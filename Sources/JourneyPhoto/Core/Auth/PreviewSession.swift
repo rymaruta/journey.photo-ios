@@ -86,4 +86,22 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
+    /// `-JPPreviewPaywall YES`。
+    ///
+    /// 見本の利用者は公開プロフィールでは Pro なので、名前の横の「Pro で集める」は出ない。
+    /// 設定の Pro の行は、鍵を持たない入り方では Pro かどうか分からず「App Store で管理」を開く
+    /// （`ProStatusText.settingsAction`・変えない）。審査用の画面写真「81-Pro の案内」を撮るためだけの口。
+    /// **入っている見本の利用者のときだけ**効く。Release では必ず false
+    static let paywallKey = "JPPreviewPaywall"
+
+    static var opensPaywall: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: paywallKey)
+        #else
+        return false
+        #endif
+    }
 }

@@ -874,12 +874,13 @@ final class ScreenshotTests: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
 
-    /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）→ Pro の案内（板 63）、
+    /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）と、
     /// マイページの名前の行 → 名前の横の画面の「PRO 限定」（板 BadgePicker）。
     ///
-    /// 鍵を持たないログイン（`-JPPreviewUserId`）なので、自分のプロフィールは読めない＝Pro でない人の姿
-    /// （サポーター証の行は出ない）。値段は App Store の商品が読めない staging なので板の値段。
-    /// **何も買わない**（主ボタンは押さない）。出なければ撮らない（この試験の決まり）
+    /// 鍵を持たないログイン（`-JPPreviewUserId`）なので、自分のプロフィールは読めない。名前の横の画面は
+    /// 公開プロフィールで開き、見本の利用者は**公開プロフィールでは Pro**＝「Pro で集める」は出ない
+    /// （2026-10-10・run 387 で 82・81 が撮れなかった理由）。82 は「PRO 限定」の眉ラベルで見つける。
+    /// Pro の案内（81）は `testCapturesProPaywall` で撮る。**何も買わない**。出なければ撮らない（この試験の決まり）
     func testCapturesProScreens() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -896,42 +897,25 @@ final class ScreenshotTests: XCTestCase {
         tabBar.buttons.element(boundBy: 4).tap()
         guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
 
-        // 名前の横の画面（PRO 限定の段まで送って撮る）
+        // 名前の横の画面（PRO 限定の段まで送って撮る）。名前の行はプロフィールが読めてから出る
+        // （`testCapturesNameSideBadge` と同じく 20 秒待つ）
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
-        if nameLine.waitForExistence(timeout: 5), nameLine.isHittable {
+        if nameLine.waitForExistence(timeout: 20), nameLine.isHittable {
             nameLine.tap()
-            let collect = app.buttons["nameSide.proCollect"].firstMatch
-            if collect.waitForExistence(timeout: 10) {
-                var pushes = 0
-                while !collect.isHittable, pushes < 3 {
-                    app.swipeUp()
-                    Thread.sleep(forTimeInterval: 1)
-                    pushes += 1
-                }
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "82-名前の横（PRO 限定）")
-                // 「Pro で集める」→ Pro の案内が開くこと（板の行き先）。**Pro の案内はここで撮る。**
-                // 鍵を持たないログインは自分のプロフィールが読めず、設定の Pro の行は
-                // 「App Store で管理」を開く（Pro かどうか分からない人に案内を出さない・ProStatusText.settingsAction）
-                if collect.isHittable {
-                    collect.tap()
-                    if app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 10) {
-                        // 上の写真（朝の公開写真）が届くのを少し待つ
-                        Thread.sleep(forTimeInterval: 4)
-                        shoot(app, "81-Pro の案内")
-                        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
-                        let restore = app.buttons["paywall.restore"].firstMatch
-                        let before = restore.exists ? restore.frame.origin.y : nil
+            if app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) {
+                // Pro でない人には「Pro で集める」、Pro の人には眉ラベルだけが出る
+                let collect = app.buttons["nameSide.proCollect"].firstMatch
+                let label = app.staticTexts["PRO 限定"].firstMatch
+                let section = collect.exists ? collect : label
+                if section.waitForExistence(timeout: 5) {
+                    var pushes = 0
+                    while !section.isHittable, pushes < 3 {
                         app.swipeUp()
                         Thread.sleep(forTimeInterval: 1)
-                        let after = restore.exists ? restore.frame.origin.y : nil
-                        if let before, let after, abs(before - after) > 1 {
-                            shoot(app, "81b-Pro の案内（下・注記と復元）")
-                        }
+                        pushes += 1
                     }
-                    if app.buttons["paywall.close"].firstMatch.waitForExistence(timeout: 10) {
-                        app.buttons["paywall.close"].firstMatch.tap()
-                    }
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "82-名前の横（PRO 限定）")
                 }
             }
             // シートを下ろす
@@ -940,7 +924,8 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
 
-        // 設定の Pro の節 → Pro の案内
+        // 設定の Pro の節。鍵を持たないログインでは Pro かどうか分からず、Pro の行は
+        // 「App Store で管理」を開く（ProStatusText.settingsAction）ので押さない
         let gear = app.buttons["設定"].firstMatch
         guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
         gear.tap()
@@ -948,6 +933,43 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+    }
+
+    /// **Pro の案内**（板 63・審査に出す画面写真）。見本の利用者には Pro の案内へ行く口が無い
+    /// （公開プロフィールでは Pro・設定の行は「App Store で管理」）ので、`-JPPreviewPaywall YES`
+    /// （Debug のみ・見本の利用者で入っているときだけ・`PreviewSession.opensPaywall`）でマイページを
+    /// 開いたときに1度だけ出す。**主ボタン（購入）は押さない**。出なければ撮らない（この試験の決まり）
+    func testCapturesProPaywall() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-JPPreviewPaywall", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else { return }
+        // 上の写真（朝の公開写真・写真の一覧を読んでから選ぶ）と値段が届くのを待つ。
+        // run 389 は 4 秒で撮り、上の写真がまだ黒かった
+        Thread.sleep(forTimeInterval: 10)
+        shoot(app, "81-Pro の案内")
+        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
+        let restore = app.buttons["paywall.restore"].firstMatch
+        let before = restore.exists ? restore.frame.origin.y : nil
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        let after = restore.exists ? restore.frame.origin.y : nil
+        if let before, let after, abs(before - after) > 1 {
+            shoot(app, "81b-Pro の案内（下・注記と復元）")
+        }
+        let close = app.buttons["paywall.close"].firstMatch
+        if close.waitForExistence(timeout: 5), close.isHittable { close.tap() }
     }
 
     /// **光と天気の知らせ**（Pro・板 LightAlert・2026-10-09）: 設定の Pro の節の「光と天気の知らせ」→

@@ -73,6 +73,15 @@ for i, want in enumerate(pick, 1):
         shutil.copy(hit, store / f"{i:02d}-{want}.png")
     else:
         print(f"::warning::App Store 用に撮れなかった画面: {want}")
+# 審査（App 内課金の審査）に出す絵。原寸の PNG をそのまま、番号を付けずに置く
+# （`pick` に入れるとインストール画面の順が変わる）
+review = ["81-Pro の案内"]
+for want in review:
+    hit = next((f for f in sorted(out.glob("*.png")) if nfc(f.name).startswith(want)), None)
+    if hit:
+        shutil.copy(hit, store / f"review-{want}.png")
+    else:
+        print(f"::warning::App Store 用に撮れなかった画面: {want}")
 STORE_PY
     if ls "$STORE"/*.png >/dev/null 2>&1; then
         (
