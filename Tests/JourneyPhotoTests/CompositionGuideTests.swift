@@ -27,8 +27,9 @@ final class CompositionGuideTests: XCTestCase {
     }
 
     func testVariantCountsMatchDesign() {
-        XCTAssertEqual(CompositionKind.goldenSpiral.variantCount, 8)
-        XCTAssertEqual(CompositionKind.fibonacciGrid.variantCount, 8)
+        // 縦長の4通りだけ（横長は 3:4 で潰れて楕円になるので外した・2026-10-10）
+        XCTAssertEqual(CompositionKind.goldenSpiral.variantCount, 4)
+        XCTAssertEqual(CompositionKind.fibonacciGrid.variantCount, 4)
         XCTAssertEqual(CompositionKind.goldenTriangle.variantCount, 2)
         XCTAssertEqual(CompositionKind.radial.variantCount, 5)
         XCTAssertEqual(CompositionKind.negativeSpace.variantCount, 4)
@@ -86,25 +87,43 @@ final class CompositionGuideTests: XCTestCase {
         XCTAssertEqual(v.0 * d.0 + v.1 * d.1, 0, accuracy: 1e-9)
     }
 
+    func testFallingGoldenTriangleFeetByHand() {
+        // 右下がり（左上→右下の対角線）。手計算（幅 0.75・高さ 1 の面）:
+        // 右上 (0.75, 0) から下ろした足 = t·(0.75, 1)、t = 0.75² / (1 + 0.75²) = 0.36 → (0.27, 0.36) → 0〜1 で (0.36, 0.36)
+        // 左下 (0, 1) から下ろした足 = t·(0.75, 1)、t = 1 / (1 + 0.75²) = 0.64 → (0.48, 0.64) → 0〜1 で (0.64, 0.64)
+        let feet = CompositionGuide.goldenTriangleFeet(variant: 1, aspect: portrait)
+        XCTAssertEqual(feet[0].x, 0.36, accuracy: 1e-9)
+        XCTAssertEqual(feet[0].y, 0.36, accuracy: 1e-9)
+        XCTAssertEqual(feet[1].x, 0.64, accuracy: 1e-9)
+        XCTAssertEqual(feet[1].y, 0.64, accuracy: 1e-9)
+        // 線もその足へ引いている（右上→足・左下→足）
+        let lines = segments(CompositionGuide.marks(.goldenTriangle, variant: 1, aspect: portrait))
+        XCTAssertTrue(lines.contains { $0.0 == GuidePoint(x: 1, y: 0) && abs($0.1.x - 0.36) < 1e-9 && abs($0.1.y - 0.36) < 1e-9 })
+        XCTAssertTrue(lines.contains { $0.0 == GuidePoint(x: 0, y: 1) && abs($0.1.x - 0.64) < 1e-9 && abs($0.1.y - 0.64) < 1e-9 })
+    }
+
     func testSpiralEyeAndSquaresConverge() {
-        // 横長（4番＝変換なし）の渦は (0.7236, 0.2764)
-        let eye = CompositionGuide.spiralEye(variant: 4)
+        // 渦（縦長・上下左右とも反転＝3番）は (0.7236, 0.2764)、反転なし（0番）は (0.2764, 0.7236)
+        let eye = CompositionGuide.spiralEye(variant: 3)
         XCTAssertEqual(eye.x, 0.7236, accuracy: 0.0001)
         XCTAssertEqual(eye.y, 0.2764, accuracy: 0.0001)
-        // 弧の中心は渦へ近づく（最後の正方形の弧の中心が渦のすぐそば）
+        let eye0 = CompositionGuide.spiralEye(variant: 0)
+        XCTAssertEqual(eye0.x, 0.2764, accuracy: 0.0001)
+        XCTAssertEqual(eye0.y, 0.7236, accuracy: 0.0001)
+        // 弧の中心は渦へ近づく（変換前の横長の長方形で、最後の正方形の弧の中心が渦のすぐそば）
         let last = CompositionGuide.spiralSquares().last!
-        XCTAssertEqual(last.arcCenter.x, eye.x, accuracy: 0.02)
-        XCTAssertEqual(last.arcCenter.y, eye.y, accuracy: 0.02)
-        // 8通りの渦はどれも別の位置で、0〜1 の内
-        let eyes = (0..<8).map { CompositionGuide.spiralEye(variant: $0) }
+        XCTAssertEqual(last.arcCenter.x, 0.7236, accuracy: 0.02)
+        XCTAssertEqual(last.arcCenter.y, 0.2764, accuracy: 0.02)
+        // 4通りの渦はどれも別の角で、0〜1 の内
+        let eyes = (0..<4).map { CompositionGuide.spiralEye(variant: $0) }
         for e in eyes { XCTAssertTrue((0...1).contains(e.x) && (0...1).contains(e.y)) }
         let distinct = Set(eyes.map { "\(($0.x * 1000).rounded()),\(($0.y * 1000).rounded())" })
-        XCTAssertEqual(distinct.count, 4, "縦長・横長で同じ角に来るので位置は 4 か所")
+        XCTAssertEqual(distinct.count, 4)
     }
 
     func testSpiralArcsAreContinuous() {
         // 1つの弧の終わりが次の弧の始まり（線が途切れない）
-        for v in 0..<8 {
+        for v in 0..<4 {
             let arcs = CompositionGuide.marks(.goldenSpiral, variant: v, aspect: portrait)
             XCTAssertEqual(arcs.count, CompositionGuide.spiralSteps)
             for (a, b) in zip(arcs, arcs.dropFirst()) {
@@ -131,7 +150,19 @@ final class CompositionGuideTests: XCTestCase {
     }
 
     func testArmatureHasFourteenLines() {
-        XCTAssertEqual(segments(CompositionGuide.marks(.armature, variant: 0, aspect: portrait)).count, 14)
+        let lines = segments(CompositionGuide.marks(.armature, variant: 0, aspect: portrait))
+        XCTAssertEqual(lines.count, 14)
+        // 手計算: 各角から、その角に触れない2辺の中点へ（8本）
+        let expected: [(Double, Double, Double, Double)] = [
+            (0, 0, 1, 0.5), (0, 0, 0.5, 1),     // 左上 → 右辺の中点・下辺の中点
+            (1, 0, 0, 0.5), (1, 0, 0.5, 1),     // 右上 → 左辺・下辺
+            (0, 1, 1, 0.5), (0, 1, 0.5, 0),     // 左下 → 右辺・上辺
+            (1, 1, 0, 0.5), (1, 1, 0.5, 0),     // 右下 → 左辺・上辺
+        ]
+        for e in expected {
+            XCTAssertTrue(lines.contains { $0.0 == GuidePoint(x: e.0, y: e.1) && $0.1 == GuidePoint(x: e.2, y: e.3) },
+                          "角 (\(e.0), \(e.1)) → 中点 (\(e.2), \(e.3)) が無い")
+        }
     }
 
     func testDiagonal45IsFortyFiveDegreesInPixels() {
@@ -208,6 +239,59 @@ final class CompositionGuideTests: XCTestCase {
         XCTAssertFalse(CompositionGuide.levelMarks(aspect: portrait, degrees: 5)[0].bold)
     }
 
+    // MARK: - 横持ち・水準器の描き直し
+
+    func testQuarterTurnsFromTheLevelAngle() {
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: 0, previous: 0), 0)
+        // 上を右に向けた横持ち（時計回りに 90°）→ 画面の上の水平線は -90°
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: -88, previous: 0), 1)
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: 90, previous: 0), 3)
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: 179, previous: 0), 2)
+        // 斜め（境目の近く）・平らに置いた → 前のまま
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: -45, previous: 1), 1)
+        XCTAssertEqual(CompositionGuide.quarterTurns(levelDegrees: nil, previous: 3), 3)
+    }
+
+    func testLandscapeRotatesTheLinesToThePhoto() {
+        // 縦持ちは今までどおり
+        XCTAssertEqual(CompositionGuide.screenMarks(.horizon, variant: 0, aspect: portrait, quarterTurns: 0, levelDegrees: 0),
+                       CompositionGuide.marks(.horizon, variant: 0, aspect: portrait))
+        // 横持ち（1）: 写真の水平線 y = 2/3（下寄り）は、画面では縦の線 x = 2/3（写真の下＝画面の右）
+        let horizon = segments(CompositionGuide.screenMarks(.horizon, variant: 0, aspect: portrait,
+                                                            quarterTurns: 1, levelDegrees: -90))
+        XCTAssertEqual(horizon.count, 1)
+        XCTAssertEqual(horizon[0].0.x, 2.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(horizon[0].1.x, 2.0 / 3, accuracy: 1e-9)
+        // 1:1 の枠は写真（4:3）の中で計算する。画面の上では 幅 1・高さ 0.75
+        let dim = CompositionGuide.screenMarks(.square, variant: 0, aspect: portrait, quarterTurns: 1, levelDegrees: -90)
+        guard case .dimOutside(let crop)? = dim.first?.shape else { return XCTFail("暗がりが無い") }
+        XCTAssertEqual(crop.width, 1, accuracy: 1e-9)
+        XCTAssertEqual(crop.height, 0.75, accuracy: 1e-9)
+        // 水準器: 横持ちで 0.5° 傾き → 太い（水平に近い）・線は画面の上でほぼ縦
+        let level = CompositionGuide.screenMarks(.level, variant: 0, aspect: portrait, quarterTurns: 1, levelDegrees: -90.5)
+        XCTAssertTrue(level[0].bold)
+        guard case .segment(let a, let b) = level[0].shape else { return XCTFail() }
+        XCTAssertLessThan(abs((b.x - a.x) * portrait), abs(b.y - a.y) * 0.05)
+        // 全種類・全向き・横持ちでも範囲の内
+        for q in 0..<4 {
+            for kind in CompositionKind.allCases {
+                for v in 0..<kind.variantCount {
+                    for p in CompositionGuide.screenMarks(kind, variant: v, aspect: portrait, quarterTurns: q,
+                                                           levelDegrees: Double(q) * -90).flatMap(\.samplePoints) {
+                        XCTAssertTrue((-1e-9...1 + 1e-9).contains(p.x) && (-1e-9...1 + 1e-9).contains(p.y), "\(kind) \(v) \(q)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testLevelIgnoresTinyChanges() {
+        XCTAssertTrue(CompositionGuide.levelNeedsUpdate(from: nil, to: 0.02))
+        XCTAssertFalse(CompositionGuide.levelNeedsUpdate(from: 1.0, to: 1.05))
+        XCTAssertTrue(CompositionGuide.levelNeedsUpdate(from: 1.0, to: 1.1))
+        XCTAssertFalse(CompositionGuide.levelNeedsUpdate(from: 1.0, to: .nan))
+    }
+
     // MARK: - 最近・覚える値
 
     func testRecentsDeduplicateAndKeepFour() {
@@ -236,8 +320,11 @@ final class CompositionGuideTests: XCTestCase {
         prefs.select(nil)
         XCTAssertNil(prefs.lastKind)
         XCTAssertEqual(prefs.recents, [.goldenSpiral, .armature])
-        prefs.setVariant(6, for: .goldenSpiral)
-        XCTAssertEqual(prefs.variant(for: .goldenSpiral), 6)
+        prefs.setVariant(2, for: .goldenSpiral)
+        XCTAssertEqual(prefs.variant(for: .goldenSpiral), 2)
+        // 前の版で覚えた横長の向き（4〜7）は範囲の内へ丸める
+        defaults.set(["goldenSpiral": 6], forKey: "journey-photo-composition-variants")
+        XCTAssertEqual(prefs.variant(for: .goldenSpiral), 3)
         prefs.setVariant(99, for: .radial)
         XCTAssertEqual(prefs.variant(for: .radial), 4)
         prefs.setLineOpacity(2)

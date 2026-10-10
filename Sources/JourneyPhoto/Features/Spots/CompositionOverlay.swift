@@ -16,6 +16,8 @@ struct CompositionOverlay: View {
     var lineOpacity = CompositionGuide.defaultLineOpacity
     /// 水準器の傾き（度）。水準器でなければ使わない
     var levelDegrees: Double = 0
+    /// 持った向き（0〜3・横持ちなら線を写真の向きに回す・`CompositionGuide.screenMarks`）
+    var quarterTurns = 0
     var lineWidth = 1.0
     /// 黒 25% の影（構図のシートの小さな絵では付けない）
     var shadowed = true
@@ -23,9 +25,8 @@ struct CompositionOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let w = Double(geo.size.width), h = Double(geo.size.height)
-            let marks = kind == .level
-                ? CompositionGuide.levelMarks(aspect: w / max(h, 1), degrees: levelDegrees)
-                : CompositionGuide.marks(kind, variant: variant, aspect: w / max(h, 1))
+            let marks = CompositionGuide.screenMarks(kind, variant: variant, aspect: w / max(h, 1),
+                                                     quarterTurns: quarterTurns, levelDegrees: levelDegrees)
             let color = Color.white.opacity(CompositionGuide.clampedLineOpacity(lineOpacity))
             ZStack {
                 ZStack {
@@ -107,6 +108,21 @@ struct CompositionOverlay: View {
                 }
             }
         }
+    }
+}
+
+/// 撮る画面の構図の線（2026-10-10）。**傾き（`LevelMotion`）を見るのはここだけ**——撮る画面全体が
+/// 30 回/秒で描き直されないように、線だけを子の View に分けた（確かめ役の指摘）
+struct CompositionLines: View {
+    let kind: CompositionKind
+    let variant: Int
+    let lineOpacity: Double
+    let quarterTurns: Int
+    @ObservedObject var level: LevelMotion
+
+    var body: some View {
+        CompositionOverlay(kind: kind, variant: variant, lineOpacity: lineOpacity,
+                           levelDegrees: kind == .level ? level.degrees : 0, quarterTurns: quarterTurns)
     }
 }
 

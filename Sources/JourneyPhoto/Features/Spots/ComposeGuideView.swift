@@ -47,7 +47,11 @@ struct ComposeGuideView: View {
     let onPost: ((CameraCapture) -> Void)?
 
     @StateObject private var camera = ComposeCamera()
-    @StateObject private var level = LevelMotion()
+    /// 傾き（水準器・持った向き）。🔴 **`@State` で持つだけで見張らない**——見張ると角度が変わるたびに
+    /// この画面全体が描き直される。角度は線の子の View（`CompositionLines`）だけが見る（2026-10-10）
+    @State private var level = LevelMotion()
+    /// 持った向き（0〜3）。横持ちなら構図の線を写真の向きに回す。変わったときだけ `LevelMotion` が知らせる
+    @State private var quarterTurns = 0
     @State private var index: Int
 
     /// 構図（nil は「なし」）・向き・線の濃さ
@@ -120,8 +124,11 @@ struct ComposeGuideView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await camera.start() }
+                updateLevel()
             } else if phase == .background {
                 camera.stop()
+                // 傾きの見張りも止める（裏で 30 回/秒 動かし続けない・確かめ役の指摘）
+                level.stop()
             }
         }
     }
@@ -186,8 +193,8 @@ struct ComposeGuideView: View {
             }
             // 重ね順: 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）
             if showsLines, let composition {
-                CompositionOverlay(kind: composition, variant: variant, lineOpacity: lineOpacity,
-                                   levelDegrees: level.degrees)
+                CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
+                                 quarterTurns: quarterTurns, level: level)
             }
         }
         .clipped()
@@ -582,9 +589,11 @@ struct ComposeGuideView: View {
         announce(CompositionGuide.variantAccessibilityLabel(kind, variant: variant))
     }
 
-    /// 水準器を選んでいる間だけ傾きを読む（電池を守る）
+    /// 傾きの見張りを始める・速さを合わせる。水準器を選んでいる間だけ角度を 30 回/秒で読み、
+    /// ほかは持った向き（縦・横）だけを 10 回/秒で見る
     private func updateLevel() {
-        if composition == .level { level.start() } else { level.stop() }
+        level.onQuarterChange = { quarterTurns = $0 }
+        level.start(level: composition == .level)
     }
 
     /// 知らせを出して数秒で消す。読み上げにも伝える

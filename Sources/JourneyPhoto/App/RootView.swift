@@ -17,6 +17,9 @@ struct RootView: View {
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
     @State private var pendingCapture: CameraCapture?
+    /// 投稿のシートで「構図を重ねて撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
+    /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）
+    @State private var openCompositionAfterPostSheet = false
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -371,7 +374,130 @@ struct RootView: View {
         }
     }
 
+    /// 札と、その上の修飾子（2026-10-10 判断: 1つの式に修飾子が長く連なって、本物の Swift が
+    /// 「型の検査が時間内に終わらない」で落ちた（Mac run・49997bc9）。投稿まわりとシートを段に分け、
+    /// 1つの式を短くした。`tabsBase` → `tabsWithPostChoice` → `tabsWithPostSheets` → `tabs`）
     private var tabs: some View {
+        tabsWithPostSheets
+            .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
+                NavigationStack { SiteMenuView() }
+            }
+            // お知らせを閉じたら数え直す（タブではなくシートになったので）
+            .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread(keepOnFailure: true) } }) {
+                notificationsSheet
+            }
+    }
+
+    /// お知らせのシートの中身
+    private var notificationsSheet: some View {
+        NavigationStack {
+            NotificationsView()
+                // **閉じる口を画面に置く。** タブからシートへ移したとき
+                // 閉じるボタンを足しておらず、下へ払う以外に閉じる手段が
+                // 無かった——owner は「✕が見えない、閉じられない」と
+                // 受け取った（2026-09-25）。置き場所はほかのシート
+                // （写真の編集・曲の選択）と同じ `cancellationAction`
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(Labels.Common.close) { showNotifications = false }
+                            .accessibilityIdentifier("notifications.close")
+                    }
+                }
+        }
+    }
+
+    /// 投稿の画面（旅の写真・投稿・ストーリー）
+    private var tabsWithPostSheets: some View {
+        tabsWithPostChoice
+            // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
+            .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+                pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
+                if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
+            }) {
+                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
+                LibraryTripFlowView { photos in
+                    pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
+                }
+            }
+            // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
+            // 格子とストーリーの行はこれを見て読み直す
+            .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
+                uploadSheet
+            }
+            .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
+                NavigationStack { StoryComposerView() }
+            }
+    }
+
+    /// 投稿画面。旅の写真から来たときは、その写真を並べて**非公開で**始める
+    private var uploadSheet: some View {
+        NavigationStack {
+            UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
+                       startPrivate: !pendingTripPhotos.isEmpty,
+                       initialCapture: pendingCapture,
+                       // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
+                       onSaved: { tabRouter.notePosted($0) })
+        }
+    }
+
+    /// 投稿の選択（下の「投稿」）と、構図を重ねて撮る（作例なし）
+    private var tabsWithPostChoice: some View {
+        tabsBase
+            // 今日のテーマの「参加する」から来たときのタグ。
+            // **投稿画面を閉じたら忘れる**（次の投稿に引きずらない）
+            .onChange(of: showPhotoUpload) { _, shown in
+                if !shown {
+                    pendingThemeTag = nil
+                    // 旅の写真も同じ（次の投稿に同じ写真が並ばない）
+                    pendingTripPhotos = []
+                    // 構図を重ねて撮った1枚も同じ
+                    pendingCapture = nil
+                }
+            }
+            .sheet(isPresented: $showPostChoice, onDismiss: openCompositionIfRequested) {
+                PostSheet { kind in choosePost(kind) }
+            }
+            // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
+            .composeGuidePresenter(composeLauncher, spotName: nil,
+                                   onPost: { capture in pendingCapture = capture },
+                                   onDismiss: postCapturedPhotoIfAny)
+    }
+
+    /// 投稿の選択で選ばれたもの
+    private func choosePost(_ kind: PostSheet.Kind) {
+        switch kind {
+        case .photo:
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
+            showPhotoUpload = true
+        case .story: showStoryComposer = true
+        case .trip:
+            pendingTripPhotos = []
+            showTripImport = true
+        case .composition:
+            // シートが閉じきってから開く（`openCompositionIfRequested`）
+            openCompositionAfterPostSheet = true
+        }
+    }
+
+    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、Pro の確かめ（Pro でなければ案内）を経て作例なしで開く
+    private func openCompositionIfRequested() {
+        guard openCompositionAfterPostSheet else { return }
+        openCompositionAfterPostSheet = false
+        Task {
+            await ComposeGuidePresenter.request(
+                composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) },
+                auth: auth, store: store, environment: environment, toasts: toasts)
+        }
+    }
+
+    /// 構図を重ねて撮る画面が閉じきった。「投稿」で撮った1枚があれば投稿画面を開く
+    private func postCapturedPhotoIfAny() {
+        guard pendingCapture != nil else { return }
+        pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
+        showPhotoUpload = true
+    }
+
+    private var tabsBase: some View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
         // 押しても setter を呼ぶので、そこで比べる
@@ -520,90 +646,6 @@ struct RootView: View {
             // 旅の写真の控えは渡さない（`TripImportHandoff`）
             pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .theme, pending: pendingTripPhotos)
             showPhotoUpload = true
-        }
-        // 今日のテーマの「参加する」から来たときのタグ。
-        // **投稿画面を閉じたら忘れる**（次の投稿に引きずらない）
-        .onChange(of: showPhotoUpload) { _, shown in
-            if !shown {
-                pendingThemeTag = nil
-                // 旅の写真も同じ（次の投稿に同じ写真が並ばない）
-                pendingTripPhotos = []
-                // 構図を重ねて撮った1枚も同じ
-                pendingCapture = nil
-            }
-        }
-        .sheet(isPresented: $showPostChoice) {
-            PostSheet { kind in
-                switch kind {
-                case .photo:
-                    pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
-                    showPhotoUpload = true
-                case .story: showStoryComposer = true
-                case .trip:
-                    pendingTripPhotos = []
-                    showTripImport = true
-                case .composition:
-                    // Pro の確かめ（Pro でなければ案内）。作例なしで開く
-                    Task {
-                        await ComposeGuidePresenter.request(
-                            composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) },
-                            auth: auth, store: store, environment: environment, toasts: toasts)
-                    }
-                }
-            }
-        }
-        // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
-        .composeGuidePresenter(composeLauncher, spotName: nil, onPost: { capture in
-            pendingCapture = capture
-        }, onDismiss: {
-            guard pendingCapture != nil else { return }
-            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
-            showPhotoUpload = true
-        })
-        // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
-        .fullScreenCover(isPresented: $showTripImport, onDismiss: {
-            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
-            if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
-        }) {
-            // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
-            LibraryTripFlowView { photos in
-                pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
-            }
-        }
-        // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
-        // 格子とストーリーの行はこれを見て読み直す
-        .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
-            // 旅の写真から来たときは、その写真を並べて**非公開で**始める
-            NavigationStack {
-                UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
-                           startPrivate: !pendingTripPhotos.isEmpty,
-                           initialCapture: pendingCapture,
-                           // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
-                           onSaved: { tabRouter.notePosted($0) })
-            }
-        }
-        .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
-            NavigationStack { StoryComposerView() }
-        }
-        .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
-            NavigationStack { SiteMenuView() }
-        }
-        // お知らせを閉じたら数え直す（タブではなくシートになったので）
-        .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread(keepOnFailure: true) } }) {
-            NavigationStack {
-                NotificationsView()
-                    // **閉じる口を画面に置く。** タブからシートへ移したとき
-                    // 閉じるボタンを足しておらず、下へ払う以外に閉じる手段が
-                    // 無かった——owner は「✕が見えない、閉じられない」と
-                    // 受け取った（2026-09-25）。置き場所はほかのシート
-                    // （写真の編集・曲の選択）と同じ `cancellationAction`
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button(Labels.Common.close) { showNotifications = false }
-                                .accessibilityIdentifier("notifications.close")
-                        }
-                    }
-            }
         }
     }
 }

@@ -121,6 +121,65 @@ enum CompositionGuide {
         return [line] + ticks
     }
 
+    /// 水準器の角度の変化をどれだけ小さければ無視するか（度）。端末の細かい揺れで線を描き直さない
+    static let levelUpdateThreshold = 0.1
+
+    /// 新しい角度を画面に渡すか（0.1° 未満の変化は渡さない・初めての値は渡す）
+    static func levelNeedsUpdate(from old: Double?, to new: Double) -> Bool {
+        guard new.isFinite else { return false }
+        guard let old, old.isFinite else { return true }
+        return abs(new - old) >= levelUpdateThreshold
+    }
+
+    // MARK: - 横持ち（2026-10-10・確かめ役の指摘）
+
+    /// 端末を何回 90° 時計回りに回して持っているか（0〜3）。0 は縦持ち、1 は上を右に向けた横持ち。
+    ///
+    /// 水準器の角度（`levelAngle`・画面の上の水平線が時計回りに何度か）から決める。斜め（境目から 30° 以内）や
+    /// 平らに置いた（角度が無い）ときは前の向きのまま——境目で線が行き来しない
+    static func quarterTurns(levelDegrees: Double?, previous: Int) -> Int {
+        guard let levelDegrees, levelDegrees.isFinite else { return previous }
+        let raw = -levelDegrees / 90
+        let nearest = raw.rounded()
+        guard abs(raw - nearest) * 90 <= 30 else { return previous }
+        return ((Int(nearest) % 4) + 4) % 4
+    }
+
+    /// 写真（持った向き）の座標から画面の座標への変換（90° 単位の回転）
+    static func quarterTransform(_ quarterTurns: Int) -> GuideTransform {
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: return GuideTransform(transpose: true, flipX: false, flipY: true)
+        case 2: return GuideTransform(transpose: false, flipX: true, flipY: true)
+        case 3: return GuideTransform(transpose: true, flipX: true, flipY: false)
+        default: return GuideTransform(transpose: false, flipX: false, flipY: false)
+        }
+    }
+
+    /// 画面に描く線。横持ちのときは**写真の向き**（縦横比も写真のもの）で線を作ってから、画面へ 90° 単位で回す。
+    /// 水平線・比率の枠・「左上」などの向きの名前・水準器の目盛りが、撮れる写真と合う
+    /// - Parameters:
+    ///   - aspect: 画面の上の枠の幅÷高さ（縦の 3:4 なら 0.75）
+    ///   - levelDegrees: 水準器の角度（画面の上・`levelAngle`）
+    static func screenMarks(_ kind: CompositionKind, variant: Int, aspect: Double, quarterTurns: Int,
+                            levelDegrees: Double) -> [GuideMark] {
+        let q = ((quarterTurns % 4) + 4) % 4
+        let r = validAspect(aspect)
+        let photoAspect = q % 2 == 1 ? 1 / r : r
+        let marks: [GuideMark]
+        if kind == .level {
+            // 写真の上の傾き＝画面の上の角度に持った向きのぶんを足し、-180〜180 に戻す
+            var d = (levelDegrees.isFinite ? levelDegrees : 0) + Double(q) * 90
+            d = (d + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            marks = levelMarks(aspect: photoAspect, degrees: d - 180)
+        } else {
+            marks = self.marks(kind, variant: variant, aspect: photoAspect)
+        }
+        guard q != 0 else { return marks }
+        let t = quarterTransform(q)
+        return marks.map { t.apply($0) }
+    }
+
     // MARK: - 読み上げ
 
     static func accessibilityLabel(_ kind: CompositionKind?) -> String {
@@ -428,11 +487,14 @@ enum CompositionGuide {
         return out
     }
 
-    /// 螺旋の向き（8通り）。0〜3 は縦長（φ の長い辺が縦）、4〜7 は横長。
-    /// それぞれ 反転なし・左右・上下・両方
+    /// 螺旋の向き（4通り・縦長＝φ の長い辺が縦）。反転なし・左右・上下・両方。
+    ///
+    /// 2026-10-10 判断（確かめ役の指摘）: 横長の4通りを外した。横長の黄金長方形を 3:4 の縦の枠に
+    /// 引き伸ばすと正方形が細長く潰れ、弧も楕円になって螺旋の役目をしない。横持ちで撮るときは
+    /// 線ごと 90° 回る（`screenMarks`）ので、写真の上では横長の螺旋になる
     static func spiralTransform(_ variant: Int) -> GuideTransform {
-        let v = min(max(variant, 0), 7)
-        return GuideTransform(transpose: v < 4, flipX: v % 4 == 1 || v % 4 == 3, flipY: v % 4 >= 2)
+        let v = min(max(variant, 0), 3)
+        return GuideTransform(transpose: true, flipX: v == 1 || v == 3, flipY: v >= 2)
     }
 }
 
@@ -560,9 +622,19 @@ struct GuideTransform: Equatable {
                      start: apply(start), end: apply(end))
         case .point(let p): s = .point(apply(p))
         case .polyline(let pts, let closed): s = .polyline(pts.map(apply), closed: closed)
-        default: s = mark.shape
+        case .ellipse(let r): s = .ellipse(apply(r))
+        case .roundedRect(let r, let corner): s = .roundedRect(apply(r), corner: corner)
+        case .dimOutside(let r): s = .dimOutside(apply(r))
+        case .bezier(let a, let c1, let c2, let b):
+            s = .bezier(from: apply(a), control1: apply(c1), control2: apply(c2), to: apply(b))
         }
         return GuideMark(s, dashed: mark.dashed, bold: mark.bold)
+    }
+
+    /// 軸に沿った長方形（向かい合う2つの角を写して並べ直す）
+    func apply(_ r: GuideRect) -> GuideRect {
+        let a = apply(GuidePoint(x: r.x, y: r.y)), b = apply(GuidePoint(x: r.maxX, y: r.maxY))
+        return GuideRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
 }
 
@@ -815,14 +887,14 @@ enum CompositionKind: String, CaseIterable, Identifiable {
         case .symmetry: return [("縦", "Vertical"), ("横", "Horizontal")]
         case .horizon: return [("空を広く", "More sky"), ("地面を広く", "More ground")]
         case .goldenSpiral, .fibonacciGrid:
-            // 0〜3 は縦長・4〜7 は横長（`CompositionGuide.spiralTransform`）。名前は渦の位置
-            return (0..<8).map { v in
+            // 4通り（縦長・`CompositionGuide.spiralTransform`）。名前は渦の位置
+            return (0..<4).map { v in
                 let eye = CompositionGuide.spiralTransform(v).apply(
                     GuidePoint(x: 1 / (1 + 1 / (CompositionGuide.phi * CompositionGuide.phi)),
                                y: 1 - 1 / (1 + 1 / (CompositionGuide.phi * CompositionGuide.phi))))
                 let ja = (eye.x < 0.5 ? "左" : "右") + (eye.y < 0.5 ? "上" : "下")
                 let en = (eye.y < 0.5 ? "Top " : "Bottom ") + (eye.x < 0.5 ? "left" : "right")
-                return v < 4 ? (ja, en) : ("\(ja)・横長", "\(en), wide")
+                return (ja, en)
             }
         case .goldenTriangle: return [("右上がり", "Rising"), ("右下がり", "Falling")]
         case .diagonals: return [("バロック", "Baroque"), ("シニスター", "Sinister"), ("両方", "Both")]

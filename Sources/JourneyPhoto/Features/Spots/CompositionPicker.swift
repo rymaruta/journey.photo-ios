@@ -167,7 +167,8 @@ struct CompositionPicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(kind.map { "\($0.name)、\($0.difficulty.label)" } ?? CompositionGuide.noneName)
+        .accessibilityLabel(kind.map { L("\($0.name)、\($0.difficulty.label)", "\($0.name), \($0.difficulty.label)") }
+                            ?? CompositionGuide.noneName)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint(kind?.tip ?? L("線を重ねません", "No lines"))
         .accessibilityIdentifier("composition.card.\(kind?.rawValue ?? "none")")

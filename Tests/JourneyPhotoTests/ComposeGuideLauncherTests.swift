@@ -79,6 +79,19 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertEqual(launcher.launch?.id, first)
     }
 
+    @MainActor
+    func testDoesNotOpenWhileThePaywallIsShowing() async {
+        let launcher = ComposeGuideLauncher()
+        await launcher.open(previewUnlocked: false, signedIn: false, deliveredRevision: 0,
+                            isPro: { nil }, make: Self.freeLaunch)
+        XCTAssertTrue(launcher.showPaywall)
+        // 案内を出している間に2回目（鍵があっても）→ 撮る画面を重ねない
+        let second = await launcher.open(previewUnlocked: true, signedIn: true, deliveredRevision: 0,
+                                         isPro: { true }, make: Self.freeLaunch)
+        XCTAssertEqual(second, .ignored)
+        XCTAssertNil(launcher.launch)
+    }
+
     // MARK: - 撮る画面の枠（3:4）
 
     func testViewfinderFitsThreeByFour() {
@@ -143,8 +156,20 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(view.contains("ComposeGuide.viewfinderSize(width:"), "映像の枠が 3:4 でない")
         // 重ね順: 映像 → 作例（overlay）→ 構図の線
         let preview = try XCTUnwrap(view.range(of: "CameraPreview(session: camera.session)"))
-        let lines = try XCTUnwrap(view.range(of: "CompositionOverlay(kind: composition"))
+        let lines = try XCTUnwrap(view.range(of: "CompositionLines(kind: composition"))
         XCTAssertLessThan(preview.lowerBound, lines.lowerBound)
+    }
+
+    /// 傾き（30 回/秒）で撮る画面全体を描き直さない。裏に回ったら傾きの見張りも止める
+    func testLevelDoesNotRedrawTheWholeScreenAndStopsInBackground() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view.contains("@State private var level = LevelMotion()"), "撮る画面が傾きを見張っている")
+        XCTAssertFalse(view.contains("@StateObject private var level"), "撮る画面が傾きを見張っている")
+        XCTAssertFalse(view.contains("level.degrees"), "撮る画面の本体が角度を読んでいる")
+        let background = try XCTUnwrap(view.components(separatedBy: "} else if phase == .background {").dropFirst().first)
+        XCTAssertTrue(background.prefix(300).contains("level.stop()"), "裏に回っても傾きの見張りが止まらない")
+        let overlay = try source("Sources/JourneyPhoto/Features/Spots/CompositionOverlay.swift")
+        XCTAssertTrue(overlay.contains("@ObservedObject var level: LevelMotion"), "線の子の View が傾きを見ていない")
     }
 
     /// 投稿のシートの4つ目「構図を重ねて撮る」は Pro の流れ（`ComposeGuidePresenter.request`）を通り、作例なしで開く
@@ -155,8 +180,12 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(root.contains("case .composition:"))
         XCTAssertTrue(root.contains("composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) }"),
                       "作例なしで Pro の流れを通していない")
-        XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil, onPost:"))
+        XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil,"))
+        XCTAssertTrue(root.contains("onPost: { capture in pendingCapture = capture }"))
         XCTAssertTrue(root.contains("initialCapture: pendingCapture"), "撮った1枚を投稿画面へ渡していない")
+        // 投稿のシートが閉じきってから開く（閉じている途中に全画面を重ねない）
+        XCTAssertTrue(root.contains(".sheet(isPresented: $showPostChoice, onDismiss: openCompositionIfRequested)"),
+                      "投稿のシートが閉じきる前に撮る画面を開いている")
     }
 
     func testPreviewLensIsOffWithoutTheLaunchArgument() {

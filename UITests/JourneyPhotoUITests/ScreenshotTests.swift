@@ -996,8 +996,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "構図を重ねて撮るの入口が 44pt 未満")
         entry.tap()
 
+        // 前提はそろった（入口が出て押せた・Pro の確かめは起動の鍵で飛ばす）。アプリは投稿のシートが
+        // 閉じきってから撮る画面を開く（`RootView.openCompositionAfterPostSheet`）ので、出なければ落とす
         let close = app.buttons["composeGuide.close"].firstMatch
-        guard close.waitForExistence(timeout: 10) else { return }
+        guard close.waitForExistence(timeout: 15) else {
+            shoot(app, "13i-構図を重ねて撮る（出なかった）")
+            XCTFail("投稿のシートの「構図を重ねて撮る」を押したのに撮る画面が出ない")
+            return
+        }
         // 作例なし: 構図の行はある・上の札（作例の番号）と作例の切り替えは無い
         let row = app.buttons["composeGuide.composition"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), "撮る画面に構図の行が無い")
@@ -1016,7 +1022,10 @@ final class ScreenshotTests: XCTestCase {
 
         // 構図のシート。黄金比の段へ飛んでから黄金螺旋を選ぶ
         let golden = app.buttons["composition.chip.golden"].firstMatch
-        guard golden.waitForExistence(timeout: 5) else { return }
+        guard golden.waitForExistence(timeout: 8) else {
+            XCTFail("構図の行を押したのに構図のシートが出ない")
+            return
+        }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "13j-構図のシート")
         if golden.isHittable { golden.tap() }
