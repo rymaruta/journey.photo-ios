@@ -454,9 +454,9 @@ struct OfficialSpotView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot.official.samples")
+            // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）
             .fullScreenCover(item: $composeLaunch) { launch in
-                ComposeGuideView(spotName: spot.name, samples: samples,
-                                 startIndex: ComposeGuide.startIndex(of: launch.sample, in: samples))
+                ComposeGuideView(spotName: spot.name, samples: launch.samples, startIndex: launch.start)
             }
             .fullScreenCover(isPresented: $showComposePaywall, onDismiss: {
                 // 案内で Pro になったら、そのまま撮る画面へ（`NameSideBadgeView` と同じ見分け方）
@@ -514,9 +514,12 @@ struct OfficialSpotView: View {
     /// `sample` は始める作例の出典のページ（作例の帯で押した1枚・入口のボタンは nil＝1枚目）
     private func openComposeGuide(from sample: URL?) async {
         guard !checkingPro else { return }
+        // 開いている・案内を出している間は開き直さない（素早い2回押しで全画面が開き直し、
+        // カメラの開始・停止が二重になる・2026-10-10）
+        guard composeLaunch == nil, !showComposePaywall else { return }
         composeStartSample = sample
         if ComposeGuideAccess.previewUnlocked {
-            composeLaunch = ComposeGuide.Launch(sample: sample)
+            composeLaunch = ComposeGuide.Launch(sample: sample, samples: shownSamples)
             return
         }
         checkingPro = true
@@ -525,7 +528,7 @@ struct OfficialSpotView: View {
         let isPro: Bool? = signedIn ? (try? await environment.profiles.myProfile())?.isPro : nil
         switch ComposeGuide.destination(signedIn: signedIn, isPro: isPro) {
         case .camera:
-            composeLaunch = ComposeGuide.Launch(sample: sample)
+            composeLaunch = ComposeGuide.Launch(sample: sample, samples: shownSamples)
         case .paywall:
             deliveredAtComposePaywall = store.deliveredRevision
             showComposePaywall = true

@@ -219,7 +219,9 @@ final class ScreenshotTests: XCTestCase {
         second.tap()
         let close = app.buttons["composeGuide.close"].firstMatch
         guard close.waitForExistence(timeout: 10) else { return }
+        // 札は必ず出る（作例が2枚以上ある）。出ているのに「作例 2」でなければ落とす
         let counter = app.descendants(matching: .any).matching(identifier: "composeGuide.counter").firstMatch
+        XCTAssertTrue(counter.waitForExistence(timeout: 5), "撮る画面の上の札（作例の番号）が出ない")
         if counter.exists {
             XCTAssertTrue(counter.label.contains("作例 2 枚目") || counter.label.contains("example 2 of"),
                           "2枚目の作例から開いていない: \(counter.label)")

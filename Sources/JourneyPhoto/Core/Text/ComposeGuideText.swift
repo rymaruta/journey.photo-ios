@@ -175,11 +175,26 @@ enum ComposeGuide {
         return i
     }
 
-    /// 撮る画面を開く頼み（`fullScreenCover(item:)` に渡す）。`sample` は始める作例の出典のページ
-    /// （入口のボタンは nil）。開くたびに別の頼みにする（同じ1枚を続けて開いても作り直す）
+    /// 撮る画面を開く頼み（`fullScreenCover(item:)` に渡す）。開くたびに別の頼みにする
+    /// （同じ1枚を続けて開いても作り直す）。
+    ///
+    /// 2026-10-10 判断: **開いた時点の作例の並びを持つ。** 撮る画面を開いている間も裏の帯は読み込みを
+    /// 続け、読めなかった1枚は帯から隠れる（`OfficialSpotView.brokenSamples`）。今の並びをそのまま
+    /// 渡すと、撮る画面の番号はそのままで並びだけ縮み、見ている作例が別の1枚にずれる
     struct Launch: Identifiable, Equatable {
         let id = UUID()
-        let sample: URL?
+        /// 撮る画面に渡す作例（開いた時点で固定）
+        let samples: [SpotSample]
+        /// 始める作例の番号（`samples` の中）
+        let start: Int
+
+        /// - Parameters:
+        ///   - sample: 始める作例の出典のページ（帯で押した1枚）。入口のボタンは nil＝1枚目
+        ///   - samples: いま帯に出している作例
+        init(sample: URL?, samples: [SpotSample]) {
+            self.samples = samples
+            self.start = ComposeGuide.startIndex(of: sample, in: samples)
+        }
     }
 
     /// 入口を押したときの行き先
