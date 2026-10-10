@@ -11,6 +11,12 @@ struct RootView: View {
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
+    /// 「構図を重ねて撮る」（Pro）の確かめに使う（渡し終えた回数・2026-10-10）
+    @EnvironmentObject private var store: StoreService
+    /// 投稿のシートの「構図を重ねて撮る」（Pro・作例なし）を開く流れ（`ComposeGuideLauncher`）
+    @StateObject private var composeLauncher = ComposeGuideLauncher()
+    /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
+    @State private var pendingCapture: CameraCapture?
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -522,6 +528,8 @@ struct RootView: View {
                 pendingThemeTag = nil
                 // 旅の写真も同じ（次の投稿に同じ写真が並ばない）
                 pendingTripPhotos = []
+                // 構図を重ねて撮った1枚も同じ
+                pendingCapture = nil
             }
         }
         .sheet(isPresented: $showPostChoice) {
@@ -534,9 +542,24 @@ struct RootView: View {
                 case .trip:
                     pendingTripPhotos = []
                     showTripImport = true
+                case .composition:
+                    // Pro の確かめ（Pro でなければ案内）。作例なしで開く
+                    Task {
+                        await ComposeGuidePresenter.request(
+                            composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) },
+                            auth: auth, store: store, environment: environment, toasts: toasts)
+                    }
                 }
             }
         }
+        // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
+        .composeGuidePresenter(composeLauncher, spotName: nil, onPost: { capture in
+            pendingCapture = capture
+        }, onDismiss: {
+            guard pendingCapture != nil else { return }
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
+            showPhotoUpload = true
+        })
         // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
         .fullScreenCover(isPresented: $showTripImport, onDismiss: {
             pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
@@ -554,6 +577,7 @@ struct RootView: View {
             NavigationStack {
                 UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
                            startPrivate: !pendingTripPhotos.isEmpty,
+                           initialCapture: pendingCapture,
                            // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                            onSaved: { tabRouter.notePosted($0) })
             }

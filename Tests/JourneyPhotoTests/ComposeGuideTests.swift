@@ -193,17 +193,24 @@ final class ComposeGuideTests: XCTestCase {
     }
 
     /// 撮る画面へは、頼み（`Launch`）が持つ並びと始める番号をそのまま渡す。
-    /// `startIndex: 0` や今の帯の並び（`samples:` に `samples`）に戻すと、押した作例から始まらない・ずれる
+    /// `startIndex: 0` や今の帯の並び（`samples:` に `samples`）に戻すと、押した作例から始まらない・ずれる。
+    /// 2026-10-10: 撮る画面を開く口は共通の部品（`ComposeGuidePresenter`）1か所に移した
     func testSpotScreenPassesTheLaunchToTheCamera() throws {
         let spot = try source("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift")
-        XCTAssertTrue(spot.contains("ComposeGuideView(spotName: spot.name, samples: launch.samples, startIndex: launch.start)"),
+        let launcher = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideLauncher.swift")
+        XCTAssertTrue(launcher.contains("ComposeGuideView(spotName: spotName, samples: launch.samples, startIndex: launch.start"),
                       "撮る画面に Launch の並びと始める番号を渡していない")
-        XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
+        XCTAssertEqual(launcher.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
+        XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "撮影スポットの頁が直に開いている")
+        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name)"),
+                      "撮影スポットの頁が共通の部品で開いていない")
+        // 頼みは開く時点の帯の並びで作る
+        XCTAssertTrue(spot.contains("ComposeGuide.Launch(sample: sample, samples: shownSamples)"), "帯の並びで開いていない")
         // 帯の写真は押した1枚の出典で開く。入口のボタンは1枚目
         XCTAssertTrue(spot.contains("openComposeGuide(from: sample.sourceUrl)"), "帯の写真から開いていない")
         XCTAssertTrue(spot.contains("openComposeGuide(from: nil)"), "入口のボタンが1枚目から開いていない")
-        // 開いている間は開き直さない（素早い2回押し）
-        XCTAssertTrue(spot.contains("guard composeLaunch == nil"), "開いている間の2回押しを止めていない")
+        // 開いている間は開き直さない（素早い2回押し・`ComposeGuideLauncherTests.testDoesNotReopenWhileOpen`）
+        XCTAssertTrue(launcher.contains("guard !checking, launch == nil, !showPaywall"), "開いている間の2回押しを止めていない")
     }
 
     /// 撮る画面は渡された番号から始め、映像に指を取らせない

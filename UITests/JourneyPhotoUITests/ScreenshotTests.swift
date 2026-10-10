@@ -427,6 +427,9 @@ final class ScreenshotTests: XCTestCase {
         // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
         // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
+        // 撮る画面の構図は端末に覚える（`CompositionPreferences`）。前の試験で選んだ構図を引きずらないよう、
+        // 13h は既定の三分割で撮る（2026-10-10）
+        app.launchArguments += ["-journey-photo-composition-last", "thirds"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -962,6 +965,85 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+    }
+
+    /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
+    /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。起動の鍵（`-JPComposeGuidePreview`・Debug のみ）で
+    /// Pro の確かめを飛ばす。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、線は鍵があるときだけ重なる。
+    ///
+    /// 入口・画面が出なければ撮らずに抜ける（この試験の決まり）。**出たのに中身が違えば落とす**
+    /// （作例なしなのに上の札がある・構図の行が無い・選んだ構図にならない）。
+    /// 終わったら三分割に戻す（構図は端末に覚えるので、あとの試験の絵に残さない）
+    func testCapturesCompositionGuide() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-JPComposeGuidePreview", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let entry = app.buttons["post.choice.composition"].firstMatch
+        guard entry.waitForExistence(timeout: 5) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "40b-投稿の選択（構図を重ねて撮るの入口）")
+        guard entry.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "構図を重ねて撮るの入口が 44pt 未満")
+        entry.tap()
+
+        let close = app.buttons["composeGuide.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
+        // 作例なし: 構図の行はある・上の札（作例の番号）と作例の切り替えは無い
+        let row = app.buttons["composeGuide.composition"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "撮る画面に構図の行が無い")
+        XCTAssertFalse(app.descendants(matching: .any)["composeGuide.counter"].firstMatch.exists,
+                       "作例なしなのに作例の番号の札が出ている")
+        XCTAssertFalse(app.buttons["composeGuide.switch"].firstMatch.exists, "作例なしなのに作例の切り替えが出ている")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "13i-構図を重ねて撮る（作例なし）")
+        defer {
+            if close.exists, close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard row.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "構図の行が 44pt 未満")
+        row.tap()
+
+        // 構図のシート。黄金比の段へ飛んでから黄金螺旋を選ぶ
+        let golden = app.buttons["composition.chip.golden"].firstMatch
+        guard golden.waitForExistence(timeout: 5) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "13j-構図のシート")
+        if golden.isHittable { golden.tap() }
+        Thread.sleep(forTimeInterval: 1)
+        let spiral = app.buttons["composition.card.goldenSpiral"].firstMatch
+        var swipes = 0
+        while swipes < 4, !(spiral.exists && spiral.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard spiral.exists, spiral.isHittable else { return }
+        spiral.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("黄金螺旋"), "選んだ構図にならない: \(row.label)")
+        shoot(app, "13k-黄金螺旋を重ねた撮る画面")
+
+        // 三分割に戻す（あとの試験・次の回の絵に残さない）
+        guard row.isHittable else { return }
+        row.tap()
+        let thirds = app.buttons["composition.card.thirds"].firstMatch
+        let chip = app.buttons["composition.chip.classic"].firstMatch
+        if chip.waitForExistence(timeout: 5), chip.isHittable { chip.tap() }
+        Thread.sleep(forTimeInterval: 1)
+        if thirds.waitForExistence(timeout: 5), thirds.isHittable { thirds.tap() }
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// **Pro の案内**（板 63・審査に出す画面写真）。見本の利用者には Pro の案内へ行く口が無い

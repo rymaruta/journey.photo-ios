@@ -12,6 +12,8 @@ struct UploadView: View {
     @State private var showSongPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
+    /// 「構図を重ねて撮る」で撮った1枚を入れたか（一度だけ・2026-10-10）
+    @State private var appliedInitialCapture = false
     /// 「書きかけを捨てて閉じますか？」
     @State private var confirmDiscard = false
     /// 編集画面を開いている写真（帯のサムネを押した）
@@ -46,10 +48,15 @@ struct UploadView: View {
     private let initialPhotos: [ImagePreparer.Prepared]
     /// 非公開で始める（旅の写真から来たとき）。**変えられる**——決めつけない
     private let startPrivate: Bool
+    /// 最初から入れておく、カメラで撮った1枚（投稿のシートの「構図を重ねて撮る」で撮って
+    /// 「投稿」を押したとき・2026-10-10）。帯の「追加」→カメラと同じ道（`UploadViewModel.accept(capture:)`）で入れる
+    private let initialCapture: CameraCapture?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
          initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
+         initialCapture: CameraCapture? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
+        self.initialCapture = initialCapture
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -239,6 +246,7 @@ struct UploadView: View {
             try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
             guard !Task.isCancelled else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
+                || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
                                                  isWorking: model.isWorking) else { return }
             // **開いたときにだけ印を付ける。** 待っている間に閉じた回は印を付けない（次に開いたらまた開く）
@@ -272,6 +280,11 @@ struct UploadView: View {
             if let initialSpot, !appliedInitialSpot {
                 appliedInitialSpot = true
                 model.spot = initialSpot
+            }
+            // 撮った1枚も一度だけ（外したあとに戻さない）
+            if let initialCapture, !appliedInitialCapture {
+                appliedInitialCapture = true
+                model.accept(capture: initialCapture)
             }
         }
         .sheet(isPresented: $showSongPicker) {

@@ -577,3 +577,21 @@ public struct AccessibilityActionKind {
     public static let escape = AccessibilityActionKind()
     public static let magicTap = AccessibilityActionKind()
 }
+
+/// 自前の修飾子（本物の `ViewModifier`・2026-10-10「構図を重ねて撮る」の入口 `ComposeGuidePresenter`）
+@MainActor
+public protocol ViewModifier {
+    associatedtype Body: View
+    typealias Content = _ViewModifier_Content<Self>
+    @ViewBuilder @MainActor func body(content: Self.Content) -> Self.Body
+}
+
+/// 修飾子の中身（本物は `_ViewModifier_Content`）
+public struct _ViewModifier_Content<Modifier: ViewModifier>: View {
+    nonisolated public init() {}
+    public var body: Never { fatalError("模型") }
+}
+
+extension View {
+    public func modifier<M: ViewModifier>(_ m: M) -> ModifiedContent<Self, M> { ModifiedContent() }
+}

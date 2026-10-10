@@ -327,8 +327,10 @@ struct ProBenefit: Identifiable, Equatable {
         [
             ProBenefit(icon: .overlay,
                        title: L("作例を重ねて撮る", "Shoot over a reference"),
-                       body: L("名作の構図をカメラに重ねて、同じ場所から撮れる",
-                               "Overlay a classic composition on your camera and shoot from the same spot")),
+                       // 2026-10-10 判断: 構図を重ねて撮る（投稿のシートの入口・作例なし）もこの特典に入るので、
+                       // 板 63 の文に最小の一言を足した（題は板のまま）
+                       body: L("名作の構図をカメラに重ねて、同じ場所から撮れる。三分割や黄金比の線も",
+                               "Overlay a classic composition on your camera and shoot from the same spot. Thirds, golden ratio and more, too")),
             ProBenefit(icon: .light,
                        title: L("光と天気の知らせ", "Light & weather alerts"),
                        body: L("行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に",
