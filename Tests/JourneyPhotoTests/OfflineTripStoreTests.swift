@@ -35,7 +35,13 @@ final class OfflineTripStoreTests: XCTestCase {
         var failAt: Int?
         var gate: (number: Int, continuation: CheckedContinuation<Void, Never>?)?
         var reachedGate: (() -> Void)?
+        /// 地図を撮れない（`MKMapSnapshotter` の失敗）
+        var mapFails = false
+        var overviewFails = false
+        var mapCalls = 0
     }
+
+    private struct MapFailed: Error {}
 
     private func sources(_ fake: Fake) -> OfflineTripSources {
         OfflineTripSources(
@@ -59,8 +65,15 @@ final class OfflineTripStoreTests: XCTestCase {
                 fake.downloads.append(name)
                 return Data(repeating: 1, count: 1_000)
             },
-            stopMap: { _ in Data(repeating: 2, count: 500) },
-            overviewMap: { _ in Data(repeating: 3, count: 700) })
+            stopMap: { _ in
+                fake.mapCalls += 1
+                if fake.mapFails { throw MapFailed() }
+                return Data(repeating: 2, count: 500)
+            },
+            overviewMap: { _ in
+                if fake.overviewFails { throw MapFailed() }
+                return Data(repeating: 3, count: 700)
+            })
     }
 
     private func waitUntil(_ store: OfflineTripStore, timeout: TimeInterval = 5,
@@ -261,5 +274,104 @@ final class OfflineTripStoreTests: XCTestCase {
         store.deleteAll()
         XCTAssertTrue(store.saved.isEmpty)
         XCTAssertEqual(store.totalBytes, 0)
+    }
+
+    /// 座標のある場所（周りの地図を撮る）
+    private func stopsWithCoords(_ p: TripPlan) -> [OfflineTripPlan.Stop] {
+        stops(p).map {
+            OfflineTripPlan.Stop(number: $0.number, dayIndex: $0.dayIndex, date: $0.date, key: $0.key, item: $0.item,
+                                 name: $0.name, address: $0.address, coords: Photo.Coords(lat: 38.2, lng: 140.3),
+                                 note: $0.note, light: $0.light)
+        }
+    }
+
+    /// 🔴 **場所の地図を撮れなかったら、その場所を「済んだ」にしない**（2026-10-09）。
+    /// 「描くものが無い」の nil と同じに扱っていた頃は、地図なしで記録し、続きから保存しても取り直さなかった
+    func testStopMapFailureStopsSaveAndResumeRefetches() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        fake.mapFails = true
+        let p = plan(2)
+        let planned = stopsWithCoords(p)
+        store.save(plan: p, stops: planned, sources: sources(fake))
+        await waitUntil(store) { !$0.isRunning("plan-1") }
+        XCTAssertNil(store.manifest("plan-1"), "地図の無いまま保存済みにした")
+        XCTAssertEqual(store.status("plan-1").partial, .init(done: 0, total: 2))
+        XCTAssertEqual(store.status("plan-1").error, OfflineTripText.failureMessage(.unknown))
+
+        fake.mapFails = false
+        store.save(plan: p, stops: planned, sources: sources(fake))
+        await waitUntil(store) { $0.manifest("plan-1") != nil }
+        let m = try XCTUnwrap(store.manifest("plan-1"))
+        XCTAssertEqual(m.days.first?.stops.map(\.map), ["m1.jpg", "m2.jpg"], "続きから保存で地図を取り直す")
+    }
+
+    /// 🔴 **旅全体の地図を撮れなかったら、保存済みにしない**（続きから保存で取り直す）
+    func testOverviewMapFailureStopsSaveAndResumeRefetches() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        fake.overviewFails = true
+        let p = plan(2)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { !$0.isRunning("plan-1") }
+        XCTAssertNil(store.manifest("plan-1"))
+        XCTAssertEqual(store.status("plan-1").partial, .init(done: 2, total: 2))
+
+        fake.overviewFails = false
+        fake.downloads = []
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { $0.manifest("plan-1") != nil }
+        XCTAssertEqual(store.manifest("plan-1")?.overviewMap, "overview.jpg")
+        XCTAssertTrue(fake.downloads.isEmpty, "済んだ場所は使い回す: \(fake.downloads)")
+    }
+
+    /// 🔴 **途中のもの（`<旅>.partial/`）も容量に数え、「すべて削除」で消せる**（2026-10-09）。
+    /// 保存済みの旅が無いと「すべて削除」が出ず、途中のものが端末に残り続けた
+    func testPartialCountsInTotalAndDeleteAllRemovesIt() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        fake.failAt = 2
+        let p = plan(3)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { !$0.isRunning("plan-1") }
+        XCTAssertTrue(store.saved.isEmpty)
+        let userDir = root.appendingPathComponent(OfflineTripStore.hex("u1"))
+        let onDisk = OfflineTripBytes.count(in: userDir)
+        XCTAssertGreaterThan(onDisk, 2_000, "1か所目の作例が途中に残る")
+        XCTAssertEqual(store.totalBytes, onDisk)
+        XCTAssertTrue(store.hasLocalData, "保存済みが無くても「すべて削除」を出す")
+        // 開き直しても同じ
+        let reopened = OfflineTripStore(root: root, defaults: defaults)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.totalBytes, onDisk)
+
+        reopened.deleteAll()
+        XCTAssertEqual(reopened.totalBytes, 0)
+        XCTAssertFalse(reopened.hasLocalData)
+        XCTAssertEqual(OfflineTripBytes.count(in: userDir), 0)
+    }
+
+    /// 🔴 **プランが無くなった旅の途中のものは、一覧が取れたときに片づける**。プランのある旅・保存済みの旅は残す
+    func testRemoveOrphanPartialsKeepsLivePlans() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        fake.failAt = 2
+        let p = plan(3)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { !$0.isRunning("plan-1") }
+        let saved = TripPlan(planId: "plan-2", title: "仙台", startDate: "2026-10-11", endDate: "2026-10-11",
+                             days: [TripDay(items: [.spot(spotId: "sp_9", note: nil)])])
+        fake.failAt = nil
+        store.save(plan: saved, stops: stops(saved), sources: sources(fake))
+        await waitUntil(store) { $0.manifest("plan-2") != nil }
+
+        store.removeOrphanPartials(keeping: ["plan-1"])
+        XCTAssertEqual(store.status("plan-1").partial?.done, 1, "プランのある旅の途中のものは残す")
+
+        store.removeOrphanPartials(keeping: [])
+        XCTAssertNil(store.status("plan-1").partial)
+        XCTAssertEqual(store.partialBytes, 0)
+        XCTAssertNotNil(store.manifest("plan-2"), "保存済みの旅は自動では消さない")
+        XCTAssertEqual(store.totalBytes, store.manifest("plan-2")?.bytes)
     }
 }

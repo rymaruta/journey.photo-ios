@@ -159,6 +159,40 @@ final class ProPurchaseTests: XCTestCase {
         XCTAssertLessThan(busy.lowerBound, load.lowerBound)
     }
 
+    /// 🔴 **読み込みの最中に来た `loadProducts(force: true)`（購入の口）は、走っている読み込みを待つ**。
+    /// すぐ戻っていた頃は、設定の節が商品を読んでいる最中に購入を押すと、読み終わる前に
+    /// 「App Store に接続できませんでした」が出ていた
+    @MainActor
+    func testLoadProductsWaitsForLoadInFlight() async {
+        final class Box { var calls = 0; var release: CheckedContinuation<Void, Never>?; var secondDone = false }
+        let box = Box()
+        let store = StoreService(prefix: "com.example.test")
+        store.fetchProducts = { _ in
+            box.calls += 1
+            await withCheckedContinuation { box.release = $0 }
+            return []
+        }
+        let first = Task { await store.loadProducts() }
+        while box.release == nil { await Task.yield() }
+        XCTAssertEqual(store.loadState, .loading)
+        let second = Task { await store.loadProducts(force: true); box.secondDone = true }
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertFalse(box.secondDone, "読み込みが終わる前に戻った")
+        box.release?.resume()
+        await first.value
+        await second.value
+        XCTAssertTrue(box.secondDone)
+        XCTAssertEqual(box.calls, 1, "同じ読み込みを待つ（二重に取りに行かない）")
+        XCTAssertEqual(store.loadState, .failed)
+        // 終わったあとの force は読み直す
+        box.release = nil
+        let third = Task { await store.loadProducts(force: true) }
+        while box.release == nil { await Task.yield() }
+        box.release?.resume()
+        await third.value
+        XCTAssertEqual(box.calls, 2)
+    }
+
     /// 🔴 **裏から戻るたびに、渡し損ねた購入を送り直す**（案内の「アプリを開いたときに自動でやり直します」）。
     /// ログインした時と起動し直した時だけだった頃は、閉じずに戻しても Pro にならなかった
     func testRedeliversUnfinishedWhenReturningToForeground() throws {
@@ -301,6 +335,19 @@ final class ProPurchaseTests: XCTestCase {
     /// Pro だが、この端末の App Store では読めない（別の Apple ID など）
     func testSettingsDetailProWithoutState() {
         XCTAssertEqual(ProStatusText.settingsDetail(isPro: true, state: nil), "App Store で管理")
+    }
+
+    /// 🔴 **プロフィールが読めていない（nil）ときは案内を出さない**——払っている人に Pro の案内を見せない。
+    /// 押すと App Store の管理、2行目は値段ではなく「App Store で管理」
+    func testSettingsRowWhenProfileUnknown() {
+        XCTAssertEqual(ProStatusText.settingsAction(isPro: nil), .manage)
+        XCTAssertEqual(ProStatusText.settingsAction(isPro: true), .manage)
+        XCTAssertEqual(ProStatusText.settingsAction(isPro: false), .paywall)
+        XCTAssertEqual(ProStatusText.settingsDetail(isPro: nil, state: nil, monthlyPrice: "$4.99"), "App Store で管理")
+        // 設定の節がこの見分けを通る（読めていないのを「Pro でない」に倒さない）
+        let section = (try? source("Sources/JourneyPhoto/Features/Pro/ProSettingsSection.swift")) ?? ""
+        XCTAssertTrue(section.contains("ProStatusText.settingsAction(isPro: knownPro)"))
+        XCTAssertTrue(section.contains("settingsDetail(isPro: knownPro"))
     }
 
     func testSettingsDetailNotPro() {

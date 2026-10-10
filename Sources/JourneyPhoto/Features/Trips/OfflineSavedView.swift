@@ -47,7 +47,10 @@ struct OfflineSavedView: View {
                             }
                         }
                     }
+                }
 
+                // 保存済みが無くても、途中のもの（止めた保存・プランを消した旅）が残っていれば出す
+                if offline.hasLocalData {
                     JPCard {
                         Button {
                             removingAll = true
@@ -148,13 +151,13 @@ struct OfflineSavedView: View {
     }
 }
 
-/// 設定の「Pro」の節の4行目（板 43・72e の注記）。**保存した旅があるか Pro のときだけ**出す
+/// 設定の「Pro」の節の4行目（板 43・72e の注記）。**端末に保存した旅（途中のものを含む）があるか Pro のときだけ**出す
 struct OfflineSavedSettingsRow: View {
     let isPro: Bool
     @EnvironmentObject private var offline: OfflineTripStore
 
     var body: some View {
-        if isPro || !offline.saved.isEmpty {
+        if isPro || offline.hasLocalData {
             JPCardDivider()
             NavigationLink { OfflineSavedView() } label: {
                 JPRowLabel(title: L("保存した旅", "Offline trips"),
