@@ -955,8 +955,9 @@ final class ScreenshotTests: XCTestCase {
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
         tabBar.buttons.element(boundBy: 4).tap()
         guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else { return }
-        // 上の写真（朝の公開写真）と値段が届くのを少し待つ
-        Thread.sleep(forTimeInterval: 4)
+        // 上の写真（朝の公開写真・写真の一覧を読んでから選ぶ）と値段が届くのを待つ。
+        // run 389 は 4 秒で撮り、上の写真がまだ黒かった
+        Thread.sleep(forTimeInterval: 10)
         shoot(app, "81-Pro の案内")
         // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
         let restore = app.buttons["paywall.restore"].firstMatch
