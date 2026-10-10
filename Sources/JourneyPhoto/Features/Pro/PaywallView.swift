@@ -358,9 +358,17 @@ enum ProPaywallStyle {
     /// 選んでいない札の縁（板: #333）
     static let planBorder = ProMarkColors.color(0x333333)
 
-    /// 上の写真に使う1枚: 朝（5〜9時）に撮った公開写真。横長を先に、無ければ朝の写真のどれか
+    /// 上の写真に使う1枚: 朝（5〜9時）に撮った公開写真。横長を先に、無ければ朝の写真のどれか。
+    /// **朝の写真が1枚も無ければ、時間帯を問わず**同じ順で選ぶ（撮影時刻の無い写真が多く、
+    /// 朝に絞ると地の色だけになりやすい・2026-10-10 owner 承認）
     static func heroPhoto(_ photos: [Photo]) -> Photo? {
-        let morning = photos.filter { ShootingTime.dayPart(of: $0) == .morning && $0.detailImageURL != nil }
-        return morning.first { ($0.width ?? 0) > ($0.height ?? 0) } ?? morning.first
+        let usable = photos.filter { $0.detailImageURL != nil }
+        let morning = usable.filter { ShootingTime.dayPart(of: $0) == .morning }
+        return pick(morning) ?? pick(usable)
+    }
+
+    /// 横長を先に、無ければ最初の1枚
+    private static func pick(_ photos: [Photo]) -> Photo? {
+        photos.first { ($0.width ?? 0) > ($0.height ?? 0) } ?? photos.first
     }
 }
