@@ -53,6 +53,9 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
+    /// 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`）。出したか・出ているか
+    @State private var previewPaywallShown = false
+    @State private var showPreviewPaywall = false
     /// 明朝 26 の名前の行の高さの見込み（文字サイズの設定で伸びる）
     @ScaledMetric(relativeTo: .title) private var nameLineHeight: CGFloat = 36
 
@@ -155,6 +158,13 @@ struct MyPageView: View {
             if let profile = model.profile {
                 NameSideBadgeView(profile: profile)
             }
+        }
+        // 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`・Debug のみ・1度だけ）
+        .fullScreenCover(isPresented: $showPreviewPaywall) { PaywallView() }
+        .task {
+            guard PreviewSession.opensPaywall, !previewPaywallShown else { return }
+            previewPaywallShown = true
+            showPreviewPaywall = true
         }
         // 「見せない」が変わったら、**画面に出ている間だけ**写しを取り直す
         // （詳細を開いている間に取り直すと押した元が消えて閉じる）。人が替わった回も

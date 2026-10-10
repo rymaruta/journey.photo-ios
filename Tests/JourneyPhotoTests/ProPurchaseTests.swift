@@ -395,6 +395,37 @@ final class ProPurchaseTests: XCTestCase {
         let free = try profile(#"{"userId":"u2","pro":false}"#)
         XCTAssertEqual(ProStatusText.nameSideDetail(free), "バッジなし")
     }
+
+    // MARK: - 画面写真の試験だけの Pro の案内（`-JPPreviewPaywall`）
+
+    /// **見本の利用者で入っているときだけ**効く（ふつうの利用者・ログインしていない人には出ない）。
+    /// Release では `#if DEBUG` の外＝必ず false
+    func testPreviewPaywallOnlyForThePreviewUser() {
+        let defaults = UserDefaults.standard
+        defer {
+            for key in [PreviewSession.defaultsKey, PreviewSession.paywallKey] { defaults.removeObject(forKey: key) }
+        }
+        defaults.removeObject(forKey: PreviewSession.defaultsKey)
+        defaults.removeObject(forKey: PreviewSession.paywallKey)
+        XCTAssertFalse(PreviewSession.opensPaywall, "何も渡さなければ出さない")
+        defaults.set(true, forKey: PreviewSession.paywallKey)
+        XCTAssertFalse(PreviewSession.opensPaywall, "見本の利用者で入っていなければ効かない")
+        defaults.set("me", forKey: PreviewSession.defaultsKey)
+        XCTAssertTrue(PreviewSession.opensPaywall)
+        defaults.set(false, forKey: PreviewSession.paywallKey)
+        XCTAssertFalse(PreviewSession.opensPaywall)
+    }
+
+    /// 出し分けは `PreviewSession.paywallKey` の1か所（綴りを2か所に持たない）。設定の Pro の行の行き先は変えない
+    func testPreviewPaywallIsWiredOnlyThroughPreviewSession() throws {
+        XCTAssertEqual(PreviewSession.paywallKey, "JPPreviewPaywall")
+        let session = try source("Sources/JourneyPhoto/Core/Auth/PreviewSession.swift")
+        XCTAssertTrue(session.contains("static var opensPaywall: Bool {\n        #if DEBUG"), "Debug のみ")
+        let myPage = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
+        XCTAssertTrue(myPage.contains("guard PreviewSession.opensPaywall, !previewPaywallShown else { return }"), "1度だけ")
+        let settings = try source("Sources/JourneyPhoto/Features/Pro/ProSettingsSection.swift")
+        XCTAssertFalse(settings.contains("opensPaywall"), "設定の行の行き先（settingsAction）は変えない")
+    }
 }
 
 /// サポーターの印（プロフィールの `supporter`）とサポーター証の文字（板 64）
