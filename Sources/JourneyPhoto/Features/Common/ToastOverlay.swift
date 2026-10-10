@@ -12,8 +12,7 @@ struct ToastOverlay: View {
     var body: some View {
         if let message = toasts.current {
             HStack(spacing: 8) {
-                Image(systemName: message.kind == .success
-                      ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                Image(systemName: Self.symbol(message.kind))
                 Text(message.text)
                     .font(.subheadline)
                     .lineLimit(2)
@@ -30,6 +29,15 @@ struct ToastOverlay: View {
             .transition(.opacity)
             .id(message.id)
             .accessibilityIdentifier("toast")
+        }
+    }
+
+    /// 知らせの印。案内（`info`）に成功の ✓ や失敗の △ を付けない
+    nonisolated static func symbol(_ kind: ToastCenter.Message.Kind) -> String {
+        switch kind {
+        case .success: return "checkmark.circle.fill"
+        case .failure: return "exclamationmark.triangle.fill"
+        case .info: return "info.circle.fill"
         }
     }
 }

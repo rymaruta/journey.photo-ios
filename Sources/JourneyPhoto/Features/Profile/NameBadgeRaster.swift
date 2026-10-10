@@ -19,10 +19,12 @@ enum NameBadgeRaster {
     /// 輪郭の立て方（比べた案 C の作り方 `UnsharpMask(radius=0.8, percent=60)` と同じ）
     static let sharpenRadius: Double = 0.8
     static let sharpenIntensity: Double = 0.6
-    /// 作る絵の上限（大きい文字の設定でも 256px あれば足りる。元の絵より大きくはしない）
+    /// 作る絵の上限（大きい文字の設定でも 256px あれば足りる。元の絵より大きくはしない）。
+    /// 名前の横の画面の「持っているバッジ」56pt × 3倍 = 168px も収まる（2026-10-09 確かめた）
     static let maxPixels = 256
-    /// 覚えておく枚数（名前の横は画面に数枚・倍率と文字の大きさの組み合わせぶん）
-    static let cacheLimit = 48
+    /// 覚えておく枚数。名前の横（画面に数枚）に加え、名前の横の画面の2つの格子（16枚前後）・棚・
+    /// お知らせのメダルも同じ絵を使う（2026-10-09）ので 48 → 64。168px で1枚 約 110KB、満杯で 7MB ほど
+    static let cacheLimit = 64
 
     /// 縮めた先の一辺（px）。点の大きさ × 画面の倍率を丸める。値が壊れていれば nil
     static func pixelSide(points: Double, scale: Double) -> Int? {
@@ -40,6 +42,41 @@ enum NameBadgeRaster {
         cache.object(forKey: cacheKey(image: image, pixels: pixels) as NSString)?.image
     }
 
+    /// 縮めた絵を画面の処理の外で作る。**同じ鍵（絵の名前と画素の数）を同時に頼まれたら1回だけ作る**
+    /// （名前の横の画面の格子・お知らせで同じ絵のマスが並ぶ。2026-10-09 確かめ役の指摘）
+    ///
+    /// 🔴 **作るのは専用の1本の列（`renderQueue`）で、1枚ずつ。** Swift の並行処理の共有の糸（協調スレッドの
+    /// 一団）の上では作らない（2026-10-10 Mac run 385: 格子・お知らせへ広げたら、名前の横の画面で 10 枚以上を
+    /// `Task.detached` の中で同時に作り、重い同期の仕事が共有の糸を全部ふさいだ。縮めた絵は1枚も出ず、
+    /// `GET /user/badges` の続きも走らず「決める」が押せないまま、画面写真の試験は UI の問い合わせが
+    /// 時間切れになった）。待つ側は継続（continuation）で待つだけで、糸を握らない
+    static func shared(named name: String, pixels: Int) async -> UIImage? {
+        if let hit = cached(image: name, pixels: pixels) { return hit }
+        let box = await inflight.value(for: cacheKey(image: name, pixels: pixels)) {
+            await onRenderQueue { image(named: name, pixels: pixels).map(Box.init) }
+        }
+        return box?.image
+    }
+
+    /// 縮める仕事の専用の列（直列）。共有の糸をふさがず、同時に何枚も作らない
+    private static let renderQueue = DispatchQueue(label: "photo.journey.badge-raster", qos: .userInitiated)
+    private static let renderQueueKey = DispatchSpecificKey<Bool>()
+    private static let markRenderQueue: Void = { renderQueue.setSpecific(key: renderQueueKey, value: true) }()
+
+    /// いま専用の列の上か（テスト用）
+    static var isOnRenderQueue: Bool { DispatchQueue.getSpecific(key: renderQueueKey) == true }
+
+    /// 重い同期の仕事を専用の列で走らせ、終わるまで（糸を握らずに）待つ
+    static func onRenderQueue<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        _ = markRenderQueue
+        return await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
+            renderQueue.async { continuation.resume(returning: work()) }
+        }
+    }
+
+    /// 作っている途中の仕事（鍵ごと）
+    private static let inflight = InflightTasks<Box?>()
+
     /// 縮めた絵。覚えていればそれを、無ければ作って覚える。**重いので画面の処理の外で呼ぶ**
     static func image(named name: String, pixels: Int) -> UIImage? {
         if let hit = cached(image: name, pixels: pixels) { return hit }
@@ -50,7 +87,7 @@ enum NameBadgeRaster {
 
     // MARK: - 作る
 
-    private final class Box: @unchecked Sendable {
+    final class Box: @unchecked Sendable {
         let image: UIImage
         init(_ image: UIImage) { self.image = image }
     }
@@ -93,4 +130,23 @@ enum NameBadgeRaster {
                                                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)) else { return nil }
         return UIImage(cgImage: made)
     }
+}
+
+/// 同じ鍵の仕事を1つにまとめる。作っている途中に同じ鍵が頼まれたら、その仕事の答えを待って分ける。
+/// 終わったら忘れる（できた絵は `NameBadgeRaster` の覚えに残る）
+actor InflightTasks<Value: Sendable> {
+    private var running: [String: Task<Value, Never>] = [:]
+
+    /// `make` は待つだけの仕事にする（重い同期の仕事は `NameBadgeRaster.onRenderQueue` で専用の列へ）
+    func value(for key: String, make: @escaping @Sendable () async -> Value) async -> Value {
+        if let task = running[key] { return await task.value }
+        let task = Task { await make() }
+        running[key] = task
+        let value = await task.value
+        running[key] = nil
+        return value
+    }
+
+    /// 作っている途中の数（テスト用）
+    var runningCount: Int { running.count }
 }

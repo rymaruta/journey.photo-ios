@@ -559,7 +559,7 @@ final class ProBadgeTests: XCTestCase {
             names.insert(BadgeCatalog.smallImage(key, tier: 1))
         }
         for tier in 1...3 { names.insert(BadgeCatalog.largeImage("supporterYear", tier: tier)) }
-        for item in ProChapters.lockedItems(owned: BadgeSet(), now: Date()) { names.insert(item.smallImage) }
+        for item in ProChapters.lockedItems(owned: BadgeSet(), now: Date()) { names.insert(item.image) }
         names.insert(BadgeCatalog.Metal.brass.reverseImage)
         names.insert(BadgeCatalog.Metal.brass.edgeImage)
         let assets = root.appendingPathComponent("Sources/JourneyPhoto/Assets.xcassets")

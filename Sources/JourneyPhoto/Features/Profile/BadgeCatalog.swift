@@ -119,7 +119,9 @@ enum BadgeCatalog {
         }
     }
 
-    /// 小（192px・Pro の章は 128px）。選ぶ画面・お知らせ（**名前の横には使わない**・`nameSideImage`）。
+    /// 小（192px・Pro の章は 128px）。**名前の横・選ぶ画面の格子・棚の「名前の横に飾る」・お知らせには
+    /// 使わない**（2026-10-09 判断: 大きい絵を `RasterBadgeArt` で表示の画素ちょうどに縮める。`-s` は
+    /// 引き伸ばしでぼやけ、図柄も簡略版だった）。
     /// 続けた年のメダルは小さい絵を持たないので大きい絵を縮めて使う
     static func smallImage(_ key: String, tier: Int) -> String {
         key == "supporterYear" ? baseImage(key, tier) : baseImage(key, tier) + "-s"

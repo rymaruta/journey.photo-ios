@@ -78,7 +78,13 @@ struct UserProfile: Decodable, Equatable, Identifiable {
         return displayBadge?.value
     }
 
-    var isPro: Bool { pro?.value ?? false }
+    var isPro: Bool {
+        #if DEBUG
+        // UI テストの見本の Pro（`PreviewSession.isPro`・入っている本人だけ）
+        if userId == PreviewSession.userId, PreviewSession.isPro { return true }
+        #endif
+        return pro?.value ?? false
+    }
 
     /// サポーターの印（番号・申し込んだ日・続けた月の数・第2段階）。公開。
     /// **やめても残る**——Pro かどうかは `isPro` で見る

@@ -317,11 +317,8 @@ private struct NotificationRow: View {
         if notification.kind == .badge, let key = notification.key {
             // 新しいメダル: 顔の代わりにメダルの絵（44pt・板 15）。押す先は行の本体と同じ棚なので
             // ここは押せないまま（同じ行き先のボタンを2つ並べない）
-            Image(BadgeCatalog.smallImage(key, tier: notification.tier ?? 1))
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 44, height: 44)
+            // 大きい絵を表示の画素ちょうどに縮める（名前の横と同じ・2026-10-09 判断。`-s` の引き伸ばしはぼやけた）
+            RasterBadgeArt(image: BadgeCatalog.largeImage(key, tier: notification.tier ?? 1), side: 44)
                 .shadow(color: Color.black.opacity(0.7), radius: 1.5, x: 0, y: 1)
                 .accessibilityHidden(true)
         } else {

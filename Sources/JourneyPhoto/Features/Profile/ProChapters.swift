@@ -17,6 +17,12 @@ import Foundation
 ///
 /// 第3段階（機能ができてから）配る。鍵はまだ無い——名前の横の画面の「PRO 限定」に
 /// 「まだ持っていない」絵として並べるだけ（板 BadgePicker のとおり）。
+///
+/// 絵は季節の章と同じ作りの大きい絵 600px（`medal-pro-dawn`・`-compose`・`-summit`）。板の
+/// ProBadges の絵をそのまま取り込んだ（2026-10-10 owner「この辺のバッジも実際のを縮小したのにして」）。
+/// 板の秋 2026 の絵がアプリの `medal-pro-autumn-2026` とバイトまで同じなので、同じ出どころ。
+/// 円の割合も測って季節の章と同じ（中心の行で 91.7%・列で 93.0%＝季節の章と同じ値）なので
+/// `discRatio` 0.91 のまま
 enum ProChapters {
 
     /// 名前の横で円が占める割合（素材の README: 91%）
@@ -122,7 +128,8 @@ enum ProChapters {
         let ja: String
         let en: String
         var name: String { L(ja, en) }
-        var smallImage: String { "medal-pro-\(id)-s" }
+        /// 大きい絵（600px・季節の章と同じ作り・2026-10-10 に板から取り込んだ）。表示の画素ちょうどに縮めて出す
+        var largeImage: String { "medal-pro-\(id)" }
     }
 
     static let featureChapters: [FeatureChapter] = [
@@ -133,9 +140,18 @@ enum ProChapters {
 
     /// 名前の横の画面の「PRO 限定」に並べる1つ
     struct LockedItem: Equatable, Identifiable {
+        enum Kind: Equatable {
+            case supporter
+            case season(Chapter)
+            case feature
+        }
+
         let id: String
         let name: String
-        let smallImage: String
+        let kind: Kind
+        /// 出す絵。サポーター・季節の章は**大きい絵**（表示の画素ちょうどに縮めて出す・板 BadgePicker）、
+        /// 機能の章も大きい絵（2026-10-10 に板から取り込んだ）
+        let image: String
     }
 
     /// 「PRO 限定」の並び（板 BadgePicker: サポーター → 季節の章4つ → 機能の章3つ）。
@@ -143,15 +159,58 @@ enum ProChapters {
     static func lockedItems(owned badges: BadgeSet, now: Date = Date()) -> [LockedItem] {
         var items: [LockedItem] = []
         if badges["supporter"] == nil {
-            items.append(LockedItem(id: "supporter", name: BadgeCatalog.name("supporter"),
-                                    smallImage: BadgeCatalog.smallImage("supporter", tier: 1)))
+            items.append(LockedItem(id: "supporter", name: BadgeCatalog.name("supporter"), kind: .supporter,
+                                    image: BadgeCatalog.largeImage("supporter", tier: 1)))
         }
         for chapter in upcoming(now: now) where hasArt(chapter) && badges[chapter.key] == nil {
-            items.append(LockedItem(id: chapter.key, name: chapter.shortName, smallImage: chapter.imageBase + "-s"))
+            items.append(LockedItem(id: chapter.key, name: chapter.shortName, kind: .season(chapter),
+                                    image: chapter.imageBase))
         }
         for feature in featureChapters {
-            items.append(LockedItem(id: feature.id, name: feature.name, smallImage: feature.smallImage))
+            items.append(LockedItem(id: feature.id, name: feature.name, kind: .feature, image: feature.largeImage))
         }
         return items
+    }
+
+    // MARK: - 届く時期（Pro の人が「PRO 限定」の章を押したとき・2026-10-09）
+
+    /// 季節の始まりの月（日本時間）。春 3月・夏 6月・秋 9月・冬 12月（**冬は12月の年**）
+    static func startMonth(_ season: Season) -> Int {
+        switch season {
+        case .spring: return 3
+        case .summer: return 6
+        case .autumn: return 9
+        case .winter: return 12
+        }
+    }
+
+    private static let englishMonths = ["January", "February", "March", "April", "May", "June", "July",
+                                        "August", "September", "October", "November", "December"]
+
+    /// Pro の人がまだ届いていない章を押したときの一言（知らせと読み上げに同じ文を使う）。
+    ///
+    /// - 季節の章: 「2026年12月から届きます」。もう始まっている季節は「いまの季節の章です。まもなく届きます」
+    ///   （2026-10-09 判断: 過ぎた月を「から届きます」と言わない）
+    /// - 機能の章: 「これから配ります」
+    /// - サポーター章: 「まもなく届きます」（この一言は Pro の人にしか出ない——Pro でない人は押すと
+    ///   Pro の案内。「Pro になると届きます」は Pro の人には話が合わないのでやめた・2026-10-09 確かめ役の指摘）
+    static func arrivalNote(_ item: LockedItem, now: Date = Date(), timeZone: TimeZone = japan) -> String {
+        switch item.kind {
+        case .supporter:
+            return L("まもなく届きます", "It arrives soon")
+        case .feature:
+            return L("これから配ります", "Coming later")
+        case .season(let chapter):
+            let month = startMonth(chapter.season)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            let c = calendar.dateComponents([.year, .month], from: now)
+            let nowIndex = (c.year ?? 0) * 12 + (c.month ?? 1)
+            if nowIndex >= chapter.year * 12 + month {
+                return L("いまの季節の章です。まもなく届きます", "This season's chapter. It arrives soon")
+            }
+            return L("\(chapter.year)年\(month)月から届きます",
+                     "Arrives from \(englishMonths[month - 1]) \(chapter.year)")
+        }
     }
 }
