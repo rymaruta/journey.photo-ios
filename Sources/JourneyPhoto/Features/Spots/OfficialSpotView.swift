@@ -57,7 +57,10 @@ struct OfficialSpotView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var store: StoreService
     /// 「作例を重ねて撮る」（Pro）の撮る画面・Pro の案内・Pro かを確かめている最中
-    @State private var showComposeGuide = false
+    /// 撮る画面を開く頼み（始める作例つき・2026-10-10）。nil なら閉じている
+    @State private var composeLaunch: ComposeGuide.Launch?
+    /// Pro の案内を経て開くときに、始める作例を覚えておく（案内で Pro になったら同じ1枚から）
+    @State private var composeStartSample: URL?
     @State private var showComposePaywall = false
     @State private var checkingPro = false
     /// 案内を開いたときの「渡し終えた回数」（閉じたときに増えていれば Pro になった）
@@ -451,13 +454,14 @@ struct OfficialSpotView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot.official.samples")
-            .fullScreenCover(isPresented: $showComposeGuide) {
-                ComposeGuideView(spotName: spot.name, samples: samples)
+            .fullScreenCover(item: $composeLaunch) { launch in
+                ComposeGuideView(spotName: spot.name, samples: samples,
+                                 startIndex: ComposeGuide.startIndex(of: launch.sample, in: samples))
             }
             .fullScreenCover(isPresented: $showComposePaywall, onDismiss: {
                 // 案内で Pro になったら、そのまま撮る画面へ（`NameSideBadgeView` と同じ見分け方）
                 guard store.deliveredRevision != deliveredAtComposePaywall else { return }
-                Task { await openComposeGuide() }
+                Task { await openComposeGuide(from: composeStartSample) }
             }) {
                 PaywallView()
             }
@@ -469,7 +473,8 @@ struct OfficialSpotView: View {
     /// 作例の帯の下の入口。黒地の上の行（地は surface・白の字）。合図の「PRO」とカメラの記号だけ真鍮
     /// （黒地の上の合図・CLAUDE.md）。**作例が1枚も無いスポットでは出さない**（呼ぶ側）
     private var composeEntry: some View {
-        Button { Task { await openComposeGuide() } } label: {
+        // 入口のボタンは今までどおり1枚目から
+        Button { Task { await openComposeGuide(from: nil) } } label: {
             HStack(spacing: 10) {
                 Image(systemName: "camera.viewfinder")
                     .font(.system(size: 18, weight: .medium))
@@ -505,11 +510,13 @@ struct OfficialSpotView: View {
         .accessibilityIdentifier("spot.official.composeGuide")
     }
 
-    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める
-    private func openComposeGuide() async {
+    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める。
+    /// `sample` は始める作例の出典のページ（作例の帯で押した1枚・入口のボタンは nil＝1枚目）
+    private func openComposeGuide(from sample: URL?) async {
         guard !checkingPro else { return }
+        composeStartSample = sample
         if ComposeGuideAccess.previewUnlocked {
-            showComposeGuide = true
+            composeLaunch = ComposeGuide.Launch(sample: sample)
             return
         }
         checkingPro = true
@@ -518,7 +525,7 @@ struct OfficialSpotView: View {
         let isPro: Bool? = signedIn ? (try? await environment.profiles.myProfile())?.isPro : nil
         switch ComposeGuide.destination(signedIn: signedIn, isPro: isPro) {
         case .camera:
-            showComposeGuide = true
+            composeLaunch = ComposeGuide.Launch(sample: sample)
         case .paywall:
             deliveredAtComposePaywall = store.deliveredRevision
             showComposePaywall = true
@@ -527,19 +534,31 @@ struct OfficialSpotView: View {
         }
     }
 
-    /// 作例の1枚: 写真（縦横比のまま・切り抜かない）と、その下の出典の1行
+    /// 作例の1枚: 写真（縦横比のまま・切り抜かない）と、その下の出典の1行。
+    ///
+    /// 2026-10-10 判断: **写真を押すと、その作例から「作例を重ねて撮る」を開く**（owner の報告
+    /// 「作例の1枚目しか重ねられない」・TestFlight 1.0.84）。写真には押す動きが無かったので奪うものは無い。
+    /// Pro でない人には入口のボタンと同じく Pro の案内（`openComposeGuide`）。出典の1行は別の当たりのまま
     private func sampleCard(_ sample: SpotSample) -> some View {
         let size = SpotSampleText.frame(aspectRatio: sample.aspectRatio)
         return VStack(alignment: .leading, spacing: 6) {
-            RemoteImage(url: sample.src, contentMode: .fit, onSettled: { loaded in
-                // 読めなかった1枚（Commons で消えた・差し替わった）は出典ごと隠す
-                if !loaded { brokenSamples.insert(sample.sourceUrl) }
-            })
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            Button { Task { await openComposeGuide(from: sample.sourceUrl) } } label: {
+                RemoteImage(url: sample.src, contentMode: .fit, onSettled: { loaded in
+                    // 読めなかった1枚（Commons で消えた・差し替わった）は出典ごと隠す
+                    if !loaded { brokenSamples.insert(sample.sourceUrl) }
+                })
+                .frame(width: size.width, height: size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(checkingPro)
             .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isImage)
+            .accessibilityAddTraits([.isImage, .isButton])
             .accessibilityLabel(sample.accessibilityLabel)
+            .accessibilityHint(L("Pro の機能です。この作例を重ねて撮ります",
+                                 "A Pro feature. Shoot with this example overlaid on the camera view."))
+            .accessibilityIdentifier("spot.official.sampleCard")
             sampleCreditLink(sample, width: size.width)
         }
     }

@@ -161,14 +161,26 @@ struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
 
     func makeUIView(context: Context) -> PreviewView {
-        let view = PreviewView()
-        view.backgroundColor = .black
+        let view = Self.preparedView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
 
     func updateUIView(_ uiView: PreviewView, context: Context) {}
+
+    /// 映像を出す部品（層の設定の前まで）。
+    ///
+    /// 2026-10-10 判断: **指を受けない**（`isUserInteractionEnabled = false`）。owner の報告
+    /// 「作例の1枚目しか重ねられない」（TestFlight 1.0.84）を受けて。映像は枠いっぱいの UIKit の部品で、
+    /// 指を受けると UIKit の当たり判定がこの部品を返し、枠に付けた左右の払い（SwiftUI の
+    /// `DragGesture`）まで届かないことがある。映像は押す物ではないので、指は外へ通す
+    static func preparedView() -> PreviewView {
+        let view = PreviewView()
+        view.backgroundColor = .black
+        view.isUserInteractionEnabled = false
+        return view
+    }
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }

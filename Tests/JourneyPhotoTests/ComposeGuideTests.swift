@@ -141,6 +141,43 @@ final class ComposeGuideTests: XCTestCase {
 
     // MARK: - 入口
 
+    private func sample(_ n: Int) -> SpotSample {
+        SpotSample(src: URL(string: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/\(n).jpg/1280px-\(n).jpg")!,
+                   width: 1280, height: 853, title: "T\(n)", author: "A", license: "CC0", licenseUrl: nil,
+                   sourceUrl: URL(string: "https://commons.wikimedia.org/wiki/File:\(n).jpg")!)
+    }
+
+    func testStartIndexIsTheTappedSample() {
+        // owner の報告（2026-10-10・1.0.84）「作例の1枚目しか重ねられない」: 帯で押した1枚から始める
+        let samples = (0..<5).map(sample)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[2].sourceUrl, in: samples), 2)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[4].sourceUrl, in: samples), 4)
+        // 入口のボタン（nil）は1枚目
+        XCTAssertEqual(ComposeGuide.startIndex(of: nil, in: samples), 0)
+    }
+
+    func testStartIndexFollowsTheSampleWhenAnEarlierOneIsHidden() {
+        // 案内を経るあいだに前の1枚が読めずに隠れても、押した1枚から始める（番号ではなく出典で探す）
+        let samples = (0..<5).map(sample)
+        let shown = samples.filter { $0 != samples[1] }
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[3].sourceUrl, in: shown), 2)
+        // 押した1枚が消えていたら1枚目
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[1].sourceUrl, in: shown), 0)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[0].sourceUrl, in: []), 0)
+    }
+
+    func testEachLaunchIsANewRequest() {
+        // 同じ1枚を続けて開いても、撮る画面を作り直す（前の作例の番号を持ち越さない）
+        let url = sample(1).sourceUrl
+        XCTAssertNotEqual(ComposeGuide.Launch(sample: url), ComposeGuide.Launch(sample: url))
+    }
+
+    @MainActor
+    func testCameraPreviewDoesNotTakeTouches() async {
+        // 映像が指を取ると、枠の左右の払い（作例の切り替え）が届かない（2026-10-10）
+        XCTAssertFalse(CameraPreview.preparedView().isUserInteractionEnabled)
+    }
+
     func testEntryOnlyWithSamples() {
         XCTAssertFalse(ComposeGuide.showsEntry(sampleCount: 0))
         XCTAssertTrue(ComposeGuide.showsEntry(sampleCount: 1))

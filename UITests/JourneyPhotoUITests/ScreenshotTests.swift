@@ -205,6 +205,33 @@ final class ScreenshotTests: XCTestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
         }
         Thread.sleep(forTimeInterval: 1)
+        shootComposeGuideFromSecondSample(app)
+    }
+
+    /// **作例の帯の2枚目を押して、その作例から撮る画面を開く**（2026-10-10・owner の報告「作例の1枚目しか
+    /// 重ねられない」）。上の札が「作例 2 / N」になっていることを確かめて撮り、閉じる。
+    /// 2枚目が無い・押せる所に無いスポットでは撮らない（この試験の決まり）
+    private func shootComposeGuideFromSecondSample(_ app: XCUIApplication) {
+        let cards = app.buttons.matching(identifier: "spot.official.sampleCard")
+        guard cards.count >= 2 else { return }
+        let second = cards.element(boundBy: 1)
+        guard second.exists, second.isHittable else { return }
+        second.tap()
+        let close = app.buttons["composeGuide.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
+        let counter = app.descendants(matching: .any).matching(identifier: "composeGuide.counter").firstMatch
+        if counter.exists {
+            XCTAssertTrue(counter.label.contains("作例 2 枚目") || counter.label.contains("example 2 of"),
+                          "2枚目の作例から開いていない: \(counter.label)")
+        }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h2-作例を重ねて撮る（2枚目から）")
+        if close.isHittable {
+            close.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// 積んだ画面から1つ戻る（2026-10-03）。

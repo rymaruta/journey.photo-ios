@@ -16,6 +16,8 @@ open class UIView {
     open var layer: CALayer { CALayer() }
     open var bounds: CGRect = .zero
     open var backgroundColor: UIColor?
+    /// 指を受けるか（本物の既定は true）
+    open var isUserInteractionEnabled: Bool = true
     open func layoutSubviews() {}
 }
 
