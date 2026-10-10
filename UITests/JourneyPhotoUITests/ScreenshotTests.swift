@@ -900,9 +900,25 @@ final class ScreenshotTests: XCTestCase {
                 }
                 Thread.sleep(forTimeInterval: 2)
                 shoot(app, "82-名前の横（PRO 限定）")
-                // 「Pro で集める」→ Pro の案内が開くこと（板の行き先）
+                // 「Pro で集める」→ Pro の案内が開くこと（板の行き先）。**Pro の案内はここで撮る。**
+                // 鍵を持たないログインは自分のプロフィールが読めず、設定の Pro の行は
+                // 「App Store で管理」を開く（Pro かどうか分からない人に案内を出さない・ProStatusText.settingsAction）
                 if collect.isHittable {
                     collect.tap()
+                    if app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 10) {
+                        // 上の写真（朝の公開写真）が届くのを少し待つ
+                        Thread.sleep(forTimeInterval: 4)
+                        shoot(app, "81-Pro の案内")
+                        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
+                        let restore = app.buttons["paywall.restore"].firstMatch
+                        let before = restore.exists ? restore.frame.origin.y : nil
+                        app.swipeUp()
+                        Thread.sleep(forTimeInterval: 1)
+                        let after = restore.exists ? restore.frame.origin.y : nil
+                        if let before, let after, abs(before - after) > 1 {
+                            shoot(app, "81b-Pro の案内（下・注記と復元）")
+                        }
+                    }
                     if app.buttons["paywall.close"].firstMatch.waitForExistence(timeout: 10) {
                         app.buttons["paywall.close"].firstMatch.tap()
                     }
@@ -922,21 +938,6 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
-        proRow.tap()
-        let purchase = app.buttons["paywall.purchase"].firstMatch
-        guard purchase.waitForExistence(timeout: 10) else { return }
-        // 上の写真（朝の公開写真）が届くのを少し待つ
-        Thread.sleep(forTimeInterval: 4)
-        shoot(app, "81-Pro の案内")
-        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
-        let restore = app.buttons["paywall.restore"].firstMatch
-        let before = restore.exists ? restore.frame.origin.y : nil
-        app.swipeUp()
-        Thread.sleep(forTimeInterval: 1)
-        let after = restore.exists ? restore.frame.origin.y : nil
-        if let before, let after, abs(before - after) > 1 {
-            shoot(app, "81b-Pro の案内（下・注記と復元）")
-        }
     }
 
     /// **光と天気の知らせ**（Pro・板 LightAlert・2026-10-09）: 設定の Pro の節の「光と天気の知らせ」→
