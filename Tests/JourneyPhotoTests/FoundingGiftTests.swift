@@ -93,4 +93,31 @@ final class FoundingGiftTests: XCTestCase {
         XCTAssertTrue(view.contains("patch.displayBadge = Clearable(FoundingGiftGate.badgeKey)"))
         XCTAssertTrue(view.contains("受け取って、プロフィールに飾る"))
     }
+
+    /// UI テストは起動の引数 `-foundingGift.done.<id> YES` で贈り物を止める。引数は文字の "YES" で
+    /// 入るので、それでも「受け取り済み」と読めること
+    func testDoneGivenAsLaunchArgumentTextStopsTheGift() throws {
+        let d = defaults()
+        d.set("YES", forKey: FoundingGiftGate.doneKey("u1"))
+        let gate = FoundingGiftGate(defaults: d)
+        XCTAssertFalse(gate.shouldPresent(userId: "u1", profile: try profile(#"{"userId":"u1",\#(early),"displayBadge":"first"}"#)))
+    }
+
+    /// 🔴 **見本の利用者で起動する UI テストは、毎回贈り物を止める**（run 403: 新しいシミュレータの
+    /// 最初の3回の起動で全画面が被さり、メダルの試験がタブも名前の行も押せずに落ちた）
+    func testUITestsThatSignInAsThePreviewUserStopTheGift() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let dir = root.appendingPathComponent("UITests/JourneyPhotoUITests")
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".swift") }
+        var checked = 0
+        for file in files {
+            let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
+            let signIns = text.components(separatedBy: #"["-JPPreviewUserId", Self.previewUserId]"#).count - 1
+            let stops = text.components(separatedBy: #"["-foundingGift.done.\(Self.previewUserId)", "YES"]"#).count - 1
+            XCTAssertEqual(stops, signIns, "\(file): 見本の利用者で起動するたびに贈り物を止める")
+            checked += signIns
+        }
+        XCTAssertGreaterThan(checked, 0)
+    }
 }

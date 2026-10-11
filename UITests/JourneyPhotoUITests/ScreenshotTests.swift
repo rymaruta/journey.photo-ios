@@ -450,6 +450,10 @@ final class ScreenshotTests: XCTestCase {
         // ——**嘘の中身は出ない**。渡す値は公開 API が返している `userId`
         // そのもので、資格情報ではない。
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（`FoundingGiftGate`・全画面）は「受け取り済み」にして出さない。
+        // 見本の利用者は章を持っていて、まだ名前の横に飾っていないと、新しいシミュレータの
+        // 最初の3回の起動で全画面が上に被さり、タブも名前の行も押せなくなる（run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
         // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
@@ -795,6 +799,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -876,6 +881,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -946,6 +952,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1006,6 +1013,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
         app.launch()
 
@@ -1092,6 +1100,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPaywall", "YES"]
         app.launch()
 
@@ -1129,6 +1138,7 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
             app.launchArguments += ["-JPLightForecastPreview", mode]
             app.launch()
 
@@ -1175,6 +1185,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1222,6 +1233,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         // 京都・鎌倉・函館（離れた3か所＝枠が全部を囲むかが絵で分かる）
         app.launchArguments += ["-journey-photo-wishlist:\(Self.previewUserId)",
                                 "(\"SPOT-fushimi-inari-taisha\",\"SPOT-kenchoji\",\"SPOT-goryokaku\")"]
@@ -1291,6 +1303,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewBadges", "earlyUser:1,prefectures:2"]
         app.launchArguments += ["-JPPreviewDisplayBadge", "earlyUser"]
         app.launch()
@@ -1332,6 +1345,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewBadges", "earlyUser:1,prefectures:2"]
         app.launchArguments += ["-JPPreviewDisplayBadge", "earlyUser"]
         app.launchArguments += ["-JPPreviewPro", "YES"]
