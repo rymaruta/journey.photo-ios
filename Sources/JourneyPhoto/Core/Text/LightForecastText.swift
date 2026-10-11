@@ -333,10 +333,14 @@ enum LightForecastText {
 
     // MARK: - 注記・出典
 
-    /// 板の注記（サーバーが返さないときの文言）
+    /// 板の注記（サーバーが返さないときの文言）。
+    ///
+    /// 2026-10-11 判断（owner「任せる」）: 見込みは Apple Weather のデータに手を加えた（value-added）もの。
+    /// WeatherKit の表示の決まり（「Apple Weather and third-party attribution」）に合わせ、出典と
+    /// 手を加えた旨を「見込みは目安で…」の前に続けて出す（サーバーの `LIGHT_NOTE`・Web の注記と同じ文）
     static var defaultNote: String {
-        L("天気は外部の予報から。光の時刻はアプリで計算。見込みは目安で、外れることがあります。",
-          "Weather comes from an outside forecast; sun times are calculated in the app. Chances are a guide and can be wrong.")
+        L("天気は外部の予報から。光の時刻はアプリで計算。Apple Weather のデータをもとに Journey Photo が計算した見込みです。見込みは目安で、外れることがあります。",
+          "Weather comes from an outside forecast; sun times are calculated in the app. Estimates calculated by Journey Photo from Apple Weather data. Chances are a guide and can be wrong.")
     }
 
     /// 画面の注記。**英語の端末にはサーバーの日本語を出さない**（サーバーは日本語だけ返す）

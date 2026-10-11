@@ -56,7 +56,7 @@ final class LightForecastTests: XCTestCase {
                    "morningBlue":{"start":{"at":"2026-10-09T20:10:00.000Z","clock":"05:10"},"end":null},
                    "eveningBlue":{"start":null,"end":null},
                    "morning":{"weather":"clear","chance":"high"},"evening":{"weather":"partlyCloudy","chance":"mid"},"night":null}]}],
-         "note":"天気は外部の予報から。光の時刻はアプリで計算。見込みは目安で、外れることがあります。",
+         "note":"天気は外部の予報から。光の時刻はアプリで計算。Apple Weather のデータをもとに Journey Photo が計算した見込みです。見込みは目安で、外れることがあります。",
          "attribution":{"serviceName":"Apple Weather","legalUrl":"https://weatherkit.apple.com/legal-attribution.html"}}
         """#)
         XCTAssertEqual(f.places.count, 1)
@@ -71,7 +71,7 @@ final class LightForecastTests: XCTestCase {
         XCTAssertEqual(p.days.first?.morningBlue?.start?.clock, "05:10")
         XCTAssertEqual(f.attribution.serviceName, "Apple Weather")
         XCTAssertEqual(f.attribution.legalURL.absoluteString, "https://weatherkit.apple.com/legal-attribution.html")
-        XCTAssertEqual(LightForecastText.note(f), "天気は外部の予報から。光の時刻はアプリで計算。見込みは目安で、外れることがあります。")
+        XCTAssertEqual(LightForecastText.note(f), "天気は外部の予報から。光の時刻はアプリで計算。Apple Weather のデータをもとに Journey Photo が計算した見込みです。見込みは目安で、外れることがあります。")
     }
 
     /// 知らない天気・見込みの言葉はその時間帯だけ落とす。名前の無い場所・日付の無い日はそれだけ落とす
@@ -103,9 +103,10 @@ final class LightForecastTests: XCTestCase {
         XCTAssertEqual(try decode(#"{"places":[],"attribution":{"serviceName":"X","legalUrl":"http://evil.test"}}"#).attribution,
                        .appleWeather)
         XCTAssertEqual(try decode(#"{"places":[],"attribution":"Apple"}"#).attribution, .appleWeather)
-        // 注記が無ければ板の文言
+        // 注記が無ければ板の文言に、Apple Weather のデータに手を加えた旨（2026-10-11・WeatherKit の決まり）を
+        // 「見込みは目安で…」の前に続けたもの
         XCTAssertEqual(LightForecastText.note(try decode(#"{"places":[]}"#)),
-                       "天気は外部の予報から。光の時刻はアプリで計算。見込みは目安で、外れることがあります。")
+                       "天気は外部の予報から。光の時刻はアプリで計算。Apple Weather のデータをもとに Journey Photo が計算した見込みです。見込みは目安で、外れることがあります。")
     }
 
     // MARK: - 2. 札
