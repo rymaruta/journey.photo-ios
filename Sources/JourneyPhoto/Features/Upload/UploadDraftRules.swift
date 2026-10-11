@@ -4,7 +4,7 @@ import Foundation
 ///
 /// - 閉じる確認（×）に「下書きに保存」を足す。出せないときは理由を言う
 /// - 開いたときに「下書きを続けますか？」を尋ねる
-/// - 投稿が上がったら、開き直した下書きを消す
+/// - 投稿が上がった写真は1枚ずつ下書きから外す（`UploadViewModel.draftKeys` の注記）
 ///
 /// **「捨てる」という言い方は使わない**（owner の好み・2026-10-09。ストーリーの下書きと同じ）。
 /// 開いたときの問いの答えは「続ける」と「下書きを削除」
@@ -45,9 +45,16 @@ enum UploadDraftRules {
     ///   - block: 保存できない理由（`saveBlock`）
     ///   - replacesOther: **開き直していない**前の下書きがある（保存すると置き換わる）
     ///   - restored: この画面で下書きを開き直した（「投稿をやめる」でも前の下書きは残る）
-    static func closeDialog(block: SaveBlock?, replacesOther: Bool, restored: Bool) -> CloseDialog {
+    ///   - unsure: 開き直した写真に、届いたか分からないものがある（下書きから外れる）
+    static func closeDialog(block: SaveBlock?, replacesOther: Bool, restored: Bool,
+                            unsure: Bool = false) -> CloseDialog {
+        let unsureNote = unsure
+            ? L("届いたか分からない写真は、二重に投稿しないよう下書きから外します。",
+                "Photos that may have already been sent are taken out of the draft so they aren't posted twice. ")
+            : ""
         let keeps = restored
-            ? L("投稿をやめても、前に保存した下書きは残ります。", "If you stop, the draft you saved earlier stays.")
+            ? unsureNote + L("投稿をやめても、前に保存した下書きの残りは残ります。",
+                             "If you stop, the rest of the draft you saved earlier stays.")
             : L("投稿をやめると、選んだ写真と書いた題・説明は残りません。",
                 "If you stop, the photos you picked and what you wrote won't be kept.")
         guard let block else {
@@ -73,14 +80,10 @@ enum UploadDraftRules {
                            message: reason + keeps)
     }
 
-    /// 開いたときに「下書きを続けますか？」を尋ねるか。**写真を持って開いた回は尋ねない**
-    /// （旅の写真・構図を重ねて撮った1枚——その写真を投稿しに来た人に、前の写真を混ぜない）
-    static func asksRestore(hasStoredDraft: Bool, opensWithPhotos: Bool, alreadyAsked: Bool) -> Bool {
-        hasStoredDraft && !opensWithPhotos && !alreadyAsked
-    }
-
-    /// 投稿が上がったあとに下書きを消すか。**開き直した下書きだけ**（`UploadViewModel.restoredDraft`）
-    static func clearsAfterPosting(posted: Int, restored: Bool) -> Bool {
-        posted > 0 && restored
+    /// 開いたときに「下書きを続けますか？」を尋ねるか。**何かを持って開いた回は尋ねない**
+    /// （旅の写真・構図を重ねて撮った1枚・今日のテーマのタグ・撮影スポット——それを投稿しに来た人に、
+    /// 前の写真や欄を混ぜない。戻すとテーマのタグやスポットの紐付けを下書きの値で上書きする・2026-10-11）
+    static func asksRestore(hasStoredDraft: Bool, opensWithContent: Bool, alreadyAsked: Bool) -> Bool {
+        hasStoredDraft && !opensWithContent && !alreadyAsked
     }
 }
