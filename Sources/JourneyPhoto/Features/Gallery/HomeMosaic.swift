@@ -140,12 +140,8 @@ struct HomeFeedTile: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel(L("この写真の操作", "More actions"))
-            .confirmationDialog(L("この人をブロックしますか？", "Block this person?"),
-                                isPresented: $showBlockConfirm, titleVisibility: .visible) {
-                Button(L("ブロック", "Block"), role: .destructive) { Task { await block() } }
-            } message: {
-                Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。", "You won't see each other's posts, stories, or notifications."))
-            }
+            // 確認は4か所で同じ部品（`blockConfirmation`・2026-10-11）
+            .blockConfirmation(isPresented: $showBlockConfirm) { Task { await block() } }
         }
     }
 

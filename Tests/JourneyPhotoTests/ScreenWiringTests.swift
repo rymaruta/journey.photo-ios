@@ -162,4 +162,64 @@ final class ScreenWiringTests: XCTestCase {
             XCTAssertFalse(text.contains("count)枚\", \"\\("), "\(path) が単数形を持たない枚数を組んでいる")
         }
     }
+
+    /// ホーム: 切り替えの下には選んだフィードの中身だけ（2026-10-11）。
+    /// 「撮影地を探す／写真から探す」の札は消し、おすすめの横並びは「おすすめ」のときだけ
+    func testHomeShowsSelectedFeedRightBelowPicker() throws {
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertFalse(gallery.contains("discoveryBridge"), "切り替えの下に「撮影地を探す」の札が戻っている")
+        XCTAssertFalse(gallery.contains("home.exploreMap"))
+        // 横並びを置くのは1か所（定義と、絞った中の1回）
+        XCTAssertEqual(count("featuredSections", in: gallery), 2, "横並びを絞らずに置いている所がある")
+        let lines = gallery.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let picker = lines.firstIndex(of: "feedPicker") else { return XCTFail("切り替えが無い") }
+        XCTAssertEqual(lines[picker + 1], "if model.feed.showsFeatured {", "切り替えのすぐ下に別のものが挟まっている")
+        XCTAssertEqual(lines[picker + 2], "featuredSections")
+    }
+
+    /// ブロックの確認は4か所で同じ部品（2026-10-11）。写真の詳細だけ確認が無かった
+    func testEveryBlockGoesThroughTheSameConfirmation() throws {
+        for path in ["Features/Gallery/HomeMosaic.swift", "Features/Profile/UserProfileView.swift",
+                     "Features/Stories/StoryViewerView.swift", "Features/PhotoDetail/PhotoDetailView.swift"] {
+            let text = try source(path)
+            XCTAssertEqual(count(".blockConfirmation(isPresented: $showBlockConfirm)", in: text), 1,
+                           "\(path) が共通の確認を使っていない")
+            XCTAssertFalse(text.contains("この人をブロックしますか"), "\(path) が確認の文言を自前で持っている")
+        }
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertFalse(detail.contains("Task { await block(ownerId) }"), "写真の詳細のブロックが確認なしで走る")
+        XCTAssertEqual(count("await block(", in: detail), 1, "確認を通らずにブロックする口がある")
+        let lines = detail.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let pending = lines.firstIndex(of: "blockPendingOwner = ownerId") else {
+            return XCTFail("メニューの「この人をブロック」が押した相手を控えていない")
+        }
+        XCTAssertEqual(lines[pending + 1], "showBlockConfirm = true", "メニューの「この人をブロック」が確認を出していない")
+        XCTAssertTrue(detail.contains("guard let target = blockPendingOwner else { return }"),
+                      "確認のあとに押した時点の相手をブロックしていない")
+    }
+
+    /// 通知: 初めての投稿のあとに説明を出す・「前の晩に知らせる」の行に届かないことを出す（2026-10-11）
+    func testPushPrimerAndLightAlertNoticeAreWired() throws {
+        let upload = try source("Features/Upload/UploadViewModel.swift")
+        XCTAssertTrue(upload.contains("PushPrimerStore.shared.notePosted()"), "投稿が上がっても説明の合図を出していない")
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains(".onChange(of: pushPrimer.requests)"))
+        XCTAssertTrue(root.contains("pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission)"),
+                      "許可の状態を見ずに説明を出している")
+        XCTAssertTrue(root.contains("await push.refreshAuthorization()"), "出す直前に許可を読み直していない")
+        XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView() }"))
+        let primer = try source("Features/Settings/PushPrimerView.swift")
+        XCTAssertTrue(primer.contains("await push.enable()"), "「通知を受け取る」がシステムの許可へ進まない")
+        XCTAssertTrue(primer.contains("push.primer.later"))
+        let rows = try source("Features/Pro/LightAlertSettingsRows.swift")
+        XCTAssertTrue(rows.contains("LightAlertPushNotice.state(wants: wants, knownNotPro: knownNotPro,"),
+                      "「前の晩に知らせる」がプッシュの状態を見ていない")
+        XCTAssertTrue(rows.contains("permission: push.permission, enabled: push.isEnabled)"))
+        XCTAssertTrue(rows.contains("UIApplication.openSettingsURLString"), "断られた人を設定アプリへ案内していない")
+        let settings = try source("Features/Settings/SettingsView.swift")
+        XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),
+                      "ほかの所で「受け取る」にしても設定のトグルが「切」のまま残る")
+        // 起動したときには聞かない（設定の「受け取る」・説明・「前の晩に知らせる」の行の3か所だけ）
+        XCTAssertEqual(count("requestAuthorization(options:", in: try source("Core/Push/PushCenter.swift")), 1)
+    }
 }

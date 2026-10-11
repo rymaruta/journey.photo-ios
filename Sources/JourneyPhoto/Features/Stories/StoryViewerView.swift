@@ -483,13 +483,8 @@ struct StoryViewerView: View {
         .onChange(of: swipeLocked) { _, locked in onSwipeLockChange?(locked) }
         .onChange(of: replyFocused) { _, focused in onTypingChange?(focused) }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
-        .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
-            Button(L("ブロック", "Block"), role: .destructive) {
-                Task { await block(story) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        } message: {
-            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
+        .blockConfirmation(isPresented: $showBlockConfirm) {
+            Task { await block(story) }
         }
         .sheet(isPresented: $showReport, onDismiss: {
             let reported = reportingStory ?? story

@@ -49,6 +49,14 @@ final class HomeFeedTests: XCTestCase {
         XCTAssertNotNil(HomeFeed.recommended.note)
         XCTAssertNil(HomeFeed.latest.note, "説明の要らないものに注釈を足さない")
     }
+
+    /// 🔴 **おすすめの横並びは「おすすめ」のときだけ**（2026-10-11）。「新着」「フォロー中」を押しても
+    /// 横並びが切り替えの下に挟まり、結果がずっと下に出て、押して何が変わったか見えなかった
+    func testFeaturedRowsOnlyOnRecommended() {
+        XCTAssertTrue(HomeFeed.recommended.showsFeatured)
+        XCTAssertFalse(HomeFeed.following.showsFeatured)
+        XCTAssertFalse(HomeFeed.latest.showsFeatured)
+    }
 }
 
 /// フィードの切り替えが、ログイン状態の反映で打ち消されないこと。

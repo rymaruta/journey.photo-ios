@@ -29,6 +29,10 @@ struct PhotoDetailView: View {
     /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
     @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
+    /// 「この人をブロック」の確認（`blockConfirmation`）。**押した時点の相手を控える**
+    /// ——確認を出している間に写真を送って持ち主が替わっても、押した人をブロックする
+    @State private var showBlockConfirm = false
+    @State private var blockPendingOwner: String?
     @State private var showEdit = false
     /// 過去の投稿を SNS に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
     @State private var threadsBundle: ThreadsShare.Bundle?
@@ -346,6 +350,10 @@ struct PhotoDetailView: View {
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+        .blockConfirmation(isPresented: $showBlockConfirm) {
+            guard let target = blockPendingOwner else { return }
+            Task { await block(target) }
         }
         // コメントの削除は確かめてから（押し間違いで他人の書き込みを消さない）
         //
@@ -859,7 +867,12 @@ struct PhotoDetailView: View {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if let ownerId {
-                    Button(role: .destructive) { Task { await block(ownerId) } } label: {
+                    // **押したらまず確かめる**（ほかの3か所と同じ部品・2026-10-11）。
+                    // ここだけ確認が無く、メニューの押し間違い1回でブロックされていた
+                    Button(role: .destructive) {
+                        blockPendingOwner = ownerId
+                        showBlockConfirm = true
+                    } label: {
                         Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                     }
                 }
