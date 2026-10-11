@@ -377,7 +377,7 @@ struct TripBookView: View {
             // 撮影地は**段の頭と違うときだけ**（同じ地名を毎枚くり返さない）
             if let place = photo.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                !place.isEmpty, place != dayPlace {
-                Text(place)
+                Text(LocationMatch.display(place))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }

@@ -52,6 +52,56 @@ struct ModerationService {
         return trimmed.isEmpty ? nil : PostLimits.clamp(trimmed, limit: reportNoteMax)
     }
 
+    // MARK: - コメントの通報（2026-10-11 判断）
+    //
+    // サーバーにコメントを通報する口は無い。**写真の通報の口に載せる**——送れるのは
+    // `reason` と `note`（500字・制御文字は落とされる＝改行は消える）だけなので、
+    // 誰のどのコメントかを `note` の頭に書く。運営は写真の通報として読む。
+    //
+    // ⚠️ 通報の行は「1人1写真に1件」（`report.ts` の `reportId`）。同じ写真を前に通報して
+    // いれば、コメントの通報で上書きされる。自分の写真には送れない（400）ので、
+    // 自分の写真のコメントには通報を出さない（持ち主は消せる）
+
+    /// 通報するコメント（誰の・どの・何と書いたか）
+    struct ReportedComment: Equatable {
+        let id: String
+        let authorId: String
+        let authorName: String
+        let text: String
+
+        init(_ comment: PhotoComment) {
+            self.init(id: comment.id, authorId: comment.uid, authorName: comment.name, text: comment.text)
+        }
+
+        init(id: String, authorId: String, authorName: String, text: String) {
+            self.id = id
+            self.authorId = authorId
+            self.authorName = authorName
+            self.text = text
+        }
+    }
+
+    /// コメントを通報するときの、本人が書く補足の上限（残りにコメントの本文を入れる）
+    static let commentReportUserNoteMax = 200
+
+    /// コメントの通報で送る `note`。**500字（UTF-16）に必ず収める**——頭（誰の・どのコメントか）と
+    /// 本人の補足は切らずに入れ、コメントの本文を残りに詰める。改行はサーバーで消えるので空白にする
+    static func commentReportNote(_ comment: ReportedComment, note: String?) -> String {
+        func oneLine(_ text: String) -> String {
+            text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        let name = PostLimits.clamp(oneLine(comment.authorName), limit: 60)
+        var head = "[コメントの通報] 投稿者: \(name) (\(comment.authorId)) / コメントID: \(comment.id)"
+        let extra = PostLimits.clamp(oneLine(note ?? ""), limit: commentReportUserNoteMax)
+        if !extra.isEmpty { head += " / 補足: \(extra)" }
+        head = PostLimits.clamp(head, limit: reportNoteMax)
+        let label = " / 本文: "
+        let room = reportNoteMax - PostLimits.length(head) - PostLimits.length(label)
+        guard room > 0 else { return head }
+        return head + label + PostLimits.clamp(oneLine(comment.text), limit: room)
+    }
+
     /// 通報する。**同じ人が押し直したら上書き**なので、二重送信を怖がらなくてよい。
     /// 自分の投稿は 400 で断られる。
     func report(photoId: String, reason: ReportReason, note: String?) async throws {

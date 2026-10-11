@@ -675,7 +675,8 @@ struct StoryViewerView: View {
         // もので、写真の上の文字と二重になる。投票・スタンプだけなら出す（サーバーは送られた
         // `caption` を保存する・Web の `hasStoryTextItem` と同じ判定）
         let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
-        let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
+        // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。スポットへの結び付けは `spotLink` 側で元の文字から
+        let place = story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 }
         // 曲の札を焼き込んだ1本は出さない（写真の上の札と2度出る・`songLineShown`）
         let song = story.songLineShown
         // 札は画像なので読み上げでは読めない。隠した行は**読み上げにだけ**残す（686566d のレビュー）

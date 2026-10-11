@@ -379,7 +379,7 @@ struct HomeTopCardView: View {
 
     /// 撮影地があれば撮影地、無ければ題。どちらも無ければ一言だけ
     private func yearAgoLine(_ photo: Photo) -> String {
-        let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let place = LocationMatch.display(photo.location)
         if !place.isEmpty { return place }
         let title = photo.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? L("あの日の1枚", "A photo from that day") : title

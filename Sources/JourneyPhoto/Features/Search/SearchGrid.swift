@@ -45,7 +45,7 @@ struct SearchGrid: View {
     @ViewBuilder
     private func caption(_ photo: Photo) -> some View {
         let title = photo.displayTitle
-        let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let place = LocationMatch.display(photo.location)
         let likes = LiveLikes.base(for: photo, stored: likeCounts.entry(for: photo.id)) ?? 0
         // **何も無い写真に帯を出さない**（空の黒帯は写真を欠けさせる）
         if !title.isEmpty || !place.isEmpty || likes > 0 {

@@ -209,10 +209,19 @@ final class DoubleTapLikeTests: XCTestCase {
                        .resetZoom)
     }
 
-    /// 未ログインでは何も送らない（断り書きで写真の邪魔をしない）
-    func testSignedOutSendsNothing() {
+    /// 🔴 未ログインでは何も送らず、**ハートも出さない**（付いたように見えていた）。
+    /// ログインを促す。起動直後の確認中は促さない（ログイン済みの人にも出る）・2026-10-11
+    func testSignedOutAsksToSignInWithoutHeart() {
         XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false),
-                       .burstOnly)
+                       .askToSignIn)
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false,
+                                            acceptsLike: false),
+                       .askToSignIn)
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false,
+                                            signInResolving: true),
+                       .ignore)
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: true, alreadyLiked: false, signedIn: false),
+                       .resetZoom, "拡大中は未ログインでも倍率を戻す")
     }
 
     /// 🔴 **下書きには送らない。** 送ると先に灯したハートが黙って消えた（サーバーが断る）

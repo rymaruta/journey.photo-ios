@@ -159,3 +159,109 @@ enum LocationMatch {
         return false
     }
 }
+
+// MARK: - 画面に出す撮影地（2026-10-11 判断）
+//
+// 撮影地は場所の検索（Nominatim の `display_name`）をそのまま保存しているので、
+// 「蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本」のように
+// 郵便番号・通り・国まで入る。写真の詳細の1行と「撮影スポット」の見出しで切れていた
+// （画面写真 20-写真の詳細・20b-写真から撮影地へ）。
+//
+// **出すときだけ縮める。** 保存した値・サーバーへ送る値・突き合わせ（`photoIsIn`・
+// スラッグ・地図の検索）は元の文字のまま——縮めた名前で引くと別の場所に当たる。
+extension LocationMatch {
+
+    /// 画面に出す撮影地。
+    ///
+    ///     「蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本」
+    ///         → 「蔵王キツネ村（宮城県白石市）」
+    ///     「Tokyo Tower, 4, Shibakoen 4-chome, Shibakoen, Minato, Tokyo, 105-0011, Japan」
+    ///         → 「Tokyo Tower (Minato, Tokyo)」
+    ///     「Louvre, Paris, France」→「Louvre (Paris, France)」
+    ///     「金沢」「パリ, フランス」→ そのまま（人が打った短い地名は触らない）
+    ///
+    /// - 先頭の欠片（場所の名前）は必ず残す
+    /// - 日本: 都道府県と、その手前でいちばん近い市区町村（郡は飛ばす）。国（日本）は出さない
+    /// - 海外: 名前と国。欠片が「名前・街・国」の3つだけなら街も残す。
+    ///   **長い住所から街は当てない**——Nominatim の並びは国ごとに違い（区・郡・州・地方…）、
+    ///   当て推量で州や通りを「街」として出すより、国だけの方が嘘が無い
+    /// - 郵便番号・番地（数字だけの欠片）は落とす
+    static func display(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.components(separatedBy: CharacterSet(charactersIn: ",，、"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let last = parts.last, parts.count >= 2 else { return trimmed }
+        let hasPostal = parts.contains(where: isPostalOrNumber)
+        let endsInJapan = isJapan(last)
+        // 人が打った「パリ, フランス」「金沢, 石川」は触らない（住所の形をしているときだけ縮める）
+        guard parts.count >= 3 || hasPostal || endsInJapan else { return trimmed }
+        let kept = parts.filter { !isPostalOrNumber($0) }
+        guard let name = kept.first else { return trimmed }
+        let rest = Array(kept.dropFirst())
+
+        // 日本（和文）: 都道府県＋市区町村
+        if let prefIndex = rest.firstIndex(where: RegionList.prefectures.contains) {
+            let pref = rest[prefIndex]
+            if name == pref { return name }
+            let city = rest[..<prefIndex].reversed().first { part in
+                guard let tail = part.last, part != name else { return false }
+                return "市区町村".contains(tail)
+            }
+            return "\(name)（\(pref)\(city ?? "")）"
+        }
+        let country = rest.last
+        // 日本（英文）: "Miyagi Prefecture" / "Tokyo" と、その手前の市区町村
+        if endsInJapan {
+            let body = rest.dropLast()
+            guard let prefIndex = body.lastIndex(where: isEnglishPrefecture) else {
+                return name
+            }
+            let pref = shortEnglishPrefecture(body[prefIndex])
+            let city = body[body.startIndex..<prefIndex].reversed().first { !isEnglishDistrict($0) }
+            let region = [city, pref].compactMap { $0 }.filter { $0 != name }
+            return region.isEmpty ? name : "\(name) (\(region.joined(separator: ", ")))"
+        }
+        // 海外: 名前＋（街）＋国
+        var region: [String] = []
+        if rest.count == 2 { region.append(rest[0]) }
+        if let country { region.append(country) }
+        region = region.filter { $0 != name }
+        guard !region.isEmpty else { return name }
+        return hasJapaneseScript(name)
+            ? "\(name)（\(region.joined(separator: "、"))）"
+            : "\(name) (\(region.joined(separator: ", ")))"
+    }
+
+    /// 郵便番号・番地（数字と「-」「〒」と空白だけの欠片）
+    private static func isPostalOrNumber(_ part: String) -> Bool {
+        let allowed = CharacterSet(charactersIn: "0123456789-−〒 ")
+        return part.unicodeScalars.contains { CharacterSet.decimalDigits.contains($0) }
+            && part.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private static func isJapan(_ part: String) -> Bool {
+        part == "日本" || part.caseInsensitiveCompare("Japan") == .orderedSame
+    }
+
+    /// 英文の都道府県（"Miyagi Prefecture"・"Tokyo"・"Hokkaido"・"Osaka"・"Kyoto"）
+    private static func isEnglishPrefecture(_ part: String) -> Bool {
+        part.hasSuffix(" Prefecture") || ["Tokyo", "Hokkaido", "Osaka", "Kyoto"].contains(part)
+    }
+
+    private static func shortEnglishPrefecture(_ part: String) -> String {
+        part.hasSuffix(" Prefecture") ? String(part.dropLast(" Prefecture".count)) : part
+    }
+
+    /// 英文の郡（市区町村の代わりに出さない）
+    private static func isEnglishDistrict(_ part: String) -> Bool {
+        part.hasSuffix(" District") || part.hasSuffix("-gun") || part.hasSuffix(" County")
+    }
+
+    private static func hasJapaneseScript(_ text: String) -> Bool {
+        text.unicodeScalars.contains { s in
+            (0x3040...0x30FF).contains(s.value) || (0x4E00...0x9FFF).contains(s.value)
+                || (0x3400...0x4DBF).contains(s.value)
+        }
+    }
+}
