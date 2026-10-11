@@ -1173,8 +1173,13 @@ struct PhotoMapView: View {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos,
                                          photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                     } label: {
+                        // 2026-10-11 判断: 呼び名を「撮影スポットを見る」に延ばしたので、幅 375pt で「経路」と
+                        // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
+                        // 縮めるのは 0.8 まで（15pt × 0.8 = 12pt。板の本文の最小）
                         Label(L("撮影スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
                             .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .foregroundStyle(WebTheme.foreground)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                             .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))

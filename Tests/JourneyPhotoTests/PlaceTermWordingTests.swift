@@ -79,6 +79,21 @@ final class PlaceTermWordingTests: XCTestCase {
         XCTAssertEqual(bare, [], "行き先が分からない「スポットを見る」が残っている")
     }
 
+    /// 延ばした「撮影スポットを見る」は横に並ぶボタンなので、幅 375pt ではみ出さないよう
+    /// **1行に収めて縮める。縮めるのは 0.8 まで**（15pt × 0.8 = 12pt。板の本文の最小・2026-10-11 のレビュー）
+    func testLongSpotButtonsFitOnOneLine() throws {
+        for path in ["Features/Map/PhotoMapView.swift", "Features/Gallery/DailyQuizView.swift"] {
+            let text = try String(contentsOf: sourcesRoot.appendingPathComponent(path), encoding: .utf8)
+            guard let start = text.range(of: #"L("撮影スポットを見る""#) else {
+                XCTFail("\(path) に「撮影スポットを見る」が無い"); continue
+            }
+            let after = String(text[start.upperBound...].prefix(400))
+            XCTAssertTrue(after.contains(".lineLimit(1)"), "\(path) の「撮影スポットを見る」が折り返す")
+            XCTAssertTrue(after.contains(".minimumScaleFactor(0.8)"),
+                          "\(path) の「撮影スポットを見る」が縮まない、または 12pt より小さく縮む")
+        }
+    }
+
     /// 文で書く所は「撮影スポット」。「スポット」だけで呼んでよいのはチップ・タブ・切り替え
     func testShelfAndWishlistTextsSayTheFullName() {
         XCTAssertEqual(HomeSpotShelf.heading, L("いまの季節の撮影スポット", "Photo spots for this season"))

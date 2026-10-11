@@ -247,8 +247,11 @@ struct DailyQuizView: View {
                     NavigationLink {
                         OfficialSpotView(spot: guideSpot, spots: spots, photos: photos)
                     } label: {
+                        // 2026-10-11 判断: 「結果を共有」と横に並ぶので1行に収めて縮める（0.8 まで＝12pt。板の本文の最小）
                         Text(L("撮影スポットを見る", "See the photo spot"))
                             .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .foregroundStyle(WebTheme.accentText)
                             .padding(.horizontal, 20)
                             .frame(minHeight: WebTheme.minTapTarget)
