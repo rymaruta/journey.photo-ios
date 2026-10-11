@@ -38,7 +38,10 @@ final class FollowListSignInTests: XCTestCase {
                       "未ログインの失敗を赤い文（errorMessage）に流している")
         XCTAssertTrue(view.contains("if needsSignIn {\n                signInPrompt"),
                       "案内が一覧に出ていない（赤い文より先に見る）")
-        XCTAssertTrue(view.contains("SignInView(reason: Self.signInLine(current))"))
+        // 共通のシート（閉じるボタン・ログインできたら閉じる）を使う。裸の `SignInView` を出さない
+        XCTAssertTrue(view.contains("SignInSheet(reason: Self.signInLine(current))"))
+        XCTAssertFalse(view.contains("SignInView("), "閉じる口の無いログイン画面をシートに出している")
+        XCTAssertFalse(view.contains(".onChange(of: auth.userId)"), "閉じる仕組みは SignInSheet が持つ（写しを作らない）")
         XCTAssertTrue(view.contains("showSignIn = true"))
         let prompt = view.components(separatedBy: "private var signInPrompt: some View {").last?
             .components(separatedBy: "/// 「フォロワー N").first ?? ""

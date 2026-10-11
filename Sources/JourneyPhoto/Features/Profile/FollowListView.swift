@@ -121,14 +121,10 @@ struct FollowListView: View {
             await load()
         }
         .refreshable { await load() }
-        // ログイン画面（マイページの未ログインと同じ `SignInView`）。閉じたら読み直す——
-        // 同じ人で入り直したときは `.task(id: auth.userId)` が走り直さない
+        // ログイン画面のシート（`SignInSheet`: 閉じるボタン・ログインできたら閉じる、を持つ共通の部品）。
+        // 閉じたら読み直す——同じ人で入り直したときは `.task(id: auth.userId)` が走り直さない
         .sheet(isPresented: $showSignIn, onDismiss: { Task { await load() } }) {
-            SignInView(reason: Self.signInLine(current))
-        }
-        // ログインできたら閉じる（閉じた合図で読み直す）
-        .onChange(of: auth.userId) { _, id in
-            if id != nil { showSignIn = false }
+            SignInSheet(reason: Self.signInLine(current))
         }
         // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
         // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
