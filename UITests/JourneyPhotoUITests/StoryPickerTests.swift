@@ -44,6 +44,10 @@ final class StoryPickerTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（`FoundingGiftGate`・全画面）は「受け取り済み」にして出さない。
+        // 見本の利用者は章を持っていて、まだ名前の横に飾っていないと、新しいシミュレータの
+        // 最初の3回の起動で全画面が上に被さり、タブも名前の行も押せなくなる（run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]

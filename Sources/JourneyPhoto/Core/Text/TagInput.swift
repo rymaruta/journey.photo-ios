@@ -194,7 +194,9 @@ enum PhotoQuery {
             switch self {
             // 札（`chipText`）と同じ畳み方——「##旅」「＃旅」の札が「#旅」なのに見出しが食い違わない
             case .tag(let value): return TagInput.chipText(value)
-            case .location(let value): return value
+            // 撮影地は画面に出す形に縮める（郵便番号・国を落とす・`LocationMatch.display`）。
+            // 絞り込み（`photos(_:in:)`）は元の文字のまま
+            case .location(let value): return LocationMatch.display(value)
             // 生の値（`landscape`）ではなく画面の名前（「風景」）。行き先の題が、押した
             // 札の「風景」と食い違わないように（ホーム・探す・写真の詳細から開く）
             case .category(let value): return Labels.Category.name(value)

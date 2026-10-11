@@ -216,6 +216,17 @@ final class TripPlanTests: XCTestCase {
         XCTAssertEqual(TripPlanText.label(for: .location(slug: "%E3%83%91%E3%83%AA", note: nil), index: [], places: []), "パリ")
     }
 
+    /// 撮影地の項目・候補の名前は**画面に出す形**（郵便番号・国を落とす）
+    func testItemLabelShowsTheShortPlace() throws {
+        let raw = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"
+        let places = DerivedSpot.all(in: [try photo("a", location: raw)])
+        let zao = try XCTUnwrap(places.first)
+        XCTAssertEqual(TripPlanText.label(for: .location(slug: zao.slug, note: nil), index: [], places: places),
+                       "蔵王キツネ村（宮城県白石市）")
+        let chosen = TripPlanText.choices(wishlistKeys: [zao.slug], places: places, index: [])
+        XCTAssertEqual(chosen.map(\.name), ["蔵王キツネ村（宮城県白石市）"])
+    }
+
     // MARK: - 保存
 
     private let base = TripPlan(planId: "p1", title: "冬", startDate: "2026-12-24", endDate: nil,

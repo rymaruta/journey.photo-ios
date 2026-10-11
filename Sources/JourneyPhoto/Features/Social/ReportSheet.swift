@@ -9,6 +9,16 @@ struct ReportSheet: View {
     let photoId: String
     /// 通報と同時にブロックもできるようにする。相手が分からない場合は nil
     let ownerId: String?
+    /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
+    /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
+    var comment: ModerationService.ReportedComment? = nil
+
+    /// 「この人をブロックする」の相手（コメントの通報ならコメントを書いた人）
+    private var blockTarget: String? { comment?.authorId ?? ownerId }
+    /// 補足の上限（コメントの通報は本文を入れる分だけ短い）
+    private var noteLimit: Int {
+        comment == nil ? ModerationService.reportNoteMax : ModerationService.commentReportUserNoteMax
+    }
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
@@ -32,6 +42,15 @@ struct ReportSheet: View {
                     if done {
                         receipt
                     } else {
+                        if let comment {
+                            // どのコメントを通報するか（押し間違いに気づけるように）
+                            Text(L("\(comment.authorName)さんのコメント：「\(comment.text)」",
+                                   "Comment by \(comment.authorName): \"\(comment.text)\""))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         reasons
                         JPField(L("補足（任意）", "Details (optional)"), multiline: true) {
                             TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
@@ -39,11 +58,11 @@ struct ReportSheet: View {
                                 // **500 で止める。** 送る前に黙って切っていたので、書いた末尾が
                                 // 届いていないことに気づけなかった（数え方はサーバーと同じ UTF-16）
                                 .onChange(of: note) { old, new in
-                                    let kept = PostLimits.limited(old: old, new: new, limit: ModerationService.reportNoteMax)
+                                    let kept = PostLimits.limited(old: old, new: new, limit: noteLimit)
                                     if kept != new { note = kept }
                                 }
                         }
-                        if ownerId != nil {
+                        if blockTarget != nil {
                             JPCard {
                                 JPToggleRow(
                                     title: L("この人をブロックする", "Also block this person"),
@@ -75,7 +94,7 @@ struct ReportSheet: View {
 
     private var header: some View {
         HStack {
-            Text(L("通報", "Report"))
+            Text(comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.display(24, relativeTo: .title2))
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
@@ -167,16 +186,20 @@ struct ReportSheet: View {
         // ブロックを控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let blocker = hidden.owner
         do {
-            try await environment.moderation.report(photoId: photoId, reason: reason, note: note)
+            let sentNote = comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
+            try await environment.moderation.report(photoId: photoId, reason: reason, note: sentNote)
             // **押したあと実際に消す。** 通報が受け付けられただけで、
-            // 通報した人の画面に出続けるなら意味がない
-            hidden.markReported(photoId, for: blocker)
-            if alsoBlock, let ownerId {
+            // 通報した人の画面に出続けるなら意味がない。
+            // コメントの通報では写真は消さない（通報したのはコメント。消すならブロックで）
+            if comment == nil {
+                hidden.markReported(photoId, for: blocker)
+            }
+            if alsoBlock, let blockTarget {
                 // **ブロックが落ちても通報は成立している。** ここで投げ直すと
                 // 「通報できなかった」と誤解させるので、文言を分ける
                 do {
-                    try await environment.moderation.block(userId: ownerId)
-                    hidden.block(ownerId, for: blocker)
+                    try await environment.moderation.block(userId: blockTarget)
+                    hidden.block(blockTarget, for: blocker)
                 } catch {
                     errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
                 }

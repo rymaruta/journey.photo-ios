@@ -75,6 +75,12 @@ struct PhotoDetailView: View {
     @State private var actionNotice: String?
     /// 削除を確かめているコメント（押してすぐ消さない）
     @State private var commentPendingDelete: PhotoComment?
+    /// 人のコメントの「…」から通報する1件・ブロックを確かめている1件（2026-10-11）
+    @State private var commentReporting: PhotoComment?
+    @State private var commentPendingBlock: PhotoComment?
+    /// 未ログインで押したいいね・保存の「ログインする」の確認と、ログイン画面（`SignInPrompt`）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
     @State private var isFollowWorking = false
     /// 大きく見る画面から、**この画面の1枚**のいいねを送っている間の向き（`ViewerLike`）。
     /// 隣の写真と同じく先に灯す——この画面の1枚は答えが来るまで値が替わらない
@@ -334,6 +340,7 @@ struct PhotoDetailView: View {
                                        pending: viewerPendingLikes, stored: favorites.contains(shown.id))
                 },
                 isSignedIn: auth.userId != nil,
+                signInResolving: auth.isResolving,
                 // 下書きにはハートを出さない（押すと灯ってから黙って消え、断りは画面の裏に出ていた）
                 acceptsLike: { PhotoDetailRules.acceptsReactions(published: $0.published) },
                 onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } },
@@ -364,6 +371,26 @@ struct PhotoDetailView: View {
             Text(L("\(comment.name)さんのコメントを削除します。元に戻せません。",
                    "Deletes the comment by \(comment.name). This cannot be undone."))
         }
+        // **コメントの通報**（2026-10-11）。サーバーにコメントの口は無いので、写真の通報に
+        // 誰のどのコメントかを書いて送る（`ReportSheet` の `comment`）
+        .sheet(item: $commentReporting) { comment in
+            ReportSheet(photoId: current.id, ownerId: ownerId, comment: .init(comment))
+        }
+        // コメントを書いた人のブロック。**確かめ方はプロフィールと同じ**（`UserProfileView`）。
+        // `presenting:` で押した時点の1件を受け取る（削除の確認と同じ理由）
+        .alert(L("この人をブロックしますか？", "Block this person?"),
+               isPresented: Binding(get: { commentPendingBlock != nil },
+                                    set: { if !$0 { commentPendingBlock = nil } }),
+               presenting: commentPendingBlock) { comment in
+            Button(L("ブロック", "Block"), role: .destructive) {
+                Task { await block(comment.uid) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: { _ in
+            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
+        }
+        // 未ログインで押したいいね・保存から「ログインする」（`SignInPrompt`）
+        .signInPrompt(ask: $signInAsk, open: $signInOpen)
     }
 
     /// 押すと大きく見る（隣の写真へも送れる）。
@@ -606,7 +633,8 @@ struct PhotoDetailView: View {
         HStack(spacing: 4) {
             Image(systemName: "mappin")
                 .font(.caption)
-            Text(location)
+            // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。行き先は元の文字で引く
+            Text(LocationMatch.display(location))
                 .underline(true, color: Color.white.opacity(0.6))
                 .lineLimit(1)
             if spotSuffix {
@@ -1020,6 +1048,12 @@ struct PhotoDetailView: View {
                                    "Drafts can't be liked. Publish the photo first.")
             return nil
         }
+        // 🔴 **未ログインは「ログインする」を出す**（2026-10-11）。以前は赤字だけで、
+        // ログインする手段がその場に無かった（`SignInPrompt`）。確認中は黙る
+        guard auth.userId != nil else {
+            signInAsk = SignInPrompt.request(SignInPrompt.like, userId: auth.userId, isResolving: auth.isResolving)
+            return nil
+        }
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
         let owner = favorites.owner
@@ -1239,6 +1273,12 @@ struct PhotoDetailView: View {
                 .foregroundStyle(WebTheme.foreground)
             if acceptsReactions {
                 commentSection
+                // **コメントの欄（下の帯）はログイン中だけ**なので、未ログインには入口を1行で出す
+                // （2026-10-11・何も無いと書けるのかどうかも分からない）
+                if SignInPrompt.showsCommentLine(userId: auth.userId, isResolving: auth.isResolving,
+                                                 acceptsReactions: acceptsReactions) {
+                    commentSignInLine
+                }
             } else {
                 Text(L("下書きにはコメントできません。公開すると受け付けます",
                        "Drafts can't receive comments. Publish the photo first."))
@@ -1331,11 +1371,65 @@ struct PhotoDetailView: View {
                                 .accessibilityLabel(L("\(comment.name)さんのコメントを削除",
                                                       "Delete comment by \(comment.name)"))
                         }
+                        // **人のコメントには「…」（通報・ブロック）**（2026-10-11）。以前は削除しか無く、
+                        // コメントを通報する手段も、書いた人をその場でブロックする手段も無かった
+                        let actions = PhotoDetailRules.commentActions(commentUid: comment.uid, viewerId: auth.userId,
+                                                                      isMine: isMine,
+                                                                      deletedUser: comment.isFromDeletedUser)
+                        if actions.report || actions.block {
+                            commentMenu(comment, report: actions.report, block: actions.block)
+                        }
                     }
                     Text(comment.text).font(.callout)
                 }
                 .padding(.vertical, 2)
             }
+        }
+    }
+
+    /// 人のコメントの「…」。メニューは系統の部品のまま（ブロックは `role: .destructive`）。
+    /// 印は削除の文字と同じ大きさ・色で、当たりだけ 44pt（行の高さは字のまま）
+    private func commentMenu(_ comment: PhotoComment, report: Bool, block: Bool) -> some View {
+        Menu {
+            if report {
+                Button { commentReporting = comment } label: {
+                    Label(L("通報", "Report"), systemImage: "flag")
+                }
+            }
+            if block {
+                Button(role: .destructive) { commentPendingBlock = comment } label: {
+                    Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .padding(.vertical, -Self.commentDeleteTapSlack)
+        }
+        .accessibilityLabel(L("\(comment.name)さんのコメントの操作", "More actions for comment by \(comment.name)"))
+    }
+
+    /// 未ログインの人に、コメントの欄の代わりに出す1行（2026-10-11）。
+    /// 「ログインする」は黒地の上のリンクなので真鍮（owner の好み・`CLAUDE.md`）
+    private var commentSignInLine: some View {
+        HStack(spacing: 8) {
+            Text(SignInPrompt.commentLine)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.muted2)
+            Spacer(minLength: 0)
+            Button {
+                signInOpen = SignInRequest(reason: SignInPrompt.comment)
+            } label: {
+                Text(SignInPrompt.actionLabel)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -1443,10 +1537,10 @@ struct PhotoDetailView: View {
         let id = current.id
         guard !savingBookmarks.contains(id) else { return }
         clearNotices()
-        // **未ログインは送らずに知らせる**（いいねと同じ扱い）。以前は押せて、
-        // 失敗を黙って巻き戻すだけだった
+        // **未ログインは送らずに「ログインする」を出す**（いいねと同じ扱い・`SignInPrompt`）。
+        // 以前は赤字だけで、ログインする手段がその場に無かった（2026-10-11）
         guard auth.userId != nil else {
-            actionError = L("保存するにはログインしてください", "Sign in to save photos")
+            signInAsk = SignInPrompt.request(SignInPrompt.save, userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         savingBookmarks.insert(id)
@@ -1786,6 +1880,19 @@ enum PhotoDetailRules {
     /// `published = :pub`）。出したままだと、下書きを開くたびに「コメントを読み込めません
     /// でした」が直らず、送ると「写真が見つかりません」になっていた
     static func acceptsReactions(published: Bool?) -> Bool { published != false }
+
+    /// コメントの行の「…」に何を出すか（2026-10-11）。
+    ///
+    /// - 出すのは**ログイン中に、人のコメント**へだけ（自分のコメント・退会した人には出さない）
+    /// - **通報は人の写真のときだけ。** コメントの通報は写真の通報の口に載せるので、
+    ///   自分の写真では送れない（`report.ts` が 400「自分の投稿は通報できません」）。
+    ///   自分の写真のコメントは持ち主が消せる（「削除」が出ている）
+    /// - ブロックは自分の写真でも出す
+    static func commentActions(commentUid: String, viewerId: String?, isMine: Bool,
+                               deletedUser: Bool) -> (report: Bool, block: Bool) {
+        guard let viewerId, commentUid != viewerId, !deletedUser else { return (false, false) }
+        return (!isMine, true)
+    }
 
     /// コメント・いいねを読み直す鍵。**受け付けるかどうかも入れる**——編集で下書きを
     /// 公開しても、人と写真が同じなので読み直さず、開いたときの「コメントを読み込めません

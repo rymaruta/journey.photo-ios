@@ -22,7 +22,8 @@ enum CollectionScreen {
     /// **撮影地が無ければ題**、どちらも無ければ出さない（空の帯を作らない）
     static func leadHeadline(_ photo: Photo) -> String? {
         let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !place.isEmpty { return place }
+        // 画面に出す形（郵便番号・通り・国を落とす・`LocationMatch.display`。画面写真 20b）
+        if !place.isEmpty { return LocationMatch.display(place) }
         let title = photo.displayTitle
         return title.isEmpty ? nil : title
     }

@@ -96,7 +96,7 @@ struct NearbyPhotosSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.photo.displayTitle.isEmpty
-                     ? (item.photo.location ?? L("写真", "Photo"))
+                     ? (item.photo.location.map { LocationMatch.display($0) } ?? L("写真", "Photo"))
                      : item.photo.displayTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)

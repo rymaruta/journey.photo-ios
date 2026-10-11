@@ -237,7 +237,8 @@ struct Photo: Identifiable, Decodable, Equatable {
     var accessibilityText: String {
         let title = displayTitle
         if !title.isEmpty { return title }
-        if let location, !location.isEmpty { return L("\(location) の写真", "Photo taken at \(location)") }
+        let place = LocationMatch.display(location)
+        if !place.isEmpty { return L("\(place) の写真", "Photo taken at \(place)") }
         return L("写真", "Photo")
     }
 }

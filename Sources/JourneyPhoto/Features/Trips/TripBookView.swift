@@ -268,7 +268,8 @@ struct TripBookView: View {
                 VStack(spacing: 0) {
                     Text("DAY \(stop.day)")
                         .font(JPFont.mono(12, relativeTo: .caption))
-                    Text(stop.place)
+                    // 画面に出す形（`LocationMatch.display`）。同じ日かどうかの比べは元の文字のまま
+                    Text(LocationMatch.display(stop.place))
                         .font(.caption)
                 }
                 .foregroundStyle(WebTheme.muted2)
@@ -315,7 +316,7 @@ struct TripBookView: View {
                 .font(JPFont.mono(12, relativeTo: .caption))
                 .foregroundStyle(WebTheme.muted2)
             if !day.place.isEmpty {
-                Text(day.place)
+                Text(LocationMatch.display(day.place))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
@@ -377,7 +378,7 @@ struct TripBookView: View {
             // 撮影地は**段の頭と違うときだけ**（同じ地名を毎枚くり返さない）
             if let place = photo.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                !place.isEmpty, place != dayPlace {
-                Text(place)
+                Text(LocationMatch.display(place))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }

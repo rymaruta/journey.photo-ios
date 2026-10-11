@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 /// 退会。
@@ -9,7 +10,15 @@ struct DeleteAccountView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    /// App Store 側の定期購入（設定の Pro の行と同じ読み方・`refreshSubscription`）
+    @EnvironmentObject private var store: StoreService
     @Environment(\.dismiss) private var dismiss
+
+    /// 自分のプロフィール（設定が読んだもの）。読めていなければ nil＝Pro かどうか分からない
+    /// ——そのときも定期購入の知らせは出す（`ProStatusText.showsDeleteAccountSubscriptionNotice`）
+    var profile: UserProfile? = nil
+    /// App Store の定期購入の管理（設定の Pro の行と同じ OS のシート）
+    @State private var showManage = false
 
     /// 押し間違いで消えないように、決まった語を打たせる（`ConfirmWord`）。
     private static var confirmWord: String { ConfirmWord.delete }
@@ -48,6 +57,15 @@ struct DeleteAccountView: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
+            // 2026-10-11 判断: App Store の定期購入は退会しても止まらない（アプリからは解約できない）。
+            // 黙っていると、退会した人に請求が続く。サーバーも App Store も「入っていない」ときだけ出さない
+            if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro, appStore: store.subscription) {
+                Section { subscriptionNotice }
+                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             Section {
                 // **`**` を書かない。** Markdown として太字になるのは
                 // `Text` に**文字列リテラル**を渡したときだけで、`L(…)` の
@@ -74,6 +92,13 @@ struct DeleteAccountView: View {
         .webScreen()
         // 板は下に固定した赤い大きいボタン（スクロールしても見える）
         .safeAreaInset(edge: .bottom) { deleteButton }
+        // 設定の Pro の行（`ProSettingsSection`）と同じ OS の管理シート。写しの画面は作らない
+        .manageSubscriptionsSheet(isPresented: $showManage)
+        // App Store 側の定期購入を読む（`ProSettingsSection` と同じ2つ。StoreKit の問い合わせを別に作らない）
+        .task {
+            await store.loadProducts()
+            await store.refreshSubscription()
+        }
         .navigationTitle(L("アカウントの削除", "Delete account"))
         .navigationBarTitleDisplayMode(.inline)
         // 消している最中は戻らせない（戻って開き直すと、2本目の退会が走る。`ProfileEditView` と同じ）
@@ -111,6 +136,40 @@ struct DeleteAccountView: View {
         // 消している最中は薄くしない（押せないのは同じ・進み具合を見せる）
         .opacity(canDelete || isWorking ? 1 : 0.4)
         .jpBottomBar()
+    }
+
+    /// 定期購入は止まらない、の知らせ（2026-10-11）。
+    ///
+    /// **赤にしない。** 板（デザインシステム「黒塗りの真鍮」）は「警告＝白＋アイコン」。赤は消えるもの・
+    /// 取り消せないこと（上の札）に取っておく。地は札（`JPCard`・白 7%）、ボタンは2番手の枠線
+    /// （主ボタンは下の「アカウントを削除する」）
+    private var subscriptionNotice: some View {
+        JPCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Label {
+                    Text(L("Journey Photo Pro の定期購入は、退会しても止まりません。App Store で解約してください。",
+                           "Your Journey Photo Pro subscription doesn't stop when you delete your account. Cancel it in the App Store."))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(WebTheme.foreground)
+                }
+                Button {
+                    showManage = true
+                } label: {
+                    Text(L("定期購入を管理", "Manage subscription"))
+                        .jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L("App Store で定期購入を管理します", "Manage your subscription in the App Store"))
+                .accessibilityIdentifier("deleteAccount.manageSubscription")
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("deleteAccount.subscriptionNotice")
     }
 
     /// 消えるものの1行（板の赤い ×）

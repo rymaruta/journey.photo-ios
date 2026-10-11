@@ -23,6 +23,8 @@ struct PhotoViewerView: View {
     /// （元の1枚がいいね済みなら、隣の写真には何も起きなかった）
     var isLiked: (Photo) -> Bool = { _ in false }
     var isSignedIn: Bool = false
+    /// 起動直後でログインしているかまだ分からない（その間は2回叩いても促さない・`DoubleTapLike`）
+    var signInResolving: Bool = false
     /// その写真にいいねを付けられるか（下書きは付けられない・`PhotoDetailRules.acceptsReactions`）
     var acceptsLike: (Photo) -> Bool = { _ in true }
     /// ダブルタップでいいねを送る。**いま見ている写真**を渡す。
@@ -52,6 +54,10 @@ struct PhotoViewerView: View {
     @State private var fitted: [Int: CGSize] = [:]
     /// ハートを弾けさせる回数。値が変わるたびに演出が走る
     @State private var burst = 0
+    /// 未ログインで2回叩いたときの「ログインする」とログイン画面（`SignInPrompt`・2026-10-11）。
+    /// 全画面の上に出すので、詳細画面ではなくここに持つ
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -156,6 +162,7 @@ struct PhotoViewerView: View {
                 .padding(.top, 56)
         }
         .statusBarHidden()
+        .signInPrompt(ask: $signInAsk, open: $signInOpen)
     }
 
     /// いま見ている写真。送っている途中で添字が外れていたら nil
@@ -163,7 +170,8 @@ struct PhotoViewerView: View {
 
     /// いま見ている写真の撮影地（無ければ出さない）
     private var currentPlace: String? {
-        let place = (current?.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // 画面に出す形（`LocationMatch.display`・郵便番号・国を落とす）
+        let place = LocationMatch.display(current?.location)
         return place.isEmpty ? nil : place
     }
 
@@ -302,7 +310,7 @@ struct PhotoViewerView: View {
     private func handleDoubleTap(_ tapped: Photo, at offset: Int) {
         let tap = DoubleTapLike.tap(tapped, at: offset, shownIndex: index, isZoomed: zoom.isZoomed,
                                     alreadyLiked: isLiked(tapped), signedIn: isSignedIn,
-                                    acceptsLike: acceptsLike(tapped))
+                                    acceptsLike: acceptsLike(tapped), signInResolving: signInResolving)
         switch tap.action {
         case .resetZoom:
             resetZoom()
@@ -311,6 +319,11 @@ struct PhotoViewerView: View {
             showBurst()
         case .burstOnly:
             showBurst()
+        case .askToSignIn:
+            // **ハートは出さない**（何も送っていないのに付いたように見えた）。ログインを促す
+            signInAsk = SignInRequest(reason: SignInPrompt.like)
+        case .ignore:
+            break
         }
     }
 

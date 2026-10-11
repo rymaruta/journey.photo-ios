@@ -852,11 +852,11 @@ struct MyPageView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(spot.label)
+                Text(LocationMatch.display(spot.label))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                let place = spot.broader.joined(separator: " ・ ")
+                let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
                 if !place.isEmpty {
                     Text(place)
                         .font(.caption)
@@ -883,7 +883,7 @@ struct MyPageView: View {
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("\(spot.label) を「行きたい」から外す", "Remove \(spot.label)"))
+            .accessibilityLabel(L("\(LocationMatch.display(spot.label)) を「行きたい」から外す", "Remove \(LocationMatch.display(spot.label))"))
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 72)

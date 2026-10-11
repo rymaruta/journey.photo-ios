@@ -101,6 +101,32 @@ final class ScreenshotTests: XCTestCase {
         guard scrollToSpotLight(app) else { return }
         shoot(app, "13f-撮影スポット（光の時刻）")
         shootSpotSamples(app)
+        shootSpotBottom(app)
+    }
+
+    /// **撮影スポットを下まで送ったとき、「このスポットの写真を投稿」がタブバーの上に出ているか**（2026-10-11）。
+    ///
+    /// 13g・13g2 は途中まで送った絵で、ボタンと「この場所の写真（0）」がタブバーの下に透けて見える
+    /// （iOS 26 の浮いたタブバーは、送っている途中の中身を下に透かす）。下まで送り切ったときに
+    /// ボタンの下端がタブバーの上端より上にあることを確かめ、その絵を撮る。
+    /// ボタン・タブバーが見つからなければ撮らない（この試験の決まり）
+    private func shootSpotBottom(_ app: XCUIApplication) {
+        let post = app.buttons["spot.official.post"].firstMatch
+        let tabBar = app.tabBars.firstMatch
+        guard post.waitForExistence(timeout: 5), tabBar.exists else { return }
+        // 送り切る（上限あり）。最後の1行（印の1行・無ければボタン）が動かなくなるまで
+        var lastY = CGFloat.greatestFiniteMagnitude
+        for _ in 0..<10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            let y = post.frame.minY
+            if abs(y - lastY) < 1 { break }
+            lastY = y
+        }
+        guard post.exists else { return }
+        XCTAssertLessThanOrEqual(post.frame.maxY, tabBar.frame.minY,
+                                 "下まで送っても「このスポットの写真を投稿」がタブバーに掛かる: \(post.frame) / \(tabBar.frame)")
+        shoot(app, "13g3-撮影スポット（下まで送った）")
     }
 
     /// 撮影スポットの画面で、光の時刻の日付の帯を画面の上の方へ寄せる（朝・夕の段と注記まで1枚に入れる）。
@@ -424,6 +450,10 @@ final class ScreenshotTests: XCTestCase {
         // ——**嘘の中身は出ない**。渡す値は公開 API が返している `userId`
         // そのもので、資格情報ではない。
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（`FoundingGiftGate`・全画面）は「受け取り済み」にして出さない。
+        // 見本の利用者は章を持っていて、まだ名前の横に飾っていないと、新しいシミュレータの
+        // 最初の3回の起動で全画面が上に被さり、タブも名前の行も押せなくなる（run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
         // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
@@ -769,6 +799,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -850,6 +881,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -920,6 +952,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -980,6 +1013,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
         app.launch()
 
@@ -1066,6 +1100,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPaywall", "YES"]
         app.launch()
 
@@ -1103,6 +1138,7 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
             app.launchArguments += ["-JPLightForecastPreview", mode]
             app.launch()
 
@@ -1149,6 +1185,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1196,6 +1233,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         // 京都・鎌倉・函館（離れた3か所＝枠が全部を囲むかが絵で分かる）
         app.launchArguments += ["-journey-photo-wishlist:\(Self.previewUserId)",
                                 "(\"SPOT-fushimi-inari-taisha\",\"SPOT-kenchoji\",\"SPOT-goryokaku\")"]
@@ -1265,6 +1303,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewBadges", "earlyUser:1,prefectures:2"]
         app.launchArguments += ["-JPPreviewDisplayBadge", "earlyUser"]
         app.launch()
@@ -1306,6 +1345,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewBadges", "earlyUser:1,prefectures:2"]
         app.launchArguments += ["-JPPreviewDisplayBadge", "earlyUser"]
         app.launchArguments += ["-JPPreviewPro", "YES"]

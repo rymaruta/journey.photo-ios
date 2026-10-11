@@ -14,7 +14,8 @@ extension TripBook {
 
     /// 背表紙・表紙の題（板「金沢の旅」）。撮影地が無ければ「旅の記録」
     static func title(of trip: Trip) -> String {
-        let place = trip.place.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 題は画面に出す形（郵便番号・国を落とす・`LocationMatch.display`・2026-10-11）
+        let place = LocationMatch.display(trip.place)
         guard !place.isEmpty else { return L("旅の記録", "A trip") }
         return L("\(place)の旅", "Trip to \(place)")
     }

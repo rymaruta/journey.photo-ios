@@ -20,6 +20,10 @@ enum DoubleTapLike {
         case burstOnly
         /// 倍率を戻す
         case resetZoom
+        /// ログインを促す（ハートは出さない・2026-10-11）
+        case askToSignIn
+        /// 何もしない（起動直後のログインの確認中・ハートも促しも出さない）
+        case ignore
     }
 
     /// **いま見ている1枚**（題・共有・下のハート）。左右に送れる画面では、
@@ -42,20 +46,26 @@ enum DoubleTapLike {
     }
 
     static func tap(_ tapped: Photo, at offset: Int, shownIndex: Int, isZoomed: Bool,
-                    alreadyLiked: Bool, signedIn: Bool, acceptsLike: Bool = true) -> Tap {
+                    alreadyLiked: Bool, signedIn: Bool, acceptsLike: Bool = true,
+                    signInResolving: Bool = false) -> Tap {
         Tap(target: tapped,
             action: action(isZoomed: offset == shownIndex && isZoomed, alreadyLiked: alreadyLiked,
-                           signedIn: signedIn, acceptsLike: acceptsLike))
+                           signedIn: signedIn, acceptsLike: acceptsLike, signInResolving: signInResolving))
     }
 
     /// - Parameter acceptsLike: その写真にいいねを付けられるか。**下書きは付けられない**
     ///   （サーバーが断る。送ると先に灯したハートが黙って消えた）
+    /// - Parameter signInResolving: 起動直後でログインしているかまだ分からない
+    ///   （`AuthStore.isResolving`）。その間は促さない——ログイン済みの人にも出る
     static func action(isZoomed: Bool, alreadyLiked: Bool, signedIn: Bool,
-                       acceptsLike: Bool = true) -> Action {
+                       acceptsLike: Bool = true, signInResolving: Bool = false) -> Action {
         if isZoomed { return .resetZoom }
-        // **ログインしていない人・下書きには何も起きない。** 断り書きを出しても、
-        // 写真を見ている最中に割り込むだけ（いいねのボタンは別にある）
-        guard signedIn, acceptsLike else { return .burstOnly }
+        // 🔴 **2026-10-11 判断: ログインしていない人にハートを出さない。** 以前は演出だけ
+        // 出していて（`burstOnly`）、何も送っていないのに付いたように見えた。
+        // ログインを促す（呼ぶ側が「ログインする」を出す・`SignInPrompt`）
+        guard signedIn else { return signInResolving ? .ignore : .askToSignIn }
+        // 下書きには何も送らない（サーバーが断る）
+        guard acceptsLike else { return .burstOnly }
         return alreadyLiked ? .burstOnly : .like
     }
 }

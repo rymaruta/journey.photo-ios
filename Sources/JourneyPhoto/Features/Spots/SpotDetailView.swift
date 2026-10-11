@@ -84,7 +84,7 @@ struct SpotDetailView: View {
             if page >= hero.count { page = max(0, hero.count - 1) }
         }
         .webScreen()
-        .navigationTitle(spot.label)
+        .navigationTitle(LocationMatch.display(spot.label))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -152,7 +152,9 @@ struct SpotDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(spot.label)
+            // 見出しは画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。
+            // 鍵・突き合わせ・地図の検索は元の文字のまま
+            Text(LocationMatch.display(spot.label))
                 .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)
             // ⚠️ **ふりがなは出さない。** Web は `content/spot-master.json` に
@@ -187,7 +189,7 @@ struct SpotDetailView: View {
     /// **推測しない。** 同じ一覧に実際に在って、含む関係にあるものだけ
     /// （`DerivedSpot.broader`）。無ければ行ごと出さない。
     private var placeLine: String? {
-        place.broader.isEmpty ? nil : place.broader.joined(separator: " ・ ")
+        place.broader.isEmpty ? nil : place.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
     }
 
     /// 概要。
@@ -245,7 +247,7 @@ struct SpotDetailView: View {
     /// 行動の札・数え札・節の見出し・近くの札は `SpotDetailParts`
     /// （台帳の撮影スポットの画面 `OfficialSpotView` と共用）
     private var shareText: String {
-        SpotScreen.shareText(name: spot.label, region: placeLine, mapURL: mapURL,
+        SpotScreen.shareText(name: LocationMatch.display(spot.label), region: placeLine, mapURL: mapURL,
                              pageURL: SpotScreen.locationPageURL(slug: spot.slug, photos: linked,
                                                                  siteBase: AppConfig.siteBaseURL))
     }
@@ -327,7 +329,7 @@ struct SpotDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SpotDetailParts.sectionHeader(L("地図", "Map"))
                 Map(position: $camera) {
-                    Annotation(spot.label, coordinate: center) {
+                    Annotation(LocationMatch.display(spot.label), coordinate: center) {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 28, weight: .semibold))
                             .foregroundStyle(WebTheme.foreground)
@@ -343,7 +345,7 @@ struct SpotDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .padding(.horizontal, 16)
                 .allowsHitTesting(false)
-                .accessibilityLabel(L("\(spot.label) の地図", "Map of \(spot.label)"))
+                .accessibilityLabel(L("\(LocationMatch.display(spot.label)) の地図", "Map of \(LocationMatch.display(spot.label))"))
             }
         }
     }

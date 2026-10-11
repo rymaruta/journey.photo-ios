@@ -275,12 +275,12 @@ struct PhotoMapView: View {
                             RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                            Text(photo.displayTitle.isEmpty ? (photo.location ?? L("写真", "Photo")) : photo.displayTitle)
+                            Text(photo.displayTitle.isEmpty ? (photo.location.map { LocationMatch.display($0) } ?? L("写真", "Photo")) : photo.displayTitle)
                         }
                     }
                 }
                 }
-                .navigationTitle(pin.hasPlaceName ? pin.title : L("場所の名前なし", "No place name"))
+                .navigationTitle(pin.hasPlaceName ? LocationMatch.display(pin.title) : L("場所の名前なし", "No place name"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
@@ -548,7 +548,7 @@ struct PhotoMapView: View {
         UserAnnotation()
         // **置くのは `pinLayout`**——多すぎるときだけ近いピンを束ねてある（`MapPinClusters`）
         ForEach(model.pinLayout.pins) { pin in
-            Annotation(pin.title, coordinate: pin.coordinate) {
+            Annotation(LocationMatch.display(pin.title), coordinate: pin.coordinate) {
                 Button {
                     selected = pin
                     selectedOfficial = nil
@@ -570,7 +570,7 @@ struct PhotoMapView: View {
                 .buttonStyle(.plain)
                 // 読み上げは撮影地と枚数（見た目は写真だけで、名前は無かった）
                 .accessibilityLabel(PhotoMapViewModel.pinSpokenLabel(
-                    place: pin.hasPlaceName ? pin.title : nil, count: pin.photos.count))
+                    place: pin.hasPlaceName ? LocationMatch.display(pin.title) : nil, count: pin.photos.count))
                 // UI テスト（`ScreenshotTests`）が写真のピンを数える目印
                 .accessibilityIdentifier("map.photoPin")
             }
@@ -1001,7 +1001,7 @@ struct PhotoMapView: View {
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
-                Text(pin.hasPlaceName ? pin.title : L("場所の名前なし", "No place name"))
+                Text(pin.hasPlaceName ? LocationMatch.display(pin.title) : L("場所の名前なし", "No place name"))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)

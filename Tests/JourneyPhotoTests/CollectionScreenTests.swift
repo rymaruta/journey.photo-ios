@@ -92,6 +92,16 @@ final class CollectionScreenTests: XCTestCase {
         XCTAssertNil(CollectionScreen.leadHeadline(try photo(["id": "c"])))
     }
 
+    /// 大きい字の撮影地は**画面に出す形**（画面写真 20b: 撮影地の一覧の先頭の1枚に
+    /// 「蔵王キツネ村, 南蔵王七ヶ宿線, …, 989-0733, 日本」がそのまま出ていた）
+    func testLeadHeadlineShowsTheShortPlace() throws {
+        let raw = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"
+        let lead = try photo(["id": "z", "location": raw])
+        XCTAssertEqual(CollectionScreen.leadHeadline(lead), "蔵王キツネ村（宮城県白石市）")
+        XCTAssertFalse(lead.accessibilityText.contains("989-0733"))
+        XCTAssertTrue(lead.accessibilityText.contains("蔵王キツネ村（宮城県白石市）"))
+    }
+
     /// **名前が無い写真に「@ユーザー」を出さない**
     func testLeadAuthorOnlyWithRealName() throws {
         XCTAssertEqual(CollectionScreen.leadAuthor(try photo(["id": "a", "displayName": "luzhj"])), "@luzhj")
