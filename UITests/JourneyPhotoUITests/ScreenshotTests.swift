@@ -1043,6 +1043,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（全画面）が説明の上に被さらないように止める（ほかの試験と同じ・run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPushPrimer", "YES"]
         app.launch()
 

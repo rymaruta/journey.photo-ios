@@ -177,25 +177,36 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertEqual(lines[picker + 2], "featuredSections")
     }
 
-    /// ブロックの確認は4か所で同じ部品（2026-10-11）。写真の詳細だけ確認が無かった
+    /// ブロックの確認は5か所で同じ部品（2026-10-11）。写真の詳細の持ち主・コメントを書いた人は
+    /// 押した時点の相手を受け取る `presenting:` 版。確認の文言を自前で持つ所があると落ちる
     func testEveryBlockGoesThroughTheSameConfirmation() throws {
         for path in ["Features/Gallery/HomeMosaic.swift", "Features/Profile/UserProfileView.swift",
-                     "Features/Stories/StoryViewerView.swift", "Features/PhotoDetail/PhotoDetailView.swift"] {
+                     "Features/Stories/StoryViewerView.swift"] {
             let text = try source(path)
             XCTAssertEqual(count(".blockConfirmation(isPresented: $showBlockConfirm)", in: text), 1,
                            "\(path) が共通の確認を使っていない")
             XCTAssertFalse(text.contains("この人をブロックしますか"), "\(path) が確認の文言を自前で持っている")
         }
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertFalse(detail.contains("この人をブロックしますか"), "写真の詳細が確認の文言を自前で持っている")
+        XCTAssertFalse(detail.contains("Block this person?"))
+        XCTAssertEqual(count(".blockConfirmation(", in: detail), 2, "写真の詳細のブロックが共通の確認を通っていない")
+        XCTAssertTrue(detail.contains(".blockConfirmation(presenting: $ownerPendingBlock) { owner in"),
+                      "写真の持ち主のブロックが押した時点の相手を受け取っていない")
+        XCTAssertTrue(detail.contains("Task { await block(owner) }"))
+        XCTAssertTrue(detail.contains(".blockConfirmation(presenting: $commentPendingBlock) { comment in"),
+                      "コメントを書いた人のブロックが共通の確認を通っていない")
+        XCTAssertTrue(detail.contains("Task { await block(comment.uid) }"))
+        XCTAssertEqual(count("await block(", in: detail), 2, "確認を通らずにブロックする口がある")
         XCTAssertFalse(detail.contains("Task { await block(ownerId) }"), "写真の詳細のブロックが確認なしで走る")
-        XCTAssertEqual(count("await block(", in: detail), 1, "確認を通らずにブロックする口がある")
         let lines = detail.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let pending = lines.firstIndex(of: "blockPendingOwner = ownerId") else {
-            return XCTFail("メニューの「この人をブロック」が押した相手を控えていない")
-        }
-        XCTAssertEqual(lines[pending + 1], "showBlockConfirm = true", "メニューの「この人をブロック」が確認を出していない")
-        XCTAssertTrue(detail.contains("guard let target = blockPendingOwner else { return }"),
-                      "確認のあとに押した時点の相手をブロックしていない")
+        XCTAssertTrue(lines.contains("ownerPendingBlock = ownerId"), "メニューの「この人をブロック」が確認を出していない")
+        XCTAssertTrue(lines.contains("Button(role: .destructive) { commentPendingBlock = comment } label: {"),
+                      "コメントの「ブロック」が確認を出していない")
+        // 共通の部品は文言を1か所だけに持つ（presenting 版も同じ文言を使う）
+        let common = try source("Features/Common/BlockConfirmation.swift")
+        XCTAssertEqual(count("BlockConfirmationText.message", in: common), 2)
+        XCTAssertTrue(common.contains("onConfirm(pending)"), "押した時点の相手でなく、閉じたあとの値を読んでいる")
     }
 
     /// 通知: 初めての投稿のあとに説明を出す・「前の晩に知らせる」の行に届かないことを出す（2026-10-11）
@@ -208,6 +219,18 @@ final class ScreenWiringTests: XCTestCase {
                       "許可の状態を見ずに説明を出している")
         XCTAssertTrue(root.contains("await push.refreshAuthorization()"), "出す直前に許可を読み直していない")
         XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView() }"))
+        // 評価のお願いと重ねない（2026-10-11）: 説明が決め終わるまで待ち、出ている・出した回は頼まない
+        XCTAssertTrue(root.contains("defer { pushPrimer.finishDeciding() }"), "説明を決め終えても評価の待ちを解いていない")
+        XCTAssertTrue(root.contains(", !pushPrimer.isDeciding { break }"),
+                      "評価のお願いが説明を決め終わるのを待っていない")
+        let rootLines = root.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        // 評価のお願いの guard（出ている画面を見る行）の終わりに、出ている説明を見る条件がある
+        guard let guardLine = rootLines.firstIndex(where: { $0.hasPrefix("guard !") && $0.hasSuffix(", !showPushPrimer,") }) else {
+            return XCTFail("評価のお願いが、出ている通知の説明を見ていない（`!showPushPrimer`）")
+        }
+        XCTAssertEqual(rootLines[guardLine + 1], "pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),",
+                       "説明を出した回にも評価を頼む")
+        XCTAssertEqual(rootLines[guardLine + 2], "reviewPrompt.consume() else { return }")
         let primer = try source("Features/Settings/PushPrimerView.swift")
         XCTAssertTrue(primer.contains("await push.enable()"), "「通知を受け取る」がシステムの許可へ進まない")
         XCTAssertTrue(primer.contains("push.primer.later"))
@@ -215,7 +238,10 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(rows.contains("LightAlertPushNotice.state(wants: wants, knownNotPro: knownNotPro,"),
                       "「前の晩に知らせる」がプッシュの状態を見ていない")
         XCTAssertTrue(rows.contains("permission: push.permission, enabled: push.isEnabled)"))
-        XCTAssertTrue(rows.contains("UIApplication.openSettingsURLString"), "断られた人を設定アプリへ案内していない")
+        XCTAssertTrue(rows.contains("UIApplication.openNotificationSettingsURLString"),
+                      "断られた人を設定アプリの「通知」へ案内していない")
+        XCTAssertFalse(rows.contains("UIApplication.openSettingsURLString"),
+                       "通知の案内がアプリの設定の一番上を開く（「通知」の行を探す手間が増える）")
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),
                       "ほかの所で「受け取る」にしても設定のトグルが「切」のまま残る")

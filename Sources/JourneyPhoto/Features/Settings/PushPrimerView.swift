@@ -11,6 +11,9 @@ import SwiftUI
 struct PushPrimerView: View {
 
     @EnvironmentObject private var push: PushCenter
+    @EnvironmentObject private var environment: AppEnvironment
+    /// Pro か（サーバーのプロフィールで決める。読めない間・読めなければ Pro の項目は出さない）
+    @State private var isPro = false
     @Environment(\.dismiss) private var dismiss
     /// 許可を尋ねている最中（二度押しで重ねて尋ねない）
     @State private var isAsking = false
@@ -29,13 +32,9 @@ struct PushPrimerView: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 VStack(alignment: .leading, spacing: 18) {
-                    point("heart",
-                          L("いいね・コメント・フォローが届いたとき", "When you get likes, comments and follows"))
-                    point("bubble.left",
-                          L("ストーリーに返信が来たとき", "When someone replies to your story"))
-                    point("sunrise",
-                          L("Pro: 行きたい場所が明日の朝に晴れそうなとき（前の晩に）",
-                            "Pro: when a wishlist place looks clear tomorrow morning (the evening before)"))
+                    ForEach(PushPrimerPoint.shown(isPro: isPro)) { item in
+                        point(item.systemImage, item.text)
+                    }
                 }
                 Text(L("あとから設定の「プッシュ通知を受け取る」でいつでも変えられます。",
                        "You can change this anytime in Settings → Push notifications."))
@@ -81,6 +80,7 @@ struct PushPrimerView: View {
             .background(WebTheme.background)
         }
         .webScreen()
+        .task { isPro = (try? await environment.profiles.myProfile())?.isPro ?? false }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
@@ -98,5 +98,31 @@ struct PushPrimerView: View {
                 .foregroundStyle(WebTheme.text)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// 説明に並べる項目（2026-10-11）。
+///
+/// 2026-10-11 判断: **「Pro: 行きたい場所が晴れそうなとき」は Pro の人にだけ出す。**
+/// 初めての投稿をした人の多くは Pro でなく、その人には届かない通知を約束することになる
+/// （Pro の案内はここでしない——通知の許可を尋ねる画面で売り込まない）
+struct PushPrimerPoint: Identifiable, Equatable {
+    let systemImage: String
+    let text: String
+    var id: String { systemImage }
+
+    static func shown(isPro: Bool) -> [PushPrimerPoint] {
+        var points = [
+            PushPrimerPoint(systemImage: "heart",
+                            text: L("いいね・コメント・フォローが届いたとき", "When you get likes, comments and follows")),
+            PushPrimerPoint(systemImage: "bubble.left",
+                            text: L("ストーリーに返信が来たとき", "When someone replies to your story")),
+        ]
+        if isPro {
+            points.append(PushPrimerPoint(systemImage: "sunrise",
+                                          text: L("Pro: 行きたい場所が明日の朝に晴れそうなとき（前の晩に）",
+                                                  "Pro: when a wishlist place looks clear tomorrow morning (the evening before)")))
+        }
+        return points
     }
 }

@@ -21,7 +21,9 @@ enum PushPermission: Equatable {
         case .notDetermined: self = .notDetermined
         case .denied: self = .denied
         case .authorized, .provisional, .ephemeral: self = .allowed
-        @unknown default: self = .denied
+        // 2026-10-11 判断: 知らない状態（今後の iOS で増えたもの）は「断られた」と決めつけず、
+        // 読めない扱いにする——何も案内しない（設定アプリへの案内も、許可のダイアログも出さない）
+        @unknown default: self = .unknown
         }
     }
 

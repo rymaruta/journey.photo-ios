@@ -334,6 +334,8 @@ struct RootView: View {
     /// 出す直前に許可を読み直す（`PushPrimer.shouldOffer`: まだ聞いていない人にだけ）
     private func offerPushPrimerWhenIdle() {
         Task { @MainActor in
+            // 出した・出さなかったのどちらでも、評価のお願いの待ちを解く（`PushPrimerStore.isDeciding`）
+            defer { pushPrimer.finishDeciding() }
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if !ModalProbe.isPresenting() { break }
@@ -369,12 +371,16 @@ struct RootView: View {
     /// （最長で約45秒。待ちきれなければ頼まず、次のうれしい瞬間に回す）
     private func askForReviewWhenIdle() {
         Task { @MainActor in
+            // 通知の説明と1つの判断にする（2026-10-11 判断・`PushPrimerStore.letsReviewAsk`）。
+            // 同じ投稿のあとに両方の合図が来る。説明が決め終わるまで待ち、説明を出した回は頼まない
+            let offeredAtStart = pushPrimer.alreadyOffered
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if !ModalProbe.isPresenting() { break }
+                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding { break }
             }
-            // 通知の説明と重ねない（同じ投稿のあとに両方が来うる・説明が先）
-            guard !ModalProbe.isPresenting(), !showPushPrimer, reviewPrompt.consume() else { return }
+            guard !ModalProbe.isPresenting(), !showPushPrimer,
+                  pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
+                  reviewPrompt.consume() else { return }
             #if canImport(StoreKit)
             requestReview()
             #endif

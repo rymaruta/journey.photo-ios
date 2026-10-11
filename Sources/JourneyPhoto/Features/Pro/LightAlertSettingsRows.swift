@@ -141,7 +141,9 @@ struct LightAlertSettingsRows: View {
     private func fixPush(_ notice: LightAlertPushNotice) async {
         switch notice {
         case .openSettings:
-            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            // 通知の設定の所を直接開く（2026-10-11・iOS 16 から）。アプリの設定の一番上だと
+            // 「通知」の行を探して押す手間が1つ増える
+            if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
         case .turnOn:
             guard !isTurningOnPush else { return }
             isTurningOnPush = true
