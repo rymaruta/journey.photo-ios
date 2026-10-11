@@ -53,6 +53,10 @@ struct FollowListView: View {
     @State private var actionError: String?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// 一覧の読み込みが「ログインしていない」で断られた。**失敗（赤）ではなく案内として出す**
+    @State private var needsSignIn = false
+    /// 案内の「ログイン」から開くログイン画面
+    @State private var showSignIn = false
     /// ブロックした人を落とす写し。**出たとき（`onAppear`）だけ取る**——描くたびに
     /// `hidden.blockedUserIds` で絞ると、行から開いた人のページでブロックした瞬間に
     /// 行（`NavigationLink`）が消えてページが閉じる（`ModerationSnapshot.users` の注記）
@@ -67,7 +71,10 @@ struct FollowListView: View {
             tabs
                 .listRowBackground(Color.clear)
 
-            if let errorMessage {
+            if needsSignIn {
+                signInPrompt
+                    .listRowBackground(Color.clear)
+            } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
             } else if users.isEmpty && !isLoading && total == 0 {
                 Text(L("まだいません", "No one yet")).foregroundStyle(.secondary)
@@ -114,6 +121,15 @@ struct FollowListView: View {
             await load()
         }
         .refreshable { await load() }
+        // ログイン画面（マイページの未ログインと同じ `SignInView`）。閉じたら読み直す——
+        // 同じ人で入り直したときは `.task(id: auth.userId)` が走り直さない
+        .sheet(isPresented: $showSignIn, onDismiss: { Task { await load() } }) {
+            SignInView(reason: Self.signInLine(current))
+        }
+        // ログインできたら閉じる（閉じた合図で読み直す）
+        .onChange(of: auth.userId) { _, id in
+            if id != nil { showSignIn = false }
+        }
         // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
         // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
         .onAppear {
@@ -121,6 +137,41 @@ struct FollowListView: View {
             if appeared { Task { await refreshMyFollowing() } }
             appeared = true
         }
+    }
+
+    /// 読み込みの失敗が「ログインしていない」か（2026-10-11 判断）。そうなら赤い失敗の文ではなく、
+    /// ログインへの案内を出す——行き止まりを作らない（`SignInView` の注記と同じ考え）。
+    /// **圏外・サーバーの失敗は混ぜない**（ログインしても直らない・`APIError` の注記）
+    nonisolated static func needsSignIn(_ error: Error) -> Bool {
+        (error as? APIError) == .notAuthenticated
+    }
+
+    /// 案内の1行。**エラーではないので赤にしない**（ふつうの文の色）
+    nonisolated static func signInLine(_ kind: Kind) -> String {
+        switch kind {
+        case .followers: return L("ログインするとフォロワーを見られます", "Sign in to see followers")
+        case .following: return L("ログインするとフォロー中の人を見られます", "Sign in to see who they follow")
+        }
+    }
+
+    /// 未ログインの案内（2026-10-11）。文はふつうの色、ボタンは写真の無い画面の主ボタン
+    /// （真鍮の塗り＋墨・`JPPillStyle.accent`・CLAUDE.md の owner の好み）
+    private var signInPrompt: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(Self.signInLine(current))
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+            Button {
+                showSignIn = true
+            } label: {
+                Text(L("ログイン", "Sign in"))
+                    .jpPillButton(.accent)
+            }
+            // 行の中のボタンは borderless（行全体が当たりにならないように）
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("followList.signIn")
+        }
+        .padding(.vertical, 8)
     }
 
     /// 「フォロワー N ／ フォロー中 N」（板の下線の切り替え）
@@ -214,6 +265,7 @@ struct FollowListView: View {
     private func load() async {
         isLoading = true
         errorMessage = nil
+        needsSignIn = false
         defer { isLoading = false }
         // **切り替えの数を出すので、両方を一度に取る**
         async let followersList = environment.social.followers(userId: userId)
@@ -224,6 +276,8 @@ struct FollowListView: View {
             lists = [.followers: followers, .following: following]
         } catch is CancellationError {
             // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
+        } catch where Self.needsSignIn(error) {
+            needsSignIn = true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
