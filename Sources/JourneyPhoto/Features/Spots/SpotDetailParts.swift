@@ -56,7 +56,7 @@ enum SpotDetailParts {
                 }
                 .clipped()
             VStack(alignment: .leading, spacing: 3) {
-                Text(other.label)
+                Text(LocationMatch.display(other.label))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
