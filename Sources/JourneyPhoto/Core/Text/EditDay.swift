@@ -40,4 +40,36 @@ enum EditDay {
         guard head.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
         return head
     }
+
+    // MARK: - 日付ピッカー（写真を編集・2026-10-11）
+
+    /// 選べるいちばん古い日（サーバーは 1990年より前を断る・`replace` の知らせと同じ決まり）
+    static let earliestYMD = "1990-01-01"
+
+    /// 欄の `YYYY-MM-DD` をピッカーに渡す値（その日の正午）。空・読めない値は nil（「日付を入れる」を出す）。
+    /// 作り方は旅行プランの日付の欄と同じ（`TripPlanText.pickerDate`）
+    static func pickerDate(field: String, in zone: TimeZone) -> Date? {
+        let day = field.trimmingCharacters(in: .whitespaces)
+        guard !day.isEmpty else { return nil }
+        return TripPlanText.pickerDate(fromYMD: day, in: zone)
+    }
+
+    /// ピッカーで選んだ日を欄の `YYYY-MM-DD` に（端末の暦の日）
+    static func field(picked: Date, in zone: TimeZone) -> String {
+        TripPlanText.ymd(pickedIn: zone, picked)
+    }
+
+    /// 選べる範囲: 1990-01-01 から**今日の終わり**まで（**明日より先は選ばせない**——サーバーが断る）。
+    ///
+    /// 2026-10-11 判断: 上限を「今この瞬間」にしていたが、ピッカーの値は日の正午（`pickerDate`）なので、
+    /// 午前中は今日の正午が範囲の外になり、今日を選べない・今日の入った欄が範囲外になっていた
+    static func pickerRange(now: Date, in zone: TimeZone) -> ClosedRange<Date> {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let startOfToday = calendar.startOfDay(for: now)
+        let endOfToday = calendar.date(byAdding: .day, value: 1, to: startOfToday)?
+            .addingTimeInterval(-1) ?? now
+        let lower = TripPlanText.pickerDate(fromYMD: earliestYMD, in: zone) ?? startOfToday
+        return lower...max(lower, endOfToday)
+    }
 }

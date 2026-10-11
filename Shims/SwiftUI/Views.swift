@@ -202,6 +202,8 @@ public struct DatePicker: View {
     public struct Components { public static let date = Components(), hourAndMinute = Components() }
     public init(_ title: String, selection: Binding<Date>, displayedComponents: Components) {}
     public init(_ title: String, selection: Binding<Date>, in range: PartialRangeFrom<Date>, displayedComponents: Components) {}
+    /// 上下の両方で区切る版（本物にもある）。写真の撮影日（1990年〜今日）に使う
+    public init(_ title: String, selection: Binding<Date>, in range: ClosedRange<Date>, displayedComponents: Components) {}
     public var body: Never { fatalError("模型") }
 }
 public struct Toggle: View {

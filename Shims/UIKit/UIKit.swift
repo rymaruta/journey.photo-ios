@@ -43,6 +43,8 @@ open class UIApplication {
     public static let shared = UIApplication()
     /// このアプリの設定画面を開く URL（本物と同じ名前）
     public static let openSettingsURLString = "app-settings:"
+    /// このアプリの「通知」の設定を開く URL（本物と同じ名前・iOS 16 から）
+    public static let openNotificationSettingsURLString = "app-settings:notifications"
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
     public var connectedScenes: Set<UIScene> { [] }

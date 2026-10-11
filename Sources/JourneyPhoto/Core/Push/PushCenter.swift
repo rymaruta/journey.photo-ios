@@ -10,13 +10,18 @@ import UserNotifications
 /// **次にその端末を使う別の人へ通知が飛ぶ**。両方を1か所で持つ。
 ///
 /// **起動時に勝手に聞かない。** 開いた瞬間の許可ダイアログは断られやすく、
-/// 一度断られると設定アプリまで行かないと戻せない。設定画面の
-/// 「プッシュ通知を受け取る」を押したときにだけ聞く。
+/// 一度断られると設定アプリまで行かないと戻せない。聞くのは
+/// 設定画面の「プッシュ通知を受け取る」・初めての投稿のあとの説明（`PushPrimerView`）・
+/// Pro の「前の晩に知らせる」の「通知がオフのため届きません」（2026-10-11）を押したときだけ。
 @MainActor
 final class PushCenter: ObservableObject {
 
     /// 端末が許可しているか（システム設定の状態）。
     @Published private(set) var isAuthorized = false
+    /// 端末の許可を「まだ聞いていない／断られた／許可」に分けたもの（2026-10-11）。
+    /// 断られた人に許可のダイアログを出そうとしても何も起きないので、設定アプリへ案内する
+    /// （`PushPrimer`・`LightAlertPushNotice`）。読むまでは `.unknown`
+    @Published private(set) var permission: PushPermission = .unknown
     /// サーバーに預けてある状態（＝いま実際に届く状態）。
     @Published private(set) var isRegistered = false
     /// **本人が「受け取る」と言ったか。** これが画面の拠り所。
@@ -138,6 +143,11 @@ final class PushCenter: ObservableObject {
     private let releaseDevice: @MainActor () -> Void
     /// システムの許可を読む。試験で差し替える（模型では許可が取れない）
     private let readAuthorization: () async -> Bool
+    /// 許可の段階を読む（まだ聞いていない／断られた）。試験で差し替える
+    private let readPermission: () async -> PushPermission
+    /// 許可を尋ねる（OS のダイアログ）。試験で差し替える——本物は答える人のいない試験で
+    /// 返ってこず、Mac の試験が2時間止まった（2026-10-11）
+    private let requestPermission: () async throws -> Bool
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
          defaults: UserDefaults = .standard,
@@ -146,11 +156,18 @@ final class PushCenter: ObservableObject {
              let settings = await UNUserNotificationCenter.current().notificationSettings()
              return settings.authorizationStatus == .authorized
                  || settings.authorizationStatus == .provisional
+         },
+         readPermission: @escaping () async -> PushPermission = { await PushPermission.system() },
+         requestPermission: @escaping () async throws -> Bool = {
+             try await UNUserNotificationCenter.current()
+                 .requestAuthorization(options: [.alert, .badge, .sound])
          }) {
         self.service = service
         self.defaults = defaults
         self.releaseDevice = releaseDevice
         self.readAuthorization = readAuthorization
+        self.readPermission = readPermission
+        self.requestPermission = requestPermission
         self.isEnabled = defaults.bool(forKey: Self.legacyEnabledKey)
     }
 
@@ -272,6 +289,7 @@ final class PushCenter: ObservableObject {
 
     /// システムの許可状態を読み直す。
     func refreshAuthorization() async {
+        permission = await readPermission()
         isAuthorized = await readAuthorization()
         if !isAuthorized { isRegistered = false }
     }
@@ -287,9 +305,10 @@ final class PushCenter: ObservableObject {
         // （`expireSession`）と、答えが次の人（や端末共通の鍵）に書かれていた
         let owner = userId
         do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .badge, .sound])
+            let granted = try await requestPermission()
             isAuthorized = granted
+            // 答えが出たので段階も決まる（断られたら、次からは設定アプリへの案内）
+            permission = granted ? .allowed : .denied
             guard let owner, owner == userId else {
                 // 人が替わった／ログインしていない: 押した人の鍵にだけ残す
                 if let owner { defaults.set(granted, forKey: Self.enabledKey(for: owner)) }

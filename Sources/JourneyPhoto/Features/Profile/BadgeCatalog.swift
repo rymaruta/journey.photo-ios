@@ -49,7 +49,9 @@ enum BadgeCatalog {
         Kind(key: "wish", ja: "行けた場所", en: "Wishes visited", maxTier: 3, unitJa: "", unitEn: "", closed: false),
         // Pro 限定（第2段階）。**後から取れない扱い**（持っていない人の棚には出さない）
         Kind(key: "supporter", ja: "サポーター", en: "Supporter", maxTier: 1, unitJa: "", unitEn: "", closed: true),
-        Kind(key: "supporterYear", ja: "続けた年", en: "Years of support", maxTier: 3, unitJa: "", unitEn: "", closed: true),
+        // 進み具合の数は Pro を続けた**月数**（線は 12・24・36）。単位が無いと「あと7で次」が
+        // 何の数か読めない——Web（`badgeShelf.ts` の `UNITS`）と同じく「か月」を付ける（2026-10-11）
+        Kind(key: "supporterYear", ja: "続けた年", en: "Years of support", maxTier: 3, unitJa: "か月", unitEn: "month", closed: true),
     ]
 
     /// Pro 限定の決まった鍵

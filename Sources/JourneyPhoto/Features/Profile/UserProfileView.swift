@@ -77,13 +77,8 @@ struct UserProfileView: View {
             BadgeShelfView(mode: userId == auth.userId ? .mine : .other(userId: userId),
                            preloaded: model.profile)
         }
-        .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
-            Button(L("ブロック", "Block"), role: .destructive) {
-                Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        } message: {
-            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
+        .blockConfirmation(isPresented: $showBlockConfirm) {
+            Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
         }
         .onAppear {
             dropped = hidden.snapshot

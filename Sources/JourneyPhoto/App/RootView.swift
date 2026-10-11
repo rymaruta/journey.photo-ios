@@ -32,6 +32,10 @@ struct RootView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// App Store の評価をお願いする頃合い（`ReviewPromptStore`・2026-10-07）
     @ObservedObject private var reviewPrompt = ReviewPromptStore.shared
+    /// 通知の説明を出す頃合い（`PushPrimerStore`・2026-10-11）
+    @ObservedObject private var pushPrimer = PushPrimerStore.shared
+    @EnvironmentObject private var push: PushCenter
+    @State private var showPushPrimer = false
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -289,7 +293,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithReviewPrompt
+        tabsWithPushPrimer
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -314,6 +318,47 @@ struct RootView: View {
         foundingGiftName = FoundingGiftGate.name(profile)
     }
 
+    /// 評価のお願いに、通知の説明（`PushPrimerView`）を足したもの（2026-10-11）。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithPushPrimer: some View {
+        tabsWithReviewPrompt
+            .onChange(of: pushPrimer.requests) { _, _ in offerPushPrimerWhenIdle() }
+            // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
+            .task { await offerPreviewPushPrimer() }
+            .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+    }
+
+    /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。
+    /// 投稿の画面が閉じきり、Threads への共有の画面が続くならそれも閉じるまで待つ（最長で約30秒。
+    /// 待ちきれなければ出さず、覚えもしない——次の投稿でもう一度確かめる）。
+    /// 出す直前に許可を読み直す（`PushPrimer.shouldOffer`: まだ聞いていない人にだけ）
+    private func offerPushPrimerWhenIdle() {
+        Task { @MainActor in
+            // 出した・出さなかったのどちらでも、評価のお願いの待ちを解く（`PushPrimerStore.isDeciding`）
+            defer { pushPrimer.finishDeciding() }
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if !ModalProbe.isPresenting() { break }
+            }
+            guard !ModalProbe.isPresenting(), !showPushPrimer else { return }
+            await push.refreshAuthorization()
+            guard !ModalProbe.isPresenting(),
+                  pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission) else { return }
+            showPushPrimer = true
+        }
+    }
+
+    private func offerPreviewPushPrimer() async {
+        guard PreviewSession.opensPushPrimer else { return }
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if !ModalProbe.isPresenting() { break }
+        }
+        guard !ModalProbe.isPresenting() else { return }
+        showPushPrimer = true
+    }
+
     /// 「新しくなったこと」に、評価のお願いを足したもの（2026-10-07）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithReviewPrompt: some View {
@@ -326,11 +371,16 @@ struct RootView: View {
     /// （最長で約45秒。待ちきれなければ頼まず、次のうれしい瞬間に回す）
     private func askForReviewWhenIdle() {
         Task { @MainActor in
+            // 通知の説明と1つの判断にする（2026-10-11 判断・`PushPrimerStore.letsReviewAsk`）。
+            // 同じ投稿のあとに両方の合図が来る。説明が決め終わるまで待ち、説明を出した回は頼まない
+            let offeredAtStart = pushPrimer.alreadyOffered
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if !ModalProbe.isPresenting() { break }
+                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding { break }
             }
-            guard !ModalProbe.isPresenting(), reviewPrompt.consume() else { return }
+            guard !ModalProbe.isPresenting(), !showPushPrimer,
+                  pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
+                  reviewPrompt.consume() else { return }
             #if canImport(StoreKit)
             requestReview()
             #endif

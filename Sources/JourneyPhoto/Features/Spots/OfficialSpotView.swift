@@ -65,6 +65,11 @@ struct OfficialSpotView: View {
     @State private var postedHere = false
     /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
     @State private var lightOffset = 0
+    /// 「経路」を探している最中（連打で2つ開かない）・その仕事（頁を離れたら取り消す）
+    @State private var openingDirections = false
+    @State private var directionsTask: Task<Void, Never>?
+    /// 頁が出ているか（「経路」を探している間に離れたら開かない）
+    @State private var onScreen = false
     /// 文字サイズ。アクセシビリティの大きさでは「光の時刻」の行を縦に積む
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -81,7 +86,8 @@ struct OfficialSpotView: View {
     /// 「行きたい」の鍵。**撮影地の鍵と混ぜない**（`SavedSpotKey`）
     private var wishKey: String { SavedSpotKey.official(spot.slug) }
 
-    /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
+    /// 配る文に入れる地図のリンク。**座標があるときだけ**（`SpotScreen`）。
+    /// 頁の「地図で見る」はアプリの中の地図（`OfficialSpotMapView`）で、このリンクは開かない
     private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
 
     /// 配る文。**公開済みのスポットはサイトのページ（`/spots/<slug>`）も入れる**
@@ -125,7 +131,14 @@ struct OfficialSpotView: View {
             }
             .padding(.bottom, 32)
         }
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            dropped = hidden.snapshot
+            onScreen = true
+        }
+        .onDisappear {
+            onScreen = false
+            directionsTask?.cancel()
+        }
         // 下書き→公開に差し替わったら取り直す（slug だけだと走り直さない）
         .task(id: "\(spot.slug)|\(spot.isDraft)") {
             brokenSamples = []
@@ -156,6 +169,8 @@ struct OfficialSpotView: View {
                 .webToolbarIcon()
                 // 絵だけのボタン。名前を明示する（OS 任せにすると版によって読まれ方が揺れる）
                 .accessibilityLabel(L("シェア", "Share"))
+                // シェアは頁にこの1つだけ（2026-10-11・`SpotScreen.officialActions`）
+                .accessibilityIdentifier("spot.official.share")
             }
         }
         .accessibilityIdentifier("spot.official")
@@ -190,7 +205,7 @@ struct OfficialSpotView: View {
 
     // MARK: - 地図（写真が無いスポットは、代表画像の位置に地図を置く）
 
-    /// **押せない地図**（`SpotDetailView.map` と同じ形）。動かしたい人は「地図で見る」へ
+    /// **押せない地図**（`SpotDetailView.map` と同じ形）。動かしたい人は「地図で見る」（アプリの中の地図）へ
     @ViewBuilder
     private var heroMap: some View {
         if let coords = spot.coords {
@@ -257,10 +272,22 @@ struct OfficialSpotView: View {
         .accessibilityIdentifier("spot.official.draftNotice")
     }
 
-    // MARK: - 行動（行きたい・地図で見る・シェア）
+    // MARK: - 行動（行きたい・地図で見る・経路）
 
+    /// 札の行（`SpotScreen.officialActions`）。**シェアは右上の1つだけ**（判断は `officialActions` の注記）
     private var actions: some View {
         HStack(spacing: 10) {
+            ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
+                actionButton(action)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private func actionButton(_ action: SpotScreen.OfficialAction) -> some View {
+        switch action {
+        case .wish:
             let wanted = wishlist.contains(wishKey)
             Button {
                 // ログイン中はサーバーへ送る。失敗したら戻して知らせる（`WishlistSync`）
@@ -274,58 +301,66 @@ struct OfficialSpotView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("spot.official.wish")
-
-            if let url = mapURL {
-                Link(destination: url) {
-                    SpotDetailParts.actionLabel(icon: "map", title: L("地図で見る", "Open in Maps"), filled: false)
-                }
-                .buttonStyle(.plain)
-            }
-
-            ShareLink(item: shareText) {
-                SpotDetailParts.actionLabel(icon: "square.and.arrow.up", title: L("シェア", "Share"), filled: false)
+        case .map:
+            // アプリの中の地図（マイページ・探すの「地図で見る」と同じくアプリの中・2026-10-11）
+            NavigationLink {
+                OfficialSpotMapView(spot: shown)
+            } label: {
+                SpotDetailParts.actionLabel(icon: "map", title: L("地図で見る", "View on map"), filled: false)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("spot.official.map")
+        case .directions:
+            // 外の地図（Apple のマップ）へ出るのはここだけ。名前で探し直してから開く（`SpotDirections`）
+            Button {
+                openDirections()
+            } label: {
+                // 探している間も名前は「経路」のまま、記号の代わりに輪を出す（2026-10-11 判断:
+                // 「開いています…」は3つ並びの札に入らず、大きな文字で切れた）
+                SpotDetailParts.actionLabel(icon: "arrow.triangle.turn.up.right.diamond",
+                                            title: L("経路", "Directions"),
+                                            filled: false, busy: openingDirections)
+            }
+            .buttonStyle(.plain)
+            .disabled(openingDirections)
+            .accessibilityValue(openingDirections ? L("開いています", "Opening") : "")
+            .accessibilityLabel(L("\(spot.name)への経路", "Directions to \(spot.name)"))
+            .accessibilityHint(L("Apple のマップで開きます", "Opens in Apple Maps"))
+            .accessibilityIdentifier("spot.official.directions")
         }
-        .padding(.horizontal, 16)
     }
 
-    /// スポット詳細を「読むだけ」で終わらせず、Journey Photoの循環を一目で伝える。
-    /// 実データの件数は捏造せず、行動だけを示す。
-    private var journeyCue: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L("この場所から、次の一枚へ", "From this place to your next photo"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(WebTheme.foreground)
-            HStack(spacing: 0) {
-                journeyStep("map", L("見つける", "Discover"))
-                journeyArrow
-                journeyStep("figure.walk", L("行く", "Go"))
-                journeyArrow
-                journeyStep("camera", L("撮る", "Shoot"))
-                journeyArrow
-                journeyStep("square.and.arrow.up", L("残す", "Share"))
-            }
+    /// 今いる場所からの経路。探している間に頁を離れたら開かない（`SpotDirections.openDirections`）
+    private func openDirections() {
+        guard let coords = spot.coords, !openingDirections else { return }
+        openingDirections = true
+        let name = spot.name
+        directionsTask = Task { @MainActor in
+            defer { openingDirections = false }
+            await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
         }
-        .padding(14)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
-        .padding(.horizontal, 16)
+    }
+
+    /// 「この場所から、次の一枚へ（見つける → 行く → 撮る → 残す）」の**説明の帯**。
+    ///
+    /// 2026-10-11 判断: 以前は地の札・縁・真鍮の記号・矢印でボタンに見えたのに押せなかった。
+    /// 各段は頁の中に本物の操作がある（行く＝上の「経路」・撮る＝「作例を重ねて撮る」・残す＝
+    /// 「ここで撮った写真を投稿する」）ので、ここは**押せる見た目をやめて1行の説明**にした
+    /// （地・縁・真鍮・矢印の記号なし。真鍮は黒地の上の合図・押せるもの）。板 SpotDetail にこの帯は無い
+    private var journeyCue: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L("この場所から、次の一枚へ", "From this place to your next photo"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(WebTheme.muted2)
+            // 本文の最小は 12pt（CLAUDE.md）
+            Text(L("見つける → 行く → 撮る → 残す", "Discover → Go → Shoot → Share"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("spot.official.journeyCue")
-    }
-
-    private func journeyStep(_ icon: String, _ title: String) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.accent)
-            // 本文の最小は 12pt（CLAUDE.md）
-            Text(title).font(.caption.weight(.medium)).foregroundStyle(WebTheme.muted2)
-                .multilineTextAlignment(.center).lineLimit(2)
-        }.frame(maxWidth: .infinity)
-    }
-
-    private var journeyArrow: some View {
-        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(WebTheme.faint).accessibilityHidden(true)
     }
 
     // MARK: - 概要（書かれたものだけ）

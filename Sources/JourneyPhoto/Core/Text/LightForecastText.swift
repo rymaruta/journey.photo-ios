@@ -333,10 +333,14 @@ enum LightForecastText {
 
     // MARK: - 注記・出典
 
-    /// 板の注記（サーバーが返さないときの文言）
+    /// 板の注記（サーバーが返さないときの文言）。
+    ///
+    /// 2026-10-11 判断（owner「任せる」）: 見込みは Apple Weather のデータに手を加えた（value-added）もの。
+    /// WeatherKit の表示の決まり（「Apple Weather and third-party attribution」）に合わせ、出典と
+    /// 手を加えた旨を「見込みは目安で…」の前に続けて出す（サーバーの `LIGHT_NOTE`・Web の注記と同じ文）
     static var defaultNote: String {
-        L("天気は外部の予報から。光の時刻はアプリで計算。見込みは目安で、外れることがあります。",
-          "Weather comes from an outside forecast; sun times are calculated in the app. Chances are a guide and can be wrong.")
+        L("天気は外部の予報から。光の時刻はアプリで計算。Apple Weather のデータをもとに Journey Photo が計算した見込みです。見込みは目安で、外れることがあります。",
+          "Weather comes from an outside forecast; sun times are calculated in the app. Estimates calculated by Journey Photo from Apple Weather data. Chances are a guide and can be wrong.")
     }
 
     /// 画面の注記。**英語の端末にはサーバーの日本語を出さない**（サーバーは日本語だけ返す）
@@ -448,14 +452,41 @@ enum LightForecastText {
         #endif
     }
 
-    /// 見本（今日から4日・場所の名前は伏せ字）。**本物の予報ではない**
-    static func sample(now: Date) -> LightForecast {
+    // MARK: - 札と撮影スポット（2026-10-11）
+
+    /// 札の場所に当たる撮影スポット（索引の行）。**slug で引く**（応答の `key` は `SPOT-<slug>`）。
+    /// 引けなければ nil——写真・「スポットを見る」「経路」を出さず、色の四角と週の予報だけにする
+    static func spot(for place: LightForecast.Place, in index: [OfficialSpot]) -> OfficialSpot? {
+        let slug = place.slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !slug.isEmpty, let hit = index.first(where: { $0.slug == slug }) { return hit }
+        return index.first { SavedSpotKey.official($0.slug) == place.key }
+    }
+
+    /// 札の開閉の読み上げの値（印 › / ⌄ を形で見せ、読み上げでも言う）
+    static func disclosureValue(isOpen: Bool) -> String {
+        isOpen ? L("開いています", "Expanded") : L("閉じています", "Collapsed")
+    }
+
+    /// 見本に使う撮影スポット（DEBUG の見本だけ）。公開済み・写真と座標のある行を先頭から4つ。
+    /// 見本の札に本物の写真と「スポットを見る」「経路」が出るように、名前と slug をこの行から取る
+    static func previewSpots(_ index: [OfficialSpot]) -> [OfficialSpot] {
+        Array(index.filter { !$0.isDraft && $0.hasPhoto && $0.coords != nil }.prefix(4))
+    }
+
+    /// 見本（今日から4日）。**本物の予報ではない**。`spots` を渡せば、その名前と slug を使う
+    /// （渡さない・足りないぶんは伏せ字の名前）
+    static func sample(now: Date, spots: [OfficialSpot] = []) -> LightForecast {
         let zone = TimeZone(identifier: "Asia/Tokyo")!
         func day(_ offset: Int) -> String { SpotLight.ymd(offset: offset, from: now, in: zone) ?? "2026-10-10" }
         func clock(_ text: String) -> LightForecast.Clock { .init(at: "2100-01-01T00:00:00.000Z", clock: text) }
         func place(_ n: Int, _ days: [LightForecast.Day]) -> LightForecast.Place {
-            .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("撮影スポット \(n)", "Photo spot \(n)"),
-                  timeZone: "Asia/Tokyo", forecast: true, days: days)
+            if spots.indices.contains(n - 1) {
+                let spot = spots[n - 1]
+                return .init(key: SavedSpotKey.official(spot.slug), slug: spot.slug, name: spot.name,
+                             nameEn: spot.nameEn, timeZone: "Asia/Tokyo", forecast: true, days: days)
+            }
+            return .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("撮影スポット \(n)", "Photo spot \(n)"),
+                         timeZone: "Asia/Tokyo", forecast: true, days: days)
         }
         return LightForecast(places: [
             place(1, [.init(date: day(1), sunrise: clock("05:42"), sunset: clock("17:22"),

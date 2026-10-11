@@ -18,6 +18,24 @@ enum SpotDirections {
         return found ?? rounded(name: name, coords: coords)
     }
 
+    /// 今いる場所からの経路を Apple のマップで開く（撮影スポットの頁・その地図・光の知らせ・2026-10-11）。
+    ///
+    /// 🔴 **探している間（最大で数秒）に画面を離れたら開かない**（`stillWanted`）——離れたあとで
+    /// Apple のマップが開くと、押していないものが開いたように見える（`TripDayMapView` と同じ理由）
+    static func openDirections(name: String, coords: Photo.Coords, stillWanted: () -> Bool) async {
+        let target = await item(name: name, coords: coords)
+        guard shouldOpen(cancelled: Task.isCancelled, stillWanted: stillWanted()) else { return }
+        target.openInMaps(launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+        ])
+    }
+
+    /// 探し終えたあとに Apple のマップを開いてよいか。**取り消された・画面を離れた回は開かない**
+    /// （判断を値で試せるように切り出した・2026-10-11）
+    nonisolated static func shouldOpen(cancelled: Bool, stillWanted: Bool) -> Bool {
+        !cancelled && stillWanted
+    }
+
     /// 丸めた座標に名前を付けた地点（探し直さない）
     static func rounded(name: String, coords: Photo.Coords) -> MKMapItem {
         let coordinate = CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)

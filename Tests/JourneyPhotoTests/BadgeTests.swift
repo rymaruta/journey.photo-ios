@@ -373,6 +373,13 @@ final class BadgeCatalogTests: XCTestCase {
                        L("達成", "Complete"))
         XCTAssertEqual(BadgeCatalog.progressText("wish", progress: BadgeProgress(count: 40, tier: 3, next: nil), earned: true),
                        L("達成", "Complete"))
+        // 続けた年の数は月数。単位なしの「あと7で次」は何の数か読めない（Web と同じく「か月」・2026-10-11）
+        XCTAssertEqual(BadgeCatalog.progressText("supporterYear", progress: BadgeProgress(count: 17, tier: 1, next: 24), earned: true),
+                       L("あと7か月で次", "7 more months to next"))
+        XCTAssertEqual(BadgeCatalog.progressText("supporterYear", progress: BadgeProgress(count: 23, tier: 1, next: 24), earned: true),
+                       L("あと1か月で次", "1 more month to next"))
+        XCTAssertEqual(BadgeCatalog.kind("supporterYear")?.unitJa, "か月")
+        XCTAssertEqual(BadgeCatalog.kind("supporterYear")?.unitEn, "month")
         // 進み具合の無い古いサーバー: 段のあるものは何も言わない・段の無いものは達成
         XCTAssertNil(BadgeCatalog.progressText("wish", progress: nil, earned: true))
         XCTAssertEqual(BadgeCatalog.progressText("first", progress: nil, earned: true), L("達成", "Complete"))

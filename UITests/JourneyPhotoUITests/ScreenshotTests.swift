@@ -98,6 +98,7 @@ final class ScreenshotTests: XCTestCase {
         }
         // 画面の目印（`spot.official`）は ScrollView に付いていて中の要素に移ることがあるので、待つのは時間で
         Thread.sleep(forTimeInterval: 3)
+        shootSpotTop(app)
         guard scrollToSpotLight(app) else { return }
         shoot(app, "13f-撮影スポット（光の時刻）")
         shootSpotSamples(app)
@@ -127,6 +128,33 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThanOrEqual(post.frame.maxY, tabBar.frame.minY,
                                  "下まで送っても「このスポットの写真を投稿」がタブバーに掛かる: \(post.frame) / \(tabBar.frame)")
         shoot(app, "13g3-撮影スポット（下まで送った）")
+    }
+
+    /// **撮影スポットの頁の上（行動の札・2026-10-11）**。前提: 頁が開いて「行きたい」が出ている。
+    /// 揃ったら、札の行に「地図で見る」「経路」があり、シェアは右上の1つだけ（違えば落とす）。
+    /// 「地図で見る」を押して**アプリの中の地図**が出ることも見て撮り、頁へ戻す。
+    /// 一覧の行（`map.spotRow`）から開くスポットは地図のピン＝座標があるので、2つの札は必ず出る
+    private func shootSpotTop(_ app: XCUIApplication) {
+        let wish = app.buttons["spot.official.wish"].firstMatch
+        guard wish.waitForExistence(timeout: 5) else { return }
+        shoot(app, "13e-撮影スポット（上・行動の札）")
+        let toMap = app.buttons["spot.official.map"].firstMatch
+        XCTAssertTrue(toMap.exists, "スポットの頁に「地図で見る」が無い")
+        XCTAssertTrue(app.buttons["spot.official.directions"].firstMatch.exists, "スポットの頁に「経路」が無い")
+        let shares = app.buttons.matching(NSPredicate(format: "label == %@", "シェア"))
+        XCTAssertEqual(shares.count, 1, "スポットの頁にシェアが2つある")
+        guard toMap.exists, toMap.isHittable else { return }
+        toMap.tap()
+        let screen = app.descendants(matching: .any).matching(identifier: "spot.official.mapScreen").firstMatch
+        XCTAssertTrue(screen.waitForExistence(timeout: 5), "「地図で見る」がアプリの中の地図を開かない")
+        XCTAssertEqual(app.state, .runningForeground, "「地図で見る」でアプリの外へ出た")
+        guard screen.exists else { return }
+        XCTAssertTrue(app.buttons["spot.official.mapScreen.directions"].firstMatch.exists, "地図の画面に「経路」が無い")
+        // 地図のタイルとピンの写真を待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13g-撮影スポット（アプリの中の地図）")
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// 撮影スポットの画面で、光の時刻の日付の帯を画面の上の方へ寄せる（朝・夕の段と注記まで1枚に入れる）。
@@ -500,9 +528,20 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
-            // ホームの「撮影地を探す / 写真から探す」が見える状態をPR確認用に残す
-            if name == "ホーム", app.buttons["home.exploreMap"].firstMatch.exists {
-                shoot(app, "10b-ホーム（撮影地への入口）")
+            // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
+            // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
+            // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
+            if name == "ホーム" {
+                let latest = app.buttons["新着"].firstMatch
+                if latest.waitForExistence(timeout: 5), latest.isHittable {
+                    latest.tap()
+                    Thread.sleep(forTimeInterval: 3)
+                    shoot(app, "10b-ホーム（新着を選んだ直後）")
+                    XCTAssertFalse(app.descendants(matching: .any)["home.featured"].firstMatch.exists,
+                                   "「新着」なのに、おすすめの横並びが切り替えの下に挟まっている")
+                    XCTAssertFalse(app.buttons["home.exploreMap"].firstMatch.exists,
+                                   "消したはずの「撮影地を探す」の札が出ている")
+                }
                 // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
                 let following = app.buttons["フォロー中"].firstMatch
                 if following.exists, following.isHittable {
@@ -754,7 +793,7 @@ final class ScreenshotTests: XCTestCase {
             toSpot.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "60-撮影スポット")
-            if app.otherElements["spot.official.journeyCue"].firstMatch.exists {
+            if app.descendants(matching: .any).matching(identifier: "spot.official.journeyCue").firstMatch.exists {
                 shoot(app, "60b-撮影スポット（撮影までの流れ）")
             }
             app.swipeUp()
@@ -912,6 +951,25 @@ final class ScreenshotTests: XCTestCase {
         // 見本の写真が描かれるのを少し待つ（枠だけの絵を「壊れている」と読み違えない）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "22-写真を編集（色を編集の入口）")
+
+        // 2026-10-11: 前提（写真を編集が開いた）が揃ったら、保存は右上・撮影日は日付ピッカーか
+        // 「日付を入れる」（手打ちの欄ではない）。違えば落とす
+        XCTAssertTrue(app.navigationBars.buttons["editPhoto.save"].firstMatch.exists, "写真を編集の保存が右上に無い")
+        let datePicker = app.descendants(matching: .any).matching(identifier: "editPhoto.date").firstMatch
+        let dateSet = app.buttons["editPhoto.date.set"].firstMatch
+        for _ in 0..<3 where !(datePicker.exists && datePicker.isHittable) && !(dateSet.exists && dateSet.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(datePicker.exists || dateSet.exists, "撮影日が日付ピッカーでない")
+        // 撮影地は撮影日より下。一覧は画面の外の行を作らないので、見えるまで送ってから確かめる（run 407）
+        let placeLabel = app.descendants(matching: .any).matching(identifier: "editPhoto.placeLabel").firstMatch
+        for _ in 0..<3 where !placeLabel.exists {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(placeLabel.exists, "撮影地の欄に名前が無い")
+        shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
     /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に出るシート。
@@ -998,6 +1056,60 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+
+        // **「前の晩に知らせる」の「通知がオフのため届きません」**（2026-10-11・`LightAlertPushNotice`）。
+        // 見本の利用者は公開プロフィールで Pro なので入切の行が出る。CI のシミュレータは通知を許可して
+        // いない（どの試験も通知の許可を押さない）ので、入切が「入」なら知らせも出るはず——出なければ落とす。
+        // 入切の行が出ない（プロフィールが読めない）・「切」の回は撮らない（この試験の決まり）
+        let lightAlert = app.switches["settings.lightAlert"].firstMatch
+        guard lightAlert.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !lightAlert.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard lightAlert.isHittable, (lightAlert.value as? String) == "1" else { return }
+        let notice = app.buttons["settings.lightAlert.pushOff"].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5),
+                      "通知を許可していない端末で「前の晩に知らせる」が入なのに、届かないことを知らせていない")
+        guard notice.exists else { return }
+        if !notice.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        XCTAssertGreaterThanOrEqual(notice.frame.height, 44, "「通知がオフのため届きません」の行が 44pt 未満")
+        shoot(app, "80b-設定（Pro の節・通知がオフ）")
+    }
+
+    /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
+    /// 鍵を持たない入り方では投稿できないので、起動の鍵（`-JPPreviewPushPrimer`・Debug のみ）で起動のときに出す。
+    ///
+    /// 出なければ撮らずに抜ける（この試験の決まり）。**出たのに「通知を受け取る」「あとで」が無い・44pt 未満・
+    /// 「あとで」で閉じなければ落とす**。「通知を受け取る」は押さない（シミュレータに許可を残さない）
+    func testCapturesPushPrimer() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（全画面）が説明の上に被さらないように止める（ほかの試験と同じ・run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPushPrimer", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let allow = app.buttons["push.primer.allow"].firstMatch
+        guard allow.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02c-通知の説明")
+        let later = app.buttons["push.primer.later"].firstMatch
+        XCTAssertTrue(later.exists, "「あとで」が無い（断る口が無い）")
+        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「通知を受け取る」が 44pt 未満")
+        XCTAssertGreaterThanOrEqual(later.frame.height, 44, "「あとで」が 44pt 未満")
+        guard later.exists, later.isHittable else { return XCTFail("「あとで」を押せない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
     /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
@@ -1160,13 +1272,32 @@ final class ScreenshotTests: XCTestCase {
                 ? app.buttons["lightForecast.card"].firstMatch
                 : app.links["lightForecast.attribution"].firstMatch
             _ = ready.waitForExistence(timeout: 10)
-            Thread.sleep(forTimeInterval: 1)
+            // 見本は索引の本物のスポットで組むので、札の写真が読み込まれるのを待つ
+            Thread.sleep(forTimeInterval: mode == "sample" ? 4 : 1)
             shoot(app, name)
             if mode == "sample", ready.exists, ready.isHittable {
-                // 札を開いた姿（その場所の7日）
+                // Apple Weather の出典は一覧に必ず出す（Apple の求め）
+                XCTAssertTrue(app.links["lightForecast.attribution"].firstMatch.exists, "天気の出典が無い")
+                // 札を開いた姿（その場所の7日と「スポットを見る」「経路」）
+                let closedValue = ready.value as? String
                 ready.tap()
                 Thread.sleep(forTimeInterval: 1)
+                // 前提（札が開閉の値を持つ）が揃ったら、開いた値に変わる（印と読み上げ・2026-10-11）
+                if let closedValue, !closedValue.isEmpty {
+                    XCTAssertNotEqual(ready.value as? String, closedValue, "札を押しても開いた値にならない")
+                }
                 shoot(app, "84a-光と天気の知らせ（札を開いた）")
+                let openSpot = app.buttons["lightForecast.openSpot"].firstMatch
+                if openSpot.waitForExistence(timeout: 5) {
+                    XCTAssertTrue(app.buttons["lightForecast.directions"].firstMatch.exists, "開いた札に「経路」が無い")
+                    if openSpot.isHittable {
+                        openSpot.tap()
+                        XCTAssertTrue(app.buttons["spot.official.wish"].firstMatch.waitForExistence(timeout: 10),
+                                      "「スポットを見る」でスポットの頁が開かない")
+                        Thread.sleep(forTimeInterval: 2)
+                        shoot(app, "84c-光と天気の知らせ（スポットを見る）")
+                    }
+                }
             }
             app.terminate()
         }
