@@ -62,6 +62,9 @@ struct OfficialSpotMapView: View {
             onScreen = false
             directionsTask?.cancel()
         }
+        // 入れ物として名前を付ける。`Group` に直に付けると中の「経路」の名前まで上書きされ、
+        // 試験が「経路」を見つけられなかった（run 407）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("spot.official.mapScreen")
     }
 

@@ -76,7 +76,9 @@ struct PushPrimerView: View {
                 .accessibilityIdentifier("push.primer.later")
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 8)
+            // 下の余白は 16。8 だと半分の高さのシートの下の縁で「あとで」の当たりが
+            // 42pt に削られていた（run 407・押せるものは 44pt）
+            .padding(.bottom, 16)
             .background(WebTheme.background)
         }
         .webScreen()

@@ -962,8 +962,13 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         XCTAssertTrue(datePicker.exists || dateSet.exists, "撮影日が日付ピッカーでない")
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "editPhoto.placeLabel").firstMatch.exists,
-                      "撮影地の欄に名前が無い")
+        // 撮影地は撮影日より下。一覧は画面の外の行を作らないので、見えるまで送ってから確かめる（run 407）
+        let placeLabel = app.descendants(matching: .any).matching(identifier: "editPhoto.placeLabel").firstMatch
+        for _ in 0..<3 where !placeLabel.exists {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(placeLabel.exists, "撮影地の欄に名前が無い")
         shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
