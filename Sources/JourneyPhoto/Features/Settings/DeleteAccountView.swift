@@ -10,6 +10,8 @@ struct DeleteAccountView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    /// App Store 側の定期購入（設定の Pro の行と同じ読み方・`refreshSubscription`）
+    @EnvironmentObject private var store: StoreService
     @Environment(\.dismiss) private var dismiss
 
     /// 自分のプロフィール（設定が読んだもの）。読めていなければ nil＝Pro かどうか分からない
@@ -56,8 +58,8 @@ struct DeleteAccountView: View {
             .listRowBackground(Color.clear)
 
             // 2026-10-11 判断: App Store の定期購入は退会しても止まらない（アプリからは解約できない）。
-            // 黙っていると、退会した人に請求が続く。Pro でないと読めた人にだけ出さない
-            if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro) {
+            // 黙っていると、退会した人に請求が続く。サーバーも App Store も「入っていない」ときだけ出さない
+            if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro, appStore: store.subscription) {
                 Section { subscriptionNotice }
                     .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
@@ -92,6 +94,11 @@ struct DeleteAccountView: View {
         .safeAreaInset(edge: .bottom) { deleteButton }
         // 設定の Pro の行（`ProSettingsSection`）と同じ OS の管理シート。写しの画面は作らない
         .manageSubscriptionsSheet(isPresented: $showManage)
+        // App Store 側の定期購入を読む（`ProSettingsSection` と同じ2つ。StoreKit の問い合わせを別に作らない）
+        .task {
+            await store.loadProducts()
+            await store.refreshSubscription()
+        }
         .navigationTitle(L("アカウントの削除", "Delete account"))
         .navigationBarTitleDisplayMode(.inline)
         // 消している最中は戻らせない（戻って開き直すと、2本目の退会が走る。`ProfileEditView` と同じ）

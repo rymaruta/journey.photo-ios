@@ -438,17 +438,30 @@ final class ProPurchaseTests: XCTestCase {
     /// 🔴 **退会しても App Store の定期購入は止まらない**（2026-10-11）。Pro の人・Pro か分からない人
     /// （プロフィールが読めていない）には知らせを出し、Pro でないと読めた人にだけ出さない
     func testDeleteAccountSubscriptionNoticeShownUnlessKnownNotPro() {
-        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: true))
-        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: nil),
+        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: true, appStore: nil))
+        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: nil, appStore: nil),
                       "読めていないのを「Pro でない」に倒すと、払っている人が知らずに退会する")
-        XCTAssertFalse(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: false))
+        XCTAssertFalse(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: false, appStore: nil))
+    }
+
+    /// 🔴 **サーバーが「Pro でない」でも、App Store の定期購入が有効なら出す**（届け出の失敗・請求の再試行中）。
+    /// 自動更新を止めていても、期限までは有効な定期購入として出す
+    func testDeleteAccountSubscriptionNoticeFollowsAppStoreWhenServerSaysNo() {
+        let renewing = ProSubscriptionState(plan: .monthly, renewalDate: nil, willAutoRenew: true, displayPrice: "¥500")
+        let cancelled = ProSubscriptionState(plan: .yearly, renewalDate: nil, willAutoRenew: false, displayPrice: nil)
+        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: false, appStore: renewing))
+        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: false, appStore: cancelled))
+        XCTAssertTrue(ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: true, appStore: renewing))
     }
 
     /// 退会の画面がこの見分けを通り、管理は設定の Pro の行と同じ OS のシート（写しを作らない）。
     /// 設定はプロフィールを渡す（渡さないと、Pro でない人にも毎回出る）
     func testDeleteAccountViewWiresSubscriptionNotice() throws {
         let view = try source("Sources/JourneyPhoto/Features/Settings/DeleteAccountView.swift")
-        XCTAssertTrue(view.contains("if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro) {"))
+        XCTAssertTrue(view.contains("if ProStatusText.showsDeleteAccountSubscriptionNotice(isPro: profile?.isPro, appStore: store.subscription) {"))
+        // App Store 側は設定と同じ読み方（`refreshSubscription`）で読む
+        XCTAssertTrue(view.contains("await store.loadProducts()\n            await store.refreshSubscription()"))
+        XCTAssertFalse(view.contains("subscription?.status"), "StoreKit の問い合わせを別に作らない")
         XCTAssertTrue(view.contains("Journey Photo Pro の定期購入は、退会しても止まりません。App Store で解約してください。"))
         XCTAssertTrue(view.contains(#"Text(L("定期購入を管理", "Manage subscription"))"#))
         // 名前を分けて書く（verify.sh の import の検査が、文字列の中の修飾子の名前も拾う）
