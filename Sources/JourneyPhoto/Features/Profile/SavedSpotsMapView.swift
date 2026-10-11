@@ -467,7 +467,7 @@ struct SavedSpotsMapView: View {
                 EmptyState(message: L("この撮影スポットは開けません", "This spot can't be opened"))
             }
         case nil:
-            EmptyState(message: L("この場所は開けません", "This place can't be opened"))
+            EmptyState(message: L("この撮影地は開けません", "This place can't be opened"))
         }
     }
 }

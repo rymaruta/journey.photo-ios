@@ -445,7 +445,7 @@ enum SpotSampleText {
         }
         let freePart = free.isEmpty && !hosted.isEmpty ? "" : {
             let from = sourceNames(free)
-            return L("この場所の近くで撮られ、\(from) で自由なライセンスのもと公開されている写真です。",
+            return L("この撮影スポットの近くで撮られ、\(from) で自由なライセンスのもと公開されている写真です。",
                      "Photos taken near this spot and published under free licenses on \(from). ")
         }()
         let hostedPart = hosted.isEmpty ? "" : {

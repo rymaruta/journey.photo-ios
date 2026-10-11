@@ -688,7 +688,7 @@ struct MyPageView: View {
                     Task { await reloadAll() }
                 }
             case .empty:
-                EmptyState(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
+                EmptyState(message: L("まだありません。撮影スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
                 // 板 WishlistTab の B1（空）の「撮影スポットを探す」
                 FindSpotsButton()

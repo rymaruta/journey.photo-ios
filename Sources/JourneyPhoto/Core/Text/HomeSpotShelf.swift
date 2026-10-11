@@ -204,13 +204,13 @@ enum HomeSpotShelf {
         return L("いまの季節・\(label)", "This season · \(label)")
     }
 
-    static var heading: String { L("いまの季節のスポット", "Spots for this season") }
+    static var heading: String { L("いまの季節の撮影スポット", "Photo spots for this season") }
 
     /// 段の注記。**作例の撮影者はこのアプリの利用者ではない**と添える（docs/spot-samples-commons.md）。
     /// 2026-10-04 判断: 作例の出どころが Commons 以外（Flickr・環境省・県の観光連盟など）にも増えたので、
     /// 出どころの名前は書かず、各写真の下の出典の行に任せる（札ごとに本文を読むので段では決まらない）
     static var note: String {
-        L("写真は各スポットの作例で、出典は写真の下にあります。撮影者はこのアプリの利用者ではありません。",
+        L("写真は各撮影スポットの作例で、出典は写真の下にあります。撮影者はこのアプリの利用者ではありません。",
           "Photos are examples for each spot, with sources below each photo. The photographers are not members of this app.")
     }
 }

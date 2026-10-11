@@ -247,7 +247,7 @@ struct DailyQuizView: View {
                     NavigationLink {
                         OfficialSpotView(spot: guideSpot, spots: spots, photos: photos)
                     } label: {
-                        Text(L("ガイドを見る", "See the guide"))
+                        Text(L("撮影スポットを見る", "See the photo spot"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accentText)
                             .padding(.horizontal, 20)

@@ -39,7 +39,7 @@ final class OfficialWishlistTests: XCTestCase {
     func testBrokenKeyStillGetsARow() {
         let rows = OfficialWishlist.rows(keys: ["SPOT-"], index: [])
         XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].name, L("名前のないスポット", "Unnamed spot"))
+        XCTAssertEqual(rows[0].name, L("名前のない撮影スポット", "Unnamed photo spot"))
     }
 
     /// 並びは索引にあるものが先、そのあと名前順（毎回同じ並びにする）

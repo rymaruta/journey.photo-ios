@@ -10,6 +10,8 @@ final class SearchSpotRowTests: XCTestCase {
     func testSubtitleSaysGuideAndPlace() throws {
         let ginzan = try spot(#"{"spotId":"sp_92dc681b0f47","slug":"ginzan-onsen","name":"銀山温泉","reading":"ぎんざんおんせん","stage":"published","region":{"prefecture":"山形県","city":"尾花沢市"}}"#)
         XCTAssertTrue(SearchView.spotSubtitle(ginzan).hasSuffix("山形県 尾花沢市"))
+        // 呼び名は「撮影スポット」（2026-10-11 owner 承認。旧「撮影地ガイド」）
+        XCTAssertEqual(SearchView.spotSubtitle(ginzan), L("撮影スポット・山形県 尾花沢市", "Photo spot・山形県 尾花沢市"))
         XCTAssertEqual(OfficialSpotIndex.matches([ginzan], query: "銀山温泉").map(\.slug), ["ginzan-onsen"])
         XCTAssertEqual(OfficialSpotIndex.matches([ginzan], query: "ぎんざん").map(\.slug), ["ginzan-onsen"])
     }

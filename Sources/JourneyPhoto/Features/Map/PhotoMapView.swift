@@ -324,7 +324,7 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
-            TextField(L("撮影地・スポット名で絞る", "Filter by place or spot"),
+            TextField(L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
@@ -733,6 +733,7 @@ struct PhotoMapView: View {
     /// （2026-10-09 のレビュー）。リストの全文（`RegionList.categoryHidesSpotsNote`）は約3行に折れ、
     /// 右の操作列（上から 56pt）に重なり、大きい文字ではカプセルの角からはみ出した。
     /// 全文（「すべて」に戻すと出る）はリストの上の1行にだけ出す
+    /// 2026-10-11 判断: 呼び名の決まりでは「撮影スポット」だが、ここは1行に収める狭い帯なので「スポット」のまま
     nonisolated static var categoryHidesSpotsBannerText: String {
         L("カテゴリで絞っている間はスポットを出しません", "Spots are hidden while a category is selected")
     }
@@ -1035,7 +1036,7 @@ struct PhotoMapView: View {
                     // ——下の「写真を見る」との間（spacing 4）に収まり、重ならない
                     .padding(.vertical, -(WebTheme.minTapTarget - 36) / 2)
                     .buttonStyle(.plain)
-                    .accessibilityLabel(L("この場所の写真を見る", "See photos here"))
+                    .accessibilityLabel(L("この撮影地の写真を見る", "See photos here"))
                 }
 
                 Button {
@@ -1172,7 +1173,7 @@ struct PhotoMapView: View {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos,
                                          photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                     } label: {
-                        Label(L("スポットを見る", "See spot"), systemImage: "mappin.and.ellipse")
+                        Label(L("撮影スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.foreground)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
@@ -1312,7 +1313,8 @@ struct PhotoMapView: View {
                     .foregroundStyle(WebTheme.muted2)
             }
         case .coordinateOnly:
-            Text(L("Apple のマップにこの場所の詳しい情報がありませんでした。経路は出せます。",
+            // 2026-10-11 判断: 「この場所」は呼び名の決まり（CLAUDE.md）で使わない。地図で押した所の話なので言わずに済む
+            Text(L("Apple のマップに詳しい情報がありませんでした。経路は出せます。",
                    "Apple Maps has no details for this place. Directions still work."))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
@@ -1392,7 +1394,7 @@ struct PhotoMapView: View {
                         NavigationLink {
                             SpotDetailView(spot: spot, photos: model.photos)
                         } label: {
-                            Text(L("スポットを見る", "See spot"))
+                            Text(L("撮影地を見る", "See place"))
                                 .font(.subheadline)
                                 .foregroundStyle(WebTheme.muted2)
                                 .frame(minHeight: WebTheme.minTapTarget)
