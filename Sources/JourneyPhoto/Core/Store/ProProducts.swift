@@ -368,6 +368,14 @@ enum ProStatusText {
         isPro == false ? .paywall : .manage
     }
 
+    /// 退会の画面に「定期購入は、退会しても止まりません」を出すか（2026-10-11 判断）。
+    /// **Pro でないと読めたときだけ隠す。** プロフィールが読めていない（nil）ときは出す——
+    /// 払っている人が知らずに退会して請求が続くより、払っていない人に1枚余計に見せるほうがよい。
+    /// 見分けは設定の行の行き先（`settingsAction`）と同じ：管理を開く人には出す
+    static func showsDeleteAccountSubscriptionNotice(isPro: Bool?) -> Bool {
+        settingsAction(isPro: isPro) == .manage
+    }
+
     /// 設定の「サポーター証」の行の2行目（板 43: 「No. 0001 · 手に取って回せます」）
     static func supporterDetail(number: Int) -> String {
         "\(SupporterText.numberLabel(number)) · " + L("手に取って回せます", "Turn it in your hand")

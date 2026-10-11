@@ -292,7 +292,8 @@ struct SettingsView: View {
             if auth.userId != nil {
                 JPCardDivider()
                 // 板: アイコンだけ赤・矢印なし
-                NavigationLink { DeleteAccountView() } label: {
+                // Pro かどうか（定期購入の知らせ）を渡す。読めていなければ nil のまま＝知らせを出す
+                NavigationLink { DeleteAccountView(profile: myProfile) } label: {
                     JPRowLabel(title: L("アカウントの削除", "Delete account"), systemImage: "trash",
                                chevron: false, iconColor: WebTheme.danger)
                 }
