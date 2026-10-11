@@ -82,6 +82,30 @@ enum SpotScreen {
 
     // MARK: - 台帳の撮影スポット（モック13・`OfficialSpotView`）
 
+    /// 撮影スポットの頁の行動の札（名前の下の3つ）。
+    enum OfficialAction: Hashable {
+        /// 行きたい（♥）
+        case wish
+        /// アプリの中の地図でこのスポットを開く（`OfficialSpotMapView`）
+        case map
+        /// 経路（Apple のマップ・`SpotDirections`）
+        case directions
+    }
+
+    /// 並べる札。**座標が無ければ「地図で見る」「経路」を出さない**（無い地点に押せる札を置かない）。
+    ///
+    /// 2026-10-11 判断（owner「おすすめで」）:
+    ///  - 「地図で見る」は**アプリの中の地図**へ。以前はここだけ Apple のマップへ飛んでいた
+    ///    （マイページ・探すの「地図で見る」はアプリの中の地図）。同じ語で行き先が割れていた
+    ///  - 外の地図へ出るのは「経路」として別に1つ（頁に経路が無かった）。地図のタブの札
+    ///    （`PhotoMapView.officialCard`）の「経路」と同じ語・同じ挙動
+    ///  - **シェアは右上の1つだけ**。板 SpotDetail は右上と札の行の両方に置いているが、同じ操作が
+    ///    1画面に2つあった（owner の指摘）。右上は板の「写真の上」の型（戻る・シェア）なので残し、
+    ///    札の行のシェアの枠に「経路」を入れた
+    static func officialActions(hasCoords: Bool) -> [OfficialAction] {
+        hasCoords ? [.wish, .map, .directions] : [.wish]
+    }
+
     /// 小見出し（モックの "PHOTO SPOT"）。
     ///
     /// 🔴 **下書きを「公式」と名乗らない。** 索引の全件が運営未確認の下書き

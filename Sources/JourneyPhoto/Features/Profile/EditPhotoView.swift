@@ -4,6 +4,14 @@ import PhotosUI
 import UIKit
 
 /// 自分の写真を直す（題・説明・撮影地・タグ・撮影日・公開）。
+///
+/// 2026-10-11（板 EditPhoto・owner「おすすめで」）:
+///  - **保存は右上**（ナビの右・真鍮の字＝投稿画面の「投稿する」と同じ文字の合図）。板には下の保存ボタンが
+///    無いので、下のボタンは外した（同じ操作を2つ置かない。保存の途中は右上が輪に替わる）
+///  - 題・説明・撮影地・撮影日は**欄の上に小さな名前**（板の 12pt・白72%・`JPField` と同じ形）。
+///    以前は欄の中の見本の字だけで、打ち始めると何の欄か分からなくなった
+///  - 撮影日は**端末の日付ピッカー**（日付だけ・空にもできる）。以前は「YYYY-MM-DD」を手で打たせていた。
+///    選べるのは 1990-01-01 から今日まで（`EditDay.pickerRange`・サーバーの決まり）
 struct EditPhotoView: View {
 
     let photo: Photo
@@ -115,18 +123,40 @@ struct EditPhotoView: View {
             }
             .listRowBackground(Color.clear)
 
-            Section(L("この写真について", "About this photo")) {
-                // 題は投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
-                TextField(L("題", "Title"), text: $title)
-                    .onChange(of: title) { old, value in
-                        let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
-                        if kept != value { title = kept }
-                    }
-                // 🔴 **説明は欄で止めない**（Web の `/user/edit` と同じ）。送る形で上限が変わり、
-                // 全体を 2000 で切ると英語の説明がある写真で後ろの段落が消えた。超えていれば
-                // 保存の前に知らせる（`LocalizedEdit.descriptionOverLimit`）
-                TextField(L("説明", "Description"), text: $caption, axis: .vertical)
-                    .lineLimit(3...8)
+            // 題・説明は板の欄（上に 12pt の名前・`JPField`）
+            Section {
+                JPField(L("題", "Title")) {
+                    // 題は投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
+                    TextField("", text: $title)
+                        .onChange(of: title) { old, value in
+                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
+                            if kept != value { title = kept }
+                        }
+                }
+                .accessibilityIdentifier("editPhoto.title")
+                JPField(L("説明", "Description"), multiline: true) {
+                    // 🔴 **説明は欄で止めない**（Web の `/user/edit` と同じ）。送る形で上限が変わり、
+                    // 全体を 2000 で切ると英語の説明がある写真で後ろの段落が消えた。超えていれば
+                    // 保存の前に知らせる（`LocalizedEdit.descriptionOverLimit`）
+                    TextField("", text: $caption, axis: .vertical)
+                        .lineLimit(3...8)
+                }
+                .accessibilityIdentifier("editPhoto.caption")
+                dateField
+            }
+            // 行の余白はほかの節のまま（`jpFormRow` で消すと、この節だけ欄が左右に広がって端が揃わない）。
+            // 欄の間の区切り線は消す（板は線なし）
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+            Section {
+                // 撮影地の名前（欄の上・板と同じ 12pt）。候補の行が下に続くので、欄と同じ行には包まない
+                Text(L("撮影地", "Place"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(WebTheme.muted2)
+                    .listRowSeparator(.hidden)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("editPhoto.placeLabel")
                 // **候補から選べるようにする**（投稿画面と同じ）。
                 // ただの入力欄だと座標が付かず、直した瞬間に
                 // サーバーが `geoApprox` の座標を消す＝地図から消える。
@@ -134,8 +164,6 @@ struct EditPhotoView: View {
                 PlaceSearchField(location: $location, coords: $pickedCoords)
                 TagField(tagsText: $tagsText)
                 CategoryField(category: $category)
-                TextField(L("撮影日（YYYY-MM-DD）", "Date taken (YYYY-MM-DD)"), text: $date)
-                    .keyboardType(.numbersAndPunctuation)
             }
             .listRowBackground(Color.clear)
 
@@ -195,20 +223,6 @@ struct EditPhotoView: View {
                 .listRowBackground(Color.clear)
             }
 
-            Section {
-                Button {
-                    Task { await save() }
-                } label: {
-                    if isSaving {
-                        HStack { ProgressView(); Text(L("保存中…", "Saving…")) }
-                    } else {
-                        Text(Labels.Common.save)
-                    }
-                }
-                // 差し替えの間も押させない（下の `save` の注記）
-                .disabled(isBusy)
-            }
-            .listRowBackground(Color.clear)
         }
         .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
@@ -260,9 +274,86 @@ struct EditPhotoView: View {
                 .disabled(PhotoRecolor.blocksClosing(isSaving: isSaving, isReplacing: isReplacing,
                                                     isLoadingRecolor: isLoadingRecolor))
             }
+            ToolbarItem(placement: .confirmationAction) { saveButton }
         }
         // 下へ払って閉じた回・「変更を捨てる」で閉じた回も、読み込みを残さない
         .onDisappear { recolorLoad?.cancel() }
+    }
+
+    /// 右上の「保存」（板 EditPhoto: ナビの右・真鍮の字）。保存の途中は輪に替える。
+    /// 差し替え・色の編集の元を読んでいる間も押させない（`save` の注記）
+    private var saveButton: some View {
+        Button {
+            Task { await save() }
+        } label: {
+            if isSaving {
+                ProgressView().tint(WebTheme.accent)
+            } else {
+                Text(Labels.Common.save)
+                    .font(.subheadline.weight(.semibold))
+            }
+        }
+        .foregroundStyle(isBusy ? WebTheme.faint : WebTheme.accent)
+        .disabled(isBusy)
+        .accessibilityLabel(isSaving ? L("保存中…", "Saving…") : Labels.Common.save)
+        .accessibilityIdentifier("editPhoto.save")
+    }
+
+    /// 撮影日（板 EditPhoto: 上に 12pt の名前・下に端末の日付ピッカー）。**空にもできる**——
+    /// 入っていれば右に消すボタン、空なら「日付を入れる」（今日から始める）。
+    /// 形は旅行プランの日付の欄（`TripPlanDetailView.dateField`）と同じ
+    private var dateField: some View {
+        let range = EditDay.pickerRange(now: Date(), in: .current)
+        let picked = EditDay.pickerDate(field: date, in: .current)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(L("撮影日", "Date taken"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(WebTheme.muted2)
+                .accessibilityHidden(true)
+            HStack(spacing: 4) {
+                if let picked {
+                    DatePicker(L("撮影日", "Date taken"),
+                               selection: Binding(get: { picked },
+                                                  set: { date = EditDay.field(picked: $0, in: .current) }),
+                               in: range, displayedComponents: .date)
+                        .labelsHidden()
+                        .tint(WebTheme.accent)
+                        .accessibilityIdentifier("editPhoto.date")
+                    Spacer(minLength: 0)
+                    Button {
+                        date = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(WebTheme.faint)
+                            .webTappable()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("撮影日を消す", "Clear the date taken"))
+                    .accessibilityIdentifier("editPhoto.date.clear")
+                } else {
+                    Button {
+                        date = EditDay.field(picked: range.upperBound, in: .current)
+                    } label: {
+                        Text(L("日付を入れる", "Set date"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted2)
+                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isBusy)
+                    .accessibilityLabel(L("撮影日を入れる", "Set the date taken"))
+                    .accessibilityIdentifier("editPhoto.date.set")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
+            Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+        }
     }
 
     /// 保存・差し替え・色の編集の元を読んでいる最中か（閉じる・保存・先へ進むを止める門）

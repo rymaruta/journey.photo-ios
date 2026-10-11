@@ -40,4 +40,28 @@ enum EditDay {
         guard head.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
         return head
     }
+
+    // MARK: - 日付ピッカー（写真を編集・2026-10-11）
+
+    /// 選べるいちばん古い日（サーバーは 1990年より前を断る・`replace` の知らせと同じ決まり）
+    static let earliestYMD = "1990-01-01"
+
+    /// 欄の `YYYY-MM-DD` をピッカーに渡す値（その日の正午）。空・読めない値は nil（「日付を入れる」を出す）。
+    /// 作り方は旅行プランの日付の欄と同じ（`TripPlanText.pickerDate`）
+    static func pickerDate(field: String, in zone: TimeZone) -> Date? {
+        let day = field.trimmingCharacters(in: .whitespaces)
+        guard !day.isEmpty else { return nil }
+        return TripPlanText.pickerDate(fromYMD: day, in: zone)
+    }
+
+    /// ピッカーで選んだ日を欄の `YYYY-MM-DD` に（端末の暦の日）
+    static func field(picked: Date, in zone: TimeZone) -> String {
+        TripPlanText.ymd(pickedIn: zone, picked)
+    }
+
+    /// 選べる範囲: 1990-01-01 から今まで（**未来は選ばせない**——サーバーが断る）
+    static func pickerRange(now: Date, in zone: TimeZone) -> ClosedRange<Date> {
+        let lower = TripPlanText.pickerDate(fromYMD: earliestYMD, in: zone) ?? now
+        return lower...max(lower, now)
+    }
 }
