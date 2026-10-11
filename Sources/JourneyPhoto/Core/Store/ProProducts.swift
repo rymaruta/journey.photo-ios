@@ -368,6 +368,17 @@ enum ProStatusText {
         isPro == false ? .paywall : .manage
     }
 
+    /// 退会の画面に「定期購入は、退会しても止まりません」を出すか（2026-10-11 判断）。
+    /// **両方が「入っていない」と言うときだけ隠す**:
+    /// - サーバー（`isPro`）: Pro か、読めていない（nil）なら出す——払っている人が知らずに退会して
+    ///   請求が続くより、払っていない人に1枚余計に見せるほうがよい（`settingsAction` と同じ見分け）
+    /// - App Store（`appStore`・`StoreService.subscription`）: 有効な定期購入が見えたら出す。
+    ///   **サーバーが false でも請求は続いていることがある**（買った直後の届け出の失敗・請求の再試行中）。
+    ///   `subscription` は有効・猶予・再試行中の分だけを持つ（`refreshSubscription`）
+    static func showsDeleteAccountSubscriptionNotice(isPro: Bool?, appStore: ProSubscriptionState?) -> Bool {
+        settingsAction(isPro: isPro) == .manage || appStore != nil
+    }
+
     /// 設定の「サポーター証」の行の2行目（板 43: 「No. 0001 · 手に取って回せます」）
     static func supporterDetail(number: Int) -> String {
         "\(SupporterText.numberLabel(number)) · " + L("手に取って回せます", "Turn it in your hand")

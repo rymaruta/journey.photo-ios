@@ -507,7 +507,7 @@ struct SearchView: View {
             }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(spot.id)
+                    Text(LocationMatch.display(spot.id))
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)

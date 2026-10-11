@@ -161,7 +161,7 @@ enum TripPlanText {
         // 1件に寄せると、選んだ名前と入った行の名前が食い違う
         let locations = places
             .filter { !$0.slug.isEmpty && wishlistKeys.contains($0.slug) && !SavedSpotKey.isOfficial($0.slug) }
-            .map { Choice(item: .location(slug: $0.slug, note: nil), name: $0.label, regionLabel: nil) }
+            .map { Choice(item: .location(slug: $0.slug, note: nil), name: LocationMatch.display($0.label), regionLabel: nil) }
             .filter { seen.insert($0.id).inserted }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
         return spots + locations
@@ -175,7 +175,7 @@ enum TripPlanText {
             let name = index.first { $0.spotId == spotId }?.name ?? ""
             return name.isEmpty ? spotId : name
         case .location(let slug, _):
-            if let place = places.first(where: { $0.slug == slug }) { return place.label }
+            if let place = places.first(where: { $0.slug == slug }) { return LocationMatch.display(place.label) }
             return slug.removingPercentEncoding ?? slug
         }
     }

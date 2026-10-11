@@ -67,6 +67,9 @@ struct HomeFeedTile: View {
     @EnvironmentObject private var toasts: ToastCenter
     /// 「…」のブロックの確認
     @State private var showBlockConfirm = false
+    /// 未ログインで押した♥の「ログインする」とログイン画面（`SignInPrompt`・2026-10-11）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
     /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
     @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -106,6 +109,7 @@ struct HomeFeedTile: View {
             likeButton
         }
         .overlay(alignment: .topTrailing) { moreMenu }
+        .signInPrompt(ask: $signInAsk, open: $signInOpen)
     }
 
     /// **`userId` が無く `uploadedBy` だけの写真もある**（詳細の `ownerId` と同じ読み方）。
@@ -252,13 +256,14 @@ struct HomeFeedTile: View {
         // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面も
         // 同じ `LikeCountStore` の印で止める）
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
-        // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
-        // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
+        // **ログインしていなければ送らずに「ログインする」を出す。** 送ると認証で断られて
+        // 黙って戻り、一瞬灯って消えるだけのボタンになっていた（詳細画面も同じ扱い）。
+        // 🔴 2026-10-11: 以前は3秒の知らせだけで、ログインする手段が無かった（`SignInPrompt`）
         switch HomeLikeGate.decide(auth) {
         case .send: break
         case .ignore: return
         case .askToSignIn:
-            toasts.show(L("いいねするにはログインしてください", "Sign in to like photos"), kind: .failure)
+            signInAsk = SignInPrompt.request(SignInPrompt.like, userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         let photoId = photo.id
