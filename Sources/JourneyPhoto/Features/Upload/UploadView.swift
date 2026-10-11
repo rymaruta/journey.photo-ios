@@ -16,6 +16,10 @@ struct UploadView: View {
     @State private var appliedInitialCapture = false
     /// 「書きかけを捨てて閉じますか？」
     @State private var confirmDiscard = false
+    /// 「下書きを続けますか？」（開いたときに一度だけ・`UploadDraftRules.asksRestore`・2026-10-11）
+    @State private var showRestore = false
+    /// 開いたときの問いをもう済ませたか（選ぶ画面・カメラから戻るたびに onAppear が走る）
+    @State private var askedRestore = false
     /// 編集画面を開いている写真（帯のサムネを押した）
     @State private var editing: EditTarget?
     /// 編集できない理由（再試行の鍵を控えている写真・`UploadEditRules.canEdit`）
@@ -115,15 +119,35 @@ struct UploadView: View {
                 ToolbarItem(placement: .confirmationAction) { submitButton }
             }
         }
+        // 🔴 **人が替わったら、この画面の書きかけを誰の下書きにも保存しない**（前の人の写真が
+        // 次の人の下書きに入る）。下書きは人ごと（`UploadDraftStore`）
+        .onChange(of: auth.userId) { _, id in
+            if model.draftOwner != id { model.draftOwner = nil }
+        }
         // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
         .interactiveDismissDisabled(model.isWorking || model.hasDraft)
-        .confirmationDialog(L("投稿をやめて閉じますか？", "Stop this post?"),
-                            isPresented: $confirmDiscard, titleVisibility: .visible) {
+        // 2026-10-11: **「下書きに保存」を足した**（端末に残す・`UploadDraftStore`）。以前は
+        // 「投稿をやめる」「書き続ける」の2択で、閉じると選んだ写真と題・説明が全部消えていた。
+        // 保存できないとき（読み込み中・送りかけ）は出さずに理由を言う（`UploadDraftRules.closeDialog`）
+        .confirmationDialog(closeDialog.title, isPresented: $confirmDiscard, titleVisibility: .visible) {
+            if closeDialog.canSave {
+                Button(L("下書きに保存", "Save draft")) { saveDraftAndClose() }
+            }
             Button(L("投稿をやめる", "Stop posting"), role: .destructive) { dismiss() }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
         } message: {
-            Text(L("選んだ写真と、書いた題・説明は残りません。",
-                   "The photos you picked and what you wrote won't be kept."))
+            Text(closeDialog.message)
+        }
+        // 開いたときに一度だけ。黙って戻すと、新しく投稿しに来た人が前の写真に驚く（ストーリーと同じ）
+        .alert(L("下書きを続けますか？", "Continue your draft?"), isPresented: $showRestore) {
+            Button(L("続ける", "Continue")) { restoreDraft() }
+            Button(L("下書きを削除", "Delete draft"), role: .destructive) {
+                model.discardDraft()
+                openLibraryAfterRestorePrompt()
+            }
+        } message: {
+            Text(L("この端末に保存した下書きがあります。続きから編集できます。",
+                   "You have a draft saved on this device. You can pick up where you left off."))
         }
         // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
         // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
@@ -145,6 +169,46 @@ struct UploadView: View {
                 .ignoresSafeArea()
                 // 共有の画面は半分の高さから（全高に広がると、後ろの投稿画面が見えず何が起きたか分からない）
                 .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// 閉じる確認の中身（`UploadDraftRules.closeDialog`）
+    private var closeDialog: UploadDraftRules.CloseDialog {
+        UploadDraftRules.closeDialog(block: model.draftSaveBlock,
+                                     replacesOther: !model.restoredDraft && model.storedDraft != nil,
+                                     restored: model.restoredDraft)
+    }
+
+    /// 「下書きに保存」。**書けたときだけ閉じる**（書けなければ上に知らせを出して残る）
+    private func saveDraftAndClose() {
+        if model.saveDraft() {
+            dismiss()
+        } else {
+            model.errorMessage = L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
+                                   "Couldn't save the draft. Check your device's free space.")
+        }
+    }
+
+    /// 「続ける」。画像が読めなければ何も戻さず、そう言う（選ぶ画面を開く）
+    private func restoreDraft() {
+        guard model.restoreDraft() else {
+            model.discardDraft()
+            model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
+            openLibraryAfterRestorePrompt()
+            return
+        }
+    }
+
+    /// 問いに答えたあと、写真がまだ無ければ選ぶ画面を開く（自動で開くのは問いの間は待っている・`form` の task）
+    private func openLibraryAfterRestorePrompt() {
+        guard !offeredLibrary, model.items.isEmpty else { return }
+        Task {
+            // 問いが閉じきってから開く（閉じる途中に重ねると出ないことがある）。**開くときにだけ印を付ける**
+            // （`form` の task と同じ——待っている間に閉じた回に印だけ残さない）
+            try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
+            guard !offeredLibrary, model.items.isEmpty else { return }
+            offeredLibrary = true
+            openLibrary()
         }
     }
 
@@ -245,6 +309,8 @@ struct UploadView: View {
             // 立て直す（`openLibrary`）
             try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
             guard !Task.isCancelled else { return }
+            // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
+            guard !showRestore else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
                 || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
@@ -286,6 +352,16 @@ struct UploadView: View {
                 appliedInitialCapture = true
                 model.accept(capture: initialCapture)
             }
+            // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
+            // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
+            if model.drafts == nil { model.drafts = UploadDraftStore() }
+            if !askedRestore { model.draftOwner = auth.userId }
+            if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
+                                            opensWithPhotos: !initialPhotos.isEmpty || initialCapture != nil,
+                                            alreadyAsked: askedRestore) {
+                showRestore = true
+            }
+            askedRestore = true
         }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {

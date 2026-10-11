@@ -3,7 +3,8 @@ import SwiftUI
 /// 通知を受け取るかの、アプリの中の短い説明（2026-10-11）。**初めての投稿が上がったとき**に1回だけ
 /// （決まりは `PushPrimer`・出す頃合いは `PushPrimerStore`・出すのは `RootView`）。
 ///
-/// 先に「なぜ通知か」を言ってから、「通知を受け取る」でシステムのダイアログへ進む。
+/// 先に「なぜ通知か」を言ってから、「オンにする」でシステムのダイアログへ進む
+/// （設定の「プッシュ通知を受け取る」と同じ道＝`PushCenter.enable`）。
 /// 「あとで」は閉じるだけ（二度と出さない・設定の「プッシュ通知を受け取る」からいつでも）。
 ///
 /// 写真の無い画面なので、板（DesignSystem「黒塗りの真鍮」）どおり: 黒地・眉ラベルは真鍮・
@@ -25,7 +26,9 @@ struct PushPrimerView: View {
                     Text("NOTIFICATIONS")
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
-                    Text(L("写真への反応を、すぐに知らせます", "Know when people respond to your photos"))
+                    // 2026-10-11: owner が承認した言い方（問いの形で、何が届くかを先に言う）
+                    Text(L("いいね・コメントが届いたらお知らせしますか？",
+                           "Want a heads-up when you get likes and comments?"))
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.text)
                         .fixedSize(horizontal: false, vertical: true)
@@ -59,7 +62,7 @@ struct PushPrimerView: View {
                         dismiss()
                     }
                 } label: {
-                    Text(L("通知を受け取る", "Turn on notifications"))
+                    Text(L("オンにする", "Turn on"))
                         .jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)

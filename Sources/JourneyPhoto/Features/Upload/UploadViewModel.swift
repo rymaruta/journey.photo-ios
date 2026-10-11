@@ -121,6 +121,15 @@ struct PendingPhoto: Identifiable {
         location = name
     }
 
+    /// 下書きから撮影地を戻す（`UploadViewModel.restoreDraft`・2026-10-11）。**自動で入れた地名と
+    /// 空にした印も戻す**——欄の文字だけ戻すと、自動の地名が「人が書いた地名」になって座標が落ち、
+    /// 空にした写真の座標がまた送られる（`PlaceCoordsRule`）
+    mutating func restorePlace(location: String, photoPlaceName: String?, clearedByUser: Bool) {
+        self.location = location
+        self.photoPlaceName = photoPlaceName
+        locationClearedByUser = clearedByUser
+    }
+
     /// `PlaceCoordsRule` の (a)(b): **欄が空（自動入力が間に合わなかった）か、自動で入れた地名を
     /// 一字も変えていない**。空にした回は `locationClearedByUser` が止める
     var keepsPhotoCoords: Bool {
@@ -519,6 +528,104 @@ final class UploadViewModel: ObservableObject {
             || !category.isEmpty
             // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
             || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
+    }
+
+    // MARK: 端末の下書き（2026-10-11・`UploadDraftStore`）
+
+    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない
+    var drafts: UploadDraftStore?
+    /// 下書きの持ち主（ログインしている人）。**人ごとに分ける**——画面が `auth.userId` を入れる
+    var draftOwner: String?
+    /// この画面で下書きを開き直した（または保存した）か。**投稿が上がったら下書きを消す**（同じ写真が
+    /// 下書きにも残ると、開き直して二重に上げる）。開き直していない下書き（旅の写真から来た回などで、
+    /// 尋ねていない）はこの投稿とは別のものなので消さない（2026-10-11 判断）
+    private(set) var restoredDraft = false
+
+    /// 持ち主の下書き（無ければ nil）
+    var storedDraft: UploadDraftStore.Draft? {
+        guard let drafts, let draftOwner else { return nil }
+        return drafts.draft(for: draftOwner)
+    }
+
+    /// 下書きに保存できない理由（`UploadDraftRules.saveBlock`）。保存できるなら nil
+    var draftSaveBlock: UploadDraftRules.SaveBlock? {
+        UploadDraftRules.saveBlock(hasPhotos: !items.isEmpty,
+                                   loading: isLoadingPicked || preparingCaptures > 0,
+                                   sending: isWorking || visibilityLocked,
+                                   signedIn: drafts != nil && !(draftOwner ?? "").isEmpty)
+    }
+
+    /// いまの欄を下書きに保存する（×→「下書きに保存」）。**写真は整えた本体と編集のレシピ**を残す
+    /// （書き出した絵ではなく元に掛け直す——開き直しても編集し直せる）。
+    /// - Returns: 書けたか。書けなければ画面は閉じない（知らせを出す）
+    @discardableResult
+    func saveDraft(now: Date = Date()) -> Bool {
+        guard draftSaveBlock == nil, let drafts, let draftOwner else { return false }
+        let inputs = items.map { photo in
+            UploadDraftStore.ItemInput(imageData: photo.prepared.data, item: UploadDraftStore.Item(
+                imageFile: "", fileName: photo.prepared.fileName, contentType: photo.prepared.contentType,
+                exif: photo.prepared.exif,
+                latitude: photo.prepared.coords?.lat, longitude: photo.prepared.coords?.lng,
+                takenOn: photo.prepared.takenOn, dominantColor: photo.prepared.dominantColor,
+                title: photo.title, caption: photo.caption, location: photo.location,
+                photoPlaceName: photo.photoPlaceName, locationClearedByUser: photo.locationClearedByUser,
+                pickedLatitude: photo.pickedCoords?.lat, pickedLongitude: photo.pickedCoords?.lng,
+                recipe: photo.recipe.isIdentity ? nil : photo.recipe))
+        }
+        let fields = UploadDraftStore.Draft(
+            items: [], tagsText: tagsText, category: category, published: published,
+            audience: audience.rawValue, song: song, selectedAlbumId: selectedAlbumId,
+            groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now))
+        let ok = drafts.save(inputs, fields: fields, for: draftOwner)
+        if ok { restoredDraft = true }
+        return ok
+    }
+
+    /// 下書きを開き直す（「下書きを続けますか？」→「続ける」）。**画像が読めなければ何も戻さない**
+    /// （欠けたまま戻すと、書いた題が別の写真に付く）。
+    /// 写真は選ぶ画面の選択（`pickerItems`）には戻らない——カメラで撮った分と同じ扱い（外すのは帯の ×）
+    @discardableResult
+    func restoreDraft() -> Bool {
+        guard items.isEmpty, !isWorking, let drafts, let draft = storedDraft,
+              let images = drafts.images(of: draft) else { return false }
+        for (saved, data) in zip(draft.items, images) {
+            let prepared = ImagePreparer.Prepared(
+                data: data, fileName: saved.fileName, contentType: saved.contentType,
+                exif: saved.exif, coords: saved.coords, takenOn: saved.takenOn,
+                dominantColor: saved.dominantColor)
+            var photo = PendingPhoto(prepared: prepared)
+            photo.title = saved.title
+            photo.caption = saved.caption
+            photo.restorePlace(location: saved.location, photoPlaceName: saved.photoPlaceName,
+                               clearedByUser: saved.locationClearedByUser)
+            photo.pickedCoords = saved.pickedCoords
+            startStripThumb(for: photo.id, prepared: prepared)
+            items.append(photo)
+            // 編集はレシピを掛け直す（帯の編集後のサムネもここで描く）
+            if let recipe = saved.recipe { applyEdit(photo.id, recipe: recipe) }
+        }
+        tagsText = draft.tagsText
+        category = draft.category
+        published = draft.published
+        audience = Audience(rawValue: draft.audience) ?? .everyone
+        song = draft.song
+        selectedAlbumId = draft.selectedAlbumId
+        groupsAsOnePost = draft.groupsAsOnePost
+        restoredDraft = true
+        return true
+    }
+
+    /// 下書きを消す（「下書きを削除」）
+    func discardDraft() {
+        guard let drafts, let draftOwner else { return }
+        drafts.clear(for: draftOwner)
+        restoredDraft = false
+    }
+
+    /// 投稿が1枚でも上がった。開き直した下書きなら消す（`restoredDraft` の注記）
+    private func clearRestoredDraftAfterPosting(posted: Int) {
+        guard UploadDraftRules.clearsAfterPosting(posted: posted, restored: restoredDraft) else { return }
+        discardDraft()
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
@@ -984,6 +1091,8 @@ final class UploadViewModel: ObservableObject {
         // 同じ写真をもう一度上げる（枚数の枠を食う）
         let postedKeys = items.filter { done.contains($0.id) }.map(\.pickerItem)
         items.removeAll { done.contains($0.id) }
+        // 開き直した下書きは、1枚でも上がったら消す（残りは画面にある。閉じるならまた保存できる）
+        clearRestoredDraftAfterPosting(posted: done.count)
         // 🔴 **ライブラリの選択からも外す。** 残すと、残った1枚を外す・「追加」で
         // 選び足す、のどちらでも選び直しの差分が投稿済みの写真を「新しく選ばれた」
         // と読み、**同じ写真をもう一度読み込んで上げる**（`remove` と同じ理由）
