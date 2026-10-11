@@ -39,6 +39,13 @@ final class UploadDraftStore {
         var pickedLongitude: Double?
         /// 編集のレシピ。**元の写真に掛け直す**（書き出した絵は残さない——編集し直せるように）
         var recipe: PhotoRecipe?
+        /// この1枚の印（保存のときに付ける）。投稿が上がった写真を**1枚ずつ**下書きから外すのに使う
+        var key: String? = nil
+        /// 🔴 **送り始めた（届いたか分からない）。** 送る直前に立て、上がったら1枚ごと外し、
+        /// 届いていないと分かったら下ろす（`UploadViewModel.submit`）。送っている途中でアプリが落ちた・
+        /// 届いたか分からないまま閉じた写真は立ったまま残り、**開き直しても戻さない**（2026-10-11 判断・
+        /// `UploadDraftStore.restorable`）——戻すと、届いていた写真がもう一度投稿される
+        var inFlight: Bool? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -64,6 +71,22 @@ final class UploadDraftStore {
         var groupsAsOnePost: Bool
         /// 保存した時刻（ISO8601）
         var savedAt: String
+        /// 撮影スポットの紐付け（スポットの画面から開いた投稿）。無ければ nil
+        var spot: Spot? = nil
+
+        /// スポットの紐付け（`UploadSpotTarget` の写し）
+        struct Spot: Codable, Equatable {
+            var spotId: String
+            var name: String
+            var latitude: Double?
+            var longitude: Double?
+        }
+    }
+
+    /// 開き直す写真と、届いたか分からないので外す写真の数（`Item.inFlight` の注記）
+    static func restorable(_ draft: Draft) -> (items: [Item], dropped: Int) {
+        let items = draft.items.filter { $0.inFlight != true }
+        return (items, draft.items.count - items.count)
     }
 
     /// 保存するときに渡す1枚ぶん（画像の中身つき）
@@ -97,8 +120,13 @@ final class UploadDraftStore {
 
     /// 画像の名前。鍵の文字を16進にするので、人ごとに必ず別の名前になる
     static func imageFileName(forKey key: String, token: String, index: Int) -> String {
-        let hex = key.utf8.map { String(format: "%02x", $0) }.joined()
-        return "\(filePrefix)\(hex)-\(token)-\(index).jpg"
+        "\(filePrefix(forKey: key))\(token)-\(index).jpg"
+    }
+
+    /// その人の画像の名前の前置き（`upload-draft-<鍵の16進>-`）。終わりの `-` で、鍵が前方一致する
+    /// 別の人（"a" と "ab"）を取り違えない
+    static func filePrefix(forKey key: String) -> String {
+        "\(filePrefix)\(key.utf8.map { String(format: "%02x", $0) }.joined())-"
     }
 
     private func fileURL(_ name: String) -> URL { directory.appendingPathComponent(name) }
@@ -130,10 +158,10 @@ final class UploadDraftStore {
     /// 下書きがあるか（開いたときに「下書きを続けますか？」を出すか）
     func hasDraft(for userId: String) -> Bool { draft(for: userId) != nil }
 
-    /// 下書きの画像（並びの順）。**1枚でも読めなければ nil**
-    func images(of draft: Draft) -> [Data]? {
+    /// 写真の画像（並びの順）。**1枚でも読めなければ nil**
+    func images(of items: [Item]) -> [Data]? {
         var result: [Data] = []
-        for item in draft.items {
+        for item in items {
             guard let data = try? Data(contentsOf: fileURL(item.imageFile)) else { return nil }
             result.append(data)
         }
@@ -163,6 +191,7 @@ final class UploadDraftStore {
         saved.items = zip(inputs, names).map { input, name in
             var item = input.item
             item.imageFile = name
+            if item.key == nil { item.key = UUID().uuidString }
             return item
         }
         guard let data = try? JSONEncoder().encode(saved) else {
@@ -176,6 +205,39 @@ final class UploadDraftStore {
         return true
     }
 
+    /// 記録を読み、1枚ずつの書き換えをして書き戻す（画像は書き換えない）。最後の1枚が外れたら下書きごと消す
+    private func update(for userId: String, _ change: (inout [Item]) -> Void) {
+        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+              var saved = try? JSONDecoder().decode(Draft.self, from: data) else { return }
+        let before = saved.items
+        change(&saved.items)
+        guard saved.items != before else { return }
+        let kept = Set(saved.items.map(\.imageFile))
+        if saved.items.isEmpty {
+            defaults.removeObject(forKey: key)
+        } else if let encoded = try? JSONEncoder().encode(saved) {
+            defaults.set(encoded, forKey: key)
+        } else {
+            return
+        }
+        for item in before where !kept.contains(item.imageFile) {
+            try? FileManager.default.removeItem(at: fileURL(item.imageFile))
+        }
+    }
+
+    /// 🔴 **投稿が上がった1枚を外す**（上がるたびにすぐ・2026-10-11）。束の終わりまで待つと、途中で
+    /// アプリが落ちたときに上がった写真が下書きに残り、開き直して二重に投稿していた
+    func removeItem(key itemKey: String, for userId: String) {
+        update(for: userId) { $0.removeAll { $0.key == itemKey } }
+    }
+
+    /// 送り始めた（`true`）・届いていないと分かった（`false`）の印（`Item.inFlight`）
+    func setInFlight(_ inFlight: Bool, key itemKey: String, for userId: String) {
+        update(for: userId) { items in
+            for i in items.indices where items[i].key == itemKey { items[i].inFlight = inFlight ? true : nil }
+        }
+    }
+
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**
     func clear(for userId: String) {
         guard let key = Self.key(for: userId) else { return }
@@ -183,6 +245,31 @@ final class UploadDraftStore {
         defaults.removeObject(forKey: key)
     }
 
-    /// 退会した人の書きかけを消す（`AccountLocalData`）
-    func removeData(for userId: String) { clear(for: userId) }
+    /// 退会した人の書きかけを消す（`AccountLocalData`）。**記録から外れた画像も**、その人の鍵の
+    /// 16進の前置き（`imageFileName`）で拾って消す（書きかけの途中で落ちた回の取りこぼし）
+    func removeData(for userId: String) {
+        clear(for: userId)
+        guard let key = Self.key(for: userId),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let prefix = Self.filePrefix(forKey: key)
+        for name in names where name.hasPrefix(prefix) {
+            try? FileManager.default.removeItem(at: fileURL(name))
+        }
+    }
+
+    /// **どの下書きからも指されていない画像を消す**（起動のとき・`StoryDraftStore.sweepOrphans` と同じ形）。
+    /// 保存の途中で落ちた回・前の名前の消し損ねが残り、端末の容量を静かに食う。
+    /// 同じ端末の別の人の下書きは消さない——全員ぶんの記録を読み、指されている名前は残す
+    func sweepOrphans() {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let referenced = Set(defaults.dictionaryRepresentation().flatMap { entry -> [String] in
+            guard entry.key.hasPrefix("\(Self.keyPrefix):"), let data = entry.value as? Data,
+                  let saved = try? JSONDecoder().decode(ImageRef.self, from: data) else { return [] }
+            return saved.files
+        })
+        for name in names where name.hasPrefix(Self.filePrefix) && name.hasSuffix(".jpg")
+            && !referenced.contains(name) {
+            try? FileManager.default.removeItem(at: fileURL(name))
+        }
+    }
 }

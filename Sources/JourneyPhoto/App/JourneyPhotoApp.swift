@@ -320,6 +320,9 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
+                    // 写真の投稿の下書きの、どの記録からも指されない画像を片づける（`StoryDraftStore` の
+                    // `use` と同じ頃合い・2026-10-11）。下書き自体は投稿の画面が開いたときに人ごとに読む
+                    UploadDraftStore().sweepOrphans()
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての

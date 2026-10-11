@@ -260,7 +260,8 @@ extension NotificationsView {
             }
             .buttonStyle(.plain)
             .disabled(isTurningOnPush)
-            .accessibilityLabel(banner.title)
+            // 読み上げは押す所の文字（「オンにする」「設定を開く」）。帯の題は隣の文字で読まれる
+            .accessibilityLabel(banner.action)
             .accessibilityHint(banner.hint)
             .accessibilityIdentifier("notifications.pushBanner.action")
         }

@@ -176,7 +176,8 @@ struct UploadView: View {
     private var closeDialog: UploadDraftRules.CloseDialog {
         UploadDraftRules.closeDialog(block: model.draftSaveBlock,
                                      replacesOther: !model.restoredDraft && model.storedDraft != nil,
-                                     restored: model.restoredDraft)
+                                     restored: model.restoredDraft,
+                                     unsure: model.hasUnsureDraftPhotos)
     }
 
     /// 「下書きに保存」。**書けたときだけ閉じる**（書けなければ上に知らせを出して残る）
@@ -191,11 +192,16 @@ struct UploadView: View {
 
     /// 「続ける」。画像が読めなければ何も戻さず、そう言う（選ぶ画面を開く）
     private func restoreDraft() {
-        guard model.restoreDraft() else {
-            model.discardDraft()
-            model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
-            openLibraryAfterRestorePrompt()
-            return
+        Task {
+            guard await model.restoreDraft() else {
+                // 戻せる写真が無かった（届いたか分からない写真だけだった）ときは、モデルがもう知らせている
+                if model.errorMessage == nil {
+                    model.discardDraft()
+                    model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
+                }
+                openLibraryAfterRestorePrompt()
+                return
+            }
         }
     }
 
@@ -310,7 +316,7 @@ struct UploadView: View {
             try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
             guard !Task.isCancelled else { return }
             // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
-            guard !showRestore else { return }
+            guard !showRestore, !model.isRestoringDraft else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
                 || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
@@ -357,7 +363,8 @@ struct UploadView: View {
             if model.drafts == nil { model.drafts = UploadDraftStore() }
             if !askedRestore { model.draftOwner = auth.userId }
             if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
-                                            opensWithPhotos: !initialPhotos.isEmpty || initialCapture != nil,
+                                            opensWithContent: !initialPhotos.isEmpty || initialCapture != nil
+                                                || initialTag != nil || initialSpot != nil,
                                             alreadyAsked: askedRestore) {
                 showRestore = true
             }
