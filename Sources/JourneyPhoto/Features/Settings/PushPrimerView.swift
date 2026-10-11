@@ -69,16 +69,16 @@ struct PushPrimerView: View {
                     Text(L("あとで", "Not now"))
                         .font(.callout)
                         .foregroundStyle(WebTheme.muted2)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        // 48: 半分の高さのシートは iOS 26 で約 96% に縮めて描かれ、44 だと
+                        // 当たりが 42.4pt になっていた（run 407・408 の画面で主ボタンの幅も 0.962 倍）
+                        .frame(maxWidth: .infinity, minHeight: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("push.primer.later")
             }
             .padding(.horizontal, 24)
-            // 下の余白は 16。8 だと半分の高さのシートの下の縁で「あとで」の当たりが
-            // 42pt に削られていた（run 407・押せるものは 44pt）
-            .padding(.bottom, 16)
+            .padding(.bottom, 8)
             .background(WebTheme.background)
         }
         .webScreen()
