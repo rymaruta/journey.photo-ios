@@ -1023,7 +1023,12 @@ final class UploadViewModel: ObservableObject {
                 }
                 didPostAll = done.count > 0
                 // 全部上がった回は「うれしい瞬間」（評価をお願いする頃合いを数える・`ReviewPromptStore`）
-                if didPostAll { ReviewPromptStore.shared.noteHappyMoment() }
+                if didPostAll {
+                    // 通知の説明は**評価のお願いより先に**合図する（同じ投稿で両方が来たら、説明が先に出る）。
+                    // いいね・コメントが届くのは投稿してから——通知が役に立つ最初の場面（`PushPrimer`・2026-10-11）
+                    PushPrimerStore.shared.notePosted()
+                    ReviewPromptStore.shared.noteHappyMoment()
+                }
             } else {
                 errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                     UploadSummary.message(done: done.count, failures: failures,

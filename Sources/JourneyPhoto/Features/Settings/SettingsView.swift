@@ -57,6 +57,13 @@ struct SettingsView: View {
                 wantsPush = push.isEnabled && authorized
                 if authorized { showDeniedHint = false }
             }
+            // **ほかの所から「受け取る」にしたときも合わせる**（Pro の「前の晩に知らせる」の
+            // 「通知がオフのため届きません」を押した・2026-10-11）。端末の許可が前から
+            // あると `isAuthorized` は変わらず、上だけではトグルが「切」のまま残る
+            .onChange(of: push.isEnabled) { _, enabled in
+                guard !isApplying else { return }
+                wantsPush = enabled && push.isAuthorized
+            }
     }
 
     private func loadMyProfile() async {

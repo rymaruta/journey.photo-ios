@@ -500,9 +500,20 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
-            // ホームの「撮影地を探す / 写真から探す」が見える状態をPR確認用に残す
-            if name == "ホーム", app.buttons["home.exploreMap"].firstMatch.exists {
-                shoot(app, "10b-ホーム（撮影地への入口）")
+            // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
+            // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
+            // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
+            if name == "ホーム" {
+                let latest = app.buttons["新着"].firstMatch
+                if latest.waitForExistence(timeout: 5), latest.isHittable {
+                    latest.tap()
+                    Thread.sleep(forTimeInterval: 3)
+                    shoot(app, "10b-ホーム（新着を選んだ直後）")
+                    XCTAssertFalse(app.descendants(matching: .any)["home.featured"].firstMatch.exists,
+                                   "「新着」なのに、おすすめの横並びが切り替えの下に挟まっている")
+                    XCTAssertFalse(app.buttons["home.exploreMap"].firstMatch.exists,
+                                   "消したはずの「撮影地を探す」の札が出ている")
+                }
                 // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
                 let following = app.buttons["フォロー中"].firstMatch
                 if following.exists, following.isHittable {
@@ -998,6 +1009,60 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+
+        // **「前の晩に知らせる」の「通知がオフのため届きません」**（2026-10-11・`LightAlertPushNotice`）。
+        // 見本の利用者は公開プロフィールで Pro なので入切の行が出る。CI のシミュレータは通知を許可して
+        // いない（どの試験も通知の許可を押さない）ので、入切が「入」なら知らせも出るはず——出なければ落とす。
+        // 入切の行が出ない（プロフィールが読めない）・「切」の回は撮らない（この試験の決まり）
+        let lightAlert = app.switches["settings.lightAlert"].firstMatch
+        guard lightAlert.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !lightAlert.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard lightAlert.isHittable, (lightAlert.value as? String) == "1" else { return }
+        let notice = app.buttons["settings.lightAlert.pushOff"].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5),
+                      "通知を許可していない端末で「前の晩に知らせる」が入なのに、届かないことを知らせていない")
+        guard notice.exists else { return }
+        if !notice.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        XCTAssertGreaterThanOrEqual(notice.frame.height, 44, "「通知がオフのため届きません」の行が 44pt 未満")
+        shoot(app, "80b-設定（Pro の節・通知がオフ）")
+    }
+
+    /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
+    /// 鍵を持たない入り方では投稿できないので、起動の鍵（`-JPPreviewPushPrimer`・Debug のみ）で起動のときに出す。
+    ///
+    /// 出なければ撮らずに抜ける（この試験の決まり）。**出たのに「通知を受け取る」「あとで」が無い・44pt 未満・
+    /// 「あとで」で閉じなければ落とす**。「通知を受け取る」は押さない（シミュレータに許可を残さない）
+    func testCapturesPushPrimer() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 初期ユーザー章の贈り物（全画面）が説明の上に被さらないように止める（ほかの試験と同じ・run 403）
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPushPrimer", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let allow = app.buttons["push.primer.allow"].firstMatch
+        guard allow.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02c-通知の説明")
+        let later = app.buttons["push.primer.later"].firstMatch
+        XCTAssertTrue(later.exists, "「あとで」が無い（断る口が無い）")
+        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「通知を受け取る」が 44pt 未満")
+        XCTAssertGreaterThanOrEqual(later.frame.height, 44, "「あとで」が 44pt 未満")
+        guard later.exists, later.isHittable else { return XCTFail("「あとで」を押せない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
     /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →

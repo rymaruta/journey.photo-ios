@@ -110,7 +110,9 @@ final class ReviewPromptTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
         let upload = try String(contentsOf: root.appendingPathComponent("Features/Upload/UploadViewModel.swift"), encoding: .utf8)
-        XCTAssertTrue(upload.contains("if didPostAll { ReviewPromptStore.shared.noteHappyMoment() }"),
+        // 2026-10-11: 同じ `if didPostAll {` の中で、通知の説明の合図（`PushPrimerStore`）の後に数える
+        let posted = upload.range(of: "if didPostAll {").map { String(upload[$0.upperBound...].prefix(600)) } ?? ""
+        XCTAssertTrue(posted.contains("ReviewPromptStore.shared.noteHappyMoment()"),
                       "投稿が全部上がった回を数えていない")
         let view = try String(contentsOf: root.appendingPathComponent("App/RootView.swift"), encoding: .utf8)
         XCTAssertTrue(view.contains("tabsWithReviewPrompt"), "評価のお願いの合図を受けていない")

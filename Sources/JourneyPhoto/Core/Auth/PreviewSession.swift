@@ -104,4 +104,20 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// UI テストで通知の説明（`PushPrimerView`）を起動のときに1回出す（Debug のみ）。`-JPPreviewPushPrimer YES`。
+    ///
+    /// ふだんは初めての投稿が上がったときにしか出ず、鍵を持たない入り方では投稿できないので絵が撮れない。
+    /// 許可の状態・前に出したかは見ない（シミュレータの状態に絵が左右されないように）。
+    /// **入っている見本の利用者のときだけ**効く。Release では必ず false
+    static let pushPrimerKey = "JPPreviewPushPrimer"
+
+    static var opensPushPrimer: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: pushPrimerKey)
+        #else
+        return false
+        #endif
+    }
 }

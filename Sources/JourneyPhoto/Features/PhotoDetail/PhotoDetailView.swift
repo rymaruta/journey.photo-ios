@@ -29,6 +29,9 @@ struct PhotoDetailView: View {
     /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
     @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
+    /// 「この人をブロック」の確認（`blockConfirmation(presenting:)`）。**押した時点の相手を控える**
+    /// ——確認を出している間に写真を送って持ち主が替わっても、押した人をブロックする
+    @State private var ownerPendingBlock: String?
     @State private var showEdit = false
     /// 過去の投稿を SNS に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
     @State private var threadsBundle: ThreadsShare.Bundle?
@@ -354,6 +357,9 @@ struct PhotoDetailView: View {
         } message: {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
         }
+        .blockConfirmation(presenting: $ownerPendingBlock) { owner in
+            Task { await block(owner) }
+        }
         // コメントの削除は確かめてから（押し間違いで他人の書き込みを消さない）
         //
         // **`presenting:` で押した時点の1件を受け取る。** 閉じるときの
@@ -376,18 +382,10 @@ struct PhotoDetailView: View {
         .sheet(item: $commentReporting) { comment in
             ReportSheet(photoId: current.id, ownerId: ownerId, comment: .init(comment))
         }
-        // コメントを書いた人のブロック。**確かめ方はプロフィールと同じ**（`UserProfileView`）。
+        // コメントを書いた人のブロック。**確認はほかの4か所と同じ部品**（2026-10-11）。
         // `presenting:` で押した時点の1件を受け取る（削除の確認と同じ理由）
-        .alert(L("この人をブロックしますか？", "Block this person?"),
-               isPresented: Binding(get: { commentPendingBlock != nil },
-                                    set: { if !$0 { commentPendingBlock = nil } }),
-               presenting: commentPendingBlock) { comment in
-            Button(L("ブロック", "Block"), role: .destructive) {
-                Task { await block(comment.uid) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        } message: { _ in
-            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
+        .blockConfirmation(presenting: $commentPendingBlock) { comment in
+            Task { await block(comment.uid) }
         }
         // 未ログインで押したいいね・保存から「ログインする」（`SignInPrompt`）
         .signInPrompt(ask: $signInAsk, open: $signInOpen)
@@ -887,7 +885,11 @@ struct PhotoDetailView: View {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if let ownerId {
-                    Button(role: .destructive) { Task { await block(ownerId) } } label: {
+                    // **押したらまず確かめる**（ほかの3か所と同じ部品・2026-10-11）。
+                    // ここだけ確認が無く、メニューの押し間違い1回でブロックされていた
+                    Button(role: .destructive) {
+                        ownerPendingBlock = ownerId
+                    } label: {
                         Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                     }
                 }
