@@ -145,6 +145,9 @@ final class PushCenter: ObservableObject {
     private let readAuthorization: () async -> Bool
     /// 許可の段階を読む（まだ聞いていない／断られた）。試験で差し替える
     private let readPermission: () async -> PushPermission
+    /// 許可を尋ねる（OS のダイアログ）。試験で差し替える——本物は答える人のいない試験で
+    /// 返ってこず、Mac の試験が2時間止まった（2026-10-11）
+    private let requestPermission: () async throws -> Bool
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
          defaults: UserDefaults = .standard,
@@ -154,12 +157,17 @@ final class PushCenter: ObservableObject {
              return settings.authorizationStatus == .authorized
                  || settings.authorizationStatus == .provisional
          },
-         readPermission: @escaping () async -> PushPermission = { await PushPermission.system() }) {
+         readPermission: @escaping () async -> PushPermission = { await PushPermission.system() },
+         requestPermission: @escaping () async throws -> Bool = {
+             try await UNUserNotificationCenter.current()
+                 .requestAuthorization(options: [.alert, .badge, .sound])
+         }) {
         self.service = service
         self.defaults = defaults
         self.releaseDevice = releaseDevice
         self.readAuthorization = readAuthorization
         self.readPermission = readPermission
+        self.requestPermission = requestPermission
         self.isEnabled = defaults.bool(forKey: Self.legacyEnabledKey)
     }
 
@@ -297,8 +305,7 @@ final class PushCenter: ObservableObject {
         // （`expireSession`）と、答えが次の人（や端末共通の鍵）に書かれていた
         let owner = userId
         do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .badge, .sound])
+            let granted = try await requestPermission()
             isAuthorized = granted
             // 答えが出たので段階も決まる（断られたら、次からは設定アプリへの案内）
             permission = granted ? .allowed : .denied

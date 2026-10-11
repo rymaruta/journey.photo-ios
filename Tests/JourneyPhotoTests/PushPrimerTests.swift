@@ -54,10 +54,11 @@ final class PushPrimerTests: XCTestCase {
         XCTAssertEqual(push.permission, .denied)
     }
 
-    /// 尋ねて断られたら `.denied`（次からは設定アプリへの案内に替わる。模型の OS は必ず断る）
+    /// 尋ねて断られたら `.denied`（次からは設定アプリへの案内に替わる）。
+    /// 🔴 尋ねるのは差し替える——本物の OS のダイアログは試験では答えが返らず、Mac の試験が止まった
     func testEnableThatIsRefusedMarksDenied() async {
         let push = PushCenter(defaults: defaults, releaseDevice: {}, readAuthorization: { false },
-                              readPermission: { .notDetermined })
+                              readPermission: { .notDetermined }, requestPermission: { false })
         await push.refreshAuthorization()
         XCTAssertEqual(push.permission, .notDetermined)
         let granted = await push.enable()
