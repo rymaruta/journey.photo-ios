@@ -301,6 +301,29 @@ final class TripBookFactsTests: XCTestCase {
         XCTAssertNotEqual(title, "金沢", "撮影地だけを題にしている（板は「金沢の旅」）")
     }
 
+    /// 題は画面に出す形（住所のままにしない・同じ画面の写真の行と揃える・2026-10-11 レビュー）
+    func testTitleUsesTheShortPlace() throws {
+        let raw = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", date: "2026-09-12", place: raw),
+            try photo("b", date: "2026-09-13", place: raw),
+        ]).first)
+        XCTAssertTrue(TripBook.title(of: trip).contains("蔵王キツネ村（宮城県白石市）"))
+        XCTAssertFalse(TripBook.title(of: trip).contains("989-0733"))
+    }
+
+    /// 旅の一冊の道のりの札・日の見出しも短い形（比べは元の文字のまま）
+    func testTripBookViewShowsShortPlaces() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripBookView.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(view.contains("Text(LocationMatch.display(stop.place))"), "道のりの札が住所のまま")
+        XCTAssertTrue(view.contains("Text(LocationMatch.display(day.place))"), "日の見出しが住所のまま")
+        XCTAssertTrue(view.contains("Text(LocationMatch.display(place))"), "写真の行が住所のまま")
+        XCTAssertTrue(view.contains("place != dayPlace"), "同じ地名の比べは元の文字で")
+    }
+
     // MARK: 数
 
     /// 撮影地は**名前の異なり**で数える（空白の違い・空は数えない）

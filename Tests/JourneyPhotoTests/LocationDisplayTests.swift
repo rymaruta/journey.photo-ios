@@ -56,6 +56,27 @@ final class LocationDisplayTests: XCTestCase {
         XCTAssertEqual(LocationMatch.display("  "), "")
     }
 
+    /// 街と県が同じ名前なら1度だけ（"Kyoto (Kyoto, Kyoto)" にしない・2026-10-11 レビュー）。
+    /// 和文の 京都市・京都府 は字が違うので「京都府京都市」のまま
+    func testCityAndPrefectureWithSameNameShownOnce() {
+        XCTAssertEqual(LocationMatch.display("Kiyomizu-dera, 1, Kiyomizu, Higashiyama Ward, Kyoto, Kyoto Prefecture, 605-0862, Japan"),
+                       "Kiyomizu-dera (Kyoto)")
+        XCTAssertEqual(LocationMatch.display("Osaka Castle, 1-1, Osakajo, Chuo Ward, Osaka, Osaka Prefecture, 540-0002, Japan"),
+                       "Osaka Castle (Osaka)")
+        XCTAssertEqual(LocationMatch.display("清水寺, 清水, 東山区, 京都市, 京都府, 605-0862, 日本"),
+                       "清水寺（京都府京都市）")
+    }
+
+    /// 人が大きい順に打った文字は触らない（先頭が県・市。検索の答えの形ではない・2026-10-11 レビュー）
+    func testUserTypedBigToSmallStaysAsTyped() {
+        XCTAssertEqual(LocationMatch.display("宮城県, 白石市, 蔵王キツネ村"), "宮城県, 白石市, 蔵王キツネ村")
+        XCTAssertEqual(LocationMatch.display("白石市, 福岡八宮, 蔵王キツネ村"), "白石市, 福岡八宮, 蔵王キツネ村")
+        XCTAssertEqual(LocationMatch.display("Miyagi Prefecture, Shiroishi, Zao Fox Village"),
+                       "Miyagi Prefecture, Shiroishi, Zao Fox Village")
+        // 郵便番号や国があれば検索の答えとして縮める
+        XCTAssertEqual(LocationMatch.display("蔵王キツネ村, 白石市, 宮城県, 989-0733"), "蔵王キツネ村（宮城県白石市）")
+    }
+
     /// 突き合わせは元の文字のまま（縮めた名前で別の場所に当てない）
     func testMatchingStillUsesRawText() {
         let raw = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"

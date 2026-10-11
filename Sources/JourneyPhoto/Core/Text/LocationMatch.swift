@@ -194,8 +194,12 @@ extension LocationMatch {
         guard let last = parts.last, parts.count >= 2 else { return trimmed }
         let hasPostal = parts.contains(where: isPostalOrNumber)
         let endsInJapan = isJapan(last)
-        // 人が打った「パリ, フランス」「金沢, 石川」は触らない（住所の形をしているときだけ縮める）
-        guard parts.count >= 3 || hasPostal || endsInJapan else { return trimmed }
+        // 人が打った「パリ, フランス」「金沢, 石川」「宮城県, 白石市, 蔵王キツネ村」は触らない。
+        // **場所の検索の答えの形のときだけ縮める**（2026-10-11 レビュー）: 郵便番号がある・
+        // 国（日本）で終わる・3つ以上で**先頭が行政区分ではない**（検索の答えは小さい順で、
+        // 先頭が場所の名前。大きい順に打った文字は先頭が県や市になる）
+        let startsWithName = !isAdministrative(parts[0])
+        guard hasPostal || endsInJapan || (parts.count >= 3 && startsWithName) else { return trimmed }
         let kept = parts.filter { !isPostalOrNumber($0) }
         guard let name = kept.first else { return trimmed }
         let rest = Array(kept.dropFirst())
@@ -205,7 +209,8 @@ extension LocationMatch {
             let pref = rest[prefIndex]
             if name == pref { return name }
             let city = rest[..<prefIndex].reversed().first { part in
-                guard let tail = part.last, part != name else { return false }
+                // 県と同じ字は二度出さない
+                guard let tail = part.last, part != name, part != pref else { return false }
                 return "市区町村".contains(tail)
             }
             return "\(name)（\(pref)\(city ?? "")）"
@@ -219,7 +224,12 @@ extension LocationMatch {
             }
             let pref = shortEnglishPrefecture(body[prefIndex])
             let city = body[body.startIndex..<prefIndex].reversed().first { !isEnglishDistrict($0) }
-            let region = [city, pref].compactMap { $0 }.filter { $0 != name }
+            // **街と県が同じ名前なら1度だけ**（"Kyoto, Kyoto Prefecture" →「Kyoto」・2026-10-11 レビュー）
+            var region: [String] = []
+            for part in [city.map(shortEnglishPrefecture), pref].compactMap({ $0 })
+            where part != name && !region.contains(part) {
+                region.append(part)
+            }
             return region.isEmpty ? name : "\(name) (\(region.joined(separator: ", ")))"
         }
         // 海外: 名前＋（街）＋国
@@ -238,6 +248,14 @@ extension LocationMatch {
         let allowed = CharacterSet(charactersIn: "0123456789-−〒 ")
         return part.unicodeScalars.contains { CharacterSet.decimalDigits.contains($0) }
             && part.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    /// 行政区分の欠片か（都道府県・市区町村郡で終わる和文・英文の県・国の日本）。
+    /// 先頭がこれなら、人が大きい順に打った文字とみなして縮めない
+    private static func isAdministrative(_ part: String) -> Bool {
+        if RegionList.prefectures.contains(part) || isEnglishPrefecture(part) || isJapan(part) { return true }
+        guard hasJapaneseScript(part), let tail = part.last else { return false }
+        return "都道府県市区町村郡".contains(tail)
     }
 
     private static func isJapan(_ part: String) -> Bool {
