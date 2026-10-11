@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// お知らせ。
 struct NotificationsView: View {
@@ -22,6 +23,9 @@ struct NotificationsView: View {
     /// 行の本体・アイコンをそれぞれ横並びの別ボタンにして、押したら
     /// ここに行き先を立て、一覧の外（`navigationDestination`）から開く
     @State private var route: NotificationsViewModel.Route?
+    /// 「通知をオンにする」の帯（`ActivityPushBanner`・2026-10-11）から許可を尋ねている最中（二度押しで重ねない）
+    @State private var isTurningOnPush = false
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Group {
@@ -147,6 +151,13 @@ struct NotificationsView: View {
 
     private var list: some View {
         List {
+            // 届かない端末では一覧のいちばん上で言う（決まりは `ActivityPushBanner`・2026-10-11）
+            if let banner = ActivityPushBanner.state(permission: push.permission) {
+                pushBanner(banner)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+            }
             filterChips
                 .listRowBackground(Color.clear)
 
@@ -196,6 +207,8 @@ struct NotificationsView: View {
             guard !Task.isCancelled, let target, let destination = model.route(for: target) else { return }
             route = destination
         }
+        // 許可の段階をまだ読んでいなければ読む（帯を出すか決める。前面に戻ったときは `PushCenter.use` が読み直す）
+        .task { if push.permission == .unknown { await push.refreshAuthorization() } }
         .refreshable {
             if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
                 await push.clearBadge()
@@ -208,6 +221,70 @@ struct NotificationsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.followBackError ?? "")
+        }
+    }
+}
+
+extension NotificationsView {
+
+    /// 「通知をオンにする」の帯。写真の無い画面なので板（DesignSystem「黒塗りの真鍮」）どおり:
+    /// 案内の帯は accent-soft の地・合図のアイコンは真鍮（黒地の上）・文字は白・押す所は
+    /// 写真の無い画面の主ボタン＝真鍮の塗り（`accentFill`）に墨（`accentText`）。押せる所は 44pt
+    fileprivate func pushBanner(_ banner: ActivityPushBanner) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "bell.badge")
+                .font(.system(size: 18))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(banner.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                Text(banner.detail)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { Task { await fixPush(banner) } } label: {
+                Text(banner.action)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 34)
+                    .background(WebTheme.accentFill, in: Capsule())
+                    // 見た目は 34・当たりは 44（板: 当たり判定は 44・見た目は変えない）
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isTurningOnPush)
+            .accessibilityLabel(banner.title)
+            .accessibilityHint(banner.hint)
+            .accessibilityIdentifier("notifications.pushBanner.action")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .background(WebTheme.accentSoft, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("notifications.pushBanner")
+    }
+
+    /// 帯の押す所。まだ聞いていない → 設定の「プッシュ通知を受け取る」と同じ道（`PushCenter.enable`・
+    /// 必要なら OS が尋ねる）。断られた → OS はもう聞かないので、設定アプリの通知の所を開く
+    /// （戻ったら `PushCenter.use` が読み直し、許可されていれば帯が消える）
+    fileprivate func fixPush(_ banner: ActivityPushBanner) async {
+        switch banner {
+        case .openSettings:
+            if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+        case .turnOn:
+            guard !isTurningOnPush else { return }
+            isTurningOnPush = true
+            defer { isTurningOnPush = false }
+            // 断られたら `push.permission` が `.denied` になり、帯は設定アプリへの案内に替わる
+            await push.enable()
         }
     }
 }

@@ -8,7 +8,9 @@ import Foundation
 /// **画像の読み書き（ImageIO）から切り離してある。** `UploadService` が
 /// 参照する型なので、ここが ImageIO に依存していると、Foundation だけの層を
 /// Linux 上で型検査できなくなる。
-struct ExifFields: Encodable, Equatable {
+///
+/// 読み戻せる（`Codable`）のは、投稿の下書き（`UploadDraftStore`）に残して開き直すため（2026-10-11）
+struct ExifFields: Codable, Equatable {
     var camera: String?
     var lens: String?
     var aperture: String?
