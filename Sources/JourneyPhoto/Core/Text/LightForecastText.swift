@@ -448,14 +448,41 @@ enum LightForecastText {
         #endif
     }
 
-    /// 見本（今日から4日・場所の名前は伏せ字）。**本物の予報ではない**
-    static func sample(now: Date) -> LightForecast {
+    // MARK: - 札と撮影スポット（2026-10-11）
+
+    /// 札の場所に当たる撮影スポット（索引の行）。**slug で引く**（応答の `key` は `SPOT-<slug>`）。
+    /// 引けなければ nil——写真・「スポットを見る」「経路」を出さず、色の四角と週の予報だけにする
+    static func spot(for place: LightForecast.Place, in index: [OfficialSpot]) -> OfficialSpot? {
+        let slug = place.slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !slug.isEmpty, let hit = index.first(where: { $0.slug == slug }) { return hit }
+        return index.first { SavedSpotKey.official($0.slug) == place.key }
+    }
+
+    /// 札の開閉の読み上げの値（印 › / ⌄ を形で見せ、読み上げでも言う）
+    static func disclosureValue(isOpen: Bool) -> String {
+        isOpen ? L("開いています", "Expanded") : L("閉じています", "Collapsed")
+    }
+
+    /// 見本に使う撮影スポット（DEBUG の見本だけ）。公開済み・写真と座標のある行を先頭から4つ。
+    /// 見本の札に本物の写真と「スポットを見る」「経路」が出るように、名前と slug をこの行から取る
+    static func previewSpots(_ index: [OfficialSpot]) -> [OfficialSpot] {
+        Array(index.filter { !$0.isDraft && $0.hasPhoto && $0.coords != nil }.prefix(4))
+    }
+
+    /// 見本（今日から4日）。**本物の予報ではない**。`spots` を渡せば、その名前と slug を使う
+    /// （渡さない・足りないぶんは伏せ字の名前）
+    static func sample(now: Date, spots: [OfficialSpot] = []) -> LightForecast {
         let zone = TimeZone(identifier: "Asia/Tokyo")!
         func day(_ offset: Int) -> String { SpotLight.ymd(offset: offset, from: now, in: zone) ?? "2026-10-10" }
         func clock(_ text: String) -> LightForecast.Clock { .init(at: "2100-01-01T00:00:00.000Z", clock: text) }
         func place(_ n: Int, _ days: [LightForecast.Day]) -> LightForecast.Place {
-            .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("撮影スポット \(n)", "Photo spot \(n)"),
-                  timeZone: "Asia/Tokyo", forecast: true, days: days)
+            if spots.indices.contains(n - 1) {
+                let spot = spots[n - 1]
+                return .init(key: SavedSpotKey.official(spot.slug), slug: spot.slug, name: spot.name,
+                             nameEn: spot.nameEn, timeZone: "Asia/Tokyo", forecast: true, days: days)
+            }
+            return .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("撮影スポット \(n)", "Photo spot \(n)"),
+                         timeZone: "Asia/Tokyo", forecast: true, days: days)
         }
         return LightForecast(places: [
             place(1, [.init(date: day(1), sunrise: clock("05:42"), sunset: clock("17:22"),

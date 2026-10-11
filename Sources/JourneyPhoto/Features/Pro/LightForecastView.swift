@@ -14,11 +14,16 @@ import SwiftUI
 ///
 /// 板に無くて足したもの:
 /// - **Apple Weather の出典**（Apple が表示を求めている）。注記の下に、応答の出典のリンク（真鍮・外へ出るリンク）
-/// - 札を押すと、その場所の7日（朝焼け・夕焼け・夜景）を札の中に開く（応答は7日ぶん持っている）
+/// - 札を押すと、その場所の7日（朝焼け・夕焼け・夜景）を札の中に開く（応答は7日ぶん持っている）。
+///   開閉の印（› 閉じている / ⌄ 開いている）を右端に置く（2026-10-11・押せると分からなかった）
+/// - 開いた中に「スポットを見る」（撮影スポットの頁）と「経路」（Apple のマップ）の行（2026-10-11・
+///   以前は週の予報が開くだけの行き止まりだった）。撮影スポットは索引から slug で引く（`LightForecastText.spot`）
 /// - 空のとき（行きたい場所が無い／撮影スポットが無い）・読めなかったとき（Pro でない・予報を読めない・圏外）
 ///
-/// **色の四角は写真の色ではない。** 応答は写真を持たない（撮影スポットの台帳の位置と予報だけ）ので、
-/// 板の4色を見込みの種類（朝焼け・夕焼け・夜景・低）に当てた（板の見本の4枚がちょうどその4つ）
+/// **四角はスポットの写真（2026-10-11）。** 応答は写真を持たないので、撮影スポットの索引の代表写真
+/// （Wikimedia Commons）を引いて出す（マイページの行きたい場所の行と同じ 56pt・角 10・`SpotThumbImage`。
+/// 出典は開いた先のスポットの頁に出る＝行きたい場所の行と同じ扱い）。写真が引けない場所だけ、
+/// 板の4色を見込みの種類（朝焼け・夕焼け・夜景・低）に当てた四角（板の見本の4枚がちょうどその4つ）
 struct LightForecastView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -38,6 +43,13 @@ struct LightForecastView: View {
     @State private var deliveredAtPaywall = 0
     /// 一覧の「今日・明日」を決める時刻（読み込んだとき）
     @State private var loadedAt = Date()
+    /// 撮影スポットの索引（札の写真・「スポットを見る」「経路」に使う）。読めなければ空のまま（札は色の四角）
+    @State private var index: [OfficialSpot] = []
+    /// 「経路」を探している札（連打で2つ開かない）・その仕事（画面を離れたら取り消す）
+    @State private var openingDirections: String?
+    @State private var directionsTask: Task<Void, Never>?
+    /// 画面が出ているか（「経路」を探している間に離れたら開かない。「スポットを見る」で積んだときも離れた扱い）
+    @State private var onScreen = false
 
     var body: some View {
         ScrollView {
@@ -57,7 +69,17 @@ struct LightForecastView: View {
         .navigationTitle(L("光と天気の知らせ", "Light & weather alerts"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // 札の場所が決まったら、その撮影スポット（写真・座標）を引く
+        .task(id: placesKey) {
+            guard case .loaded(let forecast) = phase else { return }
+            await loadSpots(for: forecast)
+        }
         .refreshable { await load(refreshing: true) }
+        .onAppear { onScreen = true }
+        .onDisappear {
+            onScreen = false
+            directionsTask?.cancel()
+        }
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 案内で Pro になったら読み直す（`NameSideBadgeView` と同じ見分け方）
             guard store.deliveredRevision != deliveredAtPaywall else { return }
@@ -95,16 +117,16 @@ struct LightForecastView: View {
     private func cardView(_ card: LightForecastText.Card, place: LightForecast.Place?) -> some View {
         let isOpen = expanded.contains(card.id)
         let week = place.map { LightForecastText.week($0, now: loadedAt) } ?? []
+        let spot = place.flatMap { LightForecastText.spot(for: $0, in: index) }
+        // 開いて出すものがあるときだけ開ける（週の予報か、スポットへの行）
+        let opens = !week.isEmpty || spot != nil
         return VStack(alignment: .leading, spacing: 12) {
             Button {
-                guard !week.isEmpty else { return }
+                guard opens else { return }
                 if isOpen { expanded.remove(card.id) } else { expanded.insert(card.id) }
             } label: {
                 HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Self.color(card.tone.hex))
-                        .frame(width: 56, height: 56)
-                        .accessibilityHidden(true)
+                    thumbnail(spot?.photo, tone: card.tone)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(card.name)
                             .font(JPFont.number(14, weight: .bold, relativeTo: .subheadline))
@@ -126,18 +148,32 @@ struct LightForecastView: View {
                         }
                     }
                     .multilineTextAlignment(.trailing)
+                    // 開閉の印（形で見せる・色だけにしない）。開けない札には置かない
+                    if opens {
+                        Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(WebTheme.faint)
+                            .frame(width: 14)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(card.accessibilityLabel)
-            .accessibilityHint(week.isEmpty ? "" : (isOpen ? L("今週の光を閉じます", "Hides this week")
-                                                        : L("今週の光を開きます", "Shows this week")))
+            .accessibilityValue(opens ? LightForecastText.disclosureValue(isOpen: isOpen) : "")
+            .accessibilityHint(!opens ? "" : (isOpen ? L("今週の光を閉じます", "Hides this week")
+                                                  : L("今週の光を開きます", "Shows this week")))
             .accessibilityIdentifier("lightForecast.card")
 
             if isOpen {
-                weekView(week)
+                if !week.isEmpty {
+                    weekView(week)
+                }
+                if let spot {
+                    spotLinks(spot, cardId: card.id)
+                }
             }
         }
         .padding(14)
@@ -147,6 +183,78 @@ struct LightForecastView: View {
                 .strokeBorder(card.isBest ? WebTheme.accent : Color(red: 0x22 / 255, green: 0x22 / 255, blue: 0x22 / 255),
                               lineWidth: card.isBest ? 1.5 : 1)
         )
+    }
+
+    /// 札の左の四角。スポットの写真があれば写真、無ければ見込みの種類の色（板の4色）
+    @ViewBuilder
+    private func thumbnail(_ photo: SpotImage?, tone: LightForecastText.Tone) -> some View {
+        Group {
+            if let photo {
+                // 56pt の枠なので縮めて読む（マイページの行きたい場所の行と同じ読み方）
+                SpotThumbImage(image: photo, assumedRatioLimit: 2)
+            } else {
+                Self.color(tone.hex)
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityHidden(true)
+    }
+
+    /// 開いた札の下の行: 「スポットを見る」（頁へ積む・白）と「経路」（Apple のマップ・外へ出るリンクは真鍮）。
+    /// 経路は座標のあるスポットだけ。当たりは 1行全体で 44pt
+    private func spotLinks(_ spot: OfficialSpot, cardId: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+            NavigationLink {
+                // 写真の一覧はこの画面に無い。「この場所の写真（0）まだありません」を言わせない
+                OfficialSpotView(spot: spot, spots: index, photos: [], photosKnown: false)
+            } label: {
+                linkRow(icon: "mappin.and.ellipse", title: L("スポットを見る", "See spot"),
+                        tint: WebTheme.foreground, trailing: "chevron.right")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("lightForecast.openSpot")
+            if let coords = spot.coords {
+                Button {
+                    guard openingDirections == nil else { return }
+                    openingDirections = cardId
+                    let name = spot.name
+                    directionsTask = Task { @MainActor in
+                        defer { openingDirections = nil }
+                        await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
+                    }
+                } label: {
+                    linkRow(icon: "arrow.triangle.turn.up.right.diamond",
+                            title: openingDirections == cardId ? L("開いています…", "Opening…") : L("経路", "Directions"),
+                            tint: WebTheme.accent, trailing: "arrow.up.right")
+                }
+                .buttonStyle(.plain)
+                .disabled(openingDirections != nil)
+                .accessibilityLabel(L("\(spot.name)への経路", "Directions to \(spot.name)"))
+                .accessibilityHint(L("Apple のマップで開きます", "Opens in Apple Maps"))
+                .accessibilityIdentifier("lightForecast.directions")
+            }
+        }
+    }
+
+    private func linkRow(icon: String, title: String, tint: Color, trailing: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            Image(systemName: trailing)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.faint)
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(tint)
+        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     /// 札の中に開く7日（日ごとに 朝焼け・夕焼け・夜景）
@@ -260,8 +368,12 @@ struct LightForecastView: View {
 
     private func load(refreshing: Bool = false) async {
         if let preview = LightForecastText.preview {
+            // 見本は索引の本物のスポット（写真・座標のある行）の名前で組む（写真と行が出る絵を撮る）
+            if preview == .sample { await loadIndexIfNeeded() }
             loadedAt = Date()
-            phase = .loaded(preview == .sample ? LightForecastText.sample(now: loadedAt) : LightForecast(places: []))
+            phase = .loaded(preview == .sample
+                            ? LightForecastText.sample(now: loadedAt, spots: LightForecastText.previewSpots(index))
+                            : LightForecast(places: []))
             return
         }
         // 引っぱって読み直すときは、出ている一覧を残したまま読む
@@ -277,6 +389,29 @@ struct LightForecastView: View {
             if refreshing, case .loaded = phase { return }
             phase = .failed(LightForecastText.failure(for: error))
         }
+    }
+
+    /// 札の場所（`.task(id:)` の鍵）。場所が変わったときだけ撮影スポットを引き直す
+    private var placesKey: String {
+        guard case .loaded(let forecast) = phase else { return "" }
+        return forecast.places.map(\.slug).joined(separator: "|")
+    }
+
+    private func loadIndexIfNeeded() async {
+        guard index.isEmpty, let fetched = try? await environment.spots.fetchIndex(),
+              !Task.isCancelled else { return }
+        index = fetched
+    }
+
+    /// 札の場所の撮影スポットを引く。索引だけの行（分けた置き場）なら、写真のある詳細を重ねる
+    /// （`OfficialSpotService.withDetails`）。読めなければ札は色の四角のまま
+    private func loadSpots(for forecast: LightForecast) async {
+        await loadIndexIfNeeded()
+        let needed = forecast.places.compactMap { LightForecastText.spot(for: $0, in: index) }
+        guard !Task.isCancelled, needed.contains(where: \.isIndexOnly) else { return }
+        let merged = await environment.spots.withDetails(index, for: needed)
+        guard !Task.isCancelled else { return }
+        index = merged
     }
 
     private static func color(_ hex: UInt32) -> Color {
