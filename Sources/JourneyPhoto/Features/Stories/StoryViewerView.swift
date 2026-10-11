@@ -711,8 +711,8 @@ struct StoryViewerView: View {
                             .padding(.vertical, -15)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",
-                                              "Location \(place). Open the photo spot guide"))
+                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットの画面を開く",
+                                              "Location \(place). Open the photo spot"))
                     } else {
                         // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
                         photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))

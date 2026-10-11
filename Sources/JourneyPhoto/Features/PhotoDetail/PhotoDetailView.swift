@@ -636,7 +636,7 @@ struct PhotoDetailView: View {
                 .underline(true, color: Color.white.opacity(0.6))
                 .lineLimit(1)
             if spotSuffix {
-                Text(PhotoMetaLine.separator + L("撮影スポットの詳細", "Photo spot details"))
+                Text(PhotoMetaLine.separator + L("撮影地の詳細", "Place details"))
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
             }

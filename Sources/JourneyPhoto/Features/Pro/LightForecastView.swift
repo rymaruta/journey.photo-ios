@@ -210,7 +210,7 @@ struct LightForecastView: View {
                 // 写真の一覧はこの画面に無い。「この場所の写真（0）まだありません」を言わせない
                 OfficialSpotView(spot: spot, spots: index, photos: [], photosKnown: false)
             } label: {
-                linkRow(icon: "mappin.and.ellipse", title: L("スポットを見る", "See spot"),
+                linkRow(icon: "mappin.and.ellipse", title: L("撮影スポットを見る", "See photo spot"),
                         tint: WebTheme.foreground, trailing: "chevron.right")
             }
             .buttonStyle(.plain)

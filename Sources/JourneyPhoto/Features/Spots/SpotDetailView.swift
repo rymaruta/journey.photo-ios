@@ -259,7 +259,7 @@ struct SpotDetailView: View {
     private var stats: some View {
         HStack(spacing: 8) {
             SpotDetailParts.statPill(icon: "camera", value: "\(linked.count)",
-                                     label: L("この場所の写真", "Photos here"))
+                                     label: L("この撮影地の写真", "Photos here"))
             // **「—」の数え札を並べない。** 数えていないものを数の形に
             // 置くと、読み込み中の 0 に見える。「行きたい」に入れたことは
             // 上のボタンが灯って伝えている
@@ -272,10 +272,10 @@ struct SpotDetailView: View {
     @ViewBuilder
     private var spotPhotos: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
+            SpotDetailParts.sectionHeader(L("この撮影地の写真（\(linked.count)）", "Photos here (\(linked.count))"))
             if linked.isEmpty {
                 // **空を隠さない。** 「まだ紐づいていない」と「読み込み中」は別
-                Text(L("この場所に紐づいた公開写真はまだありません。投稿するときに場所を選ぶと、ここに並びます。",
+                Text(L("この撮影地に紐づいた公開写真はまだありません。投稿するときに場所を選ぶと、ここに並びます。",
                        "No public photos are linked to this place yet."))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
@@ -304,7 +304,7 @@ struct SpotDetailView: View {
         let near = nearby
         if !near.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                SpotDetailParts.sectionHeader(L("近くの撮影スポット", "Nearby places"))
+                SpotDetailParts.sectionHeader(L("近くの撮影地", "Nearby places"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(near, id: \.place.id) { item in

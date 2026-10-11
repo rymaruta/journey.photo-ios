@@ -121,6 +121,15 @@ struct PendingPhoto: Identifiable {
         location = name
     }
 
+    /// 下書きから撮影地を戻す（`UploadViewModel.restoreDraft`・2026-10-11）。**自動で入れた地名と
+    /// 空にした印も戻す**——欄の文字だけ戻すと、自動の地名が「人が書いた地名」になって座標が落ち、
+    /// 空にした写真の座標がまた送られる（`PlaceCoordsRule`）
+    mutating func restorePlace(location: String, photoPlaceName: String?, clearedByUser: Bool) {
+        self.location = location
+        self.photoPlaceName = photoPlaceName
+        locationClearedByUser = clearedByUser
+    }
+
     /// `PlaceCoordsRule` の (a)(b): **欄が空（自動入力が間に合わなかった）か、自動で入れた地名を
     /// 一字も変えていない**。空にした回は `locationClearedByUser` が止める
     var keepsPhotoCoords: Bool {
@@ -519,6 +528,159 @@ final class UploadViewModel: ObservableObject {
             || !category.isEmpty
             // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
             || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
+    }
+
+    // MARK: 端末の下書き（2026-10-11・`UploadDraftStore`）
+
+    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない
+    var drafts: UploadDraftStore?
+    /// 下書きの持ち主（ログインしている人）。**人ごとに分ける**——画面が `auth.userId` を入れる
+    var draftOwner: String?
+    /// この画面で下書きを開き直した（または保存した）か（閉じる確認の言い方を決める）
+    private(set) var restoredDraft = false
+    /// 開き直した写真 → 下書きの中のその1枚の印（`UploadDraftStore.Item.key`）。
+    ///
+    /// 🔴 **2026-10-11 判断: 下書きは1枚ずつ片づける**（`submit`）。送る直前に「送り始めた」印を付け、
+    /// 上がったらその1枚を外し、届いていないと分かったら印を下ろす。以前は束の終わりに下書きごと
+    /// 消していて、送っている途中でアプリが落ちると、上がった写真が下書きに残ったまま開き直して
+    /// **同じ写真がもう一度投稿された**。届いたか分からない写真（`staged`）は印が立ったまま残り、
+    /// 開き直しても戻さない（`UploadDraftStore.restorable`）。
+    /// 開き直していない下書き（旅の写真から来た回などで、尋ねていない）の写真はここに無いので触らない
+    private var draftKeys: [UUID: String] = [:]
+    /// 帯の縮小画像（512px）を作り直す（下書きには本体だけを残す）。試験で差し替える
+    var makeDraftThumbnail: @Sendable (Data) -> Data? = { ImagePreparer.makeThumbnail(fromJPEG: $0) }
+    /// 開き直している最中（縮小画像を作っている間に二度押しで重ねない）
+    private(set) var isRestoringDraft = false
+
+    /// 持ち主の下書き（無ければ nil）
+    var storedDraft: UploadDraftStore.Draft? {
+        guard let drafts, let draftOwner else { return nil }
+        return drafts.draft(for: draftOwner)
+    }
+
+    /// 下書きに保存できない理由（`UploadDraftRules.saveBlock`）。保存できるなら nil
+    var draftSaveBlock: UploadDraftRules.SaveBlock? {
+        UploadDraftRules.saveBlock(hasPhotos: !items.isEmpty,
+                                   loading: isLoadingPicked || preparingCaptures > 0 || isRestoringDraft,
+                                   sending: isWorking || visibilityLocked,
+                                   signedIn: drafts != nil && !(draftOwner ?? "").isEmpty)
+    }
+
+    /// 開き直した写真のうち、届いたか分からないもの（閉じると下書きから外れる・閉じる確認で言う）
+    var hasUnsureDraftPhotos: Bool {
+        items.contains { draftKeys[$0.id] != nil && staged[$0.id] != nil }
+    }
+
+    /// いまの欄を下書きに保存する（×→「下書きに保存」）。**写真は整えた本体と編集のレシピ**を残す
+    /// （書き出した絵ではなく元に掛け直す——開き直しても編集し直せる）。
+    /// - Returns: 書けたか。書けなければ画面は閉じない（知らせを出す）
+    @discardableResult
+    func saveDraft(now: Date = Date()) -> Bool {
+        guard draftSaveBlock == nil, let drafts, let draftOwner else { return false }
+        let inputs = items.map { photo in
+            UploadDraftStore.ItemInput(imageData: photo.prepared.data, item: UploadDraftStore.Item(
+                imageFile: "", fileName: photo.prepared.fileName, contentType: photo.prepared.contentType,
+                exif: photo.prepared.exif,
+                latitude: photo.prepared.coords?.lat, longitude: photo.prepared.coords?.lng,
+                takenOn: photo.prepared.takenOn, dominantColor: photo.prepared.dominantColor,
+                title: photo.title, caption: photo.caption, location: photo.location,
+                photoPlaceName: photo.photoPlaceName, locationClearedByUser: photo.locationClearedByUser,
+                pickedLatitude: photo.pickedCoords?.lat, pickedLongitude: photo.pickedCoords?.lng,
+                recipe: photo.recipe.isIdentity ? nil : photo.recipe))
+        }
+        let fields = UploadDraftStore.Draft(
+            items: [], tagsText: tagsText, category: category, published: published,
+            audience: audience.rawValue, song: song, selectedAlbumId: selectedAlbumId,
+            groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now),
+            spot: spot.map { UploadDraftStore.Draft.Spot(spotId: $0.spotId, name: $0.name,
+                                                         latitude: $0.coords?.lat, longitude: $0.coords?.lng) })
+        let ok = drafts.save(inputs, fields: fields, for: draftOwner)
+        if ok { restoredDraft = true }
+        return ok
+    }
+
+    /// 下書きを開き直す（「下書きを続けますか？」→「続ける」）。**画像が読めなければ何も戻さない**
+    /// （欠けたまま戻すと、書いた題が別の写真に付く）。
+    /// 写真は選ぶ画面の選択（`pickerItems`）には戻らない——カメラで撮った分と同じ扱い（外すのは帯の ×）。
+    /// 届いたか分からないまま残っていた写真は戻さずに下書きから外し、知らせる（`draftKeys` の注記）
+    @discardableResult
+    func restoreDraft() async -> Bool {
+        guard items.isEmpty, !isWorking, !isRestoringDraft, let drafts, let draftOwner,
+              let draft = storedDraft else { return false }
+        let (restorable, dropped) = UploadDraftStore.restorable(draft)
+        for unsure in draft.items where unsure.inFlight == true {
+            if let key = unsure.key { drafts.removeItem(key: key, for: draftOwner) }
+        }
+        let droppedNote = dropped > 0
+            ? L("送っている途中だった写真 \(dropped) 枚は、投稿済みの可能性があるため下書きから外しました。プロフィールで確かめてください。",
+                "\(dropped) photo(s) were partway sent and may already be posted, so they were taken out of the draft. Check your profile.")
+            : nil
+        guard !restorable.isEmpty else {
+            errorMessage = droppedNote
+            return false
+        }
+        guard let images = drafts.images(of: restorable) else { return false }
+        isRestoringDraft = true
+        defer { isRestoringDraft = false }
+        // 一覧用の縮小画像（512px）は下書きに残していないので、画面の処理の外で作り直す
+        // （無いまま送ると、一覧がサムネ無しの本体を読む）
+        let make = makeDraftThumbnail
+        let thumbnails = await Task.detached(priority: .userInitiated) { images.map { make($0) } }.value
+        guard items.isEmpty, !isWorking else { return false }
+        for (index, saved) in restorable.enumerated() {
+            let prepared = ImagePreparer.Prepared(
+                data: images[index], fileName: saved.fileName, contentType: saved.contentType,
+                exif: saved.exif, coords: saved.coords, takenOn: saved.takenOn,
+                dominantColor: saved.dominantColor, thumbnail: thumbnails[index])
+            var photo = PendingPhoto(prepared: prepared)
+            photo.title = saved.title
+            photo.caption = saved.caption
+            photo.restorePlace(location: saved.location, photoPlaceName: saved.photoPlaceName,
+                               clearedByUser: saved.locationClearedByUser)
+            photo.pickedCoords = saved.pickedCoords
+            if let key = saved.key { draftKeys[photo.id] = key }
+            startStripThumb(for: photo.id, prepared: prepared)
+            items.append(photo)
+            // 編集はレシピを掛け直す（帯の編集後のサムネもここで描く）
+            if let recipe = saved.recipe { applyEdit(photo.id, recipe: recipe) }
+        }
+        tagsText = draft.tagsText
+        category = draft.category
+        published = draft.published
+        audience = Audience(rawValue: draft.audience) ?? .everyone
+        song = draft.song
+        selectedAlbumId = draft.selectedAlbumId
+        groupsAsOnePost = draft.groupsAsOnePost
+        // スポットから開いた回は尋ねない（`UploadDraftRules.asksRestore`）ので、ここで上書きはしない
+        if spot == nil, let saved = draft.spot {
+            spot = UploadSpotTarget(spotId: saved.spotId, name: saved.name,
+                                    coords: saved.latitude.flatMap { lat in
+                                        saved.longitude.map { Photo.Coords(lat: lat, lng: $0) } })
+        }
+        restoredDraft = true
+        errorMessage = droppedNote
+        return true
+    }
+
+    /// 下書きを消す（「下書きを削除」）
+    func discardDraft() {
+        guard let drafts, let draftOwner else { return }
+        drafts.clear(for: draftOwner)
+        restoredDraft = false
+        draftKeys = [:]
+    }
+
+    /// 下書きの1枚の印を付け替える（`draftKeys` の注記）。開き直した写真でなければ何もしない
+    private enum DraftMark { case sending, posted, notDelivered }
+    private func markDraft(_ photoId: UUID, _ mark: DraftMark) {
+        guard let key = draftKeys[photoId], let drafts, let draftOwner else { return }
+        switch mark {
+        case .sending: drafts.setInFlight(true, key: key, for: draftOwner)
+        case .posted:
+            drafts.removeItem(key: key, for: draftOwner)
+            draftKeys[photoId] = nil
+        case .notDelivered: drafts.setInFlight(false, key: key, for: draftOwner)
+        }
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
@@ -957,13 +1119,20 @@ final class UploadViewModel: ObservableObject {
             // **送る直前に引き直す。** 送信中も欄は生きているので、
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
+            // 開き直した下書きの写真なら「送り始めた」印（落ちても、開き直したときに二重に上げない）
+            markDraft(item.id, .sending)
             do {
                 let outcome = try await upload(item, exported: exported[item.id])
                 if !outcome.songAttached { songFailures += 1 }
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
                 done.append(item.id)
+                // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
+                markDraft(item.id, .posted)
             } catch {
+                // 届いていないと分かった（本体を置いていない）ときだけ印を下ろす。置いたが保存が通ったか
+                // 分からない（`staged`）写真は立てたまま——開き直しても戻さない
+                if staged[item.id] == nil { markDraft(item.id, .notDelivered) }
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
                 // 会員でないとき（`upload.ts` の `isAlbumMember`）だけで、持ち主がアルバムを
                 // 消すと会員の印も消える。残すと残りも同じ理由で全部落ち、押し直しても直らない

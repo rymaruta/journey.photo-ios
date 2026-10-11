@@ -26,7 +26,7 @@ struct LegalGateView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         AppLogo().padding(.top, geo.safeAreaInsets.top + 6).padding(.bottom, 58)
                         heading
-                        experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい撮影地を探せます。", "Discover your next shooting location through photos and the map."), systemImage: "map")
+                        experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい撮影スポットを探せます。", "Discover your next photo spot through photos and the map."), systemImage: "map")
                         experience(L("写真と撮影情報を残す", "Keep the photo and how you shot it"), detail: L("作品だけでなく、カメラやレンズ、撮影地まで一緒に残せます。", "Keep the camera, lens and shooting location together with your work."), systemImage: "camera")
                         experience(L("旅を、一冊にする", "Turn a journey into a book"), detail: L("旅の前から撮影後まで。写真を旅の記録としてまとめられます。", "From planning to the photos you bring home, keep the whole journey together."), systemImage: "book.closed")
                         safetyNote

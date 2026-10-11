@@ -349,7 +349,7 @@ struct OfficialSpotView: View {
     /// （地・縁・真鍮・矢印の記号なし。真鍮は黒地の上の合図・押せるもの）。板 SpotDetail にこの帯は無い
     private var journeyCue: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(L("この場所から、次の一枚へ", "From this place to your next photo"))
+            Text(L("この撮影スポットから、次の一枚へ", "From this spot to your next photo"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(WebTheme.muted2)
             // 本文の最小は 12pt（CLAUDE.md）
@@ -382,7 +382,7 @@ struct OfficialSpotView: View {
         if let body = spotBody, body.hasContent {
             if body.description != nil || !body.highlights.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    SpotDetailParts.sectionHeader(L("この場所の魅力", "What makes it special"))
+                    SpotDetailParts.sectionHeader(L("この撮影スポットの魅力", "What makes it special"))
                     if let text = body.description {
                         Text(text)
                             .font(.subheadline)
@@ -827,7 +827,7 @@ struct OfficialSpotView: View {
     private var spotPhotos: some View {
         VStack(alignment: .leading, spacing: 10) {
             if photosKnown || !linked.isEmpty {
-                SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
+                SpotDetailParts.sectionHeader(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
             }
             if postedHere {
                 // 一覧は開いた時点の写しなので、上げた写真はすぐには並ばない。
@@ -855,7 +855,7 @@ struct OfficialSpotView: View {
             Button {
                 showUpload = true
             } label: {
-                Label(L("このスポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
+                Label(L("この撮影スポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
                     .jpPillButton(Self.postButtonStyle(hasCover: shown.photo != nil,
                                                        hasLinked: !linked.isEmpty, postedHere: postedHere))
             }

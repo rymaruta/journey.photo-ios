@@ -377,7 +377,7 @@ struct SearchView: View {
         let spots = model.popularSpots
         if !spots.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("注目スポット", "Featured places")) {
+                sectionHeader(L("人気の撮影地", "Popular places")) {
                     // 行き先はマップの札（板 11）。撮影地のピンが並ぶ
                     Button {
                         TabRouter.shared.openMap()
@@ -399,7 +399,7 @@ struct SearchView: View {
         }
     }
 
-    /// 「注目スポット」の札の行き先。
+    /// 「人気の撮影地」の札の行き先（2026-10-11 判断: 旧「注目スポット」。指すのは写真から導く撮影地）。
     ///
     /// **2枚以上ある地点は、スポットの画面へ**（モック5）。この札が
     /// 指しているのは写真ではなく**場所**で、スポットの画面はその場所の
@@ -868,11 +868,11 @@ struct SearchView: View {
         .contentShape(Rectangle())
     }
 
-    /// 「撮影地ガイド・山形県 尾花沢市」（海外は国から）
+    /// 「撮影スポット・山形県 尾花沢市」（海外は国から）。2026-10-11 判断: 呼び名をそろえた（旧「撮影地ガイド」）
     nonisolated static func spotSubtitle(_ spot: OfficialSpot) -> String {
         let r = spot.region
         let place = [r?.country, r?.prefecture, r?.city].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        let head = L("撮影地ガイド", "Photo spot guide")
+        let head = L("撮影スポット", "Photo spot")
         return place.isEmpty ? head : "\(head)・\(place)"
     }
 

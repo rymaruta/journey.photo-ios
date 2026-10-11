@@ -49,7 +49,7 @@ enum OfficialWishlist {
     /// （**壊れた鍵 `SPOT-` も落とさない**——落とすと本人が外せない）
     static func name(fromSlug slug: String) -> String {
         let words = slug.split(separator: "-").map(String.init).filter { !$0.isEmpty }
-        guard !words.isEmpty else { return L("名前のないスポット", "Unnamed spot") }
+        guard !words.isEmpty else { return L("名前のない撮影スポット", "Unnamed photo spot") }
         return words.joined(separator: " ")
     }
 }

@@ -166,7 +166,7 @@ final class SpotSampleTests: XCTestCase {
         let commons = try body(samples: "[\(sample())]").samples
         XCTAssertEqual(SpotSampleText.heading(commons), L("作例（Wikimedia Commons より）", "Example photos (from Wikimedia Commons)"))
         XCTAssertEqual(SpotSampleText.note(commons),
-                       L("この場所の近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。撮影者はこのアプリの利用者ではありません。",
+                       L("この撮影スポットの近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。撮影者はこのアプリの利用者ではありません。",
                          "Photos taken near this spot and published under free licenses on Wikimedia Commons. The photographers are not members of this app."))
     }
 
@@ -424,7 +424,7 @@ final class SpotSampleTests: XCTestCase {
     func testNoteSeparatesHostedSources() throws {
         let mixed = try body(samples: "[\(sample()),\(hostedSample())]").samples
         XCTAssertEqual(SpotSampleText.note(mixed),
-                       L("この場所の近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。福岡県観光連盟の写真は、提供元の利用規約に従って掲載しています。撮影者はこのアプリの利用者ではありません。",
+                       L("この撮影スポットの近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。福岡県観光連盟の写真は、提供元の利用規約に従って掲載しています。撮影者はこのアプリの利用者ではありません。",
                          "Photos taken near this spot and published under free licenses on Wikimedia Commons. Photos from 福岡県観光連盟 are shown under the provider's terms of use. The photographers are not members of this app."))
         let hostedOnly = try body(samples: "[\(hostedSample())]").samples
         XCTAssertEqual(SpotSampleText.note(hostedOnly),
