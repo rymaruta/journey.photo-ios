@@ -315,13 +315,15 @@ struct OfficialSpotView: View {
             Button {
                 openDirections()
             } label: {
+                // 探している間も名前は「経路」のまま、記号の代わりに輪を出す（2026-10-11 判断:
+                // 「開いています…」は3つ並びの札に入らず、大きな文字で切れた）
                 SpotDetailParts.actionLabel(icon: "arrow.triangle.turn.up.right.diamond",
-                                            title: openingDirections ? L("開いています…", "Opening…")
-                                                                     : L("経路", "Directions"),
-                                            filled: false)
+                                            title: L("経路", "Directions"),
+                                            filled: false, busy: openingDirections)
             }
             .buttonStyle(.plain)
             .disabled(openingDirections)
+            .accessibilityValue(openingDirections ? L("開いています", "Opening") : "")
             .accessibilityLabel(L("\(spot.name)への経路", "Directions to \(spot.name)"))
             .accessibilityHint(L("Apple のマップで開きます", "Opens in Apple Maps"))
             .accessibilityIdentifier("spot.official.directions")

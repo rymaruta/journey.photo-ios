@@ -87,6 +87,30 @@ final class SpotLightEditUXTests: XCTestCase {
         XCTAssertFalse(map.contains("maps.apple.com"))
     }
 
+    /// 経路を探し終えたあと、取り消された・画面を離れた回は開かない（押していないものが開いて見える）
+    func testDirectionsOpenOnlyWhenStillWanted() async throws {
+        XCTAssertTrue(SpotDirections.shouldOpen(cancelled: false, stillWanted: true))
+        XCTAssertFalse(SpotDirections.shouldOpen(cancelled: true, stillWanted: true), "取り消したのに開く")
+        XCTAssertFalse(SpotDirections.shouldOpen(cancelled: false, stillWanted: false), "画面を離れたのに開く")
+        XCTAssertFalse(SpotDirections.shouldOpen(cancelled: true, stillWanted: false))
+        // 開く前の関所が `shouldOpen` を通っている（関所を消すとここで落ちる）
+        let directions = try source("Features/Common/SpotDirections.swift")
+        let open = try segment(directions, from: "static func openDirections(")
+        let gate = try XCTUnwrap(open.range(of: "guard shouldOpen(cancelled: Task.isCancelled, stillWanted: stillWanted()) else { return }"),
+                                 "開く前に取り消し・画面を離れたかを見ていない")
+        let launch = try XCTUnwrap(open.range(of: "target.openInMaps("))
+        XCTAssertLessThan(gate.lowerBound, launch.lowerBound, "関所が開いた後にある")
+    }
+
+    /// 経路を探している間も札の名前は「経路」のまま（「開いています…」は3つ並びの札で切れる）。輪を添える
+    func testDirectionsTileKeepsItsNameWhileOpening() async throws {
+        let page = try source("Features/Spots/OfficialSpotView.swift")
+        XCTAssertFalse(page.contains(#"L("開いています…", "Opening…")"#), "探している間に札の名前が替わる")
+        XCTAssertTrue(page.contains("filled: false, busy: openingDirections)"), "探している間の輪が無い")
+        let parts = try source("Features/Spots/SpotDetailParts.swift")
+        XCTAssertTrue(parts.contains("if busy {\n                ProgressView()"), "札に輪を出す口が無い")
+    }
+
     /// 「この場所から、次の一枚へ」は**説明の帯**。地・縁・真鍮・矢印の記号を付けない（ボタンに見せない）
     func testJourneyCueDoesNotLookTappable() async throws {
         let page = try source("Features/Spots/OfficialSpotView.swift")
@@ -172,7 +196,20 @@ final class SpotLightEditUXTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_791_514_800)  // 2026-10-09 12:00 JST
         let range = EditDay.pickerRange(now: now, in: tokyo)
         XCTAssertEqual(EditDay.field(picked: range.lowerBound, in: tokyo), "1990-01-01")
-        XCTAssertEqual(range.upperBound, now)
+        XCTAssertEqual(range.upperBound, Date(timeIntervalSince1970: 1_791_557_999))  // 2026-10-09 23:59:59 JST
+        XCTAssertEqual(EditDay.field(picked: range.upperBound, in: tokyo), "2026-10-09")
+    }
+
+    /// 🔴 午前中でも今日を選べる（ピッカーの値は日の正午。上限が「今」だと今日が範囲の外だった）。明日は選べない
+    func testDatePickerRangeIncludesTodayInTheMorning() async throws {
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        let morning = Date(timeIntervalSince1970: 1_791_500_400)  // 2026-10-09 08:00 JST
+        let range = EditDay.pickerRange(now: morning, in: tokyo)
+        let today = try XCTUnwrap(EditDay.pickerDate(field: "2026-10-09", in: tokyo))
+        XCTAssertTrue(range.contains(today), "午前中に今日が範囲の外になっている")
+        let tomorrow = try XCTUnwrap(EditDay.pickerDate(field: "2026-10-10", in: tokyo))
+        XCTAssertFalse(range.contains(tomorrow), "明日を選べてしまう")
+        // 「日付を入れる」は上限から始める——今日になる
         XCTAssertEqual(EditDay.field(picked: range.upperBound, in: tokyo), "2026-10-09")
     }
 
@@ -192,5 +229,35 @@ final class SpotLightEditUXTests: XCTestCase {
         XCTAssertTrue(edit.contains("EditDay.pickerRange(now: Date(), in: .current)"))
         XCTAssertFalse(edit.contains("YYYY-MM-DD"), "撮影日を手で打たせる欄が残っている")
         XCTAssertFalse(edit.contains("TextField(L(\"題\""), "題が見本の字だけの欄に戻っている")
+    }
+
+    /// 🔴 保存の失敗は `alert` で出す（保存は右上。フォームの下の知らせは画面の外で見えなかった）。
+    /// 説明の上限超え・送って失敗した回の両方。差し替え・色の編集の知らせは写真のすぐ下
+    func testEditPhotoSaveFailureIsVisible() async throws {
+        let edit = try source("Features/Profile/EditPhotoView.swift")
+        XCTAssertTrue(edit.contains(#".alert(L("保存できませんでした", "Couldn't save"),"#), "保存の失敗を出す alert が無い")
+        XCTAssertTrue(edit.contains("isPresented: Binding(get: { saveError != nil },"))
+        let save = try segment(edit, from: "func save() async {")
+        XCTAssertTrue(save.contains("saveError = over"), "説明の上限超えが下の知らせに書かれている")
+        XCTAssertTrue(save.contains("saveError = (error as? LocalizedError)?.errorDescription"),
+                      "保存の失敗が下の知らせに書かれている")
+        XCTAssertFalse(save.contains("message = over"))
+        XCTAssertFalse(save.contains("messageIsError = true"), "保存の失敗が画面の下の知らせに出る")
+        // 知らせの節は写真の節のすぐ後・題の欄より前
+        let notice = try XCTUnwrap(edit.range(of: "if let message {"))
+        let titleField = try XCTUnwrap(edit.range(of: #"JPField(L("題", "Title"))"#))
+        XCTAssertLessThan(notice.lowerBound, titleField.lowerBound, "知らせの節がフォームの下にある")
+    }
+
+    /// 撮影日の欄: 保存・差し替えの最中はピッカー・×・「日付を入れる」のどれも押せない
+    func testEditPhotoDateFieldIsLockedWhileBusy() async throws {
+        let edit = try source("Features/Profile/EditPhotoView.swift")
+        let field = try segment(edit, from: "var dateField: some View {")
+        for id in [#"editPhoto.date""#, #"editPhoto.date.clear""#, #"editPhoto.date.set""#] {
+            let idRange = try XCTUnwrap(field.range(of: id), "\(id) が無い")
+            // その部品の書き出し（識別子の直前の数行）に `.disabled(isBusy)` がある
+            let before = field[..<idRange.lowerBound].components(separatedBy: "\n").suffix(4).joined(separator: "\n")
+            XCTAssertTrue(before.contains(".disabled(isBusy)"), "\(id) が保存の最中も押せる")
+        }
     }
 }

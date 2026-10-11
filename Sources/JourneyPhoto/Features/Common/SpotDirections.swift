@@ -24,10 +24,16 @@ enum SpotDirections {
     /// Apple のマップが開くと、押していないものが開いたように見える（`TripDayMapView` と同じ理由）
     static func openDirections(name: String, coords: Photo.Coords, stillWanted: () -> Bool) async {
         let target = await item(name: name, coords: coords)
-        guard !Task.isCancelled, stillWanted() else { return }
+        guard shouldOpen(cancelled: Task.isCancelled, stillWanted: stillWanted()) else { return }
         target.openInMaps(launchOptions: [
             MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
         ])
+    }
+
+    /// 探し終えたあとに Apple のマップを開いてよいか。**取り消された・画面を離れた回は開かない**
+    /// （判断を値で試せるように切り出した・2026-10-11）
+    nonisolated static func shouldOpen(cancelled: Bool, stillWanted: Bool) -> Bool {
+        !cancelled && stillWanted
     }
 
     /// 丸めた座標に名前を付けた地点（探し直さない）

@@ -42,6 +42,9 @@ struct EditPhotoView: View {
     @State private var message: String?
     /// 直近の知らせが「できた」か。**成功を赤で出さない**
     @State private var messageIsError = true
+    /// 保存に失敗した知らせ（`alert` で出す）。2026-10-11 判断: 保存は右上なので、フォームの下の
+    /// 知らせの節に書くと画面に見えず「押しても何も起きない」に見えた。「保存して閉じる」の経路も同じ
+    @State private var saveError: String?
     /// 写真そのものの差し替え（Web の `/user/edit` と同じ操作）
     @State private var replaceItem: PhotosPickerItem?
     @State private var isReplacing = false
@@ -123,6 +126,28 @@ struct EditPhotoView: View {
             }
             .listRowBackground(Color.clear)
 
+            // 差し替え・色の編集の知らせは**写真のすぐ下**（押した操作の隣）。2026-10-11 判断:
+            // フォームのいちばん下だと、上で押した結果が画面の外に出て見えなかった
+            if let message {
+                Section {
+                    Text(message).font(.callout)
+                        .foregroundStyle(messageIsError ? WebTheme.danger : WebTheme.faint)
+                    // 色の差し替えが失敗した・止まった回は、最後の調整内容から開き直せる
+                    if let retry = recolorRetry {
+                        Button {
+                            recolorSource = RecolorSource(data: retry.source, recipe: retry.recipe)
+                        } label: {
+                            Label(L("もう一度", "Try again"), systemImage: "arrow.clockwise")
+                        }
+                        .disabled(isBusy)
+                        .accessibilityHint(L("最後に調整した内容から、色の編集を開き直します",
+                                             "Reopens the color editor with your last adjustments"))
+                        .accessibilityIdentifier("editPhoto.recolorRetry")
+                    }
+                }
+                .listRowBackground(Color.clear)
+            }
+
             // 題・説明は板の欄（上に 12pt の名前・`JPField`）
             Section {
                 JPField(L("題", "Title")) {
@@ -203,25 +228,6 @@ struct EditPhotoView: View {
                 .listRowBackground(Color.clear)
             }
 
-            if let message {
-                Section {
-                    Text(message).font(.callout)
-                        .foregroundStyle(messageIsError ? WebTheme.danger : WebTheme.faint)
-                    // 色の差し替えが失敗した・止まった回は、最後の調整内容から開き直せる
-                    if let retry = recolorRetry {
-                        Button {
-                            recolorSource = RecolorSource(data: retry.source, recipe: retry.recipe)
-                        } label: {
-                            Label(L("もう一度", "Try again"), systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isBusy)
-                        .accessibilityHint(L("最後に調整した内容から、色の編集を開き直します",
-                                             "Reopens the color editor with your last adjustments"))
-                        .accessibilityIdentifier("editPhoto.recolorRetry")
-                    }
-                }
-                .listRowBackground(Color.clear)
-            }
 
         }
         .webScreen()
@@ -243,6 +249,14 @@ struct EditPhotoView: View {
                            // 保存は成功したときだけ閉じる（失敗なら開いたまま知らせを出す・`save`）
                            onSave: { Task { await save() } },
                            onDiscard: { dismiss() })
+        // 保存の失敗は画面のどこにいても見える形で（`saveError` の注記・`ProfileEditView` と同じ形）
+        .alert(L("保存できませんでした", "Couldn't save"),
+               isPresented: Binding(get: { saveError != nil },
+                                    set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
+        }
         .onChange(of: replaceItem) { _, item in
             Task { await replace(item) }
         }
@@ -318,6 +332,8 @@ struct EditPhotoView: View {
                                in: range, displayedComponents: .date)
                         .labelsHidden()
                         .tint(WebTheme.accent)
+                        // 保存・差し替えの最中は日付も変えさせない（「日付を入れる」・×と同じ門）
+                        .disabled(isBusy)
                         .accessibilityIdentifier("editPhoto.date")
                     Spacer(minLength: 0)
                     Button {
@@ -328,6 +344,7 @@ struct EditPhotoView: View {
                             .webTappable()
                     }
                     .buttonStyle(.plain)
+                    .disabled(isBusy)
                     .accessibilityLabel(L("撮影日を消す", "Clear the date taken"))
                     .accessibilityIdentifier("editPhoto.date.clear")
                 } else {
@@ -526,8 +543,7 @@ struct EditPhotoView: View {
         recolorLoad?.cancel()
         // 送るとサーバーが黙って切る長さなら、保存させずに知らせる
         if let over = LocalizedEdit.descriptionOverLimit(original: photo.description, field: caption) {
-            messageIsError = true
-            message = over
+            saveError = over
             return
         }
         isSaving = true
@@ -567,8 +583,8 @@ struct EditPhotoView: View {
             }
             dismiss()
         } catch {
-            messageIsError = true
-            message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
+            saveError = (error as? LocalizedError)?.errorDescription
+                ?? L("もう一度お試しください", "Please try again")
         }
     }
 }

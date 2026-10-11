@@ -59,9 +59,17 @@ enum EditDay {
         TripPlanText.ymd(pickedIn: zone, picked)
     }
 
-    /// 選べる範囲: 1990-01-01 から今まで（**未来は選ばせない**——サーバーが断る）
+    /// 選べる範囲: 1990-01-01 から**今日の終わり**まで（**明日より先は選ばせない**——サーバーが断る）。
+    ///
+    /// 2026-10-11 判断: 上限を「今この瞬間」にしていたが、ピッカーの値は日の正午（`pickerDate`）なので、
+    /// 午前中は今日の正午が範囲の外になり、今日を選べない・今日の入った欄が範囲外になっていた
     static func pickerRange(now: Date, in zone: TimeZone) -> ClosedRange<Date> {
-        let lower = TripPlanText.pickerDate(fromYMD: earliestYMD, in: zone) ?? now
-        return lower...max(lower, now)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let startOfToday = calendar.startOfDay(for: now)
+        let endOfToday = calendar.date(byAdding: .day, value: 1, to: startOfToday)?
+            .addingTimeInterval(-1) ?? now
+        let lower = TripPlanText.pickerDate(fromYMD: earliestYMD, in: zone) ?? startOfToday
+        return lower...max(lower, endOfToday)
     }
 }

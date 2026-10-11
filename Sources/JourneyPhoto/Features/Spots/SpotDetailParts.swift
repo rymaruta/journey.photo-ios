@@ -9,9 +9,15 @@ import SwiftUI
 enum SpotDetailParts {
 
     /// 行動の札（行きたい・シェア・地図で見る）。`filled` は白地＝押した状態
-    static func actionLabel(icon: String, title: String, filled: Bool) -> some View {
+    static func actionLabel(icon: String, title: String, filled: Bool, busy: Bool = false) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
+            // 待っている間は記号の代わりに輪（名前は替えない・札の幅に収める）
+            if busy {
+                ProgressView().controlSize(.small)
+                    .tint(filled ? WebTheme.accentText : WebTheme.foreground)
+            } else {
+                Image(systemName: icon)
+            }
             Text(title).font(.subheadline.weight(.semibold))
         }
         .frame(maxWidth: .infinity)
