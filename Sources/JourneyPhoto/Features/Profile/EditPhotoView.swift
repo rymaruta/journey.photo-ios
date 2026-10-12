@@ -404,7 +404,12 @@ struct EditPhotoView: View {
             replaceItem = nil
         }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            // 中身を取り出せなかった（iCloud から落とせない等）ときは黙らない（`ProfileEditView` と同じ）
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                messageIsError = true
+                message = L("画像を読み込めませんでした", "Couldn't load the image")
+                return
+            }
             // **縮小・EXIF の書き直しは主スレッドの外で**（投稿の `prepareOffMain` と同じ）。
             // 大きい写真だと、差し替え中の表示ごと画面が固まっていた
             let prepared = try await Task.detached(priority: .userInitiated) {

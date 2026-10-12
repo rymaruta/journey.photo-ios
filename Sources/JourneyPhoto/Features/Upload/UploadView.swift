@@ -133,7 +133,11 @@ struct UploadView: View {
             if closeDialog.canSave {
                 Button(L("下書きに保存", "Save draft")) { saveDraftAndClose() }
             }
-            Button(L("投稿をやめる", "Stop posting"), role: .destructive) { dismiss() }
+            Button(L("投稿をやめる", "Stop posting"), role: .destructive) {
+                // 閉じる確認で「下書きから外します」と言うので、閉じた時点で外す（モデルの注記）
+                model.dropUnsureDraftPhotos()
+                dismiss()
+            }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
         } message: {
             Text(closeDialog.message)
@@ -694,9 +698,9 @@ struct UploadView: View {
         .accessibilityLabel(L("写真を追加", "Add photos"))
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier("upload.add")
-        // 🔴 **送っている間は足させない。** 足した写真は送信の終わりの `reset()` で
-        // 黙って消え、送っている束の印まで変わっていた
-        .disabled(model.isWorking)
+        // 🔴 **送っている間・下書きを戻している間は足させない。** 送信中に足すと
+        // `reset()` で黙って消え、復元中に足すと `restoreDraft` が失敗して下書きごと消えていた
+        .disabled(model.isWorking || model.isRestoringDraft)
     }
 
     /// 「1つの投稿にまとめる／それぞれ別の投稿」（板: 2択・選んでいる側は白）。

@@ -249,6 +249,16 @@ final class SpotLightEditUXTests: XCTestCase {
         XCTAssertLessThan(notice.lowerBound, titleField.lowerBound, "知らせの節がフォームの下にある")
     }
 
+    /// 🔴 差し替えで画像が読めないときは黙らない（`ProfileEditView` と同じ知らせ）
+    func testEditPhotoReplaceShowsLoadFailure() async throws {
+        // 型名は書かない（`check-cross-imports` が PhotosUI を要求する）
+        let replace = try segment(try source("Features/Profile/EditPhotoView.swift"),
+                                  from: "func replace(_ item:")
+        XCTAssertTrue(replace.contains(#"L("画像を読み込めませんでした", "Couldn't load the image")"#),
+                      "差し替えで画像が読めないとき黙っている")
+        XCTAssertTrue(replace.contains("messageIsError = true"))
+    }
+
     /// 撮影日の欄: 保存・差し替えの最中はピッカー・×・「日付を入れる」のどれも押せない
     func testEditPhotoDateFieldIsLockedWhileBusy() async throws {
         let edit = try source("Features/Profile/EditPhotoView.swift")
