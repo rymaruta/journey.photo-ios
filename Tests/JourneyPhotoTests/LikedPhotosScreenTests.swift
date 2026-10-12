@@ -81,7 +81,7 @@ final class LikedPhotosScreenTests: XCTestCase {
     // MARK: - 回帰2: 読み直しの途中に開いた詳細
 
     /// 🔴 **画面に出ていない間に届いた答えは入れない**（入れると一覧が差し替わり、
-    /// 押した元が消えて開いた詳細が閉じる）。戻ったときに入れる
+    /// 押した元が消えて開いた詳細が閉じる）。戻って読み直しの答えが届いたときに入れる
     func testAnswerArrivingWhileDetailIsOpenWaitsUntilReturn() throws {
         let a = try photo("a"), b = try photo("b")
         var screen = opened(mine: [a, b])
@@ -93,10 +93,34 @@ final class LikedPhotosScreenTests: XCTestCase {
         XCTAssertFalse(screen.receive(.init(user: "me", feed: [], mine: [b])), "絞り直さない")
         XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "開いている間は前のまま")
         XCTAssertNotNil(screen.staged)
-        // 戻ったら入れる
+        // 戻っても appear だけでは入れない（スワイプ途中キャンセルと同型の穴を塞ぐ）
         screen.appear()
+        XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "appear だけで staged を入れた")
+        XCTAssertNotNil(screen.staged)
+        // 読み直しの答えが届いたら入れる（staged を吸収）
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [b])))
         XCTAssertEqual(ids(screen.shown.mine), ["b"])
         XCTAssertNil(screen.staged)
+    }
+
+    /// 🔴 **戻るスワイプを途中でやめた回は staged を入れない。** `onAppear` → すぐ `onDisappear`
+    /// （詳細に戻る）でも一覧は前のまま——入れ替えると押した元が消えて詳細が閉じる
+    func testSwipeBackCancelDoesNotApplyStaged() throws {
+        let a = try photo("a"), b = try photo("b")
+        var screen = opened(mine: [a, b])
+        screen.disappear()
+        XCTAssertFalse(screen.receive(.init(user: "me", feed: [], mine: [b])), "前提: 詳細の裏で答えが届く")
+        XCTAssertNotNil(screen.staged)
+        // スワイプ途中: 一覧が少し見えて onAppear → やめて詳細へ onDisappear
+        screen.appear()
+        XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "スワイプ途中で staged を入れた")
+        XCTAssertNotNil(screen.staged, "staged を消してしまった")
+        screen.disappear()
+        XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "キャンセル後も一覧が差し替わった")
+        // 本当に戻って読み直しが届く
+        screen.appear()
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [b])))
+        XCTAssertEqual(ids(screen.shown.mine), ["b"])
     }
 
     /// 取っておいた答えの上に、後の失敗を重ねる（前の答えで取れた一覧を消さない）
@@ -106,6 +130,8 @@ final class LikedPhotosScreenTests: XCTestCase {
         XCTAssertFalse(screen.receive(.init(user: "me", feed: [], mine: [], serverIds: ["new"])))
         XCTAssertFalse(screen.receive(.init(user: "me", feed: nil, mine: nil, serverIds: nil, serverFailed: true)))
         screen.appear()
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [], serverIds: nil, serverFailed: true)),
+                      "戻って読み直しが届いたら staged を吸収する")
         XCTAssertEqual(screen.shown.serverIds, ["new"])
     }
 

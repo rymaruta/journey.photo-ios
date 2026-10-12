@@ -346,10 +346,12 @@ struct GalleryView: View {
                 // ブロックした人の写真が札の背景に出ていた）
                 // 2026-09-27: 上段は「開く場面ごとに1枚」（出発・旅の最中・一冊・1年前）
                 // 2026-09-28: 当たる札と今日のテーマを**横にめくる並び**に（owner「両方欲しい」）
-                // 自分の写真は**写しで絞らず、読み直す**（`reloadHidden`）。`gone` の印で絞ると、
-                // Web で公開に戻した写真がこの端末でだけ最大7日 札から消える（2026-09-30 判断）
+                // 自分の写真は**消した印だけ**落とす（`dropped.deleted`・2026-10-12 判断）。
+                // 全部の `gone`（非公開含む）で絞ると、Web で公開に戻した写真がこの端末でだけ
+                // 最大7日 札から消える（2026-09-30 の回帰）。消した id は使い回されないので安全。
+                // 非公開にしただけ・サーバー索引が古い回は、読み直しが返るまで札に残りうる（従来どおり）
                 HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
-                                myPhotos: model.myPhotos,
+                                myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
                 feedPicker
                 // 🔴 **切り替えの下には、選んだフィードの中身だけを置く**（2026-10-11 判断）。

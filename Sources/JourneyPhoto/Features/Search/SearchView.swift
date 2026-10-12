@@ -128,6 +128,10 @@ struct SearchView: View {
         .onAppear {
             isOnScreen = true
             dropped = hidden.snapshot
+            // 🔴 **戻った瞬間に手元の一覧を写しで絞る**（2026-10-12 判断）。以前は読み直しが
+            // 終わるまでブロックした人の写真が一瞬残った（dismiss-fixes で意図的に残した穴）。
+            // 通信は要らない——`reloadHidden` は控えの捨て直し用に続ける
+            model.applyHidden(dropped)
             if needsReload { reloadHidden() }
             // 🔴 詳細を開いている間に届いた別名は捨てている（`.task(id: query)` の注記）。
             // 同じ語のまま戻ると `.task(id:)` は走らないので、ここで取り直す
@@ -1161,6 +1165,13 @@ final class SearchViewModel: ObservableObject {
             rebuildDerived()
         }
         await reloadPhotos(environment: environment)
+    }
+
+    /// 手元の公開一覧を「見せない」の写しで絞り直す（通信なし）。
+    /// **戻った瞬間のフラッシュを止める**（`SearchView.onAppear`）。何度掛けても同じ
+    func applyHidden(_ hidden: ModerationSnapshot) {
+        allPhotos = hidden.visible(allPhotos)
+        rebuildDerived()
     }
 
     /// 控えがあっても読み直す。**ブロック／通報のあとに使う**
