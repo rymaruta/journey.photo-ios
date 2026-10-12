@@ -315,14 +315,60 @@ final class UploadLocalDraftTests: XCTestCase {
         XCTAssertEqual(store().draft(for: "a")?.items.map(\.title), ["分からない"])
         XCTAssertEqual(store().draft(for: "a")?.items.first?.inFlight, true)
 
-        // 「投稿をやめる」で閉じて、次に開いた
+        // 「投稿をやめる」で閉じる（閉じた時点で外す・閉じる確認の文言どおり）
+        next.dropUnsureDraftPhotos()
+        XCTAssertNil(store().draft(for: "a"), "閉じても届いたか分からない写真が下書きに残った")
+        XCTAssertTrue(imageFiles().isEmpty)
+
         let later = model(owner: "a")
         let restored10 = await later.restoreDraft()
         XCTAssertFalse(restored10, "届いたか分からない写真を戻した（二重に投稿される）")
         XCTAssertTrue(later.items.isEmpty)
-        XCTAssertNotNil(later.errorMessage, "外したことを黙っている")
-        XCTAssertNil(store().draft(for: "a"))
-        XCTAssertTrue(imageFiles().isEmpty)
+    }
+
+    /// 🔴 **帯の × で外した下書きの写真は端末からも消える**（残すと次に蘇る）
+    func testRemovedRestoredPhotoLeavesTheDraftOnDisk() async {
+        let first = model(owner: "a")
+        var keep = PendingPhoto(prepared: shot(1))
+        keep.title = "残す"
+        var drop = PendingPhoto(prepared: shot(2))
+        drop.title = "外す"
+        first.items = [keep, drop]
+        XCTAssertTrue(first.saveDraft())
+
+        let next = model(owner: "a")
+        let restoredDrop = await next.restoreDraft()
+        XCTAssertTrue(restoredDrop)
+        let dropId = next.items.first { $0.title == "外す" }!.id
+        next.remove(dropId)
+        XCTAssertEqual(next.items.map(\.title), ["残す"])
+        XCTAssertEqual(store().draft(for: "a")?.items.map(\.title), ["残す"],
+                       "帯で外した写真が端末の下書きに残った")
+        XCTAssertEqual(imageFiles().count, 1)
+
+        let again = model(owner: "a")
+        let restoredAgain = await again.restoreDraft()
+        XCTAssertTrue(restoredAgain)
+        XCTAssertEqual(again.items.map(\.title), ["残す"], "外した写真が蘇った")
+    }
+
+    /// 復元中は投稿できない（`draftSaveBlock` の loading と同じ門）
+    func testCanSubmitBlocksWhileRestoringDraft() async throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift"),
+                                 encoding: .utf8)
+        XCTAssertTrue(source.contains("&& !isRestoringDraft"), "canSubmit が復元中を止めていない")
+        // 印は縮小画像の await より前に立つ（復元中に「追加」されると下書きが消える）
+        let restoreStart = try XCTUnwrap(source.range(of: "func restoreDraft() async -> Bool"), "restoreDraft が無い")
+        let restoreEnd = source.range(of: "\n    func discardDraft()")?.lowerBound
+            ?? source.index(restoreStart.upperBound, offsetBy: 3500, limitedBy: source.endIndex)
+            ?? source.endIndex
+        let restoreBody = String(source[restoreStart.upperBound..<restoreEnd])
+        let flag = try XCTUnwrap(restoreBody.range(of: "isRestoringDraft = true"), "復元の印が無い")
+        let awaitThumb = try XCTUnwrap(restoreBody.range(of: "await Task.detached"), "縮小画像の待ちが無い")
+        XCTAssertLessThan(flag.lowerBound, awaitThumb.lowerBound,
+                          "縮小画像の待ちよりあとに印を立てている（その間に追加できる）")
     }
 
     /// 戻した写真には一覧用の縮小画像（512px）を作り直して付ける（無いと一覧がサムネ無しになる）
@@ -453,6 +499,10 @@ final class UploadLocalDraftTests: XCTestCase {
                       "問いの最中に写真を選ぶ画面を重ねて開く")
         XCTAssertTrue(view.contains("|| initialTag != nil || initialSpot != nil"),
                       "テーマ・スポットから開いた回にも下書きを尋ねる（タグ・紐付けを上書きする）")
+        XCTAssertTrue(view.contains("model.isWorking || model.isRestoringDraft"),
+                      "下書き復元中に「追加」が押せる（下書きが消える）")
+        XCTAssertTrue(view.contains("model.dropUnsureDraftPhotos()"),
+                      "「投稿をやめる」で届いたか分からない写真を外していない")
     }
 }
 

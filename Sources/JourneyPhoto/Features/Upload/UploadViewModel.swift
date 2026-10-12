@@ -521,7 +521,7 @@ final class UploadViewModel: ObservableObject {
     ///   写真ばかり見ていたので、写真を選ぶ前に入れたこれらが確認なしで消えていた（48b2481 のレビュー）
     /// 最初から入っているタグ・スポットの紐付けは本人が書いたものではないので数えない
     var hasDraft: Bool {
-        !items.isEmpty || isLoadingPicked || preparingCaptures > 0
+        !items.isEmpty || isLoadingPicked || preparingCaptures > 0 || isRestoringDraft
             // 公開範囲は初期値と比べる（旅の写真から来たときは非公開で始まる。
             // 投稿し終えて片付けた画面を「書きかけ」にしない）
             || song != nil || selectedAlbumId != nil || published != initialPublished || audience != .everyone
@@ -607,6 +607,11 @@ final class UploadViewModel: ObservableObject {
     func restoreDraft() async -> Bool {
         guard items.isEmpty, !isWorking, !isRestoringDraft, let drafts, let draftOwner,
               let draft = storedDraft else { return false }
+        // 🔴 **先に印を立てる**（2026-10-12 判断）。縮小画像の `await` のあいだ MainActor を譲るので、
+        // 印が無いと「追加」が押せて写真が入り、下の `items.isEmpty` で失敗→呼び出し側が
+        // `discardDraft` して下書きごと消えていた
+        isRestoringDraft = true
+        defer { isRestoringDraft = false }
         let (restorable, dropped) = UploadDraftStore.restorable(draft)
         for unsure in draft.items where unsure.inFlight == true {
             if let key = unsure.key { drafts.removeItem(key: key, for: draftOwner) }
@@ -620,13 +625,19 @@ final class UploadViewModel: ObservableObject {
             return false
         }
         guard let images = drafts.images(of: restorable) else { return false }
-        isRestoringDraft = true
-        defer { isRestoringDraft = false }
         // 一覧用の縮小画像（512px）は下書きに残していないので、画面の処理の外で作り直す
         // （無いまま送ると、一覧がサムネ無しの本体を読む）
         let make = makeDraftThumbnail
         let thumbnails = await Task.detached(priority: .userInitiated) { images.map { make($0) } }.value
-        guard items.isEmpty, !isWorking else { return false }
+        // 復元中に写真が足された・送信が始まった。**下書きは消さない**（呼び出し側が
+        // `errorMessage == nil` のときだけ `discardDraft` する）
+        guard items.isEmpty, !isWorking else {
+            if errorMessage == nil {
+                errorMessage = L("下書きを戻せませんでした。もう一度お試しください。",
+                                 "Couldn't restore the draft. Please try again.")
+            }
+            return false
+        }
         for (index, saved) in restorable.enumerated() {
             let prepared = ImagePreparer.Prepared(
                 data: images[index], fileName: saved.fileName, contentType: saved.contentType,
@@ -670,6 +681,18 @@ final class UploadViewModel: ObservableObject {
         draftKeys = [:]
     }
 
+    /// 「投稿をやめる」で閉じるとき、届いたか分からない写真を下書きから外す。
+    ///
+    /// 閉じる確認で「下書きから外します」と言うので、**閉じた時点で外す**（2026-10-12 判断）。
+    /// 以前は次に「続ける」したときまで残っていて、文言とずれていた
+    func dropUnsureDraftPhotos() {
+        guard let drafts, let draftOwner else { return }
+        for (id, key) in draftKeys where staged[id] != nil {
+            drafts.removeItem(key: key, for: draftOwner)
+            draftKeys[id] = nil
+        }
+    }
+
     /// 下書きの1枚の印を付け替える（`draftKeys` の注記）。開き直した写真でなければ何もしない
     private enum DraftMark { case sending, posted, notDelivered }
     private func markDraft(_ photoId: UUID, _ mark: DraftMark) {
@@ -690,7 +713,9 @@ final class UploadViewModel: ObservableObject {
     /// 押して、残りが黙って画面に残る」ことで、時間切れの後は読み込みは終わっている。読めなかった枚数は
     /// 知らせ（`errorMessage`）に出し、「もう一度読み込む」（`retryUnreadable`）を添えるので黙って減らない。
     /// `loadPicked` の「1枚でも読めたら、読めたぶんは受ける」とも同じ考え
-    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
+    var canSubmit: Bool {
+        !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 && !isRestoringDraft
+    }
 
     /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
     ///
@@ -909,6 +934,14 @@ final class UploadViewModel: ObservableObject {
         discardStaged(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
+        // 🔴 **開き直した下書きの1枚を帯の × で外したら、端末の下書きからも外す**（2026-10-12 判断）。
+        // 触らないとディスクに残り、次に「下書きを続けますか？」で蘇る
+        if let key = draftKeys[photoId] {
+            if let drafts, let draftOwner {
+                drafts.removeItem(key: key, for: draftOwner)
+            }
+            draftKeys[photoId] = nil
+        }
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
@@ -919,7 +952,12 @@ final class UploadViewModel: ObservableObject {
         }
         // **最後の1枚を外したら束の印も捨てる。** カメラの分（印なし）は上の
         // 読み直しを通らないので、ここで捨てないと次に撮った写真が前の投稿の束に入る
-        if items.isEmpty { groupId = nil }
+        if items.isEmpty {
+            groupId = nil
+            if restoredDraft && draftKeys.isEmpty {
+                restoredDraft = false
+            }
+        }
     }
 
     /// 選ばれた写真を読み、**その場で EXIF を落とす**。
