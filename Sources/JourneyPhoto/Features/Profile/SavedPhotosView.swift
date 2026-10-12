@@ -24,6 +24,8 @@ struct SavedPhotosView: View {
     @State private var photos: [Photo] = []
     /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
+    /// 戻り `onAppear` のあと前面確定を待つ仕事（スワイプキャンセルで消す）
+    @State private var frontSettle: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -56,8 +58,18 @@ struct SavedPhotosView: View {
         .onAppear {
             screen.appear()
             refilter()
+            frontSettle?.cancel()
+            frontSettle = Task {
+                try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                guard !Task.isCancelled else { return }
+                if screen.confirmFront() { refilter() }
+            }
         }
-        .onDisappear { screen.disappear() }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            screen.disappear()
+        }
     }
 
     /// マイページの「お気に入り」タブでも使う

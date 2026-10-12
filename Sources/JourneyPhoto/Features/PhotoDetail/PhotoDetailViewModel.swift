@@ -164,9 +164,13 @@ final class PhotoDetailViewModel: ObservableObject {
     func load(gate likeGate: LikeCountStore) async {
         let id = photoId
         let sendingAtStart = likeGate.isSending(id)
+        // **投稿・削除の最中はコメント欄を触らない**（`reloadComments` と同じ門）。
+        // 開いた直後の `load` と投稿が重なると、`commentsPhotoId = nil` や
+        // `commentsUnavailable` で欄が一瞬壊れ、削除中は古い頁でちらつく
+        let commentsBusy = isPosting || !deletingCommentIds.isEmpty
         // **読みに行くと決めたら、待つ前に「中身が入っている」を外す**（取り消し・失敗で
-        // 抜けた回に、読めていない1枚を読み済みと扱わない）
-        commentsPhotoId = nil
+        // 抜けた回に、読めていない1枚を読み済みと扱わない）——忙しい間は外さない
+        if !commentsBusy { commentsPhotoId = nil }
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
         async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn)
@@ -191,8 +195,10 @@ final class PhotoDetailViewModel: ObservableObject {
             likes = loadedCount ?? likes
             if loadedCount != nil { likesFromServer = true }
         }
-        if let loaded { applyComments(loaded, for: id) }
-        commentsUnavailable = loaded == nil
+        if !commentsBusy {
+            if let loaded { applyComments(loaded, for: id) }
+            commentsUnavailable = loaded == nil
+        }
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
         // ハートが白に戻ると、押した人は「取り消された」と読む
         // （押し直しても数は増えない＝サーバーは冪等なので、実害は

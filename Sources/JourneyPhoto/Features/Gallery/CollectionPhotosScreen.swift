@@ -25,10 +25,13 @@ struct CollectionPhotosScreen: View {
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
     @EnvironmentObject private var hidden: ModerationStore
-    /// 一覧から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**。
+    /// 一覧から落とす「見せない」の写し。**前面が確定したときだけ取る**。
     /// 探すの色・機材・季節は、探す側が詳細を積んでいる間は読み直さない（開いている
-    /// 詳細を閉じないため）ので、ここで落とさないとブロックした人の写真が並び続ける
+    /// 詳細を閉じないため）ので、ここで落とさないとブロックした人の写真が並び続ける。
+    /// 戻るスワイプ途中の `onAppear` で即適用すると、押した元が消えて詳細が閉じる
     @State private var dropped = ModerationSnapshot()
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     private var shown: [Photo] { dropped.visible(photos) }
     private var sorted: [Photo] { sort.apply(shown) }
@@ -71,7 +74,24 @@ struct CollectionPhotosScreen: View {
             .padding(.bottom, 24)
         }
         .webScreen()
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled else { return }
+                    if front.confirm() { dropped = hidden.snapshot }
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+        }
         // 読み上げと次の画面の「戻る」に使う。見た目は下の2行の見出し
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)

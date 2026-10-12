@@ -118,6 +118,8 @@ final class UsabilityWiringTests: XCTestCase {
         XCTAssertTrue(detail.contains("signInResolving: auth.isResolving"))
         XCTAssertTrue(detail.contains("PhotoDetailRules.commentActions("))
         XCTAssertTrue(detail.contains("ReportSheet(photoId: current.id, ownerId: ownerId, comment: .init(comment))"))
+        XCTAssertTrue(detail.contains("commentAuthorBlockedWhenReporting"),
+                      "コメント通報のブロック後始末が無い")
         XCTAssertTrue(detail.contains("Task { await block(comment.uid) }"))
         XCTAssertTrue(detail.contains("Text(LocationMatch.display(location))"), "撮影地の行が住所のまま")
     }

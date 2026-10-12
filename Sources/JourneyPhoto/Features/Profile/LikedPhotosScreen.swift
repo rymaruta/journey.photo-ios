@@ -11,9 +11,10 @@ import Foundation
 ///    一覧から消えた**。→ 取れなかった回は、**同じ人なら前の一覧を残す**
 ///    （人が替わったら残さない——前の人のいいねを次の人に見せない）
 /// 2. 読み直しの途中に詳細を開くと、答えが届いた瞬間に一覧が差し替わり、
-///    **押した元が消えて詳細が閉じた**。→ 答えは**画面に出ている間だけ入れる**。
-///    出ていない間に届いた答えは取っておき、戻ったとき（`appear`）に入れる
-///    （`HomeTopCardView` の `pendingQuiz` と同じ形）
+///    **押した元が消えて詳細が閉じた**。→ 答えは**前面が確定している間だけ入れる**。
+///    出ていない間に届いた答えは取っておく。戻りの `appear` だけでは入れず、
+///    `confirmFront()`（短い待ちのあと）か、確定後の `receive` で入れる
+///    （戻るスワイプ途中キャンセルで `onAppear` が一瞬来ても一覧を差し替えない）
 ///
 /// 2つの画面で同じ決まりを使う（保存した写真はサーバーのいいね一覧を持たないだけ）。
 /// 画面を持たない値にしてあるのは、Linux のテストで確かめるため。
@@ -82,6 +83,9 @@ struct LikedPhotosScreen {
     private(set) var staged: Materials?
     /// 画面がいま出ているか（`onAppear`〜`onDisappear`）
     private(set) var isShown = false
+    /// 前面が確定して、読み直し結果を一覧に入れてよいか（`FrontConfirm` と同型）。
+    /// 戻るスワイプ途中の一瞬 `isShown == true` のあいだに `receive` が来ても入れない
+    private(set) var isFrontConfirmed = false
     /// 戻ってきた回数。読み込みの `.task(id:)` の鍵に入れる——`onAppear` で別の
     /// `Task` を立てると、`.task` と2本同時に取りに行く（`HomeTopCardView` と同じ形）
     private(set) var returns = 0
@@ -98,14 +102,14 @@ struct LikedPhotosScreen {
     /// この鍵で読む必要があるか（読み終えた鍵なら空振り）。引き下げ・再試行は聞かずに読む
     func needsLoad(_ key: String) -> Bool { key != loadedKey }
 
-    /// 読み込みの答えが届いた。**画面に出ていればその場で入れて true**（絞り直す）。
-    /// 出ていなければ取っておく（詳細を開いている——差し替えると詳細が閉じる）
+    /// 読み込みの答えが届いた。**前面が確定していればその場で入れて true**（絞り直す）。
+    /// 確定前・詳細の裏なら取っておく（差し替えると詳細が閉じる）
     /// - Parameter key: 読み始めたときの鍵。届いた（取り消されなかった）回だけ「読み終えた」と覚える
     mutating func receive(_ fetch: Fetch, key: String? = nil) -> Bool {
         if let key { loadedKey = key }
         // 取っておいた答えの上に重ねる（前の答えで取れた一覧を、後の失敗で消さない）
         let next = (staged ?? shown).absorbing(fetch)
-        if isShown {
+        if isFrontConfirmed {
             shown = next
             staged = nil
             return true
@@ -117,24 +121,42 @@ struct LikedPhotosScreen {
     /// 画面が前に出た。**戻ってきた回なら読み直す**（`returns` が進む＝`.task(id:)` が走る）。
     /// 初回は `.task(id:)` がもう読んでいる。
     ///
-    /// 🔴 **戻りの `appear` では staged を入れない**（2026-10-12 判断）。戻るスワイプの途中で
-    /// `onAppear` が来て、やめると詳細に戻る——その一瞬で staged を入れると一覧が差し替わり、
-    /// 押した元が消えて詳細が閉じる（回帰2と同型）。戻りの staged は、次の `receive`
-    /// （読み直し）が `isShown` のときに吸収する。
+    /// 🔴 **戻りの `appear` では staged を入れず、前面も未確定のまま**（2026-10-12 判断）。
+    /// 戻るスワイプの途中で `onAppear` が来て、やめると詳細に戻る——その一瞬で staged を
+    /// 入れる／`receive` を適用すると一覧が差し替わり、押した元が消えて詳細が閉じる
+    /// （回帰2と同型）。確定は `confirmFront()`（View が短い待ちのあと呼ぶ）。
     ///
-    /// 初回だけは、画面が出る前に届いた答えを入れる（「読み込み中」のままにしない）。
+    /// 初回だけは、画面が出る前に届いた答えを入れて前面も確定する。
     /// 初回の `onAppear` にスワイプ途中キャンセルは来ない
     mutating func appear() {
         isShown = true
-        if !didAppear, let staged {
-            shown = staged
-            self.staged = nil
+        if !didAppear {
+            isFrontConfirmed = true
+            if let staged {
+                shown = staged
+                self.staged = nil
+            }
+            didAppear = true
+            return
         }
-        if didAppear { returns &+= 1 }
-        didAppear = true
+        isFrontConfirmed = false
+        returns &+= 1
+    }
+
+    /// 戻り後に前面が確定した。**staged を入れたら true**（呼び出し側が絞り直す）。
+    /// staged が無くても前面は確定する（あとの `receive` を通すため）
+    @discardableResult
+    mutating func confirmFront() -> Bool {
+        guard isShown else { return false }
+        isFrontConfirmed = true
+        guard let staged else { return false }
+        shown = staged
+        self.staged = nil
+        return true
     }
 
     mutating func disappear() {
         isShown = false
+        isFrontConfirmed = false
     }
 }

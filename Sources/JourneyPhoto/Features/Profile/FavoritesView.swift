@@ -35,6 +35,8 @@ struct FavoritesView: View {
     @State private var photos: [Photo] = []
     /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
+    /// 戻り `onAppear` のあと前面確定を待つ仕事（スワイプキャンセルで消す）
+    @State private var frontSettle: Task<Void, Never>?
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -90,12 +92,22 @@ struct FavoritesView: View {
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
         // ブロック／通報したぶんも、同じく戻ってきたときに落とす
-        // 読み込みの答えも、ここで入れる（詳細を開いている間に届いた分・H-2）
+        // 読み込みの答えも、前面が確定してから入れる（スワイプ途中キャンセルで閉じない・H-2）
         .onAppear {
             screen.appear()
             refilter()
+            frontSettle?.cancel()
+            frontSettle = Task {
+                try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                guard !Task.isCancelled else { return }
+                if screen.confirmFront() { refilter() }
+            }
         }
-        .onDisappear { screen.disappear() }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            screen.disappear()
+        }
     }
 
     private func refilter() {
