@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 /// プロフィールの編集。名前・自己紹介・リンクと、アイコン／カバー。
 ///
@@ -27,6 +28,10 @@ struct ProfileEditView: View {
 
     @State private var avatarItem: PhotosPickerItem?
     @State private var coverItem: PhotosPickerItem?
+    @State private var pendingAvatar: Data?
+    @State private var pendingCover: Data?
+    @State private var avatarPreview: UIImage?
+    @State private var coverPreview: UIImage?
     /// いまのアイコン・カバーを見せるための持ち主の ID（読めたら入る）
     @State private var userId: String?
     /// 画像を変えたら URL の末尾を変える（同じ URL だと古い絵の控えが出る）
@@ -45,10 +50,8 @@ struct ProfileEditView: View {
     /// 保存の失敗。**アラートで出す**——保存は右上なので、フォームの中に出すと
     /// 下に流していれば上の画面外、上にいれば下の画面外になる
     @State private var saveError: String?
-    /// アイコン／カバーを送っている間（`upload`）。**その間は保存も戻るも止める**——
-    /// 戻れてしまうと送り終わる前の古い画像が前の画面に出たままになり、
-    /// 保存と重なると後から来た方がどちらかを上書きする
-    @State private var uploadingImage: ProfileService.ImageKind?
+    /// 写真の準備中は保存と戻るを止める。
+    @State private var preparingImage: ProfileService.ImageKind?
     /// 変えた欄があるときの戻るの確認（`unsavedLeaveGuard`）
     @State private var showLeaveConfirm = false
     /// 読めたプロフィール（名前の横の画面に渡す）
@@ -126,13 +129,14 @@ struct ProfileEditView: View {
             nameSideSection
 
         }
+        .disabled(isSaving)
         .webScreen()
         .navigationTitle(L("プロフィールの編集", "Edit profile"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // **保存は右上**（板）。以前はフォームの一番下にあり、長い画面では見えなかった
             ToolbarItem(placement: .topBarTrailing) {
-                if isSaving || uploadingImage != nil {
+                if isSaving || preparingImage != nil {
                     ProgressView()
                 } else {
                     Button(L("保存", "Save")) {
@@ -148,14 +152,14 @@ struct ProfileEditView: View {
                     .foregroundStyle(loaded ? WebTheme.accent : WebTheme.muted2)
                     // **読めるまで押させない。** 押せてしまうと、
                     // 空の欄がそのまま「消す」として送られる
-                    .disabled(!loaded)
+                    .disabled(!loaded || preparingImage != nil)
                 }
             }
         }
         .overlay { if isLoading { ProgressView() } }
-        // 🔴 **直した欄を黙って捨てさせない**（`ProfileDraft.leave`・バグ探し 2026-10-03）。
+        // 写真も含め、保存前の変更を戻る確認に含める。
         // 変えた欄がある間は標準の戻るを隠し、自前の戻るで「保存して戻る／変更を捨てる」を
-        // 確かめる（親しい友達・旅行プランと同じ `unsavedLeaveGuard`）。画像の送信中・保存中は
+        // 確かめる（親しい友達・旅行プランと同じ `unsavedLeaveGuard`）。画像の準備中・保存中は
         // 戻らせない（戻れると保存の結果を見届けられない。以前の戻るを隠す門と同じ）
         .unsavedLeaveGuard(leave, isPresented: $showLeaveConfirm, canSave: loaded,
                            // 自前の戻るにも前の画面の題を添える（標準の「‹ マイページ」と同じ見た目・旅行プランと同じ形）
@@ -164,7 +168,7 @@ struct ProfileEditView: View {
                                       "If you go back without saving, your edits will be lost."),
                            onSave: {
                                // 右上の「保存」と同じ門（押したその場で閉じる）。成功したら `save` が閉じる
-                               guard !isSaving else { return }
+                               guard loaded, !isSaving, preparingImage == nil else { return }
                                isSaving = true
                                Task { await save() }
                            },
@@ -189,10 +193,10 @@ struct ProfileEditView: View {
             }
         }
         .onChange(of: avatarItem) { _, item in
-            Task { await upload(item, kind: .avatar) }
+            Task { await stage(item, kind: .avatar) }
         }
         .onChange(of: coverItem) { _, item in
-            Task { await upload(item, kind: .cover) }
+            Task { await stage(item, kind: .cover) }
         }
     }
 
@@ -206,7 +210,11 @@ struct ProfileEditView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 132)
                     .overlay {
-                        RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                        if let coverPreview {
+                            Image(uiImage: coverPreview).resizable().scaledToFill()
+                        } else {
+                            RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                        }
                     }
                     .background(WebTheme.surface)
                     .clipped()
@@ -224,13 +232,19 @@ struct ProfileEditView: View {
                         // **行の中に押せるものが2つある。** 既定の形だと行全体が
                         // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
                         .buttonStyle(.borderless)
-                        // **保存中・送信中は選ばせない**（保存と画像の送信を重ねない）
-                        .disabled(!loaded || isSaving || uploadingImage != nil)
+                        // 保存中・写真の準備中は選ばせない
+                        .disabled(!loaded || isSaving || preparingImage != nil)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                     }
                 PhotosPicker(selection: $avatarItem, matching: .images) {
-                    RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
+                    Group {
+                        if let avatarPreview {
+                            Image(uiImage: avatarPreview).resizable().scaledToFill()
+                        } else {
+                            RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
+                        }
+                    }
                         .frame(width: 84, height: 84)
                         .background(WebTheme.surface)
                         .clipShape(Circle())
@@ -243,15 +257,15 @@ struct ProfileEditView: View {
                         }
                 }
                 .buttonStyle(.borderless)
-                .disabled(!loaded || isSaving || uploadingImage != nil)
+                .disabled(!loaded || isSaving || preparingImage != nil)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
                 .padding(.leading, 20)
                 .padding(.top, 92)
             }
             .frame(height: 178, alignment: .top)
         } footer: {
-            Text(L("写真は選ぶとすぐに反映されます。文字やBGMは右上の「保存」で反映されます。",
-                   "Photos update as soon as you choose them. Save text and BGM with the button above."))
+            Text(L("写真・文字・BGMは右上の「保存」で反映されます。バッジは選択画面で決定します。",
+                   "Save photos, text and BGM with the button above. Confirm badges on their selection screen."))
         }
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
@@ -405,90 +419,110 @@ struct ProfileEditView: View {
                      homeLocation: homeLocation, themeColor: themeColor, songs: songs)
     }
 
-    /// 戻るの扱い（`ProfileDraft.leave`）
+    /// 写真も保存待ちの変更として数える。
     private var leave: UnsavedLeave {
-        ProfileDraft.leave(original: original, edited: edited, isBusy: isSaving || uploadingImage != nil)
+        let textChanged = original.map { ProfileDraft.patch(from: $0, to: edited) != nil } ?? false
+        return UnsavedLeave.decide(
+            hasChanges: textChanged || pendingAvatar != nil || pendingCover != nil,
+            isSaving: isSaving || preparingImage != nil
+        )
     }
 
-    /// 呼ぶ前に `isSaving` を立てておくこと（ボタンが同期で立てる）。戻るときは必ず下ろす
+    /// 成功した項目だけを保存済みにする。残りは次の保存で再試行できる。
     private func save() async {
         defer { isSaving = false }
-        // **読めていない内容で上書きしない。**
-        //
-        // 読み込みに失敗すると欄は全部空のまま出る。サーバーは
-        // 「キーがある＝指定した、値が空＝消す」で読む
-        // （`api-user/src/userProfile.ts` の `apply`）ので、そのまま
-        // 保存すると**表示名・ユーザー名・自己紹介・リンク・ひとこと・
-        // テーマ色が全部消える**。取り返しがつかない。
         guard loaded, let original else {
             message = L("いまの内容を読み込めていないので保存できません。開き直してください",
                         "Can't save before your current profile is loaded. Please reopen this screen.")
             return
         }
-        // 🔴 **変えた欄だけを送る**（`ProfileDraft.patch`）。開いた時点の値を全部
-        // 送っていたので、開いている間に Web で直した表示名・BGM が巻き戻り、
-        // ユーザー名も毎回送るので、いまの規則に合わない古い名前の人は
-        // 何を直しても 400 で保存できなかった。
-        // **何も変えていなければ送らずに閉じる**（Web も投げずに「保存しました」。
-        // サーバーは空の変更でも rev を進めるので、別の端末の保存を無駄に競合させる）
-        guard let patch = ProfileDraft.patch(from: original, to: edited) else {
+
+        let draft = edited
+        let patch = ProfileDraft.patch(from: original, to: draft)
+        guard patch != nil || pendingAvatar != nil || pendingCover != nil else {
             dismiss()
             return
         }
         message = nil
-        do {
-            try await environment.profiles.update(patch)
-            // マイページに読み直させる（ログイン直後の表示名と同じ知らせ）
-            auth.noteProfileChanged()
-            dismiss()
-        } catch {
-            saveError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください", "Please try again")
+
+        if let patch {
+            do {
+                try await environment.profiles.update(patch)
+                self.original = draft
+                auth.noteProfileChanged()
+            } catch {
+                saveError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください", "Please try again")
+                return
+            }
         }
+
+        for kind in [ProfileService.ImageKind.avatar, .cover] {
+            let data = kind == .avatar ? pendingAvatar : pendingCover
+            guard let data else { continue }
+            do {
+                try await environment.profiles.uploadProfileImage(kind: kind, jpeg: data)
+                if kind == .avatar {
+                    pendingAvatar = nil
+                    avatarPreview = nil
+                } else {
+                    pendingCover = nil
+                    coverPreview = nil
+                }
+                if let uid = userId ?? auth.userId {
+                    ProfileImageVersions.shared.bump(uid)
+                    imageBust = ProfileImageVersions.shared.token(for: uid)
+                } else {
+                    imageBust = UUID().uuidString
+                }
+                auth.noteProfileChanged()
+            } catch {
+                let name = kind == .avatar ? L("アイコン", "Avatar") : L("カバー", "Cover")
+                let reason = (error as? LocalizedError)?.errorDescription ?? L("通信を確認してください", "Check your connection")
+                saveError = L("\(name)を保存できませんでした。保存済みの項目は反映されています。もう一度「保存」で残りを試せます。\n\(reason)",
+                              "Couldn't save \(name). Completed changes are already applied. Tap Save to retry the remaining changes.\n\(reason)")
+                return
+            }
+        }
+        dismiss()
     }
 
-    private func upload(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
+    private func stage(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
         guard let item else { return }
-        // 送っている最中に次を選ばれたら、選択だけ戻して受け付けない
-        guard uploadingImage == nil else {
+        guard preparingImage == nil, !isSaving else {
             if kind == .avatar { avatarItem = nil } else { coverItem = nil }
             return
         }
-        uploadingImage = kind
-        // 送っている間の表示（知らせの欄・右上は ProgressView）
-        message = kind == .avatar ? L("アイコンを送っています…", "Uploading avatar…")
-                                  : L("カバーを送っています…", "Uploading cover…")
-        // **選択を戻す。** 戻さないと、同じ写真をもう一度選んでも `onChange` が
-        // 起きず何も起きない（`EditPhotoView` の差し替えと同じ）
+        preparingImage = kind
+        message = kind == .avatar ? L("アイコンを準備しています…", "Preparing avatar…")
+                                  : L("カバーを準備しています…", "Preparing cover…")
         defer {
-            uploadingImage = nil
+            preparingImage = nil
             if kind == .avatar { avatarItem = nil } else { coverItem = nil }
         }
         do {
-            // 中身を取り出せなかった（iCloud から落とせない等）ときは
-            // **「送っています…」を残さず、黙りもしない**
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 message = L("画像を読み込めませんでした", "Couldn't load the image")
                 return
             }
-            // アイコンにも同じ関所を通す。**EXIF の付いた自撮りを
-            // そのまま上げない**（撮影地が入っていることがある）
-            // **縮小・EXIF の書き直しは画面の処理の外で**（`EditPhotoView` の差し替えと同じ）。
-            // 1枚に数百ミリ秒かかり、その間「送っています…」の表示ごと画面が止まっていた
+            // GPS/EXIF を除去できた JPEG だけをプレビューと送信に使う。
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try ImagePreparer.prepare(data: data, fileName: "profile")
             }.value
-            try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
-            // マイページ・人のページにも新しい絵を出させる（その人の `?v=` だけ替える）
-            if let uid = userId ?? auth.userId {
-                ProfileImageVersions.shared.bump(uid)
-                imageBust = ProfileImageVersions.shared.token(for: uid)
-            } else {
-                imageBust = UUID().uuidString
+            guard let preview = UIImage(data: prepared.data) else {
+                message = L("画像を表示できませんでした", "Couldn't preview the image")
+                return
             }
-            message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
+            if kind == .avatar {
+                pendingAvatar = prepared.data
+                avatarPreview = preview
+            } else {
+                pendingCover = prepared.data
+                coverPreview = preview
+            }
+            message = L("写真を選びました。右上の「保存」で反映されます。",
+                        "Photo selected. Tap Save to apply it.")
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")
+            message = (error as? LocalizedError)?.errorDescription ?? L("画像を準備できませんでした", "Couldn't prepare the image")
         }
     }
 }
-
