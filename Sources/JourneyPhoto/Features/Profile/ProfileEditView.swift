@@ -3,11 +3,8 @@ import PhotosUI
 
 /// プロフィールの編集。名前・自己紹介・リンクと、アイコン／カバー。
 ///
-/// **並びはアーティファクト 32 の「プロフィールの編集」**（2026-09-26）:
-/// カバーとアイコンの見本 → 表示名 → ユーザー名 → 自己紹介 → 居住地・Instagram
-/// → BGM、保存は右上。板に無い「ひとこと・テーマ色・ウェブサイト」は
-/// **消さずに最後の「そのほか」へ**（プロフィールに値が入っている人がいて、
-/// 消すとアプリから直せなくなる）。
+/// アーティファクト 32 の写真見本と右上の保存を保ち、
+/// 入力欄は基本情報・場所とリンク・プロフィールの演出に分ける。
 struct ProfileEditView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -75,53 +72,59 @@ struct ProfileEditView: View {
                     TextField("", text: $displayName)
                         .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName, loaded: \.displayName))
                 }
-                labeled(L("ユーザー名（半角英数）", "Username (letters and numbers)")) {
-                    TextField("", text: $username)
+                labeled(L("ユーザー名", "Username")) {
+                    TextField(L("半角英数字", "Letters and numbers"), text: $username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
                 labeled(L("自己紹介", "Bio"), over: PostLimits.overLimitNote(bio, limit: PostLimits.Profile.bio)) {
-                    // 板の下書き「ひとこと」は付けない——下の「そのほか」に同じ名前の欄
+                    // 板の下書き「ひとこと」は付けない——下の演出欄に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
-                    TextField("", text: $bio, axis: .vertical)
+                    TextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
                         .lineLimit(2...6)
                         .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio, loaded: \.bio))
                 }
-                // 板は居住地と Instagram を横に2つ並べる
-                HStack(alignment: .top, spacing: 10) {
-                    labeled(L("居住地", "Where you're based"), over: PostLimits.overLimitNote(homeLocation, limit: PostLimits.Profile.homeLocation)) {
-                        TextField("", text: $homeLocation)
-                            .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation, loaded: \.homeLocation))
-                    }
-                    labeled(L("Instagram（@なし）", "Instagram (without @)"), over: PostLimits.overLimitNote(instagram, limit: PostLimits.Profile.instagram)) {
-                        TextField("", text: $instagram)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram, loaded: \.instagram))
-                    }
+            } header: {
+                Text(L("基本情報", "About you"))
+            }
+            .listRowBackground(Color.clear)
+
+            Section {
+                labeled(L("居住地", "Where you're based"), over: PostLimits.overLimitNote(homeLocation, limit: PostLimits.Profile.homeLocation)) {
+                    TextField(L("例：東京都", "e.g. Tokyo"), text: $homeLocation)
+                        .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation, loaded: \.homeLocation))
                 }
+                labeled(L("Instagram", "Instagram"), over: PostLimits.overLimitNote(instagram, limit: PostLimits.Profile.instagram)) {
+                    TextField(L("ユーザー名（@なし）", "Username without @"), text: $instagram)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram, loaded: \.instagram))
+                }
+                labeled(L("ウェブサイト", "Website"), over: PostLimits.overLimitNote(website, limit: PostLimits.Profile.website)) {
+                    TextField(L("https://", "https://"), text: $website)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .onChange(of: website, limitLength($website, to: PostLimits.Profile.website, loaded: \.website))
+                }
+            } header: {
+                Text(L("場所とリンク", "Location and links"))
+            }
+            .listRowBackground(Color.clear)
+
+            // 既存の値を消さず、用途の近い項目をまとめる
+            Section(L("プロフィールの演出", "Profile appearance")) {
+                labeled(L("ひとこと", "Status"), over: PostLimits.overLimitNote(statusText, limit: PostLimits.Profile.statusText)) {
+                    TextField(L("短いひとこと", "A short status"), text: $statusText)
+                        .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
+                }
+                ThemeColorField(themeColor: $themeColor)
             }
             .listRowBackground(Color.clear)
 
             bgmSection
 
             nameSideSection
-
-            // **板に無い3つ。** 消すとアプリから直せなくなるので、最後にまとめて残す
-            Section(L("そのほか", "More")) {
-                labeled(L("ひとこと", "Status"), over: PostLimits.overLimitNote(statusText, limit: PostLimits.Profile.statusText)) {
-                    TextField("", text: $statusText)
-                        .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
-                }
-                ThemeColorField(themeColor: $themeColor)
-                labeled(L("ウェブサイト", "Website"), over: PostLimits.overLimitNote(website, limit: PostLimits.Profile.website)) {
-                    TextField("", text: $website)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .onChange(of: website, limitLength($website, to: PostLimits.Profile.website, loaded: \.website))
-                }
-            }
-            .listRowBackground(Color.clear)
 
         }
         .webScreen()
@@ -223,7 +226,7 @@ struct ProfileEditView: View {
                         // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
                         .buttonStyle(.borderless)
                         // **保存中・送信中は選ばせない**（保存と画像の送信を重ねない）
-                        .disabled(isSaving || uploadingImage != nil)
+                        .disabled(!loaded || isSaving || uploadingImage != nil)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                     }
@@ -241,12 +244,15 @@ struct ProfileEditView: View {
                         }
                 }
                 .buttonStyle(.borderless)
-                .disabled(isSaving || uploadingImage != nil)
+                .disabled(!loaded || isSaving || uploadingImage != nil)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
                 .padding(.leading, 20)
                 .padding(.top, 92)
             }
             .frame(height: 178, alignment: .top)
+        } footer: {
+            Text(L("写真は選ぶとすぐに反映されます。文字やBGMは右上の「保存」で反映されます。",
+                   "Photos update as soon as you choose them. Save text and BGM with the button above."))
         }
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
@@ -278,6 +284,12 @@ struct ProfileEditView: View {
                 .accessibilityHidden(true)
             // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
             field()
+                .font(.body)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 48, alignment: .leading)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(WebTheme.outline, lineWidth: 1))
                 .accessibilityLabel(title)
             // **読み込んだ値が上限を超えている欄だけ**、保存で切れることを知らせる（危険の色・12pt）
             if let over {

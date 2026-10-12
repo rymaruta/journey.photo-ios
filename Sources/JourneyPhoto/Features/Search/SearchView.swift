@@ -35,40 +35,47 @@ struct SearchView: View {
     @State private var spotsExpandedFor: String? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // 板 11 の見出しの帯: 探す口と種類のチップ（間 12）
-                VStack(alignment: .leading, spacing: 12) {
-                    searchField
-                    scopeChips
-                }
-                if isDiscovering {
-                    // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
-                    // `SearchDiscovery`、段の間は 20
-                    ForEach(model.discovery(spots: officialSpots)) { section in
-                        discoverySection(section)
-                    }
-                } else {
-                    // 探し始めたら絞り込みを出す。**板 11（発見の顔）には無い**ので、
-                    // 発見の間は置かない
-                    // 人を探しているときは写真の絞り込みを出さない（効かない札を置かない）
-                    if model.scope.showsPhotos {
-                        shootingTimeChips
-                        categoryChips
-                    }
-                    // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
-                    if model.scope.showsTagChips {
-                        tagChips
-                    }
-                }
-                results
+        VStack(spacing: 0) {
+            // 検索中も探す口と種類の切り替えを画面上部に残す。
+            // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
+            VStack(alignment: .leading, spacing: 12) {
+                searchField
+                scopeChips
             }
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
+            .background(WebTheme.background)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if isDiscovering {
+                        // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
+                        // `SearchDiscovery`、段の間は 20
+                        ForEach(model.discovery(spots: officialSpots)) { section in
+                            discoverySection(section)
+                        }
+                    } else {
+                        // 探し始めたら絞り込みを出す。**板 11（発見の顔）には無い**ので、
+                        // 発見の間は置かない
+                        // 人を探しているときは写真の絞り込みを出さない（効かない札を置かない）
+                        if model.scope.showsPhotos {
+                            shootingTimeChips
+                            categoryChips
+                        }
+                        // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
+                        if model.scope.showsTagChips {
+                            tagChips
+                        }
+                    }
+                    results
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            // 結果だけを引き下げて読み直す。検索欄は固定したまま。
+            .refreshable { await reloadAll() }
         }
         .webScreen()
-        // 読み込めなかった回の出口（以前は一度読んだら二度と読まなかった）
-        .refreshable { await reloadAll() }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
