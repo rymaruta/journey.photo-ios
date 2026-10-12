@@ -83,8 +83,12 @@ struct ProfileEditView: View {
                 labeled(L("自己紹介", "Bio"), over: PostLimits.overLimitNote(bio, limit: PostLimits.Profile.bio)) {
                     // 板の下書き「ひとこと」は付けない——下の演出欄に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
+                    // 板の自己紹介は高さ 88（1行の欄は 48）。owner（2026-10-12）が
+                    // その枠は小さいと言ったので、空でも5行分を開け、300字までは伸びる
                     TextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
-                        .lineLimit(2...6)
+                        .lineLimit(5...12)
+                        .padding(.vertical, 12)
+                        .frame(minHeight: 120, alignment: .topLeading)
                         .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio, loaded: \.bio))
                 }
             } header: {
