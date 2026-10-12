@@ -96,6 +96,9 @@ struct PhotoDetailView: View {
     /// この画面が出ているか・裏にいる間にブロック／通報があったか（`hidden.revision`）
     @State private var isOnScreen = false
     @State private var needsRefilter = false
+    /// 戻るスワイプ途中の `onAppear` で絞らない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     /// コメントから落とす「見せない」の写し。**画面に出ている間だけ取り直す**
     /// ——コメントした人のページでブロックすると、描くたびに絞っていた元の行
     /// （`NavigationLink`）が消え、そのページが閉じていた
@@ -266,17 +269,25 @@ struct PhotoDetailView: View {
             }
         }
         .onAppear {
-            isOnScreen = true
-            dropped = hidden.snapshot
-            if needsRefilter {
-                needsRefilter = false
-                refilterHidden()
+            switch front.appear() {
+            case .first:
+                landDetailFront()
+            case .returning:
+                // スワイプ途中で絞ると、コメントした人・近くの写真の詳細が閉じる
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landDetailFront()
+                }
             }
-            // 裏にいる間に撮影地が変わって持ち越した近くの写真の読み直し（`NearbyShelf.appear`）
-            if nearbyShelf.appear() { nearbyReloads += 1 }
-            if spotShelf.appear() { spotReloads += 1 }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            isOnScreen = false
+        }
         // **ブロック中かどうかも鍵に入れる。** 解除して戻ったとき、ブロックで「分からない」に
         // 倒したフォローの状態を取り直す（入れないと、開き直すまでボタンが戻らない）
         .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")|\(ownerId.map(hidden.blockedUserIds.contains) ?? false)") {
@@ -1487,6 +1498,19 @@ struct PhotoDetailView: View {
         // 進めるので、一覧から取った直後でもここで落とす
         spotShelf.land(PhotoDetailSpotLead.make(label, in: hidden.visible(fetched)),
                        for: location, onScreen: isOnScreen)
+    }
+
+    /// 前面が確定したときだけ、写しと持ち越した読み直しを入れる
+    private func landDetailFront() {
+        isOnScreen = true
+        dropped = hidden.snapshot
+        if needsRefilter {
+            needsRefilter = false
+            refilterHidden()
+        }
+        // 裏にいる間に撮影地が変わって持ち越した近くの写真の読み直し（`NearbyShelf.appear`）
+        if nearbyShelf.appear() { nearbyReloads += 1 }
+        if spotShelf.appear() { spotReloads += 1 }
     }
 
     /// ブロック・通報のあと、**手元の並びだけ**を絞り直す（通信しない）。

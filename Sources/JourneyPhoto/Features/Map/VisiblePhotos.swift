@@ -16,9 +16,29 @@ struct VisiblePhotos<Content: View>: View {
 
     @EnvironmentObject private var hidden: ModerationStore
     @State private var dropped: ModerationSnapshot?
+    /// 戻るスワイプ途中の `onAppear` で行を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     var body: some View {
         content(dropped?.visible(photos) ?? photos)
-            .onAppear { dropped = hidden.snapshot }
+            .onAppear {
+                switch front.appear() {
+                case .first:
+                    dropped = hidden.snapshot
+                case .returning:
+                    frontSettle?.cancel()
+                    frontSettle = Task {
+                        try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                        guard !Task.isCancelled, front.confirm() else { return }
+                        dropped = hidden.snapshot
+                    }
+                }
+            }
+            .onDisappear {
+                frontSettle?.cancel()
+                frontSettle = nil
+                front.disappear()
+            }
     }
 }

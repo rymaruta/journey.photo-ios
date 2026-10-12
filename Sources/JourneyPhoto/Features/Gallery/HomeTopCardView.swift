@@ -64,6 +64,9 @@ struct HomeTopCardView: View {
     /// 札から開いた画面が前に出ている間だけ後回しにする**——ホームのまま前面に戻る回（いちばん多い）は
     /// `onAppear` が来ないので、後回しだけにすると昨日の札が残り続けた（4621e39 のレビュー）
     @State private var isShown = false
+    /// 戻るスワイプ途中の `onAppear` で札を差し替えない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     /// 今日の一問に答えたか（札の2行目を変える）。ホームに戻ったときに読み直す
     @State private var quizAnswered = false
     /// 今日の一問が決着したか（取れた・取れなかった）。**決着するまで「いまの季節のスポット」の段を出さない**
@@ -95,18 +98,25 @@ struct HomeTopCardView: View {
             // 読み直すと、一冊を読んでいる最中に前面へ戻った合図で札が差し替わり、
             // 押した元のリンクが消えて一冊の画面が閉じることがある
             .onAppear {
-                openedBooks = opened.ids(for: auth.userId)
-                wishedKeys = wishlist.spotIds
-                isShown = true
-                applyPendingQuiz()
-                applyPendingPlans()
-                scheduleSeasonReminder()
-                if reloadPlansOnReturn {
-                    reloadPlansOnReturn = false
-                    returnReloads &+= 1
+                switch front.appear() {
+                case .first:
+                    landHomeCards()
+                case .returning:
+                    // スワイプ途中で一冊の印や行きたいを読むと、開いている画面が閉じる
+                    frontSettle?.cancel()
+                    frontSettle = Task {
+                        try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                        guard !Task.isCancelled, front.confirm() else { return }
+                        landHomeCards()
+                    }
                 }
             }
-            .onDisappear { isShown = false }
+            .onDisappear {
+                frontSettle?.cancel()
+                frontSettle = nil
+                front.disappear()
+                isShown = false
+            }
             // 起動直後は許可の読み込みが索引より遅いことがある（初めは「許可なし」）。分かったときに入れ直す
             .onChange(of: push.isAuthorized) { _, _ in scheduleSeasonReminder() }
             .onChange(of: push.isEnabled) { _, _ in scheduleSeasonReminder() }
@@ -412,6 +422,20 @@ struct HomeTopCardView: View {
         let merged = await environment.spots.withDetails(spots, for: needs)
         guard !Task.isCancelled else { return }
         spots = merged
+    }
+
+    /// 前面が確定したときだけ、一冊の印・行きたい・取り直した札を入れる
+    private func landHomeCards() {
+        openedBooks = opened.ids(for: auth.userId)
+        wishedKeys = wishlist.spotIds
+        isShown = true
+        applyPendingQuiz()
+        applyPendingPlans()
+        scheduleSeasonReminder()
+        if reloadPlansOnReturn {
+            reloadPlansOnReturn = false
+            returnReloads &+= 1
+        }
     }
 
     /// 見頃のお知らせ（次の季節の始まりに1件だけ・端末の中だけ・`SeasonReminder`）を入れ替える。

@@ -45,6 +45,9 @@ struct OfficialSpotView: View {
     /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @EnvironmentObject private var hidden: ModerationStore
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で写真の格子を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     @State private var camera: MapCameraPosition = .automatic
     /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
@@ -132,10 +135,22 @@ struct OfficialSpotView: View {
             .padding(.bottom, 32)
         }
         .onAppear {
-            dropped = hidden.snapshot
-            onScreen = true
+            switch front.appear() {
+            case .first:
+                landOfficialFront()
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landOfficialFront()
+                }
+            }
         }
         .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
             onScreen = false
             directionsTask?.cancel()
         }
@@ -174,6 +189,12 @@ struct OfficialSpotView: View {
             }
         }
         .accessibilityIdentifier("spot.official")
+    }
+
+    /// 前面が確定したときだけ、写真の格子の写しを取る
+    private func landOfficialFront() {
+        dropped = hidden.snapshot
+        onScreen = true
     }
 
     // MARK: - 代表写真（Wikimedia Commons・2026-09-26）

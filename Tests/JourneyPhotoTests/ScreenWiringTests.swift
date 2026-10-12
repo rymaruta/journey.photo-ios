@@ -213,6 +213,33 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(search.contains("FrontConfirm.settleNanoseconds"))
     }
 
+    /// 写真詳細・地図・旅・撮影地なども、戻りは前面確定後に絞る（2026-10-12）。
+    /// スワイプ途中の `onAppear` で押した元を消すと、開いている詳細が閉じる
+    func testRemainingScreensDeferHiddenUntilFrontConfirmed() throws {
+        let paths = [
+            "Features/PhotoDetail/PhotoDetailView.swift",
+            "Features/Map/PhotoMapView.swift",
+            "Features/Map/VisiblePhotos.swift",
+            "Features/Map/NearbyPhotosSheet.swift",
+            "Features/Trips/TripBookView.swift",
+            "Features/Trips/TripPlanDetailView.swift",
+            "Features/Spots/SpotDetailView.swift",
+            "Features/Spots/OfficialSpotView.swift",
+            "Features/Gallery/HomeTopCardView.swift",
+            "Features/Albums/InviteView.swift",
+            "Features/Stories/StoryInsightsView.swift",
+            "Features/Profile/MyPhotosMap.swift",
+        ]
+        for path in paths {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("FrontConfirm"), "\(path) が前面確定前に絞っている")
+            XCTAssertTrue(text.contains("FrontConfirm.settleNanoseconds"), path)
+            XCTAssertTrue(text.contains("front.disappear()"), "\(path) がスワイプキャンセルで待ちを止めていない")
+            XCTAssertFalse(text.contains(".onAppear { dropped = hidden.snapshot }"),
+                           "\(path) が戻るスワイプ途中で写しを即入れている")
+        }
+    }
+
     /// ホーム・人の頁・マイページも戻りは前面確定後に絞る（探索メモの同型穴）
     func testHomeProfileMyPageDeferModerationUntilFrontConfirmed() throws {
         for path in ["Features/Gallery/GalleryView.swift",

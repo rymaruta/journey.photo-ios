@@ -25,6 +25,9 @@ struct StoryInsightsView: View {
     /// ——描くたびに絞ると、見た人のページでブロックした瞬間に元の行が消え、
     /// そのページが閉じる（`UserProfileView` と同じ形）
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で見た人の行を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
     /// 返信・反応を**一度でも読めたか**。読めていない間は数を「—」にする
@@ -94,7 +97,24 @@ struct StoryInsightsView: View {
                 }
             }
         }
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    dropped = hidden.snapshot
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+        }
         .task { await load() }
         .refreshable { await load(pulled: true) }
     }

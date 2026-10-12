@@ -21,6 +21,9 @@ struct TripBookView: View {
     /// （`CollectionPhotosScreen` と同じ）。旅は開いた時点の値なので、ここから開いた
     /// 詳細で消した写真が、戻っても表紙・数字・ページに残っていた
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` でページを消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     /// 消した・非公開にした写真を落とした一冊
     private var book: TripBook.Trip { Self.visible(trip, dropped: dropped) }
@@ -45,7 +48,24 @@ struct TripBookView: View {
             .padding(.bottom, 32)
         }
         .webScreen()
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    dropped = hidden.snapshot
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+        }
         .navigationTitle(TripBook.title(of: book))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
