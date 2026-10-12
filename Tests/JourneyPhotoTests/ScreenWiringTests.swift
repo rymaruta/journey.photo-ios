@@ -208,6 +208,21 @@ final class ScreenWiringTests: XCTestCase {
                       "戻ったときに手元の一覧を写しで絞っていない")
         XCTAssertTrue(search.contains("func applyHidden(_ hidden: ModerationSnapshot)"),
                       "通信なしの絞り直し口が無い")
+        XCTAssertTrue(search.contains("FrontConfirm"),
+                      "探すがスワイプ途中キャンセルで applyHidden して詳細が閉じる")
+        XCTAssertTrue(search.contains("FrontConfirm.settleNanoseconds"))
+    }
+
+    /// ホーム・人の頁・マイページも戻りは前面確定後に絞る（探索メモの同型穴）
+    func testHomeProfileMyPageDeferModerationUntilFrontConfirmed() throws {
+        for path in ["Features/Gallery/GalleryView.swift",
+                     "Features/Profile/UserProfileView.swift",
+                     "Features/Profile/MyPageView.swift",
+                     "Features/Profile/FollowListView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("FrontConfirm"), "\(path) が前面確定前に絞っている")
+            XCTAssertTrue(text.contains("FrontConfirm.settleNanoseconds"), path)
+        }
     }
 
     /// ブロックの確認は5か所で同じ部品（2026-10-11）。写真の詳細の持ち主・コメントを書いた人は

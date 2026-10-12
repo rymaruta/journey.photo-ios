@@ -25,9 +25,11 @@ struct UserProfileView: View {
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
     @EnvironmentObject private var hidden: ModerationStore
-    /// 格子と地図から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**
-    /// ——見ている最中に絞ると、押した元が消えて開いている詳細が閉じる
+    /// 格子と地図から落とす「見せない」の写し。**前面が確定したときだけ取る**
+    /// ——見ている最中／スワイプ途中に絞ると、押した元が消えて詳細が閉じる
     @State private var dropped = ModerationSnapshot()
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     @EnvironmentObject private var toasts: ToastCenter
     /// 画面に出ているか（`MyPageView` と同じ）。ブロックを解いたときの読み直しを、
     /// 出ている間だけその場で・出ていなければ戻ってきたときにする
@@ -81,14 +83,24 @@ struct UserProfileView: View {
             Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
         }
         .onAppear {
-            dropped = hidden.snapshot
-            isOnScreen = true
-            if reloadOnAppear {
-                reloadOnAppear = false
-                Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            switch front.appear() {
+            case .first:
+                landOnScreen()
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landOnScreen()
+                }
             }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            isOnScreen = false
+        }
         // 🔴 **ブロックを解いたら読み直す。** ブロックで格子を空にしたまま、下に残った
         // この画面で設定（ブロック中の人）から解くと、「0 写真」「まだありません」と
         // ブロック前のフォロワー数が出たままだった
@@ -106,6 +118,16 @@ struct UserProfileView: View {
         // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
         .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
+        }
+    }
+
+    /// 前面確定後: 写しを当て、ブロック解除後の読み直しがあれば走らせる
+    private func landOnScreen() {
+        dropped = hidden.snapshot
+        isOnScreen = true
+        if reloadOnAppear {
+            reloadOnAppear = false
+            Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
         }
     }
 

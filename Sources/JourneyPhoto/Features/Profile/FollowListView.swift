@@ -57,10 +57,12 @@ struct FollowListView: View {
     @State private var needsSignIn = false
     /// 案内の「ログイン」から開くログイン画面
     @State private var showSignIn = false
-    /// ブロックした人を落とす写し。**出たとき（`onAppear`）だけ取る**——描くたびに
+    /// ブロックした人を落とす写し。**前面が確定したときだけ取る**——描くたびに
     /// `hidden.blockedUserIds` で絞ると、行から開いた人のページでブロックした瞬間に
     /// 行（`NavigationLink`）が消えてページが閉じる（`ModerationSnapshot.users` の注記）
     @State private var dropped = ModerationSnapshot()
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     private var current: Kind { picked ?? kind }
     private var users: [FollowUser] { dropped.follows(lists[current]?.users ?? []) }
@@ -129,9 +131,24 @@ struct FollowListView: View {
         // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
         // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
         .onAppear {
-            dropped = hidden.snapshot
-            if appeared { Task { await refreshMyFollowing() } }
-            appeared = true
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+                appeared = true
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    dropped = hidden.snapshot
+                    Task { await refreshMyFollowing() }
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
         }
     }
 

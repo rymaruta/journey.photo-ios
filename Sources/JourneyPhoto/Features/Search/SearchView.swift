@@ -23,8 +23,11 @@ struct SearchView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
-    /// 人の結果から落とす「見せない」の写し。**画面に出ている間だけ取り直す**
+    /// 人の結果から落とす「見せない」の写し。**前面が確定したときだけ取り直す**
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で絞らないための印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     /// 撮影スポットの索引（`OfficialSpotService.fetchIndex` は一度取れば控える）。
     /// 語で探したとき、写真とは別の節でガイドへ案内する（2026-09-30 のレビュー:
     /// 「銀山温泉」で写真0件・ガイドは在るのに案内されない。Web の「さがす」と同じ直し）
@@ -126,23 +129,43 @@ struct SearchView: View {
             }
         }
         .onAppear {
-            isOnScreen = true
-            dropped = hidden.snapshot
-            // 🔴 **戻った瞬間に手元の一覧を写しで絞る**（2026-10-12 判断）。以前は読み直しが
-            // 終わるまでブロックした人の写真が一瞬残った（dismiss-fixes で意図的に残した穴）。
-            // 通信は要らない——`reloadHidden` は控えの捨て直し用に続ける
-            model.applyHidden(dropped)
-            if needsReload { reloadHidden() }
+            switch front.appear() {
+            case .first:
+                applyFrontModeration(reloadIfNeeded: true)
+            case .returning:
+                // 🔴 **戻りは前面確定後に絞る**（2026-10-12）。スワイプ途中の onAppear で
+                // applyHidden すると押した元が消えて詳細が閉じる（#223 の LikedPhotos と同型）
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    applyFrontModeration(reloadIfNeeded: true)
+                }
+            }
             // 🔴 詳細を開いている間に届いた別名は捨てている（`.task(id: query)` の注記）。
             // 同じ語のまま戻ると `.task(id:)` は走らないので、ここで取り直す
             if !query.isEmpty, spotAliases.isEmpty {
                 Task {
                     let fetched = await environment.spots.fetchAliases()
-                    if isOnScreen { spotAliases = fetched }
+                    if front.isConfirmed { spotAliases = fetched }
                 }
             }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            isOnScreen = false
+        }
+    }
+
+    /// 前面が確定したあとに写しを当て、必要なら読み直す
+    private func applyFrontModeration(reloadIfNeeded: Bool) {
+        isOnScreen = true
+        dropped = hidden.snapshot
+        // 手元の一覧を写しで絞る（読み直し完了を待たない——ブロックのフラッシュ止め）
+        model.applyHidden(dropped)
+        if reloadIfNeeded, needsReload { reloadHidden() }
     }
 
     private func reloadHidden() {

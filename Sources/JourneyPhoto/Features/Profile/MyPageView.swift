@@ -40,8 +40,10 @@ struct MyPageView: View {
     /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
     /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
     @State private var isOnScreen = false
-    /// お気に入りのタブから落とす「見せない」の写し。**戻ってきたときに取る**
+    /// お気に入りのタブから落とす「見せない」の写し。**前面が確定したときだけ取る**
     @State private var dropped = ModerationSnapshot()
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     /// 「行きたい場所」の行を作る鍵の写し（`wishlist.spotIds`）。**画面に出ている間だけ
     /// 取り直す**——描くたびに今の集合から作ると、開いたスポットで♥を外した瞬間に
     /// 元の行が消え、そのスポットの画面が閉じる（`savedIds` と同じ形）
@@ -140,19 +142,29 @@ struct MyPageView: View {
             Task { await model.load(for: auth.userId) }
         }
         .onAppear {
-            isOnScreen = true
-            // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
-            refreshSavedIds()
-            dropped = hidden.snapshot
-            wishIds = wishlist.spotIds
-            guard didAppear else { didAppear = true; return }
-            guard auth.userId != nil else { return }
-            Task { await model.load(for: auth.userId) }
+            switch front.appear() {
+            case .first:
+                landOnScreen(reload: false)
+                didAppear = true
+            case .returning:
+                // スワイプ途中で絞り／読み直しすると押した元が消えて詳細が閉じる
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landOnScreen(reload: true)
+                }
+            }
         }
         .onChange(of: tab) { _, next in
             if next == .favorites { refreshSavedIds() }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            isOnScreen = false
+        }
         // 名前の横の画面。決めたら `auth.noteProfileChanged()` が上の読み直しを起こす
         .sheet(isPresented: $showNameSide) {
             if let profile = model.profile {
@@ -208,6 +220,17 @@ struct MyPageView: View {
             feedFailed = false
             model.forgetPhotos(for: auth.userId)
         }
+    }
+
+    /// 前面確定後: 写し・保存 ID・必要なら読み直し
+    private func landOnScreen(reload: Bool) {
+        isOnScreen = true
+        // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
+        refreshSavedIds()
+        dropped = hidden.snapshot
+        wishIds = wishlist.spotIds
+        guard reload, auth.userId != nil else { return }
+        Task { await model.load(for: auth.userId) }
     }
 
     private func refreshSavedIds() {

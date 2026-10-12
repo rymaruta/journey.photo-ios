@@ -29,9 +29,12 @@ struct GalleryView: View {
     /// 一度でもこの画面が出たか。**戻ってきた回だけ自分の写真を読み直す**ための印
     /// （初回は `.task(id:)` が読む・`MyPageView` と同じ形）
     @State private var didAppear = false
-    /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
+    /// 描くときに落とす「見せない」の写し。**前面が確定したときだけ取り直す**。
     /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で絞り／読み直ししないための印
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     /// いま一覧を読んでいる人。**外側の nil は「まだ一度も決まっていない」**
     /// （内側の nil は未ログイン）。人が替わったのを見分けるのに使う
     @State private var shownViewer: String??
@@ -174,27 +177,45 @@ struct GalleryView: View {
             }
         }
         .onAppear {
-            isOnScreen = true
-            // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
-            // 後から足す（`GalleryViewModel.pageWrite`）
-            model.markOnScreen()
-            Task { await model.applyPendingPages() }
-            dropped = hidden.snapshot
-            // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
-            // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
-            // 下書きを公開にした（`hidden.revision` が進まない）。`onAppear` はホームが前に
-            // 出たときだけ走るので、上に積んだ画面を閉じることはない。
-            // `reloadHidden` は自分の写真も読むので、その回は二重に取りに行かない
-            if needsReload {
-                reloadHidden()
-            } else if didAppear {
-                reloadMyPhotos()
+            switch front.appear() {
+            case .first:
+                landOnScreen(reloadMy: false)
+                didAppear = true
+            case .returning:
+                // スワイプ途中で dropped／読み直しすると押した元が消えて詳細が閉じる
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landOnScreen(reloadMy: true)
+                }
             }
-            didAppear = true
         }
         .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
             isOnScreen = false
             model.leaveScreen()
+        }
+    }
+
+    /// 前面確定後: 写し・印・必要なら読み直し
+    private func landOnScreen(reloadMy: Bool) {
+        isOnScreen = true
+        // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
+        // 後から足す（`GalleryViewModel.pageWrite`）
+        model.markOnScreen()
+        Task { await model.applyPendingPages() }
+        dropped = hidden.snapshot
+        // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
+        // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
+        // 下書きを公開にした（`hidden.revision` が進まない）。
+        // `reloadHidden` は自分の写真も読むので、その回は二重に取りに行かない
+        if needsReload {
+            reloadHidden()
+        } else if reloadMy {
+            reloadMyPhotos()
         }
     }
 
