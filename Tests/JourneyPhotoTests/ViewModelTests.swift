@@ -1166,6 +1166,41 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
+    /// 🔴 **人のページのフォロー数も、読み込み中・取れなかったときに「0」と言わない**
+    /// （マイページと同じ決まり。以前は人のページだけ 0 と出ていた）
+    func testUserProfileFollowCountsAreNotZeroUntilRead() async {
+        prepare()
+        let model = UserProfileViewModel()
+        XCTAssertEqual(model.followerCount, .pending)
+        XCTAssertEqual(model.followingCount, .pending)
+        XCTAssertNil(ProfileLine.statValue(model.followerCount), "読み込み中に 0 と出している")
+        XCTAssertTrue(ProfileLine.counts(followers: model.followerCount, following: model.followingCount,
+                                         photos: .pending).isEmpty)
+
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        // followStats はスタブ無し → 失敗
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followerCount, .failed, "フォロー数を読めていないのに数を言っている")
+        XCTAssertEqual(model.followingCount, .failed)
+        XCTAssertEqual(ProfileLine.statValue(model.followerCount), "—")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                             body: #"{"followers":0,"following":4}"#)
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followerCount, .loaded(0), "読めた 0 は 0 と言う")
+        XCTAssertEqual(model.followingCount, .loaded(4))
+    }
+
     /// 🔴 **マイページの数は、読み込み中・取れなかったときに「0」と言わない**
     /// （人のページの `ProfileLine.PhotoCount` と同じ決まり）。配列の長さ・数の既定値 0 を
     /// そのまま出していたので、圏外で開くと「投稿 0・フォロワー 0」と嘘が出た
@@ -1501,6 +1536,42 @@ final class ViewModelTests: XCTestCase {
         await gate.open()
         await post.value
         XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
+    }
+
+    /// 🔴 **投稿中の `load()` はコメント欄を触らない**（`reloadComments` と同じ門）。
+    /// 開いた直後の読みと投稿が重なると、`commentsPhotoId` を消したり
+    /// `commentsUnavailable` を立てて欄が一瞬壊れていた
+    func testLoadWhilePostingLeavesCommentsAlone() async {
+        prepare()
+        let postGate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates([
+                                            "POST /photos/p1/comments": postGate
+                                         ]))))
+        model.setSignedIn(true)
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false,"count":1}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u","name":"n","text":"hi"}],"count":1}"#)
+        await model.load(gate: LikeCountStore())
+        XCTAssertEqual(model.commentsPhotoId, "p1")
+        XCTAssertFalse(model.commentsUnavailable)
+        XCTAssertEqual(model.comments.first?.id, "c1")
+
+        // 投稿中に load が失敗のコメント頁を取っても、欄を壊さない
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false,"count":1}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#)
+        model.draftComment = "x"
+        let post = Task { await model.postComment() }
+        await postGate.untilWaiting()
+        XCTAssertTrue(model.isPosting)
+        await model.load(gate: LikeCountStore())
+        XCTAssertEqual(model.commentsPhotoId, "p1", "投稿中の load が commentsPhotoId を消した")
+        XCTAssertFalse(model.commentsUnavailable, "投稿中の load が unavailable を立てた")
+        XCTAssertEqual(model.comments.first?.id, "c1", "投稿中の load がコメント一覧を消した")
+        await postGate.open()
+        await post.value
     }
 
     /// **送っている最中の二度押しで、同じ文を2件送らない**

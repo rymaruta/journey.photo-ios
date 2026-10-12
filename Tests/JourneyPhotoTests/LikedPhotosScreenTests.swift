@@ -38,6 +38,8 @@ final class LikedPhotosScreenTests: XCTestCase {
         let before = screen.returns
         screen.appear()
         XCTAssertEqual(screen.returns, before + 1, "戻ってきたら読み直す")
+        _ = screen.confirmFront()
+        XCTAssertTrue(screen.isFrontConfirmed)
 
         // 読み直しの答え（サーバーの自分の写真からは消えている）
         XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [kept])))
@@ -53,6 +55,8 @@ final class LikedPhotosScreenTests: XCTestCase {
         var screen = opened(feed: [other], mine: [], serverIds: ["liked-on-other-device"])
         screen.disappear()
         screen.appear()
+        _ = screen.confirmFront()
+        XCTAssertTrue(screen.isFrontConfirmed)
         // 圏外: 何も取れない
         XCTAssertTrue(screen.receive(.init(user: "me", feed: nil, mine: nil, serverIds: nil, serverFailed: true)))
         XCTAssertEqual(screen.shown.serverIds, ["liked-on-other-device"])
@@ -97,8 +101,9 @@ final class LikedPhotosScreenTests: XCTestCase {
         screen.appear()
         XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "appear だけで staged を入れた")
         XCTAssertNotNil(screen.staged)
-        // 読み直しの答えが届いたら入れる（staged を吸収）
-        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [b])))
+        XCTAssertFalse(screen.isFrontConfirmed)
+        // 前面確定のあと、読み直しの答え（または staged）を入れる
+        XCTAssertTrue(screen.confirmFront())
         XCTAssertEqual(ids(screen.shown.mine), ["b"])
         XCTAssertNil(screen.staged)
     }
@@ -117,10 +122,32 @@ final class LikedPhotosScreenTests: XCTestCase {
         XCTAssertNotNil(screen.staged, "staged を消してしまった")
         screen.disappear()
         XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "キャンセル後も一覧が差し替わった")
-        // 本当に戻って読み直しが届く
+        // 本当に戻って前面確定 → 読み直しが届く
         screen.appear()
-        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [b])))
+        XCTAssertTrue(screen.confirmFront(), "staged を確定で入れる")
         XCTAssertEqual(ids(screen.shown.mine), ["b"])
+    }
+
+    /// 🔴 **スワイプ途中の一瞬 `isShown` のあいだに `receive` しても一覧を差し替えない。**
+    /// #223 は appear での staged 適用だけ塞いだ。確定前の receive も同じ穴
+    func testReceiveDuringSwipeBackCancelDoesNotApply() throws {
+        let a = try photo("a"), b = try photo("b")
+        var screen = opened(mine: [a, b])
+        screen.disappear()
+        // スワイプ途中 appear → その窓で答えが届く
+        screen.appear()
+        XCTAssertFalse(screen.isFrontConfirmed)
+        XCTAssertFalse(screen.receive(.init(user: "me", feed: [], mine: [b])),
+                       "未確定のあいだに receive で一覧を差し替えた")
+        XCTAssertEqual(ids(screen.shown.mine), ["a", "b"])
+        XCTAssertNotNil(screen.staged)
+        screen.disappear()
+        XCTAssertEqual(ids(screen.shown.mine), ["a", "b"], "キャンセル後も差し替わった")
+        // 本当に戻って確定すると staged が入る
+        screen.appear()
+        XCTAssertTrue(screen.confirmFront())
+        XCTAssertEqual(ids(screen.shown.mine), ["b"])
+        XCTAssertNil(screen.staged)
     }
 
     /// 取っておいた答えの上に、後の失敗を重ねる（前の答えで取れた一覧を消さない）
@@ -130,8 +157,10 @@ final class LikedPhotosScreenTests: XCTestCase {
         XCTAssertFalse(screen.receive(.init(user: "me", feed: [], mine: [], serverIds: ["new"])))
         XCTAssertFalse(screen.receive(.init(user: "me", feed: nil, mine: nil, serverIds: nil, serverFailed: true)))
         screen.appear()
-        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [], serverIds: nil, serverFailed: true)),
-                      "戻って読み直しが届いたら staged を吸収する")
+        XCTAssertTrue(screen.confirmFront(), "前面確定で staged を入れる")
+        XCTAssertEqual(screen.shown.serverIds, ["new"])
+        // 確定後の receive も入れる
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [], serverIds: nil, serverFailed: true)))
         XCTAssertEqual(screen.shown.serverIds, ["new"])
     }
 
@@ -161,6 +190,8 @@ final class LikedPhotosScreenTests: XCTestCase {
         // 元の鍵での走り直し（SwiftUI がする場合）は空振り
         XCTAssertFalse(screen.needsLoad(first), "読み終えた鍵で2本目を立てない")
         screen.appear()
+        _ = screen.confirmFront()
+        XCTAssertTrue(screen.isFrontConfirmed)
         let next = screen.key(auth: "me")
         XCTAssertNotEqual(next, first, "戻ったら鍵が進む")
         XCTAssertTrue(screen.needsLoad(next), "新しい鍵の1本は読む")

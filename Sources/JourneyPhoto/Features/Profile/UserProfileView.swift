@@ -25,9 +25,11 @@ struct UserProfileView: View {
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
     @EnvironmentObject private var hidden: ModerationStore
-    /// 格子と地図から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**
-    /// ——見ている最中に絞ると、押した元が消えて開いている詳細が閉じる
+    /// 格子と地図から落とす「見せない」の写し。**前面が確定したときだけ取る**
+    /// ——見ている最中／スワイプ途中に絞ると、押した元が消えて詳細が閉じる
     @State private var dropped = ModerationSnapshot()
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     @EnvironmentObject private var toasts: ToastCenter
     /// 画面に出ているか（`MyPageView` と同じ）。ブロックを解いたときの読み直しを、
     /// 出ている間だけその場で・出ていなければ戻ってきたときにする
@@ -81,14 +83,24 @@ struct UserProfileView: View {
             Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
         }
         .onAppear {
-            dropped = hidden.snapshot
-            isOnScreen = true
-            if reloadOnAppear {
-                reloadOnAppear = false
-                Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            switch front.appear() {
+            case .first:
+                landOnScreen()
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landOnScreen()
+                }
             }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            isOnScreen = false
+        }
         // 🔴 **ブロックを解いたら読み直す。** ブロックで格子を空にしたまま、下に残った
         // この画面で設定（ブロック中の人）から解くと、「0 写真」「まだありません」と
         // ブロック前のフォロワー数が出たままだった
@@ -106,6 +118,16 @@ struct UserProfileView: View {
         // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
         .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
+        }
+    }
+
+    /// 前面確定後: 写しを当て、ブロック解除後の読み直しがあれば走らせる
+    private func landOnScreen() {
+        dropped = hidden.snapshot
+        isOnScreen = true
+        if reloadOnAppear {
+            reloadOnAppear = false
+            Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
         }
     }
 
@@ -275,10 +297,11 @@ struct UserProfileView: View {
     /// 押して一覧を開けるのは、ログインしていて1人以上いるときだけ
     /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
     /// 押せると赤字だけの行き止まりになる。
-    /// 人のページのフォロー数は読み込み中・失敗のとき 0 と出る（2026-09-30 判断: 見張りとの組み合わせで回帰が続いたため、マイページだけ直してある）
+    /// フォロワー・フォロー中も写真と同じく、読み終えるまで出さず取れなければ「—」
+    /// （以前は読み込み中に 0 と出ていた。マイページの `statValue` と同じ決まり）
     private var counts: some View {
         HStack(spacing: 20) {
-            ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
+            ForEach(ProfileLine.counts(followers: model.followerCount, following: model.followingCount,
                                        photos: isBlocked ? .pending : model.photoCount.shown(shownPhotos.count))) { item in
                 switch item.kind {
                 case .followers:
@@ -367,6 +390,9 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
+    /// フォロー数を読めたか（nil: まだ・false: 取れなかった）。**数の 0 と見分ける**
+    /// ——読み込み中・失敗のあいだ「0」と出ていた（マイページの `followStatsRead` と同じ）
+    @Published private(set) var followStatsRead: Bool?
     @Published private(set) var isFollowing = false
     /// 自分のフォロー一覧が取れず、**フォロー中かどうか分からない**。ボタンは「フォローする」で
     /// 出すが、押されたら送る前に取り直す（`toggleFollow`）——分からないまま送ると、
@@ -380,6 +406,18 @@ final class UserProfileViewModel: ObservableObject {
     /// フォロー・ブロックの失敗。**読み込みの失敗（`errorMessage`）と分ける**
     /// ——同じ欄だと、押し損ねただけで格子と地図が知らせ1枚に置き換わっていた
     @Published private(set) var actionMessage: String?
+
+    var followerCount: ProfileLine.PhotoCount { followCount(followers) }
+    var followingCount: ProfileLine.PhotoCount { followCount(following) }
+
+    private func followCount(_ value: Int) -> ProfileLine.PhotoCount {
+        switch followStatsRead {
+        case true?: return .loaded(value)
+        case false?: return .failed
+        // まだ取りに行けていない（プロフィールで落ちた）回も、読み込みが失敗していれば「—」
+        case nil: return errorMessage != nil ? .failed : .pending
+        }
+    }
 
     private(set) var cacheBust = ""
     /// フォロー・ブロックが**受け付けられた**回数。**読み込みの間に増えたら、その読み込みの
@@ -417,6 +455,13 @@ final class UserProfileViewModel: ObservableObject {
         // **読み直すたびに替えない**（`ProfileImageVersions`）。替わるのは本人が変えたとき・開き直したとき
         cacheBust = ProfileImageVersions.shared.token(for: userId)
         defer { if current() { isLoading = false } }
+
+        // 人が替わった直後は前の人の数を出さない（取れなかった回に残すと嘘になる）
+        if profile?.userId != userId {
+            followers = 0
+            following = 0
+            followStatsRead = nil
+        }
 
         // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が
         // 走り直し、読み終わる前に次の写真・ハイライトを開くと取り消される。それを失敗の帯
@@ -458,6 +503,10 @@ final class UserProfileViewModel: ObservableObject {
         if let stats {
             if writes == followWrites { followers = stats.followers }
             following = stats.following
+            followStatsRead = true
+        } else if followStatsRead != true, !Task.isCancelled {
+            // 一度読めた数は、読み直しの失敗で「—」にしない（マイページと同じ）
+            followStatsRead = false
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
@@ -559,6 +608,7 @@ final class UserProfileViewModel: ObservableObject {
             // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない
             followUnknown = false
             followers = result.followers
+            followStatsRead = true
         } catch {
             // 前の人が押した失敗を、次の人の画面に出さない
             guard lastViewerId == viewer else { return }

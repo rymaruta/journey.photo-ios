@@ -148,8 +148,22 @@ final class ScreenWiringTests: XCTestCase {
                       "下書き・限定写真から開くと空の一覧になる")
         let tag = try source("Features/Gallery/TagPhotosView.swift")
         XCTAssertTrue(tag.contains("CollectionScreen.withOpened(PhotoQuery.photos(all, in: kind), opened: opened, kind: kind)"))
+        XCTAssertFalse(tag.contains("onAppear { photos = hidden.visible(photos) }"),
+                       "タグ一覧が戻るスワイプ途中で photos を即絞っている")
         let screen = try source("Features/Gallery/CollectionPhotosScreen.swift")
         XCTAssertTrue(screen.contains("photos: shown)"), "共有の URL を並ぶ写真で決めていない")
+        XCTAssertTrue(screen.contains("FrontConfirm"), "色・機材・季節の一覧が前面確定前に絞っている")
+        XCTAssertTrue(screen.contains("FrontConfirm.settleNanoseconds"),
+                      "戻り後の絞りをスワイプキャンセルで止められない")
+    }
+
+    /// プロフィール編集: 準備中／保存中に写真を選び直したら知らせる（黙って picker だけ消さない）
+    func testProfileEditBusyPickerShowsMessage() throws {
+        let edit = try source("Features/Profile/ProfileEditView.swift")
+        XCTAssertTrue(edit.contains("いま準備中です。終わってから選んでください"),
+                      "準備中の再選択が黙って終わっている")
+        XCTAssertTrue(edit.contains("保存が終わるまでお待ちください"),
+                      "保存中の再選択が黙って終わっている")
     }
 
     /// 英語の枚数は単数形を持つ `photoCountLabel` を通す（「1 photos」と出ていた・2026-10-07）
@@ -194,6 +208,21 @@ final class ScreenWiringTests: XCTestCase {
                       "戻ったときに手元の一覧を写しで絞っていない")
         XCTAssertTrue(search.contains("func applyHidden(_ hidden: ModerationSnapshot)"),
                       "通信なしの絞り直し口が無い")
+        XCTAssertTrue(search.contains("FrontConfirm"),
+                      "探すがスワイプ途中キャンセルで applyHidden して詳細が閉じる")
+        XCTAssertTrue(search.contains("FrontConfirm.settleNanoseconds"))
+    }
+
+    /// ホーム・人の頁・マイページも戻りは前面確定後に絞る（探索メモの同型穴）
+    func testHomeProfileMyPageDeferModerationUntilFrontConfirmed() throws {
+        for path in ["Features/Gallery/GalleryView.swift",
+                     "Features/Profile/UserProfileView.swift",
+                     "Features/Profile/MyPageView.swift",
+                     "Features/Profile/FollowListView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("FrontConfirm"), "\(path) が前面確定前に絞っている")
+            XCTAssertTrue(text.contains("FrontConfirm.settleNanoseconds"), path)
+        }
     }
 
     /// ブロックの確認は5か所で同じ部品（2026-10-11）。写真の詳細の持ち主・コメントを書いた人は

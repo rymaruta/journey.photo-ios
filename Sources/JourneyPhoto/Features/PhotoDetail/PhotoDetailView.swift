@@ -28,6 +28,10 @@ struct PhotoDetailView: View {
     @State private var showReport = false
     /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
     @State private var ownerBlockedWhenReporting = false
+    /// コメント通報シートを開いた時点で、その作者が既にブロック済みか（閉じたあとの後始末用）
+    @State private var commentAuthorBlockedWhenReporting = false
+    /// コメント通報の作者（`onDismiss` 時点では `commentReporting` が nil になっている）
+    @State private var commentReportAuthorId: String?
     @State private var showDeleteConfirm = false
     /// 「この人をブロック」の確認（`blockConfirmation(presenting:)`）。**押した時点の相手を控える**
     /// ——確認を出している間に写真を送って持ち主が替わっても、押した人をブロックする
@@ -379,7 +383,17 @@ struct PhotoDetailView: View {
         }
         // **コメントの通報**（2026-10-11）。サーバーにコメントの口は無いので、写真の通報に
         // 誰のどのコメントかを書いて送る（`ReportSheet` の `comment`）
-        .sheet(item: $commentReporting) { comment in
+        // **「ブロックもする」を選んだ回は写真通報と同じ後始末**（前の失敗の赤字・
+        // 写真の主をブロックしたときのフォロー札）。シートは閉じるだけだった
+        .sheet(item: $commentReporting, onDismiss: {
+            guard let authorId = commentReportAuthorId, !commentAuthorBlockedWhenReporting,
+                  hidden.blockedUserIds.contains(authorId) else { return }
+            clearNotices()
+            if authorId == ownerId {
+                isFollowing = nil
+                followLookupFailed = false
+            }
+        }) { comment in
             ReportSheet(photoId: current.id, ownerId: ownerId, comment: .init(comment))
         }
         // コメントを書いた人のブロック。**確認はほかの4か所と同じ部品**（2026-10-11）。
@@ -1394,7 +1408,11 @@ struct PhotoDetailView: View {
     private func commentMenu(_ comment: PhotoComment, report: Bool, block: Bool) -> some View {
         Menu {
             if report {
-                Button { commentReporting = comment } label: {
+                Button {
+                    commentReportAuthorId = comment.uid
+                    commentAuthorBlockedWhenReporting = hidden.blockedUserIds.contains(comment.uid)
+                    commentReporting = comment
+                } label: {
                     Label(L("通報", "Report"), systemImage: "flag")
                 }
             }

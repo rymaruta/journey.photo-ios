@@ -22,12 +22,12 @@ struct TagPhotosView: View {
 
     var body: some View {
         // 形は色・機材・いまの季節と同じ（板 12）
+        // 詳細でブロック／通報して戻ったあとの絞りは `CollectionPhotosScreen` の
+        // `dropped`（前面確定後）に任せる。ここで `photos` を即絞ると、戻るスワイプ
+        // 途中キャンセルで押した元が消えて詳細が閉じる
         CollectionPhotosScreen(title: kind.title, photos: photos, kind: kind, isLoading: isLoading,
                                retry: loadFailed ? { Task { await load() } } : nil)
             .task { await load() }
-            // 詳細でブロック／通報して**戻ってきたとき**に落とす。
-            // 見ている最中に絞ると、押した元が消えて詳細が閉じる
-            .onAppear { photos = hidden.visible(photos) }
     }
 
     private func load() async {

@@ -490,6 +490,10 @@ struct ProfileEditView: View {
         guard let item else { return }
         guard preparingImage == nil, !isSaving else {
             if kind == .avatar { avatarItem = nil } else { coverItem = nil }
+            // 黙って選択だけ消すと壊れているように見える——忙しい理由を出す
+            message = isSaving
+                ? L("保存が終わるまでお待ちください", "Please wait until saving finishes")
+                : L("いま準備中です。終わってから選んでください", "Still preparing. Please choose again when it finishes")
             return
         }
         preparingImage = kind
