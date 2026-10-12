@@ -4,7 +4,7 @@ import PhotosUI
 /// プロフィールの編集。名前・自己紹介・リンクと、アイコン／カバー。
 ///
 /// アーティファクト 32 の写真見本と右上の保存を保ち、
-/// 入力欄は基本情報・場所とリンク・プロフィールの演出に分ける。
+/// 入力欄は基本情報・場所とリンク・ひとこと／テーマ色などに分ける。
 struct ProfileEditView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -112,8 +112,7 @@ struct ProfileEditView: View {
             }
             .listRowBackground(Color.clear)
 
-            // 既存の値を消さず、用途の近い項目をまとめる
-            Section(L("プロフィールの演出", "Profile appearance")) {
+            Section {
                 labeled(L("ひとこと", "Status"), over: PostLimits.overLimitNote(statusText, limit: PostLimits.Profile.statusText)) {
                     TextField(L("短いひとこと", "A short status"), text: $statusText)
                         .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
