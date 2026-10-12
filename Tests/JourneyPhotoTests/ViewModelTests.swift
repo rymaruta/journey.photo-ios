@@ -732,6 +732,23 @@ final class ViewModelTests: XCTestCase {
                        "ブロックした相手の写真が検索結果に残っている")
     }
 
+    /// 🔴 **戻った瞬間に手元を写しで絞る**（通信なし）。読み直し待ちのフラッシュを止める
+    func testSearchApplyHiddenDropsBlockedWithoutReload() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.count, 2, "前提")
+
+        model.applyHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "applyHidden してもブロックした人の写真が残る")
+    }
+
     /// **チップの数は、押したときに出る枚数。** 「すべて」はタグの語を撮影地にも
     /// 当てるので、タグの数（1）を出すと押して2枚出ていた
     func testTagChipCountMatchesWhatTappingShows() async {

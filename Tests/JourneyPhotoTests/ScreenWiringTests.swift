@@ -177,6 +177,25 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertEqual(lines[picker + 2], "featuredSections")
     }
 
+    /// ホームの上段札: 消した自分の写真だけ落とす（全部の gone は回帰するので使わない・2026-10-12）
+    func testHomeTopCardsDropDeletedOwnPhotosOnly() throws {
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains("myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) }"),
+                      "消した写真を札から落としていない")
+        // 全部の gone で myPhotos を絞ると公開に戻した写真が最大7日消える
+        XCTAssertFalse(gallery.contains("myPhotos: dropped.visible(model.myPhotos)"),
+                       "myPhotos を全部の gone で絞っている（回帰）")
+    }
+
+    /// 探す: 戻った瞬間に手元を写しで絞る（読み直し待ちのフラッシュを止める・2026-10-12）
+    func testSearchAppliesHiddenOnAppearWithoutWaitingForReload() throws {
+        let search = try source("Features/Search/SearchView.swift")
+        XCTAssertTrue(search.contains("model.applyHidden(dropped)"),
+                      "戻ったときに手元の一覧を写しで絞っていない")
+        XCTAssertTrue(search.contains("func applyHidden(_ hidden: ModerationSnapshot)"),
+                      "通信なしの絞り直し口が無い")
+    }
+
     /// ブロックの確認は5か所で同じ部品（2026-10-11）。写真の詳細の持ち主・コメントを書いた人は
     /// 押した時点の相手を受け取る `presenting:` 版。確認の文言を自前で持つ所があると落ちる
     func testEveryBlockGoesThroughTheSameConfirmation() throws {

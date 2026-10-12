@@ -114,14 +114,19 @@ struct LikedPhotosScreen {
         return false
     }
 
-    /// 画面が前に出た。取っておいた答えを入れ、**戻ってきた回なら読み直す**
-    /// （`returns` が進む＝`.task(id:)` が走る）。初回は `.task(id:)` がもう読んでいる
+    /// 画面が前に出た。**戻ってきた回なら読み直す**（`returns` が進む＝`.task(id:)` が走る）。
+    /// 初回は `.task(id:)` がもう読んでいる。
     ///
-    /// ⚠️ 戻るスワイプを途中でやめた回（`onAppear` が来て、出ないまま詳細に戻る）にも
-    /// 取っておいた答えが入る。**確かめていない・前からの `refilter` と同じ穴**（2026-10-07 判断）
+    /// 🔴 **戻りの `appear` では staged を入れない**（2026-10-12 判断）。戻るスワイプの途中で
+    /// `onAppear` が来て、やめると詳細に戻る——その一瞬で staged を入れると一覧が差し替わり、
+    /// 押した元が消えて詳細が閉じる（回帰2と同型）。戻りの staged は、次の `receive`
+    /// （読み直し）が `isShown` のときに吸収する。
+    ///
+    /// 初回だけは、画面が出る前に届いた答えを入れる（「読み込み中」のままにしない）。
+    /// 初回の `onAppear` にスワイプ途中キャンセルは来ない
     mutating func appear() {
         isShown = true
-        if let staged {
+        if !didAppear, let staged {
             shown = staged
             self.staged = nil
         }
