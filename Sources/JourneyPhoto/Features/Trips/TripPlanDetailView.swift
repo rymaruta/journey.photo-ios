@@ -120,6 +120,24 @@ struct TripPlanDetailView: View {
     @State private var dropped = ModerationSnapshot()
     /// この画面がいちばん上に出ているか（スポットを積んでいる間は行を触らない）
     @State private var onTop = false
+    /// 戻るスワイプ途中の `onAppear` で行を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
+
+    /// 前面が確定したときだけ、撮影地の行を作り直す
+    private func landPlanFront() {
+        onTop = true
+        dropped = hidden.snapshot
+        refreshPlaces()
+        // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
+        // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
+        // 下書きが未保存のまま見えなくなっていた
+        if !appeared {
+            appeared = true
+            model.clearError()
+        }
+        resetIfNeeded()
+    }
 
     private func refreshPlaces() {
         places = DerivedSpot.allMergedBySlug(in: dropped.visible(photos))
@@ -270,19 +288,24 @@ struct TripPlanDetailView: View {
             dropped = hidden.snapshot
             refreshPlaces()
         }
-        .onDisappear { onTop = false }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+            onTop = false
+        }
         .onAppear {
-            onTop = true
-            dropped = hidden.snapshot
-            refreshPlaces()
-            // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
-            // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
-            // 下書きが未保存のまま見えなくなっていた
-            if !appeared {
-                appeared = true
-                model.clearError()
+            switch front.appear() {
+            case .first:
+                landPlanFront()
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landPlanFront()
+                }
             }
-            resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
         // 日程が変わったら日の削除の札を閉じる。控えを残すと、日程が元の形に戻ったときに

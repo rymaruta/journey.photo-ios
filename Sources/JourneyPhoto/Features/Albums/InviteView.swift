@@ -25,6 +25,9 @@ struct InviteView: View {
     /// 🔴 ブロック・通報した写真を落とすための控え。**画面に戻ったときに取り直す**
     /// ——その場で絞ると、詳細でブロックした瞬間に押した元の行が消えて詳細が閉じる
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で行を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     @State private var preview: AlbumService.InvitePreview?
     @State private var isLoading = true
@@ -77,7 +80,24 @@ struct InviteView: View {
                 Button(Labels.Common.close) { dismiss() }
             }
         }
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    dropped = hidden.snapshot
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+        }
         // **読めていれば読み直さない。** 写真の詳細から戻るたびに走り、
         // 一覧がくるくるに置き換わって見ていた位置を失っていた
         .task { if preview == nil { await load() } }

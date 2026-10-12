@@ -27,6 +27,9 @@ struct MyPhotosMap: View {
     /// 🔴 シートの中の詳細でブロック／通報して閉じたら、ピンからも落とす
     /// （閉じたとき・出たときだけ取り直す）
     @State private var dropped: ModerationSnapshot?
+    /// 戻るスワイプ途中の `onAppear` でピンを落とさない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     private var pins: [MapPin] { MapPin.group(dropped?.visible(photos) ?? photos) }
 
@@ -90,7 +93,24 @@ struct MyPhotosMap: View {
                 }
             }
         }
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            switch front.appear() {
+            case .first:
+                dropped = hidden.snapshot
+            case .returning:
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    dropped = hidden.snapshot
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
+        }
     }
 
     private func frame() {

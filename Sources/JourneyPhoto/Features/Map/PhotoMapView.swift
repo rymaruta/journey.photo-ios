@@ -42,6 +42,9 @@ struct PhotoMapView: View {
     /// **出ていない間は人が替わっても読み直さない**——札の `NavigationLink` の先を
     /// 開いている間に札を下げると、その場で閉じる。戻ってきたとき `.task` が読み直す
     @State private var isOnScreen = false
+    /// 戻るスワイプ途中の `onAppear` でピンを落とさない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -155,16 +158,27 @@ struct PhotoMapView: View {
             if isOnScreen, userChanged { reloadForNewUser() }
         }
         .onAppear {
-            isOnScreen = true
-            tabRouter.mapRootOnScreen = true
-            if needsDrop { dropHidden() }
-            applyPendingQuery()
+            switch front.appear() {
+            case .first:
+                landMapFront()
+            case .returning:
+                // スワイプ途中で落とすと、リストやピンの札から開いた詳細が閉じる
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landMapFront()
+                }
+            }
         }
         // 探すの0件の出口から来た回。地図がもう出来ていれば `onAppear` より先にここで受ける
         .onChange(of: tabRouter.mapRequests) { _, _ in
             applyPendingQuery()
         }
         .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
             isOnScreen = false
             tabRouter.mapRootOnScreen = false
             directionsTask?.cancel()
@@ -1835,6 +1849,14 @@ struct PhotoMapView: View {
     private func refreshSelected() {
         selected = PhotoMapViewModel.refreshed(selected, in: model.pins)
         if listing != nil { listing = PhotoMapViewModel.refreshed(listing, in: model.pins) }
+    }
+
+    /// 前面が確定したときだけ、ピンの落下と探すから来た語を受ける
+    private func landMapFront() {
+        isOnScreen = true
+        tabRouter.mapRootOnScreen = true
+        if needsDrop { dropHidden() }
+        applyPendingQuery()
     }
 
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が

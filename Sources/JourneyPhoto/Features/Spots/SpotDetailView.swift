@@ -28,6 +28,9 @@ struct SpotDetailView: View {
     /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @EnvironmentObject private var hidden: ModerationStore
     @State private var dropped = ModerationSnapshot()
+    /// 戻るスワイプ途中の `onAppear` で写真を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     @State private var page = 0
     @State private var expanded = false
@@ -79,9 +82,23 @@ struct SpotDetailView: View {
             .padding(.bottom, 32)
         }
         .onAppear {
-            dropped = hidden.snapshot
-            // 写真が減ったら、ページ送りを範囲に戻す（どの札にも当たらず空白になる）
-            if page >= hero.count { page = max(0, hero.count - 1) }
+            switch front.appear() {
+            case .first:
+                landSpotFront()
+            case .returning:
+                // スワイプ途中で絞ると、開いている写真の詳細が閉じる
+                frontSettle?.cancel()
+                frontSettle = Task {
+                    try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                    guard !Task.isCancelled, front.confirm() else { return }
+                    landSpotFront()
+                }
+            }
+        }
+        .onDisappear {
+            frontSettle?.cancel()
+            frontSettle = nil
+            front.disappear()
         }
         .webScreen()
         .navigationTitle(LocationMatch.display(spot.label))
@@ -96,6 +113,13 @@ struct SpotDetailView: View {
                 .accessibilityLabel(L("シェア", "Share"))
             }
         }
+    }
+
+    /// 前面が確定したときだけ写しを取り、ページ送りを範囲に戻す
+    private func landSpotFront() {
+        dropped = hidden.snapshot
+        // 写真が減ったら、ページ送りを範囲に戻す（どの札にも当たらず空白になる）
+        if page >= hero.count { page = max(0, hero.count - 1) }
     }
 
     // MARK: - 代表画像

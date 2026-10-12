@@ -22,6 +22,9 @@ struct NearbyPhotosSheet: View {
     /// 🔴 シートの中の詳細でブロック／通報して戻ったら落とす。**戻ったとき
     /// （`onAppear`）だけ**写しを取り直す（見ている最中に絞ると詳細が閉じる）
     @State private var dropped: ModerationSnapshot?
+    /// 戻るスワイプ途中の `onAppear` で行を消さない印（`FrontConfirm`）
+    @State private var front = FrontConfirm()
+    @State private var frontSettle: Task<Void, Never>?
 
     private var found: [(photo: Photo, km: Double)] {
         NearbyPhotos.photos(dropped?.visible(photos) ?? photos, near: center, withinKm: radius)
@@ -77,7 +80,24 @@ struct NearbyPhotosSheet: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            .onAppear { dropped = hidden.snapshot }
+            .onAppear {
+                switch front.appear() {
+                case .first:
+                    dropped = hidden.snapshot
+                case .returning:
+                    frontSettle?.cancel()
+                    frontSettle = Task {
+                        try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                        guard !Task.isCancelled, front.confirm() else { return }
+                        dropped = hidden.snapshot
+                    }
+                }
+            }
+            .onDisappear {
+                frontSettle?.cancel()
+                frontSettle = nil
+                front.disappear()
+            }
             .webScreen()
             .navigationTitle(L("近くの写真", "Photos near me"))
             .navigationBarTitleDisplayMode(.inline)
