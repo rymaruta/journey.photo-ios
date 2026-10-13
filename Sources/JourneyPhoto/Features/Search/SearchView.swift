@@ -339,37 +339,57 @@ struct SearchView: View {
     /// 重ねられる**（「秋」＋「夕」＝秋の夕方）。押し直すと外す。2つの群の間には細い縦線を置き、
     /// 読み上げは「季節 秋」「時間帯 夕」と群の名前から言う（字だけでは「夕」が何の札か分からない）
     private var shootingTimeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(ShootingTime.Season.allCases) { season in
-                    PillChip(title: season.label, selected: model.timeFilter.season == season) {
-                        model.select(season: season)
+        HStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ShootingTime.Season.allCases) { season in
+                        PillChip(title: season.label, selected: model.timeFilter.season == season) {
+                            model.select(season: season)
+                        }
+                        .accessibilityLabel(L("季節 \(season.label)", "Season: \(season.label)"))
+                        .accessibilityIdentifier("search.season.\(season.rawValue)")
                     }
-                    .accessibilityLabel(L("季節 \(season.label)", "Season: \(season.label)"))
-                    .accessibilityIdentifier("search.season.\(season.rawValue)")
-                }
-                Rectangle()
-                    .fill(Color.white.opacity(0.15))
-                    .frame(width: 1, height: 20)
-                    .padding(.horizontal, 2)
-                    .accessibilityHidden(true)
-                ForEach(ShootingTime.DayPart.allCases) { part in
-                    let selected = model.timeFilter.dayPart == part
-                    // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
-                    let usable = selected || availableDayParts.contains(part)
-                    PillChip(title: part.label, selected: selected) {
-                        model.select(dayPart: part)
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 2)
+                        .accessibilityHidden(true)
+                    ForEach(ShootingTime.DayPart.allCases) { part in
+                        let selected = model.timeFilter.dayPart == part
+                        // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
+                        let usable = selected || availableDayParts.contains(part)
+                        PillChip(title: part.label, selected: selected) {
+                            model.select(dayPart: part)
+                        }
+                        .disabled(!usable)
+                        .opacity(usable ? 1 : 0.35)
+                        .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
+                        .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
                     }
-                    .disabled(!usable)
-                    .opacity(usable ? 1 : 0.35)
-                    .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
-                    .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
                 }
+                .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 16)
+            .padding(.vertical, -PillChip.tapSlack)
+
+            // 条件を選んだときだけ表示。横スクロールしなくても解除できるよう固定する。
+            if !model.timeFilter.isEmpty {
+                Button {
+                    model.clearTimeFilter()
+                } label: {
+                    Text(L("すべて解除", "Clear all"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("季節・時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
+                .accessibilityIdentifier("search.clearTimeFilters")
+                .fixedSize()
+                .padding(.trailing, 8)
+            }
         }
-        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
-        .padding(.vertical, -PillChip.tapSlack)
     }
 
     /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引の `timeOfDayGuide` から。
