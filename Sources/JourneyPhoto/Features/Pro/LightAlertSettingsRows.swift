@@ -129,9 +129,9 @@ struct LightAlertSettingsRows: View {
             .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             .background(
                 WebTheme.accent.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 12)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
         .disabled(isTurningOnPush)
