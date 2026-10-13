@@ -1056,6 +1056,7 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+        shootCompositionCatalog(app)
 
         // **「前の晩に知らせる」の「通知がオフのため届きません」**（2026-10-11・`LightAlertPushNotice`）。
         // 見本の利用者は公開プロフィールで Pro なので入切の行が出る。CI のシミュレータは通知を許可して
@@ -1077,6 +1078,34 @@ final class ScreenshotTests: XCTestCase {
         if !notice.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
         XCTAssertGreaterThanOrEqual(notice.frame.height, 44, "「通知がオフのため届きません」の行が 44pt 未満")
         shoot(app, "80b-設定（Pro の節・通知がオフ）")
+    }
+
+    /// 設定の構図一覧と三分割の解説。撮影画面のガイドと同じデータを表示する。
+    /// 開けない回はほかのスクリーンショットに影響させない。
+    private func shootCompositionCatalog(_ app: XCUIApplication) {
+        let entry = app.buttons["settings.compositionCatalog"].firstMatch
+        var pushes = 0
+        while !entry.isHittable, pushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard entry.exists, entry.isHittable else { return }
+        entry.tap()
+        let third = app.buttons["composition.catalog.thirds"].firstMatch
+        guard third.waitForExistence(timeout: 5) else {
+            goBack(app)
+            return
+        }
+        shoot(app, "83-設定（構図一覧）")
+        if third.isHittable {
+            third.tap()
+            if app.staticTexts["どんな構図？"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "84-構図の解説（三分割）")
+            }
+            goBack(app)
+        }
+        goBack(app)
     }
 
     /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
