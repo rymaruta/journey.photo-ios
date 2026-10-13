@@ -1,4 +1,6 @@
 import XCTest
+import SwiftUI
+import PhotosUI
 @testable import JourneyPhoto
 
 /// 「作例を重ねて撮る」（Pro・板 ComposeGuide・2026-10-09）の画面を持たない決まり（`ComposeGuide`）。
