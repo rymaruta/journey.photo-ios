@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 /// 撮影画面と同じ37種類を、撮影前にも学べる読み物として見せる。
 /// 図は実際の写真ではなく、カメラに出るガイド線の配置例。
@@ -59,6 +61,9 @@ struct CompositionCatalogView: View {
 struct CompositionExplanationView: View {
     let kind: CompositionKind
     @State private var variant = 0
+    @State private var showGuideLines = true
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var exampleImage: UIImage?
 
     var body: some View {
         ScrollView {
@@ -71,17 +76,35 @@ struct CompositionExplanationView: View {
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
 
-                // 作例の配置図。写真ではないことをラベルでも示す。
+                // 作例写真は端末内だけで扱う。未選択時は従来の配置図を表示。
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label(L("自分の写真で構図を確認", "Try with your photo"), systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("composition.explanation.choosePhoto")
+
+                // 作例の配置図。写真が選ばれた場合は写真の上に同じガイド線を重ねる。
                 VStack(alignment: .leading, spacing: 12) {
                     ZStack {
                         LinearGradient(colors: [Color(red: 0.20, green: 0.29, blue: 0.32),
                                                 Color(red: 0.09, green: 0.12, blue: 0.14)],
                                        startPoint: .top, endPoint: .bottom)
-                        Image(systemName: CompositionExample.symbol(for: kind))
-                            .font(.system(size: 86, weight: .ultraLight))
-                            .foregroundStyle(Color.white.opacity(0.35))
-                        CompositionOverlay(kind: kind, variant: variant, lineOpacity: 0.7,
-                                           levelDegrees: 0, shadowed: false)
+                        if let exampleImage {
+                            Image(uiImage: exampleImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
+                        } else {
+                            Image(systemName: CompositionExample.symbol(for: kind))
+                                .font(.system(size: 86, weight: .ultraLight))
+                                .foregroundStyle(Color.white.opacity(0.35))
+                        }
+                        if showGuideLines {
+                            CompositionOverlay(kind: kind, variant: variant, lineOpacity: 0.7,
+                                               levelDegrees: 0, shadowed: false)
+                        }
                     }
                     .aspectRatio(0.75, contentMode: .fit)
                     .frame(maxWidth: 270)
@@ -89,9 +112,14 @@ struct CompositionExplanationView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(WebTheme.border, lineWidth: 1))
                     .frame(maxWidth: .infinity)
-                    Text(L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)"))
+                    Text(exampleImage == nil
+                         ? L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")
+                         : L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
+                    Toggle(L("ガイド線を表示", "Show guide lines"), isOn: $showGuideLines)
+                        .tint(WebTheme.accent)
+                        .accessibilityIdentifier("composition.explanation.showLines")
                     if kind.hasVariants {
                         Button {
                             variant = kind.nextVariant(after: variant)
@@ -117,6 +145,14 @@ struct CompositionExplanationView: View {
         .webScreen()
         .navigationTitle(kind.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            Task {
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else { return }
+                exampleImage = image
+            }
+        }
     }
 
     private func explanationSection(_ title: String, text: String) -> some View {
