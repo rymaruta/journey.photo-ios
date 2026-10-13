@@ -15,8 +15,8 @@ enum ComposeGuide {
 
     // MARK: - 作例の濃さ
 
-    /// スライダーの範囲（板の `overlay`: 0〜0.8）。1 にすると映像が見えなくなるので上は 0.8
-    static let opacityRange: ClosedRange<Double> = 0...0.8
+    /// スライダーの範囲（板の `overlay`: 0〜1）。0〜100%を選べる
+    static let opacityRange: ClosedRange<Double> = 0...1.0
     /// 開いたときの濃さ（板: 0.35〜0.45 の間）
     static let defaultOpacity = 0.4
 
@@ -310,6 +310,49 @@ enum ComposeGuide {
 
     /// 設定アプリへの誘導を出すか（許可を断ったときだけ。制限・カメラ無しは設定で直らない）
     static func offersSettings(_ state: CameraState) -> Bool { state == .denied }
+}
+
+/// 参考写真の選択と変形。写真を選ぶ操作をキャンセルした場合はこの状態を変更しない。
+/// 画像そのものは画面のメモリだけに持ち、保存・アップロードには渡さない。
+struct ReferenceOverlayState: Equatable {
+    enum Source: Equatable { case samples, library }
+
+    var source: Source = .samples
+    var hidden = false
+    var mirrored = false
+    var scale = 1.0
+    var offsetX = 0.0
+    var offsetY = 0.0
+
+    static let scaleRange = 0.5...4.0
+
+    mutating func useLibrary() {
+        source = .library
+        hidden = false
+        resetPosition()
+    }
+
+    mutating func useSamples() {
+        source = .samples
+        hidden = false
+    }
+
+    mutating func resetPosition() {
+        scale = 1
+        offsetX = 0
+        offsetY = 0
+    }
+
+    mutating func setScale(_ value: Double) {
+        guard value.isFinite else { return }
+        scale = min(max(value, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
+    }
+
+    mutating func moveBy(x: Double, y: Double) {
+        guard x.isFinite, y.isFinite else { return }
+        offsetX += x
+        offsetY += y
+    }
 }
 
 /// 画面写真の試験（`ScreenshotTests`）だけが、Pro でなくても撮る画面を開くための鍵（2026-10-09）。

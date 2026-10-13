@@ -310,11 +310,11 @@ enum ProMarkFit {
 
     static func isSmall(side: Double) -> Bool { side < smallBelow }
 
-    /// 印の幅。札（PRO）は横長（大 42:24・小 36:24）
+    /// 印の幅。小さいPRO札は文字と縁が接しないよう余白を増やす（大 42:24・小 44:24）
     static func width(side: Double, style: ProMarkStyle) -> Double {
         switch style {
         case .iris: return side
-        case .plate: return side * (isSmall(side: side) ? 36 : 42) / 24
+        case .plate: return side * (isSmall(side: side) ? 44 : 42) / 24
         }
     }
 }

@@ -46,6 +46,15 @@ final class CompositionGuideTests: XCTestCase {
         XCTAssertEqual(CompositionKind.radial.nextVariant(after: 4), 0)
     }
 
+    func testCatalogHasExampleAndExplanationForEveryCameraComposition() {
+        XCTAssertEqual(CompositionSection.allCases.flatMap { $0.kinds }, CompositionKind.allCases)
+        for kind in CompositionKind.allCases {
+            XCTAssertFalse(CompositionExample.scene(for: kind).isEmpty, kind.rawValue)
+            XCTAssertFalse(CompositionExample.explanation(for: kind).isEmpty, kind.rawValue)
+            XCTAssertFalse(CompositionExample.symbol(for: kind).isEmpty, kind.rawValue)
+        }
+    }
+
     // MARK: - 定番
 
     func testThirdsAndPhiGridPositions() {

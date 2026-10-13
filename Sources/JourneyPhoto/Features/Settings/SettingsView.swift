@@ -133,6 +133,7 @@ struct SettingsView: View {
                     notificationsSection
                     privacySection
                 }
+                compositionSection
                 storageSection
                 accountSection
                 if auth.userId != nil {
@@ -238,6 +239,17 @@ struct SettingsView: View {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack")
             }
             .buttonStyle(JPRowButtonStyle())
+        }
+    }
+
+    private var compositionSection: some View {
+        section(L("撮影ガイド", "Shooting guide")) {
+            NavigationLink { CompositionCatalogView() } label: {
+                JPRowLabel(title: L("構図一覧", "Composition guide"), systemImage: "square.grid.3x3",
+                           detail: L("構図の説明と作例の配置図を見る", "Explore compositions and illustrated examples"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.compositionCatalog")
         }
     }
 

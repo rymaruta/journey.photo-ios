@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UIKit
 
 /// 作例・構図を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
@@ -53,6 +54,12 @@ struct ComposeGuideView: View {
     /// 持った向き（0〜3）。横持ちなら構図の線を写真の向きに回す。変わったときだけ `LevelMotion` が知らせる
     @State private var quarterTurns = 0
     @State private var index: Int
+    @State private var reference = ReferenceOverlayState()
+    @State private var librarySelection: PhotosPickerItem?
+    @State private var libraryImage: UIImage?
+    @State private var loadingLibrary = false
+    @GestureState private var dragTranslation: CGSize = .zero
+    @GestureState private var pinchFactor = 1.0
 
     /// 構図（nil は「なし」）・向き・線の濃さ
     @State private var composition: CompositionKind?
@@ -80,8 +87,6 @@ struct ComposeGuideView: View {
         _lineOpacity = State(initialValue: prefs.lineOpacity)
     }
     @State private var opacity = ComposeGuide.defaultOpacity
-    /// 作例を隠している（左のサムネを押した）
-    @State private var overlayHidden = false
     /// 撮ったあとの知らせ（数秒で消す）
     @State private var notice: String?
     @State private var noticeIsError = false
@@ -96,6 +101,9 @@ struct ComposeGuideView: View {
     private var sample: SpotSample? { samples.isEmpty ? nil : samples[current] }
     /// 作例なし（投稿のシートの入口）
     private var withoutSamples: Bool { samples.isEmpty }
+    private var hasReference: Bool {
+        reference.source == .samples ? sample != nil : libraryImage != nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,6 +128,9 @@ struct ComposeGuideView: View {
             }
         }
         .onChange(of: lineOpacity) { _, value in preferences.setLineOpacity(value) }
+        .onChange(of: librarySelection) { _, item in
+            if let item { Task { await loadLibraryImage(item) } }
+        }
         // 裏に回ったら止め、戻ったら流し直す（撮影の場は OS も止めるが、こちらからも止めて電池を守る）
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -160,6 +171,7 @@ struct ComposeGuideView: View {
             .gesture(
                 DragGesture(minimumDistance: 20)
                     .onEnded { value in
+                        guard reference.source == .samples else { return }
                         switchTo(ComposeGuide.swiped(index: current, count: samples.count,
                                                      translationWidth: value.translation.width))
                     }
@@ -203,20 +215,43 @@ struct ComposeGuideView: View {
     /// 作例を半透明で重ねる（縦横比のまま・切り抜かない）。読み込み中・失敗は何も重ねない
     @ViewBuilder
     private var overlay: some View {
-        if let sample, !overlayHidden {
-            AsyncImage(url: sample.src) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fit)
-                default:
-                    Color.clear
+        if !reference.hidden {
+            if reference.source == .samples, let sample {
+                AsyncImage(url: sample.src) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    default:
+                        Color.clear
+                    }
                 }
+                .opacity(ComposeGuide.clampedOpacity(opacity))
+                .id(sample.sourceUrl)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            } else if reference.source == .library, let libraryImage {
+                // 写真は画面上だけの層。ComposeCamera.capture/save に渡すのはカメラの出力だけ。
+                Image(uiImage: libraryImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(x: (reference.mirrored ? -1 : 1) * reference.scale * pinchFactor,
+                                 y: reference.scale * pinchFactor)
+                    .offset(x: reference.offsetX + Double(dragTranslation.width),
+                            y: reference.offsetY + Double(dragTranslation.height))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .updating($dragTranslation) { value, state, _ in state = value.translation }
+                        .onEnded { value in
+                            reference.moveBy(x: Double(value.translation.width), y: Double(value.translation.height))
+                        })
+                    .simultaneousGesture(MagnificationGesture()
+                        .updating($pinchFactor) { value, state, _ in state = value }
+                        .onEnded { value in reference.setScale(reference.scale * value) })
+                    .opacity(ComposeGuide.clampedOpacity(opacity))
+                    .accessibilityLabel(L("写真ライブラリの参考写真", "Reference photo from your library"))
             }
-            .opacity(ComposeGuide.clampedOpacity(opacity))
-            .id(sample.sourceUrl)
-            .transition(.opacity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
         }
     }
 
@@ -238,7 +273,7 @@ struct ComposeGuideView: View {
             .accessibilityIdentifier("composeGuide.close")
             Spacer(minLength: 0)
             // 作例なしの入口では札を出さない（数える作例が無い）
-            if !samples.isEmpty, let spotName {
+            if reference.source == .samples, !samples.isEmpty, let spotName {
                 Text(ComposeGuide.counter(spotName: spotName, index: current, count: samples.count))
                     // 12pt 太字・数字は等幅（送っても札の幅が揺れない）
                     .font(.caption.weight(.semibold).monospacedDigit())
@@ -350,10 +385,11 @@ struct ComposeGuideView: View {
     private var controls: some View {
         VStack(spacing: 14) {
             compositionRow
-            // 作例なしの入口では、作例の濃さ・出典・サムネ・切り替えを出さない
-            if !withoutSamples {
+            sourceRow
+            if hasReference {
                 opacityRow
-                if let sample { credit(sample) }
+                if reference.source == .samples, let sample { credit(sample) }
+                if reference.source == .library { libraryAdjustments }
             }
             HStack {
                 if withoutSamples { postButton } else { thumbButton }
@@ -420,20 +456,100 @@ struct ComposeGuideView: View {
         }
     }
 
-    /// 「作例の濃さ」（12pt・白 70%）と白いスライダー（0〜0.8）
+    /// 参考写真は作例・写真ライブラリから選ぶ。選択キャンセルでは元の状態を変えない。
+    private var sourceRow: some View {
+        HStack(spacing: 8) {
+            Text(L("参考写真", "Reference"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+            Spacer(minLength: 0)
+            Button {
+                reference.useSamples()
+            } label: {
+                Text(L("作例", "Examples"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(reference.source == .samples ? WebTheme.foreground : WebTheme.muted2)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(reference.source == .samples ? Color.white.opacity(0.14) : Color.clear,
+                                in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(samples.isEmpty)
+            .opacity(samples.isEmpty ? 0.4 : 1)
+            .accessibilityLabel(L("Journey Photoの作例", "Journey Photo examples"))
+            .accessibilityValue(reference.source == .samples && !samples.isEmpty ? L("選択中", "Selected") : "")
+            .accessibilityIdentifier("composeGuide.sourceSamples")
+
+            PhotosPicker(selection: $librarySelection, matching: .images) {
+                HStack(spacing: 5) {
+                    if loadingLibrary { ProgressView().tint(WebTheme.foreground) }
+                    Text(L("写真ライブラリ", "Photo library"))
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(reference.source == .library ? WebTheme.foreground : WebTheme.muted2)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(reference.source == .library ? Color.white.opacity(0.14) : Color.clear,
+                            in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(loadingLibrary)
+            .accessibilityValue(reference.source == .library ? L("選択中", "Selected") : "")
+            .accessibilityIdentifier("composeGuide.sourceLibrary")
+        }
+    }
+
+    /// ライブラリ画像だけ位置と反転を調整。非表示は1タップで戻せる。
+    private var libraryAdjustments: some View {
+        HStack(spacing: 8) {
+            Button {
+                reference.mirrored.toggle()
+            } label: {
+                Label(L("左右反転", "Mirror"), systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityIdentifier("composeGuide.mirror")
+            Button {
+                reference.resetPosition()
+            } label: {
+                Label(L("位置リセット", "Reset"), systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityIdentifier("composeGuide.reset")
+            Button {
+                reference.hidden.toggle()
+            } label: {
+                Label(reference.hidden ? L("表示", "Show") : L("非表示", "Hide"),
+                      systemImage: reference.hidden ? "eye" : "eye.slash")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityIdentifier("composeGuide.visibility")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(WebTheme.foreground)
+        .buttonStyle(.plain)
+    }
+
+    /// 参考写真の濃さを0〜100%で変更。数値も表示する。
     private var opacityRow: some View {
         HStack(spacing: 12) {
-            Text(L("作例の濃さ", "Overlay"))
+            Text(L("濃さ", "Opacity"))
                 .font(.caption)
                 .foregroundStyle(Color.white.opacity(0.7))
                 .accessibilityHidden(true)
             Slider(value: $opacity, in: ComposeGuide.opacityRange)
                 .tint(WebTheme.foreground)
-                .accessibilityLabel(L("作例の濃さ", "Overlay opacity"))
+                .accessibilityLabel(L("参考写真の濃さ", "Reference opacity"))
                 .accessibilityValue(ComposeGuide.opacityPercent(opacity))
                 .accessibilityIdentifier("composeGuide.opacity")
+            Text(ComposeGuide.opacityPercent(opacity))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(WebTheme.foreground)
         }
-        .disabled(overlayHidden || samples.isEmpty)
+        .disabled(reference.hidden)
     }
 
     /// 作例の出典の1行（`OfficialSpotView.sampleCreditLink` と同じ書き方・当たりは 44pt 以上）
@@ -454,11 +570,14 @@ struct ComposeGuideView: View {
     /// 左: 作例のサムネ（52pt・角 10・白 30% の縁）。押すと作例を隠す・出す
     private var thumbButton: some View {
         Button {
-            overlayHidden.toggle()
-            announce(overlayHidden ? L("作例を隠しました", "Overlay hidden") : L("作例を表示しました", "Overlay shown"))
+            reference.hidden.toggle()
+            announce(reference.hidden ? L("参考写真を隠しました", "Overlay hidden")
+                                      : L("参考写真を表示しました", "Overlay shown"))
         } label: {
             ZStack {
-                if let sample {
+                if reference.source == .library, let libraryImage {
+                    Image(uiImage: libraryImage).resizable().scaledToFill()
+                } else if let sample {
                     RemoteImage(url: sample.thumbnail(maxWidth: 250), contentMode: .fill)
                 } else {
                     WebTheme.surface
@@ -468,13 +587,13 @@ struct ComposeGuideView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
             // 隠している間は薄く（色だけでなく読み上げの値でも伝える）
-            .opacity(overlayHidden ? 0.4 : 1)
+            .opacity(reference.hidden ? 0.4 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(samples.isEmpty)
-        .accessibilityLabel(L("作例", "Example"))
-        .accessibilityValue(overlayHidden ? L("隠しています", "Hidden") : L("重ねています", "Shown"))
-        .accessibilityHint(overlayHidden ? L("作例を重ねます", "Shows the example overlay")
+        .disabled(!hasReference)
+        .accessibilityLabel(L("参考写真", "Reference photo"))
+        .accessibilityValue(reference.hidden ? L("隠しています", "Hidden") : L("重ねています", "Shown"))
+        .accessibilityHint(reference.hidden ? L("作例を重ねます", "Shows the example overlay")
                                          : L("作例を隠します", "Hides the example overlay"))
         .accessibilityIdentifier("composeGuide.thumb")
     }
@@ -535,8 +654,8 @@ struct ComposeGuideView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(samples.count < 2)
-        .opacity(samples.count < 2 ? 0.4 : 1)
+        .disabled(reference.source != .samples || samples.count < 2)
+        .opacity(reference.source == .samples && samples.count >= 2 ? 1 : 0.4)
         .accessibilityLabel(L("作例を切り替える", "Switch example"))
         .accessibilityValue(ComposeGuide.counterAccessibility(spotName: spotName ?? "", index: current, count: samples.count))
         // 読み上げでは払えないので、前へ戻す操作もここに置く。**枠（映像の上の重ね）には付けない**——
@@ -570,6 +689,34 @@ struct ComposeGuideView: View {
         lastShot = shot
         let outcome = await ComposeCamera.save(shot.data)
         show(ComposeGuide.message(for: outcome), isError: outcome != .saved)
+    }
+
+    /// Picker の戻る・キャンセルでは選択が変わらない。読めたときだけ画像と出典を切り替える。
+    private func loadLibraryImage(_ item: PhotosPickerItem) async {
+        guard !loadingLibrary else { return }
+        loadingLibrary = true
+        defer {
+            loadingLibrary = false
+            librarySelection = nil // 同じ画像を選び直せるようにする
+        }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                show(L("写真を読み込めませんでした", "Couldn't load the photo"), isError: true)
+                return
+            }
+            let thumbnail = try await Task.detached(priority: .userInitiated) {
+                try ReferencePhotoLoader.previewJPEG(from: data)
+            }.value
+            guard let image = UIImage(data: thumbnail) else {
+                show(L("写真を表示できませんでした", "Couldn't display the photo"), isError: true)
+                return
+            }
+            libraryImage = image
+            reference.useLibrary()
+        } catch {
+            show(L("写真を読み込めませんでした。別の写真をお試しください",
+                   "Couldn't load the photo. Try another one."), isError: true)
+        }
     }
 
     // MARK: - 構図
