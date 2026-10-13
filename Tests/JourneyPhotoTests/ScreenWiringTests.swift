@@ -317,6 +317,10 @@ final class ScreenWiringTests: XCTestCase {
                       "断られた人を設定アプリの「通知」へ案内していない")
         XCTAssertFalse(rows.contains("UIApplication.openSettingsURLString"),
                        "通知の案内がアプリの設定の一番上を開く（「通知」の行を探す手間が増える）")
+        XCTAssertTrue(rows.contains(".background(WebTheme.accent.opacity(0.08))"),
+                      "「通知がオフのため届きません」の地が行いっぱいに塗られていない")
+        XCTAssertFalse(rows.contains("RoundedRectangle(cornerRadius: 12)"),
+                       "案内の地を角丸にすると、角の外側が札の地のまま残り文字が塗りの外に出る")
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),
                       "ほかの所で「受け取る」にしても設定のトグルが「切」のまま残る")
