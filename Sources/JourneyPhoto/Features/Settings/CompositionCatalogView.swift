@@ -150,7 +150,7 @@ struct CompositionExplanationView: View {
             Task {
                 guard let data = try? await item.loadTransferable(type: Data.self) else { return }
                 let image = await Task.detached(priority: .userInitiated) {
-                    ReferencePhotoLoader.previewJPEG(from: data)
+                    try? ReferencePhotoLoader.previewJPEG(from: data)
                 }.value
                 guard let image, let preview = UIImage(data: image) else { return }
                 exampleImage = preview
