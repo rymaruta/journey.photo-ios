@@ -147,10 +147,11 @@ private struct ProMarkPlate: View {
         let k = side / 24
         let sheen = LinearGradient(stops: ProMarkColors.stops(ProMarkColors.sheenStops),
                                    startPoint: .leading, endPoint: .trailing)
-        // 素材の SVG の値（大: 幅 40.6・高さ 18・縁 1.3・字 11 / 小: 34.6・20・1.9・13.5）
+        // 写真詳細の 13pt の名前では小さい版が約 11.5pt。旧 36:24 の幅では
+        // 「PRO」の両端と縁が接近するため、文字の周りに余白を確保する。
         let line = (small ? 1.9 : 1.3) * k
-        let width = (small ? 34.6 : 40.6) * k + line
-        let height = (small ? 20 : 18) * k + line
+        let width = ProMarkFit.width(side: side, style: .plate)
+        let height = (small ? 22 : 18) * k + line
         ZStack {
             Capsule()
                 .fill(ProMarkColors.color(ProMarkColors.plate))
