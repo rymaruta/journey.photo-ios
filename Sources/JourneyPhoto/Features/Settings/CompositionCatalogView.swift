@@ -96,6 +96,12 @@ struct CompositionExplanationView: View {
                                 .scaledToFill()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .clipped()
+                        } else if UIImage(named: "composition-ai-\(kind.rawValue)") != nil {
+                            Image("composition-ai-\(kind.rawValue)")
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
                         } else {
                             Image(systemName: CompositionExample.symbol(for: kind))
                                 .font(.system(size: 86, weight: .ultraLight))
@@ -114,7 +120,9 @@ struct CompositionExplanationView: View {
                     .frame(maxWidth: .infinity)
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
-                         : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)"))
+                         : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
+                            ? L("AI生成の構図作例", "AI-generated composition example")
+                            : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                     Toggle(L("ガイド線を表示", "Show guide lines"), isOn: $showGuideLines)
