@@ -64,7 +64,6 @@ struct CompositionExplanationView: View {
     @State private var showGuideLines = true
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var exampleImage: UIImage?
-    @State private var useCuratedExample = true
 
     var body: some View {
         ScrollView {
@@ -85,10 +84,6 @@ struct CompositionExplanationView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("composition.explanation.choosePhoto")
 
-                if CompositionCuratedPhoto.forKind(kind) != nil {
-                    Toggle(L("用意された作例を表示", "Show curated example"), isOn: $useCuratedExample)
-                        .tint(WebTheme.accent)
-                }
                 // 作例の配置図。写真が選ばれた場合は写真の上に同じガイド線を重ねる。
                 VStack(alignment: .leading, spacing: 12) {
                     ZStack {
@@ -101,14 +96,6 @@ struct CompositionExplanationView: View {
                                 .scaledToFill()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .clipped()
-                        } else if useCuratedExample, let curated = CompositionCuratedPhoto.forKind(kind) {
-                            AsyncImage(url: curated.imageURL) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                ProgressView()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
                         } else {
                             Image(systemName: CompositionExample.symbol(for: kind))
                                 .font(.system(size: 86, weight: .ultraLight))
@@ -127,21 +114,12 @@ struct CompositionExplanationView: View {
                     .frame(maxWidth: .infinity)
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
-                         : (useCuratedExample && CompositionCuratedPhoto.forKind(kind) != nil
-                            ? L("実写作例（ガイド線は構図の目安です）", "Real photo example (guide lines are illustrative)")
-                            : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
+                         : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                     Toggle(L("ガイド線を表示", "Show guide lines"), isOn: $showGuideLines)
                         .tint(WebTheme.accent)
                         .accessibilityIdentifier("composition.explanation.showLines")
-                    if exampleImage == nil, useCuratedExample, let curated = CompositionCuratedPhoto.forKind(kind) {
-                        Link(destination: curated.sourceURL) {
-                            Text(curated.credit)
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.accent)
-                        }
-                    }
                     if kind.hasVariants {
                         Button {
                             variant = kind.nextVariant(after: variant)
@@ -170,9 +148,12 @@ struct CompositionExplanationView: View {
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let image = UIImage(data: data) else { return }
-                exampleImage = image
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                let image = await Task.detached(priority: .userInitiated) {
+                    ReferencePhotoLoader.previewJPEG(from: data)
+                }.value
+                guard let image, let preview = UIImage(data: image) else { return }
+                exampleImage = preview
             }
         }
     }
@@ -301,35 +282,5 @@ enum CompositionExample {
         case .ratio: return "building.2"
         case .device: return "camera"
         }
-    }
-}
-
-
-/// 出典と利用条件を確認した写真のみ登録。未登録の構図は従来の配置図に戻す。
-private struct CompositionCuratedPhoto {
-    let imageURL: URL
-    let sourceURL: URL
-    let credit: String
-
-    static func forKind(_ kind: CompositionKind) -> Self? {
-        let filename: String
-        let credit: String
-        switch kind {
-        case .symmetry:
-            filename = "A example of symmetry in a building.jpg"
-            credit = "Photo: 235x / Wikimedia Commons / CC0 1.0"
-        case .goldenSpiral:
-            filename = "Golden spiral on a shell.jpg"
-            credit = "Photo: Suyothami / Wikimedia Commons / CC BY-SA 4.0"
-        case .sCurve, .cCurve:
-            filename = "Winding Road (Unsplash).jpg"
-            credit = "Photo: Adam Torres / Wikimedia Commons (see source for license)"
-        default:
-            return nil
-        }
-        let encoded = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
-        guard let source = URL(string: "https://commons.wikimedia.org/wiki/File:" + encoded),
-              let image = URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/" + encoded + "?width=900") else { return nil }
-        return Self(imageURL: image, sourceURL: source, credit: credit)
     }
 }
