@@ -37,11 +37,166 @@
       "height": 1152,
       "checked": "2026-10-13",
       "note": "川の中心が variant 0 のS字に沿う。"
+    },
+    "thirds": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "頭が右下の交点に乗り、水平線が下の三分割線に乗る。初稿は不採用。"
+    },
+    "diagonals": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "稜線が左上から右下への対角線（variant 0）に沿う。"
+    },
+    "radial": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "線路と光の消失点が画面の中心に乗る。"
+    },
+    "halves": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "水面と空の境が中央の横線に乗る。木の上端が線に乗っていた初稿は不採用。"
+    },
+    "negativeSpace": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "小さな鳥が右下の置き場（variant 0）の中にいる。"
+    },
+    "grid4": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "窓の縦横の目地が4分割の線に乗る。"
+    },
+    "zShape": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "山道が variant 0 のZ字に沿う。"
+    },
+    "cCurve": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "海岸線が右に開いたC字に沿う。"
+    },
+    "tunnel": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "枝の楕円が12%内側の枠に沿い、人物の顔が中心点に乗る。"
+    },
+    "lShape": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "岸の板と桟橋が variant 0 のL字に沿う。"
+    },
+    "iphone": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "晴れた砂浜。頭の下が左上の交点で、水平線は上の三分割線。三分割の夕景とは別の写真。"
+    },
+    "ratio9x16": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "塔の左右が、中央の9:16枠に沿う。"
+    },
+    "level": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "防波堤の天端が中央の水平に乗る。"
+    },
+    "mizige": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "中央の十字と両対角線が梁に乗る。"
+    },
+    "goldenTriangle": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "斜面が左下から右上の対角線に沿い、人が黄金比の足（0.64, 0.36）に乗る。"
+    },
+    "tianzige": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "外枠が3%内側の矩形に沿い、縦横の桟が中央の十字に乗る。"
+    },
+    "square": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "屋根が正方形の上辺、壁の下が下辺に近く、扉が中央の十字に乗る。"
+    },
+    "ratio4x5": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "人物の頭と足が、上下約3%を残した4:5枠に沿う。"
+    },
+    "ratio16x9": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "山並みが中央の16:9帯の中に収まる。"
+    },
+    "otherRatios": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "街並みの左右が、縦の2:3枠（variant 0）に沿う。"
+    },
+    "grid6x4": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "縦4列・横6段の目地が線に乗る。"
     }
   },
   "held": {
-    "thirds": "人が下の三分割線より下、または地平線が上の線に乗らない",
-    "halves": "水面が中央線より上",
-    "negativeSpace": "鳥が右下の置き場（variant 0）にいない"
+    "triangle": "上の人の胸は頂点。下の2人は点が足首で、胸は底辺より上",
+    "phiGrid": "交点はコートの裾。胸は線より上",
+    "squareGrid": "横の目地が0.125間隔の線よりずれ、線が窓の中を通る",
+    "goldenSpiral": "道は外側の渦に近いが、人は目（0.276, 0.724）にいない",
+    "fibonacciGrid": "段差が格子に沿わず、扉が目にいない",
+    "thirdsDiagonals": "道が対角線に乗らず、人は交点の左",
+    "diagonal45": "道が45度の4本に乗らない",
+    "obliqueThirds": "シュプールが斜めの4本ではなくS字",
+    "dynamicSymmetry": "対角の街路は合うが、逆対角の4本が建物に乗らない",
+    "rootRectangle": "街並みは√2枠に近いが、枠の中のダイナミックシンメトリーに沿う街路がない",
+    "armature": "上半分の鉄骨は線に近いが、右下の線が鉄骨から外れる"
   }
 }
