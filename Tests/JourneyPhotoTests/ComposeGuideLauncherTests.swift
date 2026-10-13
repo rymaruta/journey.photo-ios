@@ -184,8 +184,14 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(root.contains("onPost: { capture in pendingCapture = capture }"))
         XCTAssertTrue(root.contains("initialCapture: pendingCapture"), "撮った1枚を投稿画面へ渡していない")
         // 投稿のシートが閉じきってから開く（閉じている途中に全画面を重ねない）
-        XCTAssertTrue(root.contains(".sheet(isPresented: $showPostChoice, onDismiss: openCompositionIfRequested)"),
-                      "投稿のシートが閉じきる前に撮る画面を開いている")
+        XCTAssertTrue(root.contains(".sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed)"),
+                      "投稿選択シートの閉じ完了ハンドラーを通していない")
+        XCTAssertTrue(root.contains("private func postChoiceDismissed()"),
+                      "投稿選択シートを閉じた後の処理がない")
+        XCTAssertTrue(root.contains("if let kind = pendingPostChoice"),
+                      "選択した投稿種別を閉じた後に処理していない")
+        XCTAssertTrue(root.contains("openCompositionIfRequested()"),
+                      "構図ガイドの要求を閉じた後に処理していない")
     }
 
     func testPreviewLensIsOffWithoutTheLaunchArgument() {
