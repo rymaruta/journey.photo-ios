@@ -276,9 +276,10 @@ final class BadgeSizeTests: XCTestCase {
         XCTAssertEqual(ProMarkFit.side(nameSize: 13, mincho: false), 11.5, accuracy: 0.0001)
         XCTAssertFalse(ProMarkFit.isSmall(side: 21.7))
         XCTAssertTrue(ProMarkFit.isSmall(side: 11.5), "15pt を切ったら線の太い小さい版")
-        // 札は横長（大 42:24 → 名前 26 の横で 38.0・板 UserProfile）
+        // 札は横長。小さい版は「PRO」と外枠の間に余白を持たせる
         XCTAssertEqual(ProMarkFit.width(side: 21.7, style: .plate), 37.975, accuracy: 0.001)
-        XCTAssertEqual(ProMarkFit.width(side: 12, style: .plate), 18, accuracy: 0.001)
+        XCTAssertEqual(ProMarkFit.width(side: 12, style: .plate), 22, accuracy: 0.001)
+        XCTAssertEqual(ProMarkFit.width(side: 11.5, style: .plate), 11.5 * 44 / 24, accuracy: 0.001)
         XCTAssertEqual(ProMarkFit.width(side: 21.7, style: .iris), 21.7, accuracy: 0.001)
     }
 
