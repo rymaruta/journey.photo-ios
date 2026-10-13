@@ -80,6 +80,15 @@ final class ComposeGuideTests: XCTestCase {
         XCTAssertFalse(view.contains("uploadProfileImage"), "参考画像をサーバーに送っている")
     }
 
+    func testReferenceFrameFitsPortraitAndLandscapeSafeArea() {
+        for (width, height) in [(390.0, 640.0), (844.0, 320.0)] {
+            let frame = ComposeGuide.viewfinderSize(width: width, height: height)
+            XCTAssertLessThanOrEqual(frame.width, width)
+            XCTAssertLessThanOrEqual(frame.height, height)
+            XCTAssertEqual(frame.width / frame.height, ComposeGuide.frameAspect, accuracy: 0.001)
+        }
+    }
+
     // MARK: - 作例の順
 
     func testNextAndPreviousWrapAround() {
