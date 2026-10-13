@@ -1,0 +1,47 @@
+{
+  "policy": "37種類は1枚ずつ個別に作り、縦3:4・variant 0 のガイド線に乗るか見てから登録する。一覧画像の切り抜きと、引き伸ばした仮素材は登録しない。",
+  "minimumShortSide": 800,
+  "nativePixels": "この生成の原寸は 864×1152。引き伸ばして大きい画像にはしない。",
+  "accepted": {
+    "symmetry": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "正面の扉と破風が中央の縦線に乗る。左右は鏡像。"
+    },
+    "hinomaru": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "花の中心が円の中心。花は円に収まる大きさ。大きい花の初稿は不採用。"
+    },
+    "horizon": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "水平線が下から三分の一の線（variant 0）に乗る。空が広い。"
+    },
+    "frameWithin": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "門の内枠が、画面の12%内側の額縁に沿う。"
+    },
+    "sCurve": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-13",
+      "note": "川の中心が variant 0 のS字に沿う。"
+    }
+  },
+  "held": {
+    "thirds": "人が下の三分割線より下、または地平線が上の線に乗らない",
+    "halves": "水面が中央線より上",
+    "negativeSpace": "鳥が右下の置き場（variant 0）にいない"
+  }
+}
