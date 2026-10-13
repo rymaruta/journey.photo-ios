@@ -120,9 +120,9 @@ struct PostSheet: View {
     private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
                         badge: String? = nil) -> some View {
         Button {
-            // **閉じてから渡す。** 開いたまま次の画面を出すと重なる
-            dismiss()
+            // 選択を先に記録し、シートが閉じきった後に呼び手が次の画面を開く
             onSelect(kind)
+            dismiss()
         } label: {
             HStack(spacing: 14) {
                 Color.white.opacity(0.10)
