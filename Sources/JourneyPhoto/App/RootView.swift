@@ -25,6 +25,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
+    /// 投稿の選択。シートが閉じきった後に次の画面を開く
+    @State private var pendingPostChoice: PostSheet.Kind?
     @State private var showPhotoUpload = false
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
@@ -504,13 +506,23 @@ struct RootView: View {
                     pendingCapture = nil
                 }
             }
-            .sheet(isPresented: $showPostChoice, onDismiss: openCompositionIfRequested) {
-                PostSheet { kind in choosePost(kind) }
+            .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
+                PostSheet { kind in pendingPostChoice = kind }
             }
             // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
+    }
+
+    /// 投稿の選択シートが閉じきってから、次の画面を開く。
+    /// 先に次の sheet / fullScreenCover を立てると、iOS が遷移を取りこぼすことがある。
+    private func postChoiceDismissed() {
+        if let kind = pendingPostChoice {
+            pendingPostChoice = nil
+            choosePost(kind)
+        }
+        openCompositionIfRequested()
     }
 
     /// 投稿の選択で選ばれたもの
