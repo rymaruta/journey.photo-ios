@@ -18,8 +18,8 @@ struct CompositionCatalogView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         JPSectionTitle(section.title)
                         JPCard {
-                            ForEach(Array(section.kinds.enumerated()), id: \.element.id) { index, kind in
-                                if index > 0 { JPCardDivider() }
+                            ForEach(section.kinds) { kind in
+                                if kind != section.kinds.first { JPCardDivider() }
                                 NavigationLink { CompositionExplanationView(kind: kind) } label: {
                                     HStack(spacing: 14) {
                                         CompositionThumbnail(kind: kind, cornerRadius: 5)
