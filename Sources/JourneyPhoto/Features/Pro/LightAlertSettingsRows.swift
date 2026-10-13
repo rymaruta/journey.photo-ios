@@ -125,9 +125,13 @@ struct LightAlertSettingsRows: View {
             .foregroundStyle(WebTheme.accent)
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
-            .frame(minHeight: 54)
-            .background(WebTheme.accent.opacity(0.08))
-            .contentShape(Rectangle())
+            // 背景を描く前に行の幅を確定する。内容幅だけに背景が縮むのを防ぐ（2026-10-13）。
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .background(
+                WebTheme.accent.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(isTurningOnPush)
