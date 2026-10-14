@@ -322,3 +322,26 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertFalse(body.contains("RetryButton(isBusy: model.isLoading) {"))
     }
 }
+
+/// 🔴 大きな数字の太さは数の段（投稿・フォロワー）と同じ semibold（2026-10-14 owner「旅の記録のフォントが
+/// 細いので他のと統一したい」）。数字に細い字（light・thin・ultraLight）を使わない
+final class NumberWeightUnifiedTests: XCTestCase {
+    func testFiguresUseTheStatWeight() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let font = try String(contentsOf: root.appendingPathComponent("Core/Design/JPFont.swift"), encoding: .utf8)
+        XCTAssertTrue(font.contains("static let figureWeight: Font.Weight = .semibold"))
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        var offenders: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for line in text.components(separatedBy: "\n")
+            where line.contains("JPFont.number(") && (line.contains(".light") || line.contains(".thin") || line.contains(".ultraLight")) {
+                offenders.append("\(file.lastPathComponent): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertEqual(offenders, [], "細い数字が残っている")
+    }
+}

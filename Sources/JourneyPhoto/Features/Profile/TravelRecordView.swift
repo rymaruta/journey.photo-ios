@@ -109,7 +109,7 @@ struct TravelRecordView: View {
         Button(action: onCountriesTap) {
             VStack(alignment: .trailing, spacing: 5) {
                 Text("\(countries.count)")
-                    .font(JPFont.number(JPTypeScale.figureMedium, weight: .light, relativeTo: .title3))
+                    .font(JPFont.number(JPTypeScale.figureMedium, weight: JPFont.figureWeight, relativeTo: .title3))
                     .foregroundStyle(Color.white)
                     // 距離の数字（28pt）と下の線をそろえる
                     .padding(.top, 8)

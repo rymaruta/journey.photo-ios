@@ -193,7 +193,7 @@ struct TripBookView: View {
     /// 枚・撮影地・移動（直線）の3つの数（板 03）。距離は**写真の座標を直線で
     /// つないだ合計**で、道のりではない（`TravelDistance`）。だから札は「直線」。
     ///
-    /// **v2（2026-10-14・板 TripBook）**: 升の枠をやめ、細い大きな数字（`JPFont.figureLarge`）と
+    /// **v2（2026-10-14・板 TripBook）**: 升の枠をやめ、大きな数字（`JPFont.figureLarge`・数の段と同じ semibold）と
     /// 12 の灰の札を3列に並べる
     private var stats: some View {
         HStack(alignment: .top, spacing: JPSpace.xs) {

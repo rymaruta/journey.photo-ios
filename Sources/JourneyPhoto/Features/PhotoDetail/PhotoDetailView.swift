@@ -2138,7 +2138,7 @@ private struct ExifRow: View {
                         .foregroundStyle(WebTheme.text3)
                         .lineLimit(1)
                     Text(cell.value)
-                        .font(JPFont.number(JPTypeScale.figureMedium, weight: .light, relativeTo: .title3))
+                        .font(JPFont.number(JPTypeScale.figureMedium, weight: JPFont.figureWeight, relativeTo: .title3))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
                         .minimumScaleFactor(WebTheme.minimumScale(forTextSize: CGFloat(JPTypeScale.figureMedium)))
