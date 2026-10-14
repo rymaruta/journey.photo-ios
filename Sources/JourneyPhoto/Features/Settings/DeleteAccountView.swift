@@ -5,6 +5,11 @@ import SwiftUI
 ///
 /// **審査要件（5.1.1(v)）。** アカウントを作れるアプリは、アプリの中から
 /// 削除できなければならない。**設定の中に置き、Web へ飛ばさない。**
+///
+/// **v2（2026-10-14・板 DeleteAccount）**: 左寄せの明朝 30 の大見出し。警告の札は赤 8% の地・30% の縁・角 16
+/// （`WebTheme.danger`・CLAUDE.md）で、頭に三角の印と赤の見出し、消えるものは赤の点の箇条、
+/// 「この操作は取り消せません。」は札の中の白の太字。確定は危険の塗り（`JPPillStyle.danger`）で、
+/// 「削除」と入れるまで押せず、その理由を下に1行（`DeleteAccountText.enableHint`）
 struct DeleteAccountView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -32,27 +37,51 @@ struct DeleteAccountView: View {
 
     var body: some View {
         Form {
-            // 板 46: 赤い枠の札に、消えるものと残るもの
             Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(L("アカウントを削除すると、次のものが消えます。", "Deleting your account removes:"))
-                        .font(.subheadline.weight(.semibold))
-                    VStack(alignment: .leading, spacing: 10) {
-                        removed(L("投稿した写真と画像ファイル", "Your photos and image files"))
-                        removed(L("プロフィール（名前・自己紹介・アイコン）", "Your profile (name, bio, avatar)"))
-                        removed(L("フォロー・いいね・お知らせ", "Follows, likes and activity"))
+                Text(L("アカウントの削除", "Delete account"))
+                    .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                    .foregroundStyle(WebTheme.text)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .jpFormRow()
+
+            // 板: 赤い枠の札に、消えるものと残るもの
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    // 板 v2: 三角の印と赤の見出し（危険の色・#F0565A は黒地の札の上で 6:1 を超える）
+                    Label {
+                        Text(L("アカウントを削除すると、次のものが消えます。", "Deleting your account removes:"))
+                            .font(JPFont.bodyEmphasis)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 16, weight: .semibold))
                     }
+                    .foregroundStyle(WebTheme.danger)
+                    removed(L("投稿した写真と画像ファイル", "Your photos and image files"))
+                    removed(L("プロフィール（名前・自己紹介・アイコン）", "Your profile (name, bio, avatar)"))
+                    removed(L("フォロー・いいね・お知らせ", "Follows, likes and activity"))
                     // 嘘をつかない。実装がそうなっている（コメントは読むときに
                     // 名前を伏せる扱いで、行そのものは残る）
                     Text(L("他の人の写真に書いたコメントの本文は残りますが、名前は「退会したユーザー」に変わります。", "Comments you left on other photos remain, but your name becomes “Deleted user”."))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // **`**` を書かない。** Markdown として太字になるのは
+                    // `Text` に**文字列リテラル**を渡したときだけで、`L(…)` の
+                    // 戻り値（ただの String）では記号がそのまま見える。
+                    // 太字にしたいなら font で言う。板 v2: 札の中の白の太字
+                    Text(L("この操作は取り消せません。", "This cannot be undone."))
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.text)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // 板 46 の赤い枠の札（赤 8% の地・30% の縁）。赤はテーマの危険の色
-                .background(WebTheme.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WebTheme.danger.opacity(0.3), lineWidth: 1))
+                // 板の赤い枠の札（赤 8% の地・30% の縁・角 16）。赤はテーマの危険の色（CLAUDE.md）
+                .background(WebTheme.danger.opacity(DeleteAccountText.warningFillOpacity),
+                            in: RoundedRectangle(cornerRadius: JPRadius.l))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.l)
+                    .strokeBorder(WebTheme.danger.opacity(DeleteAccountText.warningBorderOpacity), lineWidth: JPStroke.hairline))
+                .accessibilityElement(children: .combine)
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -67,13 +96,6 @@ struct DeleteAccountView: View {
             }
 
             Section {
-                // **`**` を書かない。** Markdown として太字になるのは
-                // `Text` に**文字列リテラル**を渡したときだけで、`L(…)` の
-                // 戻り値（ただの String）では記号がそのまま見える。
-                // 太字にしたいなら font で言う
-                Text(L("この操作は取り消せません。", "This cannot be undone."))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.danger)
                 // 板は欄の上に見出し、欄の中は語そのものの下書き
                 JPField(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm")) {
                     TextField(Self.confirmWord, text: $typed)
@@ -91,7 +113,7 @@ struct DeleteAccountView: View {
         }
         .webScreen()
         // 板は下に固定した赤い大きいボタン（スクロールしても見える）
-        .safeAreaInset(edge: .bottom) { deleteButton }
+        .safeAreaInset(edge: .bottom) { deleteBar }
         // 設定の Pro の行（`ProSettingsSection`）と同じ OS の管理シート。写しの画面は作らない
         .manageSubscriptionsSheet(isPresented: $showManage)
         // App Store 側の定期購入を読む（`ProSettingsSection` と同じ2つ。StoreKit の問い合わせを別に作らない）
@@ -135,7 +157,26 @@ struct DeleteAccountView: View {
         .disabled(!canDelete)
         // 消している最中は薄くしない（押せないのは同じ・進み具合を見せる）
         .opacity(canDelete || isWorking ? 1 : 0.4)
+    }
+
+    /// 下に固定した帯: 確定のボタンと、まだ押せない理由の1行（板 v2・注記 12・text-3）
+    private var deleteBar: some View {
+        VStack(spacing: JPSpace.xs) {
+            deleteButton
+            if let enableHint {
+                Text(enableHint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        }
         .jpBottomBar()
+    }
+
+    /// 確定がまだ押せない理由。灰色のまま理由も出ない画面にしない（消している最中は出さない）
+    private var enableHint: String? {
+        canDelete || isWorking ? nil : DeleteAccountText.enableHint(word: Self.confirmWord)
     }
 
     /// 定期購入は止まらない、の知らせ（2026-10-11）。
@@ -172,12 +213,19 @@ struct DeleteAccountView: View {
         .accessibilityIdentifier("deleteAccount.subscriptionNotice")
     }
 
-    /// 消えるものの1行（板の赤い ×）
+    /// 消えるものの1行（板 v2: 赤の 5pt の点の箇条。v1 は赤い ×）
     private func removed(_ text: String) -> some View {
-        Label {
-            Text(text).font(.subheadline)
-        } icon: {
-            Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(WebTheme.danger)
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(WebTheme.danger)
+                .frame(width: DeleteAccountText.bulletSide, height: DeleteAccountText.bulletSide)
+                // 1行目の字の中ほど（板: 上 8）
+                .padding(.top, 8)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -219,3 +267,18 @@ struct DeleteAccountView: View {
         }
     }
 }
+
+/// 退会の画面の決まりと文言（v2 の板 DeleteAccount・2026-10-14）。テストで見張る
+enum DeleteAccountText {
+    /// 警告の札（CLAUDE.md・板どおり: 赤 8% の地・30% の縁）
+    static let warningFillOpacity = 0.08
+    static let warningBorderOpacity = 0.3
+    /// 消えるものの点（板: 5pt）
+    static let bulletSide: CGFloat = 5
+
+    /// 確定がまだ押せない理由（板 v2:「「削除」と入れると押せます」）。灰色のまま理由も出ない画面にしない
+    static func enableHint(word: String) -> String {
+        L("「\(word)」と入れると押せます", "Type “\(word)” to enable this button")
+    }
+}
+

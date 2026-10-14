@@ -202,9 +202,9 @@ struct OfflineSavedSettingsRow: View {
         if isPro || offline.hasLocalData {
             JPCardDivider()
             NavigationLink { OfflineSavedView() } label: {
+                // 板 v2（Settings）: 行の絵を外し、件数と容量は右の値（等幅）に
                 JPRowLabel(title: L("保存した旅", "Offline trips"),
-                           detail: OfflineTripText.settingsDetail(count: offline.saved.count, bytes: offline.totalBytes),
-                           icon: AnyView(OfflinePhoneIcon(saved: true, side: 20)))
+                           value: OfflineTripText.settingsDetail(count: offline.saved.count, bytes: offline.totalBytes))
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.offlineTrips")

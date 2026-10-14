@@ -119,13 +119,18 @@ struct SettingsView: View {
     }
 
     /// **並びはアーティファクト 43 の「設定」**（2026-09-26）。左寄せの明朝の
-    /// 大見出し、節ごとに角丸の札、行の説明は行の中の2行目、最下部に等幅の版
+    /// 大見出し、節ごとに角丸の札、行の説明は行の中の2行目、最下部に等幅の版。
+    ///
+    /// **v2（2026-10-14・板 Settings）**: 節の見出しを真鍮の眉ラベルに（`SettingsGroup`）、節の間を
+    /// 物差しの「節と節の間」（`JPSpace.section`）に、行の絵を外した（Pro の行の Pro マークだけ残す）。
+    /// アカウントの削除は名前ごと危険の色（`WebTheme.danger`）
     private var list: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
                 Text(L("設定", "Settings"))
-                    .font(JPFont.display(30, relativeTo: .largeTitle))
+                    .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
+                    .padding(.horizontal, JPSpace.xxs)
                     .accessibilityAddTraits(.isHeader)
                 if auth.userId != nil {
                     // 板 43 の並び: Pro がいちばん上
@@ -142,15 +147,15 @@ struct SettingsView: View {
                 // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」。
                 // 接続先は**いつも出す**（本番かどうかを見分けるため）
                 Text(versionLine)
-                    .font(JPFont.mono(12))
-                    // 白 45% は黒地で 4.43:1 と文字の線（4.5:1）を割る。注記の text-3（白 60%）
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.meta)
+                    // 白 45% は黒地で 4.43:1 と文字の線（4.5:1）を割る。注記の text-3（v2 の #9A9A9A・黒地だけ）
+                    .foregroundStyle(WebTheme.text3)
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.gutter)
+            .padding(.top, JPSpace.xxs)
+            .padding(.bottom, JPSpace.emptyTop)
             // **ログアウトの途中は、ほかの行も押させない**（`DeleteAccountView` と同じ考え方）。
             // 退会・パスワード変更に進めると、ログアウトが先に終わって Cognito の
             // 呼び出しが落ち続けた。ログアウトの行の進み具合はそのまま出る
@@ -175,10 +180,7 @@ struct SettingsView: View {
     }
 
     private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title { JPSectionTitle(title) }
-            JPCard { content() }
-        }
+        SettingsGroup(title) { content() }
     }
 
     private var notificationsSection: some View {
@@ -195,7 +197,7 @@ struct SettingsView: View {
                 JPCardDivider()
                 note(L("この端末で通知が許可されていません。iPhone の「設定 → 通知 → Journey Photo」から許可してください。",
                        "Notifications are off for this device. Allow them in Settings → Notifications → Journey Photo."),
-                     color: WebTheme.faint)
+                     color: WebTheme.text3)
             }
             if let message = push.errorMessage {
                 JPCardDivider()
@@ -207,11 +209,11 @@ struct SettingsView: View {
     /// 札の中の注記（行ではない1文）
     private func note(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.caption)
+            .font(JPFont.caption)
             .foregroundStyle(color)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, JPSpace.s)
     }
 
     // 親しい友達・お気に入り・共同アルバムの入口をここにも置く
@@ -219,24 +221,24 @@ struct SettingsView: View {
     private var privacySection: some View {
         section(L("プライバシー", "Privacy")) {
             NavigationLink { BlockedUsersView() } label: {
-                JPRowLabel(title: L("ブロックした人", "Blocked people"), systemImage: "shield")
+                JPRowLabel(title: L("ブロックした人", "Blocked people"))
             }
             .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             NavigationLink { CloseFriendsView() } label: {
-                JPRowLabel(title: L("親しい友達", "Close friends"), systemImage: "person.badge.plus")
+                JPRowLabel(title: L("親しい友達", "Close friends"))
             }
             .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
             // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
             NavigationLink { FavoritesView() } label: {
-                JPRowLabel(title: Labels.Navigation.favorites, systemImage: "heart")
+                JPRowLabel(title: Labels.Navigation.favorites)
             }
             .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             NavigationLink { AlbumsView() } label: {
-                JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack")
+                JPRowLabel(title: Labels.Navigation.albums)
             }
             .buttonStyle(JPRowButtonStyle())
         }
@@ -245,7 +247,7 @@ struct SettingsView: View {
     private var compositionSection: some View {
         section(L("撮影ガイド", "Shooting guide")) {
             NavigationLink { CompositionCatalogView() } label: {
-                JPRowLabel(title: L("構図一覧", "Composition guide"), systemImage: "square.grid.3x3",
+                JPRowLabel(title: L("構図一覧", "Composition guide"),
                            detail: L("構図の説明と作例の配置図を見る", "Explore compositions and illustrated examples"))
             }
             .buttonStyle(JPRowButtonStyle())
@@ -256,7 +258,7 @@ struct SettingsView: View {
     // **データとストレージ**（モック12）。写真の控えは端末に溜まる
     private var storageSection: some View {
         section(L("データとストレージ", "Data & storage")) {
-            JPRowLabel(title: L("写真の控え", "Cached photos"), systemImage: "photo",
+            JPRowLabel(title: L("写真の控え", "Cached photos"),
                        detail: L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
                                  "Photos you have seen are kept on this device. Clearing frees space."),
                        value: cacheSize, chevron: false)
@@ -273,7 +275,8 @@ struct SettingsView: View {
                 URLCache.shared.removeAllCachedResponses()
                 cacheSize = Self.formattedCacheSize()
             } label: {
-                JPRowLabel(title: L("控えを空にする", "Clear cache"), chevron: false)
+                // 板 v2: 押すとその場で効く行は真鍮の字（黒地の札の上の手がかり）
+                SettingsActionLabel(title: L("控えを空にする", "Clear cache"), color: WebTheme.accent)
             }
             .buttonStyle(JPRowButtonStyle())
         }
@@ -285,36 +288,36 @@ struct SettingsView: View {
         section(auth.userId != nil ? L("アカウント", "Account") : nil) {
             if auth.userId != nil {
                 NavigationLink { ChangePasswordView() } label: {
-                    JPRowLabel(title: L("パスワードを変える", "Change password"), systemImage: "lock")
+                    JPRowLabel(title: L("パスワードを変える", "Change password"))
                 }
                 .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
             }
             // 「新しくなったこと」はいつでも開き直せる（未ログインでも出す）
             Button { showWhatsNew = true } label: {
-                JPRowLabel(title: L("新しくなったこと", "What's new"), systemImage: "sparkles")
+                JPRowLabel(title: L("新しくなったこと", "What's new"))
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.whatsNew")
             JPCardDivider()
             NavigationLink { LegalLinksView() } label: {
-                JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "flag")
+                JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"))
             }
             .buttonStyle(JPRowButtonStyle())
             if let contact = LegalConsent.contactURL {
                 JPCardDivider()
                 Link(destination: contact) {
-                    JPRowLabel(title: L("問い合わせ", "Contact"), systemImage: "bubble.left")
+                    JPRowLabel(title: L("問い合わせ", "Contact"))
                 }
                 .buttonStyle(JPRowButtonStyle())
             }
             if auth.userId != nil {
                 JPCardDivider()
-                // 板: アイコンだけ赤・矢印なし
+                // 板 v2: 名前ごと危険の色（#F0565A）・行き先があるので矢印あり（v1 はアイコンだけ赤・矢印なし）
                 // Pro かどうか（定期購入の知らせ）を渡す。読めていなければ nil のまま＝知らせを出す
                 NavigationLink { DeleteAccountView(profile: myProfile) } label: {
-                    JPRowLabel(title: L("アカウントの削除", "Delete account"), systemImage: "trash",
-                               chevron: false, iconColor: WebTheme.danger)
+                    SettingsActionLabel(title: L("アカウントの削除", "Delete account"), color: WebTheme.danger,
+                                        chevron: true)
                 }
                 .buttonStyle(JPRowButtonStyle())
             }
@@ -334,7 +337,7 @@ struct SettingsView: View {
                 auth.startSigningOut { await push.signingOut() }
             } label: {
                 JPRowLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
-                           systemImage: "rectangle.portrait.and.arrow.right", chevron: false)
+                           chevron: false)
                     .overlay(alignment: .trailing) {
                         if isSigningOut { ProgressView().padding(.trailing, 14) }
                     }
@@ -342,5 +345,72 @@ struct SettingsView: View {
             .buttonStyle(JPRowButtonStyle())
             .disabled(isSigningOut)
         }
+    }
+}
+
+/// 設定の見た目の決まり（v2 の板 Settings・2026-10-14）。テストで見張る
+enum SettingsLayout {
+    /// 大見出し「設定」（明朝 30・板の値。積む画面の大見出しは板の全画面で 30）
+    static let titleSize: Double = 30
+    /// 節と節の間（物差しの「節と節の間」）
+    static let sectionSpacing: CGFloat = JPSpace.section
+    /// 眉ラベルと札の間
+    static let headerSpacing: CGFloat = JPSpace.xs
+}
+
+/// 設定の節（v2 の板 Settings の `.grp`）: **真鍮の眉ラベル**（黒地の上の合図）＋ 札（`JPCard`）。
+///
+/// v1 は白 60% の小さい見出し（`JPSectionTitle`）だった。見出しが無い節（ログアウト）は札だけ。
+/// Pro の節（`ProSettingsSection`）も同じ形で組む
+struct SettingsGroup<Content: View>: View {
+
+    let title: String?
+    let content: Content
+
+    init(_ title: String?, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsLayout.headerSpacing) {
+            if let title {
+                Text(title)
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .padding(.horizontal, JPSpace.xxs)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            JPCard { content }
+        }
+    }
+}
+
+/// 押すとその場で効く行・危ない行の見た目（板 v2: 名前だけを色で——「控えを空にする」は真鍮、
+/// 「アカウントの削除」は #F0565A）。寸法は `JPRowLabel` と同じ（最小 54・左右 14）。
+/// **色だけで危なさを伝えない**: 名前そのものが「削除」と言う
+struct SettingsActionLabel: View {
+
+    let title: String
+    let color: Color
+    var chevron = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .frame(minHeight: 54)
+        .contentShape(Rectangle())
     }
 }

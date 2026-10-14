@@ -71,11 +71,12 @@ final class FoundingGiftTests: XCTestCase {
         XCTAssertEqual(FoundingGiftGate.name(try profile(#"{"userId":"u1"}"#)), "")
     }
 
-    /// 板の寸法: 390pt の画面でメダル 360pt、小さい画面では縮める
+    /// 板 v2 の寸法: メダル 220pt（v1 は画面の幅いっぱいの 360）。とても狭い画面では左右 28 を残して縮める
     func testMedalSide() {
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 390), 360)
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 320), 290)
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 430), 360)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 390), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 320), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 430), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 240), 184)
     }
 
     /// 配線: 起動のあと（「新しくなったこと」を閉じたあと）に確かめ、飾ったら覚えてマイページを読み直す
