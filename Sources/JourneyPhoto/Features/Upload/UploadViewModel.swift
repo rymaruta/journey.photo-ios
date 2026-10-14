@@ -49,11 +49,20 @@ struct UploadSpotTarget: Equatable {
 
     /// 送る `spotId`（投稿全体の行き先＋写真ごとに撮影地の欄で選んだ撮影スポット・2026-10-14）。
     ///
-    /// **スポットの画面から開いた行き先が先**（そちらは本人がスポットを決めて開いた）。無い・外れた
-    /// ときは、その写真の撮影地の欄で台帳の候補を選んだスポット（`PendingPhoto.pickedSpot`）。
+    /// **写真ごとに選んだスポット（`PendingPhoto.pickedSpot`）が先。** その写真の撮影地の欄で本人が
+    /// 台帳の候補を選んだので、画面の行き先より具体的（「高屋」の画面から開いて「高屋神社」を選んだら
+    /// 高屋神社・2026-10-14 のレビュー）。選んでいない・外れたときは、スポットの画面から開いた行き先。
     /// どちらも同じ条件（`spotIdToSend(_:for:)`）——撮影地を空にした・名前の消えた書き換えでは付けない
     static func spotIdToSend(screen target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
-        spotIdToSend(target, for: item) ?? spotIdToSend(item.pickedSpot, for: item)
+        spotIdToSend(item.pickedSpot, for: item) ?? spotIdToSend(target, for: item)
+    }
+
+    /// スポットの頁に「投稿しました」を出してよい1枚か。**その画面のスポットの `spotId` で送った
+    /// ときだけ**（写真ごとに別のスポットを選んだ投稿は、開いた頁の一覧には並ばない）
+    static func countsForScreen(sentSpotId: String?, screen: UploadSpotTarget?, published: Bool,
+                                everyone: Bool) -> Bool {
+        guard let sentSpotId, let screen, published, everyone else { return false }
+        return sentSpotId == screen.spotId
     }
 
     /// 撮影地の欄を書き換えたあとも、選んだ撮影スポットを持っておくか。
@@ -1399,7 +1408,9 @@ final class UploadViewModel: ObservableObject {
                 }
             }
         }
-        if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
+        if photo != nil, UploadSpotTarget.countsForScreen(sentSpotId: draft.spotId, screen: spot,
+                                                          published: draft.published,
+                                                          everyone: draft.audience == .everyone) {
             postedToSpot += 1
         }
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない

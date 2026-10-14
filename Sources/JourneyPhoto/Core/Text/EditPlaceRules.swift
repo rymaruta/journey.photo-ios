@@ -32,6 +32,28 @@ enum EditPlaceRules {
         return !PlaceCoordsRule.namesSpotNear(currentLocation, photo: photoCoords, spots: spots)
     }
 
+    /// 撮影スポットの紐付け（`Photo.spotId`）を外すか（2026-10-14）。**撮影地を書き換えて、
+    /// 台帳のスポットの名前を含まなくなった**とき（空にしたときも）。投稿の `UploadSpotTarget.spotIdToSend`
+    /// と同じ線（「, 香川」を足しただけなら残す）。
+    ///
+    /// 🔴 **分からないときは外さない**: 索引が読めない（nil）・索引にその `spotId` が無い・撮影地を
+    /// 変えていない。分からないまま外すと、スポットの頁から写真が黙って消える
+    static func clearsSpotId(spotId: String?, openedLocation: String?, currentLocation: String,
+                             spots: [OfficialSpot]?) -> Bool {
+        guard let id = spotId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
+              changedByUser(openedLocation: openedLocation, currentLocation: currentLocation) else { return false }
+        // 撮影地を空にした（場所を伏せた）なら索引が無くても外す——紐付けで場所が分かってしまう
+        if trim(currentLocation).isEmpty { return true }
+        guard let spot = spots?.first(where: { $0.spotId == id }) else { return false }
+        return !currentLocation.contains(spot.name)
+    }
+
+    /// `clearsSpotId` を決めるのに索引が要るか（スポットに紐づいた写真の撮影地を書き換えた）
+    static func needsSpotIndexForSpotId(spotId: String?, openedLocation: String?, currentLocation: String) -> Bool {
+        !(spotId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+    }
+
     /// 索引が無いと `clearsCoords` を決められないか（保存の前に索引を待つかどうか）
     static func needsSpotIndex(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
                                photoCoords: Photo.Coords?) -> Bool {

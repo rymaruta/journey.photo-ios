@@ -52,15 +52,81 @@ enum PhotoTrip {
     ///
     /// 🔴 **スラッグの空な撮影地（「---」など）には出さない**——押しても `WishlistStore` は
     /// 何も残さない（`SpotDetailView` の「行きたい」と同じ理由）。台帳の行のスラッグが空でも同じ
+    ///
+    /// 🔴 **撮影地の「行きたい」は公開の写真だけ**（`isPublic`・2026-10-14 のレビュー）。下書き・
+    /// フォロワーのみ・親しい友達の写真の撮影地は、その人が広く見せていない場所——行きたいの一覧
+    /// （ログイン中は Web にも出る）へ広げない。台帳のスポットは公開の台帳なのでこの限りではない
     static func destination(photo: Photo, spot: OfficialSpot?) -> Destination? {
         if let spot, !spot.slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .spot(spot)
         }
+        guard isPublic(photo) else { return nil }
         let label = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty else { return nil }
         let slug = LocationSlug.make(label)
         guard !slug.isEmpty else { return nil }
         return .place(label: label, slug: slug)
+    }
+
+    /// 公開（下書きでない・全員に見せる）写真か。`published` の無い写真は公開の一覧から来たもの
+    /// （`PhotoDetailRules.acceptsReactions` と同じ読み）。公開範囲は空か `everyone` だけ
+    static func isPublic(_ photo: Photo) -> Bool {
+        guard photo.published != false else { return false }
+        let raw = (photo.audience ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw.isEmpty || raw == Audience.everyone.rawValue
+    }
+
+    // MARK: - 読み込み（写真ごと）
+
+    /// 読み終えた台帳の行。**どの `spotId` で読んだか**を持つ（写真を送った直後に前の写真の
+    /// スポット・行きたい・経路・時刻を出さないため・2026-10-14 のレビュー）
+    struct Loaded {
+        /// 読んだときの写真の `spotId`（前後の空白を落としたもの）
+        let spotId: String
+        /// 引けた台帳の行（索引が読めない・見つからないなら nil）
+        let spot: OfficialSpot?
+        /// スポットの頁に渡す索引（読めなければ空）
+        let index: [OfficialSpot]
+        /// スポットの頁に渡す公開写真（読めなければ nil＝「まだありません」を言わない）
+        let photos: [Photo]?
+    }
+
+    /// 今の写真に対する読み込みの段階
+    enum Stage {
+        /// `spotId` の無い写真（読みに行かない）
+        case none
+        /// `spotId` はあるが、まだこの写真の分を読み終えていない（前の写真の分しか無いときも）
+        case loading
+        /// この写真の `spotId` で読み終えた
+        case ready(Loaded)
+
+        /// 使ってよい読み込み結果（この写真の分だけ）
+        var loaded: Loaded? {
+            if case .ready(let l) = self { return l }
+            return nil
+        }
+    }
+
+    static func normalizedSpotId(_ raw: String?) -> String? {
+        let id = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? nil : id
+    }
+
+    /// 写真の `spotId` と、手元の読み込み結果から段階を決める。**読んだ `spotId` が違えば使わない**
+    static func stage(photoSpotId: String?, loaded: Loaded?) -> Stage {
+        guard let id = normalizedSpotId(photoSpotId) else { return .none }
+        guard let loaded, loaded.spotId == id else { return .loading }
+        return .ready(loaded)
+    }
+
+    /// 段に出す行き先。**読み込み中は出さない**——読み終わると鍵が撮影地のスラッグから `SPOT-…` に
+    /// 変わるので、その前に押した「行きたい」が別の鍵に入る（2026-10-14 のレビュー）
+    static func sectionDestination(photo: Photo, stage: Stage) -> Destination? {
+        switch stage {
+        case .loading: return nil
+        case .none: return destination(photo: photo, spot: nil)
+        case .ready(let l): return destination(photo: photo, spot: l.spot)
+        }
     }
 
     // MARK: - いつ行く（1行）
@@ -76,25 +142,43 @@ enum PhotoTrip {
         return seasonLine(spot)
     }
 
-    /// 次のゴールデンアワー（例「次のゴールデンアワー 今日 16:48–17:20」）。極夜・白夜で無い日は飛ばす
+    /// 次のゴールデンアワー（例「次のゴールデンアワー 今日 16:48–17:20」）。極夜・白夜で無い日は飛ばす。
+    ///
+    /// 🔴 **「今日・明日」は、始まる時刻をその土地の暦で見て決める**（2026-10-14・日付変更線のテスト）。
+    /// `SunTimes.compute` の日付は経度で決まる太陽の日なので、トンガ（西経175°・UTC+13）のように経度と
+    /// 時刻帯が日付変更線をまたぐ土地では、その土地の「今日」の日付で計算した朝が翌朝になる。
+    /// 前後の日も計算して、まだ終わっていないうち最も早いものを選び、その土地の暦で日を言う
     static func nextGolden(spot: OfficialSpot, now: Date, deviceZone: TimeZone = .current) -> String? {
         guard let coords = spot.coords,
-              let zone = SunTimes.timeZone(named: spot.timeZone, country: spot.region?.country) else { return nil }
-        for offset in 0...1 {
+              let zone = SunTimes.timeZone(named: spot.timeZone, country: spot.region?.country),
+              let today = SpotLight.ymd(offset: 0, from: now, in: zone),
+              let tomorrow = SpotLight.ymd(offset: 1, from: now, in: zone) else { return nil }
+        var spans: [(start: Date, span: SunTimes.Span)] = []
+        for offset in -1...2 {
             guard let ymd = SpotLight.ymd(offset: offset, from: now, in: zone),
                   let times = SunTimes.compute(ymd, lat: coords.lat, lng: coords.lng) else { continue }
             for span in [times.morningGolden, times.eveningGolden] {
-                guard let start = span.start, let end = span.end, end > now,
-                      let text = SunTimes.span(span, in: zone) else { continue }
-                let day = offset == 0 ? L("今日", "today") : L("明日", "tomorrow")
-                // 端末と違う時計の土地では「現地」と添える（日本から海外のスポットを見たとき）
-                let local = zone.secondsFromGMT(for: start) == deviceZone.secondsFromGMT(for: start)
-                    ? "" : L("（現地）", " (local)")
-                return L("次のゴールデンアワー \(day) \(text)\(local)",
-                         "Next golden hour \(day) \(text)\(local)")
+                guard let start = span.start, let end = span.end, end > now else { continue }
+                spans.append((start, span))
             }
         }
-        return nil
+        guard let next = spans.min(by: { $0.start < $1.start }),
+              let text = SunTimes.span(next.span, in: zone),
+              let startDay = SpotLight.ymd(offset: 0, from: next.start, in: zone) else { return nil }
+        let day: String
+        if startDay <= today {
+            // 始まっていて、まだ終わっていない（今まさにゴールデンアワー）も「今日」
+            day = L("今日", "today")
+        } else if startDay == tomorrow {
+            day = L("明日", "tomorrow")
+        } else {
+            return nil
+        }
+        // 端末と違う時計の土地では「現地」と添える（日本から海外のスポットを見たとき）
+        let local = zone.secondsFromGMT(for: next.start) == deviceZone.secondsFromGMT(for: next.start)
+            ? "" : L("（現地）", " (local)")
+        return L("次のゴールデンアワー \(day) \(text)\(local)",
+                 "Next golden hour \(day) \(text)\(local)")
     }
 
     /// 撮りどきの季節（例「撮りどき 春・秋」）。索引の種類だけ（文は詳細）。知らない季節は落とす

@@ -66,8 +66,11 @@ struct PhotoDetailView: View {
     private var spotLead: PhotoDetailSpotLead? { spotShelf.value }
     /// 写真に紐づいた台帳の撮影スポット（`Photo.spotId`・2026-10-14）と、その頁に渡す索引。
     /// `spotId` の無い写真・索引が読めない・見つからないときは nil（スポットの行も「いつ」も出さない）
-    @State private var tripSpot: OfficialSpot?
-    @State private var tripIndex: [OfficialSpot] = []
+    /// **どの `spotId` で読んだかを持つ**（`PhotoTrip.Loaded`）。写真を送った直後は前の写真の分が
+    /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
+    @State private var tripLoaded: PhotoTrip.Loaded?
+    private var tripStage: PhotoTrip.Stage { PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded) }
+    private var tripSpot: OfficialSpot? { tripStage.loaded?.spot }
     /// フォローしているか。**分からない間は nil**——ボタンを出さない
     /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
     @State private var isFollowing: Bool?
@@ -664,10 +667,11 @@ struct PhotoDetailView: View {
     /// 当たりは 44pt（負の余白で並びは詰める・板の `margin: -8px 0`）
     @ViewBuilder
     private var spotGuideRow: some View {
-        if let spot = tripSpot {
+        if let loaded = tripStage.loaded, let spot = loaded.spot {
             NavigationLink {
-                OfficialSpotView(spot: spot, spots: tripIndex, photos: spotLead?.photos ?? [],
-                                 photosKnown: spotLead != nil)
+                // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
+                OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
+                                 photosKnown: loaded.photos != nil)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "book.closed")
@@ -696,9 +700,12 @@ struct PhotoDetailView: View {
     /// 「行き先」の段（行きたい・経路・いつ・`PhotoTripSection`）。行き先の分からない写真では出さない
     @ViewBuilder
     private var tripSection: some View {
-        if let destination = PhotoTrip.destination(photo: shown, spot: tripSpot) {
+        if let destination = PhotoTrip.sectionDestination(photo: shown, stage: tripStage) {
             PhotoTripSection(destination: destination,
                              when: tripSpot.flatMap { PhotoTrip.whenLine(spot: $0, now: Date()) })
+                // **写真ごとに作り直す。** 送った先の写真で、前の写真の「経路」の仕事が
+                // Apple のマップを開かない（作り直しで `onDisappear` が取り消す）
+                .id(shown.id)
         }
     }
 
@@ -1520,15 +1527,15 @@ struct PhotoDetailView: View {
     /// 写真に紐づいた台帳の撮影スポットを引く（`PhotoTrip.spot`）。`spotId` の無い写真は読みに行かない。
     /// 取り消された回は書かない（後の回が入れた行き先を消さない）
     private func loadTripSpot() async {
-        guard let id = shown.spotId, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            tripSpot = nil
-            tripIndex = []
-            return
-        }
+        guard let id = PhotoTrip.normalizedSpotId(shown.spotId) else { return }
+        // 既にこの `spotId` で読んであれば読み直さない（大きく見る画面を閉じた・戻ってきた）
+        if tripLoaded?.spotId == id { return }
         let rows = await environment.spots.fetchIndexRows()
-        guard !Task.isCancelled else { return }
-        tripSpot = PhotoTrip.spot(for: shown, in: rows)
-        tripIndex = rows ?? []
+        // スポットの頁の「この撮影スポットの写真」に渡す公開写真（控えがあれば通信しない）
+        let photos = try? await environment.gallery.fetchPhotos()
+        guard !Task.isCancelled, PhotoTrip.normalizedSpotId(shown.spotId) == id else { return }
+        tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),
+                                      index: rows ?? [], photos: photos)
     }
 
     /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**

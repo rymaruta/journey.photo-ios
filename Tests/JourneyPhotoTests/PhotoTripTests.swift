@@ -107,12 +107,33 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertNil(UploadSpotTarget.spotIdToSend(screen: nil, for: item), "選んでいない写真には付けない")
         item.pickedSpot = target
         XCTAssertEqual(UploadSpotTarget.spotIdToSend(screen: nil, for: item), "sp_0123456789ab")
-        // スポットの画面から開いた行き先が先
+        // **写真ごとに選んだほうが先**: 「高屋」の画面から開いて「高屋神社」を選んだら高屋神社
         let screen = UploadSpotTarget(spotId: "sp_aaaaaaaaaaaa", name: "高屋", coords: nil)
+        XCTAssertEqual(UploadSpotTarget.spotIdToSend(screen: screen, for: item), "sp_0123456789ab",
+                       "選んだ候補と違うスポットの spotId が付く")
+        // 選んでいなければ画面の行き先
+        item.pickedSpot = nil
         XCTAssertEqual(UploadSpotTarget.spotIdToSend(screen: screen, for: item), "sp_aaaaaaaaaaaa")
+        item.pickedSpot = target
         // 撮影地を空にしたら付けない
         item.location = ""
         XCTAssertNil(UploadSpotTarget.spotIdToSend(screen: nil, for: item), "撮影地を空にした")
+    }
+
+    /// スポットの頁の「投稿しました」は、その頁のスポットで送ったときだけ
+    func testPostedToSpotCountsOnlyTheScreensSpot() {
+        let screen = UploadSpotTarget(spotId: "sp_aaaaaaaaaaaa", name: "高屋", coords: nil)
+        XCTAssertTrue(UploadSpotTarget.countsForScreen(sentSpotId: "sp_aaaaaaaaaaaa", screen: screen,
+                                                       published: true, everyone: true))
+        XCTAssertFalse(UploadSpotTarget.countsForScreen(sentSpotId: "sp_0123456789ab", screen: screen,
+                                                        published: true, everyone: true), "別のスポットを選んだ投稿")
+        XCTAssertFalse(UploadSpotTarget.countsForScreen(sentSpotId: "sp_0123456789ab", screen: nil,
+                                                        published: true, everyone: true), "スポットの画面から開いていない")
+        XCTAssertFalse(UploadSpotTarget.countsForScreen(sentSpotId: nil, screen: screen, published: true, everyone: true))
+        XCTAssertFalse(UploadSpotTarget.countsForScreen(sentSpotId: "sp_aaaaaaaaaaaa", screen: screen,
+                                                        published: false, everyone: true), "下書き")
+        XCTAssertFalse(UploadSpotTarget.countsForScreen(sentSpotId: "sp_aaaaaaaaaaaa", screen: screen,
+                                                        published: true, everyone: false), "範囲を絞った")
     }
 
     /// 手で書き換えたら外す（選んだ名前のままのときだけ持つ）
@@ -132,6 +153,112 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(SpotComposePost.opensUpload(capture))
     }
 
+    // MARK: - 2. 写真を送った直後に前の写真のものを出さない・4. 読み込み中は行きたいを出さない
+
+    func testStageUsesOnlyTheCurrentPhotosSpotId() throws {
+        let spot = try takaya
+        let a = PhotoTrip.Loaded(spotId: "sp_0123456789ab", spot: spot, index: [spot], photos: nil)
+        // 前の写真（a）の読み込みだけが残っている状態で、別の spotId の写真へ送った
+        let next = try photo("n", location: "金沢", spotId: "sp_ffffffffffff")
+        let stage = PhotoTrip.stage(photoSpotId: next.spotId, loaded: a)
+        XCTAssertNil(stage.loaded, "前の写真のスポットを出している")
+        XCTAssertNil(PhotoTrip.sectionDestination(photo: next, stage: stage),
+                     "読み込み中に行きたいを出すと、読み終わりで鍵が変わる")
+        // spotId の無い写真へ送った → 前の写真のスポットは使わず、撮影地の行き先
+        let plain = try photo("p", location: "金沢")
+        let none = PhotoTrip.stage(photoSpotId: plain.spotId, loaded: a)
+        XCTAssertNil(none.loaded)
+        XCTAssertEqual(PhotoTrip.sectionDestination(photo: plain, stage: none)?.wishKey, LocationSlug.make("金沢"))
+        // 同じ spotId（前後の空白は同じに見る）なら使う
+        let same = PhotoTrip.stage(photoSpotId: " sp_0123456789ab ", loaded: a)
+        XCTAssertEqual(same.loaded?.spot?.slug, "takaya-shrine")
+        let here = try photo("s", location: "高屋神社", spotId: "sp_0123456789ab")
+        XCTAssertEqual(PhotoTrip.sectionDestination(photo: here, stage: same)?.wishKey, "SPOT-takaya-shrine")
+        // 読み終えたが索引に無い → 撮影地に戻る（スポットの行・経路・時刻は出ない）
+        let missing = PhotoTrip.Loaded(spotId: "sp_ffffffffffff", spot: nil, index: [], photos: nil)
+        let fallback = PhotoTrip.sectionDestination(photo: next, stage: PhotoTrip.stage(photoSpotId: next.spotId, loaded: missing))
+        XCTAssertNil(fallback?.spot)
+        XCTAssertEqual(fallback?.wishKey, LocationSlug.make("金沢"))
+    }
+
+    // MARK: - 7. 撮影地の「行きたい」は公開の写真だけ
+
+    func testPlaceWishOnlyForPublicPhotos() throws {
+        func decoded(_ extra: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"x\",\"src\":\"/uploads/x.jpg\",\"location\":\"金沢\"\(extra)}".utf8))
+        }
+        XCTAssertNotNil(PhotoTrip.destination(photo: try decoded(""), spot: nil), "公開の一覧の写真（published 無し）")
+        XCTAssertNotNil(PhotoTrip.destination(photo: try decoded(",\"published\":true,\"audience\":\"everyone\""), spot: nil))
+        XCTAssertNil(PhotoTrip.destination(photo: try decoded(",\"published\":false"), spot: nil), "下書き")
+        XCTAssertNil(PhotoTrip.destination(photo: try decoded(",\"audience\":\"followers\""), spot: nil), "フォロワーのみ")
+        XCTAssertNil(PhotoTrip.destination(photo: try decoded(",\"audience\":\"closeFriends\""), spot: nil), "親しい友達")
+        XCTAssertNil(PhotoTrip.destination(photo: try decoded(",\"audience\":\"somethingNew\""), spot: nil), "知らない範囲は絞った側")
+        // 台帳のスポットは公開の台帳なので、絞った写真でも出す
+        XCTAssertNotNil(PhotoTrip.destination(photo: try decoded(",\"published\":false"), spot: try takaya))
+    }
+
+    // MARK: - 4. 白夜・極夜・日付変更線
+
+    func testPolarDaysFallBackToSeasons() throws {
+        // スヴァールバル（北緯78°）の夏至の頃は白夜、冬至の頃は極夜——ゴールデンアワーが無い日は季節へ
+        let svalbard = try spot(#"{"spotId":"sp_000000000003","slug":"longyearbyen","name":"ロングイェールビーン","stage":"published","coords":{"lat":78.22,"lng":15.65},"timeZone":"Arctic/Longyearbyen","region":{"country":"ノルウェー"},"seasons":["summer"]}"#)
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let midsummer = Date(timeIntervalSince1970: 1_781_870_400)   // 2026-06-19 12:00 UTC
+        let midwinter = Date(timeIntervalSince1970: 1_797_854_400)   // 2026-12-21 12:00 UTC
+        for now in [midsummer, midwinter] {
+            XCTAssertNil(PhotoTrip.nextGolden(spot: svalbard, now: now, deviceZone: utc))
+            XCTAssertEqual(PhotoTrip.whenLine(spot: svalbard, now: now, deviceZone: utc), L("撮りどき 夏", "Best in Summer"))
+        }
+    }
+
+    func testDatelineSpotUsesItsOwnCalendar() throws {
+        // トンガ（UTC+13）。UTC では 10/13 の 23:00 でも、その土地では 10/14 の正午
+        let tonga = try spot(#"{"spotId":"sp_000000000004","slug":"nukualofa","name":"ヌクアロファ","stage":"published","coords":{"lat":-21.14,"lng":-175.2},"timeZone":"Pacific/Tongatapu","region":{"country":"トンガ"}}"#)
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        let now = Date(timeIntervalSince1970: 1_791_932_400)   // 2026-10-13 23:00 UTC = 10/14 12:00 トンガ
+        let line = try XCTUnwrap(PhotoTrip.whenLine(spot: tonga, now: now, deviceZone: tokyo))
+        XCTAssertTrue(line.contains(L("今日", "today")), "その土地の今日の夕方: \(line)")
+        XCTAssertTrue(line.contains("18:") || line.contains("17:"), line)
+        XCTAssertTrue(line.contains(L("（現地）", " (local)")))
+    }
+
+    // MARK: - 6. 写真の編集で撮影地をスポットの名前から離したら spotId を外す
+
+    func testEditDropsSpotIdWhenThePlaceLeavesTheSpot() throws {
+        let index = [try takaya]
+        func clears(_ now: String, spots: [OfficialSpot]? = index, id: String? = "sp_0123456789ab") -> Bool {
+            EditPlaceRules.clearsSpotId(spotId: id, openedLocation: "高屋神社", currentLocation: now, spots: spots)
+        }
+        XCTAssertTrue(clears("東京タワー"))
+        XCTAssertTrue(clears(""), "撮影地を空にした")
+        XCTAssertTrue(clears("", spots: nil), "空にしたら索引が無くても外す")
+        XCTAssertFalse(clears("高屋神社, 香川"), "県を足しただけ")
+        XCTAssertFalse(clears("高屋神社"), "変えていない")
+        XCTAssertFalse(clears("東京タワー", spots: nil), "索引が読めない（分からないまま外さない）")
+        XCTAssertFalse(clears("東京タワー", spots: []), "索引にその spotId が無い")
+        XCTAssertFalse(clears("東京タワー", id: nil), "紐付けの無い写真")
+        XCTAssertTrue(EditPlaceRules.needsSpotIndexForSpotId(spotId: "sp_0123456789ab", openedLocation: "高屋神社",
+                                                             currentLocation: "東京タワー"))
+        XCTAssertFalse(EditPlaceRules.needsSpotIndexForSpotId(spotId: nil, openedLocation: "高屋神社", currentLocation: "東京"))
+
+        // 送る本文は "spotId": null（サーバーは null で外す）。外さない回はキーごと載せない
+        var patch = PhotoPatch()
+        patch.location = "東京タワー"
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(patch), as: UTF8.self).contains("spotId"))
+        patch.clearSpotId = true
+        XCTAssertTrue(String(decoding: try JSONEncoder().encode(patch), as: UTF8.self).contains("\"spotId\":null"))
+        var only = PhotoPatch()
+        only.clearSpotId = true
+        XCTAssertFalse(only.isEmpty, "外すだけの保存が空と見なされる")
+
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"e","src":"/uploads/e.jpg","location":"高屋神社","spotId":"sp_0123456789ab"}"#.utf8))
+        var fields = EditPhotoChanges.Fields(opening: photo)
+        fields.location = "東京タワー"
+        XCTAssertTrue(EditPhotoChanges.patch(photo: photo, openedAudience: .everyone, fields: fields, spots: index).clearSpotId)
+    }
+
     // MARK: - 画面のつなぎ（画面の部品は Linux で動かせないので、ソースで縛る）
 
     private func source(_ path: String) throws -> String {
@@ -145,19 +272,21 @@ final class PhotoTripTests: XCTestCase {
         // 1. 既存の索引の口で引き、spotId の無い写真は読みに行かない
         XCTAssertTrue(view.contains(".task(id: shown.spotId ?? \"\") { await loadTripSpot() }"))
         XCTAssertTrue(view.contains("await environment.spots.fetchIndexRows()"))
-        XCTAssertTrue(view.contains("tripSpot = PhotoTrip.spot(for: shown, in: rows)"))
-        let load = try XCTUnwrap(view.components(separatedBy: "private func loadTripSpot() async {").dropFirst().first)
-        let guardPart = try XCTUnwrap(load.components(separatedBy: "fetchIndexRows").first)
-        XCTAssertTrue(guardPart.contains("tripSpot = nil"), "spotId の無い写真で前の写真のスポットが残る")
-        XCTAssertTrue(view.contains("if let spot = tripSpot {\n            NavigationLink {\n                OfficialSpotView(spot: spot"),
+        // 読んだ spotId を覚え、今の写真の spotId と同じときだけ使う（値の決まりは下の `testStage…`）
+        XCTAssertTrue(view.contains("PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded)"))
+        XCTAssertTrue(view.contains("tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),"))
+        XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot {\n            NavigationLink {\n                // 写真は"),
                       "撮影スポットの行が OfficialSpotView へ行かない")
+        XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
+                      "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"photo.spotGuide\")"))
         // 見出しの撮影地の行の下・題の上（板 02 の位置）
         let heading = try XCTUnwrap(view.components(separatedBy: "private var heading: some View {").dropFirst().first)
         XCTAssertTrue(heading.prefix(200).contains("placeRow\n            spotGuideRow"))
         // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
         XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))
-        XCTAssertTrue(view.contains("PhotoTrip.destination(photo: shown, spot: tripSpot)"))
+        XCTAssertTrue(view.contains("PhotoTrip.sectionDestination(photo: shown, stage: tripStage)"))
+        XCTAssertTrue(view.contains(".id(shown.id)"), "写真を送っても前の写真の経路の仕事が残る")
         XCTAssertTrue(view.contains("tripSpot.flatMap { PhotoTrip.whenLine(spot: $0, now: Date()) }"),
                       "「いつ」は台帳のスポットのときだけ")
 

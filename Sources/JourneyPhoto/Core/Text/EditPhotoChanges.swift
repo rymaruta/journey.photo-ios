@@ -88,6 +88,9 @@ enum EditPhotoChanges {
                                                         currentLocation: f.location,
                                                         pickedCoords: f.pickedCoords != nil,
                                                         photoCoords: photo.coords, spots: spots)
+        // 撮影地を台帳のスポットの名前から離したら、スポットの紐付けも外す（2026-10-14）
+        patch.clearSpotId = EditPlaceRules.clearsSpotId(spotId: photo.spotId, openedLocation: photo.location,
+                                                        currentLocation: f.location, spots: spots)
         // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
         // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(f.tagsText)
