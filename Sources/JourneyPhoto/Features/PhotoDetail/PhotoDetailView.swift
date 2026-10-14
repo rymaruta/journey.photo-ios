@@ -75,8 +75,13 @@ struct PhotoDetailView: View {
     @State private var inspiredLoaded: InspiredBy.Loaded?
     /// 元の写真を開くときに引き当てる公開一覧（読んだときのもの・`InspiredBy.photoToOpen`）
     @State private var inspiredFeed: [Photo]?
+    /// 元の写真の ID。画面写真の試験だけ、どの写真にも見本の元の写真が付いているものとする
+    /// （`PreviewSession.showsInspiredSample`・Debug のみ。口を呼ばない・`loadInspired`）
+    private var inspiredId: String? {
+        PreviewSession.showsInspiredSample ? InspiredBy.previewSourceId : shown.inspiredBy
+    }
     private var inspiredStage: InspiredBy.Stage {
-        InspiredBy.stage(photoId: shown.id, inspiredBy: shown.inspiredBy, userId: auth.userId,
+        InspiredBy.stage(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId,
                          loaded: inspiredLoaded)
     }
     private var tripSpot: OfficialSpot? { tripStage.loaded?.spot }
@@ -252,7 +257,7 @@ struct PhotoDetailView: View {
         // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
         .task(id: shown.spotId ?? "") { await loadTripSpot() }
         // 「この写真を見て撮影」の元の写真（付いている写真・ログイン中だけ。口は認証が要る）
-        .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: shown.inspiredBy, userId: auth.userId)) {
+        .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId)) {
             await loadInspired()
         }
         // 🔴 H-3: **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真の id だけだと、
@@ -1605,19 +1610,25 @@ struct PhotoDetailView: View {
         // 🔴 **読んだ人も覚える**——ログアウトして別の人で入ると、ブロックの関係が違う。前の人の
         // 読み取りを使い回さない（`InspiredBy.Loaded.userId`）
         guard let userId = auth.userId, !userId.isEmpty,
-              let sourceId = InspiredBy.normalizedId(shown.inspiredBy) else { return }
+              let sourceId = InspiredBy.normalizedId(inspiredId) else { return }
         if let loaded = inspiredLoaded, loaded.userId == userId, loaded.photoId == photoId,
            loaded.sourceId == sourceId { return }
         let stillHere = {
             !Task.isCancelled && auth.userId == userId && shown.id == photoId
-                && InspiredBy.normalizedId(shown.inspiredBy) == sourceId
+                && InspiredBy.normalizedId(inspiredId) == sourceId
         }
         // 投げた（500・圏外）と nil（null・404）を分ける: nil は「出すものが無い」として覚える
         let source: InspiredBy.Source?
-        do {
-            source = try await environment.photos.inspiredSource(photoId: photoId)
-        } catch {
-            return
+        if PreviewSession.showsInspiredSample {
+            // 画面写真の試験だけ: 口を呼ばず、公開一覧の別の1枚を要約にする（本番に口がまだ無い間も撮れるように）
+            let feed = try? await environment.gallery.fetchPhotos()
+            source = InspiredBy.previewSample(feed: feed, excluding: photoId).map(InspiredBy.previewSource)
+        } else {
+            do {
+                source = try await environment.photos.inspiredSource(photoId: photoId)
+            } catch {
+                return
+            }
         }
         guard stillHere() else { return }
         if let source {

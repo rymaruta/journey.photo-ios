@@ -876,8 +876,10 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// **別の試験にしてある。** 投稿画面は札（sheet）で、書きかけがあると閉じるのに確認が要る——
     /// 一巡（`testCapturesEveryScreen`）の途中に置くと、閉じ損ねたときにあとの絵が全部消える。
-    /// 写真はシミュレータのライブラリの見本から1枚選ぶ。選ぶ画面（PHPicker）は別プロセスで、
-    /// 中が触れない回もある——**出なければ撮らない**（この試験の決まり）
+    /// 🔴 **写真は見本の1枚を選んだ状態で開く**（`-JPPreviewUploadSample YES`・Debug のみ・2026-10-14）。
+    /// 選ぶ画面（PHPicker）は別プロセスで、中の写真に触れない回が続き、run 428 まで 42〜45c が
+    /// 1枚も撮れていなかった。見本が入らなかった回だけ、前の道（ライブラリから1枚選ぶ）を試す。
+    /// どちらでも**出なければ撮らない**（この試験の決まり）
     func testCapturesUploadEditEntry() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -886,6 +888,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -897,6 +900,16 @@ final class ScreenshotTests: XCTestCase {
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
 
+        // 見本の1枚が帯に入れば、選ぶ画面を通らない
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        if !thumb.waitForExistence(timeout: 15) {
+            pickFirstLibraryPhoto(app)
+        }
+        captureUploadScreens(app, thumb: thumb)
+    }
+
+    /// 前の道: 帯の「追加」→「ライブラリから選ぶ」→ 1枚目（見本が入らなかった回だけ）
+    private func pickFirstLibraryPhoto(_ app: XCUIApplication) {
         // 2026-10-03: 投稿画面は**開くと写真を選ぶ画面が自動で出る**（`UploadDetails.autoOpensLibrary`）。
         // 出るのを待ち、出なかった回（帯の「追加」がまだ押せる）だけ「追加」→「ライブラリから選ぶ」。
         // 未ログインの回はログイン画面で「追加」が無いので、ここで抜ける
@@ -930,9 +943,11 @@ final class ScreenshotTests: XCTestCase {
                 break
             }
         }
+    }
 
+    /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）
+    private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
         guard thumb.waitForExistence(timeout: 15) else { return }
         let editButton = app.buttons["upload.editButton"].firstMatch
         guard editButton.waitForExistence(timeout: 5) else { return }
@@ -975,6 +990,83 @@ final class ScreenshotTests: XCTestCase {
         }
         let close = app.buttons["inspiredPicker.close"].firstMatch
         if close.exists, close.isHittable { close.tap() }
+    }
+
+    /// **「この写真を見て撮影」の見本**（2026-10-14・`-JPPreviewInspired YES`・Debug のみ）。
+    /// 元の写真の付いた写真も `GET /user/inspired` も本番にまだ無いので、見本の鍵で
+    /// 写真の詳細の行（20e）・元の写真へ（20f）・元の写真を選んだ投稿の欄（45d）を撮る。
+    /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ撮らない**
+    func testCapturesInspiredBy() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES", "-JPPreviewInspired", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+
+        // 写真の詳細（ホームの写真を名指しで押す・一巡と同じく短い引きで少しずつ送る）
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        if firstPhoto.exists, firstPhoto.isHittable {
+            firstPhoto.tap()
+            let line = app.buttons["photo.inspiredBy"].firstMatch
+            if line.waitForExistence(timeout: 10) {
+                // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
+                var linePushes = 0
+                while !line.isHittable, linePushes < 4 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    linePushes += 1
+                }
+                if line.isHittable {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    line.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                }
+            }
+        }
+
+        // 投稿画面（見本の1枚・見本の元の写真を選んだ状態）。開いた詳細は戻ってから（下のタブを出す）
+        for _ in 0..<2 where !(tabBar.exists && tabBar.isHittable) {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        guard tabBar.exists, tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
+              inspired.waitForExistence(timeout: 10) else { return }
+        for _ in 0..<3 where !inspired.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.isHittable else { return }
+        // 見本の元の写真が欄に入る（公開一覧を読むので少し待つ）
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "45d-投稿（元の写真を選んだ欄）")
     }
 
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、

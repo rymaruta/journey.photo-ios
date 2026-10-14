@@ -534,4 +534,51 @@ final class InspiredByTests: XCTestCase {
         XCTAssertTrue(InspiredBy.isAttached(attached))
         XCTAssertFalse(InspiredBy.isAttached(plain))
     }
+
+    // MARK: - 画面写真の見本（Debug の鍵）
+
+    /// 見本の鍵は**見本の利用者で入っているときだけ**効く（Release では `#if DEBUG` の外＝必ず false）
+    func testPreviewKeysOnlyForThePreviewUser() async {
+        let defaults = UserDefaults.standard
+        let keys = [PreviewSession.defaultsKey, PreviewSession.uploadSampleKey, PreviewSession.inspiredSampleKey]
+        defer { for key in keys { defaults.removeObject(forKey: key) } }
+        for key in keys { defaults.removeObject(forKey: key) }
+        XCTAssertFalse(PreviewSession.opensUploadSample)
+        XCTAssertFalse(PreviewSession.showsInspiredSample)
+        XCTAssertNil(PreviewUploadSample.capture(), "鍵の無いときは見本を入れない")
+        defaults.set(true, forKey: PreviewSession.uploadSampleKey)
+        defaults.set(true, forKey: PreviewSession.inspiredSampleKey)
+        XCTAssertFalse(PreviewSession.opensUploadSample, "見本の利用者で入っていなければ効かない")
+        XCTAssertFalse(PreviewSession.showsInspiredSample)
+        defaults.set("me", forKey: PreviewSession.defaultsKey)
+        XCTAssertTrue(PreviewSession.opensUploadSample)
+        XCTAssertTrue(PreviewSession.showsInspiredSample)
+        XCTAssertNotNil(PreviewUploadSample.capture())
+        XCTAssertEqual(PreviewSession.uploadSampleKey, "JPPreviewUploadSample")
+        XCTAssertEqual(PreviewSession.inspiredSampleKey, "JPPreviewInspired")
+    }
+
+    /// 鍵は Debug の中だけで読む（綴りを1か所に持つ）
+    func testPreviewKeysAreDebugOnly() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let session = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Auth/PreviewSession.swift"),
+                                 encoding: .utf8)
+        XCTAssertTrue(session.contains("static var opensUploadSample: Bool {\n        #if DEBUG"))
+        XCTAssertTrue(session.contains("static var showsInspiredSample: Bool {\n        #if DEBUG"))
+    }
+
+    /// 見本の元の写真は、付けられる写真で、いま開いている写真でない1枚。要約の形にして出す
+    func testPreviewSamplePicksAnotherPublicPhoto() async throws {
+        let feed = [try photo("open"), try photo("draft", published: false),
+                    try photo("other", location: "観音寺市", extra: [#""displayName":"あき""#])]
+        XCTAssertEqual(InspiredBy.previewSample(feed: feed, excluding: "open")?.id, "other")
+        XCTAssertEqual(InspiredBy.previewSample(feed: feed, excluding: nil)?.id, "open")
+        XCTAssertNil(InspiredBy.previewSample(feed: nil, excluding: nil))
+        let src = InspiredBy.previewSource(try XCTUnwrap(InspiredBy.previewSample(feed: feed, excluding: "open")))
+        XCTAssertEqual(src.id, "other")
+        XCTAssertEqual(src.authorName, "あき")
+        XCTAssertEqual(src.location, "観音寺市")
+        XCTAssertNotNil(InspiredBy.normalizedId(InspiredBy.previewSourceId), "見本の印も本物と同じ段階の道を通る")
+    }
 }

@@ -263,6 +263,24 @@ enum InspiredBy {
             : L("この写真を見て撮影: \(detail)", "Inspired by: \(detail)")
     }
 
+    // MARK: - 画面写真の見本（`PreviewSession.showsInspiredSample`・Debug のみ）
+
+    /// 見本のときに写真の元の写真の ID として使う印（本物の ID の形には当たらない綴りにしない——
+    /// `normalizedId` を通る形にして、段階の決まりを本物と同じ道で通す）
+    static let previewSourceId = "preview-inspired-sample"
+
+    /// 見本の元の写真: 公開一覧のうち、付けられる写真で `excluding`（いま開いている写真）でない最初の1枚
+    static func previewSample(feed: [Photo]?, excluding photoId: String?) -> Photo? {
+        feed?.first { canAttach($0) && $0.id != photoId }
+    }
+
+    /// 写真を `GET /user/inspired` の要約の形にする（見本だけ・口を呼ばない）
+    static func previewSource(_ photo: Photo) -> Source {
+        Source(id: photo.id, title: photo.title, src: photo.src, thumbSrc: photo.thumbSrc,
+               location: photo.location, userId: photo.userId ?? photo.uploadedBy,
+               displayName: photo.displayName, username: nil)
+    }
+
     // MARK: - 元の写真を選ぶ（投稿の画面）
 
     /// 選ぶ先の棚

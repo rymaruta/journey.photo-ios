@@ -62,7 +62,9 @@ struct UploadView: View {
          initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
          initialCapture: CameraCapture? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
-        self.initialCapture = initialCapture
+        // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
+        // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
+        self.initialCapture = initialCapture ?? PreviewUploadSample.capture()
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -314,6 +316,15 @@ struct UploadView: View {
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        // 画面写真の試験だけ: 公開一覧の1枚を元の写真に選んだ状態にする（`PreviewSession.showsInspiredSample`・
+        // Debug のみ。画面の状態だけで、控えにもサーバーにも書かない）
+        .task {
+            guard PreviewSession.showsInspiredSample, model.inspired == nil,
+                  let feed = try? await environment.gallery.fetchPhotos(),
+                  let sample = InspiredBy.previewSample(feed: feed, excluding: nil),
+                  model.inspired == nil else { return }
+            model.inspired = InspiredBy.Pick(photo: sample)
+        }
         // 2026-10-03 判断: **開いたらすぐ写真を選ぶ画面へ**（「追加」→「ライブラリから選ぶ」の2手を省く）。
         // 一度だけ。旅の写真から来た回（もう並んでいる）は開かない。カメラは帯の「追加」に残る
         .task {
