@@ -496,13 +496,9 @@ struct MyPageView: View {
 
     /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）
     private static let statTapSlack: CGFloat = 5
-    /// 旅の実績の札の同じ量（上下同じ）。数の札の張り出しと足して間の 12pt に収まる量。
-    /// **上下で変えない**——変えると、間の「·」（素の字）だけが項目の字とずれる
-    private static let recordTapSlack: CGFloat = 6
 
-    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を
-    /// **小さな1行**で出す（整理案 05c・2026-09-26）。以前は幅いっぱいの
-    /// 帯を2本重ねていて、自分の写真が画面の下へ押し出されていた。
+    /// 旅の記録（モック2-3 → 案 H1「星図」2026-10-14）。**訪れた国・地域**と**写真をつないだ距離**、
+    /// その距離の元になった**写真をつないだ線**（`TravelRecordView`）。
     ///
     /// どちらも**数えた値**で、どちらも**そのままの意味ではない**ので、
     /// それぞれ押すと計算の中身が出る。**0 のものは出さない**——
@@ -510,32 +506,17 @@ struct MyPageView: View {
     /// 「行っていない」と読ませてしまう
     @ViewBuilder
     private var travelRecord: some View {
-        let countries = VisitedCountries.count(in: model.photos)
+        let countries = TravelRoute.countriesInOrder(model.photos)
         let km = TravelDistance.total(of: model.photos)
-        if countries > 0 || km > 0 {
-            // 板: 「訪れた国・地域 00 · 写真をつないだ距離 000 km」（12px・間 6px）。
-            // **1行に入らなければ2行に分ける**（幅の狭い端末・大きい文字）。以前は字を 0.8 まで
-            // 縮めて1行に押し込み、12pt の字が 10pt を切っていた
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    if countries > 0 { countriesItem(countries) }
-                    if countries > 0 && km > 0 {
-                        Text("·")
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                            .accessibilityHidden(true)
-                    }
-                    if km > 0 { distanceItem(km) }
-                }
-                // 押せる範囲（上下に張り出した 44pt）が重ならない間を空ける
-                VStack(alignment: .leading, spacing: 2 * Self.recordTapSlack) {
-                    if countries > 0 { countriesItem(countries) }
-                    if km > 0 { distanceItem(km) }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        if !countries.isEmpty || km > 0 {
+            TravelRecordView(kilometers: km,
+                             countries: countries,
+                             coordinates: TravelRoute.coordinates(of: model.photos),
+                             firstYear: TravelRoute.firstYear(of: model.photos),
+                             onDistanceTap: { showDistanceNote = true },
+                             onCountriesTap: { showCountriesNote = true })
             .padding(.horizontal, 20)
-            // 知らせは並べ方の外に付ける（2つの並べ方のどちらを選んでも1つ）
+            .padding(.top, 6)
             .alert(L("訪れた国・地域", "Countries and regions"),
                    isPresented: $showCountriesNote) {
                 Button(Labels.Common.close, role: .cancel) {}
@@ -552,40 +533,6 @@ struct MyPageView: View {
                 Text(distanceNote)
             }
         }
-    }
-
-    private func countriesItem(_ countries: Int) -> some View {
-        recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
-            showCountriesNote = true
-        }
-    }
-
-    private func distanceItem(_ km: Double) -> some View {
-        recordItem(label: L("写真をつないだ距離", "Distance between photos"),
-                   value: "\(TravelDistance.formatted(km)) km") {
-            showDistanceNote = true
-        }
-    }
-
-    /// 1行の中の1項目。**押せる高さは 44pt**（見た目は小さな字のまま）
-    private func recordItem(label: String, value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    // **縮めない**（12pt を割る）。1行に入らなければ `travelRecord` が2行に分ける
-                Text(value)
-                    .font(JPFont.mono(12, relativeTo: .caption))
-                    .foregroundStyle(Color.white)
-            }
-            .frame(minHeight: WebTheme.minTapTarget)
-            .contentShape(Rectangle())
-        }
-        // 数の札と同じく、押せる高さは 44pt のまま並びの上では詰める
-        .padding(.vertical, -Self.recordTapSlack)
-        .buttonStyle(.plain)
-        .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
     }
 
     /// **「旅した距離」とだけ書かない。** 実際に歩いた・乗った距離だと
