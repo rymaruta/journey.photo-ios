@@ -363,8 +363,9 @@ struct StoryTextTypingView: View {
             .foregroundStyle(.white)
             .fixedSize()
             .padding(.horizontal, 12)
-            .frame(minHeight: 36)
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.7), lineWidth: 1.5))
+            // v2 StoryComposerText のチップ（32・白 12% の地・縁なし）。当たりは 44
+            .frame(minHeight: Self.chipHeight)
+            .background(Color.white.opacity(Self.chipFill), in: Capsule())
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())
         }
@@ -402,13 +403,14 @@ struct StoryTextTypingView: View {
         return Button {
             overlay = StorySimpleRules.choose(ink, for: overlay)
         } label: {
+            // v2: 30 の丸・縁は白 50%。選んだ色は白の縁に、外側へ黒 60% の 3 と白の 2 の輪（板の box-shadow）
             Circle()
                 .fill(StoryCanvas.color(ink))
-                .frame(width: 26, height: 26)
-                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
-                                               lineWidth: selected ? 3 : 2))
-                .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
-                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: Self.swatchSize, height: Self.swatchSize)
+                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5), lineWidth: 2))
+                .overlay(Circle().strokeBorder(Color.black.opacity(selected ? 0.6 : 0), lineWidth: 3).padding(-3))
+                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0), lineWidth: 2).padding(-5))
+                // 見た目の丸は 30、押せる所は 44×44（入らなければ横に流す）
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
@@ -424,15 +426,20 @@ struct StoryTextTypingView: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .overlay(Circle().strokeBorder(Color.white.opacity(other ? 1 : 0.5), lineWidth: other ? 3 : 1.5))
-                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: Self.swatchSize, height: Self.swatchSize)
+                .overlay(Circle().strokeBorder(Color.white.opacity(other ? 1 : 0.5), lineWidth: other ? 3 : 2))
+                // 見た目の丸は 30、押せる所は 44×44（入らなければ横に流す）
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("ほかの色", "More colors"))
     }
+
+    /// v2 StoryComposerText の寸法（チップ 32・白 12%・色の丸 30）
+    static let chipHeight: CGFloat = 32
+    static let chipFill = 0.12
+    static let swatchSize: CGFloat = 30
 
     /// 消す（ゴミ箱・危険の赤 `WebTheme.danger`）
     private var deleteButton: some View {

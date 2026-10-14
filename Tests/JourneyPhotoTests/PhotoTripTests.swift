@@ -360,8 +360,15 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(spot.contains("UploadView(spot: UploadSpotTarget(spot), onPosted:"))
         XCTAssertTrue(spot.contains("}, initialCapture: pendingCapture) }"), "撮った1枚がスポットの投稿に入らない")
         let guide = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
-        XCTAssertTrue(guide.contains("} else if onPost != nil {\n                    // 撮影スポットの作例から開いたとき"),
-                      "作例ありの撮る画面に「投稿」が無い")
-        XCTAssertTrue(guide.contains("HStack(spacing: 12) { thumbButton; postButton }"))
+        // 2026-10-14: v2 で下の並びを3つ割りにした（`StoryV2DesignTests.testComposeGuideControls`）。
+        // 作例ありの回は、左の枠にサムネと「投稿」がこの順に並ぶ
+        let branch = try XCTUnwrap(guide.range(of: "} else if onPost != nil {\n                        // 撮影スポットの作例から開いたとき"),
+                                   "作例ありの撮る画面に「投稿」が無い")
+        let rest = guide[branch.upperBound...]
+        let thumb = try XCTUnwrap(rest.range(of: "thumbButton\n"))
+        let post = try XCTUnwrap(rest.range(of: "postButton\n"))
+        let elseBranch = try XCTUnwrap(rest.range(of: "} else {"))
+        XCTAssertTrue(thumb.lowerBound < post.lowerBound && post.lowerBound < elseBranch.lowerBound,
+                      "作例ありの回にサムネと「投稿」が並んでいない")
     }
 }

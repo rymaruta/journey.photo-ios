@@ -30,24 +30,27 @@ struct PostSheet: View {
     }
 
     var body: some View {
-        // 板 21: 下から出る短いシート。左に明朝の見出し、右に ×、3枚の札
-        VStack(alignment: .leading, spacing: 12) {
+        // v2 PostSheet: 下から出る短いシート。左に明朝 26 の見出し、右に × の丸、
+        // 4つの行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(L("投稿する", "Create"))
-                    .font(JPFont.display(24, relativeTo: .title2))
+                    .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(WebTheme.foreground)
-                        .webTappable()
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .background(Color.white.opacity(0.08), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.close)
             }
-            .padding(.leading, 4)
+            .padding(.top, JPSpace.s)
+            .padding(.bottom, JPSpace.xxs)
             choice(
                 thumb: thumbs.first,
                 title: L("写真を投稿", "Post a photo"),
@@ -69,7 +72,7 @@ struct PostSheet: View {
                 systemImage: "suitcase",
                 kind: .trip
             )
-            // 2026-10-10: 板 PostSheet に無い4つ目。板の札と同じ形で、題の横に合図の「PRO」（真鍮・黒地の上）
+            // 2026-10-10: 4つ目。題の横に合図の「PRO」（真鍮の縁と字・黒地の上）。印も真鍮の線（v2）
             choice(
                 thumb: thumbs.dropFirst(3).first,
                 title: L("構図を重ねて撮る", "Shoot with a composition guide"),
@@ -77,16 +80,17 @@ struct PostSheet: View {
                           "Overlay thirds, golden ratio and more on the camera, then post."),
                 systemImage: "camera.viewfinder",
                 kind: .composition,
-                badge: "PRO"
+                badge: "PRO",
+                last: true
             )
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-        // 文字を大きくしたときに切れないよう、全画面にも伸ばせる。札が4枚になった（2026-10-10）ので 1枚ぶん（92＋12）高く
-        .presentationDetents([.height(528), .large])
+        .padding(.horizontal, JPSpace.l)
+        // 文字を大きくしたときに切れないよう、全画面にも伸ばせる
+        .presentationDetents([.height(Self.sheetHeight), .large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(Self.sheetBackground)
+        .presentationBackground(WebTheme.sheet)
+        .presentationCornerRadius(Self.sheetRadius)
         .task {
             // **自分が最近出した写真**（`PostSheetThumbs`）。取れない・まだ無いときは
             // 印だけの無地のまま——**他人の写真で埋めない**
@@ -113,20 +117,31 @@ struct PostSheet: View {
         }
     }
 
-    /// シートの地（板: #0d0d0e。通報のシートと同じ）
-    private static let sheetBackground = Color(red: 13 / 255, green: 13 / 255, blue: 14 / 255)
+    /// シートの高さ（見出し 68 ＋ 行 4 本 × 約 92 ＋ 下の余白）。札から行にして詰まった
+    static let sheetHeight: CGFloat = 480
+    /// シートの上の角（v2 PostSheet の 28）
+    static let sheetRadius: CGFloat = 28
+    /// 行の印の札（板 52・角 16）
+    static let tileSize: CGFloat = 52
+    static let tileRadius: CGFloat = JPRadius.l
+    /// 印の札の地（板の `#1A1A1C`）。写真が無いときだけ見える
+    @MainActor static var tileFill: Color { RaisedTile.fill }
 
-    /// 板: 最小92pt・角丸18・地7%・縁12%、左に 52pt の角丸14 の絵、右に矢印
+    /// 1つの行き先（v2: 左に 52 の角丸の札、明朝 18 の題と 13 の説明、行の間は白 8% の線）。
+    ///
+    /// 2026-10-14 判断: **札の中の自分の写真は残す。** v2 の板は印だけの札だが、札に敷くのは
+    /// 「その人自身が最近出した写真」という owner の決まり（`PostSheetThumbs`）があり、板より優先した。
+    /// 写真の上の印は白（写真の上に真鍮を置かない）。写真が無いときだけ構図の印を真鍮にする
     private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
-                        badge: String? = nil) -> some View {
+                        badge: String? = nil, last: Bool = false) -> some View {
         Button {
             // 選択を先に記録し、シートが閉じきった後に呼び手が次の画面を開く
             onSelect(kind)
             dismiss()
         } label: {
-            HStack(spacing: 14) {
-                Color.white.opacity(0.10)
-                    .frame(width: 52, height: 52)
+            HStack(spacing: JPSpace.m) {
+                Self.tileFill
+                    .frame(width: Self.tileSize, height: Self.tileSize)
                     .overlay {
                         // 読めたときだけ敷く（読み込み中の回転や壊れた記号を出さない）
                         if let thumb {
@@ -139,44 +154,52 @@ struct PostSheet: View {
                     }
                     .overlay {
                         Image(systemName: systemImage)
-                            .font(.system(size: 22))
-                            .foregroundStyle(WebTheme.foreground)
-                            .shadow(color: Color.black.opacity(0.8), radius: 3, x: 0, y: 1)
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(Self.iconColor(hasPhoto: thumb != nil, pro: badge != nil))
+                            .shadow(color: Color.black.opacity(thumb == nil ? 0 : 0.8), radius: 3, x: 0, y: 1)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .clipShape(RoundedRectangle(cornerRadius: Self.tileRadius))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: JPSpace.xs) {
                         Text(title)
-                            .font(.callout.weight(.semibold))
+                            .font(JPFont.rowTitle)
                             .foregroundStyle(WebTheme.text)
                         if let badge {
+                            // v2: PRO の合図は真鍮の縁と字（黒地の上・Components 03）
                             Text(badge)
                                 .jpEyebrow()
                                 .foregroundStyle(WebTheme.accent)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 1)
+                                .overlay(Capsule().strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
                                 .accessibilityLabel(L("Pro の機能", "Pro feature"))
                         }
                     }
                     Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .accessibilityHidden(true)
             }
-            .padding(16)
-            // 押せる面を大きく取る（Web 側も 88px 以上で固定している）
-            .frame(minHeight: 92)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WebTheme.border, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .padding(.vertical, 14)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .overlay(alignment: .bottom) {
+                if !last {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JPRowButtonStyle())
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier("post.choice.\(Self.identifier(kind))")
+    }
+
+    /// 印の色。**写真の上は白、写真が無い札の上の構図の印だけ真鍮**（v2 の板の真鍮の線・黒い札の上）
+    @MainActor static func iconColor(hasPhoto: Bool, pro: Bool) -> Color {
+        !hasPhoto && pro ? WebTheme.accent : WebTheme.foreground
     }
 }

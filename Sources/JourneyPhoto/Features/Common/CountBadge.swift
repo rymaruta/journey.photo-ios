@@ -10,13 +10,21 @@ import SwiftUI
 /// ——内側に引くと真鍮が 16 に痩せる
 struct CountBadge: View {
     let count: Int
+    /// これを超えたら「99+」の形で出す（ストーリーの返信の数・2026-10-14）。無ければそのまま
+    var maximum: Int? = nil
 
     /// 真鍮の丸の高さ・最小幅
     nonisolated static let size: CGFloat = 20
     nonisolated static let horizontalPadding: CGFloat = 6
 
+    /// 出す字（`maximum` を超えたら「99+」）
+    nonisolated static func text(count: Int, maximum: Int?) -> String {
+        if let maximum, count > maximum { return "\(maximum)+" }
+        return "\(count)"
+    }
+
     var body: some View {
-        Text("\(count)")
+        Text(Self.text(count: count, maximum: maximum))
             .font(JPFont.number(JPTypeScale.caption, weight: .bold))
             .foregroundStyle(WebTheme.accentText)
             .padding(.horizontal, Self.horizontalPadding)
