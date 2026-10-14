@@ -89,6 +89,11 @@ enum PhotoTrip {
         let index: [OfficialSpot]
         /// スポットの頁に渡す公開写真（読めなければ nil＝「まだありません」を言わない）
         let photos: [Photo]?
+
+        /// 写真を後から足す（索引を読んだ時点で段を出し、一覧の取り直しを待たない）
+        func withPhotos(_ photos: [Photo]) -> Loaded {
+            Loaded(spotId: spotId, spot: spot, index: index, photos: photos)
+        }
     }
 
     /// 今の写真に対する読み込みの段階

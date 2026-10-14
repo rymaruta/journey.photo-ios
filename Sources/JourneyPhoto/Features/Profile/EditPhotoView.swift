@@ -560,10 +560,9 @@ struct EditPhotoView: View {
         // **読めなかった（nil）ときは座標を消さない**（分からないまま消すと、サーバーのピンが消える）
         let spots = await PlaceCoordsRule.lookup(
             current: [],
-            needed: EditPlaceRules.needsSpotIndex(openedLocation: photo.location, currentLocation: location,
-                                                  pickedCoords: pickedCoords != nil, photoCoords: photo.coords)
-                || EditPlaceRules.needsSpotIndexForSpotId(spotId: photo.spotId, openedLocation: photo.location,
-                                                          currentLocation: location),
+            needed: EditPlaceRules.needsIndexBeforeSave(openedLocation: photo.location, currentLocation: location,
+                                                        pickedCoords: pickedCoords != nil, photoCoords: photo.coords,
+                                                        spotId: photo.spotId),
             fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
         let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields, spots: spots)
 

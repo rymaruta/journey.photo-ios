@@ -1528,14 +1528,22 @@ struct PhotoDetailView: View {
     /// 取り消された回は書かない（後の回が入れた行き先を消さない）
     private func loadTripSpot() async {
         guard let id = PhotoTrip.normalizedSpotId(shown.spotId) else { return }
-        // 既にこの `spotId` で読んであれば読み直さない（大きく見る画面を閉じた・戻ってきた）
-        if tripLoaded?.spotId == id { return }
-        let rows = await environment.spots.fetchIndexRows()
-        // スポットの頁の「この撮影スポットの写真」に渡す公開写真（控えがあれば通信しない）
-        let photos = try? await environment.gallery.fetchPhotos()
-        guard !Task.isCancelled, PhotoTrip.normalizedSpotId(shown.spotId) == id else { return }
-        tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),
-                                      index: rows ?? [], photos: photos)
+        let stillHere = { !Task.isCancelled && PhotoTrip.normalizedSpotId(shown.spotId) == id }
+        // 既にこの `spotId` で索引を読んであれば、索引は読み直さない（大きく見る画面を閉じた・戻ってきた）
+        if tripLoaded?.spotId != id {
+            // 🔴 **読めなかった（nil）回は覚えない**——覚えると同じ画面で読み直さない。
+            // 入れなければ段は「読み込み中」のまま（行きたいを出さない）で、次の `.task` で読み直す
+            guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
+            // **索引を読んだ時点で段を出す**（写真の一覧の取り直しを待たない）。写真は後から足す
+            tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),
+                                          index: rows, photos: nil)
+        }
+        guard let loaded = tripLoaded, loaded.spotId == id, loaded.photos == nil else { return }
+        // スポットの頁の「この撮影スポットの写真」に渡す公開写真（控えがあれば通信しない）。
+        // 取れるまでは `photosKnown: false`（「まだありません」を言わない）
+        guard let photos = try? await environment.gallery.fetchPhotos(), stillHere(),
+              tripLoaded?.spotId == id else { return }
+        tripLoaded = loaded.withPhotos(photos)
     }
 
     /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**

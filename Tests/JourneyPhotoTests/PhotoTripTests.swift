@@ -174,6 +174,12 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertEqual(same.loaded?.spot?.slug, "takaya-shrine")
         let here = try photo("s", location: "高屋神社", spotId: "sp_0123456789ab")
         XCTAssertEqual(PhotoTrip.sectionDestination(photo: here, stage: same)?.wishKey, "SPOT-takaya-shrine")
+        // 写真は後から足す（段は索引を読んだ時点で出る）
+        XCTAssertNil(a.photos)
+        let withPhotos = a.withPhotos([here])
+        XCTAssertEqual(withPhotos.photos?.map(\.id), ["s"])
+        XCTAssertEqual(withPhotos.spotId, a.spotId)
+        XCTAssertEqual(withPhotos.spot?.slug, "takaya-shrine")
         // 読み終えたが索引に無い → 撮影地に戻る（スポットの行・経路・時刻は出ない）
         let missing = PhotoTrip.Loaded(spotId: "sp_ffffffffffff", spot: nil, index: [], photos: nil)
         let fallback = PhotoTrip.sectionDestination(photo: next, stage: PhotoTrip.stage(photoSpotId: next.spotId, loaded: missing))
@@ -238,9 +244,36 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertFalse(clears("東京タワー", spots: nil), "索引が読めない（分からないまま外さない）")
         XCTAssertFalse(clears("東京タワー", spots: []), "索引にその spotId が無い")
         XCTAssertFalse(clears("東京タワー", id: nil), "紐付けの無い写真")
+        // 開いたときの撮影地にもスポットの名前が無かった（Web で書き換えた・台帳の名前が変わった）なら外さない
+        XCTAssertFalse(EditPlaceRules.clearsSpotId(spotId: "sp_0123456789ab", openedLocation: "香川の神社",
+                                                   currentLocation: "東京タワー", spots: index),
+                       "触っていない紐付けが外れる")
+        XCTAssertFalse(EditPlaceRules.clearsSpotId(spotId: "sp_0123456789ab", openedLocation: nil,
+                                                   currentLocation: "東京タワー", spots: index))
+        XCTAssertTrue(EditPlaceRules.clearsSpotId(spotId: "sp_0123456789ab", openedLocation: "香川の神社",
+                                                  currentLocation: "", spots: nil), "空にしたら外す（場所を伏せた）")
+
         XCTAssertTrue(EditPlaceRules.needsSpotIndexForSpotId(spotId: "sp_0123456789ab", openedLocation: "高屋神社",
                                                              currentLocation: "東京タワー"))
         XCTAssertFalse(EditPlaceRules.needsSpotIndexForSpotId(spotId: nil, openedLocation: "高屋神社", currentLocation: "東京"))
+        XCTAssertFalse(EditPlaceRules.needsSpotIndexForSpotId(spotId: "sp_0123456789ab", openedLocation: "高屋神社",
+                                                              currentLocation: "  "), "空にしただけで索引を待たせる")
+
+        // 保存の前に索引を待つか（`EditPhotoView` はこれだけを見る）: 座標の無い写真でも、紐付けのある
+        // 写真の撮影地を書き換えたら待つ（待たないと spots が空で、外すべき紐付けが残る）
+        XCTAssertTrue(EditPlaceRules.needsIndexBeforeSave(openedLocation: "高屋神社", currentLocation: "東京タワー",
+                                                          pickedCoords: false, photoCoords: nil, spotId: "sp_0123456789ab"))
+        XCTAssertFalse(EditPlaceRules.needsIndexBeforeSave(openedLocation: "高屋神社", currentLocation: "東京タワー",
+                                                           pickedCoords: false, photoCoords: nil, spotId: nil))
+        XCTAssertTrue(EditPlaceRules.needsIndexBeforeSave(openedLocation: "高屋神社", currentLocation: "東京タワー",
+                                                          pickedCoords: false, photoCoords: Photo.Coords(lat: 34.1, lng: 133.6),
+                                                          spotId: nil), "座標の決まりの分も残っている")
+        XCTAssertFalse(EditPlaceRules.needsIndexBeforeSave(openedLocation: "高屋神社", currentLocation: "",
+                                                           pickedCoords: false, photoCoords: nil, spotId: "sp_0123456789ab"))
+        let edit = try source("Sources/JourneyPhoto/Features/Profile/EditPhotoView.swift")
+        XCTAssertTrue(edit.contains("needed: EditPlaceRules.needsIndexBeforeSave(openedLocation: photo.location, currentLocation: location,"),
+                      "写真の編集の保存が、紐付けを外すのに要る索引を待っていない")
+        XCTAssertTrue(edit.contains("spotId: photo.spotId),"))
 
         // 送る本文は "spotId": null（サーバーは null で外す）。外さない回はキーごと載せない
         var patch = PhotoPatch()
@@ -274,7 +307,11 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(view.contains("await environment.spots.fetchIndexRows()"))
         // 読んだ spotId を覚え、今の写真の spotId と同じときだけ使う（値の決まりは下の `testStage…`）
         XCTAssertTrue(view.contains("PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded)"))
-        XCTAssertTrue(view.contains("tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),"))
+        XCTAssertTrue(view.contains("tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),\n                                          index: rows, photos: nil)"),
+                      "索引を読んだ時点で段を出していない（写真の一覧を待っている）")
+        XCTAssertTrue(view.contains("guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }"),
+                      "索引が読めなかった回を読み終わりとして覚えている")
+        XCTAssertTrue(view.contains("tripLoaded = loaded.withPhotos(photos)"))
         XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot {\n            NavigationLink {\n                // 写真は"),
                       "撮影スポットの行が OfficialSpotView へ行かない")
         XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
