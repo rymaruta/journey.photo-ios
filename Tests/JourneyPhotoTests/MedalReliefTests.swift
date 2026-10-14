@@ -76,10 +76,11 @@ final class MedalReliefTests: XCTestCase {
                                      bevelWidth: face.bevelWidth, bevelDepth: face.bevelDepth)
     }
 
-    /// 🔴 **強さは1つの定数で決まる。既定は 4**（1 では前の作りと見分けがつかなかった・Mac run 427）。
+    /// 🔴 **強さは1つの定数で決まる。既定は 2.5**（owner が選んだ・Mac run 430。1 では前の作りと
+    /// 見分けがつかず（run 427）、4 からはにじみが出た）。
     /// 浮き彫りと網目を捨てる幅は比例、傾きの上限と面取りは平方根に比例（強くしても急になりすぎない）
     func testSingleAmountScalesEverything() {
-        XCTAssertEqual(MedalRelief.amount, 4)
+        XCTAssertEqual(MedalRelief.amount, 2.5)
         XCTAssertGreaterThan(MedalRelief.faceRelief, 0, "表と裏に浮き彫りが無い（のっぺりに戻る）")
         let one = MedalRelief.face(amount: 1), four = MedalRelief.face(amount: 4)
         XCTAssertEqual(four.relief, one.relief * 4, accuracy: 1e-12)
@@ -121,7 +122,8 @@ final class MedalReliefTests: XCTestCase {
         var steepest = 0.0
         for y in 12..<(n - 12) { for x in 12..<(n - 12) { steepest = max(steepest, slope(pixel(map, x, y, width: n))) } }
         XCTAssertLessThanOrEqual(steepest, face.maxSlope + 0.03)
-        XCTAssertGreaterThan(steepest, face.maxSlope * 0.7, "浮き彫りが弱すぎて見えない")
+        // 既定 2.5 ではこの 8px の帯は上限の約 0.69 倍まで傾く（4 のときは上限に届いていた）
+        XCTAssertGreaterThan(steepest, face.maxSlope * 0.6, "浮き彫りが弱すぎて見えない")
     }
 
     /// 🔴 **細かい網目は盛り上げない**（1px の格子はぼかしで消える・10-09 の「気持ち悪い」の元）
