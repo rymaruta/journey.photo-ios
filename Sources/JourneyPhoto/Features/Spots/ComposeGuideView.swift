@@ -44,7 +44,7 @@ struct ComposeGuideView: View {
     /// 撮影地の名前（作例なしの入口は nil）
     let spotName: String?
     let samples: [SpotSample]
-    /// 撮った1枚を投稿へ進める（投稿のシートの入口だけ）。nil なら「投稿」を出さない
+    /// 撮った1枚を投稿へ進める（投稿のシートの入口・撮影スポットの作例の入口）。nil なら「投稿」を出さない
     let onPost: ((CameraCapture) -> Void)?
 
     @StateObject private var camera = ComposeCamera()
@@ -392,13 +392,27 @@ struct ComposeGuideView: View {
                 if reference.source == .library { libraryAdjustments }
             }
             HStack {
-                if withoutSamples { postButton } else { thumbButton }
+                if withoutSamples {
+                    postButton
+                } else if onPost != nil {
+                    // 撮影スポットの作例から開いたとき（2026-10-14）: 作例のサムネの隣に「投稿」。
+                    // 撮った1枚をそのスポットの投稿へ進める（`OfficialSpotView` が `onPost` を渡す）
+                    HStack(spacing: 12) { thumbButton; postButton }
+                } else {
+                    thumbButton
+                }
                 Spacer()
                 shutter
                 Spacer()
                 if withoutSamples {
                     // シャッターを真ん中に保つための空き（右の切り替えと同じ幅）
                     Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
+                } else if onPost != nil {
+                    // 左に「投稿」を足した分、右にも同じ幅の空きを置いてシャッターを真ん中に保つ
+                    HStack(spacing: 12) {
+                        Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
+                        switchButton
+                    }
                 } else {
                     switchButton
                 }
@@ -598,7 +612,8 @@ struct ComposeGuideView: View {
         .accessibilityIdentifier("composeGuide.thumb")
     }
 
-    /// 左（作例なしの入口）: 撮った1枚を投稿へ進める（52pt・角 10）。撮るまでは空き。
+    /// 左（作例なしの入口・撮影スポットの作例から開いたときはサムネの隣）: 撮った1枚を投稿へ進める
+    /// （52pt・角 10）。撮るまでは空き。
     /// 写真の無い黒い面の上の押せるものなので、印は真鍮（CLAUDE.md の owner の好み）
     @ViewBuilder
     private var postButton: some View {

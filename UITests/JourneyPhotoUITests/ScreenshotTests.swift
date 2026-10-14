@@ -746,6 +746,38 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 2)
             }
 
+            // **写真から、次の旅へ**（2026-10-14）: 行き先の段（行きたい・経路・いつ）。
+            // 撮影地の無い写真では出ない——**出なければ撮らない**（この試験の決まり）。
+            // 少しずつ送って見える位置まで出す（上限あり）
+            let trip = app.descendants(matching: .any).matching(identifier: "photo.trip").firstMatch
+            if trip.waitForExistence(timeout: 3) {
+                var tripPushes = 0
+                while !app.buttons["photo.trip.wish"].firstMatch.isHittable, tripPushes < 3 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    tripPushes += 1
+                }
+                let hasSpot = app.buttons["photo.trip.directions"].firstMatch.exists
+                shoot(app, "20c-写真の詳細（行き先\(hasSpot ? "・撮影スポット" : "")）")
+                // 撮影スポットの付いた写真なら、題の上の「撮影スポット」の行からスポットの頁へ（本番にまだ少ない・出なければ撮らない）
+                let guide = app.buttons["photo.spotGuide"].firstMatch
+                if guide.exists {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    if guide.isHittable {
+                        guide.tap()
+                        if app.buttons["spot.official.wish"].firstMatch.waitForExistence(timeout: 10) {
+                            Thread.sleep(forTimeInterval: 2)
+                            shoot(app, "20d-写真から撮影スポットへ")
+                        }
+                        app.navigationBars.buttons.firstMatch.tap()
+                        Thread.sleep(forTimeInterval: 2)
+                    }
+                }
+            }
+
             // **人のページ**（モック2 と同じ部品で組んである）。
             //
             // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の

@@ -757,7 +757,8 @@ struct UploadView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
                     PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
-                                     near: item.prepared.coords, offersSpots: true)
+                                     near: item.prepared.coords, offersSpots: true,
+                                     pickedSpot: $item.pickedSpot)
                     // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
                     if UploadDetails.showsSampleNote(location: item.location, published: model.published,
                                                      audience: model.audience) {

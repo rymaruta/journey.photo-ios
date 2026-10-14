@@ -265,7 +265,7 @@ final class ComposeGuideTests: XCTestCase {
                       "撮る画面に Launch の並びと始める番号を渡していない")
         XCTAssertEqual(launcher.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
         XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "撮影スポットの頁が直に開いている")
-        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name)"),
+        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name,"),
                       "撮影スポットの頁が共通の部品で開いていない")
         // 頼みは開く時点の帯の並びで作る
         XCTAssertTrue(spot.contains("ComposeGuide.Launch(sample: sample, samples: shownSamples)"), "帯の並びで開いていない")

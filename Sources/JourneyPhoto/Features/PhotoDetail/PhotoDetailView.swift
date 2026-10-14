@@ -64,6 +64,13 @@ struct PhotoDetailView: View {
     @State private var spotShelf = SpotLeadShelf()
     @State private var spotReloads = 0
     private var spotLead: PhotoDetailSpotLead? { spotShelf.value }
+    /// 写真に紐づいた台帳の撮影スポット（`Photo.spotId`・2026-10-14）と、その頁に渡す索引。
+    /// `spotId` の無い写真・索引が読めない・見つからないときは nil（スポットの行も「いつ」も出さない）
+    /// **どの `spotId` で読んだかを持つ**（`PhotoTrip.Loaded`）。写真を送った直後は前の写真の分が
+    /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
+    @State private var tripLoaded: PhotoTrip.Loaded?
+    private var tripStage: PhotoTrip.Stage { PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded) }
+    private var tripSpot: OfficialSpot? { tripStage.loaded?.spot }
     /// フォローしているか。**分からない間は nil**——ボタンを出さない
     /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
     @State private var isFollowing: Bool?
@@ -233,6 +240,8 @@ struct PhotoDetailView: View {
                                               viewerClosedAt: viewerClosedAt, now: Date()).read else { return }
             await loadSpotLead()
         }
+        // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
+        .task(id: shown.spotId ?? "") { await loadTripSpot() }
         // 🔴 H-3: **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真の id だけだと、
         // 撮影地を直して保存しても近くの写真が前の場所のまま残った（画面を出れば直った）。
         // 答えを入れるのは画面に出ている間だけ（`loadNearby`・`NearbyShelf`）。
@@ -529,6 +538,7 @@ struct PhotoDetailView: View {
                 authorRow
             }
             socialBar(proxy)
+            tripSection
             Group {
                 if let exif = shown.exif {
                     ExifRow(exif: exif)
@@ -552,6 +562,7 @@ struct PhotoDetailView: View {
     private var heading: some View {
         VStack(alignment: .leading, spacing: 8) {
             placeRow
+            spotGuideRow
             if !shown.displayTitle.isEmpty {
                 // **題は写真の次に来る主役。** 明朝 32pt（板 02・文字サイズの設定で伸びる）。
                 // 行送りは書体の自然値（1.45em）で足りるので、足さない
@@ -646,6 +657,55 @@ struct PhotoDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("photo.placeLink")
             }
+        }
+    }
+
+    /// 「撮影スポット · [名前] ›」（板 02 の `hasSpotGuide` の行・2026-10-14）。**`spotId` で台帳の行が
+    /// 引けたときだけ**出し、台帳の撮影スポットの頁（`OfficialSpotView`）へ行く。
+    ///
+    /// 見た目は板のまま: 写真の裾に乗るので白（写真の上は白だけ）・12pt・下線（白 60%）・影。
+    /// 当たりは 44pt（負の余白で並びは詰める・板の `margin: -8px 0`）
+    @ViewBuilder
+    private var spotGuideRow: some View {
+        if let loaded = tripStage.loaded, let spot = loaded.spot {
+            NavigationLink {
+                // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
+                OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
+                                 photosKnown: loaded.photos != nil)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "book.closed")
+                        .font(.caption)
+                        .accessibilityHidden(true)
+                    // 呼び名は「撮影スポット」（2026-10-11 owner。板の「撮影スポットのガイド」は旧い呼び名）。
+                    // 撮影地の行と見分けられるよう、台帳の名前を添える
+                    Text(L("撮影スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
+                        .underline(true, color: Color.white.opacity(0.6))
+                        .lineLimit(1)
+                    Text("›").accessibilityHidden(true)
+                }
+                .font(.caption)
+                .foregroundStyle(WebTheme.foreground)
+                .jpPhotoTextShadow()
+                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding(.vertical, -8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("撮影スポット: \(spot.name)", "Photo spot: \(spot.name)"))
+            .accessibilityIdentifier("photo.spotGuide")
+        }
+    }
+
+    /// 「行き先」の段（行きたい・経路・いつ・`PhotoTripSection`）。行き先の分からない写真では出さない
+    @ViewBuilder
+    private var tripSection: some View {
+        if let destination = PhotoTrip.sectionDestination(photo: shown, stage: tripStage) {
+            PhotoTripSection(destination: destination,
+                             when: tripSpot.flatMap { PhotoTrip.whenLine(spot: $0, now: Date()) })
+                // **写真ごとに作り直す。** 送った先の写真で、前の写真の「経路」の仕事が
+                // Apple のマップを開かない（作り直しで `onDisappear` が取り消す）
+                .id(shown.id)
         }
     }
 
@@ -1464,14 +1524,36 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 写真に紐づいた台帳の撮影スポットを引く（`PhotoTrip.spot`）。`spotId` の無い写真は読みに行かない。
+    /// 取り消された回は書かない（後の回が入れた行き先を消さない）
+    private func loadTripSpot() async {
+        guard let id = PhotoTrip.normalizedSpotId(shown.spotId) else { return }
+        let stillHere = { !Task.isCancelled && PhotoTrip.normalizedSpotId(shown.spotId) == id }
+        // 既にこの `spotId` で索引を読んであれば、索引は読み直さない（大きく見る画面を閉じた・戻ってきた）
+        if tripLoaded?.spotId != id {
+            // 🔴 **読めなかった（nil）回は覚えない**——覚えると同じ画面で読み直さない。
+            // 入れなければ段は「読み込み中」のまま（行きたいを出さない）で、次の `.task` で読み直す
+            guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
+            // **索引を読んだ時点で段を出す**（写真の一覧の取り直しを待たない）。写真は後から足す
+            tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),
+                                          index: rows, photos: nil)
+        }
+        guard let loaded = tripLoaded, loaded.spotId == id, loaded.photos == nil else { return }
+        // スポットの頁の「この撮影スポットの写真」に渡す公開写真（控えがあれば通信しない）。
+        // 取れるまでは `photosKnown: false`（「まだありません」を言わない）
+        guard let photos = try? await environment.gallery.fetchPhotos(), stillHere(),
+              tripLoaded?.spotId == id else { return }
+        tripLoaded = loaded.withPhotos(photos)
+    }
+
     /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**
     /// （`DerivedSpot.openable`・2枚以上）として引く。撮影地が書かれて
     /// いない写真には、この行を出さない。
     ///
     /// ⚠️ 台帳の撮影スポット（Web の `content/spots.json`・アプリは
     /// `OfficialSpot` として別に読む）は**ここでは引かない**。紐付けは
-    /// `Photo.spotId` だけで、本番の公開写真はまだ1枚も持っていない
-    /// （持つ写真が出てきたら `OfficialSpotView` への行を足す）。
+    /// `Photo.spotId` だけで、別に引く（`loadTripSpot`・「撮影スポット」の行と
+    /// 「行き先」の段・2026-10-14）。
     private func loadSpotLead() async {
         // 途中で消さずに、答えが出てから入れ替える（絞り直しで行がちらつかない）
         let location = shown.location ?? ""

@@ -232,15 +232,19 @@ struct PhotoPatch: Encodable {
     /// サーバーは `"coords" in body` で見て、使えない値（null）なら消す
     /// （`photoUpdate.ts` の `applyMeta("coords", …)`）
     var clearCoords = false
+    /// 撮影スポットの紐付けを**外す**（本文に `"spotId": null`・2026-10-14）。
+    /// 撮影地を台帳のスポットの名前から離したとき（`EditPlaceRules.clearsSpotId`）。
+    /// サーバーは null か空文字で外す（`photoUpdate.ts` の `applyMeta("spotId", …)`）。付ける口はここに無い
+    var clearSpotId = false
 
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
             && category == nil && tags == nil && date == nil && published == nil
-            && song == nil && coords == nil && audience == nil && !clearCoords
+            && song == nil && coords == nil && audience == nil && !clearCoords && !clearSpotId
     }
 
     private enum CodingKeys: String, CodingKey {
-        case title, description, location, category, tags, date, published, coords, song, audience
+        case title, description, location, category, tags, date, published, coords, song, audience, spotId
     }
 
     /// 自動生成と同じく **nil のキーは載せない**。`clearCoords` のときだけ
@@ -261,5 +265,6 @@ struct PhotoPatch: Encodable {
         }
         try c.encodeIfPresent(song, forKey: .song)
         try c.encodeIfPresent(audience, forKey: .audience)
+        if clearSpotId { try c.encodeNil(forKey: .spotId) }
     }
 }

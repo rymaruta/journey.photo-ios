@@ -20,6 +20,9 @@ struct PlaceSearchField: View {
     /// おおよその座標（サーバーの `geoApprox`）の区別が付かず（`Photo` は読んでいない）、
     /// スポットを選ぶと名前と座標が食い違うか、ピンが消えた
     var offersSpots = false
+    /// 台帳の撮影スポットの候補を選んだときのスポット（投稿画面だけ・2026-10-14）。保存で `spotId` を付ける。
+    /// **選んだ名前から書き換えたら外す**（`UploadSpotTarget.keepsPicked`）。nil の画面（写真の編集）は持たない
+    var pickedSpot: Binding<UploadSpotTarget?>? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
     @State private var suggestions: [DiscoveryService.Place] = []
@@ -57,7 +60,7 @@ struct PlaceSearchField: View {
                     Task { await loadSpotsAndSuggest() }
                 }
 
-            // 撮影スポット（公開済み）の候補。**名前だけを入れる**（紐付けはしない）
+            // 撮影スポット（公開済み）の候補。名前と座標を入れ、投稿画面では紐付け（`pickedSpot`）も入れる
             ForEach(spotSuggestions) { spot in
                 Button {
                     pickedLabel = spot.name
@@ -68,6 +71,8 @@ struct PlaceSearchField: View {
                     // 座標は前の地名のまま「正確」として送られた）。近いスポットは写真の座標そのもの・
                     // 遠いスポットはスポットの座標（2026-10-07・`coordsAfterPicking`）
                     coords = PlaceSpotSuggestions.coordsAfterPicking(spot, photoPosition: near)
+                    // 紐付けも入れる（**`location` より先に**——あとにすると `schedule` が書き換えと読んで外す）
+                    pickedSpot?.wrappedValue = UploadSpotTarget(spot)
                     location = spot.name
                     spotSuggestions = []
                     suggestions = []
@@ -92,6 +97,8 @@ struct PlaceSearchField: View {
                     // `.onChange(of: location)` が「選んだ地名ではない」と
                     // 読んで、選んだそばから座標を捨てることがある
                     pickedLabel = place.label
+                    // 地名を選び直したら撮影スポットの紐付けは外す
+                    pickedSpot?.wrappedValue = nil
                     coords = place.coords
                     location = place.label
                     suggestions = []
@@ -125,6 +132,10 @@ struct PlaceSearchField: View {
         if !PlacePick.keepsCoords(typed: value, pickedLabel: pickedLabel) {
             pickedLabel = nil
             coords = nil
+        }
+        // **選んだ撮影スポットの名前から書き換えたら紐付けを外す**（2026-10-14）
+        if let pickedSpot, !UploadSpotTarget.keepsPicked(pickedSpot.wrappedValue, typed: value) {
+            pickedSpot.wrappedValue = nil
         }
         // 自分で入れた値（自動補完・候補の選択）では探しに行かない。
         // **選んだ直後も探さない**——選んだ名前で探し直して、候補がまた開いていた
