@@ -172,16 +172,18 @@ enum MedalTextures {
 /// **浮き彫りは「ほんの少し」だけ**（2026-10-14 owner「回転した時に表と裏があまりにも凹凸感なさすぎて、
 /// 画像貼っただけののっぺり…ほんの少しだけ凹凸感欲しい」）。10-09 に絵の明るさをそのまま高さにした
 /// ときは文字や網目まで盛り上がってざらつき、owner が「少し気持ち悪い」と言った（そのときの割合は 1）。
-/// 今回は次の3つで、印や文字の**大きな形だけ**がうっすら盛り上がるようにする:
-/// - 明るさを高さに使う割合を 1 → 0.05 に（`faceRelief`）
+/// 今回は次の4つで、印や文字の**大きな形だけ**が盛り上がるようにする:
+/// - 明るさを高さに使う割合を控えめに（`faceRelief` × 強さ）
 /// - ぼかしを広くして（半径 3 を3回・σ≈3.5px）細かい網目を消す（`faceBlurRadius`）
-/// - 傾きに上限を付ける（`maxReliefSlope`・約17°）。文字の縁の急な所が光ってぎらつかない
+/// - ゆるい傾き（地の網目の濃淡）は捨てる（`reliefFloor`）。強さを上げても網目がぎらつかない
+/// - 傾きに上限を付ける（`maxReliefSlope`）。文字の縁の急な所が光ってぎらつかない
 ///
-/// それに加え、**縁の内側に細い面取り**（`bevelWidth`・`bevelDepth`）を付ける。外へ向かって下がる細い
-/// 斜面で、回す向きによって光る側と陰る側が入れ替わる。
+/// それに加え、**縁の内側に面取り**（`bevelWidth`・`bevelDepth`）を付ける。外へ向かって下がる斜面で、
+/// 回す向きによって光る側と陰る側が入れ替わる。
 ///
-/// 強さは **`amount` の1つで調整する**（浮き彫り・傾きの上限・面取りの深さをまとめて倍にする）。
-/// 0 にすると前の作り（ふくらみだけ）に戻る。比べる試作（https://claude.ai/artifact/C7gyZEE2VzgMqcMnZcQvvR）
+/// 強さは **`amount` の1つで調整する**。浮き彫りの割合と網目を捨てる幅は強さに比例、傾きの上限と面取りの
+/// 幅・深さは強さの平方根に比例（強くしても急になりすぎない）。0 にすると前の作り（ふくらみだけ）に戻る。
+/// **既定は 4**（2026-10-14 Mac run 427: 1 では前の作りと見分けがつかなかった・平均の差 6.5/255）。比べる試作（https://claude.ai/artifact/C7gyZEE2VzgMqcMnZcQvvR）
 /// で owner が選んだ「B（ふくらみ・控えめな映り込み）」の光と映り込みはそのまま。
 ///
 /// **画像の型を読まない**（数の配列だけ）ので Linux のテストで見張れる
@@ -195,19 +197,24 @@ enum MedalRelief {
     /// 縁の帯の凹凸の強さ（ギザの溝に光が乗る程度）
     static let edgeStrength: Double = 0.8
 
-    /// 🔴 **浮き彫りと面取りの強さ（この1つで調整する）。** 1＝既定（ほんの少し）。
-    /// 0＝前の作り（ふくらみだけ・凹凸なし）、2＝強め。owner に見せる候補は 0・1・2
-    static let amount: Double = 1
+    /// 🔴 **浮き彫りと面取りの強さ（この1つで調整する）。** 4＝既定（目で分かる程度に・ほんの少し）。
+    /// 0＝前の作り（ふくらみだけ・凹凸なし）。owner に見せる候補は 2.5・4・6（1 は見分けがつかなかった）
+    static let amount: Double = 4
     /// 「視差効果を減らす」の人は半分にする（回すと動く光と陰を弱める）
     static let reducedMotionScale: Double = 0.5
 
-    /// 表と裏で明るさを高さに使う割合（`amount` が 1 のとき）。10-09 の 1 は強すぎた
+    /// 表と裏で明るさを高さに使う割合（`amount` が 1 のとき・比例）。10-09 の 1 そのままは強すぎた
     static let faceRelief: Double = 0.05
-    /// 表と裏の浮き彫りの傾きの上限（`amount` が 1 のとき・tan で 0.3 ≈ 17°）
+    /// 表と裏の浮き彫りの傾きの上限（`amount` が 1 のとき・平方根に比例）。
+    /// tan で 0.3 ≈ 17°、既定の 4 で 0.6 ≈ 31°、6 で 0.73 ≈ 36°
     static let maxReliefSlope: Double = 0.3
-    /// 縁の面取りの幅（半径に対する割合）と深さ（`amount` が 1 のとき・明るさ 0〜1 と同じ物差し）
+    /// これより緩い傾きは捨てる（`amount` が 1 のとき・比例）。地の網目は 0.04 以下、印や文字の縁は 0.3〜1
+    static let reliefFloor: Double = 0.06
+    /// 縁の面取りの幅（半径に対する割合）と深さ（`amount` が 1 のとき・平方根に比例・明るさ 0〜1 と同じ物差し）。
+    /// 幅は `maxBevelWidth` まで。傾きは強さに依らずほぼ一定（約43°）で、幅が広がって見えやすくなる
     static let bevelWidth: Double = 0.035
-    static let bevelDepth: Double = 0.03
+    static let bevelDepth: Double = 0.02
+    static let maxBevelWidth: Double = 0.075
 
     /// ぼかしの半径（縁の帯: 箱ぼかしを3回重ねて σ≈2.4px）
     static let blurRadius = 2
@@ -221,14 +228,20 @@ enum MedalRelief {
         let relief: Double
         /// 浮き彫りの傾きの上限
         let maxSlope: Double
-        /// 面取りの深さ
+        /// これより緩い浮き彫りの傾きは捨てる
+        let floor: Double
+        /// 面取りの幅と深さ
+        let bevelWidth: Double
         let bevelDepth: Double
     }
 
     /// 強さ（`amount`）から表・裏の割合を決める。0 以下は凹凸なし（ふくらみだけ）
     static func face(amount: Double) -> Face {
         let a = max(0, amount)
-        return Face(relief: faceRelief * a, maxSlope: maxReliefSlope * a, bevelDepth: bevelDepth * a)
+        let root = a.squareRoot()
+        return Face(relief: faceRelief * a, maxSlope: maxReliefSlope * root, floor: reliefFloor * a,
+                    bevelWidth: a > 0 ? min(maxBevelWidth, bevelWidth * root) : 0,
+                    bevelDepth: bevelDepth * root)
     }
 
     /// いま使う強さ。「視差効果を減らす」なら弱める
@@ -247,7 +260,7 @@ enum MedalRelief {
     static func normalMap(luminance: [UInt8], width: Int, height: Int,
                           strength: Double, dome: Double, relief: Double = 1,
                           wrapsX: Bool = false, blurRadius: Int = MedalRelief.blurRadius,
-                          maxReliefSlope: Double? = nil,
+                          maxReliefSlope: Double? = nil, reliefFloor: Double = 0,
                           bevelWidth: Double = 0, bevelDepth: Double = 0) -> [UInt8] {
         guard width > 2, height > 2, luminance.count == width * height else { return [] }
         // 傾きは画素の差 × 半分の幅（絵の大きさに依らない強さにする）
@@ -288,6 +301,9 @@ enum MedalRelief {
                 let dyCount = Double(max(1, down - up))
                 var rx = (lifted[y * width + right] - lifted[y * width + left]) / dxCount * scale
                 var ry = (lifted[down * width + x] - lifted[up * width + x]) / dyCount * scale
+                if reliefFloor > 0 {
+                    (rx, ry) = deadZone(rx, ry, floor: reliefFloor)
+                }
                 if let limit = maxReliefSlope {
                     (rx, ry) = softLimit(rx, ry, limit: limit)
                 }
@@ -311,6 +327,14 @@ enum MedalRelief {
         guard width > 0 else { return 0 }
         let t = min(1, max(0, (r - (1 - width)) / width))
         return t * t * (3 - 2 * t)
+    }
+
+    /// `floor` より緩い傾き（x, y）をなめらかに捨てる（大きさ m を m²/(m²+floor²) 倍・向きは変えない）
+    static func deadZone(_ x: Double, _ y: Double, floor: Double) -> (Double, Double) {
+        let m2 = x * x + y * y
+        guard floor > 0, m2 > 0 else { return (x, y) }
+        let f = m2 / (m2 + floor * floor)
+        return (x * f, y * f)
     }
 
     /// 傾き（x, y）の大きさを `limit` でなめらかに頭打ちにする（向きは変えない）
@@ -394,8 +418,8 @@ struct MedalPose: Equatable {
     /// 浮き彫りと面取りの強さ（`MedalRelief.amount` の代わり）
     let amount: Double
 
-    /// `"0:1,0.45:1,1.1:1"`（横の回り:強さ をカンマで区切る）を読む。強さを省くと既定。
-    /// 読めない組みは飛ばす。強さは 0〜3 に収める
+    /// `"0:4,0.45:4,1.1:4"`（横の回り:強さ をカンマで区切る）を読む。強さを省くと既定。
+    /// 読めない組みは飛ばす。強さは 0〜8 に収める
     static func parse(_ raw: String) -> [MedalPose] {
         raw.split(separator: ",").compactMap { item in
             let parts = item.split(separator: ":").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -403,7 +427,7 @@ struct MedalPose: Equatable {
             var amount = MedalRelief.amount
             if parts.count > 1 {
                 guard let value = Double(parts[1]), value.isFinite else { return nil }
-                amount = min(3, max(0, value))
+                amount = min(8, max(0, value))
             }
             return MedalPose(yaw: yaw, amount: amount)
         }

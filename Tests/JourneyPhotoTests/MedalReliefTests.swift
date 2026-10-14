@@ -68,27 +68,32 @@ final class MedalReliefTests: XCTestCase {
         return (nx * nx + ny * ny).squareRoot() / nz
     }
 
-    private func faceMap(_ lum: [UInt8], _ n: Int, amount: Double, dome: Double = 0) -> [UInt8] {
+    private func faceMap(_ lum: [UInt8], _ n: Int, amount: Double = MedalRelief.amount, dome: Double = 0) -> [UInt8] {
         let face = MedalRelief.face(amount: amount)
         return MedalRelief.normalMap(luminance: lum, width: n, height: n, strength: MedalRelief.strength, dome: dome,
                                      relief: face.relief, blurRadius: MedalRelief.faceBlurRadius,
-                                     maxReliefSlope: face.maxSlope,
-                                     bevelWidth: MedalRelief.bevelWidth, bevelDepth: face.bevelDepth)
+                                     maxReliefSlope: face.maxSlope, reliefFloor: face.floor,
+                                     bevelWidth: face.bevelWidth, bevelDepth: face.bevelDepth)
     }
 
-    /// 🔴 **強さは1つの定数で決まり、既定は控えめ**（10-09 の割合 1 は文字や網目までざらついた）
-    func testSingleAmountDefaultIsGentle() {
-        XCTAssertEqual(MedalRelief.amount, 1)
-        XCTAssertLessThanOrEqual(MedalRelief.faceRelief, 0.1, "明るさを高さに使う割合が強すぎる")
-        XCTAssertLessThanOrEqual(MedalRelief.maxReliefSlope, 0.35, "浮き彫りの傾きの上限が大きすぎる（約19°まで）")
+    /// 🔴 **強さは1つの定数で決まる。既定は 4**（1 では前の作りと見分けがつかなかった・Mac run 427）。
+    /// 浮き彫りと網目を捨てる幅は比例、傾きの上限と面取りは平方根に比例（強くしても急になりすぎない）
+    func testSingleAmountScalesEverything() {
+        XCTAssertEqual(MedalRelief.amount, 4)
         XCTAssertGreaterThan(MedalRelief.faceRelief, 0, "表と裏に浮き彫りが無い（のっぺりに戻る）")
-        XCTAssertGreaterThan(MedalRelief.bevelDepth, 0, "縁の面取りが無い")
-        // 強さを倍にすると、浮き彫り・上限・面取りがそろって倍になる
-        let one = MedalRelief.face(amount: 1), two = MedalRelief.face(amount: 2)
-        XCTAssertEqual(two.relief, one.relief * 2, accuracy: 1e-12)
-        XCTAssertEqual(two.maxSlope, one.maxSlope * 2, accuracy: 1e-12)
-        XCTAssertEqual(two.bevelDepth, one.bevelDepth * 2, accuracy: 1e-12)
+        let one = MedalRelief.face(amount: 1), four = MedalRelief.face(amount: 4)
+        XCTAssertEqual(four.relief, one.relief * 4, accuracy: 1e-12)
+        XCTAssertEqual(four.floor, one.floor * 4, accuracy: 1e-12)
+        XCTAssertEqual(four.maxSlope, one.maxSlope * 2, accuracy: 1e-12)
+        XCTAssertEqual(four.bevelDepth, one.bevelDepth * 2, accuracy: 1e-12)
+        XCTAssertEqual(four.bevelWidth, one.bevelWidth * 2, accuracy: 1e-12)
+        // 既定の傾きの上限は 35° まで（tan 0.7）。強めの 6 でも 40° まで
+        XCTAssertLessThanOrEqual(MedalRelief.face(amount: MedalRelief.amount).maxSlope, 0.7)
+        XCTAssertLessThanOrEqual(MedalRelief.face(amount: 6).maxSlope, 0.84)
+        // 面取りの幅は上限まで
+        XCTAssertEqual(MedalRelief.face(amount: 100).bevelWidth, MedalRelief.maxBevelWidth)
         XCTAssertEqual(MedalRelief.face(amount: -1), MedalRelief.face(amount: 0))
+        XCTAssertEqual(MedalRelief.face(amount: 0).bevelWidth, 0)
     }
 
     /// 強さ 0 は前の作り（ふくらみだけ・明るさを見ない）と同じ絵になる
@@ -107,15 +112,16 @@ final class MedalReliefTests: XCTestCase {
         let n = 64
         var lum = [UInt8](repeating: 0, count: n * n)
         for y in 0..<n { for x in 28..<36 { lum[y * n + x] = 255 } }
-        let map = faceMap(lum, n, amount: 1)
+        let face = MedalRelief.face(amount: MedalRelief.amount)
+        let map = faceMap(lum, n)
         // 明るい帯の左の斜面は左を、右の斜面は右を向く
         XCTAssertLessThan(pixel(map, 27, n / 2, width: n).r, 124)
         XCTAssertGreaterThan(pixel(map, 36, n / 2, width: n).r, 132)
         // 縁の面取りより内側では、傾きは上限（少しの丸めの余裕）を超えない
         var steepest = 0.0
         for y in 12..<(n - 12) { for x in 12..<(n - 12) { steepest = max(steepest, slope(pixel(map, x, y, width: n))) } }
-        XCTAssertLessThanOrEqual(steepest, MedalRelief.maxReliefSlope + 0.03)
-        XCTAssertGreaterThan(steepest, MedalRelief.maxReliefSlope * 0.5, "浮き彫りが弱すぎて見えない")
+        XCTAssertLessThanOrEqual(steepest, face.maxSlope + 0.03)
+        XCTAssertGreaterThan(steepest, face.maxSlope * 0.7, "浮き彫りが弱すぎて見えない")
     }
 
     /// 🔴 **細かい網目は盛り上げない**（1px の格子はぼかしで消える・10-09 の「気持ち悪い」の元）
@@ -123,17 +129,42 @@ final class MedalReliefTests: XCTestCase {
         let n = 48
         var lum = [UInt8](repeating: 0, count: n * n)
         for y in 0..<n { for x in 0..<n where (x + y) % 2 == 0 { lum[y * n + x] = 255 } }
-        let map = faceMap(lum, n, amount: 1)
+        for amount in [MedalRelief.amount, 6] {
+        let map = faceMap(lum, n, amount: amount)
         for (x, y) in [(10, 10), (24, 24), (30, 17)] {
             XCTAssertLessThan(slope(pixel(map, x, y, width: n)), 0.03, "網目が盛り上がっている (\(x), \(y))")
         }
+        }
+    }
+
+    /// 🔴 **地の網目くらいのゆるい濃淡は盛り上げない**（強さを上げると網目がぎらつく）。
+    /// 印や文字の縁のような急な濃淡は残す
+    func testGentleShadingIsDropped() {
+        let n = 96
+        // 横へゆっくり明るくなる（地の網目の濃淡くらいの傾き）と、急な段
+        let ramp = (0..<(n * n)).map { UInt8(20 + Double($0 % n) * 2.3) }
+        var step = [UInt8](repeating: 30, count: n * n)
+        for y in 0..<n { for x in 48..<n { step[y * n + x] = 200 } }
+        let face = MedalRelief.face(amount: MedalRelief.amount)
+        func map(_ lum: [UInt8], floor: Double) -> [UInt8] {
+            MedalRelief.normalMap(luminance: lum, width: n, height: n, strength: MedalRelief.strength, dome: 0,
+                                  relief: face.relief, blurRadius: MedalRelief.faceBlurRadius,
+                                  maxReliefSlope: face.maxSlope, reliefFloor: floor)
+        }
+        let kept = slope(pixel(map(ramp, floor: 0), n / 2, n / 2, width: n))
+        let dropped = slope(pixel(map(ramp, floor: face.floor), n / 2, n / 2, width: n))
+        XCTAssertGreaterThan(kept, 0.02, "比べる元の濃淡が弱すぎる")
+        XCTAssertLessThan(dropped, kept * 0.4, "ゆるい濃淡が残っている")
+        let edge = slope(pixel(map(step, floor: face.floor), 47, n / 2, width: n))
+        XCTAssertGreaterThan(edge, face.maxSlope * 0.7, "急な段まで消えている")
+        XCTAssertEqual(MedalRelief.deadZone(0, 0, floor: 1).0, 0)
     }
 
     /// 🔴 **縁の面取り**: 円の外側の細い輪だけが外へ下がり（右の縁は右・上の縁は上を向く）、内側は平ら
     func testBevelSlopesOutwardOnlyAtRim() {
         let n = 200
         let lum = [UInt8](repeating: 128, count: n * n)
-        let map = faceMap(lum, n, amount: 1)
+        let map = faceMap(lum, n)
         let mid = n / 2
         // 半径の 0.985 あたり（面取りの中ほど）
         XCTAssertGreaterThan(pixel(map, n - 2, mid, width: n).r, 150, "右の縁が右を向かない")
@@ -171,7 +202,7 @@ final class MedalReliefTests: XCTestCase {
     /// 🔴 **回す向きで、面取りの光る側と陰る側が入れ替わる**（法線の絵を読んで確かめる）
     func testBevelHighlightSwapsWithTurn() {
         let n = 200
-        let map = faceMap([UInt8](repeating: 128, count: n * n), n, amount: 1)
+        let map = faceMap([UInt8](repeating: 128, count: n * n), n)
         func normal(_ x: Int, _ y: Int) -> (x: Double, y: Double, z: Double) {
             let p = pixel(map, x, y, width: n)
             return (Double(p.r) / 255 * 2 - 1, Double(p.g) / 255 * 2 - 1, Double(p.b) / 255 * 2 - 1)
@@ -215,7 +246,7 @@ final class MedalReliefTests: XCTestCase {
                        [MedalPose(yaw: 0, amount: 1), MedalPose(yaw: 0.45, amount: 1), MedalPose(yaw: 1.1, amount: 2)])
         // 強さを省くと既定・範囲の外は収める・読めない組みは飛ばす
         XCTAssertEqual(MedalPose.parse(" 0.3 , x:1, 0.5:9, 0.6:-1, 0.7:y"),
-                       [MedalPose(yaw: 0.3, amount: MedalRelief.amount), MedalPose(yaw: 0.5, amount: 3),
+                       [MedalPose(yaw: 0.3, amount: MedalRelief.amount), MedalPose(yaw: 0.5, amount: 8),
                         MedalPose(yaw: 0.6, amount: 0)])
         XCTAssertEqual(MedalPose.parse(""), [])
     }
@@ -238,6 +269,11 @@ final class MedalReliefTests: XCTestCase {
         XCTAssertTrue(source.contains("relief: face.relief"))
         XCTAssertTrue(source.contains("maxReliefSlope: face.maxSlope"))
         XCTAssertTrue(source.contains("bevelDepth: face.bevelDepth"))
+        XCTAssertTrue(source.contains("bevelWidth: face.bevelWidth"))
+        XCTAssertTrue(source.contains("reliefFloor: face.floor"))
+        // 画面写真は浮き彫りを貼り終えた印（読み上げの値）を待ってから撮る
+        XCTAssertTrue(source.contains(".accessibilityValue(poseMarker)"))
+        XCTAssertTrue(source.contains("self.reportPose()"))
         XCTAssertTrue(source.contains("blurRadius: MedalRelief.faceBlurRadius"))
         XCTAssertTrue(source.contains("MedalRelief.effectiveAmount(reduceMotion: reduceMotion)"))
         XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"))

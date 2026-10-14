@@ -29,6 +29,8 @@ struct MedalViewerView: View {
     @State private var flips = 0
     /// 画面写真のために止める向き（Debug の起動の鍵だけ・`PreviewSession.medalPoses`）
     private let previewPoses = PreviewSession.medalPoses
+    /// 画面写真の向きの準備の具合（読み上げの値に出し、UI テストが待つ。止めていないときは空）
+    @State private var poseMarker = ""
 
     var body: some View {
         // 🔴 **組みは画面の大きさに固定し、× は画面の右上に重ねる**（2026-10-09 owner「メダル回す画面で
@@ -62,12 +64,14 @@ struct MedalViewerView: View {
 
     private func coinStage(_ coin: Double) -> some View {
         MedalCoinView(textures: textures, fallbackImage: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
-                      reduceMotion: reduceMotion, flips: flips, shape: .coin, poses: previewPoses)
+                      reduceMotion: reduceMotion, flips: flips, shape: .coin, poses: previewPoses,
+                      onPoseReady: previewPoses == nil ? nil : { poseMarker = $0 })
         .frame(width: coin, height: coin)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) のメダル",
                               "\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) medal"))
         .accessibilityAddTraits(.isImage)
+        .accessibilityValue(poseMarker)
         .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
         .accessibilityIdentifier("medalViewer.coin")
         // 後光は**背景に置く**（組みの大きさに効かせない・画面の幅を超えても × を押し出さない）。
@@ -143,12 +147,15 @@ struct MedalCoinView: View {
     var shape: SpinShape = .coin
     /// 画面写真のために止める向き（Debug の起動の鍵だけ）。nil ならふだんどおり回る
     var poses: [MedalPose]? = nil
+    /// 画面写真の向きの準備の具合（「pose-<番号>-ready」など）を受け取る
+    var onPoseReady: ((String) -> Void)? = nil
 
     var body: some View { coin }
 
     #if canImport(SceneKit)
     private var coin: some View {
-        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape, poses: poses)
+        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape, poses: poses,
+                       onPoseReady: onPoseReady)
     }
     #else
     /// Linux の模型のための代わり。**実機では使わない**
@@ -169,6 +176,7 @@ private struct MedalSceneView: UIViewRepresentable {
     let flips: Int
     let shape: SpinShape
     let poses: [MedalPose]?
+    let onPoseReady: ((String) -> Void)?
 
     func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
 
@@ -185,6 +193,7 @@ private struct MedalSceneView: UIViewRepresentable {
         view.addGestureRecognizer(pan)
         if let poses, !poses.isEmpty {
             // 画面写真: 止めた向きで見せ、押すと次の向きへ（Debug の起動の鍵だけ）
+            context.coordinator.poseReady = onPoseReady
             context.coordinator.pose(poses)
             let tap = UITapGestureRecognizer(target: context.coordinator,
                                              action: #selector(MedalCoinCoordinator.handlePoseTap(_:)))
@@ -237,6 +246,10 @@ final class MedalCoinCoordinator: NSObject {
     /// 画面写真のために止める向き（Debug の起動の鍵だけ）と、いま見せている番号
     private var poses: [MedalPose] = []
     private var poseIndex = 0
+    /// いま貼ってある浮き彫りの強さ（作り終えて貼ったもの）
+    private var appliedAmount: Double?
+    /// 画面写真の向きの準備ができたか（「pose-<番号>-ready」）を知らせる先。UI テストがこれを待ってから撮る
+    var poseReady: ((String) -> Void)?
 
     /// 横の回り（ラジアン）と、少しだけ傾ける縦の回り
     private var yaw: Float = -0.35
@@ -415,8 +428,12 @@ final class MedalCoinCoordinator: NSObject {
     /// SceneKit が元から行う光の計算（法線の絵を読むだけ）で、前の作りから増えない
     private func applyRelief(_ textures: MedalTextures.Faces) {
         reliefTask?.cancel()
-        let face = MedalRelief.face(amount: reliefAmount)
-        let frontImage = textures.front, backImage = textures.back, edgeImage = textures.edge
+        let amount = reliefAmount
+        let face = MedalRelief.face(amount: amount)
+        // 縁の帯は強さに依らない。作り直しのときは前のを使う（待ちを短く）
+        let needsEdge = edge.normal.contents == nil
+        let frontImage = textures.front, backImage = textures.back
+        let edgeImage = needsEdge ? textures.edge : nil
         reliefTask = Task { [weak self] in
             let maps = await Task.detached(priority: .userInitiated) { () -> [UIImage?] in
                 let side = MedalRelief.side
@@ -428,7 +445,8 @@ final class MedalCoinCoordinator: NSObject {
                                                       relief: face.relief,
                                                       blurRadius: MedalRelief.faceBlurRadius,
                                                       maxReliefSlope: face.maxSlope,
-                                                      bevelWidth: MedalRelief.bevelWidth,
+                                                      reliefFloor: face.floor,
+                                                      bevelWidth: face.bevelWidth,
                                                       bevelDepth: face.bevelDepth)
                 }
                 var edgeMap: UIImage?
@@ -442,6 +460,8 @@ final class MedalCoinCoordinator: NSObject {
             }.value
             guard !Task.isCancelled, let self else { return }
             self.setRelief(front: maps[0], back: maps[1], edge: maps[2], metal: textures.metal)
+            self.appliedAmount = amount
+            self.reportPose()
         }
     }
 
@@ -482,6 +502,17 @@ final class MedalCoinCoordinator: NSObject {
         poseIndex = (poseIndex + 1) % poses.count
         showPose()
         if reliefAmount != previous { reliefSettingsChanged() }
+        reportPose()
+    }
+
+    /// 画面写真の向きの準備の具合を知らせる。浮き彫りを作り直している間は「loading」、貼り終えたら「ready」
+    private func reportPose() {
+        guard poses.indices.contains(poseIndex) else { return }
+        let ready = appliedAmount == poses[poseIndex].amount
+        let marker = "pose-\(poseIndex)-\(ready ? "ready" : "loading")"
+        let report = poseReady
+        // SwiftUI の描き直しの最中に状態を変えない
+        DispatchQueue.main.async { report?(marker) }
     }
 
     private func showPose() {
@@ -579,7 +610,7 @@ enum MedalReliefImage {
     static func normalMap(of image: UIImage, width: Int, height: Int,
                           strength: Double, dome: Double, relief: Double = 1,
                           wrapsX: Bool = false, blurRadius: Int = MedalRelief.blurRadius,
-                          maxReliefSlope: Double? = nil,
+                          maxReliefSlope: Double? = nil, reliefFloor: Double = 0,
                           bevelWidth: Double = 0, bevelDepth: Double = 0) -> UIImage? {
         guard let cg = image.cgImage else { return nil }
         var gray = [UInt8](repeating: 0, count: width * height)
@@ -596,6 +627,7 @@ enum MedalReliefImage {
         let rgba = MedalRelief.normalMap(luminance: gray, width: width, height: height,
                                          strength: strength, dome: dome, relief: relief, wrapsX: wrapsX,
                                          blurRadius: blurRadius, maxReliefSlope: maxReliefSlope,
+                                         reliefFloor: reliefFloor,
                                          bevelWidth: bevelWidth, bevelDepth: bevelDepth)
         guard !rgba.isEmpty, let provider = CGDataProvider(data: Data(rgba) as CFData),
               let normal = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,

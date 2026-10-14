@@ -1582,8 +1582,11 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 硬貨はふだん勝手に回るので、`-JPPreviewMedalPoses`（Debug のみ・`PreviewSession.medalPoses`）で
     /// 最初の向きに止め、硬貨を押すたびに次の向きへ進める。並びは「横の回り:浮き彫りの強さ」:
-    /// 正面・少し傾けた（約26°）・大きく傾けた（約63°）を既定の強さ（1）で、比べる用に少し傾けたまま
-    /// 強さ 0（前の作り）と 2（強め）。メダルは段のある都道府県（銀）。開けなければ撮らない（この試験の決まり）
+    /// 少し傾けた（約26°）で強さ 2.5・4（既定）・6 の候補、既定の 4 で正面と大きく傾けた（約63°）、
+    /// 比べる用に少し傾けたまま強さ 0（前の作り）。メダルは段のある都道府県（銀）。
+    ///
+    /// 🔴 **浮き彫りを貼り終えた印を待ってから撮る**（run 427: 強さを変えた直後に撮り、2 と 0 が同じ絵だった）。
+    /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ撮らない（この試験の決まり）
     func testCapturesMedalRelief() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -1593,7 +1596,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewBadges", "prefectures:2,earlyUser:1"]
-        app.launchArguments += ["-JPPreviewMedalPoses", "0:1,0.45:1,1.1:1,0.45:0,0.45:2"]
+        app.launchArguments += ["-JPPreviewMedalPoses", "0.45:2.5,0.45:4,0.45:6,0:4,1.1:4,0.45:0"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1612,18 +1615,23 @@ final class ScreenshotTests: XCTestCase {
         let coin = app.descendants(matching: .any)["medalViewer.coin"].firstMatch
         guard coin.waitForExistence(timeout: 15) else { return }
 
-        let names = ["85a-メダルの浮き彫り（正面）",
-                     "85b-メダルの浮き彫り（少し傾けた）",
-                     "85c-メダルの浮き彫り（大きく傾けた）",
-                     "85d-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）",
-                     "85e-メダルの浮き彫り（少し傾けた・強さ2＝強め）"]
+        let names = ["85a-メダルの浮き彫り（少し傾けた・強さ2.5）",
+                     "85b-メダルの浮き彫り（少し傾けた・強さ4＝既定）",
+                     "85c-メダルの浮き彫り（少し傾けた・強さ6）",
+                     "85d-メダルの浮き彫り（正面・強さ4）",
+                     "85e-メダルの浮き彫り（大きく傾けた・強さ4）",
+                     "85f-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）"]
         for (index, name) in names.enumerated() {
             if index > 0 {
                 guard coin.exists, coin.isHittable else { return }
                 coin.tap()
             }
-            // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。できるまで待つ
-            Thread.sleep(forTimeInterval: 2)
+            // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。貼り終えた印を待つ
+            let ready = NSPredicate(format: "value == %@", "pose-\(index)-ready")
+            let waited = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: coin)], timeout: 30)
+            guard waited == .completed else { return }
+            // 貼った絵が次のコマで描かれるまで
+            Thread.sleep(forTimeInterval: 1)
             shoot(app, name)
         }
     }
