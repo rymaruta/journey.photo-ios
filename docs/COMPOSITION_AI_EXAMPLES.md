@@ -28,3 +28,9 @@
 - 未登録の構図は、これまでどおり配置図のまま出す。37種類そろったとは数えない。
 
 確認の記録は `docs/composition-ai-review.json`。絵の入れ物と台帳の食い違いは `CompositionAIExampleTests` が落とす。
+
+## 作る道具（2026-10-14）
+
+指示文・生成・入れる道具は `Tools/composition-examples/`（手順は同じ所の `README.md`）。
+Imagen は終了しているので、Gemini の画像モデル（Nano Banana）で作る。作例を出す所（構図のシートの札・解説）には
+必ず「AI で作ったイメージ」と出す（`CompositionAIExample`）。

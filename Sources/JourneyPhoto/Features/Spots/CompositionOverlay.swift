@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 構図の線を描く（2026-10-10・「構図を重ねて撮る」）。線の形は `CompositionGuide.marks` が決め、ここは描くだけ。
 ///
@@ -127,16 +128,33 @@ struct CompositionLines: View {
 }
 
 /// 構図の小さな絵（3:4・「構図」の行と構図のシートの札）。`kind` が nil なら「なし」（斜線の入った枠）
+///
+/// `showsExample` のとき、作例写真（`CompositionAIExample`・AI で作ったもの）があればその上に線を重ね、
+/// 左下に「AI」の小さな印を置く（2026-10-14）。板の決まり: 写真の上は白だけ（印は白 12pt・黒 60% の地）。
+/// 作例の無い構図は今まで通り線だけ
 struct CompositionThumbnail: View {
     let kind: CompositionKind?
     var variant = 0
     var cornerRadius = 4.0
+    var showsExample = false
 
     var body: some View {
+        let example = showsExample ? kind.flatMap { UIImage(named: CompositionAIExample.assetName($0)) } : nil
         ZStack {
             Color.white.opacity(0.06)
+            if let example {
+                Image(uiImage: example)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
             if let kind {
-                CompositionOverlay(kind: kind, variant: variant, lineOpacity: 0.7, levelDegrees: 0, shadowed: false)
+                // 写真の上では影を付けて線を浮かせる
+                // 作例は向き 0 の線に合わせて作ってあるので、写真の上では向き 0 で重ねる
+                CompositionOverlay(kind: kind, variant: example == nil ? variant : 0,
+                                   lineOpacity: example == nil ? 0.7 : 0.6,
+                                   levelDegrees: 0, shadowed: example != nil)
             } else {
                 Image(systemName: "nosign")
                     .font(.system(size: 14, weight: .regular))
@@ -144,6 +162,17 @@ struct CompositionThumbnail: View {
             }
         }
         .aspectRatio(0.75, contentMode: .fit)
+        .overlay(alignment: .bottomLeading) {
+            if example != nil {
+                Text(CompositionAIExample.badge)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
+                    .padding(5)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
         .accessibilityHidden(true)

@@ -26,3 +26,6 @@ Sources/JourneyPhoto/Info.plist
 Tools/node_modules/
 Tools/package-lock.json
 __pycache__/
+
+# 構図の作例写真の候補（Tools/composition-examples/generate.mjs が作る。選んだ1枚だけ install.mjs で入れる）
+Tools/composition-examples/out/

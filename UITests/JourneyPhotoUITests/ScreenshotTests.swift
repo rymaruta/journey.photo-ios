@@ -1203,6 +1203,18 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "13j-構図のシート")
+        // 作例写真（AI で作ったもの・2026-10-14）。絵が1枚も入っていなければ一言が出ないので撮らずに先へ。
+        // 出たのに三分割の札が「AI で作ったイメージ」と読まなければ落とす（三分割は作例のある構図）
+        let aiNote = app.staticTexts["composition.aiNote"].firstMatch
+        if aiNote.waitForExistence(timeout: 2) {
+            XCTAssertTrue(aiNote.label.contains("AI"), "作例の一言に AI の表記が無い: \(aiNote.label)")
+            let thirdsCard = app.buttons["composition.card.thirds"].firstMatch
+            if thirdsCard.exists {
+                XCTAssertTrue(thirdsCard.label.contains("AI で作ったイメージ"),
+                              "作例のある札が AI の作例だと読まない: \(thirdsCard.label)")
+            }
+            shoot(app, "13j2-構図のシート（AI の作例つき）")
+        }
         if golden.isHittable { golden.tap() }
         Thread.sleep(forTimeInterval: 1)
         let spiral = app.buttons["composition.card.goldenSpiral"].firstMatch

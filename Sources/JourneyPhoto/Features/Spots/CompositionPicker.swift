@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 構図のシート（2026-10-10・「構図を重ねて撮る」）。撮る画面の「構図」の行から開く。
 ///
@@ -10,6 +11,8 @@ import SwiftUI
 /// - **選んでいる札は真鍮の縁 2pt＋チェック**（owner の決定 2026-10-10。黒地の上。色だけで伝えないよう
 ///   チェックの印と読み上げの「選択中」も付ける）
 /// - 先頭の段「よく使う」に「なし」と最近の4つ。下に「線の濃さ」（0.15〜0.7・既定 0.35）
+/// - **作例写真（2026-10-14）**: 作例のある構図は札の絵を写真＋線にし、左下に白の「AI」の印。見出しの下に
+///   「AI で作ったイメージ」の一言（12pt・副文の色）。読み上げにも足す。作例の無い構図は線の図のまま
 struct CompositionPicker: View {
 
     /// 選んでいる構図（nil は「なし」）
@@ -30,9 +33,25 @@ struct CompositionPicker: View {
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12),
                            GridItem(.flexible(), spacing: 12)]
 
+    /// 作例写真のある構図があるか（無ければ見出しの下の一言も出さない）
+    private static let hasAnyExample = CompositionKind.allCases.contains(where: hasExample)
+
+    private static func hasExample(_ kind: CompositionKind) -> Bool {
+        UIImage(named: CompositionAIExample.assetName(kind)) != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if Self.hasAnyExample {
+                Text(CompositionAIExample.sheetNote)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                    .accessibilityIdentifier("composition.aiNote")
+            }
             ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 0) {
                     chips(proxy)
@@ -129,12 +148,13 @@ struct CompositionPicker: View {
     /// 札: 3:4 の小さな絵＋名前＋難しさ。選んでいる札は真鍮の縁 2pt＋チェック
     private func card(_ kind: CompositionKind?) -> some View {
         let isSelected = kind == selected
+        let hasExample = kind.map(Self.hasExample) ?? false
         return Button {
             onSelect(kind)
             dismiss()
         } label: {
             VStack(alignment: .leading, spacing: 6) {
-                CompositionThumbnail(kind: kind, variant: kind.map(variant) ?? 0, cornerRadius: 8)
+                CompositionThumbnail(kind: kind, variant: kind.map(variant) ?? 0, cornerRadius: 8, showsExample: true)
                     .overlay {
                         if isSelected {
                             RoundedRectangle(cornerRadius: 8).strokeBorder(WebTheme.accent, lineWidth: 2)
@@ -167,7 +187,8 @@ struct CompositionPicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(kind.map { L("\($0.name)、\($0.difficulty.label)", "\($0.name), \($0.difficulty.label)") }
+        .accessibilityLabel(kind.map { L("\($0.name)、\($0.difficulty.label)", "\($0.name), \($0.difficulty.label)")
+                                + CompositionAIExample.accessibilitySuffix(hasExample: hasExample) }
                             ?? CompositionGuide.noneName)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint(kind?.tip ?? L("線を重ねません", "No lines"))

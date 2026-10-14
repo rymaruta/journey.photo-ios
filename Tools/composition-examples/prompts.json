@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "about": "構図の作例写真を作る指示（英語）。CompositionKind の全37種類。座標は variant 0・縦 3:4 の枠で、左上 (0,0)・右下 (1,1)。CompositionGuide.rawMarks の線と同じ値。generate.mjs が common + kinds[kind] + scenes[n] を1本の文にする。",
+  "aspectRatio": "3:4",
+  "aspectNote": "全部 3:4 で作る。アプリの作例の枠（CompositionExplanationView・構図のシートの札）は縦 3:4 で、比率の構図も 3:4 の写真の上に切り出し枠を暗がりで重ねて見せる。だから比率の構図は『枠の内側に主題を収める』ように書く。CompositionAIExampleTests も 3:4 しか通さない。",
+  "imageSize": "2K",
+  "candidates": 3,
+  "variation": "seed は Interactions API の公式文書に載っていないので送らない。候補の違いは scenes の3つ（日本の撮影地と海外の撮影地を混ぜる・光とレンズも変える）で作る。同じ候補を作り直すときは --retake で言い回しの末尾（retakePhrases）を足して揺らす。",
+  "common": {
+    "lead": "A single authentic travel photograph, photorealistic, as if shot on a full-frame mirrorless camera. Vertical 3:4 frame.",
+    "rules": [
+      "No person's face is the subject: any people are small in the frame, seen from behind or in silhouette, never a close-up portrait.",
+      "No text, letters, signs with readable words, logos, watermarks, borders, captions or frames added to the image.",
+      "Do not draw any composition guide lines, grids, arrows or overlays; the composition must come only from the scene itself.",
+      "Natural colour and contrast like a carefully edited real photo; avoid HDR halos, oversaturation, plastic skin, CGI or illustration looks.",
+      "Do not depict any real, identifiable famous building, landmark, artwork, brand, product or real person; use generic, unnamed places.",
+      "Keep the main subject sharp; the placement described above must be exact, because guide lines will be laid over this photo."
+    ],
+    "retakePhrases": [
+      "Slightly different moment and weather.",
+      "Change the vantage point a little but keep the placement exact.",
+      "Quieter, simpler background."
+    ]
+  },
+  "kinds": {
+    "thirds": {
+      "lines": "verticals at x=0.333 and x=0.667; horizontals at y=0.333 and y=0.667",
+      "placement": "Put the main subject exactly on the lower-right intersection of the rule-of-thirds grid (67% from the left, 67% from the top). Any horizon lies along the lower third line (67% from the top). Leave the other three intersections empty.",
+      "scenes": [
+        {"where": "a quiet beach on the Japan Sea coast", "subject": "one small person standing on the sand, seen from behind, looking out to sea", "light": "soft overcast late afternoon", "lens": "35mm f/5.6"},
+        {"where": "a grassy cliff top above the Atlantic in western Europe", "subject": "a lone small stone hut", "light": "low golden side light", "lens": "28mm f/8"},
+        {"where": "a calm lagoon in Southeast Asia", "subject": "a single wooden fishing boat with one person aboard, seen from behind", "light": "pastel dawn", "lens": "50mm f/4"}
+      ]
+    },
+    "halves": {
+      "lines": "vertical at x=0.5 and horizontal at y=0.5 (a centered cross)",
+      "placement": "Split the frame exactly in half at the horizontal center line (50% from the top): the upper half and the lower half are a clear pair (sky and its reflection, or two contrasting tones). Place a small vertical element exactly on the vertical center line (50% from the left).",
+      "scenes": [
+        {"where": "a still mountain lake in Nagano at dawn", "subject": "the far shoreline exactly at mid-height with its mirror reflection below", "light": "blue hour turning pink", "lens": "35mm f/8"},
+        {"where": "a salt flat in South America after rain", "subject": "a tiny figure seen from behind standing at the center, sky mirrored below", "light": "bright midday with clouds", "lens": "24mm f/8"},
+        {"where": "a calm Nordic fjord", "subject": "a red wooden boathouse at the center of the waterline with its reflection", "light": "soft overcast", "lens": "50mm f/8"}
+      ]
+    },
+    "symmetry": {
+      "lines": "vertical axis at x=0.5",
+      "placement": "Shoot straight on so the scene is mirror-symmetric around the vertical center line (50% from the left). The central doorway or axis sits exactly on that line; left and right halves balance.",
+      "scenes": [
+        {"where": "an old wooden temple hall in rural Japan", "subject": "the front gable and open central doors seen head-on", "light": "even overcast light", "lens": "35mm f/8, camera level"},
+        {"where": "a stone arcade in a southern European town", "subject": "a long symmetrical corridor of arches with the vanishing point centered", "light": "warm morning light", "lens": "24mm f/8"},
+        {"where": "a tree-lined avenue in a northern European park in autumn", "subject": "matching rows of trees on both sides and the path centered", "light": "soft misty morning", "lens": "50mm f/5.6"}
+      ]
+    },
+    "hinomaru": {
+      "lines": "a circle centered at (0.5, 0.5) whose diameter is one third of the frame width, with a small cross at the center",
+      "placement": "Put one subject dead center (50%, 50%). It fits inside a centered circle about one third of the frame width; the background is simple and uncluttered around it.",
+      "scenes": [
+        {"where": "a mossy garden in Kyoto-style Japanese countryside", "subject": "a single red camellia flower", "light": "soft diffused shade", "lens": "100mm macro f/4"},
+        {"where": "a lavender field in southern France", "subject": "one round lone tree in the middle of the field", "light": "hazy evening", "lens": "85mm f/5.6"},
+        {"where": "a calm sea in the Mediterranean", "subject": "a small round buoy floating alone", "light": "bright clear midday", "lens": "70mm f/8"}
+      ]
+    },
+    "horizon": {
+      "lines": "horizontal at y=0.667",
+      "placement": "Put the horizon perfectly level exactly on the lower third line (67% from the top), so the sky fills the top two thirds of the frame.",
+      "scenes": [
+        {"where": "a coastline in Okinawa", "subject": "a wide sunset sky over the sea", "light": "golden hour with dramatic clouds", "lens": "24mm f/8"},
+        {"where": "the open prairie in North America", "subject": "a vast cloudscape above flat grassland", "light": "stormy late afternoon", "lens": "28mm f/8"},
+        {"where": "a quiet bay in Hokkaido in winter", "subject": "pale pastel sky above a calm grey sea", "light": "blue hour", "lens": "35mm f/8"}
+      ]
+    },
+    "grid4": {
+      "lines": "4x4 grid: verticals at x=0.25, 0.5, 0.75; horizontals at y=0.25, 0.5, 0.75",
+      "placement": "Shoot a facade head-on so its window rows and columns line up with a 4 by 4 grid: vertical edges near 25%, 50% and 75% from the left, horizontal floor lines near 25%, 50% and 75% from the top. Keep all verticals parallel.",
+      "scenes": [
+        {"where": "an old apartment block in Tokyo", "subject": "a repeating pattern of balconies and windows", "light": "flat overcast light", "lens": "50mm f/8, perspective corrected"},
+        {"where": "a historic street in Amsterdam-like canal town", "subject": "a narrow brick facade with evenly spaced windows", "light": "soft morning light", "lens": "50mm f/8"},
+        {"where": "a modern residential block in Hong Kong-like dense city", "subject": "a colorful grid of windows", "light": "even daylight", "lens": "70mm f/8"}
+      ]
+    },
+    "squareGrid": {
+      "lines": "6 columns (verticals every 16.7% of the width) and square cells (horizontals every 12.5% of the height)",
+      "placement": "Fill the frame with a regular pattern of square cells seen straight on, so the pattern's columns repeat every one sixth of the width and its rows every one eighth of the height.",
+      "scenes": [
+        {"where": "a traditional Japanese house", "subject": "a backlit shoji screen with a square lattice", "light": "soft daylight through paper", "lens": "50mm f/8"},
+        {"where": "a mid-century building in Europe", "subject": "a wall of square glass blocks", "light": "afternoon light", "lens": "50mm f/8"},
+        {"where": "a tiled courtyard in Portugal-like coastal town", "subject": "a wall of square patterned tiles without letters", "light": "open shade", "lens": "35mm f/8"}
+      ]
+    },
+    "tianzige": {
+      "lines": "an outer frame 3% inside the edges and a centered cross at x=0.5 and y=0.5",
+      "placement": "Center the subject on the cross at (50%, 50%) and balance four similar elements in the four quarters, like a calligraphy practice square. Keep a thin clear margin near the edges.",
+      "scenes": [
+        {"where": "a Zen garden in Japan seen from above", "subject": "a round stone at the center with raked gravel balanced in four quarters", "light": "soft overcast", "lens": "35mm f/8, top-down"},
+        {"where": "a courtyard in a Chinese-style old town", "subject": "a round window at the center of a white wall with four potted plants in the corners", "light": "even daylight", "lens": "35mm f/8"},
+        {"where": "a Moroccan-style tiled fountain courtyard", "subject": "a fountain at the center with symmetric paving", "light": "high sun", "lens": "24mm f/8, from above"}
+      ]
+    },
+    "mizige": {
+      "lines": "a centered cross plus both corner-to-corner diagonals, all meeting at (0.5, 0.5)",
+      "placement": "Shoot straight up or down so strong lines radiate along the vertical, horizontal and both diagonal directions and meet exactly at the frame center (50%, 50%).",
+      "scenes": [
+        {"where": "under an octagonal wooden pavilion roof in Japan", "subject": "roof beams converging at the center", "light": "soft daylight", "lens": "16mm f/8, looking straight up"},
+        {"where": "a glass atrium in a European shopping arcade with no signage", "subject": "glass dome ribs meeting at the center", "light": "bright overcast", "lens": "16mm f/8"},
+        {"where": "a star-shaped plaza paved in stone in southern Europe, seen from a tower", "subject": "paths meeting at a central fountain", "light": "midday", "lens": "24mm f/8, top-down"}
+      ]
+    },
+    "phiGrid": {
+      "lines": "verticals at x=0.382 and x=0.618; horizontals at y=0.382 and y=0.618",
+      "placement": "Place the main subject exactly on the lower-right phi-grid intersection (62% from the left, 62% from the top), closer to the center than a rule-of-thirds point.",
+      "scenes": [
+        {"where": "a street corner in an old Japanese town", "subject": "one person seen from behind carrying an umbrella", "light": "rainy dusk with glowing windows", "lens": "50mm f/2.8"},
+        {"where": "a cobbled lane in a Parisian-style European city", "subject": "a cyclist seen from behind", "light": "soft morning", "lens": "35mm f/4"},
+        {"where": "a desert road in the American Southwest", "subject": "a lone parked vintage car with no badges", "light": "golden hour", "lens": "50mm f/5.6"}
+      ]
+    },
+    "goldenSpiral": {
+      "lines": "a golden spiral whose eye is at (0.276, 0.724), sweeping in from the top and right edges",
+      "placement": "Let curving lines (a path, shoreline or stair rail) sweep from the top-right of the frame in a tightening spiral toward the spiral's eye at 28% from the left and 72% from the top. The main subject sits exactly at that eye, not above it.",
+      "scenes": [
+        {"where": "a winding garden path in a Japanese stroll garden", "subject": "a stone lantern at the end of the curving path", "light": "soft overcast after rain", "lens": "35mm f/8, from a slight height"},
+        {"where": "a spiral seaside cove in Portugal", "subject": "a small boat where the curving shore ends", "light": "late afternoon", "lens": "24mm f/8, from a cliff"},
+        {"where": "a curving cobbled lane in an Italian hill town", "subject": "a small potted lemon tree at the lane's end", "light": "warm evening", "lens": "35mm f/5.6"}
+      ],
+      "pitfall": "前の作り方では人が目より上に来た（docs/composition-ai-review.json の held）。主題は目そのものに。"
+    },
+    "fibonacciGrid": {
+      "lines": "the square subdivisions of a vertical golden rectangle, shrinking toward (0.276, 0.724)",
+      "placement": "Build the scene as nested rectangles that shrink toward a point 28% from the left and 72% from the top: large planes at the top, smaller and smaller steps leading down-left to the subject at that point.",
+      "scenes": [
+        {"where": "a stone staircase at a mountain shrine in Japan", "subject": "a small wooden door at the end of the steps", "light": "misty morning", "lens": "35mm f/8"},
+        {"where": "a whitewashed Greek-island village", "subject": "stairs between cubic houses leading to a blue door", "light": "bright afternoon", "lens": "28mm f/8"},
+        {"where": "a minimalist concrete museum courtyard with no signage", "subject": "stepped walls leading to a small doorway", "light": "hard sun and shadows", "lens": "24mm f/8"}
+      ]
+    },
+    "goldenTriangle": {
+      "lines": "one diagonal from bottom-left to top-right, and perpendiculars from the other two corners meeting it at (0.64, 0.36) and (0.36, 0.64)",
+      "placement": "Run a strong slope along the diagonal from the bottom-left corner to the top-right corner. Put the main subject exactly at 64% from the left and 36% from the top, and a secondary element at 36% from the left and 64% from the top.",
+      "scenes": [
+        {"where": "a tea plantation hillside in Shizuoka", "subject": "a small person seen from behind walking up the diagonal row", "light": "morning side light", "lens": "70mm f/8"},
+        {"where": "a sand dune in a North African desert", "subject": "a lone hiker on the dune ridge", "light": "low evening sun", "lens": "85mm f/8"},
+        {"where": "a ski slope in the Alps without lifts", "subject": "a single skier seen from behind", "light": "crisp blue-sky day", "lens": "100mm f/8"}
+      ]
+    },
+    "diagonals": {
+      "lines": "one diagonal from the top-left corner to the bottom-right corner",
+      "placement": "Let a single strong line (ridge, road or railing) run exactly from the top-left corner to the bottom-right corner of the frame.",
+      "scenes": [
+        {"where": "a mountain ridge in the Japanese Alps", "subject": "a snow-capped ridge line running corner to corner", "light": "clear morning", "lens": "70mm f/8"},
+        {"where": "a coastal road in Iceland", "subject": "an empty road along the coast", "light": "moody overcast", "lens": "35mm f/8, from a hill"},
+        {"where": "a long stone bridge railing in a central European city", "subject": "the railing receding diagonally", "light": "blue hour", "lens": "24mm f/5.6"}
+      ]
+    },
+    "thirdsDiagonals": {
+      "lines": "rule-of-thirds grid plus both corner-to-corner diagonals",
+      "placement": "Diagonal lines in the scene (a road and its edges) follow the frame's diagonals and lead to the main subject placed exactly on the upper-right thirds intersection (67% from the left, 33% from the top). Nothing important sits on the empty center.",
+      "scenes": [
+        {"where": "a rural road through rice fields in Japan", "subject": "a small person seen from behind standing where the road meets the far field", "light": "summer evening", "lens": "35mm f/8, from a slight height"},
+        {"where": "a vineyard in Tuscany-like hills", "subject": "a lone cypress tree", "light": "golden hour", "lens": "50mm f/8"},
+        {"where": "a boardwalk across a Scandinavian marsh", "subject": "a small wooden hut", "light": "soft overcast", "lens": "28mm f/8"}
+      ],
+      "pitfall": "前の作り方では人が交点より下に来た（held）。主題は上の右の交点に。"
+    },
+    "diagonal45": {
+      "lines": "four 45-degree lines from each corner: top-left to (1, 0.75), top-right to (0, 0.75), bottom-left to (1, 0.25), bottom-right to (0, 0.25); they cross at (0.5, 0.375) and (0.5, 0.625)",
+      "placement": "Use lines that are exactly 45 degrees in the picture (rooflines, stair rails, folded paper). Main elements cross at the center line, 37.5% and 62.5% from the top.",
+      "scenes": [
+        {"where": "a traditional Japanese tiled-roof townhouse seen from below", "subject": "gable edges at 45 degrees", "light": "clear blue sky", "lens": "35mm f/8"},
+        {"where": "a staircase in a modernist European building", "subject": "crossing stair rails at 45 degrees", "light": "soft daylight", "lens": "24mm f/8"},
+        {"where": "a timber-frame house in northern Europe", "subject": "diagonal beams crossing", "light": "afternoon", "lens": "50mm f/8"}
+      ]
+    },
+    "obliqueThirds": {
+      "lines": "four slanted lines parallel to the diagonals: (0,0.667)-(0.667,0), (0.333,1)-(1,0.333), (0.333,0)-(1,0.667), (0,0.333)-(0.667,1)",
+      "placement": "Divide the scene into slanted bands: a sloped edge runs from 67% down the left edge to 67% along the top edge, and a parallel edge runs from 33% along the bottom to 33% down the right edge.",
+      "scenes": [
+        {"where": "a terraced hillside in Japan", "subject": "slanted terrace walls forming parallel bands", "light": "late afternoon", "lens": "85mm f/8"},
+        {"where": "a coastal cliff in Ireland-like west coast", "subject": "sloping layered rock strata", "light": "overcast with soft contrast", "lens": "50mm f/8"},
+        {"where": "a modern white building facade in Spain", "subject": "slanted balconies forming bands", "light": "hard sun", "lens": "35mm f/8"}
+      ]
+    },
+    "dynamicSymmetry": {
+      "lines": "both diagonals plus four perpendicular reciprocals; eyes at (0.36,0.36), (0.64,0.36), (0.36,0.64), (0.64,0.64)",
+      "placement": "Crossing streets or edges follow both diagonals and their perpendiculars. The main subject sits exactly at an eye point 64% from the left and 36% from the top; secondary elements sit near the other eyes.",
+      "scenes": [
+        {"where": "a crossing in a Tokyo-like city seen from a high window", "subject": "one person with a white umbrella crossing", "light": "rainy evening", "lens": "50mm f/5.6, from above"},
+        {"where": "a European square with crossing paths seen from a tower", "subject": "a single tree at the eye point", "light": "soft morning", "lens": "35mm f/8"},
+        {"where": "a park with diagonal paths in winter", "subject": "a lone walker seen from above", "light": "snowy overcast", "lens": "50mm f/8"}
+      ],
+      "pitfall": "前の作り方では逆対角の4本が道に乗らなかった（held）。4本の線の向きまで合わせる。"
+    },
+    "armature": {
+      "lines": "both diagonals, a rhombus through the edge midpoints, and lines from each corner to the far edges' midpoints",
+      "placement": "Shoot a geometric scene head-on so that edges follow the frame diagonals and the diamond that joins the midpoints of the four edges (50% along each edge).",
+      "scenes": [
+        {"where": "a steel truss bridge interior in Japan", "subject": "criss-crossing beams", "light": "overcast", "lens": "24mm f/8"},
+        {"where": "a glass roof of a European railway station without signage", "subject": "diamond-shaped glazing", "light": "soft daylight", "lens": "24mm f/8"},
+        {"where": "a stone-paved plaza in Latin America seen from above", "subject": "diamond-patterned paving with crossing paths", "light": "midday", "lens": "35mm f/8"}
+      ]
+    },
+    "rootRectangle": {
+      "lines": "a √2 crop frame from x=0.028 to x=0.972 (full height) with dynamic-symmetry diagonals inside",
+      "placement": "Keep everything important inside the central √2 frame (2.8% margins left and right). A cityscape's main diagonals follow the corner-to-corner lines of that frame.",
+      "scenes": [
+        {"where": "a hillside town in Japan seen from above", "subject": "rooftops and a sloping street", "light": "evening", "lens": "50mm f/8"},
+        {"where": "an old European city seen from a hill", "subject": "terracotta roofs and a diagonal river", "light": "golden hour", "lens": "70mm f/8"},
+        {"where": "a harbor town in Norway", "subject": "colorful houses along a diagonal quay", "light": "soft overcast", "lens": "50mm f/8"}
+      ]
+    },
+    "triangle": {
+      "lines": "a triangle with vertices at (0.5, 0.18), (0.84, 0.80) and (0.16, 0.80)",
+      "placement": "Three subjects mark the vertices of a triangle: the top one exactly at 50% from the left and 18% from the top, the lower two exactly at 16% and 84% from the left, both 80% from the top. Use small subjects whose centers sit on those points.",
+      "scenes": [
+        {"where": "a snowy field in Hokkaido", "subject": "three lone trees of similar size", "light": "soft winter overcast", "lens": "70mm f/8"},
+        {"where": "a green hillside in New Zealand-like countryside", "subject": "three sheep, one higher up the slope and two below", "light": "afternoon", "lens": "85mm f/8"},
+        {"where": "a calm lake in Scandinavia", "subject": "three small rocks rising from the water", "light": "dawn", "lens": "50mm f/8"}
+      ],
+      "pitfall": "前の作り方では3人の胸が点に乗らなかった（held）。人ではなく、中心がはっきりした小さな物3つで作る。"
+    },
+    "radial": {
+      "lines": "eight rays meeting at the center (0.5, 0.5)",
+      "placement": "All converging lines (rails, light rays, corridor edges) meet at a vanishing point exactly at the frame center (50%, 50%).",
+      "scenes": [
+        {"where": "a rural single-track railway in Japan", "subject": "rails converging to the center", "light": "hazy summer evening", "lens": "35mm f/8"},
+        {"where": "a long colonnade in southern Europe", "subject": "columns converging", "light": "morning sun", "lens": "24mm f/8"},
+        {"where": "a forest in Germany-like mountains", "subject": "sun rays radiating from the center through the trees", "light": "morning mist", "lens": "24mm f/8"}
+      ]
+    },
+    "tunnel": {
+      "lines": "an ellipse inset 12% from the edges with a point at the center",
+      "placement": "Dark foreground forms an oval arch just inside the frame (12% inset); the far opening and the small subject sit exactly at the center (50%, 50%).",
+      "scenes": [
+        {"where": "a bamboo forest path in Japan", "subject": "a small person seen from behind at the far end", "light": "soft green daylight", "lens": "35mm f/5.6"},
+        {"where": "a tunnel of trees on a country lane in Ireland", "subject": "a small cyclist seen from behind at the end", "light": "dappled afternoon", "lens": "50mm f/5.6"},
+        {"where": "a stone arch passage in a Mediterranean village", "subject": "a bright sea view at the end with a small figure", "light": "bright midday", "lens": "28mm f/8"}
+      ]
+    },
+    "frameWithin": {
+      "lines": "a rounded rectangle inset 12% from every edge",
+      "placement": "A foreground gate, window or doorway forms a frame whose inner edges sit about 12% inside each edge of the photo; the distant scene appears inside it.",
+      "scenes": [
+        {"where": "a temple gate in rural Japan", "subject": "a village and mountains seen through the gate", "light": "soft overcast", "lens": "35mm f/8"},
+        {"where": "a Moorish window in Spain", "subject": "a whitewashed town seen through the window", "light": "afternoon", "lens": "35mm f/8"},
+        {"where": "a ruined stone doorway in Scotland", "subject": "green hills seen through the doorway", "light": "moody overcast", "lens": "28mm f/8"}
+      ]
+    },
+    "negativeSpace": {
+      "lines": "a small square (12% of the width) centered at (0.667, 0.667)",
+      "placement": "Keep the subject tiny, inside a small square centered at 67% from the left and 67% from the top; the rest of the frame is calm empty space.",
+      "scenes": [
+        {"where": "a winter sky over Japan", "subject": "a single small crane in flight", "light": "pale overcast", "lens": "200mm f/8"},
+        {"where": "a white sand dune in Namibia-like desert", "subject": "a tiny acacia tree", "light": "soft early light", "lens": "135mm f/8"},
+        {"where": "a foggy lake in Canada", "subject": "a small canoe with one person seen from behind", "light": "dense fog", "lens": "85mm f/5.6"}
+      ]
+    },
+    "lShape": {
+      "lines": "an L from (0.22, 0.14) down to (0.22, 0.80) then right to (0.86, 0.80)",
+      "placement": "A vertical element runs up the left side at 22% from the left (from 14% to 80% from the top) and meets a horizontal element at 80% from the top that runs right to 86% from the left.",
+      "scenes": [
+        {"where": "a lake shore in Japan", "subject": "a tall cedar on the left and a long wooden pier along the bottom", "light": "calm dawn", "lens": "35mm f/8"},
+        {"where": "a harbor in Denmark", "subject": "a mooring post on the left and a quay wall along the bottom", "light": "overcast", "lens": "35mm f/8"},
+        {"where": "a desert in Arizona-like plateau", "subject": "a tall cactus on the left and a flat mesa line along the bottom", "light": "golden hour", "lens": "50mm f/8"}
+      ]
+    },
+    "zShape": {
+      "lines": "a Z through (0.16, 0.22), (0.84, 0.22), (0.16, 0.78), (0.84, 0.78)",
+      "placement": "A zigzag path runs across the upper band at 22% from the top, cuts diagonally down to the lower left, and runs across again at 78% from the top.",
+      "scenes": [
+        {"where": "a mountain switchback road in Japan", "subject": "a zigzag road seen from above", "light": "autumn colours, soft light", "lens": "70mm f/8"},
+        {"where": "an alpine pass in Switzerland-like mountains", "subject": "hairpin bends", "light": "clear morning", "lens": "50mm f/8"},
+        {"where": "a coastal stair path in Italy", "subject": "a zigzag stone path down a cliff", "light": "late afternoon", "lens": "35mm f/8"}
+      ]
+    },
+    "sCurve": {
+      "lines": "an S-shaped bezier from (0.35, 0.06) via (0.95, 0.30) and (0.05, 0.70) to (0.65, 0.94)",
+      "placement": "A river or road enters at the bottom (65% from the left), bends left, then right, and exits at the top (35% from the left), following a smooth S.",
+      "scenes": [
+        {"where": "a mountain river valley in Japan", "subject": "a river meandering in an S", "light": "misty morning", "lens": "50mm f/8, from a high viewpoint"},
+        {"where": "a country road in Tuscany-like hills", "subject": "a winding road", "light": "golden hour", "lens": "85mm f/8"},
+        {"where": "a glacial river in Iceland", "subject": "a braided river in an S", "light": "overcast", "lens": "35mm f/8, aerial view"}
+      ]
+    },
+    "cCurve": {
+      "lines": "a C-shaped bezier from (0.72, 0.14) bulging left to x≈0.24 and back to (0.72, 0.86)",
+      "placement": "A coastline or path forms a large C opening to the right: it starts near the top at 72% from the left, bulges out to the left side, and returns near the bottom at 72% from the left.",
+      "scenes": [
+        {"where": "a crescent bay in Okinawa", "subject": "the curved beach line", "light": "clear midday", "lens": "24mm f/8, from a hill"},
+        {"where": "a curved harbor in Croatia", "subject": "a curving stone promenade", "light": "late afternoon", "lens": "28mm f/8"},
+        {"where": "a curved lakeshore in Canada", "subject": "the shoreline wrapping around calm water", "light": "autumn morning", "lens": "35mm f/8"}
+      ]
+    },
+    "square": {
+      "lines": "a 1:1 crop frame spanning the full width from y=0.125 to y=0.875, with a centered cross",
+      "placement": "Compose for a centered square: everything important stays between 12.5% and 87.5% from the top, with the subject centered at (50%, 50%).",
+      "scenes": [
+        {"where": "a small shrine building in a Japanese forest", "subject": "the shrine centered", "light": "soft daylight", "lens": "35mm f/8"},
+        {"where": "a white chapel on a Greek island", "subject": "the chapel centered", "light": "bright afternoon", "lens": "35mm f/8"},
+        {"where": "a windmill in a Dutch-like polder", "subject": "the windmill centered", "light": "soft overcast", "lens": "50mm f/8"}
+      ]
+    },
+    "ratio4x5": {
+      "lines": "a 4:5 crop frame spanning the full width from y=0.031 to y=0.969",
+      "placement": "Compose for a 4:5 vertical crop: keep the subject comfortably inside, with small margins at the very top and bottom (3%).",
+      "scenes": [
+        {"where": "a street in an old Japanese town", "subject": "a person in a coat seen from behind walking away", "light": "evening", "lens": "50mm f/2.8"},
+        {"where": "a flower market in the Netherlands", "subject": "a person seen from behind holding tulips", "light": "soft daylight", "lens": "50mm f/2.8"},
+        {"where": "a coastal path in Cornwall-like coast", "subject": "a hiker seen from behind", "light": "golden hour", "lens": "35mm f/4"}
+      ]
+    },
+    "ratio9x16": {
+      "lines": "a 9:16 crop frame spanning the full height from x=0.125 to x=0.875",
+      "placement": "Compose for a tall 9:16 crop: the subject is a tall vertical element that fits between 12.5% and 87.5% from the left and runs top to bottom.",
+      "scenes": [
+        {"where": "a five-storied wooden pagoda-like tower in a generic Japanese temple", "subject": "the tower rising vertically", "light": "blue sky", "lens": "35mm f/8"},
+        {"where": "a tall waterfall in Iceland", "subject": "a thin waterfall from top to bottom", "light": "overcast", "lens": "50mm f/8"},
+        {"where": "a giant redwood forest in North America", "subject": "a single tall trunk", "light": "soft forest light", "lens": "24mm f/8"}
+      ]
+    },
+    "ratio16x9": {
+      "lines": "a 16:9 crop frame spanning the full width from y=0.289 to y=0.711",
+      "placement": "Compose for a wide 16:9 strip in the middle: the panorama lies between 29% and 71% from the top; the top and bottom are plain sky and foreground.",
+      "scenes": [
+        {"where": "the Japanese Alps", "subject": "a range of peaks spread across the frame", "light": "morning", "lens": "70mm f/8"},
+        {"where": "Patagonia-like mountains", "subject": "jagged peaks spread wide", "light": "sunrise", "lens": "50mm f/8"},
+        {"where": "a coastline in Scotland", "subject": "sea stacks spread across", "light": "soft overcast", "lens": "35mm f/8"}
+      ]
+    },
+    "otherRatios": {
+      "lines": "a 2:3 vertical crop frame spanning the full height from x=0.056 to x=0.944",
+      "placement": "Compose for a 2:3 crop: keep all important elements between 5.6% and 94.4% from the left.",
+      "scenes": [
+        {"where": "a street of old wooden houses in Japan", "subject": "a narrow street stretching away", "light": "evening lanterns", "lens": "35mm f/5.6"},
+        {"where": "a canal in Venice-like city with no signage", "subject": "a narrow canal between houses", "light": "morning", "lens": "35mm f/8"},
+        {"where": "a market street in Morocco", "subject": "a covered alley", "light": "shafts of light", "lens": "28mm f/5.6"}
+      ]
+    },
+    "grid6x4": {
+      "lines": "4 columns and 6 rows: verticals at x=0.25, 0.5, 0.75; horizontals every 16.7% of the height",
+      "placement": "Fill the frame head-on with a regular pattern of 4 columns and 6 rows (windows, lockers, mailboxes without names).",
+      "scenes": [
+        {"where": "a Showa-era apartment block in Japan", "subject": "4 columns of balconies over 6 floors", "light": "flat overcast", "lens": "70mm f/8"},
+        {"where": "a colorful housing block in Lisbon-like city", "subject": "6 floors of windows, 4 per floor", "light": "soft morning", "lens": "50mm f/8"},
+        {"where": "a brick warehouse in New York-like port", "subject": "a grid of arched windows", "light": "afternoon", "lens": "50mm f/8"}
+      ]
+    },
+    "iphone": {
+      "lines": "the same rule-of-thirds grid as the camera's default: verticals at x=0.333 and 0.667; horizontals at y=0.333 and 0.667",
+      "placement": "Place the subject on the upper-left thirds intersection (33% from the left, 33% from the top) and keep any horizon along the lower third line (67%).",
+      "scenes": [
+        {"where": "a seaside town in Japan", "subject": "a seagull standing on a post", "light": "clear afternoon", "lens": "26mm f/1.8 phone-like wide"},
+        {"where": "a beach in Australia", "subject": "a surfer seen from behind walking", "light": "golden hour", "lens": "26mm phone-like wide"},
+        {"where": "a mountain lake in Canada", "subject": "a red canoe on the shore", "light": "morning", "lens": "26mm phone-like wide"}
+      ]
+    },
+    "level": {
+      "lines": "a horizontal line at y=0.5 and short ticks at the edges",
+      "placement": "The horizon or a strong horizontal edge is perfectly level exactly at mid-height (50% from the top).",
+      "scenes": [
+        {"where": "a calm sea off the Japanese coast", "subject": "a perfectly level horizon at mid-height", "light": "blue hour", "lens": "35mm f/8"},
+        {"where": "a desert salt pan in Bolivia-like plateau", "subject": "a perfectly level horizon", "light": "midday", "lens": "24mm f/8"},
+        {"where": "a quiet harbor wall in Ireland", "subject": "a long level wall at mid-height", "light": "overcast", "lens": "50mm f/8"}
+      ]
+    }
+  }
+}

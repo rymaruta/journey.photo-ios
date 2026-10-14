@@ -3,7 +3,8 @@ import PhotosUI
 import UIKit
 
 /// 撮影画面と同じ37種類を、撮影前にも学べる読み物として見せる。
-/// 図は実際の写真ではなく、カメラに出るガイド線の配置例。
+/// 図はカメラに出るガイド線の配置例。作例写真（AI で作ったもの・`CompositionAIExample`）があれば解説に出し、
+/// 必ず「AI で作ったイメージ」と添える。
 struct CompositionCatalogView: View {
     var body: some View {
         ScrollView {
@@ -12,8 +13,8 @@ struct CompositionCatalogView: View {
                     .font(JPFont.display(30, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
-                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。図はガイド線の例で、実際の写真ではありません。",
-                       "Explore ways to frame a scene. Illustrations show guide lines, not actual photographs."))
+                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。作例の写真は AI で作ったイメージで、実際の撮影ではありません。",
+                       "Explore ways to frame a scene. Example photos are AI-generated, not real shots."))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                 ForEach(CompositionSection.allCases) { section in
@@ -96,8 +97,8 @@ struct CompositionExplanationView: View {
                                 .scaledToFill()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .clipped()
-                        } else if UIImage(named: "composition-ai-\(kind.rawValue)") != nil {
-                            Image("composition-ai-\(kind.rawValue)")
+                        } else if UIImage(named: CompositionAIExample.assetName(kind)) != nil {
+                            Image(CompositionAIExample.assetName(kind))
                                 .resizable()
                                 .scaledToFill()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -120,8 +121,8 @@ struct CompositionExplanationView: View {
                     .frame(maxWidth: .infinity)
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
-                         : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
-                            ? L("AI生成の構図作例", "AI-generated composition example")
+                         : (UIImage(named: CompositionAIExample.assetName(kind)) != nil
+                            ? CompositionAIExample.label
                             : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
