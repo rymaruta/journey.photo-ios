@@ -43,11 +43,15 @@ struct JPField<Content: View>: View {
     }
 }
 
-/// 52pt のカプセル（板の確定ボタン）。幅いっぱい・`.callout`（既定 16pt）semibold。
+/// 幅いっぱいのカプセル（板の確定ボタン）。
+///
+/// **v2（2026-10-14・Components 01「高さは 50（主）と 44（副）の2種類だけ」）**:
+/// 塗りのボタン（白・真鍮・赤）は 50・`.callout`（既定 16pt）semibold、
+/// 線のボタン（`.outline`）は 44・15pt semibold・白 14% の縁。以前は全部 52 で、縁は白 28%。
 ///
 /// **`webPrimaryButton` は変えない。** そちらは約44pt で、プロフィールの
 /// フォローなど行の中のボタンが使っている
-enum JPPillStyle {
+enum JPPillStyle: Equatable {
     /// 白 92% に墨の字（1画面に1つ）
     case primary
     /// 枠線（白28%）に白の字（「アカウントを作る」など2番手）
@@ -57,6 +61,23 @@ enum JPPillStyle {
     /// 真鍮の塗りに墨の字（**写真の無い画面の主ボタン1つ**・デザインシステム「黒塗りの真鍮」
     /// の accent-fill #B8955A・墨で 7.11:1）。写真のある画面は `.primary`（白）
     case accent
+
+    /// **主ボタンの色はこれで決める**（CLAUDE.md の owner の好み・v2 の板より優先）:
+    /// 写真のある画面は白（ログインなど・写真の上で読める色は白だけ）、写真の無い画面は真鍮の塗り＋墨。
+    /// v2 の板は「写真のある画面も真鍮」の案だったが、owner の決まりを取った（2026-10-14）
+    static func main(onPhoto: Bool) -> JPPillStyle {
+        onPhoto ? .primary : .accent
+    }
+
+    /// 高さ。塗りは 50、線は 44（`JPHeight`）
+    var height: CGFloat {
+        self == .outline ? JPHeight.secondaryButton : JPHeight.primaryButton
+    }
+
+    /// 縁の白の濃さ。線のボタンだけ v2 の line（白 14%）
+    var borderOpacity: Double {
+        self == .outline ? 0.14 : 0
+    }
 
     @MainActor var fill: Color {
         switch self {
@@ -82,11 +103,11 @@ extension View {
 
     func jpPillButton(_ style: JPPillStyle = .primary) -> some View {
         self
-            .font(.callout.weight(.semibold))
+            .font(style == .outline ? JPFont.bodyEmphasis : .callout.weight(.semibold))
             .foregroundStyle(style == .primary || style == .accent ? WebTheme.accentText : Color.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: style.height)
             .background(style.fill, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(style == .outline ? 0.28 : 0), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(style.borderOpacity), lineWidth: JPStroke.hairline))
             .contentShape(Capsule())
     }
 
@@ -110,7 +131,9 @@ extension View {
 
 // MARK: - 札と行（板 43 設定・47 通報）
 
-/// 行を束ねる札（板: 角丸16・地 白7%・縁 白8%）。行の間の線は `JPCardDivider`
+/// 行を束ねる札（板: 角丸16・縁 白8%）。行の間の線は `JPCardDivider`。
+///
+/// **v2（2026-10-14）: 地を白 7%（≒#121212）から surface-1 の #0E0E0F に沈めた**（`WebTheme.card`）
 struct JPCard<Content: View>: View {
 
     let content: Content
@@ -121,16 +144,16 @@ struct JPCard<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
     }
 }
 
 /// 札の中の行と行の間の線（板: 白8%・1pt）
 struct JPCardDivider: View {
     var body: some View {
-        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
     }
 }
 

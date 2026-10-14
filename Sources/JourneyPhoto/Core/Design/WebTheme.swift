@@ -26,15 +26,27 @@ enum WebTheme {
     static let text = Color.white.opacity(0.95)
     /// 副次の文字。`--muted`
     static let muted = Color.white.opacity(0.82)
-    /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`
-    static let muted2 = Color.white.opacity(0.72)
-    static let faint = Color.white.opacity(0.6)
+    /// 副文（説明・日付）。**v2 の text-2（#B8B8B8・黒の上 10.6:1）**。白 72% と同じ値を
+    /// 不透明で持つ（2026-10-14 判断: 札の上でも同じ灰に見えるように）
+    static let muted2 = rgb(BrandPalette.text2)
+    /// 注記・@名・日時。**v2 の text-3（#9A9A9A・黒の上 7.4:1）**。以前の白 60% とほぼ同じ値
+    static let faint = rgb(BrandPalette.text3)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
     static let placeholder = Color.white.opacity(0.5)
 
     /// 境目（装飾の髪線）。**部品の縁には使わない**（黒の上で 1.27）
     static let border = Color.white.opacity(0.12)
+    /// **v2 の区切り線（白 8%）。** 札の縁・札の中の行の間・画面の節の間
+    static let hairline = Color.white.opacity(0.08)
+    /// **v2 の線（白 14%）。** 線のボタン（副ボタン・「もう一度」）の縁だけ。
+    /// 押せることは字で分かるので、縁は 3:1 を要しない（入力欄の縁は `outline`）
+    static let line = Color.white.opacity(0.14)
+
+    /// **v2 の札の面（surface-1・#0E0E0F）。** `JPCard`・空の状態の札
+    static let card = rgb(BrandPalette.surface)
+    /// **v2 のシート・入力欄の地（surface-2・#161617）**
+    static let sheet = rgb(BrandPalette.surface2)
     /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
     static let outline = rgb(BrandPalette.outline)
 
@@ -49,6 +61,8 @@ enum WebTheme {
     static let accentDeep = rgb(BrandPalette.accentDeep)
     /// 案内の帯（今日のテーマ）。選択状態は担わない
     static let accentSoft = rgb(BrandPalette.accentSoft)
+    /// 輪・メダル・Pro の印の金属の光（v2 の brass-hi → 真鍮 → brass-lo）。**字には使わない**
+    static let accentMetal = [rgb(BrandPalette.accentHighlight), accent, rgb(BrandPalette.accentShadow)]
 
     // MARK: 意味の色
 
@@ -67,8 +81,10 @@ enum WebTheme {
     }
 
     /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 92%）と、その上の墨。
-    /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ
-    static let accentBackground = Color.white.opacity(0.92)
+    /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ。
+    /// **v2 で 92% → 94%**（黒に重ねた値が `BrandPalette.primary`・比はそちらで見張る）
+    nonisolated static let primaryFillOpacity = 0.94
+    static let accentBackground = Color.white.opacity(primaryFillOpacity)
     static let accentText = rgb(BrandPalette.ink)
 
     /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）

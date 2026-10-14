@@ -847,7 +847,8 @@ struct OfficialSpotView: View {
     /// - 代表写真がある → 白（写真のある画面の主ボタン）
     nonisolated static func postButtonStyle(hasCover: Bool, hasLinked: Bool, postedHere: Bool) -> JPPillStyle {
         if hasLinked || postedHere { return .outline }
-        return hasCover ? .primary : .accent
+        // 主ボタンの色は共通の決まりで（写真のある画面は白・無い画面は真鍮）
+        return .main(onPhoto: hasCover)
     }
 
     @ViewBuilder
