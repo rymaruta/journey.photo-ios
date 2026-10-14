@@ -233,12 +233,30 @@
       "height": 1152,
       "checked": "2026-10-14",
       "note": "コンクリートの目地が斜めの4本に沿う。縦のシュプールの初稿は不採用。"
+    },
+    "triangle": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "上の人の胸は頂点。下の2人は点がシャツの胸の下の方で、ベルトより上。"
+    },
+    "thirdsDiagonals": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "右上の交点に人の背中が乗る。道は対角線に沿い、左下では道の端に線が乗る。"
+    },
+    "dynamicSymmetry": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "対角と逆対角が道に乗り、4つの木の中心が目に乗る。"
     }
   },
   "held": {
-    "triangle": "上の人の胸は頂点。下の2人は点がベルトで、胸は線より上",
-    "goldenSpiral": "渦に近い道の回もあるが、人は目（0.276, 0.724）より上。座った回はS字",
-    "thirdsDiagonals": "道のXに近い回もあるが、人は交点より下で点は空地",
-    "dynamicSymmetry": "対角の道は近いが、逆対角の4本が道に乗らず、点も公園の中心ではない"
+    "goldenSpiral": "道は渦に沿う。人は目（0.276, 0.724）のすぐ右で、点は道の空きに残る"
   }
 }
