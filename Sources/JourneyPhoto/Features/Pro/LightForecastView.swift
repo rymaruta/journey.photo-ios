@@ -336,11 +336,11 @@ struct LightForecastView: View {
                 stateIcon("sparkles")
                 EmptyState(title: LightForecastText.failureTitle(failure),
                            message: LightForecastText.failureBody(failure),
-                           actionTitle: L("Pro について見る", "About Pro")) {
+                           actionTitle: L("Pro について見る", "About Pro"),
+                           actionIdentifier: "lightForecast.paywall") {
                     deliveredAtPaywall = store.deliveredRevision
                     showPaywall = true
                 }
-                .accessibilityIdentifier("lightForecast.paywall")
             }
             .padding(.top, JPSpace.section)
         case .signedOut:

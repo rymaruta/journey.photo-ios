@@ -8,8 +8,7 @@ import SwiftUI
 /// **黒地の上だけ**（真鍮は写真の上では読めない・CLAUDE.md）。写真の上の眉ラベルは
 /// `jpEyebrow()` を白で使う。
 ///
-/// 2026-10-14 判断: マイページの旅の記録（枝 `claude/travel-record` の `TravelRecordView.eyebrow`）が
-/// 同じ形を画面の中に書いている。main に入ったら、それをこの部品に寄せる（字の太さは板の 600）
+/// マイページの旅の記録（`TravelRecordView`）もこの部品を使う（字の太さは板の 600）
 struct JPEyebrowLine: View {
 
     let text: String

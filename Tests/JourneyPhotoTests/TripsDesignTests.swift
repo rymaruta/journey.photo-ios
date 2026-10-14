@@ -352,3 +352,25 @@ final class TripsDesignTests: XCTestCase {
         }
     }
 }
+
+/// 🔴 オフラインの札に緑を入れない（画面の色は白・黒・真鍮・危険の色だけ・2026-10-14 判断）
+final class OfflineCardColorTests: XCTestCase {
+    func testNoGreenOnOfflineCard() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/OfflineTripCard.swift"),
+                              encoding: .utf8)
+        XCTAssertFalse(text.contains("WebTheme.success"), "オフラインの札に緑が入っている")
+    }
+}
+
+/// 旅の記録の国名の行は 12pt で 4.5:1 を保つ（白 42% では約 3.9:1）
+final class TravelRecordContrastTests: XCTestCase {
+    func testCountriesLineUsesText3() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Profile/TravelRecordView.swift"),
+                              encoding: .utf8)
+        XCTAssertFalse(text.contains("faint.opacity(0.7)"))
+    }
+}

@@ -130,13 +130,12 @@ final class V2SettingsProTests: XCTestCase {
         XCTAssertEqual(ProPaywallStyle.heroFade, 160)
         XCTAssertEqual(ProPaywallStyle.contentOverlap, 40)
         XCTAssertEqual(ProPaywallStyle.purchaseStyle, .primary, "写真のある画面の主ボタンは白（CLAUDE.md）")
-        // 眉ラベル（真鍮）は溶けの下端に乗る。いちばん明るい地（白い写真）でも 4.5:1
-        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.accent, ProPaywallStyle.eyebrowFloorHex), 4.5)
+        // 眉ラベルは写真が黒へ溶ける帯に乗るので白 88%（真鍮は黒地の上だけ・CLAUDE.md・2026-10-14 判断）
 
         let view = try source("Features/Pro/PaywallView.swift")
         let content = slice(view, from: "private var content: some View", to: "private func benefitRow")
-        assertInOrder(["Text(\"JOURNEY PHOTO PRO\")", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)"],
-                      in: content, "案内の眉ラベル")
+        assertInOrder(["Text(\"JOURNEY PHOTO PRO\")", ".jpEyebrow()", ".foregroundStyle(Color.white.opacity(0.88))"],
+                      in: content, "案内の眉ラベル（写真の溶けの上は白）")
         let benefit = slice(view, from: "private func benefitRow", to: "private var plans: some View")
         assertInOrder(["ProIconView(icon: benefit.icon, side: ProPaywallStyle.benefitIconSide, color: WebTheme.accent",
                        ".font(JPFont.bodyEmphasis)", ".font(JPFont.footnote)", ".foregroundStyle(WebTheme.text2)"],
@@ -229,7 +228,8 @@ final class V2SettingsProTests: XCTestCase {
         let states = slice(view, from: "private func emptyView", to: "private func load(refreshing")
         XCTAssertTrue(states.contains("EmptyState(title: LightForecastText.emptyTitle(empty)"))
         XCTAssertTrue(states.contains("actionTitle: L(\"Pro について見る\", \"About Pro\")"))
-        XCTAssertTrue(states.contains(".accessibilityIdentifier(\"lightForecast.paywall\")"))
+        // 識別子はボタンそのものに（EmptyState の一手に渡す）
+        XCTAssertTrue(states.contains("actionIdentifier: \"lightForecast.paywall\""))
         XCTAssertTrue(states.contains("ErrorBanner(title: LightForecastText.failureTitle(failure)"))
         XCTAssertFalse(view.contains("Color(red: 0x12"), "札に v1 の #121212 が残っている")
     }
@@ -390,5 +390,16 @@ final class V2SettingsProTests: XCTestCase {
                 XCTAssertFalse(line.contains("捨て"), "\(file): 「捨てる」を使っている: \(line)")
             }
         }
+    }
+}
+
+final class PaywallEyebrowContrastTests: XCTestCase {
+    /// 白 88% の眉ラベルは、いちばん明るい地（白い写真＋溶けの下端）でも 4.5:1 を保つ
+    func testWhiteEyebrowReadsOnTheBrightestFloor() {
+        let floor = ProPaywallStyle.eyebrowFloorHex
+        let level = Double(floor & 0xFF)
+        let blended = UInt32((255 * 0.88 + level * 0.12).rounded())
+        let white88 = (blended << 16) | (blended << 8) | blended
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(white88, floor), 4.5)
     }
 }

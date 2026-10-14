@@ -89,12 +89,14 @@ struct OfflineTripCard: View {
         .accessibilityLabel(L("電波なしで使う", "Use offline"))
     }
 
-    /// 札の見出し（板 `.ot`: 16 の太字。保存前は真鍮の電話の印、保存済みは緑のチェックの印・板の注記）。
+    /// 札の見出し（板 `.ot`: 16 の太字。電話の印は真鍮。保存済みかどうかは印の形（矢印・チェック）で言い分ける。
+    /// 2026-10-14 判断: 板の注記は保存済みを緑にしていたが、画面の色は白・黒・真鍮・危険の色だけ（CLAUDE.md）。
+    /// 緑は入れない）。
     /// `icon: false` は印を置かない姿（保存中・途中で止まった・削除の確かめ）
     private func header(_ title: String, saved: Bool = false, icon: Bool = true, detail: String? = nil) -> some View {
         HStack(spacing: 10) {
             if icon {
-                OfflinePhoneIcon(saved: saved, color: saved ? WebTheme.success : WebTheme.accent)
+                OfflinePhoneIcon(saved: saved, color: WebTheme.accent)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)

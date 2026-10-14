@@ -95,11 +95,11 @@ struct PaywallView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: JPSpace.m) {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
-                // 2026-10-14 判断（v2 の板どおり真鍮）: 眉は溶けの下端 40pt の中＝黒 75% 以上の上に乗る。
-                // 白い写真でも地は #404040 より暗く、真鍮は 4.5:1 を保つ（`ProPaywallStyle.eyebrowFloorHex`）
+                // 2026-10-14 判断: 板は真鍮だが、眉は写真が黒へ溶ける帯の上に乗る（純粋な黒地ではない）。
+                // 「真鍮は黒地の上だけ」（CLAUDE.md）に従い、写真の上の眉と同じ白 88% にする
                 Text("JOURNEY PHOTO PRO")
                     .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
+                    .foregroundStyle(Color.white.opacity(0.88))
                 Text(L("行ったその日に、\nいちばんの一枚を。", "The best shot,\non the day you go."))
                     .font(JPFont.display(ProPaywallStyle.titleSize, relativeTo: .title))
                     .lineSpacing(ProPaywallStyle.titleSize * 0.35 - 6)
@@ -373,7 +373,7 @@ enum ProPaywallStyle {
     static let selectedPlanFill = ProMarkColors.color(selectedPlanFillHex)
 
     /// 眉ラベルの下に来うるいちばん明るい地: 白い写真に、溶けの下端 40pt の黒（75% 以上）を重ねた値。
-    /// 真鍮の字がこの上で 4.5:1 を保つことをテストで見張る
+    /// 眉ラベルは白 88%（真鍮は黒地の上だけ）。この地の上でも白が読めることをテストで見張る
     static var eyebrowFloorHex: UInt32 {
         let white = contentOverlap / heroFade
         let level = UInt32((white * 255).rounded())

@@ -118,7 +118,8 @@ struct TravelRecordView: View {
                     .foregroundStyle(WebTheme.text3)
                 Text(TravelRoute.countriesLine(countries))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint.opacity(0.7))
+                    // 白 42% だと黒地で約 3.9:1 で 12pt に足りない。text-3（黒地の不透明の灰）
+                    .foregroundStyle(WebTheme.text3)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
