@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// 写真を大きく見る（板 14）。**送りと拡大、それに共有といいねだけ**。
+/// 写真を大きく見る（板 14・v2 の板 PhotoViewer）。**送りと拡大、それに共有といいねだけ**。
 ///
-///     ✕            1枚目 / 3            共有
-///                 （写真）
-///     題                                 ♡
-///     機種 · レンズ · f · s · ISO
+///     (✕)             1 / 3             (共有)     ← ガラスの丸 44
+///                    （写真）
+///     題（明朝 20）                          ♡     ← ハートは白・細い線
+///     機種 · レンズ                                 ← 等幅の数字 12・白 72%
+///     24mm · f/8 · 1/125s · ISO 100
+///
+/// **全部が写真の上**（写真は画面いっぱいに収める）なので、字と印は白と白の透過だけ。
+/// 不透明の灰（`text2`・`text3`）と真鍮は置かない（CLAUDE.md・`PhotoScreensV2Tests` が見張る）。
 ///
 /// 一覧から開いた写真は、たいてい隣も見たい。詳細画面に戻ってから
 /// もう1枚押す、をさせない（Web のモーダルが左右送りを持っているのと同じ理由）。
@@ -175,32 +179,35 @@ struct PhotoViewerView: View {
         return place.isEmpty ? nil : place
     }
 
-    /// 上の列（板 14）: 左に閉じる・真ん中に「1枚目 / N」・右に共有。
+    /// 上の列（v2 の板 PhotoViewer）: 左に閉じる・真ん中に「1 / N」・右に共有。
     ///
-    /// **閉じるは左上**（板どおり）。以前は右上だった。
-    /// 枠は写真の外（黒地）に出るので、ガラスの丸は付けない（板も素の 44pt）
+    /// **閉じるは左上**（板どおり）。v2 で閉じる・共有を**ガラスの丸（44pt）**に入れた——縦長の写真は
+    /// 上の端まで届くので、素の白い印だと明るい空の上で沈む（写真の詳細の戻る・「…」と同じ形）
     private var topBar: some View {
         HStack {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(WebTheme.foreground)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .jpGlass(in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Labels.Common.close)
 
             Spacer()
 
-            // **何枚目か**。点の列より数の方が、20枚あるときに現在地が分かる
+            // **何枚目か**（v2: 「1 / 3」・13 の太字の等幅の数字）。読み上げは「3枚中1枚目」
             if let position = PhotoMetaLine.viewerPosition(index, of: photos.count) {
                 Text(position)
-                    .font(JPFont.mono(13))
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .font(JPFont.number(JPTypeScale.footnote, weight: .semibold, relativeTo: .footnote))
+                    .foregroundStyle(WebTheme.foreground)
+                    .jpPhotoTextShadow()
                     .allowsHitTesting(false)
+                    .accessibilityLabel(PhotoMetaLine.viewerPositionSpoken(index, of: photos.count) ?? position)
             }
 
             Spacer()
@@ -208,35 +215,37 @@ struct PhotoViewerView: View {
             if let photo = current, let url = shareURL(photo) {
                 ShareLink(item: url) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .jpGlass(in: Circle())
+                        .contentShape(Circle())
                 }
                 .accessibilityLabel(L("共有", "Share"))
             } else {
                 // 真ん中の数をずらさないための空き（閉じるボタンと同じ幅）
-                Color.clear.frame(width: 44, height: 44)
+                Color.clear.frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, JPSpace.s)
         .padding(.top, 6)
     }
 
-    /// 下の題・撮影地・撮影情報と、いいね（板 14）。
+    /// 下の題・撮影地・撮影情報と、いいね（v2 の板 PhotoViewer）。
     ///
-    /// 撮影地は板に無いが、以前ここに札で出していたので消さない
-    /// （題の下に1行で）。**いいねはログイン中だけ**——押しても
-    /// 「ログインしてください」しか返らないボタンを写真の上に置かない
+    /// v2: 題は明朝 20、機材（機種 · レンズ）と撮影設定（焦点距離 · f · s · ISO）を等幅の数字 12 で2行に
+    /// （以前は1行に詰めて、長い機種名で設定が切れていた）。色は写真の上なので白 72%（`muted2`）。
+    /// 撮影地は板に無いが、以前ここに札で出していたので消さない（題の下に1行で）。
+    /// **いいねはログイン中だけ**——押しても「ログインしてください」しか返らないボタンを写真の上に置かない
     @ViewBuilder
     private var caption: some View {
         if let photo = current {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: JPSpace.s) {
+                VStack(alignment: .leading, spacing: 6) {
                     if !photo.displayTitle.isEmpty {
                         Text(photo.displayTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.white)
+                            .font(JPFont.display(JPTypeScale.stateTitle, relativeTo: .title3))
+                            .foregroundStyle(WebTheme.foreground)
                             .lineLimit(2)
                     }
                     if let place = currentPlace {
@@ -244,13 +253,19 @@ struct PhotoViewerView: View {
                             Image(systemName: "mappin")
                             Text(place).lineLimit(1)
                         }
-                        .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.72))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.muted2)
                     }
-                    if let line = PhotoMetaLine.exifLine(photo.exif) {
-                        Text(line)
-                            .font(JPFont.mono(12))
-                            .foregroundStyle(Color.white.opacity(0.6))
+                    if let gear = PhotoMetaLine.gearLine(photo.exif) {
+                        Text(gear)
+                            .font(JPFont.meta)
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
+                    }
+                    if let settings = PhotoMetaLine.settingsLine(photo.exif) {
+                        Text(settings)
+                            .font(JPFont.meta)
+                            .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
                     }
                 }
@@ -262,10 +277,11 @@ struct PhotoViewerView: View {
                     Button {
                         onToggleLike(photo)
                     } label: {
+                        // v2 の板: 26 の細い線のハート。**白のまま**（写真の上・CLAUDE.md の owner の決まり）
                         Image(systemName: liked ? "heart.fill" : "heart")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 44, height: 44)
+                            .font(.system(size: Self.heartSize, weight: .light))
+                            .foregroundStyle(WebTheme.foreground)
+                            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -273,9 +289,13 @@ struct PhotoViewerView: View {
                     .accessibilityAddTraits(liked ? .isSelected : [])
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.leading, JPSpace.m)
+            .padding(.trailing, JPSpace.xs)
         }
     }
+
+    /// 下のハートの大きさ（v2 の板の 26）
+    nonisolated static let heartSize: CGFloat = 26
 
     /// サムネイルの帯。**1枚しか無いときは出さない**（送る先が無い）
     @ViewBuilder

@@ -317,9 +317,9 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
                       "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"photo.spotGuide\")"))
-        // 見出しの撮影地の行の下・題の上（板 02 の位置）
-        let heading = try XCTUnwrap(view.components(separatedBy: "private var heading: some View {").dropFirst().first)
-        XCTAssertTrue(heading.prefix(200).contains("placeRow\n            spotGuideRow"))
+        // 撮影地の行の下・題の上（v2: 写真の裾 `photoFoot` に撮影地 → 撮影スポットの順。題は写真の下）
+        let foot = try XCTUnwrap(view.components(separatedBy: "private var photoFoot: some View {").dropFirst().first)
+        XCTAssertTrue(foot.prefix(300).contains("placeRow\n            spotGuideRow"))
         // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
         XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))
         XCTAssertTrue(view.contains("PhotoTrip.sectionDestination(photo: shown, stage: tripStage)"))
@@ -334,7 +334,8 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(section.contains("\"flag.fill\" : \"flag\""), "保存（しおり）・いいね（ハート）と印を分ける")
         XCTAssertTrue(section.contains("if PhotoTrip.offersDirections(destination) {"))
         XCTAssertTrue(section.contains(".openDirections(name: name, coords: coords, stillWanted: { onScreen })"))
-        XCTAssertTrue(section.contains(".frame(minHeight: WebTheme.minTapTarget)"), "押せるものは 44pt")
+        XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"), "押せるものは 44pt")
+        XCTAssertGreaterThanOrEqual(PhotoTripSection.goHeight, WebTheme.minTapTarget)
         XCTAssertTrue(section.contains(".accessibilityAddTraits(wanted ? .isSelected : [])"), "選んだ状態を読み上げない")
     }
 

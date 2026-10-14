@@ -162,13 +162,19 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertTrue(theme.contains("static let muted2 = Color.white.opacity(0.72)"), "muted2 が白の透過でない")
         XCTAssertTrue(theme.contains("static let faint = Color.white.opacity(0.6)"), "faint が白の透過でない")
         // 写真の上に字を置く画面は、不透明の灰・札の面を使わない
-        for path in ["Features/Stories/StoryViewerView.swift", "Features/PhotoDetail/PhotoDetailView.swift"] {
+        for path in ["Features/Stories/StoryViewerView.swift", "Features/PhotoDetail/PhotoViewerView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("WebTheme.muted2"), "\(path) の写真の上の字をたどれない")
             for opaque in ["WebTheme.text2", "WebTheme.text3", "WebTheme.card"] {
                 XCTAssertFalse(text.contains(opaque), "\(path) が写真の上で \(opaque) を使っている")
             }
         }
+        // 写真の詳細は v2（2026-10-14・第3段）で題から下を写真の下の黒地に移した——黒地の部品は text2・text3 を使う。
+        // 写真の上に残る部品（撮影地・撮影スポットの行・ページの点・コメントの欄）は
+        // `PhotoScreensV2Tests.testPhotoFootIsWhiteOnly`・`testCommentSendIsWhiteCircle` が部品ごとに見張る
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains("WebTheme.muted2"), "写真の詳細の写真の上の字をたどれない")
+        XCTAssertFalse(detail.contains("WebTheme.card"), "写真の詳細に札の面")
     }
 
     /// 札（#0E0E0F）はシート（#161617）より暗い。シートの上の札は地を渡して浮かせる

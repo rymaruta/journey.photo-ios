@@ -58,10 +58,28 @@ final class PhotoMetaLineTests: XCTestCase {
         XCTAssertNil(PhotoMetaLine.headline(date: nil, exifDateTime: nil, position: 1, of: 1))
     }
 
-    /// ビューアの「1枚目 / N」（0 始まりの添字から）
+    /// ビューアの「1 / N」（0 始まりの添字から・v2 の板）。読み上げは「N枚中1枚目」
     func testViewerPosition() {
-        XCTAssertEqual(PhotoMetaLine.viewerPosition(0, of: 5), L("1枚目 / 5", "1 of 5"))
+        XCTAssertEqual(PhotoMetaLine.viewerPosition(0, of: 5), "1 / 5")
+        XCTAssertEqual(PhotoMetaLine.viewerPosition(9, of: 5), "5 / 5")
         XCTAssertNil(PhotoMetaLine.viewerPosition(0, of: 1))
+        XCTAssertEqual(PhotoMetaLine.viewerPositionSpoken(0, of: 5), L("5枚中1枚目", "Photo 1 of 5"))
+        XCTAssertNil(PhotoMetaLine.viewerPositionSpoken(0, of: 1))
+    }
+
+    /// v2: 機材の1行と撮影設定の1行に分ける（ビューアの下の2行・詳細の撮影情報の要約）
+    func testGearAndSettingsLines() throws {
+        let e = try exif(#"{"camera":"Hasselblad Hasselblad X2D II 100C","lens":"XCD 35-100E@75","aperture":"4","exposure":"1/100","iso":50,"focalLength":"75mm"}"#)
+        XCTAssertEqual(PhotoMetaLine.gearLine(e), "Hasselblad X2D II 100C · XCD 35-100E@75")
+        XCTAssertEqual(PhotoMetaLine.settingsLine(e), "75mm · f/4 · 1/100s · ISO 50")
+        XCTAssertEqual(PhotoMetaLine.settingsCells(e).map(\.value), ["75mm", "f/4", "1/100s", "50"])
+        // 無いものは詰める（空の升・区切りだけの行を作らない）
+        let partial = try exif(#"{"aperture":"f/1.8","iso":0}"#)
+        XCTAssertNil(PhotoMetaLine.gearLine(partial))
+        XCTAssertEqual(PhotoMetaLine.settingsLine(partial), "f/1.8")
+        XCTAssertEqual(PhotoMetaLine.settingsCells(partial).map(\.label), [L("絞り", "Aperture")])
+        XCTAssertNil(PhotoMetaLine.settingsLine(nil))
+        XCTAssertTrue(PhotoMetaLine.settingsCells(nil).isEmpty)
     }
 
     // MARK: - 撮影情報の1行
