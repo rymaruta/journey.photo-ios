@@ -981,8 +981,8 @@ struct UploadView: View {
                     .disabled(model.isWorking)
             }
             if model.inspired != nil {
-                Text(L("投稿の先頭の1枚に付きます。元の写真が非公開になっていたら付きません。",
-                       "Attached to the first photo of the post. It won't attach if the original is no longer public."))
+                Text(L("投稿のうち1枚に付きます。元の写真が非公開になっていたら付きません。",
+                       "Attached to one photo of the post. It won't attach if the original is no longer public."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)

@@ -240,6 +240,15 @@ final class UploadDraftStore {
         }
     }
 
+    /// 記録にある下書きから「この写真を見て撮影」の元の写真を外す（付ける1枚の保存が通ったとき）。
+    /// 写真と欄はそのまま
+    func clearInspired(for userId: String) {
+        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+              var saved = try? JSONDecoder().decode(Draft.self, from: data), saved.inspired != nil else { return }
+        saved.inspired = nil
+        if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: key) }
+    }
+
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**
     func clear(for userId: String) {
         guard let key = Self.key(for: userId) else { return }

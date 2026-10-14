@@ -955,8 +955,9 @@ final class ScreenshotTests: XCTestCase {
         // 2026-10-14: 「この写真を見て撮影」の欄と、元の写真を選ぶ画面（保存した写真・行きたい場所）。
         // 選ぶ画面は閉じるだけ（選ぶと書きかけが増える）。出なければ撮らない（この試験の決まり）
         let inspired = app.buttons["upload.inspired"].firstMatch
+        // 欄は「詳しい設定」の上にある。開いた設定の下に隠れていたら下へ送って探す（上限あり）
         for _ in 0..<3 where !(inspired.exists && inspired.isHittable) {
-            app.swipeDown()
+            app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
         guard inspired.exists, inspired.isHittable else { return }

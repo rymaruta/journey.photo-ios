@@ -76,7 +76,7 @@ struct PhotoDetailView: View {
     /// 元の写真を開くときに引き当てる公開一覧（読んだときのもの・`InspiredBy.photoToOpen`）
     @State private var inspiredFeed: [Photo]?
     private var inspiredStage: InspiredBy.Stage {
-        InspiredBy.stage(photoId: shown.id, inspiredBy: shown.inspiredBy, signedIn: auth.userId != nil,
+        InspiredBy.stage(photoId: shown.id, inspiredBy: shown.inspiredBy, userId: auth.userId,
                          loaded: inspiredLoaded)
     }
     private var tripSpot: OfficialSpot? { tripStage.loaded?.spot }
@@ -252,7 +252,7 @@ struct PhotoDetailView: View {
         // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
         .task(id: shown.spotId ?? "") { await loadTripSpot() }
         // 「この写真を見て撮影」の元の写真（付いている写真・ログイン中だけ。口は認証が要る）
-        .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: shown.inspiredBy, signedIn: auth.userId != nil)) {
+        .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: shown.inspiredBy, userId: auth.userId)) {
             await loadInspired()
         }
         // 🔴 H-3: **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真の id だけだと、
@@ -1602,9 +1602,16 @@ struct PhotoDetailView: View {
     /// 失敗（500・圏外）は覚えない——何も出さないまま、次に開いたときに読み直す
     private func loadInspired() async {
         let photoId = shown.id
-        guard auth.userId != nil, let sourceId = InspiredBy.normalizedId(shown.inspiredBy) else { return }
-        if let loaded = inspiredLoaded, loaded.photoId == photoId, loaded.sourceId == sourceId { return }
-        let stillHere = { !Task.isCancelled && shown.id == photoId && InspiredBy.normalizedId(shown.inspiredBy) == sourceId }
+        // 🔴 **読んだ人も覚える**——ログアウトして別の人で入ると、ブロックの関係が違う。前の人の
+        // 読み取りを使い回さない（`InspiredBy.Loaded.userId`）
+        guard let userId = auth.userId, !userId.isEmpty,
+              let sourceId = InspiredBy.normalizedId(shown.inspiredBy) else { return }
+        if let loaded = inspiredLoaded, loaded.userId == userId, loaded.photoId == photoId,
+           loaded.sourceId == sourceId { return }
+        let stillHere = {
+            !Task.isCancelled && auth.userId == userId && shown.id == photoId
+                && InspiredBy.normalizedId(shown.inspiredBy) == sourceId
+        }
         // 投げた（500・圏外）と nil（null・404）を分ける: nil は「出すものが無い」として覚える
         let source: InspiredBy.Source?
         do {
@@ -1619,7 +1626,7 @@ struct PhotoDetailView: View {
             guard stillHere() else { return }
             if let feed { inspiredFeed = feed }
         }
-        inspiredLoaded = InspiredBy.Loaded(photoId: photoId, sourceId: sourceId, source: source)
+        inspiredLoaded = InspiredBy.Loaded(userId: userId, photoId: photoId, sourceId: sourceId, source: source)
     }
 
     /// 写真に紐づいた台帳の撮影スポットを引く（`PhotoTrip.spot`）。`spotId` の無い写真は読みに行かない。

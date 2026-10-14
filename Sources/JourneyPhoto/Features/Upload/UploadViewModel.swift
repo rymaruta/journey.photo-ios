@@ -271,14 +271,14 @@ final class UploadViewModel: ObservableObject {
 
     // ここから下は、まとめて同じものが付く
     @Published var song: Photo.Song?
-    /// 「この写真を見て撮影」の元の写真（2026-10-14・`InspiredBy`）。投稿の**先頭に上がった1枚だけ**に
-    /// 付ける（`InspiredBy.attachesTo`・同じ人に通知を何度も送らない）。下書きにも残す
+    /// 「この写真を見て撮影」の元の写真（2026-10-14・`InspiredBy`）。投稿の**1枚だけ**に付ける
+    /// （`inspiredCarrier`・同じ人に通知を何度も送らない）。付け終える前なら下書きにも残す
     @Published var inspired: InspiredBy.Pick? {
-        didSet { if inspired?.id != oldValue?.id { inspiredAttachedInPost = false } }
+        didSet { if inspired?.id != oldValue?.id { inspiredCarrier = InspiredBy.Carrier() } }
     }
-    /// この投稿で元の写真を付けた1枚の保存が通ったか。**やり直し（落ちた写真だけ送り直す）でも
-    /// もう付けない**——`reset()`（全部上がった）と、元の写真を選び直したときに下ろす
-    private var inspiredAttachedInPost = false
+    /// 元の写真を載せる1枚と、その保存が通ったか（`InspiredBy.Carrier`）。**届いたか分からない間は
+    /// その1枚に載せたまま**、後ろの写真には載せない。`reset()`（全部上がった）と、元の写真を選び直したときに戻す
+    private var inspiredCarrier = InspiredBy.Carrier<UUID>()
     @Published var tagsText = ""
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき・`UploadView`）。
     /// **入れるだけで、消せる**——決めつけない
@@ -630,7 +630,10 @@ final class UploadViewModel: ObservableObject {
             groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now),
             spot: spot.map { UploadDraftStore.Draft.Spot(spotId: $0.spotId, name: $0.name,
                                                          latitude: $0.coords?.lat, longitude: $0.coords?.lng) },
-            inspired: inspired)
+            // 🔴 **付け終えていたら・載せた1枚が届いたか分からないなら残さない**——開き直して
+            // やり直すと別の写真に付き、元の作者に通知が2回届く
+            inspired: inspiredCarrier.keepsInDraft(unsure: Set(items.map(\.id).filter { staged[$0] != nil }))
+                ? inspired : nil)
         let ok = drafts.save(inputs, fields: fields, for: draftOwner)
         if ok { restoredDraft = true }
         return ok
@@ -733,6 +736,13 @@ final class UploadViewModel: ObservableObject {
 
     /// 下書きの1枚の印を付け替える（`draftKeys` の注記）。開き直した写真でなければ何もしない
     private enum DraftMark { case sending, posted, notDelivered }
+    /// 元の写真を載せた1枚の保存が通った。**記録にある下書きの元の写真も消す**（開き直して別の写真に
+    /// 付け直さない・`markDraft(.posted)` と同じく上がった時点で）
+    private func inspiredSaved(_ photoId: UUID) {
+        inspiredCarrier.saved(photoId)
+        if restoredDraft, let drafts, let draftOwner { drafts.clearInspired(for: draftOwner) }
+    }
+
     private func markDraft(_ photoId: UUID, _ mark: DraftMark) {
         guard let key = draftKeys[photoId], let drafts, let draftOwner else { return }
         switch mark {
@@ -970,6 +980,8 @@ final class UploadViewModel: ObservableObject {
         stripRenders[photoId]?.cancel()
         stripRenders[photoId] = nil
         discardStaged(photoId)
+        // 元の写真を載せる1枚を外したら、次の写真に引き継ぐ
+        inspiredCarrier.removed(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
         // 🔴 **開き直した下書きの1枚を帯の × で外したら、端末の下書きからも外す**（2026-10-12 判断）。
@@ -1212,6 +1224,9 @@ final class UploadViewModel: ObservableObject {
                 // 届いていないと分かった（本体を置いていない）ときだけ印を下ろす。置いたが保存が通ったか
                 // 分からない（`staged`）写真は立てたまま——開き直しても戻さない
                 if staged[item.id] == nil { markDraft(item.id, .notDelivered) }
+                // 元の写真は、**確実に届いていない**ときだけ次の写真に引き継ぐ（鍵・PUT の失敗・アルバムが無い）。
+                // 届いたか分からない（`staged` が残る）間はこの写真に載せたまま——やり直しもこの写真に載せる
+                if staged[item.id] == nil || error is AlbumGone { inspiredCarrier.notDelivered(item.id) }
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
                 // 会員でないとき（`upload.ts` の `isAlbumMember`）だけで、持ち主がアルバムを
                 // 消すと会員の印も消える。残すと残りも同じ理由で全部落ち、押し直しても直らない
@@ -1323,8 +1338,7 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
         draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
-        draft.inspiredBy = InspiredBy.attachesTo(alreadyAttachedInPost: inspiredAttachedInPost)
-            ? InspiredBy.idToSend(inspired) : nil
+        draft.inspiredBy = inspiredCarrier.idToSend(for: item.id, pick: inspired)
         return draft
     }
 
@@ -1393,7 +1407,7 @@ final class UploadViewModel: ObservableObject {
             stagedEdits[item.id] = nil
             outcome.savedEarlier = true
             // 前の保存に元の写真を載せていたなら、それで付いている（付いたかは分からない）——もう付けない
-            if draft.inspiredBy != nil { inspiredAttachedInPost = true }
+            if draft.inspiredBy != nil { inspiredSaved(item.id) }
             if let song {
                 // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
                 if let id = placed.main.photoId {
@@ -1411,7 +1425,7 @@ final class UploadViewModel: ObservableObject {
         if let photo { onSaved?(photo) }
         // 元の写真は1枚に付けたら済み（付かなかった回も、同じ理由で次の写真も付かないので送らない）
         if draft.inspiredBy != nil {
-            inspiredAttachedInPost = true
+            inspiredSaved(item.id)
             outcome.inspiredDropped = InspiredBy.wasDropped(sent: draft.inspiredBy, saved: photo)
         }
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
@@ -1493,7 +1507,7 @@ final class UploadViewModel: ObservableObject {
         groupId = nil
         song = nil
         inspired = nil
-        inspiredAttachedInPost = false
+        inspiredCarrier = InspiredBy.Carrier()
         tagsText = ""
         // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
         initialTagsText = ""

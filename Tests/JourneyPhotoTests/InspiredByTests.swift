@@ -73,8 +73,6 @@ final class InspiredByTests: XCTestCase {
         XCTAssertTrue(InspiredBy.wasDropped(sent: sourceId, saved: try photo("p")), "見られない元の写真は黙って付かない")
         XCTAssertFalse(InspiredBy.wasDropped(sent: sourceId, saved: nil), "応答に写真が無い＝分からない")
         XCTAssertFalse(InspiredBy.wasDropped(sent: nil, saved: try photo("p")), "送っていない")
-        XCTAssertTrue(InspiredBy.attachesTo(alreadyAttachedInPost: false))
-        XCTAssertFalse(InspiredBy.attachesTo(alreadyAttachedInPost: true))
     }
 
     func testDroppedNoteIsAddedToTheSummary() async {
@@ -186,14 +184,41 @@ final class InspiredByTests: XCTestCase {
         XCTAssertNil(m.errorMessage, "2枚目に付けていないので「付かなかった」とは言わない")
     }
 
-    /// 1枚目の保存が落ちたら、次に通った1枚に付ける（付けた1枚が無いまま終わらない）
-    func testFailedFirstSaveLetsTheNextPhotoCarryIt() async {
+    /// 🔴 **1枚目の保存の答えが来ない（時間切れ・500＝届いたか分からない）間は、2枚目に載せない。
+    /// やり直した1枚目に載せる**——2枚目に載せると、1枚目が実は通っていたとき通知が2回届く
+    func testUnsureFirstSaveKeepsItAndTheRetryCarriesIt() async {
         ScriptedProtocol.reset()
         defer { ScriptedProtocol.reset() }
         ScriptedProtocol.script = [
             .init(match: "/upload/presigned-url", status: 200, body: presign),
             .init(match: "/put", status: 200, body: ""),
-            .init(match: "/upload/save", status: 500, body: #"{"error":"だめでした"}"#, once: true),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"時間切れ"}"#, once: true),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p2","src":"https://x/p2.jpg"}}"#,
+                  once: true),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg","inspiredBy":"\#(sourceId)"}}"#),
+        ]
+        let m = model()
+        m.items = [PendingPhoto(prepared: shot(1)), PendingPhoto(prepared: shot(2))]
+        m.inspired = pick()
+        await m.submit()
+        XCTAssertEqual(m.items.count, 1, "前提: 1枚目が届いたか分からないまま残った")
+        await m.submit()
+        let bodies = saveBodies()
+        XCTAssertEqual(bodies.count, 3)
+        XCTAssertEqual(bodies[0]["inspiredBy"] as? String, sourceId, "1枚目に載せていない")
+        XCTAssertNil(bodies[1]["inspiredBy"], "届いたか分からない1枚目のあと、2枚目にも載せた（通知が2回届きうる）")
+        XCTAssertEqual(bodies[2]["inspiredBy"] as? String, sourceId, "やり直した1枚目に載せていない")
+    }
+
+    /// 1枚目が**確実に届いていない**（鍵を取れない）なら、次の写真に引き継ぐ
+    func testUndeliveredFirstPhotoHandsItToTheNext() async {
+        ScriptedProtocol.reset()
+        defer { ScriptedProtocol.reset() }
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 500, body: #"{"error":"だめ"}"#, once: true),
+            .init(match: "/upload/presigned-url", status: 200, body: presign),
+            .init(match: "/put", status: 200, body: ""),
             .init(match: "/upload/save", status: 200,
                   body: #"{"success":true,"photo":{"id":"p2","src":"https://x/p2.jpg","inspiredBy":"\#(sourceId)"}}"#),
         ]
@@ -202,9 +227,105 @@ final class InspiredByTests: XCTestCase {
         m.inspired = pick()
         await m.submit()
         let bodies = saveBodies()
-        XCTAssertEqual(bodies.count, 2)
-        XCTAssertEqual(bodies[0]["inspiredBy"] as? String, sourceId)
-        XCTAssertEqual(bodies[1]["inspiredBy"] as? String, sourceId, "1枚目が落ちたのに2枚目に付けなかった")
+        XCTAssertEqual(bodies.count, 1, "前提: 1枚目は保存まで行かない")
+        XCTAssertEqual(bodies[0]["inspiredBy"] as? String, sourceId, "届いていない1枚目から引き継いでいない")
+    }
+
+    /// 載せる1枚を帯から外したら次の写真に引き継ぐ。付け終えたら、下書きに残さない
+    func testCarrierRules() async {
+        var c = InspiredBy.Carrier<Int>()
+        let p = pick()
+        XCTAssertEqual(c.idToSend(for: 1, pick: p), sourceId)
+        XCTAssertNil(c.idToSend(for: 2, pick: p), "載せる1枚は1枚目に決まっている")
+        XCTAssertTrue(c.keepsInDraft(unsure: []))
+        XCTAssertFalse(c.keepsInDraft(unsure: [1]), "届いたか分からない1枚がある間は下書きに残さない")
+        c.removed(1)
+        XCTAssertEqual(c.idToSend(for: 2, pick: p), sourceId, "外したのに引き継がない")
+        c.saved(2)
+        XCTAssertNil(c.idToSend(for: 3, pick: p))
+        XCTAssertNil(c.idToSend(for: 2, pick: p), "付け終えた")
+        XCTAssertFalse(c.keepsInDraft(unsure: []), "付け終えたのに下書きに残す")
+        c.notDelivered(2)
+        XCTAssertNil(c.idToSend(for: 3, pick: p), "付け終えた後は引き継がない")
+        var empty = InspiredBy.Carrier<Int>()
+        XCTAssertNil(empty.idToSend(for: 1, pick: nil), "選んでいなければ載せない")
+    }
+
+    /// 🔴 **下書きから続けても二重に付かない**: 1枚目に付いて2枚目が落ちる → 下書きに保存 →
+    /// 開き直してやり直す → 2枚目の本文に inspiredBy が無い
+    func testDraftAfterAttachingDoesNotAttachAgain() async throws {
+        ScriptedProtocol.reset()
+        defer { ScriptedProtocol.reset() }
+        let defaults = UserDefaults(suiteName: "InspiredByTests.\(UUID().uuidString)")!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("InspiredByTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func drafted() -> UploadViewModel {
+            let m = model()
+            m.drafts = UploadDraftStore(defaults: defaults, directory: directory)
+            m.draftOwner = "a"
+            m.makeDraftThumbnail = { _ in nil }
+            return m
+        }
+        // 1枚目は付いて上がる。2枚目は鍵を取れずに落ちる（届いていない＝下書きに保存できる）
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presign, once: true),
+            .init(match: "/upload/presigned-url", status: 500, body: #"{"error":"だめ"}"#, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg","inspiredBy":"\#(sourceId)"}}"#),
+        ]
+        let first = drafted()
+        first.items = [PendingPhoto(prepared: shot(1)), PendingPhoto(prepared: shot(2))]
+        first.inspired = pick()
+        await first.submit()
+        XCTAssertEqual(first.items.count, 1, "前提: 2枚目が残った")
+        XCTAssertTrue(first.saveDraft(), "前提: 下書きに保存できる")
+
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presign),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p2","src":"https://x/p2.jpg"}}"#),
+        ]
+        let next = drafted()
+        let restored = await next.restoreDraft()
+        XCTAssertTrue(restored)
+        XCTAssertNil(next.inspired, "付け終えた元の写真が下書きから戻った")
+        await next.submit()
+        XCTAssertNil(saveBodies().last?["inspiredBy"], "下書きから続けた2枚目にも付けた（通知が2回届く）")
+    }
+
+    /// 🔴 **開き直した下書きで付ける1枚が上がったら、記録にある下書きの元の写真も消す**
+    /// （残りの写真が落ちたあと閉じて開き直すと、別の写真に付け直していた）
+    func testPostingTheCarrierClearsInspiredFromTheStoredDraft() async throws {
+        ScriptedProtocol.reset()
+        defer { ScriptedProtocol.reset() }
+        let defaults = UserDefaults(suiteName: "InspiredByTests.\(UUID().uuidString)")!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("InspiredByTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = UploadDraftStore(defaults: defaults, directory: directory)
+        let first = model()
+        first.drafts = store
+        first.draftOwner = "a"
+        first.items = [PendingPhoto(prepared: shot(1)), PendingPhoto(prepared: shot(2))]
+        first.inspired = pick()
+        XCTAssertTrue(first.saveDraft())
+
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presign, once: true),
+            .init(match: "/upload/presigned-url", status: 500, body: #"{"error":"だめ"}"#),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg","inspiredBy":"\#(sourceId)"}}"#),
+        ]
+        let next = model()
+        next.drafts = store
+        next.draftOwner = "a"
+        next.makeDraftThumbnail = { _ in nil }
+        let restored = await next.restoreDraft()
+        XCTAssertTrue(restored)
+        await next.submit()
+        XCTAssertEqual(store.draft(for: "a")?.items.count, 1, "前提: 2枚目が下書きに残った")
+        XCTAssertNil(store.draft(for: "a")?.inspired, "付け終えたのに記録の下書きに元の写真が残った")
     }
 
     /// 選んだ元の写真は書きかけに数え、下書きに残り、開き直すと戻る
@@ -304,22 +425,26 @@ final class InspiredByTests: XCTestCase {
     /// 🔴 **送った先の写真で前の写真の行を出さない**（`Loaded` が写真と元の写真を持つ）
     func testStageOnlyUsesTheResultForThisPhotoAndSource() async throws {
         let src = try source(#"{"inspiredBy":{"id":"s","src":"https://x/s.jpg"}}"#)
-        let loaded = InspiredBy.Loaded(photoId: "a", sourceId: sourceId, source: src)
-        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, signedIn: true, loaded: loaded).source, src)
-        XCTAssertEqual(InspiredBy.stage(photoId: "b", inspiredBy: sourceId, signedIn: true, loaded: loaded), .loading,
+        let loaded = InspiredBy.Loaded(userId: "u1", photoId: "a", sourceId: sourceId, source: src)
+        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, userId: "u1", loaded: loaded).source, src)
+        XCTAssertEqual(InspiredBy.stage(photoId: "b", inspiredBy: sourceId, userId: "u1", loaded: loaded), .loading,
                        "前の写真の分を使った")
-        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: "other-id", signedIn: true, loaded: loaded), .loading,
+        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: "other-id", userId: "u1", loaded: loaded), .loading,
                        "付け替えた元の写真で前の分を使った")
-        XCTAssertNil(InspiredBy.stage(photoId: "b", inspiredBy: sourceId, signedIn: true, loaded: loaded).source)
-        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: nil, signedIn: true, loaded: loaded), .none)
-        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, signedIn: false, loaded: loaded), .none,
+        XCTAssertNil(InspiredBy.stage(photoId: "b", inspiredBy: sourceId, userId: "u1", loaded: loaded).source)
+        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: nil, userId: "u1", loaded: loaded), .none)
+        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, userId: nil, loaded: loaded), .none,
                        "口は認証が要る（ログアウト中は出さない）")
-        let gone = InspiredBy.Loaded(photoId: "a", sourceId: sourceId, source: nil)
-        XCTAssertNil(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, signedIn: true, loaded: gone).source,
+        XCTAssertEqual(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, userId: "u2", loaded: loaded), .loading,
+                       "人が替わったのに前の人の読み取りを使った（ブロックの関係は人ごとに違う）")
+        let gone = InspiredBy.Loaded(userId: "u1", photoId: "a", sourceId: sourceId, source: nil)
+        XCTAssertNil(InspiredBy.stage(photoId: "a", inspiredBy: sourceId, userId: "u1", loaded: gone).source,
                      "null・404 は何も出さない")
-        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, signedIn: true), "a>\(sourceId)")
-        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: nil, signedIn: true), "")
-        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, signedIn: false), "")
+        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, userId: "u1"), "u1|a>\(sourceId)")
+        XCTAssertNotEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, userId: "u2"),
+                          InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, userId: "u1"), "人が替わっても読み直さない")
+        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: nil, userId: "u1"), "")
+        XCTAssertEqual(InspiredBy.loadKey(photoId: "a", inspiredBy: sourceId, userId: nil), "")
     }
 
     /// 元の写真を開く1枚: 公開一覧に居ればその行（説明まで揃う）、居なければ要約から作る

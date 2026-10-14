@@ -75,18 +75,59 @@ enum InspiredBy {
         }
     }
 
-    /// 投稿の1枚に付ける ID。**投稿のうち最初に上がった1枚だけ**に付ける（`attachesTo`）
+    /// 投稿の1枚に付ける ID（形の合うものだけ）
     static func idToSend(_ pick: Pick?) -> String? {
         normalizedId(pick?.id)
     }
 
-    /// この1枚に付けるか。**同じ投稿で既に1枚付けた（保存が通った）なら付けない**。
+    /// **元の写真を載せる1枚**（2026-10-14 の確かめ）。投稿のうち1枚だけに付け、その1枚を覚える。
     ///
     /// 🔴 サーバーは**付いた写真1枚ごとに**元の作者へ通知を1回送る（`notifyInspiredOnce`）。
-    /// 3枚の投稿の全部に付けると、同じ人に同じ通知が3回届く。写真の詳細の行も
-    /// 投稿の先頭の1枚に出れば足りる（2026-10-14 判断）
-    static func attachesTo(alreadyAttachedInPost: Bool) -> Bool {
-        !alreadyAttachedInPost
+    /// 3枚の全部に付けると同じ人に3回届く。以前は「付け終えたか」の真偽値だけで、保存の答えが
+    /// 来なかった（時間切れ・500＝届いたか分からない）1枚のあと、2枚目にも載せていた——
+    /// 1枚目が実は通っていれば通知が2回届く。
+    ///
+    /// - 載せる1枚は、最初に送り始めた写真に決める
+    /// - その1枚が**届いたか分からない**間は、後ろの写真には載せない。やり直しもその1枚に載せる
+    /// - 別の写真に引き継ぐのは、**確実に届いていない**とき（鍵・本体の PUT の失敗、アルバムが無い）と、
+    ///   その1枚を帯から外したときだけ
+    struct Carrier<ID: Hashable>: Equatable {
+        /// 載せる1枚（まだ決めていなければ nil）
+        private(set) var photo: ID?
+        /// その1枚の保存が通った（以後どの写真にも載せない）
+        private(set) var attached = false
+
+        init() {}
+
+        /// この写真の保存に載せる ID。まだ1枚に決めていなければ、この写真に決める
+        mutating func idToSend(for item: ID, pick: Pick?) -> String? {
+            guard !attached, let id = InspiredBy.idToSend(pick) else { return nil }
+            if photo == nil { photo = item }
+            return photo == item ? id : nil
+        }
+
+        /// 保存が通った（「保存済み」の 409 も、前の送信で載せていれば通ったものとする）
+        mutating func saved(_ item: ID) {
+            if photo == item { attached = true }
+        }
+
+        /// 確実に届いていない（鍵・PUT の失敗・アルバムが無い）。次の写真に引き継ぐ
+        mutating func notDelivered(_ item: ID) {
+            if photo == item && !attached { photo = nil }
+        }
+
+        /// 帯から外した。届いたか分からない写真でも、外したなら次の写真に引き継ぐ
+        mutating func removed(_ item: ID) {
+            notDelivered(item)
+        }
+
+        /// 下書きに元の写真を残してよいか。**付け終えた・載せた1枚が届いたか分からない**なら残さない
+        /// （開き直して別の写真に付き、通知が2回届く）
+        func keepsInDraft(unsure: Set<ID>) -> Bool {
+            guard !attached else { return false }
+            guard let photo else { return true }
+            return !unsure.contains(photo)
+        }
     }
 
     /// 送ったのに付かなかったか（元の写真が非公開・削除・ブロックになった）。
@@ -140,6 +181,8 @@ enum InspiredBy {
     /// 読み終えた結果。**どの写真の、どの元の写真で読んだか**を持つ（写真を送った直後に前の写真の行を
     /// 出さないため・`PhotoTrip.Loaded` と同じ考え）
     struct Loaded: Equatable {
+        /// 読んだときの人（**人が替わったら使わない**——ブロックの関係は人ごとに違う）
+        let userId: String
         let photoId: String
         let sourceId: String
         /// 出してよい元の写真。null・404 なら nil（何も出さない）
@@ -162,18 +205,21 @@ enum InspiredBy {
         }
     }
 
-    /// 写真と手元の読み込み結果から段階を決める。**読んだ写真・元の写真が違えば使わない**。
+    /// 写真と手元の読み込み結果から段階を決める。**読んだ人・写真・元の写真が違えば使わない**。
     /// 口は認証が要るので、ログインしていなければ読まない（出さない）
-    static func stage(photoId: String, inspiredBy: String?, signedIn: Bool, loaded: Loaded?) -> Stage {
-        guard signedIn, let sourceId = normalizedId(inspiredBy) else { return .none }
-        guard let loaded, loaded.photoId == photoId, loaded.sourceId == sourceId else { return .loading }
+    static func stage(photoId: String, inspiredBy: String?, userId: String?, loaded: Loaded?) -> Stage {
+        guard let userId, !userId.isEmpty, let sourceId = normalizedId(inspiredBy) else { return .none }
+        guard let loaded, loaded.userId == userId, loaded.photoId == photoId, loaded.sourceId == sourceId else {
+            return .loading
+        }
         return .ready(loaded.source)
     }
 
-    /// 読みに行く鍵（`.task(id:)`）。付いていない・ログインしていない写真は空（読みに行かない）
-    static func loadKey(photoId: String, inspiredBy: String?, signedIn: Bool) -> String {
-        guard signedIn, let sourceId = normalizedId(inspiredBy) else { return "" }
-        return "\(photoId)>\(sourceId)"
+    /// 読みに行く鍵（`.task(id:)`）。**人も入れる**（入り直したら読み直す）。
+    /// 付いていない・ログインしていない写真は空（読みに行かない）
+    static func loadKey(photoId: String, inspiredBy: String?, userId: String?) -> String {
+        guard let userId, !userId.isEmpty, let sourceId = normalizedId(inspiredBy) else { return "" }
+        return "\(userId)|\(photoId)>\(sourceId)"
     }
 
     /// 元の写真を開くときの1枚。**公開一覧に居ればその行**（撮影情報・説明まで揃う）、
