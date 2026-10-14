@@ -71,14 +71,42 @@ enum TravelRoute {
         let (minLng, maxLng) = padded(lngs.min()!, lngs.max()!)
         let (minLat, maxLat) = padded(lats.min()!, lats.max()!)
         let spanLng = maxLng - minLng, spanLat = maxLat - minLat
-        let fitted = points.map { point in
+        let fitted = deduplicated(points.map { point in
             CGPoint(x: (point.lng - minLng) / spanLng, y: 1 - (point.lat - minLat) / spanLat)
-        }
+        })
+        // まとめた結果1点になる（同じ町の中だけ）なら、線は描かない
+        guard fitted.count >= minimumPoints else { return nil }
         let meridians = stride(from: (minLng / meridianStep).rounded(.up) * meridianStep,
                                through: maxLng, by: meridianStep).map { ($0 - minLng) / spanLng }
         let parallels = stride(from: (minLat / parallelStep).rounded(.up) * parallelStep,
                                through: maxLat, by: parallelStep).map { 1 - ($0 - minLat) / spanLat }
         return Shape(points: fitted, meridians: meridians, parallels: parallels)
+    }
+
+    /// 枠の中でほとんど同じ所に続く点は1つにまとめる（同じ町で何枚も撮ると、点と線が重なって潰れる）。
+    /// 一番新しい点は必ず残す
+    static let mergeDistance = 0.012
+
+    static func deduplicated(_ points: [CGPoint]) -> [CGPoint] {
+        var out: [CGPoint] = []
+        for (index, point) in points.enumerated() {
+            if let previous = out.last, hypot(point.x - previous.x, point.y - previous.y) < mergeDistance {
+                if index == points.count - 1 { out[out.count - 1] = point }
+                continue
+            }
+            out.append(point)
+        }
+        return out
+    }
+
+    /// 2点を結ぶ弧の、曲げの点（0〜1 の座標）。**航路のように上へふくらませる**（直線を何本も重ねると
+    /// 行き来が平行な線の束に潰れた・Mac run 437 の絵）。ふくらみは区間の長さに比例し、枠の上は越えない
+    static let arcLift = 0.28
+
+    static func arcControl(from a: CGPoint, to b: CGPoint) -> CGPoint {
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        let length = hypot(b.x - a.x, b.y - a.y)
+        return CGPoint(x: mid.x, y: max(0, mid.y - length * arcLift))
     }
 
     private static func padded(_ low: Double, _ high: Double) -> (Double, Double) {

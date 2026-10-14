@@ -35,8 +35,8 @@ struct TravelRecordView: View {
     @State private var haloOpacity: Double = 0
     @State private var played = false
 
-    /// 線の高さ（板 H1: 64pt）
-    static let routeHeight: CGFloat = 64
+    /// 線の高さ（板 H1 の 64pt に、弧のふくらみの分を足した）
+    static let routeHeight: CGFloat = 72
 
     private var shape: TravelRoute.Shape? {
         kilometers > 0 ? TravelRoute.shape(of: coordinates) : nil
@@ -187,10 +187,11 @@ private struct TravelRouteCanvas: View, Animatable {
 
     var body: some View {
         GeometryReader { proxy in
-            let inset: CGFloat = 6
-            let rect = CGRect(x: inset, y: inset,
+            // 上は弧のふくらみの分を空ける
+            let inset: CGFloat = 6, top: CGFloat = 14
+            let rect = CGRect(x: inset, y: top,
                               width: max(1, proxy.size.width - inset * 2),
-                              height: max(1, proxy.size.height - inset * 2))
+                              height: max(1, proxy.size.height - top - inset))
             let points = shape.points.map { CGPoint(x: rect.minX + $0.x * rect.width,
                                                     y: rect.minY + $0.y * rect.height) }
             let last = max(1, points.count - 1)
@@ -210,11 +211,16 @@ private struct TravelRouteCanvas: View, Animatable {
                 }
                 .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
 
-                // 線。古い区間ほど薄い真鍮
+                // 線。区間ごとに上へふくらむ弧（航路）。古い区間ほど薄い真鍮
                 Path { path in
                     guard let first = points.first else { return }
                     path.move(to: first)
-                    for point in points.dropFirst() { path.addLine(to: point) }
+                    for index in 1..<points.count {
+                        let c = TravelRoute.arcControl(from: shape.points[index - 1], to: shape.points[index])
+                        path.addQuadCurve(to: points[index],
+                                          control: CGPoint(x: rect.minX + c.x * rect.width,
+                                                           y: rect.minY + c.y * rect.height))
+                    }
                 }
                 .trim(from: 0, to: progress)
                 .stroke(LinearGradient(stops: [.init(color: WebTheme.accent.opacity(0.35), location: 0),

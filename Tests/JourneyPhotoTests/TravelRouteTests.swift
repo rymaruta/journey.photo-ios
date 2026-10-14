@@ -63,12 +63,33 @@ final class TravelRouteTests: XCTestCase {
         XCTAssertNil(TravelRoute.shape(of: [Photo.Coords(lat: 35, lng: 139)]))
     }
 
-    /// 同じ町の中だけの線は、枠いっぱいに引き伸ばさない（大旅行に見せない）
-    func testTinySpanIsNotStretched() throws {
-        let shape = try XCTUnwrap(TravelRoute.shape(of: [Photo.Coords(lat: 35.680, lng: 139.760),
-                                                         Photo.Coords(lat: 35.690, lng: 139.770)]))
-        let dx = abs(shape.points[1].x - shape.points[0].x)
-        XCTAssertLessThan(dx, 0.01, "2° の幅に広げて真ん中に置く")
+    /// 同じ町の中だけの線は、枠いっぱいに引き伸ばさない（大旅行に見せない）。
+    /// 2° の幅に広げて真ん中に置くと点が重なるので、1点にまとまって線は出ない
+    func testTinySpanIsNotStretched() {
+        XCTAssertNil(TravelRoute.shape(of: [Photo.Coords(lat: 35.680, lng: 139.760),
+                                            Photo.Coords(lat: 35.690, lng: 139.770)]))
+        let shape = TravelRoute.shape(of: [Photo.Coords(lat: 35.0, lng: 139.0),
+                                           Photo.Coords(lat: 35.0, lng: 140.5)])
+        XCTAssertEqual(shape?.points.count, 2)
+        XCTAssertLessThan(abs((shape?.points[1].x ?? 0) - (shape?.points[0].x ?? 0)), 0.8, "2° の幅の中に置く")
+    }
+
+    /// 続けて同じ所の点は1つに。一番新しい点は残す
+    func testNearbyPointsMerge() {
+        let merged = TravelRoute.deduplicated([CGPoint(x: 0, y: 0), CGPoint(x: 0.001, y: 0),
+                                               CGPoint(x: 0.5, y: 0.5), CGPoint(x: 0.505, y: 0.5)])
+        XCTAssertEqual(merged, [CGPoint(x: 0, y: 0), CGPoint(x: 0.505, y: 0.5)])
+    }
+
+    /// 弧は上へふくらみ、長い区間ほど高い。枠の上は越えない
+    func testArcBulgesUpward() {
+        let short = TravelRoute.arcControl(from: CGPoint(x: 0.4, y: 0.8), to: CGPoint(x: 0.6, y: 0.8))
+        let long = TravelRoute.arcControl(from: CGPoint(x: 0, y: 0.8), to: CGPoint(x: 1, y: 0.8))
+        XCTAssertLessThan(short.y, 0.8)
+        XCTAssertLessThan(long.y, short.y)
+        XCTAssertEqual(long.x, 0.5, accuracy: 1e-9)
+        let top = TravelRoute.arcControl(from: CGPoint(x: 0, y: 0.05), to: CGPoint(x: 1, y: 0.05))
+        XCTAssertGreaterThanOrEqual(top.y, 0)
     }
 
     /// 間引いても最初と最後の点は残る
