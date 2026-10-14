@@ -98,10 +98,23 @@ enum WebTheme {
     /// iOS 26 のガラスの帯に入れると「デカすぎる」（owner・実機）。板（01 ホーム・04 マップ・
     /// 11 探す・01d メニュー）の見出しは 22px の箱に線 1.7 の細い線画（描かれる絵は約 19px）で、
     /// 太字ではない。**システムの 17pt より一回り大きく、線の太さは板どおり細め**にする。
-    nonisolated static let toolbarIconSize: CGFloat = 19
+    nonisolated static var toolbarIconSize: CGFloat { previewToolbarIcon?.size ?? 19 }
     /// アイコンの箱の**幅**（並びの寸法）。19pt の絵（約 21〜23pt）が収まる最小。
     /// **高さは `minTapTarget`（44）**（`webToolbarIcon` の注記・箱の外は押せなかった）
-    nonisolated static let toolbarIconBox: CGFloat = 28
+    nonisolated static var toolbarIconBox: CGFloat { previewToolbarIcon?.box ?? 28 }
+
+    /// 画面写真で大きさの候補を見比べるための鍵（Debug のみ・Release では必ず `nil`）。
+    /// `-JPPreviewToolbarIcon "17:24"`（絵の大きさ:箱の幅）。2026-10-14 owner「アイコン自体も含めてデカイ」
+    nonisolated static var previewToolbarIcon: (size: CGFloat, box: CGFloat)? {
+        #if DEBUG
+        guard let raw = UserDefaults.standard.string(forKey: "JPPreviewToolbarIcon") else { return nil }
+        let parts = raw.split(separator: ":").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, (10...30).contains(parts[0]), (16...44).contains(parts[1]) else { return nil }
+        return (CGFloat(parts[0]), CGFloat(parts[1]))
+        #else
+        return nil
+        #endif
+    }
     /// お知らせの未読の点（8pt）を、箱の右上の角からずらす量。板の点は絵の右上の角に
     /// 中心が来て、線画の肩に少し掛かる（板 01: 44 の枠で top/right 10・絵 22）。
     /// 28 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない

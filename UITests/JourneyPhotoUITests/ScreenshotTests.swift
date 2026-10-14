@@ -84,6 +84,31 @@ final class ScreenshotTests: XCTestCase {
         add(note)
     }
 
+    /// **見出しの絵の大きさの候補を並べて撮る**（2026-10-14 owner「アイコン自体も含めてデカイ」）。
+    /// `-JPPreviewToolbarIcon "絵:箱の幅"`（Debug のみ）で起動し直し、上のバーだけを撮る。
+    /// 10f-a が今（19:28）。出なければ撮らない
+    func testCapturesHeaderIconCandidates() {
+        let candidates = [("a", "19:28", "今"), ("b", "17:24", ""), ("c", "16:22", ""), ("d", "15:22", "")]
+        for (key, value, note) in candidates {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewToolbarIcon", value]
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            guard app.buttons["header.search"].firstMatch.waitForExistence(timeout: 20) else { return }
+            Thread.sleep(forTimeInterval: 2)
+            let bar = app.navigationBars.firstMatch
+            guard bar.exists else { return }
+            let shot = XCTAttachment(screenshot: bar.screenshot())
+            shot.name = "10f-\(key)-見出しの絵（\(value)\(note.isEmpty ? "" : "・" + note)）"
+            shot.lifetime = .keepAlways
+            add(shot)
+            app.terminate()
+        }
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
