@@ -99,11 +99,9 @@ enum WebTheme {
     /// 11 探す・01d メニュー）の見出しは 22px の箱に線 1.7 の細い線画（描かれる絵は約 19px）で、
     /// 太字ではない。**システムの 17pt より一回り大きく、線の太さは板どおり細め**にする。
     nonisolated static let toolbarIconSize: CGFloat = 19
-    /// アイコンの**見た目の箱**（並びの寸法）。19pt の絵（約 21〜23pt）が収まる最小。
-    /// **当たりは `minTapTarget`（44）のまま**で、箱の外へ広げる（`webToolbarIcon` の注記）
+    /// アイコンの箱の**幅**（並びの寸法）。19pt の絵（約 21〜23pt）が収まる最小。
+    /// **高さは `minTapTarget`（44）**（`webToolbarIcon` の注記・箱の外は押せなかった）
     nonisolated static let toolbarIconBox: CGFloat = 28
-    /// 当たりを箱の外へ広げる幅（片側）。箱＋両側で 44
-    nonisolated static var toolbarHitSlack: CGFloat { (minTapTarget - toolbarIconBox) / 2 }
     /// お知らせの未読の点（8pt）を、箱の右上の角からずらす量。板の点は絵の右上の角に
     /// 中心が来て、線画の肩に少し掛かる（板 01: 44 の枠で top/right 10・絵 22）。
     /// 28 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない
@@ -160,25 +158,17 @@ extension View {
     /// ガラスの帯に入れる。こちらが `frame(minWidth: 44, minHeight: 44)` で並びの寸法そのものを
     /// 44 にしていたので、帯は「44 ＋ システムの余白」になり、標準の帯より太く・長くなっていた。
     ///
-    /// **当たりは 44 のまま・並びの寸法には効かせない**: 44 の枠で当たり（`contentShape`）を取り、
-    /// その外側を負の余白で `toolbarIconBox`（28）に戻す。帯が受け取る寸法は 28、押せる範囲は 44。
-    /// （iOS 26 の帯の項目はシステムも当たりを持つが、Linux では確かめられないので、
-    /// こちらの当たりも残す。どちらが効いても 44 を割らない）
+    /// **箱は幅 28・高さ 44**: 帯を長くするのは幅なので、幅だけを `toolbarIconBox`（28）に詰め、
+    /// 高さは 44 のまま当たりにする（`contentShape`）。
+    /// 🔴 **箱の外へ当たりを広げる作り（44 の余白で当たりを取り、負の余白で箱に戻す）は効かなかった**
+    /// （Mac run 432: 絵の中心から 19pt 下を押してもお知らせが開かない。バーの項目は UIKit の枠の中しか
+    /// 押せない）。当たりは並びの寸法の中にしか作れない
     func webToolbarIcon() -> some View {
         self
             .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
             .foregroundStyle(WebTheme.foreground)
-            .frame(minWidth: WebTheme.toolbarIconBox, minHeight: WebTheme.toolbarIconBox)
-            .webToolbarHitArea()
-    }
-
-    /// 見た目の箱（`toolbarIconBox`）のまま、当たりだけを 44 に広げる。
-    /// 44 の枠で当たりを取り、負の余白で並びの寸法を箱に戻す（帯を太らせない）
-    func webToolbarHitArea() -> some View {
-        self
-            .padding(WebTheme.toolbarHitSlack)
+            .frame(minWidth: WebTheme.toolbarIconBox, minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())
-            .padding(-WebTheme.toolbarHitSlack)
     }
 
     /// 押せるものの当たり判定を 44pt 以上にする（見た目は変えない）。

@@ -91,10 +91,10 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(bell.isHittable, "閉じた後にホームへ戻っていない")
     }
 
-    /// **見出しの絵は、見た目の箱（28pt）の外でも 44pt の範囲なら押せること。**
-    /// 絵を小さくしたとき（2026-10-14）に、当たりだけ 44pt に広げた
-    /// （`webToolbarHitArea`）。広げた分が本当に指に届くかを、箱の下の端から
-    /// 外れた所（中心から 19pt 下・箱の端から約 5pt 外）を押して確かめる
+    /// **見出しの絵は、絵の外でも 44pt の高さの中なら押せること**（2026-10-14 絵を小さくしたとき）。
+    /// 箱は幅 28・高さ 44。絵の中心から 19pt 下（19pt の絵の端から約 9pt 外）を押して開くか見る。
+    /// 🔴 run 432: 箱を 28 角にして外へ当たりを広げた作りでは、ここを押しても開かなかった。
+    /// 横（隣の絵との間）を押したときの結果は、決まりにせず記録だけ残す（システム次第のため）
     func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -106,17 +106,26 @@ final class SmokeTests: XCTestCase {
 
         let bell = app.buttons["header.notifications"]
         XCTAssertTrue(bell.waitForExistence(timeout: 20), "見出しのお知らせが無い")
-        // 箱が 44 のままなら、この試しは意味が無い（外を押していない）
-        XCTAssertLessThan(bell.frame.height, 44, "見た目の箱が小さくなっていない")
-        let outside = 19 - bell.frame.height / 2
-        XCTAssertGreaterThan(outside, 0, "押す所が箱の内側になっている")
+        XCTAssertGreaterThanOrEqual(bell.frame.height, 44, "当たりの高さが 44 に足りない")
+        let close = app.buttons["notifications.close"]
+        let center = bell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
 
-        bell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .withOffset(CGVector(dx: 0, dy: 19))
-            .tap()
+        // 横: 箱の右の端から 5pt 外（隣のメニューとの間）。記録だけ
+        center.withOffset(CGVector(dx: bell.frame.width / 2 + 5, dy: 0)).tap()
+        let sideOpened = close.waitForExistence(timeout: 5)
+        let note = XCTAttachment(string: "箱: \(bell.frame) / 横に 5pt 外を押して開いたか: \(sideOpened)")
+        note.name = "見出しの絵の横の当たり"
+        note.lifetime = .keepAlways
+        add(note)
+        if sideOpened {
+            close.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 10), "お知らせが閉じない")
+        }
 
-        XCTAssertTrue(app.buttons["notifications.close"].waitForExistence(timeout: 15),
-                      "絵の箱の少し外（44pt の範囲内）を押してもお知らせが開かない")
+        // 縦: 絵の中心から 19pt 下（44 の高さの中）
+        center.withOffset(CGVector(dx: 0, dy: 19)).tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 15),
+                      "絵の外（44pt の高さの中）を押してもお知らせが開かない")
     }
 
     /// 見出しの「メニュー（≡）」でメニューが出て、「撮影地マップ」でシートが閉じて
