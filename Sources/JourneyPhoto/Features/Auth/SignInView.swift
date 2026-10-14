@@ -4,6 +4,10 @@ import SwiftUI
 ///
 /// **行き止まりを作らない。** 確認コードが届かない／パスワードを忘れた、の
 /// 出口が無いと、その人はアカウントを作り直すしかなくなる。
+///
+/// **v2（2026-10-14・板 SignIn）**: 写真のタイルを4列×3段で斜め（-4°）に敷き、上で黒へ溶かす。
+/// ワードマークの下の一文は明朝 18 の text-2。主ボタンは**白**（写真のある画面・CLAUDE.md の owner の好み。
+/// v2 の板は真鍮の案）、「アカウントを作る」は線のボタン
 struct SignInView: View {
 
     var reason: String?
@@ -69,10 +73,10 @@ struct SignInView: View {
                         verificationOffer
                     }
                 }
-                .padding(.horizontal, 24)
-                // 写真の下の暗がりに重ねる（板は写真 340 の上から 262 で本文が始まる）
-                .padding(.top, -78)
-                .padding(.bottom, 30)
+                .padding(.horizontal, JPSpace.xl)
+                // 写真の下の暗がりに重ねる（板 v2: 写真 380 の上から 250 でワードマークが始まる）
+                .padding(.top, -SignInLayout.contentOverlap)
+                .padding(.bottom, JPSpace.section)
             }
         }
         .scrollDismissesKeyboard(.interactively)
@@ -92,28 +96,37 @@ struct SignInView: View {
 
     // MARK: - 上の写真とロゴ
 
-    /// 3×3 の写真（板: 高さ340・隙間3、下 212 を黒へ溶かす）。飾りなので読み上げない
+    /// 4×3 の写真（板 v2: 1枚 120・隙間 3 を -4° 傾けて左右に 20 はみ出させ、上へ 30 ずらす。
+    /// 高さ 380 の中で 上 20% → 40% で 40% → 92% で黒 と溶かす）。飾りなので読み上げない
     private var tileHeader: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
-        return LazyVGrid(columns: columns, spacing: 3) {
-            ForEach(0..<9, id: \.self) { index in
-                tile(index < tiles.count ? tiles[index] : nil)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: SignInLayout.tileGap),
+                            count: SignInLayout.tileColumns)
+        return Color.clear
+            .frame(height: SignInLayout.headerHeight)
+            .overlay(alignment: .top) {
+                LazyVGrid(columns: columns, spacing: SignInLayout.tileGap) {
+                    ForEach(0..<SignInLayout.tileCount, id: \.self) { index in
+                        tile(index < tiles.count ? tiles[index] : nil)
+                    }
+                }
+                .padding(.horizontal, -SignInLayout.tileBleed)
+                .rotationEffect(.degrees(SignInLayout.tileTilt))
+                .offset(y: SignInLayout.tileShift)
             }
-        }
-        .frame(height: 340, alignment: .top)
-        .clipped()
-        .overlay(alignment: .bottom) {
-            LinearGradient(colors: [Color.black.opacity(0), Color.black],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 212)
-        }
-        .accessibilityHidden(true)
+            .clipped()
+            .overlay {
+                LinearGradient(stops: [.init(color: Color.black.opacity(0.2), location: 0),
+                                       .init(color: Color.black.opacity(0.4), location: 0.4),
+                                       .init(color: Color.black, location: 0.92)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .accessibilityHidden(true)
     }
 
     /// 1枚。**読めたときだけ描く**（読み込み中の回転や壊れた記号を並べない）
     private func tile(_ photo: Photo?) -> some View {
         WebTheme.surface
-            .frame(height: 112)
+            .frame(height: SignInLayout.tileHeight)
             .overlay {
                 if let photo {
                     AsyncImage(url: photo.gridImageURL,
@@ -129,16 +142,17 @@ struct SignInView: View {
             .clipped()
     }
 
-    /// 大きいロゴと一文（板: マーク＋serif 40・「旅の写真を、一冊の記録に。」）
+    /// 大きいロゴと一文（板: マーク＋serif・「旅の写真を、一冊の記録に。」）。
+    /// 板 v2: 一文は明朝 18（段の下限）の text-2。溶けの下の方（黒 70% 以上）に乗るので灰は透過の `muted2`
     private var brand: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             AppLogo(size: .hero)
                 .accessibilityAddTraits(.isHeader)
             Text(L("旅の写真を、一冊の記録に。", "Your travels, bound into one book."))
-                .font(.subheadline)
+                .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.muted2)
         }
-        .padding(.bottom, 6)
+        .padding(.bottom, JPSpace.s)
     }
 
     /// 公開一覧の先頭9枚（端末で落とした人・写真は一覧の側で除かれている）。
@@ -152,7 +166,7 @@ struct SignInView: View {
     /// 入れ替え（`JourneyPhotoApp.applyRestrictedFeed`）より先にここが読むことがあり、
     /// 前の人あての「フォロワーのみ」「親しい友達」が混ざる
     nonisolated static func tiles(from photos: [Photo]) -> [Photo] {
-        Array(photos.filter { $0.gridImageURL != nil && !RestrictedFeed.isRestricted($0) }.prefix(9))
+        Array(photos.filter { $0.gridImageURL != nil && !RestrictedFeed.isRestricted($0) }.prefix(SignInLayout.tileCount))
     }
 
     private var verificationOffer: some View {
@@ -235,15 +249,16 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            // **いちばん押される場所を真鍮の大ボタンに**（50pt のカプセル・墨の字）。写真のタイルは
-            // 上で黒へ溶けていて、ボタンは黒地に乗るので「写真の無い画面の主ボタン」（`.accent`）。
-            // 2026-10-02 の owner「ログインボタンもテーマカラーの真鍮の色にしたい」。
+            // 主ボタン（50pt のカプセル・墨の字）。**2026-10-14 判断: 白**——CLAUDE.md の owner の好み
+            // 「写真のある画面の主ボタン（ログインなど）は白」と、v2 の段の指示に合わせた。
+            // ⚠️ 2026-10-02 には owner「ログインボタンもテーマカラーの真鍮の色にしたい」で真鍮にしていた
+            // （v2 の板の付箋もそれを引く）。食い違いは報告済み——戻すなら `SignInLayout.primaryStyle` の1か所。
             // 同じ画面の続き（登録の完了・コードを送る・パスワードを変える）も揃える
             Button {
                 Task { await submitCredentials() }
             } label: {
                 Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
-                    .jpPillButton(.accent)
+                    .jpPillButton(SignInLayout.primaryStyle)
             }
             .buttonStyle(.plain)
             .disabled(!canSubmit)
@@ -475,7 +490,7 @@ struct SignInView: View {
                     }
                 }
             } label: {
-                Text(L("登録を完了する", "Finish sign up")).jpPillButton(.accent)
+                Text(L("登録を完了する", "Finish sign up")).jpPillButton(SignInLayout.primaryStyle)
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking || code.isEmpty)
@@ -560,7 +575,7 @@ struct SignInView: View {
                         }
                     }
                 } label: {
-                    Text(L("コードを送る", "Send code")).jpPillButton(.accent)
+                    Text(L("コードを送る", "Send code")).jpPillButton(SignInLayout.primaryStyle)
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || email.isEmpty)
@@ -584,7 +599,7 @@ struct SignInView: View {
                         }
                     }
                 } label: {
-                    Text(L("パスワードを変える", "Change password")).jpPillButton(.accent)
+                    Text(L("パスワードを変える", "Change password")).jpPillButton(SignInLayout.primaryStyle)
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || code.isEmpty || password.isEmpty)
@@ -610,4 +625,22 @@ struct SignInView: View {
         // 確認への入口も前の失敗についての案内——画面を移ったら下げる
         offerVerification = false
     }
+}
+
+/// ログイン画面の決まり（v2 の板 SignIn・2026-10-14）。テストで見張る
+enum SignInLayout {
+    /// 主ボタン: 写真のある画面なので白（CLAUDE.md の owner の好み。v2 の板の真鍮の案は取らない）
+    static let primaryStyle = JPPillStyle.main(onPhoto: true)
+    /// 写真のタイル（板 v2: 4列×3段・1枚 120・隙間 3・-4°・左右に 20 はみ出し・上へ 30）
+    static let tileColumns = 4
+    static let tileRows = 3
+    static var tileCount: Int { tileColumns * tileRows }
+    static let tileHeight: CGFloat = 120
+    static let tileGap: CGFloat = 3
+    static let tileTilt: Double = -4
+    static let tileBleed: CGFloat = 20
+    static let tileShift: CGFloat = -30
+    /// 写真の帯の高さ（板 v2: 380）と、本文がそこへ食い込む量（ワードマークは上から 250）
+    static let headerHeight: CGFloat = 380
+    static let contentOverlap: CGFloat = 130
 }
