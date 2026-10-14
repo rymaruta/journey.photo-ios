@@ -161,7 +161,7 @@ struct SpotDetailView: View {
                 // **「1/10」は数えた数**（紐づいた公開写真の枚数そのもの）
                 if hero.count > 1 {
                     Text(SpotScreen.pagerLabel(page: page, count: hero.count) ?? "")
-                        .font(.caption.weight(.semibold))
+                        .font(JPFont.number(JPTypeScale.caption, weight: .semibold))
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -178,8 +178,9 @@ struct SpotDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             // 見出しは画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。
             // 鍵・突き合わせ・地図の検索は元の文字のまま
+            // v2（2026-10-14）: 撮影スポットの頁と同じ明朝 32（`JPFont.photoTitle`）
             Text(LocationMatch.display(spot.label))
-                .font(JPFont.display(28, relativeTo: .title))
+                .font(JPFont.photoTitle)
                 .foregroundStyle(WebTheme.foreground)
             // ⚠️ **ふりがなは出さない。** Web は `content/spot-master.json` に
             // 人が書いたぶんだけ持つ形で（いまは空）、アプリへ配る経路が無い。
@@ -190,8 +191,8 @@ struct SpotDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(WebTheme.faint)
                     Text(line)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
                 }
             }
             // 分類のチップ。**写真が実際に持っているものだけ**（多い順）
@@ -228,7 +229,8 @@ struct SpotDetailView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
+        HStack(spacing: JPSpace.xs) {
             // 🔴 **鍵（スラッグ）が空の地点には「行きたい」を出さない。** 記号だけの
             // 撮影地（「---」など）はスラッグが空になり、押しても `WishlistStore` は
             // 何も残さない——以前は押すと「追加しました」と知らせて、どこにも出なかった
@@ -301,8 +303,8 @@ struct SpotDetailView: View {
                 // **空を隠さない。** 「まだ紐づいていない」と「読み込み中」は別
                 Text(L("この撮影地に紐づいた公開写真はまだありません。投稿するときに場所を選ぶと、ここに並びます。",
                        "No public photos are linked to this place yet."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
                     .padding(.horizontal, 16)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -354,9 +356,8 @@ struct SpotDetailView: View {
                 SpotDetailParts.sectionHeader(L("地図", "Map"))
                 Map(position: $camera) {
                     Annotation(LocationMatch.display(spot.label), coordinate: center) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(WebTheme.foreground)
+                        // **地図のピンは真鍮**（owner の好み・CLAUDE.md）。地図のタブの撮影スポットと同じ印
+                        SpotMapMarker(photoURL: nil)
                     }
                 }
                 .onAppear {
@@ -366,8 +367,8 @@ struct SpotDetailView: View {
                         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
                 }
                 .frame(height: 200)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 16)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+                .padding(.horizontal, JPSpace.m)
                 .allowsHitTesting(false)
                 .accessibilityLabel(L("\(LocationMatch.display(spot.label)) の地図", "Map of \(LocationMatch.display(spot.label))"))
             }

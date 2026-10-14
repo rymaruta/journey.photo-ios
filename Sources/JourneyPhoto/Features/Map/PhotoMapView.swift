@@ -96,6 +96,10 @@ struct PhotoMapView: View {
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
     /// 置かないと、iOS が右上に出す方位磁針が操作列と重なる
     @Namespace private var mapScope
+    /// 動きを減らす設定（撮影スポットのピンを選んだときのばねを止める）
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 撮影スポットのピンを選び直した回数（触覚の合図の引き金）
+    @State private var spotSelectTicks = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -334,10 +338,13 @@ struct PhotoMapView: View {
     /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。
     /// 「都市」で当たるのは撮影地にその語が入っているときだけなので、
     /// プレースホルダにもそう書く
+    ///
+    /// **v2（2026-10-14・板 MapList）**: 高さ 44 の丸・地は surface-2（#161617）に白 8% の縁・
+    /// 虫めがねは text-3。欄は地図の上ではなく黒地の上に載るので、板の「リスト」の形を使う
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
             TextField(L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
@@ -357,12 +364,16 @@ struct PhotoMapView: View {
                 .accessibilityLabel(L("消す", "Clear"))
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 52)
-        .background(WebTheme.surface, in: Capsule())
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, JPSpace.m)
+        .frame(height: Self.searchFieldHeight)
+        .background(WebTheme.sheet, in: Capsule())
+        .overlay(Capsule().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .padding(.horizontal, JPSpace.s)
+        .padding(.top, JPSpace.xs)
     }
+
+    /// 検索欄の高さ（板 v2 の 44・押せるものの最小と同じ）。v1 は 52
+    nonisolated static let searchFieldHeight: CGFloat = WebTheme.minTapTarget
 
     /// カテゴリ。**「すべて」を先頭に置く**（戻れない絞り込みを作らない）。
     /// 出すのは座標のある写真に実際にある種類だけ
@@ -382,34 +393,44 @@ struct PhotoMapView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            // 札の押せる余白（上下 4）の分だけ詰め、札の上下の見た目の間は前のまま 10。
-            // ScrollView の外で負の余白にすると、上の検索欄の下端に ScrollView が重なって当たりを取る
-            .padding(.vertical, 10 - PillChip.tapSlack)
+            .padding(.horizontal, JPSpace.m)
+            // 札の押せる余白（上下 5）の分だけ詰め、札の上下の見た目の間は 8（板 MapList の gap 8）
+            .padding(.vertical, JPSpace.xs - Self.chipTapSlack)
         }
     }
 
-    /// 探す画面のチップと同じ形（白地＝選択中）。見た目の札は上下 11 ＋ 字（字の大きさが
-    /// 標準で約 42）、上下 4 の余白まで押せる＝**押せる範囲は 44 以上**（`PillChip` と同じ形）
+    /// チップの見た目の高さ（板 v2 MapList の `.chip` 34）と、押せる 44 までの上下の余白（5）
+    nonisolated static let chipHeight: CGFloat = 34
+    nonisolated static let chipTapSlack: CGFloat = (WebTheme.minTapTarget - chipHeight) / 2
+
+    /// チップ（**v2 の板 MapList の `.chip`**・2026-10-14）: 見た目 34・左右 14・13pt・
+    /// 地は白 7% に白 8% の縁、選んでいるものは白 94% に墨の字・太字＋チェックの印
+    /// （色だけで選んだことを伝えない）。上下 5 の余白まで押せる＝**押せる範囲は 44**
     private func chip(_ title: String, symbol: String? = nil, selected: Bool,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
+                // 選んでいる札は先頭にチェック（板）。分類の記号はそのあと
+                if selected {
+                    Image(systemName: "checkmark").font(.caption.weight(.bold))
+                }
                 // **記号は持っている分類にだけ**（`CategoryChoices.symbol`）。
                 // 知らない語に当てずっぽうの絵を付けない
                 if let symbol {
                     Image(systemName: symbol).font(.caption)
                 }
                 Text(title)
-                    .font(.subheadline.weight(selected ? .semibold : .regular))
+                    .font(.footnote.weight(selected ? .semibold : .regular))
             }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                .padding(.horizontal, 14)
+                .frame(minHeight: Self.chipHeight)
+                .background(selected ? AnyShapeStyle(WebTheme.accentBackground)
                                      : AnyShapeStyle(WebTheme.surface),
                             in: Capsule())
-                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                .padding(.vertical, PillChip.tapSlack)
+                .overlay(Capsule().strokeBorder(selected ? Color.clear : WebTheme.hairline,
+                                                lineWidth: JPStroke.hairline))
+                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.text)
+                .padding(.vertical, Self.chipTapSlack)
                 .frame(minHeight: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
@@ -417,12 +438,16 @@ struct PhotoMapView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「地図 / スポット / リスト」（板 04c 案A: 高さ 44 のガラスの帯に3つ、選んでいる札は
-    /// 白地に墨の字）。地図は `shown` から、スポットは撮影スポットの台帳から、
+    /// 「地図 / スポット / リスト」。地図は `shown` から、スポットは撮影スポットの台帳から、
     /// リストは両方を都道府県ごとにまとめて描く（`RegionList`）。
+    ///
+    /// **v2（2026-10-14・板 Map / MapList の `tablist`）**: 角 14 の帯（白 7%）に3つ、選んでいる札は
+    /// 一段明るい面（白 16%）に白の太字・選んでいないものは text-2。幅は板の 236 で左に寄せる。
+    /// v1 は白 92% の塗りに墨の字（1画面に白の塗りが2つ並んでいた——選んだチップと）。
+    /// 板は帯 40・札 34。**押せる 44 を取るため帯 44・札 38**（2026-10-14 判断・`modeSegmentHeight`）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var modePicker: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(PhotoMapViewModel.Mode.allCases) { mode in
                 let selected = model.mode == mode
                 Button {
@@ -430,12 +455,12 @@ struct PhotoMapView: View {
                 } label: {
                     Text(mode.label)
                         .font(.footnote.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? WebTheme.accentText : Color.white.opacity(0.82))
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(selected ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
-                        // 見た目の札は 36（板 04c）、上下 4 の余白まで押せる＝**押せる範囲は 44**（CLAUDE.md）。
-                        // 余白で広げる——字を大きくしても札が帯の縁に接しない
-                        .padding(.vertical, 4)
+                        .foregroundStyle(selected ? WebTheme.text : WebTheme.text2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.footnote))
+                        .frame(maxWidth: .infinity, minHeight: Self.modeSegmentHeight)
+                        .background(selected ? Color.white.opacity(Self.modeSelectedOpacity) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: JPRadius.s))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -443,16 +468,23 @@ struct PhotoMapView: View {
                 .accessibilityIdentifier("map.mode.\(mode.rawValue)")
             }
         }
-        // 上下の余白は札の側（押せる範囲）に持たせる。帯は 36＋4＋4＝44 のまま（板 04c）
-        .padding(.horizontal, 4)
-        .jpGlass(in: Capsule())
-        .padding(.horizontal, 16)
+        .padding(Self.modeInset)
+        .frame(maxWidth: Self.modePickerWidth)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JPSpace.s)
         // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
-        // 地図・リストはカテゴリのチップの下の余白（10pt）がそのまま間になるが、
+        // 地図・リストはカテゴリのチップの下の余白がそのまま間になるが、
         // スポットはチップを出さないので検索欄に隙間なしで付いていた
-        .padding(.top, model.mode == .spots ? 12 : 0)
-        .padding(.bottom, 8)
+        .padding(.top, model.mode == .spots ? JPSpace.s : 0)
+        .padding(.bottom, JPSpace.xs)
     }
+
+    /// 切り替えの帯の幅（板 236）・内側の余白（板 3）・札の高さ（帯 44 − 3 × 2）・選んだ札の面（白 16%）
+    nonisolated static let modePickerWidth: CGFloat = 236
+    nonisolated static let modeInset: CGFloat = 3
+    nonisolated static let modeSegmentHeight: CGFloat = WebTheme.minTapTarget - modeInset * 2
+    nonisolated static let modeSelectedOpacity = 0.16
 
     // MARK: - 地図
 
@@ -512,6 +544,8 @@ struct PhotoMapView: View {
         .onChange(of: model.pinLayout) { _, layout in
             if layout.hides(selected, among: model.pins) { selected = nil }
         }
+        // 撮影スポットのピンを選んだ合図（触覚1回・板 SpotPinOptions）
+        .sensoryFeedback(.selection, trigger: spotSelectTicks)
         // 地点を選んだら、ピンの札は下げる（札は1枚だけ）
         .onChange(of: chosenPlace) { _, place in
             if place != nil {
@@ -570,14 +604,12 @@ struct PhotoMapView: View {
                 } label: {
                     ZStack(alignment: .topTrailing) {
                         // 44pt の印に 512px は要らない（256px の `thumbSm` から）
-                        RemoteImage(url: pin.photos.first?.pinImageURL,
-                                    alignment: pin.photos.first?.gridAlignment ?? .center)
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        Self.photoPinFrame(RemoteImage(url: pin.photos.first?.pinImageURL,
+                                                       alignment: pin.photos.first?.gridAlignment ?? .center))
                         // **数えた枚数**（モックのクラスタの数字にあたる）
                         if pin.photos.count > 1 {
                             CountBadge(count: pin.photos.count)
-                                .offset(x: 8, y: -8)
+                                .offset(x: Self.badgeOffset.x, y: Self.badgeOffset.y)
                         }
                     }
                 }
@@ -597,17 +629,15 @@ struct PhotoMapView: View {
                     frame(cluster.frame)
                 } label: {
                     ZStack(alignment: .topTrailing) {
-                        // 後ろに1枚ずらして重ね、1つの撮影地のピンと見分ける
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(WebTheme.raised)
-                            .frame(width: 44, height: 44)
+                        // 後ろに1枚ずらして重ね、1つの撮影地のピンと見分ける（白い縁の札をもう1枚）
+                        RoundedRectangle(cornerRadius: Self.photoPinRadius)
+                            .fill(Color.white.opacity(0.55))
+                            .frame(width: Self.photoPinSize, height: Self.photoPinSize)
                             .offset(x: 3, y: 3)
-                        RemoteImage(url: cluster.cover?.pinImageURL,
-                                    alignment: cluster.cover?.gridAlignment ?? .center)
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        Self.photoPinFrame(RemoteImage(url: cluster.cover?.pinImageURL,
+                                                       alignment: cluster.cover?.gridAlignment ?? .center))
                         CountBadge(count: cluster.photoCount)
-                            .offset(x: 8, y: -8)
+                            .offset(x: Self.badgeOffset.x, y: Self.badgeOffset.y)
                     }
                 }
                 .buttonStyle(.plain)
@@ -620,16 +650,22 @@ struct PhotoMapView: View {
             Annotation(pin.name, coordinate: CLLocationCoordinate2D(latitude: pin.coords.lat,
                                                                       longitude: pin.coords.lng)) {
                 Button {
-                    selectedOfficial = pin
+                    // 選んだときはばね 0.3 秒で大きく（板 SpotPinOptions）。動きを減らす設定なら動かさない
+                    // 選び直したときだけ触覚1回（板 SpotPinOptions）。同じピンの押し直しでは鳴らさない
+                    if selectedOfficial?.id != pin.id { spotSelectTicks += 1 }
+                    withAnimation(reduceMotion ? nil : Self.pinSelectAnimation) {
+                        selectedOfficial = pin
+                    }
                     selected = nil
                     chosenPlace = nil
                 } label: {
                     // 印は 32〜40pt のまま、押せる範囲だけ 44pt に広げる（中心は変わらない）
-                    officialMarker(pin)
+                    officialMarker(pin, selected: selectedOfficial?.id == pin.id)
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedOfficial?.id == pin.id ? .isSelected : [])
                 // 読み上げでも下書きだと分かるように（画面の札と同じ語）
                 .accessibilityLabel(pin.isDraft ? L("\(pin.name)（下書き）", "\(pin.name) (draft)") : pin.name)
             }
@@ -638,9 +674,30 @@ struct PhotoMapView: View {
 
     /// 撮影スポットの印。見た目は `SpotMapMarker`（「行きたい場所」の地図と同じ部品）。
     /// 写真の出典は札（`officialCard`）に出す
-    private func officialMarker(_ pin: OfficialPins.Pin) -> some View {
+    private func officialMarker(_ pin: OfficialPins.Pin, selected: Bool = false) -> some View {
         // 40pt の丸なので縮小版（`SpotImage.smallURL`・読めなければ元の画像）。札の頭の大きな写真は元の画像のまま
         SpotMapMarker(photoURL: pin.photo?.smallURL, fallbackURL: pin.photo?.smallFallbackURL)
+            .selected(selected)
+    }
+
+    /// みんなの写真のピン（**v2 の板 Map の `.pin`**・2026-10-14）: 44 の角丸 12 の白い札に
+    /// 2 の余白で写真（角 10）・影 14 / 55%。撮影スポット（真鍮の丸）・Apple の名所（白い縁の丸）と
+    /// **形で見分ける**（板 SpotPinOptions の「見分け方」）。v1 は縁の無い角 8 の写真だった
+    nonisolated static let photoPinSize: CGFloat = 44
+    nonisolated static let photoPinRadius: CGFloat = 12
+    nonisolated static let photoPinInset: CGFloat = 2
+    /// 件数バッジの位置（板 `.cnt` の top -6・right -8 は真鍮の丸の角。黒の縁 2 の分だけ外へ）
+    nonisolated static let badgeOffset = (x: 8 + JPStroke.emphasis, y: -(6 + JPStroke.emphasis))
+    /// 撮影スポットのピンを選んだときの動き（板「ばね 0.3 秒」）
+    static let pinSelectAnimation = Animation.spring(response: 0.3, dampingFraction: 0.7)
+
+    private static func photoPinFrame<Content: View>(_ image: Content) -> some View {
+        image
+            .frame(width: photoPinSize - photoPinInset * 2, height: photoPinSize - photoPinInset * 2)
+            .clipShape(RoundedRectangle(cornerRadius: photoPinRadius - photoPinInset))
+            .padding(photoPinInset)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: photoPinRadius))
+            .shadow(color: .black.opacity(0.55), radius: 7, y: 4)
     }
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
@@ -695,7 +752,8 @@ struct PhotoMapView: View {
                 .foregroundStyle(WebTheme.foreground)
                 .padding(.horizontal, 14)
                 .frame(minHeight: WebTheme.minTapTarget)
-                .background(Color.black.opacity(0.7), in: Capsule())
+                // 地図の上の札はガラス（v2 の板 Map・`jpGlass`）
+                .jpGlass(in: Capsule())
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -804,7 +862,8 @@ struct PhotoMapView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, retry ? 0 : 8)
-        .background(Color.black.opacity(0.7), in: Capsule())
+        // 地図の上の札はガラス（v2 の板 Map・`jpGlass`）
+        .jpGlass(in: Capsule())
         .padding(.top, 12)
     }
 
@@ -868,16 +927,16 @@ struct PhotoMapView: View {
             Button {
                 model.applyArea()
             } label: {
+                // v2 の板 Map: ガラスの丸に 13pt の太字と回る矢印（押すと読み直す合図）
                 HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: "arrow.clockwise")
                     Text(L("このエリアを検索", "Search this area"))
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WebTheme.foreground)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, JPSpace.m)
                 .frame(minHeight: WebTheme.minTapTarget)
-                .background(Color.black.opacity(0.7), in: Capsule())
-                .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                .jpGlass(in: Capsule())
             }
             .buttonStyle(.plain)
             // 範囲がまだ届いていない間は押せない（何も起きないボタンにしない）
@@ -889,6 +948,10 @@ struct PhotoMapView: View {
     ///
     /// **方位磁針もこの列に入れる。** 既定のままだと iOS が右上に置き、
     /// この列と重なった（実機の絵・2026-09-25）
+    ///
+    /// **v2（2026-10-14・板 Map の右の列）**: 現在地は1つのガラスの丸、拡大・縮小は1本のガラスの帯に
+    /// 縦に2つ（間に白 12% の線）。印は 17pt regular（上のバーと同じ `toolbarIconSize`）。
+    /// v1 は黒 70% の丸を4つ離して置いていた
     private var mapControls: some View {
         VStack(spacing: WebTheme.mapControlSpacing) {
             // **常に出す。** 北向きの間だけ消えると列が1段詰まり、
@@ -897,20 +960,30 @@ struct PhotoMapView: View {
             MapCompass(scope: mapScope)
                 .mapControlVisibility(.visible)
             locateButton
-            VStack(spacing: WebTheme.mapControlSpacing) {
+                .jpGlass(in: Capsule())
+            VStack(spacing: 0) {
                 zoomButton(systemImage: "plus", factor: 1 / MapFraming.zoomStep,
                            label: L("拡大", "Zoom in"))
+                // 2つの間の線（板の `height: 1px; margin: 0 10px; background: rgba(255,255,255,.12)`）
+                Rectangle()
+                    .fill(WebTheme.border)
+                    .frame(width: WebTheme.minTapTarget - Self.controlDividerInset * 2, height: JPStroke.hairline)
+                    .accessibilityHidden(true)
                 zoomButton(systemImage: "minus", factor: MapFraming.zoomStep,
                            label: L("縮小", "Zoom out"))
             }
-            // **＋と−の間の隙間は地図へ素通しさせない**（現在地と＋の間は
+            .jpGlass(in: Capsule())
+            // **＋と−の間の線は地図へ素通しさせない**（現在地と＋の間は
             // 素通しする——外の列には方位磁針が入っている）。素通しすると、
-            // −を狙って隙間を2回叩いたとき地図のダブルタップ（＝拡大）になる。
+            // −を狙って線の上を2回叩いたとき地図のダブルタップ（＝拡大）になる。
             // 方位磁針（中身は UIKit）には掛けない——親の手振りと取り合わせない
             .contentShape(Rectangle())
             .onTapGesture {}
         }
     }
+
+    /// 拡大・縮小の帯の中の線の左右の余白（板 10）
+    nonisolated static let controlDividerInset: CGFloat = 10
 
     /// **いま見えている枠から数える。** `camera` は `.automatic` のことも
     /// あるので読めない——見えている枠は `onMapCameraChange` が控えている。
@@ -926,12 +999,11 @@ struct PhotoMapView: View {
             move(to: zoomChain.step(from: model.visibleFrame, by: factor))
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
                 .foregroundStyle(WebTheme.foreground)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                .background(Color.black.opacity(0.7), in: Circle())
-                .overlay(Circle().strokeBorder(WebTheme.border, lineWidth: 1))
-                .contentShape(Circle())
+                // 地はガラスの帯（`mapControls`）。押せるのは 44 の四角ぜんぶ
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -976,11 +1048,11 @@ struct PhotoMapView: View {
             }
         } label: {
             Image(systemName: locateSymbol)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
                 .foregroundStyle(WebTheme.foreground)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                .background(Color.black.opacity(0.7), in: Circle())
-                .overlay(Circle().strokeBorder(WebTheme.border, lineWidth: 1))
+                // 地はガラスの丸（`mapControls`）
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(locateLabel)
@@ -1010,19 +1082,20 @@ struct PhotoMapView: View {
             guard pin.hasPlaceName else { return nil }
             return DerivedSpot.openable(pin.title, in: model.photos)
         }()
-        return HStack(alignment: .top, spacing: 12) {
+        return HStack(alignment: .top, spacing: JPSpace.s) {
             RemoteImage(url: pin.photos.first?.gridImageURL,
                         alignment: pin.photos.first?.gridAlignment ?? .center)
                 .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 4) {
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                // 題は明朝（v2 の板 MapPlace の場所の名前）
                 Text(pin.hasPlaceName ? LocationMatch.display(pin.title) : L("場所の名前なし", "No place name"))
-                    .font(.headline)
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 Text(PhotoMapViewModel.nearbyCountLabel(pin.photos.count))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
                 // 何が写っているかの見本（モック3-3）。**3枚まで＋残りの数**
                 // ——数は数えた値。押すと一覧へ（下のボタンと同じ行き先）
                 if pin.photos.count > 1 {
@@ -1033,14 +1106,14 @@ struct PhotoMapView: View {
                             ForEach(pin.photos.prefix(3)) { photo in
                                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .frame(width: 36, height: 36)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
                             }
                             if pin.photos.count > 3 {
                                 Text("+\(pin.photos.count - 3)")
-                                    .font(.caption.weight(.semibold))
+                                    .font(JPFont.number(JPTypeScale.caption, weight: .semibold))
                                     .foregroundStyle(WebTheme.muted2)
                                     .frame(width: 36, height: 36)
-                                    .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 6))
+                                    .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: JPRadius.xs))
                             }
                         }
                         .frame(minHeight: WebTheme.minTapTarget)
@@ -1085,22 +1158,30 @@ struct PhotoMapView: View {
                 }
             }
             Spacer()
-            Button {
-                selected = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(WebTheme.muted2)
-                    .webTappable()
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Labels.Common.close)
+            cardCloseButton { selected = nil }
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18)
-            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .modifier(MapCardStyle())
         .accessibilityIdentifier("map.pinCard")
+    }
+
+    /// 札のボタンの高さ。主（経路）と線（撮影スポットを見る・場所の詳細）が横に並ぶので 44 にそろえる
+    /// （2026-10-14 判断: v2 は主 50・副 44 だが、地図の上の札は地図を広く残したい。板 MapPlace も 46）
+    nonisolated static let cardButtonHeight: CGFloat = JPHeight.secondaryButton
+    /// 札の「閉じる」の丸の見た目（板 MapPlace の 36・白 8%）。当たりは 44
+    nonisolated static let cardCloseSize: CGFloat = JPHeight.inlineButton
+
+    /// 札の右上の「閉じる」（v2 の板 MapPlace: 36 の丸・白 8% の地・白の ×）。当たりは 44
+    private func cardCloseButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: Self.cardCloseSize, height: Self.cardCloseSize)
+                .background(Color.white.opacity(0.08), in: Circle())
+                .webTappable()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Labels.Common.close)
     }
 
     /// 押した撮影スポット（台帳）の札。地点の札（`placeCard`）と同じ並び:
@@ -1120,21 +1201,27 @@ struct PhotoMapView: View {
                 Color.clear
                     .frame(height: 150)
                     .overlay(RemoteImage(url: photo.url))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
                     .accessibilityHidden(true)
             }
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: JPSpace.s) {
                 officialMarker(pin)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    // 眉ラベル（v2 の板 MapPlace「PHOTO SPOT」）。**札はガラス（地図が透ける）なので白**——
+                    // 真鍮は黒地の上だけ（CLAUDE.md）。下書きなら「下書き・未確認」
+                    Text(SpotScreen.eyebrow(review: pin.isDraft))
+                        .jpEyebrow()
+                        .foregroundStyle(WebTheme.muted)
+                    // 題は明朝（板 MapPlace）
                     Text(pin.name)
-                        .font(.headline)
+                        .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(2)
-                    HStack(spacing: 8) {
+                    HStack(spacing: JPSpace.xs) {
                         if let region = pin.regionLabel {
                             Text(region)
-                                .font(.subheadline)
-                                .foregroundStyle(WebTheme.faint)
+                                .font(.footnote)
+                                .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(1)
                         }
                         if pin.isDraft {
@@ -1157,29 +1244,20 @@ struct PhotoMapView: View {
                     }
                 }
                 Spacer()
-                Button {
-                    selectedOfficial = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(WebTheme.muted2)
-                        .webTappable()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Labels.Common.close)
+                cardCloseButton { selectedOfficial = nil }
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: JPSpace.xs) {
                 // **地点の札の「経路」と同じ挙動**（Apple の地図で経路を出す）。
                 // 同じ語で片方だけ「地点を表示」にしない
                 Button {
                     openDirections(to: pin)
                 } label: {
+                    // 札の主ボタン（v2 の板 MapPlace: 白の塗りに墨。札はガラスの地なので白・owner の決まり）。
+                    // 隣の線のボタンと字（15 semibold）・高さ（44）をそろえる
                     Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .background(WebTheme.foreground, in: Capsule())
+                        .font(JPFont.bodyEmphasis)
+                        .jpPillButton(.primary, height: Self.cardButtonHeight)
                 }
                 .buttonStyle(.plain)
                 if let spot = model.officialSpot(for: pin) {
@@ -1190,25 +1268,18 @@ struct PhotoMapView: View {
                         // 2026-10-11 判断: 呼び名を「撮影スポットを見る」に延ばしたので、幅 375pt で「経路」と
                         // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
                         // 縮めるのは 0.8 まで（15pt × 0.8 = 12pt。板の本文の最小）
+                        // 線のボタン（v2 の副ボタン・白 14% の縁）。枠の中ぜんぶが当たり（`jpPillButton` の contentShape）
                         Label(L("撮影スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
-                            .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
-                            .foregroundStyle(WebTheme.foreground)
-                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                            .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
-                            // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
-                            .contentShape(Capsule())
+                            .jpPillButton(.outline, height: Self.cardButtonHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.officialCard.open")
                 }
             }
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18)
-            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .modifier(MapCardStyle())
         .accessibilityIdentifier("map.officialCard")
     }
 
@@ -1254,38 +1325,29 @@ struct PhotoMapView: View {
         // **名前がそのまま撮影地になっている地点だけ**スポットとして開く。
         // 付近の写真の撮影地から当て推量で選ばない
         let spot = DerivedSpot.openable(place.name, in: model.photos)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
+        return VStack(alignment: .leading, spacing: JPSpace.s) {
+            HStack(alignment: .top, spacing: JPSpace.s) {
+                // 題は明朝（v2 の板 MapPlace）
                 Text(place.name)
-                    .font(.headline)
+                    .font(JPFont.cardTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
                 Spacer()
-                Button {
-                    chosenPlace = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(WebTheme.muted2)
-                        .webTappable()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Labels.Common.close)
+                cardCloseButton { chosenPlace = nil }
             }
 
             placeInfo(place)
 
-            HStack(spacing: 8) {
+            HStack(spacing: JPSpace.xs) {
                 Button {
                     place.mapItem?.openInMaps(launchOptions: [
                         MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
                     ])
                 } label: {
+                    // 白の主ボタン＋線の副ボタン（撮影スポットの札と同じ形・`cardButtonHeight`）
                     Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .background(WebTheme.foreground, in: Capsule())
+                        .font(JPFont.bodyEmphasis)
+                        .jpPillButton(.primary, height: Self.cardButtonHeight)
                 }
                 .buttonStyle(.plain)
                 .disabled(place.mapItem == nil)
@@ -1293,12 +1355,7 @@ struct PhotoMapView: View {
                     placeDetail = place.detailItem
                 } label: {
                     Label(L("場所の詳細", "Details"), systemImage: "info.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
-                        // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
-                        .contentShape(Capsule())
+                        .jpPillButton(.outline, height: Self.cardButtonHeight)
                 }
                 .buttonStyle(.plain)
                 // 座標だけの地点では出さない（中身の無い詳細カードになる）
@@ -1309,10 +1366,7 @@ struct PhotoMapView: View {
 
             placePhotos(photos, spot: spot)
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18)
-            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .modifier(MapCardStyle())
         .accessibilityIdentifier("map.placeCard")
     }
 
@@ -1403,12 +1457,13 @@ struct PhotoMapView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // v2 の板 MapPlace: 13 の灰の見出しに、数だけ白の等幅数字
                     Text(L("この付近で撮られた写真", "Photos taken near here"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                    Text(PhotoMapViewModel.photoCountLabel(photos.count))
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(WebTheme.muted2)
+                    Text(PhotoMapViewModel.photoCountLabel(photos.count))
+                        .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.foreground)
                     Spacer(minLength: 8)
                     if let spot {
                         NavigationLink {
@@ -1423,25 +1478,32 @@ struct PhotoMapView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                // v2 の板 MapPlace: 正方形の写真をすき間 2 で並べ、外枠だけ角 12。
+                // 板は 4 列の格子だが、5 枚目より先を見られなくしないよう横に送る（2026-10-14 判断）
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 6) {
+                    LazyHStack(spacing: Self.photoStripSpacing) {
                         ForEach(photos) { photo in
                             NavigationLink {
                                 PhotoDetailView(photo: photo, context: photos)
                             } label: {
                                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                                    .frame(width: 72, height: 90)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .frame(width: Self.placePhotoSize, height: Self.placePhotoSize)
+                                    .clipped()
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(L("写真を開く", "Open photo"))
                         }
                     }
                 }
-                .frame(height: 90)
+                .frame(height: Self.placePhotoSize)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
             }
         }
     }
+
+    /// 札の写真の列（正方形・すき間 2・板 MapPlace の 4 列の格子の 1 枚ぶん）
+    nonisolated static let placePhotoSize: CGFloat = 76
+    nonisolated static let photoStripSpacing: CGFloat = 2
 
 
     // MARK: - スポット（板 04c 案A）
@@ -1460,14 +1522,9 @@ struct PhotoMapView: View {
         let detailNeeds = SpotDetailNeeds.mapSpotList(
             rows, through: spotListDepth.depth(query: model.query, category: model.category))
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                // 板: 12px・medium・白60%。起点が何かを言う（現在地か地図の中心か）
-                Text(spotsHeading(hasHere: here != nil, hasCenter: center != nil))
-                    .font(.caption.weight(.medium))
-                    .tracking(0.5)
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
-                    .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                // 起点が何かを言う（現在地か地図の中心か）。v2: 真鍮の眉ラベルと消えていく線（黒地の上）
+                JPEyebrowLine(spotsHeading(hasHere: here != nil, hasCenter: center != nil))
                 // 写真が読めなかった回は、各行の「写真 0枚」が本当の0ではないと言う
                 // （「リスト」の札は `listNotes` で言っていた）
                 // （前に読めた写真が手元に残っている回は数が本物なので言わない——
@@ -1475,28 +1532,17 @@ struct PhotoMapView: View {
                 if model.loadFailed, model.photos.isEmpty {
                     loadFailedListNote
                 }
+                // 読み込み中・失敗・空は v2 の共通の部品（Components 06「4つの状態」・同じ並び）
                 if model.officialIndexState == .loading {
-                    // **読み込み中に「無い」と言わない**
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                    // **読み込み中に「無い」と言わない**。0.3 秒より早く届けば骨格も出さない
+                    JPLoadingState(kind: .rows)
                 } else if model.officialIndexState == .failed {
-                    VStack(spacing: 8) {
-                        Text(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
-                            .font(.subheadline)
-                            .foregroundStyle(WebTheme.faint)
-                        RetryButton(isBusy: model.isLoading) { retryLoad() }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
+                    ErrorBanner(message: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
+                                isBusy: model.isLoading) { retryLoad() }
                 } else if rows.isEmpty {
-                    Text(MapSearch.fold(model.query).isEmpty
-                         ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
-                         : L("見つかりませんでした", "No results"))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                    EmptyState(message: MapSearch.fold(model.query).isEmpty
+                               ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
+                               : L("見つかりませんでした", "No results"))
                 } else {
                     // **Lazy にする。** 一覧は全件（公開済み364件・写真つき315件）で、
                     // 素の VStack だと開いた瞬間に全行の写真（960px・計約31MB）を一斉に
@@ -1508,7 +1554,7 @@ struct PhotoMapView: View {
                                 OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
                                                  photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                             } label: {
-                                spotRow(row, divider: index > 0)
+                                spotRow(row)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("map.spotRow")
@@ -1518,9 +1564,7 @@ struct PhotoMapView: View {
                             }
                         }
                     }
-                    .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    // v2 の板 MapList: 行は札に入れず黒地に直に並べ、行の下に白 8% の線（`spotRow`）
                 }
                 // 読み終えたときだけ件数を言う（読み込み中・失敗の「0件」は事実と違う）
                 if model.officialIndexState == .ready {
@@ -1530,9 +1574,8 @@ struct PhotoMapView: View {
                        "Published photo spots only (\(rows.count) now)."))
                     .font(.caption)
                     .lineSpacing(3)
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 4)
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.top, JPSpace.xxs)
                 }
             }
             .padding(.horizontal, 16)
@@ -1552,9 +1595,12 @@ struct PhotoMapView: View {
         return L("撮影スポット", "Photo spots")
     }
 
-    /// 1行（板: 高さ 64・40pt の丸・15px の名前・12px の「0.8km · 写真 N枚」・右に矢印）
-    private func spotRow(_ row: OfficialSpotList.Row, divider: Bool) -> some View {
-        HStack(spacing: 12) {
+    /// 1行。**v2（2026-10-14・板 MapList の `.sr`）**: 高さ 64・名前は明朝 18（板 17 は明朝の下限 18 に上げた）・
+    /// 「1 km 以内 · 写真 N枚」は 12 の text-3 の等幅数字・行の下に白 8% の線。札に入れず黒地に直に並べる。
+    /// 左の 40pt の丸（写真の丸・真鍮の縁／真鍮の丸）は地図のピンと同じ見分け方なので残す（板の行には無い）。
+    /// 右の矢印も残す（行き先がある行・板は「行きたい」の旗の位置）
+    private func spotRow(_ row: OfficialSpotList.Row) -> some View {
+        HStack(spacing: JPSpace.s) {
             if let photo = row.spot.photo {
                 // 写真があれば写真の丸・真鍮の縁（地図のピンと同じ見分け方）。40pt なので縮小版
                 // （読めなければ元の画像・`SpotThumbImage`）
@@ -1562,7 +1608,7 @@ struct PhotoMapView: View {
                     .frame(width: 40, height: 40)
                     .background(WebTheme.accent)
                     .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 2))
+                    .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.emphasis))
                     .accessibilityHidden(true)
             } else {
                 Image(systemName: "camera.fill")
@@ -1570,12 +1616,12 @@ struct PhotoMapView: View {
                     .foregroundStyle(WebTheme.accentText)
                     .frame(width: 40, height: 40)
                     .background(WebTheme.accent, in: Circle())
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.92), lineWidth: 2))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.92), lineWidth: JPStroke.emphasis))
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(row.spot.name)
-                    .font(.subheadline)
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 // 枚数は写真が取れてから（読み込み中・初回の失敗で手元が空なら「0枚」と言わない。
@@ -1584,22 +1630,21 @@ struct PhotoMapView: View {
                                                                                photos: model.photos))
                 if !sub.isEmpty {
                     Text(sub)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.meta)
+                        .foregroundStyle(WebTheme.text3)
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.35))
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(minHeight: 64)
-        .overlay(alignment: .top) {
-            if divider { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.tallRow)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
         .contentShape(Rectangle())
     }
@@ -1642,10 +1687,8 @@ struct PhotoMapView: View {
         // 座標だけの写真が「県・国に分けられない」段に入る。そこから詳細を開いた後に台帳が届くと、
         // 写真が県へ移って元の行が消え、詳細がその場で閉じる（台帳は控えがあればすぐ届く）
         if model.officialIndexState == .loading || (sections.isEmpty && !model.loaded) {
-            // **読み込み中に「無い」と言わない**
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+            // **読み込み中に「無い」と言わない**。v2 の読み込みの骨格（0.3 秒より早ければ出さない）
+            JPLoadingState(kind: .grid)
             Spacer()
         } else if sections.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -1667,15 +1710,16 @@ struct PhotoMapView: View {
             Spacer()
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                // v2 の板 MapList: 県は札に入れず、見出しの行（下に白 8% の線）で区切って黒地に直に並べる
+                LazyVStack(alignment: .leading, spacing: 0) {
                     listNotes
                     ForEach(sections) { section in
                         regionSection(section, openRows: openRows)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.horizontal, JPSpace.m)
+                .padding(.top, JPSpace.xxs)
+                .padding(.bottom, JPSpace.xl)
             }
             .onAppear { if let currentId { autoOpenedRegions.insert(currentId) } }
             .onChange(of: currentId) { _, id in if let id { autoOpenedRegions.insert(id) } }
@@ -1721,11 +1765,12 @@ struct PhotoMapView: View {
         }
     }
 
+    /// 一覧の上の断り書き（12 の text-3・黒地の上）
     private func listNote(_ text: String) -> some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(WebTheme.faint)
-            .padding(.horizontal, 4)
+            .foregroundStyle(WebTheme.text3)
+            .padding(.vertical, JPSpace.xxs)
     }
 
     /// 開いているか。押した県は押したとおり。押していない県は、起点の県（と、これまでに
@@ -1744,28 +1789,31 @@ struct PhotoMapView: View {
             Button {
                 regionOpen[section.id] = !open
             } label: {
-                HStack(spacing: 8) {
+                // v2 の板 MapList の県の見出し: 明朝 20・いまいる県は真鍮の縁の札・件数は 13 の text-3・
+                // 高さ 56・下に白 8% の線
+                HStack(spacing: JPSpace.xs) {
                     Text(section.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(Self.regionTitleFont)
                         .foregroundStyle(WebTheme.foreground)
+                        .lineLimit(1)
                     if section.isCurrent {
                         // 現在地が無ければ地図の中心から決めている（「スポット」の札の見出しと同じ言い分け）
-                        Text(here != nil ? (section.key.isCountry ? L("いまいる国", "You're here") : L("いまいる県", "You're here"))
-                             : L("地図の中心", "Map center"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+                        regionCurrentTag(here != nil ? (section.key.isCountry ? L("いまいる国", "You're here") : L("いまいる県", "You're here"))
+                                         : L("地図の中心", "Map center"))
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: JPSpace.xs)
                     Text(RegionList.countLabel(section))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.text3)
                     Image(systemName: open ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 14)
-                .frame(minHeight: 52)
+                .frame(minHeight: Self.regionHeaderHeight)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1781,7 +1829,7 @@ struct PhotoMapView: View {
                         OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
                                          photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                     } label: {
-                        spotRow(row, divider: true)
+                        spotRow(row)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.regionSpotRow")
@@ -1793,35 +1841,54 @@ struct PhotoMapView: View {
                 }
             }
         }
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    /// その県で撮られた写真を横に並べる（札の写真の列と同じ大きさ）。押すと写真の詳細
+    /// 県の見出しの字（板 MapList の明朝 20・空の状態の見出しと同じ段）・行の高さ（板 56）
+    static let regionTitleFont = JPFont.display(JPTypeScale.stateTitle, relativeTo: .title3)
+    nonisolated static let regionHeaderHeight: CGFloat = 56
+
+    /// 「いまいる県」の札（板 MapList: 11pt 600・字間 0.08em・真鍮の字と真鍮 50% の縁・角 10）。
+    /// **黒地の上なので真鍮**（CLAUDE.md）。色だけでなく字で言う
+    private func regionCurrentTag(_ text: String) -> some View {
+        Text(text)
+            .font(JPFont.eyebrow)
+            .tracking(JPTypeScale.eyebrow * 0.08)
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, JPSpace.xs)
+            .padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
+                .strokeBorder(WebTheme.accent.opacity(0.5), lineWidth: JPStroke.hairline))
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    /// その県で撮られた写真を横に並べる。押すと写真の詳細。
+    /// **v2（板 MapList）**: 4:3 の写真をすき間 2 で並べ、外枠だけ角 12（板は 3 列の格子。
+    /// 4 枚目より先を見られなくしないよう横に送る・2026-10-14 判断）
     private func regionPhotos(_ photos: [Photo]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 6) {
+            LazyHStack(spacing: Self.photoStripSpacing) {
                 ForEach(photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, context: photos)
                     } label: {
                         RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                            .frame(width: 72, height: 90)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .frame(width: Self.regionPhotoSize.width, height: Self.regionPhotoSize.height)
+                            .clipped()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(photo.accessibilityText)
                 }
             }
-            .padding(.horizontal, 14)
         }
-        .frame(height: 90)
-        .padding(.vertical, 12)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-        }
+        .frame(height: Self.regionPhotoSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+        .padding(.top, JPSpace.s)
+        .padding(.bottom, JPSpace.xxs)
     }
+
+    /// 県の写真の大きさ（4:3・板の 3 列の 1 枚ぶん）
+    nonisolated static let regionPhotoSize = CGSize(width: 116, height: 87)
 
     // MARK: - カメラ
 
@@ -1922,5 +1989,19 @@ struct MapPin: Identifiable, Equatable {
             )
         }
         .sorted { $0.id < $1.id }
+    }
+}
+
+/// 地図の上の札（ピン・撮影スポット・地点）。**v2（2026-10-14）**: 角 24（板 MapPlace のシートの角）・
+/// 内側 16・地は `jpGlass`（黒 55% ＋ぼかし）。
+///
+/// 2026-10-14 判断: 板 MapPlace は黒地のシートだが、ここは地図の上に浮かぶ札のまま**ガラス**にした。
+/// owner の決まり「地図の札の電話・Webサイトのリンクは白（ガラス越しに地図が透ける地）」が
+/// この地を前提にしているため。だから札の中に真鍮は置かない（眉ラベルも白）
+struct MapCardStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(JPSpace.m)
+            .jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl), border: 0.12)
     }
 }
