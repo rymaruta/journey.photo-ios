@@ -53,19 +53,19 @@ struct NearbyPhotosSheet: View {
                         // なく「まだ読めていない」——同じ文で出すと、
                         // 圏外の人に「近くには何も無い」と言うことになる
                         // 地図に引き下げの読み直しは無い——「もう一度試す」で地図が読み直す
+                        // v2（2026-10-14）: 本文 15 の灰・「もう一度」は共通の線のボタン（`RetryButton`・当たり 44）。
+                        // 読み込み中もここに来るので警告の三角（`ErrorBanner`）は出さない
                         Text(L("写真をまだ読み込めていません。",
                                "Photos haven't loaded yet."))
-                            .font(.callout)
+                            .font(JPFont.body)
                             .foregroundStyle(WebTheme.muted2)
                         if let onRetry {
-                            Button(Labels.Common.retry, action: onRetry)
-                                .frame(minHeight: WebTheme.minTapTarget)
+                            RetryButton(action: onRetry)
                         }
                     } else if found.isEmpty {
                         // ここまで来たら、測った結果として本当に無い
-                        Text(L("この範囲には、まだ写真がありません。", "No photos in this range yet."))
-                            .font(.callout)
-                            .foregroundStyle(WebTheme.muted2)
+                        // 空の状態は共通の部品（v2 Components 06・三角を出さない）
+                        EmptyState(message: L("この範囲には、まだ写真がありません。", "No photos in this range yet."))
                     } else {
                         ForEach(found, id: \.photo.id) { item in
                             NavigationLink {
@@ -113,7 +113,7 @@ struct NearbyPhotosSheet: View {
         HStack(spacing: 10) {
             RemoteImage(url: item.photo.gridImageURL, alignment: item.photo.gridAlignment)
                 .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.photo.displayTitle.isEmpty
                      ? (item.photo.location.map { LocationMatch.display($0) } ?? L("写真", "Photo"))
@@ -121,9 +121,10 @@ struct NearbyPhotosSheet: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
+                // 距離は数字なので SF の等幅数字（v2 の Meta 12）
                 Text(NearbyPhotos.label(km: item.km))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.meta)
+                    .foregroundStyle(WebTheme.text3)
             }
         }
     }
