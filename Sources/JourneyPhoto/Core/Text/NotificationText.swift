@@ -126,6 +126,8 @@ enum NotificationText {
         case .comment: rest = L(" がコメントしました", " commented on your photo")
         case .follow: rest = L(" があなたをフォローしました", " followed you")
         case .storyreply: rest = L(" がストーリーに返信しました", " replied to your story")
+        // 文言は Web の `NotificationsBell` と同じ（プッシュの `NOTIF_INSPIRED` とも同じ）
+        case .inspired: rest = L(" さんがあなたの写真を見て撮影しました", " took a photo inspired by yours")
         // 光と天気の知らせは一覧の行にならない（プッシュだけ）
         case .badge, .light, .none: return nil
         }
