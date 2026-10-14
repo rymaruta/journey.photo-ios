@@ -1381,7 +1381,8 @@ struct PhotoMapView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                 Spacer(minLength: 0)
-                RetryButton(isBusy: model.isLoading) { retryLoad() }
+                // 地図が透けるガラスの札の中。線だけの 44 では見えにくく、隣の字が折り返すので小さい札（2026-10-14）
+                RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if photos.isEmpty {

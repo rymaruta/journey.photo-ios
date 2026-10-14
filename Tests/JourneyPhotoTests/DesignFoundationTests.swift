@@ -4,7 +4,8 @@ import XCTest
 /// v2 の土台（Artifact「デザインシステム v2」・2026-10-14）の値と、共通の部品がその値を通っていること。
 ///
 /// 画面の部品は Linux では描けないので、**値は数で**、**部品の作りは元のファイルを読んで**見張る
-/// （`FollowListSignInTests` と同じやり方）。
+/// （`FollowListSignInTests` と同じやり方）。ソースを読むときは型の範囲に絞り、呼び出しの**順**まで見る
+/// ——字があるかだけを見ると、修飾子の入れ替えや呼び出しの削除で落ちない（2026-10-14 のレビュー）。
 final class DesignFoundationTests: XCTestCase {
 
     private func source(_ path: String) throws -> String {
@@ -16,6 +17,32 @@ final class DesignFoundationTests: XCTestCase {
         return text.components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
             .joined(separator: "\n")
+    }
+
+    /// `struct <name>` から次の型の宣言までを切り出す（ほかの型の同じ字に当たらないように）
+    private func declaration(_ name: String, in text: String,
+                             file: StaticString = #filePath, line: UInt = #line) -> String {
+        guard let start = text.range(of: "struct \(name)") else {
+            XCTFail("struct \(name) が無い", file: file, line: line)
+            return ""
+        }
+        let rest = text[start.upperBound...]
+        let ends = ["\nstruct ", "\nprivate struct ", "\nenum ", "\nextension "]
+            .compactMap { rest.range(of: $0)?.lowerBound }
+        return String(rest[..<(ends.min() ?? rest.endIndex)])
+    }
+
+    /// `parts` がこの順に `text` に現れる（並びの入れ替え・呼び出しの削除で落ちる）
+    private func assertInOrder(_ parts: [String], in text: String, _ what: String,
+                               file: StaticString = #filePath, line: UInt = #line) {
+        var cursor = text.startIndex
+        for part in parts {
+            guard let found = text.range(of: part, range: cursor..<text.endIndex) else {
+                XCTFail("\(what): 「\(part)」が無いか、順が違う", file: file, line: line)
+                return
+            }
+            cursor = found.upperBound
+        }
     }
 
     // MARK: - 物差し
@@ -69,11 +96,15 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertEqual(JPTypeScale.eyebrowTracking, 1.54, accuracy: 0.001)
     }
 
-    /// 数字は SF の等幅数字（`number` / `mono` が近い文字の種類を選ぶ）
-    func testNumberStylesPickNearestTextStyle() {
-        XCTAssertEqual(JPFont.numberStyle(size: JPTypeScale.eyebrow, relativeTo: .caption2), .caption2)
-        XCTAssertEqual(JPFont.numberStyle(size: JPTypeScale.meta, relativeTo: .caption), .caption)
-        XCTAssertEqual(JPFont.numberStyle(size: JPTypeScale.figureMedium, relativeTo: .title3), .title3)
+    /// 数字は SF の等幅数字。**段に書いた大きさと、実際に出る文字の種類の標準の大きさが一致する**
+    /// （`number` は近い文字の種類に寄せるので、30 と書くと 28 で出ていた・2026-10-14 のレビュー）
+    func testNumberSizesAreWhatIsShown() {
+        for size in JPTypeScale.numbers {
+            let style = JPFont.numberStyle(size: size, relativeTo: .caption)
+            let shown = JPFont.standardSizes.first { $0.style == style }?.size
+            XCTAssertEqual(shown, size, "段の \(size) は \(shown ?? 0) で出る")
+        }
+        XCTAssertEqual(JPFont.numberStyle(size: JPTypeScale.figureLarge, relativeTo: .title), .title)
     }
 
     func testFontAndEyebrowUseTheScale() throws {
@@ -105,7 +136,7 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertEqual(BrandPalette.danger, 0xF0565A)
     }
 
-    /// 副文・注記の灰は黒と札の上で 4.5 を保つ（板の 10.6・7.4）
+    /// 副文・注記の灰は黒と札の上で 4.5 を保つ（板の 10.6・7.4——板は 7.46 を切り捨てて書いている）
     func testSecondaryTextIsReadable() {
         XCTAssertEqual(BrandPalette.contrast(BrandPalette.text2, BrandPalette.background), 10.6, accuracy: 0.1)
         XCTAssertEqual(BrandPalette.contrast(BrandPalette.text3, BrandPalette.background), 7.46, accuracy: 0.01)
@@ -115,12 +146,40 @@ final class DesignFoundationTests: XCTestCase {
 
     func testThemeUsesV2Values() throws {
         let theme = try source("Core/Design/WebTheme.swift")
-        XCTAssertTrue(theme.contains("static let muted2 = rgb(BrandPalette.text2)"))
-        XCTAssertTrue(theme.contains("static let faint = rgb(BrandPalette.text3)"))
+        XCTAssertTrue(theme.contains("static let text2 = rgb(BrandPalette.text2)"))
+        XCTAssertTrue(theme.contains("static let text3 = rgb(BrandPalette.text3)"))
         XCTAssertTrue(theme.contains("static let card = rgb(BrandPalette.surface)"))
+        XCTAssertTrue(theme.contains("static let sheet = rgb(BrandPalette.surface2)"))
         XCTAssertTrue(theme.contains("Color.white.opacity(primaryFillOpacity)"))
         // 危険の色は danger だけ（系統の赤を作らない）
         XCTAssertFalse(theme.contains("Color.red"))
+    }
+
+    /// 🔴 **写真の上で使う灰は白の透過のまま**（2026-10-14 のレビュー）。不透明の灰にすると
+    /// 明るい写真の上で沈む（白地＋黒 65% の影で 4.56 → 3.53）。黒地用の不透明の灰は `text2`・`text3`
+    func testGraysOnPhotosStayTranslucent() throws {
+        let theme = try source("Core/Design/WebTheme.swift")
+        XCTAssertTrue(theme.contains("static let muted2 = Color.white.opacity(0.72)"), "muted2 が白の透過でない")
+        XCTAssertTrue(theme.contains("static let faint = Color.white.opacity(0.6)"), "faint が白の透過でない")
+        // 写真の上に字を置く画面は、不透明の灰・札の面を使わない
+        for path in ["Features/Stories/StoryViewerView.swift", "Features/PhotoDetail/PhotoDetailView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("WebTheme.muted2"), "\(path) の写真の上の字をたどれない")
+            for opaque in ["WebTheme.text2", "WebTheme.text3", "WebTheme.card"] {
+                XCTAssertFalse(text.contains(opaque), "\(path) が写真の上で \(opaque) を使っている")
+            }
+        }
+    }
+
+    /// 札（#0E0E0F）はシート（#161617）より暗い。シートの上の札は地を渡して浮かせる
+    func testCardsOnTheReportSheetStandOut() throws {
+        XCTAssertLessThan(BrandPalette.luminance(BrandPalette.surface), BrandPalette.luminance(BrandPalette.surface2))
+        let sheet = try source("Features/Social/ReportSheet.swift")
+        XCTAssertTrue(sheet.contains("sheetBackground = WebTheme.sheet"), "通報のシートの地が v2 の surface-2 でない")
+        XCTAssertFalse(sheet.contains("JPCard {"), "シートの上に既定の地の札がある（シートと同じ暗さで札に見えない）")
+        XCTAssertEqual(sheet.components(separatedBy: "JPCard(fill: WebTheme.surface)").count - 1, 2)
+        let card = declaration("JPCard", in: try source("Core/Design/FormParts.swift"))
+        XCTAssertTrue(card.contains(".background(fill ?? WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))"))
     }
 
     // MARK: - 主ボタン
@@ -143,11 +202,17 @@ final class DesignFoundationTests: XCTestCase {
 
     func testPillButtonUsesStyleMetrics() throws {
         let parts = try source("Core/Design/FormParts.swift")
-        XCTAssertTrue(parts.contains("minHeight: style.height"), "カプセルの高さが段から来ていない")
         XCTAssertTrue(parts.contains("Color.white.opacity(style.borderOpacity)"))
         XCTAssertFalse(parts.contains("minHeight: 52"), "v1 の 52 が残っている")
-        // 札は v2 の面と髪線
-        XCTAssertTrue(parts.contains("WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l)"))
+    }
+
+    /// 同じ場所で主ボタン（50）と線のボタンが入れ替わる帯は、線のボタンも 50 にする（跳ねない）
+    func testSwappedButtonsKeepOneHeight() throws {
+        let parts = try source("Core/Design/FormParts.swift")
+        XCTAssertTrue(parts.contains("minHeight: height ?? style.height)"), "カプセルの高さが段から来ていない")
+        let pick = try source("Features/Trips/LibraryTripPickView.swift")
+        assertInOrder(["if isLoading {", "jpPillButton(.outline, height: JPHeight.primaryButton)",
+                       "} else {", ".jpPillButton(.primary)"], in: pick, "旅の記録に入れる帯")
     }
 
     /// 撮影スポットの「投稿」は共通の決まりを通る（写真があれば白・無ければ真鍮・並んでいれば線）
@@ -164,11 +229,13 @@ final class DesignFoundationTests: XCTestCase {
     func testCountBadge() throws {
         XCTAssertEqual(CountBadge.size, 20)
         XCTAssertEqual(CountBadge.horizontalPadding, 6)
-        let badge = try source("Features/Common/CountBadge.swift")
-        XCTAssertTrue(badge.contains(".background(WebTheme.accent, in: Capsule())"), "塗りが真鍮でない")
-        XCTAssertTrue(badge.contains(".foregroundStyle(WebTheme.accentText)"), "字が墨でない")
-        XCTAssertTrue(badge.contains(".padding(JPStroke.emphasis)"), "黒い縁が外側の 2 でない")
-        XCTAssertTrue(badge.contains(".background(Color.black, in: Capsule())"))
+        let badge = declaration("CountBadge", in: try source("Features/Common/CountBadge.swift"))
+        // 墨の字 → 真鍮の丸 → 外へ 2 広げて → 黒の丸（順が入れ替わると縁が内側に入る）
+        assertInOrder([".foregroundStyle(WebTheme.accentText)",
+                       ".frame(minWidth: Self.size, minHeight: Self.size)",
+                       ".background(WebTheme.accent, in: Capsule())",
+                       ".padding(JPStroke.emphasis)",
+                       ".background(Color.black, in: Capsule())"], in: badge, "件数バッジ")
         // 地図の写真のピンと束が同じ部品を使う
         let map = try source("Features/Map/PhotoMapView.swift")
         XCTAssertEqual(map.components(separatedBy: "CountBadge(count:").count - 1, 2)
@@ -178,10 +245,10 @@ final class DesignFoundationTests: XCTestCase {
     func testEyebrowLine() throws {
         XCTAssertEqual(JPEyebrowLine.lineStartOpacity, 0.55)
         XCTAssertEqual(JPEyebrowLine.gap, 10)
-        let eyebrow = try source("Core/Design/EyebrowLine.swift")
-        XCTAssertTrue(eyebrow.contains(".jpEyebrow()"))
-        XCTAssertTrue(eyebrow.contains(".foregroundStyle(WebTheme.accent)"))
-        XCTAssertTrue(eyebrow.contains(".frame(height: JPStroke.hairline)"))
+        let eyebrow = declaration("JPEyebrowLine", in: try source("Core/Design/EyebrowLine.swift"))
+        assertInOrder(["Text(text)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
+                       "LinearGradient(colors: [WebTheme.accent.opacity(Self.lineStartOpacity), WebTheme.accent.opacity(0)]",
+                       ".frame(height: JPStroke.hairline)"], in: eyebrow, "眉ラベルの線")
     }
 
     /// 上の丸いガラスの札の印は 17pt regular（main にある決まり）
@@ -192,15 +259,22 @@ final class DesignFoundationTests: XCTestCase {
 
     // MARK: - 状態
 
-    /// 空・失敗は同じ並び（明朝 20 の見出し → 15 の text-2 → 一手）。空の一手は写真の無い画面の主ボタン
+    /// 空・失敗は同じ並び（明朝 20 の見出し → 15 の灰 → 一手）。空の一手は写真の無い画面の主ボタン
     func testStatesShareTheV2Layout() throws {
         let states = try source("Features/Common/ErrorBanner.swift")
-        XCTAssertTrue(states.contains(".font(JPFont.stateTitle)"))
-        XCTAssertTrue(states.contains(".font(JPFont.body)"))
-        XCTAssertTrue(states.contains(".foregroundStyle(WebTheme.muted2)"))
-        XCTAssertTrue(states.contains(".jpPillButton(.main(onPhoto: false))"), "空の一手が真鍮の主ボタンでない")
-        XCTAssertTrue(states.contains(".frame(minHeight: JPHeight.secondaryButton)"), "「もう一度」が 44 でない")
-        XCTAssertTrue(states.contains("WebTheme.line"), "「もう一度」の縁が白 14% でない")
+        assertInOrder(["StateLayout {", "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
+                       "RetryButton(isBusy: isBusy, action: retry)"],
+                      in: declaration("ErrorBanner", in: states), "失敗の表示")
+        assertInOrder(["StateLayout {", "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
+                       ".jpPillButton(.main(onPhoto: false))"],
+                      in: declaration("EmptyState", in: states), "空の表示")
+        XCTAssertTrue(declaration("StateTitle", in: states).contains(".font(JPFont.stateTitle)"))
+        let message = declaration("StateMessage", in: states)
+        XCTAssertTrue(message.contains(".font(JPFont.body)"))
+        XCTAssertTrue(message.contains(".foregroundStyle(WebTheme.muted2)"))
+        assertInOrder(["if compact {", "} else {", ".frame(minHeight: JPHeight.secondaryButton)",
+                       ".overlay(Capsule().strokeBorder(WebTheme.line"],
+                      in: declaration("RetryButton", in: states), "「もう一度」の線のボタン")
         // 失敗の印を赤にしない・本文を .callout（16）に戻さない
         XCTAssertFalse(states.contains("WebTheme.danger"))
         XCTAssertFalse(states.contains(".font(.callout)"))
@@ -212,16 +286,33 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertEqual(JPLoadingState.boneGray, 0x1C1C1E)
     }
 
-    /// 主な画面（ホーム・マイページ・地図）が空・失敗の共通の部品を通っている
+    /// 主な画面（ホーム・マイページ・人・地図）の空・失敗の表示が、共通の部品を通っている。
+    /// 呼び出しを消したり、手書きの `Text` に戻したりすると落ちる
     func testMainScreensUseStateParts() throws {
-        for path in ["Features/Gallery/GalleryView.swift", "Features/Profile/MyPageView.swift",
-                     "Features/Map/PhotoMapView.swift"] {
+        let expected: [(path: String, calls: [String])] = [
+            ("Features/Gallery/GalleryView.swift", ["ErrorBanner(message: message)"]),
+            ("Features/Profile/MyPageView.swift", ["EmptyState(message: L(\"まだ写真がありません\"",
+                                                   "ErrorBanner(message: error)",
+                                                   "ErrorBanner(message: reloadError)"]),
+            ("Features/Profile/UserProfileView.swift", ["EmptyState(message: L(\"公開された写真はまだありません\""]),
+            ("Features/Map/PhotoMapView.swift", ["ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading)",
+                                                 "EmptyState(message: L(\"見つかりませんでした\""]),
+        ]
+        for (path, calls) in expected {
             let text = try source(path)
-            XCTAssertTrue(text.contains("ErrorBanner(") || text.contains("RetryButton("), "\(path) が失敗の部品を通っていない")
+            for call in calls {
+                XCTAssertTrue(text.contains(call), "\(path) の「\(call)」が共通の部品を通っていない")
+            }
         }
-        for path in ["Features/Profile/MyPageView.swift", "Features/Map/PhotoMapView.swift",
-                     "Features/Profile/UserProfileView.swift"] {
-            XCTAssertTrue(try source(path).contains("EmptyState("), "\(path) が空の部品を通っていない")
-        }
+    }
+
+    /// 地図が透けるガラスの札の中の「もう一度」は小さい札（線だけの 44 は見えにくく、隣の字が折り返す）
+    func testRetryInsideTheMapCardIsCompact() throws {
+        let map = try source("Features/Map/PhotoMapView.swift")
+        guard let start = map.range(of: "private func placePhotos(") else { return XCTFail("placePhotos が無い") }
+        let tail = String(map[start.upperBound...])
+        let body = String(tail[..<(tail.range(of: "\n    }\n")?.lowerBound ?? tail.endIndex)])
+        XCTAssertTrue(body.contains("RetryButton(isBusy: model.isLoading, compact: true)"))
+        XCTAssertFalse(body.contains("RetryButton(isBusy: model.isLoading) {"))
     }
 }

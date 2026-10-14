@@ -3,7 +3,7 @@ import SwiftUI
 /// 入力と確定の部品（板 41〜47「はじめる・安全・設定」の列）。
 ///
 /// **板は7画面とも同じ3つの形を使っている**——見出し付きの 48pt の欄、
-/// 52pt のカプセル、下に固定したぼかしの帯。以前は画面ごとに書き分けて
+/// カプセル（v2 で塗り 50・線 44）、下に固定したぼかしの帯。以前は画面ごとに書き分けて
 /// いて、同じ「パスワードの欄」でもログインは枠付き・変更は素の行、と割れていた。
 
 /// 見出し付きの入力欄（板: 12px・medium・白72% の見出し ＋ 48pt・角丸12・
@@ -52,9 +52,9 @@ struct JPField<Content: View>: View {
 /// **`webPrimaryButton` は変えない。** そちらは約44pt で、プロフィールの
 /// フォローなど行の中のボタンが使っている
 enum JPPillStyle: Equatable {
-    /// 白 92% に墨の字（1画面に1つ）
+    /// 白 94% に墨の字（1画面に1つ）
     case primary
-    /// 枠線（白28%）に白の字（「アカウントを作る」など2番手）
+    /// 枠線（白 14%）に白の字（「アカウントを作る」など2番手）。高さ 44
     case outline
     /// 赤の塗りに白の字（アカウントの削除だけ）
     case danger
@@ -101,11 +101,14 @@ extension View {
             .listRowSeparator(.hidden)
     }
 
-    func jpPillButton(_ style: JPPillStyle = .primary) -> some View {
+    /// - Parameter height: 高さを揃えたいときだけ渡す。**同じ場所で主ボタンと線のボタンが
+    ///   入れ替わる**所（読み込み中に「やめる」へ替わる帯）は `JPHeight.primaryButton` を渡し、
+    ///   入れ替わりで帯が 6pt 跳ねないようにする
+    func jpPillButton(_ style: JPPillStyle = .primary, height: CGFloat? = nil) -> some View {
         self
             .font(style == .outline ? JPFont.bodyEmphasis : .callout.weight(.semibold))
             .foregroundStyle(style == .primary || style == .accent ? WebTheme.accentText : Color.white)
-            .frame(maxWidth: .infinity, minHeight: style.height)
+            .frame(maxWidth: .infinity, minHeight: height ?? style.height)
             .background(style.fill, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(style.borderOpacity), lineWidth: JPStroke.hairline))
             .contentShape(Capsule())
@@ -133,18 +136,25 @@ extension View {
 
 /// 行を束ねる札（板: 角丸16・縁 白8%）。行の間の線は `JPCardDivider`。
 ///
-/// **v2（2026-10-14）: 地を白 7%（≒#121212）から surface-1 の #0E0E0F に沈めた**（`WebTheme.card`）
+/// **v2（2026-10-14）: 地を白 7%（≒#121212）から surface-1 の #0E0E0F に沈めた**（`WebTheme.card`）。
+///
+/// - **黒地の画面の上だけ既定の地。** シート（#161617）の上では沈んで札に見えないので、
+///   `fill: WebTheme.surface`（白 7%・シートの上で一段明るい）を渡す（通報のシート）
+/// - 同じ画面に白 7% の札（`WebTheme.surface` を直に塗った所）がまだ残っている。次の段でそろえる
 struct JPCard<Content: View>: View {
 
+    /// 地。無ければ `WebTheme.card`
+    var fill: Color?
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(fill: Color? = nil, @ViewBuilder content: () -> Content) {
+        self.fill = fill
         self.content = content()
     }
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+            .background(fill ?? WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
             .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
             .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
     }

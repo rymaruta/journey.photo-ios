@@ -26,11 +26,17 @@ enum WebTheme {
     static let text = Color.white.opacity(0.95)
     /// 副次の文字。`--muted`
     static let muted = Color.white.opacity(0.82)
-    /// 副文（説明・日付）。**v2 の text-2（#B8B8B8・黒の上 10.6:1）**。白 72% と同じ値を
-    /// 不透明で持つ（2026-10-14 判断: 札の上でも同じ灰に見えるように）
-    static let muted2 = rgb(BrandPalette.text2)
-    /// 注記・@名・日時。**v2 の text-3（#9A9A9A・黒の上 7.4:1）**。以前の白 60% とほぼ同じ値
-    static let faint = rgb(BrandPalette.text3)
+    /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`。
+    ///
+    /// 🔴 **白の透過のまま持つ。** 写真の上（ストーリー・写真の詳細）でも使っていて、不透明の灰にすると
+    /// 明るい写真の上で沈む（2026-10-14 のレビュー: 白地＋黒 65% の影で 4.56 → 3.53）。
+    /// 黒地の上の v2 の灰は `text2`・`text3`
+    static let muted2 = Color.white.opacity(0.72)
+    static let faint = Color.white.opacity(0.6)
+    /// **v2 の text-2（#B8B8B8・黒の上 10.6:1）。黒地・札の上だけ**——写真の上は `muted2`（透過）
+    static let text2 = rgb(BrandPalette.text2)
+    /// **v2 の text-3（#9A9A9A・黒の上 7.46:1）。黒地・札の上だけ**——写真の上は `faint`（透過）
+    static let text3 = rgb(BrandPalette.text3)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
     static let placeholder = Color.white.opacity(0.5)
@@ -43,9 +49,12 @@ enum WebTheme {
     /// 押せることは字で分かるので、縁は 3:1 を要しない（入力欄の縁は `outline`）
     static let line = Color.white.opacity(0.14)
 
-    /// **v2 の札の面（surface-1・#0E0E0F）。** `JPCard`・空の状態の札
+    /// **v2 の札の面（surface-1・#0E0E0F）。** `JPCard` の地。
+    /// ⚠️ いまは同じ画面に白 7% の `surface` の札も残っている（マイページ・探す・投稿）。
+    /// 画面ごとの作り替え（v2 の次の段）でこちらへそろえる
     static let card = rgb(BrandPalette.surface)
-    /// **v2 のシート・入力欄の地（surface-2・#161617）**
+    /// **v2 のシート・入力欄の地（surface-2・#161617）。** 通報のシートの地。
+    /// この上の札は `card` だと沈んで見えるので、`JPCard(fill: surface)` で浮かせる
     static let sheet = rgb(BrandPalette.surface2)
     /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
     static let outline = rgb(BrandPalette.outline)
@@ -80,14 +89,15 @@ enum WebTheme {
               blue: Double(hex & 0xFF) / 255)
     }
 
-    /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 92%）と、その上の墨。
+    /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 94%）と、その上の墨。
     /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ。
     /// **v2 で 92% → 94%**（黒に重ねた値が `BrandPalette.primary`・比はそちらで見張る）
     nonisolated static let primaryFillOpacity = 0.94
     static let accentBackground = Color.white.opacity(primaryFillOpacity)
     static let accentText = rgb(BrandPalette.ink)
 
-    /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）
+    /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）。
+    /// ⚠️ 札の地にも使っている所がある（`JPCard` は v2 の `card`）。次の段でそろえる
     static let surface = Color.white.opacity(0.07)
     /// 少し浮かせる面（ピル・カード。`bg-black/30` ＋ `ring-white/10`）
     static let raised = Color.white.opacity(0.10)

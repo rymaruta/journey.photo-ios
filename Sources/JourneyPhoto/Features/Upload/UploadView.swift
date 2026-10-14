@@ -1146,7 +1146,7 @@ struct UploadView: View {
         }
         if model.canRetryUnreadable {
             // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
-            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（高さ 52pt）。文言は今日の一問の再試行と同じ
+            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（線のボタン・高さ 44pt）。文言は今日の一問の再試行と同じ
             Button { model.retryUnreadable() } label: {
                 Text(L("もう一度読み込む", "Try again")).jpPillButton(.outline)
             }

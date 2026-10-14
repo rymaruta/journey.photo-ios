@@ -63,7 +63,7 @@ struct ReportSheet: View {
                                 }
                         }
                         if blockTarget != nil {
-                            JPCard {
+                            JPCard(fill: WebTheme.surface) {
                                 JPToggleRow(
                                     title: L("この人をブロックする", "Also block this person"),
                                     detail: L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
@@ -89,8 +89,9 @@ struct ReportSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    /// シートの地（板: #0d0d0e。画面の黒より一段浮かせる）
-    private static let sheetBackground = Color(red: 13 / 255, green: 13 / 255, blue: 14 / 255)
+    /// シートの地（v2 の板: surface-2 #161617。画面の黒より一段浮かせる）。
+    /// 札は `JPCard(fill: WebTheme.surface)`——既定の札の地（#0E0E0F）はシートより暗く、札に見えない
+    private static let sheetBackground = WebTheme.sheet
 
     private var header: some View {
         HStack {
@@ -117,7 +118,7 @@ struct ReportSheet: View {
     private var reasons: some View {
         VStack(alignment: .leading, spacing: 10) {
             JPSectionTitle(L("理由", "Reason"))
-            JPCard {
+            JPCard(fill: WebTheme.surface) {
                 ForEach(Array(ModerationService.ReportReason.allCases.enumerated()), id: \.element) { index, item in
                     if index > 0 { JPCardDivider() }
                     JPRadioRow(title: item.label, selected: reason == item) { reason = item }

@@ -113,8 +113,10 @@ enum JPTypeScale {
     static let eyebrowTracking: Double = eyebrow * 0.14
 
     // 数字（SF の等幅数字）
-    /// 旅の記録の距離（SF 300）
-    static let figureLarge: Double = 30
+    /// 旅の記録の距離（SF 300）。**板は 30 だが 28 で出す**——数字は文字の種類の標準の大きさで
+    /// 出して Dynamic Type に追従させる決まり（`JPFont.mono` の注記・最大 2pt のずれを許す）で、
+    /// 30 にいちばん近いのは `.title` の 28（2026-10-14 判断）
+    static let figureLarge: Double = 28
     /// 投稿・フォロワー・フォロー中（SF 400）
     static let figureMedium: Double = 20
     /// 撮影情報・座標・時刻
@@ -122,4 +124,6 @@ enum JPTypeScale {
 
     static let mincho: [Double] = [display, title1, title2, stateTitle, title3]
     static let text: [Double] = [headline, body, footnote, caption, figureLarge, figureMedium, meta]
+    /// 等幅数字で出す大きさ（`JPFont.number` を通る。文字の種類の標準の大きさと一致していること）
+    static let numbers: [Double] = [eyebrow, meta, figureMedium, figureLarge]
 }

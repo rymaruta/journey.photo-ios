@@ -55,7 +55,7 @@ enum JPFont {
     static let footnote = Font.footnote
     /// 注記（Caption · 12）。**本文系の最小**
     static let caption = Font.caption
-    /// 旅の記録の距離（Figure L · SF 300 · 30）
+    /// 旅の記録の距離（Figure L · SF 300。板は 30、出るのは `.title` の 28——`JPTypeScale.figureLarge`）
     static let figureLarge = number(JPTypeScale.figureLarge, weight: .light, relativeTo: .title)
     /// 撮影情報・座標・時刻（Meta · 12・等幅）
     static let meta = mono(JPTypeScale.meta)
