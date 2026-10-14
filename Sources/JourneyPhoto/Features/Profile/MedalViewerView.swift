@@ -8,10 +8,11 @@ import SceneKit
 ///
 /// SceneKit の円柱で硬貨を作る: 表＝メダルの絵、裏＝金属ごとの絞り羽根に**持ち主の名前と
 /// 受け取った日を重ねた絵**、縁＝金属ごとの細いギザの帯を円周に巻く。
-/// 表・裏は面を少しふくらませ（`MedalRelief`）、控えめな映り込みを付けて、回すと光が流れる（凹凸は縁のギザだけ）。指で横に払うと回り、
+/// 表・裏は面を少しふくらませ（`MedalRelief`）、絵の大きな形をほんの少し浮き彫りにし、縁の内側に細い面取りを付け、
+/// 控えめな映り込みを付けて、回すと光と陰が流れる（2026-10-14）。指で横に払うと回り、
 /// 離すと惰性で少し回って止まる（止まりきったらゆっくり回り続ける）。
 ///
-/// **「視差効果を減らす」の人には勝手に回さない**（惰性も短くする）。読み上げでは
+/// **「視差効果を減らす」の人には勝手に回さない**（惰性も短くする・浮き彫りと映り込みも半分）。読み上げでは
 /// 「裏返す」の操作で表と裏を替えられる。
 ///
 /// 初期ユーザー章の後光は硬貨に貼らない（硬貨は内側の円だけ）。代わりに後ろに真鍮の淡い光を敷く。
@@ -26,6 +27,10 @@ struct MedalViewerView: View {
     @State private var textures: MedalTextures.Faces?
     /// 読み上げの「裏返す」を押した回数（数の変化で裏返す）
     @State private var flips = 0
+    /// 画面写真のために止める向き（Debug の起動の鍵だけ・`PreviewSession.medalPoses`）
+    private let previewPoses = PreviewSession.medalPoses
+    /// 画面写真の向きの準備の具合（読み上げの値に出し、UI テストが待つ。止めていないときは空）
+    @State private var poseMarker = ""
 
     var body: some View {
         // 🔴 **組みは画面の大きさに固定し、× は画面の右上に重ねる**（2026-10-09 owner「メダル回す画面で
@@ -59,12 +64,14 @@ struct MedalViewerView: View {
 
     private func coinStage(_ coin: Double) -> some View {
         MedalCoinView(textures: textures, fallbackImage: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
-                      reduceMotion: reduceMotion, flips: flips, shape: .coin)
+                      reduceMotion: reduceMotion, flips: flips, shape: .coin, poses: previewPoses,
+                      onPoseReady: previewPoses == nil ? nil : { poseMarker = $0 })
         .frame(width: coin, height: coin)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) のメダル",
                               "\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) medal"))
         .accessibilityAddTraits(.isImage)
+        .accessibilityValue(poseMarker)
         .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
         .accessibilityIdentifier("medalViewer.coin")
         // 後光は**背景に置く**（組みの大きさに効かせない・画面の幅を超えても × を押し出さない）。
@@ -138,12 +145,17 @@ struct MedalCoinView: View {
     let reduceMotion: Bool
     let flips: Int
     var shape: SpinShape = .coin
+    /// 画面写真のために止める向き（Debug の起動の鍵だけ）。nil ならふだんどおり回る
+    var poses: [MedalPose]? = nil
+    /// 画面写真の向きの準備の具合（「pose-<番号>-ready」など）を受け取る
+    var onPoseReady: ((String) -> Void)? = nil
 
     var body: some View { coin }
 
     #if canImport(SceneKit)
     private var coin: some View {
-        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape)
+        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape, poses: poses,
+                       onPoseReady: onPoseReady)
     }
     #else
     /// Linux の模型のための代わり。**実機では使わない**
@@ -163,6 +175,8 @@ private struct MedalSceneView: UIViewRepresentable {
     let reduceMotion: Bool
     let flips: Int
     let shape: SpinShape
+    let poses: [MedalPose]?
+    let onPoseReady: ((String) -> Void)?
 
     func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
 
@@ -177,6 +191,14 @@ private struct MedalSceneView: UIViewRepresentable {
         let pan = UIPanGestureRecognizer(target: context.coordinator,
                                          action: #selector(MedalCoinCoordinator.handlePan(_:)))
         view.addGestureRecognizer(pan)
+        if let poses, !poses.isEmpty {
+            // 画面写真: 止めた向きで見せ、押すと次の向きへ（Debug の起動の鍵だけ）
+            context.coordinator.poseReady = onPoseReady
+            context.coordinator.pose(poses)
+            let tap = UITapGestureRecognizer(target: context.coordinator,
+                                             action: #selector(MedalCoinCoordinator.handlePoseTap(_:)))
+            view.addGestureRecognizer(tap)
+        }
         context.coordinator.reduceMotion = reduceMotion
         context.coordinator.lastFlips = flips
         if let textures { context.coordinator.apply(textures) }
@@ -212,8 +234,22 @@ final class MedalCoinCoordinator: NSObject {
     private let cap = SCNMaterial()
 
     private(set) var hasTextures = false
-    var reduceMotion = false
+    /// 「視差効果を減らす」。変わったら浮き彫りと映り込みの強さを作り直す
+    var reduceMotion = false {
+        didSet { if oldValue != reduceMotion { reliefSettingsChanged() } }
+    }
     var lastFlips = 0
+    /// 貼った絵（浮き彫りを作り直すときに使う）
+    private var faces: MedalTextures.Faces?
+    /// 浮き彫り（法線の絵）を作る仕事。画面の処理の外で作る
+    private var reliefTask: Task<Void, Never>?
+    /// 画面写真のために止める向き（Debug の起動の鍵だけ）と、いま見せている番号
+    private var poses: [MedalPose] = []
+    private var poseIndex = 0
+    /// いま貼ってある浮き彫りの強さ（作り終えて貼ったもの）
+    private var appliedAmount: Double?
+    /// 画面写真の向きの準備ができたか（「pose-<番号>-ready」）を知らせる先。UI テストがこれを待ってから撮る
+    var poseReady: ((String) -> Void)?
 
     /// 横の回り（ラジアン）と、少しだけ傾ける縦の回り
     private var yaw: Float = -0.35
@@ -330,7 +366,8 @@ final class MedalCoinCoordinator: NSObject {
         ambient.light?.type = .ambient
         ambient.light?.intensity = 400
         scene.rootNode.addChildNode(ambient)
-        for (position, intensity) in [(SCNVector3(-2.5, 3, 5), CGFloat(800)),
+        let key = MedalRelief.keyLight
+        for (position, intensity) in [(SCNVector3(Float(key.x), Float(key.y), Float(key.z)), CGFloat(800)),
                                       (SCNVector3(3.5, 0.5, 3), CGFloat(240)),
                                       (SCNVector3(2.5, 1.5, -4), CGFloat(360))] {
             let light = SCNNode()
@@ -366,37 +403,125 @@ final class MedalCoinCoordinator: NSObject {
             edge.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(textures.edgeRepeat), 1, 1)
         }
         hasTextures = textures.front != nil
-        // 面のふくらみ・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
+        faces = textures
+        // 面のふくらみ・浮き彫り・面取り・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
         if case .coin = shape { applyRelief(textures) }
     }
 
-    /// 面のふくらみ・縁のギザの凹凸（法線の絵・`MedalRelief`）と、周りの映り込み
+    /// いまの浮き彫りの強さ。画面写真で止めているときはその向きの強さ、ふだんは既定
+    /// （「視差効果を減らす」なら半分）
+    private var reliefAmount: Double {
+        if poses.indices.contains(poseIndex) { return poses[poseIndex].amount }
+        return MedalRelief.effectiveAmount(reduceMotion: reduceMotion)
+    }
+
+    /// 「視差効果を減らす」・見本の強さが変わった。浮き彫りを作り直す
+    private func reliefSettingsChanged() {
+        guard case .coin = shape, let faces, hasTextures else { return }
+        applyRelief(faces)
+    }
+
+    /// 面のふくらみ・浮き彫り・面取り・縁のギザの凹凸（法線の絵・`MedalRelief`）と、周りの映り込み。
+    ///
+    /// **法線の絵は開いたときに1度だけ作る**（512px を2枚と縁の帯・ぼかしを含めて数十 ms）。画面の処理を
+    /// 止めないよう外で作り、できたら貼る（それまでは平らなまま見える）。回している間の毎コマの負担は
+    /// SceneKit が元から行う光の計算（法線の絵を読むだけ）で、前の作りから増えない
     private func applyRelief(_ textures: MedalTextures.Faces) {
-        let side = MedalRelief.side
-        for (material, image) in [(front, textures.front), (back, textures.back)] {
-            guard let image, let normal = MedalReliefImage.normalMap(of: image, width: side, height: side,
-                                                                      strength: MedalRelief.strength,
-                                                                      dome: MedalRelief.dome,
-                                                                      relief: MedalRelief.faceRelief) else { continue }
+        reliefTask?.cancel()
+        let amount = reliefAmount
+        let face = MedalRelief.face(amount: amount)
+        // 縁の帯は強さに依らない。作り直しのときは前のを使う（待ちを短く）
+        let needsEdge = edge.normal.contents == nil
+        let frontImage = textures.front, backImage = textures.back
+        let edgeImage = needsEdge ? textures.edge : nil
+        reliefTask = Task { [weak self] in
+            let maps = await Task.detached(priority: .userInitiated) { () -> [UIImage?] in
+                let side = MedalRelief.side
+                let faceMaps = [frontImage, backImage].map { image -> UIImage? in
+                    guard let image else { return nil }
+                    return MedalReliefImage.normalMap(of: image, width: side, height: side,
+                                                      strength: MedalRelief.strength,
+                                                      dome: MedalRelief.dome,
+                                                      relief: face.relief,
+                                                      blurRadius: MedalRelief.faceBlurRadius,
+                                                      maxReliefSlope: face.maxSlope,
+                                                      reliefFloor: face.floor,
+                                                      bevelWidth: face.bevelWidth,
+                                                      bevelDepth: face.bevelDepth)
+                }
+                var edgeMap: UIImage?
+                if let image = edgeImage, let cg = image.cgImage {
+                    // 縁の帯は左右がつながる。高さはギザが潰れない程度に半分へ
+                    let width = max(3, cg.width / 2), height = max(3, cg.height / 2)
+                    edgeMap = MedalReliefImage.normalMap(of: image, width: width, height: height,
+                                                         strength: MedalRelief.edgeStrength, dome: 0, wrapsX: true)
+                }
+                return faceMaps + [edgeMap]
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.setRelief(front: maps[0], back: maps[1], edge: maps[2], metal: textures.metal)
+            self.appliedAmount = amount
+            self.reportPose()
+        }
+    }
+
+    private func setRelief(front frontMap: UIImage?, back backMap: UIImage?, edge edgeMap: UIImage?,
+                           metal: BadgeCatalog.Metal) {
+        for (material, normal) in [(front, frontMap), (back, backMap)] {
+            guard let normal else { continue }
             material.normal.contents = normal
             material.normal.mipFilter = .linear
         }
-        if let image = textures.edge, let cg = image.cgImage {
-            // 縁の帯は左右がつながる。高さはギザが潰れない程度に半分へ
-            let width = max(3, cg.width / 2), height = max(3, cg.height / 2)
-            if let normal = MedalReliefImage.normalMap(of: image, width: width, height: height,
-                                                       strength: MedalRelief.edgeStrength, dome: 0, wrapsX: true) {
-                edge.normal.contents = normal
-                edge.normal.wrapS = .repeat
-                edge.normal.wrapT = .clamp
-                edge.normal.contentsTransform = edge.diffuse.contentsTransform
-            }
+        if let edgeMap {
+            edge.normal.contents = edgeMap
+            edge.normal.wrapS = .repeat
+            edge.normal.wrapT = .clamp
+            edge.normal.contentsTransform = edge.diffuse.contentsTransform
         }
-        let reflection = MedalReliefImage.studio(tint: MedalReliefImage.tint(textures.metal))
+        let reflection = MedalReliefImage.studio(tint: MedalReliefImage.tint(metal))
+        // 映り込み（回すと面をなでる光）も、「視差効果を減らす」の人には半分
+        let scale = CGFloat(MedalRelief.effectiveAmount(reduceMotion: reduceMotion, base: 1))
+        let intensity = MedalReliefImage.reflectionIntensity * scale
         for material in [front, back, edge] {
             material.reflective.contents = reflection
-            material.reflective.intensity = MedalReliefImage.reflectionIntensity
+            material.reflective.intensity = intensity
         }
+    }
+
+    /// 画面写真のために止める（Debug の起動の鍵だけ）。最初の向きで止め、勝手に回さない
+    func pose(_ list: [MedalPose]) {
+        poses = list
+        poseIndex = 0
+        showPose()
+    }
+
+    /// 硬貨を押すと次の向きへ（画面写真のため）
+    @objc func handlePoseTap(_ gesture: UITapGestureRecognizer) {
+        guard !poses.isEmpty else { return }
+        let previous = reliefAmount
+        poseIndex = (poseIndex + 1) % poses.count
+        showPose()
+        if reliefAmount != previous { reliefSettingsChanged() }
+        reportPose()
+    }
+
+    /// 画面写真の向きの準備の具合を知らせる。浮き彫りを作り直している間は「loading」、貼り終えたら「ready」
+    private func reportPose() {
+        guard poses.indices.contains(poseIndex) else { return }
+        let ready = appliedAmount == poses[poseIndex].amount
+        let marker = "pose-\(poseIndex)-\(ready ? "ready" : "loading")"
+        let report = poseReady
+        // SwiftUI の描き直しの最中に状態を変えない
+        DispatchQueue.main.async { report?(marker) }
+    }
+
+    private func showPose() {
+        guard poses.indices.contains(poseIndex) else { return }
+        velocity = 0
+        flipTarget = nil
+        yaw = Float(poses[poseIndex].yaw)
+        pitch = Self.restingPitch
+        applyAngles()
     }
 
     func start() {
@@ -404,12 +529,14 @@ final class MedalCoinCoordinator: NSObject {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
-        velocity = reduceMotion ? 0 : Self.idleSpin
+        velocity = reduceMotion || !poses.isEmpty ? 0 : Self.idleSpin
     }
 
     func stop() {
         link?.invalidate()
         link = nil
+        reliefTask?.cancel()
+        reliefTask = nil
     }
 
     /// 裏返す（読み上げの操作）。いまの向きから半周先の、表か裏の正面へ
@@ -420,7 +547,8 @@ final class MedalCoinCoordinator: NSObject {
     }
 
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard let view = gesture.view else { return }
+        // 画面写真で止めているときは払っても回さない（角度を決まったままにする）
+        guard poses.isEmpty, let view = gesture.view else { return }
         let width = Float(max(1, view.bounds.width))
         let move = gesture.translation(in: view)
         gesture.setTranslation(.zero, in: view)
@@ -449,7 +577,7 @@ final class MedalCoinCoordinator: NSObject {
         let now = link.timestamp
         let dt = Float(lastTimestamp == 0 ? 0 : now - lastTimestamp)
         lastTimestamp = now
-        guard dt > 0, dt < 0.1, !dragging else { return }
+        guard dt > 0, dt < 0.1, !dragging, poses.isEmpty else { return }
 
         if let target = flipTarget {
             // なめらかに寄せる（「視差効果を減らす」では一息に）
@@ -481,7 +609,9 @@ enum MedalReliefImage {
     /// 絵の明るさ（灰色・上の行から）を読み、法線の絵にする
     static func normalMap(of image: UIImage, width: Int, height: Int,
                           strength: Double, dome: Double, relief: Double = 1,
-                          wrapsX: Bool = false) -> UIImage? {
+                          wrapsX: Bool = false, blurRadius: Int = MedalRelief.blurRadius,
+                          maxReliefSlope: Double? = nil, reliefFloor: Double = 0,
+                          bevelWidth: Double = 0, bevelDepth: Double = 0) -> UIImage? {
         guard let cg = image.cgImage else { return nil }
         var gray = [UInt8](repeating: 0, count: width * height)
         let drawn = gray.withUnsafeMutableBytes { buffer -> Bool in
@@ -495,7 +625,10 @@ enum MedalReliefImage {
         }
         guard drawn else { return nil }
         let rgba = MedalRelief.normalMap(luminance: gray, width: width, height: height,
-                                         strength: strength, dome: dome, relief: relief, wrapsX: wrapsX)
+                                         strength: strength, dome: dome, relief: relief, wrapsX: wrapsX,
+                                         blurRadius: blurRadius, maxReliefSlope: maxReliefSlope,
+                                         reliefFloor: reliefFloor,
+                                         bevelWidth: bevelWidth, bevelDepth: bevelDepth)
         guard !rgba.isEmpty, let provider = CGDataProvider(data: Data(rgba) as CFData),
               let normal = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
                                    bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
