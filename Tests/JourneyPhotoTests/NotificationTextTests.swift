@@ -64,10 +64,70 @@ final class NotificationTextTests: XCTestCase {
                        L("Aki のプロフィールを開く", "Open Aki's profile"))
     }
 
+    /// 「この写真を見て撮影」（2026-10-14）は出す。**知らない種類は今まで通り出さない**
     func testUnknownKindAndDeletedUser() throws {
-        XCTAssertNil(NotificationText.line(for: single(try row("inspired"))))
+        XCTAssertNotNil(NotificationText.line(for: single(try row("inspired"))))
+        XCTAssertNil(NotificationText.line(for: single(try row("mystery"))))
+        XCTAssertNil(try row("mystery").kind)
         XCTAssertEqual(NotificationText.line(for: single(try row("like", deleted: true)))?.who,
                        Labels.Common.deletedUser)
+    }
+
+    // MARK: この写真を見て撮影（inspired・2026-10-14）
+
+    /// 文言は Web の `NotificationsBell` と同じ。名前だけ太くする
+    func testInspiredWording() throws {
+        let line = try XCTUnwrap(NotificationText.line(for: single(try row("inspired"))))
+        XCTAssertEqual(line.who, "Aki")
+        XCTAssertEqual(line.plain, L("Aki があなたの写真を見て撮影しました",
+                                     "Aki took a photo inspired by yours"))
+        // 名前の無い古い形・退会した人は、ほかの種類と同じ補い方
+        XCTAssertEqual(NotificationText.line(for: single(try row("inspired", name: nil)))?.who,
+                       L("だれか", "Someone"))
+        XCTAssertEqual(NotificationText.line(for: single(try row("inspired", deleted: true)))?.who,
+                       Labels.Common.deletedUser)
+    }
+
+    /// サーバーの形（`photoId` は付けた人の新しい写真・`sourcePhotoId` は元の自分の写真）を読む。
+    /// 小窓は付けた人の新しい写真
+    func testInspiredDecodesTheServerRow() throws {
+        let json = #"{"type":"inspired","photoId":"new1","photoSrc":"https://x/new1.jpg","sourcePhotoId":"mine1","byId":"u2","byName":"Mio","t":"2026-10-14T01:00:00.000Z"}"#
+        let n = try JSONDecoder.api.decode(AppNotification.self, from: Data(json.utf8))
+        XCTAssertEqual(n.kind, .inspired)
+        XCTAssertEqual(n.photoId, "new1")
+        XCTAssertEqual(n.sourcePhotoId, "mine1")
+        XCTAssertEqual(n.byId, "u2")
+        XCTAssertEqual(NotificationText.thumbnailURL(n)?.absoluteString, "https://x/new1.jpg")
+    }
+
+    /// まとめるのはいいねだけ。同じ写真の inspired が並んでも1件ずつ
+    func testInspiredIsNotCollapsed() throws {
+        let rows = [try row("inspired", by: "a", t: "2026-09-21T10:00:00.000Z"),
+                    try row("inspired", by: "b", t: "2026-09-21T09:00:00.000Z")]
+        XCTAssertEqual(NotificationText.collapse(rows).map(\.others), [0, 0])
+    }
+
+    /// 未読は**位置で数える**（サーバーの `unread`）。inspired も行として描かれるので、
+    /// 数えた未読が一覧に出ない、というズレは起きない
+    func testInspiredUnreadCountsLikeOtherKinds() throws {
+        let rows = [try row("inspired", by: "a", t: "2026-09-21T11:00:00.000Z"),
+                    try row("like", by: "b", photo: "p2", t: "2026-09-21T10:00:00.000Z"),
+                    try row("comment", by: "c", t: "2026-09-21T09:00:00.000Z")]
+        let ids = NotificationText.unreadIds(rows, unread: 2)
+        let entries = NotificationText.collapse(rows, unreadIds: ids)
+        XCTAssertEqual(entries.map(\.unread), [true, true, false])
+        // 未読に数えた行は、すべて文言を持つ（＝描かれる）
+        for entry in entries where entry.unread {
+            XCTAssertNotNil(NotificationText.line(for: entry))
+        }
+    }
+
+    /// 絞り込みの札は増やさない——「すべて」にだけ出す（Web と同じ）
+    func testInspiredShowsOnlyUnderAll() {
+        XCTAssertTrue(NotificationFilter.all.matches(.inspired))
+        XCTAssertFalse(NotificationFilter.like.matches(.inspired))
+        XCTAssertFalse(NotificationFilter.comment.matches(.inspired))
+        XCTAssertFalse(NotificationFilter.follow.matches(.inspired))
     }
 
     // MARK: まとめ
@@ -267,6 +327,7 @@ final class NotificationPushStringsTests: XCTestCase {
         XCTAssertEqual(ja["NOTIF_COMMENT"], "%@ がコメントしました")
         XCTAssertEqual(ja["NOTIF_FOLLOW"], "%@ があなたをフォローしました")
         XCTAssertEqual(ja["NOTIF_STORY_REPLY"], "%@ がストーリーに返信しました")
+        XCTAssertEqual(ja["NOTIF_INSPIRED"], "%@ があなたの写真を見て撮影しました")
     }
 
     func testEnglishMatchesTheList() throws {
@@ -275,6 +336,7 @@ final class NotificationPushStringsTests: XCTestCase {
         XCTAssertEqual(en["NOTIF_COMMENT"], "%@ commented on your photo")
         XCTAssertEqual(en["NOTIF_FOLLOW"], "%@ followed you")
         XCTAssertEqual(en["NOTIF_STORY_REPLY"], "%@ replied to your story")
+        XCTAssertEqual(en["NOTIF_INSPIRED"], "%@ took a photo inspired by yours")
     }
 }
 
@@ -303,6 +365,19 @@ final class NotificationRouteTests: XCTestCase {
         XCTAssertEqual(model.route(for: follow), .user("u"))
         let reply = try notification(#"{"type":"storyreply","photoId":"s","byId":"u"}"#)
         XCTAssertNil(model.route(for: reply))
+    }
+
+    /// 「この写真を見て撮影」は**付けた人の新しい写真**（`photoId`）へ。元の写真（`sourcePhotoId`）ではない。
+    /// 引けなければ押せないまま（いいね・コメントと同じ）
+    func testInspiredOpensTheNewPhoto() async throws {
+        let model = NotificationsViewModel()
+        model.setFeedForTesting([try photo("new1"), try photo("mine1")])
+        let n = try notification(#"{"type":"inspired","photoId":"new1","sourcePhotoId":"mine1","byId":"u2"}"#)
+        XCTAssertEqual(model.route(for: n), .photo(try photo("new1"), fromPublicFeed: true))
+        model.setFeedForTesting([try photo("mine1")])
+        XCTAssertNil(model.route(for: n))
+        let unknown = try notification(#"{"type":"mystery","photoId":"mine1","byId":"u2"}"#)
+        XCTAssertNil(model.route(for: unknown))
     }
 
     /// **押したあとで手元の一覧が空になっても、行き先の写真は残る。**

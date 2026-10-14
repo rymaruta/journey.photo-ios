@@ -31,6 +31,31 @@ final class PushDeepLinkTests: XCTestCase {
         XCTAssertEqual(target?.byId, "u9")
     }
 
+    /// 「この写真を見て撮影」（`NOTIF_INSPIRED`）。data は `type`・`photoId`・`byId`・`sourcePhotoId`
+    func testReadsTheInspiredPayload() async {
+        let userInfo: [AnyHashable: Any] = [
+            "aps": ["alert": ["loc-key": "NOTIF_INSPIRED", "loc-args": ["Mio"]]],
+            "type": "inspired", "photoId": "new1", "byId": "u2", "sourcePhotoId": "mine1",
+        ]
+        let target = AppNotification.fromPush(userInfo)
+        XCTAssertEqual(target?.kind, .inspired)
+        XCTAssertEqual(target?.photoId, "new1")
+        XCTAssertEqual(target?.byId, "u2")
+        XCTAssertEqual(target?.sourcePhotoId, "mine1")
+    }
+
+    /// 押したら付けた人の新しい写真へ（一覧の行と同じ決まり）
+    func testInspiredPushOpensTheNewPhoto() async throws {
+        let model = NotificationsViewModel()
+        model.setFeedForTesting([try photo(id: "new1"), try photo(id: "mine1")])
+        let target = try XCTUnwrap(AppNotification.fromPush(
+            ["type": "inspired", "photoId": "new1", "byId": "u2", "sourcePhotoId": "mine1"]))
+        guard case .photo(let found, true)? = model.route(for: target) else {
+            return XCTFail("付けた人の写真へ行かない")
+        }
+        XCTAssertEqual(found.id, "new1")
+    }
+
     func testFollowCarriesTheTargetUser() async {
         let target = AppNotification.fromPush(["type": "follow", "byId": "u1", "targetUserId": "u1"])
         XCTAssertEqual(target?.kind, .follow)

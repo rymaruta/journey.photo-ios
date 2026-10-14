@@ -9,5 +9,8 @@
 "NOTIF_FOLLOW" = "%@ followed you";
 "NOTIF_STORY_REPLY" = "%@ replied to your story";
 
+/* "Inspired by" (2026-10-14). The argument is the name of the person who linked the photo. */
+"NOTIF_INSPIRED" = "%@ took a photo inspired by yours";
+
 /* Medals (2026-10-09). The argument is the medal name sent by the server. */
 "NOTIF_BADGE" = "You earned the %@ medal";

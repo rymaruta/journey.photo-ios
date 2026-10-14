@@ -584,6 +584,8 @@ final class NotificationsViewModel: ObservableObject {
     ///   引き当てる（投稿直後・下書きは公開一覧に載っていない）。
     ///   どちらにも無ければ押せないまま
     ///   にする（非公開にされた／消された写真を押して空振りさせない）
+    /// - この写真を見て撮影（`inspired`）は**付けた人の新しい写真**（`photoId`）。引き当て方は
+    ///   いいね・コメントと同じ（公開でしか届かないので、ふつうは公開一覧に居る）
     /// - ストーリーへの返信は行き先が無い（24時間で消えるため）
     /// - 新しいメダルは自分のバッジの棚（知らない鍵は行が描かれないので押せない）
     /// - 光と天気の知らせ（プッシュだけ）は行きたい場所の光。Pro でなくなっていたら、その画面が
@@ -595,7 +597,7 @@ final class NotificationsViewModel: ObservableObject {
                 return .user(id)
             }
             return .none
-        case .like, .comment:
+        case .like, .comment, .inspired:
             guard let id = notification.photoId else { return .none }
             if let photo = feed.first(where: { $0.id == id }) {
                 return .photo(photo, fromPublicFeed: true)
