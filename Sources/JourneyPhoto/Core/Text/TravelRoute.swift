@@ -99,14 +99,53 @@ enum TravelRoute {
         return out
     }
 
-    /// 2点を結ぶ弧の、曲げの点（0〜1 の座標）。**航路のように上へふくらませる**（直線を何本も重ねると
-    /// 行き来が平行な線の束に潰れた・Mac run 437 の絵）。ふくらみは区間の長さに比例し、枠の上は越えない
-    static let arcLift = 0.28
+    /// 2点を結ぶ弧（2026-10-14 判断）。
+    ///
+    /// 🔴 run 437 は直線で、日本とヨーロッパの行き来が平行な線の束に潰れた。run 438 は上へだけ少し
+    /// ふくらませたが、同じ2か所の行き来が同じ弧に重なり、まだ束だった。いま:
+    /// - **行きは上へ・帰りは下へ**ふくらむ（東へ向かう区間は上、西へは下）。往復が目の形に開く
+    /// - **同じ2か所を何度も行き来したら、回ごとに大きくふくらむ**（`occurrence`）
+    /// - ふくらみは区間の長さに比例し、上下の余白に収める
+    /// ふくらみが最大になる区間の長さ（枠の幅に対する割合）。これより短い区間は比例して低い
+    static let arcFullLengthRatio = 0.6
 
-    static func arcControl(from a: CGPoint, to b: CGPoint) -> CGPoint {
-        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
-        let length = hypot(b.x - a.x, b.y - a.y)
-        return CGPoint(x: mid.x, y: max(0, mid.y - length * arcLift))
+    /// 曲げの点を、**画面の点の単位で**決める（枠は横長なので、0〜1 のままだとふくらみが縦に潰れる）。
+    /// ふくらみの上限は上下の余白（`band`）の2倍（曲線の頂点は曲げの点の半分の高さに来るので、頂点が
+    /// ちょうど余白に収まる）。同じ2か所の行き来は回ごとに 45% → 100% まで大きくする
+    static func arcControl(from a: CGPoint, to b: CGPoint, occurrence: Int = 0,
+                           size: CGSize, band: CGFloat) -> CGPoint {
+        let w = Double(size.width), h = Double(size.height)
+        guard w > 0, h > 0 else { return a }
+        let ax = a.x * w, ay = a.y * h, bx = b.x * w, by = b.y * h
+        let mx = (ax + bx) / 2, my = (ay + by) / 2
+        let dx = bx - ax, dy = by - ay
+        let length = hypot(dx, dy)
+        guard length > 0 else { return CGPoint(x: mx / w, y: my / h) }
+        // 区間に直角な2つの向きのうち、画面の上（y が小さい側）を指す方
+        var upX = dy / length, upY = -dx / length
+        if upY > 0 || (upY == 0 && upX > 0) { upX = -upX; upY = -upY }
+        // 東へ進むなら上へ、西へなら下へ
+        let sign: Double = dx >= 0 ? 1 : -1
+        let base = min(1, length / (w * arcFullLengthRatio))
+        let spread = 0.45 + 0.55 * Double(min(occurrence, 3)) / 3
+        let lift = 2 * Double(band) * base * spread * sign
+        return CGPoint(x: (mx + upX * lift) / w, y: (my + upY * lift) / h)
+    }
+
+    /// 区間ごとの曲げの点。同じ2か所（向きは問わない）を前に何回結んだかを数えて渡す
+    static func arcControls(_ points: [CGPoint], size: CGSize, band: CGFloat) -> [CGPoint] {
+        guard points.count >= 2 else { return [] }
+        var seen: [(CGPoint, CGPoint)] = []
+        var out: [CGPoint] = []
+        let near = mergeDistance * 3
+        func close(_ p: CGPoint, _ q: CGPoint) -> Bool { hypot(p.x - q.x, p.y - q.y) < near }
+        for index in 1..<points.count {
+            let a = points[index - 1], b = points[index]
+            let occurrence = seen.filter { (close($0.0, a) && close($0.1, b)) || (close($0.0, b) && close($0.1, a)) }.count
+            out.append(arcControl(from: a, to: b, occurrence: occurrence, size: size, band: band))
+            seen.append((a, b))
+        }
+        return out
     }
 
     private static func padded(_ low: Double, _ high: Double) -> (Double, Double) {

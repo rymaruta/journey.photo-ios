@@ -35,8 +35,8 @@ struct TravelRecordView: View {
     @State private var haloOpacity: Double = 0
     @State private var played = false
 
-    /// 線の高さ（板 H1 の 64pt に、弧のふくらみの分を足した）
-    static let routeHeight: CGFloat = 72
+    /// 線の高さ（板 H1 の 64pt に、上下の弧のふくらみの分を足した）
+    static let routeHeight: CGFloat = 84
 
     private var shape: TravelRoute.Shape? {
         kilometers > 0 ? TravelRoute.shape(of: coordinates) : nil
@@ -187,11 +187,11 @@ private struct TravelRouteCanvas: View, Animatable {
 
     var body: some View {
         GeometryReader { proxy in
-            // 上は弧のふくらみの分を空ける
-            let inset: CGFloat = 6, top: CGFloat = 14
-            let rect = CGRect(x: inset, y: top,
+            // 上下は弧のふくらみの分を空ける（行きは上・帰りは下へふくらむ）
+            let inset: CGFloat = 6, band: CGFloat = 16
+            let rect = CGRect(x: inset, y: band,
                               width: max(1, proxy.size.width - inset * 2),
-                              height: max(1, proxy.size.height - top - inset))
+                              height: max(1, proxy.size.height - band * 2))
             let points = shape.points.map { CGPoint(x: rect.minX + $0.x * rect.width,
                                                     y: rect.minY + $0.y * rect.height) }
             let last = max(1, points.count - 1)
@@ -215,8 +215,9 @@ private struct TravelRouteCanvas: View, Animatable {
                 Path { path in
                     guard let first = points.first else { return }
                     path.move(to: first)
+                    let controls = TravelRoute.arcControls(shape.points, size: rect.size, band: band)
                     for index in 1..<points.count {
-                        let c = TravelRoute.arcControl(from: shape.points[index - 1], to: shape.points[index])
+                        let c = controls[index - 1]
                         path.addQuadCurve(to: points[index],
                                           control: CGPoint(x: rect.minX + c.x * rect.width,
                                                            y: rect.minY + c.y * rect.height))

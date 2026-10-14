@@ -81,15 +81,30 @@ final class TravelRouteTests: XCTestCase {
         XCTAssertEqual(merged, [CGPoint(x: 0, y: 0), CGPoint(x: 0.505, y: 0.5)])
     }
 
-    /// 弧は上へふくらみ、長い区間ほど高い。枠の上は越えない
-    func testArcBulgesUpward() {
-        let short = TravelRoute.arcControl(from: CGPoint(x: 0.4, y: 0.8), to: CGPoint(x: 0.6, y: 0.8))
-        let long = TravelRoute.arcControl(from: CGPoint(x: 0, y: 0.8), to: CGPoint(x: 1, y: 0.8))
-        XCTAssertLessThan(short.y, 0.8)
-        XCTAssertLessThan(long.y, short.y)
-        XCTAssertEqual(long.x, 0.5, accuracy: 1e-9)
-        let top = TravelRoute.arcControl(from: CGPoint(x: 0, y: 0.05), to: CGPoint(x: 1, y: 0.05))
-        XCTAssertGreaterThanOrEqual(top.y, 0)
+    private let box = CGSize(width: 338, height: 52)
+
+    /// 🔴 東へ進む区間は上へ、西へ進む区間は下へふくらむ（往復が目の形に開く）。長いほど大きく、
+    /// 頂点は上下の余白（16pt）に収まる
+    func testArcBulgesByDirection() {
+        let east = TravelRoute.arcControl(from: CGPoint(x: 0.2, y: 0.5), to: CGPoint(x: 0.8, y: 0.5), size: box, band: 16)
+        let west = TravelRoute.arcControl(from: CGPoint(x: 0.8, y: 0.5), to: CGPoint(x: 0.2, y: 0.5), size: box, band: 16)
+        XCTAssertLessThan(east.y, 0.5, "東へは上")
+        XCTAssertGreaterThan(west.y, 0.5, "西へは下")
+        XCTAssertEqual(east.x, 0.5, accuracy: 1e-9)
+        let short = TravelRoute.arcControl(from: CGPoint(x: 0.45, y: 0.5), to: CGPoint(x: 0.55, y: 0.5), size: box, band: 16)
+        XCTAssertLessThan(east.y, short.y, "長い区間ほど高い")
+        let most = TravelRoute.arcControl(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 1, y: 0), occurrence: 9, size: box, band: 16)
+        // 頂点（曲げの点の半分の高さ）は余白の 16pt まで
+        XCTAssertGreaterThanOrEqual(most.y * 52 / 2, -16 - 1e-9)
+    }
+
+    /// 🔴 同じ2か所を何度も行き来すると、回ごとに大きくふくらむ（束に潰れない・run 438）
+    func testRepeatedLegsFanOut() {
+        let jp = CGPoint(x: 1, y: 0.9), eu = CGPoint(x: 0, y: 0.4)
+        let controls = TravelRoute.arcControls([jp, eu, jp, eu, jp], size: box, band: 16)
+        XCTAssertEqual(controls.count, 4)
+        XCTAssertGreaterThan(controls[2].y, controls[0].y, "西へ: 2回目はもっと下")
+        XCTAssertLessThan(controls[3].y, controls[1].y, "東へ: 2回目はもっと上")
     }
 
     /// 間引いても最初と最後の点は残る
