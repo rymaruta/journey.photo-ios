@@ -47,22 +47,22 @@ struct AlbumsView: View {
         List {
             // 板 v2 Albums: 明朝の題と一行の説明 → 作る（主ボタン）→ 招待リンクから参加の札 → 一覧
             header
-                .albumsRow()
+                .profileListRow()
             statusRow
             if !model.albums.isEmpty || !joinedOthers.isEmpty {
                 createButton
-                    .albumsRow()
+                    .profileListRow()
             }
             joinCard
-                .albumsRow()
+                .profileListRow()
             if !model.albums.isEmpty {
                 JPEyebrowLine(L("作ったアルバム", "Your albums"))
                     .padding(.top, JPSpace.xs)
-                    .albumsRow()
+                    .profileListRow()
             }
             ForEach(model.albums) { album in
                 row(album)
-                    .albumsRow(divider: true)
+                    .profileListRow(divider: true)
             }
             joinedSection
         }
@@ -133,24 +133,24 @@ struct AlbumsView: View {
     private var statusRow: some View {
         if let notice = model.notice {
             Text(notice).foregroundStyle(WebTheme.danger).font(.callout)
-                .albumsRow()
+                .profileListRow()
         }
         if let message = model.errorMessage {
             // v2 Components 06: 失敗は共通の並び（何が起きたか → もう一度）
             ErrorBanner(message: message, isBusy: model.isLoading) {
                 Task { await model.load(environment: environment) }
             }
-            .albumsRow()
+            .profileListRow()
         } else if model.albums.isEmpty && joinedOthers.isEmpty && !model.isLoading {
             // 板 v2 Albums（空）: 何が無いか → どうすれば埋まるか → 作る（写真の無い画面の主ボタン＝真鍮）
             EmptyState(title: L("まだアルバムがありません", "No albums yet"),
                        message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
                                   "Create an album and send the invite link — your companions' photos gather here."),
                        actionTitle: L("アルバムを作る", "New album")) { showCreate = true }
-                .albumsRow()
+                .profileListRow()
         } else if model.albums.isEmpty && model.isLoading {
             JPLoadingState(kind: .rows)
-                .albumsRow()
+                .profileListRow()
         }
     }
 
@@ -254,7 +254,7 @@ struct AlbumsView: View {
             // 板 v2 Albums: 節の見出しは眉（真鍮＋消える線）
             JPEyebrowLine(L("参加しているアルバム", "Albums you joined"))
                 .padding(.top, JPSpace.xs)
-                .albumsRow()
+                .profileListRow()
             Section {
                 ForEach(others) { entry in
                     Button {
@@ -280,7 +280,7 @@ struct AlbumsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .albumsRow(divider: true)
+                    .profileListRow(divider: true)
                     .swipeActions {
                         // **抜けるのではなく、この端末の控えを消すだけ。**
                         // サーバーに「抜ける」口は無い（Web にも無い）
@@ -703,19 +703,3 @@ final class AlbumsViewModel: ObservableObject {
     }
 }
 
-private extension View {
-    /// アルバムの一覧の行の作法（板 v2 Albums: 左右 16・地は黒・系統の区切り線は出さない）。
-    /// `divider` の行だけ下に白 8% の線（板の `.al`）
-    func albumsRow(divider: Bool = false) -> some View {
-        self
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                if divider {
-                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-                }
-            }
-            .listRowInsets(EdgeInsets(top: 4, leading: ProfileV2.gutter, bottom: 4, trailing: ProfileV2.gutter))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-    }
-}

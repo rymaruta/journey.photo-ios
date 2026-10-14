@@ -113,3 +113,20 @@ struct ProfileFollowButtonLabel: View {
         .contentShape(Rectangle())
     }
 }
+
+extension View {
+    /// 一覧（`List`）の行を v2 の作法にする（板 v2 Albums・FollowList: 左右 16・地は黒・系統の区切り線は出さない）。
+    /// `divider` の行だけ下に白 8% の線（板の `.al`・`.pr`）
+    func profileListRow(divider: Bool = false) -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                if divider {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: ProfileV2.gutter, bottom: 4, trailing: ProfileV2.gutter))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
