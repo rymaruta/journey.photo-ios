@@ -87,6 +87,25 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストでメダルを回す全画面の硬貨を止める向きと強さ（Debug のみ）。
+    /// `-JPPreviewMedalPoses "0:1,0.45:1,1.1:1"`（横の回り:浮き彫りの強さ）。
+    ///
+    /// 硬貨はふだん勝手にゆっくり回るので、画面写真の角度が毎回ちがう。浮き彫りの強さ（2026-10-14）を
+    /// 決まった角度で比べるために、**最初の向きで止め、硬貨を押すと次の向きへ進める**。
+    /// 入っている見本の利用者のときだけ効く。Release では必ず `nil`
+    static let medalPosesKey = "JPPreviewMedalPoses"
+
+    static var medalPoses: [MedalPose]? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: medalPosesKey), !raw.isEmpty else { return nil }
+        let poses = MedalPose.parse(raw)
+        return poses.isEmpty ? nil : poses
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
     /// `-JPPreviewPaywall YES`。
     ///
@@ -116,6 +135,44 @@ enum PreviewSession {
         #if DEBUG
         guard userId != nil else { return false }
         return UserDefaults.standard.bool(forKey: pushPrimerKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストで投稿画面を**見本の写真1枚を選んだ状態で**開く（Debug のみ）。`-JPPreviewUploadSample YES`。
+    ///
+    /// 写真を選ぶ画面（PHPicker）は別プロセスで、CI では中の写真に触れない回が続き、投稿画面の絵
+    /// （42〜45c）が1枚も撮れていなかった（run 428）。ピッカーを通らず、アプリに入っている画像
+    /// （`PreviewUploadSample`）をカメラで撮った1枚と同じ道で入れる。**入っている見本の利用者のときだけ**
+    /// 効く。Release では必ず false
+    static let uploadSampleKey = "JPPreviewUploadSample"
+
+    static var opensUploadSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: uploadSampleKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストで「この写真を見て撮影」の見本を出す（Debug のみ）。`-JPPreviewInspired YES`。
+    ///
+    /// 元の写真の付いた写真は本番にまだ無く、`GET /user/inspired` も本番に無いので、写真の詳細の行
+    /// （20e/20f）と、元の写真を選んだ投稿の欄（45d）が撮れない。この鍵のときだけ:
+    /// - 写真の詳細は、どの写真にも元の写真が付いているものとし、口を呼ばずに公開一覧の別の1枚を
+    ///   要約にして出す（`InspiredBy.previewSource`）
+    /// - 投稿画面は、公開一覧の1枚を元の写真に選んだ状態で始める
+    ///
+    /// **画面の状態だけ**で、サーバー・端末の控えには何も書かない。入っている見本の利用者のときだけ。
+    /// Release では必ず false
+    static let inspiredSampleKey = "JPPreviewInspired"
+
+    static var showsInspiredSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: inspiredSampleKey)
         #else
         return false
         #endif

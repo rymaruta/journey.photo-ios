@@ -63,6 +63,8 @@ struct EditPhotoView: View {
     /// この画面で差し替えた本体。**続けて色を編集するときはこちらを元にする**
     /// （`photo.src` は開いたときの前の画像のまま）
     @State private var replacedData: Data?
+    /// 「この写真を見て撮影」の元の写真を外す（保存で `inspiredBy: null`・2026-10-14）。付け直しはここでは無い
+    @State private var removeInspired = false
 
     init(photo: Photo) {
         self.photo = photo
@@ -228,7 +230,10 @@ struct EditPhotoView: View {
                 .listRowBackground(Color.clear)
             }
 
-
+            // 「この写真を見て撮影」の元の写真（付いている写真だけ）。外すだけ（付け直しは投稿の画面から）
+            if InspiredBy.isAttached(photo) {
+                inspiredSection
+            }
         }
         .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
@@ -373,6 +378,54 @@ struct EditPhotoView: View {
         }
     }
 
+    /// 元の写真の節。**外すは保存で効く**（ほかの欄と同じ）——押した時点では送らず、文言と印で
+    /// 「保存すると外れます」と言う。色だけで状態を言わない（行の字と記号が変わる）
+    private var inspiredSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "link")
+                    .font(.system(size: 17))
+                    .foregroundStyle(WebTheme.muted2)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("この写真を見て撮影", "Inspired by"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.text)
+                    Text(removeInspired
+                         ? L("保存すると、元の写真が外れます", "The original photo will be removed when you save")
+                         : L("元の写真が付いています", "An original photo is attached"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    removeInspired.toggle()
+                } label: {
+                    // 黒地の上の文字ボタン（板: 小さな文字ボタンも当たりは 44）。外すは危険ではないので赤にしない
+                    Text(removeInspired ? L("元に戻す", "Undo") : L("外す", "Remove"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+                .accessibilityHint(removeInspired
+                                   ? L("元の写真を付けたままにします", "Keeps the original photo attached")
+                                   : L("保存すると、この写真から元の写真へのつながりを外します",
+                                       "Removes the link to the original photo when you save"))
+                .accessibilityIdentifier("editPhoto.inspiredRemove")
+            }
+            .accessibilityElement(children: .contain)
+        } footer: {
+            Text(L("外すと、写真のページから「この写真を見て撮影」の行が消えます（サイトは反映まで数分）。ここでは付け直せません。",
+                   "Removing it takes the “Inspired by” line off the photo page (the site updates within a few minutes). It can't be re-attached here."))
+        }
+        .listRowBackground(Color.clear)
+    }
+
     /// 保存・差し替え・色の編集の元を読んでいる最中か（閉じる・保存・先へ進むを止める門）
     private var isBusy: Bool { isSaving || isReplacing || isLoadingRecolor }
 
@@ -380,7 +433,8 @@ struct EditPhotoView: View {
     private var fields: EditPhotoChanges.Fields {
         EditPhotoChanges.Fields(title: title, caption: caption, location: location,
                                 pickedCoords: pickedCoords, tagsText: tagsText, category: category,
-                                date: date, published: published, audience: audience)
+                                date: date, published: published, audience: audience,
+                                removeInspired: removeInspired)
     }
 
     /// 「閉じる」・下へ払うの扱い（`EditPhotoChanges.leave`）

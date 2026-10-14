@@ -70,6 +70,20 @@ struct PhotoDetailView: View {
     /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
     @State private var tripLoaded: PhotoTrip.Loaded?
     private var tripStage: PhotoTrip.Stage { PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded) }
+    /// 「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・2026-10-14）。**どの写真の、どの元の写真で
+    /// 読んだかを持つ**（`InspiredBy.Loaded`）——写真を送った直後に前の写真の行を出さない（`tripLoaded` と同じ考え）
+    @State private var inspiredLoaded: InspiredBy.Loaded?
+    /// 元の写真を開くときに引き当てる公開一覧（読んだときのもの・`InspiredBy.photoToOpen`）
+    @State private var inspiredFeed: [Photo]?
+    /// 元の写真の ID。画面写真の試験だけ、どの写真にも見本の元の写真が付いているものとする
+    /// （`PreviewSession.showsInspiredSample`・Debug のみ。口を呼ばない・`loadInspired`）
+    private var inspiredId: String? {
+        PreviewSession.showsInspiredSample ? InspiredBy.previewSourceId : shown.inspiredBy
+    }
+    private var inspiredStage: InspiredBy.Stage {
+        InspiredBy.stage(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId,
+                         loaded: inspiredLoaded)
+    }
     private var tripSpot: OfficialSpot? { tripStage.loaded?.spot }
     /// フォローしているか。**分からない間は nil**——ボタンを出さない
     /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
@@ -242,6 +256,10 @@ struct PhotoDetailView: View {
         }
         // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
         .task(id: shown.spotId ?? "") { await loadTripSpot() }
+        // 「この写真を見て撮影」の元の写真（付いている写真・ログイン中だけ。口は認証が要る）
+        .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId)) {
+            await loadInspired()
+        }
         // 🔴 H-3: **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真の id だけだと、
         // 撮影地を直して保存しても近くの写真が前の場所のまま残った（画面を出れば直った）。
         // 答えを入れるのは画面に出ている間だけ（`loadNearby`・`NearbyShelf`）。
@@ -536,6 +554,7 @@ struct PhotoDetailView: View {
                 chips
                 paragraphs
                 authorRow
+                inspiredRow
             }
             socialBar(proxy)
             tripSection
@@ -694,6 +713,66 @@ struct PhotoDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("撮影スポット: \(spot.name)", "Photo spot: \(spot.name)"))
             .accessibilityIdentifier("photo.spotGuide")
+        }
+    }
+
+    /// 「この写真を見て撮影 · [元の写真の小さな画像] [題・作者] ›」（2026-10-14・`InspiredBy`）。
+    ///
+    /// **この写真の分を読み終えて、元の写真が今も見られるときだけ**出す（null・404・失敗・読み込み中は何も出さない）。
+    /// 作者の行の下＝写真の裾より下の黒地なので、合図の字（「この写真を見て撮影」）は真鍮、題・作者は白、
+    /// 矢印は白 50%（板 02 の旅の行と同じ形）。当たりは 44pt。押すと元の写真の詳細へ
+    @ViewBuilder
+    private var inspiredRow: some View {
+        if let source = inspiredStage.source,
+           let target = InspiredBy.photoToOpen(source, feed: inspiredFeed),
+           !hidden.visible([target.photo]).isEmpty {
+            NavigationLink {
+                PhotoDetailView(photo: target.photo, fromPublicFeed: target.fromPublicFeed)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "camera.viewfinder")
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityHidden(true)
+                    Text(L("この写真を見て撮影", "Inspired by"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    RemoteImage(url: source.thumbURL)
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        let title = source.displayTitle
+                        if !title.isEmpty {
+                            Text(title)
+                                .font(.footnote)
+                                .foregroundStyle(WebTheme.foreground)
+                                .lineLimit(1)
+                        }
+                        if let author = source.authorName {
+                            Text(author)
+                                .font(.caption)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    Text("›")
+                        .font(.footnote)
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(InspiredBy.spokenLabel(source))
+            .accessibilityHint(L("元の写真を開きます", "Opens the original photo"))
+            .accessibilityIdentifier("photo.inspiredBy")
         }
     }
 
@@ -1522,6 +1601,43 @@ struct PhotoDetailView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// 元の写真の要約を読む（`InspiredBy`）。**読んだ写真・元の写真を覚え**、送った先の写真では使わない。
+    /// 失敗（500・圏外）は覚えない——何も出さないまま、次に開いたときに読み直す
+    private func loadInspired() async {
+        let photoId = shown.id
+        // 🔴 **読んだ人も覚える**——ログアウトして別の人で入ると、ブロックの関係が違う。前の人の
+        // 読み取りを使い回さない（`InspiredBy.Loaded.userId`）
+        guard let userId = auth.userId, !userId.isEmpty,
+              let sourceId = InspiredBy.normalizedId(inspiredId) else { return }
+        if let loaded = inspiredLoaded, loaded.userId == userId, loaded.photoId == photoId,
+           loaded.sourceId == sourceId { return }
+        let stillHere = {
+            !Task.isCancelled && auth.userId == userId && shown.id == photoId
+                && InspiredBy.normalizedId(inspiredId) == sourceId
+        }
+        // 投げた（500・圏外）と nil（null・404）を分ける: nil は「出すものが無い」として覚える
+        let source: InspiredBy.Source?
+        if PreviewSession.showsInspiredSample {
+            // 画面写真の試験だけ: 口を呼ばず、公開一覧の別の1枚を要約にする（本番に口がまだ無い間も撮れるように）
+            let feed = try? await environment.gallery.fetchPhotos()
+            source = InspiredBy.previewSample(feed: feed, excluding: photoId).map(InspiredBy.previewSource)
+        } else {
+            do {
+                source = try await environment.photos.inspiredSource(photoId: photoId)
+            } catch {
+                return
+            }
+        }
+        guard stillHere() else { return }
+        if let source {
+            // 開く1枚は公開一覧の行を使う（説明・撮影情報まで揃う）。控えがあれば通信しない
+            let feed = try? await environment.gallery.fetchPhotos()
+            guard stillHere() else { return }
+            if let feed { inspiredFeed = feed }
+        }
+        inspiredLoaded = InspiredBy.Loaded(userId: userId, photoId: photoId, sourceId: sourceId, source: source)
     }
 
     /// 写真に紐づいた台帳の撮影スポットを引く（`PhotoTrip.spot`）。`spotId` の無い写真は読みに行かない。

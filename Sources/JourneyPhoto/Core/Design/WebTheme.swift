@@ -92,6 +92,21 @@ enum WebTheme {
     /// そのまま（`contentShape` で余白まで押せるようにする）。
     nonisolated static let minTapTarget: CGFloat = 44
 
+    /// **上のバー（ツールバー）のアイコンの大きさ（17pt・regular）**（2026-10-14）。
+    ///
+    /// 経緯: 既定の 17pt では黒地で沈む（owner）→ 22pt semibold にした →
+    /// iOS 26 のガラスの帯に入れると「デカすぎる」（owner・実機）→ 19pt regular・箱 28 にした →
+    /// まだ「アイコン自体も含めてデカイ」（owner・Mac run 433 の絵）→ **17pt regular・箱 24**
+    /// （システムの標準の大きさ。owner の好みが板の約 19px より優先）。太字には戻さない
+    nonisolated static let toolbarIconSize: CGFloat = 17
+    /// アイコンの箱の**幅**（並びの寸法）。17pt の絵（約 19〜21pt）が収まる最小。
+    /// **高さは `minTapTarget`（44）**（`webToolbarIcon` の注記・箱の外は押せなかった）
+    nonisolated static let toolbarIconBox: CGFloat = 24
+    /// お知らせの未読の点（8pt）を、箱の右上の角からずらす量。板の点は絵の右上の角に
+    /// 中心が来て、線画の肩に少し掛かる（板 01: 44 の枠で top/right 10・絵 22）。
+    /// 24 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない
+    nonisolated static let toolbarBadgeOffset: (x: CGFloat, y: CGFloat) = (1, -1)
+
     /// **本文系の字の最小（12pt）。** 11pt は眉ラベルだけ（CLAUDE.md・デザインの板）
     nonisolated static let minBodyText: CGFloat = 12
 
@@ -133,17 +148,28 @@ extension View {
 
     /// バー（上のツールバー）の中のアイコン。
     ///
-    /// **ここは「当たり判定だけ広げる」では足りない。** owner の指摘は
-    /// 地図・「…」・歯車のような**絵そのものが小さい**という話で、
-    /// 押しやすさの前に**見つけにくい**。既定は 17pt 相当で、
-    /// 黒地の上では特に沈む。
+    /// **大きさの経緯**（`WebTheme.toolbarIconSize`）:
+    /// 1. 既定の 17pt 相当では黒地で沈み、見つけにくい（owner の指摘。地図・「…」・歯車）
+    /// 2. 22pt semibold ＋ 44pt の枠にした → iOS 26 のガラスの丸い帯に入れると
+    ///    **帯が文字の行よりずっと高く、絵も太く大きい**（2026-10-14 owner「デカすぎる」）
+    /// 3. 19pt regular・箱 28 にしても「アイコン自体も含めてデカイ」（owner）
+    /// 4. いま: **17pt regular・箱 24**（システムの標準の大きさ）
     ///
-    /// 22pt の太めにして、当たりは 44pt。
+    /// **帯が太っていた訳**: iOS 26 はバーの右の項目を、ラベルの寸法に**システムの余白を足して**
+    /// ガラスの帯に入れる。こちらが `frame(minWidth: 44, minHeight: 44)` で並びの寸法そのものを
+    /// 44 にしていたので、帯は「44 ＋ システムの余白」になり、標準の帯より太く・長くなっていた。
+    ///
+    /// **箱は幅 24・高さ 44**: 帯を長くするのは幅なので、幅だけを `toolbarIconBox`（24）に詰め、
+    /// 高さは 44 のまま当たりにする（`contentShape`）。
+    /// 🔴 **箱の外へ当たりを広げる作り（44 の余白で当たりを取り、負の余白で箱に戻す）は効かなかった**
+    /// （Mac run 432: 絵の中心から 19pt 下を押してもお知らせが開かない。バーの項目は UIKit の枠の中しか
+    /// 押せない）。当たりは並びの寸法の中にしか作れない
     func webToolbarIcon() -> some View {
         self
-            .font(.system(size: 22, weight: .semibold))
+            .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
             .foregroundStyle(WebTheme.foreground)
-            .webTappable()
+            .frame(minWidth: WebTheme.toolbarIconBox, minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
     }
 
     /// 押せるものの当たり判定を 44pt 以上にする（見た目は変えない）。

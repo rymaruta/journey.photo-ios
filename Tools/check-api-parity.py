@@ -115,14 +115,24 @@ def notification_kind_problems(root: Path):
 
     server_kinds = set(re.findall(r'"(\w+)"', found.group(1)))
     swift = (HERE / "Sources/JourneyPhoto/Services/NotificationService.swift").read_text(encoding="utf-8")
-    declared = re.search(r"enum Kind: String, Decodable \{\s*case ([^\n]+)", swift)
-    app_kinds = {k.strip() for k in declared.group(1).split(",")} if declared else set()
+    # **`case` の行をぜんぶ読む。** 1行目の `case like, comment, …` だけを読んでいたので、
+    # 注記付きで別の行に足した種別（`case inspired`・2026-10-14）を「知らない」と誤報した
+    body = re.search(r"enum Kind: String, Decodable \{(.*?)\n    \}", swift, re.S)
+    app_kinds = set()
+    if body:
+        for line in body.group(1).split("\n"):
+            m = re.match(r"\s*case ([^/\n]+)", line)
+            if m:
+                app_kinds |= {k.strip() for k in m.group(1).split(",") if k.strip()}
 
     out = []
     for kind in sorted(server_kinds - app_kinds):
         out.append(f"お知らせの種別 {kind} をアプリが知りません"
                    f"（一覧に空の行が出ます。NotificationService の Kind と summary に足してください）")
-    for kind in sorted(app_kinds - server_kinds):
+    # プッシュにだけ来る種別（一覧の型 `notify.ts` には無いのが正しい）。
+    # `light`＝光と天気の知らせ（`lightForecast.ts` の `alertOne`・2026-10-09）
+    push_only = {"light"}
+    for kind in sorted(app_kinds - server_kinds - push_only):
         out.append(f"お知らせの種別 {kind} はサーバーに無くなりました（NotificationService から外してください）")
     return out
 
