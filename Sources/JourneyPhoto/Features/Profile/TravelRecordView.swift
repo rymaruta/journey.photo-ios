@@ -36,7 +36,7 @@ struct TravelRecordView: View {
     @State private var played = false
 
     /// 線の高さ（板 H1 の 64pt に、上下の弧のふくらみの分を足した）
-    static let routeHeight: CGFloat = 84
+    static let routeHeight: CGFloat = 100
 
     private var shape: TravelRoute.Shape? {
         kilometers > 0 ? TravelRoute.shape(of: coordinates) : nil
@@ -179,7 +179,7 @@ private struct TravelRouteCanvas: View, Animatable {
     var body: some View {
         GeometryReader { proxy in
             // 上下は弧のふくらみの分を空ける（行きは上・帰りは下へふくらむ）
-            let inset: CGFloat = 6, band: CGFloat = 16
+            let inset: CGFloat = 6, band: CGFloat = 26
             let rect = CGRect(x: inset, y: band,
                               width: max(1, proxy.size.width - inset * 2),
                               height: max(1, proxy.size.height - band * 2))

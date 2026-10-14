@@ -111,7 +111,7 @@ enum TravelRoute {
 
     /// 曲げの点を、**画面の点の単位で**決める（枠は横長なので、0〜1 のままだとふくらみが縦に潰れる）。
     /// ふくらみの上限は上下の余白（`band`）の2倍（曲線の頂点は曲げの点の半分の高さに来るので、頂点が
-    /// ちょうど余白に収まる）。同じ2か所の行き来は回ごとに 45% → 100% まで大きくする
+    /// ちょうど余白に収まる）。同じ2か所の行き来は回ごとに 70% → 100% まで大きくする（run 440: 45% からでは往復が平らなまま）
     static func arcControl(from a: CGPoint, to b: CGPoint, occurrence: Int = 0,
                            size: CGSize, band: CGFloat) -> CGPoint {
         let w = Double(size.width), h = Double(size.height)
@@ -127,7 +127,7 @@ enum TravelRoute {
         // 東へ進むなら上へ、西へなら下へ
         let sign: Double = dx >= 0 ? 1 : -1
         let base = min(1, length / (w * arcFullLengthRatio))
-        let spread = 0.45 + 0.55 * Double(min(occurrence, 3)) / 3
+        let spread = 0.7 + 0.3 * Double(min(occurrence, 3)) / 3
         let lift = 2 * Double(band) * base * spread * sign
         return CGPoint(x: (mx + upX * lift) / w, y: (my + upY * lift) / h)
     }
