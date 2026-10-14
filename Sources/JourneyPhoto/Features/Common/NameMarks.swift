@@ -76,9 +76,10 @@ struct NameMarks: View {
             if let proStyle {
                 ProMark(style: proStyle,
                         side: ProMarkFit.side(nameSize: nameSize, mincho: isMincho) * scale)
-                    // 公式の封印と同じく、行の中央ではなく字面の中央へ
+                    // 公式の封印と同じく、行の中央ではなく字面の中央へ。封印は記号で見た目の中央が
+                    // 少し下にあるので、その分も下げる（`ProMarkFit.sealCenterNudge`）
                     .alignmentGuide(VerticalAlignment.center) { d in
-                        d[VerticalAlignment.center] - d.height * fit.nudge
+                        d[VerticalAlignment.center] - d.height * (fit.nudge + ProMarkFit.sealCenterNudge)
                     }
             }
             if let badge, BadgeCatalog.isKnown(badge.key) {

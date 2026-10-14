@@ -587,3 +587,15 @@ final class BadgeServiceTests: XCTestCase {
         XCTAssertTrue(json["displayBadge"] is NSNull)
     }
 }
+
+/// Pro の印は公式の封印の**見た目の中央**にそろえる（2026-10-14 owner「中心ズレてる？」・実機の絵で約 0.66pt 上）
+final class ProMarkCenterTests: XCTestCase {
+    func testProMarkIsNudgedToTheSealCenter() throws {
+        XCTAssertEqual(ProMarkFit.sealCenterNudge, 0.03, accuracy: 1e-9)
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Common/NameMarks.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("fit.nudge + ProMarkFit.sealCenterNudge"), "Pro の印が封印の中央へ下がっていない")
+    }
+}
