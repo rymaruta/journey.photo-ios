@@ -79,7 +79,7 @@ final class NotificationTextTests: XCTestCase {
     func testInspiredWording() throws {
         let line = try XCTUnwrap(NotificationText.line(for: single(try row("inspired"))))
         XCTAssertEqual(line.who, "Aki")
-        XCTAssertEqual(line.plain, L("Aki さんがあなたの写真を見て撮影しました",
+        XCTAssertEqual(line.plain, L("Aki があなたの写真を見て撮影しました",
                                      "Aki took a photo inspired by yours"))
         // 名前の無い古い形・退会した人は、ほかの種類と同じ補い方
         XCTAssertEqual(NotificationText.line(for: single(try row("inspired", name: nil)))?.who,
@@ -327,7 +327,7 @@ final class NotificationPushStringsTests: XCTestCase {
         XCTAssertEqual(ja["NOTIF_COMMENT"], "%@ がコメントしました")
         XCTAssertEqual(ja["NOTIF_FOLLOW"], "%@ があなたをフォローしました")
         XCTAssertEqual(ja["NOTIF_STORY_REPLY"], "%@ がストーリーに返信しました")
-        XCTAssertEqual(ja["NOTIF_INSPIRED"], "%@ さんがあなたの写真を見て撮影しました")
+        XCTAssertEqual(ja["NOTIF_INSPIRED"], "%@ があなたの写真を見て撮影しました")
     }
 
     func testEnglishMatchesTheList() throws {
