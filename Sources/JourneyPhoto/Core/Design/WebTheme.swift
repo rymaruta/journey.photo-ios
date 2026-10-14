@@ -92,6 +92,23 @@ enum WebTheme {
     /// そのまま（`contentShape` で余白まで押せるようにする）。
     nonisolated static let minTapTarget: CGFloat = 44
 
+    /// **上のバー（ツールバー）のアイコンの大きさ（19pt・regular）**（2026-10-14）。
+    ///
+    /// 経緯: 既定の 17pt では黒地で沈む（owner）→ 22pt semibold にした →
+    /// iOS 26 のガラスの帯に入れると「デカすぎる」（owner・実機）。板（01 ホーム・04 マップ・
+    /// 11 探す・01d メニュー）の見出しは 22px の箱に線 1.7 の細い線画（描かれる絵は約 19px）で、
+    /// 太字ではない。**システムの 17pt より一回り大きく、線の太さは板どおり細め**にする。
+    nonisolated static let toolbarIconSize: CGFloat = 19
+    /// アイコンの**見た目の箱**（並びの寸法）。19pt の絵（約 21〜23pt）が収まる最小。
+    /// **当たりは `minTapTarget`（44）のまま**で、箱の外へ広げる（`webToolbarIcon` の注記）
+    nonisolated static let toolbarIconBox: CGFloat = 28
+    /// 当たりを箱の外へ広げる幅（片側）。箱＋両側で 44
+    nonisolated static var toolbarHitSlack: CGFloat { (minTapTarget - toolbarIconBox) / 2 }
+    /// お知らせの未読の点（8pt）を、箱の右上の角からずらす量。板の点は絵の右上の角に
+    /// 中心が来て、線画の肩に少し掛かる（板 01: 44 の枠で top/right 10・絵 22）。
+    /// 28 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない
+    nonisolated static let toolbarBadgeOffset: (x: CGFloat, y: CGFloat) = (1, -1)
+
     /// **本文系の字の最小（12pt）。** 11pt は眉ラベルだけ（CLAUDE.md・デザインの板）
     nonisolated static let minBodyText: CGFloat = 12
 
@@ -133,17 +150,35 @@ extension View {
 
     /// バー（上のツールバー）の中のアイコン。
     ///
-    /// **ここは「当たり判定だけ広げる」では足りない。** owner の指摘は
-    /// 地図・「…」・歯車のような**絵そのものが小さい**という話で、
-    /// 押しやすさの前に**見つけにくい**。既定は 17pt 相当で、
-    /// 黒地の上では特に沈む。
+    /// **大きさの経緯**（`WebTheme.toolbarIconSize`）:
+    /// 1. 既定の 17pt 相当では黒地で沈み、見つけにくい（owner の指摘。地図・「…」・歯車）
+    /// 2. 22pt semibold ＋ 44pt の枠にした → iOS 26 のガラスの丸い帯に入れると
+    ///    **帯が文字の行よりずっと高く、絵も太く大きい**（2026-10-14 owner「デカすぎる」）
+    /// 3. いま: **19pt regular**。板の見出し（細い線画・約 19px）に合わせ、17pt より一回り大きい
     ///
-    /// 22pt の太めにして、当たりは 44pt。
+    /// **帯が太っていた訳**: iOS 26 はバーの右の項目を、ラベルの寸法に**システムの余白を足して**
+    /// ガラスの帯に入れる。こちらが `frame(minWidth: 44, minHeight: 44)` で並びの寸法そのものを
+    /// 44 にしていたので、帯は「44 ＋ システムの余白」になり、標準の帯より太く・長くなっていた。
+    ///
+    /// **当たりは 44 のまま・並びの寸法には効かせない**: 44 の枠で当たり（`contentShape`）を取り、
+    /// その外側を負の余白で `toolbarIconBox`（28）に戻す。帯が受け取る寸法は 28、押せる範囲は 44。
+    /// （iOS 26 の帯の項目はシステムも当たりを持つが、Linux では確かめられないので、
+    /// こちらの当たりも残す。どちらが効いても 44 を割らない）
     func webToolbarIcon() -> some View {
         self
-            .font(.system(size: 22, weight: .semibold))
+            .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
             .foregroundStyle(WebTheme.foreground)
-            .webTappable()
+            .frame(minWidth: WebTheme.toolbarIconBox, minHeight: WebTheme.toolbarIconBox)
+            .webToolbarHitArea()
+    }
+
+    /// 見た目の箱（`toolbarIconBox`）のまま、当たりだけを 44 に広げる。
+    /// 44 の枠で当たりを取り、負の余白で並びの寸法を箱に戻す（帯を太らせない）
+    func webToolbarHitArea() -> some View {
+        self
+            .padding(WebTheme.toolbarHitSlack)
+            .contentShape(Rectangle())
+            .padding(-WebTheme.toolbarHitSlack)
     }
 
     /// 押せるものの当たり判定を 44pt 以上にする（見た目は変えない）。

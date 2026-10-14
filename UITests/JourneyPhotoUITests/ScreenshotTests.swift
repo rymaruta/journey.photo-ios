@@ -62,6 +62,28 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **ホームの右上の見出し（探す・お知らせ・メニューのガラスの帯）を寄りで撮る**（2026-10-14）。
+    /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
+    /// 見比べられるように、上のバーだけを切り出す。3つの押せる範囲（frame）も文で残す
+    /// （帯の高さは絵より数字の方が比べやすい）。出なければ撮らない
+    private func shootHeaderBand(_ app: XCUIApplication) {
+        let bar = app.navigationBars.firstMatch
+        guard bar.exists else { return }
+        let shot = XCTAttachment(screenshot: bar.screenshot())
+        shot.name = "10e-ホーム（右上の見出しの帯・寄り）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let ids = ["header.search", "header.notifications", "header.menu"]
+        let lines = ids.map { id -> String in
+            let button = app.buttons[id].firstMatch
+            return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
+        }
+        let note = XCTAttachment(string: (["バー: \(bar.frame)"] + lines).joined(separator: "\n"))
+        note.name = "10e-ホーム（見出しの寸法）"
+        note.lifetime = .keepAlways
+        add(note)
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
@@ -531,6 +553,7 @@ final class ScreenshotTests: XCTestCase {
             // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
             // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
             // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
+            if name == "ホーム" { shootHeaderBand(app) }
             if name == "ホーム" {
                 let latest = app.buttons["新着"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
