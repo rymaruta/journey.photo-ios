@@ -48,11 +48,16 @@ struct EmptyState: View {
     let message: String
     var actionTitle: String?
     var action: (() -> Void)?
+    /// 一手のボタンの道しるべ（UI テストが名指しで探す。ホームの `home.emptyAction`）。
+    /// 2026-10-14 判断: 画面ごとに空の状態を書き直さず、この部品に名前だけ渡せるようにした
+    var actionIdentifier: String?
 
-    init(title: String? = nil, message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+    init(title: String? = nil, message: String, actionTitle: String? = nil,
+         actionIdentifier: String? = nil, action: (() -> Void)? = nil) {
         self.title = title
         self.message = message
         self.actionTitle = actionTitle
+        self.actionIdentifier = actionIdentifier
         self.action = action
     }
 
@@ -65,6 +70,7 @@ struct EmptyState: View {
                     Text(actionTitle).jpPillButton(.main(onPhoto: false))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(actionIdentifier ?? "")
                 .padding(.top, JPSpace.xs)
             }
         }

@@ -10,6 +10,7 @@ struct ColorPhotosView: View {
 
     var body: some View {
         CollectionPhotosScreen(title: section.family.note, note: section.family.label,
-                               photos: section.photos)
+                               photos: section.photos,
+                               eyebrow: "COLOR", eyebrowSpoken: L("色", "Colour"))
     }
 }

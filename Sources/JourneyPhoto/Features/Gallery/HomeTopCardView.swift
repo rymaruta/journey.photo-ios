@@ -127,11 +127,11 @@ struct HomeTopCardView: View {
     }
 
     /// 札のあいだ
-    private static let spacing: CGFloat = 10
+    private static let spacing: CGFloat = JPSpace.xs
     /// 左右の余白（1枚の日の札と同じ）
-    private static let margin: CGFloat = 16
+    private static let margin: CGFloat = JPSpace.gutter
     /// 画面の右端に見せる次の札の幅（めくれることの合図）
-    private static let peek: CGFloat = 24
+    private static let peek: CGFloat = JPSpace.xl
 
     /// 今日の札の並び（`HomeTopCard.cards`）。段（`spotShelf`）も同じ並びを見て、札に出ている場所を除く
     private var choices: [HomeTopCard.Choice] {
@@ -302,70 +302,84 @@ struct HomeTopCardView: View {
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
                       trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
                       inCarousel: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(eyebrow)
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
+        // **v2（2026-10-14・Main の板「上の札を写真つきの横長カードに」）**:
+        // 左に写真（幅 112・札の高さいっぱい・薄めない）、右に 眉（真鍮＋消える線）→ 明朝の題 →
+        // 12 の text-2 の一行 → 出典。地は札の面（#0E0E0F）に白 8% の縁・角 16。
+        // 以前は写真を右に 35% の薄さで敷き、題は明朝 26 だった。写真を薄めずに置けるので、
+        // 字を写真の上に重ねない（真鍮の眉を黒地の上に置ける・CLAUDE.md）
+        HStack(alignment: .center, spacing: 0) {
+            cardPhoto(backdrop: backdrop, backdropURL: backdropURL)
+            HStack(alignment: .center, spacing: JPSpace.xs) {
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 英字の眉は読み上げでは日本語で（今日のテーマの札と同じ）
-                    .accessibilityLabel(eyebrowLabel)
-                Text(title)
-                    .font(JPFont.screenTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(2)
-                Text(line)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .lineLimit(2)
-                if let detail {
-                    // **2行まで。** 写真の作者名には100文字を超える機械文がある（Commons の
-                    // 「No machine-readable author provided…」）。並びは背を揃えるので、
-                    // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
-                    // 切るのは真ん中——末尾のライセンス名を残す
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted)
+                    JPEyebrowLine(eyebrow, spoken: eyebrowLabel)
+                    Text(title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.text)
                         .lineLimit(2)
-                        // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
-                        // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
-                        .truncationMode(detailTruncation)
+                    Text(line)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineLimit(2)
+                    if let detail {
+                        // **2行まで。** 写真の作者名には100文字を超える機械文がある（Commons の
+                        // 「No machine-readable author provided…」）。並びは背を揃えるので、
+                        // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
+                        // 切るのは真ん中——末尾のライセンス名を残す
+                        Text(detail)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(2)
+                            // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                            // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
+                            .truncationMode(detailTruncation)
+                    }
                 }
+                Spacer(minLength: 0)
+                Image(systemName: trailingSymbol)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text2)
+                    .accessibilityHidden(true)
             }
-            Spacer(minLength: 0)
-            Image(systemName: trailingSymbol)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.muted)
+            .padding(.leading, JPSpace.m)
+            .padding(.trailing, JPSpace.s)
+            .padding(.vertical, JPSpace.s)
+            // 並びの中では高さいっぱい（隣の札と背を揃える）・文字は上に寄せる
+            .frame(maxWidth: .infinity, maxHeight: inCarousel ? .infinity : nil,
+                   alignment: inCarousel ? .topLeading : .leading)
         }
-        .padding(16)
-        // 並びの中では高さいっぱい（隣の札と背を揃える）・文字は上に寄せる
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: inCarousel ? .infinity : nil,
-               alignment: inCarousel ? .topLeading : .leading)
-        .background(alignment: .trailing) {
-            if let backdrop {
-                // **写真は右側に薄く**（今日のテーマの札と同じ——文字を読めなくしない）
-                RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
-                    .frame(width: 160)
-                    .opacity(0.35)
-                    .mask {
-                        LinearGradient(colors: [Color.black.opacity(0), Color.black],
-                                       startPoint: .leading, endPoint: .trailing)
-                    }
-            } else if let backdropURL {
-                // 撮影スポットの写真（`Photo` ではない）。薄さ・幅は上と同じ
-                RemoteImage(url: backdropURL)
-                    .frame(width: 160)
-                    .opacity(0.35)
-                    .mask {
-                        LinearGradient(colors: [Color.black.opacity(0), Color.black],
-                                       startPoint: .leading, endPoint: .trailing)
-                    }
-            }
-        }
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .frame(maxWidth: .infinity, minHeight: Self.cardHeight,
+               maxHeight: inCarousel ? .infinity : nil, alignment: .leading)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .accessibilityElement(children: .combine)
-        .padding(.horizontal, inCarousel ? 0 : 16)
+        .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
+    }
+
+    /// 札の背（板の 116）。中身が多い札はそれより伸びる
+    nonisolated static let cardHeight: CGFloat = 116
+    /// 札の左の写真の幅（板の 112）
+    nonisolated static let photoWidth: CGFloat = 112
+
+    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない
+    @ViewBuilder
+    private func cardPhoto(backdrop: Photo?, backdropURL: URL?) -> some View {
+        if let backdrop {
+            RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
+                .frame(width: Self.photoWidth)
+                .frame(maxHeight: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+        } else if let backdropURL {
+            // 撮影スポット・今日の一問の写真（`Photo` ではない）。出典は右の字に出す
+            RemoteImage(url: backdropURL)
+                .frame(width: Self.photoWidth)
+                .frame(maxHeight: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+        }
     }
 
     /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**

@@ -6,6 +6,18 @@ import Foundation
 /// どの入口から来ても同じ形にする（`CollectionPhotosScreen`）。
 enum CollectionScreen {
 
+    /// 題の上の眉（v2 の板 TagPhotos の「TAG」・2026-10-14）。**何で集めた一覧か**を先に読ませる。
+    /// 集約の種類が無い入口（色・機材・いまの季節）は、呼ぶ側が渡す（`CollectionPhotosScreen.eyebrow`）
+    static func eyebrow(for kind: PhotoQuery.Collection?) -> (text: String, spoken: String)? {
+        switch kind {
+        case .tag: return ("TAG", L("タグ", "Tag"))
+        case .location: return ("PLACE", L("撮影地", "Place"))
+        case .category: return ("CATEGORY", L("カテゴリ", "Category"))
+        case .camera: return ("CAMERA", L("カメラ", "Camera"))
+        case nil: return nil
+        }
+    }
+
     /// 題の下の小さい字（板 12 の「00枚 · いまの季節」）。
     /// **枚数は並ぶ写真を数えたもの。** 添え書きが無ければ枚数だけ。
     /// **読み込み中は枚数を出さない**——まだ数えていないものを「0枚」と言わない

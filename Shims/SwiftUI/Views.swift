@@ -11,7 +11,9 @@ public struct Text: View {
     public enum Case { case uppercase, lowercase }
     /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す
     public func bold() -> Text { self }
-    public static func + (lhs: Text, rhs: Text) -> Text { lhs }
+    /// 一部だけ色を変える（`Text(a).foregroundStyle(白) + Text(b).foregroundStyle(灰)`）。本物は iOS 17〜 で Text を返す
+    public func foregroundStyle<S>(_ style: S) -> Text { self }
+    public static func +(lhs: Text, rhs: Text) -> Text { lhs }
 }
 
 public struct Image: View {

@@ -27,63 +27,53 @@ struct DailyThemeCard: View {
         return GallerySort.popular.apply(matched).first
     }
 
+    /// **v2（2026-10-14・Main の板の「TODAY'S THEME」の札）**: 隣の札（`HomeTopCardView`）と同じ
+    /// 地（#0E0E0F）・白 8% の縁・角 16。眉は真鍮＋消える線、題は明朝、説明は text-2。
+    /// 写真は右に薄く敷いたまま（字は写真に重ねない側＝黒地の上）。
+    /// 「参加する」は**写真のある画面の主ボタン＝白**（CLAUDE.md・`JPPillStyle.main(onPhoto: true)`）。
+    /// 札の中なので高さは副ボタンの 44
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                // 眉ラベル（アーティファクトの `TODAY'S THEME`）。札の地は黒なので真鍮
-                Text("TODAY'S THEME")
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityLabel(L("今日のテーマ", "Today's theme"))
-                Spacer()
-                Text("#\(theme.tag)")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(WebTheme.surface, in: Capsule())
-            }
-            .foregroundStyle(WebTheme.muted)
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            // 眉ラベル（板の `TODAY'S THEME`）。札の地は黒なので真鍮。タグは右に添え書き
+            JPEyebrowLine("TODAY'S THEME", spoken: L("今日のテーマ", "Today's theme"),
+                          trailing: "#\(theme.tag)")
 
             Text(theme.title)
-                .font(JPFont.screenTitle)
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.rowTitle)
+                .foregroundStyle(WebTheme.text)
 
             Text(theme.prompt)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
 
             if joined {
                 // **参加済みは「押せない印」にする。** 同じ日に何度も
                 // 促さない（写真は自分の写真から確かめたもの）
-                HStack(spacing: 6) {
+                HStack(spacing: JPSpace.xxs) {
                     Image(systemName: "checkmark.circle.fill")
                     Text(L("参加済み", "Joined"))
-                        .font(.subheadline.weight(.semibold))
+                        .font(JPFont.bodyEmphasis)
                 }
-                .foregroundStyle(WebTheme.foreground)
+                .foregroundStyle(WebTheme.text)
                 .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                .frame(height: JPHeight.secondaryButton)
+                .background(WebTheme.surface, in: Capsule())
             } else {
                 Button {
                     MissionRouter.shared.join(tag: theme.tag)
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: JPSpace.xxs) {
                         Text(L("参加する", "Join"))
-                            .font(.subheadline.weight(.bold))
                         Image(systemName: "arrow.right")
                             .font(.caption.weight(.bold))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(WebTheme.foreground, in: RoundedRectangle(cornerRadius: 12))
-                    .foregroundStyle(WebTheme.accentText)
+                    .jpPillButton(.main(onPhoto: true), height: JPHeight.secondaryButton)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(16)
+        .padding(JPSpace.m)
         .frame(maxHeight: inCarousel ? .infinity : nil, alignment: .top)
         .background(alignment: .trailing) {
             if let backdrop {
@@ -95,10 +85,12 @@ struct DailyThemeCard: View {
                         LinearGradient(colors: [Color.black.opacity(0), Color.black],
                                        startPoint: .leading, endPoint: .trailing)
                     }
+                    .accessibilityHidden(true)
             }
         }
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, inCarousel ? 0 : 16)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+        .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
     }
 }

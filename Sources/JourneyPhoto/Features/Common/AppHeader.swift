@@ -78,7 +78,8 @@ struct AppHeaderItems: ToolbarContent {
                     }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("お知らせ", "Activity"))
+            // v2（Main の板の aria-label）: 未読の点は色の合図なので、読み上げでも「未読あり」と言う
+            .accessibilityLabel(unread > 0 ? L("お知らせ（未読あり）", "Activity, unread") : L("お知らせ", "Activity"))
             .accessibilityIdentifier("header.notifications")
         }
         ToolbarItem(placement: .topBarTrailing) {

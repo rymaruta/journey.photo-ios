@@ -30,7 +30,8 @@ struct NotificationsView: View {
     var body: some View {
         Group {
             if auth.isResolving {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // v2（Components 06）: 回る印ではなく行の形の灰の骨格
+                ScrollView { JPLoadingState(kind: .rows).padding(.horizontal, JPSpace.gutter) }
             } else if auth.userId == nil {
                 SignInView(reason: L("お知らせを見るにはログインしてください", "Sign in to see your activity"))
             } else {
@@ -60,32 +61,19 @@ struct NotificationsView: View {
 
     /// 種類で絞る（提案の絵）。**数の多い順ではなく決まった並び**
     /// ——押すたびに位置が変わると、目で追えない
+    ///
+    /// **v2（2026-10-14・Notifications の板）: 共通のチップ（`PillChip`）に寄せた。**
+    /// 見た目 34・当たり 44・選ぶと白の塗り＋チェック。以前はここだけ自前の札（40 前後・印なし）だった
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: JPSpace.xs) {
                 ForEach(NotificationFilter.allCases) { option in
-                    let selected = filter == option
-                    Button {
+                    PillChip(title: option.label, selected: filter == option) {
                         filter = option
-                    } label: {
-                        Text(option.label)
-                            .font(.subheadline.weight(selected ? .semibold : .regular))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                                 : AnyShapeStyle(WebTheme.surface),
-                                        in: Capsule())
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                            // 札は 40pt 前後。押せる高さを 44pt にする（見た目は変えない）
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, JPSpace.gutter)
         }
     }
 
@@ -127,26 +115,20 @@ struct NotificationsView: View {
 
     /// 何も無いときの画面（モック10 の「まだ通知はありません」）。
     /// **「1件も無い」と「この種類が無い」を分ける**
+    ///
+    /// **v2（2026-10-14・Components 06）: 共通の `EmptyState`**（明朝 20 の見出し → 15 の text-2）。
+    /// 板の空の状態にある「写真を投稿する」の主ボタンと季節のスポット2件は置かない
+    /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bell")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(WebTheme.faint)
-            Text(model.rows.isEmpty
-                 ? L("まだお知らせはありません", "Nothing yet")
-                 : L("この種類のお知らせはありません", "Nothing of this kind"))
-                .font(.headline)
-                .foregroundStyle(WebTheme.foreground)
-            if model.rows.isEmpty {
-                Text(L("新しいいいねやコメント、フォローが届くとここに出ます。",
-                       "Likes, comments and follows will show up here."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        EmptyState(title: model.rows.isEmpty
+                       ? L("まだお知らせはありません", "Nothing yet")
+                       : L("この種類のお知らせはありません", "Nothing of this kind"),
+                   message: model.rows.isEmpty
+                       ? L("写真を投稿すると、いいねやコメント、フォローがここに届きます。",
+                           "Likes, comments and follows on your photos will show up here.")
+                       : L("「すべて」に戻すと、ほかの種類のお知らせが見られます。",
+                           "Switch back to All to see other activity."))
+        .padding(.top, JPSpace.xl)
     }
 
     private var list: some View {
@@ -160,12 +142,30 @@ struct NotificationsView: View {
             }
             filterChips
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
 
+            // v2（Components 06）: 読めなかった回は共通の `ErrorBanner`（灰の三角・「もう一度試す」）。
+            // 以前は赤い字だけだった——読めないのは人の誤りではなく、危険の色は使わない
             if let message = model.errorMessage {
-                Text(message).foregroundStyle(WebTheme.danger).font(.callout)
+                ErrorBanner(message: message, isBusy: model.isLoading) {
+                    Task {
+                        if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
+                            await push.clearBadge()
+                        }
+                    }
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } else if model.rows.isEmpty && model.isLoading {
+                // 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
+                JPLoadingState(kind: .rows)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } else if shownRows.isEmpty && !model.isLoading {
                 emptyState
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             // **時間ごとにまとめる**（モック10）。並べ替えはしない
@@ -177,14 +177,21 @@ struct NotificationsView: View {
                     // 吸い込むと、見出しの「今日」が嘘になる
                     ForEach(NotificationText.collapse(group.rows, unreadIds: model.unreadIds)) { entry in
                         rowLink(entry)
+                            // v2: 行の間に線を引かない（板）。左の 20 は未読の真鍮の点の居場所
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: JPSpace.l, bottom: 0, trailing: JPSpace.m))
                     }
                 } header: {
-                    Text(group.bucket.label)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(WebTheme.foreground)
+                    // v2（板）: 日付の区切りは眉（真鍮）＋右へ消える線。黒地の上なので真鍮
+                    JPEyebrowLine(group.bucket.label)
+                        .padding(.top, JPSpace.l)
+                        .padding(.bottom, JPSpace.xxs)
                 }
             }
         }
+        // v2: 行を札で囲まない（板の行は黒地にそのまま並ぶ）
+        .listStyle(.plain)
         .navigationDestination(item: $route) { route in
             // 開いている写真の上で別の通知を押したとき、前の写真の画面の状態を引き継がない
             // （`PhotoDetailView` は写真を init でしか受け取らない）
@@ -226,6 +233,11 @@ struct NotificationsView: View {
 }
 
 extension NotificationsView {
+
+    /// 1件の行の最小の高さ（v2 の板 Notifications の `.nr` 68）
+    nonisolated static let rowHeight: CGFloat = 68
+    /// フォローバックの見た目 36 の上下に足す押せる余白（36＋4＋4＝44）
+    nonisolated static let followBackSlack: CGFloat = (WebTheme.minTapTarget - JPHeight.inlineButton) / 2
 
     /// 「通知をオンにする」の帯。写真の無い画面なので板（DesignSystem「黒塗りの真鍮」）どおり:
     /// 案内の帯は accent-soft の地・合図のアイコンは真鍮（黒地の上）・文字は白・押す所は
@@ -315,7 +327,7 @@ private struct NotificationRow: View {
                 main(line)
                 followBackButton
             }
-            .frame(minHeight: 66)
+            .frame(minHeight: NotificationsView.rowHeight)
             // **未読の印は行の頭の真鍮の点**（板 15）。真鍮＝合図
             .overlay(alignment: .leading) {
                 if entry.unread {
@@ -347,21 +359,23 @@ private struct NotificationRow: View {
     }
 
     private func mainContent(_ line: NotificationText.Line) -> some View {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: JPSpace.s) {
+                VStack(alignment: .leading, spacing: 2) {
                     // 新しいメダルは眉ラベル（黒地の上なので真鍮・板 15）
                     if notification.kind == .badge {
                         Text("NEW MEDAL")
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
+                            .accessibilityLabel(L("新しいメダル", "New medal"))
                     }
-                    (Text(line.who).bold() + Text(line.rest))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.text)
+                    // v2（板）: 誰が＝白の 600、何をした＝text-2。字の太さだけに頼らず明るさでも分ける
+                    (Text(line.who).bold().foregroundStyle(WebTheme.text)
+                        + Text(line.rest).foregroundStyle(WebTheme.text2))
+                        .font(JPFont.body)
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                     }
                 }
                 Spacer(minLength: 0)
@@ -370,19 +384,20 @@ private struct NotificationRow: View {
                     RemoteImage(url: url)
                         .frame(width: 44, height: 44)
                         .background(WebTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        // v2: 小さい写真の角（radius-xs 6）
+                        .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
                         .accessibilityHidden(true)
                 }
                 // メダルは押すと棚へ進む（板 15 の右の矢印）
                 if notification.kind == .badge {
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .frame(width: 44, height: 44)
                         .accessibilityHidden(true)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: NotificationsView.rowHeight, alignment: .leading)
             .contentShape(Rectangle())
     }
 
@@ -443,14 +458,15 @@ private struct NotificationRow: View {
                     busy = false
                 }
             } label: {
+                // v2（板・Components 01 の行の中の小ボタン）: 白 94% の塗りに墨・13 semibold・見た目 36
                 Text(L("フォローバック", "Follow back"))
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .background(WebTheme.foreground, in: Capsule())
+                    .font(JPFont.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: JPHeight.inlineButton)
+                    .background(WebTheme.accentBackground, in: Capsule())
                     .foregroundStyle(WebTheme.accentText)
-                    // 見た目は 32pt、押せる高さは 44pt
-                    .padding(.vertical, 6)
+                    // 見た目は 36pt、押せる高さは 44pt
+                    .padding(.vertical, NotificationsView.followBackSlack)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
