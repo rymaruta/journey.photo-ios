@@ -325,6 +325,10 @@ struct TripPlanDetailView: View {
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
+                                  dayDate: pickDayDate(target.day),
+                                  capacity: TripStyle.remaining(
+                                      dayCount: days.indices.contains(target.day) ? days[target.day].items.count : 0,
+                                      max: TripPlanService.itemsPerDayMax),
                                   sourcesFailed: sourcesFailed,
                                   choices: TripPlanText.choices(wishlistKeys: wishlist.spotIds,
                                                                 places: places, index: index)) { choice in
@@ -402,7 +406,7 @@ struct TripPlanDetailView: View {
                 leaveSaveError = message
             }
         }
-        .font(.body.weight(.semibold))
+        .font(JPFont.bodyEmphasis)
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）
         .foregroundStyle(WebTheme.accent)
         .opacity(isDirty && model.busy == nil ? 1 : 0.5)
@@ -413,12 +417,13 @@ struct TripPlanDetailView: View {
     private func editor(_ plan: TripPlan) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // 題（v2 の板 TripPlanDays: 明朝の大見出し・Title 1）
                 Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
-                    .font(JPFont.cardTitle)
+                    .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
-                    .padding(.horizontal, 4)
+                    .accessibilityAddTraits(.isHeader)
 
-                HStack(spacing: 10) {
+                HStack(spacing: JPSpace.xs) {
                     dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
                     dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
                 }
@@ -428,25 +433,28 @@ struct TripPlanDetailView: View {
 
                 if let error = model.errorMessage {
                     Text(error)
-                        .font(.footnote)
+                        .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.danger)
-                        .padding(.horizontal, 4)
                 }
 
                 if days.isEmpty {
                     Text(L("まだ日程がありません。下から追加してください。", "No days yet. Add one below."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
-                        .padding(.horizontal, 4)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text3)
                 }
+                // 通し番号（1日目 1・2、2日目 3 …・板 TripPlanDays）。圏外の画面・地図の画像の点と同じ数え方
+                let numbers = TripStyle.stopNumbers(days.map(\.items.count))
                 ForEach(Array(days.enumerated()), id: \.offset) { di, day in
-                    daySection(di, day)
+                    daySection(di, day, numbers: numbers.indices.contains(di) ? numbers[di] : [])
+                        .padding(.top, di == 0 ? 0 : JPSpace.xs)
                 }
 
                 addDayButton
                 deleteCard(plan)
             }
-            .padding(16)
+            .padding(.horizontal, JPSpace.gutter)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.screenEnd)
         }
     }
 
@@ -456,11 +464,13 @@ struct TripPlanDetailView: View {
     /// 空にもできる（Web も空を許す）
     private func dateField(_ title: String, value: Binding<String?>, fallback: String?,
                            isStart: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // v2 の板 TripPlanDays の `.dt`: 52 の箱の中に、上に 12 の名前・下に日付（surface-2・白 8% の縁・角 12）
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.muted2)
-            HStack(spacing: 4) {
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
+            HStack(spacing: JPSpace.xxs) {
                 if value.wrappedValue != nil {
                     DatePicker(title, selection: pickerBinding(value, isStart: isStart), displayedComponents: .date)
                         .labelsHidden()
@@ -469,7 +479,7 @@ struct TripPlanDetailView: View {
                         value.wrappedValue = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(WebTheme.faint)
+                            .foregroundStyle(WebTheme.text3)
                             .webTappable()
                     }
                     .buttonStyle(.plain)
@@ -480,19 +490,20 @@ struct TripPlanDetailView: View {
                         value.wrappedValue = fallback ?? TripPlanText.ymd(pickedIn: .current, Date())
                     } label: {
                         Text(L("日付を入れる", "Set date"))
-                            .font(.subheadline)
-                            .foregroundStyle(WebTheme.muted2)
+                            .font(JPFont.body)
+                            .foregroundStyle(WebTheme.text2)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(title)の日付を入れる", "Set \(title) date"))
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: WebTheme.minTapTarget)
-            .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 12))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JPSpace.s)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, minHeight: TripStyle.dateFieldHeight, alignment: .leading)
+        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 
     /// `YYYY-MM-DD` ⇔ ピッカーの日。**端末のゾーンのその日**で読み書きする
@@ -512,22 +523,28 @@ struct TripPlanDetailView: View {
 
     // MARK: - 日ごと
 
-    private func daySection(_ di: Int, _ day: TripDay) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                // 板どおり「1 日目」は普通の字、日付だけ等幅
-                HStack(spacing: 0) {
-                    Text(L("\(di + 1) 日目", "Day \(di + 1)"))
-                        .font(.caption.weight(.medium))
-                        .tracking(0.5)
-                    if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
-                       let label = TakenDay.label(date) {
-                        Text(L("・\(label)", " · \(label)")).font(JPFont.mono(12))
-                    }
-                }
-                .foregroundStyle(WebTheme.faint)
-                .accessibilityElement(children: .combine)
-                Spacer()
+    /// 候補のシートの眉に添える日付（「12月24日」）。日付の無いプランは nil
+    private func pickDayDate(_ di: Int) -> String? {
+        guard days.indices.contains(di),
+              let date = TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) else { return nil }
+        return TakenDay.label(date)
+    }
+
+    /// 日の見出し（v2 の板 TripPlanDays: 真鍮の眉「1日目 · 12月24日」と右へ消える線）
+    private func dayHeading(_ di: Int, _ day: TripDay) -> String {
+        var head = L("\(di + 1) 日目", "Day \(di + 1)")
+        if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
+           let label = TakenDay.label(date) {
+            head += L(" · \(label)", " · \(label)")
+        }
+        return head
+    }
+
+    private func daySection(_ di: Int, _ day: TripDay, numbers: [Int]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                JPEyebrowLine(dayHeading(di, day))
+                    .padding(.trailing, JPSpace.xs)
                 // 地図で見る。**地図に置ける場所がある日だけ**（押しても空の地図を出さない）
                 let stops = TripDayMap.stops(of: day, index: index, places: places)
                 if TripDayMap.hasPins(stops) {
@@ -535,7 +552,7 @@ struct TripPlanDetailView: View {
                         mapDay = MapTarget(day: di, stops: stops)
                     } label: {
                         Image(systemName: "map")
-                            .foregroundStyle(WebTheme.muted2)
+                            .foregroundStyle(WebTheme.text2)
                             .webTappable()
                     }
                     .buttonStyle(.plain)
@@ -561,8 +578,8 @@ struct TripPlanDetailView: View {
                                    : isConfirmingRemove(di) ? L("確認を閉じます", "Closes the confirmation")
                                    : L("確認が出ます", "Asks before removing"))
             }
-            .padding(.horizontal, 4)
 
+            // v2: 札で囲まず、行の下に白 8% の区切り線（板 TripPlanDays の `.st`）
             VStack(spacing: 0) {
                 // 札は**消える日の箱の中の先頭**に開く（別の箱にすると、どちらが消えるのか分かりにくい・
                 // プランの削除の札も押したボタンと同じ箱の中）
@@ -572,20 +589,17 @@ struct TripPlanDetailView: View {
                 }
                 if day.items.isEmpty {
                     Text(L("まだ何も入っていません。", "Nothing planned."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-                        .padding(.horizontal, 14)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text3)
+                        .frame(maxWidth: .infinity, minHeight: JPHeight.row, alignment: .leading)
+                    divider
                 }
                 ForEach(Array(day.items.enumerated()), id: \.offset) { ii, item in
-                    if ii > 0 { divider }
-                    itemRow(di, ii, item)
+                    itemRow(di, ii, item, number: numbers.indices.contains(ii) ? numbers[ii] : ii + 1)
+                    divider
                 }
-                divider
                 addRow(di, full: day.items.count >= TripPlanService.itemsPerDayMax)
             }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         }
     }
 
@@ -603,49 +617,33 @@ struct TripPlanDetailView: View {
         announce(L("\(di + 1) 日目を削除しました", "Removed day \(di + 1)"))
     }
 
-    /// 日を消す前の札（プランの削除の札と同じ形）
+    /// 日を消す前の札（プランの削除の札と同じ形・v2 の板 OfflineSaveStates 5 の確かめと同じ部品）
     private func removeDayConfirm(_ di: Int) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
-            HStack(spacing: 8) {
-                Button {
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+            HStack(spacing: JPSpace.xs) {
+                TripOutlineButton(title: L("削除する", "Remove"), strong: true, fill: true) {
                     guard let target = removingDay else { return }
                     removeDay(di, confirmedOn: target.days)
-                } label: {
-                    Text(L("削除する", "Remove"))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.danger)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                        .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
-                Button {
+                TripOutlineButton(title: Labels.Common.cancel, fill: true) {
                     removingDay = nil
-                } label: {
-                    Text(Labels.Common.cancel)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.foreground)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                        .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(14)
+        .padding(.vertical, JPSpace.s)
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
     }
 
-    private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem) -> some View {
+    private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
-        return HStack(spacing: 12) {
-            itemLink(item, name: name)
+        return HStack(spacing: 0) {
+            itemLink(item, name: name, number: number)
             itemMenu(di, ii, item, name: name)
             // **外す。** 日の削除（赤いゴミ箱）と見分けるため × にする
             Button {
@@ -655,13 +653,12 @@ struct TripPlanDetailView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text3)
                     .webTappable()
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("「\(name)」を外す", "Remove \(name)"))
         }
-        .padding(.trailing, 8)
     }
 
     /// 項目の操作（2026-09-30）: 上へ・下へ・別の日へ・ひとこと。**規則は `TripPlanEdit`**
@@ -709,7 +706,7 @@ struct TripPlanDetailView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+                .foregroundStyle(WebTheme.text3)
                 .webTappable()
         }
         // 画面の下のほうで上に開いても、上へ・下へが逆さに並ばないようにする
@@ -756,79 +753,77 @@ struct TripPlanDetailView: View {
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
-    private func itemLink(_ item: TripItem, name: String) -> some View {
+    private func itemLink(_ item: TripItem, name: String, number: Int) -> some View {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, icon: "mappin.and.ellipse", note: item.note)
+                    itemLabel(name, number: number, isSpot: true, note: item.note)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, icon: "mappin.and.ellipse", note: item.note)
+                itemLabel(name, number: number, isSpot: true, note: item.note)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, icon: "map", note: item.note)
+                    itemLabel(name, number: number, isSpot: false, note: item.note)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, icon: "map", note: item.note)
+                itemLabel(name, number: number, isSpot: false, note: item.note)
             }
         }
     }
 
-    private func itemLabel(_ name: String, icon: String, note: String? = nil) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(WebTheme.muted2)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+    /// 行の中身（v2 の板 TripPlanDays: 真鍮の番号の丸 → 撮影スポットは明朝・撮影地は SF の太字 → ひとこと）
+    private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String? = nil) -> some View {
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            TripStopNumber(number: number)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 Text(name)
-                    .font(.body)
+                    .font(isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
-                // 添えたひとこと（あるときだけ・薄く小さく）
+                // 添えたひとこと（あるときだけ）
                 if let note, !note.isEmpty {
                     Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted)
+                        .font(JPFont.footnote)
+                        .lineSpacing(3)
+                        .foregroundStyle(WebTheme.text2)
                         .lineLimit(3)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 54)
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.tallRow)
         .contentShape(Rectangle())
+        // 読み上げは「1 · 名前 · ひとこと」（番号の丸は絵として隠している）
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([String(number), name, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
     }
 
+    /// 「行きたい場所から追加…」（v2 の板 TripPlanDays の `.add`: 真鍮の ＋ と字・48）
     private func addRow(_ di: Int, full: Bool) -> some View {
         Button {
             picking = PickTarget(day: di)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: JPSpace.xs) {
                 Image(systemName: "plus")
-                    .foregroundStyle(WebTheme.muted2)
-                    .frame(width: 20)
+                    .font(.footnote.weight(.semibold))
                     .accessibilityHidden(true)
                 Text(L("行きたい場所から追加…", "Add a saved place…"))
-                    .font(.body)
-                    .foregroundStyle(WebTheme.text)
+                    .font(JPFont.bodyEmphasis)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.footnote)
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 54)
+            .foregroundStyle(WebTheme.accent)
+            .frame(minHeight: JPHeight.field)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -848,12 +843,9 @@ struct TripPlanDetailView: View {
         return Button {
             days.append(TripDay())
         } label: {
+            // v2 の副ボタン（44・白 14% の線・Components 01）
             Label(L("日を追加", "Add a day"), systemImage: "plus")
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.foreground)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                .contentShape(Capsule())
+                .jpPillButton(.outline)
         }
         .buttonStyle(.plain)
         .disabled(full)
@@ -862,34 +854,34 @@ struct TripPlanDetailView: View {
 
     // MARK: - 削除
 
-    /// **消す前に一度聞く。** 日程ごと消えるうえ、戻す手が無い（Web と同じ）
+    /// **消す前に一度聞く。** 日程ごと消えるうえ、戻す手が無い（Web と同じ）。
+    ///
+    /// v2 の板 TripPlanDays: 一番下に `WebTheme.danger` の字の行を1つだけ（札で囲まない）。
+    /// 確かめは**画面の中に開く**（板は系統の確認の札だが、保存のアラートと重ならないよう前のまま）
     private func deleteCard(_ plan: TripPlan) -> some View {
         let title = plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title
-        return VStack(spacing: 0) {
+        return VStack(spacing: JPSpace.xs) {
             Button {
                 confirmingDelete.toggle()
             } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "trash").frame(width: 20).accessibilityHidden(true)
+                HStack(spacing: 6) {
+                    Image(systemName: "trash").accessibilityHidden(true)
                     Text(L("「\(title)」を削除", "Delete \(title)"))
-                    Spacer(minLength: 0)
                 }
-                .font(.body)
+                .font(JPFont.body)
                 .foregroundStyle(WebTheme.danger)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 54)
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if confirmingDelete {
-                divider
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L("この旅行プランを削除しますか？", "Delete this trip?"))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted2)
-                    HStack(spacing: 8) {
-                        Button {
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                    HStack(spacing: JPSpace.xs) {
+                        TripOutlineButton(title: L("削除する", "Delete"), strong: true, fill: true) {
                             confirmingDelete = false
                             Task {
                                 if await model.remove(planId, environment: environment) {
@@ -901,34 +893,19 @@ struct TripPlanDetailView: View {
                                         ?? L("もう一度お試しください", "Please try again.")
                                 }
                             }
-                        } label: {
-                            Text(L("削除する", "Delete"))
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(WebTheme.danger)
-                                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                                .contentShape(Capsule())
                         }
-                        .buttonStyle(.plain)
                         .disabled(model.busy != nil)
                         .opacity(model.busy == nil ? 1 : 0.5)
-                        Button {
+                        TripOutlineButton(title: Labels.Common.cancel, fill: true) {
                             confirmingDelete = false
-                        } label: {
-                            Text(Labels.Common.cancel)
-                                .font(.footnote)
-                                .foregroundStyle(WebTheme.foreground)
-                                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                                .contentShape(Capsule())
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .padding(14)
+                .padding(JPSpace.m)
+                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
             }
         }
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .padding(.top, JPSpace.xs)
     }
 }
