@@ -91,6 +91,34 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(bell.isHittable, "閉じた後にホームへ戻っていない")
     }
 
+    /// **見出しの絵は、見た目の箱（28pt）の外でも 44pt の範囲なら押せること。**
+    /// 絵を小さくしたとき（2026-10-14）に、当たりだけ 44pt に広げた
+    /// （`webToolbarHitArea`）。広げた分が本当に指に届くかを、箱の下の端から
+    /// 外れた所（中心から 19pt 下・箱の端から約 5pt 外）を押して確かめる
+    func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
+        agree.tap()
+
+        let bell = app.buttons["header.notifications"]
+        XCTAssertTrue(bell.waitForExistence(timeout: 20), "見出しのお知らせが無い")
+        // 箱が 44 のままなら、この試しは意味が無い（外を押していない）
+        XCTAssertLessThan(bell.frame.height, 44, "見た目の箱が小さくなっていない")
+        let outside = 19 - bell.frame.height / 2
+        XCTAssertGreaterThan(outside, 0, "押す所が箱の内側になっている")
+
+        bell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: 19))
+            .tap()
+
+        XCTAssertTrue(app.buttons["notifications.close"].waitForExistence(timeout: 15),
+                      "絵の箱の少し外（44pt の範囲内）を押してもお知らせが開かない")
+    }
+
     /// 見出しの「メニュー（≡）」でメニューが出て、「撮影地マップ」でシートが閉じて
     /// マップの札へ移る（板 01d・2026-09-26）
     func testHeaderMenuOpensAndRoutesToMap() {
