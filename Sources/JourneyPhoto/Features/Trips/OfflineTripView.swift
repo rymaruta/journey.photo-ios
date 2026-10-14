@@ -347,7 +347,7 @@ struct OfflineSpotView: View {
                             .foregroundStyle(WebTheme.text)
                         Spacer(minLength: JPSpace.xs)
                         Text(entry.value)
-                            .font(JPFont.number(17, weight: .light, relativeTo: .body))
+                            .font(JPFont.number(17, weight: JPFont.figureWeight, relativeTo: .body))
                             .foregroundStyle(WebTheme.text)
                     }
                     .frame(minHeight: TripStyle.lightRowMinHeight)

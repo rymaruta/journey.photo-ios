@@ -80,7 +80,7 @@ struct StoryRepliesSheet: View {
                 .font(JPFont.cardTitle)
             if loaded {
                 Text("\(items.count)")
-                    .font(JPFont.number(JPTypeScale.title2, weight: .light, relativeTo: .title2))
+                    .font(JPFont.number(JPTypeScale.title2, weight: JPFont.figureWeight, relativeTo: .title2))
             }
         }
         .foregroundStyle(WebTheme.text)

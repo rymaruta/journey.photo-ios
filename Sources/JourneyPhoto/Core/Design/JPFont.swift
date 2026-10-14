@@ -55,8 +55,11 @@ enum JPFont {
     static let footnote = Font.footnote
     /// 注記（Caption · 12）。**本文系の最小**
     static let caption = Font.caption
-    /// 旅の記録の距離（Figure L · SF 300。板は 30、出るのは `.title` の 28——`JPTypeScale.figureLarge`）
-    static let figureLarge = number(JPTypeScale.figureLarge, weight: .light, relativeTo: .title)
+    /// 大きな数字（旅の記録の距離・旅の一冊・反応・保存した旅の容量。板は 30、出るのは `.title` の 28——
+    /// `JPTypeScale.figureLarge`）。**太さは数の段（`statNumber`）と同じ semibold**（2026-10-14 owner
+    /// 「旅の記録のフォントが細いので他のと統一したい」。板の SF 300 の細い数字はやめた）
+    static let figureWeight: Font.Weight = .semibold
+    static let figureLarge = number(JPTypeScale.figureLarge, weight: figureWeight, relativeTo: .title)
     /// 撮影情報・座標・時刻（Meta · 12・等幅）
     static let meta = mono(JPTypeScale.meta)
 
