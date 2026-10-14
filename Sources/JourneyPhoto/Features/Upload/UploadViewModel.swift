@@ -46,6 +46,22 @@ struct UploadSpotTarget: Equatable {
         guard let target, !item.locationClearedByUser, item.location.contains(target.name) else { return nil }
         return target.spotId
     }
+
+    /// 送る `spotId`（投稿全体の行き先＋写真ごとに撮影地の欄で選んだ撮影スポット・2026-10-14）。
+    ///
+    /// **スポットの画面から開いた行き先が先**（そちらは本人がスポットを決めて開いた）。無い・外れた
+    /// ときは、その写真の撮影地の欄で台帳の候補を選んだスポット（`PendingPhoto.pickedSpot`）。
+    /// どちらも同じ条件（`spotIdToSend(_:for:)`）——撮影地を空にした・名前の消えた書き換えでは付けない
+    static func spotIdToSend(screen target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
+        spotIdToSend(target, for: item) ?? spotIdToSend(item.pickedSpot, for: item)
+    }
+
+    /// 撮影地の欄を書き換えたあとも、選んだ撮影スポットを持っておくか。
+    /// **選んだ名前のままのときだけ**（手で書き換えたら外す・座標の `PlacePick.keepsCoords` と同じ線）
+    static func keepsPicked(_ picked: UploadSpotTarget?, typed: String) -> Bool {
+        guard let picked else { return false }
+        return typed == picked.name
+    }
 }
 
 /// 投稿画面の帯のサムネ（無編集の絵・2026-10-03）。
@@ -103,6 +119,9 @@ struct PendingPhoto: Identifiable {
     }
     /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
     var pickedCoords: Photo.Coords?
+    /// 撮影地の欄で台帳の撮影スポットの候補を選んだときのスポット（2026-10-14）。保存で `spotId` を付け、
+    /// そのスポットの頁の「この場所の写真」に並ぶ。**手で書き換えたら外す**（`PlaceSearchField`）
+    var pickedSpot: UploadSpotTarget?
     /// ライブラリから選んだ写真の印（カメラで撮った分は nil）。
     /// 選び直しのときに「まだ選ばれているか」を見るのに使う
     var pickerItem: PhotosPickerItem?
@@ -1280,7 +1299,7 @@ final class UploadViewModel: ObservableObject {
         draft.dominantColor = item.prepared.dominantColor
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
-        draft.spotId = UploadSpotTarget.spotIdToSend(spot, for: item)
+        draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
         return draft
     }
 

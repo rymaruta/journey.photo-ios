@@ -64,6 +64,8 @@ struct OfficialSpotView: View {
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
+    /// 「作例を重ねて撮る」で撮って「投稿」を押した1枚。撮る画面を閉じきったら投稿画面に入れて開く
+    @State private var pendingCapture: CameraCapture?
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
     @State private var postedHere = false
     /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
@@ -506,7 +508,11 @@ struct OfficialSpotView: View {
             .accessibilityIdentifier("spot.official.samples")
             // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）。
             // 案内で Pro になったら同じ1枚から開き直す（`ComposeGuidePresenter`）
-            .composeGuidePresenter(composeLauncher, spotName: spot.name)
+            // 撮った1枚は「投稿」でこのスポットの投稿へ進める（2026-10-14・写真から次の旅へ）。
+            // 撮る画面を**閉じきってから**投稿画面を開く（`RootView` の作例なしの入口と同じ順）
+            .composeGuidePresenter(composeLauncher, spotName: spot.name,
+                                   onPost: { capture in pendingCapture = capture },
+                                   onDismiss: { if SpotComposePost.opensUpload(pendingCapture) { showUpload = true } })
         }
     }
 
@@ -886,12 +892,16 @@ struct OfficialSpotView: View {
         }
         // 閉じたら「投稿を閉じた」を出す（`RootView` の投稿と同じ）。メニューのシートから
         // 来た回はホームの `onAppear` が走らず、自分の写真（今日のテーマの参加済みなど）が古いまま残った
-        .sheet(isPresented: $showUpload, onDismiss: { TabRouter.shared.postSheetClosed() }) {
+        .sheet(isPresented: $showUpload, onDismiss: {
+            // 撮った1枚は次の投稿に持ち越さない
+            pendingCapture = nil
+            TabRouter.shared.postSheetClosed()
+        }) {
             NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { count in
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）
                 if count > 0 { postedHere = true }
-            }) }
+            }, initialCapture: pendingCapture) }
         }
     }
 
@@ -998,4 +1008,11 @@ struct SpotImageCredit: View {
         Text(photo.linkedCredit)
             .tint(WebTheme.accent)
     }
+}
+
+/// 撮影スポットの「作例を重ねて撮る」から投稿へ進むか（2026-10-14）。
+/// 撮る画面を閉じたとき、「投稿」で撮った1枚を受け取っていれば投稿画面を開く。
+/// 閉じるボタンで閉じた回（受け取っていない）は開かない
+enum SpotComposePost {
+    static func opensUpload(_ capture: CameraCapture?) -> Bool { capture != nil }
 }

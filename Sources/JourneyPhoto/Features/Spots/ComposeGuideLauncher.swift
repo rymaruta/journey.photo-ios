@@ -83,7 +83,7 @@ struct ComposeGuidePresenter: ViewModifier {
     @ObservedObject var launcher: ComposeGuideLauncher
     /// 撮影地の名前（作例なしの入口は nil）
     let spotName: String?
-    /// 撮った1枚を投稿へ進める（投稿のシートの入口だけ）。nil なら「投稿する」を出さない
+    /// 撮った1枚を投稿へ進める（投稿のシートの入口・撮影スポットの作例の入口）。nil なら「投稿する」を出さない
     var onPost: ((CameraCapture) -> Void)?
     /// 撮る画面を閉じきった
     var onDismiss: (() -> Void)?
