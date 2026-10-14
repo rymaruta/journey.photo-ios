@@ -78,6 +78,15 @@ enum UploadSummary {
         return summary + L("　", " ") + note
     }
 
+    /// 元の写真が付かなかったこと（`InspiredBy.droppedNote`）を、結果の一言に足す。
+    /// **投稿は成功**——ほかの知らせが無ければこの一言だけ（画面は閉じずに見せる）
+    static func withInspiredDropped(_ summary: String?, dropped: Bool) -> String? {
+        guard dropped else { return summary }
+        guard let summary else { return InspiredBy.droppedNote }
+        return summary + L("　", " ") + L("元の写真は付けられませんでした（非公開になったか、削除された可能性があります）",
+                                          "The original photo couldn't be attached (it may have been made private or deleted).")
+    }
+
     /// **曲のことは、どの結末でも言う。** 先頭の分岐でしか見ていなかった頃は、
     /// 途中でやめた回・他の写真が失敗した回に、曲が付かなかったことが
     /// 一度も伝わらなかった。

@@ -247,6 +247,9 @@ struct PhotoDraft {
     /// （owner「スポットの詳細からこのスポットの写真を上げたい」2026-09-29）。
     /// 名前の一致で付けることはしない（`link-photos-to-spots.ts` の決まり）
     var spotId: String?
+    /// 「この写真を見て撮影」の元の写真の ID（2026-10-14）。**付けないときは送らない**（キーごと落ちる）。
+    /// 見られない元の写真はサーバーが黙って付けない——付いたかは応答の `photo.inspiredBy` で見る
+    var inspiredBy: String?
 
     /// `POST /upload/save` に送る形。
     ///
@@ -272,7 +275,8 @@ struct PhotoDraft {
             dominantColor: dominantColor,
             groupId: groupId,
             audience: audience.wireValue,
-            spotId: spotId
+            spotId: spotId,
+            inspiredBy: InspiredBy.normalizedId(inspiredBy)
         )
     }
 
@@ -298,6 +302,8 @@ struct PhotoDraft {
         let audience: String?
         /// 撮影スポット。無ければ送らない（`nil` はキーごと落ちる）
         let spotId: String?
+        /// 元の写真の ID。無ければ送らない（`nil` はキーごと落ちる）
+        let inspiredBy: String?
 
         struct Coords: Encodable {
             let lat: Double

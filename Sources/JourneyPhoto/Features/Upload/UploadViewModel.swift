@@ -271,6 +271,14 @@ final class UploadViewModel: ObservableObject {
 
     // ここから下は、まとめて同じものが付く
     @Published var song: Photo.Song?
+    /// 「この写真を見て撮影」の元の写真（2026-10-14・`InspiredBy`）。投稿の**先頭に上がった1枚だけ**に
+    /// 付ける（`InspiredBy.attachesTo`・同じ人に通知を何度も送らない）。下書きにも残す
+    @Published var inspired: InspiredBy.Pick? {
+        didSet { if inspired?.id != oldValue?.id { inspiredAttachedInPost = false } }
+    }
+    /// この投稿で元の写真を付けた1枚の保存が通ったか。**やり直し（落ちた写真だけ送り直す）でも
+    /// もう付けない**——`reset()`（全部上がった）と、元の写真を選び直したときに下ろす
+    private var inspiredAttachedInPost = false
     @Published var tagsText = ""
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき・`UploadView`）。
     /// **入れるだけで、消せる**——決めつけない
@@ -552,7 +560,7 @@ final class UploadViewModel: ObservableObject {
         !items.isEmpty || isLoadingPicked || preparingCaptures > 0 || isRestoringDraft
             // 公開範囲は初期値と比べる（旅の写真から来たときは非公開で始まる。
             // 投稿し終えて片付けた画面を「書きかけ」にしない）
-            || song != nil || selectedAlbumId != nil || published != initialPublished || audience != .everyone
+            || song != nil || inspired != nil || selectedAlbumId != nil || published != initialPublished || audience != .everyone
             || !category.isEmpty
             // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
             || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
@@ -621,7 +629,8 @@ final class UploadViewModel: ObservableObject {
             audience: audience.rawValue, song: song, selectedAlbumId: selectedAlbumId,
             groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now),
             spot: spot.map { UploadDraftStore.Draft.Spot(spotId: $0.spotId, name: $0.name,
-                                                         latitude: $0.coords?.lat, longitude: $0.coords?.lng) })
+                                                         latitude: $0.coords?.lat, longitude: $0.coords?.lng) },
+            inspired: inspired)
         let ok = drafts.save(inputs, fields: fields, for: draftOwner)
         if ok { restoredDraft = true }
         return ok
@@ -688,6 +697,7 @@ final class UploadViewModel: ObservableObject {
         published = draft.published
         audience = Audience(rawValue: draft.audience) ?? .everyone
         song = draft.song
+        inspired = draft.inspired
         selectedAlbumId = draft.selectedAlbumId
         groupsAsOnePost = draft.groupsAsOnePost
         // スポットから開いた回は尋ねない（`UploadDraftRules.asksRestore`）ので、ここで上書きはしない
@@ -1170,6 +1180,8 @@ final class UploadViewModel: ObservableObject {
         var savedEarlier = 0
         /// 編集した写真を共有用に書き出せず、共有から外した枚数（`UploadOutcome.shareSkipped`）
         var shareSkipped = 0
+        /// 元の写真が付かなかった（`UploadOutcome.inspiredDropped`）。投稿は成功なので失敗に数えない
+        var inspiredDropped = false
         let queue = items.map(\.id)
         // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
         let exported = await exportAllEdited(queue)
@@ -1192,6 +1204,7 @@ final class UploadViewModel: ObservableObject {
                 if !outcome.songAttached { songFailures += 1 }
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
+                if outcome.inspiredDropped { inspiredDropped = true }
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -1231,7 +1244,8 @@ final class UploadViewModel: ObservableObject {
             // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない。
             // 前の公開範囲で投稿済みだった回も閉じない（その知らせを見せる）
             // 共有から外した写真がある回も閉じない（共有の画面は出さず、そのことを知らせる）
-            if songFailures == 0 && savedEarlier == 0 && shareSkipped == 0 {
+            // 元の写真が付かなかった回も閉じない（そのことを知らせる）
+            if songFailures == 0 && savedEarlier == 0 && shareSkipped == 0 && !inspiredDropped {
                 // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
                 // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
@@ -1265,10 +1279,10 @@ final class UploadViewModel: ObservableObject {
                     ReviewPromptStore.shared.noteHappyMoment()
                 }
             } else {
-                errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
+                errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                     UploadSummary.message(done: done.count, failures: failures,
                                           cancelled: cancelled, songFailures: songFailures),
-                    savedEarlier: savedEarlier), skipped: shareSkipped)
+                    savedEarlier: savedEarlier), skipped: shareSkipped), dropped: inspiredDropped)
                 songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
@@ -1277,10 +1291,10 @@ final class UploadViewModel: ObservableObject {
             // （`errorMessage` は `reset()` では消えないので警告は残る）
             reset()
         } else {
-            errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
+            errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                 UploadSummary.message(done: done.count, failures: failures,
                                       cancelled: cancelled, songFailures: songFailures),
-                savedEarlier: savedEarlier), skipped: shareSkipped)
+                savedEarlier: savedEarlier), skipped: shareSkipped), dropped: inspiredDropped)
             songFailuresShown = songFailures
         }
     }
@@ -1309,6 +1323,8 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
         draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
+        draft.inspiredBy = InspiredBy.attachesTo(alreadyAttachedInPost: inspiredAttachedInPost)
+            ? InspiredBy.idToSend(inspired) : nil
         return draft
     }
 
@@ -1320,6 +1336,8 @@ final class UploadViewModel: ObservableObject {
         var savedEarlier = false
         /// 編集した写真を共有用に書き出せず、共有に回さなかった（元の絵を黙って渡さない）
         var shareSkipped = false
+        /// 元の写真を送ったのに付かなかった（非公開・削除・ブロック。投稿は成功・`InspiredBy.wasDropped`）
+        var inspiredDropped = false
     }
 
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
@@ -1374,6 +1392,8 @@ final class UploadViewModel: ObservableObject {
             staged[item.id] = nil
             stagedEdits[item.id] = nil
             outcome.savedEarlier = true
+            // 前の保存に元の写真を載せていたなら、それで付いている（付いたかは分からない）——もう付けない
+            if draft.inspiredBy != nil { inspiredAttachedInPost = true }
             if let song {
                 // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
                 if let id = placed.main.photoId {
@@ -1389,6 +1409,11 @@ final class UploadViewModel: ObservableObject {
         staged[item.id] = nil
         stagedEdits[item.id] = nil
         if let photo { onSaved?(photo) }
+        // 元の写真は1枚に付けたら済み（付かなかった回も、同じ理由で次の写真も付かないので送らない）
+        if draft.inspiredBy != nil {
+            inspiredAttachedInPost = true
+            outcome.inspiredDropped = InspiredBy.wasDropped(sent: draft.inspiredBy, saved: photo)
+        }
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
             // 共有に渡すのも**置いた絵**（編集後）。やり直しで書き出していなければ、載せる設定のときだけ
             // ここで作る。🔴 **作れなければ共有に回さず知らせる**——編集前の絵を黙って渡さない
@@ -1467,6 +1492,8 @@ final class UploadViewModel: ObservableObject {
         items = []
         groupId = nil
         song = nil
+        inspired = nil
+        inspiredAttachedInPost = false
         tagsText = ""
         // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
         initialTagsText = ""

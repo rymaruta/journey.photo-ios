@@ -778,6 +778,21 @@ final class ScreenshotTests: XCTestCase {
                 }
             }
 
+            // 「この写真を見て撮影」の行（2026-10-14）。元の写真が付いた写真はまだ少なく、口は本番に
+            // まだ無いこともある——**出なければ撮らない**（この試験の決まり）。押して元の写真へ移るのも撮る
+            let inspiredLine = app.buttons["photo.inspiredBy"].firstMatch
+            // 送らない（このあとの作者の行を画面の外へ押し出さないため）。見えていなければ撮らない
+            if inspiredLine.waitForExistence(timeout: 3) {
+                if inspiredLine.isHittable {
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    inspiredLine.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                    app.navigationBars.buttons.firstMatch.tap()
+                    Thread.sleep(forTimeInterval: 2)
+                }
+            }
+
             // **人のページ**（モック2 と同じ部品で組んである）。
             //
             // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の
@@ -936,6 +951,29 @@ final class ScreenshotTests: XCTestCase {
         details.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "44-投稿（詳しい設定・開いた）")
+
+        // 2026-10-14: 「この写真を見て撮影」の欄と、元の写真を選ぶ画面（保存した写真・行きたい場所）。
+        // 選ぶ画面は閉じるだけ（選ぶと書きかけが増える）。出なければ撮らない（この試験の決まり）
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        for _ in 0..<3 where !(inspired.exists && inspired.isHittable) {
+            app.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.exists, inspired.isHittable else { return }
+        shoot(app, "45-投稿（この写真を見て撮影の欄）")
+        inspired.tap()
+        let savedShelf = app.buttons["inspiredPicker.shelf.saved"].firstMatch
+        guard savedShelf.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "45b-元の写真を選ぶ")
+        let wishShelf = app.buttons["inspiredPicker.shelf.wishlist"].firstMatch
+        if wishShelf.exists, wishShelf.isHittable {
+            wishShelf.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "45c-元の写真を選ぶ（行きたい場所）")
+        }
+        let close = app.buttons["inspiredPicker.close"].firstMatch
+        if close.exists, close.isHittable { close.tap() }
     }
 
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、

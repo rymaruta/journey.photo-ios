@@ -73,6 +73,8 @@ final class UploadDraftStore {
         var savedAt: String
         /// 撮影スポットの紐付け（スポットの画面から開いた投稿）。無ければ nil
         var spot: Spot? = nil
+        /// 「この写真を見て撮影」の元の写真（2026-10-14）。無ければ nil。**前の版の下書きには無い**（nil で読む）
+        var inspired: InspiredBy.Pick? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {

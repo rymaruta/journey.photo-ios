@@ -10,6 +10,8 @@ struct UploadView: View {
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
     @State private var showSongPicker = false
+    /// 「この写真を見て撮影」の元の写真を選ぶ画面（`InspiredPickerView`・2026-10-14）
+    @State private var showInspiredPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
     /// 「構図を重ねて撮る」で撮った1枚を入れたか（一度だけ・2026-10-10）
@@ -298,6 +300,7 @@ struct UploadView: View {
                     groupChoice
                 }
                 detailSection
+                inspiredCard
                 rowsCard
                 tagsAndCategory
                 // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
@@ -377,6 +380,12 @@ struct UploadView: View {
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { song in model.song = song }
+            }
+        }
+        .sheet(isPresented: $showInspiredPicker) {
+            NavigationStack {
+                InspiredPickerView(currentLocation: model.items.first?.location,
+                                   selectedId: model.inspired?.id) { pick in model.inspired = pick }
             }
         }
         // 写真の編集（帯のサムネを押す）。**その写真だけ**にレシピを入れる（`applyEdit`）
@@ -959,6 +968,65 @@ struct UploadView: View {
         }
         .buttonStyle(JPRowButtonStyle())
         .disabled(model.isWorking)
+    }
+
+    /// 「この写真を見て撮影」（2026-10-14・`InspiredBy`）。**詳しい設定に畳まない**——「写真から、次の旅が
+    /// 始まる」の入口なので、いつも見える所に1行。任意（付けずに投稿できる）。
+    /// 行の形は曲の行と同じ（板 Upload の札の行）。選んだら小さな写真と題・作者を出す
+    private var inspiredCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            JPCard {
+                inspiredRow
+                    // 送っている間は変えない（1枚目に付けるかを送りながら決めている）
+                    .disabled(model.isWorking)
+            }
+            if model.inspired != nil {
+                Text(L("投稿の先頭の1枚に付きます。元の写真が非公開になっていたら付きません。",
+                       "Attached to the first photo of the post. It won't attach if the original is no longer public."))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var inspiredRow: some View {
+        if let pick = model.inspired {
+            Menu {
+                Button { showInspiredPicker = true } label: {
+                    Label(L("選び直す", "Choose another"), systemImage: "photo.on.rectangle")
+                }
+                Button(role: .destructive) { model.inspired = nil } label: {
+                    Label(L("外す", "Remove"), systemImage: "xmark")
+                }
+            } label: {
+                JPRowLabel(title: L("この写真を見て撮影", "Inspired by"),
+                           detail: [pick.label, pick.authorName ?? ""].filter { !$0.isEmpty }
+                               .joined(separator: PhotoMetaLine.separator),
+                           icon: AnyView(inspiredThumb(pick)))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityLabel(L("この写真を見て撮影: \(pick.label)", "Inspired by: \(pick.label)"))
+            .accessibilityHint(L("選び直す・外す", "Choose another or remove"))
+            .accessibilityIdentifier("upload.inspired")
+        } else {
+            Button { showInspiredPicker = true } label: {
+                JPRowLabel(title: L("この写真を見て撮影（任意）", "Inspired by (optional)"),
+                           systemImage: "camera.viewfinder",
+                           value: L("元の写真を付ける", "Add"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("upload.inspired")
+        }
+    }
+
+    /// 選んだ元の写真の小さな画像（行のアイコンの場所・24pt の枠に収める）
+    private func inspiredThumb(_ pick: InspiredBy.Pick) -> some View {
+        RemoteImage(url: pick.thumbURL.flatMap(URL.init(string:)))
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder
