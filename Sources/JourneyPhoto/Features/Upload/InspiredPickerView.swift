@@ -40,7 +40,7 @@ struct InspiredPickerView: View {
                 Text(L("その場所へ行くきっかけになった写真を付けると、写真のページに「この写真を見て撮影」と出て、元の写真の作者にも知らせが届きます。",
                        "Attach the photo that made you go. Your photo page shows “Inspired by”, and the original photographer is notified."))
                     .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
                 shelfTabs
                 content
@@ -74,7 +74,7 @@ struct InspiredPickerView: View {
                     VStack(spacing: 6) {
                         Text(item.label)
                             .font(.subheadline.weight(selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.muted2)
+                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text2)
                             .lineLimit(1)
                         Rectangle()
                             .fill(selected ? WebTheme.accent : Color.clear)
@@ -89,7 +89,7 @@ struct InspiredPickerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(WebTheme.border).frame(height: 1)
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
     }
 
@@ -118,7 +118,7 @@ struct InspiredPickerView: View {
                      "Couldn't load photos. Check your connection.")
                  : shelf.emptyMessage)
                 .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity)

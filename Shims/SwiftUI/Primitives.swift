@@ -407,6 +407,12 @@ public struct LinearGradient: View, ShapeStyle {
     public var body: Never { fatalError() }
 }
 
+/// 円周に沿うグラデーション（ストーリーの未見の輪の金属の光・本物と同じ）
+public struct AngularGradient: View, ShapeStyle {
+    public init(colors: [Color], center: UnitPoint, startAngle: Angle, endAngle: Angle) {}
+    public var body: Never { fatalError() }
+}
+
 /// 丸いグラデーション（メダルを手に取る画面の地と後光・本物と同じ）
 public struct RadialGradient: View, ShapeStyle {
     public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}

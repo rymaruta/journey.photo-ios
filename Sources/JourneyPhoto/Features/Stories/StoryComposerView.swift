@@ -567,7 +567,7 @@ struct StoryComposerView: View {
         let next = StorySimpleRules.nextButton(selected: librarySelection.count, loading: loadingPicks > 0)
         return VStack(spacing: 10) {
             if let message {
-                Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
+                Text(message).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
             }
             Button {
                 // 読み込みは前の `load`（読めたものから並びに入り、1枚入ると仕上げる段に移る）
@@ -581,10 +581,8 @@ struct StoryComposerView: View {
                         Text(next.title)
                     }
                 }
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(WebTheme.accentText)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(WebTheme.accentBackground, in: Capsule())
+                // v2: 写真のある画面の主ボタン（白・50・`JPPillStyle.main(onPhoto: true)`）
+                .jpPillButton(.main(onPhoto: true))
                 .opacity(next.enabled || loadingPicks > 0 ? 1 : 0.5)
                 .accessibilityLabel(next.title)
                 .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
@@ -676,8 +674,8 @@ struct StoryComposerView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, minHeight: 64)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
 
     /// 写真の上の「ひとこと」の層（左寄せ・縦は真ん中）。**`StoryCanvas` が写真と札の間に敷く**
@@ -696,7 +694,8 @@ struct StoryComposerView: View {
         }
     }
 
-    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// 写真の上のひとこと（明朝 30・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// v2: 見る画面と同じ 30（v1 は 32 で、作った形と見える形がずれていた）
     /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -710,7 +709,7 @@ struct StoryComposerView: View {
                                                     limit: PostLimits.storyCaption) }
             ), axis: .vertical)
                 .focused($captionFocused)
-                .font(JPFont.display(32, relativeTo: .largeTitle))
+                .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
                 .jpPhotoTextShadow()
@@ -752,16 +751,22 @@ struct StoryComposerView: View {
         return overlays.wrappedValue.contains { $0.kind == .song && $0.text == placed }
     }
 
+    /// 写真の上の札（v2 StoryComposer の `.stk`: 高さ 30・左右 12・黒 45%・13pt の白）
     private func photoChip(symbol: String, text: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol).font(.caption)
-            Text(text).font(.caption).lineLimit(1)
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(JPFont.footnote)
+            Text(text).font(JPFont.footnote).lineLimit(1)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .jpGlass(in: Capsule(), border: 0)
+        .padding(.horizontal, JPSpace.s)
+        .frame(minHeight: Self.chipHeight)
+        .background(Color.black.opacity(Self.chipFill), in: Capsule())
     }
+
+    /// ひとことの大きさ（見る画面の `captionBlock` と同じ 30）・札の高さと地（v2 の板）
+    static let captionSize: Double = 30
+    static let chipHeight: CGFloat = 30
+    static let chipFill = 0.45
 
     /// 撮影地の候補（`StorySpotSuggestion`）。**押したときだけ**撮影地に入る。
     /// 付けた札（`photoChip`）と見分けるため、破線の縁と「＋」（板の「写真を追加」と同じ破線）。
@@ -771,20 +776,20 @@ struct StoryComposerView: View {
             place.pick()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "plus").font(.caption.weight(.semibold))
-                Image(systemName: "mappin").font(.caption)
-                Text(StorySpotLink.shortened(spot.name)).font(.caption).lineLimit(1)
+                Image(systemName: "plus").font(JPFont.footnote.weight(.semibold))
+                Image(systemName: "mappin").font(JPFont.footnote)
+                Text(StorySpotLink.shortened(spot.name)).font(JPFont.footnote).lineLimit(1)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .jpGlass(in: Capsule(), border: 0)
+            .padding(.horizontal, JPSpace.s)
+            .frame(minHeight: Self.chipHeight)
+            .background(Color.black.opacity(Self.chipFill), in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.45),
                                             style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
             // **押せる所だけ上下に広げて 44pt に、並びは変えない**（見る画面の撮影地の行と同じ作り）
-            .padding(.vertical, 9)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
-            .padding(.vertical, -9)
+            .padding(.vertical, -7)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("撮影地の候補 \(spot.name)。付ける", "Suggested place \(spot.name). Add"))
@@ -929,10 +934,10 @@ struct StoryComposerView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let message, prepared != nil {
-                Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
+                Text(message).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
             }
             if let songNote, prepared != nil {
-                Text(songNote).font(.footnote).foregroundStyle(WebTheme.muted2)
+                Text(songNote).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
             }
             toolRow
             HStack(spacing: 10) {
@@ -945,13 +950,11 @@ struct StoryComposerView: View {
                         Image(systemName: "chevron.down")
                             .font(.caption.weight(.semibold))
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.text)
                     .fixedSize()
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 52)
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
-                    .contentShape(Capsule())
+                    .padding(.horizontal, JPSpace.l)
+                    // v2: 線の副ボタン（白 14% の縁）。主ボタンと並ぶので高さは主と同じ 50（跳ねない）
+                    .jpPillButton(.outline, height: JPHeight.primaryButton)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("見せる相手: フォロワー", "Audience: Followers"))
@@ -970,10 +973,8 @@ struct StoryComposerView: View {
                             Text(L("シェアする", "Share"))
                         }
                     }
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(WebTheme.accentText)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(WebTheme.accentBackground, in: Capsule())
+                    // v2: 写真のある画面の主ボタン（白・50）
+                    .jpPillButton(.main(onPhoto: true))
                     .opacity(prepared == nil ? 0.5 : 1)
                     // 輪を出している間も読み上げは空にしない
                     .accessibilityLabel(L("シェアする", "Share"))
