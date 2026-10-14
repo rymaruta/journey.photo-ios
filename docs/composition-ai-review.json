@@ -184,19 +184,61 @@
       "height": 1152,
       "checked": "2026-10-13",
       "note": "縦4列・横6段の目地が線に乗る。"
+    },
+    "squareGrid": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "縦の目地が6等分、横の目地が0.125間隔の線に乗る。窓の中を通っていた初稿は不採用。"
+    },
+    "rootRectangle": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "街並みが√2の枠に収まり、枠の中の対角と逆対角が街路に乗る。"
+    },
+    "armature": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "鉄骨が対角・菱形・角から中点への線に沿う。右下の1本だけわずかに外れる。"
+    },
+    "phiGrid": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "小さな通行人の胴が、右下の交点（0.618, 0.618）に乗る。"
+    },
+    "fibonacciGrid": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "段差がフィボナッチの区切りに沿い、扉が目（0.276, 0.724）に重なる。"
+    },
+    "diagonal45": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "4本の道が、ピクセル上で45度の線に沿う。角から角へのXではない。"
+    },
+    "obliqueThirds": {
+      "source": "individual",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-14",
+      "note": "コンクリートの目地が斜めの4本に沿う。縦のシュプールの初稿は不採用。"
     }
   },
   "held": {
-    "triangle": "上の人の胸は頂点。下の2人は点が足首で、胸は底辺より上",
-    "phiGrid": "交点はコートの裾。胸は線より上",
-    "squareGrid": "横の目地が0.125間隔の線よりずれ、線が窓の中を通る",
-    "goldenSpiral": "道は外側の渦に近いが、人は目（0.276, 0.724）にいない",
-    "fibonacciGrid": "段差が格子に沿わず、扉が目にいない",
-    "thirdsDiagonals": "道が対角線に乗らず、人は交点の左",
-    "diagonal45": "道が45度の4本に乗らない",
-    "obliqueThirds": "シュプールが斜めの4本ではなくS字",
-    "dynamicSymmetry": "対角の街路は合うが、逆対角の4本が建物に乗らない",
-    "rootRectangle": "街並みは√2枠に近いが、枠の中のダイナミックシンメトリーに沿う街路がない",
-    "armature": "上半分の鉄骨は線に近いが、右下の線が鉄骨から外れる"
+    "triangle": "上の人の胸は頂点。下の2人は点がベルトで、胸は線より上",
+    "goldenSpiral": "渦に近い道の回もあるが、人は目（0.276, 0.724）より上。座った回はS字",
+    "thirdsDiagonals": "道のXに近い回もあるが、人は交点より下で点は空地",
+    "dynamicSymmetry": "対角の道は近いが、逆対角の4本が道に乗らず、点も公園の中心ではない"
   }
 }
