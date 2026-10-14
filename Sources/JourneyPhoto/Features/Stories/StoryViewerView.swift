@@ -1428,8 +1428,8 @@ struct StoryViewerView: View {
         return L("\(story.authorName) のストーリー", "\(story.authorName)'s story")
     }
 
-    /// シートの地（v2 StoryViewerMenu の `#1E1E20`・系統のシートの形）
-    private static let sheetColor = Color(red: 0x1E / 255.0, green: 0x1E / 255.0, blue: 0x20 / 255.0)
+    /// シートの地（v2 StoryViewerMenu の `#1E1E20`・系統のシートの形）。土台の面の段 `surface5`
+    private static let sheetColor = WebTheme.surface5
 
     /// メニューの1行（v2: 56・17pt・左右 20・印との間 14・上に白 10% の線）。**押したらメニューを閉じてから動く**
     private func menuRow(symbol: String, title: String, danger: Bool = false,
@@ -1515,10 +1515,7 @@ struct StoryViewerView: View {
     }
 
     /// 確認の地（v2 の `rgba(40,40,42,.96)`）
-    private static let confirmFill = Color(red: Double((StoryViewerMetrics.confirmFill >> 16) & 0xFF) / 255,
-                                           green: Double((StoryViewerMetrics.confirmFill >> 8) & 0xFF) / 255,
-                                           blue: Double(StoryViewerMetrics.confirmFill & 0xFF) / 255)
-        .opacity(StoryViewerMetrics.confirmFillOpacity)
+    private static let confirmFill = WebTheme.surface6.opacity(StoryViewerMetrics.confirmFillOpacity)
 
     private func confirmButton(_ title: String, color: Color, weight: Font.Weight,
                                action: @escaping () -> Void) -> some View {
@@ -1741,11 +1738,7 @@ struct StoryViewerView: View {
     private static let heartColor = WebTheme.accent
 
     /// 返信を書いている間の欄の地（v2 の `rgba(28,28,30,.9)`）
-    private static let replyFocusedFill = Color(
-        red: Double((StoryViewerMetrics.replyFieldFocusedFill >> 16) & 0xFF) / 255,
-        green: Double((StoryViewerMetrics.replyFieldFocusedFill >> 8) & 0xFF) / 255,
-        blue: Double(StoryViewerMetrics.replyFieldFocusedFill & 0xFF) / 255)
-        .opacity(StoryViewerMetrics.replyFieldFocusedFillOpacity)
+    private static let replyFocusedFill = WebTheme.surface4.opacity(StoryViewerMetrics.replyFieldFocusedFillOpacity)
 
     /// 送信の丸を出すか（送れるか）。**空白だけでない文字が入っているとき**
     private var canSend: Bool {

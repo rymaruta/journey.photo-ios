@@ -126,7 +126,8 @@ final class ProfileV2DesignTests: XCTestCase {
     func testEditButtonIsV2Outline() throws {
         let parts = try source("Features/Profile/ProfileV2Parts.swift")
         let pill = try slice(parts, from: "struct ProfileOutlinePill", to: "struct ProfileFollowButtonLabel")
-        XCTAssertTrue(pill.contains("strokeBorder(WebTheme.line"))
+        XCTAssertTrue(pill.contains(".jpOutlineButton(.inline)"), "編集の線のボタンが土台の線の小ボタンでない")
+        XCTAssertFalse(pill.contains("strokeBorder("), "線の小ボタンの縁を画面に書き直している")
         let mine = try source("Features/Profile/MyPageView.swift")
         XCTAssertFalse(mine.contains("Color.white.opacity(0.28)"))
         XCTAssertEqual(mine.components(separatedBy: ".accessibilityIdentifier(\"mypage.edit\")").count - 1, 1,
@@ -210,7 +211,7 @@ final class ProfileV2DesignTests: XCTestCase {
         let nameSide = try source("Features/Profile/NameSideBadgeView.swift")
         XCTAssertTrue(nameSide.contains(".jpPillButton(.main(onPhoto: false))"), "決めるは真鍮の塗り＋墨")
         XCTAssertTrue(nameSide.contains("JPEyebrowLine(L(\"持っているバッジ\""))
-        XCTAssertTrue(nameSide.contains(".background(WebTheme.background, in: RoundedRectangle(cornerRadius: JPRadius.l))"),
+        XCTAssertTrue(nameSide.contains(".jpCardFace(fill: WebTheme.background)"),
                       "見え方の下見は黒地の札（マイページと同じ地）")
     }
 

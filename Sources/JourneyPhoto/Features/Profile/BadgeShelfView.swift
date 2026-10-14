@@ -155,8 +155,7 @@ struct BadgeShelfView: View {
         .padding(.vertical, JPSpace.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         // v2 の札（#0E0E0F・白 8% の縁・角 16）
-        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .jpCardFace()
     }
 
     /// 飾りを外す（名前の横に何も出さない）。名前の横の画面の「なし」で決めるのと同じ部分更新

@@ -27,6 +27,28 @@ enum BrandPalette {
     static let surface: UInt32 = 0x0E0E0F
     /// 札の中の入力欄・シートの地（v2 の surface-2。v1 は #1A1A1A）
     static let surface2: UInt32 = 0x161617
+
+    // MARK: 面の段（surface-2 より上・2026-10-14）
+    //
+    // v2 の板が画面ごとに書いた一段上の灰。担当ごとに `Color(red: 0x1E …)` と直に書いて散らばっていたので、
+    // **値は変えずに**ここへ名前を付けて集めた（2026-10-14 判断）。数が大きいほど明るい。
+    // 新しい灰を足す前に、ここのどれかで足りないかを見る
+
+    /// 一段浮かせた小さな面（板 PostSheet の印の札・StoryReplies の吹き出し・SongPicker の帯）
+    static let surface3: UInt32 = 0x1A1A1C
+    /// 読み込み中の骨格の灰・ストーリーの返信欄を書いている間の地（板 `#1C1C1E`）
+    static let surface4: UInt32 = 0x1C1C1E
+    /// ストーリーのメニューのシートの地（板 StoryViewerMenu `#1E1E20`）
+    static let surface5: UInt32 = 0x1E1E20
+    /// ストーリーの削除の確認の地（板 `rgba(40,40,42,.96)`）
+    static let surface6: UInt32 = 0x28282A
+    /// 投稿の写真の帯の「外す」の丸（板 `#2A2A2C`）
+    static let surface7: UInt32 = 0x2A2A2C
+    /// 投稿のつながったセグメントの選んだ側（板 `#2C2C2E`）
+    static let surface8: UInt32 = 0x2C2C2E
+    /// 面の段（暗い → 明るい）。テストが「段が明るさの順に並ぶ」ことを見張る
+    static let surfaceSteps: [UInt32] = [background, surface, surface2, surface3, surface4, surface5,
+                                         surface6, surface7, surface8]
     /// 入力欄・枠線ボタンの境界（白 40%）。**部品の縁は 3:1 が要る**
     static let outline: UInt32 = 0x666666
     /// 未選択チップの文字（白 82% を surface に重ねた値）

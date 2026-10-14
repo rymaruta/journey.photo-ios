@@ -204,8 +204,7 @@ struct NameSideBadgeView: View {
         .padding(.horizontal, JPSpace.m)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.background, in: RoundedRectangle(cornerRadius: JPRadius.l))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .jpCardFace(fill: WebTheme.background)
         .accessibilityElement(children: .combine)
     }
 

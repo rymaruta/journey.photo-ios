@@ -256,8 +256,7 @@ struct TripBookView: View {
                     }
                     .frame(height: TripRouteLayout.height(labelHeight: routeLabelHeight))
                 }
-                .background(Self.cellColor, in: RoundedRectangle(cornerRadius: JPRadius.l))
-                .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                .jpCardFace(fill: Self.cellColor)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Self.routeSpokenLabel(stops))
                 // スクリーンショットの `31-旅の足取り` がここまで送って撮る
@@ -345,20 +344,13 @@ struct TripBookView: View {
         .padding(.top, JPSpace.section)
     }
 
-    /// 日の見出し（v2 の板 TripBook: 真鍮の眉「DAY 1 · 09.12」と右へ消える線 → 明朝 22 の地名）
+    /// 日の見出し（v2 の板 TripBook: 真鍮の眉「DAY 1 · 09.12」と右へ消える線 → 明朝 22 の地名）。
+    /// 形は共通の節の見出し（`JPSectionHeading`・2026-10-14 判断）。地名が無い日は眉だけ
     private func dayHeader(_ day: TripBook.Day) -> some View {
-        VStack(alignment: .leading, spacing: JPSpace.xxs) {
-            JPEyebrowLine("DAY \(day.number) · \(TripBook.monthDay(day.date))",
-                          spoken: Self.spokenDayHeader(day.number, monthDay: TripBook.monthDay(day.date)))
-            if !day.place.isEmpty {
-                Text(LocationMatch.display(day.place))
-                    .font(JPFont.cardTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(2)
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
-        .padding(.bottom, JPSpace.s)
+        JPSectionHeading(eyebrow: "DAY \(day.number) · \(TripBook.monthDay(day.date))",
+                         spoken: Self.spokenDayHeader(day.number, monthDay: TripBook.monthDay(day.date)),
+                         title: day.place.isEmpty ? nil : LocationMatch.display(day.place))
+            .padding(.bottom, JPSpace.s)
     }
 
     /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——

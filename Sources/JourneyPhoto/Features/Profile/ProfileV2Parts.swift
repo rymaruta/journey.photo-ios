@@ -64,22 +64,15 @@ struct ProfileStat: View {
 }
 
 /// 見出しの横の線のボタン（「プロフィールを編集」・板 v2 Components 01 の副ボタンの形）。
-/// 見た目は 36・透明の地に白 14% の縁（`WebTheme.line`）・13pt semibold。**当たりは 44**
+/// 見た目は 36・透明の地に白 14% の縁（`WebTheme.line`）・13pt semibold。**当たりは 44**。
+/// 形は土台の `jpOutlineButton(.inline)`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
 struct ProfileOutlinePill: View {
 
     let title: String
 
     var body: some View {
         Text(title)
-            .font(JPFont.footnote.weight(.semibold))
-            .foregroundStyle(WebTheme.foreground)
-            .lineLimit(1)
-            .padding(.horizontal, JPSpace.m)
-            .frame(minHeight: ProfileV2.headerButtonHeight)
-            .overlay(Capsule().strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
-            // 見た目は 36pt、押せる高さは 44pt
-            .padding(.vertical, ProfileV2.tapSlack(visible: ProfileV2.headerButtonHeight))
-            .contentShape(Rectangle())
+            .jpOutlineButton(.inline)
     }
 }
 

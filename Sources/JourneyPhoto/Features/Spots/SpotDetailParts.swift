@@ -54,27 +54,21 @@ enum SpotDetailParts {
         .frame(maxWidth: .infinity)
         .padding(.vertical, JPSpace.s)
         // v2 の札（surface-1・白 8% の縁・角 16）
-        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .jpCardFace()
     }
 
     /// 節の見出し。**v2（2026-10-14・板 SpotDetail の節）**: 真鍮の眉ラベルと消えていく線（`JPEyebrowLine`・
     /// 任意）→ 明朝 22 の見出し。黒地の上だけで使う（真鍮）
     ///
+    /// 形は共通の `JPSectionHeading`（2026-10-14 判断: 同じ形を2つ持たない）。題は件数入りで長くなるので
+    /// 行を切らない（`titleLineLimit: nil`）
+    ///
     /// - Parameters:
     ///   - eyebrow: 眉の字（「ABOUT」「LIGHT · 時間帯」）。無ければ見出しだけ
     ///   - spoken: 眉の読み上げ（英字の眉を日本語で読ませる）
     static func sectionHeader(_ title: String, eyebrow: String? = nil, spoken: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: JPSpace.s) {
-            if let eyebrow {
-                JPEyebrowLine(eyebrow, spoken: spoken)
-            }
-            Text(title)
-                .font(JPFont.cardTitle)
-                .foregroundStyle(WebTheme.foreground)
-                .accessibilityAddTraits(.isHeader)
-        }
-        .padding(.horizontal, JPSpace.m)
+        JPSectionHeading(eyebrow: eyebrow, spoken: spoken, title: title, titleLineLimit: nil)
+            .padding(.horizontal, JPSpace.m)
     }
 
     /// 近くの撮影地の札（表紙つき）

@@ -185,7 +185,7 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertFalse(sheet.contains("JPCard {"), "シートの上に既定の地の札がある（シートと同じ暗さで札に見えない）")
         XCTAssertEqual(sheet.components(separatedBy: "JPCard(fill: WebTheme.surface)").count - 1, 2)
         let card = declaration("JPCard", in: try source("Core/Design/FormParts.swift"))
-        XCTAssertTrue(card.contains(".background(fill ?? WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))"))
+        XCTAssertTrue(card.contains(".jpCardFace(fill: fill)"), "JPCard が札の地（jpCardFace）を通っていない")
     }
 
     // MARK: - 主ボタン
@@ -215,7 +215,7 @@ final class DesignFoundationTests: XCTestCase {
     /// 同じ場所で主ボタン（50）と線のボタンが入れ替わる帯は、線のボタンも 50 にする（跳ねない）
     func testSwappedButtonsKeepOneHeight() throws {
         let parts = try source("Core/Design/FormParts.swift")
-        XCTAssertTrue(parts.contains("minHeight: height ?? style.height)"), "カプセルの高さが段から来ていない")
+        XCTAssertTrue(parts.contains("minHeight: height ?? style.height,"), "カプセルの高さが段から来ていない")
         let pick = try source("Features/Trips/LibraryTripPickView.swift")
         assertInOrder(["if isLoading {", "jpPillButton(.outline, height: JPHeight.primaryButton)",
                        "} else {", ".jpPillButton(.primary)"], in: pick, "旅の記録に入れる帯")

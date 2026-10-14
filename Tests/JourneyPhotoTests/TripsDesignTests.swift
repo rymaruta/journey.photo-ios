@@ -219,8 +219,9 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertFalse(book.contains("dash:"), "たどった場所の線が点線に戻っている")
         XCTAssertTrue(book.contains("JPEyebrowLine(L(\"たどった場所\""))
         let header = section("private func dayHeader(", in: book)
-        assertInOrder(["JPEyebrowLine(\"DAY", "spoken: Self.spokenDayHeader(", "Text(LocationMatch.display(day.place))",
-                       ".font(JPFont.cardTitle)"], in: header, "日の見出しは眉 → 明朝の地名")
+        // 形は共通の節の見出し（眉 → 明朝 22。2026-10-14: ここだけ間が 4 だった）
+        assertInOrder(["JPSectionHeading(eyebrow: \"DAY", "spoken: Self.spokenDayHeader(",
+                       "title: day.place.isEmpty ? nil : LocationMatch.display(day.place)"], in: header, "日の見出しは眉 → 明朝の地名")
         let page = section("private func page(", in: book)
         assertInOrder(["pageImage(photo)", ".padding(.horizontal, -JPSpace.xs)", "JPFont.rowTitle",
                        "TripStyle.pageMeta(photo)"], in: page, "ページの写真 → 題 → 撮影時刻と設定")
@@ -288,7 +289,7 @@ final class TripsDesignTests: XCTestCase {
     func testOfflineCardStates() throws {
         let card = try source("Features/Trips/OfflineTripCard.swift")
         XCTAssertTrue(card.contains(".offlineCardFace()"))
-        XCTAssertTrue(section("func offlineCardFace()", in: card).contains("WebTheme.card"), "札の地は surface-1")
+        XCTAssertTrue(section("func offlineCardFace()", in: card).contains(".jpCardFace()"), "札の地は共通の surface-1 の札")
         let interrupted = section("private func interrupted(", in: card)
         XCTAssertTrue(interrupted.contains("OfflineProgressBar(done: p.done, total: p.total, stalled: true)"), "止まった棒は真鍮 50%")
         let saved = section("private func saved(", in: card)
@@ -306,8 +307,9 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["TripStyle.progressTrackOpacity", "TripStyle.stalledProgressOpacity", "TripStyle.progressHeight"],
                       in: bar, "進みの線")
         let button = section("struct TripOutlineButton", in: parts)
-        assertInOrder(["JPHeight.secondaryButton", "WebTheme.danger.opacity(TripStyle.dangerFillOpacity)"],
-                      in: button, "線の小ボタン")
+        XCTAssertTrue(button.contains(".jpOutlineButton(.regular, tone: strong ? .strong : danger ? .danger : .plain, fullWidth: fill)"),
+                      "旅の線の小ボタンが土台の線の小ボタンでない")
+        XCTAssertFalse(button.contains("strokeBorder("), "線の小ボタンの縁を画面に書き直している")
     }
 
     func testOfflineTripAndSpot() throws {

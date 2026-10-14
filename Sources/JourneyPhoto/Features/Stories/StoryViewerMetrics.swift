@@ -66,7 +66,7 @@ enum StoryViewerMetrics {
     /// キャンセル｜削除 の2つ並びの高さ（板 50）
     static let confirmButtonHeight: CGFloat = 50
     /// 地（板 `rgba(40,40,42,.96)`）
-    static let confirmFill: UInt32 = 0x28282A
+    static let confirmFill: UInt32 = BrandPalette.surface6
     static let confirmFillOpacity = 0.96
 
     // MARK: 足元
@@ -75,7 +75,7 @@ enum StoryViewerMetrics {
     static let replyFieldHeight: CGFloat = 44
     static let replyFieldBorder = 0.30
     /// 書いている間の欄の地（板 `rgba(28,28,30,.9)`）と縁（白 20%）
-    static let replyFieldFocusedFill: UInt32 = 0x1C1C1E
+    static let replyFieldFocusedFill: UInt32 = BrandPalette.surface4
     static let replyFieldFocusedFillOpacity = 0.9
     static let replyFieldFocusedBorder = 0.20
     /// 送信の白い丸（板 44）

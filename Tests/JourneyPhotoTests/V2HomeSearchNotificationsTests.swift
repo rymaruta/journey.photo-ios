@@ -154,15 +154,14 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
                        "JPEyebrowLine(eyebrow, spoken: eyebrowLabel)",
                        ".font(JPFont.rowTitle)",
                        ".foregroundStyle(WebTheme.text2)"], in: card, "札の並び（写真 → 眉 → 題 → 一行）")
-        XCTAssertTrue(card.contains(".background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))"))
-        XCTAssertTrue(card.contains("strokeBorder(WebTheme.hairline"), "札の縁が無い")
+        XCTAssertTrue(card.contains(".jpCardFace()"), "札の地（surface-1・白 8% の縁・角 16）が無い")
         XCTAssertFalse(card.contains(".opacity(0.35)"), "写真を薄く敷く v1 の形に戻っている")
         XCTAssertFalse(card.contains("WebTheme.surface"), "札の地が v1 の白 7% のまま")
         let theme = try source("Features/Gallery/DailyThemeCard.swift")
         XCTAssertTrue(theme.contains("JPEyebrowLine(\"TODAY'S THEME\""), "今日のテーマの眉が v2 でない")
         XCTAssertTrue(theme.contains(".jpPillButton(.main(onPhoto: true), height: JPHeight.secondaryButton)"),
                       "「参加する」が写真のある画面の主ボタン（白）でない")
-        XCTAssertTrue(theme.contains(".background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))"))
+        XCTAssertTrue(theme.contains(".jpCardFace()"), "今日のテーマの札の地が共通の札でない")
     }
 
     /// ホームの写真: 写真の上は白だけ（真鍮を置かない）。いいねのハートも白

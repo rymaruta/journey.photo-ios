@@ -59,6 +59,23 @@ enum WebTheme {
     /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
     static let outline = rgb(BrandPalette.outline)
 
+    // MARK: 面の段（`sheet` より上・値と使う所は `BrandPalette.surface3`〜`surface8`）
+    //
+    // ⚠️ `surface`（白 7% の透過）とは別物。こちらは不透明の灰の段（2026-10-14 判断: 散らばっていた値に名前を付けた）
+
+    /// #1A1A1C（一段浮かせた小さな面・`RaisedTile`）
+    static let surface3 = rgb(BrandPalette.surface3)
+    /// #1C1C1E（骨格の灰・返信欄を書いている間）
+    static let surface4 = rgb(BrandPalette.surface4)
+    /// #1E1E20（ストーリーのメニューのシート）
+    static let surface5 = rgb(BrandPalette.surface5)
+    /// #28282A（ストーリーの削除の確認）
+    static let surface6 = rgb(BrandPalette.surface6)
+    /// #2A2A2C（投稿の写真の「外す」の丸）
+    static let surface7 = rgb(BrandPalette.surface7)
+    /// #2C2C2E（投稿のセグメントの選んだ側）
+    static let surface8 = rgb(BrandPalette.surface8)
+
     // MARK: 真鍮（合図と手がかり）
 
     /// 文字・アイコン・未読の点・ストーリーの輪・リンク・眉ラベル。**黒か面の上だけ**

@@ -178,8 +178,8 @@ struct JPLoadingState: View {
 
     /// 骨格を出すまで待つ時間
     nonisolated static let revealDelay: Duration = .milliseconds(300)
-    /// 骨格の灰（板の `#121213 → #1C1C1E`。光は流さないので中の値1つ）
-    nonisolated static let boneGray: UInt32 = 0x1C1C1E
+    /// 骨格の灰（板の `#121213 → #1C1C1E`。光は流さないので中の値1つ）。土台の面の段 `surface4`
+    nonisolated static let boneGray: UInt32 = BrandPalette.surface4
 
     @State private var revealed = false
 
@@ -219,11 +219,7 @@ struct JPLoadingState: View {
         .padding(.vertical, JPSpace.m)
     }
 
-    private var bone: Color {
-        Color(red: Double((Self.boneGray >> 16) & 0xFF) / 255,
-              green: Double((Self.boneGray >> 8) & 0xFF) / 255,
-              blue: Double(Self.boneGray & 0xFF) / 255)
-    }
+    private var bone: Color { WebTheme.surface4 }
 
     private func bar(widthRatio: CGFloat, height: CGFloat) -> some View {
         GeometryReader { proxy in

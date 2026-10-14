@@ -659,7 +659,7 @@ struct UploadView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.white)
                     .frame(width: UploadStripLayout.removeDot, height: UploadStripLayout.removeDot)
-                    .background(Color(red: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x2c / 255.0), in: Circle())
+                    .background(WebTheme.surface7, in: Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
                     // 丸は板の位置のまま、押せる範囲だけ左へずらす（`UploadStripLayout` の注記）
                     .offset(x: UploadStripLayout.removeDotNudge)
@@ -774,8 +774,8 @@ struct UploadView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 選んだセグメントの面（v2 の `#2C2C2E`）
-    private static let segmentSelectedFill = Color(red: 0x2C / 255.0, green: 0x2C / 255.0, blue: 0x2E / 255.0)
+    /// 選んだセグメントの面（v2 の `#2C2C2E`）。土台の面の段 `surface8`
+    private static let segmentSelectedFill = WebTheme.surface8
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
     private var detailSection: some View {

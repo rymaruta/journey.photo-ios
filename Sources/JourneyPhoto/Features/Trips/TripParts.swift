@@ -59,10 +59,7 @@ enum TripStyle {
     static let progressTrackOpacity = 0.10
     /// 途中で止まった進みの真鍮の濃さ（板 50%）
     static let stalledProgressOpacity = 0.5
-    /// 「端末から削除」の線の赤の濃さ（板 40%）と、確かめの「削除する」の地（16%）・線（50%）
-    static let dangerLineOpacity = 0.4
-    static let dangerFillOpacity = 0.16
-    static let dangerStrongLineOpacity = 0.5
+    // 「端末から削除」の線の赤の濃さ・確かめの「削除する」の地と線は土台の `JPOutlineTone`（2026-10-14）
     /// 圏外の場所の光の時刻の行（板 36）
     static let lightRowMinHeight: CGFloat = 36
     /// 保存した旅の行（板 84）と写真（板 56）
@@ -178,8 +175,9 @@ struct TripStopNumber: View {
     }
 }
 
-/// 線の小ボタン（板 `.bo`: 44・白 14% の線・14〜15 の semibold）。**幅は中身に合わせる**
-/// （`jpPillButton(.outline)` は幅いっぱい）。危ないもの（端末から削除）は赤の字に赤 40% の線
+/// 線の小ボタン（板 `.bo`: 44・白 14% の線・15 の semibold）。**幅は中身に合わせる**
+/// （`fill` で札の幅いっぱい）。危ないもの（端末から削除）は赤の字に赤 40% の線。
+/// 形は土台の `jpOutlineButton`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
 struct TripOutlineButton: View {
     let title: String
     var danger = false
@@ -191,22 +189,9 @@ struct TripOutlineButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(strong ? WebTheme.foreground : danger ? WebTheme.danger : WebTheme.foreground)
-                .lineLimit(1)
-                .padding(.horizontal, JPSpace.m)
-                .frame(maxWidth: fill ? .infinity : nil, minHeight: JPHeight.secondaryButton)
-                .background(strong ? WebTheme.danger.opacity(TripStyle.dangerFillOpacity) : Color.clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(borderColor, lineWidth: JPStroke.hairline))
-                .contentShape(Capsule())
+                .jpOutlineButton(.regular, tone: strong ? .strong : danger ? .danger : .plain, fullWidth: fill)
         }
         .buttonStyle(.plain)
-    }
-
-    private var borderColor: Color {
-        if strong { return WebTheme.danger.opacity(TripStyle.dangerStrongLineOpacity) }
-        if danger { return WebTheme.danger.opacity(TripStyle.dangerLineOpacity) }
-        return WebTheme.line
     }
 }
 

@@ -902,8 +902,7 @@ struct TripPlanDetailView: View {
                     }
                 }
                 .padding(JPSpace.m)
-                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-                .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                .jpCardFace()
             }
         }
         .padding(.top, JPSpace.xs)

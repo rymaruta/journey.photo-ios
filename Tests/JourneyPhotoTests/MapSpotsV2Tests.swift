@@ -342,8 +342,9 @@ final class MapSpotsV2Tests: XCTestCase {
     func testSectionHeadersCarryEyebrows() throws {
         let parts = try source("Features/Spots/SpotDetailParts.swift")
         let header = segment(parts, from: "static func sectionHeader(")
-        assertInOrder(["if let eyebrow {", "JPEyebrowLine(eyebrow, spoken: spoken)", ".font(JPFont.cardTitle)"],
-                      in: header, "節の見出し")
+        // 形は共通の節の見出し（2026-10-14: 撮影スポットだけ眉と題の間が 12 だった）
+        XCTAssertTrue(header.contains("JPSectionHeading(eyebrow: eyebrow, spoken: spoken, title: title, titleLineLimit: nil)"),
+                      "撮影スポットの節の見出しが共通の JPSectionHeading を通っていない")
         let text = try source(official)
         for eyebrow in ["\"ABOUT\"", "\"GUIDE\"", "\"LIGHT\"", "\"EXAMPLES\""] {
             XCTAssertTrue(text.contains("eyebrow: \(eyebrow)"), "\(eyebrow) の眉が無い")

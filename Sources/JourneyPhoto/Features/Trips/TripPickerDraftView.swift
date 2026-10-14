@@ -222,8 +222,7 @@ struct TripPickerDraftView: View {
                     row(spot)
                 }
             }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .jpCardFace(fill: WebTheme.surface)
         }
     }
 

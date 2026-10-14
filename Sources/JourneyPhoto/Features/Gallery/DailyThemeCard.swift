@@ -88,8 +88,7 @@ struct DailyThemeCard: View {
                     .accessibilityHidden(true)
             }
         }
-        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .jpCardFace()
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
     }

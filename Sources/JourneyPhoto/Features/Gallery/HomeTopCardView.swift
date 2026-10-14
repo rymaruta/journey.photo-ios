@@ -350,8 +350,7 @@ struct HomeTopCardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: Self.cardHeight,
                maxHeight: inCarousel ? .infinity : nil, alignment: .leading)
-        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .jpCardFace()
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .accessibilityElement(children: .combine)
