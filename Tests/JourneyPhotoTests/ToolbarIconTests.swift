@@ -4,7 +4,7 @@ import XCTest
 /// 上のバーのアイコンの大きさと当たり（`webToolbarIcon`・2026-10-14）。
 ///
 /// 17pt では黒地で沈む → 22pt semibold ＋ 44 の枠で iOS 26 のガラスの帯が太り「デカすぎる」
-/// （owner）→ 19pt regular・箱は幅 28・高さ 44（箱の外へ当たりを広げる作りは Mac run 432 で
+/// （owner）→ 19pt・幅 28 でもまだ大きい（owner）→ 17pt regular・箱は幅 24・高さ 44（箱の外へ当たりを広げる作りは Mac run 432 で
 /// 効かなかった）。絵は Linux で描けないので、
 /// 値と、帯に渡す寸法を 44 に戻していないこと（ソース）を縛る
 final class ToolbarIconTests: XCTestCase {
@@ -20,17 +20,16 @@ final class ToolbarIconTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// システムの 17pt より大きく（沈まない）、前の 22pt より小さい（デカすぎない）
+    /// システムの標準（17pt）。前の 19pt・22pt より小さい（デカすぎない）
     func testIconSizeIsBetweenSystemAndOldValue() {
-        XCTAssertEqual(WebTheme.toolbarIconSize, 19)
-        XCTAssertGreaterThan(WebTheme.toolbarIconSize, 17, "システムの既定（17pt）では黒地で沈む")
-        XCTAssertLessThan(WebTheme.toolbarIconSize, 22, "22pt はガラスの帯の中で大きすぎた")
+        XCTAssertEqual(WebTheme.toolbarIconSize, 17)
+        XCTAssertLessThan(WebTheme.toolbarIconSize, 19, "19pt でもアイコン自体が大きいと言われた")
     }
 
-    /// 箱の幅は 19pt の絵が収まり、44 より小さい（帯を長くしない）
+    /// 箱の幅は 17pt の絵が収まり、44 より小さい（帯を長くしない）
     func testBoxWidthFitsTheIconButIsNarrowerThan44() {
         XCTAssertGreaterThanOrEqual(WebTheme.toolbarIconBox, WebTheme.toolbarIconSize + 4,
-                                    "19pt の絵（約 21〜23pt）が箱に収まらない")
+                                    "17pt の絵（約 19〜21pt）が箱に収まらない")
         XCTAssertLessThan(WebTheme.toolbarIconBox, WebTheme.minTapTarget,
                           "帯に渡す幅が 44 のままだと、帯が長いまま")
     }
@@ -57,7 +56,7 @@ final class ToolbarIconTests: XCTestCase {
         XCTAssertFalse(body.contains(".semibold"), "バーのアイコンが太字に戻っている")
         XCTAssertTrue(body.contains("WebTheme.toolbarIconSize"))
         XCTAssertTrue(body.contains("minWidth: WebTheme.toolbarIconBox, minHeight: WebTheme.minTapTarget"),
-                      "箱が幅 28・高さ 44 になっていない")
+                      "箱が幅 24・高さ 44 になっていない")
         XCTAssertFalse(body.contains(".padding(-"), "箱の外へ当たりを広げる作りは効かなかった（run 432）")
         XCTAssertTrue(body.contains(".contentShape(Rectangle())"))
     }

@@ -14,7 +14,7 @@ import SwiftUI
 /// **右端は自分のアイコンではなくメニュー（≡）**（2026-09-26 owner「ヘッダーの
 /// ハンバーガーは残す」・板 01d）。マイページへは下の札とメニューから行ける。
 ///
-/// **右の3つの絵は 19pt regular・帯に渡す箱は 28・当たりは 44**（2026-10-14 owner「デカすぎる」。
+/// **右の3つの絵は 17pt regular・箱は幅 24・高さ 44**（2026-10-14 owner「デカすぎる」。
 /// 22pt semibold ＋ 44 の枠で、iOS 26 のガラスの帯が太っていた。`webToolbarIcon` の注記）。
 ///
 /// **ホームにあった地図のアイコンは外した。** 下のタブに「マップ」が
@@ -71,7 +71,7 @@ struct AppHeaderItems: ToolbarContent {
                                 .overlay(Circle().strokeBorder(WebTheme.background, lineWidth: 2)
                                     .padding(-2))
                                 // 板どおり絵の右上の角に（`toolbarBadgeOffset`）。前は 44 の枠を
-                                // 前提に (-8, 10) で内へ寄せていたが、帯に渡す箱は 28 になった
+                                // 前提に (-8, 10) で内へ寄せていたが、帯に渡す箱は幅 24 になった
                                 .offset(x: WebTheme.toolbarBadgeOffset.x,
                                         y: WebTheme.toolbarBadgeOffset.y)
                         }

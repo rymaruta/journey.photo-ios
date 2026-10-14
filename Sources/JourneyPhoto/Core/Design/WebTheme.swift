@@ -92,32 +92,19 @@ enum WebTheme {
     /// そのまま（`contentShape` で余白まで押せるようにする）。
     nonisolated static let minTapTarget: CGFloat = 44
 
-    /// **上のバー（ツールバー）のアイコンの大きさ（19pt・regular）**（2026-10-14）。
+    /// **上のバー（ツールバー）のアイコンの大きさ（17pt・regular）**（2026-10-14）。
     ///
     /// 経緯: 既定の 17pt では黒地で沈む（owner）→ 22pt semibold にした →
-    /// iOS 26 のガラスの帯に入れると「デカすぎる」（owner・実機）。板（01 ホーム・04 マップ・
-    /// 11 探す・01d メニュー）の見出しは 22px の箱に線 1.7 の細い線画（描かれる絵は約 19px）で、
-    /// 太字ではない。**システムの 17pt より一回り大きく、線の太さは板どおり細め**にする。
-    nonisolated static var toolbarIconSize: CGFloat { previewToolbarIcon?.size ?? 19 }
-    /// アイコンの箱の**幅**（並びの寸法）。19pt の絵（約 21〜23pt）が収まる最小。
+    /// iOS 26 のガラスの帯に入れると「デカすぎる」（owner・実機）→ 19pt regular・箱 28 にした →
+    /// まだ「アイコン自体も含めてデカイ」（owner・Mac run 433 の絵）→ **17pt regular・箱 24**
+    /// （システムの標準の大きさ。owner の好みが板の約 19px より優先）。太字には戻さない
+    nonisolated static let toolbarIconSize: CGFloat = 17
+    /// アイコンの箱の**幅**（並びの寸法）。17pt の絵（約 19〜21pt）が収まる最小。
     /// **高さは `minTapTarget`（44）**（`webToolbarIcon` の注記・箱の外は押せなかった）
-    nonisolated static var toolbarIconBox: CGFloat { previewToolbarIcon?.box ?? 28 }
-
-    /// 画面写真で大きさの候補を見比べるための鍵（Debug のみ・Release では必ず `nil`）。
-    /// `-JPPreviewToolbarIcon "17:24"`（絵の大きさ:箱の幅）。2026-10-14 owner「アイコン自体も含めてデカイ」
-    nonisolated static var previewToolbarIcon: (size: CGFloat, box: CGFloat)? {
-        #if DEBUG
-        guard let raw = UserDefaults.standard.string(forKey: "JPPreviewToolbarIcon") else { return nil }
-        let parts = raw.split(separator: ":").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count == 2, (10...30).contains(parts[0]), (16...44).contains(parts[1]) else { return nil }
-        return (CGFloat(parts[0]), CGFloat(parts[1]))
-        #else
-        return nil
-        #endif
-    }
+    nonisolated static let toolbarIconBox: CGFloat = 24
     /// お知らせの未読の点（8pt）を、箱の右上の角からずらす量。板の点は絵の右上の角に
     /// 中心が来て、線画の肩に少し掛かる（板 01: 44 の枠で top/right 10・絵 22）。
-    /// 28 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない
+    /// 24 の箱では角そのものがほぼ絵の角なので、ほとんどずらさない
     nonisolated static let toolbarBadgeOffset: (x: CGFloat, y: CGFloat) = (1, -1)
 
     /// **本文系の字の最小（12pt）。** 11pt は眉ラベルだけ（CLAUDE.md・デザインの板）
@@ -165,13 +152,14 @@ extension View {
     /// 1. 既定の 17pt 相当では黒地で沈み、見つけにくい（owner の指摘。地図・「…」・歯車）
     /// 2. 22pt semibold ＋ 44pt の枠にした → iOS 26 のガラスの丸い帯に入れると
     ///    **帯が文字の行よりずっと高く、絵も太く大きい**（2026-10-14 owner「デカすぎる」）
-    /// 3. いま: **19pt regular**。板の見出し（細い線画・約 19px）に合わせ、17pt より一回り大きい
+    /// 3. 19pt regular・箱 28 にしても「アイコン自体も含めてデカイ」（owner）
+    /// 4. いま: **17pt regular・箱 24**（システムの標準の大きさ）
     ///
     /// **帯が太っていた訳**: iOS 26 はバーの右の項目を、ラベルの寸法に**システムの余白を足して**
     /// ガラスの帯に入れる。こちらが `frame(minWidth: 44, minHeight: 44)` で並びの寸法そのものを
     /// 44 にしていたので、帯は「44 ＋ システムの余白」になり、標準の帯より太く・長くなっていた。
     ///
-    /// **箱は幅 28・高さ 44**: 帯を長くするのは幅なので、幅だけを `toolbarIconBox`（28）に詰め、
+    /// **箱は幅 24・高さ 44**: 帯を長くするのは幅なので、幅だけを `toolbarIconBox`（24）に詰め、
     /// 高さは 44 のまま当たりにする（`contentShape`）。
     /// 🔴 **箱の外へ当たりを広げる作り（44 の余白で当たりを取り、負の余白で箱に戻す）は効かなかった**
     /// （Mac run 432: 絵の中心から 19pt 下を押してもお知らせが開かない。バーの項目は UIKit の枠の中しか
