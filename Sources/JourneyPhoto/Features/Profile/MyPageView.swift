@@ -61,12 +61,8 @@ struct MyPageView: View {
     /// 明朝 26 の名前の行の高さの見込み（文字サイズの設定で伸びる）
     @ScaledMetric(relativeTo: .title) private var nameLineHeight: CGFloat = 36
 
-    /// 板 05c: 3列・隙間 4pt・角なし
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-    ]
+    /// 板 v2 MyPage: 3列・隙間 2pt・縦長 4:5・角なし（`ProfileV2`）
+    private let columns = ProfileV2.gridItems
 
     var body: some View {
         Group {
@@ -255,18 +251,20 @@ struct MyPageView: View {
                             .font(.subheadline.weight(.semibold))
                         Text(L("名前が無いと、ほかの人の検索に出てきません",
                                "Without a name you won't appear in search"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption)
                 }
                 .foregroundStyle(WebTheme.foreground)
-                .padding(12)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                .padding(JPSpace.s)
+                // v2 の札（#0E0E0F・白 8% の縁・角 14）。白 7% の札から寄せた
+                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, ProfileV2.gutter)
         }
     }
 
@@ -369,56 +367,89 @@ struct MyPageView: View {
                 .jpGlass(in: Circle())
         }
         .buttonStyle(.plain)
-        .padding(.trailing, 8)
+        .padding(.trailing, JPSpace.s)
         .accessibilityLabel(L("設定", "Settings"))
     }
 
-    /// 見出し（板 05c・05d）: 84pt のアイコン（黒い 3pt の縁）と右に「プロフィールを
-    /// 編集」、その下に明朝 26 の名前・「@ユーザー名 · (線のピン)居住地」・ひとこと
+    /// 見出し（板 v2 MyPage・MyPageNoCover）。
+    ///
+    /// - **カバーがある人**: 88pt のアイコン（黒い 4pt の縁）をカバーの下端に 44pt 重ね、右に
+    ///   「プロフィールを編集」。その下に明朝 26 の名前・「@ユーザー名 · (線のピン)居住地」・ひとこと
+    /// - **カバーが無い人**（板 MyPageNoCover）: 帯も灰色の空き地も置かず、72pt のアイコンと名前・
+    ///   @ユーザー名を**横に並べて上を詰める**。編集は数の並びの右へ（`stats`）
     private func header(_ profile: UserProfile) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .bottom) {
-                RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
-                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
-                    .clipShape(Circle())
-                    // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
-                    // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
-                    .coverCutout(true)
-                Spacer(minLength: 8)
-                NavigationLink { ProfileEditView() } label: {
-                    Text(L("プロフィールを編集", "Edit profile"))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 36)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
-                        // 見た目は 36pt、押せる高さは 44pt
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            if hasCover {
+                HStack(alignment: .bottom) {
+                    avatar(profile, side: ProfileCover.avatarSize)
+                        // **板どおり黒の縁**（写真の上でも丸が割れない）。
+                        // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
+                        .coverCutout(true)
+                    Spacer(minLength: 8)
+                    editLink(short: false)
                 }
-                .buttonStyle(.plain)
-                // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
-                .accessibilityIdentifier("mypage.edit")
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                nameLine(profile)
-                if let line = ProfileLine.handleAndHome(username: profile.username,
-                                                        home: profile.homeLocation) {
-                    ProfileHandleLine(line: line, showsPin: true)
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    nameLine(profile)
+                    handleLine(profile)
+                    aboutLines(profile)
                 }
-                // ひとこと。**持っているのに一度も出していなかった**
-                ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
-                    Text(text)
-                        .font(.footnote)
-                        .lineSpacing(4)
-                        .foregroundStyle(WebTheme.muted2)
+            } else {
+                HStack(alignment: .center, spacing: 14) {
+                    avatar(profile, side: ProfileCover.compactAvatarSize)
+                    VStack(alignment: .leading, spacing: 2) {
+                        nameLine(profile)
+                        handleLine(profile)
+                    }
+                    // 右上の設定の丸に名前が潜らない
+                    Spacer(minLength: WebTheme.minTapTarget)
                 }
+                aboutLines(profile)
             }
         }
-        .padding(.horizontal, 20)
-        // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
-        // 無ければ右上の設定の丸の下から（板 05d）
-        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
+        .padding(.horizontal, ProfileV2.gutter)
+        // カバーがあればアイコンを下端に重ねる（板 v2: 196pt の帯に 88pt の丸を 44pt）。
+        // 無ければ右上の設定の丸の高さから（板 MyPageNoCover・丸と並ぶ）
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 0)
+    }
+
+    private func avatar(_ profile: UserProfile, side: CGFloat) -> some View {
+        RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+            .frame(width: side, height: side)
+            .background(WebTheme.card)
+            .clipShape(Circle())
+    }
+
+    @ViewBuilder
+    private func handleLine(_ profile: UserProfile) -> some View {
+        if let line = ProfileLine.handleAndHome(username: profile.username,
+                                                home: profile.homeLocation) {
+            ProfileHandleLine(line: line, showsPin: true)
+        }
+    }
+
+    /// ひとこと。**持っているのに一度も出していなかった**。v2: 本文 15・text-2・行間 1.7
+    private func aboutLines(_ profile: UserProfile) -> some View {
+        ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
+            Text(text)
+                .font(JPFont.body)
+                .lineSpacing(6)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, JPSpace.xxs)
+        }
+    }
+
+    /// 「プロフィールを編集」。カバーが無い人は数の並びの右に短く「編集」（板 MyPageNoCover）。
+    /// どちらも同じ目印（画面写真の試験が「読み込みが済んだ」の印に待つ）
+    private func editLink(short: Bool) -> some View {
+        NavigationLink { ProfileEditView() } label: {
+            // v2: 線の副ボタン（白 14% の縁・見た目 36・当たり 44・`ProfileOutlinePill`）
+            ProfileOutlinePill(title: short ? L("編集", "Edit") : L("プロフィールを編集", "Edit profile"))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("プロフィールを編集", "Edit profile"))
+        // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
+        .accessibilityIdentifier("mypage.edit")
     }
 
     /// 名前の行（板 05c・BadgePicker）: 明朝 26 の名前 → 公式の封印 → Pro マーク → 選んだバッジ。
@@ -428,8 +459,9 @@ struct MyPageView: View {
         Button { showNameSide = true } label: {
             HStack(spacing: 4) {
                 Text(profile.name)
-                    .font(JPFont.display(26, relativeTo: .title))
+                    .font(JPFont.screenTitle)
                     .foregroundStyle(Color.white)
+                    .lineLimit(1)
                 NameMarks(profile: profile, nameSize: 26, relativeTo: .title, fit: .mincho, showsBadge: true)
             }
             .frame(minHeight: WebTheme.minTapTarget)
@@ -454,8 +486,8 @@ struct MyPageView: View {
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・数字（`JPFont.statNumber`）と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
-        // 板: 3列の等幅。数字（`JPFont.statNumber`・SF の等幅数字）の下に小さい名前
-        HStack(alignment: .top, spacing: 8) {
+        // 板 v2: カバーがあれば3列の等幅。無ければ左に詰めて間 24・右に「編集」（MyPageNoCover）
+        HStack(alignment: hasCover ? .top : .center, spacing: hasCover ? JPSpace.xs : JPSpace.xl) {
             statCell(value: ProfileLine.statValue(model.photoCount), label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
@@ -469,23 +501,19 @@ struct MyPageView: View {
                 statCell(value: ProfileLine.statValue(model.followingCount), label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
+            if !hasCover {
+                Spacer(minLength: 0)
+                editLink(short: true)
+            }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ProfileV2.gutter)
     }
 
     /// - Parameter value: nil は読み込み中。**数を出さずに高さだけ取る**（出たときに並びが動かない）
+    /// 形は人のページと同じ `ProfileStat`（v2: 数字の下に 12pt の text-3 の名前）
     private func statCell(value: String?, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value ?? "0")
-                .font(JPFont.statNumber)
-                .foregroundStyle(Color.white)
-                .opacity(value == nil ? 0 : 1)
-                .accessibilityHidden(value == nil)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-        }
-        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        ProfileStat(value: value, label: label)
+        .frame(maxWidth: hasCover ? .infinity : nil, minHeight: WebTheme.minTapTarget, alignment: .leading)
         .contentShape(Rectangle())
         // **押せる高さは 44pt のまま、並びの上では字の高さだけ取る**（板: 数の下は
         // すぐ 12pt で旅の実績の行）。44pt で場所を取ると、数と旅の実績の間が
@@ -515,8 +543,8 @@ struct MyPageView: View {
                              firstYear: TravelRoute.firstYear(of: model.photos),
                              onDistanceTap: { showDistanceNote = true },
                              onCountriesTap: { showCountriesNote = true })
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
+            .padding(.horizontal, ProfileV2.gutter)
+            .padding(.top, JPSpace.xs)
             .alert(L("訪れた国・地域", "Countries and regions"),
                    isPresented: $showCountriesNote) {
                 Button(Labels.Common.close, role: .cancel) {}
@@ -555,7 +583,7 @@ struct MyPageView: View {
     private func bgmCard(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
             ProfileBgmCard(song: song)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, ProfileV2.gutter)
         }
     }
 
@@ -590,7 +618,8 @@ struct MyPageView: View {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                // v2: 読み込みは中身と同じ形の骨格（0.3 秒より早ければ出さない）
+                JPLoadingState(kind: .grid)
             case .none:
                 EmptyState(message: SavedPhotosView.emptyMessage)
             case .nothingShown:
@@ -607,9 +636,25 @@ struct MyPageView: View {
             // 保存は他人の写真と自分の写真が混ざる。公開一覧から引き当てた写真だけ
             // 個別ページが在る（`LikedPhotos.fromPublicFeed`・`SavedPhotosView` と同じ）
             let isPublic = LikedPhotos.fromPublicFeed(publicPool)
-            PhotoGrid(photos: saved) { photo in
-                PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: saved)
+            // 板 v2 MyPage（保存）: 投稿と同じ 3 列・縦長 4:5 の格子と、何の一覧かの一行
+            LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
+                ForEach(saved) { photo in
+                    NavigationLink {
+                        PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: saved)
+                    } label: {
+                        PhotoFrame(photo: photo, aspect: ProfileV2.gridAspect, corner: 0)
+                            .background(WebTheme.card)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(photo.accessibilityText)
+                }
             }
+            Text(L("しおりで保存した写真。あなただけに見え、作者には届きません（いいねした写真はメニューの「いいねした写真」）",
+                   "Photos you bookmarked. Only you can see them, and the photographer isn't notified (liked photos are under Liked Photos in the menu)."))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, ProfileV2.gutter)
         }
     }
 
@@ -650,7 +695,9 @@ struct MyPageView: View {
                                             loaded: feedLoaded && model.hasLoadedPhotos,
                                             sourceFailed: sourceFailed) {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                // v2 WishlistTab B2: 行と同じ形の骨格
+                JPLoadingState(kind: .rows)
+                    .padding(.horizontal, ProfileV2.gutter)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."),
@@ -658,8 +705,10 @@ struct MyPageView: View {
                     Task { await reloadAll() }
                 }
             case .empty:
-                EmptyState(message: L("まだありません。撮影スポットの画面で「行きたい」を押すとここに並びます",
-                                       "Nothing yet. Tap “Want to go” on a place."))
+                // v2 WishlistTab B1: 何が無いか（明朝の見出し）→ どうすれば埋まるか → 一手
+                EmptyState(title: L("行きたい場所はまだありません", "No places yet"),
+                           message: L("まだありません。撮影スポットの画面で「行きたい」を押すとここに並びます",
+                                      "Nothing yet. Tap “Want to go” on a place."))
                 // 板 WishlistTab の B1（空）の「撮影スポットを探す」
                 FindSpotsButton()
                     .frame(maxWidth: .infinity)
@@ -681,7 +730,7 @@ struct MyPageView: View {
                         // 引き下げを知らない人にも出口を（2026-10-02 の調査）
                         RetryButton(isBusy: isReloading, compact: true) { Task { await reloadAll() } }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, ProfileV2.gutter)
                 }
                 ForEach(wanted) { place in
                     NavigationLink {
@@ -715,12 +764,9 @@ struct MyPageView: View {
     /// min-height 44」）。黒地の上の手がかりなので真鍮（owner の好み「デザインの箇所は白より真鍮」）。
     /// 件数は数なので白（数は合図ではない・CLAUDE.md の実例）
     private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(L("すべての行きたい場所 · \(split.count)", "All places · \(split.count)"))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 8)
+        HStack(spacing: JPSpace.s) {
+            // v2 WishlistTab: 節の見出しは眉（真鍮＋消える線）。見出しの読み上げは部品が付ける
+            JPEyebrowLine(L("すべての行きたい場所 · \(split.count)", "All places · \(split.count)"))
             NavigationLink {
                 SavedSpotsMapView(split: split, officialSpots: officialSpots, photos: pool,
                                   photosKnown: photosKnown)
@@ -740,7 +786,7 @@ struct MyPageView: View {
             .accessibilityLabel(L("行きたい場所を地図で見る", "View places on a map"))
             .accessibilityIdentifier("mypage.wishlistMap")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileV2.gutter)
     }
 
     /// 台帳のスポットの行。撮影地の行と同じ並び。
@@ -757,33 +803,35 @@ struct MyPageView: View {
                     // 縮小版があればそれを読む（無い・読めなければ元の画像・`SpotThumbImage`）
                     SpotThumbImage(image: photo, assumedRatioLimit: 2)
                 } else {
-                    Image(systemName: "mappin.circle")
+                    // 写真の無い行は真鍮の旗の札（板 v2 WishlistTab「無ければ真鍮の旗の札」・黒地の上）
+                    Image(systemName: "flag")
                         .font(.title3)
-                        .foregroundStyle(WebTheme.muted2)
+                        .foregroundStyle(WebTheme.accent)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(WebTheme.surface)
+                        .background(WebTheme.card)
                 }
             }
             .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
+                // v2: 場所の名前は明朝（下限の 18。板の 16 は明朝の下限を割るので上げた）
                 Text(row.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     if let region = row.regionLabel {
                         Text(region)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.muted2)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                             .lineLimit(1)
                     }
                     if row.spot?.isDraft ?? false {
                         Text(L("下書き", "Draft"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                     }
                 }
             }
@@ -800,16 +848,20 @@ struct MyPageView: View {
                     }
                 }
             } label: {
-                Image(systemName: "heart.fill")
+                // v2 WishlistTab: 外すのは真鍮の旗（行きたい＝旗・`PhotoTripSection` と同じ印）。
+                // 黒地の上なので真鍮。いいねのハート（白）と紛れない
+                Image(systemName: "flag.fill")
                     .font(.subheadline)
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(WebTheme.accent)
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("\(row.name) を「行きたい」から外す", "Remove \(row.name)"))
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileV2.gutter)
         .frame(minHeight: 72)
+        .overlay(alignment: .bottom) { wishlistDivider }
         .accessibilityIdentifier("mypage.officialWish")
     }
 
@@ -818,19 +870,19 @@ struct MyPageView: View {
             // 代表写真は**いちばん多く押された1枚**（数えた値）
             RemoteImage(url: spot.cover?.gridImageURL)
                 .frame(width: 56, height: 56)
-                .background(WebTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .background(WebTheme.card)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocationMatch.display(spot.label))
-                    .font(.subheadline.weight(.semibold))
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
                 if !place.isEmpty {
                     Text(place)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                         .lineLimit(1)
                 }
             }
@@ -847,16 +899,28 @@ struct MyPageView: View {
                     }
                 }
             } label: {
-                Image(systemName: "heart.fill")
+                // v2 WishlistTab: 外すのは真鍮の旗（行きたい＝旗・`PhotoTripSection` と同じ印）。
+                // 黒地の上なので真鍮。いいねのハート（白）と紛れない
+                Image(systemName: "flag.fill")
                     .font(.subheadline)
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(WebTheme.accent)
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("\(LocationMatch.display(spot.label)) を「行きたい」から外す", "Remove \(LocationMatch.display(spot.label))"))
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileV2.gutter)
         .frame(minHeight: 72)
+        .overlay(alignment: .bottom) { wishlistDivider }
+    }
+
+    /// 行の間の線（板 v2 の `.sr`: 下に白 8%）。端の 16 から引く
+    private var wishlistDivider: some View {
+        Rectangle()
+            .fill(WebTheme.hairline)
+            .frame(height: JPStroke.hairline)
+            .padding(.horizontal, ProfileV2.gutter)
     }
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
@@ -888,10 +952,9 @@ struct MyPageView: View {
     private var tripsArea: some View {
         let trips = TripBook.shelfTrips(from: model.photos)
         if trips.isEmpty && model.isLoading {
-            // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(24)
+            // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）。v2: 行の骨格
+            JPLoadingState(kind: .rows)
+                .padding(.horizontal, ProfileV2.gutter)
         } else {
             VStack(alignment: .leading, spacing: 20) {
                 // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
@@ -926,7 +989,7 @@ struct MyPageView: View {
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("trips.plans")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileV2.gutter)
     }
 
     /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
@@ -961,14 +1024,14 @@ struct MyPageView: View {
             Text(action)
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, ProfileV2.gutter)
         } else if tab == .wishlist || tab == .favorites, let error = model.errorMessage {
             // この2つは読み込みの失敗で覆わないが、**自分の写真から導くぶん**
             // （撮影地の地点・自分の非公開写真の保存）は欠けるので、一行添える
             Text(error)
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, ProfileV2.gutter)
         }
         // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
         // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
@@ -1005,7 +1068,7 @@ struct MyPageView: View {
             EmptyState(message: L("まだ写真がありません", "No photos yet"))
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
-            LazyVGrid(columns: columns, spacing: 4) {
+            LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
@@ -1041,41 +1104,41 @@ struct MyPageView: View {
 
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
-    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）、
-    /// 複数枚の投稿は右上。**印は読み上げない**（格子の1枚の値として読む）
+    ///
+    /// v2（板 MyPage・2026-10-14）: 縦長 4:5。ピン留めと複数枚は右上の白い印（影つき・写真の上は白だけ）、
+    /// 下書きは写真を 55% に沈めて左下に「下書き」の札（黒 60%・12pt）。**印は読み上げない**
+    /// （格子の1枚の値として読む）
     private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
-        PhotoFrame(photo: photo, corner: 0)
+        let draft = photo.published == false
+        return PhotoFrame(photo: photo, aspect: ProfileV2.gridAspect, corner: 0)
+            .opacity(draft ? 0.55 : 1)
+            .background(WebTheme.card)
             .overlay(alignment: .topTrailing) {
-                if multiple {
-                    Image(systemName: "square.on.square")
-                        .font(.caption.weight(.semibold))
+                HStack(spacing: JPSpace.xxs) {
+                    if model.isPinned(photo.id) {
+                        Image(systemName: "pin.fill")
+                    }
+                    if multiple {
+                        Image(systemName: "square.on.square")
+                    }
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+                .padding(6)
+                .accessibilityHidden(true)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if draft {
+                    Text(L("下書き", "Draft"))
+                        .font(JPFont.caption.weight(.semibold))
                         .foregroundStyle(Color.white)
-                        .shadow(radius: 3)
+                        .padding(.horizontal, JPSpace.xs)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.6), in: Capsule())
                         .padding(6)
                         .accessibilityHidden(true)
                 }
-            }
-            .overlay(alignment: .topLeading) {
-                HStack(spacing: 4) {
-                    if model.isPinned(photo.id) {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 22, height: 22)
-                            .background(Color.black.opacity(0.55), in: Circle())
-                            .accessibilityHidden(true)
-                    }
-                    if photo.published == false {
-                        Text(L("下書き", "Draft"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Color.black.opacity(0.6), in: Capsule())
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding(6)
             }
     }
 }

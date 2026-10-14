@@ -67,23 +67,12 @@ struct TravelRecordView: View {
 
     // MARK: - 眉ラベル
 
+    /// 眉ラベルは土台の `JPEyebrowLine`（v2 の板 02・字は SF 600・字間 0.14em・真鍮 55% から消える線）。
+    /// 2026-10-14 判断: 以前はここに同じ形（11pt regular・字間 2・線 60%）を書いていたので、土台の部品に寄せた
     private var eyebrow: some View {
-        HStack(spacing: 10) {
-            Text(L("旅の記録", "TRAVEL LOG"))
-                .font(.system(size: 11, weight: .regular))
-                .tracking(2)
-                .foregroundStyle(WebTheme.accent)
-                .accessibilityAddTraits(.isHeader)
-            LinearGradient(colors: [WebTheme.accent.opacity(0.6), WebTheme.accent.opacity(0)],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(height: 1)
-                .accessibilityHidden(true)
-            if let firstYear {
-                Text(L("\(String(firstYear)) 年から", "Since \(String(firstYear))"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-            }
-        }
+        JPEyebrowLine(L("旅の記録", "TRAVEL LOG"),
+                      spoken: L("旅の記録", "Travel log"),
+                      trailing: firstYear.map { L("\(String($0)) 年から", "Since \(String($0))") })
     }
 
     // MARK: - 数字
@@ -93,17 +82,18 @@ struct TravelRecordView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(TravelDistance.formatted(kilometers))
-                        .font(JPFont.number(30, weight: .light, relativeTo: .title))
+                        // 板の 30 は Dynamic Type の段の 28 で出す（`JPTypeScale.figureLarge` の注記）
+                        .font(JPFont.figureLarge)
                         .foregroundStyle(Color.white)
                     Text("km")
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text3)
                 }
                 .lineLimit(1)
-                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 30))
+                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: CGFloat(JPTypeScale.figureLarge)))
                 Text(L("写真をつないだ距離", "Distance between photos"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
             }
             .frame(minHeight: WebTheme.minTapTarget, alignment: .top)
             .contentShape(Rectangle())
@@ -119,13 +109,13 @@ struct TravelRecordView: View {
         Button(action: onCountriesTap) {
             VStack(alignment: .trailing, spacing: 5) {
                 Text("\(countries.count)")
-                    .font(JPFont.number(20, weight: .light, relativeTo: .title3))
+                    .font(JPFont.number(JPTypeScale.figureMedium, weight: .light, relativeTo: .title3))
                     .foregroundStyle(Color.white)
-                    // 距離の数字（30pt）と下の線をそろえる
+                    // 距離の数字（28pt）と下の線をそろえる
                     .padding(.top, 8)
                 Text(L("か国・地域", countries.count == 1 ? "country or region" : "countries & regions"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
                 Text(TravelRoute.countriesLine(countries))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint.opacity(0.7))

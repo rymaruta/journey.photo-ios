@@ -45,13 +45,37 @@ struct AlbumsView: View {
     // （"unable to type-check this expression in reasonable time"）。
     private var list: some View {
         List {
+            // 板 v2 Albums: 明朝の題と一行の説明 → 作る（主ボタン）→ 招待リンクから参加の札 → 一覧
+            header
+                .albumsRow()
             statusRow
+            if !model.albums.isEmpty || !joinedOthers.isEmpty {
+                createButton
+                    .albumsRow()
+            }
+            joinCard
+                .albumsRow()
+            if !model.albums.isEmpty {
+                JPEyebrowLine(L("作ったアルバム", "Your albums"))
+                    .padding(.top, JPSpace.xs)
+                    .albumsRow()
+            }
             ForEach(model.albums) { album in
                 row(album)
+                    .albumsRow(divider: true)
             }
             joinedSection
         }
+        .listStyle(.plain)
         .webScreen()
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 題は下の明朝の見出しが受け持つ（板 v2）。中央は空けておく（戻る文字と読み上げには題を持つ）
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
+            }
+        }
         .toolbar { addMenu }
         .alert(L("名前を変える", "Rename"), isPresented: $showRename) {
             TextField(L("名前", "Name"), text: $renameTitle)
@@ -109,11 +133,111 @@ struct AlbumsView: View {
     private var statusRow: some View {
         if let notice = model.notice {
             Text(notice).foregroundStyle(WebTheme.danger).font(.callout)
+                .albumsRow()
         }
         if let message = model.errorMessage {
-            Text(message).foregroundStyle(WebTheme.danger).font(.callout)
-        } else if model.albums.isEmpty && !model.isLoading {
-            Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
+            // v2 Components 06: 失敗は共通の並び（何が起きたか → もう一度）
+            ErrorBanner(message: message, isBusy: model.isLoading) {
+                Task { await model.load(environment: environment) }
+            }
+            .albumsRow()
+        } else if model.albums.isEmpty && joinedOthers.isEmpty && !model.isLoading {
+            // 板 v2 Albums（空）: 何が無いか → どうすれば埋まるか → 作る（写真の無い画面の主ボタン＝真鍮）
+            EmptyState(title: L("まだアルバムがありません", "No albums yet"),
+                       message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
+                                  "Create an album and send the invite link — your companions' photos gather here."),
+                       actionTitle: L("アルバムを作る", "New album")) { showCreate = true }
+                .albumsRow()
+        } else if model.albums.isEmpty && model.isLoading {
+            JPLoadingState(kind: .rows)
+                .albumsRow()
+        }
+    }
+
+    /// 自分が作ったアルバムと重ならない、参加しているアルバム（`joinedSection` と同じ絞り）
+    private var joinedOthers: [JoinedAlbumsStore.Entry] {
+        let mine = Set(model.albums.map { $0.id })
+        return joined.entries.filter { !mine.contains($0.id) }
+    }
+
+    /// 見出し（板 v2 Albums: 明朝の題・13 の text-2 の説明）。
+    /// 板の題は明朝 30 だが、字の段に 30 は無いので画面の題の 26（`JPFont.screenTitle`）
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Labels.Navigation.albums)
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityAddTraits(.isHeader)
+            Text(L("招待リンクで、旅の仲間と写真を集めます", "Collect photos with your travel companions via an invite link"))
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, JPSpace.xs)
+    }
+
+    /// 「アルバムを作る」。**写真の無い画面の主ボタン＝真鍮の塗り＋墨**（`JPPillStyle.main(onPhoto: false)`・
+    /// CLAUDE.md の owner の好み）。2026-10-14 判断: 板 v2 は白（アルバムの組み絵がある画面）だが、
+    /// この一覧はアルバムの写真を持っていない（`GET /albums` は表紙を返さない）ので写真の無い画面
+    private var createButton: some View {
+        Button { showCreate = true } label: {
+            Label(L("アルバムを作る", "New album"), systemImage: "plus")
+                .jpPillButton(.main(onPhoto: false))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("albums.create")
+    }
+
+    /// 招待リンクから参加（板 v2 Albums: 黒地の札の中に欄と「開く」）。以前は右上の「＋」の中の
+    /// 入力ダイアログだけで、受け取ったリンクの貼り先が見えなかった。ダイアログ（`showJoin`）も残す
+    private var joinCard: some View {
+        JPCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(L("招待リンクから参加", "Join with a link"), systemImage: "link")
+                    .font(JPFont.body.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                HStack(spacing: JPSpace.xs) {
+                    TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
+                        .font(.callout)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .submitLabel(.go)
+                        .onSubmit { openInvite() }
+                        .padding(.horizontal, JPSpace.s)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.s))
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.s).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                        .accessibilityLabel(L("リンクか招待コード", "Link or invite code"))
+                    Button { openInvite() } label: {
+                        Text(L("開く", "Open"))
+                            .font(JPFont.bodyEmphasis)
+                            .foregroundStyle(WebTheme.foreground)
+                            .padding(.horizontal, 18)
+                            .frame(minHeight: JPHeight.secondaryButton)
+                            .overlay(Capsule().strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
+                            .contentShape(Capsule())
+                    }
+                    // 行の中に押せるもの（欄とボタン）が2つある
+                    .buttonStyle(.borderless)
+                    .disabled(inviteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Text(L("受け取ったリンク（https://journey-photo.com/j?t=…）をそのまま貼れます", "You can paste the link you received as-is."))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            }
+            .padding(14)
+        }
+    }
+
+    /// 貼ったリンクか招待コードを開く。**押した瞬間に参加させない**——何のアルバムか見せてから聞く
+    /// （Web は `/j?t=` が中身を見せてから聞く）。ダイアログの「開く」と同じ1本
+    private func openInvite() {
+        let token = InviteLink.token(from: inviteText)
+        inviteText = ""
+        openedToken = token.isEmpty ? nil : InviteToken(id: token)
+        if openedToken == nil {
+            model.flash(L("招待リンクを読み取れませんでした", "Couldn't read that invite link"))
         }
     }
 
@@ -125,23 +249,38 @@ struct AlbumsView: View {
         // **自分が作ったアルバムとは重ねない。** 自分のリンクを自分で開くと
         // サーバーは 200（`already: true`）を返すので、控えにも入る
         // ——弾かないと同じアルバムが上下に2行出る（投稿画面は弾いている）
-        let mine = Set(model.albums.map { $0.id })
-        let others = joined.entries.filter { !mine.contains($0.id) }
+        let others = joinedOthers
         if !others.isEmpty {
-            Section(L("参加しているアルバム", "Albums you joined")) {
+            // 板 v2 Albums: 節の見出しは眉（真鍮＋消える線）
+            JPEyebrowLine(L("参加しているアルバム", "Albums you joined"))
+                .padding(.top, JPSpace.xs)
+                .albumsRow()
+            Section {
                 ForEach(others) { entry in
                     Button {
                         openedToken = InviteToken(id: entry.token)
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.title.isEmpty
-                                 ? L("無題のアルバム", "Untitled album") : entry.title)
-                            Text(L("招待リンクから参加", "Joined with a link"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: JPSpace.s) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.title.isEmpty
+                                     ? L("無題のアルバム", "Untitled album") : entry.title)
+                                    .font(JPFont.rowTitle)
+                                    .foregroundStyle(entry.title.isEmpty ? WebTheme.text2 : WebTheme.foreground)
+                                Text(L("招待リンクから参加", "Joined with a link"))
+                                    .font(JPFont.caption)
+                                    .foregroundStyle(WebTheme.text3)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.35))
+                                .accessibilityHidden(true)
                         }
+                        .frame(minHeight: JPHeight.tallRow)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .albumsRow(divider: true)
                     .swipeActions {
                         // **抜けるのではなく、この端末の控えを消すだけ。**
                         // サーバーに「抜ける」口は無い（Web にも無い）
@@ -157,15 +296,27 @@ struct AlbumsView: View {
         }
     }
 
+    /// 1つのアルバム（板 v2 Albums: 明朝 18 の名前・人数は等幅の数字・右に「アルバムの操作」の丸）。
+    /// 2026-10-14 判断: 板の左の3枚の組み絵は出さない——`GET /albums` が表紙の写真を返さない
+    /// （サーバーに触らない段）。名前を変える・消すは払いと右の「…」の両方から
     private func row(_ album: Album) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
-            // 英語は1人なら単数（「1 members」にしない）
-            Text(L("\(album.members) 人", album.members == 1 ? "1 member" : "\(album.members) members"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            HStack(alignment: .top, spacing: JPSpace.s) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(album.title.isEmpty ? WebTheme.text2 : WebTheme.foreground)
+                    // 英語は1人なら単数（「1 members」にしない）
+                    Text(L("\(album.members) 人", album.members == 1 ? "1 member" : "\(album.members) members"))
+                        .font(JPFont.meta)
+                        .foregroundStyle(WebTheme.text3)
+                }
+                Spacer(minLength: 0)
+                albumMenu(album)
+            }
             inviteControls(album)
         }
+        .padding(.vertical, JPSpace.s)
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
         // 戻す口は無い）。削除のボタンを押したときだけ消す
         .swipeActions(allowsFullSwipe: false) {
@@ -186,6 +337,34 @@ struct AlbumsView: View {
         }
     }
 
+    /// 行の右の「アルバムの操作」（板 v2 Albums の「…」の丸・44pt）。払いの操作と同じ2つ
+    private func albumMenu(_ album: Album) -> some View {
+        Menu {
+            Button {
+                renameTitle = album.title
+                renamingId = album.id
+                showRename = true
+            } label: {
+                Label(L("名前を変える", "Rename"), systemImage: "pencil")
+            }
+            // **押しただけでは消さない。** 確認を出す（消すのは確認の中）
+            Button(role: .destructive) {
+                deleting = album
+                showDelete = true
+            } label: {
+                Label(Labels.Common.delete, systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(L("アルバムの操作", "Album actions"))
+    }
+
     /// 🔴 **期限が切れたリンクは共有させない。** サーバーは切れた招待も一覧に
     /// 返し続けるので、以前はトークンがあるだけで「共有」を出していた——送った
     /// 相手が開くと「期限が切れています」で断られる。切れていたら同じ場所に
@@ -201,7 +380,9 @@ struct AlbumsView: View {
                     // （アプリを入れていない人にも開ける）
                     ShareLink(item: model.inviteURL(token: token)) {
                         Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
-                            .font(.caption)
+                            .font(JPFont.footnote.weight(.semibold))
+                            // 黒地の上の手がかり（リンク）は真鍮（CLAUDE.md の owner の好み）
+                            .foregroundStyle(WebTheme.accent)
                             // 押す場所はラベルの内側で広げる（外側の余白は押せない）
                             .webTappable()
                     }
@@ -216,7 +397,8 @@ struct AlbumsView: View {
                 } label: {
                     Text(expiry == .expired ? L("招待リンクを作り直す", "Recreate invite link")
                                             : L("作り直す", "Recreate"))
-                        .font(.caption)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
                         // 押す場所は 44pt（隣の「取り消す」と押し間違えない）。**ラベルの
                         // 内側で**広げる——ボタンの外側に付けた余白は押せない
                         .webTappable()
@@ -228,7 +410,8 @@ struct AlbumsView: View {
                     Task { await model.revokeInvite(album.id, environment: environment) }
                 } label: {
                     Text(L("取り消す", "Revoke"))
-                        .font(.caption)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
                         .webTappable()
                 }
                 .disabled(model.inviteWorking.contains(album.id))
@@ -245,25 +428,26 @@ struct AlbumsView: View {
             switch expiry {
             case .valid(let until):
                 Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
             case .expired:
                 Text(L("招待リンクの期限が切れています", "This invite link has expired"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
             case .unknown:
                 EmptyView()
             }
             // **前のリンクが死ぬことを書く**（Web と同じ文）。書かないと、配ったリンクが黙って切れる
             Text(L("作り直すと、前のリンクは使えなくなります。", "Recreating stops the previous link from working."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
         } else {
             Button {
                 Task { await model.createInvite(album.id, environment: environment) }
             } label: {
                 Text(L("招待リンクを作る", "Create invite link"))
-                    .font(.caption)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.accent)
                     // 押す場所は 44pt（上の3つと同じ。ここだけ文字の高さしか押せなかった）
                     .webTappable()
             }
@@ -284,7 +468,7 @@ struct AlbumsView: View {
     private func inviteDoneLine(_ album: Album) -> some View {
         if let done = model.inviteDone, done.albumId == album.id {
             Text(done.message)
-                .font(.caption)
+                .font(JPFont.caption)
                 .foregroundStyle(WebTheme.foreground)
         }
     }
@@ -304,16 +488,8 @@ struct AlbumsView: View {
     @ViewBuilder
     private var joinAlertButtons: some View {
         TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
-        Button(L("開く", "Open")) {
-            // **押した瞬間に参加させない。** 何のアルバムか分からないまま
-            // 参加することになる（Web は `/j?t=` が中身を見せてから聞く）
-            let token = InviteLink.token(from: inviteText)
-            inviteText = ""
-            openedToken = token.isEmpty ? nil : InviteToken(id: token)
-            if openedToken == nil {
-                model.flash(L("招待リンクを読み取れませんでした", "Couldn't read that invite link"))
-            }
-        }
+        // 札の「開く」と同じ1本（押した瞬間に参加させない・`openInvite`）
+        Button(L("開く", "Open")) { openInvite() }
         Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
     }
 
@@ -524,5 +700,22 @@ final class AlbumsViewModel: ObservableObject {
             guard myEra == era else { return }
             flash((error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke"))
         }
+    }
+}
+
+private extension View {
+    /// アルバムの一覧の行の作法（板 v2 Albums: 左右 16・地は黒・系統の区切り線は出さない）。
+    /// `divider` の行だけ下に白 8% の線（板の `.al`）
+    func albumsRow(divider: Bool = false) -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                if divider {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: ProfileV2.gutter, bottom: 4, trailing: ProfileV2.gutter))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 }
