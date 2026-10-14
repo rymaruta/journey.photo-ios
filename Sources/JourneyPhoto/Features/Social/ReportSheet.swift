@@ -12,6 +12,17 @@ struct ReportSheet: View {
     /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
     /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
     var comment: ModerationService.ReportedComment? = nil
+    /// 通報する写真の小さな札（v2 の板 Report・2026-10-14: 「通報する写真を上に小さく出して取り違えを防ぐ」）。
+    /// 写真の詳細から開いたときだけ渡す。無ければ札を出さない（ホームの格子・ストーリーからの通報）
+    var subject: Subject? = nil
+
+    /// 通報する写真の札の中身
+    struct Subject: Equatable {
+        let title: String
+        let imageURL: URL?
+        /// 「霧の人 · @kiri_photo」。分からなければ nil
+        let byline: String?
+    }
 
     /// 「この人をブロックする」の相手（コメントの通報ならコメントを書いた人）
     private var blockTarget: String? { comment?.authorId ?? ownerId }
@@ -42,6 +53,9 @@ struct ReportSheet: View {
                     if done {
                         receipt
                     } else {
+                        if comment == nil, let subject {
+                            subjectCard(subject)
+                        }
                         if let comment {
                             // どのコメントを通報するか（押し間違いに気づけるように）
                             Text(L("\(comment.authorName)さんのコメント：「\(comment.text)」",
@@ -95,37 +109,82 @@ struct ReportSheet: View {
 
     private var header: some View {
         HStack {
+            // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
             Text(comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
-                .font(JPFont.display(24, relativeTo: .title2))
+                .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             Button { dismiss() } label: {
+                // v2 の板: ガラスの丸（44pt）の ×
                 Image(systemName: "xmark")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(WebTheme.foreground)
-                    .webTappable()
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .jpGlass(in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(isWorking)
             .accessibilityLabel(Labels.Common.close)
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 8)
-        .padding(.top, 10)
+        .padding(.leading, JPSpace.l)
+        .padding(.trailing, JPSpace.s)
+        .padding(.top, JPSpace.s)
     }
 
+    /// 理由（v2 の板 Report: 「理由（1つ）」の見出しの下に、左に丸の行を白 8% の線で区切って並べる。札にしない）。
+    /// 選んだ丸は**真鍮の太い輪**（黒地の上の合図・形でも伝える）。読み上げは「選択中」
     private var reasons: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            JPSectionTitle(L("理由", "Reason"))
-            JPCard(fill: WebTheme.surface) {
-                ForEach(Array(ModerationService.ReportReason.allCases.enumerated()), id: \.element) { index, item in
-                    if index > 0 { JPCardDivider() }
-                    JPRadioRow(title: item.label, selected: reason == item) { reason = item }
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            Text(L("理由（1つ）", "Reason (choose one)"))
+                .font(JPFont.caption.weight(.medium))
+                .foregroundStyle(WebTheme.text2)
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0) {
+                let all = ModerationService.ReportReason.allCases
+                ForEach(Array(all.enumerated()), id: \.element) { index, item in
+                    ReportReasonRow(title: item.label, selected: reason == item,
+                                    isLast: index == all.count - 1) { reason = item }
                 }
             }
         }
     }
+
+    /// 通報する写真の小さな札（v2 の板: 44 の写真・題 14 の太字・作者 12 の text-3）
+    private func subjectCard(_ subject: Subject) -> some View {
+        JPCard(fill: WebTheme.surface) {
+            HStack(spacing: JPSpace.s) {
+                RemoteImage(url: subject.imageURL)
+                    .frame(width: Self.subjectThumb, height: Self.subjectThumb)
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    if !subject.title.isEmpty {
+                        Text(subject.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.text)
+                            .lineLimit(1)
+                    }
+                    if let byline = subject.byline {
+                        Text(byline)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L("通報する写真: ", "Reporting: ") + [subject.title, subject.byline ?? ""]
+            .filter { !$0.isEmpty }.joined(separator: PhotoMetaLine.separator))
+        .accessibilityIdentifier("report.subject")
+    }
+
+    /// 札の写真の大きさ（v2 の板の 44）
+    nonisolated static let subjectThumb: CGFloat = 44
 
     /// 受け付けたあと、ブロックだけ落ちたとき（閉じずに理由を読ませる）
     private var receipt: some View {
@@ -158,15 +217,16 @@ struct ReportSheet: View {
                         Text(done ? Labels.Common.close : L("通報する", "Report"))
                     }
                 }
-                // 写真の無い画面の主ボタンは真鍮の塗り（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
-                .jpPillButton(.accent)
+                // 写真の無い画面の主ボタンは真鍮の塗り（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29）・
+                // v2 の板も真鍮の塗り）。決まりは `JPPillStyle.main(onPhoto:)` で引く
+                .jpPillButton(JPPillStyle.main(onPhoto: false))
             }
             .buttonStyle(.plain)
             .disabled(isWorking)
             // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
             Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .multilineTextAlignment(.center)
         }
         .jpBottomBar()
@@ -222,5 +282,48 @@ struct ReportSheet: View {
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")
         }
+    }
+}
+
+/// 通報の理由の1行（v2 の板 Report・2026-10-14）。**左に丸**、選ぶと真鍮の太い輪（輪の幅 6 で中が小さく残る）。
+/// 行の高さは 48（押せる 44 より大きい）、行の間は白 8% の線（最後の行は引かない）。
+///
+/// 共通の `JPRadioRow`（右に白い丸・札の中の行）は設定などが使っているので変えない——v2 の通報の板だけの形
+private struct ReportReasonRow: View {
+
+    let title: String
+    let selected: Bool
+    let isLast: Bool
+    let action: () -> Void
+
+    /// 行の高さ（v2 の板の 48）
+    static let height: CGFloat = JPHeight.field
+    /// 丸の大きさと、選んだときの輪の幅（v2 の板: 20・6）
+    static let ring: CGFloat = 20
+    static let selectedRingWidth: CGFloat = 6
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: JPSpace.s) {
+                Circle()
+                    .strokeBorder(selected ? WebTheme.accent : Color.white.opacity(0.35),
+                                  lineWidth: selected ? Self.selectedRingWidth : 1.5)
+                    .frame(width: Self.ring, height: Self.ring)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: Self.height)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                if !isLast {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
