@@ -26,17 +26,55 @@ enum WebTheme {
     static let text = Color.white.opacity(0.95)
     /// 副次の文字。`--muted`
     static let muted = Color.white.opacity(0.82)
-    /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`
+    /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`。
+    ///
+    /// 🔴 **白の透過のまま持つ。** 写真の上（ストーリー・写真の詳細）でも使っていて、不透明の灰にすると
+    /// 明るい写真の上で沈む（2026-10-14 のレビュー: 白地＋黒 65% の影で 4.56 → 3.53）。
+    /// 黒地の上の v2 の灰は `text2`・`text3`
     static let muted2 = Color.white.opacity(0.72)
     static let faint = Color.white.opacity(0.6)
+    /// **v2 の text-2（#B8B8B8・黒の上 10.6:1）。黒地・札の上だけ**——写真の上は `muted2`（透過）
+    static let text2 = rgb(BrandPalette.text2)
+    /// **v2 の text-3（#9A9A9A・黒の上 7.46:1）。黒地・札の上だけ**——写真の上は `faint`（透過）
+    static let text3 = rgb(BrandPalette.text3)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
     static let placeholder = Color.white.opacity(0.5)
 
     /// 境目（装飾の髪線）。**部品の縁には使わない**（黒の上で 1.27）
     static let border = Color.white.opacity(0.12)
+    /// **v2 の区切り線（白 8%）。** 札の縁・札の中の行の間・画面の節の間
+    static let hairline = Color.white.opacity(0.08)
+    /// **v2 の線（白 14%）。** 線のボタン（副ボタン・「もう一度」）の縁だけ。
+    /// 押せることは字で分かるので、縁は 3:1 を要しない（入力欄の縁は `outline`）
+    static let line = Color.white.opacity(0.14)
+
+    /// **v2 の札の面（surface-1・#0E0E0F）。** `JPCard` の地。
+    /// ⚠️ いまは同じ画面に白 7% の `surface` の札も残っている（マイページ・探す・投稿）。
+    /// 画面ごとの作り替え（v2 の次の段）でこちらへそろえる
+    static let card = rgb(BrandPalette.surface)
+    /// **v2 のシート・入力欄の地（surface-2・#161617）。** 通報のシートの地。
+    /// この上の札は `card` だと沈んで見えるので、`JPCard(fill: surface)` で浮かせる
+    static let sheet = rgb(BrandPalette.surface2)
     /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
     static let outline = rgb(BrandPalette.outline)
+
+    // MARK: 面の段（`sheet` より上・値と使う所は `BrandPalette.surface3`〜`surface8`）
+    //
+    // ⚠️ `surface`（白 7% の透過）とは別物。こちらは不透明の灰の段（2026-10-14 判断: 散らばっていた値に名前を付けた）
+
+    /// #1A1A1C（一段浮かせた小さな面・`RaisedTile`）
+    static let surface3 = rgb(BrandPalette.surface3)
+    /// #1C1C1E（骨格の灰・返信欄を書いている間）
+    static let surface4 = rgb(BrandPalette.surface4)
+    /// #1E1E20（ストーリーのメニューのシート）
+    static let surface5 = rgb(BrandPalette.surface5)
+    /// #28282A（ストーリーの削除の確認）
+    static let surface6 = rgb(BrandPalette.surface6)
+    /// #2A2A2C（投稿の写真の「外す」の丸）
+    static let surface7 = rgb(BrandPalette.surface7)
+    /// #2C2C2E（投稿のセグメントの選んだ側）
+    static let surface8 = rgb(BrandPalette.surface8)
 
     // MARK: 真鍮（合図と手がかり）
 
@@ -49,6 +87,8 @@ enum WebTheme {
     static let accentDeep = rgb(BrandPalette.accentDeep)
     /// 案内の帯（今日のテーマ）。選択状態は担わない
     static let accentSoft = rgb(BrandPalette.accentSoft)
+    /// 輪・メダル・Pro の印の金属の光（v2 の brass-hi → 真鍮 → brass-lo）。**字には使わない**
+    static let accentMetal = [rgb(BrandPalette.accentHighlight), accent, rgb(BrandPalette.accentShadow)]
 
     // MARK: 意味の色
 
@@ -66,12 +106,15 @@ enum WebTheme {
               blue: Double(hex & 0xFF) / 255)
     }
 
-    /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 92%）と、その上の墨。
-    /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ
-    static let accentBackground = Color.white.opacity(0.92)
+    /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 94%）と、その上の墨。
+    /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ。
+    /// **v2 で 92% → 94%**（黒に重ねた値が `BrandPalette.primary`・比はそちらで見張る）
+    nonisolated static let primaryFillOpacity = 0.94
+    static let accentBackground = Color.white.opacity(primaryFillOpacity)
     static let accentText = rgb(BrandPalette.ink)
 
-    /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）
+    /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）。
+    /// ⚠️ 札の地にも使っている所がある（`JPCard` は v2 の `card`）。次の段でそろえる
     static let surface = Color.white.opacity(0.07)
     /// 少し浮かせる面（ピル・カード。`bg-black/30` ＋ `ring-white/10`）
     static let raised = Color.white.opacity(0.10)

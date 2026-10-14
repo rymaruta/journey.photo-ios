@@ -319,7 +319,7 @@ final class TripBookFactsTests: XCTestCase {
         let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripBookView.swift"),
                               encoding: .utf8)
         XCTAssertTrue(view.contains("Text(LocationMatch.display(stop.place))"), "道のりの札が住所のまま")
-        XCTAssertTrue(view.contains("Text(LocationMatch.display(day.place))"), "日の見出しが住所のまま")
+        XCTAssertTrue(view.contains("title: day.place.isEmpty ? nil : LocationMatch.display(day.place)"), "日の見出しが住所のまま")
         XCTAssertTrue(view.contains("Text(LocationMatch.display(place))"), "写真の行が住所のまま")
         XCTAssertTrue(view.contains("place != dayPlace"), "同じ地名の比べは元の文字で")
     }

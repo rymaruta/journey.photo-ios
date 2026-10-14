@@ -105,9 +105,8 @@ struct NameSideBadgeView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 12)
                     }
-                    Text(L("持っているバッジ", "Your badges"))
-                        .jpEyebrow()
-                        .foregroundStyle(WebTheme.accent)
+                    // 板 v2 BadgePicker: 節の見出しは眉（真鍮＋消える線・土台の `JPEyebrowLine`）
+                    JPEyebrowLine(L("持っているバッジ", "Your badges"))
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
                     badgeGrid
@@ -129,6 +128,13 @@ struct NameSideBadgeView: View {
             .toolbarBackground(NameSideChoice.sheetBackground, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                // 板 v2 BadgePicker: 題は明朝 22（`JPFont.cardTitle`）
+                ToolbarItem(placement: .principal) {
+                    Text(L("名前の横", "Next to your name"))
+                        .font(JPFont.cardTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
@@ -172,12 +178,13 @@ struct NameSideBadgeView: View {
 
     // MARK: - 下見
 
-    /// 板: 「プロフィールでの見え方」。名前は明朝 26 のまま（実際の大きさ）
+    /// 板 v2: 「プロフィールでの見え方」。**黒地の札**（マイページと同じ地で、実寸の名前・印を見せる）。
+    /// 名前は明朝 26 のまま（実際の大きさ）。見出しは 12 の text-3（板 v2 の `.cap`）
     private var preview: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(L("プロフィールでの見え方", "How it looks on your profile"))
-                .jpEyebrow()
-                .foregroundStyle(WebTheme.accent)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
             HStack(spacing: 4) {
                 Text(profile.name)
                     .font(JPFont.display(26, relativeTo: .title))
@@ -191,14 +198,13 @@ struct NameSideBadgeView: View {
             .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
             Text(selectedBadge.map { BadgeCatalog.fullName($0.key, tier: $0.tier) }
                  ?? L("バッジを出さない", "No badge"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, JPSpace.m)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .jpCardFace(fill: WebTheme.background)
         .accessibilityElement(children: .combine)
     }
 
@@ -264,13 +270,12 @@ struct NameSideBadgeView: View {
                                         @ViewBuilder options: () -> Options) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted)
-            HStack(spacing: 6) {
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+            // 板 v2: 選択肢は1つずつの札（間 8）。入れ物の地は敷かない
+            HStack(spacing: JPSpace.xs) {
                 options()
             }
-            .padding(3)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -281,13 +286,15 @@ struct NameSideBadgeView: View {
             content()
                 .lineLimit(1)
                 .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 12))
-                .foregroundStyle(on ? Color.white : WebTheme.muted)
+                .foregroundStyle(on ? Color.white : WebTheme.text2)
                 .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                // 板 v2: 48・角 12・選んでいないものは白 8% の縁、選んだものは真鍮の 2pt の縁（形でも分かる）
+                .frame(maxWidth: .infinity, minHeight: JPHeight.field)
                 .background(on ? NameSideChoice.chosenFill : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 1))
+                            in: RoundedRectangle(cornerRadius: JPRadius.field))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+                    .strokeBorder(on ? WebTheme.accent : WebTheme.hairline,
+                                  lineWidth: on ? JPStroke.emphasis : JPStroke.hairline))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -332,7 +339,7 @@ struct NameSideBadgeView: View {
                 .overlay(Circle().strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 2))
             Text(BadgeCatalog.name(badge.key))
                 .font(.caption.weight(on ? .semibold : .regular))
-                .foregroundStyle(on ? Color.white : WebTheme.muted)
+                .foregroundStyle(on ? Color.white : WebTheme.text2)
                 .lineLimit(1)
                 .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 12))
         }
@@ -358,7 +365,7 @@ struct NameSideBadgeView: View {
                     .overlay(Circle().strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 2))
                 Text(L("なし", "None"))
                     .font(.caption.weight(on ? .semibold : .regular))
-                    .foregroundStyle(on ? Color.white : WebTheme.muted)
+                    .foregroundStyle(on ? Color.white : WebTheme.text2)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, minHeight: 88)
@@ -501,17 +508,11 @@ struct NameSideBadgeView: View {
                     .multilineTextAlignment(.center)
             }
             Button { Task { await save() } } label: {
-                ZStack {
-                    Text(L("決める", "Done"))
-                        .font(.body.weight(.bold))
-                        .opacity(saving ? 0 : 1)
-                    if saving { ProgressView().tint(WebTheme.accentText) }
-                }
-                .foregroundStyle(WebTheme.accentText)
-                .frame(maxWidth: .infinity, minHeight: 50)
-                // 写真の無い画面の主ボタンは真鍮の塗りに墨の字（CLAUDE.md）
-                .background(WebTheme.accentFill, in: Capsule())
-                .contentShape(Capsule())
+                // 写真の無い画面の主ボタンは真鍮の塗りに墨の字（CLAUDE.md・土台の `JPPillStyle.main`）
+                Text(L("決める", "Done"))
+                    .opacity(saving ? 0 : 1)
+                    .jpPillButton(.main(onPhoto: false))
+                    .overlay { if saving { ProgressView().tint(WebTheme.accentText) } }
             }
             .buttonStyle(.plain)
             .disabled(saving || !refreshed)
@@ -520,8 +521,8 @@ struct NameSideBadgeView: View {
             // 板の文言（第2段階から Pro があるので、Pro でない人にも同じ文を出す）
             Text(L("バッジは1つ（Pro でも1つ）。Pro マークは Pro の間だけ出ます",
                    "One badge (Pro included). The Pro mark shows while you're Pro."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 20)

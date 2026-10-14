@@ -60,7 +60,8 @@ struct StoryInsightsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: JPSpace.m) {
+                header
                 if let refreshNotice {
                     Text(refreshNotice)
                         .font(.footnote)
@@ -76,27 +77,16 @@ struct StoryInsightsView: View {
                 tabs
                 viewerList
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xxs)
+            .padding(.bottom, JPSpace.xl)
         }
-        .webScreen()
+        // v2 StoryInsights: シートの地は札の面（surface-1 #0E0E0F）。写真の上ではないので不透明の灰を使う
+        .scrollContentBackground(.hidden)
+        .background(WebTheme.card)
+        .toolbarBackground(WebTheme.card, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // 題と、下に「9月24日 18:20に投稿」（板 26）
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(L("ストーリーの反応", "Story insights"))
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.white)
-                    if let posted = StoryPlayback.postedAt(story.createdAt) {
-                        Text(posted)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                    }
-                }
-            }
-        }
         .onAppear {
             switch front.appear() {
             case .first:
@@ -119,82 +109,109 @@ struct StoryInsightsView: View {
         .refreshable { await load(pulled: true) }
     }
 
-    // MARK: - 写真と数
+    // MARK: - 見出し・写真と数
 
-    /// 左に縦長の写真（72×112）、右に3つの数を1枚の格子で（板 26）
-    private var summary: some View {
-        HStack(spacing: 12) {
-            thumbnail
-                .frame(width: 72, height: 112)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            HStack(spacing: 1) {
-                // 2026-10-07 判断: 数は**ブロックした人を落としてから**数える（下の一覧と同じ `dropped`）。
-                // 落とす前の数だと、一覧に居ない人の分まで数えて合わなかった
-                countCell(L("閲覧", "Views"), value: viewersLoaded ? dropped.viewers(viewers).count : nil)
-                countCell(L("いいね", "Likes"), value: repliesLoaded ? dropped.replies(replies).reactionCount : nil)
-                countCell(L("返信", "Replies"), value: repliesLoaded ? dropped.replies(replies).textReplies.count : nil)
+    /// v2: 左に縦長の写真（48×64・角 8）、右に明朝 22 の「ストーリーの反応」と
+    /// 「9月24日 18:20に投稿 · あと 22 時間」（12・text-3・等幅の数字）
+    private var header: some View {
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            StoryPoster(story: story)
+                .frame(width: Self.thumbSize.width, height: Self.thumbSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("ストーリーの反応", "Story insights"))
+                    .font(JPFont.cardTitle)
+                    .foregroundStyle(WebTheme.text)
+                    .accessibilityAddTraits(.isHeader)
+                if let line = postedLine {
+                    Text(line)
+                        .font(JPFont.meta)
+                        .foregroundStyle(WebTheme.text3)
+                }
             }
-            .background(Color.white.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .padding(.top, JPSpace.xxs)
+            Spacer(minLength: 0)
         }
     }
 
-    /// 写真ならそのまま、動画は記号（`StoryPoster`）
-    private var thumbnail: some View {
-        StoryPoster(story: story)
+    /// 「9月24日 18:20に投稿 · あと 22 時間」。期限が分からなければ投稿の時刻だけ
+    private var postedLine: String? {
+        let parts = [StoryPlayback.postedAt(story.createdAt),
+                     StoryPlayback.remaining(until: story.expiresAt)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// 写真の大きさ（板 48×64）
+    static let thumbSize = (width: CGFloat(48), height: CGFloat(64))
+
+    /// 3つの数を1枚の升目で（v2: 縁は白 8%・角 14・升の間も白 8% の線・数は SF 300 の 28）
+    private var summary: some View {
+        HStack(spacing: 0) {
+            // 2026-10-07 判断: 数は**ブロックした人を落としてから**数える（下の一覧と同じ `dropped`）。
+            // 落とす前の数だと、一覧に居ない人の分まで数えて合わなかった
+            countCell(L("閲覧", "Views"), value: viewersLoaded ? dropped.viewers(viewers).count : nil)
+            InsightsCellDivider()
+            countCell(L("いいね", "Likes"), value: repliesLoaded ? dropped.replies(replies).reactionCount : nil)
+            InsightsCellDivider()
+            countCell(L("返信", "Replies"), value: repliesLoaded ? dropped.replies(replies).textReplies.count : nil)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 
     /// - Parameter value: nil は「読めていない」。**0 と書かない**
     private func countCell(_ label: String, value: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(value.map { "\($0)" } ?? "—")
-                .font(JPFont.statNumber)
+                .font(JPFont.figureLarge)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundStyle(.white)
+                .foregroundStyle(WebTheme.text)
             Text(label)
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .background(Self.cellColor)
+        .padding(.horizontal, JPSpace.m)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
     }
-
-    /// 数の升の地（板の `#0b0b0c`）
-    private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)
 
     // MARK: - 絞り
 
-    /// 閲覧者 / リアクション。**下線のタブ**（板 26）。数は上の格子にある
+    /// 閲覧者 / リアクション。**下線のタブ**（v2: 左寄せで間 22・15pt・選んだら真鍮の字と 2 の下線＝
+    /// CLAUDE.md の「選んでいるタブは真鍮」）。数は上の格子にある
     private var tabs: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 22) {
             ForEach(Scope.allCases) { option in
                 let selected = scope == option
                 Button {
                     scope = option
                 } label: {
                     Text(option.label)
-                        .font(.footnote.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Color.white : WebTheme.faint)
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .font(JPFont.body.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(Self.tabColor(selected: selected))
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .overlay(alignment: .bottom) {
-                            Rectangle().fill(selected ? Color.white : Color.clear).frame(height: 2)
+                            Rectangle().fill(selected ? WebTheme.accent : Color.clear).frame(height: JPStroke.emphasis)
                         }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
+            Spacer(minLength: 0)
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
     }
 
+    /// タブの字の色（選んだら真鍮・選んでいなければ text-3）
+    @MainActor static func tabColor(selected: Bool) -> Color {
+        selected ? WebTheme.accent : WebTheme.text3
+    }
     // MARK: - 見た人
 
     @ViewBuilder
@@ -243,26 +260,21 @@ struct StoryInsightsView: View {
             NavigationLink {
                 UserProfileView(userId: viewer.userId)
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: JPSpace.s) {
                     RemoteImage(url: UserProfile.profileAssetURL(
                         userId: viewer.userId, suffix: nil, cacheBust: nil),
                                 placeholderSymbol: "person.crop.circle.fill")
-                        .frame(width: 44, height: 44)
+                        .frame(width: Self.avatarSize, height: Self.avatarSize)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
                         Text(viewer.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                        if let ago = ago(from: viewer.at) {
-                            Text(ago)
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.faint)
-                        }
-                        // いいねと返信の両方をした人は、返信の文を名前の下に
-                        if hasReaction(from: viewer.userId), let reply = replyText(from: viewer.userId) {
-                            Text("「\(reply)」")
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.muted2)
+                            .font(JPFont.bodyEmphasis)
+                            .foregroundStyle(WebTheme.text)
+                        // v2: 時刻と返信の一言を1行に（「3時間前 · 「どこですか？」」）
+                        if let line = subline(for: viewer) {
+                            Text(line)
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.text3)
                                 .lineLimit(1)
                         }
                     }
@@ -277,16 +289,29 @@ struct StoryInsightsView: View {
                 Image(systemName: "heart.fill")
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityLabel(L("いいね", "Liked"))
-            } else if let reply = replyText(from: viewer.userId) {
-                Text("「\(reply)」")
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
-                    .lineLimit(1)
-                    .frame(maxWidth: 140, alignment: .trailing)
+            } else if replyText(from: viewer.userId) != nil {
+                // 返信した人は吹き出しの印（一言は名前の下に出している）
+                Image(systemName: "bubble.left")
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityLabel(L("返信あり", "Replied"))
             }
         }
-        .frame(minHeight: 62)
+        .frame(minHeight: Self.rowHeight)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
     }
+
+    /// 行の2行目（時刻・返信の一言）
+    private func subline(for viewer: StoryViewer) -> String? {
+        let reply = replyText(from: viewer.userId).map { "「\($0)」" }
+        let parts = [ago(from: viewer.at), reply].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// 行（板 60）と顔（板 40）
+    static let rowHeight: CGFloat = 60
+    static let avatarSize: CGFloat = 40
 
     // MARK: - 数え方
 
@@ -375,5 +400,12 @@ struct StoryInsightsView: View {
         if let url = error as? URLError, url.code == .cancelled { return .silent }
         if firstLoad { return .errorMessage }
         return pulled ? .refreshNotice : .silent
+    }
+}
+
+/// 升目の間の縦の髪線（白 8%・v2 StoryInsights の `border-right`）
+private struct InsightsCellDivider: View {
+    var body: some View {
+        Rectangle().fill(WebTheme.hairline).frame(width: JPStroke.hairline)
     }
 }

@@ -22,4 +22,35 @@ enum CommentsHeading {
     static func visibleCount(total: Int?, loaded: Int, shown: Int) -> Int? {
         total.map { max(0, $0 - max(0, loaded - shown)) }
     }
+
+    /// コメントの時刻の添え書き（v2 の板 PhotoDetail の「2時間前」「昨日」）。
+    ///
+    /// 1分未満は「たった今」、1時間未満は「N分前」、24時間未満は「N時間前」、48時間未満は「昨日」、
+    /// 7日未満は「N日前」、それより前は「2026.09.12」。**読めない時刻・未来の時刻は出さない**（nil）
+    /// ——時計のずれで「-3分前」を出さない（1分までの未来は「たった今」に丸める）
+    static func age(_ iso: String?, now: Date) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        let seconds = now.timeIntervalSince(date)
+        guard seconds > -60 else { return nil }
+        switch seconds {
+        case ..<60: return L("たった今", "Just now")
+        case ..<3600: let m = Int(seconds / 60); return L("\(m)分前", "\(m)m ago")
+        case ..<86_400: let h = Int(seconds / 3600); return L("\(h)時間前", "\(h)h ago")
+        case ..<172_800: return L("昨日", "Yesterday")
+        case ..<604_800: let d = Int(seconds / 86_400); return L("\(d)日前", "\(d)d ago")
+        default:
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = .current
+            let c = calendar.dateComponents([.year, .month, .day], from: date)
+            guard let y = c.year, let m = c.month, let d = c.day else { return nil }
+            return String(format: "%04d.%02d.%02d", y, m, d)
+        }
+    }
+
+    private static func parse(_ iso: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: iso) { return date }
+        return ISO8601DateFormatter().date(from: iso)
+    }
 }

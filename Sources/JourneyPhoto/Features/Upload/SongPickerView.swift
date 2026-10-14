@@ -29,54 +29,24 @@ struct SongPickerView: View {
     var body: some View {
         List {
             if let message {
-                Text(message).font(.callout).foregroundStyle(.secondary)
+                Text(message)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
+                    .listRowBackground(Color.clear)
             }
             ForEach(rows, id: \.previewUrl) { song in
-                HStack(spacing: 10) {
-                    RemoteImage(url: song.artworkURL)
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(song.title).font(.callout).lineLimit(1)
-                        if let artist = song.artist, !artist.isEmpty {
-                            Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                    Spacer()
-                    // 試し聴きと「選ぶ」を分ける（押し間違いで曲が決まらない）
-                    Button {
-                        // **曲も渡す。** 渡さないと再生の係が何の曲か知らず、
-                        // 下の再生バー（`MiniPlayerBar`）が出ない
-                        player.toggle(song.previewURL, song: song, origin: .songPicker)
-                    } label: {
-                        // 押せる広さは 44pt（記号だけだと 20pt ほどしかなかった）
-                        Image(systemName: player.isPlaying(song.previewURL)
-                              ? "pause.circle.fill" : "play.circle")
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                            .accessibilityLabel(SongPickerText.previewButtonLabel(
-                                isPlaying: player.isPlaying(song.previewURL)))
-                    }
-                    .buttonStyle(.borderless)
-                    Button {
-                        player.stop()
-                        recent = recentStore.remember(song, userId: auth.userId)
-                        onSelect(song)
-                        dismiss()
-                    } label: {
-                        Text(L("選ぶ", "Choose"))
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                }
+                row(song)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparatorTint(WebTheme.hairline)
             }
             // 板 23 の一覧の下の注記
             Text(SongPickerText.previewNote)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
+        .listStyle(.plain)
         .webScreen()
         .navigationTitle(L("曲を選ぶ", "Choose a song"))
         .navigationBarTitleDisplayMode(.inline)
@@ -111,6 +81,73 @@ struct SongPickerView: View {
         }
     }
 
+    /// 1曲の行（v2 SongPicker: 最小 68・アートワーク 48 が試し聴きの口・曲名 15 の太字・
+    /// 歌い手 12 の灰・右に「選ぶ」の小さなカプセル）。
+    ///
+    /// **試し聴きと「選ぶ」を分ける**（押し間違いで曲が決まらない）。鳴っている曲は
+    /// アートワークに止める印を重ね、「選ぶ」を白の塗りにする（どの曲を聴いているかが形で分かる）
+    private func row(_ song: Photo.Song) -> some View {
+        let playing = player.isPlaying(song.previewURL)
+        return HStack(spacing: JPSpace.s) {
+            Button {
+                // **曲も渡す。** 渡さないと再生の係が何の曲か知らず、
+                // 下の再生バー（`MiniPlayerBar`）が出ない
+                player.toggle(song.previewURL, song: song, origin: .songPicker)
+            } label: {
+                RemoteImage(url: song.artworkURL)
+                    .frame(width: Self.artworkSize, height: Self.artworkSize)
+                    .overlay {
+                        // アートワークは写真なので、上の印は白（真鍮を置かない）
+                        Color.black.opacity(playing ? 0.45 : 0.3)
+                        Image(systemName: playing ? "stop.fill" : "play.fill")
+                            .font(.system(size: playing ? 14 : 16))
+                            .foregroundStyle(.white)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    // 押せる広さは 48pt（44 を越える）
+                    .contentShape(Rectangle())
+                    .accessibilityLabel(SongPickerText.previewButtonLabel(isPlaying: playing))
+            }
+            .buttonStyle(.borderless)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(song.title)
+                    .font(JPFont.bodyEmphasis)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+                if let artist = song.artist, !artist.isEmpty {
+                    Text(artist)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            Button {
+                player.stop()
+                recent = recentStore.remember(song, userId: auth.userId)
+                onSelect(song)
+                dismiss()
+            } label: {
+                Text(L("選ぶ", "Choose"))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(playing ? WebTheme.accentText : WebTheme.text)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: Self.pickHeight)
+                    .background(playing ? WebTheme.accentBackground : Color.clear, in: Capsule())
+                    .overlay(Capsule().strokeBorder(playing ? Color.clear : WebTheme.line, lineWidth: JPStroke.hairline))
+                    // 見た目は 34、押せる所は 44
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+        }
+        .frame(minHeight: Self.rowHeight)
+    }
+
+    /// 行（板 68）・アートワーク（板 48）・「選ぶ」の見た目（板 34）
+    static let rowHeight: CGFloat = 68
+    static let artworkSize: CGFloat = 48
+    static let pickHeight: CGFloat = 34
     private func search() async {
         isSearching = true
         message = nil

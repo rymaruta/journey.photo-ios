@@ -80,7 +80,8 @@ struct ProfileEditView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                labeled(L("自己紹介", "Bio"), over: PostLimits.overLimitNote(bio, limit: PostLimits.Profile.bio)) {
+                labeled(L("自己紹介", "Bio"), over: PostLimits.overLimitNote(bio, limit: PostLimits.Profile.bio),
+                        multiline: true) {
                     // 板の下書き「ひとこと」は付けない——下の演出欄に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
                     TextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
@@ -121,6 +122,7 @@ struct ProfileEditView: View {
                         .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
                 }
                 ThemeColorField(themeColor: $themeColor)
+                    .listRowInsets(EdgeInsets(top: 8, leading: ProfileV2.gutter, bottom: 8, trailing: ProfileV2.gutter))
             }
             .listRowBackground(Color.clear)
 
@@ -200,7 +202,11 @@ struct ProfileEditView: View {
         }
     }
 
-    /// カバーとアイコンの見本（板の上端）。**押すとそのまま選び直せる**
+    /// カバーとアイコンの見本（板 v2 ProfileEdit の上端）。**見える場所でそのまま選び直せる**。
+    ///
+    /// v2: カバーは端 16・高さ 150・角 16 の札で、右下にガラスの「カバーを変える」（写真の上なので白の字）。
+    /// アイコンは 84pt を札の下端に 40pt 重ね（黒い 4pt の縁）、右下に白い 28pt のカメラの丸（墨の印・
+    /// 黒 3pt の縁）——どこを押せば変わるかを絵で言う
     private var imagesHeader: some View {
         Section {
             ZStack(alignment: .topLeading) {
@@ -208,7 +214,7 @@ struct ProfileEditView: View {
                 // カバーで行の幅が画面より広くなる（写真の詳細で踏んだのと同じ）
                 Color.clear
                     .frame(maxWidth: .infinity)
-                    .frame(height: 132)
+                    .frame(height: Self.coverHeight)
                     .overlay {
                         if let coverPreview {
                             Image(uiImage: coverPreview).resizable().scaledToFill()
@@ -216,17 +222,18 @@ struct ProfileEditView: View {
                             RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
                         }
                     }
-                    .background(WebTheme.surface)
-                    .clipped()
-                    .overlay(alignment: .topTrailing) {
+                    .background(WebTheme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+                    .overlay(alignment: .bottomTrailing) {
                         PhotosPicker(selection: $coverItem, matching: .images) {
-                            Label(L("カバーを変える", "Change cover"), systemImage: "photo")
-                                .font(.footnote.weight(.semibold))
-                                .padding(.horizontal, 12)
-                                .frame(minHeight: 36)
-                                .background(Color.black.opacity(0.55), in: Capsule())
-                                // 見た目は 36pt、押せる高さは 44pt（下の余白を 4pt 減らして位置は変えない）
-                                .padding(.vertical, 4)
+                            Label(L("カバーを変える", "Change cover"), systemImage: "camera")
+                                .font(JPFont.footnote.weight(.semibold))
+                                .foregroundStyle(WebTheme.foreground)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: JPHeight.inlineButton)
+                                .jpGlass(in: Capsule())
+                                // 見た目は 36pt、押せる高さは 44pt
+                                .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
                                 .contentShape(Rectangle())
                         }
                         // **行の中に押せるものが2つある。** 既定の形だと行全体が
@@ -234,8 +241,8 @@ struct ProfileEditView: View {
                         .buttonStyle(.borderless)
                         // 保存中・写真の準備中は選ばせない
                         .disabled(!loaded || isSaving || preparingImage != nil)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 6)
                     }
                 PhotosPicker(selection: $avatarItem, matching: .images) {
                     Group {
@@ -245,31 +252,46 @@ struct ProfileEditView: View {
                             RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
                         }
                     }
-                        .frame(width: 84, height: 84)
-                        .background(WebTheme.surface)
+                        .frame(width: Self.avatarSide, height: Self.avatarSide)
+                        .background(WebTheme.card)
                         .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(Color.black, lineWidth: 3))
-                        .overlay {
+                        .overlay(Circle().strokeBorder(Color.black, lineWidth: ProfileCover.cutoutWidth)
+                            .padding(-ProfileCover.cutoutWidth))
+                        .overlay(alignment: .bottomTrailing) {
                             Image(systemName: "camera")
-                                .font(.footnote)
-                                .frame(width: 32, height: 32)
-                                .background(Color.black.opacity(0.55), in: Circle())
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(WebTheme.accentText)
+                                .frame(width: 28, height: 28)
+                                .background(Color.white, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.black, lineWidth: 3).padding(-3))
+                                .offset(x: 2, y: 2)
                         }
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .disabled(!loaded || isSaving || preparingImage != nil)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
-                .padding(.leading, 20)
-                .padding(.top, 92)
+                .padding(.leading, JPSpace.m)
+                .padding(.top, Self.coverHeight - 40)
             }
-            .frame(height: 178, alignment: .top)
+            .frame(height: Self.coverHeight - 40 + Self.avatarSide + ProfileCover.cutoutWidth, alignment: .top)
         } footer: {
             Text(L("写真・文字・BGMは右上の「保存」で反映されます。バッジは選択画面で決定します。",
                    "Save photos, text and BGM with the button above. Confirm badges on their selection screen."))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
         }
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
         .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
+
+    /// 板 v2 ProfileEdit: カバーの札の高さ 150・アイコン 84
+    nonisolated static let coverHeight: CGFloat = 150
+    nonisolated static let avatarSide: CGFloat = 84
+    /// 名前の列の幅（板 v2 の `.fr`: 104）。値がどの行でも同じ所から始まる
+    nonisolated static let labelColumn: CGFloat = 104
 
     /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
     /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
@@ -284,34 +306,76 @@ struct ProfileEditView: View {
         }
     }
 
-    /// 欄の上に小さい見出し（板の「表示名」などの置き方）
+    /// 名前と値の2列の行（板 v2 ProfileEdit「名前と値を2列の表にして欄の縁を消した」）。
+    /// 左に 104 の名前（13・text-2）、右に値（16）。行は 52 以上・下に白 8% の区切り。
+    /// 複数行（自己紹介）は名前を上にそろえる
     /// - Parameter over: 保存されていた値が上限を超えているときの知らせ（`PostLimits.overLimitNote`）。
     ///   超えていなければ nil で、何も出さない
-    private func labeled<Field: View>(_ title: String, over: String? = nil,
+    private func labeled<Field: View>(_ title: String, over: String? = nil, multiline: Bool = false,
                                       @ViewBuilder field: () -> Field) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.muted)
-                // 欄そのものに同じ名前を付けてあるので、見出しは読まない（2回読まれる）
-                .accessibilityHidden(true)
-            // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
-            field()
-                .font(.body)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 48, alignment: .leading)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(WebTheme.outline, lineWidth: 1))
-                .accessibilityLabel(title)
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            HStack(alignment: multiline ? .firstTextBaseline : .center, spacing: 0) {
+                Text(title)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .frame(width: Self.labelColumn, alignment: .leading)
+                    // 欄そのものに同じ名前を付けてあるので、見出しは読まない（2回読まれる）
+                    .accessibilityHidden(true)
+                // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
+                field()
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(title)
+            }
+            .padding(.vertical, 14)
+            .frame(minHeight: JPHeight.row)
             // **読み込んだ値が上限を超えている欄だけ**、保存で切れることを知らせる（危険の色・12pt）
             if let over {
                 Text(over)
                     .font(.caption)
                     .foregroundStyle(WebTheme.danger)
+                    .padding(.leading, Self.labelColumn)
+                    .padding(.bottom, JPSpace.xs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    /// 札の中の行（BGM・名前の横）。板 v2 ProfileEdit の BGM の行: 左に真鍮の線の印（黒地の上）、
+    /// 15 の名前と 12 の text-3 の説明、右に矢印。64 以上・下に白 8% の区切り
+    private func linkRow(title: String, detail: String?, systemImage: String) -> some View {
+        HStack(spacing: JPSpace.s) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                if let detail {
+                    Text(detail)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .accessibilityHidden(true)
+        }
+        .frame(minHeight: JPHeight.tallRow)
+        .contentShape(Rectangle())
     }
 
     /// 名前の横のバッジ（持っているメダルから1つ・Pro マークの形）。板 32 の BGM の行と同じ形の行で、
@@ -321,10 +385,12 @@ struct ProfileEditView: View {
             Button {
                 showNameSide = true
             } label: {
-                Label(L("名前の横のバッジ", "Badge beside your name"), systemImage: "medal")
+                linkRow(title: L("名前の横のバッジ", "Badge beside your name"), detail: nil, systemImage: "medal")
             }
+            .buttonStyle(.plain)
             .disabled(loadedProfile == nil)
             .accessibilityIdentifier("profileEdit.nameSide")
+            .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
         } header: {
             Text(L("バッジ", "Badges"))
         } footer: {
@@ -353,16 +419,23 @@ struct ProfileEditView: View {
                 Button {
                     showSongPicker = true
                 } label: {
-                    Label(L("BGM を選ぶ", "Choose BGM"), systemImage: "music.note")
+                    // 板 v2: 真鍮の音符の行・説明は行の中に
+                    linkRow(title: L("BGM を選ぶ", "Choose BGM"),
+                            detail: L("30秒の試聴が、あなたのマイページで流せるようになります。",
+                                      "A 30-second preview people can play on your page."),
+                            systemImage: "music.note")
                 }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
             }
         } header: {
             Text(L("BGM", "BGM"))
         } footer: {
+            // 曲を選ぶ前の説明は行の中（`linkRow`）に移した。選んだあとは同じ説明をここに
             Text(songs.count > 1
                  ? L("マイページには先頭の1曲が出ます。ほかに\(songs.count - 1)曲あります（ウェブで並べ替えられます）。",
                      "Your page shows the first track. \(songs.count - 1) more are saved (reorder them on the web).")
-                 : L("30秒の試聴が、あなたのマイページで流せるようになります。",
+                 : songs.isEmpty ? "" : L("30秒の試聴が、あなたのマイページで流せるようになります。",
                      "A 30-second preview people can play on your page."))
         }
         .listRowBackground(Color.clear)

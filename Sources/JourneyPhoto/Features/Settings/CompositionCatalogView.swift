@@ -4,56 +4,66 @@ import UIKit
 
 /// 撮影画面と同じ37種類を、撮影前にも学べる読み物として見せる。
 /// 図は実際の写真ではなく、カメラに出るガイド線の配置例。
+///
+/// **v2（2026-10-14・板 Compositions）**: バーの中央は「撮影ガイド」（設定の節の名前）、大見出しは明朝 30 の
+/// 「構図一覧」。節の見出しは真鍮の眉ラベルと消えていく線（`JPEyebrowLine`）、行は札に入れず 64 の素の行に
+/// 白 8% の区切り線。構図の名前 16 semibold・場面は 12 の text-3
 struct CompositionCatalogView: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
                 Text(L("構図一覧", "Composition guide"))
-                    .font(JPFont.display(30, relativeTo: .largeTitle))
+                    .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
                 Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。図はガイド線の例で、実際の写真ではありません。",
                        "Explore ways to frame a scene. Illustrations show guide lines, not actual photographs."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.footnote)
+                    .lineSpacing(3)
+                    .foregroundStyle(WebTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(CompositionSection.allCases) { section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        JPSectionTitle(section.title)
-                        JPCard {
-                            ForEach(section.kinds) { kind in
-                                if kind != section.kinds.first { JPCardDivider() }
-                                NavigationLink { CompositionExplanationView(kind: kind) } label: {
-                                    HStack(spacing: 14) {
-                                        CompositionThumbnail(kind: kind, cornerRadius: 5)
-                                            .frame(width: 44)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(kind.name).font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(WebTheme.text)
-                                            Text(CompositionExample.scene(for: kind))
-                                                .font(.caption).foregroundStyle(WebTheme.muted2)
-                                                .lineLimit(2)
-                                        }
-                                        Spacer(minLength: 4)
-                                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                                            .foregroundStyle(WebTheme.faint)
+                    VStack(alignment: .leading, spacing: 0) {
+                        JPEyebrowLine(section.title)
+                            .padding(.top, JPSpace.xl)
+                            .padding(.bottom, JPSpace.xxs)
+                        ForEach(section.kinds) { kind in
+                            NavigationLink { CompositionExplanationView(kind: kind) } label: {
+                                HStack(spacing: 14) {
+                                    CompositionThumbnail(kind: kind, cornerRadius: 8)
+                                        .frame(width: 44)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(kind.name).font(.callout.weight(.semibold))
+                                            .foregroundStyle(WebTheme.text)
+                                        Text(CompositionExample.scene(for: kind))
+                                            .font(JPFont.caption).foregroundStyle(WebTheme.text3)
+                                            .lineLimit(2)
                                     }
-                                    .padding(.horizontal, 14)
-                                    .frame(minHeight: 64)
-                                    .contentShape(Rectangle())
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                        .foregroundStyle(WebTheme.text3)
+                                        .accessibilityHidden(true)
                                 }
-                                .buttonStyle(JPRowButtonStyle())
-                                .accessibilityIdentifier("composition.catalog.\(kind.rawValue)")
+                                .padding(.vertical, 10)
+                                .frame(minHeight: JPHeight.tallRow)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(JPRowButtonStyle())
+                            .accessibilityIdentifier("composition.catalog.\(kind.rawValue)")
                         }
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.section)
         }
         .webScreen()
-        .navigationTitle(L("構図一覧", "Composition guide"))
+        // 板 v2: バーの中央は設定の節の名前（大見出しの「構図一覧」と二重にしない）
+        .navigationTitle(L("撮影ガイド", "Shooting guide"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -67,21 +77,28 @@ struct CompositionExplanationView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(kind.name)
-                    .font(JPFont.display(30, relativeTo: .largeTitle))
-                    .foregroundStyle(WebTheme.text)
-                    .accessibilityAddTraits(.isHeader)
-                Text(kind.difficulty.label)
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
+            VStack(alignment: .leading, spacing: JPSpace.m) {
+                // 板 v2: 明朝 30 の題の右に、難しさの札（12・text-2・白 14% の線）
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(kind.name)
+                        .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                        .foregroundStyle(WebTheme.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(kind.difficulty.label)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .padding(.horizontal, JPSpace.xs)
+                        .padding(.vertical, 1)
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.s).strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
+                }
 
                 // 作例写真は端末内だけで扱う。未選択時は従来の配置図を表示。
+                // 板 v2: 線のボタン（44・白 14% の縁）
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Label(L("自分の写真で構図を確認", "Try with your photo"), systemImage: "photo.on.rectangle")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .jpPillButton(.outline)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("composition.explanation.choosePhoto")
 
                 // 作例の配置図。写真が選ばれた場合は写真の上に同じガイド線を重ねる。
@@ -114,19 +131,23 @@ struct CompositionExplanationView: View {
                     }
                     .aspectRatio(0.75, contentMode: .fit)
                     .frame(maxWidth: 270)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(WebTheme.border, lineWidth: 1))
+                    // 板 v2: 写真の札の角 14
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                    .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
+                        .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
                     .frame(maxWidth: .infinity)
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
                          : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
                             ? L("AI生成の構図作例", "AI-generated composition example")
                             : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                     Toggle(L("ガイド線を表示", "Show guide lines"), isOn: $showGuideLines)
-                        .tint(WebTheme.accent)
+                        .font(JPFont.body)
+                        // 板 v2: 軌道は暗い真鍮（brass-deep）。白いつまみが乗って入切が見える（`JPToggleRow` と同じ）
+                        .tint(WebTheme.accentDeep)
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .accessibilityIdentifier("composition.explanation.showLines")
                     if kind.hasVariants {
                         Button {
@@ -146,9 +167,9 @@ struct CompositionExplanationView: View {
                 explanationSection(L("こんな場面で", "Example scene"), text: CompositionExample.scene(for: kind))
                 explanationSection(L("撮るときのコツ", "Shooting tip"), text: kind.tip)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.section)
         }
         .webScreen()
         .navigationTitle(kind.name)
@@ -166,17 +187,18 @@ struct CompositionExplanationView: View {
         }
     }
 
+    /// 解説の節（板 v2: 真鍮の眉と消えていく線 → 本文 15・text-2。札に入れない）
     private func explanationSection(_ title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            JPSectionTitle(title)
-            JPCard {
-                Text(text)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-            }
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            JPEyebrowLine(title)
+            Text(text)
+                .font(JPFont.body)
+                .lineSpacing(5)
+                .foregroundStyle(WebTheme.text2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.top, JPSpace.xs)
     }
 }
 

@@ -75,8 +75,10 @@ struct CloseFriendsView: View {
                 // 公開範囲（投稿・編集）と設定のプライバシー（2026-09-26）
                 Text(L("公開範囲を「親しい友達」にした写真は、選んだ人だけが見られます。相手には知らせません。",
                        "Photos shared with Close friends are visible only to people you pick. They aren't told."))
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.footnote)
+                    .lineSpacing(4)
+                    // v2: 黒地の上の副文は text-2（#B8B8B8）
+                    .foregroundStyle(WebTheme.text2)
             }
             .listRowBackground(Color.clear)
 
@@ -139,7 +141,8 @@ struct CloseFriendsView: View {
                             row(user)
                         }
                     } header: {
-                        Text(L("選んだ人 \(chosen.count)", "\(chosen.count) picked"))
+                        // v2: 眉ラベル（真鍮＋右へ消える線）に件数を等幅で（`JPEyebrowLine`）
+                        JPEyebrowLine(L("選んだ人 \(chosen.count)", "\(chosen.count) picked"))
                     }
                     .listRowBackground(Color.clear)
                 }
@@ -209,9 +212,10 @@ struct CloseFriendsView: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+        .frame(height: WebTheme.minTapTarget)
+        // v2: 入力欄の地は surface-2（#161617）・縁は白 8%（板 CloseFriends・Components 02）
+        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 
     private func row(_ user: FollowUser) -> some View {
@@ -227,11 +231,10 @@ struct CloseFriendsView: View {
                 PersonNameLines(user: user)
                     .foregroundStyle(WebTheme.foreground)
                 Spacer()
-                Image(systemName: picked ? "star.fill" : "star")
-                    // 選んだ人は真鍮の ★（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。形も塗りで変わる
-                    .foregroundStyle(picked ? WebTheme.accent : WebTheme.faint)
+                pickMark(picked)
             }
-            .frame(minHeight: WebTheme.minTapTarget)
+            // v2 CloseFriends: 人の行は 64（`JPHeight.tallRow`）
+            .frame(minHeight: JPHeight.tallRow)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -239,6 +242,29 @@ struct CloseFriendsView: View {
         .disabled(isSaving)
         .accessibilityAddTraits(picked ? .isSelected : [])
     }
+
+    /// 選んだ印（v2 CloseFriends: **選んだ人は真鍮の丸に墨の ★**＝親しい友達の印と同じ形、
+    /// 選んでいない人は白 30% の輪だけ）。owner の好み「親しい友達の選んだ ★ は真鍮」。
+    /// 色だけでなく塗りと ★ の有無でも分かる。読み上げは行の「選択中」で言う
+    private func pickMark(_ picked: Bool) -> some View {
+        ZStack {
+            if picked {
+                Circle().fill(WebTheme.accent)
+                Image(systemName: "star.fill")
+                    .font(.caption.weight(.bold))
+                    .dynamicTypeSize(...DynamicTypeSize.large)
+                    .foregroundStyle(WebTheme.accentText)
+            } else {
+                Circle().strokeBorder(Color.white.opacity(Self.unpickedRing), lineWidth: 1.5)
+            }
+        }
+        .frame(width: Self.pickMarkSize, height: Self.pickMarkSize)
+        .accessibilityHidden(true)
+    }
+
+    /// 印の丸（板 28）と、選んでいない輪の白（板 30%）
+    static let pickMarkSize: CGFloat = 28
+    static let unpickedRing = 0.3
 
     private func load() async {
         guard !loaded else { return }

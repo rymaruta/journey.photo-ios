@@ -8,6 +8,10 @@ import Foundation
 /// （青は空・海の写真と同じ色、橙は夕日そのもの。真鍮は青の対極で、
 /// 暖色でも彩度が半分なので写真と競わない）。
 ///
+/// **v2（2026-10-14・Artifact「デザインシステム v2」）で面を一段沈め、文字の3段・金属の光を足した。**
+/// v1 との違い: 札 #121212 → #0E0E0F・入力欄 #1A1A1A → #161617・案内の帯 #201B11 → #1C170E・
+/// 白の主ボタン 92% → 94%。真鍮・危険・成功・現在地は v1 のまま。
+///
 /// **規則は1行: 白＝位置と選択、真鍮＝合図と手がかり。
 /// 写真の上には白しか置かない。**
 ///
@@ -19,16 +23,42 @@ enum BrandPalette {
     // MARK: 中立
 
     static let background: UInt32 = 0x000000
-    /// カード・チップの面（白 7% を黒に重ねた値）
-    static let surface: UInt32 = 0x121212
-    /// 入力欄・副ボタンの面（白 10%）
-    static let surface2: UInt32 = 0x1A1A1A
+    /// 札の面（v2 の surface-1。v1 の #121212 から一段沈めた——写真の縁が浮く）
+    static let surface: UInt32 = 0x0E0E0F
+    /// 札の中の入力欄・シートの地（v2 の surface-2。v1 は #1A1A1A）
+    static let surface2: UInt32 = 0x161617
+
+    // MARK: 面の段（surface-2 より上・2026-10-14）
+    //
+    // v2 の板が画面ごとに書いた一段上の灰。担当ごとに `Color(red: 0x1E …)` と直に書いて散らばっていたので、
+    // **値は変えずに**ここへ名前を付けて集めた（2026-10-14 判断）。数が大きいほど明るい。
+    // 新しい灰を足す前に、ここのどれかで足りないかを見る
+
+    /// 一段浮かせた小さな面（板 PostSheet の印の札・StoryReplies の吹き出し・SongPicker の帯）
+    static let surface3: UInt32 = 0x1A1A1C
+    /// 読み込み中の骨格の灰・ストーリーの返信欄を書いている間の地（板 `#1C1C1E`）
+    static let surface4: UInt32 = 0x1C1C1E
+    /// ストーリーのメニューのシートの地（板 StoryViewerMenu `#1E1E20`）
+    static let surface5: UInt32 = 0x1E1E20
+    /// ストーリーの削除の確認の地（板 `rgba(40,40,42,.96)`）
+    static let surface6: UInt32 = 0x28282A
+    /// 投稿の写真の帯の「外す」の丸（板 `#2A2A2C`）
+    static let surface7: UInt32 = 0x2A2A2C
+    /// 投稿のつながったセグメントの選んだ側（板 `#2C2C2E`）
+    static let surface8: UInt32 = 0x2C2C2E
+    /// 面の段（暗い → 明るい）。テストが「段が明るさの順に並ぶ」ことを見張る
+    static let surfaceSteps: [UInt32] = [background, surface, surface2, surface3, surface4, surface5,
+                                         surface6, surface7, surface8]
     /// 入力欄・枠線ボタンの境界（白 40%）。**部品の縁は 3:1 が要る**
     static let outline: UInt32 = 0x666666
     /// 未選択チップの文字（白 82% を surface に重ねた値）
     static let chipText: UInt32 = 0xD4D4D4
-    /// 主ボタン・選択中チップの塗り（白 92%）
-    static let primary: UInt32 = 0xEBEBEB
+    /// 副文の字（v2 の text-2・白 72% と同じ値）
+    static let text2: UInt32 = 0xB8B8B8
+    /// 注記・@名・日時の字（v2 の text-3・白 60% とほぼ同じ値）
+    static let text3: UInt32 = 0x9A9A9A
+    /// 主ボタン・選択中チップの塗り（v2: 白 94%。v1 は 92% の #EBEBEB）
+    static let primary: UInt32 = 0xF0F0F0
     /// 白・真鍮の塗りに載せる文字（墨）
     static let ink: UInt32 = 0x07090A
 
@@ -42,8 +72,12 @@ enum BrandPalette {
     static let accentFill: UInt32 = 0xB8955A
     /// **白を載せる暗い真鍮。** トグルの軌道・地図の印
     static let accentDeep: UInt32 = 0x796440
-    /// 案内の帯（真鍮 16%）。**選択状態は担わない**
-    static let accentSoft: UInt32 = 0x201B11
+    /// 案内の帯（v2: 真鍮 8% の #1C170E。v1 は 16% の #201B11）。**選択状態は担わない**
+    static let accentSoft: UInt32 = 0x1C170E
+    /// 金属の光の明るい端（v2 の brass-hi）。**輪・メダル・Pro の印の光だけ**。字には使わない
+    static let accentHighlight: UInt32 = 0xF3DCA6
+    /// 金属の光の暗い端（v2 の brass-hi → lo の lo）
+    static let accentShadow: UInt32 = 0x9A7A45
 
     // MARK: 意味の色
 

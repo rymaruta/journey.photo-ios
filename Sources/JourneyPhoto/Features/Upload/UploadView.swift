@@ -106,14 +106,16 @@ struct UploadView: View {
             ToolbarItem(placement: .cancellationAction) {
                 // 🔴 **書きかけを黙って捨てない**（2026-09-30）。選んだ写真と書いた題・説明が
                 // 確認なしで消えていた。写真を選び始めたら一度聞く（旅行プランの日程と同じ判断）
+                // v2 Upload・Components 04「シート · 左に『キャンセル』/右に確定（真鍮の字）」。
+                // 以前は ×。動き（書きかけがあれば確かめる）は同じ
                 Button {
                     if model.hasDraft { confirmDiscard = true } else { dismiss() }
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(WebTheme.foreground)
+                    Text(Labels.Common.cancel)
+                        .font(.body)
+                        .foregroundStyle(WebTheme.text2)
                 }
-                .accessibilityLabel(Labels.Common.close)
+                .accessibilityLabel(Labels.Common.cancel)
                 // 🔴 **送っている間は閉じさせない。** 閉じても送信は裏で続き、
                 // 残りの写真が公開され、失敗の知らせは閉じた画面に書かれていた。
                 // 途中でやめるのは送信中の「やめる」（`model.cancel()`）
@@ -239,7 +241,7 @@ struct UploadView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("撮影スポットの写真として投稿", "Posting to a photo spot"))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                 Text(spot.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
@@ -280,7 +282,7 @@ struct UploadView: View {
             Text(L("写真を押すと、色や明るさを編集できます。元の写真は変わりません。",
                    "Tap a photo to adjust its color and light. The original stays as it is."))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
         }
     }
@@ -296,7 +298,7 @@ struct UploadView: View {
                 if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .padding(.horizontal, 4)
                 } else if model.items.count > 1 {
                     groupChoice
@@ -308,7 +310,7 @@ struct UploadView: View {
                 // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
                 Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .padding(.horizontal, 4)
             }
             .padding(16)
@@ -468,7 +470,7 @@ struct UploadView: View {
                     .font(.subheadline.weight(.semibold))
             }
         }
-        .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.faint)
+        .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.text3)
         .disabled(!model.canSubmit)
         .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
                             ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
@@ -478,7 +480,7 @@ struct UploadView: View {
                                : L("投稿する", "Post"))))
     }
 
-    /// 選んだ写真の帯（板: 96×120・角丸12、右上に外す丸、左下に番号、最後に「追加」）。
+    /// 選んだ写真の帯（v2 の板: 84×104・角丸12、右上に外す丸、左上に番号、最後に「追加」）。
     ///
     /// **サーバーは1行＝1枚**で、選んだ枚数ぶんの投稿になる（題も説明も1枚ずつ）。
     /// 「まとめる」は見せ方だけ（`groupChoice`）
@@ -539,7 +541,7 @@ struct UploadView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, 12)
@@ -599,7 +601,7 @@ struct UploadView: View {
                     WebTheme.surface
                 }
             }
-            .frame(width: 96, height: 120)
+            .frame(width: UploadStripLayout.thumbWidth, height: UploadStripLayout.thumbHeight)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -616,10 +618,10 @@ struct UploadView: View {
             // 送る順の番号。2026-10-02 判断: 左下は編集済みの札（見本 3 の位置）に譲り、左上に移した
             // （右上の外す丸とは 96pt の幅の両端で離れている）
             Text("\(index + 1)")
-                .font(JPFont.mono(12))
+                .font(JPFont.number(JPTypeScale.caption, weight: .bold))
                 .foregroundStyle(Color.white)
-                .frame(minWidth: 18, minHeight: 18)
-                .padding(.horizontal, 3)
+                .padding(.horizontal, 4)
+                .frame(minWidth: UploadStripLayout.numberSize, minHeight: UploadStripLayout.numberSize)
                 .background(Color.black.opacity(0.6), in: Capsule())
                 .padding(6)
                 .accessibilityHidden(true)
@@ -643,7 +645,7 @@ struct UploadView: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
                 .background(Color.black.opacity(0.66), in: Capsule())
-                .frame(maxWidth: 96 - 12, alignment: .leading)
+                .frame(maxWidth: UploadStripLayout.thumbWidth - 12, alignment: .leading)
                 .padding(6)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -657,7 +659,7 @@ struct UploadView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.white)
                     .frame(width: UploadStripLayout.removeDot, height: UploadStripLayout.removeDot)
-                    .background(Color(red: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x2c / 255.0), in: Circle())
+                    .background(WebTheme.surface7, in: Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
                     // 丸は板の位置のまま、押せる範囲だけ左へずらす（`UploadStripLayout` の注記）
                     .offset(x: UploadStripLayout.removeDotNudge)
@@ -705,14 +707,17 @@ struct UploadView: View {
                 Label(L("ライブラリから選ぶ", "Choose from library"), systemImage: "photo.on.rectangle")
             }
         } label: {
-            VStack(spacing: 6) {
-                Image(systemName: "plus").font(.system(size: 20, weight: .regular))
-                Text(L("追加", "Add")).font(.caption)
+            // v2 Upload:「写真を追加で選ぶ」は**真鍮の点線と真鍮の字**（黒地の上・owner の好み
+            // 「旅の写真からの『写真を追加で選ぶ』は真鍮」と同じ扱い）
+            VStack(spacing: 4) {
+                Image(systemName: "plus").font(.system(size: 22, weight: .light))
+                Text(L("追加", "Add")).font(JPFont.caption)
             }
-            .foregroundStyle(WebTheme.muted2)
-            .frame(width: 96, height: 120)
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .foregroundStyle(WebTheme.accent)
+            .frame(width: UploadStripLayout.thumbWidth, height: UploadStripLayout.thumbHeight)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+                .strokeBorder(WebTheme.accent.opacity(UploadStripLayout.addBorderOpacity),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .accessibilityLabel(L("写真を追加", "Add photos"))
@@ -745,25 +750,32 @@ struct UploadView: View {
                      "Shown as one card you can swipe (each photo keeps its own title)")
                  : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
         }
     }
 
+    /// つながったセグメントの1つ（v2 Upload・Components 02「表示の切り替え」）。
+    /// **選んだ側は一段明るい面（#2C2C2E）に白の太字**、選んでいない側は text-2。
+    /// v1 は白の塗りに墨だったが、白の塗りは1画面に1つ（主ボタン）の決まりに合わせた
     private func segment(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.footnote.weight(selected ? .semibold : .regular))
-                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                .font(JPFont.footnote.weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? WebTheme.text : WebTheme.text2)
                 // 押せるものは 44pt
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(selected ? WebTheme.accentBackground : Color.clear,
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                .background(selected ? Self.segmentSelectedFill : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
+                .shadow(color: Color.black.opacity(selected ? 0.4 : 0), radius: 1.5, x: 0, y: 1)
                 .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+
+    /// 選んだセグメントの面（v2 の `#2C2C2E`）。土台の面の段 `surface8`
+    private static let segmentSelectedFill = WebTheme.surface8
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
     private var detailSection: some View {
@@ -792,7 +804,7 @@ struct UploadView: View {
                                 .accessibilityHidden(true)
                         }
                         .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .foregroundStyle(WebTheme.text2)
                         .padding(.horizontal, 4)
                         .accessibilityIdentifier("upload.sampleNote")
                     }
@@ -831,7 +843,7 @@ struct UploadView: View {
             // 「150/200」のように余っている数が出る
             Text("\(PostLimits.length(text))/\(limit)")
                 .font(JPFont.mono(12))
-                .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.faint)
+                .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.text3)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, -8)
         }
@@ -859,7 +871,7 @@ struct UploadView: View {
             HStack(spacing: 12) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 17))
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .frame(width: 24)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
@@ -868,13 +880,13 @@ struct UploadView: View {
                         .foregroundStyle(WebTheme.text)
                     Text(detailsSummary)
                         .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .rotationEffect(.degrees(showsDetails ? 180 : 0))
                     .accessibilityHidden(true)
             }
@@ -914,7 +926,7 @@ struct UploadView: View {
             if let reason = model.visibilityLockReason {
                 Text(reason)
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .padding(.horizontal, 4)
             }
             // 公開範囲の説明（何が起きるかを先に言う）。**畳んでいても出す**（レビュー 2026-10-03）
@@ -924,7 +936,7 @@ struct UploadView: View {
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
                      "Private photos stay yours. You can publish them later."))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
                 .accessibilityIdentifier("upload.audienceNote")
         }
@@ -995,7 +1007,7 @@ struct UploadView: View {
                 Text(L("投稿のうち1枚に付きます。元の写真が非公開になっていたら付きません。",
                        "Attached to one photo of the post. It won't attach if the original is no longer public."))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .padding(.horizontal, 4)
             }
         }
@@ -1092,7 +1104,7 @@ struct UploadView: View {
                 Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください。文はコピーされるので、入らないアプリでは貼り付けてください",
                        "After posting, the share sheet opens. Pick Threads, X, Instagram or any app. The caption is copied, so paste it if the app leaves it out."))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
             }
         }
         // **軌道は暗い真鍮**（ストーリーの入切と同じ。既定の白だと白い軌道に白いつまみが乗る）
@@ -1146,7 +1158,7 @@ struct UploadView: View {
         }
         if model.canRetryUnreadable {
             // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
-            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（高さ 52pt）。文言は今日の一問の再試行と同じ
+            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（線のボタン・高さ 44pt）。文言は今日の一問の再試行と同じ
             Button { model.retryUnreadable() } label: {
                 Text(L("もう一度読み込む", "Try again")).jpPillButton(.outline)
             }
@@ -1164,16 +1176,27 @@ struct UploadView: View {
     }
 }
 
-/// 選んだ写真の帯の寸法（板 `project/Upload.dc.html`: 96×120・間 10、右上の外す丸は
-/// 見た目 28・押せる所 44 で、写真の右上の角から右へ・上へ 14 はみ出す）。
+/// 選んだ写真の帯の寸法（板 `project/Upload.dc.html`: v2 で 84×104・間 8（v1 は 96×120・間 10）、
+/// 右上の外す丸は見た目 28・押せる所 44 で、写真の右上の角から右へ・上へ 14 はみ出す）。
 ///
-/// 🔴 **2026-10-07 判断: 丸は板の位置のまま、押せる範囲だけ左へ 4 ずらす。** 板どおりに
+/// 2026-10-14 判断: v2 の板は外す印を写真の角の内側（30 の枠に 18 の丸）に入れたが、**外す丸は v1 の形のまま**
+/// にした——小さな丸は押し間違えやすく、下の押せる範囲の調整（2026-10-07）を保つため。帯の間が 8 になったので、
+/// 押せる範囲を寄せる量は 6 になる（見た目の位置は同じ・下の式で決まる）
+///
+/// 🔴 **2026-10-07 判断: 丸は板の位置のまま、押せる範囲だけ左へずらす（間 10 のとき 4）。** 板どおりに
 /// 押せる範囲を 14 はみ出させると、帯の間（10）を越えて隣の写真に 4 重なり、隣の写真の左上を
 /// 押したつもりで1つ前の写真が外れた（2026-10-01 の既知の残り）。見た目（丸の位置と大きさ）は
 /// 変えない——押せる範囲（見えない）を、丸が収まる範囲で寄せるだけ。44 も保つ
 enum UploadStripLayout {
-    /// 写真と写真の間（板 gap 10）
-    static let spacing: CGFloat = 10
+    /// 写真と写真の間（v2 の板 gap 8。v1 は 10）
+    static let spacing: CGFloat = 8
+    /// 1枚の大きさ（v2 の板 84×104。v1 は 96×120）。「追加」の枠も同じ
+    static let thumbWidth: CGFloat = 84
+    static let thumbHeight: CGFloat = 104
+    /// 左上の順番の丸（v2: 最小 22・12pt の太字・黒 60%）
+    static let numberSize: CGFloat = 22
+    /// 「追加」の真鍮の点線の濃さ（v2 の板 `rgba(201,166,107,.6)`）
+    static let addBorderOpacity = 0.6
     /// 外す丸の見た目の大きさ（板 28）
     static let removeDot: CGFloat = 28
     /// 外す丸が押せる範囲（CLAUDE.md の最小 44）

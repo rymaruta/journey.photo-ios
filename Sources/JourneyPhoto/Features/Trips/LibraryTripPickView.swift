@@ -172,7 +172,8 @@ struct LibraryTripPickView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button { stopLoading() } label: {
-                    Text(L("やめる", "Stop")).jpPillButton(.outline)
+                    // 主ボタン（50）と同じ高さに（入れ替わりで帯が跳ねない）
+                    Text(L("やめる", "Stop")).jpPillButton(.outline, height: JPHeight.primaryButton)
                 }
                 .buttonStyle(.plain)
             } else {

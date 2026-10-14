@@ -14,7 +14,16 @@ import SwiftUI
 /// （黒地の上の手がかり・CLAUDE.md の owner の好み「デザインの箇所は白より真鍮」）、文字は白。
 /// 札の地は surface（白 7%）。**選んだ状態は形でも伝える**——旗が塗りに変わり、縁が真鍮になり、
 /// 読み上げは「選択中」。押せるものは高さ 44pt。
+///
+/// **v2（2026-10-14・板 PhotoDetail の「写真から、次の旅へ」）**: 頭に眉ラベル「NEXT TRIP · 次の旅へ」
+/// （真鍮＋消える線・`JPEyebrowLine`。板の「この場所へ」は使わないと決めた呼び名なので「次の旅へ」・2026-10-11 の呼び名の決まり）。行きたい・経路は**幅を分け合う同じ大きさの札**（高さ 48・角 14・
+/// 地 白 7%・縁 白 12%）。「いつ」の1行は 13 の text-2 に真鍮の太陽
 struct PhotoTripSection: View {
+
+    /// 札の高さ（v2 の板の 48）。押せるものの最小 44 より大きい
+    nonisolated static let goHeight: CGFloat = JPHeight.field
+    /// 札の角（v2 の板の 14）
+    nonisolated static let goRadius: CGFloat = JPRadius.m
 
     let destination: PhotoTrip.Destination
     /// 「いつ」の1行（台帳のスポットで、座標か季節が分かるときだけ）
@@ -31,23 +40,24 @@ struct PhotoTripSection: View {
     @State private var onScreen = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            JPEyebrowLine(L("NEXT TRIP · 次の旅へ", "NEXT TRIP"),
+                          spoken: L("写真から、次の旅へ", "From this photo to your next trip"))
+            HStack(spacing: JPSpace.xs) {
                 wishButton
                 if PhotoTrip.offersDirections(destination) {
                     directionsButton
                 }
-                Spacer(minLength: 0)
             }
             if let when {
                 Label {
                     Text(when)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.footnote.monospacedDigit())
+                        .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "sun.horizon")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityHidden(true)
                 }
@@ -117,9 +127,11 @@ struct PhotoTripSection: View {
 
     // MARK: - 札
 
-    /// 黒地の札（surface・角丸の丸み）。印は真鍮、字は白 15pt。選んだら縁を真鍮に（形でも伝える）
+    /// 黒地の札（v2: 幅を分け合う・高さ 48・角 14・地 白 7%）。印は真鍮、字は白 15pt。
+    /// 選んだら縁を真鍮に（形でも伝える）。選んでいないときの縁は v2 の線（白 14%・板の `.go` は 12% だが、
+    /// `WebTheme.border` は部品の縁に使わない決まりなので、線のボタンの縁 `line` にそろえた）
     private func chip(icon: String, title: String, selected: Bool, busy: Bool = false) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JPSpace.xs) {
             if busy {
                 ProgressView().tint(WebTheme.accent)
             } else {
@@ -133,10 +145,11 @@ struct PhotoTripSection: View {
                 .foregroundStyle(WebTheme.foreground)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: WebTheme.minTapTarget)
-        .background(WebTheme.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(selected ? WebTheme.accent : WebTheme.outline, lineWidth: 1))
-        .contentShape(Capsule())
+        .padding(.horizontal, JPSpace.m)
+        .frame(maxWidth: .infinity, minHeight: Self.goHeight)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: Self.goRadius))
+        .overlay(RoundedRectangle(cornerRadius: Self.goRadius)
+            .strokeBorder(selected ? WebTheme.accent : WebTheme.line, lineWidth: JPStroke.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: Self.goRadius))
     }
 }

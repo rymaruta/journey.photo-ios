@@ -13,6 +13,7 @@ struct GearPhotosView: View {
         CollectionPhotosScreen(title: section.group.label,
                                note: L("焦点距離 \(section.group.range)", "\(section.group.range)"),
                                photos: section.photos,
-                               lede: section.group.note)
+                               lede: section.group.note,
+                               eyebrow: "GEAR", eyebrowSpoken: L("機材", "Gear"))
     }
 }

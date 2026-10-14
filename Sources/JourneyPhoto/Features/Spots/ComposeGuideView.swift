@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import ImageIO
 
 /// 作例・構図を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
 ///
@@ -68,6 +69,8 @@ struct ComposeGuideView: View {
     @State private var showPicker = false
     /// 最後に撮れた1枚（投稿へ進める用）
     @State private var lastShot: ComposeShot?
+    /// 最後に撮れた1枚の小さな絵（「投稿」のカプセルに入れる・v2）。撮ったときに一度だけ縮めて作る
+    @State private var lastShotThumb: UIImage?
     private let preferences = CompositionPreferences()
 
     /// - Parameters:
@@ -348,15 +351,15 @@ struct ComposeGuideView: View {
         VStack(spacing: 12) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 30))
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
             Text(title)
                 .font(.headline)
                 .foregroundStyle(WebTheme.foreground)
                 .multilineTextAlignment(.center)
             Text(detail)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if ComposeGuide.offersSettings(camera.state) {
@@ -391,31 +394,27 @@ struct ComposeGuideView: View {
                 if reference.source == .samples, let sample { credit(sample) }
                 if reference.source == .library { libraryAdjustments }
             }
-            HStack {
-                if withoutSamples {
-                    postButton
-                } else if onPost != nil {
-                    // 撮影スポットの作例から開いたとき（2026-10-14）: 作例のサムネの隣に「投稿」。
-                    // 撮った1枚をそのスポットの投稿へ進める（`OfficialSpotView` が `onPost` を渡す）
-                    HStack(spacing: 12) { thumbButton; postButton }
-                } else {
-                    thumbButton
-                }
-                Spacer()
-                shutter
-                Spacer()
-                if withoutSamples {
-                    // シャッターを真ん中に保つための空き（右の切り替えと同じ幅）
-                    Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
-                } else if onPost != nil {
-                    // 左に「投稿」を足した分、右にも同じ幅の空きを置いてシャッターを真ん中に保つ
-                    HStack(spacing: 12) {
-                        Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
-                        switchButton
+            // v2: 左・シャッター・右の3つ割り（板の `grid-template-columns: 1fr auto 1fr`）。
+            // 左右を同じ幅の枠にするので、「投稿」のカプセルが出てもシャッターは真ん中のまま
+            HStack(spacing: 0) {
+                HStack(spacing: JPSpace.s) {
+                    if withoutSamples {
+                        postButton
+                    } else if onPost != nil {
+                        // 撮影スポットの作例から開いたとき（2026-10-14）: 作例のサムネの隣に「投稿」。
+                        // 撮った1枚をそのスポットの投稿へ進める（`OfficialSpotView` が `onPost` を渡す）
+                        thumbButton
+                        postButton
+                    } else {
+                        thumbButton
                     }
-                } else {
-                    switchButton
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                shutter
+                Group {
+                    if !withoutSamples { switchButton }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(.top, 14)
@@ -438,13 +437,17 @@ struct ComposeGuideView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
+                    Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(WebTheme.muted2)
+                        .foregroundStyle(WebTheme.text3)
                         .accessibilityHidden(true)
-                    Spacer(minLength: 0)
                 }
-                .frame(minHeight: 44)
+                // v2: 札の面（surface-1）・角 12・白 8% の縁の 44 の札（押すと構図のシート）
+                .padding(.horizontal, JPSpace.s)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.field))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -459,7 +462,7 @@ struct ComposeGuideView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .frame(width: 44, height: 44)
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -474,20 +477,21 @@ struct ComposeGuideView: View {
     private var sourceRow: some View {
         HStack(spacing: 8) {
             Text(L("参考写真", "Reference"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
             Spacer(minLength: 0)
+            // v2: **つながったセグメント**（白 7% の地・選んだ側は白 14% の面に白の太字）。v1 は離れた2つの線のカプセル
+            HStack(spacing: 0) {
             Button {
                 reference.useSamples()
             } label: {
                 Text(L("作例", "Examples"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(reference.source == .samples ? WebTheme.foreground : WebTheme.muted2)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(reference.source == .samples ? WebTheme.foreground : WebTheme.text2)
                     .padding(.horizontal, 12)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: Self.segmentInner)
                     .background(reference.source == .samples ? Color.white.opacity(0.14) : Color.clear,
-                                in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                                in: RoundedRectangle(cornerRadius: 9))
             }
             .buttonStyle(.plain)
             .disabled(samples.isEmpty)
@@ -500,21 +504,26 @@ struct ComposeGuideView: View {
                 HStack(spacing: 5) {
                     if loadingLibrary { ProgressView().tint(WebTheme.foreground) }
                     Text(L("写真ライブラリ", "Photo library"))
-                        .font(.caption.weight(.semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                 }
-                .foregroundStyle(reference.source == .library ? WebTheme.foreground : WebTheme.muted2)
+                .foregroundStyle(reference.source == .library ? WebTheme.foreground : WebTheme.text2)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 44)
+                .frame(minHeight: Self.segmentInner)
                 .background(reference.source == .library ? Color.white.opacity(0.14) : Color.clear,
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                            in: RoundedRectangle(cornerRadius: 9))
             }
             .buttonStyle(.plain)
             .disabled(loadingLibrary)
             .accessibilityValue(reference.source == .library ? L("選択中", "Selected") : "")
             .accessibilityIdentifier("composeGuide.sourceLibrary")
+            }
+            .padding(3)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.field))
         }
     }
+
+    /// セグメントの内側の高さ（外の 3 の余白と合わせて 44＝押せるものの最小）
+    static let segmentInner: CGFloat = WebTheme.minTapTarget - 6
 
     /// ライブラリ画像だけ位置と反転を調整。非表示は1タップで戻せる。
     private var libraryAdjustments: some View {
@@ -551,8 +560,8 @@ struct ComposeGuideView: View {
     private var opacityRow: some View {
         HStack(spacing: 12) {
             Text(L("濃さ", "Opacity"))
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.7))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
             Slider(value: $opacity, in: ComposeGuide.opacityRange)
                 .tint(WebTheme.foreground)
@@ -560,7 +569,7 @@ struct ComposeGuideView: View {
                 .accessibilityValue(ComposeGuide.opacityPercent(opacity))
                 .accessibilityIdentifier("composeGuide.opacity")
             Text(ComposeGuide.opacityPercent(opacity))
-                .font(.caption.monospacedDigit())
+                .font(JPFont.mono(13, relativeTo: .footnote))
                 .foregroundStyle(WebTheme.foreground)
         }
         .disabled(reference.hidden)
@@ -571,8 +580,8 @@ struct ComposeGuideView: View {
         CreditLinksMenu(links: sample.creditLinks, accessibilityLabel: sample.credit) {
             Text(sample.linkedCredit)
                 .tint(WebTheme.accent)
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 // **切り詰めない**（題・作者・ライセンス・出どころを必ず全部出す・`SpotSample` の注記）
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.leading)
@@ -622,32 +631,52 @@ struct ComposeGuideView: View {
                 onPost(shot.cameraCapture)
                 dismiss()
             } label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 17, weight: .semibold))
+                // v2 ComposeGuide「撮った後（投稿）」: **真鍮の縁と字のカプセル（44）に、撮った1枚の小さな写真**
+                // （黒い面の上の押せるもの・CLAUDE.md の owner の好み）
+                HStack(spacing: JPSpace.xs) {
+                    Group {
+                        if let thumb = lastShotThumb {
+                            Image(uiImage: thumb).resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "photo").font(JPFont.caption)
+                        }
+                    }
+                    .frame(width: Self.postThumb, height: Self.postThumb)
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
+                    .accessibilityHidden(true)
                     Text(L("投稿", "Post"))
-                        .font(.caption.weight(.semibold))
+                        .font(JPFont.bodyEmphasis)
                 }
                 .foregroundStyle(WebTheme.accent)
-                .frame(width: 52, height: 52)
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(WebTheme.accent, lineWidth: 1))
-                .contentShape(Rectangle())
+                .padding(.leading, JPSpace.xs)
+                .padding(.trailing, JPSpace.m)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .overlay(Capsule().strokeBorder(WebTheme.accent, lineWidth: 1.5))
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("撮った写真を投稿する", "Post the photo you took"))
             .accessibilityIdentifier("composeGuide.post")
-        } else {
-            Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
         }
     }
 
-    /// 中央: シャッター（72pt・白 4pt の輪・内側に白の丸）
+    /// 「投稿」の中の撮った1枚（板 26）
+    static let postThumb: CGFloat = 26
+
+    /// 撮った1枚を小さく読む（長い辺 120 画素・向きは焼く）。読めなければ nil（印で代える）
+    private static func thumbnail(of data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = ImagePreparer.downsampledImage(source: source, maxPixelSize: 120) else { return nil }
+        return UIImage(cgImage: image)
+    }
+
+    /// 中央: シャッター（v2 の 76pt・白 4pt の輪・内側に白の丸）
     private var shutter: some View {
         Button { Task { await shoot() } } label: {
             Circle()
                 .fill(WebTheme.foreground)
                 .padding(8)
-                .frame(width: 72, height: 72)
+                .frame(width: Self.shutterSize, height: Self.shutterSize)
                 .overlay(Circle().strokeBorder(WebTheme.foreground, lineWidth: 4))
         }
         .buttonStyle(.plain)
@@ -657,6 +686,9 @@ struct ComposeGuideView: View {
         .accessibilityHint(L("撮った写真は端末の写真に保存されます", "The photo is saved to your Photos"))
         .accessibilityIdentifier("composeGuide.shutter")
     }
+
+    /// シャッター（v2 の板 76。v1 は 72）
+    static let shutterSize: CGFloat = 76
 
     /// 右: 作例を切り替える（52pt の丸・白 30% の縁）。1枚しか無ければ押せない
     private var switchButton: some View {
@@ -702,6 +734,7 @@ struct ComposeGuideView: View {
             return
         }
         lastShot = shot
+        lastShotThumb = Self.thumbnail(of: shot.data)
         let outcome = await ComposeCamera.save(shot.data)
         show(ComposeGuide.message(for: outcome), isError: outcome != .saved)
     }

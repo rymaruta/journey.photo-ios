@@ -317,9 +317,9 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
                       "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"photo.spotGuide\")"))
-        // 見出しの撮影地の行の下・題の上（板 02 の位置）
-        let heading = try XCTUnwrap(view.components(separatedBy: "private var heading: some View {").dropFirst().first)
-        XCTAssertTrue(heading.prefix(200).contains("placeRow\n            spotGuideRow"))
+        // 撮影地の行の下・題の上（v2: 写真の裾 `photoFoot` に撮影地 → 撮影スポットの順。題は写真の下）
+        let foot = try XCTUnwrap(view.components(separatedBy: "private var photoFoot: some View {").dropFirst().first)
+        XCTAssertTrue(foot.prefix(300).contains("placeRow\n            spotGuideRow"))
         // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
         XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))
         XCTAssertTrue(view.contains("PhotoTrip.sectionDestination(photo: shown, stage: tripStage)"))
@@ -334,7 +334,8 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(section.contains("\"flag.fill\" : \"flag\""), "保存（しおり）・いいね（ハート）と印を分ける")
         XCTAssertTrue(section.contains("if PhotoTrip.offersDirections(destination) {"))
         XCTAssertTrue(section.contains(".openDirections(name: name, coords: coords, stillWanted: { onScreen })"))
-        XCTAssertTrue(section.contains(".frame(minHeight: WebTheme.minTapTarget)"), "押せるものは 44pt")
+        XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"), "押せるものは 44pt")
+        XCTAssertGreaterThanOrEqual(PhotoTripSection.goHeight, WebTheme.minTapTarget)
         XCTAssertTrue(section.contains(".accessibilityAddTraits(wanted ? .isSelected : [])"), "選んだ状態を読み上げない")
     }
 
@@ -360,8 +361,15 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(spot.contains("UploadView(spot: UploadSpotTarget(spot), onPosted:"))
         XCTAssertTrue(spot.contains("}, initialCapture: pendingCapture) }"), "撮った1枚がスポットの投稿に入らない")
         let guide = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
-        XCTAssertTrue(guide.contains("} else if onPost != nil {\n                    // 撮影スポットの作例から開いたとき"),
-                      "作例ありの撮る画面に「投稿」が無い")
-        XCTAssertTrue(guide.contains("HStack(spacing: 12) { thumbButton; postButton }"))
+        // 2026-10-14: v2 で下の並びを3つ割りにした（`StoryV2DesignTests.testComposeGuideControls`）。
+        // 作例ありの回は、左の枠にサムネと「投稿」がこの順に並ぶ
+        let branch = try XCTUnwrap(guide.range(of: "} else if onPost != nil {\n                        // 撮影スポットの作例から開いたとき"),
+                                   "作例ありの撮る画面に「投稿」が無い")
+        let rest = guide[branch.upperBound...]
+        let thumb = try XCTUnwrap(rest.range(of: "thumbButton\n"))
+        let post = try XCTUnwrap(rest.range(of: "postButton\n"))
+        let elseBranch = try XCTUnwrap(rest.range(of: "} else {"))
+        XCTAssertTrue(thumb.lowerBound < post.lowerBound && post.lowerBound < elseBranch.lowerBound,
+                      "作例ありの回にサムネと「投稿」が並んでいない")
     }
 }

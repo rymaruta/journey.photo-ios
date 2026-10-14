@@ -32,14 +32,33 @@ enum JPFont {
         .custom(displayName, size: size, relativeTo: style)
     }
 
-    /// 写真の題（詳細画面のいちばん大きい見出し・板 02 の 32px）
-    static let photoTitle = display(32, relativeTo: .largeTitle)
-    /// 画面の題・人の名前
-    static let screenTitle = display(26, relativeTo: .title)
-    /// カードの題（写真の上・大きい札）
-    static let cardTitle = display(22, relativeTo: .title2)
-    /// 格子・一覧の題。**明朝の下限**
-    static let rowTitle = display(18, relativeTo: .title3)
+    // MARK: 字の段（v2 の板 02・大きさは `JPTypeScale`）
+
+    /// 写真の題（詳細画面のいちばん大きい見出し・v2 の Display 32）
+    static let photoTitle = display(JPTypeScale.display, relativeTo: .largeTitle)
+    /// 画面の題・人の名前（Title 1 · 26）
+    static let screenTitle = display(JPTypeScale.title1, relativeTo: .title)
+    /// カードの題・節の見出し（Title 2 · 22）
+    static let cardTitle = display(JPTypeScale.title2, relativeTo: .title2)
+    /// 空・失敗の状態の見出し（v2 Components 06 の 20）
+    static let stateTitle = display(JPTypeScale.stateTitle, relativeTo: .title3)
+    /// 格子・一覧の題。**明朝の下限**（Title 3 · 18）
+    static let rowTitle = display(JPTypeScale.title3, relativeTo: .title3)
+
+    /// ナビ・シートの題（Headline · SF 600 · 17）
+    static let headline = Font.headline
+    /// 本文・説明文（Body · SF 400 · 15）。**v2 の本文は 15**——`.body`（17）ではなく `.subheadline`
+    static let body = Font.subheadline
+    /// ボタン・作者名（Callout · SF 600 · 15）
+    static let bodyEmphasis = Font.subheadline.weight(.semibold)
+    /// 副文・文字ボタン（Footnote · 13）
+    static let footnote = Font.footnote
+    /// 注記（Caption · 12）。**本文系の最小**
+    static let caption = Font.caption
+    /// 旅の記録の距離（Figure L · SF 300。板は 30、出るのは `.title` の 28——`JPTypeScale.figureLarge`）
+    static let figureLarge = number(JPTypeScale.figureLarge, weight: .light, relativeTo: .title)
+    /// 撮影情報・座標・時刻（Meta · 12・等幅）
+    static let meta = mono(JPTypeScale.meta)
 
     /// 数字。撮影情報・距離・件数。**SF Pro ＋ 等幅の数字**（桁がそろう・iOS の
     /// ヘルスケアや写真の数字と同じ素直な形）。名前は昔の等幅書体の名残で `mono` のまま
@@ -88,6 +107,9 @@ enum JPFont {
     /// SF らしく締める（2026-10-02 の owner の好み）
     static let statNumber = Font.system(.title3, weight: .semibold).monospacedDigit()
 
+    /// 眉ラベルの字（SF 600 · 11・等幅の数字）。`jpEyebrow()` と `JPEyebrowLine` が使う
+    static let eyebrow = number(JPTypeScale.eyebrow, weight: .semibold, relativeTo: .caption2)
+
     /// ワードマーク「Journey Photo」。**サイトと同じ New York Bold 22・固定**
     /// （ロゴは文字サイズの設定で伸び縮みさせない。`docs/BRAND.md`）
     static let wordmark = Font.system(size: 22, weight: .bold, design: .serif)
@@ -95,15 +117,18 @@ enum JPFont {
 
 extension View {
 
-    /// 眉ラベル（`TODAY'S THEME`・`TRIP BOOK` の類）。SF Pro の medium・字間を空けた小さい大文字。
+    /// 眉ラベル（`TODAY'S THEME`・`TRIP BOOK` の類）。SF Pro・字間を空けた小さい大文字。
     /// 11pt（caption2）は本文系の最小 12pt の、眉ラベルだけの例外。
+    ///
+    /// **v2（2026-10-14）: medium → semibold・字間 0.14em（1.54pt）**（板 02 の Eyebrow · SF 600 · 11）。
+    /// 黒地で右へ消えていく線まで付けるなら `JPEyebrowLine`。
     ///
     /// **色は呼ぶ側が決める。** 黒地の上なら真鍮、**写真の上なら白**
     /// （真鍮は夕日の写真の上で 1.03 まで落ちる）。
     func jpEyebrow() -> some View {
         self
-            .font(JPFont.mono(11, medium: true, relativeTo: .caption2))
-            .tracking(1.5)
+            .font(JPFont.eyebrow)
+            .tracking(JPTypeScale.eyebrowTracking)
             .textCase(.uppercase)
     }
 }

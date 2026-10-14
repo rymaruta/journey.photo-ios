@@ -247,8 +247,7 @@ struct SavedSpotsMapView: View {
                         selectedRow(offset, item)
                     }
                 }
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                .jpCardFace(fill: WebTheme.surface)
             }
         }
         .padding(.horizontal, 16)
@@ -484,7 +483,8 @@ struct FindSpotsButton: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .padding(.horizontal, 24)
-                .frame(minHeight: 48)
+                // v2 Components 01: 主ボタンの高さは 50（写真の無い画面なので真鍮の塗り＋墨）
+                .frame(minHeight: JPHeight.primaryButton)
                 .background(WebTheme.accentFill, in: Capsule())
                 .contentShape(Capsule())
         }

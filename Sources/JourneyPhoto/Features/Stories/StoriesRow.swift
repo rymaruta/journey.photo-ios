@@ -31,8 +31,8 @@ struct StoriesRow: View {
         Group {
             if auth.userId != nil {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 12) {
-                        // **1人＝1つの輪。自分は先頭、未読 → 既読の順**（板 27）
+                    HStack(alignment: .top, spacing: StoryRingMetrics.spacing) {
+                        // **1人＝1つの輪。自分は先頭、未読 → 既読の順**（板 27・v2 StoryRings）
                         let ordered = StoryPlayback.orderedRings(
                             StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) }),
                             me: auth.userId,
@@ -40,6 +40,10 @@ struct StoriesRow: View {
                         // **送っている間・失敗した残りがある間は、自分の輪がそれを示す**（板 27）
                         if uploads.isBusy {
                             uploadRing(ordered.mine)
+                        } else if ordered.mine == nil && ordered.others.isEmpty && model.loaded {
+                            // **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。丸1つだけ置くと
+                            // 何の列か分からないので、入口の行と「探す」への道を出す
+                            emptyRow
                         } else {
                             mineRing(ordered.mine)
                         }
@@ -52,8 +56,8 @@ struct StoriesRow: View {
                             } label: {
                                 ringItem(story: story,
                                          count: model.siblings(of: story).count,
-                                         color: unseen ? WebTheme.accent : Color.white.opacity(0.18),
-                                         name: story.authorName, emphasized: unseen)
+                                         unseen: unseen,
+                                         name: story.authorName)
                             }
                             .buttonStyle(.plain)
                         }
@@ -123,8 +127,8 @@ struct StoriesRow: View {
 
     // MARK: - 輪
 
-    /// 自分の輪。**ストーリーがあれば真鍮の区切り輪と「＋」の札、無ければ破線の丸**。
-    /// どちらも名前は「あなた」（板 27）
+    /// 自分の輪。**ストーリーがあれば真鍮の輪と「＋」、無ければ自分の顔に白 22% の輪と「＋」**。
+    /// どちらも名前は「あなた」（板 27・v2 StoryRings「自分のストーリーが無いとき」）
     @ViewBuilder
     private func mineRing(_ mine: Story?) -> some View {
         if let mine {
@@ -132,8 +136,9 @@ struct StoriesRow: View {
                 Button {
                     open(mine)
                 } label: {
+                    // 自分の輪は**見たかどうかに関係なく真鍮**（板の「あなた」の輪）
                     ringItem(story: mine, count: model.siblings(of: mine).count,
-                             color: WebTheme.accent, name: L("あなた", "You"), emphasized: false)
+                             unseen: true, name: L("あなた", "You"))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("あなたのストーリー", "Your story"))
@@ -141,24 +146,16 @@ struct StoriesRow: View {
                 Button {
                     showComposer = true
                 } label: {
-                    // 22pt の丸の中の記号（字ではない）。丸は輪に重ねる決まった大きさなので、
-                    // 記号も既定の大きさで止める（大きい文字でも丸からはみ出さない）
-                    Image(systemName: "plus")
-                        .font(.caption2.weight(.bold))
-                        .dynamicTypeSize(...DynamicTypeSize.large)
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(width: 22, height: 22)
-                        .background(Color.white, in: Circle())
-                        .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
-                        // **押せる範囲は丸で小さく。** 44の四角にすると自分の写真の
-                        // 右下4分の1を奪い、ストーリーを開くつもりで投稿画面が開いた
+                    // **押せる範囲は丸で小さく。** 44の四角にすると自分の写真の
+                    // 右下4分の1を奪い、ストーリーを開くつもりで投稿画面が開いた
+                    plusBadge
                         .frame(width: 30, height: 30)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
-                // 白丸の中心を輪の右下の線の上へ（板 27 の位置）
-                .offset(x: 5, y: 37)
+                // 白丸の中心を輪の右下へ（板: right/bottom −2）
+                .offset(x: 5, y: 39)
             }
         } else {
             // **自分の入口を先頭に置く。** ストーリーが1本も無いときに
@@ -166,26 +163,90 @@ struct StoriesRow: View {
             Button {
                 showComposer = true
             } label: {
-                VStack(spacing: 6) {
-                    ZStack {
-                        Circle()
-                            .strokeBorder(Color.white.opacity(0.35),
-                                          style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                        Image(systemName: "plus")
-                            .font(.body)
-                            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 62, height: 62)
-                    ringName(L("あなた", "You"), emphasized: false)
+                VStack(spacing: StoryRingMetrics.nameSpacing) {
+                    StoryRing(count: 1, unseen: false) { myFace }
+                        .overlay(alignment: .bottomTrailing) {
+                            plusBadge.offset(x: 2, y: 2)
+                        }
+                    ringName(L("あなた", "You"), color: WebTheme.text2)
                 }
+                .frame(width: StoryRingMetrics.size)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
         }
     }
 
-    /// **送っている間の自分の輪**（板 27「投稿した直後——上がるまで自分の輪が進み具合を示す」）。
+    /// 自分の顔（無ければ人の印）
+    private var myFace: some View {
+        RemoteImage(url: auth.userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) },
+                    placeholderSymbol: "person.crop.circle.fill")
+    }
+
+    /// 「＋」の白い丸（22・墨の「＋」・黒 3 の縁。板の `.plus`）。
+    /// 丸は輪に重ねる決まった大きさなので、記号も既定の大きさで止める（大きい文字でも丸からはみ出さない）
+    private var plusBadge: some View {
+        Image(systemName: "plus")
+            .font(.caption2.weight(.bold))
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            .foregroundStyle(WebTheme.accentText)
+            .frame(width: StoryRingMetrics.plusSize, height: StoryRingMetrics.plusSize)
+            .background(Color.white, in: Circle())
+            .padding(StoryRingMetrics.gap)
+            .background(Color.black, in: Circle())
+            .accessibilityHidden(true)
+    }
+
+    /// **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。自分の顔＋「＋」・「ストーリーを追加」と
+    /// 一行の説明、下に「探す」への道（真鍮の下線・黒地の上のリンク）
+    private var emptyRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                showComposer = true
+            } label: {
+                HStack(spacing: JPSpace.s) {
+                    myFace
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .clipShape(Circle())
+                        .overlay(alignment: .bottomTrailing) {
+                            plusBadge
+                                .scaleEffect(StoryRingMetrics.smallPlusSize / StoryRingMetrics.plusSize)
+                                .offset(x: 6, y: 6)
+                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("ストーリーを追加", "Add a story"))
+                            .font(JPFont.bodyEmphasis)
+                            .foregroundStyle(WebTheme.text)
+                        Text(L("フォローした人がストーリーを上げると、ここに輪が並びます",
+                               "When people you follow post stories, their rings show up here"))
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: JPHeight.row)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("stories.empty.add")
+            Button {
+                TabRouter.shared.openSearch()
+            } label: {
+                Text(L("探すで写真の作者を見つける", "Find photographers in Search"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.accent)
+                    .underline()
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        // 横に流れる列の中なので、幅を決める（いちばん狭い iPhone の幅 320 − 左右の端 16×2）
+        .frame(width: StoryRingMetrics.emptyRowWidth, alignment: .leading)
+    }
+
+    /// **送っている間の自分の輪**（板 27「投稿した直後——上がるまで、自分の輪の真鍮が時計回りに満ちていく」）。
     /// 進み具合は「出し終えた本数 ÷ 全部」。0本目でも少しだけ点ける（止まって見えない）。
     /// 失敗したら輪を赤くし、名前を「送れませんでした」に。押すと送り直すかやめるかを選ぶ
     @ViewBuilder
@@ -200,23 +261,28 @@ struct StoriesRow: View {
         Button {
             if failed { showUploadFailure = true }
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: StoryRingMetrics.nameSpacing) {
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.18), lineWidth: 2)
-                        .padding(1)
+                        .stroke(Color.white.opacity(StoryRingMetrics.uploadTrackOpacity),
+                                lineWidth: StoryRingMetrics.stroke)
+                        .padding(StoryRingMetrics.stroke / 2)
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(failed ? WebTheme.danger : WebTheme.accent,
-                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                style: StrokeStyle(lineWidth: StoryRingMetrics.stroke, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .padding(1)
-                    if let mine {
-                        StoryThumb(story: mine, size: 52)
-                            .opacity(0.6)
-                    } else {
-                        Circle().fill(WebTheme.surface).frame(width: 52, height: 52)
+                        .padding(StoryRingMetrics.stroke / 2)
+                    Group {
+                        if let mine {
+                            StoryThumb(story: mine, size: StoryRingMetrics.photo)
+                        } else {
+                            myFace
+                                .frame(width: StoryRingMetrics.photo, height: StoryRingMetrics.photo)
+                                .clipShape(Circle())
+                        }
                     }
+                    .opacity(StoryRingMetrics.uploadPhotoOpacity)
                     if failed {
                         Image(systemName: "exclamationmark")
                             .font(.body.weight(.bold))
@@ -224,11 +290,11 @@ struct StoriesRow: View {
                             .foregroundStyle(.white)
                     }
                 }
-                .frame(width: 62, height: 62)
+                .frame(width: StoryRingMetrics.size, height: StoryRingMetrics.size)
                 ringName(failed ? L("送れませんでした", "Failed") : L("送信中…", "Sending…"),
-                         emphasized: true)
+                         color: failed ? WebTheme.danger : WebTheme.text2)
             }
-            .frame(width: 64)
+            .frame(width: StoryRingMetrics.size)
         }
         .buttonStyle(.plain)
         .disabled(!failed)
@@ -248,38 +314,32 @@ struct StoriesRow: View {
         }
     }
 
-    /// 輪1つ（外径62・線2・写真52・下に名前12pt。板 27 は 10pt だが本文の最小 12 に合わせる）
-    private func ringItem(story: Story, count: Int, color: Color,
-                          name: String, emphasized: Bool) -> some View {
-        VStack(spacing: 6) {
-            ZStack {
-                // **本数で区切る**（1本は切れ目なし）。上から時計回り
-                ForEach(Array(StoryPlayback.ringSegments(count: count).enumerated()), id: \.offset) { _, seg in
-                    Circle()
-                        .trim(from: seg.start, to: seg.end)
-                        .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .padding(1)
-                }
-                StoryThumb(story: story, size: 52)
+    /// 輪1つと名前（`StoryRing`・下に名前 12pt。板 27 は 10pt だが本文の最小 12 に合わせる）
+    private func ringItem(story: Story, count: Int, unseen: Bool, name: String) -> some View {
+        VStack(spacing: StoryRingMetrics.nameSpacing) {
+            StoryRing(count: count, unseen: unseen) {
+                StoryThumb(story: story, size: StoryRingMetrics.photo)
             }
-            .frame(width: 62, height: 62)
-            ringName(name, emphasized: emphasized)
+            ringName(name, color: Self.nameColor(unseen: unseen))
         }
-        .frame(width: 64)
+        .frame(width: StoryRingMetrics.size)
     }
 
-    /// 名前。**未読は太く白く、既読は細く薄く**（板 27）
-    private func ringName(_ name: String, emphasized: Bool) -> some View {
+    /// 名前の色。**未読は白、既読は灰（text-3・黒地の上）**（v2 StoryRings。輪の色でも見分ける）
+    @MainActor static func nameColor(unseen: Bool) -> Color {
+        unseen ? WebTheme.text : WebTheme.text3
+    }
+
+    private func ringName(_ name: String, color: Color) -> some View {
         Text(name)
             // 本文の最小は 12pt（CLAUDE.md。板 27 は 10 だが、決まりを優先）。
             // **眉ラベル（11）扱いにはしない**——名前は人を見分ける本文なので 12（.caption）。
             // 輪の幅（64）は決まっているので、大きい文字は xxLarge で止める（1行で切れる）
-            .font(.caption.weight(emphasized ? .semibold : .regular))
+            .font(JPFont.caption)
             .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
-            .foregroundStyle(emphasized ? WebTheme.text : WebTheme.faint)
+            .foregroundStyle(color)
             .lineLimit(1)
-            .frame(maxWidth: 64)
+            .frame(maxWidth: StoryRingMetrics.size)
     }
 
     private func reload() async {
@@ -328,6 +388,8 @@ struct StoriesRow: View {
 final class StoriesViewModel: ObservableObject {
 
     @Published private(set) var stories: [Story] = []
+    /// 一度でも一覧を読めたか（読み終える前に「輪が無い」の行を出さない・2026-10-14）
+    @Published private(set) var loaded = false
 
     /// その1本と**同じ投稿者の束**（輪の色は束ごとに決める——1本でも
     /// 未読なら点ける）
@@ -385,6 +447,9 @@ final class StoriesViewModel: ObservableObject {
                                           blockedUserIds: latestBlocked,
                                           reportedPhotoIds: latestReported)
             .filter { !deletedIds.contains($0.id) }
-        if fetched != nil { loadedFor = viewerId }
+        if fetched != nil {
+            loadedFor = viewerId
+            loaded = true
+        }
     }
 }

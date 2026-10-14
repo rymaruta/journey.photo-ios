@@ -111,10 +111,11 @@ struct LightAlertSettingsRows: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(notice.title)
-                        .font(.subheadline)
+                        .font(JPFont.bodyEmphasis)
                     Text(notice.detail)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.caption)
+                        // 板 v2: 帯の中の説明も真鍮（85%）。真鍮 8% の地の上で 5.9:1
+                        .foregroundStyle(WebTheme.accent.opacity(LightAlertSettingsStyle.noticeDetailOpacity))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +133,8 @@ struct LightAlertSettingsRows: View {
         // 地は行いっぱいの矩形。角を落とすと角の外側が札の地のまま残り、1行目が塗りの外に出る（2026-10-14）。
         // 札の外周は JPCard が角丸で切る。
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.accent.opacity(0.08))
+        // 板 v2 の brass-soft（#1C170E・真鍮 8% を黒に重ねた値）。選択は担わない、案内の帯の色
+        .background(WebTheme.accentSoft)
         .disabled(isTurningOnPush)
         .accessibilityElement(children: .combine)
         .accessibilityHint(notice.hint)
@@ -157,9 +159,9 @@ struct LightAlertSettingsRows: View {
     }
 
     private var listLabel: some View {
+        // 板 v2: 行の絵を外した（Pro の行の Pro マークだけ）
         JPRowLabel(title: L("光と天気の知らせ", "Light & weather alerts"),
-                   detail: L("行きたい場所の、今週の光と天気", "This week\u{2019}s light and weather at your wishlist places"),
-                   icon: AnyView(ProIconView(icon: .light, side: 20, color: WebTheme.accent, lineWidth: 1.7)))
+                   detail: L("行きたい場所の、今週の光と天気", "This week\u{2019}s light and weather at your wishlist places"))
     }
 
     /// 押された瞬間だけ受ける（`SettingsView.pushBinding` と同じ理由——画面から戻したときに送り直さない）
@@ -191,6 +193,12 @@ struct LightAlertSettingsRows: View {
         deliveredAtPaywall = store.deliveredRevision
         showPaywall = true
     }
+}
+
+/// 「通知がオフのため届きません」の帯の見た目（v2 の板 Settings）
+enum LightAlertSettingsStyle {
+    /// 帯の説明の真鍮の濃さ（板: rgba(201,166,107,.85)）
+    static let noticeDetailOpacity = 0.85
 }
 
 /// 入切の文言（テストで見張る）

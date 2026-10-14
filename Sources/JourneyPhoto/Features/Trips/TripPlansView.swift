@@ -37,16 +37,27 @@ struct TripPlansView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
+        // 題は画面の中の明朝の大見出しに出す（v2 の板 TripPlans）。上のバーには出さない
+        // （同じ語を2度並べない）。戻るの「‹ 旅行プラン」には `navigationTitle` が要るので残す
+        .toolbar {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+        }
         .onChange(of: auth.userId) { _, _ in model.forget() }
     }
 
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(TripPlanText.listSubtitle(count: model.status == .loaded ? model.plans.count : nil))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
+                // 大見出し（v2 の板 TripPlans: 明朝の題 → 件数）。件数は**聞けたときだけ**（`listSubtitle`）
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    Text(L("旅行プラン", "Trip plans"))
+                        .font(JPFont.screenTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(TripPlanText.listSubtitle(count: model.status == .loaded ? model.plans.count : nil))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text3)
+                }
 
                 if model.status == .failed {
                     failedNotice
@@ -54,9 +65,8 @@ struct TripPlansView: View {
                 // **サーバーの言い分をそのまま出す**（上限の 403 と混雑を潰さない）
                 if let error = model.errorMessage {
                     Text(error)
-                        .font(.footnote)
+                        .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.danger)
-                        .padding(.horizontal, 4)
                 }
 
                 // 作る口は、一覧が取れていなくても出す——新しく作るのに一覧は要らない
@@ -67,7 +77,9 @@ struct TripPlansView: View {
 
                 planList
             }
-            .padding(16)
+            .padding(.horizontal, JPSpace.gutter)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.screenEnd)
         }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
@@ -109,91 +121,86 @@ struct TripPlansView: View {
             pickedPlanId = nil
             showPicker = true
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Image(systemName: "hand.draw")
                     .font(.title3)
                     .foregroundStyle(WebTheme.accent)
-                    .frame(width: 28)
+                    .frame(width: TripStyle.planThumb, height: TripStyle.planThumb)
+                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(L("写真から行き先を選ぶ", "Pick places by photo"))
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.foreground)
                     Text(L("右へ払うと「行きたい」に。選んだ場所がそのまま旅行プランの下書きになります",
                            "Swipe right on places you want to go, then turn them into a trip."))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.footnote)
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .accessibilityHidden(true)
+                Spacer(minLength: JPSpace.xs)
+                chevron
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .contentShape(Rectangle())
+            .tripPlanCard()
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("trips.pickByPhoto")
     }
 
+    /// 読めなかった（v2 Components 06: 灰の印 → 何が起きたか → 「もう一度」）。**赤にしない**——
+    /// 読めないのは人の誤りではない
     private var failedNotice: some View {
-        HStack(spacing: 8) {
-            Text(L("旅行プランを読み込めませんでした。", "Couldn't load your trips."))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.danger)
-            // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）
-            Button {
-                Task { await model.load(environment: environment) }
-            } label: {
-                Text(L("再試行", "Retry"))
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                    .webTappable()
-            }
+        ErrorBanner(message: L("旅行プランを読み込めませんでした。", "Couldn't load your trips."),
+                    isBusy: model.status == .loading) {
+            Task { await model.load(environment: environment) }
         }
-        .padding(.horizontal, 4)
     }
 
     private var trimmedTitle: String { newTitle.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// 作る口（v2 の板 TripPlans: 48 の欄 ＋ 48 の真鍮の「作る」・題を入れるまで押せない理由を1行で）
     private var createRow: some View {
-        HStack(spacing: 8) {
-            TextField(L("例: 冬のフィンランド", "e.g. Finland in winter"), text: $newTitle)
-                .font(.body)
-                .foregroundStyle(WebTheme.foreground)
-                .submitLabel(.done)
-                .onSubmit { create() }
-                // **上限で止める**（Web の `maxLength={100}` と同じ）。黙って100字で作らない
-                .onChange(of: newTitle) { old, new in
-                    let kept = PostLimits.limited(old: old, new: new, limit: TripPlanService.titleMax)
-                    if kept != new { newTitle = kept }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: JPSpace.xs) {
+                TextField(L("例: 冬のフィンランド", "e.g. Finland in winter"), text: $newTitle)
+                    .font(.body)
+                    .foregroundStyle(WebTheme.foreground)
+                    .submitLabel(.done)
+                    .onSubmit { create() }
+                    // **上限で止める**（Web の `maxLength={100}` と同じ）。黙って100字で作らない
+                    .onChange(of: newTitle) { old, new in
+                        let kept = PostLimits.limited(old: old, new: new, limit: TripPlanService.titleMax)
+                        if kept != new { newTitle = kept }
+                    }
+                    .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: JPHeight.field)
+                    // v2 の入力欄（surface-2 の地・白 8% の縁・角 12）
+                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+                    .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+                        .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                // **写真の無い画面の主ボタン1つ＝真鍮の塗り＋墨の字**（デザインシステムの決まり）
+                // 余白・大きさ・塗りは **label の中に**（外に付けると押せるのが文字の上だけになる）
+                Button { create() } label: {
+                    Text(L("作る", "New"))
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, JPSpace.l)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: JPHeight.field)
+                        .background(JPPillStyle.main(onPhoto: false).fill, in: Capsule())
+                        .contentShape(Capsule())
                 }
-                .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
-                .padding(.horizontal, 14)
-                .frame(minHeight: WebTheme.minTapTarget)
-                // 板の入力欄（白8%・縁6%）
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
-            // **写真の無い画面の主ボタン1つ＝真鍮の塗り＋墨の字**（デザインシステムの決まり）
-            // 余白・大きさ・塗りは **label の中に**（外に付けると押せるのが文字の上だけになる）
-            Button { create() } label: {
-                Text(L("作る", "New"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.accentText)
-                    .padding(.horizontal, 16)
-                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                    .background(WebTheme.accentFill, in: Capsule())
-                    .contentShape(Capsule())
+                .buttonStyle(.plain)
+                .opacity(canCreate ? 1 : TripStyle.disabledOpacity)
+                .disabled(!canCreate)
             }
-            .buttonStyle(.plain)
-            .opacity(canCreate ? 1 : 0.5)
-            .disabled(!canCreate)
+            // 押せない理由（板）。題が空のときだけ
+            if trimmedTitle.isEmpty {
+                Text(L("題を入れると「作る」が押せます", "Enter a title to create a plan"))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            }
         }
     }
 
@@ -216,14 +223,14 @@ struct TripPlansView: View {
     private var planList: some View {
         switch model.status {
         case .loading:
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
+            JPLoadingState(kind: .rows)
         case .failed:
             // 上の1行が事情と再試行を出している。**端末に保存した旅があれば、それを出す**
             // （圏外で一覧が読めなくても、保存した旅は開ける・板 72c）
             if !offline.saved.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    JPSectionTitle(L("電波なしで使える旅 · \(offline.saved.count) 件",
-                                     "Offline trips · \(offline.saved.count)"))
+                    JPEyebrowLine(L("電波なしで使える旅 · \(offline.saved.count) 件",
+                                    "Offline trips · \(offline.saved.count)"))
                     LazyVStack(spacing: 10) {
                         ForEach(offline.saved) { manifest in
                             NavigationLink {
@@ -238,18 +245,11 @@ struct TripPlansView: View {
             }
         case .loaded:
             if model.plans.isEmpty {
-                VStack(spacing: 8) {
-                    Text(L("旅行プランはまだありません。", "No trips yet."))
-                        .font(.callout)
-                        .foregroundStyle(WebTheme.muted2)
-                    Text(L("上でタイトルを付けて作ると、行きたい場所を並べられます。",
-                           "Name a trip above, then add places you want to go."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
+                // 空の状態（v2 Components 06: 明朝の見出し → どうすれば埋まるか）
+                EmptyState(title: L("旅行プランはまだありません", "No trips yet"),
+                           message: L("上でタイトルを付けて作ると、行きたい場所を並べられます。",
+                                      "Name a trip above, then add places you want to go."))
+                    .padding(.top, JPSpace.xl)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(model.plans) { plan in
@@ -266,60 +266,80 @@ struct TripPlansView: View {
         }
     }
 
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(WebTheme.text3)
+            .accessibilityHidden(true)
+    }
+
     /// 端末に保存した旅の札（一覧の札と同じ面）
     private func offlineCard(_ manifest: OfflineTripManifest) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 14) {
+            OfflinePhoneIcon(saved: true, side: 22)
+                .frame(width: TripStyle.planThumb, height: TripStyle.planThumb)
+                .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+            VStack(alignment: .leading, spacing: 3) {
                 Text(manifest.title.isEmpty ? L("無題のプラン", "Untitled trip") : manifest.title)
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
                 Text(OfflineTripText.savedRow(manifest))
-                    .font(JPFont.mono(12))
-                    .foregroundStyle(WebTheme.muted)
+                    .font(JPFont.meta)
+                    .foregroundStyle(WebTheme.text3)
             }
-            Spacer(minLength: 8)
-            OfflinePhoneIcon(saved: true, side: 20)
-            Image(systemName: "chevron.right")
-                .font(.footnote)
-                .foregroundStyle(Color.white.opacity(0.35))
-                .accessibilityHidden(true)
+            Spacer(minLength: JPSpace.xs)
+            chevron
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-        .contentShape(Rectangle())
+        .tripPlanCard()
         .accessibilityElement(children: .combine)
     }
 
+    /// プランの札（v2 の板 TripPlans: 左に 64 の枠・眉「出発まで 3 日」（近いときだけ）・明朝の題・
+    /// 「期間 · N か所」。帰ってきたプランは題を灰にして「帰着済み」）
     private func card(_ plan: TripPlan) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        let today = TripPlanText.ymd(pickedIn: .current, Date())
+        let finished = TripStyle.isFinished(end: plan.endDate ?? plan.startDate, today: today)
+        let eyebrow = finished ? nil : TripStyle.departureEyebrow(start: plan.startDate, today: today)
+        return HStack(spacing: 14) {
+            // 旗の印（板の写真の無いプランの枠）。プランの一覧は場所の写真を持たない
+            Image(systemName: "flag")
+                .font(.title3)
+                .foregroundStyle(finished ? WebTheme.text3 : WebTheme.accent)
+                .frame(width: TripStyle.planThumb, height: TripStyle.planThumb)
+                .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                if let eyebrow {
+                    Text(eyebrow)
+                        .jpEyebrow()
+                        .foregroundStyle(WebTheme.accent)
+                }
                 Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
                     .font(JPFont.rowTitle)
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(finished ? WebTheme.text2 : WebTheme.foreground)
                     .lineLimit(2)
-                if let period = TripPlanText.period(start: plan.startDate, end: plan.endDate) {
-                    Text(period)
-                        .font(JPFont.mono(12))
-                        .foregroundStyle(WebTheme.muted)
-                }
+                Text(TripStyle.planLine(start: plan.startDate, end: plan.endDate,
+                                        places: plan.itemCount, finished: finished))
+                    .font(JPFont.meta)
+                    .foregroundStyle(WebTheme.text3)
             }
-            Spacer(minLength: 8)
-            Text(TripPlanText.placeCount(plan.itemCount))
-                .font(JPFont.mono(13))
-                .foregroundStyle(WebTheme.faint)
-            Image(systemName: "chevron.right")
-                .font(.footnote)
-                .foregroundStyle(Color.white.opacity(0.35))
-                .accessibilityHidden(true)
+            Spacer(minLength: JPSpace.xs)
+            chevron
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-        .contentShape(Rectangle())
+        .tripPlanCard()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    /// 旅行プランの札の面（v2 の板 TripPlans の `.pl`: surface-1・白 8% の縁・角 16・内側 14）
+    func tripPlanCard() -> some View {
+        self
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .jpCardFace()
+            .contentShape(Rectangle())
     }
 }
 
