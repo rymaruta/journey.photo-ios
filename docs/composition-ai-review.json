@@ -81,11 +81,11 @@
       "note": "窓の縦横の目地が4分割の線に乗る。"
     },
     "zShape": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "山道が variant 0 のZ字に沿う。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。丘陵を縫う道（Unsplash）。手前の大きなカーブ→中ほど→奥のつづら折りと、視線が左右に折り返しながら奥へ進む。出典は Tools/composition-examples/photo-sources.json"
     },
     "cCurve": {
       "source": "individual",
@@ -95,11 +95,11 @@
       "note": "海岸線が右に開いたC字に沿う。"
     },
     "tunnel": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "枝の楕円が12%内側の枠に沿い、人物の顔が中心点に乗る。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。伏見稲荷大社の千本鳥居（京都）。朱の鳥居が連なって囲み、参道の奥の消失点が画面の中心に来る。出典は Tools/composition-examples/photo-sources.json"
     },
     "lShape": {
       "source": "individual",
@@ -116,11 +116,11 @@
       "note": "晴れた砂浜。頭の下が左上の交点で、水平線は上の三分割線。三分割の夕景とは別の写真。"
     },
     "ratio9x16": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "塔の左右が、中央の9:16枠に沿う。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。京都タワー（京都）。細長い塔が 9:16 の縦の枠いっぱいに伸びる。出典は Tools/composition-examples/photo-sources.json"
     },
     "level": {
       "source": "individual",
@@ -130,11 +130,11 @@
       "note": "防波堤の天端が中央の水平に乗る。"
     },
     "mizige": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "中央の十字と両対角線が梁に乗る。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。アーチの続く回廊（Unsplash）。消失点が中心、床と天井の縁が対角線に沿って中心へ集まる。出典は Tools/composition-examples/photo-sources.json"
     },
     "goldenTriangle": {
       "source": "individual",
@@ -144,11 +144,11 @@
       "note": "斜面が左下から右上の対角線に沿い、人が黄金比の足（0.64, 0.36）に乗る。"
     },
     "tianzige": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "外枠が3%内側の矩形に沿い、縦横の桟が中央の十字に乗る。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。金閣寺と鏡湖池の映り込み（京都）。水際が中央の横線、舎利殿が中央の縦線の近くに乗り、四方の重さが釣り合う。出典は Tools/composition-examples/photo-sources.json"
     },
     "square": {
       "source": "individual",
@@ -158,18 +158,18 @@
       "note": "屋根が正方形の上辺、壁の下が下辺に近く、扉が中央の十字に乗る。"
     },
     "ratio4x5": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "人物の頭と足が、上下約3%を残した4:5枠に沿う。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。八坂の塔と石畳の道（京都・二年坂のあたり）。着物の2人は後ろ姿。4:5 の枠の中に塔と道が収まる。出典は Tools/composition-examples/photo-sources.json"
     },
     "ratio16x9": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
-      "checked": "2026-10-13",
-      "note": "山並みが中央の16:9帯の中に収まる。"
+      "checked": "2026-10-14",
+      "note": "実写真（CC0）。山あいの湖と雲の映り込み（Unsplash）。16:9 の帯の中に山並みと水面の映り込みが収まる。出典は Tools/composition-examples/photo-sources.json"
     },
     "otherRatios": {
       "source": "individual",
@@ -186,25 +186,25 @@
       "note": "縦4列・横6段の目地が線に乗る。"
     },
     "squareGrid": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
       "checked": "2026-10-14",
-      "note": "縦の目地が6等分、横の目地が0.125間隔の線に乗る。窓の中を通っていた初稿は不採用。"
+      "note": "実写真（CC0）。リスボンのアズレージョ（青いタイル）の家（Unsplash）。窓と扉の縦の並びを格子で確かめる。出典は Tools/composition-examples/photo-sources.json"
     },
     "rootRectangle": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
       "checked": "2026-10-14",
-      "note": "街並みが√2の枠に収まり、枠の中の対角と逆対角が街路に乗る。"
+      "note": "実写真（CC0）。新倉山浅間公園の忠霊塔と富士山（山梨）。√2 の枠の中で、塔が右の縦の流れ、富士山が左上の交点の近くに乗る。出典は Tools/composition-examples/photo-sources.json"
     },
     "armature": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
       "checked": "2026-10-14",
-      "note": "鉄骨が対角・菱形・角から中点への線に沿う。右下の1本だけわずかに外れる。"
+      "note": "実写真（CC0）。ブルックリン橋の主塔とケーブル（ニューヨーク）。ケーブルが対角線と角から辺の中点への線に沿って中心へ集まる。出典は Tools/composition-examples/photo-sources.json"
     },
     "phiGrid": {
       "source": "individual",
@@ -221,18 +221,18 @@
       "note": "段差がフィボナッチの区切りに沿い、扉が目（0.276, 0.724）に重なる。"
     },
     "diagonal45": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
       "checked": "2026-10-14",
-      "note": "4本の道が、ピクセル上で45度の線に沿う。角から角へのXではない。"
+      "note": "実写真（CC0）。エスカレーターと鏡の壁の階段（Unsplash）。手すりと段の縁が 45° の斜めの線に沿う。出典は Tools/composition-examples/photo-sources.json"
     },
     "obliqueThirds": {
-      "source": "individual",
+      "source": "photo",
       "width": 864,
       "height": 1152,
       "checked": "2026-10-14",
-      "note": "コンクリートの目地が斜めの4本に沿う。縦のシュプールの初稿は不採用。"
+      "note": "実写真（CC0）。砂丘の稜線（Unsplash）。光の当たる斜面と影が斜めの帯になって画面を分ける。出典は Tools/composition-examples/photo-sources.json"
     }
   },
   "held": {

@@ -1,6 +1,6 @@
 # AI構図作例の登録手順
 
-構図の詳細画面は画像アセット `composition-ai-<CompositionKind.rawValue>` を検索する。存在すれば写真の上に `CompositionOverlay` を重ね、ラベルを「AI生成の構図作例」にする。存在しない場合は従来の図を表示する。
+構図の詳細画面は画像アセット `composition-ai-<CompositionKind.rawValue>` を検索する。存在すれば写真の上に `CompositionOverlay` を重ね、ラベルを「AI生成の構図作例」にする（実写真の構図は「構図の作例写真」・下の節）。存在しない場合は従来の図を表示する。
 
 ## 画像の条件
 
@@ -28,3 +28,12 @@
 - 未登録の構図は、これまでどおり配置図のまま出す。37種類そろったとは数えない。
 
 確認の記録は `docs/composition-ai-review.json`。絵の入れ物と台帳の食い違いは `CompositionAIExampleTests` が落とす。
+
+## 実写真の作例（2026-10-14 owner）
+
+AI の絵が構図を文字どおりの形で描いていて写真の作例になっていなかった12種類（tunnel・zShape・rootRectangle・armature・diagonal45・mizige・tianzige・obliqueThirds・squareGrid・ratio4x5・ratio9x16・ratio16x9）は、**無料で商用に使え、クレジット表記の要らない実写真**に替えた。
+
+- 使える許諾: CC0・パブリックドメイン・Unsplash License・Pexels License。CC BY など表記の要るものは使わない。出典のページで許諾を確かめ、確かめられないものは使わない。
+- 生成画像・透かし・文字入りは使わない。人物は後ろ姿や小さな人影まで。
+- 出典・作者・許諾・確かめた日・切り抜きは `Tools/composition-examples/photo-sources.json`。台帳では `source: "photo"`。
+- アプリの札は `CompositionExample.photoKinds` の構図だけ「構図の作例写真」。台帳・出典の記録・`photoKinds` の食い違いは `CompositionAIExampleTests` が落とす。

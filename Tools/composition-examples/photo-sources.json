@@ -1,0 +1,281 @@
+{
+  "policy": "構図の作例のうち実写真のもの。無料で商用に使え、クレジット表記の要らない許諾（CC0・パブリックドメイン・Unsplash License・Pexels License）だけを使う。CC BY などの表記が要るものは使わない。生成画像・透かし・文字入りは使わず、人物は後ろ姿や小さな人影まで。どれも出典のページで許諾を確かめた。",
+  "fetch": "Wikimedia Commons の API と縮小版（1920・3840px）から取得。User-Agent は journey-photo-composition-examples/1.0（個人の情報は送らない）。",
+  "output": "3:4 の縦長に切り抜き、864×1152・JPEG 品質 86。crop は取得した縮小版の上の画素",
+  "photos": {
+    "tunnel": {
+      "subject": "伏見稲荷大社の千本鳥居（京都）。朱の鳥居が連なって囲み、参道の奥の消失点が画面の中心に来る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Fushimi_Inari_Shrine_August_2019.jpg",
+      "author": "Sizableframe",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{self|cc-zero}}・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2560,
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Hakkoda_Mountains,_Part_II-_Foothills_-_Hakkoda6915.jpg",
+          "author": "lumoplank",
+          "license": "CC0"
+        }
+      ]
+    },
+    "zShape": {
+      "subject": "丘陵を縫う道（Unsplash）。手前の大きなカーブ→中ほど→奥のつづら折りと、視線が左右に折り返しながら奥へ進む",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Autumn_road_up_the_hills_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/c0I4ahyGIkA",
+      "author": "Jesse Bowser jessebowser",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2159,
+        "x": 1571,
+        "y": 0,
+        "width": 1619,
+        "height": 2159
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Twisting_mountain_road_(Unsplash).jpg",
+          "author": "Georg Nietsch bartondawes",
+          "license": "CC0"
+        }
+      ]
+    },
+    "rootRectangle": {
+      "subject": "新倉山浅間公園の忠霊塔と富士山（山梨）。√2 の枠の中で、塔が右の縦の流れ、富士山が左上の交点の近くに乗る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Mt_Fuji_and_Tyureito_pagoda_2.jpg",
+      "author": "Hrykt",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{CC0}}・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2880,
+        "x": 1224,
+        "y": 0,
+        "width": 2160,
+        "height": 2880
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Fujiyoshida_-_Fujiyoshida6761.jpg",
+          "author": "lumoplank",
+          "license": "CC0"
+        }
+      ]
+    },
+    "armature": {
+      "subject": "ブルックリン橋の主塔とケーブル（ニューヨーク）。ケーブルが対角線と角から辺の中点への線に沿って中心へ集まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Brooklyn_Bridge_tower_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/nRw0Mo4oFYo",
+      "author": "Jacob Copus cacobjopus",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 960,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Steel_Bridge_Below_(Unsplash).jpg",
+          "author": "valor kopeny valor",
+          "license": "CC0"
+        }
+      ]
+    },
+    "diagonal45": {
+      "subject": "エスカレーターと鏡の壁の階段（Unsplash）。手すりと段の縁が 45° の斜めの線に沿う",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Staircase_and_mirror_walls_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/hx6kTWs1sHI",
+      "author": "Dmitri  Popov dmpop",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2880,
+        "x": 840,
+        "y": 0,
+        "width": 2160,
+        "height": 2880
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Gloomy_staircase_1_(Unsplash).jpg",
+          "author": "Kyaw Tun mahuyar",
+          "license": "CC0"
+        }
+      ]
+    },
+    "mizige": {
+      "subject": "アーチの続く回廊（Unsplash）。消失点が中心、床と天井の縁が対角線に沿って中心へ集まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Hallway_with_pillars._(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/CtA7F7BwT5o",
+      "author": "Serge Esteve sce767",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2924,
+        "x": 0,
+        "y": 182,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:The_Broad,_Los_Angeles,_United_States_(Unsplash_aLNqys6xAdw).jpg",
+          "author": "Victor Lozano prozpris",
+          "license": "CC0"
+        }
+      ]
+    },
+    "tianzige": {
+      "subject": "金閣寺と鏡湖池の映り込み（京都）。水際が中央の横線、舎利殿が中央の縦線の近くに乗り、四方の重さが釣り合う",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Den_gyllene_paviljongen,_Kyoto,_Japan_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/ZsiVhiNDnsQ",
+      "author": "Oskar Vertetics oskarvertetics",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2544,
+        "x": 1281,
+        "y": 0,
+        "width": 1908,
+        "height": 2544
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Kinkaku-ji_golden_temple_(Unsplash).jpg",
+          "author": "Kendall Henderson kendallhenderson",
+          "license": "CC0"
+        }
+      ]
+    },
+    "obliqueThirds": {
+      "subject": "砂丘の稜線（Unsplash）。光の当たる斜面と影が斜めの帯になって画面を分ける",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Sloping_Sand_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/Qs7CP5btbGI",
+      "author": "Joseph Argus joseph_argus",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 960,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Vietnam_rice_terrace_(Unsplash).jpg",
+          "author": "Daniel Burka dburka",
+          "license": "CC0"
+        }
+      ]
+    },
+    "squareGrid": {
+      "subject": "リスボンのアズレージョ（青いタイル）の家（Unsplash）。窓と扉の縦の並びを格子で確かめる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Blue_stone_house_with_windows_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/FbQyPakumhE",
+      "author": "Sérgio Rola sergio_rola",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 3096,
+        "x": 759,
+        "y": 0,
+        "width": 2322,
+        "height": 3096
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Square_windows_in_gray_facade_(Unsplash).jpg",
+          "author": "Loic Djim loic",
+          "license": "CC0"
+        }
+      ]
+    },
+    "ratio4x5": {
+      "subject": "八坂の塔と石畳の道（京都・二年坂のあたり）。着物の2人は後ろ姿。4:5 の枠の中に塔と道が収まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Kyoto,_Japan_(Unsplash_UIN-pFfJ7c).jpg",
+      "originalURL": "https://unsplash.com/photos/_UIN-pFfJ7c",
+      "author": "Sorasak boontohhgraphy",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2563,
+        "x": 1151,
+        "y": 0,
+        "width": 1922,
+        "height": 2563
+      },
+      "alternates": []
+    },
+    "ratio9x16": {
+      "subject": "京都タワー（京都）。細長い塔が 9:16 の縦の枠いっぱいに伸びる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Kyoto_Station,_Kyoto,_Japan_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/Ytno1wZF5Is",
+      "author": "Suttawee Tantiwongchai kahonoii",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2550,
+        "x": 1928,
+        "y": 0,
+        "width": 1912,
+        "height": 2550
+      },
+      "alternates": []
+    },
+    "ratio16x9": {
+      "subject": "山あいの湖と雲の映り込み（Unsplash）。16:9 の帯の中に山並みと水面の映り込みが収まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Clouds_mirrored_in_a_mountain_lake_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/gV-BfIHK1pE",
+      "author": "Ales Krivec aleskrivec",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-14",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2563,
+        "x": 959,
+        "y": 0,
+        "width": 1922,
+        "height": 2563
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Mountain_lake_(Unsplash).jpg",
+          "author": "Aleksandra Boguslawska aleksandraboguslawska",
+          "license": "CC0"
+        }
+      ]
+    }
+  }
+}

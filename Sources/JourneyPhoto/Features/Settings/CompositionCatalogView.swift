@@ -139,7 +139,7 @@ struct CompositionExplanationView: View {
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
                          : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
-                            ? L("AI生成の構図作例", "AI-generated composition example")
+                            ? CompositionExample.bundledCaption(for: kind)
                             : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -204,6 +204,24 @@ struct CompositionExplanationView: View {
 
 /// 一覧と詳細で同じ作例・解説を使い、撮影時の線と食い違わないようにする。
 enum CompositionExample {
+    /// 作例が**実際の写真**の構図（AI 生成ではない）。出典と許諾は
+    /// `Tools/composition-examples/photo-sources.json`、確認の記録は `docs/composition-ai-review.json`（source: photo）。
+    ///
+    /// 2026-10-14 判断（owner）: 文字どおりの形を描いた AI の絵（Z の字の道・線だけの絵）は写真の作例に
+    /// なっていなかったので、無料で商用に使え表記の要らない写真（CC0・パブリックドメイン）に替えた。
+    /// 写真を「AI生成」と書かない（`CompositionAIExampleTests` が台帳と突き合わせる）
+    static let photoKinds: Set<CompositionKind> = [
+        .tunnel, .zShape, .rootRectangle, .armature, .diagonal45, .mizige, .tianzige, .obliqueThirds,
+        .squareGrid, .ratio4x5, .ratio9x16, .ratio16x9,
+    ]
+
+    /// 作例の絵の下の札。写真なら「作例の写真」、AI の絵なら「AI生成」と書く
+    static func bundledCaption(for kind: CompositionKind) -> String {
+        photoKinds.contains(kind)
+            ? L("構図の作例写真", "Composition example photo")
+            : L("AI生成の構図作例", "AI-generated composition example")
+    }
+
     static func scene(for kind: CompositionKind) -> String {
         switch kind {
         case .thirds, .iphone: return L("海辺の人物を交点に置く", "Place a person on an intersection by the sea")
@@ -211,27 +229,30 @@ enum CompositionExample {
         case .symmetry: return L("建物の正面を中心軸で揃える", "Center a building's facade")
         case .hinomaru: return L("一輪の花を画面の中央に", "Center a single flower")
         case .horizon: return L("夕空を広く見せる海岸", "Show more of the sunset sky above the sea")
-        case .grid4, .squareGrid, .tianzige, .mizige, .grid6x4:
+        case .grid4, .squareGrid, .grid6x4:
             return L("建物の窓や柱の並びを整える", "Align rows of windows or columns")
+        case .tianzige: return L("水辺の建物と映り込みを十字で釣り合わせる", "Balance a waterside building and its reflection on the cross")
+        case .mizige: return L("回廊の線が中心の奥へ集まる", "Corridor lines converging on the center")
         case .phiGrid: return L("街角の人物を内寄りの交点に", "Place a person at an inner intersection")
         case .goldenSpiral: return L("曲がる道の先に主役を置く", "Place the subject at the end of a winding path")
         case .fibonacciGrid: return L("階段をたどって奥の扉へ", "Follow stairs toward a distant door")
         case .goldenTriangle: return L("斜面と人物を対角に並べる", "Arrange a slope and person diagonally")
         case .diagonals, .diagonal45, .obliqueThirds: return L("斜めに延びる道や稜線", "A sloping road or mountain ridge")
         case .thirdsDiagonals: return L("道の斜線と奥の人物", "A diagonal road leading to a person")
-        case .dynamicSymmetry, .armature: return L("交差する街路と建物の輪郭", "Crossing streets and building edges")
-        case .rootRectangle: return L("√2に切り出す街並み", "A cityscape framed for a √2 crop")
+        case .dynamicSymmetry: return L("交差する街路と建物の輪郭", "Crossing streets and building edges")
+        case .armature: return L("橋のケーブルが斜めに集まる", "Bridge cables converging on the diagonals")
+        case .rootRectangle: return L("√2に切り出す塔と山", "A pagoda and mountain framed for a √2 crop")
         case .triangle: return L("3人の位置で三角形を作る", "Arrange three people in a triangle")
         case .radial: return L("一点へ集まる線路や光", "Tracks or light converging at one point")
-        case .tunnel: return L("木のトンネルの奥に人物", "A person beyond a tunnel of trees")
+        case .tunnel: return L("鳥居や木のトンネルの奥へ", "Into a tunnel of torii gates or trees")
         case .frameWithin: return L("門の向こうに見える街並み", "A cityscape seen through a gate")
         case .negativeSpace: return L("広い空に小さな鳥を置く", "A small bird against a wide sky")
         case .lShape: return L("岸辺と桟橋でL字を作る", "A shoreline and pier forming an L")
-        case .zShape: return L("折り返す山道をたどる", "A winding mountain path")
+        case .zShape: return L("折り返す道を手前から奥へたどる", "Follow a winding road from near to far")
         case .sCurve: return L("S字に曲がる川の流れ", "An S-shaped river")
         case .cCurve: return L("湾曲する海岸線", "A curved coastline")
         case .square: return L("中央の建物を正方形に収める", "A building composed inside a square")
-        case .ratio4x5: return L("縦長に切り出す人物写真", "A portrait framed for 4:5")
+        case .ratio4x5: return L("縦長に切り出す街並み", "A street scene framed for 4:5")
         case .ratio9x16: return L("縦いっぱいに伸びる塔", "A tall tower in a 9:16 frame")
         case .ratio16x9: return L("横に広がる山並み", "A mountain panorama in 16:9")
         case .otherRatios: return L("横長の街並みを比率で切り出す", "Frame a wide cityscape for the chosen ratio")
