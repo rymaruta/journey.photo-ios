@@ -33,7 +33,8 @@ final class CompositionAIExampleTests: XCTestCase {
             XCTAssertEqual(Double(size.width) / Double(size.height), 0.75, accuracy: 0.01, kind)
         }
         XCTAssertEqual(bundled, Set(ledger.accepted.keys), "台帳と絵の入れ物が食い違っている")
-        XCTAssertLessThan(bundled.count, 37, "37種類そろったと数えない。未確認の構図が残っている")
+        XCTAssertEqual(bundled.count, 37, "確認済みの37種類がそろっていない")
+        XCTAssertTrue(ledger.held.isEmpty, "不採用の構図が残っている")
         for kind in ledger.held.keys {
             XCTAssertFalse(bundled.contains(kind), "\(kind) は不採用なのに登録されている")
         }
