@@ -73,6 +73,8 @@ final class UploadDraftStore {
         var savedAt: String
         /// 撮影スポットの紐付け（スポットの画面から開いた投稿）。無ければ nil
         var spot: Spot? = nil
+        /// 「この写真を見て撮影」の元の写真（2026-10-14）。無ければ nil。**前の版の下書きには無い**（nil で読む）
+        var inspired: InspiredBy.Pick? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -236,6 +238,15 @@ final class UploadDraftStore {
         update(for: userId) { items in
             for i in items.indices where items[i].key == itemKey { items[i].inFlight = inFlight ? true : nil }
         }
+    }
+
+    /// 記録にある下書きから「この写真を見て撮影」の元の写真を外す（付ける1枚の保存が通ったとき）。
+    /// 写真と欄はそのまま
+    func clearInspired(for userId: String) {
+        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+              var saved = try? JSONDecoder().decode(Draft.self, from: data), saved.inspired != nil else { return }
+        saved.inspired = nil
+        if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: key) }
     }
 
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**

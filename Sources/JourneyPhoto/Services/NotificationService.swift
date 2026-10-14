@@ -32,11 +32,12 @@ struct NotificationService {
 struct AppNotification: Decodable, Identifiable, Equatable {
 
     enum Kind: String, Decodable {
-        case like, comment, follow, storyreply, badge
-        /// 「この写真を見て撮影」（2026-10-14・`api-user/src/inspired.ts`）。だれかが**自分の写真を元に**
-        /// 撮った写真を公開した。`photoId`・`photoSrc` は**付けた人の新しい写真**（押すとそこへ）、
-        /// `sourcePhotoId` は元になった自分の写真。1枚につき1回だけ届く
-        case inspired
+        case like, comment, follow, storyreply, badge, inspired
+        // `inspired`＝「この写真を見て撮影」（2026-10-14・`api-user/src/inspired.ts`）。だれかが**自分の写真を元に**
+        // 撮った写真を公開した。`photoId`・`photoSrc` は**付けた人の新しい写真**（押すとそこへ）、
+        // `sourcePhotoId` は元になった自分の写真。1枚につき1回だけ届く。
+        // 🔴 **サーバーの種別（`notify.ts` の union）は `{` の直後の1行目の `case` に並べる**——Web 版との
+        // 突き合わせ（`check-api-parity.py`）はそこだけを読む。別の行に置くと「アプリが知りません」と NG になる
         /// 光と天気の知らせ（Pro・前の晩 20:00 のプッシュ・2026-10-09）。**プッシュにだけ来る**——
         /// サーバーはお知らせの一覧に積まない（`lightForecast.ts` の `alertOne`）。押したら一覧
         /// 「行きたい場所の光」を開く。一覧に紛れ込んでも行の文言を持たないので描かれない
