@@ -87,6 +87,25 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストでメダルを回す全画面の硬貨を止める向きと強さ（Debug のみ）。
+    /// `-JPPreviewMedalPoses "0:1,0.45:1,1.1:1"`（横の回り:浮き彫りの強さ）。
+    ///
+    /// 硬貨はふだん勝手にゆっくり回るので、画面写真の角度が毎回ちがう。浮き彫りの強さ（2026-10-14）を
+    /// 決まった角度で比べるために、**最初の向きで止め、硬貨を押すと次の向きへ進める**。
+    /// 入っている見本の利用者のときだけ効く。Release では必ず `nil`
+    static let medalPosesKey = "JPPreviewMedalPoses"
+
+    static var medalPoses: [MedalPose]? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: medalPosesKey), !raw.isEmpty else { return nil }
+        let poses = MedalPose.parse(raw)
+        return poses.isEmpty ? nil : poses
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
     /// `-JPPreviewPaywall YES`。
     ///

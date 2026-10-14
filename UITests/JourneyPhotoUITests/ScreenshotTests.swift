@@ -1576,4 +1576,55 @@ final class ScreenshotTests: XCTestCase {
         guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
     }
+
+    /// **メダルの浮き彫りと面取り**（2026-10-14 owner「回転した時に表と裏があまりにも凹凸感なさすぎて…
+    /// ほんの少しだけ凹凸感欲しい」）。メダルを回す全画面の硬貨を、決まった角度で止めて撮る。
+    ///
+    /// 硬貨はふだん勝手に回るので、`-JPPreviewMedalPoses`（Debug のみ・`PreviewSession.medalPoses`）で
+    /// 最初の向きに止め、硬貨を押すたびに次の向きへ進める。並びは「横の回り:浮き彫りの強さ」:
+    /// 正面・少し傾けた（約26°）・大きく傾けた（約63°）を既定の強さ（1）で、比べる用に少し傾けたまま
+    /// 強さ 0（前の作り）と 2（強め）。メダルは段のある都道府県（銀）。開けなければ撮らない（この試験の決まり）
+    func testCapturesMedalRelief() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewBadges", "prefectures:2,earlyUser:1"]
+        app.launchArguments += ["-JPPreviewMedalPoses", "0:1,0.45:1,1.1:1,0.45:0,0.45:2"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return }
+        nameLine.tap()
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        // 名前の横の画面でメダルを長押しすると全画面で手に取れる（`MedalViewerTests` と同じ道）
+        let badge = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
+        guard badge.waitForExistence(timeout: 15), badge.isHittable else { return }
+        badge.press(forDuration: 1.0)
+        let coin = app.descendants(matching: .any)["medalViewer.coin"].firstMatch
+        guard coin.waitForExistence(timeout: 15) else { return }
+
+        let names = ["85a-メダルの浮き彫り（正面）",
+                     "85b-メダルの浮き彫り（少し傾けた）",
+                     "85c-メダルの浮き彫り（大きく傾けた）",
+                     "85d-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）",
+                     "85e-メダルの浮き彫り（少し傾けた・強さ2＝強め）"]
+        for (index, name) in names.enumerated() {
+            if index > 0 {
+                guard coin.exists, coin.isHittable else { return }
+                coin.tap()
+            }
+            // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。できるまで待つ
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+        }
+    }
 }
