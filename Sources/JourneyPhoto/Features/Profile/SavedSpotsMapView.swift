@@ -484,7 +484,8 @@ struct FindSpotsButton: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .padding(.horizontal, 24)
-                .frame(minHeight: 48)
+                // v2 Components 01: 主ボタンの高さは 50（写真の無い画面なので真鍮の塗り＋墨）
+                .frame(minHeight: JPHeight.primaryButton)
                 .background(WebTheme.accentFill, in: Capsule())
                 .contentShape(Capsule())
         }

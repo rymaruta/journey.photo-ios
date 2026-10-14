@@ -31,6 +31,9 @@ struct BadgeShelfView: View {
     @State private var errorMessage: String?
     @State private var viewing: EarnedBadge?
     @State private var showNameSide = false
+    /// 「外す」を送っている間（二度押しで2本送らない）
+    @State private var removing = false
+    @EnvironmentObject private var toasts: ToastCenter
 
     init(mode: Mode, preloaded: UserProfile? = nil, allowsChoosing: Bool = true) {
         self.mode = mode
@@ -48,18 +51,30 @@ struct BadgeShelfView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                // 板 v2 Shelf: 題は明朝（板の 30 は字の段に無いので画面の題の 26）
+                Text(L("バッジ", "Badges"))
+                    .font(JPFont.screenTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .accessibilityAddTraits(.isHeader)
                 if isMine, allowsChoosing, let profile {
                     decorateSection(profile)
                 }
                 medalsSection
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.horizontal, ProfileV2.gutter)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.xl)
         }
         .webScreen()
         .navigationTitle(L("バッジ", "Badges"))
         .navigationBarTitleDisplayMode(.inline)
+        // 題は上の明朝の見出しが受け持つ。中央は空けておく（戻る文字と読み上げには題を持つ）
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
+            }
+        }
         .task(id: auth.userId) { await load() }
         .refreshable { await load() }
         .fullScreenCover(item: $viewing) { badge in
@@ -74,82 +89,125 @@ struct BadgeShelfView: View {
 
     // MARK: - 名前の横に飾る
 
-    /// 板: 「名前の横に飾る」。いま出しているバッジ（無ければ「まだ選んでいません」）。押すと名前の横の画面
+    /// 板 v2 Shelf: 上の札に**いま飾っているバッジ**（52pt の絵・「名前の横に飾る · 1つ（Pro でも1つ）」・名前）と、
+    /// 右に「変える」（線のボタン → 名前の横の画面）と「外す」（飾りを外す・資格は残る）。
+    /// 何も飾っていなければ「まだ選んでいません」と「選ぶ」
     private func decorateSection(_ profile: UserProfile) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(L("名前の横に飾る", "Next to your name"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                Spacer()
-                Text(L("1つ", "One"))
-                    .font(JPFont.mono(12))
-                    .foregroundStyle(WebTheme.faint)
+        let shown = profile.shownBadge.flatMap { BadgeCatalog.isKnown($0.key) ? $0 : nil }
+        return HStack(spacing: JPSpace.s) {
+            if let badge = shown {
+                // 大きい絵を表示の画素ちょうどに縮める（名前の横と同じ・2026-10-09 判断）
+                RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 52)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: "seal")
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(WebTheme.text3)
+                    .frame(width: 52, height: 52)
+                    .accessibilityHidden(true)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("名前の横に飾る · 1つ（Pro でも1つ）", "Next to your name · one (Pro included)"))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                Text(shown.map { BadgeCatalog.fullName($0.key, tier: $0.tier) } ?? L("まだ選んでいません", "Nothing chosen yet"))
+                    .font(JPFont.bodyEmphasis)
+                    .foregroundStyle(shown == nil ? WebTheme.text2 : WebTheme.foreground)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button { showNameSide = true } label: {
-                HStack(spacing: 10) {
-                    if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) {
-                        // 大きい絵を表示の画素ちょうどに縮める（名前の横と同じ・2026-10-09 判断）
-                        RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(BadgeCatalog.fullName(badge.key, tier: badge.tier))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
-                            Text(L("名前の横に出ています", "Shown next to your name"))
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.accent)
-                        }
+                Group {
+                    if shown == nil {
+                        Text(L("選ぶ", "Choose"))
                     } else {
-                        Image(systemName: "seal")
-                            .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(WebTheme.faint)
-                            .frame(width: 40, height: 40)
-                        Text(L("まだ選んでいません", "Nothing chosen yet"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(WebTheme.muted)
+                        Text(L("変える", "Change"))
                     }
-                    Spacer(minLength: 0)
-                    Text(L("変える", "Change"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(WebTheme.accent)
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-                .background(ProMarkColors.color(0x0E0E0E), in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(ProMarkColors.color(0x3A3220), lineWidth: 1))
-                .contentShape(Rectangle())
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .padding(.horizontal, JPSpace.s)
+                    .frame(minHeight: JPHeight.inlineButton)
+                    .overlay(Capsule().strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityHint(L("名前の横のバッジを選ぶ", "Choose the badge next to your name"))
+            if let badge = shown {
+                Button { Task { await removeBadge(profile) } } label: {
+                    Text(L("外す", "Remove"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .padding(.horizontal, JPSpace.xs)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(removing)
+                .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier))を外す",
+                                      "Remove \(BadgeCatalog.fullName(badge.key, tier: badge.tier))"))
+                .accessibilityIdentifier("shelf.removeBadge")
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, JPSpace.xs)
+        .padding(.vertical, JPSpace.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // v2 の札（#0E0E0F・白 8% の縁・角 16）
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+    }
+
+    /// 飾りを外す（名前の横に何も出さない）。名前の横の画面の「なし」で決めるのと同じ部分更新
+    /// （`NameSideChoice.patch`・Pro マークと公式の印は触らない）。外したら読み直してマイページにも知らせる
+    private func removeBadge(_ profile: UserProfile) async {
+        guard !removing,
+              let patch = NameSideChoice.patch(profile: profile, selected: nil, style: profile.chosenProMark)
+        else { return }
+        removing = true
+        defer { removing = false }
+        do {
+            try await environment.profiles.update(patch)
+            auth.noteProfileChanged()
+            await load()
+        } catch {
+            toasts.show((error as? LocalizedError)?.errorDescription
+                        ?? L("外せませんでした。時間をおいてもう一度お試しください。",
+                             "Couldn't remove it. Please try again later."),
+                        kind: .failure)
         }
     }
 
     // MARK: - メダル
 
+    /// 板 v2 Shelf: 眉「獲得したメダル」と右に「7 / 12」（等幅・持っている数だけ白）、その下に
+    /// 真鍮の 2pt の進み線、3 列のメダル（84pt・札の地は敷かない・まだのものは色を抜いて 35%）
     private var medalsSection: some View {
         let shown = items
         let count = BadgeCatalog.shelfCount(shown)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(isMine ? L("獲得したメダル", "Medals")
                             : L("\(profile?.name ?? "") のメダル", "\(profile?.name ?? "")'s medals"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if isMine, !shown.isEmpty {
                     HStack(spacing: 0) {
                         Text("\(count.earned)").foregroundStyle(WebTheme.foreground)
-                        Text(" / \(count.total)").foregroundStyle(WebTheme.faint)
+                            .font(JPFont.number(JPTypeScale.footnote, weight: .semibold, relativeTo: .footnote))
+                        Text(" / \(count.total)").foregroundStyle(WebTheme.text2)
                     }
-                        .font(JPFont.mono(12))
+                        .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(L("\(count.total) 個のうち \(count.earned) 個", "\(count.earned) of \(count.total)"))
                 }
+            }
+            if isMine, !shown.isEmpty {
+                progressLine(earned: count.earned, total: count.total)
             }
             if let errorMessage {
                 Text(errorMessage)
@@ -158,52 +216,62 @@ struct BadgeShelfView: View {
             }
             if shown.isEmpty {
                 if loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                    JPLoadingState(kind: .rows)
                 } else if errorMessage == nil {
-                    Text(L("まだメダルはありません。", "No medals yet."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted2)
-                        .padding(.vertical, 20)
+                    EmptyState(message: L("まだメダルはありません。", "No medals yet."))
                 }
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: JPSpace.xs), count: 3),
+                          spacing: JPSpace.xxs) {
                     ForEach(shown) { item in
                         tile(item)
                     }
                 }
+                .padding(.top, 6)
             }
         }
     }
 
+    /// 獲得の進み線（板 v2 Shelf: 2pt・地は白 10%・持っている割合だけ真鍮）。数は上の「7 / 12」が言う
+    private func progressLine(earned: Int, total: Int) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.1))
+                Capsule().fill(WebTheme.accent)
+                    .frame(width: proxy.size.width * BadgeShelfRules.progress(earned: earned, total: total))
+            }
+        }
+        .frame(height: JPStroke.emphasis)
+        .accessibilityHidden(true)
+    }
+
     @ViewBuilder
     private func tile(_ item: BadgeCatalog.ShelfItem) -> some View {
-        let content = VStack(spacing: 5) {
+        let content = VStack(spacing: JPSpace.xxs) {
             Image(BadgeCatalog.largeImage(item.key, tier: item.tier))
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 72, height: 72)
-                // 板: まだのものは色を抜いて 35%
+                .frame(width: BadgeShelfRules.medalSide, height: BadgeShelfRules.medalSide)
+                // 板: まだのものは色を抜いて 35%。持っているものは影で浮かせる
                 .grayscale(item.isEarned ? 0 : 1)
                 .opacity(item.isEarned ? 1 : 0.35)
+                .shadow(color: .black.opacity(item.isEarned ? 0.6 : 0), radius: 6, y: 6)
             Text(BadgeCatalog.name(item.key))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.footnote.weight(.semibold))
+                .foregroundStyle(item.isEarned ? WebTheme.foreground : WebTheme.text3)
                 .lineLimit(1)
-                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 12))
+                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 13))
             if let progress = item.progress {
                 Text(progress)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption.monospacedDigit())
+                    .foregroundStyle(WebTheme.text3)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .top)
-        .background(ProMarkColors.color(0x0B0B0B), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(ProMarkColors.color(0x1F1F1F), lineWidth: 1))
+        .padding(.vertical, JPSpace.xs)
+        .frame(maxWidth: .infinity, alignment: .top)
 
         if let earned = item.earned {
             Button { viewing = earned } label: { content.contentShape(Rectangle()) }
@@ -254,6 +322,15 @@ struct BadgeShelfView: View {
 
 /// 棚の決まり（画面に依らない・テストで見張る）
 enum BadgeShelfRules {
+
+    /// メダルの絵の一辺（板 v2 Shelf: 84。v1 は 72 の札の中）
+    static let medalSide: CGFloat = 84
+
+    /// 進み線の割合（0〜1）。全部が 0 なら 0（0 で割らない）
+    static func progress(earned: Int, total: Int) -> CGFloat {
+        guard total > 0 else { return 0 }
+        return CGFloat(min(max(earned, 0), total)) / CGFloat(total)
+    }
 
     /// 棚に並べるもの。
     /// - 自分: `GET /user/badges` が読めればそれ（進み具合つき）。読めなければプロフィールの持ち物だけ

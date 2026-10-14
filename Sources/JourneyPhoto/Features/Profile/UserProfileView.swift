@@ -39,12 +39,8 @@ struct UserProfileView: View {
     /// 名前の横のバッジを押した → この人のバッジの棚
     @State private var showShelf = false
 
-    /// 板 31: 3列・隙間 4pt・角なし（マイページと同じ）
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-    ]
+    /// 板 v2 UserProfile: 3列・隙間 2pt・縦長 4:5・角なし（マイページと同じ `ProfileV2`）
+    private let columns = ProfileV2.gridItems
 
     /// ログインしていて、自分以外で、ブロック中でないページか
     /// （フォロー・一覧の丸・ハイライト・ブロックはこの時だけ。`ProfileLine.canAct`）。
@@ -133,9 +129,9 @@ struct UserProfileView: View {
 
     private var scroll: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 板: 見出し・数・ハイライトの間は 12pt、その下の札と格子は 16pt
-                VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JPSpace.m) {
+                // 板: 見出し・数・ハイライトの間は 14pt 前後（v2 の物差しで 12）、その下の札と格子は 16pt
+                VStack(alignment: .leading, spacing: JPSpace.s) {
                     VStack(alignment: .leading, spacing: 0) {
                         ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
                                      reserve: hasCover) { hasCover = $0 }
@@ -199,7 +195,7 @@ struct UserProfileView: View {
             Text(action)
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, ProfileV2.gutter)
         }
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
@@ -211,25 +207,29 @@ struct UserProfileView: View {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
         } else if shownPhotos.isEmpty && !isBlocked && model.photoCount == .pending {
-            // ブロックを解いて読み直すまでの間。「まだありません」と言わない
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            // ブロックを解いて読み直すまでの間。「まだありません」と言わない（v2: 格子の骨格）
+            JPLoadingState(kind: .grid)
         } else if shownPhotos.isEmpty && !model.isLoading {
             // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
             EmptyState(message: L("公開された写真はまだありません", "No public photos yet"))
+            // 板 v2 UserProfile（写真0）: 押せる一手は真鍮の下線のリンク（黒地の上のリンクは真鍮）
+            findOthersLink
         } else if tab == .map && shownPhotos.isEmpty {
             // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
             // 「読み終えて0枚」は上の枝で済んでいるので、ここに来るのは読み込み中だけ
-            // （マイページの読み込み中と同じ輪）
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            // （マイページの読み込み中と同じ骨格）
+            JPLoadingState(kind: .rows)
+                .padding(.horizontal, ProfileV2.gutter)
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
             // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）
             MyPhotosMap(photos: shownPhotos, isMine: false, onSheetDismiss: { dropped = hidden.snapshot })
         } else {
-            LazyVGrid(columns: columns, spacing: 4) {
+            LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
                 ForEach(shownPhotos) { photo in
                     NavigationLink { PhotoDetailView(photo: photo, context: shownPhotos) } label: {
-                        PhotoFrame(photo: photo, corner: 0)
+                        PhotoFrame(photo: photo, aspect: ProfileV2.gridAspect, corner: 0)
+                            .background(WebTheme.card)
                     }
                     .buttonStyle(.plain)
                 }
@@ -237,7 +237,25 @@ struct UserProfileView: View {
         }
     }
 
-    /// 見出し（板 31）: 84pt のアイコン（黒い 3pt の縁）と右に「フォローする」、
+    /// 写真が0枚の人のページの一手（板 v2 UserProfile の「ほかの人の写真を探す」）。
+    /// 探すのタブを開く。黒地の上のリンクなので真鍮・下線（色だけで言わない）・押せる高さ 44
+    private var findOthersLink: some View {
+        Button {
+            TabRouter.shared.openSearch()
+        } label: {
+            Text(L("ほかの人の写真を探す", "Find other people's photos"))
+                .font(JPFont.body)
+                .underline()
+                .foregroundStyle(WebTheme.accent)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityHint(L("探すのタブを開きます", "Opens the Search tab"))
+    }
+
+    /// 見出し（板 v2 UserProfile）: 88pt のアイコン（黒い 4pt の縁）と右に「フォローする」、
     /// その下に明朝 26 の名前・「@ユーザー名 · 居住地」・ひとことと自己紹介。
     ///
     /// 2026-10-09 判断（owner）: 右のフォロー一覧の丸（人と＋の印）は消した。「フォローする」と
@@ -248,6 +266,7 @@ struct UserProfileView: View {
             HStack(alignment: .bottom) {
                 RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
                     .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
+                    .background(WebTheme.card)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（板 31）。本人が選んだ色の輪（`themeColor`）は
                     // 出さない——マイページ（板 05c）と揃える（owner の判断・2026-09-26）。
@@ -256,13 +275,12 @@ struct UserProfileView: View {
                 Spacer(minLength: 8)
                 if canAct {
                     followButton
-                        .padding(.bottom, 4)
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 HStack(spacing: 6) {
                     Text(model.shownName ?? "—")
-                        .font(JPFont.display(26, relativeTo: .title))
+                        .font(JPFont.screenTitle)
                         .foregroundStyle(Color.white)
                         // 題は上のバーに出さないので、画面の見出しは名前が受け持つ
                         .accessibilityAddTraits(.isHeader)
@@ -276,20 +294,24 @@ struct UserProfileView: View {
                     ProfileHandleLine(line: line, showsPin: false)
                 }
                 // ひとことと自己紹介。**以前は自己紹介だけ**で、ひとことを出していなかった
+                // v2: 本文 15・text-2・行間 1.7
                 ForEach(ProfileLine.about(status: model.profile?.statusText,
                                           bio: model.profile?.bio), id: \.self) { text in
                     Text(text)
-                        .font(.footnote)
-                        .lineSpacing(4)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.body)
+                        .lineSpacing(6)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, JPSpace.xxs)
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ProfileV2.gutter)
         .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
     }
 
-    /// 数の1行（板 31: 「000 フォロワー　000 フォロー中　000 写真」・数が先）。
+    /// 数の並び（板 v2 UserProfile: 数字の下に名前の札を間 24 で「フォロワー・フォロー中・写真」）。
+    /// v1（板 31）は「000 フォロワー」の1行だった。形はマイページと同じ `ProfileStat`。
     ///
     /// 写真の数は**下の格子に並べている枚数そのもの**（公開一覧からこの人のぶんを
     /// 選り分けたもの）。**読み終えるまで出さず、取れなければ「—」**（`PhotoCount`）。
@@ -300,7 +322,7 @@ struct UserProfileView: View {
     /// フォロワー・フォロー中も写真と同じく、読み終えるまで出さず取れなければ「—」
     /// （以前は読み込み中に 0 と出ていた。マイページの `statValue` と同じ決まり）
     private var counts: some View {
-        HStack(spacing: 20) {
+        HStack(alignment: .top, spacing: JPSpace.xl) {
             ForEach(ProfileLine.counts(followers: model.followerCount, following: model.followingCount,
                                        photos: isBlocked ? .pending : model.photoCount.shown(shownPhotos.count))) { item in
                 switch item.kind {
@@ -314,7 +336,7 @@ struct UserProfileView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ProfileV2.gutter)
     }
 
     @ViewBuilder
@@ -338,23 +360,16 @@ struct UserProfileView: View {
     }
 
     private func countText(_ item: ProfileLine.Count) -> some View {
-        HStack(spacing: 4) {
-            Text(item.value)
-                .font(JPFont.mono(13, relativeTo: .footnote))
-                .foregroundStyle(Color.white)
-            Text(item.label)
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
-        }
-        .lineLimit(1)
-        .accessibilityElement(children: .combine)
+        ProfileStat(value: item.value, label: item.label)
+            .accessibilityElement(children: .combine)
     }
 
     /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）。
-    /// 上下の 12pt の間に収まる量
-    private static let countTapSlack: CGFloat = 10
+    /// v2 の札は2段（数字 20＋名前 12 ≈ 42pt）なので、44 に足りない分だけ
+    private static let countTapSlack: CGFloat = 1
 
-    /// 「フォローする」（白地に墨）／「フォロー中」（白12% の地に白18% の縁）。板 31 の丸い札。
+    /// 「フォローする」（白 94% に墨）／「フォロー中 ▾」（線）。板 v2 UserProfile の見出しのボタン
+    /// （`ProfileFollowButtonLabel`・見た目 40・当たり 44）。形で分ける——色だけで状態を言わない。
     ///
     /// 🔴 `.borderedProminent` は使わない——`RootView` の
     /// `.tint(WebTheme.foreground)` が白なので、白地に白い字＝
@@ -368,8 +383,7 @@ struct UserProfileView: View {
                 Task { await model.toggleFollow(userId: userId, environment: environment, follow: true) }
             }
         } label: {
-            FollowPill(title: model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"),
-                       isFollowing: model.isFollowing)
+            ProfileFollowButtonLabel(isFollowing: model.isFollowing)
         }
         .buttonStyle(.plain)
         // 送っている間は薄くする（押したことが見て分かる。二度押しは `disabled` で防ぐ）

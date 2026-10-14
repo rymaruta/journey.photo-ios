@@ -311,6 +311,8 @@ public struct Path: View, Shape {
     public mutating func closeSubpath() {}
     /// 塗る（本物は `Shape` の修飾子）
     public func fill<S: ShapeStyle>(_ style: S) -> Path { self }
+    /// 一部だけ描く（旅の記録の線を古い順に引く）。本物は `Shape` の修飾子
+    public func trim(from: Double, to: Double) -> Path { self }
     public var body: Never { fatalError("模型") }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める

@@ -314,6 +314,14 @@ public struct Animation {
     public static func easeInOut(duration: Double) -> Animation { Animation() }
     public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825) -> Animation { Animation() }
     public static let `default` = Animation()
+    /// 3次の曲線（旅の記録の線を引く動き）
+    public static func timingCurve(_ c0x: Double, _ c0y: Double, _ c1x: Double, _ c1y: Double,
+                                   duration: Double) -> Animation { Animation() }
+}
+/// 値の途中を毎コマ描き直す部品（本物は `animatableData` を補間する）
+public protocol Animatable {
+    associatedtype AnimatableData
+    var animatableData: AnimatableData { get set }
 }
 /// 本物は `Result` を返す。模型は中身を1回呼ぶだけ
 @discardableResult

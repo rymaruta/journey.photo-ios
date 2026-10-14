@@ -32,7 +32,8 @@ struct SavedPhotosView: View {
             if photos.isEmpty {
                 switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                    // v2: 格子の骨格（0.3 秒より早ければ出さない）
+                    JPLoadingState(kind: .grid)
                 case .none:
                     EmptyState(message: Self.emptyMessage)
                 case .nothingShown:
