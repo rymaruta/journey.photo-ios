@@ -539,6 +539,25 @@ final class SupporterTests: XCTestCase {
         XCTAssertEqual(face.accessibilityLabel, "サポーター証、No. 0001、丸田、@maruta、MEMBER SINCE 2026.10")
     }
 
+    /// 🔴 見出しを左の枠に置かない。iOS 26 は左右の中身をガラスの丸ボタンにし、
+    /// 「サポーター証」が「サ...」に潰れていた（ロゴと同じ。`AppHeader` の注）
+    func testTitleSitsBesideTheBackButton() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let src = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Pro/SupporterCardView.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(src.range(of: ".toolbar {"))
+        let end = try XCTUnwrap(src[start.upperBound...].range(of: "\n        }"))
+        let block = String(src[start.lowerBound..<end.upperBound])
+        XCTAssertFalse(block.contains("ToolbarItem(placement: .topBarLeading)"),
+                       "見出しを左の枠に置くと iOS 26 がガラスの丸にして「サ...」になる")
+        XCTAssertTrue(block.contains("ToolbarItem(placement: .principal)"),
+                      "見出しは中央の枠に置く")
+        XCTAssertTrue(block.contains(".frame(maxWidth: .infinity, alignment: .leading)"),
+                      "見出しは戻るの右へ寄せる")
+        XCTAssertTrue(block.contains("サポーター証"))
+    }
+
     /// 板 64 の札（342×216・角 16）。狭い画面では左右 24 を残して縮める
     func testCardLayout() {
         XCTAssertEqual(SupporterCardLayout.aspect, 342.0 / 216.0, accuracy: 1e-9)

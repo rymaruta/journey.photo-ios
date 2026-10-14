@@ -58,11 +58,17 @@ struct SupporterCardView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             // 板: 戻るの右に明朝 18 の見出し（真ん中には置かない）
-            ToolbarItem(placement: .topBarLeading) {
+            //
+            // 🔴 **`.topBarLeading` に置かない。** iOS 26 は左右の枠の中身をボタンとして
+            // ガラスの丸に入れるので、「サポーター証」が丸に押し込まれて「サ...」の
+            // ボタンに見えていた（ロゴと同じ。`AppHeader` の注）。中央の枠はガラスを
+            // 持たないので、枠いっぱいに広げて左へ寄せる。
+            ToolbarItem(placement: .principal) {
                 Text(L("サポーター証", "Supporter card"))
                     .font(JPFont.display(18, relativeTo: .headline))
                     .foregroundStyle(Color.white)
                     .accessibilityAddTraits(.isHeader)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .task {
