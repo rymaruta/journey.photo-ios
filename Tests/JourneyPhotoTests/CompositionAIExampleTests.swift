@@ -1,4 +1,5 @@
 import XCTest
+@testable import JourneyPhoto
 
 /// 構図解説の写真は、1枚ずつ確認した台帳に載ったものだけを本番の絵の入れ物へ置く。
 /// 一覧からの切り抜きや、短い辺が 800px に届かない仮素材は置けない。
@@ -23,7 +24,7 @@ final class CompositionAIExampleTests: XCTestCase {
             let kind = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "composition-ai-", with: "")
             bundled.insert(kind)
             let entry = try XCTUnwrap(ledger.accepted[kind], "\(kind) は確認台帳に無い")
-            XCTAssertEqual(entry.source, "individual", "\(kind) は個別制作ではない")
+            XCTAssertTrue(["individual", "photo"].contains(entry.source), "\(kind) は個別制作でも実写真でもない")
             let file = url.appendingPathComponent("composition-ai-\(kind).jpg")
             let data = try Data(contentsOf: file)
             let size = try XCTUnwrap(Self.jpegSize(data), "\(kind) の寸法が読めない")
@@ -36,6 +37,33 @@ final class CompositionAIExampleTests: XCTestCase {
         XCTAssertLessThan(bundled.count, 37, "37種類そろったと数えない。未確認の構図が残っている")
         for kind in ledger.held.keys {
             XCTAssertFalse(bundled.contains(kind), "\(kind) は不採用なのに登録されている")
+        }
+    }
+
+    /// 実写真の作例（source: photo）は、出典の記録・アプリの札（「作例写真」）と食い違わない。
+    /// 表記の要らない許諾（CC0・パブリックドメイン・Unsplash・Pexels）だけを置く
+    func testPhotoExamplesHaveSourcesAndAreNotLabeledAI() throws {
+        let ledger = try JSONDecoder().decode(ReviewLedger.self,
+                                              from: Data(contentsOf: root.appendingPathComponent("docs/composition-ai-review.json")))
+        let photoKinds = Set(ledger.accepted.filter { $0.value.source == "photo" }.keys)
+        XCTAssertEqual(photoKinds, Set(CompositionExample.photoKinds.map(\.rawValue)),
+                       "台帳の実写真とアプリの photoKinds が食い違っている")
+        let sourcesURL = root.appendingPathComponent("Tools/composition-examples/photo-sources.json")
+        let sources = try JSONDecoder().decode(PhotoSources.self, from: Data(contentsOf: sourcesURL))
+        XCTAssertEqual(Set(sources.photos.keys), photoKinds, "出典の記録と台帳の実写真が食い違っている")
+        let allowed: Set<String> = ["CC0", "Public domain", "Unsplash License", "Pexels License"]
+        for (kind, photo) in sources.photos {
+            XCTAssertTrue(allowed.contains(photo.license), "\(kind) の許諾 \(photo.license) は表記なしで使えない")
+            XCTAssertTrue(photo.sourceURL.hasPrefix("https://"), kind)
+            XCTAssertFalse(photo.checked.isEmpty, kind)
+        }
+        for kind in CompositionKind.allCases {
+            let caption = CompositionExample.bundledCaption(for: kind)
+            if CompositionExample.photoKinds.contains(kind) {
+                XCTAssertFalse(caption.contains("AI"), "\(kind.rawValue) は写真なのに AI と書いている")
+            } else {
+                XCTAssertTrue(caption.contains("AI"), "\(kind.rawValue) は AI の絵なのに写真と書いている")
+            }
         }
     }
 
@@ -65,6 +93,16 @@ final class CompositionAIExampleTests: XCTestCase {
         let minimumShortSide: Int
         let accepted: [String: Entry]
         let held: [String: String]
+    }
+
+    private struct PhotoSources: Decodable {
+        let photos: [String: Photo]
+    }
+
+    private struct Photo: Decodable {
+        let sourceURL: String
+        let license: String
+        let checked: String
     }
 
     private struct Entry: Decodable {
