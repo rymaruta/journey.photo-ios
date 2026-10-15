@@ -1,7 +1,7 @@
 {
-  "policy": "構図の作例のうち実写真のもの。無料で商用に使え、クレジット表記の要らない許諾（CC0・パブリックドメイン・Unsplash License・Pexels License）だけを使う。CC BY などの表記が要るものは使わない。生成画像・透かし・文字入りは使わず、人物は後ろ姿や小さな人影まで。どれも出典のページで許諾を確かめた。",
+  "policy": "構図の作例（2026-10-15 からすべて実写真）。無料で商用に使え、クレジット表記の要らない許諾（CC0・パブリックドメイン・Unsplash License・Pexels License）だけを使う。CC BY などの表記が要るものは使わない。生成画像・透かし・文字入りは使わず、人物は後ろ姿や小さな人影まで。どれも出典のページで許諾を確かめた。",
   "fetch": "Wikimedia Commons の API と縮小版（1920・3840px）から取得。User-Agent は journey-photo-composition-examples/1.0（個人の情報は送らない）。",
-  "output": "3:4 の縦長に切り抜き、864×1152・JPEG 品質 86。crop は取得した縮小版の上の画素",
+  "output": "3:4 の縦長に切り抜き、864×1152・JPEG 品質 86（2026-10-15 の21枚は 85）。crop は取得した縮小版の上の画素",
   "photos": {
     "tunnel": {
       "subject": "伏見稲荷大社の千本鳥居（京都）。朱の鳥居が連なって囲み、参道の奥の消失点が画面の中心に来る",
@@ -273,6 +273,429 @@
         {
           "sourceURL": "https://commons.wikimedia.org/wiki/File:Mountain_lake_(Unsplash).jpg",
           "author": "Aleksandra Boguslawska aleksandraboguslawska",
+          "license": "CC0"
+        }
+      ]
+    },
+    "radial": {
+      "subject": "森の中の高架の線路（米ワシントン州 Vance Creek）。レールと枕木の縁が画面の中心の消失点へ集まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:On_elevated_railroad_tracks_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/vPe0ltATD2k",
+      "author": "Austin Smart austinsmart",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2400,
+        "x": 1320,
+        "y": 824,
+        "width": 1182,
+        "height": 1576
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Railroad_in_the_Forest.jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "hinomaru": {
+      "subject": "青空に浮かぶ熱気球（米カリフォルニア州ナパ・バレー）。気球が中央の円に収まり、周りは雲だけ",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Hot_Air_Balloon_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/vhnyfT8fmmw",
+      "author": "Kupono Kuwamura kuponokuwamura",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 1094,
+        "y": 256,
+        "width": 1728,
+        "height": 2304
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Ascend_(Unsplash).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "frameWithin": {
+      "subject": "窓の向こうの海と小舟（Unsplash）。暗い窓枠が 12% 内側の額縁に沿い、明るい海を囲む",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Room_with_a_view_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/cBw09HLB4yc",
+      "author": "Ciprian Boiciuc ciprian",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2880,
+        "x": 18,
+        "y": 233,
+        "width": 1768,
+        "height": 2357
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Taj_Mahal_Main_Entrance_to_Tomb_(22854822229).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "halves": {
+      "subject": "ブレッド湖の島の教会と映り込み（スロベニア）。湖岸の水際が中央の横線、教会の塔が中央の縦線に乗る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Lake-bled-1951708.jpg",
+      "originalURL": "https://unsplash.com/photos/ZfSyKZ2dD5w",
+      "author": "Artem Sapegin",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 682,
+        "y": 282,
+        "width": 1708,
+        "height": 2278
+      },
+      "alternates": []
+    },
+    "negativeSpace": {
+      "subject": "ビーチー・ヘッドの灯台（英イーストボーン）。広い海の右下の置き場に小さな灯台だけ",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Boat_and_Lighthouse_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/9CyrvPB-tQ4",
+      "author": "Rucksack Magazine rucksackmag",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 2169,
+        "y": 333,
+        "width": 1670,
+        "height": 2227
+      },
+      "alternates": []
+    },
+    "thirds": {
+      "subject": "防波堤の灯台と夕空（米カリフォルニア州サンタクルーズ）。灯台が右の縦の線、水平線が中ほどの横の線の近く",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Walton_Lighthouse_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/z6IyHYU0uF8",
+      "author": "Rodrigo Soares rodi01",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 1614,
+        "y": 0,
+        "width": 1410,
+        "height": 1880
+      },
+      "alternates": []
+    },
+    "level": {
+      "subject": "夕暮れの海の水平線（ペルー・リマのミラフローレス）。水平線が水準器の真ん中の線に重なる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Miraflores_Lighthouse,_Miraflores,_Peru_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/CtUGsCFr94A",
+      "author": "Dan Gold danielcgold",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2161,
+        "x": 2700,
+        "y": 0,
+        "width": 1086,
+        "height": 1448
+      },
+      "alternates": []
+    },
+    "horizon": {
+      "subject": "ホワイトサンズの白い砂丘と空（米ニューメキシコ州）。砂丘の稜線が下から三分の一の線に乗り、空が広い",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:White_Sands_and_Desert_Shrubs_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/X2_Rr9sjvhM",
+      "author": "Daniel Burka dburka",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 1920,
+        "x": 474,
+        "y": 624,
+        "width": 972,
+        "height": 1296
+      },
+      "alternates": []
+    },
+    "square": {
+      "subject": "ヘットナルの教会（アイスランド）。教会が中央の正方形の枠に収まり、扉が十字の近く",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Hellnar_Church,_Iceland_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/8hAnl3Q50Bo",
+      "author": "lydia harper lids_harper",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 787,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": []
+    },
+    "otherRatios": {
+      "subject": "雪のタリン旧市街（エストニア）。塔と屋根が縦の 2:3 枠の中に収まる",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:City_covered_in_snow_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/2OSEWkQHiGI",
+      "author": "Ilya Orehov iliched",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2564,
+        "x": 1189,
+        "y": 0,
+        "width": 1923,
+        "height": 2564
+      },
+      "alternates": []
+    },
+    "grid4": {
+      "subject": "ケベック旧市街の黄色い窓と扉（カナダ）。窓と鎧戸の縦横が 4×4 の格子で揃う",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Yellow_door_and_windows_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/QRdikrlnet8",
+      "author": "Fanny Rascle fanny_rascle",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 1341,
+        "x": 399,
+        "y": 0,
+        "width": 1006,
+        "height": 1341
+      },
+      "alternates": []
+    },
+    "grid6x4": {
+      "subject": "赤い外壁の建物の窓の並び（Unsplash）。窓の列と段が 4 列×6 段の格子に沿う",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:S%C3%A9rgio_Rola_2016-11-02_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/Gj47dfUNHPc",
+      "author": "Sérgio Rola sergio_rola",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2541,
+        "x": 294,
+        "y": 500,
+        "width": 1073,
+        "height": 1431
+      },
+      "alternates": []
+    },
+    "phiGrid": {
+      "subject": "アタカマ高地の塩湖と小さな人影（チリ・サンペドロ・デ・アタカマ）。人影が中央の交点の近く、山並みが上の線に乗る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Walking_Through_The_Desert_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/HNOaMthcq0w",
+      "author": "Diego Jimenez diegojimenez",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2557,
+        "x": 826,
+        "y": 1,
+        "width": 1770,
+        "height": 2360
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Person_walks_west_village_street_(Unsplash).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "iphone": {
+      "subject": "砂浜を歩く人の後ろ姿と足跡（Unsplash）。人が左上の交点に、足跡が右下の交点へ続く",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Zack_Minor_2015-04-17_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/6_pFPo2YM9c",
+      "author": "Zack Minor zackography",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2880,
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Brian_Mann_2015-05-01_(Unsplash_Qmbp26bep6k).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "symmetry": {
+      "subject": "霧の湖へ延びる桟橋（Unsplash）。桟橋の中心が縦の軸に乗り、左右が鏡のよう",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Fabrice_Villard_2017_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/k87jn9fnYdY",
+      "author": "Fabrice Villard fabulu75",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 960,
+        "y": 0,
+        "width": 1920,
+        "height": 2560
+      },
+      "alternates": []
+    },
+    "lShape": {
+      "subject": "草原の一本の木（Unsplash）。木の幹が L の縦の線、地平線が L の横の線に沿う",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Tree_in_the_golden_grassland_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/a7IVuJwYjp8",
+      "author": "Rodion Kutsaev frostroomhead",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2560,
+        "x": 470,
+        "y": 0,
+        "width": 1680,
+        "height": 2240
+      },
+      "alternates": []
+    },
+    "goldenTriangle": {
+      "subject": "急斜面の尾根道を登るハイカー2人（米カリフォルニア州ロス・パドレス国有林）。斜面が右上がりの対角線に沿い、2人が垂線の足の近く。後ろ姿",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Hikers_on_a_steep_slope_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/S9uZOfeYi1U",
+      "author": "Will Langenberg wlangenberg",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2543,
+        "x": 2023,
+        "y": 596,
+        "width": 1460,
+        "height": 1947
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Mountain_climb_with_pickaxe_(Unsplash).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "sCurve": {
+      "subject": "紅葉の森を抜ける道を真上から（米ミシガン州フェントン）。道が S 字に曲がって手前から奥へ続く",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Autumn_road_from_above_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/oWyzKTEOCZg",
+      "author": "Aaron Burden aaronburden",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2559,
+        "x": 290,
+        "y": 768,
+        "width": 1343,
+        "height": 1791
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Twisting_mountain_road_(Unsplash).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "diagonals": {
+      "subject": "レ・ドゥー・ザルプのスキー場の斜面（フランス）。日なたと日陰の境の稜線が左上から右下への対角線に沿う。人は小さな人影",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Ski_racers_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/D_mFA0GZuAs",
+      "author": "Toa Heftiba heftiba",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 1920,
+        "downloadedHeight": 2685,
+        "x": 0,
+        "y": 342,
+        "width": 1757,
+        "height": 2343
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Hiking_in_the_tall_mountains_(Unsplash).jpg",
+          "license": "CC0"
+        }
+      ]
+    },
+    "fibonacciGrid": {
+      "subject": "白いらせん階段を見下ろす（Unsplash）。渦が小さくなる区画へ視線が入っていく",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Spiral_staircase_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/tUSN3PNeX1U",
+      "author": "chuttersnap chuttersnap",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 2563,
+        "x": 981,
+        "y": 0,
+        "width": 1593,
+        "height": 2124
+      },
+      "alternates": []
+    },
+    "cCurve": {
+      "subject": "ホースシュー・ベンド（米アリゾナ州ペイジ）。コロラド川が左に膨らむ大きな弧で岩を包む",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Horseshoe_Bend_on_a_sunny_day_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/yBqcajVQng4",
+      "author": "Preston Pownell prestonpownell",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）・extmetadata の LicenseShortName = CC0",
+      "checked": "2026-10-15",
+      "crop": {
+        "downloadedWidth": 3840,
+        "downloadedHeight": 1763,
+        "x": 489,
+        "y": 0,
+        "width": 1322,
+        "height": 1763
+      },
+      "alternates": [
+        {
+          "sourceURL": "https://commons.wikimedia.org/wiki/File:Horseshoe_bend_(Unsplash_iC_Ytsvgf0E).jpg",
           "license": "CC0"
         }
       ]

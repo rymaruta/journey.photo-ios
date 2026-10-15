@@ -24,7 +24,7 @@ final class CompositionAIExampleTests: XCTestCase {
             let kind = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "composition-ai-", with: "")
             bundled.insert(kind)
             let entry = try XCTUnwrap(ledger.accepted[kind], "\(kind) は確認台帳に無い")
-            XCTAssertTrue(["individual", "photo"].contains(entry.source), "\(kind) は個別制作でも実写真でもない")
+            XCTAssertEqual(entry.source, "photo", "\(kind) は実写真ではない")
             let file = url.appendingPathComponent("composition-ai-\(kind).jpg")
             let data = try Data(contentsOf: file)
             let size = try XCTUnwrap(Self.jpegSize(data), "\(kind) の寸法が読めない")
@@ -40,14 +40,17 @@ final class CompositionAIExampleTests: XCTestCase {
         }
     }
 
-    /// 実写真の作例（source: photo）は、出典の記録・アプリの札（「作例写真」）と食い違わない。
-    /// 表記の要らない許諾（CC0・パブリックドメイン・Unsplash・Pexels）だけを置く
-    func testPhotoExamplesHaveSourcesAndAreNotLabeledAI() throws {
+    /// 作例は**すべて実写真**（source: photo）で、出典の記録と食い違わない。アプリの札に「AI」と書かない。
+    /// 表記の要らない許諾（CC0・パブリックドメイン・Unsplash・Pexels）だけを置く。
+    ///
+    /// 2026-10-15: 残りの21枚も写真にしたので、AI の絵（source: individual）を戻すとここで落ちる
+    func testAllExamplesArePhotosWithSourcesAndAreNotLabeledAI() throws {
         let ledger = try JSONDecoder().decode(ReviewLedger.self,
                                               from: Data(contentsOf: root.appendingPathComponent("docs/composition-ai-review.json")))
-        let photoKinds = Set(ledger.accepted.filter { $0.value.source == "photo" }.keys)
-        XCTAssertEqual(photoKinds, Set(CompositionExample.photoKinds.map(\.rawValue)),
-                       "台帳の実写真とアプリの photoKinds が食い違っている")
+        for (kind, entry) in ledger.accepted {
+            XCTAssertEqual(entry.source, "photo", "\(kind) が実写真ではない（AI の絵は入れない）")
+        }
+        let photoKinds = Set(ledger.accepted.keys)
         let sourcesURL = root.appendingPathComponent("Tools/composition-examples/photo-sources.json")
         let sources = try JSONDecoder().decode(PhotoSources.self, from: Data(contentsOf: sourcesURL))
         XCTAssertEqual(Set(sources.photos.keys), photoKinds, "出典の記録と台帳の実写真が食い違っている")
@@ -57,14 +60,7 @@ final class CompositionAIExampleTests: XCTestCase {
             XCTAssertTrue(photo.sourceURL.hasPrefix("https://"), kind)
             XCTAssertFalse(photo.checked.isEmpty, kind)
         }
-        for kind in CompositionKind.allCases {
-            let caption = CompositionExample.bundledCaption(for: kind)
-            if CompositionExample.photoKinds.contains(kind) {
-                XCTAssertFalse(caption.contains("AI"), "\(kind.rawValue) は写真なのに AI と書いている")
-            } else {
-                XCTAssertTrue(caption.contains("AI"), "\(kind.rawValue) は AI の絵なのに写真と書いている")
-            }
-        }
+        XCTAssertFalse(CompositionExample.bundledCaption.contains("AI"), "写真の作例を AI と書いている")
     }
 
     /// JPEG の SOF から幅と高さ。引き伸ばした PNG を別形式で紛らわせない。

@@ -1,6 +1,6 @@
 # AI構図作例の登録手順
 
-構図の詳細画面は画像アセット `composition-ai-<CompositionKind.rawValue>` を検索する。存在すれば写真の上に `CompositionOverlay` を重ね、ラベルを「AI生成の構図作例」にする（実写真の構図は「構図の作例写真」・下の節）。存在しない場合は従来の図を表示する。
+構図の詳細画面は画像アセット `composition-ai-<CompositionKind.rawValue>` を検索する。存在すれば写真の上に `CompositionOverlay` を重ね、ラベルを「構図の作例写真」にする（2026-10-15 から作例はすべて実写真・下の節。名前の `composition-ai-` は以前の AI の絵の名残で、入れ物の名前はそのまま）。存在しない場合は従来の図を表示する。
 
 ## 画像の条件
 
@@ -36,4 +36,11 @@ AI の絵が構図を文字どおりの形で描いていて写真の作例に�
 - 使える許諾: CC0・パブリックドメイン・Unsplash License・Pexels License。CC BY など表記の要るものは使わない。出典のページで許諾を確かめ、確かめられないものは使わない。
 - 生成画像・透かし・文字入りは使わない。人物は後ろ姿や小さな人影まで。
 - 出典・作者・許諾・確かめた日・切り抜きは `Tools/composition-examples/photo-sources.json`。台帳では `source: "photo"`。
-- アプリの札は `CompositionExample.photoKinds` の構図だけ「構図の作例写真」。台帳・出典の記録・`photoKinds` の食い違いは `CompositionAIExampleTests` が落とす。
+- アプリの札は「構図の作例写真」（`CompositionExample.bundledCaption`）。台帳と出典の記録の食い違い、`source: "photo"` でない絵は `CompositionAIExampleTests` が落とす。
+
+### 残りの21枚（2026-10-15 owner「他もお願い」）
+
+radial・sCurve・diagonals・otherRatios・grid6x4・iphone・square・fibonacciGrid・hinomaru・level・phiGrid・cCurve・thirds・grid4・halves・goldenTriangle・symmetry・lShape・frameWithin・horizon・negativeSpace も同じ決まり・同じ手順で実写真（Commons の `{{Unsplash}}`＝中身 `{{Cc-zero}}`）に替えた。前の12枚と場所・写真は重ねていない（線路・熱気球・ブレッド湖・ホワイトサンズ・アイスランドの教会・タリン・ケベック・アタカマ・ホースシュー・ベンドほか）。
+
+- これで入っている作例（33種類）はすべて実写真。「AI生成の構図作例」の札と、写真の構図を分けていた `CompositionExample.photoKinds` は外した。
+- 絵の無い4種類（triangle・goldenSpiral・thirdsDiagonals・dynamicSymmetry・台帳の `held`）は、これまでどおり配置図のまま。
