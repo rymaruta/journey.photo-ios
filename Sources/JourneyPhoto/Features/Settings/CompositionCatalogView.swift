@@ -139,7 +139,7 @@ struct CompositionExplanationView: View {
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
                          : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
-                            ? CompositionExample.bundledCaption(for: kind)
+                            ? CompositionExample.bundledCaption
                             : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -204,36 +204,29 @@ struct CompositionExplanationView: View {
 
 /// 一覧と詳細で同じ作例・解説を使い、撮影時の線と食い違わないようにする。
 enum CompositionExample {
-    /// 作例が**実際の写真**の構図（AI 生成ではない）。出典と許諾は
-    /// `Tools/composition-examples/photo-sources.json`、確認の記録は `docs/composition-ai-review.json`（source: photo）。
+    /// 作例の絵の下の札。入っている作例は**すべて実際の写真**（出典と許諾は
+    /// `Tools/composition-examples/photo-sources.json`、確認の記録は `docs/composition-ai-review.json`・source: photo）。
     ///
     /// 2026-10-14 判断（owner）: 文字どおりの形を描いた AI の絵（Z の字の道・線だけの絵）は写真の作例に
     /// なっていなかったので、無料で商用に使え表記の要らない写真（CC0・パブリックドメイン）に替えた。
-    /// 写真を「AI生成」と書かない（`CompositionAIExampleTests` が台帳と突き合わせる）
-    static let photoKinds: Set<CompositionKind> = [
-        .tunnel, .zShape, .rootRectangle, .armature, .diagonal45, .mizige, .tianzige, .obliqueThirds,
-        .squareGrid, .ratio4x5, .ratio9x16, .ratio16x9,
-    ]
-
-    /// 作例の絵の下の札。写真なら「作例の写真」、AI の絵なら「AI生成」と書く
-    static func bundledCaption(for kind: CompositionKind) -> String {
-        photoKinds.contains(kind)
-            ? L("構図の作例写真", "Composition example photo")
-            : L("AI生成の構図作例", "AI-generated composition example")
-    }
+    /// 2026-10-15 判断（owner「他もお願い」）: 残りの21枚も写真に替え、AI の絵はもう入っていない。
+    /// 「AI生成」の札と、写真の構図を分けていた集合（photoKinds）は外した。AI の絵（source: individual）を
+    /// 戻すと `CompositionAIExampleTests` が落ちる
+    static var bundledCaption: String { L("構図の作例写真", "Composition example photo") }
 
     static func scene(for kind: CompositionKind) -> String {
         switch kind {
-        case .thirds, .iphone: return L("海辺の人物を交点に置く", "Place a person on an intersection by the sea")
-        case .halves: return L("水面と空を半分ずつ写す", "Divide a lake and sky equally")
-        case .symmetry: return L("建物の正面を中心軸で揃える", "Center a building's facade")
-        case .hinomaru: return L("一輪の花を画面の中央に", "Center a single flower")
-        case .horizon: return L("夕空を広く見せる海岸", "Show more of the sunset sky above the sea")
+        case .thirds: return L("灯台を縦の線に、水平線を下の線に", "A lighthouse on a vertical line, the horizon on the lower line")
+        case .iphone: return L("砂浜を歩く人を交点に置く", "Place a person walking on the beach at an intersection")
+        case .halves: return L("湖の島と映り込みを半分ずつ写す", "Split a lake island and its reflection in half")
+        case .symmetry: return L("桟橋を中心の軸で左右に揃える", "Center a pier on the axis")
+        case .hinomaru: return L("空に浮かぶ気球を画面の中央に", "Center a hot-air balloon in the sky")
+        case .horizon: return L("白い砂丘の上に空を広く見せる", "Show more of the sky above white dunes")
         case .grid4, .squareGrid, .grid6x4:
             return L("建物の窓や柱の並びを整える", "Align rows of windows or columns")
         case .tianzige: return L("水辺の建物と映り込みを十字で釣り合わせる", "Balance a waterside building and its reflection on the cross")
         case .mizige: return L("回廊の線が中心の奥へ集まる", "Corridor lines converging on the center")
-        case .phiGrid: return L("街角の人物を内寄りの交点に", "Place a person at an inner intersection")
+        case .phiGrid: return L("広い景色の小さな人影を内寄りの交点に", "Place a small figure at an inner intersection")
         case .goldenSpiral: return L("曲がる道の先に主役を置く", "Place the subject at the end of a winding path")
         case .fibonacciGrid: return L("階段をたどって奥の扉へ", "Follow stairs toward a distant door")
         case .goldenTriangle: return L("斜面と人物を対角に並べる", "Arrange a slope and person diagonally")
@@ -245,9 +238,9 @@ enum CompositionExample {
         case .triangle: return L("3人の位置で三角形を作る", "Arrange three people in a triangle")
         case .radial: return L("一点へ集まる線路や光", "Tracks or light converging at one point")
         case .tunnel: return L("鳥居や木のトンネルの奥へ", "Into a tunnel of torii gates or trees")
-        case .frameWithin: return L("門の向こうに見える街並み", "A cityscape seen through a gate")
-        case .negativeSpace: return L("広い空に小さな鳥を置く", "A small bird against a wide sky")
-        case .lShape: return L("岸辺と桟橋でL字を作る", "A shoreline and pier forming an L")
+        case .frameWithin: return L("窓の向こうに見える海と小舟", "The sea and boats seen through a window")
+        case .negativeSpace: return L("広い海に小さな灯台を置く", "A small lighthouse in a wide sea")
+        case .lShape: return L("一本の木と地平線でL字を作る", "A lone tree and the horizon forming an L")
         case .zShape: return L("折り返す道を手前から奥へたどる", "Follow a winding road from near to far")
         case .sCurve: return L("S字に曲がる川の流れ", "An S-shaped river")
         case .cCurve: return L("湾曲する海岸線", "A curved coastline")
@@ -255,8 +248,8 @@ enum CompositionExample {
         case .ratio4x5: return L("縦長に切り出す街並み", "A street scene framed for 4:5")
         case .ratio9x16: return L("縦いっぱいに伸びる塔", "A tall tower in a 9:16 frame")
         case .ratio16x9: return L("横に広がる山並み", "A mountain panorama in 16:9")
-        case .otherRatios: return L("横長の街並みを比率で切り出す", "Frame a wide cityscape for the chosen ratio")
-        case .level: return L("海や建物の水平を確認する", "Level the sea or building edges")
+        case .otherRatios: return L("雪の旧市街を比率で切り出す", "Frame a snowy old town for the chosen ratio")
+        case .level: return L("海の水平線の傾きを確かめる", "Check that the sea horizon is level")
         }
     }
 
