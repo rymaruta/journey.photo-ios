@@ -94,6 +94,22 @@ final class TabRouter: ObservableObject {
 
     func notePosted(_ photo: Photo) { posting.append(photo) }
 
+    /// 端末の写真の一冊の「この旅の写真を投稿する」（`DeviceTripBookView`・2026-10-16）。
+    /// **「旅の写真から」の流れを、その旅を開いた形で出す**（`RootView`・既存の投稿の流れ）。回数で伝えるのは上と同じ理由
+    @Published private(set) var tripImportRequests = 0
+    /// 開く旅。流れが受け取ったら消す（`takePendingImportTrip`）
+    private(set) var pendingImportTrip: LibraryTrip?
+
+    func openTripImport(_ trip: LibraryTrip) {
+        pendingImportTrip = trip
+        tripImportRequests += 1
+    }
+
+    func takePendingImportTrip() -> LibraryTrip? {
+        defer { pendingImportTrip = nil }
+        return pendingImportTrip
+    }
+
     /// **メニュー（≡）のシートを閉じた回数。** メニューから旅行プランを開いて
     /// 変えても、シートの下のホームは画面から消えた扱いにならないので、
     /// ホームの上段の札が古いプランのまま残った。回数で伝えるのは上と同じ理由

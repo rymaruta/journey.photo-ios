@@ -64,6 +64,12 @@ struct LibraryTrip: Identifiable, Equatable {
     }
 }
 
+/// 画面の押し込み（`navigationDestination(item:)`）に使う。**同じ旅は id で決まる**
+/// （等しい旅は同じ id なので、id だけで混ぜても `==` と食い違わない）
+extension LibraryTrip: Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
 /// 写真ライブラリの写真から旅を見つける。**端末の中だけで決める**（どこにも送らない）。
 ///
 /// `TripBook` は投稿済みの写真を日付だけで束ねる（場所では切らない）。こちらは

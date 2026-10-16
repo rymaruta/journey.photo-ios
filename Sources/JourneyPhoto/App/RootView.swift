@@ -46,6 +46,9 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
+    /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
+    /// 流れを閉じたら忘れる
+    @State private var importTrip: LibraryTrip?
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -463,13 +466,28 @@ struct RootView: View {
         tabsWithPostChoice
             // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+                importTrip = nil
                 pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
                 if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
             }) {
-                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
-                LibraryTripFlowView { photos in
+                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
+                // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
+                LibraryTripFlowView(opening: importTrip,
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.shots) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
+            }
+            // 端末の写真の一冊の「この旅の写真を投稿する」（2026-10-16）。ほかの投稿の画面が出ていたら開かない
+            .onChange(of: tabRouter.tripImportRequests) { _, _ in
+                let trip = tabRouter.takePendingImportTrip()
+                guard !showTripImport, !showPhotoUpload, !showStoryComposer, !showPostChoice else { return }
+                importTrip = trip
+                pendingTripPhotos = []
+                showTripImport = true
+            }
+            // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
+            .task(id: auth.userId) {
+                if auth.userId != nil { DeviceTripShelfStore.shared.startIfAllowed() }
             }
             // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
             // 格子とストーリーの行はこれを見て読み直す

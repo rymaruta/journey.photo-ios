@@ -12,16 +12,26 @@ struct LibraryTripFlowView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var model = LibraryTripModel()
+    @StateObject private var model: LibraryTripModel
 
+    /// 開いたらすぐ選ぶ画面へ進む旅（端末の写真の一冊から来たとき・`DeviceTrips.matching`）
+    let opening: LibraryTrip?
     /// 選んだ写真を整えたもの（読めたぶん・旅の並び）。渡してから閉じる
     let onDone: ([ImagePreparer.Prepared]) -> Void
+
+    /// - Parameter preloaded: 棚が読んだ写真の要約（`DeviceTripShelfStore.shots`）。渡せばライブラリを読み直さない
+    init(opening: LibraryTrip? = nil, preloaded: [LibraryShot]? = nil,
+         onDone: @escaping ([ImagePreparer.Prepared]) -> Void) {
+        self.opening = opening
+        self.onDone = onDone
+        _model = StateObject(wrappedValue: LibraryTripModel(preloaded: preloaded))
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if PhotoLibrary.canRead(model.status) {
-                    LibraryTripListView(model: model) { photos in
+                    LibraryTripListView(model: model, opening: opening) { photos in
                         // **渡してから閉じる。** 呼び手は「流れが開いている間だけ受ける」
                         // （`TripImportHandoff.received`）。投稿画面は閉じきってから呼び手が開く
                         onDone(photos)
@@ -85,12 +95,18 @@ final class LibraryTripModel: ObservableObject {
         failedAt = [:]
     }
 
-    init() {
+    /// 棚が読んだ写真の要約（最初の1回だけ使う。選び足しの後は読み直す）
+    private var preloaded: [LibraryShot]?
+
+    init(preloaded: [LibraryShot]? = nil) {
         names = Self.knownNames
+        self.preloaded = preloaded.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     func requestAccess() async {
         status = await PhotoLibrary.requestAccess()
+        // 許したら、マイページの端末の写真の一冊も後ろで読み始める（2026-10-16）
+        DeviceTripShelfStore.shared.startIfAllowed()
     }
 
     /// 設定アプリから戻ったときに見直す
@@ -103,7 +119,8 @@ final class LibraryTripModel: ObservableObject {
         guard !loaded, !isLoading, PhotoLibrary.canRead(status) else { return }
         isLoading = true
         async let posted = myPhotos()
-        trips = await Self.findTrips()
+        trips = await Self.findTrips(preloaded)
+        preloaded = nil
         self.posted = LibraryTrips.postedShots(of: await posted)
         isLoading = false
         loaded = true
@@ -123,8 +140,9 @@ final class LibraryTripModel: ObservableObject {
         isLoading = false
     }
 
-    private static func findTrips() async -> [LibraryTrip] {
-        let shots = await PhotoLibrary.shots()
+    private static func findTrips(_ preloaded: [LibraryShot]? = nil) async -> [LibraryTrip] {
+        let shots: [LibraryShot]
+        if let preloaded { shots = preloaded } else { shots = await PhotoLibrary.shots() }
         // 探すのも画面の処理の外で（数万枚を升に分ける）
         let found = await Task.detached(priority: .userInitiated) { LibraryTrips.find(shots) }.value
         // 前に引いて分かった土地の時間帯で日を切り直す（分からない旅は経度の目安のまま）
