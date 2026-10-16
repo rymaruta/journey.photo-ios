@@ -239,7 +239,7 @@
       "width": 864,
       "height": 1152,
       "checked": "2026-10-16",
-      "note": "実写真（CC0）。らせん階段を真上から（ストックホルム）。段の輪が外から巻き込み、吹き抜けの中心が渦の目に乗る。出典は Tools/composition-examples/photo-sources.json"
+      "note": "実写真（CC0）。らせん階段を真上から（ストックホルム）。段の輪が外から巻き込み、吹き抜けの中心が渦の目にほぼ乗る。出典は Tools/composition-examples/photo-sources.json"
     },
     "thirdsDiagonals": {
       "source": "photo",
@@ -260,7 +260,7 @@
       "width": 864,
       "height": 1152,
       "checked": "2026-10-16",
-      "note": "実写真（CC0）。霧のキルキュフェトル山（アイスランド）。山頂が上の頂点、裾の川岸が下の辺。右の裾は少し広い。出典は Tools/composition-examples/photo-sources.json"
+      "note": "実写真（CC0）。霧のキルキュフェトル山（アイスランド）。山頂が上の頂点、裾の川岸が下の辺。斜面は三角の辺より広い（とくに右の裾）。出典は Tools/composition-examples/photo-sources.json"
     }
   },
   "held": {}

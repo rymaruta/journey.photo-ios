@@ -115,7 +115,7 @@ enum CompositionLessons {
                 what: ("画面の真ん中に縦と横の線を1本ずつ引き、上下・左右を半分ずつに分けます。",
                        "One vertical and one horizontal line through the center split the frame into equal halves."),
                 why: ("半分ずつに分けると、上と下（左と右）を見比べる写真になります。空と水面、昼と夜の色、古い物と新しい物のように「対」を見せたいときにはっきり伝わります。",
-                      "Equal halves invite comparison: sky against water, warm against cool, old against new. The pairing reads clearly when neither side dominates."),
+                      "Equal halves invite comparison: sky against water, day against night colors, old against new. The pairing reads clearly when neither side dominates."),
                 steps: [("対になる2つ（空と映り込みなど）を見つけます。", "Find a pair, such as a scene and its reflection."),
                         ("境目（水際・地平線）を真ん中の横線に重ねます。", "Put the boundary—the waterline or horizon—on the center line."),
                         ("左右の対なら、真ん中の縦線に境目を合わせます。", "For a left–right pair, use the vertical line instead."),
@@ -187,12 +187,12 @@ enum CompositionLessons {
                 scenes: ("ヨーロッパの集合住宅の窓、駅の天井の格子、本屋の棚、障子。", "Rows of apartment windows, a station's ceiling grid, bookstore shelves, shoji screens."),
                 mistakes: ("見上げて撮って縦の線が上ですぼまる → 少し下がるか、カメラを水平に構えます。線の多さに惑わされて主役が無い → 並びの中に1つだけ違う物（開いた窓など）を探します。",
                            "Shooting upward makes verticals converge → step back and keep the camera level. Lots of lines but no subject → look for one thing that breaks the pattern, like an open window."),
-                versus: ("方眼は正方形のマス、6×4 は縦長のマスです。4×4 は縦横とも4等分なので、マスは画面と同じ縦長の形になります。",
-                         "The square grid uses true squares and 6×4 uses taller boxes. The 4×4 grid splits both directions into four, so each box has the frame's shape."))
+                versus: ("方眼は正方形のマス、6×4 はほぼ正方形（縦持ちで少し横長）のマスです。4×4 は縦横とも4等分なので、マスは画面と同じ縦長（3:4）の形になります。",
+                         "The square grid uses true squares and 6×4 uses nearly square boxes (slightly wide in portrait). The 4×4 grid splits both directions into four, so each box is tall, with the frame's 3:4 shape."))
 
         case .squareGrid:
             return Entry(
-                what: ("縦を6等分し、横の線はマスが本物の正方形になる間隔で引いた方眼です。",
+                what: ("縦の線で横幅を6等分し、横の線はマスが本物の正方形になる間隔で引いた方眼です。",
                        "The width is divided into six, and the horizontal lines are spaced so every box is a true square."),
                 why: ("正方形のマスは縦と横の長さが同じなので、建物や看板が縦長・横長に歪んでいないか、傾いていないかを見比べやすくなります。",
                       "Square boxes have equal sides, which makes it easy to judge whether buildings or signs look stretched or tilted."),
@@ -203,8 +203,8 @@ enum CompositionLessons {
                 scenes: ("タイル張りの壁、駅舎の正面、商店街の看板の並び、碁盤の目の街を見下ろした景色。", "Tiled walls, a station façade, rows of shop signs, a grid-plan city seen from above."),
                 mistakes: ("マスの数が多くて構図が決まらない → 主役のまとまりだけを見て、他の線は傾きの確認だけに使います。",
                            "Too many boxes to decide on a layout → frame the main group and use the rest only to check for tilt."),
-                versus: ("4×4 や 6×4 はマスが縦長になります。方眼は正方形なので、形の歪みを見たいときに向きます。",
-                         "4×4 and 6×4 use tall boxes; the square grid keeps true squares, so it is better for spotting distortion."))
+                versus: ("4×4 はマスが縦長、6×4 はほぼ正方形（縦持ちで少し横長）です。方眼はぴったり正方形なので、形の歪みを見たいときに向きます。",
+                         "4×4 uses tall boxes and 6×4 nearly square ones (slightly wide in portrait); the square grid keeps exact squares, so it is better for spotting distortion."))
 
         case .tianzige:
             return Entry(
@@ -224,8 +224,8 @@ enum CompositionLessons {
 
         case .mizige:
             return Entry(
-                what: ("米の字のように、真ん中の十字と2本の対角線を重ねた線です。8本の線が中心で交わります。",
-                       "Like the Chinese character mǐ (rice): a center cross plus both diagonals, so eight lines meet in the middle."),
+                what: ("米の字のように、真ん中の十字と2本の対角線を重ねた線です。4本の線が中心で交わり、8方向に伸びます。",
+                       "Like the Chinese character mǐ (rice): a center cross plus both diagonals—four lines that cross in the middle and reach out in eight directions."),
                 why: ("線がすべて中心へ集まるので、回廊・トンネル・放射状の模様のように、中心へ向かう形があると、目が自然に中心へ運ばれます。",
                       "All lines converge on the center, so corridors, tunnels and radiating patterns that follow them carry the eye straight in."),
                 steps: [("中心へ向かう線を持つ場所（回廊・並木・天井の梁）を探します。", "Find lines heading to a center: a corridor, an avenue of trees, ceiling beams."),
@@ -276,8 +276,8 @@ enum CompositionLessons {
             return Entry(
                 what: ("黄金螺旋と同じ正方形の区切りを、直線だけで描いたものです。大きな正方形から小さな正方形へと区切りが続き、いちばん小さい所が渦の目になります。",
                        "The same squares as the golden spiral, drawn as straight lines. The divisions shrink from a large square to tiny ones, ending at the eye."),
-                why: ("区切りが奥へ進むほど小さくなるので、手前の広い場所から奥の狭い場所へ、段を踏むように目が進みます。曲線が無い景色でも使えます。",
-                      "Each division is smaller than the last, so the eye steps from the wide area to the narrow one—useful even when the scene has no curves."),
+                why: ("区切りがだんだん小さくなるので、景色の中の広い場所と狭い場所をその区切りに合わせると、広い所から狭い所へ目を運ぶ手がかりになります。曲線が無い景色でも使えます。",
+                      "The divisions get smaller step by step. If wide and narrow parts of the scene line up with them, they can help lead the eye from the open area to the tight one—even when the scene has no curves."),
                 steps: [("手前が広く、奥へ行くほど狭くなる景色（階段・路地・扉の連なり）を探します。", "Find a scene that narrows as it recedes: stairs, an alley, a row of doorways."),
                         ("向きのボタンで、いちばん小さい区画が主役の側に来るようにします。", "Use the orientation button so the smallest box is on the subject's side."),
                         ("主役（奥の扉・人）をいちばん小さい区画に入れます。", "Place the subject—a far door, a person—in the smallest box."),
@@ -308,8 +308,8 @@ enum CompositionLessons {
 
         case .diagonals:
             return Entry(
-                what: ("画面の角から角へ引いた斜めの線です。向きのボタンで、左上→右下・左下→右上・両方を切り替えます。",
-                       "A line from corner to corner. The button switches between top-left to bottom-right, bottom-left to top-right, and both."),
+                what: ("画面の角から角へ引いた斜めの線です。向きのボタンで、シニスター（左上→右下）・バロック（左下→右上）・両方を切り替えます。",
+                       "A line from corner to corner. The button switches between sinister (top-left to bottom-right), baroque (bottom-left to top-right) and both."),
                 why: ("水平や垂直の線は静かに見え、斜めの線は動いているように見えます。道や斜面を対角線に重ねると、写真に勢いと奥行きが出ます。",
                       "Horizontal and vertical lines feel still; diagonals feel like motion. Laying a road or slope along a diagonal adds energy and depth."),
                 steps: [("道・川・稜線・手すりなど、長い直線を探します。", "Find a long straight line: a road, a river, a ridge, a railing."),
@@ -342,8 +342,8 @@ enum CompositionLessons {
             return Entry(
                 what: ("四隅から、画面の上でちょうど45°の角度の線を引いたものです。縦長の画面では、線は向かいの角ではなく辺の途中に届きます。",
                        "Lines from each corner at exactly 45° on screen. In a tall frame they reach the opposite side rather than the far corner."),
-                why: ("45°はいちばん「斜め」に見える角度で、階段・屋根・ケーブルなど、実際に45°前後の物と重ねると、線のそろった気持ちのいい写真になります。",
-                      "Forty-five degrees reads as the most decisive slant. Matching it with stairs, roofs or cables near that angle makes the lines feel tidy."),
+                why: ("画面の比率に左右されない一定の角度なので、階段・屋根・ケーブルなど45°前後の物と重ねると、線の向きがそろって整って見えます。",
+                      "It is a fixed angle that does not change with the frame, so matching it with stairs, roofs or cables near 45° keeps their lines aligned and tidy."),
                 steps: [("階段・屋根・橋のケーブルなど、斜めの線が45°に近い物を探します。", "Look for stairs, roofs or cables close to 45°."),
                         ("その線を四隅から伸びる線のどれかに重ねます。", "Lay that line on one of the corner guides."),
                         ("交わる線がもう1本あれば、それも別の45°の線に合わせます。", "If a second line crosses it, match that to another guide."),
@@ -383,13 +383,13 @@ enum CompositionLessons {
                 scenes: ("交差する坂道と建物の輪郭、斜面を登る人、斜めの屋根が重なる古い町並み。", "Crossing hill streets and building edges, a person climbing a slope, layered roofs in an old town."),
                 mistakes: ("6本の線に全部合わせようとして構図が窮屈になる → 対角線1本と目の点1つから始め、合う線だけを足していきます。",
                            "Forcing all six lines makes the frame cramped → start with one diagonal and one eye, then add only the lines that fit."),
-                versus: ("黄金三角形はこの線の片側だけを使った形です。アーマチュアは中点への線も加えた、さらに線の多い版です。",
-                         "The golden triangle is one side of this guide; the armature adds lines to the midpoints for even more options."))
+                versus: ("黄金三角形はこの線の片側だけを使った形です。アーマチュアは逆対角を含まない別の線の網で、辺の真ん中への線があるぶん線が多くなります。",
+                         "The golden triangle uses one side of this guide. The armature is a different network without reciprocals; its lines to the midpoints of the sides make it busier."))
 
         case .armature:
             return Entry(
-                what: ("対角線2本、辺の真ん中を結ぶひし形の4本、各角から向かいの辺の真ん中への8本、合わせて14本の線です。昔の絵の下描きに使われた線の網です。",
-                       "Fourteen lines: two diagonals, a diamond joining the midpoints of the sides, and eight lines from each corner to the middle of the opposite sides—a network once used to lay out paintings."),
+                what: ("対角線2本、辺の真ん中を結ぶひし形の4本、各角から向かいの辺の真ん中への8本、合わせて14本の線です。古典絵画の構図の分析で使われる線の網です。",
+                       "Fourteen lines: two diagonals, a diamond joining the midpoints of the sides, and eight lines from each corner to the middle of the opposite sides—a network used when analyzing the composition of classical paintings."),
                 why: ("いろいろな角度の線があるので、形の多い景色でも、どれか1〜2本に重なる線が見つかります。主役や視線がその線に乗ると、まとまって見えます。",
                       "With lines at many angles, almost any busy scene has one or two that fit. When shapes or gazes rest on them, the picture holds together."),
                 steps: [("景色の中のいちばん目立つ線や形を1つ選びます。", "Pick the most noticeable line or shape in the scene."),
@@ -399,8 +399,8 @@ enum CompositionLessons {
                 scenes: ("斜張橋のケーブル、市場の屋台の屋根、人が多い広場。", "Cable-stayed bridge cables, market stall roofs, a busy square."),
                 mistakes: ("線が多すぎて画面が見えにくい → 線の濃さを下げるか、シンプルな構図に切り替えます。",
                            "Too many lines to see the scene → lower the line opacity or switch to a simpler guide."),
-                versus: ("ダイナミックシンメトリーより線が多く、中点への線があるぶん、画面の真ん中寄りにも置き場所が増えます。",
-                         "It has more lines than dynamic symmetry; the midpoint lines add placement options nearer the center."))
+                versus: ("ダイナミックシンメトリーとは別の線の網で、逆対角は含みません。線が多く、辺の真ん中への線があるぶん、画面の真ん中寄りにも置き場所が増えます。",
+                         "It is a different network from dynamic symmetry and has no reciprocals. It has more lines, and those to the midpoints add placement options nearer the center."))
 
         case .rootRectangle:
             return Entry(
@@ -617,7 +617,7 @@ enum CompositionLessons {
         case .ratio16x9:
             return Entry(
                 what: ("縦横の比が16:9の横長の枠を明るく見せます。縦持ちでは枠が細い帯になるので、横持ちで撮ると画面を広く使えます。撮った写真は切り抜かれません。",
-                       "A bright 16:9 landscape frame. In portrait it becomes a thin band, so turn the phone sideways to use more of the sensor. The photo is saved uncropped."),
+                       "A bright 16:9 landscape frame. In portrait it becomes a thin band, so turn the phone sideways to make the frame larger. The photo is saved uncropped."),
                 why: ("テレビや映画と同じ横長の比率で、横に広がる景色や、人の動く向きが伝わります。",
                       "The same wide shape as TV and film, it conveys panoramas and sideways movement."),
                 steps: [("横に広がる景色（山並み・海岸・街の夜景）を選びます。", "Choose a wide scene: mountain ranges, a coastline, a city at night."),

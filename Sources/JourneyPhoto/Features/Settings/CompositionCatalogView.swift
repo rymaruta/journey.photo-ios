@@ -381,8 +381,8 @@ enum CompositionExample {
                                  "A network of diagonals and midpoints; use only the lines that help a busy scene.")
         case .rootRectangle: return L("√2比率の切り出し枠とその中の対角線です。明るい範囲に主役を収めます。",
                                      "Compose within a √2 crop, using its diagonals as placement cues.")
-        case .triangle: return L("三つの主役を結んで三角形を作ります。上向きは安定、逆向きは緊張感が出ます。",
-                                 "Three subjects form a triangle: upright feels stable, inverted more tense.")
+        case .triangle: return L("三角の形か、三つの主役を結んで三角形を作ります。上向きは安定、逆向きは緊張感が出ます。",
+                                 "Use a triangular shape, or link three subjects into a triangle: upright feels stable, inverted more tense.")
         case .radial: return L("線が一点へ集まる場所を探します。中心を変えると主役を端にも置けます。",
                                "Find lines converging at one point; move the center to position the subject.")
         case .tunnel: return L("アーチのような形で奥の主役を囲みます。手前と奥の距離も伝えられます。",

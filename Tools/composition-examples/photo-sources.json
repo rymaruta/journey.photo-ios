@@ -1,7 +1,7 @@
 {
   "policy": "構図の作例（2026-10-15 からすべて実写真）。無料で商用に使え、クレジット表記の要らない許諾（CC0・パブリックドメイン・Unsplash License・Pexels License）だけを使う。CC BY などの表記が要るものは使わない。生成画像・透かし・文字入りは使わず、人物は後ろ姿や小さな人影まで。どれも出典のページで許諾を確かめた。",
   "fetch": "Wikimedia Commons の API と縮小版（1920・3840px）から取得。User-Agent は journey-photo-composition-examples/1.0（個人の情報は送らない）。",
-  "output": "3:4 の縦長に切り抜き、864×1152・JPEG 品質 86（2026-10-15 の21枚は 85）。crop は取得した縮小版の上の画素",
+  "output": "3:4 の縦長に切り抜き、864×1152・JPEG 品質 86（2026-10-15 の21枚と 2026-10-16 の4枚は 85）。crop は取得した縮小版の上の画素",
   "photos": {
     "tunnel": {
       "subject": "伏見稲荷大社の千本鳥居（京都）。朱の鳥居が連なって囲み、参道の奥の消失点が画面の中心に来る",
@@ -701,7 +701,7 @@
       ]
     },
     "goldenSpiral": {
-      "subject": "らせん階段を真上から見下ろした所（スウェーデン・ストックホルム）。大理石の段が外から内へ巻き込み、階段の中心の吹き抜けが渦の目（左下・約28%・72%）に乗る",
+      "subject": "らせん階段を真上から見下ろした所（スウェーデン・ストックホルム）。大理石の段が外から内へ巻き込み、階段の中心の吹き抜けが渦の目（左下・約28%・72%）にほぼ乗る",
       "sourceURL": "https://commons.wikimedia.org/wiki/File:Infinite_spiral_stairs_(Unsplash).jpg",
       "originalURL": "https://unsplash.com/photos/YfCVCPMNd38",
       "author": "Ludde Lorentz luddelorentz",
@@ -755,7 +755,7 @@
       "alternates": []
     },
     "triangle": {
-      "subject": "霧のかかったキルキュフェトル山（アイスランド）。山頂が三角の上の頂点に、裾の川岸が下の2点の高さに来る。山は右の裾が少し広い",
+      "subject": "霧のかかったキルキュフェトル山（アイスランド）。山頂が三角の上の頂点に、裾の川岸が下の2点の高さに来る。ただし山の斜面（とくに右の裾）は三角の辺より広く、辺にぴったりは重ならない",
       "sourceURL": "https://commons.wikimedia.org/wiki/File:Kirkjufell_in_Fog_(Unsplash).jpg",
       "originalURL": "https://unsplash.com/photos/TllHZBc88q4",
       "author": "Nicholas Kampouris nicholaskampouris",
