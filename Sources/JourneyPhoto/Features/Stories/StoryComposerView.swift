@@ -17,6 +17,11 @@ struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var drafts: StoryDraftStore
+    /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
+    @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
+    @Environment(\.scenePhase) private var scenePhase
+    /// 「書きかけの続きがあります」（アプリが途中で終了した回・開いた直後に1回）
+    @State private var showRestoreAuto = false
     /// 送るのは裏の係（画面を閉じても続く・板 27）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @EnvironmentObject private var auth: AuthStore
@@ -315,6 +320,7 @@ struct StoryComposerView: View {
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
             drafts.use(userId: auth.userId)
+            autoDrafts.use(userId: auth.userId)
             // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
@@ -325,10 +331,26 @@ struct StoryComposerView: View {
                 showPendingFailure = true
                 // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
                 if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
+            } else if Self.asksRestore(draftStamp: autoDrafts.draft?.savedAt, hasShot: prepared != nil,
+                                       sendingDraftStamp: nil) {
+                // アプリが途中で終了した書きかけを先に尋ねる（本人の下書きは次に開いたとき）
+                showRestoreAuto = true
             } else if Self.asksRestore(draftStamp: drafts.draft?.savedAt, hasShot: prepared != nil,
                                        sendingDraftStamp: uploads.pendingDraftStamp) {
                 showRestore = true
             }
+        }
+        // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
+        // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { autoSaveDraft() }
+        }
+        .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
+            Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
+            Button(L("削除", "Delete"), role: .destructive) { autoDrafts.clear() }
+        } message: {
+            Text(L("前回、ストーリーを作っている途中でアプリが終了しました。続きから編集できます。",
+                   "The app closed while you were making a story. You can pick up where you left off."))
         }
         .confirmationDialog(L("送れなかったストーリーがあります", "A story didn't finish sending"),
                             isPresented: $showPendingFailure, titleVisibility: .visible) {
@@ -358,9 +380,12 @@ struct StoryComposerView: View {
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
         // 開かないことがあるので、旗で開く
+        // **元の形のまま受け取る（`.current`）**——埋め込みの写真選び（`pickStage`）と同じ理由。既定だと
+        // JPEG などに作り直し終えるまで選択が知らされず、その間は並びに出ない（2026-10-16）
         .photosPicker(isPresented: $showLibrary, selection: $pickerItems,
                       maxSelectionCount: max(1, StoryQueue.maxShots - shots.count),
-                      matching: .images)
+                      matching: .images,
+                      preferredItemEncoding: .current)
         .onChange(of: pickerItems) { _, items in
             Task { await load(items) }
         }
@@ -386,6 +411,8 @@ struct StoryComposerView: View {
                            onSave: { saveDraft() },
                            onDiscard: {
                                stopWaitingToPost()
+                               // 保存せずに閉じると決めたので、黙って残した書きかけも消す
+                               autoDrafts.clear()
                                dismiss()
                            })
     }
@@ -1446,7 +1473,25 @@ struct StoryComposerView: View {
             message = blocked
             return
         }
-        let ok = drafts.save(
+        let ok = write(to: drafts)
+        // **書けなかったことを黙らない。** 「保存しました」とだけ出して
+        // 実際は消えている、が いちばん困る
+        message = ok
+            ? L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device")
+            : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
+                "Couldn't save the draft — check your device's free space")
+        if ok {
+            // 下書きにしたので、待っている投稿は出さない（同じものが下書きと投稿の両方に残る）
+            stopWaitingToPost()
+            // 本人の下書きに移したので、黙って残した書きかけは要らない
+            autoDrafts.clear()
+            dismiss()
+        }
+    }
+
+    /// 並べた写真と欄を下書きの枠に書く（「下書き保存」と自動の書きかけの両方）。**焼き込む前の文字のまま**
+    private func write(to store: StoryDraftStore) -> Bool {
+        store.save(
             shots: shots.map { shot in
                 StoryDraftStore.ShotInput(imageData: shot.prepared.data,
                                           fileName: shot.prepared.fileName,
@@ -1464,16 +1509,15 @@ struct StoryComposerView: View {
             allowReplies: allowReplies,
             savedAt: ISO8601DateFormatter().string(from: Date())
         )
-        // **書けなかったことを黙らない。** 「保存しました」とだけ出して
-        // 実際は消えている、が いちばん困る
-        message = ok
-            ? L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device")
-            : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
-                "Couldn't save the draft — check your device's free space")
-        if ok {
-            // 下書きにしたので、待っている投稿は出さない（同じものが下書きと投稿の両方に残る）
-            stopWaitingToPost()
-            dismiss()
+    }
+
+    /// 裏に回ったときの自動の書きかけ（`StorySimpleRules.autoSaves`）。写真が無ければ前の分を消す
+    /// （外した写真が次に蘇らない）。読み込み中は書かない（読みかけの写真が落ちた書きかけを作らない）
+    private func autoSaveDraft() {
+        switch StorySimpleRules.autoSave(hasShots: !shots.isEmpty, loading: loadingPicks > 0) {
+        case .write: _ = write(to: autoDrafts)
+        case .clear: autoDrafts.clear()
+        case .skip: break
         }
     }
 
@@ -1513,8 +1557,11 @@ struct StoryComposerView: View {
                             isSaving: false)
     }
 
-    /// 「続きから」。**画像が読めなければ何も戻さない**
-    private func restoreDraft() {
+    /// 「続きから」。**画像が読めなければ何も戻さない**。
+    /// 自動の書きかけ（`autoDrafts`）から戻した回は「本人の下書きを開いた」ことにしない——閉じる確認で
+    /// 「下書きに保存」を出す（何も変えずに閉じると、戻した書きかけが残らずに消える）
+    private func restoreDraft(from store: StoryDraftStore? = nil) {
+        let drafts = store ?? self.drafts
         let saved = drafts.shotImages()
         guard let draft = drafts.draft, !saved.isEmpty else {
             drafts.clear()
@@ -1547,7 +1594,7 @@ struct StoryComposerView: View {
         keepInArchive = draft.archive == true
         allowReplies = draft.allowReplies != false
         message = nil
-        restoredContent = content
+        restoredContent = store == nil ? content : nil
     }
 
 
@@ -1653,6 +1700,8 @@ struct StoryComposerView: View {
             }
             return
         }
+        // 出した（裏の係が送り終えるまで持つ）。黙って残した書きかけは要らない
+        autoDrafts.clear()
         dismiss()
     }
 }

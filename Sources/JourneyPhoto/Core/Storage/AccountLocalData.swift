@@ -41,8 +41,11 @@ enum AccountLocalData {
         SeenStoriesStore(defaults: defaults).removeData(for: userId)
         RecentSongsStore(defaults: defaults).removeData(for: userId)
         StoryDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
+        StoryDraftStore(defaults: defaults, directory: draftDirectory, slot: .auto).removeData(for: userId)
         // 写真の投稿の下書きとその画像（2026-10-11）
         UploadDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
+        // 自動で残した書きかけ・送信の控え（別の枠・2026-10-16）
+        UploadDraftStore(defaults: defaults, directory: draftDirectory, slot: .auto).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）

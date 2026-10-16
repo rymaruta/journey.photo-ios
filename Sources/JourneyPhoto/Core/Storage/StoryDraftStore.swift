@@ -104,11 +104,18 @@ final class StoryDraftStore: ObservableObject {
     private let directory: URL
     private var userId: String?
 
+    /// 下書きの枠（2026-10-16 判断・`UploadDraftStore.Slot` と同じ考え）。
+    /// `saved` は本人が「下書き保存」で残したもの、`auto` は**裏に回ったときに黙って残す書きかけ**
+    /// （OS にアプリを終了されても消えない）。本人の下書きを黙って上書きしないよう、別の鍵に置く
+    enum Slot: Equatable { case saved, auto }
+    let slot: Slot
+
     /// - Parameters:
     ///   - directory: 画像を置く場所。既定は Application Support
     ///     （利用者に見せるものではなく、端末の掃除で勝手に消えては困る）
-    init(defaults: UserDefaults = .standard, directory: URL? = nil) {
+    init(defaults: UserDefaults = .standard, directory: URL? = nil, slot: Slot = .saved) {
         self.defaults = defaults
+        self.slot = slot
         self.directory = directory ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -116,11 +123,15 @@ final class StoryDraftStore: ObservableObject {
 
     private static let key = "journey-photo-story-draft"
 
+    /// 枠ごとの鍵の頭。自動の枠も `journey-photo-story-draft:` で始まる——掃除（`sweepOrphans`）は
+    /// どちらの枠からでも両方の画像を「指されている」と読む
+    private var base: String { slot == .saved ? Self.key : "\(Self.key):auto" }
+
     /// **アカウントごとに分ける**（`FavoritesStore` と同じ理由——同じ端末で
     /// 人が変わったとき、前の人の書きかけを見せない）。
     private func key(for userId: String?) -> String {
-        guard let userId, !userId.isEmpty else { return Self.key }
-        return "\(Self.key):\(userId)"
+        guard let userId, !userId.isEmpty else { return base }
+        return "\(base):\(userId)"
     }
 
     func use(userId: String?) {

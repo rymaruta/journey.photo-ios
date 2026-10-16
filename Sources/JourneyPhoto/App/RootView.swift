@@ -28,6 +28,10 @@ struct RootView: View {
     /// 投稿の選択。シートが閉じきった後に次の画面を開く
     @State private var pendingPostChoice: PostSheet.Kind?
     @State private var showPhotoUpload = false
+    /// 「送れなかった投稿があります」（送っている途中でアプリが終了した・起動のあと一度だけ・2026-10-16）
+    @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
+    /// 送れなかった投稿を確かめた人（人ごとに起動のあと一度だけ）
+    @State private var checkedInterruptedFor: String?
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
@@ -431,6 +435,22 @@ struct RootView: View {
     /// 1つの式を短くした。`tabsBase` → `tabsWithPostChoice` → `tabsWithPostSheets` → `tabs`）
     private var tabs: some View {
         tabsWithPostSheets
+            .task(id: auth.userId) { await offerInterruptedUpload() }
+            .alert(L("送れなかった投稿があります", "A post didn\u{2019}t finish sending"),
+                   isPresented: Binding(get: { interruptedUpload != nil },
+                                        set: { if !$0 { interruptedUpload = nil } }),
+                   presenting: interruptedUpload) { notice in
+                if notice.canResume {
+                    // 投稿の画面を開く。開いた画面が「書きかけの続きがあります」→「続きから」で戻す
+                    Button(L("続きから", "Continue")) { showPhotoUpload = true }
+                    Button(L("あとで", "Later"), role: .cancel) {}
+                } else {
+                    // 戻せる写真が無い（届いたか分からない写真だけ）。控えは片づける
+                    Button(L("OK", "OK"), role: .cancel) { discardInterruptedUpload() }
+                }
+            } message: { notice in
+                Text(notice.message)
+            }
             .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
                 NavigationStack { SiteMenuView() }
             }
@@ -479,6 +499,24 @@ struct RootView: View {
             .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
                 NavigationStack { StoryComposerView() }
             }
+    }
+
+    /// 🔴 **送っている途中でアプリが終了した投稿を知らせる**（2026-10-16）。以前はまだ送れていない写真が
+    /// 知らせも無く消えた。控え（`UploadDraftStore.Slot.auto` の `sending`）が残っていたら、起動のあと一度だけ。
+    /// ほかの画面（規約・新しくなったこと）が出ていたら出さない——投稿の画面を開いたときにも尋ねる
+    private func offerInterruptedUpload() async {
+        guard let userId = auth.userId, checkedInterruptedFor != userId else { return }
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
+        checkedInterruptedFor = userId
+        interruptedUpload = UploadDraftRules.interruptedNotice(
+            UploadDraftStore(slot: .auto).draft(for: userId))
+    }
+
+    /// 戻せる写真が無かった控えを片づける（届いたか分からない写真は戻さない・`UploadDraftStore.restorable`）
+    private func discardInterruptedUpload() {
+        guard let userId = auth.userId else { return }
+        UploadDraftStore(slot: .auto).clear(for: userId)
     }
 
     /// 投稿画面。旅の写真から来たときは、その写真を並べて**非公開で**始める

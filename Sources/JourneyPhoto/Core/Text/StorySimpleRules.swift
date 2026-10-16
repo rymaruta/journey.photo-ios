@@ -24,6 +24,24 @@ enum StorySimpleRules {
         return NextButton(title: L("次へ（\(selected)枚）", "Next (\(selected))"), enabled: !loading)
     }
 
+    // MARK: - 裏に回ったときの自動の書きかけ（2026-10-16）
+
+    /// 裏に回ったときに自動の書きかけ（`StoryDraftStore.Slot.auto`）をどうするか
+    enum AutoSave: Equatable {
+        /// 書く（並べた写真と置いた文字を残す）
+        case write
+        /// 前の分を消す（写真を全部外した——次に開いて外した写真が蘇らない）
+        case clear
+        /// 何もしない（読み込み中。読みかけの写真が落ちた書きかけを作らない・前の分は残す）
+        case skip
+    }
+
+    /// 写真が無ければ書かない（何も書いていない）。読み込み中は触らない
+    static func autoSave(hasShots: Bool, loading: Bool) -> AutoSave {
+        if loading { return .skip }
+        return hasShots ? .write : .clear
+    }
+
     // MARK: - 選んだ写真の読み込み
 
     /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す。

@@ -75,6 +75,10 @@ final class UploadDraftStore {
         var spot: Spot? = nil
         /// 「この写真を見て撮影」の元の写真（2026-10-14）。無ければ nil。**前の版の下書きには無い**（nil で読む）
         var inspired: InspiredBy.Pick? = nil
+        /// 🔴 **送信の控え**（自動の枠 `Slot.auto` だけ・2026-10-16）。「投稿する」を押した時点の写真と欄を
+        /// 書いて立てる。全部上がれば1枚ずつ外れて下書きごと消える。**残っていたら送っている途中で
+        /// アプリが終了した**——次の起動で知らせる（`UploadDraftRules.interruptedNotice`）
+        var sending: Bool? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -100,13 +104,25 @@ final class UploadDraftStore {
     /// 保存のたびの印（試験で差し替えて、途中で書けない形を作る）
     var makeToken: () -> String = { String(UUID().uuidString.prefix(8)).lowercased() }
 
+    /// 下書きの枠（2026-10-16 判断）。
+    ///
+    /// - `saved`: 本人が「下書きに保存」で残したもの（今までの下書き）
+    /// - `auto`: **アプリが黙って残す書きかけ**——裏に回ったとき（`scenePhase == .background`）の
+    ///   自動の下書きと、「投稿する」を押してから送り終えるまでの送信の控え（`Draft.sending`）。
+    ///   本人の下書きを黙って上書きしないよう、**別の鍵・別のファイル名**に置く。
+    ///   画面を閉じる（投稿し終えた・やめた・下書きに保存した）と消える。残っていたら、
+    ///   アプリが途中で終了した——次に開いたとき「続きから」を出す
+    enum Slot: Equatable { case saved, auto }
+
+    let slot: Slot
     private let defaults: UserDefaults
     private let directory: URL
 
     /// - Parameter directory: 画像を置く場所。既定は Application Support
     ///   （利用者に見せるものではなく、端末の掃除で勝手に消えては困る）
-    init(defaults: UserDefaults = .standard, directory: URL? = nil) {
+    init(defaults: UserDefaults = .standard, directory: URL? = nil, slot: Slot = .saved) {
         self.defaults = defaults
+        self.slot = slot
         self.directory = directory ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -115,10 +131,18 @@ final class UploadDraftStore {
     static let keyPrefix = "journey-photo-upload-draft"
     private static let filePrefix = "upload-draft-"
 
-    /// **人ごとの鍵。** ログインしていない人の下書きは作らない（空の userId は nil）
-    static func key(for userId: String) -> String? {
-        userId.isEmpty ? nil : "\(keyPrefix):\(userId)"
+    /// **人ごとの鍵。** ログインしていない人の下書きは作らない（空の userId は nil）。
+    /// 自動の枠は `journey-photo-upload-draft:auto:<userId>`——前置きが同じなので、
+    /// 起動のときの掃除（`sweepOrphans`）は両方の枠の画像を「指されている」と読む
+    static func key(for userId: String, slot: Slot = .saved) -> String? {
+        guard !userId.isEmpty else { return nil }
+        switch slot {
+        case .saved: return "\(keyPrefix):\(userId)"
+        case .auto: return "\(keyPrefix):auto:\(userId)"
+        }
     }
+
+    private func storageKey(_ userId: String) -> String? { Self.key(for: userId, slot: slot) }
 
     /// 画像の名前。鍵の文字を16進にするので、人ごとに必ず別の名前になる
     static func imageFileName(forKey key: String, token: String, index: Int) -> String {
@@ -147,7 +171,7 @@ final class UploadDraftStore {
     /// その人の下書き。**画像が1枚でも消えていたら、無いものとして片づける**
     /// ——欠けたまま戻すと、書いた題が別の写真に付く
     func draft(for userId: String) -> Draft? {
-        guard let key = Self.key(for: userId),
+        guard let key = storageKey(userId),
               let data = defaults.data(forKey: key) else { return nil }
         guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty,
               saved.items.allSatisfy({ FileManager.default.fileExists(atPath: fileURL($0.imageFile).path) }) else {
@@ -174,7 +198,7 @@ final class UploadDraftStore {
     /// - Returns: 書けたか（**黙って失敗しない**——画面が知らせを出す）
     @discardableResult
     func save(_ inputs: [ItemInput], fields: Draft, for userId: String) -> Bool {
-        guard let key = Self.key(for: userId), !inputs.isEmpty else { return false }
+        guard let key = storageKey(userId), !inputs.isEmpty else { return false }
         let token = makeToken()
         let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
         let previous = files(atKey: key)
@@ -209,7 +233,7 @@ final class UploadDraftStore {
 
     /// 記録を読み、1枚ずつの書き換えをして書き戻す（画像は書き換えない）。最後の1枚が外れたら下書きごと消す
     private func update(for userId: String, _ change: (inout [Item]) -> Void) {
-        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+        guard let key = storageKey(userId), let data = defaults.data(forKey: key),
               var saved = try? JSONDecoder().decode(Draft.self, from: data) else { return }
         let before = saved.items
         change(&saved.items)
@@ -243,7 +267,7 @@ final class UploadDraftStore {
     /// 記録にある下書きから「この写真を見て撮影」の元の写真を外す（付ける1枚の保存が通ったとき）。
     /// 写真と欄はそのまま
     func clearInspired(for userId: String) {
-        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+        guard let key = storageKey(userId), let data = defaults.data(forKey: key),
               var saved = try? JSONDecoder().decode(Draft.self, from: data), saved.inspired != nil else { return }
         saved.inspired = nil
         if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: key) }
@@ -251,7 +275,7 @@ final class UploadDraftStore {
 
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**
     func clear(for userId: String) {
-        guard let key = Self.key(for: userId) else { return }
+        guard let key = storageKey(userId) else { return }
         for name in files(atKey: key) { try? FileManager.default.removeItem(at: fileURL(name)) }
         defaults.removeObject(forKey: key)
     }
@@ -260,7 +284,7 @@ final class UploadDraftStore {
     /// 16進の前置き（`imageFileName`）で拾って消す（書きかけの途中で落ちた回の取りこぼし）
     func removeData(for userId: String) {
         clear(for: userId)
-        guard let key = Self.key(for: userId),
+        guard let key = storageKey(userId),
               let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
         let prefix = Self.filePrefix(forKey: key)
         for name in names where name.hasPrefix(prefix) {

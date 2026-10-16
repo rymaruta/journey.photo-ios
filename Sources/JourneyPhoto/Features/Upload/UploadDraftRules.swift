@@ -86,4 +86,37 @@ enum UploadDraftRules {
     static func asksRestore(hasStoredDraft: Bool, opensWithContent: Bool, alreadyAsked: Bool) -> Bool {
         hasStoredDraft && !opensWithContent && !alreadyAsked
     }
+
+    /// 次の起動で出す「送れなかった投稿があります」（2026-10-16）
+    struct InterruptedNotice: Equatable {
+        let message: String
+        /// 「続きから」を出すか（戻せる写真がある）。届いたか分からない写真だけなら出さない
+        let canResume: Bool
+    }
+
+    /// 次の起動で知らせるか。出さないなら nil。
+    ///
+    /// 送信の控え（`UploadDraftStore.Draft.sending`）が残っている＝送っている途中でアプリが終了した。
+    /// 裏に回ったときの自動の書きかけ（`sending` が無い）は知らせない（投稿の画面を開いたときに尋ねる）
+    @MainActor
+    static func interruptedNotice(_ draft: UploadDraftStore.Draft?) -> InterruptedNotice? {
+        guard let draft, draft.sending == true else { return nil }
+        let (restorable, dropped) = UploadDraftStore.restorable(draft)
+        guard !restorable.isEmpty || dropped > 0 else { return nil }
+        let unsure = dropped > 0
+            ? L("送っている途中だった \(dropped) 枚は投稿済みの可能性があるため、プロフィールで確かめてください。",
+                "\(dropped) photo(s) were partway sent and may already be posted \u{2014} check your profile.")
+            : ""
+        guard !restorable.isEmpty else {
+            return InterruptedNotice(
+                message: L("投稿を送り終える前にアプリが終了しました。", "The app closed before your post finished sending. ")
+                    + unsure,
+                canResume: false)
+        }
+        return InterruptedNotice(
+            message: L("写真 \(restorable.count) 枚を送り終える前にアプリが終了しました。「続きから」で投稿の画面に戻せます。",
+                       "The app closed before \(restorable.count) photo(s) were sent. Tap Continue to pick up where you left off. ")
+                + unsure,
+            canResume: true)
+    }
 }

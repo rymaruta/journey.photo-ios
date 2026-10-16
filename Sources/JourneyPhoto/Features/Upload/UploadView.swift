@@ -22,6 +22,10 @@ struct UploadView: View {
     @State private var showRestore = false
     /// 開いたときの問いをもう済ませたか（選ぶ画面・カメラから戻るたびに onAppear が走る）
     @State private var askedRestore = false
+    /// 「書きかけの続きがあります」（自動で残した書きかけ・送れなかった投稿・2026-10-16）
+    @State private var showRestoreAuto = false
+    /// 裏に回ったら書きかけを黙って残す（`UploadViewModel.autoSaveDraft`）
+    @Environment(\.scenePhase) private var scenePhase
     /// 編集画面を開いている写真（帯のサムネを押した）
     @State private var editing: EditTarget?
     /// 編集できない理由（再試行の鍵を控えている写真・`UploadEditRules.canEdit`）
@@ -142,6 +146,8 @@ struct UploadView: View {
             Button(L("投稿をやめる", "Stop posting"), role: .destructive) {
                 // 閉じる確認で「下書きから外します」と言うので、閉じた時点で外す（モデルの注記）
                 model.dropUnsureDraftPhotos()
+                // やめると決めたので、黙って残した書きかけも消す（次に開いて「続きから」を出さない）
+                model.discardAutoDraft()
                 dismiss()
             }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
@@ -158,6 +164,25 @@ struct UploadView: View {
         } message: {
             Text(L("この端末に保存した下書きがあります。続きから編集できます。",
                    "You have a draft saved on this device. You can pick up where you left off."))
+        }
+        // 🔴 **アプリが途中で終了した書きかけ・送れなかった投稿**（2026-10-16）。裏に回ったときに黙って
+        // 残した分（`autoSaveDraft`）と送信の控え。本人の下書きとは別の枠なので、別に尋ねる
+        .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
+            Button(L("続きから", "Continue")) { restoreDraft(from: .auto) }
+            Button(L("削除", "Delete"), role: .destructive) {
+                model.discardAutoDraft()
+                openLibraryAfterRestorePrompt()
+            }
+        } message: {
+            Text(model.storedAutoDraft?.sending == true
+                 ? L("送り終える前にアプリが終了した投稿があります。続きから送り直せます。",
+                     "A post didn\u{2019}t finish sending before the app closed. You can send it again.")
+                 : L("前回、投稿の途中でアプリが終了しました。続きから編集できます。",
+                     "The app closed while you were writing a post. You can pick up where you left off."))
+        }
+        // 裏に回ったら書きかけを黙って残す（OS にアプリを終了されても消えない・2026-10-16）
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { model.autoSaveDraft() }
         }
         // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
         // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
@@ -201,12 +226,12 @@ struct UploadView: View {
     }
 
     /// 「続ける」。画像が読めなければ何も戻さず、そう言う（選ぶ画面を開く）
-    private func restoreDraft() {
+    private func restoreDraft(from slot: UploadDraftStore.Slot = .saved) {
         Task {
-            guard await model.restoreDraft() else {
+            guard await model.restoreDraft(from: slot) else {
                 // 戻せる写真が無かった（届いたか分からない写真だけだった）ときは、モデルがもう知らせている
                 if model.errorMessage == nil {
-                    model.discardDraft()
+                    if slot == .saved { model.discardDraft() } else { model.discardAutoDraft() }
                     model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
                 }
                 openLibraryAfterRestorePrompt()
@@ -336,7 +361,7 @@ struct UploadView: View {
             try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
             guard !Task.isCancelled else { return }
             // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
-            guard !showRestore, !model.isRestoringDraft else { return }
+            guard !showRestore, !showRestoreAuto, !model.isRestoringDraft else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
                 || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
@@ -381,11 +406,16 @@ struct UploadView: View {
             // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
             // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
             if model.drafts == nil { model.drafts = UploadDraftStore() }
+            if model.autoDrafts == nil { model.autoDrafts = UploadDraftStore(slot: .auto) }
             if !askedRestore { model.draftOwner = auth.userId }
-            if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
-                                            opensWithContent: !initialPhotos.isEmpty || initialCapture != nil
-                                                || initialTag != nil || initialSpot != nil,
-                                            alreadyAsked: askedRestore) {
+            let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
+                || initialTag != nil || initialSpot != nil
+            // 自動で残した書きかけ（アプリが途中で終了した回）を先に尋ねる。本人の下書きは次に開いたとき
+            if UploadDraftRules.asksRestore(hasStoredDraft: model.storedAutoDraft != nil,
+                                            opensWithContent: opensWithContent, alreadyAsked: askedRestore) {
+                showRestoreAuto = true
+            } else if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
+                                                   opensWithContent: opensWithContent, alreadyAsked: askedRestore) {
                 showRestore = true
             }
             askedRestore = true
@@ -432,10 +462,14 @@ struct UploadView: View {
         // **まとめて選べる**（Web の投稿画面と同じ）。一度に扱う数は
         // `maxSelection` まで——1枚ずつ題と説明を書く画面なので、
         // 多すぎるとどれを書いているか見失う
+        // **元の形のまま受け取る（`.current`）**（2026-10-16・ストーリーの埋め込みの写真選びと同じ理由）。
+        // 既定（`.automatic`）だと写真を JPEG などに作り直し終えるまで選択が知らされず、大きな写真・
+        // iCloud の写真ほど長く待たされる。読み込みは `Data` で受けて `ImagePreparer` が整えるので HEIC のままで困らない
         .photosPicker(isPresented: $showLibrary,
                       selection: $model.pickerItems,
                       maxSelectionCount: UploadViewModel.maxSelection,
                       matching: .images,
+                      preferredItemEncoding: .current,
                       // **前の選択に印を付けて開く。** 無いと毎回まっさらで開き、
                       // 「追加」が選び直しになる（前の写真と打った題が消える）
                       photoLibrary: .shared())

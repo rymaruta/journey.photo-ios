@@ -360,7 +360,7 @@ final class UploadLocalDraftTests: XCTestCase {
                                  encoding: .utf8)
         XCTAssertTrue(source.contains("&& !isRestoringDraft"), "canSubmit が復元中を止めていない")
         // 印は縮小画像の await より前に立つ（復元中に「追加」されると下書きが消える）
-        let restoreStart = try XCTUnwrap(source.range(of: "func restoreDraft() async -> Bool"), "restoreDraft が無い")
+        let restoreStart = try XCTUnwrap(source.range(of: "func restoreDraft(from slot: UploadDraftStore.Slot = .saved) async -> Bool"), "restoreDraft が無い")
         let restoreEnd = source.range(of: "\n    func discardDraft()")?.lowerBound
             ?? source.index(restoreStart.upperBound, offsetBy: 3500, limitedBy: source.endIndex)
             ?? source.endIndex
@@ -495,7 +495,7 @@ final class UploadLocalDraftTests: XCTestCase {
         XCTAssertTrue(view.contains("model.discardDraft()"))
         XCTAssertTrue(view.contains("if model.draftOwner != id { model.draftOwner = nil }"),
                       "人が替わっても前の人の書きかけを次の人の下書きに保存できる")
-        XCTAssertTrue(view.contains("guard !showRestore, !model.isRestoringDraft else { return }"),
+        XCTAssertTrue(view.contains("guard !showRestore, !showRestoreAuto, !model.isRestoringDraft else { return }"),
                       "問いの最中に写真を選ぶ画面を重ねて開く")
         XCTAssertTrue(view.contains("|| initialTag != nil || initialSpot != nil"),
                       "テーマ・スポットから開いた回にも下書きを尋ねる（タグ・紐付けを上書きする）")
