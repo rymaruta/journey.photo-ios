@@ -18,6 +18,38 @@ struct StoryInsightsView: View {
 
     let story: Story
 
+    /// 閲覧画面が**もう読んだ**見た人・返信（2026-10-16）。渡されたら最初は読み直さない
+    /// ——閲覧画面から開くたびに、同じ2つの一覧をもう一度読んでいた。引き下げ・人のページから
+    /// 戻ったときの読み直しは今までどおり
+    struct Seed: Equatable {
+        let viewers: [StoryViewer]
+        let replies: [StoryReply]
+
+        /// **両方読めているときだけ**渡す（片方でも読めていなければ、反応の画面が自分で読む）
+        static func from(viewers: [StoryViewer], viewersLoaded: Bool?,
+                         replies: [StoryReply], repliesLoaded: Bool) -> Seed? {
+            viewersLoaded == true && repliesLoaded ? Seed(viewers: viewers, replies: replies) : nil
+        }
+    }
+
+    init(story: Story, seed: Seed? = nil) {
+        self.story = story
+        if let seed {
+            _viewers = State(initialValue: seed.viewers)
+            _replies = State(initialValue: seed.replies)
+            _viewersLoaded = State(initialValue: true)
+            _repliesLoaded = State(initialValue: true)
+            _isLoading = State(initialValue: false)
+        }
+        _skipsFirstLoad = State(initialValue: Self.skipsFirstLoad(seed: seed))
+    }
+
+    /// 最初の読み込みを省くか（渡された一覧があるとき）
+    nonisolated static func skipsFirstLoad(seed: Seed?) -> Bool { seed != nil }
+
+    /// 最初の `.task` の読み込みを1回だけ省く印（`Seed`）
+    @State private var skipsFirstLoad = false
+
     @EnvironmentObject private var environment: AppEnvironment
     /// ブロックした人は一覧から外す（行からその人のページへ行き、ブロックできる）
     @EnvironmentObject private var hidden: ModerationStore
@@ -105,7 +137,14 @@ struct StoryInsightsView: View {
             frontSettle = nil
             front.disappear()
         }
-        .task { await load() }
+        .task {
+            // 閲覧画面から一覧を受け取った回は、最初の1回だけ読まない（戻ったときは読み直す）
+            if skipsFirstLoad {
+                skipsFirstLoad = false
+                return
+            }
+            await load()
+        }
         .refreshable { await load(pulled: true) }
     }
 

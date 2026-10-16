@@ -230,6 +230,49 @@ enum StoryPlayback {
         return candidate < count ? candidate : nil
     }
 
+    /// 先読みする**次の動画**（いまの1本より後で最初の動画）。無ければ nil。
+    ///
+    /// 2026-10-16: 次の1本（写真）の先読みに加えて、次の動画の再生器も1つだけ作っておく
+    /// （`StoryVideoPreloader`）。いちばん近い1本だけ——並び全部の動画を読むと重い
+    static func nextVideo(after index: Int, isVideo: [Bool]) -> Int? {
+        guard index + 1 < isVideo.count else { return nil }
+        return (index + 1..<isVideo.count).first { isVideo[$0] }
+    }
+
+    // MARK: - 読めなかった写真
+
+    /// 写真の読み込みが片付いたあとの扱い（`RemoteImage.onSettled`）。
+    ///
+    /// 2026-10-16: **読めなかった写真で時計を回さない。** 以前は失敗でも `mediaReady` にして秒数を
+    /// 減らし、何も出ないまま次へ送っていた。読み直しのボタンを出して待つ（右を押せば次へは行ける）。
+    /// 押して読み直せるのは `RemoteImageRetry.manualLimit` 回まで——使い切ったら前と同じく進める
+    /// （圏外のままで永久に固まらないように）。URL が無い1本は読み直しても同じなので、すぐ進める
+    struct MediaSettle: Equatable {
+        /// 時計を回してよい（絵が出た・諦めた）
+        let ready: Bool
+        /// 読み直しのボタンを出す
+        let offersRetry: Bool
+    }
+
+    static func mediaSettled(loaded: Bool, hasURL: Bool, retriesUsed: Int) -> MediaSettle {
+        if loaded { return MediaSettle(ready: true, offersRetry: false) }
+        if hasURL, retriesUsed < RemoteImageRetry.manualLimit {
+            return MediaSettle(ready: false, offersRetry: true)
+        }
+        return MediaSettle(ready: true, offersRetry: false)
+    }
+
+    // MARK: - 読み上げ
+
+    /// 進み線の読み上げ。「4本中2本目」、**止めている間は「・止まっています」**（板 StoryViewerMenu・
+    /// Paused・Reply の `aria-label`）。ハイライトは単位が「件」（板 HighlightPlayer「5件中1件目」）
+    static func progressLabel(count: Int, index: Int, paused: Bool, inHighlight: Bool) -> String {
+        let n = index + 1
+        let base = inHighlight ? L("\(count)件中\(n)件目", "\(n) of \(count)")
+                               : L("\(count)本中\(n)本目", "\(n) of \(count)")
+        return paused ? base + L("・止まっています", ", paused") : base
+    }
+
     // MARK: - 押したとき・読み上げの操作
 
     /// 押す・払う・読み上げの操作の前に**先に片づけるもの**。返信を打っている・反応の並びが
@@ -590,6 +633,11 @@ enum StoryPlayback {
     ///
     /// 見出しと足元を隠すのは**長押しの間だけ**（板 25b）。メニューで止めた
     /// ときに隠すと、「…」（再開）と ✕ に手が届かなくなる
+    ///
+    /// `hidesChrome` で隠すのは見出し（名前・…・✕）・足元・ひとこと・撮影地・曲・上下の暗がり。
+    /// 進み線は残す（板 StoryViewerPaused は進み線・写真・札だけ）。
+    /// **「…」のシート・削除の確認の間も隠す**（2026-10-16・板 StoryViewerMenu・StoryDeleteConfirm は
+    /// 進み線と写真に暗幕だけ。閉じる口はシートの「キャンセル」と外を押すこと）
     struct Chrome: Equatable {
         let hidesChrome: Bool
         let showsPill: Bool
@@ -599,7 +647,7 @@ enum StoryPlayback {
 
     static func chrome(longHeld: Bool, paused: Bool, overlayOpen: Bool) -> Chrome {
         guard !overlayOpen else {
-            return Chrome(hidesChrome: false, showsPill: false, pillSaysRelease: false)
+            return Chrome(hidesChrome: true, showsPill: false, pillSaysRelease: false)
         }
         return Chrome(hidesChrome: longHeld,
                       showsPill: longHeld || paused,

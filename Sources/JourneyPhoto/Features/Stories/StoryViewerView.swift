@@ -85,6 +85,12 @@ struct StoryViewerView: View {
     @State private var voting = false
     /// 絵が出た（動画は出どころが無いので最初から true）
     @State private var mediaReady: Bool
+    /// 読めなかった写真の読み直しのボタンを出している（`StoryPlayback.mediaSettled`）
+    @State private var offersMediaRetry = false
+    /// いまの1本で押して読み直した回数（上限は `RemoteImageRetry.manualLimit`）。移ったら 0
+    @State private var mediaRetries = 0
+    /// 写真を作り直した回数（`StoryMedia` の `.id` に混ぜる——替えるともう一度読む）
+    @State private var mediaReloads = 0
 
     // メニューと確認
     @State private var showMenu = false
@@ -320,6 +326,8 @@ struct StoryViewerView: View {
         .onDisappear {
             stopSong()
             MusicPreviewPlayer.shared.endStoryViewing(viewingToken)
+            // 先読みした動画の再生器を持ち越さない（閉じたあとも読み続けない）
+            StoryVideoPreloader.shared.clear()
         }
     }
 
@@ -380,27 +388,30 @@ struct StoryViewerView: View {
     /// その下の黒い帯に返信欄が乗る
     private func content(for story: Story) -> some View {
         ZStack(alignment: .top) {
-            if let highlight {
-                // ハイライトは写真を画面いっぱい（角丸なし）に敷き、足元も重ねる
-                photoArea(for: story)
-                    .ignoresSafeArea()
-                    .overlay(alignment: .bottom) {
+            // **写真の枠はキーボードで縮めない**（2026-10-16・板 StoryViewerReply は写真 752 のまま、
+            // 返信欄だけがキーボードの上へ上がる）。写真と足元の黒帯の場所はキーボードを無視して敷き、
+            // 足元の中身だけを上に重ねてキーボードに付いていかせる。
+            // **ハイライトも同じ形**（2026-10-16・板 HighlightPlayer: 写真の下の角丸 24＋足元 92 の黒帯）
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    photoArea(for: story)
+                        .ignoresSafeArea(edges: .top)
+                    // 足元の黒帯の場所（中身は下で重ねる）。高さは足元の中身と同じ
+                    Color.clear.frame(height: Self.footerHeight)
+                }
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+                Group {
+                    if let highlight {
                         highlightFooter(for: story, highlight: highlight)
-                            .opacity(chrome.hidesChrome ? 0 : 1)
-                            .dynamicTypeSize(...Self.chromeTypeLimit)
+                    } else {
+                        footer(for: story)
                     }
-            } else {
-            VStack(spacing: 0) {
-                photoArea(for: story)
-                    .ignoresSafeArea(edges: .top)
-                footer(for: story)
-                    .dynamicTypeSize(...Self.chromeTypeLimit)
-                    .frame(minHeight: Self.footerHeight)
-                    // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）。
-                    // 場所は残す——消すと写真の枠が伸び縮みする
-                    .opacity(chrome.hidesChrome ? 0 : 1)
-                    .allowsHitTesting(!chrome.hidesChrome)
-            }
+                }
+                .dynamicTypeSize(...Self.chromeTypeLimit)
+                .frame(minHeight: Self.footerHeight)
+                // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）
+                .opacity(chrome.hidesChrome ? 0 : 1)
+                .allowsHitTesting(!chrome.hidesChrome)
             }
             VStack(spacing: 9) {
                 progressBar(for: story)
@@ -412,10 +423,24 @@ struct StoryViewerView: View {
             .dynamicTypeSize(...Self.chromeTypeLimit)
 
             if chrome.showsPill {
-                pausedPill
-                    .dynamicTypeSize(...Self.chromeTypeLimit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 板 StoryViewerPaused: 札は**上から 360（中心 380／844）**——真ん中より少し上
+                GeometryReader { geo in
+                    pausedPill
+                        .dynamicTypeSize(...Self.chromeTypeLimit)
+                        .position(x: geo.size.width / 2,
+                                  y: geo.size.height * StoryViewerMetrics.pausedPillCenter)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+            // **暗幕は画面全体に**（2026-10-16・板 StoryViewerMenu 50%・StoryDeleteConfirm 60% は
+            // `inset: 0`）。写真の中だけに敷いていたので、足元の黒帯と見出しが暗くならなかった
+            if overlayDimOpacity > 0 {
+                Color.black
+                    .opacity(overlayDimOpacity)
+                    .ignoresSafeArea()
                     .allowsHitTesting(false)
+                    .transition(.opacity)
             }
             if showMenu {
                 menuSheet(for: story)
@@ -428,6 +453,7 @@ struct StoryViewerView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
+        .animation(.easeOut(duration: 0.18), value: showDeleteConfirm)
         .animation(.easeOut(duration: 0.18), value: chrome)
         .task(id: story.id) {
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
@@ -473,7 +499,7 @@ struct StoryViewerView: View {
         // 時計は読み込みと別に回す。同じ task に入れると、見た人の一覧を
         // 待っている間、写真が出ているのに秒数が始まらない
         .task(id: story.id) { await runClock(for: story) }
-        // 次の写真を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
+        // 次の写真と次の動画を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
         .task(id: story.id) { prefetchNext() }
         .onAppear {
             isForeground = scenePhase == .active
@@ -545,7 +571,11 @@ struct StoryViewerView: View {
             replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)
         }) {
             NavigationStack {
-                StoryInsightsView(story: story)
+                // **閲覧画面が読んだ見た人・返信を渡す**（2026-10-16）。開くたびに同じ一覧を読み直していた。
+                // 両方読めていないときは渡さない（反応の画面が自分で読む）
+                StoryInsightsView(story: story,
+                                  seed: StoryInsightsView.Seed.from(viewers: viewers, viewersLoaded: viewersLoaded,
+                                                                    replies: replies, repliesLoaded: repliesLoaded))
                     .toolbar {
                         // v2 StoryInsights: 見出しは中身の左に明朝で置き、「閉じる」は右
                         ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
@@ -570,9 +600,11 @@ struct StoryViewerView: View {
                                                   hasSong: StoryPlayback.songURL(for: story) != nil),
                 isPaused: frozen,
                 onEnded: { [id = story.id] in mediaEnded(id) },
-                // 出せないと分かった回も進める——止めたままだと永久に固まる
-                // （Web の `!mediaReady && !mediaError` と同じ）
-                onSettled: { _ in mediaReady = true },
+                // 読めなかった回は時計を回さず、読み直しのボタンを出す（`StoryPlayback.mediaSettled`）。
+                // 読み直しを使い切ったら進める——止めたままだと永久に固まる
+                onSettled: { [id = story.id, hasURL = story.imageURL != nil] loaded in
+                    mediaSettled(loaded, storyId: id, hasURL: hasURL)
+                },
                 onImageLayout: { [id = story.id] size in
                     // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
                     if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
@@ -594,23 +626,27 @@ struct StoryViewerView: View {
             // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
             // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
             // 鳴り終わりの合図も来ないので先へ進めなかった
-            .id(story.id)
+            // 読み直しのボタンを押したら作り直して読み直す（`mediaReloads`）
+            .id("\(story.id)#\(mediaReloads)")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            // 上と下の暗がり（白い文字を写真の明るさに負けさせない。板は上180・下200）。
-            // **重ねて置き、寸法の申告に加えない。** 縦に積むと合わせて 380pt を
-            // 求め、キーボードで写真の枠が縮んだときに枠ごと画面からあふれた
+            // 上と下の暗がり（白い文字を写真の明るさに負けさせない。v2 の板は上 170・60%、下 260・70%）。
+            // **重ねて置き、寸法の申告に加えない**（縦に積むと合わせて 430pt を求め、狭い枠で
+            // 枠ごと画面からあふれる）。**止めている間は消す**（板 StoryViewerPaused は写真と札だけ）
             .overlay(alignment: .top) {
-                LinearGradient(colors: [Color.black.opacity(0.65), Color.black.opacity(0)],
+                LinearGradient(colors: [Color.black.opacity(StoryViewerMetrics.topShadeOpacity), Color.black.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
-                    .frame(height: 180)
+                    .frame(height: StoryViewerMetrics.topShadeHeight)
+                    .opacity(chrome.hidesChrome ? 0 : 1)
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
-                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(StoryViewerMetrics.bottomShadeOpacity)],
                                startPoint: .top, endPoint: .bottom)
-                    .frame(height: 200)
+                    .frame(height: highlight == nil ? StoryViewerMetrics.bottomShadeHeight
+                                                    : StoryViewerMetrics.highlightBottomShadeHeight)
+                    .opacity(chrome.hidesChrome ? 0 : 1)
                     .allowsHitTesting(false)
             }
 
@@ -628,17 +664,28 @@ struct StoryViewerView: View {
                     .id(story.id)
             }
 
-            // 暗幕。v2 の板の値（`dimOpacity`）
+            // 返信を書いている間の暗幕（板 StoryViewerReply 55%）。「…」・削除の確認の暗幕は
+            // 画面全体に敷く（`overlayDimOpacity`・`content(for:)`）
             Color.black
-                .opacity(dimOpacity)
+                .opacity(photoDimOpacity)
                 .allowsHitTesting(false)
 
             // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
-            // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
+            // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）。
+            // **止めている間は隠す**（板 StoryViewerPaused は進み線・写真・札だけ）。
+            // ハイライトも同じ高さ（日付はひとことの下に入った・板 HighlightPlayer）
             captionBlock(for: story)
                 .dynamicTypeSize(...Self.chromeTypeLimit)
                 .padding(.horizontal, StoryViewerMetrics.captionInset)
-                .padding(.bottom, highlight == nil ? 96 : 150)
+                .padding(.bottom, 96)
+                .opacity(chrome.hidesChrome ? 0 : 1)
+                .allowsHitTesting(!chrome.hidesChrome)
+
+            // 読めなかった写真の読み直し（`StoryPlayback.mediaSettled`）。**送る的より上**に置く
+            // ——`RemoteImage` の中の読み直しの印は送る的の下になり、押せない
+            if offersMediaRetry {
+                mediaRetryButton
+            }
 
             if let message {
                 Text(message)
@@ -659,8 +706,7 @@ struct StoryViewerView: View {
                     }
             }
         }
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: highlight == nil ? JPRadius.xl : 0,
-                                          bottomTrailingRadius: highlight == nil ? JPRadius.xl : 0))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: JPRadius.xl, bottomTrailingRadius: JPRadius.xl))
         // **止めている間は写真をわずかに縮める**（v2 StoryViewerPaused・名前やひとことを消しても
         // 「止まった」が形で分かる）。動きは `chrome` の切り替えに付いている
         .scaleEffect(chrome.showsPill ? StoryViewerMetrics.pausedScale : 1)
@@ -680,16 +726,28 @@ struct StoryViewerView: View {
         let song = story.songLineShown
         // 札は画像なので読み上げでは読めない。隠した行は**読み上げにだけ**残す（686566d のレビュー）
         let spokenSong = song == nil ? story.songLine : nil
-        if caption != nil || place != nil || song != nil || spokenSong != nil {
+        // ハイライトの日付「2026.09.12 · 残したストーリー」（板 HighlightPlayer: ひとことの下・13 の等幅・白 82%）
+        let keptDate = highlight == nil ? nil : StoryPlayback.dotDate(story.createdAt)
+        if caption != nil || place != nil || song != nil || spokenSong != nil || keptDate != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {
                     Text(caption)
-                        .font(JPFont.display(30, relativeTo: .largeTitle))
+                        // 板 StoryViewer 30・HighlightPlayer 28
+                        .font(JPFont.display(highlight == nil ? StoryViewerMetrics.captionSize
+                                                              : StoryViewerMetrics.highlightCaptionSize,
+                                             relativeTo: .largeTitle))
                         .lineSpacing(6)
                         // 長い文でも写真の枠を押し広げない（ひとことは200字まで）
                         .lineLimit(5)
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
+                        .jpPhotoTextShadow()
+                        .allowsHitTesting(false)
+                }
+                if let keptDate {
+                    Text(L("\(keptDate) · 残したストーリー", "\(keptDate) · Kept story"))
+                        .font(JPFont.mono(13, relativeTo: .footnote))
+                        .foregroundStyle(Color.white.opacity(StoryViewerMetrics.highlightDateOpacity))
                         .jpPhotoTextShadow()
                         .allowsHitTesting(false)
                 }
@@ -731,7 +789,7 @@ struct StoryViewerView: View {
                 }
                 // ひとことも撮影地も無い回は並びが空になり、背景に大きさが無いので中に置く
                 // （ほかに要素が無いので間隔は足されない）
-                if caption == nil, place == nil, let spokenSong {
+                if caption == nil, place == nil, keptDate == nil, let spokenSong {
                     Color.clear
                         .frame(width: 1, height: 1)
                         .allowsHitTesting(false)
@@ -742,7 +800,7 @@ struct StoryViewerView: View {
             // **並びの外（背景）に置く。** 並びの中に置くと間隔 8pt ＋ 1pt が足され、下端で
             // 揃えている塊が 9pt 押し上がった（c04fdf5 のレビュー）
             .background {
-                if caption != nil || place != nil, let spokenSong {
+                if caption != nil || place != nil || keptDate != nil, let spokenSong {
                     Color.clear
                         .allowsHitTesting(false)
                         .accessibilityElement()
@@ -797,7 +855,9 @@ struct StoryViewerView: View {
         // 見出しの出し入れ（`.animation(value: chrome)`）が走り、0へ戻る縮みが見えた
         .transaction { $0.animation = nil }
         .padding(.horizontal, 10)
-        .accessibilityLabel(L("\(visible.count)本中\(index + 1)本目", "\(index + 1) of \(visible.count)"))
+        // 止めている間は「・止まっています」、ハイライトは「件」（`StoryPlayback.progressLabel`）
+        .accessibilityLabel(StoryPlayback.progressLabel(count: visible.count, index: index,
+                                                        paused: spokenAsPaused, inHighlight: highlight != nil))
     }
 
     /// v2: 地は白 32%。**止めている間は地 22%・塗り 70% に沈める**（板 StoryViewerPaused——
@@ -900,15 +960,10 @@ struct StoryViewerView: View {
         .frame(minHeight: WebTheme.minTapTarget)
     }
 
-    /// ハイライトの足元（左に等幅の日付、右に自分なら「編集」）
+    /// ハイライトの足元（写真の下の黒帯）。**自分なら右に「編集」だけ**（2026-10-16・板 HighlightPlayer。
+    /// 日付はひとことの下へ移した・`captionBlock`）
     private func highlightFooter(for story: Story, highlight: HighlightContext) -> some View {
         HStack {
-            if let date = StoryPlayback.dotDate(story.createdAt) {
-                Text(L("\(date) · 残したストーリー", "\(date) · Kept story"))
-                    .font(JPFont.mono(13, relativeTo: .footnote))
-                    .foregroundStyle(WebTheme.muted)
-                    .jpPhotoTextShadow()
-            }
             Spacer(minLength: 0)
             if let onEdit = highlight.onEdit {
                 Button(action: onEdit) {
@@ -917,11 +972,14 @@ struct StoryViewerView: View {
                         Image(systemName: "pencil")
                         Text(L("編集", "Edit"))
                     }
-                    .font(JPFont.footnote.weight(.semibold))
+                    // 板 14・600
+                    .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .frame(minHeight: StoryViewerMetrics.highlightEditHeight)
-                    .jpGlass(in: Capsule(), border: 0.14)
+                    // 板: **透明の地に白 14% の縁**（足元は写真の外の黒地。ガラスにしない）
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(StoryViewerMetrics.highlightEditBorder),
+                                                    lineWidth: JPStroke.hairline))
                     .frame(minHeight: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
                 }
@@ -929,7 +987,7 @@ struct StoryViewerView: View {
             }
         }
         .padding(.horizontal, JPSpace.m)
-        .padding(.bottom, JPSpace.m)
+        .frame(height: Self.footerHeight)
     }
 
     /// 見出しの左（アバター・名前・時刻）
@@ -945,7 +1003,8 @@ struct StoryViewerView: View {
                 // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("あなた", "You"))
-                        .font(.subheadline.weight(.semibold))
+                        // 板 14・600（`.subheadline` と同じだけ伸びる）
+                        .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
                         .foregroundStyle(.white)
                     if let line = ownTimeLine(for: story) {
                         Text(line)
@@ -956,7 +1015,8 @@ struct StoryViewerView: View {
                 }
             } else {
                 Text(story.authorName)
-                    .font(.subheadline.weight(.semibold))
+                    // 板 14・600（`.subheadline` と同じだけ伸びる）
+                    .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 if let ago = StoryPlayback.ago(from: story.createdAt) {
@@ -1174,6 +1234,8 @@ struct StoryViewerView: View {
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
         paused = false
         mediaReady = visible[target].isVideo
+        offersMediaRetry = false
+        mediaRetries = 0
         captionHidden = false
         mediaImageSize = nil
         reply = ""
@@ -1242,29 +1304,87 @@ struct StoryViewerView: View {
     /// 次の1本が写真なら、先に読んでおく。`AsyncImage` と同じ `URLSession.shared`
     /// （＝`URLCache.shared`・`JourneyPhotoApp` で容量を広げてある）に入れるだけ。
     /// **失敗は気にしない**（表示のときにもう一度読む）
+    ///
+    /// 2026-10-16: **次の動画も読み始める**（`StoryPlayback.nextVideo`・`StoryVideoPreloader`）。
+    /// 持つのは1つ・先に読むのは数秒だけ（重くしすぎない）
     private func prefetchNext() {
-        guard let target = StoryPlayback.next(after: index, count: visible.count),
-              visible.indices.contains(target),
-              !visible[target].isVideo,
-              let url = visible[target].imageURL else { return }
+        let shown = visible
+        if let video = StoryPlayback.nextVideo(after: index, isVideo: shown.map(\.isVideo)),
+           let url = shown[video].imageURL {
+            StoryVideoPreloader.shared.preload(url)
+        }
+        guard let target = StoryPlayback.next(after: index, count: shown.count),
+              shown.indices.contains(target),
+              !shown[target].isVideo,
+              let url = shown[target].imageURL else { return }
         URLSession.shared.dataTask(with: url).resume()
+    }
+
+    /// 写真の読み込みが片付いた（`StoryPlayback.mediaSettled`）。**前の1本の知らせは当てない**
+    private func mediaSettled(_ loaded: Bool, storyId: String, hasURL: Bool) {
+        guard current?.id == storyId else { return }
+        let settle = StoryPlayback.mediaSettled(loaded: loaded, hasURL: hasURL, retriesUsed: mediaRetries)
+        offersMediaRetry = settle.offersRetry
+        if settle.ready { mediaReady = true }
+    }
+
+    /// 読めなかった写真の「読み直す」（ガラスの札・14・当たり 44）。押すと写真を作り直して読み直す
+    private var mediaRetryButton: some View {
+        Button {
+            mediaRetries += 1
+            offersMediaRetry = false
+            mediaReloads += 1
+        } label: {
+            VStack(spacing: JPSpace.xs) {
+                Text(L("写真を読み込めませんでした", "Couldn't load the photo"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(Color.white.opacity(StoryViewerMetrics.metaOpacity))
+                    .jpPhotoTextShadow()
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise")
+                    Text(L("読み直す", "Reload"))
+                }
+                .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .frame(minHeight: StoryViewerMetrics.pausedPillHeight)
+                .jpGlass(in: Capsule(), border: 0)
+                .frame(minHeight: WebTheme.minTapTarget)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .dynamicTypeSize(...Self.chromeTypeLimit)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("写真を読み込めませんでした。読み直す", "Couldn't load the photo. Reload"))
+        .accessibilityAddTraits(.isButton)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - 「…」のメニュー
 
-    /// 止めている間の見せ方（`StoryPlayback.chrome`）。**メニューを開いている間は
-    /// 数えない**——メニューの板は見出しを見せたまま暗くするだけ
+    /// 止めている間の見せ方（`StoryPlayback.chrome`）。**メニュー・削除の確認を開いている間は
+    /// 札を出さず、見出し・足元・ひとことを隠す**（板 StoryViewerMenu・StoryDeleteConfirm）
     private var chrome: StoryPlayback.Chrome {
         StoryPlayback.chrome(longHeld: longHeld, paused: paused,
                              overlayOpen: showMenu || showDeleteConfirm)
     }
 
-    /// 暗幕（v2 の板: 削除の確認 60%・「…」50%・返信を書いている間 55%）
-    private var dimOpacity: Double {
+    /// 画面全体の暗幕（v2 の板: 削除の確認 60%・「…」50%）。足元の黒帯と見出しの上まで敷く
+    private var overlayDimOpacity: Double {
         if showDeleteConfirm { return StoryViewerMetrics.deleteDim }
         if showMenu { return StoryViewerMetrics.menuDim }
-        if replyFocused { return StoryViewerMetrics.replyDim }
         return 0
+    }
+
+    /// 写真の上の暗幕（返信を書いている間 55%・板 StoryViewerReply）。返信欄と一言の候補は写真の上に上がる
+    private var photoDimOpacity: Double {
+        replyFocused && overlayDimOpacity == 0 ? StoryViewerMetrics.replyDim : 0
+    }
+
+    /// 読み上げで「止まっています」と言うか（長押し・一時停止・メニュー・削除の確認・返信を書いている間）
+    private var spokenAsPaused: Bool {
+        paused || longHeld || showMenu || showDeleteConfirm || replyFocused
     }
 
     /// 危ない操作の文字（ブロック・通報・削除）。**危険の色 `WebTheme.danger`（#F0565A）**。
@@ -1277,10 +1397,11 @@ struct StoryViewerView: View {
         HStack(spacing: 10) {
             Image(systemName: "pause.fill")
                 .font(JPFont.footnote)
+            // 板 14
             Text(StoryPlayback.pausedNote(pressing: chrome.pillSaysRelease))
-                .font(JPFont.body)
+                .jpSystemFont(StoryViewerMetrics.smallTextSize)
                 .lineLimit(1)
-                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.body))
+                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: StoryViewerMetrics.smallTextSize))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 18)
@@ -1327,8 +1448,10 @@ struct StoryViewerView: View {
                         }
                     }
                     if items.contains(.hideCaption) {
-                        menuRow(symbol: "textformat",
-                                title: captionHidden ? L("テキストを表示", "Show text") : L("テキストを非表示", "Hide text")) {
+                        // 2026-10-16: 板 StoryViewerMenu の「文字を隠す」。印は打ち消しの入った文字
+                        // （`strikethrough`）。出すときは打ち消しの無い文字（`textformat`）
+                        menuRow(symbol: captionHidden ? "textformat" : "strikethrough",
+                                title: captionHidden ? L("文字を出す", "Show text") : L("文字を隠す", "Hide text")) {
                             captionHidden.toggle()
                         }
                     }
@@ -1406,7 +1529,8 @@ struct StoryViewerView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(menuTitle(for: story))
-                    .font(JPFont.footnote.weight(.semibold))
+                    // 板 14・600
+                    .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
                 Text(L("開いている間は止まっています", "Paused while this is open"))
@@ -1621,12 +1745,13 @@ struct StoryViewerView: View {
                                 Button {
                                     Task { await sendReply(text, to: story) }
                                 } label: {
+                                    // 板 `.qr`: 14・白 14% の地・縁なし・高さ 36
                                     Text(text)
-                                        .font(.footnote)
+                                        .jpSystemFont(StoryViewerMetrics.smallTextSize)
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 14)
-                                        .frame(minHeight: 36)
-                                        .jpGlass(in: Capsule(), border: 0.14)
+                                        .frame(minHeight: StoryViewerMetrics.quickReplyHeight)
+                                        .background(Color.white.opacity(StoryViewerMetrics.quickReplyFill), in: Capsule())
                                         // 見た目は 36 の札のまま、押せる所は 44
                                         .frame(minHeight: WebTheme.minTapTarget)
                                         .contentShape(Rectangle())
@@ -1636,10 +1761,6 @@ struct StoryViewerView: View {
                             }
                         }
                     }
-                    Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
-                        .padding(.leading, 4)
                 }
                 HStack(spacing: 6) {
                     TextField(L("返信する", "Reply"), text: $reply)
@@ -1670,8 +1791,9 @@ struct StoryViewerView: View {
                         Button {
                             Task { await sendReply(to: story) }
                         } label: {
-                            Image(systemName: "paperplane")
-                                .font(.body)
+                            // 板 StoryViewerReply: 上向きの矢印（白い丸に墨）
+                            Image(systemName: "arrow.up")
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(WebTheme.accentText)
                                 .frame(width: StoryViewerMetrics.sendSize, height: StoryViewerMetrics.sendSize)
                                 .background(WebTheme.accentBackground, in: Circle())
@@ -1688,7 +1810,8 @@ struct StoryViewerView: View {
                         // 「ストーリーの反応のハートは真鍮」・v2 StoryViewer）。送ったかは塗りの形でも分かる
                         let reacted = sentReactions.emoji(on: story.id) != nil
                         Image(systemName: reacted ? "heart.fill" : "heart")
-                            .font(.title2)
+                            // 板 26
+                            .jpSystemFont(StoryViewerMetrics.heartSize, relativeTo: .title2)
                             .foregroundStyle(Self.heartColor)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
@@ -1722,6 +1845,13 @@ struct StoryViewerView: View {
                             }
                         }
                     }
+                }
+                // 2026-10-16: 板 StoryViewerReply の並び「一言の候補 → 欄 → だれに届くか」。**欄の下**に置く
+                if replyFocused {
+                    Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                        .padding(.leading, 6)
                 }
             }
             .padding(.horizontal, 12)

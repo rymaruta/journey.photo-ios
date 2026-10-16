@@ -131,9 +131,10 @@ final class StoryV2DesignTests: XCTestCase {
                        "StoryViewerMetrics.pausedFill"], in: segment, "止めている間の進み線")
         XCTAssertTrue(viewer.contains(".scaleEffect(chrome.showsPill ? StoryViewerMetrics.pausedScale : 1)"),
                       "止めている間に写真を縮めていない")
-        let dim = member("private var dimOpacity: Double", in: viewer)
-        assertInOrder(["StoryViewerMetrics.deleteDim", "StoryViewerMetrics.menuDim", "StoryViewerMetrics.replyDim"],
-                      in: dim, "暗幕")
+        // 「…」・削除の確認は画面全体、返信を書いている間は写真の上（2026-10-16・`StoryViewerV2FixTests`）
+        let dim = member("private var overlayDimOpacity: Double", in: viewer)
+        assertInOrder(["StoryViewerMetrics.deleteDim", "StoryViewerMetrics.menuDim"], in: dim, "暗幕")
+        XCTAssertTrue(member("private var photoDimOpacity: Double", in: viewer).contains("StoryViewerMetrics.replyDim"))
         let row = member("private func menuRow(", in: viewer)
         XCTAssertTrue(row.contains(".frame(minHeight: StoryViewerMetrics.menuRowHeight)"))
         XCTAssertTrue(row.contains("danger ? Self.storyDanger : WebTheme.text"), "ブロック・通報が危険の色でない")
@@ -361,7 +362,8 @@ final class StoryV2DesignTests: XCTestCase {
     func testComposerCaptionMatchesViewer() throws {
         XCTAssertEqual(StoryComposerView.captionSize, 30)
         let viewer = try source("Features/Stories/StoryViewerView.swift")
-        XCTAssertTrue(viewer.contains("JPFont.display(30, relativeTo: .largeTitle)"))
+        XCTAssertEqual(StoryViewerMetrics.captionSize, StoryComposerView.captionSize)
+        XCTAssertTrue(viewer.contains("JPFont.display(highlight == nil ? StoryViewerMetrics.captionSize"))
         let composer = try source("Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("JPFont.display(Self.captionSize, relativeTo: .largeTitle)"))
         XCTAssertFalse(composer.contains("JPFont.display(32"))

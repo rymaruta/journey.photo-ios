@@ -567,10 +567,11 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertFalse(c.pillSaysRelease)
     }
 
-    /// メニューや確認を開いている間は札を出さない
+    /// メニューや確認を開いている間は札を出さず、**見出し・足元を隠す**（2026-10-16・板 StoryViewerMenu・
+    /// StoryDeleteConfirm は進み線と写真に暗幕だけ）
     func testOverlayWins() {
         let c = StoryPlayback.chrome(longHeld: true, paused: true, overlayOpen: true)
-        XCTAssertFalse(c.hidesChrome)
+        XCTAssertTrue(c.hidesChrome)
         XCTAssertFalse(c.showsPill)
     }
 

@@ -26,6 +26,25 @@ enum StoryViewerMetrics {
     static let pausedScale = 0.985
     /// 「一時停止中」の札の高さ（ガラス・14pt）
     static let pausedPillHeight: CGFloat = 40
+    /// 札の縦の位置。**画面の高さに対する札の中心の割合**（板は 844 のうち上から 360・高さ 40 →
+    /// 中心 380）。真ん中より少し上——親指の下に隠れない
+    static let pausedPillCenter = (360.0 + 20.0) / 844.0
+
+    // MARK: 字（2026-10-16・板 v2 の 14px）
+
+    /// 見出しの名前・「…」のシートの先頭の名前・一時停止の札・返信の一言の候補・ハイライトの「編集」（板 14）。
+    /// 14 は文字の種類の標準の大きさに無いので、`.subheadline` と同じだけ伸び縮みさせる（`jpSystemFont`）
+    static let smallTextSize: CGFloat = 14
+
+    // MARK: 上下の暗がり（写真の上の白い字を写真の明るさに負けさせない）
+
+    /// 上（板 170・黒 60%）
+    static let topShadeHeight: CGFloat = 170
+    static let topShadeOpacity = 0.6
+    /// 下（板 260・黒 70%）。ハイライトは 240（板 HighlightPlayer）
+    static let bottomShadeHeight: CGFloat = 260
+    static let highlightBottomShadeHeight: CGFloat = 240
+    static let bottomShadeOpacity = 0.7
 
     // MARK: ひとこと
 
@@ -33,6 +52,11 @@ enum StoryViewerMetrics {
     static let captionInset: CGFloat = 28
     /// 撮影地・曲の行の白（板 `rgba(255,255,255,.88)`）。**写真の上なので白の透過**
     static let metaOpacity = 0.88
+    /// ひとことの明朝（板 StoryViewer 30・HighlightPlayer 28）。**作る画面の 30 と揃える**（`StoryComposerView.captionSize`）
+    static let captionSize: Double = 30
+    static let highlightCaptionSize: Double = 28
+    /// ハイライトの日付の行（板 `rgba(255,255,255,.82)`・13 の等幅数字）
+    static let highlightDateOpacity = 0.82
 
     // MARK: 暗幕
 
@@ -80,6 +104,11 @@ enum StoryViewerMetrics {
     static let replyFieldFocusedBorder = 0.20
     /// 送信の白い丸（板 44）
     static let sendSize: CGFloat = 44
+    /// 返信の一言の候補（板 `.qr`: 高さ 36・左右 14・白 14% の地・縁なし）
+    static let quickReplyHeight: CGFloat = 36
+    static let quickReplyFill = 0.14
+    /// ♡（板 26）
+    static let heartSize: CGFloat = 26
     /// 自分のストーリーの足元の丸（板 46・地は surface-2・縁は白 12%）
     static let ownCircle: CGFloat = 46
     static let ownCircleBorder = 0.12
@@ -92,4 +121,6 @@ enum StoryViewerMetrics {
     static let highlightCoverRing = 0.5
     /// 「編集」の線のボタン（板 40・当たりは 44）
     static let highlightEditHeight: CGFloat = 40
+    /// 「編集」の縁（板 `--line` 白 14%・地は透明）
+    static let highlightEditBorder = 0.14
 }
