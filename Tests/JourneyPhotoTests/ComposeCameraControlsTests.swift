@@ -270,6 +270,111 @@ final class ComposeCameraControlsTests: XCTestCase {
         XCTAssertFalse(ComposeControls.canShoot(ready: false, capturing: false, sheetOpen: false))
     }
 
+    // MARK: - 確かめ役の指摘（2026-10-16）
+
+    func testPinchDoesNotRotateAndTwistNeedsFifteenDegrees() {
+        var t = ComposeControls.Twist()
+        // つまむ量が先に大きい（1.3 倍）→ 拡大の指。あとでひねっても回さない
+        t = ComposeControls.nextTwist(t, rotation: 4, magnification: 1.3)
+        XCTAssertTrue(t.blocked)
+        t = ComposeControls.nextTwist(t, rotation: 40, magnification: 1.3)
+        XCTAssertFalse(t.engaged)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: 40, state: t), 0)
+        // つまむ量が小さく、ひねりが 15° 未満 → まだ回さない
+        var u = ComposeControls.nextTwist(ComposeControls.Twist(), rotation: 10, magnification: 1.05)
+        XCTAssertFalse(u.engaged)
+        XCTAssertFalse(u.blocked)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: 10, state: u), 0)
+        // 15° を越えたら効く。越えた所から数える（跳ねない）
+        u = ComposeControls.nextTwist(u, rotation: -16, magnification: 1.05)
+        XCTAssertTrue(u.engaged)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: -16, state: u), -1, accuracy: 1e-9)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: -105, state: u), -90, accuracy: 1e-9)
+        // 一度効いたら、あとで拡大が大きくなっても離すまで効いたまま
+        XCTAssertTrue(ComposeControls.nextTwist(u, rotation: -20, magnification: 2).engaged)
+    }
+
+    func testSnapFeedbackOnlyWhenSnapping() {
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, twisting: true), 1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, twisting: false), -1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 100, twisting: true), -1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 360, twisting: true), 0)
+        // 鳴るのは吸い付いたときだけ（-1 に戻るとき・同じ値のままでは鳴らない）
+        XCTAssertTrue(ComposeControls.snapFeedbackFires(old: -1, new: 1))
+        XCTAssertFalse(ComposeControls.snapFeedbackFires(old: 1, new: -1))
+        XCTAssertFalse(ComposeControls.snapFeedbackFires(old: 1, new: 1))
+    }
+
+    func testCumulativeRotationTurnsTheShortWay() {
+        // 270° から右へ → 360°（0° に戻すと絵が逆に 270° 回る）
+        XCTAssertEqual(ComposeControls.rotatedRightCumulative(270), 360)
+        XCTAssertEqual(ComposeControls.rotatedRightCumulative(37), 90)
+        XCTAssertEqual(CompositionGuide.normalizedRotation(ComposeControls.rotatedRightCumulative(270)), 0)
+        // 吸い付きも累積のまま
+        XCTAssertEqual(ComposeControls.snappedCumulative(364), 360)
+        XCTAssertEqual(ComposeControls.snappedCumulative(-93), -90)
+        XCTAssertEqual(ComposeControls.snappedCumulative(20), 20)
+        // 真っ直ぐに戻す先はいちばん近い 360° の倍数
+        XCTAssertEqual(ComposeControls.straightened(450), 360)
+        XCTAssertEqual(ComposeControls.straightened(90), 0)
+        // 参考写真の縦横は決まった角度で決める
+        XCTAssertTrue(ComposeControls.referenceSwapsAxes(committedRotation: 450))
+        XCTAssertFalse(ComposeControls.referenceSwapsAxes(committedRotation: 360))
+    }
+
+    func testExposureIsNotReadDuringTwoFingers() {
+        XCTAssertFalse(ComposeControls.isExposureDrag(dx: 2, dy: -30, focusShown: true, afterMultiTouch: true))
+        XCTAssertTrue(ComposeControls.isExposureDrag(dx: 2, dy: -30, focusShown: true, afterMultiTouch: false))
+    }
+
+    func testZoomIdentifiersDifferPerStep() {
+        XCTAssertEqual(ComposeControls.zoomIdentifier(0.5), "composeGuide.zoom.0_5")
+        XCTAssertEqual(ComposeControls.zoomIdentifier(1), "composeGuide.zoom.1")
+        XCTAssertEqual(ComposeControls.zoomIdentifier(3), "composeGuide.zoom.3")
+        XCTAssertTrue(ComposeControls.shutterFlashHold > 0)
+    }
+
+    func testReviewFixesAreWired() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        // 暗転: true を描かせてから false へ（同じ処理の中で戻さない）
+        XCTAssertFalse(view.contains("shutterFlash = true\n        withAnimation"))
+        XCTAssertTrue(view.contains("ComposeControls.shutterFlashHold * 1_000_000_000"))
+        // 振動は吸い付いたときだけ
+        XCTAssertTrue(view.contains("ComposeControls.snapFeedbackFires(old: old, new: new)"))
+        // ひねりは読み分けてから（拡大の指では回さない）
+        XCTAssertTrue(view.contains("twistState = ComposeControls.nextTwist(twistState"))
+        XCTAssertTrue(view.contains("ComposeControls.effectiveTwist(rotation: twist, state: twistState)"))
+        // 参考写真の縦横は決まった角度で
+        XCTAssertTrue(view.contains("ComposeControls.referenceSwapsAxes(committedRotation: rotation)"))
+        // 指が取り消されたら後始末・長押しは指が触れている間だけ
+        XCTAssertTrue(view.contains(".onChange(of: touchActive) { _, active in touchActivityChanged(active) }"))
+        XCTAssertTrue(view.contains("guard !Task.isCancelled, touchActive, var t = touch"))
+        // 拡大の段: 当たり 44・字は JPFont.mono・段ごとの識別子
+        XCTAssertTrue(view.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"))
+        XCTAssertTrue(view.contains(".accessibilityIdentifier(ComposeControls.zoomIdentifier(preset))"))
+        XCTAssertTrue(view.contains("camera.stopObservingSubjectArea()"))
+        let camera = try source("Sources/JourneyPhoto/Features/Spots/ComposeCamera.swift")
+        // 見張りを外す
+        let stopBody = try XCTUnwrap(camera.components(separatedBy: "func stopObservingSubjectArea() {").dropFirst().first?
+            .components(separatedBy: "\n    }").first)
+        XCTAssertTrue(stopBody.contains("NotificationCenter.default.removeObserver(subjectObserver)"))
+        XCTAssertTrue(stopBody.contains("subjectObserver = nil"))
+        let deinitBody = try XCTUnwrap(camera.components(separatedBy: "deinit {").dropFirst().first?
+            .components(separatedBy: "\n    }").first)
+        XCTAssertTrue(deinitBody.contains("NotificationCenter.default.removeObserver(subjectObserver)"))
+        // 流し始める前に 1× の倍率（開いた瞬間に 0.5× を見せない）
+        let configure = try XCTUnwrap(camera.components(separatedBy: "session.addOutput(output)").dropFirst().first)
+        let beforeRun = try XCTUnwrap(configure.components(separatedBy: "session.startRunning()").first)
+        XCTAssertTrue(beforeRun.contains("device.videoZoomFactor = CGFloat(Self.levels(for: device).factor(display: 1))"))
+    }
+
+    @MainActor
+    func testObserverCanBeRemoved() async {
+        let camera = ComposeCamera()
+        camera.stopObservingSubjectArea()
+        XCTAssertFalse(camera.isObservingSubjectArea)
+    }
+
     // MARK: - 画面の作り（文字で見張る）
 
     func testScreenWiresRotateHideAndCameraControls() throws {

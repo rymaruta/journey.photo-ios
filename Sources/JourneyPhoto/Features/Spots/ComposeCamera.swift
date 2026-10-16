@@ -128,6 +128,12 @@ final class ComposeCamera: ObservableObject {
                     }
                     session.addInput(input)
                     session.addOutput(output)
+                    // 2026-10-16（確かめ役の指摘）: 流し始める**前に** 1× の倍率にしておく。三眼・二眼の広角は
+                    // 倍率 1 が超広角（0.5×）なので、後から合わせると開いた瞬間に 0.5× の映像が見える
+                    if (try? device.lockForConfiguration()) != nil {
+                        device.videoZoomFactor = CGFloat(Self.levels(for: device).factor(display: 1))
+                        device.unlockForConfiguration()
+                    }
                     session.commitConfiguration()
                 }
                 if !session.isRunning { session.startRunning() }
@@ -139,6 +145,8 @@ final class ComposeCamera: ObservableObject {
             if device == nil, let device = Self.backCamera() {
                 self.device = device
                 prepare(device)
+            } else {
+                startObservingSubjectArea()
             }
         }
         return ok
@@ -149,21 +157,47 @@ final class ComposeCamera: ObservableObject {
         if rotation == nil {
             rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         }
+        let levels = Self.levels(for: device)
+        zoomLevels = levels
+        // 倍率は組み立ての中で 1× にしてある（`run`）。ここは画面の値を合わせるだけ
+        zoomFactor = levels.factor(display: 1)
+        let lo = max(Double(device.minExposureTargetBias), -2), hi = min(Double(device.maxExposureTargetBias), 2)
+        exposureRange = lo <= hi ? lo...hi : 0...0
+        startObservingSubjectArea()
+    }
+
+    /// 端末のレンズから拡大の段（組み立ての列からも呼ぶので主スレッドに縛らない）
+    nonisolated static func levels(for device: AVCaptureDevice) -> ComposeControls.ZoomLevels {
         let ultra = device.deviceType == .builtInTripleCamera || device.deviceType == .builtInDualWideCamera
-        let levels = ComposeControls.zoomLevels(
+        return ComposeControls.zoomLevels(
             hasUltraWide: ultra,
             switchOver: device.virtualDeviceSwitchOverVideoZoomFactors.map(\.doubleValue),
             minFactor: Double(device.minAvailableVideoZoomFactor),
             maxFactor: Double(device.maxAvailableVideoZoomFactor))
-        zoomLevels = levels
-        let lo = max(Double(device.minExposureTargetBias), -2), hi = min(Double(device.maxExposureTargetBias), 2)
-        exposureRange = lo <= hi ? lo...hi : 0...0
-        setZoom(display: 1, animated: false)
-        // 写っているものが大きく変わったら、タップで合わせたピントを自動に戻す（固定していなければ）
+    }
+
+    /// 写っているものが大きく変わったら、タップで合わせたピントを自動に戻す（固定していなければ）。
+    /// 2026-10-16（確かめ役の指摘）: 見張りは画面を閉じたとき（`stopObservingSubjectArea`）と、この係が
+    /// 消えるとき（deinit）に外す。開き直したら付け直す（`run`）
+    private func startObservingSubjectArea() {
+        guard subjectObserver == nil, let device else { return }
         subjectObserver = NotificationCenter.default.addObserver(
             forName: AVCaptureDevice.subjectAreaDidChangeNotification, object: device, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.subjectAreaChanged() }
         }
+    }
+
+    /// 見張りを外す（画面を閉じたとき）
+    func stopObservingSubjectArea() {
+        if let subjectObserver { NotificationCenter.default.removeObserver(subjectObserver) }
+        subjectObserver = nil
+    }
+
+    /// 見張っているか（試験用）
+    var isObservingSubjectArea: Bool { subjectObserver != nil }
+
+    deinit {
+        if let subjectObserver { NotificationCenter.default.removeObserver(subjectObserver) }
     }
 
     // MARK: - 拡大・ピント・明るさ（2026-10-16・標準のカメラ App にそろえる）

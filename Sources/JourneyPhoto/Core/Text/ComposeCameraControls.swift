@@ -88,6 +88,13 @@ enum ComposeControls {
         return active ? text + "×" : text
     }
 
+    /// 段ごとの識別子（「composeGuide.zoom.0_5」「composeGuide.zoom.2」）。画面の試験で段を押し分ける
+    static func zoomIdentifier(_ value: Double) -> String {
+        let v = (value * 10).rounded() / 10
+        let text = v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v).replacingOccurrences(of: ".", with: "_")
+        return "composeGuide.zoom.\(text)"
+    }
+
     /// 拡大の段の読み上げ（「2倍」）
     static func zoomAccessibility(_ value: Double) -> String {
         let text = zoomLabel(value, active: false).replacingOccurrences(of: "×", with: "")
@@ -125,10 +132,89 @@ enum ComposeControls {
         return .none
     }
 
-    /// 縦に動かして明るさを変えるか（ピントの枠が出ているとき・縦が横より大きく、タップの幅を越えた）
-    static func isExposureDrag(dx: Double, dy: Double, focusShown: Bool) -> Bool {
-        focusShown && dx.isFinite && dy.isFinite && abs(dy) > tapSlop && abs(dy) > abs(dx)
+    /// 縦に動かして明るさを変えるか（ピントの枠が出ているとき・縦が横より大きく、タップの幅を越えた）。
+    /// 2026-10-16（確かめ役の指摘）: 2本指の最中・直後（`afterMultiTouch`）は読まない——つまむ・ひねる指の
+    /// 1本目が縦に動いて明るさが変わっていた
+    static func isExposureDrag(dx: Double, dy: Double, focusShown: Bool, afterMultiTouch: Bool = false) -> Bool {
+        !afterMultiTouch && focusShown && dx.isFinite && dy.isFinite && abs(dy) > tapSlop && abs(dy) > abs(dx)
     }
+
+    // MARK: - 2本指でひねる（2026-10-16・確かめ役の指摘「つまむたびに構図が回る」）
+
+    /// ひねりを効かせ始める角度（度）。つまむ指は少しひねれるので、これを越えるまでは回さない
+    static let twistThreshold = 15.0
+    /// つまむ量がこれを越えたら（1.15 倍・0.87 倍）、その指ではひねりを読まない＝拡大の指とみなす
+    static let pinchDominance = 0.15
+
+    /// ひねりの指の状態（2本指を置いてから離すまで）
+    struct Twist: Equatable {
+        /// ひねりとして効いている
+        var engaged = false
+        /// 拡大の指とみなした（離すまで回さない）
+        var blocked = false
+    }
+
+    /// ひねりの指の次の状態。拡大の量（`magnification`・1 が無し）が先に大きくなったら回さない。
+    /// ひねりが `twistThreshold` を越えたら効かせる。一度決まったら離すまで変えない
+    static func nextTwist(_ state: Twist, rotation: Double, magnification: Double) -> Twist {
+        guard !state.engaged, !state.blocked else { return state }
+        var next = state
+        if magnification.isFinite, magnification > 0, abs(magnification - 1) > pinchDominance {
+            next.blocked = true
+        } else if rotation.isFinite, abs(rotation) >= twistThreshold {
+            next.engaged = true
+        }
+        return next
+    }
+
+    /// 描くときに足すひねりの角度。効かせ始めた所から数える（越えた瞬間に 15° 跳ねない）
+    static func effectiveTwist(rotation: Double, state: Twist) -> Double {
+        guard state.engaged, rotation.isFinite else { return 0 }
+        return rotation - (rotation < 0 ? -twistThreshold : twistThreshold)
+    }
+
+    /// 吸い付いた合図の値（0〜3）。ひねりが効いていて 0/90/180/270 ちょうどに乗ったときだけ。それ以外は -1
+    /// （振動は新しい値が 0 以上のときだけ鳴らす・`sensoryFeedback(_:trigger:condition:)`）
+    static func snapSignal(shownRotation: Double, twisting: Bool) -> Int {
+        guard twisting, CompositionGuide.isQuarterRotation(shownRotation) else { return -1 }
+        return CompositionGuide.rotationParts(shownRotation).quarters
+    }
+
+    /// 振動を鳴らすか（吸い付いたときだけ）
+    static func snapFeedbackFires(old: Int, new: Int) -> Bool { new >= 0 && new != old }
+
+    // MARK: - 回した角度（累積・2026-10-16 確かめ役の指摘「270°→0° で写真が逆に 270° 回る」）
+
+    /// 「右に90度回す」: 累積の角度のまま次の 90° の倍数へ（270 → 360）。表示・線は 0〜360 に戻して使う
+    /// （`CompositionGuide.normalizedRotation`）ので、絵の回る向きはいつも右へ 90°
+    static func rotatedRightCumulative(_ degrees: Double) -> Double {
+        guard degrees.isFinite else { return 90 }
+        return (floor(degrees / 90 + 1e-9) + 1) * 90
+    }
+
+    /// 累積の角度のまま、0/90/180/270 の近くなら吸い付かせる
+    static func snappedCumulative(_ degrees: Double) -> Double {
+        guard degrees.isFinite else { return 0 }
+        let nearest = (degrees / 90).rounded() * 90
+        return abs(degrees - nearest) <= CompositionGuide.rotationSnap ? nearest : degrees
+    }
+
+    /// 真っ直ぐに戻す先（いちばん近い 360° の倍数・逆回りに大きく回らない）
+    static func straightened(_ degrees: Double) -> Double {
+        guard degrees.isFinite else { return 0 }
+        return (degrees / 360).rounded() * 360
+    }
+
+    /// 参考写真の枠の縦横を入れ替えるか。**決まった角度（ひねっている途中は含めない）で決める**——
+    /// 途中の 45° で入れ替えると写真の大きさが跳ねる。離したあと、動きを付けて入れ替える
+    static func referenceSwapsAxes(committedRotation: Double) -> Bool {
+        CompositionGuide.rotationParts(committedRotation).quarters % 2 == 1
+    }
+
+    // MARK: - シャッターの暗転
+
+    /// 押した瞬間の暗転を見せておく長さ（秒）。黒を一度描かせてから戻す（同じ処理で戻すと描かれない）
+    static let shutterFlashHold = 0.06
 
     /// 明るさ（露出の補正・EV）。上へ動かすと明るく。範囲の内へ
     static func exposureBias(start: Double, dy: Double, min lo: Double, max hi: Double) -> Double {

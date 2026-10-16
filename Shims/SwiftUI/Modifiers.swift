@@ -417,6 +417,9 @@ extension View {
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）
     public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T) -> Self { self }
+    /// 鳴らすかを古い値・新しい値で決める（本物と同じ・iOS 17）
+    public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T,
+                                              condition: @escaping (T, T) -> Bool) -> Self { self }
     /// 読み上げでの既定の操作（ダブルタップ）。本物と同じ形
     public func accessibilityAction(_ actionKind: AccessibilityActionKind = .default,
                                     _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }

@@ -79,8 +79,17 @@ struct ComposeGuideView: View {
     @State private var lineOpacity: Double
     /// 構図の線と参考写真を回した角度（時計回りの度・2026-10-16）。その構図を選び直すまで保つ
     @State private var rotation: Double
-    /// 2本指でひねっている間の角度（離したら `rotation` に足す）
+    /// 2本指でひねっている間の角度（指のそのままの値。効かせるかは `twistState`）
     @GestureState private var twist = 0.0
+    /// ひねりを効かせたか・拡大の指とみなしたか（2026-10-16 確かめ役の指摘「つまむたびに回る」・
+    /// `ComposeControls.nextTwist`）。指を離す・取り消されたら戻す
+    @State private var twistState = ComposeControls.Twist()
+    /// いまつまんでいる量（1 が無し）。ひねりと拡大の読み分けに使う
+    @State private var pinchMagnification = 1.0
+    /// 2本指でつまんでいる間だけ true（取り消されても自動で戻る）
+    @GestureState private var pinchActive = false
+    /// 1本指が触れている間だけ true（取り消されても自動で戻る・後始末の合図）
+    @GestureState private var touchActive = false
     /// つまんで寄り始めたときのカメラの倍率
     @State private var zoomStart: Double?
     /// 最後に2本指（ひねる・つまむ）を使った時刻。直後の1本指のタップ・払いを読まない
@@ -157,9 +166,11 @@ struct ComposeGuideView: View {
     private var canRotate: Bool {
         (composition != nil && composition != .level) || referenceShown
     }
-    /// 描くときの角度（ひねっている間も 0/90/180/270 の近くでは吸い付く）
+    /// 描くときの角度（累積・ひねっている間も 0/90/180/270 の近くでは吸い付く）。
+    /// 2026-10-16（確かめ役の指摘）: 角度は 0〜360 に丸めず累積で持つ。270° から右へ回すと 360° になり、
+    /// 参考写真は逆回りせずに右へ 90° 回る（線・読み上げ・覚える値は 0〜360 に戻して使う）
     private var shownRotation: Double {
-        CompositionGuide.snappedRotation(rotation + twist)
+        ComposeControls.snappedCumulative(rotation + ComposeControls.effectiveTwist(rotation: twist, state: twistState))
     }
     private var canShoot: Bool {
         ComposeControls.canShoot(ready: camera.state == .ready, capturing: camera.isCapturing, sheetOpen: showPicker)
@@ -182,7 +193,10 @@ struct ComposeGuideView: View {
         }
         // シャッターの押し心地（軽い振動）・0/90/180/270 に吸い付いたときの軽い合図
         .sensoryFeedback(.impact(weight: .light), trigger: shotCount)
-        .sensoryFeedback(.selection, trigger: snapTrigger)
+        // 吸い付いたときだけ鳴らす（-1 に戻るときは鳴らさない）
+        .sensoryFeedback(.selection, trigger: snapTrigger) { old, new in
+            ComposeControls.snapFeedbackFires(old: old, new: new)
+        }
         // 読み上げ: 2本指のダブルタップで撮る・こすって隠すのをやめる（隠している間はボタンが無い）
         .accessibilityAction(.magicTap) { Task { await shootIfReady() } }
         .accessibilityAction(.escape) {
@@ -194,6 +208,8 @@ struct ComposeGuideView: View {
         .onChange(of: composition) { _, _ in updateLevel() }
         .onDisappear {
             camera.stop()
+            // 写っているものの見張りを外す（確かめ役の指摘・開き直したら `ComposeCamera.run` が付け直す）
+            camera.stopObservingSubjectArea()
             level.stop()
             noticeTask?.cancel()
         }
@@ -206,6 +222,10 @@ struct ComposeGuideView: View {
         }
         .onChange(of: lineOpacity) { _, value in preferences.setLineOpacity(value) }
         .onChange(of: camera.focusResetCount) { _, _ in focusPoint = nil }
+        // 指が取り消されたときの後始末（`touchActivityChanged`・`multiTouchChanged`）
+        .onChange(of: touchActive) { _, active in touchActivityChanged(active) }
+        .onChange(of: twist) { _, _ in multiTouchChanged() }
+        .onChange(of: pinchActive) { _, _ in multiTouchChanged() }
         .onChange(of: librarySelection) { _, item in
             if let item { Task { await loadLibraryImage(item) } }
         }
@@ -295,8 +315,33 @@ struct ComposeGuideView: View {
 
     private func touchGesture(frame: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($touchActive) { _, state, _ in state = true }
             .onChanged { value in touchChanged(value, frame: frame) }
             .onEnded { value in touchEnded(value, frame: frame) }
+    }
+
+    /// 指が取り消された（`onEnded` が来ない）ときの後始末。2026-10-16（確かめ役の指摘）: 以前は `touch` が
+    /// 残り、長押しの処理が勝手に AE/AF ロックをかけた。ふつうに離したときは `onEnded` が先に片づけるので、
+    /// ここは一拍おいて、同じ指がまだ残っていたら消す
+    private func touchActivityChanged(_ active: Bool) {
+        guard !active else { return }
+        let started = touch?.start
+        Task { @MainActor in
+            guard let started, touch?.start == started, !touchActive else { return }
+            pressTask?.cancel()
+            touch = nil
+        }
+    }
+
+    /// 2本指が取り消されたときの後始末（ひねり・つまむの状態を戻す）。離したときは `onEnded` の後に来る
+    private func multiTouchChanged() {
+        Task { @MainActor in
+            if twist == 0 { twistState = ComposeControls.Twist() }
+            if !pinchActive {
+                pinchMagnification = 1
+                zoomStart = nil
+            }
+        }
     }
 
     private func touchChanged(_ value: DragGesture.Value, frame: CGSize) {
@@ -307,7 +352,7 @@ struct ComposeGuideView: View {
             let location = value.startLocation
             pressTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: UInt64(ComposeControls.longPressSeconds * 1_000_000_000))
-                guard !Task.isCancelled, var t = touch, !t.adjustedExposure,
+                guard !Task.isCancelled, touchActive, var t = touch, !t.adjustedExposure,
                       !ComposeControls.isAfterMultiTouch(last: lastMultiTouch, now: Date()) else { return }
                 t.locked = true
                 touch = t
@@ -317,7 +362,9 @@ struct ComposeGuideView: View {
         let dx = Double(value.translation.width), dy = Double(value.translation.height)
         if abs(dx) > ComposeControls.tapSlop || abs(dy) > ComposeControls.tapSlop { pressTask?.cancel() }
         guard !uiHidden, !libraryShown, var t = touch,
-              ComposeControls.isExposureDrag(dx: dx, dy: dy, focusShown: focusPoint != nil) else { return }
+              ComposeControls.isExposureDrag(dx: dx, dy: dy, focusShown: focusPoint != nil,
+                                             afterMultiTouch: ComposeControls.isAfterMultiTouch(last: lastMultiTouch,
+                                                                                               now: Date())) else { return }
         t.adjustedExposure = true
         touch = t
         exposureBias = ComposeControls.exposureBias(start: t.exposureStart, dy: dy,
@@ -355,9 +402,13 @@ struct ComposeGuideView: View {
     /// つまんで寄る（標準のカメラ App と同じく滑らかに）
     private var zoomGesture: some Gesture {
         MagnifyGesture()
+            .updating($pinchActive) { _, state, _ in state = true }
             .onChanged { value in
                 lastMultiTouch = Date()
                 pressTask?.cancel()
+                pinchMagnification = Double(value.magnification)
+                // ひねりとして効いている間は寄らない（回すつもりの指で拡大が動かない）
+                guard !twistState.engaged else { return }
                 let start = zoomStart ?? camera.zoomFactor
                 if zoomStart == nil { zoomStart = start }
                 camera.setZoom(factor: ComposeControls.pinchedFactor(start: start,
@@ -367,6 +418,7 @@ struct ComposeGuideView: View {
             .onEnded { _ in
                 lastMultiTouch = Date()
                 zoomStart = nil
+                pinchMagnification = 1
             }
     }
 
@@ -376,21 +428,26 @@ struct ComposeGuideView: View {
             .updating($twist) { value, state, _ in
                 state = value.rotation.degrees
             }
-            .onChanged { _ in
+            .onChanged { value in
                 lastMultiTouch = Date()
                 pressTask?.cancel()
+                // つまむ量が先に大きければ拡大の指、ひねりが 15° を越えたら回す指（`ComposeControls.nextTwist`）
+                twistState = ComposeControls.nextTwist(twistState, rotation: value.rotation.degrees,
+                                                       magnification: pinchMagnification)
             }
             .onEnded { value in
                 lastMultiTouch = Date()
-                guard canRotate else { return }
-                setRotation(CompositionGuide.snappedRotation(rotation + value.rotation.degrees))
+                let state = twistState
+                twistState = ComposeControls.Twist()
+                guard canRotate, state.engaged else { return }
+                setRotation(ComposeControls.snappedCumulative(
+                    rotation + ComposeControls.effectiveTwist(rotation: value.rotation.degrees, state: state)))
             }
     }
 
-    /// 吸い付いたときの合図（0/90/180/270 のどれかに乗ったら値が変わる）
+    /// 吸い付いたときの合図（ひねりが効いていて 0/90/180/270 に乗ったら 0〜3、ほかは -1）
     private var snapTrigger: Int {
-        guard twist != 0, canRotate, CompositionGuide.isQuarterRotation(shownRotation) else { return -1 }
-        return CompositionGuide.rotationParts(shownRotation).quarters
+        ComposeControls.snapSignal(shownRotation: shownRotation, twisting: twistState.engaged && canRotate)
     }
 
     /// その点にピントと明るさを合わせ、枠を出す
@@ -498,7 +555,8 @@ struct ComposeGuideView: View {
     /// 順は線と同じ「反転（ライブラリの左右反転）→ 回転 → 指で動かした位置」
     private func rotatedReference<Content: View>(_ content: Content) -> some View {
         GeometryReader { geo in
-            let swap = CompositionGuide.rotationParts(shownRotation).quarters % 2 == 1
+            // 縦横の入れ替えは決まった角度で（ひねりの途中 45° で写真の大きさが跳ねない・確かめ役の指摘）
+            let swap = ComposeControls.referenceSwapsAxes(committedRotation: rotation)
             content
                 .frame(width: swap ? geo.size.height : geo.size.width, height: swap ? geo.size.width : geo.size.height)
                 .rotationEffect(.degrees(shownRotation))
@@ -618,13 +676,13 @@ struct ComposeGuideView: View {
     /// 右に 90° 回す（反転の隣・2026-10-16）。回している間は印が真鍮
     private var rotateButton: some View {
         Button { rotateRight() } label: {
-            roundIcon("rotate.right", tinted: rotation != 0)
+            roundIcon("rotate.right", tinted: CompositionGuide.normalizedRotation(rotation) != 0)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("構図を右に90度回す", "Rotate the guide 90° right"))
         .accessibilityValue(CompositionGuide.rotationAccessibilityValue(rotation))
         .accessibilityHint(L("2本指でひねっても回せます", "You can also twist with two fingers"))
-        .accessibilityAction(named: L("回転を戻す", "Reset rotation")) { setRotation(0) }
+        .accessibilityAction(named: L("回転を戻す", "Reset rotation")) { setRotation(ComposeControls.straightened(rotation)) }
         .accessibilityIdentifier("composeGuide.rotate")
     }
 
@@ -1020,18 +1078,22 @@ struct ComposeGuideView: View {
                 ForEach(levels.presets, id: \.self) { preset in
                     let on = preset == active
                     Button { camera.setZoom(display: preset, animated: !reduceMotion) } label: {
+                        // 2026-10-16（確かめ役の指摘）: 字は既存の数字の字（`JPFont.mono`・文字サイズの設定に
+                        // ついていく）、丸は字に合わせて広がる。当たりは 44×44
                         Text(ComposeControls.zoomLabel(on ? display : preset, active: on))
-                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .font(JPFont.mono(12, medium: true, relativeTo: .caption))
                             .foregroundStyle(on ? WebTheme.accent : WebTheme.foreground)
-                            .frame(width: on ? 36 : 30, height: on ? 36 : 30)
-                            .background(Color.white.opacity(on ? 0.16 : 0.08), in: Circle())
-                            .frame(minWidth: 40, minHeight: WebTheme.minTapTarget)
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: on ? 36 : 30, minHeight: on ? 36 : 30)
+                            .background(Color.white.opacity(on ? 0.16 : 0.08), in: Capsule())
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(ComposeControls.zoomAccessibility(preset))
                     .accessibilityValue(on ? L("選択中", "Selected") : "")
-                    .accessibilityIdentifier("composeGuide.zoom")
+                    .accessibilityIdentifier(ComposeControls.zoomIdentifier(preset))
                 }
             }
         }
@@ -1114,8 +1176,14 @@ struct ComposeGuideView: View {
     private func shootIfReady() async {
         guard canShoot else { return }
         shotCount += 1
+        // 2026-10-16（確かめ役の指摘）: 以前は同じ処理で false に戻していて、黒が一度も描かれなかった。
+        // 黒を描かせてから（`shutterFlashHold`）戻す
         shutterFlash = true
-        withAnimation(.easeOut(duration: reduceMotion ? 0.05 : 0.18)) { shutterFlash = false }
+        let fade = reduceMotion ? 0.05 : 0.18
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(ComposeControls.shutterFlashHold * 1_000_000_000))
+            withAnimation(.easeOut(duration: fade)) { shutterFlash = false }
+        }
         await shoot()
     }
 
@@ -1166,8 +1234,9 @@ struct ComposeGuideView: View {
     private func choose(_ picked: CompositionKind?) {
         composition = picked
         variant = picked.map { preferences.variant(for: $0) } ?? 0
-        // 選び直したら回転は真っ直ぐに戻す（`CompositionPreferences.select` が覚えた角度も 0 にする）
-        rotation = 0
+        // 選び直したら回転は真っ直ぐに戻す（`CompositionPreferences.select` が覚えた角度も 0 にする）。
+        // 累積の角度はいちばん近い 360° の倍数へ（逆回りに大きく回らない）
+        rotation = ComposeControls.straightened(rotation)
         preferences.select(picked)
         announce(CompositionGuide.accessibilityLabel(picked))
     }
@@ -1181,19 +1250,21 @@ struct ComposeGuideView: View {
 
     /// 右に 90° 回す（次の 90° の倍数へ・`CompositionGuide.rotatedRight`）
     private func rotateRight() {
-        setRotation(CompositionGuide.rotatedRight(rotation))
+        setRotation(ComposeControls.rotatedRightCumulative(rotation))
     }
 
     /// 回した角度を決めて覚え、読み上げで伝える
+    /// 状態は累積のまま持ち（絵がいちばん短い向きに回る）、覚える値と読み上げは 0〜360 に戻す
     private func setRotation(_ degrees: Double) {
-        let value = CompositionGuide.normalizedRotation(degrees)
+        guard degrees.isFinite else { return }
         if reduceMotion {
-            rotation = value
+            rotation = degrees
         } else {
-            withAnimation(.easeOut(duration: 0.2)) { rotation = value }
+            withAnimation(.easeOut(duration: 0.2)) { rotation = degrees }
         }
-        preferences.setRotation(value, for: composition)
-        announce(CompositionGuide.rotationAccessibilityValue(value))
+        let normalized = CompositionGuide.normalizedRotation(degrees)
+        preferences.setRotation(normalized, for: composition)
+        announce(CompositionGuide.rotationAccessibilityValue(normalized))
     }
 
     /// UI を隠す・戻す。隠すときはピントの枠も消し、戻し方を読み上げで伝える
