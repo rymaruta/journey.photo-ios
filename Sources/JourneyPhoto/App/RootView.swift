@@ -55,6 +55,9 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
+    /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
+    /// 流れを閉じたら忘れる
+    @State private var importTrip: LibraryTrip?
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -496,13 +499,30 @@ struct RootView: View {
         tabsWithPostChoice
             // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+                importTrip = nil
                 pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
                 if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
             }) {
-                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
-                LibraryTripFlowView { photos in
+                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
+                // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
+                LibraryTripFlowView(opening: importTrip,
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.shots) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
+            }
+            // 端末の写真の一冊の「この旅の写真を投稿する」（2026-10-16）。ほかの投稿の画面が出ていたら開かない
+            .onChange(of: tabRouter.tripImportRequests) { _, _ in
+                let trip = tabRouter.takePendingImportTrip()
+                guard PostRequestGate.opens(busy: postScreensShown) else { return }
+                importTrip = trip
+                pendingTripPhotos = []
+                showTripImport = true
+            }
+            // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
+            .task(id: auth.userId) {
+                // ログインの有無を店に知らせる（ログインしていない間は前面に戻っても読まない）
+                DeviceTripShelfStore.shared.setSignedIn(auth.userId != nil)
+                if auth.userId != nil { DeviceTripShelfStore.shared.startIfAllowed() }
             }
             // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
             // 格子とストーリーの行はこれを見て読み直す
@@ -576,16 +596,20 @@ struct RootView: View {
                 CameraPicker { capture in pendingCapture = capture }
                     .ignoresSafeArea()
             }
-            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**。
-            // ⚠️ 投稿の画面を足したら、この並びと、端末の旅の一冊（PR #260 の `tripImportRequests` の onChange）の
-            // 確かめにも足す。#260 を取り込むときは、あちらも `PostRequestGate.opens(busy:)` にそろえる
-            // （今のあちらの確かめには「カメラで撮る」の `showPostCamera` が入っていない）
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
+            // （端末の旅の一冊の「この旅の写真を投稿する」と同じ `postScreensShown` を見る）
             .onChange(of: tabRouter.postRequests) { _, _ in
                 guard let kind = tabRouter.takePendingPost(),
-                      PostRequestGate.opens(busy: [showTripImport, showPhotoUpload, showStoryComposer,
-                                                   showPostChoice, showPostCamera]) else { return }
+                      PostRequestGate.opens(busy: postScreensShown) else { return }
                 choosePost(kind)
             }
+    }
+
+    /// **投稿の画面が出ているか**の旗の並び。空の画面の一手と端末の旅の一冊は、どれか1つでも出ていたら
+    /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
+    /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
+    private var postScreensShown: [Bool] {
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
     }
 
     /// 投稿の選択シートが閉じきってから、次の画面を開く。
@@ -702,6 +726,8 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
+            // 端末の写真の一冊は前面にいる間だけ読む（`DeviceTripShelfStore.setActive`・2026-10-16）
+            DeviceTripShelfStore.shared.setActive(phase == .active)
             if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }

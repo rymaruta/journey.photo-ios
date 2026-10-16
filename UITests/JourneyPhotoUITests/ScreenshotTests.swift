@@ -711,6 +711,19 @@ final class ScreenshotTests: XCTestCase {
                 if albumsRow.waitForExistence(timeout: 5), albumsRow.isHittable {
                     shoot(app, "32-旅の記録の入口")
                 }
+                // **端末の写真の一冊の説明の札**（2026-10-16・写真の許可がまだのときだけ出る）。
+                // 札は入口の行より上にあるので、押せる所まで戻して撮る。**許可のボタンは押さない**
+                // （iOS の許可のダイアログが出て、後の節を覆う）。出なければ撮らない
+                let deviceAllow = app.buttons["trips.deviceAllow"].firstMatch
+                var allowPulls = 0
+                while deviceAllow.exists, !deviceAllow.isHittable, allowPulls < 4 {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    allowPulls += 1
+                }
+                if deviceAllow.exists, deviceAllow.isHittable {
+                    shoot(app, "33-端末の写真の一冊の説明")
+                }
             }
         }
 

@@ -319,6 +319,9 @@ final class AuthStore: ObservableObject {
         TripBookCard.removeAll()
         // 旅の写真から引いた地名の控え（その人の旅先が分かる）も次の人に残さない
         LibraryTripModel.forgetPlaceNames()
+        // 端末の写真の一冊の要約（写真の撮影日時と位置）と地名も次の人に残さない（2026-10-16）
+        DeviceTripShelfStore.shared.setSignedIn(false)
+        DeviceTripShelfStore.shared.forget()
         // **通信の控え（URLCache）も次の人に残さない**（2026-10-03）。API の応答
         // （`/user/profile`・`/user/photos` の下書きと限定写真の署名つき URL・
         // `/user/notifications` は Cache-Control を付けずに返る）と限定写真の画像が、

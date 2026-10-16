@@ -51,6 +51,8 @@ struct MyPageView: View {
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
+    @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
     /// 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`）。出したか・出ているか
@@ -925,6 +927,9 @@ struct MyPageView: View {
     @ViewBuilder
     private var tripsArea: some View {
         let trips = TripBook.shelfTrips(from: model.photos)
+        // 端末の写真の一冊（2026-10-16・`DeviceTripSection`）。投稿済みの日がある旅は外す
+        let posted = LibraryTrips.postedShots(of: model.photos)
+        let hasDeviceBooks = !deviceTrips.books(posted: posted, isMine: true).isEmpty
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）。v2: 行の骨格
             JPLoadingState(kind: .rows)
@@ -932,8 +937,12 @@ struct MyPageView: View {
         } else {
             VStack(alignment: .leading, spacing: 20) {
                 // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
-                // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
-                TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
+                // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）。
+                // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
+                if !trips.isEmpty || !hasDeviceBooks {
+                    TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
+                }
+                DeviceTripSection(store: deviceTrips, posted: posted)
                 tripToolsCard
             }
         }
