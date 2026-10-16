@@ -597,7 +597,7 @@ struct SearchView: View {
         let sections = model.colors
         if !sections.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                sectionHeader(eyebrow: "COLORS", spoken: L("色", "Colours"), title: L("色から探す", "Browse by colour"))
+                sectionHeader(eyebrow: "COLORS", spoken: L("色", "Colors"), title: L("色から探す", "Browse by color"))
                 // 丸い写真に名前（板 11）。**5つを横に割り付ける**——色味は最大5つ
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(sections) { section in

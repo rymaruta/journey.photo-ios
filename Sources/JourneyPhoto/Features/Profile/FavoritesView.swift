@@ -144,7 +144,7 @@ struct FavoritesView: View {
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.foreground)
                 .accessibilityAddTraits(.isHeader)
-            Text(L("ハートを押した写真。作者に届き、ほかの端末や Web でも同じ一覧が見られます。しおりで保存した写真はマイページの「お気に入り」に。",
+            Text(L("ハートを押した写真。作者に届き、ほかの端末や Web でも同じ一覧が見られます。しおりで保存した写真はマイページの「保存」に。",
                    "Photos you liked. The photographer is notified, and the same list appears on your other devices and the web. Bookmarked photos are under Saved on your page."))
                 .font(JPFont.footnote)
                 .lineSpacing(4)

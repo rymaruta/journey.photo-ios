@@ -142,13 +142,13 @@ struct SignInView: View {
             .clipped()
     }
 
-    /// 大きいロゴと一文（板: マーク＋serif・「旅の写真を、一冊の記録に。」）。
+    /// 大きいロゴと一文（板: マーク＋serif。一文は 2026-10-16 にアプリの一言 `Labels.Brand.tagline` にそろえた）。
     /// 板 v2: 一文は明朝 18（段の下限）の text-2。溶けの下の方（黒 70% 以上）に乗るので灰は透過の `muted2`
     private var brand: some View {
         VStack(alignment: .leading, spacing: 10) {
             AppLogo(size: .hero)
                 .accessibilityAddTraits(.isHeader)
-            Text(L("旅の写真を、一冊の記録に。", "Your travels, bound into one book."))
+            Text(Labels.Brand.tagline)
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.muted2)
         }

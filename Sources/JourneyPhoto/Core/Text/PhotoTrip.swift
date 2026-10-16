@@ -76,6 +76,39 @@ enum PhotoTrip {
         return raw.isEmpty || raw == Audience.everyone.rawValue
     }
 
+    // MARK: - この近くの撮影スポット（`spotId` の無い写真・撮影地の頁）
+
+    /// 「この近くの撮影スポット」と呼んでよい距離（km）。**2026-10-16 判断: 2km。**
+    ///
+    /// 写真の座標も台帳の座標も**約1kmに丸めてある**（小数2桁・斜めのずれは最大 約0.7km ずつ）。
+    /// 同じ場所でも丸めだけで 約1.4km 離れて見えるので、それを包む 2km にした。
+    /// これより広げると、隣の町の別の名所を「この近く」と呼ぶ（地図の「近くの撮影スポット」の
+    /// `OfficialSpotIndex.nearbyMaxKm` = 50km は「足を延ばせる所」の距離で、ここの用途とは違う）
+    static let nearbySpotMaxKm: Double = 2
+
+    /// 座標からいちばん近い台帳の撮影スポット（`nearbySpotMaxKm` 以内・座標と名前のある行だけ）。
+    /// 選び方は地図で押した地点の拾い直しと同じ（`PlaceLookup.nearestIndex`）。無ければ nil（行ごと出さない）
+    static func nearbySpot(to coords: Photo.Coords?, in index: [OfficialSpot],
+                           maxKm: Double = nearbySpotMaxKm) -> OfficialSpot? {
+        guard let coords else { return nil }
+        let usable = index.filter { $0.coords != nil && !$0.slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard let i = PlaceLookup.nearestIndex(of: usable.compactMap(\.coords), to: coords, withinKm: maxKm) else {
+            return nil
+        }
+        return usable[i]
+    }
+
+    /// 行の呼び名（写真の詳細・撮影地の頁で同じ語）
+    static var nearbySpotTitle: String { L("この近くの撮影スポット", "Photo spot nearby") }
+
+    /// 写真の詳細で「この近くの撮影スポット」を探しに行く鍵。**`spotId` の無い写真で、座標のあるときだけ**
+    /// （`spotId` のある写真は「撮影スポット」の行がもう台帳の頁へ行く）。写真と座標で変わる
+    /// （写真を送った直後・座標を直した直後に前の写真の行を出さない・`Loaded.spotId` に入れて比べる）
+    static func nearbySpotKey(photo: Photo) -> String? {
+        guard normalizedSpotId(photo.spotId) == nil, let c = photo.coords else { return nil }
+        return "near|\(photo.id)|\(c.lat),\(c.lng)"
+    }
+
     // MARK: - 読み込み（写真ごと）
 
     /// 読み終えた台帳の行。**どの `spotId` で読んだか**を持つ（写真を送った直後に前の写真の
