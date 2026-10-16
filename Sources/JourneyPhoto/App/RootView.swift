@@ -644,6 +644,8 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
+            // 端末の写真の一冊は前面にいる間だけ読む（`DeviceTripShelfStore.setActive`・2026-10-16）
+            DeviceTripShelfStore.shared.setActive(phase == .active)
             if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }

@@ -34,9 +34,11 @@ enum DeviceTrips {
 
     // MARK: - 上限（2026-10-16 判断）
 
-    /// 遡る年数。**5年**——「旅の写真からまとめて」（3年・`PhotoLibrary.lookbackYears`）より長い。
-    /// 棚は「過去の旅が並ぶ」のが目的で、読むのは日時と位置だけ（画像は読まない）なので軽い
-    static let lookbackYears = 5
+    /// 遡る年数。**「旅の写真からまとめて」と同じ3年（`PhotoLibrary.lookbackYears`）にそろえる**
+    /// （2026-10-16 判断・確かめ役の指摘）。棚の一冊から「この旅の写真を投稿する」で同じ流れを開くので、
+    /// 年数が割れると、棚にある旅が流れの一覧に無い・入口によって一覧が変わる。長い方（5年）に
+    /// そろえるより、owner の「重くしない」に合う短い方を取った
+    static var lookbackYears: Int { PhotoLibrary.lookbackYears }
     /// 覚える枚数の上限（新しい方から）。**5万枚**——要約は1枚 約100バイトで、5万枚でも 約5MB
     static let maxShots = 50_000
     /// 1回に読む枚数。読み終えるたびに少し休んで、画面の動きに譲る
@@ -50,6 +52,31 @@ enum DeviceTrips {
     /// 覚える位置の細かさ（小数第4位 ≒ 約11m）。旅の判定（50km・約10kmの升）には十分で、
     /// 端末に残す位置を細かくしすぎない
     static let coordinateScale = 10_000.0
+
+    /// 読みの間の下限（秒）。**60秒**——変化の知らせ（iCloud の同期・編集）が続いても、
+    /// 前の読みの始まりから60秒は次を始めない（`runDelay`）
+    static let minRunInterval: TimeInterval = 60
+    /// 変化の知らせから読むまでの待ち（秒）。続けて来る知らせを1回にまとめる
+    static let changeDelay: TimeInterval = 3
+    /// 識別子の突き合わせ（`needsSweep`）は**10分に1回まで**（`maySweep`）。消した写真の表紙が
+    /// しばらく残るだけで、旅の並びはほとんど変わらない
+    static let sweepInterval: TimeInterval = 10 * 60
+    /// 突き合わせで知らない識別子がこれより多ければ、1枚ずつ引かずに頭から読み直す
+    /// （一部の許可から全部の許可に替えた——知らない写真が数万枚になる）
+    static let maxSweepReads = 2_000
+
+    /// 変化の知らせを受けてから読み始めるまでの待ち。**前の読みの始まりから `minRunInterval`**、
+    /// 少なくとも `changeDelay`
+    static func runDelay(lastRunStart: Date?, now: Date) -> TimeInterval {
+        guard let lastRunStart else { return changeDelay }
+        return max(changeDelay, minRunInterval - now.timeIntervalSince(lastRunStart))
+    }
+
+    /// 突き合わせてよいか（前の突き合わせから `sweepInterval` 経った）
+    static func maySweep(lastSweep: Date?, now: Date) -> Bool {
+        guard let lastSweep else { return true }
+        return now.timeIntervalSince(lastSweep) >= sweepInterval
+    }
 
     /// 地名を引き直すまでの間。**1日**（一冊につき1回の約束・圏外で引けなかった一冊だけ翌日に1回）
     static let nameRetryAfter: TimeInterval = 24 * 60 * 60
@@ -94,6 +121,8 @@ enum DeviceTrips {
         var zones: [String: String] = [:]
         /// 地名を引けなかった時刻（鍵は旅の id）。`nameRetryAfter` の間は引き直さない
         var failedAt: [String: Date] = [:]
+        /// 前に識別子で突き合わせた時刻（`maySweep`）。前の版の置き場には無い（nil で読める）
+        var lastSweep: Date?
     }
 
     // MARK: - 読む段

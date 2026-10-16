@@ -202,8 +202,11 @@ struct DeviceTripIntroCard: View {
                 point("photo.on.rectangle", DeviceTripText.introLimited)
             }
             .padding(.top, JPSpace.xxs)
+            // **自前の札のボタンは「続ける」**（2026-10-16 判断）。押すと iOS の許可のダイアログが出る。
+            // 自前の札で「許可」と言うと、iOS の許可を先に押させる形に見える（Apple の手引きは
+            // 確かめていないが、安全側に倒した）
             Button(action: onAllow) {
-                Text(L("写真へのアクセスを許可", "Allow photo access"))
+                Text(L("続ける", "Continue"))
                     .jpPillButton(.accent)
             }
             .buttonStyle(.plain)
@@ -240,8 +243,8 @@ struct DeviceTripIntroCard: View {
 
 extension DeviceTripText {
     /// 説明の札の約束（**端末の中だけで読み、どこにも送らない**）
-    static var introPrivacy: String { L("端末の中だけで読み、写真も位置もどこにも送りません。読むのは撮影日時と場所だけです",
-                                "Read on this iPhone only. Neither photos nor locations are uploaded—only the date and place they were taken are read.") }
+    static var introPrivacy: String { L("端末の中だけで読み、写真も位置もどこにも送りません。旅を探すのに読むのは撮影日時と場所だけです",
+                                "Read on this iPhone only. Neither photos nor locations are uploaded. To find trips, only the date and place each photo was taken are read.") }
     static var introPlaceNames: String { L("旅の名前を引くため、一冊につき1回だけ、おおよその位置（約1km）を Apple の地図に渡します",
                                    "To name each trip, a rough location (about 1 km) is sent to Apple Maps once per trip.") }
     static var introLimited: String { L("一部の写真だけを許可しても使えます。ほかの人には見えません",

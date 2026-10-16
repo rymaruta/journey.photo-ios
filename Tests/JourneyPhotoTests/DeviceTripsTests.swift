@@ -149,6 +149,22 @@ final class DeviceTripsTests: XCTestCase {
     func testDeviceBooksAreNotShared() throws {
         let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
         XCTAssertFalse(DeviceTrips.canShare(trip))
+        // **画面にも送る口が無いこと**（確かめ役の指摘）。端末の一冊の画面は共有の部品を持たず、
+        // 共有のある一冊の画面（`TripBookView`）へは渡らない（型が違う・`TripBook.Trip` だけを受ける）
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let screen = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/DeviceTripShelf.swift"),
+                                encoding: .utf8)
+        for share in ["ShareLink", "TripBookCard", " TripBookView(", "UIActivityViewController", "shareSheet"] {
+            XCTAssertFalse(screen.contains(share), "端末の一冊の画面に共有の口（\(share)）がある")
+        }
+        // 人のプロフィールには端末の一冊を置かない（置くのはマイページだけ）
+        let others = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Profile/UserProfileView.swift"),
+                                encoding: .utf8)
+        XCTAssertFalse(others.contains("DeviceTrip"))
+        let mine = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Profile/MyPageView.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(mine.contains("DeviceTripSection(store:"))
+        XCTAssertTrue(screen.contains("store.books(posted: posted, isMine: true)"))
     }
 
     // MARK: - 地名（一冊につき1回）
@@ -251,6 +267,22 @@ final class DeviceTripsTests: XCTestCase {
         XCTAssertNil(DeviceTripIndexFile.load(from: url))
     }
 
+    /// 🔴 **読む年数は「旅の写真から」と同じ**（棚の一冊から同じ流れを開く・確かめ役の指摘 8）
+    func testLookbackMatchesTheTripFlow() {
+        XCTAssertEqual(DeviceTrips.lookbackYears, PhotoLibrary.lookbackYears)
+    }
+
+    /// 自前の札のボタンは「続ける」（iOS の許可のダイアログの前に「許可」と言わない・2026-10-16 判断）。
+    /// 約束の文は実装どおり「旅を探すのに読むのは撮影日時と場所だけ」（表紙は小さく読む）
+    func testIntroCardWording() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let screen = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/DeviceTripShelf.swift"),
+                                encoding: .utf8)
+        XCTAssertTrue(screen.contains("L(\"続ける\", \"Continue\")"))
+        XCTAssertFalse(screen.contains("写真へのアクセスを許可"))
+        XCTAssertTrue(screen.contains("旅を探すのに読むのは撮影日時と場所だけです"))
+    }
+
     func testRoundingKeepsFourDecimals() {
         XCTAssertEqual(DeviceTrips.rounded(35.123456), 35.1235)
         XCTAssertNil(DeviceTrips.rounded(nil))
@@ -266,6 +298,7 @@ final class DeviceTripsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripsTests-\(UUID().uuidString)"))
         let store = DeviceTripShelfStore(defaults: defaults, url: url)
         store.forget()
+        await store.waitForRemoval()
         XCTAssertNil(DeviceTripIndexFile.load(from: url), "写真の位置の控えが次の人に残った")
         XCTAssertTrue(store.books(posted: [], isMine: true).isEmpty)
     }
