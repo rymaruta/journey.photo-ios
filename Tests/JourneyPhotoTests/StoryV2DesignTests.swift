@@ -398,6 +398,54 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertFalse(typing.contains("Color.red"))
     }
 
+    /// 板 v2 `StoryComposerText` の上の段: 「キャンセル／文字と札／完了」（17pt・白）。揃えはキャンセルの右に残す
+    func testTextTypingTopBar() throws {
+        let typing = try source("Features/Stories/StoryTextTypingView.swift")
+        let bar = member("private var topBar: some View", in: typing)
+        assertInOrder(["L(\"文字と札\", \"Text & stickers\")",
+                       "barButton(L(\"キャンセル\", \"Cancel\"), weight: .regular, action: onCancel)",
+                       "StoryTextEditing.nextAlign(overlay)",
+                       "barButton(L(\"完了\", \"Done\"), weight: .bold, action: onDone)"], in: bar, "上の段")
+        XCTAssertEqual(StoryTextTypingView.barFontSize, 17)
+        // 写真の上の白い帯のボタン（v1 の「完了」）は残さない
+        XCTAssertFalse(bar.contains("accentBackground"), "完了が白い帯のまま")
+        // 呼ぶ側がキャンセルを通す（打つ前に戻す）
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("onCancel: { cancelTyping() }"))
+        let cancel = member("private func cancelTyping()", in: composer)
+        assertInOrder(["StoryTextEditing.cancel(shots[i].overlays, id: id, original: typingOriginal)",
+                       "finishTyping(showsHint: false)"], in: cancel, "キャンセル")
+        // 新しく足した札は打つ前が無い（nil）＝キャンセルで消える
+        XCTAssertEqual(composer.components(separatedBy: "startTyping(overlay.id, isNew: true)").count - 1, 2,
+                       "「Aa」とトレイの札が新しい札として打ち始めていない")
+        XCTAssertTrue(composer.contains("typingOriginal = isNew ? nil : overlays.wrappedValue.first { $0.id == id }"))
+    }
+
+    /// 大きさのつまみは右に、上に「大」・下に「小」（12pt）
+    func testTextTypingSizeSliderOnTheRight() throws {
+        let typing = try source("Features/Stories/StoryTextTypingView.swift")
+        assertInOrder(["sizeSlider", ".frame(maxWidth: .infinity, alignment: .trailing)"], in: typing, "右のつまみ")
+        XCTAssertFalse(typing.contains("sizeSlider\n                        .frame(maxWidth: .infinity, alignment: .leading)"))
+        let slider = member("private var sizeSlider: some View", in: typing)
+        assertInOrder(["sizeMark(L(\"大\", \"L\"))", "Slider(", ".rotationEffect(.degrees(-90))",
+                       "sizeMark(L(\"小\", \"S\"))"], in: slider, "大・つまみ・小")
+        XCTAssertTrue(member("private func sizeMark(", in: typing).contains(".font(.system(size: 12"))
+        XCTAssertEqual(StoryTextTypingView.sliderLength, 200)
+    }
+
+    /// 置いた直後の案内: 置いたときだけ・端末に1回（印を付けてから出す）・押せば消える・12pt 以上
+    func testPlaceHintInComposer() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        let finish = member("private func finishTyping(", in: composer)
+        assertInOrder(["let placed = shots[i].overlays.contains { $0.id == id }",
+                       "if showsHint, StoryTextEditing.shouldShowPlaceHint(placed: placed) {",
+                       "StoryTextEditing.markPlaceHintShown()", "showPlaceHint = true"], in: finish, "案内")
+        let hint = member("private var placeHint: some View", in: composer)
+        assertInOrder(["Button { showPlaceHint = false }", "Text(StoryTextEditing.placeHint)",
+                       ".font(.footnote"], in: hint, "案内の札")
+        XCTAssertTrue(composer.contains("if showPlaceHint && typingId == nil && !draggingOverlay {"))
+    }
+
     // MARK: - 共通
 
     /// 一段浮かせた面（#1A1A1C）は1つの値（画面ごとに書かない）
