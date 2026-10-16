@@ -740,4 +740,48 @@ final class NoDataLossTests: XCTestCase {
         _ = await late.value
         XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["残す"], "外した写真を遅れた保存が書き戻した")
     }
+
+    /// 🔴 本人の下書きを**保存し直したあと**に控えから戻しても、前の下書きの印は戻さない（`savedKeysNow`）。
+    /// 戻すと、別物になった今の下書きを「開いた」ことになり、保存で黙って置き換え・元の写真の印を消す
+    func testJournalDoesNotReattachToAResavedDraft() async {
+        let first = model(owner: "a")
+        first.items = [photo(1, title: "上がる"), photo(2, title: "控えに残る")]
+        XCTAssertTrue(first.saveDraft())
+        failSecond()
+        let opened = model(owner: "a")
+        let restoredSaved = await opened.restoreDraft()
+        XCTAssertTrue(restoredSaved)
+        await opened.submit()
+        let left = journals()
+        XCTAssertNotNil(left.first?.draft.items.first?.savedKey, "前提: 控えが本人の下書きの印を持つ")
+
+        // 本人の下書きを別の中身で保存し直す
+        let other = model(owner: "a")
+        other.items = [photo(7, title: "新しい下書き")]
+        XCTAssertTrue(other.saveDraft())
+
+        let resumed = model(owner: "a")
+        let restored = await resumed.restoreDraft(from: .send(left[0].id))
+        XCTAssertTrue(restored)
+        XCTAssertFalse(resumed.restoredDraft, "保存し直した別の下書きを「開いた」ことにした（前の印を戻した）")
+        XCTAssertTrue(UploadDraftRules.closeDialog(block: resumed.draftSaveBlock,
+                                                   replacesOther: !resumed.restoredDraft && resumed.storedDraft != nil,
+                                                   restored: resumed.restoredDraft).message
+                        .contains(L("置き換わります", "replaces")), "別の下書きを置き換えると言わない")
+    }
+
+    /// 「古いものを片づける」は何を何件消すかを言う。投稿画面の問いには控えに触らない「あとで」がある。
+    /// 届いたか分からない間は控えを書き直さないことを注記している
+    func testCleanupWordingAndLaterButton() async throws {
+        XCTAssertEqual(UploadDraftRules.cleanupButtonTitle(count: 2), L("まだ送っていない写真の投稿 2 件を削除",
+                                                                         "Delete 2 unsent post(s) and their photos"))
+        let root = try source("Sources/JourneyPhoto/App/RootView.swift")
+        XCTAssertTrue(root.contains("UploadDraftRules.cleanupButtonTitle(count: notice.cleanupIds.count)"))
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        let ask = try XCTUnwrap(upload.range(of: "presenting: askingJournal) { id in"))
+        XCTAssertTrue(upload[ask.upperBound...].prefix(700).contains("Button(L(\"あとで\", \"Later\"), role: .cancel)"),
+                      "送れなかった投稿の問いに「あとで」が無い（削除するか戻すかしか選べない）")
+        let model = try source("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
+        XCTAssertTrue(model.contains("届いたか分からない写真がある間（`visibilityLocked`"))
+    }
 }

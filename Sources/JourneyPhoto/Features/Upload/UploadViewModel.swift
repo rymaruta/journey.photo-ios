@@ -689,6 +689,9 @@ final class UploadViewModel: ObservableObject {
         let idle = !isWorking && !isLoadingPicked && preparingCaptures == 0 && !isRestoringDraft
         if journalId != nil {
             if items.isEmpty && idle { discardJournal(); return }
+            // 届いたか分からない写真がある間（`visibilityLocked`・`draftSaveBlock == .sending`）は書き直さない。
+            // 控えにはその写真が「送り始めた」印つきで残っていて、続きからでも戻さない（二重に投稿しない）。
+            // その間に直した題・足した写真は控えに入らない（終了すると、その変更は残らない）——割り切り
             guard draftSaveBlock == nil else { return }
             await writeJournal(now: now)
             return

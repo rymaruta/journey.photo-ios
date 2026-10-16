@@ -451,7 +451,7 @@ struct RootView: View {
                     }
                 }
                 if !notice.cleanupIds.isEmpty {
-                    Button(L("古いものを片づける", "Clear old ones"), role: .destructive) {
+                    Button(UploadDraftRules.cleanupButtonTitle(count: notice.cleanupIds.count), role: .destructive) {
                         settleInterruptedUpload(notice, cleaning: true)
                     }
                 }

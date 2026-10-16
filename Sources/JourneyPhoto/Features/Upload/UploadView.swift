@@ -193,6 +193,8 @@ struct UploadView: View {
                 if let owner = model.draftOwner { model.drafts?.sibling(.send(id)).clear(for: owner) }
                 openLibraryAfterRestorePrompt()
             }
+            // 「あとで」は控えに触らない（次に開いたとき・次の起動でまた尋ねる。起動時の知らせと同じ形）
+            Button(L("あとで", "Later"), role: .cancel) { openLibraryAfterRestorePrompt() }
         } message: { _ in
             Text(L("送り終える前にアプリが終了した投稿です。続きから送り直せます。",
                    "This post didn\u{2019}t finish sending before the app closed. You can send it again."))

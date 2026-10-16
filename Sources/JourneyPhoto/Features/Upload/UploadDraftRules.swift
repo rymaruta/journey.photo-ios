@@ -145,6 +145,12 @@ enum UploadDraftRules {
         }.map(\.id)
     }
 
+    /// 片づけのボタンの文言。**何を何件消すのか**を書く（「古いもの」だけでは、まだ送っていない写真が
+    /// 消えることが伝わらない）
+    static func cleanupButtonTitle(count: Int) -> String {
+        L("まだ送っていない写真の投稿 \(count) 件を削除", "Delete \(count) unsent post(s) and their photos")
+    }
+
     /// 次の起動で出す「送れなかった投稿があります」（2026-10-16）
     struct InterruptedNotice: Equatable {
         let message: String
@@ -177,8 +183,8 @@ enum UploadDraftRules {
         let cleanup = journalsToClean(journals.filter { resumable.contains($0.id) }
                                         .map { (id: $0.id, savedAt: $0.draft.savedAt) }, now: now)
         let cleanupNote = cleanup.isEmpty ? ""
-            : L("古いものは端末の容量を使い続けるので、片づけるのがおすすめです。",
-                "Older ones keep using storage on this device, so consider clearing them.")
+            : L("うち古い \(cleanup.count) 件（3件を超えた分・7日を過ぎた分）は端末の容量を使い続けるので、削除するのがおすすめです。削除すると、まだ送っていない写真は戻せません。",
+                "\(cleanup.count) older one(s) (beyond 3, or over 7 days old) keep using storage on this device, so consider deleting them. Deleted unsent photos can\u{2019}t be recovered.")
         let head = resumable.isEmpty
             ? L("投稿を送り終える前にアプリが終了しました。", "The app closed before your post finished sending. ")
             : L("送れなかった投稿が \(resumable.count) 件あります。「続きから」で古いものから1件ずつ戻せます。",
