@@ -1,9 +1,12 @@
 import SwiftUI
+import UIKit
 
 /// プロフィールの色を選ぶ欄（Web の見本8色＋パレットから自由に選ぶ丸と同じ）。
 struct ThemeColorField: View {
 
     @Binding var themeColor: String
+    /// 端末の色選び（`ThemeColorPickerSheet`）を出しているか
+    @State private var showsPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -39,36 +42,33 @@ struct ThemeColorField: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        // 注意書きが**出た**ときだけ読み上げでも知らせる（目で見えない人には出たことが分からない）
+        .onChange(of: themeColor) { old, new in
+            guard ThemeColor.shouldAnnounceHardToSee(old: old, new: new) else { return }
+            UIAccessibility.post(notification: .announcement,
+                                 argument: L("黒い地の上では見えにくい色です。このままでも保存できます",
+                                             "This color is hard to see on black. You can still save it."))
+        }
+        .sheet(isPresented: $showsPicker) {
+            ThemeColorPickerSheet(themeColor: $themeColor)
+                .presentationDetents([.medium, .large])
+        }
     }
 
     /// 見本に無い色（ここで選んだ色・Web のパレットで選んだ色）が入っているか
     private var isCustom: Bool { ThemeColor.isCustom(themeColor) }
 
     /// **パレットから自由に選ぶ丸**（Web の `input type="color"` の丸と同じ見せ方）。
-    /// 見本に無い色が入っていればその色で塗り、見本の丸と同じ外側の輪を付ける。
+    /// 見本に無い色が入っていればその色で塗り、見本の丸と同じ外側の輪（真鍮）を付ける。
     /// 入っていなければ虹の丸（Web の `conic-gradient`）に白 30% の輪。
     ///
-    /// 押せるのは端末の色選び（`ColorPicker`）。**その丸（見た目 約28）は 44 の枠いっぱいに
-    /// 広げて、ほぼ透明にして下に敷く**——上の丸は `allowsHitTesting(false)` なので、
-    /// 枠のどこを押しても色選びが開く。透明度を 0 にすると押せなくなる（UIKit は
-    /// 0.01 未満の部品に当たりを渡さない）ので `pickerOpacity` を残す
+    /// **ふつうの Button（枠 44）で押し、端末の色選びをシートで出す**（`ThemeColorPickerSheet`）。
+    /// 以前は SwiftUI の `ColorPicker` を広げて透明に近くして下に敷いていたが、当たりが
+    /// 約 28 のままになる恐れがあり、Linux では確かめられない（2026-10-16 読み直しの指摘）
     private var customSwatch: some View {
-        ZStack {
-            ColorPicker(L("プロフィールの色: 自由に選ぶ", "Profile color: pick any color"),
-                        selection: Binding(
-                            get: { Color(hex: themeColor) ?? Color(hex: ThemeColor.presets[0]) ?? .white },
-                            // 同じ色が返ってきたときは書かない（押しただけで見本の色が「自由に選んだ色」に化けない）
-                            set: { color in
-                                let hex = ThemeColor.hex(of: color)
-                                if hex != themeColor.lowercased() { themeColor = hex }
-                            }),
-                        supportsOpacity: false)
-                .labelsHidden()
-                .scaleEffect(ThemeColorLayout.target / ThemeColorLayout.pickerWell)
-                .opacity(ThemeColorLayout.pickerOpacity)
-                .accessibilityLabel(L("プロフィールの色: 自由に選ぶ", "Profile color: pick any color"))
-                .accessibilityValue(isCustom ? themeColor.lowercased() : L("未選択", "Not chosen"))
-                .accessibilityAddTraits(isCustom ? .isSelected : [])
+        Button {
+            showsPicker = true
+        } label: {
             Circle()
                 .fill(isCustom
                       ? AnyShapeStyle(Color(hex: themeColor) ?? .gray)
@@ -76,17 +76,19 @@ struct ThemeColorField: View {
                                                       center: .center,
                                                       startAngle: .degrees(-90), endAngle: .degrees(270))))
                 .frame(width: ThemeColorLayout.swatch, height: ThemeColorLayout.swatch)
-                // 選んでいれば見本と同じ輪（白）、選んでいなければ白 30% の輪（Web の `ring-white/30`）——
+                // 選んでいれば見本と同じ輪（真鍮）、選んでいなければ白 30% の輪（Web の `ring-white/30`）——
                 // 暗い色を選んでも丸の在りかが黒い地に消えない
                 .overlay(Circle()
-                    .strokeBorder(isCustom ? ThemeColorLayout.color(ThemeColorLayout.selectedRing) : Color.white.opacity(0.3),
+                    .strokeBorder(isCustom ? WebTheme.accent : Color.white.opacity(0.3),
                                   lineWidth: ThemeColorLayout.ringWidth)
                     .padding(-(ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth)))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                .frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)
+                .contentShape(Rectangle())
         }
-        .frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)
-        .contentShape(Rectangle())
+        .buttonStyle(.borderless)
+        .accessibilityLabel(L("プロフィールの色: 自由に選ぶ", "Profile color: pick any color"))
+        .accessibilityValue(isCustom ? themeColor.lowercased() : L("未選択", "Not chosen"))
+        .accessibilityAddTraits(isCustom ? .isSelected : [])
     }
 
     /// **選ばない**に戻せるようにする（押しても何も起きない状態を作らない）
@@ -98,9 +100,9 @@ struct ThemeColorField: View {
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                // 選んでいれば真鍮の塗り＋墨（丸の輪と同じ決まり・2026-10-16 判断。`ThemeColorLayout.selected`）
-                .foregroundStyle(themeColor.isEmpty ? ThemeColorLayout.color(ThemeColorLayout.noneSelectedText) : WebTheme.muted)
-                .background(themeColor.isEmpty ? ThemeColorLayout.color(ThemeColorLayout.noneSelectedFill) : WebTheme.surface,
+                // 選んでいれば真鍮の塗り＋墨（丸の輪と同じ決まり・2026-10-16 判断。`ThemeColorLayout` の注記）
+                .foregroundStyle(themeColor.isEmpty ? WebTheme.accentText : WebTheme.muted)
+                .background(themeColor.isEmpty ? WebTheme.accentFill : WebTheme.surface,
                             in: Capsule())
                 // 札（高さ約26）の外側だけ広げる（`background` より後ろ＝見た目は変えない）
                 .webTappable()
@@ -122,7 +124,7 @@ struct ThemeColorField: View {
                 // 選んだ印は **外側の輪**（Web の `ring-2 ring-offset-2`）。間 2・輪 2 で、
                 // 枠の余白 4 にちょうど収まる（輪の外径 44＝押せる枠）
                 .overlay(Circle()
-                    .strokeBorder(ThemeColorLayout.color(ThemeColorLayout.selectedRing), lineWidth: ThemeColorLayout.ringWidth)
+                    .strokeBorder(WebTheme.accent, lineWidth: ThemeColorLayout.ringWidth)
                     .padding(-(ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth))
                     .opacity(chosen ? 1 : 0))
                 .frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)
@@ -145,20 +147,12 @@ enum ThemeColorLayout {
     /// 選んだ印の輪と丸の間・輪の太さ（Web の `ring-offset-2`・`ring-2`）。足して `inset` に収める
     static let ringGap: CGFloat = 2
     static let ringWidth: CGFloat = 2
-    /// **選んでいる印の色（2026-10-16 判断: 真鍮）。** 見本8色の丸・「自由に選ぶ」丸の輪は
-    /// 真鍮 `#C9A66B`、「なし」の札は真鍮の塗り（accent-fill `#B8955A`）＋墨の字（7.11:1）。
-    /// 板は「白＝選択」だが、owner の好み「選んでいるものは真鍮」（CLAUDE.md）を取った。
-    /// 欄は黒い地の上（プロフィールの編集）なので真鍮を置いてよい。以前は輪が白・「なし」が白の塗りで、
-    /// 同じ欄の中で選択の色が割れないよう3つともそろえる
-    static let selectedRing: UInt32 = BrandPalette.accent
-    static let noneSelectedFill: UInt32 = BrandPalette.accentFill
-    static let noneSelectedText: UInt32 = BrandPalette.ink
-    /// 0xRRGGBB から色（`Color(hex:)` を使い回す）
-    @MainActor static func color(_ rgb: UInt32) -> Color { Color(hex: ThemeColor.hex(rgb)) ?? .white }
-    /// 端末の色選びの丸の見た目（ラベルを隠したとき 約28）。押せる枠 44 まで広げる倍率の元
-    static let pickerWell: CGFloat = 28
-    /// 下に敷いた色選びの透明度。**0.01 以上**（UIKit はそれ未満の部品に当たりを渡さない）
-    static let pickerOpacity: Double = 0.02
+    // **選んでいる印の色（2026-10-16 判断: 真鍮）。** 見本8色の丸・「自由に選ぶ」丸の輪は
+    // `WebTheme.accent`（#C9A66B）、「なし」の札は `WebTheme.accentFill`（#B8955A）＋
+    // `WebTheme.accentText`（墨・7.11:1）。板は「白＝選択」だが、owner の好み
+    // 「選んでいるものは真鍮」（CLAUDE.md）を取った。欄は黒い地の上（プロフィールの編集）なので
+    // 真鍮を置いてよい。以前は輪が白・「なし」が白の塗りで、同じ欄で選択の色が割れないよう3つともそろえる。
+    // 画面がこの定数を使っていることは `ThemeColorFieldSourceTests` が見張る
     /// 「自由に選ぶ」の丸の虹（Web の `conic-gradient` と同じ並び）
     static let rainbow = ["#f87171", "#fbbf24", "#34d399", "#38bdf8", "#a78bfa", "#f472b6", "#f87171"]
     /// 1行の色の数
@@ -181,12 +175,59 @@ enum ThemeColorLayout {
     }
 }
 
-extension ThemeColor {
-    /// 端末の色選びが返した色を保存の形 `#rrggbb`（小文字）に。
-    /// 赤緑青の取り出しはストーリーの文字の「好きな色」と同じ `StoryCanvas.hex(of:)`
-    /// （`UIColor.getRed` は拡張 sRGB で返す＝P3 の色は 0〜1 の外。そこで sRGB に詰めて丸める）
-    @MainActor static func hex(of color: Color) -> String {
-        hex(StoryCanvas.hex(of: color))
+/// 端末の色選び（`UIColorPickerViewController`）をシートで出す包み。
+///
+/// 不透明だけ（`supportsAlpha = false`・保存の形 `#rrggbb` に透明度は無い）。
+/// 開いたときは今の色（無ければ見本の先頭・Web の `input type="color"` の既定と同じ）。
+/// 色が変わるたびに書く——**同じ色なら書かない**（`ThemeColor.nextValue`）
+struct ThemeColorPickerSheet: UIViewControllerRepresentable {
+
+    @Binding var themeColor: String
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIColorPickerViewController {
+        let controller = UIColorPickerViewController()
+        controller.supportsAlpha = false
+        let rgb = ThemeColor.rgb(themeColor) ?? ThemeColor.rgb(ThemeColor.presets[0])
+        if let rgb {
+            controller.selectedColor = UIKit.UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+        }
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIColorPickerViewController, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    /// 色選びの知らせは主スレッドで来る（UIKit）
+    @MainActor final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+        var parent: ThemeColorPickerSheet
+
+        init(parent: ThemeColorPickerSheet) { self.parent = parent }
+
+        /// 指で動かしている間も（`continuously`）書く——欄の丸と注意書きがその場で変わる
+        func colorPickerViewController(_ viewController: UIColorPickerViewController,
+                                       didSelect color: UIKit.UIColor, continuously: Bool) {
+            pick(color)
+        }
+
+        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
+            pick(viewController.selectedColor)
+            parent.dismiss()
+        }
+
+        /// `UIColor.getRed` は拡張 sRGB で返す（P3 の色は 0〜1 の外）。`ThemeColor.hex` が sRGB に詰めて丸める
+        private func pick(_ color: UIKit.UIColor) {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
+            let picked = ThemeColor.hex(red: Double(red), green: Double(green), blue: Double(blue))
+            if let next = ThemeColor.nextValue(picked: picked, current: parent.themeColor) {
+                parent.themeColor = next
+            }
+        }
     }
 }
 

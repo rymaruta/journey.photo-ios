@@ -388,29 +388,21 @@ final class PostLimitsTests: XCTestCase {
                                  "393pt 幅の端末でフォームの行に入らない")
     }
 
-    /// 🔴 **「自由に選ぶ」の丸を足しても最後の行は入る**（4色＋丸＋「なし」＝ 44×5＋56−4＝272）。
-    /// 下に敷いた色選びは 44 の枠いっぱいに広がり、押せる（透明度 0.01 以上）
-    func testCustomSwatchFitsTheLastRowAndStaysTappable() {
+    /// 🔴 **「自由に選ぶ」の丸を足しても最後の行は入る**（4色＋丸＋「なし」＝ 44×5＋56−4＝272）
+    func testCustomSwatchFitsTheLastRow() {
         XCTAssertEqual(ThemeColorLayout.widestRow,
                        CGFloat(ThemeColorLayout.rows.last?.count ?? 0) * 44 + 44 + ThemeColorLayout.noneWidth - 4,
                        "最後の行に「自由に選ぶ」の丸の幅が入っていない")
         XCTAssertLessThanOrEqual(ThemeColorLayout.widestRow, 393 - 2 * 20 - 2 * 20)
-        XCTAssertGreaterThanOrEqual(ThemeColorLayout.pickerWell * (ThemeColorLayout.target / ThemeColorLayout.pickerWell),
-                                    ThemeColorLayout.target)
-        XCTAssertGreaterThanOrEqual(ThemeColorLayout.pickerOpacity, 0.01)
         XCTAssertEqual(ThemeColorLayout.rainbow.first, ThemeColorLayout.rainbow.last, "虹の継ぎ目が途切れる")
         XCTAssertTrue(ThemeColorLayout.rainbow.allSatisfy(ThemeColor.isValid))
     }
 
-    /// 🔴 **2026-10-16 判断: 選んでいる印は真鍮**（見本の丸・自由に選ぶ丸の輪、「なし」の塗り＋墨）。
-    /// 3つが同じ決まりで、黒い地の上で輪は部品の線 3:1、「なし」の字は 4.5:1 を越える
-    func testSelectionMarksAreBrass() {
-        XCTAssertEqual(ThemeColorLayout.selectedRing, 0xC9A66B, "輪は真鍮")
-        XCTAssertEqual(ThemeColorLayout.noneSelectedFill, 0xB8955A, "「なし」は accent-fill")
-        XCTAssertEqual(ThemeColorLayout.noneSelectedText, BrandPalette.ink, "塗りの上の字は墨")
-        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(ThemeColorLayout.selectedRing, 0x000000), 3)
-        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(ThemeColorLayout.noneSelectedText,
-                                                          ThemeColorLayout.noneSelectedFill), 4.5)
+    /// 2026-10-16 判断の真鍮（`WebTheme.accent` / `accentFill` / `accentText` の元）は、
+    /// 黒い地の上で輪が部品の線 3:1、「なし」の塗りの上の字が 4.5:1 を越える
+    func testBrassSelectionColorsAreReadable() {
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.accent, 0x000000), 3)
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.ink, BrandPalette.accentFill), 4.5)
     }
 
     /// 選んだ印の外側の輪（間 2・輪 2）は、押せる枠の余白 4 に収まる（隣の枠へはみ出さない）

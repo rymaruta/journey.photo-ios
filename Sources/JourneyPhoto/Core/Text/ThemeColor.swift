@@ -56,6 +56,21 @@ enum ThemeColor {
         return isValid(v) && !presets.contains(v)
     }
 
+    /// 色選びが返した色を書くか。**同じ色なら nil（書かない）**——大文字・小文字の違いだけも同じ色。
+    /// 書くなら小文字の `#rrggbb`。読めない値も nil。
+    /// 書いてしまうと、開いて閉じただけ（今の色がそのまま返る）で「編集した」扱いになる
+    static func nextValue(picked: String, current: String) -> String? {
+        let p = picked.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard isValid(p) else { return nil }
+        let c = current.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return p == c ? nil : p
+    }
+
+    /// 暗い色の注意書きが**新しく出た**か（読み上げで知らせる時）。出たままの色替えでは繰り返さない
+    static func shouldAnnounceHardToSee(old: String, new: String) -> Bool {
+        !isHardToSeeOnBlack(old) && isHardToSeeOnBlack(new)
+    }
+
     /// 黒い地の上で見分けにくい色か（WCAG の部品の線 3:1 を下回る）。
     ///
     /// **2026-10-16 判断: 選べるまま・色は変えずに保存し、選んだときに知らせるだけ。**

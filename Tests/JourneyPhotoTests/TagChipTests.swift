@@ -179,6 +179,72 @@ final class ThemeColorTests: XCTestCase {
         XCTAssertFalse(ThemeColor.isHardToSeeOnBlack("garbage"))
         for preset in ThemeColor.presets { XCTAssertFalse(ThemeColor.isHardToSeeOnBlack(preset), preset) }
     }
+
+    /// 🔴 **色選びから同じ色が返ってきたら書かない**（開いて閉じただけで「編集した」にならない）。
+    /// 大文字・小文字の違いだけも同じ色。違う色は小文字で書く
+    func testPickerWritesOnlyADifferentColor() {
+        XCTAssertNil(ThemeColor.nextValue(picked: "#38bdf8", current: "#38bdf8"), "同じ色")
+        XCTAssertNil(ThemeColor.nextValue(picked: "#38bdf8", current: "#38BDF8"), "大文字の違いだけ")
+        XCTAssertNil(ThemeColor.nextValue(picked: "#ABCDEF", current: "#abcdef"), "大文字の違いだけ（逆）")
+        XCTAssertEqual(ThemeColor.nextValue(picked: "#123456", current: "#38bdf8"), "#123456", "違う色")
+        XCTAssertEqual(ThemeColor.nextValue(picked: "#ABCDEF", current: ""), "#abcdef", "なしから・小文字で")
+        XCTAssertNil(ThemeColor.nextValue(picked: "red", current: ""), "読めない値は書かない")
+    }
+
+    /// 暗い色の注意書きは**新しく出たときだけ**読み上げる（出たままの色替えでは繰り返さない）
+    func testHardToSeeIsAnnouncedOnlyWhenItAppears() {
+        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "#38bdf8", new: "#101010"))
+        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#000000"))
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#101010", new: "#000000"), "出たまま")
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#000000", new: "#38bdf8"), "消えた")
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#38bdf8"))
+    }
+}
+
+/// プロフィールの色の欄の書き方の見張り（画面は Linux で動かせないので、字で守る）
+final class ThemeColorFieldSourceTests: XCTestCase {
+
+    private func source() throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Common/ThemeColorField.swift"), encoding: .utf8)
+        // 注記（`//`・`///`）の中は数えない
+        return text.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    /// 🔴 **2026-10-16 判断: 選んでいる印は真鍮で、既にある `WebTheme` の定数を使う**。
+    /// 輪を `.primary`（白）に戻す・「なし」を白の塗りに戻すと落ちる
+    func testSelectionMarksUseTheBrassTokens() throws {
+        let code = try source()
+        XCTAssertTrue(code.contains(".strokeBorder(WebTheme.accent, lineWidth: ThemeColorLayout.ringWidth)"),
+                      "見本の丸の輪が真鍮でない")
+        XCTAssertTrue(code.contains(".strokeBorder(isCustom ? WebTheme.accent : Color.white.opacity(0.3),"),
+                      "「自由に選ぶ」丸の輪が真鍮でない")
+        XCTAssertTrue(code.contains("themeColor.isEmpty ? WebTheme.accentText : WebTheme.muted"), "「なし」の字が墨でない")
+        XCTAssertTrue(code.contains("themeColor.isEmpty ? WebTheme.accentFill : WebTheme.surface"), "「なし」の塗りが真鍮でない")
+        XCTAssertFalse(code.contains(".primary"), "白（.primary）の選択の印が残っている")
+        XCTAssertFalse(code.contains("accentBackground"), "「なし」が白の塗りのまま")
+    }
+
+    /// 🔴 **「自由に選ぶ」はふつうの Button（枠 44）で、端末の色選びをシートで出す。**
+    /// 透明に近い `ColorPicker` を下に敷く作りは当たりが 28 のままの恐れがある
+    func testCustomSwatchIsAButtonThatOpensTheSystemPicker() throws {
+        let code = try source()
+        XCTAssertFalse(code.contains("ColorPicker("), "SwiftUI の ColorPicker を敷く作りに戻っている")
+        XCTAssertFalse(code.contains(".opacity(0.0"), "透明に近くして当たりを取る作りに戻っている")
+        XCTAssertTrue(code.contains("showsPicker = true"), "丸のボタンが色選びを開いていない")
+        XCTAssertTrue(code.contains("ThemeColorPickerSheet(themeColor: $themeColor)"), "シートで出していない")
+        XCTAssertTrue(code.contains("UIColorPickerViewController()"))
+        XCTAssertTrue(code.contains("controller.supportsAlpha = false"), "透明度を選べてしまう")
+        XCTAssertTrue(code.contains("ThemeColor.nextValue(picked: picked, current: parent.themeColor)"),
+                      "同じ色でも書いてしまう")
+        XCTAssertTrue(code.contains("UIAccessibility.post(notification: .announcement"), "暗い色の注意を読み上げない")
+        // 丸の枠は 44（ボタンの label の中で）
+        XCTAssertTrue(code.contains(".frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)"))
+    }
 }
 
 /// 写真の詳細のタグの札の字（板 02 の「#夕焼け」）。
