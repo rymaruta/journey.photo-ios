@@ -233,12 +233,35 @@
       "height": 1152,
       "checked": "2026-10-14",
       "note": "実写真（CC0）。砂丘の稜線（Unsplash）。光の当たる斜面と影が斜めの帯になって画面を分ける。出典は Tools/composition-examples/photo-sources.json"
+    },
+    "goldenSpiral": {
+      "source": "photo",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-16",
+      "note": "実写真（CC0）。らせん階段を真上から（ストックホルム）。段の輪が外から巻き込み、吹き抜けの中心が渦の目に乗る。出典は Tools/composition-examples/photo-sources.json"
+    },
+    "thirdsDiagonals": {
+      "source": "photo",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-16",
+      "note": "実写真（CC0）。レマン湖の桟橋の先に座る人（スイス・モルジュ）。桟橋が手前から人へ導き、人は右上の交点（対角線の上）。出典は Tools/composition-examples/photo-sources.json"
+    },
+    "dynamicSymmetry": {
+      "source": "photo",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-16",
+      "note": "実写真（CC0）。急な斜面を登る2人（米ロス・パドレス国有林）。2人が右下の目に乗り、稜線は逆対角とほぼ平行（重なりはしない）。出典は Tools/composition-examples/photo-sources.json"
+    },
+    "triangle": {
+      "source": "photo",
+      "width": 864,
+      "height": 1152,
+      "checked": "2026-10-16",
+      "note": "実写真（CC0）。霧のキルキュフェトル山（アイスランド）。山頂が上の頂点、裾の川岸が下の辺。右の裾は少し広い。出典は Tools/composition-examples/photo-sources.json"
     }
   },
-  "held": {
-    "triangle": "上の人の胸は頂点。下の2人は点がベルトで、胸は線より上",
-    "goldenSpiral": "渦に近い道の回もあるが、人は目（0.276, 0.724）より上。座った回はS字",
-    "thirdsDiagonals": "道のXに近い回もあるが、人は交点より下で点は空地",
-    "dynamicSymmetry": "対角の道は近いが、逆対角の4本が道に乗らず、点も公園の中心ではない"
-  }
+  "held": {}
 }

@@ -699,6 +699,78 @@
           "license": "CC0"
         }
       ]
+    },
+    "goldenSpiral": {
+      "subject": "らせん階段を真上から見下ろした所（スウェーデン・ストックホルム）。大理石の段が外から内へ巻き込み、階段の中心の吹き抜けが渦の目（左下・約28%・72%）に乗る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Infinite_spiral_stairs_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/YfCVCPMNd38",
+      "author": "Ludde Lorentz luddelorentz",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）。Commons の action=raw で確かめた（API は混雑で 429 のため）",
+      "checked": "2026-10-16",
+      "crop": {
+        "downloadedWidth": 3264,
+        "downloadedHeight": 2448,
+        "x": 1364,
+        "y": 91,
+        "width": 1149,
+        "height": 1532
+      },
+      "alternates": []
+    },
+    "thirdsDiagonals": {
+      "subject": "レマン湖の桟橋の先に座る人（スイス・モルジュ）。手前から延びる桟橋が人へ視線を運び、人は右上の三分割の交点（左下→右上の対角線の上）に座る",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Admiring_the_lake_from_a_pier_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/eAkjzXCU0p0",
+      "author": "Paola Chaaya paolitta",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）。Commons の action=raw で確かめた（API は混雑で 429 のため）",
+      "checked": "2026-10-16",
+      "crop": {
+        "downloadedWidth": 3872,
+        "downloadedHeight": 2592,
+        "x": 2013,
+        "y": 527,
+        "width": 1548,
+        "height": 2064
+      },
+      "alternates": []
+    },
+    "dynamicSymmetry": {
+      "subject": "急な斜面の小道を登る2人（米カリフォルニア州ロス・パドレス国有林）。2人が右下の目（約64%・64%）に乗り、斜面の稜線は左下の角からの逆対角とほぼ平行に右上へ上がる（線にぴったり重なるわけではない）",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Hikers_on_a_steep_slope_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/S9uZOfeYi1U",
+      "author": "Will Langenberg wlangenberg",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）。Commons の action=raw で確かめた（API は混雑で 429 のため）",
+      "checked": "2026-10-16",
+      "crop": {
+        "downloadedWidth": 4732,
+        "downloadedHeight": 3134,
+        "x": 2489,
+        "y": 0,
+        "width": 1836,
+        "height": 2448
+      },
+      "alternates": []
+    },
+    "triangle": {
+      "subject": "霧のかかったキルキュフェトル山（アイスランド）。山頂が三角の上の頂点に、裾の川岸が下の2点の高さに来る。山は右の裾が少し広い",
+      "sourceURL": "https://commons.wikimedia.org/wiki/File:Kirkjufell_in_Fog_(Unsplash).jpg",
+      "originalURL": "https://unsplash.com/photos/TllHZBc88q4",
+      "author": "Nicholas Kampouris nicholaskampouris",
+      "license": "CC0",
+      "licenseEvidence": "Commons のページの許諾タグ {{Unsplash}}（中身は {{Cc-zero}}）。Commons の action=raw で確かめた（API は混雑で 429 のため）",
+      "checked": "2026-10-16",
+      "crop": {
+        "downloadedWidth": 2446,
+        "downloadedHeight": 2446,
+        "x": 405,
+        "y": 272,
+        "width": 1630,
+        "height": 2174
+      },
+      "alternates": []
     }
   }
 }

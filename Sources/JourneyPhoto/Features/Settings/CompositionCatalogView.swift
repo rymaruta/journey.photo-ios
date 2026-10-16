@@ -74,6 +74,8 @@ struct CompositionExplanationView: View {
     @State private var showGuideLines = true
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var exampleImage: UIImage?
+    /// 開いている解説の段。最初は「どういう構図か」だけ開く（長い文を一度に並べない）
+    @State private var openParts: Set<CompositionLesson.Part> = [.what]
 
     var body: some View {
         ScrollView {
@@ -166,6 +168,7 @@ struct CompositionExplanationView: View {
                 explanationSection(L("どんな構図？", "How it works"), text: CompositionExample.explanation(for: kind))
                 explanationSection(L("こんな場面で", "Example scene"), text: CompositionExample.scene(for: kind))
                 explanationSection(L("撮るときのコツ", "Shooting tip"), text: kind.tip)
+                lessonSection
             }
             .padding(.horizontal, JPSpace.l)
             .padding(.top, JPSpace.xs)
@@ -200,6 +203,93 @@ struct CompositionExplanationView: View {
         }
         .padding(.top, JPSpace.xs)
     }
+
+    /// 詳しい解説（2026-10-16 owner「構図の説明が軽い」・`CompositionLessons`）。
+    ///
+    /// 2026-10-16 判断: 一覧は軽いまま、この画面の下に6つの段を折りたたみで置く。段の見出しは明朝 18
+    /// （明朝の下限）・押せる高さ 44・右に開閉の山形（text-3）。本文は 15 の text-2、手順の番号は SF の
+    /// 等幅数字で text-3（数は合図ではないので真鍮にしない・CLAUDE.md の実例）。真鍮は黒地の上の眉ラベルだけ
+    private var lessonSection: some View {
+        let lesson = CompositionLessons.lesson(for: kind)
+        return VStack(alignment: .leading, spacing: 0) {
+            JPEyebrowLine(L("詳しい解説", "In depth"))
+                .padding(.bottom, JPSpace.xxs)
+            ForEach(CompositionLesson.Part.allCases, id: \.self) { part in
+                lessonRow(part, lesson: lesson)
+            }
+        }
+        .padding(.top, JPSpace.m)
+    }
+
+    private func lessonRow(_ part: CompositionLesson.Part, lesson: CompositionLesson) -> some View {
+        let isOpen = openParts.contains(part)
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isOpen { openParts.remove(part) } else { openParts.insert(part) }
+                }
+            } label: {
+                HStack(spacing: JPSpace.s) {
+                    Text(part.title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.text3)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(isOpen ? L("開いています", "Expanded") : L("閉じています", "Collapsed"))
+            .accessibilityIdentifier("composition.lesson.\(part)")
+            if isOpen {
+                lessonBody(part, lesson: lesson)
+                    .padding(.bottom, JPSpace.s)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+    }
+
+    @ViewBuilder
+    private func lessonBody(_ part: CompositionLesson.Part, lesson: CompositionLesson) -> some View {
+        switch part {
+        case .steps:
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                ForEach(Array(lesson.steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+                        Text("\(index + 1)")
+                            .font(JPFont.mono(JPTypeScale.body, medium: true, relativeTo: .subheadline))
+                            .foregroundStyle(WebTheme.text3)
+                            .frame(minWidth: 16, alignment: .leading)
+                            .accessibilityHidden(true)
+                        lessonText(step)
+                            .accessibilityLabel(L("手順\(index + 1)、\(step)", "Step \(index + 1), \(step)"))
+                    }
+                }
+            }
+        case .what: lessonText(lesson.what)
+        case .why: lessonText(lesson.why)
+        case .scenes: lessonText(lesson.scenes)
+        case .mistakes: lessonText(lesson.mistakes)
+        case .versus: lessonText(lesson.versus)
+        }
+    }
+
+    private func lessonText(_ text: String) -> some View {
+        Text(text)
+            .font(JPFont.body)
+            .lineSpacing(5)
+            .foregroundStyle(WebTheme.text2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 /// 一覧と詳細で同じ作例・解説を使い、撮影時の線と食い違わないようにする。
@@ -227,15 +317,15 @@ enum CompositionExample {
         case .tianzige: return L("水辺の建物と映り込みを十字で釣り合わせる", "Balance a waterside building and its reflection on the cross")
         case .mizige: return L("回廊の線が中心の奥へ集まる", "Corridor lines converging on the center")
         case .phiGrid: return L("広い景色の小さな人影を内寄りの交点に", "Place a small figure at an inner intersection")
-        case .goldenSpiral: return L("曲がる道の先に主役を置く", "Place the subject at the end of a winding path")
+        case .goldenSpiral: return L("らせん階段の巻き込む先を渦の目に", "A spiral staircase curling into the eye")
         case .fibonacciGrid: return L("階段をたどって奥の扉へ", "Follow stairs toward a distant door")
         case .goldenTriangle: return L("斜面と人物を対角に並べる", "Arrange a slope and person diagonally")
         case .diagonals, .diagonal45, .obliqueThirds: return L("斜めに延びる道や稜線", "A sloping road or mountain ridge")
-        case .thirdsDiagonals: return L("道の斜線と奥の人物", "A diagonal road leading to a person")
-        case .dynamicSymmetry: return L("交差する街路と建物の輪郭", "Crossing streets and building edges")
+        case .thirdsDiagonals: return L("桟橋の先に座る人を交点に", "A person at the end of a pier, on a crossing")
+        case .dynamicSymmetry: return L("斜面を登る人を線の交わる点に", "Hikers on a slope where the lines cross")
         case .armature: return L("橋のケーブルが斜めに集まる", "Bridge cables converging on the diagonals")
         case .rootRectangle: return L("√2に切り出す塔と山", "A pagoda and mountain framed for a √2 crop")
-        case .triangle: return L("3人の位置で三角形を作る", "Arrange three people in a triangle")
+        case .triangle: return L("とがった山を三角に収める", "A pointed mountain inside the triangle")
         case .radial: return L("一点へ集まる線路や光", "Tracks or light converging at one point")
         case .tunnel: return L("鳥居や木のトンネルの奥へ", "Into a tunnel of torii gates or trees")
         case .frameWithin: return L("窓の向こうに見える海と小舟", "The sea and boats seen through a window")
