@@ -1,6 +1,9 @@
 import XCTest
 import CoreBluetooth
 @testable import JourneyPhoto
+// 選択の印（`PhotosPickerItem`）は SwiftUI と PhotosUI の両方が要る（`Tools/check-cross-imports.py`）
+import SwiftUI
+import PhotosUI
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -13,6 +16,7 @@ import FoundationNetworking
 /// 4. スポットのページからの投稿がマイページ・ホームに先に出なかった
 /// 5. 新しい投稿が公開の一覧（探す・地図・ホームのおすすめ）に最大60秒出なかった
 /// 6. すれちがいで Bluetooth を切っても何も知らせなかった
+/// 7. 選択を外した写真・空にして閉じた画面の写しが、自動の書きかけ・送信の控えに残った
 @MainActor
 final class NoDataLossTests: XCTestCase {
 
@@ -783,5 +787,141 @@ final class NoDataLossTests: XCTestCase {
                       "送れなかった投稿の問いに「あとで」が無い（削除するか戻すかしか選べない）")
         let model = try source("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
         XCTAssertTrue(model.contains("届いたか分からない写真がある間（`visibilityLocked`"))
+    }
+
+    // MARK: - 7. 外した写真の写し（2026-10-16）
+
+    /// 条件が立つまで待つ（最長5秒）。切り離した読み込み（`pickerItems` の didSet）の終わりを時間で当てない
+    private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
+        for _ in 0..<500 where !condition() {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(condition(), "待っても条件が立たなかった", file: file, line: line)
+    }
+
+    private func picked(_ byte: UInt8, title: String, key: PhotosPickerItem) -> PendingPhoto {
+        var p = photo(byte, title: title)
+        p.pickerItem = key
+        return p
+    }
+
+    /// 🔴 **A・B を送って B だけ残ったあと、「追加」で B の選択を外したら、控えからも外す。** 残すと次の起動の
+    /// 「送れなかった投稿」から B が戻り、本人が外した写真が投稿されえた（帯の × だけが外していた）
+    func testUnselectedPhotoLeavesTheJournal() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let model = model(owner: "a")
+        model.loadPickedData = { _ in nil }
+        let a = PhotosPickerItem(itemIdentifier: "a")
+        let b = PhotosPickerItem(itemIdentifier: "b")
+        model.items = [picked(1, title: "上がる", key: a), picked(2, title: "届かない", key: b)]
+        model.pickerItems = [a, b]
+        await model.submit()
+        XCTAssertEqual(journals().first?.draft.items.map(\.title), ["届かない"], "前提: B が控えに残る")
+        XCTAssertEqual(model.items.map(\.title), ["届かない"])
+
+        // 「追加」で B の選択を外す
+        model.pickerItems = []
+        await waitUntil { model.items.isEmpty }
+        XCTAssertTrue(journals().isEmpty, "選択を外した写真が送信の控えに残った（次の起動で戻り、投稿されうる）")
+        XCTAssertFalse(model.hasDraft, "前提: 欄も空なので × は確かめずに閉じる")
+    }
+
+    /// 選択を外した写真は、裏に回ったときに残した自動の書きかけからも外す（帯の × と同じ）
+    func testUnselectedPhotoLeavesTheAutoDraft() async {
+        let model = model(owner: "a")
+        model.loadPickedData = { _ in nil }
+        let a = PhotosPickerItem(itemIdentifier: "a")
+        let b = PhotosPickerItem(itemIdentifier: "b")
+        model.items = [picked(1, title: "残す", key: a), picked(2, title: "外す", key: b)]
+        model.pickerItems = [a, b]
+        await model.autoSaveDraft()
+        XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["残す", "外す"])
+
+        model.pickerItems = [a]
+        await waitUntil { model.items.count == 1 }
+        XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["残す"], "選択を外した写真が自動の書きかけに残った")
+        model.pickerItems = []
+        await waitUntil { model.items.isEmpty }
+        XCTAssertNil(auto().draft(for: "a"), "全部外したのに自動の書きかけが残った")
+    }
+
+    /// 🔴 **× で確かめずに閉じる（中身が無い）ときは、この画面の書きかけ・控えを片づける。**
+    /// 中身があるときは触らない。本人の下書き・ほかの画面の控えにも触らない
+    func testClosingAnEmptyScreenClearsItsLeftovers() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let keep = model(owner: "a")
+        keep.items = [photo(9, title: "本人の下書き")]
+        XCTAssertTrue(keep.saveDraft())
+
+        // ほかの画面の控え（送れなかった投稿）
+        let other = model(owner: "a")
+        other.items = [photo(7, title: "上がる"), photo(8, title: "ほかの控え")]
+        await other.submit()
+        XCTAssertEqual(journals().count, 1)
+
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let screen = model(owner: "a")
+        screen.items = [photo(1, title: "上がる"), photo(2, title: "この画面の控え")]
+        await screen.submit()
+        XCTAssertEqual(journals().count, 2, "前提: この画面の控えができる")
+
+        // 中身があるうちは片づけない（確認を出す側）
+        screen.closeWithoutDraft()
+        XCTAssertEqual(journals().count, 2, "書きかけがあるのに控えを消した")
+
+        // 写しから外れない形で空になった画面（片づけの漏れの受け皿）
+        screen.items = []
+        XCTAssertFalse(screen.hasDraft)
+        screen.closeWithoutDraft()
+        XCTAssertEqual(journals().map { $0.draft.items.map(\.title) }, [["ほかの控え"]],
+                       "空にして閉じた画面の控えが残った・ほかの画面の控えを消した")
+        XCTAssertEqual(saved().draft(for: "a")?.items.map(\.title), ["本人の下書き"], "本人の下書きを消した")
+
+        // 自動の書きかけ
+        let writing = model(owner: "a")
+        writing.items = [photo(3, title: "書きかけ")]
+        await writing.autoSaveDraft()
+        XCTAssertNotNil(auto().draft(for: "a"))
+        writing.items = []
+        writing.closeWithoutDraft()
+        XCTAssertNil(auto().draft(for: "a"), "空にして閉じたのに自動の書きかけが残った（次に開くと外した写真が戻る）")
+    }
+
+    /// 投稿の × の配線: 確かめずに閉じる道で片づける
+    func testUploadCloseWithoutDraftIsWired() async throws {
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        let cancel = try XCTUnwrap(upload.range(of: "if model.hasDraft {"))
+        XCTAssertTrue(upload[cancel.upperBound...].prefix(300).contains("model.closeWithoutDraft()"),
+                      "× で確かめずに閉じる道が自動の書きかけ・控えを片づけない")
+    }
+
+    /// ストーリー: 変更なし（`.now`）で閉じる道でも自動の書きかけを消す。2つの ✕ が同じ道を通る
+    func testStoryCloseWithoutChangesClearsAutoDraft() async throws {
+        XCTAssertEqual(StorySimpleRules.close(.now), .closeClearingAutoDraft,
+                       "写真を全部外して閉じても自動の書きかけを消さない（次に開くと外した写真が戻る）")
+        XCTAssertEqual(StorySimpleRules.close(.confirm), .confirm)
+        XCTAssertEqual(StorySimpleRules.close(.wait), .stay)
+
+        let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertEqual(story.components(separatedBy: "switch StorySimpleRules.close(leave) {").count - 1, 2,
+                       "✕ のどれかが閉じ方の決まりを通っていない")
+        XCTAssertEqual(story.components(separatedBy: "case .closeClearingAutoDraft: closeWithoutChanges()").count - 1, 2)
+        // 関数の中身（次の「\n    }」まで）だけを見る
+        let start = try XCTUnwrap(story.range(of: "private func closeWithoutChanges() {"))
+        let end = try XCTUnwrap(story.range(of: "\n    }", range: start.upperBound..<story.endIndex))
+        XCTAssertTrue(story[start.upperBound..<end.lowerBound].contains("clearAutoDraft()"),
+                      "変更なしで閉じる道が自動の書きかけを消さない")
     }
 }

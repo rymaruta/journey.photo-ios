@@ -600,12 +600,10 @@ struct StoryComposerView: View {
                     .accessibilityAddTraits(.isHeader)
                 HStack {
                     Button {
-                        switch leave {
-                        case .now:
-                            stopWaitingToPost()
-                            dismiss()
+                        switch StorySimpleRules.close(leave) {
+                        case .closeClearingAutoDraft: closeWithoutChanges()
                         case .confirm: showLeaveConfirm = true
-                        case .wait: break
+                        case .stay: break
                         }
                     } label: {
                         Image(systemName: "xmark")
@@ -946,12 +944,10 @@ struct StoryComposerView: View {
             // **閉じる。** この段は写真がある間だけ出るので、前の ✕ と同じ確認（下書きに保存しますか）を通す。
             // 写真を全部外すと、ここを押さなくても写真を選ぶ段へ戻る
             Button {
-                switch leave {
-                case .now:
-                    stopWaitingToPost()
-                    dismiss()
+                switch StorySimpleRules.close(leave) {
+                case .closeClearingAutoDraft: closeWithoutChanges()
                 case .confirm: showLeaveConfirm = true
-                case .wait: break
+                case .stay: break
                 }
             } label: {
                 // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
@@ -1595,6 +1591,14 @@ struct StoryComposerView: View {
         case .clear: clearAutoDraft()
         case .skip: break
         }
+    }
+
+    /// ✕ で変更なしに閉じる（`StorySimpleRules.close` の注記）。外した写真が次に「書きかけ」で戻らないよう、
+    /// 自動の書きかけも消す
+    private func closeWithoutChanges() {
+        stopWaitingToPost()
+        clearAutoDraft()
+        dismiss()
     }
 
     /// 自動の書きかけを消す。**この画面が触ってよいときだけ**（`autoSlotOwned`）
