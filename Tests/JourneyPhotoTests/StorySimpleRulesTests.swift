@@ -136,15 +136,24 @@ final class StorySimpleRulesTests: XCTestCase {
 
     // MARK: - 色の丸
 
-    func testFourInksWithoutBackdrop() {
+    /// 板 v2 の5色（白・黒・真鍮・空色・珊瑚）。珊瑚は「ほかの色」の奥から前へ（2026-10-16）
+    func testFiveInksWithoutBackdrop() {
         let overlay = TextOverlay(text: "旅", style: .light)
-        XCTAssertEqual(StorySimpleRules.inks(for: overlay), [.white, .ink, .brass, .sky])
+        XCTAssertEqual(StorySimpleRules.inks(for: overlay), [.white, .ink, .brass, .sky, .coral])
+        XCTAssertEqual(StorySimpleRules.quickInks.map(\.hex), [0xFFFFFF, 0x07090A, 0xC9A66B, 0x9CC3E6, 0xFF8A80])
+    }
+
+    /// 珊瑚を選んでも背景は変えない（白の見た目のまま・帯を前提に縛らない）
+    func testChoosingCoralKeepsLight() {
+        let overlay = StorySimpleRules.choose(.coral, for: TextOverlay(text: "旅", style: .light))
+        XCTAssertEqual(overlay.style, .light)
+        XCTAssertTrue(StorySimpleRules.isSelected(.coral, in: overlay))
     }
 
     /// 帯・縁取りでは墨を出さない（読めない）
     func testNoInkOnBanner() {
         let overlay = TextOverlay(text: "旅", style: .banner)
-        XCTAssertEqual(StorySimpleRules.inks(for: overlay), [.white, .brass, .sky])
+        XCTAssertEqual(StorySimpleRules.inks(for: overlay), [.white, .brass, .sky, .coral])
     }
 
     /// 背景無しで墨を選ぶと黒の見た目（白い縁）、白に戻すと白の見た目。好きな色は外す

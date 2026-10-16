@@ -85,6 +85,11 @@ struct StoryComposerView: View {
     @State private var photoIgnoresKeyboard = false
     /// 打っている札が**付けた曲の札**だったか（打ち始めの時点）。空にして閉じたら曲も外す
     @State private var typingSongSticker = false
+    /// 打ち始める前の札（「キャンセル」で戻す先）。**nil は打つ画面を開くときに新しく足した札**
+    /// （キャンセルで消す）。`StoryTextEditing.cancel`
+    @State private var typingOriginal: TextOverlay?
+    /// 置いた直後の案内「指で動かす · 2本指で回す」（板 v2・端末に1回だけ）
+    @State private var showPlaceHint = false
     /// 札を指で動かしている最中（周りの道具を隠し、下のゴミ箱を見せる）
     @State private var draggingOverlay = false
     /// 投票の札を選んでいる（下に投票の欄を出す）
@@ -221,7 +226,8 @@ struct StoryComposerView: View {
                                         photo: TextOverlay.filledRect(
                                             image: shots.first { $0.id == typingShotId }?.imageSize ?? typingCanvas,
                                             in: typingCanvas),
-                                        onDelete: { deleteTyping() }) { finishTyping() }
+                                        onDelete: { deleteTyping() },
+                                        onCancel: { cancelTyping() }) { finishTyping() }
                 }
             }
         }
@@ -404,7 +410,11 @@ struct StoryComposerView: View {
                             onTapPhoto: { voteSelected = false },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
                             onDelete: { id in deleteOverlay(id) },
-                            onDraggingChange: { draggingOverlay = $0 },
+                            onDraggingChange: { dragging in
+                                draggingOverlay = dragging
+                                // 動かし始めたら案内は役目を終えた
+                                if dragging { showPlaceHint = false }
+                            },
                             vote: vote,
                             voteSelected: voteSelected,
                             onTapVote: { voteSelected = true },
@@ -428,6 +438,11 @@ struct StoryComposerView: View {
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 170)
                 .allowsHitTesting(false)
+        }
+        .overlay(alignment: .center) {
+            if showPlaceHint && typingId == nil && !draggingOverlay {
+                placeHint
+            }
         }
         .overlay(alignment: .bottomLeading) {
             if typingId == nil && !votePanelOpen && preview != nil {
@@ -992,6 +1007,25 @@ struct StoryComposerView: View {
 
     // MARK: - 文字と札
 
+    /// 置いた直後の案内（板 v2 `StoryComposerText`「指で動かす · 2本指で回す」・12pt 以上）。
+    /// 写真の上なので白い字に黒の地。字は `.footnote`（13pt・Dynamic Type に付いてくる）。
+    /// **押せば消える**。札を動かし始めたときも隠す
+    private var placeHint: some View {
+        Button { showPlaceHint = false } label: {
+            Text(StoryTextEditing.placeHint)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.6), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("押すと消えます", "Tap to dismiss"))
+        .accessibilityIdentifier("story.placeHint")
+        .padding(.top, 120)
+    }
+
     /// 新しい文字を足して、**すぐ打つ画面を開く**。上限なら断りを出す
     private func startNewText() {
         guard shots.indices.contains(current) else { return }
@@ -1001,7 +1035,7 @@ struct StoryComposerView: View {
             return
         }
         overlays.wrappedValue.append(overlay)
-        startTyping(overlay.id)
+        startTyping(overlay.id, isNew: true)
     }
 
     /// 打つ画面のゴミ箱。**空にして、打ち終えたときと同じ片付けを通す**（`finishTyping` が空の札を
@@ -1012,8 +1046,21 @@ struct StoryComposerView: View {
         finishTyping()
     }
 
-    /// いま表示中の写真の札を打ち始める。**打つ先の写真を覚える**
-    private func startTyping(_ id: UUID) {
+    /// 打つ画面の「キャンセル」。**打ち始める前に戻してから、打ち終えたときと同じ片付けを通す**
+    /// （新しく足した札は取り除く・直していた札は直す前の札に戻す。`StoryTextEditing.cancel`）
+    private func cancelTyping() {
+        guard let id = typingId, let shotId = typingShotId,
+              let i = shots.firstIndex(where: { $0.id == shotId }) else {
+            finishTyping()
+            return
+        }
+        shots[i].overlays = StoryTextEditing.cancel(shots[i].overlays, id: id, original: typingOriginal)
+        finishTyping(showsHint: false)
+    }
+
+    /// いま表示中の写真の札を打ち始める。**打つ先の写真を覚える**。
+    /// `isNew` はこの画面を開くために足したばかりの札（キャンセルで消す）
+    private func startTyping(_ id: UUID, isNew: Bool = false) {
         guard shots.indices.contains(current) else { return }
         // 別の札を打っている最中に呼ばれたら（VoiceOver など）、前の札を先に確定する
         if typingId != nil { finishTyping() }
@@ -1023,17 +1070,25 @@ struct StoryComposerView: View {
         typingCanvas = canvasSize
         typingShotId = shots[current].id
         typingSongSticker = overlays.wrappedValue.first { $0.id == id }.map { SongSticker.isSticker($0, of: song) } ?? false
+        typingOriginal = isNew ? nil : overlays.wrappedValue.first { $0.id == id }
+        showPlaceHint = false
         photoIgnoresKeyboard = true
         typingId = id
     }
 
     /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）。
-    /// 片付ける先は**打ち始めた写真**（表示中の写真ではない）
-    private func finishTyping() {
+    /// 片付ける先は**打ち始めた写真**（表示中の写真ではない）。
+    /// 札が残った（置いた）ら、端末で1回だけ「指で動かす · 2本指で回す」を出す（キャンセルでは出さない）
+    private func finishTyping(showsHint: Bool = true) {
         if let id = typingId, let shotId = typingShotId,
            let i = shots.firstIndex(where: { $0.id == shotId }) {
             let before = shots[i].overlays.first { $0.id == id }
             shots[i].overlays = StoryTextEditing.finish(shots[i].overlays, id: id)
+            let placed = shots[i].overlays.contains { $0.id == id }
+            if showsHint, StoryTextEditing.shouldShowPlaceHint(placed: placed) {
+                StoryTextEditing.markPlaceHintShown()
+                showPlaceHint = true
+            }
             // 曲の札を空にして閉じた＝札を消した（ゴミ箱と同じ扱い）
             let removed = shots[i].overlays.contains { $0.id == id } ? nil : before
             if typingSongSticker, removed != nil,
@@ -1044,6 +1099,7 @@ struct StoryComposerView: View {
         typingId = nil
         typingShotId = nil
         typingSongSticker = false
+        typingOriginal = nil
     }
 
     /// 打っている札への窓。**打ち始めた写真の中を id で引く**（表示中の写真が移っても同じ札）
@@ -1143,7 +1199,7 @@ struct StoryComposerView: View {
             let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: 0.6, kind: kind, face: .gothic)
             overlays.wrappedValue.append(overlay)
             voteSelected = false
-            if kind.isEditable { startTyping(overlay.id) }
+            if kind.isEditable { startTyping(overlay.id, isNew: true) }
         }
     }
 

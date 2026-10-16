@@ -9,9 +9,13 @@ import SwiftUI
 ///    （大きさは焼き込みと同じ式・`StoryTextEditing.typingFontSize`）
 ///  - **キーボードの上は1列だけ**（かんたん版・owner 2026-10-02「めっちゃいい」）:
 ///    「Aa 明朝」の書体ボタン（押すたびに次の書体）・背景ボタン（無し → 帯 → 縁取り）・
-///    色の丸4つ（「ほかの色」で12色と好きな色の列に替わる）・消す（ゴミ箱・危険の赤）。
-///    回し方と色の寄せ方は `StorySimpleRules`
-///  - 大きさは左の縦のつまみ。揃えは左上のボタンを押すたびに次へ。右上は白い「完了」
+///    色の丸5つ（板 v2: 白・黒・真鍮・空色・珊瑚。「ほかの色」で12色と好きな色の列に替わる）・
+///    消す（ゴミ箱・危険の赤）。回し方と色の寄せ方は `StorySimpleRules`
+///  - 上の段は板 v2 `StoryComposerText` どおり「キャンセル／文字と札／完了」の3つ（2026-10-16）。
+///    キャンセルは打ち始める前に戻す（呼ぶ側が `StoryTextEditing.cancel` を通す）
+///  - 揃えのボタンは板 v2 に無い。2026-10-16 判断: 消さずに今の場所（上の段の左）に残し、
+///    「キャンセル」の右に置く。押すたびに次へ
+///  - 大きさは**右の縦のつまみ**（板 v2: 上に「大」・下に「小」）
 ///  - 「完了」か、文字の外を押すと確定。**空なら置かない**（呼ぶ側が `StoryTextEditing.finish` を通す）
 ///
 /// 写真の上に置くのは白だけ（デザインシステム「黒塗りの真鍮」: 写真の上に真鍮を置かない）。
@@ -28,10 +32,13 @@ struct StoryTextTypingView: View {
     let photo: CGRect
     /// ゴミ箱。**打っている札を消す**（呼ぶ側が空にして `onDone` と同じ片付けを通す）
     var onDelete: () -> Void
+    /// 「キャンセル」。**打ち始める前に戻す**（新しく足した札なら消す・直していた札は直す前に戻す。
+    /// 戻すのは呼ぶ側・`StoryTextEditing.cancel`）
+    var onCancel: () -> Void
     var onDone: () -> Void
 
     @FocusState private var focused: Bool
-    /// 色の丸4つの代わりに、12色と好きな色の列（`OverlayInkRow`）を出している
+    /// 色の丸5つの代わりに、12色と好きな色の列（`OverlayInkRow`）を出している
     @State private var showAllInks = false
 
     var body: some View {
@@ -68,7 +75,7 @@ struct StoryTextTypingView: View {
                                                height: max(0, area.size.height - 24 - (noticeShown ? Self.noticeHeight : 0)))
                         let space = CGSize(width: area.size.width,
                                            height: max(0, area.size.height - (noticeShown ? Self.noticeHeight : 0)))
-                        // 寄せる枠は**左の縦のつまみの内側**（左に寄せた行頭がつまみの下に潜らない）
+                        // 寄せる枠は**右の縦のつまみの内側**（右に寄せた行末がつまみの下に潜らない）
                         let pinArea = CGSize(width: max(0, space.width - Self.sideInset * 2), height: space.height)
                         let lastLine = TextOverlayRenderer.naturalSize(overlay, text: StoryTextEditing.lastLine(overlay),
                                                                        fontSize: fontSize).width
@@ -123,9 +130,10 @@ struct StoryTextTypingView: View {
                 }
 
                 if overlay.kind.hasTypography {
+                    // 板 v2: 右に縦のつまみ（右端から 22 の所）
                     sizeSlider
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 12)
                 }
             }
         }
@@ -139,7 +147,7 @@ struct StoryTextTypingView: View {
         .accessibilityAction(.escape) { onDone() }
     }
 
-    /// 左の縦のつまみと重ねない左右の逃げ
+    /// 右の縦のつまみと重ねない左右の逃げ（真ん中に置くので左右とも同じだけ）
     static let sideInset: Double = 56
     /// 断り書きの帯の高さ（字の下端に重ねないよう、その分だけ上に寄せる）
     static let noticeHeight: Double = 28
@@ -180,29 +188,46 @@ struct StoryTextTypingView: View {
 
     // MARK: - 上のバー
 
+    /// 板 v2 `StoryComposerText` の上の段: 左「キャンセル」・真ん中「文字と札」・右「完了」（どれも 17pt）。
+    /// 写真の上なので字は白（板「黒塗りの真鍮」: 写真の上に真鍮を置かない）
     private var topBar: some View {
-        HStack(spacing: 4) {
-            // 揃え（改行できる自由な文字だけ）。押すたびに 中央 → 左 → 右
-            if overlay.kind.allowsNewlines {
-                roundButton(symbol: overlay.align.symbol, label: overlay.align.label) {
-                    overlay = StoryTextEditing.nextAlign(overlay)
+        ZStack {
+            Text(L("文字と札", "Text & stickers"))
+                .font(.system(size: Self.barFontSize, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 0) {
+                barButton(L("キャンセル", "Cancel"), weight: .regular, action: onCancel)
+                    .accessibilityIdentifier("story.typing.cancel")
+                // 揃え（改行できる自由な文字だけ）。押すたびに 中央 → 左 → 右。
+                // 板 v2 に無いので、今の場所（左上）のまま「キャンセル」の右に残す（2026-10-16 判断）
+                if overlay.kind.allowsNewlines {
+                    roundButton(symbol: overlay.align.symbol, label: overlay.align.label) {
+                        overlay = StoryTextEditing.nextAlign(overlay)
+                    }
                 }
+                Spacer(minLength: 0)
+                barButton(L("完了", "Done"), weight: .bold, action: onDone)
+                    .accessibilityIdentifier("story.typing.done")
             }
-            Spacer()
-            // 白い「完了」（写真の上なので白・板「黒塗りの真鍮」）
-            Button(action: onDone) {
-                Text(L("完了", "Done"))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(WebTheme.accentText)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 36)
-                    .background(WebTheme.accentBackground, in: Capsule())
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("story.typing.done")
         }
+    }
+
+    /// 上の段の字のボタン（板 v2: 17pt・左右 8・高さ 44）
+    static let barFontSize: CGFloat = 17
+
+    private func barButton(_ title: String, weight: Font.Weight, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: Self.barFontSize, weight: weight))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func roundButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
@@ -322,7 +347,7 @@ struct StoryTextTypingView: View {
                 backdropButton
             }
             if showAllInks {
-                // 12色と好きな色（前の色の列そのまま）。左の「‹」で4つの丸へ戻る
+                // 12色と好きな色（前の色の列そのまま）。左の「‹」で5つの丸へ戻る
                 Button { showAllInks = false } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
@@ -331,7 +356,7 @@ struct StoryTextTypingView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("色の丸4つに戻る", "Back to four colors"))
+                .accessibilityLabel(L("色の丸5つに戻る", "Back to five colors"))
                 OverlayInkRow(overlay: $overlay)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -419,7 +444,7 @@ struct StoryTextTypingView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「ほかの色」（12色と好きな色の列へ）。4つ以外を選んでいるときは輪で知らせる
+    /// 「ほかの色」（12色と好きな色の列へ）。5つ以外を選んでいるときは輪で知らせる
     private var moreInksButton: some View {
         let other = !StorySimpleRules.inks(for: overlay).contains { StorySimpleRules.isSelected($0, in: overlay) }
         return Button { showAllInks = true } label: {
@@ -454,18 +479,34 @@ struct StoryTextTypingView: View {
         .accessibilityLabel(L("この文字を消す", "Delete this text"))
     }
 
-    // MARK: - 大きさ（左の縦のつまみ）
+    // MARK: - 大きさ（右の縦のつまみ・板 v2）
+
+    /// 板 v2: 縦 200 のつまみの上に「大」、下に「小」（12pt）
+    static let sliderLength: CGFloat = 200
 
     private var sizeSlider: some View {
-        // 横のつまみを回して縦に使う（長さを決めてから回し、回したあとの枠で並べる）
-        Slider(value: Binding(
-            get: { overlay.size },
-            set: { overlay.size = TextOverlay.clampSize($0) }
-        ), in: TextOverlay.minSize...TextOverlay.maxSize)
-        .tint(.white)
-        .frame(width: 220)
-        .rotationEffect(.degrees(-90))
-        .frame(width: WebTheme.minTapTarget, height: 220)
-        .accessibilityLabel(L("文字の大きさ", "Text size"))
+        VStack(spacing: 6) {
+            sizeMark(L("大", "L"))
+            // 横のつまみを回して縦に使う（長さを決めてから回し、回したあとの枠で並べる）。
+            // -90° 回すので右端（大きい方）が上に来る
+            Slider(value: Binding(
+                get: { overlay.size },
+                set: { overlay.size = TextOverlay.clampSize($0) }
+            ), in: TextOverlay.minSize...TextOverlay.maxSize)
+            .tint(.white)
+            .frame(width: Self.sliderLength)
+            .rotationEffect(.degrees(-90))
+            .frame(width: WebTheme.minTapTarget, height: Self.sliderLength)
+            .accessibilityLabel(L("文字の大きさ", "Text size"))
+            sizeMark(L("小", "S"))
+        }
+    }
+
+    private func sizeMark(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.5), radius: 2)
+            .accessibilityHidden(true)
     }
 }
