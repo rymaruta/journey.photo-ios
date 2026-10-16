@@ -28,7 +28,11 @@ struct StoriesRow: View {
     @State private var showUploadFailure = false
 
     var body: some View {
-        Group {
+        // 🔴 **入れ物は中身が空にならない形にする**（2026-10-16 判断）。前は `Group` の中を `if` だけにして
+        // いたので、読み込み中（輪の列を出さない間）は中身が無く、`Group` に付けた `.task` が一度も走らな
+        // かった。読み込まない → `settled` が立たない → 輪の列がいつまでも出ない（1.1.5 でホームの
+        // ストーリーが消えた）。出さない間も高さ 0 の見えない1枚を置き、`.task` を必ず走らせる
+        VStack(spacing: 0) {
             // **読み込み中は輪の列を出さない**（板 Main の `showRings: !loading`）。ただし既に持っている
             // 輪・送っている輪があれば出したまま（読み直しのたびに列を消すとちらつく・`showsRings`）
             if auth.userId != nil,
@@ -74,6 +78,8 @@ struct StoriesRow: View {
                     .padding(.top, 2)
                     .padding(.bottom, 8)
                 }
+            } else {
+                Self.loadingAnchor
             }
         }
         // 🔴 **閲覧画面を開いている間は読み直さない**（下の `hidden.revision` と同じ理由）。
@@ -316,6 +322,11 @@ struct StoriesRow: View {
     /// 既に輪を持っている（読み直し中）・送っている輪があるなら出したまま（ちらつかせない）
     nonisolated static func showsRings(settled: Bool, hasRings: Bool, uploading: Bool) -> Bool {
         settled || hasRings || uploading
+    }
+
+    /// 輪の列を出さない間に置く、高さ 0 の見えない1枚。**これが無いと入れ物が空になり、`.task` が走らない**
+    static var loadingAnchor: some View {
+        Color.clear.frame(height: 0).accessibilityHidden(true)
     }
 
     /// 人の輪の読み上げ（板 v2 StoryRings の「haru_t のストーリー 3本（まだ見ていない）」）

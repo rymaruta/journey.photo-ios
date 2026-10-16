@@ -234,4 +234,18 @@ final class StoryV2RingsFixTests: XCTestCase {
         let load = slice(row, from: "func load(environment:", to: "let fetched = try? await")
         XCTAssertTrue(load.contains("defer { settled = true }"))
     }
+
+    /// 🔴 1.1.5: 読み込み中は入れ物（`Group`）の中身が空で `.task` が走らず、ホームの輪の列がいつまでも
+    /// 出なかった。**出さない間も中身を置き、`.task` はその入れ物に付いている**
+    func testRowLoadsEvenWhileRingsAreHidden() throws {
+        let row = try source("Features/Stories/StoriesRow.swift")
+        let body = slice(row, from: "var body: some View {", to: ".fullScreenCover(item: $opened")
+        XCTAssertFalse(body.contains("        Group {\n"), "中身が空になりうる Group に .task を付けている")
+        assertInOrder(["VStack(spacing: 0) {",
+                       "Self.showsRings(settled: model.settled",
+                       "} else {", "Self.loadingAnchor",
+                       ".task(id: \"\\(auth.userId ?? \"-\")#\\(reloadToken)\")"],
+                      in: body, "読み込み中も .task が走る形")
+        XCTAssertTrue(row.contains("Color.clear.frame(height: 0).accessibilityHidden(true)"))
+    }
 }
