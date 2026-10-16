@@ -483,7 +483,7 @@ struct RootView: View {
             // 端末の写真の一冊の「この旅の写真を投稿する」（2026-10-16）。ほかの投稿の画面が出ていたら開かない
             .onChange(of: tabRouter.tripImportRequests) { _, _ in
                 let trip = tabRouter.takePendingImportTrip()
-                guard !showTripImport, !showPhotoUpload, !showStoryComposer, !showPostChoice else { return }
+                guard PostRequestGate.opens(busy: postScreensShown) else { return }
                 importTrip = trip
                 pendingTripPhotos = []
                 showTripImport = true
@@ -541,16 +541,20 @@ struct RootView: View {
                 CameraPicker { capture in pendingCapture = capture }
                     .ignoresSafeArea()
             }
-            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**。
-            // ⚠️ 投稿の画面を足したら、この並びと、端末の旅の一冊（PR #260 の `tripImportRequests` の onChange）の
-            // 確かめにも足す。#260 を取り込むときは、あちらも `PostRequestGate.opens(busy:)` にそろえる
-            // （今のあちらの確かめには「カメラで撮る」の `showPostCamera` が入っていない）
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
+            // （端末の旅の一冊の「この旅の写真を投稿する」と同じ `postScreensShown` を見る）
             .onChange(of: tabRouter.postRequests) { _, _ in
                 guard let kind = tabRouter.takePendingPost(),
-                      PostRequestGate.opens(busy: [showTripImport, showPhotoUpload, showStoryComposer,
-                                                   showPostChoice, showPostCamera]) else { return }
+                      PostRequestGate.opens(busy: postScreensShown) else { return }
                 choosePost(kind)
             }
+    }
+
+    /// **投稿の画面が出ているか**の旗の並び。空の画面の一手と端末の旅の一冊は、どれか1つでも出ていたら
+    /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
+    /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
+    private var postScreensShown: [Bool] {
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
     }
 
     /// 投稿の選択シートが閉じきってから、次の画面を開く。

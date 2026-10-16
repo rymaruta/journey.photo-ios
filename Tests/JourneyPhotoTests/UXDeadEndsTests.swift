@@ -168,12 +168,16 @@ final class UXDeadEndsTests: XCTestCase {
     /// （1つ抜けると、その画面の上に別の投稿の画面が重なる）
     func testPostRequestGateCoversEveryPostScreen() async throws {
         let root = try source("App/RootView.swift")
-        let gate = slice(root, from: "PostRequestGate.opens(busy: [", to: "]) else { return }")
+        let gate = slice(root, from: "private var postScreensShown: [Bool] {", to: "]\n    }")
         let flags = ["showTripImport", "showPhotoUpload", "showStoryComposer", "showPostChoice", "showPostCamera"]
         for flag in flags {
             XCTAssertTrue(root.contains("@State private var \(flag) = false"), "\(flag) が RootView に無い")
             XCTAssertTrue(gate.contains(flag), "\(flag) が出ている間も空の画面の一手が投稿の画面を開く")
         }
+        // 空の画面の一手と、端末の旅の一冊の「この旅の写真を投稿する」が、同じ並びを見る（別々に書くと抜ける）
+        XCTAssertEqual(root.components(separatedBy: "PostRequestGate.opens(busy: postScreensShown)").count - 1, 2,
+                       "投稿の画面を開く入口が、まとめた並びとは別の確かめをしている")
+        XCTAssertFalse(root.contains("guard !showTripImport, !showPhotoUpload"), "手書きの確かめが残っている")
     }
 
     /// 設定から来たすれちがい帳では、「すれちがいの設定」で設定を積み直さず戻る
