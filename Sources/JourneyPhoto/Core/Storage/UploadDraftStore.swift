@@ -46,6 +46,9 @@ final class UploadDraftStore {
         /// 届いたか分からないまま閉じた写真は立ったまま残り、**開き直しても戻さない**（2026-10-11 判断・
         /// `UploadDraftStore.restorable`）——戻すと、届いていた写真がもう一度投稿される
         var inFlight: Bool? = nil
+        /// 自動の枠だけ: **本人の下書きの中の同じ1枚の印**（`key`・2026-10-16）。本人の下書きを開いて送る途中で
+        /// 終了 →「続きから」で送ったとき、上がった写真を本人の下書きからも外す（残すと次にまた投稿される）
+        var savedKey: String? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -79,6 +82,9 @@ final class UploadDraftStore {
         /// 書いて立てる。全部上がれば1枚ずつ外れて下書きごと消える。**残っていたら送っている途中で
         /// アプリが終了した**——次の起動で知らせる（`UploadDraftRules.interruptedNotice`）
         var sending: Bool? = nil
+        /// 束の印（「1つの投稿にまとめる」の `groupId`・2026-10-16）。途中まで送った束を続きから送るとき、
+        /// 同じ束に入れる（新しい印にすると投稿が2つに割れる）。前の版の下書きには無い（nil）
+        var groupId: String? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -199,9 +205,9 @@ final class UploadDraftStore {
     @discardableResult
     func save(_ inputs: [ItemInput], fields: Draft, for userId: String) -> Bool {
         guard let key = storageKey(userId), !inputs.isEmpty else { return false }
+        saveGeneration += 1
         let token = makeToken()
         let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
-        let previous = files(atKey: key)
         var written: [String] = []
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -213,6 +219,49 @@ final class UploadDraftStore {
             for name in written { try? FileManager.default.removeItem(at: fileURL(name)) }
             return false
         }
+        return commit(inputs, names: names, fields: fields, key: key)
+    }
+
+    /// 保存の回（`save`・`saveInBackground`・`clear` で進む）。**後から始まった回が勝つ**——
+    /// 先に始まった裏の書き込みが遅れて終わっても、新しい記録を古い中身で上書きしない
+    private var saveGeneration = 0
+
+    /// 画像を書く口（**主スレッドの外で書く**・試験で遅らせて順番を作る）
+    var writeFiles: @Sendable ([(Data, URL)]) async throws -> Void = { pairs in
+        try await Task.detached(priority: .userInitiated) {
+            for (data, url) in pairs { try data.write(to: url, options: .atomic) }
+        }.value
+    }
+
+    /// `save` と同じことを、**画像の書き込みを主スレッドの外で**する（2026-10-16 判断）。
+    /// 送信の控え（最大10枚）と裏に回ったときの自動の書きかけで使う——主スレッドで数十MB書くと、
+    /// 「投稿する」を押した直後や裏に回る瞬間に画面が固まる。
+    /// 書いている間に新しい保存・`clear` が始まったら、この回の記録は書かない（書いた画像も消す）
+    func saveInBackground(_ inputs: [ItemInput], fields: Draft, for userId: String) async -> Bool {
+        guard let key = storageKey(userId), !inputs.isEmpty else { return false }
+        saveGeneration += 1
+        let mine = saveGeneration
+        let token = makeToken()
+        let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
+        let urls = names.map { fileURL($0) }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try await writeFiles(Array(zip(inputs.map(\.imageData), urls)))
+        } catch {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        guard mine == saveGeneration else {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        return commit(inputs, names: names, fields: fields, key: key)
+    }
+
+    /// 画像を書き終えた後に記録を差し替え、前の画像を消す（**前の画像は差し替える時点で読む**）
+    private func commit(_ inputs: [ItemInput], names: [String], fields: Draft, key: String) -> Bool {
+        let previous = files(atKey: key)
+        let written = names
         var saved = fields
         saved.items = zip(inputs, names).map { input, name in
             var item = input.item
@@ -276,6 +325,8 @@ final class UploadDraftStore {
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**
     func clear(for userId: String) {
         guard let key = storageKey(userId) else { return }
+        // 書いている途中の裏の保存（`saveInBackground`）が、消した後に記録を書き戻さないように
+        saveGeneration += 1
         for name in files(atKey: key) { try? FileManager.default.removeItem(at: fileURL(name)) }
         defaults.removeObject(forKey: key)
     }

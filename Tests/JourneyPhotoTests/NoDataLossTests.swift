@@ -161,13 +161,13 @@ final class NoDataLossTests: XCTestCase {
         XCTAssertTrue(earlier.saveDraft())
 
         let empty = model(owner: "a")
-        empty.autoSaveDraft()
+        await empty.autoSaveDraft()
         XCTAssertNil(auto().draft(for: "a"), "写真が無いのに書いた")
 
         let writing = model(owner: "a")
         writing.items = [photo(1, title: "書きかけ")]
         writing.tagsText = "雲海"
-        writing.autoSaveDraft()
+        await writing.autoSaveDraft()
         XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["書きかけ"], "裏に回っても残らない")
         XCTAssertNil(auto().draft(for: "a")?.sending, "自動の書きかけを送信の控えにした（起動で知らせてしまう）")
         XCTAssertEqual(saved().draft(for: "a")?.items.map(\.title), ["前の下書き"], "本人の下書きを黙って上書きした")
@@ -188,14 +188,14 @@ final class NoDataLossTests: XCTestCase {
     func testAutoSaveClearsRemovedPhotos() async {
         let model = model(owner: "a")
         model.items = [photo(1, title: "x")]
-        model.autoSaveDraft()
+        await model.autoSaveDraft()
         XCTAssertNotNil(auto().draft(for: "a"))
         model.remove(model.items[0].id)
         XCTAssertNil(auto().draft(for: "a"), "外した写真が自動の枠に残った")
         model.items = [photo(2, title: "y")]
-        model.autoSaveDraft()
+        await model.autoSaveDraft()
         model.items = []
-        model.autoSaveDraft()
+        await model.autoSaveDraft()
         XCTAssertNil(auto().draft(for: "a"), "写真が無いのに前の書きかけを残した")
     }
 
@@ -203,7 +203,7 @@ final class NoDataLossTests: XCTestCase {
     func testAutoSlotSurvivesSweepAndIsRemovedWithAccount() async {
         let model = model(owner: "a")
         model.items = [photo(1, title: "x")]
-        model.autoSaveDraft()
+        await model.autoSaveDraft()
         saved().sweepOrphans()
         XCTAssertNotNil(auto().draft(for: "a"), "起動の掃除が自動の書きかけの画像を消した")
         AccountLocalData.remove(userId: "a", username: nil, defaults: defaults, draftDirectory: directory,
@@ -246,16 +246,16 @@ final class NoDataLossTests: XCTestCase {
     /// 画面の配線: 裏に回ったら書く・開いたら「続きから」・閉じる/投稿で消す
     func testAutoSaveIsWired() async throws {
         let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
-        XCTAssertTrue(upload.contains("if phase == .background { model.autoSaveDraft() }"), "投稿: 裏に回っても書かない")
-        XCTAssertTrue(upload.contains("model.autoDrafts = UploadDraftStore(slot: .auto)"))
+        XCTAssertTrue(upload.contains("if phase == .background { Task { await model.autoSaveDraft() } }"), "投稿: 裏に回っても書かない")
+        XCTAssertTrue(upload.contains("model.autoDrafts = autoStore"))
         XCTAssertTrue(upload.contains("Button(L(\"続きから\", \"Continue\")) { restoreDraft(from: .auto) }"))
         XCTAssertTrue(upload.contains("model.discardAutoDraft()"), "投稿をやめても自動の書きかけが残る")
 
         let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(story.contains("if phase == .background { autoSaveDraft() }"), "ストーリー: 裏に回っても書かない")
+        XCTAssertTrue(story.contains("if phase == .background { Task { await autoSaveDraft() } }"), "ストーリー: 裏に回っても書かない")
         XCTAssertTrue(story.contains("@StateObject private var autoDrafts = StoryDraftStore(slot: .auto)"))
         XCTAssertTrue(story.contains("Button(L(\"続きから\", \"Continue\")) { restoreDraft(from: autoDrafts) }"))
-        XCTAssertGreaterThanOrEqual(story.components(separatedBy: "autoDrafts.clear()").count - 1, 4,
+        XCTAssertGreaterThanOrEqual(story.components(separatedBy: "clearAutoDraft()").count - 1, 5,
                                     "保存・投稿・保存せずに閉じる・削除のどれかで自動の書きかけを消していない")
     }
 
@@ -380,5 +380,201 @@ final class NoDataLossTests: XCTestCase {
         let view = try source("Sources/JourneyPhoto/Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(view.contains("PassRadio.showsPowerOffNotice(enabled: pass.settings.enabled, state: radio.powerState)"))
         XCTAssertTrue(view.contains("Bluetooth がオフです"))
+    }
+
+    // MARK: - 読み直しの指摘（2026-10-16）
+
+    /// 🔴 [1] ストーリー: 自動の書きかけを尋ねた回は、本人の下書きの問いに答えていない。
+    /// その回の投稿・保存で本人の下書きを消さない・置き換えない（送れなかった問いの分岐と同じ）
+    func testStoryAutoAskKeepsTheUnansweredSavedDraft() async throws {
+        let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        let ask = try XCTUnwrap(story.range(of: "                showRestoreAuto = true\n"))
+        XCTAssertTrue(story[ask.upperBound...].prefix(300)
+                        .contains("if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }"),
+                      "自動の書きかけを尋ねた回に投稿すると、無関係な本人の下書きが消える")
+    }
+
+    /// 🔴 [2] **本人の下書きを開いて送る途中で終わり →「続きから」で送ったら、本人の下書きからも外れる**。
+    /// 残ると、次に本人の下書きを開いて送ったとき同じ写真がもう一度投稿された
+    func testResumedPhotoLeavesTheSavedDraftToo() async {
+        let first = model(owner: "a")
+        first.items = [photo(1, title: "上がる"), photo(2, title: "続きから")]
+        XCTAssertTrue(first.saveDraft())
+
+        // 本人の下書きを開いて送る。1枚目は上がり、2枚目は届かない（終了したのと同じく控えに残る）
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let opened = model(owner: "a")
+        let restoredSaved = await opened.restoreDraft()
+        XCTAssertTrue(restoredSaved)
+        await opened.submit()
+        XCTAssertEqual(saved().draft(for: "a")?.items.map(\.title), ["続きから"], "前提")
+        XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["続きから"], "前提")
+
+        // 次の起動: 自動の枠の「続きから」で送る
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let resumed = model(owner: "a")
+        let restoredAuto = await resumed.restoreDraft(from: .auto)
+        XCTAssertTrue(restoredAuto)
+        await resumed.submit()
+        XCTAssertTrue(resumed.didPostAll, "前提: 上がった")
+        XCTAssertNil(saved().draft(for: "a"), "続きから送った写真が本人の下書きに残った（次にもう一度投稿される）")
+        XCTAssertNil(auto().draft(for: "a"))
+    }
+
+    /// [2] ストーリー: 自動の書きかけは開いていた本人の下書きの印を持ち、続きから戻すと同じ下書きの続きになる
+    func testStoryAutoDraftRemembersTheSavedDraftItContinues() async throws {
+        let autoStore = StoryDraftStore(defaults: defaults, directory: directory, slot: .auto)
+        autoStore.use(userId: "a")
+        let ok = await autoStore.saveInBackground(
+            shots: [StoryDraftStore.ShotInput(imageData: Data([1]), fileName: "a.jpg", contentType: "image/jpeg",
+                                              coords: nil, overlays: [])],
+            caption: "", location: "", song: nil, durationSec: 5, archive: false, allowReplies: true,
+            basedOn: "saved-1", savedAt: "2")
+        XCTAssertTrue(ok)
+        let again = StoryDraftStore(defaults: defaults, directory: directory, slot: .auto)
+        again.use(userId: "a")
+        XCTAssertEqual(again.draft?.basedOn, "saved-1", "開いていた本人の下書きの印が残らない")
+        XCTAssertTrue(StorySimpleRules.autoRestoreContinuesSaved(basedOn: "saved-1", savedStamp: "saved-1"))
+        XCTAssertFalse(StorySimpleRules.autoRestoreContinuesSaved(basedOn: "saved-1", savedStamp: "saved-2"),
+                       "別の下書き（後で保存し直したもの）まで片づける")
+        XCTAssertFalse(StorySimpleRules.autoRestoreContinuesSaved(basedOn: nil, savedStamp: "saved-1"))
+        let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(story.contains("basedOn: openedDraftStamp"), "自動の書きかけに開いていた下書きの印を書いていない")
+        XCTAssertTrue(story.contains("StorySimpleRules.autoRestoreContinuesSaved(basedOn: draft.basedOn"))
+    }
+
+    /// 🔴 [3] **人が替わったら、投稿したばかりの写真の控えも捨てる**（前の人の写真を次の人の一覧に重ねない）
+    func testSwitchingUserDropsThePostedLedger() async throws {
+        let ledger = PostedPhotos.Ledger()
+        let service = PublicGalleryService(url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                           snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+                                           posted: ledger)
+        ledger.note([try postedPhoto(#"{"id":"n1","src":"https://x/n1.jpg","published":true,"userId":"a"}"#)])
+        await service.setRestrictedLoader(nil)
+        XCTAssertTrue(ledger.photos().isEmpty, "人が替わっても前の人の投稿の控えが残った")
+    }
+
+    /// 🔴 [4] **尋ねていない自動の書きかけには触らない**。テーマ・スポット・旅の写真から開いた回は尋ねないので、
+    /// 自動の枠を渡さない（黙って上書き・削除しない）。開いたとき空だった・尋ねたときだけ触る
+    func testOpenActionAndAutoSlotOwnership() async throws {
+        typealias R = UploadDraftRules
+        let withContent = R.openAction(hasAutoDraft: true, hasSavedDraft: false, opensWithContent: true,
+                                       alreadyAsked: false, resumesAuto: false)
+        XCTAssertEqual(withContent, .none)
+        XCTAssertFalse(R.ownsAutoSlot(hasAutoDraft: true, action: withContent),
+                       "尋ねていない自動の書きかけを上書き・削除する")
+        XCTAssertTrue(R.ownsAutoSlot(hasAutoDraft: false, action: .none), "開いたとき空なら使ってよい")
+        XCTAssertEqual(R.openAction(hasAutoDraft: true, hasSavedDraft: true, opensWithContent: false,
+                                    alreadyAsked: false, resumesAuto: false), .askAuto)
+        XCTAssertTrue(R.ownsAutoSlot(hasAutoDraft: true, action: .askAuto))
+        XCTAssertEqual(R.openAction(hasAutoDraft: false, hasSavedDraft: true, opensWithContent: false,
+                                    alreadyAsked: false, resumesAuto: false), .askSaved)
+        XCTAssertEqual(R.openAction(hasAutoDraft: true, hasSavedDraft: true, opensWithContent: false,
+                                    alreadyAsked: true, resumesAuto: false), .none)
+        XCTAssertFalse(StorySimpleRules.ownsAutoSlot(hasAutoDraft: true, asked: false))
+        XCTAssertTrue(StorySimpleRules.ownsAutoSlot(hasAutoDraft: true, asked: true))
+        XCTAssertTrue(StorySimpleRules.ownsAutoSlot(hasAutoDraft: false, asked: false))
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("UploadDraftRules.ownsAutoSlot(hasAutoDraft: hasAuto, action: action)"))
+        let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(story.contains("guard autoSlotOwned else { return }"))
+    }
+
+    /// 🔴 [5] **「この写真を見て撮影」を付け終えたら、送信の控えからも外す**（続きから送ると別の写真に付き、
+    /// 作者に通知が2回届く）
+    func testInspiredLeavesTheJournalOnceAttached() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg","inspiredBy":"src-1"}}"#),
+        ]
+        let model = model(owner: "a")
+        model.items = [photo(1, title: "付く"), photo(2, title: "届かない")]
+        model.inspired = InspiredBy.Pick(id: "src-1", title: "夕焼け", thumbURL: nil, authorName: nil, location: nil)
+        await model.submit()
+        let left = auto().draft(for: "a")
+        XCTAssertEqual(left?.items.map(\.title), ["届かない"], "前提")
+        XCTAssertNil(left?.inspired, "付け終えた元の写真が控えに残った（続きから送ると通知が2回届く）")
+    }
+
+    /// 🔴 [6] **画像は主スレッドの外で書き、後から始まった保存が勝つ**。先に始まった裏の書き込みが遅れて
+    /// 終わっても新しい記録を上書きしない。書いている間に消したら書き戻さない
+    func testBackgroundSaveLaterWinsAndClearIsNotUndone() async throws {
+        let store = auto()
+        store.writeFiles = { pairs in
+            // 1 で始まる本体（先に始まる保存）だけ遅らせる
+            if pairs.first?.0.first == 1 { try await Task.sleep(nanoseconds: 200_000_000) }
+            for (data, url) in pairs { try data.write(to: url, options: .atomic) }
+        }
+        func input(_ byte: UInt8, _ title: String) -> [UploadDraftStore.ItemInput] {
+            [UploadDraftStore.ItemInput(imageData: Data(repeating: byte, count: 4), item: UploadDraftStore.Item(
+                imageFile: "", fileName: "a.jpg", contentType: "image/jpeg", title: title, caption: "",
+                location: "", locationClearedByUser: false))]
+        }
+        let fields = UploadDraftStore.Draft(items: [], tagsText: "", category: "", published: true,
+                                            audience: "everyone", groupsAsOnePost: false, savedAt: "")
+        let older = Task { await store.saveInBackground(input(1, "古い"), fields: fields, for: "a") }
+        await Task.yield()
+        let newer = Task { await store.saveInBackground(input(2, "新しい"), fields: fields, for: "a") }
+        _ = await (older.value, newer.value)
+        XCTAssertEqual(auto().draft(for: "a")?.items.map(\.title), ["新しい"], "遅れて終わった古い保存が上書きした")
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("upload-draft-") }
+        XCTAssertEqual(files.count, 1, "負けた保存の画像が残った")
+
+        let late = Task { await store.saveInBackground(input(1, "消した後"), fields: fields, for: "a") }
+        await Task.yield()
+        store.clear(for: "a")
+        _ = await late.value
+        XCTAssertNil(auto().draft(for: "a"), "消した後に裏の保存が書き戻した")
+
+        let model = try source("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
+        XCTAssertTrue(model.contains("await store.saveInBackground(draftInputs(keys: keys)"),
+                      "送信の控え・自動の書きかけを主スレッドで書いている")
+        XCTAssertTrue(model.contains("BackgroundWindow(name: \"upload-autosave\")"), "裏に回ったときの書き込みを守っていない")
+        let story = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(story.contains("await autoDrafts.saveInBackground("))
+        XCTAssertTrue(story.contains("BackgroundWindow(name: \"story-autosave\")"))
+    }
+
+    /// 🔴 [7] 起動のときの知らせで「続きから」を押して来たら、投稿の画面で尋ね直さずに戻す
+    func testResumeFromLaunchNoticeDoesNotAskAgain() async throws {
+        XCTAssertEqual(UploadDraftRules.openAction(hasAutoDraft: true, hasSavedDraft: true, opensWithContent: false,
+                                                   alreadyAsked: false, resumesAuto: true), .resumeAuto)
+        XCTAssertEqual(UploadDraftRules.openAction(hasAutoDraft: false, hasSavedDraft: true, opensWithContent: false,
+                                                   alreadyAsked: false, resumesAuto: true), .askSaved)
+        let root = try source("Sources/JourneyPhoto/App/RootView.swift")
+        XCTAssertTrue(root.contains("resumesAutoDraft: resumeInterruptedUpload"))
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("case .resumeAuto: restoreDraft(from: .auto)"))
+    }
+
+    /// 🔴 [8] **続きから送った写真は、途中まで送った束と同じ投稿に入る**（束の印を控えに持つ）
+    func testResumedPhotoKeepsTheGroup() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let first = model(owner: "a")
+        first.items = [photo(1, title: "上がる"), photo(2, title: "続きから")]
+        first.groupsAsOnePost = true
+        await first.submit()
+        let group = first.groupId
+        XCTAssertNotNil(group, "前提: 束の印がある")
+        XCTAssertEqual(auto().draft(for: "a")?.groupId, group, "束の印を控えに持っていない")
+        let next = model(owner: "a")
+        let restored = await next.restoreDraft(from: .auto)
+        XCTAssertTrue(restored)
+        XCTAssertEqual(next.groupId, group, "続きから送ると別の投稿に割れる")
     }
 }

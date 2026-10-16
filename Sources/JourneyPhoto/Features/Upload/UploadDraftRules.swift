@@ -87,6 +87,40 @@ enum UploadDraftRules {
         hasStoredDraft && !opensWithContent && !alreadyAsked
     }
 
+    /// 投稿の画面を開いたときにすること（2026-10-16）
+    enum OpenAction: Equatable {
+        /// 尋ねずに自動の枠から戻す（起動のときの「送れなかった投稿があります」で「続きから」を押して来た）
+        case resumeAuto
+        /// 「書きかけの続きがあります」を尋ねる
+        case askAuto
+        /// 「下書きを続けますか？」を尋ねる（本人の下書き）
+        case askSaved
+        case none
+    }
+
+    /// 開いたときの問い。自動の枠（アプリが途中で終了した書きかけ）を本人の下書きより先に尋ねる
+    static func openAction(hasAutoDraft: Bool, hasSavedDraft: Bool, opensWithContent: Bool,
+                           alreadyAsked: Bool, resumesAuto: Bool) -> OpenAction {
+        guard !alreadyAsked else { return .none }
+        if resumesAuto && hasAutoDraft { return .resumeAuto }
+        if asksRestore(hasStoredDraft: hasAutoDraft, opensWithContent: opensWithContent, alreadyAsked: false) {
+            return .askAuto
+        }
+        if asksRestore(hasStoredDraft: hasSavedDraft, opensWithContent: opensWithContent, alreadyAsked: false) {
+            return .askSaved
+        }
+        return .none
+    }
+
+    /// この画面が自動の枠に触って（書いて・消して）よいか。
+    ///
+    /// 🔴 **尋ねていない自動の書きかけを黙って上書き・削除しない**（2026-10-16 の読み直し）。テーマ・スポット・
+    /// 旅の写真から開いた回は尋ねないので、そのまま触ると、前にアプリが終了した書きかけ・送れなかった投稿が
+    /// 知らせも無く消えた。開いたとき空だった・この画面で尋ねた（戻した）ときだけ触る
+    static func ownsAutoSlot(hasAutoDraft: Bool, action: OpenAction) -> Bool {
+        !hasAutoDraft || action == .resumeAuto || action == .askAuto
+    }
+
     /// 次の起動で出す「送れなかった投稿があります」（2026-10-16）
     struct InterruptedNotice: Equatable {
         let message: String

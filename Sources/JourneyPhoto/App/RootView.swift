@@ -32,6 +32,8 @@ struct RootView: View {
     @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
     /// 送れなかった投稿を確かめた人（人ごとに起動のあと一度だけ）
     @State private var checkedInterruptedFor: String?
+    /// 起動のときの知らせで「続きから」を押した（投稿の画面で尋ね直さずに戻す・閉じたら下ろす）
+    @State private var resumeInterruptedUpload = false
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
@@ -442,7 +444,10 @@ struct RootView: View {
                    presenting: interruptedUpload) { notice in
                 if notice.canResume {
                     // 投稿の画面を開く。開いた画面が「書きかけの続きがあります」→「続きから」で戻す
-                    Button(L("続きから", "Continue")) { showPhotoUpload = true }
+                    Button(L("続きから", "Continue")) {
+                        resumeInterruptedUpload = true
+                        showPhotoUpload = true
+                    }
                     Button(L("あとで", "Later"), role: .cancel) {}
                 } else {
                     // 戻せる写真が無い（届いたか分からない写真だけ）。控えは片づける
@@ -525,6 +530,7 @@ struct RootView: View {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
                        startPrivate: !pendingTripPhotos.isEmpty,
                        initialCapture: pendingCapture,
+                       resumesAutoDraft: resumeInterruptedUpload,
                        // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                        onSaved: { tabRouter.notePosted($0) })
         }
@@ -542,6 +548,8 @@ struct RootView: View {
                     pendingTripPhotos = []
                     // 構図を重ねて撮った1枚も同じ
                     pendingCapture = nil
+                    // 送れなかった投稿の「続きから」も1回だけ
+                    resumeInterruptedUpload = false
                 }
             }
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {

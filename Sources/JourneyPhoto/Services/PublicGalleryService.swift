@@ -72,6 +72,9 @@ actor PublicGalleryService {
         // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった。
         // ここ（actor の上）で捨てれば、この後の `merged` は必ず空の控えで重ねる
         edits.clear()
+        // 投稿したばかりの写真の控えも捨てる（2026-10-16）。残すと、前の人が非公開にした・消した写真が
+        // 次の人の一覧に最大60秒重なる（`PostedPhotos.Ledger`）
+        posted.clear()
         restrictedLoader = loader
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil

@@ -636,13 +636,15 @@ final class UploadViewModel: ObservableObject {
                 recipe: photo.recipe.isIdentity ? nil : photo.recipe,
                 key: keys[photo.id],
                 // 届いたか分からない写真は控えでも「送り始めた」のまま（開き直しても戻さない）
-                inFlight: staged[photo.id] != nil ? true : nil))
+                inFlight: staged[photo.id] != nil ? true : nil,
+                // 自動の枠には本人の下書きでの印も書く（続きから送ったとき、本人の下書きからも外す）
+                savedKey: keys.isEmpty ? nil : draftKeys[photo.id]))
         }
     }
 
     /// 下書きに書く、まとめて付く欄
     private func draftFields(now: Date) -> UploadDraftStore.Draft {
-        UploadDraftStore.Draft(
+        var fields = UploadDraftStore.Draft(
             items: [], tagsText: tagsText, category: category, published: published,
             audience: audience.rawValue, song: song, selectedAlbumId: selectedAlbumId,
             groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now),
@@ -652,6 +654,9 @@ final class UploadViewModel: ObservableObject {
             // やり直すと別の写真に付き、元の作者に通知が2回届く
             inspired: inspiredCarrier.keepsInDraft(unsure: Set(items.map(\.id).filter { staged[$0] != nil }))
                 ? inspired : nil)
+        // 束の印（途中まで送った束を続きから送ると、同じ投稿に入る・`UploadGrouping.groupIdForSubmit`）
+        fields.groupId = groupId
+        return fields
     }
 
     // MARK: 自動の書きかけ・送信の控え（2026-10-16・`UploadDraftStore.Slot.auto`）
@@ -671,25 +676,31 @@ final class UploadViewModel: ObservableObject {
     /// 人のものしか残らず、裏に回ったまま OS にアプリを終了されると選んだ写真と題が全部消えた。
     /// 写真が無い・読み込み中・送っている（送信の控えがもう在る）ときは書かない。写真が無ければ前の分を消す
     /// （外した写真が次に蘇らない）
-    func autoSaveDraft(now: Date = Date()) {
+    ///
+    /// 画像は主スレッドの外で書き、**書き終えるまで裏の猶予をもらう**（`BackgroundWindow`。裏に回った直後に
+    /// 止められると書きかけが残らない）。`autoDrafts` が無い（この画面は自動の枠に触らない・
+    /// `UploadDraftRules.openAction`）なら何もしない
+    func autoSaveDraft(now: Date = Date()) async {
         guard let autoDrafts, let draftOwner, !draftOwner.isEmpty else { return }
         if items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 && !isRestoringDraft {
             discardAutoDraft()
             return
         }
         guard draftSaveBlock == nil else { return }
-        writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: false, now: now)
+        let window = BackgroundWindow(name: "upload-autosave")
+        defer { window.end() }
+        await writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: false, now: now)
     }
 
-    /// 自動の枠に今の写真と欄を書き、印（`autoKeys`）を付け直す
+    /// 自動の枠に今の写真と欄を書き、印（`autoKeys`）を付け直す（画像は主スレッドの外で書く）
     @discardableResult
-    private func writeAutoDraft(to store: UploadDraftStore, owner: String, sending: Bool, now: Date) -> Bool {
+    private func writeAutoDraft(to store: UploadDraftStore, owner: String, sending: Bool, now: Date) async -> Bool {
         guard !items.isEmpty else { return false }
         var keys: [UUID: String] = [:]
         for photo in items { keys[photo.id] = UUID().uuidString }
         var fields = draftFields(now: now)
         fields.sending = sending ? true : nil
-        guard store.save(draftInputs(keys: keys), fields: fields, for: owner) else { return false }
+        guard await store.saveInBackground(draftInputs(keys: keys), fields: fields, for: owner) else { return false }
         autoKeys = keys
         return true
     }
@@ -757,6 +768,9 @@ final class UploadViewModel: ObservableObject {
             if let key = saved.key {
                 if slot == .saved { draftKeys[photo.id] = key } else { autoKeys[photo.id] = key }
             }
+            // 🔴 **自動の枠から戻した写真が本人の下書きにも在れば、その印も戻す**（2026-10-16）。戻さないと、
+            // 続きから送って上がった写真が本人の下書きに残り、次に開いて送ると同じ写真がもう一度投稿された
+            if slot == .auto, let savedKey = saved.savedKey { draftKeys[photo.id] = savedKey }
             startStripThumb(for: photo.id, prepared: prepared)
             items.append(photo)
             // 編集はレシピを掛け直す（帯の編集後のサムネもここで描く）
@@ -771,6 +785,8 @@ final class UploadViewModel: ObservableObject {
         selectedAlbumId = draft.selectedAlbumId
         groupsAsOnePost = draft.groupsAsOnePost
         // スポットから開いた回は尋ねない（`UploadDraftRules.asksRestore`）ので、ここで上書きはしない
+        // 途中まで送った束の印を引き継ぐ（新しい印にすると投稿が2つに割れる）
+        if let savedGroup = draft.groupId { groupId = savedGroup }
         if spot == nil, let saved = draft.spot {
             spot = UploadSpotTarget(spotId: saved.spotId, name: saved.name,
                                     coords: saved.latitude.flatMap { lat in
@@ -808,6 +824,8 @@ final class UploadViewModel: ObservableObject {
     private func inspiredSaved(_ photoId: UUID) {
         inspiredCarrier.saved(photoId)
         if restoredDraft, let drafts, let draftOwner { drafts.clearInspired(for: draftOwner) }
+        // 送信の控え（自動の枠）からも外す——続きから送ると別の写真に付き、作者に通知が2回届く（2026-10-16）
+        if let autoDrafts, let draftOwner { autoDrafts.clearInspired(for: draftOwner) }
     }
 
     private func markDraft(_ photoId: UUID, _ mark: DraftMark) {
@@ -1280,7 +1298,7 @@ final class UploadViewModel: ObservableObject {
         // 知らせも無く消えた。上がった1枚ずつ控えから外れ（`markDraft(.posted)`）、全部上がれば消える。
         // 残っていたら次の起動で知らせ、投稿の画面の「続きから」で戻せる（届いたか分からない写真は戻さない）
         if let autoDrafts, let draftOwner, !draftOwner.isEmpty {
-            writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: true, now: Date())
+            await writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: true, now: Date())
         }
         // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
         let exported = await exportAllEdited(queue)

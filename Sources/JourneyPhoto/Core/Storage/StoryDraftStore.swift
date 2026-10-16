@@ -51,6 +51,9 @@ final class StoryDraftStore: ObservableObject {
         var framing: PhotoFraming?
         /// 1枚目の投票。置いていなければ nil
         var vote: StoryVoteDraft?
+        /// 自動の枠だけ: **開いていた本人の下書きの印**（その `savedAt`・2026-10-16）。本人の下書きを開いて
+        /// 書いている途中で終了 →「続きから」で投稿したとき、元の下書きも片づける（残すと同じ写真がもう一度出る）
+        var basedOn: String? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -252,14 +255,12 @@ final class StoryDraftStore: ObservableObject {
     @discardableResult
     func save(shots inputs: [ShotInput], caption: String, location: String,
               song: Photo.Song?, durationSec: Int, archive: Bool = false, allowReplies: Bool = true,
-              savedAt: String) -> Bool {
+              basedOn: String? = nil, savedAt: String) -> Bool {
         guard !inputs.isEmpty else { return false }
+        saveGeneration += 1
         let storageKey = key(for: userId)
         let token = makeToken()
         let files = inputs.indices.map { Self.imageFileName(forKey: storageKey, token: token, index: $0) }
-        // 前の下書きの画像は、記録を差し替えたあとに消す
-        let previous = defaults.data(forKey: storageKey)
-            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.files ?? []
         var written: [String] = []
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -274,13 +275,66 @@ final class StoryDraftStore: ObservableObject {
             }
             return false
         }
+        return commit(inputs, files: files, storageKey: storageKey, caption: caption, location: location,
+                      song: song, durationSec: durationSec, archive: archive, allowReplies: allowReplies,
+                      basedOn: basedOn, savedAt: savedAt)
+    }
+
+    /// 保存の回（`save`・`saveInBackground`・`clear` で進む）。**後から始まった回が勝つ**
+    /// （`UploadDraftStore.saveGeneration` と同じ）
+    private var saveGeneration = 0
+
+    /// 画像を書く口（**主スレッドの外で書く**・試験で差し替える）
+    var writeFiles: @Sendable ([(Data, URL)]) async throws -> Void = { pairs in
+        try await Task.detached(priority: .userInitiated) {
+            for (data, url) in pairs { try data.write(to: url, options: .atomic) }
+        }.value
+    }
+
+    /// `save` と同じことを、画像の書き込みを主スレッドの外で（裏に回ったときの自動の書きかけ・2026-10-16）。
+    /// 書いている間に新しい保存・`clear` が始まったら、この回の記録は書かない
+    func saveInBackground(shots inputs: [ShotInput], caption: String, location: String,
+                          song: Photo.Song?, durationSec: Int, archive: Bool, allowReplies: Bool,
+                          basedOn: String?, savedAt: String) async -> Bool {
+        guard !inputs.isEmpty else { return false }
+        saveGeneration += 1
+        let mine = saveGeneration
+        let storageKey = key(for: userId)
+        let token = makeToken()
+        let files = inputs.indices.map { Self.imageFileName(forKey: storageKey, token: token, index: $0) }
+        let urls = files.map { fileURL($0) }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try await writeFiles(Array(zip(inputs.map(\.imageData), urls)))
+        } catch {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        // 書いている間に人が替わった（`use`）・新しい保存や `clear` が始まった
+        guard mine == saveGeneration, storageKey == key(for: userId) else {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        return commit(inputs, files: files, storageKey: storageKey, caption: caption, location: location,
+                      song: song, durationSec: durationSec, archive: archive, allowReplies: allowReplies,
+                      basedOn: basedOn, savedAt: savedAt)
+    }
+
+    /// 画像を書き終えた後に記録を差し替え、前の画像を消す（**前の画像は差し替える時点で読む**）
+    private func commit(_ inputs: [ShotInput], files: [String], storageKey: String, caption: String,
+                        location: String, song: Photo.Song?, durationSec: Int, archive: Bool,
+                        allowReplies: Bool, basedOn: String?, savedAt: String) -> Bool {
+        let written = files
+        // 前の下書きの画像は、記録を差し替えたあとに消す
+        let previous = defaults.data(forKey: storageKey)
+            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.files ?? []
         let shots = zip(inputs, files).map { input, file in
             Shot(imageFile: file, fileName: input.fileName, contentType: input.contentType,
                  latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays,
                  framing: input.framing, vote: input.vote)
         }
         let first = shots[0]
-        let saved = Draft(imageFile: first.imageFile, fileName: first.fileName,
+        var saved = Draft(imageFile: first.imageFile, fileName: first.fileName,
                           contentType: first.contentType,
                           latitude: first.latitude, longitude: first.longitude,
                           caption: caption, location: location, overlays: first.overlays,
@@ -289,6 +343,7 @@ final class StoryDraftStore: ObservableObject {
                           archive: archive ? true : nil,
                           allowReplies: allowReplies ? nil : false,
                           framing: first.framing, vote: first.vote)
+        saved.basedOn = basedOn
         guard let data = try? JSONEncoder().encode(saved) else {
             for file in written {
                 try? FileManager.default.removeItem(at: fileURL(file))
@@ -323,6 +378,7 @@ final class StoryDraftStore: ObservableObject {
     /// 捨てる（「捨てる」を押したとき・投稿し終えたとき）。
     /// **画像のファイルも消す**——残すと端末の容量を静かに食う
     func clear() {
+        saveGeneration += 1
         for shot in draft?.shots ?? [] {
             try? FileManager.default.removeItem(at: fileURL(shot.imageFile))
         }

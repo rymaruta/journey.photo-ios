@@ -22,6 +22,10 @@ struct StoryComposerView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// 「書きかけの続きがあります」（アプリが途中で終了した回・開いた直後に1回）
     @State private var showRestoreAuto = false
+    /// この画面が自動の枠に触ってよいか（開いたとき空だった・尋ねた・`StorySimpleRules.ownsAutoSlot`）
+    @State private var autoSlotOwned = false
+    /// 開いている本人の下書きの印（`savedAt`）。自動の書きかけに `basedOn` として書く
+    @State private var openedDraftStamp: String?
     /// 送るのは裏の係（画面を閉じても続く・板 27）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @EnvironmentObject private var auth: AuthStore
@@ -325,6 +329,7 @@ struct StoryComposerView: View {
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
             askedOnOpen = true
+            let hasAuto = autoDrafts.draft != nil
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
@@ -335,19 +340,24 @@ struct StoryComposerView: View {
                                        sendingDraftStamp: nil) {
                 // アプリが途中で終了した書きかけを先に尋ねる（本人の下書きは次に開いたとき）
                 showRestoreAuto = true
+                // 🔴 本人の下書きの問いは出ない＝答えていない。この回の投稿・保存で消さない・置き換えない
+                // （送れなかった問いの分岐と同じ・2026-10-16 の読み直し）
+                if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
             } else if Self.asksRestore(draftStamp: drafts.draft?.savedAt, hasShot: prepared != nil,
                                        sendingDraftStamp: uploads.pendingDraftStamp) {
                 showRestore = true
             }
+            // 🔴 尋ねていない自動の書きかけには触らない（黙って上書き・削除しない）
+            autoSlotOwned = StorySimpleRules.ownsAutoSlot(hasAutoDraft: hasAuto, asked: showRestoreAuto)
         }
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { autoSaveDraft() }
+            if phase == .background { Task { await autoSaveDraft() } }
         }
         .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
             Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
-            Button(L("削除", "Delete"), role: .destructive) { autoDrafts.clear() }
+            Button(L("削除", "Delete"), role: .destructive) { clearAutoDraft() }
         } message: {
             Text(L("前回、ストーリーを作っている途中でアプリが終了しました。続きから編集できます。",
                    "The app closed while you were making a story. You can pick up where you left off."))
@@ -412,7 +422,7 @@ struct StoryComposerView: View {
                            onDiscard: {
                                stopWaitingToPost()
                                // 保存せずに閉じると決めたので、黙って残した書きかけも消す
-                               autoDrafts.clear()
+                               clearAutoDraft()
                                dismiss()
                            })
     }
@@ -1484,23 +1494,28 @@ struct StoryComposerView: View {
             // 下書きにしたので、待っている投稿は出さない（同じものが下書きと投稿の両方に残る）
             stopWaitingToPost()
             // 本人の下書きに移したので、黙って残した書きかけは要らない
-            autoDrafts.clear()
+            clearAutoDraft()
             dismiss()
         }
     }
 
-    /// 並べた写真と欄を下書きの枠に書く（「下書き保存」と自動の書きかけの両方）。**焼き込む前の文字のまま**
+    /// 並べた写真（下書きに書く形）。**焼き込む前の文字のまま**
+    private var shotInputs: [StoryDraftStore.ShotInput] {
+        shots.map { shot in
+            StoryDraftStore.ShotInput(imageData: shot.prepared.data,
+                                      fileName: shot.prepared.fileName,
+                                      contentType: shot.prepared.contentType,
+                                      coords: shot.prepared.coords,
+                                      overlays: shot.overlays,
+                                      framing: shot.framing.isIdentity ? nil : shot.framing,
+                                      vote: shot.vote)
+        }
+    }
+
+    /// 並べた写真と欄を本人の下書きに書く（「下書き保存」）
     private func write(to store: StoryDraftStore) -> Bool {
         store.save(
-            shots: shots.map { shot in
-                StoryDraftStore.ShotInput(imageData: shot.prepared.data,
-                                          fileName: shot.prepared.fileName,
-                                          contentType: shot.prepared.contentType,
-                                          coords: shot.prepared.coords,
-                                          overlays: shot.overlays,
-                                          framing: shot.framing.isIdentity ? nil : shot.framing,
-                                          vote: shot.vote)
-            },
+            shots: shotInputs,
             caption: caption,
             location: place.location,
             song: song,
@@ -1511,14 +1526,28 @@ struct StoryComposerView: View {
         )
     }
 
-    /// 裏に回ったときの自動の書きかけ（`StorySimpleRules.autoSaves`）。写真が無ければ前の分を消す
-    /// （外した写真が次に蘇らない）。読み込み中は書かない（読みかけの写真が落ちた書きかけを作らない）
-    private func autoSaveDraft() {
+    /// 裏に回ったときの自動の書きかけ（`StorySimpleRules.autoSave`）。写真が無ければ前の分を消す
+    /// （外した写真が次に蘇らない）。読み込み中は書かない（読みかけの写真が落ちた書きかけを作らない）。
+    /// 画像は主スレッドの外で書き、書き終えるまで裏の猶予をもらう（`BackgroundWindow`）
+    private func autoSaveDraft() async {
+        guard autoSlotOwned else { return }
         switch StorySimpleRules.autoSave(hasShots: !shots.isEmpty, loading: loadingPicks > 0) {
-        case .write: _ = write(to: autoDrafts)
-        case .clear: autoDrafts.clear()
+        case .write:
+            let window = BackgroundWindow(name: "story-autosave")
+            defer { window.end() }
+            _ = await autoDrafts.saveInBackground(
+                shots: shotInputs, caption: caption, location: place.location, song: song,
+                durationSec: durationSec, archive: keepInArchive, allowReplies: allowReplies,
+                basedOn: openedDraftStamp, savedAt: ISO8601DateFormatter().string(from: Date()))
+        case .clear: clearAutoDraft()
         case .skip: break
         }
+    }
+
+    /// 自動の書きかけを消す。**この画面が触ってよいときだけ**（`autoSlotOwned`）
+    private func clearAutoDraft() {
+        guard autoSlotOwned else { return }
+        autoDrafts.clear()
     }
 
     /// 送り終えたときに下書きを**残す**か。「キャンセル（残す）」を選んだか、
@@ -1595,6 +1624,17 @@ struct StoryComposerView: View {
         allowReplies = draft.allowReplies != false
         message = nil
         restoredContent = store == nil ? content : nil
+        if store == nil {
+            openedDraftStamp = draft.savedAt
+        } else {
+            // 自動の書きかけが本人の下書きを開いて書いていたもの（`basedOn`）なら、同じ下書きの続き——
+            // 投稿・保存で元の下書きも片づける（残すと次に開いて同じ写真をもう一度出す・2026-10-16）
+            openedDraftStamp = draft.basedOn
+            if StorySimpleRules.autoRestoreContinuesSaved(basedOn: draft.basedOn, savedStamp: self.drafts.draft?.savedAt) {
+                unansweredDraftStamp = nil
+                keptDraftStamp = nil
+            }
+        }
     }
 
 
@@ -1701,7 +1741,7 @@ struct StoryComposerView: View {
             return
         }
         // 出した（裏の係が送り終えるまで持つ）。黙って残した書きかけは要らない
-        autoDrafts.clear()
+        clearAutoDraft()
         dismiss()
     }
 }

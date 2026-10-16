@@ -61,11 +61,15 @@ struct UploadView: View {
     /// 最初から入れておく、カメラで撮った1枚（投稿のシートの「構図を重ねて撮る」で撮って
     /// 「投稿」を押したとき・2026-10-10）。帯の「追加」→カメラと同じ道（`UploadViewModel.accept(capture:)`）で入れる
     private let initialCapture: CameraCapture?
+    /// 起動のときの「送れなかった投稿があります」で「続きから」を押して来た。**もう一度尋ねずに戻す**（2026-10-16）
+    private let resumesAutoDraft: Bool
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
          initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
          initialCapture: CameraCapture? = nil,
+         resumesAutoDraft: Bool = false,
          onSaved: ((Photo) -> Void)? = nil) {
+        self.resumesAutoDraft = resumesAutoDraft
         // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
         // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
         self.initialCapture = initialCapture ?? PreviewUploadSample.capture()
@@ -182,7 +186,7 @@ struct UploadView: View {
         }
         // 裏に回ったら書きかけを黙って残す（OS にアプリを終了されても消えない・2026-10-16）
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { model.autoSaveDraft() }
+            if phase == .background { Task { await model.autoSaveDraft() } }
         }
         // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
         // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
@@ -406,17 +410,24 @@ struct UploadView: View {
             // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
             // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
             if model.drafts == nil { model.drafts = UploadDraftStore() }
-            if model.autoDrafts == nil { model.autoDrafts = UploadDraftStore(slot: .auto) }
             if !askedRestore { model.draftOwner = auth.userId }
             let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
                 || initialTag != nil || initialSpot != nil
             // 自動で残した書きかけ（アプリが途中で終了した回）を先に尋ねる。本人の下書きは次に開いたとき
-            if UploadDraftRules.asksRestore(hasStoredDraft: model.storedAutoDraft != nil,
-                                            opensWithContent: opensWithContent, alreadyAsked: askedRestore) {
-                showRestoreAuto = true
-            } else if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
-                                                   opensWithContent: opensWithContent, alreadyAsked: askedRestore) {
-                showRestore = true
+            let autoStore = UploadDraftStore(slot: .auto)
+            let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
+            let action = UploadDraftRules.openAction(hasAutoDraft: hasAuto, hasSavedDraft: model.storedDraft != nil,
+                                                     opensWithContent: opensWithContent, alreadyAsked: askedRestore,
+                                                     resumesAuto: resumesAutoDraft)
+            // 🔴 尋ねていない自動の書きかけには触らない（`ownsAutoSlot`）。触らない回は自動の枠を渡さない
+            if !askedRestore, UploadDraftRules.ownsAutoSlot(hasAutoDraft: hasAuto, action: action) {
+                model.autoDrafts = autoStore
+            }
+            switch action {
+            case .resumeAuto: restoreDraft(from: .auto)
+            case .askAuto: showRestoreAuto = true
+            case .askSaved: showRestore = true
+            case .none: break
             }
             askedRestore = true
         }
