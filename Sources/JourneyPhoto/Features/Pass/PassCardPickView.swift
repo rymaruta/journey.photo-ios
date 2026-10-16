@@ -209,7 +209,7 @@ struct PassCardPickView: View {
             }
             if originChoice == .custom {
                 labelField(L("発に書く字（\(PassExchange.labelLimit)字まで）", "From (up to \(PassExchange.labelLimit))"),
-                           placeholder: L("例：雪国", "e.g. Snow country"), text: $originText, id: "pass.pick.origin.text")
+                           placeholder: L("例：雪国", "e.g. Snow"), text: $originText, id: "pass.pick.origin.text")
             }
             Text(L("着（旅先）", "To"))
                 .font(.caption.weight(.medium))
@@ -227,7 +227,7 @@ struct PassCardPickView: View {
             }
             if destinationCustom {
                 labelField(L("着に書く字（\(PassExchange.labelLimit)字まで）", "To (up to \(PassExchange.labelLimit))"),
-                           placeholder: L("例：北陸ひとり旅・金沢", "e.g. Solo trip, Kanazawa"), text: $destinationText,
+                           placeholder: L("例：北陸ひとり旅", "e.g. Hokuriku"), text: $destinationText,
                            id: "pass.pick.destination.text")
             }
             Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「〇〇のあたり 下車」の行は、受け取った人の位置で自動です。",
@@ -273,8 +273,9 @@ struct PassCardPickView: View {
         pass.update { settings in
             settings.cardPhotoId = selected
             settings.note = note
+            // 「自分で書く」を空のまま保存したら、発は「出さない」・着は「すれちがった所」に戻す（`setOrigin`・`setDestination`）
             settings.setOrigin(originChoice, text: originText)
-            settings.destinationLabel = destinationCustom ? PassExchange.cleanLabel(destinationText) : nil
+            settings.setDestination(custom: destinationCustom, text: destinationText)
         }
         PassCoordinator.shared.refresh()
         dismiss()

@@ -87,6 +87,18 @@ enum PassSpinGesture {
     }
 
     static let flickDuration = 0.25
+
+    /// 指を置いてすぐ（`flickDuration` の間）は、払いか回すかまだ分からない。**回りを半分にし、裏が見える
+    /// 手前（`earlyLimit`）で止める**——素早く払ったときに、次へ移る前に一瞬裏が見えていた（2026-10-16 の読み直し）
+    static let earlyFactor = 0.5
+    static let earlyLimit = Double.pi / 3
+
+    /// 指を動かしている間の回り（`base` は指を置いた時の回り）
+    static func liveYaw(base: Double, dx: Double, width: Double, elapsed: Double) -> Double {
+        let full = SpinMotion.yawDelta(dx: dx, width: width)
+        guard elapsed < flickDuration else { return base + full }
+        return base + min(earlyLimit, max(-earlyLimit, full * earlyFactor))
+    }
     static let flickDistance = 200.0
     static let flickTravel = 120.0
 

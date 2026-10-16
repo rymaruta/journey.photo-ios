@@ -95,9 +95,22 @@ enum PassCardStyle {
     static let bandBottom = Color(red: 26 / 255, green: 22 / 255, blue: 15 / 255)
     /// 「遠くから」の縁の沈む側（板 #3A3020）
     static let farEdgeLow = Color(red: 58 / 255, green: 48 / 255, blue: 32 / 255)
-    /// 区間の地名（明朝 30）。長い地名は縮める——明朝の下限 18 まで（30 × 0.6）
+    /// 区間の地名（明朝 30）。長い地名は縮める——**明朝 15 まで（30 × 0.5）**。
+    ///
+    /// 2026-10-16 判断（読み直し）: 発・着の両方を自分で書く（6 字＋6 字）と、明朝の下限 18（× 0.6）では片側
+    /// 5 字ほどしか入らなかった。区間の地名だけ、明朝の下限を 15 まで下げる（大きな札の中の見出しで、本文系の
+    /// 12pt は割らない）。収まるかは `routeFits` で数えて見張る
     static let routeSize: Double = 30
-    static let routeMinScale: CGFloat = 0.6
+    static let routeMinScale: CGFloat = 0.5
+    /// 区間の並びの幅（きっぷ 300 − 左右の内側 18 × 2）・矢印の幅・矢印の左右のすき間
+    static let routeWidth: Double = 264
+    static let arrowWidth: Double = 56
+    static let arrowGap: Double = 6
+
+    /// 明朝は1字がほぼ1字幅（全角）。両側に `chars` 字ずつを、いちばん縮めた大きさで並べて収まるか
+    nonisolated static func routeFits(chars: Int) -> Bool {
+        Double(chars) * routeSize * Double(routeMinScale) * 2 + arrowWidth + arrowGap * 2 <= routeWidth
+    }
     /// 裏の欄の値（板 14）・ひとこと（板 15 = `JPFont.body`）
     static let backValueSize: CGFloat = 14
     /// カードは寸法が決まった札なので、文字の大きさの設定は xLarge までに留める（はみ出さない）
@@ -281,11 +294,12 @@ struct PassCardFront: View {
                             .foregroundStyle(WebTheme.accent)
                     }
                 }
-                HStack(alignment: .center, spacing: JPSpace.xs) {
+                // すき間は矢印の左右だけ（`PassCardStyle.routeFits` の数え方と同じ）
+                HStack(alignment: .center, spacing: 0) {
                     routeName(face.origin)
-                    Spacer(minLength: 0)
+                    Spacer(minLength: CGFloat(PassCardStyle.arrowGap))
                     PassTicketArrow()
-                    Spacer(minLength: 0)
+                    Spacer(minLength: CGFloat(PassCardStyle.arrowGap))
                     routeName(face.destination)
                 }
                 .accessibilityElement(children: .ignore)

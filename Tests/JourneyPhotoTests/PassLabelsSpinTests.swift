@@ -47,14 +47,15 @@ final class PassLabelsSpinTests: XCTestCase {
     /// 発・着の字はひとことと同じ整え方（向きの制御・ゼロ幅・結合文字・8 字・32 バイト）
     func testLabelCleaning() {
         XCTAssertEqual(PassExchange.cleanLabel("北陸\u{202E}ひとり旅\u{200B}"), "北陸ひとり旅")
-        XCTAssertEqual(PassExchange.cleanLabel("123456789"), "12345678")
+        XCTAssertEqual(PassExchange.cleanLabel("123456789"), "123456")
         XCTAssertLessThanOrEqual(PassExchange.cleanLabel(String(repeating: "👨‍👩‍👧", count: 8)).utf8.count,
                                  PassExchange.labelByteLimit)
         let zalgo = "雪" + String(repeating: "\u{0301}", count: 20)
         XCTAssertEqual(PassExchange.cleanLabel(zalgo).unicodeScalars.count, 1 + PassExchange.marksPerCharacterLimit)
         XCTAssertNil(PassExchange.labelProblem("金沢"))
         XCTAssertNotNil(PassExchange.labelProblem("123456789"))
-        XCTAssertNotNil(PassExchange.labelProblem(String(repeating: "👨‍👩‍👧", count: 4)), "バイトで超えた訳が出ない")
+        XCTAssertNotNil(PassExchange.labelProblem("1234567"), "7 字で訳が出ない")
+        XCTAssertNotNil(PassExchange.labelProblem(String(repeating: "👨‍👩‍👧", count: 2)), "バイトで超えた訳が出ない")
     }
 
     // MARK: - 自動と自分で書く
@@ -119,6 +120,39 @@ final class PassLabelsSpinTests: XCTestCase {
         s.destinationLabel = "金沢"
         let line = PassSettingsText.route(s)
         XCTAssertTrue(line.contains("雪国") && line.contains("金沢"), line)
+    }
+
+    /// 🔴 発・着の両方を上限いっぱいに書いても、いちばん縮めれば区間に収まる（7 字では収まらない＝上限が正しい）
+    func testRouteFitsAtTheLimit() {
+        XCTAssertEqual(PassExchange.labelLimit, 6)
+        XCTAssertTrue(PassCardStyle.routeFits(chars: PassExchange.labelLimit), "6 字＋6 字が区間に収まらない")
+        XCTAssertFalse(PassCardStyle.routeFits(chars: PassExchange.labelLimit + 1))
+        XCTAssertGreaterThanOrEqual(PassCardStyle.routeSize * Double(PassCardStyle.routeMinScale), 15, "明朝 15 を割る")
+    }
+
+    /// 「自分で書く」を空のまま保存したら、発は「出さない」・着は「すれちがった所」
+    func testEmptyCustomFallsBack() {
+        var s = PassSettings()
+        s.setOrigin(.custom, text: "  ")
+        XCTAssertEqual(s.origin, .hidden)
+        s.setDestination(custom: true, text: "")
+        XCTAssertNil(s.destinationLabel)
+        s.setDestination(custom: true, text: "金沢")
+        XCTAssertEqual(s.destinationLabel, "金沢")
+        s.setDestination(custom: false, text: "金沢")
+        XCTAssertNil(s.destinationLabel)
+    }
+
+    /// 🔴 素早く払ったとき、次へ移る前に裏が見えない（置いてすぐは回りを半分・裏の手前で止める）
+    func testEarlyDragNeverShowsBack() {
+        for dx in [-300.0, -150, 150, 300, 600] {
+            let yaw = PassSpinGesture.liveYaw(base: 0, dx: dx, width: 300, elapsed: 0.1)
+            XCTAssertFalse(SpinMotion.showsBack(yaw), "払いの途中で裏が見えた（dx \(dx)）")
+            XCTAssertLessThanOrEqual(abs(yaw), PassSpinGesture.earlyLimit + 1e-9)
+        }
+        // 置いてしばらく経てば、指に付いてくる（裏まで回せる）
+        XCTAssertTrue(SpinMotion.showsBack(PassSpinGesture.liveYaw(base: 0, dx: -150, width: 300, elapsed: 0.6)))
+        XCTAssertEqual(PassSpinGesture.liveYaw(base: .pi, dx: 0, width: 300, elapsed: 0.1), .pi, accuracy: 1e-9)
     }
 
     // MARK: - 回す

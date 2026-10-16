@@ -217,9 +217,10 @@ struct PassViewerView: View {
                         if reduceMotion {
                             drag = value.translation.width
                         } else {
-                            yaw = (dragBaseYaw ?? yaw)
-                                + SpinMotion.yawDelta(dx: Double(value.translation.width),
-                                                      width: Double(PassCardStyle.deckSize.width))
+                            // 置いてすぐは回りを弱める（払いなら裏を見せない・`PassSpinGesture.liveYaw`）
+                            yaw = PassSpinGesture.liveYaw(base: dragBaseYaw ?? yaw, dx: Double(value.translation.width),
+                                                          width: Double(PassCardStyle.deckSize.width),
+                                                          elapsed: Date().timeIntervalSince(dragStartAt ?? Date()))
                         }
                     }
                     .onEnded { value in
@@ -261,6 +262,7 @@ struct PassViewerView: View {
     /// 指を離した。回す（近い面に吸い付く）か、次／前のカードか（`PassSpinGesture.classify`）
     private func endDrag(translation: Double, predicted: Double, onCard: Bool) {
         let duration = dragStartAt.map { Date().timeIntervalSince($0) } ?? 1
+        let base = dragBaseYaw
         dragStartAt = nil
         dragBaseYaw = nil
         let outcome = PassSpinGesture.classify(translation: translation, predicted: predicted, duration: duration,
@@ -269,6 +271,8 @@ struct PassViewerView: View {
         // 指の速さのおよそ（勢いの見込みは、離してから約 0.25 秒ぶん）
         let velocity = SpinMotion.releaseVelocity(vx: (predicted - translation) / 0.25,
                                                   width: Double(PassCardStyle.deckSize.width), reduceMotion: reduceMotion)
+        // 払いと決まったら、回りを見せずに（動かさずに）指を置いた時の面へ戻してから次へ替える
+        if outcome == .next || outcome == .previous, let base { yaw = SpinMotion.nearestFace(base) }
         withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.82)) {
             drag = 0
             switch outcome {

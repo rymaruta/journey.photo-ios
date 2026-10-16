@@ -95,9 +95,19 @@ struct PassSettings: Codable, Equatable {
         switch choice {
         case .home: originLabel = nil; showsFrom = true
         case .hidden: originLabel = nil; showsFrom = false
-        // 自分で書いた字があるときは居住地を載せない（前のアプリには居住地も出ない）
-        case .custom: originLabel = PassExchange.cleanLabel(text); showsFrom = false
+        // 自分で書いた字があるときは居住地を載せない（前のアプリには居住地も出ない）。
+        // **空のままなら「出さない」に戻す**（2026-10-16 の読み直し）
+        case .custom:
+            let written = PassExchange.cleanLabel(text)
+            originLabel = written.isEmpty ? nil : written
+            showsFrom = false
         }
+    }
+
+    /// 「着」を決める。自分で書く字が空なら「すれちがった所（自動）」に戻す
+    mutating func setDestination(custom: Bool, text: String) {
+        let written = custom ? PassExchange.cleanLabel(text) : ""
+        destinationLabel = written.isEmpty ? nil : written
     }
 }
 

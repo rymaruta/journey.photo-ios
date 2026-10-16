@@ -43,10 +43,11 @@ enum PassExchange {
     /// 無ければ版 1 を読む。版 1 の中身も読める
     static let version: UInt8 = 2
     static let version1: UInt8 = 1
-    /// 区間に自分で書く字の数（明朝 30 の区間に収まる長さ・長いときは区間の縮め方で縮める）
-    static let labelLimit = 8
-    /// 区間の字のバイト数（8 字の絵文字・結合を含めても収まる大きさ）
-    static let labelByteLimit = 32
+    /// 区間に自分で書く字の数。**6 字**（2026-10-16 の読み直し: 発・着の両方を 6 字で書いても、明朝 30 を
+    /// 15 まで縮めれば区間の幅 264pt に収まる・`PassCardStyle.routeFits`。8 字では収まらなかった）
+    static let labelLimit = 6
+    /// 区間の字のバイト数（6 字の絵文字・結合を含めても収まる大きさ）
+    static let labelByteLimit = 24
     /// ひとことの字数（板「20字まで」）
     static let noteLimit = 20
     /// 写真の id の長さの上限（`PathID` と同じ字だけ）
@@ -159,7 +160,7 @@ enum PassExchange {
     }
 
     /// 版 2 の並び: [版 2][印 1（bit0 = 出身を出す）][id の長さ 1][id][ひとことの長さ 1][ひとこと][発の長さ 1][発][着の長さ 1][着]。
-    /// 文字はどれも UTF-8。全体は `payloadByteLimit` まで（いちばん長くて 3+64+1+80+1+32+1+32 = 214）
+    /// 文字はどれも UTF-8。全体は `payloadByteLimit` まで（いちばん長くて 3+64+1+80+1+24+1+24 = 198）
     static func encode(_ payload: Payload) -> Data? {
         guard isValidPhotoId(payload.photoId) else { return nil }
         let id = Array(payload.photoId.utf8)

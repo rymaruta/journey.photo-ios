@@ -131,7 +131,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("SpinMotion.yawDelta("), "メダルが同じ決め方を使っていない（写しになる）")
         XCTAssertTrue(medal.contains("SpinMotion.flipTarget(from:"))
         let viewer = try source("Features/Pass/PassViewerView.swift")
-        for part in ["PassSpinTicket(yaw: yaw", "SpinMotion.yawDelta(", "PassSpinGesture.classify(",
+        for part in ["PassSpinTicket(yaw: yaw", "PassSpinGesture.liveYaw(", "PassSpinGesture.classify(",
                      "SpinMotion.snapTarget(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
                      "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)",
                      "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
