@@ -119,6 +119,8 @@ final class PassStore: ObservableObject {
         var next = settings
         change(&next)
         next.note = PassExchange.cleanNote(next.note)
+        next.originLabel = next.originLabel.map(PassExchange.cleanLabel)
+        next.destinationLabel = next.destinationLabel.map(PassExchange.cleanLabel).flatMap { $0.isEmpty ? nil : $0 }
         guard next != settings else { return }
         settings = next
         if !next.enabled { PassBundleNotifier.cancelAll() }
@@ -128,7 +130,8 @@ final class PassStore: ObservableObject {
     /// 電波に載せる中身。**オンで、名刺の一枚を選んであるときだけ**
     var payload: PassExchange.Payload? {
         guard userId != nil, settings.enabled, let photoId = settings.cardPhotoId else { return nil }
-        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: settings.note)
+        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: settings.note,
+                                    origin: settings.originLabel ?? "", destination: settings.destinationLabel ?? "")
     }
 
     /// 自分の居住地を覚える（マイページ・設定がプロフィールを読んだとき）
@@ -194,7 +197,9 @@ final class PassStore: ObservableObject {
                                  deliverAt: deliverAt,
                                  placeName: placeName, placeLat: coarse?.lat, placeLng: coarse?.lng,
                                  number: (encounters.map(\.number).max() ?? 0) + 1,
-                                 opened: false, ownerId: nil)
+                                 opened: false, ownerId: nil,
+                                 originLabel: payload.origin.isEmpty ? nil : payload.origin,
+                                 destinationLabel: payload.destination.isEmpty ? nil : payload.destination)
         encounters.append(card)
         save()
         let day = PassExchange.dayKey(deliverAt, calendar: calendar)
@@ -254,11 +259,20 @@ final class PassStore: ObservableObject {
         save()
     }
 
+    /// 区間の字を伏せる／出す（伏せたら自動の形に戻す・この端末だけ）
+    func setLabelsHidden(_ id: String, _ hidden: Bool) {
+        guard let i = encounters.firstIndex(where: { $0.id == id }), (encounters[i].labelsHidden ?? false) != hidden else { return }
+        encounters[i].labelsHidden = hidden
+        save()
+    }
+
     /// ひとことを通報できた: 印を付け、そのひとことを伏せる（2026-10-16 の読み直し）
     func markNoteReported(_ id: String) {
         guard let i = encounters.firstIndex(where: { $0.id == id }) else { return }
         encounters[i].noteReported = true
         encounters[i].noteHidden = true
+        // 区間の字も同じ通報に入れて送ったので、一緒に伏せる（自動の形に戻る）
+        encounters[i].labelsHidden = true
         save()
     }
 

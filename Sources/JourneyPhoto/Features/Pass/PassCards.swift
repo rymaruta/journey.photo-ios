@@ -29,7 +29,8 @@ struct PassCardContent: Identifiable, Equatable {
     /// 表に描くもの
     func face(calendar: Calendar = .current) -> PassTicketFace {
         PassTicketFace(photo: photo, kind: kind, number: PassExchange.numberLabel(card.number),
-                       origin: PassTicket.origin(fromPrefecture), destination: PassTicket.destination(card.placeName),
+                       origin: PassTicket.origin(fromPrefecture, written: card.shownOrigin),
+                       destination: PassTicket.destination(card.placeName, written: card.shownDestination),
                        name: name, distance: PassTicket.distanceLabel(km),
                        date: PassTicket.dateLabel(card.metHour, calendar: calendar),
                        alighting: PassTicket.alighting(card.placeName))
@@ -112,6 +113,8 @@ enum PassCardStyle {
 struct PassTicketEdge: View {
     let kind: PassTicket.Kind
     var corner: CGFloat = PassCardStyle.deckCorner
+    /// 回しているときの光の位置（`SpinMotion.shine`）。nil なら光らない
+    var shine: Double? = nil
 
     /// 線の太さ（種類ごと）
     nonisolated static func width(_ kind: PassTicket.Kind) -> CGFloat {
@@ -149,6 +152,11 @@ struct PassTicketEdge: View {
                                    lineWidth: lineWidth)
             }
         }
+        .overlay {
+            if let light = PassTicketShine.style(at: shine) {
+                shape.strokeBorder(light, lineWidth: lineWidth)
+            }
+        }
         .padding(firstInset)
         .overlay {
             if case .again = kind {
@@ -160,6 +168,28 @@ struct PassTicketEdge: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// 回したときに縁と破線を流れる光（`SpinMotion.shine` の位置に細い明るい帯）。**真鍮の線の上だけ**に乗せる
+/// （縁はカードの外・破線は黒い地の上。写真には乗せない）。位置が 0〜1 から外れていれば出さない
+enum PassTicketShine {
+    static let halfWidth = 0.12
+
+    static func stops(at position: Double) -> [Gradient.Stop]? {
+        guard position > -halfWidth, position < 1 + halfWidth else { return nil }
+        let lo = max(0, position - halfWidth), hi = min(1, position + halfWidth)
+        let mid = min(max(position, lo), hi)
+        guard lo < mid || mid < hi else { return nil }
+        let bright = WebTheme.accentMetal[0]
+        return [Gradient.Stop(color: Color.clear, location: lo), Gradient.Stop(color: bright, location: mid),
+                Gradient.Stop(color: Color.clear, location: hi)]
+    }
+
+    @MainActor
+    static func style(at position: Double?) -> LinearGradient? {
+        guard let position, let stops = stops(at: position) else { return nil }
+        return LinearGradient(stops: stops, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
@@ -179,9 +209,17 @@ struct PassTicketGlow: View {
 
 /// 真鍮の破線（板 4 引いて 4 空ける）
 struct PassTicketDash: View {
+    /// 回しているときの光の位置（縁と同じ流れ）
+    var shine: Double? = nil
+
     var body: some View {
         Rectangle()
             .stroke(WebTheme.accent.opacity(PassCardStyle.dashOpacity), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .overlay {
+                if let light = PassTicketShine.style(at: shine) {
+                    Rectangle().stroke(light, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                }
+            }
             .frame(height: 1)
             .accessibilityHidden(true)
     }
@@ -223,6 +261,8 @@ struct PassCardFront: View {
     let face: PassTicketFace
     /// 写真を押した（束の画面: 全面で見る）。nil なら写真も裏返しの一部
     var onPhotoTap: (() -> Void)?
+    /// 回しているときの縁と破線の光の位置（`SpinMotion.shine`）
+    var shine: Double? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -262,7 +302,7 @@ struct PassCardFront: View {
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text2)
                 Spacer(minLength: 0)
-                PassTicketDash()
+                PassTicketDash(shine: shine)
                 HStack {
                     Text(face.alighting)
                         .font(JPFont.caption)
@@ -281,7 +321,7 @@ struct PassCardFront: View {
         .background(PassCardStyle.face)
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
         .background { PassTicketGlow(kind: face.kind) }
-        .overlay(PassTicketEdge(kind: face.kind))
+        .overlay(PassTicketEdge(kind: face.kind, shine: shine))
         .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
     }
@@ -323,6 +363,8 @@ struct PassCardFront: View {
 struct PassCardBack: View {
 
     let content: PassCardContent
+    /// 回しているときの縁の光の位置
+    var shine: Double? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -376,7 +418,7 @@ struct PassCardBack: View {
         .background(PassCardStyle.face)
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
         .background { PassTicketGlow(kind: content.kind) }
-        .overlay(PassTicketEdge(kind: content.kind))
+        .overlay(PassTicketEdge(kind: content.kind, shine: shine))
         .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
         .accessibilityElement(children: .combine)

@@ -216,6 +216,28 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(again.encounters.first?.noteHidden, true)
     }
 
+    /// 相手が書いた発・着を綴じる・伏せたら自動に戻る・通報したら一緒に伏せる。自分の発・着は電波の中身に載る
+    func testLabelsAreRecordedHiddenAndSent() async throws {
+        let store = makeStore()
+        var p = payload("p1", note: "霧")
+        p.origin = "雪国"
+        p.destination = "北陸"
+        let card = try XCTUnwrap(store.record(p, at: at(16, 10)))
+        XCTAssertEqual(card.shownOrigin, "雪国")
+        XCTAssertEqual(card.shownDestination, "北陸")
+        store.setLabelsHidden(card.id, true)
+        XCTAssertNil(store.encounters.first?.shownOrigin, "伏せても自動に戻らない")
+        store.setLabelsHidden(card.id, false)
+        store.markNoteReported(card.id)
+        XCTAssertNil(store.encounters.first?.shownDestination, "通報したのに区間の字が残る")
+        store.update { s in
+            s.setOrigin(.custom, text: "雪国\u{202E}です")
+            s.destinationLabel = "金沢"
+        }
+        XCTAssertEqual(store.payload?.origin, "雪国です", "書いた字を整えずに載せた")
+        XCTAssertEqual(store.payload?.destination, "金沢")
+    }
+
     /// 期限切れで止めた後に入り直したら、まだ届いていない束の知らせを予約し直す
     func testNoticesAreRescheduledOnSignIn() async throws {
         let store = makeStore()

@@ -12,6 +12,8 @@ struct PassCardMenu: View {
     let reportNote: () -> Void
     /// ひとことを伏せる／出す（この端末だけ）
     let toggleNote: () -> Void
+    /// 区間の字（発・着）を伏せる／出す（伏せたら自動の形に戻る・2026-10-16）
+    let toggleLabels: () -> Void
     let block: () -> Void
     let remove: () -> Void
     /// 写真の上に置く（帳の綴じ）ならガラスの丸に白。黒地の上（束の上の段）なら素の白
@@ -22,10 +24,20 @@ struct PassCardMenu: View {
             Button(action: report) {
                 Label(L("写真を通報する", "Report photo"), systemImage: "flag")
             }
-            if !content.card.note.isEmpty {
+            if content.card.hasWrittenText {
+                // ひとこと・発・着（相手の端末から届いた、署名の無い字）を1つの通報で
                 Button(action: reportNote) {
-                    Label(L("ひとことを通報する", "Report note"), systemImage: "text.bubble")
+                    Label(L("書かれた字を通報する", "Report the text"), systemImage: "text.bubble")
                 }
+            }
+            if !(content.card.originLabel ?? "").isEmpty || !(content.card.destinationLabel ?? "").isEmpty {
+                Button(action: toggleLabels) {
+                    content.card.labelsHidden == true
+                        ? Label(L("区間の字を出す", "Show route text"), systemImage: "eye")
+                        : Label(L("区間の字を伏せる", "Hide route text"), systemImage: "eye.slash")
+                }
+            }
+            if !content.card.note.isEmpty {
                 Button(action: toggleNote) {
                     content.card.noteHidden == true
                         ? Label(L("ひとことを出す", "Show note"), systemImage: "eye")

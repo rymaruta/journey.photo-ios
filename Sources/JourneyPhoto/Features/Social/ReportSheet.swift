@@ -61,7 +61,7 @@ struct ReportSheet: View {
                         receipt
                     } else {
                         if let passNote {
-                            Text(L("すれちがいのカードのひとこと：「\(passNote)」", "Note on a Pass card: \"\(passNote)\""))
+                            Text(L("すれちがいのカードに書かれた字：\(passNote)", "Text on a Pass card: \(passNote)"))
                                 .font(.subheadline)
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(3)
@@ -135,7 +135,7 @@ struct ReportSheet: View {
     private var header: some View {
         HStack {
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
-            Text(passNote != nil ? L("ひとことを通報", "Report note")
+            Text(passNote != nil ? L("書かれた字を通報", "Report text")
                  : comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)

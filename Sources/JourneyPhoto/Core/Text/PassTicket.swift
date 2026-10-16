@@ -64,6 +64,34 @@ enum PassTicket {
         return shortPlace(prefecture)
     }
 
+    /// 区間の左。**相手が自分で書いた字があればそのまま**（縮めない・2026-10-16 判断）、無ければ自動の形
+    static func origin(_ prefecture: String?, written: String?) -> String {
+        if let written, !written.isEmpty { return written }
+        return origin(prefecture)
+    }
+
+    /// 区間の右。相手が自分で書いた字（旅先）があればそのまま、無ければすれちがった所（自動）。
+    /// **下車の行は書いた字に関わらず、受け取った側の位置で自動**（会った場所の記録は残す・`alighting`）
+    static func destination(_ placeName: String?, written: String?) -> String {
+        if let written, !written.isEmpty { return written }
+        return destination(placeName)
+    }
+
+    /// 名刺選びの見本の区間の左（選んだ発をその場で出す）
+    static func previewOrigin(_ choice: PassSettings.Origin, text: String, homePrefecture: String?) -> String {
+        switch choice {
+        case .home: return origin(homePrefecture)
+        case .hidden: return origin(nil)
+        case .custom: return origin(nil, written: PassExchange.cleanLabel(text))
+        }
+    }
+
+    /// 名刺選びの見本の区間の右（自動はすれちがう所なので「旅先」）
+    static func previewDestination(custom: Bool, text: String) -> String {
+        let written = custom ? PassExchange.cleanLabel(text) : ""
+        return written.isEmpty ? L("旅先", "Your trip") : written
+    }
+
     /// 区間の右（すれちがった場所）。無ければ「どこか」
     static func destination(_ placeName: String?) -> String {
         guard let name = placeName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {

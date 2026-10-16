@@ -30,8 +30,16 @@ struct PassViewerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var index = 0
-    @State private var showsBack = false
+    /// きっぷの横の回り（ラジアン・0 が表）。**90° を越えたら裏**（`SpinMotion.showsBack`）。
+    /// 2026-10-16 判断（owner「このカードも回転できるようにしたい」）: メダルと同じ手触りで指で回す
+    @State private var yaw: Double = 0
+    /// 指を置いた時の回りと時刻（回すか払うかを決める・`PassSpinGesture`）
+    @State private var dragBaseYaw: Double?
+    @State private var dragStartAt: Date?
+    /// 「視差効果を減らす」・きっぷの外で払っている間の横のずれ
     @State private var drag: CGFloat = 0
+
+    private var showsBack: Bool { SpinMotion.showsBack(yaw) }
     @State private var thanking = false
     @State private var errorMessage: String?
     @State private var didStart = false
@@ -69,13 +77,29 @@ struct PassViewerView: View {
             RadialGradient(colors: [Color(red: 21 / 255, green: 18 / 255, blue: 12 / 255), Color.black],
                            center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: 520)
                 .ignoresSafeArea()
+                // きっぷの外で払う → 次／前のカード（きっぷの上は回す・2026-10-16 判断）
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            if dragStartAt == nil { dragStartAt = Date() }
+                            drag = value.translation.width
+                        }
+                        .onEnded { value in
+                            endDrag(translation: Double(value.translation.width),
+                                    predicted: Double(value.predictedEndTranslation.width), onCard: false)
+                        }
+                )
             VStack(spacing: 0) {
                 header
                 if let current {
                     deck(current)
                         .padding(.top, 26)
-                    Text(L("写真を押すと全面 · 下を押すと裏返る · 左右に払って次のカード",
-                           "Tap the photo to view it · Tap below to flip · Swipe for the next card"))
+                    Text(reduceMotion
+                         ? L("写真を押すと全面 · 下を押すと裏返る · 左右に払って次のカード",
+                             "Tap the photo to view it · Tap below to flip · Swipe for the next card")
+                         : L("写真を押すと全面 · 指を置いて回す · 素早く払うと次のカード",
+                             "Tap the photo to view it · Hold and turn · Flick for the next card"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .multilineTextAlignment(.center)
@@ -106,14 +130,14 @@ struct PassViewerView: View {
         .onChange(of: shown.count) { _, count in
             if count == 0 { dismiss(); return }
             if index >= count { index = count - 1 }
-            showsBack = false
+            yaw = 0
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId,
-                        carriedPassNote: target.card.noteReported == true ? target.card.note : nil)
+                        carriedPassNote: target.card.noteReported == true ? target.card.writtenText : nil)
         }
         .sheet(item: $noteReportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.writtenText,
                         onReported: { pass.markNoteReported(target.id) })
         }
         .fullScreenCover(item: $fullPhoto) { photo in PassPhotoFullView(photo: photo) }
@@ -149,6 +173,7 @@ struct PassViewerView: View {
                              report: { reportTarget = current },
                              reportNote: { noteReportTarget = current },
                              toggleNote: { pass.setNoteHidden(current.id, current.card.noteHidden != true) },
+                             toggleLabels: { pass.setLabelsHidden(current.id, current.card.labelsHidden != true) },
                              block: { blockTarget = current },
                              remove: {
                                  pass.remove(current.id)
@@ -177,34 +202,36 @@ struct PassViewerView: View {
             // 後ろに重なる2枚（残りがあるときだけ・板の傾き 4°・2°）
             if index + 2 < shown.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
             if index + 1 < shown.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
-            ZStack {
-                // 写真を押すと全面で見る（写真の上は白だけ）。裏を見ている間は表を押させない
-                PassCardFront(face: content.face(), onPhotoTap: { fullPhoto = content.photo })
-                    .opacity(showsBack ? 0 : 1)
-                    .allowsHitTesting(!showsBack)
-                PassCardBack(content: content)
-                    // 裏は鏡に映らないように先に半回転しておく
-                    .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
-                    .opacity(showsBack ? 1 : 0)
-                    .allowsHitTesting(showsBack)
-            }
-            .rotation3DEffect(.degrees(showsBack ? 180 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
-            .rotationEffect(.degrees(showsBack ? 1 : -1.5))
+            PassSpinTicket(yaw: yaw, content: content, reduceMotion: reduceMotion) { fullPhoto = content.photo }
             .offset(x: drag)
             .rotationEffect(.degrees(Double(drag) / 24))
-            .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.82), value: showsBack)
             .contentShape(Rectangle())
-            .onTapGesture { showsBack.toggle() }
+            .onTapGesture { flip() }
             .gesture(
                 DragGesture(minimumDistance: 12)
-                    .onChanged { value in drag = value.translation.width }
-                    .onEnded { value in settle(value.translation.width) }
+                    .onChanged { value in
+                        if dragStartAt == nil {
+                            dragStartAt = Date()
+                            dragBaseYaw = yaw
+                        }
+                        if reduceMotion {
+                            drag = value.translation.width
+                        } else {
+                            yaw = (dragBaseYaw ?? yaw)
+                                + SpinMotion.yawDelta(dx: Double(value.translation.width),
+                                                      width: Double(PassCardStyle.deckSize.width))
+                        }
+                    }
+                    .onEnded { value in
+                        endDrag(translation: Double(value.translation.width),
+                                predicted: Double(value.predictedEndTranslation.width), onCard: true)
+                    }
             )
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
                                          : L("押すと裏返します", "Tap to flip the card"))
-            .accessibilityAction { showsBack.toggle() }
+            .accessibilityAction { flip() }
             .accessibilityAction(named: L("写真を全面で見る", "View photo full screen")) { fullPhoto = content.photo }
             .accessibilityAction(named: L("次のカード", "Next card")) { move(by: 1) }
             .accessibilityAction(named: L("前のカード", "Previous card")) { move(by: -1) }
@@ -225,12 +252,35 @@ struct PassViewerView: View {
             .accessibilityHidden(true)
     }
 
-    /// 指を離した。払った距離が `swipeDistance` を超えたら次（左へ）・前（右へ）
-    private func settle(_ width: CGFloat) {
-        let step = PassViewerMotion.step(forDrag: width, distance: Self.swipeDistance)
-        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
+    /// 押して裏返す（読み上げの「裏返す」も）。半周先の面へ（「視差効果を減らす」では動かさずに替える）
+    private func flip() {
+        let target = SpinMotion.flipTarget(from: yaw)
+        withAnimation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.82)) { yaw = target }
+    }
+
+    /// 指を離した。回す（近い面に吸い付く）か、次／前のカードか（`PassSpinGesture.classify`）
+    private func endDrag(translation: Double, predicted: Double, onCard: Bool) {
+        let duration = dragStartAt.map { Date().timeIntervalSince($0) } ?? 1
+        dragStartAt = nil
+        dragBaseYaw = nil
+        let outcome = PassSpinGesture.classify(translation: translation, predicted: predicted, duration: duration,
+                                               onCard: onCard, reduceMotion: reduceMotion,
+                                               swipeDistance: Double(Self.swipeDistance))
+        // 指の速さのおよそ（勢いの見込みは、離してから約 0.25 秒ぶん）
+        let velocity = SpinMotion.releaseVelocity(vx: (predicted - translation) / 0.25,
+                                                  width: Double(PassCardStyle.deckSize.width), reduceMotion: reduceMotion)
+        withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.82)) {
             drag = 0
-            if step != 0 { move(by: step) }
+            switch outcome {
+            case .rotate:
+                yaw = SpinMotion.snapTarget(yaw: yaw, velocity: velocity)
+            case .next:
+                move(by: 1)
+            case .previous:
+                move(by: -1)
+            case .none:
+                yaw = SpinMotion.nearestFace(yaw)
+            }
         }
     }
 
@@ -238,7 +288,7 @@ struct PassViewerView: View {
         let next = index + step
         guard shown.indices.contains(next) else { return }
         index = next
-        showsBack = false
+        yaw = 0
         errorMessage = nil
     }
 
@@ -303,12 +353,35 @@ struct PassViewerView: View {
     }
 }
 
-/// めくりの決まり（テストで見張る）
-enum PassViewerMotion {
-    /// 払った距離から、進む数（左へ払うと次 = +1、右へ払うと前 = -1、足りなければ 0）
-    static func step(forDrag width: CGFloat, distance: CGFloat) -> Int {
-        if width <= -distance { return 1 }
-        if width >= distance { return -1 }
-        return 0
+/// 回るきっぷ（表・裏）。**角度を補間して描く**（`Animatable`）——裏返す途中の 90° で表と裏が替わる。
+/// 縁と破線の光は角度から（`SpinMotion.shine`・真鍮の線の上だけ）。「視差効果を減らす」では回さず、光も流さない
+struct PassSpinTicket: View, Animatable {
+    var yaw: Double
+    let content: PassCardContent
+    let reduceMotion: Bool
+    let onPhotoTap: () -> Void
+
+    var animatableData: Double {
+        get { yaw }
+        set { yaw = newValue }
+    }
+
+    var body: some View {
+        let back = SpinMotion.showsBack(yaw)
+        let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)
+        ZStack {
+            // 写真を押すと全面で見る（写真の上は白だけ）。裏を見ている間は表を押させない
+            PassCardFront(face: content.face(), onPhotoTap: onPhotoTap, shine: shine)
+                .opacity(back ? 0 : 1)
+                .allowsHitTesting(!back)
+            PassCardBack(content: content, shine: shine)
+                // 回すときは、裏が鏡に映らないように先に半回転しておく（回さないときはそのまま）
+                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
+                .opacity(back ? 1 : 0)
+                .allowsHitTesting(back)
+        }
+        .rotation3DEffect(.radians(reduceMotion ? 0 : yaw), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+        .rotationEffect(.degrees(back ? 1 : -1.5))
     }
 }
+
