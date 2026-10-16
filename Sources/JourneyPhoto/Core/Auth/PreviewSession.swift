@@ -131,6 +131,22 @@ enum PreviewSession {
     /// **入っている見本の利用者のときだけ**効く。Release では必ず false
     static let pushPrimerKey = "JPPreviewPushPrimer"
 
+    /// UI テストで、すれちがいの届いた束（見本のカード7枚）を入れる（Debug のみ）。`-JPPreviewPass YES`。
+    ///
+    /// カードは近くの端末と Bluetooth で交換したときにしか届かず、シミュレータには電波が無いので絵が撮れない。
+    /// 公開一覧の他の人の写真から見本を作る（端末の中だけ・サーバーには何も送らない）。
+    /// **入っている見本の利用者のときだけ**効く。Release では必ず false
+    static let passSampleKey = "JPPreviewPass"
+
+    static var passSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: passSampleKey)
+        #else
+        return false
+        #endif
+    }
+
     static var opensPushPrimer: Bool {
         #if DEBUG
         guard userId != nil else { return false }

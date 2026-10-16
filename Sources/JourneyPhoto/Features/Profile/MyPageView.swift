@@ -988,6 +988,15 @@ struct MyPageView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("trips.plans")
+            JPCardDivider()
+            // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）。旅先で受け取ったカード
+            NavigationLink { PassBookView() } label: {
+                JPRowLabel(title: L("すれちがい帳", "Pass book"), systemImage: "rectangle.portrait.on.rectangle.portrait",
+                           detail: L("旅先ですれちがった人から届いたカード",
+                                     "Cards from people you passed on your travels"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.passBook")
         }
         .padding(.horizontal, ProfileV2.gutter)
     }

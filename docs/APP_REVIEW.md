@@ -64,6 +64,7 @@ App Store Connect の Demo Account に入れる。
 | 5.1.1(v) | アプリ内でのアカウント削除 | 設定 → アカウントの削除（確認語の入力つき） | `DeleteAccountView.swift` |
 | 5.1.1 | 必要のないログイン要求は不可 | 閲覧・検索・地図はログイン不要 | `RootView.swift` |
 | 5.1.2 | 位置情報の最小化 | 精細な位置は保存しない（約1kmに丸める） | `ImagePreparer.readCoords` |
+| 5.1.1 / 5.1.2 | Bluetooth（すれちがい・2026-10-16） | **既定はオフ**。オンにする前に説明を出し、そこで初めて Bluetooth を尋ねる。電波で渡すのは版・公開写真の id・ひとこと（20字・80 バイトまで）・出身を出すかの印だけ。**特性は暗号化しておらず、近くの Bluetooth 機器なら誰でも読める**（写真の id から持ち主も分かる・名刺を変えるまで同じ値・ブロックした相手にも届きうる）——設定とオンにする前の説明にそのまま書いてある（`PassPrivacyText`）。カードの「…」から通報・ブロック・帳から外すができる（審査 1.2）。受け取ったカード・すれちがった場所（市区町村ほど・0.1 度に丸める）は**端末の中だけ**でサーバーへ送らない（＝収集しない）。位置は撮影地マップで許可済みのときだけ使い、すれちがいからは尋ねない | `PassRadio.swift` / `PassStore.swift` / `PassExchange.swift` |
 | 2.1 | プライバシーマニフェスト | 収集項目と UserDefaults の理由を申告 | `Resources/PrivacyInfo.xcprivacy` |
 | 2.5.1 | 非公開 API 不使用 | 依存は Amplify Swift 1本のみ | `project.yml` |
 | 4.8 Sign in with Apple | **対象外** | 第三者ログイン（Google・Facebook 等）を使っていない。認証は自前の Cognito でメール＋パスワードのみ | `AuthGateway.swift` |

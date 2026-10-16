@@ -9,6 +9,14 @@ struct GalleryView: View {
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
+    /// すれちがいの届いた束（板 PassHome・2026-10-16）
+    @EnvironmentObject private var pass: PassStore
+    /// 開いている束。**出す口はここに置く**（札は `LazyVStack` の中なので）
+    @State private var passDeck: PassDeck?
+    @State private var showPassBook = false
+    /// すれちがいの「いま」。**時計で待たない**（ロック中に 18 時を越えると古いまま残る）——前面に来た・
+    /// 知らせが届いた／押された・画面に戻ったときに入れ直す（2026-10-16 の読み直し）
+    @State private var passNow = Date()
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
     /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
@@ -139,6 +147,7 @@ struct GalleryView: View {
         .onAppear { if scenePhase == .background { wentToBackground = true } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
+            if phase == .active { passNow = Date() }
             if phase == .active, wentToBackground {
                 wentToBackground = false
                 storiesRefresh &+= 1
@@ -156,6 +165,27 @@ struct GalleryView: View {
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
+        }
+        // すれちがいの束（札を押した・夕方の知らせを押した）。「帳に入れる」は閉じてから帳を積む
+        .fullScreenCover(item: $passDeck) { deck in
+            PassViewerView(cards: deck.cards, mode: .bundle) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPassBook = true }
+            }
+        }
+        .navigationDestination(isPresented: $showPassBook) { PassBookView() }
+        .onChange(of: pass.openRequests) { _, _ in
+            passNow = Date()
+            openPendingPass()
+        }
+        .onChange(of: pass.arrivals) { _, _ in passNow = Date() }
+        // 冷えた起動で知らせを押した回は、写真を引き終えてから開く
+        .onChange(of: pass.photos.count) { _, _ in openPendingPass() }
+        // 届いた束の写真を引く（届いた数・ブロック／通報が変わったら引き直す）。**引くのは「いま」で**
+        .task(id: PassResolveKey(due: pass.encounters.filter { $0.deliverAt <= passNow }.count,
+                                 hidden: hidden.revision)) {
+            let now = Date()
+            guard pass.hasDelivered(now: now) else { return }
+            await pass.resolve(gallery: environment.gallery, profiles: environment.profiles, now: now)
         }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。
@@ -201,9 +231,28 @@ struct GalleryView: View {
         }
     }
 
+    /// 夕方の知らせを押した分の束を開く。**写真を引けるまで待つ**（引けた束が空なら諦める）
+    private func openPendingPass() {
+        guard pass.hasPendingOpen, passDeck == nil else { return }
+        let cards = passCards(now: Date())
+        guard !cards.isEmpty else {
+            if !pass.photos.isEmpty { _ = pass.takePendingOpen() }
+            return
+        }
+        _ = pass.takePendingOpen()
+        passDeck = PassDeck(cards: cards)
+    }
+
+    /// 届いた束のうち、まだ開いていない分（ブロック・通報を落とす）
+    private func passCards(now: Date) -> [PassCardContent] {
+        pass.contents(pass.unopened(hiding: hidden.snapshot, now: now), book: pass.book(hiding: hidden.snapshot, now: now))
+    }
+
     /// 前面確定後: 写し・印・必要なら読み直し
     private func landOnScreen(reloadMy: Bool) {
         isOnScreen = true
+        passNow = Date()
+        openPendingPass()
         // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
         // 後から足す（`GalleryViewModel.pageWrite`）
         model.markOnScreen()
@@ -354,6 +403,10 @@ struct GalleryView: View {
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
                 // 投稿シートを閉じたとき・引き下げ更新・前面に戻ったときに読み直す
                 // （どちらの数も増える一方なので、和は必ず変わる）
+                // **すれちがいの届いた束**（板 PassHome: 見出しのすぐ下・「ここから下はいつものホーム」）。
+                // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
+                let passBundle = passCards(now: passNow)
+                PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
@@ -503,4 +556,10 @@ struct GalleryView: View {
         let ids = try? await environment.social.myFollowingIds()
         return ids.map { Set($0) }
     }
+}
+
+/// 届いた束の写真を引き直す合図（`GalleryView`）
+private struct PassResolveKey: Equatable {
+    let due: Int
+    let hidden: Int
 }

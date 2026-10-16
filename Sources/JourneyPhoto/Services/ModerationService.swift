@@ -102,6 +102,44 @@ struct ModerationService {
         return head + label + PostLimits.clamp(oneLine(comment.text), limit: room)
     }
 
+    // MARK: - すれちがいのカードのひとことの通報（2026-10-16 判断）
+    //
+    // ひとことは**署名が無い**（Bluetooth の中身は誰でも書ける）。写真の通報として送ると、書いていないかも
+    // しれない写真の持ち主が罰されうる。コメントの通報と同じく写真の通報の口に載せるが、頭に
+    // 「すれちがいのカードのひとこと」の印と「写真の持ち主が書いたとは限らない」を書き、本文を添える。
+    // 運営はこの印を見て、写真ではなくひとことの通報として読む
+
+    /// ひとことの通報の補足の頭の印（テストで見張る）
+    static let passNoteMarker = "[すれちがいのカードのひとこと]"
+
+    static func passNoteReportNote(_ text: String, note: String?) -> String {
+        func oneLine(_ text: String) -> String {
+            text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        var head = "\(passNoteMarker) 署名なし（写真の持ち主が書いたとは限らない・写真の通報ではない）"
+        let extra = PostLimits.clamp(oneLine(note ?? ""), limit: commentReportUserNoteMax)
+        if !extra.isEmpty { head += " / 補足: \(extra)" }
+        head = PostLimits.clamp(head, limit: reportNoteMax)
+        let label = " / 本文: "
+        let room = reportNoteMax - PostLimits.length(head) - PostLimits.length(label)
+        guard room > 0 else { return head }
+        return head + label + PostLimits.clamp(oneLine(text), limit: room)
+    }
+
+    /// 写真の通報に、前に送ったひとことの通報を一緒に入れる（2026-10-16 の読み直し）。
+    ///
+    /// **サーバーの通報は「1人1写真に1件」で上書き**（`report.ts` の `reportId`）。同じカードのひとことを
+    /// 先に通報してから写真を通報すると、ひとことの通報が消える。写真の通報の補足の後ろに、前のひとことの通報
+    /// （印と本文）を足して送る。500 字に収める（写真の補足を先に・ひとことは残りに）
+    static func photoReportWithPassNote(_ note: String?, passNote: String) -> String {
+        let head = PostLimits.clamp((note ?? "").trimmingCharacters(in: .whitespacesAndNewlines), limit: commentReportUserNoteMax)
+        let label = head.isEmpty ? "" : " / 前に送った通報: "
+        let room = reportNoteMax - PostLimits.length(head) - PostLimits.length(label)
+        guard room > 0 else { return head }
+        return head + label + PostLimits.clamp(passNoteReportNote(passNote, note: nil), limit: room)
+    }
+
     /// 通報する。**同じ人が押し直したら上書き**なので、二重送信を怖がらなくてよい。
     /// 自分の投稿は 400 で断られる。
     func report(photoId: String, reason: ReportReason, note: String?) async throws {

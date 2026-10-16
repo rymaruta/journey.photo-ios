@@ -112,10 +112,12 @@ final class V2SettingsProTests: XCTestCase {
 
     /// 「通知がオフのため届きません」の帯: 地は brass-soft、説明も真鍮 85%（帯の上で 4.5:1 以上）
     func testLightAlertNoticeBand() throws {
+        // 2026-10-16: 帯は部品（`PushOffNoticeRow`）に出した（Pro の「前の晩に知らせる」とすれちがいの設定が使う）
         let rows = try source("Features/Pro/LightAlertSettingsRows.swift")
-        let band = slice(rows, from: "private func pushNoticeRow", to: "private func fixPush")
+        XCTAssertTrue(rows.contains("PushOffNoticeRow(notice: notice"))
+        let band = try source("Features/Common/PushOffNoticeRow.swift")
         // 地はボタンの後ろの別の矩形（2026-10-16・ボタンに付けた地は実機で上の角が丸く抜けた）
-        assertInOrder(["ZStack {", "Rectangle()", ".fill(WebTheme.accentSoft)", "pushNoticeButton(notice)",
+        assertInOrder(["ZStack {", "Rectangle()", ".fill(WebTheme.accentSoft)", "pushNoticeButton",
                        "Text(notice.detail)",
                        ".foregroundStyle(WebTheme.accent.opacity(LightAlertSettingsStyle.noticeDetailOpacity))",
                        ".foregroundStyle(WebTheme.accent)", ".frame(maxWidth: .infinity, minHeight: 54"],

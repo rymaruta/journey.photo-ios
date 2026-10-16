@@ -1327,6 +1327,66 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
+    /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
+    /// 束を開く（表）→ 写真を押して全面 → 閉じる → 下を押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
+    /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
+    ///
+    /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
+    /// 束が開かない・閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす
+    func testCapturesPass() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let open = app.buttons["pass.home.open"].firstMatch
+        // 札が出なければ落とす（2026-10-16 の読み直し: 出ないまま抜けると、札の .task が走らない回を見逃した）
+        guard open.waitForExistence(timeout: 45) else {
+            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "80-すれちがいの束")
+        open.tap()
+
+        let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "札を押しても束が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "81-すれちがいのカード（表）")
+        // 写真（きっぷの上 250/430）を押すと全面で見る（2026-10-16 案C）
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        let photoClose = app.buttons["pass.photo.close"].firstMatch
+        XCTAssertTrue(photoClose.waitForExistence(timeout: 5), "写真を押しても全面で見られない")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "84-すれちがいの写真（全面）")
+        XCTAssertGreaterThanOrEqual(photoClose.frame.height, 44, "全面の × が 44pt 未満")
+        photoClose.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // きっぷの下（写真ではない所）を押すと裏返る
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "82-すれちがいのカード（裏）")
+
+        let close = app.buttons["pass.viewer.close"].firstMatch
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        let file = app.buttons["pass.viewer.file"].firstMatch
+        for (button, name) in [(close, "閉じる"), (thanks, "ありがとう"), (file, "帳に入れる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        guard file.exists, file.isHittable else { return XCTFail("「帳に入れる」を押せない") }
+        file.tap()
+        let book = app.staticTexts["すれちがい帳"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 10), "「帳に入れる」で帳が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "83-すれちがい帳")
+    }
+
     /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
     /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。起動の鍵（`-JPComposeGuidePreview`・Debug のみ）で
     /// Pro の確かめを飛ばす。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、線は鍵があるときだけ重なる。

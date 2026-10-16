@@ -319,11 +319,14 @@ final class ScreenWiringTests: XCTestCase {
                        "通知の案内がアプリの設定の一番上を開く（「通知」の行を探す手間が増える）")
         // v2（2026-10-14）: 地は brass-soft（真鍮 8% を黒に重ねた #1C170E）。行いっぱいの矩形のまま。
         // 2026-10-16: ボタンに付けた地は実機で上の角が丸く抜けた → ボタンの後ろに別の矩形として敷く
-        XCTAssertTrue(rows.contains(".fill(WebTheme.accentSoft)"),
+        // 2026-10-16: 行は部品（`PushOffNoticeRow`）に出した（すれちがいの設定と同じものを使う）
+        XCTAssertTrue(rows.contains("PushOffNoticeRow(notice: notice"), "「前の晩に知らせる」が案内の行の部品を使っていない")
+        let notice = try source("Features/Common/PushOffNoticeRow.swift")
+        XCTAssertTrue(notice.contains(".fill(WebTheme.accentSoft)"),
                       "「通知がオフのため届きません」の地が行いっぱいに塗られていない")
-        XCTAssertFalse(rows.contains(".background(WebTheme.accentSoft)"),
+        XCTAssertFalse(notice.contains(".background(WebTheme.accentSoft)"),
                        "案内の地をボタンに付けると、実機で上の角が丸く抜ける（2026-10-16）")
-        XCTAssertFalse(rows.contains("RoundedRectangle(cornerRadius: 12)"),
+        XCTAssertFalse(notice.contains("RoundedRectangle(cornerRadius: 12)"),
                        "案内の地を角丸にすると、角の外側が札の地のまま残り文字が塗りの外に出る")
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),

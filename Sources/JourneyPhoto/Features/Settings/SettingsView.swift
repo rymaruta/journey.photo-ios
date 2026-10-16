@@ -11,6 +11,7 @@ struct SettingsView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var pass: PassStore
     /// 自分のプロフィール（Pro の節の中身・第2段階）。読めなければ nil
     @State private var myProfile: UserProfile?
     @State private var wantsPush = false
@@ -136,6 +137,7 @@ struct SettingsView: View {
                     // 板 43 の並び: Pro がいちばん上
                     ProSettingsSection(profile: myProfile)
                     notificationsSection
+                    passSection
                     privacySection
                 }
                 compositionSection
@@ -203,6 +205,21 @@ struct SettingsView: View {
                 JPCardDivider()
                 note(message, color: WebTheme.danger)
             }
+        }
+    }
+
+    /// すれちがい（板 PassSettings の戻り先が設定・2026-10-16）。お知らせとプライバシーの間
+    /// （近くの人とカードを交換する＝届くものと、見せるものの両方に関わる）
+    private var passSection: some View {
+        section(L("すれちがい", "Pass")) {
+            NavigationLink { PassSettingsView() } label: {
+                JPRowLabel(title: L("すれちがい", "Pass"),
+                           detail: L("旅先で近くにいた人と、名刺の一枚をカードで交換する",
+                                     "Swap a calling-card photo with people you pass on your travels"),
+                           value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.pass")
         }
     }
 

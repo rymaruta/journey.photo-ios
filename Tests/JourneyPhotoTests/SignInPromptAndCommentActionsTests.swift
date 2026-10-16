@@ -148,7 +148,8 @@ final class UsabilityWiringTests: XCTestCase {
     func testReportSheetCommentMode() throws {
         let sheet = try source("Features/Social/ReportSheet.swift")
         XCTAssertTrue(sheet.contains("comment.map { ModerationService.commentReportNote($0, note: note) } ?? note"))
-        XCTAssertTrue(sheet.contains("if comment == nil {\n                hidden.markReported(photoId, for: blocker)"),
+        // 2026-10-16: すれちがいのひとことの通報でも写真は消さない（`passNote`）
+        XCTAssertTrue(sheet.contains("if comment == nil && passNote == nil {\n                hidden.markReported(photoId, for: blocker)"),
                       "コメントの通報で写真ごと消している")
         XCTAssertTrue(sheet.contains("try await environment.moderation.block(userId: blockTarget)"))
     }

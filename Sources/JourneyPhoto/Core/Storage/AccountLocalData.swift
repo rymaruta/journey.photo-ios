@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 🔴 **退会しても端末に本人の控えが残っていた。** 控えは人ごとの鍵に分けて
 /// あるので次の人には見えないが、消えるべきもの（いいね・保存・行きたい場所・
-/// ブロック・参加したアルバム・見たストーリー・最近の曲・ストーリーと写真の投稿の書きかけ
+/// ブロック・参加したアルバム・見たストーリー・すれちがいの帳・最近の曲・ストーリーと写真の投稿の書きかけ
 /// とその画像・登録の確認の控え・通知の設定・ホームの札から開いた一冊の印・電波なしで使える旅）が端末に残り続けていた。
 /// 審査 5.1.1(v) の「アカウントの削除」は、端末に残した本人のデータも含む。
 ///
@@ -20,11 +20,19 @@ enum AccountLocalData {
     ///   - defaults: 試験で差し替える
     ///   - draftDirectory: ストーリー・写真の投稿の書きかけの画像の置き場（試験で差し替える）
     ///   - offlineTripsRoot: 電波なしで使える旅の置き場（試験で差し替える）
+    ///   - passRoot: すれちがいの帳の置き場（試験で差し替える）
     static func remove(userId: String, username: String?,
                        defaults: UserDefaults = .standard,
                        draftDirectory: URL? = nil,
-                       offlineTripsRoot: URL? = nil) {
+                       offlineTripsRoot: URL? = nil,
+                       passRoot: URL? = nil) {
         guard !userId.isEmpty else { return }
+        // 🔴 **すれちがいの電波を先に止める**（2026-10-16）。止めないと、消した後も前の名刺を出し続け、
+        // 手元に持っている帳が次の保存で書き戻される
+        if PassStore.shared.userId == userId {
+            PassStore.shared.use(userId: nil)
+            PassCoordinator.shared.refresh()
+        }
         FavoritesStore(defaults: defaults).removeData(for: userId)
         SavedPhotosStore(defaults: defaults).removeData(for: userId)
         ModerationStore(defaults: defaults).removeData(for: userId)
@@ -39,6 +47,8 @@ enum AccountLocalData {
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）
         OfflineTripStore.removeData(for: userId, root: offlineTripsRoot, defaults: defaults)
+        // すれちがいの帳と設定（受け取ったカード・名刺の一枚・ひとこと）
+        PassStore.removeData(for: userId, root: passRoot, defaults: defaults)
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
         TripBookCard.removeAll()
         if let username, !username.isEmpty {
