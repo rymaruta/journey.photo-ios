@@ -172,6 +172,22 @@ actor PublicGalleryService {
     /// 取れた時刻で見ると、失敗した後は控えがある間も呼ぶたびに
     /// 叩き直し、一覧を最大 `liveTimeout` ずつ待たせる
     private var liveAttemptedAt: Date?
+    /// 最後の取得が**失敗したか**（時間切れ・圏外・500・壊れた答え）。失敗した回は控えの寿命を
+    /// `liveRetryAfterFailure` に縮める（`refreshLiveCounts`）
+    private var liveLastFailed = false
+
+    /// 失敗した後に取り直すまでの間。
+    ///
+    /// 2026-10-16 判断: 4秒（`liveTimeout`）で諦めた回は、成功と同じ60秒の控えにすると最大60秒
+    /// 止まった `photos.json` の一覧のまま（新しい写真が出ない）。「裏で要求を続け、届いたら画面に
+    /// 読み直させる」（`restrictedChanges` のような通知）は画面ごとに受け口が要り漏れやすいので、
+    /// **失敗した回だけ控えを短くする**方を採る。次にどの画面が一覧を読んでも10秒後なら取り直す。
+    /// 叩き直しの間隔は10秒より詰めない（失敗が続く間、呼ぶたびに最大4秒待たせない）
+    let liveRetryAfterFailure: TimeInterval
+
+    /// 生の答え（`GET /photos` の本文）の端末の控え。**圏外では静的 JSON の控えより先に使う**
+    /// （`loadLiveCounts`）。名前は静的 JSON の控えから作る（`PhotoSnapshotStore.liveCompanion`）
+    private let liveStore: PhotoSnapshotStore
 
     /// いまの数を待つ上限。**一覧を出すのをこれ以上遅らせない**
     /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
@@ -193,8 +209,11 @@ actor PublicGalleryService {
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
          edits: PhotoEditLedger = PhotoEditLedger(),
          beforeLiveRequest: (@Sendable () async -> Void)? = nil,
-         beforeStaticRequest: (@Sendable () async -> Void)? = nil) {
+         beforeStaticRequest: (@Sendable () async -> Void)? = nil,
+         liveRetryAfterFailure: TimeInterval = 10) {
         self.url = url
+        self.liveRetryAfterFailure = liveRetryAfterFailure
+        self.liveStore = snapshot.liveCompanion
         self.beforeStaticRequest = beforeStaticRequest
         self.edits = edits
         self.liveURL = liveURL
@@ -440,7 +459,7 @@ actor PublicGalleryService {
             }
         }
         if !force, let liveAttemptedAt,
-           Date().timeIntervalSince(liveAttemptedAt) < Self.cacheLifetime {
+           Date().timeIntervalSince(liveAttemptedAt) < (liveLastFailed ? liveRetryAfterFailure : Self.cacheLifetime) {
             return
         }
         let startedAt = Date()
@@ -469,12 +488,30 @@ actor PublicGalleryService {
             let (data, response) = try await session.cancellableData(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
-                  let snapshot = LiveLikes.read(data) else { return }
+                  let snapshot = LiveLikes.read(data) else { return liveFailed() }
             liveSnapshot = snapshot
             liveCountsAsOf = startedAt
+            liveLastFailed = false
+            // 行のある答えだけを控える（空の答えで前の良い控えを潰さない・`LiveLikes.list` は空なら静的）
+            if !snapshot.ids.isEmpty { liveStore.save(data) }
         } catch {
             print("[gallery] いまの一覧（GET /photos）を取れませんでした: \(error)")
+            liveFailed()
         }
+    }
+
+    /// 取れなかった回。控えを短くし（`liveRetryAfterFailure`）、**この起動でまだ1度も取れていなければ
+    /// 端末の生の控えを使う**（なければ静的 JSON のまま）。
+    ///
+    /// 2026-10-16 判断: 圏外で起動すると静的 JSON の控え（止まった 9/28 の一覧）だけになり、
+    /// 前に見えていた新しい写真が消えていた。生の控えの時刻は分からないので、いいねの数の時刻
+    /// （`liveCountsAsOf`）は付けない（押した回の答えに勝たせない）。この起動で取れた答えがあれば、
+    /// そちらの方が新しいので控えで上書きしない
+    private func liveFailed() {
+        liveLastFailed = true
+        guard liveSnapshot == nil, let data = liveStore.loadData(),
+              let stored = LiveLikes.read(data), !stored.ids.isEmpty else { return }
+        liveSnapshot = stored
     }
 
     /// 公開 JSON にも `GET /photos` にも非公開の写真は載らない（サーバーが `published`・

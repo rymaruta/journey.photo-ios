@@ -42,11 +42,28 @@ enum LiveLikes {
         for row in rows {
             guard let dict = row as? [String: Any],
                   let id = dict["id"] as? String, !id.isEmpty, seen.insert(id).inserted else { continue }
+            // 公開範囲を絞った行は**id ごと**一覧に入れない（`isRestrictedRow`）
+            if isRestrictedRow(dict["audience"]) { continue }
             ids.append(id)
         }
         let decoded = (try? JSONDecoder.api.decode(LenientPhotoList.self, from: data))?.photos ?? []
-        let photos = Dictionary(decoded.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let photos = Dictionary(decoded.filter { !isRestrictedRow($0.audience) }.map { ($0.id, $0) },
+                                uniquingKeysWith: { first, _ in first })
         return Snapshot(counts: counts, ids: ids, photos: photos)
+    }
+
+    /// 公開範囲を絞った行か。**サーバーの `isRestricted`（`api/src/photos.ts`）と同じ線**——空でない
+    /// 文字列、または null 以外の値なら絞った行とみなす（知らない値も隠す側に倒す）。
+    ///
+    /// 2026-10-16 判断: `GET /photos` は絞った行を返さない（Scan の `attribute_not_exists(audience)`）が、
+    /// 念のため端末でも落とす。限定公開は `GET /feed/restricted` から `RestrictedFeed.merge` が別に重ねる
+    /// ——生の行で混ざると、見てよい人の判定（サーバーの `isVisiblePhoto`）を通らずに出てしまう
+    static func isRestrictedRow(_ audience: Any?) -> Bool {
+        switch audience {
+        case nil, is NSNull: return false
+        case let text as String: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default: return true
+        }
     }
 
     /// 一覧の元。**Web の `usePhotos` と同じ決まり**（2026-10-16 判断）。
@@ -63,6 +80,7 @@ enum LiveLikes {
         guard let live, !live.ids.isEmpty else { return staticPhotos }
         let staticById = Dictionary(staticPhotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let replaced = live.ids.compactMap { live.photos[$0] ?? staticById[$0] }
+            .filter { !isRestrictedRow($0.audience) }
         // 1行も写真にできなかった答え（形の変わった答えなど）で一覧を空にしない。数だけ写す
         guard !replaced.isEmpty else { return apply(live.counts, asOf: asOf, to: staticPhotos) }
         return apply(live.counts, asOf: asOf, to: replaced)

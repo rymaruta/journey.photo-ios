@@ -132,10 +132,12 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         super.tearDown()
     }
 
-    private func service(live: URL?, gate: Gate? = nil) -> PublicGalleryService {
+    private func service(live: URL?, gate: Gate? = nil, snapshot: String = UUID().uuidString,
+                         retryAfterFailure: TimeInterval = 10) -> PublicGalleryService {
         PublicGalleryService(url: staticURL, liveURL: live, session: session,
-                             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
-                             beforeLiveRequest: gate.map { gate in { @Sendable () async in await gate.wait() } })
+                             snapshot: PhotoSnapshotStore(fileName: snapshot),
+                             beforeLiveRequest: gate.map { gate in { @Sendable () async in await gate.wait() } },
+                             liveRetryAfterFailure: retryAfterFailure)
     }
 
     private let staticBody = """
@@ -336,6 +338,114 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         await gallery.setRestrictedLoader { [restricted] }
         let photos = try await gallery.fetchPhotos()
         XCTAssertEqual(photos.map(\.id), ["r", "new"])
+    }
+
+    /// 写真にできない行だけ・静的に無い id だけの答えなら、**一覧は静的に戻る**（空にしない）。
+    /// 数だけは写す（`LiveLikes.list` の「1行も写真にできなかった」の guard）
+    func testUnusableLiveRowsFallBackToStatic() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"x","likes":9},{"id":"a","likes":2,"src":7}]"#)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["a"], "答えに在る id は静的の行で埋め、答えに無い b は出さない")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"x","likes":9}]"#)
+        let onlyUnknown = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(onlyUnknown.map(\.id), ["a", "b"], "写真にできない答えで一覧を空にしている")
+        // 答えに無い写真の数は触らない（`apply` の約束）
+        XCTAssertEqual(onlyUnknown.map(\.likes), [5, nil])
+    }
+
+    /// 成功 → 失敗 → 引き下げ: **失敗した回も、前に取れた生の行は残る**（止まった静的に戻さない）
+    func testLiveRowsSurviveALaterFailure() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"}]"#)
+        let gallery = service(live: liveURL)
+        let first = try await gallery.fetchPhotos()
+        XCTAssertEqual(first.map(\.id), ["new"])
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let forced = try await gallery.fetchPhotos(force: true)
+        XCTAssertEqual(StubProtocol.requestCount, 2, "引き下げで取り直していない")
+        XCTAssertEqual(forced.map(\.id), ["new"], "失敗した回に生の行が消えた")
+    }
+
+    /// 同じ id が答えに2行来ても1つ（先の行）
+    func testDuplicateLiveIdsCollapse() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"n","src":"https://x/n1.jpg"},{"id":"n","src":"https://x/n2.jpg"},{"id":"a","src":"https://x/a.jpg"}]
+        """)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["n", "a"])
+        XCTAssertEqual(photos.first?.src, "https://x/n1.jpg")
+    }
+
+    /// 生の行に公開範囲を絞った写真が混ざっても出さない（静的の行でも埋めない）。
+    /// 限定公開は `GET /feed/restricted` の方から重なる
+    func testRestrictedLiveRowsAreDropped() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: """
+        [{"id":"f","src":"https://x/f.jpg"}]
+        """)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"ok","src":"https://x/ok.jpg"},
+         {"id":"f","src":"https://x/f.jpg","audience":"followers"},
+         {"id":"cf","src":"https://x/cf.jpg","audience":"closeFriends"},
+         {"id":"odd","src":"https://x/odd.jpg","audience":{"x":1}},
+         {"id":"blank","src":"https://x/blank.jpg","audience":""}]
+        """)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["ok", "blank"], "絞った行が生の一覧から出ている")
+    }
+
+    /// 🔴 生を4秒で諦めた（失敗した）回は、**控えの寿命を縮めて取り直す**。60秒の控えのままだと、
+    /// その間は止まった静的の一覧で新しい写真が出ない。成功した回は今までどおり60秒叩かない
+    func testRetriesSoonAfterLiveFailure() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let gallery = service(live: liveURL, retryAfterFailure: 0)
+        let failed = try await gallery.fetchPhotos()
+        XCTAssertEqual(failed.map(\.id), ["a", "b"])
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"}]"#)
+        let retried = try await gallery.fetchPhotos()
+        XCTAssertEqual(StubProtocol.requestCount, 1, "失敗の後に生を取り直していない（静的は60秒の控え）")
+        XCTAssertEqual(retried.map(\.id), ["new"])
+
+        _ = try await gallery.fetchPhotos()
+        XCTAssertEqual(StubProtocol.requestCount, 1, "成功した後も控えの間に叩き直している")
+    }
+
+    /// 🔴 **圏外では生の控えを先に使う**（なければ静的）。静的の控えだけだと、前に見えていた
+    /// 新しい写真（止まった `photos.json` に無い）が圏外で消える
+    func testOfflineUsesStoredLiveAnswer() async throws {
+        let name = UUID().uuidString
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"},{"id":"a","src":"https://x/a.jpg"}]"#)
+        _ = try await service(live: liveURL, snapshot: name).fetchPhotos()
+
+        // 起動し直して圏外（どちらの口も 500）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 500, body: "{}")
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let offline = try await service(live: liveURL, snapshot: name).fetchPhotos()
+        XCTAssertEqual(offline.map(\.id), ["new", "a"], "圏外で生の控えを使っていない")
+
+        // 生の控えが無ければ静的の控え
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let other = UUID().uuidString
+        _ = try await service(live: nil, snapshot: other).fetchPhotos()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 500, body: "{}")
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let staticOnly = try await service(live: liveURL, snapshot: other).fetchPhotos()
+        XCTAssertEqual(staticOnly.map(\.id), ["a", "b"])
     }
 
     /// 口が設定されていなければ叩かない（既存の試験・未設定の環境）
