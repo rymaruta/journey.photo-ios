@@ -897,7 +897,10 @@ enum CompositionKind: String, CaseIterable, Identifiable {
                 return (ja, en)
             }
         case .goldenTriangle: return [("右上がり", "Rising"), ("右下がり", "Falling")]
-        case .diagonals: return [("バロック", "Baroque"), ("シニスター", "Sinister"), ("両方", "Both")]
+        case .diagonals:
+            // 2026-10-16 判断（確かめ役の指摘）: 名前が逆だった。一般的な呼び名はバロック＝左下→右上・シニスター＝左上→右下。
+            // 線の形と番号は動かさない（覚えてある番号と作例写真は 0＝左上→右下に合わせてある）ので、名前の並びを入れ替えた
+            return [("シニスター", "Sinister"), ("バロック", "Baroque"), ("両方", "Both")]
         case .triangle: return [("正", "Upright"), ("逆", "Inverted")]
         case .radial:
             return [("中心", "Center"), ("左上", "Top left"), ("右上", "Top right"), ("左下", "Bottom left"),

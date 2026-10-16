@@ -44,3 +44,11 @@ radial・sCurve・diagonals・otherRatios・grid6x4・iphone・square・fibonacc
 
 - これで入っている作例（33種類）はすべて実写真。「AI生成の構図作例」の札と、写真の構図を分けていた `CompositionExample.photoKinds` は外した。
 - 絵の無い4種類（triangle・goldenSpiral・thirdsDiagonals・dynamicSymmetry・台帳の `held`）は、これまでどおり配置図のまま。
+
+### 残りの4枚（2026-10-16 owner「黄金螺旋など、まだ作例の写真が無い構図がある」）
+
+goldenSpiral（ストックホルムのらせん階段を真上から）・thirdsDiagonals（レマン湖の桟橋の先に座る人）・dynamicSymmetry（急な斜面を登る2人）・triangle（霧のキルキュフェトル山）を、同じ決まり・同じ手順（Commons の `{{Unsplash}}`＝中身 `{{Cc-zero}}`、3:4・864×1152・JPEG 品質 85）で足した。
+
+- これで **37種類すべてに実写真の作例がある**。台帳の `held` は空。作例の無い構図を許すときは、`CompositionAIExampleTests.allowedMissing` に理由つきで書き、台帳の `held` にも同じ理由を書く（試験が両方の食い違いを落とす）。
+- dynamicSymmetry は「2人が右下の目に乗り、稜線は逆対角とほぼ平行」まで。線にぴったり重なる写真ではない（出典の記録の subject に書いた）。
+- 2026-10-16 は Commons の API と upload.wikimedia.org が混雑で 429 を返したので、許諾は `index.php?action=raw` の許諾タグで、画像は `w/thumb.php` から取った。
