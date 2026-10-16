@@ -5,6 +5,6 @@
 "NSCameraUsageDescription" = "写真を撮って投稿するため、また作例を重ねて撮るためにカメラを使います。";
 "NSPhotoLibraryUsageDescription" = "端末の写真を選んで投稿するため、また撮影日と場所から旅を見つけるために使います。写真は選んだものだけを送ります。";
 "NSPhotoLibraryAddUsageDescription" = "撮った写真を端末に保存するために使います。";
-"NSLocationWhenInUseUsageDescription" = "撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。すれちがいをオンにしているときは、すれちがった場所を市区町村ほどの粗さでこの端末の中にだけ残します。位置を送信することはありません。";
-"NSBluetoothAlwaysUsageDescription" = "すれちがいをオンにしたとき、近くにいる Journey Photo の利用者を見つけて、名刺に選んだ公開写真をカードとして交換するために Bluetooth を使います。位置や連絡先は送りません。";
+"NSLocationWhenInUseUsageDescription" = "撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。すれちがいをオンにしているときは、すれちがった所の市区町村の名前を調べるために、約1kmに丸めたおおよその位置だけを Apple の地図に渡し、市区町村の名前と粗い位置をこの端末の中にだけ残します。Journey Photo のサーバーへ位置を送ることはありません。";
+"NSBluetoothAlwaysUsageDescription" = "すれちがいをオンにしたとき、近くにいる Journey Photo の利用者を見つけて、名刺に選んだ公開写真・ひとこと・乗車券の発と着の字をカードとして交換するために Bluetooth を使います。居住地を出す設定なら、相手にはプロフィールの都道府県が表示されます。位置や連絡先は送りません。";
 "CFBundleDisplayName" = "Journey Photo";

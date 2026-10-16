@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// **自分のストーリーに届いた返信の一覧**（板「26b 返信（自分）」・v2 StoryReplies・2026-10-14）。
 ///
@@ -21,6 +22,26 @@ struct StoryRepliesSheet: View {
     /// 読めていた一覧の読み直しに失敗した（一覧はそのまま、短く知らせる）
     let notice: String?
     let onReload: () async -> Void
+    /// どのストーリーへの返信か（通報のメールに書く）。分からなければ nil
+    var storyId: String? = nil
+
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
+    @Environment(\.openURL) private var openURL
+
+    /// ブロックの確認を出している返信（押した時点の相手を持つ・`blockConfirmation(presenting:)`）
+    @State private var pendingBlock: StoryReply?
+    /// **このシートの「…」からブロックした人**。その人の返信はその場で外す。
+    /// `hidden.blockedUserIds` で毎回絞らない——行の顔から開いた人のページでブロックすると、
+    /// 行が消えて開いている画面が閉じる（`ModerationSnapshot.users` の注記と同じ理由）。
+    /// 人のページでブロックした分は、閉じたときに閲覧画面が外す（`StoryViewerView` の `onDismiss`）
+    @State private var blockedHere: Set<String> = []
+    /// メールを開けなかった（宛先を知らせる確認を出す）
+    @State private var mailUnavailable = false
+
+    /// 出す返信（このシートでブロックした人の分を外す）
+    private var shown: [StoryReply] { StoryReplyActions.visible(items, blockedHere: blockedHere) }
 
     var body: some View {
         NavigationStack {
@@ -43,12 +64,12 @@ struct StoryRepliesSheet: View {
                     } else if !loaded {
                         // **読み込み中に「まだ返信はありません」と言わない**（丸のバッジと同じ）
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, JPSpace.xl)
-                    } else if items.isEmpty {
+                    } else if shown.isEmpty {
                         Text(L("まだ返信はありません", "No replies yet"))
                             .font(JPFont.body)
                             .foregroundStyle(WebTheme.text2)
                     }
-                    ForEach(items) { item in
+                    ForEach(shown) { item in
                         row(item)
                     }
                 }
@@ -76,7 +97,24 @@ struct StoryRepliesSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
             }
             .toolbarBackground(WebTheme.card, for: .navigationBar)
+            .blockConfirmation(presenting: $pendingBlock) { reply in
+                Task { await block(reply) }
+            }
+            // メールを開けない端末: 宛先は**トーストではなく確認で出す**（トーストは短く消え、
+            // 長い宛先が途中で切れる）。写して別のメールから送れるよう「宛先をコピー」を置く
+            .alert(StoryReplyActions.mailUnavailableTitle, isPresented: $mailUnavailable) {
+                Button(StoryReplyActions.copyAddress) {
+                    UIPasteboard.general.string = LegalConsent.contactEmail
+                    toasts.show(L("宛先をコピーしました", "Address copied"))
+                }
+                Button(Labels.Common.close, role: .cancel) {}
+            } message: {
+                Text(StoryReplyActions.mailUnavailable)
+            }
         }
+        // **このシートの上にもトーストを重ねる**（シートの上には根のトーストが出ず、ブロックの結果・
+        // 失敗が裏に隠れていた・`PassViewerView` と同じ形）
+        .overlay(alignment: .top) { ToastOverlay() }
         .presentationBackground(WebTheme.card)
         // 板 v2 StoryReplies: シートは**上から約 160 で止まる**（後ろにストーリーの写真が覗く）。
         // 画面の高さは機種で違うので、板の画面（844）に対する割合で持つ（2026-10-16 判断）
@@ -90,7 +128,7 @@ struct StoryRepliesSheet: View {
             Text(L("返信", "Replies"))
                 .font(JPFont.cardTitle)
             if loaded {
-                Text("\(items.count)")
+                Text("\(shown.count)")
                     .font(JPFont.number(JPTypeScale.title2, weight: JPFont.figureWeight, relativeTo: .title2))
             }
         }
@@ -138,7 +176,62 @@ struct StoryRepliesSheet: View {
                                                            bottomTrailingRadius: Self.bubbleRadius,
                                                            topTrailingRadius: Self.bubbleRadius))
             }
-            Spacer(minLength: JPSpace.section)
+            let actions = StoryReplyActions(item, me: hidden.owner)
+            // 「…」の無い行（自分の返信）は前のとおり右に 32 空ける——吹き出しが右端まで伸びない
+            Spacer(minLength: actions.trailingSpace)
+            if actions.hasMenu {
+                replyMenu(item, actions: actions)
+            }
+        }
+    }
+
+    /// 返信の「…」（通報・この人をブロック・審査 1.2・2026-10-16）。形はコメントの「…」と同じ
+    /// （`PhotoDetailView.commentMenu`: 系統のメニュー・ブロックは `role: .destructive`・印は小さく当たりは 44pt）。
+    /// 板（StoryReplies）に「…」は無いが、審査で要る口なので行の右上に足した
+    private func replyMenu(_ item: StoryReply, actions: StoryReplyActions) -> some View {
+        Menu {
+            if actions.report {
+                Button { report(item) } label: {
+                    Label(L("通報", "Report"), systemImage: "flag")
+                }
+            }
+            if actions.block {
+                Button(role: .destructive) { pendingBlock = item } label: {
+                    Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L("\(item.displayName)さんの返信の操作", "More actions for reply from \(item.displayName)"))
+        .accessibilityIdentifier("storyReplies.menu")
+    }
+
+    /// 通報（問い合わせの宛先へのメール・`ModerationService.storyReplyReportURL` の注記）。
+    /// メールを開けない端末では、宛先を知らせる（黙って何も起きないようにしない）
+    private func report(_ item: StoryReply) {
+        let target = ModerationService.ReportedComment(id: item.id, authorId: item.uid ?? "",
+                                                       authorName: item.displayName, text: item.body)
+        guard let url = ModerationService.storyReplyReportURL(target, storyId: storyId) else { return }
+        openURL(url) { accepted in
+            if !accepted { mailUnavailable = true }
+        }
+    }
+
+    /// ブロック（確認の後）。**サーバーに送り、その場で一覧から外す**
+    private func block(_ item: StoryReply) async {
+        guard let uid = item.uid else { return }
+        do {
+            try await hidden.blockAndHide(uid, environment: environment)
+            blockedHere.insert(uid)
+            toasts.show(L("ブロックしました。設定から解除できます。", "Blocked. You can undo this in Settings."))
+        } catch {
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
+                        kind: .failure)
         }
     }
 
@@ -174,6 +267,48 @@ struct StoryRepliesSheet: View {
     static let detentFraction: CGFloat = 1 - boardTop / boardScreenHeight
 }
 
+/// 返信の「…」に何を出すか（画面を持たない決まり・テストで見張る）。2026-10-16
+struct StoryReplyActions: Equatable {
+    /// 通報（本文がある返信だけ・自分の返信には出さない）
+    let report: Bool
+    /// ブロック（相手が分かり・自分でなく・退会していない人だけ）
+    let block: Bool
+
+    init(_ reply: StoryReply, me: String?) {
+        let mine = reply.uid != nil && reply.uid == me
+        report = !mine && !reply.body.isEmpty
+        block = !mine && reply.uid?.isEmpty == false && reply.deleted != true
+    }
+
+    init(report: Bool, block: Bool) {
+        self.report = report
+        self.block = block
+    }
+
+    /// 「…」を出すか
+    var hasMenu: Bool { report || block }
+
+    /// 吹き出しの右に必ず空ける幅。「…」がある行は「…」（44pt）が幅を取るので詰め、
+    /// 無い行（自分の返信）は v2 の板どおり節の間（32）を空ける
+    var trailingSpace: CGFloat { hasMenu ? JPSpace.s : JPSpace.section }
+
+    /// このシートでブロックした人の返信を外す
+    static func visible(_ items: [StoryReply], blockedHere: Set<String>) -> [StoryReply] {
+        guard !blockedHere.isEmpty else { return items }
+        return items.filter { reply in reply.uid.map { !blockedHere.contains($0) } ?? true }
+    }
+
+    /// メールを開けない端末で出す確認の題・本文・ボタン（宛先は本文に**全部**出す。トーストでは切れた）
+    static var mailUnavailableTitle: String { L("メールを開けませんでした", "Couldn\u{2019}t open Mail") }
+
+    static var mailUnavailable: String {
+        L("\(LegalConsent.contactEmail) へ、返信の内容を添えてお知らせください。",
+          "Please email \(LegalConsent.contactEmail) with the reply.")
+    }
+
+    static var copyAddress: String { L("宛先をコピー", "Copy address") }
+}
+
 /// お知らせから開く返信の一覧の行き先（`NotificationsView`・2026-10-16）
 struct StoryRepliesTarget: Identifiable, Equatable {
     let storyId: String
@@ -199,7 +334,8 @@ struct StoryRepliesLoader: View {
     var body: some View {
         StoryRepliesSheet(items: replies.textReplies, loaded: loaded, failed: failed,
                           reloading: reloading, notice: notice,
-                          onReload: { await load(pulled: true) })
+                          onReload: { await load(pulled: true) },
+                          storyId: storyId)
             .task(id: storyId) { await load(pulled: false) }
     }
 

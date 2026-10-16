@@ -272,6 +272,17 @@ struct PaywallView: View {
                 .foregroundStyle(WebTheme.text3)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+            // 自動更新の一文（審査 3.1.2・2026-10-16）。値段と期間はプランの札にある。
+            // 色・大きさは上の注記と同じ（黒地の上の注記 12・text-3）
+            Text(ProPaywallText.autoRenewNotice)
+                .font(JPFont.caption)
+                .lineSpacing(2)
+                .foregroundStyle(WebTheme.text3)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                .padding(.top, JPSpace.xs)
+                .accessibilityIdentifier("paywall.autoRenew")
             HStack(spacing: JPSpace.m) {
                 footLink(L("利用規約", "Terms of Use")) { openURL(LegalConsent.termsURL) }
                 footLink(L("プライバシーポリシー", "Privacy Policy")) { openURL(LegalConsent.privacyURL) }

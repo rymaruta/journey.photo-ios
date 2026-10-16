@@ -2049,7 +2049,7 @@ struct StoryViewerView: View {
     private var repliesSheet: some View {
         StoryRepliesSheet(items: replies.textReplies, loaded: repliesLoaded, failed: repliesFailed,
                           reloading: repliesReloading, notice: repliesNotice,
-                          onReload: { await reloadReplies() })
+                          onReload: { await reloadReplies() }, storyId: current?.id)
     }
 
     /// 返信を読み直す（返信のシートの引き下げ）。**読み直しの間に別の1本へ移ったら書かない**。

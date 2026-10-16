@@ -95,6 +95,9 @@ struct OfflineSavedView: View {
     }
 
     /// iPhone の空き（設定アプリの「iPhone ストレージ」に近い数え方）。読めなければ nil（出さない）
+    ///
+    /// **理由の申告が要る API**（ディスクの空き）。`PrivacyInfo.xcprivacy` に 85F4.1（本人に見せるだけ・外へ送らない）
+    /// で申告してある。書く前の確かめや送信に使うなら理由を足すこと（2026-10-16）
     private static func freeSpace() -> Int64? {
         #if os(Linux)
         return nil

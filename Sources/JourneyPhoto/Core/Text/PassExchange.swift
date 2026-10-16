@@ -322,6 +322,15 @@ enum PassExchange {
         return L("\(name)のあたり", "around \(name)")
     }
 
+    /// すれちがった所の地名を引くときに Apple の地図（`CLGeocoder`）へ渡す座標。
+    ///
+    /// **2026-10-16 判断: 旅の写真の地名引きと同じく約1km に丸めてから渡す**（`LibraryTrips.roundedForLookup`）。
+    /// それまでは取れた位置をそのまま渡していた——位置の利用目的の文（「おおよその位置だけ」）と食い違う。
+    /// 市区町村の名前を引くには 1km の粗さで足りる
+    static func lookupCoords(_ coords: Photo.Coords) -> Photo.Coords {
+        LibraryTrips.roundedForLookup(coords)
+    }
+
     /// 地名の部品から、記録する名前を選ぶ。**市区町村（`locality`）、無ければ都道府県**
     static func placeName(locality: String?, administrativeArea: String?) -> String? {
         for raw in [locality, administrativeArea] {

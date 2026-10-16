@@ -53,7 +53,9 @@ final class LegalConsent: ObservableObject {
     /// 連絡が取れる必要がある（ガイドライン 1.2）。サイトの規約ページと
     /// 同じ宛先を使う（`.github/workflows/deploy.yml` の `contactEmail`）。
     /// 2か所に別の宛先を書くと、どちらかが必ず死ぬ。
-    static let contactEmail = "journey.photo.official@gmail.com"
+    /// **`nonisolated`**: 画面を持たない層（通報のメール・`ModerationService`）からも読む定数。
+    /// main actor に縛ると、そこから読むたびに Swift 6 で止まる警告が出た（2026-10-16）
+    nonisolated static let contactEmail = "journey.photo.official@gmail.com"
 
     static var contactURL: URL? {
         URL(string: "mailto:\(contactEmail)?subject=" +
