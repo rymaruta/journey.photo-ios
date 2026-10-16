@@ -150,22 +150,32 @@ struct TripShelfList: View {
     let trips: [TripBook.Trip]
     /// 写真に個別ページが在るか（`TripBookView.isPublic`）
     var isPublic: (Photo) -> Bool = { _ in false }
+    /// 自分の棚か。人の棚（人のプロフィールの「すべての旅」）は偽——説明文から本人向けの
+    /// 後半を落とし、開いた一冊で「この一冊を送る」を出さない（2026-10-16 判断）
+    var isMine = true
 
-    static var explanation: String {
-        L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります。「旅の写真からまとめて」で入れた写真は、その束で一冊になります",
-          "Two or more public photos taken around the same time become a trip. Photos added with \"From a trip in your photos\" become one trip together")
+    nonisolated static var explanation: String { explanation(isMine: true) }
+
+    /// 下の説明文。**「旅の写真からまとめて」は本人の操作**なので、人の棚では言わない
+    nonisolated static func explanation(isMine: Bool) -> String {
+        guard isMine else {
+            return L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります",
+                     "Two or more public photos taken around the same time become a trip")
+        }
+        return L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります。「旅の写真からまとめて」で入れた写真は、その束で一冊になります",
+                 "Two or more public photos taken around the same time become a trip. Photos added with \"From a trip in your photos\" become one trip together")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             if trips.isEmpty {
                 // 空の状態（v2 Components 06: 明朝 20 の見出し → 説明）
-                EmptyState(title: L("まだ旅はありません", "No trips yet"), message: Self.explanation)
+                EmptyState(title: L("まだ旅はありません", "No trips yet"), message: Self.explanation(isMine: isMine))
             } else {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
                         NavigationLink {
-                            TripBookView(trip: trip, isPublic: isPublic)
+                            TripBookView(trip: trip, isPublic: isPublic, isMine: isMine)
                         } label: {
                             if index == 0 {
                                 TripShelf(trip: trip)
@@ -177,7 +187,7 @@ struct TripShelfList: View {
                         .accessibilityIdentifier("trips.book")
                     }
                 }
-                Text(Self.explanation)
+                Text(Self.explanation(isMine: isMine))
                     .font(JPFont.caption)
                     .lineSpacing(3)
                     .foregroundStyle(WebTheme.text3)

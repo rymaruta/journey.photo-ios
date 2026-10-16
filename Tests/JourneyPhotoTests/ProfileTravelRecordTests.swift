@@ -144,9 +144,9 @@ final class ProfileTravelRecordTests: XCTestCase {
     func testUserProfileWiresPublicOnlyRecord() throws {
         let user = try source("Features/Profile/UserProfileView.swift")
         XCTAssertTrue(user.contains("ProfileTravelRecord.othersSummary(shownPhotos, blocked: isBlocked)"))
-        XCTAssertTrue(user.contains("ProfileTravelRecord.othersTrips(shownPhotos, blocked: isBlocked)"))
+        XCTAssertTrue(user.contains("ProfileTravelRecord.othersShelf(shownPhotos, blocked: isBlocked)"))
         XCTAssertTrue(user.contains("TravelRecordSection(summary: summary, isMine: false)"))
-        XCTAssertTrue(user.contains("ProfileTripsLine(trips: trips"))
+        XCTAssertTrue(user.contains("ProfileTripsLine(shelf: shelf)"))
         XCTAssertFalse(user.contains("TravelDistance.total(of: model.photos)"), "限定の写真まで数える")
         XCTAssertFalse(user.contains("TripBook.shelfTrips(from: model.photos)"), "限定の写真まで束ねる")
         // 板 F33 の並び: 数 → 旅の記録 → 旅 → ハイライト
@@ -168,5 +168,81 @@ final class ProfileTravelRecordTests: XCTestCase {
         // 余白は今までの値（端 16・上 8）を部品が持つ
         let section = try source("Features/Profile/TravelRecordSection.swift")
         XCTAssertTrue(section.contains(".padding(.horizontal, ProfileV2.gutter)\n        .padding(.top, JPSpace.xs)"))
+    }
+
+    // MARK: - 確かめ役の指摘（2026-10-16）
+
+    private func publicTrip() throws -> TripBook.Trip {
+        let trips = ProfileTravelRecord.othersTrips(try mixed(), blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        return try XCTUnwrap(trips.first)
+    }
+
+    /// 🔴 人の一冊では「この一冊を送る」を出さない（自分の公開の一冊は今までどおり出す）
+    func testOthersTripIsNotShareable() throws {
+        let trip = try publicTrip()
+        XCTAssertTrue(TripBook.canShare(trip), "前提: 公開写真だけの一冊")
+        XCTAssertTrue(TripBook.canShare(trip, isMine: true))
+        XCTAssertFalse(TripBook.canShare(trip, isMine: false), "他人の写真を名前なしで配れる")
+        let book = try source("Features/Trips/TripBookView.swift")
+        XCTAssertTrue(book.contains("if TripBook.canShare(book, isMine: isMine) {"), "共有の出し分けが自分の一冊かを見ていない")
+        let parts = try source("Features/Profile/TravelRecordSection.swift")
+        XCTAssertTrue(parts.contains("TripBookView(trip: latest, isPublic: shelf.hasPage, isMine: false)"))
+        XCTAssertTrue(parts.contains("TripShelfList(trips: shelf.trips, isPublic: shelf.hasPage, isMine: false)"))
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        XCTAssertTrue(shelf.contains("TripBookView(trip: trip, isPublic: isPublic, isMine: isMine)"), "棚から開いた一冊に印が渡らない")
+    }
+
+    /// 🔴 人の棚の説明文は本人向けの後半（「旅の写真からまとめて」）を出さない。自分の棚は今までどおり
+    func testOthersShelfExplanationDropsOwnerPart() throws {
+        XCTAssertTrue(TripShelfList.explanation(isMine: true).contains(L("「旅の写真からまとめて」", "From a trip in your photos")))
+        XCTAssertEqual(TripShelfList.explanation(isMine: true), TripShelfList.explanation)
+        XCTAssertFalse(TripShelfList.explanation(isMine: false).contains(L("旅の写真からまとめて", "From a trip in your photos")))
+        XCTAssertTrue(TripShelfList.explanation(isMine: true).hasPrefix(TripShelfList.explanation(isMine: false)))
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        XCTAssertEqual(shelf.components(separatedBy: "Self.explanation(isMine: isMine)").count - 1, 2,
+                       "空の状態と一覧の下の両方で、自分の棚かを見る")
+    }
+
+    /// 🔴 一冊の写真の個別ページは公開写真にだけ在る（入口が「全部ある」と決めない）
+    func testOthersShelfHasPagesOnlyForPublicPhotos() throws {
+        let photos = try mixed()
+        let shelf = ProfileTravelRecord.othersShelf(photos, blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        XCTAssertEqual(shelf.trips.count, 1)
+        for photo in photos {
+            XCTAssertEqual(shelf.hasPage(photo), ["tokyo", "osaka"].contains(photo.id), photo.id)
+        }
+        XCTAssertFalse(shelf.hasPage(try photo("other", date: "2026-05-01")), "棚に無い写真")
+        XCTAssertTrue(ProfileTravelRecord.othersShelf(photos, blocked: true).trips.isEmpty)
+        // 開く入口は棚の答えをそのまま渡す（自前の「全部ある」を書かない）
+        let parts = try source("Features/Profile/TravelRecordSection.swift")
+        XCTAssertFalse(parts.contains("{ _ in true }"))
+        XCTAssertFalse(parts.contains("let isPublic: (Photo) -> Bool"), "入口が個別ページの有無を外から受け取っている")
+        XCTAssertEqual(parts.components(separatedBy: "isPublic: shelf.hasPage").count - 1, 2)
+    }
+
+    /// 🔴 板 UserProfile の「旅」の形: 小見出し「旅」・札1枚・左に 44pt の表紙・明朝の題・等幅の数字（12pt）。
+    /// 題が長ければ題を省き、日数・枚数は切らない。真鍮の本の印と「旅 ·」は無い
+    func testTripCardMatchesBoard() throws {
+        let parts = try source("Features/Profile/TravelRecordSection.swift")
+        let line = String(parts[try XCTUnwrap(parts.range(of: "struct ProfileTripsLine"))!.lowerBound...])
+        let card = String(line[try XCTUnwrap(line.range(of: "private func card("))!.lowerBound...])
+        XCTAssertFalse(line.contains("book.closed"), "板に無い真鍮の本の印")
+        XCTAssertFalse(line.contains("L(\"旅 ·\""), "板に無い「旅 ·」の文")
+        XCTAssertTrue(line.contains("Text(L(\"旅\", \"Trips\"))"), "小見出し「旅」")
+        XCTAssertEqual(ProfileTripsLine.cardHeight, 44)
+        XCTAssertTrue(card.contains(".frame(width: Self.cardHeight, height: Self.cardHeight)"), "左の 44pt の表紙")
+        XCTAssertTrue(card.contains("RemoteImage(url: cover.gridImageURL"))
+        XCTAssertTrue(card.contains(".font(JPFont.rowTitle)"), "題は明朝")
+        XCTAssertTrue(card.contains(".font(JPFont.mono(12))"), "数字は等幅で 12pt（板の 11 を上げた）")
+        let title = try XCTUnwrap(card.range(of: ".font(JPFont.rowTitle)"))
+        let facts = try XCTUnwrap(card.range(of: "Text(Self.facts(trip))"))
+        let titleMods = String(card[title.upperBound..<facts.lowerBound])
+        XCTAssertTrue(titleMods.contains(".truncationMode(.tail)") && titleMods.contains(".lineLimit(1)"), "長い題を省かない")
+        let factsMods = String(card[facts.upperBound...].prefix(260))
+        XCTAssertTrue(factsMods.contains(".fixedSize()"), "日数・枚数が切られる")
+        XCTAssertTrue(factsMods.contains(".layoutPriority(1)"))
+        XCTAssertEqual(ProfileTripsLine.cardFillOpacity, 0.05)
+        XCTAssertEqual(ProfileTripsLine.cardStrokeOpacity, 0.10)
+        XCTAssertEqual(ProfileTripsLine.facts(try publicTrip()), L("2日間 · 2枚", "2 days · 2 photos"))
     }
 }

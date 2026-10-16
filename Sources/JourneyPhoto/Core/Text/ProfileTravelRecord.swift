@@ -58,6 +58,29 @@ enum ProfileTravelRecord {
         TripBook.shelfTrips(from: othersPhotos(photos, blocked: blocked), timeZone: timeZone)
     }
 
+    /// 人の旅の棚。一冊と、**一冊の写真に個別ページが在るか**を一緒に持つ（開く入口が自分で
+    /// 「全部ある」と決めない——限定公開・下書きの写真の個別ページへ案内しない）
+    struct OthersShelf {
+        let trips: [TripBook.Trip]
+        /// 個別ページが在る写真（公開写真だけ）
+        private let pageIds: Set<String>
+
+        init(trips: [TripBook.Trip], publicPhotos: [Photo]) {
+            self.trips = trips
+            self.pageIds = Set(publicPhotos.map(\.id))
+        }
+
+        /// 写真に個別ページが在るか（`TripBookView.isPublic` に渡す）
+        func hasPage(_ photo: Photo) -> Bool { pageIds.contains(photo.id) }
+    }
+
+    /// 人のページの旅の棚（`othersTrips` と、個別ページの在る写真）
+    static func othersShelf(_ photos: [Photo], blocked: Bool,
+                            timeZone: TimeZone = .current) -> OthersShelf {
+        let shown = othersPhotos(photos, blocked: blocked)
+        return OthersShelf(trips: TripBook.shelfTrips(from: shown, timeZone: timeZone), publicPhotos: shown)
+    }
+
     // MARK: - 数え方の説明（押すと出る）
 
     /// 国・地域の数え方。**本人の文は今までのまま**（撮影地に国名を足す手立てまで言う）。

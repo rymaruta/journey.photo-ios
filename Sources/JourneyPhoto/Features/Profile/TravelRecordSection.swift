@@ -41,41 +41,38 @@ struct TravelRecordSection: View {
     }
 }
 
-/// 人のページの「旅」（板 UserProfile F33・v2: 名前と数の下に1行の札）。
+/// 人のページの「旅」（板 UserProfile F33）。小見出し「旅」の下に札1枚。
 ///
 /// この人の**公開写真だけ**を、マイページの「旅の記録」の棚と同じ規則で束ねた一冊
-/// （`ProfileTravelRecord.othersTrips`）。いちばん新しい一冊を1行（見た目 48・押せる 44 以上）に畳み、
+/// （`ProfileTravelRecord.othersShelf`）。いちばん新しい一冊を 44pt の札に畳み、
 /// 表紙は開いた先（`TripBookView`）で見せる——写真の格子の1段目を一画面目に残すため（板の注記）。
-/// 2冊以上あれば、下に「すべての旅」の行（棚はマイページと同じ `TripShelfList`）。
+/// 札（板の数値）: 角 12・白 5% の地・白 10% の縁・左に 44pt の表紙の小さな写真・明朝の題・
+/// 等幅の数字の「2日間 · 22枚」・灰の矢印。小見出しは 12pt・白 60%。**板の 11pt の数字は 12pt に上げた**
+/// （本文系の最小 12）。題は明朝の下限（`JPFont.rowTitle`・18）で、板の 15 より大きい。
+/// 2冊以上あれば、札の下に「すべての旅」（棚はマイページと同じ `TripShelfList`）。
+/// 開いた一冊・棚は**人の一冊**（`isMine: false`）——「この一冊を送る」を出さない（2026-10-16 判断）。
 /// **一冊も無ければ呼ぶ側が節ごと出さない**
 struct ProfileTripsLine: View {
 
-    let trips: [TripBook.Trip]
-    /// 写真に個別ページが在るか（`TripBookView.isPublic`）
-    let isPublic: (Photo) -> Bool
+    let shelf: ProfileTravelRecord.OthersShelf
+
+    /// 板の札の地と縁（白 5%・白 10%）
+    nonisolated static let cardFillOpacity = 0.05
+    nonisolated static let cardStrokeOpacity = 0.10
+    /// 板の札の高さと表紙の小さな写真の辺
+    nonisolated static let cardHeight: CGFloat = 44
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let latest = trips.first {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            Text(L("旅", "Trips"))
+                .font(JPFont.caption.weight(.medium))
+                .foregroundStyle(Color.white.opacity(0.6))
+                .accessibilityAddTraits(.isHeader)
+            if let latest = shelf.trips.first {
                 NavigationLink {
-                    TripBookView(trip: latest, isPublic: isPublic)
+                    TripBookView(trip: latest, isPublic: shelf.hasPage, isMine: false)
                 } label: {
-                    row(icon: "book.closed") {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(L("旅 ·", "Trip ·"))
-                                .font(JPFont.body)
-                                .foregroundStyle(WebTheme.text2)
-                            Text(TripBook.title(of: latest))
-                                .font(JPFont.rowTitle)
-                                .foregroundStyle(WebTheme.foreground)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                            Text(Self.facts(latest))
-                                .font(JPFont.meta)
-                                .foregroundStyle(WebTheme.text3)
-                                .lineLimit(1)
-                        }
-                    }
+                    card(latest)
                 }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
@@ -83,63 +80,84 @@ struct ProfileTripsLine: View {
                                       "Trip \(TripBook.title(of: latest)), \(Self.facts(latest))"))
                 .accessibilityIdentifier("profile.trip")
             }
-            if trips.count > 1 {
+            if shelf.trips.count > 1 {
                 NavigationLink {
-                    ProfileTripsScreen(trips: trips, isPublic: isPublic)
+                    ProfileTripsScreen(shelf: shelf)
                 } label: {
-                    row(icon: "books.vertical") {
-                        Text(L("すべての旅 · \(trips.count)冊", "All trips · \(trips.count)"))
-                            .font(JPFont.body)
+                    HStack(spacing: 6) {
+                        Text(L("すべての旅 · \(shelf.trips.count)冊", "All trips · \(shelf.trips.count)"))
+                            .font(JPFont.footnote)
                             .foregroundStyle(WebTheme.text2)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(WebTheme.text3)
+                            .accessibilityHidden(true)
                     }
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("profile.trips.all")
             }
         }
-        .overlay(alignment: .top) { divider }
         .padding(.horizontal, ProfileV2.gutter)
     }
 
-    /// 「2日間 · 22枚」（板の等幅の1行）
+    /// 「2日間 · 22枚」（板の等幅の数字の1行）
     nonisolated static func facts(_ trip: TripBook.Trip) -> String {
         "\(TripBook.daysLabel(trip.days)) · \(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
     }
 
-    /// 板の札: 真鍮の本の印（黒地の上）・中身・灰の矢印、下に白 8% の線
-    private func row<Content: View>(icon: String, @ViewBuilder content: () -> Content) -> some View {
+    private func card(_ trip: TripBook.Trip) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(WebTheme.accent)
-                .frame(width: 20)
+            // 左に 44pt の表紙の小さな写真（板: 左の角だけ丸い・札の縁の内側）
+            Color.clear
+                .frame(width: Self.cardHeight, height: Self.cardHeight)
+                .overlay {
+                    if let cover = trip.cover {
+                        RemoteImage(url: cover.gridImageURL, alignment: cover.gridAlignment)
+                    }
+                }
+                .background(WebTheme.card)
+                .clipped()
                 .accessibilityHidden(true)
-            content()
+            // 🔴 題が長ければ題を「…」で省く。日数・枚数は切らない（`layoutPriority`・`fixedSize`）
+            Text(TripBook.title(of: trip))
+                .font(JPFont.rowTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(Self.facts(trip))
+                .font(JPFont.mono(12))
+                .foregroundStyle(Color.white.opacity(0.72))
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(WebTheme.text3)
+                .foregroundStyle(Color.white.opacity(0.35))
                 .accessibilityHidden(true)
         }
-        .frame(minHeight: 48)
-        .contentShape(Rectangle())
-        .overlay(alignment: .bottom) { divider }
-    }
-
-    private var divider: some View {
-        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        .padding(.trailing, 12)
+        .frame(minHeight: Self.cardHeight)
+        .background(Color.white.opacity(Self.cardFillOpacity))
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+            .strokeBorder(Color.white.opacity(Self.cardStrokeOpacity), lineWidth: JPStroke.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.field))
     }
 }
 
-/// 人の旅の棚（「すべての旅」から）。中身はマイページの「旅の記録」のタブと同じ `TripShelfList`
+/// 人の旅の棚（「すべての旅」から）。中身はマイページの「旅の記録」のタブと同じ `TripShelfList`。
+/// **人の棚**（`isMine: false`）——本人向けの説明の後半と「この一冊を送る」を出さない
 struct ProfileTripsScreen: View {
 
-    let trips: [TripBook.Trip]
-    let isPublic: (Photo) -> Bool
+    let shelf: ProfileTravelRecord.OthersShelf
 
     var body: some View {
         ScrollView {
-            TripShelfList(trips: trips, isPublic: isPublic)
+            TripShelfList(trips: shelf.trips, isPublic: shelf.hasPage, isMine: false)
                 .padding(.vertical, JPSpace.m)
         }
         .webScreen()

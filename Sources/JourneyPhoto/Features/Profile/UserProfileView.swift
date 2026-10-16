@@ -203,16 +203,13 @@ struct UserProfileView: View {
         }
     }
 
-    /// 旅の一冊（板 F33「旅」の1行）。公開写真だけを、マイページの棚と同じ規則で束ねる。
+    /// 旅の一冊（板 F33「旅」の札）。公開写真だけを、マイページの棚と同じ規則で束ねる。
     /// 一冊も無ければ節ごと出さない
     @ViewBuilder
     private var tripsLine: some View {
-        let trips = ProfileTravelRecord.othersTrips(shownPhotos, blocked: isBlocked)
-        if !trips.isEmpty {
-            // 公開一覧から来た写真なので個別ページが在る（`LikedPhotos.fromPublicFeed`）
-            ProfileTripsLine(trips: trips,
-                             isPublic: LikedPhotos.fromPublicFeed(
-                                ProfileTravelRecord.othersPhotos(shownPhotos, blocked: isBlocked)))
+        let shelf = ProfileTravelRecord.othersShelf(shownPhotos, blocked: isBlocked)
+        if !shelf.trips.isEmpty {
+            ProfileTripsLine(shelf: shelf)
         }
     }
 
