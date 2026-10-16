@@ -576,10 +576,6 @@ struct StoryViewerView: View {
                 StoryInsightsView(story: story,
                                   seed: StoryInsightsView.Seed.from(viewers: viewers, viewersLoaded: viewersLoaded,
                                                                     replies: replies, repliesLoaded: repliesLoaded))
-                    .toolbar {
-                        // v2 StoryInsights: 見出しは中身の左に明朝で置き、「閉じる」は右
-                        ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
-                    }
             }
         }
     }
@@ -902,11 +898,10 @@ struct StoryViewerView: View {
             }
             Spacer(minLength: 0)
             // 上の「…」は人の投稿（通報とブロックの入口・審査 1.2。人のハイライトも）と、
-            // **自分のハイライトで音があるとき**（動画・曲。音を消す口がここにしか無い）だけ。
+            // **自分のハイライト**（足元に「…」が無く、止める・文字を隠す・音を消す口がここにしか無い）。
             // 自分のストーリー（ハイライト以外）は足元の「…」が同じシートを開くので出さない
             // （同じ印が上下に2つ並ぶ）
-            if StoryPlayback.showsTopMenu(isMine: isMine(story), inHighlight: highlight != nil,
-                                          hasAudio: story.isVideo || StoryPlayback.songURL(for: story) != nil) {
+            if StoryPlayback.showsTopMenu(isMine: isMine(story), inHighlight: highlight != nil) {
                 Button {
                     showMenu = true
                 } label: {

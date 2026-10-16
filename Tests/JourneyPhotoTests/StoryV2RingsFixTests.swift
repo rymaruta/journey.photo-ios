@@ -160,13 +160,13 @@ final class StoryV2RingsFixTests: XCTestCase {
     // MARK: - 37 自分のハイライトの「…」
 
     func testOwnHighlightAlwaysHasTheTopMenu() {
-        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: false))
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true))
         // 「…」を開けば止められる（音が無くても中身が空にならない）
         let items = StoryPlayback.menuItems(isMine: true, isVideo: false, hasCaption: true, hasOwner: true,
                                             inHighlight: true)
         XCTAssertEqual(items, [.pause, .hideCaption])
         // ハイライト以外の自分の投稿は足元の「…」と2つ並べない（今まで通り）
-        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false, hasAudio: true))
+        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false))
     }
 
     // MARK: - 38・42 自分の輪の「＋」

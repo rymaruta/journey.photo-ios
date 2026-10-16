@@ -321,13 +321,13 @@ final class StoryPlaybackTests: XCTestCase {
     /// 上の「…」。自分の投稿は足元に「…」があるので出さない。**ハイライトの中なら音が無くても出す**
     /// （一時停止・テキストを非表示の口がここにしか無い・2026-10-16）
     func testTopMenuIsNotDoubledForOwnStories() {
-        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: false, hasAudio: false))
-        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: true, hasAudio: false))
-        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false, hasAudio: true),
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: false))
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: true))
+        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false),
                        "足元の「…」と上下に2つ並ぶ")
-        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: false),
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true),
                       "写真だけの自分のハイライトで、止める・文字を隠すができない")
-        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: true),
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true),
                       "ハイライトでは音を消す口がここにしか無い")
 
         let unknownOwner = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: false)
