@@ -26,10 +26,16 @@ struct PassCardPickView: View {
 
     private var selectedPhoto: Photo? { photos.first { $0.id == selected } }
 
-    /// ひとことが長すぎる（字数か、電波に載る大きさ）
-    private var noteTooLong: Bool {
-        note.count > PassExchange.noteLimit || note.utf8.count > PassExchange.noteByteLimit
+    private var previewFace: PassTicketFace {
+        PassTicketFace(photo: selectedPhoto, kind: .plain, number: nil,
+                       origin: PassTicket.origin(showsFrom ? pass.homePrefecture : nil),
+                       destination: L("旅先", "Your trip"),
+                       name: profile?.name ?? L("あなた", "You"), distance: nil, date: nil,
+                       alighting: L("旅先のあたり 下車", "Got off around your trip"))
     }
+
+    /// ひとことが長すぎる（字数か、電波に載る大きさ）
+    private var noteTooLong: Bool { PassExchange.noteProblem(note) != nil }
 
     var body: some View {
         ScrollView {
@@ -40,14 +46,15 @@ struct PassCardPickView: View {
                     .lineSpacing(5)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                PassCardFront(photo: selectedPhoto, name: profile?.name ?? L("あなた", "You"),
-                              avatarURL: profile?.avatarURL(),
-                              from: showsFrom ? pass.homePrefecture.map(PassExchange.fromLabel) : nil,
-                              number: nil,
-                              size: PassCardStyle.previewSize, corner: PassCardStyle.previewCorner,
-                              footer: PassCardStyle.previewFooter)
+                // 相手に届くきっぷの表（同じ部品を縮めて出す）。区間の右・日時・下車は会ってから決まるので、
+                // 見本では「旅先」とする。番号は受け取った側の帳の順なので出さない
+                PassCardFront(face: previewFace)
+                    .scaleEffect(PassCardStyle.previewScale)
+                    .frame(width: PassCardStyle.deckSize.width * PassCardStyle.previewScale,
+                           height: PassCardStyle.deckSize.height * PassCardStyle.previewScale)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L("相手に届くカードの表", "The front of the card others receive"))
                 JPEyebrowLine(L("あなたの写真から選ぶ", "Choose from your photos"))
                 grid
@@ -147,6 +154,7 @@ struct PassCardPickView: View {
     }
 
     private var noteField: some View {
+        VStack(alignment: .leading, spacing: 6) {
         JPField(L("裏に書くひとこと（\(PassExchange.noteLimit)字まで）", "A note on the back (up to \(PassExchange.noteLimit))")) {
             HStack {
                 // 打っている途中では切らない（かな漢字の変換中に字数で切ると、変換が壊れる）。
@@ -156,6 +164,15 @@ struct PassCardPickView: View {
                     .font(JPFont.meta)
                     .foregroundStyle(noteTooLong ? WebTheme.danger : WebTheme.text3)
                     .accessibilityHidden(true)
+            }
+        }
+            // 押せない訳を言う（字数の内でも、絵文字が多いと電波に載る大きさを超える）
+            if let problem = PassExchange.noteProblem(note) {
+                Text(problem)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("pass.pick.noteProblem")
             }
         }
     }

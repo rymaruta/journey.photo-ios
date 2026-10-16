@@ -56,6 +56,18 @@ enum PassExchange {
     /// 中身ごと落とす値（電波で受け取る特性の上限 512 を超えない）
     static let payloadByteLimit = 512
 
+    /// 入力中のひとことが載せられない訳（載せられるなら nil）。名刺選びの欄の下に出す
+    static func noteProblem(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.count > noteLimit {
+            return L("\(noteLimit)字を超えています", "This is longer than \(noteLimit) characters")
+        }
+        if trimmed.utf8.count > noteByteLimit {
+            return L("絵文字が多く、載せられる大きさを超えています", "Too many emoji \u{2014} this is too large to send")
+        }
+        return nil
+    }
+
     /// 向きを変える制御（文字の並びを逆さに見せる・なりすましに使える）
     private static func isBidiControl(_ s: Unicode.Scalar) -> Bool {
         switch s.value {

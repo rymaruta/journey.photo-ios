@@ -1327,8 +1327,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
-    /// **すれちがい**（板「10 すれちがい」・2026-10-16）: ホームの「カードが届きました」の札 → 束を開く（表）→
-    /// 押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
+    /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
+    /// 束を開く（表）→ 写真を押して全面 → 閉じる → 下を押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
     /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
     ///
     /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
@@ -1358,7 +1358,17 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10), "札を押しても束が開かない")
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "81-すれちがいのカード（表）")
-        card.tap()
+        // 写真（きっぷの上 250/430）を押すと全面で見る（2026-10-16 案C）
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        let photoClose = app.buttons["pass.photo.close"].firstMatch
+        XCTAssertTrue(photoClose.waitForExistence(timeout: 5), "写真を押しても全面で見られない")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "84-すれちがいの写真（全面）")
+        XCTAssertGreaterThanOrEqual(photoClose.frame.height, 44, "全面の × が 44pt 未満")
+        photoClose.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // きっぷの下（写真ではない所）を押すと裏返る
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
         Thread.sleep(forTimeInterval: 1.5)
         shoot(app, "82-すれちがいのカード（裏）")
 

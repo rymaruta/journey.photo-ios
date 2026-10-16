@@ -106,6 +106,8 @@ final class PassStore: ObservableObject {
         settings = file.settings
         encounters = file.encounters
         homeLocation = file.homeLocation
+        // 人を替える・期限切れで止めるときに夕方の知らせを消したので、まだ届いていない束の分を予約し直す
+        rescheduleNotices()
         if let day = file.awayDay, let value = file.awayValue { away = (day, value) }
     }
 
@@ -202,6 +204,19 @@ final class PassStore: ObservableObject {
         return card
     }
 
+    /// まだ届いていない束の知らせを予約し直す（オンのときだけ・日ごとに1つ・枚数つき）
+    func rescheduleNotices(now: Date = Date()) {
+        guard settings.enabled else { return }
+        let pending = Dictionary(grouping: encounters.filter { $0.deliverAt > now }) {
+            PassExchange.dayKey($0.deliverAt, calendar: calendar)
+        }
+        let schedule = schedule
+        for (day, cards) in pending {
+            guard let at = cards.map(\.deliverAt).min() else { continue }
+            Task { await schedule(day, at, cards.count) }
+        }
+    }
+
     // MARK: - 見せる
 
     /// 見せてよいカードか: 届いていて・写真が公開一覧に今あり・通報した写真ではなく・持ち主をブロックしておらず・
@@ -230,6 +245,13 @@ final class PassStore: ObservableObject {
 
     func unopened(hiding: ModerationSnapshot, now: Date = Date()) -> [PassEncounter] {
         unopened(blocked: hiding.blocked, reported: hiding.reported, now: now)
+    }
+
+    /// ひとことを伏せる／出す（カードの「…」・この端末だけ）
+    func setNoteHidden(_ id: String, _ hidden: Bool) {
+        guard let i = encounters.firstIndex(where: { $0.id == id }), (encounters[i].noteHidden ?? false) != hidden else { return }
+        encounters[i].noteHidden = hidden
+        save()
     }
 
     /// 帳から外す（カードの「…」）。**記録ごと消す**（次に同じ人とすれちがえば、また届く）

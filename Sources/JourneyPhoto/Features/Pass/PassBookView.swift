@@ -14,6 +14,7 @@ struct PassBookView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
     @State private var reportTarget: PassCardContent?
+    @State private var noteReportTarget: PassCardContent?
     @State private var blockTarget: PassCardContent?
     @State private var order: PassBook.Order = .bound
     @State private var opened: PassBookOpen?
@@ -80,6 +81,9 @@ struct PassBookView: View {
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
+        }
+        .sheet(item: $noteReportTarget) { target in
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)
         }
         .blockConfirmation(presenting: $blockTarget) { target in
             Task { _ = await PassCardModeration.block(target, hidden: hidden, environment: environment, toasts: toasts) }
@@ -153,7 +157,7 @@ struct PassBookView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 ForEach(Array(list.enumerated()), id: \.element.id) { offset, content in
                     Button { opened = PassBookOpen(cards: list, start: offset) } label: {
-                        slot(content)
+                        PassTicketSlot(content: content)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(content.name) のカード", "\(content.name)\u{2019}s card"))
@@ -161,10 +165,12 @@ struct PassBookView: View {
                     .overlay(alignment: .topTrailing) {
                         PassCardMenu(content: content,
                                      report: { reportTarget = content },
+                                     reportNote: { noteReportTarget = content },
+                                     toggleNote: { pass.setNoteHidden(content.id, content.card.noteHidden != true) },
                                      block: { blockTarget = content },
                                      remove: { pass.remove(content.id) },
                                      onPhoto: true)
-                            .offset(x: 8, y: -8)
+                            // 当たり（44）は札の内側に収める（隣のカードにかからない）
                     }
                 }
                 ForEach(0..<PassBook.emptySlots(for: list.count), id: \.self) { _ in
@@ -180,39 +186,6 @@ struct PassBookView: View {
         }
     }
 
-    /// 綴じの1枚（板 `.sl`: 5:7・角 8・真鍮 40% の縁・下 18% に名前と番号）
-    private func slot(_ content: PassCardContent) -> some View {
-        Color.clear
-            .aspectRatio(5.0 / 7.0, contentMode: .fit)
-            .overlay {
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        RemoteImage(url: content.photo.gridImageURL, alignment: content.photo.gridAlignment)
-                            .frame(height: geo.size.height * 0.82)
-                            .clipped()
-                        HStack(spacing: 2) {
-                            Text(content.name)
-                                .font(JPFont.caption.weight(.semibold))
-                                .foregroundStyle(WebTheme.text)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(PassExchange.shortNumber(content.card.number))
-                                .font(JPFont.meta)
-                                .foregroundStyle(WebTheme.accent)
-                                .lineLimit(1)
-                                .fixedSize()
-                        }
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(PassCardStyle.face)
-                    }
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(WebTheme.accent.opacity(0.4), lineWidth: JPStroke.hairline))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-    }
 }
 
 /// 帳から開くカード（その節の並びと、押した1枚）

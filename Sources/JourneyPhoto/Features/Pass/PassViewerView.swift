@@ -38,6 +38,10 @@ struct PassViewerView: View {
     /// この画面で外した・ブロックしたカード（並びから落とす）
     @State private var removed: Set<String> = []
     @State private var reportTarget: PassCardContent?
+    /// ひとことを通報する（写真の通報とは分ける）
+    @State private var noteReportTarget: PassCardContent?
+    /// 全面で見ている写真
+    @State private var fullPhoto: Photo?
     @State private var blockTarget: PassCardContent?
 
     /// 払って次へ進む距離
@@ -46,9 +50,12 @@ struct PassViewerView: View {
     /// いま見せる並び: 外した・通報した写真・ブロックした人のカードを落とす
     private var shown: [PassCardContent] {
         let hiding = hidden.snapshot
-        return cards.filter { content in
-            !removed.contains(content.id) && !hiding.reported.contains(content.photo.id)
-                && !(content.card.ownerId.map(hiding.blocked.contains) ?? false)
+        let live = Dictionary(uniqueKeysWithValues: pass.encounters.map { ($0.id, $0) })
+        return cards.compactMap { content in
+            guard !removed.contains(content.id), !hiding.reported.contains(content.photo.id),
+                  !(content.card.ownerId.map(hiding.blocked.contains) ?? false) else { return nil }
+            // ひとことを伏せた等は、置き場の新しい記録で描く
+            return live[content.id].map(content.with(card:)) ?? content
         }
     }
 
@@ -103,6 +110,13 @@ struct PassViewerView: View {
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
         }
+        .sheet(item: $noteReportTarget) { target in
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)
+        }
+        .fullScreenCover(item: $fullPhoto) { photo in PassPhotoFullView(photo: photo) }
+        // **この画面の上にもトーストを重ねる**（全面の上には根のトーストが出ず、ブロックの失敗・通報の受付が
+        // 見えなかった・`PhotoViewerView` と同じ形）
+        .overlay(alignment: .top) { ToastOverlay() }
         .blockConfirmation(presenting: $blockTarget) { target in
             Task {
                 if await PassCardModeration.block(target, hidden: hidden, environment: environment, toasts: toasts) {
@@ -130,6 +144,8 @@ struct PassViewerView: View {
             if let current {
                 PassCardMenu(content: current,
                              report: { reportTarget = current },
+                             reportNote: { noteReportTarget = current },
+                             toggleNote: { pass.setNoteHidden(current.id, current.card.noteHidden != true) },
                              block: { blockTarget = current },
                              remove: {
                                  pass.remove(current.id)
@@ -159,11 +175,10 @@ struct PassViewerView: View {
             if index + 2 < shown.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
             if index + 1 < shown.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
             ZStack {
-                PassCardFront(photo: content.photo, name: content.name,
-                              avatarURL: content.owner?.avatarURL(),
-                              from: content.fromPrefecture.map(PassExchange.fromLabel),
-                              number: PassExchange.numberLabel(content.card.number))
+                // 写真を押すと全面で見る（写真の上は白だけ）。裏を見ている間は表を押させない
+                PassCardFront(face: content.face(), onPhotoTap: { fullPhoto = content.photo })
                     .opacity(showsBack ? 0 : 1)
+                    .allowsHitTesting(!showsBack)
                 PassCardBack(content: content)
                     // 裏は鏡に映らないように先に半回転しておく
                     .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
@@ -186,6 +201,7 @@ struct PassViewerView: View {
             .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
                                          : L("押すと裏返します", "Tap to flip the card"))
             .accessibilityAction { showsBack.toggle() }
+            .accessibilityAction(named: L("写真を全面で見る", "View photo full screen")) { fullPhoto = content.photo }
             .accessibilityAction(named: L("次のカード", "Next card")) { move(by: 1) }
             .accessibilityAction(named: L("前のカード", "Previous card")) { move(by: -1) }
             .accessibilityIdentifier("pass.viewer.card")

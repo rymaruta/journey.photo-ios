@@ -25,6 +25,11 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var opened: Bool
     /// 写真の持ち主（届いた後、公開一覧から引いたもの）
     var ownerId: String?
+    /// ひとことを伏せた（カードの「…」・この端末だけ）。前の版の記録には無いので省略できる形
+    var noteHidden: Bool? = nil
+
+    /// 見せるひとこと（伏せていれば空）
+    var shownNote: String { noteHidden == true ? "" : note }
 
     var place: Photo.Coords? {
         guard let placeLat, let placeLng else { return nil }

@@ -60,8 +60,12 @@ final class PassRadio: NSObject {
     private var payload: Data?
     /// 足し終えた（`didAdd` が成功した）サービスの中身。同じなら足し直さない
     private var publishedPayload: Data?
-    /// 足している途中の中身（`didAdd` を待っている）
-    private var pendingPayload: Data?
+    /// 足している途中の中身（`didAdd` を待っている順）。**1つの変数で持つと**、続けて2回変えたときに
+    /// 前の `didAdd` を後の中身の答えと取り違えた（2026-10-16 の読み直し）
+    private var pendingAdds: [Data] = []
+    /// 古い記録を最後に掃除した時（前面の重ねて受ける知らせは多いので、数秒に1回に間引く）
+    private var lastPrune = Date.distantPast
+    static let pruneInterval: TimeInterval = 5
     /// 前面か（前面だけ同じ端末の知らせを重ねて受け、読めなかった相手を拾い直す）
     private var foreground = false
     private var connecting: [UUID: CBPeripheral] = [:]
@@ -121,7 +125,7 @@ final class PassRadio: NSObject {
     func stop() {
         payload = nil
         publishedPayload = nil
-        pendingPayload = nil
+        pendingAdds = []
         isRunning = false
         if let central {
             if central.state == .poweredOn { central.stopScan() }
@@ -205,6 +209,26 @@ final class PassRadio: NSObject {
 
     // MARK: - 周辺機器の役（広告する）
 
+    /// `didAdd` の答えで、足し終えた中身をどうするか
+    enum Published: Equatable {
+        case keep
+        case clear
+        case set(Data)
+    }
+
+    /// `didAdd` の答えを、足した順の先頭の中身の答えとして読む。**いま載せる中身の答えだけで決める**——
+    /// 続けて2回変えたとき、前の中身の答えを後の中身の答えと取り違えない（2026-10-16 の読み直し）
+    static func afterAdd(pending: [Data], current: Data?, failed: Bool) -> (pending: [Data], published: Published) {
+        var rest = pending
+        guard !rest.isEmpty else { return (rest, .keep) }
+        let added = rest.removeFirst()
+        guard added == current else { return (rest, .keep) }
+        if failed { return (rest, .clear) }
+        // 後にもう一度同じ中身を足している（その答えを待つ）
+        if rest.contains(added) { return (rest, .keep) }
+        return (rest, .set(added))
+    }
+
     private func publish(_ manager: CBPeripheralManager) {
         guard let payload, manager.state == .poweredOn else { return }
         guard payload.count <= PassExchange.payloadByteLimit else { return }
@@ -212,7 +236,7 @@ final class PassRadio: NSObject {
             if !manager.isAdvertising { startAdvertising(manager) }
             return
         }
-        guard pendingPayload != payload else { return }
+        guard pendingAdds.last != payload else { return }
         manager.stopAdvertising()
         manager.removeAllServices()
         publishedPayload = nil
@@ -220,7 +244,7 @@ final class PassRadio: NSObject {
                                                      value: payload, permissions: [.readable])
         let service = CBMutableService(type: Self.serviceUUID, primary: true)
         service.characteristics = [characteristic]
-        pendingPayload = payload
+        pendingAdds.append(payload)
         // 広告は `didAdd` が成功してから（足せなかったサービスを広告しない）
         manager.add(service)
     }
@@ -257,7 +281,10 @@ extension PassRadio: CBCentralManagerDelegate {
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let now = Date()
         sweepStale(now: now)
-        peers = Self.pruned(peers, now: now)
+        if now.timeIntervalSince(lastPrune) >= Self.pruneInterval {
+            peers = Self.pruned(peers, now: now)
+            lastPrune = now
+        }
         let id = peripheral.identifier
         guard payload != nil, connecting[id] == nil,
               Self.shouldConnect(peers[id], connecting: connecting.count, now: now) else { return }
@@ -323,26 +350,26 @@ extension PassRadio: CBPeripheralManagerDelegate {
         } else {
             // 電源が落ちるとサービスは消える。入ったら足し直す
             publishedPayload = nil
-            pendingPayload = nil
+            pendingAdds = []
         }
     }
 
     /// OS に起こされた。焼いた値は前の起動のもの——中身が同じかは分からないので足し直す
     func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
         publishedPayload = nil
-        pendingPayload = nil
+        pendingAdds = []
     }
 
     /// サービスを足せたか。**足せなかったら広告しない**（次に決め直したとき足し直す）
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
-        let added = pendingPayload
-        pendingPayload = nil
-        guard error == nil, let added, added == payload else {
-            publishedPayload = nil
-            if let error { print("[pass] サービスを足せませんでした: \((error as NSError).code)") }
-            return
+        if let error { print("[pass] サービスを足せませんでした: \((error as NSError).code)") }
+        let answer = Self.afterAdd(pending: pendingAdds, current: payload, failed: error != nil)
+        pendingAdds = answer.pending
+        switch answer.published {
+        case .keep: return
+        case .clear: publishedPayload = nil
+        case .set(let added): publishedPayload = added
         }
-        publishedPayload = added
         if !peripheral.isAdvertising { startAdvertising(peripheral) }
     }
 }

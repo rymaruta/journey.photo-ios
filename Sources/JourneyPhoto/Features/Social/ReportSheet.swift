@@ -12,6 +12,9 @@ struct ReportSheet: View {
     /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
     /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
     var comment: ModerationService.ReportedComment? = nil
+    /// すれちがいのカードのひとことの通報（2026-10-16）。署名が無いので、写真は隠さず・持ち主をブロックする口も
+    /// 出さない。補足に印と本文を入れて送る（`ModerationService.passNoteReportNote`）
+    var passNote: String? = nil
     /// 通報する写真の小さな札（v2 の板 Report・2026-10-14: 「通報する写真を上に小さく出して取り違えを防ぐ」）。
     /// 写真の詳細から開いたときだけ渡す。無ければ札を出さない（ホームの格子・ストーリーからの通報）
     var subject: Subject? = nil
@@ -25,10 +28,10 @@ struct ReportSheet: View {
     }
 
     /// 「この人をブロックする」の相手（コメントの通報ならコメントを書いた人）
-    private var blockTarget: String? { comment?.authorId ?? ownerId }
+    private var blockTarget: String? { passNote != nil ? nil : (comment?.authorId ?? ownerId) }
     /// 補足の上限（コメントの通報は本文を入れる分だけ短い）
     private var noteLimit: Int {
-        comment == nil ? ModerationService.reportNoteMax : ModerationService.commentReportUserNoteMax
+        comment == nil && passNote == nil ? ModerationService.reportNoteMax : ModerationService.commentReportUserNoteMax
     }
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -53,7 +56,13 @@ struct ReportSheet: View {
                     if done {
                         receipt
                     } else {
-                        if comment == nil, let subject {
+                        if let passNote {
+                            Text(L("すれちがいのカードのひとこと：「\(passNote)」", "Note on a Pass card: \"\(passNote)\""))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else if comment == nil, let subject {
                             subjectCard(subject)
                         }
                         if let comment {
@@ -110,7 +119,8 @@ struct ReportSheet: View {
     private var header: some View {
         HStack {
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
-            Text(comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
+            Text(passNote != nil ? L("ひとことを通報", "Report note")
+                 : comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
@@ -247,12 +257,13 @@ struct ReportSheet: View {
         // ブロックを控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let blocker = hidden.owner
         do {
-            let sentNote = comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
+            let sentNote = passNote.map { ModerationService.passNoteReportNote($0, note: note) }
+                ?? comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
             try await environment.moderation.report(photoId: photoId, reason: reason, note: sentNote)
             // **押したあと実際に消す。** 通報が受け付けられただけで、
             // 通報した人の画面に出続けるなら意味がない。
             // コメントの通報では写真は消さない（通報したのはコメント。消すならブロックで）
-            if comment == nil {
+            if comment == nil && passNote == nil {
                 hidden.markReported(photoId, for: blocker)
             }
             if alsoBlock, let blockTarget {

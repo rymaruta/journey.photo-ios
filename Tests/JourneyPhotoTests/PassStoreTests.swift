@@ -190,6 +190,33 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(again.encounters.map(\.photoId), ["p1"], "外したカードが読み直すと戻った")
     }
 
+    /// ひとことを伏せる（この端末だけ・読み直しても伏せたまま・出し直せる）
+    func testNoteCanBeHidden() async throws {
+        let store = makeStore()
+        let card = try XCTUnwrap(store.record(payload("p1", note: "こんにちは"), at: at(16, 10)))
+        XCTAssertEqual(card.shownNote, "こんにちは")
+        store.setNoteHidden(card.id, true)
+        XCTAssertEqual(store.encounters.first?.shownNote, "")
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        again.use(userId: "me")
+        XCTAssertEqual(again.encounters.first?.noteHidden, true, "伏せた印が残らない")
+        again.setNoteHidden(card.id, false)
+        XCTAssertEqual(again.encounters.first?.shownNote, "こんにちは")
+    }
+
+    /// 期限切れで止めた後に入り直したら、まだ届いていない束の知らせを予約し直す
+    func testNoticesAreRescheduledOnSignIn() async throws {
+        let store = makeStore()
+        store.record(payload("p1"), at: Date().addingTimeInterval(-60))
+        await waitForSchedule(1)
+        scheduled = []
+        store.use(userId: nil)
+        store.use(userId: "me")
+        await waitForSchedule(1)
+        XCTAssertEqual(scheduled.count, 1, "入り直しても夕方の知らせを予約し直さない")
+        XCTAssertEqual(scheduled.first?.count, 1)
+    }
+
     /// 自分の写真（別の端末の自分）は見せない
     func testOwnPhotoFromAnotherDeviceIsHidden() async throws {
         let store = makeStore()

@@ -45,6 +45,41 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(viewer.contains("Text(PassPrivacyText.thanksNotice)"), "「ありがとう」が名前つきのいいねだと言わない")
     }
 
+    /// 二度目の読み直し: 束の画面にトースト・ひとことの通報は写真の通報と分ける・写真は全面で見られる
+    func testViewerShowsToastsAndSeparatesNoteReports() throws {
+        let viewer = try source("Features/Pass/PassViewerView.swift")
+        XCTAssertTrue(viewer.contains(".overlay(alignment: .top) { ToastOverlay() }"), "束の画面にトーストが出ない")
+        XCTAssertTrue(viewer.contains("PassPhotoFullView(photo: photo)"), "写真を全面で見られない")
+        XCTAssertTrue(viewer.contains(".allowsHitTesting(!showsBack)"), "裏を見ている間に表の写真が押せる")
+        for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)"),
+                          "\(path) のひとことの通報が写真の通報になっている")
+            XCTAssertTrue(text.contains("pass.setNoteHidden("), "\(path) でひとことを伏せられない")
+        }
+        let sheet = try source("Features/Social/ReportSheet.swift")
+        XCTAssertTrue(sheet.contains("passNote.map { ModerationService.passNoteReportNote($0, note: note) }"))
+        XCTAssertTrue(sheet.contains("if comment == nil && passNote == nil {\n                hidden.markReported"),
+                      "ひとことの通報で写真を隠している")
+        let menu = try source("Features/Pass/PassCardMenu.swift")
+        for word in ["写真を通報する", "ひとことを通報する", "ひとことを伏せる", "ひとことを出す"] {
+            XCTAssertTrue(menu.contains(word), word)
+        }
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        XCTAssertTrue(pick.contains("PassExchange.noteProblem(note)"), "超えた訳を出さない")
+    }
+
+    /// きっぷ（案C）: 表は写真・眉・区間・破線・改札の穴、裏は帯・ご案内・4つの欄
+    func testTicketShape() throws {
+        let cards = try source("Features/Pass/PassCards.swift")
+        for part in ["PassTicketArrow()", "PassTicketDash()", "PassTicketPunch()", "PassTicket.eyebrow(face.kind)",
+                     "L(\"ご案内\", \"NOTICE\")", "L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")",
+                     "L(\"区間\", \"Distance\")", "L(\"回数\", \"Times\")", "PassTicketEdge(kind: face.kind)"] {
+            XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
+        }
+        XCTAssertTrue(try source("Features/Pass/PassBookView.swift").contains("PassTicketSlot(content: content)"))
+    }
+
     /// 退会・期限切れのログアウトでも電波を止める
     func testRadioStopsOnAccountRemovalAndExpiry() throws {
         // 型の名前を分けて書く（`check-swift-refs.js` が文字列の中の呼び出しを、テストからの呼び出しと読む）

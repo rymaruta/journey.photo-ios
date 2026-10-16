@@ -6,7 +6,12 @@ import SwiftUI
 struct PassCardMenu: View {
 
     let content: PassCardContent
+    /// 写真を通報する（写真の持ち主への通報）
     let report: () -> Void
+    /// ひとことを通報する（署名が無いので、写真の通報とは分ける・`ReportSheet.passNote`）
+    let reportNote: () -> Void
+    /// ひとことを伏せる／出す（この端末だけ）
+    let toggleNote: () -> Void
     let block: () -> Void
     let remove: () -> Void
     /// 写真の上に置く（帳の綴じ）ならガラスの丸に白。黒地の上（束の上の段）なら素の白
@@ -15,7 +20,17 @@ struct PassCardMenu: View {
     var body: some View {
         Menu {
             Button(action: report) {
-                Label(L("通報する", "Report"), systemImage: "flag")
+                Label(L("写真を通報する", "Report photo"), systemImage: "flag")
+            }
+            if !content.card.note.isEmpty {
+                Button(action: reportNote) {
+                    Label(L("ひとことを通報する", "Report note"), systemImage: "text.bubble")
+                }
+                Button(action: toggleNote) {
+                    content.card.noteHidden == true
+                        ? Label(L("ひとことを出す", "Show note"), systemImage: "eye")
+                        : Label(L("ひとことを伏せる", "Hide note"), systemImage: "eye.slash")
+                }
             }
             if content.card.ownerId != nil {
                 Button(role: .destructive, action: block) {
