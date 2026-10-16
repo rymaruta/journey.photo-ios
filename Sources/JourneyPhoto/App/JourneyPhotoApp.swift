@@ -194,6 +194,9 @@ struct JourneyPhotoApp: App {
                 .environmentObject(store)
                 .environmentObject(offlineTrips)
                 .environmentObject(connectivity)
+                // すれちがい（2026-10-16）。電波は画面の無い起動でもカードを受け取るので、
+                // `AppDelegate` の起動から居る1つ（`PassStore.shared`）を配る
+                .environmentObject(PassStore.shared)
                 .task { connectivity.start() }
                 .task { await auth.restore() }
                 // **取引は起動直後から聞く**（Apple の決まり。更新・別の端末での購入・返金が届く）。
@@ -233,6 +236,9 @@ struct JourneyPhotoApp: App {
                 // inactive → active と進み、active の直前は inactive なので、`old` ではなく
                 // 裏に入ったことを覚えておく。見張りを通ったときの人で呼ぶ
                 .onChange(of: scenePhase) { _, phase in
+                    // すれちがい: 前面／背面で「いま交換してよいか」を決め直す（「開いている間」は背面で止める）
+                    if phase == .active { PassCoordinator.shared.setForeground(true) }
+                    if phase == .background { PassCoordinator.shared.setForeground(false) }
                     if phase == .background { wentToBackground = true }
                     guard phase == .active, wentToBackground else { return }
                     wentToBackground = false
@@ -297,6 +303,22 @@ struct JourneyPhotoApp: App {
                     }
                     if auth.userId == nil, auth.signedOutByExpiry { return }
                     offlineTrips.use(userId: auth.userId)
+                }
+                // すれちがいの帳と設定も人に合わせる（電波なしの旅と同じ決まり: 圏外で ID が取れなかった・
+                // 期限切れのログアウトは前の人のまま）。人が替われば電波を決め直す（前の人の名刺を出さない）
+                .task(id: auth.state) {
+                    guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    if auth.userId == nil, auth.signedOutByExpiry { return }
+                    PassStore.shared.use(userId: auth.userId)
+                    // 起動したときの前面は `onChange(of: scenePhase)` に来ないので、ここで渡す
+                    PassCoordinator.shared.setForeground(scenePhase == .active)
+                    // 見本のカード（絵の撮影・Debug のみ）
+                    if PreviewSession.passSample, auth.userId != nil {
+                        let all = (try? await environment.gallery.fetchPhotos()) ?? []
+                        let ids = all.filter { PassExchange.isPublicCard($0) && ($0.userId ?? $0.uploadedBy) != auth.userId }
+                            .prefix(7).map(\.id)
+                        PassStore.shared.seedPreview(photoIds: Array(ids))
+                    }
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
                 // ログアウト（signedOut）も `userId` は nil で、確認が

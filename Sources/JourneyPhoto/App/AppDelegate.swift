@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
         // 居ない転送は止め、その鍵はログインしているときに片付ける
         BackgroundTransfer.shared.reconnect()
+        // **すれちがいの電波を戻す**（オンにしていた人だけ・2026-10-16）。Bluetooth の知らせで OS に
+        // 起こされた起動（画面は作られない）でも、ここで同じ復元の識別子の管理者を作り直すと続きを受け取れる
+        MainActor.assumeIsolated { PassCoordinator.shared.launch() }
         return true
     }
 
@@ -67,7 +70,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         // **ベルの数も合わせる。** バナーだけ出してベルが古い数のままだと、
         // 前面に戻るかお知らせを開くまで届いたことが数に出なかった。
         // 見頃のお知らせ（端末の中の予約）はお知らせの出来事ではないので数え直さない
-        if (notification.request.content.userInfo["kind"] as? String) != SeasonReminder.kind {
+        let kind = notification.request.content.userInfo["kind"] as? String
+        if kind != SeasonReminder.kind && kind != PassBundleNotifier.kind {
             await MainActor.run { NotificationRouter.shared.noteArrival() }
         }
         return [.banner, .list, .sound, .badge]
@@ -85,7 +89,16 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse
     ) async {
         // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない——開くだけにする
-        if (response.notification.request.content.userInfo["kind"] as? String) == SeasonReminder.kind { return }
+        let kind = response.notification.request.content.userInfo["kind"] as? String
+        if kind == SeasonReminder.kind { return }
+        // すれちがいの束（端末の中で予約したもの）: ホームへ行って束を開く
+        if kind == PassBundleNotifier.kind {
+            await MainActor.run {
+                TabRouter.shared.openHome()
+                PassStore.shared.requestOpen()
+            }
+            return
+        }
         let target = AppNotification.fromPush(response.notification.request.content.userInfo)
         await MainActor.run { NotificationRouter.shared.openActivity(target: target) }
     }

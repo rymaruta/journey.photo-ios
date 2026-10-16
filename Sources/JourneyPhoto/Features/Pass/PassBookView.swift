@@ -1,0 +1,205 @@
+import SwiftUI
+
+/// すれちがい帳（板 PassBook）。受け取ったカードは消えずにここに綴じる。
+///
+/// 上に3つの数（枚・都道府県・いちばん遠く）、字のタブ（綴じた順・場所ごと・よく会う人）、
+/// 節ごとに 3×3 の綴じ（足りない枠は点線の空き）。押すとその節のカードを1枚ずつめくれる。
+///
+/// **届く前のカードは出さない**（夕方まで「いま近くにいる」を見せない・`PassBook.delivered`）。
+/// 写真が公開一覧から消えた（非公開・削除）・持ち主をブロックしたカードも出さない（`PassStore.isVisible`）
+struct PassBookView: View {
+
+    @EnvironmentObject private var pass: PassStore
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
+    @State private var order: PassBook.Order = .bound
+    @State private var opened: PassBookOpen?
+    @State private var isLoading = true
+
+    var body: some View {
+        let book = pass.book(blocked: hidden.snapshot.blocked)
+        let contents = pass.contents(book, book: book)
+        let byId = Dictionary(uniqueKeysWithValues: contents.map { ($0.id, $0) })
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    Text(L("すれちがい帳", "Pass book"))
+                        .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                        .foregroundStyle(WebTheme.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(L("受け取ったカードは、消えずにここに綴じられます", "Cards you receive stay bound here"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                }
+                .padding(.horizontal, JPSpace.l)
+                .padding(.top, 10)
+
+                if contents.isEmpty {
+                    if isLoading && pass.hasDelivered() {
+                        JPLoadingState(kind: .grid)
+                    } else {
+                        EmptyState(title: L("まだカードがありません", "No cards yet"),
+                                   message: L("すれちがいをオンにして出かけると、近くにいたアプリの人のカードがその日の夕方に届きます。",
+                                              "Turn on Pass and head out — cards from app users you passed arrive that evening."))
+                    }
+                } else {
+                    statsRow(PassBook.stats(book.filter { byId[$0.id] != nil }, prefectures: pass.ownerPrefectures))
+                        .padding(.horizontal, JPSpace.l)
+                        .padding(.top, 18)
+                    tabs.padding(.top, 14)
+                    VStack(alignment: .leading, spacing: JPSpace.l) {
+                        ForEach(PassBook.sections(book.filter { byId[$0.id] != nil }, order: order,
+                                                  names: pass.ownerNames, calendar: .current)) { section in
+                            sectionView(section, byId: byId)
+                        }
+                    }
+                    .padding(.horizontal, JPSpace.gutter)
+                    .padding(.top, 14)
+                    Text(L("場所は「〇〇のあたり」の粒度だけを記録します。相手が今どこにいるかは出しません。",
+                           "Places are recorded only roughly (\u{201C}around …\u{201D}). Where someone is now is never shown."))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .padding(.horizontal, JPSpace.gutter)
+                        .padding(.top, JPSpace.s)
+                }
+            }
+            .padding(.bottom, JPSpace.screenEnd)
+        }
+        .webScreen()
+        .navigationTitle(L("すれちがい帳", "Pass book"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+        }
+        .task(id: hidden.revision) {
+            await pass.resolve(gallery: environment.gallery, profiles: environment.profiles)
+            isLoading = false
+        }
+        .fullScreenCover(item: $opened) { open in
+            PassViewerView(cards: open.cards, mode: .book, start: open.start)
+        }
+    }
+
+    private func statsRow(_ stats: PassBook.Stats) -> some View {
+        HStack(alignment: .top, spacing: JPSpace.xs) {
+            stat(PassExchange.grouped(stats.cards), unit: nil,
+                 label: L("枚のカード", "cards"))
+            stat(String(stats.prefectures), unit: nil, label: L("都道府県から", "prefectures"))
+            if let km = stats.farthestKm {
+                stat(PassExchange.grouped(km), unit: "km",
+                     label: L("いちばん遠く", "farthest"))
+            } else {
+                stat("—", unit: nil, label: L("いちばん遠く", "farthest"))
+            }
+        }
+    }
+
+    private func stat(_ value: String, unit: String?, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(JPFont.number(22, weight: .semibold, relativeTo: .title2))
+                    .foregroundStyle(WebTheme.text)
+                if let unit {
+                    Text(unit).font(JPFont.caption).foregroundStyle(WebTheme.text3)
+                }
+            }
+            Text(label).font(JPFont.caption).foregroundStyle(WebTheme.text3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 字のタブ（ホームのフィードの切り替えと同じ形: 選んだタブは真鍮の字と 2 の下線）
+    private var tabs: some View {
+        VStack(spacing: 0) {
+            // 板の間は 22。ホームのフィードの切り替えと同じく 4 の倍数の 24（`GalleryView.feedTabGap`）
+            HStack(spacing: JPSpace.xl) {
+                ForEach(PassBook.Order.allCases) { item in
+                    let selected = order == item
+                    Button { order = item } label: {
+                        Text(item.label)
+                            .font(selected ? JPFont.bodyEmphasis : JPFont.body)
+                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text3)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .overlay(alignment: .bottom) {
+                                Rectangle().fill(selected ? WebTheme.accent : Color.clear).frame(height: JPStroke.emphasis)
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JPSpace.gutter)
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+    }
+
+    private func sectionView(_ section: PassBook.Section, byId: [String: PassCardContent]) -> some View {
+        let list = section.cards.compactMap { byId[$0.id] }
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            JPEyebrowLine(section.title)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                ForEach(Array(list.enumerated()), id: \.element.id) { offset, content in
+                    Button { opened = PassBookOpen(cards: list, start: offset) } label: {
+                        slot(content)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("\(content.name) のカード", "\(content.name)\u{2019}s card"))
+                }
+                ForEach(0..<PassBook.emptySlots(for: list.count), id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.white.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .aspectRatio(5.0 / 7.0, contentMode: .fit)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(14)
+            // 綴じの地は札より一段沈めた #0b0b0c（板 `.bind`）
+            .jpCardFace(fill: PassCardStyle.face)
+        }
+    }
+
+    /// 綴じの1枚（板 `.sl`: 5:7・角 8・真鍮 40% の縁・下 18% に名前と番号）
+    private func slot(_ content: PassCardContent) -> some View {
+        Color.clear
+            .aspectRatio(5.0 / 7.0, contentMode: .fit)
+            .overlay {
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        RemoteImage(url: content.photo.gridImageURL, alignment: content.photo.gridAlignment)
+                            .frame(height: geo.size.height * 0.82)
+                            .clipped()
+                        HStack(spacing: 2) {
+                            Text(content.name)
+                                .font(JPFont.caption.weight(.semibold))
+                                .foregroundStyle(WebTheme.text)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text(PassExchange.shortNumber(content.card.number))
+                                .font(JPFont.meta)
+                                .foregroundStyle(WebTheme.accent)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(PassCardStyle.face)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(WebTheme.accent.opacity(0.4), lineWidth: JPStroke.hairline))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// 帳から開くカード（その節の並びと、押した1枚）
+struct PassBookOpen: Identifiable {
+    let cards: [PassCardContent]
+    let start: Int
+    var id: String { (cards.map(\.id) + [String(start)]).joined(separator: ",") }
+}

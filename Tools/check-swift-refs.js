@@ -55,6 +55,8 @@ const declaredIn = new Map();
 const required = new Map();
 /** `.environmentObject(expr)` の expr（識別子） */
 const injectedExpressions = new Set();
+/** `.environmentObject(Type.shared)` の Type（起動の最初から居る1つを配る形・`PassStore.shared`） */
+const injectedShared = new Set();
 /** `let/var name = Type(` の name → Type（同じファイル内で解決するため） */
 const bindings = new Map();
 
@@ -104,6 +106,9 @@ for (const file of files) {
     }
     for (const match of source.matchAll(/\.environmentObject\(\s*([A-Za-z_]\w*)\s*\)/g)) {
         injectedExpressions.add(match[1]);
+    }
+    for (const match of source.matchAll(/\.environmentObject\(\s*([A-Z]\w*)\.shared\s*\)/g)) {
+        injectedShared.add(match[1]);
     }
     for (const match of source.matchAll(/(?:@StateObject|@State|let|var)\s+(?:private\s+)?var?\s*([a-z]\w*)\s*(?::\s*[\w<>\[\], ?]+)?\s*=\s*([A-Z]\w*)\s*\(/g)) {
         bindings.set(match[1], match[2]);
@@ -309,6 +314,8 @@ for (const file of files) {
         "20-写真の詳細", "21-人のページ", "30-旅の一冊", "31-旅の足取り",
         "40-投稿の2択", "41-ストーリー作成", "42-投稿（写真の編集の入口）",
         "60-撮影スポット", "61-撮影スポット（下）",
+        // すれちがい（2026-10-16）
+        "80-すれちがいの束", "81-すれちがいのカード（表）", "83-すれちがい帳",
     ];
     // **`files` は Sources しか見ていない。** 巡回は `UITests/` に在るので
     // 決め打ちで開く（見つからなければ、それ自体を問題として挙げる）
@@ -400,7 +407,7 @@ if (testRoot) {
 }
 
 // 1. 配られていない EnvironmentObject
-const injectedTypes = new Set();
+const injectedTypes = new Set(injectedShared);
 for (const name of injectedExpressions) {
     const type = bindings.get(name);
     if (type) injectedTypes.add(type);
