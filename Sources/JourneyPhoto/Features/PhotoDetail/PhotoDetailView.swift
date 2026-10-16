@@ -70,6 +70,12 @@ struct PhotoDetailView: View {
     /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
     @State private var tripLoaded: PhotoTrip.Loaded?
     private var tripStage: PhotoTrip.Stage { PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded) }
+    /// 「この近くの撮影スポット」（`spotId` の無い写真・2026-10-16）。`spotId` の欄には
+    /// `PhotoTrip.nearbySpotKey`（写真と座標）を入れて、今の写真の鍵と同じときだけ使う
+    @State private var nearbySpotLoaded: PhotoTrip.Loaded?
+    private var nearbySpotStage: PhotoTrip.Stage {
+        PhotoTrip.stage(photoSpotId: PhotoTrip.nearbySpotKey(photo: shown), loaded: nearbySpotLoaded)
+    }
     /// 「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・2026-10-14）。**どの写真の、どの元の写真で
     /// 読んだかを持つ**（`InspiredBy.Loaded`）——写真を送った直後に前の写真の行を出さない（`tripLoaded` と同じ考え）
     @State private var inspiredLoaded: InspiredBy.Loaded?
@@ -502,9 +508,14 @@ struct PhotoDetailView: View {
                 .padding(.bottom, JPSpace.xs)
             placeRow
             spotGuideRow
+            nearbySpotRow
         }
         .padding(.horizontal, JPSpace.m)
         .padding(.bottom, JPSpace.xxs)
+        // この近くの撮影スポット（`spotId` の無い写真で座標のあるときだけ）。同じ索引の口（控えがあれば通信しない）。
+        // **`body` ではなくここに付ける**: `body` の修飾の鎖に足すと、Xcode の型検査が時間内に終わらず
+        // ビルドが落ちた（2026-10-17・PR #262 の Mac の検証）。この裾は写真があるあいだ常に描かれる
+        .task(id: PhotoTrip.nearbySpotKey(photo: shown) ?? "") { await loadNearbySpot() }
     }
 
     /// 束のページの点（v2 の板: 6pt・今の1枚は白、ほかは白 40%）。**1枚だけなら出さない**。
@@ -762,6 +773,41 @@ struct PhotoDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("撮影スポット: \(spot.name)", "Photo spot: \(spot.name)"))
             .accessibilityIdentifier("photo.spotGuide")
+        }
+    }
+
+    /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。
+    ///
+    /// 🔴 `spotId` の無い写真（10/14 より前の写真・地名を手で打った写真）からは、台帳の撮影スポットの頁へ
+    /// 行けなかった。写真の座標（約1kmに丸めたもの）から `PhotoTrip.nearbySpotMaxKm`（2km）以内で
+    /// いちばん近い台帳の行を出す。`spotId` のある写真は上の「撮影スポット」の行が出るので出さない。
+    /// 見た目は上の行と同じ（写真の裾＝写真の上なので白・12pt・下線・影・当たり 44pt）
+    @ViewBuilder
+    private var nearbySpotRow: some View {
+        if let loaded = nearbySpotStage.loaded, let spot = loaded.spot {
+            NavigationLink {
+                OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
+                                 photosKnown: loaded.photos != nil)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.caption)
+                        .accessibilityHidden(true)
+                    Text(PhotoTrip.nearbySpotTitle + PhotoMetaLine.separator + spot.name)
+                        .underline(true, color: Color.white.opacity(0.6))
+                        .lineLimit(1)
+                    Text("›").accessibilityHidden(true)
+                }
+                .font(.caption)
+                .foregroundStyle(WebTheme.foreground)
+                .jpPhotoTextShadow()
+                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding(.vertical, -8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(PhotoTrip.nearbySpotTitle + ": " + spot.name)
+            .accessibilityIdentifier("photo.nearbySpot")
         }
     }
 
@@ -1784,6 +1830,22 @@ struct PhotoDetailView: View {
         guard let photos = try? await environment.gallery.fetchPhotos(), stillHere(),
               tripLoaded?.spotId == id else { return }
         tripLoaded = loaded.withPhotos(photos)
+    }
+
+    /// この近くの撮影スポットを引く（`PhotoTrip.nearbySpot`・2026-10-16）。`loadTripSpot` と同じ読み方で、
+    /// 鍵は `PhotoTrip.nearbySpotKey`。読めなかった回は覚えない（次の `.task` で読み直す）
+    private func loadNearbySpot() async {
+        guard let key = PhotoTrip.nearbySpotKey(photo: shown) else { return }
+        let stillHere = { !Task.isCancelled && PhotoTrip.nearbySpotKey(photo: shown) == key }
+        if nearbySpotLoaded?.spotId != key {
+            guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
+            nearbySpotLoaded = PhotoTrip.Loaded(spotId: key, spot: PhotoTrip.nearbySpot(to: shown.coords, in: rows),
+                                                index: rows, photos: nil)
+        }
+        guard let loaded = nearbySpotLoaded, loaded.spotId == key, loaded.spot != nil, loaded.photos == nil else { return }
+        guard let photos = try? await environment.gallery.fetchPhotos(), stillHere(),
+              nearbySpotLoaded?.spotId == key else { return }
+        nearbySpotLoaded = loaded.withPhotos(photos)
     }
 
     /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**

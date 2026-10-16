@@ -39,7 +39,7 @@ let package = Package(
         .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
         .target(name: "MapKit", dependencies: ["SwiftUI", "UIKit", "CoreLocation"], path: "Shims/MapKit"),
         .target(name: "AVFoundation", dependencies: ["QuartzCore"], path: "Shims/AVFoundation"),
-        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], path: "Shims/AVKit"),
+        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation", "UIKit"], path: "Shims/AVKit"),
         .target(name: "UserNotifications", path: "Shims/UserNotifications"),
         // 電波の有無の見張り（`NWPathMonitor`・電波なしで使える旅）
         .target(name: "Network", path: "Shims/Network"),

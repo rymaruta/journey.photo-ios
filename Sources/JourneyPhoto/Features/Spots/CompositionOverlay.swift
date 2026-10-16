@@ -18,6 +18,9 @@ struct CompositionOverlay: View {
     var levelDegrees: Double = 0
     /// 持った向き（0〜3・横持ちなら線を写真の向きに回す・`CompositionGuide.screenMarks`）
     var quarterTurns = 0
+    /// 人が回した角度（時計回りの度・2026-10-16）。90° 単位は線を作り直して回し
+    /// （`CompositionGuide.screenMarks` の注記）、残り（-45〜45°）は絵ごと回す。水準器には効かせない
+    var rotationDegrees = 0.0
     var lineWidth = 1.0
     /// 黒 25% の影（構図のシートの小さな絵では付けない）
     var shadowed = true
@@ -25,8 +28,12 @@ struct CompositionOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let w = Double(geo.size.width), h = Double(geo.size.height)
+            let parts = CompositionGuide.rotationParts(kind == .level ? 0 : rotationDegrees)
             let marks = CompositionGuide.screenMarks(kind, variant: variant, aspect: w / max(h, 1),
-                                                     quarterTurns: quarterTurns, levelDegrees: levelDegrees)
+                                                     quarterTurns: quarterTurns, levelDegrees: levelDegrees,
+                                                     rotationQuarters: parts.quarters)
+            // 斜めに回すときだけ、暗がりの帯を枠の外まで伸ばす（回しても枠の角が抜けない・`dimBands`）
+            let margin = parts.residual == 0 ? 0 : max(w / max(h, 1), h / max(w, 1))
             let color = Color.white.opacity(CompositionGuide.clampedLineOpacity(lineOpacity))
             ZStack {
                 ZStack {
@@ -41,9 +48,11 @@ struct CompositionOverlay: View {
                 }
                 .shadow(color: Color.black.opacity(shadowed ? 0.25 : 0), radius: 1, x: 0, y: 0)
                 // 切り出し枠の外の暗がり（線より上）
-                Self.path(marks, layer: .dim, width: w, height: h)
+                Self.path(marks, layer: .dim, width: w, height: h, dimMargin: margin)
                     .fill(Color.black.opacity(0.4))
             }
+            // 残りの角度は絵ごと回す（枠の真ん中を軸に・外は撮る画面の `.clipped()` で切れる）
+            .rotationEffect(.degrees(parts.residual))
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -55,7 +64,8 @@ struct CompositionOverlay: View {
     }
 
     /// 線の集まりを、幅 `width`・高さ `height` の枠の `Path` にする
-    static func path(_ marks: [GuideMark], layer: Layer, width w: Double, height h: Double) -> Path {
+    static func path(_ marks: [GuideMark], layer: Layer, width w: Double, height h: Double,
+                     dimMargin: Double = 0) -> Path {
         func p(_ g: GuidePoint) -> CGPoint { CGPoint(x: g.x * w, y: g.y * h) }
         func r(_ g: GuideRect) -> CGRect { CGRect(x: g.x * w, y: g.y * h, width: g.width * w, height: g.height * h) }
         let picked = marks.filter { mark in
@@ -98,13 +108,8 @@ struct CompositionOverlay: View {
                     path.move(to: p(a))
                     path.addCurve(to: p(b), control1: p(c1), control2: p(c2))
                 case .dimOutside(let crop):
-                    // 枠の外の4つの帯（上・下・左・右）
-                    let c = r(crop)
-                    path.addRect(CGRect(x: 0, y: 0, width: w, height: Double(c.minY)))
-                    path.addRect(CGRect(x: 0, y: Double(c.maxY), width: w, height: max(h - Double(c.maxY), 0)))
-                    path.addRect(CGRect(x: 0, y: Double(c.minY), width: Double(c.minX), height: Double(c.height)))
-                    path.addRect(CGRect(x: Double(c.maxX), y: Double(c.minY), width: max(w - Double(c.maxX), 0),
-                                        height: Double(c.height)))
+                    // 枠の外の4つの帯（上・下・左・右）。斜めに回すときは枠の外まで伸ばす
+                    for band in CompositionGuide.dimBands(crop: crop, margin: dimMargin) { path.addRect(r(band)) }
                 }
             }
         }
@@ -118,11 +123,13 @@ struct CompositionLines: View {
     let variant: Int
     let lineOpacity: Double
     let quarterTurns: Int
+    var rotationDegrees = 0.0
     @ObservedObject var level: LevelMotion
 
     var body: some View {
         CompositionOverlay(kind: kind, variant: variant, lineOpacity: lineOpacity,
-                           levelDegrees: kind == .level ? level.degrees : 0, quarterTurns: quarterTurns)
+                           levelDegrees: kind == .level ? level.degrees : 0, quarterTurns: quarterTurns,
+                           rotationDegrees: rotationDegrees)
     }
 }
 
@@ -131,12 +138,15 @@ struct CompositionThumbnail: View {
     let kind: CompositionKind?
     var variant = 0
     var cornerRadius = 4.0
+    /// 撮る画面で回している角度（「構図」の行の小さな絵も同じ向きに・2026-10-16）
+    var rotationDegrees = 0.0
 
     var body: some View {
         ZStack {
             Color.white.opacity(0.06)
             if let kind {
-                CompositionOverlay(kind: kind, variant: variant, lineOpacity: 0.7, levelDegrees: 0, shadowed: false)
+                CompositionOverlay(kind: kind, variant: variant, lineOpacity: 0.7, levelDegrees: 0,
+                                   rotationDegrees: rotationDegrees, shadowed: false)
             } else {
                 Image(systemName: "nosign")
                     .font(.system(size: 14, weight: .regular))

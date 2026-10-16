@@ -20,6 +20,9 @@ struct RootView: View {
     /// 投稿のシートで「構図を重ねて撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
     /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）
     @State private var openCompositionAfterPostSheet = false
+    /// 投稿のシートの「カメラで撮る」（2026-10-16）。撮った1枚は `pendingCapture` に入れ、
+    /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
+    @State private var showPostCamera = false
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -513,6 +516,21 @@ struct RootView: View {
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
+            // 「カメラで撮る」。投稿画面の帯の「追加」→「写真を撮る」と同じカメラ（`CameraPicker`）
+            .fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {
+                CameraPicker { capture in pendingCapture = capture }
+                    .ignoresSafeArea()
+            }
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**。
+            // ⚠️ 投稿の画面を足したら、この並びと、端末の旅の一冊（PR #260 の `tripImportRequests` の onChange）の
+            // 確かめにも足す。#260 を取り込むときは、あちらも `PostRequestGate.opens(busy:)` にそろえる
+            // （今のあちらの確かめには「カメラで撮る」の `showPostCamera` が入っていない）
+            .onChange(of: tabRouter.postRequests) { _, _ in
+                guard let kind = tabRouter.takePendingPost(),
+                      PostRequestGate.opens(busy: [showTripImport, showPhotoUpload, showStoryComposer,
+                                                   showPostChoice, showPostCamera]) else { return }
+                choosePost(kind)
+            }
     }
 
     /// 投稿の選択シートが閉じきってから、次の画面を開く。
@@ -538,6 +556,9 @@ struct RootView: View {
         case .composition:
             // シートが閉じきってから開く（`openCompositionIfRequested`）
             openCompositionAfterPostSheet = true
+        case .camera:
+            pendingCapture = nil
+            showPostCamera = true
         }
     }
 

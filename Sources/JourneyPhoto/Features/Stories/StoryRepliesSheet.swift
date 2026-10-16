@@ -308,3 +308,53 @@ struct StoryReplyActions: Equatable {
 
     static var copyAddress: String { L("宛先をコピー", "Copy address") }
 }
+
+/// お知らせから開く返信の一覧の行き先（`NotificationsView`・2026-10-16）
+struct StoryRepliesTarget: Identifiable, Equatable {
+    let storyId: String
+    var id: String { storyId }
+}
+
+/// **お知らせの「ストーリーへの返信」から開く返信の一覧**（2026-10-16・行き止まりの直し）。
+///
+/// 中身は見る画面の返信の一覧と同じ `StoryRepliesSheet`。読み込み・ブロックの絞り・読み直しの失敗の
+/// 出し方も見る画面（`StoryViewerView.reloadReplies`）と同じ決まり（`StoryInsightsView.failureOutcome`）
+struct StoryRepliesLoader: View {
+
+    let storyId: String
+
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
+    @State private var replies: [StoryReply] = []
+    @State private var loaded = false
+    @State private var failed = false
+    @State private var reloading = false
+    @State private var notice: String?
+
+    var body: some View {
+        StoryRepliesSheet(items: replies.textReplies, loaded: loaded, failed: failed,
+                          reloading: reloading, notice: notice,
+                          onReload: { await load(pulled: true) },
+                          storyId: storyId)
+            .task(id: storyId) { await load(pulled: false) }
+    }
+
+    private func load(pulled: Bool) async {
+        guard !reloading else { return }
+        reloading = true
+        defer { reloading = false }
+        do {
+            let fetched = try await environment.stories.replies(id: storyId)
+            replies = BlockFilter.replies(fetched, blocked: hidden.blockedUserIds)
+            failed = false
+            loaded = true
+            notice = nil
+        } catch {
+            switch StoryInsightsView.failureOutcome(error, firstLoad: !loaded, pulled: pulled) {
+            case .silent: break
+            case .errorMessage: failed = true
+            case .refreshNotice: notice = L("読み直せませんでした", "Couldn't refresh")
+            }
+        }
+    }
+}
