@@ -42,9 +42,10 @@ struct ThemeColorField: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        // 注意書きが**出た**ときだけ読み上げでも知らせる（目で見えない人には出たことが分からない）
+        // 注意書きが**出た**ときだけ読み上げでも知らせる（目で見えない人には出たことが分からない）。
+        // 本人が色選びで選んだときだけ——読み込み（保存してあった暗い色が入る）では知らせない
         .onChange(of: themeColor) { old, new in
-            guard ThemeColor.shouldAnnounceHardToSee(old: old, new: new) else { return }
+            guard ThemeColor.shouldAnnounceHardToSee(old: old, new: new, picking: showsPicker) else { return }
             UIAccessibility.post(notification: .announcement,
                                  argument: L("黒い地の上では見えにくい色です。このままでも保存できます",
                                              "This color is hard to see on black. You can still save it."))
@@ -196,37 +197,44 @@ struct ThemeColorPickerSheet: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: UIColorPickerViewController, context: Context) {
-        context.coordinator.parent = self
-    }
+    func updateUIViewController(_ uiViewController: UIColorPickerViewController, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    /// 閉じる処理と書く処理は閉包で渡す（`CameraPicker` と同じ形）
+    func makeCoordinator() -> Coordinator {
+        Coordinator(pick: { picked in
+            if let next = ThemeColor.nextValue(picked: picked, current: themeColor) { themeColor = next }
+        }, dismiss: { dismiss() })
+    }
 
     /// 色選びの知らせは主スレッドで来る（UIKit）
     @MainActor final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
-        var parent: ThemeColorPickerSheet
+        private let pick: (String) -> Void
+        private let dismiss: () -> Void
 
-        init(parent: ThemeColorPickerSheet) { self.parent = parent }
-
-        /// 指で動かしている間も（`continuously`）書く——欄の丸と注意書きがその場で変わる
-        func colorPickerViewController(_ viewController: UIColorPickerViewController,
-                                       didSelect color: UIKit.UIColor, continuously: Bool) {
-            pick(color)
+        init(pick: @escaping (String) -> Void, dismiss: @escaping () -> Void) {
+            self.pick = pick
+            self.dismiss = dismiss
         }
 
+        /// 指で動かしている間も（`continuously`）書く——欄の丸と注意書きがその場で変わる。
+        /// **選んだ色はここで全部届く**
+        func colorPickerViewController(_ viewController: UIColorPickerViewController,
+                                       didSelect color: UIKit.UIColor, continuously: Bool) {
+            write(color)
+        }
+
+        /// 🔴 **閉じるだけ。ここでは書かない。** `selectedColor` は開いたときの初期色のままなので、
+        /// 「なし」のまま開いて何も触らずに閉じると、初期色（見本の先頭 #38bdf8）が書かれて
+        /// 「なし」が空色に化けていた（2026-10-16 見直しの指摘）
         func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
-            pick(viewController.selectedColor)
-            parent.dismiss()
+            dismiss()
         }
 
         /// `UIColor.getRed` は拡張 sRGB で返す（P3 の色は 0〜1 の外）。`ThemeColor.hex` が sRGB に詰めて丸める
-        private func pick(_ color: UIKit.UIColor) {
+        private func write(_ color: UIKit.UIColor) {
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
             guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
-            let picked = ThemeColor.hex(red: Double(red), green: Double(green), blue: Double(blue))
-            if let next = ThemeColor.nextValue(picked: picked, current: parent.themeColor) {
-                parent.themeColor = next
-            }
+            pick(ThemeColor.hex(red: Double(red), green: Double(green), blue: Double(blue)))
         }
     }
 }

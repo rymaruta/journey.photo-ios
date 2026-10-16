@@ -193,11 +193,16 @@ final class ThemeColorTests: XCTestCase {
 
     /// 暗い色の注意書きは**新しく出たときだけ**読み上げる（出たままの色替えでは繰り返さない）
     func testHardToSeeIsAnnouncedOnlyWhenItAppears() {
-        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "#38bdf8", new: "#101010"))
-        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#000000"))
-        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#101010", new: "#000000"), "出たまま")
-        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#000000", new: "#38bdf8"), "消えた")
-        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#38bdf8"))
+        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "#38bdf8", new: "#101010", picking: true))
+        XCTAssertTrue(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#000000", picking: true))
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#101010", new: "#000000", picking: true), "出たまま")
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "#000000", new: "#38bdf8", picking: true), "消えた")
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#38bdf8", picking: true))
+    }
+
+    /// 🔴 **読み込み（色選びを開いていない）で暗い色が入っても読み上げない**
+    func testHardToSeeIsNotAnnouncedWhileLoading() {
+        XCTAssertFalse(ThemeColor.shouldAnnounceHardToSee(old: "", new: "#000000", picking: false))
     }
 }
 
@@ -229,6 +234,21 @@ final class ThemeColorFieldSourceTests: XCTestCase {
         XCTAssertFalse(code.contains("accentBackground"), "「なし」が白の塗りのまま")
     }
 
+    /// 🔴 **色選びを閉じるときは書かない。** `selectedColor` は開いたときの初期色のままなので、
+    /// 「なし」のまま開いて触らずに閉じると見本の先頭（#38bdf8）に化けていた。色は `didSelect` で届く
+    func testDidFinishOnlyDismisses() throws {
+        let code = try source()
+        let start = try XCTUnwrap(code.range(of: "func colorPickerViewControllerDidFinish("), "閉じる知らせが無い")
+        let rest = code[start.upperBound...]
+        let body = String(rest[..<(rest.range(of: "\n        }")?.lowerBound ?? rest.endIndex)])
+        XCTAssertFalse(body.contains("pick("), "閉じるときに書いている")
+        XCTAssertFalse(body.contains("write("), "閉じるときに書いている")
+        XCTAssertFalse(body.contains("selectedColor"), "閉じるときに初期色を読んでいる")
+        XCTAssertTrue(body.contains("dismiss()"), "閉じていない")
+        XCTAssertTrue(code.contains("didSelect color: UIKit.UIColor, continuously: Bool) {\n            write(color)"),
+                      "選んだ色を書いていない")
+    }
+
     /// 🔴 **「自由に選ぶ」はふつうの Button（枠 44）で、端末の色選びをシートで出す。**
     /// 透明に近い `ColorPicker` を下に敷く作りは当たりが 28 のままの恐れがある
     func testCustomSwatchIsAButtonThatOpensTheSystemPicker() throws {
@@ -239,9 +259,11 @@ final class ThemeColorFieldSourceTests: XCTestCase {
         XCTAssertTrue(code.contains("ThemeColorPickerSheet(themeColor: $themeColor)"), "シートで出していない")
         XCTAssertTrue(code.contains("UIColorPickerViewController()"))
         XCTAssertTrue(code.contains("controller.supportsAlpha = false"), "透明度を選べてしまう")
-        XCTAssertTrue(code.contains("ThemeColor.nextValue(picked: picked, current: parent.themeColor)"),
+        XCTAssertTrue(code.contains("ThemeColor.nextValue(picked: picked, current: themeColor)"),
                       "同じ色でも書いてしまう")
         XCTAssertTrue(code.contains("UIAccessibility.post(notification: .announcement"), "暗い色の注意を読み上げない")
+        XCTAssertTrue(code.contains("shouldAnnounceHardToSee(old: old, new: new, picking: showsPicker)"),
+                      "読み込みでも読み上げてしまう")
         // 丸の枠は 44（ボタンの label の中で）
         XCTAssertTrue(code.contains(".frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)"))
     }

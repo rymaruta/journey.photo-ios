@@ -66,9 +66,11 @@ enum ThemeColor {
         return p == c ? nil : p
     }
 
-    /// 暗い色の注意書きが**新しく出た**か（読み上げで知らせる時）。出たままの色替えでは繰り返さない
-    static func shouldAnnounceHardToSee(old: String, new: String) -> Bool {
-        !isHardToSeeOnBlack(old) && isHardToSeeOnBlack(new)
+    /// 暗い色の注意書きが**新しく出た**か（読み上げで知らせる時）。出たままの色替えでは繰り返さない。
+    /// **本人が色選びで選んでいるときだけ**（`picking`）——画面を開いたときの読み込みで
+    /// 保存してあった暗い色が入っても知らせない（見本8色は暗くないので、選べるのは色選びだけ）
+    static func shouldAnnounceHardToSee(old: String, new: String, picking: Bool) -> Bool {
+        picking && !isHardToSeeOnBlack(old) && isHardToSeeOnBlack(new)
     }
 
     /// 黒い地の上で見分けにくい色か（WCAG の部品の線 3:1 を下回る）。
