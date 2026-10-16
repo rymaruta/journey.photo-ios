@@ -114,10 +114,13 @@ final class V2SettingsProTests: XCTestCase {
     func testLightAlertNoticeBand() throws {
         let rows = try source("Features/Pro/LightAlertSettingsRows.swift")
         let band = slice(rows, from: "private func pushNoticeRow", to: "private func fixPush")
-        assertInOrder(["Text(notice.detail)",
+        // 地はボタンの後ろの別の矩形（2026-10-16・ボタンに付けた地は実機で上の角が丸く抜けた）
+        assertInOrder(["ZStack {", "Rectangle()", ".fill(WebTheme.accentSoft)", "pushNoticeButton(notice)",
+                       "Text(notice.detail)",
                        ".foregroundStyle(WebTheme.accent.opacity(LightAlertSettingsStyle.noticeDetailOpacity))",
-                       ".foregroundStyle(WebTheme.accent)", ".frame(maxWidth: .infinity, minHeight: 54",
-                       ".background(WebTheme.accentSoft)"], in: band, "通知が届かない帯")
+                       ".foregroundStyle(WebTheme.accent)", ".frame(maxWidth: .infinity, minHeight: 54"],
+                      in: band, "通知が届かない帯")
+        XCTAssertFalse(band.contains(".background(WebTheme.accentSoft)"), "地をボタンに付けている")
         XCTAssertEqual(LightAlertSettingsStyle.noticeDetailOpacity, 0.85)
         let detail = blend(BrandPalette.accent, alpha: LightAlertSettingsStyle.noticeDetailOpacity, over: BrandPalette.accentSoft)
         XCTAssertGreaterThanOrEqual(BrandPalette.contrast(detail, BrandPalette.accentSoft), 4.5)
