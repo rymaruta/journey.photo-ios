@@ -388,6 +388,23 @@ final class PostLimitsTests: XCTestCase {
                                  "393pt 幅の端末でフォームの行に入らない")
     }
 
+    /// 🔴 **「自由に選ぶ」の丸を足しても最後の行は入る**（4色＋丸＋「なし」＝ 44×5＋56−4＝272）
+    func testCustomSwatchFitsTheLastRow() {
+        XCTAssertEqual(ThemeColorLayout.widestRow,
+                       CGFloat(ThemeColorLayout.rows.last?.count ?? 0) * 44 + 44 + ThemeColorLayout.noneWidth - 4,
+                       "最後の行に「自由に選ぶ」の丸の幅が入っていない")
+        XCTAssertLessThanOrEqual(ThemeColorLayout.widestRow, 393 - 2 * 20 - 2 * 20)
+        XCTAssertEqual(ThemeColorLayout.rainbow.first, ThemeColorLayout.rainbow.last, "虹の継ぎ目が途切れる")
+        XCTAssertTrue(ThemeColorLayout.rainbow.allSatisfy(ThemeColor.isValid))
+    }
+
+    /// 2026-10-16 判断の真鍮（`WebTheme.accent` / `accentFill` / `accentText` の元）は、
+    /// 黒い地の上で輪が部品の線 3:1、「なし」の塗りの上の字が 4.5:1 を越える
+    func testBrassSelectionColorsAreReadable() {
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.accent, 0x000000), 3)
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.ink, BrandPalette.accentFill), 4.5)
+    }
+
     /// 選んだ印の外側の輪（間 2・輪 2）は、押せる枠の余白 4 に収まる（隣の枠へはみ出さない）
     func testThemeColorRingFitsTheTapTarget() {
         XCTAssertEqual(ThemeColorLayout.ringGap, 2)
