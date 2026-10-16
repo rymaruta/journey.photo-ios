@@ -327,7 +327,10 @@ final class StoryViewerV2FixTests: XCTestCase {
         XCTAssertFalse(content.contains(".overlay(alignment: .bottom) {\n                        highlightFooter"),
                        "ハイライトの足元が写真の上に重なっている")
         let photo = member("private func photoArea(for story: Story)", in: text)
-        XCTAssertTrue(photo.contains(".clipShape(UnevenRoundedRectangle(bottomLeadingRadius: JPRadius.xl, bottomTrailingRadius: JPRadius.xl))"))
+        // 2026-10-16 判断: 角は閲覧画面と隣の面で共有の StoryViewerMetrics.photoRadius（= JPRadius.xl）を読む
+        XCTAssertEqual(StoryViewerMetrics.photoRadius, JPRadius.xl)
+        assertInOrder([".clipShape(UnevenRoundedRectangle(bottomLeadingRadius: StoryViewerMetrics.photoRadius,",
+                       "bottomTrailingRadius: StoryViewerMetrics.photoRadius))"], in: photo, "写真の下の角丸")
         XCTAssertFalse(photo.contains("highlight == nil ? JPRadius.xl : 0"))
     }
 

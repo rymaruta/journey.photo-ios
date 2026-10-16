@@ -78,8 +78,9 @@ final class StoryV2RingsFixTests: XCTestCase {
         // 閲覧画面も同じ値（片方だけ変えると、回りきった瞬間に跳ねる）
         let viewer = try source("Features/Stories/StoryViewerView.swift")
         XCTAssertTrue(viewer.contains("footerHeight: CGFloat = StoryViewerMetrics.footerHeight"))
-        XCTAssertTrue(viewer.contains("UnevenRoundedRectangle(bottomLeadingRadius: highlight == nil ? JPRadius.xl"),
-                      "閲覧画面の写真の角が変わった。StoryViewerMetrics.photoRadius もそろえる")
+        // ハイライトも同じ角丸（2026-10-16・板 HighlightPlayer）。隣の面と同じ値を読む
+        XCTAssertTrue(viewer.contains("UnevenRoundedRectangle(bottomLeadingRadius: StoryViewerMetrics.photoRadius"),
+                      "閲覧画面の写真の角が StoryViewerMetrics.photoRadius を読んでいない（隣の面と跳ねる）")
     }
 
     // MARK: - 23・24 反応の画面の印と読み上げ

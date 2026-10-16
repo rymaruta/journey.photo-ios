@@ -706,7 +706,8 @@ struct StoryViewerView: View {
                     }
             }
         }
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: JPRadius.xl, bottomTrailingRadius: JPRadius.xl))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: StoryViewerMetrics.photoRadius,
+                                           bottomTrailingRadius: StoryViewerMetrics.photoRadius))
         // **止めている間は写真をわずかに縮める**（v2 StoryViewerPaused・名前やひとことを消しても
         // 「止まった」が形で分かる）。動きは `chrome` の切り替えに付いている
         .scaleEffect(chrome.showsPill ? StoryViewerMetrics.pausedScale : 1)
