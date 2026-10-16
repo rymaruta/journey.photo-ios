@@ -50,10 +50,6 @@ struct ThemeColorField: View {
                                  argument: L("黒い地の上では見えにくい色です。このままでも保存できます",
                                              "This color is hard to see on black. You can still save it."))
         }
-        .sheet(isPresented: $showsPicker) {
-            ThemeColorPickerSheet(themeColor: $themeColor)
-                .presentationDetents([.medium, .large])
-        }
     }
 
     /// 見本に無い色（ここで選んだ色・Web のパレットで選んだ色）が入っているか
@@ -63,11 +59,13 @@ struct ThemeColorField: View {
     /// 見本に無い色が入っていればその色で塗り、見本の丸と同じ外側の輪（真鍮）を付ける。
     /// 入っていなければ虹の丸（Web の `conic-gradient`）に白 30% の輪。
     ///
-    /// **ふつうの Button（枠 44）で押し、端末の色選びをシートで出す**（`ThemeColorPickerSheet`）。
-    /// 以前は SwiftUI の `ColorPicker` を広げて透明に近くして下に敷いていたが、当たりが
-    /// 約 28 のままになる恐れがあり、Linux では確かめられない（2026-10-16 読み直しの指摘）
+    /// **ふつうの Button（枠 44）で押し、端末の色選びを UIKit で直接 modal に出す**
+    /// （`ThemeColorPickerPresenter`）。以前は SwiftUI の `ColorPicker` を広げて透明に近くして
+    /// 下に敷いていたが、当たりが約 28 のままになる恐れがあった（2026-10-16 読み直しの指摘）
     private var customSwatch: some View {
         Button {
+            // 二度押しで2つ出さない（出している間は何もしない。presenter の側でも見る）
+            guard !showsPicker else { return }
             showsPicker = true
         } label: {
             Circle()
@@ -87,6 +85,8 @@ struct ThemeColorField: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
+        // 色選びを出す元（見えない空の画面）。丸の後ろに敷き、iPad の吹き出しの矢印もここを指す
+        .background { ThemeColorPickerPresenter(isPresented: $showsPicker, themeColor: $themeColor) }
         .accessibilityLabel(L("プロフィールの色: 自由に選ぶ", "Profile color: pick any color"))
         .accessibilityValue(isCustom ? themeColor.lowercased() : L("未選択", "Not chosen"))
         .accessibilityAddTraits(isCustom ? .isSelected : [])
@@ -176,44 +176,74 @@ enum ThemeColorLayout {
     }
 }
 
-/// 端末の色選び（`UIColorPickerViewController`）をシートで出す包み。
+/// 端末の色選び（`UIColorPickerViewController`）を **UIKit の `present` で直接 modal に出す**元。
 ///
-/// 不透明だけ（`supportsAlpha = false`・保存の形 `#rrggbb` に透明度は無い）。
-/// 開いたときは今の色（無ければ見本の先頭・Web の `input type="color"` の既定と同じ）。
-/// 色が変わるたびに書く——**同じ色なら書かない**（`ThemeColor.nextValue`）
-struct ThemeColorPickerSheet: UIViewControllerRepresentable {
+/// 🔴 **2026-10-16 判断: SwiftUI の `.sheet` の中に子として埋め込まない。** 埋め込むと、
+/// スポイトを押したとき（色選びが自分の画面を引っ込めて画面の色を拾う）に落ちた
+/// （owner の実機・TestFlight 1.1.5/1.1.6）。色選びは自分で modal に出された形で使う。
+/// - 出し方は `.popover`。iPhone（横幅の狭い画面）では UIKit が自動でシートに直し、iPad では
+///   この丸を指す吹き出しになる（吹き出しは元の場所が無いと落ちるので `sourceView` を必ず渡す）。
+///   `.pageSheet` を選ばないのは iPad で画面いっぱいの板になるため。**スポイトでどちらが安全かを
+///   Apple の文書で確かめることはこの環境ではできなかった**——実機で確かめる
+/// - 不透明だけ（`supportsAlpha = false`）。開いたときは今の色（無ければ見本の先頭）
+/// - 色は `didSelect`（指で動かしている間も）で書く。**同じ色なら書かない**（`ThemeColor.nextValue`）。
+///   閉じる知らせ（DidFinish）では書かない——`selectedColor` は初期色のままのことがある
+/// - **二度出さない**: 出している間（`isShowing`）は出し直さない
+struct ThemeColorPickerPresenter: UIViewControllerRepresentable {
 
+    @Binding var isPresented: Bool
     @Binding var themeColor: String
-    @Environment(\.dismiss) private var dismiss
 
-    func makeUIViewController(context: Context) -> UIColorPickerViewController {
-        let controller = UIColorPickerViewController()
-        controller.supportsAlpha = false
-        let rgb = ThemeColor.rgb(themeColor) ?? ThemeColor.rgb(ThemeColor.presets[0])
-        if let rgb {
-            controller.selectedColor = UIKit.UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
-        }
-        controller.delegate = context.coordinator
-        return controller
+    func makeUIViewController(context: Context) -> UIViewController {
+        let host = UIViewController()
+        // 見えない元。丸のボタンの指を奪わない
+        host.view.isUserInteractionEnabled = false
+        return host
     }
 
-    func updateUIViewController(_ uiViewController: UIColorPickerViewController, context: Context) {}
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        let coordinator = context.coordinator
+        guard isPresented, !coordinator.isShowing else { return }
+        coordinator.isShowing = true
 
-    /// 閉じる処理と書く処理は閉包で渡す（`CameraPicker` と同じ形）
+        let picker = UIColorPickerViewController()
+        picker.supportsAlpha = false
+        if let rgb = ThemeColor.rgb(themeColor) ?? ThemeColor.rgb(ThemeColor.presets[0]) {
+            picker.selectedColor = UIKit.UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+        }
+        picker.delegate = coordinator
+        picker.modalPresentationStyle = .popover
+        picker.popoverPresentationController?.sourceView = host.view
+        picker.popoverPresentationController?.sourceRect = host.view.bounds
+        // 下へ払って閉じたときも知る（DidFinish が来ない閉じ方）
+        picker.presentationController?.delegate = coordinator
+
+        // 描き直しの最中に出さない（次の回に回す）。いちばん上に出ている画面から出す
+        DispatchQueue.main.async {
+            var top: UIViewController = host
+            while let next = top.presentedViewController { top = next }
+            top.present(picker, animated: true)
+        }
+    }
+
+    /// 閉じた後の処理と書く処理は閉包で渡す（`CameraPicker` と同じ形）
     func makeCoordinator() -> Coordinator {
         Coordinator(pick: { picked in
             if let next = ThemeColor.nextValue(picked: picked, current: themeColor) { themeColor = next }
-        }, dismiss: { dismiss() })
+        }, finished: { isPresented = false })
     }
 
     /// 色選びの知らせは主スレッドで来る（UIKit）
-    @MainActor final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, UIColorPickerViewControllerDelegate,
+                                        UIAdaptivePresentationControllerDelegate {
+        /// 色選びを出しているか（二度出さない）
+        var isShowing = false
         private let pick: (String) -> Void
-        private let dismiss: () -> Void
+        private let finished: () -> Void
 
-        init(pick: @escaping (String) -> Void, dismiss: @escaping () -> Void) {
+        init(pick: @escaping (String) -> Void, finished: @escaping () -> Void) {
             self.pick = pick
-            self.dismiss = dismiss
+            self.finished = finished
         }
 
         /// 指で動かしている間も（`continuously`）書く——欄の丸と注意書きがその場で変わる。
@@ -227,7 +257,19 @@ struct ThemeColorPickerSheet: UIViewControllerRepresentable {
         /// 「なし」のまま開いて何も触らずに閉じると、初期色（見本の先頭 #38bdf8）が書かれて
         /// 「なし」が空色に化けていた（2026-10-16 見直しの指摘）
         func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
-            dismiss()
+            if viewController.presentingViewController != nil, !viewController.isBeingDismissed {
+                viewController.dismiss(animated: true)
+            }
+            reset()
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            reset()
+        }
+
+        private func reset() {
+            isShowing = false
+            finished()
         }
 
         /// `UIColor.getRed` は拡張 sRGB で返す（P3 の色は 0〜1 の外）。`ThemeColor.hex` が sRGB に詰めて丸める
