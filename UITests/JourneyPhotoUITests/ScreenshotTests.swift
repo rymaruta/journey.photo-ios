@@ -1331,8 +1331,8 @@ final class ScreenshotTests: XCTestCase {
     /// 押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
     /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
     ///
-    /// 札が出なければ撮らずに抜ける（この試験の決まり・公開一覧が取れない回）。**出たのに束が開かない・
-    /// 閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす**
+    /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
+    /// 束が開かない・閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす
     func testCapturesPass() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -1346,7 +1346,10 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let open = app.buttons["pass.home.open"].firstMatch
-        guard open.waitForExistence(timeout: 30) else { return }
+        // 札が出なければ落とす（2026-10-16 の読み直し: 出ないまま抜けると、札の .task が走らない回を見逃した）
+        guard open.waitForExistence(timeout: 45) else {
+            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+        }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-すれちがいの束")
         open.tap()

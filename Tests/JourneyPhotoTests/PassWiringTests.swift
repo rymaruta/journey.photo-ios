@@ -1,0 +1,70 @@
+import XCTest
+@testable import JourneyPhoto
+
+/// すれちがいの画面のつなぎ（読み直し 2026-10-16 の直し）。画面は Linux で動かせないので、書き方を見張る
+final class PassWiringTests: XCTestCase {
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+        // 注記（`//`・`///`）の中は数えない
+        return text.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    /// 🔴 札が空の間は子が無く `.task` が走らない・時計で 18 時を待つとロック中に越えて古いまま →
+    /// 札は中身だけ。写真を引くのも「いま」を入れ直すのもホーム（`LazyVStack` の外）
+    func testHomeSlotIsContentOnlyAndGalleryRefreshesNow() throws {
+        let slot = try source("Features/Pass/PassHomeSlot.swift")
+        XCTAssertFalse(slot.contains(".task"), "札に .task が残っている")
+        XCTAssertFalse(slot.contains("Task.sleep"), "時計で 18 時を待っている")
+        XCTAssertFalse(slot.contains("@State"), "札が自分で「いま」を持っている")
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains("await pass.resolve(gallery: environment.gallery, profiles: environment.profiles, now: now)"))
+        XCTAssertTrue(gallery.contains("if phase == .active { passNow = Date() }"), "前面に来ても「いま」を入れ直さない")
+        XCTAssertTrue(gallery.contains(".onChange(of: pass.openRequests) { _, _ in\n            passNow = Date()"),
+                      "知らせを押しても「いま」を入れ直さない")
+    }
+
+    /// カードの「…」（通報・ブロック・帳から外す）が束の画面と帳の両方にある（審査 1.2）
+    func testCardsHaveReportBlockAndRemove() throws {
+        let menu = try source("Features/Pass/PassCardMenu.swift")
+        for word in ["通報する", "この人をブロック", "帳から外す"] { XCTAssertTrue(menu.contains(word), word) }
+        for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("PassCardMenu(content:"), "\(path) に「…」が無い")
+            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id"), "\(path) から通報できない")
+            XCTAssertTrue(text.contains(".blockConfirmation(presenting: $blockTarget)"), "\(path) のブロックに確認が無い")
+            XCTAssertTrue(text.contains("pass.remove("), "\(path) から帳から外せない")
+        }
+        let back = try source("Features/Pass/PassCards.swift")
+        XCTAssertTrue(back.contains("Text(PassPrivacyText.noteSource)"), "ひとことが届いた文だと分からない")
+        let viewer = try source("Features/Pass/PassViewerView.swift")
+        XCTAssertTrue(viewer.contains("Text(PassPrivacyText.thanksNotice)"), "「ありがとう」が名前つきのいいねだと言わない")
+    }
+
+    /// 退会・期限切れのログアウトでも電波を止める
+    func testRadioStopsOnAccountRemovalAndExpiry() throws {
+        // 型の名前を分けて書く（`check-swift-refs.js` が文字列の中の呼び出しを、テストからの呼び出しと読む）
+        let store = "Pass" + "Store"
+        let local = try source("Core/Storage/AccountLocalData.swift")
+        let stop = try XCTUnwrap(local.range(of: store + ".shared.use(userId: nil)"), "退会で電波を止めない")
+        let remove = try XCTUnwrap(local.range(of: store + ".removeData(for: userId"))
+        XCTAssertLessThan(stop.lowerBound, remove.lowerBound, "帳を消す前に止めていない")
+        let app = try source("App/JourneyPhotoApp.swift")
+        let task = try XCTUnwrap(app.range(of: store + ".shared.use(userId: auth.userId)"))
+        let head = app[app.startIndex..<task.lowerBound]
+        let block = try XCTUnwrap(head.range(of: ".task(id: auth.state)", options: .backwards))
+        XCTAssertFalse(app[block.upperBound..<task.lowerBound].contains("signedOutByExpiry { return }"),
+                       "期限切れのログアウトで電波を止めない")
+    }
+
+    /// 写真の上の真鍮の枠には内側に黒の縁・打っている途中で字数で切らない
+    func testPickFrameHasInnerBlackEdge() throws {
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        XCTAssertTrue(pick.contains("Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)"))
+        XCTAssertFalse(pick.contains("String(value.prefix(PassExchange.noteLimit))"), "変換中に字数で切っている")
+    }
+}

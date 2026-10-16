@@ -8,11 +8,15 @@ import CoreLocation
 ///
 /// 1. 自分の端末は、アプリ固有のサービス（`serviceUUID`）で広告する（周辺機器の役）。特性は1つ
 ///    （`characteristicUUID`・読むだけ）で、中身は `PassExchange.Payload`（版・名刺の写真の id・
-///    出身を出すか・ひとこと）。**値は特性に焼いて渡す**（読みの依頼に応える処理を持たない＝誰が
-///    読んだかをこちらは知らない・覚えない）
+///    出身を出すか・ひとこと）。値は特性に焼いて渡す（読みの依頼に応える処理を持たない）
 /// 2. 同時に、同じサービスを探す（中心の役）。見つけたら繋いで特性を1つ読み、**読んだらすぐ切る**
-/// 3. 読んだ中身は `PassStore` が綴じる。**同じ相手（同じ写真）は1日1回まで**（`PassStore.accepts`）。
-///    同じ端末に何度も繋がないよう、繋いだ端末は `retryInterval` の間は見送る
+/// 3. 読んだ中身は `PassStore` が綴じる。**同じ相手（同じ写真）は1日1回まで**（`PassStore.accepts`）
+///
+/// 🔴 **中身は暗号化していない・誰でも読める**（2026-10-16 の読み直し）。アプリでなくても、近くで
+/// Bluetooth を調べる道具（LightBlue など）から繋げば、名刺の写真の id とひとことが読める。写真の id から
+/// 公開一覧で持ち主が分かり、**値は名刺を変えるまで日をまたいでも同じ**。誰が読んだかはこちらでは分からず、
+/// ブロックした人の端末にも届きうる。画面と説明の文はこの事実に合わせてある（`PassSettingsView`）。
+/// 値を日ごとに変わる形で包む・サーバーで回る合言葉にする案は owner が決める（v1 ではしない）
 ///
 /// 背景でも動くように `bluetooth-central`・`bluetooth-peripheral` の背景の仕事を宣言してあり
 /// （`project.yml`）、OS に起こされたときのために復元の識別子を付ける。
@@ -30,24 +34,40 @@ final class PassRadio: NSObject {
     static let centralRestoreId = "photo.journey.pass.central"
     static let peripheralRestoreId = "photo.journey.pass.peripheral"
 
-    /// 同じ端末に繋ぎ直すまでの間
+    /// 読めた端末に繋ぎ直すまでの間
     static let retryInterval: TimeInterval = 10 * 60
+    /// 読めなかった端末に、`retryInterval` の間に試してよい回数
+    static let maxFailures = 3
     /// 繋いでから読み終えるまで待つ長さ（過ぎたら切る）
     static let connectTimeout: TimeInterval = 10
     /// 同時に繋ぐ数
     static let maxConnections = 3
 
+    /// 端末ごとの記録（読めた時・読めなかった時）
+    struct PeerRecord: Equatable {
+        var lastSuccess: Date?
+        var failures: [Date] = []
+    }
+
     /// 受け取った中身（主スレッドで呼ぶ）
     var onReceive: ((PassExchange.Payload) -> Void)?
 
     private var central: CBCentralManager?
+    /// 中心の管理者が復元の識別子つきか（許可を尋ねるためだけに作った管理者は付いていない）
+    private var centralRestorable = false
     private var peripheralManager: CBPeripheralManager?
     /// 載せている中身（nil なら止めている）
     private var payload: Data?
-    /// サービスを足し終えた中身（同じなら足し直さない）
+    /// 足し終えた（`didAdd` が成功した）サービスの中身。同じなら足し直さない
     private var publishedPayload: Data?
+    /// 足している途中の中身（`didAdd` を待っている）
+    private var pendingPayload: Data?
+    /// 前面か（前面だけ同じ端末の知らせを重ねて受け、読めなかった相手を拾い直す）
+    private var foreground = false
     private var connecting: [UUID: CBPeripheral] = [:]
-    private var lastTried: [UUID: Date] = [:]
+    /// 繋ぎ始めた時（`connectTimeout` を過ぎたものは、次の知らせのときに自分で切る）
+    private var connectStarted: [UUID: Date] = [:]
+    private var peers: [UUID: PeerRecord] = [:]
 
     /// 動いているか（設定の画面の表示用）
     private(set) var isRunning = false
@@ -55,18 +75,27 @@ final class PassRadio: NSObject {
     /// 載せる中身を決める。**nil なら止めて、電波の管理者も手放す**
     /// （手放さないと OS の Bluetooth の印が残る）。
     ///
-    /// 🔴 **初めて中身を渡したときに、OS の Bluetooth の許可のダイアログが出る**（管理者を作った時）。
+    /// 🔴 **初めて管理者を作ったときに、OS の Bluetooth の許可のダイアログが出る**。
     /// オンにする説明（`PassIntroSheet`）を見せてからだけ呼ぶ
-    func apply(payload next: Data?) {
+    func apply(payload next: Data?, foreground: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let next else { stop(); return }
+        let wasForeground = self.foreground
+        self.foreground = foreground
         payload = next
         isRunning = true
+        // 許可を尋ねるためだけに作った管理者（識別子なし）は作り直す——OS に起こされたときに復元できない
+        if central != nil, !centralRestorable {
+            central?.delegate = nil
+            central = nil
+        }
         if central == nil {
             central = CBCentralManager(delegate: self, queue: nil,
                                        options: [CBCentralManagerOptionRestoreIdentifierKey: Self.centralRestoreId,
                                                  CBCentralManagerOptionShowPowerAlertKey: false])
+            centralRestorable = true
         } else if let central {
+            if wasForeground != foreground, central.isScanning { central.stopScan() }
             startScanning(central)
         }
         if peripheralManager == nil {
@@ -86,17 +115,20 @@ final class PassRadio: NSObject {
         guard CBManager.authorization == .notDetermined, central == nil else { return }
         central = CBCentralManager(delegate: self, queue: nil,
                                    options: [CBCentralManagerOptionShowPowerAlertKey: false])
+        centralRestorable = false
     }
 
     func stop() {
         payload = nil
         publishedPayload = nil
+        pendingPayload = nil
         isRunning = false
         if let central {
             if central.state == .poweredOn { central.stopScan() }
             for peripheral in connecting.values { central.cancelPeripheralConnection(peripheral) }
         }
         connecting = [:]
+        connectStarted = [:]
         if let peripheralManager, peripheralManager.state == .poweredOn {
             peripheralManager.stopAdvertising()
             peripheralManager.removeAllServices()
@@ -104,6 +136,7 @@ final class PassRadio: NSObject {
         central?.delegate = nil
         peripheralManager?.delegate = nil
         central = nil
+        centralRestorable = false
         peripheralManager = nil
     }
 
@@ -111,40 +144,90 @@ final class PassRadio: NSObject {
 
     private func startScanning(_ central: CBCentralManager) {
         guard payload != nil, central.state == .poweredOn, !central.isScanning else { return }
+        // 前面だけ重ねて受ける（背景では OS が重ねない）。繋ぐかは端末ごとの記録で間引く
         central.scanForPeripherals(withServices: [Self.serviceUUID],
-                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: foreground])
     }
 
-    /// 繋ぐか: 動いている・同時の数に空きがある・最近繋いだ端末ではない
-    static func shouldConnect(lastTried: Date?, connecting: Int, now: Date) -> Bool {
+    /// 探し直す。**重ねて受けない探し方では、一度知らされた端末は二度と知らされない**——読めなかった相手を
+    /// 拾い直すために、読めなかったときに止めてから探し直す
+    private func restartScanning() {
+        guard let central, central.state == .poweredOn else { return }
+        if central.isScanning { central.stopScan() }
+        startScanning(central)
+    }
+
+    /// 繋ぐか: 同時の数に空きがある・最近読めた端末ではない・読めなかった回数が上限に達していない
+    static func shouldConnect(_ record: PeerRecord?, connecting: Int, now: Date) -> Bool {
         guard connecting < maxConnections else { return false }
-        guard let lastTried else { return true }
-        return now.timeIntervalSince(lastTried) >= retryInterval
+        guard let record else { return true }
+        if let success = record.lastSuccess, now.timeIntervalSince(success) < retryInterval { return false }
+        return record.failures.filter { now.timeIntervalSince($0) < retryInterval }.count < maxFailures
     }
 
-    private func finish(_ peripheral: CBPeripheral) {
-        connecting[peripheral.identifier] = nil
+    /// `connectTimeout` を過ぎた接続待ち。**背景では遅らせた処理が走らないことがある**ので、知らせが来るたびに見る
+    static func staleConnections(_ started: [UUID: Date], now: Date) -> [UUID] {
+        started.filter { now.timeIntervalSince($0.value) >= connectTimeout }.map(\.key)
+    }
+
+    /// 古い記録を掃除する（見送りの間を過ぎたものは要らない）
+    static func pruned(_ peers: [UUID: PeerRecord], now: Date) -> [UUID: PeerRecord] {
+        peers.compactMapValues { record in
+            var r = record
+            r.failures = r.failures.filter { now.timeIntervalSince($0) < retryInterval }
+            if let s = r.lastSuccess, now.timeIntervalSince(s) >= retryInterval { r.lastSuccess = nil }
+            return r.lastSuccess == nil && r.failures.isEmpty ? nil : r
+        }
+    }
+
+    private func sweepStale(now: Date) {
+        for id in Self.staleConnections(connectStarted, now: now) {
+            if let peripheral = connecting[id] { finish(peripheral, succeeded: false) } else { connectStarted[id] = nil }
+        }
+    }
+
+    private func finish(_ peripheral: CBPeripheral, succeeded: Bool) {
+        let id = peripheral.identifier
+        guard connecting[id] != nil || connectStarted[id] != nil else { return }
+        connecting[id] = nil
+        connectStarted[id] = nil
         central?.cancelPeripheralConnection(peripheral)
+        var record = peers[id] ?? PeerRecord()
+        if succeeded {
+            record.lastSuccess = Date()
+            record.failures = []
+        } else {
+            record.failures.append(Date())
+        }
+        peers[id] = record
+        if !succeeded { restartScanning() }
     }
 
     // MARK: - 周辺機器の役（広告する）
 
     private func publish(_ manager: CBPeripheralManager) {
         guard let payload, manager.state == .poweredOn else { return }
-        if publishedPayload != payload {
-            manager.stopAdvertising()
-            manager.removeAllServices()
-            let characteristic = CBMutableCharacteristic(type: Self.characteristicUUID, properties: [.read],
-                                                         value: payload, permissions: [.readable])
-            let service = CBMutableService(type: Self.serviceUUID, primary: true)
-            service.characteristics = [characteristic]
-            manager.add(service)
-            publishedPayload = payload
+        guard payload.count <= PassExchange.payloadByteLimit else { return }
+        if publishedPayload == payload {
+            if !manager.isAdvertising { startAdvertising(manager) }
+            return
         }
-        if !manager.isAdvertising {
-            // 名前は載せない（端末の名前・持ち主が分かる文字を出さない）
-            manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID]])
-        }
+        guard pendingPayload != payload else { return }
+        manager.stopAdvertising()
+        manager.removeAllServices()
+        publishedPayload = nil
+        let characteristic = CBMutableCharacteristic(type: Self.characteristicUUID, properties: [.read],
+                                                     value: payload, permissions: [.readable])
+        let service = CBMutableService(type: Self.serviceUUID, primary: true)
+        service.characteristics = [characteristic]
+        pendingPayload = payload
+        // 広告は `didAdd` が成功してから（足せなかったサービスを広告しない）
+        manager.add(service)
+    }
+
+    private func startAdvertising(_ manager: CBPeripheralManager) {
+        // 名前は載せない（端末の名前・持ち主が分かる文字を出さない）
+        manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID]])
     }
 }
 
@@ -160,6 +243,7 @@ extension PassRadio: CBCentralManagerDelegate {
             startScanning(central)
         } else {
             connecting = [:]
+            connectStarted = [:]
         }
     }
 
@@ -172,18 +256,19 @@ extension PassRadio: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let now = Date()
+        sweepStale(now: now)
+        peers = Self.pruned(peers, now: now)
         let id = peripheral.identifier
         guard payload != nil, connecting[id] == nil,
-              Self.shouldConnect(lastTried: lastTried[id], connecting: connecting.count, now: now) else { return }
-        lastTried[id] = now
-        // 古い記録を掃除する（見送りの間を過ぎたものは要らない）
-        lastTried = lastTried.filter { now.timeIntervalSince($0.value) < Self.retryInterval }
+              Self.shouldConnect(peers[id], connecting: connecting.count, now: now) else { return }
         connecting[id] = peripheral
+        connectStarted[id] = now
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
+        // 前面では遅らせて切る（背景で走らなかった分は、次の知らせの `sweepStale` が切る）
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.connectTimeout) { [weak self] in
             guard let self, self.connecting[id] != nil else { return }
-            self.finish(peripheral)
+            self.sweepStale(now: Date())
         }
     }
 
@@ -192,11 +277,12 @@ extension PassRadio: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        connecting[peripheral.identifier] = nil
+        finish(peripheral, succeeded: false)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        connecting[peripheral.identifier] = nil
+        // 読み終える前に切れた（読めた回は `finish` が先に片づけている）
+        finish(peripheral, succeeded: false)
     }
 }
 
@@ -204,7 +290,7 @@ extension PassRadio: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
-            finish(peripheral)
+            finish(peripheral, succeeded: false)
             return
         }
         peripheral.discoverCharacteristics([Self.characteristicUUID], for: service)
@@ -213,15 +299,18 @@ extension PassRadio: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard error == nil,
               let characteristic = service.characteristics?.first(where: { $0.uuid == Self.characteristicUUID }) else {
-            finish(peripheral)
+            finish(peripheral, succeeded: false)
             return
         }
         peripheral.readValue(for: characteristic)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        defer { finish(peripheral) }
-        guard error == nil, let data = characteristic.value, let payload = PassExchange.decode(data) else { return }
+        guard error == nil, let data = characteristic.value, let payload = PassExchange.decode(data) else {
+            finish(peripheral, succeeded: false)
+            return
+        }
+        finish(peripheral, succeeded: true)
         onReceive?(payload)
     }
 }
@@ -234,12 +323,27 @@ extension PassRadio: CBPeripheralManagerDelegate {
         } else {
             // 電源が落ちるとサービスは消える。入ったら足し直す
             publishedPayload = nil
+            pendingPayload = nil
         }
     }
 
     /// OS に起こされた。焼いた値は前の起動のもの——中身が同じかは分からないので足し直す
     func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
         publishedPayload = nil
+        pendingPayload = nil
+    }
+
+    /// サービスを足せたか。**足せなかったら広告しない**（次に決め直したとき足し直す）
+    func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+        let added = pendingPayload
+        pendingPayload = nil
+        guard error == nil, let added, added == payload else {
+            publishedPayload = nil
+            if let error { print("[pass] サービスを足せませんでした: \((error as NSError).code)") }
+            return
+        }
+        publishedPayload = added
+        if !peripheral.isAdvertising { startAdvertising(peripheral) }
     }
 }
 
@@ -339,7 +443,7 @@ final class PassCoordinator {
     /// 決め直す（設定を変えた・人が替わった）
     func refresh(now: Date = Date()) {
         if store.exchangeAllowed(isForeground: isForeground, now: now), let payload = store.payload {
-            radio.apply(payload: PassExchange.encode(payload))
+            radio.apply(payload: PassExchange.encode(payload), foreground: isForeground)
         } else {
             radio.stop()
         }

@@ -171,6 +171,25 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(store.book(blocked: [], now: evening).count, 3, "開いたら帳から消えた")
     }
 
+    /// 通報した写真のカードは見せない・帳から外したカードは記録ごと消える（カードの「…」・審査 1.2）
+    func testReportedAndRemovedCardsAreGone() async throws {
+        let store = makeStore()
+        store.record(payload("p1"), at: at(16, 10))
+        store.record(payload("p2"), at: at(16, 11))
+        let evening = at(16, 19)
+        store.applyResolved(all: [try photo("p1", owner: "a"), try photo("p2", owner: "b")], now: evening)
+        var hiding = ModerationSnapshot()
+        hiding.reported = ["p1"]
+        XCTAssertEqual(store.book(hiding: hiding, now: evening).map(\.photoId), ["p2"], "通報した写真のカードが見えた")
+        XCTAssertEqual(store.unopened(hiding: hiding, now: evening).map(\.photoId), ["p2"])
+        let id = try XCTUnwrap(store.encounters.first { $0.photoId == "p2" }?.id)
+        store.remove(id)
+        XCTAssertTrue(store.book(hiding: hiding, now: evening).isEmpty)
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        again.use(userId: "me")
+        XCTAssertEqual(again.encounters.map(\.photoId), ["p1"], "外したカードが読み直すと戻った")
+    }
+
     /// 自分の写真（別の端末の自分）は見せない
     func testOwnPhotoFromAnotherDeviceIsHidden() async throws {
         let store = makeStore()

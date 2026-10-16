@@ -24,6 +24,8 @@ final class PassStore: ObservableObject {
     @Published private(set) var owners: [String: UserProfile] = [:]
     /// 通知を押した（束を開く）合図。**数で持つ**（続けて2回押しても2回目が効く）
     @Published private(set) var openRequests = 0
+    /// 夕方の知らせが前面で届いた合図（ホームが「いま」を入れ直す）
+    @Published private(set) var arrivals = 0
     private(set) var hasPendingOpen = false
 
     private(set) var userId: String?
@@ -202,21 +204,39 @@ final class PassStore: ObservableObject {
 
     // MARK: - 見せる
 
-    /// 見せてよいカードか: 届いていて・写真が公開一覧に今あり・持ち主をブロックしておらず・自分ではない
-    func isVisible(_ card: PassEncounter, blocked: Set<String>, now: Date = Date()) -> Bool {
-        guard card.deliverAt <= now, let photo = photos[card.photoId] else { return false }
+    /// 見せてよいカードか: 届いていて・写真が公開一覧に今あり・通報した写真ではなく・持ち主をブロックしておらず・
+    /// 自分ではない
+    func isVisible(_ card: PassEncounter, blocked: Set<String>, reported: Set<String> = [],
+                   now: Date = Date()) -> Bool {
+        guard card.deliverAt <= now, !reported.contains(card.photoId), let photo = photos[card.photoId] else { return false }
         guard let owner = photo.userId ?? photo.uploadedBy else { return false }
         return owner != userId && !blocked.contains(owner)
     }
 
     /// 帳に綴じたカード（届いたもの・見せてよいもの）
-    func book(blocked: Set<String>, now: Date = Date()) -> [PassEncounter] {
-        encounters.filter { isVisible($0, blocked: blocked, now: now) }
+    func book(blocked: Set<String>, reported: Set<String> = [], now: Date = Date()) -> [PassEncounter] {
+        encounters.filter { isVisible($0, blocked: blocked, reported: reported, now: now) }
     }
 
     /// まだ開いていない束（届いたもの・見せてよいもの）
-    func unopened(blocked: Set<String>, now: Date = Date()) -> [PassEncounter] {
-        book(blocked: blocked, now: now).filter { !$0.opened }.sorted { $0.number < $1.number }
+    func unopened(blocked: Set<String>, reported: Set<String> = [], now: Date = Date()) -> [PassEncounter] {
+        book(blocked: blocked, reported: reported, now: now).filter { !$0.opened }.sorted { $0.number < $1.number }
+    }
+
+    /// 画面から: 「見せない」の写し（ブロック・通報）で絞る
+    func book(hiding: ModerationSnapshot, now: Date = Date()) -> [PassEncounter] {
+        book(blocked: hiding.blocked, reported: hiding.reported, now: now)
+    }
+
+    func unopened(hiding: ModerationSnapshot, now: Date = Date()) -> [PassEncounter] {
+        unopened(blocked: hiding.blocked, reported: hiding.reported, now: now)
+    }
+
+    /// 帳から外す（カードの「…」）。**記録ごと消す**（次に同じ人とすれちがえば、また届く）
+    func remove(_ id: String) {
+        let before = encounters.count
+        encounters.removeAll { $0.id == id }
+        if encounters.count != before { save() }
     }
 
     /// 届いたが、まだ写真を引けていないカードがあるか（ホームで引きに行くかを決める）
@@ -287,6 +307,8 @@ final class PassStore: ObservableObject {
 
     // MARK: - 通知を押した
 
+    func noteArrival() { arrivals += 1 }
+
     func requestOpen() {
         hasPendingOpen = true
         openRequests += 1
@@ -352,7 +374,9 @@ final class PassStore: ObservableObject {
             values.isExcludedFromBackup = true
             try? url.setResourceValues(values)
         } catch {
-            print("[pass] 書けませんでした: \(error)")
+            // 道筋（人の id の 16 進）を出さない。種類と番号だけ
+            let ns = error as NSError
+            print("[pass] 書けませんでした: \(ns.domain) \(ns.code)")
         }
     }
 

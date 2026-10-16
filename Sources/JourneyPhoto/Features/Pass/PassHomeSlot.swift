@@ -10,52 +10,26 @@ import SwiftUI
 /// 札を押すと束を開く（`PassViewerView`）。夕方の知らせを押したとき（`PassStore.requestOpen`）も同じ
 struct PassHomeSlot: View {
 
-    /// 束を開く（シートと帳への押し込みは `GalleryView` が持つ——ここは `LazyVStack` の中なので、
-    /// 出す口（`fullScreenCover`・`navigationDestination`）を置かない）
-    let open: ([PassCardContent]) -> Void
+    /// 出す束（`GalleryView` が「いま」で決めて渡す）。空なら何も描かない
+    let cards: [PassCardContent]
+    /// 束を決めた「いま」（今日の束か）
+    let now: Date
+    /// 束を開く（シートと帳への押し込みは `GalleryView` が持つ）
+    let open: () -> Void
 
-    @EnvironmentObject private var pass: PassStore
-    @EnvironmentObject private var environment: AppEnvironment
-    @EnvironmentObject private var hidden: ModerationStore
-    @State private var now = Date()
-
+    /// 🔴 **この部品は中身だけ。** 写真を引く `.task`・「いま」を入れ直す処理は `GalleryView`
+    /// （`LazyVStack` の外）が持つ——札が空の間は子が無く、ここに付けた `.task` が走らないことがあった
+    /// （2026-10-16 の読み直し）
     var body: some View {
-        let blocked = hidden.snapshot.blocked
-        let cards = pass.contents(pass.unopened(blocked: blocked, now: now), book: pass.book(blocked: blocked, now: now))
-        Group {
-            if !cards.isEmpty {
-                PassHomeCard(cards: cards, isToday: isToday(cards)) { open(cards) }
-                    .padding(.horizontal, JPSpace.gutter)
-            }
+        if !cards.isEmpty {
+            PassHomeCard(cards: cards, isToday: PassHomeSlot.isToday(cards, now: now), open: open)
+                .padding(.horizontal, JPSpace.gutter)
         }
-        // 届いた束の写真を引く（届いた数・ブロックが変わったら引き直す）
-        .task(id: ResolveKey(due: pass.encounters.filter { $0.deliverAt <= now }.count, blocked: hidden.revision)) {
-            guard pass.hasDelivered(now: now) else { return }
-            await pass.resolve(gallery: environment.gallery, profiles: environment.profiles, now: now)
-        }
-        // 開いている間に夕方 18 時を過ぎたら、その時に札を出す
-        .task(id: nextDelivery) {
-            guard let next = nextDelivery else { return }
-            let wait = next.timeIntervalSinceNow
-            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(min(wait, 86_400) * 1_000_000_000)) }
-            guard !Task.isCancelled else { return }
-            now = Date()
-        }
-        .onAppear { now = Date() }
     }
 
-    private var nextDelivery: Date? {
-        pass.encounters.map(\.deliverAt).filter { $0 > now }.min()
-    }
-
-    private func isToday(_ cards: [PassCardContent]) -> Bool {
-        let today = PassExchange.dayKey(now, calendar: .current)
-        return cards.allSatisfy { PassExchange.dayKey($0.card.deliverAt, calendar: .current) == today }
-    }
-
-    private struct ResolveKey: Equatable {
-        let due: Int
-        let blocked: Int
+    static func isToday(_ cards: [PassCardContent], now: Date, calendar: Calendar = .current) -> Bool {
+        let today = PassExchange.dayKey(now, calendar: calendar)
+        return cards.allSatisfy { PassExchange.dayKey($0.card.deliverAt, calendar: calendar) == today }
     }
 }
 

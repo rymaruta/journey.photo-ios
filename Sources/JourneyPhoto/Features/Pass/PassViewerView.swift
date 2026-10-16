@@ -24,6 +24,8 @@ struct PassViewerView: View {
     @EnvironmentObject private var pass: PassStore
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -33,12 +35,26 @@ struct PassViewerView: View {
     @State private var thanking = false
     @State private var errorMessage: String?
     @State private var didStart = false
+    /// この画面で外した・ブロックしたカード（並びから落とす）
+    @State private var removed: Set<String> = []
+    @State private var reportTarget: PassCardContent?
+    @State private var blockTarget: PassCardContent?
 
     /// 払って次へ進む距離
     nonisolated static let swipeDistance: CGFloat = 90
 
+    /// いま見せる並び: 外した・通報した写真・ブロックした人のカードを落とす
+    private var shown: [PassCardContent] {
+        let hiding = hidden.snapshot
+        return cards.filter { content in
+            !removed.contains(content.id) && !hiding.reported.contains(content.photo.id)
+                && !(content.card.ownerId.map(hiding.blocked.contains) ?? false)
+        }
+    }
+
     private var current: PassCardContent? {
-        cards.indices.contains(index) ? cards[index] : nil
+        let list = shown
+        return list.indices.contains(index) ? list[index] : nil
     }
 
     var body: some View {
@@ -78,6 +94,22 @@ struct PassViewerView: View {
         .onDisappear {
             if mode == .bundle { pass.markOpened(cards.map(\.id)) }
         }
+        // 並びが減った（外した・ブロックした・通報した）: 位置を詰め、空になったら閉じる
+        .onChange(of: shown.count) { _, count in
+            if count == 0 { dismiss(); return }
+            if index >= count { index = count - 1 }
+            showsBack = false
+        }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
+        }
+        .blockConfirmation(presenting: $blockTarget) { target in
+            Task {
+                if await PassCardModeration.block(target, hidden: hidden, environment: environment, toasts: toasts) {
+                    removed.insert(target.id)
+                }
+            }
+        }
     }
 
     // MARK: - 上
@@ -88,12 +120,22 @@ struct PassViewerView: View {
                 Text(mode == .bundle ? L("今日のカード", "Today\u{2019}s cards") : L("すれちがい帳", "Pass book"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
-                Text(L("\(index + 1) / \(cards.count) 枚", "\(index + 1) of \(cards.count)"))
+                Text(L("\(index + 1) / \(shown.count) 枚", "\(index + 1) of \(shown.count)"))
                     .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(WebTheme.text)
             }
             .accessibilityElement(children: .combine)
             Spacer()
+            // 表でも裏でも同じ所に出る「…」（通報・ブロック・帳から外す）
+            if let current {
+                PassCardMenu(content: current,
+                             report: { reportTarget = current },
+                             block: { blockTarget = current },
+                             remove: {
+                                 pass.remove(current.id)
+                                 removed.insert(current.id)
+                             })
+            }
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .medium))
@@ -114,8 +156,8 @@ struct PassViewerView: View {
     private func deck(_ content: PassCardContent) -> some View {
         ZStack {
             // 後ろに重なる2枚（残りがあるときだけ・板の傾き 4°・2°）
-            if index + 2 < cards.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
-            if index + 1 < cards.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
+            if index + 2 < shown.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
+            if index + 1 < shown.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
             ZStack {
                 PassCardFront(photo: content.photo, name: content.name,
                               avatarURL: content.owner?.avatarURL(),
@@ -174,7 +216,7 @@ struct PassViewerView: View {
 
     private func move(by step: Int) {
         let next = index + step
-        guard cards.indices.contains(next) else { return }
+        guard shown.indices.contains(next) else { return }
         index = next
         showsBack = false
         errorMessage = nil
@@ -184,7 +226,8 @@ struct PassViewerView: View {
 
     private func actions(_ content: PassCardContent) -> some View {
         let thanked = favorites.contains(content.photo.id)
-        return HStack(spacing: JPSpace.xs) {
+        return VStack(spacing: JPSpace.xs) {
+        HStack(spacing: JPSpace.xs) {
             Button { Task { await thank(content) } } label: {
                 HStack(spacing: JPSpace.xs) {
                     // ハートは白（2026-10-16 判断: 板は真鍮だが、「ありがとう」はいいねそのもの。
@@ -212,6 +255,12 @@ struct PassViewerView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("pass.viewer.file")
             }
+        }
+            // 「ありがとう」は名前つきのいいね（相手のお知らせにこちらの名前が出る）。押す前に言う
+            Text(PassPrivacyText.thanksNotice)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.bottom, JPSpace.m)

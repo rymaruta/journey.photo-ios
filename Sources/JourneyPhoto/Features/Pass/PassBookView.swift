@@ -12,12 +12,15 @@ struct PassBookView: View {
     @EnvironmentObject private var pass: PassStore
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
+    @State private var reportTarget: PassCardContent?
+    @State private var blockTarget: PassCardContent?
     @State private var order: PassBook.Order = .bound
     @State private var opened: PassBookOpen?
     @State private var isLoading = true
 
     var body: some View {
-        let book = pass.book(blocked: hidden.snapshot.blocked)
+        let book = pass.book(hiding: hidden.snapshot)
         let contents = pass.contents(book, book: book)
         let byId = Dictionary(uniqueKeysWithValues: contents.map { ($0.id, $0) })
         ScrollView {
@@ -55,8 +58,8 @@ struct PassBookView: View {
                     }
                     .padding(.horizontal, JPSpace.gutter)
                     .padding(.top, 14)
-                    Text(L("場所は「〇〇のあたり」の粒度だけを記録します。相手が今どこにいるかは出しません。",
-                           "Places are recorded only roughly (\u{201C}around …\u{201D}). Where someone is now is never shown."))
+                    Text(L("場所は「〇〇のあたり」の粒度だけを、この iPhone の中に記録します。",
+                           "Places are recorded only roughly (\u{201C}around …\u{201D}), on this iPhone only."))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .padding(.horizontal, JPSpace.gutter)
@@ -74,6 +77,12 @@ struct PassBookView: View {
         .task(id: hidden.revision) {
             await pass.resolve(gallery: environment.gallery, profiles: environment.profiles)
             isLoading = false
+        }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
+        }
+        .blockConfirmation(presenting: $blockTarget) { target in
+            Task { _ = await PassCardModeration.block(target, hidden: hidden, environment: environment, toasts: toasts) }
         }
         .fullScreenCover(item: $opened) { open in
             PassViewerView(cards: open.cards, mode: .book, start: open.start)
@@ -148,6 +157,15 @@ struct PassBookView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(content.name) のカード", "\(content.name)\u{2019}s card"))
+                    // 「…」（通報・ブロック・帳から外す）。写真の上なのでガラスの丸に白
+                    .overlay(alignment: .topTrailing) {
+                        PassCardMenu(content: content,
+                                     report: { reportTarget = content },
+                                     block: { blockTarget = content },
+                                     remove: { pass.remove(content.id) },
+                                     onPhoto: true)
+                            .offset(x: 8, y: -8)
+                    }
                 }
                 ForEach(0..<PassBook.emptySlots(for: list.count), id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 8)

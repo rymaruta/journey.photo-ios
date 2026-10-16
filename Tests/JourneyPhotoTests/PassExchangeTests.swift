@@ -173,12 +173,85 @@ final class PassExchangeTests: XCTestCase {
         XCTAssertEqual(PassViewerMotion.step(forDrag: 40, distance: 90), 0)
     }
 
-    /// 同じ端末には `retryInterval` の間は繋ぎ直さない・同時に繋ぐ数に上限
+    /// 読めた端末には `retryInterval` の間は繋ぎ直さない・同時に繋ぐ数に上限
     func testRadioDoesNotHammerTheSamePeer() {
         let now = Date()
-        XCTAssertTrue(PassRadio.shouldConnect(lastTried: nil, connecting: 0, now: now))
-        XCTAssertFalse(PassRadio.shouldConnect(lastTried: now.addingTimeInterval(-60), connecting: 0, now: now))
-        XCTAssertTrue(PassRadio.shouldConnect(lastTried: now.addingTimeInterval(-PassRadio.retryInterval), connecting: 0, now: now))
-        XCTAssertFalse(PassRadio.shouldConnect(lastTried: nil, connecting: PassRadio.maxConnections, now: now))
+        typealias R = PassRadio.PeerRecord
+        XCTAssertTrue(PassRadio.shouldConnect(nil, connecting: 0, now: now))
+        XCTAssertFalse(PassRadio.shouldConnect(R(lastSuccess: now.addingTimeInterval(-60)), connecting: 0, now: now))
+        XCTAssertTrue(PassRadio.shouldConnect(R(lastSuccess: now.addingTimeInterval(-PassRadio.retryInterval)),
+                                              connecting: 0, now: now))
+        XCTAssertFalse(PassRadio.shouldConnect(nil, connecting: PassRadio.maxConnections, now: now))
+    }
+
+    /// 🔴 **読めなかった相手を見捨てない**（重ねて受けない探し方では二度と知らされなかった）。
+    /// 失敗は上限の回数までは試し直す
+    func testRadioRetriesFailedPeersUpToALimit() {
+        let now = Date()
+        let once = PassRadio.PeerRecord(failures: [now.addingTimeInterval(-5)])
+        XCTAssertTrue(PassRadio.shouldConnect(once, connecting: 0, now: now), "一度読めなかった相手に二度と繋がない")
+        let many = PassRadio.PeerRecord(failures: Array(repeating: now.addingTimeInterval(-5), count: PassRadio.maxFailures))
+        XCTAssertFalse(PassRadio.shouldConnect(many, connecting: 0, now: now), "読めない相手に繋ぎ続ける")
+        let old = PassRadio.PeerRecord(failures: Array(repeating: now.addingTimeInterval(-PassRadio.retryInterval - 1),
+                                                       count: PassRadio.maxFailures))
+        XCTAssertTrue(PassRadio.shouldConnect(old, connecting: 0, now: now))
+        XCTAssertTrue(PassRadio.pruned([UUID(): old], now: now).isEmpty, "古い記録が残る")
+    }
+
+    /// 🔴 **背景では遅らせた処理が走らない**ので、10 秒を過ぎた接続待ちは次の知らせのときに自分で切る
+    func testStaleConnectionsAreFound() {
+        let now = Date()
+        let fresh = UUID(), stale = UUID()
+        let found = PassRadio.staleConnections([fresh: now.addingTimeInterval(-2),
+                                                stale: now.addingTimeInterval(-PassRadio.connectTimeout - 1)], now: now)
+        XCTAssertEqual(found, [stale])
+    }
+
+    // MARK: - ひとことの形
+
+    /// バイトの上限（送る側・受ける側とも）。字の途中で切らない
+    func testNoteByteLimit() throws {
+        let emoji = String(repeating: "👨‍👩‍👧", count: 20)
+        let clean = PassExchange.cleanNote(emoji)
+        XCTAssertLessThanOrEqual(clean.utf8.count, PassExchange.noteByteLimit)
+        XCTAssertTrue(clean.allSatisfy { $0 == "👨‍👩‍👧" }, "絵文字の途中で切った")
+        let tooBig = [UInt8]([1, 0, 1, 0x61]) + Array(String(repeating: "👍", count: 21).utf8)
+        XCTAssertNil(PassExchange.decode(Data(tooBig)))
+        let big = [UInt8]([1, 0, 1, 0x61]) + Array(String(repeating: "あ", count: 27).utf8) // 81 バイト
+        XCTAssertNil(PassExchange.decode(Data(big)), "80 バイトを超えたひとことを読んだ")
+        let ok = PassExchange.Payload(photoId: String(repeating: "a", count: 64), showsFrom: true, note: emoji)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(PassExchange.encode(ok)).count, PassExchange.payloadByteLimit)
+    }
+
+    /// ZWJ・異体字セレクタは残し、向きの制御・ゼロ幅の空白は落とす。重ね書きの結合文字は上限まで
+    func testNoteKeepsEmojiAndDropsTricks() {
+        XCTAssertEqual(PassExchange.cleanNote("❤️👨‍👩‍👧"), "❤️👨‍👩‍👧", "ZWJ・異体字セレクタを落とした")
+        XCTAssertEqual(PassExchange.cleanNote("a\u{202E}bc\u{200B}d"), "abcd", "向きの制御・ゼロ幅の空白が残った")
+        let zalgo = "e" + String(repeating: "\u{0301}", count: 30)
+        let clean = PassExchange.cleanNote(zalgo)
+        let marks = clean.unicodeScalars.filter { $0.properties.generalCategory == .nonspacingMark }.count
+        XCTAssertEqual(marks, PassExchange.marksPerCharacterLimit, "重ね書きの結合文字が残った")
+        XCTAssertEqual(PassExchange.cleanNote("é"), "é")
+    }
+
+    // MARK: - 説明の文
+
+    /// 🔴 **仕組みが守っていない約束を書かない**（暗号化なし・誰でも読める・ブロックした人にも届きうる）
+    func testPrivacyTextMatchesTheMechanism() {
+        let all = ([PassPrivacyText.noteTitle, PassPrivacyText.noteBody] + PassPrivacyText.introPoints.map(\.text))
+            .joined(separator: "\n")
+        for banned in ["いま近くに誰がいるか", "誰にも分かりません", "ブロックした人のカードは届きません。",
+                       "who is nearby right now", "No one can tell"] {
+            XCTAssertFalse(all.contains(banned), "守れない約束が残っている: \(banned)")
+        }
+        let ja = PassPrivacyText.noteBody + PassPrivacyText.noteTitle
+        if ja.contains("暗号化") {
+            XCTAssertTrue(ja.contains("暗号化していません"))
+            XCTAssertTrue(ja.contains("ブロックした人にも"))
+            XCTAssertTrue(ja.contains("名刺の写真とひとことが読めます"))
+        } else {
+            XCTAssertTrue(ja.contains("isn\u{2019}t encrypted"))
+            XCTAssertTrue(ja.contains("blocked may still receive"))
+        }
     }
 }

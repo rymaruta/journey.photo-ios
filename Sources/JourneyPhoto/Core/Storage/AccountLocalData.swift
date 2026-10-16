@@ -27,6 +27,12 @@ enum AccountLocalData {
                        offlineTripsRoot: URL? = nil,
                        passRoot: URL? = nil) {
         guard !userId.isEmpty else { return }
+        // 🔴 **すれちがいの電波を先に止める**（2026-10-16）。止めないと、消した後も前の名刺を出し続け、
+        // 手元に持っている帳が次の保存で書き戻される
+        if PassStore.shared.userId == userId {
+            PassStore.shared.use(userId: nil)
+            PassCoordinator.shared.refresh()
+        }
         FavoritesStore(defaults: defaults).removeData(for: userId)
         SavedPhotosStore(defaults: defaults).removeData(for: userId)
         ModerationStore(defaults: defaults).removeData(for: userId)

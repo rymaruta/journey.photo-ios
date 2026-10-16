@@ -304,11 +304,11 @@ struct JourneyPhotoApp: App {
                     if auth.userId == nil, auth.signedOutByExpiry { return }
                     offlineTrips.use(userId: auth.userId)
                 }
-                // すれちがいの帳と設定も人に合わせる（電波なしの旅と同じ決まり: 圏外で ID が取れなかった・
-                // 期限切れのログアウトは前の人のまま）。人が替われば電波を決め直す（前の人の名刺を出さない）
+                // すれちがいの帳と設定も人に合わせる。圏外で ID が取れなかった回だけ前の人のまま
+                // （起動の `PassCoordinator.launch` が読んだ人）。人が替われば電波を決め直す（前の人の名刺を出さない）
                 .task(id: auth.state) {
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
-                    if auth.userId == nil, auth.signedOutByExpiry { return }
+                    // 期限切れのログアウトでも電波は止める（帳は端末に残り、入り直せば読み戻す）
                     PassStore.shared.use(userId: auth.userId)
                     // 起動したときの前面は `onChange(of: scenePhase)` に来ないので、ここで渡す
                     PassCoordinator.shared.setForeground(scenePhase == .active)

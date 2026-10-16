@@ -26,6 +26,11 @@ struct PassCardPickView: View {
 
     private var selectedPhoto: Photo? { photos.first { $0.id == selected } }
 
+    /// ひとことが長すぎる（字数か、電波に載る大きさ）
+    private var noteTooLong: Bool {
+        note.count > PassExchange.noteLimit || note.utf8.count > PassExchange.noteByteLimit
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
@@ -52,8 +57,8 @@ struct PassCardPickView: View {
                     Text(L("この一枚をカードにする", "Use this photo as my card")).jpPillButton(.main(onPhoto: true))
                 }
                 .buttonStyle(.plain)
-                .disabled(selected == nil)
-                .opacity(selected == nil ? 0.5 : 1)
+                .disabled(selected == nil || noteTooLong)
+                .opacity(selected == nil || noteTooLong ? 0.5 : 1)
                 .padding(.top, JPSpace.xxs)
                 .accessibilityIdentifier("pass.pick.save")
             }
@@ -109,7 +114,13 @@ struct PassCardPickView: View {
                             .clipped()
                             .overlay {
                                 if on {
-                                    Rectangle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.emphasis)
+                                    // 写真の上の真鍮は読めないので、**内側に黒の縁**を足して写真から切り離す
+                                    // （2026-10-16 の読み直し・件数バッジの黒い縁と同じ考え方）
+                                    ZStack {
+                                        Rectangle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.emphasis)
+                                        Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)
+                                            .padding(JPStroke.emphasis)
+                                    }
                                 }
                             }
                             .overlay(alignment: .topTrailing) {
@@ -138,14 +149,12 @@ struct PassCardPickView: View {
     private var noteField: some View {
         JPField(L("裏に書くひとこと（\(PassExchange.noteLimit)字まで）", "A note on the back (up to \(PassExchange.noteLimit))")) {
             HStack {
+                // 打っている途中では切らない（かな漢字の変換中に字数で切ると、変換が壊れる）。
+                // 超えたら数を危険の色にして、主ボタンを押せなくする
                 TextField(L("例：霧の朝が好きです", "e.g. I love misty mornings"), text: $note)
-                    .onChange(of: note) { _, value in
-                        let clean = String(value.prefix(PassExchange.noteLimit))
-                        if clean != value { note = clean }
-                    }
                 Text("\(note.count)/\(PassExchange.noteLimit)")
                     .font(JPFont.meta)
-                    .foregroundStyle(WebTheme.text3)
+                    .foregroundStyle(noteTooLong ? WebTheme.danger : WebTheme.text3)
                     .accessibilityHidden(true)
             }
         }

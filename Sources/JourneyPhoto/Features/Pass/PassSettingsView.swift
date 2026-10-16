@@ -228,11 +228,10 @@ struct PassSettingsView: View {
 
     private var privacyNote: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("相手の今いる場所は、誰にも分かりません", "No one can tell where anyone is right now"))
+            Text(PassPrivacyText.noteTitle)
                 .font(JPFont.bodyEmphasis)
                 .foregroundStyle(WebTheme.accent)
-            Text(L("カードはその日の夕方にまとめて届きます。「いま近くに誰がいるか」は見られません。ブロックした人のカードは届きません。",
-                   "Cards arrive together that evening. You can\u{2019}t see who is nearby right now. Cards from people you blocked never arrive."))
+            Text(PassPrivacyText.noteBody)
                 .font(JPFont.footnote)
                 .lineSpacing(4)
                 .foregroundStyle(WebTheme.text2)
@@ -254,8 +253,8 @@ struct PassSettingsView: View {
             JPCardDivider()
             NavigationLink { PassBookView() } label: {
                 JPRowLabel(title: L("すれちがい帳", "Pass book"),
-                           detail: L("\(pass.book(blocked: hidden.snapshot.blocked).count) 枚",
-                                     "\(pass.book(blocked: hidden.snapshot.blocked).count) cards"))
+                           detail: L("\(pass.book(hiding: hidden.snapshot).count) 枚",
+                                     "\(pass.book(hiding: hidden.snapshot).count) cards"))
             }
             .buttonStyle(JPRowButtonStyle())
         }
@@ -336,21 +335,9 @@ struct PassIntroSheet: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 VStack(alignment: .leading, spacing: JPSpace.m) {
-                    point("dot.radiowaves.left.and.right",
-                          L("近くにいたアプリの人と、あなたが選んだ写真1枚がカードで交換されます。Bluetooth を使います。",
-                            "You and app users nearby swap one photo each as a card. This uses Bluetooth."))
-                    point("clock",
-                          L("カードはその日の夕方 18 時に、束でまとめて届きます。「いま近くに誰がいるか」は見られません。",
-                            "Cards arrive together at 6 PM that day. You can\u{2019}t see who is nearby right now."))
-                    point("rectangle.portrait.on.rectangle.portrait",
-                          L("相手に渡るのは、名刺の一枚・名前・ひとことと、選べば居住地の都道府県だけです。",
-                            "Only your card photo, name, note and — if you choose — your home prefecture are shared."))
-                    point("mappin",
-                          L("すれちがった場所は「〇〇のあたり」、時刻は「15 時ごろ」の粗さで、この iPhone の中にだけ残ります。",
-                            "Where and when you passed is kept only on this iPhone, roughly (\u{201C}around …\u{201D}, \u{201C}around 3 PM\u{201D})."))
-                    point("hand.raised",
-                          L("ブロックした人のカードは届きません。いつでもオフにできます。",
-                            "Cards from people you blocked never arrive. Turn it off at any time."))
+                    ForEach(Array(PassPrivacyText.introPoints.enumerated()), id: \.offset) { _, item in
+                        point(item.symbol, item.text)
+                    }
                 }
                 Text(L("「オンにする」を押すと、iPhone が Bluetooth の使用を尋ねます。",
                        "After you tap Turn on, iPhone will ask to use Bluetooth."))

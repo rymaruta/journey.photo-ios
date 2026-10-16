@@ -71,6 +71,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         // 前面に戻るかお知らせを開くまで届いたことが数に出なかった。
         // 見頃のお知らせ（端末の中の予約）はお知らせの出来事ではないので数え直さない
         let kind = notification.request.content.userInfo["kind"] as? String
+        // すれちがいの束が前面で届いた: ホームの札を「いま」で出し直す
+        if kind == PassBundleNotifier.kind { await MainActor.run { PassStore.shared.noteArrival() } }
         if kind != SeasonReminder.kind && kind != PassBundleNotifier.kind {
             await MainActor.run { NotificationRouter.shared.noteArrival() }
         }

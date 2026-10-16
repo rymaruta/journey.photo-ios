@@ -149,11 +149,20 @@ struct PassCardBack: View {
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(2)
             if !content.card.note.isEmpty {
-                Text(L("「\(content.card.note)」", "\u{201C}\(content.card.note)\u{201D}"))
-                    .font(.callout)
-                    .lineSpacing(6)
-                    .foregroundStyle(WebTheme.text)
-                    .fixedSize(horizontal: false, vertical: true)
+                // 🔴 **ひとことには署名が無い**（電波の中身は誰でも書ける・2026-10-16 の読み直し）。写真の持ち主の
+                // 言葉に見せないよう、届いた文だと分かる書き方にする
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    Text(L("「\(content.card.note)」", "\u{201C}\(content.card.note)\u{201D}"))
+                        .font(.callout)
+                        .lineSpacing(6)
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(PassPrivacyText.noteSource)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let place = PassExchange.placeLabel(content.card.placeName) {
                 row("mappin", place)
@@ -167,11 +176,13 @@ struct PassCardBack: View {
                 HStack(spacing: 10) {
                     Rectangle().fill(WebTheme.accent.opacity(0.3)).frame(height: JPStroke.hairline)
                         .accessibilityHidden(true)
+                    // 長い地名ではみ出さない（`fixedSize` にしない・縮めても 12pt は割らない深さまで）
                     Text(route)
                         .font(JPFont.meta)
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)
-                        .fixedSize()
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
                 }
             }
         }

@@ -47,11 +47,68 @@ enum PassExchange {
         }
     }
 
-    /// ひとことを整える: 改行・制御文字を空白に、前後の空白を落とし、`noteLimit` 字で切る
+    /// ひとことのバイト数の上限（UTF-8）。送る側・受ける側とも（`noteLimit` 字の絵文字でも収まる大きさ）
+    static let noteByteLimit = 80
+    /// 1字に重ねてよい結合文字（Mn・Me）の数。**重ね書きで行を突き破る字**（ザルゴ）を止める
+    static let marksPerCharacterLimit = 3
+    /// 1字に入ってよいスカラーの数（肌の色つきの家族の絵文字で 11）
+    static let scalarsPerCharacterLimit = 16
+    /// 中身ごと落とす値（電波で受け取る特性の上限 512 を超えない）
+    static let payloadByteLimit = 512
+
+    /// 向きを変える制御（文字の並びを逆さに見せる・なりすましに使える）
+    private static func isBidiControl(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069: return true
+        default: return false
+        }
+    }
+
+    /// 残す書式の字（絵文字をつなぐ ZWJ と、旗のタグ）。ほかの書式の字（ゼロ幅の空白など）は落とす
+    private static func isKeptFormat(_ s: Unicode.Scalar) -> Bool {
+        s.value == 0x200D || (0xE0020...0xE007F).contains(s.value)
+    }
+
+    /// ひとことを整える（2026-10-16 判断・相手の端末から来る値なので受ける側も必ず通す）:
+    /// - 改行・制御文字は空白に、向きの制御とゼロ幅の字は落とす。**ZWJ・異体字セレクタ（絵文字）は残す**
+    /// - 1字に重ねる結合文字は `marksPerCharacterLimit` まで、スカラーが多すぎる字は落とす
+    /// - 前後の空白を落とし、`noteLimit` 字・`noteByteLimit` バイトの短い方で（字の途中で切らずに）切る
     static func cleanNote(_ text: String) -> String {
-        let flat = String(text.unicodeScalars.map { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) ? " " : Character($0) })
-        let trimmed = flat.trimmingCharacters(in: .whitespaces)
-        return String(trimmed.prefix(noteLimit))
+        var scalars = String.UnicodeScalarView()
+        for s in text.unicodeScalars {
+            if isBidiControl(s) { continue }
+            if CharacterSet.newlines.contains(s) || s.properties.generalCategory == .control {
+                scalars.append(" ")
+            } else if s.properties.generalCategory == .format, !isKeptFormat(s) {
+                continue
+            } else {
+                scalars.append(s)
+            }
+        }
+        var out = ""
+        var bytes = 0
+        for ch in String(scalars).trimmingCharacters(in: .whitespaces) {
+            guard out.count < noteLimit else { break }
+            var marks = 0
+            var kept = String.UnicodeScalarView()
+            for s in ch.unicodeScalars {
+                let mark = s.properties.generalCategory == .nonspacingMark || s.properties.generalCategory == .enclosingMark
+                // 異体字セレクタ（FE00–FE0F）は数えない（絵文字の見た目を選ぶだけ）
+                if mark && !(0xFE00...0xFE0F).contains(s.value) {
+                    marks += 1
+                    if marks > marksPerCharacterLimit { continue }
+                }
+                kept.append(s)
+            }
+            // 結合文字を削ってもまだスカラーが多すぎる字は落とす
+            guard kept.count <= scalarsPerCharacterLimit else { continue }
+            let piece = String(kept)
+            let size = piece.utf8.count
+            guard bytes + size <= noteByteLimit else { break }
+            out += piece
+            bytes += size
+        }
+        return out.trimmingCharacters(in: .whitespaces)
     }
 
     /// 並び: [版 1][印 1（bit0 = 出身を出す）][id の長さ 1][id][ひとこと（UTF-8・残り全部）]
@@ -61,18 +118,20 @@ enum PassExchange {
         var bytes: [UInt8] = [version, payload.showsFrom ? 1 : 0, UInt8(id.count)]
         bytes += id
         bytes += Array(cleanNote(payload.note).utf8)
+        guard bytes.count <= payloadByteLimit else { return nil }
         return Data(bytes)
     }
 
     /// 読む。**形が崩れていたら nil**（知らない版・長さが合わない・id に使えない字・ひとことが長すぎる）
     static func decode(_ data: Data) -> Payload? {
         let bytes = [UInt8](data)
-        guard bytes.count >= 4, bytes[0] == version else { return nil }
+        guard bytes.count >= 4, bytes.count <= payloadByteLimit, bytes[0] == version else { return nil }
         let length = Int(bytes[2])
         guard length > 0, bytes.count >= 3 + length else { return nil }
         guard let id = String(bytes: bytes[3..<(3 + length)], encoding: .utf8), isValidPhotoId(id) else { return nil }
         let rest = bytes[(3 + length)...]
-        guard let rawNote = String(bytes: rest, encoding: .utf8), rawNote.count <= noteLimit else { return nil }
+        guard rest.count <= noteByteLimit, let rawNote = String(bytes: rest, encoding: .utf8),
+              rawNote.count <= noteLimit else { return nil }
         return Payload(photoId: id, showsFrom: bytes[1] & 1 == 1, note: cleanNote(rawNote))
     }
 
