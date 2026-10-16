@@ -103,6 +103,21 @@ struct LightAlertSettingsRows: View {
 
     /// 「通知がオフのため届きません」の行（板 Settings の F31 の行: 真鍮 8% の地・真鍮の字と線の絵・矢印）
     private func pushNoticeRow(_ notice: LightAlertPushNotice) -> some View {
+        // 🔴 **地はボタンに付けず、後ろに別の層として敷く**（2026-10-16・owner の実機で、帯の上の2つの角が
+        // 丸く抜けて札の地が見えていた）。コードは矩形の `.background` だったが、ボタンに付けた地は
+        // OS の側で角を丸められうる。ただの `Rectangle` を `ZStack` の下に置けば、角は札（`JPCard`）の
+        // 切り抜きだけが決める
+        ZStack {
+            // 板 v2 の brass-soft（#1C170E・真鍮 8% を黒に重ねた値）。選択は担わない、案内の帯の色
+            Rectangle()
+                .fill(WebTheme.accentSoft)
+                .accessibilityHidden(true)
+            pushNoticeButton(notice)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func pushNoticeButton(_ notice: LightAlertPushNotice) -> some View {
         Button { Task { await fixPush(notice) } } label: {
             HStack(spacing: 12) {
                 Image(systemName: "bell.slash")
@@ -130,11 +145,7 @@ struct LightAlertSettingsRows: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 地は行いっぱいの矩形。角を落とすと角の外側が札の地のまま残り、1行目が塗りの外に出る（2026-10-14）。
-        // 札の外周は JPCard が角丸で切る。
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 板 v2 の brass-soft（#1C170E・真鍮 8% を黒に重ねた値）。選択は担わない、案内の帯の色
-        .background(WebTheme.accentSoft)
         .disabled(isTurningOnPush)
         .accessibilityElement(children: .combine)
         .accessibilityHint(notice.hint)
