@@ -160,12 +160,23 @@ enum CompositionGuide {
     /// - Parameters:
     ///   - aspect: 画面の上の枠の幅÷高さ（縦の 3:4 なら 0.75）
     ///   - levelDegrees: 水準器の角度（画面の上・`levelAngle`）
+    ///   - rotationQuarters: 人が回した回数（時計回りの 90° 単位・2026-10-16）。水準器には効かせない
+    ///
+    /// **2026-10-16 判断（回転と反転の順）**: 線は「構図の形 → 向き（反転・`variant`）→ 人の回転 →
+    /// 持った向き」の順に作る。**反転が先・回転が後**。画面で見えている形がそのまま回る（回してから
+    /// 「向き」を押すと、回った後の枠の中で反転して見える）。
+    ///
+    /// **90°/270° の描き方**: 線を画面の比率に引き伸ばして回すのではなく、**回した後の枠の比率
+    /// （縦横を入れ替えた比率）で構図を作り直してから 90° 回す**。3:4 の枠を 90° 回すと構図は 4:3 の
+    /// 枠の形で作られ、回った結果がちょうど 3:4 の写真に収まる——三分割は三分割のまま、正方形は正方形の
+    /// まま、16:9 の枠は 9:16 の枠になる（構図として正しい形。引き伸ばすと正方形が長方形に潰れる）
     static func screenMarks(_ kind: CompositionKind, variant: Int, aspect: Double, quarterTurns: Int,
-                            levelDegrees: Double) -> [GuideMark] {
+                            levelDegrees: Double, rotationQuarters: Int = 0) -> [GuideMark] {
         let q = ((quarterTurns % 4) + 4) % 4
         let r = validAspect(aspect)
         let photoAspect = q % 2 == 1 ? 1 / r : r
         let marks: [GuideMark]
+        let turns = kind == .level ? 0 : ((rotationQuarters % 4) + 4) % 4
         if kind == .level {
             // 写真の上の傾き＝画面の上の角度に持った向きのぶんを足し、-180〜180 に戻す
             var d = (levelDegrees.isFinite ? levelDegrees : 0) + Double(q) * 90
@@ -173,11 +184,78 @@ enum CompositionGuide {
             if d < 0 { d += 360 }
             marks = levelMarks(aspect: photoAspect, degrees: d - 180)
         } else {
-            marks = self.marks(kind, variant: variant, aspect: photoAspect)
+            // 回した後の枠の比率で作り（90°/270° なら縦横を入れ替える）、時計回りに回して写真の枠へ
+            let guideAspect = turns % 2 == 1 ? 1 / photoAspect : photoAspect
+            let shaped = self.marks(kind, variant: variant, aspect: guideAspect)
+            marks = turns == 0 ? shaped : shaped.map { clockwiseTransform(turns).apply($0) }
         }
         guard q != 0 else { return marks }
         let t = quarterTransform(q)
         return marks.map { t.apply($0) }
+    }
+
+    // MARK: - 人が回す（2026-10-16 owner「肝心の反転はあるけど回転がないのしんどい」）
+
+    /// 0°/90°/180°/270° に吸い付く幅（度）。2本指でひねったとき、この内側なら真っ直ぐに戻す
+    static let rotationSnap = 6.0
+
+    /// 時計回りに `turns` 回 90° 回す変換（0〜1 の座標）。`quarterTransform` の逆回り
+    static func clockwiseTransform(_ turns: Int) -> GuideTransform {
+        quarterTransform(4 - ((turns % 4) + 4) % 4)
+    }
+
+    /// 0〜360 未満に戻す（数でなければ 0）
+    static func normalizedRotation(_ degrees: Double) -> Double {
+        guard degrees.isFinite else { return 0 }
+        var d = degrees.truncatingRemainder(dividingBy: 360)
+        if d < 0 { d += 360 }
+        return d >= 360 - 1e-9 ? 0 : d
+    }
+
+    /// 0/90/180/270 の近く（`rotationSnap` の内）なら吸い付かせる。0〜360 未満で返す
+    static func snappedRotation(_ degrees: Double) -> Double {
+        let d = normalizedRotation(degrees)
+        let nearest = (d / 90).rounded() * 90
+        return abs(d - nearest) <= rotationSnap ? normalizedRotation(nearest) : d
+    }
+
+    /// 0/90/180/270 ちょうどか（吸い付いたときの振動に使う）
+    static func isQuarterRotation(_ degrees: Double) -> Bool {
+        let d = normalizedRotation(degrees)
+        return abs(d - (d / 90).rounded() * 90) < 1e-9
+    }
+
+    /// 「右に90度回す」ボタン: 次の 90° の倍数へ（0→90・37→90・270→0）
+    static func rotatedRight(_ degrees: Double) -> Double {
+        let d = normalizedRotation(degrees)
+        return normalizedRotation((floor(d / 90 + 1e-9) + 1) * 90)
+    }
+
+    /// 回した角度を「90° 単位の回数（時計回り 0〜3）」と「残り（-45〜45 度）」に分ける。
+    /// 回数は線を作り直して回す（`screenMarks`）、残りは描くときに絵ごと回す（`CompositionOverlay`）
+    static func rotationParts(_ degrees: Double) -> (quarters: Int, residual: Double) {
+        let d = normalizedRotation(degrees)
+        let k = (d / 90).rounded()
+        return ((Int(k) % 4 + 4) % 4, d - k * 90)
+    }
+
+    /// 回した角度の読み上げ（「90度」）
+    static func rotationAccessibilityValue(_ degrees: Double) -> String {
+        let d = Int(normalizedRotation(degrees).rounded()) % 360
+        return L("\(d)度", "\(d) degrees")
+    }
+
+    /// 切り出し枠の外の暗がりの4つの帯（0〜1 の座標）。`margin` は枠の外へはみ出させる幅（枠の何倍か）。
+    /// 2026-10-16: 斜めに回したとき（`rotationParts` の残り）に枠の角が暗がりから抜けないよう、
+    /// 帯を枠の外まで伸ばしてから回す。回さないときは 0（枠の内側だけ・以前と同じ）
+    static func dimBands(crop c: GuideRect, margin m: Double) -> [GuideRect] {
+        let m = max(m.isFinite ? m : 0, 0)
+        return [
+            GuideRect(x: -m, y: -m, width: 1 + 2 * m, height: c.y + m),
+            GuideRect(x: -m, y: c.maxY, width: 1 + 2 * m, height: max(1 - c.maxY, 0) + m),
+            GuideRect(x: -m, y: c.y, width: c.x + m, height: c.height),
+            GuideRect(x: c.maxX, y: c.y, width: max(1 - c.maxX, 0) + m, height: c.height),
+        ]
     }
 
     // MARK: - 読み上げ

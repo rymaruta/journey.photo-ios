@@ -1,6 +1,6 @@
 import Foundation
 
-/// 「構図を重ねて撮る」で選んだものを端末に覚える（最後の構図・最近の4つ・構図ごとの向き・線の濃さ）。
+/// 「構図を重ねて撮る」で選んだものを端末に覚える（最後の構図・最近の4つ・構図ごとの向き・回した角度・線の濃さ）。
 ///
 /// **サーバーには送らない**（端末の好みだけ・2026-10-10）。アカウントにも結び付けない——
 /// 構図の好みは人の情報ではなく道具の設定なので、同じ端末で別の人が使っても困らない。
@@ -18,6 +18,9 @@ struct CompositionPreferences {
         static let recents = "journey-photo-composition-recents"
         static let variants = "journey-photo-composition-variants"
         static let lineOpacity = "journey-photo-composition-line-opacity"
+        /// 構図ごとの回した角度（2026-10-16）。**向き（反転）の `variants` とは別の鍵**——前の版で
+        /// 覚えた向きの値（整数）はそのまま読める
+        static let rotations = "journey-photo-composition-rotations"
     }
 
     /// 「なし」を覚えるときの値
@@ -44,6 +47,8 @@ struct CompositionPreferences {
     /// 構図を選んだ。nil は「なし」（最近には足さない）
     func select(_ kind: CompositionKind?) {
         defaults.set(kind?.rawValue ?? Self.noneValue, forKey: Key.last)
+        // 2026-10-16 判断: 回した角度は「その構図を選び直すまで」保つ。シートで選び直したら真っ直ぐ（0°）に戻す
+        setRotation(0, for: kind)
         guard let kind else { return }
         defaults.set(CompositionGuide.recents(adding: kind, to: recents).map(\.rawValue), forKey: Key.recents)
     }
@@ -58,6 +63,20 @@ struct CompositionPreferences {
         var map = defaults.dictionary(forKey: Key.variants) as? [String: Int] ?? [:]
         map[kind.rawValue] = kind.normalizedVariant(variant)
         defaults.set(map, forKey: Key.variants)
+    }
+
+    /// 回した角度（時計回りの度・0〜360 未満）。覚えていない・壊れた値は 0。
+    /// `kind` が nil（「なし」）でも、重ねている参考写真の向きとして覚える
+    func rotation(for kind: CompositionKind?) -> Double {
+        let map = defaults.dictionary(forKey: Key.rotations) ?? [:]
+        guard let value = map[kind?.rawValue ?? Self.noneValue] as? Double else { return 0 }
+        return CompositionGuide.normalizedRotation(value)
+    }
+
+    func setRotation(_ degrees: Double, for kind: CompositionKind?) {
+        var map = defaults.dictionary(forKey: Key.rotations) as? [String: Double] ?? [:]
+        map[kind?.rawValue ?? Self.noneValue] = CompositionGuide.normalizedRotation(degrees)
+        defaults.set(map, forKey: Key.rotations)
     }
 
     /// 線の濃さ（覚えていなければ既定 0.35）
