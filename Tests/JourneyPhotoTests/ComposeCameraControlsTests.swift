@@ -290,15 +290,24 @@ final class ComposeCameraControlsTests: XCTestCase {
         XCTAssertTrue(u.engaged)
         XCTAssertEqual(ComposeControls.effectiveTwist(rotation: -16, state: u), -1, accuracy: 1e-9)
         XCTAssertEqual(ComposeControls.effectiveTwist(rotation: -105, state: u), -90, accuracy: 1e-9)
+        // 効いた後に指を逆へ戻して 0° をまたいでも、続けて数える（30° 跳ばない）
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: 10, state: u), 25, accuracy: 1e-9)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: 0, state: u), 15, accuracy: 1e-9)
+        let right = ComposeControls.nextTwist(ComposeControls.Twist(), rotation: 20, magnification: 1)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: 20, state: right), 5, accuracy: 1e-9)
+        XCTAssertEqual(ComposeControls.effectiveTwist(rotation: -10, state: right), -25, accuracy: 1e-9)
         // 一度効いたら、あとで拡大が大きくなっても離すまで効いたまま
         XCTAssertTrue(ComposeControls.nextTwist(u, rotation: -20, magnification: 2).engaged)
     }
 
     func testSnapFeedbackOnlyWhenSnapping() {
-        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, twisting: true), 1)
-        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, twisting: false), -1)
-        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 100, twisting: true), -1)
-        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 360, twisting: true), 0)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, baseRotation: 0, twisting: true), 1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, baseRotation: 0, twisting: false), -1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 100, baseRotation: 0, twisting: true), -1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 360, baseRotation: 270, twisting: true), 0)
+        // 効いた瞬間（足す角度 0・もとの角度のまま）は鳴らさない
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 90, baseRotation: 90, twisting: true), -1)
+        XCTAssertEqual(ComposeControls.snapSignal(shownRotation: 0, baseRotation: 3, twisting: true), -1)
         // 鳴るのは吸い付いたときだけ（-1 に戻るとき・同じ値のままでは鳴らない）
         XCTAssertTrue(ComposeControls.snapFeedbackFires(old: -1, new: 1))
         XCTAssertFalse(ComposeControls.snapFeedbackFires(old: 1, new: -1))

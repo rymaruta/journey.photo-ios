@@ -447,7 +447,8 @@ struct ComposeGuideView: View {
 
     /// 吸い付いたときの合図（ひねりが効いていて 0/90/180/270 に乗ったら 0〜3、ほかは -1）
     private var snapTrigger: Int {
-        ComposeControls.snapSignal(shownRotation: shownRotation, twisting: twistState.engaged && canRotate)
+        ComposeControls.snapSignal(shownRotation: shownRotation, baseRotation: rotation,
+                                   twisting: twistState.engaged && canRotate)
     }
 
     /// その点にピントと明るさを合わせ、枠を出す

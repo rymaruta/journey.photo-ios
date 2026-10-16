@@ -152,6 +152,9 @@ enum ComposeControls {
         var engaged = false
         /// 拡大の指とみなした（離すまで回さない）
         var blocked = false
+        /// 効き始めた向き（+1 右回り・-1 左回り）。2026-10-16（見直しの指摘）: ずらす 15° の向きを
+        /// その時の指の正負で決めると、効いた後に 0° をまたいだとき線が 30° 跳んだ。効き始めに覚えて離すまで変えない
+        var direction = 0.0
     }
 
     /// ひねりの指の次の状態。拡大の量（`magnification`・1 が無し）が先に大きくなったら回さない。
@@ -163,6 +166,7 @@ enum ComposeControls {
             next.blocked = true
         } else if rotation.isFinite, abs(rotation) >= twistThreshold {
             next.engaged = true
+            next.direction = rotation < 0 ? -1 : 1
         }
         return next
     }
@@ -170,13 +174,16 @@ enum ComposeControls {
     /// 描くときに足すひねりの角度。効かせ始めた所から数える（越えた瞬間に 15° 跳ねない）
     static func effectiveTwist(rotation: Double, state: Twist) -> Double {
         guard state.engaged, rotation.isFinite else { return 0 }
-        return rotation - (rotation < 0 ? -twistThreshold : twistThreshold)
+        return rotation - state.direction * twistThreshold
     }
 
     /// 吸い付いた合図の値（0〜3）。ひねりが効いていて 0/90/180/270 ちょうどに乗ったときだけ。それ以外は -1
-    /// （振動は新しい値が 0 以上のときだけ鳴らす・`sensoryFeedback(_:trigger:condition:)`）
-    static func snapSignal(shownRotation: Double, twisting: Bool) -> Int {
-        guard twisting, CompositionGuide.isQuarterRotation(shownRotation) else { return -1 }
+    /// （振動は新しい値が 0 以上のときだけ鳴らす・`sensoryFeedback(_:trigger:condition:)`）。
+    /// 2026-10-16（見直しの指摘）: もとの角度（`baseRotation`・ひねる前に決まっていた角度）のままのときは -1。
+    /// 効いた瞬間は足す角度が 0 で、もとの角度に乗ったまま 1 回鳴っていた
+    static func snapSignal(shownRotation: Double, baseRotation: Double, twisting: Bool) -> Int {
+        guard twisting, CompositionGuide.isQuarterRotation(shownRotation),
+              abs(shownRotation - snappedCumulative(baseRotation)) > 1e-9 else { return -1 }
         return CompositionGuide.rotationParts(shownRotation).quarters
     }
 
