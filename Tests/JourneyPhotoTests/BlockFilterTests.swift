@@ -120,4 +120,21 @@ final class BlockFilterTests: XCTestCase {
         XCTAssertEqual(BlockFilter.replies(replies, blocked: []).count, 5)
         XCTAssertEqual(ModerationSnapshot(blocked: ["a", "c"]).replies(replies).map(\.uid), ["b", nil])
     }
+
+    /// 🔴 **お知らせで返信の一覧（シート）や人のページからブロックしても、その人の行が残っていた**
+    /// （2026-10-16・読み直すまで名前・顔・行が出たまま）。送り手（`byId`）で落とし、送り手の無い行は残す
+    @MainActor
+    func testNotificationsDropBlockedSenders() async throws {
+        let json = #"[{"type":"storyreply","byId":"a","byName":"A","photoId":"S1","t":"2026-10-16T03:00:00Z"},{"type":"like","byId":"b","byName":"B","photoId":"p1","t":"2026-10-16T02:00:00Z"},{"type":"follow","byId":"a","byName":"A","targetUserId":"a","t":"2026-10-16T01:00:00Z"},{"type":"badge","key":"first","tier":1,"t":"2026-10-16T00:00:00Z"}]"#
+        let rows = try JSONDecoder.api.decode([AppNotification].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 4)
+
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        store.use(userId: "me")
+        XCTAssertEqual(BlockFilter.notifications(rows, blocked: store.blockedUserIds).count, 4)
+        store.block("a")
+        let shown = BlockFilter.notifications(rows, blocked: store.blockedUserIds)
+        XCTAssertEqual(shown.map(\.byId), ["b", nil], "ブロックした人の行が残った・送り手の無い行（メダル）まで落とした")
+        XCTAssertEqual(store.snapshot.notifications(rows).map(\.id), shown.map(\.id))
+    }
 }

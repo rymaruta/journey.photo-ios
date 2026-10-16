@@ -270,6 +270,19 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertTrue(loader.contains("BlockFilter.replies(fetched, blocked: hidden.blockedUserIds)"))
     }
 
+    /// 🔴 **返信の一覧のシート・人のページでブロックして戻っても、お知らせにその人の行が残っていた**（2026-10-16）。
+    /// 一覧（種類で絞る前）と空の判断を、ブロックで落とした行から作る
+    func testNotificationsDropBlockedSendersOnScreen() async throws {
+        let view = try source("Features/Notifications/NotificationsView.swift")
+        XCTAssertTrue(view.contains("@EnvironmentObject private var hidden: ModerationStore"))
+        XCTAssertTrue(view.contains("BlockFilter.notifications(model.rows, blocked: hidden.blockedUserIds)"))
+        let shown = slice(view, from: "private var shownRows", to: "private func rowLink(")
+        XCTAssertTrue(shown.contains("visibleRows.filter"), "種類で絞る前にブロックした人を落としていない")
+        XCTAssertFalse(shown.contains("model.rows"))
+        let empty = slice(view, from: "private var emptyState", to: "private var list")
+        XCTAssertFalse(empty.contains("model.rows.isEmpty"), "ブロックで全部落ちたのに「この種類のお知らせはありません」と言う")
+    }
+
     // MARK: - 8. 文言
 
     func testWishlistEmptyDoesNotRepeatNothingYet() async throws {

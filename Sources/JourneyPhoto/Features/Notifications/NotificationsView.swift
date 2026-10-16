@@ -7,6 +7,8 @@ struct NotificationsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    /// ブロックした人の行を手元で落とすため（`visibleRows`）
+    @EnvironmentObject private var hidden: ModerationStore
     /// **通知を押すたびに読み直すため**に見ている。
     ///
     /// お知らせタブを開いたまま通知を押した回は、`RootView` の
@@ -80,10 +82,21 @@ struct NotificationsView: View {
         }
     }
 
+    /// ブロックした人（行の送り手）を落とした一覧（2026-10-16 判断）。
+    ///
+    /// サーバーは読み直せば落とすが、返信の一覧のシートや人のページでブロックして戻ると、
+    /// 読み直すまでその人の名前・顔・行が残っていた。**描くたびに `hidden.blockedUserIds` で絞る**
+    /// ——`hidden` が変わると描き直されるので、ブロックした瞬間にも、表示のときにも効く。
+    /// ほかの一覧（`FollowListView`）は行が `NavigationLink` なので写しを取るが、ここの行き先は
+    /// `route`・`repliesStory` に持っていて行とは切れている——行が消えても開いている画面は閉じない
+    private var visibleRows: [AppNotification] {
+        BlockFilter.notifications(model.rows, blocked: hidden.blockedUserIds)
+    }
+
     private var shownRows: [AppNotification] {
         // **種類の分からないお知らせは「すべて」にだけ出す。**
         // 捨てると届いたことが伝わらないし、当て推量で仕分けると嘘になる
-        model.rows.filter { row in
+        visibleRows.filter { row in
             guard let kind = row.kind else { return filter == .all }
             return filter.matches(kind)
         }
@@ -138,10 +151,10 @@ struct NotificationsView: View {
     /// 板の空の状態にある「写真を投稿する」の主ボタンと季節のスポット2件は置かない
     /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
-        EmptyState(title: model.rows.isEmpty
+        EmptyState(title: visibleRows.isEmpty
                        ? L("まだお知らせはありません", "Nothing yet")
                        : L("この種類のお知らせはありません", "Nothing of this kind"),
-                   message: model.rows.isEmpty
+                   message: visibleRows.isEmpty
                        ? L("写真を投稿すると、いいねやコメント、フォローがここに届きます。",
                            "Likes, comments and follows on your photos will show up here.")
                        : L("「すべて」に戻すと、ほかの種類のお知らせが見られます。",
