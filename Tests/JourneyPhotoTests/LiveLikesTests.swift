@@ -402,22 +402,102 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
     }
 
     /// 🔴 生を4秒で諦めた（失敗した）回は、**控えの寿命を縮めて取り直す**。60秒の控えのままだと、
-    /// その間は止まった静的の一覧で新しい写真が出ない。成功した回は今までどおり60秒叩かない
+    /// その間は止まった静的の一覧で新しい写真が出ない。
+    /// 🔴 **取り直しは裏で走り、手元に一覧があれば待たずに返す**（失敗が続く間、10秒ごとに
+    /// 画面を最大4秒待たせない）。届いた答えは次の読み込みで効く。成功した後は60秒叩かない
     func testRetriesSoonAfterLiveFailure() async throws {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
         StubProtocol.respond(path: "/photos", status: 500, body: "{}")
-        let gallery = service(live: liveURL, retryAfterFailure: 0)
+        // 1回目（失敗する回）は通し、2回目（取り直し）を要求の手前で止める
+        let gate = Gate(holds: 1, skip: 1)
+        let gallery = service(live: liveURL, gate: gate, retryAfterFailure: 0)
         let failed = try await gallery.fetchPhotos()
         XCTAssertEqual(failed.map(\.id), ["a", "b"])
 
         StubProtocol.reset()
         StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"}]"#)
-        let retried = try await gallery.fetchPhotos()
-        XCTAssertEqual(StubProtocol.requestCount, 1, "失敗の後に生を取り直していない（静的は60秒の控え）")
-        XCTAssertEqual(retried.map(\.id), ["new"])
+        // 取り直しが止まっている間に返る（待っていたら、門を開けるまで返らない）。
+        // 壊れた回に試験ごと固まらないよう、別の Task で読んで期限で見る
+        let retriedTask = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting(2)
+        guard await Self.finishes(retriedTask, within: 1) else {
+            await gate.open()
+            _ = try? await retriedTask.value
+            return XCTFail("取り直しを待ってから返している")
+        }
+        let retried = try await retriedTask.value
+        XCTAssertEqual(retried.map(\.id), ["a", "b"])
+        // 取り直しの最中に来た読み込みも待たない
+        let during = try await gallery.fetchPhotos()
+        XCTAssertEqual(during.map(\.id), ["a", "b"])
+        await gate.open()
 
+        // 届いた答えは次の読み込みで効く
+        let deadline = Date().addingTimeInterval(2)
+        var latest = during
+        while latest.map(\.id) != ["new"] {
+            guard Date() < deadline else { return XCTFail("裏の取り直しの答えが効かない: \(latest.map(\.id))") }
+            try await Task.sleep(nanoseconds: 5_000_000)
+            latest = try await gallery.fetchPhotos()
+        }
+        XCTAssertEqual(StubProtocol.requestCount, 1, "取り直しを1回より多く叩いている")
         _ = try await gallery.fetchPhotos()
         XCTAssertEqual(StubProtocol.requestCount, 1, "成功した後も控えの間に叩き直している")
+    }
+
+    /// `task` が `within` 秒のうちに終わるか（終わらなくても取り消さない）
+    private static func finishes(_ task: Task<[Photo], Error>, within: TimeInterval) async -> Bool {
+        let done = DoneFlag()
+        Task { _ = try? await task.value; await done.set() }
+        let deadline = Date().addingTimeInterval(within)
+        while Date() < deadline {
+            let finished = await done.value
+            if finished { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return await done.value
+    }
+
+    private actor DoneFlag {
+        private(set) var value = false
+        func set() { value = true }
+    }
+
+    /// 失敗の後でも**引き下げ更新は取り直しを待つ**（利用者が自分で引いた回に古い一覧を出さない）
+    func testForceAfterFailureWaitsForLiveAnswer() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        // 1回目（失敗する回）は通し、引き下げの取り直しを要求の手前で止める
+        let gate = Gate(holds: 1, skip: 1)
+        let gallery = service(live: liveURL, gate: gate, retryAfterFailure: 0)
+        _ = try await gallery.fetchPhotos()
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"}]"#)
+        let forcedTask = Task { try await gallery.fetchPhotos(force: true) }
+        await gate.untilWaiting(2)
+        let returnedEarly = await Self.finishes(forcedTask, within: 0.3)
+        await gate.open()
+        let forced = try await forcedTask.value
+        XCTAssertFalse(returnedEarly, "引き下げ更新が取り直しを待たずに返った")
+        XCTAssertEqual(forced.map(\.id), ["new"], "引き下げ更新が取り直しを待っていない")
+    }
+
+    /// 🔴 **網から新しく取れた静的 JSON は、生の控えに負けない。** 生の控えはいつのものか分からない。
+    /// 使うのは静的 JSON も端末の控えから出た回だけ（`testOfflineUsesStoredLiveAnswer`）
+    func testFreshStaticBeatsStoredLiveAnswer() async throws {
+        let name = UUID().uuidString
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"old","src":"https://x/old.jpg"}]"#)
+        _ = try await service(live: liveURL, snapshot: name).fetchPhotos()
+
+        // 起動し直し: 静的 JSON は網から新しく取れ、生だけ取れない
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: #"[{"id":"z","src":"https://x/z.jpg"}]"#)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let photos = try await service(live: liveURL, snapshot: name).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["z"], "網から取れた静的 JSON より生の控えを出している")
     }
 
     /// 🔴 **圏外では生の控えを先に使う**（なければ静的）。静的の控えだけだと、前に見えていた

@@ -164,6 +164,13 @@ actor PublicGalleryService {
     /// `liveSnapshot` を**取りに行った時刻**（写した写真の `likesAsOf` になる）
     private var liveCountsAsOf: Date?
     private var liveCounts: [String: Int]? { liveSnapshot?.counts }
+    /// 端末に控えた生の答え（`liveStore`）。**この起動で取れた答えが無いときだけ**読む（`liveFailed`）
+    private var storedLiveSnapshot: LiveLikes.Snapshot?
+    /// 一覧に使う生の答え。この起動で取れた答えがあればそれ。無ければ、**静的 JSON も端末の控えから
+    /// 出た回（本当にどちらも読めなかった回）だけ**生の控え（2026-10-16 判断）
+    private var liveForList: LiveLikes.Snapshot? {
+        liveSnapshot ?? (staticFromDevice ? storedLiveSnapshot : nil)
+    }
     /// 取りに行っている最中の要求。**同時に来た呼び出しはこれを待つ**
     /// （待たずに返すと、その画面だけ静的 JSON の古い数で出て、
     ///  控えの間は取り直さない）
@@ -282,7 +289,7 @@ actor PublicGalleryService {
         case .failure(let error):
             // 2026-10-16 判断: 静的 JSON が取れなくても（端末の控えも無い）、いまの一覧が
             // 取れていればそれで出す。どちらも無ければ今までどおり投げる
-            guard !LiveLikes.list(live: liveSnapshot, asOf: .distantPast, static: []).isEmpty else { throw error }
+            guard !LiveLikes.list(live: liveForList, asOf: .distantPast, static: []).isEmpty else { throw error }
             return await merged([], force: force)
         }
     }
@@ -328,8 +335,19 @@ actor PublicGalleryService {
 
     /// 取り消された呼び手の戻り方。**まとめる前と同じ**——圏外と同じ道（端末の控え、無ければ unreachable）
     private func cancelledStaticList() throws -> [Photo] {
-        if let cached = snapshot.load() { return cached }
+        if let cached = deviceStaticList() { return cached }
         throw APIError.unreachable
+    }
+
+    /// 最後の静的 JSON が**端末の控えから出た（網から読めなかった）か**。
+    /// 2026-10-16 判断: 生の控え（`storedLiveSnapshot`）を使うのはこの印が立っている回だけ
+    /// （`liveForList`）。網から新しく取れた静的 JSON に、いつのものか分からない生の控えを勝たせない
+    private var staticFromDevice = false
+
+    /// 端末の控え（静的 JSON）を出す。**出した印を立てる**（`staticFromDevice`）
+    private func deviceStaticList() -> [Photo]? {
+        staticFromDevice = true
+        return snapshot.load()
     }
 
     /// 取りに行っている最中の一覧。**同時に来た呼び出しはこれを待つ**（`fetchStaticList`）
@@ -355,6 +373,8 @@ actor PublicGalleryService {
             }
             switch outcome {
             case .notModified(let photos):
+                // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）
+                staticFromDevice = false
                 cached = photos
                 cachedAt = Date()
                 return photos
@@ -363,14 +383,15 @@ actor PublicGalleryService {
             }
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = snapshot.load() { return cached }
+            if let cached = deviceStaticList() { return cached }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
+            staticFromDevice = true
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = snapshot.load() { return cached }
+            if let cached = deviceStaticList() { return cached }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
@@ -391,11 +412,12 @@ actor PublicGalleryService {
                 // 今回とは違う控えを「変わっていない」として出す）
                 snapshot.validators.clear()
             }
+            staticFromDevice = false
             cached = photos
             cachedAt = Date()
             return photos
         } catch {
-            if let cached = snapshot.load() { return cached }
+            if let cached = deviceStaticList() { return cached }
             throw APIError.decoding(String(describing: error))
         }
     }
@@ -414,7 +436,7 @@ actor PublicGalleryService {
     /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
     /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
     private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
-        let counted = LiveLikes.list(live: liveSnapshot, asOf: liveCountsAsOf ?? .distantPast, static: photos)
+        let counted = LiveLikes.list(live: liveForList, asOf: liveCountsAsOf ?? .distantPast, static: photos)
         let (extra, epoch) = await restrictedPhotos(force: force)
         if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
         return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)
@@ -447,7 +469,14 @@ actor PublicGalleryService {
     /// ——直前に取れた答えか、静的 JSON のまま出す。
     private func refreshLiveCounts(force: Bool) async {
         guard let liveURL else { return }
+        // 2026-10-16 判断: **失敗の後の取り直しは待たない**（引き下げ更新を除く）。手元に出せる一覧
+        // （この起動の生の答え・生の控え・静的 JSON）があるなら、取り直しは裏で走らせて今の答えで返す
+        // ——失敗が続く間、10秒ごとに画面を最大 `liveTimeout`（4秒）待たせない。届いた答えは次の
+        // 読み込みで効く。何も無い起動直後と引き下げ更新は今までどおり待つ
+        let inBackground = !force && liveLastFailed
+            && (liveSnapshot != nil || storedLiveSnapshot != nil || cached != nil)
         if let liveInFlight {
+            if inBackground { return }
             await liveInFlight.value
             // **引き下げ更新は、途中の要求の結果で済ませない。**
             // 最大 `liveTimeout` 前に始まった要求で、失敗していることもある
@@ -468,6 +497,7 @@ actor PublicGalleryService {
         // 取り直さないので、別の画面まで古い数のままになる）
         let task = Task { await self.loadLiveCounts(from: liveURL, startedAt: startedAt) }
         liveInFlight = task
+        if inBackground { return }
         await task.value
     }
 
@@ -501,7 +531,7 @@ actor PublicGalleryService {
     }
 
     /// 取れなかった回。控えを短くし（`liveRetryAfterFailure`）、**この起動でまだ1度も取れていなければ
-    /// 端末の生の控えを使う**（なければ静的 JSON のまま）。
+    /// 端末の生の控えを読んでおく**。使うのは静的 JSON も端末の控えから出た回だけ（`liveForList`）。
     ///
     /// 2026-10-16 判断: 圏外で起動すると静的 JSON の控え（止まった 9/28 の一覧）だけになり、
     /// 前に見えていた新しい写真が消えていた。生の控えの時刻は分からないので、いいねの数の時刻
@@ -509,9 +539,9 @@ actor PublicGalleryService {
     /// そちらの方が新しいので控えで上書きしない
     private func liveFailed() {
         liveLastFailed = true
-        guard liveSnapshot == nil, let data = liveStore.loadData(),
+        guard liveSnapshot == nil, storedLiveSnapshot == nil, let data = liveStore.loadData(),
               let stored = LiveLikes.read(data), !stored.ids.isEmpty else { return }
-        liveSnapshot = stored
+        storedLiveSnapshot = stored
     }
 
     /// 公開 JSON にも `GET /photos` にも非公開の写真は載らない（サーバーが `published`・
