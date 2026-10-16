@@ -28,8 +28,10 @@ struct StoryRing<Content: View>: View {
             ForEach(Array(StoryPlayback.ringSegments(count: count).enumerated()), id: \.offset) { _, seg in
                 Circle()
                     .trim(from: seg.start, to: seg.end)
+                    // 🔴 **端は丸めない**（`.butt`）。丸めると端が線の太さの半分ずつ切れ目へはみ出し、
+                    // 板の約 4pt の切れ目が 2pt ほどに潰れていた（2026-10-16 判断）
                     .stroke(Self.style(unseen: unseen),
-                            style: StrokeStyle(lineWidth: StoryRingMetrics.stroke, lineCap: .round))
+                            style: StrokeStyle(lineWidth: StoryRingMetrics.stroke, lineCap: .butt))
                     .rotationEffect(.degrees(-90))
                     .padding(StoryRingMetrics.stroke / 2)
             }
@@ -83,4 +85,8 @@ enum StoryRingMetrics {
     static let uploadTrackOpacity = 0.16
     /// 送っている間の写真の濃さ（板の `opacity: .6`）
     static let uploadPhotoOpacity = 0.6
+    /// 本数の切れ目（板の `stroke-dasharray` の 4）
+    static let segmentGap: CGFloat = 4
+    /// 線の中心の円周（板の r=31 → 2π×31 ≈ 194.8）。切れ目の割合はこれで割る（`StoryPlayback.ringSegments`）
+    static let strokeCircumference: Double = 2 * Double.pi * Double(size - stroke) / 2
 }

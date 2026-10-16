@@ -51,8 +51,6 @@ struct StoryRepliesSheet: View {
                     ForEach(items) { item in
                         row(item)
                     }
-                    footnote
-                        .padding(.top, JPSpace.s)
                 }
                 .padding(.horizontal, JPSpace.l)
                 .padding(.top, JPSpace.xs)
@@ -61,6 +59,16 @@ struct StoryRepliesSheet: View {
             // 引き下げで読み直す（一度読めないと、その1本の間ずっと「読み込めませんでした」だった。
             // `StoryInsightsView` の引き下げと同じ）
             .refreshable { await onReload() }
+            // 錠の注記は**シートの下端**（板 `margin: auto 20px 40px`）。一覧の終わりに続けて置くと、
+            // 返信が少ないときにシートの真ん中に浮いていた（2026-10-16 判断）
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                footnote
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, JPSpace.l)
+                    .padding(.top, JPSpace.s)
+                    .padding(.bottom, JPSpace.l)
+                    .background(WebTheme.card)
+            }
             .background(WebTheme.card)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -70,6 +78,9 @@ struct StoryRepliesSheet: View {
             .toolbarBackground(WebTheme.card, for: .navigationBar)
         }
         .presentationBackground(WebTheme.card)
+        // 板 v2 StoryReplies: シートは**上から約 160 で止まる**（後ろにストーリーの写真が覗く）。
+        // 画面の高さは機種で違うので、板の画面（844）に対する割合で持つ（2026-10-16 判断）
+        .presentationDetents([.fraction(Self.detentFraction)])
         .presentationDragIndicator(.visible)
     }
 
@@ -157,4 +168,8 @@ struct StoryRepliesSheet: View {
     static let bubbleRadius: CGFloat = 18
     /// 顔（板 36）
     static let avatarSize: CGFloat = 36
+    /// シートの上端（板の画面 844 のうち上から 160）と、それをシートの高さの割合にしたもの
+    static let boardTop: CGFloat = 160
+    static let boardScreenHeight: CGFloat = 844
+    static let detentFraction: CGFloat = 1 - boardTop / boardScreenHeight
 }

@@ -318,13 +318,15 @@ final class StoryPlaybackTests: XCTestCase {
                                                canKeep: true, inHighlight: true), [.pause, .mute])
     }
 
-    /// 上の「…」。自分の投稿は足元に「…」があるので、ハイライトで音があるときだけ
+    /// 上の「…」。自分の投稿は足元に「…」があるので出さない。**ハイライトの中なら音が無くても出す**
+    /// （一時停止・テキストを非表示の口がここにしか無い・2026-10-16）
     func testTopMenuIsNotDoubledForOwnStories() {
         XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: false, hasAudio: false))
         XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: true, hasAudio: false))
         XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false, hasAudio: true),
                        "足元の「…」と上下に2つ並ぶ")
-        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: false))
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: false),
+                      "写真だけの自分のハイライトで、止める・文字を隠すができない")
         XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: true),
                       "ハイライトでは音を消す口がここにしか無い")
 
