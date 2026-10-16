@@ -3,6 +3,8 @@
 import ImageIO
 
 open class UIViewController {
+    /// 本物と同じく外から作れる（色選びを出す見えない元・2026-10-16）
+    public init() {}
     /// 本物は読み取りだけ（このコントローラが出しているもの）
     open var presentedViewController: UIViewController? { nil }
 }

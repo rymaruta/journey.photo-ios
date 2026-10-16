@@ -13,3 +13,35 @@ open class UIColorPickerViewController: UIViewController {
     public weak var delegate: UIColorPickerViewControllerDelegate?
     public override init() {}
 }
+
+// 色選びを UIKit で直接 modal に出すのに要る口（2026-10-16・スポイトで落ちる件）
+
+/// 出し方（本物と同じ名前の一部）
+public enum UIModalPresentationStyle { case automatic, fullScreen, pageSheet, formSheet, popover }
+
+/// 本物は `NSObjectProtocol`。`presentationControllerDidDismiss(_:)` は任意の口
+public protocol UIAdaptivePresentationControllerDelegate: AnyObject {}
+
+open class UIPresentationController {
+    public weak var delegate: UIAdaptivePresentationControllerDelegate?
+}
+
+open class UIPopoverPresentationController: UIPresentationController {
+    public var sourceView: UIView?
+    public var sourceRect: CGRect = .zero
+}
+
+extension UIViewController {
+    /// 本物は暗黙に開く `UIView!`。模型は毎回作る
+    public var view: UIView! { UIView() }
+    public var presentingViewController: UIViewController? { nil }
+    public var isBeingDismissed: Bool { false }
+    public var modalPresentationStyle: UIModalPresentationStyle {
+        get { .automatic }
+        set {}
+    }
+    public var presentationController: UIPresentationController? { nil }
+    public var popoverPresentationController: UIPopoverPresentationController? { nil }
+    public func present(_ viewController: UIViewController, animated: Bool, completion: (() -> Void)? = nil) {}
+    public func dismiss(animated: Bool, completion: (() -> Void)? = nil) {}
+}

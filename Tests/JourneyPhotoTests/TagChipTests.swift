@@ -244,9 +244,38 @@ final class ThemeColorFieldSourceTests: XCTestCase {
         XCTAssertFalse(body.contains("pick("), "閉じるときに書いている")
         XCTAssertFalse(body.contains("write("), "閉じるときに書いている")
         XCTAssertFalse(body.contains("selectedColor"), "閉じるときに初期色を読んでいる")
-        XCTAssertTrue(body.contains("dismiss()"), "閉じていない")
+        XCTAssertTrue(body.contains("viewController.dismiss(animated: true)"), "閉じていない")
+        XCTAssertTrue(body.contains("reset()"), "閉じた後に「出していない」へ戻していない（二度目が開かない）")
         XCTAssertTrue(code.contains("didSelect color: UIKit.UIColor, continuously: Bool) {\n            write(color)"),
                       "選んだ色を書いていない")
+    }
+
+    /// 🔴 **色選びは SwiftUI の `.sheet` に埋め込まず、UIKit の `present` で直接 modal に出す。**
+    /// 埋め込むとスポイトを押したときに落ちた（owner の実機・TestFlight 1.1.5/1.1.6・2026-10-16）
+    func testPickerIsPresentedModallyNotEmbeddedInASheet() throws {
+        let code = try source()
+        XCTAssertFalse(code.contains(".sheet("), "色選びを .sheet に入れている")
+        XCTAssertFalse(code.contains("ThemeColorPickerSheet"), "シートに埋め込む包みが残っている")
+        XCTAssertFalse(code.contains("UIViewControllerRepresentable {\n\n    @Binding var themeColor: String\n    @Environment"),
+                       "色選びそのものを SwiftUI に埋め込んでいる")
+        XCTAssertTrue(code.contains("func makeUIViewController(context: Context) -> UIViewController {"),
+                      "SwiftUI に置くのは見えない空の元だけ（色選びそのものを置かない）")
+        XCTAssertTrue(code.contains("top.present(picker, animated: true)"), "present で出していない")
+        XCTAssertTrue(code.contains("while let next = top.presentedViewController { top = next }"),
+                      "いちばん上の画面から出していない")
+        XCTAssertTrue(code.contains("picker.modalPresentationStyle = .popover"))
+        XCTAssertTrue(code.contains("picker.popoverPresentationController?.sourceView = host.view"),
+                      "iPad の吹き出しの元が無い（元が無いと落ちる）")
+    }
+
+    /// 🔴 **二度押しで2つ出さない**（ボタンの側と、出す元の側の両方で止める）
+    func testPickerIsNotPresentedTwice() throws {
+        let code = try source()
+        XCTAssertTrue(code.contains("guard !showsPicker else { return }"), "ボタンの二度押しを止めていない")
+        XCTAssertTrue(code.contains("guard isPresented, !coordinator.isShowing else { return }"),
+                      "出している間に出し直してしまう")
+        XCTAssertTrue(code.contains("coordinator.isShowing = true"))
+        XCTAssertTrue(code.contains("func presentationControllerDidDismiss("), "払って閉じたあと二度目が開かない")
     }
 
     /// 🔴 **「自由に選ぶ」はふつうの Button（枠 44）で、端末の色選びをシートで出す。**
@@ -256,9 +285,10 @@ final class ThemeColorFieldSourceTests: XCTestCase {
         XCTAssertFalse(code.contains("ColorPicker("), "SwiftUI の ColorPicker を敷く作りに戻っている")
         XCTAssertFalse(code.contains(".opacity(0.0"), "透明に近くして当たりを取る作りに戻っている")
         XCTAssertTrue(code.contains("showsPicker = true"), "丸のボタンが色選びを開いていない")
-        XCTAssertTrue(code.contains("ThemeColorPickerSheet(themeColor: $themeColor)"), "シートで出していない")
+        XCTAssertTrue(code.contains("ThemeColorPickerPresenter(isPresented: $showsPicker, themeColor: $themeColor)"),
+                      "色選びを出す元を置いていない")
         XCTAssertTrue(code.contains("UIColorPickerViewController()"))
-        XCTAssertTrue(code.contains("controller.supportsAlpha = false"), "透明度を選べてしまう")
+        XCTAssertTrue(code.contains("picker.supportsAlpha = false"), "透明度を選べてしまう")
         XCTAssertTrue(code.contains("ThemeColor.nextValue(picked: picked, current: themeColor)"),
                       "同じ色でも書いてしまう")
         XCTAssertTrue(code.contains("UIAccessibility.post(notification: .announcement"), "暗い色の注意を読み上げない")
