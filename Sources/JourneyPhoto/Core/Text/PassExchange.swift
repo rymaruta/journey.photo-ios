@@ -71,8 +71,17 @@ enum PassExchange {
     /// 中身ごと落とす値（電波で受け取る特性の上限 512 を超えない）
     static let payloadByteLimit = 512
 
+    /// 連絡先の形（URL・メール・電話番号・ID）を含むか（`ContactText`・2026-10-16 owner の決定）
+    static func containsContact(_ text: String) -> Bool { ContactText.contains(text) }
+
+    /// 連絡先の形を書いたときの訳
+    static var contactProblem: String {
+        L("URL・メール・電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
+    }
+
     /// 入力中のひとことが載せられない訳（載せられるなら nil）。名刺選びの欄の下に出す
     static func noteProblem(_ text: String) -> String? {
+        if containsContact(text) { return contactProblem }
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.count > noteLimit {
             return L("\(noteLimit)字を超えています", "This is longer than \(noteLimit) characters")
@@ -111,6 +120,7 @@ enum PassExchange {
 
     /// 入力中の区間の字が載せられない訳（載せられるなら nil）
     static func labelProblem(_ text: String) -> String? {
+        if containsContact(text) { return contactProblem }
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.count > labelLimit {
             return L("\(labelLimit)字を超えています", "This is longer than \(labelLimit) characters")

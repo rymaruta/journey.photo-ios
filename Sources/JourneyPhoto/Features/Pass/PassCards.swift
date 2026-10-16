@@ -408,7 +408,7 @@ struct PassCardBack: View {
                             .foregroundStyle(WebTheme.text3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                } else if content.card.noteHidden == true {
+                } else if content.card.noteHidden == true || content.card.noteHasContact {
                     Text(L("ひとことは伏せています", "Note hidden"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)

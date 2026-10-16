@@ -238,6 +238,22 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(store.payload?.destination, "金沢")
     }
 
+    /// 連絡先の形の字は電波に載せない（前の版で残った字も）。届いた字に含まれていれば伏せた扱い
+    func testContactsAreNeitherSentNorShown() async throws {
+        let store = makeStore()
+        store.update { s in
+            s.note = "電話 090-1234-5678"
+            s.destinationLabel = "abc.jp"
+        }
+        XCTAssertEqual(store.payload?.note, "", "連絡先の形のひとことを電波に載せた")
+        XCTAssertEqual(store.payload?.destination, "")
+        var p = payload("p1", note: "kiri@example")
+        p.origin = "雪国"
+        let card = try XCTUnwrap(store.record(p, at: at(16, 10)))
+        XCTAssertEqual(card.shownNote, "")
+        XCTAssertEqual(card.shownOrigin, "雪国")
+    }
+
     /// 期限切れで止めた後に入り直したら、まだ届いていない束の知らせを予約し直す
     func testNoticesAreRescheduledOnSignIn() async throws {
         let store = makeStore()

@@ -130,8 +130,11 @@ final class PassStore: ObservableObject {
     /// 電波に載せる中身。**オンで、名刺の一枚を選んであるときだけ**
     var payload: PassExchange.Payload? {
         guard userId != nil, settings.enabled, let photoId = settings.cardPhotoId else { return nil }
-        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: settings.note,
-                                    origin: settings.originLabel ?? "", destination: settings.destinationLabel ?? "")
+        // 連絡先の形の字は載せない（前の版で書いて残っている字も・2026-10-16 owner の決定）
+        func allowed(_ text: String) -> String { PassExchange.containsContact(text) ? "" : text }
+        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: allowed(settings.note),
+                                    origin: allowed(settings.originLabel ?? ""),
+                                    destination: allowed(settings.destinationLabel ?? ""))
     }
 
     /// 自分の居住地を覚える（マイページ・設定がプロフィールを読んだとき）

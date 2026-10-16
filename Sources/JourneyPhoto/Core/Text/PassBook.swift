@@ -36,11 +36,23 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var labelsHidden: Bool? = nil
 
     /// 見せるひとこと（伏せていれば空）
-    var shownNote: String { noteHidden == true ? "" : note }
+    /// 見せるひとこと（伏せていれば空）。**連絡先の形（URL・メール・電話番号）を含む字は出さない**
+    /// （2026-10-16 owner の決定・`ContactText`。前のアプリや手を加えた端末からは届きうる）
+    var shownNote: String { noteHidden == true || noteHasContact ? "" : note }
 
-    /// 区間に出す、相手が書いた字（伏せた・書いていなければ nil＝自動の形）
-    var shownOrigin: String? { labelsHidden == true ? nil : originLabel.flatMap { $0.isEmpty ? nil : $0 } }
-    var shownDestination: String? { labelsHidden == true ? nil : destinationLabel.flatMap { $0.isEmpty ? nil : $0 } }
+    /// 区間に出す、相手が書いた字（伏せた・書いていない・連絡先の形なら nil＝自動の形）
+    var shownOrigin: String? { shownLabel(originLabel) }
+    var shownDestination: String? { shownLabel(destinationLabel) }
+
+    var noteHasContact: Bool { PassExchange.containsContact(note) }
+    var labelsHaveContact: Bool {
+        PassExchange.containsContact(originLabel ?? "") || PassExchange.containsContact(destinationLabel ?? "")
+    }
+
+    private func shownLabel(_ label: String?) -> String? {
+        guard labelsHidden != true, let label, !label.isEmpty, !PassExchange.containsContact(label) else { return nil }
+        return label
+    }
 
     /// 相手が書いた字があるか（ひとこと・発・着。通報・伏せるを出すか）
     var hasWrittenText: Bool {

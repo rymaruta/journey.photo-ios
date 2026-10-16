@@ -30,14 +30,16 @@ struct PassCardMenu: View {
                     Label(L("書かれた字を通報する", "Report the text"), systemImage: "text.bubble")
                 }
             }
-            if !(content.card.originLabel ?? "").isEmpty || !(content.card.destinationLabel ?? "").isEmpty {
+            // 連絡先の形で出さない字は、出す口も置かない（`PassEncounter.shownNote`）
+            if !content.card.labelsHaveContact,
+               !(content.card.originLabel ?? "").isEmpty || !(content.card.destinationLabel ?? "").isEmpty {
                 Button(action: toggleLabels) {
                     content.card.labelsHidden == true
                         ? Label(L("区間の字を出す", "Show route text"), systemImage: "eye")
                         : Label(L("区間の字を伏せる", "Hide route text"), systemImage: "eye.slash")
                 }
             }
-            if !content.card.note.isEmpty {
+            if !content.card.note.isEmpty, !content.card.noteHasContact {
                 Button(action: toggleNote) {
                     content.card.noteHidden == true
                         ? Label(L("ひとことを出す", "Show note"), systemImage: "eye")
