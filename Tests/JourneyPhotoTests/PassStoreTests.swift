@@ -68,6 +68,21 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(store.encounters.map(\.number), [1, 2, 3])
     }
 
+    /// 🔴 保存すると電話番号になる字（改行で桁を切ったもの）は、設定に残さない
+    func testUpdateDropsContactShapedNote() async {
+        let store = makeStore()
+        store.update { $0.note = "090\n12345" }
+        XCTAssertEqual(store.settings.note, "", "保存後に電話番号へ戻る字を残した")
+        store.update {
+            $0.setOrigin(.custom, text: "a\u{200B}.jp")
+            $0.note = "霧の朝"
+        }
+        XCTAssertEqual(store.settings.note, "霧の朝")
+        XCTAssertNil(store.settings.originLabel, "URL になる発を残した")
+        XCTAssertEqual(store.payload?.note, "霧の朝")
+        XCTAssertEqual(store.payload?.origin, "")
+    }
+
     func testOwnCardAndOffAreNotRecorded() async {
         let store = makeStore()
         XCTAssertNil(store.record(payload("mine"), at: at(16, 10)), "自分の名刺を綴じた")

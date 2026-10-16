@@ -50,9 +50,25 @@ enum ContactText {
         "八": "8", "九": "9",
     ]
 
-    /// 全角・漢数字・言い換えを揃えた小文字の字
+    /// 全角・漢数字・言い換えを揃えた小文字の字。
+    ///
+    /// **保存時に消える字は、判定の前に保存後と同じ形にする。** `PassExchange.cleanText` は
+    /// ゼロ幅などの書式を落とし、改行・制御文字を空白にする。空白は電話番号の続きなので、
+    /// 落とす前の字だけで見ると「090」と「12345」が改行やゼロ幅で切れて 8 桁に届かず、
+    /// 保存したあとに「090 12345」「09012345」へ戻って連絡先になる。
     static func normalize(_ text: String) -> String {
-        var s = text.precomposedStringWithCompatibilityMapping.lowercased()
+        var scalars = String.UnicodeScalarView()
+        for s in text.unicodeScalars {
+            switch s.properties.generalCategory {
+            case .format:
+                continue
+            case .control:
+                scalars.append(" ")
+            default:
+                scalars.append(s)
+            }
+        }
+        var s = String(scalars).precomposedStringWithCompatibilityMapping.lowercased()
         for (word, mark) in [("ドット", "."), ("どっと", "."), ("(dot)", "."), ("[dot]", "."), (" dot ", "."),
                              ("。", "."), ("、", ","), ("アットマーク", "@"), ("あっとまーく", "@"), ("アット", "@"),
                              ("あっと", "@"), ("(at)", "@"), ("[at]", "@")] {
