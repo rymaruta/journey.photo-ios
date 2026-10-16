@@ -593,7 +593,11 @@ struct MyPageView: View {
                 // v2: 読み込みは中身と同じ形の骨格（0.3 秒より早ければ出さない）
                 JPLoadingState(kind: .grid)
             case .none:
-                EmptyState(message: SavedPhotosView.emptyMessage)
+                // 2026-10-16: 保存は写真の詳細のしおりから。写真に出会う所（ホーム）へ1手
+                EmptyState(message: SavedPhotosView.emptyMessage,
+                           actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "mypage.emptySaved") {
+                    tabRouter.openHome()
+                }
             case .nothingShown:
                 EmptyState(message: LikedPhotos.nothingShownMessage)
             case .unresolved:
@@ -678,9 +682,9 @@ struct MyPageView: View {
                 }
             case .empty:
                 // v2 WishlistTab B1: 何が無いか（明朝の見出し）→ どうすれば埋まるか → 一手
+                // 2026-10-16: 見出しと本文で「まだありません」を重ねない（本文は「どうすれば埋まるか」だけ）
                 EmptyState(title: L("行きたい場所はまだありません", "No places yet"),
-                           message: L("まだありません。撮影スポットの画面で「行きたい」を押すとここに並びます",
-                                      "Nothing yet. Tap “Want to go” on a place."))
+                           message: MyPageEmpty.wishlistMessage)
                 // 板 WishlistTab の B1（空）の「撮影スポットを探す」
                 FindSpotsButton()
                     .frame(maxWidth: .infinity)
@@ -1053,7 +1057,11 @@ struct MyPageView: View {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
-            EmptyState(message: L("まだ写真がありません", "No photos yet"))
+            // 2026-10-16: 次の一手を1つ（「写真を投稿」・下の「投稿」と同じ道 `TabRouter.openPost`）
+            EmptyState(message: L("まだ写真がありません", "No photos yet"),
+                       actionTitle: MyPageEmpty.postTitle, actionIdentifier: "mypage.emptyPost") {
+                tabRouter.openPost(.photo)
+            }
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
@@ -1469,5 +1477,18 @@ final class MyPageViewModel: ObservableObject {
         guard let fresh, fresh.userId == userId, gen == generation, seq > shownProfileSeq else { return }
         profile = fresh
         shownProfileSeq = seq
+    }
+}
+
+/// マイページの空の画面の文言（2026-10-16・行き止まりの直し）。画面を持たないのでテストから読める
+enum MyPageEmpty {
+    /// 投稿0枚の次の一手（下の「投稿」の「写真を投稿」と同じ語）
+    static var postTitle: String { L("写真を投稿", "Post a photo") }
+    /// 保存0枚の次の一手（写真に出会うホームへ）
+    static var browseTitle: String { L("写真を見に行く", "Browse photos") }
+    /// 行きたい場所0件の本文。見出しが「まだありません」と言うので、ここは埋め方だけ
+    static var wishlistMessage: String {
+        L("撮影スポットの画面で「行きたい」を押すと、ここに並びます",
+          "Tap “Want to go” on a place to add it here.")
     }
 }

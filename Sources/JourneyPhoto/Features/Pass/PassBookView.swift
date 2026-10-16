@@ -19,6 +19,15 @@ struct PassBookView: View {
     @State private var order: PassBook.Order = .bound
     @State private var opened: PassBookOpen?
     @State private var isLoading = true
+    /// 空のときの「すれちがいの設定」（2026-10-16・次の一手）
+    @State private var showSettings = false
+    /// すれちがいの設定（`PassSettingsView`）から開いたか。**そのときは設定を積み直さず、戻る**
+    /// （設定 → 帳 → 設定 → 帳…と同じ画面が重なっていく）
+    var fromSettings = false
+    @Environment(\.dismiss) private var dismiss
+
+    /// 空のときの次の一手の題
+    nonisolated static var settingsTitle: String { L("すれちがいの設定", "Pass settings") }
 
     var body: some View {
         let book = pass.book(hiding: hidden.snapshot)
@@ -44,7 +53,10 @@ struct PassBookView: View {
                     } else {
                         EmptyState(title: L("まだカードがありません", "No cards yet"),
                                    message: L("すれちがいをオンにして出かけると、近くにいたアプリの人のカードがその日の夕方に届きます。",
-                                              "Turn on Pass and head out — cards from app users you passed arrive that evening."))
+                                              "Turn on Pass and head out — cards from app users you passed arrive that evening."),
+                                   actionTitle: Self.settingsTitle, actionIdentifier: "passBook.emptySettings") {
+                            if fromSettings { dismiss() } else { showSettings = true }
+                        }
                     }
                 } else {
                     statsRow(PassBook.stats(book.filter { byId[$0.id] != nil }, prefectures: pass.ownerPrefectures))
@@ -69,6 +81,8 @@ struct PassBookView: View {
             }
             .padding(.bottom, JPSpace.screenEnd)
         }
+        // 設定（設定の画面の「すれちがい」と同じ `PassSettingsView`）
+        .navigationDestination(isPresented: $showSettings) { PassSettingsView() }
         .webScreen()
         .navigationTitle(L("すれちがい帳", "Pass book"))
         .navigationBarTitleDisplayMode(.inline)

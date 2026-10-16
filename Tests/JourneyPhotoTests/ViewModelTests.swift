@@ -2140,7 +2140,8 @@ final class NotificationDestinationTests: XCTestCase {
         }
     }
 
-    /// ストーリーへの返信は行き先が無い（24時間で消えるため）。
+    /// ストーリーへの返信は、そのストーリーがまだ出ていると分かるまで行き先が無い（24時間で消えるため）。
+    /// 出ている間は返信の一覧へ行く（2026-10-16・`UXDeadEndsTests`）
     func testStoryReplyGoesNowhere() async throws {
         let n = try notification(#"{"type":"storyreply","photoId":"s1"}"#)
         guard case .none = model(feed: []).destination(for: n) else {

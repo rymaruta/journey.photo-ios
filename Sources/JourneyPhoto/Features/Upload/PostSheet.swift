@@ -22,6 +22,9 @@ struct PostSheet: View {
     enum Kind {
         case photo
         case story
+        /// カメラで撮って、その1枚で投稿へ（2026-10-16）。カメラは投稿画面の帯の「追加」→「写真を撮る」と
+        /// 同じ `CameraPicker`、撮った1枚は構図を重ねて撮ったあとと同じ道（`UploadView.initialCapture`）で入れる
+        case camera
         /// 端末の写真ライブラリから旅を見つけて、まとめて投稿（`LibraryTripFlowView`）
         case trip
         /// 構図を重ねて撮る（Pro・作例なし・2026-10-10 owner）。撮ってから投稿へ進める。
@@ -58,6 +61,17 @@ struct PostSheet: View {
                 systemImage: "photo",
                 kind: .photo
             )
+            // 2026-10-16 判断: 「カメラで撮る」は写真の投稿の次（同じ「写真を投稿」の入口の別の手）。
+            // 札に自分の写真は敷かない（敷く写真は4枚まで・`PostSheetThumbs`）。カメラの無い端末では出さない
+            if CameraPicker.isAvailable {
+                choice(
+                    thumb: nil,
+                    title: Self.cameraTitle,
+                    detail: L("撮った1枚から、そのまま投稿します。", "Take a photo and post it right away."),
+                    systemImage: "camera",
+                    kind: .camera
+                )
+            }
             choice(
                 thumb: thumbs.dropFirst().first,
                 title: L("ストーリーを投稿", "Post a story"),
@@ -112,13 +126,18 @@ struct PostSheet: View {
         switch kind {
         case .photo: return "photo"
         case .story: return "story"
+        case .camera: return "camera"
         case .trip: return "trip"
         case .composition: return "composition"
         }
     }
 
-    /// シートの高さ（見出し 68 ＋ 行 4 本 × 約 92 ＋ 下の余白）。札から行にして詰まった
-    static let sheetHeight: CGFloat = 480
+    /// 「カメラで撮る」の題
+    static var cameraTitle: String { L("カメラで撮る", "Take a photo") }
+
+    /// シートの高さ（見出し 68 ＋ 行 5 本 × 約 92 ＋ 下の余白）。札から行にして詰まった。
+    /// 2026-10-16: 「カメラで撮る」の1行ぶん伸ばした（カメラの無い端末では1行ぶん下が空く）
+    static let sheetHeight: CGFloat = 572
     /// シートの上の角（v2 PostSheet の 28）
     static let sheetRadius: CGFloat = 28
     /// 行の印の札（板 52・角 16）
@@ -202,4 +221,11 @@ struct PostSheet: View {
     @MainActor static func iconColor(hasPhoto: Bool, pro: Bool) -> Color {
         !hasPhoto && pro ? WebTheme.accent : WebTheme.foreground
     }
+}
+
+/// 空の画面の「次の一手」から投稿の流れを開いてよいか（`TabRouter.openPost`・2026-10-16）。
+/// **ほかの投稿の画面（旅の写真・投稿・ストーリー・投稿のシート・カメラ）が出ていたら開かない**——
+/// 重ねると iOS が遷移を取りこぼすか、書きかけの上に別の画面が出る
+enum PostRequestGate {
+    nonisolated static func opens(busy: [Bool]) -> Bool { !busy.contains(true) }
 }

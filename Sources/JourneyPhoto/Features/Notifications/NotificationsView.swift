@@ -23,6 +23,9 @@ struct NotificationsView: View {
     /// 行の本体・アイコンをそれぞれ横並びの別ボタンにして、押したら
     /// ここに行き先を立て、一覧の外（`navigationDestination`）から開く
     @State private var route: NotificationsViewModel.Route?
+    /// ストーリーへの返信の通知から開く返信の一覧（シート・2026-10-16）。`StoryRepliesSheet` は
+    /// シートとして作られている（自分の見出しのバーを持つ）ので、積まずに下から出す
+    @State private var repliesStory: StoryRepliesTarget?
     /// 「通知をオンにする」の帯（`ActivityPushBanner`・2026-10-11）から許可を尋ねている最中（二度押しで重ねない）
     @State private var isTurningOnPush = false
     @Environment(\.openURL) private var openURL
@@ -92,8 +95,19 @@ struct NotificationsView: View {
         let target = model.route(for: entry.lead)
         return NotificationRow(entry: entry, following: model.following,
                                onFollowBack: { await model.followBack($0, environment: environment) },
-                               onOpen: target.map { target in { route = target } },
+                               onOpen: target.map { target in { open(target) } },
                                onOpenProfile: { route = .user($0) })
+    }
+
+    /// 行き先を開く。ストーリーの返信の一覧だけシートで出す（ほかは積む）
+    private func open(_ target: NotificationsViewModel.Route) {
+        if case .storyReplies(let storyId) = target {
+            repliesStory = StoryRepliesTarget(storyId: storyId)
+        } else {
+            // 返信のシートが出ていたら閉じてから積む（シートの下で別の画面が開いて見えない）
+            repliesStory = nil
+            route = target
+        }
     }
 
     /// 行き先の画面。写真は**押した時点の値**で開く（`Route` を参照）
@@ -110,6 +124,10 @@ struct NotificationsView: View {
         case .light:
             // 光と天気の知らせ（プッシュだけ）→ 行きたい場所の光（板 LightAlert）
             LightForecastView()
+        case .storyReplies:
+            // **ここへは来ない**: 返信の一覧は必ずシートで出す（`open` が `route` に入れない）。
+            // `StoryRepliesSheet` は自分の `NavigationStack` を持つので、積むと入れ子になる。何も出さない
+            EmptyView()
         }
     }
 
@@ -212,7 +230,10 @@ struct NotificationsView: View {
             // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
             // 引けなければ一覧に留まる
             guard !Task.isCancelled, let target, let destination = model.route(for: target) else { return }
-            route = destination
+            open(destination)
+        }
+        .sheet(item: $repliesStory) { target in
+            StoryRepliesLoader(storyId: target.storyId)
         }
         // 許可の段階をまだ読んでいなければ読む（帯を出すか決める。前面に戻ったときは `PushCenter.use` が読み直す）
         .task { if push.permission == .unknown { await push.refreshAuthorization() } }
@@ -490,6 +511,8 @@ final class NotificationsViewModel: ObservableObject {
         case shelf
         /// 行きたい場所の光（光と天気の知らせ・プッシュだけ）
         case light
+        /// 自分のストーリーの返信の一覧（ストーリーへの返信・まだ消えていない自分のストーリーだけ）
+        case storyReplies(String)
         case none
     }
 
@@ -503,6 +526,7 @@ final class NotificationsViewModel: ObservableObject {
         case user(String)
         case shelf
         case light
+        case storyReplies(String)
 
         static func == (lhs: Route, rhs: Route) -> Bool {
             switch (lhs, rhs) {
@@ -510,6 +534,7 @@ final class NotificationsViewModel: ObservableObject {
             case let (.user(a), .user(b)): return a == b
             case (.shelf, .shelf): return true
             case (.light, .light): return true
+            case let (.storyReplies(a), .storyReplies(b)): return a == b
             default: return false
             }
         }
@@ -524,6 +549,8 @@ final class NotificationsViewModel: ObservableObject {
                 hasher.combine(2)
             case .light:
                 hasher.combine(3)
+            case .storyReplies(let id):
+                hasher.combine(4); hasher.combine(id)
             }
         }
     }
@@ -547,6 +574,9 @@ final class NotificationsViewModel: ObservableObject {
     /// **nil は「まだ分からない」**（読めていない・読めなかった）。空集合と
     /// 分けないと、取れなかった回に全員へフォローバックが出る
     @Published private(set) var following: Set<String>?
+    /// **まだ出ている自分のストーリー**の id（`GET /stories` のうち自分の行）。ストーリーへの返信の
+    /// 行き先を決めるのに使う（2026-10-16）。nil は「まだ分からない」——押せないまま出す
+    @Published private(set) var liveStoryIds: Set<String>?
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
@@ -584,6 +614,7 @@ final class NotificationsViewModel: ObservableObject {
         unread = 0
         unreadIds = []
         following = nil
+        liveStoryIds = nil
         isLoading = false
         errorMessage = nil
         followBackError = nil
@@ -592,6 +623,12 @@ final class NotificationsViewModel: ObservableObject {
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
     func setMineForTesting(_ photos: [Photo]) { mine = photos }
+    func setLiveStoryIdsForTesting(_ ids: Set<String>?) { liveStoryIds = ids }
+
+    /// 自分のストーリーのうち、まだ出ているものの id（一覧の自分の行だけ）
+    nonisolated static func liveStoryIds(_ stories: [Story], viewerId: String) -> Set<String> {
+        Set(stories.filter { $0.userId == viewerId }.map(\.id))
+    }
 
     /// 行き先を決める。
     ///
@@ -602,7 +639,9 @@ final class NotificationsViewModel: ObservableObject {
     ///   にする（非公開にされた／消された写真を押して空振りさせない）
     /// - この写真を見て撮影（`inspired`）は**付けた人の新しい写真**（`photoId`）。引き当て方は
     ///   いいね・コメントと同じ（公開でしか届かないので、ふつうは公開一覧に居る）
-    /// - ストーリーへの返信は行き先が無い（24時間で消えるため）
+    /// - ストーリーへの返信は、**そのストーリーがまだ出ている間だけ**自分の返信の一覧（2026-10-16）。
+    ///   サーバーは `photoId` にストーリーの id を入れて送る（`api-user/src/storyReplies.ts`）。
+    ///   消えた（24時間・削除）・分からない間は押せないまま（空振りの一覧を開かない）
     /// - 新しいメダルは自分のバッジの棚（知らない鍵は行が描かれないので押せない）
     /// - 光と天気の知らせ（プッシュだけ）は行きたい場所の光。Pro でなくなっていたら、その画面が
     ///   「Pro の機能です」と言う（ここでは Pro かを見ない——見るのはサーバー）
@@ -627,7 +666,10 @@ final class NotificationsViewModel: ObservableObject {
             return .shelf
         case .light:
             return .light
-        case .storyreply, .none:
+        case .storyreply:
+            guard let id = notification.photoId, liveStoryIds?.contains(id) == true else { return .none }
+            return .storyReplies(id)
+        case .none:
             return .none
         }
     }
@@ -638,6 +680,7 @@ final class NotificationsViewModel: ObservableObject {
         case .user(let id): return .user(id)
         case .shelf: return .shelf
         case .light: return .light
+        case .storyReplies(let id): return .storyReplies(id)
         case .none: return nil
         }
     }
@@ -658,6 +701,15 @@ final class NotificationsViewModel: ObservableObject {
         // 人が替わった（`forget`）後に返った前の人の答えは書かない
         guard era == userEra else { return }
         following = Set(ids)
+    }
+
+    /// まだ出ている自分のストーリーを読む（ストーリーへの返信の行き先・2026-10-16）。
+    /// 返信の行が無ければ読みに行かない。人が替わった後に返った答えは書かない
+    private func loadLiveStories(_ items: [AppNotification], environment: AppEnvironment,
+                                 viewerId: String?, era: Int) async {
+        guard let me = viewerId, !me.isEmpty, items.contains(where: { $0.kind == .storyreply }) else { return }
+        guard let stories = try? await environment.stories.list(), era == userEra else { return }
+        liveStoryIds = Self.liveStoryIds(stories, viewerId: me)
     }
 
     /// フォローバックを出すか。**フォロー中が分からない間（nil）は出さない**
@@ -764,6 +816,8 @@ final class NotificationsViewModel: ObservableObject {
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
             await loadFollowing(environment: environment, viewerId: viewerId, era: era)
+            // ストーリーへの返信の行があるときだけ、自分のストーリーがまだ出ているかを読む（取れなければ押せないまま）
+            await loadLiveStories(page.items, environment: environment, viewerId: viewerId, era: era)
             // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
             // サーバーの既読化（`api-user/src/notifications.ts` の
             // `readNotifications`）は無条件の `SET unread = :z` なので、

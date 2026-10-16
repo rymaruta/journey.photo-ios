@@ -74,10 +74,10 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertFalse(tabs.contains("WebTheme.foreground : WebTheme.muted2"), "v1 の白い選択に戻っている")
     }
 
-    /// 「行きたい場所」のタブ名はマイページのタブ名（owner の決め）。4 つ目は「お気に入り」のまま
-    /// （板 v2 の「保存」にすると、プロフィールの編集の「保存」と同じ字になる）
+    /// 「行きたい場所」のタブ名はマイページのタブ名（owner の決め）。4 つ目は 2026-10-16 に「お気に入り」→「保存」
+    /// （メニューの「保存した写真」と呼び名をそろえた・板 v2 の「保存」。プロフィールの編集の「保存」と同じ字になる点は承知の上）
     func testMyPageTabNames() {
-        XCTAssertEqual(ProfileTab.tabs(isMe: true).map(\.label), ["投稿", "旅の記録", "行きたい場所", "お気に入り"])
+        XCTAssertEqual(ProfileTab.tabs(isMe: true).map(\.label), ["投稿", "旅の記録", "行きたい場所", "保存"])
         XCTAssertEqual(ProfileTab.tabs(isMe: false).map(\.label), ["投稿", "マップ"])
     }
 

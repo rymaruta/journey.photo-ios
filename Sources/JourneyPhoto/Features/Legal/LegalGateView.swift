@@ -65,7 +65,7 @@ struct LegalGateView: View {
         VStack(alignment: .leading, spacing: 8) {
             // 眉ラベルは**白**（写真の上に重なる・CLAUDE.md「白のまま: 規約の眉ラベル」）
             Text("JOURNEY PHOTO").jpEyebrow().foregroundStyle(Color.white.opacity(0.9)).accessibilityHidden(true)
-            Text(L("次に撮りたい場所が、見つかる。", "Find the place you want to photograph next."))
+            Text(Labels.Brand.tagline)
                 .font(JPFont.display(32, relativeTo: .largeTitle)).foregroundStyle(WebTheme.text).accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
             Text(L("写真から旅が始まり、旅がまた写真になる。", "Let a photo start the journey — and the journey become your next photo."))
                 .font(.subheadline).foregroundStyle(WebTheme.muted2).fixedSize(horizontal: false, vertical: true)

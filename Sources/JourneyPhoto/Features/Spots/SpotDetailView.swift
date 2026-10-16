@@ -35,6 +35,8 @@ struct SpotDetailView: View {
     @State private var page = 0
     @State private var expanded = false
     @State private var camera: MapCameraPosition = .automatic
+    /// この近くの撮影スポット（台帳・2026-10-16）。`spotId` の欄には読んだ座標の鍵を入れる（`nearbySpotKey`）
+    @State private var nearbySpotLoaded: PhotoTrip.Loaded?
 
     private var linked: [Photo] { dropped.visible(spot.photos) }
 
@@ -75,6 +77,7 @@ struct SpotDetailView: View {
                 summary
                 actions
                 stats
+                nearbySpotRow
                 spotPhotos
                 nearbySpots
                 map
@@ -100,6 +103,8 @@ struct SpotDetailView: View {
             frontSettle = nil
             front.disappear()
         }
+        // この近くの撮影スポット（座標のある撮影地だけ）。写真の詳細と同じ索引の口（控えがあれば通信しない）
+        .task(id: nearbySpotKey ?? "") { await loadNearbySpot() }
         .webScreen()
         .navigationTitle(LocationMatch.display(spot.label))
         .navigationBarTitleDisplayMode(.inline)
@@ -291,6 +296,71 @@ struct SpotDetailView: View {
             // 上のボタンが灯って伝えている
         }
         .padding(.horizontal, 16)
+    }
+
+    // MARK: - この近くの撮影スポット（台帳）
+
+    /// 撮影地の座標。**`place` を作らずに直に取る**（`place` は分類・広い撮影地を毎回数え直す・`place.coords` と同じ値）
+    private var nearbyCoords: Photo.Coords? { linked.compactMap(\.coords).first }
+
+    /// 読みに行く鍵（撮影地の座標）。座標の無い撮影地は nil（行を出さない）
+    private var nearbySpotKey: String? {
+        nearbyCoords.map { "near|\(spot.slug)|\($0.lat),\($0.lng)" }
+    }
+
+    /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。撮影地の集まりの頁から、
+    /// 台帳の撮影スポットの頁（撮り方・季節・経路）へ。選び方は写真の詳細と同じ（`PhotoTrip.nearbySpot`・2km）。
+    /// 黒地の上なので、合図の字は真鍮・名前は白・矢印は白 50%（写真の詳細の「この写真を見て撮影」の行と同じ形）。当たり 44pt
+    @ViewBuilder
+    private var nearbySpotRow: some View {
+        if let loaded = nearbySpotLoaded, loaded.spotId == nearbySpotKey, let official = loaded.spot {
+            NavigationLink {
+                OfficialSpotView(spot: official, spots: loaded.index, photos: dropped.visible(loaded.photos ?? []),
+                                 photosKnown: loaded.photos != nil)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityHidden(true)
+                    Text(PhotoTrip.nearbySpotTitle)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text(official.name)
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text("›")
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .accessibilityLabel(PhotoTrip.nearbySpotTitle + ": " + official.name)
+            .accessibilityIdentifier("spot.nearbySpot")
+        }
+    }
+
+    /// 台帳の索引を読み、いちばん近い撮影スポットを引く。読めなかった回は覚えない
+    private func loadNearbySpot() async {
+        guard let key = nearbySpotKey else { return }
+        let coords = nearbyCoords
+        let stillHere = { !Task.isCancelled && nearbySpotKey == key }
+        if nearbySpotLoaded?.spotId != key {
+            guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
+            nearbySpotLoaded = PhotoTrip.Loaded(spotId: key, spot: PhotoTrip.nearbySpot(to: coords, in: rows),
+                                                index: rows, photos: nil)
+        }
+        guard let loaded = nearbySpotLoaded, loaded.spotId == key, loaded.spot != nil, loaded.photos == nil else { return }
+        guard let feed = try? await environment.gallery.fetchPhotos(), stillHere(),
+              nearbySpotLoaded?.spotId == key else { return }
+        nearbySpotLoaded = loaded.withPhotos(feed)
     }
 
     // MARK: - 写真と近くのスポット

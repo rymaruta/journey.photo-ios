@@ -59,7 +59,7 @@ struct FavoritesView: View {
                     // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）
                     JPLoadingState(kind: .grid)
                 case .none:
-                    EmptyState(message: L("まだお気に入りがありません", "No liked photos yet"))
+                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"))
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
@@ -144,7 +144,7 @@ struct FavoritesView: View {
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.foreground)
                 .accessibilityAddTraits(.isHeader)
-            Text(L("ハートを押した写真。作者に届き、ほかの端末や Web でも同じ一覧が見られます。しおりで保存した写真はマイページの「お気に入り」に。",
+            Text(L("ハートを押した写真。作者に届き、ほかの端末や Web でも同じ一覧が見られます。しおりで保存した写真はマイページの「保存」に。",
                    "Photos you liked. The photographer is notified, and the same list appears on your other devices and the web. Bookmarked photos are under Saved on your page."))
                 .font(JPFont.footnote)
                 .lineSpacing(4)

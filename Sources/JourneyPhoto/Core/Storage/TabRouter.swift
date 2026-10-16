@@ -50,6 +50,24 @@ final class TabRouter: ObservableObject {
     }
     func openMenu() { menuRequests += 1 }
 
+    /// **空の画面の「次の一手」から、投稿の流れを開く**（2026-10-16 判断・行き止まりの直し）。
+    /// マイページの投稿0枚 →「写真を投稿」、旅の記録0件 →「旅の写真からまとめて」。
+    /// 開くのは下の「投稿」と同じ道（`RootView.choosePost`）——投稿の画面を写して作らない。
+    /// 回数で伝えるのは上と同じ理由
+    @Published private(set) var postRequests = 0
+    /// 開く投稿の種類。`RootView` が受け取ったら消す（`takePendingPost`）
+    private(set) var pendingPost: PostSheet.Kind?
+
+    func openPost(_ kind: PostSheet.Kind) {
+        pendingPost = kind
+        postRequests += 1
+    }
+
+    func takePendingPost() -> PostSheet.Kind? {
+        defer { pendingPost = nil }
+        return pendingPost
+    }
+
     /// **ホームを開いたまま、下の「ホーム」をもう一度押した回数。**
     /// ホームのフィードはこれを見て一番上まで戻る（Instagram・X と同じ動き。
     /// owner の依頼・2026-09-25）。回数で伝えるのは上と同じ理由——

@@ -25,7 +25,46 @@ open class AVCaptureDevice: NSObject {
         public let rawValue: String
         public init(rawValue: String) { self.rawValue = rawValue }
         public static let builtInWideAngleCamera = DeviceType(rawValue: "AVCaptureDeviceTypeBuiltInWideAngleCamera")
+        /// 仮想カメラ（2026-10-16・拡大の段）。三眼・二眼の広角（超広角＋広角）・二眼（広角＋望遠）
+        public static let builtInTripleCamera = DeviceType(rawValue: "AVCaptureDeviceTypeBuiltInTripleCamera")
+        public static let builtInDualWideCamera = DeviceType(rawValue: "AVCaptureDeviceTypeBuiltInDualWideCamera")
+        public static let builtInDualCamera = DeviceType(rawValue: "AVCaptureDeviceTypeBuiltInDualCamera")
     }
+    /// ピントの合わせ方（本物と同じ値）
+    public enum FocusMode: Int, Sendable {
+        case locked = 0, autoFocus = 1, continuousAutoFocus = 2
+    }
+    /// 明るさの合わせ方（本物と同じ値）
+    public enum ExposureMode: Int, Sendable {
+        case locked = 0, autoExpose = 1, continuousAutoExposure = 2, custom = 3
+    }
+    open var deviceType: DeviceType { .builtInWideAngleCamera }
+    /// 設定を変える前に押さえる（本物と同じく投げる）
+    open func lockForConfiguration() throws {}
+    open func unlockForConfiguration() {}
+    // 拡大（本物と同じ `CGFloat`）
+    open var videoZoomFactor: CGFloat = 1
+    open var minAvailableVideoZoomFactor: CGFloat { 1 }
+    open var maxAvailableVideoZoomFactor: CGFloat { 1 }
+    /// レンズが切り替わる倍率（本物は `[NSNumber]`）
+    open var virtualDeviceSwitchOverVideoZoomFactors: [NSNumber] { [] }
+    open func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float) {}
+    open func cancelVideoZoomRamp() {}
+    // ピント
+    open var isFocusPointOfInterestSupported: Bool { false }
+    open var focusPointOfInterest: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    open var focusMode: FocusMode = .continuousAutoFocus
+    open func isFocusModeSupported(_ focusMode: FocusMode) -> Bool { false }
+    // 明るさ
+    open var isExposurePointOfInterestSupported: Bool { false }
+    open var exposurePointOfInterest: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    open var exposureMode: ExposureMode = .continuousAutoExposure
+    open func isExposureModeSupported(_ exposureMode: ExposureMode) -> Bool { false }
+    open var minExposureTargetBias: Float { -8 }
+    open var maxExposureTargetBias: Float { 8 }
+    open func setExposureTargetBias(_ bias: Float, completionHandler handler: ((CMTime) -> Void)? = nil) {}
+    /// 写っているものが大きく変わったら知らせる（`AVCaptureDeviceSubjectAreaDidChange`）
+    open var isSubjectAreaChangeMonitoringEnabled: Bool = false
     /// 前・後ろ（本物と同じ値）
     public enum Position: Int, Sendable {
         case unspecified = 0, back = 1, front = 2
@@ -124,4 +163,9 @@ open class AVCaptureVideoPreviewLayer: CALayer {
     open var session: AVCaptureSession?
     open var videoGravity: AVLayerVideoGravity = .resizeAspect
     open var connection: AVCaptureConnection? { nil }
+}
+
+/// 写っているものが大きく変わった知らせ（本物と同じ名前・`AVCaptureDevice.subjectAreaDidChangeNotification`）
+extension AVCaptureDevice {
+    public static let subjectAreaDidChangeNotification = Notification.Name("AVCaptureDeviceSubjectAreaDidChangeNotification")
 }

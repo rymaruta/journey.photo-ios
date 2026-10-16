@@ -84,7 +84,8 @@ final class PushDeepLinkTests: XCTestCase {
         XCTAssertTrue(fromPublicFeed)
     }
 
-    /// 引けない写真（消された・圏外で一覧が空）とストーリーの返信は、一覧に留まる
+    /// 引けない写真（消された・圏外で一覧が空）と、出ているか分からないストーリー（id の無いもの）の返信は、一覧に留まる。
+    /// 出ている自分のストーリーへの返信は返信の一覧へ行く（2026-10-16・`UXDeadEndsTests`）
     func testStaysOnTheListWhenThereIsNowhereToGo() async throws {
         let model = NotificationsViewModel()
         model.setFeedForTesting([])
