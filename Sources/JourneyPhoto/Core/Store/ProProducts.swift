@@ -404,3 +404,17 @@ enum ProStatusText {
         return parts.joined(separator: " · ")
     }
 }
+
+// MARK: - 案内の自動更新の一文（審査 3.1.2）
+
+/// Pro の案内（`PaywallView`）の下に出す、自動更新の定期購入の決まり文（2026-10-16 判断）。
+///
+/// 審査 3.1.2 は、自動更新の定期購入の案内に「期間・値段・自動で更新されること・止め方」を求める。
+/// 値段と期間はプランの札（`ProPlan.priceLine`）に出ているので、ここは**自動更新と止め方**だけ。
+/// テストで見張る（`ReviewPrivacyTests`）
+enum ProPaywallText {
+    static var autoRenewNotice: String {
+        L("お支払いは購入の確定時に Apple ID に請求されます。定期購入は、期間が終わる24時間前までに解約しない限り自動で更新され、終わる前の24時間以内に次の期間の料金が請求されます。解約は「設定」アプリ → 自分の名前 →「サブスクリプション」（App Store の定期購入の管理）からいつでもできます。",
+          "Payment is charged to your Apple ID when you confirm the purchase. The subscription renews automatically unless you cancel at least 24 hours before the end of the current period, and the next period is charged within 24 hours before it ends. Cancel anytime in the Settings app \u{2192} your name \u{2192} Subscriptions (App Store subscription settings).")
+    }
+}

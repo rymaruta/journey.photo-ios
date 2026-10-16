@@ -166,6 +166,8 @@ public struct DismissAction {
 
 public struct OpenURLAction {
     public func callAsFunction(_ url: URL) {}
+    /// 開けたかを受け取る形（本物と同じ）
+    public func callAsFunction(_ url: URL, completion: @escaping (Bool) -> Void) {}
 }
 
 public enum ColorScheme { case light, dark }

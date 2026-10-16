@@ -472,9 +472,11 @@ final class PassPlaceFinder: NSObject, CLLocationManagerDelegate {
         manager.requestLocation()
     }
 
-    /// 市区町村の名前。引けなければ nil
+    /// 市区町村の名前。引けなければ nil。**Apple の地図へは約1km に丸めた座標だけを渡す**
+    /// （`PassExchange.lookupCoords`・位置の利用目的の文と同じ約束）
     func placeName(for coords: Photo.Coords) async -> String? {
-        let location = CLLocation(latitude: coords.lat, longitude: coords.lng)
+        let rounded = PassExchange.lookupCoords(coords)
+        let location = CLLocation(latitude: rounded.lat, longitude: rounded.lng)
         guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location).first else { return nil }
         return PassExchange.placeName(locality: mark.locality, administrativeArea: mark.administrativeArea)
     }

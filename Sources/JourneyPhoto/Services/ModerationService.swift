@@ -102,6 +102,44 @@ struct ModerationService {
         return head + label + PostLimits.clamp(oneLine(comment.text), limit: room)
     }
 
+    // MARK: - ストーリーへの返信の通報（2026-10-16 判断）
+    //
+    // 返信の一覧は**自分のストーリー**にしか出ない。写真の通報の口（`POST /photos/{id}/report`）に載せたいが、
+    // サーバーは自分の投稿への通報を 400 で断る（`report.ts`「自分の投稿は通報できません」）ので、
+    // コメントと同じ作法（写真の通報の補足に書く）が使えない。返信を通報する口もサーバーに無い。
+    // **新しい口は作らず、問い合わせの宛先（`LegalConsent.contactEmail`）へのメールで送る**——審査 1.2 の
+    // 「通報の受け皿」として Notes にも書いている宛先と同じ。中身はコメントの通報と同じ形（誰の・どの・何と書いたか）
+
+    /// 返信の通報のメールの件名の印（テストで見張る）
+    static let storyReplyMarker = "[ストーリーへの返信の通報]"
+
+    /// 返信の通報のメールの本文。**コメントの通報と同じ形**（誰の・どの返信か・本文）に、どのストーリーかを足す
+    static func storyReplyReportBody(_ reply: ReportedComment, storyId: String?) -> String {
+        var lines = [
+            storyReplyMarker,
+            "投稿者 / From: \(reply.authorName) (\(reply.authorId))",
+            "返信ID / Reply ID: \(reply.id)",
+        ]
+        if let storyId, !storyId.isEmpty { lines.append("ストーリーID / Story ID: \(storyId)") }
+        lines.append("本文 / Text: \(reply.text)")
+        lines.append("")
+        lines.append(L("理由・補足（任意）:", "Reason / details (optional):"))
+        lines.append("")
+        return lines.joined(separator: "\n")
+    }
+
+    /// 返信の通報のメール（`mailto:`）。作れなければ nil
+    static func storyReplyReportURL(_ reply: ReportedComment, storyId: String?) -> URL? {
+        var parts = URLComponents()
+        parts.scheme = "mailto"
+        parts.path = LegalConsent.contactEmail
+        parts.queryItems = [
+            URLQueryItem(name: "subject", value: "\(storyReplyMarker) \(reply.authorName)"),
+            URLQueryItem(name: "body", value: storyReplyReportBody(reply, storyId: storyId)),
+        ]
+        return parts.url
+    }
+
     // MARK: - すれちがいのカードのひとことの通報（2026-10-16 判断）
     //
     // ひとことは**署名が無い**（Bluetooth の中身は誰でも書ける）。写真の通報として送ると、書いていないかも

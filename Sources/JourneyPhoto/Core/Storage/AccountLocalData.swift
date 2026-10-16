@@ -16,7 +16,7 @@ enum AccountLocalData {
     /// - Parameters:
     ///   - userId: 退会した人
     ///   - username: Cognito のユーザー名（登録のときの UUID）。登録の確認の
-    ///     控え（`jp_verify_<メール>`）を探すのに使う。取れなければ nil
+    ///     控え（鍵はメールのハッシュ `jp_pending_<指紋>`。中身のユーザー名で探す）を探すのに使う。取れなければ nil
     ///   - defaults: 試験で差し替える
     ///   - draftDirectory: ストーリー・写真の投稿の書きかけの画像の置き場（試験で差し替える）
     ///   - offlineTripsRoot: 電波なしで使える旅の置き場（試験で差し替える）

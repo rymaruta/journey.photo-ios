@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **すれちがいの電波を戻す**（オンにしていた人だけ・2026-10-16）。Bluetooth の知らせで OS に
         // 起こされた起動（画面は作られない）でも、ここで同じ復元の識別子の管理者を作り直すと続きを受け取れる
         MainActor.assumeIsolated { PassCoordinator.shared.launch() }
+        // 登録の確認の控えの鍵を、メールアドレスそのまま（前の形）からハッシュへ移す（2026-10-16）
+        PendingVerificationStore().migrateLegacyKeys()
         return true
     }
 
