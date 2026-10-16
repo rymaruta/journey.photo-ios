@@ -206,6 +206,21 @@ final class PassLabelsSpinTests: XCTestCase {
         XCTAssertEqual(c(-30, -30, 0.6, reduce: true), PassSpinGesture.Outcome.none)
     }
 
+    /// 🔴 0.25 秒を過ぎた瞬間に回りが跳ばない（弱めた回りから少しずつ指の量へ寄せる）
+    func testLiveYawDoesNotJump() {
+        for dx in [-300.0, -120, 80, 300] {
+            var last = PassSpinGesture.liveYaw(base: 0, dx: dx, width: 300, elapsed: 0)
+            var e = 0.0
+            while e < 0.6 {
+                e += 0.005
+                let now = PassSpinGesture.liveYaw(base: 0, dx: dx, width: 300, elapsed: e)
+                XCTAssertLessThan(abs(now - last), 0.3, "回りが跳んだ（dx \(dx)・\(e) 秒）")
+                last = now
+            }
+            XCTAssertEqual(last, SpinMotion.yawDelta(dx: dx, width: 300), accuracy: 1e-9, "最後は指の量に追いつかない")
+        }
+    }
+
     /// 版 2 の特性があれば版 2 を読む（前のアプリの端末は版 1 だけ）
     func testReaderPrefersV2() {
         XCTAssertEqual(PassRadio.characteristicToRead([PassRadio.characteristicUUID, PassRadio.characteristicV2UUID]),

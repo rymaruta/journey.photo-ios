@@ -41,16 +41,23 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var shownNote: String { noteHidden == true || noteHasContact ? "" : note }
 
     /// 区間に出す、相手が書いた字（伏せた・書いていない・連絡先の形なら nil＝自動の形）
-    var shownOrigin: String? { shownLabel(originLabel) }
-    var shownDestination: String? { shownLabel(destinationLabel) }
 
-    var noteHasContact: Bool { PassExchange.containsContact(note) }
-    var labelsHaveContact: Bool {
-        PassExchange.containsContact(originLabel ?? "") || PassExchange.containsContact(destinationLabel ?? "")
-    }
+    /// 連絡先の形の印（**受け取った時に一度だけ判定して持つ**・`PassStore.record`）。前の記録には無いので、
+    /// 無ければその場で判定する
+    var noteContact: Bool? = nil
+    var originContact: Bool? = nil
+    var destinationContact: Bool? = nil
 
-    private func shownLabel(_ label: String?) -> String? {
-        guard labelsHidden != true, let label, !label.isEmpty, !PassExchange.containsContact(label) else { return nil }
+    var noteHasContact: Bool { noteContact ?? PassExchange.containsContact(note) }
+    private var originHasContact: Bool { originContact ?? PassExchange.containsContact(originLabel ?? "") }
+    private var destinationHasContact: Bool { destinationContact ?? PassExchange.containsContact(destinationLabel ?? "") }
+    var labelsHaveContact: Bool { originHasContact || destinationHasContact }
+
+    var shownOrigin: String? { shownLabel(originLabel, contact: originHasContact) }
+    var shownDestination: String? { shownLabel(destinationLabel, contact: destinationHasContact) }
+
+    private func shownLabel(_ label: String?, contact: Bool) -> String? {
+        guard labelsHidden != true, let label, !label.isEmpty, !contact else { return nil }
         return label
     }
 

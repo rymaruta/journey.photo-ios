@@ -202,7 +202,11 @@ final class PassStore: ObservableObject {
                                  number: (encounters.map(\.number).max() ?? 0) + 1,
                                  opened: false, ownerId: nil,
                                  originLabel: payload.origin.isEmpty ? nil : payload.origin,
-                                 destinationLabel: payload.destination.isEmpty ? nil : payload.destination)
+                                 destinationLabel: payload.destination.isEmpty ? nil : payload.destination,
+                                 // 連絡先の形は受け取った時に一度だけ判定して持つ（描くたびに判定し直さない）
+                                 noteContact: PassExchange.containsContact(payload.note),
+                                 originContact: PassExchange.containsContact(payload.origin),
+                                 destinationContact: PassExchange.containsContact(payload.destination))
         encounters.append(card)
         save()
         let day = PassExchange.dayKey(deliverAt, calendar: calendar)

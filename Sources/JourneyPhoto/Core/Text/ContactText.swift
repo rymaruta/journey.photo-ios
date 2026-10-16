@@ -17,17 +17,26 @@ import Foundation
 enum ContactText {
 
     /// よくあるドメインの終わり（点の後）
-    static let topLevelDomains: Set<String> = [
-        "com", "net", "org", "jp", "co", "ne", "or", "me", "io", "info", "biz", "xyz", "app", "dev", "ly", "gl",
-        "link", "site", "online", "tv", "us", "uk", "cn", "kr", "tw", "page", "shop", "top", "to", "cc", "be",
-        "fm", "la", "ai", "so", "gg", "mobi", "tokyo", "osaka", "club", "blog", "work", "ink", "jpn",
+    /// **強い終わり**: ふつうの単語と重ならない。点のまわりに空白があっても拾う（`abc . com`）
+    static let strongDomains: Set<String> = [
+        "com", "net", "org", "jp", "io", "ly", "gl", "xyz", "biz", "cn", "kr", "tw", "gg", "cc", "fm", "mobi", "jpn",
     ]
+    /// **弱い終わり**: ふつうの単語と重なる（「Hi. Me too」「Kyoto. To Osaka」）。空白なしの `abc.me` 形だけ拾う。
+    /// 2026-10-16 の読み直し: 英語の文の誤検知を減らした（「Osaka.Tokyo」も通すため tokyo・osaka は外した）
+    static let weakDomains: Set<String> = [
+        "co", "ne", "or", "me", "so", "be", "us", "la", "tv", "ai", "to", "uk", "info", "app", "dev", "link", "site",
+        "online", "page", "shop", "top", "club", "blog", "work", "ink",
+    ]
+    static var topLevelDomains: Set<String> { strongDomains.union(weakDomains) }
+
+    /// 判定にかける長さ（貼り付けた長い字で重くしない・欄の上限より十分長い）
+    static let scanLimit = 200
 
     /// 電話番号とみなす数字の数
     static let phoneDigits = 8
 
     static func contains(_ text: String) -> Bool {
-        let n = normalize(text)
+        let n = normalize(String(text.prefix(scanLimit)))
         guard !n.isEmpty else { return false }
         if n.contains("http") || n.contains("://") || n.contains("www.") { return true }
         if hasDomain(n) || hasEmailOrHandle(n) { return true }
@@ -58,23 +67,33 @@ enum ContactText {
 
     // MARK: - 形
 
-    private static let domainRegex = try! NSRegularExpression(pattern: #"[a-z0-9-]+\s*\.\s*([a-z]{2,8})(?![a-z])"#)
+    /// 点の前後に空白を許す並び（強い終わりだけに当てる）と、空白なしの並び（どちらの終わりにも当てる）
+    private static let spacedDomainRegex = try! NSRegularExpression(pattern: #"[a-z0-9-]+\s*\.\s*([a-z]{2,8})(?![a-z])"#)
+    private static let domainRegex = try! NSRegularExpression(pattern: #"[a-z0-9-]+\.([a-z]{2,8})(?![a-z])"#)
     private static let emailRegex = try! NSRegularExpression(pattern: #"[a-z0-9._%+-]+\s*@\s*[a-z0-9-]+"#)
     private static let handleRegex = try! NSRegularExpression(pattern: #"(^|[^a-z0-9])@\s*[a-z0-9._-]{3,}"#)
     private static let idRegex = try! NSRegularExpression(pattern: #"\bid\s*[:=]"#)
-    /// 日付（年.月.日・年-月-日・年/月/日・月/日）。電話番号の数えから先に外す
+    /// 日付（年.月.日・年-月-日・年/月/日）。電話番号の数えから先に外す。**あり得る日付だけ**（年は 19xx・20xx か
+    /// 2 桁、月 1〜12、日 1〜31）で、前後が数字や区切りに続かないときだけ（2026-10-16 の読み直し:
+    /// 「+81-90-1234-5678」「090-12-34-5678」が日付として外れていた）
     private static let dateRegex = try! NSRegularExpression(
-        pattern: #"\d{2,4}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}"#)
+        pattern: #"(?<![0-9./+-])(?:(?:19|20)\d{2}|\d{2})([./-])(?:0?[1-9]|1[0-2])\1(?:0?[1-9]|[12]\d|3[01])(?![0-9./-])"#)
+    /// 年の範囲（2016-2026・2016〜2026）。電話番号にしない
+    private static let yearRangeRegex = try! NSRegularExpression(
+        pattern: #"(?<![0-9])(?:19|20)\d{2}\s*[-~〜–]\s*(?:19|20)\d{2}(?![0-9])"#)
 
     private static func matches(_ regex: NSRegularExpression, _ s: String) -> [NSTextCheckingResult] {
         regex.matches(in: s, range: NSRange(s.startIndex..., in: s))
     }
 
     static func hasDomain(_ n: String) -> Bool {
-        matches(domainRegex, n).contains { m in
-            guard let r = Range(m.range(at: 1), in: n) else { return false }
-            return topLevelDomains.contains(String(n[r]))
+        func ends(_ regex: NSRegularExpression, in set: Set<String>) -> Bool {
+            matches(regex, n).contains { m in
+                guard let r = Range(m.range(at: 1), in: n) else { return false }
+                return set.contains(String(n[r]))
+            }
         }
+        return ends(domainRegex, in: topLevelDomains) || ends(spacedDomainRegex, in: strongDomains)
     }
 
     static func hasEmailOrHandle(_ n: String) -> Bool {
@@ -83,8 +102,11 @@ enum ContactText {
 
     static func hasPhone(_ n: String) -> Bool {
         var s = n
-        for m in matches(dateRegex, s).reversed() {
-            if let r = Range(m.range, in: s) { s.replaceSubrange(r, with: " ") }
+        for regex in [dateRegex, yearRangeRegex] {
+            for m in matches(regex, s).reversed() {
+                // 外した所は数字の続きを切る字にする（前後の数字とつなげない）
+                if let r = Range(m.range, in: s) { s.replaceSubrange(r, with: "|") }
+            }
         }
         let separators: Set<Character> = ["-", "‐", "−", "ー", "—", " ", "(", ")", "+", ".", "・", "_"]
         var run = 0
