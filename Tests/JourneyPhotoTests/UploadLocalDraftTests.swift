@@ -51,9 +51,12 @@ final class UploadLocalDraftTests: XCTestCase {
                                       takenOn: "2026-09-12", dominantColor: "#334455")
     }
 
+    /// 本人の下書き（と書きかけ）の画像。**送信の控え（`Slot.send`・2026-10-16）の画像は数えない**——
+    /// 送るたびに投稿ごとの控えを書くので、ここで見たい下書きの片づけと混ざる（控えは `NoDataLossTests`）
     private func imageFiles() -> [String] {
-        ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
-            .filter { $0.hasPrefix("upload-draft-") }
+        let journalHead = String(UploadDraftStore.filePrefix(forKey: UploadDraftStore.keyPrefix + ":send:").dropLast())
+        return ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .filter { $0.hasPrefix("upload-draft-") && !$0.hasPrefix(journalHead) }
     }
 
     // MARK: - 保存して開き直す
@@ -495,7 +498,7 @@ final class UploadLocalDraftTests: XCTestCase {
         XCTAssertTrue(view.contains("model.discardDraft()"))
         XCTAssertTrue(view.contains("if model.draftOwner != id { model.draftOwner = nil }"),
                       "人が替わっても前の人の書きかけを次の人の下書きに保存できる")
-        XCTAssertTrue(view.contains("guard !showRestore, !showRestoreAuto, !model.isRestoringDraft else { return }"),
+        XCTAssertTrue(view.contains("guard !showRestore, !showRestoreAuto, askingJournal == nil, !model.isRestoringDraft else { return }"),
                       "問いの最中に写真を選ぶ画面を重ねて開く")
         XCTAssertTrue(view.contains("|| initialTag != nil || initialSpot != nil"),
                       "テーマ・スポットから開いた回にも下書きを尋ねる（タグ・紐付けを上書きする）")

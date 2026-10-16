@@ -89,8 +89,10 @@ enum UploadDraftRules {
 
     /// 投稿の画面を開いたときにすること（2026-10-16）
     enum OpenAction: Equatable {
-        /// 尋ねずに自動の枠から戻す（起動のときの「送れなかった投稿があります」で「続きから」を押して来た）
-        case resumeAuto
+        /// 尋ねずにその控えから戻す（起動のときの「送れなかった投稿があります」で「続きから」を押して来た）
+        case resumeJournal(String)
+        /// 「送れなかった投稿があります」をその控え1件について尋ねる（古い順・1件ずつ）
+        case askJournal(String)
         /// 「書きかけの続きがあります」を尋ねる
         case askAuto
         /// 「下書きを続けますか？」を尋ねる（本人の下書き）
@@ -98,11 +100,15 @@ enum UploadDraftRules {
         case none
     }
 
-    /// 開いたときの問い。自動の枠（アプリが途中で終了した書きかけ）を本人の下書きより先に尋ねる
-    static func openAction(hasAutoDraft: Bool, hasSavedDraft: Bool, opensWithContent: Bool,
-                           alreadyAsked: Bool, resumesAuto: Bool) -> OpenAction {
+    /// 開いたときの問い。送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
+    /// - Parameters:
+    ///   - journalIds: その人の送信の控え（**古い順**）
+    ///   - resumeJournal: 起動のときの知らせで「続きから」を押して来た控え
+    static func openAction(journalIds: [String], hasAutoDraft: Bool, hasSavedDraft: Bool,
+                           opensWithContent: Bool, alreadyAsked: Bool, resumeJournal: String? = nil) -> OpenAction {
         guard !alreadyAsked else { return .none }
-        if resumesAuto && hasAutoDraft { return .resumeAuto }
+        if let resumeJournal, journalIds.contains(resumeJournal) { return .resumeJournal(resumeJournal) }
+        if !opensWithContent, let oldest = journalIds.first { return .askJournal(oldest) }
         if asksRestore(hasStoredDraft: hasAutoDraft, opensWithContent: opensWithContent, alreadyAsked: false) {
             return .askAuto
         }
@@ -112,45 +118,72 @@ enum UploadDraftRules {
         return .none
     }
 
-    /// この画面が自動の枠に触って（書いて・消して）よいか。
+    /// この画面が書きかけの枠（`Slot.auto`）に触って（書いて・消して）よいか。
     ///
-    /// 🔴 **尋ねていない自動の書きかけを黙って上書き・削除しない**（2026-10-16 の読み直し）。テーマ・スポット・
-    /// 旅の写真から開いた回は尋ねないので、そのまま触ると、前にアプリが終了した書きかけ・送れなかった投稿が
-    /// 知らせも無く消えた。開いたとき空だった・この画面で尋ねた（戻した）ときだけ触る
+    /// 🔴 **尋ねていない書きかけを黙って上書き・削除しない**（2026-10-16 の読み直し）。開いたとき空だった・
+    /// この画面で尋ねたときだけ触る。**送信の控えはこれと関係なく必ず書く**（投稿ごとの別の枠・`Slot.send`）
     static func ownsAutoSlot(hasAutoDraft: Bool, action: OpenAction) -> Bool {
-        !hasAutoDraft || action == .resumeAuto || action == .askAuto
+        !hasAutoDraft || action == .askAuto
+    }
+
+    // MARK: - 送れなかった投稿（送信の控え）
+
+    /// 控えが溜まったら片づけを勧める件数（2026-10-16 判断: 写真の本体を持つので容量を食い続けない）
+    static let journalLimit = 3
+    /// 控えが古くなったら片づけを勧める長さ（7日）
+    static let journalMaxAge: TimeInterval = 7 * 24 * 60 * 60
+
+    /// 片づけを勧める控え: **7日を過ぎたもの**と、新しい順に `journalLimit` 件を超えた古いもの
+    /// - Parameter journals: 古い順（ID と保存した時刻）
+    @MainActor
+    static func journalsToClean(_ journals: [(id: String, savedAt: String)], now: Date) -> [String] {
+        let overflow = Set(journals.dropLast(journalLimit).map(\.id))
+        return journals.filter { entry in
+            if overflow.contains(entry.id) { return true }
+            guard let at = UploadDraftStore.savedDate(entry.savedAt) else { return false }
+            return now.timeIntervalSince(at) > journalMaxAge
+        }.map(\.id)
     }
 
     /// 次の起動で出す「送れなかった投稿があります」（2026-10-16）
     struct InterruptedNotice: Equatable {
         let message: String
-        /// 「続きから」を出すか（戻せる写真がある）。届いたか分からない写真だけなら出さない
-        let canResume: Bool
+        /// 「続きから」で戻す控え（**古い順に1件**）。戻せる写真のある控えが無ければ nil
+        let resumeId: String?
+        /// 届いたか分からない写真だけの控え（戻せない）。知らせたら片づける
+        let unsureOnlyIds: [String]
+        /// 片づけを勧める控え（`journalsToClean`）。空なら勧めない
+        let cleanupIds: [String]
     }
 
-    /// 次の起動で知らせるか。出さないなら nil。
-    ///
-    /// 送信の控え（`UploadDraftStore.Draft.sending`）が残っている＝送っている途中でアプリが終了した。
-    /// 裏に回ったときの自動の書きかけ（`sending` が無い）は知らせない（投稿の画面を開いたときに尋ねる）
+    /// 次の起動で知らせるか。出さないなら nil
+    /// - Parameter journals: その人の送信の控え（古い順・`UploadDraftStore.journals`）
     @MainActor
-    static func interruptedNotice(_ draft: UploadDraftStore.Draft?) -> InterruptedNotice? {
-        guard let draft, draft.sending == true else { return nil }
-        let (restorable, dropped) = UploadDraftStore.restorable(draft)
-        guard !restorable.isEmpty || dropped > 0 else { return nil }
-        let unsure = dropped > 0
-            ? L("送っている途中だった \(dropped) 枚は投稿済みの可能性があるため、プロフィールで確かめてください。",
-                "\(dropped) photo(s) were partway sent and may already be posted \u{2014} check your profile.")
-            : ""
-        guard !restorable.isEmpty else {
-            return InterruptedNotice(
-                message: L("投稿を送り終える前にアプリが終了しました。", "The app closed before your post finished sending. ")
-                    + unsure,
-                canResume: false)
+    static func interruptedNotice(_ journals: [(id: String, draft: UploadDraftStore.Draft)],
+                                  now: Date = Date()) -> InterruptedNotice? {
+        guard !journals.isEmpty else { return nil }
+        var resumable: [String] = []
+        var unsureOnly: [String] = []
+        var dropped = 0
+        for entry in journals {
+            let (restorable, unsure) = UploadDraftStore.restorable(entry.draft)
+            dropped += unsure
+            if restorable.isEmpty { unsureOnly.append(entry.id) } else { resumable.append(entry.id) }
         }
-        return InterruptedNotice(
-            message: L("写真 \(restorable.count) 枚を送り終える前にアプリが終了しました。「続きから」で投稿の画面に戻せます。",
-                       "The app closed before \(restorable.count) photo(s) were sent. Tap Continue to pick up where you left off. ")
-                + unsure,
-            canResume: true)
+        let unsureNote = dropped > 0
+            ? L("送っている途中だった \(dropped) 枚は投稿済みの可能性があるため、プロフィールで確かめてください。",
+                "\(dropped) photo(s) were partway sent and may already be posted \u{2014} check your profile. ")
+            : ""
+        let cleanup = journalsToClean(journals.filter { resumable.contains($0.id) }
+                                        .map { (id: $0.id, savedAt: $0.draft.savedAt) }, now: now)
+        let cleanupNote = cleanup.isEmpty ? ""
+            : L("古いものは端末の容量を使い続けるので、片づけるのがおすすめです。",
+                "Older ones keep using storage on this device, so consider clearing them.")
+        let head = resumable.isEmpty
+            ? L("投稿を送り終える前にアプリが終了しました。", "The app closed before your post finished sending. ")
+            : L("送れなかった投稿が \(resumable.count) 件あります。「続きから」で古いものから1件ずつ戻せます。",
+                "\(resumable.count) post(s) didn\u{2019}t finish sending. Tap Continue to pick them up one at a time, oldest first. ")
+        return InterruptedNotice(message: head + unsureNote + cleanupNote, resumeId: resumable.first,
+                                 unsureOnlyIds: unsureOnly, cleanupIds: cleanup)
     }
 }

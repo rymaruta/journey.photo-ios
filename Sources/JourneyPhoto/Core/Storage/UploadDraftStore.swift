@@ -78,10 +78,6 @@ final class UploadDraftStore {
         var spot: Spot? = nil
         /// 「この写真を見て撮影」の元の写真（2026-10-14）。無ければ nil。**前の版の下書きには無い**（nil で読む）
         var inspired: InspiredBy.Pick? = nil
-        /// 🔴 **送信の控え**（自動の枠 `Slot.auto` だけ・2026-10-16）。「投稿する」を押した時点の写真と欄を
-        /// 書いて立てる。全部上がれば1枚ずつ外れて下書きごと消える。**残っていたら送っている途中で
-        /// アプリが終了した**——次の起動で知らせる（`UploadDraftRules.interruptedNotice`）
-        var sending: Bool? = nil
         /// 束の印（「1つの投稿にまとめる」の `groupId`・2026-10-16）。途中まで送った束を続きから送るとき、
         /// 同じ束に入れる（新しい印にすると投稿が2つに割れる）。前の版の下書きには無い（nil）
         var groupId: String? = nil
@@ -113,12 +109,19 @@ final class UploadDraftStore {
     /// 下書きの枠（2026-10-16 判断）。
     ///
     /// - `saved`: 本人が「下書きに保存」で残したもの（今までの下書き）
-    /// - `auto`: **アプリが黙って残す書きかけ**——裏に回ったとき（`scenePhase == .background`）の
-    ///   自動の下書きと、「投稿する」を押してから送り終えるまでの送信の控え（`Draft.sending`）。
-    ///   本人の下書きを黙って上書きしないよう、**別の鍵・別のファイル名**に置く。
+    /// - `auto`: **アプリが黙って残す書きかけ**（1件）——裏に回ったとき（`scenePhase == .background`）の
+    ///   自動の下書き。本人の下書きを黙って上書きしないよう、**別の鍵・別のファイル名**に置く。
     ///   画面を閉じる（投稿し終えた・やめた・下書きに保存した）と消える。残っていたら、
     ///   アプリが途中で終了した——次に開いたとき「続きから」を出す
-    enum Slot: Equatable { case saved, auto }
+    /// - `send(id)`: **送信の控え（投稿ごとに1件）**（2026-10-16 判断）。「投稿する」を押すたびに
+    ///   その画面の控えを書き、上がった写真から外れ、空になれば消える。**ほかの枠には触らない**——
+    ///   書きかけの枠を共有していた頃は、テーマ・スポットから開いた回の送信が前の書きかけを上書きするか、
+    ///   控えを書かずに送るかの二択になった。残っていたら送っている途中でアプリが終了した
+    ///   （次の起動で「送れなかった投稿が N 件あります」・`UploadDraftRules.interruptedNotice`）
+    enum Slot: Equatable {
+        case saved, auto
+        case send(String)
+    }
 
     let slot: Slot
     private let defaults: UserDefaults
@@ -145,7 +148,87 @@ final class UploadDraftStore {
         switch slot {
         case .saved: return "\(keyPrefix):\(userId)"
         case .auto: return "\(keyPrefix):auto:\(userId)"
+        case .send(let id):
+            // 控えの ID は UUID だけ（区切りの「:」を含まない・取り違えない）
+            guard UUID(uuidString: id) != nil else { return nil }
+            return "\(sendPrefix(for: userId))\(id)"
         }
+    }
+
+    /// その人の送信の控えの鍵の頭（`journey-photo-upload-draft:send:<userId>:`）
+    static func sendPrefix(for userId: String) -> String { "\(keyPrefix):send:\(userId):" }
+
+    /// 鍵がその人の送信の控えなら、その ID。**頭の後ろが UUID ちょうどのときだけ**——userId に「:」を
+    /// 含む別の人（"a" と "a:b"）の控えを取り違えない
+    static func journalId(fromKey key: String, userId: String) -> String? {
+        let prefix = sendPrefix(for: userId)
+        guard !userId.isEmpty, key.hasPrefix(prefix) else { return nil }
+        let rest = String(key.dropFirst(prefix.count))
+        guard let uuid = UUID(uuidString: rest), uuid.uuidString == rest.uppercased() else { return nil }
+        return rest
+    }
+
+    /// 同じ置き場の別の枠（送信の控えを開くため）
+    func sibling(_ slot: Slot) -> UploadDraftStore {
+        let other = UploadDraftStore(defaults: defaults, directory: directory, slot: slot)
+        other.writeFiles = writeFiles
+        return other
+    }
+
+    /// その人の送信の控え（**古い順**）。中身の読めないもの・画像の欠けたものは片づけて数えない
+    func journals(for userId: String) -> [(id: String, draft: Draft)] {
+        let ids = defaults.dictionaryRepresentation().keys.compactMap { Self.journalId(fromKey: $0, userId: userId) }
+        return ids.compactMap { id in sibling(.send(id)).draft(for: userId).map { (id: id, draft: $0) } }
+            .sorted {
+                let (a, b) = (Self.savedDate($0.draft.savedAt) ?? .distantPast, Self.savedDate($1.draft.savedAt) ?? .distantPast)
+                return a != b ? a < b : $0.id < $1.id
+            }
+    }
+
+    /// 保存した時刻の書き方（**ミリ秒まで**——同じ秒に2つ送ると古い順が決まらない）
+    static func savedAtString(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
+    }
+
+    /// 保存した時刻を読む（ミリ秒あり・なしの両方。前の版の下書きはミリ秒が無い）
+    static func savedDate(_ text: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    /// 退会: その人の送信の控えを全部（記録と画像）消す。記録から外れた画像も、鍵の16進の頭と
+    /// **その後ろの UUID** を確かめて拾う（別の人の画像を消さない）
+    func removeAllJournals(for userId: String) {
+        for key in defaults.dictionaryRepresentation().keys {
+            if let id = Self.journalId(fromKey: key, userId: userId) { sibling(.send(id)).clear(for: userId) }
+        }
+        guard !userId.isEmpty,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let head = Self.filePrefix + Self.hex(Self.sendPrefix(for: userId))
+        for name in names where name.hasPrefix(head) {
+            // 頭の後ろは UUID（36字＝16進で72字）と「-」
+            let rest = name.dropFirst(head.count)
+            guard rest.count > 73, rest[rest.index(rest.startIndex, offsetBy: 72)] == "-",
+                  let id = Self.unhex(String(rest.prefix(72))), UUID(uuidString: id) != nil else { continue }
+            try? FileManager.default.removeItem(at: fileURL(name))
+        }
+    }
+
+    private static func hex(_ text: String) -> String { text.utf8.map { String(format: "%02x", $0) }.joined() }
+
+    private static func unhex(_ hex: String) -> String? {
+        var bytes: [UInt8] = []
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            guard let b = UInt8(hex[i..<j], radix: 16) else { return nil }
+            bytes.append(b)
+            i = j
+        }
+        return String(bytes: bytes, encoding: .utf8)
     }
 
     private func storageKey(_ userId: String) -> String? { Self.key(for: userId, slot: slot) }
@@ -158,7 +241,7 @@ final class UploadDraftStore {
     /// その人の画像の名前の前置き（`upload-draft-<鍵の16進>-`）。終わりの `-` で、鍵が前方一致する
     /// 別の人（"a" と "ab"）を取り違えない
     static func filePrefix(forKey key: String) -> String {
-        "\(filePrefix)\(key.utf8.map { String(format: "%02x", $0) }.joined())-"
+        "\(filePrefix)\(hex(key))-"
     }
 
     private func fileURL(_ name: String) -> URL { directory.appendingPathComponent(name) }
@@ -205,7 +288,7 @@ final class UploadDraftStore {
     @discardableResult
     func save(_ inputs: [ItemInput], fields: Draft, for userId: String) -> Bool {
         guard let key = storageKey(userId), !inputs.isEmpty else { return false }
-        saveGeneration += 1
+        _ = bump(key)
         let token = makeToken()
         let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
         var written: [String] = []
@@ -222,9 +305,17 @@ final class UploadDraftStore {
         return commit(inputs, names: names, fields: fields, key: key)
     }
 
-    /// 保存の回（`save`・`saveInBackground`・`clear` で進む）。**後から始まった回が勝つ**——
-    /// 先に始まった裏の書き込みが遅れて終わっても、新しい記録を古い中身で上書きしない
-    private var saveGeneration = 0
+    /// 保存の回（**鍵ごと**・`save`・`saveInBackground`・`clear`・1枚ずつの書き換えで進む）。
+    /// **後から始まった回が勝つ**——先に始まった裏の書き込みが遅れて終わっても、新しい記録・
+    /// 1枚ずつ外した記録を古い中身で上書きしない。入れ物（このクラスの1つ）ごとではなく鍵ごとに数える——
+    /// 同じ鍵を別の入れ物から触っても（`sibling`・起動の知らせ）同じ数を見る
+    private static var generations: [String: Int] = [:]
+
+    private func bump(_ key: String) -> Int {
+        let next = (Self.generations[key] ?? 0) + 1
+        Self.generations[key] = next
+        return next
+    }
 
     /// 画像を書く口（**主スレッドの外で書く**・試験で遅らせて順番を作る）
     var writeFiles: @Sendable ([(Data, URL)]) async throws -> Void = { pairs in
@@ -239,8 +330,7 @@ final class UploadDraftStore {
     /// 書いている間に新しい保存・`clear` が始まったら、この回の記録は書かない（書いた画像も消す）
     func saveInBackground(_ inputs: [ItemInput], fields: Draft, for userId: String) async -> Bool {
         guard let key = storageKey(userId), !inputs.isEmpty else { return false }
-        saveGeneration += 1
-        let mine = saveGeneration
+        let mine = bump(key)
         let token = makeToken()
         let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
         let urls = names.map { fileURL($0) }
@@ -251,7 +341,7 @@ final class UploadDraftStore {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             return false
         }
-        guard mine == saveGeneration else {
+        guard mine == Self.generations[key] else {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             return false
         }
@@ -287,6 +377,8 @@ final class UploadDraftStore {
         let before = saved.items
         change(&saved.items)
         guard saved.items != before else { return }
+        // 書いている途中の裏の保存が、外した写真を書き戻さないように
+        _ = bump(key)
         let kept = Set(saved.items.map(\.imageFile))
         if saved.items.isEmpty {
             defaults.removeObject(forKey: key)
@@ -318,6 +410,7 @@ final class UploadDraftStore {
     func clearInspired(for userId: String) {
         guard let key = storageKey(userId), let data = defaults.data(forKey: key),
               var saved = try? JSONDecoder().decode(Draft.self, from: data), saved.inspired != nil else { return }
+        _ = bump(key)
         saved.inspired = nil
         if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: key) }
     }
@@ -326,7 +419,7 @@ final class UploadDraftStore {
     func clear(for userId: String) {
         guard let key = storageKey(userId) else { return }
         // 書いている途中の裏の保存（`saveInBackground`）が、消した後に記録を書き戻さないように
-        saveGeneration += 1
+        _ = bump(key)
         for name in files(atKey: key) { try? FileManager.default.removeItem(at: fileURL(name)) }
         defaults.removeObject(forKey: key)
     }

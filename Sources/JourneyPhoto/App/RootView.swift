@@ -32,8 +32,8 @@ struct RootView: View {
     @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
     /// 送れなかった投稿を確かめた人（人ごとに起動のあと一度だけ）
     @State private var checkedInterruptedFor: String?
-    /// 起動のときの知らせで「続きから」を押した（投稿の画面で尋ね直さずに戻す・閉じたら下ろす）
-    @State private var resumeInterruptedUpload = false
+    /// 起動のときの知らせで「続きから」を押した控え（投稿の画面で尋ね直さずに戻す・閉じたら下ろす）
+    @State private var resumeJournalId: String?
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
@@ -438,20 +438,25 @@ struct RootView: View {
     private var tabs: some View {
         tabsWithPostSheets
             .task(id: auth.userId) { await offerInterruptedUpload() }
-            .alert(L("送れなかった投稿があります", "A post didn\u{2019}t finish sending"),
+            .alert(L("送れなかった投稿があります", "Posts didn\u{2019}t finish sending"),
                    isPresented: Binding(get: { interruptedUpload != nil },
                                         set: { if !$0 { interruptedUpload = nil } }),
                    presenting: interruptedUpload) { notice in
-                if notice.canResume {
-                    // 投稿の画面を開く。開いた画面が「書きかけの続きがあります」→「続きから」で戻す
+                if let id = notice.resumeId {
+                    // 古い順に1件だけ戻す。残りは次に投稿の画面を開いたとき・次の起動で
                     Button(L("続きから", "Continue")) {
-                        resumeInterruptedUpload = true
+                        settleInterruptedUpload(notice, cleaning: false)
+                        resumeJournalId = id
                         showPhotoUpload = true
                     }
-                    Button(L("あとで", "Later"), role: .cancel) {}
-                } else {
-                    // 戻せる写真が無い（届いたか分からない写真だけ）。控えは片づける
-                    Button(L("OK", "OK"), role: .cancel) { discardInterruptedUpload() }
+                }
+                if !notice.cleanupIds.isEmpty {
+                    Button(L("古いものを片づける", "Clear old ones"), role: .destructive) {
+                        settleInterruptedUpload(notice, cleaning: true)
+                    }
+                }
+                Button(notice.resumeId == nil ? L("OK", "OK") : L("あとで", "Later"), role: .cancel) {
+                    settleInterruptedUpload(notice, cleaning: false)
                 }
             } message: { notice in
                 Text(notice.message)
@@ -514,14 +519,18 @@ struct RootView: View {
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
         checkedInterruptedFor = userId
-        interruptedUpload = UploadDraftRules.interruptedNotice(
-            UploadDraftStore(slot: .auto).draft(for: userId))
+        // 送信の控え（`journey-photo-upload-draft:send:<userId>:<ID>`）を古い順に数える
+        interruptedUpload = UploadDraftRules.interruptedNotice(UploadDraftStore().journals(for: userId))
     }
 
-    /// 戻せる写真が無かった控えを片づける（届いたか分からない写真は戻さない・`UploadDraftStore.restorable`）
-    private func discardInterruptedUpload() {
+    /// 知らせに答えた。戻せない控え（届いたか分からない写真だけ）は片づけ、「古いものを片づける」なら
+    /// 勧めた控えも消す（`UploadDraftRules.journalsToClean`）
+    private func settleInterruptedUpload(_ notice: UploadDraftRules.InterruptedNotice, cleaning: Bool) {
         guard let userId = auth.userId else { return }
-        UploadDraftStore(slot: .auto).clear(for: userId)
+        let store = UploadDraftStore()
+        for id in notice.unsureOnlyIds + (cleaning ? notice.cleanupIds : []) {
+            store.sibling(.send(id)).clear(for: userId)
+        }
     }
 
     /// 投稿画面。旅の写真から来たときは、その写真を並べて**非公開で**始める
@@ -530,7 +539,7 @@ struct RootView: View {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
                        startPrivate: !pendingTripPhotos.isEmpty,
                        initialCapture: pendingCapture,
-                       resumesAutoDraft: resumeInterruptedUpload,
+                       resumeJournal: resumeJournalId,
                        // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                        onSaved: { tabRouter.notePosted($0) })
         }
@@ -549,7 +558,7 @@ struct RootView: View {
                     // 構図を重ねて撮った1枚も同じ
                     pendingCapture = nil
                     // 送れなかった投稿の「続きから」も1回だけ
-                    resumeInterruptedUpload = false
+                    resumeJournalId = nil
                 }
             }
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {

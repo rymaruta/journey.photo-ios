@@ -616,8 +616,10 @@ final class UploadViewModel: ObservableObject {
         let ok = drafts.save(draftInputs(), fields: draftFields(now: now), for: draftOwner)
         if ok {
             restoredDraft = true
-            // 本人の下書きに移したので、黙って残した書きかけは要らない（次に開いて二重に尋ねない）
+            // 本人の下書きに移したので、黙って残した書きかけ・この画面の送信の控えは要らない
+            // （次に開いて二重に尋ねない・同じ写真を2か所から送らない）
             discardAutoDraft()
+            discardJournal()
         }
         return ok
     }
@@ -647,7 +649,7 @@ final class UploadViewModel: ObservableObject {
         var fields = UploadDraftStore.Draft(
             items: [], tagsText: tagsText, category: category, published: published,
             audience: audience.rawValue, song: song, selectedAlbumId: selectedAlbumId,
-            groupsAsOnePost: groupsAsOnePost, savedAt: ISO8601DateFormatter().string(from: now),
+            groupsAsOnePost: groupsAsOnePost, savedAt: UploadDraftStore.savedAtString(now),
             spot: spot.map { UploadDraftStore.Draft.Spot(spotId: $0.spotId, name: $0.name,
                                                          latitude: $0.coords?.lat, longitude: $0.coords?.lng) },
             // 🔴 **付け終えていたら・載せた1枚が届いたか分からないなら残さない**——開き直して
@@ -674,55 +676,105 @@ final class UploadViewModel: ObservableObject {
 
     /// 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16 判断）。以前は「×→下書きに保存」を押した
     /// 人のものしか残らず、裏に回ったまま OS にアプリを終了されると選んだ写真と題が全部消えた。
-    /// 写真が無い・読み込み中・送っている（送信の控えがもう在る）ときは書かない。写真が無ければ前の分を消す
-    /// （外した写真が次に蘇らない）
+    /// 写真が無い・読み込み中・送っているときは書かない。写真が無ければ前の分を消す（外した写真が次に蘇らない）。
     ///
-    /// 画像は主スレッドの外で書き、**書き終えるまで裏の猶予をもらう**（`BackgroundWindow`。裏に回った直後に
-    /// 止められると書きかけが残らない）。`autoDrafts` が無い（この画面は自動の枠に触らない・
-    /// `UploadDraftRules.openAction`）なら何もしない
+    /// - この画面に**送信の控え**があれば（送ったが残った写真がある）、書きかけではなく控えを今の写真で書き直す
+    ///   ——同じ写真を書きかけと控えの両方に置くと、続きから2回送れてしまう
+    /// - 書きかけの枠（`autoDrafts`）が無い（この画面は尋ねていない書きかけに触らない・
+    ///   `UploadDraftRules.ownsAutoSlot`）なら書きかけは書かない
+    ///
+    /// 画像は主スレッドの外で書く。裏の猶予（`BackgroundWindow`）は呼ぶ側が**裏に回った瞬間に**取る
     func autoSaveDraft(now: Date = Date()) async {
-        guard let autoDrafts, let draftOwner, !draftOwner.isEmpty else { return }
-        if items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 && !isRestoringDraft {
+        guard let draftOwner, !draftOwner.isEmpty else { return }
+        let idle = !isWorking && !isLoadingPicked && preparingCaptures == 0 && !isRestoringDraft
+        if journalId != nil {
+            if items.isEmpty && idle { discardJournal(); return }
+            guard draftSaveBlock == nil else { return }
+            await writeJournal(now: now)
+            return
+        }
+        guard let autoDrafts else { return }
+        if items.isEmpty && idle {
             discardAutoDraft()
             return
         }
         guard draftSaveBlock == nil else { return }
-        let window = BackgroundWindow(name: "upload-autosave")
-        defer { window.end() }
-        await writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: false, now: now)
+        guard let keys = await write(to: autoDrafts, owner: draftOwner, now: now) else { return }
+        autoKeys = keys
     }
 
-    /// 自動の枠に今の写真と欄を書き、印（`autoKeys`）を付け直す（画像は主スレッドの外で書く）
-    @discardableResult
-    private func writeAutoDraft(to store: UploadDraftStore, owner: String, sending: Bool, now: Date) async -> Bool {
-        guard !items.isEmpty else { return false }
+    /// 枠に今の写真と欄を書き、写真ごとの印を返す（画像は主スレッドの外で書く）。書けなければ nil
+    private func write(to store: UploadDraftStore, owner: String, now: Date) async -> [UUID: String]? {
+        guard !items.isEmpty else { return nil }
         var keys: [UUID: String] = [:]
         for photo in items { keys[photo.id] = UUID().uuidString }
-        var fields = draftFields(now: now)
-        fields.sending = sending ? true : nil
-        guard await store.saveInBackground(draftInputs(keys: keys), fields: fields, for: owner) else { return false }
-        autoKeys = keys
-        return true
+        guard await store.saveInBackground(draftInputs(keys: keys), fields: draftFields(now: now), for: owner) else {
+            return nil
+        }
+        return keys
     }
 
-    /// 自動の書きかけを消す（画面を閉じた・投稿し終えた・下書きに保存した・「続きから」で削除）
+    /// 自動の書きかけを消す（画面を閉じた・投稿し終えた・下書きに保存した・「続きから」で削除・控えに移した）。
+    /// 書きかけの枠を持っていない画面では何もしない
     func discardAutoDraft() {
         autoKeys = [:]
         guard let autoDrafts, let draftOwner else { return }
         autoDrafts.clear(for: draftOwner)
     }
 
+    // MARK: 送信の控え（投稿ごと・2026-10-16・`UploadDraftStore.Slot.send`）
+
+    /// この画面の送信の控えの ID（`journey-photo-upload-draft:send:<userId>:<ID>`）。送るたびに書き直し、
+    /// 閉じる（やめる・下書きに保存・全部上がった）と消す。**ほかの画面の控え・書きかけには触らない**
+    private(set) var journalId: String?
+    /// いまの写真 → 控えの中のその1枚の印（上がったら1枚ずつ外す）
+    private var journalKeys: [UUID: String] = [:]
+
+    private var journalStore: UploadDraftStore? {
+        guard let journalId else { return nil }
+        return drafts?.sibling(.send(journalId))
+    }
+
+    /// 🔴 **送り始める前に、この画面の控えを書く**（2026-10-16 判断）。送っている途中でアプリが終了されると、
+    /// まだ送れていない写真と題が知らせも無く消えていた。控えは投稿ごとに別の鍵なので、
+    /// テーマ・スポットから開いた回でも前の書きかけ・ほかの控えを上書きせずに必ず書ける
+    @discardableResult
+    private func writeJournal(now: Date) async -> Bool {
+        guard let drafts, let draftOwner, !draftOwner.isEmpty else { return false }
+        let id = journalId ?? UUID().uuidString
+        // 書いている間に二本目（裏に回った）が来ても同じ ID に書く
+        journalId = id
+        guard let keys = await write(to: drafts.sibling(.send(id)), owner: draftOwner, now: now) else { return false }
+        journalKeys = keys
+        return true
+    }
+
+    /// この画面の送信の控えを消す（やめる・下書きに保存・全部上がった）
+    func discardJournal() {
+        if let journalStore, let draftOwner { journalStore.clear(for: draftOwner) }
+        journalId = nil
+        journalKeys = [:]
+    }
+
     /// 下書きを開き直す（「下書きを続けますか？」→「続ける」）。**画像が読めなければ何も戻さない**
     /// （欠けたまま戻すと、書いた題が別の写真に付く）。
     /// 写真は選ぶ画面の選択（`pickerItems`）には戻らない——カメラで撮った分と同じ扱い（外すのは帯の ×）。
     /// 届いたか分からないまま残っていた写真は戻さずに下書きから外し、知らせる（`draftKeys` の注記）
-    /// - Parameter slot: `.auto` は自動で残した書きかけ・送れなかった投稿（「続きから」・2026-10-16）。
-    ///   開き直しても「本人の下書きを開いた」ことにはしない（閉じる確認は新しい投稿と同じ言い方）
+    /// - Parameter slot: `.auto` は自動で残した書きかけ、`.send(id)` は送れなかった投稿の控え
+    ///   （「続きから」・2026-10-16）。控えから戻すと、この画面がその控えを引き継ぐ（送り直すと同じ控えに書く）
     @discardableResult
     func restoreDraft(from slot: UploadDraftStore.Slot = .saved) async -> Bool {
+        let source: UploadDraftStore?
+        switch slot {
+        case .saved: source = drafts
+        case .auto: source = autoDrafts
+        case .send: source = drafts?.sibling(slot)
+        }
         guard items.isEmpty, !isWorking, !isRestoringDraft,
-              let drafts = slot == .saved ? drafts : autoDrafts, let draftOwner,
+              let drafts = source, let draftOwner,
               let draft = drafts.draft(for: draftOwner) else { return false }
+        // 本人の下書きにいま在る写真の印（自動の枠・控えの `savedKey` が今も指しているか）
+        let savedKeysNow = Set(self.drafts?.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
         // 🔴 **先に印を立てる**（2026-10-12 判断）。縮小画像の `await` のあいだ MainActor を譲るので、
         // 印が無いと「追加」が押せて写真が入り、下の `items.isEmpty` で失敗→呼び出し側が
         // `discardDraft` して下書きごと消えていた
@@ -766,11 +818,18 @@ final class UploadViewModel: ObservableObject {
                                clearedByUser: saved.locationClearedByUser)
             photo.pickedCoords = saved.pickedCoords
             if let key = saved.key {
-                if slot == .saved { draftKeys[photo.id] = key } else { autoKeys[photo.id] = key }
+                switch slot {
+                case .saved: draftKeys[photo.id] = key
+                case .auto: autoKeys[photo.id] = key
+                case .send: journalKeys[photo.id] = key
+                }
             }
-            // 🔴 **自動の枠から戻した写真が本人の下書きにも在れば、その印も戻す**（2026-10-16）。戻さないと、
-            // 続きから送って上がった写真が本人の下書きに残り、次に開いて送ると同じ写真がもう一度投稿された
-            if slot == .auto, let savedKey = saved.savedKey { draftKeys[photo.id] = savedKey }
+            // 🔴 **自動の枠・控えから戻した写真が本人の下書きにも在れば、その印も戻す**（2026-10-16）。戻さないと、
+            // 続きから送って上がった写真が本人の下書きに残り、次に開いて送ると同じ写真がもう一度投稿された。
+            // 本人の下書きが後で保存し直されていたら（その印がもう無い）戻さない
+            if slot != .saved, let savedKey = saved.savedKey, savedKeysNow.contains(savedKey) {
+                draftKeys[photo.id] = savedKey
+            }
             startStripThumb(for: photo.id, prepared: prepared)
             items.append(photo)
             // 編集はレシピを掛け直す（帯の編集後のサムネもここで描く）
@@ -792,7 +851,9 @@ final class UploadViewModel: ObservableObject {
                                     coords: saved.latitude.flatMap { lat in
                                         saved.longitude.map { Photo.Coords(lat: lat, lng: $0) } })
         }
-        if slot == .saved { restoredDraft = true }
+        if case .send(let id) = slot { journalId = id }
+        // 本人の下書きの続き（印を戻した）なら「下書きを開いた」——保存で閉じても「置き換わります」と言わない
+        restoredDraft = slot == .saved || !draftKeys.isEmpty
         errorMessage = droppedNote
         return true
     }
@@ -823,13 +884,21 @@ final class UploadViewModel: ObservableObject {
     /// 付け直さない・`markDraft(.posted)` と同じく上がった時点で）
     private func inspiredSaved(_ photoId: UUID) {
         inspiredCarrier.saved(photoId)
-        if restoredDraft, let drafts, let draftOwner { drafts.clearInspired(for: draftOwner) }
-        // 送信の控え（自動の枠）からも外す——続きから送ると別の写真に付き、作者に通知が2回届く（2026-10-16）
-        if let autoDrafts, let draftOwner { autoDrafts.clearInspired(for: draftOwner) }
+        // 本人の下書きの写真を送っている（自動の枠・控えから戻した続きも含む）なら、本人の下書きからも外す
+        if !draftKeys.isEmpty, let drafts, let draftOwner { drafts.clearInspired(for: draftOwner) }
+        // 送信の控え・書きかけからも外す——続きから送ると別の写真に付き、作者に通知が2回届く（2026-10-16）
+        if let draftOwner {
+            journalStore?.clearInspired(for: draftOwner)
+            autoDrafts?.clearInspired(for: draftOwner)
+        }
     }
 
     private func markDraft(_ photoId: UUID, _ mark: DraftMark) {
-        // 送信の控え（自動の枠）にも同じ印を付ける（落ちても、続きからで二重に上げない・2026-10-16）
+        // 送信の控えにも同じ印を付ける（落ちても、続きからで二重に上げない・2026-10-16）
+        if let key = journalKeys[photoId], let journalStore, let draftOwner {
+            Self.apply(mark, key: key, store: journalStore, owner: draftOwner)
+            if mark == .posted { journalKeys[photoId] = nil }
+        }
         if let key = autoKeys[photoId], let autoDrafts, let draftOwner {
             Self.apply(mark, key: key, store: autoDrafts, owner: draftOwner)
             if mark == .posted { autoKeys[photoId] = nil }
@@ -1090,6 +1159,10 @@ final class UploadViewModel: ObservableObject {
             if let autoDrafts, let draftOwner { autoDrafts.removeItem(key: key, for: draftOwner) }
             autoKeys[photoId] = nil
         }
+        if let key = journalKeys[photoId] {
+            if let journalStore, let draftOwner { journalStore.removeItem(key: key, for: draftOwner) }
+            journalKeys[photoId] = nil
+        }
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
@@ -1297,9 +1370,8 @@ final class UploadViewModel: ObservableObject {
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
         // 知らせも無く消えた。上がった1枚ずつ控えから外れ（`markDraft(.posted)`）、全部上がれば消える。
         // 残っていたら次の起動で知らせ、投稿の画面の「続きから」で戻せる（届いたか分からない写真は戻さない）
-        if let autoDrafts, let draftOwner, !draftOwner.isEmpty {
-            await writeAutoDraft(to: autoDrafts, owner: draftOwner, sending: true, now: Date())
-        }
+        // 控えは投稿ごとの別の枠に書く（ほかの枠には触らない）。書けたら、この画面の書きかけは控えに移ったので消す
+        if await writeJournal(now: Date()) { discardAutoDraft() }
         // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
         let exported = await exportAllEdited(queue)
         // 撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule` の (c)）を見る索引。要る写真があって
@@ -1406,6 +1478,7 @@ final class UploadViewModel: ObservableObject {
                 songFailuresShown = songFailures
             }
             // 全部上がった。送信の控えは1枚ずつ外れて空のはずだが、念のため消す（次に開いて尋ねない）
+            discardJournal()
             discardAutoDraft()
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
             // 投稿済みの写真が選ばれたまま残り、次に写真を選び直した瞬間に

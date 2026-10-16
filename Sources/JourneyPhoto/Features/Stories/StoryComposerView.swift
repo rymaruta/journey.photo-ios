@@ -353,7 +353,14 @@ struct StoryComposerView: View {
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { Task { await autoSaveDraft() } }
+            // 裏の猶予は**裏に回ったこの瞬間に**取る（Task が走るのを待つと、その前に止められうる）
+            if phase == .background {
+                let window = BackgroundWindow(name: "story-autosave")
+                Task {
+                    await autoSaveDraft()
+                    window.end()
+                }
+            }
         }
         .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
             Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
@@ -1533,8 +1540,6 @@ struct StoryComposerView: View {
         guard autoSlotOwned else { return }
         switch StorySimpleRules.autoSave(hasShots: !shots.isEmpty, loading: loadingPicks > 0) {
         case .write:
-            let window = BackgroundWindow(name: "story-autosave")
-            defer { window.end() }
             _ = await autoDrafts.saveInBackground(
                 shots: shotInputs, caption: caption, location: place.location, song: song,
                 durationSec: durationSec, archive: keepInArchive, allowReplies: allowReplies,
