@@ -62,19 +62,20 @@ protocol DeviceTripAssets {
     func summary(at position: Int, since: Date) -> DeviceTripSummary?
 }
 
-/// 写真ライブラリの読み口
+/// 写真ライブラリの読み口。**取り出しは async**——試験の読み口がここで読みを止められる
+/// （古い読みを途中で止めて、消す・新しい読みを始める順を手で進める）
 protocol DeviceTripSource: Sendable {
-    func fetch(since: Date, before: Date?, after: Date?) -> any DeviceTripAssets
-    func assets(ids: [String]) -> any DeviceTripAssets
+    func fetch(since: Date, before: Date?, after: Date?) async -> any DeviceTripAssets
+    func assets(ids: [String]) async -> any DeviceTripAssets
 }
 
 /// 本物の読み口（PhotoKit）
 struct PhotoKitTripSource: DeviceTripSource {
-    func fetch(since: Date, before: Date?, after: Date?) -> any DeviceTripAssets {
+    func fetch(since: Date, before: Date?, after: Date?) async -> any DeviceTripAssets {
         PhotoKitTripAssets(result: DeviceTripLibrary.fetch(since: since, before: before, after: after))
     }
 
-    func assets(ids: [String]) -> any DeviceTripAssets {
+    func assets(ids: [String]) async -> any DeviceTripAssets {
         PhotoKitTripAssets(result: PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil))
     }
 }
@@ -163,15 +164,16 @@ struct DeviceTripScan {
         case .resume(let before):
             await readFirst(before, into: &index, since: since)
         case .newer(let after):
-            readNewer(after: after, into: &index, since: since)
+            await readNewer(after: after, into: &index, since: since)
         }
 
         if index.complete, !Task.isCancelled,
-           forceSweep || DeviceTrips.maySweep(lastSweep: index.lastSweep, now: now),
-           DeviceTrips.needsSweep(index, libraryCount: source.fetch(since: since, before: nil, after: nil).count,
-                                  since: since) {
-            index.lastSweep = now
-            await sweep(&index, since: since)
+           forceSweep || DeviceTrips.maySweep(lastSweep: index.lastSweep, now: now) {
+            let libraryCount = await source.fetch(since: since, before: nil, after: nil).count
+            if DeviceTrips.needsSweep(index, libraryCount: libraryCount, since: since) {
+                index.lastSweep = now
+                await sweep(&index, since: since)
+            }
         }
         // 取り消し（サインアウトで消した）のあとは書かない
         guard !Task.isCancelled else { return index }
@@ -201,7 +203,7 @@ struct DeviceTripScan {
     /// 初めての読み（`before` があれば続きから）。新しい順に区切って読み、
     /// `publishEvery` 枚ごとに棚へ、`saveEvery` 枚ごとに端末へ。上限（`maxShots`）で打ち止め
     private func readFirst(_ before: Date?, into index: inout DeviceTrips.Index, since: Date) async {
-        let assets = source.fetch(since: since, before: before, after: nil)
+        let assets = await source.fetch(since: since, before: before, after: nil)
         var sincePublish = 0
         var sinceSave = 0
         var position = 0
@@ -240,8 +242,8 @@ struct DeviceTripScan {
     }
 
     /// 前回より新しい写真だけ（ふつうは数枚・区切らない）
-    private func readNewer(after: Date, into index: inout DeviceTrips.Index, since: Date) {
-        let assets = source.fetch(since: since, before: nil, after: after)
+    private func readNewer(after: Date, into index: inout DeviceTrips.Index, since: Date) async {
+        let assets = await source.fetch(since: since, before: nil, after: after)
         var shots: [LibraryShot] = []
         var skipped: [LibraryShot] = []
         for i in 0..<assets.count {
@@ -258,7 +260,7 @@ struct DeviceTripScan {
     /// **覚えている写真は日時・位置を読み直さない**——読むのは識別子だけ（区切って）。
     /// 知らない写真が `maxSweepReads` より多ければ、頭から読み直す（区切って読む道）
     private func sweep(_ index: inout DeviceTrips.Index, since: Date) async {
-        let assets = source.fetch(since: since, before: nil, after: nil)
+        let assets = await source.fetch(since: since, before: nil, after: nil)
         var ids: [String] = []
         ids.reserveCapacity(assets.count)
         var position = 0
@@ -285,7 +287,7 @@ struct DeviceTripScan {
         while start < known.unknown.count {
             if Task.isCancelled { return }
             let end = min(start + DeviceTrips.chunkSize, known.unknown.count)
-            let fetched = source.assets(ids: Array(known.unknown[start..<end]))
+            let fetched = await source.assets(ids: Array(known.unknown[start..<end]))
             for i in 0..<fetched.count {
                 guard let item = fetched.summary(at: i, since: since) else { continue }
                 if item.isSkipped { skipped.append(item.shot) } else { shots.append(item.shot) }
@@ -362,6 +364,13 @@ final class DeviceTripShelfStore: ObservableObject {
     private var clearedWhileUnreadable = false
     /// 読みの輪を抜けた回数（試験・古い読みが終わったかを見る）
     private(set) var loopsFinished = 0
+    private var loopWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    /// 読みの輪を `count` 回抜けるまで待つ（試験。時間に頼らない）
+    func waitForLoopsFinished(_ count: Int) async {
+        guard loopsFinished < count else { return }
+        await withCheckedContinuation { loopWaiters.append((count, $0)) }
+    }
     /// 裏にいる間に変化の知らせが来た
     private var pendingChange = false
     private var observer: DeviceTripChangeObserver?
@@ -576,7 +585,12 @@ final class DeviceTripShelfStore: ObservableObject {
     }
 
     private func runLoop(_ run: Int) async {
-        defer { loopsFinished += 1 }
+        defer {
+            loopsFinished += 1
+            let waiting = loopWaiters.filter { $0.count <= loopsFinished }
+            loopWaiters.removeAll { $0.count <= loopsFinished }
+            waiting.forEach { $0.continuation.resume() }
+        }
         isScanning = true
         var publishCached = false
         repeat {

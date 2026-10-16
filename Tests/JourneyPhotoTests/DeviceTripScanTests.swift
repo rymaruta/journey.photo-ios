@@ -299,26 +299,26 @@ extension DeviceTripScanTests {
         let url = tempURLForGate()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let source = FakeTripSource(library())
-        source.blockLiveReads = true   // 取り消されていない読み（新しい読み）だけを止める
+        let gate = FetchGate()
+        source.gate = gate          // 取り出しのたびに門で止まる（試験が1つずつ放す）
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false)
-        store.startIfAllowed()      // 1本目
-        store.forget()              // サインアウト（1本目を取り消す）
-        store.startIfAllowed()      // 2本目
-        // **1本目が読みの輪を抜けきり、2本目が読みの途中で止まっている**場面を待つ
-        var waited = 0
-        while (store.loopsFinished < 1 || source.blockedCalls < 1), waited < 400 {
-            try await Task.sleep(nanoseconds: 5_000_000)
-            waited += 1
-        }
-        XCTAssertEqual(store.loopsFinished, 1, "古い読みが終わる場面を作れなかった")
-        XCTAssertEqual(source.blockedCalls, 1)
+        // **時間に頼らず、順を手で進める**:
+        // 1本目を読みの途中（取り出し）で止める → 消す → 2本目を始めて同じく止める → 1本目だけ放す
+        store.startIfAllowed()                  // 1本目
+        await gate.waitForWaiting(1)            // 1本目が門で止まった
+        store.forget()                          // サインアウト（1本目を取り消す）
+        store.startIfAllowed()                  // 2本目
+        await gate.waitForWaiting(2)            // 2本目も門で止まった
+        await gate.releaseFirst()               // 1本目だけ放す（取り消されているので輪を抜ける）
+        await store.waitForLoopsFinished(1)     // 1本目が輪を抜けきった
+        XCTAssertEqual(store.loopsFinished, 1)
         XCTAssertTrue(store.isScanning, "古い読みが新しい読みの印を消した")
-        store.startIfAllowed()      // 2本目の最中の「読んで」は、終わったあとの1回にまとまる
+        store.startIfAllowed()                  // 2本目の最中の「読んで」は、終わったあとの1回にまとまる
         XCTAssertEqual(store.runsStarted, 2, "読みが2本走った")
-        source.release()
+        await gate.open()                       // 残りは止めない
         await store.waitUntilIdle()
         await store.waitForRemoval()
     }
@@ -406,25 +406,11 @@ final class FakeTripSource: DeviceTripSource, @unchecked Sendable {
     fileprivate func countSummary() { lock.lock(); _summaryReads += 1; lock.unlock() }
     fileprivate func countId() { lock.lock(); _idReads += 1; lock.unlock() }
 
-    /// 取り消されていない読みの取り出しを `release()` まで止める（取り消された読みは止めない）
-    var blockLiveReads = false
-    private var _blockedCalls = 0
-    private let gate = DispatchSemaphore(value: 0)
-    private var released = false
-    /// 止めている取り出しの数
-    var blockedCalls: Int { lock.lock(); defer { lock.unlock() }; return _blockedCalls }
+    /// 取り出しのたびに止まる門（nil なら止めない）
+    var gate: FetchGate?
 
-    func release() {
-        lock.lock(); released = true; lock.unlock()
-        for _ in 0..<8 { gate.signal() }
-    }
-
-    func fetch(since: Date, before: Date?, after: Date?) -> any DeviceTripAssets {
-        lock.lock()
-        let mustWait = blockLiveReads && !released && !Task.isCancelled
-        if mustWait { _blockedCalls += 1 }
-        lock.unlock()
-        if mustWait { gate.wait() }
+    func fetch(since: Date, before: Date?, after: Date?) async -> any DeviceTripAssets {
+        if let gate { await gate.enter() }
         let picked = items.filter { item in
             let date = item.shot.date
             return date >= since && (before.map { date <= $0 } ?? true) && (after.map { date > $0 } ?? true)
@@ -432,10 +418,48 @@ final class FakeTripSource: DeviceTripSource, @unchecked Sendable {
         return FakeTripAssets(items: picked, source: self)
     }
 
-    func assets(ids: [String]) -> any DeviceTripAssets {
+    func assets(ids: [String]) async -> any DeviceTripAssets {
         lock.lock(); _idsLookups += ids.count; lock.unlock()
         let wanted = Set(ids)
         return FakeTripAssets(items: items.filter { wanted.contains($0.shot.id) }, source: self)
+    }
+}
+
+/// 取り出しを止める門。**時間に頼らず**、止まった読みを試験が1つずつ放す
+actor FetchGate {
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var watchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var isOpen = false
+
+    /// 読みが門に入る（開いていなければ放されるまで止まる）
+    func enter() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            waiting.append(continuation)
+            let ready = watchers.filter { $0.count <= waiting.count }
+            watchers.removeAll { $0.count <= waiting.count }
+            ready.forEach { $0.continuation.resume() }
+        }
+    }
+
+    /// 門で止まっている読みが `count` 本になるまで待つ
+    func waitForWaiting(_ count: Int) async {
+        guard waiting.count < count else { return }
+        await withCheckedContinuation { watchers.append((count, $0)) }
+    }
+
+    /// いちばん先に止まった読みを放す
+    func releaseFirst() {
+        guard !waiting.isEmpty else { return }
+        waiting.removeFirst().resume()
+    }
+
+    /// 止まっている読みを全部放し、以後は止めない
+    func open() {
+        isOpen = true
+        let all = waiting
+        waiting = []
+        all.forEach { $0.resume() }
     }
 }
 
