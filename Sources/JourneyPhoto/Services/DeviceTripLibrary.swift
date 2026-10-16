@@ -145,7 +145,9 @@ struct DeviceTripScan {
     let progress: Progress
     var pauseNanos: UInt64 = DeviceTrips.chunkPauseNanos
 
-    func run(start: DeviceTrips.Index?, now: Date, publishCached: Bool) async -> DeviceTrips.Index {
+    /// - Parameter forceSweep: 10分の制限を外して突き合わせる（本人が「写真を追加で選ぶ」で選び足した直後）
+    func run(start: DeviceTrips.Index?, now: Date, publishCached: Bool,
+             forceSweep: Bool = false) async -> DeviceTrips.Index {
         let since = DeviceTrips.since(now: now)
         var index = start ?? DeviceTrips.Index()
         index.shots = index.shots.filter { $0.date >= since }
@@ -165,7 +167,7 @@ struct DeviceTripScan {
         }
 
         if index.complete, !Task.isCancelled,
-           DeviceTrips.maySweep(lastSweep: index.lastSweep, now: now),
+           forceSweep || DeviceTrips.maySweep(lastSweep: index.lastSweep, now: now),
            DeviceTrips.needsSweep(index, libraryCount: source.fetch(since: since, before: nil, after: nil).count,
                                   since: since) {
             index.lastSweep = now
@@ -268,6 +270,9 @@ struct DeviceTripScan {
             await pause()
         }
         let known = DeviceTrips.sweep(known: index.shots + index.skipped, current: ids)
+        // ⚠️ 写真が `maxShots`（5万枚）を超える人は、上限より古い写真がいつも「知らない写真」に入るので、
+        // 突き合わせのたびにここで頭から読み直す（10分に1回まで・`maySweep`）。5万枚を超える人は少なく、
+        // 読むのは日時と位置だけなので注記にとどめる（2026-10-16 判断・確かめ役の指摘）
         if known.unknown.count > DeviceTrips.maxSweepReads {
             index = Self.restarted(keepingNamesOf: index)
             await readFirst(nil, into: &index, since: since)
@@ -349,6 +354,14 @@ final class DeviceTripShelfStore: ObservableObject {
     private var lastRunStart: Date?
     /// 前面にいるか（`RootView` が知らせる）。裏にいる間は読み始めない
     private var isActive = true
+    /// ログインしているか（`setSignedIn`）
+    private(set) var isSignedIn: Bool
+    /// 次の読みで突き合わせの10分の制限を外す（`addMorePhotos`）
+    private var sweepRequested = false
+    /// 読めない段で端末のファイルを消した（読めない間は1回だけ）
+    private var clearedWhileUnreadable = false
+    /// 読みの輪を抜けた回数（試験・古い読みが終わったかを見る）
+    private(set) var loopsFinished = 0
     /// 裏にいる間に変化の知らせが来た
     private var pendingChange = false
     private var observer: DeviceTripChangeObserver?
@@ -373,7 +386,8 @@ final class DeviceTripShelfStore: ObservableObject {
          pauseNanos: UInt64 = DeviceTrips.chunkPauseNanos,
          lookupPauseNanos: UInt64 = DeviceTrips.lookupPauseNanos,
          now: @escaping () -> Date = Date.init,
-         observesLibrary: Bool = true) {
+         observesLibrary: Bool = true,
+         signedIn: Bool = false) {
         self.defaults = defaults
         self.writer = DeviceTripIndexWriter(url: url)
         self.source = source
@@ -383,6 +397,7 @@ final class DeviceTripShelfStore: ObservableObject {
         self.lookupPauseNanos = lookupPauseNanos
         self.now = now
         self.observesLibrary = observesLibrary
+        self.isSignedIn = signedIn
         self.status = status()
         introDismissed = defaults.bool(forKey: Self.introDismissedKey)
     }
@@ -398,7 +413,9 @@ final class DeviceTripShelfStore: ObservableObject {
         defaults.set(true, forKey: Self.introDismissedKey)
     }
 
-    /// 許可を尋ねる（説明の札の主ボタン）。許されたらすぐ読み始める
+    /// 許可を尋ねる（説明の札の主ボタン）。許されたらすぐ読み始める。
+    /// 許可のダイアログが閉じると前面に戻った扱い（`setActive`）でもう1回読みが頼まれるが、
+    /// 変わっていなければ書かず探し直さない（`DeviceTripScan.run`）ので注記にとどめる
     func requestAccess() async {
         _ = await PhotoLibrary.requestAccess()
         startIfAllowed()
@@ -410,8 +427,15 @@ final class DeviceTripShelfStore: ObservableObject {
     func refreshStatus() -> Bool {
         status = statusProvider()
         let readable = PhotoLibrary.canRead(status)
-        if !readable, didStart || index != nil || !trips.isEmpty {
+        if readable {
+            clearedWhileUnreadable = false
+        } else if didStart || index != nil || !trips.isEmpty {
             forget()
+        } else if !clearedWhileUnreadable {
+            // **メモリが空でも端末のファイルは消す**——設定で許可を外すと iOS がアプリを終わらせ、
+            // 次の起動ではメモリが空のまま（読めない段のあいだ1回だけ）
+            clearedWhileUnreadable = true
+            removeStoredFile()
         }
         return readable
     }
@@ -438,12 +462,18 @@ final class DeviceTripShelfStore: ObservableObject {
         startIfAllowed()
     }
 
+    /// ログインしているか（`RootView`・`AuthStore.settleSignedOut`）。**ログインしていない間は、
+    /// 前面に戻ったとき・変化の知らせで読み始めない**（サインアウトで消した要約を作り直さない）
+    func setSignedIn(_ signedIn: Bool) {
+        isSignedIn = signedIn
+    }
+
     /// 前面に来た・裏へ回った（`RootView` の `scenePhase`）。前面に来たら許可を見直し、
-    /// 裏にいる間に変化の知らせが来ていれば1回だけ読む
+    /// 裏にいる間に変化の知らせが来ていれば1回だけ読む。**読み始めるのはログインしているときだけ**
     func setActive(_ active: Bool) {
         isActive = active
         guard active else { return }
-        guard refreshStatus() else { return }
+        guard refreshStatus(), isSignedIn else { return }
         if !didStart {
             startIfAllowed()
         } else if pendingChange {
@@ -458,12 +488,17 @@ final class DeviceTripShelfStore: ObservableObject {
         isPickingMore = true
         let presented = await PhotoLibrary.presentLimitedPicker()
         isPickingMore = false
-        if presented { startIfAllowed() }
+        // 本人が選び足した直後の読みは、10分の突き合わせの制限を外す
+        if presented {
+            sweepRequested = true
+            startIfAllowed()
+        }
     }
 
     /// ライブラリが変わった。**前の読みの始まりから60秒・少なくとも3秒待ってから**読む
     /// （iCloud の同期は知らせが続けて来る）。裏にいる間は読まず、前面に戻ったときに読む
     func libraryChanged() {
+        guard isSignedIn else { return }
         guard isActive else {
             pendingChange = true
             return
@@ -477,6 +512,7 @@ final class DeviceTripShelfStore: ObservableObject {
                 pendingChange = true
                 return
             }
+            guard isSignedIn else { return }
             startIfAllowed()
         }
     }
@@ -499,7 +535,6 @@ final class DeviceTripShelfStore: ObservableObject {
         task?.cancel()
         task = nil
         runId += 1
-        generation += 1
         changeDebounce?.cancel()
         if let observer { PHPhotoLibrary.shared().unregisterChangeObserver(observer) }
         observer = nil
@@ -515,6 +550,12 @@ final class DeviceTripShelfStore: ObservableObject {
         rerunRequested = false
         pendingChange = false
         lastRunStart = nil
+        removeStoredFile()
+    }
+
+    /// 端末のファイルだけを消す（古い番号の書き込みも捨てる）
+    private func removeStoredFile() {
+        generation += 1
         let writer = writer
         let removing = generation
         removal = Task { await writer.remove(generation: removing) }
@@ -535,6 +576,7 @@ final class DeviceTripShelfStore: ObservableObject {
     }
 
     private func runLoop(_ run: Int) async {
+        defer { loopsFinished += 1 }
         isScanning = true
         var publishCached = false
         repeat {
@@ -542,7 +584,10 @@ final class DeviceTripShelfStore: ObservableObject {
             lastRunStart = now()
             if !loadedFromDisk {
                 // 書いた要約を読むのも後ろで（数MB・書き込みと同じ列）
-                index = await writer.load()
+                let loaded = await writer.load()
+                // 読んでいる間に消された（サインアウト）・新しい読みが始まった——古い要約を戻さない
+                guard run == runId else { return }
+                index = loaded
                 loadedFromDisk = true
                 publishCached = true
             }
@@ -555,7 +600,10 @@ final class DeviceTripShelfStore: ObservableObject {
                 save: { await writer.save($0, generation: saving) },
                 progress: { [weak self] index, trips in await self?.apply(index, trips, run: run) },
                 pauseNanos: pauseNanos)
-            let finished = await scan.run(start: index, now: now(), publishCached: publishCached)
+            let forceSweep = sweepRequested
+            sweepRequested = false
+            let finished = await scan.run(start: index, now: now(), publishCached: publishCached,
+                                          forceSweep: forceSweep)
             publishCached = false
             guard !Task.isCancelled, run == runId else { break }
             index = finished

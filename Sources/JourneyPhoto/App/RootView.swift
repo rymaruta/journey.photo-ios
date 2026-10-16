@@ -487,6 +487,8 @@ struct RootView: View {
             }
             // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
             .task(id: auth.userId) {
+                // ログインの有無を店に知らせる（ログインしていない間は前面に戻っても読まない）
+                DeviceTripShelfStore.shared.setSignedIn(auth.userId != nil)
                 if auth.userId != nil { DeviceTripShelfStore.shared.startIfAllowed() }
             }
             // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの

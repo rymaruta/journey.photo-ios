@@ -299,7 +299,7 @@ extension DeviceTripScanTests {
         let url = tempURLForGate()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let source = FakeTripSource(library())
-        source.blockFrom = 2   // 2回目の取り出し（新しい読み）で止める
+        source.blockLiveReads = true   // 取り消されていない読み（新しい読み）だけを止める
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
@@ -307,19 +307,72 @@ extension DeviceTripScanTests {
         store.startIfAllowed()      // 1本目
         store.forget()              // サインアウト（1本目を取り消す）
         store.startIfAllowed()      // 2本目
+        // **1本目が読みの輪を抜けきり、2本目が読みの途中で止まっている**場面を待つ
         var waited = 0
-        while source.fetchCalls < 2, waited < 200 {
+        while (store.loopsFinished < 1 || source.blockedCalls < 1), waited < 400 {
             try await Task.sleep(nanoseconds: 5_000_000)
             waited += 1
         }
-        // 1本目が終わりきるのを待つ（取り消されているのですぐ終わる）
-        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(store.loopsFinished, 1, "古い読みが終わる場面を作れなかった")
+        XCTAssertEqual(source.blockedCalls, 1)
         XCTAssertTrue(store.isScanning, "古い読みが新しい読みの印を消した")
         store.startIfAllowed()      // 2本目の最中の「読んで」は、終わったあとの1回にまとまる
         XCTAssertEqual(store.runsStarted, 2, "読みが2本走った")
         source.release()
         await store.waitUntilIdle()
         await store.waitForRemoval()
+    }
+
+    /// 🔴 **ログインしていない間は、前面に戻っても読まない**（サインアウトで消した要約を作り直さない）
+    @MainActor
+    func testSignedOutForegroundDoesNotRead() async throws {
+        let url = tempURLForGate()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
+        let store = DeviceTripShelfStore(defaults: defaults, url: url, source: FakeTripSource(library()),
+                                         status: { .authorized }, place: { _ in (nil, nil) },
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: false)
+        store.setActive(false)
+        store.setActive(true)
+        store.libraryChanged()
+        await store.waitUntilIdle()
+        XCTAssertEqual(store.runsStarted, 0, "ログインしていないのに読んだ")
+        XCTAssertNil(DeviceTripIndexFile.load(from: url), "サインアウトのあとに要約を作り直した")
+        store.setSignedIn(true)
+        store.setActive(false)
+        store.setActive(true)
+        await store.waitUntilIdle()
+        XCTAssertEqual(store.runsStarted, 1, "ログインしたら前面に戻ったときに読む")
+    }
+
+    /// 🔴 **読めない段なら、メモリが空でも端末のファイルを消す**（許可を外すと iOS がアプリを終わらせる）
+    @MainActor
+    func testUnreadableRemovesTheStoredFileOnAFreshLaunch() async throws {
+        let url = tempURLForGate()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var stored = DeviceTrips.Index()
+        stored.complete = true
+        stored.shots = library().map(\.shot)
+        DeviceTripIndexFile.save(stored, to: url)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
+        let store = DeviceTripShelfStore(defaults: defaults, url: url, source: FakeTripSource([]),
+                                         status: { .denied }, place: { _ in (nil, nil) },
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: true)
+        store.setActive(true)
+        await store.waitForRemoval()
+        XCTAssertNil(DeviceTripIndexFile.load(from: url), "読めない写真の位置の控えが残った")
+    }
+
+    /// 本人が「写真を追加で選ぶ」で選び足した直後は、10分の制限を外して突き合わせる
+    func testForcedSweepIgnoresTheInterval() async {
+        let source = FakeTripSource(library())
+        var first = await scan(source, Counter()).run(start: nil, now: now, publishCached: false)
+        first.lastSweep = now.addingTimeInterval(-60)
+        source.items.append(item("picked", hours: -24 * 60, home))
+        let index = await scan(source, Counter()).run(start: first, now: now, publishCached: false, forceSweep: true)
+        XCTAssertTrue(index.shots.contains { $0.id == "picked" }, "選び足した写真が棚に入らない")
     }
 
     private func tempURLForGate() -> URL {
@@ -353,12 +406,13 @@ final class FakeTripSource: DeviceTripSource, @unchecked Sendable {
     fileprivate func countSummary() { lock.lock(); _summaryReads += 1; lock.unlock() }
     fileprivate func countId() { lock.lock(); _idReads += 1; lock.unlock() }
 
-    /// この回数目からの取り出しを `release()` まで止める（0 は止めない）
-    var blockFrom = 0
-    private var _fetchCalls = 0
+    /// 取り消されていない読みの取り出しを `release()` まで止める（取り消された読みは止めない）
+    var blockLiveReads = false
+    private var _blockedCalls = 0
     private let gate = DispatchSemaphore(value: 0)
     private var released = false
-    var fetchCalls: Int { lock.lock(); defer { lock.unlock() }; return _fetchCalls }
+    /// 止めている取り出しの数
+    var blockedCalls: Int { lock.lock(); defer { lock.unlock() }; return _blockedCalls }
 
     func release() {
         lock.lock(); released = true; lock.unlock()
@@ -367,8 +421,8 @@ final class FakeTripSource: DeviceTripSource, @unchecked Sendable {
 
     func fetch(since: Date, before: Date?, after: Date?) -> any DeviceTripAssets {
         lock.lock()
-        _fetchCalls += 1
-        let mustWait = blockFrom > 0 && _fetchCalls >= blockFrom && !released
+        let mustWait = blockLiveReads && !released && !Task.isCancelled
+        if mustWait { _blockedCalls += 1 }
         lock.unlock()
         if mustWait { gate.wait() }
         let picked = items.filter { item in
