@@ -275,8 +275,6 @@ struct PhotoDetailView: View {
         }
         // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
         .task(id: shown.spotId ?? "") { await loadTripSpot() }
-        // この近くの撮影スポット（`spotId` の無い写真で座標のあるときだけ）。同じ索引の口（控えがあれば通信しない）
-        .task(id: PhotoTrip.nearbySpotKey(photo: shown) ?? "") { await loadNearbySpot() }
         // 「この写真を見て撮影」の元の写真（付いている写真・ログイン中だけ。口は認証が要る）
         .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId)) {
             await loadInspired()
@@ -514,6 +512,10 @@ struct PhotoDetailView: View {
         }
         .padding(.horizontal, JPSpace.m)
         .padding(.bottom, JPSpace.xxs)
+        // この近くの撮影スポット（`spotId` の無い写真で座標のあるときだけ）。同じ索引の口（控えがあれば通信しない）。
+        // **`body` ではなくここに付ける**: `body` の修飾の鎖に足すと、Xcode の型検査が時間内に終わらず
+        // ビルドが落ちた（2026-10-17・PR #262 の Mac の検証）。この裾は写真があるあいだ常に描かれる
+        .task(id: PhotoTrip.nearbySpotKey(photo: shown) ?? "") { await loadNearbySpot() }
     }
 
     /// 束のページの点（v2 の板: 6pt・今の1枚は白、ほかは白 40%）。**1枚だけなら出さない**。
