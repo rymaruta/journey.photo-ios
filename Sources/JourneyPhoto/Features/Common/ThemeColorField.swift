@@ -79,7 +79,7 @@ struct ThemeColorField: View {
                 // 選んでいれば見本と同じ輪（白）、選んでいなければ白 30% の輪（Web の `ring-white/30`）——
                 // 暗い色を選んでも丸の在りかが黒い地に消えない
                 .overlay(Circle()
-                    .strokeBorder(isCustom ? Color.primary : Color.white.opacity(0.3),
+                    .strokeBorder(isCustom ? ThemeColorLayout.color(ThemeColorLayout.selectedRing) : Color.white.opacity(0.3),
                                   lineWidth: ThemeColorLayout.ringWidth)
                     .padding(-(ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth)))
                 .allowsHitTesting(false)
@@ -98,8 +98,9 @@ struct ThemeColorField: View {
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .foregroundStyle(themeColor.isEmpty ? WebTheme.accentText : WebTheme.muted)
-                .background(themeColor.isEmpty ? WebTheme.accentBackground : WebTheme.surface,
+                // 選んでいれば真鍮の塗り＋墨（丸の輪と同じ決まり・2026-10-16 判断。`ThemeColorLayout.selected`）
+                .foregroundStyle(themeColor.isEmpty ? ThemeColorLayout.color(ThemeColorLayout.noneSelectedText) : WebTheme.muted)
+                .background(themeColor.isEmpty ? ThemeColorLayout.color(ThemeColorLayout.noneSelectedFill) : WebTheme.surface,
                             in: Capsule())
                 // 札（高さ約26）の外側だけ広げる（`background` より後ろ＝見た目は変えない）
                 .webTappable()
@@ -121,7 +122,7 @@ struct ThemeColorField: View {
                 // 選んだ印は **外側の輪**（Web の `ring-2 ring-offset-2`）。間 2・輪 2 で、
                 // 枠の余白 4 にちょうど収まる（輪の外径 44＝押せる枠）
                 .overlay(Circle()
-                    .strokeBorder(.primary, lineWidth: ThemeColorLayout.ringWidth)
+                    .strokeBorder(ThemeColorLayout.color(ThemeColorLayout.selectedRing), lineWidth: ThemeColorLayout.ringWidth)
                     .padding(-(ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth))
                     .opacity(chosen ? 1 : 0))
                 .frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)
@@ -144,6 +145,16 @@ enum ThemeColorLayout {
     /// 選んだ印の輪と丸の間・輪の太さ（Web の `ring-offset-2`・`ring-2`）。足して `inset` に収める
     static let ringGap: CGFloat = 2
     static let ringWidth: CGFloat = 2
+    /// **選んでいる印の色（2026-10-16 判断: 真鍮）。** 見本8色の丸・「自由に選ぶ」丸の輪は
+    /// 真鍮 `#C9A66B`、「なし」の札は真鍮の塗り（accent-fill `#B8955A`）＋墨の字（7.11:1）。
+    /// 板は「白＝選択」だが、owner の好み「選んでいるものは真鍮」（CLAUDE.md）を取った。
+    /// 欄は黒い地の上（プロフィールの編集）なので真鍮を置いてよい。以前は輪が白・「なし」が白の塗りで、
+    /// 同じ欄の中で選択の色が割れないよう3つともそろえる
+    static let selectedRing: UInt32 = BrandPalette.accent
+    static let noneSelectedFill: UInt32 = BrandPalette.accentFill
+    static let noneSelectedText: UInt32 = BrandPalette.ink
+    /// 0xRRGGBB から色（`Color(hex:)` を使い回す）
+    @MainActor static func color(_ rgb: UInt32) -> Color { Color(hex: ThemeColor.hex(rgb)) ?? .white }
     /// 端末の色選びの丸の見た目（ラベルを隠したとき 約28）。押せる枠 44 まで広げる倍率の元
     static let pickerWell: CGFloat = 28
     /// 下に敷いた色選びの透明度。**0.01 以上**（UIKit はそれ未満の部品に当たりを渡さない）

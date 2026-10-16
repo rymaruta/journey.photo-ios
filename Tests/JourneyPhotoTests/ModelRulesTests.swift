@@ -402,6 +402,17 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertTrue(ThemeColorLayout.rainbow.allSatisfy(ThemeColor.isValid))
     }
 
+    /// 🔴 **2026-10-16 判断: 選んでいる印は真鍮**（見本の丸・自由に選ぶ丸の輪、「なし」の塗り＋墨）。
+    /// 3つが同じ決まりで、黒い地の上で輪は部品の線 3:1、「なし」の字は 4.5:1 を越える
+    func testSelectionMarksAreBrass() {
+        XCTAssertEqual(ThemeColorLayout.selectedRing, 0xC9A66B, "輪は真鍮")
+        XCTAssertEqual(ThemeColorLayout.noneSelectedFill, 0xB8955A, "「なし」は accent-fill")
+        XCTAssertEqual(ThemeColorLayout.noneSelectedText, BrandPalette.ink, "塗りの上の字は墨")
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(ThemeColorLayout.selectedRing, 0x000000), 3)
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(ThemeColorLayout.noneSelectedText,
+                                                          ThemeColorLayout.noneSelectedFill), 4.5)
+    }
+
     /// 選んだ印の外側の輪（間 2・輪 2）は、押せる枠の余白 4 に収まる（隣の枠へはみ出さない）
     func testThemeColorRingFitsTheTapTarget() {
         XCTAssertEqual(ThemeColorLayout.ringGap, 2)
