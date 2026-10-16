@@ -384,9 +384,15 @@ final class PassStore: ObservableObject {
                 id: UUID().uuidString, photoId: id, note: index == 0 ? "夕方の街を歩くのが好き" : "",
                 showsFrom: true, metHour: PassExchange.hourStart(met, calendar: calendar),
                 deliverAt: now.addingTimeInterval(-60), placeName: names[index % names.count],
-                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil)
+                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil,
+                // 1枚目は和文2字と和文4字の区間（字数が違っても発・着の大きさがそろい、矢印が中央に来るかを撮る）
+                originLabel: index == 0 ? "東京" : nil, destinationLabel: index == 0 ? "フランス" : nil)
         }
         settings.enabled = true
+        // 自分のカードの見本（名刺の一枚を選ぶ画面）も同じ区間・裏のひとことつきで撮る
+        settings.setOrigin(.custom, text: "東京")
+        settings.setDestination(custom: true, text: "フランス")
+        if settings.note.isEmpty { settings.note = "霧の朝が好きです" }
         save()
     }
 

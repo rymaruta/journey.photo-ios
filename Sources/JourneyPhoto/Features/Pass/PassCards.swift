@@ -36,6 +36,15 @@ struct PassCardContent: Identifiable, Equatable {
                        alighting: PassTicket.alighting(card.placeName))
     }
 
+    /// 裏に描くもの
+    func backFace() -> PassTicketBackFace {
+        PassTicketBackFace(kind: kind, title: photo.displayTitle, note: card.shownNote,
+                           noteHidden: card.noteHidden == true || card.noteHasContact,
+                           issuer: PassTicket.issuer(name: name, prefecture: fromPrefecture),
+                           section: PassTicket.sectionLabel(km),
+                           count: PassTicket.countLabel(kind, meetingCount: card.ownerId == nil ? nil : meetingCount))
+    }
+
     /// 前の記録（ひとことを伏せた等）を新しい記録に差し替える
     func with(card next: PassEncounter) -> PassCardContent {
         PassCardContent(card: next, photo: photo, owner: owner, fromPrefecture: fromPrefecture, meetingCount: meetingCount)
@@ -74,6 +83,39 @@ struct PassTicketFace {
     let alighting: String
 }
 
+/// きっぷの裏に描くもの（届いたカードは `PassCardContent.backFace()`・自分のカードの見本は `preview`）。
+/// 2026-10-16 判断（owner「自分のカードも回したい」）: 裏を記録（`PassEncounter`）から切り離し、表
+/// （`PassTicketFace`）と同じく「描くもの」だけを渡す。自分のカードの見本も同じ裏の部品で描ける
+struct PassTicketBackFace: Equatable {
+    let kind: PassTicket.Kind
+    /// 作品名
+    let title: String
+    /// 見せるひとこと（空なら出さない）
+    let note: String
+    /// ひとことを伏せている（「ひとことは伏せています」を出す）
+    let noteHidden: Bool
+    /// 「発行」
+    let issuer: String
+    /// 「区間」
+    let section: String
+    /// 「回数」
+    let count: String
+
+    /// 自分のカードの見本の裏（**相手の手元に届く形**）。
+    /// - ひとことは電波に載る形（整えた字・連絡先の形は載らない＝`PassStore.payload` と同じ）
+    /// - 発行の都道府県は「居住地から」を選んだときだけ（相手の端末でもそう読まれる・`PassStore.prefecture(for:)`）
+    /// - 区間（km）と回数は会ってから決まるので「—」（表の番号・日時・下車を出さないのと同じ扱い）
+    static func preview(photoTitle: String?, note: String, name: String,
+                        origin: PassSettings.Origin, homePrefecture: String?) -> PassTicketBackFace {
+        let cleaned = PassExchange.cleanNote(note)
+        return PassTicketBackFace(kind: .plain, title: photoTitle ?? L("選んだ写真", "Your photo"),
+                                  note: PassExchange.containsContact(cleaned) ? "" : cleaned, noteHidden: false,
+                                  issuer: PassTicket.issuer(name: name, prefecture: origin == .home ? homePrefecture : nil),
+                                  section: PassTicket.sectionLabel(nil),
+                                  count: PassTicket.countLabel(.plain, meetingCount: nil))
+    }
+}
+
 /// カードの見た目の決まり（**2026-10-16 判断（owner が案C を選んだ）**・板 AltC・CardKinds）。テストで見張る
 enum PassCardStyle {
     /// 束を開いた画面のカード（板 300×430・角 14・写真 250）
@@ -108,8 +150,45 @@ enum PassCardStyle {
     static let arrowGap: Double = 6
 
     /// 明朝は1字がほぼ1字幅（全角）。両側に `chars` 字ずつを、いちばん縮めた大きさで並べて収まるか
+    /// （片側の欄 `routeColumnWidth` に `chars` 字が入るか。左右は同じ幅なので片側で数えれば足りる）
     nonisolated static func routeFits(chars: Int) -> Bool {
-        Double(chars) * routeSize * Double(routeMinScale) * 2 + arrowWidth + arrowGap * 2 <= routeWidth
+        Double(chars) * routeSize * Double(routeMinScale) <= routeColumnWidth
+    }
+
+    /// 区間の左右の欄の幅（並びの幅から矢印とすき間を引いて半分）。**矢印をいつもカードの中央に置く**
+    nonisolated static var routeColumnWidth: Double { (routeWidth - arrowWidth - arrowGap * 2) / 2 }
+
+    /// 字の幅を全角1字＝1 で数える（明朝の和文は 1・欧文と数字は `latinEm`）。
+    /// 欧文は字ごとの幅が違うので少し広めに見積もる
+    nonisolated static let latinEm = 0.62
+    nonisolated static func routeEms(_ text: String) -> Double {
+        text.reduce(0) { $0 + ($1.isASCII ? latinEm : 1) }
+    }
+
+    /// 区間の発・着の並べ方（**2026-10-16 判断**・owner「東京 ──→ フランス で左右の幅も字の大きさもそろわない」）。
+    ///
+    /// 前は発・着がそれぞれ `minimumScaleFactor` で別々に縮み、長い方だけ小さくなり、矢印も中央からずれた。
+    /// - 矢印はいつも並びの中央（`arrowCenter` = 並びの幅の半分）
+    /// - 発・着は同じ幅の左右の欄。**発は欄の中で右寄せ・着は左寄せ**（矢印に寄せて「東京 → フランス」を
+    ///   一続きに読ませる。板 AltC の「札幌 → 京都」の詰まった並びに近い形）
+    /// - 字の大きさは**発・着で同じ**: 長い方が欄に収まる大きさ（`routeSize` まで・下限 `routeSize × routeMinScale`）
+    struct RouteLayout: Equatable {
+        /// 発・着の両方の字の大きさ
+        let fontSize: Double
+        /// 左右の欄の幅（同じ）
+        let columnWidth: Double
+        /// 矢印の中心（並びの左端から）
+        let arrowCenter: Double
+        /// 数え方が外れたとき（幅の広い欧文など）だけ効く、最後の縮め（**12pt を割らない**）
+        var emergencyScale: Double { min(1, 12 / fontSize) }
+    }
+
+    nonisolated static func routeLayout(origin: String, destination: String) -> RouteLayout {
+        let longest = max(routeEms(origin), routeEms(destination))
+        let floor = routeSize * Double(routeMinScale)
+        let size = longest > 0 ? min(routeSize, max(floor, routeColumnWidth / longest)) : routeSize
+        return RouteLayout(fontSize: size, columnWidth: routeColumnWidth,
+                           arrowCenter: routeColumnWidth + arrowGap + arrowWidth / 2)
     }
     /// 裏の欄の値（板 14）・ひとこと（板 15 = `JPFont.body`）
     static let backValueSize: CGFloat = 14
@@ -294,14 +373,17 @@ struct PassCardFront: View {
                             .foregroundStyle(WebTheme.accent)
                     }
                 }
-                // すき間は矢印の左右だけ（`PassCardStyle.routeFits` の数え方と同じ）
+                // 矢印はいつも中央・発と着は同じ幅の欄に同じ大きさで（`PassCardStyle.routeLayout`・2026-10-16 判断）
+                let route = PassCardStyle.routeLayout(origin: face.origin, destination: face.destination)
                 HStack(alignment: .center, spacing: 0) {
-                    routeName(face.origin)
-                    Spacer(minLength: CGFloat(PassCardStyle.arrowGap))
+                    routeName(face.origin, route)
+                        .frame(width: CGFloat(route.columnWidth), alignment: .trailing)
                     PassTicketArrow()
-                    Spacer(minLength: CGFloat(PassCardStyle.arrowGap))
-                    routeName(face.destination)
+                        .padding(.horizontal, CGFloat(PassCardStyle.arrowGap))
+                    routeName(face.destination, route)
+                        .frame(width: CGFloat(route.columnWidth), alignment: .leading)
                 }
+                .frame(width: CGFloat(PassCardStyle.routeWidth))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(PassTicket.spokenRoute(origin: face.origin, destination: face.destination))
                 HStack(spacing: JPSpace.xs) {
@@ -340,12 +422,15 @@ struct PassCardFront: View {
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
     }
 
-    private func routeName(_ text: String) -> some View {
+    /// 区間の地名。**大きさは発・着で同じ**（`route.fontSize`）。札は寸法が決まっていて、字の大きさは並びに
+    /// 収まるよう数えて決めるので、文字の大きさの設定では動かさない（動かすと片側だけ欄からはみ出して縮み、
+    /// 左右がまたそろわなくなる）。縮めは数え方が外れたときの最後の手だけ（12pt まで）
+    private func routeName(_ text: String, _ route: PassCardStyle.RouteLayout) -> some View {
         Text(text)
-            .font(JPFont.display(PassCardStyle.routeSize, relativeTo: .title))
+            .font(.custom(JPFont.displayName, fixedSize: CGFloat(route.fontSize)))
             .foregroundStyle(WebTheme.text)
             .lineLimit(1)
-            .minimumScaleFactor(PassCardStyle.routeMinScale)
+            .minimumScaleFactor(CGFloat(route.emergencyScale))
     }
 
     @ViewBuilder
@@ -376,7 +461,7 @@ struct PassCardFront: View {
 /// きっぷの裏（板 AltC の右: 真鍮寄りの帯・「ご案内」・作品名・ひとこと・発行／有効／区間／回数）
 struct PassCardBack: View {
 
-    let content: PassCardContent
+    let face: PassTicketBackFace
     /// 回しているときの縁の光の位置
     var shine: Double? = nil
 
@@ -390,14 +475,14 @@ struct PassCardBack: View {
                 Text(L("ご案内", "NOTICE"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
-                Text(content.photo.displayTitle)
+                Text(face.title)
                     .font(JPFont.cardTitle)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
-                if !content.card.shownNote.isEmpty {
+                if !face.note.isEmpty {
                     // 🔴 **ひとことには署名が無い**（電波の中身は誰でも書ける）。届いた文だと分かる書き方にする
                     VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                        Text(L("「\(content.card.shownNote)」", "\u{201C}\(content.card.shownNote)\u{201D}"))
+                        Text(L("「\(face.note)」", "\u{201C}\(face.note)\u{201D}"))
                             .font(JPFont.body)
                             .lineSpacing(5)
                             .foregroundStyle(WebTheme.text)
@@ -408,7 +493,7 @@ struct PassCardBack: View {
                             .foregroundStyle(WebTheme.text3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                } else if content.card.noteHidden == true || content.card.noteHasContact {
+                } else if face.noteHidden {
                     Text(L("ひとことは伏せています", "Note hidden"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -416,12 +501,12 @@ struct PassCardBack: View {
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top, spacing: 12) {
-                        field(L("発行", "Issued by"), PassTicket.issuer(name: content.name, prefecture: content.fromPrefecture))
+                        field(L("発行", "Issued by"), face.issuer)
                         field(L("有効", "Valid"), PassTicket.validity)
                     }
                     HStack(alignment: .top, spacing: 12) {
-                        field(L("区間", "Distance"), PassTicket.sectionLabel(content.km), mono: true)
-                        field(L("回数", "Times"), PassTicket.countLabel(content.kind, meetingCount: content.card.ownerId == nil ? nil : content.meetingCount))
+                        field(L("区間", "Distance"), face.section, mono: true)
+                        field(L("回数", "Times"), face.count)
                     }
                 }
             }
@@ -431,8 +516,8 @@ struct PassCardBack: View {
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
-        .background { PassTicketGlow(kind: content.kind) }
-        .overlay(PassTicketEdge(kind: content.kind, shine: shine))
+        .background { PassTicketGlow(kind: face.kind) }
+        .overlay(PassTicketEdge(kind: face.kind, shine: shine))
         .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
         .accessibilityElement(children: .combine)

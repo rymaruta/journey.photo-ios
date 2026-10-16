@@ -50,7 +50,8 @@ final class PassWiringTests: XCTestCase {
         let viewer = try source("Features/Pass/PassViewerView.swift")
         XCTAssertTrue(viewer.contains(".overlay(alignment: .top) { ToastOverlay() }"), "束の画面にトーストが出ない")
         XCTAssertTrue(viewer.contains("PassPhotoFullView(photo: photo)"), "写真を全面で見られない")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(!back)"), "裏を見ている間に表の写真が押せる")
+        XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(!back)"),
+                      "裏を見ている間に表の写真が押せる")
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.writtenText,"),
@@ -92,8 +93,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 3)
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
-        let viewer = try source("Features/Pass/PassViewerView.swift")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(back)"))
+        XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(back)"))
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("onReported: { pass.markNoteReported(target.id) })"), "\(path): 通報したひとことを伏せない")
@@ -131,11 +131,16 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("SpinMotion.yawDelta("), "メダルが同じ決め方を使っていない（写しになる）")
         XCTAssertTrue(medal.contains("SpinMotion.flipTarget(from:"))
         let viewer = try source("Features/Pass/PassViewerView.swift")
-        for part in ["PassSpinTicket(yaw: yaw", "PassSpinGesture.liveYaw(", "PassSpinGesture.classify(",
-                     "SpinMotion.snapTarget(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
-                     "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)",
+        for part in ["PassSpinTicket(yaw: yaw", "spin.liveYaw(", "PassSpinGesture.classify(",
+                     "SpinMotion.snapTarget(",
                      "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
             XCTAssertTrue(viewer.contains(part), part)
+        }
+        // 回す描き方・手つきは共有の部品（自分のカードの見本も使う・`PassOwnCardSpinTests`）
+        let spin = try source("Features/Pass/PassSpinCard.swift")
+        for part in ["PassSpinGesture.liveYaw(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
+                     "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)"] {
+            XCTAssertTrue(spin.contains(part), part)
         }
     }
 

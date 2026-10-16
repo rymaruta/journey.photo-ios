@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// - 選べるのは**全体に公開している自分の写真だけ**（公開範囲を絞った写真は相手の端末で引けない・
 ///   `PassExchange.isPublicCard`）。公開一覧（`photos.json`）に載っているものから選ぶ
-/// - 上の見本は、相手に届くカードの表と同じ部品（`PassCardFront`）。**番号は出さない**
+/// - 上の見本は、相手に届くカードと同じ回る部品（`PassSpinCard` → `PassSpinTicket`）。指で回して裏も見られる。**番号は出さない**
 ///   （番号は受け取った側の帳の順で決まり、自分の側では決まらない・2026-10-16 判断）
 /// - 主ボタンは白（写真のある画面の主ボタン・CLAUDE.md の owner の好み。板は真鍮の塗りだが owner の決まりを取った）
 struct PassCardPickView: View {
@@ -38,6 +38,13 @@ struct PassCardPickView: View {
                        alighting: L("旅先のあたり 下車", "Got off around your trip"))
     }
 
+    /// 見本の裏（相手に届く形・会ってから決まる区間と回数は「—」・`PassTicketBackFace.preview`）
+    private var previewBack: PassTicketBackFace {
+        PassTicketBackFace.preview(photoTitle: selectedPhoto?.displayTitle, note: note,
+                                   name: profile?.name ?? L("あなた", "You"),
+                                   origin: originChoice, homePrefecture: pass.homePrefecture)
+    }
+
     /// ひとことが長すぎる（字数か、電波に載る大きさ）
     private var noteTooLong: Bool {
         PassExchange.noteProblem(note) != nil
@@ -54,14 +61,14 @@ struct PassCardPickView: View {
                     .lineSpacing(5)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                // 相手に届くきっぷの表（束の画面と同じ部品）。区間の右・日時・下車は会ってから決まるので、
-                // 見本では「旅先」とする。番号は受け取った側の帳の順なので出さない
+                // 相手に届くきっぷ（束の画面と同じ回る部品 `PassSpinTicket`・同じ手つき・2026-10-16 owner の頼み）。
+                // 区間の右・日時・下車は会ってから決まるので、見本では「旅先」とする。番号は受け取った側の帳の順
+                // なので出さない。裏の区間（km）・回数も会ってから決まるので「—」
                 // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
-                PassCardFront(face: previewFace)
+                PassSpinCard(front: previewFace, back: previewBack,
+                             spokenName: L("相手に届くカード", "the card others receive"))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(L("相手に届くカードの表", "The front of the card others receive"))
+                    .padding(.top, 6)
                 JPEyebrowLine(L("あなたの写真から選ぶ", "Choose from your photos"))
                 grid
                 noteField

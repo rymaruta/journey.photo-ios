@@ -1400,6 +1400,71 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "83-すれちがい帳")
     }
 
+    /// **自分のカード（名刺の一枚の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
+    /// 名刺の一枚。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
+    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
+    /// 横に回しても裏にならなければ落とす**
+    func testCapturesPassOwnCard() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let row = app.buttons["settings.pass"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !row.isHittable, pushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return }
+        row.tap()
+        let cardRow = app.buttons["pass.settings.card"].firstMatch
+        guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return }
+        cardRow.tap()
+
+        let card = app.descendants(matching: .any)["pass.pick.card"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return XCTFail("名刺の一枚の画面に回る見本が無い") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "85-自分のカード（表・東京→フランス）")
+        let flip = app.buttons["pass.pick.flip"].firstMatch
+        XCTAssertTrue(flip.exists, "回さずに裏を見る口（「裏を見る」）が無い")
+        XCTAssertGreaterThanOrEqual(flip.frame.height, 44, "「裏を見る」が 44pt 未満")
+        let value = { (card.value as? String) ?? "" }
+        XCTAssertTrue(value().hasSuffix("表"), "読み上げで表と言わない（\(value())）")
+        guard flip.isHittable else { return XCTFail("「裏を見る」を押せない") }
+        flip.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(value().hasSuffix("裏"), "「裏を見る」で裏にならない（\(value())）")
+        shoot(app, "86-自分のカード（裏）")
+        // 表に戻してから、指を置いて横に回す（ScrollView の中でも回る・離すと近い面＝裏に吸い付く）
+        flip.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        let from = card.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.75))
+        let to = card.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.75))
+        from.press(forDuration: 0.4, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(value().hasSuffix("裏"), "見本を指で横に回しても裏にならない（\(value())）")
+        shoot(app, "87-自分のカード（指で回した後）")
+    }
+
     /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
     /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。起動の鍵（`-JPComposeGuidePreview`・Debug のみ）で
     /// Pro の確かめを飛ばす。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、線は鍵があるときだけ重なる。
