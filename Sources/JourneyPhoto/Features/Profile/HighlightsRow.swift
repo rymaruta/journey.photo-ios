@@ -35,6 +35,9 @@ struct HighlightsRow: View {
                                                count: highlights.count) {
                 header
                 circles
+            } else {
+                // 読み終わる前も中身を1つ置き、`.task` を必ず走らせる（StoriesRow の 1.1.5 と同じ守り・2026-10-16）
+                StoriesRow.loadingAnchor
             }
         }
         .task(id: userId) { await load() }

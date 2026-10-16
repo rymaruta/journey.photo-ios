@@ -234,4 +234,32 @@ final class StoryV2RingsFixTests: XCTestCase {
         let load = slice(row, from: "func load(environment:", to: "let fetched = try? await")
         XCTAssertTrue(load.contains("defer { settled = true }"))
     }
+
+    /// 🔴 1.1.5: 読み込み中は入れ物（`Group`）の中身が空で `.task` が走らず、ホームの輪の列がいつまでも
+    /// 出なかった。**出さない間も中身を置き、`.task` はその入れ物に付いている**
+    func testRowLoadsEvenWhileRingsAreHidden() throws {
+        let row = try source("Features/Stories/StoriesRow.swift")
+        let body = slice(row, from: "var body: some View {", to: ".fullScreenCover(item: $opened")
+        XCTAssertFalse(body.contains("        Group {\n"), "中身が空になりうる Group に .task を付けている")
+        assertInOrder(["VStack(spacing: 0) {",
+                       "Self.showsRings(settled: model.settled",
+                       "} else {", "Self.loadingAnchor",
+                       ".task(id: \"\\(auth.userId ?? \"-\")#\\(reloadToken)\")"],
+                      in: body, "読み込み中も .task が走る形")
+        XCTAssertTrue(row.contains("Color.clear.frame(height: 0).accessibilityHidden(true)"))
+    }
+
+    /// 同じ形の2か所: 旅の「電波なしで使えるようにする」の札（Pro かどうか読む前は中身が空だった）と、
+    /// プロフィールのハイライト（読み終わる前は中身が空）。どちらも見えない1枚を置いて `.task` を走らせる
+    func testOtherLoadersKeepAnAnchor() throws {
+        let card = try source("Features/Trips/OfflineTripCard.swift")
+        let cardBody = slice(card, from: "var body: some View {", to: ".fullScreenCover(isPresented: $showPaywall)")
+        assertInOrder(["case .hidden:", "StoriesRow.loadingAnchor", ".task {", "myProfile()"],
+                      in: cardBody, "旅の札の読み込み")
+        XCTAssertFalse(cardBody.contains("EmptyView()"), "中身が EmptyView だけになり .task が走らない")
+        let highlights = try source("Features/Profile/HighlightsRow.swift")
+        let hBody = slice(highlights, from: "var body: some View {", to: ".sheet(isPresented: $showEditor")
+        assertInOrder(["if ProfileSections.showsHighlights(", "} else {", "StoriesRow.loadingAnchor",
+                       ".task(id: userId) { await load() }"], in: hBody, "ハイライトの読み込み")
+    }
 }
