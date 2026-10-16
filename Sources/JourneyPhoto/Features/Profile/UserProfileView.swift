@@ -139,6 +139,10 @@ struct UserProfileView: View {
                     }
                     if model.profile != nil {
                         counts
+                        // 旅の記録と旅の一冊（2026-10-16 owner「他人のプロフィールでも旅の記録を」）。
+                        // 板 UserProfile F33 の並び: 数 → 旅 → ハイライト。旅の記録はマイページと同じく数のすぐ下
+                        travelRecord
+                        tripsLine
                         if canAct {
                             // 板 31 の丸の列。**無い人には何も出さない**（`ProfileSections.showsHighlights`）。
                             // 見られるのは本人とフォロワーだけなので、**フォローを変えたら
@@ -187,6 +191,30 @@ struct UserProfileView: View {
     /// 🔴 ブロック・通報した写真を落とした一覧。以前は読み込んだまま描いていて、
     /// 詳細でブロックして戻っても、その人の写真の格子と地図が押せた（審査 1.2）
     private var shownPhotos: [Photo] { dropped.visible(model.photos) }
+
+    /// 旅の記録（マイページと同じ `TravelRecordSection`）。**この人の公開写真だけ**から作り、
+    /// ブロックの関係なら出さない（`ProfileTravelRecord.othersPhotos`・2026-10-16 判断）。
+    /// 国も距離も無い人・読み込み中・取れなかった回は節ごと出さない（板 F33「灰色の空き地も置かない」）
+    @ViewBuilder
+    private var travelRecord: some View {
+        let summary = ProfileTravelRecord.othersSummary(shownPhotos, blocked: isBlocked)
+        if !summary.isEmpty {
+            TravelRecordSection(summary: summary, isMine: false)
+        }
+    }
+
+    /// 旅の一冊（板 F33「旅」の1行）。公開写真だけを、マイページの棚と同じ規則で束ねる。
+    /// 一冊も無ければ節ごと出さない
+    @ViewBuilder
+    private var tripsLine: some View {
+        let trips = ProfileTravelRecord.othersTrips(shownPhotos, blocked: isBlocked)
+        if !trips.isEmpty {
+            // 公開一覧から来た写真なので個別ページが在る（`LikedPhotos.fromPublicFeed`）
+            ProfileTripsLine(trips: trips,
+                             isPublic: LikedPhotos.fromPublicFeed(
+                                ProfileTravelRecord.othersPhotos(shownPhotos, blocked: isBlocked)))
+        }
+    }
 
     @ViewBuilder
     private var photoArea: some View {
