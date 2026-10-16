@@ -86,12 +86,15 @@ enum PhotoTrip {
     /// `OfficialSpotIndex.nearbyMaxKm` = 50km は「足を延ばせる所」の距離で、ここの用途とは違う）
     static let nearbySpotMaxKm: Double = 2
 
-    /// 座標からいちばん近い台帳の撮影スポット（`nearbySpotMaxKm` 以内・座標と名前のある行だけ）。
+    /// 座標からいちばん近い台帳の撮影スポット（`nearbySpotMaxKm` 以内・座標とスラッグのある行だけ）。
+    /// 🔴 **運営の下書き（`isDraft`）の行は出さない**——まだ確かめていない行を「この近く」と勧めない
     /// 選び方は地図で押した地点の拾い直しと同じ（`PlaceLookup.nearestIndex`）。無ければ nil（行ごと出さない）
     static func nearbySpot(to coords: Photo.Coords?, in index: [OfficialSpot],
                            maxKm: Double = nearbySpotMaxKm) -> OfficialSpot? {
         guard let coords else { return nil }
-        let usable = index.filter { $0.coords != nil && !$0.slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let usable = index.filter {
+            !$0.isDraft && $0.coords != nil && !$0.slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         guard let i = PlaceLookup.nearestIndex(of: usable.compactMap(\.coords), to: coords, withinKm: maxKm) else {
             return nil
         }

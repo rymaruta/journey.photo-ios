@@ -521,7 +521,10 @@ struct RootView: View {
                 CameraPicker { capture in pendingCapture = capture }
                     .ignoresSafeArea()
             }
-            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**。
+            // ⚠️ 投稿の画面を足したら、この並びと、端末の旅の一冊（PR #260 の `tripImportRequests` の onChange）の
+            // 確かめにも足す。#260 を取り込むときは、あちらも `PostRequestGate.opens(busy:)` にそろえる
+            // （今のあちらの確かめには「カメラで撮る」の `showPostCamera` が入っていない）
             .onChange(of: tabRouter.postRequests) { _, _ in
                 guard let kind = tabRouter.takePendingPost(),
                       PostRequestGate.opens(busy: [showTripImport, showPhotoUpload, showStoryComposer,

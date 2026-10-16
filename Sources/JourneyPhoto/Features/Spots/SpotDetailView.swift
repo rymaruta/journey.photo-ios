@@ -300,9 +300,12 @@ struct SpotDetailView: View {
 
     // MARK: - この近くの撮影スポット（台帳）
 
+    /// 撮影地の座標。**`place` を作らずに直に取る**（`place` は分類・広い撮影地を毎回数え直す・`place.coords` と同じ値）
+    private var nearbyCoords: Photo.Coords? { linked.compactMap(\.coords).first }
+
     /// 読みに行く鍵（撮影地の座標）。座標の無い撮影地は nil（行を出さない）
     private var nearbySpotKey: String? {
-        place.coords.map { "near|\(spot.slug)|\($0.lat),\($0.lng)" }
+        nearbyCoords.map { "near|\(spot.slug)|\($0.lat),\($0.lng)" }
     }
 
     /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。撮影地の集まりの頁から、
@@ -347,7 +350,7 @@ struct SpotDetailView: View {
     /// 台帳の索引を読み、いちばん近い撮影スポットを引く。読めなかった回は覚えない
     private func loadNearbySpot() async {
         guard let key = nearbySpotKey else { return }
-        let coords = place.coords
+        let coords = nearbyCoords
         let stillHere = { !Task.isCancelled && nearbySpotKey == key }
         if nearbySpotLoaded?.spotId != key {
             guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }

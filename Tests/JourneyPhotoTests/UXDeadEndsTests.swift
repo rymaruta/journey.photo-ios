@@ -31,8 +31,9 @@ final class UXDeadEndsTests: XCTestCase {
         return String(rest[..<tail.lowerBound])
     }
 
-    private func spot(_ id: String, lat: Double?, lng: Double?, slug: String? = nil) throws -> OfficialSpot {
-        var fields = ["\"spotId\":\"\(id)\"", "\"slug\":\"\(slug ?? id)\"", "\"name\":\"[\(id)]\"", "\"stage\":\"published\""]
+    private func spot(_ id: String, lat: Double?, lng: Double?, slug: String? = nil,
+                      stage: String = "published") throws -> OfficialSpot {
+        var fields = ["\"spotId\":\"\(id)\"", "\"slug\":\"\(slug ?? id)\"", "\"name\":\"[\(id)]\"", "\"stage\":\"\(stage)\""]
         if let lat, let lng { fields.append("\"coords\":{\"lat\":\(lat),\"lng\":\(lng)}") }
         return try JSONDecoder.api.decode(OfficialSpot.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
     }
@@ -82,6 +83,11 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertNil(PhotoTrip.nearbySpot(to: here, in: [far, noCoords, blank]), "2km より遠い・座標やスラッグの無い行を出した")
         XCTAssertNil(PhotoTrip.nearbySpot(to: nil, in: index))
         XCTAssertEqual(PhotoTrip.nearbySpotMaxKm, 2)
+        // 運営の下書きの行は、いちばん近くても出さない
+        let draft = try spot("draft", lat: 35.00, lng: 135.001, stage: "draft")
+        XCTAssertTrue(draft.isDraft)
+        XCTAssertEqual(PhotoTrip.nearbySpot(to: here, in: [draft, near])?.spotId, "near", "下書きの行を勧めた")
+        XCTAssertNil(PhotoTrip.nearbySpot(to: here, in: [draft]))
     }
 
     /// 鍵は `spotId` の無い写真で、座標のあるときだけ。写真と座標で変わる
@@ -149,13 +155,34 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertEqual(TripShelfList.startTripTitle, "旅の写真からまとめて")
 
         let book = try source("Features/Pass/PassBookView.swift")
-        XCTAssertTrue(book.contains("actionTitle: Self.settingsTitle, actionIdentifier: \"passBook.emptySettings\") {\n                            showSettings = true"))
+        XCTAssertTrue(book.contains("actionTitle: Self.settingsTitle, actionIdentifier: \"passBook.emptySettings\") {\n                            if fromSettings"))
         XCTAssertTrue(book.contains(".navigationDestination(isPresented: $showSettings) { PassSettingsView() }"))
 
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains(".onChange(of: tabRouter.postRequests)"))
         XCTAssertTrue(root.contains("guard let kind = tabRouter.takePendingPost(),"))
         XCTAssertTrue(root.contains("                choosePost(kind)\n            }"), "下の「投稿」と別の道で開いている")
+    }
+
+    /// 「ほかの投稿の画面が出ていたら開かない」の並びに、投稿の画面の旗が全部入っている
+    /// （1つ抜けると、その画面の上に別の投稿の画面が重なる）
+    func testPostRequestGateCoversEveryPostScreen() async throws {
+        let root = try source("App/RootView.swift")
+        let gate = slice(root, from: "PostRequestGate.opens(busy: [", to: "]) else { return }")
+        let flags = ["showTripImport", "showPhotoUpload", "showStoryComposer", "showPostChoice", "showPostCamera"]
+        for flag in flags {
+            XCTAssertTrue(root.contains("@State private var \(flag) = false"), "\(flag) が RootView に無い")
+            XCTAssertTrue(gate.contains(flag), "\(flag) が出ている間も空の画面の一手が投稿の画面を開く")
+        }
+    }
+
+    /// 設定から来たすれちがい帳では、「すれちがいの設定」で設定を積み直さず戻る
+    func testPassBookFromSettingsGoesBack() async throws {
+        let book = try source("Features/Pass/PassBookView.swift")
+        XCTAssertTrue(book.contains("if fromSettings { dismiss() } else { showSettings = true }"))
+        let settings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(settings.contains("PassBookView(fromSettings: true)"))
+        XCTAssertFalse(settings.contains("PassBookView()"), "設定から開く帳が、設定を積み直す")
     }
 
     // MARK: - 4. アプリの一言
@@ -228,6 +255,12 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertTrue(view.contains("if case .storyReplies(let storyId) = target {\n            repliesStory = StoryRepliesTarget(storyId: storyId)"))
         XCTAssertTrue(view.contains(".sheet(item: $repliesStory) { target in\n            StoryRepliesLoader(storyId: target.storyId)"))
         XCTAssertTrue(view.contains("open(destination)"), "通知を押して開いた回がシートを通らない")
+        // 返信のシートが出たまま別の行き先へ行くときは閉じる（シートの下で積まれて見えない）
+        let open = slice(view, from: "private func open(_ target:", to: "/// 行き先の画面")
+        XCTAssertTrue(open.contains("repliesStory = nil\n            route = target"))
+        // 積む道には返信の一覧を置かない（自分の NavigationStack を持つので入れ子になる）
+        let destination = slice(view, from: "private func destinationView(", to: "private var emptyState")
+        XCTAssertFalse(destination.contains("StoryRepliesLoader"))
         let loader = try source("Features/Stories/StoryRepliesSheet.swift")
         XCTAssertTrue(loader.contains("try await environment.stories.replies(id: storyId)"))
         XCTAssertTrue(loader.contains("BlockFilter.replies(fetched, blocked: hidden.blockedUserIds)"))
@@ -236,6 +269,15 @@ final class UXDeadEndsTests: XCTestCase {
     // MARK: - 8. 文言
 
     func testWishlistEmptyDoesNotRepeatNothingYet() async throws {
+        // いいねした写真の空の文は「いいね」と呼ぶ（「お気に入り」はもう使わない）
+        let liked = try source("Features/Profile/FavoritesView.swift")
+        XCTAssertTrue(liked.contains("まだいいねした写真がありません"))
+        XCTAssertFalse(liked.contains("まだお気に入りがありません"))
+        // 撮影地の頁の近くのスポットは、座標を `place` を作らずに取る
+        let place = try source("Features/Spots/SpotDetailView.swift")
+        XCTAssertTrue(place.contains("private var nearbyCoords: Photo.Coords? { linked.compactMap(\\.coords).first }"))
+        XCTAssertTrue(place.contains("let coords = nearbyCoords"))
+        XCTAssertFalse(place.contains("place.coords.map { \"near|"))
         XCTAssertFalse(MyPageEmpty.wishlistMessage.contains("まだありません"), "見出しと本文で「まだありません」を重ねた")
         let mypage = try source("Features/Profile/MyPageView.swift")
         XCTAssertTrue(mypage.contains("message: MyPageEmpty.wishlistMessage)"))

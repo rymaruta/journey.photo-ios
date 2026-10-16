@@ -59,7 +59,7 @@ struct FavoritesView: View {
                     // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）
                     JPLoadingState(kind: .grid)
                 case .none:
-                    EmptyState(message: L("まだお気に入りがありません", "No liked photos yet"))
+                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"))
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:

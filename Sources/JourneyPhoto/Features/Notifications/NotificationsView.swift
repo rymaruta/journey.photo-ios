@@ -104,6 +104,8 @@ struct NotificationsView: View {
         if case .storyReplies(let storyId) = target {
             repliesStory = StoryRepliesTarget(storyId: storyId)
         } else {
+            // 返信のシートが出ていたら閉じてから積む（シートの下で別の画面が開いて見えない）
+            repliesStory = nil
             route = target
         }
     }
@@ -122,9 +124,10 @@ struct NotificationsView: View {
         case .light:
             // 光と天気の知らせ（プッシュだけ）→ 行きたい場所の光（板 LightAlert）
             LightForecastView()
-        case .storyReplies(let storyId):
-            // ふつうはシートで出す（`open`）。積まれたときも同じ中身を出す
-            StoryRepliesLoader(storyId: storyId)
+        case .storyReplies:
+            // **ここへは来ない**: 返信の一覧は必ずシートで出す（`open` が `route` に入れない）。
+            // `StoryRepliesSheet` は自分の `NavigationStack` を持つので、積むと入れ子になる。何も出さない
+            EmptyView()
         }
     }
 
