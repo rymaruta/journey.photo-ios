@@ -53,7 +53,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(viewer.contains(".allowsHitTesting(!showsBack)"), "裏を見ている間に表の写真が押せる")
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
-            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)"),
+            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,"),
                           "\(path) のひとことの通報が写真の通報になっている")
             XCTAssertTrue(text.contains("pass.setNoteHidden("), "\(path) でひとことを伏せられない")
         }
@@ -78,6 +78,32 @@ final class PassWiringTests: XCTestCase {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         XCTAssertTrue(try source("Features/Pass/PassBookView.swift").contains("PassTicketSlot(content: content)"))
+    }
+
+    /// 三度目の読み直し: 縁は外側・光は後ろ・見本は縮めない・裏は裏のときだけ押せる・通報の終わりで伏せる
+    func testEdgeOutsideAndReportFollowUps() throws {
+        let cards = try source("Features/Pass/PassCards.swift")
+        let edge = try XCTUnwrap(cards.range(of: "struct PassTicketEdge")).upperBound
+        let glow = try XCTUnwrap(cards.range(of: "struct PassTicketGlow")).lowerBound
+        let edgeBody = String(cards[edge..<glow])
+        XCTAssertTrue(edgeBody.contains(".padding(firstInset)"), "縁を内側に引いている（写真に真鍮がかかる）")
+        XCTAssertFalse(edgeBody.contains(".shadow("), "「はじめて」の光を縁に付けている（写真に光が落ちる）")
+        XCTAssertEqual(cards.components(separatedBy: ".background { PassTicketGlow(").count - 1, 3)
+        XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 3)
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
+        let viewer = try source("Features/Pass/PassViewerView.swift")
+        XCTAssertTrue(viewer.contains(".allowsHitTesting(showsBack)"))
+        for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("onReported: { pass.markNoteReported(target.id) })"), "\(path): 通報したひとことを伏せない")
+            XCTAssertTrue(text.contains("carriedPassNote: target.card.noteReported == true ? target.card.note : nil)"),
+                          "\(path): 写真の通報でひとことの通報が消える")
+        }
+        let sheet = try source("Features/Social/ReportSheet.swift")
+        XCTAssertTrue(sheet.contains("onReported?()"))
+        XCTAssertTrue(sheet.contains("carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }"))
+        XCTAssertTrue(sheet.contains("report.replaceNotice"), "上書きされることを画面で言わない")
     }
 
     /// 退会・期限切れのログアウトでも電波を止める

@@ -15,6 +15,10 @@ struct ReportSheet: View {
     /// すれちがいのカードのひとことの通報（2026-10-16）。署名が無いので、写真は隠さず・持ち主をブロックする口も
     /// 出さない。補足に印と本文を入れて送る（`ModerationService.passNoteReportNote`）
     var passNote: String? = nil
+    /// 写真の通報で、同じカードのひとことを前に通報していたら、その本文（上書きで消えないよう補足に一緒に入れる）
+    var carriedPassNote: String? = nil
+    /// 受け付けた（閉じる前に呼ぶ）。すれちがいのひとことの通報の後に、そのひとことを伏せるのに使う
+    var onReported: (() -> Void)? = nil
     /// 通報する写真の小さな札（v2 の板 Report・2026-10-14: 「通報する写真を上に小さく出して取り違えを防ぐ」）。
     /// 写真の詳細から開いたときだけ渡す。無ければ札を出さない（ホームの格子・ストーリーからの通報）
     var subject: Subject? = nil
@@ -73,6 +77,18 @@ struct ReportSheet: View {
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if passNote != nil || carriedPassNote != nil {
+                            // サーバーの通報は「1人1写真に1件」で上書きされる。黙って消えないよう言う
+                            Text(passNote != nil
+                                 ? L("同じ写真を前に通報していれば、その通報はこの通報で置き換わります（1つの写真につき1件）。",
+                                     "If you reported this photo before, that report will be replaced by this one (one per photo).")
+                                 : L("前に送ったひとことの通報は置き換わるため、この通報の補足に一緒に入れて送ります。",
+                                     "Your earlier report about the note will be replaced, so it\u{2019}s included in this report."))
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.text3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("report.replaceNotice")
                         }
                         reasons
                         JPField(L("補足（任意）", "Details (optional)"), multiline: true) {
@@ -258,6 +274,7 @@ struct ReportSheet: View {
         let blocker = hidden.owner
         do {
             let sentNote = passNote.map { ModerationService.passNoteReportNote($0, note: note) }
+                ?? carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }
                 ?? comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
             try await environment.moderation.report(photoId: photoId, reason: reason, note: sentNote)
             // **押したあと実際に消す。** 通報が受け付けられただけで、
@@ -277,6 +294,7 @@ struct ReportSheet: View {
                 }
             }
             await applyHidden()
+            onReported?()
             // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
             // 押した人には届いたのか分からなかった
             // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える

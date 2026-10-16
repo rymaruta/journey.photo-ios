@@ -27,6 +27,8 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var ownerId: String?
     /// ひとことを伏せた（カードの「…」・この端末だけ）。前の版の記録には無いので省略できる形
     var noteHidden: Bool? = nil
+    /// ひとことを通報した（写真を通報するときに補足に一緒に入れる・`ReportSheet.carriedPassNote`）
+    var noteReported: Bool? = nil
 
     /// 見せるひとこと（伏せていれば空）
     var shownNote: String { noteHidden == true ? "" : note }

@@ -46,12 +46,10 @@ struct PassCardPickView: View {
                     .lineSpacing(5)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                // 相手に届くきっぷの表（同じ部品を縮めて出す）。区間の右・日時・下車は会ってから決まるので、
+                // 相手に届くきっぷの表（束の画面と同じ部品）。区間の右・日時・下車は会ってから決まるので、
                 // 見本では「旅先」とする。番号は受け取った側の帳の順なので出さない
+                // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
                 PassCardFront(face: previewFace)
-                    .scaleEffect(PassCardStyle.previewScale)
-                    .frame(width: PassCardStyle.deckSize.width * PassCardStyle.previewScale,
-                           height: PassCardStyle.deckSize.height * PassCardStyle.previewScale)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                     .accessibilityElement(children: .ignore)

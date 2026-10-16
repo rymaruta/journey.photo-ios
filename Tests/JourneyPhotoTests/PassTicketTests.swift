@@ -88,6 +88,33 @@ final class PassTicketTests: XCTestCase {
         XCTAssertNotEqual(problem, PassExchange.noteProblem(String(repeating: "あ", count: 21)))
     }
 
+    /// 🔴 足せなかった（.clear）ときは広告せず、止めて一度だけ足し直す（前の版は広告へ進んでいた）
+    func testFailedAddStopsAdvertisingAndRetriesOnce() {
+        XCTAssertEqual(PassRadio.followUp(.clear, alreadyRetried: false), .stopAndRetry)
+        XCTAssertEqual(PassRadio.followUp(.clear, alreadyRetried: true), .stop, "足し直しを繰り返す")
+        XCTAssertEqual(PassRadio.followUp(.set(Data([1])), alreadyRetried: true), .advertise)
+        XCTAssertEqual(PassRadio.followUp(.keep, alreadyRetried: false), .none)
+    }
+
+    /// 写真の通報に、前に送ったひとことの通報を一緒に入れる（サーバーは1人1写真に1件で上書きする）
+    func testPhotoReportCarriesEarlierNoteReport() {
+        let sent = ModerationService.photoReportWithPassNote("写真が不快", passNote: "なりすましの文")
+        XCTAssertTrue(sent.hasPrefix("写真が不快"))
+        XCTAssertTrue(sent.contains(ModerationService.passNoteMarker), "前のひとことの通報が消える")
+        XCTAssertTrue(sent.contains("なりすましの文"))
+        let bare = ModerationService.photoReportWithPassNote(nil, passNote: "なりすましの文")
+        XCTAssertTrue(bare.hasPrefix(ModerationService.passNoteMarker))
+        let long = ModerationService.photoReportWithPassNote(String(repeating: "あ", count: 600), passNote: String(repeating: "い", count: 600))
+        XCTAssertLessThanOrEqual(PostLimits.length(long), ModerationService.reportNoteMax)
+    }
+
+    /// 縁の太さ（外へ出す分）
+    func testEdgeWidths() {
+        XCTAssertEqual(PassTicketEdge.width(.plain), 1)
+        XCTAssertEqual(PassTicketEdge.width(.first), 2)
+        XCTAssertEqual(PassTicketEdge.width(.far(800)), 1.5)
+    }
+
     /// 🔴 続けて2回変えたとき、前の中身の `didAdd` を後の中身の答えと取り違えない
     func testAfterAddDoesNotMixUpPayloads() {
         let a = Data([1]), b = Data([2])

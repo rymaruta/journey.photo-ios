@@ -74,7 +74,8 @@ struct PassViewerView: View {
                 if let current {
                     deck(current)
                         .padding(.top, 26)
-                    Text(L("押すと裏返る · 左右に払って次のカード", "Tap to flip · Swipe for the next card"))
+                    Text(L("写真を押すと全面 · 下を押すと裏返る · 左右に払って次のカード",
+                           "Tap the photo to view it · Tap below to flip · Swipe for the next card"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .multilineTextAlignment(.center)
@@ -108,10 +109,12 @@ struct PassViewerView: View {
             showsBack = false
         }
         .sheet(item: $reportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
+            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId,
+                        carriedPassNote: target.card.noteReported == true ? target.card.note : nil)
         }
         .sheet(item: $noteReportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,
+                        onReported: { pass.markNoteReported(target.id) })
         }
         .fullScreenCover(item: $fullPhoto) { photo in PassPhotoFullView(photo: photo) }
         // **この画面の上にもトーストを重ねる**（全面の上には根のトーストが出ず、ブロックの失敗・通報の受付が
@@ -183,6 +186,7 @@ struct PassViewerView: View {
                     // 裏は鏡に映らないように先に半回転しておく
                     .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                     .opacity(showsBack ? 1 : 0)
+                    .allowsHitTesting(showsBack)
             }
             .rotation3DEffect(.degrees(showsBack ? 180 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
             .rotationEffect(.degrees(showsBack ? 1 : -1.5))

@@ -204,6 +204,18 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(again.encounters.first?.shownNote, "こんにちは")
     }
 
+    /// ひとことを通報できたら印を付けて伏せる（読み直しても残る）
+    func testNoteReportedHidesTheNote() async throws {
+        let store = makeStore()
+        let card = try XCTUnwrap(store.record(payload("p1", note: "なりすまし"), at: at(16, 10)))
+        store.markNoteReported(card.id)
+        XCTAssertEqual(store.encounters.first?.shownNote, "")
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        again.use(userId: "me")
+        XCTAssertEqual(again.encounters.first?.noteReported, true)
+        XCTAssertEqual(again.encounters.first?.noteHidden, true)
+    }
+
     /// 期限切れで止めた後に入り直したら、まだ届いていない束の知らせを予約し直す
     func testNoticesAreRescheduledOnSignIn() async throws {
         let store = makeStore()

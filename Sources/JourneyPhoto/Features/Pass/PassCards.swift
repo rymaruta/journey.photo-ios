@@ -79,8 +79,6 @@ enum PassCardStyle {
     static let deckSize = CGSize(width: 300, height: 430)
     static let deckCorner: CGFloat = 14
     static let photoHeight: CGFloat = 250
-    /// 名刺の一枚の見本（同じきっぷを縮めて出す）
-    static let previewScale: CGFloat = 236.0 / 300.0
     /// ホームの束の1枚（板 92×128・角 9・写真 76）
     static let stackSize = CGSize(width: 92, height: 128)
     static let stackCorner: CGFloat = 9
@@ -99,39 +97,83 @@ enum PassCardStyle {
     /// 区間の地名（明朝 30）。長い地名は縮める——明朝の下限 18 まで（30 × 0.6）
     static let routeSize: Double = 30
     static let routeMinScale: CGFloat = 0.6
+    /// 裏の欄の値（板 14）・ひとこと（板 15 = `JPFont.body`）
+    static let backValueSize: CGFloat = 14
+    /// カードは寸法が決まった札なので、文字の大きさの設定は xLarge までに留める（はみ出さない）
+    static let typeLimit: DynamicTypeSize = .xLarge
 }
 
 /// 種類ごとの縁（板 CardKinds: ふつう＝細い線・はじめて＝光る真鍮・また会えた＝2本線・遠くから＝沈む真鍮）。
-/// **色だけで伝えない**: 眉ラベルの言葉（`PassTicket.eyebrow`）と裏の「回数」でも言う
+/// **色だけで伝えない**: 眉ラベルの言葉（`PassTicket.eyebrow`）と裏の「回数」でも言う。
+///
+/// 🔴 **線はカードの外側に描く**（2026-10-16 の読み直し）。`strokeBorder` で内側に引くと、写真の上に真鍮が
+/// 重なる（真鍮は黒い地の上だけ）。線の太さの分だけ外へ広げた形に引き、写真には一筋もかけない。
+/// 「はじめて」の光も、カードの後ろに敷く（`PassTicketGlow`）——写真の上に光を落とさない
 struct PassTicketEdge: View {
     let kind: PassTicket.Kind
     var corner: CGFloat = PassCardStyle.deckCorner
 
-    private var outerCorner: CGFloat { corner + 4 }
+    /// 線の太さ（種類ごと）
+    nonisolated static func width(_ kind: PassTicket.Kind) -> CGFloat {
+        switch kind {
+        case .plain, .again: return JPStroke.hairline
+        case .first: return JPStroke.emphasis
+        case .far: return 1.5
+        }
+    }
+
+    /// 「また会えた」の外の2本目まで（黒 3 のすき間＋線 1）
+    static let secondRingGap: CGFloat = 3
+
+    private var lineWidth: CGFloat { Self.width(kind) }
+    private var outer: CGFloat { corner + lineWidth }
+    private var secondOuter: CGFloat { corner + lineWidth + Self.secondRingGap + JPStroke.hairline }
+    private var secondInset: CGFloat { -(lineWidth + Self.secondRingGap + JPStroke.hairline) }
+    private var firstInset: CGFloat { -lineWidth }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: corner)
-        switch kind {
-        case .plain:
-            shape.strokeBorder(WebTheme.accent.opacity(PassCardStyle.edgeOpacity), lineWidth: JPStroke.hairline)
-        case .first:
-            shape.strokeBorder(LinearGradient(colors: WebTheme.accentMetal + [WebTheme.accentMetal[0]],
-                                              startPoint: .topLeading, endPoint: .bottomTrailing),
-                               lineWidth: JPStroke.emphasis)
-                .shadow(color: WebTheme.accent.opacity(0.28), radius: 12)
-        case .again:
-            ZStack {
-                shape.strokeBorder(WebTheme.accent.opacity(PassCardStyle.edgeOpacity), lineWidth: JPStroke.hairline)
-                // 外にもう1本（黒 3 のすき間を空けて）
-                RoundedRectangle(cornerRadius: outerCorner)
-                    .strokeBorder(WebTheme.accent.opacity(0.45), lineWidth: JPStroke.hairline)
-                    .padding(-4)
+        let shape = RoundedRectangle(cornerRadius: outer)
+        Group {
+            switch kind {
+            case .plain:
+                shape.strokeBorder(WebTheme.accent.opacity(PassCardStyle.edgeOpacity), lineWidth: lineWidth)
+            case .first:
+                shape.strokeBorder(LinearGradient(colors: WebTheme.accentMetal + [WebTheme.accentMetal[0]],
+                                                  startPoint: .topLeading, endPoint: .bottomTrailing),
+                                   lineWidth: lineWidth)
+            case .again:
+                shape.strokeBorder(WebTheme.accent.opacity(PassCardStyle.edgeOpacity), lineWidth: lineWidth)
+            case .far:
+                shape.strokeBorder(LinearGradient(colors: [WebTheme.accent, PassCardStyle.farEdgeLow],
+                                                  startPoint: .top, endPoint: .bottom),
+                                   lineWidth: lineWidth)
             }
-        case .far:
-            shape.strokeBorder(LinearGradient(colors: [WebTheme.accent, PassCardStyle.farEdgeLow],
-                                              startPoint: .top, endPoint: .bottom),
-                               lineWidth: 1.5)
         }
+        .padding(firstInset)
+        .overlay {
+            if case .again = kind {
+                // 外にもう1本（黒 3 のすき間を空けて）
+                RoundedRectangle(cornerRadius: secondOuter)
+                    .strokeBorder(WebTheme.accent.opacity(0.45), lineWidth: JPStroke.hairline)
+                    .padding(secondInset - firstInset)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// カードの後ろの地と光（「はじめて」だけ真鍮の光・ほかは黒の影）。**カードの後ろに敷く**ので、
+/// 不透明なカードの下に隠れて、光は外側にだけ出る
+struct PassTicketGlow: View {
+    let kind: PassTicket.Kind
+    var corner: CGFloat = PassCardStyle.deckCorner
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: corner)
+            .fill(PassCardStyle.face)
+            .shadow(color: kind == .first ? WebTheme.accent.opacity(0.28) : Color.clear, radius: 12)
+            .accessibilityHidden(true)
     }
 }
 
@@ -238,7 +280,9 @@ struct PassCardFront: View {
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
+        .background { PassTicketGlow(kind: face.kind) }
         .overlay(PassTicketEdge(kind: face.kind))
+        .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
     }
 
@@ -331,7 +375,9 @@ struct PassCardBack: View {
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
+        .background { PassTicketGlow(kind: content.kind) }
         .overlay(PassTicketEdge(kind: content.kind))
+        .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
         .accessibilityElement(children: .combine)
     }
@@ -339,8 +385,10 @@ struct PassCardBack: View {
     private func field(_ label: String, _ value: String, mono: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(JPFont.caption).foregroundStyle(WebTheme.text3)
+            // 値は見本の 14（カードは文字の大きさの上限 `PassCardStyle.typeLimit` の中で描く）
             Text(value)
-                .font(mono ? JPFont.mono(14, relativeTo: .subheadline) : .subheadline)
+                .font(mono ? Font.system(size: PassCardStyle.backValueSize).monospacedDigit()
+                           : Font.system(size: PassCardStyle.backValueSize))
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(2)
         }
@@ -392,7 +440,9 @@ struct PassTicketSlot: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background { PassTicketGlow(kind: content.kind, corner: 8) }
             .overlay(PassTicketEdge(kind: content.kind, corner: 8))
+            .dynamicTypeSize(...PassCardStyle.typeLimit)
             .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -426,8 +476,8 @@ struct PassMiniStack: View {
                 }
                 .frame(width: PassCardStyle.stackSize.width, height: PassCardStyle.stackSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.stackCorner))
-                .overlay(RoundedRectangle(cornerRadius: PassCardStyle.stackCorner)
-                    .strokeBorder(WebTheme.accent.opacity(0.45), lineWidth: JPStroke.hairline))
+                // 縁は外側に（写真の上に真鍮をかけない）
+                .overlay(PassTicketEdge(kind: .plain, corner: PassCardStyle.stackCorner))
                 .shadow(color: Color.black.opacity(0.6), radius: 9, x: 0, y: 10)
                 .rotationEffect(.degrees(Self.tilts[index]))
                 .offset(x: Self.lefts[index], y: 6)

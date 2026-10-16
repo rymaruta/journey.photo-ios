@@ -63,6 +63,8 @@ final class PassRadio: NSObject {
     /// 足している途中の中身（`didAdd` を待っている順）。**1つの変数で持つと**、続けて2回変えたときに
     /// 前の `didAdd` を後の中身の答えと取り違えた（2026-10-16 の読み直し）
     private var pendingAdds: [Data] = []
+    /// 足せずに一度だけ足し直した中身（同じ中身で何度も足し直さない）
+    private var retriedPayload: Data?
     /// 古い記録を最後に掃除した時（前面の重ねて受ける知らせは多いので、数秒に1回に間引く）
     private var lastPrune = Date.distantPast
     static let pruneInterval: TimeInterval = 5
@@ -216,6 +218,29 @@ final class PassRadio: NSObject {
         case set(Data)
     }
 
+    /// `didAdd` の答えの後にすること
+    enum AddFollowUp: Equatable {
+        /// 何もしない（前の中身の答え・同じ中身の後の答えを待つ）
+        case none
+        /// 広告する
+        case advertise
+        /// 止める（もう一度試した後も足せなかった）
+        case stop
+        /// 止めて、数秒後に一度だけ足し直す
+        case stopAndRetry
+    }
+
+    /// 足せなかったときに足し直すまでの間
+    static let addRetryDelay: TimeInterval = 3
+
+    static func followUp(_ published: Published, alreadyRetried: Bool) -> AddFollowUp {
+        switch published {
+        case .keep: return .none
+        case .set: return .advertise
+        case .clear: return alreadyRetried ? .stop : .stopAndRetry
+        }
+    }
+
     /// `didAdd` の答えを、足した順の先頭の中身の答えとして読む。**いま載せる中身の答えだけで決める**——
     /// 続けて2回変えたとき、前の中身の答えを後の中身の答えと取り違えない（2026-10-16 の読み直し）
     static func afterAdd(pending: [Data], current: Data?, failed: Bool) -> (pending: [Data], published: Published) {
@@ -365,12 +390,26 @@ extension PassRadio: CBPeripheralManagerDelegate {
         if let error { print("[pass] サービスを足せませんでした: \((error as NSError).code)") }
         let answer = Self.afterAdd(pending: pendingAdds, current: payload, failed: error != nil)
         pendingAdds = answer.pending
-        switch answer.published {
-        case .keep: return
-        case .clear: publishedPayload = nil
-        case .set(let added): publishedPayload = added
+        if case .set(let added) = answer.published { publishedPayload = added }
+        if answer.published == .clear { publishedPayload = nil }
+        switch Self.followUp(answer.published, alreadyRetried: payload != nil && retriedPayload == payload) {
+        case .none:
+            return
+        case .advertise:
+            retriedPayload = nil
+            if !peripheral.isAdvertising { startAdvertising(peripheral) }
+        case .stop:
+            // **足せなかったサービスを広告しない**（前の版は .clear でも広告へ進んでいた・2026-10-16 の読み直し）
+            peripheral.stopAdvertising()
+        case .stopAndRetry:
+            peripheral.stopAdvertising()
+            retriedPayload = payload
+            let tried = payload
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.addRetryDelay) { [weak self] in
+                guard let self, let tried, self.payload == tried, let manager = self.peripheralManager else { return }
+                self.publish(manager)
+            }
         }
-        if !peripheral.isAdvertising { startAdvertising(peripheral) }
     }
 }
 

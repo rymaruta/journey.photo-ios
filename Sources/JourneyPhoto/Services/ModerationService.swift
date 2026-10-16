@@ -127,6 +127,19 @@ struct ModerationService {
         return head + label + PostLimits.clamp(oneLine(text), limit: room)
     }
 
+    /// 写真の通報に、前に送ったひとことの通報を一緒に入れる（2026-10-16 の読み直し）。
+    ///
+    /// **サーバーの通報は「1人1写真に1件」で上書き**（`report.ts` の `reportId`）。同じカードのひとことを
+    /// 先に通報してから写真を通報すると、ひとことの通報が消える。写真の通報の補足の後ろに、前のひとことの通報
+    /// （印と本文）を足して送る。500 字に収める（写真の補足を先に・ひとことは残りに）
+    static func photoReportWithPassNote(_ note: String?, passNote: String) -> String {
+        let head = PostLimits.clamp((note ?? "").trimmingCharacters(in: .whitespacesAndNewlines), limit: commentReportUserNoteMax)
+        let label = head.isEmpty ? "" : " / 前に送った通報: "
+        let room = reportNoteMax - PostLimits.length(head) - PostLimits.length(label)
+        guard room > 0 else { return head }
+        return head + label + PostLimits.clamp(passNoteReportNote(passNote, note: nil), limit: room)
+    }
+
     /// 通報する。**同じ人が押し直したら上書き**なので、二重送信を怖がらなくてよい。
     /// 自分の投稿は 400 で断られる。
     func report(photoId: String, reason: ReportReason, note: String?) async throws {

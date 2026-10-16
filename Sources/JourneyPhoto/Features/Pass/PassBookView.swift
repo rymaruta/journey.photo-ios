@@ -80,10 +80,12 @@ struct PassBookView: View {
             isLoading = false
         }
         .sheet(item: $reportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId)
+            ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId,
+                        carriedPassNote: target.card.noteReported == true ? target.card.note : nil)
         }
         .sheet(item: $noteReportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note)
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,
+                        onReported: { pass.markNoteReported(target.id) })
         }
         .blockConfirmation(presenting: $blockTarget) { target in
             Task { _ = await PassCardModeration.block(target, hidden: hidden, environment: environment, toasts: toasts) }

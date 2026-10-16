@@ -254,6 +254,14 @@ final class PassStore: ObservableObject {
         save()
     }
 
+    /// ひとことを通報できた: 印を付け、そのひとことを伏せる（2026-10-16 の読み直し）
+    func markNoteReported(_ id: String) {
+        guard let i = encounters.firstIndex(where: { $0.id == id }) else { return }
+        encounters[i].noteReported = true
+        encounters[i].noteHidden = true
+        save()
+    }
+
     /// 帳から外す（カードの「…」）。**記録ごと消す**（次に同じ人とすれちがえば、また届く）
     func remove(_ id: String) {
         let before = encounters.count
