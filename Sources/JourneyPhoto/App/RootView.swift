@@ -506,7 +506,7 @@ struct RootView: View {
                 // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
                 // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
                 LibraryTripFlowView(opening: importTrip,
-                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.shots) { photos in
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.preloadedShots) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
             }

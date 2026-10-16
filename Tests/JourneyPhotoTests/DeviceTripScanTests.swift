@@ -162,6 +162,9 @@ final class DeviceTripScanTests: XCTestCase {
         XCTAssertEqual(DeviceTrips.runDelay(lastRunStart: nil, now: now), DeviceTrips.changeDelay)
         XCTAssertEqual(DeviceTrips.runDelay(lastRunStart: now.addingTimeInterval(-10), now: now), 50, accuracy: 0.001)
         XCTAssertEqual(DeviceTrips.runDelay(lastRunStart: now.addingTimeInterval(-600), now: now), DeviceTrips.changeDelay)
+        // 🔴 端末の時計を戻した（前の読みの始まりが「未来」）。待ちは下限の60秒まで（1日待たせない）
+        XCTAssertEqual(DeviceTrips.runDelay(lastRunStart: now.addingTimeInterval(86_400), now: now),
+                       DeviceTrips.minRunInterval, accuracy: 0.001, "時計を戻した分だけ待ちが延びた")
         XCTAssertTrue(DeviceTrips.maySweep(lastSweep: nil, now: now))
         XCTAssertFalse(DeviceTrips.maySweep(lastSweep: now.addingTimeInterval(-60), now: now))
         XCTAssertTrue(DeviceTrips.maySweep(lastSweep: now.addingTimeInterval(-DeviceTrips.sweepInterval), now: now))
@@ -202,7 +205,8 @@ final class DeviceTripScanTests: XCTestCase {
         return DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                     status: { box.status },
                                     place: { _ in box.lookups += 1; return ("京都市", TimeZone(identifier: "Asia/Tokyo")) },
-                                    pauseNanos: 0, lookupPauseNanos: 0, now: { now }, observesLibrary: false)
+                                    pauseNanos: 0, lookupPauseNanos: 0, now: { now }, observesLibrary: false,
+                                    signedIn: true)
     }
 
     private func tempURL() -> URL {
@@ -304,7 +308,8 @@ extension DeviceTripScanTests {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
-                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false)
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: true)
         // **時間に頼らず、順を手で進める**:
         // 1本目を読みの途中（取り出し）で止める → 消す → 2本目を始めて同じく止める → 1本目だけ放す
         store.startIfAllowed()                  // 1本目
@@ -344,6 +349,60 @@ extension DeviceTripScanTests {
         store.setActive(true)
         await store.waitUntilIdle()
         XCTAssertEqual(store.runsStarted, 1, "ログインしたら前面に戻ったときに読む")
+    }
+
+    /// 🔴 **ログインしていなければ、どの入口から頼まれても読まない**（2026-10-16）。
+    /// ログインせずに「投稿」→「旅の写真から」で許可すると `startIfAllowed` が直に呼ばれ、
+    /// サインアウトで消した要約（撮影日時と位置）を作り直していた
+    @MainActor
+    func testSignedOutDirectStartDoesNotRead() async throws {
+        let url = tempURLForGate()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
+        let store = DeviceTripShelfStore(defaults: defaults, url: url, source: FakeTripSource(library()),
+                                         status: { .authorized }, place: { _ in (nil, nil) },
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: false)
+        store.startIfAllowed()      // 「旅の写真から」で許可した
+        store.startIfNeeded()       // 棚が出た
+        await store.waitUntilIdle()
+        XCTAssertEqual(store.runsStarted, 0, "ログインしていないのに読んだ")
+        XCTAssertNil(DeviceTripIndexFile.load(from: url), "ログインしていないのに要約を書いた")
+        store.setSignedIn(true)
+        store.startIfAllowed()
+        await store.waitUntilIdle()
+        XCTAssertEqual(store.runsStarted, 1, "ログインしたら読む")
+        await store.waitForRemoval()
+    }
+
+    /// 🔴 **読み終えていない要約は「旅の写真から」に渡さない**（2026-10-16）。
+    /// 初めての読みの途中で渡すと、まだ読んでいない古い旅が一覧から抜けていた
+    @MainActor
+    func testPreloadedShotsOnlyAfterTheSummaryIsComplete() async throws {
+        let url = tempURLForGate()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var stored = DeviceTrips.Index()
+        stored.shots = Array(library().suffix(7).map(\.shot))   // 途中まで読んだ要約（京都の旅だけ）
+        stored.complete = false
+        DeviceTripIndexFile.save(stored, to: url)
+        let source = FakeTripSource(library())
+        let gate = FetchGate()
+        source.gate = gate
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
+        let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
+                                         status: { .authorized }, place: { _ in (nil, nil) },
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: true)
+        XCTAssertNil(store.preloadedShots, "まだ何も読んでいない")
+        store.startIfAllowed()
+        await gate.waitForWaiting(1)            // 覚えた要約を出し、続きを取り出すところで止まった
+        XCTAssertFalse(store.shots.isEmpty, "前提: 途中までの要約が棚に出ている")
+        XCTAssertNil(store.preloadedShots, "読み終えていない要約を渡している")
+        await gate.open()
+        await store.waitUntilIdle()
+        XCTAssertEqual(store.preloadedShots?.count, store.shots.count, "読み終えたら渡す")
+        XCTAssertFalse(store.shots.isEmpty)
+        await store.waitForRemoval()
     }
 
     /// 🔴 **読めない段なら、メモリが空でも端末のファイルを消す**（許可を外すと iOS がアプリを終わらせる）
