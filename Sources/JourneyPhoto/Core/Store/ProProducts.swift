@@ -128,7 +128,8 @@ enum AppAccountToken {
     }
 }
 
-/// SHA-1（UUID 第5版のためだけ）。**署名や秘密には使わない**——CryptoKit は Linux の模型に無いので
+/// SHA-1。使い道は2つだけ: UUID 第5版（購入者の印）と、登録の確認の控えの鍵（メールアドレスを鍵に
+/// 平文で残さないための指紋・`PendingVerification.key`・2026-10-16）。**署名や秘密には使わない**——CryptoKit は Linux の模型に無いので
 /// 自前で持つ（RFC 3174）。正しさはテストの既知の値で見張る
 enum SHA1 {
     static func digest(_ message: [UInt8]) -> [UInt8] {

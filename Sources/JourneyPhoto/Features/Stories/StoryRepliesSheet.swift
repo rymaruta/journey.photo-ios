@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// **自分のストーリーに届いた返信の一覧**（板「26b 返信（自分）」・v2 StoryReplies・2026-10-14）。
 ///
@@ -36,6 +37,8 @@ struct StoryRepliesSheet: View {
     /// 行が消えて開いている画面が閉じる（`ModerationSnapshot.users` の注記と同じ理由）。
     /// 人のページでブロックした分は、閉じたときに閲覧画面が外す（`StoryViewerView` の `onDismiss`）
     @State private var blockedHere: Set<String> = []
+    /// メールを開けなかった（宛先を知らせる確認を出す）
+    @State private var mailUnavailable = false
 
     /// 出す返信（このシートでブロックした人の分を外す）
     private var shown: [StoryReply] { StoryReplyActions.visible(items, blockedHere: blockedHere) }
@@ -97,7 +100,21 @@ struct StoryRepliesSheet: View {
             .blockConfirmation(presenting: $pendingBlock) { reply in
                 Task { await block(reply) }
             }
+            // メールを開けない端末: 宛先は**トーストではなく確認で出す**（トーストは短く消え、
+            // 長い宛先が途中で切れる）。写して別のメールから送れるよう「宛先をコピー」を置く
+            .alert(StoryReplyActions.mailUnavailableTitle, isPresented: $mailUnavailable) {
+                Button(StoryReplyActions.copyAddress) {
+                    UIPasteboard.general.string = LegalConsent.contactEmail
+                    toasts.show(L("宛先をコピーしました", "Address copied"))
+                }
+                Button(Labels.Common.close, role: .cancel) {}
+            } message: {
+                Text(StoryReplyActions.mailUnavailable)
+            }
         }
+        // **このシートの上にもトーストを重ねる**（シートの上には根のトーストが出ず、ブロックの結果・
+        // 失敗が裏に隠れていた・`PassViewerView` と同じ形）
+        .overlay(alignment: .top) { ToastOverlay() }
         .presentationBackground(WebTheme.card)
         // 板 v2 StoryReplies: シートは**上から約 160 で止まる**（後ろにストーリーの写真が覗く）。
         // 画面の高さは機種で違うので、板の画面（844）に対する割合で持つ（2026-10-16 判断）
@@ -159,9 +176,10 @@ struct StoryRepliesSheet: View {
                                                            bottomTrailingRadius: Self.bubbleRadius,
                                                            topTrailingRadius: Self.bubbleRadius))
             }
-            Spacer(minLength: JPSpace.s)
             let actions = StoryReplyActions(item, me: hidden.owner)
-            if actions.report || actions.block {
+            // 「…」の無い行（自分の返信）は前のとおり右に 32 空ける——吹き出しが右端まで伸びない
+            Spacer(minLength: actions.trailingSpace)
+            if actions.hasMenu {
                 replyMenu(item, actions: actions)
             }
         }
@@ -200,7 +218,7 @@ struct StoryRepliesSheet: View {
                                                        authorName: item.displayName, text: item.body)
         guard let url = ModerationService.storyReplyReportURL(target, storyId: storyId) else { return }
         openURL(url) { accepted in
-            if !accepted { toasts.show(StoryReplyActions.mailUnavailable, kind: .info) }
+            if !accepted { mailUnavailable = true }
         }
     }
 
@@ -267,15 +285,26 @@ struct StoryReplyActions: Equatable {
         self.block = block
     }
 
+    /// 「…」を出すか
+    var hasMenu: Bool { report || block }
+
+    /// 吹き出しの右に必ず空ける幅。「…」がある行は「…」（44pt）が幅を取るので詰め、
+    /// 無い行（自分の返信）は v2 の板どおり節の間（32）を空ける
+    var trailingSpace: CGFloat { hasMenu ? JPSpace.s : JPSpace.section }
+
     /// このシートでブロックした人の返信を外す
     static func visible(_ items: [StoryReply], blockedHere: Set<String>) -> [StoryReply] {
         guard !blockedHere.isEmpty else { return items }
         return items.filter { reply in reply.uid.map { !blockedHere.contains($0) } ?? true }
     }
 
-    /// メールを開けない端末で出す知らせ（宛先を出す）
+    /// メールを開けない端末で出す確認の題・本文・ボタン（宛先は本文に**全部**出す。トーストでは切れた）
+    static var mailUnavailableTitle: String { L("メールを開けませんでした", "Couldn\u{2019}t open Mail") }
+
     static var mailUnavailable: String {
-        L("メールを開けませんでした。\(LegalConsent.contactEmail) へ、返信の内容を添えてお知らせください。",
-          "Couldn\u{2019}t open Mail. Please email \(LegalConsent.contactEmail) with the reply.")
+        L("\(LegalConsent.contactEmail) へ、返信の内容を添えてお知らせください。",
+          "Please email \(LegalConsent.contactEmail) with the reply.")
     }
+
+    static var copyAddress: String { L("宛先をコピー", "Copy address") }
 }

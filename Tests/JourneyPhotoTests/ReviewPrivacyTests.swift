@@ -298,6 +298,46 @@ final class ReviewPrivacyTests: XCTestCase {
         }
     }
 
+    /// `+` を符号にする（`queryItems` は `+` を残し、受け手によっては空白に読まれる）。
+    /// 相手の分からない返信で空のかっこを出さない
+    func testReplyReportMailEncodesPlusAndSkipsEmptyAuthorId() throws {
+        let target = ModerationService.ReportedComment(id: "r1", authorId: "", authorName: "A+B", text: "1+1")
+        let url = try XCTUnwrap(ModerationService.storyReplyReportURL(target, storyId: nil))
+        XCTAssertFalse(url.absoluteString.contains("+"), "mailto に生の + が残っている: \(url.absoluteString)")
+        XCTAssertTrue(url.absoluteString.contains("%2B"))
+        let body = ModerationService.storyReplyReportBody(target, storyId: nil)
+        XCTAssertFalse(body.contains("()"), "相手の分からない返信で空のかっこを出している")
+        XCTAssertTrue(body.contains("投稿者 / From: A+B\n"))
+    }
+
+    /// 「…」の無い行（自分の返信）は吹き出しの右に 32 を空ける（右端まで伸びない）
+    func testOwnReplyBubbleKeepsTrailingRoom() {
+        XCTAssertEqual(StoryReplyActions(report: false, block: false).trailingSpace, JPSpace.section)
+        XCTAssertEqual(StoryReplyActions(report: true, block: false).trailingSpace, JPSpace.s)
+        XCTAssertFalse(StoryReplyActions(report: false, block: false).hasMenu)
+    }
+
+    /// 🔴 シートの上には根のトーストが出ない——ブロックの結果・失敗が裏に隠れていた。
+    /// メールを開けないときの宛先は、切れないよう確認（alert）で全部出し、コピーできる
+    func testReplySheetShowsToastsAndAddressAlert() throws {
+        let sheet = try code("Sources/JourneyPhoto/Features/Stories/StoryRepliesSheet.swift")
+        XCTAssertTrue(sheet.contains(".overlay(alignment: .top) { ToastOverlay() }"), "シートにトーストを重ねていない")
+        XCTAssertTrue(sheet.contains(".alert(StoryReplyActions.mailUnavailableTitle, isPresented: $mailUnavailable)"))
+        XCTAssertTrue(sheet.contains("UIPasteboard.general.string = LegalConsent.contactEmail"), "宛先をコピーできない")
+        XCTAssertFalse(sheet.contains("toasts.show(StoryReplyActions.mailUnavailable"), "宛先をトーストで出している（切れる）")
+        XCTAssertTrue(StoryReplyActions.mailUnavailable.contains(LegalConsent.contactEmail))
+        XCTAssertEqual(StoryReplyActions.copyAddress, "宛先をコピー")
+    }
+
+    /// Bluetooth の利用目的の文に、居住地を出す設定のとき相手に都道府県が出ることを書く
+    func testBluetoothPurposeMentionsPrefecture() throws {
+        for path in ["project.yml", "Sources/JourneyPhoto/Resources/ja.lproj/InfoPlist.strings"] {
+            XCTAssertTrue(try read(path).contains("居住地を出す設定なら、相手にはプロフィールの都道府県が表示されます"), path)
+        }
+        XCTAssertTrue(try read("Sources/JourneyPhoto/Resources/en.lproj/InfoPlist.strings")
+            .contains("they see the prefecture from your profile"))
+    }
+
     func testReplySheetHasMenuWithConfirmedBlock() throws {
         let sheet = try code("Sources/JourneyPhoto/Features/Stories/StoryRepliesSheet.swift")
         XCTAssertTrue(sheet.contains("replyMenu(item, actions: actions)"), "返信の行に「…」が無い")

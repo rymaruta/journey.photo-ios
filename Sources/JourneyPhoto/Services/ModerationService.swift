@@ -117,7 +117,9 @@ struct ModerationService {
     static func storyReplyReportBody(_ reply: ReportedComment, storyId: String?) -> String {
         var lines = [
             storyReplyMarker,
-            "投稿者 / From: \(reply.authorName) (\(reply.authorId))",
+            // 相手の分からない返信（uid が無い）に空のかっこを出さない
+            reply.authorId.isEmpty ? "投稿者 / From: \(reply.authorName)"
+                : "投稿者 / From: \(reply.authorName) (\(reply.authorId))",
             "返信ID / Reply ID: \(reply.id)",
         ]
         if let storyId, !storyId.isEmpty { lines.append("ストーリーID / Story ID: \(storyId)") }
@@ -133,9 +135,14 @@ struct ModerationService {
         var parts = URLComponents()
         parts.scheme = "mailto"
         parts.path = LegalConsent.contactEmail
-        parts.queryItems = [
-            URLQueryItem(name: "subject", value: "\(storyReplyMarker) \(reply.authorName)"),
-            URLQueryItem(name: "body", value: storyReplyReportBody(reply, storyId: storyId)),
+        // **`+` も符号にする**（`queryItems` は `+` を残す。受け手によっては空白に読まれ、
+        // 「1 + 1」の本文や名前が化ける）。`&`・`=`・`+` を除いた字の集まりで符号にして渡す
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        func encode(_ text: String) -> String { text.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }
+        parts.percentEncodedQueryItems = [
+            URLQueryItem(name: "subject", value: encode("\(storyReplyMarker) \(reply.authorName)")),
+            URLQueryItem(name: "body", value: encode(storyReplyReportBody(reply, storyId: storyId))),
         ]
         return parts.url
     }
