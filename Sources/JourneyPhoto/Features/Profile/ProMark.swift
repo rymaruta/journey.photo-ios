@@ -9,9 +9,10 @@ import SwiftUI
 /// 真鍮の印は**黒い地の上だけ**に置く（名前の行は黒地。写真の上には置かない）。
 /// 15pt を切ったら線を太らせた小さい版（`ProMarkFit.isSmall`）。
 ///
-/// **v2（2026-10-14・板 ProMarkOptions）の小さい版**: 金属の光（グラデーション）は小さいと濁るので、
-/// 絞り羽根は**真鍮の単色**の丸、PRO の札は**真鍮の塗りに墨の字**（読める大きさを保つ）。
-/// 大きい版（プロフィールの名前の横）は今までどおり光る真鍮（`ProMarkStyleV2`）
+/// **どの大きさでも光る真鍮の1つの形**（2026-10-16 owner「Pro のデザインが画面によって違う」）。
+/// v2（2026-10-14）では小さい版だけ真鍮の単色・PRO の札は真鍮の塗りに墨の字にしていたが、
+/// 写真の詳細・コメント（小さい）とプロフィール（大きい）で別の印に見えたので、光る真鍮にそろえた。
+/// 小さい版で変えるのは**線の太さと穴の形だけ**（`ProMarkGeometry`・形は同じ）
 struct ProMark: View {
 
     let style: ProMarkStyle
@@ -98,16 +99,11 @@ private struct ProMarkIris: View {
         let ink = ProMarkColors.color(ProMarkColors.ink)
         let disc = ProMarkGeometry.discRadius * 2 * k
         ZStack {
-            // 板 v2: 小さい版は真鍮の単色（光のグラデーションは 14pt 以下で濁る）
-            Group {
-                if ProMarkStyleV2.flatFill(small: small) {
-                    Circle().fill(WebTheme.accent)
-                } else {
-                    Circle().fill(LinearGradient(stops: ProMarkColors.stops(ProMarkColors.irisStops),
-                                                 startPoint: UnitPoint(x: 0, y: 0), endPoint: UnitPoint(x: 0.4, y: 1)))
-                }
-            }
-            .frame(width: disc, height: disc)
+            // どの大きさでも光る真鍮（2026-10-16・画面ごとに印が違って見えた）
+            Circle()
+                .fill(LinearGradient(stops: ProMarkColors.stops(ProMarkColors.irisStops),
+                                     startPoint: UnitPoint(x: 0, y: 0), endPoint: UnitPoint(x: 0.4, y: 1)))
+                .frame(width: disc, height: disc)
             // 羽根の線。丸い端が丸の外へはみ出さないよう丸で切る
             blades(k)
                 .stroke(ink, style: StrokeStyle(lineWidth: ProMarkGeometry.bladeWidth(small: small) * k,
@@ -117,12 +113,10 @@ private struct ProMarkIris: View {
             aperture(k)
                 .fill(ink)
                 .frame(width: side, height: side)
-            if !small {
-                Circle()
-                    .stroke(ProMarkColors.color(ProMarkColors.highlight).opacity(0.5), lineWidth: 0.6 * k)
-                    .frame(width: ProMarkGeometry.highlightRadius * 2 * k,
-                           height: ProMarkGeometry.highlightRadius * 2 * k)
-            }
+            Circle()
+                .stroke(ProMarkColors.color(ProMarkColors.highlight).opacity(0.5), lineWidth: 0.6 * k)
+                .frame(width: ProMarkGeometry.highlightRadius * 2 * k,
+                       height: ProMarkGeometry.highlightRadius * 2 * k)
         }
         .frame(width: side, height: side)
     }
@@ -162,35 +156,21 @@ private struct ProMarkPlate: View {
         let line = (small ? 1.9 : 1.3) * k
         let width = ProMarkFit.width(side: side, style: .plate)
         let height = (small ? 22 : 18) * k + line
-        let filled = ProMarkStyleV2.filledPlate(small: small)
         ZStack {
-            // 板 v2: 小さい版（コメント・写真の詳細の作者）は真鍮の塗りに墨の字。縁の線は描かない
-            if filled {
-                Capsule()
-                    .fill(WebTheme.accent)
-                    .frame(width: width, height: height)
-            } else {
-                Capsule()
-                    .fill(ProMarkColors.color(ProMarkColors.plate))
-                    .overlay(Capsule().strokeBorder(sheen, lineWidth: line))
-                    .frame(width: width, height: height)
-            }
+            // どの大きさでも墨の札に光る真鍮の縁と字（2026-10-16・画面ごとに印が違って見えた）
+            Capsule()
+                .fill(ProMarkColors.color(ProMarkColors.plate))
+                .overlay(Capsule().strokeBorder(sheen, lineWidth: line))
+                .frame(width: width, height: height)
             Text("PRO")
                 // 大きさは呼ぶ側で文字サイズの設定に合わせ済み（ここで二重に伸ばさない）
-                .font(.system(size: (small ? 13.5 : 11) * k, weight: filled ? .heavy : .bold))
+                // 小さい版は字を太らせて読める形を保つ（線と同じく太さだけ変える）
+                .font(.system(size: (small ? 13.5 : 11) * k, weight: small ? .heavy : .bold))
                 .tracking(0.6 * k)
-                .foregroundStyle(filled ? AnyShapeStyle(WebTheme.accentText) : AnyShapeStyle(sheen))
+                .foregroundStyle(sheen)
                 .lineLimit(1)
                 .fixedSize()
         }
         .frame(width: ProMarkFit.width(side: side, style: .plate), height: side)
     }
-}
-
-/// v2 の Pro マークの小さい版の決まり（板 ProMarkOptions・2026-10-14）。テストで見張る
-enum ProMarkStyleV2 {
-    /// 絞り羽根の丸を単色の真鍮にするか（小さい版だけ）
-    static func flatFill(small: Bool) -> Bool { small }
-    /// PRO の札を真鍮の塗りに墨の字にするか（小さい版だけ）。墨の字は真鍮の上で 7:1 を超える
-    static func filledPlate(small: Bool) -> Bool { small }
 }
