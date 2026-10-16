@@ -231,6 +231,113 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 4)
     }
 
+    // MARK: - いまの一覧で置き換える（2026-10-16 判断・Web の `usePhotos` と同じ）
+
+    /// 🔴 **`photos.json` に無い生の行が一覧に出る。** 静的 JSON は 2026-09-28 で止まっていて、
+    /// Web で見える写真（題「焚き火🔥」）が iOS に出なかった
+    func testLiveRowMissingFromStaticJSONIsListed() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"new","src":"https://x/new.jpg","title":"焚き火🔥","createdAt":"2026-10-10T00:00:00Z","likes":3},
+         {"id":"a","src":"https://x/a.jpg","likes":2},
+         {"id":"b","src":"https://x/b.jpg"}]
+        """)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["new", "a", "b"], "生の行が一覧に出ていない")
+        let fresh = try XCTUnwrap(photos.first)
+        XCTAssertEqual(fresh.likes, 3)
+        XCTAssertNotNil(fresh.likesAsOf, "生の行にいまの数の時刻が付いていない")
+        // `likes` を持たない生の行は 0（一度もいいねされていない）
+        XCTAssertEqual(photos.map(\.likes), [3, 2, 0])
+        // 一度だけ読む（静的 JSON 1回＋ GET /photos 1回。数のために二度叩かない）
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
+    /// **同じ id は生の行が正**（題・場所を直したのに静的 JSON の古い姿が出ない）
+    func testSameIdPrefersLiveRow() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: """
+        [{"id":"a","src":"https://x/a.jpg","location":"古い場所","likes":5}]
+        """)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"a","src":"https://x/a2.jpg","location":"新しい場所","likes":1}]
+        """)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.count, 1, "同じ id が2行になっている")
+        XCTAssertEqual(photos.first?.location, "新しい場所")
+        XCTAssertEqual(photos.first?.src, "https://x/a2.jpg")
+        XCTAssertEqual(photos.first?.likes, 1)
+    }
+
+    /// 置き換え（Web と同じ）: **答えに無い静的 JSON の行は出さない**（サーバーで消した・非公開にした写真）。
+    /// 生の行が写真として読めなかった id だけ、静的 JSON の行で埋める（1行の型違いで消さない）
+    func testReplacesListAndFillsUnreadableRowsFromStatic() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"b","likes":4},{"id":"c","src":"https://x/c.jpg"}]
+        """)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["b", "c"], "サーバーに無い a が残っている、または b を落としている")
+        XCTAssertEqual(photos.first?.likes, 4)
+    }
+
+    /// **生が失敗なら静的**（今までどおり）。空の配列でも静的（Web の「空なら維持」と同じ）
+    func testFallsBackToStaticWhenLiveIsEmpty() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: "[]")
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["a", "b"])
+        XCTAssertEqual(photos.map(\.likes), [5, nil])
+    }
+
+    /// 静的 JSON が取れない（端末の控えも無い）ときも、生の一覧が取れていれば出す
+    func testLiveListShownWhenStaticFails() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 500, body: "{}")
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"new","src":"https://x/new.jpg"}]"#)
+        let photos = try await service(live: liveURL).fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["new"])
+    }
+
+    /// どちらも取れなければ今までどおり投げる（空の一覧を「写真が無い」と出さない）
+    func testThrowsWhenBothFail() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 500, body: "{}")
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        do {
+            _ = try await service(live: liveURL).fetchPhotos()
+            XCTFail("どちらも取れないのに投げていない")
+        } catch {}
+    }
+
+    /// 🔴 **合わせた後に絞り込みを必ず通す。** 生の行にもブロックした相手・通報した写真・
+    /// 消した写真・`published: false` の行が混ざりうる（端末にしか無い印はサーバーでは落とせない）
+    func testLiveRowsStillPassModeration() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"ok","src":"https://x/ok.jpg","userId":"u1"},
+         {"id":"blocked","src":"https://x/bl.jpg","userId":"u2"},
+         {"id":"reported","src":"https://x/re.jpg","userId":"u1"},
+         {"id":"gone","src":"https://x/go.jpg","userId":"u1"},
+         {"id":"draft","src":"https://x/dr.jpg","userId":"u1","published":false}]
+        """)
+        let gallery = service(live: liveURL)
+        await gallery.setHidden(ModerationSnapshot(blocked: ["u2"], reported: ["reported"], gone: ["gone"]))
+        let photos = try await gallery.fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["ok"], "生の行が絞り込みを通っていない")
+    }
+
+    /// 限定公開の行（`GET /feed/restricted`）は今までどおり重なる（生の行は公開ぶんだけ）
+    func testRestrictedRowsStillMergeOverLiveList() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: """
+        [{"id":"new","src":"https://x/new.jpg","createdAt":"2026-10-10T00:00:00Z"}]
+        """)
+        let gallery = service(live: liveURL)
+        let restricted = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"r","src":"https://x/r.jpg","audience":"followers","createdAt":"2026-10-11T00:00:00Z"}"#.utf8))
+        await gallery.setRestrictedLoader { [restricted] }
+        let photos = try await gallery.fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["r", "new"])
+    }
+
     /// 口が設定されていなければ叩かない（既存の試験・未設定の環境）
     func testSkipsWhenNotConfigured() async throws {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)

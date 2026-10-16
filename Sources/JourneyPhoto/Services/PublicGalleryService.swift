@@ -16,8 +16,10 @@ import FoundationNetworking
 /// `app/data/photos.json` を取得する。
 ///
 /// 割り切っている点:
-/// - **最新とは限らない。** 反映はサイト再ビルド待ち（投稿時に
-///   `repository_dispatch` が走るので通常は数分）
+/// - **静的 JSON は最新とは限らない。** 反映はサイト再ビルド待ちで、2026-10 時点では
+///   作り直しが見送られ定期ビルドも止まっている。だから**管理 API の `GET /photos`
+///   （DynamoDB を直に読む・未認証）が取れたら、一覧をその答えで置き換える**
+///   （Web の `usePhotos` と同じ・`LiveLikes.list`・2026-10-16 判断）。取れなければ静的 JSON
 /// - **ページングが無い。** 全件が要る画面（おすすめ・カテゴリ・タグ・検索・地図など）は
 ///   今もこちら。ホームの「新着」は `GET /feed` のページ読み（`PublicFeedService`・
 ///   2026-10-03）に移した。仕上げ（限定公開・ブロック）は `presentFeed` が同じ道で掛ける
@@ -151,14 +153,17 @@ actor PublicGalleryService {
         }
     }
 
-    /// いいねの**いまの数**を取る口（管理 API の `GET /photos`）。nil なら叩かない。
+    /// **いまの一覧**（行といいねの数）を取る口（管理 API の `GET /photos`）。nil なら叩かない。
     ///
     /// **既定は nil。** 本物の口は `AppEnvironment` が `AppConfig.livePhotosURL`
     /// を渡す——既定に置くと、設定を入れていない試験がここで落ちる
     private let liveURL: URL?
-    private var liveCounts: [String: Int]?
-    /// `liveCounts` を**取りに行った時刻**（写した写真の `likesAsOf` になる）
+    /// 最後に読めた答え（`LiveLikes.read`）。**1回の要求から、一覧の行といまの数の両方を使う**。
+    /// 取れなかった回は前に読めた答えを持ち続ける（静的 JSON より新しい）
+    private var liveSnapshot: LiveLikes.Snapshot?
+    /// `liveSnapshot` を**取りに行った時刻**（写した写真の `likesAsOf` になる）
     private var liveCountsAsOf: Date?
+    private var liveCounts: [String: Int]? { liveSnapshot?.counts }
     /// 取りに行っている最中の要求。**同時に来た呼び出しはこれを待つ**
     /// （待たずに返すと、その画面だけ静的 JSON の古い数で出て、
     ///  控えの間は取り直さない）
@@ -241,12 +246,26 @@ actor PublicGalleryService {
             await refreshLiveCounts(force: false)
             return await merged(fresh, force: force)
         }
-        // **いいねのいまの数は、一覧と同時に取りに行く**
+        // **いまの一覧（`GET /photos`）は、静的 JSON と同時に取りに行く**
         // （順に待つと、起き抜けの Lambda のぶん一覧が遅れる）
         async let live: Void = refreshLiveCounts(force: force)
-        let photos = try await fetchStaticList(force: force)
+        // **catch の中で await しない**（Xcode 26.3 の SILGen）。結果を外へ持ち出してから分ける
+        let loaded: Result<[Photo], Error>
+        do {
+            loaded = .success(try await fetchStaticList(force: force))
+        } catch {
+            loaded = .failure(error)
+        }
         await live
-        return await merged(photos, force: force)
+        switch loaded {
+        case .success(let photos):
+            return await merged(photos, force: force)
+        case .failure(let error):
+            // 2026-10-16 判断: 静的 JSON が取れなくても（端末の控えも無い）、いまの一覧が
+            // 取れていればそれで出す。どちらも無ければ今までどおり投げる
+            guard !LiveLikes.list(live: liveSnapshot, asOf: .distantPast, static: []).isEmpty else { throw error }
+            return await merged([], force: force)
+        }
     }
 
     /// 静的 JSON を取る。**圏外・壊れた応答なら前回の控え**。
@@ -368,14 +387,15 @@ actor PublicGalleryService {
     /// 写真も落とすため。サーバー側（`restrictedFeed.ts`）でも落としているが、
     /// 端末にしか無い「通報した写真」はここでしか落とせない。
     ///
-    /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
-    /// 取れていなければ静的 JSON の数のまま。
+    /// **一覧の元はここで決める**（`LiveLikes.list`・2026-10-16 判断）。`GET /photos` が取れていれば
+    /// その行で置き換え（同じ id は生の行が正・いいねもいまの数）、取れていなければ静的 JSON のまま。
+    /// 生の行も静的 JSON の行も、**このあとの絞り込み（限定公開の重ね・編集・`visible`）を必ず通る**。
     ///
     /// **自分で編集した写真は編集後の行を重ねる**（`edits`）。限定の行を足した**後**に重ねる
     /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
     /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
     private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
-        let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
+        let counted = LiveLikes.list(live: liveSnapshot, asOf: liveCountsAsOf ?? .distantPast, static: photos)
         let (extra, epoch) = await restrictedPhotos(force: force)
         if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
         return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)
@@ -404,8 +424,8 @@ actor PublicGalleryService {
         return visible(edits.apply(to: mixed))
     }
 
-    /// いいねのいまの数を取り直す。**失敗しても何も投げない**
-    /// ——直前に取れた数か、静的 JSON の数のまま出す。
+    /// いまの一覧（行といいねの数）を取り直す。**失敗しても何も投げない**
+    /// ——直前に取れた答えか、静的 JSON のまま出す。
     private func refreshLiveCounts(force: Bool) async {
         guard let liveURL else { return }
         if let liveInFlight {
@@ -449,16 +469,16 @@ actor PublicGalleryService {
             let (data, response) = try await session.cancellableData(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
-                  let counts = LiveLikes.counts(from: data) else { return }
-            liveCounts = counts
+                  let snapshot = LiveLikes.read(data) else { return }
+            liveSnapshot = snapshot
             liveCountsAsOf = startedAt
         } catch {
-            print("[gallery] いいねのいまの数を取れませんでした: \(error)")
+            print("[gallery] いまの一覧（GET /photos）を取れませんでした: \(error)")
         }
     }
 
-    /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
-    /// false の行が混ざっても出さない（二重の守り）。
+    /// 公開 JSON にも `GET /photos` にも非公開の写真は載らない（サーバーが `published`・
+    /// `story`・`audience` で落とす）が、`published` が明示的に false の行が混ざっても出さない（二重の守り）。
     /// あわせて、ブロックした相手と、自分が通報した・消した・非公開にした写真を落とす。
     private func visible(_ photos: [Photo]) -> [Photo] {
         hiding.visible(photos.filter { $0.published != false })
