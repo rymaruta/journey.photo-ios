@@ -239,24 +239,19 @@ final class V2SettingsProTests: XCTestCase {
 
     // MARK: - Pro マーク（板 ProMarkOptions）
 
-    /// 小さい版は真鍮の単色・PRO の札は真鍮の塗りに墨。大きい版は光る真鍮のまま
-    func testProMarkSmallVersions() throws {
-        XCTAssertTrue(ProMarkStyleV2.filledPlate(small: true))
-        XCTAssertFalse(ProMarkStyleV2.filledPlate(small: false))
-        XCTAssertTrue(ProMarkStyleV2.flatFill(small: true))
-        XCTAssertFalse(ProMarkStyleV2.flatFill(small: false))
-        // 墨の字は真鍮の塗りの上で 7:1 を超える（コメントの小ささでも読める）
-        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.ink, BrandPalette.accent), 7)
-
+    /// **どの大きさでも光る真鍮の1つの形**（2026-10-16 owner「Pro のデザインが画面によって違う」）。
+    /// 小さい版だけ単色・真鍮の塗りに墨の字にしていたのをやめた。変えてよいのは線の太さと穴の形だけ
+    func testProMarkIsOneLookAtEverySize() throws {
         let mark = try source("Features/Profile/ProMark.swift")
+        XCTAssertFalse(mark.contains("ProMarkStyleV2"), "大きさで見た目を切り替える決まりが残っている")
         let iris = slice(mark, from: "private struct ProMarkIris", to: "private func aperture")
-        assertInOrder(["if ProMarkStyleV2.flatFill(small: small) {", "Circle().fill(WebTheme.accent)",
-                       "} else {", "LinearGradient(stops: ProMarkColors.stops(ProMarkColors.irisStops)"],
-                      in: iris, "絞り羽根の小さい版")
-        let plate = slice(mark, from: "private struct ProMarkPlate", to: "enum ProMarkStyleV2")
-        assertInOrder(["let filled = ProMarkStyleV2.filledPlate(small: small)", "if filled {",
-                       ".fill(WebTheme.accent)", "} else {", ".strokeBorder(sheen, lineWidth: line)",
-                       "filled ? AnyShapeStyle(WebTheme.accentText) : AnyShapeStyle(sheen)"], in: plate, "PRO の札の小さい版")
+        XCTAssertTrue(iris.contains("LinearGradient(stops: ProMarkColors.stops(ProMarkColors.irisStops)"))
+        XCTAssertFalse(iris.contains("Circle().fill(WebTheme.accent)"), "絞り羽根に単色の版が残っている")
+        XCTAssertFalse(iris.contains("if !small {"), "光の縁を小さい版だけ外している")
+        let plate = slice(mark, from: "private struct ProMarkPlate", to: "\n}\n")
+        XCTAssertTrue(plate.contains(".strokeBorder(sheen, lineWidth: line)"))
+        XCTAssertTrue(plate.contains(".foregroundStyle(sheen)"))
+        XCTAssertFalse(plate.contains(".fill(WebTheme.accent)"), "PRO の札に真鍮の塗りの版が残っている")
     }
 
     // MARK: - 通知の説明（板 PushPrimer）
