@@ -36,7 +36,10 @@ struct OfflineTripCard: View {
         Group {
             switch phase {
             case .hidden:
-                EmptyView()
+                // 🔴 **EmptyView にしない**（2026-10-16 判断）。最初は Pro かどうか読めていない（nil）ので
+                // `.hidden` になり、中身が EmptyView だけだと下の `.task` が走らず、`isPro` が nil のまま
+                // 札がいつまでも出なかった（StoriesRow の 1.1.5 と同じ形）。高さ 0 の見えない1枚を置く
+                StoriesRow.loadingAnchor
             case .free:
                 freeCard
             default:

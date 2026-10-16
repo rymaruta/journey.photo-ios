@@ -248,4 +248,18 @@ final class StoryV2RingsFixTests: XCTestCase {
                       in: body, "読み込み中も .task が走る形")
         XCTAssertTrue(row.contains("Color.clear.frame(height: 0).accessibilityHidden(true)"))
     }
+
+    /// 同じ形の2か所: 旅の「電波なしで使えるようにする」の札（Pro かどうか読む前は中身が空だった）と、
+    /// プロフィールのハイライト（読み終わる前は中身が空）。どちらも見えない1枚を置いて `.task` を走らせる
+    func testOtherLoadersKeepAnAnchor() throws {
+        let card = try source("Features/Trips/OfflineTripCard.swift")
+        let cardBody = slice(card, from: "var body: some View {", to: ".fullScreenCover(isPresented: $showPaywall)")
+        assertInOrder(["case .hidden:", "StoriesRow.loadingAnchor", ".task {", "myProfile()"],
+                      in: cardBody, "旅の札の読み込み")
+        XCTAssertFalse(cardBody.contains("EmptyView()"), "中身が EmptyView だけになり .task が走らない")
+        let highlights = try source("Features/Profile/HighlightsRow.swift")
+        let hBody = slice(highlights, from: "var body: some View {", to: ".sheet(isPresented: $showEditor")
+        assertInOrder(["if ProfileSections.showsHighlights(", "} else {", "StoriesRow.loadingAnchor",
+                       ".task(id: userId) { await load() }"], in: hBody, "ハイライトの読み込み")
+    }
 }
