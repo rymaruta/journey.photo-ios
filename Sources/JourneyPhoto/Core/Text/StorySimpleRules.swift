@@ -130,12 +130,20 @@ enum StorySimpleRules {
         }
     }
 
-    // MARK: - 色の丸（4つ）
+    // MARK: - 色の丸（5つ）
 
-    /// キーボードの上に出す4色（白・墨・真鍮・空色）。残りの8色と好きな色は「ほかの色」から
-    static let quickInks: [TextOverlay.Ink] = [.white, .ink, .brass, .sky]
+    /// キーボードの上に出す5色（板 v2 `StoryComposerText`: 白・黒（墨）・真鍮・空色・珊瑚）。
+    /// 残りの7色と好きな色は「ほかの色」から。
+    ///
+    /// 2026-10-16 判断: 珊瑚を「ほかの色」の奥から前へ出した（板 v2 の5色）。
+    /// **真鍮は文字の色として残す。** CLAUDE.md の「真鍮は黒い地の上だけ」は UI の部品（合図・リンク・
+    /// 選んでいるもの）の決まりで、ここは使う人が自分の写真に載せる文字の色（板 v2 も5色に置いている・
+    /// 2026-10-02 のかんたん版から既に出ていた）。背景無しでも影（`.light`）が付き、帯は背景ボタン1回で
+    /// 付く。**帯を前提に縛ることはしていない**（真鍮を選んでも背景は変えない）——写真によっては
+    /// 読みにくいので、縛るかは owner に尋ねる
+    static let quickInks: [TextOverlay.Ink] = [.white, .ink, .brass, .sky, .coral]
 
-    /// いまの札で出す丸。**背景無しは4つとも**（墨を選ぶと黒の見た目に移る）。
+    /// いまの札で出す丸。**背景無しは5つとも**（墨を選ぶと黒の見た目に移る）。
     /// 帯・縁取りでは読めない墨を出さない（`TextOverlay.inks(for:)` と同じ決まり）
     static func inks(for overlay: TextOverlay) -> [TextOverlay.Ink] {
         guard overlay.kind.forcedStyle != nil || backdrop(of: overlay.style) != .none else { return quickInks }

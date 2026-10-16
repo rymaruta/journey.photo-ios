@@ -37,6 +37,11 @@ struct StoryReelView: View {
     @State private var settleY: Double = 0
     /// 回りきる動きの最中（二度押しで2人進まない・閲覧画面を止める・触らせない）
     @State private var turning = false
+    /// 指を離して元へ戻すばねの最中（閉じずに戻る縮み・回らずに戻る横）。**この間も時計を止める**
+    /// ——止めないと、縮んだ写真が戻りきる前に次の1本へ進んでいた（2026-10-16 判断）
+    @State private var settling = false
+    /// 戻すばねの回（新しい払いで始めた戻しを、古い回の終わりで解かない）
+    @State private var settleRun = 0
     @State private var width: Double = 390
     /// 並びから落とした1本（通報・削除）。**人を行き来して閲覧画面が作り直されても戻さない**
     @State private var removed: Set<String> = []
@@ -73,6 +78,8 @@ struct StoryReelView: View {
 
     /// 回りきるのにかける時間
     private static let turnDuration: Double = 0.32
+    /// 戻すばねが落ち着くまで（`settleAnimation` のばね 0.3 秒・弾まない形 0.2 秒）。この間は止めておく
+    static let settleDuration: Double = 0.3
 
     init(groups: [StoryReel.Group], startGroup: Int, viewerId: String?,
          onSeen: ((String) -> Void)? = nil, onDeleted: ((String) -> Void)? = nil) {
@@ -179,7 +186,7 @@ struct StoryReelView: View {
                         if StoryReel.closes(dy: dy, predictedDY: value.predictedEndTranslation.height) {
                             dismiss()
                         } else {
-                            withAnimation(settleAnimation) { settleY = 0 }
+                            settle { settleY = 0 }
                         }
                     case nil:
                         break
@@ -191,6 +198,18 @@ struct StoryReelView: View {
     /// 指を離した後に戻す動き。**「動きを減らす」ならばねで弾ませない**
     private var settleAnimation: Animation {
         reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
+    }
+
+    /// 指を離した後に元へ戻す。**戻りきるまで閲覧画面の時計を止める**（`holds` の `settling`）
+    private func settle(_ change: () -> Void) {
+        settleRun += 1
+        let run = settleRun
+        settling = true
+        withAnimation(settleAnimation, change)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Int(Self.settleDuration * 1000)))
+            if run == settleRun { settling = false }
+        }
     }
 
     /// 立方体の1面。`minX` は面の左端の位置。
@@ -212,7 +231,7 @@ struct StoryReelView: View {
             stories: g.stories, startIndex: g.start, viewerId: viewerId,
             // **指で動かしている間・回りきる間・縮みから戻る間は止める**（長押しの判定は
             // 指が動くと外れ、時計が進み続けていた）
-            holds: finger.axis != nil || turning,
+            holds: finger.axis != nil || turning || settling,
             onGroupEnd: { turn(.forward) },
             onGroupBack: neighbor(-1) != nil ? { turn(.back) } : nil,
             swipesHandledOutside: true,
@@ -244,12 +263,12 @@ struct StoryReelView: View {
             target = next
         case .back:
             guard let previous = neighbor(-1) else {
-                withAnimation(settleAnimation) { settleX = 0 }
+                settle { settleX = 0 }
                 return
             }
             target = previous
         case .stay:
-            withAnimation(settleAnimation) { settleX = 0 }
+            settle { settleX = 0 }
             return
         }
         turning = true
@@ -271,27 +290,38 @@ struct StoryReelView: View {
     }
 }
 
-/// 回っている途中に見える隣の人の面。**写真1枚と名前だけ**（動画は記号）
+/// 回っている途中に見える隣の人の面。**写真1枚と名前だけ**（動画は記号）。
+///
+/// **形は本物の閲覧画面と同じ**——写真は上端から伸びて下の角だけ丸く（`StoryViewerMetrics.photoRadius`）、
+/// その下に足元の黒い帯（`StoryViewerMetrics.footerHeight`）を空ける。四角い写真を画面いっぱいに
+/// 敷いていたときは、回りきって閲覧画面に差し替わった瞬間に角と帯が現れて跳ねた（2026-10-16 判断）
 private struct StoryReelFace: View {
     let story: Story?
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.black
-            if let story {
-                // 枠いっぱいに敷く四角いサムネ（動画は記号。1コマ目を出さない）
-                StoryPoster(story: story)
+        VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                Color.black
+                if let story {
+                    // 枠いっぱいに敷く四角いサムネ（動画は記号。1コマ目を出さない）
+                    StoryPoster(story: story)
+                }
+                if let story {
+                    Text(story.authorName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.top, 64)
+                        .padding(.leading, 16)
+                }
             }
-            if let story {
-                Text(story.authorName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.white)
-                    .padding(.top, 64)
-                    .padding(.leading, 16)
-            }
+            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: StoryViewerMetrics.photoRadius,
+                                              bottomTrailingRadius: StoryViewerMetrics.photoRadius))
+            .ignoresSafeArea(edges: .top)
+            // 足元の黒い帯（閲覧画面の返信欄・自分の足元が乗る高さ）
+            Color.black.frame(height: StoryViewerMetrics.footerHeight)
         }
-        .clipped()
-        .ignoresSafeArea()
+        // 色の地は安全域の外（上の時計・下のホームの印の下）まで敷かれる（`ignoresSafeAreaEdges` の既定）
+        .background(Color.black)
         // 画面の外に倒して置いてある面。**読み上げない**（前後の人の名前が読まれていた）
         .accessibilityHidden(true)
     }

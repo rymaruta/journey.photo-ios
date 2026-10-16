@@ -18,6 +18,38 @@ struct StoryInsightsView: View {
 
     let story: Story
 
+    /// 閲覧画面が**もう読んだ**見た人・返信（2026-10-16）。渡されたら最初は読み直さない
+    /// ——閲覧画面から開くたびに、同じ2つの一覧をもう一度読んでいた。引き下げ・人のページから
+    /// 戻ったときの読み直しは今までどおり
+    struct Seed: Equatable {
+        let viewers: [StoryViewer]
+        let replies: [StoryReply]
+
+        /// **両方読めているときだけ**渡す（片方でも読めていなければ、反応の画面が自分で読む）
+        static func from(viewers: [StoryViewer], viewersLoaded: Bool?,
+                         replies: [StoryReply], repliesLoaded: Bool) -> Seed? {
+            viewersLoaded == true && repliesLoaded ? Seed(viewers: viewers, replies: replies) : nil
+        }
+    }
+
+    init(story: Story, seed: Seed? = nil) {
+        self.story = story
+        if let seed {
+            _viewers = State(initialValue: seed.viewers)
+            _replies = State(initialValue: seed.replies)
+            _viewersLoaded = State(initialValue: true)
+            _repliesLoaded = State(initialValue: true)
+            _isLoading = State(initialValue: false)
+        }
+        _skipsFirstLoad = State(initialValue: Self.skipsFirstLoad(seed: seed))
+    }
+
+    /// 最初の読み込みを省くか（渡された一覧があるとき）
+    nonisolated static func skipsFirstLoad(seed: Seed?) -> Bool { seed != nil }
+
+    /// 最初の `.task` の読み込みを1回だけ省く印（`Seed`）
+    @State private var skipsFirstLoad = false
+
     @EnvironmentObject private var environment: AppEnvironment
     /// ブロックした人は一覧から外す（行からその人のページへ行き、ブロックできる）
     @EnvironmentObject private var hidden: ModerationStore
@@ -84,6 +116,10 @@ struct StoryInsightsView: View {
         // v2 StoryInsights: シートの地は札の面（surface-1 #0E0E0F）。写真の上ではないので不透明の灰を使う
         .scrollContentBackground(.hidden)
         .background(WebTheme.card)
+        // 2026-10-16 判断: 「閉じる」を見出しの行に置いたので、この画面の上のバーは隠す（板にバーは無い）。
+        // 呼び出し側（`StoryViewerView` のシート）がバーに置いた「閉じる」もこれで出ない。
+        // 見た人のページへ進んだ先は、その画面のバー（戻る）がそのまま出る
+        .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(WebTheme.card, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
@@ -105,7 +141,14 @@ struct StoryInsightsView: View {
             frontSettle = nil
             front.disappear()
         }
-        .task { await load() }
+        .task {
+            // 閲覧画面から一覧を受け取った回は、最初の1回だけ読まない（戻ったときは読み直す）
+            if skipsFirstLoad {
+                skipsFirstLoad = false
+                return
+            }
+            await load()
+        }
         .refreshable { await load(pulled: true) }
     }
 
@@ -132,6 +175,13 @@ struct StoryInsightsView: View {
             }
             .padding(.top, JPSpace.xxs)
             Spacer(minLength: 0)
+            // v2 StoryInsights: 「閉じる」は**見出しと同じ行の右端**（板の header の中）。
+            // 上のバーは隠している（`body` の `.toolbar(.hidden, for: .navigationBar)`）
+            SheetCloseButton()
+                .font(JPFont.bodyEmphasis)
+                .foregroundStyle(WebTheme.text)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .padding(.leading, JPSpace.xs)
         }
     }
 
@@ -144,6 +194,12 @@ struct StoryInsightsView: View {
 
     /// 写真の大きさ（板 48×64）
     static let thumbSize = (width: CGFloat(48), height: CGFloat(64))
+
+    /// 行の右の印の読み上げ（板 v2 の `aria-label`）。**何をしたかを言う**（「いいね」だけだと押すボタンに聞こえる）
+    nonisolated static var likedLabel: String { L("いいねしました", "Liked") }
+    nonisolated static var repliedLabel: String { L("返信しました", "Replied") }
+    /// 返信した人の印。閲覧画面の自分の足元の返信の丸と同じ記号
+    static let replySymbol = "message"
 
     /// 3つの数を1枚の升目で（v2: 縁は白 8%・角 14・升の間も白 8% の線・数は SF 300 の 28）
     private var summary: some View {
@@ -288,12 +344,13 @@ struct StoryInsightsView: View {
                 // 真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29）。黒地の行の上）
                 Image(systemName: "heart.fill")
                     .foregroundStyle(WebTheme.accent)
-                    .accessibilityLabel(L("いいね", "Liked"))
+                    .accessibilityLabel(Self.likedLabel)
             } else if replyText(from: viewer.userId) != nil {
-                // 返信した人は吹き出しの印（一言は名前の下に出している）
-                Image(systemName: "bubble.left")
+                // 返信した人は吹き出しの印（一言は名前の下に出している）。**閲覧画面の足元の返信の丸と
+                // 同じ丸い吹き出し**（`message`）——角の吹き出し（`bubble.left`）は owner が安っぽいと言った形
+                Image(systemName: Self.replySymbol)
                     .foregroundStyle(WebTheme.text3)
-                    .accessibilityLabel(L("返信あり", "Replied"))
+                    .accessibilityLabel(Self.repliedLabel)
             }
         }
         .frame(minHeight: Self.rowHeight)

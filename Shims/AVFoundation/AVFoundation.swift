@@ -10,6 +10,8 @@ open class AVPlayerItem: NSObject {
     open var status: Status { .unknown }
     /// 本物と同じ形（長さ。読み込み前は無限・NaN のことがある）
     open var duration: CMTime { .zero }
+    /// 本物と同じ形（先に読んでおく長さ・秒。0 は再生器に任せる）
+    open var preferredForwardBufferDuration: TimeInterval = 0
 }
 
 open class AVPlayer {

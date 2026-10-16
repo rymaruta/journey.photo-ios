@@ -118,7 +118,32 @@ enum JPFont {
     static let wordmark = Font.system(size: 22, weight: .bold, design: .serif)
 }
 
+/// 文字の種類の標準に無い大きさ（板の 14 など）を、**文字の種類と同じだけ伸び縮みさせて**出す。
+///
+/// 2026-10-16 判断: `@ScaledMetric` で大きさを伸ばしてから SF を当てる。`Font.system(size:)` を
+/// そのまま書くと文字サイズの設定に付いてこない（`StoryDynamicTypeTests`）。`@ScaledMetric` は
+/// 画面の `dynamicTypeSize` を読むので、写真の上の飾りの上限（`StoryViewerView.chromeTypeLimit`）も効く
+struct JPScaledSystemFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    let weight: Font.Weight
+
+    init(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight))
+    }
+}
+
 extension View {
+
+    /// `size` の SF を、`style` の文字の種類と同じだけ伸び縮みさせて当てる（`JPScaledSystemFont`）
+    func jpSystemFont(_ size: CGFloat, weight: Font.Weight = .regular,
+                      relativeTo style: Font.TextStyle = .subheadline) -> some View {
+        modifier(JPScaledSystemFont(size: size, weight: weight, relativeTo: style))
+    }
 
     /// 眉ラベル（`TODAY'S THEME`・`TRIP BOOK` の類）。SF Pro・字間を空けた小さい大文字。
     /// 11pt（caption2）は本文系の最小 12pt の、眉ラベルだけの例外。
