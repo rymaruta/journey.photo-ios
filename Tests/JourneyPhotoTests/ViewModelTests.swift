@@ -95,6 +95,8 @@ final class ViewModelTests: XCTestCase {
     /// 投稿画面を閉じたら、その画面で上がった写真を渡す（次に閉じたら入れ替わる）
     func testPostSheetCloseHandsOverPostedPhotos() async throws {
         let router = TabRouter()
+        // 公開の一覧に重ねる控え（共有）も書くので、ほかの試験に残さない
+        defer { PostedPhotos.Ledger.shared.clear() }
         let p = try postedPhoto("new")
         router.notePosted(p)
         XCTAssertTrue(router.lastPosted.isEmpty, "閉じる前に渡した")

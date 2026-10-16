@@ -35,6 +35,10 @@ actor PublicGalleryService {
     /// 同期で読むので actor の外に置く）
     nonisolated let edits: PhotoEditLedger
 
+    /// 投稿したばかりの写真（`PostedPhotos.Ledger`・2026-10-16）。**出すところで重ねる**——一覧の控え
+    /// （`cacheLifetime`）の間、新しい投稿が探す・地図・ホームのおすすめに出なかった
+    nonisolated let posted: PostedPhotos.Ledger
+
     /// 見せない相手と、見せない写真。
     ///
     /// **公開一覧は静的な JSON なので、サーバー側では絞れない。**
@@ -68,6 +72,9 @@ actor PublicGalleryService {
         // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった。
         // ここ（actor の上）で捨てれば、この後の `merged` は必ず空の控えで重ねる
         edits.clear()
+        // 投稿したばかりの写真の控えも捨てる（2026-10-16）。残すと、前の人が非公開にした・消した写真が
+        // 次の人の一覧に最大60秒重なる（`PostedPhotos.Ledger`）
+        posted.clear()
         restrictedLoader = loader
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
@@ -215,6 +222,7 @@ actor PublicGalleryService {
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
          edits: PhotoEditLedger = PhotoEditLedger(),
+         posted: PostedPhotos.Ledger = .shared,
          beforeLiveRequest: (@Sendable () async -> Void)? = nil,
          beforeStaticRequest: (@Sendable () async -> Void)? = nil,
          liveRetryAfterFailure: TimeInterval = 10) {
@@ -223,6 +231,7 @@ actor PublicGalleryService {
         self.liveStore = snapshot.liveCompanion
         self.beforeStaticRequest = beforeStaticRequest
         self.edits = edits
+        self.posted = posted
         self.liveURL = liveURL
         self.snapshot = snapshot
         self.beforeLiveRequest = beforeLiveRequest
@@ -436,7 +445,10 @@ actor PublicGalleryService {
     /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
     /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
     private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
-        let counted = LiveLikes.list(live: liveForList, asOf: liveCountsAsOf ?? .distantPast, static: photos)
+        // 投稿したばかりの公開写真を先に重ねる（読んだ一覧に在れば読んだ行を採る・`PostedPhotos.overlayPublic`）
+        let counted = PostedPhotos.overlayPublic(
+            loaded: LiveLikes.list(live: liveForList, asOf: liveCountsAsOf ?? .distantPast, static: photos),
+            posted: posted.photos())
         let (extra, epoch) = await restrictedPhotos(force: force)
         if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
         return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)

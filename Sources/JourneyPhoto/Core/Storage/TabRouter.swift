@@ -100,6 +100,8 @@ final class TabRouter: ObservableObject {
 
     func postSheetClosed() {
         lastPosted = posting
+        // 公開の一覧（探す・地図・ホームのおすすめ）にも先に重ねる（`PostedPhotos.Ledger`・2026-10-16）
+        PostedPhotos.Ledger.shared.note(posting)
         posting = []
         postSheetsClosed += 1
     }

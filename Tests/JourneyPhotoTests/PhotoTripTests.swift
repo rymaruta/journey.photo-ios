@@ -359,7 +359,7 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(spot.contains("onPost: { capture in pendingCapture = capture },"))
         XCTAssertTrue(spot.contains("onDismiss: { if SpotComposePost.opensUpload(pendingCapture) { showUpload = true } })"))
         XCTAssertTrue(spot.contains("UploadView(spot: UploadSpotTarget(spot), onPosted:"))
-        XCTAssertTrue(spot.contains("}, initialCapture: pendingCapture) }"), "撮った1枚がスポットの投稿に入らない")
+        XCTAssertTrue(spot.contains("}, initialCapture: pendingCapture,"), "撮った1枚がスポットの投稿に入らない")
         let guide = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
         // 2026-10-14: v2 で下の並びを3つ割りにした（`StoryV2DesignTests.testComposeGuideControls`）。
         // 作例ありの回は、左の枠にサムネと「投稿」がこの順に並ぶ

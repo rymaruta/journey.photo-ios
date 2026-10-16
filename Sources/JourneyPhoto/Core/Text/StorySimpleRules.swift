@@ -24,6 +24,37 @@ enum StorySimpleRules {
         return NextButton(title: L("次へ（\(selected)枚）", "Next (\(selected))"), enabled: !loading)
     }
 
+    // MARK: - 裏に回ったときの自動の書きかけ（2026-10-16）
+
+    /// 裏に回ったときに自動の書きかけ（`StoryDraftStore.Slot.auto`）をどうするか
+    enum AutoSave: Equatable {
+        /// 書く（並べた写真と置いた文字を残す）
+        case write
+        /// 前の分を消す（写真を全部外した——次に開いて外した写真が蘇らない）
+        case clear
+        /// 何もしない（読み込み中。読みかけの写真が落ちた書きかけを作らない・前の分は残す）
+        case skip
+    }
+
+    /// 写真が無ければ書かない（何も書いていない）。読み込み中は触らない
+    static func autoSave(hasShots: Bool, loading: Bool) -> AutoSave {
+        if loading { return .skip }
+        return hasShots ? .write : .clear
+    }
+
+    /// この画面が自動の枠に触って（書いて・消して）よいか。開いたとき空だった・この画面で尋ねたときだけ
+    /// ——尋ねていない書きかけ（送れなかった問いが先に出た・写真を持って開いた回）を黙って上書き・削除しない
+    static func ownsAutoSlot(hasAutoDraft: Bool, asked: Bool) -> Bool {
+        !hasAutoDraft || asked
+    }
+
+    /// 自動の書きかけが、いまの本人の下書きを開いて書いていたものか（`StoryDraftStore.Draft.basedOn`）。
+    /// そうなら続きから出したとき元の下書きも片づける（同じ写真が二度出ない）
+    static func autoRestoreContinuesSaved(basedOn: String?, savedStamp: String?) -> Bool {
+        guard let basedOn else { return false }
+        return basedOn == savedStamp
+    }
+
     // MARK: - 選んだ写真の読み込み
 
     /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す。

@@ -1,5 +1,6 @@
 import Foundation
 import CoreBluetooth
+import Combine
 import CoreLocation
 
 /// すれちがいの電波（Bluetooth Low Energy・2026-10-16）。
@@ -24,7 +25,7 @@ import CoreLocation
 /// ⚠️ **確かめていないこと**: 実機での見つかりやすさ。iOS は背景の広告をサービスの「あふれ領域」に
 /// 移し、背景どうし（両方ともアプリを閉じている）では見つけ合えないことが多い（Apple の文書）。
 /// 片方が画面を開いているときに見つかる、を最初の目安にしている
-final class PassRadio: NSObject {
+final class PassRadio: NSObject, ObservableObject {
 
     static let shared = PassRadio()
 
@@ -89,6 +90,16 @@ final class PassRadio: NSObject {
 
     /// 動いているか（設定の画面の表示用）
     private(set) var isRunning = false
+
+    /// 電波の管理者が知らせてきた Bluetooth の状態（設定の画面の案内・2026-10-16）。
+    /// 🔴 **Bluetooth を切っても何も知らせていなかった**——オンのまま、すれちがいが黙って止まっていた。
+    /// 管理者を手放したら（止めた）分からないので `.unknown` に戻す
+    @Combine.Published private(set) var powerState: CBManagerState = .unknown
+
+    /// 設定の画面に「Bluetooth がオフです」を出すか。すれちがいをオンにしていて、電源が切れているときだけ
+    static func showsPowerOffNotice(enabled: Bool, state: CBManagerState) -> Bool {
+        enabled && state == .poweredOff
+    }
 
     /// 載せる中身を決める。**nil なら止めて、電波の管理者も手放す**
     /// （手放さないと OS の Bluetooth の印が残る）。
@@ -158,6 +169,7 @@ final class PassRadio: NSObject {
         central = nil
         centralRestorable = false
         peripheralManager = nil
+        powerState = .unknown
     }
 
     // MARK: - 中心の役（探す・読む）
@@ -304,10 +316,12 @@ extension PassRadio: CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         // 許可を尋ねるためだけに作った管理者（`requestAuthorization`）は、答えが来たら手放す
+        // （手放すと `stop` が `.unknown` に戻す）
         guard payload != nil else {
             if central.state != .unknown { stop() }
             return
         }
+        powerState = central.state
         if central.state == .poweredOn {
             startScanning(central)
         } else {

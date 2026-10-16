@@ -16,6 +16,8 @@ struct PassSettingsView: View {
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.openURL) private var openURL
+    /// Bluetooth の電源（切れていたら案内を出す・2026-10-16）
+    @ObservedObject private var radio = PassRadio.shared
 
     @State private var showIntro = false
     @State private var showPick = false
@@ -108,6 +110,11 @@ struct PassSettingsView: View {
                 }
                 .buttonStyle(JPRowButtonStyle())
             }
+            // 🔴 **Bluetooth を切ったら、そう言う**（2026-10-16）。オンのまま黙って止まっていた
+            if PassRadio.showsPowerOffNotice(enabled: pass.settings.enabled, state: radio.powerState) {
+                JPCardDivider()
+                powerOffNotice
+            }
             if pass.settings.enabled,
                let notice = LightAlertPushNotice.state(wants: true, knownNotPro: false,
                                                        permission: push.permission, enabled: true) {
@@ -117,6 +124,40 @@ struct PassSettingsView: View {
                 }
             }
         }
+    }
+
+    /// 「Bluetooth がオフです」の一行。**「通知がオフのため届きません」の行と同じ見た目**（真鍮 8% の地・
+    /// 真鍮の字と印・owner の好み 2026-10-11）。押す所は無い——アプリから Bluetooth の電源は入れられず、
+    /// 設定アプリの入口もアプリの設定（Bluetooth の画面ではない）なので、どこで入れるかを言うだけ
+    private var powerOffNotice: some View {
+        ZStack {
+            Rectangle()
+                .fill(WebTheme.accentSoft)
+                .accessibilityHidden(true)
+            HStack(spacing: 12) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 18))
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("Bluetooth がオフです", "Bluetooth is off"))
+                        .font(JPFont.bodyEmphasis)
+                    Text(L("オンにするまで、すれちがいは止まっています。コントロールセンターか設定アプリで入れてください。",
+                           "Pass is paused until you turn Bluetooth on in Control Center or the Settings app."))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.accent.opacity(LightAlertSettingsStyle.noticeDetailOpacity))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("pass.settings.bluetoothOff")
     }
 
     private var cardRow: some View {

@@ -1060,7 +1060,9 @@ struct OfficialSpotView: View {
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）
                 if count > 0 { postedHere = true }
-            }, initialCapture: pendingCapture) }
+            }, initialCapture: pendingCapture,
+            // 上がった写真をマイページ・ホームに先に並べる（`RootView` の投稿と同じ・`TabRouter.lastPosted`）
+            onSaved: { TabRouter.shared.notePosted($0) }) }
         }
     }
 
