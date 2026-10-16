@@ -405,6 +405,16 @@ extension DeviceTripScanTests {
         await store.waitForRemoval()
     }
 
+    /// 🔴 一冊から開く「旅の写真から」は `preloadedShots` を渡す（`shots` を直に渡すと読みかけを渡す）
+    func testRootViewHandsOnlyCompleteShotsToTheTripFlow() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/App/RootView.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("DeviceTripShelfStore.shared.preloadedShots"), "読み終えた要約だけを渡していない")
+        XCTAssertFalse(text.contains("DeviceTripShelfStore.shared.shots"), "読みかけの要約を渡している")
+    }
+
     /// 🔴 **読めない段なら、メモリが空でも端末のファイルを消す**（許可を外すと iOS がアプリを終わらせる）
     @MainActor
     func testUnreadableRemovesTheStoredFileOnAFreshLaunch() async throws {
