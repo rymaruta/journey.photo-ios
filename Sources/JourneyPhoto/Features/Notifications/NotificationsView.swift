@@ -7,7 +7,7 @@ struct NotificationsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
-    /// ブロックした人の行を手元で落とすため（`visibleRows`）
+    /// ブロックした人の行・プッシュの行き先を手元で落とすため（`shown`・`opensPushTarget`）
     @EnvironmentObject private var hidden: ModerationStore
     /// **通知を押すたびに読み直すため**に見ている。
     ///
@@ -82,24 +82,14 @@ struct NotificationsView: View {
         }
     }
 
-    /// ブロックした人（行の送り手）を落とした一覧（2026-10-16 判断）。
+    /// 出す行（ブロックで落とし、種類で絞る・`Self.shown`）。
     ///
-    /// サーバーは読み直せば落とすが、返信の一覧のシートや人のページでブロックして戻ると、
-    /// 読み直すまでその人の名前・顔・行が残っていた。**描くたびに `hidden.blockedUserIds` で絞る**
-    /// ——`hidden` が変わると描き直されるので、ブロックした瞬間にも、表示のときにも効く。
-    /// ほかの一覧（`FollowListView`）は行が `NavigationLink` なので写しを取るが、ここの行き先は
-    /// `route`・`repliesStory` に持っていて行とは切れている——行が消えても開いている画面は閉じない
-    private var visibleRows: [AppNotification] {
-        BlockFilter.notifications(model.rows, blocked: hidden.blockedUserIds)
-    }
-
+    /// **描くたびに `hidden.blockedUserIds` で絞る**（2026-10-16 判断）——`hidden` が変わると描き直されるので、
+    /// ブロックした瞬間にも、表示のときにも効く。ほかの一覧（`FollowListView`）は行が `NavigationLink` なので
+    /// 写しを取るが、ここの行き先は `route`・`repliesStory` に持っていて行とは切れている
+    /// ——行が消えても開いている画面は閉じない
     private var shownRows: [AppNotification] {
-        // **種類の分からないお知らせは「すべて」にだけ出す。**
-        // 捨てると届いたことが伝わらないし、当て推量で仕分けると嘘になる
-        visibleRows.filter { row in
-            guard let kind = row.kind else { return filter == .all }
-            return filter.matches(kind)
-        }
+        Self.shown(model.rows, blocked: hidden.blockedUserIds, filter: filter)
     }
 
     /// 1件ぶん。**押せるようにする**——行き止まりの一覧は「壊れている」に見える。
@@ -151,10 +141,11 @@ struct NotificationsView: View {
     /// 板の空の状態にある「写真を投稿する」の主ボタンと季節のスポット2件は置かない
     /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
-        EmptyState(title: visibleRows.isEmpty
+        let total = Self.emptyIsTotal(rows: model.rows, blocked: hidden.blockedUserIds)
+        return EmptyState(title: total
                        ? L("まだお知らせはありません", "Nothing yet")
                        : L("この種類のお知らせはありません", "Nothing of this kind"),
-                   message: visibleRows.isEmpty
+                   message: total
                        ? L("写真を投稿すると、いいねやコメント、フォローがここに届きます。",
                            "Likes, comments and follows on your photos will show up here.")
                        : L("「すべて」に戻すと、ほかの種類のお知らせが見られます。",
@@ -242,7 +233,10 @@ struct NotificationsView: View {
             if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
             // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
             // 引けなければ一覧に留まる
-            guard !Task.isCancelled, let target, let destination = model.route(for: target) else { return }
+            // **ブロックした人の通知は開かない**（ブロックの前に届いたプッシュを後で押した回・`opensPushTarget`）
+            guard !Task.isCancelled, let target,
+                  Self.opensPushTarget(target, blocked: hidden.blockedUserIds),
+                  let destination = model.route(for: target) else { return }
             open(destination)
         }
         .sheet(item: $repliesStory) { target in
@@ -272,6 +266,31 @@ extension NotificationsView {
     nonisolated static let rowHeight: CGFloat = 68
     /// フォローバックの見た目 36 の上下に足す押せる余白（36＋4＋4＝44）
     nonisolated static let followBackSlack: CGFloat = (WebTheme.minTapTarget - JPHeight.inlineButton) / 2
+
+    /// 一覧に出す行（2026-10-16 判断）。**ブロックした人（行の送り手）を落としてから種類で絞る。**
+    /// サーバー（`api-user/src/notifications.ts`）は読み直せば落とすが、返信の一覧のシートや人のページで
+    /// ブロックして戻ると、読み直すまでその人の名前・顔・行が残っていた。
+    /// 種類の分からないお知らせは「すべて」にだけ出す——捨てると届いたことが伝わらないし、
+    /// 当て推量で仕分けると嘘になる
+    nonisolated static func shown(_ rows: [AppNotification], blocked: Set<String>,
+                                  filter: NotificationFilter) -> [AppNotification] {
+        BlockFilter.notifications(rows, blocked: blocked).filter { row in
+            guard let kind = row.kind else { return filter == .all }
+            return filter.matches(kind)
+        }
+    }
+
+    /// 空の画面が「1件も無い」側か（「この種類が無い」側でなく）。**ブロックで落とした後で数える**
+    /// ——全部ブロックした人の行だったのに「『すべて』に戻すと…」と言わない
+    nonisolated static func emptyIsTotal(rows: [AppNotification], blocked: Set<String>) -> Bool {
+        BlockFilter.notifications(rows, blocked: blocked).isEmpty
+    }
+
+    /// 押したプッシュの行き先を開くか（2026-10-16 判断）。**送り手をブロックしていたら開かない**——
+    /// ブロックの前に届いたプッシュを後で押すと、その人の写真・人のページへ進んでいた。お知らせの一覧に留まる
+    nonisolated static func opensPushTarget(_ target: AppNotification, blocked: Set<String>) -> Bool {
+        !BlockFilter.notifications([target], blocked: blocked).isEmpty
+    }
 
     /// 「通知をオンにする」の帯。写真の無い画面なので板（DesignSystem「黒塗りの真鍮」）どおり:
     /// 案内の帯は accent-soft の地・合図のアイコンは真鍮（黒地の上）・文字は白・押す所は

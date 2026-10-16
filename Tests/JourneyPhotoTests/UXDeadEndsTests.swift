@@ -270,17 +270,50 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertTrue(loader.contains("BlockFilter.replies(fetched, blocked: hidden.blockedUserIds)"))
     }
 
+    private func notifications(_ json: String) throws -> [AppNotification] {
+        try JSONDecoder.api.decode([AppNotification].self, from: Data(json.utf8))
+    }
+
     /// 🔴 **返信の一覧のシート・人のページでブロックして戻っても、お知らせにその人の行が残っていた**（2026-10-16）。
-    /// 一覧（種類で絞る前）と空の判断を、ブロックで落とした行から作る
+    /// ブロックで落としてから種類で絞る。送り手の無い行（メダル）は残す
     func testNotificationsDropBlockedSendersOnScreen() async throws {
+        let rows = try notifications(#"[{"type":"storyreply","byId":"a","photoId":"S1","t":"4"},{"type":"like","byId":"a","photoId":"p1","t":"3"},{"type":"like","byId":"b","photoId":"p2","t":"2"},{"type":"badge","key":"first","tier":1,"t":"1"}]"#)
+        XCTAssertEqual(NotificationsView.shown(rows, blocked: ["a"], filter: .all).map(\.byId), ["b", nil])
+        XCTAssertEqual(NotificationsView.shown(rows, blocked: ["a"], filter: .like).map(\.byId), ["b"])
+        XCTAssertEqual(NotificationsView.shown(rows, blocked: ["a"], filter: .comment).count, 0,
+                       "ブロックした人の返信が「コメント」に残った")
+        XCTAssertEqual(NotificationsView.shown(rows, blocked: [], filter: .comment).map(\.byId), ["a"])
+        // 画面はこの関数を呼ぶだけ（自前で絞らない）
         let view = try source("Features/Notifications/NotificationsView.swift")
-        XCTAssertTrue(view.contains("@EnvironmentObject private var hidden: ModerationStore"))
-        XCTAssertTrue(view.contains("BlockFilter.notifications(model.rows, blocked: hidden.blockedUserIds)"))
-        let shown = slice(view, from: "private var shownRows", to: "private func rowLink(")
-        XCTAssertTrue(shown.contains("visibleRows.filter"), "種類で絞る前にブロックした人を落としていない")
-        XCTAssertFalse(shown.contains("model.rows"))
-        let empty = slice(view, from: "private var emptyState", to: "private var list")
-        XCTAssertFalse(empty.contains("model.rows.isEmpty"), "ブロックで全部落ちたのに「この種類のお知らせはありません」と言う")
+        XCTAssertTrue(view.contains("Self.shown(model.rows, blocked: hidden.blockedUserIds, filter: filter)"))
+        XCTAssertTrue(view.contains("Self.emptyIsTotal(rows: model.rows, blocked: hidden.blockedUserIds)"))
+    }
+
+    /// 空の画面の文言: 全部ブロックした人の行なら、どの種類を選んでいても「まだお知らせはありません」側
+    func testNotificationsEmptyIsTotalAfterBlocking() async throws {
+        let rows = try notifications(#"[{"type":"like","byId":"a","photoId":"p1","t":"2"},{"type":"comment","byId":"a","photoId":"p1","t":"1"}]"#)
+        XCTAssertTrue(NotificationsView.shown(rows, blocked: ["a"], filter: .like).isEmpty)
+        XCTAssertTrue(NotificationsView.emptyIsTotal(rows: rows, blocked: ["a"]),
+                      "全員ブロック済みなのに「この種類のお知らせはありません」と言う")
+        XCTAssertFalse(NotificationsView.emptyIsTotal(rows: rows, blocked: []))
+        XCTAssertTrue(NotificationsView.emptyIsTotal(rows: [], blocked: []))
+        // 「フォロー」が空でもほかの人の行が残っていれば「この種類が無い」側
+        XCTAssertFalse(NotificationsView.emptyIsTotal(rows: rows, blocked: ["b"]))
+    }
+
+    /// 🔴 **ブロックの前に届いたプッシュを後で押すと、その人の写真・人のページへ進んでいた**（2026-10-16）
+    func testPushTargetFromBlockedSenderDoesNotOpen() async throws {
+        let follow = try XCTUnwrap(AppNotification.fromPush(["type": "follow", "byId": "a", "targetUserId": "a"]))
+        let like = try XCTUnwrap(AppNotification.fromPush(["type": "like", "byId": "a", "photoId": "p1"]))
+        let badge = try XCTUnwrap(AppNotification.fromPush(["type": "badge", "key": "first", "tier": "1"]))
+        XCTAssertFalse(NotificationsView.opensPushTarget(follow, blocked: ["a"]))
+        XCTAssertFalse(NotificationsView.opensPushTarget(like, blocked: ["a"]))
+        XCTAssertTrue(NotificationsView.opensPushTarget(like, blocked: ["b"]))
+        XCTAssertTrue(NotificationsView.opensPushTarget(badge, blocked: ["a"]), "送り手の無い通知まで止めた")
+        // 押した通知の行き先を受け取るのはお知らせ画面だけで、そこで止める
+        let view = try source("Features/Notifications/NotificationsView.swift")
+        let task = slice(view, from: ".task(id: router.openActivityRequests)", to: ".sheet(item: $repliesStory)")
+        XCTAssertTrue(task.contains("Self.opensPushTarget(target, blocked: hidden.blockedUserIds),\n                  let destination = model.route(for: target)"))
     }
 
     // MARK: - 8. 文言
