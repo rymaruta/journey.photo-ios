@@ -541,8 +541,8 @@ final class MedalCoinCoordinator: NSObject {
 
     /// 裏返す（読み上げの操作）。いまの向きから半周先の、表か裏の正面へ
     func flip() {
-        let half = Float.pi
-        flipTarget = (yaw / half).rounded() * half + half
+        // 決め方はきっぷと同じ1つ（`SpinMotion`・2026-10-16）
+        flipTarget = Float(SpinMotion.flipTarget(from: Double(yaw)))
         velocity = 0
     }
 
@@ -558,15 +558,14 @@ final class MedalCoinCoordinator: NSObject {
             flipTarget = nil
             velocity = 0
         case .changed:
-            // 幅いっぱい払うと約 1.2 周の 4 割（指に付いてくる量）
-            yaw += Float(move.x) / width * .pi * 1.5
+            // 幅いっぱい払うと約 1.2 周の 4 割（指に付いてくる量・`SpinMotion.turnPerWidth`）
+            yaw += Float(SpinMotion.yawDelta(dx: Double(move.x), width: Double(width)))
             pitch = min(0.6, max(-0.6, pitch + Float(move.y) / width * 1.2))
         case .ended, .cancelled, .failed:
             dragging = false
-            let speed = Float(gesture.velocity(in: view).x) / width * .pi * 1.5
-            // 惰性は付けるが、速すぎる払いは抑える。「視差効果を減らす」では弱く
-            let limit: Float = reduceMotion ? 3 : 14
-            velocity = min(limit, max(-limit, speed))
+            // 惰性は付けるが、速すぎる払いは抑える。「視差効果を減らす」では弱く（`SpinMotion.releaseVelocity`）
+            velocity = Float(SpinMotion.releaseVelocity(vx: Double(gesture.velocity(in: view).x), width: Double(width),
+                                                        reduceMotion: reduceMotion))
         default:
             break
         }
@@ -581,7 +580,7 @@ final class MedalCoinCoordinator: NSObject {
 
         if let target = flipTarget {
             // なめらかに寄せる（「視差効果を減らす」では一息に）
-            let step = reduceMotion ? 1 : min(1, dt * 7)
+            let step = Float(SpinMotion.approachStep(dt: Double(dt), reduceMotion: reduceMotion))
             yaw += (target - yaw) * step
             if abs(target - yaw) < 0.002 { yaw = target; flipTarget = nil }
         } else {

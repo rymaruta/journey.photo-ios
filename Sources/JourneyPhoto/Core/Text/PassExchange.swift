@@ -29,10 +29,25 @@ enum PassExchange {
         var showsFrom: Bool
         /// 裏に書くひとこと（`noteLimit` 字まで・改行なし）
         var note: String
+        /// 乗車券の「発」を自分で書いた字（空なら自動: `showsFrom` なら居住地の都道府県・でなければ「どこかから」）。
+        /// **2026-10-16 判断**（owner「発・着を自分で決めたい」）。`labelLimit` 字まで
+        var origin: String = ""
+        /// 乗車券の「着」を自分で書いた字（空なら自動: 受け取った側がすれちがった所）
+        var destination: String = ""
     }
 
-    /// 中身の版。**知らない版は読まない**（形を変えたら上げる）
-    static let version: UInt8 = 1
+    /// 中身の版。**知らない版は読まない**（形を変えたら上げる）。
+    ///
+    /// 2026-10-16 判断: 発・着の字を足して版 2 にした。**版 1 の特性も一緒に出す**（`PassRadio` は特性を2つ置く）
+    /// ——版 1 しか読めない前のアプリ（TestFlight 1.1.5）とも、ひとことまでは交換できる。読む側は版 2 があれば版 2、
+    /// 無ければ版 1 を読む。版 1 の中身も読める
+    static let version: UInt8 = 2
+    static let version1: UInt8 = 1
+    /// 区間に自分で書く字の数。**6 字**（2026-10-16 の読み直し: 発・着の両方を 6 字で書いても、明朝 30 を
+    /// 15 まで縮めれば区間の幅 264pt に収まる・`PassCardStyle.routeFits`。8 字では収まらなかった）
+    static let labelLimit = 6
+    /// 区間の字のバイト数（6 字の絵文字・結合を含めても収まる大きさ）
+    static let labelByteLimit = 24
     /// ひとことの字数（板「20字まで」）
     static let noteLimit = 20
     /// 写真の id の長さの上限（`PathID` と同じ字だけ）
@@ -56,8 +71,17 @@ enum PassExchange {
     /// 中身ごと落とす値（電波で受け取る特性の上限 512 を超えない）
     static let payloadByteLimit = 512
 
+    /// 連絡先の形（URL・メール・電話番号・ID）を含むか（`ContactText`・2026-10-16 owner の決定）
+    static func containsContact(_ text: String) -> Bool { ContactText.contains(text) }
+
+    /// 連絡先の形を書いたときの訳
+    static var contactProblem: String {
+        L("URL・メール・電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
+    }
+
     /// 入力中のひとことが載せられない訳（載せられるなら nil）。名刺選びの欄の下に出す
     static func noteProblem(_ text: String) -> String? {
+        if containsContact(text) { return contactProblem }
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.count > noteLimit {
             return L("\(noteLimit)字を超えています", "This is longer than \(noteLimit) characters")
@@ -86,6 +110,28 @@ enum PassExchange {
     /// - 1字に重ねる結合文字は `marksPerCharacterLimit` まで、スカラーが多すぎる字は落とす
     /// - 前後の空白を落とし、`noteLimit` 字・`noteByteLimit` バイトの短い方で（字の途中で切らずに）切る
     static func cleanNote(_ text: String) -> String {
+        cleanText(text, charLimit: noteLimit, byteLimit: noteByteLimit)
+    }
+
+    /// 区間に自分で書く字を整える（ひとことと同じ整え方・`labelLimit` 字・`labelByteLimit` バイト）
+    static func cleanLabel(_ text: String) -> String {
+        cleanText(text, charLimit: labelLimit, byteLimit: labelByteLimit)
+    }
+
+    /// 入力中の区間の字が載せられない訳（載せられるなら nil）
+    static func labelProblem(_ text: String) -> String? {
+        if containsContact(text) { return contactProblem }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.count > labelLimit {
+            return L("\(labelLimit)字を超えています", "This is longer than \(labelLimit) characters")
+        }
+        if trimmed.utf8.count > labelByteLimit {
+            return L("絵文字が多く、載せられる大きさを超えています", "Too many emoji \u{2014} this is too large to send")
+        }
+        return nil
+    }
+
+    static func cleanText(_ text: String, charLimit: Int, byteLimit: Int) -> String {
         var scalars = String.UnicodeScalarView()
         for s in text.unicodeScalars {
             if isBidiControl(s) { continue }
@@ -100,7 +146,7 @@ enum PassExchange {
         var out = ""
         var bytes = 0
         for ch in String(scalars).trimmingCharacters(in: .whitespaces) {
-            guard out.count < noteLimit else { break }
+            guard out.count < charLimit else { break }
             var marks = 0
             var kept = String.UnicodeScalarView()
             for s in ch.unicodeScalars {
@@ -116,35 +162,90 @@ enum PassExchange {
             guard kept.count <= scalarsPerCharacterLimit else { continue }
             let piece = String(kept)
             let size = piece.utf8.count
-            guard bytes + size <= noteByteLimit else { break }
+            guard bytes + size <= byteLimit else { break }
             out += piece
             bytes += size
         }
         return out.trimmingCharacters(in: .whitespaces)
     }
 
-    /// 並び: [版 1][印 1（bit0 = 出身を出す）][id の長さ 1][id][ひとこと（UTF-8・残り全部）]
+    /// 版 2 の並び: [版 2][印 1（bit0 = 出身を出す）][id の長さ 1][id][ひとことの長さ 1][ひとこと][発の長さ 1][発][着の長さ 1][着]。
+    /// 文字はどれも UTF-8。全体は `payloadByteLimit` まで（いちばん長くて 3+64+1+80+1+24+1+24 = 198）
     static func encode(_ payload: Payload) -> Data? {
         guard isValidPhotoId(payload.photoId) else { return nil }
         let id = Array(payload.photoId.utf8)
+        let note = Array(cleanNote(payload.note).utf8)
+        let origin = Array(cleanLabel(payload.origin).utf8)
+        let destination = Array(cleanLabel(payload.destination).utf8)
         var bytes: [UInt8] = [version, payload.showsFrom ? 1 : 0, UInt8(id.count)]
+        bytes += id
+        for part in [note, origin, destination] {
+            bytes.append(UInt8(part.count))
+            bytes += part
+        }
+        guard bytes.count <= payloadByteLimit else { return nil }
+        return Data(bytes)
+    }
+
+    /// 版 1 の並び（前のアプリが読む特性）: [版 1][印 1][id の長さ 1][id][ひとこと（残り全部）]。発・着は載らない
+    static func encodeV1(_ payload: Payload) -> Data? {
+        guard isValidPhotoId(payload.photoId) else { return nil }
+        let id = Array(payload.photoId.utf8)
+        var bytes: [UInt8] = [version1, payload.showsFrom ? 1 : 0, UInt8(id.count)]
         bytes += id
         bytes += Array(cleanNote(payload.note).utf8)
         guard bytes.count <= payloadByteLimit else { return nil }
         return Data(bytes)
     }
 
-    /// 読む。**形が崩れていたら nil**（知らない版・長さが合わない・id に使えない字・ひとことが長すぎる）
+    /// 読む（版 1・版 2）。**形が崩れていたら nil**（知らない版・長さが合わない・id に使えない字・字が長すぎる）
     static func decode(_ data: Data) -> Payload? {
         let bytes = [UInt8](data)
-        guard bytes.count >= 4, bytes.count <= payloadByteLimit, bytes[0] == version else { return nil }
+        guard bytes.count >= 4, bytes.count <= payloadByteLimit else { return nil }
         let length = Int(bytes[2])
         guard length > 0, bytes.count >= 3 + length else { return nil }
         guard let id = String(bytes: bytes[3..<(3 + length)], encoding: .utf8), isValidPhotoId(id) else { return nil }
-        let rest = bytes[(3 + length)...]
-        guard rest.count <= noteByteLimit, let rawNote = String(bytes: rest, encoding: .utf8),
-              rawNote.count <= noteLimit else { return nil }
-        return Payload(photoId: id, showsFrom: bytes[1] & 1 == 1, note: cleanNote(rawNote))
+        let showsFrom = bytes[1] & 1 == 1
+        switch bytes[0] {
+        case version1:
+            let rest = bytes[(3 + length)...]
+            guard let note = text(rest, charLimit: noteLimit, byteLimit: noteByteLimit) else { return nil }
+            return Payload(photoId: id, showsFrom: showsFrom, note: cleanNote(note))
+        case version:
+            var cursor = 3 + length
+            var parts: [String] = []
+            for (chars, limit) in [(noteLimit, noteByteLimit), (labelLimit, labelByteLimit), (labelLimit, labelByteLimit)] {
+                guard cursor < bytes.count else { return nil }
+                let size = Int(bytes[cursor])
+                cursor += 1
+                guard cursor + size <= bytes.count,
+                      let part = text(bytes[cursor..<(cursor + size)], charLimit: chars, byteLimit: limit) else { return nil }
+                parts.append(part)
+                cursor += size
+            }
+            // 後ろに余りがあれば崩れている（次の版で足すときは版を上げる）
+            guard cursor == bytes.count else { return nil }
+            return Payload(photoId: id, showsFrom: showsFrom, note: cleanNote(parts[0]),
+                           origin: cleanLabel(parts[1]), destination: cleanLabel(parts[2]))
+        default:
+            return nil
+        }
+    }
+
+    private static func text(_ bytes: ArraySlice<UInt8>, charLimit: Int, byteLimit: Int) -> String? {
+        guard bytes.count <= byteLimit, let value = String(bytes: bytes, encoding: .utf8),
+              value.count <= charLimit else { return nil }
+        return value
+    }
+
+    /// 通報の本文（ひとこと・発・着のうち書かれたもの）。署名が無い字だけを並べる。
+    /// **運営が読む文なので日本語だけ**（画面には出さない・ほかの通報の補足と同じ）
+    static func writtenText(note: String, origin: String, destination: String) -> String {
+        var parts: [String] = []
+        if !note.isEmpty { parts.append("ひとこと「\(note)」") }
+        if !origin.isEmpty { parts.append("発「\(origin)」") }
+        if !destination.isEmpty { parts.append("着「\(destination)」") }
+        return parts.joined(separator: " / ")
     }
 
     /// 名刺の一枚にできる写真か（**全体に公開している写真だけ**）。公開範囲を絞った写真は

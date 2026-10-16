@@ -50,10 +50,10 @@ final class PassWiringTests: XCTestCase {
         let viewer = try source("Features/Pass/PassViewerView.swift")
         XCTAssertTrue(viewer.contains(".overlay(alignment: .top) { ToastOverlay() }"), "束の画面にトーストが出ない")
         XCTAssertTrue(viewer.contains("PassPhotoFullView(photo: photo)"), "写真を全面で見られない")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(!showsBack)"), "裏を見ている間に表の写真が押せる")
+        XCTAssertTrue(viewer.contains(".allowsHitTesting(!back)"), "裏を見ている間に表の写真が押せる")
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
-            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,"),
+            XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.writtenText,"),
                           "\(path) のひとことの通報が写真の通報になっている")
             XCTAssertTrue(text.contains("pass.setNoteHidden("), "\(path) でひとことを伏せられない")
         }
@@ -62,7 +62,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(sheet.contains("if comment == nil && passNote == nil {\n                hidden.markReported"),
                       "ひとことの通報で写真を隠している")
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        for word in ["写真を通報する", "ひとことを通報する", "ひとことを伏せる", "ひとことを出す"] {
+        for word in ["写真を通報する", "書かれた字を通報する", "ひとことを伏せる", "ひとことを出す"] {
             XCTAssertTrue(menu.contains(word), word)
         }
         let pick = try source("Features/Pass/PassCardPickView.swift")
@@ -74,7 +74,7 @@ final class PassWiringTests: XCTestCase {
         let cards = try source("Features/Pass/PassCards.swift")
         for part in ["PassTicketArrow()", "PassTicketDash()", "PassTicketPunch()", "PassTicket.eyebrow(face.kind)",
                      "L(\"ご案内\", \"NOTICE\")", "L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")",
-                     "L(\"区間\", \"Distance\")", "L(\"回数\", \"Times\")", "PassTicketEdge(kind: face.kind)"] {
+                     "L(\"区間\", \"Distance\")", "L(\"回数\", \"Times\")", "PassTicketEdge(kind: face.kind, shine: shine)"] {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         XCTAssertTrue(try source("Features/Pass/PassBookView.swift").contains("PassTicketSlot(content: content)"))
@@ -93,17 +93,50 @@ final class PassWiringTests: XCTestCase {
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
         let viewer = try source("Features/Pass/PassViewerView.swift")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(showsBack)"))
+        XCTAssertTrue(viewer.contains(".allowsHitTesting(back)"))
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("onReported: { pass.markNoteReported(target.id) })"), "\(path): 通報したひとことを伏せない")
-            XCTAssertTrue(text.contains("carriedPassNote: target.card.noteReported == true ? target.card.note : nil)"),
+            XCTAssertTrue(text.contains("carriedPassNote: target.card.noteReported == true ? target.card.writtenText : nil)"),
                           "\(path): 写真の通報でひとことの通報が消える")
         }
         let sheet = try source("Features/Social/ReportSheet.swift")
         XCTAssertTrue(sheet.contains("onReported?()"))
         XCTAssertTrue(sheet.contains("carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }"))
         XCTAssertTrue(sheet.contains("report.replaceNotice"), "上書きされることを画面で言わない")
+    }
+
+    /// 発・着: 名刺選びに区間の欄・見本にその場で出る・「…」に区間の字を伏せる・通報は書かれた字ぜんぶ
+    func testTicketLabelsWiring() throws {
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        for part in ["routeSection", "PassTicket.previewOrigin(originChoice", "PassTicket.previewDestination(custom: destinationCustom",
+                     "settings.setOrigin(originChoice, text: originText)", "PassExchange.labelProblem("] {
+            XCTAssertTrue(pick.contains(part), part)
+        }
+        let menu = try source("Features/Pass/PassCardMenu.swift")
+        XCTAssertTrue(menu.contains("区間の字を伏せる"))
+        XCTAssertTrue(menu.contains("書かれた字を通報する"))
+        for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("passNote: target.card.writtenText"), "\(path): 通報に発・着の字が入らない")
+            XCTAssertTrue(text.contains("pass.setLabelsHidden("), "\(path): 区間の字を伏せられない")
+        }
+        let radio = try source("Services/PassRadio.swift")
+        XCTAssertTrue(radio.contains("legacy: PassExchange.encodeV1(payload)"), "前のアプリ向けの版 1 を出していない")
+    }
+
+    /// 回す: メダルと同じ決め方（`SpinMotion`）を両方が使う・減らす設定では回さない・読み上げの操作は残す
+    func testSpinWiring() throws {
+        let medal = try source("Features/Profile/MedalViewerView.swift")
+        XCTAssertTrue(medal.contains("SpinMotion.yawDelta("), "メダルが同じ決め方を使っていない（写しになる）")
+        XCTAssertTrue(medal.contains("SpinMotion.flipTarget(from:"))
+        let viewer = try source("Features/Pass/PassViewerView.swift")
+        for part in ["PassSpinTicket(yaw: yaw", "PassSpinGesture.liveYaw(", "PassSpinGesture.classify(",
+                     "SpinMotion.snapTarget(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
+                     "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)",
+                     "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
+            XCTAssertTrue(viewer.contains(part), part)
+        }
     }
 
     /// 退会・期限切れのログアウトでも電波を止める

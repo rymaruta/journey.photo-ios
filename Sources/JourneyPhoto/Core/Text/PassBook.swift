@@ -29,9 +29,47 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var noteHidden: Bool? = nil
     /// ひとことを通報した（写真を通報するときに補足に一緒に入れる・`ReportSheet.carriedPassNote`）
     var noteReported: Bool? = nil
+    /// 相手が乗車券の「発」「着」に自分で書いた字（2026-10-16・無ければ自動の形）。署名は無い
+    var originLabel: String? = nil
+    var destinationLabel: String? = nil
+    /// 区間の字を伏せた（伏せたら自動の形に戻す・この端末だけ）
+    var labelsHidden: Bool? = nil
 
     /// 見せるひとこと（伏せていれば空）
-    var shownNote: String { noteHidden == true ? "" : note }
+    /// 見せるひとこと（伏せていれば空）。**連絡先の形（URL・メール・電話番号）を含む字は出さない**
+    /// （2026-10-16 owner の決定・`ContactText`。前のアプリや手を加えた端末からは届きうる）
+    var shownNote: String { noteHidden == true || noteHasContact ? "" : note }
+
+    /// 区間に出す、相手が書いた字（伏せた・書いていない・連絡先の形なら nil＝自動の形）
+
+    /// 連絡先の形の印（**受け取った時に一度だけ判定して持つ**・`PassStore.record`）。前の記録には無いので、
+    /// 無ければその場で判定する
+    var noteContact: Bool? = nil
+    var originContact: Bool? = nil
+    var destinationContact: Bool? = nil
+
+    var noteHasContact: Bool { noteContact ?? PassExchange.containsContact(note) }
+    private var originHasContact: Bool { originContact ?? PassExchange.containsContact(originLabel ?? "") }
+    private var destinationHasContact: Bool { destinationContact ?? PassExchange.containsContact(destinationLabel ?? "") }
+    var labelsHaveContact: Bool { originHasContact || destinationHasContact }
+
+    var shownOrigin: String? { shownLabel(originLabel, contact: originHasContact) }
+    var shownDestination: String? { shownLabel(destinationLabel, contact: destinationHasContact) }
+
+    private func shownLabel(_ label: String?, contact: Bool) -> String? {
+        guard labelsHidden != true, let label, !label.isEmpty, !contact else { return nil }
+        return label
+    }
+
+    /// 相手が書いた字があるか（ひとこと・発・着。通報・伏せるを出すか）
+    var hasWrittenText: Bool {
+        !note.isEmpty || !(originLabel ?? "").isEmpty || !(destinationLabel ?? "").isEmpty
+    }
+
+    /// 通報に入れる、相手が書いた字（伏せていても元の字）
+    var writtenText: String {
+        PassExchange.writtenText(note: note, origin: originLabel ?? "", destination: destinationLabel ?? "")
+    }
 
     var place: Photo.Coords? {
         guard let placeLat, let placeLng else { return nil }
@@ -49,6 +87,47 @@ struct PassSettings: Codable, Equatable {
     var note = ""
     /// どこから来た人か（居住地の都道府県）を載せる
     var showsFrom = true
+    /// 乗車券の「発」を自分で書いた字（nil なら自動: `showsFrom` なら居住地・でなければ「どこかから」）。
+    /// **2026-10-16 判断**（owner「発・着を自分で決めたい」）。前の版の設定には無いので省略できる形
+    var originLabel: String? = nil
+    /// 乗車券の「着」を自分で書いた字（nil なら自動: すれちがった所）
+    var destinationLabel: String? = nil
+
+    /// 「発」の選び方
+    enum Origin: String, CaseIterable, Identifiable {
+        /// 居住地から（自動）
+        case home
+        /// 自分で書く
+        case custom
+        /// 出さない（どこかから）
+        case hidden
+        var id: String { rawValue }
+    }
+
+    var origin: Origin {
+        if originLabel != nil { return .custom }
+        return showsFrom ? .home : .hidden
+    }
+
+    /// 「発」を選ぶ。自分で書くときは字も（空でも「自分で書く」のまま）
+    mutating func setOrigin(_ choice: Origin, text: String = "") {
+        switch choice {
+        case .home: originLabel = nil; showsFrom = true
+        case .hidden: originLabel = nil; showsFrom = false
+        // 自分で書いた字があるときは居住地を載せない（前のアプリには居住地も出ない）。
+        // **空のままなら「出さない」に戻す**（2026-10-16 の読み直し）
+        case .custom:
+            let written = PassExchange.cleanLabel(text)
+            originLabel = written.isEmpty ? nil : written
+            showsFrom = false
+        }
+    }
+
+    /// 「着」を決める。自分で書く字が空なら「すれちがった所（自動）」に戻す
+    mutating func setDestination(custom: Bool, text: String) {
+        let written = custom ? PassExchange.cleanLabel(text) : ""
+        destinationLabel = written.isEmpty ? nil : written
+    }
 }
 
 /// すれちがい帳の並べ方と数え方（板 PassBook）。

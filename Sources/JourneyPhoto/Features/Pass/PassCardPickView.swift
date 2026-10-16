@@ -18,7 +18,11 @@ struct PassCardPickView: View {
     @State private var isLoading = true
     @State private var selected: String?
     @State private var note = ""
-    @State private var showsFrom = true
+    /// 乗車券の区間（2026-10-16 判断・owner「発・着を自分で決めたい」）
+    @State private var originChoice: PassSettings.Origin = .home
+    @State private var originText = ""
+    @State private var destinationCustom = false
+    @State private var destinationText = ""
     @State private var profile: UserProfile?
     @State private var didLoad = false
 
@@ -28,14 +32,18 @@ struct PassCardPickView: View {
 
     private var previewFace: PassTicketFace {
         PassTicketFace(photo: selectedPhoto, kind: .plain, number: nil,
-                       origin: PassTicket.origin(showsFrom ? pass.homePrefecture : nil),
-                       destination: L("旅先", "Your trip"),
+                       origin: PassTicket.previewOrigin(originChoice, text: originText, homePrefecture: pass.homePrefecture),
+                       destination: PassTicket.previewDestination(custom: destinationCustom, text: destinationText),
                        name: profile?.name ?? L("あなた", "You"), distance: nil, date: nil,
                        alighting: L("旅先のあたり 下車", "Got off around your trip"))
     }
 
     /// ひとことが長すぎる（字数か、電波に載る大きさ）
-    private var noteTooLong: Bool { PassExchange.noteProblem(note) != nil }
+    private var noteTooLong: Bool {
+        PassExchange.noteProblem(note) != nil
+            || (originChoice == .custom && PassExchange.labelProblem(originText) != nil)
+            || (destinationCustom && PassExchange.labelProblem(destinationText) != nil)
+    }
 
     var body: some View {
         ScrollView {
@@ -57,7 +65,7 @@ struct PassCardPickView: View {
                 JPEyebrowLine(L("あなたの写真から選ぶ", "Choose from your photos"))
                 grid
                 noteField
-                fromField
+                routeSection
                 Button(action: save) {
                     Text(L("この一枚をカードにする", "Use this photo as my card")).jpPillButton(.main(onPhoto: true))
                 }
@@ -80,7 +88,10 @@ struct PassCardPickView: View {
             didLoad = true
             selected = pass.settings.cardPhotoId
             note = pass.settings.note
-            showsFrom = pass.settings.showsFrom
+            originChoice = pass.settings.origin
+            originText = pass.settings.originLabel ?? ""
+            destinationCustom = pass.settings.destinationLabel != nil
+            destinationText = pass.settings.destinationLabel ?? ""
             await load()
         }
     }
@@ -175,40 +186,86 @@ struct PassCardPickView: View {
         }
     }
 
-    private var fromField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L("どこから来た人か", "Where you\u{2019}re from"))
+    /// 乗車券の区間（発・着）。**自分で書いた字は署名が無い**ので、受け取った側では「相手の端末から届いた文」の扱い
+    /// （通報・伏せる）になる。下車の行は書いた字に関わらず、受け取った側の位置で自動
+    private var routeSection: some View {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            JPEyebrowLine(L("乗車券の区間", "Ticket route"))
+            Text(L("発（どこから）", "From"))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WebTheme.muted2)
-                .accessibilityHidden(true)
-            Button { showsFrom.toggle() } label: {
-                HStack {
-                    Text(fromText)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.text)
-                    Spacer()
-                    Text(showsFrom ? L("出さないもできます", "You can hide this") : L("押すと載せます", "Tap to show"))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
+                .accessibilityAddTraits(.isHeader)
+            JPCard {
+                JPRadioRow(title: homeTitle, selected: originChoice == .home) { originChoice = .home }
+                    .accessibilityIdentifier("pass.pick.origin.home")
+                JPCardDivider()
+                JPRadioRow(title: L("自分で書く", "Write my own"), selected: originChoice == .custom) { originChoice = .custom }
+                    .accessibilityIdentifier("pass.pick.origin.custom")
+                JPCardDivider()
+                JPRadioRow(title: L("出さない（どこかから）", "Don\u{2019}t show (somewhere)"), selected: originChoice == .hidden) {
+                    originChoice = .hidden
                 }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
-                .contentShape(Rectangle())
+                .accessibilityIdentifier("pass.pick.origin.hidden")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("どこから来た人か", "Where you\u{2019}re from"))
-            .accessibilityValue(fromText)
-            .accessibilityHint(showsFrom ? L("押すとカードに載せません", "Tap to hide it from your card")
-                                         : L("押すとカードに載せます", "Tap to show it on your card"))
+            if originChoice == .custom {
+                labelField(L("発に書く字（\(PassExchange.labelLimit)字まで）", "From (up to \(PassExchange.labelLimit))"),
+                           placeholder: L("例：雪国", "e.g. Snow"), text: $originText, id: "pass.pick.origin.text")
+            }
+            Text(L("着（旅先）", "To"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(WebTheme.muted2)
+                .padding(.top, JPSpace.xxs)
+                .accessibilityAddTraits(.isHeader)
+            JPCard {
+                JPRadioRow(title: L("すれちがった所（自動）", "Where we pass (automatic)"), selected: !destinationCustom) {
+                    destinationCustom = false
+                }
+                .accessibilityIdentifier("pass.pick.destination.auto")
+                JPCardDivider()
+                JPRadioRow(title: L("自分で書く（旅先）", "Write my own (trip)"), selected: destinationCustom) { destinationCustom = true }
+                    .accessibilityIdentifier("pass.pick.destination.custom")
+            }
+            if destinationCustom {
+                labelField(L("着に書く字（\(PassExchange.labelLimit)字まで）", "To (up to \(PassExchange.labelLimit))"),
+                           placeholder: L("例：北陸ひとり旅", "e.g. Hokuriku"), text: $destinationText,
+                           id: "pass.pick.destination.text")
+            }
+            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「〇〇のあたり 下車」の行は、受け取った人の位置で自動です。",
+                   "What you write reaches the other device as is (unsigned). The \u{201C}got off around …\u{201D} line always uses where they were."))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var fromText: String {
-        guard showsFrom else { return L("載せない", "Hidden") }
-        guard let pref = pass.homePrefecture else { return L("居住地が未設定（載りません）", "No home set (not shown)") }
-        return PassExchange.fromLabel(pref)
+    /// 「居住地から（自動）」の行の名前（居住地が無ければそう言う）
+    private var homeTitle: String {
+        guard let pref = pass.homePrefecture else {
+            return L("居住地から（自動・居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
+        }
+        return L("居住地から（自動・\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
+    }
+
+    private func labelField(_ title: String, placeholder: String, text: Binding<String>, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            JPField(title) {
+                HStack {
+                    // 打っている途中では切らない（ひとことと同じ）。超えたら数を危険の色にして訳を出す
+                    TextField(placeholder, text: text)
+                        .accessibilityIdentifier(id)
+                    Text("\(text.wrappedValue.count)/\(PassExchange.labelLimit)")
+                        .font(JPFont.meta)
+                        .foregroundStyle(PassExchange.labelProblem(text.wrappedValue) == nil ? WebTheme.text3 : WebTheme.danger)
+                        .accessibilityHidden(true)
+                }
+            }
+            if let problem = PassExchange.labelProblem(text.wrappedValue) {
+                Text(problem)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func save() {
@@ -216,7 +273,9 @@ struct PassCardPickView: View {
         pass.update { settings in
             settings.cardPhotoId = selected
             settings.note = note
-            settings.showsFrom = showsFrom
+            // 「自分で書く」を空のまま保存したら、発は「出さない」・着は「すれちがった所」に戻す（`setOrigin`・`setDestination`）
+            settings.setOrigin(originChoice, text: originText)
+            settings.setDestination(custom: destinationCustom, text: destinationText)
         }
         PassCoordinator.shared.refresh()
         dismiss()

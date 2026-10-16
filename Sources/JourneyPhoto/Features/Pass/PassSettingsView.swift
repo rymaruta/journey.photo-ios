@@ -210,13 +210,12 @@ struct PassSettingsView: View {
                 JPRowLabel(title: L("名刺の一枚・名前・ひとこと", "Card photo, name and note"),
                            detail: L("いつも載ります", "Always included"), chevron: false)
                 JPCardDivider()
-                JPToggleRow(title: L("どこから来た人か", "Where you\u{2019}re from"),
-                            detail: L("居住地の都道府県だけ", "Only the prefecture you live in"),
-                            isOn: Binding(get: { pass.settings.showsFrom },
-                                          set: { on in
-                                              pass.update { $0.showsFrom = on }
-                                              PassCoordinator.shared.refresh()
-                                          }))
+                // 乗車券の「発」（2026-10-16）。自分で書く字は名刺の一枚の画面で選ぶ。ここでは居住地を出す／出さない
+                NavigationLink { PassCardPickView() } label: {
+                    JPRowLabel(title: L("乗車券の区間（発・着）", "Ticket route (from / to)"),
+                               detail: PassSettingsText.route(pass.settings))
+                }
+                .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
                 JPRowLabel(title: L("すれちがった場所と時刻", "Where and when you passed"),
                            detail: L("「京都市のあたり · 15 時ごろ」の粒度。番地や分は載せません",
@@ -378,5 +377,21 @@ struct PassIntroSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// 設定の文（テストで見張る）
+enum PassSettingsText {
+    /// 「乗車券の区間」の行の2行目（いまの発・着）
+    static func route(_ settings: PassSettings) -> String {
+        let from: String
+        switch settings.origin {
+        case .home: from = L("発: 居住地から", "From: where I live")
+        case .hidden: from = L("発: 出さない", "From: hidden")
+        case .custom: from = L("発: 「\(settings.originLabel ?? "")」", "From: \u{201C}\(settings.originLabel ?? "")\u{201D}")
+        }
+        let to = settings.destinationLabel.map { L("着: 「\($0)」", "To: \u{201C}\($0)\u{201D}") }
+            ?? L("着: すれちがった所", "To: where you pass")
+        return "\(from) · \(to)"
     }
 }

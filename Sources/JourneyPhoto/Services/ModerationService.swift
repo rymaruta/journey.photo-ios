@@ -110,7 +110,8 @@ struct ModerationService {
     // 運営はこの印を見て、写真ではなくひとことの通報として読む
 
     /// ひとことの通報の補足の頭の印（テストで見張る）
-    static let passNoteMarker = "[すれちがいのカードのひとこと]"
+    /// 2026-10-16: 乗車券の発・着の字も同じ通報に入れる（ひとこと・発・着＝相手が書いた字）
+    static let passNoteMarker = "[すれちがいのカードに書かれた字]"
 
     static func passNoteReportNote(_ text: String, note: String?) -> String {
         func oneLine(_ text: String) -> String {

@@ -30,7 +30,17 @@ final class PassRadio: NSObject {
 
     /// アプリ固有のサービス（**変えると前の版と見つけ合えなくなる**）
     static let serviceUUID = CBUUID(string: "6A3E2C1B-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    /// 版 1 の中身の特性（前のアプリが読む・ひとことまで）
     static let characteristicUUID = CBUUID(string: "6A3E2C1C-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    /// 版 2 の中身の特性（発・着の字つき・2026-10-16）。**版 1 と並べて出す**——前のアプリとも交換できる
+    static let characteristicV2UUID = CBUUID(string: "6A3E2C1D-7F44-4D0B-9C3E-1B5A0D2F8E61")
+
+    /// 読む特性を選ぶ: **版 2 があれば版 2、無ければ版 1**（前のアプリの端末は版 1 だけを出している）
+    static func characteristicToRead(_ uuids: [CBUUID]) -> CBUUID? {
+        if uuids.contains(characteristicV2UUID) { return characteristicV2UUID }
+        if uuids.contains(characteristicUUID) { return characteristicUUID }
+        return nil
+    }
     static let centralRestoreId = "photo.journey.pass.central"
     static let peripheralRestoreId = "photo.journey.pass.peripheral"
 
@@ -56,8 +66,10 @@ final class PassRadio: NSObject {
     /// 中心の管理者が復元の識別子つきか（許可を尋ねるためだけに作った管理者は付いていない）
     private var centralRestorable = false
     private var peripheralManager: CBPeripheralManager?
-    /// 載せている中身（nil なら止めている）
+    /// 載せている中身（版 2・nil なら止めている）。足し終えたかはこの中身で見分ける
     private var payload: Data?
+    /// 版 1 の中身（前のアプリ向け・同じ設定から作るので、版 2 が同じなら同じ）
+    private var legacyPayload: Data?
     /// 足し終えた（`didAdd` が成功した）サービスの中身。同じなら足し直さない
     private var publishedPayload: Data?
     /// 足している途中の中身（`didAdd` を待っている順）。**1つの変数で持つと**、続けて2回変えたときに
@@ -83,12 +95,13 @@ final class PassRadio: NSObject {
     ///
     /// 🔴 **初めて管理者を作ったときに、OS の Bluetooth の許可のダイアログが出る**。
     /// オンにする説明（`PassIntroSheet`）を見せてからだけ呼ぶ
-    func apply(payload next: Data?, foreground: Bool = false) {
+    func apply(payload next: Data?, legacy: Data? = nil, foreground: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let next else { stop(); return }
         let wasForeground = self.foreground
         self.foreground = foreground
         payload = next
+        legacyPayload = legacy
         isRunning = true
         // 許可を尋ねるためだけに作った管理者（識別子なし）は作り直す——OS に起こされたときに復元できない
         if central != nil, !centralRestorable {
@@ -126,6 +139,7 @@ final class PassRadio: NSObject {
 
     func stop() {
         payload = nil
+        legacyPayload = nil
         publishedPayload = nil
         pendingAdds = []
         isRunning = false
@@ -265,10 +279,16 @@ final class PassRadio: NSObject {
         manager.stopAdvertising()
         manager.removeAllServices()
         publishedPayload = nil
-        let characteristic = CBMutableCharacteristic(type: Self.characteristicUUID, properties: [.read],
-                                                     value: payload, permissions: [.readable])
+        var characteristics: [CBCharacteristic] = [
+            CBMutableCharacteristic(type: Self.characteristicV2UUID, properties: [.read],
+                                    value: payload, permissions: [.readable]),
+        ]
+        if let legacyPayload, legacyPayload.count <= PassExchange.payloadByteLimit {
+            characteristics.append(CBMutableCharacteristic(type: Self.characteristicUUID, properties: [.read],
+                                                           value: legacyPayload, permissions: [.readable]))
+        }
         let service = CBMutableService(type: Self.serviceUUID, primary: true)
-        service.characteristics = [characteristic]
+        service.characteristics = characteristics
         pendingAdds.append(payload)
         // 広告は `didAdd` が成功してから（足せなかったサービスを広告しない）
         manager.add(service)
@@ -345,12 +365,13 @@ extension PassRadio: CBPeripheralDelegate {
             finish(peripheral, succeeded: false)
             return
         }
-        peripheral.discoverCharacteristics([Self.characteristicUUID], for: service)
+        peripheral.discoverCharacteristics([Self.characteristicV2UUID, Self.characteristicUUID], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard error == nil,
-              let characteristic = service.characteristics?.first(where: { $0.uuid == Self.characteristicUUID }) else {
+        let found = service.characteristics ?? []
+        guard error == nil, let wanted = Self.characteristicToRead(found.map(\.uuid)),
+              let characteristic = found.first(where: { $0.uuid == wanted }) else {
             finish(peripheral, succeeded: false)
             return
         }
@@ -509,7 +530,8 @@ final class PassCoordinator {
     /// 決め直す（設定を変えた・人が替わった）
     func refresh(now: Date = Date()) {
         if store.exchangeAllowed(isForeground: isForeground, now: now), let payload = store.payload {
-            radio.apply(payload: PassExchange.encode(payload), foreground: isForeground)
+            radio.apply(payload: PassExchange.encode(payload), legacy: PassExchange.encodeV1(payload),
+                        foreground: isForeground)
         } else {
             radio.stop()
         }

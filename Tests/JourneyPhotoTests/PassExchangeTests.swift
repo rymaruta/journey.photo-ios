@@ -26,7 +26,8 @@ final class PassExchangeTests: XCTestCase {
 
     /// 載せるのは版・印・id・ひとことだけ（id の長さを持つので、ひとことに区切りの字が要らない）
     func testPayloadLayoutIsVersionFlagsIdNote() throws {
-        let data = try XCTUnwrap(PassExchange.encode(.init(photoId: "ab", showsFrom: true, note: "x")))
+        // 版 1（前のアプリが読む特性）
+        let data = try XCTUnwrap(PassExchange.encodeV1(.init(photoId: "ab", showsFrom: true, note: "x")))
         XCTAssertEqual([UInt8](data), [1, 1, 2, 0x61, 0x62, 0x78])
     }
 
@@ -168,9 +169,14 @@ final class PassExchangeTests: XCTestCase {
     // MARK: - めくり・電波
 
     func testSwipeStep() {
-        XCTAssertEqual(PassViewerMotion.step(forDrag: -120, distance: 90), 1)
-        XCTAssertEqual(PassViewerMotion.step(forDrag: 120, distance: 90), -1)
-        XCTAssertEqual(PassViewerMotion.step(forDrag: 40, distance: 90), 0)
+        // きっぷの外で払う（前と同じ: 90pt で次／前）
+        func page(_ w: Double) -> PassSpinGesture.Outcome {
+            PassSpinGesture.classify(translation: w, predicted: w, duration: 1, onCard: false, reduceMotion: false,
+                                     swipeDistance: 90)
+        }
+        XCTAssertEqual(page(-120), .next)
+        XCTAssertEqual(page(120), .previous)
+        XCTAssertEqual(page(40), PassSpinGesture.Outcome.none)
     }
 
     /// 読めた端末には `retryInterval` の間は繋ぎ直さない・同時に繋ぐ数に上限

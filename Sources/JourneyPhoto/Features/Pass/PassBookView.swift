@@ -81,10 +81,10 @@ struct PassBookView: View {
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.photo.id, ownerId: target.card.ownerId,
-                        carriedPassNote: target.card.noteReported == true ? target.card.note : nil)
+                        carriedPassNote: target.card.noteReported == true ? target.card.writtenText : nil)
         }
         .sheet(item: $noteReportTarget) { target in
-            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.note,
+            ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.writtenText,
                         onReported: { pass.markNoteReported(target.id) })
         }
         .blockConfirmation(presenting: $blockTarget) { target in
@@ -169,6 +169,7 @@ struct PassBookView: View {
                                      report: { reportTarget = content },
                                      reportNote: { noteReportTarget = content },
                                      toggleNote: { pass.setNoteHidden(content.id, content.card.noteHidden != true) },
+                                     toggleLabels: { pass.setLabelsHidden(content.id, content.card.labelsHidden != true) },
                                      block: { blockTarget = content },
                                      remove: { pass.remove(content.id) },
                                      onPhoto: true)
