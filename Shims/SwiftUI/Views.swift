@@ -104,6 +104,8 @@ public struct Angle {
     public static func degrees(_ v: Double) -> Angle { Angle() }
     public static func radians(_ v: Double) -> Angle { Angle() }
     public var radians: Double { 0 }
+    /// 本物と同じく度でも読める（2026-10-16・2本指でひねった角度）
+    public var degrees: Double { 0 }
 }
 
 public struct ViewThatFits: View {

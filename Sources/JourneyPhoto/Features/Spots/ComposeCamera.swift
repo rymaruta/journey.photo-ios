@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Photos
 import SwiftUI
 import UIKit
@@ -28,6 +29,17 @@ final class ComposeCamera: ObservableObject {
     @Published private(set) var state: ComposeGuide.CameraState = .preparing
     /// 撮っている最中（シャッターを2度押せないように）
     @Published private(set) var isCapturing = false
+    /// 拡大の段（端末のレンズから・2026-10-16）。組み立てるまでは 1× だけ
+    @Published private(set) var zoomLevels = ComposeControls.zoomLevels(hasUltraWide: false, switchOver: [],
+                                                                         minFactor: 1, maxFactor: 1)
+    /// いまのカメラの倍率（`videoZoomFactor`）
+    @Published private(set) var zoomFactor = 1.0
+    /// 明るさの補正の範囲（EV）。標準のカメラ App にそろえ ±2 に絞る
+    @Published private(set) var exposureRange: ClosedRange<Double> = -2...2
+    /// 写っているものが大きく変わり、タップで合わせたピントを自動に戻した回数（画面はピントの枠を消す）
+    @Published private(set) var focusResetCount = 0
+    /// 長押しでピントと明るさを固定しているか
+    @Published private(set) var focusLocked = false
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -41,6 +53,22 @@ final class ComposeCamera: ObservableObject {
     private var pending: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
     /// 端末の向きから撮る向きを決める係（組み立てたあとに作る）
     private var rotation: AVCaptureDevice.RotationCoordinator?
+    /// 使っている後ろのカメラ（仮想カメラなら拡大でレンズが切り替わる）
+    private var device: AVCaptureDevice?
+    private var subjectObserver: NSObjectProtocol?
+
+    /// 後ろのカメラを選ぶ順（2026-10-16）。**仮想カメラ（三眼・二眼）を先に**——拡大の倍率だけで
+    /// 超広角・広角・望遠を OS が切り替える（標準のカメラ App と同じ）。無ければ広角1つ
+    nonisolated static let backCameraTypes: [AVCaptureDevice.DeviceType] = [
+        .builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera,
+    ]
+
+    nonisolated static func backCamera() -> AVCaptureDevice? {
+        for type in backCameraTypes {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) { return device }
+        }
+        return nil
+    }
 
     /// 許可を確かめて映像を流し始める。画面が出たときに呼ぶ
     func start() async {
@@ -86,7 +114,7 @@ final class ComposeCamera: ObservableObject {
         let ok: Bool = await withCheckedContinuation { continuation in
             queue.async {
                 if !alreadyConfigured {
-                    guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                    guard let device = Self.backCamera(),
                           let input = try? AVCaptureDeviceInput(device: device) else {
                         continuation.resume(returning: false)
                         return
@@ -108,11 +136,114 @@ final class ComposeCamera: ObservableObject {
         }
         if ok {
             configured = true
-            if rotation == nil, let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
-                rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+            if device == nil, let device = Self.backCamera() {
+                self.device = device
+                prepare(device)
             }
         }
         return ok
+    }
+
+    /// 組み立てたカメラから、拡大の段・明るさの範囲・向きの係を作る。始めは 1×（超広角から始めない）
+    private func prepare(_ device: AVCaptureDevice) {
+        if rotation == nil {
+            rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        }
+        let ultra = device.deviceType == .builtInTripleCamera || device.deviceType == .builtInDualWideCamera
+        let levels = ComposeControls.zoomLevels(
+            hasUltraWide: ultra,
+            switchOver: device.virtualDeviceSwitchOverVideoZoomFactors.map(\.doubleValue),
+            minFactor: Double(device.minAvailableVideoZoomFactor),
+            maxFactor: Double(device.maxAvailableVideoZoomFactor))
+        zoomLevels = levels
+        let lo = max(Double(device.minExposureTargetBias), -2), hi = min(Double(device.maxExposureTargetBias), 2)
+        exposureRange = lo <= hi ? lo...hi : 0...0
+        setZoom(display: 1, animated: false)
+        // 写っているものが大きく変わったら、タップで合わせたピントを自動に戻す（固定していなければ）
+        subjectObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureDevice.subjectAreaDidChangeNotification, object: device, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.subjectAreaChanged() }
+        }
+    }
+
+    // MARK: - 拡大・ピント・明るさ（2026-10-16・標準のカメラ App にそろえる）
+
+    /// 画面の倍率（0.5×・1×・2× …）へ寄る。段のボタンは滑らかに（`ramp`）、ピンチはそのまま
+    func setZoom(display: Double, animated: Bool) {
+        setZoom(factor: zoomLevels.factor(display: display), animated: animated)
+    }
+
+    func setZoom(factor: Double, animated: Bool) {
+        guard let device else { return }
+        let target = min(max(factor, zoomLevels.minFactor), zoomLevels.maxFactor)
+        zoomFactor = target
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if animated {
+                device.ramp(toVideoZoomFactor: CGFloat(target), withRate: 8)
+            } else {
+                device.cancelVideoZoomRamp()
+                device.videoZoomFactor = CGFloat(target)
+            }
+            device.unlockForConfiguration()
+        }
+    }
+
+    /// その点（カメラの座標 0〜1・`ComposeControls.devicePoint`）にピントと明るさを合わせる。
+    /// `lock` なら合わせたまま固定（AE/AF ロック）。固定しないときは、写っているものが変われば自動に戻る
+    func focus(at point: (x: Double, y: Double), lock: Bool) {
+        guard let device else { return }
+        focusLocked = lock
+        let p = CGPoint(x: point.x, y: point.y)
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
+                device.focusPointOfInterest = p
+                // 一度合わせて止まる（固定でもタップでも同じ。違いは下の見張り）
+                device.focusMode = .autoFocus
+            }
+            if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
+                device.exposurePointOfInterest = p
+                device.exposureMode = .autoExpose
+            }
+            device.setExposureTargetBias(0, completionHandler: nil)
+            device.isSubjectAreaChangeMonitoringEnabled = !lock
+            device.unlockForConfiguration()
+        }
+    }
+
+    /// 明るさの補正（EV・範囲の内）
+    func setExposureBias(_ bias: Double) {
+        guard let device else { return }
+        let value = Float(min(max(bias, exposureRange.lowerBound), exposureRange.upperBound))
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            device.setExposureTargetBias(value, completionHandler: nil)
+            device.unlockForConfiguration()
+        }
+    }
+
+    /// ピントと明るさを自動（真ん中・合わせ続ける）に戻す。固定も外す
+    func resetFocus() {
+        guard let device else { return }
+        focusLocked = false
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            let center = CGPoint(x: 0.5, y: 0.5)
+            if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = center }
+            if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+            if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = center }
+            if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            device.setExposureTargetBias(0, completionHandler: nil)
+            device.isSubjectAreaChangeMonitoringEnabled = false
+            device.unlockForConfiguration()
+        }
+    }
+
+    private func subjectAreaChanged() {
+        guard !focusLocked else { return }
+        resetFocus()
+        focusResetCount += 1
     }
 
     /// 1枚撮る。撮れた写真（ファイルの中身と撮影情報）。撮れなければ nil
@@ -228,5 +359,46 @@ struct CameraPreview: UIViewRepresentable {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         // swiftlint:disable:next force_cast
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    }
+}
+
+/// 音量ボタン（とカメラコントロール）で撮る（iOS 17.2〜・`AVCaptureEventInteraction`・2026-10-16）。
+///
+/// 標準のカメラ App と同じく、この画面を開いている間は音量ボタンがシャッターになる（音量は変わらない）。
+/// 押し終えた（`.ended`）ときに1枚。構図のシートを開いている・映像が出ていないときは効かせない（`enabled`）。
+/// 部品は大きさ 0 の UIView（指は受けない場所に置く）。**実機では確かめていない**
+struct CaptureButtonInteraction: UIViewRepresentable {
+
+    var enabled: Bool
+    let onPress: () -> Void
+
+    final class Coordinator {
+        var onPress: () -> Void = {}
+        var interaction: AnyObject?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        let coordinator = context.coordinator
+        coordinator.onPress = onPress
+        if #available(iOS 17.2, *) {
+            let interaction = AVCaptureEventInteraction { event in
+                guard event.phase == .ended else { return }
+                Task { @MainActor in coordinator.onPress() }
+            }
+            interaction.isEnabled = enabled
+            view.addInteraction(interaction)
+            coordinator.interaction = interaction
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onPress = onPress
+        if #available(iOS 17.2, *), let interaction = context.coordinator.interaction as? AVCaptureEventInteraction {
+            interaction.isEnabled = enabled
+        }
     }
 }

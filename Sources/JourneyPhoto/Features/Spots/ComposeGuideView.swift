@@ -40,6 +40,17 @@ import ImageIO
 /// - カメラが使えない（許可が無い・制限・カメラが無い）ときは、映像の枠に理由と
 ///   「設定を開く」（写真の無い画面の主ボタン＝真鍮の塗りに墨）を出す
 /// - 下の黒い面のいちばん上に「構図」の行（2026-10-10・板に無い。板の決まりに合わせた）
+///
+/// **2026-10-16（owner「回転がないのしんどい」「UI を隠さないと全体が見れない」「標準のカメラ App と遜色なく」）**
+/// - 上の帯（閉じる・札・小さな丸の「向き」「右に90度回す」「隠す」）は**映像の外の黒い帯**へ。構図の一言も
+///   映像の上から下の帯へ移した（線と重ねない）。板は映像の上に重ねている——板と変えたところ
+/// - 回す: 90° ずつのボタンと2本指のひねり（0/90/180/270 に吸い付く）。線も参考写真も同じ角度。
+///   順と 90°/270° の描き方は `CompositionGuide.screenMarks` の注記
+/// - 隠す: 上下の帯ごと消し、撮れる範囲（3:4）を画面いっぱいに出して縁を細い白で示す。映像を1回タップで戻す。
+///   シャッターは枠の下の余りに置けるときだけ残し、いつでも音量ボタン（`CaptureButtonInteraction`）と
+///   読み上げの「撮影」（2本指のダブルタップ）で撮れる
+/// - 拡大の段（0.5×/1×/2×/望遠・端末のレンズに応じて）とピンチ、タップでピントと明るさ・長押しで固定・
+///   上下にずらして明るさ、シャッターの振動と暗転、撮った直後の左下の見本。指の割り当ては「指」の節の注記
 struct ComposeGuideView: View {
 
     /// 撮影地の名前（作例なしの入口は nil）
@@ -66,6 +77,27 @@ struct ComposeGuideView: View {
     @State private var composition: CompositionKind?
     @State private var variant: Int
     @State private var lineOpacity: Double
+    /// 構図の線と参考写真を回した角度（時計回りの度・2026-10-16）。その構図を選び直すまで保つ
+    @State private var rotation: Double
+    /// 2本指でひねっている間の角度（離したら `rotation` に足す）
+    @GestureState private var twist = 0.0
+    /// つまんで寄り始めたときのカメラの倍率
+    @State private var zoomStart: Double?
+    /// 最後に2本指（ひねる・つまむ）を使った時刻。直後の1本指のタップ・払いを読まない
+    @State private var lastMultiTouch: Date?
+    /// UI（上下の帯・ボタン・札）を隠して、撮れる範囲の全体を見る（2026-10-16 owner の声）
+    @State private var uiHidden = false
+    /// ピントの枠（映像の枠の上の点・pt）。タップ・長押しで出す
+    @State private var focusPoint: CGPoint?
+    @State private var focusHideTask: Task<Void, Never>?
+    /// 明るさの補正（EV）。ピントの枠の横を上下にずらして変える
+    @State private var exposureBias = 0.0
+    /// いまの指（1本）の始まり。長押しの判定と明るさの始まりの値を持つ
+    @State private var touch: TouchTrack?
+    @State private var pressTask: Task<Void, Never>?
+    /// 撮った回数（シャッターの振動の合図）と、押した瞬間の暗転
+    @State private var shotCount = 0
+    @State private var shutterFlash = false
     @State private var showPicker = false
     /// 最後に撮れた1枚（投稿へ進める用）
     @State private var lastShot: ComposeShot?
@@ -88,6 +120,16 @@ struct ComposeGuideView: View {
         _composition = State(initialValue: kind)
         _variant = State(initialValue: kind.map { prefs.variant(for: $0) } ?? 0)
         _lineOpacity = State(initialValue: prefs.lineOpacity)
+        _rotation = State(initialValue: prefs.rotation(for: kind))
+    }
+
+    /// 1本の指の始まり（映像の枠の上）
+    struct TouchTrack {
+        let start: Date
+        let location: CGPoint
+        var adjustedExposure = false
+        var locked = false
+        var exposureStart = 0.0
     }
     @State private var opacity = ComposeGuide.defaultOpacity
     /// 撮ったあとの知らせ（数秒で消す）
@@ -107,13 +149,45 @@ struct ComposeGuideView: View {
     private var hasReference: Bool {
         reference.source == .samples ? sample != nil : libraryImage != nil
     }
+    /// 参考写真を重ねて見せているか
+    private var referenceShown: Bool { hasReference && !reference.hidden }
+    /// ライブラリの写真を重ねている（ピンチはその写真の大きさに効かせる・以前のまま）
+    private var libraryShown: Bool { reference.source == .library && libraryImage != nil && !reference.hidden }
+    /// 回せるか。構図の線（水準器は除く——傾きは重さの向きが基準なので回さない）か、参考写真があるとき
+    private var canRotate: Bool {
+        (composition != nil && composition != .level) || referenceShown
+    }
+    /// 描くときの角度（ひねっている間も 0/90/180/270 の近くでは吸い付く）
+    private var shownRotation: Double {
+        CompositionGuide.snappedRotation(rotation + twist)
+    }
+    private var canShoot: Bool {
+        ComposeControls.canShoot(ready: camera.state == .ready, capturing: camera.isCapturing, sheetOpen: showPicker)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            // 2026-10-16 判断（owner「標準のカメラ App と遜色なく」）: 上の帯は映像の外の黒い帯に置き、
+            // 構図の線と重ねない。隠している間は上下の帯ごと消し、撮れる範囲を画面いっぱいに見せる
+            if !uiHidden { topBar }
             viewfinder
-            controls
+            if !uiHidden { controls }
         }
         .background { Color.black.ignoresSafeArea() }
+        // 音量ボタンで撮る（隠している間も・標準のカメラ App と同じ）
+        .background {
+            CaptureButtonInteraction(enabled: canShoot) { Task { await shootIfReady() } }
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+        // シャッターの押し心地（軽い振動）・0/90/180/270 に吸い付いたときの軽い合図
+        .sensoryFeedback(.impact(weight: .light), trigger: shotCount)
+        .sensoryFeedback(.selection, trigger: snapTrigger)
+        // 読み上げ: 2本指のダブルタップで撮る・こすって隠すのをやめる（隠している間はボタンが無い）
+        .accessibilityAction(.magicTap) { Task { await shootIfReady() } }
+        .accessibilityAction(.escape) {
+            if uiHidden { setHidden(false) } else { dismiss() }
+        }
         .preferredColorScheme(.dark)
         .task { await camera.start() }
         .onAppear { updateLevel() }
@@ -131,6 +205,7 @@ struct ComposeGuideView: View {
             }
         }
         .onChange(of: lineOpacity) { _, value in preferences.setLineOpacity(value) }
+        .onChange(of: camera.focusResetCount) { _, _ in focusPoint = nil }
         .onChange(of: librarySelection) { _, item in
             if let item { Task { await loadLibraryImage(item) } }
         }
@@ -150,35 +225,238 @@ struct ComposeGuideView: View {
     // MARK: - 映像の枠（板: 上 640pt）
 
     private var viewfinder: some View {
-        // 撮れる範囲（3:4）の枠を、空いた面の真ん中にいちばん大きく置く。余りは黒い地（2026-10-10）
+        // 撮れる範囲（3:4）の枠を、空いた面の真ん中にいちばん大きく置く。余りは黒い地（2026-10-10）。
+        // 2026-10-16 判断: 上下の帯は黒のまま（標準のカメラ App の「帯を半透明にして外の映像を透かす」は、
+        // 撮れる写真が 4:3 で**枠の外に映像が無い**ので、透かしても見えるものが無い）
         GeometryReader { geo in
             let size = ComposeGuide.viewfinderSize(width: Double(geo.size.width), height: Double(geo.size.height))
-            cameraLayers
-                .frame(width: size.width, height: size.height)
-                .position(x: Double(geo.size.width) / 2, y: Double(geo.size.height) / 2)
+            let frame = CGSize(width: size.width, height: size.height)
+            ZStack {
+                cameraLayers
+                    .frame(width: size.width, height: size.height)
+                    // 押した瞬間の暗転（シャッターの手応え・標準のカメラ App と同じ）
+                    .overlay { Color.black.opacity(shutterFlash ? 1 : 0).allowsHitTesting(false) }
+                    .overlay { focusOverlay(frame: frame) }
+                    .overlay(alignment: .top) { lockBadge }
+                    .overlay(alignment: .bottom) {
+                        if let notice { noticeView(notice).padding(.horizontal, 16).padding(.bottom, 16) }
+                    }
+                    // 隠している間は、撮れる範囲（保存される 3:4）の縁を細い白で示す（暗い景色でも枠が分かる）
+                    .overlay {
+                        if uiHidden {
+                            Rectangle().strokeBorder(Color.white.opacity(0.5), lineWidth: 1)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(touchGesture(frame: frame))
+                    // つまんで寄る。ライブラリの写真を重ねている間は、その写真の大きさに効かせる（以前のまま）
+                    .simultaneousGesture(zoomGesture, including: libraryShown && !uiHidden ? .subviews : .all)
+                    .simultaneousGesture(twistGesture)
+                    .accessibilityIdentifier("composeGuide.viewfinder")
+                    .position(x: Double(geo.size.width) / 2, y: Double(geo.size.height) / 2)
+                // 隠している間のシャッター: 枠の下の黒い余りに置けるときだけ（枠に重ねない）。
+                // 置けなければ音量ボタン・読み上げの「撮影」（2本指のダブルタップ）で撮る
+                if uiHidden, ComposeControls.hiddenShutterFits(containerHeight: Double(geo.size.height),
+                                                               frameHeight: size.height, shutter: Self.shutterSize) {
+                    shutter
+                        .position(x: Double(geo.size.width) / 2,
+                                  y: Double(geo.size.height) - (Double(geo.size.height) - size.height) / 4)
+                }
+                // 隠している間、読み上げでは UI を戻すボタンとして読む（指のタップの代わり）
+                if uiHidden {
+                    Color.clear
+                        .accessibilityElement()
+                        .accessibilityLabel(L("操作を表示", "Show controls"))
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { setHidden(false) }
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("composeGuide.showUI")
+                }
+            }
         }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
-            .overlay(alignment: .top) { topBar }
-            .overlay(alignment: .bottom) {
-                VStack(spacing: 10) {
-                    if let notice { noticeView(notice) }
-                    if showsLines || camera.state == .ready, let text = hintText { hintCard(text) }
-                }
-                // 板: 案内の札は枠の下端から約 40pt 上
-                .padding(.horizontal, 16)
-                .padding(.bottom, 40)
+    }
+
+    // MARK: - 指（2026-10-16・標準のカメラ App にそろえる）
+    //
+    // 2026-10-16 判断（指の割り当て。ぶつからないように1つの指の流れで読み分ける・`ComposeControls.touchEnd`）:
+    // - 1本指のタップ＝その場所にピントと明るさ。**UI を隠している間は、タップは UI を戻すだけ**（ピントは動かさない）
+    // - 長押し（0.6 秒）＝ピントと明るさを固定（AE/AF ロック）。タップで合わせ直すと外れる
+    // - ピントの枠が出ている間に上下へずらす＝明るさ（上で明るく）
+    // - 左右に払う＝作例を替える（以前のまま・作例を重ねているときだけ）
+    // - 2本指でつまむ＝寄る・引く、2本指でひねる＝構図の線と参考写真を回す。2本指の直後の
+    //   1本指の動きはタップ・払いとみなさない（ひねった指を離したときに作例が替わらない）
+    // - ライブラリの写真を重ねている間は、その写真を動かす指（ドラッグ・つまむ）が先（以前のまま）。
+    //   その間は上下にずらしても明るさは変えない（写真を動かす指と紛れる）
+    // それまで、この画面にピント合わせのタップは**無かった**（確かめた）。ぶつかる相手は払いと写真の指だけ
+
+    private func touchGesture(frame: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in touchChanged(value, frame: frame) }
+            .onEnded { value in touchEnded(value, frame: frame) }
+    }
+
+    private func touchChanged(_ value: DragGesture.Value, frame: CGSize) {
+        if touch == nil {
+            touch = TouchTrack(start: Date(), location: value.startLocation, exposureStart: exposureBias)
+            pressTask?.cancel()
+            guard !uiHidden else { return }
+            let location = value.startLocation
+            pressTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(ComposeControls.longPressSeconds * 1_000_000_000))
+                guard !Task.isCancelled, var t = touch, !t.adjustedExposure,
+                      !ComposeControls.isAfterMultiTouch(last: lastMultiTouch, now: Date()) else { return }
+                t.locked = true
+                touch = t
+                focus(at: location, frame: frame, lock: true)
             }
-            .contentShape(Rectangle())
+        }
+        let dx = Double(value.translation.width), dy = Double(value.translation.height)
+        if abs(dx) > ComposeControls.tapSlop || abs(dy) > ComposeControls.tapSlop { pressTask?.cancel() }
+        guard !uiHidden, !libraryShown, var t = touch,
+              ComposeControls.isExposureDrag(dx: dx, dy: dy, focusShown: focusPoint != nil) else { return }
+        t.adjustedExposure = true
+        touch = t
+        exposureBias = ComposeControls.exposureBias(start: t.exposureStart, dy: dy,
+                                                    min: camera.exposureRange.lowerBound,
+                                                    max: camera.exposureRange.upperBound)
+        camera.setExposureBias(exposureBias)
+        keepFocusShown()
+    }
+
+    private func touchEnded(_ value: DragGesture.Value, frame: CGSize) {
+        pressTask?.cancel()
+        let t = touch
+        touch = nil
+        let outcome = ComposeControls.touchEnd(
+            dx: Double(value.translation.width), dy: Double(value.translation.height),
+            seconds: Date().timeIntervalSince(t?.start ?? Date()),
+            adjustedExposure: t?.adjustedExposure ?? false, locked: t?.locked ?? false,
+            afterMultiTouch: ComposeControls.isAfterMultiTouch(last: lastMultiTouch, now: Date()))
+        switch outcome {
+        case .tap:
+            if uiHidden {
+                setHidden(false)
+            } else {
+                focus(at: value.startLocation, frame: frame, lock: false)
+            }
+        case .swipe(let dx):
             // 左右に払って作例を切り替える（短い払いは切り替えない・`ComposeGuide.swiped`）
-            .gesture(
-                DragGesture(minimumDistance: 20)
-                    .onEnded { value in
-                        guard reference.source == .samples else { return }
-                        switchTo(ComposeGuide.swiped(index: current, count: samples.count,
-                                                     translationWidth: value.translation.width))
-                    }
-            )
+            guard !uiHidden, reference.source == .samples else { return }
+            switchTo(ComposeGuide.swiped(index: current, count: samples.count, translationWidth: dx))
+        case .none:
+            break
+        }
+    }
+
+    /// つまんで寄る（標準のカメラ App と同じく滑らかに）
+    private var zoomGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                lastMultiTouch = Date()
+                pressTask?.cancel()
+                let start = zoomStart ?? camera.zoomFactor
+                if zoomStart == nil { zoomStart = start }
+                camera.setZoom(factor: ComposeControls.pinchedFactor(start: start,
+                                                                     magnification: Double(value.magnification),
+                                                                     levels: camera.zoomLevels), animated: false)
+            }
+            .onEnded { _ in
+                lastMultiTouch = Date()
+                zoomStart = nil
+            }
+    }
+
+    /// 2本指でひねって回す（0/90/180/270 の近くでは吸い付く・`CompositionGuide.snappedRotation`）
+    private var twistGesture: some Gesture {
+        RotateGesture()
+            .updating($twist) { value, state, _ in
+                state = value.rotation.degrees
+            }
+            .onChanged { _ in
+                lastMultiTouch = Date()
+                pressTask?.cancel()
+            }
+            .onEnded { value in
+                lastMultiTouch = Date()
+                guard canRotate else { return }
+                setRotation(CompositionGuide.snappedRotation(rotation + value.rotation.degrees))
+            }
+    }
+
+    /// 吸い付いたときの合図（0/90/180/270 のどれかに乗ったら値が変わる）
+    private var snapTrigger: Int {
+        guard twist != 0, canRotate, CompositionGuide.isQuarterRotation(shownRotation) else { return -1 }
+        return CompositionGuide.rotationParts(shownRotation).quarters
+    }
+
+    /// その点にピントと明るさを合わせ、枠を出す
+    private func focus(at location: CGPoint, frame: CGSize, lock: Bool) {
+        guard camera.state == .ready else { return }
+        let p = ComposeControls.devicePoint(x: Double(location.x), y: Double(location.y),
+                                            width: Double(frame.width), height: Double(frame.height))
+        exposureBias = 0
+        camera.focus(at: p, lock: lock)
+        focusPoint = location
+        if lock {
+            focusHideTask?.cancel()
+            announce(L("ピントと明るさを固定しました", "Focus and exposure locked"))
+        } else {
+            keepFocusShown()
+        }
+    }
+
+    /// ピントの枠を少しの間出しておく（固定しているときは出したまま）
+    private func keepFocusShown() {
+        focusHideTask?.cancel()
+        guard !camera.focusLocked else { return }
+        focusHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, !camera.focusLocked else { return }
+            withAnimation(.easeOut(duration: 0.2)) { focusPoint = nil }
+        }
+    }
+
+    /// ピントの枠（写真の上なので白・板の決まり）と、右に明るさの印（太陽）。上下にずらすと動く
+    @ViewBuilder
+    private func focusOverlay(frame: CGSize) -> some View {
+        if let p = focusPoint, !uiHidden {
+            let box = 72.0
+            ZStack {
+                Rectangle()
+                    .strokeBorder(WebTheme.foreground, lineWidth: 1.5)
+                    .frame(width: box, height: box)
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .shadow(color: .black.opacity(0.4), radius: 1)
+                    .offset(x: box / 2 + 14,
+                            y: -exposureBias / max(camera.exposureRange.upperBound, 0.1) * box / 2)
+            }
+            .position(x: min(max(Double(p.x), box / 2), Double(frame.width) - box / 2),
+                      y: min(max(Double(p.y), box / 2), Double(frame.height) - box / 2))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// AE/AF ロックの札（写真の上なので黒 60% に白の字・上の札と同じ形）
+    @ViewBuilder
+    private var lockBadge: some View {
+        if camera.focusLocked, !uiHidden {
+            Text(L("AE/AF ロック", "AE/AF LOCK"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(WebTheme.foreground)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.6), in: Capsule())
+                .padding(.top, 10)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("composeGuide.focusLock")
+        }
     }
 
     /// 構図の線を出すか。映像が出ているときだけ（画面写真の試験の鍵があれば、カメラの無い
@@ -209,10 +487,23 @@ struct ComposeGuideView: View {
             // 重ね順: 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）
             if showsLines, let composition {
                 CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
-                                 quarterTurns: quarterTurns, level: level)
+                                 quarterTurns: quarterTurns, rotationDegrees: shownRotation, level: level)
             }
         }
         .clipped()
+    }
+
+    /// 参考写真を回す（構図の線と同じ角度・2026-10-16）。90°/270° のときは**縦横を入れ替えた枠に収めてから**
+    /// 回す——線と同じく、回した後の写真が撮れる範囲にちょうど収まる（引き伸ばさない・切り抜かない）。
+    /// 順は線と同じ「反転（ライブラリの左右反転）→ 回転 → 指で動かした位置」
+    private func rotatedReference<Content: View>(_ content: Content) -> some View {
+        GeometryReader { geo in
+            let swap = CompositionGuide.rotationParts(shownRotation).quarters % 2 == 1
+            content
+                .frame(width: swap ? geo.size.height : geo.size.width, height: swap ? geo.size.width : geo.size.height)
+                .rotationEffect(.degrees(shownRotation))
+                .position(x: Double(geo.size.width) / 2, y: Double(geo.size.height) / 2)
+        }
     }
 
     /// 作例を半透明で重ねる（縦横比のまま・切り抜かない）。読み込み中・失敗は何も重ねない
@@ -220,14 +511,16 @@ struct ComposeGuideView: View {
     private var overlay: some View {
         if !reference.hidden {
             if reference.source == .samples, let sample {
-                AsyncImage(url: sample.src) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    default:
-                        Color.clear
+                rotatedReference(
+                    AsyncImage(url: sample.src) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        default:
+                            Color.clear
+                        }
                     }
-                }
+                )
                 .opacity(ComposeGuide.clampedOpacity(opacity))
                 .id(sample.sourceUrl)
                 .transition(.opacity)
@@ -235,16 +528,19 @@ struct ComposeGuideView: View {
                 .accessibilityHidden(true)
             } else if reference.source == .library, let libraryImage {
                 // 写真は画面上だけの層。ComposeCamera.capture/save に渡すのはカメラの出力だけ。
-                Image(uiImage: libraryImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .scaleEffect(x: (reference.mirrored ? -1 : 1) * reference.scale * pinchFactor,
-                                 y: reference.scale * pinchFactor)
+                rotatedReference(
+                    Image(uiImage: libraryImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .scaleEffect(x: (reference.mirrored ? -1 : 1) * reference.scale * pinchFactor,
+                                     y: reference.scale * pinchFactor)
+                )
                     .offset(x: reference.offsetX + Double(dragTranslation.width),
                             y: reference.offsetY + Double(dragTranslation.height))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0)
+                    // 2026-10-16: 動かし始めの幅を 0 → 4pt に。タップ（ピント）を外の指に通す
+                    .gesture(DragGesture(minimumDistance: 4)
                         .updating($dragTranslation) { value, state, _ in state = value.translation }
                         .onEnded { value in
                             reference.moveBy(x: Double(value.translation.width), y: Double(value.translation.height))
@@ -252,46 +548,94 @@ struct ComposeGuideView: View {
                     .simultaneousGesture(MagnificationGesture()
                         .updating($pinchFactor) { value, state, _ in state = value }
                         .onEnded { value in reference.setScale(reference.scale * value) })
+                    // 隠している間は写真を動かさない（タップは UI を戻すだけ）
+                    .allowsHitTesting(!uiHidden)
                     .opacity(ComposeGuide.clampedOpacity(opacity))
                     .accessibilityLabel(L("写真ライブラリの参考写真", "Reference photo from your library"))
             }
         }
     }
 
-    // MARK: - 上（閉じる・作例の番号）
+    // MARK: - 上の帯（閉じる・作例の番号・向き・回す・隠す）
 
-    /// 板: 左に閉じる（44pt の丸）、右へ寄せて札（`justify-content: space-between`）。上は時刻の帯の 5pt 下
+    /// 映像の外の黒い帯（2026-10-16）。左に閉じる、札、右に標準のカメラ App の上の帯のような小さな丸
+    /// （向き・回す・隠す）。黒い地の上なので、回している合図だけ真鍮（CLAUDE.md の owner の好み）
     private var topBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.55), in: Circle())
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                roundIcon("xmark")
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Labels.Common.close)
             .accessibilityIdentifier("composeGuide.close")
-            Spacer(minLength: 0)
             // 作例なしの入口では札を出さない（数える作例が無い）
             if reference.source == .samples, !samples.isEmpty, let spotName {
                 Text(ComposeGuide.counter(spotName: spotName, index: current, count: samples.count))
                     // 12pt 太字・数字は等幅（送っても札の幅が揺れない）
                     .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(WebTheme.text2)
                     .lineLimit(1)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.6), in: Capsule())
+                    .truncationMode(.middle)
                     .accessibilityLabel(ComposeGuide.counterAccessibility(spotName: spotName, index: current,
                                                                           count: samples.count))
                     .accessibilityIdentifier("composeGuide.counter")
             }
+            Spacer(minLength: 4)
+            if let composition, composition.hasVariants { variantButton(composition) }
+            if canRotate { rotateButton }
+            hideButton
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 5)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .background(Color.black)
+    }
+
+    /// 上の帯の小さな丸の見た目（当たりは 44）
+    static let roundVisual: CGFloat = 34
+
+    /// 上の帯の小さな丸（白 12% の丸に白の印。`tinted` なら印を真鍮＝いま効いている合図）
+    private func roundIcon(_ systemName: String, tinted: Bool = false) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(tinted ? WebTheme.accent : WebTheme.foreground)
+            .frame(width: Self.roundVisual, height: Self.roundVisual)
+            .background(Color.white.opacity(0.12), in: Circle())
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+    }
+
+    /// 向き（反転）。2026-10-16: 下の「構図」の行から上の帯の小さな丸へ移した（回す・隠すと並べる）
+    private func variantButton(_ composition: CompositionKind) -> some View {
+        Button { cycleVariant(of: composition) } label: {
+            roundIcon("arrow.left.and.right.righttriangle.left.righttriangle.right")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(CompositionGuide.variantAccessibilityLabel(composition, variant: variant))
+        .accessibilityHint(L("次の向きに替えます", "Switches to the next orientation"))
+        .accessibilityIdentifier("composeGuide.variant")
+    }
+
+    /// 右に 90° 回す（反転の隣・2026-10-16）。回している間は印が真鍮
+    private var rotateButton: some View {
+        Button { rotateRight() } label: {
+            roundIcon("rotate.right", tinted: rotation != 0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("構図を右に90度回す", "Rotate the guide 90° right"))
+        .accessibilityValue(CompositionGuide.rotationAccessibilityValue(rotation))
+        .accessibilityHint(L("2本指でひねっても回せます", "You can also twist with two fingers"))
+        .accessibilityAction(named: L("回転を戻す", "Reset rotation")) { setRotation(0) }
+        .accessibilityIdentifier("composeGuide.rotate")
+    }
+
+    /// UI を隠して撮れる範囲の全体を見る（2026-10-16 owner の声）。戻すのは映像を1回タップ
+    private var hideButton: some View {
+        Button { setHidden(true) } label: {
+            roundIcon("arrow.up.left.and.arrow.down.right")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("操作を隠して撮れる範囲を見る", "Hide controls to see the whole frame"))
+        .accessibilityIdentifier("composeGuide.hideUI")
     }
 
     // MARK: - 案内の札
@@ -304,24 +648,22 @@ struct ComposeGuideView: View {
         return ComposeGuide.hint(current: nil, target: nil, tip: composition?.tip)
     }
 
-    /// 板: 黒 62%・角 12・左に矢印・13pt。いまは作例に撮った位置が無いので、構図の一言だけ
-    /// （`ComposeGuide.hint`）。距離が出せるときだけ上向きの矢印、それ以外は格子の記号
-    private func hintCard(_ text: String) -> some View {
+    /// 構図の一言（板の案内の札の文）。2026-10-16 判断: 板は映像の下寄りに黒 62% の札で重ねるが、
+    /// owner「標準のカメラ App と遜色なく」を受けて**映像の外の黒い帯**へ移した（構図の線と重ねない）。
+    /// 距離が出せるときだけ上向きの矢印、それ以外は格子の記号
+    private func hintLine(_ text: String) -> some View {
         let move = ComposeGuide.movement(current: nil, target: nil)
-        return HStack(spacing: 10) {
+        return HStack(spacing: 8) {
             Image(systemName: move == nil ? "rectangle.split.3x3" : "arrow.up")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(WebTheme.foreground)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("composeGuide.hint")
     }
@@ -388,6 +730,8 @@ struct ComposeGuideView: View {
     private var controls: some View {
         VStack(spacing: 14) {
             compositionRow
+            // 2026-10-16: 構図の一言は映像の上（線と重なる）から、映像の外のこの帯へ移した
+            if showsLines || camera.state == .ready, let text = hintText { hintLine(text) }
             sourceRow
             if hasReference {
                 opacityRow
@@ -398,7 +742,11 @@ struct ComposeGuideView: View {
             // 左右を同じ幅の枠にするので、「投稿」のカプセルが出てもシャッターは真ん中のまま
             HStack(spacing: 0) {
                 HStack(spacing: JPSpace.s) {
-                    if withoutSamples {
+                    if onPost == nil {
+                        // 投稿へ進めない入口でも、撮った直後に左下へ小さな見本（標準のカメラ App と同じ・2026-10-16）
+                        if !withoutSamples { thumbButton }
+                        lastShotPreview
+                    } else if withoutSamples {
                         postButton
                     } else if onPost != nil {
                         // 撮影スポットの作例から開いたとき（2026-10-14）: 作例のサムネの隣に「投稿」。
@@ -431,7 +779,8 @@ struct ComposeGuideView: View {
         HStack(spacing: 8) {
             Button { showPicker = true } label: {
                 HStack(spacing: 10) {
-                    CompositionThumbnail(kind: composition, variant: variant, cornerRadius: 3)
+                    CompositionThumbnail(kind: composition, variant: variant, cornerRadius: 3,
+                                         rotationDegrees: composition == .level ? 0 : rotation)
                         .frame(width: 24, height: 32)
                     Text(composition?.name ?? CompositionGuide.noneName)
                         .font(.subheadline.weight(.semibold))
@@ -456,20 +805,8 @@ struct ComposeGuideView: View {
             .accessibilityLabel(CompositionGuide.accessibilityLabel(composition))
             .accessibilityHint(L("構図を選びます", "Choose a composition"))
             .accessibilityIdentifier("composeGuide.composition")
-            if let composition, composition.hasVariants {
-                Button { cycleVariant(of: composition) } label: {
-                    Text(L("向き", "Flip"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .frame(width: 44, height: 44)
-                        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(CompositionGuide.variantAccessibilityLabel(composition, variant: variant))
-                .accessibilityHint(L("次の向きに替えます", "Switches to the next orientation"))
-                .accessibilityIdentifier("composeGuide.variant")
-            }
+            // 拡大の段（端末のレンズに応じて 0.5×/1×/2×/望遠・2026-10-16）。向きは上の帯の小さな丸へ移した
+            zoomPills
         }
     }
 
@@ -670,9 +1007,55 @@ struct ComposeGuideView: View {
         return UIImage(cgImage: image)
     }
 
+    /// 拡大の段の丸（標準のカメラ App と同じ形: 黒い地に小さな丸、選んでいる段はいまの倍率と「×」）。
+    /// 黒い帯の上なので、選んでいる段の字は真鍮（CLAUDE.md の owner の好み「選んでいるもの」）。
+    /// 段が1つ（1× だけ）の端末では出さない
+    @ViewBuilder
+    private var zoomPills: some View {
+        let levels = camera.zoomLevels
+        if levels.presets.count > 1 {
+            let display = levels.display(factor: camera.zoomFactor)
+            let active = ComposeControls.activePreset(display: display, presets: levels.presets)
+            HStack(spacing: 0) {
+                ForEach(levels.presets, id: \.self) { preset in
+                    let on = preset == active
+                    Button { camera.setZoom(display: preset, animated: !reduceMotion) } label: {
+                        Text(ComposeControls.zoomLabel(on ? display : preset, active: on))
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(on ? WebTheme.accent : WebTheme.foreground)
+                            .frame(width: on ? 36 : 30, height: on ? 36 : 30)
+                            .background(Color.white.opacity(on ? 0.16 : 0.08), in: Circle())
+                            .frame(minWidth: 40, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(ComposeControls.zoomAccessibility(preset))
+                    .accessibilityValue(on ? L("選択中", "Selected") : "")
+                    .accessibilityIdentifier("composeGuide.zoom")
+                }
+            }
+        }
+    }
+
+    /// 撮った直後の小さな見本（投稿へ進めない入口の左下・押す先は無い）
+    @ViewBuilder
+    private var lastShotPreview: some View {
+        if let thumb = lastShotThumb {
+            Image(uiImage: thumb)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.xs).strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityLabel(L("撮った写真（写真に保存しました）", "Photo you just took (saved to Photos)"))
+                .accessibilityIdentifier("composeGuide.lastShot")
+        }
+    }
+
     /// 中央: シャッター（v2 の 76pt・白 4pt の輪・内側に白の丸）
     private var shutter: some View {
-        Button { Task { await shoot() } } label: {
+        Button { Task { await shootIfReady() } } label: {
             Circle()
                 .fill(WebTheme.foreground)
                 .padding(8)
@@ -680,7 +1063,7 @@ struct ComposeGuideView: View {
                 .overlay(Circle().strokeBorder(WebTheme.foreground, lineWidth: 4))
         }
         .buttonStyle(.plain)
-        .disabled(camera.state != .ready || camera.isCapturing)
+        .disabled(!canShoot)
         .opacity(camera.state == .ready ? 1 : 0.4)
         .accessibilityLabel(L("撮影", "Take photo"))
         .accessibilityHint(L("撮った写真は端末の写真に保存されます", "The photo is saved to your Photos"))
@@ -724,6 +1107,16 @@ struct ComposeGuideView: View {
             withAnimation(.easeOut(duration: 0.2)) { index = next }
         }
         announce(ComposeGuide.counterAccessibility(spotName: spotName ?? "", index: next, count: samples.count))
+    }
+
+    /// シャッター・音量ボタン・読み上げの「撮影」の入口。撮れるときだけ（`ComposeControls.canShoot`）、
+    /// 押した瞬間に軽い振動と暗転（標準のカメラ App の手応え）
+    private func shootIfReady() async {
+        guard canShoot else { return }
+        shotCount += 1
+        shutterFlash = true
+        withAnimation(.easeOut(duration: reduceMotion ? 0.05 : 0.18)) { shutterFlash = false }
+        await shoot()
     }
 
     /// 撮って保存し、結果を知らせる。作例なしの入口では、撮れた1枚を「投稿」へ進められるようにする
@@ -773,6 +1166,8 @@ struct ComposeGuideView: View {
     private func choose(_ picked: CompositionKind?) {
         composition = picked
         variant = picked.map { preferences.variant(for: $0) } ?? 0
+        // 選び直したら回転は真っ直ぐに戻す（`CompositionPreferences.select` が覚えた角度も 0 にする）
+        rotation = 0
         preferences.select(picked)
         announce(CompositionGuide.accessibilityLabel(picked))
     }
@@ -782,6 +1177,38 @@ struct ComposeGuideView: View {
         variant = kind.nextVariant(after: variant)
         preferences.setVariant(variant, for: kind)
         announce(CompositionGuide.variantAccessibilityLabel(kind, variant: variant))
+    }
+
+    /// 右に 90° 回す（次の 90° の倍数へ・`CompositionGuide.rotatedRight`）
+    private func rotateRight() {
+        setRotation(CompositionGuide.rotatedRight(rotation))
+    }
+
+    /// 回した角度を決めて覚え、読み上げで伝える
+    private func setRotation(_ degrees: Double) {
+        let value = CompositionGuide.normalizedRotation(degrees)
+        if reduceMotion {
+            rotation = value
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { rotation = value }
+        }
+        preferences.setRotation(value, for: composition)
+        announce(CompositionGuide.rotationAccessibilityValue(value))
+    }
+
+    /// UI を隠す・戻す。隠すときはピントの枠も消し、戻し方を読み上げで伝える
+    private func setHidden(_ hidden: Bool) {
+        guard hidden != uiHidden else { return }
+        if hidden { focusPoint = nil }
+        if reduceMotion {
+            uiHidden = hidden
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { uiHidden = hidden }
+        }
+        if hidden {
+            announce(L("操作を隠しました。画面をタップすると戻ります。音量ボタンで撮れます",
+                       "Controls hidden. Tap the screen to show them. Press a volume button to take a photo."))
+        }
     }
 
     /// 傾きの見張りを始める・速さを合わせる。水準器を選んでいる間だけ角度を 30 回/秒で読み、
