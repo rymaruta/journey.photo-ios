@@ -31,8 +31,6 @@ struct MyPageView: View {
     /// が読み直されても、控えた ID のぶんは引き当て直せるように
     @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
-    @State private var showDistanceNote = false
-    @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
     /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
@@ -531,45 +529,17 @@ struct MyPageView: View {
     /// どちらも**数えた値**で、どちらも**そのままの意味ではない**ので、
     /// それぞれ押すと計算の中身が出る。**0 のものは出さない**——
     /// 「訪れた国 0」は実績にならず、「まだ国名を書いていない」を
-    /// 「行っていない」と読ませてしまう
+    /// 「行っていない」と読ませてしまう。
+    ///
+    /// 節は人のページと同じ部品（`TravelRecordSection`・2026-10-16 判断）。マイページは
+    /// **自分の写真すべて**から作る（今までどおり・人のページは公開写真だけ）
     @ViewBuilder
     private var travelRecord: some View {
-        let countries = TravelRoute.countriesInOrder(model.photos)
-        let km = TravelDistance.total(of: model.photos)
-        if !countries.isEmpty || km > 0 {
-            TravelRecordView(kilometers: km,
-                             countries: countries,
-                             coordinates: TravelRoute.coordinates(of: model.photos),
-                             firstYear: TravelRoute.firstYear(of: model.photos),
-                             onDistanceTap: { showDistanceNote = true },
-                             onCountriesTap: { showCountriesNote = true })
-            .padding(.horizontal, ProfileV2.gutter)
-            .padding(.top, JPSpace.xs)
-            .alert(L("訪れた国・地域", "Countries and regions"),
-                   isPresented: $showCountriesNote) {
-                Button(Labels.Common.close, role: .cancel) {}
-            } message: {
-                // **数え方をそのまま書く。** 「思ったより少ない」の答えが
-                // ここにある（国名を書いた写真しか数えていない）
-                Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
-                       "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
-            }
-            .alert(L("写真をつないだ距離", "Distance between photos"),
-                   isPresented: $showDistanceNote) {
-                Button(Labels.Common.close, role: .cancel) {}
-            } message: {
-                Text(distanceNote)
-            }
+        let summary = ProfileTravelRecord.Summary(photos: model.photos)
+        if !summary.isEmpty {
+            TravelRecordSection(summary: summary, isMine: true)
         }
     }
-
-    /// **「旅した距離」とだけ書かない。** 実際に歩いた・乗った距離だと
-    /// 読まれる（指示書 8-3）。
-    private var distanceNote: String {
-        L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた・乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
-          "The straight-line total between photos that have coordinates, oldest first. Not the distance you actually travelled.")
-    }
-
 
     /// プロフィールのBGM（モック2-4）。
     ///

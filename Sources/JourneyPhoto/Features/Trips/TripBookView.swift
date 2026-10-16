@@ -13,6 +13,9 @@ struct TripBookView: View {
     /// 写真から作るので、投稿直後の写真はページがまだ無い。一覧を持たない入口は既定の偽
     /// （必ず開ける `/?photo=` に落ちる）
     var isPublic: (Photo) -> Bool = { _ in false }
+    /// 自分の一冊か。人のプロフィールから開いた一冊は偽で、「この一冊を送る」を出さない
+    /// （`TripBook.canShare(_:isMine:)`・2026-10-16 判断）
+    var isMine = true
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -52,7 +55,7 @@ struct TripBookView: View {
         // 右上の印は探しにくく、何を配るのか分からなかった。写真のある画面なので主ボタンは白
         // （`JPPillStyle.main(onPhoto: true)`）。自分だけの一冊は出さない（`TripBook.canShare`）
         .safeAreaInset(edge: .bottom) {
-            if TripBook.canShare(book) {
+            if TripBook.canShare(book, isMine: isMine) {
                 shareButton.jpBottomBar()
             }
         }
