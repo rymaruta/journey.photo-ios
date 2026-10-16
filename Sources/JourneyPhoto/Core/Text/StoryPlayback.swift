@@ -435,8 +435,10 @@ enum StoryPlayback {
     }
 
     /// 輪を本数で区切るときの1区切り（0...1 の始まりと終わり）。
-    /// **1本なら切れ目の無い輪**。切れ目は円周のうち `gap` の割合
-    static func ringSegments(count: Int, gap: Double = 4.0 / 182.2) -> [(start: Double, end: Double)] {
+    /// **1本なら切れ目の無い輪**。切れ目は円周のうち `gap` の割合。
+    /// 既定は板 v2 の 4pt を輪の線の円周（外径 64・線 2 → r=31・194.8）で割ったもの
+    /// （2026-10-16 判断: 以前の 182.2 は v1 の輪の円周のままだった）
+    static func ringSegments(count: Int, gap: Double = 4.0 / 194.8) -> [(start: Double, end: Double)] {
         guard count > 1 else { return [(0, 1)] }
         // **型を言い切って1式ずつ書く。** 名前付きの組を返す式を1行で書くと、
         // Xcode の型検査が時間切れで止まる（TestFlight run #113）
@@ -511,10 +513,15 @@ enum StoryPlayback {
     }
 
     /// 上（見出しの横）に「…」を出すか。人の投稿は必ず（通報とブロックの入口・審査 1.2）。
-    /// 自分の投稿は**ハイライトの中で音があるときだけ**（音を消す口がそこにしか無い）。
+    /// 自分の投稿は**ハイライトの中なら必ず**——ハイライトには足元の「…」が無く、「一時停止」
+    /// 「テキストを非表示」の口がここにしか無い（2026-10-16 判断。以前は音があるときだけで、
+    /// 写真だけのハイライトでは止める・文字を隠すができなかった）。
     /// ハイライト以外の自分の投稿は足元に「…」があるので出さない（上下に2つ並ぶ）
+    ///
+    /// - Parameter hasAudio: もう決め手にしない。呼び出し側（`StoryViewerView`）は別の担当が大きく
+    ///   直している最中なので、引数の形は残す（次に触るときに外してよい）
     static func showsTopMenu(isMine: Bool, inHighlight: Bool, hasAudio: Bool) -> Bool {
-        !isMine || (inHighlight && hasAudio)
+        !isMine || inHighlight
     }
 
     /// 読み直したあとの一覧。

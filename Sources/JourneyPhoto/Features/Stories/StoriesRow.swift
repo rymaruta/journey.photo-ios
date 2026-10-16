@@ -29,7 +29,10 @@ struct StoriesRow: View {
 
     var body: some View {
         Group {
-            if auth.userId != nil {
+            // **読み込み中は輪の列を出さない**（板 Main の `showRings: !loading`）。ただし既に持っている
+            // 輪・送っている輪があれば出したまま（読み直しのたびに列を消すとちらつく・`showsRings`）
+            if auth.userId != nil,
+               Self.showsRings(settled: model.settled, hasRings: !model.stories.isEmpty, uploading: uploads.isBusy) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: StoryRingMetrics.spacing) {
                         // **1人＝1つの輪。自分は先頭、未読 → 既読の順**（板 27・v2 StoryRings）
@@ -60,6 +63,11 @@ struct StoriesRow: View {
                                          name: story.authorName)
                             }
                             .buttonStyle(.plain)
+                            // 「haru_t のストーリー 3本（まだ見ていない）」（板 v2 StoryRings の `aria-label`）。
+                            // 輪の色と切れ目で見せていることを、読み上げでも言う
+                            .accessibilityLabel(Self.ringLabel(name: story.authorName,
+                                                               count: model.siblings(of: story).count,
+                                                               unseen: unseen))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -127,39 +135,29 @@ struct StoriesRow: View {
 
     // MARK: - 輪
 
-    /// 自分の輪。**ストーリーがあれば真鍮の輪と「＋」、無ければ自分の顔に白 22% の輪と「＋」**。
-    /// どちらも名前は「あなた」（板 27・v2 StoryRings「自分のストーリーが無いとき」）
+    /// 自分の輪。**ストーリーがあれば真鍮の輪だけ、無ければ自分の顔に白 22% の輪と「＋」**。
+    /// どちらも名前は「あなた」（板 27・v2 StoryRings「いつもの並び」「自分のストーリーが無いとき」）
+    ///
+    /// 2026-10-16 判断: ストーリーがあるときは「＋」を出さない（板 v2 の「いつもの並び」の「あなた」は輪だけ）。
+    /// 2本目は下の札の「投稿」から足せる。輪の右下に小さな「＋」を重ねていたときは、自分の輪を開く
+    /// つもりで投稿画面が開くことがあった
     @ViewBuilder
     private func mineRing(_ mine: Story?) -> some View {
         if let mine {
-            ZStack(alignment: .topTrailing) {
-                Button {
-                    open(mine)
-                } label: {
-                    // 自分の輪は**見たかどうかに関係なく真鍮**（板の「あなた」の輪）
-                    ringItem(story: mine, count: model.siblings(of: mine).count,
-                             unseen: true, name: L("あなた", "You"))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("あなたのストーリー", "Your story"))
-                // 右下の「＋」: もう1本足す
-                Button {
-                    showComposer = true
-                } label: {
-                    // **押せる範囲は丸で小さく。** 44の四角にすると自分の写真の
-                    // 右下4分の1を奪い、ストーリーを開くつもりで投稿画面が開いた
-                    plusBadge
-                        .frame(width: 30, height: 30)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
-                // 白丸の中心を輪の右下へ（板: right/bottom −2）
-                .offset(x: 5, y: 39)
+            Button {
+                open(mine)
+            } label: {
+                // 自分の輪は**見たかどうかに関係なく真鍮**（板の「あなた」の輪）
+                ringItem(story: mine, count: model.siblings(of: mine).count,
+                         unseen: true, name: L("あなた", "You"))
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("あなたのストーリー", "Your story"))
         } else {
             // **自分の入口を先頭に置く。** ストーリーが1本も無いときに
             // 行ごと消すと、投稿する場所が無くなる
+            // 「＋」は見た目 22 の丸だが、**押せるのは輪と名前の全体**（幅 64・44pt 以上）。
+            // 「＋」だけの小さな的は置かない
             Button {
                 showComposer = true
             } label: {
@@ -314,6 +312,19 @@ struct StoriesRow: View {
         }
     }
 
+    /// 輪の列を出すか。**一覧の読み込みが一度終わるまでは出さない**（板 Main の `showRings: !loading`）。
+    /// 既に輪を持っている（読み直し中）・送っている輪があるなら出したまま（ちらつかせない）
+    nonisolated static func showsRings(settled: Bool, hasRings: Bool, uploading: Bool) -> Bool {
+        settled || hasRings || uploading
+    }
+
+    /// 人の輪の読み上げ（板 v2 StoryRings の「haru_t のストーリー 3本（まだ見ていない）」）
+    nonisolated static func ringLabel(name: String, count: Int, unseen: Bool) -> String {
+        let n = max(1, count)
+        return L("\(name) のストーリー \(n)本（\(unseen ? "まだ見ていない" : "見た")）",
+                 "\(name)'s story, \(n == 1 ? "1 item" : "\(n) items") (\(unseen ? "not seen yet" : "seen"))")
+    }
+
     /// 輪1つと名前（`StoryRing`・下に名前 12pt。板 27 は 10pt だが本文の最小 12 に合わせる）
     private func ringItem(story: Story, count: Int, unseen: Bool, name: String) -> some View {
         VStack(spacing: StoryRingMetrics.nameSpacing) {
@@ -390,6 +401,10 @@ final class StoriesViewModel: ObservableObject {
     @Published private(set) var stories: [Story] = []
     /// 一度でも一覧を読めたか（読み終える前に「輪が無い」の行を出さない・2026-10-14）
     @Published private(set) var loaded = false
+    /// 一度でも読み込みが終わったか（**取れなかった回も含む**）。終わるまで輪の列を出さない
+    /// （`StoriesRow.showsRings`）。取れなかった回も立てる——立てないと、圏外で開いた人に
+    /// 投稿の入口（自分の「＋」）がいつまでも出なかった（2026-10-16 判断）
+    @Published private(set) var settled = false
 
     /// その1本と**同じ投稿者の束**（輪の色は束ごとに決める——1本でも
     /// 未読なら点ける）
@@ -428,6 +443,7 @@ final class StoriesViewModel: ObservableObject {
               reportedPhotoIds: Set<String> = []) async {
         loadSeq += 1
         let seq = loadSeq
+        defer { settled = true }
         latestViewer = .some(viewerId)
         latestBlocked = blockedUserIds
         latestReported = reportedPhotoIds

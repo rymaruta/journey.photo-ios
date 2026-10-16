@@ -147,6 +147,7 @@ public struct PresentationDetent: Hashable {
     public static let medium = PresentationDetent()
     public static let large = PresentationDetent()
     public static func height(_ h: CGFloat) -> PresentationDetent { PresentationDetent() }
+    public static func fraction(_ f: CGFloat) -> PresentationDetent { PresentationDetent() }
 }
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()

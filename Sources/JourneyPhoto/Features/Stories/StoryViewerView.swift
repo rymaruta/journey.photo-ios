@@ -371,7 +371,7 @@ struct StoryViewerView: View {
     static let chromeTypeLimit = DynamicTypeSize.xxLarge
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
-    private static let footerHeight: CGFloat = 60
+    private static let footerHeight: CGFloat = StoryViewerMetrics.footerHeight
 
     /// **写真を画面いっぱいに敷き、全部をその上に重ねる**（ストーリーの板）。
     ///

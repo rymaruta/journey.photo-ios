@@ -69,6 +69,14 @@ enum StoryViewerMetrics {
     static let confirmFill: UInt32 = BrandPalette.surface6
     static let confirmFillOpacity = 0.96
 
+    // MARK: 写真の枠
+
+    /// 写真の下の角（板 24・`JPRadius.xl`）。閲覧画面と、人を回る途中の隣の面（`StoryReelFace`）が使う
+    static let photoRadius: CGFloat = JPRadius.xl
+    /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る）。隣の面も同じ高さを空ける——
+    /// 回りきって本物の閲覧画面に差し替わった瞬間に写真の枠が跳ねない（2026-10-16 判断）
+    static let footerHeight: CGFloat = 60
+
     // MARK: 足元
 
     /// 返信欄の高さ（板 44・46 → 44）と縁の白（板 30%）
