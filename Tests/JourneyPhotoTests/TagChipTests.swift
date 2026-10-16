@@ -111,6 +111,74 @@ final class ThemeColorTests: XCTestCase {
         XCTAssertEqual(rgb.green, 128.0 / 255, accuracy: 0.001)
         XCTAssertEqual(rgb.blue, 0, accuracy: 0.001)
     }
+
+    // MARK: パレットから自由に選ぶ（2026-10-16）
+
+    /// 🔴 **0〜1 の値は 255 段に丸める**（切り捨てない）。0.5 段の上下で割れる
+    func testPickedColorIsRoundedTo255Steps() {
+        XCTAssertEqual(ThemeColor.hex(red: 0.2, green: 0.5, blue: 1), "#3380ff")
+        XCTAssertEqual(ThemeColor.hex(red: 127.6 / 255, green: 127.4 / 255, blue: 0.5 / 255), "#807f01")
+        XCTAssertEqual(ThemeColor.hex(red: 0, green: 0, blue: 0), "#000000", "先頭の 0 を落とさない")
+        XCTAssertEqual(ThemeColor.hex(red: 0, green: 0, blue: 1.0 / 255), "#000001")
+    }
+
+    /// 🔴 **保存は小文字。** 見本（小文字）との比べが割れない・Web の `toLowerCase()` と同じ
+    func testPickedColorIsLowercase() {
+        let hex = ThemeColor.hex(red: 0.98, green: 0.75, blue: 0.14)
+        XCTAssertEqual(hex, hex.lowercased())
+        XCTAssertEqual(ThemeColor.hex(0xABCDEF), "#abcdef")
+        XCTAssertTrue(ThemeColor.isValid(hex))
+    }
+
+    /// 🔴 **Display P3 の色は拡張 sRGB で 0 未満・1 超えが来る。sRGB に詰めて保存の形に収める**
+    /// （詰めないと 7 桁を超えたり負の桁になり、Web とサーバーが受け付けない）
+    func testOutOfRangeChannelsAreClampedIntoSRGB() {
+        XCTAssertEqual(ThemeColor.hex(red: 1.09, green: -0.23, blue: 0.5), "#ff0080")
+        XCTAssertEqual(ThemeColor.hex(red: .infinity, green: .nan, blue: -.infinity), "#000000")
+        XCTAssertEqual(ThemeColor.hex(0x1FFFFFF), "#ffffff", "上の桁は捨てる")
+        for hex in [ThemeColor.hex(red: 2, green: 2, blue: 2), ThemeColor.hex(red: -1, green: -1, blue: -1)] {
+            XCTAssertTrue(ThemeColor.isValid(hex), hex)
+        }
+    }
+
+    /// 保存した色を読み直して変換し直すと同じ色（見本8色と、段ごとの色）
+    func testHexRoundTrips() throws {
+        var samples = ThemeColor.presets
+        for v in stride(from: 0, through: 255, by: 17) {
+            samples.append(ThemeColor.hex(UInt32(v) << 16 | UInt32(255 - v) << 8 | UInt32(v / 2)))
+        }
+        for hex in samples {
+            let rgb = try XCTUnwrap(ThemeColor.rgb(hex))
+            XCTAssertEqual(ThemeColor.hex(red: rgb.red, green: rgb.green, blue: rgb.blue), hex)
+        }
+        // 大文字で入っていた値も、往復すると小文字の同じ色
+        let upper = try XCTUnwrap(ThemeColor.rgb("#A78BFA"))
+        XCTAssertEqual(ThemeColor.hex(red: upper.red, green: upper.green, blue: upper.blue), "#a78bfa")
+    }
+
+    /// 🔴 **見本に無い色（Web で選んだ色も）は「自由に選ぶ」の丸が選ばれている。**
+    /// 以前はどの丸にも印が付かず、何も選んでいないように見えた
+    func testColorsOutsideThePresetsAreCustom() {
+        XCTAssertTrue(ThemeColor.isCustom("#123456"))
+        XCTAssertTrue(ThemeColor.isCustom("#ABCDEF"))
+        XCTAssertFalse(ThemeColor.isCustom("#38bdf8"), "見本の色は見本の丸")
+        XCTAssertFalse(ThemeColor.isCustom("#38BDF8"), "大文字でも見本の色")
+        XCTAssertFalse(ThemeColor.isCustom(""), "なし")
+        XCTAssertFalse(ThemeColor.isCustom("red"), "読めない値は塗らない")
+        for preset in ThemeColor.presets { XCTAssertFalse(ThemeColor.isCustom(preset), preset) }
+    }
+
+    /// 🔴 **2026-10-16 判断: 黒い地で見えにくい色（3:1 未満）だけ知らせる。** 見本8色と「なし」には出さない
+    func testOnlyColorsTooDarkForBlackAreFlagged() {
+        XCTAssertTrue(ThemeColor.isHardToSeeOnBlack("#000000"))
+        XCTAssertTrue(ThemeColor.isHardToSeeOnBlack("#202040"))
+        XCTAssertTrue(ThemeColor.isHardToSeeOnBlack("#5A0000"))
+        XCTAssertFalse(ThemeColor.isHardToSeeOnBlack("#C9A66B"), "真鍮は黒の上 9:1")
+        XCTAssertFalse(ThemeColor.isHardToSeeOnBlack("#ffffff"))
+        XCTAssertFalse(ThemeColor.isHardToSeeOnBlack(""))
+        XCTAssertFalse(ThemeColor.isHardToSeeOnBlack("garbage"))
+        for preset in ThemeColor.presets { XCTAssertFalse(ThemeColor.isHardToSeeOnBlack(preset), preset) }
+    }
 }
 
 /// 写真の詳細のタグの札の字（板 02 の「#夕焼け」）。
