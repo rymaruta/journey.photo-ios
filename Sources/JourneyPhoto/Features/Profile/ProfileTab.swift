@@ -24,7 +24,8 @@ enum ProfileTab: String, CaseIterable, Identifiable {
         case .trips: return L("旅の記録", "Trips")
         case .wishlist: return L("行きたい場所", "Want to go")
         case .map: return L("マップ", "Map")
-        case .favorites: return L("お気に入り", "Saved")
+        // 2026-10-16: 「お気に入り」→「保存」。メニューの「保存した写真」・写真の詳細のしおり（保存）と呼び名をそろえた
+        case .favorites: return L("保存", "Saved")
         }
     }
 

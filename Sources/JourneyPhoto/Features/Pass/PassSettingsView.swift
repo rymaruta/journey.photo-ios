@@ -250,7 +250,7 @@ struct PassSettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
-            NavigationLink { PassBookView() } label: {
+            NavigationLink { PassBookView(fromSettings: true) } label: {
                 JPRowLabel(title: L("すれちがい帳", "Pass book"),
                            detail: L("\(pass.book(hiding: hidden.snapshot).count) 枚",
                                      "\(pass.book(hiding: hidden.snapshot).count) cards"))

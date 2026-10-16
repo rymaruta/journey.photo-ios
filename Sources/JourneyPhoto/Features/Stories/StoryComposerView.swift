@@ -181,7 +181,55 @@ struct StoryComposerView: View {
         Self.leave(content, restored: restoredContent)
     }
 
+    /// 開いたときに何を出すか（2026-10-16 判断・行き止まりの直し）
+    enum Stage: Equatable {
+        /// 起動直後のログインの確認中（ログイン済みの人にログイン画面を見せない）
+        case resolving
+        /// ログインしていない。**開いた時点でログインを求める**（写真の投稿 `UploadView` と同じ作法）
+        case signIn
+        /// 作る
+        case compose
+    }
+
+    /// 🔴 以前は未ログインでも作る画面が開き、写真を選んで文字を置いて「ストーリーに投稿」を押すと、
+    /// 送る所（`post`）の `guard … auth.userId` で**黙って抜けた**（何も起きない）。
+    /// 決め方は、いいね・保存の「ログインする」と同じ（`HomeLikeGate.decide`）
+    nonisolated static func stage(userId: String?, isResolving: Bool) -> Stage {
+        switch HomeLikeGate.decide(userId: userId, isResolving: isResolving) {
+        case .send: return .compose
+        case .ignore: return .resolving
+        case .askToSignIn: return .signIn
+        }
+    }
+
+    /// ログイン画面の上に出す一言（写真の投稿の「写真を投稿するにはログインしてください」と同じ形）
+    nonisolated static var signInReason: String {
+        L("ストーリーを投稿するにはログインしてください", "Sign in to post a story")
+    }
+
     var body: some View {
+        switch Self.stage(userId: auth.userId, isResolving: auth.isResolving) {
+        case .resolving:
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ProgressView()
+            }
+        case .signIn:
+            // 既存のログイン画面（`SignInView`）。ログインできたら、そのまま作る画面に変わる。
+            // 作る画面は見出しのバーを隠すので、ここでは閉じる口を見出しに置く（`SignInSheet` と同じ形）
+            SignInView(reason: Self.signInReason)
+                .webScreen()
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(Labels.Common.close) { dismiss() }
+                    }
+                }
+        case .compose:
+            composer
+        }
+    }
+
+    private var composer: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
@@ -1570,7 +1618,13 @@ struct StoryComposerView: View {
         // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
         // 並びがある」で受けない。索引を待っている間の押し直しは `isWaitingForSpots` で受けない
-        guard !shots.isEmpty, let ownerId = auth.userId else { return }
+        guard !shots.isEmpty else { return }
+        // 🔴 **ログインしていないなら黙って抜けない**（2026-10-16）。ふつうは開いた時点でログイン画面に
+        // なっている（`stage`）が、作っている途中でログインが切れた回もここで言う
+        guard let ownerId = auth.userId else {
+            message = Self.signInReason
+            return
+        }
         guard waitedSpots != nil || !isWaitingForSpots else { return }
         // **欠けた投票は送らない**（サーバーが黙って落とす＝置いたのに出ない）。どの写真かを言う
         if let index = shots.firstIndex(where: { $0.vote.map { !$0.isComplete } ?? false }) {

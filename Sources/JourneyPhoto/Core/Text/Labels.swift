@@ -17,6 +17,13 @@ func L(_ ja: String, _ en: String) -> String {
 /// ——同じ画面で違う言葉を使わないため。
 enum Labels {
 
+    /// アプリの一言（2026-10-16 判断・owner「写真から、次の旅が始まるSNS」）。
+    /// 同意画面とログイン画面で別々の一言（「次に撮りたい場所が、見つかる。」「旅の写真を、一冊の記録に。」）
+    /// だったのを、この1本にそろえた。**App Store の文言（docs）は別に人が直す**
+    enum Brand {
+        static var tagline: String { L("写真から、次の旅が始まる。", "Your next journey starts with a photo.") }
+    }
+
     enum Navigation {
         static var gallery: String { L("ギャラリー", "Gallery") }
         static var favorites: String { L("いいねした写真", "Liked Photos") }

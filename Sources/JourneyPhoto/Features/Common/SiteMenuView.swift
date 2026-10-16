@@ -50,7 +50,8 @@ struct SiteMenuView: View {
                         }
                         .buttonStyle(.plain)
                         NavigationLink { SavedPhotosView() } label: {
-                            SiteMenuRow(title: L("保存した写真", "Saved photos"), systemImage: "bookmark",
+                            // 呼び名はマイページのタブと同じ1か所（`ProfileTab.favorites.label`・2026-10-16）
+                            SiteMenuRow(title: ProfileTab.favorites.label, systemImage: "bookmark",
                                         note: L("しおりで保存 · 自分だけ", "Bookmarked · only you can see"))
                         }
                         .buttonStyle(.plain)

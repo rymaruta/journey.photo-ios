@@ -154,6 +154,9 @@ struct TripShelfList: View {
     /// 後半を落とし、開いた一冊で「この一冊を送る」を出さない（2026-10-16 判断）
     var isMine = true
 
+    /// 0冊のときの次の一手の題（下の「投稿」の行と同じ語・2026-10-16）
+    nonisolated static var startTripTitle: String { L("旅の写真からまとめて", "From a trip in your photos") }
+
     nonisolated static var explanation: String { explanation(isMine: true) }
 
     /// 下の説明文。**「旅の写真からまとめて」は本人の操作**なので、人の棚では言わない
@@ -170,7 +173,13 @@ struct TripShelfList: View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             if trips.isEmpty {
                 // 空の状態（v2 Components 06: 明朝 20 の見出し → 説明）
-                EmptyState(title: L("まだ旅はありません", "No trips yet"), message: Self.explanation(isMine: isMine))
+                // 2026-10-16: 自分の棚だけ、次の一手「旅の写真からまとめて」（下の「投稿」と同じ道 `TabRouter.openPost`）。
+                // 人の棚で出すと、その人の旅を作るように読める。呼び手（マイページ）は変えずにここで持つ
+                // （端末の旅の一冊の枝がマイページの同じ行を変えているので、ぶつけない）
+                EmptyState(title: L("まだ旅はありません", "No trips yet"), message: Self.explanation(isMine: isMine),
+                           actionTitle: isMine ? Self.startTripTitle : nil,
+                           actionIdentifier: "trips.emptyStart",
+                           action: isMine ? { TabRouter.shared.openPost(.trip) } : nil)
             } else {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
