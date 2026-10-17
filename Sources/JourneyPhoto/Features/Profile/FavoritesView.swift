@@ -59,7 +59,11 @@ struct FavoritesView: View {
                     // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）
                     JPLoadingState(kind: .grid)
                 case .none:
-                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"))
+                    // 2026-10-17: いいねは写真から。写真に出会う所（ホーム）へ1手（マイページの保存0枚と同じ道）
+                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"),
+                               actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "favorites.emptyBrowse") {
+                        TabRouter.shared.openHome()
+                    }
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
