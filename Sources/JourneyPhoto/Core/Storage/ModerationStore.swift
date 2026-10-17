@@ -338,4 +338,8 @@ struct ModerationSnapshot: Equatable {
     func replies(_ replies: [StoryReply]) -> [StoryReply] {
         BlockFilter.replies(replies, blocked: blocked)
     }
+
+    func notifications(_ rows: [AppNotification]) -> [AppNotification] {
+        BlockFilter.notifications(rows, blocked: blocked)
+    }
 }

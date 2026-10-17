@@ -67,9 +67,11 @@ enum DeviceTrips {
 
     /// 変化の知らせを受けてから読み始めるまでの待ち。**前の読みの始まりから `minRunInterval`**、
     /// 少なくとも `changeDelay`
+    /// 2026-10-16 判断: 経った時間は 0 未満にしない。端末の時計を戻すと負になり、待ちが
+    /// 「60秒＋戻した分」（1日戻せば約1日）に延びて、新しい写真が棚に出なかった
     static func runDelay(lastRunStart: Date?, now: Date) -> TimeInterval {
         guard let lastRunStart else { return changeDelay }
-        return max(changeDelay, minRunInterval - now.timeIntervalSince(lastRunStart))
+        return max(changeDelay, minRunInterval - max(0, now.timeIntervalSince(lastRunStart)))
     }
 
     /// 突き合わせてよいか（前の突き合わせから `sweepInterval` 経った）

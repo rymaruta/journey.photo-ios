@@ -42,6 +42,28 @@ enum StorySimpleRules {
         return hasShots ? .write : .clear
     }
 
+    /// ✕ を押したときにどうするか（`UnsavedLeave` から）
+    enum Close: Equatable {
+        /// 確かめずに閉じ、**自動の書きかけも消す**（写真を全部外した・戻した下書きから何も変えていない）
+        case closeClearingAutoDraft
+        /// 閉じる確認を出す（「下書きに保存」「保存せずに閉じる」。どちらも自動の書きかけを消す）
+        case confirm
+        /// 閉じない
+        case stay
+    }
+
+    /// 🔴 **2026-10-16 判断: 変更なし（`.now`）で閉じる道でも自動の書きかけを消す。** 以前は写真を全部外して
+    /// ✕ で閉じると消さず、次に開くと外した写真が「書きかけの続き」で戻った。変更なしで閉じるのは
+    /// 写真が無い（残すものが無い）か、戻した本人の下書きのまま（同じものが本人の下書きに残る）のどちらかなので、
+    /// 自動の枠に残す理由が無い。この画面が触ってよい枠か（`ownsAutoSlot`）は消す側が見る
+    static func close(_ leave: UnsavedLeave) -> Close {
+        switch leave {
+        case .now: return .closeClearingAutoDraft
+        case .confirm: return .confirm
+        case .wait: return .stay
+        }
+    }
+
     /// この画面が自動の枠に触って（書いて・消して）よいか。開いたとき空だった・この画面で尋ねたときだけ
     /// ——尋ねていない書きかけ（送れなかった問いが先に出た・写真を持って開いた回）を黙って上書き・削除しない
     static func ownsAutoSlot(hasAutoDraft: Bool, asked: Bool) -> Bool {

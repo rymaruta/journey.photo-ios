@@ -341,6 +341,12 @@ final class DeviceTripShelfStore: ObservableObject {
 
     /// 読んだ写真の要約（「旅の写真から」の流れに渡す・読み直さない）
     private(set) var shots: [LibraryShot] = []
+    /// 「旅の写真から」の流れに渡す要約。**読み終えた要約があるときだけ**（`nil` ならその場で読み直す）。
+    /// 2026-10-16 判断: 初めての読みの途中で渡すと、まだ読んでいない古い旅が一覧から抜けていた
+    var preloadedShots: [LibraryShot]? {
+        guard index?.complete == true, !shots.isEmpty else { return nil }
+        return shots
+    }
     private var index: DeviceTrips.Index?
     private var loadedFromDisk = false
     /// 一度でも読み始めた（`startIfNeeded`）
@@ -450,9 +456,12 @@ final class DeviceTripShelfStore: ObservableObject {
     }
 
     /// 許されていれば続きを読む（起動・許可した・選び足した）。**読んでいる最中なら、
-    /// 終わったあとにもう一度だけ**（新しい写真を取りこぼさない）
+    /// 終わったあとにもう一度だけ**（新しい写真を取りこぼさない）。
+    /// 2026-10-16 判断: **ログインしていなければ読まない。** ログインせずに「投稿」→「旅の写真から」で
+    /// 写真を許可すると、ここから読み始め、サインアウトで消した要約（撮影日時と位置）を作り直していた。
+    /// 入口ごとに確かめず、ここ1か所で止める（`startIfNeeded`・`addMorePhotos` もここを通る）
     func startIfAllowed() {
-        guard refreshStatus() else { return }
+        guard isSignedIn, refreshStatus() else { return }
         didStart = true
         registerObserver()
         guard task == nil else {

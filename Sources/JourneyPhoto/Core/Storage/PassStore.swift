@@ -113,14 +113,27 @@ final class PassStore: ObservableObject {
 
     // MARK: - 設定
 
+    /// 保存してよいひとこと。連絡先の形は空にする（判定は保存後の字で・`ContactText.normalize`）
+    private static func keptNote(_ text: String) -> String {
+        let cleaned = PassExchange.cleanNote(text)
+        return PassExchange.containsContact(cleaned) ? "" : cleaned
+    }
+
+    /// 保存してよい区間の字。空と連絡先の形は nil（自動の形に戻す）
+    private static func keptLabel(_ text: String) -> String? {
+        let cleaned = PassExchange.cleanLabel(text)
+        guard !cleaned.isEmpty, !PassExchange.containsContact(cleaned) else { return nil }
+        return cleaned
+    }
+
     /// 設定を変える。**ログインしていなければ何もしない**（誰の名刺か決まらない）
     func update(_ change: (inout PassSettings) -> Void) {
         guard userId != nil else { return }
         var next = settings
         change(&next)
-        next.note = PassExchange.cleanNote(next.note)
-        next.originLabel = next.originLabel.map(PassExchange.cleanLabel)
-        next.destinationLabel = next.destinationLabel.map(PassExchange.cleanLabel).flatMap { $0.isEmpty ? nil : $0 }
+        next.note = Self.keptNote(next.note)
+        next.originLabel = next.originLabel.flatMap(Self.keptLabel)
+        next.destinationLabel = next.destinationLabel.flatMap(Self.keptLabel)
         guard next != settings else { return }
         settings = next
         if !next.enabled { PassBundleNotifier.cancelAll() }

@@ -178,7 +178,7 @@ struct PassCardPickView: View {
                 TextField(L("例：霧の朝が好きです", "e.g. I love misty mornings"), text: $note)
                 Text("\(note.count)/\(PassExchange.noteLimit)")
                     .font(JPFont.meta)
-                    .foregroundStyle(noteTooLong ? WebTheme.danger : WebTheme.text3)
+                    .foregroundStyle(PassExchange.noteProblem(note) == nil ? WebTheme.text3 : WebTheme.danger)
                     .accessibilityHidden(true)
             }
         }
