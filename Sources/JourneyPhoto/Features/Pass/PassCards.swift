@@ -179,8 +179,6 @@ enum PassCardStyle {
         let columnWidth: Double
         /// 矢印の中心（並びの左端から）
         let arrowCenter: Double
-        /// 数え方が外れたとき（幅の広い欧文など）だけ効く、最後の縮め（**12pt を割らない**）
-        var emergencyScale: Double { min(1, 12 / fontSize) }
     }
 
     nonisolated static func routeLayout(origin: String, destination: String) -> RouteLayout {
@@ -424,13 +422,18 @@ struct PassCardFront: View {
 
     /// 区間の地名。**大きさは発・着で同じ**（`route.fontSize`）。札は寸法が決まっていて、字の大きさは並びに
     /// 収まるよう数えて決めるので、文字の大きさの設定では動かさない（動かすと片側だけ欄からはみ出して縮み、
-    /// 左右がまたそろわなくなる）。縮めは数え方が外れたときの最後の手だけ（12pt まで）
+    /// 左右がまたそろわなくなる）。
+    ///
+    /// 🔴 **`minimumScaleFactor` を付けない**（2026-10-17 判断）。付けていた版では、Mac の画面写真
+    /// （「東京 → フランス」）で欄に十分収まる「東京」だけが下限（12pt）まで縮み、発と着がそろわなかった。
+    /// 大きさは `routeLayout` で欄に収まるよう数えて決めてあるので、縮めずにその大きさで描く。
+    /// 数え方が外れて収まらないときは、縮めずに末尾を「…」で切る（左右の大きさは崩さない）
     private func routeName(_ text: String, _ route: PassCardStyle.RouteLayout) -> some View {
         Text(text)
             .font(.custom(JPFont.displayName, fixedSize: CGFloat(route.fontSize)))
             .foregroundStyle(WebTheme.text)
             .lineLimit(1)
-            .minimumScaleFactor(CGFloat(route.emergencyScale))
+            .truncationMode(.tail)
     }
 
     @ViewBuilder

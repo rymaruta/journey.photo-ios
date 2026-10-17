@@ -44,7 +44,17 @@ final class PassOwnCardSpinTests: XCTestCase {
         XCTAssertLessThanOrEqual(PassCardStyle.routeEms("フランス") * route.fontSize, route.columnWidth + 1e-9)
     }
 
-    /// 短い地名は大きいまま（30）・上限いっぱい（6 字）でも 15 を割らない・長すぎても 15 で止め、最後の縮めも 12 まで
+    /// 区間の地名は**別々に縮めない**（`minimumScaleFactor` があると、収まる側だけが縮んで左右がそろわない。
+    /// 2026-10-17 の Mac の画面写真で「東京」だけが 12pt まで縮んだ）
+    func testRouteNamesDoNotShrinkSeparately() throws {
+        let cards = try source("Features/Pass/PassCards.swift")
+        guard let start = cards.range(of: "private func routeName(") else { return XCTFail("routeName が無い") }
+        let body = String(cards[start.lowerBound...].prefix(600))
+        XCTAssertFalse(body.contains("minimumScaleFactor"), "発・着が別々に縮み、大きさがそろわなくなる")
+        XCTAssertTrue(body.contains("fixedSize: CGFloat(route.fontSize)"), "発・着が同じ大きさで描かれていない")
+    }
+
+    /// 短い地名は大きいまま（30）・上限いっぱい（6 字）でも 15 を割らない・長すぎても 15 で止める
     func testRouteLayoutBounds() {
         XCTAssertEqual(PassCardStyle.routeLayout(origin: "札幌", destination: "京都").fontSize, PassCardStyle.routeSize)
         let six = String(repeating: "雪", count: PassExchange.labelLimit)
@@ -53,7 +63,6 @@ final class PassOwnCardSpinTests: XCTestCase {
         XCTAssertLessThanOrEqual(PassCardStyle.routeEms(six) * full.fontSize, full.columnWidth + 1e-9, "6 字が欄に収まらない")
         let long = PassCardStyle.routeLayout(origin: "どこかから", destination: "サントリーニ島イアの町はずれ")
         XCTAssertEqual(long.fontSize, 15, accuracy: 1e-9)
-        XCTAssertGreaterThanOrEqual(long.fontSize * long.emergencyScale, 12 - 1e-9, "最後の縮めで 12pt を割る")
         XCTAssertEqual(PassCardStyle.routeLayout(origin: "", destination: "").fontSize, PassCardStyle.routeSize)
         // 欧文は和文より狭く数える（「Somewhere」9 字でも和文 9 字ほど小さくしない）
         XCTAssertLessThan(PassCardStyle.routeEms("Somewhere"), 9)
