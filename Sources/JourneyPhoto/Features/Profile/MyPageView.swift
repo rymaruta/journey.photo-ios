@@ -51,6 +51,8 @@ struct MyPageView: View {
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
+    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
@@ -105,6 +107,7 @@ struct MyPageView: View {
         }
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
+        .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
@@ -956,15 +959,18 @@ struct MyPageView: View {
     /// 「行きたい場所から旅行プランを作る」の行がある）。形は設定・メニューと同じ札と行
     private var tripToolsCard: some View {
         JPCard {
-            // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく
-            NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
-                JPRowLabel(title: L("旅のトランク", "Travel trunk"), systemImage: "suitcase",
-                           detail: L("投稿のお礼に届いた旅のラベルを貼っていく",
-                                     "Stick the travel labels you get for posting"))
+            // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく。
+            // **口が読めたことのある人にだけ出す**（サーバーが出ていない間は隠す・`TrunkAvailability`）
+            if trunkAvailability.isAvailable {
+                NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
+                    JPRowLabel(title: L("旅のトランク", "Travel trunk"), systemImage: "suitcase",
+                               detail: L("投稿のお礼に届いた旅のラベルを貼っていく",
+                                         "Stick the travel labels you get for posting"))
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("trips.trunk")
+                JPCardDivider()
             }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.trunk")
-            JPCardDivider()
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",

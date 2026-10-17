@@ -50,6 +50,8 @@ struct RootView: View {
     /// 旅のトランク: 投稿のお礼に届いたラベル（`TrunkArrivals`・2026-10-17）。出している束
     @ObservedObject private var trunkArrivals = TrunkArrivals.shared
     @State private var trunkBatch: TrunkArrivals.Batch?
+    /// 評価のお願いが決めている最中（届いた画面はこれが終わるまで待つ・`PostModalGate`）
+    @State private var reviewDeciding = false
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -350,9 +352,16 @@ struct RootView: View {
     private var tabsWithTrunkArrival: some View {
         tabsWithPushPrimer
             .onChange(of: trunkArrivals.requests) { _, _ in offerTrunkArrivalWhenIdle() }
+            // 一部だけ上がった回は投稿の画面が開いたまま。閉じたら出し直す（待ちきれずに残った束も）
+            .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensTrunkArrived`・Debug のみ）
             .task { await offerPreviewTrunkArrival() }
             .fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }
+            // 人が替わった（ログアウトを含む）: 前の人に届いた束と一言を捨てる
+            .onChange(of: auth.userId) { _, userId in trunkArrivals.noteUser(userId) }
+            .task { trunkArrivals.noteUser(auth.userId) }
     }
 
     /// **ほかの画面が閉じてから**届いた画面を出す（投稿の画面・Threads への共有の画面が閉じきるまで待つ。
@@ -360,17 +369,24 @@ struct RootView: View {
     /// 手持ちがいっぱいで届かなかった回は、手持ちへ案内する一言（`TrunkText.fullNotice`）
     private func offerTrunkArrivalWhenIdle() {
         Task { @MainActor in
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding, !showPushPrimer { break }
-            }
-            guard !ModalProbe.isPresenting(), !showPushPrimer, trunkBatch == nil else { return }
+            // 通知の説明 → 評価のお願い → 届いた画面の順（`PostModalGate`）
+            let ready = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                                 until: PostModalGate.trunkMayShow,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            guard ready else { return }
             if let batch = trunkArrivals.consume() {
                 trunkBatch = batch
             } else if let notice = trunkArrivals.consumeNotice() {
                 toasts.show(notice.text, kind: .info)
             }
         }
+    }
+
+    /// いま出ているものの様子（`PostModalGate` に渡す）
+    private func postModalSnapshot() -> PostModalSnapshot {
+        PostModalSnapshot(modalPresenting: ModalProbe.isPresenting(), pushPrimerDeciding: pushPrimer.isDeciding,
+                          pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
+                          trunkPending: trunkArrivals.hasPending, trunkShowing: trunkBatch != nil)
     }
 
     private func offerPreviewTrunkArrival() async {
@@ -430,11 +446,14 @@ struct RootView: View {
             // 通知の説明と1つの判断にする（2026-10-11 判断・`PushPrimerStore.letsReviewAsk`）。
             // 同じ投稿のあとに両方の合図が来る。説明が決め終わるまで待ち、説明を出した回は頼まない
             let offeredAtStart = pushPrimer.alreadyOffered
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding { break }
-            }
-            guard !ModalProbe.isPresenting(), !showPushPrimer,
+            // 届いた画面はこの判断が終わるまで待つ（評価の窓と全画面を重ねない・`PostModalGate`）
+            reviewDeciding = true
+            defer { reviewDeciding = false }
+            _ = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                         until: PostModalGate.reviewWaitIsOver,
+                                         sleep: { try? await Task.sleep(nanoseconds: 1_500_000_000) })
+            // 届いた画面が出ている・出すものが残っている間は頼まない（次のうれしい瞬間に回す）
+            guard PostModalGate.reviewMayAsk(postModalSnapshot()),
                   pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
                   reviewPrompt.consume() else { return }
             #if canImport(StoreKit)

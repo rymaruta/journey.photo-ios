@@ -60,6 +60,30 @@ enum TrunkText {
           "The place and season stay; only the design is redone. The shape, colors and picture change.")
     }
 
+    /// 作り直しの画面の段（2026-10-17 判断: **開いただけでは回数を使わない**。「作り直す」を押して初めて使う）
+    enum RerollStep: Equatable {
+        /// まだ作り直していない。押すと1回使って候補3つ（`left` は今月の残り）
+        case start(left: Int)
+        /// 候補が出ている（選ぶまで残る・回数はもう使った）
+        case choosing([Int])
+        /// 今月の回数を使い切った
+        case noneLeft
+        /// Pro でない
+        case notPro
+    }
+
+    static func rerollStep(_ state: TrunkState?, labelId: String) -> RerollStep {
+        guard let state else { return .start(left: 0) }
+        if let pending = state.pendingReroll, pending.labelId == labelId { return .choosing(Array(pending.seeds.prefix(3))) }
+        guard state.isPro else { return .notPro }
+        return state.rerollsLeft > 0 ? .start(left: state.rerollsLeft) : .noneLeft
+    }
+
+    /// 「作り直す · 今月あと 2 回」
+    static func rerollStartTitle(left: Int) -> String {
+        L("作り直す · 今月あと \(max(0, left)) 回", "Redo · \(max(0, left)) left this month")
+    }
+
     /// 作り直しの断り（サーバーの `code`）を画面の言葉に
     static func refusal(code: String?, fallback: String) -> String {
         switch code {
@@ -82,7 +106,7 @@ enum TrunkText {
     struct Stats: Equatable {
         /// 貼ったラベル
         let stuck: Int
-        /// か国・地域（貼ったラベルの国の数。国の分からない国内のラベルは日本に数える）
+        /// か国・地域（貼ったラベルの国の数。**国名が分かるものだけ**数える・2026-10-17 の読み直し）
         let countries: Int
         /// いちばん古いラベルの年（無ければ nil）
         let sinceYear: Int?
@@ -92,7 +116,6 @@ enum TrunkText {
         var countries = Set<String>()
         for label in state.stuck {
             if let c = label.place.country { countries.insert(c) }
-            else if !label.place.name.isEmpty { countries.insert("日本") }
         }
         let years = (state.stuck + state.pocket).compactMap { $0.day?.year }
         return Stats(stuck: state.stuck.count, countries: countries.count, sinceYear: years.min())

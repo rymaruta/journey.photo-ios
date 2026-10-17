@@ -296,12 +296,15 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView() }"))
         // 評価のお願いと重ねない（2026-10-11）: 説明が決め終わるまで待ち、出ている・出した回は頼まない
         XCTAssertTrue(root.contains("defer { pushPrimer.finishDeciding() }"), "説明を決め終えても評価の待ちを解いていない")
-        XCTAssertTrue(root.contains(", !pushPrimer.isDeciding { break }"),
+        // 2026-10-17: 待ち方と条件は `PostModalGate` に寄せた（条件そのものは TrunkReviewFixesTests が振る舞いで見る）
+        XCTAssertTrue(root.contains("until: PostModalGate.reviewWaitIsOver"),
                       "評価のお願いが説明を決め終わるのを待っていない")
+        XCTAssertFalse(PostModalGate.reviewWaitIsOver(PostModalSnapshot(pushPrimerDeciding: true)))
+        XCTAssertFalse(PostModalGate.reviewMayAsk(PostModalSnapshot(pushPrimerShowing: true)),
+                       "評価のお願いが、出ている通知の説明を見ていない")
         let rootLines = root.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        // 評価のお願いの guard（出ている画面を見る行）の終わりに、出ている説明を見る条件がある
-        guard let guardLine = rootLines.firstIndex(where: { $0.hasPrefix("guard !") && $0.hasSuffix(", !showPushPrimer,") }) else {
-            return XCTFail("評価のお願いが、出ている通知の説明を見ていない（`!showPushPrimer`）")
+        guard let guardLine = rootLines.firstIndex(where: { $0 == "guard PostModalGate.reviewMayAsk(postModalSnapshot())," }) else {
+            return XCTFail("評価のお願いが、出ている画面を見ていない")
         }
         XCTAssertEqual(rootLines[guardLine + 1], "pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),",
                        "説明を出した回にも評価を頼む")

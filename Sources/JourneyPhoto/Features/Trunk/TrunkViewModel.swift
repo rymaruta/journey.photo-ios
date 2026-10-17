@@ -106,6 +106,27 @@ final class TrunkViewModel: ObservableObject {
         }
     }
 
+    /// 届いた画面の「トランクに貼る」。**読めていなければ読み直してから貼る。それでも読めなければ一言を出す**
+    /// （黙って何もしない、をなくす・2026-10-17 の読み直し）
+    @discardableResult
+    func stickEnsuringLoaded(_ id: String, offline: Bool = false) async -> Bool {
+        if state == nil { await load(offline: offline) }
+        guard state != nil else {
+            switch phase {
+            case .failed(let message): actionError = message
+            case .offline: actionError = Labels.Common.unreachable
+            default: actionError = Labels.Common.loadFailed
+            }
+            return false
+        }
+        return await stick(id)
+    }
+
+    /// Pro の案内を閉じたあと（買えたかもしれない）。Pro かどうか・上限・回数を読み直す
+    func refreshAfterPaywall(offline: Bool = false) async {
+        await load(offline: offline)
+    }
+
     @discardableResult
     func stick(_ id: String) async -> Bool {
         await write({ TrunkLocal.stick($0, id: id) }, { try await $0.stick(id) })

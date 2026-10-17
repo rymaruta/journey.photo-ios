@@ -66,7 +66,13 @@ struct LabelArrivedView: View {
         }) {
             TrunkRerollView(model: model, labelId: arrival.label.id)
         }
-        .fullScreenCover(isPresented: $showPaywall) { PaywallView() }
+        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+            // 買えたかもしれない: 作り直せるか読み直す
+            Task { await model.refreshAfterPaywall() }
+        }) { PaywallView() }
+        // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（作り直しの「図柄を決めました」・
+        // 貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
+        .overlay(alignment: .top) { ToastOverlay() }
         .accessibilityIdentifier("trunk.arrived")
     }
 
@@ -171,9 +177,8 @@ struct LabelArrivedView: View {
             }
             Button {
                 Task {
-                    // まだ読めていなければ読んでから貼る（貼る口は書いたあとの状態を返すので、元の状態が要る）
-                    if model.state == nil { await model.load(offline: false) }
-                    if await model.stick(arrival.label.id) {
+                    // まだ読めていなければ読んでから貼る。それでも読めなければ一言を出す（`stickEnsuringLoaded`）
+                    if await model.stickEnsuringLoaded(arrival.label.id) {
                         toasts.show(L("トランクに貼りました", "Stuck on your trunk"))
                         dismiss()
                     }

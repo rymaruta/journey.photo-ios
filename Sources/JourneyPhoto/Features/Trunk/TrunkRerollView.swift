@@ -2,7 +2,8 @@ import SwiftUI
 
 /// 図柄を作り直す（Pro・月3回・モック Reroll.dc.html・2026-10-17）。
 ///
-/// 開いたら作り直しを1回使い（同じラベルの選びかけがあればそれを出す＝回数を使わない）、
+/// 2026-10-17 判断: **開いただけでは回数を使わない。** まず「作り直す · 今月あと N 回」を出し、押したときに
+/// 1回使って候補3つを出す（押し間違いで開いて減らさない）。同じラベルの選びかけがあれば、それをすぐ出す。
 /// サーバーが出した候補3つと「いまの」図柄から選ぶ。選んで「この図柄にする」で決まる。
 /// **選ばずに閉じても候補は残る**（サーバーの `pendingReroll`）——次に開くと同じ候補が出る。
 struct TrunkRerollView: View {
@@ -13,7 +14,8 @@ struct TrunkRerollView: View {
     @EnvironmentObject private var toasts: ToastCenter
     /// 選んでいる種（nil は最初の候補）
     @State private var chosenSeed: Int?
-    @State private var starting = true
+    /// 作り直しを頼んでいる最中
+    @State private var rolling = false
 
     private var label: TrunkLabel? { model.state?.pocket.first { $0.id == labelId } }
 
@@ -36,13 +38,7 @@ struct TrunkRerollView: View {
                 }
             }
         }
-        .task {
-            // 開いたら1回だけ作り直す（選びかけがあればそれを出す）
-            guard starting else { return }
-            await model.reroll(labelId)
-            chosenSeed = candidates.first
-            starting = false
-        }
+        .onAppear { chosenSeed = candidates.first }
         .accessibilityIdentifier("trunk.reroll")
     }
 
@@ -73,7 +69,7 @@ struct TrunkRerollView: View {
         let options = [label.seed] + candidates
         let seed = chosenSeed ?? candidates.first ?? label.seed
         return VStack(spacing: 0) {
-            TrunkProTag(height: 22)
+            TrunkProTag()
                 .padding(.top, 10)
             Text(TrunkText.rerollLead)
                 .font(.subheadline)
@@ -93,19 +89,42 @@ struct TrunkRerollView: View {
             }
             .frame(height: 250)
             .padding(.top, 12)
-            if starting && candidates.isEmpty {
-                ProgressView()
-                    .tint(WebTheme.muted2)
-                    .frame(height: 96)
-                    .padding(.top, 16)
-            } else if candidates.isEmpty {
-                Text(model.actionError ?? TrunkText.refusal(code: "noRerollsLeft", fallback: ""))
+            switch TrunkText.rerollStep(model.state, labelId: labelId) {
+            case .start(let left):
+                VStack(spacing: 10) {
+                    Button {
+                        Task {
+                            rolling = true
+                            await model.reroll(labelId)
+                            chosenSeed = candidates.first
+                            rolling = false
+                        }
+                    } label: {
+                        TrunkButtonFace(title: TrunkText.rerollStartTitle(left: left))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(rolling || model.busy)
+                    .opacity(rolling ? 0.4 : 1)
+                    .accessibilityIdentifier("trunk.reroll.start")
+                    if rolling { ProgressView().tint(WebTheme.muted2) }
+                    if let error = model.actionError {
+                        Text(error)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+            case .noneLeft, .notPro:
+                Text(model.actionError ?? TrunkText.refusal(code: model.state?.isPro == false ? "proOnly" : "noRerollsLeft",
+                                                            fallback: ""))
                     .font(JPFont.footnote)
                     .foregroundStyle(TrunkStyle.muted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                     .padding(.top, 16)
-            } else {
+            case .choosing:
                 Text(L("候補から選ぶ", "Choose a design"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)

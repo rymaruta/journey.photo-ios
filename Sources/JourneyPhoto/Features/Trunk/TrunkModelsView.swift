@@ -187,7 +187,10 @@ struct TrunkProModelsView: View {
         .webScreen()
         .navigationTitle(L("特別なトランク", "Special trunks"))
         .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(isPresented: $showPaywall) { PaywallView() }
+        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+            // 買えたかもしれない: Pro の型を選べるか読み直す
+            Task { await model.refreshAfterPaywall() }
+        }) { PaywallView() }
         .accessibilityIdentifier("trunk.proModels.screen")
     }
 
@@ -210,7 +213,7 @@ struct TrunkProModelsView: View {
                             .font(JPFont.display(24, relativeTo: .title2))
                             .foregroundStyle(WebTheme.text)
                         Spacer(minLength: 0)
-                        TrunkProTag(height: 22)
+                        TrunkProTag()
                     }
                     if let concept = info.concept {
                         Text(concept)

@@ -40,7 +40,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(rootView.contains(".fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }"))
         XCTAssertTrue(rootView.contains("tabsWithTrunkArrival"), "届いた画面の修飾子が繋がっていない")
         XCTAssertTrue(rootView.contains("toasts.show(notice.text, kind: .info)"), "いっぱいのときの一言が無い")
-        XCTAssertTrue(rootView.contains("!Modal" + "Probe.isPresenting(), !showPushPrimer, trunkBatch == nil"), "投稿の画面が出ている間に重ねている")
+        XCTAssertTrue(rootView.contains("until: PostModalGate.trunkMayShow"), "届いた画面が順番の決まりを通っていない")
+        XCTAssertTrue(rootView.contains("guard PostModalGate.reviewMayAsk(postModalSnapshot())"), "評価のお願いが順番の決まりを通っていない")
     }
 
     /// 窓口は `TrunkService` 1つで、`AppEnvironment` が組む
@@ -106,5 +107,15 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(preview.contains("static let trunkSampleKey = \"JPPreviewTrunk\""))
         XCTAssertTrue(preview.contains("static let trunkArrivedKey = \"JPPreviewTrunkArrived\""))
         XCTAssertNil(PreviewSession.trunkSample, "テストでは見本が効いていない")
+    }
+
+    /// 知らせ: 押して進む画面には重ねず（`RootView` の全体の知らせ）、全画面の届いた画面にだけ置く。
+    /// 画面の組みは Linux で描けないので書き方で見る（振る舞いは Mac の画面写真）
+    func testToastPlacement() throws {
+        for path in ["Features/Trunk/TrunkView.swift", "Features/Trunk/TrunkPocketView.swift"] {
+            XCTAssertFalse(try source(path).contains("ToastOverlay()"), "\(path) で知らせが二重に出る")
+        }
+        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains(".overlay(alignment: .top) { ToastOverlay() }"),
+                      "届いた画面の上で知らせが隠れる")
     }
 }

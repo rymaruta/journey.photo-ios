@@ -1456,6 +1456,12 @@ final class UploadViewModel: ObservableObject {
             }
         }
 
+        // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す（`RootView` が待つ）。
+        // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
+        // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
+        TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
+                                     notice: labelNotice)
+
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
         let postedKeys = items.filter { done.contains($0.id) }.map(\.pickerItem)
@@ -1505,10 +1511,6 @@ final class UploadViewModel: ObservableObject {
                     // いいね・コメントが届くのは投稿してから——通知が役に立つ最初の場面（`PushPrimer`・2026-10-11）
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
-                    // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す
-                    // （`RootView` が待つ）。届かなかった理由が「手持ちがいっぱい」「容量」なら、手持ちへ案内する一言
-                    TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
-                                                 notice: labelNotice)
                 }
             } else {
                 errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(

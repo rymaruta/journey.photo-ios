@@ -51,7 +51,25 @@ final class TrunkArrivals: ObservableObject {
 
     private(set) var pendingNotice: Notice?
 
+    /// 束を出す相手（ログアウト・人の切り替えで前の人の束を捨てる）
+    private var owner: String?
+
     init() {}
+
+    /// 出すものがあるか（評価のお願いはこれが空になるまで待つ・`PostModalGate`）
+    var hasPending: Bool { pending != nil || pendingNotice != nil }
+
+    /// 入っている人が替わった（ログアウトを含む）。**前の人に届いた束と一言を捨てる**（2026-10-17 の読み直し）
+    func noteUser(_ userId: String?) {
+        guard userId != owner else { return }
+        owner = userId
+        reset()
+    }
+
+    func reset() {
+        pending = nil
+        pendingNotice = nil
+    }
 
     /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）
     func deliver(_ arrivals: [Arrival], notice: Notice?) {

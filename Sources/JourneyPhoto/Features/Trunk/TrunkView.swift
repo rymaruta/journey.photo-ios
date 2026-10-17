@@ -35,8 +35,11 @@ struct TrunkView: View {
                                     ownerName: ownerName)
                 }
             }
-            .fullScreenCover(isPresented: $showPaywall) { PaywallView() }
-            .overlay(alignment: .bottom) { ToastOverlay().padding(.bottom, 24) }
+            .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+                // 買えたかもしれない: Pro かどうか・上限・回数を読み直す
+                Task { await model.refreshAfterPaywall(offline: connectivity.isOffline) }
+            }) { PaywallView() }
+            // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }
 
     @ViewBuilder

@@ -39,8 +39,11 @@ struct TrunkPocketView: View {
         .fullScreenCover(item: $rerollTarget) { label in
             TrunkRerollView(model: model, labelId: label.id)
         }
-        .fullScreenCover(isPresented: $showPaywall) { PaywallView() }
-        .overlay(alignment: .top) { ToastOverlay() }
+        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+            // 買えたかもしれない: 上限（150 枚）と作り直しを読み直す
+            Task { await model.refreshAfterPaywall() }
+        }) { PaywallView() }
+        // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }
 
     private func content(_ state: TrunkState) -> some View {
@@ -190,7 +193,7 @@ struct TrunkPocketView: View {
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
-                        TrunkProTag(height: 16)
+                        TrunkProTag()
                     }
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))

@@ -194,6 +194,35 @@ final class UploadServiceTests: XCTestCase {
         }
     }
 
+    /// 旅のトランク（2026-10-17 の読み直し）: **一部だけ上がった回でも**、配られたラベルは届いた画面の待ちへ
+    /// （全部上がった分かれ道の内側にしか無かった）
+    @MainActor
+    func testDealtLabelIsHandedOverEvenWhenSomePhotosFail() async {
+        ScriptedProtocol.reset()
+        _ = TrunkArrivals.shared.consume()
+        _ = TrunkArrivals.shared.consumeNotice()
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","kind":"place","place":{"name":"京都"},"seed":5,"at":"2026-10-17T00:00:00Z"}}"#,
+                  once: true),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"処理に失敗しました"}"#),
+        ]
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.items = (0..<2).map { _ in PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil)) }
+
+        await model.submit()
+
+        XCTAssertFalse(model.didPostAll, "前提: 1枚は落ちている")
+        XCTAssertEqual(TrunkArrivals.shared.consume()?.first.label.id, "p1", "一部だけ上がった回に届いたラベルを捨てた")
+    }
+
     /// 束の印の頭（2026-10-02 判断）: 旅の写真の流れから来た投稿は必ず `trip-` で始まり、
     /// ふだんのまとめ投稿には付かない（旅の記録の一冊になるのは前者だけ）
     @MainActor

@@ -47,18 +47,18 @@ enum TrunkStyle {
     }
 }
 
-/// PRO の札（モック: 高さ 18・左右 6・角 4・真鍮の 1pt の縁・11pt 700・字間 0.08em）
+/// PRO の札。**アプリの既存の Pro の札と同じ形**（`OfflineTripCard`・`OfficialSpotView`: 眉ラベルの字・真鍮・
+/// 真鍮 60% の細い縁）で、トランクの中でも高さは1通り（2026-10-17 の読み直し・2026-10-16 の Pro の印の件と同じ理由——
+/// 画面ごと・大きさごとに印の形を割らない）。モックの 18pt・22pt の2つの札はこれに寄せた
 struct TrunkProTag: View {
-    var height: Double = 18
-
     var body: some View {
         Text("PRO")
-            .font(.system(size: 11, weight: .bold))
-            .tracking(11 * 0.08)
+            .jpEyebrow()
             .foregroundStyle(WebTheme.accent)
-            .padding(.horizontal, height > 18 ? 8 : 6)
-            .frame(height: height)
-            .overlay(RoundedRectangle(cornerRadius: height > 18 ? 5 : 4).strokeBorder(WebTheme.accent, lineWidth: 1))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
+                .strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
             .accessibilityLabel("Pro")
     }
 }
