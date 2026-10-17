@@ -1370,8 +1370,11 @@ final class ScreenshotTests: XCTestCase {
         let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 10), "札を押しても束が開かない")
         Thread.sleep(forTimeInterval: 2)
+        // 表はマルス券（2026-10-17 owner「マルス券いいね」）: 「〇〇発 → 〇〇着」と「ずっと有効」
+        XCTAssertTrue(card.label.contains("着"), "表の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
+        XCTAssertTrue(card.label.contains("ずっと有効"), "表に「すれちがいの日から ずっと有効」が無い（\(card.label)）")
         shoot(app, "81-すれちがいのカード（表）")
-        // 写真（きっぷの上 250/430）を押すと全面で見る（2026-10-16 案C）
+        // 写真（きっぷの上 214/430・マルス券）を押すと全面で見る
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
         let photoClose = app.buttons["pass.photo.close"].firstMatch
         XCTAssertTrue(photoClose.waitForExistence(timeout: 5), "写真を押しても全面で見られない")
@@ -1383,6 +1386,8 @@ final class ScreenshotTests: XCTestCase {
         // きっぷの下（写真ではない所）を押すと裏返る
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
         Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(card.label.contains("ご案内"), "裏に「ご案内」の帯が無い（\(card.label)）")
+        XCTAssertTrue(card.label.contains("届きました"), "裏の裾に由来の一行が無い（\(card.label)）")
         shoot(app, "82-すれちがいのカード（裏）")
 
         let close = app.buttons["pass.viewer.close"].firstMatch
@@ -1445,6 +1450,10 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         // 呼び名は「わたしの乗車券」（2026-10-17 owner）
         XCTAssertTrue(app.navigationBars["わたしの乗車券"].firstMatch.exists, "選ぶ画面の題が「わたしの乗車券」でない")
+        // 表はマルス券（2026-10-17）: 「東京発、フランス着」と読む・「乗車券」の名
+        XCTAssertTrue(card.label.contains("発、") && card.label.contains("着"),
+                      "見本の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
+        XCTAssertTrue(card.label.contains("乗車券"), "見本の表に「乗車券」が無い（\(card.label)）")
         shoot(app, "85-自分のカード（表・東京→フランス）")
         let flip = app.buttons["pass.pick.flip"].firstMatch
         XCTAssertTrue(flip.exists, "回さずに裏を見る口（「裏を見る」）が無い")
@@ -1455,6 +1464,7 @@ final class ScreenshotTests: XCTestCase {
         flip.tap()
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(value().hasSuffix("裏"), "「裏を見る」で裏にならない（\(value())）")
+        XCTAssertTrue(card.label.contains("届きます"), "見本の裏の裾が自分向け（「届きます」）でない（\(card.label)）")
         shoot(app, "86-自分のカード（裏）")
         // 表に戻してから、指を置いて横に回す（ScrollView の中でも回る・離すと近い面＝裏に吸い付く）
         flip.tap()

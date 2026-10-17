@@ -35,7 +35,8 @@ struct PassCardPickView: View {
                        origin: PassTicket.previewOrigin(originChoice, text: originText, homePrefecture: pass.homePrefecture),
                        destination: PassTicket.previewDestination(custom: destinationCustom, text: destinationText),
                        name: profile?.name ?? L("あなた", "You"), distance: nil, date: nil,
-                       alighting: L("旅先のあたり 下車", "Got off around your trip"))
+                       count: PassTicket.countLabel(.plain, meetingCount: nil),
+                       via: PassTicket.via(L("旅先", "your trip")))
     }
 
     /// 見本の裏（相手に届く形・会ってから決まる区間と回数は「—」・`PassTicketBackFace.preview`）
@@ -62,8 +63,8 @@ struct PassCardPickView: View {
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
                 // 相手に届くきっぷ（束の画面と同じ回る部品 `PassSpinTicket`・同じ手つき・2026-10-16 owner の頼み）。
-                // 区間の右・日時・下車は会ってから決まるので、見本では「旅先」とする。番号は受け取った側の帳の順
-                // なので出さない。裏の区間（km）・回数も会ってから決まるので「—」
+                // 区間の右・経由は会ってから決まるので、見本では「旅先」とする。番号は受け取った側の帳の順
+                // なので出さない。日付・区間（km）・回数も会ってから決まるので、表・裏とも「—」（2026-10-17 マルス券）
                 // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
                 PassSpinCard(front: previewFace, back: previewBack,
                              spokenName: L("相手に届くカード", "the card others receive"))
@@ -194,7 +195,7 @@ struct PassCardPickView: View {
     }
 
     /// 乗車券の区間（発・着）。**自分で書いた字は署名が無い**ので、受け取った側では「相手の端末から届いた文」の扱い
-    /// （通報・伏せる）になる。下車の行は書いた字に関わらず、受け取った側の位置で自動
+    /// （通報・伏せる）になる。「経由」の行は書いた字に関わらず、受け取った側の位置で自動
     private var routeSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             JPEyebrowLine(L("乗車券の区間", "Ticket route"))
@@ -209,7 +210,7 @@ struct PassCardPickView: View {
                 JPRadioRow(title: L("自分で書く", "Write my own"), selected: originChoice == .custom) { originChoice = .custom }
                     .accessibilityIdentifier("pass.pick.origin.custom")
                 JPCardDivider()
-                JPRadioRow(title: L("出さない（どこかから）", "Don\u{2019}t show (somewhere)"), selected: originChoice == .hidden) {
+                JPRadioRow(title: L("出さない（どこか発）", "Don\u{2019}t show (somewhere)"), selected: originChoice == .hidden) {
                     originChoice = .hidden
                 }
                 .accessibilityIdentifier("pass.pick.origin.hidden")
@@ -237,8 +238,8 @@ struct PassCardPickView: View {
                            placeholder: L("例：北陸ひとり旅", "e.g. Hokuriku"), text: $destinationText,
                            id: "pass.pick.destination.text")
             }
-            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「〇〇のあたり 下車」の行は、受け取った人の位置で自動です。",
-                   "What you write reaches the other device as is (unsigned). The \u{201C}got off around …\u{201D} line always uses where they were."))
+            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「経由 〇〇のあたり」の行は、受け取った人の位置で自動です。",
+                   "What you write reaches the other device as is (unsigned). The \u{201C}via …\u{201D} line always uses where they were."))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)

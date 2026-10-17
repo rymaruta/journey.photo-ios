@@ -76,10 +76,15 @@ final class PassWiringTests: XCTestCase {
     /// きっぷ（案C）: 表は写真・眉・区間・破線・改札の穴、裏は帯・ご案内・4つの欄
     func testTicketShape() throws {
         let cards = try source("Features/Pass/PassCards.swift")
-        for part in ["PassTicketArrow()", "PassTicketDash()", "PassTicketPunch()", "PassTicket.eyebrow(face.kind)",
-                     "L(\"ご案内\", \"NOTICE\")", "L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")",
-                     "L(\"区間\", \"Distance\")", "L(\"回数\", \"Times\")", "PassTicketEdge(kind: face.kind, shine: shine)"] {
+        // 2026-10-17 マルス券: 表の改札の穴はやめ（破線は裏へ）、種類の名は「乗車券」の位置（`face.headline`）
+        for part in ["PassTicketArrow()", "PassTicketDash(shine: shine)", "PassTicketHead(text: face.headline)",
+                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, shine: shine)"] {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
+        }
+        let ticket = try source("Core/Text/PassTicket.swift")
+        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Distance\")",
+                     "L(\"回数\", \"Times\")", "L(\"日付\", \"Date\")"] {
+            XCTAssertTrue(ticket.contains(part), "きっぷの欄に \(part) が無い")
         }
         XCTAssertTrue(try source("Features/Pass/PassBookView.swift").contains("PassTicketSlot(content: content)"))
     }

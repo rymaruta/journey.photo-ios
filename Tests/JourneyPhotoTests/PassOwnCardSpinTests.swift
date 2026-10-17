@@ -34,14 +34,16 @@ final class PassOwnCardSpinTests: XCTestCase {
     /// 🔴 「東京 → フランス」: 発・着は同じ大きさ（長い方＝4 字が欄に収まる大きさ）・矢印は並びの中央
     func testRouteLayoutSharesOneSizeAndCentersArrow() {
         let route = PassCardStyle.routeLayout(origin: "東京", destination: "フランス")
-        XCTAssertEqual(route.fontSize, PassCardStyle.routeColumnWidth / 4, accuracy: 1e-9, "長い方に合わせていない")
+        XCTAssertEqual(route.fontSize, (PassCardStyle.routeColumnWidth - route.markWidth) / 4, accuracy: 1e-9,
+                       "長い方（と「発」「着」）に合わせていない")
         XCTAssertLessThan(route.fontSize, PassCardStyle.routeSize)
         XCTAssertEqual(route, PassCardStyle.routeLayout(origin: "フランス", destination: "東京"), "左右で大きさが変わる")
         XCTAssertEqual(route.arrowCenter, PassCardStyle.routeWidth / 2, accuracy: 1e-9, "矢印が中央にない")
         XCTAssertEqual(route.columnWidth * 2 + PassCardStyle.arrowWidth + PassCardStyle.arrowGap * 2,
                        PassCardStyle.routeWidth, accuracy: 1e-9, "左右の欄が同じ幅で並びを埋めない")
-        // 4 字の欄に 4 字が入る
-        XCTAssertLessThanOrEqual(PassCardStyle.routeEms("フランス") * route.fontSize, route.columnWidth + 1e-9)
+        // 4 字の欄に 4 字と「着」が入る
+        XCTAssertLessThanOrEqual(PassCardStyle.routeEms("フランス") * route.fontSize + route.markWidth,
+                                 route.columnWidth + 1e-9)
     }
 
     /// 区間の地名は**別々に縮めない**（`minimumScaleFactor` があると、収まる側だけが縮んで左右がそろわない。
@@ -59,10 +61,11 @@ final class PassOwnCardSpinTests: XCTestCase {
         XCTAssertEqual(PassCardStyle.routeLayout(origin: "札幌", destination: "京都").fontSize, PassCardStyle.routeSize)
         let six = String(repeating: "雪", count: PassExchange.labelLimit)
         let full = PassCardStyle.routeLayout(origin: six, destination: "京都")
-        XCTAssertGreaterThanOrEqual(full.fontSize, PassCardStyle.routeSize * Double(PassCardStyle.routeMinScale))
-        XCTAssertLessThanOrEqual(PassCardStyle.routeEms(six) * full.fontSize, full.columnWidth + 1e-9, "6 字が欄に収まらない")
+        XCTAssertGreaterThanOrEqual(full.fontSize, PassCardStyle.routeMinSize)
+        XCTAssertLessThanOrEqual(PassCardStyle.routeEms(six) * full.fontSize + full.markWidth, full.columnWidth + 1e-9,
+                                 "6 字と「発」が欄に収まらない")
         let long = PassCardStyle.routeLayout(origin: "どこかから", destination: "サントリーニ島イアの町はずれ")
-        XCTAssertEqual(long.fontSize, 15, accuracy: 1e-9)
+        XCTAssertEqual(long.fontSize, PassCardStyle.routeMinSize, accuracy: 1e-9)
         XCTAssertEqual(PassCardStyle.routeLayout(origin: "", destination: "").fontSize, PassCardStyle.routeSize)
         // 欧文は和文より狭く数える（「Somewhere」9 字でも和文 9 字ほど小さくしない）
         XCTAssertLessThan(PassCardStyle.routeEms("Somewhere"), 9)
@@ -73,12 +76,13 @@ final class PassOwnCardSpinTests: XCTestCase {
     func testFrontUsesSharedRouteLayout() throws {
         let cards = try source("Features/Pass/PassCards.swift")
         for part in ["let route = PassCardStyle.routeLayout(origin: face.origin, destination: face.destination)",
-                     "routeName(face.origin, route)\n                        .frame(width: CGFloat(route.columnWidth), alignment: .trailing)",
-                     "routeName(face.destination, route)\n                        .frame(width: CGFloat(route.columnWidth), alignment: .leading)",
+                     "routeColumn(face.origin, mark: PassTicket.originMark, route)\n                .frame(width: CGFloat(route.columnWidth), alignment: .trailing)",
+                     "routeColumn(face.destination, mark: PassTicket.destinationMark, route)\n                .frame(width: CGFloat(route.columnWidth), alignment: .leading)",
+                     "routeName(text, route)",
                      ".font(.custom(JPFont.displayName, fixedSize: CGFloat(route.fontSize)))"] {
             XCTAssertTrue(cards.contains(part), "区間の描き方が違う: \(part)")
         }
-        XCTAssertFalse(cards.contains(".minimumScaleFactor(PassCardStyle.routeMinScale)"), "発・着が別々に縮む")
+        XCTAssertFalse(cards.contains("PassCardStyle.routeMinScale"), "発・着が別々に縮む")
         XCTAssertFalse(cards.contains("Spacer(minLength: CGFloat(PassCardStyle.arrowGap))"), "矢印が字数で中央からずれる")
     }
 

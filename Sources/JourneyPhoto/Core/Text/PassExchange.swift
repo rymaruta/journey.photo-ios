@@ -29,7 +29,7 @@ enum PassExchange {
         var showsFrom: Bool
         /// 裏に書くひとこと（`noteLimit` 字まで・改行なし）
         var note: String
-        /// 乗車券の「発」を自分で書いた字（空なら自動: `showsFrom` なら居住地の都道府県・でなければ「どこかから」）。
+        /// 乗車券の「発」を自分で書いた字（空なら自動: `showsFrom` なら居住地の都道府県・でなければ「どこか」）。
         /// **2026-10-16 判断**（owner「発・着を自分で決めたい」）。`labelLimit` 字まで
         var origin: String = ""
         /// 乗車券の「着」を自分で書いた字（空なら自動: 受け取った側がすれちがった所）
