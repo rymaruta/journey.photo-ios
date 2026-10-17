@@ -26,7 +26,8 @@ final class LevelMotion: ObservableObject {
     /// 持った向きが変わった
     var onQuarterChange: ((Int) -> Void)?
 
-    private static let manager = CMMotionManager()
+    /// 2026-10-17: 乗車券の券面の光（`PassTiltMotion`）もこの1つを使う（アプリに1つ・撮る画面と券面は同時に出ない）
+    static let manager = CMMotionManager()
 
     /// 傾きを読める端末か
     var available: Bool { Self.manager.isDeviceMotionAvailable }

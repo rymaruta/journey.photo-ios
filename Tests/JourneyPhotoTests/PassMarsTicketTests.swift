@@ -187,7 +187,8 @@ final class PassMarsTicketTests: XCTestCase {
         for part in ["PassTicketRule(opacity: PassCardStyle.photoRuleOpacity, shine: shine)",
                      "PassTicketHead(text: face.headline)", "if let via = face.via",
                      "ForEach(Array(face.fields.enumerated())", "Text(PassTicket.frontValidity)",
-                     "PassTicketEdge(kind: face.kind, shine: shine)", "PassTicketGlow(kind: face.kind)"] {
+                     "PassTicketEdge(kind: face.kind, corner: corner, shine: shine)",
+                     "PassTicketGlow(kind: face.kind, corner: corner)"] {
             XCTAssertTrue(front.contains(part), "表に \(part) が無い")
         }
         XCTAssertFalse(front.contains("PassTicketPunch"), "表に前の改札の穴が残っている")

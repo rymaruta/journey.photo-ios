@@ -35,9 +35,12 @@ final class PassRadio: NSObject, ObservableObject {
     static let characteristicUUID = CBUUID(string: "6A3E2C1C-7F44-4D0B-9C3E-1B5A0D2F8E61")
     /// 版 2 の中身の特性（発・着の字つき・2026-10-16）。**版 1 と並べて出す**——前のアプリとも交換できる
     static let characteristicV2UUID = CBUUID(string: "6A3E2C1D-7F44-4D0B-9C3E-1B5A0D2F8E61")
+    /// 版 3 の中身の特性（券面の番号つき・2026-10-17）。**版 1・2 と並べて出す**——版 2 までの前のアプリとも交換できる
+    static let characteristicV3UUID = CBUUID(string: "6A3E2C1E-7F44-4D0B-9C3E-1B5A0D2F8E61")
 
-    /// 読む特性を選ぶ: **版 2 があれば版 2、無ければ版 1**（前のアプリの端末は版 1 だけを出している）
+    /// 読む特性を選ぶ: **版 3 があれば版 3、無ければ版 2、無ければ版 1**（前のアプリの端末は版 2 か 1 だけを出している）
     static func characteristicToRead(_ uuids: [CBUUID]) -> CBUUID? {
+        if uuids.contains(characteristicV3UUID) { return characteristicV3UUID }
         if uuids.contains(characteristicV2UUID) { return characteristicV2UUID }
         if uuids.contains(characteristicUUID) { return characteristicUUID }
         return nil
@@ -67,8 +70,10 @@ final class PassRadio: NSObject, ObservableObject {
     /// 中心の管理者が復元の識別子つきか（許可を尋ねるためだけに作った管理者は付いていない）
     private var centralRestorable = false
     private var peripheralManager: CBPeripheralManager?
-    /// 載せている中身（版 2・nil なら止めている）。足し終えたかはこの中身で見分ける
+    /// 載せている中身（版 3・nil なら止めている）。足し終えたかはこの中身で見分ける
     private var payload: Data?
+    /// 版 2 の中身（版 2 までのアプリ向け・同じ設定から作るので、版 3 が同じなら同じ）
+    private var v2Payload: Data?
     /// 版 1 の中身（前のアプリ向け・同じ設定から作るので、版 2 が同じなら同じ）
     private var legacyPayload: Data?
     /// 足し終えた（`didAdd` が成功した）サービスの中身。同じなら足し直さない
@@ -106,12 +111,13 @@ final class PassRadio: NSObject, ObservableObject {
     ///
     /// 🔴 **初めて管理者を作ったときに、OS の Bluetooth の許可のダイアログが出る**。
     /// オンにする説明（`PassIntroSheet`）を見せてからだけ呼ぶ
-    func apply(payload next: Data?, legacy: Data? = nil, foreground: Bool = false) {
+    func apply(payload next: Data?, v2: Data? = nil, legacy: Data? = nil, foreground: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let next else { stop(); return }
         let wasForeground = self.foreground
         self.foreground = foreground
         payload = next
+        v2Payload = v2
         legacyPayload = legacy
         isRunning = true
         // 許可を尋ねるためだけに作った管理者（識別子なし）は作り直す——OS に起こされたときに復元できない
@@ -150,6 +156,7 @@ final class PassRadio: NSObject, ObservableObject {
 
     func stop() {
         payload = nil
+        v2Payload = nil
         legacyPayload = nil
         publishedPayload = nil
         pendingAdds = []
@@ -292,9 +299,13 @@ final class PassRadio: NSObject, ObservableObject {
         manager.removeAllServices()
         publishedPayload = nil
         var characteristics: [CBCharacteristic] = [
-            CBMutableCharacteristic(type: Self.characteristicV2UUID, properties: [.read],
+            CBMutableCharacteristic(type: Self.characteristicV3UUID, properties: [.read],
                                     value: payload, permissions: [.readable]),
         ]
+        if let v2Payload, v2Payload.count <= PassExchange.payloadByteLimit {
+            characteristics.append(CBMutableCharacteristic(type: Self.characteristicV2UUID, properties: [.read],
+                                                           value: v2Payload, permissions: [.readable]))
+        }
         if let legacyPayload, legacyPayload.count <= PassExchange.payloadByteLimit {
             characteristics.append(CBMutableCharacteristic(type: Self.characteristicUUID, properties: [.read],
                                                            value: legacyPayload, permissions: [.readable]))
@@ -379,7 +390,8 @@ extension PassRadio: CBPeripheralDelegate {
             finish(peripheral, succeeded: false)
             return
         }
-        peripheral.discoverCharacteristics([Self.characteristicV2UUID, Self.characteristicUUID], for: service)
+        peripheral.discoverCharacteristics([Self.characteristicV3UUID, Self.characteristicV2UUID, Self.characteristicUUID],
+                                           for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
@@ -546,8 +558,9 @@ final class PassCoordinator {
     /// 決め直す（設定を変えた・人が替わった）
     func refresh(now: Date = Date()) {
         if store.exchangeAllowed(isForeground: isForeground, now: now), let payload = store.payload {
-            radio.apply(payload: PassExchange.encode(payload), legacy: PassExchange.encodeV1(payload),
-                        foreground: isForeground)
+            // 版 3（券面つき）・版 2・版 1 を並べて出す（前のアプリとも交換できる・2026-10-17）
+            radio.apply(payload: PassExchange.encodeV3(payload), v2: PassExchange.encode(payload),
+                        legacy: PassExchange.encodeV1(payload), foreground: isForeground)
         } else {
             radio.stop()
         }
