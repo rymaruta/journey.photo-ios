@@ -33,7 +33,8 @@ struct TrunkView: View {
             .fullScreenCover(isPresented: $showSpin) {
                 if let state = model.state {
                     TrunkSpinViewer(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                                    ownerName: ownerName, parts: state.equipped)
+                                    ownerName: ownerName, parts: state.equipped,
+                                    wrinkles: TrunkWrinkles(userId: auth.userId).strengths)
                 }
             }
             .fullScreenCover(isPresented: $showPaywall, onDismiss: {
@@ -131,7 +132,8 @@ struct TrunkView: View {
                 // モック: 360×300 を 1.05 倍・少し傾けて（rotateX 5°・rotateY -7°・rotate -1°）378×318 の枠に。
                 // 幅の狭い画面では枠ごと縮める（左右に 6 ずつ）
                 TrunkFigureFit(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                               ownerName: ownerName, parts: state.equipped, maxWidth: 360)
+                               ownerName: ownerName, parts: state.equipped,
+                               wrinkles: TrunkWrinkles(userId: auth.userId).strengths, maxWidth: 360)
                     .scaleEffect(1.05)
                     .rotation3DEffect(.degrees(5), axis: (x: 1, y: 0, z: 0), perspective: 0.36)
                     .rotation3DEffect(.degrees(-7), axis: (x: 0, y: 1, z: 0), perspective: 0.36)

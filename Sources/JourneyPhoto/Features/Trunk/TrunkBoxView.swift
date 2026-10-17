@@ -857,11 +857,13 @@ struct TrunkFigure: View {
     var stuck: [TrunkLabel] = []
     var ownerName: String?
     var parts: TrunkEquipped = .none
+    /// 動かしてよれたラベル（`TrunkWrinkles`・どの画面のトランクも同じ見た目に）
+    var wrinkles: [String: Double] = [:]
     let width: Double
 
     var body: some View {
         let k = width / TrunkLooks.canvasWidth
-        TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts)
+        TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
             .scaleEffect(k, anchor: .topLeading)
             .frame(width: width, height: TrunkLooks.canvasHeight * k, alignment: .topLeading)
             .accessibilityElement(children: .ignore)
@@ -879,11 +881,12 @@ struct TrunkFigureFit: View {
     var stuck: [TrunkLabel] = []
     var ownerName: String?
     var parts: TrunkEquipped = .none
+    var wrinkles: [String: Double] = [:]
     let maxWidth: Double
 
     var body: some View {
         GeometryReader { geo in
-            TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+            TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles,
                         width: min(maxWidth, Double(geo.size.width)))
                 .frame(width: geo.size.width, height: geo.size.height)
         }

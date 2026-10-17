@@ -303,6 +303,7 @@ struct TrunkEquipView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var auth: AuthStore
     @State private var kind: TrunkPartKind?
     @State private var draft: TrunkEquipped?
     @State private var confirmLeave = false
@@ -399,7 +400,8 @@ struct TrunkEquipView: View {
             let k = w / TrunkLooks.canvasWidth
             ZStack(alignment: .topLeading) {
                 TrunkFigure(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                            ownerName: ownerName, parts: working, width: w)
+                            ownerName: ownerName, parts: working,
+                            wrinkles: TrunkWrinkles(userId: auth.userId).strengths, width: w)
                 if let r = TrunkEquipText.outline(current) {
                     RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(WebTheme.accent.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))

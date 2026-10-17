@@ -13,6 +13,8 @@ struct TrunkSpinViewer: View {
     var ownerName: String?
     /// 付けている部品（2026-10-17 次の版）
     var parts: TrunkEquipped = .none
+    /// 動かしてよれたラベル（トランクの画面と同じ見た目に）
+    var wrinkles: [String: Double] = [:]
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -60,7 +62,8 @@ struct TrunkSpinViewer: View {
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
-            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts)
+            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+                                          wrinkles: wrinkles)
         }
     }
 
@@ -96,9 +99,9 @@ enum TrunkTextures {
     }
 
     static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?,
-                     parts: TrunkEquipped = .none) -> MedalTextures.Faces {
+                     parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                                        parts: parts))
+                                        parts: parts, wrinkles: wrinkles))
         let back = render(TrunkBoxView(model: model, posts: posts, stuck: [], ownerName: nil, bodyOnly: true))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))

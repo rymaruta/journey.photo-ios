@@ -88,8 +88,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
-        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        parts: parts)"),
-                      "回す画面の表に付けた部品が出ない（2026-10-17 次の版）")
+        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        parts: parts, wrinkles: wrinkles))"),
+                      "回す画面の表に付けた部品とよれが出ない（2026-10-17 次の版）")
         XCTAssertTrue(spin.contains(".accessibilityAction(named: L(\"裏返す\", \"Turn over\"))"))
     }
 
@@ -207,5 +207,15 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(stick.contains("await flush()\n                        dismiss()"), "「完了」が溜まった置き場を送らずに閉じる")
         XCTAssertTrue(stick.contains(".onDisappear { sendLeftovers() }"), "閉じたときに残りを捨てる")
         XCTAssertFalse(stick.contains("commitTask?.cancel()"), "保存の予定が1つだけに戻った")
+    }
+
+    /// よれ（貼り直した紙）は貼る画面だけでなく、トランクを描くどの画面にも同じく出す（画面ごとに見た目を割らない）
+    func testWrinklesReachEveryTrunk() throws {
+        for path in ["Features/Trunk/TrunkView.swift", "Features/Trunk/TrunkPartsBoxView.swift"] {
+            XCTAssertTrue(try source(path).contains("wrinkles: TrunkWrinkles(userId: auth.userId).strengths"), "\(path) によれが無い")
+        }
+        XCTAssertTrue(try source("Features/Trunk/TrunkStickView.swift").contains("wrinkles: wrinkles, pop: pop"))
+        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles)"),
+                      "TrunkFigure がよれを箱に渡していない")
     }
 }
