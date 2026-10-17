@@ -203,20 +203,26 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(gacha.contains("if !unit.isEmpty {"))
     }
 
-    /// 回して間もなく閉じても保存する（「完了」は送ってから閉じる・閉じた画面は残りを送る）
+    /// 回して間もなく閉じても保存する。送れなければ閉じずに「もう一度」「保存せずに閉じる」を聞く
+    /// （送る順序・数え方は `TrunkPlaceCommitterTests` が振る舞いで見る）
     func testStickScreenFlushesOnClose() throws {
         let stick = try source("Features/Trunk/TrunkStickView.swift")
-        XCTAssertTrue(stick.contains("let ok = await flush()"), "「完了」が溜まった置き場を送らずに閉じる")
-        XCTAssertTrue(stick.contains("if ok {\n                            dismiss()"), "送れなかったのに閉じる")
+        XCTAssertTrue(stick.contains("let ok = await places.flush()"), "「完了」が溜まった置き場を送らずに閉じる")
+        XCTAssertTrue(stick.contains("if ok { dismiss() } else { showSaveFailed = true }"), "送れなかったのに閉じる・出る道が無い")
+        XCTAssertTrue(stick.contains("Button(L(\"保存せずに閉じる\", \"Close without saving\"))"))
+        XCTAssertTrue(stick.contains("places.discardAll()\n                dismiss()"), "保存せずに閉じても送る")
         XCTAssertTrue(stick.contains("Text(L(\"保存しています\", \"Saving\"))"), "送っている間に何も出さない")
-        // 2本指: 取り消されても下がる印・回し始めたラベルを送る・取り消し後に予定を作り直さない
+        XCTAssertTrue(stick.contains(".onDisappear { places.sendLeftovers() }"), "閉じたときに残りを捨てる")
+        XCTAssertFalse(stick.contains("捨て"))
+        // 2本指: 取り消されても下がる印・回し始めたラベルを送ってから印を下げる
         XCTAssertTrue(stick.contains("@GestureState private var rotating = false"))
         XCTAssertTrue(stick.contains(".updating($rotating) { _, state, _ in state = true }"))
-        XCTAssertTrue(stick.contains("if let id = rotatingId { scheduleCommit(id, delay: 0) }"), "回したラベルではなく選んでいるラベルを送る")
+        XCTAssertTrue(stick.contains(".onChange(of: rotating) { _, now in"), "取り消されたときに回した1枚を送らない")
+        XCTAssertTrue(stick.contains("if let id = rotatingId { places.schedule(id, delay: 0) }"))
         XCTAssertTrue(stick.contains("guard !rotatedDuringDrag else {"), "2本指のあとの離しで選び直す")
-        XCTAssertTrue(stick.contains("attempt < 5, !Task.isCancelled"), "取り消したあとに予定を作り直す")
-        XCTAssertTrue(stick.contains(".onDisappear { sendLeftovers() }"), "閉じたときに残りを捨てる")
-        XCTAssertFalse(stick.contains("commitTask?.cancel()"), "保存の予定が1つだけに戻った")
+        XCTAssertTrue(stick.contains("case .saved?, .superseded?:"), "すぐ後に回すと、運んだよれ・音が付かない")
+        XCTAssertTrue(try source("Features/Trunk/TrunkPlaceCommitter.swift").contains("attempt < 5, !Task.isCancelled"),
+                      "取り消したあとに予定を作り直す")
     }
 
     /// よれ（貼り直した紙）は貼る画面だけでなく、トランクを描くどの画面にも同じく出す（画面ごとに見た目を割らない）

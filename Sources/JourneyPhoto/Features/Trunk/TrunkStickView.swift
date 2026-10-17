@@ -38,8 +38,8 @@ struct TrunkStickView: View {
     /// 手持ちの札を押さえてから、縦に動かしたか（横なら並びを送る）
     @State private var trayIntent: [String: Bool] = [:]
     @State private var selectedId: String?
-    /// 保存を待っている置き場（ラベルごと・回した・動かした）。画面の上にはこれを出す
-    @State private var pending = TrunkPendingPlaces()
+    /// 保存を待っている置き場（ラベルごと・回した・動かした）。画面の上にはこれを出す（`TrunkPlaceCommitter`）
+    @StateObject private var places = TrunkPlaceCommitter()
     /// 貼るのを待っている1枚（応答の前から、離した所に出す）
     @State private var pendingStick: TrunkLabel?
     @State private var steps: [Step] = []
@@ -55,10 +55,12 @@ struct TrunkStickView: View {
     @State private var rotatingId: String?
     /// 今の1本目の指の間に2本指で回した（離したときに「押しただけ」で選び直さない）
     @State private var rotatedDuringDrag = false
+    /// トランクの上を1本目の指で押さえている最中（2本指のあとの離しを見分ける）
+    @GestureState private var dragging = false
     /// 「完了」で送っている最中
     @State private var saving = false
-    /// 保存の予定（ラベルごと）
-    @State private var commitTasks: [String: Task<Void, Never>] = [:]
+    /// 「完了」で送れなかった（もう一度・保存せずに閉じる を選ぶ）
+    @State private var showSaveFailed = false
 
     private let space = "trunk.stick"
 
@@ -96,10 +98,37 @@ struct TrunkStickView: View {
         .background { TrunkStyle.stageBackground(centerY: 0.34) }
         .sensoryFeedback(.impact(weight: .medium), trigger: stickTicks)
         .task {
+            places.bind(model)
+            places.onSaved = { id, from in steps.append(.moved(id, from: from)) }
             wrinkles = TrunkWrinkles(userId: auth.userId).strengths
             if model.state == nil { await model.load(offline: false) }
         }
-        .onDisappear { sendLeftovers() }
+        .onDisappear { places.sendLeftovers() }
+        // 2本指が取り消されても（onEnded が来なくても）回した1枚を送ってから、印を全部下げる
+        .onChange(of: rotating) { _, now in
+            guard !now else { return }
+            if let id = rotatingId { places.schedule(id, delay: 0) }
+            rotatingId = nil
+            rotateBase = nil
+            if !dragging { rotatedDuringDrag = false }
+        }
+        .onChange(of: dragging) { _, now in
+            // 1本目が離れた・取り消された: 離しの処理（onEnded）のあとで下げる
+            guard !now else { return }
+            Task { @MainActor in rotatedDuringDrag = false }
+        }
+        .confirmationDialog(L("置き場を保存できませんでした", "Couldn\u{2019}t save where your labels are"),
+                            isPresented: $showSaveFailed, titleVisibility: .visible) {
+            Button(L("もう一度", "Try again")) { Task { await finish() } }
+            Button(L("保存せずに閉じる", "Close without saving")) {
+                // 溜まった置き場は送らない（トランクは元の置き場で描く）
+                places.discardAll()
+                dismiss()
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(model.actionError ?? TrunkText.placeNotSaved)
+        }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.stick")
@@ -108,7 +137,15 @@ struct TrunkStickView: View {
     private var state: TrunkState? { model.state }
 
     /// 画面の上だけで動かしている置き場（保存を待っている分）
-    private var overrides: [String: TrunkPos] { pending.overrides }
+    private var overrides: [String: TrunkPos] { places.overrides }
+
+    /// 「完了」: 溜まった置き場を送ってから閉じる。送れなければ閉じずに、もう一度か保存せずに閉じるかを聞く
+    private func finish() async {
+        saving = true
+        let ok = await places.flush()
+        saving = false
+        if ok { dismiss() } else { showSaveFailed = true }
+    }
 
     /// 描く貼ったラベル（待っている1枚を先頭に）
     private var stuck: [TrunkLabel] {
@@ -151,16 +188,7 @@ struct TrunkStickView: View {
                 Spacer()
                 Button {
                     // 回して間もなく閉じても、溜まった置き場を送ってから閉じる。送れなければ閉じずに一言
-                    Task {
-                        saving = true
-                        let ok = await flush()
-                        saving = false
-                        if ok {
-                            dismiss()
-                        } else if model.actionError == nil {
-                            model.actionError = TrunkText.placeNotSaved
-                        }
-                    }
+                    Task { await finish() }
                 } label: {
                     HStack(spacing: 6) {
                         if saving {
@@ -269,6 +297,7 @@ struct TrunkStickView: View {
     /// トランクの上: 押さえたラベルを動かす・押しただけなら選ぶ
     private func trunkDrag(_ layout: TrunkStickLayout) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
+            .updating($dragging) { _, state, _ in state = true }
             .onChanged { value in
                 guard !model.busy else { return }
                 let moved = abs(Double(value.translation.width)) + abs(Double(value.translation.height))
@@ -316,13 +345,9 @@ struct TrunkStickView: View {
                 guard let id = rotatingId ?? target?.id, let base = rotateBase ?? currentPos(id) else { return }
                 if rotatingId == nil { rotatingId = id }
                 if rotateBase == nil { rotateBase = base }
-                pending.note(id, from: pending[id]?.from ?? base, to: TrunkPlacement.rotated(base, by: value.rotation.degrees))
+                places.note(id, from: base, to: TrunkPlacement.rotated(base, by: value.rotation.degrees))
             }
-            .onEnded { _ in
-                rotateBase = nil
-                if let id = rotatingId { scheduleCommit(id, delay: 0) }
-                rotatingId = nil
-            }
+            // 指を離した・取り消された、のどちらも `onChange(of: rotating)` で送って印を下げる
     }
 
     // MARK: 回す
@@ -356,8 +381,8 @@ struct TrunkStickView: View {
     private func rotateButton(_ label: String, symbol: String, delta: Double, id: String) -> some View {
         Button {
             guard let target, let base = currentPos(target.id) else { return }
-            pending.note(target.id, from: pending[target.id]?.from ?? base, to: TrunkPlacement.rotated(base, by: delta))
-            scheduleCommit(target.id, delay: 0.5)
+            places.note(target.id, from: base, to: TrunkPlacement.rotated(base, by: delta))
+            places.schedule(target.id, delay: 0.5)
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 17, weight: .semibold))
@@ -369,62 +394,6 @@ struct TrunkStickView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
-    }
-
-    /// 回したのを少し待ってから保存する（押すたびに書かない）。**予定はラベルごと**——別のラベルを回しても
-    /// 前のラベルの保存は消えない
-    private func scheduleCommit(_ id: String, delay: Double, attempt: Int = 0) {
-        commitTasks[id]?.cancel()
-        commitTasks[id] = Task {
-            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
-            guard !Task.isCancelled else { return }
-            // 送っている間に取り消された（新しい予定ができた）なら、作り直さない
-            if await commit(id) == .busy, attempt < 5, !Task.isCancelled {
-                // ほかの書き込みが終わらなかった: 置き場は残したまま、少し待ってやり直す
-                scheduleCommit(id, delay: 0.3, attempt: attempt + 1)
-            }
-        }
-    }
-
-    /// 1枚の置き場を送る。送れたら戻す1手を足す・断られたら画面の置き場を戻す・混んでいたら残す
-    @discardableResult
-    private func commit(_ id: String) async -> TrunkViewModel.PlaceOutcome? {
-        guard let item = pending[id] else { return nil }
-        let outcome = await model.placeWhenFree(id, at: item.to)
-        switch outcome {
-        case .saved:
-            if TrunkPlacement.clamp(item.from) != TrunkPlacement.clamp(item.to) { steps.append(.moved(id, from: item.from)) }
-            pending.done(id, sent: item.to)
-        case .refused:
-            pending.done(id, sent: item.to)
-        case .busy, .failed, .superseded:
-            // 混んでいた・圏外: 置き場は残す。新しい頼みに負けた: その頼みが送る
-            break
-        }
-        return outcome
-    }
-
-    /// 溜まった置き場を全部送る（「完了」）。全部送れたら true（断られた・圏外・混んでいたら false で、閉じない）
-    private func flush() async -> Bool {
-        for task in commitTasks.values { task.cancel() }
-        commitTasks = [:]
-        var ok = true
-        for id in pending.ids {
-            let outcome = await commit(id)
-            if outcome != .saved && outcome != .superseded { ok = false }
-        }
-        return ok
-    }
-
-    /// 画面が閉じた（「完了」を通らずに）。残っている置き場を送る（画面の状態ではなく値を持って）
-    private func sendLeftovers() {
-        for task in commitTasks.values { task.cancel() }
-        let leftovers = pending.ids.compactMap { id in pending[id].map { (id, $0.to) } }
-        guard !leftovers.isEmpty else { return }
-        let model = model
-        Task { @MainActor in
-            for (id, pos) in leftovers { _ = await model.placeWhenFree(id, at: pos) }
-        }
     }
 
     // MARK: 手持ち
@@ -533,11 +502,12 @@ struct TrunkStickView: View {
         guard TrunkPlacement.canDrop(x: b.x, y: b.y), let from = carry.from else { return }
         let id = carry.label.id
         let pos = TrunkPlacement.moved(from, toX: b.x, y: b.y)
-        pending.note(id, from: pending[id]?.from ?? from, to: pos)
-        commitTasks[id]?.cancel()
+        places.note(id, from: from, to: pos)
+        places.cancelSchedule(id)
         Task {
-            switch await commit(id) {
-            case .saved?:
+            switch await places.commit(id) {
+            case .saved?, .superseded?:
+                // 送れた・すぐ後に回した（その頼みが同じ1枚を送る）: どちらも動かしたことに変わりはない
                 // 貼ったあとに動かすと、紙が少しよれる
                 let store = TrunkWrinkles(userId: auth.userId)
                 store.noteMoved(id)
@@ -545,7 +515,7 @@ struct TrunkStickView: View {
                 stickTicks += 1
                 TrunkSound.stick()
             case .busy?:
-                scheduleCommit(id, delay: 0.3)
+                places.schedule(id, delay: 0.3)
             default:
                 break
             }
