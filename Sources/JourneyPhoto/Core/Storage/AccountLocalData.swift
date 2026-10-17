@@ -27,7 +27,7 @@ enum AccountLocalData {
                        offlineTripsRoot: URL? = nil,
                        passRoot: URL? = nil) {
         guard !userId.isEmpty else { return }
-        // 🔴 **すれちがいの電波を先に止める**（2026-10-16）。止めないと、消した後も前の名刺を出し続け、
+        // 🔴 **すれちがいの電波を先に止める**（2026-10-16）。止めないと、消した後も前の乗車券を出し続け、
         // 手元に持っている帳が次の保存で書き戻される
         if PassStore.shared.userId == userId {
             PassStore.shared.use(userId: nil)
@@ -52,7 +52,7 @@ enum AccountLocalData {
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）
         OfflineTripStore.removeData(for: userId, root: offlineTripsRoot, defaults: defaults)
-        // すれちがいの帳と設定（受け取ったカード・名刺の一枚・ひとこと）
+        // すれちがいの帳と設定（受け取ったカード・乗車券・ひとこと）
         PassStore.removeData(for: userId, root: passRoot, defaults: defaults)
         // 旅のトランク（2026-10-17）: 入口を出すかの覚え・古び方の区切りの知らせを出した印
         TrunkAvailability.removeData(for: userId, defaults: defaults)

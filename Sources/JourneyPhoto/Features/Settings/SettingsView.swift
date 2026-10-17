@@ -214,8 +214,8 @@ struct SettingsView: View {
         section(L("すれちがい", "Pass")) {
             NavigationLink { PassSettingsView() } label: {
                 JPRowLabel(title: L("すれちがい", "Pass"),
-                           detail: L("旅先で近くにいた人と、名刺の一枚をカードで交換する",
-                                     "Swap a calling-card photo with people you pass on your travels"),
+                           detail: L("旅先で近くにいた人と、わたしの乗車券をカードで交換する",
+                                     "Swap your ticket with people you pass on your travels"),
                            value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
             }
             .buttonStyle(JPRowButtonStyle())

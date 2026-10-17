@@ -33,9 +33,8 @@ struct PassViewerView: View {
     /// きっぷの横の回り（ラジアン・0 が表）。**90° を越えたら裏**（`SpinMotion.showsBack`）。
     /// 2026-10-16 判断（owner「このカードも回転できるようにしたい」）: メダルと同じ手触りで指で回す
     @State private var yaw: Double = 0
-    /// 指を置いた時の回りと時刻（回すか払うかを決める・`PassSpinGesture`）
-    @State private var dragBaseYaw: Double?
-    @State private var dragStartAt: Date?
+    /// 指を置いた時の回りと時刻（回すか払うかを決める・`PassSpinGesture`）。自分のカードの見本と同じ手つき
+    @State private var spin = PassSpinDrag()
     /// 「視差効果を減らす」・きっぷの外で払っている間の横のずれ
     @State private var drag: CGFloat = 0
 
@@ -82,7 +81,7 @@ struct PassViewerView: View {
                 .gesture(
                     DragGesture(minimumDistance: 12)
                         .onChanged { value in
-                            if dragStartAt == nil { dragStartAt = Date() }
+                            spin.begin(yaw: yaw)
                             drag = value.translation.width
                         }
                         .onEnded { value in
@@ -202,7 +201,9 @@ struct PassViewerView: View {
             // 後ろに重なる2枚（残りがあるときだけ・板の傾き 4°・2°）
             if index + 2 < shown.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
             if index + 1 < shown.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
-            PassSpinTicket(yaw: yaw, content: content, reduceMotion: reduceMotion) { fullPhoto = content.photo }
+            PassSpinTicket(yaw: yaw, front: content.face(), back: content.backFace(), reduceMotion: reduceMotion) {
+                fullPhoto = content.photo
+            }
             .offset(x: drag)
             .rotationEffect(.degrees(Double(drag) / 24))
             .contentShape(Rectangle())
@@ -210,17 +211,13 @@ struct PassViewerView: View {
             .gesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
-                        if dragStartAt == nil {
-                            dragStartAt = Date()
-                            dragBaseYaw = yaw
-                        }
+                        spin.begin(yaw: yaw)
                         if reduceMotion {
                             drag = value.translation.width
                         } else {
                             // 置いてすぐは回りを弱める（払いなら裏を見せない・`PassSpinGesture.liveYaw`）
-                            yaw = PassSpinGesture.liveYaw(base: dragBaseYaw ?? yaw, dx: Double(value.translation.width),
-                                                          width: Double(PassCardStyle.deckSize.width),
-                                                          elapsed: Date().timeIntervalSince(dragStartAt ?? Date()))
+                            yaw = spin.liveYaw(current: yaw, dx: Double(value.translation.width),
+                                               width: Double(PassCardStyle.deckSize.width))
                         }
                     }
                     .onEnded { value in
@@ -229,6 +226,7 @@ struct PassViewerView: View {
                     }
             )
             .accessibilityElement(children: .combine)
+            .accessibilityValue(PassSpinTicket.spokenSide(yaw))
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
                                          : L("押すと裏返します", "Tap to flip the card"))
@@ -261,10 +259,7 @@ struct PassViewerView: View {
 
     /// 指を離した。回す（近い面に吸い付く）か、次／前のカードか（`PassSpinGesture.classify`）
     private func endDrag(translation: Double, predicted: Double, onCard: Bool) {
-        let duration = dragStartAt.map { Date().timeIntervalSince($0) } ?? 1
-        let base = dragBaseYaw
-        dragStartAt = nil
-        dragBaseYaw = nil
+        let (duration, base) = spin.end()
         let outcome = PassSpinGesture.classify(translation: translation, predicted: predicted, duration: duration,
                                                onCard: onCard, reduceMotion: reduceMotion,
                                                swipeDistance: Double(Self.swipeDistance))
@@ -356,36 +351,3 @@ struct PassViewerView: View {
         }
     }
 }
-
-/// 回るきっぷ（表・裏）。**角度を補間して描く**（`Animatable`）——裏返す途中の 90° で表と裏が替わる。
-/// 縁と破線の光は角度から（`SpinMotion.shine`・真鍮の線の上だけ）。「視差効果を減らす」では回さず、光も流さない
-struct PassSpinTicket: View, Animatable {
-    var yaw: Double
-    let content: PassCardContent
-    let reduceMotion: Bool
-    let onPhotoTap: () -> Void
-
-    var animatableData: Double {
-        get { yaw }
-        set { yaw = newValue }
-    }
-
-    var body: some View {
-        let back = SpinMotion.showsBack(yaw)
-        let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)
-        ZStack {
-            // 写真を押すと全面で見る（写真の上は白だけ）。裏を見ている間は表を押させない
-            PassCardFront(face: content.face(), onPhotoTap: onPhotoTap, shine: shine)
-                .opacity(back ? 0 : 1)
-                .allowsHitTesting(!back)
-            PassCardBack(content: content, shine: shine)
-                // 回すときは、裏が鏡に映らないように先に半回転しておく（回さないときはそのまま）
-                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
-                .opacity(back ? 1 : 0)
-                .allowsHitTesting(back)
-        }
-        .rotation3DEffect(.radians(reduceMotion ? 0 : yaw), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
-        .rotationEffect(.degrees(back ? 1 : -1.5))
-    }
-}
-

@@ -11,9 +11,7 @@ struct RootView: View {
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
-    /// 「構図を重ねて撮る」（Pro）の確かめに使う（渡し終えた回数・2026-10-10）
-    @EnvironmentObject private var store: StoreService
-    /// 投稿のシートの「構図を重ねて撮る」（Pro・作例なし）を開く流れ（`ComposeGuideLauncher`）
+    /// 投稿のシートの「構図を重ねて撮る」（作例なし・2026-10-17 から全員無料）を開く流れ（`ComposeGuideLauncher`）
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
     @State private var pendingCapture: CameraCapture?
@@ -714,15 +712,12 @@ struct RootView: View {
         }
     }
 
-    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、Pro の確かめ（Pro でなければ案内）を経て作例なしで開く
+    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、作例なしで開く
+    /// （2026-10-17 判断: 全員無料。Pro の確かめもサーバーへの問い合わせもしない・`ComposeGuideLauncher`）
     private func openCompositionIfRequested() {
         guard openCompositionAfterPostSheet else { return }
         openCompositionAfterPostSheet = false
-        Task {
-            await ComposeGuidePresenter.request(
-                composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) },
-                auth: auth, store: store, environment: environment, toasts: toasts)
-        }
+        composeLauncher.open(make: { ComposeGuide.Launch(sample: nil, samples: []) })
     }
 
     /// 構図を重ねて撮る画面が閉じきった。「投稿」で撮った1枚があれば投稿画面を開く

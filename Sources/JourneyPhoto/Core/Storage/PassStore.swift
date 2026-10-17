@@ -126,7 +126,7 @@ final class PassStore: ObservableObject {
         return cleaned
     }
 
-    /// 設定を変える。**ログインしていなければ何もしない**（誰の名刺か決まらない）
+    /// 設定を変える。**ログインしていなければ何もしない**（誰の乗車券か決まらない）
     func update(_ change: (inout PassSettings) -> Void) {
         guard userId != nil else { return }
         var next = settings
@@ -140,7 +140,7 @@ final class PassStore: ObservableObject {
         save()
     }
 
-    /// 電波に載せる中身。**オンで、名刺の一枚を選んであるときだけ**
+    /// 電波に載せる中身。**オンで、乗車券を選んであるときだけ**
     var payload: PassExchange.Payload? {
         guard userId != nil, settings.enabled, let photoId = settings.cardPhotoId else { return nil }
         // 連絡先の形の字は載せない（前の版で書いて残っている字も・2026-10-16 owner の決定）
@@ -160,7 +160,7 @@ final class PassStore: ObservableObject {
         save()
     }
 
-    /// 自分の居住地の都道府県（「旅のあいだ」・名刺の表の「〇〇から」）
+    /// 自分の居住地の都道府県（「旅のあいだ」・乗車券の表の「〇〇から」）
     var homePrefecture: String? { PassExchange.homePrefecture(homeLocation) }
 
     /// 今日は家から離れているかを覚える（前面で位置が取れた・分からなかった）
@@ -178,7 +178,7 @@ final class PassStore: ObservableObject {
         return away.value
     }
 
-    /// いま交換してよいか（オン・名刺あり・「いつ」の決まり）
+    /// いま交換してよいか（オン・乗車券あり・「いつ」の決まり）
     func exchangeAllowed(isForeground: Bool, now: Date = Date()) -> Bool {
         guard payload != nil else { return false }
         return PassExchange.allowsExchange(mode: settings.mode, isForeground: isForeground,
@@ -188,7 +188,7 @@ final class PassStore: ObservableObject {
     // MARK: - 受け取る
 
     /// この中身を受け取るか（**場所を引く前に**決める——要らない回に位置や地名を引かない）。
-    /// 自分の名刺・同じ日に同じ写真・1日の上限を超えた回は受け取らない
+    /// 自分の乗車券・同じ日に同じ写真・1日の上限を超えた回は受け取らない
     func accepts(_ payload: PassExchange.Payload, at date: Date = Date()) -> Bool {
         guard userId != nil, settings.enabled else { return false }
         if payload.photoId == settings.cardPhotoId { return false }
@@ -397,9 +397,15 @@ final class PassStore: ObservableObject {
                 id: UUID().uuidString, photoId: id, note: index == 0 ? "夕方の街を歩くのが好き" : "",
                 showsFrom: true, metHour: PassExchange.hourStart(met, calendar: calendar),
                 deliverAt: now.addingTimeInterval(-60), placeName: names[index % names.count],
-                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil)
+                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil,
+                // 1枚目は和文2字と和文4字の区間（字数が違っても発・着の大きさがそろい、矢印が中央に来るかを撮る）
+                originLabel: index == 0 ? "東京" : nil, destinationLabel: index == 0 ? "フランス" : nil)
         }
         settings.enabled = true
+        // 自分のカードの見本（乗車券を選ぶ画面）も同じ区間・裏のひとことつきで撮る
+        settings.setOrigin(.custom, text: "東京")
+        settings.setDestination(custom: true, text: "フランス")
+        if settings.note.isEmpty { settings.note = "霧の朝が好きです" }
         save()
     }
 
