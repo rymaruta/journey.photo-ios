@@ -325,8 +325,12 @@ struct TrunkGachaView: View {
                 // 数は SF の等幅の数字（`JPFont.mono`）
                 Text("\(coins)")
                     .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                Text(L("枚", ""))
-                    .font(.subheadline)
+                // 英語は数のあとに字を置かない（空の字と余白を残さない）
+                let unit = L("枚", "")
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.subheadline)
+                }
             }
             .foregroundStyle(WebTheme.text)
             Text(L("· 公開の投稿1件で1枚", "· One per public post"))

@@ -199,6 +199,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(gacha.contains(".sensoryFeedback(.impact(weight: .heavy), trigger: drops)"), "カプセルが落ちたときに触覚が無い")
         XCTAssertTrue(gacha.contains("TrunkGachaOddsView()"), "中身と確率への入口が無い")
         XCTAssertTrue(gacha.contains("if reduceMotion {"), "落ちる弾みを「視差効果を減らす」で止めていない")
+        XCTAssertFalse(gacha.contains("Text(L(\"枚\", \"\"))"), "英語で空の字と余白が残る")
+        XCTAssertTrue(gacha.contains("if !unit.isEmpty {"))
     }
 
     /// 回して間もなく閉じても保存する（「完了」は送ってから閉じる・閉じた画面は残りを送る）
