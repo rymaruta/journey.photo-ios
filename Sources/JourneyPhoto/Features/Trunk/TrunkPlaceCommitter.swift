@@ -11,7 +11,9 @@ import Combine
 /// - 「保存せずに閉じる」（`discardAll`）: 溜まった置き場を送らない（トランクは元の置き場で描く）。
 ///   運んで離した送信も予定（`schedule`）に入れるので、待っている分はここで取り消せる
 /// - 送り終えたら、その予定に付けた知らせ（`then`）を1回だけ呼ぶ（運んだ1枚のよれ・音・触覚）。
-///   後から同じ1枚を回して予定が替わっても、知らせは引き継ぐ。「完了」が送ったときも呼ぶ
+///   後から同じ1枚を回して予定が替わっても、知らせは引き継ぐ。「完了」が送ったときも呼ぶ。
+///   送れなかった（圏外・混んだまま）ときは知らせを残し、あとで「完了」「もう一度」で送れたら呼ぶ。
+///   画面が閉じたあとに送れたときは `closed` を立てて呼ぶ（音・触覚は出さず、よれだけ覚える）
 @MainActor
 final class TrunkPlaceCommitter: ObservableObject {
 
@@ -20,9 +22,13 @@ final class TrunkPlaceCommitter: ObservableObject {
     private weak var model: TrunkViewModel?
     private var tasks: [String: Task<Void, Never>] = [:]
     /// 送り終えたときの知らせ（ラベルごと・1回だけ呼ぶ）
-    private var completions: [String: (TrunkViewModel.PlaceOutcome?) -> Void] = [:]
+    private var completions: [String: Notice] = [:]
     /// ラベルごとの、最後に溜まりから消えた結果（送れた・断られた）。知らせに渡す
     private var lastSent: [String: TrunkViewModel.PlaceOutcome] = [:]
+    /// 送り終えた知らせ。`outcome` は送れた（`.saved`）か断られた（`.refused`）。
+    /// `closed` は画面が閉じたあと（音・触覚は出さない）
+    typealias Notice = (_ outcome: TrunkViewModel.PlaceOutcome, _ closed: Bool) -> Void
+
     /// 送れた1手（id と、動かす前の置き場）。画面の「ひとつ戻す」に積む
     var onSaved: ((String, TrunkPos) -> Void)?
 
@@ -41,7 +47,7 @@ final class TrunkPlaceCommitter: ObservableObject {
     /// 少し待ってから送る。混んでいたら置き場を残してやり直す（取り消されたら作り直さない）。
     /// `then` は送り終えたときに1回だけ呼ぶ（nil なら前の予定の知らせを引き継ぐ）
     func schedule(_ id: String, delay: Double, attempt: Int = 0,
-                  then done: ((TrunkViewModel.PlaceOutcome?) -> Void)? = nil) {
+                  then done: Notice? = nil) {
         if let done { completions[id] = done }
         tasks[id]?.cancel()
         tasks[id] = Task { [weak self] in
@@ -51,16 +57,21 @@ final class TrunkPlaceCommitter: ObservableObject {
             // 待っている頼みを止めるのは `discardAll` の取り下げ（`withdrawPlace`）
             let outcome = await Task { await self.commit(id) }.value
             guard !Task.isCancelled else { return }
-            if outcome == .busy, attempt < 5 {
+            switch outcome {
+            case .busy? where attempt < 5:
                 self.schedule(id, delay: 0.3, attempt: attempt + 1)
-                return
+            case .saved?, .refused?, nil:
+                // nil はもう溜まっていない（ほかの頼みが送った）: その結果で知らせる
+                self.complete(id, outcome ?? self.lastSent[id] ?? .saved)
+            default:
+                // 圏外・混んだまま・新しい頼みに負けた: 知らせは残す（あとで送れたら付ける）
+                break
             }
-            self.complete(id, outcome)
         }
     }
 
-    private func complete(_ id: String, _ outcome: TrunkViewModel.PlaceOutcome?) {
-        completions.removeValue(forKey: id)?(outcome)
+    private func complete(_ id: String, _ outcome: TrunkViewModel.PlaceOutcome, closed: Bool = false) {
+        completions.removeValue(forKey: id)?(outcome, closed)
     }
 
     /// 1枚の置き場を送る。**溜まっていなければ nil**（送ることが無い）
@@ -131,8 +142,8 @@ final class TrunkPlaceCommitter: ObservableObject {
         Task { @MainActor in
             for (id, pos) in leftovers {
                 let outcome = await model.placeWhenFree(id, at: pos)
-                // 運んで離した1枚のよれは、閉じたあとに送れても覚える
-                if outcome == .saved { done[id]?(outcome) }
+                // 運んで離した1枚のよれは、閉じたあとに送れても覚える（閉じた先の画面で音は出さない）
+                if outcome == .saved || outcome == .refused { done[id]?(outcome, true) }
             }
         }
     }

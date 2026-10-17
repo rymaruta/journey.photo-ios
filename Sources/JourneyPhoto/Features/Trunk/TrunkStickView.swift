@@ -509,19 +509,17 @@ struct TrunkStickView: View {
         places.note(id, from: from, to: pos)
         // 送るのも committer の予定に入れる（「保存せずに閉じる」で取り消せる・混んでいたらやり直す）
         let userId = auth.userId
-        places.schedule(id, delay: 0) { outcome in
-            switch outcome {
-            case .saved?, .superseded?, nil:
-                // 送れた・すぐ後に回した（その頼みが同じ1枚を送る）・もう送れていた: どれも動かしたことに変わりはない
-                // 貼ったあとに動かすと、紙が少しよれる
-                let store = TrunkWrinkles(userId: userId)
-                store.noteMoved(id)
-                wrinkles = store.strengths
-                stickTicks += 1
-                TrunkSound.stick()
-            default:
-                break
-            }
+        places.schedule(id, delay: 0) { outcome, closed in
+            // 送れた（すぐ後に回した頼み・「完了」が送った分も）: 動かしたことに変わりはない。断られたら何も付けない
+            guard outcome == .saved else { return }
+            // 貼ったあとに動かすと、紙が少しよれる
+            let store = TrunkWrinkles(userId: userId)
+            store.noteMoved(id)
+            // 閉じたあとに送れた: よれだけ覚え、閉じた先の画面で音・触覚を出さない
+            guard !closed else { return }
+            wrinkles = store.strengths
+            stickTicks += 1
+            TrunkSound.stick()
         }
     }
 

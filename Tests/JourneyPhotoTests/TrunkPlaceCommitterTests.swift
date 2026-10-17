@@ -211,9 +211,9 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         places.bind(model)
         let other = Task { await model.placeWhenFree("c", at: TrunkPos(x: 0.9, y: 0.9, rot: 0)) }
         while !model.busy { await Task.yield() }
-        var told: [TrunkViewModel.PlaceOutcome?] = []
+        var told: [TrunkViewModel.PlaceOutcome] = []
         places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
-        places.schedule("a", delay: 0) { told.append($0) }
+        places.schedule("a", delay: 0) { outcome, _ in told.append(outcome) }
         // 予定が動き出して、書き込みの終わりを待ち始めるまで
         try await Task.sleep(nanoseconds: 60_000_000)
         places.discardAll()
@@ -232,15 +232,15 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         SlowTrunkProtocol.delay = 0.05
         let places = TrunkPlaceCommitter()
         places.bind(model)
-        var told: [TrunkViewModel.PlaceOutcome?] = []
+        var told: [TrunkViewModel.PlaceOutcome] = []
         places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
-        places.schedule("a", delay: 0) { told.append($0) }
+        places.schedule("a", delay: 0) { outcome, _ in told.append(outcome) }
         // 離してすぐ2本指で回した（知らせなしの予定に替わる）
         places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 12))
         places.schedule("a", delay: 0)
         try await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertEqual(told.count, 1, "運んだ知らせが出ない・二重に出た")
-        XCTAssertEqual(told.first ?? nil, .saved)
+        XCTAssertEqual(told.first, .saved)
         XCTAssertTrue(places.pending.isEmpty)
     }
 
@@ -252,9 +252,9 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         places.bind(model)
         let other = Task { await model.placeWhenFree("c", at: TrunkPos(x: 0.9, y: 0.9, rot: 0)) }
         while !model.busy { await Task.yield() }
-        var told: [TrunkViewModel.PlaceOutcome?] = []
+        var told: [TrunkViewModel.PlaceOutcome] = []
         places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
-        places.schedule("a", delay: 0) { told.append($0) }
+        places.schedule("a", delay: 0) { outcome, _ in told.append(outcome) }
         let ok = await places.flush()
         _ = await other.value
         XCTAssertTrue(ok)
@@ -270,12 +270,48 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         SlowTrunkProtocol.delay = 0
         let places = TrunkPlaceCommitter()
         places.bind(model)
-        var told: [TrunkViewModel.PlaceOutcome?] = []
+        var told: [TrunkViewModel.PlaceOutcome] = []
         places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
-        places.schedule("a", delay: 10) { told.append($0) }
+        places.schedule("a", delay: 10) { outcome, _ in told.append(outcome) }
         let ok = await places.flush()
         XCTAssertFalse(ok)
         XCTAssertFalse(told.contains(.saved), "断られたのに送れたと知らせた")
         XCTAssertEqual(told, [.refused])
+    }
+
+    /// 閉じたあと（送り残し）に送れた: 知らせは「閉じたあと」の印つき（閉じた先の画面で音・触覚を出さない）
+    @MainActor
+    func testLeftoversTellAsClosed() async throws {
+        let model = await makeModel()
+        SlowTrunkProtocol.delay = 0
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        var told: [(TrunkViewModel.PlaceOutcome, Bool)] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 10) { told.append(($0, $1)) }
+        places.sendLeftovers()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(told.count, 1)
+        XCTAssertEqual(told.first?.0, .saved)
+        XCTAssertEqual(told.first?.1, true, "閉じたあとの知らせで音・触覚が出る")
+    }
+
+    /// 予定の送信が圏外で失敗: 知らせは使い切らずに残し、あとで「完了」で送れたら付ける
+    @MainActor
+    func testFailedDropKeepsItsNoticeForLater() async throws {
+        let model = await makeModel()
+        SlowTrunkProtocol.status = 500
+        SlowTrunkProtocol.delay = 0
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        var told: [TrunkViewModel.PlaceOutcome] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0) { outcome, _ in told.append(outcome) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(told.isEmpty, "送れていないのに知らせた")
+        SlowTrunkProtocol.status = 200
+        let ok = await places.flush()
+        XCTAssertTrue(ok)
+        XCTAssertEqual(told, [.saved], "あとで送れたのに、よれ・音が付かない")
     }
 }

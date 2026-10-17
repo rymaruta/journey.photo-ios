@@ -45,7 +45,7 @@ final class TrunkWiringTests: XCTestCase {
     func testStickSendsThroughTheCommitter() throws {
         let stick = try source("Features/Trunk/TrunkStickView.swift")
         XCTAssertFalse(stick.contains("places.commit("), "予定の外で送っている（保存せずに閉じても取り消せない）")
-        XCTAssertTrue(stick.contains("places.schedule(id, delay: 0) { outcome in"))
+        XCTAssertTrue(stick.contains("places.schedule(id, delay: 0) { outcome, closed in"))
         XCTAssertTrue(stick.contains("places.onSaved = nil"), "閉じても onSaved が画面を抱え込む")
     }
 
@@ -245,9 +245,10 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(stick.contains(".onChange(of: rotating) { _, now in"), "取り消されたときに回した1枚を送らない")
         XCTAssertTrue(stick.contains("if let id = rotatingId { places.schedule(id, delay: 0) }"))
         XCTAssertTrue(stick.contains("guard !rotatedDuringDrag else {"), "2本指のあとの離しで選び直す")
-        XCTAssertTrue(stick.contains("case .saved?, .superseded?, nil:"), "すぐ後に回すと、運んだよれ・音が付かない")
+        XCTAssertTrue(stick.contains("guard outcome == .saved else { return }"), "断られたのに、運んだよれ・音が付く")
+        XCTAssertTrue(stick.contains("guard !closed else { return }"), "閉じた先の画面で音・触覚が出る")
         let committer = try source("Features/Trunk/TrunkPlaceCommitter.swift")
-        XCTAssertTrue(committer.contains("guard !Task.isCancelled else { return }\n            if outcome == .busy, attempt < 5 {"),
+        XCTAssertTrue(committer.contains("guard !Task.isCancelled else { return }\n            switch outcome {\n            case .busy? where attempt < 5:"),
                       "取り消したあとに予定を作り直す")
     }
 
