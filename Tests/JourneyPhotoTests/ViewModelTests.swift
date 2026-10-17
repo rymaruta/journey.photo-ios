@@ -546,6 +546,39 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.isWorking)
     }
 
+    /// 🔴 **お知らせのフォローバックも、送っている間の2回目は送らない**（2026-10-17）。
+    /// ボタンの `disabled` は描き直しの後にしか効かず、先に終わった方（送らなかった方）が
+    /// 印を下ろすと、1回目の送信中にまた押せた。別の相手は止めない。終わったあとはもう一度送れる
+    func testFollowBackSecondPressWhileSendingIsIgnored() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":2}"#)
+        StubProtocol.respond(path: "/users/u2/follow", status: 200, body: #"{"following":true,"followers":1}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["POST /users/u1/follow": gate])))
+        let model = NotificationsViewModel()
+        let first = Task { await model.followBack("u1", environment: env) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.followBackSending.contains("u1"), "前提: 1本目を送っている")
+        // 1本目はまだ門の手前（要求の記録の前）にいる。2回目で増えていないことだけ見る
+        let u1WhileSending = StubProtocol.requests.filter { $0.contains("/users/u1/") }.count
+        await model.followBack("u1", environment: env)
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("/users/u1/") }.count, u1WhileSending,
+                       "同じ相手の2回目も送った")
+        await model.followBack("u2", environment: env)
+        XCTAssertTrue(StubProtocol.requests.contains("POST /users/u2/follow"), "別の相手まで止めた")
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("/users/u1/") }, ["POST /users/u1/follow"])
+        XCTAssertTrue(model.followBackSending.isEmpty, "終わったあとも送り中のまま")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":2}"#)
+        await model.followBack("u1", environment: env)
+        XCTAssertEqual(StubProtocol.requests, ["POST /users/u1/follow"], "終わったあとに送り直せない")
+        XCTAssertTrue(model.followBackSending.isEmpty)
+    }
+
     /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
     /// 書くと前の人の「フォロー中」が次の人の画面に出て、次の人の読み込みも直さなかった
     func testProfileFollowAnswerForThePreviousViewerIsDropped() async {
