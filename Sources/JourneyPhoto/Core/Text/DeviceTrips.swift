@@ -239,6 +239,17 @@ enum DeviceTrips {
     /// 端末の一冊は共有しない（上の「見える範囲」）
     static func canShare(_ trip: LibraryTrip) -> Bool { false }
 
+    /// 開いている一冊の、いまの形。棚の読み直しで写真が増えていても、同じ id の旅を使い、
+    /// 覚えた土地の時間帯で日を切り直す。
+    ///
+    /// 🔴 **開いたときの値のままにしない**（2026-10-17）。地名を引いて時間帯が分かったあとでも、
+    /// 開いた画面は目安の日のまま残り、「この旅の写真を投稿する」もその日で流れを開いていた。
+    /// 海外の旅は日が1日ずれる（`LibraryTrips.recut`）
+    static func shown(_ opened: LibraryTrip, trips: [LibraryTrip], zones: [String: String]) -> LibraryTrip {
+        let base = trips.first(where: { $0.id == opened.id }) ?? opened
+        return books([base], posted: [], zones: zones, isMine: true).first ?? base
+    }
+
     /// 「旅の写真から」の流れで、棚の一冊に当たる旅（同じ id、無ければ表紙の写真を含む旅）
     static func matching(_ book: LibraryTrip, in trips: [LibraryTrip]) -> LibraryTrip? {
         if let same = trips.first(where: { $0.id == book.id }) { return same }
