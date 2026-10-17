@@ -218,6 +218,61 @@ final class DeviceTripsTests: XCTestCase {
 
     // MARK: - 投稿の流れへ
 
+    /// 🔴 **開いた一冊は、あとから分かった土地の時間帯で日を切り直す**（2026-10-17）。
+    /// 開いたときの値のままだと、海外の旅の日が1日ずれたまま「この旅の写真を投稿する」へ渡る
+    func testShownBookUsesTheResolvedTimeZone() throws {
+        let utc = TimeZone(identifier: "UTC")!
+        // 2026-09-11 20:00 UTC は日本では 2026-09-12 05:00。日をまたぐ
+        let evening = Date(timeIntervalSince1970: 1_789_156_800)
+        let shots = (0..<6).map { i in
+            LibraryShot(id: "k\(i)", date: evening.addingTimeInterval(Double(i) * 3600), lat: kyoto.lat, lng: kyoto.lng)
+        }
+        let homeShots = (0..<8).map { i in
+            LibraryShot(id: "h\(i)", date: evening.addingTimeInterval(Double(-48 + i) * 3600), lat: home.lat, lng: home.lng)
+        }
+        let trip = try XCTUnwrap(LibraryTrips.find(homeShots + shots, home: home, timeZone: utc).first)
+        let shown = DeviceTrips.shown(trip, trips: [trip], zones: [trip.id: tokyo.identifier])
+        XCTAssertEqual(shown.timeZone.identifier, tokyo.identifier)
+        XCTAssertTrue(shown.zoneIsKnown)
+        XCTAssertNotEqual(shown.days.map(\.key), trip.days.map(\.key), "土地の時間帯で日を切り直していない")
+        // 時間帯が無ければ、開いたときの旅のまま
+        XCTAssertEqual(DeviceTrips.shown(trip, trips: [], zones: [:]).days.map(\.key), trip.days.map(\.key))
+    }
+
+    /// 🔴 **投稿の流れは、棚が引いた地名と時間帯をそのまま使う**（2026-10-17）。
+    /// もう一度地図に聞くと、一冊につき1回の約束を破り、答えが返るまで日が目安のままになる。
+    /// 時間帯が無い地名だけは写さない（写すと、流れが時間帯を引きに行かなくなる）
+    @MainActor
+    func testPostFlowReusesThePlaceTheShelfAlreadyLookedUp() async throws {
+        LibraryTripModel.forgetPlaceNames()
+        defer { LibraryTripModel.forgetPlaceNames() }
+        let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
+        let model = LibraryTripModel()
+        model.adoptDevicePlace(of: trip, names: [trip.id: "京都市"], zones: [:])
+        XCTAssertNil(model.name(for: trip.center), "時間帯の無い地名を覚えると、流れが時間帯を引きに行けない")
+        XCTAssertNil(model.zone(for: trip.center))
+
+        model.adoptDevicePlace(of: trip, names: [trip.id: "京都市"], zones: [trip.id: tokyo.identifier])
+        XCTAssertEqual(model.name(for: trip.center), "京都市")
+        XCTAssertEqual(model.zone(for: trip.center)?.identifier, tokyo.identifier)
+        // 流れが先に覚えた分は、棚の別の答えで上書きしない
+        model.adoptDevicePlace(of: trip, names: [trip.id: "別の市"], zones: [trip.id: "Europe/Paris"])
+        XCTAssertEqual(model.name(for: trip.center), "京都市")
+        XCTAssertEqual(model.zone(for: trip.center)?.identifier, tokyo.identifier)
+
+        let list = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Trips/LibraryTripListView.swift"), encoding: .utf8)
+        let task = try XCTUnwrap(list.range(of: "model.adoptDevicePlace"))
+        let load = try XCTUnwrap(list.range(of: "await model.load"))
+        XCTAssertLessThan(task.lowerBound, load.lowerBound, "地名を写す前に旅を探している")
+        let book = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Trips/DeviceTripShelf.swift"), encoding: .utf8)
+        XCTAssertTrue(book.contains("DeviceTrips.shown(trip, trips: store.trips, zones: store.zones)"))
+        XCTAssertTrue(book.contains("openTripImport(shown)"))
+    }
+
     func testMatchingFindsTheSameTripOrTheTripWithTheCover() throws {
         let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
         XCTAssertEqual(DeviceTrips.matching(trip, in: [trip])?.id, trip.id)

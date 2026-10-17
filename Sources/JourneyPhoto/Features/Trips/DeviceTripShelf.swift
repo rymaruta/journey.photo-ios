@@ -259,14 +259,33 @@ struct DeviceTripBookView: View {
 
     let trip: LibraryTrip
     let name: String?
+    /// 開いたあとに地名・時間帯が分かっても、日の切り方を追う（`DeviceTrips.shown`）
+    @ObservedObject private var store: DeviceTripShelfStore
+
+    init(trip: LibraryTrip, name: String?, store: DeviceTripShelfStore = .shared) {
+        self.trip = trip
+        self.name = name
+        _store = ObservedObject(wrappedValue: store)
+    }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
+
+    /// いまの一冊（時間帯が分かっていれば、その土地の日）
+    private var shown: LibraryTrip {
+        DeviceTrips.shown(trip, trips: store.trips, zones: store.zones)
+    }
+
+    /// 棚が引いた地名。開いたときにまだ無ければ、あとから入ったものを使う
+    private var shownName: String? {
+        let resolved = store.names[trip.id]?.trimmingCharacters(in: .whitespaces) ?? ""
+        return resolved.isEmpty ? name : resolved
+    }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 header
-                ForEach(trip.days) { day in
+                ForEach(shown.days) { day in
                     VStack(alignment: .leading, spacing: JPSpace.xs) {
                         Text(LibraryTrips.dayLabel(day, place: nil))
                             .jpEyebrow()
@@ -286,11 +305,11 @@ struct DeviceTripBookView: View {
             .padding(.vertical, JPSpace.m)
         }
         .webScreen()
-        .navigationTitle(DeviceTrips.title(of: trip, name: name))
+        .navigationTitle(DeviceTrips.title(of: shown, name: shownName))
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             Button {
-                TabRouter.shared.openTripImport(trip)
+                TabRouter.shared.openTripImport(shown)
             } label: {
                 Text(L("この旅の写真を投稿する", "Post photos from this trip"))
                     .jpPillButton(JPPillStyle.main(onPhoto: true))
@@ -305,13 +324,13 @@ struct DeviceTripBookView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             DeviceOnlyChip()
-            Text(DeviceTrips.title(of: trip, name: name))
+            Text(DeviceTrips.title(of: shown, name: shownName))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             // 題が期間でも、開いた画面では期間と枚数をそろえて出す
-            Text(LibraryTrips.periodText(trip) + " · " + LibraryTrips.countText(trip))
+            Text(LibraryTrips.periodText(shown) + " · " + LibraryTrips.countText(shown))
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text3)
             Text(L("端末の写真から見つけた旅です。投稿するまで、ほかの人には見えません",
