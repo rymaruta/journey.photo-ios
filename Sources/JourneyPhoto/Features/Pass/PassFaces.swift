@@ -1002,56 +1002,47 @@ struct PassLeatherFace: View {
     }
 }
 
-// MARK: - 選ぶ画面の見本
+// MARK: - 小さく描く地（選ぶ画面の見本・帳の札・ホームの束）
 
-/// 券面の見本（選ぶ画面・64×92）。素材だけを正面の光で描く（写真の窓は暗い四角・字は描かない）
-struct PassFaceSwatch: View {
+/// 券面の地を**小さく描くための軽い形**（300×430 の座標で描き、使う側が縮める・2026-10-17 判断）。
+/// 大きい札の地（`PassBrassMaterial` など）から、小さくすると見えない細かい地紋（ヘアライン・綿紙の粒・金粉・
+/// 革のしぼ）と、傾きで動く光を省き、正面の光で止めた色だけを残す。小さな札では黒に沈む漆と革は、
+/// 覆輪・裾の金の霞・ステッチを太く明るく描く（見本で決めた形）。**写真の窓には何も描かない**（窓の位置は `window`）
+struct PassFaceGround: View {
     let style: PassTicketFaceStyle
 
-    static let size = CGSize(width: 64, height: 92)
+    static let size = CGSize(width: 300, height: 430)
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            material
-            // 写真の窓の位置（暗い四角）
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(0.55))
-                .frame(width: window.width, height: window.height)
-                .offset(x: window.x, y: window.y)
-        }
-        .frame(width: 300, height: 430, alignment: .topLeading)
-        .scaleEffect(Self.size.width / 300, anchor: .topLeading)
-        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var material: some View {
-        switch style {
-        case .mars:
-            ZStack(alignment: .topLeading) {
+            switch style {
+            case .mars:
                 PassCardStyle.face
+                // 写真の下端の真鍮の線（黒い地の側・窓の下）
                 WebTheme.accent.opacity(PassCardStyle.photoRuleOpacity).frame(width: 300, height: 4).offset(y: 214)
-            }
-            .frame(width: 300, height: 430)
-        case .brassPlate: PassBrassMaterial(light: .center)
-        case .greatCircle:
-            ZStack(alignment: .topLeading) {
+            case .brassPlate:
+                let ends = PassFaceLight.gradientPoints(cssDegrees: PassFaceLight.brassAngle(.center))
+                LinearGradient(stops: [
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.brassEdge), location: 0),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.brassMid), location: 0.28),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.brassLight),
+                                  location: PassFaceLight.brassHighlight(.center)),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.brassMid), location: 0.62),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.brassEdge), location: 1),
+                ], startPoint: UnitPoint(x: ends.start.x, y: ends.start.y), endPoint: UnitPoint(x: ends.end.x, y: ends.end.y))
+            case .greatCircle:
                 PassRouteMaterial()
                 PassGreatCircleGrid().offset(y: 206)
                 PassGreatCircleArc(lineWidth: 4, dash: 9).offset(y: 206)
-            }
-        case .foilHard:
-            ZStack(alignment: .topLeading) {
-                PassPaperMaterial()
+            case .foilHard:
+                PassFaceColor.of(PassFacePalette.paper)
                 PassFaceColor.foil(.center).frame(width: 300, height: 6).offset(y: 200)
-                PassFaceColor.foil(.center).frame(width: 150, height: 40).offset(x: 20, y: 240)
-            }
-        case .urushi:
-            // 小さな見本では黒に沈むので、金の覆輪と裾の金の霞を太く・明るく描く（2026-10-17 の読み直し）
-            ZStack(alignment: .topLeading) {
-                PassLacquerMaterial(light: .center)
+            case .urushi:
+                RadialGradient(stops: [
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.lacquerTop), location: 0),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.lacquerMid), location: 0.45),
+                    Gradient.Stop(color: PassFaceColor.of(PassFacePalette.lacquerDeep), location: 1),
+                ], center: UnitPoint(x: 0.3, y: 0.1), startRadius: 0, endRadius: 470)
                 LinearGradient(colors: [Color.clear, PassFaceColor.of(PassFacePalette.goldDust, 0.45)],
                                startPoint: .top, endPoint: .bottom)
                     .frame(width: 300, height: 150)
@@ -1063,28 +1054,71 @@ struct PassFaceSwatch: View {
                                                  startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 10)
                     .frame(width: 282, height: 196)
                     .offset(x: 9, y: 10)
-            }
-        case .leather:
-            // 小さな見本では黒に沈むので、革を明るめに・ステッチを太く描く（2026-10-17 の読み直し）
-            ZStack(alignment: .topLeading) {
-                PassLeatherMaterial(light: .center)
-                PassFaceColor.of(0x8A6A4E, 0.30).frame(width: 300, height: 430)
+            case .leather:
+                PassFaceColor.of(PassFacePalette.leather)
+                PassFaceColor.of(0x8A6A4E, 0.30)
+                RadialGradient(stops: [
+                    Gradient.Stop(color: Color.clear, location: 0.4),
+                    Gradient.Stop(color: Color.black.opacity(0.45), location: 1),
+                ], center: UnitPoint(x: 0.5, y: 0), startRadius: 0, endRadius: 400)
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(WebTheme.accent, style: StrokeStyle(lineWidth: 6, dash: [16, 11]))
                     .frame(width: 270, height: 400)
                     .offset(x: 15, y: 15)
             }
         }
+        .frame(width: 300, height: 430, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
-    /// 写真の窓（券面ごとの位置・300×430 の座標）
-    private var window: (x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {
+    /// 写真の窓（券面ごとの位置・300×430 の座標。大きい札の窓と同じ）
+    nonisolated static func window(_ style: PassTicketFaceStyle) -> CGRect {
         switch style {
-        case .mars: return (0, 0, 300, 214)
-        case .brassPlate: return (14, 14, 272, 196)
-        case .greatCircle, .foilHard: return (0, 0, 300, 200)
-        case .urushi: return (19, 19, 262, 178)
-        case .leather: return (22, 22, 256, 178)
+        case .mars: return CGRect(x: 0, y: 0, width: 300, height: 214)
+        case .brassPlate: return CGRect(x: 14, y: 14, width: 272, height: 196)
+        case .greatCircle, .foilHard: return CGRect(x: 0, y: 0, width: 300, height: 200)
+        case .urushi: return CGRect(x: 19, y: 19, width: 262, height: 178)
+        case .leather: return CGRect(x: 22, y: 22, width: 256, height: 178)
         }
+    }
+
+    /// 窓の角（大きい札と同じ: 01 は 8・21 と 26 は 6・端まで広がる窓は 0）
+    nonisolated static func windowCorner(_ style: PassTicketFaceStyle) -> CGFloat {
+        switch style {
+        case .brassPlate: return 8
+        case .urushi, .leather: return 6
+        case .mars, .greatCircle, .foilHard: return 0
+        }
+    }
+}
+
+// MARK: - 選ぶ画面の見本
+
+/// 券面の見本（選ぶ画面・64×92）。地は `PassFaceGround`（写真の窓は暗い四角・字は描かない）
+struct PassFaceSwatch: View {
+    let style: PassTicketFaceStyle
+
+    static let size = CGSize(width: 64, height: 92)
+
+    var body: some View {
+        let window = PassFaceGround.window(style)
+        ZStack(alignment: .topLeading) {
+            PassFaceGround(style: style)
+            if style == .foilHard {
+                // 箔の字の代わり（見本には字を描かない）
+                PassFaceColor.foil(.center).frame(width: 150, height: 40).offset(x: 20, y: 240)
+            }
+            // 写真の窓の位置（暗い四角）
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.black.opacity(0.55))
+                .frame(width: window.width, height: window.height)
+                .offset(x: window.minX, y: window.minY)
+        }
+        .frame(width: 300, height: 430, alignment: .topLeading)
+        .scaleEffect(Self.size.width / 300, anchor: .topLeading)
+        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityHidden(true)
     }
 }

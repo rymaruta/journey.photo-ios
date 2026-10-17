@@ -391,7 +391,11 @@ final class PassStore: ObservableObject {
 
     /// 見本のカードを入れる（`PreviewSession.passSample`・Debug のみ）。公開一覧の写真から作る。
     /// **起動のたびに入れ直す**（前の回に開いた印が残ると、ホームの札が出ず絵が撮れない）
-    func seedPreview(photoIds: [String], now: Date = Date()) {
+    ///
+    /// 2〜6枚目は特別な券面（01・06・10・21・26）にし、その持ち主を**端末の中だけ** Pro の姿にする（2026-10-17・
+    /// 帳の札とホームの束で券面の地が分かるかを撮る）。1枚目はマルス券のまま（束の表の絵）
+    func seedPreview(photos: [Photo], now: Date = Date()) {
+        let photoIds = photos.map(\.id)
         guard userId != nil, !photoIds.isEmpty else { return }
         let names = ["京都市", "京都市", "金沢市", "札幌市", "京都市", "鳥取市", "京都市"]
         encounters = photoIds.prefix(7).enumerated().map { index, id in
@@ -402,8 +406,17 @@ final class PassStore: ObservableObject {
                 deliverAt: now.addingTimeInterval(-60), placeName: names[index % names.count],
                 placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil,
                 // 1枚目は和文2字と和文4字の区間（字数が違っても発・着の大きさがそろい、矢印が中央に来るかを撮る）
-                originLabel: index == 0 ? "東京" : nil, destinationLabel: index == 0 ? "フランス" : nil)
+                originLabel: index == 0 ? "東京" : nil, destinationLabel: index == 0 ? "フランス" : nil,
+                face: (1...5).contains(index) ? UInt8(index) : nil)
         }
+        #if DEBUG
+        for (index, photo) in photos.prefix(7).enumerated() where (1...5).contains(index) {
+            guard let owner = photo.userId ?? photo.uploadedBy, owners[owner] == nil else { continue }
+            let fields: [String: Any] = ["userId": owner, "displayName": photo.displayName ?? "", "pro": true, "passFace": true]
+            guard let data = try? JSONSerialization.data(withJSONObject: fields) else { continue }
+            owners[owner] = try? JSONDecoder.api.decode(UserProfile.self, from: data)
+        }
+        #endif
         settings.enabled = true
         // 自分のカードの見本（乗車券を選ぶ画面）も同じ区間・裏のひとことつきで撮る
         settings.setOrigin(.custom, text: "東京")
