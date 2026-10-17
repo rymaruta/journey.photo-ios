@@ -137,6 +137,38 @@ final class PhotoDetailRulesTests: XCTestCase {
                                                     lookupFailed: false, ownerBlocked: false))
     }
 
+    /// 🔴 **ブロック・削除の答えは、押した1枚を押した人がまだ見ているときだけ書く**（2026-10-17）。
+    /// 隣へ送ったあとに削除が終わると、いま見ている写真まで閉じていた
+    func testActionAnswerStaysOnThePhotoThatWasPressed() async {
+        XCTAssertTrue(PhotoDetailRules.appliesHere(photoId: "p1", currentId: "p1", sender: "a", viewer: "a"))
+        XCTAssertFalse(PhotoDetailRules.appliesHere(photoId: "p1", currentId: "p2", sender: "a", viewer: "a"),
+                       "隣の写真に前の1枚の答えを書いた")
+        XCTAssertFalse(PhotoDetailRules.appliesHere(photoId: "p1", currentId: "p1", sender: "a", viewer: "b"),
+                       "次の人の画面に前の人の答えを書いた")
+        XCTAssertFalse(PhotoDetailRules.appliesHere(photoId: "p1", currentId: "p1", sender: "a", viewer: nil))
+        XCTAssertFalse(PhotoDetailRules.appliesHere(photoId: "p1", currentId: "p1", sender: nil, viewer: nil))
+        XCTAssertTrue(BlockedUsersView.keepsUnblock(sender: "a", viewer: "a"))
+        XCTAssertFalse(BlockedUsersView.keepsUnblock(sender: "a", viewer: "b"),
+                       "次の人のブロック一覧を、前の人の解除でいじった")
+        XCTAssertFalse(BlockedUsersView.keepsUnblock(sender: nil, viewer: nil))
+    }
+
+    /// 画面がこの判断を、削除・ブロック・解除の成功と失敗の両方で通す
+    func testStaleActionAnswersAreDroppedInTheScreens() async throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertEqual(detail.components(separatedBy: "PhotoDetailRules.appliesHere(photoId:").count - 1, 4,
+                       "削除かブロックの、成功か失敗が隣の写真に残る")
+        let blocked = try source("Features/Settings/BlockedUsersView.swift")
+        XCTAssertEqual(blocked.components(separatedBy: "Self.keepsUnblock(sender: sender, viewer: auth.userId)").count - 1, 2,
+                       "解除の成功か失敗が次の人の一覧に残る")
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+    }
+
     // MARK: - 大きく見る画面を閉じた後の読み直し（2026-10-03）
 
     /// 🔴 **読み直しを省くのは、大きく見る画面を閉じた直後で、中身が今の1枚のものとして入っているときだけ**
