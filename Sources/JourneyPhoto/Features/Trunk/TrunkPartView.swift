@@ -110,7 +110,7 @@ enum TrunkPartRenderer {
             case let .stroke(segments, color, width, dash, round):
                 ctx.stroke(TrunkPaint.path(segments), with: .color(Color(trunk: color)),
                            style: StrokeStyle(lineWidth: width, lineCap: round ? .round : .butt,
-                                              lineJoin: round ? .round : .miter, dash: dash))
+                                              lineJoin: round ? .round : .miter, dash: dash.map { CGFloat($0) }))
             case let .group(children, t, clip):
                 var c = ctx
                 c.translateBy(x: t.tx, y: t.ty)
