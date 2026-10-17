@@ -350,9 +350,10 @@ final class StoryV2DesignTests: XCTestCase {
         }
     }
 
-    /// 構図のシートは1行ずつの札。選んだ札は真鍮の縁 2＋チェック（owner の決定 2026-10-10）
+    /// 構図のシートは1行ずつの札。選んだ札は真鍮の縁 2＋チェック（owner の決定 2026-10-10）。
+    /// 札の高さは板の 60 から 72 に（2026-10-17 owner: 右に作例写真 64 を置くため・`CompositionRowPhotoTests`）
     func testCompositionSheetRows() throws {
-        XCTAssertEqual(CompositionPicker.rowHeight, 60)
+        XCTAssertEqual(CompositionPicker.rowHeight, 72)
         let picker = try source("Features/Spots/CompositionPicker.swift")
         let card = member("private func card(_ kind: CompositionKind?)", in: picker)
         assertInOrder(["Image(systemName: \"checkmark\")", "WebTheme.accent",
