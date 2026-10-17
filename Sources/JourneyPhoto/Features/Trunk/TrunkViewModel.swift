@@ -229,6 +229,11 @@ final class TrunkViewModel: ObservableObject {
         return lastWriteRefused ? .refused : .failed
     }
 
+    /// 待っている置き直しの頼みを取り下げる（「保存せずに閉じる」）。待っている古い頼みは `.superseded` で送らずに終わる
+    func withdrawPlace(_ id: String) {
+        _ = placeTickets.issue(id)
+    }
+
     /// 置き場つきで貼る（書き込みの最中なら待ってから）
     func stickWhenFree(_ id: String, at pos: TrunkPos) async -> Bool {
         guard await waitUntilIdle() else { return false }

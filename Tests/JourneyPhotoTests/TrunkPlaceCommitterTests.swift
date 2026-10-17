@@ -201,4 +201,63 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         XCTAssertEqual(rot(sent.first?.body), 16)
         XCTAssertEqual(SlowTrunkProtocol.puts.count, 2)
     }
+
+    /// 🔴 運んで離した送信（予定に入れたもの）が、別の書き込みの終わりを待っている間に「保存せずに閉じる」:
+    /// 送らない・よれや音の知らせも出さない
+    @MainActor
+    func testDiscardAllCancelsAWaitingDrop() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        let other = Task { await model.placeWhenFree("c", at: TrunkPos(x: 0.9, y: 0.9, rot: 0)) }
+        while !model.busy { await Task.yield() }
+        var told: [TrunkViewModel.PlaceOutcome?] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0) { told.append($0) }
+        // 予定が動き出して、書き込みの終わりを待ち始めるまで
+        try await Task.sleep(nanoseconds: 60_000_000)
+        places.discardAll()
+        _ = await other.value
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(SlowTrunkProtocol.puts.filter { $0.path == "/user/trunk/labels/a/place" }.isEmpty,
+                      "保存せずに閉じたのに、運んだ1枚を送った")
+        XCTAssertTrue(told.isEmpty, "取り消した送信の知らせを出した")
+        XCTAssertTrue(places.pending.isEmpty)
+    }
+
+    /// 運んで離した1枚の知らせ（よれ・音・触覚）は、送れたら1回だけ。すぐ後に回して予定が替わっても引き継ぐ
+    @MainActor
+    func testDropNoticeFiresOnceAndCarriesOver() async throws {
+        let model = await makeModel()
+        SlowTrunkProtocol.delay = 0.05
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        var told: [TrunkViewModel.PlaceOutcome?] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0) { told.append($0) }
+        // 離してすぐ2本指で回した（知らせなしの予定に替わる）
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 12))
+        places.schedule("a", delay: 0)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(told.count, 1, "運んだ知らせが出ない・二重に出た")
+        XCTAssertEqual(told.first ?? nil, .saved)
+        XCTAssertTrue(places.pending.isEmpty)
+    }
+
+    /// 運んで離してすぐ「完了」: 「完了」が送ったときも、運んだ1枚の知らせ（よれを覚える）を出す
+    @MainActor
+    func testFlushTellsTheDropNotice() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        let other = Task { await model.placeWhenFree("c", at: TrunkPos(x: 0.9, y: 0.9, rot: 0)) }
+        while !model.busy { await Task.yield() }
+        var told: [TrunkViewModel.PlaceOutcome?] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0) { told.append($0) }
+        let ok = await places.flush()
+        _ = await other.value
+        XCTAssertTrue(ok)
+        XCTAssertEqual(told.count, 1, "「完了」で送った1枚のよれを覚えない")
+    }
 }

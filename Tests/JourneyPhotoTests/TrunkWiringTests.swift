@@ -40,6 +40,15 @@ final class TrunkWiringTests: XCTestCase {
         }
     }
 
+    /// 自分の手で貼る画面: 運んで離した送信も committer の予定に入れる（「保存せずに閉じる」で取り消せる）。
+    /// 閉じたら「ひとつ戻す」への積み（`onSaved`）を外して画面を抱え込まない
+    func testStickSendsThroughTheCommitter() throws {
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertFalse(stick.contains("places.commit("), "予定の外で送っている（保存せずに閉じても取り消せない）")
+        XCTAssertTrue(stick.contains("places.schedule(id, delay: 0) { outcome in"))
+        XCTAssertTrue(stick.contains("places.onSaved = nil"), "閉じても onSaved が画面を抱え込む")
+    }
+
     /// 入口はマイページの旅の記録の札（名前の付いた行・画面写真の試験が押す）
     func testEntryFromMyPage() throws {
         let page = try source("Features/Profile/MyPageView.swift")
@@ -228,7 +237,7 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(stick.contains("Button(L(\"保存せずに閉じる\", \"Close without saving\"))"))
         XCTAssertTrue(stick.contains("places.discardAll()\n                dismiss()"), "保存せずに閉じても送る")
         XCTAssertTrue(stick.contains("Text(L(\"保存しています\", \"Saving\"))"), "送っている間に何も出さない")
-        XCTAssertTrue(stick.contains(".onDisappear { places.sendLeftovers() }"), "閉じたときに残りを捨てる")
+        XCTAssertTrue(stick.contains(".onDisappear {\n            places.sendLeftovers()"), "閉じたときに残りを捨てる")
         XCTAssertFalse(stick.contains("捨て"))
         // 2本指: 取り消されても下がる印・回し始めたラベルを送ってから印を下げる
         XCTAssertTrue(stick.contains("@GestureState private var rotating = false"))
@@ -236,8 +245,9 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(stick.contains(".onChange(of: rotating) { _, now in"), "取り消されたときに回した1枚を送らない")
         XCTAssertTrue(stick.contains("if let id = rotatingId { places.schedule(id, delay: 0) }"))
         XCTAssertTrue(stick.contains("guard !rotatedDuringDrag else {"), "2本指のあとの離しで選び直す")
-        XCTAssertTrue(stick.contains("case .saved?, .superseded?:"), "すぐ後に回すと、運んだよれ・音が付かない")
-        XCTAssertTrue(try source("Features/Trunk/TrunkPlaceCommitter.swift").contains("attempt < 5, !Task.isCancelled"),
+        XCTAssertTrue(stick.contains("case .saved?, .superseded?, nil:"), "すぐ後に回すと、運んだよれ・音が付かない")
+        let committer = try source("Features/Trunk/TrunkPlaceCommitter.swift")
+        XCTAssertTrue(committer.contains("guard !Task.isCancelled else { return }\n            if outcome == .busy, attempt < 5 {"),
                       "取り消したあとに予定を作り直す")
     }
 

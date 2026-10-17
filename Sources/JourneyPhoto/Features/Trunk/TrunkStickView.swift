@@ -103,7 +103,11 @@ struct TrunkStickView: View {
             wrinkles = TrunkWrinkles(userId: auth.userId).strengths
             if model.state == nil { await model.load(offline: false) }
         }
-        .onDisappear { places.sendLeftovers() }
+        .onDisappear {
+            places.sendLeftovers()
+            // 画面を抱え込まない（`.task` で付けた「ひとつ戻す」への積み）
+            places.onSaved = nil
+        }
         // 2本指が取り消されても（onEnded が来なくても）回した1枚を送ってから、印を全部下げる
         .onChange(of: rotating) { _, now in
             guard !now else { return }
@@ -503,19 +507,18 @@ struct TrunkStickView: View {
         let id = carry.label.id
         let pos = TrunkPlacement.moved(from, toX: b.x, y: b.y)
         places.note(id, from: from, to: pos)
-        places.cancelSchedule(id)
-        Task {
-            switch await places.commit(id) {
-            case .saved?, .superseded?:
-                // 送れた・すぐ後に回した（その頼みが同じ1枚を送る）: どちらも動かしたことに変わりはない
+        // 送るのも committer の予定に入れる（「保存せずに閉じる」で取り消せる・混んでいたらやり直す）
+        let userId = auth.userId
+        places.schedule(id, delay: 0) { outcome in
+            switch outcome {
+            case .saved?, .superseded?, nil:
+                // 送れた・すぐ後に回した（その頼みが同じ1枚を送る）・もう送れていた: どれも動かしたことに変わりはない
                 // 貼ったあとに動かすと、紙が少しよれる
-                let store = TrunkWrinkles(userId: auth.userId)
+                let store = TrunkWrinkles(userId: userId)
                 store.noteMoved(id)
                 wrinkles = store.strengths
                 stickTicks += 1
                 TrunkSound.stick()
-            case .busy?:
-                places.schedule(id, delay: 0.3)
             default:
                 break
             }
