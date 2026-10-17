@@ -56,8 +56,38 @@ final class TrunkArrivals: ObservableObject {
 
     init() {}
 
-    /// 出すものがあるか（評価のお願いはこれが空になるまで待つ・`PostModalGate`）
+    /// 出すものがあるか（画面が閉じたら出し直す）
     var hasPending: Bool { pending != nil || pendingNotice != nil }
+
+    /// 束が入った時刻（評価のお願いを止めるのは入ってから少しの間だけ）
+    private(set) var deliveredAt: Date?
+
+    /// 評価のお願いを止めてよい長さ。2026-10-17 判断: 2分。待ちきれずに残った束（投稿の画面を開いたまま・
+    /// 通知の説明が長く出ていた）が、評価のお願いをずっと止めないように
+    static let reviewHoldSeconds: TimeInterval = 120
+
+    /// 評価のお願いを止めるか（入ってから `reviewHoldSeconds` の間だけ）
+    func blocksReview(now: Date = Date()) -> Bool {
+        guard hasPending, let deliveredAt else { return false }
+        return now.timeIntervalSince(deliveredAt) < Self.reviewHoldSeconds
+    }
+
+    /// 届いた画面で「トランクに貼る」が済んだ（閉じ切ってから全体の知らせを1つだけ出す・`RootView`）
+    private var stuckFromArrival = false
+
+    func noteStuckFromArrival() { stuckFromArrival = true }
+
+    /// 閉じたあとに「トランクに貼りました」を出すか（受け取ったら下ろす）
+    func consumeStuckFromArrival() -> Bool {
+        defer { stuckFromArrival = false }
+        return stuckFromArrival
+    }
+
+    /// 下書きを公開した・投稿した応答の配った結果を渡す（`TrunkDealt`）
+    func deliver(_ dealt: TrunkDealt, photoTitle: String, now: Date = Date()) {
+        deliver(dealt.label.map { [Arrival(label: $0, photoTitle: photoTitle)] } ?? [],
+                notice: Notice(dealt.labelSkipped), now: now)
+    }
 
     /// 入っている人が替わった（ログアウトを含む）。**前の人に届いた束と一言を捨てる**（2026-10-17 の読み直し）
     func noteUser(_ userId: String?) {
@@ -69,11 +99,14 @@ final class TrunkArrivals: ObservableObject {
     func reset() {
         pending = nil
         pendingNotice = nil
+        deliveredAt = nil
+        stuckFromArrival = false
     }
 
     /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）
-    func deliver(_ arrivals: [Arrival], notice: Notice?) {
+    func deliver(_ arrivals: [Arrival], notice: Notice?, now: Date = Date()) {
         guard !arrivals.isEmpty || notice != nil else { return }
+        deliveredAt = now
         if !arrivals.isEmpty {
             pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals)
         } else {

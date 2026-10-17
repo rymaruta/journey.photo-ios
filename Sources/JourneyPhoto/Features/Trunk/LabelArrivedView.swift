@@ -179,7 +179,8 @@ struct LabelArrivedView: View {
                 Task {
                     // まだ読めていなければ読んでから貼る。それでも読めなければ一言を出す（`stickEnsuringLoaded`）
                     if await model.stickEnsuringLoaded(arrival.label.id) {
-                        toasts.show(L("トランクに貼りました", "Stuck on your trunk"))
+                        // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
+                        TrunkArrivals.shared.noteStuckFromArrival()
                         dismiss()
                     }
                 }

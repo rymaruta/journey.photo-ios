@@ -53,6 +53,7 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @Environment(\.scenePhase) private var scenePhase
     /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
@@ -108,6 +109,12 @@ struct MyPageView: View {
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
         .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
+        // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk, force: true) }
+            }
+        }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }

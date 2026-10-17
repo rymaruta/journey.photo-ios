@@ -94,6 +94,8 @@ enum TrunkText {
                                        "Another label\u{2019}s redo is waiting. Choose a design there first.")
         case "notFound": return L("ラベルが見つかりませんでした。読み直してください。", "That label wasn\u{2019}t found. Reload and try again.")
         case "full": return L("トランクがいっぱいです", "Your trunk is full")
+        case "storage": return L("トランクの容量が上限に近いため、受け取れませんでした。手持ちのラベルを削除すると、また受け取れます。",
+                                 "Your trunk is nearly at its storage limit, so it couldn\u{2019}t be received. Delete some labels in your pocket to receive again.")
         case "noPending": return L("作り直しの候補がありません。もう一度作り直してください。",
                                    "There are no designs to choose from. Redo it again.")
         case "busy": return L("混み合っています。もう一度お試しください", "It\u{2019}s busy. Please try again.")
@@ -345,4 +347,9 @@ enum TrunkSample {
 
     /// 作り直しの見本の候補の種
     static let rerollSeeds = [20_001, 20_002, 20_003]
+}
+
+/// 古び方の区切りの知らせを出した印（人ごとに端末へ・退会で消す `AccountLocalData`）
+enum TrunkAgingNotice {
+    static func key(_ userId: String) -> String { "trunk.agingSeen.\(userId)" }
 }

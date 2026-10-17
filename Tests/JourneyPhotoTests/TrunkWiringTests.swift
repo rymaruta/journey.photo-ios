@@ -37,7 +37,7 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(upload.contains("TrunkArrivals.shared.deliver("), "投稿の成功で届いたラベルを渡していない")
         XCTAssertTrue(upload.contains("outcome.label = saved.label"))
         let rootView = try source("App/RootView.swift")
-        XCTAssertTrue(rootView.contains(".fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }"))
+        XCTAssertTrue(rootView.contains("}) { batch in LabelArrivedView(batch: batch) }"))
         XCTAssertTrue(rootView.contains("tabsWithTrunkArrival"), "届いた画面の修飾子が繋がっていない")
         XCTAssertTrue(rootView.contains("toasts.show(notice.text, kind: .info)"), "いっぱいのときの一言が無い")
         XCTAssertTrue(rootView.contains("until: PostModalGate.trunkMayShow"), "届いた画面が順番の決まりを通っていない")
@@ -117,5 +117,35 @@ final class TrunkWiringTests: XCTestCase {
         }
         XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains(".overlay(alignment: .top) { ToastOverlay() }"),
                       "届いた画面の上で知らせが隠れる")
+    }
+
+    /// 評価のお願いの判断の最中は届いた画面を待たせる配線（`reviewDeciding`）と、残った束の出し直し
+    func testReviewDecidingIsWired() throws {
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("reviewDeciding = true\n            defer { reviewDeciding = false }"),
+                      "評価のお願いの判断の最中を印にしていない")
+        XCTAssertTrue(root.contains("pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,"),
+                      "判断の最中を順番の決まりに渡していない")
+        XCTAssertTrue(root.contains("trunkPending: trunkArrivals.blocksReview()"), "残った束が評価をずっと止める")
+        XCTAssertTrue(root.contains(".onChange(of: showPushPrimer) { _, showing in\n                if !showing, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }"),
+                      "通知の説明が閉じても残った束を出し直さない")
+        XCTAssertTrue(root.contains(".onChange(of: reviewDeciding) { _, deciding in\n                if !deciding, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }"),
+                      "評価の判断が終わっても残った束を出し直さない")
+        XCTAssertTrue(root.contains("if trunkArrivals.consumeStuckFromArrival() { toasts.show("),
+                      "届いた画面で貼った知らせを閉じ切ってから出していない")
+        let arrived = try source("Features/Trunk/LabelArrivedView.swift")
+        XCTAssertFalse(arrived.contains("toasts.show(L(\"トランクに貼りました\""), "届いた画面の上でも知らせを出している（2つ見える）")
+    }
+
+    /// マイページの入口は口が読めたときだけ出す配線
+    func testMyPageEntryIsGated() throws {
+        let page = try source("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(page.contains("if trunkAvailability.isAvailable {\n                NavigationLink { TrunkView("),
+                      "口が無いのに入口を出している")
+        XCTAssertTrue(page.contains("await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)"))
+        XCTAssertTrue(page.contains("service: environment.trunk, force: true)"), "前面に戻ったときに確かめ直していない")
+        let edit = try source("Features/Profile/EditPhotoView.swift")
+        XCTAssertTrue(edit.contains("if patch.published == true {\n                TrunkArrivals.shared.deliver(dealt,"),
+                      "下書きを公開しても届いた画面を出さない")
     }
 }

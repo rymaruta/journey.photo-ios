@@ -280,7 +280,7 @@ struct TrunkView: View {
     private func noteAging() {
         guard let posts = model.state?.posts, let milestone = TrunkAging.latestMilestone(posts: posts),
               let uid = auth.userId else { return }
-        let key = "trunk.agingSeen.\(uid)"
+        let key = TrunkAgingNotice.key(uid)
         let seen = UserDefaults.standard.integer(forKey: key)
         guard milestone.posts > seen else { return }
         UserDefaults.standard.set(milestone.posts, forKey: key)

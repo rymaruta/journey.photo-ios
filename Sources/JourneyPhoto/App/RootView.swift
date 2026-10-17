@@ -358,7 +358,19 @@ struct RootView: View {
             }
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensTrunkArrived`・Debug のみ）
             .task { await offerPreviewTrunkArrival() }
-            .fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }
+            .fullScreenCover(item: $trunkBatch, onDismiss: {
+                // 届いた画面で貼った: 閉じ切ってから全体の知らせを1つだけ（届いた画面の上には出さない）
+                if trunkArrivals.consumeStuckFromArrival() { toasts.show(L("トランクに貼りました", "Stuck on your trunk")) }
+                // 閉じている間に次の束が入っていれば出す
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { batch in LabelArrivedView(batch: batch) }
+            // 待っていた画面が閉じたら、待ちきれずに残った束を出し直す（通知の説明・評価の判断）
+            .onChange(of: showPushPrimer) { _, showing in
+                if !showing, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            .onChange(of: reviewDeciding) { _, deciding in
+                if !deciding, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
             // 人が替わった（ログアウトを含む）: 前の人に届いた束と一言を捨てる
             .onChange(of: auth.userId) { _, userId in trunkArrivals.noteUser(userId) }
             .task { trunkArrivals.noteUser(auth.userId) }
@@ -386,7 +398,7 @@ struct RootView: View {
     private func postModalSnapshot() -> PostModalSnapshot {
         PostModalSnapshot(modalPresenting: ModalProbe.isPresenting(), pushPrimerDeciding: pushPrimer.isDeciding,
                           pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
-                          trunkPending: trunkArrivals.hasPending, trunkShowing: trunkBatch != nil)
+                          trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil)
     }
 
     private func offerPreviewTrunkArrival() async {

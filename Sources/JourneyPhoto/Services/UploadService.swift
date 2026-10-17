@@ -120,8 +120,10 @@ struct UploadService {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             success = try c.decode(Bool.self, forKey: .success)
             photo = try c.decodeIfPresent(Photo.self, forKey: .photo)
-            label = (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value
-            labelSkipped = ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init)
+            // 読み方は下書きを公開した応答と同じ1つ（`TrunkDealt`）
+            let dealt = (try? TrunkDealt(from: decoder)) ?? TrunkDealt()
+            label = dealt.label
+            labelSkipped = dealt.labelSkipped
         }
     }
 

@@ -224,6 +224,34 @@ struct TrunkState: Decodable, Equatable {
     }
 }
 
+/// 配った結果（`POST /upload/save` と、下書きを公開した `PUT /photos/{id}` の応答の `label`・`labelSkipped`）。
+/// **どちらも包みで読み、古いサーバーが返さなくても、形が違っても投げない**
+struct TrunkDealt: Decodable, Equatable {
+    let label: TrunkLabel?
+    let labelSkipped: TrunkLabelSkip?
+
+    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil) {
+        self.label = label
+        self.labelSkipped = labelSkipped
+    }
+
+    private enum CodingKeys: String, CodingKey { case label, labelSkipped }
+
+    init(from decoder: Decoder) throws {
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
+            self.init()
+            return
+        }
+        self.init(label: (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value,
+                  labelSkipped: ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init))
+    }
+
+    /// 応答の本文から読む（読めなければ空）
+    static func read(_ data: Data) -> TrunkDealt {
+        (try? JSONDecoder.api.decode(TrunkDealt.self, from: data)) ?? TrunkDealt()
+    }
+}
+
 /// 投稿の保存（`POST /upload/save`）で、ラベルを配らなかった理由（サーバーの `labelSkipped`）
 enum TrunkLabelSkip: Equatable {
     /// 手持ちがいっぱい（貼るか削除すると、また届く）
