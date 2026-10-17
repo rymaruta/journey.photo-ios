@@ -260,4 +260,22 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         XCTAssertTrue(ok)
         XCTAssertEqual(told.count, 1, "「完了」で送った1枚のよれを覚えない")
     }
+
+    /// 🔴 運んで離した1枚をサーバーが断った（409）まま「完了」: 断られた1枚を「送れた」と知らせない
+    /// （よれ・音・触覚のあとで「保存できませんでした」が出る食い違いを作らない）
+    @MainActor
+    func testFlushDoesNotTellARefusalAsSaved() async throws {
+        let model = await makeModel()
+        SlowTrunkProtocol.status = 409
+        SlowTrunkProtocol.delay = 0
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        var told: [TrunkViewModel.PlaceOutcome?] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 10) { told.append($0) }
+        let ok = await places.flush()
+        XCTAssertFalse(ok)
+        XCTAssertFalse(told.contains(.saved), "断られたのに送れたと知らせた")
+        XCTAssertEqual(told, [.refused])
+    }
 }

@@ -21,6 +21,8 @@ final class TrunkPlaceCommitter: ObservableObject {
     private var tasks: [String: Task<Void, Never>] = [:]
     /// 送り終えたときの知らせ（ラベルごと・1回だけ呼ぶ）
     private var completions: [String: (TrunkViewModel.PlaceOutcome?) -> Void] = [:]
+    /// ラベルごとの、最後に溜まりから消えた結果（送れた・断られた）。知らせに渡す
+    private var lastSent: [String: TrunkViewModel.PlaceOutcome] = [:]
     /// 送れた1手（id と、動かす前の置き場）。画面の「ひとつ戻す」に積む
     var onSaved: ((String, TrunkPos) -> Void)?
 
@@ -70,8 +72,10 @@ final class TrunkPlaceCommitter: ObservableObject {
         case .saved:
             if TrunkPlacement.clamp(item.from) != TrunkPlacement.clamp(item.to) { onSaved?(id, item.from) }
             pending.done(id, sent: item.to)
+            lastSent[id] = .saved
         case .refused:
             pending.done(id, sent: item.to)
+            lastSent[id] = .refused
         case .busy, .failed, .superseded:
             // 混んでいた・圏外: 置き場は残す。新しい頼みに負けた: その頼みが送る
             break
@@ -101,8 +105,9 @@ final class TrunkPlaceCommitter: ObservableObject {
                 ok = false
             }
         }
-        // 送れた1枚（もう溜まっていない）の知らせを呼ぶ。送れなかった分は、やり直しのために残す
-        for id in completions.keys.sorted() where pending[id] == nil { complete(id, .saved) }
+        // もう溜まっていない1枚の知らせを、その結果で呼ぶ（断られた1枚を「送れた」と知らせない）。
+        // 送れなかった分は、やり直しのために残す
+        for id in completions.keys.sorted() where pending[id] == nil { complete(id, lastSent[id] ?? .saved) }
         return ok
     }
 
