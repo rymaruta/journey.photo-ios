@@ -314,4 +314,27 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         XCTAssertTrue(ok)
         XCTAssertEqual(told, [.saved], "あとで送れたのに、よれ・音が付かない")
     }
+
+    /// 🔴 送り始めた送信は、予定の取り消し（同じ1枚の予定の作り直し）で切らない。
+    /// 切ると圏外と同じ失敗になり、送ったはずの置き場が溜まりに残る
+    @MainActor
+    func testStartedSendIsNotCutByRescheduling() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        var told: [TrunkViewModel.PlaceOutcome] = []
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0) { outcome, _ in told.append(outcome) }
+        // PUT が飛んで、応答を待っている間に予定を作り直す（前の予定は取り消される）
+        while SlowTrunkProtocol.puts.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        places.schedule("a", delay: 10)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertNil(places.pending["a"], "送り始めた送信が取り消しで切れた")
+        XCTAssertNil(model.actionError)
+        XCTAssertEqual(SlowTrunkProtocol.puts.count, 1)
+        XCTAssertTrue(told.isEmpty, "作り直した予定がまだ残っている間に知らせた")
+        // そのまま閉じた: 送れていた1枚のよれは、閉じたあとの知らせで覚える
+        places.sendLeftovers()
+        XCTAssertEqual(told, [.saved], "送れていた1枚のよれを閉じたときに落とした")
+    }
 }

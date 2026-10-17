@@ -137,6 +137,8 @@ final class TrunkPlaceCommitter: ObservableObject {
         tasks = [:]
         let done = completions
         completions = [:]
+        // もう送れていた1枚（予定を作り直した間に前の送信が届いた）の知らせは、閉じたあとの印でいま呼ぶ
+        for (id, notice) in done where pending[id] == nil { notice(lastSent[id] ?? .saved, true) }
         let leftovers = pending.ids.compactMap { id in pending[id].map { (id, $0.to) } }
         guard !leftovers.isEmpty, let model else { return }
         Task { @MainActor in
