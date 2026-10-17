@@ -10,6 +10,8 @@ struct UploadView: View {
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
     @State private var showSongPicker = false
+    /// 「この写真を見て撮影」の元の写真を選ぶ画面（`InspiredPickerView`・2026-10-14）
+    @State private var showInspiredPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
     /// 「構図を重ねて撮る」で撮った1枚を入れたか（一度だけ・2026-10-10）
@@ -20,6 +22,12 @@ struct UploadView: View {
     @State private var showRestore = false
     /// 開いたときの問いをもう済ませたか（選ぶ画面・カメラから戻るたびに onAppear が走る）
     @State private var askedRestore = false
+    /// 「書きかけの続きがあります」（自動で残した書きかけ・送れなかった投稿・2026-10-16）
+    @State private var showRestoreAuto = false
+    /// 「送れなかった投稿があります」で尋ねている控え（古い順に1件ずつ・2026-10-16）
+    @State private var askingJournal: String?
+    /// 裏に回ったら書きかけを黙って残す（`UploadViewModel.autoSaveDraft`）
+    @Environment(\.scenePhase) private var scenePhase
     /// 編集画面を開いている写真（帯のサムネを押した）
     @State private var editing: EditTarget?
     /// 編集できない理由（再試行の鍵を控えている写真・`UploadEditRules.canEdit`）
@@ -55,12 +63,18 @@ struct UploadView: View {
     /// 最初から入れておく、カメラで撮った1枚（投稿のシートの「構図を重ねて撮る」で撮って
     /// 「投稿」を押したとき・2026-10-10）。帯の「追加」→カメラと同じ道（`UploadViewModel.accept(capture:)`）で入れる
     private let initialCapture: CameraCapture?
+    /// 起動のときの「送れなかった投稿があります」で「続きから」を押して来た。**もう一度尋ねずに戻す**（2026-10-16）
+    private let resumeJournal: String?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
          initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
          initialCapture: CameraCapture? = nil,
+         resumeJournal: String? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
-        self.initialCapture = initialCapture
+        self.resumeJournal = resumeJournal
+        // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
+        // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
+        self.initialCapture = initialCapture ?? PreviewUploadSample.capture()
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -102,14 +116,22 @@ struct UploadView: View {
             ToolbarItem(placement: .cancellationAction) {
                 // 🔴 **書きかけを黙って捨てない**（2026-09-30）。選んだ写真と書いた題・説明が
                 // 確認なしで消えていた。写真を選び始めたら一度聞く（旅行プランの日程と同じ判断）
+                // v2 Upload・Components 04「シート · 左に『キャンセル』/右に確定（真鍮の字）」。
+                // 以前は ×。動き（書きかけがあれば確かめる）は同じ
                 Button {
-                    if model.hasDraft { confirmDiscard = true } else { dismiss() }
+                    if model.hasDraft {
+                        confirmDiscard = true
+                    } else {
+                        // 中身が無くなった自動の書きかけ・この画面の控えを片づけてから閉じる（モデルの注記）
+                        model.closeWithoutDraft()
+                        dismiss()
+                    }
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(WebTheme.foreground)
+                    Text(Labels.Common.cancel)
+                        .font(.body)
+                        .foregroundStyle(WebTheme.text2)
                 }
-                .accessibilityLabel(Labels.Common.close)
+                .accessibilityLabel(Labels.Common.cancel)
                 // 🔴 **送っている間は閉じさせない。** 閉じても送信は裏で続き、
                 // 残りの写真が公開され、失敗の知らせは閉じた画面に書かれていた。
                 // 途中でやめるのは送信中の「やめる」（`model.cancel()`）
@@ -136,6 +158,9 @@ struct UploadView: View {
             Button(L("投稿をやめる", "Stop posting"), role: .destructive) {
                 // 閉じる確認で「下書きから外します」と言うので、閉じた時点で外す（モデルの注記）
                 model.dropUnsureDraftPhotos()
+                // やめると決めたので、黙って残した書きかけ・この画面の送信の控えも消す（次に開いて尋ねない）
+                model.discardAutoDraft()
+                model.discardJournal()
                 dismiss()
             }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
@@ -152,6 +177,44 @@ struct UploadView: View {
         } message: {
             Text(L("この端末に保存した下書きがあります。続きから編集できます。",
                    "You have a draft saved on this device. You can pick up where you left off."))
+        }
+        // 🔴 **アプリが途中で終了した書きかけ**（2026-10-16）。裏に回ったときに黙って残した分
+        // （`autoSaveDraft`）。本人の下書きとは別の枠なので、別に尋ねる
+        .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
+            Button(L("続きから", "Continue")) { restoreDraft(from: .auto) }
+            Button(L("削除", "Delete"), role: .destructive) {
+                model.discardAutoDraft()
+                openLibraryAfterRestorePrompt()
+            }
+        } message: {
+            Text(L("前回、投稿の途中でアプリが終了しました。続きから編集できます。",
+                   "The app closed while you were writing a post. You can pick up where you left off."))
+        }
+        // 🔴 **送れなかった投稿**（送信の控え・古い順に1件ずつ・2026-10-16）。残りは次に開いたとき
+        .alert(L("送れなかった投稿があります", "A post didn\u{2019}t finish sending"),
+               isPresented: Binding(get: { askingJournal != nil }, set: { if !$0 { askingJournal = nil } }),
+               presenting: askingJournal) { id in
+            Button(L("続きから", "Continue")) { restoreDraft(from: .send(id)) }
+            Button(L("削除", "Delete"), role: .destructive) {
+                if let owner = model.draftOwner { model.drafts?.sibling(.send(id)).clear(for: owner) }
+                openLibraryAfterRestorePrompt()
+            }
+            // 「あとで」は控えに触らない（次に開いたとき・次の起動でまた尋ねる。起動時の知らせと同じ形）
+            Button(L("あとで", "Later"), role: .cancel) { openLibraryAfterRestorePrompt() }
+        } message: { _ in
+            Text(L("送り終える前にアプリが終了した投稿です。続きから送り直せます。",
+                   "This post didn\u{2019}t finish sending before the app closed. You can send it again."))
+        }
+        // 裏に回ったら書きかけを黙って残す（OS にアプリを終了されても消えない・2026-10-16）。
+        // 裏の猶予は**裏に回ったこの瞬間に**取る（Task が走るのを待つと、その前に止められうる）
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                let window = BackgroundWindow(name: "upload-autosave")
+                Task {
+                    await model.autoSaveDraft()
+                    window.end()
+                }
+            }
         }
         // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
         // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
@@ -195,12 +258,17 @@ struct UploadView: View {
     }
 
     /// 「続ける」。画像が読めなければ何も戻さず、そう言う（選ぶ画面を開く）
-    private func restoreDraft() {
+    private func restoreDraft(from slot: UploadDraftStore.Slot = .saved) {
         Task {
-            guard await model.restoreDraft() else {
+            guard await model.restoreDraft(from: slot) else {
                 // 戻せる写真が無かった（届いたか分からない写真だけだった）ときは、モデルがもう知らせている
                 if model.errorMessage == nil {
-                    model.discardDraft()
+                    switch slot {
+                    case .saved: model.discardDraft()
+                    case .auto: model.discardAutoDraft()
+                    case .send:
+                        if let owner = model.draftOwner { model.drafts?.sibling(slot).clear(for: owner) }
+                    }
                     model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
                 }
                 openLibraryAfterRestorePrompt()
@@ -235,7 +303,7 @@ struct UploadView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("撮影スポットの写真として投稿", "Posting to a photo spot"))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                 Text(spot.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
@@ -276,7 +344,7 @@ struct UploadView: View {
             Text(L("写真を押すと、色や明るさを編集できます。元の写真は変わりません。",
                    "Tap a photo to adjust its color and light. The original stays as it is."))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
         }
     }
@@ -292,18 +360,19 @@ struct UploadView: View {
                 if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .padding(.horizontal, 4)
                 } else if model.items.count > 1 {
                     groupChoice
                 }
                 detailSection
+                inspiredCard
                 rowsCard
                 tagsAndCategory
                 // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
                 Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .padding(.horizontal, 4)
             }
             .padding(16)
@@ -311,6 +380,15 @@ struct UploadView: View {
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        // 画面写真の試験だけ: 公開一覧の1枚を元の写真に選んだ状態にする（`PreviewSession.showsInspiredSample`・
+        // Debug のみ。画面の状態だけで、控えにもサーバーにも書かない）
+        .task {
+            guard PreviewSession.showsInspiredSample, model.inspired == nil,
+                  let feed = try? await environment.gallery.fetchPhotos(),
+                  let sample = InspiredBy.previewSample(feed: feed, excluding: nil),
+                  model.inspired == nil else { return }
+            model.inspired = InspiredBy.Pick(photo: sample)
+        }
         // 2026-10-03 判断: **開いたらすぐ写真を選ぶ画面へ**（「追加」→「ライブラリから選ぶ」の2手を省く）。
         // 一度だけ。旅の写真から来た回（もう並んでいる）は開かない。カメラは帯の「追加」に残る
         .task {
@@ -320,7 +398,7 @@ struct UploadView: View {
             try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
             guard !Task.isCancelled else { return }
             // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
-            guard !showRestore, !model.isRestoringDraft else { return }
+            guard !showRestore, !showRestoreAuto, askingJournal == nil, !model.isRestoringDraft else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
                 || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
@@ -366,17 +444,39 @@ struct UploadView: View {
             // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
             if model.drafts == nil { model.drafts = UploadDraftStore() }
             if !askedRestore { model.draftOwner = auth.userId }
-            if UploadDraftRules.asksRestore(hasStoredDraft: model.storedDraft != nil,
-                                            opensWithContent: !initialPhotos.isEmpty || initialCapture != nil
-                                                || initialTag != nil || initialSpot != nil,
-                                            alreadyAsked: askedRestore) {
-                showRestore = true
+            let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
+                || initialTag != nil || initialSpot != nil
+            // 送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
+            let autoStore = UploadDraftStore(slot: .auto)
+            let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
+            let journalIds = auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? []
+            let action = UploadDraftRules.openAction(journalIds: journalIds, hasAutoDraft: hasAuto,
+                                                     hasSavedDraft: model.storedDraft != nil,
+                                                     opensWithContent: opensWithContent, alreadyAsked: askedRestore,
+                                                     resumeJournal: resumeJournal)
+            // 🔴 尋ねていない書きかけには触らない（`ownsAutoSlot`）。触らない回は書きかけの枠を渡さない
+            // （送信の控えは投稿ごとの別の枠なので、この回も必ず書く）
+            if !askedRestore, UploadDraftRules.ownsAutoSlot(hasAutoDraft: hasAuto, action: action) {
+                model.autoDrafts = autoStore
+            }
+            switch action {
+            case .resumeJournal(let id): restoreDraft(from: .send(id))
+            case .askJournal(let id): askingJournal = id
+            case .askAuto: showRestoreAuto = true
+            case .askSaved: showRestore = true
+            case .none: break
             }
             askedRestore = true
         }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { song in model.song = song }
+            }
+        }
+        .sheet(isPresented: $showInspiredPicker) {
+            NavigationStack {
+                InspiredPickerView(currentLocation: model.items.first?.location,
+                                   selectedId: model.inspired?.id) { pick in model.inspired = pick }
             }
         }
         // 写真の編集（帯のサムネを押す）。**その写真だけ**にレシピを入れる（`applyEdit`）
@@ -410,10 +510,14 @@ struct UploadView: View {
         // **まとめて選べる**（Web の投稿画面と同じ）。一度に扱う数は
         // `maxSelection` まで——1枚ずつ題と説明を書く画面なので、
         // 多すぎるとどれを書いているか見失う
+        // **元の形のまま受け取る（`.current`）**（2026-10-16・ストーリーの埋め込みの写真選びと同じ理由）。
+        // 既定（`.automatic`）だと写真を JPEG などに作り直し終えるまで選択が知らされず、大きな写真・
+        // iCloud の写真ほど長く待たされる。読み込みは `Data` で受けて `ImagePreparer` が整えるので HEIC のままで困らない
         .photosPicker(isPresented: $showLibrary,
                       selection: $model.pickerItems,
                       maxSelectionCount: UploadViewModel.maxSelection,
                       matching: .images,
+                      preferredItemEncoding: .current,
                       // **前の選択に印を付けて開く。** 無いと毎回まっさらで開き、
                       // 「追加」が選び直しになる（前の写真と打った題が消える）
                       photoLibrary: .shared())
@@ -448,7 +552,7 @@ struct UploadView: View {
                     .font(.subheadline.weight(.semibold))
             }
         }
-        .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.faint)
+        .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.text3)
         .disabled(!model.canSubmit)
         .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
                             ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
@@ -458,7 +562,7 @@ struct UploadView: View {
                                : L("投稿する", "Post"))))
     }
 
-    /// 選んだ写真の帯（板: 96×120・角丸12、右上に外す丸、左下に番号、最後に「追加」）。
+    /// 選んだ写真の帯（v2 の板: 84×104・角丸12、右上に外す丸、左上に番号、最後に「追加」）。
     ///
     /// **サーバーは1行＝1枚**で、選んだ枚数ぶんの投稿になる（題も説明も1枚ずつ）。
     /// 「まとめる」は見せ方だけ（`groupChoice`）
@@ -519,7 +623,7 @@ struct UploadView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, 12)
@@ -579,7 +683,7 @@ struct UploadView: View {
                     WebTheme.surface
                 }
             }
-            .frame(width: 96, height: 120)
+            .frame(width: UploadStripLayout.thumbWidth, height: UploadStripLayout.thumbHeight)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -596,10 +700,10 @@ struct UploadView: View {
             // 送る順の番号。2026-10-02 判断: 左下は編集済みの札（見本 3 の位置）に譲り、左上に移した
             // （右上の外す丸とは 96pt の幅の両端で離れている）
             Text("\(index + 1)")
-                .font(JPFont.mono(12))
+                .font(JPFont.number(JPTypeScale.caption, weight: .bold))
                 .foregroundStyle(Color.white)
-                .frame(minWidth: 18, minHeight: 18)
-                .padding(.horizontal, 3)
+                .padding(.horizontal, 4)
+                .frame(minWidth: UploadStripLayout.numberSize, minHeight: UploadStripLayout.numberSize)
                 .background(Color.black.opacity(0.6), in: Capsule())
                 .padding(6)
                 .accessibilityHidden(true)
@@ -623,7 +727,7 @@ struct UploadView: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
                 .background(Color.black.opacity(0.66), in: Capsule())
-                .frame(maxWidth: 96 - 12, alignment: .leading)
+                .frame(maxWidth: UploadStripLayout.thumbWidth - 12, alignment: .leading)
                 .padding(6)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -637,7 +741,7 @@ struct UploadView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.white)
                     .frame(width: UploadStripLayout.removeDot, height: UploadStripLayout.removeDot)
-                    .background(Color(red: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x2c / 255.0), in: Circle())
+                    .background(WebTheme.surface7, in: Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
                     // 丸は板の位置のまま、押せる範囲だけ左へずらす（`UploadStripLayout` の注記）
                     .offset(x: UploadStripLayout.removeDotNudge)
@@ -685,14 +789,17 @@ struct UploadView: View {
                 Label(L("ライブラリから選ぶ", "Choose from library"), systemImage: "photo.on.rectangle")
             }
         } label: {
-            VStack(spacing: 6) {
-                Image(systemName: "plus").font(.system(size: 20, weight: .regular))
-                Text(L("追加", "Add")).font(.caption)
+            // v2 Upload:「写真を追加で選ぶ」は**真鍮の点線と真鍮の字**（黒地の上・owner の好み
+            // 「旅の写真からの『写真を追加で選ぶ』は真鍮」と同じ扱い）
+            VStack(spacing: 4) {
+                Image(systemName: "plus").font(.system(size: 22, weight: .light))
+                Text(L("追加", "Add")).font(JPFont.caption)
             }
-            .foregroundStyle(WebTheme.muted2)
-            .frame(width: 96, height: 120)
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .foregroundStyle(WebTheme.accent)
+            .frame(width: UploadStripLayout.thumbWidth, height: UploadStripLayout.thumbHeight)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+                .strokeBorder(WebTheme.accent.opacity(UploadStripLayout.addBorderOpacity),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .accessibilityLabel(L("写真を追加", "Add photos"))
@@ -725,25 +832,32 @@ struct UploadView: View {
                      "Shown as one card you can swipe (each photo keeps its own title)")
                  : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
         }
     }
 
+    /// つながったセグメントの1つ（v2 Upload・Components 02「表示の切り替え」）。
+    /// **選んだ側は一段明るい面（#2C2C2E）に白の太字**、選んでいない側は text-2。
+    /// v1 は白の塗りに墨だったが、白の塗りは1画面に1つ（主ボタン）の決まりに合わせた
     private func segment(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.footnote.weight(selected ? .semibold : .regular))
-                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                .font(JPFont.footnote.weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? WebTheme.text : WebTheme.text2)
                 // 押せるものは 44pt
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(selected ? WebTheme.accentBackground : Color.clear,
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                .background(selected ? Self.segmentSelectedFill : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
+                .shadow(color: Color.black.opacity(selected ? 0.4 : 0), radius: 1.5, x: 0, y: 1)
                 .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+
+    /// 選んだセグメントの面（v2 の `#2C2C2E`）。土台の面の段 `surface8`
+    private static let segmentSelectedFill = WebTheme.surface8
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
     private var detailSection: some View {
@@ -757,7 +871,8 @@ struct UploadView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
                     PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
-                                     near: item.prepared.coords, offersSpots: true)
+                                     near: item.prepared.coords, offersSpots: true,
+                                     pickedSpot: $item.pickedSpot)
                     // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
                     if UploadDetails.showsSampleNote(location: item.location, published: model.published,
                                                      audience: model.audience) {
@@ -771,7 +886,7 @@ struct UploadView: View {
                                 .accessibilityHidden(true)
                         }
                         .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .foregroundStyle(WebTheme.text2)
                         .padding(.horizontal, 4)
                         .accessibilityIdentifier("upload.sampleNote")
                     }
@@ -810,7 +925,7 @@ struct UploadView: View {
             // 「150/200」のように余っている数が出る
             Text("\(PostLimits.length(text))/\(limit)")
                 .font(JPFont.mono(12))
-                .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.faint)
+                .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.text3)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, -8)
         }
@@ -838,7 +953,7 @@ struct UploadView: View {
             HStack(spacing: 12) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 17))
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .frame(width: 24)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
@@ -847,13 +962,13 @@ struct UploadView: View {
                         .foregroundStyle(WebTheme.text)
                     Text(detailsSummary)
                         .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .rotationEffect(.degrees(showsDetails ? 180 : 0))
                     .accessibilityHidden(true)
             }
@@ -893,7 +1008,7 @@ struct UploadView: View {
             if let reason = model.visibilityLockReason {
                 Text(reason)
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
                     .padding(.horizontal, 4)
             }
             // 公開範囲の説明（何が起きるかを先に言う）。**畳んでいても出す**（レビュー 2026-10-03）
@@ -903,7 +1018,7 @@ struct UploadView: View {
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
                      "Private photos stay yours. You can publish them later."))
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, 4)
                 .accessibilityIdentifier("upload.audienceNote")
         }
@@ -960,6 +1075,65 @@ struct UploadView: View {
         .disabled(model.isWorking)
     }
 
+    /// 「この写真を見て撮影」（2026-10-14・`InspiredBy`）。**詳しい設定に畳まない**——「写真から、次の旅が
+    /// 始まる」の入口なので、いつも見える所に1行。任意（付けずに投稿できる）。
+    /// 行の形は曲の行と同じ（板 Upload の札の行）。選んだら小さな写真と題・作者を出す
+    private var inspiredCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            JPCard {
+                inspiredRow
+                    // 送っている間は変えない（1枚目に付けるかを送りながら決めている）
+                    .disabled(model.isWorking)
+            }
+            if model.inspired != nil {
+                Text(L("投稿のうち1枚に付きます。元の写真が非公開になっていたら付きません。",
+                       "Attached to one photo of the post. It won't attach if the original is no longer public."))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var inspiredRow: some View {
+        if let pick = model.inspired {
+            Menu {
+                Button { showInspiredPicker = true } label: {
+                    Label(L("選び直す", "Choose another"), systemImage: "photo.on.rectangle")
+                }
+                Button(role: .destructive) { model.inspired = nil } label: {
+                    Label(L("外す", "Remove"), systemImage: "xmark")
+                }
+            } label: {
+                JPRowLabel(title: L("この写真を見て撮影", "Inspired by"),
+                           detail: [pick.label, pick.authorName ?? ""].filter { !$0.isEmpty }
+                               .joined(separator: PhotoMetaLine.separator),
+                           icon: AnyView(inspiredThumb(pick)))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityLabel(L("この写真を見て撮影: \(pick.label)", "Inspired by: \(pick.label)"))
+            .accessibilityHint(L("選び直す・外す", "Choose another or remove"))
+            .accessibilityIdentifier("upload.inspired")
+        } else {
+            Button { showInspiredPicker = true } label: {
+                JPRowLabel(title: L("この写真を見て撮影（任意）", "Inspired by (optional)"),
+                           systemImage: "camera.viewfinder",
+                           value: L("元の写真を付ける", "Add"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("upload.inspired")
+        }
+    }
+
+    /// 選んだ元の写真の小さな画像（行のアイコンの場所・24pt の枠に収める）
+    private func inspiredThumb(_ pick: InspiredBy.Pick) -> some View {
+        RemoteImage(url: pick.thumbURL.flatMap(URL.init(string:)))
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+    }
+
     @ViewBuilder
     private var songRow: some View {
         if let song = model.song {
@@ -1012,7 +1186,7 @@ struct UploadView: View {
                 Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください。文はコピーされるので、入らないアプリでは貼り付けてください",
                        "After posting, the share sheet opens. Pick Threads, X, Instagram or any app. The caption is copied, so paste it if the app leaves it out."))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .foregroundStyle(WebTheme.text3)
             }
         }
         // **軌道は暗い真鍮**（ストーリーの入切と同じ。既定の白だと白い軌道に白いつまみが乗る）
@@ -1066,7 +1240,7 @@ struct UploadView: View {
         }
         if model.canRetryUnreadable {
             // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
-            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（高さ 52pt）。文言は今日の一問の再試行と同じ
+            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（線のボタン・高さ 44pt）。文言は今日の一問の再試行と同じ
             Button { model.retryUnreadable() } label: {
                 Text(L("もう一度読み込む", "Try again")).jpPillButton(.outline)
             }
@@ -1084,16 +1258,27 @@ struct UploadView: View {
     }
 }
 
-/// 選んだ写真の帯の寸法（板 `project/Upload.dc.html`: 96×120・間 10、右上の外す丸は
-/// 見た目 28・押せる所 44 で、写真の右上の角から右へ・上へ 14 はみ出す）。
+/// 選んだ写真の帯の寸法（板 `project/Upload.dc.html`: v2 で 84×104・間 8（v1 は 96×120・間 10）、
+/// 右上の外す丸は見た目 28・押せる所 44 で、写真の右上の角から右へ・上へ 14 はみ出す）。
 ///
-/// 🔴 **2026-10-07 判断: 丸は板の位置のまま、押せる範囲だけ左へ 4 ずらす。** 板どおりに
+/// 2026-10-14 判断: v2 の板は外す印を写真の角の内側（30 の枠に 18 の丸）に入れたが、**外す丸は v1 の形のまま**
+/// にした——小さな丸は押し間違えやすく、下の押せる範囲の調整（2026-10-07）を保つため。帯の間が 8 になったので、
+/// 押せる範囲を寄せる量は 6 になる（見た目の位置は同じ・下の式で決まる）
+///
+/// 🔴 **2026-10-07 判断: 丸は板の位置のまま、押せる範囲だけ左へずらす（間 10 のとき 4）。** 板どおりに
 /// 押せる範囲を 14 はみ出させると、帯の間（10）を越えて隣の写真に 4 重なり、隣の写真の左上を
 /// 押したつもりで1つ前の写真が外れた（2026-10-01 の既知の残り）。見た目（丸の位置と大きさ）は
 /// 変えない——押せる範囲（見えない）を、丸が収まる範囲で寄せるだけ。44 も保つ
 enum UploadStripLayout {
-    /// 写真と写真の間（板 gap 10）
-    static let spacing: CGFloat = 10
+    /// 写真と写真の間（v2 の板 gap 8。v1 は 10）
+    static let spacing: CGFloat = 8
+    /// 1枚の大きさ（v2 の板 84×104。v1 は 96×120）。「追加」の枠も同じ
+    static let thumbWidth: CGFloat = 84
+    static let thumbHeight: CGFloat = 104
+    /// 左上の順番の丸（v2: 最小 22・12pt の太字・黒 60%）
+    static let numberSize: CGFloat = 22
+    /// 「追加」の真鍮の点線の濃さ（v2 の板 `rgba(201,166,107,.6)`）
+    static let addBorderOpacity = 0.6
     /// 外す丸の見た目の大きさ（板 28）
     static let removeDot: CGFloat = 28
     /// 外す丸が押せる範囲（CLAUDE.md の最小 44）

@@ -276,9 +276,10 @@ final class BadgeSizeTests: XCTestCase {
         XCTAssertEqual(ProMarkFit.side(nameSize: 13, mincho: false), 11.5, accuracy: 0.0001)
         XCTAssertFalse(ProMarkFit.isSmall(side: 21.7))
         XCTAssertTrue(ProMarkFit.isSmall(side: 11.5), "15pt を切ったら線の太い小さい版")
-        // 札は横長（大 42:24 → 名前 26 の横で 38.0・板 UserProfile）
+        // 札は横長。小さい版は「PRO」と外枠の間に余白を持たせる
         XCTAssertEqual(ProMarkFit.width(side: 21.7, style: .plate), 37.975, accuracy: 0.001)
-        XCTAssertEqual(ProMarkFit.width(side: 12, style: .plate), 18, accuracy: 0.001)
+        XCTAssertEqual(ProMarkFit.width(side: 12, style: .plate), 22, accuracy: 0.001)
+        XCTAssertEqual(ProMarkFit.width(side: 11.5, style: .plate), 11.5 * 44 / 24, accuracy: 0.001)
         XCTAssertEqual(ProMarkFit.width(side: 21.7, style: .iris), 21.7, accuracy: 0.001)
     }
 
@@ -584,5 +585,17 @@ final class BadgeServiceTests: XCTestCase {
         let body = try XCTUnwrap(StubProtocol.lastBody)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertTrue(json["displayBadge"] is NSNull)
+    }
+}
+
+/// Pro の印は公式の封印の**見た目の中央**にそろえる（2026-10-14 owner「中心ズレてる？」・実機の絵で約 0.66pt 上）
+final class ProMarkCenterTests: XCTestCase {
+    func testProMarkIsNudgedToTheSealCenter() throws {
+        XCTAssertEqual(ProMarkFit.sealCenterNudge, 0.03, accuracy: 1e-9)
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Common/NameMarks.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("fit.nudge + ProMarkFit.sealCenterNudge"), "Pro の印が封印の中央へ下がっていない")
     }
 }

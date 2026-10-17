@@ -20,12 +20,23 @@ struct RootView: View {
     /// 投稿のシートで「構図を重ねて撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
     /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）
     @State private var openCompositionAfterPostSheet = false
+    /// 投稿のシートの「カメラで撮る」（2026-10-16）。撮った1枚は `pendingCapture` に入れ、
+    /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
+    @State private var showPostCamera = false
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
+    /// 投稿の選択。シートが閉じきった後に次の画面を開く
+    @State private var pendingPostChoice: PostSheet.Kind?
     @State private var showPhotoUpload = false
+    /// 「送れなかった投稿があります」（送っている途中でアプリが終了した・起動のあと一度だけ・2026-10-16）
+    @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
+    /// 送れなかった投稿を確かめた人（人ごとに起動のあと一度だけ）
+    @State private var checkedInterruptedFor: String?
+    /// 起動のときの知らせで「続きから」を押した控え（投稿の画面で尋ね直さずに戻す・閉じたら下ろす）
+    @State private var resumeJournalId: String?
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
@@ -44,6 +55,9 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
+    /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
+    /// 流れを閉じたら忘れる
+    @State private var importTrip: LibraryTrip?
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -429,6 +443,30 @@ struct RootView: View {
     /// 1つの式を短くした。`tabsBase` → `tabsWithPostChoice` → `tabsWithPostSheets` → `tabs`）
     private var tabs: some View {
         tabsWithPostSheets
+            .task(id: auth.userId) { await offerInterruptedUpload() }
+            .alert(L("送れなかった投稿があります", "Posts didn\u{2019}t finish sending"),
+                   isPresented: Binding(get: { interruptedUpload != nil },
+                                        set: { if !$0 { interruptedUpload = nil } }),
+                   presenting: interruptedUpload) { notice in
+                if let id = notice.resumeId {
+                    // 古い順に1件だけ戻す。残りは次に投稿の画面を開いたとき・次の起動で
+                    Button(L("続きから", "Continue")) {
+                        settleInterruptedUpload(notice, cleaning: false)
+                        resumeJournalId = id
+                        showPhotoUpload = true
+                    }
+                }
+                if !notice.cleanupIds.isEmpty {
+                    Button(UploadDraftRules.cleanupButtonTitle(count: notice.cleanupIds.count), role: .destructive) {
+                        settleInterruptedUpload(notice, cleaning: true)
+                    }
+                }
+                Button(notice.resumeId == nil ? L("OK", "OK") : L("あとで", "Later"), role: .cancel) {
+                    settleInterruptedUpload(notice, cleaning: false)
+                }
+            } message: { notice in
+                Text(notice.message)
+            }
             .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
                 NavigationStack { SiteMenuView() }
             }
@@ -461,13 +499,30 @@ struct RootView: View {
         tabsWithPostChoice
             // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+                importTrip = nil
                 pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
                 if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
             }) {
-                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
-                LibraryTripFlowView { photos in
+                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
+                // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
+                LibraryTripFlowView(opening: importTrip,
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.preloadedShots) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
+            }
+            // 端末の写真の一冊の「この旅の写真を投稿する」（2026-10-16）。ほかの投稿の画面が出ていたら開かない
+            .onChange(of: tabRouter.tripImportRequests) { _, _ in
+                let trip = tabRouter.takePendingImportTrip()
+                guard PostRequestGate.opens(busy: postScreensShown) else { return }
+                importTrip = trip
+                pendingTripPhotos = []
+                showTripImport = true
+            }
+            // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
+            .task(id: auth.userId) {
+                // ログインの有無を店に知らせる（ログインしていない間は前面に戻っても読まない）
+                DeviceTripShelfStore.shared.setSignedIn(auth.userId != nil)
+                if auth.userId != nil { DeviceTripShelfStore.shared.startIfAllowed() }
             }
             // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
             // 格子とストーリーの行はこれを見て読み直す
@@ -479,12 +534,35 @@ struct RootView: View {
             }
     }
 
+    /// 🔴 **送っている途中でアプリが終了した投稿を知らせる**（2026-10-16）。以前はまだ送れていない写真が
+    /// 知らせも無く消えた。控え（`UploadDraftStore.Slot.auto` の `sending`）が残っていたら、起動のあと一度だけ。
+    /// ほかの画面（規約・新しくなったこと）が出ていたら出さない——投稿の画面を開いたときにも尋ねる
+    private func offerInterruptedUpload() async {
+        guard let userId = auth.userId, checkedInterruptedFor != userId else { return }
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
+        checkedInterruptedFor = userId
+        // 送信の控え（`journey-photo-upload-draft:send:<userId>:<ID>`）を古い順に数える
+        interruptedUpload = UploadDraftRules.interruptedNotice(UploadDraftStore().journals(for: userId))
+    }
+
+    /// 知らせに答えた。戻せない控え（届いたか分からない写真だけ）は片づけ、「古いものを片づける」なら
+    /// 勧めた控えも消す（`UploadDraftRules.journalsToClean`）
+    private func settleInterruptedUpload(_ notice: UploadDraftRules.InterruptedNotice, cleaning: Bool) {
+        guard let userId = auth.userId else { return }
+        let store = UploadDraftStore()
+        for id in notice.unsureOnlyIds + (cleaning ? notice.cleanupIds : []) {
+            store.sibling(.send(id)).clear(for: userId)
+        }
+    }
+
     /// 投稿画面。旅の写真から来たときは、その写真を並べて**非公開で**始める
     private var uploadSheet: some View {
         NavigationStack {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
                        startPrivate: !pendingTripPhotos.isEmpty,
                        initialCapture: pendingCapture,
+                       resumeJournal: resumeJournalId,
                        // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                        onSaved: { tabRouter.notePosted($0) })
         }
@@ -502,15 +580,46 @@ struct RootView: View {
                     pendingTripPhotos = []
                     // 構図を重ねて撮った1枚も同じ
                     pendingCapture = nil
+                    // 送れなかった投稿の「続きから」も1回だけ
+                    resumeJournalId = nil
                 }
             }
-            .sheet(isPresented: $showPostChoice, onDismiss: openCompositionIfRequested) {
-                PostSheet { kind in choosePost(kind) }
+            .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
+                PostSheet { kind in pendingPostChoice = kind }
             }
             // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
+            // 「カメラで撮る」。投稿画面の帯の「追加」→「写真を撮る」と同じカメラ（`CameraPicker`）
+            .fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {
+                CameraPicker { capture in pendingCapture = capture }
+                    .ignoresSafeArea()
+            }
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
+            // （端末の旅の一冊の「この旅の写真を投稿する」と同じ `postScreensShown` を見る）
+            .onChange(of: tabRouter.postRequests) { _, _ in
+                guard let kind = tabRouter.takePendingPost(),
+                      PostRequestGate.opens(busy: postScreensShown) else { return }
+                choosePost(kind)
+            }
+    }
+
+    /// **投稿の画面が出ているか**の旗の並び。空の画面の一手と端末の旅の一冊は、どれか1つでも出ていたら
+    /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
+    /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
+    private var postScreensShown: [Bool] {
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
+    }
+
+    /// 投稿の選択シートが閉じきってから、次の画面を開く。
+    /// 先に次の sheet / fullScreenCover を立てると、iOS が遷移を取りこぼすことがある。
+    private func postChoiceDismissed() {
+        if let kind = pendingPostChoice {
+            pendingPostChoice = nil
+            choosePost(kind)
+        }
+        openCompositionIfRequested()
     }
 
     /// 投稿の選択で選ばれたもの
@@ -526,6 +635,9 @@ struct RootView: View {
         case .composition:
             // シートが閉じきってから開く（`openCompositionIfRequested`）
             openCompositionAfterPostSheet = true
+        case .camera:
+            pendingCapture = nil
+            showPostCamera = true
         }
     }
 
@@ -614,6 +726,8 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
+            // 端末の写真の一冊は前面にいる間だけ読む（`DeviceTripShelfStore.setActive`・2026-10-16）
+            DeviceTripShelfStore.shared.setActive(phase == .active)
             if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }

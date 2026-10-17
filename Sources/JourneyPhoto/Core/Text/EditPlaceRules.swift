@@ -32,6 +32,42 @@ enum EditPlaceRules {
         return !PlaceCoordsRule.namesSpotNear(currentLocation, photo: photoCoords, spots: spots)
     }
 
+    /// 撮影スポットの紐付け（`Photo.spotId`）を外すか（2026-10-14）。**撮影地を書き換えて、
+    /// 台帳のスポットの名前を含まなくなった**とき（空にしたときも）。投稿の `UploadSpotTarget.spotIdToSend`
+    /// と同じ線（「, 香川」を足しただけなら残す）。
+    ///
+    /// 🔴 **分からないときは外さない**: 索引が読めない（nil）・索引にその `spotId` が無い・撮影地を
+    /// 変えていない。分からないまま外すと、スポットの頁から写真が黙って消える
+    static func clearsSpotId(spotId: String?, openedLocation: String?, currentLocation: String,
+                             spots: [OfficialSpot]?) -> Bool {
+        guard let id = spotId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
+              changedByUser(openedLocation: openedLocation, currentLocation: currentLocation) else { return false }
+        // 撮影地を空にした（場所を伏せた）なら索引が無くても外す——紐付けで場所が分かってしまう
+        if trim(currentLocation).isEmpty { return true }
+        guard let spot = spots?.first(where: { $0.spotId == id }) else { return false }
+        // **開いたときの撮影地にもスポットの名前が無かったなら外さない**（Web で書き換えた写真・台帳の
+        // 名前が変わった写真）。名前の線で付いていた紐付けではないので、ここで触ると黙って外れる
+        guard (openedLocation ?? "").contains(spot.name) else { return false }
+        return !currentLocation.contains(spot.name)
+    }
+
+    /// `clearsSpotId` を決めるのに索引が要るか（スポットに紐づいた写真の撮影地を書き換えた）
+    /// 撮影地を空にしただけなら要らない（索引なしで外す・保存を最大2秒待たせない）
+    static func needsSpotIndexForSpotId(spotId: String?, openedLocation: String?, currentLocation: String) -> Bool {
+        !(spotId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !trim(currentLocation).isEmpty
+            && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+    }
+
+    /// 保存の前に索引を待つか（座標を消すか・スポットの紐付けを外すかのどちらかに要る）。
+    /// 写真の編集の保存（`EditPhotoView.save`）はこれだけを見る
+    static func needsIndexBeforeSave(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
+                                     photoCoords: Photo.Coords?, spotId: String?) -> Bool {
+        needsSpotIndex(openedLocation: openedLocation, currentLocation: currentLocation,
+                       pickedCoords: pickedCoords, photoCoords: photoCoords)
+            || needsSpotIndexForSpotId(spotId: spotId, openedLocation: openedLocation, currentLocation: currentLocation)
+    }
+
     /// 索引が無いと `clearsCoords` を決められないか（保存の前に索引を待つかどうか）
     static func needsSpotIndex(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
                                photoCoords: Photo.Coords?) -> Bool {

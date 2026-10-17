@@ -35,6 +35,9 @@ struct HighlightsRow: View {
                                                count: highlights.count) {
                 header
                 circles
+            } else {
+                // 読み終わる前も中身を1つ置き、`.task` を必ず走らせる（StoriesRow の 1.1.5 と同じ守り・2026-10-16）
+                StoriesRow.loadingAnchor
             }
         }
         .task(id: userId) { await load() }
@@ -45,10 +48,11 @@ struct HighlightsRow: View {
 
     private var header: some View {
         HStack {
-            // 板 05c: 12px・medium・白60% の見出し
+            // 板 v2 MyPage: 13px・semibold・text-2 の見出し
             Text(L("ストーリーハイライト", "Story highlights"))
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.text2)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             // **すべて見るは、2つ以上あるときだけ。** 1つしかない画面で
             // 「すべて見る」を押すと同じものがもう一度出るだけになる
@@ -60,8 +64,8 @@ struct HighlightsRow: View {
                         Text(L("すべて見る", "See all"))
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                     }
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
                     // 押せる高さは 44pt。並びの高さは 28pt のまま（上下 8pt ずつはみ出す）
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -69,12 +73,16 @@ struct HighlightsRow: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ProfileV2.gutter)
     }
+
+    /// 板 v2: 丸 64（白 22% の 1pt の縁の内側 3pt に写真）・間 14・名前 12 の text-2
+    nonisolated static let ringSide: CGFloat = 64
+    nonisolated static let ringSpacing: CGFloat = 14
 
     private var circles: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: Self.ringSpacing) {
                 if isMine { newButton }
                 ForEach(highlights) { highlight in
                     NavigationLink {
@@ -85,7 +93,7 @@ struct HighlightsRow: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, ProfileV2.gutter)
         }
     }
 
@@ -94,20 +102,20 @@ struct HighlightsRow: View {
             showEditor = true
         } label: {
             VStack(spacing: 6) {
-                // 板: 62pt の点線の丸（白35%）
+                // 板 v2: 64pt の点線の丸（白 22%）
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.35),
+                    .strokeBorder(Color.white.opacity(0.22),
                                   style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .frame(width: 62, height: 62)
+                    .frame(width: Self.ringSide, height: Self.ringSide)
                     .overlay(Image(systemName: "plus")
-                        .font(.system(size: 18))
+                        .font(.system(size: 20))
                         .foregroundStyle(Color.white))
                 Text(L("新規", "New"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text2)
                     .lineLimit(1)
             }
-            .frame(width: 66)
+            .frame(width: Self.ringSide)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -123,27 +131,27 @@ struct HighlightsRow: View {
                     RemoteImage(url: url)
                 } else if highlight.cover?.isVideo == true {
                     // 表紙が動画（絵として読めない）。空の輪（✦）と見分ける
-                    Circle().fill(WebTheme.surface)
+                    Circle().fill(WebTheme.card)
                         .overlay(Image(systemName: "play.circle")
                             .foregroundStyle(WebTheme.faint))
                 } else {
-                    Circle().fill(WebTheme.surface)
+                    Circle().fill(WebTheme.card)
                         .overlay(Image(systemName: "sparkles")
                             .foregroundStyle(WebTheme.faint))
                 }
             }
-            // 板: 62pt の枠（縁 1pt・白25%）の内側 3pt に写真（54pt）
-            .frame(width: 54, height: 54)
+            // 板 v2: 64pt の枠（縁 1pt・白 22%）の内側 3pt に写真（56pt）
+            .frame(width: Self.ringSide - 8, height: Self.ringSide - 8)
             .clipShape(Circle())
             .padding(4)
-            .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.22), lineWidth: JPStroke.hairline))
 
             Text(highlight.displayTitle)
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text2)
                 .lineLimit(1)
         }
-        .frame(width: 66)
+        .frame(width: Self.ringSide)
         .contentShape(Rectangle())
     }
 

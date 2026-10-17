@@ -302,6 +302,11 @@ enum ProMarkFit {
     static let systemRatio: Double = 0.885
     /// これより小さいときは小さい版
     static let smallBelow: Double = 15
+    /// 公式の封印（`checkmark.seal.fill`）の見た目の中央に合わせて、印の高さに対して下へずらす量。
+    /// 封印は記号なので、見た目の中央が枠の中央より少し下にある。印は正方形の枠の真ん中に描くので、
+    /// 同じ中央に置くと印だけ少し上に見えた（2026-10-14 owner「中心ズレてる？」。実機の絵を画素で測って
+    /// 封印の中央 y=77・印 y=75（約3倍）＝約 0.66pt 上 ÷ 印の高さ 21.7pt ≈ 0.03）
+    static let sealCenterNudge: Double = 0.03
 
     /// 印の高さ（絞り羽根は一辺）
     static func side(nameSize: Double, mincho: Bool) -> Double {
@@ -310,11 +315,11 @@ enum ProMarkFit {
 
     static func isSmall(side: Double) -> Bool { side < smallBelow }
 
-    /// 印の幅。札（PRO）は横長（大 42:24・小 36:24）
+    /// 印の幅。小さいPRO札は文字と縁が接しないよう余白を増やす（大 42:24・小 44:24）
     static func width(side: Double, style: ProMarkStyle) -> Double {
         switch style {
         case .iris: return side
-        case .plate: return side * (isSmall(side: side) ? 36 : 42) / 24
+        case .plate: return side * (isSmall(side: side) ? 44 : 42) / 24
         }
     }
 }

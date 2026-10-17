@@ -11,7 +11,9 @@ public struct Text: View {
     public enum Case { case uppercase, lowercase }
     /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す
     public func bold() -> Text { self }
-    public static func + (lhs: Text, rhs: Text) -> Text { lhs }
+    /// 一部だけ色を変える（`Text(a).foregroundStyle(白) + Text(b).foregroundStyle(灰)`）。本物は iOS 17〜 で Text を返す
+    public func foregroundStyle<S>(_ style: S) -> Text { self }
+    public static func +(lhs: Text, rhs: Text) -> Text { lhs }
 }
 
 public struct Image: View {
@@ -102,6 +104,8 @@ public struct Angle {
     public static func degrees(_ v: Double) -> Angle { Angle() }
     public static func radians(_ v: Double) -> Angle { Angle() }
     public var radians: Double { 0 }
+    /// 本物と同じく度でも読める（2026-10-16・2本指でひねった角度）
+    public var degrees: Double { 0 }
 }
 
 public struct ViewThatFits: View {
@@ -309,6 +313,8 @@ public struct Path: View, Shape {
     public mutating func closeSubpath() {}
     /// 塗る（本物は `Shape` の修飾子）
     public func fill<S: ShapeStyle>(_ style: S) -> Path { self }
+    /// 一部だけ描く（旅の記録の線を古い順に引く）。本物は `Shape` の修飾子
+    public func trim(from: Double, to: Double) -> Path { self }
     public var body: Never { fatalError("模型") }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める

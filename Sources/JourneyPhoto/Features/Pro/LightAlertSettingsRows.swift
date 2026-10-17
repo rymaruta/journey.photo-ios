@@ -101,39 +101,12 @@ struct LightAlertSettingsRows: View {
         }
     }
 
-    /// 「通知がオフのため届きません」の行（板 Settings の F31 の行: 真鍮 8% の地・真鍮の字と線の絵・矢印）
+    /// 「通知がオフのため届きません」の行（`PushOffNoticeRow`・すれちがいの設定と同じ部品）
     private func pushNoticeRow(_ notice: LightAlertPushNotice) -> some View {
-        Button { Task { await fixPush(notice) } } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "bell.slash")
-                    .font(.system(size: 18))
-                    .frame(width: 20)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(notice.title)
-                        .font(.subheadline)
-                    Text(notice.detail)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(WebTheme.accent)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .frame(minHeight: 54)
-            .background(WebTheme.accent.opacity(0.08))
-            .contentShape(Rectangle())
+        PushOffNoticeRow(notice: notice, isBusy: isTurningOnPush,
+                         identifier: "settings.lightAlert.pushOff") {
+            Task { await fixPush(notice) }
         }
-        .buttonStyle(.plain)
-        .disabled(isTurningOnPush)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(notice.hint)
-        .accessibilityIdentifier("settings.lightAlert.pushOff")
     }
 
     /// 行を押した。まだ聞いていない・アプリでオフにした → 受け取る（必要なら OS が尋ねる）。
@@ -154,9 +127,9 @@ struct LightAlertSettingsRows: View {
     }
 
     private var listLabel: some View {
+        // 板 v2: 行の絵を外した（Pro の行の Pro マークだけ）
         JPRowLabel(title: L("光と天気の知らせ", "Light & weather alerts"),
-                   detail: L("行きたい場所の、今週の光と天気", "This week\u{2019}s light and weather at your wishlist places"),
-                   icon: AnyView(ProIconView(icon: .light, side: 20, color: WebTheme.accent, lineWidth: 1.7)))
+                   detail: L("行きたい場所の、今週の光と天気", "This week\u{2019}s light and weather at your wishlist places"))
     }
 
     /// 押された瞬間だけ受ける（`SettingsView.pushBinding` と同じ理由——画面から戻したときに送り直さない）
@@ -188,6 +161,12 @@ struct LightAlertSettingsRows: View {
         deliveredAtPaywall = store.deliveredRevision
         showPaywall = true
     }
+}
+
+/// 「通知がオフのため届きません」の帯の見た目（v2 の板 Settings）
+enum LightAlertSettingsStyle {
+    /// 帯の説明の真鍮の濃さ（板: rgba(201,166,107,.85)）
+    static let noticeDetailOpacity = 0.85
 }
 
 /// 入切の文言（テストで見張る）

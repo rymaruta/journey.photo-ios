@@ -8,6 +8,11 @@ import SwiftUI
 /// 素材の `marks/pro-mark-*.svg` の形を SwiftUI で描く（24 の升目の座標をそのまま写した）。
 /// 真鍮の印は**黒い地の上だけ**に置く（名前の行は黒地。写真の上には置かない）。
 /// 15pt を切ったら線を太らせた小さい版（`ProMarkFit.isSmall`）。
+///
+/// **どの大きさでも光る真鍮の1つの形**（2026-10-16 owner「Pro のデザインが画面によって違う」）。
+/// v2（2026-10-14）では小さい版だけ真鍮の単色・PRO の札は真鍮の塗りに墨の字にしていたが、
+/// 写真の詳細・コメント（小さい）とプロフィール（大きい）で別の印に見えたので、光る真鍮にそろえた。
+/// 小さい版で変えるのは**線の太さと穴の形だけ**（`ProMarkGeometry`・形は同じ）
 struct ProMark: View {
 
     let style: ProMarkStyle
@@ -94,6 +99,7 @@ private struct ProMarkIris: View {
         let ink = ProMarkColors.color(ProMarkColors.ink)
         let disc = ProMarkGeometry.discRadius * 2 * k
         ZStack {
+            // どの大きさでも光る真鍮（2026-10-16・画面ごとに印が違って見えた）
             Circle()
                 .fill(LinearGradient(stops: ProMarkColors.stops(ProMarkColors.irisStops),
                                      startPoint: UnitPoint(x: 0, y: 0), endPoint: UnitPoint(x: 0.4, y: 1)))
@@ -107,12 +113,10 @@ private struct ProMarkIris: View {
             aperture(k)
                 .fill(ink)
                 .frame(width: side, height: side)
-            if !small {
-                Circle()
-                    .stroke(ProMarkColors.color(ProMarkColors.highlight).opacity(0.5), lineWidth: 0.6 * k)
-                    .frame(width: ProMarkGeometry.highlightRadius * 2 * k,
-                           height: ProMarkGeometry.highlightRadius * 2 * k)
-            }
+            Circle()
+                .stroke(ProMarkColors.color(ProMarkColors.highlight).opacity(0.5), lineWidth: 0.6 * k)
+                .frame(width: ProMarkGeometry.highlightRadius * 2 * k,
+                       height: ProMarkGeometry.highlightRadius * 2 * k)
         }
         .frame(width: side, height: side)
     }
@@ -147,18 +151,21 @@ private struct ProMarkPlate: View {
         let k = side / 24
         let sheen = LinearGradient(stops: ProMarkColors.stops(ProMarkColors.sheenStops),
                                    startPoint: .leading, endPoint: .trailing)
-        // 素材の SVG の値（大: 幅 40.6・高さ 18・縁 1.3・字 11 / 小: 34.6・20・1.9・13.5）
+        // 写真詳細の 13pt の名前では小さい版が約 11.5pt。旧 36:24 の幅では
+        // 「PRO」の両端と縁が接近するため、文字の周りに余白を確保する。
         let line = (small ? 1.9 : 1.3) * k
-        let width = (small ? 34.6 : 40.6) * k + line
-        let height = (small ? 20 : 18) * k + line
+        let width = ProMarkFit.width(side: side, style: .plate)
+        let height = (small ? 22 : 18) * k + line
         ZStack {
+            // どの大きさでも墨の札に光る真鍮の縁と字（2026-10-16・画面ごとに印が違って見えた）
             Capsule()
                 .fill(ProMarkColors.color(ProMarkColors.plate))
                 .overlay(Capsule().strokeBorder(sheen, lineWidth: line))
                 .frame(width: width, height: height)
             Text("PRO")
                 // 大きさは呼ぶ側で文字サイズの設定に合わせ済み（ここで二重に伸ばさない）
-                .font(.system(size: (small ? 13.5 : 11) * k, weight: .bold))
+                // 小さい版は字を太らせて読める形を保つ（線と同じく太さだけ変える）
+                .font(.system(size: (small ? 13.5 : 11) * k, weight: small ? .heavy : .bold))
                 .tracking(0.6 * k)
                 .foregroundStyle(sheen)
                 .lineLimit(1)

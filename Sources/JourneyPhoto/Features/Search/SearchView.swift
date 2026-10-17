@@ -41,19 +41,26 @@ struct SearchView: View {
         VStack(spacing: 0) {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                // v2（2026-10-14・Search の板）: 大見出し「探す」を明朝で置く。板は 30 だが字の段に無いので
+                // いちばん近い Display の 32（`JPFont.photoTitle`・タグの写真の題と同じ段）
+                Text(Labels.Navigation.searchTab)
+                    .font(JPFont.photoTitle)
+                    .foregroundStyle(WebTheme.text)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, JPSpace.gutter)
                 searchField
                 scopeChips
             }
-            .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.s)
             .background(WebTheme.background)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
                     if isDiscovering {
                         // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
-                        // `SearchDiscovery`、段の間は 20
+                        // `SearchDiscovery`、段の間は v2 で 32（`JPSpace.section`・板は 36）
                         ForEach(model.discovery(spots: officialSpots)) { section in
                             discoverySection(section)
                         }
@@ -190,10 +197,12 @@ struct SearchView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 17))
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
             TextField(model.scope.prompt, text: $query)
                 .textFieldStyle(.plain)
-                .font(.subheadline)
+                // 板の 16（`.callout`）
+                .font(.callout)
                 .foregroundStyle(WebTheme.foreground)
                 // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
                 .accessibilityIdentifier("search.field")
@@ -203,7 +212,7 @@ struct SearchView: View {
                 } label: {
                     // 押せる幅は 44pt（地図の探す口の「×」と同じ）
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
@@ -213,10 +222,11 @@ struct SearchView: View {
         }
         .padding(.horizontal, 14)
         // 最小44（板）。大きな文字の設定では字に合わせて伸ばす（固定だと上下が欠ける）
-        .frame(minHeight: 44)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
-        .padding(.horizontal, 16)
+        .frame(minHeight: WebTheme.minTapTarget)
+        // v2（2026-10-14・Search の板）: 地は surface-2（#161617）・縁は白 8%・角 12
+        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .padding(.horizontal, JPSpace.gutter)
     }
 
     /// 種類（板 11 の「すべて／写真／人／タグ／撮影地」）。
@@ -279,11 +289,11 @@ struct SearchView: View {
                                 in: Circle())
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(
-                        selected ? WebTheme.foreground : Color.white.opacity(0.15),
+                        selected ? WebTheme.foreground : WebTheme.hairline,
                         lineWidth: selected ? 2.5 : 1))
                 Text(label)
                     .font(.caption)
-                    .foregroundStyle(selected ? WebTheme.foreground : WebTheme.muted2)
+                    .foregroundStyle(selected ? WebTheme.foreground : WebTheme.text2)
                     .lineLimit(1)
             }
             .frame(width: 68)
@@ -301,36 +311,18 @@ struct SearchView: View {
                 // 0 になったとき、押して外す手立てが消える
                 ForEach(model.tagChips.filter { $0.count > 0 || TagChoices.key(query) == TagChoices.key($0.tag) },
                         id: \.tag) { item in
-                    chip("\(item.tag)  \(item.count)",
-                         selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
+                    // v2（2026-10-14・Search の板の県のチップ）: 共通のチップに、枚数を灰の等幅で添える。
+                    // 以前はここだけ自前の大きい札（42 前後）で、枚数も同じ字の色だった
+                    PillChip(title: item.tag, count: item.count,
+                             selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
                         query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, JPSpace.gutter)
         }
-        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+        // 札の押せる余白（上下 5）の分だけ詰め、並びの見た目の間隔は前のまま
         .padding(.vertical, -PillChip.tapSlack)
-    }
-
-    /// 見た目の札は上下 11 ＋ 字（標準で約 42）、上下 4 の余白まで押せる＝**押せる範囲は 44 以上**
-    /// （`PillChip` と同じ形）
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                     : AnyShapeStyle(WebTheme.surface),
-                            in: Capsule())
-                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                .padding(.vertical, PillChip.tapSlack)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// 季節と時間帯の札（2026-10-03・戦略の計画6）。**1列に 春 夏 秋 冬 ｜ 朝 日中 夕 夜**。
@@ -339,37 +331,59 @@ struct SearchView: View {
     /// 重ねられる**（「秋」＋「夕」＝秋の夕方）。押し直すと外す。2つの群の間には細い縦線を置き、
     /// 読み上げは「季節 秋」「時間帯 夕」と群の名前から言う（字だけでは「夕」が何の札か分からない）
     private var shootingTimeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(ShootingTime.Season.allCases) { season in
-                    PillChip(title: season.label, selected: model.timeFilter.season == season) {
-                        model.select(season: season)
+        HStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ShootingTime.Season.allCases) { season in
+                        PillChip(title: season.label, selected: model.timeFilter.season == season) {
+                            model.select(season: season)
+                        }
+                        .accessibilityLabel(L("季節 \(season.label)", "Season: \(season.label)"))
+                        .accessibilityIdentifier("search.season.\(season.rawValue)")
                     }
-                    .accessibilityLabel(L("季節 \(season.label)", "Season: \(season.label)"))
-                    .accessibilityIdentifier("search.season.\(season.rawValue)")
-                }
-                Rectangle()
-                    .fill(Color.white.opacity(0.15))
-                    .frame(width: 1, height: 20)
-                    .padding(.horizontal, 2)
-                    .accessibilityHidden(true)
-                ForEach(ShootingTime.DayPart.allCases) { part in
-                    let selected = model.timeFilter.dayPart == part
-                    // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
-                    let usable = selected || availableDayParts.contains(part)
-                    PillChip(title: part.label, selected: selected) {
-                        model.select(dayPart: part)
+                    Rectangle()
+                        .fill(WebTheme.line)
+                        .frame(width: JPStroke.hairline, height: 20)
+                        .padding(.horizontal, 2)
+                        .accessibilityHidden(true)
+                    ForEach(ShootingTime.DayPart.allCases) { part in
+                        let selected = model.timeFilter.dayPart == part
+                        // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
+                        let usable = selected || availableDayParts.contains(part)
+                        PillChip(title: part.label, selected: selected) {
+                            model.select(dayPart: part)
+                        }
+                        .disabled(!usable)
+                        .opacity(usable ? 1 : 0.35)
+                        .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
+                        .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
                     }
-                    .disabled(!usable)
-                    .opacity(usable ? 1 : 0.35)
-                    .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
-                    .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
                 }
+                .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 16)
+            .padding(.vertical, -PillChip.tapSlack)
+
+            // 条件を選んだときだけ表示。横スクロールしなくても解除できるよう固定する。
+            if !model.timeFilter.isEmpty {
+                Button {
+                    model.clearTimeFilter()
+                } label: {
+                    // 🔴 2026-10-14: 字が墨（`accentText` #07090A）で、黒地の上で見えなかった。
+                    // 黒地の上の手がかりなので真鍮（CLAUDE.md の owner の好み「デザインの箇所は白より真鍮」）
+                    Text(L("すべて解除", "Clear all"))
+                        .font(JPFont.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("季節・時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
+                .accessibilityIdentifier("search.clearTimeFilters")
+                .fixedSize()
+                .padding(.trailing, 8)
+            }
         }
-        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
-        .padding(.vertical, -PillChip.tapSlack)
     }
 
     /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引の `timeOfDayGuide` から。
@@ -381,8 +395,9 @@ struct SearchView: View {
     /// 発見の顔の「季節・時間帯から探す」。札を押すと結果の顔に移り、同じ札の列が上に残る
     /// （語・種類・カテゴリと重ねられる——「秋」を押してから「京都」と打てば秋の京都）
     private var shootingTimeSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(L("季節・時間帯から探す", "Browse by season & time of day"))
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            sectionHeader(eyebrow: "SEASON · TIME", spoken: L("季節と時間帯", "Season and time"),
+                          title: L("季節・時間帯から探す", "Browse by season & time of day"))
             shootingTimeChips
         }
     }
@@ -410,13 +425,14 @@ struct SearchView: View {
     private var popularSpots: some View {
         let spots = model.popularSpots
         if !spots.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("人気の撮影地", "Popular places")) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                sectionHeader(eyebrow: "PLACES", spoken: L("撮影地", "Places"),
+                              title: L("人気の撮影地", "Popular places")) {
                     // 行き先はマップの札（板 11）。撮影地のピンが並ぶ
                     Button {
                         TabRouter.shared.openMap()
                     } label: {
-                        moreLabel(L("地図で見る", "View on map"))
+                        MoreLink(text: L("地図で見る", "View on map"))
                     }
                     .buttonStyle(.plain)
                 }
@@ -469,17 +485,19 @@ struct SearchView: View {
     private var seasonal: some View {
         let photos = model.seasonal
         if !photos.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
                 // **「おすすめ」とは書かない**——推薦の口は無く、
                 // 中身は「いまの季節のタグが付いた写真」そのもの。
                 // どのタグで集めたかは「すべて」の先の注記に出す（板 11 はこの段に説明を置かない）
-                sectionHeader(L("いまの季節の写真", "This season")) {
+                sectionHeader(eyebrow: "THIS SEASON", spoken: L("いまの季節", "This season"),
+                              title: L("いまの季節の写真", "This season")) {
                     NavigationLink {
                         CollectionPhotosScreen(title: L("いまの季節の写真", "This season"),
                                                note: model.seasonalNote,
-                                               photos: model.seasonalAll)
+                                               photos: model.seasonalAll,
+                                               eyebrow: "THIS SEASON", eyebrowSpoken: L("いまの季節", "This season"))
                     } label: {
-                        moreLabel(L("すべて", "All"))
+                        MoreLink(text: L("すべて", "All"))
                     }
                     .buttonStyle(.plain)
                 }
@@ -495,6 +513,9 @@ struct SearchView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                // v2（Search の板の `.grid3`）: 格子は端 16 の内側に置き、外枠だけ角 14 で丸める（中のすき間 2 はそのまま）
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                .padding(.horizontal, JPSpace.gutter)
             }
         }
     }
@@ -504,12 +525,13 @@ struct SearchView: View {
     @ViewBuilder
     private var featured: some View {
         if let group = model.featured {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("おすすめ · \(group.label)", "Picks · \(group.label)")) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                sectionHeader(eyebrow: "PICKS · \(group.label)", spoken: L("おすすめ · \(group.label)", "Picks · \(group.label)"),
+                              title: L("おすすめ", "Picks")) {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
                     } label: {
-                        moreLabel(L("すべて見る", "See all"))
+                        MoreLink(text: L("すべて見る", "See all"))
                     }
                     .buttonStyle(.plain)
                 }
@@ -519,7 +541,7 @@ struct SearchView: View {
                             NavigationLink {
                                 PhotoDetailView(photo: photo, context: group.photos)
                             } label: {
-                                PhotoFrame(photo: photo, aspect: 3.0 / 4.0, corner: 0)
+                                PhotoFrame(photo: photo, aspect: 3.0 / 4.0, corner: JPRadius.s)
                                     .frame(width: 120)
                             }
                             .buttonStyle(.plain)
@@ -531,8 +553,11 @@ struct SearchView: View {
         }
     }
 
-    /// 撮影地の札（板 11: 156×116・角丸14・名前 13 semibold・枚数は等幅 12——板の 10 は本文の最小 12 に上げた）。
+    /// 撮影地の札（板 11: 156×116・角丸14・枚数は等幅 12——板の 10 は本文の最小 12 に上げた）。
     /// **枚数は数えたもの**
+    ///
+    /// v2（2026-10-14・Search の板の PLACES）: 名前は明朝（板 16 → 明朝の下限の 18）。写真の上なので白だけ。
+    /// 枚数は透過の白（写真の上の副文・`WebTheme.muted`）
     private func spotCard(_ spot: DiscoverySections.Spot) -> some View {
         Color.clear
             .frame(width: 156, height: 116)
@@ -542,24 +567,24 @@ struct SearchView: View {
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(LocationMatch.display(spot.id))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(Color.white)
                         .lineLimit(1)
                     Text(L("\(spot.count)枚の写真", spot.count == 1 ? "1 photo" : "\(spot.count) photos"))
-                        .font(JPFont.mono(12, relativeTo: .caption))
+                        .font(JPFont.meta)
                         .foregroundStyle(WebTheme.muted)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 28)
-                .padding(.bottom, 10)
+                .padding(.horizontal, JPSpace.s)
+                .padding(.top, JPSpace.section)
+                .padding(.bottom, JPSpace.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.8)],
                                    startPoint: .top, endPoint: .bottom)
                 )
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+            .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
 
     /// 色から探す（モック9-5）。
@@ -571,8 +596,8 @@ struct SearchView: View {
     private var colors: some View {
         let sections = model.colors
         if !sections.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("色から探す", "Browse by colour"))
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                sectionHeader(eyebrow: "COLORS", spoken: L("色", "Colors"), title: L("色から探す", "Browse by color"))
                 // 丸い写真に名前（板 11）。**5つを横に割り付ける**——色味は最大5つ
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(sections) { section in
@@ -593,15 +618,16 @@ struct SearchView: View {
         VStack(spacing: 6) {
             RemoteImage(url: section.photos.first?.gridImageURL,
                         alignment: section.photos.first?.gridAlignment ?? .center)
-                .frame(width: 56, height: 56)
+                // v2（Search の板）: 実際の写真の丸 62・縁は白 8%
+                .frame(width: Self.colorCircleSize, height: Self.colorCircleSize)
                 .background(WebTheme.surface, in: Circle())
                 .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(Circle().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
             // 本文の最小 12pt（`.caption` は標準で 12pt・字の大きさの設定に追従する）。
             // 縮めずに2行まで折る（英語の「Forest & nature」が5列に入らない）
             Text(section.family.note)
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text2)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
@@ -611,7 +637,13 @@ struct SearchView: View {
         .accessibilityLabel(ColorFamilies.accessibilityLabel(section.family, count: section.count))
     }
 
+    /// 色の丸の大きさ（v2 の板の 62）
+    nonisolated static let colorCircleSize: CGFloat = 62
+
     /// 機材から探す（板 11: 札の中の行・最小54・カメラの印・右に枚数と「›」）。
+    ///
+    /// **v2（2026-10-14・Search の板の GEAR）: 札で囲まず、白 8% の線で区切った行にした**（上にも線）。
+    /// 枚数は text-3 の等幅（数は合図ではない）
     ///
     /// **分け方を隠さない**——行の下の小さい字に「〜35mm」を出す。
     /// レンズ名で分けないのは、ズーム1本が広角も望遠も撮れるから。
@@ -619,20 +651,21 @@ struct SearchView: View {
     private var gear: some View {
         let sections = model.gear
         if !sections.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("機材から探す", "Browse by gear"))
-                JPCard {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                        if index > 0 { JPCardDivider() }
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                sectionHeader(eyebrow: "GEAR", spoken: L("機材", "Gear"), title: L("機材から探す", "Browse by gear"))
+                VStack(spacing: 0) {
+                    JPCardDivider()
+                    ForEach(sections) { section in
                         NavigationLink {
                             GearPhotosView(section: section)
                         } label: {
                             gearRow(section)
                         }
-                        .buttonStyle(JPRowButtonStyle())
+                        .buttonStyle(.plain)
+                        JPCardDivider()
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, JPSpace.gutter)
             }
         }
     }
@@ -641,57 +674,41 @@ struct SearchView: View {
         HStack(spacing: 12) {
             Image(systemName: "camera")
                 .font(.system(size: 18))
-                .foregroundStyle(WebTheme.muted2)
+                .foregroundStyle(WebTheme.text2)
                 .frame(width: 20)
-            VStack(alignment: .leading, spacing: 3) {
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(section.group.label)
-                    .font(.subheadline)
+                    .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
                 Text(section.group.range)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: JPSpace.xs)
             Text(L("\(section.count)枚", "\(section.count)"))
-                .font(JPFont.mono(13, relativeTo: .footnote))
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.text3)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.35))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .frame(minHeight: 54)
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.row)
         .contentShape(Rectangle())
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        sectionHeader(title) { EmptyView() }
+    private func sectionHeader(eyebrow: String, spoken: String, title: String) -> some View {
+        sectionHeader(eyebrow: eyebrow, spoken: spoken, title: title) { EmptyView() }
     }
 
-    /// 段の見出し（板 11: 12・medium・白60% の小さい見出し）。
-    /// 右端に「地図で見る →」「すべて見る →」を置ける
-    private func sectionHeader<Trailing: View>(_ title: String,
+    /// 段の見出し。**v2（2026-10-14・Search の板）**: 眉（真鍮＋消える線）→ 明朝 22 → 右下に「すべて ›」
+    /// （共通の `JPSectionHeading`・`MoreLink`）。以前は 12pt の灰の小さい見出しだった
+    private func sectionHeader<Trailing: View>(eyebrow: String, spoken: String, title: String,
                                                @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            JPSectionTitle(title)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            trailing()
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func moreLabel(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(text)
-            Image(systemName: "arrow.right")
-        }
-        .font(.caption)
-        .foregroundStyle(WebTheme.muted2)
-        .padding(.trailing, 4)
-        .frame(minHeight: WebTheme.minTapTarget)
-        .contentShape(Rectangle())
+        JPSectionHeading(eyebrow: eyebrow, spoken: spoken, title: title, trailing: trailing)
+            .padding(.horizontal, JPSpace.gutter)
     }
 
     // MARK: - 結果
@@ -727,10 +744,9 @@ struct SearchView: View {
         // 元の行が消え、そのページが閉じる
         let users = model.scope.showsPeople ? dropped.users(model.users) : []
         if !users.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L("人", "People"))
-                    .font(.headline)
-                    .foregroundStyle(WebTheme.foreground)
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                // v2: 結果の節の名前は眉（真鍮＋消える線・黒地の上）
+                JPEyebrowLine(L("人", "People"))
                 ForEach(users) { user in
                     NavigationLink {
                         UserProfileView(userId: user.userId)
@@ -741,14 +757,16 @@ struct SearchView: View {
                                 .frame(width: 44, height: 44)
                                 .clipShape(Circle())
                             Text(user.name)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
+                                .font(JPFont.bodyEmphasis)
+                                .foregroundStyle(WebTheme.text)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.caption)
-                                .foregroundStyle(WebTheme.faint)
+                                .foregroundStyle(WebTheme.text3)
+                                .accessibilityHidden(true)
                         }
-                        .frame(minHeight: WebTheme.minTapTarget)
+                        // v2: 人の行は 64（`JPHeight.tallRow`）
+                        .frame(minHeight: JPHeight.tallRow)
                         // `.plain` は字と絵の上だけが当たる——間の空き（Spacer）も押せるように
                         .contentShape(Rectangle())
                     }
@@ -772,8 +790,8 @@ struct SearchView: View {
                        : (model.peopleQueryTooShort
                           ? L("英数字は2文字から探せます", "Type at least 2 letters or numbers")
                           : L("見つかりませんでした", "No results")))))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text2)
                 .padding(.horizontal, 16)
                 .padding(.top, 24)
                 .padding(.bottom, peopleRetryShown ? 8 : 24)
@@ -819,14 +837,14 @@ struct SearchView: View {
         let hits = spotHits
         if !hits.isEmpty {
             let expanded = spotsExpandedFor == spotsExpandKey
-            VStack(alignment: .leading, spacing: 10) {
-                // 季節・時間帯で絞っているときは「冬の案内がある撮影スポット」（`ShootingTime.Filter.spotsHeading`）
-                Text(model.timeFilter.spotsHeading(count: hits.count))
-                    .font(.headline)
-                    .foregroundStyle(WebTheme.foreground)
-                VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                // 季節・時間帯で絞っているときは「冬の案内がある撮影スポット」（`ShootingTime.Filter.spotsHeading`）。
+                // v2: 結果の節の名前は眉（真鍮＋消える線）
+                JPEyebrowLine(model.timeFilter.spotsHeading(count: hits.count))
+                // v2: 行を束ねる札（#0E0E0F・白 8% の縁・角 16）と白 8% の区切り線（共通の `JPCard`）
+                JPCard {
                     ForEach(Array((expanded ? hits : Array(hits.prefix(5))).enumerated()), id: \.element.id) { i, spot in
-                        if i > 0 { Divider().overlay(WebTheme.border) }
+                        if i > 0 { JPCardDivider() }
                         NavigationLink {
                             OfficialSpotView(spot: spot, spots: officialSpots, photos: model.everything,
                                              photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded, photos: model.everything))
@@ -836,13 +854,12 @@ struct SearchView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                 if hits.count > 5 {
                     Button {
                         spotsExpandedFor = expanded ? nil : spotsExpandKey
                     } label: {
                         Text(expanded ? L("閉じる", "Show fewer") : L("すべて表示（\(hits.count)か所）", "Show all \(hits.count)"))
-                            .font(.subheadline.weight(.semibold))
+                            .font(JPFont.bodyEmphasis)
                             .foregroundStyle(WebTheme.accent)
                             .frame(minHeight: WebTheme.minTapTarget)
                             // `.plain` は字の上だけが当たる——44 の帯ぜんぶを押せるように
@@ -873,32 +890,33 @@ struct SearchView: View {
                 .frame(width: 24)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                // v2（Search の板の撮影スポットの行）: 名前は明朝（板 17 → 明朝の下限の 18）
                 Text(spot.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
+                    .font(JPFont.rowTitle)
+                    .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
                 Text(Self.spotSubtitle(spot))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
                     .lineLimit(1)
                 // 季節・時間帯で絞っているときは、その案内の文を添える（なぜ並ぶのかを見せる・板 11 の
                 // 「THIS SEASON」の札と同じ中身）
                 if let guide = ShootingTime.guide(for: spot, filter: model.timeFilter) {
                     Text(guide)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
                         .lineLimit(2)
                 }
             }
-            .padding(.vertical, 8)
-            Spacer(minLength: 8)
+            .padding(.vertical, JPSpace.s)
+            Spacer(minLength: JPSpace.xs)
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 56)
+        .padding(.horizontal, JPSpace.m)
+        .frame(minHeight: JPHeight.tallRow)
         .contentShape(Rectangle())
     }
 
@@ -918,8 +936,8 @@ struct SearchView: View {
             Text(query.isEmpty
                  ? L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results")
                  : L("写真: \(model.shown.count) 件", "Photos: \(model.shown.count)"))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.footnote.monospacedDigit())
+                .foregroundStyle(WebTheme.text2)
             Spacer()
             Menu {
                 ForEach(GallerySort.feedChoices) { option in
@@ -930,8 +948,8 @@ struct SearchView: View {
                     Text(model.sort.label)
                     Image(systemName: "chevron.down").font(.caption2)
                 }
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
                 .frame(minHeight: WebTheme.minTapTarget)
             }
         }
@@ -941,17 +959,16 @@ struct SearchView: View {
         if let note = model.timeFilter.note {
             Text(note)
                 .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16)
                 .accessibilityIdentifier("search.time.note")
         }
 
         if model.shown.isEmpty && !model.hasLoaded {
-            // 最初の読み込みが返るまでは何も言わない（失敗とも0件とも言わない）
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+            // 最初の読み込みが返るまでは何も言わない（失敗とも0件とも言わない）。
+            // v2（Components 06）: 回る印ではなく格子の形の灰の骨格
+            JPLoadingState(kind: .grid)
         } else if model.shown.isEmpty {
             // **「読み込めなかった」と「見つからなかった」を分ける。**
             // 0件なら検索語を捨てさせず、地図で同じ目的を続けられる出口を出す。
@@ -961,13 +978,13 @@ struct SearchView: View {
                      // 上に撮影スポットが当たっているときは「写真は」と言う（全部0件に読ませない）
                      : (spotHits.isEmpty ? L("見つかりませんでした", "No results")
                         : L("写真は見つかりませんでした", "No photos found")))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
                 if !(model.loadFailed && model.everything.isEmpty) {
                     // 打った語を地図へ持っていく（地図で打ち直させない。タグの語は除く）
                     Button { tabRouter.openMap(query: model.scope.mapQuery(for: query)) } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
-                            .font(.subheadline.weight(.semibold))
+                            .font(JPFont.bodyEmphasis)
                             .foregroundStyle(WebTheme.accent)
                             .frame(minHeight: WebTheme.minTapTarget)
                             // `.plain` は字と絵の上だけが当たる——44 の帯ぜんぶを押せるように

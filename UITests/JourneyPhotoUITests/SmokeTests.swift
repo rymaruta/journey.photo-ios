@@ -91,6 +91,43 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(bell.isHittable, "閉じた後にホームへ戻っていない")
     }
 
+    /// **見出しの絵は、絵の外でも 44pt の高さの中なら押せること**（2026-10-14 絵を小さくしたとき）。
+    /// 箱は幅 24・高さ 44。絵の中心から 19pt 下（17pt の絵の端から約 10pt 外）を押して開くか見る。
+    /// 🔴 run 432: 箱を 28 角にして外へ当たりを広げた作りでは、ここを押しても開かなかった。
+    /// 横（隣の絵との間）を押したときの結果は、決まりにせず記録だけ残す（システム次第のため）
+    func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
+        agree.tap()
+
+        let bell = app.buttons["header.notifications"]
+        XCTAssertTrue(bell.waitForExistence(timeout: 20), "見出しのお知らせが無い")
+        XCTAssertGreaterThanOrEqual(bell.frame.height, 44, "当たりの高さが 44 に足りない")
+        let close = app.buttons["notifications.close"]
+        let center = bell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+
+        // 横: 箱の右の端から 5pt 外（隣のメニューとの間）。記録だけ
+        center.withOffset(CGVector(dx: bell.frame.width / 2 + 5, dy: 0)).tap()
+        let sideOpened = close.waitForExistence(timeout: 5)
+        let note = XCTAttachment(string: "箱: \(bell.frame) / 横に 5pt 外を押して開いたか: \(sideOpened)")
+        note.name = "見出しの絵の横の当たり"
+        note.lifetime = .keepAlways
+        add(note)
+        if sideOpened {
+            close.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 10), "お知らせが閉じない")
+        }
+
+        // 縦: 絵の中心から 19pt 下（44 の高さの中）
+        center.withOffset(CGVector(dx: 0, dy: 19)).tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 15),
+                      "絵の外（44pt の高さの中）を押してもお知らせが開かない")
+    }
+
     /// 見出しの「メニュー（≡）」でメニューが出て、「撮影地マップ」でシートが閉じて
     /// マップの札へ移る（板 01d・2026-09-26）
     func testHeaderMenuOpensAndRoutesToMap() {

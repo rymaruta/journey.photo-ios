@@ -3,7 +3,7 @@ import SwiftUI
 /// 入力と確定の部品（板 41〜47「はじめる・安全・設定」の列）。
 ///
 /// **板は7画面とも同じ3つの形を使っている**——見出し付きの 48pt の欄、
-/// 52pt のカプセル、下に固定したぼかしの帯。以前は画面ごとに書き分けて
+/// カプセル（v2 で塗り 50・線 44）、下に固定したぼかしの帯。以前は画面ごとに書き分けて
 /// いて、同じ「パスワードの欄」でもログインは枠付き・変更は素の行、と割れていた。
 
 /// 見出し付きの入力欄（板: 12px・medium・白72% の見出し ＋ 48pt・角丸12・
@@ -43,14 +43,18 @@ struct JPField<Content: View>: View {
     }
 }
 
-/// 52pt のカプセル（板の確定ボタン）。幅いっぱい・`.callout`（既定 16pt）semibold。
+/// 幅いっぱいのカプセル（板の確定ボタン）。
+///
+/// **v2（2026-10-14・Components 01「高さは 50（主）と 44（副）の2種類だけ」）**:
+/// 塗りのボタン（白・真鍮・赤）は 50・`.callout`（既定 16pt）semibold、
+/// 線のボタン（`.outline`）は 44・15pt semibold・白 14% の縁。以前は全部 52 で、縁は白 28%。
 ///
 /// **`webPrimaryButton` は変えない。** そちらは約44pt で、プロフィールの
 /// フォローなど行の中のボタンが使っている
-enum JPPillStyle {
-    /// 白 92% に墨の字（1画面に1つ）
+enum JPPillStyle: Equatable {
+    /// 白 94% に墨の字（1画面に1つ）
     case primary
-    /// 枠線（白28%）に白の字（「アカウントを作る」など2番手）
+    /// 枠線（白 14%）に白の字（「アカウントを作る」など2番手）。高さ 44
     case outline
     /// 赤の塗りに白の字（アカウントの削除だけ）
     case danger
@@ -58,12 +62,81 @@ enum JPPillStyle {
     /// の accent-fill #B8955A・墨で 7.11:1）。写真のある画面は `.primary`（白）
     case accent
 
+    /// **主ボタンの色はこれで決める**（CLAUDE.md の owner の好み・v2 の板より優先）:
+    /// 写真のある画面は白（ログインなど・写真の上で読める色は白だけ）、写真の無い画面は真鍮の塗り＋墨。
+    /// v2 の板は「写真のある画面も真鍮」の案だったが、owner の決まりを取った（2026-10-14）
+    static func main(onPhoto: Bool) -> JPPillStyle {
+        onPhoto ? .primary : .accent
+    }
+
+    /// 高さ。塗りは 50、線は 44（`JPHeight`）
+    var height: CGFloat {
+        self == .outline ? JPHeight.secondaryButton : JPHeight.primaryButton
+    }
+
+    /// 縁の白の濃さ。線のボタンだけ v2 の line（白 14%）
+    var borderOpacity: Double {
+        self == .outline ? 0.14 : 0
+    }
+
     @MainActor var fill: Color {
         switch self {
         case .primary: return WebTheme.accentBackground
         case .outline: return Color.clear
         case .danger: return WebTheme.dangerFill
         case .accent: return WebTheme.accentFill
+        }
+    }
+}
+
+/// 線の小ボタンの大きさ（板 Components 01）
+enum JPOutlineSize: Equatable {
+    /// 副ボタン: 44・15pt semibold（板 `.bo`）
+    case regular
+    /// 行の中の小ボタン: 見た目 36・13pt semibold・当たり 44（板「行の中の小ボタン」・プロフィールを編集）
+    case inline
+
+    var height: CGFloat {
+        self == .regular ? JPHeight.secondaryButton : JPHeight.inlineButton
+    }
+
+    /// 見た目の高さから 44 の当たりまでの上下の余白（片側）
+    var tapSlack: CGFloat {
+        max(0, (WebTheme.minTapTarget - height) * 0.5)
+    }
+
+    @MainActor var font: Font {
+        self == .regular ? JPFont.bodyEmphasis : JPFont.footnote.weight(.semibold)
+    }
+}
+
+/// 線の小ボタンの色合い（板 Components 01: 線は白 14%・危険は #F0565A の字と 40% の縁）
+enum JPOutlineTone: Equatable {
+    /// 白の字・白 14% の線（`WebTheme.line`）
+    case plain
+    /// 赤の字・赤 40% の線（端末から削除）
+    case danger
+    /// 削除の確かめの「削除する」: 白の字・赤 16% の地・赤 50% の線
+    case strong
+
+    /// 危険の線の赤の濃さ（板 40%）と、確かめの「削除する」の地（16%）・線（50%）
+    nonisolated static let dangerLineOpacity = 0.4
+    nonisolated static let strongFillOpacity = 0.16
+    nonisolated static let strongLineOpacity = 0.5
+
+    @MainActor var text: Color {
+        self == .danger ? WebTheme.danger : WebTheme.foreground
+    }
+
+    @MainActor var fill: Color {
+        self == .strong ? WebTheme.danger.opacity(Self.strongFillOpacity) : Color.clear
+    }
+
+    @MainActor var border: Color {
+        switch self {
+        case .plain: return WebTheme.line
+        case .danger: return WebTheme.danger.opacity(Self.dangerLineOpacity)
+        case .strong: return WebTheme.danger.opacity(Self.strongLineOpacity)
         }
     }
 }
@@ -80,14 +153,57 @@ extension View {
             .listRowSeparator(.hidden)
     }
 
-    func jpPillButton(_ style: JPPillStyle = .primary) -> some View {
+    /// - Parameter height: 高さを揃えたいときだけ渡す。**同じ場所で主ボタンと線のボタンが
+    ///   入れ替わる**所（読み込み中に「やめる」へ替わる帯）は `JPHeight.primaryButton` を渡し、
+    ///   入れ替わりで帯が 6pt 跳ねないようにする
+    func jpPillButton(_ style: JPPillStyle = .primary, height: CGFloat? = nil) -> some View {
         self
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(style == .primary || style == .accent ? WebTheme.accentText : Color.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(style.fill, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(style == .outline ? 0.28 : 0), lineWidth: 1))
+            .jpCapsuleFace(font: style == .outline ? JPOutlineSize.regular.font : .callout.weight(.semibold),
+                           text: style == .primary || style == .accent ? WebTheme.accentText : Color.white,
+                           fill: style.fill,
+                           border: Color.white.opacity(style.borderOpacity),
+                           fullWidth: true,
+                           minHeight: height ?? style.height,
+                           textInset: nil)
             .contentShape(Capsule())
+    }
+
+    /// **線の小ボタン**（板 Components 01 の `.bo`・「行の中の小ボタン」・危険の線）。幅は中身に合わせる
+    /// （`fullWidth` で札の幅いっぱい）。字は1行・左右 16 の内側。
+    ///
+    /// 旅（`TripOutlineButton`）・人のページ（`ProfileOutlinePill`）がそれぞれ同じ形を書いていたのを、
+    /// `jpPillButton(.outline)` と同じ面（`jpCapsuleFace`）に寄せた（2026-10-14 判断）。
+    /// `.inline` は見た目 36・**当たりは 44**（上下に余白を足して四角で押せるようにする）
+    @ViewBuilder
+    func jpOutlineButton(_ size: JPOutlineSize = .regular, tone: JPOutlineTone = .plain,
+                         fullWidth: Bool = false) -> some View {
+        let face = self.jpCapsuleFace(font: size.font, text: tone.text, fill: tone.fill, border: tone.border,
+                                      fullWidth: fullWidth, minHeight: size.height, textInset: JPSpace.m)
+        switch size {
+        case .regular:
+            face.contentShape(Capsule())
+        case .inline:
+            face
+                .padding(.vertical, size.tapSlack)
+                .contentShape(Rectangle())
+        }
+    }
+
+    /// 丸いボタンの面（字・地・縁・高さ）。**丸いボタンの値はここ1つを通る**——幅いっぱいのカプセル
+    /// （`jpPillButton`）も線の小ボタン（`jpOutlineButton`）も同じ並びで組む（2026-10-14 判断）。
+    ///
+    /// - Parameter textInset: 字の左右の内側。nil なら内側なし・行も切らない（幅いっぱいのカプセルの元の形）。
+    ///   値があれば字は1行
+    func jpCapsuleFace(font: Font, text: Color, fill: Color, border: Color,
+                         fullWidth: Bool, minHeight: CGFloat, textInset: CGFloat?) -> some View {
+        self
+            .font(font)
+            .foregroundStyle(text)
+            .lineLimit(textInset == nil ? nil : 1)
+            .padding(.horizontal, textInset ?? 0)
+            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: minHeight)
+            .background(fill, in: Capsule())
+            .overlay(Capsule().strokeBorder(border, lineWidth: JPStroke.hairline))
     }
 
     /// 下に固定する帯（板: 黒55%＋ぼかし＋上に白8% の線・余白 12/16/下）。
@@ -110,27 +226,51 @@ extension View {
 
 // MARK: - 札と行（板 43 設定・47 通報）
 
-/// 行を束ねる札（板: 角丸16・地 白7%・縁 白8%）。行の間の線は `JPCardDivider`
+/// 行を束ねる札（板: 角丸16・縁 白8%）。行の間の線は `JPCardDivider`。
+///
+/// **v2（2026-10-14）: 地を白 7%（≒#121212）から surface-1 の #0E0E0F に沈めた**（`WebTheme.card`）。
+///
+/// - **黒地の画面の上だけ既定の地。** シート（#161617）の上では沈んで札に見えないので、
+///   `fill: WebTheme.surface`（白 7%・シートの上で一段明るい）を渡す（通報のシート）
+/// - 同じ画面に白 7% の札（`WebTheme.surface` を直に塗った所）がまだ残っている。次の段でそろえる
 struct JPCard<Content: View>: View {
 
+    /// 地。無ければ `WebTheme.card`
+    var fill: Color?
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(fill: Color? = nil, @ViewBuilder content: () -> Content) {
+        self.fill = fill
         self.content = content()
     }
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .jpCardFace(fill: fill)
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+    }
+}
+
+extension View {
+
+    /// **札の地**（板 Components の `.card`: surface-1・白 8% の縁・角 16）。`JPCard` と同じ値。
+    ///
+    /// 札を `VStack` で組めない所（旅行プラン・電波なしの札・今日のテーマ・ホームの上の札・バッジの棚・
+    /// 撮影スポットの数え札など）が「面＋縁＋角 16」を画面ごとに直に書いていた。ここ1つに寄せる
+    /// （2026-10-14 判断）。切り抜き（`clipShape`）・押せる形は札ごとに違うので呼ぶ側が足す。
+    ///
+    /// - Parameter fill: 地。無ければ `WebTheme.card`。シートの上・黒地に溶かす札は地だけ替える
+    func jpCardFace(fill: Color? = nil) -> some View {
+        self
+            .background(fill ?? WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 }
 
 /// 札の中の行と行の間の線（板: 白8%・1pt）
 struct JPCardDivider: View {
     var body: some View {
-        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
     }
 }
 

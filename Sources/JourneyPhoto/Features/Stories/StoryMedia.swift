@@ -1,6 +1,6 @@
 import SwiftUI
 import AVFoundation
-import AVKit
+import UIKit
 
 /// ストーリーの中身。**写真とは限らない。**
 ///
@@ -72,12 +72,17 @@ private struct StoryVideo: View {
     @State private var failWatch: Task<Void, Never>?
 
     var body: some View {
-        VideoPlayer(player: player)
+        // 2026-10-16 判断: **`VideoPlayer` をやめ、層（`AVPlayerLayer`）を `.resizeAspectFill` で敷く**
+        // （`StoryVideoSurface`）。`VideoPlayer` は縦横比のまま収める（`.resizeAspect`）ので、
+        // 縦長でない動画の上下・左右に黒い帯が出て、写真のように画面いっぱいにならなかった
+        // （板 StoryViewer は `object-fit: cover`）。再生の操作盤も出ない（送る・止めるは閲覧画面の指で）
+        StoryVideoSurface(player: player)
             // **既にあるなら作り直さない。** 「見た人」のシートを閉じて
             // 戻るたびに `onAppear` は呼ばれるので、毎回作ると 0:00 に戻る
             .onAppear {
                 if player == nil {
-                    let made = AVPlayer(url: url)
+                    // 閲覧画面が先読みしておいた再生器があれば使う（`StoryVideoPreloader`）
+                    let made = StoryVideoPreloader.shared.take(url) ?? AVPlayer(url: url)
                     made.isMuted = isMuted
                     player = made
                 }
@@ -199,6 +204,82 @@ private struct StoryVideo: View {
                 }
             }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
+    }
+}
+
+/// 動画を**枠いっぱいに敷く**面（`AVPlayerLayer` を層にした UIView・`.resizeAspectFill`）。
+///
+/// はみ出しは閲覧画面が切る（写真の `RemoteImage(contentMode: .fill)` と同じ）。
+/// **指を受けない**——受けると左右の送る的・長押しまで届かない（`CameraPreview` と同じ理由）
+struct StoryVideoSurface: UIViewRepresentable {
+
+    let player: AVPlayer?
+
+    /// 敷き方。**切って埋める**（板の `object-fit: cover`）
+    static let gravity: AVLayerVideoGravity = .resizeAspectFill
+
+    func makeUIView(context: Context) -> SurfaceView {
+        let view = SurfaceView()
+        view.backgroundColor = .black
+        view.isUserInteractionEnabled = false
+        view.playerLayer.videoGravity = Self.gravity
+        view.playerLayer.player = player
+        return view
+    }
+
+    /// 再生器は `onAppear` で作るので、最初は nil で来て後から入る
+    func updateUIView(_ uiView: SurfaceView, context: Context) {
+        if uiView.playerLayer.player !== player { uiView.playerLayer.player = player }
+    }
+
+    final class SurfaceView: UIView {
+        override class var layerClass: AnyClass { AVPlayerLayer.self }
+        // swiftlint:disable:next force_cast
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    }
+}
+
+/// 次の動画の**先読み**（2026-10-16）。閲覧画面が次の動画の再生器を1つだけ作っておき、
+/// その動画を出すとき `StoryVideo` が受け取る——押してから読み始めると、動画の1本目の数秒が黒いまま待った。
+///
+/// **重くしすぎない。** 持つのは1つだけ（次を頼むと前のは捨てる）・先に読む長さは
+/// `bufferSeconds` 秒まで・鳴らさない（作るだけで `play()` しない）。閉じたら捨てる（`clear`）
+///
+/// **`@MainActor` を付けない**（`MusicPreviewPlayer` と同じ）。触るのは画面（`onAppear`・`.task`）からだけで、
+/// 常にメインスレッドで動く
+final class StoryVideoPreloader {
+
+    static let shared = StoryVideoPreloader()
+
+    /// 先に読んでおく長さ（秒）。受け取ったら 0（再生器に任せる）へ戻す
+    static let bufferSeconds: TimeInterval = 3
+
+    private(set) var url: URL?
+    private var player: AVPlayer?
+
+    /// `url` の再生器を作っておく。**同じ URL なら作り直さない**
+    func preload(_ url: URL) {
+        guard url != self.url else { return }
+        clear()
+        let made = AVPlayer(url: url)
+        made.currentItem?.preferredForwardBufferDuration = Self.bufferSeconds
+        self.url = url
+        player = made
+    }
+
+    /// 先読みしてあった再生器を受け取る（**1回だけ**・別の URL なら nil）
+    func take(_ url: URL) -> AVPlayer? {
+        guard url == self.url, let player else { return nil }
+        self.url = nil
+        self.player = nil
+        player.currentItem?.preferredForwardBufferDuration = 0
+        return player
+    }
+
+    func clear() {
+        player?.pause()
+        player = nil
+        url = nil
     }
 }
 

@@ -370,8 +370,10 @@ final class GalleryViewModel: ObservableObject {
             // 取り消された回は何も変えない（出ていた並びを残す）
             if error is CancellationError { return false }
             // **全件の並びに戻る。** 道が無い 404（`isMissingRoute`）・500・圏外・壊れた答えの
-            // どれでも、ホームを空にしない——戻り先の `photos.json` は端末の控えも持つ
-            print("[feed] 公開写真のページを読めませんでした。photos.json に戻ります: \(error)")
+            // どれでも、ホームを空にしない——戻り先の `photos.json` は端末の控えも持つ。
+            // 2026-10-16 判断: 戻り先の全件（`all`・`fetchPhotos`）は `GET /photos` が取れていれば
+            // その行で置き換えた一覧（`LiveLikes.list`）。止まった `photos.json` だけには戻らない
+            print("[feed] 公開写真のページを読めませんでした。全件（GET /photos と photos.json を合わせた一覧）に戻ります: \(error)")
             clearPages()
             pageSource = .snapshot
             return false

@@ -64,6 +64,8 @@ struct OfficialSpotView: View {
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
+    /// 「作例を重ねて撮る」で撮って「投稿」を押した1枚。撮る画面を閉じきったら投稿画面に入れて開く
+    @State private var pendingCapture: CameraCapture?
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
     @State private var postedHere = false
     /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
@@ -103,14 +105,17 @@ struct OfficialSpotView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                // 写真があれば写真を主役に（モック13の代表画像の位置）。無ければ地図
+            // v2（2026-10-14）: 間は 20 で一つにそろえる（板 SpotDetail は頭の段 12・節の間 32。
+            // 下書きの帯・説明の帯が節の間に挟まるので、一つの値にした）
+            VStack(alignment: .leading, spacing: JPSpace.l) {
+                // 写真があれば写真を主役に（板 SpotDetail の 460pt・題は写真の下端に白で）。
+                // 無ければ地図と、その下の黒地に題（板 SpotLanding C・眉は真鍮）
                 if let photo = shown.photo {
                     heroPhoto(photo)
                 } else {
                     heroMap
+                    header(onPhoto: false)
                 }
-                header
                 if let notice = SpotScreen.reviewNotice(review: spot.isDraft, draftedAt: shown.draftedAt) {
                     draftNotice(notice)
                 }
@@ -199,30 +204,47 @@ struct OfficialSpotView: View {
 
     // MARK: - 代表写真（Wikimedia Commons・2026-09-26）
 
-    /// 横いっぱい・4:3 の写真と、その下に出典の1行。
+    /// 横いっぱいの写真（v2 の板 SpotDetail の 460pt）と、その下に出典の1行。
+    /// 写真の下端は黒へ溶かし、題（眉・明朝 32・地域と枚数）を白で載せる（写真の上は白だけ・CLAUDE.md）。
     /// **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）。押すと Commons のページへ
     private func heroPhoto(_ photo: SpotImage) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
             Color.clear
-                .aspectRatio(4 / 3, contentMode: .fit)
+                .frame(height: Self.heroHeight)
                 .overlay(RemoteImage(url: photo.url))
                 .clipped()
                 // `Color.clear` は読み上げの対象にならないので、1つの画像としてまとめて名前を付ける
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
+                // 下端を黒へ溶かす（板: 下 220pt・黒 4% の位置から透明へ）。題の字を写真から切り離す
+                .overlay(alignment: .bottom) {
+                    LinearGradient(colors: [Color.black.opacity(0), Color.black],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: Self.heroFadeHeight)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    header(onPhoto: true)
+                        .padding(.bottom, JPSpace.m)
+                }
             // 当たりは1行全体で 44pt 以上（2026-10-03・`CreditLink` の注記）。見た目は `SpotImageCredit` のまま
             CreditLinksMenu(links: photo.creditLinks, accessibilityLabel: photo.credit, alignment: .topTrailing) {
                 SpotImageCredit(photo: photo)
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text3)
                     .lineLimit(2)
                     .multilineTextAlignment(.trailing)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, JPSpace.m)
             .accessibilityIdentifier("spot.official.photoCredit")
         }
     }
+
+    /// 頭の写真の高さ（板 SpotDetail 460）・下端の溶かしの高さ（板 220）
+    nonisolated static let heroHeight: CGFloat = 460
+    nonisolated static let heroFadeHeight: CGFloat = 220
 
     // MARK: - 地図（写真が無いスポットは、代表画像の位置に地図を置く）
 
@@ -233,9 +255,8 @@ struct OfficialSpotView: View {
             let center = CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)
             Map(position: $camera) {
                 Annotation(spot.name, coordinate: center) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(WebTheme.foreground)
+                    // **地図のピンは真鍮**（owner の好み・CLAUDE.md）。地図のタブと同じ印（v2 の板 SpotLanding C）
+                    SpotMapMarker(photoURL: nil)
                 }
             }
             .onAppear {
@@ -252,15 +273,18 @@ struct OfficialSpotView: View {
 
     // MARK: - 頭
 
-    private var header: some View {
+    /// 頭（眉・名前・地域と枚数）。**v2（2026-10-14・板 SpotDetail / SpotLanding）**:
+    /// - 写真の上（`onPhoto`）: 眉は白 88%・名前は明朝 32 の白・地域と枚数は白 82%。影で写真から切り離す
+    /// - 地図の下の黒地: 眉は真鍮（下書きは灰）・名前は明朝 32・地域と枚数は text-2
+    private func header(onPhoto: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             // 小見出し（モックの "PHOTO SPOT"）。**下書きなら「下書き・未確認」**
-            // 眉ラベルの部品に揃える。黒地なので真鍮（下書きの札は色で目立たせない）
+            // 眉ラベルの部品に揃える。真鍮は黒地の上だけ（写真の上は白・下書きの札は色で目立たせない）
             Text(SpotScreen.eyebrow(review: spot.isDraft))
                 .jpEyebrow()
-                .foregroundStyle(spot.isDraft ? WebTheme.muted : WebTheme.accent)
+                .foregroundStyle(onPhoto ? Color.white.opacity(0.88) : (spot.isDraft ? WebTheme.muted : WebTheme.accent))
             Text(spot.name)
-                .font(JPFont.display(28, relativeTo: .title))
+                .font(JPFont.photoTitle)
                 .foregroundStyle(WebTheme.foreground)
             // 「[都道府県] · [市区町村] · N枚の写真」。N は数えた値
             let subtitle = SpotScreen.subtitle(region: spot.regionLabel,
@@ -268,28 +292,34 @@ struct OfficialSpotView: View {
             // 地域も枚数も無い（ストーリーから開いた地域の無いスポット）なら行を置かない
             if !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                    .foregroundStyle(onPhoto ? WebTheme.muted : WebTheme.text2)
             }
         }
-        .padding(.horizontal, 16)
+        // 写真の上だけ字の影（`jpPhotoTextShadow` と同じ 0 2 14 / 60%）。黒地の上は影なし
+        .shadow(color: Color.black.opacity(onPhoto ? 0.6 : 0), radius: 7, x: 0, y: 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JPSpace.m)
     }
 
     /// 下書きの帯。文は `SpotScreen.reviewNotice` が日付ごと組み立てる
     /// （生の `draftedAt` を `Text` に渡さない）
     private func draftNotice(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.circle")
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted)
+        // v2 の札（`JPCard`・surface-1 と白 8% の縁）に入れる
+        JPCard {
+            HStack(alignment: .top, spacing: JPSpace.xs) {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.text3)
+                Text(text)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(JPSpace.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
+        .padding(.horizontal, JPSpace.m)
         .accessibilityIdentifier("spot.official.draftNotice")
     }
 
@@ -297,12 +327,13 @@ struct OfficialSpotView: View {
 
     /// 札の行（`SpotScreen.officialActions`）。**シェアは右上の1つだけ**（判断は `officialActions` の注記）
     private var actions: some View {
-        HStack(spacing: 10) {
+        // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
+        HStack(spacing: JPSpace.xs) {
             ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
                 actionButton(action)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, JPSpace.m)
     }
 
     @ViewBuilder
@@ -390,11 +421,16 @@ struct OfficialSpotView: View {
     private var summary: some View {
         if let text = shown.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             Text(text)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted)
-                .padding(.horizontal, 16)
+                .font(JPFont.body)
+                .lineSpacing(Self.bodyLineSpacing)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, JPSpace.m)
         }
     }
+
+    /// 本文の行間（板 SpotDetail の `.body` 15 / 行の高さ 1.8 に寄せる）
+    nonisolated static let bodyLineSpacing: CGFloat = 8
 
     // MARK: - 本文（この場所の魅力・撮影ガイド）
 
@@ -402,17 +438,19 @@ struct OfficialSpotView: View {
     private var bodySections: some View {
         if let body = spotBody, body.hasContent {
             if body.description != nil || !body.highlights.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    SpotDetailParts.sectionHeader(L("この撮影スポットの魅力", "What makes it special"))
+                VStack(alignment: .leading, spacing: JPSpace.s) {
+                    SpotDetailParts.sectionHeader(L("この撮影スポットの魅力", "What makes it special"),
+                                                  eyebrow: "ABOUT", spoken: L("概要", "About"))
                     if let text = body.description {
                         Text(text)
-                            .font(.subheadline)
-                            .foregroundStyle(WebTheme.muted)
+                            .font(JPFont.body)
+                            .lineSpacing(Self.bodyLineSpacing)
+                            .foregroundStyle(WebTheme.text2)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, JPSpace.m)
                     }
-                    ForEach(Array(body.highlights.enumerated()), id: \.offset) { _, line in
-                        bullet(line)
+                    if !body.highlights.isEmpty {
+                        highlightList(body.highlights)
                     }
                 }
             }
@@ -425,18 +463,18 @@ struct OfficialSpotView: View {
             // 朝・夕の文は「光の時刻」の節を出すときだけそちらに並べ、ここは残り（日中・夜）。出さなければ全部
             let times = SpotLight.guideTimes(body.timeOfDayGuide, lightShown: lightSheet != nil)
             if !seasons.isEmpty || !times.isEmpty || !body.compositionTips.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    SpotDetailParts.sectionHeader(L("撮影ガイド", "Shooting guide"))
+                VStack(alignment: .leading, spacing: JPSpace.s) {
+                    SpotDetailParts.sectionHeader(L("撮影ガイド", "Shooting guide"),
+                                                  eyebrow: "GUIDE", spoken: L("撮影ガイド", "Guide"))
                     if !seasons.isEmpty {
-                        guideGroup(L("季節ごとの景色", "By season"),
-                                   rows: seasons.map { (SpotBodyText.seasonLabel($0.season) ?? "", $0.text) })
+                        seasonGroup(seasons)
                     }
                     if !times.isEmpty {
                         guideGroup(L("時間帯", "By time of day"),
                                    rows: times.map { (SpotBodyText.timeLabel($0.time) ?? "", $0.text) })
                     }
                     if !body.compositionTips.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: JPSpace.xs) {
                             guideLabel(L("構図のヒント", "Composition"))
                             ForEach(Array(body.compositionTips.enumerated()), id: \.offset) { _, tip in
                                 // 行頭は Web と同じ「・」（見どころは「—」）
@@ -452,11 +490,13 @@ struct OfficialSpotView: View {
                 Link(destination: site) {
                     HStack(spacing: 6) {
                         Text(L("公式サイト", "Official site"))
-                            .font(.subheadline.weight(.semibold))
-                        Image(systemName: "arrow.up.right.square")
+                            .font(JPFont.bodyEmphasis)
+                            .underline()
+                        // 外へ出る印（v2 の板 SpotLanding「公式サイト · … ↗」）
+                        Image(systemName: "arrow.up.right")
                             .font(.footnote)
                     }
-                    .frame(minHeight: 44)
+                    .frame(minHeight: WebTheme.minTapTarget)
                     // 外へ出るリンクは真鍮（黒地の上・規約や出典のリンクと同じ。2026-10-02 owner）
                     .foregroundStyle(WebTheme.accent)
                 }
@@ -483,11 +523,12 @@ struct OfficialSpotView: View {
     private var samplesSection: some View {
         let samples = shownSamples
         if !samples.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                SpotDetailParts.sectionHeader(SpotSampleText.heading(samples))
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                SpotDetailParts.sectionHeader(SpotSampleText.heading(samples),
+                                              eyebrow: "EXAMPLES", spoken: L("作例", "Examples"))
                 Text(SpotSampleText.note(samples))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text3)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16)
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -506,7 +547,11 @@ struct OfficialSpotView: View {
             .accessibilityIdentifier("spot.official.samples")
             // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）。
             // 案内で Pro になったら同じ1枚から開き直す（`ComposeGuidePresenter`）
-            .composeGuidePresenter(composeLauncher, spotName: spot.name)
+            // 撮った1枚は「投稿」でこのスポットの投稿へ進める（2026-10-14・写真から次の旅へ）。
+            // 撮る画面を**閉じきってから**投稿画面を開く（`RootView` の作例なしの入口と同じ順）
+            .composeGuidePresenter(composeLauncher, spotName: spot.name,
+                                   onPost: { capture in pendingCapture = capture },
+                                   onDismiss: { if SpotComposePost.opensUpload(pendingCapture) { showUpload = true } })
         }
     }
 
@@ -516,20 +561,33 @@ struct OfficialSpotView: View {
     /// （黒地の上の合図・CLAUDE.md）。**作例が1枚も無いスポットでは出さない**（呼ぶ側）
     private var composeEntry: some View {
         // 入口のボタンは今までどおり1枚目から
+        // v2 の板 SpotDetail: 角 14・白 7% の行に、真鍮の印 → 15 の太字の名前と 12 の text-3 の一言 →
+        // 真鍮の縁の「PRO」の札
         Button { Task { await openComposeGuide(from: nil) } } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: JPSpace.s) {
                 Image(systemName: "camera.viewfinder")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityHidden(true)
-                Text(L("作例を重ねて撮る", "Shoot with an example overlay"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                Text("PRO")
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("作例を重ねて撮る", "Shoot with an example overlay"))
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.foreground)
+                    Text(L("作例の構図をカメラに重ねて、同じ所から", "Overlay the example on your camera, from the same spot"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 0)
+                Text("PRO")
+                    .font(JPFont.eyebrow)
+                    .tracking(JPTypeScale.eyebrow * 0.12)
+                    .foregroundStyle(WebTheme.accent)
+                    .padding(.horizontal, JPSpace.xs)
+                    .padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
+                        .strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
+                    .accessibilityHidden(true)
                 if composeLauncher.checking {
                     ProgressView().tint(WebTheme.muted2)
                 } else {
@@ -540,13 +598,14 @@ struct OfficialSpotView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.vertical, JPSpace.s)
+            .frame(maxWidth: .infinity, minHeight: JPHeight.tallRow)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
+            .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
         }
         .buttonStyle(.plain)
         .disabled(composeLauncher.checking)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, JPSpace.m)
         .accessibilityHint(L("Pro の機能です。カメラの映像に作例を半透明で重ねて撮ります",
                              "A Pro feature. Shoot with an example photo overlaid on the camera view."))
         .accessibilityIdentifier("spot.official.composeGuide")
@@ -597,7 +656,7 @@ struct OfficialSpotView: View {
             Text(sample.linkedCredit)
                 .tint(WebTheme.accent)
                 .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.leading)
                 .frame(width: width, alignment: .leading)
@@ -622,21 +681,21 @@ struct OfficialSpotView: View {
     private var lightSection: some View {
         if let sheet = lightSheet {
             let guides = SpotLight.guides(spotBody?.timeOfDayGuide ?? [])
-            VStack(alignment: .leading, spacing: 10) {
-                SpotDetailParts.sectionHeader(L("光の時刻", "Light"))
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                SpotDetailParts.sectionHeader(L("光の時刻", "Light"),
+                                              eyebrow: "LIGHT", spoken: L("光", "Light"))
                 lightDateBar(SpotLight.dateLabel(sheet.ymd, offset: lightOffset, todayYMD: sheet.todayYMD))
-                VStack(alignment: .leading, spacing: 0) {
+                // v2 の札（`JPCard`・surface-1 と白 8% の縁）。朝と夕の間は札の中の線
+                JPCard {
                     ForEach(Array(sheet.blocks.enumerated()), id: \.offset) { index, block in
-                        if index > 0 { Divider().overlay(WebTheme.border) }
+                        if index > 0 { JPCardDivider() }
                         lightBlock(block, guides: block.isMorning ? guides.morning : guides.evening)
                     }
                 }
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(WebTheme.border, lineWidth: 1))
-                .padding(.horizontal, 16)
+                .padding(.horizontal, JPSpace.m)
                 Text(SpotLight.note(sheet.timeZone))
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text3)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16)
             }
@@ -735,24 +794,24 @@ struct OfficialSpotView: View {
                         .background(WebTheme.surface, in: Capsule())
                         .foregroundStyle(WebTheme.foreground)
                     Text(guide.text)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(14)
+        .padding(JPSpace.m)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 1行（札・方角・時刻）。アクセシビリティの大きさでは縦に積む（横に並べると時刻が切れる・折れる）
     @ViewBuilder
     private func lightRow(_ row: SpotLight.Row) -> some View {
-        let label = Text(row.label).font(.subheadline).foregroundStyle(WebTheme.muted)
+        let label = Text(row.label).font(JPFont.body).foregroundStyle(WebTheme.text2)
         let detail = row.detail.map {
-            Text($0).font(JPFont.mono(13, relativeTo: .footnote)).foregroundStyle(WebTheme.muted2)
+            Text($0).font(JPFont.mono(13, relativeTo: .footnote)).foregroundStyle(WebTheme.text3)
         }
         let value = Text(row.value)
             .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
@@ -786,10 +845,11 @@ struct OfficialSpotView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 3)
                         .background(WebTheme.surface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
                         .foregroundStyle(WebTheme.foreground)
                     Text(row.text)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
@@ -801,18 +861,109 @@ struct OfficialSpotView: View {
     private func guideLabel(_ title: String) -> some View {
         Text(title)
             .font(.caption)
-            .foregroundStyle(WebTheme.muted2)
+            .foregroundStyle(WebTheme.text3)
+    }
+
+    /// 見どころ（**v2 の板 SpotDetail**: 真鍮の等幅番号「01」・15 の本文・行の上に白 8% の線、最後の行は下にも）。
+    /// v1 は「—」の行頭。黒地の上なので番号は真鍮（合図・CLAUDE.md）
+    private func highlightList(_ lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    Text(Self.highlightNumber(index))
+                        .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.accent)
+                        .frame(minWidth: 18, alignment: .leading)
+                        .accessibilityHidden(true)
+                    Text(line)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, JPSpace.s)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) { JPCardDivider() }
+                .overlay(alignment: .bottom) { if index == lines.count - 1 { JPCardDivider() } }
+            }
+        }
+        .padding(.horizontal, JPSpace.m)
+    }
+
+    /// 見どころの番号（「01」「02」…）。2 桁にそろえる（板）
+    nonisolated static func highlightNumber(_ index: Int) -> String {
+        String(format: "%02d", index + 1)
+    }
+
+    /// 季節ごとの景色（**v2 の板 SpotDetail「THIS SEASON」**）: 今の季節は札（surface-1・角 16）に
+    /// 明朝の季節名と真鍮の「NOW」の札を添え、ほかの季節はその下に線で区切って並べる。
+    /// 板はほかの季節を閉じた行にしているが、ここは開いたまま（押さないと読めない文を作らない・2026-10-14 判断）
+    private func seasonGroup(_ seasons: [SpotBody.Seasonal]) -> some View {
+        let current = SpotBodyText.currentSeason(now: Date())
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            guideLabel(L("季節ごとの景色", "By season"))
+            ForEach(Array(seasons.enumerated()), id: \.offset) { _, season in
+                let label = SpotBodyText.seasonLabel(season.season) ?? ""
+                if Self.isCurrentSeason(season.season, current: current) {
+                    JPCard {
+                        VStack(alignment: .leading, spacing: JPSpace.xs) {
+                            HStack(spacing: JPSpace.xs) {
+                                Text(label)
+                                    .font(JPFont.rowTitle)
+                                    .foregroundStyle(WebTheme.foreground)
+                                // 今の季節の札（真鍮の塗りに墨・字でも「いま」と言う）
+                                Text("NOW")
+                                    .font(JPFont.eyebrow)
+                                    .tracking(JPTypeScale.eyebrow * 0.12)
+                                    .foregroundStyle(WebTheme.accentText)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(WebTheme.accent, in: RoundedRectangle(cornerRadius: 4))
+                                    .accessibilityLabel(L("いまの季節", "This season"))
+                            }
+                            Text(season.text)
+                                .font(JPFont.body)
+                                .lineSpacing(Self.bodyLineSpacing)
+                                .foregroundStyle(WebTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(JPSpace.m)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityElement(children: .combine)
+                } else {
+                    VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                        Text(label)
+                            .font(JPFont.rowTitle)
+                            .foregroundStyle(WebTheme.foreground)
+                        Text(season.text)
+                            .font(JPFont.body)
+                            .foregroundStyle(WebTheme.text2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, JPSpace.s)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .bottom) { JPCardDivider() }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .padding(.horizontal, JPSpace.m)
+    }
+
+    /// 今の季節の行か（「NOW」の札を付ける）
+    nonisolated static func isCurrentSeason(_ season: String, current: String) -> Bool {
+        season == current
     }
 
     private func bullet(_ text: String, mark: String = "—") -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(mark).foregroundStyle(WebTheme.muted2).accessibilityHidden(true)
+            Text(mark).foregroundStyle(WebTheme.text3).accessibilityHidden(true)
             Text(text)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, JPSpace.m)
     }
 
     /// 確かめた印の1行（Web と同じ出し分け）。**本文が取れたら必ず出す**
@@ -823,10 +974,11 @@ struct OfficialSpotView: View {
         if let body = spotBody {
             // 出典の題は押せる（Web と同じ）。押すと出典のページ
             // リンクは真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
+            // v2 の板 SpotDetail の足元: 12 の text-3・出典のリンクは真鍮
             Text(SpotBodyText.linkedCheckLine(body.check))
                 .tint(WebTheme.accent)
                 .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16)
                 .accessibilityIdentifier("spot.official.check")
@@ -841,13 +993,15 @@ struct OfficialSpotView: View {
     /// - 代表写真がある → 白（写真のある画面の主ボタン）
     nonisolated static func postButtonStyle(hasCover: Bool, hasLinked: Bool, postedHere: Bool) -> JPPillStyle {
         if hasLinked || postedHere { return .outline }
-        return hasCover ? .primary : .accent
+        // 主ボタンの色は共通の決まりで（写真のある画面は白・無い画面は真鍮）
+        return .main(onPhoto: hasCover)
     }
 
     @ViewBuilder
     private var spotPhotos: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if photosKnown || !linked.isEmpty {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            // 写真が0枚の回は下の破線の札が見出しを持つ（同じことを二度言わない）
+            if (photosKnown || !linked.isEmpty) && !showsEmptyPhotosCard {
                 SpotDetailParts.sectionHeader(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
             }
             if postedHere {
@@ -855,97 +1009,141 @@ struct OfficialSpotView: View {
                 // 「まだありません」のままだと、上がっていないと思ってもう一度上げてしまう
                 Text(L("投稿しました。この一覧に並ぶまで少し時間がかかります。",
                        "Posted. It may take a little while to appear here."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted)
-                    .padding(.horizontal, 16)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
+                    .padding(.horizontal, JPSpace.m)
             }
-            if linked.isEmpty && !postedHere && photosKnown {
-                // **空を隠さない。** 紐づいた写真が無いことをそのまま言う
-                Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
-                       "None yet. If you've shot here, share the first one."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .padding(.horizontal, 16)
-            } else if !linked.isEmpty {
-                PhotoGrid(photos: linked) { photo in
-                    PhotoDetailView(photo: photo, context: linked)
+            if showsEmptyPhotosCard {
+                // **空を隠さない。** 紐づいた写真が無いことをそのまま言う。
+                // v2 の板 SpotDetail の「写真0枚」: 破線の札に明朝 18 の見出し・13 の text-2・投稿のボタン
+                VStack(spacing: JPSpace.xs) {
+                    Text(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                        .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
+                           "None yet. If you've shot here, share the first one."))
+                        .font(.footnote)
+                        .lineSpacing(4)
+                        .foregroundStyle(WebTheme.text2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    postButton
+                        .padding(.top, JPSpace.xs)
                 }
+                .padding(.horizontal, JPSpace.l)
+                .padding(.vertical, JPSpace.xl)
+                .frame(maxWidth: .infinity)
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.l)
+                    .strokeBorder(Color.white.opacity(Self.emptyDashOpacity),
+                                  style: StrokeStyle(lineWidth: JPStroke.hairline, dash: [4, 4])))
+                .padding(.horizontal, JPSpace.m)
+            } else {
+                if !linked.isEmpty {
+                    PhotoGrid(photos: linked) { photo in
+                        PhotoDetailView(photo: photo, context: linked)
+                    }
+                }
+                postButton
+                    .padding(.horizontal, JPSpace.m)
             }
-            // owner「スポットの詳細からこのスポットの写真を上げたい」（2026-09-29）。
-            // 撮影地を入れた投稿画面を開き、保存で `spotId` を付ける
-            Button {
-                showUpload = true
-            } label: {
-                Label(L("この撮影スポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
-                    .jpPillButton(Self.postButtonStyle(hasCover: shown.photo != nil,
-                                                       hasLinked: !linked.isEmpty, postedHere: postedHere))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .accessibilityIdentifier("spot.official.post")
         }
         // 閉じたら「投稿を閉じた」を出す（`RootView` の投稿と同じ）。メニューのシートから
         // 来た回はホームの `onAppear` が走らず、自分の写真（今日のテーマの参加済みなど）が古いまま残った
-        .sheet(isPresented: $showUpload, onDismiss: { TabRouter.shared.postSheetClosed() }) {
+        .sheet(isPresented: $showUpload, onDismiss: {
+            // 撮った1枚は次の投稿に持ち越さない
+            pendingCapture = nil
+            TabRouter.shared.postSheetClosed()
+        }) {
             NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { count in
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）
                 if count > 0 { postedHere = true }
-            }) }
+            }, initialCapture: pendingCapture,
+            // 上がった写真をマイページ・ホームに先に並べる（`RootView` の投稿と同じ・`TabRouter.lastPosted`）
+            onSaved: { TabRouter.shared.notePosted($0) }) }
         }
+    }
+
+    /// 写真0枚の破線の札を出すか（読めていて、紐づいた写真が無く、この画面から投稿していない）
+    private var showsEmptyPhotosCard: Bool {
+        linked.isEmpty && !postedHere && photosKnown
+    }
+
+    /// 写真0枚の札の破線の白の濃さ（板 `1px dashed rgba(255,255,255,.2)`）
+    nonisolated static let emptyDashOpacity = 0.2
+
+    /// 「この撮影スポットの写真を投稿」。
+    /// owner「スポットの詳細からこのスポットの写真を上げたい」（2026-09-29）。
+    /// 撮影地を入れた投稿画面を開き、保存で `spotId` を付ける
+    private var postButton: some View {
+        Button {
+            showUpload = true
+        } label: {
+            Label(L("この撮影スポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
+                .jpPillButton(Self.postButtonStyle(hasCover: shown.photo != nil,
+                                                   hasLinked: !linked.isEmpty, postedHere: postedHere))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("spot.official.post")
     }
 
     @ViewBuilder
     private var nearbySpots: some View {
         let near = nearby
         if !near.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
                 SpotDetailParts.sectionHeader(L("近くの撮影スポット", "Nearby spots"))
+                // v2 の板 SpotDetail: 札に入れず、行の上に白 8% の線（最後の行は下にも）
                 VStack(spacing: 0) {
-                    ForEach(near, id: \.spot.id) { item in
+                    ForEach(Array(near.enumerated()), id: \.element.spot.id) { index, item in
                         NavigationLink {
                             OfficialSpotView(spot: item.spot, spots: spots, photos: photos, photosKnown: photosKnown)
                         } label: {
                             nearbyRow(item.spot, km: item.km)
                         }
                         .buttonStyle(.plain)
+                        .overlay(alignment: .top) { JPCardDivider() }
+                        .overlay(alignment: .bottom) { if index == near.count - 1 { JPCardDivider() } }
                     }
                 }
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 16)
+                .padding(.horizontal, JPSpace.m)
             }
         }
     }
 
-    /// 近くの1行（モック13）: 印 → 名前 → 距離 → 矢印。表紙は無い（写真が無い）
+    /// 近くの1行（**v2 の板 SpotDetail**: 明朝の名前 → 13 の text-3 の等幅の距離・高さ 56）。
+    /// 板の行に無い右の矢印は残す（行き先がある行の合図）。v1 の左の印（mappin）は外した
     private func nearbyRow(_ other: OfficialSpot, km: Double) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mappin.circle")
-                .foregroundStyle(WebTheme.muted2)
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: JPSpace.s) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(other.name)
-                    .font(.subheadline)
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
                 if other.isDraft {
                     Text(L("下書き", "Draft"))
                         .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: JPSpace.xs)
             // **距離は計算したもの。** 言い方は「近くの写真」と同じ関数（`NearbyPhotos.label`）
             Text(NearbyPhotos.label(km: km))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.text3)
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(WebTheme.placeholder)
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 54)
+        .frame(minHeight: Self.nearbyRowHeight)
         .contentShape(Rectangle())
     }
+
+    /// 近くの撮影スポットの行の高さ（板 56）
+    nonisolated static let nearbyRowHeight: CGFloat = 56
 }
 
 /// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**1本の文字のまま**
@@ -998,4 +1196,11 @@ struct SpotImageCredit: View {
         Text(photo.linkedCredit)
             .tint(WebTheme.accent)
     }
+}
+
+/// 撮影スポットの「作例を重ねて撮る」から投稿へ進むか（2026-10-14）。
+/// 撮る画面を閉じたとき、「投稿」で撮った1枚を受け取っていれば投稿画面を開く。
+/// 閉じるボタンで閉じた回（受け取っていない）は開かない
+enum SpotComposePost {
+    static func opensUpload(_ capture: CameraCapture?) -> Bool { capture != nil }
 }

@@ -32,6 +32,63 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.finish(list, id: UUID()).map(\.id), list.map(\.id))
     }
 
+    // MARK: - キャンセル（板 v2 の上の段・2026-10-16）
+
+    /// 新しく足した札（打つ前が無い）はキャンセルで取り除く。中身を打っていても消す。他の札は残す
+    func testCancelRemovesNewlyAddedOverlay() {
+        let other = TextOverlay(text: "残す")
+        var fresh = TextOverlay(text: "")
+        fresh.text = "打ちかけ"
+        let result = StoryTextEditing.cancel([other, fresh], id: fresh.id, original: nil)
+        XCTAssertEqual(result.map(\.id), [other.id])
+    }
+
+    /// 既にあった札を直していたなら、直す前（文字・書体・色・背景・大きさ・揃え）に戻す。並びと他の札は変えない
+    func testCancelRestoresTheOriginal() {
+        let other = TextOverlay(text: "そのまま")
+        let original = TextOverlay(text: "前の字", style: .light, kind: .text, face: .mincho)
+        var edited = original
+        edited.text = "直した字"
+        edited.face = .gothic
+        edited.ink = .coral
+        edited.size = TextOverlay.maxSize
+        edited = StorySimpleRules.nextBackdrop(edited)
+        edited = StoryTextEditing.nextAlign(edited)
+        let result = StoryTextEditing.cancel([edited, other], id: original.id, original: original)
+        XCTAssertEqual(result, [original, other])
+    }
+
+    /// もう無い札の id では何も変えない
+    func testCancelWithUnknownIdKeepsAll() {
+        let list = [TextOverlay(text: "a"), TextOverlay(text: "b")]
+        XCTAssertEqual(StoryTextEditing.cancel(list, id: UUID(), original: TextOverlay(text: "x")), list)
+    }
+
+    // MARK: - 置いた直後の案内（端末に1回だけ）
+
+    private func freshDefaults() -> UserDefaults {
+        let name = "StoryTextEditingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    /// 置いたときだけ・この端末で1回だけ出す
+    func testPlaceHintShowsOnlyOnceAfterPlacing() {
+        let defaults = freshDefaults()
+        XCTAssertFalse(StoryTextEditing.shouldShowPlaceHint(placed: false, defaults: defaults),
+                       "置かなかった（空で閉じた）のに出た")
+        XCTAssertTrue(StoryTextEditing.shouldShowPlaceHint(placed: true, defaults: defaults))
+        StoryTextEditing.markPlaceHintShown(defaults: defaults)
+        XCTAssertFalse(StoryTextEditing.shouldShowPlaceHint(placed: true, defaults: defaults), "二度目も出た")
+    }
+
+    /// 文言は板 v2 のまま
+    func testPlaceHintText() {
+        XCTAssertEqual(StoryTextEditing.placeHint, L("指で動かす · 2本指で回す",
+                                                     "Drag to move · Twist with two fingers to rotate"))
+    }
+
     /// 押すと打つ画面を開くのはスタンプ以外（時刻・日付は書体・色・大きさを直す）
     func testWhichOverlaysOpenTyping() {
         let opens = TextOverlay.Kind.allCases.filter {

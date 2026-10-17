@@ -54,23 +54,17 @@ struct HomeSpotShelfView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(HomeSpotShelf.eyebrow(shelf.season))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityLabel(HomeSpotShelf.eyebrowSpoken(shelf.season))
-                Text(HomeSpotShelf.heading)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                    .accessibilityAddTraits(.isHeader)
-            }
+        // v2（2026-10-14・Search の板の節の見出しと同じ型）: 眉（真鍮＋消える線）→ 明朝 22 → 注記
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            JPSectionHeading(eyebrow: HomeSpotShelf.eyebrow(shelf.season),
+                             spoken: HomeSpotShelf.eyebrowSpoken(shelf.season),
+                             title: HomeSpotShelf.heading)
             Text(HomeSpotShelf.note)
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, JPSpace.gutter)
     }
 
     private func card(_ entry: HomeSpotShelf.Entry) -> some View {
@@ -90,21 +84,22 @@ struct HomeSpotShelfView: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(WebTheme.accent)
                                 .accessibilityHidden(true)
+                            // 場所の名前は明朝（v2 の板の場所の行・明朝の下限 18）
                             Text(entry.spot.name)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
+                                .font(JPFont.rowTitle)
+                                .foregroundStyle(WebTheme.text)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
                             if let region = entry.regionLabel {
                                 Text(region)
-                                    .font(.caption)
-                                    .foregroundStyle(WebTheme.faint)
+                                    .font(JPFont.caption)
+                                    .foregroundStyle(WebTheme.text3)
                                     .lineLimit(1)
                             }
                         }
                         Text(entry.guide)
-                            .font(.footnote)
-                            .foregroundStyle(WebTheme.muted2)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text2)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
@@ -122,8 +117,10 @@ struct HomeSpotShelfView: View {
         }
         .frame(width: Self.cardWidth, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        // v2: 札の面（#0E0E0F）に白 8% の縁・角 14（写真の札）
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
 
     /// 札の写真。**切り抜かない**（`.fit`・余白は黒）。本文を待つ間は空の地、写真が無ければ真鍮のピン

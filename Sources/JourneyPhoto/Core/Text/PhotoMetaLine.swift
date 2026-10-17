@@ -3,7 +3,7 @@ import Foundation
 /// 写真の詳細（板 02）とビューア（板 14）の小さい1行たち。
 ///
 ///     題の下      2026.09.12 · 17:42 · 1/3枚
-///     ビューア上  1枚目 / 3
+///     ビューア上  1 / 3（読み上げは「3枚中1枚目」）
 ///     ビューア下  SONY ILCE-7M3 · E 28-200mm · f/3.2 · 1/400s · ISO 500
 ///
 /// **持っているものだけを繋ぐ。** 空の欠片に区切りだけが残る
@@ -58,10 +58,20 @@ enum PhotoMetaLine {
 
     /// ビューアの上の「1枚目 / 3」（板 14）。**送る先が無ければ出さない**。
     /// - Parameter index: 0 始まり
+    ///
+    /// **v2（2026-10-14・板 PhotoViewer）: 画面の字は「1 / 3」**（等幅の数字だけ）。読み上げは
+    /// 「3枚中1枚目」（`viewerPositionSpoken`）——数字と斜線だけでは何の数か伝わらない
     static func viewerPosition(_ index: Int, of total: Int) -> String? {
         guard total > 1 else { return nil }
         let p = min(max(index + 1, 1), total)
-        return L("\(p)枚目 / \(total)", "\(p) of \(total)")
+        return "\(p) / \(total)"
+    }
+
+    /// ビューアの「1 / 3」の読み上げ（板の `aria-label="3枚中1枚目"`）
+    static func viewerPositionSpoken(_ index: Int, of total: Int) -> String? {
+        guard total > 1 else { return nil }
+        let p = min(max(index + 1, 1), total)
+        return L("\(total)枚中\(p)枚目", "Photo \(p) of \(total)")
     }
 
     /// ビューアの下の撮影情報の1行（板 14: 機種 · レンズ · f · s · ISO）。
@@ -71,12 +81,50 @@ enum PhotoMetaLine {
     /// **秒の「s」を揃える**。絞りは `f/` の付かない値も受け止める
     static func exifLine(_ exif: Photo.Exif?) -> String? {
         guard let exif else { return nil }
-        let aperture = trimmed(exif.aperture).map { $0.lowercased().hasPrefix("f") ? $0 : "f/\($0)" }
-        let exposure = trimmed(exif.exposure).map { $0.hasSuffix("s") ? $0 : "\($0)s" }
-        let iso = exif.iso.flatMap { $0 > 0 ? "ISO \($0)" : nil }
-        let items = [CameraName.deduped(exif.camera), trimmed(exif.lens), aperture, exposure, iso]
+        let items = [CameraName.deduped(exif.camera), trimmed(exif.lens), aperture(exif), exposure(exif), iso(exif)]
             .compactMap { $0 }
         return items.isEmpty ? nil : items.joined(separator: separator)
+    }
+
+    /// 機材の1行（v2 の板 PhotoViewer の下の1行目: 機種 · レンズ）。無ければ nil
+    static func gearLine(_ exif: Photo.Exif?) -> String? {
+        guard let exif else { return nil }
+        let items = [CameraName.deduped(exif.camera), trimmed(exif.lens)].compactMap { $0 }
+        return items.isEmpty ? nil : items.joined(separator: separator)
+    }
+
+    /// 撮影設定の1行（v2 の板 PhotoDetail の撮影情報の要約・PhotoViewer の下の2行目:
+    /// 「24mm · f/8 · 1/125s · ISO 100」）。焦点距離 → 絞り → シャッター → ISO。
+    /// 書き方は `exifLine` と同じ（`f/` を付ける・秒の「s」を揃える）。無ければ nil
+    static func settingsLine(_ exif: Photo.Exif?) -> String? {
+        guard let exif else { return nil }
+        let items = [trimmed(exif.focalLength), aperture(exif), exposure(exif), iso(exif)].compactMap { $0 }
+        return items.isEmpty ? nil : items.joined(separator: separator)
+    }
+
+    /// 撮影情報を開いたときの升目（v2 の板 PhotoDetail: 焦点距離・絞り・シャッター・ISO）。
+    /// **無いものは詰める**——空の升を立てない
+    static func settingsCells(_ exif: Photo.Exif?) -> [(label: String, value: String)] {
+        guard let exif else { return [] }
+        let cells: [(String, String?)] = [
+            (L("焦点距離", "Focal length"), trimmed(exif.focalLength)),
+            (L("絞り", "Aperture"), aperture(exif)),
+            (L("シャッター", "Shutter"), exposure(exif)),
+            ("ISO", exif.iso.flatMap { $0 > 0 ? "\($0)" : nil }),
+        ]
+        return cells.compactMap { label, value in value.map { (label, $0) } }
+    }
+
+    private static func aperture(_ exif: Photo.Exif) -> String? {
+        trimmed(exif.aperture).map { $0.lowercased().hasPrefix("f") ? $0 : "f/\($0)" }
+    }
+
+    private static func exposure(_ exif: Photo.Exif) -> String? {
+        trimmed(exif.exposure).map { $0.hasSuffix("s") ? $0 : "\($0)s" }
+    }
+
+    private static func iso(_ exif: Photo.Exif) -> String? {
+        exif.iso.flatMap { $0 > 0 ? "ISO \($0)" : nil }
     }
 
     // MARK: - 内側

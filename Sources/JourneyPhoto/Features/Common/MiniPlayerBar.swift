@@ -17,6 +17,11 @@ struct MiniPlayerBar: View {
 
     @ObservedObject private var player = MusicPreviewPlayer.shared
 
+    /// 曲選びの中のバー（v2 SongPicker）
+    static let pickerBarHeight: CGFloat = 60
+    static let pickerBarRadius: CGFloat = 18
+    @MainActor static var pickerBarFill: Color { RaisedTile.fill }
+
     var body: some View {
         if let song = player.playingSong,
            SongPickerText.showsBar(playingFrom: player.origin, inSongPicker: inSongPicker) {
@@ -52,9 +57,13 @@ struct MiniPlayerBar: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(WebTheme.border, lineWidth: 1))
+            // 曲選びの中のバーは v2 SongPicker の形（高さ 60・角 18・地 #1A1A1C・縁は白 8%）。
+            // 全体のバー（ホームなど）は今のまま（別の段で直す）
+            .frame(minHeight: inSongPicker ? Self.pickerBarHeight : nil)
+            .background(inSongPicker ? Self.pickerBarFill : WebTheme.raised,
+                        in: RoundedRectangle(cornerRadius: inSongPicker ? Self.pickerBarRadius : 12))
+            .overlay(RoundedRectangle(cornerRadius: inSongPicker ? Self.pickerBarRadius : 12)
+                .strokeBorder(inSongPicker ? WebTheme.hairline : WebTheme.border, lineWidth: 1))
             .padding(.horizontal, 12)
             .accessibilityIdentifier("mini.player")
         }

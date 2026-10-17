@@ -9,6 +9,14 @@ struct GalleryView: View {
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
+    /// すれちがいの届いた束（板 PassHome・2026-10-16）
+    @EnvironmentObject private var pass: PassStore
+    /// 開いている束。**出す口はここに置く**（札は `LazyVStack` の中なので）
+    @State private var passDeck: PassDeck?
+    @State private var showPassBook = false
+    /// すれちがいの「いま」。**時計で待たない**（ロック中に 18 時を越えると古いまま残る）——前面に来た・
+    /// 知らせが届いた／押された・画面に戻ったときに入れ直す（2026-10-16 の読み直し）
+    @State private var passNow = Date()
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
     /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
@@ -50,7 +58,8 @@ struct GalleryView: View {
             // 自分の写真はマイページが持ち場
             switch model.state {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // v2（Components 06）: 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
+                ScrollView { JPLoadingState(kind: .grid) }
             case .failed(let message):
                 ErrorBanner(message: message) {
                     Task { await model.load() }
@@ -138,6 +147,7 @@ struct GalleryView: View {
         .onAppear { if scenePhase == .background { wentToBackground = true } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
+            if phase == .active { passNow = Date() }
             if phase == .active, wentToBackground {
                 wentToBackground = false
                 storiesRefresh &+= 1
@@ -155,6 +165,27 @@ struct GalleryView: View {
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
+        }
+        // すれちがいの束（札を押した・夕方の知らせを押した）。「帳に入れる」は閉じてから帳を積む
+        .fullScreenCover(item: $passDeck) { deck in
+            PassViewerView(cards: deck.cards, mode: .bundle) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPassBook = true }
+            }
+        }
+        .navigationDestination(isPresented: $showPassBook) { PassBookView() }
+        .onChange(of: pass.openRequests) { _, _ in
+            passNow = Date()
+            openPendingPass()
+        }
+        .onChange(of: pass.arrivals) { _, _ in passNow = Date() }
+        // 冷えた起動で知らせを押した回は、写真を引き終えてから開く
+        .onChange(of: pass.photos.count) { _, _ in openPendingPass() }
+        // 届いた束の写真を引く（届いた数・ブロック／通報が変わったら引き直す）。**引くのは「いま」で**
+        .task(id: PassResolveKey(due: pass.encounters.filter { $0.deliverAt <= passNow }.count,
+                                 hidden: hidden.revision)) {
+            let now = Date()
+            guard pass.hasDelivered(now: now) else { return }
+            await pass.resolve(gallery: environment.gallery, profiles: environment.profiles, now: now)
         }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。
@@ -200,9 +231,28 @@ struct GalleryView: View {
         }
     }
 
+    /// 夕方の知らせを押した分の束を開く。**写真を引けるまで待つ**（引けた束が空なら諦める）
+    private func openPendingPass() {
+        guard pass.hasPendingOpen, passDeck == nil else { return }
+        let cards = passCards(now: Date())
+        guard !cards.isEmpty else {
+            if !pass.photos.isEmpty { _ = pass.takePendingOpen() }
+            return
+        }
+        _ = pass.takePendingOpen()
+        passDeck = PassDeck(cards: cards)
+    }
+
+    /// 届いた束のうち、まだ開いていない分（ブロック・通報を落とす）
+    private func passCards(now: Date) -> [PassCardContent] {
+        pass.contents(pass.unopened(hiding: hidden.snapshot, now: now), book: pass.book(hiding: hidden.snapshot, now: now))
+    }
+
     /// 前面確定後: 写し・印・必要なら読み直し
     private func landOnScreen(reloadMy: Bool) {
         isOnScreen = true
+        passNow = Date()
+        openPendingPass()
         // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
         // 後から足す（`GalleryViewModel.pageWrite`）
         model.markOnScreen()
@@ -243,30 +293,17 @@ struct GalleryView: View {
     private var featuredSections: some View {
         // おすすめの横並びも、モザイクと同じ写しで落とす（戻った直後に見えない）
         ForEach(model.featured.filter { !dropped.visible($0.photos).isEmpty }) { group in
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(group.label)
-                        .font(JPFont.rowTitle)
-                        .foregroundStyle(WebTheme.foreground)
-                    Spacer()
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                // v2（Search の板の節の見出しと同じ型）: 眉（真鍮＋消える線）→ 明朝 22 → 右に「すべて ›」
+                JPSectionHeading(eyebrow: "PICKS", spoken: L("おすすめ", "Picks"), title: group.label) {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
                     } label: {
-                        // 字の見た目・行の高さはそのまま、当たりだけ 44pt。
-                        // **上へ多めに広げる**——上は並び同士の間（24）が空いているが、
-                        // 下は 8 で写真の横並びがすぐ来る（写真の押し下げを奪わない）
-                        Text(L("すべて見る", "See all"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                            .padding(.top, 18)
-                            .padding(.bottom, 10)
-                            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
-                            .contentShape(Rectangle())
-                            .padding(.top, -18)
-                            .padding(.bottom, -10)
+                        MoreLink(text: L("すべて見る", "See all"))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, JPSpace.gutter)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: WebTheme.gridSpacing) {
@@ -280,10 +317,9 @@ struct GalleryView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, JPSpace.gutter)
                 }
             }
-            .padding(.bottom, 8)
             // 画面写真の試験が「新着」で出ていないことを確かめる目印（`ScreenshotTests`）
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("home.featured")
@@ -295,9 +331,15 @@ struct GalleryView: View {
     /// **推薦の口は無い**ので、おすすめの規則を下に1行で出す
     /// （指示書 5-2——実装済みであるかのように見せない）。**その一文は
     /// 整理案 01c で画面から外した**（owner の承認・2026-09-26）。文言は `HomeFeed.note`
+    ///
+    /// **v2（2026-10-14・Main の板）: 字のタブにした。** 選んだタブは真鍮の字（600）と 2 の真鍮の下線、
+    /// ほかは text-3 の字。並びの下に白 8% の区切り線。高さ 44・間 22・左右 16。
+    /// 以前は白の塗りの丸い切り替え（白＝選択）だったが、v2 の板は「選んでいるタブ」を真鍮にした
+    /// （CLAUDE.md の owner の好み「選んでいるタブは真鍮」とも合う）。黒地の上なので真鍮が読める。
+    /// **選んだことは下線（形）と読み上げ（`.isSelected`）でも伝える**——色だけにしない
     private var feedPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Self.feedTabGap) {
                 ForEach(HomeFeed.allCases) { feed in
                     let selected = model.feed == feed
                     Button {
@@ -318,32 +360,34 @@ struct GalleryView: View {
                         }
                     } label: {
                         Text(feed.label)
-                            .font(.subheadline.weight(selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                                 : AnyShapeStyle(Color.clear),
-                                        in: Capsule())
-                            // 押せる範囲だけ 44pt 以上に（札も帯も大きさは変えない。`CategoryField` と
-                            // 同じ形で、外側の帯の余白 4 の分まで押せる）。選んでいない札は
-                            // 地が透明で、字の上しか押せなかった
-                            .padding(.vertical, 4)
+                            .font(JPFont.bodyEmphasis)
+                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text3)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            // 選んだタブの下線（板: inset 0 -2px 0 真鍮）。字の幅いっぱい
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(selected ? WebTheme.accent : Color.clear)
+                                    .frame(height: JPStroke.emphasis)
+                            }
+                            // 字の上だけでなく 44 の帯ぜんぶを押せるように
                             .contentShape(Rectangle())
-                            .padding(.vertical, -4)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
+                Spacer(minLength: 0)
             }
-            .padding(4)
-            .background(WebTheme.surface, in: Capsule())
+            .padding(.horizontal, JPSpace.gutter)
+            // 並びの下の区切り線（板: border-bottom 白 8%）
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
             // **規則の一文は出さない**（整理案 01c）。写真より先に
             // 説明が並ぶと、開いた瞬間に読むものが増える。
             // 文言は `HomeFeed.note` に残してある
         }
-        .padding(.horizontal, 16)
     }
+
+    /// 字のタブの間（板 Main の gap 22。4 の倍数に寄せて 24——`JPSpace.xl`）
+    nonisolated static let feedTabGap: CGFloat = JPSpace.xl
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
     /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
@@ -359,6 +403,10 @@ struct GalleryView: View {
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
                 // 投稿シートを閉じたとき・引き下げ更新・前面に戻ったときに読み直す
                 // （どちらの数も増える一方なので、和は必ず変わる）
+                // **すれちがいの届いた束**（板 PassHome: 見出しのすぐ下・「ここから下はいつものホーム」）。
+                // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
+                let passBundle = passCards(now: passNow)
+                PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
@@ -438,50 +486,47 @@ struct GalleryView: View {
         }
     }
 
+    /// 0枚のとき。**v2（2026-10-14・Main の「フォロー中が空」・Components 06）**:
+    /// 共通の `EmptyState`（明朝 20 の見出し → 15 の text-2 → 一手）に寄せた。読めなかった回は
+    /// `ErrorBanner`（三角の印と「もう一度試す」）——0件と失敗を同じ形にしない。
+    ///
+    /// 一手は `EmptyState` の主ボタン（写真の無い所＝真鍮の塗り＋墨・CLAUDE.md の owner の好み）。
+    /// 板は真鍮の下線の字のリンクだが、0件の画面で押す所が1つしかないので主ボタンの形を取った
+    @ViewBuilder
     private var feedEmptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: model.feed == .following ? "person.2" : "photo.on.rectangle.angled")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(WebTheme.accent)
-                .accessibilityHidden(true)
-            Text(emptyMessage)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
-                .multilineTextAlignment(.center)
-            if !model.followingFailed {
-                Button {
-                    model.feed == .following ? tabRouter.openSearch() : tabRouter.openMap()
-                } label: {
-                    Label(model.feed == .following
-                          ? L("写真や人を探す", "Find photos and people")
-                          : L("撮影地を地図で探す", "Explore shooting places"),
-                          systemImage: model.feed == .following ? "magnifyingglass" : "map")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .padding(.horizontal, 18)
-                        .frame(minHeight: 44)
-                        .background(WebTheme.foreground, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("home.emptyAction")
-            } else if model.feed == .following {
-                // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-                RetryButton(isBusy: isRefreshing) { Task { await refreshAll() } }
+        if model.followingFailed && model.feed == .following {
+            // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+            ErrorBanner(message: emptyMessage, isBusy: isRefreshing) { Task { await refreshAll() } }
+        } else if model.followingFailed {
+            EmptyState(title: emptyTitle, message: emptyMessage)
+        } else {
+            EmptyState(title: emptyTitle, message: emptyMessage,
+                       actionTitle: model.feed == .following
+                           ? L("写真や人を探す", "Find photos and people")
+                           : L("撮影地を地図で探す", "Explore shooting places"),
+                       actionIdentifier: "home.emptyAction") {
+                model.feed == .following ? tabRouter.openSearch() : tabRouter.openMap()
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .padding(.horizontal, 24)
+    }
+
+    /// 0枚のときの見出し（明朝 20）。フォロー中が空の回だけ「何が無いか」を言う（板 Main）
+    private var emptyTitle: String? {
+        model.feed == .following && !model.followingFailed
+            ? L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+            : nil
     }
 
     /// 0枚のときの一文。**フォロー一覧を取れなかった回に「まだありません」と言わない**
-    /// （形は探すの写真の「読み込めませんでした。引き下げて読み直せます」と同じ）
+    /// （形は探すの写真の「読み込めませんでした。引き下げて読み直せます」と同じ）。
+    /// フォロー中が空の回は、見出しが「何が無いか」を言うので、ここは「どうすれば埋まるか」（板 Main）
     private var emptyMessage: String {
         guard model.feed == .following else { return Labels.Gallery.empty }
         return model.followingFailed
             ? L("フォロー中の人を読み込めませんでした。引き下げて読み直せます",
                 "Couldn't load the people you follow. Pull to retry")
-            : L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+            : L("気になる作者をフォローすると、新しい写真がここに並びます。",
+                "Follow photographers you like and their new photos will appear here.")
     }
 
     /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**——続けて押すと、
@@ -511,4 +556,10 @@ struct GalleryView: View {
         let ids = try? await environment.social.myFollowingIds()
         return ids.map { Set($0) }
     }
+}
+
+/// 届いた束の写真を引き直す合図（`GalleryView`）
+private struct PassResolveKey: Equatable {
+    let due: Int
+    let hidden: Int
 }

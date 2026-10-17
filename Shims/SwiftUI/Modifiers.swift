@@ -147,6 +147,7 @@ public struct PresentationDetent: Hashable {
     public static let medium = PresentationDetent()
     public static let large = PresentationDetent()
     public static func height(_ h: CGFloat) -> PresentationDetent { PresentationDetent() }
+    public static func fraction(_ f: CGFloat) -> PresentationDetent { PresentationDetent() }
 }
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
@@ -281,6 +282,8 @@ extension View {
     public func listStyle(_ style: ListStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の区切り線を出すか（本物と同じ。`.listRowBackground(.clear)` では線は消えない）
     public func listRowSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 行の区切り線の色（本物は `edges:` も取る）
+    public func listRowSeparatorTint(_ color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -290,6 +293,8 @@ extension View {
     /// 色を抜く（バッジの棚のまだ持っていないメダル・本物と同じ）
     public func grayscale(_ amount: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// シートの上の角（本物は iOS 16.4〜）
+    public func presentationCornerRadius(_ r: Double?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationDragIndicator(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// シートの高さ（本物と同じ）
     public func presentationDetents(_ detents: Set<PresentationDetent>) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -412,6 +417,9 @@ extension View {
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）
     public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T) -> Self { self }
+    /// 鳴らすかを古い値・新しい値で決める（本物と同じ・iOS 17）
+    public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T,
+                                              condition: @escaping (T, T) -> Bool) -> Self { self }
     /// 読み上げでの既定の操作（ダブルタップ）。本物と同じ形
     public func accessibilityAction(_ actionKind: AccessibilityActionKind = .default,
                                     _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
@@ -517,6 +525,7 @@ extension View {
                                    perform action: @escaping () -> Void,
                                    onPressingChanged: ((Bool) -> Void)? = nil) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scaleEffect(x: Double = 1, y: Double = 1, anchor: UnitPoint = .center) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaleEffect(_ scale: Double, anchor: UnitPoint) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// この部品の更新にかかる動きを書き換える（本物と同じ）
     public func transaction(_ transform: @escaping (inout Transaction) -> Void) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

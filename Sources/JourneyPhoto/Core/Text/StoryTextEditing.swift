@@ -43,6 +43,33 @@ enum StoryTextEditing {
         overlays.filter { $0.id != id || !$0.isEmpty }
     }
 
+    /// 打つ画面の「キャンセル」（板 v2 `StoryComposerText` の上の段の左）。**打ち始める前に戻す**:
+    /// `original` が nil（この画面を開くときに新しく足した札）なら取り除き、
+    /// あれば打つ前の札（文字・書体・色・背景・大きさ・揃え）に戻す。
+    /// 2026-10-16 判断: 戻したあとは呼ぶ側が「完了」と同じ片付け（`finish`・曲の札の外し）を通す
+    static func cancel(_ overlays: [TextOverlay], id: UUID, original: TextOverlay?) -> [TextOverlay] {
+        guard let original else { return overlays.filter { $0.id != id } }
+        return overlays.map { $0.id == id ? original : $0 }
+    }
+
+    // MARK: - 置いた直後の案内（板 v2「指で動かす · 2本指で回す」）
+
+    /// 案内の文言（本文 12pt 以上で出す）
+    static var placeHint: String { L("指で動かす · 2本指で回す", "Drag to move · Twist with two fingers to rotate") }
+
+    /// 端末に1回だけの印（UserDefaults）
+    static let placeHintShownKey = "story.placeHintShown"
+
+    /// 案内を出すか。**文字を置いた（打ち終えて札が残った）直後で、この端末でまだ出していないときだけ**
+    static func shouldShowPlaceHint(placed: Bool, defaults: UserDefaults = .standard) -> Bool {
+        placed && !defaults.bool(forKey: placeHintShownKey)
+    }
+
+    /// 出した印を付ける（出した時点で付ける——押して消さずに閉じても二度は出さない）
+    static func markPlaceHintShown(defaults: UserDefaults = .standard) {
+        defaults.set(true, forKey: placeHintShownKey)
+    }
+
     /// 見た目を次へ（白 → 黒 → 帯 → 縁取り → 白）。色の寄せ方は `TextOverlay.withStyle`。
     /// **帯で固定の札（撮影地・曲など）とスタンプは変えない**
     static func nextStyle(_ overlay: TextOverlay) -> TextOverlay {
@@ -84,7 +111,7 @@ enum StoryTextEditing {
     static let minFitScale = 0.35
 
     /// 打つ画面で文字を縮めて見せる倍率（`minFitScale`〜1）。**文字そのものの大きさは変えない**。
-    /// `available` は打つ画面の空き（左の縦のつまみを避けた幅・キーボードの上の高さ）で、
+    /// `available` は打つ画面の空き（右の縦のつまみを避けた幅・キーボードの上の高さ）で、
     /// **写真の枠ではない**——写真からはみ出すかは `overflow` で別に見る（同じ物差しにすると、
     /// 写真に収まる11〜14字の一言でも「写真の幅を超えています」と出た・ab63fb0 のレビュー）。
     /// 横に流さないのは、キャレットが画面の外へ出て追えなかったから（92a38d7 のレビュー）

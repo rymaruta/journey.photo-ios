@@ -63,6 +63,8 @@ struct EditPhotoView: View {
     /// この画面で差し替えた本体。**続けて色を編集するときはこちらを元にする**
     /// （`photo.src` は開いたときの前の画像のまま）
     @State private var replacedData: Data?
+    /// 「この写真を見て撮影」の元の写真を外す（保存で `inspiredBy: null`・2026-10-14）。付け直しはここでは無い
+    @State private var removeInspired = false
 
     init(photo: Photo) {
         self.photo = photo
@@ -83,46 +85,9 @@ struct EditPhotoView: View {
 
     var body: some View {
         Form {
+            // v2 の板 EditPhoto（2026-10-14）: 左に 112×140 の写真、右に線のボタン2つ（44）と一言
             Section {
-                // 差し替えた回は送った画像を出す（開いたときの URL は前の写真・`EditPreview`）
-                switch EditPreview.source(replaced: replacedPreview, original: photo.detailImageURL) {
-                case .replaced(let image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 200)
-                        .accessibilityLabel(L("差し替えた写真", "Replaced photo"))
-                case .original(let url):
-                    // 周りに押す操作の無い1枚なので、押して読み直せる（`RemoteImage.allowsManualRetry`）
-                    RemoteImage(url: url, contentMode: .fit, allowsManualRetry: true)
-                        .frame(maxHeight: 200)
-                }
-                if isReplacing {
-                    HStack { ProgressView(); Text(L("差し替えています…", "Replacing…")) }
-                } else if isLoadingRecolor {
-                    HStack { ProgressView(); Text(L("写真を読み込んでいます…", "Loading the photo…")) }
-                } else {
-                    PhotosPicker(selection: $replaceItem, matching: .images) {
-                        Label(L("写真を差し替える", "Replace the photo"), systemImage: "photo.on.rectangle.angled")
-                    }
-                    // 保存の途中は差し替えさせない（保存ボタンと同じ門）
-                    .disabled(isSaving)
-                    // 投稿した写真の色を編集し直す（`PhotoRecolor`）。**隣の行と同じ形・白のまま**
-                    // ——写真のある画面の欄なので真鍮にしない（デザインの板「黒塗りの真鍮」）
-                    Button {
-                        startRecolorLoad()
-                    } label: {
-                        Label(L("色を編集", "Edit colors"), systemImage: "slider.horizontal.3")
-                    }
-                    .disabled(isSaving)
-                    .accessibilityHint(L("投稿した写真の上に重ねて、色を編集し直します",
-                                         "Re-edit the colors, layered on top of the posted photo"))
-                    .accessibilityIdentifier("editPhoto.recolor")
-                }
-            } footer: {
-                // 派生（AVIF・小さい版）はサーバーが消して作り直す
-                Text(L("題や説明はそのままで、写真だけを入れ替えます。反映まで数分かかります。",
-                       "Swaps the image only, keeping the title and description. It takes a few minutes to appear."))
+                photoHeader
             }
             .listRowBackground(Color.clear)
 
@@ -178,7 +143,7 @@ struct EditPhotoView: View {
                 // 撮影地の名前（欄の上・板と同じ 12pt）。候補の行が下に続くので、欄と同じ行には包まない
                 Text(L("撮影地", "Place"))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .listRowSeparator(.hidden)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("editPhoto.placeLabel")
@@ -192,26 +157,42 @@ struct EditPhotoView: View {
             }
             .listRowBackground(Color.clear)
 
+            // v2 の板 EditPhoto: 「公開する」と「誰に見せるか」を1枚の札（surface-1）に。
+            // 説明は行の中の 12 の text-3（以前は節の下の注記）
             Section {
-                Toggle(L("公開する", "Public"), isOn: $published)
-                // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
-                // 白いつまみが乗り、入か切かが見えない
-                .tint(WebTheme.accentDeep)
-            } footer: {
-                Text(L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."))
-            }
-            .listRowBackground(Color.clear)
-
-            // 誰に見せるか。**公開しているときだけ**出す
-            // （非公開は誰にも見えないので絞りようが無い）。
-            // 知らない値が入っている写真では出さない——上書きで広げないため
-            if published && audienceKnown {
-                Section {
-                    Picker(L("誰に見せるか", "Who can see it"), selection: $audience) {
-                        ForEach(Audience.allCases) { choice in
-                            Text(choice.label).tag(choice)
+                // **軌道は暗い真鍮**（`JPToggleRow`）。既定の tint（白）だと入か切かが見えない
+                JPToggleRow(title: L("公開する", "Public"),
+                            detail: L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."),
+                            isOn: $published)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(WebTheme.card)
+                // 誰に見せるか。**公開しているときだけ**出す
+                // （非公開は誰にも見えないので絞りようが無い）。
+                // 知らない値が入っている写真では出さない——上書きで広げないため
+                if published && audienceKnown {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker(L("誰に見せるか", "Who can see it"), selection: $audience) {
+                            ForEach(Audience.allCases) { choice in
+                                Text(choice.label).tag(choice)
+                            }
                         }
+                        .font(.subheadline)
+                        .tint(WebTheme.text2)
+                        Text(audience.photoNote)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, JPSpace.s)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(WebTheme.card)
+                    .accessibilityIdentifier("editPhoto.audience")
+                }
+            }
+
+            if published && audienceKnown && audience == .closeFriends {
+                Section {
                     if audience == .closeFriends {
                         NavigationLink {
                             CloseFriendsView()
@@ -222,13 +203,14 @@ struct EditPhotoView: View {
                         // 保存・差し替えの最中は先へ進ませない（右上の「閉じる」と同じ）
                         .disabled(isBusy)
                     }
-                } footer: {
-                    Text(audience.photoNote)
                 }
                 .listRowBackground(Color.clear)
             }
 
-
+            // 「この写真を見て撮影」の元の写真（付いている写真だけ）。外すだけ（付け直しは投稿の画面から）
+            if InspiredBy.isAttached(photo) {
+                inspiredSection
+            }
         }
         .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
@@ -276,7 +258,7 @@ struct EditPhotoView: View {
                 // 保存・差し替えの最中は閉じさせない。閉じると詳細が古い姿のまま残り、
                 // 失敗の知らせも見えない
                 // 色の編集の元を読んでいる間は閉じられる（読み込みは取り消す・`blocksClosing`）
-                Button(Labels.Common.close) {
+                Button {
                     switch leave {
                     case .now:
                         recolorLoad?.cancel()
@@ -284,6 +266,11 @@ struct EditPhotoView: View {
                     case .confirm: showLeaveConfirm = true
                     case .wait: break
                     }
+                } label: {
+                    // v2 の板: 左上の「閉じる」は 17 の text-2（保存の真鍮より一段控える）
+                    Text(Labels.Common.close)
+                        .font(.body)
+                        .foregroundStyle(WebTheme.text2)
                 }
                 .disabled(PhotoRecolor.blocksClosing(isSaving: isSaving, isReplacing: isReplacing,
                                                     isLoadingRecolor: isLoadingRecolor))
@@ -294,6 +281,78 @@ struct EditPhotoView: View {
         .onDisappear { recolorLoad?.cancel() }
     }
 
+    /// 写真の段（v2 の板 EditPhoto）: 左に今の写真（112×140・角 12・切り抜き）、右に「写真を差し替える」
+    /// 「色を編集」の線のボタン（高さ 44・白 14% の縁・白の字）と一言。**ボタンは白のまま**——
+    /// 写真のある画面の欄なので真鍮にしない（デザインの板「黒塗りの真鍮」）
+    private var photoHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Color.clear
+                .frame(width: Self.thumbSize.width, height: Self.thumbSize.height)
+                .overlay {
+                    // 差し替えた回は送った画像を出す（開いたときの URL は前の写真・`EditPreview`）
+                    switch EditPreview.source(replaced: replacedPreview, original: photo.detailImageURL) {
+                    case .replaced(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .accessibilityLabel(L("差し替えた写真", "Replaced photo"))
+                    case .original(let url):
+                        // 周りに押す操作の無い1枚なので、押して読み直せる（`RemoteImage.allowsManualRetry`）
+                        RemoteImage(url: url, allowsManualRetry: true)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                if isReplacing {
+                    busyLine(L("差し替えています…", "Replacing…"))
+                } else if isLoadingRecolor {
+                    busyLine(L("写真を読み込んでいます…", "Loading the photo…"))
+                } else {
+                    PhotosPicker(selection: $replaceItem, matching: .images) {
+                        Label(L("写真を差し替える", "Replace the photo"), systemImage: "arrow.triangle.2.circlepath")
+                            .jpPillButton(.outline)
+                    }
+                    .buttonStyle(.plain)
+                    // 保存の途中は差し替えさせない（保存ボタンと同じ門）
+                    .disabled(isSaving)
+                    // 投稿した写真の色を編集し直す（`PhotoRecolor`）。**隣のボタンと同じ形・白のまま**
+                    Button {
+                        startRecolorLoad()
+                    } label: {
+                        Label(L("色を編集", "Edit colors"), systemImage: "slider.horizontal.3")
+                            .jpPillButton(.outline)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving)
+                    .accessibilityHint(L("投稿した写真の上に重ねて、色を編集し直します",
+                                         "Re-edit the colors, layered on top of the posted photo"))
+                    .accessibilityIdentifier("editPhoto.recolor")
+                }
+                // 派生（AVIF・小さい版）はサーバーが消して作り直す
+                Text(L("題や説明はそのままで、写真だけを入れ替えます。反映まで数分かかります。",
+                       "Swaps the image only, keeping the title and description. It takes a few minutes to appear."))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// 差し替え・読み込みの途中の1行（ボタン2つの代わりに出す）
+    private func busyLine(_ text: String) -> some View {
+        HStack(spacing: JPSpace.xs) {
+            ProgressView()
+            Text(text)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text)
+        }
+        .frame(minHeight: JPHeight.secondaryButton)
+    }
+
+    /// 写真の段の写真（v2 の板 EditPhoto の 112×140）
+    nonisolated static let thumbSize = CGSize(width: 112, height: 140)
+
     /// 右上の「保存」（板 EditPhoto: ナビの右・真鍮の字）。保存の途中は輪に替える。
     /// 差し替え・色の編集の元を読んでいる間も押させない（`save` の注記）
     private var saveButton: some View {
@@ -303,8 +362,9 @@ struct EditPhotoView: View {
             if isSaving {
                 ProgressView().tint(WebTheme.accent)
             } else {
+                // v2 の板: 17 の太字・真鍮（黒地のナビの文字ボタン）
                 Text(Labels.Common.save)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body.weight(.semibold))
             }
         }
         .foregroundStyle(isBusy ? WebTheme.faint : WebTheme.accent)
@@ -322,9 +382,14 @@ struct EditPhotoView: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text(L("撮影日", "Date taken"))
                 .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.muted2)
+                .foregroundStyle(WebTheme.text2)
                 .accessibilityHidden(true)
             HStack(spacing: 4) {
+                // v2 の板: 欄の頭に真鍮の暦の印（黒地の上の手がかり・読み上げは欄の名前で足りる）
+                Image(systemName: "calendar")
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityHidden(true)
                 if let picked {
                     DatePicker(L("撮影日", "Date taken"),
                                selection: Binding(get: { picked },
@@ -368,9 +433,57 @@ struct EditPhotoView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
             Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
         }
+    }
+
+    /// 元の写真の節。**外すは保存で効く**（ほかの欄と同じ）——押した時点では送らず、文言と印で
+    /// 「保存すると外れます」と言う。色だけで状態を言わない（行の字と記号が変わる）
+    private var inspiredSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "link")
+                    .font(.system(size: 17))
+                    .foregroundStyle(WebTheme.muted2)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("この写真を見て撮影", "Inspired by"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.text)
+                    Text(removeInspired
+                         ? L("保存すると、元の写真が外れます", "The original photo will be removed when you save")
+                         : L("元の写真が付いています", "An original photo is attached"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    removeInspired.toggle()
+                } label: {
+                    // 黒地の上の文字ボタン（板: 小さな文字ボタンも当たりは 44）。外すは危険ではないので赤にしない
+                    Text(removeInspired ? L("元に戻す", "Undo") : L("外す", "Remove"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+                .accessibilityHint(removeInspired
+                                   ? L("元の写真を付けたままにします", "Keeps the original photo attached")
+                                   : L("保存すると、この写真から元の写真へのつながりを外します",
+                                       "Removes the link to the original photo when you save"))
+                .accessibilityIdentifier("editPhoto.inspiredRemove")
+            }
+            .accessibilityElement(children: .contain)
+        } footer: {
+            Text(L("外すと、写真のページから「この写真を見て撮影」の行が消えます（サイトは反映まで数分）。ここでは付け直せません。",
+                   "Removing it takes the “Inspired by” line off the photo page (the site updates within a few minutes). It can't be re-attached here."))
+        }
+        .listRowBackground(Color.clear)
     }
 
     /// 保存・差し替え・色の編集の元を読んでいる最中か（閉じる・保存・先へ進むを止める門）
@@ -380,7 +493,8 @@ struct EditPhotoView: View {
     private var fields: EditPhotoChanges.Fields {
         EditPhotoChanges.Fields(title: title, caption: caption, location: location,
                                 pickedCoords: pickedCoords, tagsText: tagsText, category: category,
-                                date: date, published: published, audience: audience)
+                                date: date, published: published, audience: audience,
+                                removeInspired: removeInspired)
     }
 
     /// 「閉じる」・下へ払うの扱い（`EditPhotoChanges.leave`）
@@ -560,8 +674,9 @@ struct EditPhotoView: View {
         // **読めなかった（nil）ときは座標を消さない**（分からないまま消すと、サーバーのピンが消える）
         let spots = await PlaceCoordsRule.lookup(
             current: [],
-            needed: EditPlaceRules.needsSpotIndex(openedLocation: photo.location, currentLocation: location,
-                                                  pickedCoords: pickedCoords != nil, photoCoords: photo.coords),
+            needed: EditPlaceRules.needsIndexBeforeSave(openedLocation: photo.location, currentLocation: location,
+                                                        pickedCoords: pickedCoords != nil, photoCoords: photo.coords,
+                                                        spotId: photo.spotId),
             fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
         let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields, spots: spots)
 

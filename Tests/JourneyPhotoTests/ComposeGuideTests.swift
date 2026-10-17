@@ -1,4 +1,6 @@
 import XCTest
+import SwiftUI
+import PhotosUI
 @testable import JourneyPhoto
 
 /// 「作例を重ねて撮る」（Pro・板 ComposeGuide・2026-10-09）の画面を持たない決まり（`ComposeGuide`）。
@@ -7,16 +9,16 @@ final class ComposeGuideTests: XCTestCase {
 
     // MARK: - 濃さ
 
-    func testOpacityRangeMatchesBoard() {
-        // 板: 0〜0.8、既定は 0.35〜0.45 の間
-        XCTAssertEqual(ComposeGuide.opacityRange, 0...0.8)
+    func testOpacityRangeIncludesZeroAndFullStrength() {
+        XCTAssertEqual(ComposeGuide.opacityRange, 0...1.0)
         XCTAssertTrue((0.35...0.45).contains(ComposeGuide.defaultOpacity))
     }
 
     func testClampedOpacityStaysInRange() {
         XCTAssertEqual(ComposeGuide.clampedOpacity(-0.2), 0)
         XCTAssertEqual(ComposeGuide.clampedOpacity(0.5), 0.5)
-        XCTAssertEqual(ComposeGuide.clampedOpacity(1), 0.8)
+        XCTAssertEqual(ComposeGuide.clampedOpacity(1), 1)
+        XCTAssertEqual(ComposeGuide.clampedOpacity(2), 1)
         XCTAssertEqual(ComposeGuide.clampedOpacity(.nan), ComposeGuide.defaultOpacity)
         XCTAssertEqual(ComposeGuide.clampedOpacity(.infinity), ComposeGuide.defaultOpacity)
     }
@@ -25,7 +27,68 @@ final class ComposeGuideTests: XCTestCase {
         XCTAssertEqual(ComposeGuide.opacityPercent(0.4), "40%")
         XCTAssertEqual(ComposeGuide.opacityPercent(0), "0%")
         // 範囲の外は上限で読む
-        XCTAssertEqual(ComposeGuide.opacityPercent(2), "80%")
+        XCTAssertEqual(ComposeGuide.opacityPercent(2), "100%")
+    }
+
+    // MARK: - ライブラリの参考写真
+
+    func testChoosingLibraryThenCancellingKeepsTheCurrentReference() {
+        var state = ReferenceOverlayState()
+        state.useSamples()
+        let before = state
+        // PhotosPicker のキャンセルは選択 item が nil。成功時の useLibrary 以外では変更しない。
+        XCTAssertEqual(state, before)
+        state.useLibrary()
+        XCTAssertEqual(state.source, .library)
+        XCTAssertFalse(state.hidden)
+        state.useSamples()
+        XCTAssertEqual(state.source, .samples)
+    }
+
+    func testReferenceCanMirrorHideAndResetItsPosition() {
+        var state = ReferenceOverlayState()
+        state.useLibrary()
+        state.mirrored.toggle()
+        state.hidden.toggle()
+        state.setScale(9)
+        state.moveBy(x: 42, y: -18)
+        XCTAssertTrue(state.mirrored)
+        XCTAssertTrue(state.hidden)
+        XCTAssertEqual(state.scale, 4)
+        XCTAssertEqual(state.offsetX, 42)
+        XCTAssertEqual(state.offsetY, -18)
+        state.resetPosition()
+        XCTAssertEqual(state.scale, 1)
+        XCTAssertEqual(state.offsetX, 0)
+        XCTAssertEqual(state.offsetY, 0)
+        XCTAssertTrue(state.mirrored, "位置リセットは反転設定を変えない")
+        state.setScale(0.1)
+        XCTAssertEqual(state.scale, 0.5)
+        state.setScale(.nan)
+        state.moveBy(x: .infinity, y: 1)
+        XCTAssertEqual(state.scale, 0.5)
+        XCTAssertEqual(state.offsetY, 0)
+    }
+
+    func testLibraryPhotoOnlyLivesInTheViewfinderAndCaptureKeepsRawData() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        let camera = try source("Sources/JourneyPhoto/Features/Spots/ComposeCamera.swift")
+        XCTAssertTrue(view.contains("PhotosPicker(selection: $librarySelection, matching: .images)"))
+        XCTAssertTrue(view.contains("ReferencePhotoLoader.previewJPEG(from: data)"))
+        XCTAssertTrue(view.contains("libraryImage = image"))
+        XCTAssertTrue(view.contains("reference.useLibrary()"))
+        XCTAssertTrue(camera.contains("output.capturePhoto(with: AVCapturePhotoSettings(), delegate: delegate)"))
+        XCTAssertTrue(camera.contains("PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data"))
+        XCTAssertFalse(view.contains("uploadProfileImage"), "参考画像をサーバーに送っている")
+    }
+
+    func testReferenceFrameFitsPortraitAndLandscapeSafeArea() {
+        for (width, height) in [(390.0, 640.0), (844.0, 320.0)] {
+            let frame = ComposeGuide.viewfinderSize(width: width, height: height)
+            XCTAssertLessThanOrEqual(frame.width, width)
+            XCTAssertLessThanOrEqual(frame.height, height)
+            XCTAssertEqual(frame.width / frame.height, ComposeGuide.frameAspect, accuracy: 0.001)
+        }
     }
 
     // MARK: - 作例の順
@@ -202,7 +265,7 @@ final class ComposeGuideTests: XCTestCase {
                       "撮る画面に Launch の並びと始める番号を渡していない")
         XCTAssertEqual(launcher.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
         XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "撮影スポットの頁が直に開いている")
-        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name)"),
+        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name,"),
                       "撮影スポットの頁が共通の部品で開いていない")
         // 頼みは開く時点の帯の並びで作る
         XCTAssertTrue(spot.contains("ComposeGuide.Launch(sample: sample, samples: shownSamples)"), "帯の並びで開いていない")

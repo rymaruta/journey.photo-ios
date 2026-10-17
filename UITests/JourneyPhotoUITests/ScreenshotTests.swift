@@ -62,6 +62,28 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **ホームの右上の見出し（探す・お知らせ・メニューのガラスの帯）を寄りで撮る**（2026-10-14）。
+    /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
+    /// 見比べられるように、上のバーだけを切り出す。3つの押せる範囲（frame）も文で残す
+    /// （帯の高さは絵より数字の方が比べやすい）。出なければ撮らない
+    private func shootHeaderBand(_ app: XCUIApplication) {
+        let bar = app.navigationBars.firstMatch
+        guard bar.exists else { return }
+        let shot = XCTAttachment(screenshot: bar.screenshot())
+        shot.name = "10e-ホーム（右上の見出しの帯・寄り）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let ids = ["header.search", "header.notifications", "header.menu"]
+        let lines = ids.map { id -> String in
+            let button = app.buttons[id].firstMatch
+            return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
+        }
+        let note = XCTAttachment(string: (["バー: \(bar.frame)"] + lines).joined(separator: "\n"))
+        note.name = "10e-ホーム（見出しの寸法）"
+        note.lifetime = .keepAlways
+        add(note)
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
@@ -531,6 +553,7 @@ final class ScreenshotTests: XCTestCase {
             // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
             // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
             // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
+            if name == "ホーム" { shootHeaderBand(app) }
             if name == "ホーム" {
                 let latest = app.buttons["新着"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
@@ -688,6 +711,19 @@ final class ScreenshotTests: XCTestCase {
                 if albumsRow.waitForExistence(timeout: 5), albumsRow.isHittable {
                     shoot(app, "32-旅の記録の入口")
                 }
+                // **端末の写真の一冊の説明の札**（2026-10-16・写真の許可がまだのときだけ出る）。
+                // 札は入口の行より上にあるので、押せる所まで戻して撮る。**許可のボタンは押さない**
+                // （iOS の許可のダイアログが出て、後の節を覆う）。出なければ撮らない
+                let deviceAllow = app.buttons["trips.deviceAllow"].firstMatch
+                var allowPulls = 0
+                while deviceAllow.exists, !deviceAllow.isHittable, allowPulls < 4 {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    allowPulls += 1
+                }
+                if deviceAllow.exists, deviceAllow.isHittable {
+                    shoot(app, "33-端末の写真の一冊の説明")
+                }
             }
         }
 
@@ -744,6 +780,53 @@ final class ScreenshotTests: XCTestCase {
                 shoot(app, "20b-写真から撮影地へ")
                 app.navigationBars.buttons.firstMatch.tap()
                 Thread.sleep(forTimeInterval: 2)
+            }
+
+            // **写真から、次の旅へ**（2026-10-14）: 行き先の段（行きたい・経路・いつ）。
+            // 撮影地の無い写真では出ない——**出なければ撮らない**（この試験の決まり）。
+            // 少しずつ送って見える位置まで出す（上限あり）
+            let trip = app.descendants(matching: .any).matching(identifier: "photo.trip").firstMatch
+            if trip.waitForExistence(timeout: 3) {
+                var tripPushes = 0
+                while !app.buttons["photo.trip.wish"].firstMatch.isHittable, tripPushes < 3 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    tripPushes += 1
+                }
+                let hasSpot = app.buttons["photo.trip.directions"].firstMatch.exists
+                shoot(app, "20c-写真の詳細（行き先\(hasSpot ? "・撮影スポット" : "")）")
+                // 撮影スポットの付いた写真なら、題の上の「撮影スポット」の行からスポットの頁へ（本番にまだ少ない・出なければ撮らない）
+                let guide = app.buttons["photo.spotGuide"].firstMatch
+                if guide.exists {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    if guide.isHittable {
+                        guide.tap()
+                        if app.buttons["spot.official.wish"].firstMatch.waitForExistence(timeout: 10) {
+                            Thread.sleep(forTimeInterval: 2)
+                            shoot(app, "20d-写真から撮影スポットへ")
+                        }
+                        app.navigationBars.buttons.firstMatch.tap()
+                        Thread.sleep(forTimeInterval: 2)
+                    }
+                }
+            }
+
+            // 「この写真を見て撮影」の行（2026-10-14）。元の写真が付いた写真はまだ少なく、口は本番に
+            // まだ無いこともある——**出なければ撮らない**（この試験の決まり）。押して元の写真へ移るのも撮る
+            let inspiredLine = app.buttons["photo.inspiredBy"].firstMatch
+            // 送らない（このあとの作者の行を画面の外へ押し出さないため）。見えていなければ撮らない
+            if inspiredLine.waitForExistence(timeout: 3) {
+                if inspiredLine.isHittable {
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    inspiredLine.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                    app.navigationBars.buttons.firstMatch.tap()
+                    Thread.sleep(forTimeInterval: 2)
+                }
             }
 
             // **人のページ**（モック2 と同じ部品で組んである）。
@@ -829,8 +912,10 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// **別の試験にしてある。** 投稿画面は札（sheet）で、書きかけがあると閉じるのに確認が要る——
     /// 一巡（`testCapturesEveryScreen`）の途中に置くと、閉じ損ねたときにあとの絵が全部消える。
-    /// 写真はシミュレータのライブラリの見本から1枚選ぶ。選ぶ画面（PHPicker）は別プロセスで、
-    /// 中が触れない回もある——**出なければ撮らない**（この試験の決まり）
+    /// 🔴 **写真は見本の1枚を選んだ状態で開く**（`-JPPreviewUploadSample YES`・Debug のみ・2026-10-14）。
+    /// 選ぶ画面（PHPicker）は別プロセスで、中の写真に触れない回が続き、run 428 まで 42〜45c が
+    /// 1枚も撮れていなかった。見本が入らなかった回だけ、前の道（ライブラリから1枚選ぶ）を試す。
+    /// どちらでも**出なければ撮らない**（この試験の決まり）
     func testCapturesUploadEditEntry() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -839,6 +924,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -850,6 +936,16 @@ final class ScreenshotTests: XCTestCase {
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
 
+        // 見本の1枚が帯に入れば、選ぶ画面を通らない
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        if !thumb.waitForExistence(timeout: 15) {
+            pickFirstLibraryPhoto(app)
+        }
+        captureUploadScreens(app, thumb: thumb)
+    }
+
+    /// 前の道: 帯の「追加」→「ライブラリから選ぶ」→ 1枚目（見本が入らなかった回だけ）
+    private func pickFirstLibraryPhoto(_ app: XCUIApplication) {
         // 2026-10-03: 投稿画面は**開くと写真を選ぶ画面が自動で出る**（`UploadDetails.autoOpensLibrary`）。
         // 出るのを待ち、出なかった回（帯の「追加」がまだ押せる）だけ「追加」→「ライブラリから選ぶ」。
         // 未ログインの回はログイン画面で「追加」が無いので、ここで抜ける
@@ -883,9 +979,11 @@ final class ScreenshotTests: XCTestCase {
                 break
             }
         }
+    }
 
+    /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）
+    private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
         guard thumb.waitForExistence(timeout: 15) else { return }
         let editButton = app.buttons["upload.editButton"].firstMatch
         guard editButton.waitForExistence(timeout: 5) else { return }
@@ -904,6 +1002,107 @@ final class ScreenshotTests: XCTestCase {
         details.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "44-投稿（詳しい設定・開いた）")
+
+        // 2026-10-14: 「この写真を見て撮影」の欄と、元の写真を選ぶ画面（保存した写真・行きたい場所）。
+        // 選ぶ画面は閉じるだけ（選ぶと書きかけが増える）。出なければ撮らない（この試験の決まり）
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        // 欄は「詳しい設定」の上にある。開いた設定の下に隠れていたら下へ送って探す（上限あり）
+        for _ in 0..<3 where !(inspired.exists && inspired.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.exists, inspired.isHittable else { return }
+        shoot(app, "45-投稿（この写真を見て撮影の欄）")
+        inspired.tap()
+        let savedShelf = app.buttons["inspiredPicker.shelf.saved"].firstMatch
+        guard savedShelf.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "45b-元の写真を選ぶ")
+        let wishShelf = app.buttons["inspiredPicker.shelf.wishlist"].firstMatch
+        if wishShelf.exists, wishShelf.isHittable {
+            wishShelf.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "45c-元の写真を選ぶ（行きたい場所）")
+        }
+        let close = app.buttons["inspiredPicker.close"].firstMatch
+        if close.exists, close.isHittable { close.tap() }
+    }
+
+    /// **「この写真を見て撮影」の見本**（2026-10-14・`-JPPreviewInspired YES`・Debug のみ）。
+    /// 元の写真の付いた写真も `GET /user/inspired` も本番にまだ無いので、見本の鍵で
+    /// 写真の詳細の行（20e）・元の写真へ（20f）・元の写真を選んだ投稿の欄（45d）を撮る。
+    /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ撮らない**
+    func testCapturesInspiredBy() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES", "-JPPreviewInspired", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+
+        // 写真の詳細（ホームの写真を名指しで押す・一巡と同じく短い引きで少しずつ送る）
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        if firstPhoto.exists, firstPhoto.isHittable {
+            firstPhoto.tap()
+            let line = app.buttons["photo.inspiredBy"].firstMatch
+            if line.waitForExistence(timeout: 10) {
+                // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
+                var linePushes = 0
+                while !line.isHittable, linePushes < 4 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    linePushes += 1
+                }
+                if line.isHittable {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    line.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                }
+            }
+        }
+
+        // 投稿画面（見本の1枚・見本の元の写真を選んだ状態）。開いた詳細は戻ってから（下のタブを出す）
+        for _ in 0..<2 where !(tabBar.exists && tabBar.isHittable) {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        guard tabBar.exists, tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
+              inspired.waitForExistence(timeout: 10) else { return }
+        for _ in 0..<3 where !inspired.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.isHittable else { return }
+        // 見本の元の写真が欄に入る（公開一覧を読むので少し待つ）
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "45d-投稿（元の写真を選んだ欄）")
     }
 
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、
@@ -1056,6 +1255,7 @@ final class ScreenshotTests: XCTestCase {
         guard proRow.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-設定（Pro の節）")
+        shootCompositionCatalog(app)
 
         // **「前の晩に知らせる」の「通知がオフのため届きません」**（2026-10-11・`LightAlertPushNotice`）。
         // 見本の利用者は公開プロフィールで Pro なので入切の行が出る。CI のシミュレータは通知を許可して
@@ -1077,6 +1277,34 @@ final class ScreenshotTests: XCTestCase {
         if !notice.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
         XCTAssertGreaterThanOrEqual(notice.frame.height, 44, "「通知がオフのため届きません」の行が 44pt 未満")
         shoot(app, "80b-設定（Pro の節・通知がオフ）")
+    }
+
+    /// 設定の構図一覧と三分割の解説。撮影画面のガイドと同じデータを表示する。
+    /// 開けない回はほかのスクリーンショットに影響させない。
+    private func shootCompositionCatalog(_ app: XCUIApplication) {
+        let entry = app.buttons["settings.compositionCatalog"].firstMatch
+        var pushes = 0
+        while !entry.isHittable, pushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard entry.exists, entry.isHittable else { return }
+        entry.tap()
+        let third = app.buttons["composition.catalog.thirds"].firstMatch
+        guard third.waitForExistence(timeout: 5) else {
+            goBack(app)
+            return
+        }
+        shoot(app, "83-設定（構図一覧）")
+        if third.isHittable {
+            third.tap()
+            if app.staticTexts["どんな構図？"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "84-構図の解説（三分割）")
+            }
+            goBack(app)
+        }
+        goBack(app)
     }
 
     /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
@@ -1110,6 +1338,66 @@ final class ScreenshotTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 5)
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
+    }
+
+    /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
+    /// 束を開く（表）→ 写真を押して全面 → 閉じる → 下を押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
+    /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
+    ///
+    /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
+    /// 束が開かない・閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす
+    func testCapturesPass() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let open = app.buttons["pass.home.open"].firstMatch
+        // 札が出なければ落とす（2026-10-16 の読み直し: 出ないまま抜けると、札の .task が走らない回を見逃した）
+        guard open.waitForExistence(timeout: 45) else {
+            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "80-すれちがいの束")
+        open.tap()
+
+        let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "札を押しても束が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "81-すれちがいのカード（表）")
+        // 写真（きっぷの上 250/430）を押すと全面で見る（2026-10-16 案C）
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        let photoClose = app.buttons["pass.photo.close"].firstMatch
+        XCTAssertTrue(photoClose.waitForExistence(timeout: 5), "写真を押しても全面で見られない")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "84-すれちがいの写真（全面）")
+        XCTAssertGreaterThanOrEqual(photoClose.frame.height, 44, "全面の × が 44pt 未満")
+        photoClose.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // きっぷの下（写真ではない所）を押すと裏返る
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "82-すれちがいのカード（裏）")
+
+        let close = app.buttons["pass.viewer.close"].firstMatch
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        let file = app.buttons["pass.viewer.file"].firstMatch
+        for (button, name) in [(close, "閉じる"), (thanks, "ありがとう"), (file, "帳に入れる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        guard file.exists, file.isHittable else { return XCTFail("「帳に入れる」を押せない") }
+        file.tap()
+        let book = app.staticTexts["すれちがい帳"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 10), "「帳に入れる」で帳が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "83-すれちがい帳")
     }
 
     /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
@@ -1514,5 +1802,62 @@ final class ScreenshotTests: XCTestCase {
         target.tap()
         guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
+    }
+
+    /// **メダルの浮き彫りと面取り**（2026-10-14 owner「回転した時に表と裏があまりにも凹凸感なさすぎて…
+    /// ほんの少しだけ凹凸感欲しい」）。メダルを回す全画面の硬貨を、決まった角度で止めて撮る。
+    ///
+    /// 硬貨はふだん勝手に回るので、`-JPPreviewMedalPoses`（Debug のみ・`PreviewSession.medalPoses`）で
+    /// 最初の向きに止め、硬貨を押すたびに次の向きへ進める。並びは「横の回り:浮き彫りの強さ」:
+    /// 既定の強さ（2.5・owner が選んだ）で少し傾けた（約26°）・正面・大きく傾けた（約63°）、
+    /// 比べる用に少し傾けたまま強さ 0（前の作り）。メダルは段のある都道府県（銀）。
+    ///
+    /// 🔴 **浮き彫りを貼り終えた印を待ってから撮る**（run 427: 強さを変えた直後に撮り、2 と 0 が同じ絵だった）。
+    /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ撮らない（この試験の決まり）
+    func testCapturesMedalRelief() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewBadges", "prefectures:2,earlyUser:1"]
+        app.launchArguments += ["-JPPreviewMedalPoses", "0.45:2.5,0:2.5,1.1:2.5,0.45:0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return }
+        nameLine.tap()
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        // 名前の横の画面でメダルを長押しすると全画面で手に取れる（`MedalViewerTests` と同じ道）
+        let badge = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
+        guard badge.waitForExistence(timeout: 15), badge.isHittable else { return }
+        badge.press(forDuration: 1.0)
+        let coin = app.descendants(matching: .any)["medalViewer.coin"].firstMatch
+        guard coin.waitForExistence(timeout: 15) else { return }
+
+        let names = ["85a-メダルの浮き彫り（少し傾けた・既定の強さ2.5）",
+                     "85b-メダルの浮き彫り（正面・既定の強さ2.5）",
+                     "85c-メダルの浮き彫り（大きく傾けた・既定の強さ2.5）",
+                     "85f-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）"]
+        for (index, name) in names.enumerated() {
+            if index > 0 {
+                guard coin.exists, coin.isHittable else { return }
+                coin.tap()
+            }
+            // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。貼り終えた印を待つ
+            let ready = NSPredicate(format: "value == %@", "pose-\(index)-ready")
+            let waited = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: coin)], timeout: 30)
+            guard waited == .completed else { return }
+            // 貼った絵が次のコマで描かれるまで
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, name)
+        }
     }
 }

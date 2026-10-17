@@ -31,8 +31,9 @@ struct ProfileHandleLine: View {
                     .lineLimit(1)
             }
         }
-        .font(.caption)
-        .foregroundStyle(WebTheme.faint)
+        // v2（板 MyPage・UserProfile: 13px・text-3）。黒地の上だけなので不透明の灰
+        .font(JPFont.footnote)
+        .foregroundStyle(WebTheme.text3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(line.spoken)
     }

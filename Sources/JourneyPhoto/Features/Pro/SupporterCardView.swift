@@ -11,6 +11,11 @@ import UIKit
 /// - 「続けた年のメダル」（真鍮の眉ラベル）と右に「12 か月目」、1年目・2年目・3年目のメダル 96pt
 ///   （届いていないものは色を抜いて 42%）。届いたメダルは押すと手に取って回せる
 /// - 注記（板の文言そのまま）
+///
+/// **v2（2026-10-14・板 SupporterCard）**: 地は黒（v1 の丸いグラデーションは手に取って回す全画面だけに残す）。
+/// 題はナビの中央の 17（積む画面の題）。札は少し傾けて置き（`SupporterCardScreen.tilt`）、手に取れることを見せ、
+/// 下に「押すと手に取って回せます」の注記。続けた年のメダルは 92 の3列、受け取った年だけ色、まだの年は灰色 40%。
+/// 「12 か月目」は数だけ白の等幅（数は合図ではないので真鍮にしない）
 struct SupporterCardView: View {
 
     let profile: UserProfile
@@ -38,33 +43,35 @@ struct SupporterCardView: View {
         GeometryReader { geo in
             let cardWidth = SupporterCardLayout.cardWidth(screenWidth: Double(geo.size.width))
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    card(width: cardWidth)
+                VStack(alignment: .leading, spacing: JPSpace.section) {
+                    VStack(spacing: JPSpace.l) {
+                        card(width: cardWidth)
+                        Text(L("押すと手に取って回せます", "Tap to hold it and turn it over"))
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .multilineTextAlignment(.center)
+                            .accessibilityHidden(true)  // 札の読み上げのヒントと同じ文
+                    }
+                    .frame(maxWidth: .infinity)
                     yearsSection(width: cardWidth)
                     Text(SupporterText.note(monthlyPrice: store.product(.monthly)?.displayPrice))
-                        .font(.caption)
-                        .lineSpacing(12 * 0.7 - 4)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.footnote)
+                        .lineSpacing(13 * 0.8 - 4)
+                        .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-                .padding(.bottom, 32)
+                .padding(.horizontal, JPSpace.l)
+                .padding(.top, JPSpace.xl)
+                .padding(.bottom, JPSpace.section)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background { SupporterCardStyle.background.ignoresSafeArea() }
+        // 板 v2: 地は黒（丸いグラデーションは手に取って回す全画面 `SupporterCardViewer` だけ）
+        .background { WebTheme.background.ignoresSafeArea() }
+        // 板 v2: 題は積む画面の中央の 17（Headline）。v1 は戻るの右の明朝 18
+        .navigationTitle(L("サポーター証", "Supporter card"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            // 板: 戻るの右に明朝 18 の見出し（真ん中には置かない）
-            ToolbarItem(placement: .topBarLeading) {
-                Text(L("サポーター証", "Supporter card"))
-                    .font(JPFont.display(18, relativeTo: .headline))
-                    .foregroundStyle(Color.white)
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
         .task {
             guard front == nil else { return }
             front = SupporterCardTextures.front(face)
@@ -96,6 +103,11 @@ struct SupporterCardView: View {
             // 板: 0 24 48 黒 75%
             .shadow(color: Color.black.opacity(0.75), radius: 24, x: 0, y: 24)
             .contentShape(RoundedRectangle(cornerRadius: corner))
+            // 板 v2: 少し傾けて置く（perspective 900・X 6°・Y -8°）。視差効果を減らす人には傾けない
+            .rotation3DEffect(.degrees(reduceMotion ? 0 : SupporterCardScreen.tilt.x),
+                              axis: (x: 1, y: 0, z: 0), perspective: SupporterCardScreen.tiltPerspective)
+            .rotation3DEffect(.degrees(reduceMotion ? 0 : SupporterCardScreen.tilt.y),
+                              axis: (x: 0, y: 1, z: 0), perspective: SupporterCardScreen.tiltPerspective)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(face.accessibilityLabel)
@@ -106,18 +118,26 @@ struct SupporterCardView: View {
     // MARK: - 続けた年のメダル
 
     private func yearsSection(width: Double) -> some View {
-        // 板は 96pt を3つ。狭い端末では間を 8pt 残して縮める
-        let side = min(96, (width - 16) / 3)
-        return VStack(alignment: .leading, spacing: 14) {
+        // 板 v2 は 92pt を3つ。狭い端末では間を 8pt 残して縮める
+        let side = min(SupporterCardScreen.yearMedalSide, (width - 16) / 3)
+        let month = String(SupporterText.monthOrdinal(supporter?.months ?? 0))
+        return VStack(alignment: .leading, spacing: JPSpace.s) {
             HStack(alignment: .firstTextBaseline) {
                 Text(L("続けた年のメダル", "Years of support"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
-                Spacer(minLength: 8)
-                Text(L("\(SupporterText.monthOrdinal(supporter?.months ?? 0)) か月目",
-                       "Month \(SupporterText.monthOrdinal(supporter?.months ?? 0))"))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(WebTheme.faint)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: JPSpace.xs)
+                // 板 v2: 数だけ白の等幅 semibold、単位は text-2（13）
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(L("", "Month ")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+                    Text(month)
+                        .font(JPFont.number(JPTypeScale.footnote, weight: .semibold, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.text)
+                    Text(L(" か月目", "")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("\(month) か月目", "Month \(month)"))
             }
             HStack(alignment: .top) {
                 ForEach(1...SupporterText.yearThresholds.count, id: \.self) { year in
@@ -144,11 +164,14 @@ struct SupporterCardView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: side, height: side)
                     .grayscale(reached ? 0 : 1)
+                    // 板 v2: 受け取った年には落ち影
+                    .shadow(color: Color.black.opacity(reached ? 0.6 : 0), radius: 6, x: 0, y: 6)
+                    .opacity(reached ? 1 : SupporterCardScreen.notReachedOpacity)
+                // 板 v2: 字は 13。まだの年は text-3（字は薄めない——4.5:1 を保つ）
                 Text(SupporterText.yearLabel(year))
-                    .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.8))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(reached ? WebTheme.text : WebTheme.text3)
             }
-            .opacity(reached ? 1 : 0.42)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -237,4 +260,17 @@ enum SupporterCardStyle {
             Gradient.Stop(color: Color.black, location: 1),
         ], center: UnitPoint(x: 0.5, y: 0.22), startRadius: 0, endRadius: 690)
     }
+}
+
+/// サポーター証の画面の寸法（v2 の板 SupporterCard・2026-10-14）。3D の絵（`SupporterCardTextures`）には触らない
+enum SupporterCardScreen {
+    /// 画面に置く札の傾き（板: rotateX 6°・rotateY -8°・perspective 900）。手に取れることを見せる。
+    /// 視差効果を減らす人には傾けない
+    static let tilt: (x: Double, y: Double) = (6, -8)
+    /// 傾きの遠近（SwiftUI の perspective は 0〜1。板の 900px を 390pt の画面に当てた弱め）
+    static let tiltPerspective: Double = 0.4
+    /// 続けた年のメダルの大きさ（v2: 92・v1 は 96）
+    static let yearMedalSide: Double = 92
+    /// まだの年のメダルの濃さ（v2: 40%・灰色）。字は薄めない
+    static let notReachedOpacity: Double = 0.4
 }

@@ -24,6 +24,59 @@ enum StorySimpleRules {
         return NextButton(title: L("次へ（\(selected)枚）", "Next (\(selected))"), enabled: !loading)
     }
 
+    // MARK: - 裏に回ったときの自動の書きかけ（2026-10-16）
+
+    /// 裏に回ったときに自動の書きかけ（`StoryDraftStore.Slot.auto`）をどうするか
+    enum AutoSave: Equatable {
+        /// 書く（並べた写真と置いた文字を残す）
+        case write
+        /// 前の分を消す（写真を全部外した——次に開いて外した写真が蘇らない）
+        case clear
+        /// 何もしない（読み込み中。読みかけの写真が落ちた書きかけを作らない・前の分は残す）
+        case skip
+    }
+
+    /// 写真が無ければ書かない（何も書いていない）。読み込み中は触らない
+    static func autoSave(hasShots: Bool, loading: Bool) -> AutoSave {
+        if loading { return .skip }
+        return hasShots ? .write : .clear
+    }
+
+    /// ✕ を押したときにどうするか（`UnsavedLeave` から）
+    enum Close: Equatable {
+        /// 確かめずに閉じ、**自動の書きかけも消す**（写真を全部外した・戻した下書きから何も変えていない）
+        case closeClearingAutoDraft
+        /// 閉じる確認を出す（「下書きに保存」「保存せずに閉じる」。どちらも自動の書きかけを消す）
+        case confirm
+        /// 閉じない
+        case stay
+    }
+
+    /// 🔴 **2026-10-16 判断: 変更なし（`.now`）で閉じる道でも自動の書きかけを消す。** 以前は写真を全部外して
+    /// ✕ で閉じると消さず、次に開くと外した写真が「書きかけの続き」で戻った。変更なしで閉じるのは
+    /// 写真が無い（残すものが無い）か、戻した本人の下書きのまま（同じものが本人の下書きに残る）のどちらかなので、
+    /// 自動の枠に残す理由が無い。この画面が触ってよい枠か（`ownsAutoSlot`）は消す側が見る
+    static func close(_ leave: UnsavedLeave) -> Close {
+        switch leave {
+        case .now: return .closeClearingAutoDraft
+        case .confirm: return .confirm
+        case .wait: return .stay
+        }
+    }
+
+    /// この画面が自動の枠に触って（書いて・消して）よいか。開いたとき空だった・この画面で尋ねたときだけ
+    /// ——尋ねていない書きかけ（送れなかった問いが先に出た・写真を持って開いた回）を黙って上書き・削除しない
+    static func ownsAutoSlot(hasAutoDraft: Bool, asked: Bool) -> Bool {
+        !hasAutoDraft || asked
+    }
+
+    /// 自動の書きかけが、いまの本人の下書きを開いて書いていたものか（`StoryDraftStore.Draft.basedOn`）。
+    /// そうなら続きから出したとき元の下書きも片づける（同じ写真が二度出ない）
+    static func autoRestoreContinuesSaved(basedOn: String?, savedStamp: String?) -> Bool {
+        guard let basedOn else { return false }
+        return basedOn == savedStamp
+    }
+
     // MARK: - 選んだ写真の読み込み
 
     /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す。
@@ -130,12 +183,20 @@ enum StorySimpleRules {
         }
     }
 
-    // MARK: - 色の丸（4つ）
+    // MARK: - 色の丸（5つ）
 
-    /// キーボードの上に出す4色（白・墨・真鍮・空色）。残りの8色と好きな色は「ほかの色」から
-    static let quickInks: [TextOverlay.Ink] = [.white, .ink, .brass, .sky]
+    /// キーボードの上に出す5色（板 v2 `StoryComposerText`: 白・黒（墨）・真鍮・空色・珊瑚）。
+    /// 残りの7色と好きな色は「ほかの色」から。
+    ///
+    /// 2026-10-16 判断: 珊瑚を「ほかの色」の奥から前へ出した（板 v2 の5色）。
+    /// **真鍮は文字の色として残す。** CLAUDE.md の「真鍮は黒い地の上だけ」は UI の部品（合図・リンク・
+    /// 選んでいるもの）の決まりで、ここは使う人が自分の写真に載せる文字の色（板 v2 も5色に置いている・
+    /// 2026-10-02 のかんたん版から既に出ていた）。背景無しでも影（`.light`）が付き、帯は背景ボタン1回で
+    /// 付く。**帯を前提に縛ることはしていない**（真鍮を選んでも背景は変えない）——写真によっては
+    /// 読みにくいので、縛るかは owner に尋ねる
+    static let quickInks: [TextOverlay.Ink] = [.white, .ink, .brass, .sky, .coral]
 
-    /// いまの札で出す丸。**背景無しは4つとも**（墨を選ぶと黒の見た目に移る）。
+    /// いまの札で出す丸。**背景無しは5つとも**（墨を選ぶと黒の見た目に移る）。
     /// 帯・縁取りでは読めない墨を出さない（`TextOverlay.inks(for:)` と同じ決まり）
     static func inks(for overlay: TextOverlay) -> [TextOverlay.Ink] {
         guard overlay.kind.forcedStyle != nil || backdrop(of: overlay.style) != .none else { return quickInks }
