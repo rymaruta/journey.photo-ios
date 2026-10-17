@@ -1,11 +1,10 @@
 import SwiftUI
 
-/// Pro の画面の線の絵（板 63 の4つの利点・板 43 の設定の行）。24 の升目の座標を板の SVG から写した。
+/// Pro の画面の線の絵（板 63 の利点・板 43 の設定の行）。
+/// 2026-10-17: 「作例を重ねて撮る」が全員無料になり Pro の利点から外れたので、そのカメラの絵（overlay）も外した。24 の升目の座標を板の SVG から写した。
 ///
 /// どれも線（stroke）だけで描く。太さと色は呼ぶ側（板: 案内は白 1.8・設定は真鍮 1.7）
 enum ProIcon: String, CaseIterable {
-    /// 作例を重ねて撮る（カメラ）
-    case overlay
     /// 光と天気の知らせ（地平線と日の出）
     case light
     /// 電波なしで使える旅（ピン）
@@ -27,18 +26,6 @@ enum ProIcon: String, CaseIterable {
         }
         return Path { path in
             switch self {
-            case .overlay:
-                // M4 8h3l2-2h6l2 2h3v11H4z ・ 中心 (12,14) 半径 3.5 の丸
-                path.move(to: p(4, 8))
-                path.addLine(to: p(7, 8))
-                path.addLine(to: p(9, 6))
-                path.addLine(to: p(15, 6))
-                path.addLine(to: p(17, 8))
-                path.addLine(to: p(20, 8))
-                path.addLine(to: p(20, 19))
-                path.addLine(to: p(4, 19))
-                path.closeSubpath()
-                path.addEllipse(in: circle(12, 14, 3.5))
             case .light:
                 // M3 18h18 ・ M7 18a5 5 0 0 1 10 0 ・ M12 6v3 ・ M5 10l2 2 ・ M19 10l-2 2
                 path.move(to: p(3, 18))
