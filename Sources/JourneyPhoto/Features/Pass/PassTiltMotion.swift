@@ -43,6 +43,9 @@ final class PassTiltMotion: ObservableObject {
 
     private func start() {
         guard manager.isDeviceMotionAvailable else { return }
+        // 撮る画面の水準器が持っている間は取らない（`DeviceMotionOwner`）
+        guard DeviceMotionOwner.isFree(for: self) else { return }
+        DeviceMotionOwner.claim(self)
         baselineY = nil
         manager.deviceMotionUpdateInterval = Self.updateInterval
         manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
@@ -54,7 +57,8 @@ final class PassTiltMotion: ObservableObject {
     }
 
     private func stop() {
-        manager.stopDeviceMotionUpdates()
+        // 自分が持っていたときだけ止める（水準器が後から取っていたら、その知らせと間隔を壊さない）
+        if DeviceMotionOwner.release(self) { manager.stopDeviceMotionUpdates() }
         baselineY = nil
         light = .center
     }

@@ -7,89 +7,36 @@ final class ComposeGuideLauncherTests: XCTestCase {
 
     private static func freeLaunch() -> ComposeGuide.Launch { ComposeGuide.Launch(sample: nil, samples: []) }
 
-    // MARK: - Pro の流れ
+    // MARK: - 開く流れ（2026-10-17 判断: 全員無料）
 
+    /// Pro でなくても・ログインしていなくても・圏外でも、押せば撮る画面へ進む。
+    /// `open` は Pro もログインも受け取らない——Pro の確かめを戻すと、この呼び方が通らない
     @MainActor
-    func testProOpensTheCamera() async {
+    func testAnyoneOpensTheCamera() async {
         let launcher = ComposeGuideLauncher()
-        let outcome = await launcher.open(previewUnlocked: false, signedIn: true, deliveredRevision: 0,
-                                          isPro: { true }, make: Self.freeLaunch)
+        var made = 0
+        let outcome = launcher.open(make: { made += 1; return Self.freeLaunch() })
         XCTAssertEqual(outcome, .opened)
         XCTAssertNotNil(launcher.launch)
         XCTAssertEqual(launcher.launch?.samples.count, 0, "作例なしの入口")
-        XCTAssertFalse(launcher.showPaywall)
-        XCTAssertFalse(launcher.checking)
-    }
-
-    @MainActor
-    func testNotProShowsThePaywallAndReopensAfterPurchase() async {
-        let launcher = ComposeGuideLauncher()
-        var made = 0
-        let outcome = await launcher.open(previewUnlocked: false, signedIn: true, deliveredRevision: 3,
-                                          isPro: { false }, make: { made += 1; return Self.freeLaunch() })
-        XCTAssertEqual(outcome, .paywall)
-        XCTAssertTrue(launcher.showPaywall)
-        XCTAssertNil(launcher.launch)
-        XCTAssertEqual(made, 0, "案内のときは撮る画面の頼みを作らない")
-        // 案内で買わずに閉じた（渡し終えた回数が同じ）→ 開き直さない
-        launcher.showPaywall = false
-        XCTAssertNil(launcher.paywallDismissed(deliveredRevision: 3))
-        // 買って閉じた（回数が増えた）→ 同じ頼みで開き直す
-        let reopen = launcher.paywallDismissed(deliveredRevision: 4)
-        XCTAssertNotNil(reopen)
-        if let reopen {
-            let again = await launcher.open(previewUnlocked: false, signedIn: true, deliveredRevision: 4,
-                                            isPro: { true }, make: reopen)
-            XCTAssertEqual(again, .opened)
-            XCTAssertEqual(made, 1)
-        }
-    }
-
-    @MainActor
-    func testSignedOutGoesToPaywallWithoutAsking() async {
-        let launcher = ComposeGuideLauncher()
-        var asked = false
-        let outcome = await launcher.open(previewUnlocked: false, signedIn: false, deliveredRevision: 0,
-                                          isPro: { asked = true; return true }, make: Self.freeLaunch)
-        XCTAssertEqual(outcome, .paywall)
-        XCTAssertFalse(asked, "ログインしていなければプロフィールを聞きに行かない")
-    }
-
-    @MainActor
-    func testUnreachableDoesNotShowPaywallToPro() async {
-        let launcher = ComposeGuideLauncher()
-        let outcome = await launcher.open(previewUnlocked: false, signedIn: true, deliveredRevision: 0,
-                                          isPro: { nil }, make: Self.freeLaunch)
-        XCTAssertEqual(outcome, .unreachable)
-        XCTAssertFalse(launcher.showPaywall)
-        XCTAssertNil(launcher.launch)
+        XCTAssertEqual(made, 1, "頼みは開く時点で1回だけ作る")
     }
 
     @MainActor
     func testDoesNotReopenWhileOpen() async {
         let launcher = ComposeGuideLauncher()
-        await launcher.open(previewUnlocked: true, signedIn: false, deliveredRevision: 0,
-                            isPro: { nil }, make: Self.freeLaunch)
+        launcher.open(make: Self.freeLaunch)
         let first = launcher.launch?.id
-        XCTAssertNotNil(first, "試験の鍵があれば Pro の確かめを飛ばす")
+        XCTAssertNotNil(first)
         // 開いている間に2回目（素早い2回押し）→ 何もしない
-        let second = await launcher.open(previewUnlocked: true, signedIn: false, deliveredRevision: 0,
-                                         isPro: { nil }, make: Self.freeLaunch)
+        var made = 0
+        let second = launcher.open(make: { made += 1; return Self.freeLaunch() })
         XCTAssertEqual(second, .ignored)
+        XCTAssertEqual(made, 0)
         XCTAssertEqual(launcher.launch?.id, first)
-    }
-
-    @MainActor
-    func testDoesNotOpenWhileThePaywallIsShowing() async {
-        let launcher = ComposeGuideLauncher()
-        await launcher.open(previewUnlocked: false, signedIn: false, deliveredRevision: 0,
-                            isPro: { nil }, make: Self.freeLaunch)
-        XCTAssertTrue(launcher.showPaywall)
-        // 案内を出している間に2回目（鍵があっても）→ 撮る画面を重ねない
-        let second = await launcher.open(previewUnlocked: true, signedIn: true, deliveredRevision: 0,
-                                         isPro: { true }, make: Self.freeLaunch)
-        XCTAssertEqual(second, .ignored)
-        XCTAssertNil(launcher.launch)
+        // 閉じたら、また開ける
+        launcher.launch = nil
+        XCTAssertEqual(launcher.open(make: Self.freeLaunch), .opened)
     }
 
     // MARK: - 撮る画面の枠（3:4）
@@ -172,14 +119,14 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(overlay.contains("@ObservedObject var level: LevelMotion"), "線の子の View が傾きを見ていない")
     }
 
-    /// 投稿のシートの4つ目「構図を重ねて撮る」は Pro の流れ（`ComposeGuidePresenter.request`）を通り、作例なしで開く
-    func testPostSheetEntryGoesThroughTheProCheck() throws {
+    /// 投稿のシートの4つ目「構図を重ねて撮る」は、Pro の確かめを通らずに作例なしで開く（2026-10-17 判断: 全員無料）
+    func testPostSheetEntryOpensWithoutTheProCheck() throws {
         let sheet = try source("Sources/JourneyPhoto/Features/Upload/PostSheet.swift")
         XCTAssertTrue(sheet.contains("kind: .composition"))
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertTrue(root.contains("case .composition:"))
-        XCTAssertTrue(root.contains("composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) }"),
-                      "作例なしで Pro の流れを通していない")
+        XCTAssertTrue(root.contains("composeLauncher.open(make: { ComposeGuide.Launch(sample: nil, samples: []) })"),
+                      "作例なしで、そのまま開いていない")
         XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil,"))
         XCTAssertTrue(root.contains("onPost: { capture in pendingCapture = capture }"))
         XCTAssertTrue(root.contains("initialCapture: pendingCapture"), "撮った1枚を投稿画面へ渡していない")
@@ -192,6 +139,38 @@ final class ComposeGuideLauncherTests: XCTestCase {
                       "選択した投稿種別を閉じた後に処理していない")
         XCTAssertTrue(root.contains("openCompositionIfRequested()"),
                       "構図ガイドの要求を閉じた後に処理していない")
+    }
+
+    /// 2026-10-17 判断（owner）: 全員無料。**開く前にサーバーへ何も聞かない**（プロフィールの `pro` を読まない）・
+    /// Pro の案内も「つながりません」の知らせも出さない。入口（投稿のシート・撮影スポット）も同じ
+    func testOpeningDoesNotAskTheServerOrShowThePaywall() throws {
+        let launcher = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideLauncher.swift")
+        let code = launcher.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        for banned in ["myProfile", "isPro", "PaywallView", "showPaywall", "unreachable", "profiles", "StoreService",
+                       "async"] {
+            XCTAssertFalse(code.contains(banned), "開く流れに Pro の確かめ・問い合わせが戻っている: \(banned)")
+        }
+        XCTAssertTrue(code.contains("func open(make: () -> ComposeGuide.Launch) -> Outcome {"))
+        let root = try source("Sources/JourneyPhoto/App/RootView.swift")
+        let spot = try source("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift")
+        for (name, text) in [("RootView", root), ("OfficialSpotView", spot)] {
+            XCTAssertFalse(text.contains("ComposeGuidePresenter.request"), "\(name) が Pro の流れを通している")
+            XCTAssertFalse(text.contains("composeLauncher.checking"), "\(name) が確かめ中の回転を待っている")
+        }
+        XCTAssertTrue(spot.contains("composeLauncher.open(make: { ComposeGuide.Launch(sample: sample, samples: shownSamples) })"))
+        // 撮影スポットの入口から PRO の札と「Pro の機能です」の読み上げを外した
+        let entry = try XCTUnwrap(spot.components(separatedBy: "private var composeEntry: some View {").dropFirst().first)
+        let card = try XCTUnwrap(entry.components(separatedBy: "private func sampleCreditLink").first)
+        XCTAssertFalse(card.contains("Text(\"PRO\")"), "撮影スポットの入口に PRO の札が残っている")
+        XCTAssertFalse(card.contains("Pro の機能"), "撮影スポットの入口に Pro の読み上げが残っている")
+    }
+
+    /// Pro の案内の利点から「作例を重ねて撮る」を外した（2026-10-17）。残りは3つで空にならない
+    func testPaywallNoLongerSellsTheComposeGuide() {
+        let titles = ProBenefit.all.map(\.title)
+        XCTAssertEqual(titles, ["光と天気の知らせ", "電波なしで使える旅", "Pro マークと Pro 限定の章", "特別な乗車券"])
+        XCTAssertFalse(ProBenefit.all.contains { $0.title.contains("重ねて撮る") || $0.body.contains("重ねて") })
     }
 
     func testPreviewLensIsOffWithoutTheLaunchArgument() {

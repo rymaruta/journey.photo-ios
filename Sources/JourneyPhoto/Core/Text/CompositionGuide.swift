@@ -1,6 +1,6 @@
 import Foundation
 
-/// 「構図を重ねて撮る」（Pro・2026-10-10 owner「有名な構図からマイナーな構図まで欲しい」）の、
+/// 「構図を重ねて撮る」（2026-10-17 から全員無料・2026-10-10 owner「有名な構図からマイナーな構図まで欲しい」）の、
 /// 画面を持たない決まり。線の形はすべてここで計算し、Linux の試験で見張る。
 ///
 /// 画面は `Features/Spots/ComposeGuideView.swift`（撮る画面）・`CompositionOverlay.swift`（線を描く）・

@@ -11,9 +11,12 @@ final class PassFaceTests: XCTestCase {
         return c
     }
 
-    private func profile(_ id: String, pro: Bool?) throws -> UserProfile {
+    private func profile(_ id: String, pro: Bool?, passFace: Bool? = nil, markNone: Bool = false) throws -> UserProfile {
         let flag = pro.map { ",\"pro\":\($0)" } ?? ""
-        return try JSONDecoder.api.decode(UserProfile.self, from: Data("{\"userId\":\"\(id)\",\"name\":\"丸田\"\(flag)}".utf8))
+        let face = passFace.map { ",\"passFace\":\($0)" } ?? ""
+        let mark = markNone ? ",\"proMarkStyle\":\"none\"" : ""
+        return try JSONDecoder.api.decode(UserProfile.self, from: Data(
+            "{\"userId\":\"\(id)\",\"name\":\"丸田\"\(flag)\(face)\(mark)}".utf8))
     }
 
     private func content(face: UInt8?, owner: UserProfile?) throws -> PassCardContent {
@@ -71,6 +74,14 @@ final class PassFaceTests: XCTestCase {
         XCTAssertEqual(try content(face: 1, owner: nil).faceStyle, .mars, "プロフィールを引く前・引けなかった")
         XCTAssertEqual(try content(face: nil, owner: try profile("u1", pro: true)).faceStyle, .mars)
         XCTAssertEqual(try content(face: 77, owner: try profile("u1", pro: true)).faceStyle, .mars)
+        // 🔴 サーバーの `passFace` があればそれで決める（印を外した Pro は公開プロフィールで pro:false になる）
+        XCTAssertEqual(try content(face: 4, owner: try profile("u1", pro: false, passFace: true, markNone: true)).faceStyle,
+                       .urushi, "印を外した Pro（pro:false, passFace:true）が特別な券面にならない")
+        XCTAssertEqual(try content(face: 4, owner: try profile("u1", pro: true, passFace: false)).faceStyle,
+                       .mars, "passFace:false なのに特別な券面")
+        XCTAssertEqual(try content(face: 4, owner: try profile("u1", pro: true)).faceStyle, .urushi, "passFace 無し → pro で決めない")
+        XCTAssertEqual(try content(face: 4, owner: try profile("u1", pro: false)).faceStyle, .mars)
+        XCTAssertNil(try profile("u1", pro: true).passFaceFlag)
         // Pro の印が変わったら描き直す（同じカードでも別の値）
         XCTAssertNotEqual(try content(face: 1, owner: try profile("u1", pro: true)),
                           try content(face: 1, owner: try profile("u1", pro: false)))
@@ -202,12 +213,12 @@ final class PassFaceTests: XCTestCase {
         print("[券面の文字と地の比]\n" + report.joined(separator: "\n"))
     }
 
-    /// 本文系の字は 12pt 以上（眉ラベル・ラベル・ずっと有効・No. は 11）
+    /// 本文系の字は 12pt 以上（「ずっと有効」も 12・土台のマルス券に合わせる。眉ラベル・欄のラベル・No. は 11）
     func testFaceTextSizes() {
         XCTAssertGreaterThanOrEqual(PassCardStyle.metaSize, 12)
         XCTAssertGreaterThanOrEqual(PassCardStyle.fieldValueSize, 12)
         XCTAssertEqual(PassCardStyle.fieldLabelSize, 11)
-        XCTAssertEqual(PassCardStyle.validitySize, 11)
+        XCTAssertEqual(PassCardStyle.validitySize, 12)
         XCTAssertEqual(PassFaceRoute.maxSize, 24.5)
     }
 
@@ -224,6 +235,77 @@ final class PassFaceTests: XCTestCase {
         XCTAssertNil(PassTicket.embossedNumber(nil))
         XCTAssertEqual(PassTicket.routeHeadline(.plain), "航路乗車券")
         XCTAssertEqual(PassTicket.routeHeadline(.first), PassTicket.eyebrow(.first))
+    }
+
+    // MARK: - 傾きの読み取り・弧の光（2026-10-17 の読み直し）
+
+    /// 見えていて・前面で・光が動く券面で・「視差効果を減らす」でないときだけ。どれか1つでも外れたら読まない
+    func testTiltReadsOnlyWhenEverythingAllows() {
+        func reads(appeared: Bool = true, visible: Bool = true, foreground: Bool = true,
+                   style: PassTicketFaceStyle = .brassPlate, reduceMotion: Bool = false) -> Bool {
+            PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: foreground,
+                                    style: style, reduceMotion: reduceMotion)
+        }
+        XCTAssertTrue(reads())
+        XCTAssertFalse(reads(appeared: false))
+        XCTAssertFalse(reads(visible: false), "裏・全面の写真の下でも読む")
+        XCTAssertFalse(reads(foreground: false))
+        XCTAssertFalse(reads(reduceMotion: true), "「視差効果を減らす」に変えても読む")
+        // 券面を替えたら決め直す: 光が動かない券面（マルス券・大圏航路）へは読まない
+        XCTAssertFalse(reads(style: .mars))
+        XCTAssertFalse(reads(style: .greatCircle))
+        for style in [PassTicketFaceStyle.brassPlate, .foilHard, .urushi, .leather] { XCTAssertTrue(reads(style: style)) }
+        // 06 の弧の光: 見えていない・「視差効果を減らす」では止める
+        XCTAssertFalse(PassGreatCircle.paused(reduceMotion: false, visible: true))
+        XCTAssertTrue(PassGreatCircle.paused(reduceMotion: true, visible: true))
+        XCTAssertTrue(PassGreatCircle.paused(reduceMotion: false, visible: false))
+    }
+
+    // MARK: - 選ぶ欄（2026-10-17 の読み直し）
+
+    /// Pro は選べる・Pro でないは鍵（押すと案内）・読めない（nil）は鍵をかけない／案内も開かない。マルス券はいつも選べる
+    func testPickerOptionStates() {
+        XCTAssertEqual(PassTicketFaceStyle.option(.urushi, isPro: true), .open)
+        XCTAssertEqual(PassTicketFaceStyle.option(.urushi, isPro: false), .locked)
+        XCTAssertEqual(PassTicketFaceStyle.option(.urushi, isPro: nil), .unknown)
+        for isPro in [true, false, nil] as [Bool?] {
+            XCTAssertEqual(PassTicketFaceStyle.option(.mars, isPro: isPro), .open)
+        }
+    }
+
+    /// 暫定: Pro で Pro マークを外している人だけに「相手にはマルス券で届く」と言う
+    /// サーバーの公開プロフィールに `passFace` が出るまでの間だけ（自分の公開プロフィールに無いときだけ）。読めなければ出さない
+    func testProMarkNotice() {
+        let notice = PassTicketFaceStyle.proMarkNotice(isPro: true, markRemoved: true, publicHasPassFace: false)
+        XCTAssertEqual(notice, "Pro マークを外しているので、相手にはマルス券で届きます")
+        XCTAssertNil(PassTicketFaceStyle.proMarkNotice(isPro: true, markRemoved: true, publicHasPassFace: true),
+                     "サーバーが passFace を出しているのに知らせる")
+        XCTAssertNil(PassTicketFaceStyle.proMarkNotice(isPro: true, markRemoved: true, publicHasPassFace: nil),
+                     "公開プロフィールが読めないのに知らせる")
+        XCTAssertNil(PassTicketFaceStyle.proMarkNotice(isPro: true, markRemoved: false, publicHasPassFace: false))
+        XCTAssertNil(PassTicketFaceStyle.proMarkNotice(isPro: false, markRemoved: true, publicHasPassFace: false))
+        XCTAssertNil(PassTicketFaceStyle.proMarkNotice(isPro: nil, markRemoved: true, publicHasPassFace: false))
+    }
+}
+
+/// 端末の動きの管理者の取り合い（撮る画面の水準器と券面の光・2026-10-17）
+@MainActor
+final class DeviceMotionOwnerTests: XCTestCase {
+
+    /// 🔴 止めてよいのは今の持ち主だけ。水準器が後から取ったら、券面の光は止めない（水準器の知らせを壊さない）
+    func testOnlyCurrentOwnerMayStop() async {
+        let level = NSObject(), tilt = NSObject()
+        _ = DeviceMotionOwner.release(level)
+        _ = DeviceMotionOwner.release(tilt)
+        XCTAssertTrue(DeviceMotionOwner.isFree(for: tilt))
+        DeviceMotionOwner.claim(tilt)
+        // 水準器（撮る画面）が後から取る
+        DeviceMotionOwner.claim(level)
+        XCTAssertFalse(DeviceMotionOwner.isFree(for: tilt), "水準器が持っているのに券面が取れる")
+        XCTAssertFalse(DeviceMotionOwner.release(tilt), "券面の光が水準器の知らせを止めてしまう")
+        XCTAssertTrue(DeviceMotionOwner.release(level))
+        XCTAssertTrue(DeviceMotionOwner.isFree(for: tilt))
+        XCTAssertFalse(DeviceMotionOwner.release(level), "二度止める")
     }
 }
 
@@ -327,40 +409,112 @@ final class PassFaceWiringTests: XCTestCase {
         }
     }
 
-    /// 🔴 どの券面も写真は `PassFacePhoto` だけで描き、**写真の上に光・金粉・しぼの層を重ねない**
-    /// （写真より後に書く層は字と札だけ）。写真の窓そのものにも修飾子を足さない
+    /// 文の中の部品の名前（大文字で始まり `(` が続くもの）
+    private func componentNames(_ text: String) -> Set<String> {
+        let regex = try! NSRegularExpression(pattern: "(?<![A-Za-z0-9_.])([A-Z][A-Za-z0-9]*)\\(")
+        let range = NSRange(text.startIndex..., in: text)
+        return Set(regex.matches(in: text, range: range).compactMap { m in
+            Range(m.range(at: 1), in: text).map { String(text[$0]) }
+        })
+    }
+
+    /// 写真の呼び出し（`PassFacePhoto(` … `onTap: onPhotoTap)`）の後ろを、写真に続けて付けた修飾子と、その後の文に分ける
+    private func afterPhoto(_ text: String) throws -> (chained: [String], rest: String) {
+        let start = try XCTUnwrap(text.range(of: "PassFacePhoto("), "写真が無い")
+        let close = try XCTUnwrap(text.range(of: "onTap: onPhotoTap)", range: start.upperBound..<text.endIndex))
+        var lines = String(text[close.upperBound...]).components(separatedBy: "\n").dropFirst()
+        var chained: [String] = []
+        while let line = lines.first, line.trimmingCharacters(in: .whitespaces).hasPrefix(".") {
+            chained.append(line.trimmingCharacters(in: .whitespaces))
+            lines = lines.dropFirst()
+        }
+        return (chained, lines.joined(separator: "\n"))
+    }
+
+    /// 券面の `body`（`var body` から、札の大きさを決める最後の行まで）
+    private func faceBody(_ text: String, _ name: String) throws -> String {
+        let all = try block(text, name)
+        let start = try XCTUnwrap(all.range(of: "var body: some View {"), "\(name) に body が無い")
+        let end = try XCTUnwrap(all.range(of: ".frame(width: 300, height: 430, alignment: .topLeading)",
+                                          range: start.upperBound..<all.endIndex), "\(name) の body の終わりが無い")
+        return String(all[start.upperBound..<end.lowerBound])
+    }
+
+    /// 写真より上の層に置いてよい部品（字と、その並べ方だけ）
+    private let textOnly: Set<String> = ["Text", "VStack", "HStack", "Spacer", "AnyShapeStyle", "PassFaceTextShadow",
+                                         "PassFaceHeadRow", "PassFaceRoute", "PassFaceFields", "PassFaceFooter"]
+
+    /// 🔴 どの券面も写真は `PassFacePhoto` だけで描き、**写真の行から body の終わりまで、写真より後ろ（上の層）には
+    /// 字の部品だけ**。写真に続けて付けてよいのは置き場（`.offset`）だけ
     func testFacesDrawPhotoOnlyThroughWindowAndNothingAbove() throws {
         let text = try source("Features/Pass/PassFaces.swift")
-        let light = ["Material(", "Sheen", "Glint", "Dust", "Grain", "Hairline", "foil(light)", "LinearGradient(", "RadialGradient("]
         for name in ["PassBrassPlateFace", "PassGreatCircleFace", "PassFoilHardFace", "PassUrushiFace", "PassLeatherFace"] {
-            let body = try block(text, name)
-            XCTAssertEqual(body.components(separatedBy: "PassFacePhoto(").count - 1, 1, "\(name) の写真が1枚でない")
-            XCTAssertFalse(body.contains("DownsampledRemoteImage"), "\(name) が写真を直に描いている")
-            let after = try XCTUnwrap(body.components(separatedBy: "PassFacePhoto(").last)
-            // 写真の窓の行（押したときの指定と置き場）だけを除いて見る
-            let rest = after.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")
-            for word in light where name != "PassFoilHardFace" || word != "LinearGradient(" {
-                XCTAssertFalse(rest.contains(word), "\(name) の写真より上に \(word) の層がある")
+            let all = try block(text, name)
+            XCTAssertEqual(all.components(separatedBy: "PassFacePhoto(").count - 1, 1, "\(name) の写真が1枚でない")
+            XCTAssertFalse(all.contains("DownsampledRemoteImage"), "\(name) が写真を直に描いている")
+            let after = try afterPhoto(try faceBody(text, name))
+            for line in after.chained {
+                XCTAssertTrue(line.hasPrefix(".offset("), "\(name) の写真に \(line) が付いている")
             }
-            let windowLines = after.components(separatedBy: "\n").prefix(2).joined(separator: "\n")
-            for word in forbidden {
-                XCTAssertFalse(windowLines.contains(word), "\(name) の写真の窓に \(word) が付いている")
-            }
+            let extra = componentNames(after.rest).subtracting(textOnly)
+            XCTAssertTrue(extra.isEmpty, "\(name) の写真より上の層に字でない部品がある: \(extra.sorted())")
         }
-        // 10 の写真の下端の真鍮の線は写真の下（y 200〜202）に置き、写真の上には重ねない
+        // 10 の写真の下端の真鍮の線は写真の下（y 200〜202）に置き、写真より下の層に描く
         let foil = try block(text, "PassFoilHardFace")
         XCTAssertTrue(foil.contains(".frame(width: 300, height: 2)\n                .offset(y: 200)"))
-        // マルス券も同じ窓で描く
+    }
+
+    /// 🔴 マルス券も同じ窓で描き、写真に修飾子を続けない・重ねない。**表の外側**（`PassCardFront.body`）にも
+    /// 写真ごと色や形を変える修飾子を付けず、重ねるのは外側の縁（`PassTicketEdge`）だけ
+    func testMarsFaceAndFrontOutsideAreUntouched() throws {
         let cards = try source("Features/Pass/PassCards.swift")
-        XCTAssertTrue(cards.contains("PassFacePhoto(photo: face.photo, width: PassCardStyle.deckSize.width, height: PassCardStyle.photoHeight,"))
+        let front = try block(cards, "PassCardFront")
+        let mars = try XCTUnwrap(front.components(separatedBy: "private var marsFace: some View {").last?
+            .components(separatedBy: "private var route: some View").first)
+        XCTAssertTrue(mars.contains("PassFacePhoto(photo: face.photo, width: PassCardStyle.deckSize.width, height: PassCardStyle.photoHeight,"))
+        let after = try afterPhoto(mars)
+        XCTAssertTrue(after.chained.isEmpty, "マルス券の写真に \(after.chained) が付いている")
+        for word in [".overlay", "ZStack(", ".mask"] {
+            XCTAssertFalse(mars.contains(word), "マルス券に \(word) がある（写真に重なりうる）")
+        }
+        let body = try XCTUnwrap(front.components(separatedBy: "var body: some View {").dropFirst().first?
+            .components(separatedBy: "private var marsFace: some View").first)
+        let filters = forbidden.filter { ![".shadow", ".opacity", ".foregroundStyle", ".tint"].contains($0) }
+        for word in filters {
+            XCTAssertFalse(body.contains(word), "表の外側に \(word) が付いている（写真ごと変わる）")
+        }
+        let overlays = body.components(separatedBy: ".overlay(").dropFirst().map { String($0.prefix(15)) }
+        XCTAssertEqual(overlays, ["PassTicketEdge("], "表の外側に縁以外が重なっている")
+        XCTAssertFalse(body.contains(".dynamicTypeSize"), "表の外側に .dynamicTypeSize（土台の決め: 付けない）")
+        // 特別な券面の入れ物にも付けない
+        for name in ["PassSpecialFace", "PassFaceBody"] {
+            let wrapper = try block(try source("Features/Pass/PassFaces.swift"), name)
+            for word in filters { XCTAssertFalse(wrapper.contains(word), "\(name) に \(word) が付いている") }
+        }
     }
 
     /// 傾きの読み取りは表示中・前面・光が動く券面・「視差効果を減らす」でないときだけ
     func testTiltIsReadOnlyWhileShown() throws {
         let face = try block(try source("Features/Pass/PassFaces.swift"), "PassSpecialFace")
-        XCTAssertTrue(face.contains("appeared && scenePhase == .active && face.style.followsTilt && !reduceMotion"))
+        XCTAssertTrue(face.contains("PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: scenePhase == .active,"))
         XCTAssertTrue(face.contains(".onDisappear"))
         XCTAssertTrue(face.contains("tilt.release()"))
+        // 前面・「視差効果を減らす」・券面・見えているか、のどれが変わっても決め直す
+        for value in ["scenePhase", "reduceMotion", "face.style", "visible"] {
+            XCTAssertTrue(face.contains(".onChange(of: \(value)) { _, _ in updateHold() }"), "\(value) が変わっても決め直さない")
+        }
+        // 裏を見ている間・全面の写真が上にある間は止める（見えているかを渡す）
+        let spin = try source("Features/Pass/PassSpinCard.swift")
+        XCTAssertTrue(spin.contains("PassCardFront(face: front, onPhotoTap: onPhotoTap, shine: shine, visible: active && !back)"))
+        XCTAssertTrue(try source("Features/Pass/PassViewerView.swift").contains("active: fullPhoto == nil"))
+        XCTAssertTrue(try source("Features/Pass/PassCardPickView.swift").contains("active: !showPaywall"))
+        let faces = try source("Features/Pass/PassFaces.swift")
+        XCTAssertTrue(faces.contains("paused: PassGreatCircle.paused(reduceMotion: reduceMotion, visible: visible)"))
+        // 動きの管理者は持ち主だけが止める（水準器を壊さない）
+        let level = try source("Features/Spots/LevelMotion.swift")
+        XCTAssertTrue(level.contains("if DeviceMotionOwner.release(self) { Self.manager.stopDeviceMotionUpdates() }"))
+        XCTAssertTrue(try source("Features/Pass/PassTiltMotion.swift")
+            .contains("if DeviceMotionOwner.release(self) { manager.stopDeviceMotionUpdates() }"))
         let motion = try source("Features/Pass/PassTiltMotion.swift")
         XCTAssertTrue(motion.contains("LevelMotion.manager"), "動きの管理者を2つ作っている")
         XCTAssertTrue(motion.contains("PassFaceLight.needsUpdate"), "細かな揺れでも描き直す")
@@ -371,13 +525,27 @@ final class PassFaceWiringTests: XCTestCase {
     /// 表は券面で描き分け、読み上げで券面の名前を言う。選ぶ画面は Pro でない人を Pro の案内へ
     func testFrontSwitchesAndPickerGatesPro() throws {
         let cards = try source("Features/Pass/PassCards.swift")
-        XCTAssertTrue(cards.contains("PassSpecialFace(face: face, onPhotoTap: onPhotoTap, shine: shine)"))
-        XCTAssertTrue(cards.contains("PassTicketFaceStyle.shown(wire: card.face, ownerIsPro: owner?.isPro)"))
+        XCTAssertTrue(cards.contains("PassSpecialFace(face: face, onPhotoTap: onPhotoTap, shine: shine, visible: visible)"))
+        // 裏の角は表の券面の角に合わせる
+        XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift")
+            .contains("PassCardBack(face: self.back, shine: shine, corner: PassCardFront.corner(front.style))"))
+        XCTAssertTrue(try block(cards, "PassCardBack").contains(".clipShape(RoundedRectangle(cornerRadius: corner))"))
+        XCTAssertTrue(cards.contains("PassTicketFaceStyle.shown(wire: card.face, ownerIsPro: owner?.showsPassFace)"))
         let faces = try source("Features/Pass/PassFaces.swift")
         XCTAssertGreaterThanOrEqual(faces.components(separatedBy: "face.style.spokenHeadline(").count - 1, 3)
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertTrue(pick.contains("PassTicketFaceStyle.own(chosen: faceChoice.rawValue, isPro: profile?.isPro)"))
-        XCTAssertTrue(pick.contains("if locked {\n                deliveredAtPaywall = store.deliveredRevision\n                showPaywall = true"))
+        XCTAssertTrue(pick.contains("case .locked:\n                deliveredAtPaywall = store.deliveredRevision\n                showPaywall = true"))
+        XCTAssertTrue(pick.contains("case .unknown:\n                break"))
+        XCTAssertTrue(pick.contains("Text(PassTicketFaceStyle.profileUnreadable)"))
+        XCTAssertTrue(pick.contains("markRemoved: profile?.proMarkRemoved ?? false,\n                                                              publicHasPassFace: publicHasPassFace)"))
+        XCTAssertTrue(pick.contains("publicHasPassFace = shown.map { $0.passFaceFlag != nil }"))
+        XCTAssertTrue(pick.contains(".foregroundStyle(WebTheme.accent)\n                .accessibilityElement(children: .combine)\n                .accessibilityIdentifier(\"pass.pick.face.markNotice\")"))
+        // 欄の読み上げは土台と同じ（空は「なし」）
+        let fields = try block(try source("Features/Pass/PassFaces.swift"), "PassFaceFields")
+        XCTAssertTrue(fields.contains(".accessibilityElement(children: .ignore)\n                .accessibilityLabel(PassTicket.spokenField(field))"))
+        // Pro の案内の利点
+        XCTAssertTrue(ProBenefit.all.contains { $0.title == "特別な乗車券" })
         XCTAssertTrue(pick.contains("PaywallView()"))
         XCTAssertTrue(pick.contains("if isPro { settings.faceStyle = face == .mars ? nil : face.rawValue }"))
         let radio = try source("Services/PassRadio.swift")

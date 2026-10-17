@@ -78,7 +78,7 @@ final class PassWiringTests: XCTestCase {
         let cards = try source("Features/Pass/PassCards.swift")
         // 2026-10-17 マルス券: 表の改札の穴はやめ（破線は裏へ）、種類の名は「乗車券」の位置（`face.headline`）
         for part in ["PassTicketArrow()", "PassTicketDash(shine: shine)", "PassTicketHead(text: face.headline)",
-                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, shine: shine)"] {
+                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, corner: corner, shine: shine)"] {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         let ticket = try source("Core/Text/PassTicket.swift")
@@ -98,7 +98,16 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(edgeBody.contains(".padding(firstInset)"), "縁を内側に引いている（写真に真鍮がかかる）")
         XCTAssertFalse(edgeBody.contains(".shadow("), "「はじめて」の光を縁に付けている（写真に光が落ちる）")
         XCTAssertEqual(cards.components(separatedBy: ".background { PassTicketGlow(").count - 1, 3)
-        XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 3)
+        // 2026-10-17 判断: 表と裏は固定の字（文字を大きくする設定では変わらない・読み上げで全部読める）なので
+        // `.dynamicTypeSize` を付けない。設定に合わせて大きくなる字（`JPFont`）を使うのは帳の小さな札だけで、上限はそこに1つ
+        XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 1)
+        let slot = try XCTUnwrap(cards.range(of: "struct PassTicketSlot"))
+        let mini = try XCTUnwrap(cards.range(of: "struct PassMiniStack"))
+        XCTAssertTrue(cards[slot.upperBound..<mini.lowerBound].contains(".dynamicTypeSize(...PassCardStyle.typeLimit)"),
+                      "帳の小さな札に文字の大きさの上限が無い")
+        let front = try XCTUnwrap(cards.range(of: "struct PassCardFront")).lowerBound
+        XCTAssertFalse(cards[front..<slot.lowerBound].contains(".font(JPFont."),
+                       "表と裏に設定で大きくなる字が入った（固定の字の判断が崩れる・札からはみ出す）")
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
         XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(back)"))

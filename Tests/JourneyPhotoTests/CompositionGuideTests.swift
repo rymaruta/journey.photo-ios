@@ -1,7 +1,7 @@
 import XCTest
 @testable import JourneyPhoto
 
-/// 「構図を重ねて撮る」（Pro・2026-10-10）の線の計算（`CompositionGuide`）と、端末に覚える値
+/// 「構図を重ねて撮る」（2026-10-10。2026-10-17 から全員無料）の線の計算（`CompositionGuide`）と、端末に覚える値
 /// （`CompositionPreferences`）。
 final class CompositionGuideTests: XCTestCase {
 

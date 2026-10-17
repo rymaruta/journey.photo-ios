@@ -78,6 +78,8 @@ struct PassSpecialFace: View {
     let face: PassTicketFace
     var onPhotoTap: (() -> Void)?
     var shine: Double?
+    /// 表がいま見えているか（裏を見ている・全面の写真や Pro の案内が上にある間は false）
+    var visible: Bool = true
 
     @ObservedObject private var tilt = PassTiltMotion.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -87,7 +89,7 @@ struct PassSpecialFace: View {
 
     var body: some View {
         let light = PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion)
-        PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, onPhotoTap: onPhotoTap)
+        PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
             .onAppear {
                 appeared = true
                 updateHold()
@@ -96,13 +98,17 @@ struct PassSpecialFace: View {
                 appeared = false
                 updateHold()
             }
+            // 前面・「視差効果を減らす」・券面・見えているかが変わったら、読むかを決め直す
             .onChange(of: scenePhase) { _, _ in updateHold() }
             .onChange(of: reduceMotion) { _, _ in updateHold() }
+            .onChange(of: face.style) { _, _ in updateHold() }
+            .onChange(of: visible) { _, _ in updateHold() }
     }
 
-    /// 傾きを読むか: 出ていて・前面で・光が動く券面で・「視差効果を減らす」でないとき
+    /// 傾きを読むか（`PassFaceLight.readsTilt`）
     private func updateHold() {
-        let wants = appeared && scenePhase == .active && face.style.followsTilt && !reduceMotion
+        let wants = PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: scenePhase == .active,
+                                            style: face.style, reduceMotion: reduceMotion)
         guard wants != holding else { return }
         holding = wants
         if wants { tilt.hold() } else { tilt.release() }
@@ -114,6 +120,7 @@ struct PassFaceBody: View {
     let face: PassTicketFace
     let light: PassFaceLight.Point
     let reduceMotion: Bool
+    var visible: Bool = true
     var onPhotoTap: (() -> Void)?
 
     var body: some View {
@@ -124,7 +131,7 @@ struct PassFaceBody: View {
         case .brassPlate:
             PassBrassPlateFace(face: face, light: light, onPhotoTap: onPhotoTap)
         case .greatCircle:
-            PassGreatCircleFace(face: face, reduceMotion: reduceMotion, onPhotoTap: onPhotoTap)
+            PassGreatCircleFace(face: face, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
         case .foilHard:
             PassFoilHardFace(face: face, light: light, onPhotoTap: onPhotoTap)
         case .urushi:
@@ -260,7 +267,9 @@ struct PassFaceFields: View {
                         .minimumScaleFactor(PassCardStyle.metaSize / PassCardStyle.fieldValueSize)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+                // 空の欄「—」は「なし」と読む（マルス券と同じ・`PassTicket.spokenField`）
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(PassTicket.spokenField(field))
             }
         }
         .padding(.vertical, 7)
@@ -328,15 +337,16 @@ enum PassFaceTextures {
 
     /// 21 裾の金粉（モック: 霞は裾に溜まる。細かな粒）。明るい粒と淡い粒。
     /// 2026-10-17 の Mac の画面写真で、粒が多すぎて字の上まで散っていた（モックより濃い）。
-    /// 高さの半分より上には置かず、裾へ向けて増やす・数を 1400 → 420 に
+    /// 名前の行（`dustTop` より上）には置かず、裾へ向けて増やす（2026-10-17 の読み直し: 名前にかかっていた）
+    static let dustTop = 350.0
     static let goldDust: (bright: Path, faint: Path) = {
         var rng = Seeded(state: 21)
         var bright = Path(), faint = Path()
         var placed = 0
-        while placed < 420 {
+        while placed < 260 {
             let x = rng.next() * 300, y = rng.next() * 430
-            let t = y / 430
-            let haze = t < 0.5 ? 0 : t < 0.8 ? (t - 0.5) / 0.3 * 0.35 : 0.35 + (t - 0.8) / 0.2 * 0.65
+            let t = (y - dustTop) / (430 - dustTop)
+            let haze = t < 0 ? 0 : 0.2 + t * 0.8
             guard rng.next() < haze else { continue }
             let r = 0.35 + rng.next() * 0.6
             let dot = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
@@ -608,6 +618,8 @@ struct PassBrassPlateFace: View {
 struct PassGreatCircleFace: View {
     let face: PassTicketFace
     let reduceMotion: Bool
+    /// 見えていないとき（裏・上に全面の写真）は弧の光を止める
+    var visible: Bool = true
     var onPhotoTap: (() -> Void)?
 
     private var brass: Color { WebTheme.accent }
@@ -616,10 +628,11 @@ struct PassGreatCircleFace: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             PassRouteMaterial()
-            PassFacePhoto(photo: face.photo, width: 300, height: 200, onTap: onPhotoTap)
+            // 経緯線と弧は写真の下（y 206〜）に置き、写真より下の層に描く
             map
                 .frame(width: 300, height: 120)
                 .offset(y: 206)
+            PassFacePhoto(photo: face.photo, width: 300, height: 200, onTap: onPhotoTap)
             HStack(alignment: .firstTextBaseline) {
                 Text(PassTicket.routeHeadline(face.kind))
                     .font(.system(size: 11, weight: .semibold))
@@ -660,7 +673,7 @@ struct PassGreatCircleFace: View {
             mapLabel(face.origin, x: start.x, y: start.y + 20)
             mapLabel(face.destination, x: end.x, y: end.y + 20)
             // 弧をたどる光（4 秒で一周）。「視差効果を減らす」では弧の中ほどで止める
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: PassGreatCircle.paused(reduceMotion: reduceMotion, visible: visible))) { context in
                 let t = PassGreatCircle.progress(at: context.date.timeIntervalSinceReferenceDate, reduceMotion: reduceMotion)
                 let point = PassGreatCircle.point(t)
                 Circle().fill(PassFaceColor.of(PassFacePalette.routeLight)).frame(width: 6, height: 6)
@@ -692,7 +705,7 @@ struct PassGreatCircleFace: View {
                     .font(.system(size: PassCardStyle.metaSize).monospacedDigit())
                     .foregroundStyle(text2)
                     .lineLimit(1)
-                    .accessibilityLabel("\(PassTicket.dateTitle) \(fieldValue(0))、\(PassTicket.countTitle) \(fieldValue(2))")
+                    .accessibilityLabel("\(spokenField(0))、\(spokenField(2))")
                 Spacer(minLength: JPSpace.xs)
                 Text(PassTicket.shortValidity)
                     .font(.system(size: PassCardStyle.validitySize))
@@ -711,6 +724,7 @@ struct PassGreatCircleFace: View {
                     .font(.system(size: PassCardStyle.metaSize).monospacedDigit())
                     .foregroundStyle(text2)
                     .fixedSize()
+                    .accessibilityLabel(spokenField(1))
             }
         }
     }
@@ -718,6 +732,12 @@ struct PassGreatCircleFace: View {
     private func fieldValue(_ index: Int) -> String {
         let fields = face.fields
         return fields.indices.contains(index) ? fields[index].value : PassTicket.blank
+    }
+
+    /// 欄の読み上げ（空は「なし」）
+    private func spokenField(_ index: Int) -> String {
+        let fields = face.fields
+        return fields.indices.contains(index) ? PassTicket.spokenField(fields[index]) : ""
     }
 
     /// 「東京 発 — フランス 着」（明朝 20・発と着は 12 の text-2）。長い地名は 13 まで縮める
@@ -804,7 +824,6 @@ struct PassFoilHardFace: View {
         let foil = PassFaceColor.foil(light)
         ZStack(alignment: .topLeading) {
             PassPaperMaterial()
-            PassFacePhoto(photo: face.photo, width: 300, height: 200, onTap: onPhotoTap)
             // 写真の下端の真鍮の線（写真の下の黒い地に引く・写真には重ねない）
             LinearGradient(colors: [PassFaceColor.of(0x8E6F40), PassFaceColor.of(0xF3DCA6), PassFaceColor.of(0x8E6F40)],
                            startPoint: .leading, endPoint: .trailing)
@@ -825,6 +844,8 @@ struct PassFoilHardFace: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(face.number ?? embossed)
             }
+            // 写真は線と空押しより上・字より下（写真より上の層は字だけ）
+            PassFacePhoto(photo: face.photo, width: 300, height: 200, onTap: onPhotoTap)
             VStack(alignment: .leading, spacing: 10) {
                 Text(face.headline)
                     .font(.custom(JPFont.displayName, fixedSize: PassCardStyle.headSize))
@@ -844,6 +865,7 @@ struct PassFoilHardFace: View {
                         .font(.system(size: PassCardStyle.metaSize))
                         .foregroundStyle(text2)
                         .lineLimit(1)
+                        .accessibilityLabel(spokenField(2))
                     Spacer(minLength: JPSpace.xs)
                     Text(PassTicket.shortValidity)
                         .font(.system(size: PassCardStyle.validitySize))
@@ -863,7 +885,7 @@ struct PassFoilHardFace: View {
                         .foregroundStyle(text2)
                         .lineLimit(1)
                         .fixedSize()
-                        .accessibilityLabel("\(PassTicket.dateTitle) \(fieldValue(0))、\(PassTicket.sectionTitle) \(fieldValue(1))")
+                        .accessibilityLabel("\(spokenField(0))、\(spokenField(1))")
                 }
             }
             .padding(.horizontal, 20)
@@ -886,6 +908,11 @@ struct PassFoilHardFace: View {
     private func fieldValue(_ index: Int) -> String {
         let fields = face.fields
         return fields.indices.contains(index) ? fields[index].value : PassTicket.blank
+    }
+
+    private func spokenField(_ index: Int) -> String {
+        let fields = face.fields
+        return fields.indices.contains(index) ? PassTicket.spokenField(fields[index]) : ""
     }
 }
 
@@ -1021,8 +1048,32 @@ struct PassFaceSwatch: View {
                 PassFaceColor.foil(.center).frame(width: 300, height: 6).offset(y: 200)
                 PassFaceColor.foil(.center).frame(width: 150, height: 40).offset(x: 20, y: 240)
             }
-        case .urushi: PassLacquerMaterial(light: .center)
-        case .leather: PassLeatherMaterial(light: .center)
+        case .urushi:
+            // 小さな見本では黒に沈むので、金の覆輪と裾の金の霞を太く・明るく描く（2026-10-17 の読み直し）
+            ZStack(alignment: .topLeading) {
+                PassLacquerMaterial(light: .center)
+                LinearGradient(colors: [Color.clear, PassFaceColor.of(PassFacePalette.goldDust, 0.45)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(width: 300, height: 150)
+                    .offset(y: 280)
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(LinearGradient(colors: [PassFaceColor.of(PassFacePalette.rimDark),
+                                                          PassFaceColor.of(PassFacePalette.rimLight),
+                                                          PassFaceColor.of(PassFacePalette.rimDark)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 10)
+                    .frame(width: 282, height: 196)
+                    .offset(x: 9, y: 10)
+            }
+        case .leather:
+            // 小さな見本では黒に沈むので、革を明るめに・ステッチを太く描く（2026-10-17 の読み直し）
+            ZStack(alignment: .topLeading) {
+                PassLeatherMaterial(light: .center)
+                PassFaceColor.of(0x8A6A4E, 0.30).frame(width: 300, height: 430)
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(WebTheme.accent, style: StrokeStyle(lineWidth: 6, dash: [16, 11]))
+                    .frame(width: 270, height: 400)
+                    .offset(x: 15, y: 15)
+            }
         }
     }
 

@@ -73,6 +73,42 @@ enum PassTicketFaceStyle: UInt8, CaseIterable, Identifiable, Codable {
         shown(wire: chosen, ownerIsPro: isPro)
     }
 
+    /// 選ぶ欄の1つの状態（2026-10-17）
+    enum Option: Equatable {
+        /// 選べる
+        case open
+        /// Pro でない（押すと Pro の案内）
+        case locked
+        /// 自分のプロフィールが読めず、Pro か分からない（鍵をかけない・押しても何もしない・買う案内を開かない）
+        case unknown
+    }
+
+    /// 選ぶ欄の状態。マルス券はいつも選べる
+    static func option(_ style: PassTicketFaceStyle, isPro: Bool?) -> Option {
+        guard style.needsPro else { return .open }
+        switch isPro {
+        case true?: return .open
+        case false?: return .locked
+        case nil: return .unknown
+        }
+    }
+
+    /// 選ぶ欄の下の注記（**2026-10-17 暫定**）: Pro の人が Pro マークを外していると、公開プロフィールでは `pro` が落ちる。
+    /// サーバーが `passFace`（印と関係なく券面を見せてよいか）を返すようになれば、相手はそれで決めるので要らない。
+    /// だから**自分の公開プロフィールに `passFace` が無い**（`publicHasPassFace == false`）ときだけ出す——サーバーが
+    /// 出したら自然に消える。公開プロフィールが読めない（nil）・Pro でない・印を外していないときは nil
+    static func proMarkNotice(isPro: Bool?, markRemoved: Bool, publicHasPassFace: Bool?) -> String? {
+        guard isPro == true, markRemoved, publicHasPassFace == false else { return nil }
+        return L("Pro マークを外しているので、相手にはマルス券で届きます",
+                 "Your Pro mark is hidden, so others receive your ticket in the Classic design")
+    }
+
+    /// 自分のプロフィールが読めなかったときの注記
+    static var profileUnreadable: String {
+        L("Pro かどうかを読み込めませんでした。電波のあるところで開き直してください",
+          "Couldn\u{2019}t check your Pro status. Open this again with a signal")
+    }
+
     /// 選ぶ画面の並び（マルス券が先・モックの番号の順）
     static var pickerOrder: [PassTicketFaceStyle] { [.mars, .brassPlate, .greatCircle, .foilHard, .urushi, .leather] }
 }
@@ -106,6 +142,13 @@ enum PassFaceLight {
     /// 描き直すほど動いたか
     static func needsUpdate(from old: Point, to new: Point) -> Bool {
         abs(old.x - new.x) >= minStep || abs(old.y - new.y) >= minStep
+    }
+
+    /// 傾きを読むか（2026-10-17）: 画面に出ていて・見えていて（裏・全面の写真・Pro の案内の下でない）・前面で・
+    /// 光が動く券面で・「視差効果を減らす」でないときだけ。どれかが変わったら決め直す（`PassSpecialFace`）
+    static func readsTilt(appeared: Bool, visible: Bool, foreground: Bool, style: PassTicketFaceStyle,
+                          reduceMotion: Bool) -> Bool {
+        appeared && visible && foreground && style.followsTilt && !reduceMotion
     }
 
     /// いま描く光: 「視差効果を減らす」なら正面。指で回している間（`shine` が 0〜1）は回りに合わせ、
@@ -189,6 +232,9 @@ enum PassGreatCircle {
         return (a * start.x + b * control1.x + c * control2.x + d * end.x,
                 a * start.y + b * control1.y + c * control2.y + d * end.y)
     }
+
+    /// 弧の光（`TimelineView`）を止めるか: 「視差効果を減らす」・見えていない（裏・上に全面の写真）とき
+    static func paused(reduceMotion: Bool, visible: Bool) -> Bool { reduceMotion || !visible }
 
     /// 時刻から光の位置（0〜1）。「視差効果を減らす」では動かさない（弧の中ほどに置く）
     static func progress(at seconds: Double, reduceMotion: Bool) -> Double {

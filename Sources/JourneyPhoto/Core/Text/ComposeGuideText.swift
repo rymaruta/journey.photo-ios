@@ -1,6 +1,6 @@
 import Foundation
 
-/// 「作例を重ねて撮る」（Pro・板 ComposeGuide・2026-10-09）の、画面を持たない決まり。
+/// 「作例を重ねて撮る」（板 ComposeGuide・2026-10-09。2026-10-17 から全員無料）の、画面を持たない決まり。
 ///
 /// 画面は `Features/Spots/ComposeGuideView.swift`。ここは Linux でも試験で見張れる計算だけを置く:
 /// 作例の濃さの範囲・作例の順（切り替え）・上の札の文・案内の札の文・距離と方角。
@@ -207,8 +207,8 @@ enum ComposeGuide {
     /// 撮る画面を開いたときの作例（2026-10-10）。**作例の帯で押した1枚から始める**
     /// （owner の報告「1枚目しか重ねられない」・TestFlight 1.0.84）。入口のボタンは `nil`＝1枚目。
     ///
-    /// 押した1枚は**出典のページ（`sourceUrl`）で探す**——番号で渡すと、案内の画面（Pro でない人）を
-    /// 経るあいだに読めなかった作例が帯から隠れて、別の1枚から始まる。見つからなければ 1枚目
+    /// 押した1枚は**出典のページ（`sourceUrl`）で探す**——番号で渡すと、開くまでのあいだに読めなかった
+    /// 作例が帯から隠れて、別の1枚から始まる。見つからなければ 1枚目
     static func startIndex(of sourceUrl: URL?, in samples: [SpotSample]) -> Int {
         guard let sourceUrl, let i = samples.firstIndex(where: { $0.sourceUrl == sourceUrl }) else { return 0 }
         return i
@@ -236,24 +236,11 @@ enum ComposeGuide {
         }
     }
 
-    /// 入口を押したときの行き先
-    enum Destination: Equatable {
-        /// 撮る画面（Pro）
-        case camera
-        /// Pro の案内（Pro でない・ログインしていない。案内の画面がログインを求める）
-        case paywall
-        /// Pro かどうかを確かめられなかった（圏外など）。**Pro の人に案内を出さない**——知らせだけ
-        case unreachable
-    }
-
-    /// - Parameters:
-    ///   - signedIn: ログインしているか
-    ///   - isPro: サーバーのプロフィールの `pro`。読めなかったら nil（権利を決めるのはサーバー）
-    static func destination(signedIn: Bool, isPro: Bool?) -> Destination {
-        guard signedIn else { return .paywall }
-        guard let isPro else { return .unreachable }
-        return isPro ? .camera : .paywall
-    }
+    // 2026-10-17 判断（owner）: **「作例・構図を重ねて撮る」は全員無料。** 入口を押したときの行き先
+    // （Pro なら撮る画面・そうでなければ Pro の案内・確かめられなければ知らせ）は外した。
+    // 開く前にサーバーへ何も聞かない（`ComposeGuideLauncher.open`）——圏外でも、ログインしていなくても撮れる。
+    // ログインが要るのは撮った1枚を投稿するときだけで、投稿画面（`UploadView`）がログインを求める。
+    // 写真への保存（`ComposeCamera.save`）は端末の中だけで済む
 
     // MARK: - 撮ったあと
 
@@ -355,10 +342,11 @@ struct ReferenceOverlayState: Equatable {
     }
 }
 
-/// 画面写真の試験（`ScreenshotTests`）だけが、Pro でなくても撮る画面を開くための鍵（2026-10-09）。
+/// 画面写真の試験（`ScreenshotTests`）だけが、カメラの無いシミュレータでも構図の線を出すための鍵（2026-10-09）。
 ///
-/// **Release では必ず false**（`#if DEBUG`・`PreviewSession` と同じ決まり）。TestFlight・App Store の
-/// ビルドでは、この鍵で Pro の確かめを飛ばせない。`-JPComposeGuidePreview YES` で渡す
+/// 2026-10-17: 撮る画面は全員無料になったので、Pro の確かめを飛ばす役目は無くなった（開くのに鍵は要らない）。
+/// 残る役目は、映像が出ていなくても線を描くこと（`ComposeGuideView.showsLines`）だけ。
+/// **Release では必ず false**（`#if DEBUG`・`PreviewSession` と同じ決まり）。`-JPComposeGuidePreview YES` で渡す
 enum ComposeGuideAccess {
     static let defaultsKey = "JPComposeGuidePreview"
 

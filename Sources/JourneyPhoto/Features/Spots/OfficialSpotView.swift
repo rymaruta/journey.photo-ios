@@ -56,10 +56,7 @@ struct OfficialSpotView: View {
     @State private var detailed: OfficialSpot?
     /// 読み込めなかった作例（出典のページで覚える）。その1枚を出典ごと隠す
     @State private var brokenSamples: Set<URL> = []
-    /// Pro かどうか・ログインしているか（「作例を重ねて撮る」の入口）
-    @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var store: StoreService
-    /// 「作例を重ねて撮る」（Pro）の撮る画面・Pro の案内・Pro かを確かめている最中
+    /// 「作例を重ねて撮る」の撮る画面（2026-10-17 から全員無料。Pro もログインも確かめない）
     /// （流れは投稿のシートの入口と同じ部品・`ComposeGuideLauncher`・2026-10-10）
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 「このスポットの写真を投稿」から開く投稿画面
@@ -546,7 +543,6 @@ struct OfficialSpotView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot.official.samples")
             // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）。
-            // 案内で Pro になったら同じ1枚から開き直す（`ComposeGuidePresenter`）
             // 撮った1枚は「投稿」でこのスポットの投稿へ進める（2026-10-14・写真から次の旅へ）。
             // 撮る画面を**閉じきってから**投稿画面を開く（`RootView` の作例なしの入口と同じ順）
             .composeGuidePresenter(composeLauncher, spotName: spot.name,
@@ -555,15 +551,15 @@ struct OfficialSpotView: View {
         }
     }
 
-    // MARK: - 作例を重ねて撮る（Pro・2026-10-09）
+    // MARK: - 作例を重ねて撮る（2026-10-09・2026-10-17 から全員無料）
 
-    /// 作例の帯の下の入口。黒地の上の行（地は surface・白の字）。合図の「PRO」とカメラの記号だけ真鍮
+    /// 作例の帯の下の入口。黒地の上の行（地は surface・白の字）。カメラの記号だけ真鍮
     /// （黒地の上の合図・CLAUDE.md）。**作例が1枚も無いスポットでは出さない**（呼ぶ側）
     private var composeEntry: some View {
         // 入口のボタンは今までどおり1枚目から
-        // v2 の板 SpotDetail: 角 14・白 7% の行に、真鍮の印 → 15 の太字の名前と 12 の text-3 の一言 →
-        // 真鍮の縁の「PRO」の札
-        Button { Task { await openComposeGuide(from: nil) } } label: {
+        // v2 の板 SpotDetail: 角 14・白 7% の行に、真鍮の印 → 15 の太字の名前と 12 の text-3 の一言 → ›
+        // 2026-10-17 判断（owner）: 全員無料にしたので、板にある真鍮の縁の「PRO」の札は外した
+        Button { openComposeGuide(from: nil) } label: {
             HStack(spacing: JPSpace.s) {
                 Image(systemName: "camera.viewfinder")
                     .font(.system(size: 20, weight: .medium))
@@ -579,23 +575,10 @@ struct OfficialSpotView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Text("PRO")
-                    .font(JPFont.eyebrow)
-                    .tracking(JPTypeScale.eyebrow * 0.12)
-                    .foregroundStyle(WebTheme.accent)
-                    .padding(.horizontal, JPSpace.xs)
-                    .padding(.vertical, 2)
-                    .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
-                        .strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.faint)
                     .accessibilityHidden(true)
-                if composeLauncher.checking {
-                    ProgressView().tint(WebTheme.muted2)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.faint)
-                        .accessibilityHidden(true)
-                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, JPSpace.s)
@@ -604,31 +587,27 @@ struct OfficialSpotView: View {
             .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
         }
         .buttonStyle(.plain)
-        .disabled(composeLauncher.checking)
         .padding(.horizontal, JPSpace.m)
-        .accessibilityHint(L("Pro の機能です。カメラの映像に作例を半透明で重ねて撮ります",
-                             "A Pro feature. Shoot with an example photo overlaid on the camera view."))
+        .accessibilityHint(L("カメラの映像に作例を半透明で重ねて撮ります",
+                             "Shoot with an example photo overlaid on the camera view."))
         .accessibilityIdentifier("spot.official.composeGuide")
     }
 
-    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める
-    /// （`ComposeGuideLauncher`）。`sample` は始める作例の出典のページ（作例の帯で押した1枚・入口のボタンは nil＝1枚目）。
-    /// 作例の並びは開く時点で読む（案内を経て開き直すときも、その時点の並び）
-    private func openComposeGuide(from sample: URL?) async {
-        await ComposeGuidePresenter.request(composeLauncher, make: {
-            ComposeGuide.Launch(sample: sample, samples: shownSamples)
-        }, auth: auth, store: store, environment: environment, toasts: toasts)
+    /// 撮る画面を開く（誰でも・`ComposeGuideLauncher`）。`sample` は始める作例の出典のページ
+    /// （作例の帯で押した1枚・入口のボタンは nil＝1枚目）。作例の並びは開く時点で読む
+    private func openComposeGuide(from sample: URL?) {
+        composeLauncher.open(make: { ComposeGuide.Launch(sample: sample, samples: shownSamples) })
     }
 
     /// 作例の1枚: 写真（縦横比のまま・切り抜かない）と、その下の出典の1行。
     ///
     /// 2026-10-10 判断: **写真を押すと、その作例から「作例を重ねて撮る」を開く**（owner の報告
     /// 「作例の1枚目しか重ねられない」・TestFlight 1.0.84）。写真には押す動きが無かったので奪うものは無い。
-    /// Pro でない人には入口のボタンと同じく Pro の案内（`openComposeGuide`）。出典の1行は別の当たりのまま
+    /// 出典の1行は別の当たりのまま
     private func sampleCard(_ sample: SpotSample) -> some View {
         let size = SpotSampleText.frame(aspectRatio: sample.aspectRatio)
         return VStack(alignment: .leading, spacing: 6) {
-            Button { Task { await openComposeGuide(from: sample.sourceUrl) } } label: {
+            Button { openComposeGuide(from: sample.sourceUrl) } label: {
                 RemoteImage(url: sample.src, contentMode: .fit, onSettled: { loaded in
                     // 読めなかった1枚（Commons で消えた・差し替わった）は出典ごと隠す
                     if !loaded { brokenSamples.insert(sample.sourceUrl) }
@@ -638,12 +617,11 @@ struct OfficialSpotView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .disabled(composeLauncher.checking)
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits([.isImage, .isButton])
             .accessibilityLabel(sample.accessibilityLabel)
-            .accessibilityHint(L("Pro の機能です。この作例を重ねて撮ります",
-                                 "A Pro feature. Shoot with this example overlaid on the camera view."))
+            .accessibilityHint(L("この作例を重ねて撮ります",
+                                 "Shoot with this example overlaid on the camera view."))
             .accessibilityIdentifier("spot.official.sampleCard")
             sampleCreditLink(sample, width: size.width)
         }

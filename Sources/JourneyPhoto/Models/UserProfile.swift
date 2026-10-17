@@ -52,6 +52,10 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     private let pro: LenientFlag?
     /// Pro マークの形（`iris` / `plate`）。**`none` は本人が印を外している**（2026-10-10）
     private let proMarkStyle: LenientText?
+    /// すれちがいの特別な乗車券の券面を相手に見せてよいか（**2026-10-17**・サーバーの公開プロフィールの `passFace`）。
+    /// Pro マークを外した Pro の人は公開プロフィールで `pro` が落ちるので、印とは別の項目で持つ。
+    /// 古いサーバーは返さない → nil（`showsPassFace` は `isPro` で決める）
+    private let passFace: LenientFlag?
     /// 本人が認証済みの印を外しているか（2026-10-10）。**本人の応答だけに載る**。
     /// 公開プロフィールでは、外した人は `verified` ごと返ってこない（サーバーの `toPublicProfile`）
     private let verifiedMarkOff: LenientFlag?
@@ -80,6 +84,12 @@ struct UserProfile: Decodable, Equatable, Identifiable {
         #endif
         return displayBadge?.value
     }
+
+    /// `passFace` の値（無ければ nil）
+    var passFaceFlag: Bool? { passFace?.value }
+
+    /// 特別な券面を見せてよいか: **`passFace` があればそれ、無ければ（古いサーバー）`isPro`**（`PassCardContent.faceStyle`）
+    var showsPassFace: Bool { passFaceFlag ?? isPro }
 
     var isPro: Bool {
         #if DEBUG

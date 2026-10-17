@@ -16,6 +16,30 @@ import Foundation
 /// `CMMotionManager` はアプリに1つ（Apple の注記）なので、型で1つだけ持つ。
 ///
 /// **実機では確かめていない**（Linux の模型でビルドを通しただけ）。
+/// 端末の動きの管理者（`LevelMotion.manager`）を、いま誰が使っているか（**2026-10-17**）。
+///
+/// 管理者はアプリに1つで、知らせの受け手も1つ。撮る画面の水準器（`LevelMotion`）と乗車券の券面の光
+/// （`PassTiltMotion`）が取り合わないよう、**止めてよいのは今の持ち主だけ**にする:
+/// - 水準器は取る（撮る画面が先）。券面は、水準器が持っている間は取らない
+/// - 止めるときは `release` が true のときだけ止める（後から取った側の知らせを止めない・間隔も変えない）
+@MainActor
+enum DeviceMotionOwner {
+    private(set) static var current: ObjectIdentifier?
+
+    /// 取る（前の持ち主から受け手を替える）
+    static func claim(_ owner: AnyObject) { current = ObjectIdentifier(owner) }
+
+    /// 空いているか、自分が持っているか
+    static func isFree(for owner: AnyObject) -> Bool { current == nil || current == ObjectIdentifier(owner) }
+
+    /// 手放す。**自分が持っていたときだけ** true（そのときだけ管理者を止めてよい）
+    static func release(_ owner: AnyObject) -> Bool {
+        guard current == ObjectIdentifier(owner) else { return false }
+        current = nil
+        return true
+    }
+}
+
 @MainActor
 final class LevelMotion: ObservableObject {
 
@@ -41,6 +65,8 @@ final class LevelMotion: ObservableObject {
     func start(level: Bool) {
         tracksLevel = level
         guard available else { return }
+        // 撮る画面が先（券面の光が持っていても取る・`DeviceMotionOwner`）
+        DeviceMotionOwner.claim(self)
         Self.manager.deviceMotionUpdateInterval = level ? 1.0 / 30 : 1.0 / 10
         guard !running else { return }
         running = true
@@ -56,7 +82,8 @@ final class LevelMotion: ObservableObject {
     func stop() {
         guard running else { return }
         running = false
-        Self.manager.stopDeviceMotionUpdates()
+        // 自分が持っていたときだけ止める
+        if DeviceMotionOwner.release(self) { Self.manager.stopDeviceMotionUpdates() }
     }
 
     private func receive(_ angle: Double?) {

@@ -49,7 +49,8 @@ enum PassTicket {
         switch kind {
         case .plain: return L("すれちがい乗車券", "PASS TICKET")
         case .first: return L("はじめての乗車券", "FIRST PASS")
-        case .again(let n): return L("\(n) 度目の乗車券", "PASS NO. \(n)")
+        // 英語は「PASS」＋番号の形だと右上の番号「No.0002」と数字が並んで紛れるので、回数の言い方にする（2026-10-17 判断）
+        case .again(let n): return L("\(n) 度目の乗車券", "AGAIN ×\(n)")
         case .far: return L("遠くからの乗車券", "FROM AFAR")
         }
     }
@@ -64,6 +65,11 @@ enum PassTicket {
 
     /// 欄が空のときの印
     static var blank: String { L("—", "—") }
+
+    /// 欄を読み上げる言葉（「日付 10.17 3時」）。空の印「—」は「ダッシュ」と読まれ得るので、**読み上げだけ「なし」**
+    static func spokenField(_ field: Field) -> String {
+        "\(field.label) \(field.value == blank ? L("なし", "none") : field.value)"
+    }
 
     /// きっぷの欄（ラベルと値）
     struct Field: Equatable {

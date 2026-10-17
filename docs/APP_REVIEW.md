@@ -26,14 +26,15 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > ・**背景での Bluetooth（UIBackgroundModes: bluetooth-central / bluetooth-peripheral）**は
 >   「すれちがい」のためだけに使います。「マイページ → 設定 → すれちがい」でオンにした人だけ
 >   （既定はオフ）、画面を閉じている間も近くの Journey Photo 利用者と「わたしの乗車券」のカード
->   （本人が選んだ公開写真1枚・ひとこと・乗車券の発・着の字）を交換します。位置・連絡先は送りません。
+>   （本人が選んだ公開写真1枚・ひとこと・乗車券の発・着の字・券面の種類）を交換します。位置・連絡先は送りません。
 > ・**すれちがいを試すには iPhone が2台要ります**（2台とも審査用のアカウントでログインし、
 >   それぞれで「すれちがい」をオンにして近くに置く。カードはその日の 18 時にまとめて届きます）。
 >   2台で動いている様子の動画: 【owner が用意する: 動画の URL】
 > ・**Pro（自動更新の定期購入）**: 「Journey Photo Pro」月額（`<束の名前>.pro.monthly`・¥500/月）と
 >   年額（`<束の名前>.pro.yearly`・¥5,000/年）。同じサブスクリプショングループ「Journey Photo Pro」。
->   無料の試用はありません。中身は「作例を重ねて撮る」「光と天気の知らせ」「電波なしで使える旅」
->   「名前の横の Pro マーク」。試し方: 「マイページ → 設定 → Pro → Journey Photo Pro」で案内を開き、
+>   無料の試用はありません。中身は「光と天気の知らせ」「電波なしで使える旅」「名前の横の Pro マーク」「特別な乗車券（すれちがいの券面を選べる）」。
+>   （「作例・構図を重ねて撮る」は 2026-10-17 から全員無料。ログインしていなくても撮れます）
+>   試し方: 「マイページ → 設定 → Pro → Journey Photo Pro」で案内を開き、
 >   プランを選んで「Pro をはじめる」（Sandbox のアカウントで購入できます）。案内の下の
 >   「購入を復元」で復元、解約は App Store の定期購入の管理から。
 
@@ -56,8 +57,8 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 >   senders blocked from the "…" on each reply in the replies list.
 > - **Background Bluetooth (UIBackgroundModes: bluetooth-central / bluetooth-peripheral)**
 >   is used only for "Pass". Only users who turn it on under My Page → Settings → Pass
->   (off by default) swap a "card" (one public photo they chose, a short note and the
->   from/to text on the ticket) with Journey Photo users nearby, also while the app is
+>   (off by default) swap a "card" (one public photo they chose, a short note, the
+>   from/to text on the ticket and the ticket design) with Journey Photo users nearby, also while the app is
 >   in the background. No location or contact details are sent.
 > - **Testing Pass needs two iPhones** (sign in on both, turn Pass on on both and keep
 >   them close; received cards arrive together at 6 PM that day).
@@ -65,7 +66,9 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > - **Pro (auto-renewable subscription)**: "Journey Photo Pro" monthly
 >   (`<bundle id>.pro.monthly`, ¥500/month) and yearly (`<bundle id>.pro.yearly`,
 >   ¥5,000/year) in the subscription group "Journey Photo Pro". No free trial.
->   Pro adds composition overlays, light & weather alerts, offline trips and a Pro mark.
+>   Pro adds light & weather alerts, offline trips, a Pro mark and special Pass ticket
+>   designs. (Shooting with a
+>   composition / example overlay is free for everyone and works without signing in.)
 >   To test: My Page → Settings → Pro → Journey Photo Pro, pick a plan and tap
 >   "Start Pro" (Sandbox account). "Restore" is under the plans; cancel from
 >   the App Store subscription settings.
@@ -96,7 +99,7 @@ App Store Connect の Demo Account に入れる。
 | 5.1.1(v) | アプリ内でのアカウント削除 | 設定 → アカウントの削除（確認語の入力つき） | `DeleteAccountView.swift` |
 | 5.1.1 | 必要のないログイン要求は不可 | 閲覧・検索・地図はログイン不要 | `RootView.swift` |
 | 5.1.2 | 位置情報の最小化 | 精細な位置は保存しない（約1kmに丸める） | `ImagePreparer.readCoords` |
-| 5.1.1 / 5.1.2 | Bluetooth（すれちがい・2026-10-16） | **既定はオフ**。オンにする前に説明を出し、そこで初めて Bluetooth を尋ねる。電波で渡すのは版・公開写真の id・ひとこと（20字・80 バイトまで）・乗車券の発・着の字（6字まで）・居住地を出すかの印だけ（出す設定のときは、受け取った端末が公開プロフィールから居住地の都道府県を引いて出す）。**特性は暗号化しておらず、近くの Bluetooth 機器なら誰でも読める**（写真の id から持ち主も分かる・乗車券を変えるまで同じ値・ブロックした相手にも届きうる）——設定とオンにする前の説明にそのまま書いてある（`PassPrivacyText`）。カードの「…」から通報・ブロック・帳から外すができる（審査 1.2）。受け取ったカード・すれちがった場所（市区町村ほど・0.1 度に丸める）は**端末の中だけ**でサーバーへ送らない（＝収集しない）。地名を引くときは約1kmに丸めた座標だけを Apple の地図（`CLGeocoder`）に渡す（`PassExchange.lookupCoords`）。背景の Bluetooth（UIBackgroundModes）はこのためだけ。位置は撮影地マップで許可済みのときだけ使い、すれちがいからは尋ねない | `PassRadio.swift` / `PassStore.swift` / `PassExchange.swift` |
+| 5.1.1 / 5.1.2 | Bluetooth（すれちがい・2026-10-16） | **既定はオフ**。オンにする前に説明を出し、そこで初めて Bluetooth を尋ねる。電波で渡すのは版・公開写真の id・ひとこと（20字・80 バイトまで）・乗車券の発・着の字（6字まで）・居住地を出すかの印・券面の種類（1 バイト・2026-10-17）だけ（出す設定のときは、受け取った端末が公開プロフィールから居住地の都道府県を引いて出す）。**特性は暗号化しておらず、近くの Bluetooth 機器なら誰でも読める**（写真の id から持ち主も分かる・乗車券を変えるまで同じ値・ブロックした相手にも届きうる）——設定とオンにする前の説明にそのまま書いてある（`PassPrivacyText`）。カードの「…」から通報・ブロック・帳から外すができる（審査 1.2）。受け取ったカード・すれちがった場所（市区町村ほど・0.1 度に丸める）は**端末の中だけ**でサーバーへ送らない（＝収集しない）。地名を引くときは約1kmに丸めた座標だけを Apple の地図（`CLGeocoder`）に渡す（`PassExchange.lookupCoords`）。背景の Bluetooth（UIBackgroundModes）はこのためだけ。位置は撮影地マップで許可済みのときだけ使い、すれちがいからは尋ねない | `PassRadio.swift` / `PassStore.swift` / `PassExchange.swift` |
 | 1.2 UGC | ストーリーへの返信の通報・ブロック | 返信の一覧の各行の「…」。**通報はメール**（返信を通報するサーバーの口が無く、写真の通報の口は自分のストーリーを受けない＝400）。宛先は問い合わせと同じ。ブロックは既存の口でその場で一覧から消える | `StoryRepliesSheet.swift` / `ModerationService.storyReplyReportURL` |
 | 2.1 | プライバシーマニフェスト | 収集項目と、理由の要る API（UserDefaults: CA92.1・ディスクの空き: 85F4.1）を申告 | `Resources/PrivacyInfo.xcprivacy` |
 | 3.1.2 | 自動更新の定期購入 | 案内に値段・期間・自動更新の一文（24時間前までに解約しない限り更新・止め方）・利用規約とプライバシーポリシーのリンク・購入の復元 | `PaywallView.swift` / `ProPaywallText` |
