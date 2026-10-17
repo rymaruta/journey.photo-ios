@@ -14,7 +14,7 @@ struct TagField: View {
             Text(L("タグ", "Tags"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            FlowLayout(spacing: 6) {
+            FlowLayout(spacing: FormChip.spacing, lineSpacing: FormChip.lineSpacing) {
                 ForEach(TagInput.suggest(TagChoices.all, current: tagsText), id: \.self) { tag in
                     chip(tag)
                 }
@@ -26,9 +26,6 @@ struct TagField: View {
                 .font(.callout)
         }
     }
-
-    /// 札の当たりを外へ広げる幅（`FlowLayout(spacing: 6)` の半分）
-    private static let tapSlack: CGFloat = 3
 
     private func chip(_ tag: String) -> some View {
         let chosen = TagInput.has(tagsText, tag: tag)
@@ -46,17 +43,48 @@ struct TagField: View {
                 // **選んでいるものは白の塗りに墨の字**（白＝選択）。以前は
                 // AccentColor の 20% で、黒地の上ではほとんど見分けがつかなかった
                 .foregroundStyle(chosen ? WebTheme.accentText : WebTheme.muted)
-                .background(chosen ? WebTheme.accentBackground : WebTheme.surface,
-                            in: Capsule())
-                // **当たりを札の間（6pt）の半分まで広げる。** 外へ広げて同じだけ詰めるので、
-                // 並び（`FlowLayout` が測る大きさ）も見た目も変わらない。
-                // 44pt には届かない——札は縦に 32pt おきに並ぶので、それ以上広げると
-                // 隣の札の押し下げを奪う。届かせるには並びの間を空ける（見た目が変わる）
-                .padding(Self.tapSlack)
-                .contentShape(Rectangle())
-                .padding(-Self.tapSlack)
+                .formChipFace(fill: chosen ? WebTheme.accentBackground : WebTheme.surface)
         }
         .buttonStyle(.borderless)
         .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+/// 投稿・編集のタグとカテゴリの札の形（`TagField`・`CategoryField`）。
+///
+/// **2026-10-17 判断: 見た目 32・当たり 44**（板 DesignSystem 03「チップは見た目 32〜36 のまま、
+/// 上下のパディングで当たりを 44 に」・板 EditPhoto の札 32）。それまでは字の高さ＋上下 5（約 26）で、
+/// 当たりを札の間の半分（3pt）しか広げられず 44 に届かなかった。
+///
+/// 札の上下に 6 ずつ押せる余白を足し、**その 44 の箱を行の間 0 で積む**（`FlowLayout.lineSpacing`）。
+/// 箱が重ならないので、隣の行の札の押し下げを奪わない。見える札の行の間は 6 → 12 に開く
+enum FormChip {
+    /// 見た目の札の高さ
+    static let height: CGFloat = 32
+    /// 札の上下に足す押せるだけの余白（32＋6＋6＝44）
+    static let tapSlack: CGFloat = (WebTheme.minTapTarget - height) / 2
+    /// 札の左右の間
+    static let spacing: CGFloat = 6
+    /// 行の間。当たりの箱（44）をそのまま積む
+    static let lineSpacing: CGFloat = 0
+    /// 当たりを左右へ広げる幅（札の間の半分。外へ広げて同じだけ詰め、並びは変えない）
+    static let sideSlack: CGFloat = spacing / 2
+    /// 見える札の最小の幅（2026-10-17）。左右の余り（3＋3）を足して当たりの幅も 44 にする。
+    /// 1文字の札（「春」「海」）は字＋左右 10 で約 32 しかなく、当たりが約 38 だった
+    static let minWidth: CGFloat = WebTheme.minTapTarget - sideSlack * 2
+}
+
+extension View {
+
+    /// 札の面（塗りのカプセル・見た目 `FormChip.height`）と、上下 44 の当たり
+    func formChipFace(fill: Color) -> some View {
+        self
+            .frame(minWidth: FormChip.minWidth, minHeight: FormChip.height)
+            .background(fill, in: Capsule())
+            // 字を大きくして札が 32 を超えても、上下に押せる余白が残る
+            .padding(.vertical, FormChip.tapSlack)
+            .padding(.horizontal, FormChip.sideSlack)
+            .contentShape(Rectangle())
+            .padding(.horizontal, -FormChip.sideSlack)
     }
 }

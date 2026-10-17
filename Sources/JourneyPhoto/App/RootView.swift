@@ -45,6 +45,11 @@ struct RootView: View {
     @ObservedObject private var pushPrimer = PushPrimerStore.shared
     @EnvironmentObject private var push: PushCenter
     @State private var showPushPrimer = false
+    /// 旅のトランク: 投稿のお礼に届いたラベル（`TrunkArrivals`・2026-10-17）。出している束
+    @ObservedObject private var trunkArrivals = TrunkArrivals.shared
+    @State private var trunkBatch: TrunkArrivals.Batch?
+    /// 評価のお願いが決めている最中（届いた画面はこれが終わるまで待つ・`PostModalGate`）
+    @State private var reviewDeciding = false
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -305,7 +310,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithPushPrimer
+        tabsWithTrunkArrival
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -338,6 +343,71 @@ struct RootView: View {
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
             .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+    }
+
+    /// 通知の説明に、旅のトランクの「ラベルが届きました」（モック LabelArrived・2026-10-17）を足したもの。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithTrunkArrival: some View {
+        tabsWithPushPrimer
+            .onChange(of: trunkArrivals.requests) { _, _ in offerTrunkArrivalWhenIdle() }
+            // 一部だけ上がった回は投稿の画面が開いたまま。閉じたら出し直す（待ちきれずに残った束も）
+            .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensTrunkArrived`・Debug のみ）
+            .task { await offerPreviewTrunkArrival() }
+            .fullScreenCover(item: $trunkBatch, onDismiss: {
+                // 届いた画面で貼った: 閉じ切ってから全体の知らせを1つだけ（届いた画面の上には出さない）
+                if trunkArrivals.consumeStuckFromArrival() { toasts.show(L("トランクに貼りました", "Stuck on your trunk")) }
+                // 閉じている間に次の束が入っていれば出す
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { batch in LabelArrivedView(batch: batch) }
+            // 待っていた画面が閉じたら、待ちきれずに残った束を出し直す（通知の説明・評価の判断）
+            .onChange(of: showPushPrimer) { _, showing in
+                if !showing, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            .onChange(of: reviewDeciding) { _, deciding in
+                if !deciding, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            // 人が替わった（ログアウトを含む）: 前の人に届いた束と一言を捨てる
+            .onChange(of: auth.userId) { _, userId in trunkArrivals.noteUser(userId) }
+            .task { trunkArrivals.noteUser(auth.userId) }
+    }
+
+    /// **ほかの画面が閉じてから**届いた画面を出す（投稿の画面・Threads への共有の画面が閉じきるまで待つ。
+    /// 最長で約30秒。待ちきれなければ出さない——ラベルは手持ちに届いているので、トランクを開けば在る）。
+    /// 手持ちがいっぱいで届かなかった回は、手持ちへ案内する一言（`TrunkText.fullNotice`）
+    private func offerTrunkArrivalWhenIdle() {
+        Task { @MainActor in
+            // 通知の説明 → 評価のお願い → 届いた画面の順（`PostModalGate`）
+            let ready = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                                 until: PostModalGate.trunkMayShow,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            guard ready else { return }
+            if let batch = trunkArrivals.consume() {
+                trunkBatch = batch
+            } else if let notice = trunkArrivals.consumeNotice() {
+                toasts.show(notice.text, kind: .info)
+            }
+        }
+    }
+
+    /// いま出ているものの様子（`PostModalGate` に渡す）
+    private func postModalSnapshot() -> PostModalSnapshot {
+        PostModalSnapshot(modalPresenting: ModalProbe.isPresenting(), pushPrimerDeciding: pushPrimer.isDeciding,
+                          pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
+                          trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil)
+    }
+
+    private func offerPreviewTrunkArrival() async {
+        guard PreviewSession.opensTrunkArrived else { return }
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if !ModalProbe.isPresenting() { break }
+        }
+        guard !ModalProbe.isPresenting() else { return }
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")])
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。
@@ -386,11 +456,14 @@ struct RootView: View {
             // 通知の説明と1つの判断にする（2026-10-11 判断・`PushPrimerStore.letsReviewAsk`）。
             // 同じ投稿のあとに両方の合図が来る。説明が決め終わるまで待ち、説明を出した回は頼まない
             let offeredAtStart = pushPrimer.alreadyOffered
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding { break }
-            }
-            guard !ModalProbe.isPresenting(), !showPushPrimer,
+            // 届いた画面はこの判断が終わるまで待つ（評価の窓と全画面を重ねない・`PostModalGate`）
+            reviewDeciding = true
+            defer { reviewDeciding = false }
+            _ = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                         until: PostModalGate.reviewWaitIsOver,
+                                         sleep: { try? await Task.sleep(nanoseconds: 1_500_000_000) })
+            // 届いた画面が出ている・出すものが残っている間は頼まない（次のうれしい瞬間に回す）
+            guard PostModalGate.reviewMayAsk(postModalSnapshot()),
                   pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
                   reviewPrompt.consume() else { return }
             #if canImport(StoreKit)

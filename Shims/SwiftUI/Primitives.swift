@@ -412,8 +412,8 @@ public struct Gradient {
     }
 }
 public struct LinearGradient: View, ShapeStyle {
-    public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
-    public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    nonisolated public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    nonisolated public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
     public var body: Never { fatalError() }
 }
 
@@ -425,8 +425,8 @@ public struct AngularGradient: View, ShapeStyle {
 
 /// 丸いグラデーション（メダルを手に取る画面の地と後光・本物と同じ）
 public struct RadialGradient: View, ShapeStyle {
-    public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
-    public init(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
+    nonisolated public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
+    nonisolated public init(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
     public var body: Never { fatalError() }
 }
 

@@ -193,4 +193,40 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// UI テストで旅のトランクを見本の中身で出す（Debug のみ・2026-10-17）。`-JPPreviewTrunk YES`（見本）・
+    /// `-JPPreviewTrunk empty`（届いたラベルが1枚も無い人）。
+    ///
+    /// 鍵を持たない入り方では `GET /user/trunk` が読めず、ラベルも投稿しないと届かないので絵が撮れない。
+    /// **サーバーには何も送らない**——貼る・削除・作り直し・型の替えは端末の中で見本を動かすだけ
+    /// （`TrunkLocal`）。Pro の姿は `-JPPreviewPro`。入っている見本の利用者のときだけ効く。Release では必ず nil
+    static let trunkSampleKey = "JPPreviewTrunk"
+
+    enum TrunkPreview: Equatable { case sample, empty }
+
+    static var trunkSample: TrunkPreview? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: trunkSampleKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty else { return nil }
+        if raw == "empty" { return .empty }
+        return ["yes", "true", "1", "sample"].contains(raw) ? .sample : nil
+        #else
+        return nil
+        #endif
+    }
+
+    /// UI テストで、起動のときに「ラベルが届きました」の画面を1回出す（Debug のみ）。`-JPPreviewTrunkArrived YES`。
+    /// 投稿しないと届かないので、見本の1枚（`TrunkSample.arrived`）で出す。入っている見本の利用者のときだけ。
+    /// Release では必ず false
+    static let trunkArrivedKey = "JPPreviewTrunkArrived"
+
+    static var opensTrunkArrived: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: trunkArrivedKey)
+        #else
+        return false
+        #endif
+    }
 }

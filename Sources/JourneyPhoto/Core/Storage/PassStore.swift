@@ -147,7 +147,8 @@ final class PassStore: ObservableObject {
         func allowed(_ text: String) -> String { PassExchange.containsContact(text) ? "" : text }
         return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: allowed(settings.note),
                                     origin: allowed(settings.originLabel ?? ""),
-                                    destination: allowed(settings.destinationLabel ?? ""))
+                                    destination: allowed(settings.destinationLabel ?? ""),
+                                    face: settings.faceStyle ?? PassTicketFaceStyle.mars.rawValue)
     }
 
     /// 自分の居住地を覚える（マイページ・設定がプロフィールを読んだとき）
@@ -216,6 +217,8 @@ final class PassStore: ObservableObject {
                                  opened: false, ownerId: nil,
                                  originLabel: payload.origin.isEmpty ? nil : payload.origin,
                                  destinationLabel: payload.destination.isEmpty ? nil : payload.destination,
+                                 // 券面の番号はそのまま持つ（見せるときに相手が Pro かを確かめる・知らない番号はマルス券）
+                                 face: payload.face == PassTicketFaceStyle.mars.rawValue ? nil : payload.face,
                                  // 連絡先の形は受け取った時に一度だけ判定して持つ（描くたびに判定し直さない）
                                  noteContact: PassExchange.containsContact(payload.note),
                                  originContact: PassExchange.containsContact(payload.origin),

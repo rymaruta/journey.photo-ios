@@ -431,7 +431,8 @@ struct EditPhotoView: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
+            // 縁は題・説明の欄（`JPField`）と同じ `outline`（部品の縁の 3:1・2026-10-17）
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
             Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
@@ -689,7 +690,12 @@ struct EditPhotoView: View {
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
         do {
-            try await environment.photos.update(photoId: photo.id, patch: patch)
+            let dealt = try await environment.photos.update(photoId: photo.id, patch: patch)
+            // 旅のトランク（2026-10-17）: 下書きを初めて公開した回は、投稿と同じく届いた画面（または一言）を出す。
+            // 出すのはこの画面が閉じてから（`RootView` が待つ）
+            if patch.published == true {
+                TrunkArrivals.shared.deliver(dealt, photoTitle: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
             // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
             // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
             // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。

@@ -7,7 +7,11 @@ import SwiftUI
 /// いて、同じ「パスワードの欄」でもログインは枠付き・変更は素の行、と割れていた。
 
 /// 見出し付きの入力欄（板: 12px・medium・白72% の見出し ＋ 48pt・角丸12・
-/// 地6%・縁12% の欄）。複数行（通報の補足）は 88pt。
+/// 地6% の欄）。複数行（通報の補足）は 88pt。
+///
+/// **縁は `WebTheme.outline`（#666666・2026-10-17 判断）。** 画面の板は縁 12% で描いてあるが、
+/// 黒の上で 1.27 しかなく、地も 6% なので欄の在りかが見えなかった（完成度レビュー P2）。
+/// デザインシステムの入力欄（03 の検索欄・`outline`・部品の縁の 3:1）に合わせた
 ///
 /// **字は文字の大きさの設定に追従させる**（`.caption` = 12・`.subheadline` = 15 が
 /// 既定の大きさで板の px と同じ。固定の pt にすると、大きな文字の人だけ読めない）
@@ -38,7 +42,7 @@ struct JPField<Content: View>: View {
                 .frame(maxWidth: .infinity, minHeight: multiline ? 88 : 48,
                        alignment: multiline ? .topLeading : .leading)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
         }
     }
 }

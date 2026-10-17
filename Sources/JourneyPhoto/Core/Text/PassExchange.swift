@@ -34,6 +34,9 @@ enum PassExchange {
         var origin: String = ""
         /// 乗車券の「着」を自分で書いた字（空なら自動: 受け取った側がすれちがった所）
         var destination: String = ""
+        /// 券面の番号（`PassTicketFaceStyle` の電波の番号・**2026-10-17** 版 3 で足した）。版 1・2 の中身は 0（マルス券）。
+        /// 知らない番号もそのまま持つ（見せるときにマルス券にする・`PassTicketFaceStyle.shown`）
+        var face: UInt8 = 0
     }
 
     /// 中身の版。**知らない版は読まない**（形を変えたら上げる）。
@@ -43,6 +46,9 @@ enum PassExchange {
     /// 無ければ版 1 を読む。版 1 の中身も読める
     static let version: UInt8 = 2
     static let version1: UInt8 = 1
+    /// 版 3（**2026-10-17**・券面の番号を末尾に1バイト足した）。版 2 の読み手は後ろの余りを「崩れている」と
+    /// 落とすので、版 2 の中に足さず、**別の特性で版 1・2 と並べて出す**（`PassRadio.characteristicV3UUID`）
+    static let version3: UInt8 = 3
     /// 区間に自分で書く字の数。**6 字**（2026-10-16 の読み直し: 発・着の両方を 6 字で書いても、明朝 30 を
     /// 15 まで縮めれば区間の幅 264pt に収まる・`PassCardStyle.routeFits`。8 字では収まらなかった）
     static let labelLimit = 6
@@ -187,6 +193,16 @@ enum PassExchange {
         return Data(bytes)
     }
 
+    /// 版 3 の並び: 版 2 の並び（先頭の版だけ 3）の後ろに [券面の番号 1]。いちばん長くて 198+1 = 199 バイト
+    /// （特性の値の上限 `payloadByteLimit` 512 に収まる）
+    static func encodeV3(_ payload: Payload) -> Data? {
+        guard var bytes = encode(payload).map({ [UInt8]($0) }) else { return nil }
+        bytes[0] = version3
+        bytes.append(payload.face)
+        guard bytes.count <= payloadByteLimit else { return nil }
+        return Data(bytes)
+    }
+
     /// 版 1 の並び（前のアプリが読む特性）: [版 1][印 1][id の長さ 1][id][ひとこと（残り全部）]。発・着は載らない
     static func encodeV1(_ payload: Payload) -> Data? {
         guard isValidPhotoId(payload.photoId) else { return nil }
@@ -198,7 +214,7 @@ enum PassExchange {
         return Data(bytes)
     }
 
-    /// 読む（版 1・版 2）。**形が崩れていたら nil**（知らない版・長さが合わない・id に使えない字・字が長すぎる）
+    /// 読む（版 1・版 2・版 3）。**形が崩れていたら nil**（知らない版・長さが合わない・id に使えない字・字が長すぎる）
     static func decode(_ data: Data) -> Payload? {
         let bytes = [UInt8](data)
         guard bytes.count >= 4, bytes.count <= payloadByteLimit else { return nil }
@@ -211,7 +227,7 @@ enum PassExchange {
             let rest = bytes[(3 + length)...]
             guard let note = text(rest, charLimit: noteLimit, byteLimit: noteByteLimit) else { return nil }
             return Payload(photoId: id, showsFrom: showsFrom, note: cleanNote(note))
-        case version:
+        case version, version3:
             var cursor = 3 + length
             var parts: [String] = []
             for (chars, limit) in [(noteLimit, noteByteLimit), (labelLimit, labelByteLimit), (labelLimit, labelByteLimit)] {
@@ -223,10 +239,17 @@ enum PassExchange {
                 parts.append(part)
                 cursor += size
             }
+            // 版 3 は末尾に券面の番号が1バイト
+            var face: UInt8 = 0
+            if bytes[0] == version3 {
+                guard cursor < bytes.count else { return nil }
+                face = bytes[cursor]
+                cursor += 1
+            }
             // 後ろに余りがあれば崩れている（次の版で足すときは版を上げる）
             guard cursor == bytes.count else { return nil }
             return Payload(photoId: id, showsFrom: showsFrom, note: cleanNote(parts[0]),
-                           origin: cleanLabel(parts[1]), destination: cleanLabel(parts[2]))
+                           origin: cleanLabel(parts[1]), destination: cleanLabel(parts[2]), face: face)
         default:
             return nil
         }

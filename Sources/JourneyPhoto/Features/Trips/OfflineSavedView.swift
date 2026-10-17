@@ -10,6 +10,8 @@ struct OfflineSavedView: View {
     @State private var removing: OfflineTripManifest?
     @State private var removingAll = false
     @State private var freeSpace: Int64?
+    /// 0件の一手「旅行プランを開く」（保存は旅行プランの画面から・2026-10-17）
+    @State private var showPlans = false
 
     var body: some View {
         ScrollView {
@@ -25,7 +27,10 @@ struct OfflineSavedView: View {
 
                 if offline.saved.isEmpty {
                     EmptyState(message: L("電波なしで使える旅はまだありません。旅行プランの画面から保存できます。",
-                                          "No offline trips yet. Save one from a trip plan."))
+                                          "No offline trips yet. Save one from a trip plan."),
+                               actionTitle: Self.openPlansTitle, actionIdentifier: "offlineSaved.emptyPlans") {
+                        showPlans = true
+                    }
                         .padding(.top, JPSpace.xs)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
@@ -74,6 +79,7 @@ struct OfflineSavedView: View {
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
         }
         .task { freeSpace = Self.freeSpace() }
+        .navigationDestination(isPresented: $showPlans) { TripPlansView() }
         .confirmationDialog(L("「\(removing?.title ?? "")」を端末から削除しますか？", "Remove \"\(removing?.title ?? "")\" from this iPhone?"),
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible) {
@@ -93,6 +99,9 @@ struct OfflineSavedView: View {
             Text(OfflineTripText.deleteBody(bytes: offline.totalBytes))
         }
     }
+
+    /// 0件の一手。行き先の画面の名前と同じ語（設定・メニューの「旅行プラン」）
+    nonisolated static var openPlansTitle: String { L("旅行プランを開く", "Open trip plans") }
 
     /// iPhone の空き（設定アプリの「iPhone ストレージ」に近い数え方）。読めなければ nil（出さない）
     ///

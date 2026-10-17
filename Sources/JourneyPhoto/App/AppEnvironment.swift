@@ -39,6 +39,8 @@ final class AppEnvironment: ObservableObject {
     let publicFeed: PublicFeedService
     /// Pro の購入をサーバーへ渡す口（`POST /user/purchases`・第2段階）
     let purchases: PurchaseService
+    /// 旅のトランク（`/user/trunk`・本人だけ・2026-10-17）
+    let trunk: TrunkService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -74,5 +76,6 @@ final class AppEnvironment: ObservableObject {
         self.trips = trips ?? TripPlanService(api: api)
         self.publicFeed = PublicFeedService(api: api)
         self.purchases = PurchaseService(api: api)
+        self.trunk = TrunkService(api: api)
     }
 }

@@ -116,6 +116,23 @@ enum PassTicket {
     /// 表の右下（板「すれちがいの日から ずっと有効」）
     static var frontValidity: String { L("すれちがいの日から ずっと有効", "Valid forever") }
 
+    /// 特別な券面の右下（モック「ずっと有効」・2026-10-17）
+    static var shortValidity: String { L("ずっと有効", "Valid forever") }
+
+    /// 06 大圏航路の左上（モック「航路乗車券」）。ふつう以外は種類の名（`headline` と同じく種類を言葉で伝える）
+    static func routeHeadline(_ kind: Kind) -> String {
+        if case .plain = kind { return L("航路乗車券", "ROUTE TICKET") }
+        return eyebrow(kind)
+    }
+
+    /// 10 箔押しの硬券の空押しの番号（モック「87」）: 「No.0087」から頭の 0 を落とした数。決まらなければ nil
+    static func embossedNumber(_ label: String?) -> String? {
+        guard let label else { return nil }
+        let digits = label.filter(\.isNumber)
+        guard let value = Int(digits) else { return nil }
+        return String(value)
+    }
+
     /// 裏の裾の一行（届いたカード）
     static var receivedFootnote: String {
         L("この券は、旅先ですれちがった Journey Photo の人から届きました。",

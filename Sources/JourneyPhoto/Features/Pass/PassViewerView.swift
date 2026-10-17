@@ -201,7 +201,9 @@ struct PassViewerView: View {
             // 後ろに重なる2枚（残りがあるときだけ・板の傾き 4°・2°）
             if index + 2 < shown.count { backing(inset: 14, opacity: 0.25, tilt: 4, fill: 0x12) }
             if index + 1 < shown.count { backing(inset: 8, opacity: 0.3, tilt: 2, fill: 0x16) }
-            PassSpinTicket(yaw: yaw, front: content.face(), back: content.backFace(), reduceMotion: reduceMotion) {
+            // 全面の写真が上に出ている間は、表の光を止める（`active`・2026-10-17）
+            PassSpinTicket(yaw: yaw, front: content.face(), back: content.backFace(), reduceMotion: reduceMotion,
+                           active: fullPhoto == nil) {
                 fullPhoto = content.photo
             }
             .offset(x: drag)
