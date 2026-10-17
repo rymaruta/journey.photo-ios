@@ -55,6 +55,15 @@ enum BlockFilter {
         return replies.filter { reply in reply.uid.map { !blocked.contains($0) } ?? true }
     }
 
+    /// お知らせの一覧（`NotificationsView`）。行の送り手（`byId`）がブロックした人なら落とす（2026-10-16 判断）。
+    /// サーバー（`api-user/src/notifications.ts`）も `byId` で落とすが、**読み直すまで**手元の一覧に残り、
+    /// 返信の一覧や人のページでブロックして戻っても、その人の名前・顔・行が出たままだった。
+    /// 送り手の無い行（メダル・光の知らせ）は落とさない
+    static func notifications(_ rows: [AppNotification], blocked: Set<String>) -> [AppNotification] {
+        guard !blocked.isEmpty else { return rows }
+        return rows.filter { row in row.byId.map { !blocked.contains($0) } ?? true }
+    }
+
     /// フォロー中・フォロワーの一覧（`FollowListView`）。ブロックした人の行に
     /// 「フォローする」が残り、押すとサーバーが 400 を返していた
     static func follows(_ users: [FollowUser], blocked: Set<String>) -> [FollowUser] {
