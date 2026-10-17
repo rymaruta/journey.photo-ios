@@ -956,6 +956,15 @@ struct MyPageView: View {
     /// 「行きたい場所から旅行プランを作る」の行がある）。形は設定・メニューと同じ札と行
     private var tripToolsCard: some View {
         JPCard {
+            // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく
+            NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
+                JPRowLabel(title: L("旅のトランク", "Travel trunk"), systemImage: "suitcase",
+                           detail: L("投稿のお礼に届いた旅のラベルを貼っていく",
+                                     "Stick the travel labels you get for posting"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.trunk")
+            JPCardDivider()
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",

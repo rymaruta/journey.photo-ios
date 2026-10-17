@@ -105,18 +105,40 @@ struct UploadService {
 
     // MARK: - 3. 1行作る
 
+    /// 保存の応答。旅のトランク（2026-10-17）で `label`（配った1枚 or null）と
+    /// `labelSkipped`（配らなかった理由）が増えた。**どちらも包みで読み、古いサーバーが返さなくても、
+    /// 形が違っても投稿は成功のまま**（ラベルが読めないだけ）
     struct SaveResponse: Decodable {
         let success: Bool
         let photo: Photo?
+        let label: TrunkLabel?
+        let labelSkipped: TrunkLabelSkip?
+
+        private enum CodingKeys: String, CodingKey { case success, photo, label, labelSkipped }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            success = try c.decode(Bool.self, forKey: .success)
+            photo = try c.decodeIfPresent(Photo.self, forKey: .photo)
+            label = (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value
+            labelSkipped = ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init)
+        }
+    }
+
+    /// 保存した写真と、配られたラベル
+    struct Saved {
+        let photo: Photo?
+        let label: TrunkLabel?
+        let labelSkipped: TrunkLabelSkip?
     }
 
     /// - Parameter thumbUrl: 一覧用の 512px を置いた URL（`stageThumbnail`）。無ければ送らない
-    func save(_ draft: PhotoDraft, presigned: PresignResponse, thumbUrl: String? = nil) async throws -> Photo? {
+    func save(_ draft: PhotoDraft, presigned: PresignResponse, thumbUrl: String? = nil) async throws -> Saved {
         let body = draft.saveBody(key: presigned.key, publicUrl: presigned.publicUrl, thumbUrl: thumbUrl)
         let result: SaveResponse = try await api.authorized(
             .post, "/upload/save", body: body, as: SaveResponse.self
         )
-        return result.photo
+        return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped)
     }
 
     // MARK: - 後始末

@@ -1395,6 +1395,9 @@ final class UploadViewModel: ObservableObject {
         var shareSkipped = 0
         /// 元の写真が付かなかった（`UploadOutcome.inspiredDropped`）。投稿は成功なので失敗に数えない
         var inspiredDropped = false
+        /// 旅のトランクのラベル（2026-10-17）。届いた順と、手持ちがいっぱいで届かなかったか
+        var dealtLabels: [(label: TrunkLabel, title: String)] = []
+        var pocketWasFull = false
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -1424,6 +1427,8 @@ final class UploadViewModel: ObservableObject {
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
                 if outcome.inspiredDropped { inspiredDropped = true }
+                if let label = outcome.label { dealtLabels.append((label, outcome.title)) }
+                if outcome.labelSkipped == .full { pocketWasFull = true }
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -1499,6 +1504,10 @@ final class UploadViewModel: ObservableObject {
                     // いいね・コメントが届くのは投稿してから——通知が役に立つ最初の場面（`PushPrimer`・2026-10-11）
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
+                    // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す
+                    // （`RootView` が待つ）。届かなかった理由が「手持ちがいっぱい」なら、手持ちへ案内する一言
+                    TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
+                                                 pocketWasFull: pocketWasFull)
                 }
             } else {
                 errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
@@ -1562,6 +1571,11 @@ final class UploadViewModel: ObservableObject {
         var shareSkipped = false
         /// 元の写真を送ったのに付かなかった（非公開・削除・ブロック。投稿は成功・`InspiredBy.wasDropped`）
         var inspiredDropped = false
+        /// 旅のトランクのラベル（保存の応答の `label`・2026-10-17）と、配られなかった理由
+        var label: TrunkLabel?
+        var labelSkipped: TrunkLabelSkip?
+        /// 送った題（届いた画面の「「…」を投稿したお礼です」）
+        var title = ""
     }
 
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
@@ -1604,8 +1618,12 @@ final class UploadViewModel: ObservableObject {
         draft.dominantColor = placedColor
         let photo: Photo?
         var outcome = UploadOutcome()
+        outcome.title = draft.title
         do {
-            photo = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
+            let saved = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
+            photo = saved.photo
+            outcome.label = saved.label
+            outcome.labelSkipped = saved.labelSkipped
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }

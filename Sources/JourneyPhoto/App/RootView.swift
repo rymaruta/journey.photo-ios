@@ -47,6 +47,9 @@ struct RootView: View {
     @ObservedObject private var pushPrimer = PushPrimerStore.shared
     @EnvironmentObject private var push: PushCenter
     @State private var showPushPrimer = false
+    /// 旅のトランク: 投稿のお礼に届いたラベル（`TrunkArrivals`・2026-10-17）。出している束
+    @ObservedObject private var trunkArrivals = TrunkArrivals.shared
+    @State private var trunkBatch: TrunkArrivals.Batch?
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -307,7 +310,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithPushPrimer
+        tabsWithTrunkArrival
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -340,6 +343,45 @@ struct RootView: View {
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
             .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+    }
+
+    /// 通知の説明に、旅のトランクの「ラベルが届きました」（モック LabelArrived・2026-10-17）を足したもの。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithTrunkArrival: some View {
+        tabsWithPushPrimer
+            .onChange(of: trunkArrivals.requests) { _, _ in offerTrunkArrivalWhenIdle() }
+            // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensTrunkArrived`・Debug のみ）
+            .task { await offerPreviewTrunkArrival() }
+            .fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }
+    }
+
+    /// **ほかの画面が閉じてから**届いた画面を出す（投稿の画面・Threads への共有の画面が閉じきるまで待つ。
+    /// 最長で約30秒。待ちきれなければ出さない——ラベルは手持ちに届いているので、トランクを開けば在る）。
+    /// 手持ちがいっぱいで届かなかった回は、手持ちへ案内する一言（`TrunkText.fullNotice`）
+    private func offerTrunkArrivalWhenIdle() {
+        Task { @MainActor in
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding, !showPushPrimer { break }
+            }
+            guard !ModalProbe.isPresenting(), !showPushPrimer, trunkBatch == nil else { return }
+            if let batch = trunkArrivals.consume() {
+                trunkBatch = batch
+            } else if trunkArrivals.consumeFullNotice() {
+                toasts.show(TrunkText.fullNotice, kind: .info)
+            }
+        }
+    }
+
+    private func offerPreviewTrunkArrival() async {
+        guard PreviewSession.opensTrunkArrived else { return }
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if !ModalProbe.isPresenting() { break }
+        }
+        guard !ModalProbe.isPresenting() else { return }
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")])
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。

@@ -51,14 +51,17 @@ final class UploadServiceTests: XCTestCase {
         ScriptedProtocol.script = [
             .init(match: "/upload/presigned-url", status: 200, body: presignBody),
             .init(match: "/put", status: 200, body: ""),
-            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","photoId":"p1","kind":"place","place":{"name":"パリ"},"seed":3,"at":"2026-10-17T00:00:00Z"},"labelSkipped":null}"#),
         ]
         let presigned = try await service().stage(
             data: Data(repeating: 0xFF, count: 16),
             fileName: "photo.jpg", fileType: "image/jpeg"
         )
-        let photo = try await service().save(PhotoDraft(), presigned: presigned)
-        XCTAssertEqual(photo?.id, "p1")
+        let saved = try await service().save(PhotoDraft(), presigned: presigned)
+        XCTAssertEqual(saved.photo?.id, "p1")
+        // 旅のトランク（2026-10-17）: 保存の応答のラベルを受け取る
+        XCTAssertEqual(saved.label?.place.name, "パリ")
+        XCTAssertNil(saved.labelSkipped)
         XCTAssertEqual(ScriptedProtocol.calls.map(\.path),
                        ["/upload/presigned-url", "/put", "/upload/save"])
         let put = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/put" })
@@ -140,6 +143,47 @@ final class UploadServiceTests: XCTestCase {
         model.tagsText = ""
         model.applyInitialTag()  // カテゴリの選択画面から戻った
         XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
+    }
+
+    /// 旅のトランク（2026-10-17）: 全部上がった投稿で届いたラベルは、届いた画面の待ち（`TrunkArrivals`）へ。
+    /// 手持ちがいっぱいで届かなかった回は「手持ちへ案内する一言」の合図だけ
+    @MainActor
+    func testDealtLabelIsHandedToTheArrivalScreen() async {
+        for full in [false, true] {
+            ScriptedProtocol.reset()
+            _ = TrunkArrivals.shared.consume()
+            _ = TrunkArrivals.shared.consumeFullNotice()
+            let save = full
+                ? #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":null,"labelSkipped":"full"}"#
+                : #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","photoId":"p1","kind":"season","place":{"name":"京都"},"season":"spring","seed":5,"at":"2026-10-17T00:00:00Z"}}"#
+            ScriptedProtocol.script = [
+                .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+                .init(match: "/put", status: 200, body: ""),
+                .init(match: "/upload/save", status: 200, body: save),
+            ]
+            let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                tokenProvider: StubTokenProvider(token: "t"), session: session)
+            let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                        photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+            var item = PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+                exif: nil, coords: nil, takenOn: nil))
+            item.title = "哲学の道の朝"
+            model.items = [item]
+
+            await model.submit()
+
+            XCTAssertTrue(model.didPostAll)
+            if full {
+                XCTAssertNil(TrunkArrivals.shared.consume(), "届いていないのに届いた画面を出す")
+                XCTAssertTrue(TrunkArrivals.shared.consumeFullNotice(), "いっぱいの一言の合図が無い")
+            } else {
+                let batch = TrunkArrivals.shared.consume()
+                XCTAssertEqual(batch?.first.label.place.name, "京都")
+                XCTAssertEqual(batch?.first.photoTitle, "哲学の道の朝")
+                XCTAssertFalse(TrunkArrivals.shared.consumeFullNotice())
+            }
+        }
     }
 
     /// 束の印の頭（2026-10-02 判断）: 旅の写真の流れから来た投稿は必ず `trip-` で始まり、
