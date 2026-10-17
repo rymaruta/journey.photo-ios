@@ -442,7 +442,36 @@ final class PassFaceWiringTests: XCTestCase {
 
     /// 写真より上の層に置いてよい部品（字と、その並べ方だけ）
     private let textOnly: Set<String> = ["Text", "VStack", "HStack", "Spacer", "AnyShapeStyle", "PassFaceTextShadow",
-                                         "PassFaceHeadRow", "PassFaceRoute", "PassFaceFields", "PassFaceFooter"]
+                                         "PassFaceHeadRow", "PassFaceRoute", "PassFaceFields", "PassFaceFooter", "L",
+                                         // 数の型の変換（層ではない）
+                                         "CGFloat", "Double"]
+
+    /// 写真より後ろで使う小文字の部品（`bottom`・`route`・`routePart(` など）を、同じ札の中の定義
+    /// （`private var 名前: some View {` / `private func 名前(`）まで引いて足す。定義の中の小文字の部品もたどる
+    private func expandingMembers(_ text: String, in structText: String) -> String {
+        let use = try! NSRegularExpression(pattern: "(?<![A-Za-z0-9_.$])([a-z][A-Za-z0-9]*)\\b")
+        var seen = Set<String>()
+        var queue = [text]
+        var out = text
+        while let chunk = queue.popLast() {
+            let range = NSRange(chunk.startIndex..., in: chunk)
+            for m in use.matches(in: chunk, range: range) {
+                guard let r = Range(m.range(at: 1), in: chunk) else { continue }
+                let name = String(chunk[r])
+                guard !seen.contains(name) else { continue }
+                seen.insert(name)
+                for head in ["private var \(name): some View {", "private func \(name)("] {
+                    guard let start = structText.range(of: head) else { continue }
+                    let rest = structText[start.upperBound...]
+                    let end = rest.range(of: "\n    private ")?.lowerBound ?? rest.endIndex
+                    let body = String(rest[..<end])
+                    out += "\n" + body
+                    queue.append(body)
+                }
+            }
+        }
+        return out
+    }
 
     /// 🔴 どの券面も写真は `PassFacePhoto` だけで描き、**写真の行から body の終わりまで、写真より後ろ（上の層）には
     /// 字の部品だけ**。写真に続けて付けてよいのは置き場（`.offset`）だけ
@@ -456,7 +485,7 @@ final class PassFaceWiringTests: XCTestCase {
             for line in after.chained {
                 XCTAssertTrue(line.hasPrefix(".offset("), "\(name) の写真に \(line) が付いている")
             }
-            let extra = componentNames(after.rest).subtracting(textOnly)
+            let extra = componentNames(expandingMembers(after.rest, in: all)).subtracting(textOnly)
             XCTAssertTrue(extra.isEmpty, "\(name) の写真より上の層に字でない部品がある: \(extra.sorted())")
         }
         // 10 の写真の下端の真鍮の線は写真の下（y 200〜202）に置き、写真より下の層に描く
@@ -491,6 +520,35 @@ final class PassFaceWiringTests: XCTestCase {
             let wrapper = try block(try source("Features/Pass/PassFaces.swift"), name)
             for word in filters { XCTAssertFalse(wrapper.contains(word), "\(name) に \(word) が付いている") }
         }
+    }
+
+    private func repoFile(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 古い注記を残さない（2026-10-17 の読み直し）。`DeviceMotionOwner` は `LevelMotion` の説明の途中に挟まない
+    func testNotesMatchTheCode() throws {
+        let style = try raw("Core/Text/PassFaceStyle.swift")
+        XCTAssertTrue(style.contains("`UserProfile.showsPassFace`"), "券面の決め方の注記が pro だけのまま")
+        XCTAssertTrue(try raw("Features/Pass/PassFaces.swift").contains("ずっと有効 12 字間 0.04em"))
+        XCTAssertTrue(try raw("Features/Pro/PaywallView.swift").contains("特別な乗車券（すれちがいの券面を選べる）を足して4つ"))
+        let level = try raw("Features/Spots/LevelMotion.swift")
+        XCTAssertTrue(level.contains("/// **実機では確かめていない**（Linux の模型でビルドを通しただけ）。\n@MainActor\nfinal class LevelMotion"),
+                      "LevelMotion の説明の後ろに別の型が挟まっている")
+        XCTAssertTrue(level.contains("間隔も変えない）\n@MainActor\nenum DeviceMotionOwner"))
+    }
+
+    /// メダルの全画面の試験（run 465）: 問い合わせの遅さで「閉じない」と誤って落ちない待ち方・見つけたら抜ける送り方
+    func testMedalCloseWaitIsRobust() throws {
+        let test = try repoFile("UITests/JourneyPhotoUITests/MedalViewerTests.swift")
+        XCTAssertTrue(test.contains("private static let closeDeadline: TimeInterval = 20"))
+        XCTAssertTrue(test.contains("let closed = closeButton.waitForNonExistence(timeout: Self.closeDeadline)"))
+        XCTAssertTrue(test.contains("XCTAssertTrue(closed, \"\\(tag): × を押してもメダルの全画面が閉じない\")"),
+                      "閉じない不具合を見逃す")
+        XCTAssertFalse(test.contains("for _ in 0..<12 where"), "見つけた後も問い合わせ続ける")
+        XCTAssertTrue(test.contains("if row.exists && row.isHittable && row.isEnabled { break }"))
     }
 
     /// 傾きの読み取りは表示中・前面・光が動く券面・「視差効果を減らす」でないときだけ

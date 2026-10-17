@@ -5,9 +5,9 @@ import Foundation
 /// - 既定はマルス券（`mars`）。ほかの5つは **Pro の人だけ**が選べる
 /// - 選んだ券面は電波の中身（`PassExchange.Payload.face`）に1バイトで載せる。番号は**電波の番号**で、
 ///   一度出したら変えない（前の版のアプリが送った番号を、後の版が別の券面と読み違えない）
-/// - 受け取った側は、送った人の**公開プロフィールの Pro の印**（`UserProfile.isPro`）を見て、Pro なら選んだ券面、
-///   そうでなければマルス券で見せる（`shown(wire:ownerIsPro:)`）。番号を自分で書き換えた端末からでも、Pro でない人の
-///   券面は特別にならない
+/// - 受け取った側は、送った人の公開プロフィールで**券面を見せてよいか**（`UserProfile.showsPassFace`: サーバーの
+///   `passFace` があればそれ・無ければ古いサーバーとして `pro`）を見て、よければ選んだ券面、そうでなければマルス券で
+///   見せる（`shown(wire:ownerIsPro:)`）。番号を自分で書き換えた端末からでも、Pro でない人の券面は特別にならない
 ///
 /// 画面を持たない層に置いてあるので、Linux の `swift test` で確かめられる。
 enum PassTicketFaceStyle: UInt8, CaseIterable, Identifiable, Codable {

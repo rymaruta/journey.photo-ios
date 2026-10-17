@@ -278,7 +278,7 @@ struct PassFaceFields: View {
     }
 }
 
-/// 名前と「ずっと有効」の段（名前 12・ずっと有効 11 字間 0.08em）
+/// 名前と「ずっと有効」の段（名前 12・ずっと有効 12 字間 0.04em・`PassCardStyle.validitySize` と同じ）
 struct PassFaceFooter: View {
     let name: String
     let nameColor: Color
