@@ -88,7 +88,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
-        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true)"))
+        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        parts: parts)"),
+                      "回す画面の表に付けた部品が出ない（2026-10-17 次の版）")
         XCTAssertTrue(spin.contains(".accessibilityAction(named: L(\"裏返す\", \"Turn over\"))"))
     }
 
@@ -107,6 +108,9 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(preview.contains("static let trunkSampleKey = \"JPPreviewTrunk\""))
         XCTAssertTrue(preview.contains("static let trunkArrivedKey = \"JPPreviewTrunkArrived\""))
         XCTAssertNil(PreviewSession.trunkSample, "テストでは見本が効いていない")
+        // 次の版（2026-10-17）: 硬貨の枚数の見本（カプセルの機械の「硬貨がありません」を撮る）
+        XCTAssertTrue(preview.contains("static let trunkCoinsKey = \"JPPreviewTrunkCoins\""))
+        XCTAssertNil(PreviewSession.trunkCoins)
     }
 
     /// 知らせ: 押して進む画面には重ねず（`RootView` の全体の知らせ）、全画面の届いた画面にだけ置く。
@@ -155,7 +159,9 @@ final class TrunkWiringTests: XCTestCase {
     /// 再現しない。入れ物の目印の直前には必ず `.accessibilityElement(children: .contain)` を置く
     func testContainerIdentifiersDoNotOverrideChildren() throws {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
-                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen"]
+                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
+                          // 次の版（2026-10-17）
+                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip"]
         var found = Set<String>()
         for (name, text) in try trunkFiles() {
             let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -168,5 +174,30 @@ final class TrunkWiringTests: XCTestCase {
             }
         }
         XCTAssertEqual(found, Set(containers), "見張る目印が見つからない（名前が変わった？）")
+    }
+
+    /// 次の版（2026-10-17）: トランクの画面に「ラベルを貼る」「部品箱」「カプセルの機械（硬貨の数）」の入口があり、
+    /// 部品はトランクの絵と回す画面に映る。画面写真の試験が各画面を1枚ずつ撮る
+    func testNextVersionEntriesAndScreenshots() throws {
+        let main = try source("Features/Trunk/TrunkView.swift")
+        for id in ["trunk.stick.open", "trunk.partsBox", "trunk.gacha.open"] {
+            XCTAssertTrue(main.contains("\"\(id)\""), "\(id) の入口が無い")
+        }
+        XCTAssertTrue(main.contains("Text(L(\"硬貨 \\(state.coins)\""), "入口に硬貨の数が無い")
+        XCTAssertTrue(main.contains("parts: state.equipped"), "トランクの絵に付けた部品を渡していない")
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        for name in ["97-ラベルを貼る", "98-カプセルの機械", "98a-カプセルを開けた", "98b-中身と確率", "99-部品箱", "99a-部品を付け替える",
+                     "98c-カプセルの機械（硬貨がありません）"] {
+            XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
+        }
+        // 触覚（貼る・目盛り・落ちる）と「視差効果を減らす」
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertTrue(stick.contains(".sensoryFeedback(.impact(weight: .medium), trigger: stickTicks)"))
+        XCTAssertTrue(stick.contains("guard !reduceMotion else { return }"), "貼る弾みを「視差効果を減らす」で止めていない")
+        let gacha = try source("Features/Trunk/TrunkGachaView.swift")
+        XCTAssertTrue(gacha.contains(".sensoryFeedback(.selection, trigger: ticks)"), "ハンドルの目盛りに触覚が無い")
+        XCTAssertTrue(gacha.contains(".sensoryFeedback(.impact(weight: .heavy), trigger: drops)"), "カプセルが落ちたときに触覚が無い")
+        XCTAssertTrue(gacha.contains("TrunkGachaOddsView()"), "中身と確率への入口が無い")
+        XCTAssertTrue(gacha.contains("if reduceMotion {"), "落ちる弾みを「視差効果を減らす」で止めていない")
     }
 }

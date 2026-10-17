@@ -17,6 +17,7 @@ struct TrunkView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     @State private var showSpin = false
     @State private var showPaywall = false
+    @State private var showStick = false
 
     var body: some View {
         content
@@ -32,13 +33,14 @@ struct TrunkView: View {
             .fullScreenCover(isPresented: $showSpin) {
                 if let state = model.state {
                     TrunkSpinViewer(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                                    ownerName: ownerName)
+                                    ownerName: ownerName, parts: state.equipped)
                 }
             }
             .fullScreenCover(isPresented: $showPaywall, onDismiss: {
                 // 買えたかもしれない: Pro かどうか・上限・回数を読み直す
                 Task { await model.refreshAfterPaywall(offline: connectivity.isOffline) }
             }) { PaywallView() }
+            .fullScreenCover(isPresented: $showStick) { TrunkStickView(model: model, ownerName: ownerName) }
             // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }
 
@@ -110,8 +112,10 @@ struct TrunkView: View {
                     stats(state)
                     recent(state)
                 }
-                menu(state)
+                workshop(state)
                     .padding(.top, 14)
+                menu(state)
+                    .padding(.top, 10)
                     .padding(.bottom, 32)
             }
         }
@@ -127,7 +131,7 @@ struct TrunkView: View {
                 // モック: 360×300 を 1.05 倍・少し傾けて（rotateX 5°・rotateY -7°・rotate -1°）378×318 の枠に。
                 // 幅の狭い画面では枠ごと縮める（左右に 6 ずつ）
                 TrunkFigureFit(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                               ownerName: ownerName, maxWidth: 360)
+                               ownerName: ownerName, parts: state.equipped, maxWidth: 360)
                     .scaleEffect(1.05)
                     .rotation3DEffect(.degrees(5), axis: (x: 1, y: 0, z: 0), perspective: 0.36)
                     .rotation3DEffect(.degrees(-7), axis: (x: 0, y: 1, z: 0), perspective: 0.36)
@@ -232,6 +236,53 @@ struct TrunkView: View {
             }
             .padding(.horizontal, 20)
         }
+    }
+
+    /// 自分の手で貼る・部品箱・カプセルの機械（2026-10-17 次の版。モック Main の札と同じ形・硬貨の数つき）
+    private func workshop(_ state: TrunkState) -> some View {
+        let collected = TrunkPartsBoxText.collected(state.ownedParts)
+        return VStack(spacing: 0) {
+            Button { showStick = true } label: {
+                TrunkMenuRow(title: L("ラベルを貼る", "Stick labels"),
+                             value: L("手持ち \(state.pocket.count)", "\(state.pocket.count) in pocket"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trunk.stick.open")
+            TrunkStyle.line.frame(height: 1)
+            NavigationLink {
+                TrunkPartsBoxView(model: model, ownerName: ownerName)
+            } label: {
+                TrunkMenuRow(title: L("部品箱", "Parts box"), value: "\(collected.owned) / \(collected.total)")
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trunk.partsBox")
+            TrunkStyle.line.frame(height: 1)
+            NavigationLink {
+                TrunkGachaView(model: model)
+            } label: {
+                HStack(spacing: 0) {
+                    TrunkMenuRow(title: L("カプセルの機械", "Capsule machine"), value: nil, chevron: false)
+                    HStack(spacing: 6) {
+                        TrunkCoinMark(size: 16)
+                        Text(L("硬貨 \(state.coins)", "\(state.coins) coins"))
+                            .font(JPFont.mono(15, relativeTo: .subheadline))
+                            .foregroundStyle(TrunkStyle.muted)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(TrunkStyle.muted)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.trailing, 16)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("trunk.gacha.open")
+        }
+        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 20)
     }
 
     /// 手持ち・型・受け取り（モック: #121212 の札・行 52・#1A1A1A の区切り）

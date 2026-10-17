@@ -144,6 +144,21 @@ struct LabelArrivedView: View {
                 .frame(height: 32)
                 .background(TrunkStyle.chip, in: Capsule())
             }
+            // 一緒に届いた硬貨（公開の投稿1件で1枚・2026-10-17 次の版）
+            if batch.coins > 0 {
+                HStack(spacing: 6) {
+                    TrunkCoinMark(size: 14)
+                    Text(TrunkText.coinChip(batch.coins))
+                        .font(JPFont.footnote.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(WebTheme.accent)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background(TrunkStyle.chip, in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("trunk.arrived.coin")
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)

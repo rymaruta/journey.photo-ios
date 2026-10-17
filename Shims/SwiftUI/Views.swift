@@ -5,6 +5,8 @@ public struct Text: View {
     public init(_ s: String) {}
     public init(_ s: Substring) {}
     public init<S: StringProtocol>(_ s: S) {}
+    /// 訳さずにそのまま出す字（本物と同じ）
+    public init(verbatim content: String) {}
     /// 部分にリンク（`.link`）を付けた文字。本物は iOS 15〜
     public init(_ attributed: AttributedString) {}
     public var body: Never { fatalError("模型") }

@@ -48,7 +48,10 @@ final class TrunkViewModel: ObservableObject {
     /// - Parameter offline: いま電波が無いか（`Connectivity`）。読めなかったときに「圏外」で出すかを決める
     func load(offline: Bool) async {
         if let preview {
-            state = TrunkSample.state(isPro: previewPro, empty: preview == .empty)
+            // 一度動かした見本（貼った・回した・付け替えた）は、画面を開き直しても消さない
+            if state == nil {
+                state = TrunkSample.state(isPro: previewPro, empty: preview == .empty, coins: PreviewSession.trunkCoins)
+            }
             phase = .loaded
             return
         }
@@ -85,7 +88,8 @@ final class TrunkViewModel: ObservableObject {
     /// 書き込みを1つ流す。成功したら true（状態は応答に置き換わる）
     @discardableResult
     private func write(_ local: (TrunkState) -> TrunkState,
-                       _ remote: (TrunkService) async throws -> TrunkState) async -> Bool {
+                       _ remote: (TrunkService) async throws -> TrunkState,
+                       refusal: ((TrunkService.Refused) -> String?)? = nil) async -> Bool {
         guard !busy, let current = state else { return false }
         busy = true
         defer { busy = false }
@@ -99,6 +103,9 @@ final class TrunkViewModel: ObservableObject {
             state = try await remote(service).keepingPosts(from: current)
             return true
         } catch is CancellationError {
+            return false
+        } catch let refused as TrunkService.Refused {
+            actionError = refusal?(refused) ?? Self.message(refused)
             return false
         } catch {
             actionError = Self.message(error)
@@ -160,5 +167,97 @@ final class TrunkViewModel: ObservableObject {
     func setReceiveLabels(_ on: Bool) async -> Bool {
         guard state?.receiveLabels != on else { return true }
         return await write({ TrunkLocal.setReceive($0, on) }, { try await $0.setReceiveLabels(on) })
+    }
+
+    // MARK: 自分の手で貼る（2026-10-17 次の版）
+
+    /// 置き場つきで貼る
+    @discardableResult
+    func stick(_ id: String, at pos: TrunkPos) async -> Bool {
+        await write({ TrunkLocal.stick($0, id: id, pos: pos) }, { try await $0.stick(id, at: pos) })
+    }
+
+    /// 貼ったラベルを置き直す
+    @discardableResult
+    func place(_ id: String, at pos: TrunkPos) async -> Bool {
+        guard state?.stuck.first(where: { $0.id == id })?.pos != TrunkPlacement.clamp(pos) else { return true }
+        return await write({ TrunkLocal.place($0, id: id, pos: pos) }, { try await $0.place(id, at: pos) })
+    }
+
+    /// はがして手持ちに戻す（手持ちが上限なら一言）
+    @discardableResult
+    func unstick(_ id: String) async -> Bool {
+        if let state, state.pocket.count >= state.limit, preview != nil {
+            actionError = TrunkText.unstickFull
+            return false
+        }
+        return await write({ TrunkLocal.unstick($0, id: id) }, { try await $0.unstick(id) },
+                           refusal: { $0.code == "full" ? TrunkText.unstickFull : nil })
+    }
+
+    /// おまかせで並べる（空いている置き場に、手持ちの新しいものから順に貼る）。貼れた id を返す。
+    /// 空きが無ければ一言を出して空を返す
+    func autoArrange() async -> [String] {
+        guard let state else { return [] }
+        let plan = TrunkPlacement.autoArrange(pocket: state.pocket, stuck: state.stuck)
+        guard !plan.isEmpty else {
+            actionError = state.pocket.isEmpty ? TrunkText.noPocketLabels : TrunkText.noFreeSlot
+            return []
+        }
+        var done: [String] = []
+        for item in plan {
+            guard await stick(item.id, at: item.pos) else { break }
+            done.append(item.id)
+        }
+        return done
+    }
+
+    // MARK: カプセルの機械・部品（2026-10-17 次の版）
+
+    /// 見本で回した回数（出る部品の並びを進める）
+    private var previewDraws = 0
+
+    /// 回す（硬貨1枚）。出た部品を返す（断られた・読めなければ nil で、一言は `actionError`）。
+    /// 応答は状態を丸ごと返さないので、硬貨・かけら・部品だけを手元の状態に足す
+    func gacha() async -> TrunkGachaResult? {
+        guard !busy, let current = state else { return nil }
+        busy = true
+        defer { busy = false }
+        actionError = nil
+        if preview != nil {
+            guard let result = TrunkLocal.gacha(current, draw: previewDraws) else {
+                actionError = TrunkText.refusal(code: "noCoins", fallback: Labels.Common.loadFailed)
+                return nil
+            }
+            previewDraws += 1
+            state = result.applied(to: current)
+            return result
+        }
+        guard let service else { return nil }
+        do {
+            let result = try await service.gacha()
+            state = result.applied(to: current)
+            return result
+        } catch is CancellationError {
+            return nil
+        } catch {
+            actionError = Self.message(error)
+            // 回ったかどうか分からない（知らない部品・時間切れ）。硬貨と部品を読み直す
+            if !(error is TrunkService.Refused) { await load(offline: false) }
+            return nil
+        }
+    }
+
+    /// かけら5つで交換
+    @discardableResult
+    func exchange(_ partId: String) async -> Bool {
+        await write({ TrunkLocal.exchange($0, partId: partId) }, { try await $0.exchange(partId) })
+    }
+
+    /// 付け替えを保存する
+    @discardableResult
+    func equip(_ equipped: TrunkEquipped) async -> Bool {
+        guard state?.equipped != equipped else { return true }
+        return await write({ TrunkLocal.equip($0, equipped) }, { try await $0.equip(equipped) })
     }
 }

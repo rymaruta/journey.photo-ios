@@ -1399,6 +1399,8 @@ final class UploadViewModel: ObservableObject {
         var dealtLabels: [(label: TrunkLabel, title: String)] = []
         /// 届かなかった理由の一言（手持ちがいっぱい・トランクの容量）。ほかの理由は黙る
         var labelNotice: TrunkArrivals.Notice?
+        /// 届いた硬貨の数（公開の投稿1件で1枚・2026-10-17 次の版）
+        var dealtCoins = 0
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -1430,6 +1432,7 @@ final class UploadViewModel: ObservableObject {
                 if outcome.inspiredDropped { inspiredDropped = true }
                 if let label = outcome.label { dealtLabels.append((label, outcome.title)) }
                 if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
+                dealtCoins += outcome.coin
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -1460,7 +1463,7 @@ final class UploadViewModel: ObservableObject {
         // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
         // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
         TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
-                                     notice: labelNotice)
+                                     notice: labelNotice, coins: dealtCoins)
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
@@ -1577,6 +1580,8 @@ final class UploadViewModel: ObservableObject {
         /// 旅のトランクのラベル（保存の応答の `label`・2026-10-17）と、配られなかった理由
         var label: TrunkLabel?
         var labelSkipped: TrunkLabelSkip?
+        /// 配られた硬貨（0 か 1・2026-10-17 次の版）
+        var coin = 0
         /// 送った題（届いた画面の「「…」を投稿したお礼です」）
         var title = ""
     }
@@ -1627,6 +1632,7 @@ final class UploadViewModel: ObservableObject {
             photo = saved.photo
             outcome.label = saved.label
             outcome.labelSkipped = saved.labelSkipped
+            outcome.coin = saved.coin
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }

@@ -46,9 +46,12 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
     let at: String
     /// 箔押し（まれに・2%）
     let foil: Bool
+    /// 自分の手で貼った置き場（貼ったラベルだけ・2026-10-17 次の版）。無ければおまかせの置き場（`TrunkSlots`）
+    let pos: TrunkPos?
 
     init(id: String, photoId: String, kind: Kind, place: Place, season: Season? = nil,
-         timeslot: Timeslot? = nil, milestone: Milestone? = nil, seed: Int, at: String, foil: Bool = false) {
+         timeslot: Timeslot? = nil, milestone: Milestone? = nil, seed: Int, at: String, foil: Bool = false,
+         pos: TrunkPos? = nil) {
         self.id = id
         self.photoId = photoId
         self.kind = kind
@@ -59,16 +62,23 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         self.seed = seed
         self.at = at
         self.foil = foil
+        self.pos = pos
     }
 
     /// 同じラベルで種だけ替えたもの（作り直しの候補を描く）
     func withSeed(_ seed: Int) -> TrunkLabel {
         TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
-                   milestone: milestone, seed: seed, at: at, foil: foil)
+                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos)
+    }
+
+    /// 同じラベルで置き場だけ替えたもの（nil ならおまかせの置き場）
+    func withPos(_ pos: TrunkPos?) -> TrunkLabel {
+        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
+                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, photoId, kind, place, season, timeslot, milestone, seed, at, foil
+        case id, photoId, kind, place, season, timeslot, milestone, seed, at, foil, pos
     }
     private enum PlaceKeys: String, CodingKey { case name, latin, country }
 
@@ -101,6 +111,8 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         milestone = ((try? c.decodeIfPresent(String.self, forKey: .milestone)) ?? nil).flatMap(Milestone.init(rawValue:))
         at = ((try? c.decodeIfPresent(String.self, forKey: .at)) ?? nil) ?? ""
         foil = ((try? c.decodeIfPresent(Bool.self, forKey: .foil)) ?? nil) ?? false
+        // 置き場は包みで読む（無い・形が違う・範囲の外ならおまかせ）
+        pos = (try? c.decodeIfPresent(Lenient<TrunkPos>.self, forKey: .pos))??.value
     }
 
     /// 配った日（日本時間の暦ではなく、`at` の頭の年月日をそのまま読む）。読めなければ nil
@@ -110,6 +122,142 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         return (parts[0], parts[1], parts[2])
     }
 }
+
+/// 貼ったラベルの置き場（サーバーの `pos`）。x・y はトランクの正面（胴）の 0〜1 で、ラベルの真ん中。
+/// rot は傾き（度・-30〜30）。**範囲の外の値は読まない**（おまかせに戻す）
+struct TrunkPos: Codable, Equatable, Hashable {
+    let x: Double
+    let y: Double
+    let rot: Double
+
+    init(x: Double, y: Double, rot: Double) {
+        self.x = x
+        self.y = y
+        self.rot = rot
+    }
+
+    /// 傾きの上限（サーバーの `ROT_MAX`）
+    static let rotMax: Double = 30
+
+    private enum CodingKeys: String, CodingKey { case x, y, rot }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let x = try c.decode(Double.self, forKey: .x)
+        let y = try c.decode(Double.self, forKey: .y)
+        let rot = try c.decode(Double.self, forKey: .rot)
+        guard x.isFinite, y.isFinite, rot.isFinite, (0...1).contains(x), (0...1).contains(y),
+              (-Self.rotMax...Self.rotMax).contains(rot) else {
+            throw DecodingError.dataCorruptedError(forKey: .x, in: c, debugDescription: "置き場が範囲の外")
+        }
+        self.init(x: x, y: y, rot: rot)
+    }
+}
+
+/// 付けている部品（サーバーの `equipped`）。**台帳に無い・場所の合わない・持っていない id は落とす**
+struct TrunkEquipped: Codable, Equatable, Hashable {
+    var handle: String?
+    var corner: String?
+    var lock: String?
+    var lining: String?
+    var tag: String?
+    var charm: String?
+    var key: String?
+    /// ピンバッジ（3つまで）
+    var pins: [String] = []
+    /// ワッペン（2つまで）
+    var patches: [String] = []
+
+    static let none = TrunkEquipped()
+
+    init(handle: String? = nil, corner: String? = nil, lock: String? = nil, lining: String? = nil, tag: String? = nil,
+         charm: String? = nil, key: String? = nil, pins: [String] = [], patches: [String] = []) {
+        self.handle = handle
+        self.corner = corner
+        self.lock = lock
+        self.lining = lining
+        self.tag = tag
+        self.charm = charm
+        self.key = key
+        self.pins = pins
+        self.patches = patches
+    }
+
+    /// 1つの場所に付けている id（ピン・ワッペンは並び）
+    func ids(_ kind: TrunkPartKind) -> [String] {
+        switch kind {
+        case .handle: return handle.map { [$0] } ?? []
+        case .corner: return corner.map { [$0] } ?? []
+        case .lock: return lock.map { [$0] } ?? []
+        case .lining: return lining.map { [$0] } ?? []
+        case .tag: return tag.map { [$0] } ?? []
+        case .charm: return charm.map { [$0] } ?? []
+        case .key: return key.map { [$0] } ?? []
+        case .pin: return pins
+        case .patch: return patches
+        }
+    }
+
+    /// 1つの場所を置き換える（数の上限で切る）
+    func setting(_ kind: TrunkPartKind, _ ids: [String]) -> TrunkEquipped {
+        var e = self
+        let list = Array(ids.prefix(kind.capacity))
+        switch kind {
+        case .handle: e.handle = list.first
+        case .corner: e.corner = list.first
+        case .lock: e.lock = list.first
+        case .lining: e.lining = list.first
+        case .tag: e.tag = list.first
+        case .charm: e.charm = list.first
+        case .key: e.key = list.first
+        case .pin: e.pins = list
+        case .patch: e.patches = list
+        }
+        return e
+    }
+
+    /// 付けている id 全部
+    var all: [String] { TrunkPartKind.allCases.flatMap(ids) }
+
+    /// 持っていない・台帳に無い・場所の合わない id を落とす（サーバーの `parseEquipped` と同じ）
+    func sanitized(owned: Set<String>?) -> TrunkEquipped {
+        var out = TrunkEquipped()
+        for kind in TrunkPartKind.allCases {
+            var seen = Set<String>()
+            let kept = ids(kind).filter { id in
+                guard TrunkPartCatalog.part(id)?.kind == kind, owned?.contains(id) ?? true, !seen.contains(id) else { return false }
+                seen.insert(id)
+                return true
+            }
+            out = out.setting(kind, kept)
+        }
+        return out
+    }
+
+    private enum CodingKeys: String, CodingKey { case handle, corner, lock, lining, tag, charm, key, pins, patches }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func one(_ key: CodingKeys) -> String? { (try? c.decodeIfPresent(String.self, forKey: key)) ?? nil }
+        func list(_ key: CodingKeys) -> [String] {
+            ((try? c.decodeIfPresent([Lenient<String>].self, forKey: key)) ?? nil)?.compactMap(\.value) ?? []
+        }
+        self.init(handle: one(.handle), corner: one(.corner), lock: one(.lock), lining: one(.lining), tag: one(.tag),
+                  charm: one(.charm), key: one(.key), pins: list(.pins), patches: list(.patches))
+    }
+
+    /// `PUT /user/trunk/equip` の本文。**場所を全部送り、外した場所は null**（サーバーは null を「外す」と読む）
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        for (key, value) in [(CodingKeys.handle, handle), (.corner, corner), (.lock, lock), (.lining, lining), (.tag, tag),
+                             (.charm, charm), (.key, key)] {
+            if let value { try c.encode(value, forKey: key) } else { try c.encodeNil(forKey: key) }
+        }
+        try c.encode(Array(pins.prefix(TrunkPartKind.pin.capacity)), forKey: .pins)
+        try c.encode(Array(patches.prefix(TrunkPartKind.patch.capacity)), forKey: .patches)
+    }
+}
+
 
 /// トランクの型（サーバーの `FREE_MODELS`・`PRO_MODELS`）
 enum TrunkModel: String, CaseIterable, Identifiable {
@@ -150,10 +298,19 @@ struct TrunkState: Decodable, Equatable {
     let posts: Int?
     /// ラベルを受け取るか
     let receiveLabels: Bool
+    /// 硬貨の枚数（公開の投稿1件で1枚・カプセルの機械で使う・2026-10-17 次の版）。古いサーバーは 0
+    let coins: Int
+    /// 持っている部品の id（台帳にあるものだけ・新しい順）
+    let parts: [String]
+    /// かけらの数（同じ部品が出たら +1・5つで交換）
+    let fragments: Int
+    /// 付けている部品（持っているものだけ）
+    let equipped: TrunkEquipped
 
     init(model: TrunkModel, effectiveModel: TrunkModel? = nil, pocket: [TrunkLabel], stuck: [TrunkLabel],
          limit: Int, isPro: Bool, rerollsLeft: Int, pendingReroll: TrunkPendingReroll? = nil,
-         posts: Int?, receiveLabels: Bool) {
+         posts: Int?, receiveLabels: Bool, coins: Int = 0, parts: [String] = [], fragments: Int = 0,
+         equipped: TrunkEquipped = .none) {
         self.model = model
         self.effectiveModel = effectiveModel ?? model
         self.pocket = pocket
@@ -164,7 +321,29 @@ struct TrunkState: Decodable, Equatable {
         self.pendingReroll = pendingReroll
         self.posts = posts
         self.receiveLabels = receiveLabels
+        self.coins = max(0, coins)
+        self.parts = parts
+        self.fragments = max(0, fragments)
+        self.equipped = equipped
     }
+
+    /// 同じ状態で一部だけ替えたもの（端末の中の移り変わり・ガチャの結果を足す）
+    func copy(pocket: [TrunkLabel]? = nil, stuck: [TrunkLabel]? = nil, model: TrunkModel? = nil,
+              effectiveModel: TrunkModel? = nil, rerollsLeft: Int? = nil,
+              pendingReroll: TrunkPendingReroll?? = nil, posts: Int?? = nil, receiveLabels: Bool? = nil,
+              coins: Int? = nil, parts: [String]? = nil, fragments: Int? = nil,
+              equipped: TrunkEquipped? = nil) -> TrunkState {
+        TrunkState(model: model ?? self.model, effectiveModel: effectiveModel ?? self.effectiveModel,
+                   pocket: pocket ?? self.pocket, stuck: stuck ?? self.stuck, limit: limit, isPro: isPro,
+                   rerollsLeft: rerollsLeft ?? self.rerollsLeft,
+                   pendingReroll: pendingReroll == nil ? self.pendingReroll : pendingReroll!,
+                   posts: posts == nil ? self.posts : posts!, receiveLabels: receiveLabels ?? self.receiveLabels,
+                   coins: coins ?? self.coins, parts: parts ?? self.parts, fragments: fragments ?? self.fragments,
+                   equipped: equipped ?? self.equipped)
+    }
+
+    /// 持っている部品（台帳の順ではなく、届いた新しい順）
+    var ownedParts: Set<String> { Set(parts) }
 
     /// サーバーの既定（無料 30）。`limit` が読めない応答に使う
     static let freeLimit = 30
@@ -172,6 +351,7 @@ struct TrunkState: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case model, effectiveModel, pocket, stuck, limit, isPro, rerolls, pendingReroll, posts, receiveLabels
+        case coins, parts, fragments, equipped
     }
     private enum RerollKeys: String, CodingKey { case left, month }
     private enum PendingKeys: String, CodingKey { case labelId, seeds }
@@ -213,14 +393,21 @@ struct TrunkState: Decodable, Equatable {
         }
         posts = LenientInt.read(c, .posts).map { max(0, $0) }
         receiveLabels = ((try? c.decodeIfPresent(Bool.self, forKey: .receiveLabels)) ?? nil) ?? true
+        // 硬貨・部品・かけら・付けている部品（2026-10-17 次の版）。**どれも包みで読み、無ければ 0・空**
+        // （部品の口が無い古いサーバーでも、トランクの画面は今までどおり）
+        coins = max(0, LenientInt.read(c, .coins) ?? 0)
+        var seen = Set<String>()
+        parts = (((try? c.decodeIfPresent([Lenient<String>].self, forKey: .parts)) ?? nil)?.compactMap(\.value) ?? [])
+            .filter { TrunkPartCatalog.part($0) != nil && seen.insert($0).inserted }
+        fragments = max(0, LenientInt.read(c, .fragments) ?? 0)
+        let rawEquipped = (try? c.decodeIfPresent(Lenient<TrunkEquipped>.self, forKey: .equipped))??.value ?? .none
+        equipped = rawEquipped.sanitized(owned: Set(parts))
     }
 
     /// 書き込みの応答（`posts` が無い）に、前に読んだ投稿の数を引き継ぐ
     func keepingPosts(from previous: TrunkState?) -> TrunkState {
         guard posts == nil, let previousPosts = previous?.posts else { return self }
-        return TrunkState(model: model, effectiveModel: effectiveModel, pocket: pocket, stuck: stuck, limit: limit,
-                          isPro: isPro, rerollsLeft: rerollsLeft, pendingReroll: pendingReroll,
-                          posts: previousPosts, receiveLabels: receiveLabels)
+        return copy(posts: .some(previousPosts))
     }
 }
 
@@ -229,21 +416,27 @@ struct TrunkState: Decodable, Equatable {
 struct TrunkDealt: Decodable, Equatable {
     let label: TrunkLabel?
     let labelSkipped: TrunkLabelSkip?
+    /// 配った硬貨（0 か 1・2026-10-17 次の版）。**手持ちがいっぱい・受け取らない設定でも配られる**
+    let coin: Int
 
-    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil) {
+    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil, coin: Int = 0) {
         self.label = label
         self.labelSkipped = labelSkipped
+        self.coin = coin
     }
 
-    private enum CodingKeys: String, CodingKey { case label, labelSkipped }
+    private enum CodingKeys: String, CodingKey { case label, labelSkipped, coin }
 
     init(from decoder: Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
             self.init()
             return
         }
+        // 硬貨は 0 か 1 だけ読む（知らない値・負の数・大きい数は 0）
+        let coin = LenientInt.read(c, .coin) ?? 0
         self.init(label: (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value,
-                  labelSkipped: ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init))
+                  labelSkipped: ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init),
+                  coin: coin == 1 ? 1 : 0)
     }
 
     /// 応答の本文から読む（読めなければ空）
@@ -282,5 +475,44 @@ enum TrunkLabelSkip: Equatable {
         case "draft": self = .draft
         default: self = .other(raw)
         }
+    }
+}
+
+/// カプセルの機械を回した結果（`POST /user/trunk/gacha` → `{ part, duplicate, fragments, coins }`・2026-10-17 次の版）。
+/// **部品の id がこの版の台帳に無ければ投げる**（描けない部品を「出た」と見せない。画面は読み直す）
+struct TrunkGachaResult: Decodable, Equatable {
+    let part: TrunkPart
+    /// 持っている部品だった（かけらが 1 増えた）
+    let duplicate: Bool
+    /// 回したあとのかけらの数
+    let fragments: Int
+    /// 回したあとの硬貨の数
+    let coins: Int
+
+    init(part: TrunkPart, duplicate: Bool, fragments: Int, coins: Int) {
+        self.part = part
+        self.duplicate = duplicate
+        self.fragments = max(0, fragments)
+        self.coins = max(0, coins)
+    }
+
+    private enum CodingKeys: String, CodingKey { case part, duplicate, fragments, coins }
+    private enum PartKeys: String, CodingKey { case id }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let p = try c.nestedContainer(keyedBy: PartKeys.self, forKey: .part)
+        let id = try p.decode(String.self, forKey: .id)
+        guard let part = TrunkPartCatalog.part(id) else {
+            throw DecodingError.dataCorruptedError(forKey: .id, in: p, debugDescription: "台帳に無い部品")
+        }
+        self.init(part: part, duplicate: ((try? c.decodeIfPresent(Bool.self, forKey: .duplicate)) ?? nil) ?? false,
+                  fragments: LenientInt.read(c, .fragments) ?? 0, coins: LenientInt.read(c, .coins) ?? 0)
+    }
+
+    /// 回す前の状態に結果を足す（応答は状態を丸ごと返さないので、硬貨・かけら・部品だけを置き換える）
+    func applied(to state: TrunkState) -> TrunkState {
+        let parts = duplicate || state.parts.contains(part.id) ? state.parts : [part.id] + state.parts
+        return state.copy(coins: coins, parts: parts, fragments: fragments)
     }
 }

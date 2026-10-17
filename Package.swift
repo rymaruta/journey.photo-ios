@@ -47,6 +47,8 @@ let package = Package(
         .target(name: "CoreMotion", path: "Shims/CoreMotion"),
         // 近くの人を見つける電波（すれちがい `PassRadio`・2026-10-16）
         .target(name: "CoreBluetooth", path: "Shims/CoreBluetooth"),
+        // 短い効果音（旅のトランクの貼る・ハンドルの目盛り・カプセル `TrunkSound`・2026-10-17）
+        .target(name: "AudioToolbox", path: "Shims/AudioToolbox"),
         // 定期購入（Pro）。SwiftUI と重なる口（`manageSubscriptionsSheet`）があるので SwiftUI を読む
         .target(name: "StoreKit", dependencies: ["SwiftUI"], path: "Shims/StoreKit"),
         .target(name: "ImageIO", path: "Shims/ImageIO"),
@@ -66,7 +68,7 @@ let package = Package(
             dependencies: [
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
-                "StoreKit", "QuartzCore", "Network", "CoreMotion", "CoreBluetooth", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "StoreKit", "QuartzCore", "Network", "CoreMotion", "CoreBluetooth", "AudioToolbox", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

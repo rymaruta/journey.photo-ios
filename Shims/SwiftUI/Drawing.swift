@@ -23,6 +23,12 @@ public struct Canvas: View {
     public var body: Never { fatalError("模型") }
 }
 
+/// 塗り方（本物と同じ。`eoFill` で輪や U の字を抜く）
+public struct FillStyle {
+    public var isEOFilled: Bool
+    public init(eoFill: Bool = false, antialiased: Bool = true) { isEOFilled = eoFill }
+}
+
 /// `Canvas` の描く先（使う口だけ）
 public struct GraphicsContext {
     public struct Shading {
@@ -33,12 +39,15 @@ public struct GraphicsContext {
     }
     public var opacity: Double = 1
     public func fill(_ path: Path, with shading: Shading) {}
+    /// 塗り方（even-odd・本物と同じ）
+    public func fill(_ path: Path, with shading: Shading, style: FillStyle) {}
     public func stroke(_ path: Path, with shading: Shading, lineWidth: CGFloat = 1) {}
     public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle) {}
     public mutating func translateBy(x: CGFloat, y: CGFloat) {}
     public mutating func rotate(by angle: Angle) {}
     public mutating func scaleBy(x: CGFloat, y: CGFloat) {}
     public mutating func clip(to path: Path) {}
+    public mutating func clip(to path: Path, style: FillStyle) {}
 }
 
 /// 画面の部品を1枚の絵にする（本物は iOS 16+）

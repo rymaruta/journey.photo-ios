@@ -16,33 +16,58 @@ struct TrunkBoxView: View {
     var ownerName: String?
     /// 胴だけ（3D の箱の表に貼る絵・持ち手とタグを描かない）
     var bodyOnly = false
+    /// 付けている部品（2026-10-17 次の版・モック PartsOnTrunk・Equip）
+    var parts: TrunkEquipped = .none
+    /// 画面の上だけで動かしている置き場（自分の手で貼る画面）
+    var overrides: [String: TrunkPos] = [:]
+    /// 描かないラベル（自分の手で貼る画面で、指で持ち上げている1枚）
+    var hidden: String?
+    /// 動かしてよれたラベル（id → よれの強さ 0〜1）
+    var wrinkles: [String: Double] = [:]
+    /// 貼った瞬間に押さえる1枚と、その大きさ（モック Stick の `stickPress`・1.12 → 0.97 → 1）
+    var pop: String?
+    var popScale: Double = 1
 
     private var stage: Double { TrunkAging.stage(posts: posts) }
     private var look: TrunkLook { TrunkLooks.look(model, stage: stage) }
+    private var fittings: TrunkFittings { TrunkFittings(parts) }
 
     private static let W = TrunkLooks.bodyWidth
     private static let H = TrunkLooks.bodyHeight
 
     var body: some View {
         let look = look
+        let fittings = fittings
         ZStack(alignment: .topLeading) {
-            if !bodyOnly { handle(look) }
-            trunkBody(look)
+            if !bodyOnly { handle(look, fittings) }
+            trunkBody(look, fittings)
                 .offset(y: bodyOnly ? 0 : TrunkLooks.bodyTop)
-            if !bodyOnly { tags(look) }
+            if !bodyOnly {
+                tags(look)
+                hanging(fittings)
+            }
         }
         .frame(width: TrunkLooks.canvasWidth, height: bodyOnly ? Self.H : TrunkLooks.canvasHeight, alignment: .topLeading)
     }
 
     // MARK: 持ち手
 
-    private func handle(_ look: TrunkLook) -> some View {
+    private func handle(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         ZStack(alignment: .topLeading) {
-            TrunkHandleShape()
-                .fill(Color(trunk: look.handle))
-                .frame(width: 100, height: 36)
-                .shadow(color: Color.black.opacity(0.5), radius: 1.5, x: 0, y: 2)
-                .offset(x: 130, y: 2)
+            Group {
+                if let part = fittings.handlePaint {
+                    // 付けた持ち手（モックの `P.handle`・`P.handleW`）
+                    TrunkPartPaintView(paint: part.paint)
+                        .frame(width: 100, height: 36)
+                        .clipShape(TrunkHandleShape(thickness: part.thickness))
+                } else {
+                    TrunkHandleShape()
+                        .fill(Color(trunk: look.handle))
+                        .frame(width: 100, height: 36)
+                }
+            }
+            .shadow(color: Color.black.opacity(0.5), radius: 1.5, x: 0, y: 2)
+            .offset(x: 130, y: 2)
             if model != .aluminum && model != .urushi {
                 // 持ち手の縫い目（破線）
                 Path { p in
@@ -52,7 +77,7 @@ struct TrunkBoxView: View {
                 .stroke(Color(trunk: TrunkRGBA(r: 255, g: 235, b: 200, a: 0.3)), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             }
             ForEach([120.0, 220.0], id: \.self) { x in
-                TrunkFillView(fill: look.lock.fill, stage: stage, w: 20, h: 14)
+                lockFace(look, fittings, w: 20, h: 14)
                     .frame(width: 20, height: 14)
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3))
                     .shadow(color: Color.black.opacity(0.6), radius: 1, x: 0, y: 1)
@@ -63,11 +88,12 @@ struct TrunkBoxView: View {
 
     // MARK: 胴
 
-    private func trunkBody(_ look: TrunkLook) -> some View {
+    private func trunkBody(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         ZStack(alignment: .topLeading) {
             surfaceLayers(look)
-            hardwareLayers(look)
+            hardwareLayers(look, fittings)
             finishLayers(look)
+            onBody(fittings)
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -92,17 +118,55 @@ struct TrunkBoxView: View {
 
     /// 縁・桟・ベルト・帯・鋲・角・留め金・錠前・名札（z 1〜6）
     @ViewBuilder
-    private func hardwareLayers(_ look: TrunkLook) -> some View {
+    private func hardwareLayers(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         binding(look)
         bars(look)
         straps(look)
         rail(look)
-        buckles(look)
+        buckles(look, fittings)
         rivets(look)
-        corners(look)
+        corners(look, fittings)
         latches(look)
-        lock(look)
+        lock(look, fittings)
         plate(look)
+    }
+
+    /// 錠前の面（付けた錠前の金属があればそれ・モックの `P.lock`）
+    @ViewBuilder
+    private func lockFace(_ look: TrunkLook, _ fittings: TrunkFittings, w: Double, h: Double) -> some View {
+        if let metal = fittings.lockMetal {
+            TrunkPartPaintView(paint: .metal(metal))
+        } else {
+            TrunkFillView(fill: look.lock.fill, stage: stage, w: w, h: h)
+        }
+    }
+
+    /// 胴に付けた部品（ピンバッジ・ワッペン）。ラベルと艶の上に（モック Equip の z 10）
+    private func onBody(_ fittings: TrunkFittings) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(fittings.placements.filter(\.onBody).enumerated()), id: \.offset) { _, p in
+                placed(p, dy: -TrunkLooks.bodyTop)
+            }
+        }
+        .frame(width: Self.W, height: Self.H, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    /// 持ち手から吊るす部品（手荷物タグ・チャーム・鍵）。胴の上に（モック Equip の z 11）
+    private func hanging(_ fittings: TrunkFittings) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(fittings.placements.filter { !$0.onBody }.enumerated()), id: \.offset) { _, p in
+                placed(p, dy: 0)
+            }
+        }
+        .frame(width: TrunkLooks.canvasWidth, height: TrunkLooks.canvasHeight, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    private func placed(_ p: TrunkFittings.Placement, dy: Double) -> some View {
+        TrunkPartView(part: p.part, size: TrunkPartDrawing.size * p.scale)
+            .rotationEffect(.degrees(p.rot), anchor: UnitPoint(x: p.anchorX, y: p.anchorY))
+            .offset(x: p.x, y: p.y + dy)
     }
 
     /// 擦り傷・艶・縁の陰（z 7〜8）
@@ -257,14 +321,18 @@ struct TrunkBoxView: View {
         .allowsHitTesting(false)
     }
 
-    /// 貼ったラベル（新しい 11 枚・古いものほど褪せる）
+    /// 貼ったラベル（置き場つきはその場所に・置き場なしは新しい 11 枚をおまかせに・古いものほど褪せる）
     private var labels: some View {
-        let placed = TrunkSlots.place(stuck, stage: stage)
+        let placed = TrunkPlacement.layout(stuck, stage: stage, overrides: overrides)
         return ZStack(alignment: .topLeading) {
             ForEach(Array(placed.indices), id: \.self) { i in
                 let p = placed[i]
-                TrunkLabelView(label: p.label, w: p.w, h: p.h, age: p.age, rot: p.rot)
-                    .position(x: p.x + p.w / 2, y: p.y + p.h / 2)
+                if p.label.id != hidden {
+                    TrunkLabelView(label: p.label, w: p.w, h: p.h, age: p.age, rot: p.rot,
+                                   wrinkle: wrinkles[p.label.id] ?? 0)
+                        .scaleEffect(p.label.id == pop ? popScale : 1)
+                        .position(x: p.x + p.w / 2, y: p.y + p.h / 2)
+                }
             }
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
@@ -388,19 +456,28 @@ struct TrunkBoxView: View {
             .offset(y: TrunkLooks.railY)
     }
 
-    /// 尾錠・組紐の留め・縄の結び（帯より上）
-    private func buckles(_ look: TrunkLook) -> some View {
+    /// 尾錠・組紐の留め・縄の結び（帯より上）。錠前を付けたら尾錠も同じ金属（モックの `P.lock || buckle`）
+    private func buckles(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         ZStack(alignment: .topLeading) {
             if let s = look.straps {
                 ForEach(s.x, id: \.self) { x in
                     ZStack(alignment: .top) {
-                        RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(TrunkPaint.metal(s.buckle, stage: stage, w: s.width + 8, h: 30), lineWidth: 4.5)
-                        // 尾錠の針
-                        TrunkPaint.metal(s.buckle, stage: stage, w: 2.5, h: 22)
-                            .frame(width: 2.5, height: 22)
-                            .clipShape(RoundedRectangle(cornerRadius: 1))
-                            .offset(y: -2)
+                        if let metal = fittings.lockMetal {
+                            TrunkPartPaintView(paint: .metal(metal))
+                                .mask { RoundedRectangle(cornerRadius: 5).strokeBorder(Color.black, lineWidth: 4.5) }
+                            TrunkPartPaintView(paint: .metal(metal))
+                                .frame(width: 2.5, height: 22)
+                                .clipShape(RoundedRectangle(cornerRadius: 1))
+                                .offset(y: -2)
+                        } else {
+                            RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(TrunkPaint.metal(s.buckle, stage: stage, w: s.width + 8, h: 30), lineWidth: 4.5)
+                            // 尾錠の針
+                            TrunkPaint.metal(s.buckle, stage: stage, w: 2.5, h: 22)
+                                .frame(width: 2.5, height: 22)
+                                .clipShape(RoundedRectangle(cornerRadius: 1))
+                                .offset(y: -2)
+                        }
                     }
                     .frame(width: s.width + 8, height: 30)
                     .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 2)
@@ -465,11 +542,11 @@ struct TrunkBoxView: View {
         }
     }
 
-    private func corners(_ look: TrunkLook) -> some View {
+    private func corners(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         let cs = look.corners.size
         return ZStack(alignment: .topLeading) {
             ForEach(TrunkCorner.allCases, id: \.self) { pos in
-                cornerFace(look, pos)
+                cornerFace(look, pos, paint: fittings.cornerPaint)
                     .frame(width: cs, height: cs)
                     .clipShape(pos.shape(round: look.corners.round))
                     .overlay(alignment: .top) {
@@ -483,11 +560,16 @@ struct TrunkBoxView: View {
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
     }
 
-    private func cornerFace(_ look: TrunkLook, _ pos: TrunkCorner) -> some View {
+    private func cornerFace(_ look: TrunkLook, _ pos: TrunkCorner, paint: TrunkPartPaint?) -> some View {
         let cs = look.corners.size
         let rp = pos.rivetPoint
         return ZStack(alignment: .topLeading) {
-            TrunkFillView(fill: look.corners.fill, stage: stage, w: cs, h: cs)
+            if let paint {
+                // 付けた角金具（モックの `P.corner`）
+                TrunkPartPaintView(paint: paint)
+            } else {
+                TrunkFillView(fill: look.corners.fill, stage: stage, w: cs, h: cs)
+            }
             if model == .captain && stage > 0 {
                 // 真鍮の角が青緑にくすむ（船長の箱）
                 TrunkSpot(color: TrunkRGBA(r: 86, g: 150, b: 120, a: 0.55 * stage), x: rp.x * cs, y: rp.y * cs,
@@ -525,10 +607,10 @@ struct TrunkBoxView: View {
         }
     }
 
-    private func lock(_ look: TrunkLook) -> some View {
+    private func lock(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         let lk = look.lock
         return ZStack {
-            TrunkFillView(fill: lk.fill, stage: stage, w: lk.width, h: lk.height)
+            lockFace(look, fittings, w: lk.width, h: lk.height)
             if lk.tab {
                 // 柳行李の革の留め（真鍮の輪）
                 Circle().strokeBorder(Color(trunk: TrunkRGBA(0xC9A66B)), lineWidth: 2.5)
@@ -729,11 +811,13 @@ enum TrunkCorner: CaseIterable {
     }
 }
 
-/// 持ち手（上の角が丸い U の字・太さ 10）
+/// 持ち手（上の角が丸い U の字・太さ 10。付けた持ち手の部品は部品の太さ・`TrunkFittings.handlePaint`）
 struct TrunkHandleShape: Shape {
+    var thickness: Double = 10
+
     func path(in rect: CGRect) -> Path {
-        let w = Double(rect.width), h = Double(rect.height), t = 10.0
-        let outer = 22.0, inner = 12.0, k = 0.5522847498
+        let w = Double(rect.width), h = Double(rect.height), t = thickness
+        let outer = 22.0, inner = max(0, outer - t), k = 0.5522847498
         let segments: [SVGPath.Segment] = [
             .move(SVGPath.Point(x: 0, y: h)),
             .line(SVGPath.Point(x: 0, y: outer)),
@@ -772,17 +856,18 @@ struct TrunkFigure: View {
     let posts: Int
     var stuck: [TrunkLabel] = []
     var ownerName: String?
+    var parts: TrunkEquipped = .none
     let width: Double
 
     var body: some View {
         let k = width / TrunkLooks.canvasWidth
-        TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName)
+        TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts)
             .scaleEffect(k, anchor: .topLeading)
             .frame(width: width, height: TrunkLooks.canvasHeight * k, alignment: .topLeading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
-                                                             labels: min(stuck.count, TrunkSlots.capacity),
-                                                             tags: TrunkAging.tagCount(posts: posts)))
+                                                             labels: TrunkPlacement.layout(stuck, stage: 0).count,
+                                                             tags: TrunkAging.tagCount(posts: posts), equipped: parts))
             .accessibilityAddTraits(.isImage)
     }
 }
@@ -793,11 +878,12 @@ struct TrunkFigureFit: View {
     let posts: Int
     var stuck: [TrunkLabel] = []
     var ownerName: String?
+    var parts: TrunkEquipped = .none
     let maxWidth: Double
 
     var body: some View {
         GeometryReader { geo in
-            TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName,
+            TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                         width: min(maxWidth, Double(geo.size.width)))
                 .frame(width: geo.size.width, height: geo.size.height)
         }
