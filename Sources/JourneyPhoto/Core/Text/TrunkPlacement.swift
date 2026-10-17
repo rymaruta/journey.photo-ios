@@ -68,31 +68,28 @@ enum TrunkPlacement {
     /// 貼ったラベル（**新しい順**）を描く並び（古いものが下）。
     ///
     /// - 置き場つき: その置き場に（新しい `maxPlaced` 枚まで）
-    /// - 置き場なし: おまかせの置き場（新しい 11 枚・`TrunkSlots`）
+    /// - 置き場なし: おまかせの置き場（`TrunkSlots`）。**どの置き場かは、置き場の有無を問わない貼った順で決める**
+    ///   （新しい 11 枚の中の古い方からの番号）。2026-10-17 の見直し: 置き場なしだけで詰めると、1枚に置き場を
+    ///   与えたとたん残りが別の置き場へ跳んだ。置き場つきのラベルは自分の置き場を空けるだけで、ほかは動かない
     /// - `overrides`: 画面の上だけで動かしている置き場（離した直後・回している最中。サーバーの応答を待たずに出す）
     static func layout(_ stuckNewestFirst: [TrunkLabel], stage st: Double,
                        overrides: [String: TrunkPos] = [:]) -> [TrunkSlots.Placed] {
-        var positioned: [(index: Int, label: TrunkLabel, pos: TrunkPos)] = []
-        var loose: [(index: Int, label: TrunkLabel)] = []
-        for (i, label) in stuckNewestFirst.enumerated() {
-            if let pos = overrides[label.id] ?? label.pos {
-                if positioned.count < maxPlaced { positioned.append((i, label, pos)) }
-            } else if loose.count < TrunkSlots.capacity {
-                loose.append((i, label))
-            }
-        }
-        // おまかせの置き場は古いものから順に（`TrunkSlots.place` と同じ並べ方）
-        let slotted = TrunkSlots.place(loose.map(\.label), stage: 0)
         var drawn: [(index: Int, x: Double, y: Double, w: Double, h: Double, rot: Double, label: TrunkLabel)] = []
-        for (k, p) in slotted.enumerated() {
-            // `place` は古い順に返す。loose は新しい順なので逆から対応させる
-            let source = loose[loose.count - 1 - k]
-            drawn.append((source.index, p.x, p.y, p.w, p.h, p.rot, p.label))
+        // おまかせの置き場（前の版と同じ: 新しい 11 枚を古い方から `order` の順に）
+        let window = min(stuckNewestFirst.count, TrunkSlots.capacity)
+        for i in 0..<window {
+            let label = stuckNewestFirst[i]
+            guard overrides[label.id] == nil, label.pos == nil else { continue }
+            let slot = TrunkSlots.slots[TrunkSlots.order[window - 1 - i]]
+            drawn.append((i, slot.x, slot.y, slot.w, slot.h, slot.rot, label))
         }
-        for item in positioned {
-            let s = size(item.label)
-            let c = point(item.pos)
-            drawn.append((item.index, c.x - s.w / 2, c.y - s.h / 2, s.w, s.h, item.pos.rot, item.label))
+        var placedCount = 0
+        for (i, label) in stuckNewestFirst.enumerated() {
+            guard let pos = overrides[label.id] ?? label.pos, placedCount < maxPlaced else { continue }
+            placedCount += 1
+            let s = size(label)
+            let c = point(pos)
+            drawn.append((i, c.x - s.w / 2, c.y - s.h / 2, s.w, s.h, pos.rot, label))
         }
         // 古いもの（番号の大きいもの）が下
         drawn.sort { $0.index > $1.index }

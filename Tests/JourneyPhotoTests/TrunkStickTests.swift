@@ -65,6 +65,28 @@ final class TrunkStickTests: XCTestCase {
         XCTAssertEqual(mine, first, "置き場の無いトランクの見た目が前の版と変わった")
     }
 
+    /// 🔴 1枚に置き場を与えても、置き場を持たない残りのラベルは動かない（前の版の利用者は全員これを踏む）
+    func testGivingOnePositionDoesNotMoveTheOthers() {
+        let c = label("c"), b = label("b"), a = label("a")
+        let before = TrunkPlacement.layout([c, b, a], stage: 0)
+        let placedA = TrunkPlacement.layout([c, b, a.withPos(TrunkPos(x: 0.5, y: 0.5, rot: 0))], stage: 0)
+        for id in ["b", "c"] {
+            let x = before.first { $0.label.id == id }!, y = placedA.first { $0.label.id == id }!
+            XCTAssertEqual(x.x, y.x, "\(id) が跳んだ")
+            XCTAssertEqual(x.y, y.y, "\(id) が跳んだ")
+            XCTAssertEqual(x.rot, y.rot)
+        }
+        // 画面の上だけの置き場（離した直後・回している最中）でも同じ
+        let moving = TrunkPlacement.layout([c, b, a], stage: 0, overrides: ["c": TrunkPos(x: 0.2, y: 0.2, rot: 5)])
+        let bBefore = before.first { $0.label.id == "b" }!, bAfter = moving.first { $0.label.id == "b" }!
+        XCTAssertEqual(bBefore.x, bAfter.x)
+        XCTAssertEqual(bBefore.y, bAfter.y)
+        // 置き場を与えたラベルが空けた所には、おまかせで並べるが貼れる
+        let free = TrunkPlacement.autoArrange(pocket: [label("n")], stuck: [c, b, a.withPos(TrunkPos(x: 0.9, y: 0.9, rot: 0))])
+        let aSlot = before.first { $0.label.id == "a" }!
+        XCTAssertEqual(free.first?.pos, TrunkPlacement.pos(x: aSlot.x + aSlot.w / 2, y: aSlot.y + aSlot.h / 2, rot: aSlot.rot))
+    }
+
     func testOverridesAndCap() {
         let a = label("a", pos: TrunkPos(x: 0.1, y: 0.1, rot: 0))
         let moved = TrunkPlacement.layout([a], stage: 0, overrides: ["a": TrunkPos(x: 0.9, y: 0.9, rot: -20)])
