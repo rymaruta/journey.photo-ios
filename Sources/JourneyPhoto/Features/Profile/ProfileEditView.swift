@@ -504,6 +504,11 @@ struct ProfileEditView: View {
     /// 成功した項目だけを保存済みにする。残りは次の保存で再試行できる。
     private func save() async {
         defer { isSaving = false }
+        // 押した人。🔴 **次の人のプロフィールに書かない**（2026-10-17）。
+        // 名前の保存のあとにアイコンを上げるので、その間にアカウントが替わると、
+        // 前の人が選んだ絵が次の人のアイコンになる（置き場所は今のログインの `profiles/<uid>`）
+        let sender = auth.userId
+        guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
         guard loaded, let original else {
             message = L("いまの内容を読み込めていないので保存できません。開き直してください",
                         "Can't save before your current profile is loaded. Please reopen this screen.")
@@ -521,9 +526,11 @@ struct ProfileEditView: View {
         if let patch {
             do {
                 try await environment.profiles.update(patch)
+                guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
                 self.original = draft
                 auth.noteProfileChanged()
             } catch {
+                guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
                 saveError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください", "Please try again")
                 return
             }
@@ -532,8 +539,10 @@ struct ProfileEditView: View {
         for kind in [ProfileService.ImageKind.avatar, .cover] {
             let data = kind == .avatar ? pendingAvatar : pendingCover
             guard let data else { continue }
+            guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
             do {
                 try await environment.profiles.uploadProfileImage(kind: kind, jpeg: data)
+                guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
                 if kind == .avatar {
                     pendingAvatar = nil
                     avatarPreview = nil
@@ -549,6 +558,7 @@ struct ProfileEditView: View {
                 }
                 auth.noteProfileChanged()
             } catch {
+                guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
                 let name = kind == .avatar ? L("アイコン", "Avatar") : L("カバー", "Cover")
                 let reason = (error as? LocalizedError)?.errorDescription ?? L("通信を確認してください", "Check your connection")
                 saveError = L("\(name)を保存できませんでした。保存済みの項目は反映されています。もう一度「保存」で残りを試せます。\n\(reason)",
@@ -556,7 +566,13 @@ struct ProfileEditView: View {
                 return
             }
         }
+        guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
         dismiss()
+    }
+
+    /// 保存の答えを書くか。**押した人が、まだその人のときだけ**
+    nonisolated static func keepsSave(sender: String?, viewer: String?) -> Bool {
+        sender != nil && sender == viewer
     }
 
     private func stage(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
