@@ -431,7 +431,8 @@ struct EditPhotoView: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
+            // 縁は題・説明の欄（`JPField`）と同じ `outline`（部品の縁の 3:1・2026-10-17）
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
             Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)

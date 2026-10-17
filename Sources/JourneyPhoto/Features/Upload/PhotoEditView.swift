@@ -58,6 +58,12 @@ struct PhotoEditView: View {
     private static let track = WebTheme.outline
     /// プリセットの見本の大きさ（pt）
     private static let thumbSize: CGFloat = 64
+    /// 道具の段（フィルム・調整）の高さ。字が大きいときは伸びて、写真の欄が縮む
+    static let panelHeight: CGFloat = 150
+    /// **文字の大きさの上限（2026-10-17 判断）。** 字は文字サイズの設定に付いてくる
+    /// （それまで `.system(size:)` の固定だった）が、写真を主役に残すため、
+    /// 写真の欄を押しつぶす「さらに大きな文字」の段では止める
+    static let typeLimit = DynamicTypeSize.xxxLarge
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,7 +71,7 @@ struct PhotoEditView: View {
             if let note {
                 // 黒地の上の薄い灰（板の text-3 #999999・黒に 7.37）。本文系の最小 12pt
                 Text(note)
-                    .font(.system(size: 12))
+                    .jpSystemFont(12, relativeTo: .caption)
                     .foregroundStyle(Self.hint)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -75,7 +81,7 @@ struct PhotoEditView: View {
             }
             photo
             Text(L("写真を長押しすると、編集前と比べられます", "Touch and hold the photo to compare with the original"))
-                .font(.system(size: 12))
+                .jpSystemFont(12, relativeTo: .caption)
                 .foregroundStyle(Self.hint)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 4)
@@ -87,9 +93,10 @@ struct PhotoEditView: View {
                 case .adjust: adjustPanel
                 }
             }
-            .frame(height: 150, alignment: .top)
+            .frame(minHeight: Self.panelHeight, alignment: .top)
             .padding(.top, 10)
         }
+        .dynamicTypeSize(...Self.typeLimit)
         // 色の背景は安全域の外まで塗る（`background(_:ignoresSafeAreaEdges:)` の既定）
         .background(Color.black)
         .preferredColorScheme(.dark)
@@ -111,7 +118,7 @@ struct PhotoEditView: View {
                 if screen.asksBeforeDiscard { confirmDiscard = true } else { onCancel() }
             } label: {
                 Text(L("キャンセル", "Cancel"))
-                    .font(.system(size: 17))
+                    .jpSystemFont(17, relativeTo: .body)
                     .foregroundStyle(WebTheme.foreground)
                     .padding(.horizontal, 10)
                     .frame(minWidth: 44, minHeight: 44)
@@ -130,7 +137,7 @@ struct PhotoEditView: View {
                 onDone(screen.finished)
             } label: {
                 Text(L("完了", "Done"))
-                    .font(.system(size: 17, weight: .semibold))
+                    .jpSystemFont(17, weight: .semibold, relativeTo: .body)
                     // 黒地のヘッダーの文字ボタンなので真鍮（owner の好み: デザインの箇所は白より真鍮）
                     .foregroundStyle(WebTheme.accent)
                     .padding(.horizontal, 10)
@@ -148,7 +155,7 @@ struct PhotoEditView: View {
                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 19, weight: .medium))
+                .jpSystemFont(19, weight: .medium, relativeTo: .body)
                 .foregroundStyle(WebTheme.foreground)
                 .opacity(enabled ? 1 : 0.35)
                 .frame(width: 44, height: 44)
@@ -170,7 +177,7 @@ struct PhotoEditView: View {
                 if screen.showsBeforeLabel {
                     // 写真の上なので白（真鍮は写真の上では読めない）
                     Text(L("編集前", "Original"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -208,6 +215,11 @@ struct PhotoEditView: View {
             .accessibilityLabel(screen.showsBeforeLabel ? L("元の写真", "Original photo")
                                                         : L("編集中の写真", "Photo being edited"))
             .accessibilityAddTraits(.isImage)
+            // 読み上げでは長押しが届かない。操作で切り替える（`PhotoEditScreen.toggleCompare`・2026-10-17）
+            .accessibilityAction(named: screen.compareActionName) {
+                screen.toggleCompare()
+                UIAccessibility.post(notification: .announcement, argument: screen.compareAnnouncement)
+            }
             // 枠の大きさが 0 の回は待ち、次に大きさが取れたときに始める（`PhotoEditLoadSteps`）
             .onAppear { startPreview(box: proxy.size) }
             .onChange(of: proxy.size) { _, size in startPreview(box: size) }
@@ -240,7 +252,7 @@ struct PhotoEditView: View {
                     .overlay(alignment: .bottom) {
                         // 写真の上なので白（「編集前」の札と同じ形）
                         Text(L("編集後の写真を表示できませんでした", "Couldn't show the edited photo"))
-                            .font(.system(size: 13, weight: .semibold))
+                            .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                             .foregroundStyle(Color.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -281,7 +293,7 @@ struct PhotoEditView: View {
     private func tabButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .jpSystemFont(15, weight: .semibold, relativeTo: .subheadline)
                 // 選んでいるタブは真鍮の字と下線（黒地の上）
                 .foregroundStyle(selected ? WebTheme.accent : Self.hint)
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -312,7 +324,7 @@ struct PhotoEditView: View {
             if let strength = screen.strengthSlider {
                 HStack(spacing: 14) {
                     Text(L("強さ", "Strength"))
-                        .font(.system(size: 13))
+                        .jpSystemFont(13, relativeTo: .footnote)
                         .foregroundStyle(Self.idle)
                     Slider(value: Binding(get: { strength }, set: { screen.dragStrength($0) }),
                            in: PhotoEditScreen.strengthSliderRange,
@@ -354,7 +366,7 @@ struct PhotoEditView: View {
                         .padding(-4)
                 )
                 Text(name)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .jpSystemFont(12, weight: selected ? .semibold : .regular, relativeTo: .caption)
                     .foregroundStyle(selected ? WebTheme.accent : Self.idle)
                     .lineLimit(1)
                     .fixedSize()
@@ -396,7 +408,7 @@ struct PhotoEditView: View {
                     screen.resetAdjustment()
                 } label: {
                     Text(L("0に戻す", "Reset"))
-                        .font(.system(size: 13))
+                        .jpSystemFont(13, relativeTo: .footnote)
                         .foregroundStyle(value == 0 ? WebTheme.faint : WebTheme.foreground)
                         .padding(.horizontal, 4)
                         .frame(minHeight: 44)
@@ -418,13 +430,13 @@ struct PhotoEditView: View {
         } label: {
             VStack(spacing: 5) {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 19, weight: .semibold))
+                    .jpSystemFont(19, weight: .semibold, relativeTo: .body)
                     // 変えた項目は真鍮（黒地の上）。選んでいるだけなら白、ふだんは灰
                     .foregroundStyle(changed ? WebTheme.accent : (selected ? WebTheme.foreground : Self.idle))
                     .frame(width: 40, height: 40)
                     .background(selected ? Self.selectedFill : Color.clear, in: Circle())
                 Text(item.label)
-                    .font(.system(size: 12))
+                    .jpSystemFont(12, relativeTo: .caption)
                     .foregroundStyle(selected ? WebTheme.foreground : Self.idle)
                     .lineLimit(1)
                     .fixedSize()
