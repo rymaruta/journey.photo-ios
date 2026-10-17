@@ -32,8 +32,8 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 >   2台で動いている様子の動画: 【owner が用意する: 動画の URL】
 > ・**Pro（自動更新の定期購入）**: 「Journey Photo Pro」月額（`<束の名前>.pro.monthly`・¥500/月）と
 >   年額（`<束の名前>.pro.yearly`・¥5,000/年）。同じサブスクリプショングループ「Journey Photo Pro」。
->   無料の試用はありません。中身は「作例を重ねて撮る」「光と天気の知らせ」「電波なしで使える旅」
->   「名前の横の Pro マーク」。試し方: 「マイページ → 設定 → Pro → Journey Photo Pro」で案内を開き、
+>   無料の試用はありません。中身は「光と天気の知らせ」「電波なしで使える旅」「名前の横の Pro マーク」。
+>   （「作例・構図を重ねて撮る」は 2026-10-17 から全員無料。ログインしていなくても撮れます）試し方: 「マイページ → 設定 → Pro → Journey Photo Pro」で案内を開き、
 >   プランを選んで「Pro をはじめる」（Sandbox のアカウントで購入できます）。案内の下の
 >   「購入を復元」で復元、解約は App Store の定期購入の管理から。
 
@@ -65,7 +65,8 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > - **Pro (auto-renewable subscription)**: "Journey Photo Pro" monthly
 >   (`<bundle id>.pro.monthly`, ¥500/month) and yearly (`<bundle id>.pro.yearly`,
 >   ¥5,000/year) in the subscription group "Journey Photo Pro". No free trial.
->   Pro adds composition overlays, light & weather alerts, offline trips and a Pro mark.
+>   Pro adds light & weather alerts, offline trips and a Pro mark. (Shooting with a
+>   composition / example overlay is free for everyone and works without signing in.)
 >   To test: My Page → Settings → Pro → Journey Photo Pro, pick a plan and tap
 >   "Start Pro" (Sandbox account). "Restore" is under the plans; cancel from
 >   the App Store subscription settings.

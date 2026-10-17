@@ -364,7 +364,7 @@ enum ProStatusText {
 
     /// **Pro でないと読めたときだけ案内を開く**（2026-10-09 判断）。プロフィールが読めていない
     /// （圏外・読み込みの失敗で nil）ときは管理を開く——払っている人に案内を出さない
-    /// （`ComposeGuideText.destination` の `.unreachable` と同じ考え。権利を決めるのはサーバー）
+    /// （権利を決めるのはサーバー。2026-10-17 までの「作例を重ねて撮る」の入口も同じ考えだった）
     static func settingsAction(isPro: Bool?) -> SettingsAction {
         isPro == false ? .paywall : .manage
     }
