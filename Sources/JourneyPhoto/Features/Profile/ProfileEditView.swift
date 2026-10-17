@@ -84,12 +84,9 @@ struct ProfileEditView: View {
                         multiline: true) {
                     // 板の下書き「ひとこと」は付けない——下の演出欄に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
-                    // 板の自己紹介は高さ 88（1行の欄は 48）。owner（2026-10-12）が
-                    // その枠は小さいと言ったので、空でも5行分を開け、300字までは伸びる
+                    // 行数は `bioLines` の注記（owner 2026-10-12: 枠が小さい）
                     TextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
-                        .lineLimit(5...12)
-                        .padding(.vertical, 12)
-                        .frame(minHeight: 120, alignment: .topLeading)
+                        .lineLimit(Self.bioLines)
                         .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio, loaded: \.bio))
                 }
             } header: {
@@ -296,6 +293,11 @@ struct ProfileEditView: View {
     nonisolated static let avatarSide: CGFloat = 84
     /// 名前の列の幅（板 v2 の `.fr`: 104）。値がどの行でも同じ所から始まる
     nonisolated static let labelColumn: CGFloat = 104
+    /// 自己紹介の欄の行数。板は高さ 88（2〜3行）だが、owner（2026-10-12）が「枠が小さい」と言ったので、
+    /// 空でも5行分を開け、300字（`PostLimits.Profile.bio`）までは12行まで伸ばす。
+    /// 2026-10-17 判断: v2 の行は `labeled` が上下 14 を取るので、欄に余白や最小の高さは足さない
+    /// （行数の下限だけで5行分が開く）
+    nonisolated static let bioLines: ClosedRange<Int> = 5...12
 
     /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
     /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
