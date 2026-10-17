@@ -282,6 +282,29 @@ final class ReviewPrivacyTests: XCTestCase {
         XCTAssertEqual(StoryReplyActions.visible(items, blockedHere: []).count, 3)
     }
 
+    /// 🔴 **ブロックの答えは、押した人がまだその人のときだけ書く**（2026-10-17）。
+    /// 返信のシート・すれちがいの束・ストーリーの閲覧・ホームのカード
+    func testBlockAnswerStaysWithThePersonWhoPressed() throws {
+        XCTAssertTrue(StoryReplyActions.keepsBlock(sender: "a", viewer: "a"))
+        XCTAssertFalse(StoryReplyActions.keepsBlock(sender: "a", viewer: "b"))
+        XCTAssertFalse(StoryReplyActions.keepsBlock(sender: nil, viewer: nil))
+        XCTAssertTrue(PassCardModeration.keepsResult(sender: "a", viewer: "a"))
+        XCTAssertFalse(PassCardModeration.keepsResult(sender: "a", viewer: "b"),
+                       "次の人の帳から、前の人のブロックでカードを外した")
+        let sheet = try code("Sources/JourneyPhoto/Features/Stories/StoryRepliesSheet.swift")
+        XCTAssertEqual(sheet.components(separatedBy: "StoryReplyActions.keepsBlock(sender: sender, viewer: hidden.owner)").count - 1, 2)
+        let pass = try code("Sources/JourneyPhoto/Features/Pass/PassCardMenu.swift")
+        XCTAssertEqual(pass.components(separatedBy: "keepsResult(sender: sender, viewer: hidden.owner)").count - 1, 2)
+        let story = try code("Sources/JourneyPhoto/Features/Stories/StoryViewerView.swift")
+        XCTAssertEqual(story.components(separatedBy: "guard hidden.owner == owner, owner != nil, current?.id == storyId else { return }").count - 1, 2,
+                       "人が替わったあとも、見ている人の束を飛ばす")
+        let home = try code("Sources/JourneyPhoto/Features/Gallery/HomeMosaic.swift")
+        XCTAssertEqual(home.components(separatedBy: "guard sender != nil, hidden.owner == sender else { return }").count - 1, 2)
+        let edit = try code("Sources/JourneyPhoto/Features/Profile/ProfileEditView.swift")
+        XCTAssertGreaterThanOrEqual(edit.components(separatedBy: "Self.keepsSave(sender: sender, viewer: auth.userId)").count - 1, 6,
+                                    "アイコンのアップロードの前に、押した人かを見ていない")
+    }
+
     /// 通報はメールで運営の宛先へ（サーバーに返信の通報の口が無く、写真の通報の口は自分のストーリーを 400 で断る）
     func testReplyReportMailCarriesWhoWhatAndWhere() throws {
         let target = ModerationService.ReportedComment(id: "r1", authorId: "u2", authorName: "A&B+C", text: "1 + 1 = 2 & more")

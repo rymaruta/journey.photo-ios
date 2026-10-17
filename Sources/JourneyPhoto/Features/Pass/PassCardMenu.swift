@@ -83,14 +83,25 @@ enum PassCardModeration {
     static func block(_ content: PassCardContent, hidden: ModerationStore, environment: AppEnvironment,
                       toasts: ToastCenter) async -> Bool {
         guard let owner = content.card.ownerId else { return false }
+        // 押した人。🔴 **次の人の帳からカードを外さない**（2026-10-17）。
+        // 成功で true を返すと、束の画面が `removed` に入れてそのカードを消す。
+        // 人が替わったあとも true だと、次の人のカードが消える
+        let sender = hidden.owner
         do {
             try await hidden.blockAndHide(owner, environment: environment)
+            guard keepsResult(sender: sender, viewer: hidden.owner) else { return false }
             toasts.show(L("ブロックしました", "Blocked"))
             return true
         } catch {
+            guard keepsResult(sender: sender, viewer: hidden.owner) else { return false }
             toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
                         kind: .failure)
             return false
         }
+    }
+
+    /// ブロックの結果を、押した人の画面に書くか
+    nonisolated static func keepsResult(sender: String?, viewer: String?) -> Bool {
+        sender != nil && sender == viewer
     }
 }
