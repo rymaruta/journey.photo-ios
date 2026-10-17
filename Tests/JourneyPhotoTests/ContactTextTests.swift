@@ -65,6 +65,20 @@ final class ContactTextTests: XCTestCase {
         XCTAssertTrue(card.writtenText.contains("abc.com"))
     }
 
+    /// 🔴 保存すると消える字（ゼロ幅・改行）で桁を切っても、保存後の形で連絡先と分かる。
+    /// 判定が保存前の字だけを見ると、保存したあとに電話番号へ戻る
+    func testInvisibleBreaksDoNotHideAPhone() {
+        let broken = ["090\u{200B}1234\u{200B}5678", "090\n12345", "090\u{202E}12345", "a\u{200B}.jp"]
+        for text in broken {
+            XCTAssertTrue(PassExchange.containsContact(text), "保存前の字で拾えない: \(text)")
+            XCTAssertEqual(PassExchange.noteProblem(text), PassExchange.contactProblem, text)
+        }
+        XCTAssertEqual(PassExchange.cleanNote("090\n12345"), "090 12345")
+        XCTAssertTrue(PassExchange.containsContact(PassExchange.cleanNote("090\u{200B}1234\u{200B}5678")))
+        // ふつうの文にゼロ幅が入っていても、連絡先に化けなければ通す
+        XCTAssertFalse(PassExchange.containsContact("霧の\u{200B}朝が好きです"))
+    }
+
     /// 長く貼り付けても頭の 200 字ほどだけを見る（重くしない）
     func testScanIsBounded() {
         let long = String(repeating: "霧", count: 5000) + " kiri@example"

@@ -67,6 +67,9 @@ final class PassWiringTests: XCTestCase {
         }
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertTrue(pick.contains("PassExchange.noteProblem(note)"), "超えた訳を出さない")
+        XCTAssertTrue(pick.contains("foregroundStyle(PassExchange.noteProblem(note) == nil ? WebTheme.text3 : WebTheme.danger)"),
+                      "ひとことの字数が、発・着のエラーで赤くなる")
+        XCTAssertFalse(pick.contains("foregroundStyle(noteTooLong"), "ひとことの字数が別の欄のエラーを見ている")
     }
 
     /// きっぷ（案C）: 表は写真・眉・区間・破線・改札の穴、裏は帯・ご案内・4つの欄
