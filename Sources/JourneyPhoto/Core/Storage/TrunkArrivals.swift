@@ -28,18 +28,38 @@ final class TrunkArrivals: ObservableObject {
     /// 増えるたびに `RootView` が出す頃合いを見る
     @Published private(set) var requests = 0
     private(set) var pending: Batch?
-    /// 手持ちがいっぱいで届かなかった（一言を出す）
-    private(set) var pendingFullNotice = false
+    /// ラベルが届かなかった理由のうち、一言で知らせるもの（手持ちがいっぱい・トランクの容量）。
+    /// ほかの理由（同じ写真・1日の上限・受け取らない設定・時間切れ・知らない値）は黙って何も出さない
+    enum Notice: Equatable {
+        case full, storage
+
+        init?(_ skip: TrunkLabelSkip?) {
+            switch skip {
+            case .full: self = .full
+            case .storage: self = .storage
+            default: return nil
+            }
+        }
+
+        var text: String {
+            switch self {
+            case .full: return TrunkText.fullNotice
+            case .storage: return TrunkText.storageNotice
+            }
+        }
+    }
+
+    private(set) var pendingNotice: Notice?
 
     init() {}
 
-    /// 投稿が全部上がった。届いたラベル（無ければ空）と、いっぱいで届かなかったか
-    func deliver(_ arrivals: [Arrival], pocketWasFull: Bool) {
-        guard !arrivals.isEmpty || pocketWasFull else { return }
+    /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）
+    func deliver(_ arrivals: [Arrival], notice: Notice?) {
+        guard !arrivals.isEmpty || notice != nil else { return }
         if !arrivals.isEmpty {
             pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals)
         } else {
-            pendingFullNotice = true
+            pendingNotice = notice
         }
         requests += 1
     }
@@ -50,9 +70,9 @@ final class TrunkArrivals: ObservableObject {
         return pending
     }
 
-    /// いっぱいの一言を出すか（受け取ったら下ろす）。ラベルが届いた回は出さない
-    func consumeFullNotice() -> Bool {
-        defer { pendingFullNotice = false }
-        return pendingFullNotice && pending == nil
+    /// 出す一言（受け取ったら下ろす）。ラベルが届いた回は出さない
+    func consumeNotice() -> Notice? {
+        defer { pendingNotice = nil }
+        return pending == nil ? pendingNotice : nil
     }
 }

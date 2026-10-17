@@ -39,6 +39,12 @@ enum TrunkText {
           "Your label pocket is full, so no label this time. Stick or delete one in Travel trunk on My Page to receive again.")
     }
 
+    /// トランクの行の大きさが上限に近く、ラベルを受け取れなかった（`labelSkipped: "storage"`）ときの一言
+    static var storageNotice: String {
+        L("トランクの容量が上限に近いため、今回のラベルは受け取れませんでした。手持ちのラベルを削除すると、また受け取れます。",
+          "Your trunk is nearly at its storage limit, so this label couldn\u{2019}t be received. Delete some labels in your pocket to receive again.")
+    }
+
     // MARK: 作り直し
 
     /// 「あと 2 回」

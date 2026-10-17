@@ -149,13 +149,13 @@ final class UploadServiceTests: XCTestCase {
     /// 手持ちがいっぱいで届かなかった回は「手持ちへ案内する一言」の合図だけ
     @MainActor
     func testDealtLabelIsHandedToTheArrivalScreen() async {
-        for full in [false, true] {
+        // nil は届いた回、それ以外は届かなかった理由（"mystery" は知らない値＝黙る）
+        for skipped in [nil, "full", "storage", "mystery"] as [String?] {
             ScriptedProtocol.reset()
             _ = TrunkArrivals.shared.consume()
-            _ = TrunkArrivals.shared.consumeFullNotice()
-            let save = full
-                ? #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":null,"labelSkipped":"full"}"#
-                : #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","photoId":"p1","kind":"season","place":{"name":"京都"},"season":"spring","seed":5,"at":"2026-10-17T00:00:00Z"}}"#
+            _ = TrunkArrivals.shared.consumeNotice()
+            let save = skipped.map { #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":null,"labelSkipped":"\#($0)"}"# }
+                ?? #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","kind":"season","place":{"name":"京都"},"season":"spring","seed":5,"at":"2026-10-17T00:00:00Z"}}"#
             ScriptedProtocol.script = [
                 .init(match: "/upload/presigned-url", status: 200, body: presignBody),
                 .init(match: "/put", status: 200, body: ""),
@@ -174,14 +174,22 @@ final class UploadServiceTests: XCTestCase {
             await model.submit()
 
             XCTAssertTrue(model.didPostAll)
-            if full {
-                XCTAssertNil(TrunkArrivals.shared.consume(), "届いていないのに届いた画面を出す")
-                XCTAssertTrue(TrunkArrivals.shared.consumeFullNotice(), "いっぱいの一言の合図が無い")
-            } else {
+            switch skipped {
+            case nil:
                 let batch = TrunkArrivals.shared.consume()
                 XCTAssertEqual(batch?.first.label.place.name, "京都")
+                XCTAssertEqual(batch?.first.label.photoId, "p1", "photoId が無いラベルは id を使う")
                 XCTAssertEqual(batch?.first.photoTitle, "哲学の道の朝")
-                XCTAssertFalse(TrunkArrivals.shared.consumeFullNotice())
+                XCTAssertNil(TrunkArrivals.shared.consumeNotice())
+            case "full":
+                XCTAssertNil(TrunkArrivals.shared.consume(), "届いていないのに届いた画面を出す")
+                XCTAssertEqual(TrunkArrivals.shared.consumeNotice(), .full, "いっぱいの一言の合図が無い")
+            case "storage":
+                XCTAssertNil(TrunkArrivals.shared.consume())
+                XCTAssertEqual(TrunkArrivals.shared.consumeNotice(), .storage, "容量の一言の合図が無い")
+            default:
+                XCTAssertNil(TrunkArrivals.shared.consume())
+                XCTAssertNil(TrunkArrivals.shared.consumeNotice(), "知らない理由で一言を出した")
             }
         }
     }

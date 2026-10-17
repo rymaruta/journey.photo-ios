@@ -39,7 +39,7 @@ final class TrunkWiringTests: XCTestCase {
         let rootView = try source("App/RootView.swift")
         XCTAssertTrue(rootView.contains(".fullScreenCover(item: $trunkBatch) { batch in LabelArrivedView(batch: batch) }"))
         XCTAssertTrue(rootView.contains("tabsWithTrunkArrival"), "届いた画面の修飾子が繋がっていない")
-        XCTAssertTrue(rootView.contains("toasts.show(TrunkText.fullNotice, kind: .info)"), "いっぱいのときの一言が無い")
+        XCTAssertTrue(rootView.contains("toasts.show(notice.text, kind: .info)"), "いっぱいのときの一言が無い")
         XCTAssertTrue(rootView.contains("!Modal" + "Probe.isPresenting(), !showPushPrimer, trunkBatch == nil"), "投稿の画面が出ている間に重ねている")
     }
 

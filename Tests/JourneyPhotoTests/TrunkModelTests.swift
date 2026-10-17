@@ -97,6 +97,19 @@ final class TrunkModelTests: XCTestCase {
         XCTAssertEqual(s.posts, 12)
     }
 
+    /// サーバーは photoId を保存しなくなった（2026-10-17）。無い・空・型違いなら id を使う
+    func testPhotoIdFallsBackToId() throws {
+        let s = try decode(TrunkState.self, """
+        {"pocket": [
+          {"id": "a-1", "kind": "place", "place": {"name": "x"}, "seed": 1, "at": ""},
+          {"id": "a-2", "photoId": "", "kind": "place", "place": {"name": "x"}, "seed": 1, "at": ""},
+          {"id": "a-3", "photoId": 9, "kind": "place", "place": {"name": "x"}, "seed": 1, "at": ""},
+          {"id": "a-4", "photoId": "ph-4", "kind": "place", "place": {"name": "x"}, "seed": 1, "at": ""}
+        ]}
+        """)
+        XCTAssertEqual(s.pocket.map(\.photoId), ["a-1", "a-2", "a-3", "ph-4"])
+    }
+
     /// 書き込みの応答には `posts` が無いので、前に読んだ数を引き継ぐ（古び方が新品に戻らない）
     func testKeepingPosts() throws {
         let before = try decode(TrunkState.self, fullJSON)
@@ -126,6 +139,7 @@ final class TrunkModelTests: XCTestCase {
         XCTAssertNil(broken.labelSkipped)
         XCTAssertEqual(TrunkLabelSkip("timeout"), .other("timeout"))
         XCTAssertEqual(TrunkLabelSkip("daily"), .daily)
+        XCTAssertEqual(TrunkLabelSkip("storage"), .storage)
     }
 
     // MARK: 手持ちの上限の表示（モック Pocket・LabelArrived）
@@ -201,20 +215,34 @@ final class TrunkModelTests: XCTestCase {
     func testArrivalsQueue() async {
         let arrivals = TrunkArrivals()
         XCTAssertNil(arrivals.consume())
-        arrivals.deliver([], pocketWasFull: false)
+        arrivals.deliver([], notice: nil)
         XCTAssertEqual(arrivals.requests, 0, "何も無い投稿では合図しない")
-        arrivals.deliver([.init(label: TrunkSample.arrived, photoTitle: "朝")], pocketWasFull: false)
+        arrivals.deliver([.init(label: TrunkSample.arrived, photoTitle: "朝")], notice: nil)
         XCTAssertEqual(arrivals.requests, 1)
-        arrivals.deliver([.init(label: TrunkSample.pocket[0], photoTitle: "")], pocketWasFull: true)
+        arrivals.deliver([.init(label: TrunkSample.pocket[0], photoTitle: "")], notice: .full)
         let batch = arrivals.consume()
         XCTAssertEqual(batch?.arrivals.count, 2, "続けて届いた分は1つの束で出す")
         XCTAssertEqual(batch?.first.label.id, TrunkSample.arrived.id)
         XCTAssertEqual(batch?.othersCount, 1)
         XCTAssertNil(arrivals.consume())
-        XCTAssertFalse(arrivals.consumeFullNotice(), "ラベルが届いた回は「いっぱい」を言わない")
-        arrivals.deliver([], pocketWasFull: true)
-        XCTAssertTrue(arrivals.consumeFullNotice())
-        XCTAssertFalse(arrivals.consumeFullNotice(), "一言は1回だけ")
+        XCTAssertNil(arrivals.consumeNotice(), "ラベルが届いた回は「いっぱい」を言わない")
+        arrivals.deliver([], notice: .full)
+        XCTAssertEqual(arrivals.consumeNotice(), .full)
+        XCTAssertNil(arrivals.consumeNotice(), "一言は1回だけ")
+        arrivals.deliver([], notice: .storage)
+        XCTAssertEqual(arrivals.consumeNotice(), .storage)
+    }
+
+    /// 届かなかった理由のうち、一言を出すのは「手持ちがいっぱい」と「容量」だけ。文言は分ける。ほかは黙る
+    func testSkipNotices() {
+        XCTAssertEqual(TrunkArrivals.Notice(.full), .full)
+        XCTAssertEqual(TrunkArrivals.Notice(TrunkLabelSkip("storage")), .storage)
+        for raw in ["off", "duplicate", "daily", "samePost", "draft", "timeout", "error", "somethingNew"] {
+            XCTAssertNil(TrunkArrivals.Notice(TrunkLabelSkip(raw)), raw)
+        }
+        XCTAssertNil(TrunkArrivals.Notice(nil))
+        XCTAssertNotEqual(TrunkArrivals.Notice.full.text, TrunkArrivals.Notice.storage.text)
+        XCTAssertTrue(TrunkArrivals.Notice.storage.text.contains(L("容量", "storage")))
     }
 
     /// 見本は Linux でも読める形（id は道に入れられる・種は 0 以上）

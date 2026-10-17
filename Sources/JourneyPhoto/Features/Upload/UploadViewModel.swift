@@ -1397,7 +1397,8 @@ final class UploadViewModel: ObservableObject {
         var inspiredDropped = false
         /// 旅のトランクのラベル（2026-10-17）。届いた順と、手持ちがいっぱいで届かなかったか
         var dealtLabels: [(label: TrunkLabel, title: String)] = []
-        var pocketWasFull = false
+        /// 届かなかった理由の一言（手持ちがいっぱい・トランクの容量）。ほかの理由は黙る
+        var labelNotice: TrunkArrivals.Notice?
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -1428,7 +1429,7 @@ final class UploadViewModel: ObservableObject {
                 if outcome.shareSkipped { shareSkipped += 1 }
                 if outcome.inspiredDropped { inspiredDropped = true }
                 if let label = outcome.label { dealtLabels.append((label, outcome.title)) }
-                if outcome.labelSkipped == .full { pocketWasFull = true }
+                if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -1505,9 +1506,9 @@ final class UploadViewModel: ObservableObject {
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
                     // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す
-                    // （`RootView` が待つ）。届かなかった理由が「手持ちがいっぱい」なら、手持ちへ案内する一言
+                    // （`RootView` が待つ）。届かなかった理由が「手持ちがいっぱい」「容量」なら、手持ちへ案内する一言
                     TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
-                                                 pocketWasFull: pocketWasFull)
+                                                 notice: labelNotice)
                 }
             } else {
                 errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(

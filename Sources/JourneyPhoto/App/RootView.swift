@@ -367,8 +367,8 @@ struct RootView: View {
             guard !ModalProbe.isPresenting(), !showPushPrimer, trunkBatch == nil else { return }
             if let batch = trunkArrivals.consume() {
                 trunkBatch = batch
-            } else if trunkArrivals.consumeFullNotice() {
-                toasts.show(TrunkText.fullNotice, kind: .info)
+            } else if let notice = trunkArrivals.consumeNotice() {
+                toasts.show(notice.text, kind: .info)
             }
         }
     }

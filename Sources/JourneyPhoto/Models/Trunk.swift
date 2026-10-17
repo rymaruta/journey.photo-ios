@@ -83,7 +83,10 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         }
         self.id = id
         self.seed = seed
-        photoId = ((try? c.decodeIfPresent(String.self, forKey: .photoId)) ?? nil) ?? id
+        // 2026-10-17: サーバーは photoId を保存しなくなった（id が写真の id）。無い・空なら id を使う
+        let storedPhotoId = ((try? c.decodeIfPresent(String.self, forKey: .photoId)) ?? nil)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        photoId = (storedPhotoId?.isEmpty == false ? storedPhotoId : nil) ?? id
         let kindText = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? nil
         kind = kindText.flatMap(Kind.init(rawValue:)) ?? .place
         let p = try? c.nestedContainer(keyedBy: PlaceKeys.self, forKey: .place)
@@ -225,6 +228,8 @@ struct TrunkState: Decodable, Equatable {
 enum TrunkLabelSkip: Equatable {
     /// 手持ちがいっぱい（貼るか削除すると、また届く）
     case full
+    /// トランクの行の大きさが上限に近く、受け取れなかった（サーバーの `storage`・2026-10-17）
+    case storage
     /// 受け取らない設定
     case off
     /// 同じ写真（指紋）に配り済み
@@ -241,6 +246,7 @@ enum TrunkLabelSkip: Equatable {
     init(_ raw: String) {
         switch raw {
         case "full": self = .full
+        case "storage": self = .storage
         case "off": self = .off
         case "duplicate": self = .duplicate
         case "daily": self = .daily

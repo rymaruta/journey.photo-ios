@@ -56,6 +56,8 @@ final class TrunkViewModel: ObservableObject {
         if state == nil { phase = .loading }
         do {
             let fresh = try await service.state()
+            // **読むたびにサーバーの中身で丸ごと置き換える**（2026-10-17: 投稿から24時間以内に削除・非公開にした
+            // 写真のラベルは、手持ちからも貼ったラベルからも消える）。端末には控えを持たず、引き継ぐのは投稿の数だけ
             state = fresh.keepingPosts(from: state)
             phase = .loaded
         } catch is CancellationError {
