@@ -1454,6 +1454,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(card.label.contains("発、") && card.label.contains("着"),
                       "見本の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
         XCTAssertTrue(card.label.contains("乗車券"), "見本の表に「乗車券」が無い（\(card.label)）")
+        // 見本の日付・区間・回数は空（「—」）。読み上げは「ダッシュ」でなく「なし」（2026-10-17）
+        XCTAssertTrue(card.label.contains("日付 なし"), "空の欄が「なし」と読めない（\(card.label)）")
+        XCTAssertFalse(card.label.contains("—"), "空の欄の「—」をそのまま読ませている（\(card.label)）")
         shoot(app, "85-自分のカード（表・東京→フランス）")
         let flip = app.buttons["pass.pick.flip"].firstMatch
         XCTAssertTrue(flip.exists, "回さずに裏を見る口（「裏を見る」）が無い")

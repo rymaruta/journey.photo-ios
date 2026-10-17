@@ -168,14 +168,18 @@ final class PassMarsTicketTests: XCTestCase {
         XCTAssertEqual(PassCardStyle.deckCorner, 14)
         XCTAssertEqual(PassCardStyle.photoHeight, 214)
         XCTAssertEqual(PassCardStyle.photoRuleOpacity, 0.55, accuracy: 1e-9)
+        // 文（「すれちがいの日から ずっと有効」・裏の裾）は本文系なので 12 以上（2026-10-17: 11 だったのを直した）
         for size in [PassCardStyle.metaSize, PassCardStyle.fieldValueSize, PassCardStyle.backLabelSize,
-                     PassCardStyle.backValueSize, PassCardStyle.headSize] {
-            XCTAssertGreaterThanOrEqual(size, 12)
-        }
-        for size in [PassCardStyle.numberSize, PassCardStyle.fieldLabelSize, PassCardStyle.validitySize,
+                     PassCardStyle.backValueSize, PassCardStyle.headSize, PassCardStyle.validitySize,
                      PassCardStyle.footnoteSize] {
+            XCTAssertGreaterThanOrEqual(size, 12, "本文系が 12 を割る")
+        }
+        // 11 でよいのは眉ラベルの類（番号・欄の小さな見出し）だけ
+        for size in [PassCardStyle.numberSize, PassCardStyle.fieldLabelSize] {
             XCTAssertGreaterThanOrEqual(size, 11, "眉ラベルの類でも 11 を割る")
         }
+        // 裾を 12 にした分の縦は上の余白から取る（下と左右は板の 18 のまま）
+        XCTAssertLessThan(PassCardStyle.backTop, PassCardStyle.backPadding)
     }
 
     /// 表は写真の下端に真鍮の線・欄の格子・名前と「ずっと有効」。前の改札の穴は無い
@@ -200,5 +204,38 @@ final class PassMarsTicketTests: XCTestCase {
         XCTAssertTrue(pick.contains("via: PassTicket.via(L(\"旅先\", \"your trip\"))"))
         XCTAssertTrue(pick.contains("count: PassTicket.countLabel(.plain, meetingCount: nil)"))
         XCTAssertEqual(PassTicket.via("旅先"), "経由 旅先のあたり")
+    }
+
+    // MARK: - 2026-10-17 の読み直し
+
+    /// 回る札: 裏を見ている間は表を読ませない・表を見ている間は裏を読ませない（どちらかを消すと両面が読まれる）
+    func testSpinHidesOtherSideFromVoiceOver() throws {
+        let spin = try source("Features/Pass/PassSpinCard.swift")
+        let front = try XCTUnwrap(spin.range(of: "PassCardFront(face: front"))
+        let back = try XCTUnwrap(spin.range(of: "PassCardBack(face: self.back"))
+        let end = try XCTUnwrap(spin.range(of: ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)"))
+        let frontPart = spin[front.upperBound..<back.lowerBound]
+        let backPart = spin[back.upperBound..<end.lowerBound]
+        XCTAssertTrue(frontPart.contains(".accessibilityHidden(back)"), "裏を見ている間も表が読まれる")
+        XCTAssertTrue(backPart.contains(".accessibilityHidden(!back)"), "表を見ている間も裏が読まれる")
+    }
+
+    /// 英語の「また会えた」の名は、右上の番号（No.0002）と数字が並ばない言い方
+    func testAgainHeadlineEnglishAvoidsNumberClash() throws {
+        let text = try source("Core/Text/PassTicket.swift")
+        XCTAssertFalse(text.contains("PASS NO."), "英語の名が「PASS NO. 2」で右上の No.0002 と紛れる")
+        XCTAssertTrue(text.contains("\"AGAIN ×\\(n)\""))
+    }
+
+    /// 空の欄「—」は、読み上げだけ「なし」（「ダッシュ」と読ませない）。値のある欄はそのまま
+    func testBlankFieldSpokenAsNone() throws {
+        let empty = PassTicket.Field(label: PassTicket.dateTitle, value: PassTicket.blank)
+        XCTAssertEqual(PassTicket.spokenField(empty), "\(PassTicket.dateTitle) \(L("なし", "none"))")
+        XCTAssertFalse(PassTicket.spokenField(empty).contains(PassTicket.blank))
+        let filled = PassTicket.Field(label: PassTicket.countTitle, value: "はじめて")
+        XCTAssertEqual(PassTicket.spokenField(filled), "\(PassTicket.countTitle) はじめて")
+        let cards = try source("Features/Pass/PassCards.swift")
+        XCTAssertEqual(cards.components(separatedBy: ".accessibilityLabel(PassTicket.spokenField(field))").count - 1, 2,
+                       "表と裏の欄の読み上げに「なし」を当てていない")
     }
 }

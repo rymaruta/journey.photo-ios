@@ -170,8 +170,10 @@ enum PassCardStyle {
 
     // MARK: 字組（マルス券の板）
     //
-    // 2026-10-17 判断: きっぷの字は**固定の大きさ**で描く（区間の地名と同じ考え）。札は寸法の決まった物で、
-    // 文字の大きさの設定で字だけ大きくすると欄の格子や裾の行が札からはみ出す。読み上げは札の中身を全部読む。
+    // 2026-10-17 判断: きっぷの表と裏の字は**固定の大きさ**で描き、文字を大きくする設定では変わらない（区間の地名と
+    // 同じ考え）。札は寸法の決まった物で、字だけ大きくすると欄の格子や裾の行が札からはみ出す。
+    // **中身は読み上げで全部読める**（区間・欄・空の欄の「なし」・裏のひとことと裾まで）。だから表と裏には
+    // `.dynamicTypeSize` を付けない（固定の字には効かず、効くように見えて紛らわしい）。帳の小さな札だけ `typeLimit`。
     // 板の明朝 15・12 は CLAUDE.md の明朝の下限 18 より小さいが、owner が選んだ板の字組を取った（本文系 12 は割らない）
 
     /// 内側の余白（板 左右 18・表の上 13・下 12）と、表の行の間（板 9）
@@ -191,11 +193,14 @@ enum PassCardStyle {
     static let fieldLabelSize: CGFloat = 11
     static let fieldValueSize: CGFloat = 13
     static let fieldPadding: CGFloat = 8
-    /// 右下の「ずっと有効」（11・字間 0.08em）
-    static let validitySize: CGFloat = 11
-    static let validityTracking: CGFloat = 0.08
-    /// 裏: 余白と行の間（板 18・14）・作品名（明朝 18）・欄（ラベル 12・値 14）・裾（11・字間 0.06em）
+    /// 右下の「ずっと有効」（12・字間 0.04em）。板は 11・0.08em だが、本文系の下限 12 を守る（2026-10-17 判断）。
+    /// 大きくした分、字間を詰めて名前の幅を残す
+    static let validitySize: CGFloat = 12
+    static let validityTracking: CGFloat = 0.04
+    /// 裏: 余白と行の間（板 18・14）・作品名（明朝 18）・欄（ラベル 12・値 14）・裾（12・字間 0.06em）。
+    /// 裾は板の 11 から本文系の下限 12 に上げ（2026-10-17 判断）、その分の縦を上の余白（18 → 16）から取った
     static let backPadding: CGFloat = 18
+    static let backTop: CGFloat = 16
     static let backSpacing: CGFloat = 14
     static let backTitleSize: CGFloat = 18
     static let backLabelSize: CGFloat = 12
@@ -203,7 +208,7 @@ enum PassCardStyle {
     /// 裏の欄の間（板 12）・ひとこと（板 15）
     static let backFieldGap: CGFloat = 12
     static let noteSize: CGFloat = 15
-    static let footnoteSize: CGFloat = 11
+    static let footnoteSize: CGFloat = 12
     static let footnoteTracking: CGFloat = 0.06
 
     /// 区間の地名（明朝 30）。長い地名は縮める——**明朝 13 まで**。
@@ -275,7 +280,8 @@ enum PassCardStyle {
         return RouteLayout(fontSize: size, columnWidth: routeColumnWidth,
                            arrowCenter: routeColumnWidth + arrowGap + arrowWidth / 2, markWidth: marked)
     }
-    /// カードは寸法が決まった札なので、文字の大きさの設定は xLarge までに留める（はみ出さない）
+    /// 帳の小さな札（`PassTicketSlot`・字は `JPFont` で設定に合わせて大きくなる）は、文字の大きさの設定を
+    /// xLarge までに留める（はみ出さない）。表と裏は固定の字なので付けない（上の字組の注記）
     static let typeLimit: DynamicTypeSize = .xLarge
 }
 
@@ -488,7 +494,6 @@ struct PassCardFront: View {
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
         .background { PassTicketGlow(kind: face.kind) }
         .overlay(PassTicketEdge(kind: face.kind, shine: shine))
-        .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
     }
 
@@ -559,7 +564,8 @@ struct PassCardFront: View {
                         .minimumScaleFactor(PassCardStyle.metaSize / PassCardStyle.fieldValueSize)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(PassTicket.spokenField(field))
             }
         }
         .padding(.vertical, PassCardStyle.fieldPadding)
@@ -699,7 +705,9 @@ struct PassCardBack: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(PassCardStyle.backPadding)
+            .padding(.horizontal, PassCardStyle.backPadding)
+            .padding(.top, PassCardStyle.backTop)
+            .padding(.bottom, PassCardStyle.backPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
@@ -707,7 +715,6 @@ struct PassCardBack: View {
         .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
         .background { PassTicketGlow(kind: face.kind) }
         .overlay(PassTicketEdge(kind: face.kind, shine: shine))
-        .dynamicTypeSize(...PassCardStyle.typeLimit)
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
         .accessibilityElement(children: .combine)
     }
@@ -740,7 +747,8 @@ struct PassCardBack: View {
                 .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(PassTicket.spokenField(field))
     }
 }
 
