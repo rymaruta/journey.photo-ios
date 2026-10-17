@@ -305,7 +305,7 @@ struct JourneyPhotoApp: App {
                     offlineTrips.use(userId: auth.userId)
                 }
                 // すれちがいの帳と設定も人に合わせる。圏外で ID が取れなかった回だけ前の人のまま
-                // （起動の `PassCoordinator.launch` が読んだ人）。人が替われば電波を決め直す（前の人の名刺を出さない）
+                // （起動の `PassCoordinator.launch` が読んだ人）。人が替われば電波を決め直す（前の人の乗車券を出さない）
                 .task(id: auth.state) {
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
                     // 期限切れのログアウトでも電波は止める（帳は端末に残り、入り直せば読み戻す）

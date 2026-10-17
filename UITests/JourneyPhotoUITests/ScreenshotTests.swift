@@ -1400,8 +1400,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "83-すれちがい帳")
     }
 
-    /// **自分のカード（名刺の一枚の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
-    /// 名刺の一枚。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
+    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
+    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
     /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
     ///
     /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
@@ -1441,8 +1441,10 @@ final class ScreenshotTests: XCTestCase {
         cardRow.tap()
 
         let card = app.descendants(matching: .any)["pass.pick.card"].firstMatch
-        guard card.waitForExistence(timeout: 15) else { return XCTFail("名刺の一枚の画面に回る見本が無い") }
+        guard card.waitForExistence(timeout: 15) else { return XCTFail("乗車券の画面に回る見本が無い") }
         Thread.sleep(forTimeInterval: 3)
+        // 呼び名は「わたしの乗車券」（2026-10-17 owner）
+        XCTAssertTrue(app.navigationBars["わたしの乗車券"].firstMatch.exists, "選ぶ画面の題が「わたしの乗車券」でない")
         shoot(app, "85-自分のカード（表・東京→フランス）")
         let flip = app.buttons["pass.pick.flip"].firstMatch
         XCTAssertTrue(flip.exists, "回さずに裏を見る口（「裏を見る」）が無い")

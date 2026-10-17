@@ -2,7 +2,7 @@ import Foundation
 
 /// **すれちがい**（板「10 すれちがい」・2026-10-16）の、画面と電波を持たない決まり。
 ///
-/// 旅先で同じ場所に居合わせたアプリの人と、自分が選んだ「名刺の一枚」（自分の公開写真1枚）が
+/// 旅先で同じ場所に居合わせたアプリの人と、自分が選んだ「乗車券」（自分の公開写真1枚）が
 /// カードで交換される。届くのはその日の夕方 18 時に束で1回。受け取ったカードは消えず、
 /// すれちがい帳に綴じる。相手の今いる場所は分からない形にする（場所は「〇〇のあたり」・時刻は時の単位・
 /// 届くのは夕方）。
@@ -23,7 +23,7 @@ enum PassExchange {
     /// その2つ（本人が書いて載せると決めたものだけ）を足した。サーバーを変えずに相手へ届ける道が
     /// ほかに無い。外すなら `note` を空・`showsFrom` を false で送れば同じ形のまま読める。
     struct Payload: Equatable {
-        /// 名刺の一枚（自分の公開写真の id）
+        /// 乗車券（自分の公開写真の id）
         var photoId: String
         /// 居住地の都道府県をカードに出してよいか（プロフィールの居住地から相手の端末が引く）
         var showsFrom: Bool
@@ -79,7 +79,7 @@ enum PassExchange {
         L("URL・メール・電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
     }
 
-    /// 入力中のひとことが載せられない訳（載せられるなら nil）。名刺選びの欄の下に出す
+    /// 入力中のひとことが載せられない訳（載せられるなら nil）。乗車券選びの欄の下に出す
     static func noteProblem(_ text: String) -> String? {
         if containsContact(text) { return contactProblem }
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -248,7 +248,7 @@ enum PassExchange {
         return parts.joined(separator: " / ")
     }
 
-    /// 名刺の一枚にできる写真か（**全体に公開している写真だけ**）。公開範囲を絞った写真は
+    /// 乗車券にできる写真か（**全体に公開している写真だけ**）。公開範囲を絞った写真は
     /// 公開一覧（`photos.json`）に載らず、相手の端末で引けない
     static func isPublicCard(_ photo: Photo) -> Bool {
         guard photo.published != false else { return false }

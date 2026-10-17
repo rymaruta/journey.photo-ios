@@ -6,7 +6,7 @@ import Foundation
 /// （写真の id・ひとこと・出身を出すか）と、時の単位の時刻と、取れたときだけの粗い場所。
 struct PassEncounter: Codable, Equatable, Identifiable {
     var id: String
-    /// 相手の名刺の一枚（公開写真の id）
+    /// 相手の乗車券（公開写真の id）
     var photoId: String
     var note: String
     var showsFrom: Bool
@@ -82,7 +82,7 @@ struct PassSettings: Codable, Equatable {
     var enabled = false
     /// 板の既定は「旅のあいだ」
     var mode: PassExchange.Mode = .traveling
-    /// 名刺の一枚（自分の公開写真の id）。選ぶまでは電波を出さない
+    /// 乗車券（自分の公開写真の id）。選ぶまでは電波を出さない
     var cardPhotoId: String?
     var note = ""
     /// どこから来た人か（居住地の都道府県）を載せる

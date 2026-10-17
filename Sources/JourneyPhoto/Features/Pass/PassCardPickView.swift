@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 名刺の一枚を選ぶ（板 PassCardPick）。すれちがった人の手元に、カードになって届く一枚。
+/// 乗車券（旧: 名刺の一枚。2026-10-17 owner が呼び名を「わたしの乗車券」に替えた）を選ぶ（板 PassCardPick）。すれちがった人の手元に、カードになって届く一枚。
 ///
 /// - 選べるのは**全体に公開している自分の写真だけ**（公開範囲を絞った写真は相手の端末で引けない・
 ///   `PassExchange.isPublicCard`）。公開一覧（`photos.json`）に載っているものから選ぶ
@@ -88,7 +88,7 @@ struct PassCardPickView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
-        .navigationTitle(L("名刺の一枚", "Your card"))
+        .navigationTitle(L("わたしの乗車券", "My ticket"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard !didLoad else { return }
@@ -124,8 +124,8 @@ struct PassCardPickView: View {
             JPLoadingState(kind: .grid)
         } else if photos.isEmpty {
             EmptyState(title: L("全体に公開している写真がありません", "No public photos yet"),
-                       message: L("名刺にできるのは、全体に公開している写真だけです。投稿してからもう一度開いてください。",
-                                  "Only photos shared with everyone can be your card. Post one, then come back."))
+                       message: L("乗車券にできるのは、全体に公開している写真だけです。投稿してからもう一度開いてください。",
+                                  "Only photos shared with everyone can go on your ticket. Post one, then come back."))
         } else {
             LazyVGrid(columns: Self.columns, spacing: 3) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in

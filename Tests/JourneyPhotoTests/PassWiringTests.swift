@@ -109,7 +109,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(sheet.contains("report.replaceNotice"), "上書きされることを画面で言わない")
     }
 
-    /// 発・着: 名刺選びに区間の欄・見本にその場で出る・「…」に区間の字を伏せる・通報は書かれた字ぜんぶ
+    /// 発・着: 乗車券選びに区間の欄・見本にその場で出る・「…」に区間の字を伏せる・通報は書かれた字ぜんぶ
     func testTicketLabelsWiring() throws {
         let pick = try source("Features/Pass/PassCardPickView.swift")
         for part in ["routeSection", "PassTicket.previewOrigin(originChoice", "PassTicket.previewDestination(custom: destinationCustom",
@@ -168,5 +168,37 @@ final class PassWiringTests: XCTestCase {
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertTrue(pick.contains("Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)"))
         XCTAssertFalse(pick.contains("String(value.prefix(PassExchange.noteLimit))"), "変換中に字数で切っている")
+    }
+
+    /// 呼び名は「わたしの乗車券」（2026-10-17 判断: owner が「名刺の一枚」から替えた）。
+    /// 画面に出る字（Sources の文字列リテラル＝`L("…", "…")` の中・InfoPlist.strings）に「名刺」を残さない。
+    /// 注記（`//`）の「旧: 名刺の一枚」は数えない。識別子・保存のキーは変えていない
+    func testNoOldCardNameOnScreen() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let literal = try NSRegularExpression(pattern: #""(?:[^"\\\n]|\\.)*""#)
+        var checked = 0
+        var found: [String] = []
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for url in files where url.pathExtension == "swift" || url.pathExtension == "strings" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            checked += 1
+            for (index, line) in text.components(separatedBy: "\n").enumerated() {
+                if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { continue }
+                let range = NSRange(line.startIndex..., in: line)
+                for match in literal.matches(in: line, range: range) {
+                    guard let r = Range(match.range, in: line), line[r].contains("名刺") else { continue }
+                    found.append("\(url.lastPathComponent):\(index + 1) \(line[r])")
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 100, "Sources を読めていない")
+        XCTAssertTrue(found.isEmpty, "画面の字に「名刺」が残っている（「乗車券」に）: \(found)")
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        XCTAssertTrue(pick.contains(#".navigationTitle(L("わたしの乗車券", "My ticket"))"#), "選ぶ画面の題が「わたしの乗車券」でない")
+        let settings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(settings.contains(#"Text(L("わたしの乗車券", "My ticket"))"#), "設定の行が「わたしの乗車券」でない")
     }
 }

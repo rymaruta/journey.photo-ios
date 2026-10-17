@@ -69,11 +69,11 @@ extension PassStore {
     }
 }
 
-/// きっぷの表に描くもの（見本の名刺も同じ形で作る）
+/// きっぷの表に描くもの（見本の乗車券も同じ形で作る）
 struct PassTicketFace {
     let photo: Photo?
     let kind: PassTicket.Kind
-    /// 「No.0087」。決まらないとき（自分の名刺の見本）は nil
+    /// 「No.0087」。決まらないとき（自分の乗車券の見本）は nil
     let number: String?
     let origin: String
     let destination: String

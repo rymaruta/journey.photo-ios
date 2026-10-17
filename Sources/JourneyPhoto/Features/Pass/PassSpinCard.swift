@@ -84,7 +84,7 @@ struct PassSpinDrag {
     }
 }
 
-/// 自分のカードの見本（名刺の一枚を選ぶ画面）。届いたカードと同じ `PassSpinTicket` を、同じ手つき
+/// 自分のカードの見本（乗車券を選ぶ画面）。届いたカードと同じ `PassSpinTicket` を、同じ手つき
 /// （`PassSpinDrag`・指を置いて回す・離すと近い面に吸い付く）で回す。
 ///
 /// - **たての送りとぶつけない**: ScrollView の中なので `simultaneousGesture` で受け、最初に動いた向きが横の
