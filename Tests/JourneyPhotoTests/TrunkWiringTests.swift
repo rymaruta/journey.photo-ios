@@ -32,12 +32,21 @@ final class TrunkWiringTests: XCTestCase {
         let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
         XCTAssertTrue(box.contains("Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)"), "影が白の影絵でない")
         XCTAssertTrue(box.contains(".mask { TrunkPartView(part: part, shadow: false) }"), "形の影絵でなく色・質感が出る")
+        var masks = 0
         for (name, text) in try trunkFiles() {
-            // 部品の形を型に抜く所（＝持っていない部品の影）は、どこも同じ影の色で塗る
-            for line in text.components(separatedBy: "\n") where line.contains(".mask { TrunkPartView(") {
-                XCTAssertTrue(text.contains("TrunkPartsBoxText.missingShadowOpacity"), "\(name) の影が部品箱と違う色: \(line)")
+            // 部品の形を型に抜く所（＝持っていない部品の影）は、どこも同じ影の色で塗る。
+            // 抜く修飾子の連なりをさかのぼり、その頭（塗る色）が白の影の値であることを1か所ずつ見る
+            let lines = text.components(separatedBy: "\n")
+            for (i, line) in lines.enumerated() where line.contains(".mask { TrunkPartView(") {
+                masks += 1
+                var head = i
+                while head > 0, lines[head].trimmingCharacters(in: .whitespaces).hasPrefix(".") { head -= 1 }
+                XCTAssertEqual(lines[head].trimmingCharacters(in: .whitespaces),
+                               "Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)",
+                               "\(name):\(i + 1) の影が部品箱と違う色")
             }
         }
+        XCTAssertGreaterThanOrEqual(masks, 1, "影の描き方が見つからない（見張りが空振りしている）")
     }
 
     /// 自分の手で貼る画面: 運んで離した送信も committer の予定に入れる（「保存せずに閉じる」で取り消せる）。
