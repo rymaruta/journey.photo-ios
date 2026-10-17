@@ -320,6 +320,10 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
                        ".foregroundStyle(WebTheme.accentText)",
                        ".padding(.vertical, NotificationsView.followBackSlack)"], in: follow,
                       "フォローバックの白の小ボタン")
+        // 印は送りの側が持つ。ボタンが自分で下ろすと、送らなかった2回目が送信中に押せる姿へ戻す
+        XCTAssertTrue(follow.contains("followBackSending.contains(userId)"))
+        XCTAssertFalse(follow.contains("busy"))
+        XCTAssertTrue(notes.contains("guard followBackSending.insert(userId).inserted else { return }"))
     }
 
     // MARK: - 字の段
