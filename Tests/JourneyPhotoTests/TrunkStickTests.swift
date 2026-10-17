@@ -87,6 +87,40 @@ final class TrunkStickTests: XCTestCase {
         XCTAssertEqual(free.first?.pos, TrunkPlacement.pos(x: aSlot.x + aSlot.w / 2, y: aSlot.y + aSlot.h / 2, rot: aSlot.rot))
     }
 
+    /// 🔴 前の版のラベル11枚の人が、手で1枚貼る: 置き場のない11枚は1点も動かず、全部描かれる
+    func testElevenOldLabelsStayWhenOneIsPlacedByHand() {
+        let old = (0..<11).map { label("o\($0)", seed: $0) }
+        let before = TrunkPlacement.layout(old, stage: 0)
+        let after = TrunkPlacement.layout([label("new", pos: TrunkPos(x: 0.5, y: 0.5, rot: 0))] + old, stage: 0)
+        XCTAssertEqual(after.count, 12, "前の版のラベルが描かれなくなった")
+        for p in before {
+            let q = after.first { $0.label.id == p.label.id }
+            XCTAssertEqual(q?.x, p.x, "\(p.label.id) が跳んだ")
+            XCTAssertEqual(q?.y, p.y, "\(p.label.id) が跳んだ")
+            XCTAssertEqual(q?.rot, p.rot)
+        }
+    }
+
+    /// 🔴 3枚の人が手で9枚貼る: どれも胴から消えず、おまかせで並べるが置き場なしの3枚に重ねない
+    func testThreeLabelsSurviveNineHandPlaced() {
+        let old = (0..<3).map { label("o\($0)", seed: $0) }
+        let hand = (0..<9).map { label("h\($0)", pos: TrunkPos(x: 0.1 + Double($0) * 0.1, y: 0.95, rot: 0)) }
+        let before = TrunkPlacement.layout(old, stage: 0)
+        let stuck = hand + old
+        let after = TrunkPlacement.layout(stuck, stage: 0)
+        XCTAssertEqual(after.count, 12, "最古のラベルが消えた")
+        for p in before {
+            let q = after.first { $0.label.id == p.label.id }
+            XCTAssertEqual(q?.x, p.x, "\(p.label.id) が跳んだ")
+            XCTAssertEqual(q?.y, p.y)
+        }
+        let used = Set(before.map { TrunkPlacement.pos(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2, rot: $0.rot) })
+        let plan = TrunkPlacement.autoArrange(pocket: (0..<11).map { label("p\($0)") }, stuck: stuck)
+        // 空いているのは 11 − 3 のうち、手で貼った9枚が乗っていない所
+        XCTAssertTrue((1...8).contains(plan.count), "\(plan.count)")
+        XCTAssertTrue(plan.allSatisfy { !used.contains($0.pos) }, "置き場なしのラベルの上に重ねた")
+    }
+
     func testOverridesAndCap() {
         let a = label("a", pos: TrunkPos(x: 0.1, y: 0.1, rot: 0))
         let moved = TrunkPlacement.layout([a], stage: 0, overrides: ["a": TrunkPos(x: 0.9, y: 0.9, rot: -20)])
