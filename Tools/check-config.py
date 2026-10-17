@@ -412,13 +412,41 @@ pr_yml = ROOT / ".github/workflows/ios-pr.yml"
 if testflight_yml.exists() and pr_yml.exists():
     flow = testflight_yml.read_text(encoding="utf-8")
     pr_flow = pr_yml.read_text(encoding="utf-8")
-    mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}", flow)
+    # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
+    MARK_IF = "(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+    mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if not mark:
         fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
-    elif "steps.scope.outputs.full == 'true'" not in mark.group(1):
-        fail(f"ios-testflight.yml の「{MARK}」が、絞った回（screens）にも走ります")
-    if f'.name == "{MARK}"' not in pr_flow:
-        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」が「{MARK}」を数えていません")
+    elif mark.group(1).strip() != MARK_IF:
+        fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
+    # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
+    selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
+    if selects != [f'.name == "{MARK}"']:
+        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
+
+    # **落ちても先へ進む段を作らない。** 組む・単体・UI・印のどれかに `continue-on-error` が付くと、
+    # 落ちた回でも印まで進み「テスト済み」と数えられる
+    def step_block(text, name):
+        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", text, re.M | re.S)
+        return found.group(1) if found else None
+    for text, file, names in [
+        (flow, "ios-testflight.yml", ["組む（本物の SwiftUI で型検査される最初の機会）", "単体テスト", "UI テスト（画面の絵）", MARK]),
+        (pr_flow, "ios-pr.yml", ["組む", "単体テスト", "UI テスト（起動・全タブ・画面の絵）"]),
+    ]:
+        for name in names:
+            block = step_block(text, name)
+            if block is None:
+                fail(f"{file} に「{name}」の段がありません")
+            elif "continue-on-error" in block:
+                fail(f"{file} の「{name}」に continue-on-error があります（落ちても印まで進む）")
+    # テストを流す道具が、落ちたときに 1 で終わること（0 で終わると段が緑になる）
+    runner = (ROOT / "Tools/xcode-test.sh").read_text(encoding="utf-8")
+    if not re.search(r'\| tail -n \d+ \|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
+        fail("Tools/xcode-test.sh が xcodebuild の失敗で exit 1 しません")
+    # 上げる回・storeShots の回は screens を捨てて全部にする
+    scope = step_block(flow, "どこまで流すかを決める") or ""
+    if not re.search(r'if \[ "\$\{SUBMIT:-\}" = "true" \] \|\| \[ "\$\{STORE_SHOTS:-\}" = "true" \]; then\n\s*SCREENS=""\n\s*fi', scope):
+        fail("ios-testflight.yml の「どこまで流すかを決める」が、上げる回・storeShots の回で screens を捨てていません")
     if re.search(r'startswith\("テスト"\)', pr_flow):
         fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
     for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):

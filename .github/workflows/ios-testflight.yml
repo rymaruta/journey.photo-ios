@@ -34,9 +34,10 @@ on:
       # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
       # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）と storeShots の回は、ここに何を書いても全部を回す
+      # 上げる回（submit=true）と storeShots の回では絞らない（ここに何を書いても無視）。
+      # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では無視して全部"
+        description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
         type: string
         default: ""
 
@@ -247,6 +248,11 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
+      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
+      - name: 控えの鍵を決める
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
       # 🔴 **控えは main の回だけが書く・枝は読むだけ**（2026-10-17 判断）。
       # 控えは1つ約7GB（run 461 の実測 7111MB）で、GitHub の置き場は10GBまで——**2つ目を書くと
       # 前のが追い出される**。しかも控えは枝ごとに区切られ、別の枝からは main の分しか読めない。
@@ -261,6 +267,7 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           # **Xcode の版を鍵に入れる。** 入れないと、ランナーの像が
           # 上がって Xcode が変わった回に**古い中間生成物が混ざる**。
@@ -270,9 +277,9 @@ jobs:
           # **鍵の末尾に回の番号を付ける**（2026-10-17）。main の回は毎回新しい鍵で書き、
           # 読む側は頭が合ういちばん新しいものを拾う。番号が無いと、鍵が当たり続けて
           # 控えが古いまま（ソースとの差が広がって差分のビルドが年々長くなる）
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}-${{ github.run_id }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
+            ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
       - name: 設定の検査
@@ -405,6 +412,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド
+        id: archive
         if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
         run: |
           set -euo pipefail
@@ -529,18 +537,23 @@ jobs:
       # シミュレータ向けの組み立てが入らず、枝・PR の回の役に立たない。ここで組んでから書く。
       # main の控えから差分で組むので、2回目からは数分（run 461 は控え有りで、組むのは逆算で1〜2分。控え無しの run 462 は約12分）。
       # **上げる・印を付けるが済んだあと**に置き、落ちても赤にしない（上げる回の邪魔をしない）
+      # Archive（「ビルド」）が通った回だけ温める・書く。落ちた回の作りかけは書かない。
+      # **path の `!…/ArchiveIntermediates`**: Archive の中間物は控えに入れない（10GB を超えないように）。
+      # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）
       - name: 控えを温める（main の回だけ・シミュレータ向けに組む）
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        id: warm
+        if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 30
         run: XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
 
       - name: 控えを書く（main の回だけ）
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v4
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}-${{ github.run_id }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}

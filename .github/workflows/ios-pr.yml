@@ -112,8 +112,8 @@ jobs:
   #  - PR の先頭のコミットで、TestFlight のワークフローが success で終わり、
   #    その回の「全部のテストが通った（PR の検証が数える印）」の段が success
   #    （2026-10-17: 枝の確認は UI テストを `screens` で絞れるようになった。絞った回は
-  #    この印が skipped なので数えない＝ここで全部を回す。印の無い前の作りの回は、
-  #    いつも全部を流していたので「テスト（本物の SwiftUI …）」の段の success を数える）
+  #    この印が skipped なので数えない＝ここで全部を回す。印の無い前の作りの回は数えない
+  #    （その PR は Mac をもう一度回すだけ。数える名前を増やすほど穴の入り口が増える）
   #
   # Linux で API を2〜3回読むだけなので数秒。飛ばしたときも Xcode の段は「skipped」に
   # なり、必須のチェックにしていても通った扱いになる
@@ -153,7 +153,7 @@ jobs:
               # 🔴 **段の名前は完全一致で見る**（前は「テスト」で始まる最初の段＝単体だけで
               # 通った扱いになりうる）。名前は ios-testflight.yml と揃える
               step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
-                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）" or .name == "テスト（本物の SwiftUI で型検査される最初の機会）") | .conclusion] | first // ""' 2>/dev/null || true)"
+                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | first // ""' 2>/dev/null || true)"
               if [ "$step" = "success" ]; then
                 skip=true
                 reason="TestFlight の run ${id} で同じコミットのテストが通っている"
@@ -207,6 +207,11 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
+      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
+      - name: 控えの鍵を決める
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
       # **読むだけ**（2026-10-17 判断）。PR の回の控えは `refs/pull/<番号>/merge` に区切られ、
       # ほかの枝からは読めない。しかも1つ約7GB で、書くと置き場（10GB）から main の控えを
       # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
@@ -217,10 +222,11 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}-${{ github.run_id }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
+            ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
       - name: Xcode プロジェクトを作る
