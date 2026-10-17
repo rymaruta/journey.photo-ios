@@ -92,32 +92,9 @@ struct TrunkRerollView: View {
             .frame(height: 250)
             .padding(.top, 12)
             switch TrunkText.rerollStep(model.state, labelId: labelId) {
-            case .start(let left):
-                VStack(spacing: 10) {
-                    Button {
-                        Task {
-                            rolling = true
-                            await model.reroll(labelId)
-                            chosenSeed = candidates.first
-                            rolling = false
-                        }
-                    } label: {
-                        TrunkButtonFace(title: TrunkText.rerollStartTitle(left: left))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(rolling || model.busy)
-                    .opacity(rolling ? 0.4 : 1)
-                    .accessibilityIdentifier("trunk.reroll.start")
-                    if rolling { ProgressView().tint(WebTheme.muted2) }
-                    if let error = model.actionError {
-                        Text(error)
-                            .font(JPFont.footnote)
-                            .foregroundStyle(WebTheme.danger)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+            case .start:
+                // 押す前は、いまの図柄と下の「作り直す」と注記だけ（モック RerollStart）
+                EmptyView()
             case .noneLeft, .notPro:
                 Text(model.actionError ?? TrunkText.refusal(code: model.state?.isPro == false ? "proOnly" : "noRerollsLeft",
                                                             fallback: ""))
@@ -174,19 +151,75 @@ struct TrunkRerollView: View {
         .accessibilityIdentifier("trunk.reroll.option")
     }
 
+    @ViewBuilder
     private func footer(_ label: TrunkLabel, seed: Int) -> some View {
+        switch TrunkText.rerollStep(model.state, labelId: labelId) {
+        case .start(let left):
+            startFooter(left: left)
+        case .choosing:
+            chooseFooter(label, seed: seed)
+        case .noneLeft, .notPro:
+            counterLine
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+        }
+    }
+
+    /// 押す前（モック RerollStart）: 「作り直す · 今月あと N 回」と注記だけ。**押すまで回数は減らない**
+    private func startFooter(left: Int) -> some View {
         VStack(spacing: 8) {
-            HStack(spacing: 0) {
-                Text(L("今月の作り直し ", "Redos this month: "))
-                Text(TrunkText.rerollsLeft(model.state?.rerollsLeft ?? 0))
-                    .font(JPFont.mono(13, relativeTo: .footnote))
-                    .foregroundStyle(WebTheme.text)
-                Text(L("（毎月 3 回 · 繰り越しなし）", " (3 a month · no carry-over)"))
+            if let error = model.actionError {
+                Text(error)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.danger)
+                    .multilineTextAlignment(.center)
             }
-            .font(JPFont.footnote)
-            .foregroundStyle(TrunkStyle.muted)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            Button {
+                Task {
+                    rolling = true
+                    await model.reroll(labelId)
+                    chosenSeed = candidates.first
+                    rolling = false
+                }
+            } label: {
+                TrunkButtonFace(title: TrunkText.rerollStartTitle(left: left))
+            }
+            .buttonStyle(.plain)
+            .disabled(rolling || model.busy)
+            .opacity(rolling ? 0.4 : 1)
+            .overlay { if rolling { ProgressView().tint(WebTheme.accentText) } }
+            .accessibilityIdentifier("trunk.reroll.start")
+            Text(TrunkText.rerollStartNote)
+                .font(.caption)
+                .lineSpacing(4)
+                .foregroundStyle(TrunkStyle.faint)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 24)
+    }
+
+    /// 「今月の作り直し あと N 回（毎月 3 回 · 繰り越しなし）」
+    private var counterLine: some View {
+        HStack(spacing: 0) {
+            Text(L("今月の作り直し ", "Redos this month: "))
+            Text(TrunkText.rerollsLeft(model.state?.rerollsLeft ?? 0))
+                .font(JPFont.mono(13, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.text)
+            Text(L("（毎月 3 回 · 繰り越しなし）", " (3 a month · no carry-over)"))
+        }
+        .font(JPFont.footnote)
+        .foregroundStyle(TrunkStyle.muted)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+
+    /// 候補が出たあと: 残りの回数・「この図柄にする」・注記
+    private func chooseFooter(_ label: TrunkLabel, seed: Int) -> some View {
+        VStack(spacing: 8) {
+            counterLine
             Button {
                 Task {
                     if await model.choose(label.id, seed: seed) {
@@ -198,10 +231,9 @@ struct TrunkRerollView: View {
                 TrunkButtonFace(title: L("この図柄にする", "Use this design"))
             }
             .buttonStyle(.plain)
-            .disabled(candidates.isEmpty || model.busy)
-            .opacity(candidates.isEmpty ? 0.4 : 1)
+            .disabled(model.busy)
             .accessibilityIdentifier("trunk.reroll.choose")
-            if let error = model.actionError, !candidates.isEmpty {
+            if let error = model.actionError {
                 Text(error)
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.danger)

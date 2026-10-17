@@ -150,6 +150,7 @@ final class TrunkReviewFixesTests: XCTestCase {
                                rerollsLeft: 0, posts: 0, receiveLabels: true)
         XCTAssertEqual(TrunkText.rerollStep(spent, labelId: id), .noneLeft)
         XCTAssertEqual(TrunkText.rerollStartTitle(left: 2), L("作り直す · 今月あと 2 回", "Redo · 2 left this month"))
+        XCTAssertTrue(TrunkText.rerollStartNote.contains(L("開いただけでは", "Just opening")), "押す前の注記が無い")
     }
 
     /// 作り直しの画面の作りが、開いたときに口を叩かない（候補を出す段は押してから）

@@ -79,6 +79,12 @@ enum TrunkText {
         return state.rerollsLeft > 0 ? .start(left: state.rerollsLeft) : .noneLeft
     }
 
+    /// 押す前の注記（モック RerollStart）
+    static var rerollStartNote: String {
+        L("押すと1回使い、候補が3つ出ます。開いただけでは回数は減りません。毎月3回・繰り越しなし。",
+          "Tapping uses one redo and shows three designs. Just opening this doesn\u{2019}t use one. 3 a month, no carry-over.")
+    }
+
     /// 「作り直す · 今月あと 2 回」
     static func rerollStartTitle(left: Int) -> String {
         L("作り直す · 今月あと \(max(0, left)) 回", "Redo · \(max(0, left)) left this month")

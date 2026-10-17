@@ -277,6 +277,13 @@ final class MedalCoinCoordinator: NSObject {
     /// 止まりきったあと、ゆっくり回る速さ（板: 9秒で1周 ≈ 0.7rad/s。それより控えめに）
     private static let idleSpin: Float = 0.45
 
+    /// 止まりきったあとに回る速さ。**トランクは勝手に回さず、-20° の斜めで止めて置く**
+    /// （2026-10-17・run 466: 回り続けると、開いて数秒で横を向き正面の絵が見えなかった）。払えば惰性で回る
+    private var restingSpin: Float {
+        if case .box = shape { return 0 }
+        return Self.idleSpin
+    }
+
     private let shape: SpinShape
 
     init(shape: SpinShape = .coin) {
@@ -295,6 +302,7 @@ final class MedalCoinCoordinator: NSObject {
             addHandle(aspect: aspect, depth: depth, color: handle)
         }
         addLightsAndCamera()
+        if case .box = shape { brightenForBox() }
         applyAngles()
     }
 
@@ -340,6 +348,22 @@ final class MedalCoinCoordinator: NSObject {
             coin.addChildNode(node)
         }
         scene.rootNode.addChildNode(coin)
+    }
+
+    /// トランクの光（2026-10-17・run 466 の見比べ）: 正面の絵がトランクの画面（板 Main）と同じ明るさに見えるよう、
+    /// 正面の少し左上にキーライトを足し、環境光は弱いまま。表と裏は光らせず（金属の映り込みは付けない）、
+    /// 絵そのものを少し自ら光らせて暗く沈まないようにする
+    private func brightenForBox() {
+        let key = SCNNode()
+        key.light = SCNLight()
+        key.light?.type = .omni
+        key.light?.intensity = 1100
+        key.position = SCNVector3(-1.2, 1.4, 5)
+        scene.rootNode.addChildNode(key)
+        for material in [front, back] {
+            material.lightingModel = .lambert
+            material.specular.contents = UIColor(white: 0, alpha: 1)
+        }
     }
 
     /// トランクの持ち手（上の角が丸い U の字を、胴の上に立てる・2026-10-17）
@@ -450,6 +474,13 @@ final class MedalCoinCoordinator: NSObject {
         }
         hasTextures = textures.front != nil
         faces = textures
+        if case .box = shape {
+            // 箱の表と裏は絵を少し自ら光らせる（光の当たらない向きでも絵が沈まない・`brightenForBox`）
+            front.emission.contents = textures.front
+            front.emission.intensity = 0.45
+            back.emission.contents = textures.back
+            back.emission.intensity = 0.45
+        }
         // 面のふくらみ・浮き彫り・面取り・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
         if case .coin = shape { applyRelief(textures) }
     }
@@ -575,7 +606,7 @@ final class MedalCoinCoordinator: NSObject {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
-        velocity = reduceMotion || !poses.isEmpty ? 0 : Self.idleSpin
+        velocity = reduceMotion || !poses.isEmpty ? 0 : restingSpin
     }
 
     func stop() {
@@ -632,7 +663,7 @@ final class MedalCoinCoordinator: NSObject {
         } else {
             yaw += velocity * dt
             // 速さは、ゆっくり回る速さ（減らす設定では 0）へ戻っていく
-            let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -Self.idleSpin : Self.idleSpin)
+            let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -restingSpin : restingSpin)
             let damping: Float = reduceMotion ? 6 : 1.6
             velocity += (resting - velocity) * min(1, dt * damping)
         }

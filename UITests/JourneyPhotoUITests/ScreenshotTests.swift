@@ -1964,14 +1964,24 @@ final class ScreenshotTests: XCTestCase {
             let close = app.buttons["trunk.reroll.close"].firstMatch
             if close.waitForExistence(timeout: 10) {
                 Thread.sleep(forTimeInterval: 2)
-                shoot(app, "93-図柄を作り直す")
-                let options = app.buttons.matching(identifier: "trunk.reroll.option")
-                if options.count > 2 {
-                    options.element(boundBy: 2).tap()
+                shoot(app, "93-図柄を作り直す（押す前）")
+                // 押す前は「この図柄にする」を出さない（開いただけでは回数を使わない・2026-10-17）
+                XCTAssertFalse(app.buttons["trunk.reroll.choose"].firstMatch.exists, "押す前なのに「この図柄にする」が出ている")
+                let start = app.buttons["trunk.reroll.start"].firstMatch
+                if start.exists, start.isHittable {
+                    XCTAssertGreaterThanOrEqual(start.frame.height, 44, "「作り直す」が 44pt 未満")
+                    start.tap()
+                    let options = app.buttons.matching(identifier: "trunk.reroll.option")
+                    _ = options.firstMatch.waitForExistence(timeout: 10)
                     Thread.sleep(forTimeInterval: 1)
-                    shoot(app, "93a-図柄を作り直す（案2を選んだ）")
+                    shoot(app, "93a-図柄を作り直す（候補）")
+                    if options.count > 2 {
+                        options.element(boundBy: 2).tap()
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "93b-図柄を作り直す（案2を選んだ）")
+                    }
+                    XCTAssertGreaterThanOrEqual(app.buttons["trunk.reroll.choose"].firstMatch.frame.height, 44)
                 }
-                XCTAssertGreaterThanOrEqual(app.buttons["trunk.reroll.choose"].firstMatch.frame.height, 44)
                 close.tap()
                 Thread.sleep(forTimeInterval: 1)
             }

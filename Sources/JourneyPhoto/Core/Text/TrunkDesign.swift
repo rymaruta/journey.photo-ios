@@ -195,14 +195,11 @@ enum TrunkSlots {
     /// （貼ったばかりのラベルが見えないのは困る）。並べる 11 枚の中では古いものほど褪せる
     static func place(_ stuckNewestFirst: [TrunkLabel], stage st: Double) -> [Placed] {
         let shown = Array(stuckNewestFirst.prefix(capacity).reversed())
+        // 2026-10-17 判断（run 466 の見比べ）: 置き場の大きさをそのまま使う（モックの `allLabels` の x,y,w,h）。
+        // 形の比に合わせて縮めると、モックより小さく形の違いが分かりにくかった
         return shown.enumerated().map { k, label in
             let slot = slots[order[k]]
-            let shape = TrunkLabelDesign.spec(for: label).shape
-            let size = shape.fitted(maxWidth: slot.w, maxHeight: slot.h)
-            return Placed(label: label,
-                          x: slot.x + (slot.w - size.w) / 2,
-                          y: slot.y + (slot.h - size.h) / 2,
-                          w: size.w, h: size.h, rot: slot.rot,
+            return Placed(label: label, x: slot.x, y: slot.y, w: slot.w, h: slot.h, rot: slot.rot,
                           age: TrunkAging.labelAge(index: k, count: shown.count, stage: st))
         }
     }

@@ -331,7 +331,11 @@ final class TrunkDesignTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(p.x, slot.x - 1e-9)
             XCTAssertLessThanOrEqual(p.x + p.w, slot.x + slot.w + 1e-9)
             XCTAssertLessThanOrEqual(p.y + p.h, slot.y + slot.h + 1e-9)
+            // モックの置き場の大きさのまま（形の比で縮めない・run 466 の見比べ）
+            XCTAssertEqual([p.x, p.y, p.w, p.h], [slot.x, slot.y, slot.w, slot.h], "置き場 \(k) がモックと違う")
         }
+        XCTAssertEqual(TrunkSlots.slots[0], .init(x: 150, y: 120, w: 108, h: 72, rot: -6))
+        XCTAssertEqual(TrunkSlots.slots[10], .init(x: 300, y: 64, w: 56, h: 56, rot: -6))
         XCTAssertEqual(TrunkSlots.place([], stage: 1), [])
         XCTAssertEqual(Set(TrunkSlots.order).count, 11)
     }

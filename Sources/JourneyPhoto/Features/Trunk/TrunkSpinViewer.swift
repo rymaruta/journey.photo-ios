@@ -86,8 +86,8 @@ enum TrunkTextures {
     static func shape(model: TrunkModel, posts: Int) -> SpinShape {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
         return .box(aspect: TrunkLooks.bodyWidth / TrunkLooks.bodyHeight,
-                    // 2026-10-17 判断: 厚みは横の 0.34（モックに奥行きの絵は無い。実物の旅行鞄の比率）
-                    depth: 0.34, corner: 16 / TrunkLooks.bodyWidth,
+                    // 2026-10-17 判断（run 466 の見比べ）: 厚みは横の 0.24（0.34 では箱が細く暗く、正面の絵が見えにくい）
+                    depth: 0.24, corner: 16 / TrunkLooks.bodyWidth,
                     handle: SpinRGB(r: look.handle.r / 255, g: look.handle.g / 255, b: look.handle.b / 255))
     }
 
