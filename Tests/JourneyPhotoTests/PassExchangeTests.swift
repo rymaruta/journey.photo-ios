@@ -154,7 +154,7 @@ final class PassExchangeTests: XCTestCase {
         XCTAssertFalse(PassExchange.allowsExchange(mode: .traveling, isForeground: true, awayFromHome: nil))
     }
 
-    /// 名刺にできるのは全体に公開している写真だけ（絞った写真は相手の端末で引けない）
+    /// 乗車券にできるのは全体に公開している写真だけ（絞った写真は相手の端末で引けない）
     func testOnlyPublicPhotosCanBeCards() throws {
         func photo(_ extra: String) throws -> Photo {
             try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"p","src":"/u/p.jpg"\#(extra)}"#.utf8))
@@ -254,7 +254,7 @@ final class PassExchangeTests: XCTestCase {
         if ja.contains("暗号化") {
             XCTAssertTrue(ja.contains("暗号化していません"))
             XCTAssertTrue(ja.contains("ブロックした人にも"))
-            XCTAssertTrue(ja.contains("名刺の写真・ひとこと・発と着の字が読めます"))
+            XCTAssertTrue(ja.contains("乗車券の写真・ひとこと・発と着の字が読めます"))
         } else {
             XCTAssertTrue(ja.contains("isn\u{2019}t encrypted"))
             XCTAssertTrue(ja.contains("blocked may still receive"))

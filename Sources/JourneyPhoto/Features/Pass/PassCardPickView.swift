@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// 名刺の一枚を選ぶ（板 PassCardPick）。すれちがった人の手元に、カードになって届く一枚。
+/// 乗車券（旧: 名刺の一枚。2026-10-17 owner が呼び名を「わたしの乗車券」に替えた）を選ぶ（板 PassCardPick）。すれちがった人の手元に、カードになって届く一枚。
 ///
 /// - 選べるのは**全体に公開している自分の写真だけ**（公開範囲を絞った写真は相手の端末で引けない・
 ///   `PassExchange.isPublicCard`）。公開一覧（`photos.json`）に載っているものから選ぶ
-/// - 上の見本は、相手に届くカードの表と同じ部品（`PassCardFront`）。**番号は出さない**
+/// - 上の見本は、相手に届くカードと同じ回る部品（`PassSpinCard` → `PassSpinTicket`）。指で回して裏も見られる。**番号は出さない**
 ///   （番号は受け取った側の帳の順で決まり、自分の側では決まらない・2026-10-16 判断）
 /// - 主ボタンは白（写真のある画面の主ボタン・CLAUDE.md の owner の好み。板は真鍮の塗りだが owner の決まりを取った）
 struct PassCardPickView: View {
@@ -35,7 +35,15 @@ struct PassCardPickView: View {
                        origin: PassTicket.previewOrigin(originChoice, text: originText, homePrefecture: pass.homePrefecture),
                        destination: PassTicket.previewDestination(custom: destinationCustom, text: destinationText),
                        name: profile?.name ?? L("あなた", "You"), distance: nil, date: nil,
-                       alighting: L("旅先のあたり 下車", "Got off around your trip"))
+                       count: PassTicket.countLabel(.plain, meetingCount: nil),
+                       via: PassTicket.via(L("旅先", "your trip")))
+    }
+
+    /// 見本の裏（相手に届く形・会ってから決まる区間と回数は「—」・`PassTicketBackFace.preview`）
+    private var previewBack: PassTicketBackFace {
+        PassTicketBackFace.preview(photoTitle: selectedPhoto?.displayTitle, note: note,
+                                   name: profile?.name ?? L("あなた", "You"),
+                                   origin: originChoice, homePrefecture: pass.homePrefecture)
     }
 
     /// ひとことが長すぎる（字数か、電波に載る大きさ）
@@ -54,14 +62,14 @@ struct PassCardPickView: View {
                     .lineSpacing(5)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                // 相手に届くきっぷの表（束の画面と同じ部品）。区間の右・日時・下車は会ってから決まるので、
-                // 見本では「旅先」とする。番号は受け取った側の帳の順なので出さない
+                // 相手に届くきっぷ（束の画面と同じ回る部品 `PassSpinTicket`・同じ手つき・2026-10-16 owner の頼み）。
+                // 区間の右・経由は会ってから決まるので、見本では「旅先」とする。番号は受け取った側の帳の順
+                // なので出さない。日付・区間（km）・回数も会ってから決まるので、表・裏とも「—」（2026-10-17 マルス券）
                 // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
-                PassCardFront(face: previewFace)
+                PassSpinCard(front: previewFace, back: previewBack,
+                             spokenName: L("相手に届くカード", "the card others receive"))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(L("相手に届くカードの表", "The front of the card others receive"))
+                    .padding(.top, 6)
                 JPEyebrowLine(L("あなたの写真から選ぶ", "Choose from your photos"))
                 grid
                 noteField
@@ -81,7 +89,7 @@ struct PassCardPickView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
-        .navigationTitle(L("名刺の一枚", "Your card"))
+        .navigationTitle(L("わたしの乗車券", "My ticket"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard !didLoad else { return }
@@ -117,8 +125,8 @@ struct PassCardPickView: View {
             JPLoadingState(kind: .grid)
         } else if photos.isEmpty {
             EmptyState(title: L("全体に公開している写真がありません", "No public photos yet"),
-                       message: L("名刺にできるのは、全体に公開している写真だけです。投稿してからもう一度開いてください。",
-                                  "Only photos shared with everyone can be your card. Post one, then come back."))
+                       message: L("乗車券にできるのは、全体に公開している写真だけです。投稿してからもう一度開いてください。",
+                                  "Only photos shared with everyone can go on your ticket. Post one, then come back."))
         } else {
             LazyVGrid(columns: Self.columns, spacing: 3) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
@@ -187,7 +195,7 @@ struct PassCardPickView: View {
     }
 
     /// 乗車券の区間（発・着）。**自分で書いた字は署名が無い**ので、受け取った側では「相手の端末から届いた文」の扱い
-    /// （通報・伏せる）になる。下車の行は書いた字に関わらず、受け取った側の位置で自動
+    /// （通報・伏せる）になる。「経由」の行は書いた字に関わらず、受け取った側の位置で自動
     private var routeSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             JPEyebrowLine(L("乗車券の区間", "Ticket route"))
@@ -202,7 +210,7 @@ struct PassCardPickView: View {
                 JPRadioRow(title: L("自分で書く", "Write my own"), selected: originChoice == .custom) { originChoice = .custom }
                     .accessibilityIdentifier("pass.pick.origin.custom")
                 JPCardDivider()
-                JPRadioRow(title: L("出さない（どこかから）", "Don\u{2019}t show (somewhere)"), selected: originChoice == .hidden) {
+                JPRadioRow(title: L("出さない（どこか発）", "Don\u{2019}t show (somewhere)"), selected: originChoice == .hidden) {
                     originChoice = .hidden
                 }
                 .accessibilityIdentifier("pass.pick.origin.hidden")
@@ -230,8 +238,8 @@ struct PassCardPickView: View {
                            placeholder: L("例：北陸ひとり旅", "e.g. Hokuriku"), text: $destinationText,
                            id: "pass.pick.destination.text")
             }
-            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「〇〇のあたり 下車」の行は、受け取った人の位置で自動です。",
-                   "What you write reaches the other device as is (unsigned). The \u{201C}got off around …\u{201D} line always uses where they were."))
+            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「経由 〇〇のあたり」の行は、受け取った人の位置で自動です。",
+                   "What you write reaches the other device as is (unsigned). The \u{201C}via …\u{201D} line always uses where they were."))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
