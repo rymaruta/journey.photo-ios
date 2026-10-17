@@ -11,7 +11,10 @@ struct TrunkGachaView: View {
     @ObservedObject var model: TrunkViewModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var toasts: ToastCenter
     @State private var phase: TrunkGachaPhase = .idle
+    /// 画面に出ているか（1周したあと返事を待つ間に戻った人へ、一言で知らせる）
+    @State private var visible = false
     @State private var crank = TrunkCrank()
     @State private var ticks = 0
     @State private var drops = 0
@@ -64,6 +67,8 @@ struct TrunkGachaView: View {
         .sensoryFeedback(.selection, trigger: ticks)
         .sensoryFeedback(.impact(weight: .heavy), trigger: drops)
         .task { if model.state == nil { await model.load(offline: false) } }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
         .fullScreenCover(isPresented: $showOpen, onDismiss: reset) {
             if let result { TrunkGachaOpenView(model: model, result: result) }
         }
@@ -314,9 +319,16 @@ struct TrunkGachaView: View {
     private var coinRow: some View {
         HStack(spacing: 10) {
             TrunkCoinMark(size: 26)
-            Text(L("硬貨 \(coins) 枚", "\(coins) coins"))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(WebTheme.text)
+            HStack(spacing: 4) {
+                Text(L("硬貨", "Coins"))
+                    .font(.subheadline)
+                // 数は SF の等幅の数字（`JPFont.mono`）
+                Text("\(coins)")
+                    .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+                Text(L("枚", ""))
+                    .font(.subheadline)
+            }
+            .foregroundStyle(WebTheme.text)
             Text(L("· 公開の投稿1件で1枚", "· One per public post"))
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.faint)
@@ -357,7 +369,7 @@ struct TrunkGachaView: View {
             case .turning, .waiting:
                 HStack(spacing: 8) {
                     Text(L("ハンドルを右へまわす", "Turn the handle right"))
-                    Text("· \(crank.percent)%").font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    Text("· \(crank.percent)%").font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                 }
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(WebTheme.accent)
@@ -385,6 +397,12 @@ struct TrunkGachaView: View {
         guard let got = await model.gacha() else {
             phase = .idle
             crank = TrunkCrank()
+            return
+        }
+        guard visible else {
+            // 返事を待つ間に戻った: 出た部品は部品箱に入っている（硬貨はもう使った）
+            toasts.show(TrunkGachaText.arrivedWhileAway(got), kind: .info)
+            reset()
             return
         }
         result = got
@@ -590,7 +608,12 @@ struct TrunkGachaOpenView: View {
                 Task {
                     guard let state = model.state else { return }
                     let next = TrunkEquipText.equipping(part, on: state.equipped)
-                    if await model.equip(next) {
+                    guard !next.full else {
+                        // いっぱい: 黙って外さず、付け替えの画面と同じ一言
+                        model.actionError = TrunkEquipText.fullNote(part.kind)
+                        return
+                    }
+                    if await model.equip(next.equipped) {
                         dismiss()
                         toasts.show(L("トランクに付けました", "Put on your trunk"))
                     }
@@ -659,7 +682,7 @@ struct TrunkGachaOddsView: View {
                             }
                             Spacer()
                             Text("\(rarity.percent)%")
-                                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                                 .foregroundStyle(WebTheme.text)
                         }
                         .padding(.horizontal, 16)

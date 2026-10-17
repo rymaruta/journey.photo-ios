@@ -200,10 +200,13 @@ final class TrunkPartsTests: XCTestCase {
         XCTAssertTrue(full.full, "4つ目のピンを付けられた")
         XCTAssertEqual(full.equipped, e)
         XCTAssertEqual(TrunkEquipText.toggling(pin(2), on: e).equipped.pins, ["pin.1", "pin.3"], "押し直しで外れない")
-        // 開けた画面の「付ける」はいっぱいなら古いものを外して足す
-        XCTAssertEqual(TrunkEquipText.equipping(pin(4), on: e).pins, ["pin.2", "pin.3", "pin.4"])
+        // 開けた画面の「付ける」も、いっぱいなら黙って外さずに断る（付け替えの画面と同じ）
+        let fromCapsule = TrunkEquipText.equipping(pin(4), on: e)
+        XCTAssertTrue(fromCapsule.full, "いっぱいなのに付けた")
+        XCTAssertEqual(fromCapsule.equipped.pins, ["pin.1", "pin.2", "pin.3"], "古いピンを黙って外した")
+        XCTAssertEqual(TrunkEquipText.equipping(pin(4), on: TrunkEquipped(pins: ["pin.1"])).equipped.pins, ["pin.1", "pin.4"])
         let lock = TrunkPartCatalog.part("lock.3")!
-        let withLock = TrunkEquipText.equipping(lock, on: TrunkEquipped(lock: "lock.1"))
+        let withLock = TrunkEquipText.equipping(lock, on: TrunkEquipped(lock: "lock.1")).equipped
         XCTAssertEqual(withLock.lock, "lock.3", "1つの場所は置き換え")
         XCTAssertNil(TrunkEquipText.toggling(lock, on: withLock).equipped.lock, "押し直しで外れない")
         XCTAssertEqual(TrunkEquipText.clearing(.pin, on: e).pins, [])
@@ -304,6 +307,11 @@ final class TrunkPartsTests: XCTestCase {
         XCTAssertEqual(TrunkText.refusal(code: "notEnoughFragments", fallback: "x"), "かけらが足りません。5つで1つ交換できます。")
         XCTAssertEqual(TrunkGachaText.title(TrunkPartCatalog.part("lock.2")!), "真鍮の錠前「菊」", "モックの見出しの形")
         XCTAssertEqual(TrunkGachaText.title(TrunkPartCatalog.part("lock.12")!), "錠前「金の星」", "金属の名前を重ねた")
+        let kiku = TrunkPartCatalog.part("lock.2")!
+        XCTAssertEqual(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: false, fragments: 0, coins: 0)),
+                       "カプセルの「菊」が部品箱に入りました。")
+        XCTAssertTrue(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: true, fragments: 1, coins: 0))
+            .contains("かけら"))
     }
 
     @MainActor
@@ -348,7 +356,11 @@ final class TrunkPartsTests: XCTestCase {
         arrivals.deliver(TrunkDealt(label: nil, labelSkipped: .off, coin: 1), photoTitle: "")
         XCTAssertEqual(arrivals.consumeNotice(), .coins(1), "受け取らない設定の人に硬貨が届いたことを言わない")
         arrivals.deliver(TrunkDealt(label: nil, labelSkipped: .full, coin: 1), photoTitle: "")
-        XCTAssertEqual(arrivals.consumeNotice(), .full, "いっぱいの一言が硬貨に負けた")
+        let full = arrivals.consumeNotice()
+        XCTAssertEqual(full, .fullAndCoins(1), "いっぱいのときに硬貨が届いたことを言わない")
+        XCTAssertEqual(full?.text, TrunkText.fullNotice + " " + TrunkText.coinAlsoNotice(1))
+        arrivals.deliver(TrunkDealt(label: nil, labelSkipped: .full, coin: 0), photoTitle: "")
+        XCTAssertEqual(arrivals.consumeNotice(), .full)
         arrivals.deliver(TrunkDealt(label: nil, labelSkipped: .daily, coin: 0), photoTitle: "")
         XCTAssertFalse(arrivals.hasPending)
         XCTAssertEqual(TrunkText.coinChip(1), "硬貨 +1")

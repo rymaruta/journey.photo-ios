@@ -265,6 +265,11 @@ enum TrunkText {
         L("硬貨 +\(n) · カプセルの機械で部品と換えられます", "+\(n) coin · Use it at the capsule machine for a trunk part")
     }
 
+    /// ラベルが届かなかった一言に添える硬貨（手持ちがいっぱいでも硬貨は届く）
+    static func coinAlsoNotice(_ n: Int) -> String {
+        L("硬貨は +\(n) 届いています。", "You still got +\(n) coin.")
+    }
+
     /// 届いた画面の硬貨の札（「硬貨 +1」）
     static func coinChip(_ n: Int) -> String { L("硬貨 +\(n)", "+\(n) coin") }
 

@@ -156,6 +156,14 @@ enum TrunkGachaText {
         }
     }
 
+    /// 1周したあと返事を待つ間に戻った人への一言
+    static func arrivedWhileAway(_ r: TrunkGachaResult) -> String {
+        r.duplicate
+            ? L("カプセルの「\(r.part.name)」は持っている部品でした。かけらを1つ部品箱に入れました。",
+                "The capsule held \u{201C}\(r.part.name)\u{201D}, which you have. A fragment went into your parts box.")
+            : L("カプセルの「\(r.part.name)」が部品箱に入りました。", "\u{201C}\(r.part.name)\u{201D} from the capsule is in your parts box.")
+    }
+
     /// 硬貨の入れ口のボタン
     static func insertTitle(coins: Int) -> String {
         coins > 0 ? L("硬貨を入れる", "Insert a coin") : L("硬貨がありません", "No coins")
@@ -232,13 +240,14 @@ enum TrunkPartsBoxText {
 /// 付け替えの決まり（付ける・外す・数の上限）
 enum TrunkEquipText {
 
-    /// 開けた画面の「トランクに付ける」: 1つの場所は置き換え、ピン・ワッペンは足す（いっぱいなら古いものを外す）
-    static func equipping(_ part: TrunkPart, on e: TrunkEquipped) -> TrunkEquipped {
-        var ids = e.ids(part.kind)
-        guard !ids.contains(part.id) else { return e }
-        if part.kind.capacity == 1 { return e.setting(part.kind, [part.id]) }
-        if ids.count >= part.kind.capacity { ids.removeFirst() }
-        return e.setting(part.kind, ids + [part.id])
+    /// 開けた画面の「トランクに付ける」: 1つの場所は置き換え、ピン・ワッペンは足す。
+    /// **いっぱいなら変えずに `full`**（付け替えの画面と同じ決まり・2026-10-17 の見直し: 古いものを黙って外していた）
+    static func equipping(_ part: TrunkPart, on e: TrunkEquipped) -> (equipped: TrunkEquipped, full: Bool) {
+        let ids = e.ids(part.kind)
+        guard !ids.contains(part.id) else { return (e, false) }
+        if part.kind.capacity == 1 { return (e.setting(part.kind, [part.id]), false) }
+        guard ids.count < part.kind.capacity else { return (e, true) }
+        return (e.setting(part.kind, ids + [part.id]), false)
     }
 
     /// 付け替えの画面で押した: 付けていれば外す・付けていなければ付ける。

@@ -36,6 +36,9 @@ final class TrunkArrivals: ObservableObject {
         case full, storage
         /// ラベルは届かなかったが、硬貨だけ届いた（受け取らない設定・2026-10-17 次の版）
         case coins(Int)
+        /// 手持ちがいっぱい・容量で届かなかったが、硬貨は届いた（2026-10-17 の見直し: 硬貨のことも言う）
+        case fullAndCoins(Int)
+        case storageAndCoins(Int)
 
         init?(_ skip: TrunkLabelSkip?) {
             switch skip {
@@ -50,6 +53,8 @@ final class TrunkArrivals: ObservableObject {
             case .full: return TrunkText.fullNotice
             case .storage: return TrunkText.storageNotice
             case .coins(let n): return TrunkText.coinNotice(n)
+            case .fullAndCoins(let n): return TrunkText.fullNotice + " " + TrunkText.coinAlsoNotice(n)
+            case .storageAndCoins(let n): return TrunkText.storageNotice + " " + TrunkText.coinAlsoNotice(n)
             }
         }
     }
@@ -112,7 +117,11 @@ final class TrunkArrivals: ObservableObject {
     /// 硬貨は届いた画面に添える。ラベルが無く理由の一言も無ければ「硬貨 +1」の一言にする
     func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, now: Date = Date()) {
         let coins = max(0, coins)
-        let notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
+        var notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
+        if coins > 0, arrivals.isEmpty {
+            if notice == .full { notice = .fullAndCoins(coins) }
+            if notice == .storage { notice = .storageAndCoins(coins) }
+        }
         guard !arrivals.isEmpty || notice != nil else { return }
         deliveredAt = now
         if !arrivals.isEmpty {
