@@ -175,4 +175,30 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         XCTAssertFalse(ok, "後の頼みが失敗したのに閉じた")
         XCTAssertNotNil(places.pending["a"])
     }
+
+    /// 🔴 「完了」の頼みが新しい頼みに負け、その新しい頼みが成功した: 待ってから成功と数える（閉じてよい）。
+    /// 送るのは他の1枚と新しい置き場の1回ずつだけ（待ったあとに古い値を送り直さない）
+    @MainActor
+    func testFlushWaitsAndCountsTheNewerSuccess() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.5, y: 0.5, rot: 8))
+        let other = Task { await model.placeWhenFree("c", at: TrunkPos(x: 0.9, y: 0.9, rot: 0)) }
+        while !model.busy { await Task.yield() }
+        let flushing = Task { await places.flush() }
+        try await Task.sleep(nanoseconds: 60_000_000)
+        // すぐ後に同じ1枚を回した（新しい頼み）。それが成功する
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.5, y: 0.5, rot: 16))
+        let later = Task { await places.commit("a") }
+        _ = await other.value
+        let ok = await flushing.value
+        _ = await later.value
+        XCTAssertTrue(ok, "新しい頼みが送れたのに、負けた頼みを失敗と数えた")
+        XCTAssertTrue(places.pending.isEmpty)
+        let sent = SlowTrunkProtocol.puts.filter { $0.path == "/user/trunk/labels/a/place" }
+        XCTAssertEqual(sent.count, 1, "同じ1枚を余分に送った")
+        XCTAssertEqual(rot(sent.first?.body), 16)
+        XCTAssertEqual(SlowTrunkProtocol.puts.count, 2)
+    }
 }
