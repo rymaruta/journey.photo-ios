@@ -752,6 +752,23 @@ final class UploadViewModel: ObservableObject {
         return true
     }
 
+    /// × で**確認なしに**閉じる（`hasDraft` が偽＝写真も変えた欄も無い）。中身が無くなった自動の書きかけ・
+    /// この画面の送信の控えを片づける。
+    ///
+    /// 🔴 **2026-10-16 判断:** 写真を全部外して空にした画面は確認なしで閉じるので、ここで片づけないと
+    /// 控え・書きかけが残り、次に開いて（次の起動で）外した写真のことを尋ねていた。決まりは裏に回ったときの
+    /// `autoSaveDraft`（写真が無く手が空いていれば前の分を消す）と同じで、次のものは壊さない:
+    /// - 送っている途中・読み込み中・開き直している最中は `hasDraft` が真（または × が押せない）なので触らない
+    /// - 届いたか分からない写真（`staged`・控えでは `inFlight`）は帯に残る＝`hasDraft` が真なのでここに来ない。
+    ///   本人が外した写真は「投稿をやめる」と同じく控えから外れる（`dropUnsureDraftPhotos` と同じ扱い）
+    /// - 書きかけの枠を持っていない画面（`ownsAutoSlot`）・ほかの画面の控え・本人の下書きには触らない
+    ///   （`discardAutoDraft` / `discardJournal` がそう作ってある）
+    func closeWithoutDraft() {
+        guard !hasDraft else { return }
+        discardAutoDraft()
+        discardJournal()
+    }
+
     /// この画面の送信の控えを消す（やめる・下書きに保存・全部上がった）
     func discardJournal() {
         if let journalStore, let draftOwner { journalStore.clear(for: draftOwner) }
@@ -1149,23 +1166,7 @@ final class UploadViewModel: ObservableObject {
         inspiredCarrier.removed(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
-        // 🔴 **開き直した下書きの1枚を帯の × で外したら、端末の下書きからも外す**（2026-10-12 判断）。
-        // 触らないとディスクに残り、次に「下書きを続けますか？」で蘇る
-        if let key = draftKeys[photoId] {
-            if let drafts, let draftOwner {
-                drafts.removeItem(key: key, for: draftOwner)
-            }
-            draftKeys[photoId] = nil
-        }
-        // 自動で残した書きかけ・送信の控えからも外す（同じ理由・2026-10-16）
-        if let key = autoKeys[photoId] {
-            if let autoDrafts, let draftOwner { autoDrafts.removeItem(key: key, for: draftOwner) }
-            autoKeys[photoId] = nil
-        }
-        if let key = journalKeys[photoId] {
-            if let journalStore, let draftOwner { journalStore.removeItem(key: key, for: draftOwner) }
-            journalKeys[photoId] = nil
-        }
+        forgetStoredCopies(of: photoId)
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
@@ -1181,6 +1182,30 @@ final class UploadViewModel: ObservableObject {
             if restoredDraft && draftKeys.isEmpty {
                 restoredDraft = false
             }
+        }
+    }
+
+    /// 本人が外した写真を、端末に残した写し（本人の下書き・自動の書きかけ・送信の控え）からも外す。
+    ///
+    /// 🔴 **開き直した下書きの1枚を帯の × で外したら、端末の下書きからも外す**（2026-10-12 判断）。
+    /// 触らないとディスクに残り、次に「下書きを続けますか？」で蘇る。自動で残した書きかけ・送信の控えも
+    /// 同じ（2026-10-16）。
+    ///
+    /// 🔴 **2026-10-16 判断: 帯の × とライブラリの選択を外す道（`loadPicked` の `dropped`）の両方でここを通す。**
+    /// 以前は × だけが外していて、A・B を送って B だけ残った後に「追加」で B の選択を外すと、
+    /// B が控えに残ったまま次の起動の「送れなかった投稿」から戻り、本人が外した写真が投稿されえた
+    private func forgetStoredCopies(of photoId: UUID) {
+        if let key = draftKeys[photoId] {
+            if let drafts, let draftOwner { drafts.removeItem(key: key, for: draftOwner) }
+            draftKeys[photoId] = nil
+        }
+        if let key = autoKeys[photoId] {
+            if let autoDrafts, let draftOwner { autoDrafts.removeItem(key: key, for: draftOwner) }
+            autoKeys[photoId] = nil
+        }
+        if let key = journalKeys[photoId] {
+            if let journalStore, let draftOwner { journalStore.removeItem(key: key, for: draftOwner) }
+            journalKeys[photoId] = nil
         }
     }
 
@@ -1209,6 +1234,8 @@ final class UploadViewModel: ObservableObject {
             placeTasks[id]?.cancel()
             placeTasks[id] = nil
             discardStaged(id)
+            // 選択を外した写真も、帯の × と同じく端末の写しから外す（`forgetStoredCopies` の注記）
+            forgetStoredCopies(of: id)
         }
         items.removeAll { dropped.contains($0.id) }
         // **束の印を捨てるのは、前の写真が1枚も残らないときだけ。** 「追加」は

@@ -119,7 +119,13 @@ struct UploadView: View {
                 // v2 Upload・Components 04「シート · 左に『キャンセル』/右に確定（真鍮の字）」。
                 // 以前は ×。動き（書きかけがあれば確かめる）は同じ
                 Button {
-                    if model.hasDraft { confirmDiscard = true } else { dismiss() }
+                    if model.hasDraft {
+                        confirmDiscard = true
+                    } else {
+                        // 中身が無くなった自動の書きかけ・この画面の控えを片づけてから閉じる（モデルの注記）
+                        model.closeWithoutDraft()
+                        dismiss()
+                    }
                 } label: {
                     Text(Labels.Common.cancel)
                         .font(.body)
