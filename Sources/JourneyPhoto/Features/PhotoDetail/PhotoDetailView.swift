@@ -1938,9 +1938,16 @@ struct PhotoDetailView: View {
 
     private func block(_ userId: String) async {
         clearNotices()
+        // 押した1枚と人。🔴 **隣の写真や、次の人の画面に書かない**（2026-10-17）。
+        // 答えが返る前に束を送ると、「ブロックしました」とフォローの消しが、
+        // いま見ている別の人の写真に乗っていた
+        let photoId = current.id
+        let sender = auth.userId
         do {
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
             try await hidden.blockAndHide(userId, environment: environment)
+            guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
+                                               sender: sender, viewer: auth.userId) else { return }
             // **成功は赤字で出さない**（失敗の欄 `actionError` は空けたまま）。
             // ブロックするとフォローも外れるので、ボタンも外した姿にする
             actionNotice = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
@@ -1950,6 +1957,8 @@ struct PhotoDetailView: View {
                 followLookupFailed = false
             }
         } catch {
+            guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
+                                               sender: sender, viewer: auth.userId) else { return }
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
@@ -2022,6 +2031,7 @@ struct PhotoDetailView: View {
         let photoId = current.id
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
+        let sender = auth.userId
         do {
             try await environment.photos.delete(photoId: photoId)
             // 🔴 **公開一覧からも落とす。** 一覧は建て直しまで古い静的 JSON で、
@@ -2029,9 +2039,15 @@ struct PhotoDetailView: View {
             // いいね・保存・コメントが 404 になっていた（`ModerationStore.goneMarks`）
             await hidden.hideGone(photoId, for: owner, environment: environment, deleted: true)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
-            // 編集したり、もう一度削除を押したりできてしまう
+            // 編集したり、もう一度削除を押したりできてしまう。
+            // 🔴 **隣へ送ったあと・人が替わったあとは閉じない**（2026-10-17）。
+            // 閉じると、いま見ている別の写真まで一緒に閉じていた。失敗の文も隣に出さない
+            guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
+                                               sender: sender, viewer: auth.userId) else { return }
             dismiss()
         } catch {
+            guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
+                                               sender: sender, viewer: auth.userId) else { return }
             actionError = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
@@ -2378,6 +2394,14 @@ enum PhotoDetailRules {
                             lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
         guard !isMine, signedIn, !ownerBlocked else { return false }
         return isFollowing != nil || lookupFailed
+    }
+
+    /// ブロック・削除の答えを、いまの画面に書くか。
+    ///
+    /// **押した1枚を、押した人が、まだ見ているときだけ。** 束を隣へ送ったあとや、
+    /// ログアウトしたあとに書くと、別の写真が閉じたり、次の人に前の人の失敗が出る
+    static func appliesHere(photoId: String, currentId: String, sender: String?, viewer: String?) -> Bool {
+        photoId == currentId && sender != nil && sender == viewer
     }
 
     /// 詳細の上で左右に送る束と、いま見ている位置。**大きく見る画面（`viewerLineup`）と
