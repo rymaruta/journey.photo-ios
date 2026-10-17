@@ -411,7 +411,7 @@ struct UserProfileView: View {
             ProfileFollowButtonLabel(isFollowing: model.isFollowing)
         }
         .buttonStyle(.plain)
-        // 送っている間は薄くする（押したことが見て分かる。二度押しは `disabled` で防ぐ）
+        // 送っている間は薄くする（押したことが見て分かる。二度押しは `toggleFollow` の頭で止める）
         .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
@@ -600,6 +600,10 @@ final class UserProfileViewModel: ObservableObject {
     /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
     /// - Parameter follow: 押したボタンの向き（フォローしたいか）。nil はいまの姿の逆
     func toggleFollow(userId: String, environment: AppEnvironment, follow: Bool? = nil) async {
+        // 🔴 **送っている間の2回目は送らない。** `disabled` は描き直しの後にしか効かず、素早く2回押すと
+        // 2本走り、先に終わった方の `defer` が `isWorking` を下ろして、もう1本の最中に押せる姿へ戻っていた
+        // （2026-10-16 判断: 写真詳細の `toggleFollow` と同じ形で頭で止める）
+        guard !isWorking else { return }
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }

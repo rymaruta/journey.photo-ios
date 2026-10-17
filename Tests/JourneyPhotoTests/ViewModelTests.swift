@@ -527,6 +527,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"])
     }
 
+    /// 🔴 **送っている間にもう一度押しても、2本目を送らない**（2026-10-16）。
+    /// `disabled` は描き直しの後にしか効かず、素早い2回で2本走っていた
+    func testProfileFollowSecondPressWhileSendingIsIgnored() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["DELETE /users/u1/follow": gate])))
+        let model = UserProfileViewModel()
+        let first = Task { await model.toggleFollow(userId: "u1", environment: env, follow: false) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.isWorking, "前提: 1本目を送っている")
+        await model.toggleFollow(userId: "u1", environment: env, follow: false)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"], "送っている間の2回目も送った")
+        XCTAssertFalse(model.isWorking)
+    }
+
     /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
     /// 書くと前の人の「フォロー中」が次の人の画面に出て、次の人の読み込みも直さなかった
     func testProfileFollowAnswerForThePreviousViewerIsDropped() async {
