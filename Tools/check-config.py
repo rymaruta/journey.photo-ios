@@ -403,6 +403,45 @@ if testflight_yml.exists():
     if "testflight/" not in flow:
         fail("ios-testflight.yml が出した版の印（testflight/<版> のタグ）を付けていません")
 
+# ---- 枝の確認の絞り（`screens`）と「Mac でテスト済み」の数え方 -------------------
+# 🔴 **絞った回を「テスト済み」と数えると、全部の UI テストが一度も回らずに main に入る**
+# （2026-10-17）。数えるのは ios-testflight.yml の印の段だけで、その段は絞らない回にしか
+# 走らない。印の名前・条件・数える側のどれかが崩れたら、ここで止める
+MARK = "全部のテストが通った（PR の検証が数える印）"
+pr_yml = ROOT / ".github/workflows/ios-pr.yml"
+if testflight_yml.exists() and pr_yml.exists():
+    flow = testflight_yml.read_text(encoding="utf-8")
+    pr_flow = pr_yml.read_text(encoding="utf-8")
+    mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}", flow)
+    if not mark:
+        fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
+    elif "steps.scope.outputs.full == 'true'" not in mark.group(1):
+        fail(f"ios-testflight.yml の「{MARK}」が、絞った回（screens）にも走ります")
+    if f'.name == "{MARK}"' not in pr_flow:
+        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」が「{MARK}」を数えていません")
+    if re.search(r'startswith\("テスト"\)', pr_flow):
+        fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
+    for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):
+        fail(f"ios-testflight.yml の段「{name}」が「テスト」で始まります（古い数え方に拾われる）")
+    import subprocess
+    picker = ROOT / "Tools/pick-ui-tests.py"
+    def picked(screens):
+        run = subprocess.run([sys.executable, str(picker), screens], capture_output=True, text=True)
+        return run.returncode, run.stdout.split()
+    code, out = picked("")
+    if code != 0 or out != ["-only-testing:JourneyPhotoUITests"]:
+        fail(f"pick-ui-tests.py の空（全部）が全部になりません: {code} {out}")
+    code, out = picked("なし")
+    if code != 0 or out != ["-only-testing:JourneyPhotoUITests/SmokeTests"]:
+        fail(f"pick-ui-tests.py の「なし」が起動の見張りだけになりません: {code} {out}")
+    code, out = picked("01-同意画面")
+    if code != 0 or "-only-testing:JourneyPhotoUITests/ScreenshotTests/testCapturesEveryScreen" not in out \
+            or "-only-testing:JourneyPhotoUITests/SmokeTests" not in out:
+        fail(f"pick-ui-tests.py が絵の名前（01-同意画面）から撮るテストを選べません: {code} {out}")
+    code, _ = picked("どの絵にも無い語qqq")
+    if code != 2:
+        fail("pick-ui-tests.py が当たらない語で止まりません（打ち間違いで UI テスト0件のまま緑になる）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

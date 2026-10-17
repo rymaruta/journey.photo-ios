@@ -124,8 +124,15 @@ done
 # （手元で読める）。ここが見るのは**手はあるのに絵が出なかった**回。
 #
 # **落とさない**（この台本の約束）。出すのは警告と、まとめへの1行。
+# **絞った回（`screens`・NARROWED=true）は数えない**（2026-10-17）。撮らない画面があって当たり前で、
+# 名指しが並ぶと本当に消えた回と見分けられない。全部の回だけ数える
 python3 - "$OUT" <<'SHOTS'
-import pathlib, sys, unicodedata
+import os, pathlib, sys, unicodedata
+
+if os.environ.get("NARROWED") == "true":
+    pathlib.Path("/tmp/shots-report.md").write_text(
+        "絞った回（screens）なので、撮れなかった画面は数えていない。この枝には絞った分の絵だけがある\n")
+    raise SystemExit(0)
 
 # 🔴 **macOS のファイル名は NFD で返る。** 「マップ」の「プ」は
 # 「フ」＋濁点の2文字になっていて、台本に書いた NFC の「プ」とは
