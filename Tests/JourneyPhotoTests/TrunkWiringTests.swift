@@ -200,4 +200,12 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(gacha.contains("TrunkGachaOddsView()"), "中身と確率への入口が無い")
         XCTAssertTrue(gacha.contains("if reduceMotion {"), "落ちる弾みを「視差効果を減らす」で止めていない")
     }
+
+    /// 回して間もなく閉じても保存する（「完了」は送ってから閉じる・閉じた画面は残りを送る）
+    func testStickScreenFlushesOnClose() throws {
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertTrue(stick.contains("await flush()\n                        dismiss()"), "「完了」が溜まった置き場を送らずに閉じる")
+        XCTAssertTrue(stick.contains(".onDisappear { sendLeftovers() }"), "閉じたときに残りを捨てる")
+        XCTAssertFalse(stick.contains("commitTask?.cancel()"), "保存の予定が1つだけに戻った")
+    }
 }

@@ -184,6 +184,39 @@ final class TrunkViewModel: ObservableObject {
         return await write({ TrunkLocal.place($0, id: id, pos: pos) }, { try await $0.place(id, at: pos) })
     }
 
+    /// 書き込みの最中なら終わるまで待つ（5 秒まで）。空いたら true
+    func waitUntilIdle(timeout: Double = 5) async -> Bool {
+        var waited = 0.0
+        while busy && waited < timeout {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            waited += 0.05
+        }
+        return !busy
+    }
+
+    /// 置き直しの結果
+    enum PlaceOutcome: Equatable {
+        case saved
+        /// 断られた・読めなかった（一言は `actionError`）
+        case refused
+        /// 別の書き込みが終わらず送れなかった（あとでやり直す）
+        case busy
+    }
+
+    /// 置き直す。**書き込みの最中なら待ってから送る**（2026-10-17 の見直し: 黙って false で、回した向きが
+    /// 保存されないことがあった）
+    func placeWhenFree(_ id: String, at pos: TrunkPos) async -> PlaceOutcome {
+        guard await waitUntilIdle() else { return .busy }
+        if await place(id, at: pos) { return .saved }
+        return actionError == nil ? .busy : .refused
+    }
+
+    /// 置き場つきで貼る（書き込みの最中なら待ってから）
+    func stickWhenFree(_ id: String, at pos: TrunkPos) async -> Bool {
+        guard await waitUntilIdle() else { return false }
+        return await stick(id, at: pos)
+    }
+
     /// はがして手持ちに戻す（手持ちが上限なら一言）
     @discardableResult
     func unstick(_ id: String) async -> Bool {

@@ -196,3 +196,43 @@ struct TrunkStickLayout: Equatable {
         (originX + x * scale, originY + (y + TrunkLooks.bodyTop) * scale)
     }
 }
+
+/// 保存を待っている置き場（回した・動かした。**ラベルごとに**持つ・2026-10-17 の見直し）。
+///
+/// 以前は保存の予定を1つしか持たず、別のラベルを回すと前のラベルの保存が消えた。閉じるときは
+/// ここに残っている分を全部送る（`TrunkStickView.flush`）
+struct TrunkPendingPlaces: Equatable {
+    struct Item: Equatable {
+        /// 動かし始める前の置き場（戻す1手に使う）
+        let from: TrunkPos
+        /// 送る置き場（いちばん新しい値）
+        var to: TrunkPos
+    }
+
+    private(set) var items: [String: Item] = [:]
+
+    var isEmpty: Bool { items.isEmpty }
+    /// 送る順（id の順・決まった順）
+    var ids: [String] { items.keys.sorted() }
+
+    subscript(id: String) -> Item? { items[id] }
+
+    /// 動かした（はじめの置き場は最初の1回だけ覚える）
+    mutating func note(_ id: String, from: TrunkPos, to: TrunkPos) {
+        if var item = items[id] {
+            item.to = to
+            items[id] = item
+        } else {
+            items[id] = Item(from: from, to: to)
+        }
+    }
+
+    /// 送れた・断られた。**送ったあとにまた動かしていたら消さない**（新しい値をあとで送る）
+    mutating func done(_ id: String, sent: TrunkPos) {
+        guard let item = items[id], TrunkPlacement.clamp(item.to) == TrunkPlacement.clamp(sent) else { return }
+        items[id] = nil
+    }
+
+    /// 画面の上に出す置き場
+    var overrides: [String: TrunkPos] { items.mapValues(\.to) }
+}
