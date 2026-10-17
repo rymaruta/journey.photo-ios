@@ -40,12 +40,28 @@ if not manifest.exists():
     print("::warning::manifest.json がありません")
     raise SystemExit(0)
 
+# 🔴 **置くのは自分で撮った絵（.png/.jpg）と注記（.txt）だけ**（2026-10-17）。
+# Xcode は UI テストが落ちると画面の録画（.mp4）と UI の木・合成した操作（拡張子なし）を
+# 自分で添付する。run 465 はその録画（162MB）をこの枝に押そうとして、GitHub の1ファイル
+# 100MB の上限で**押すこと自体が断られ、絵が1枚も置けなかった**。録画は「落ちたときに
+# 読むもの」の成果物（Test.xcresult の中・7日）に元から入っているので、ここでは足さない
+# （成果物の容量も増やさない）
+KEEP = (".png", ".jpg", ".jpeg", ".txt")
+skipped = []
 for test in json.loads(manifest.read_text()):
     for a in test.get("attachments", []):
-        name = a.get("suggestedHumanReadableName") or a.get("exportedFileName")
-        f = src / a["exportedFileName"]
-        if f.exists():
-            shutil.copy(f, out / f"{name}.png")
+        exported = a["exportedFileName"]
+        name = a.get("suggestedHumanReadableName") or exported
+        f = src / exported
+        if not f.exists():
+            continue
+        if not exported.lower().endswith(KEEP):
+            if exported.lower().endswith((".mp4", ".mov")):
+                skipped.append(name)
+            continue
+        shutil.copy(f, out / f"{name}.png")
+if skipped:
+    print(f"録画 {len(skipped)} 本はこの枝に置きません（成果物 build-logs の Test.xcresult の中にあります）: " + " / ".join(skipped[:5]))
 PY
 
 count=$(ls "$OUT"/*.png 2>/dev/null | wc -l | tr -d ' ')
