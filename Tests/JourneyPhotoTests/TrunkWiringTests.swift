@@ -148,4 +148,25 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(edit.contains("if patch.published == true {\n                TrunkArrivals.shared.deliver(dealt,"),
                       "下書きを公開しても届いた画面を出さない")
     }
+
+    /// 🔴 入れ物（VStack・ZStack・EmptyState・ScrollView）に付けた目印は、**本物の SwiftUI では中の子に
+    /// 降りて、子のボタンの目印を上書きする**（run 464: `trunk.empty` が「写真を投稿」の `trunk.emptyPost` を
+    /// 消し、作り直し・届いた画面のボタンも見つからなかった）。模型（Shims）は目印を素通しで、この上書きを
+    /// 再現しない。入れ物の目印の直前には必ず `.accessibilityElement(children: .contain)` を置く
+    func testContainerIdentifiersDoNotOverrideChildren() throws {
+        let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
+                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen"]
+        var found = Set<String>()
+        for (name, text) in try trunkFiles() {
+            let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            for (k, line) in lines.enumerated() {
+                for id in containers where line == ".accessibilityIdentifier(\"\(id)\")" {
+                    found.insert(id)
+                    XCTAssertEqual(k > 0 ? lines[k - 1] : "", ".accessibilityElement(children: .contain)",
+                                   "\(name) の \(id) が子のボタンの目印を上書きする")
+                }
+            }
+        }
+        XCTAssertEqual(found, Set(containers), "見張る目印が見つからない（名前が変わった？）")
+    }
 }

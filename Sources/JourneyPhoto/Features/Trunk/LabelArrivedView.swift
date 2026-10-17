@@ -73,6 +73,8 @@ struct LabelArrivedView: View {
         // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（作り直しの「図柄を決めました」・
         // 貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
         .overlay(alignment: .top) { ToastOverlay() }
+        // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.arrived")
     }
 

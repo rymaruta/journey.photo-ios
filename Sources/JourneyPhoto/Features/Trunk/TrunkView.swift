@@ -55,11 +55,15 @@ struct TrunkView: View {
                     JPLoadingState(kind: .rows).padding(.horizontal, 20)
                 }
             }
+            // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("trunk.loading")
         case .failed(let message):
             ErrorBanner(title: L("トランクを開けませんでした", "Couldn\u{2019}t open your trunk"), message: message,
                         retry: { Task { await model.load(offline: connectivity.isOffline) } })
                 .frame(maxHeight: .infinity)
+                // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("trunk.failed")
         case .offline:
             ErrorBanner(title: L("電波がありません", "No signal"),
@@ -67,6 +71,8 @@ struct TrunkView: View {
                                    "Open this again where you have a signal to load your trunk."),
                         retry: { Task { await model.load(offline: connectivity.isOffline) } })
                 .frame(maxHeight: .infinity)
+                // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("trunk.offline")
         case .loaded:
             if let state = model.state { loaded(state) }
@@ -97,6 +103,8 @@ struct TrunkView: View {
                                actionTitle: L("写真を投稿", "Post a photo"), actionIdentifier: "trunk.emptyPost") {
                         tabRouter.openPost(.photo)
                     }
+                    // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("trunk.empty")
                 } else {
                     stats(state)
@@ -107,6 +115,8 @@ struct TrunkView: View {
                     .padding(.bottom, 32)
             }
         }
+        // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.screen")
     }
 

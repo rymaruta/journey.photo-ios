@@ -60,6 +60,8 @@ struct TrunkPocketView: View {
                     EmptyState(title: L("手持ちのラベルはありません", "Your pocket is empty"),
                                message: L("写真を投稿すると、お礼のラベルがここに届きます。",
                                           "Post a photo and a thank-you label will arrive here."))
+                        // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("trunk.pocket.empty")
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
