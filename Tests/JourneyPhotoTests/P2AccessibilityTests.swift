@@ -112,6 +112,11 @@ final class P2AccessibilityTests: XCTestCase {
         XCTAssertEqual(FormChip.height + FormChip.tapSlack * 2, WebTheme.minTapTarget)
         XCTAssertEqual(FormChip.lineSpacing, 0)
         XCTAssertEqual(FormChip.spacing, 6)
+        // 🔴 1文字の札（字 12＋左右 10 ≈ 32）でも、当たりの幅は 44 以上
+        XCTAssertEqual(FormChip.minWidth, 38)
+        let oneChar: CGFloat = 12 + 10 * 2
+        XCTAssertGreaterThanOrEqual(max(oneChar, FormChip.minWidth) + FormChip.sideSlack * 2, WebTheme.minTapTarget,
+                                    "1文字の札の当たりの幅が 44 に届かない")
     }
 
     /// 🔴 **当たりの箱（44）が隣の行と重ならない。** 重なると、下の行の札が上の札の押し下げを奪う
@@ -145,7 +150,8 @@ final class P2AccessibilityTests: XCTestCase {
             XCTAssertFalse(code.contains(".padding(-Self.tapSlack)"), "\(file) が前の 3pt だけの当たりに戻っている")
         }
         let face = try source("Features/Common/TagField.swift")
-        XCTAssertTrue(face.contains(".frame(minHeight: FormChip.height)"))
+        XCTAssertTrue(face.contains(".frame(minWidth: FormChip.minWidth, minHeight: FormChip.height)"),
+                      "1文字の札の当たりの幅が 44 に届かない")
         XCTAssertTrue(face.contains(".padding(.vertical, FormChip.tapSlack)\n"))
     }
 

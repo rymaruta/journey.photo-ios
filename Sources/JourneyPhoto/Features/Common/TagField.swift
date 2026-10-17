@@ -69,6 +69,9 @@ enum FormChip {
     static let lineSpacing: CGFloat = 0
     /// 当たりを左右へ広げる幅（札の間の半分。外へ広げて同じだけ詰め、並びは変えない）
     static let sideSlack: CGFloat = spacing / 2
+    /// 見える札の最小の幅（2026-10-17）。左右の余り（3＋3）を足して当たりの幅も 44 にする。
+    /// 1文字の札（「春」「海」）は字＋左右 10 で約 32 しかなく、当たりが約 38 だった
+    static let minWidth: CGFloat = WebTheme.minTapTarget - sideSlack * 2
 }
 
 extension View {
@@ -76,7 +79,7 @@ extension View {
     /// 札の面（塗りのカプセル・見た目 `FormChip.height`）と、上下 44 の当たり
     func formChipFace(fill: Color) -> some View {
         self
-            .frame(minHeight: FormChip.height)
+            .frame(minWidth: FormChip.minWidth, minHeight: FormChip.height)
             .background(fill, in: Capsule())
             // 字を大きくして札が 32 を超えても、上下に押せる余白が残る
             .padding(.vertical, FormChip.tapSlack)
