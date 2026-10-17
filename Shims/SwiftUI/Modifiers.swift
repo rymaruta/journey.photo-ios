@@ -292,7 +292,8 @@ extension View {
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 色を抜く（バッジの棚のまだ持っていないメダル・本物と同じ）
     public func grayscale(_ amount: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    // drawingGroup() は Drawing.swift に1つだけ（2026-10-17: 2つの枝が同じ口を足して main の Linux の型検査が落ちていた）
+    /// 重ねた層を一枚の絵にまとめて描く（乗車券の券面の動かない地紋・本物と同じ）
+    public func drawingGroup() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// シートの上の角（本物は iOS 16.4〜）
     public func presentationCornerRadius(_ r: Double?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

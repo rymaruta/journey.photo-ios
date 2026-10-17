@@ -68,8 +68,8 @@ extension Shape {
 extension View {
     /// 重ねた層を1枚にまとめてから効果をかける（本物と同じ）
     public func compositingGroup() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    /// 画面の外で1枚の絵に描いてから置く（細かい模様の重さを抑える）
-    public func drawingGroup() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    // drawingGroup() は Modifiers.swift に在る（2026-10-17 判断: #280 と #281 が別々に足して重なり、
+    // Linux の模型が組めなくなったので1つにまとめた）
     /// 傾き（回す中心つき）
     public func rotationEffect(_ a: Angle, anchor: UnitPoint) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 }
