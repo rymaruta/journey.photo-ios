@@ -340,12 +340,14 @@ jobs:
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
       - name: 単体テスト
+        id: unit
         if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
       # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
       - name: UI テスト（画面の絵）
+        id: ui
         if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
         run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
 
@@ -354,7 +356,7 @@ jobs:
       # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
       # `ios-pr.yml` の `tested` の job も合わせる
       - name: 全部のテストが通った（PR の検証が数える印）
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' }}
+        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
@@ -545,7 +547,16 @@ jobs:
         if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 30
-        run: XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
+        # 🔴 **元のプロジェクトに戻してから組む**（2026-10-17 判断）。ここに来るまでに「ビルド番号を
+        # 決める」が project.yml の版・ビルド番号を書き換え、`xcode-project use-profiles` が署名の設定を
+        # .xcodeproj に入れている。そのまま組むと、控えに入るのは**枝や PR では作られない設定**の
+        # 中間物になり、読む側で差分が大きくなる（設定が違えば組み直し）。project.yml を checkout の
+        # 状態へ戻し、.xcodeproj（git に入っていない）を作り直してから組む
+        run: |
+          set -euo pipefail
+          git checkout -- project.yml
+          xcodegen generate
+          XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
 
       - name: 控えを書く（main の回だけ）
         if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}

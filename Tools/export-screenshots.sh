@@ -59,7 +59,11 @@ for test in json.loads(manifest.read_text()):
             if exported.lower().endswith((".mp4", ".mov")):
                 skipped.append(name)
             continue
-        shutil.copy(f, out / f"{name}.png")
+        # **元の拡張子のまま写す**（2026-10-17）。前は何でも `{name}.png` にしていて、注記（.txt）が
+        # 偽の .png として枝に並んでいた。名前に拡張子が付いて来る（`…_0_<UUID>.png`）ので重ねない
+        ext = pathlib.Path(exported).suffix.lower()
+        base = name[: -len(ext)] if name.lower().endswith(ext) else name
+        shutil.copy(f, out / f"{base}{ext}")
 if skipped:
     print(f"録画 {len(skipped)} 本はこの枝に置きません（成果物 build-logs の Test.xcresult の中にあります）: " + " / ".join(skipped[:5]))
 PY

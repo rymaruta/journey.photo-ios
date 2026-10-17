@@ -19,13 +19,15 @@
   **起動の見張り（`SmokeTests`・2分弱）はいつも足す**（落ちずに描けるかは毎回見る）
 - どれにも当たらない語があれば、候補を出して止める（打ち間違いで0件のまま緑にしない）
 """
+import os
 import pathlib
 import re
 import sys
 import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-UI_DIR = ROOT / "UITests" / "JourneyPhotoUITests"
+# 読む場所は差し替えられる（`check-config.py` が「空なら読まない」を確かめるのに使う）
+UI_DIR = pathlib.Path(os.environ.get("JP_UI_TESTS_DIR") or (ROOT / "UITests" / "JourneyPhotoUITests"))
 TARGET = "JourneyPhotoUITests"
 ALWAYS = "SmokeTests"
 
@@ -72,10 +74,16 @@ def read_tests(directory=UI_DIR):
     return tests
 
 
+def wants_all(screens):
+    """空・`all`・`全部` なら True（UI テストのファイルを読む前に決める）"""
+    words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
+    return not words or any(nfc(w) in ("all", "全部") for w in words)
+
+
 def pick(screens, tests):
     """xcodebuild の引数の並びと、当たらなかった語を返す"""
     words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
-    if not words or any(nfc(w) in ("all", "全部") for w in words):
+    if wants_all(screens):
         return [f"-only-testing:{TARGET}"], []
     chosen = {name for name in tests if name.startswith(f"{ALWAYS}/")}
     missing = []
@@ -94,6 +102,11 @@ def pick(screens, tests):
 
 def main():
     screens = sys.argv[1] if len(sys.argv) > 1 else ""
+    # **全部のときはファイルを読まない**（2026-10-17）。上げる回（submit=true）はいつも全部で、
+    # UI テストのファイルの書き方に左右される理由が無い
+    if wants_all(screens):
+        print(f"-only-testing:{TARGET}")
+        return 0
     tests = read_tests()
     if not tests:
         print(f"UI テストが読めません（{UI_DIR}）", file=sys.stderr)

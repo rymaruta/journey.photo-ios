@@ -413,7 +413,9 @@ if testflight_yml.exists() and pr_yml.exists():
     flow = testflight_yml.read_text(encoding="utf-8")
     pr_flow = pr_yml.read_text(encoding="utf-8")
     # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
-    MARK_IF = "(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+    # 単体・UI の段の結果も見る（`id` が消えると outcome は空になり、印が付かない＝安全側。下で id も見る）
+    MARK_IF = ("(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+               " && steps.unit.outcome == 'success' && steps.ui.outcome == 'success'")
     mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if not mark:
         fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
@@ -439,8 +441,17 @@ if testflight_yml.exists() and pr_yml.exists():
                 fail(f"{file} に「{name}」の段がありません")
             elif "continue-on-error" in block:
                 fail(f"{file} の「{name}」に continue-on-error があります（落ちても印まで進む）")
+    # 印が結果を見る段の `id`
+    for name, step_id in [("単体テスト", "unit"), ("UI テスト（画面の絵）", "ui")]:
+        block = step_block(flow, name) or ""
+        if not re.search(r"^        id: " + step_id + r"\n", block, re.M):
+            fail(f"ios-testflight.yml の「{name}」に id: {step_id} がありません（印が結果を見られない）")
     # テストを流す道具が、落ちたときに 1 で終わること（0 で終わると段が緑になる）
     runner = (ROOT / "Tools/xcode-test.sh").read_text(encoding="utf-8")
+    # **pipefail が無いと** `xcodebuild … | tee | tail` の終了は tail のもの＝いつも 0 になり、
+    # 下の `|| { exit 1 }` に来ない
+    if not re.search(r"^set -[a-z]*o pipefail\b", runner, re.M):
+        fail("Tools/xcode-test.sh に set -euo pipefail（pipefail）がありません（xcodebuild の失敗が tail に隠れる）")
     if not re.search(r'\| tail -n \d+ \|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
         fail("Tools/xcode-test.sh が xcodebuild の失敗で exit 1 しません")
     # 上げる回・storeShots の回は screens を捨てて全部にする
@@ -451,8 +462,43 @@ if testflight_yml.exists() and pr_yml.exists():
         fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
     for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):
         fail(f"ios-testflight.yml の段「{name}」が「テスト」で始まります（古い数え方に拾われる）")
+    # main の回の「控えを温める」は、署名用に書き換えたプロジェクトを元に戻してから組む
+    warm = step_block(flow, "控えを温める（main の回だけ・シミュレータ向けに組む）") or ""
+    warm_order = [warm.find("git checkout -- project.yml"), warm.find("xcodegen generate"),
+                  warm.find("Tools/xcode-test.sh build")]
+    if -1 in warm_order or warm_order != sorted(warm_order):
+        fail("ios-testflight.yml の「控えを温める」が、project.yml を戻して xcodegen し直してから組んでいません")
+
     import subprocess
+    import tempfile
+    # 画面の絵の書き出し: 元の拡張子のまま写し、録画・拡張子なしは置かない
+    # （`export-screenshots.sh` の中の Python をそのまま取り出して、偽の添付で流す）
+    exporter = (ROOT / "Tools/export-screenshots.sh").read_text(encoding="utf-8")
+    copy_py = re.search(r"<<'PY'\n(.*?)\nPY\n", exporter, re.S)
+    if not copy_py:
+        fail("Tools/export-screenshots.sh の添付を写す Python が読めません")
+    else:
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp, "src"), Path(tmp, "out")
+            src.mkdir(); out.mkdir()
+            manifest = []
+            for exported, name in [("a.png", "10-ホーム_0_X.png"), ("b.txt", "note_0_Y.txt"),
+                                   ("c.jpg", "pic"), ("d.mp4", "Screen Recording.mp4"), ("e", "UI Snapshot")]:
+                (src / exported).write_bytes(b"x")
+                manifest.append({"exportedFileName": exported, "suggestedHumanReadableName": name})
+            (src / "manifest.json").write_text(json.dumps([{"attachments": manifest}]), encoding="utf-8")
+            subprocess.run([sys.executable, "-I", "-c", copy_py.group(1), str(src), str(out)],
+                           capture_output=True, text=True)
+            got = sorted(f.name for f in out.iterdir())
+            if got != ["10-ホーム_0_X.png", "note_0_Y.txt", "pic.jpg"]:
+                fail(f"export-screenshots.sh の写し方が変わっています（元の拡張子のまま・録画は置かない）: {got}")
+
     picker = ROOT / "Tools/pick-ui-tests.py"
+    # 全部（空）のときは UI テストのファイルを読まない（上げる回がファイルの書き方に左右されない）
+    nowhere = subprocess.run([sys.executable, str(picker), ""], capture_output=True, text=True,
+                             env={**os.environ, "JP_UI_TESTS_DIR": "/nonexistent-ui-tests"})
+    if nowhere.returncode != 0 or nowhere.stdout.split() != ["-only-testing:JourneyPhotoUITests"]:
+        fail("pick-ui-tests.py が空（全部）でも UI テストのファイルを読んでいます")
     def picked(screens):
         run = subprocess.run([sys.executable, str(picker), screens], capture_output=True, text=True)
         return run.returncode, run.stdout.split()
