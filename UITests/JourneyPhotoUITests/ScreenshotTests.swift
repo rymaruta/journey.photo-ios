@@ -1471,9 +1471,15 @@ final class ScreenshotTests: XCTestCase {
         for face in faces {
             let button = app.buttons["pass.pick.face.\(face.id)"].firstMatch
             guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(face.name)」のボタンが無い") }
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る
             var pushes = 0
             while !button.isHittable, pushes < 4 {
-                app.swipeUp()
+                let previous = app.buttons["pass.pick.face.\(face.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
+                } else {
+                    app.swipeUp()
+                }
                 Thread.sleep(forTimeInterval: 1)
                 pushes += 1
             }
@@ -1492,15 +1498,10 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertTrue(card.label.contains(face.name), "見本の読み上げが券面「\(face.name)」を言わない（\(card.label)）")
             shoot(app, face.shot)
         }
-        let picker = app.buttons["pass.pick.face.0"].firstMatch
-        if picker.exists {
-            var pushes = 0
-            while !picker.isHittable, pushes < 4 {
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 1)
-                pushes += 1
-            }
-            app.swipeUp()
+        // 選ぶ欄を左端に戻して撮る
+        let last = app.buttons["pass.pick.face.5"].firstMatch
+        if last.exists, last.isHittable {
+            last.swipeRight()
             Thread.sleep(forTimeInterval: 1.5)
             shoot(app, "88f-券面を選ぶ")
         }

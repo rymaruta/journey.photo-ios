@@ -326,19 +326,21 @@ enum PassFaceTextures {
         }
     }
 
-    /// 21 裾の金粉（モック: 上 0・高さの 60% で .35・裾で 1 の霞に、細かな粒）。明るい粒と淡い粒
+    /// 21 裾の金粉（モック: 霞は裾に溜まる。細かな粒）。明るい粒と淡い粒。
+    /// 2026-10-17 の Mac の画面写真で、粒が多すぎて字の上まで散っていた（モックより濃い）。
+    /// 高さの半分より上には置かず、裾へ向けて増やす・数を 1400 → 420 に
     static let goldDust: (bright: Path, faint: Path) = {
         var rng = Seeded(state: 21)
         var bright = Path(), faint = Path()
         var placed = 0
-        while placed < 1400 {
+        while placed < 420 {
             let x = rng.next() * 300, y = rng.next() * 430
             let t = y / 430
-            let haze = t < 0.6 ? t / 0.6 * 0.35 : 0.35 + (t - 0.6) / 0.4 * 0.65
+            let haze = t < 0.5 ? 0 : t < 0.8 ? (t - 0.5) / 0.3 * 0.35 : 0.35 + (t - 0.8) / 0.2 * 0.65
             guard rng.next() < haze else { continue }
             let r = 0.35 + rng.next() * 0.6
             let dot = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
-            if rng.next() < 0.35 { bright.addEllipse(in: dot) } else { faint.addEllipse(in: dot) }
+            if rng.next() < 0.25 { bright.addEllipse(in: dot) } else { faint.addEllipse(in: dot) }
             placed += 1
         }
         return (bright, faint)
@@ -409,8 +411,8 @@ struct PassPaperGrain: View {
 struct PassGoldDust: View {
     var body: some View {
         ZStack {
-            PassFaceTextures.goldDust.faint.fill(PassFaceColor.of(PassFacePalette.goldDust, 0.45))
-            PassFaceTextures.goldDust.bright.fill(PassFaceColor.of(PassFacePalette.goldDust, 0.9))
+            PassFaceTextures.goldDust.faint.fill(PassFaceColor.of(PassFacePalette.goldDust, 0.35))
+            PassFaceTextures.goldDust.bright.fill(PassFaceColor.of(PassFacePalette.goldDust, 0.8))
         }
         .frame(width: 300, height: 430)
         .drawingGroup()
