@@ -26,6 +26,13 @@ struct PassCardContent: Identifiable, Equatable {
         PassTicket.kind(meetingCount: card.ownerId == nil ? nil : meetingCount, km: km)
     }
 
+    /// 券面（2026-10-17）。**持ち主の公開プロフィールが券面を見せてよいときだけ**相手が選んだ券面、ほかはマルス券。
+    /// 決め手は `passFace`（印を外した Pro も立つ）、古いサーバーで無ければ `pro`（`UserProfile.showsPassFace`）。
+    /// プロフィールは帳を開くときに引いたもの（`PassStore.resolve` の `owners`）を使い回す——カードごとに引き直さない
+    var faceStyle: PassTicketFaceStyle {
+        PassTicketFaceStyle.shown(wire: card.face, ownerIsPro: owner?.showsPassFace)
+    }
+
     /// 表に描くもの
     func face(calendar: Calendar = .current) -> PassTicketFace {
         PassTicketFace(photo: photo, kind: kind, number: PassExchange.numberLabel(card.number),
@@ -33,7 +40,7 @@ struct PassCardContent: Identifiable, Equatable {
                        destination: PassTicket.destination(card.placeName, written: card.shownDestination),
                        name: name, distance: PassTicket.distanceLabel(km),
                        date: PassTicket.dateLabel(card.metHour, calendar: calendar),
-                       count: count, via: PassTicket.via(card.placeName))
+                       count: count, via: PassTicket.via(card.placeName), style: faceStyle)
     }
 
     /// 「回数」の欄（表と裏で同じ）
@@ -58,6 +65,7 @@ struct PassCardContent: Identifiable, Equatable {
 
     static func == (lhs: PassCardContent, rhs: PassCardContent) -> Bool {
         lhs.card == rhs.card && lhs.photo.id == rhs.photo.id && lhs.owner?.userId == rhs.owner?.userId
+            && lhs.owner?.showsPassFace == rhs.owner?.showsPassFace
             && lhs.fromPrefecture == rhs.fromPrefecture && lhs.meetingCount == rhs.meetingCount
     }
 }
@@ -92,6 +100,8 @@ struct PassTicketFace {
     let count: String
     /// 「経由 〇〇」の行。場所の記録が無ければ nil（行ごと出さない）
     let via: String?
+    /// 券面（2026-10-17・既定はマルス券）。決め方は `PassTicketFaceStyle.shown`・`own`
+    var style: PassTicketFaceStyle = .mars
 
     /// 左上の種類の名（`PassTicket.headline`）
     var headline: String { PassTicket.headline(kind) }
@@ -270,15 +280,18 @@ enum PassCardStyle {
         let markWidth: Double
     }
 
+    /// `width` と `maxSize` は特別な券面（2026-10-17・モックの区間は幅 260・明朝 24.5）。マルス券は既定のまま
     nonisolated static func routeLayout(origin: String, destination: String,
                                         marks: (origin: String, destination: String) =
-                                            (PassTicket.originMark, PassTicket.destinationMark)) -> RouteLayout {
+                                            (PassTicket.originMark, PassTicket.destinationMark),
+                                        width: Double = routeWidth, maxSize: Double = routeSize) -> RouteLayout {
+        let column = (width - arrowWidth - arrowGap * 2) / 2
         let longest = max(routeEms(origin), routeEms(destination))
         let marked = markWidth(origin: marks.origin, destination: marks.destination)
-        let room = routeColumnWidth - marked
-        let size = longest > 0 ? min(routeSize, max(routeMinSize, room / longest)) : routeSize
-        return RouteLayout(fontSize: size, columnWidth: routeColumnWidth,
-                           arrowCenter: routeColumnWidth + arrowGap + arrowWidth / 2, markWidth: marked)
+        let room = column - marked
+        let size = longest > 0 ? min(maxSize, max(routeMinSize, room / longest)) : maxSize
+        return RouteLayout(fontSize: size, columnWidth: column,
+                           arrowCenter: column + arrowGap + arrowWidth / 2, markWidth: marked)
     }
     /// 帳の小さな札（`PassTicketSlot`・字は `JPFont` で設定に合わせて大きくなる）は、文字の大きさの設定を
     /// xLarge までに留める（はみ出さない）。表と裏は固定の字なので付けない（上の字組の注記）
@@ -418,8 +431,11 @@ struct PassTicketPunch: View {
     }
 }
 
-/// 区間の矢印（板: 56×14 の細い線・真鍮）
+/// 区間の矢印（板: 56×14 の細い線・真鍮）。01 真鍮の金属板は墨（2026-10-17）
 struct PassTicketArrow: View {
+    var color: Color = WebTheme.accent
+    var lineWidth: CGFloat = 1.6
+
     var body: some View {
         Path { p in
             p.move(to: CGPoint(x: 2, y: 7))
@@ -428,7 +444,7 @@ struct PassTicketArrow: View {
             p.addLine(to: CGPoint(x: 50, y: 7))
             p.addLine(to: CGPoint(x: 44, y: 12))
         }
-        .stroke(WebTheme.accent, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
         .frame(width: 56, height: 14)
         .accessibilityHidden(true)
     }
@@ -446,10 +462,40 @@ struct PassCardFront: View {
     var onPhotoTap: (() -> Void)?
     /// 回しているときの縁と線の光の位置（`SpinMotion.shine`）
     var shine: Double? = nil
+    /// 表がいま見えているか（裏を見ている・全面の写真が上にある間は false）。特別な券面の光を止める
+    var visible: Bool = true
+
+    /// 券面ごとの角（2026-10-17・モック: 10 箔押しの硬券は 10・26 型押しの革は 16・ほかは 14）
+    nonisolated static func corner(_ style: PassTicketFaceStyle) -> CGFloat {
+        switch style {
+        case .foilHard: return 10
+        case .leather: return 16
+        case .mars, .brassPlate, .greatCircle, .urushi: return PassCardStyle.deckCorner
+        }
+    }
 
     var body: some View {
+        let corner = Self.corner(face.style)
+        Group {
+            if face.style == .mars {
+                marsFace
+            } else {
+                // 特別な券面（Pro・2026-10-17）。縁・後ろの光・影・字の大きさの上限はマルス券と同じものを使う
+                PassSpecialFace(face: face, onPhotoTap: onPhotoTap, shine: shine, visible: visible)
+            }
+        }
+        .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: corner))
+        .background { PassTicketGlow(kind: face.kind, corner: corner) }
+        .overlay(PassTicketEdge(kind: face.kind, corner: corner, shine: shine))
+        .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
+    }
+
+    /// マルス券（既定の券面）
+    private var marsFace: some View {
         VStack(spacing: 0) {
-            photo
+            PassFacePhoto(photo: face.photo, width: PassCardStyle.deckSize.width, height: PassCardStyle.photoHeight,
+                          onTap: onPhotoTap)
             // 写真の下端の細い真鍮の線（黒い地の側に引く・写真には重ねない）
             PassTicketRule(opacity: PassCardStyle.photoRuleOpacity, shine: shine)
             VStack(alignment: .leading, spacing: PassCardStyle.frontSpacing) {
@@ -489,12 +535,7 @@ struct PassCardFront: View {
             .padding(.bottom, PassCardStyle.frontBottom)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
-        .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
-        .background { PassTicketGlow(kind: face.kind) }
-        .overlay(PassTicketEdge(kind: face.kind, shine: shine))
-        .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
     }
 
     /// 区間。矢印はいつも中央・発と着は同じ幅の欄に同じ大きさで（`PassCardStyle.routeLayout`・2026-10-16 判断）。
@@ -572,30 +613,6 @@ struct PassCardFront: View {
         .overlay(alignment: .top) { PassTicketHairline() }
         .overlay(alignment: .bottom) { PassTicketHairline() }
     }
-
-    @ViewBuilder
-    private var photo: some View {
-        let image = Color.clear
-            .frame(maxWidth: .infinity)
-            .frame(height: PassCardStyle.photoHeight)
-            .overlay {
-                if let photo = face.photo {
-                    DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
-                                           aspectRatio: photo.aspectRatio.map { CGFloat($0) },
-                                           alignment: photo.gridAlignment)
-                } else {
-                    WebTheme.surface
-                }
-            }
-            .clipped()
-        if let onPhotoTap {
-            image
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onPhotoTap)
-        } else {
-            image
-        }
-    }
 }
 
 /// 「乗車券」「ご案内」の字組（明朝 15・字間 0.3em・真鍮）。表と裏で同じ
@@ -658,6 +675,8 @@ struct PassCardBack: View {
     let face: PassTicketBackFace
     /// 回しているときの縁の光の位置
     var shine: Double? = nil
+    /// 角の丸み（**表の券面の角に合わせる**・`PassCardFront.corner`・2026-10-17）
+    var corner: CGFloat = PassCardStyle.deckCorner
 
     var body: some View {
         VStack(spacing: 0) {
@@ -712,9 +731,9 @@ struct PassCardBack: View {
         }
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
-        .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.deckCorner))
-        .background { PassTicketGlow(kind: face.kind) }
-        .overlay(PassTicketEdge(kind: face.kind, shine: shine))
+        .clipShape(RoundedRectangle(cornerRadius: corner))
+        .background { PassTicketGlow(kind: face.kind, corner: corner) }
+        .overlay(PassTicketEdge(kind: face.kind, corner: corner, shine: shine))
         .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
         .accessibilityElement(children: .combine)
     }

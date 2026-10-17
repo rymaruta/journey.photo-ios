@@ -34,6 +34,9 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var destinationLabel: String? = nil
     /// 区間の字を伏せた（伏せたら自動の形に戻す・この端末だけ）
     var labelsHidden: Bool? = nil
+    /// 相手が選んだ券面の電波の番号（2026-10-17・版 3 の中身だけが持つ）。無ければマルス券。
+    /// **見せるのは相手が Pro だと確かめられたときだけ**（`PassTicketFaceStyle.shown`・`PassCardContent.faceStyle`）
+    var face: UInt8? = nil
 
     /// 見せるひとこと（伏せていれば空）
     /// 見せるひとこと（伏せていれば空）。**連絡先の形（URL・メール・電話番号）を含む字は出さない**
@@ -92,6 +95,9 @@ struct PassSettings: Codable, Equatable {
     var originLabel: String? = nil
     /// 乗車券の「着」を自分で書いた字（nil なら自動: すれちがった所）
     var destinationLabel: String? = nil
+    /// 選んだ券面の電波の番号（2026-10-17・nil はマルス券）。**Pro をやめても残す**（自分の見本はマルス券に戻し、
+    /// また Pro になれば選んだ券面に戻る・`PassTicketFaceStyle.own`）
+    var faceStyle: UInt8? = nil
 
     /// 「発」の選び方
     enum Origin: String, CaseIterable, Identifiable {

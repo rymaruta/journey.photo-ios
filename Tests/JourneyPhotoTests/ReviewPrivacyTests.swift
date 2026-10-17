@@ -248,7 +248,7 @@ final class ReviewPrivacyTests: XCTestCase {
             .children.compactMap(\.label)
         let words: [String: String] = [
             "photoId": "乗車券の写真", "note": "ひとこと", "origin": "発と着の字",
-            "destination": "発と着の字", "showsFrom": "居住地",
+            "destination": "発と着の字", "showsFrom": "居住地", "face": "券面の種類",
         ]
         let body = PassPrivacyText.noteBody
         let point = PassPrivacyText.introPoints.map(\.text).joined()

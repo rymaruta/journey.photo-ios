@@ -7,11 +7,15 @@ import SwiftUI
 /// - 上の見本は、相手に届くカードと同じ回る部品（`PassSpinCard` → `PassSpinTicket`）。指で回して裏も見られる。**番号は出さない**
 ///   （番号は受け取った側の帳の順で決まり、自分の側では決まらない・2026-10-16 判断）
 /// - 主ボタンは白（写真のある画面の主ボタン・CLAUDE.md の owner の好み。板は真鍮の塗りだが owner の決まりを取った）
+/// - **券面**（2026-10-17・Pro）: 見本の下に券面を選ぶ欄。Pro でない人にも見本は見せ、押すと Pro の案内（`PaywallView`）。
+///   選んだ券面は設定（`PassSettings.faceStyle`）に保存し、電波で相手に届く。Pro をやめたら見本はマルス券に戻る
+///   （選んだ値は残す・`PassTicketFaceStyle.own`）
 struct PassCardPickView: View {
 
     @EnvironmentObject private var pass: PassStore
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var store: StoreService
     @Environment(\.dismiss) private var dismiss
 
     @State private var photos: [Photo] = []
@@ -24,7 +28,18 @@ struct PassCardPickView: View {
     @State private var destinationCustom = false
     @State private var destinationText = ""
     @State private var profile: UserProfile?
+    /// 自分の**公開**プロフィールに `passFace` があるか（読めなければ nil・Pro マークの注記を出すかだけに使う）
+    @State private var publicHasPassFace: Bool?
     @State private var didLoad = false
+    /// 選んだ券面（Pro をやめても残す値・2026-10-17）
+    @State private var faceChoice: PassTicketFaceStyle = .mars
+    @State private var showPaywall = false
+    @State private var deliveredAtPaywall = 0
+
+    /// いま見本に出す券面（**Pro のときだけ**選んだ券面・ほかはマルス券）
+    private var shownFace: PassTicketFaceStyle {
+        PassTicketFaceStyle.own(chosen: faceChoice.rawValue, isPro: profile?.isPro)
+    }
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -36,7 +51,7 @@ struct PassCardPickView: View {
                        destination: PassTicket.previewDestination(custom: destinationCustom, text: destinationText),
                        name: profile?.name ?? L("あなた", "You"), distance: nil, date: nil,
                        count: PassTicket.countLabel(.plain, meetingCount: nil),
-                       via: PassTicket.via(L("旅先", "your trip")))
+                       via: PassTicket.via(L("旅先", "your trip")), style: shownFace)
     }
 
     /// 見本の裏（相手に届く形・会ってから決まる区間と回数は「—」・`PassTicketBackFace.preview`）
@@ -67,9 +82,10 @@ struct PassCardPickView: View {
                 // なので出さない。日付・区間（km）・回数も会ってから決まるので、表・裏とも「—」（2026-10-17 マルス券）
                 // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
                 PassSpinCard(front: previewFace, back: previewBack,
-                             spokenName: L("相手に届くカード", "the card others receive"))
+                             spokenName: L("相手に届くカード", "the card others receive"), active: !showPaywall)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
+                faceSection
                 JPEyebrowLine(L("あなたの写真から選ぶ", "Choose from your photos"))
                 grid
                 noteField
@@ -91,6 +107,12 @@ struct PassCardPickView: View {
         .webScreen()
         .navigationTitle(L("わたしの乗車券", "My ticket"))
         .navigationBarTitleDisplayMode(.inline)
+        // 買えたら（サーバーが受け取ったら）プロフィールを読み直して、選んだ券面を使えるようにする
+        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+            if store.deliveredRevision != deliveredAtPaywall { Task { await reloadProfile() } }
+        }) {
+            PaywallView()
+        }
         .task {
             guard !didLoad else { return }
             didLoad = true
@@ -100,6 +122,7 @@ struct PassCardPickView: View {
             originText = pass.settings.originLabel ?? ""
             destinationCustom = pass.settings.destinationLabel != nil
             destinationText = pass.settings.destinationLabel ?? ""
+            faceChoice = PassTicketFaceStyle.fromWire(pass.settings.faceStyle)
             await load()
         }
     }
@@ -111,6 +134,11 @@ struct PassCardPickView: View {
         if let mine {
             profile = mine
             pass.noteHome(mine.homeLocation)
+            // 印を外した Pro の人だけ、自分の公開プロフィールを読んで `passFace` があるかを見る（注記を出すか）
+            if mine.isPro, mine.proMarkRemoved {
+                let shown = try? await environment.profiles.publicProfile(userId: me)
+                publicHasPassFace = shown.map { $0.passFaceFlag != nil }
+            }
         }
         let all = (try? await environment.gallery.fetchPhotos()) ?? []
         photos = all.filter { ($0.userId ?? $0.uploadedBy) == me && PassExchange.isPublicCard($0) }
@@ -276,9 +304,136 @@ struct PassCardPickView: View {
         }
     }
 
+    // MARK: - 券面（Pro・2026-10-17）
+
+    /// 券面を選ぶ欄（見本の下・横に並べる）。Pro でない人には見本を見せ、押すと Pro の案内
+    private var faceSection: some View {
+        let isPro = profile?.isPro == true
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            JPEyebrowLine(L("券面", "Ticket design"))
+            if !isLoading, profile == nil {
+                // 読めなかった: 鍵はかけず、押しても買う案内は開かない（`PassTicketFaceStyle.option` の .unknown）
+                Text(PassTicketFaceStyle.profileUnreadable)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("pass.pick.face.unreadable")
+            } else {
+            Text(isPro
+                 ? L("選んだ券面で、すれちがった人の手元に届きます。", "Your ticket reaches people you pass in this design.")
+                 : L("特別な券面は Pro で選べます。選ぶと、すれちがった人の手元にもその券面で届きます。",
+                     "Special designs come with Pro. People you pass receive your ticket in that design."))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            if let notice = PassTicketFaceStyle.proMarkNotice(isPro: profile?.isPro,
+                                                              markRemoved: profile?.proMarkRemoved ?? false,
+                                                              publicHasPassFace: publicHasPassFace) {
+                // 暫定（2026-10-17）: Pro マークを外すと公開プロフィールの Pro の印が落ち、相手にはマルス券で届く。
+                // 黒い地の上の合図なので真鍮・12pt
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12, weight: .medium))
+                        .accessibilityHidden(true)
+                    Text(notice)
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("pass.pick.face.markNotice")
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: JPSpace.s) {
+                    ForEach(PassTicketFaceStyle.pickerOrder) { style in
+                        faceOption(style, isPro: profile?.isPro)
+                    }
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func faceOption(_ style: PassTicketFaceStyle, isPro: Bool?) -> some View {
+        let state = PassTicketFaceStyle.option(style, isPro: isPro)
+        let locked = state == .locked
+        let on = style == shownFace
+        return Button {
+            switch state {
+            case .open:
+                faceChoice = style
+            case .locked:
+                deliveredAtPaywall = store.deliveredRevision
+                showPaywall = true
+            case .unknown:
+                // Pro か分からない（読み込み中・読めなかった）: 何もしない。買う案内も開かない
+                break
+            }
+        } label: {
+            VStack(spacing: 6) {
+                PassFaceSwatch(style: style)
+                    .padding(3)
+                    // 選んだ券面: 真鍮の 2pt の縁（黒い地の上）とチェック（色だけで伝えない）
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 11)
+                            .strokeBorder(on ? WebTheme.accent : WebTheme.border, lineWidth: on ? JPStroke.emphasis : JPStroke.hairline)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if on {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(WebTheme.accentText)
+                                .frame(width: 20, height: 20)
+                                .background(WebTheme.accent, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.black, lineWidth: JPStroke.emphasis))
+                                .offset(x: 6, y: -6)
+                                .accessibilityHidden(true)
+                        } else if locked {
+                            // 「PRO」の合図（真鍮・黒い地の上）
+                            HStack(spacing: 2) {
+                                Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
+                                Text("PRO").font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(WebTheme.accent)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.black, in: Capsule())
+                            .offset(x: -6, y: 6)
+                            .accessibilityHidden(true)
+                        }
+                    }
+                Text(style.name)
+                    .font(.system(size: 12))
+                    .foregroundStyle(on ? WebTheme.text : WebTheme.text2)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: PassFaceSwatch.size.width + 12)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("券面 \(style.name)", "\(style.name) design"))
+        .accessibilityValue(locked ? L("Pro で選べます", "Available with Pro") : "")
+        .accessibilityHint(locked ? L("押すと Pro の案内を開きます", "Opens the Pro details") : "")
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("pass.pick.face.\(style.rawValue)")
+    }
+
+    /// Pro を買った後に、自分のプロフィール（Pro の印）を読み直す
+    private func reloadProfile() async {
+        let mine = try? await environment.profiles.myProfile()
+        if let mine { profile = mine }
+    }
+
     private func save() {
         guard let selected else { return }
+        let isPro = profile?.isPro == true
+        let face = faceChoice
         pass.update { settings in
+            // 券面は Pro のときだけ変える（Pro でないときは前に選んだ値を残す・2026-10-17）
+            if isPro { settings.faceStyle = face == .mars ? nil : face.rawValue }
             settings.cardPhotoId = selected
             settings.note = note
             // 「自分で書く」を空のまま保存したら、発は「出さない」・着は「すれちがった所」に戻す（`setOrigin`・`setDestination`）

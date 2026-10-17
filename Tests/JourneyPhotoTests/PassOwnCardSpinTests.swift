@@ -94,7 +94,7 @@ final class PassOwnCardSpinTests: XCTestCase {
         XCTAssertTrue(pick.contains("PassSpinCard(front: previewFace, back: previewBack"), "自分のカードが回る部品を使っていない")
         XCTAssertFalse(pick.contains("PassCardFront(face: previewFace)"), "自分のカードが表だけの止まった絵のまま")
         let spin = try source("Features/Pass/PassSpinCard.swift")
-        for part in ["PassSpinTicket(yaw: yaw, front: front, back: back, reduceMotion: reduceMotion)",
+        for part in ["PassSpinTicket(yaw: yaw, front: front, back: back, reduceMotion: reduceMotion, active: active)",
                      "@State private var spin = PassSpinDrag()", ".simultaneousGesture(", "spin.lockAxis(",
                      "spin.liveYaw(", "SpinMotion.snapTarget(", ".accessibilityAction { flip() }",
                      "PassSpinTicket.spokenSide(yaw)", "\"pass.pick.flip\"",

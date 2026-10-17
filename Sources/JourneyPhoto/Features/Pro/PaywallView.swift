@@ -330,6 +330,7 @@ struct PaywallView: View {
 ///
 /// 2026-10-17 判断（owner）: **「作例を重ねて撮る」（構図を重ねて撮るを含む）は全員無料にしたので、利点から外した。**
 /// 板 63 は4つだが、残りは3つ（光と天気の知らせ・電波なしで使える旅・Pro マークと Pro 限定の章）。
+/// 2026-10-17: 特別な乗車券（すれちがいの券面を選べる）を足して4つ。
 ///
 /// 第3段階の機能が2つ入っている（光と天気の知らせ・電波なしで使える旅）。**どちらもできている。**
 /// 2026-10-17 判断（確かめた）: 光と天気の知らせは、アプリ側＝一覧 `LightForecastView`
@@ -360,6 +361,11 @@ struct ProBenefit: Identifiable, Equatable {
                        title: L("Pro マークと Pro 限定の章", "Pro mark & Pro-only chapters"),
                        body: L("名前の横に Pro マーク。季節ごとに届く七宝の章と、道具を使い込んだ証の章",
                                "A Pro mark next to your name, enamel chapters every season, and chapters for using the tools")),
+            // 2026-10-17: すれちがいの「特別な乗車券」（券面を選べる・`PassTicketFaceStyle`）
+            ProBenefit(icon: .card,
+                       title: L("特別な乗車券", "Special Pass tickets"),
+                       body: L("すれちがいの乗車券を、真鍮・漆・革などの券面で。相手の手元にもその券面で届く",
+                               "Pick a brass, lacquer, leather or other design for your Pass ticket — it reaches others that way")),
         ]
     }
 }

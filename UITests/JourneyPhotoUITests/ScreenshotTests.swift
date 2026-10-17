@@ -1411,7 +1411,9 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
     /// 横に回しても裏にならなければ落とす**
-    func testCapturesPassOwnCard() {
+    /// わたしの乗車券（マイページ → 設定 → すれちがい → わたしの乗車券）まで進めて、回る見本を返す。
+    /// 画面まで行けなければ nil（撮らずに抜ける）。`pro` は見本の利用者を Pro の姿にする（`-JPPreviewPro`）
+    private func openPassPick(pro: Bool = false) -> (XCUIApplication, XCUIElement)? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1420,33 +1422,93 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPass", "YES"]
+        if pro { app.launchArguments += ["-JPPreviewPro", "YES"] }
         app.launch()
 
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return nil }
         tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return nil }
         let gear = app.buttons["設定"].firstMatch
-        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return nil }
         gear.tap()
         let row = app.buttons["settings.pass"].firstMatch
-        guard row.waitForExistence(timeout: 10) else { return }
+        guard row.waitForExistence(timeout: 10) else { return nil }
         var pushes = 0
         while !row.isHittable, pushes < 6 {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        guard row.isHittable else { return }
+        guard row.isHittable else { return nil }
         row.tap()
         let cardRow = app.buttons["pass.settings.card"].firstMatch
-        guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return }
+        guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return nil }
         cardRow.tap()
-
         let card = app.descendants(matching: .any)["pass.pick.card"].firstMatch
-        guard card.waitForExistence(timeout: 15) else { return XCTFail("乗車券の画面に回る見本が無い") }
+        guard card.waitForExistence(timeout: 15) else {
+            XCTFail("乗車券の画面に回る見本が無い")
+            return nil
+        }
+        return (app, card)
+    }
+
+    /// **特別な券面**（Pro・2026-10-17 owner が確定）: わたしの乗車券で、券面を選ぶ欄の5つを順に押し、見本の表を撮る。
+    /// 見本の利用者を Pro の姿（`-JPPreviewPro`）にして選べるようにする。最後に選ぶ欄を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**欄が出たのに券面のボタンが無い・44pt 未満・押しても読み上げが
+    /// 券面の名前を言わなければ落とす**
+    func testCapturesPassFaces() {
+        guard let (app, card) = openPassPick(pro: true) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let faces: [(id: Int, name: String, shot: String)] = [
+            (1, "真鍮の金属板", "88a-券面 01 真鍮の金属板"), (2, "大圏航路", "88b-券面 06 大圏航路"),
+            (3, "箔押しの硬券", "88c-券面 10 箔押しの硬券"), (4, "漆と蒔絵", "88d-券面 21 漆と蒔絵"),
+            (5, "型押しの革", "88e-券面 26 型押しの革"),
+        ]
+        for face in faces {
+            let button = app.buttons["pass.pick.face.\(face.id)"].firstMatch
+            guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(face.name)」のボタンが無い") }
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る
+            var pushes = 0
+            while !button.isHittable, pushes < 4 {
+                let previous = app.buttons["pass.pick.face.\(face.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
+                } else {
+                    app.swipeUp()
+                }
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard button.isHittable else { return XCTFail("券面「\(face.name)」を押せない") }
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "券面「\(face.name)」のボタンが 44pt 未満")
+            button.tap()
+            Thread.sleep(forTimeInterval: 1)
+            // 見本が画面の上に隠れていたら戻す
+            pushes = 0
+            while card.frame.minY < 60, pushes < 4 {
+                app.swipeDown()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(card.label.contains(face.name), "見本の読み上げが券面「\(face.name)」を言わない（\(card.label)）")
+            shoot(app, face.shot)
+        }
+        // 選ぶ欄を左端に戻して撮る
+        let last = app.buttons["pass.pick.face.5"].firstMatch
+        if last.exists, last.isHittable {
+            last.swipeRight()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, "88f-券面を選ぶ")
+        }
+    }
+
+    func testCapturesPassOwnCard() {
+        guard let (app, card) = openPassPick() else { return }
         Thread.sleep(forTimeInterval: 3)
         // 呼び名は「わたしの乗車券」（2026-10-17 owner）
         XCTAssertTrue(app.navigationBars["わたしの乗車券"].firstMatch.exists, "選ぶ画面の題が「わたしの乗車券」でない")

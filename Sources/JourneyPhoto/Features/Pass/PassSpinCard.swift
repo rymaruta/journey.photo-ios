@@ -11,6 +11,9 @@ struct PassSpinTicket: View, Animatable {
     let front: PassTicketFace
     let back: PassTicketBackFace
     let reduceMotion: Bool
+    /// この札がいま画面に見えているか（全面の写真・Pro の案内が上に出ている間は false）。
+    /// 表の傾きの読み取りと 06 の光を止める（`PassSpecialFace`・2026-10-17）
+    var active: Bool = true
     /// 写真を押した（束の画面: 全面で見る）。nil なら写真も裏返しの一部
     var onPhotoTap: (() -> Void)? = nil
 
@@ -24,11 +27,13 @@ struct PassSpinTicket: View, Animatable {
         let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)
         ZStack {
             // 写真を押すと全面で見る（写真の上は白だけ）。裏を見ている間は表を押させない・読ませない
-            PassCardFront(face: front, onPhotoTap: onPhotoTap, shine: shine)
+            // 裏を見ている間は、表の光（傾き・06 の弧の光）を止める
+            PassCardFront(face: front, onPhotoTap: onPhotoTap, shine: shine, visible: active && !back)
                 .opacity(back ? 0 : 1)
                 .allowsHitTesting(!back)
                 .accessibilityHidden(back)
-            PassCardBack(face: self.back, shine: shine)
+            // 裏の角は表の券面の角に合わせる（2026-10-17）
+            PassCardBack(face: self.back, shine: shine, corner: PassCardFront.corner(front.style))
                 // 回すときは、裏が鏡に映らないように先に半回転しておく（回さないときはそのまま）
                 .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
                 .opacity(back ? 1 : 0)
@@ -97,6 +102,8 @@ struct PassSpinCard: View {
     let back: PassTicketBackFace
     /// 読み上げで面と一緒に言う名前（例「相手に届くカード」→「相手に届くカードの裏」）
     let spokenName: String
+    /// いま見えているか（上に Pro の案内が出ている間は false・`PassSpinTicket.active`）
+    var active: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var yaw: Double = 0
@@ -106,7 +113,7 @@ struct PassSpinCard: View {
 
     var body: some View {
         VStack(spacing: JPSpace.xs) {
-            PassSpinTicket(yaw: yaw, front: front, back: back, reduceMotion: reduceMotion)
+            PassSpinTicket(yaw: yaw, front: front, back: back, reduceMotion: reduceMotion, active: active)
                 .contentShape(Rectangle())
                 .onTapGesture { flip() }
                 .simultaneousGesture(

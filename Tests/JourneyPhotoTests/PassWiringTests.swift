@@ -78,7 +78,7 @@ final class PassWiringTests: XCTestCase {
         let cards = try source("Features/Pass/PassCards.swift")
         // 2026-10-17 マルス券: 表の改札の穴はやめ（破線は裏へ）、種類の名は「乗車券」の位置（`face.headline`）
         for part in ["PassTicketArrow()", "PassTicketDash(shine: shine)", "PassTicketHead(text: face.headline)",
-                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, shine: shine)"] {
+                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, corner: corner, shine: shine)"] {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         let ticket = try source("Core/Text/PassTicket.swift")

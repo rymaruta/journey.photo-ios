@@ -33,8 +33,12 @@ final class MedalViewerTests: XCTestCase {
     /// 後光の出るメダル（owner の絵のもの）と、出ないメダル（比べる用）
     private static let haloKey = "earlyUser"
     private static let plainKey = "prefectures"
-    /// 戻ったと見なすまで待つ上限（秒）。閉じる動きは 0.5 秒ほど
-    private static let closeDeadline: TimeInterval = 8
+    /// 戻ったと見なすまで待つ上限（秒）。閉じる動きは 0.5 秒ほど。
+    ///
+    /// 2026-10-17（run 465）: アプリは閉じていたのに、全画面のメダルを描いている間の XCUITest の問い合わせが
+    /// 1回 7.3 秒かかり、8 秒の待ちを使い切って「閉じない」と落ちた。問い合わせの遅さで落ちないよう 20 秒にし、
+    /// 待ちは `waitForNonExistence`（消えたら即座に戻る）で。**本当に閉じないとき**は 20 秒たっても × が残るので落ちる
+    private static let closeDeadline: TimeInterval = 20
 
     func testShelfCloseImmediately() throws { try run(.shelf, .immediately) }
     /// 比べる用: 後光の無いメダルは前から閉じられたか
@@ -100,15 +104,13 @@ final class MedalViewerTests: XCTestCase {
         let tapTook = Date().timeIntervalSince(tapStart)
 
         // 戻ったか: × が消え、元の画面の目印が見える
-        let gone = NSPredicate(format: "exists == false")
-        let waited = XCTWaiter().wait(for: [expectation(for: gone, evaluatedWith: closeButton)],
-                                      timeout: Self.closeDeadline)
+        let closed = closeButton.waitForNonExistence(timeout: Self.closeDeadline)
         let back = backMarker(route, key: key, in: app)
         let backVisible = back.waitForExistence(timeout: 3)
         note("\(tag)-閉じた結果", String(format: "tap=%.2fs closed=%@ back=%@", tapTook,
-                                     (waited == .completed).description, backVisible.description))
+                                     closed.description, backVisible.description))
         shoot(app, "\(tag)-3-閉じた後")
-        if waited != .completed {
+        if !closed {
             // もう一度押して、押しても効かないのか・1回目が届かなかっただけかを書き残す
             let hittable = closeButton.isHittable
             if hittable { closeButton.tap() }
@@ -117,7 +119,7 @@ final class MedalViewerTests: XCTestCase {
             shoot(app, "\(tag)-4-2回目の後")
             note("\(tag)-画面の木", app.debugDescription)
         }
-        XCTAssertEqual(waited, .completed, "\(tag): × を押してもメダルの全画面が閉じない")
+        XCTAssertTrue(closed, "\(tag): × を押してもメダルの全画面が閉じない")
         XCTAssertTrue(backVisible, "\(tag): 閉じた後に元の画面が見えない")
     }
 
@@ -160,7 +162,9 @@ final class MedalViewerTests: XCTestCase {
             _ = app.buttons["保存"].firstMatch.waitForExistence(timeout: 15)
             Thread.sleep(forTimeInterval: 2)
             let row = element(app, "profileEdit.nameSide")
-            for _ in 0..<12 where !(row.exists && row.isHittable && row.isEnabled) {
+            // 見つけたら抜ける（`where` で書くと、見つけた後も残りの回数ぶん問い合わせて約 20 秒むだにしていた）
+            for _ in 0..<12 {
+                if row.exists && row.isHittable && row.isEnabled { break }
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 0.8)
             }
