@@ -11,6 +11,10 @@ struct TrunkSpinViewer: View {
     let posts: Int
     let stuck: [TrunkLabel]
     var ownerName: String?
+    /// 付けている部品（2026-10-17 次の版）
+    var parts: TrunkEquipped = .none
+    /// 動かしてよれたラベル（トランクの画面と同じ見た目に）
+    var wrinkles: [String: Double] = [:]
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,12 +27,12 @@ struct TrunkSpinViewer: View {
             VStack(spacing: 20) {
                 Spacer(minLength: 0)
                 MedalCoinView(textures: textures, fallbackImage: "", reduceMotion: reduceMotion, flips: flips,
-                              shape: TrunkTextures.shape(model: model, posts: posts))
+                              shape: TrunkTextures.shape(model: model, posts: posts, parts: parts))
                     .frame(width: stage, height: stage)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
-                                                                     labels: min(stuck.count, TrunkSlots.capacity),
-                                                                     tags: TrunkAging.tagCount(posts: posts)))
+                                                                     labels: TrunkPlacement.layout(stuck, stage: 0).count,
+                                                                     tags: TrunkAging.tagCount(posts: posts), equipped: parts))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
                     .accessibilityIdentifier("trunk.spin.box")
@@ -58,7 +62,8 @@ struct TrunkSpinViewer: View {
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
-            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName)
+            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+                                          wrinkles: wrinkles)
         }
     }
 
@@ -83,16 +88,20 @@ struct TrunkSpinViewer: View {
 enum TrunkTextures {
 
     /// 箱の形（胴の縦横・厚み・角の丸み・持ち手の色）
-    static func shape(model: TrunkModel, posts: Int) -> SpinShape {
+    static func shape(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none) -> SpinShape {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
+        // 付けた持ち手は、その面のいちばん下の色で（3D の持ち手は1色）
+        let handle = TrunkFittings(parts).handlePaint?.paint.baseColor ?? look.handle
         return .box(aspect: TrunkLooks.bodyWidth / TrunkLooks.bodyHeight,
                     // 2026-10-17 判断（run 466 の見比べ）: 厚みは横の 0.24（0.34 では箱が細く暗く、正面の絵が見えにくい）
                     depth: 0.24, corner: 16 / TrunkLooks.bodyWidth,
-                    handle: SpinRGB(r: look.handle.r / 255, g: look.handle.g / 255, b: look.handle.b / 255))
+                    handle: SpinRGB(r: handle.r / 255, g: handle.g / 255, b: handle.b / 255))
     }
 
-    static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?) -> MedalTextures.Faces {
-        let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true))
+    static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?,
+                     parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
+        let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
+                                        parts: parts, wrinkles: wrinkles))
         let back = render(TrunkBoxView(model: model, posts: posts, stuck: [], ownerName: nil, bodyOnly: true))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))

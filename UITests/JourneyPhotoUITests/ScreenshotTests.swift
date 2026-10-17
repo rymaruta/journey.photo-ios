@@ -2188,4 +2188,145 @@ final class ScreenshotTests: XCTestCase {
         let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: stick)], timeout: 5)
         XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
     }
+
+    // MARK: - 旅のトランクの次の版（2026-10-17・自分の手で貼る・カプセルの機械・部品箱）
+
+    /// トランクの画面の入口（`trunk.stick.open`・`trunk.partsBox`・`trunk.gacha.open`）を押す。押せたら true
+    private func openTrunkRow(_ app: XCUIApplication, _ id: String) -> Bool {
+        let row = app.buttons[id].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return false }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return false }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) の行が 44pt 未満")
+        row.tap()
+        return true
+    }
+
+    /// **自分の手で貼る**: 手持ちのラベルを押さえてトランクへ運ぶ → 貼った → 右に回す。出なければ撮らずに抜ける
+    func testCapturesTrunkStick() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.stick.open") else { return XCTFail("「ラベルを貼る」の入口が無い") }
+        let done = app.buttons["trunk.stick.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("貼る画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97-ラベルを貼る")
+        for id in ["trunk.stick.done", "trunk.stick.undo", "trunk.stick.auto", "trunk.stick.peel"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        let cell = app.buttons.matching(identifier: "trunk.stick.tray").firstMatch
+        let trunk = app.descendants(matching: .any)["trunk.stick.trunk"].firstMatch
+        guard cell.waitForExistence(timeout: 5), trunk.exists else { return XCTFail("手持ちの札かトランクが無い") }
+        do {
+            cell.press(forDuration: 0.3, thenDragTo: trunk)
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "97a-ラベルを貼る（運んで貼った）")
+            let right = app.buttons["trunk.stick.rotateRight"].firstMatch
+            if right.waitForExistence(timeout: 5) {
+                XCTAssertGreaterThanOrEqual(right.frame.height, 44, "回すボタンが 44pt 未満")
+                right.tap()
+                right.tap()
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "97b-ラベルを貼る（回した）")
+            }
+        }
+        let auto = app.buttons["trunk.stick.auto"].firstMatch
+        if auto.isHittable {
+            auto.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "97c-ラベルを貼る（おまかせで並べた）")
+        }
+        done.tap()
+    }
+
+    /// **カプセルの機械**: 硬貨を入れる → ハンドルを4回押して1周 → カプセルを開ける → 中身と確率
+    func testCapturesTrunkGacha() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨を入れる」が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98-カプセルの機械")
+        XCTAssertGreaterThanOrEqual(insert.frame.height, 44, "「硬貨を入れる」が 44pt 未満")
+        insert.tap()
+        let crank = app.buttons["trunk.gacha.crank"].firstMatch
+        guard crank.waitForExistence(timeout: 5) else { return XCTFail("ハンドルが無い") }
+        XCTAssertGreaterThanOrEqual(crank.frame.height, 44, "ハンドルが 44pt 未満")
+        crank.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "98-カプセルの機械（回している）")
+        for _ in 0..<3 {
+            crank.tap()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        let open = app.buttons["trunk.gacha.openCapsule"].firstMatch
+        guard open.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "98-カプセルの機械（出てきた）")
+        open.tap()
+        let equip = app.buttons["trunk.gachaOpen.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98a-カプセルを開けた")
+        for id in ["trunk.gachaOpen.equip", "trunk.gachaOpen.keep", "trunk.gachaOpen.close"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        app.buttons["trunk.gachaOpen.keep"].firstMatch.tap()
+        let odds = app.buttons["trunk.gacha.odds"].firstMatch
+        guard odds.waitForExistence(timeout: 10) else { return XCTFail("「中身と確率」が無い") }
+        odds.tap()
+        guard app.descendants(matching: .any)["trunk.odds.perPart"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("中身と確率に1点あたりの確率が無い")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "98b-中身と確率")
+    }
+
+    /// **カプセルの機械（硬貨がありません）**: `-JPPreviewTrunkCoins 0`。入れ口のボタンが押せないこと
+    func testCapturesTrunkGachaNoCoins() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "0"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨がありません」のボタンが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98c-カプセルの機械（硬貨がありません）")
+        XCTAssertFalse(insert.isEnabled, "硬貨 0 で硬貨を入れられる")
+    }
+
+    /// **部品箱 → 付け替える**: 種類のタブ（錠前）・ピンバッジの付け替え
+    func testCapturesTrunkPartsBox() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.partsBox") else { return XCTFail("部品箱の入口が無い") }
+        let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
+        guard lockTab.waitForExistence(timeout: 10) else { return XCTFail("部品箱の種類のタブが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99-部品箱")
+        XCTAssertGreaterThanOrEqual(lockTab.frame.height, 44, "種類のタブが 44pt 未満")
+        lockTab.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99-部品箱（錠前）")
+        let equip = app.buttons["trunk.parts.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
+        equip.tap()
+        let pinTab = app.buttons["trunk.equip.tab.pin"].firstMatch
+        guard pinTab.waitForExistence(timeout: 10) else { return XCTFail("付け替えの場所のタブが無い") }
+        pinTab.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99a-部品を付け替える")
+        let part = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        if part.exists, part.isHittable {
+            XCTAssertGreaterThanOrEqual(part.frame.height, 44)
+            part.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "99b-部品を付け替える（ピンを足した）")
+            let save = app.buttons["trunk.equip.save"].firstMatch
+            XCTAssertTrue(save.isEnabled, "付け替えたのに保存できない")
+            save.tap()
+        }
+    }
 }

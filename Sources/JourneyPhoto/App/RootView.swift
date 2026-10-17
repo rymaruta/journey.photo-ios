@@ -407,7 +407,7 @@ struct RootView: View {
             if !ModalProbe.isPresenting() { break }
         }
         guard !ModalProbe.isPresenting() else { return }
-        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")])
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")], coins: 1)
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。

@@ -113,6 +113,8 @@ struct UploadService {
         let photo: Photo?
         let label: TrunkLabel?
         let labelSkipped: TrunkLabelSkip?
+        /// 配った硬貨（0 か 1・2026-10-17 次の版）
+        let coin: Int
 
         private enum CodingKeys: String, CodingKey { case success, photo, label, labelSkipped }
 
@@ -124,6 +126,7 @@ struct UploadService {
             let dealt = (try? TrunkDealt(from: decoder)) ?? TrunkDealt()
             label = dealt.label
             labelSkipped = dealt.labelSkipped
+            coin = dealt.coin
         }
     }
 
@@ -132,6 +135,7 @@ struct UploadService {
         let photo: Photo?
         let label: TrunkLabel?
         let labelSkipped: TrunkLabelSkip?
+        var coin = 0
     }
 
     /// - Parameter thumbUrl: 一覧用の 512px を置いた URL（`stageThumbnail`）。無ければ送らない
@@ -140,7 +144,7 @@ struct UploadService {
         let result: SaveResponse = try await api.authorized(
             .post, "/upload/save", body: body, as: SaveResponse.self
         )
-        return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped)
+        return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped, coin: result.coin)
     }
 
     // MARK: - 後始末

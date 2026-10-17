@@ -105,6 +105,15 @@ enum TrunkText {
         case "noPending": return L("作り直しの候補がありません。もう一度作り直してください。",
                                    "There are no designs to choose from. Redo it again.")
         case "busy": return L("混み合っています。もう一度お試しください", "It\u{2019}s busy. Please try again.")
+        // 次の版（2026-10-17）: 置き場・はがす・カプセルの機械・部品
+        case "badPlace": return L("その場所には貼れませんでした。トランクの上で離してください。",
+                                  "Couldn\u{2019}t stick it there. Let go over the trunk.")
+        case "notStuck": return L("まだ貼っていないラベルです。読み直してください。", "That label isn\u{2019}t stuck yet. Reload and try again.")
+        case "noCoins": return L("硬貨がありません。公開の投稿1件で1枚もらえます。", "No coins. You get one for each public post.")
+        case "notEnoughFragments": return L("かけらが足りません。5つで1つ交換できます。", "Not enough fragments. Five make one exchange.")
+        case "owned": return L("もう持っている部品です。", "You already have that part.")
+        case "notOwned": return L("持っていない部品は付けられません。読み直してください。", "You can\u{2019}t use a part you don\u{2019}t have. Reload and try again.")
+        case "badPart", "badKind": return L("その部品は付けられませんでした。読み直してください。", "That part couldn\u{2019}t be used. Reload and try again.")
         default: return fallback
         }
     }
@@ -234,12 +243,42 @@ enum TrunkText {
     /// 眉ラベル（モック Main の「MY TRUNK · 革の旅行鞄」）
     static func eyebrow(_ model: TrunkModel) -> String { "MY TRUNK · \(info(model).name)" }
 
-    /// トランクの読み上げ（モック Trunk の `ariaLabel`）
-    static func accessibilityLabel(model: TrunkModel, labels: Int, tags: Int) -> String {
+    /// トランクの読み上げ（モック Trunk の `ariaLabel`）。付けている部品があれば名前を添える
+    static func accessibilityLabel(model: TrunkModel, labels: Int, tags: Int, equipped: TrunkEquipped = .none) -> String {
         var text = L("\(info(model).name)。ラベル\(labels)枚", "\(info(model).name). \(labels) labels")
         if tags > 0 { text += L("、手荷物タグ\(tags)枚", ", \(tags) baggage tags") }
+        let names = equipped.all.compactMap { TrunkPartCatalog.part($0) }.filter { $0.kind != .lining }.map(\.name)
+        if !names.isEmpty { text += L("。付けている部品: \(names.joined(separator: "、"))", ". Parts: \(names.joined(separator: ", "))") }
         return text
     }
+
+    /// 「はがして手持ちに戻す」が手持ちの上限で断られたとき
+    /// 「完了」で置き場を送れなかった（混んでいた・圏外）
+    static let placeNotSaved = L("置き場を保存できませんでした。電波のあるところで、もう一度「完了」を押してください。",
+                                 "Couldn\u{2019}t save where your labels are. Try Done again where you have a signal.")
+
+    /// おまかせで並べる空きが無い
+    static let noFreeSlot = L("おまかせの置き場が埋まっています。ラベルを押さえて、好きな所へ運んで貼れます。",
+                              "The suggested spots are full. Hold a label and carry it anywhere on the trunk.")
+    /// 手持ちが空
+    static let noPocketLabels = L("手持ちのラベルがありません。写真を投稿すると届きます。",
+                                  "No labels in your pocket. Post a photo to get one.")
+
+    /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）
+    static func coinNotice(_ n: Int) -> String {
+        L("硬貨 +\(n) · カプセルの機械で部品と換えられます", "+\(n) coin · Use it at the capsule machine for a trunk part")
+    }
+
+    /// ラベルが届かなかった一言に添える硬貨（手持ちがいっぱいでも硬貨は届く）
+    static func coinAlsoNotice(_ n: Int) -> String {
+        L("硬貨は +\(n) 届いています。", "You still got +\(n) coin.")
+    }
+
+    /// 届いた画面の硬貨の札（「硬貨 +1」）
+    static func coinChip(_ n: Int) -> String { L("硬貨 +\(n)", "+\(n) coin") }
+
+    static let unstickFull = L("手持ちがいっぱいのため、はがせません。手持ちのラベルを貼るか削除してください。",
+                               "Your pocket is full, so it can\u{2019}t be peeled off. Stick or delete a label in your pocket first.")
 }
 
 // MARK: - 端末の中だけの移り変わり（画面写真の見本・`PreviewSession.trunkSample`）
@@ -247,50 +286,66 @@ enum TrunkText {
 /// サーバーと同じ決まりで、トランクの状態を手元で動かす（Debug の見本だけが使う。本番はサーバーの応答を映す）
 enum TrunkLocal {
 
-    static func stick(_ s: TrunkState, id: String) -> TrunkState {
+    static func stick(_ s: TrunkState, id: String, pos: TrunkPos? = nil) -> TrunkState {
         guard let label = s.pocket.first(where: { $0.id == id }) else { return s }
-        return copy(s, pocket: s.pocket.filter { $0.id != id }, stuck: [label] + s.stuck,
-                    pending: s.pendingReroll?.labelId == id ? .some(nil) : nil)
+        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [label.withPos(pos.map(TrunkPlacement.clamp))] + s.stuck,
+                      pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
+    }
+
+    static func place(_ s: TrunkState, id: String, pos: TrunkPos) -> TrunkState {
+        guard s.stuck.contains(where: { $0.id == id }) else { return s }
+        return s.copy(stuck: s.stuck.map { $0.id == id ? $0.withPos(TrunkPlacement.clamp(pos)) : $0 })
+    }
+
+    /// はがす（手持ちのいちばん上へ・置き場は消す）。手持ちが上限なら変えない（サーバーは 409 `full`）
+    static func unstick(_ s: TrunkState, id: String) -> TrunkState {
+        guard let label = s.stuck.first(where: { $0.id == id }), s.pocket.count < s.limit else { return s }
+        return s.copy(pocket: [label.withPos(nil)] + s.pocket, stuck: s.stuck.filter { $0.id != id })
     }
 
     static func remove(_ s: TrunkState, id: String) -> TrunkState {
-        copy(s, pocket: s.pocket.filter { $0.id != id },
-             pending: s.pendingReroll?.labelId == id ? .some(nil) : nil)
+        s.copy(pocket: s.pocket.filter { $0.id != id },
+               pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
     }
 
     /// 作り直し（候補の種3つ）。Pro で、回数が残っているときだけ
     static func reroll(_ s: TrunkState, id: String, seeds: [Int]) -> TrunkState {
         guard s.isPro, s.rerollsLeft > 0, s.pocket.contains(where: { $0.id == id }) else { return s }
         if s.pendingReroll?.labelId == id { return s }
-        return copy(s, rerollsLeft: s.rerollsLeft - 1, pending: .some(TrunkPendingReroll(labelId: id, seeds: seeds)))
+        return s.copy(rerollsLeft: s.rerollsLeft - 1, pendingReroll: .some(TrunkPendingReroll(labelId: id, seeds: seeds)))
     }
 
     static func choose(_ s: TrunkState, id: String, seed: Int) -> TrunkState {
         guard let pending = s.pendingReroll, pending.labelId == id else { return s }
         let pocket = s.pocket.map { $0.id == id && (pending.seeds.contains(seed) || $0.seed == seed) ? $0.withSeed(seed) : $0 }
-        return copy(s, pocket: pocket, pending: .some(nil))
+        return s.copy(pocket: pocket, pendingReroll: .some(nil))
     }
 
     static func setModel(_ s: TrunkState, _ model: TrunkModel) -> TrunkState {
         guard !model.isPro || s.isPro else { return s }
-        return TrunkState(model: model, effectiveModel: model, pocket: s.pocket, stuck: s.stuck, limit: s.limit,
-                          isPro: s.isPro, rerollsLeft: s.rerollsLeft, pendingReroll: s.pendingReroll,
-                          posts: s.posts, receiveLabels: s.receiveLabels)
+        return s.copy(model: model, effectiveModel: model)
     }
 
     static func setReceive(_ s: TrunkState, _ on: Bool) -> TrunkState {
-        TrunkState(model: s.model, effectiveModel: s.effectiveModel, pocket: s.pocket, stuck: s.stuck, limit: s.limit,
-                   isPro: s.isPro, rerollsLeft: s.rerollsLeft, pendingReroll: s.pendingReroll,
-                   posts: s.posts, receiveLabels: on)
+        s.copy(receiveLabels: on)
     }
 
-    /// `pending` は「触らない（nil）」「外す（.some(nil)）」「置く（.some(値)）」の3つ
-    private static func copy(_ s: TrunkState, pocket: [TrunkLabel]? = nil, stuck: [TrunkLabel]? = nil,
-                             rerollsLeft: Int? = nil, pending: TrunkPendingReroll?? = nil) -> TrunkState {
-        TrunkState(model: s.model, effectiveModel: s.effectiveModel, pocket: pocket ?? s.pocket, stuck: stuck ?? s.stuck,
-                   limit: s.limit, isPro: s.isPro, rerollsLeft: rerollsLeft ?? s.rerollsLeft,
-                   pendingReroll: pending == nil ? s.pendingReroll : pending!,
-                   posts: s.posts, receiveLabels: s.receiveLabels)
+    /// カプセルの機械（見本）。硬貨が無ければ nil。出る部品は見本の並び（`TrunkSample.gachaOrder`）を回す
+    static func gacha(_ s: TrunkState, draw: Int) -> TrunkGachaResult? {
+        guard s.coins > 0, !TrunkSample.gachaOrder.isEmpty,
+              let part = TrunkPartCatalog.part(TrunkSample.gachaOrder[draw % TrunkSample.gachaOrder.count]) else { return nil }
+        let duplicate = s.parts.contains(part.id)
+        return TrunkGachaResult(part: part, duplicate: duplicate, fragments: s.fragments + (duplicate ? 1 : 0), coins: s.coins - 1)
+    }
+
+    static func exchange(_ s: TrunkState, partId: String) -> TrunkState {
+        guard TrunkPartCatalog.part(partId) != nil, !s.parts.contains(partId),
+              s.fragments >= TrunkPartsBoxText.fragmentsPerExchange else { return s }
+        return s.copy(parts: [partId] + s.parts, fragments: s.fragments - TrunkPartsBoxText.fragmentsPerExchange)
+    }
+
+    static func equip(_ s: TrunkState, _ equipped: TrunkEquipped) -> TrunkState {
+        s.copy(equipped: equipped.sanitized(owned: s.ownedParts))
     }
 }
 
@@ -338,13 +393,36 @@ enum TrunkSample {
         label("p-naha", .season, "那覇", latin: "Naha", country: "日本", season: .summer, seed: 70_707, at: "2025-07-07T10:00:00Z"),
     ]
 
-    /// 見本の状態。`empty` は届いたラベルが1枚も無い人（空の状態の絵）
-    static func state(isPro: Bool, empty: Bool = false) -> TrunkState {
+    /// 見本の持っている部品（モック PartsBox の錠前 5/12 ほか・付け替えの見本 Equip の鳥居と汽船のピン）
+    static let parts: [String] = [
+        "lock.1", "lock.2", "lock.3", "lock.5", "lock.8",
+        "handle.1", "handle.2", "handle.7", "handle.6",
+        "corner.2", "corner.4", "corner.12",
+        "lining.1", "lining.7",
+        "tag.1", "tag.4", "tag.9",
+        "pin.1", "pin.7", "pin.2", "pin.5", "pin.9",
+        "patch.1",
+        "charm.1", "charm.4",
+        "key.4",
+    ]
+
+    /// 見本の付けている部品（モック Equip の「古都」: 赤の組紐・金の唐草・ピン2つ・京都のワッペン・鳥居のチャーム・赤い札の鍵）
+    static let equipped = TrunkEquipped(handle: "handle.7", corner: "corner.12", lock: "lock.2", lining: "lining.7",
+                                        tag: "tag.4", charm: "charm.1", key: "key.4",
+                                        pins: ["pin.1", "pin.7"], patches: ["patch.1"])
+
+    /// 見本のカプセルの機械で出る順（めずらしい錠前「菊」→ まだ持っていない部品 → 持っている部品（かけら））
+    static let gachaOrder = ["lock.2", "charm.12", "pin.1", "patch.6"]
+
+    /// 見本の状態。`empty` は届いたラベルが1枚も無い人（空の状態の絵）。`coins` で硬貨の枚数を替える（画面写真の「硬貨がありません」）
+    static func state(isPro: Bool, empty: Bool = false, coins: Int? = nil) -> TrunkState {
         TrunkState(model: .leather, effectiveModel: .leather,
                    pocket: empty ? [] : pocket, stuck: empty ? [] : stuck,
                    limit: isPro ? TrunkState.proLimit : TrunkState.freeLimit, isPro: isPro,
                    rerollsLeft: isPro ? 2 : 0, pendingReroll: nil,
-                   posts: empty ? 0 : 42, receiveLabels: true)
+                   posts: empty ? 0 : 42, receiveLabels: true,
+                   coins: coins ?? (empty ? 0 : 2), parts: empty ? [] : parts, fragments: empty ? 0 : 3,
+                   equipped: empty ? .none : equipped)
     }
 
     /// 届いた画面の見本の1枚（モック LabelArrived の「京都 · 桜」）

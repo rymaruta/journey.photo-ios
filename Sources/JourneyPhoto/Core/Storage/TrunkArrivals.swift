@@ -20,6 +20,8 @@ final class TrunkArrivals: ObservableObject {
     /// 届いた画面に出す束（先頭が大きく出る1枚・残りは「ほかに N 枚」）
     struct Batch: Identifiable, Equatable {
         let arrivals: [Arrival]
+        /// 一緒に届いた硬貨（届いた画面に「硬貨 +1」を添える・2026-10-17 次の版）
+        var coins: Int = 0
         var id: String { arrivals.map(\.label.id).joined(separator: ",") }
         var first: Arrival { arrivals[0] }
         var othersCount: Int { arrivals.count - 1 }
@@ -32,6 +34,11 @@ final class TrunkArrivals: ObservableObject {
     /// ほかの理由（同じ写真・1日の上限・受け取らない設定・時間切れ・知らない値）は黙って何も出さない
     enum Notice: Equatable {
         case full, storage
+        /// ラベルは届かなかったが、硬貨だけ届いた（受け取らない設定・2026-10-17 次の版）
+        case coins(Int)
+        /// 手持ちがいっぱい・容量で届かなかったが、硬貨は届いた（2026-10-17 の見直し: 硬貨のことも言う）
+        case fullAndCoins(Int)
+        case storageAndCoins(Int)
 
         init?(_ skip: TrunkLabelSkip?) {
             switch skip {
@@ -45,6 +52,9 @@ final class TrunkArrivals: ObservableObject {
             switch self {
             case .full: return TrunkText.fullNotice
             case .storage: return TrunkText.storageNotice
+            case .coins(let n): return TrunkText.coinNotice(n)
+            case .fullAndCoins(let n): return TrunkText.fullNotice + " " + TrunkText.coinAlsoNotice(n)
+            case .storageAndCoins(let n): return TrunkText.storageNotice + " " + TrunkText.coinAlsoNotice(n)
             }
         }
     }
@@ -86,7 +96,7 @@ final class TrunkArrivals: ObservableObject {
     /// 下書きを公開した・投稿した応答の配った結果を渡す（`TrunkDealt`）
     func deliver(_ dealt: TrunkDealt, photoTitle: String, now: Date = Date()) {
         deliver(dealt.label.map { [Arrival(label: $0, photoTitle: photoTitle)] } ?? [],
-                notice: Notice(dealt.labelSkipped), now: now)
+                notice: Notice(dealt.labelSkipped), coins: dealt.coin, now: now)
     }
 
     /// 入っている人が替わった（ログアウトを含む）。**前の人に届いた束と一言を捨てる**（2026-10-17 の読み直し）
@@ -103,12 +113,19 @@ final class TrunkArrivals: ObservableObject {
         stuckFromArrival = false
     }
 
-    /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）
-    func deliver(_ arrivals: [Arrival], notice: Notice?, now: Date = Date()) {
+    /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）と、届いた硬貨の数。
+    /// 硬貨は届いた画面に添える。ラベルが無く理由の一言も無ければ「硬貨 +1」の一言にする
+    func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, now: Date = Date()) {
+        let coins = max(0, coins)
+        var notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
+        if coins > 0, arrivals.isEmpty {
+            if notice == .full { notice = .fullAndCoins(coins) }
+            if notice == .storage { notice = .storageAndCoins(coins) }
+        }
         guard !arrivals.isEmpty || notice != nil else { return }
         deliveredAt = now
         if !arrivals.isEmpty {
-            pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals)
+            pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals, coins: (pending?.coins ?? 0) + coins)
         } else {
             pendingNotice = notice
         }

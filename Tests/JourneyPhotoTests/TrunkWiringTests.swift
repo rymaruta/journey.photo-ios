@@ -24,6 +24,40 @@ final class TrunkWiringTests: XCTestCase {
         return try names.map { ($0, try source("Features/Trunk/" + $0)) }
     }
 
+    /// 持っていない部品の影は白 10% 前後の一色の影絵（2026-10-17 owner。板の黒 35% は #121212 の札で見えない）。
+    /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
+    func testMissingPartShadowIsFaintWhite() throws {
+        XCTAssertGreaterThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.08)
+        XCTAssertLessThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.12)
+        let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
+        XCTAssertTrue(box.contains("Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)"), "影が白の影絵でない")
+        XCTAssertTrue(box.contains(".mask { TrunkPartView(part: part, shadow: false) }"), "形の影絵でなく色・質感が出る")
+        var masks = 0
+        for (name, text) in try trunkFiles() {
+            // 部品の形を型に抜く所（＝持っていない部品の影）は、どこも同じ影の色で塗る。
+            // 抜く修飾子の連なりをさかのぼり、その頭（塗る色）が白の影の値であることを1か所ずつ見る
+            let lines = text.components(separatedBy: "\n")
+            for (i, line) in lines.enumerated() where line.contains(".mask { TrunkPartView(") {
+                masks += 1
+                var head = i
+                while head > 0, lines[head].trimmingCharacters(in: .whitespaces).hasPrefix(".") { head -= 1 }
+                XCTAssertEqual(lines[head].trimmingCharacters(in: .whitespaces),
+                               "Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)",
+                               "\(name):\(i + 1) の影が部品箱と違う色")
+            }
+        }
+        XCTAssertGreaterThanOrEqual(masks, 1, "影の描き方が見つからない（見張りが空振りしている）")
+    }
+
+    /// 自分の手で貼る画面: 運んで離した送信も committer の予定に入れる（「保存せずに閉じる」で取り消せる）。
+    /// 閉じたら「ひとつ戻す」への積み（`onSaved`）を外して画面を抱え込まない
+    func testStickSendsThroughTheCommitter() throws {
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertFalse(stick.contains("places.commit("), "予定の外で送っている（保存せずに閉じても取り消せない）")
+        XCTAssertTrue(stick.contains("places.schedule(id, delay: 0) { outcome, closed in"))
+        XCTAssertTrue(stick.contains("places.onSaved = nil"), "閉じても onSaved が画面を抱え込む")
+    }
+
     /// 入口はマイページの旅の記録の札（名前の付いた行・画面写真の試験が押す）
     func testEntryFromMyPage() throws {
         let page = try source("Features/Profile/MyPageView.swift")
@@ -88,7 +122,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
-        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true)"))
+        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        parts: parts, wrinkles: wrinkles))"),
+                      "回す画面の表に付けた部品とよれが出ない（2026-10-17 次の版）")
         XCTAssertTrue(spin.contains(".accessibilityAction(named: L(\"裏返す\", \"Turn over\"))"))
     }
 
@@ -107,6 +142,9 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(preview.contains("static let trunkSampleKey = \"JPPreviewTrunk\""))
         XCTAssertTrue(preview.contains("static let trunkArrivedKey = \"JPPreviewTrunkArrived\""))
         XCTAssertNil(PreviewSession.trunkSample, "テストでは見本が効いていない")
+        // 次の版（2026-10-17）: 硬貨の枚数の見本（カプセルの機械の「硬貨がありません」を撮る）
+        XCTAssertTrue(preview.contains("static let trunkCoinsKey = \"JPPreviewTrunkCoins\""))
+        XCTAssertNil(PreviewSession.trunkCoins)
     }
 
     /// 知らせ: 押して進む画面には重ねず（`RootView` の全体の知らせ）、全画面の届いた画面にだけ置く。
@@ -155,7 +193,9 @@ final class TrunkWiringTests: XCTestCase {
     /// 再現しない。入れ物の目印の直前には必ず `.accessibilityElement(children: .contain)` を置く
     func testContainerIdentifiersDoNotOverrideChildren() throws {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
-                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen"]
+                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
+                          // 次の版（2026-10-17）
+                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip"]
         var found = Set<String>()
         for (name, text) in try trunkFiles() {
             let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -168,5 +208,66 @@ final class TrunkWiringTests: XCTestCase {
             }
         }
         XCTAssertEqual(found, Set(containers), "見張る目印が見つからない（名前が変わった？）")
+    }
+
+    /// 次の版（2026-10-17）: トランクの画面に「ラベルを貼る」「部品箱」「カプセルの機械（硬貨の数）」の入口があり、
+    /// 部品はトランクの絵と回す画面に映る。画面写真の試験が各画面を1枚ずつ撮る
+    func testNextVersionEntriesAndScreenshots() throws {
+        let main = try source("Features/Trunk/TrunkView.swift")
+        for id in ["trunk.stick.open", "trunk.partsBox", "trunk.gacha.open"] {
+            XCTAssertTrue(main.contains("\"\(id)\""), "\(id) の入口が無い")
+        }
+        XCTAssertTrue(main.contains("Text(L(\"硬貨 \\(state.coins)\""), "入口に硬貨の数が無い")
+        XCTAssertTrue(main.contains("parts: state.equipped"), "トランクの絵に付けた部品を渡していない")
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        for name in ["97-ラベルを貼る", "98-カプセルの機械", "98a-カプセルを開けた", "98b-中身と確率", "99-部品箱", "99a-部品を付け替える",
+                     "98c-カプセルの機械（硬貨がありません）"] {
+            XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
+        }
+        // 触覚（貼る・目盛り・落ちる）と「視差効果を減らす」
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertTrue(stick.contains(".sensoryFeedback(.impact(weight: .medium), trigger: stickTicks)"))
+        XCTAssertTrue(stick.contains("guard !reduceMotion else { return }"), "貼る弾みを「視差効果を減らす」で止めていない")
+        let gacha = try source("Features/Trunk/TrunkGachaView.swift")
+        XCTAssertTrue(gacha.contains(".sensoryFeedback(.selection, trigger: ticks)"), "ハンドルの目盛りに触覚が無い")
+        XCTAssertTrue(gacha.contains(".sensoryFeedback(.impact(weight: .heavy), trigger: drops)"), "カプセルが落ちたときに触覚が無い")
+        XCTAssertTrue(gacha.contains("TrunkGachaOddsView()"), "中身と確率への入口が無い")
+        XCTAssertTrue(gacha.contains("if reduceMotion {"), "落ちる弾みを「視差効果を減らす」で止めていない")
+        XCTAssertFalse(gacha.contains("Text(L(\"枚\", \"\"))"), "英語で空の字と余白が残る")
+        XCTAssertTrue(gacha.contains("if !unit.isEmpty {"))
+    }
+
+    /// 回して間もなく閉じても保存する。送れなければ閉じずに「もう一度」「保存せずに閉じる」を聞く
+    /// （送る順序・数え方は `TrunkPlaceCommitterTests` が振る舞いで見る）
+    func testStickScreenFlushesOnClose() throws {
+        let stick = try source("Features/Trunk/TrunkStickView.swift")
+        XCTAssertTrue(stick.contains("let ok = await places.flush()"), "「完了」が溜まった置き場を送らずに閉じる")
+        XCTAssertTrue(stick.contains("if ok { dismiss() } else { showSaveFailed = true }"), "送れなかったのに閉じる・出る道が無い")
+        XCTAssertTrue(stick.contains("Button(L(\"保存せずに閉じる\", \"Close without saving\"))"))
+        XCTAssertTrue(stick.contains("places.discardAll()\n                dismiss()"), "保存せずに閉じても送る")
+        XCTAssertTrue(stick.contains("Text(L(\"保存しています\", \"Saving\"))"), "送っている間に何も出さない")
+        XCTAssertTrue(stick.contains(".onDisappear {\n            places.sendLeftovers()"), "閉じたときに残りを捨てる")
+        XCTAssertFalse(stick.contains("捨て"))
+        // 2本指: 取り消されても下がる印・回し始めたラベルを送ってから印を下げる
+        XCTAssertTrue(stick.contains("@GestureState private var rotating = false"))
+        XCTAssertTrue(stick.contains(".updating($rotating) { _, state, _ in state = true }"))
+        XCTAssertTrue(stick.contains(".onChange(of: rotating) { _, now in"), "取り消されたときに回した1枚を送らない")
+        XCTAssertTrue(stick.contains("if let id = rotatingId { places.schedule(id, delay: 0) }"))
+        XCTAssertTrue(stick.contains("guard !rotatedDuringDrag else {"), "2本指のあとの離しで選び直す")
+        XCTAssertTrue(stick.contains("guard outcome == .saved else { return }"), "断られたのに、運んだよれ・音が付く")
+        XCTAssertTrue(stick.contains("guard !closed else { return }"), "閉じた先の画面で音・触覚が出る")
+        let committer = try source("Features/Trunk/TrunkPlaceCommitter.swift")
+        XCTAssertTrue(committer.contains("guard !Task.isCancelled else { return }\n            switch outcome {\n            case .busy? where attempt < 5:"),
+                      "取り消したあとに予定を作り直す")
+    }
+
+    /// よれ（貼り直した紙）は貼る画面だけでなく、トランクを描くどの画面にも同じく出す（画面ごとに見た目を割らない）
+    func testWrinklesReachEveryTrunk() throws {
+        for path in ["Features/Trunk/TrunkView.swift", "Features/Trunk/TrunkPartsBoxView.swift"] {
+            XCTAssertTrue(try source(path).contains("wrinkles: TrunkWrinkles(userId: auth.userId).strengths"), "\(path) によれが無い")
+        }
+        XCTAssertTrue(try source("Features/Trunk/TrunkStickView.swift").contains("wrinkles: wrinkles, pop: pop"))
+        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles)"),
+                      "TrunkFigure がよれを箱に渡していない")
     }
 }

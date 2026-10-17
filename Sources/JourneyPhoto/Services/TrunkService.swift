@@ -11,6 +11,15 @@ import Foundation
 ///     PUT    /user/trunk/model { model }              → 状態
 ///     PUT    /user/trunk/settings { receiveLabels }   → 状態
 ///
+/// 次の版（2026-10-17 owner 承認）:
+///
+///     POST   /user/trunk/labels/{id}/stick { x?, y?, rot? }  → 状態（置き場つきで貼る）
+///     PUT    /user/trunk/labels/{id}/place { x, y, rot }     → 状態（貼ったラベルを置き直す）
+///     POST   /user/trunk/labels/{id}/unstick                 → 状態（はがして手持ちに戻す・いっぱいなら 409 full）
+///     POST   /user/trunk/gacha                               → { part, duplicate, fragments, coins }（硬貨 0 は 409 noCoins）
+///     POST   /user/trunk/parts/exchange { partId }           → 状態＋part（かけら5つ）
+///     PUT    /user/trunk/equip { handle…key, pins[], patches[] } → 状態
+///
 /// **書き込みの応答は、書いたあとの状態。** 画面は自分で足し引きせず、返ってきた状態をそのまま映す
 /// （`TripPlanService` と同じ判断——断られた回に嘘の状態を残さない）。書き込みの応答には `posts` が
 /// 無いので、前に読んだ数を引き継ぐ（`TrunkState.keepingPosts`）。
@@ -55,6 +64,52 @@ struct TrunkService {
     func stick(_ id: String) async throws -> TrunkState {
         try await refusing {
             try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/stick", as: TrunkState.self)
+        }
+    }
+
+    /// 置き場つきで貼る（自分の手で貼る画面）。置き場はサーバーの細かさに丸めて送る（`TrunkPlacement.clamp`）
+    func stick(_ id: String, at pos: TrunkPos) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/stick",
+                                     body: TrunkPlacement.clamp(pos), as: TrunkState.self)
+        }
+    }
+
+    /// 貼ったラベルを置き直す（動かす・回す）
+    func place(_ id: String, at pos: TrunkPos) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.put, "/user/trunk/labels/\(encoded(id))/place",
+                                     body: TrunkPlacement.clamp(pos), as: TrunkState.self)
+        }
+    }
+
+    /// はがして手持ちに戻す（手持ちが上限なら 409 `full`）
+    func unstick(_ id: String) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/unstick", as: TrunkState.self)
+        }
+    }
+
+    /// カプセルの機械を回す（硬貨1枚）。応答は状態を丸ごと返さない（`TrunkGachaResult.applied`）
+    func gacha() async throws -> TrunkGachaResult {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/gacha", as: TrunkGachaResult.self)
+        }
+    }
+
+    private struct ExchangeBody: Encodable { let partId: String }
+
+    /// かけら5つで、持っていない部品1つと交換
+    func exchange(_ partId: String) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/parts/exchange", body: ExchangeBody(partId: partId), as: TrunkState.self)
+        }
+    }
+
+    /// 付ける部品を全部まとめて送る（外した場所は null）
+    func equip(_ equipped: TrunkEquipped) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.put, "/user/trunk/equip", body: equipped, as: TrunkState.self)
         }
     }
 

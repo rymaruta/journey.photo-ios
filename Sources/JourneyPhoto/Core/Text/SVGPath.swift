@@ -5,7 +5,7 @@ import Foundation
 /// モックのラベルとトランクの絵は SVG で描いてある。**手で写し替えると数字を取り違える**ので、
 /// 文字のまま持ち、ここで読む。画面は並びをそのまま `Path` に移すだけ。
 ///
-/// 読むのはモックが使う命令だけ: `M L H V C Q A Z`（**大文字＝絶対座標だけ**）。
+/// 読むのはモックが使う命令だけ: `M L H V C Q A Z`（**大文字＝絶対座標**）と、相対の弧 `a`（部品の絵）。
 /// 弧（`A`）は SVG の決まり（端点から中心への変換・半径が足りなければ広げる）で
 /// 90° 以下の3次の曲線に分ける。
 enum SVGPath {
@@ -82,6 +82,14 @@ enum SVGPath {
             case "A":
                 guard let rx = number(), let ry = number(), let rotation = number(),
                       let large = number(), let sweep = number(), let p = point() else { return out }
+                out += arc(from: current, to: p, rx: rx, ry: ry, rotation: rotation,
+                           largeArc: large != 0, sweep: sweep != 0)
+                current = p
+            case "a":
+                // 相対の弧（部品の汽車の車輪 `a3 3 0 1 0 0.1 0`・2026-10-17）。端点だけが今の点からの差
+                guard let rx = number(), let ry = number(), let rotation = number(),
+                      let large = number(), let sweep = number(), let d = point() else { return out }
+                let p = Point(x: current.x + d.x, y: current.y + d.y)
                 out += arc(from: current, to: p, rx: rx, ry: ry, rotation: rotation,
                            largeArc: large != 0, sweep: sweep != 0)
                 current = p

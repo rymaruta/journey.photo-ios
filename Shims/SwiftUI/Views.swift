@@ -5,6 +5,8 @@ public struct Text: View {
     public init(_ s: String) {}
     public init(_ s: Substring) {}
     public init<S: StringProtocol>(_ s: S) {}
+    /// 訳さずにそのまま出す字（本物と同じ）
+    public init(verbatim content: String) {}
     /// 部分にリンク（`.link`）を付けた文字。本物は iOS 15〜
     public init(_ attributed: AttributedString) {}
     public var body: Never { fatalError("模型") }
@@ -91,8 +93,9 @@ public struct StrokeStyle {
     public var lineWidth: Double
     public var lineCap: LineCapShim
     public var lineJoin: LineJoinShim
-    public var dash: [Double]
-    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, lineJoin: LineJoinShim = .miter, dash: [Double] = []) {
+    /// 本物と同じ `[CGFloat]`（`[Double]` の変数をそのまま渡すと Mac でだけ落ちる・2026-10-17 run 480）
+    public var dash: [CGFloat]
+    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, lineJoin: LineJoinShim = .miter, dash: [CGFloat] = []) {
         self.lineWidth = lineWidth
         self.lineCap = lineCap
         self.lineJoin = lineJoin

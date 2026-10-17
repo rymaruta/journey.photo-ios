@@ -216,6 +216,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの見本の硬貨の枚数（Debug のみ・2026-10-17 次の版）。`-JPPreviewTrunkCoins 0` で
+    /// カプセルの機械の「硬貨がありません」を撮る。無ければ見本の 2 枚。Release では必ず nil
+    static let trunkCoinsKey = "JPPreviewTrunkCoins"
+
+    static var trunkCoins: Int? {
+        #if DEBUG
+        guard trunkSample != nil, let raw = UserDefaults.standard.string(forKey: trunkCoinsKey),
+              let value = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)), value >= 0 else { return nil }
+        return min(99, value)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで、起動のときに「ラベルが届きました」の画面を1回出す（Debug のみ）。`-JPPreviewTrunkArrived YES`。
     /// 投稿しないと届かないので、見本の1枚（`TrunkSample.arrived`）で出す。入っている見本の利用者のときだけ。
     /// Release では必ず false

@@ -16,19 +16,28 @@ struct TrunkLabelView: View {
     var age: Double = 0
     /// 下の通し番号の行（届いた画面の大きいラベルの日付）
     var serial: String?
+    /// 貼ったあとに動かしたよれ（0〜1・2026-10-17 次の版）
+    var wrinkle: Double = 0
+    /// よれの折れ目を決める種（ラベルの種）
+    var wrinkleSeed = 0
 
-    init(spec: TrunkLabelSpec, w: Double, h: Double, age: Double = 0, serial: String? = nil) {
+    init(spec: TrunkLabelSpec, w: Double, h: Double, age: Double = 0, serial: String? = nil,
+         wrinkle: Double = 0, wrinkleSeed: Int = 0) {
         self.spec = spec
         self.w = w
         self.h = h
         self.age = age
         self.serial = serial
+        self.wrinkle = wrinkle
+        self.wrinkleSeed = wrinkleSeed
     }
 
     /// ラベルから描く（決まった図柄・`TrunkLabelDesign.spec`）
-    init(label: TrunkLabel, w: Double, h: Double, age: Double = 0, rot: Double? = nil, serial: String? = nil) {
+    init(label: TrunkLabel, w: Double, h: Double, age: Double = 0, rot: Double? = nil, serial: String? = nil,
+         wrinkle: Double = 0) {
         let spec = TrunkLabelDesign.spec(for: label)
-        self.init(spec: rot.map { spec.rotated($0) } ?? spec, w: w, h: h, age: age, serial: serial)
+        self.init(spec: rot.map { spec.rotated($0) } ?? spec, w: w, h: h, age: age, serial: serial,
+                  wrinkle: wrinkle, wrinkleSeed: label.seed)
     }
 
     private var layout: TrunkLabelLayout { TrunkLabelLayout(w: w, h: h, spec: spec, age: age) }
@@ -44,8 +53,11 @@ struct TrunkLabelView: View {
             wear.clipShape(outline(0))
             content
             if l.showsCurl { curl }
+            if wrinkle > 0 { creases.clipShape(outline(0)) }
         }
         .frame(width: w, height: h)
+        // よれ: 貼り直した紙は少しだけ縮んで浮く（2026-10-17 次の版）
+        .scaleEffect(x: 1, y: 1 - 0.015 * wrinkle)
         .modifier(TrunkTicketMask(active: spec.shape == .ticket, notch: l.ticketNotch))
         // 細かい粒と重ねを1枚の絵にしてから影を落とす（手持ちの格子に何十枚も並ぶので軽くする）
         .drawingGroup()
@@ -80,6 +92,25 @@ struct TrunkLabelView: View {
                 TrunkStop(color: TrunkRGBA(r: 0, g: 0, b: 0, a: 0.12), location: 1),
             ]), w: w, h: h)
         }
+    }
+
+    /// 貼り直したよれの折れ目（明るい線と、その横の影の線）
+    private var creases: some View {
+        let lines = TrunkPlacement.creases(seed: wrinkleSeed, wrinkle: wrinkle)
+        return Canvas { ctx, _ in
+            for line in lines {
+                var light = Path()
+                light.move(to: CGPoint(x: line.x0 * w, y: line.y0 * h))
+                light.addLine(to: CGPoint(x: line.x1 * w, y: line.y1 * h))
+                var dark = Path()
+                dark.move(to: CGPoint(x: line.x0 * w + 1, y: line.y0 * h))
+                dark.addLine(to: CGPoint(x: line.x1 * w + 1, y: line.y1 * h))
+                ctx.stroke(light, with: .color(Color.white.opacity(0.28 + 0.12 * wrinkle)), lineWidth: 1)
+                ctx.stroke(dark, with: .color(Color.black.opacity(0.14 + 0.1 * wrinkle)), lineWidth: 1)
+            }
+        }
+        .frame(width: w, height: h)
+        .allowsHitTesting(false)
     }
 
     /// 角の擦れ（白っぽい）と、しみ（茶色）。古びるほど濃い
