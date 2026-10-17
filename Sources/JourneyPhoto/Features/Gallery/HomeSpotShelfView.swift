@@ -21,6 +21,8 @@ struct HomeSpotShelfView: View {
     var reloadToken: Int = 0
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var wishlist: WishlistStore
+    @EnvironmentObject private var toasts: ToastCenter
     /// アクセシビリティ用の大きさでは出典の行数の上限を外す（`credit` の注記）
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -68,6 +70,8 @@ struct HomeSpotShelfView: View {
     }
 
     private func card(_ entry: HomeSpotShelf.Entry) -> some View {
+        let wishKey = SavedSpotKey.official(entry.spot.slug)
+        let wanted = wishlist.contains(wishKey)
         let loaded = bodies[entry.spot.slug] != nil
         let spotBody = bodies[entry.spot.slug] ?? nil
         // **本文を待ってから決める**——先に代表写真を出すと、作例が届いた瞬間に写真が入れ替わる
@@ -114,6 +118,27 @@ struct HomeSpotShelfView: View {
             if let picture {
                 credit(picture)
             }
+            // ホームで見つけた場所を、詳細へ入らずに「行きたい」へ保存できる。
+            Button {
+                Task {
+                    let outcome = await WishlistSync.toggle(wishKey, store: wishlist, service: environment.savedSpots)
+                    if let notice = WishlistSync.notice(for: outcome) {
+                        toasts.show(notice.text, kind: notice.kind)
+                    }
+                }
+            } label: {
+                SpotDetailParts.actionLabel(
+                    icon: wanted ? "heart.fill" : "heart",
+                    title: L("行きたい", "Want to go"),
+                    filled: wanted,
+                    busy: wishlist.isSending(wishKey)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(wishlist.isSending(wishKey))
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .accessibilityIdentifier("home.spotShelf.wish")
         }
         .frame(width: Self.cardWidth, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .top)
