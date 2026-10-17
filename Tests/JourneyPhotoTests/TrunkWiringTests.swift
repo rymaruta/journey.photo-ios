@@ -24,6 +24,22 @@ final class TrunkWiringTests: XCTestCase {
         return try names.map { ($0, try source("Features/Trunk/" + $0)) }
     }
 
+    /// 持っていない部品の影は白 10% 前後の一色の影絵（2026-10-17 owner。板の黒 35% は #121212 の札で見えない）。
+    /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
+    func testMissingPartShadowIsFaintWhite() throws {
+        XCTAssertGreaterThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.08)
+        XCTAssertLessThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.12)
+        let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
+        XCTAssertTrue(box.contains("Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)"), "影が白の影絵でない")
+        XCTAssertTrue(box.contains(".mask { TrunkPartView(part: part, shadow: false) }"), "形の影絵でなく色・質感が出る")
+        for (name, text) in try trunkFiles() {
+            // 部品の形を型に抜く所（＝持っていない部品の影）は、どこも同じ影の色で塗る
+            for line in text.components(separatedBy: "\n") where line.contains(".mask { TrunkPartView(") {
+                XCTAssertTrue(text.contains("TrunkPartsBoxText.missingShadowOpacity"), "\(name) の影が部品箱と違う色: \(line)")
+            }
+        }
+    }
+
     /// 入口はマイページの旅の記録の札（名前の付いた行・画面写真の試験が押す）
     func testEntryFromMyPage() throws {
         let page = try source("Features/Profile/MyPageView.swift")

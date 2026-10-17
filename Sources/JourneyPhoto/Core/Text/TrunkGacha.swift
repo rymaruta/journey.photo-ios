@@ -201,6 +201,10 @@ enum TrunkPartsBoxText {
     /// 交換に要るかけら（サーバーの `FRAGMENTS_PER_EXCHANGE`）
     static let fragmentsPerExchange = 5
 
+    /// 持っていない部品の影の不透明度（白の一色の影絵・2026-10-17 owner。板は `brightness(0) opacity(0.35)` の黒だが、
+    /// #121212 の札の上でほぼ見えないので白 10% にした。8〜12% の間で動かす）
+    static let missingShadowOpacity = 0.10
+
     /// 集めた数（「23 / 108」）
     static func collected(_ owned: Set<String>) -> (owned: Int, total: Int) {
         (TrunkPartCatalog.all.filter { owned.contains($0.id) }.count, TrunkPartCatalog.all.count)

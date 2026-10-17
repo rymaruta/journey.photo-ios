@@ -202,8 +202,9 @@ struct TrunkPartsBoxView: View {
                 if has {
                     TrunkPartView(part: part)
                 } else {
-                    // 持っていない部品は影（モックの `filter: brightness(0) opacity(0.35)`）
-                    Color.black.opacity(0.35)
+                    // 持っていない部品は白 10% の一色の影絵（2026-10-17 owner。板の黒 35% は #121212 の札でほぼ見えない）。
+                    // 形だけを出し、色・質感は出さない
+                    Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)
                         .frame(width: 96, height: 96)
                         .mask { TrunkPartView(part: part, shadow: false) }
                 }
