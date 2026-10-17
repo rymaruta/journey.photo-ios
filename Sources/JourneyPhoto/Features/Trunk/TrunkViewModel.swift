@@ -105,13 +105,18 @@ final class TrunkViewModel: ObservableObject {
         } catch is CancellationError {
             return false
         } catch let refused as TrunkService.Refused {
+            lastWriteRefused = true
             actionError = refusal?(refused) ?? Self.message(refused)
             return false
         } catch {
+            lastWriteRefused = false
             actionError = Self.message(error)
             return false
         }
     }
+
+    /// 最後に失敗した書き込みが、サーバーの断り（`Refused`）だったか。false なら圏外・時間切れなど（やり直せる）
+    private(set) var lastWriteRefused = false
 
     /// 届いた画面の「トランクに貼る」。**読めていなければ読み直してから貼る。それでも読めなければ一言を出す**
     /// （黙って何もしない、をなくす・2026-10-17 の読み直し）
@@ -201,14 +206,27 @@ final class TrunkViewModel: ObservableObject {
         case refused
         /// 別の書き込みが終わらず送れなかった（あとでやり直す）
         case busy
+        /// 圏外・時間切れなどで送れなかった（置き場は残してやり直せる）
+        case failed
+        /// 同じラベルに、あとから新しい置き場が頼まれた（古い値は送らない）
+        case superseded
     }
+
+    /// ラベルごとの置き直しの番号（新しい頼みが来たら、待っている古い頼みは送らない）
+    private var placeTickets = TrunkPlaceTickets()
 
     /// 置き直す。**書き込みの最中なら待ってから送る**（2026-10-17 の見直し: 黙って false で、回した向きが
     /// 保存されないことがあった）
+    ///
+    /// **同じラベルへの頼みは新しい方が勝つ**（閉じたあとの送り残しと、開き直した画面の新しい置き場がぶつかっても、
+    /// 古い値で上書きしない・2026-10-17 の見直し）
     func placeWhenFree(_ id: String, at pos: TrunkPos) async -> PlaceOutcome {
+        let ticket = placeTickets.issue(id)
         guard await waitUntilIdle() else { return .busy }
+        guard placeTickets.isLatest(id, ticket) else { return .superseded }
         if await place(id, at: pos) { return .saved }
-        return actionError == nil ? .busy : .refused
+        if actionError == nil { return .busy }
+        return lastWriteRefused ? .refused : .failed
     }
 
     /// 置き場つきで貼る（書き込みの最中なら待ってから）

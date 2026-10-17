@@ -204,7 +204,15 @@ final class TrunkWiringTests: XCTestCase {
     /// 回して間もなく閉じても保存する（「完了」は送ってから閉じる・閉じた画面は残りを送る）
     func testStickScreenFlushesOnClose() throws {
         let stick = try source("Features/Trunk/TrunkStickView.swift")
-        XCTAssertTrue(stick.contains("await flush()\n                        dismiss()"), "「完了」が溜まった置き場を送らずに閉じる")
+        XCTAssertTrue(stick.contains("let ok = await flush()"), "「完了」が溜まった置き場を送らずに閉じる")
+        XCTAssertTrue(stick.contains("if ok {\n                            dismiss()"), "送れなかったのに閉じる")
+        XCTAssertTrue(stick.contains("Text(L(\"保存しています\", \"Saving\"))"), "送っている間に何も出さない")
+        // 2本指: 取り消されても下がる印・回し始めたラベルを送る・取り消し後に予定を作り直さない
+        XCTAssertTrue(stick.contains("@GestureState private var rotating = false"))
+        XCTAssertTrue(stick.contains(".updating($rotating) { _, state, _ in state = true }"))
+        XCTAssertTrue(stick.contains("if let id = rotatingId { scheduleCommit(id, delay: 0) }"), "回したラベルではなく選んでいるラベルを送る")
+        XCTAssertTrue(stick.contains("guard !rotatedDuringDrag else {"), "2本指のあとの離しで選び直す")
+        XCTAssertTrue(stick.contains("attempt < 5, !Task.isCancelled"), "取り消したあとに予定を作り直す")
         XCTAssertTrue(stick.contains(".onDisappear { sendLeftovers() }"), "閉じたときに残りを捨てる")
         XCTAssertFalse(stick.contains("commitTask?.cancel()"), "保存の予定が1つだけに戻った")
     }

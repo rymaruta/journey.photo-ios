@@ -49,8 +49,14 @@ struct TrunkStickView: View {
     @State private var wrinkles: [String: Double] = [:]
     /// 2本指で回し始めたときの置き場
     @State private var rotateBase: TrunkPos?
-    /// 2本指で回している最中（運ぶ方を始めない）
-    @State private var rotating = false
+    /// 2本指で回している最中（運ぶ方を始めない）。取り消されても必ず下がるよう `@GestureState`
+    @GestureState private var rotating = false
+    /// 2本指で回し始めたラベル（指を離したら、これを送る）
+    @State private var rotatingId: String?
+    /// 今の1本目の指の間に2本指で回した（離したときに「押しただけ」で選び直さない）
+    @State private var rotatedDuringDrag = false
+    /// 「完了」で送っている最中
+    @State private var saving = false
     /// 保存の予定（ラベルごと）
     @State private var commitTasks: [String: Task<Void, Never>] = [:]
 
@@ -144,20 +150,37 @@ struct TrunkStickView: View {
                 .accessibilityIdentifier("trunk.stick.undo")
                 Spacer()
                 Button {
-                    // 回して間もなく閉じても、溜まった置き場を送ってから閉じる
+                    // 回して間もなく閉じても、溜まった置き場を送ってから閉じる。送れなければ閉じずに一言
                     Task {
-                        await flush()
-                        dismiss()
+                        saving = true
+                        let ok = await flush()
+                        saving = false
+                        if ok {
+                            dismiss()
+                        } else if model.actionError == nil {
+                            model.actionError = TrunkText.placeNotSaved
+                        }
                     }
                 } label: {
-                    Text(L("完了", "Done"))
-                        .font(.headline)
-                        .foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
+                    HStack(spacing: 6) {
+                        if saving {
+                            ProgressView()
+                                .tint(WebTheme.accent)
+                            Text(L("保存しています", "Saving"))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.accent)
+                        } else {
+                            Text(L("完了", "Done"))
+                                .font(.headline)
+                                .foregroundStyle(WebTheme.accent)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(saving)
                 .accessibilityIdentifier("trunk.stick.done")
             }
             .padding(.horizontal, 8)
@@ -269,6 +292,11 @@ struct TrunkStickView: View {
                     drop(carry, layout)
                     return
                 }
+                // 2本指で回したあとの離し: 選び直さない（回したラベルのまま）
+                guard !rotatedDuringDrag else {
+                    rotatedDuringDrag = false
+                    return
+                }
                 // 押しただけ: 指の下のラベルを選ぶ
                 let p = layout.bodyPoint(screenX: Double(value.location.x), screenY: Double(value.location.y), lifted: false)
                 let placed = TrunkPlacement.layout(stuck, stage: 0, overrides: overrides)
@@ -279,19 +307,21 @@ struct TrunkStickView: View {
     /// 2本指で回す（選んでいる1枚）
     private var rotateGesture: some Gesture {
         RotateGesture()
+            .updating($rotating) { _, state, _ in state = true }
             .onChanged { value in
-                rotating = true
+                rotatedDuringDrag = true
                 // 1本目で運び始めていたら、回す方を選ぶ（置き場は動かす前に戻る）
                 if let c = carry, !c.fromTray { carry = nil }
-                guard let target, let base = rotateBase ?? currentPos(target.id) else { return }
+                // 回し始めたラベルを覚える（途中で選んでいるものが替わっても、同じ1枚を回して送る）
+                guard let id = rotatingId ?? target?.id, let base = rotateBase ?? currentPos(id) else { return }
+                if rotatingId == nil { rotatingId = id }
                 if rotateBase == nil { rotateBase = base }
-                pending.note(target.id, from: pending[target.id]?.from ?? base,
-                             to: TrunkPlacement.rotated(base, by: value.rotation.degrees))
+                pending.note(id, from: pending[id]?.from ?? base, to: TrunkPlacement.rotated(base, by: value.rotation.degrees))
             }
             .onEnded { _ in
-                rotating = false
                 rotateBase = nil
-                if let target { scheduleCommit(target.id, delay: 0) }
+                if let id = rotatingId { scheduleCommit(id, delay: 0) }
+                rotatingId = nil
             }
     }
 
@@ -348,7 +378,8 @@ struct TrunkStickView: View {
         commitTasks[id] = Task {
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard !Task.isCancelled else { return }
-            if await commit(id) == .busy, attempt < 5 {
+            // 送っている間に取り消された（新しい予定ができた）なら、作り直さない
+            if await commit(id) == .busy, attempt < 5, !Task.isCancelled {
                 // ほかの書き込みが終わらなかった: 置き場は残したまま、少し待ってやり直す
                 scheduleCommit(id, delay: 0.3, attempt: attempt + 1)
             }
@@ -366,17 +397,23 @@ struct TrunkStickView: View {
             pending.done(id, sent: item.to)
         case .refused:
             pending.done(id, sent: item.to)
-        case .busy:
+        case .busy, .failed, .superseded:
+            // 混んでいた・圏外: 置き場は残す。新しい頼みに負けた: その頼みが送る
             break
         }
         return outcome
     }
 
-    /// 溜まった置き場を全部送る（「完了」）
-    private func flush() async {
+    /// 溜まった置き場を全部送る（「完了」）。全部送れたら true（断られた・圏外・混んでいたら false で、閉じない）
+    private func flush() async -> Bool {
         for task in commitTasks.values { task.cancel() }
         commitTasks = [:]
-        for id in pending.ids { await commit(id) }
+        var ok = true
+        for id in pending.ids {
+            let outcome = await commit(id)
+            if outcome != .saved && outcome != .superseded { ok = false }
+        }
+        return ok
     }
 
     /// 画面が閉じた（「完了」を通らずに）。残っている置き場を送る（画面の状態ではなく値を持って）

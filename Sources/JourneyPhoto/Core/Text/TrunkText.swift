@@ -253,6 +253,10 @@ enum TrunkText {
     }
 
     /// 「はがして手持ちに戻す」が手持ちの上限で断られたとき
+    /// 「完了」で置き場を送れなかった（混んでいた・圏外）
+    static let placeNotSaved = L("置き場を保存できませんでした。電波のあるところで、もう一度「完了」を押してください。",
+                                 "Couldn\u{2019}t save where your labels are. Try Done again where you have a signal.")
+
     /// おまかせで並べる空きが無い
     static let noFreeSlot = L("おまかせの置き場が埋まっています。ラベルを押さえて、好きな所へ運んで貼れます。",
                               "The suggested spots are full. Hold a label and carry it anywhere on the trunk.")

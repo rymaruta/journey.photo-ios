@@ -77,4 +77,33 @@ final class TrunkCommitTests: XCTestCase {
         XCTAssertEqual(r, .refused)
         XCTAssertEqual(model.actionError, TrunkText.refusal(code: "notStuck", fallback: ""))
     }
+
+    /// 🔴 同じラベルに古い置き場と新しい置き場が続けて頼まれたら、新しい方だけが送る
+    /// （閉じたあとの送り残しと、開き直した画面の新しい置き場がぶつかっても古い値で上書きしない）
+    func testNewerPlaceWinsForTheSameLabel() {
+        var t = TrunkPlaceTickets()
+        let old = t.issue("s-1")
+        let other = t.issue("s-2")
+        let new = t.issue("s-1")
+        XCTAssertFalse(t.isLatest("s-1", old), "古い頼みも送る")
+        XCTAssertTrue(t.isLatest("s-1", new))
+        XCTAssertTrue(t.isLatest("s-2", other), "別のラベルの頼みを止めた")
+    }
+
+    /// 圏外（断りではない失敗）は failed（画面は置き場を残して、閉じずに一言）
+    @MainActor
+    func testPlaceFailedIsNotRefused() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = TrunkViewModel(preview: nil)
+        model.bind(TrunkService(api: api))
+        ScriptedProtocol.script = [
+            .init(match: "/place", status: 500, body: #"{"error":"x"}"#),
+            .init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[\#(label("s-1"))]}"#),
+        ]
+        await model.load(offline: false)
+        let r = await model.placeWhenFree("s-1", at: TrunkPos(x: 0.2, y: 0.2, rot: 8))
+        XCTAssertEqual(r, .failed, "やり直せる失敗を「断られた」と数えた（置き場が黙って消える）")
+        XCTAssertFalse(TrunkText.placeNotSaved.isEmpty)
+    }
 }

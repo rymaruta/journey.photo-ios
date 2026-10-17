@@ -258,3 +258,18 @@ struct TrunkPendingPlaces: Equatable {
     /// 画面の上に出す置き場
     var overrides: [String: TrunkPos] { items.mapValues(\.to) }
 }
+
+/// ラベルごとの置き直しの番号（`TrunkViewModel.placeWhenFree`）。**同じラベルへの頼みは、あとの方だけが送る**
+struct TrunkPlaceTickets: Equatable {
+    private var latest: [String: Int] = [:]
+
+    /// 頼みを1つ受ける（番号を返す）
+    mutating func issue(_ id: String) -> Int {
+        let next = (latest[id] ?? 0) + 1
+        latest[id] = next
+        return next
+    }
+
+    /// この番号がそのラベルのいちばん新しい頼みか
+    func isLatest(_ id: String, _ ticket: Int) -> Bool { latest[id] == ticket }
+}
