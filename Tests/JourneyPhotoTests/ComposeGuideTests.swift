@@ -4,7 +4,7 @@ import PhotosUI
 @testable import JourneyPhoto
 
 /// 「作例を重ねて撮る」（板 ComposeGuide・2026-10-09。2026-10-17 から全員無料）の画面を持たない決まり（`ComposeGuide`）。
-/// 濃さの範囲・作例の順・上の札と案内の札の文・距離と方角・入口の行き先・カメラが使えないときの文
+/// 濃さの範囲・作例の順・上の札と案内の札の文・距離と方角・カメラが使えないときの文
 final class ComposeGuideTests: XCTestCase {
 
     // MARK: - 濃さ
