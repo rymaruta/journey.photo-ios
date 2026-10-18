@@ -2,6 +2,39 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.15",
+      "date": "2026-10-18",
+      "items": [
+        {
+          "symbol": "rotate.3d",
+          "title": { "ja": "トランクを回すと裏も横も見える", "en": "Turn your trunk to see every side" },
+          "detail": { "ja": "手に取って回すと、裏・横・上・底まで、素材と付けた部品のまま見られます。", "en": "Pick it up and turn it to see the back, sides, top and bottom, with its material and the parts you've added." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "archivebox",
+          "title": { "ja": "トランクを開けて中を見る", "en": "Open your trunk and look inside" },
+          "detail": { "ja": "ふたを開けると、メダル・会員証・乗車券が入っています。", "en": "Open the lid to find your medals, member card and tickets." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "person.2",
+          "title": { "ja": "人のトランクを見る", "en": "See other people's trunks" },
+          "detail": { "ja": "人のプロフィールから、その人のトランクを回したり開けたりして見られます。地名は誰にでも公開している写真のものだけ出ます。", "en": "From someone's profile, turn their trunk or open it to look inside. Place names appear only for photos shared with everyone." }
+        },
+        {
+          "symbol": "eye",
+          "title": { "ja": "トランクを見せるか選べる", "en": "Choose who sees your trunk" },
+          "detail": { "ja": "設定のプライバシーから、トランクをほかの人に見せるか、わたしの乗車券も入れるかを選べます。", "en": "In Settings → Privacy, choose whether others can see your trunk and whether your ticket goes inside." }
+        },
+        {
+          "symbol": "tag",
+          "title": { "ja": "手荷物タグに自分の旅", "en": "Your own trips on the luggage tags" },
+          "detail": { "ja": "投稿が増えると付く手荷物タグに、自分のラベルの撮影地と日付が刷られます。", "en": "The luggage tags that appear as you post more now carry the photo locations and dates from your own labels." }
+        }
+      ]
+    },
+    {
       "version": "1.1.14",
       "date": "2026-10-18",
       "items": [
