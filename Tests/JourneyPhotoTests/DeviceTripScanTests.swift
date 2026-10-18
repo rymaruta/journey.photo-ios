@@ -206,7 +206,7 @@ final class DeviceTripScanTests: XCTestCase {
                                     status: { box.status },
                                     place: { _ in box.lookups += 1; return ("京都市", TimeZone(identifier: "Asia/Tokyo")) },
                                     pauseNanos: 0, lookupPauseNanos: 0, now: { now }, observesLibrary: false,
-                                    signedIn: true)
+                                    signedIn: true, priority: .userInitiated)
     }
 
     private func tempURL() -> URL {
@@ -309,7 +309,7 @@ extension DeviceTripScanTests {
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
-                                         signedIn: true)
+                                         signedIn: true, priority: .userInitiated)
         // **時間に頼らず、順を手で進める**:
         // 1本目を読みの途中（取り出し）で止める → 消す → 2本目を始めて同じく止める → 1本目だけ放す
         store.startIfAllowed()                  // 1本目
@@ -392,7 +392,7 @@ extension DeviceTripScanTests {
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
-                                         signedIn: true)
+                                         signedIn: true, priority: .userInitiated)
         XCTAssertNil(store.preloadedShots, "まだ何も読んでいない")
         store.startIfAllowed()
         await gate.waitForWaiting(1)            // 覚えた要約を出し、続きを取り出すところで止まった
@@ -428,7 +428,7 @@ extension DeviceTripScanTests {
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: FakeTripSource([]),
                                          status: { .denied }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
-                                         signedIn: true)
+                                         signedIn: true, priority: .userInitiated)
         store.setActive(true)
         await store.waitForRemoval()
         XCTAssertNil(DeviceTripIndexFile.load(from: url), "読めない写真の位置の控えが残った")

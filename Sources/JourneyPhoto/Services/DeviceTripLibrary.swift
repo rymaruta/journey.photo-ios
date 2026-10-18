@@ -392,6 +392,9 @@ final class DeviceTripShelfStore: ObservableObject {
     private let now: () -> Date
     /// 変化の知らせを受ける役を登録するか（試験では登録しない）
     private let observesLibrary: Bool
+    /// 読みの優先度（ふだんは裏の低い優先度。試験は高くする——シミュレータは裏の優先度の仕事をまとめて後回しにし、
+    /// 門で順を進める試験が 1 本 45〜53 秒かかって、1 本 60 秒の上限を越えていた・2026-10-18 run 531）
+    private let priority: TaskPriority
 
     init(defaults: UserDefaults = .standard,
          url: URL? = DeviceTripIndexFile.defaultURL(),
@@ -402,8 +405,10 @@ final class DeviceTripShelfStore: ObservableObject {
          lookupPauseNanos: UInt64 = DeviceTrips.lookupPauseNanos,
          now: @escaping () -> Date = Date.init,
          observesLibrary: Bool = true,
-         signedIn: Bool = false) {
+         signedIn: Bool = false,
+         priority: TaskPriority = .background) {
         self.defaults = defaults
+        self.priority = priority
         self.writer = DeviceTripIndexWriter(url: url)
         self.source = source
         self.statusProvider = status
@@ -471,7 +476,7 @@ final class DeviceTripShelfStore: ObservableObject {
         runId += 1
         runsStarted += 1
         let run = runId
-        task = Task(priority: .background) { await runLoop(run) }
+        task = Task(priority: priority) { await runLoop(run) }
     }
 
     /// まだ一度も読み始めていなければ読む（棚が出たとき）。**許可の段は毎回読み直す**
