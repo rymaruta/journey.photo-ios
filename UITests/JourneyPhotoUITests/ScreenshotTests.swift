@@ -2521,9 +2521,9 @@ final class ScreenshotTests: XCTestCase {
         // 会員証を手に取って回す（番号と始めた年月を出さない）
         let go = app.buttons["trunk.hold.go"].firstMatch
         let putBack = app.buttons["trunk.hold.putBack"].firstMatch
-        let card = app.buttons["trunk.inside.card"].firstMatch
-        guard card.waitForExistence(timeout: 5), card.isHittable else { return XCTFail("人のトランクの内ポケットに会員証が無い") }
-        card.tap()
+        let insideCard = app.buttons["trunk.inside.card"].firstMatch
+        guard insideCard.waitForExistence(timeout: 5), insideCard.isHittable else { return XCTFail("人のトランクの内ポケットに会員証が無い") }
+        insideCard.tap()
         guard go.waitForExistence(timeout: 10) else { return XCTFail("会員証を押しても持ち上がらない") }
         go.tap()
         let viewerClose = app.buttons["supporter.viewer.close"].firstMatch
