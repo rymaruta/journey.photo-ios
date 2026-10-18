@@ -110,8 +110,11 @@ final class CamperScene {
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
             : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
         ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
-        // 夜の光の粒が散らないよう、明るい所だけをにじませる（run 529 の夜は電球と小さな灯りが点々と光った）
-        cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0.7 : 0.2)
+        // 夜はにじみ（bloom）を使わない（2026-10-18 Mac の絵 run 533）。艶の強い面に近くの灯りが当たると HDR の値が
+        // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
+        cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
+        // 夜は露出を少し下げる（口の中・窓の灯りを白く飛ばさない）
+        cameraNode.camera?.exposureOffset = CGFloat(mood == .night ? -0.4 : 0)
         // 焚き火・ランタンの面（emission 1 前後）はにじませない。前照灯・尾灯（1.6〜2.2）だけ（run 530）
         cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.3 : 0.85)
 
@@ -196,15 +199,15 @@ final class CamperScene {
         let car = SCNNode()
         // 止まっている部品は材質ごとにまとめる（描く回数を減らす）。室内と外は灯りの組が違うので別々に
         let bodyFlat = body.flattenedClone()
-        bodyFlat.categoryBitMask = Self.outsideMask
+        Self.mask(bodyFlat, Self.outsideMask)
         car.addChildNode(bodyFlat)
         let insideFlat = inside.flattenedClone()
-        insideFlat.categoryBitMask = Self.insideMask
+        Self.mask(insideFlat, Self.insideMask)
         car.addChildNode(insideFlat)
         let pivot = SCNNode()
         pivot.position = Self.vector(bp.doorHinge * s)
         let doorFlat = door.flattenedClone()
-        doorFlat.categoryBitMask = Self.outsideMask
+        Self.mask(doorFlat, Self.outsideMask)
         pivot.addChildNode(doorFlat)
         pivot.eulerAngles = SCNVector3(0, Float(doorOpen ? bp.doorOpenAngle : 0), 0)
         car.addChildNode(pivot)
@@ -225,8 +228,16 @@ final class CamperScene {
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
             if light.kind == .spot {
-                l.spotInnerAngle = 20
-                l.spotOuterAngle = 45
+                l.spotInnerAngle = CGFloat(light.spotInner)
+                l.spotOuterAngle = CGFloat(light.spotOuter)
+            }
+            if light.castsShadow {
+                l.castsShadow = true
+                l.shadowMode = .deferred
+                l.shadowSampleCount = 8
+                l.shadowRadius = 3
+                l.shadowMapSize = CGSize(width: 1024, height: 1024)
+                l.shadowColor = Self.color(0x000000, alpha: 0.9)
             }
             let n = SCNNode()
             n.light = l
@@ -407,6 +418,12 @@ final class CamperScene {
                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) else { return nil }
         textureCache[key] = made
         return made
+    }
+
+    /// 灯りの組をまとめた形の下の全部に付ける（まとめた結果が子を持つ場合にも効くように）
+    static func mask(_ node: SCNNode, _ bits: Int) {
+        node.categoryBitMask = bits
+        for child in node.childNodes { mask(child, bits) }
     }
 
     static func vector(_ v: CV3) -> SCNVector3 { SCNVector3(Float(v.x), Float(v.y), Float(v.z)) }

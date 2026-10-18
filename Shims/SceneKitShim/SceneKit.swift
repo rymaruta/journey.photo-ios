@@ -192,6 +192,7 @@ open class SCNCamera {
     open var wantsHDR = false
     open var wantsExposureAdaptation = true
     open var bloomIntensity: CGFloat = 0
+    open var exposureOffset: CGFloat = 0
     open var bloomThreshold: CGFloat = 1
     open var bloomBlurRadius: CGFloat = 4
     open var screenSpaceAmbientOcclusionIntensity: CGFloat = 0
@@ -214,6 +215,7 @@ open class SCNNode {
     open var categoryBitMask = 1
     open var name: String?
     open var isHidden = false
+    open var childNodes: [SCNNode] = []
     open func addChildNode(_ child: SCNNode) {}
     open func removeFromParentNode() {}
     open func flattenedClone() -> Self { self }

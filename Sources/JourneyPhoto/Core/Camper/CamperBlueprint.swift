@@ -109,6 +109,10 @@ struct CamperLightSpec: Sendable, Equatable {
     /// 届く距離（板の単位）
     var range: Double
     var group: CamperGroup = .body
+    /// spot の円錐（全体の角度・度）と、影を落とすか
+    var spotInner = 20.0
+    var spotOuter = 45.0
+    var castsShadow = false
 
     /// 室内の灯り（室内の部品だけを照らす。壁の外の縁・扉・屋根の棒に光の筋を乗せない）
     var inside: Bool { name.hasPrefix("interior.") }
@@ -1252,15 +1256,17 @@ struct CamperBuilder {
         let warm: UInt32 = 0xFFB260
         // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
         if !van {
-            // 室内の灯りは室内の部品だけを照らす（`CamperLightSpec.inside`）。扉の口のすぐ内に置くと口のまわりが白く飛んだ
-            // （run 532）ので、前の灯りは台所の上（口から奥へ）に
-            out.lights.append(CamperLightSpec(name: "interior.rear", kind: .omni, position: B(-70, -30, 0), color: warm,
-                                              intensity: 1100, range: 80))
-            out.lights.append(CamperLightSpec(name: "interior.front", kind: .omni, position: B(24, -34, -14), color: warm,
-                                              intensity: 650, range: 60))
+            // 室内の灯りは天井から下へ向けた spot で、影を落とす（2026-10-18 Mac の絵 run 533）。
+            // omni は影を落とさず上にも光るので、灯りの組を分けた後も屋根の棒・オーニングの箱・縁に橙の筋が残った。
+            // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
+            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 900.0), ("interior.front", CV3(6, roofTop - 12, -10), 520)] {
+                out.lights.append(CamperLightSpec(name: name, kind: .spot, position: p, direction: CV3(0, -1, 0), color: warm,
+                                                  intensity: k, range: 110, spotInner: 50, spotOuter: 120, castsShadow: true))
+            }
         } else {
-            out.lights.append(CamperLightSpec(name: "interior.van", kind: .omni, position: B(-40, -30, 0), color: warm,
-                                              intensity: 1200, range: 80))
+            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, position: CV3(-40, roofTop - 12, 0),
+                                              direction: CV3(0, -1, 0), color: warm, intensity: 900, range: 110,
+                                              spotInner: 50, spotOuter: 120, castsShadow: true))
         }
         // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
         for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {

@@ -204,7 +204,19 @@ final class CamperBlueprintTests: XCTestCase {
     func testNightLights() {
         XCTAssertTrue(build(mood: .day).lights.isEmpty)
         let lights = build(mood: .night).lights
-        XCTAssertEqual(lights.filter { $0.kind == .spot }.count, 2)
+        XCTAssertEqual(lights.filter { $0.name == "headlight" && $0.kind == .spot }.count, 2)
+        // 室内の灯りは天井から下向きの spot で影を落とす（omni だと屋根の棒・縁に光の筋が乗った・run 533）
+        for stage in CamperStage.allCases {
+            let b = build(stage, mood: .night)
+            let roof = CamperBuilder(config: CamperConfig(stage: stage)).roofTop
+            for l in b.lights where l.inside {
+                XCTAssertEqual(l.kind, .spot, l.name)
+                XCTAssertTrue(l.castsShadow, l.name)
+                XCTAssertLessThan(l.direction.y, -0.99, l.name)
+                XCTAssertLessThan(l.position.y, roof - 8, "\(stage) \(l.name): 天井より下")
+                XCTAssertLessThan(l.spotOuter / 2, 80, "円錐が上を向かない")
+            }
+        }
         // 室内 2・前照灯 2・尾灯 1・焚き火 1・外のランタン 1
         XCTAssertEqual(lights.count, 7)
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")

@@ -793,7 +793,8 @@ extension CamperBuilder {
                 let t = Double(i) / 9
                 let p = a + (b - a) * t + CV3(0, -10 * sin(t * .pi), 0)
                 rod("light.stringWire", prev, p, 0.15, .black, segments: 4, category: oc)
-                if i < 9 { add("light.bulb", .sphere(radius: 1.4), .lamp, at: p + CV3(0, -1.9, 0), category: oc) }
+                // 球は小さく（夜に筋ではなく点の並びに見えるよう・run 533）
+                if i < 9 { add("light.bulb", .sphere(radius: 1.0), .lamp, at: p + CV3(0, -1.6, 0), category: oc) }
                 prev = p
             }
             if night {
