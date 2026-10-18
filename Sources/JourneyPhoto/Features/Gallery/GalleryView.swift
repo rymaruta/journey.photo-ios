@@ -163,6 +163,13 @@ struct GalleryView: View {
                 await model.load()
             }
         }
+        // **限定公開の写真の画像が期限切れで割れたら、取り直して新しい URL をもらう**
+        // （2026-10-18・札 #294。`SignedImageExpiry`）。控えを使わず読む（控えの URL も同じ期限）
+        .task {
+            for await _ in SignedImageExpiry.signals() {
+                await model.load(force: true)
+            }
+        }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
         }

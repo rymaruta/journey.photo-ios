@@ -101,6 +101,14 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load(for: auth.userId)
         }
+        // 自分の一覧の絞った写真は期限つきの URL（`/user/photos` が署名する）。期限切れで
+        // 割れたら読み直して新しい URL をもらう（2026-10-18・札 #294・`SignedImageExpiry`）
+        .task(id: auth.userId) {
+            guard auth.userId != nil else { return }
+            for await _ in SignedImageExpiry.signals() {
+                await model.load(for: auth.userId)
+            }
+        }
         // **外で書き換えたプロフィールを取り直す。** `load()` は走っている間の
         // 2本目を捨てるので、ここはプロフィールだけを読み直す
         .onChange(of: auth.profileRevision) { _, _ in

@@ -68,6 +68,10 @@ struct RemoteImage: View {
                     case .failure:
                         failure(RemoteImageRetry.step(automaticDone: automaticRetries, manualDone: manualRetries,
                                               allowsManualRetry: allowsManualRetry))
+                            // **期限の切れた署名つき URL なら、一覧を取り直す合図を出す**（2026-10-18・札 #294）。
+                            // 同じ URL を読み直しても 403 のままなので、新しい URL をもらうしかない。
+                            // 署名の無い URL・期限内の失敗では何もしない（`SignedImageExpiry`）
+                            .onAppear { SignedImageExpiry.report(url) }
                     case .empty:
                         ProgressView()
                     @unknown default:

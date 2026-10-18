@@ -96,6 +96,13 @@ struct SearchView: View {
                 await model.loadPhotos(environment: environment, epoch: epoch)
             }
         }
+        // 限定公開の写真の画像が期限切れで割れたら、取り直して新しい URL をもらう
+        // （2026-10-18・札 #294）。**人は替わっていない**ので選択は外さない（回は進めない）
+        .task {
+            for await _ in SignedImageExpiry.signals() {
+                await model.reloadPhotos(environment: environment, force: true)
+            }
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
