@@ -244,6 +244,17 @@ struct TrunkView: View {
     private func workshop(_ state: TrunkState) -> some View {
         let collected = TrunkPartsBoxText.collected(state.ownedParts)
         return VStack(spacing: 0) {
+            // ふたを開ける（2026-10-18 次の版・板 TrunkOpen）: 中にメダル・会員証・乗車券
+            NavigationLink {
+                TrunkOpenView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
+                              ownerName: ownerName, parts: state.equipped,
+                              wrinkles: TrunkWrinkles(userId: auth.userId).strengths)
+            } label: {
+                TrunkMenuRow(title: L("ふたを開ける", "Open the lid"), value: L("中身", "Inside"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trunk.open")
+            TrunkStyle.line.frame(height: 1)
             Button { showStick = true } label: {
                 TrunkMenuRow(title: L("ラベルを貼る", "Stick labels"),
                              value: L("手持ち \(state.pocket.count)", "\(state.pocket.count) in pocket"))
