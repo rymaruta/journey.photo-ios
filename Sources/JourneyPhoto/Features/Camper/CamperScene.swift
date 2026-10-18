@@ -109,7 +109,8 @@ final class CamperScene {
         ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
         // 夜の光の粒が散らないよう、明るい所だけをにじませる（run 529 の夜は電球と小さな灯りが点々と光った）
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0.7 : 0.2)
-        cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.0 : 0.85)
+        // 焚き火・ランタンの面（emission 1 前後）はにじませない。前照灯・尾灯（1.6〜2.2）だけ（run 530）
+        cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.3 : 0.85)
 
         // 床: 暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）
         let f = CamperMaterials.floor(mood)

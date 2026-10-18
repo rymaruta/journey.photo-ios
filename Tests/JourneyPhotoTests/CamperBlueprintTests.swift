@@ -263,7 +263,9 @@ final class CamperBlueprintTests: XCTestCase {
             let xs = hole.map(\.x), ys = hole.map(\.y)
             XCTAssertTrue((xs.min()!...xs.max()!).contains(a.target.x), "\(stage)")
             XCTAssertTrue((ys.min()!...ys.max()!).contains(a.target.y), "\(stage)")
-            XCTAssertLessThan(a.yaw, -25, "前の側から斜めに")
+            // 前の側から斜めに（開いた扉の板は口の後ろに立つ）。斜めすぎると口が細い帯になる
+            XCTAssertTrue((-40.0)...(-15.0) ~= a.yaw, "前の側から斜めに")
+            XCTAssertLessThan(a.target.z, CamperBuilder(config: CamperConfig(stage: stage)).BW, "狙いは口の奥")
             XCTAssertTrue(CamperFraming.zoomRange.contains(a.zoom))
         }
     }
@@ -292,5 +294,55 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertGreaterThan(Int(box.r), 240)
         XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoat, 1)
         XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoatRoughness, 0.08)
+    }
+
+    /// 夜の主役は窓と扉の口の灯り。焚き火・ランタン・電飾は弱く、近くだけ（run 530: 左 3 分の 1 が白く飛んだ）
+    func testNightOutdoorLightsStayModest() {
+        var l = CamperLoadout.standard
+        for (cat, key) in [(CamperCategory.outdoorLight, "string_lights"), (.outdoorLight, "brass_lantern")] {
+            l.picks[cat.rawValue] = key
+            let lights = build(mood: .night, loadout: l).lights
+            let interior = lights.filter { $0.name.hasPrefix("interior.") }.map(\.intensity).max() ?? 0
+            for o in lights where ["campfire", "lantern", "string"].contains(o.name) {
+                XCTAssertLessThanOrEqual(o.intensity, interior / 4, "\(o.name) が室内の灯りに迫る")
+                XCTAssertLessThanOrEqual(o.range, 72, o.name)
+            }
+        }
+        XCTAssertLessThanOrEqual(CamperMaterials.spec(.ember, paint: 0, mood: .night).emissionIntensity, 1.0)
+    }
+
+    /// 扉の口から見えるもの: 台所（天板・やかん）と吊りランプが口の正面にある
+    func testKitchenAndLampFaceTheDoorway() {
+        let b = build()
+        let hole = CamperBuilder(config: CamperConfig(stage: .camper)).doorHole.map(\.x)
+        let span = (hole.min()! - 30)...(hole.max()! + 10)
+        for name in ["interior.counter", "interior.kettle", "interior.lamp"] {
+            guard let n = b.nodes.first(where: { $0.name == name }) else { return XCTFail(name) }
+            XCTAssertTrue(span.contains(n.position.x), "\(name) x=\(n.position.x)")
+        }
+    }
+
+    /// 外の置き物は車の横に潰れず、少し離れた地面に（床が透け始める所より手前）
+    func testCampsiteStandsApart() {
+        let b = build()
+        let bw = CamperBuilder(config: CamperConfig(stage: .camper)).BW
+        let fade = CamperMaterials.floor(.day).fadeStart * 100
+        for n in b.nodes where [CamperCategory.chair, .table, .firePit].contains(n.category) {
+            XCTAssertGreaterThan(n.position.z, bw + 30, n.name)
+            XCTAssertLessThan(CV2(n.position.x, n.position.z).length, fade, n.name)
+        }
+    }
+
+    /// 初めの寄り: 車が画面の横幅の 7〜9 割（画面の横縦は 1.4 前後）
+    func testOverviewFillsTheStage() {
+        for stage in CamperStage.allCases {
+            let a = CamperFraming.overview(stage)
+            let b = build(stage)
+            let yaw = abs(a.yaw) * .pi / 180
+            let car = (b.length.upperBound - b.length.lowerBound) * cos(yaw) + b.halfWidth * 2 * sin(yaw)
+            let frame = 1.4 * 2 * CamperFraming.distance(zoom: a.zoom) * tan(CamperFraming.fieldOfView / 2 * .pi / 180) * 100
+            XCTAssertGreaterThan(car / frame, 0.65, "\(stage)")
+            XCTAssertLessThan(car / frame, 0.9, "\(stage)")
+        }
     }
 }

@@ -635,17 +635,19 @@ struct CamperBuilder {
             rbox("interior.bench", CV3(-74, 48, 10), CV3(12, 28, 72), 2, .cushion)
             rbox("interior.table", CV3(-89, 60, 14), CV3(20, 2.2, 46), 1, .wood)
             rod("interior.tableLeg", CV3(-89, 34, 14), CV3(-89, 59, 14), 2, .chrome)
-            // 台所（反対側の壁）: 箱・石の天板・流し・コンロ・やかん
-            rbox("interior.kitchen", CV3(-12, 46, -36), CV3(56, 24, 20), 1.4, .woodDark)
-            rbox("interior.counter", CV3(-12, 58.4, -36), CV3(57, 1.6, 21), 0.6, .stone)
-            rbox("interior.sink", CV3(4, 58.6, -37), CV3(14, 1.4, 11), 0.6, .chromeDark)
-            for dx in [-30.0, -20.0] {
+            // 台所（反対側の壁・扉の口の真向かい）: 箱・石の天板・流し・コンロ・やかん。
+            // 2026-10-18 判断（Mac の絵 run 530）: 扉の口から奥の台所が読めなかったので、口の正面（x 2〜58）へ寄せた。
+            // 開けた扉から入ると目の前が台所になる（向こうの壁の小窓 B の下）
+            rbox("interior.kitchen", CV3(30, 46, -36), CV3(56, 24, 20), 1.4, .woodDark)
+            rbox("interior.counter", CV3(30, 58.4, -36), CV3(57, 1.6, 21), 0.6, .stone)
+            rbox("interior.sink", CV3(47, 58.6, -37), CV3(14, 1.4, 11), 0.6, .chromeDark)
+            for dx in [22.0, 32.0] {
                 add("interior.burner", .torus(ring: 2.6, pipe: 0.5), .black, at: CV3(dx, 59.6, -38))
             }
-            lathe("interior.kettle", CV3(-24, 59.2, -38), axis: CV3(0, 1, 0), [(3.4, 0), (3.8, 4), (2.4, 7), (0.01, 7.4)],
+            lathe("interior.kettle", CV3(32, 59.2, -38), axis: CV3(0, 1, 0), [(3.4, 0), (3.8, 4), (2.4, 7), (0.01, 7.4)],
                   segments: 12, capStart: .chrome) { _ in .chrome }
             for k in 0..<4 {
-                rbox("interior.kitchenDoorGap", CV3(-35 + Double(k) * 14, 46, -25.8), CV3(0.6, 20, 0.4), 0.1, .black)
+                rbox("interior.kitchenDoorGap", CV3(9 + Double(k) * 14, 46, -25.8), CV3(0.6, 20, 0.4), 0.1, .black)
             }
             // 吊り戸棚（扉の継ぎ目）
             rbox("interior.cupboard", CV3(-40, 120, -40), CV3(140, 12, 12), 1.4, .woodDark)
@@ -1286,7 +1288,8 @@ enum CamperFraming {
         case .paint: return overview(stage)
         case .stickerEdge: return CamperAngle(target: B(-70, -10, 50), yaw: -6, elevation: 4, zoom: 2.6)
         case .chair, .table, .firePit, .outdoorLight, .rug:
-            return CamperAngle(target: CV3(-40, 18, 96), yaw: -20, elevation: 24, zoom: 1.1)
+            return CamperAngle(target: CV3(-40, 18, 116), yaw: -20, elevation: 24, zoom: 1.6)
+        case .hangingLamp where !van: return door(stage)
         case .curtain, .hangingLamp, .wallWood:
             return CamperAngle(target: B(-80, -24, 30), yaw: -10, elevation: 6, zoom: 2.4)
         case .cushion, .floor, .mug:
@@ -1306,7 +1309,9 @@ enum CamperFraming {
     static func door(_ stage: CamperStage) -> CamperAngle {
         // 扉の口の真ん中（バンは x −10〜16、ほかは 33.5〜56.5）の、壁の少し内側
         let cx = stage == .van ? 3.0 : 45.0
-        return CamperAngle(target: CamperBuilder.B(cx, -10, 34), yaw: -34, elevation: 5, zoom: 2.1)
+        // 2026-10-18（run 530）: 口の向こうの台所の天板・吊りランプが読めるよう、斜めをゆるめ（口が広く見える）、
+        // 少し見下ろし（天板の上が見える）、狙いを口の奥へ
+        return CamperAngle(target: CamperBuilder.B(cx, -6, 16), yaw: -24, elevation: 9, zoom: 2.5)
     }
     /// 下から（板の under: t[0,24,0] rx46 ry−28）
     static let under = CamperAngle(target: CamperBuilder.B(0, 24, 0), yaw: -28, elevation: -46, zoom: 1.0)

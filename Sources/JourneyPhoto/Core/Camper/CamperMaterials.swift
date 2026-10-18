@@ -139,7 +139,7 @@ enum CamperMaterials {
         case .tint(let c): return CamperMaterialSpec(color: c, roughness: 0.5, clearCoat: 0.3)
         case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .woodGrain)
         case .ember:
-            return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 2.4 : 0.8)
+            return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 1.0 : 0.6)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         case .glowPool: return CamperMaterialSpec(color: 0x8A5A2C, texture: .glow, additive: true)
         }
@@ -186,8 +186,8 @@ struct CamperFloor: Equatable, Sendable {
     var reflectivity: Double
     /// ここ（車の真ん中からの距離・SceneKit の単位）までは濃く、`fadeEnd` で消える。
     /// 車体の長さは 2.42、トレーラーつきは後ろへ 1.6 ほど伸びる
-    var fadeStart = 1.5
-    var fadeEnd = 4.2
+    var fadeStart = 1.9
+    var fadeEnd = 4.8
 
     /// 床の透け具合を距離で決める（Metal の fragment の shader modifier）。
     /// `_output.color` に掛けると、色も透け具合も一緒に 0 へ向かう（地平線の線が出ない。SCNView の地は透明なので、

@@ -594,7 +594,9 @@ extension CamperBuilder {
     // MARK: 外の置き物（扉の側の地面）
 
     mutating func campsite() {
-        let z0 = BW + 34.0
+        // 2026-10-18（Mac の絵 run 530）: BW + 34 では車の横に小さく潰れて見えた。車から離し（カメラの側へ出す）、
+        // 椅子・机・焚き火が車の影と重ならずに読める所へ。床が透け始める 190 より手前に収める
+        let z0 = BW + 50.0
         rug(at: CV3(-40, 0, z0 + 6))
         chairs(z: z0)
         table(at: CV3(-48, 0, z0 + 8))
@@ -772,8 +774,10 @@ extension CamperBuilder {
         }
         add("fire.ember", .sphere(radius: 3.2), .ember, at: emberAt, category: fc, scale: CV3(1, 0.7, 1))
         if night {
-            out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 8, 0), color: 0xFF8A3C,
-                                              intensity: 700, range: 90))
+            // 2026-10-18（Mac の絵 run 530）: 700・90 では焚き火のまわりが白く飛び、画面の左が真っ白なにじみになった。
+            // 夜の主役は窓と扉の口の灯りなので、焚き火は足元を赤く照らすだけにする
+            out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xFF8A3C,
+                                              intensity: 220, range: 48))
         }
     }
 
@@ -794,7 +798,7 @@ extension CamperBuilder {
             }
             if night {
                 out.lights.append(CamperLightSpec(name: "string", kind: .omni, position: CV3(-40, 60, z + 44), color: 0xFFD27A,
-                                                  intensity: 500, range: 110))
+                                                  intensity: 200, range: 70))
             }
         case "paper_lantern":
             let c = CV3(-96, 0, z + 14)
@@ -823,7 +827,7 @@ extension CamperBuilder {
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
             if night {
                 out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFFBE6E,
-                                                  intensity: 380, range: 60))
+                                                  intensity: 140, range: 36))
             }
         }
     }
@@ -912,7 +916,8 @@ extension CamperBuilder {
     /// 吊りランプ（座卓の上）
     mutating func hangingLamp() {
         let lc = CamperCategory.hangingLamp
-        let top = CV3(-89, roofTop - 12, 12)
+        // キャンピングカーは扉の口の奥（台所の手前の通路の上）に吊る。開けた扉から見える灯り（2026-10-18 run 530）
+        let top = van ? CV3(-89, roofTop - 12, 12) : CV3(28, roofTop - 12, -8)
         switch k(.hangingLamp) {
         case "enamel_cone":
             rod("interior.lampCord", top, top - CV3(0, 14, 0), 0.25, .black, category: lc)
@@ -943,7 +948,7 @@ extension CamperBuilder {
     /// 観葉植物（台所の天板の上。吊るしたつるは天井から）
     mutating func plant() {
         let pc = CamperCategory.plant
-        let c = van ? CV3(-24, 52, -30) : CV3(10, 59.2, -40)
+        let c = van ? CV3(-24, 52, -30) : CV3(8, 59.2, -40)
         switch k(.plant) {
         case "monstera":
             lathe("interior.pot", c, axis: CV3(0, 1, 0), [(3.4, 0), (4.4, 6)], segments: 14, capStart: .tint(0xEDEAE2), category: pc) { _ in .tint(0xEDEAE2) }
