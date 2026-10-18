@@ -49,6 +49,13 @@ struct MyPageView: View {
     @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
+    /// カバーが**無いと確かめられた**（HEAD が「無い」と答えた）。真鍮の額縁を出す（#304・板 52）。読み込み中・分からないときは false。
+    /// 2026-10-18 見直し: 絵を読めなかっただけ（圏外など）では出さない——カバーがある人に「ここにあなたの1枚」を見せない
+    @State private var coverMissing = false
+    /// 額縁を出しているか（見本の `-JPPreviewNoCover` では、カバーがあっても額縁で撮る）
+    private var showsCoverFrame: Bool { PreviewSession.forcesNoCover || (coverMissing && !hasCover) }
+    /// 帯（カバーか額縁）の下端にアイコンを重ねる並びにするか
+    private var bandShown: Bool { hasCover || showsCoverFrame }
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
@@ -328,8 +335,22 @@ struct MyPageView: View {
                             // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
                             // 右上の設定の丸の下から始める（板 05d）
                             VStack(alignment: .leading, spacing: 0) {
-                                ProfileCover(url: profile.coverURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)),
-                                             reserve: hasCover) { hasCover = $0 }
+                                ProfileCover(url: PreviewSession.forcesNoCover ? nil
+                                                : profile.coverURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)),
+                                             reserve: hasCover) { loaded in
+                                    hasCover = loaded
+                                    coverMissing = false
+                                    guard !loaded else { return }
+                                    let uid = profile.userId
+                                    Task {
+                                        let exists = await ProfileImageFromPhoto.exists(userId: uid, kind: .cover)
+                                        // 待つ間に人が替わった・絵が出た回は使わない
+                                        guard model.profile?.userId == uid, !hasCover else { return }
+                                        coverMissing = CoverFrameRule.shows(exists: exists)
+                                    }
+                                }
+                                // カバーが無ければ、帯の場所に真鍮の額縁（自分のページだけ・板 52）
+                                if showsCoverFrame { CoverFrameBand() }
                                 header(profile)
                             }
                         } else {
@@ -407,7 +428,7 @@ struct MyPageView: View {
     ///   @ユーザー名を**横に並べて上を詰める**。編集は数の並びの右へ（`stats`）
     private func header(_ profile: UserProfile) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            if hasCover {
+            if bandShown {
                 HStack(alignment: .bottom) {
                     avatar(profile, side: ProfileCover.avatarSize)
                         // **板どおり黒の縁**（写真の上でも丸が割れない）。
@@ -437,7 +458,7 @@ struct MyPageView: View {
         .padding(.horizontal, ProfileV2.gutter)
         // カバーがあればアイコンを下端に重ねる（板 v2: 196pt の帯に 88pt の丸を 44pt）。
         // 無ければ右上の設定の丸の高さから（板 MyPageNoCover・丸と並ぶ）
-        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 0)
+        .padding(.top, bandShown ? -ProfileCover.avatarOverlap : 0)
     }
 
     private func avatar(_ profile: UserProfile, side: CGFloat) -> some View {
@@ -515,7 +536,7 @@ struct MyPageView: View {
     /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
         // 板 v2: カバーがあれば3列の等幅。無ければ左に詰めて間 24・右に「編集」（MyPageNoCover）
-        HStack(alignment: hasCover ? .top : .center, spacing: hasCover ? JPSpace.xs : JPSpace.xl) {
+        HStack(alignment: bandShown ? .top : .center, spacing: bandShown ? JPSpace.xs : JPSpace.xl) {
             statCell(value: ProfileLine.statValue(model.photoCount), label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
@@ -529,7 +550,7 @@ struct MyPageView: View {
                 statCell(value: ProfileLine.statValue(model.followingCount), label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
-            if !hasCover {
+            if !bandShown {
                 Spacer(minLength: 0)
                 editLink(short: true)
             }
@@ -541,7 +562,7 @@ struct MyPageView: View {
     /// 形は人のページと同じ `ProfileStat`（v2: 数字の下に 12pt の text-3 の名前）
     private func statCell(value: String?, label: String) -> some View {
         ProfileStat(value: value, label: label)
-        .frame(maxWidth: hasCover ? .infinity : nil, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        .frame(maxWidth: bandShown ? .infinity : nil, minHeight: WebTheme.minTapTarget, alignment: .leading)
         .contentShape(Rectangle())
         // **押せる高さは 44pt のまま、並びの上では字の高さだけ取る**（板: 数の下は
         // すぐ 12pt で旅の実績の行）。44pt で場所を取ると、数と旅の実績の間が

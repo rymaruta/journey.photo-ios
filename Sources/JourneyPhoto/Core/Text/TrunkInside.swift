@@ -527,7 +527,7 @@ struct TrunkInsideContents: Equatable {
     /// 乗車券の束の読み上げ
     var ticketLabel: String {
         if isTheirs { return L("\(ownerName)さんの乗車券", "\(ownerName)\u{2019}s ticket") }
-        return L("すれちがいの乗車券 \(ticketCount) 枚", "\(ticketCount) pass tickets")
+        return L("すれちがい乗車券 \(ticketCount) 枚", "\(ticketCount) pass tickets")
     }
 
     // MARK: 持ち上げたとき（板 InsideHold）
@@ -537,7 +537,7 @@ struct TrunkInsideContents: Equatable {
         case .medal(let badge): return BadgeCatalog.fullName(badge.key, tier: badge.tier)
         case .more: return L("ほかのメダル \(overflow) 枚", "\(overflow) more medals")
         case .card: return L("サポーター証", "Supporter card")
-        case .tickets: return isTheirs ? ticketLabel : L("すれちがいの乗車券", "Pass tickets")
+        case .tickets: return isTheirs ? ticketLabel : PassTicket.featureName
         }
     }
 

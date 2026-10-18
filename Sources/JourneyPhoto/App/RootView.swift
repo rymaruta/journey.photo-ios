@@ -63,6 +63,20 @@ struct RootView: View {
     /// 起動のときの案内（新しくなったこと → 初期ユーザー章）を決め終えるまで true。
     /// はじめての硬貨の案内はこれが終わってから出す（`PostModalGate.welcomeMayShow`）
     @State private var launchNoticesDeciding = true
+    // #304（2026-10-18）: 「この1枚をカバーに」とアイコン・カバーのお礼
+    @ObservedObject private var coverOffers = CoverOfferStore.shared
+    @ObservedObject private var profileReward = ProfileReward.shared
+    /// 出している差し出し（板 51・51b）
+    @State private var coverOffer: CoverOfferStore.Offer?
+    /// 出しているお礼（板 53）
+    @State private var rewardGrant: ProfileReward.Grant?
+    /// この起動ではじめての硬貨の案内を出したか（起動のときにまとめたお礼は、その起動では続けて出さない）
+    @State private var welcomeShownThisLaunch = false
+    /// 差し出し・お礼を出す頃合いを待っている仕事（それぞれ1本だけ）
+    @State private var coverOfferWait: Task<Void, Never>?
+    @State private var rewardWait: Task<Void, Never>?
+    /// 画面写真の見本を出したか（起動のあと1回だけ）
+    @State private var previewProfileExtrasDelivered = false
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -323,7 +337,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithTrunkWelcome
+        tabsWithProfileExtras
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -388,6 +402,7 @@ struct RootView: View {
                 TrunkWelcomeView(grant: grant) {
                     welcomeAppeared = true
                     trunkWelcome.noteShown(userId: auth.userId)
+                    welcomeShownThisLaunch = true
                 }
             }
             // 人が替わった（ログアウトを含む）: 前の人の案内を下ろす
@@ -398,6 +413,184 @@ struct RootView: View {
                 trunkWelcomeGrant = nil
                 trunkWelcome.noteUser(userId)
             }
+    }
+
+    /// はじめての硬貨の案内に、「この1枚をカバーに」（板 51・51b）とアイコン・カバーのお礼（板 53）を足したもの（#304）。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithProfileExtras: some View {
+        tabsWithTrunkWelcome
+            .onChange(of: coverOffers.postRequests) { _, _ in decideFirstPostOffer() }
+            .onChange(of: coverOffers.requests) { _, _ in offerCoverWhenIdle() }
+            .onChange(of: profileReward.requests) { _, _ in offerRewardWhenIdle() }
+            // 編集を閉じた・ほかの画面が閉じた・前面に戻った: 待ちきれずに残ったものを出し直す
+            .onChange(of: profileReward.editorOpen) { _, open in if !open, profileReward.hasPending { offerRewardWhenIdle() } }
+            .onChange(of: welcomeWaitKey) { _, _ in
+                if profileReward.hasPending { offerRewardWhenIdle() }
+                if coverOffers.hasPending { offerCoverWhenIdle() }
+            }
+            .onChange(of: trunkWelcomeGrant == nil) { _, closed in
+                if closed, profileReward.hasPending { offerRewardWhenIdle() }
+                if closed, coverOffers.hasPending { offerCoverWhenIdle() }
+            }
+            .task(id: auth.userId) { await claimProfileExtras() }
+            .sheet(item: $coverOffer, onDismiss: {
+                // 閉じたら、待っていたお礼・届いた画面を出し直す
+                if profileReward.hasPending { offerRewardWhenIdle() }
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { offer in
+                CoverOfferView(offer: offer) { coverOffers.noteShown(offer, userId: auth.userId) }
+            }
+            .fullScreenCover(item: $rewardGrant, onDismiss: {
+                if coverOffers.hasPending { offerCoverWhenIdle() }
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { grant in
+                TrunkWelcomeView(grant: TrunkWelcome.Grant(added: grant.added, coins: grant.coins),
+                                 copy: .reward(grant)) {
+                    profileReward.noteShown(userId: auth.userId)
+                }
+            }
+            .onChange(of: auth.userId) { _, userId in
+                coverOfferWait?.cancel()
+                coverOfferWait = nil
+                rewardWait?.cancel()
+                rewardWait = nil
+                coverOffer = nil
+                rewardGrant = nil
+                profileReward.noteUser(userId)
+                coverOffers.noteUser(userId)
+            }
+    }
+
+    /// 起動のとき（人が替わったときも）: お礼の控えを戻し、設定済みの人に1回だけお礼を頼み、いいねが集まった1枚を確かめる。
+    /// 画面写真の見本（`-JPPreviewCoverOffer`・`-JPPreviewCoinReward`）ではサーバーを呼ばずに出す
+    private func claimProfileExtras() async {
+        if PreviewSession.coverOffer != nil || PreviewSession.coinReward != nil {
+            guard !previewProfileExtrasDelivered else { return }
+            previewProfileExtrasDelivered = true
+            profileReward.noteUser(auth.userId)
+            if let grant = PreviewSession.coinReward { profileReward.deliverPreview(grant) }
+            if let kind = PreviewSession.coverOffer { await deliverPreviewCoverOffer(kind) }
+            return
+        }
+        profileReward.restore(userId: auth.userId)
+        guard let userId = auth.userId else { return }
+        // はじめての硬貨（`claimTrunkWelcome`・2 秒待つ）より後に呼ぶ
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        if !trunkAvailability.isAvailable, !trunkAvailability.checkedThisLaunch.contains(userId) {
+            await trunkAvailability.refresh(userId: userId, service: environment.trunk)
+        }
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        let trunk = environment.trunk
+        await profileReward.claimExisting(userId: userId, available: trunkAvailability.isAvailable) { try await trunk.reward($0) }
+        guard !Task.isCancelled, auth.userId == userId, !coverOffers.isNever(userId), !coverOffers.hasPending,
+              let photos = await ProfileImageFromPhoto.myPhotos(environment: environment),
+              let photo = CoverOfferRules.likedCandidate(photos, asked: coverOffers.asked(userId),
+                                                         currentCover: coverOffers.currentCover(userId)) else { return }
+        // カバーが分からない（圏外）ときは「入れ替わります」に倒す（硬貨を約束しない）
+        let hasCover = await ProfileImageFromPhoto.exists(userId: userId, kind: .cover) ?? true
+        let showsCoins = hasCover ? false : await coverCoinsStillOpen()
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        coverOffers.offerLiked(.init(kind: .liked(photo.likes ?? CoverOfferRules.likedThreshold), photoId: photo.id,
+                                     imageURL: photo.detailImageURL, title: photo.displayTitle, hasCover: hasCover,
+                                     showsCoins: showsCoins),
+                               userId: userId)
+    }
+
+    /// 差し出しの「硬貨 3 枚」の行を出すか: 旅のトランクが使えて、**カバーのお礼の印がまだ無い**（`rewarded == false`）とき。
+    /// カバーが無い人にだけ聞く（無いので配られることは無く、印の有無を読むだけになる）。分からなければ出さない（約束しない）
+    private func coverCoinsStillOpen() async -> Bool {
+        guard trunkAvailability.isAvailable, let answer = try? await environment.trunk.reward(.cover) else { return false }
+        return answer.rewarded == false
+    }
+
+    /// 見本の差し出し（見本の利用者の公開写真の1枚目）
+    private func deliverPreviewCoverOffer(_ kind: PreviewSession.CoverOfferPreview) async {
+        guard let photo = await ProfileImageFromPhoto.myPhotos(environment: environment)?.first else { return }
+        let offerKind: CoverOfferStore.Offer.Kind = kind == .first ? .firstPost : .liked(max(CoverOfferRules.likedThreshold, photo.likes ?? 0))
+        let hasCover = kind == .liked
+        coverOffers.deliverPreview(.init(kind: offerKind, photoId: photo.id, imageURL: photo.detailImageURL,
+                                         title: photo.displayTitle, hasCover: hasCover, showsCoins: !hasCover))
+    }
+
+    /// 初めての投稿が上がった（`CoverOfferStore.notePosted`）: 投稿の画面が閉じてから、初めての投稿か・カバーが無いかを確かめる。
+    /// 通知の説明はこれが決め終わるまで待つ（`PostModalGate.pushPrimerWaitIsOver`）
+    private func decideFirstPostOffer() {
+        Task { @MainActor in
+            guard let userId = auth.userId, coverOffers.isDeciding else {
+                coverOffers.finishFirstPost(userId: auth.userId, offer: nil, checked: false)
+                return
+            }
+            let posted = coverOffers.postedIds
+            // 投稿の画面が閉じきるまで待つ（最長で約30秒）
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if !ModalProbe.isPresenting() { break }
+            }
+            guard auth.userId == userId, !Task.isCancelled else {
+                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: false)
+                return
+            }
+            guard let mine = await ProfileImageFromPhoto.myPhotos(environment: environment) else {
+                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: false)
+                return
+            }
+            guard CoverOfferRules.isFirstPost(myPhotos: mine, posted: posted) else {
+                // 2枚目からは初めてではない（以後この合図では確かめない）
+                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: true)
+                return
+            }
+            // カバーを持っている人には出さない。分からない（圏外）回は決めずに見送る
+            guard let hasCover = await ProfileImageFromPhoto.exists(userId: userId, kind: .cover) else {
+                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: false)
+                return
+            }
+            let lead = tabRouter.lastPosted.first { posted.contains($0.id) } ?? mine.first { posted.contains($0.id) }
+            guard !hasCover, let lead, CoverCandidates.isCandidate(lead), auth.userId == userId else {
+                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: true)
+                return
+            }
+            let showsCoins = await coverCoinsStillOpen()
+            coverOffers.finishFirstPost(userId: userId, offer: .init(
+                kind: .firstPost, photoId: lead.id, imageURL: lead.detailImageURL, title: lead.displayTitle,
+                hasCover: false, showsCoins: showsCoins), checked: true)
+        }
+    }
+
+    /// **ほかの画面が閉じてから**差し出しを出す。初めての投稿のは投稿の画面が閉じたらすぐ（通知の説明より前）、
+    /// いいねのはいちばん後ろ（`PostModalGate.likedOfferMayShow`）
+    private func offerCoverWhenIdle() {
+        guard coverOfferWait == nil else { return }
+        coverOfferWait = Task { @MainActor in
+            let first = coverOffers.pending?.kind == .firstPost
+            let ready = await PostModalGate.wait(tries: first ? 30 : 600, snapshot: postModalSnapshot,
+                                                 until: { first ? !$0.modalPresenting && !$0.extrasShowing
+                                                                : PostModalGate.likedOfferMayShow($0) && !profileReward.hasPending },
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            if Task.isCancelled { return }
+            coverOfferWait = nil
+            guard ready, coverOffer == nil, let offer = coverOffers.consume() else {
+                // 初めての投稿のは待ちきれなければ捨てる（通知の説明を止めたままにしない）
+                if first { _ = coverOffers.consume() }
+                return
+            }
+            coverOffer = offer
+        }
+    }
+
+    /// **ほかの画面が閉じてから**お礼を出す（編集を閉じてから・はじめての硬貨の案内のあと・`PostModalGate.rewardMayShow`）
+    private func offerRewardWhenIdle() {
+        guard rewardWait == nil else { return }
+        rewardWait = Task { @MainActor in
+            let ready = await PostModalGate.wait(tries: 600, snapshot: postModalSnapshot,
+                                                 until: { PostModalGate.rewardMayShow($0)
+                                                     && profileReward.mayShowNow(welcomeShownThisLaunch: welcomeShownThisLaunch) },
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            if Task.isCancelled { return }
+            rewardWait = nil
+            guard ready, rewardGrant == nil, let grant = profileReward.consume() else { return }
+            rewardGrant = grant
+        }
     }
 
     /// はじめての硬貨の案内が待っているもの（どれかが変わったら出せるか見直す）。
@@ -528,7 +721,11 @@ struct RootView: View {
                           trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil,
                           launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil,
                           welcomeShowing: trunkWelcomeGrant != nil,
-                          sceneActive: scenePhase == .active)
+                          sceneActive: scenePhase == .active,
+                          coverOfferBusy: coverOffers.isDeciding || coverOffer?.kind == .firstPost
+                              || coverOffers.pending?.kind == .firstPost,
+                          welcomePending: trunkWelcome.hasPending,
+                          extrasShowing: rewardGrant != nil || coverOffer != nil)
     }
 
     private func offerPreviewTrunkArrival() async {
@@ -550,11 +747,12 @@ struct RootView: View {
         Task { @MainActor in
             // 出した・出さなかったのどちらでも、評価のお願いの待ちを解く（`PushPrimerStore.isDeciding`）
             defer { pushPrimer.finishDeciding() }
+            // 初めての投稿の「この1枚をカバーに」（#304）が決め終わり、閉じるまで待つ（差し出しが先・板 51）
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if !ModalProbe.isPresenting() { break }
+                if PostModalGate.pushPrimerWaitIsOver(postModalSnapshot()) { break }
             }
-            guard !ModalProbe.isPresenting(), !showPushPrimer else { return }
+            guard PostModalGate.pushPrimerWaitIsOver(postModalSnapshot()), !showPushPrimer else { return }
             await push.refreshAuthorization()
             guard !ModalProbe.isPresenting(),
                   pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission) else { return }

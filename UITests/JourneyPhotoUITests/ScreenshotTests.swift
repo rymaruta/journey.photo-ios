@@ -1641,6 +1641,62 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **券面ごとの裏**（2026-10-18 札 #306・板「すれちがい乗車券の裏面」）: わたしの乗車券で、マルス券と特別な券面の5つを
+    /// 順に選び、「裏を見る」で裏返して撮り、表に戻す。見本の利用者は Pro の姿（`-JPPreviewPro`・Debug のみ）。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**券面のボタンが無い・押せない・裏返らない・裏に「ご案内」が無い・
+    /// 特別な券面の裏が券面の名前を言わない（＝裏がマルス券のまま）なら落とす**
+    func testCapturesPassFaceBacks() {
+        guard let (app, card) = openPassPick(pro: true) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let backs: [(id: Int, name: String, shot: String)] = [
+            (0, "マルス券", "89a-裏 00 マルス券"), (1, "真鍮の金属板", "89b-裏 01 真鍮の金属板"),
+            (2, "大圏航路", "89c-裏 06 大圏航路"), (3, "箔押しの硬券", "89d-裏 10 箔押しの硬券"),
+            (4, "漆と蒔絵", "89e-裏 21 漆と蒔絵"), (5, "型押しの革", "89f-裏 26 型押しの革"),
+        ]
+        let flip = app.buttons["pass.pick.flip"].firstMatch
+        let side = { (card.value as? String) ?? "" }
+        for back in backs {
+            let button = app.buttons["pass.pick.face.\(back.id)"].firstMatch
+            guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(back.name)」のボタンが無い") }
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る（testCapturesPassFaces と同じ）
+            var swipes = 0
+            while !button.isHittable, swipes < 4 {
+                let previous = app.buttons["pass.pick.face.\(back.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
+                } else {
+                    app.swipeUp()
+                }
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            guard button.isHittable else { return XCTFail("券面「\(back.name)」を押せない") }
+            button.tap()
+            Thread.sleep(forTimeInterval: 1)
+            // 見本が画面の上に隠れていたら戻す
+            var pulls = 0
+            while card.frame.minY < 60, pulls < 4 {
+                app.swipeDown()
+                Thread.sleep(forTimeInterval: 1)
+                pulls += 1
+            }
+            guard flip.waitForExistence(timeout: 5), flip.isHittable else { return XCTFail("「裏を見る」を押せない") }
+            flip.tap()
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(side().hasSuffix("裏"), "「裏を見る」で裏返らない（\(back.name)・\(side())）")
+            XCTAssertTrue(card.label.contains("ご案内"), "裏に「ご案内」の帯が無い（\(back.name)・\(card.label)）")
+            if back.id != 0 {
+                XCTAssertTrue(card.label.contains(back.name), "裏が券面「\(back.name)」を言わない＝マルス券の裏のまま（\(card.label)）")
+            }
+            shoot(app, back.shot)
+            // 表に戻す（次の券面を選ぶ）
+            flip.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            XCTAssertTrue(side().hasSuffix("表"), "「表を見る」で表に戻らない（\(back.name)・\(side())）")
+        }
+    }
+
     func testCapturesPassOwnCard() {
         guard let (app, card) = openPassPick() else { return }
         Thread.sleep(forTimeInterval: 3)
@@ -2582,6 +2638,91 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。
+    /// 付け替えの画面で錠前を替え、トランクに付けた錠前の形も撮る。タブが無ければ落とす
+    func testCapturesTrunkPartsKinds() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.partsBox") else { return XCTFail("部品箱の入口が無い") }
+        let kinds = [("corner", "99c-部品箱（角金具）"), ("lining", "99d-部品箱（内張り）"), ("tag", "99e-部品箱（タグ）"),
+                     ("patch", "99f-部品箱（ワッペン）"), ("charm", "99g-部品箱（チャーム）"), ("key", "99h-部品箱（鍵）")]
+        for (kind, name) in kinds {
+            let tab = app.buttons["trunk.parts.tab.\(kind)"].firstMatch
+            guard tab.waitForExistence(timeout: 10) else { return XCTFail("部品箱に \(kind) のタブが無い") }
+            revealTab(tab, in: app, toLeft: true)
+            guard tab.frame.maxX <= app.windows.firstMatch.frame.width, tab.isHittable else { return XCTFail("部品箱の \(kind) のタブに届かない") }
+            tab.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, name)
+        }
+        // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
+        let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
+        revealTab(lockTab, in: app, toLeft: false)
+        guard lockTab.frame.minX >= 0, lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
+        lockTab.tap()
+        let equip = app.buttons["trunk.parts.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
+        equip.tap()
+        let equipLock = app.buttons["trunk.equip.tab.lock"].firstMatch
+        guard equipLock.waitForExistence(timeout: 10) else { return XCTFail("付け替えの錠前のタブが無い") }
+        equipLock.tap()
+        Thread.sleep(forTimeInterval: 1)
+        let roundLock = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        if roundLock.exists, roundLock.isHittable {
+            roundLock.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, "99i-部品を付け替える（錠前を替えた）")
+        }
+    }
+
+    /// 横に並んだタブの列を、`tab` が画面に入りきるまで送る（右のタブは左へ・左のタブは右へ。6回まで）。
+    /// 画面の外のタブに `isHittable` を聞くと「押す点が決まらない」で落ちるので、枠で見る（Mac run 525）
+    private func revealTab(_ tab: XCUIElement, in app: XCUIApplication, toLeft: Bool) {
+        let width = app.windows.firstMatch.frame.width
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        func onScreen() -> Bool {
+            let f = tab.frame
+            return !f.isEmpty && f.minX >= 0 && f.maxX <= width
+        }
+        var slides = 0
+        while !onScreen(), slides < 6 {
+            let y = tab.frame.midY
+            let start = origin.withOffset(CGVector(dx: width * (toLeft ? 0.8 : 0.2), dy: y))
+            let end = origin.withOffset(CGVector(dx: width * (toLeft ? 0.3 : 0.7), dy: y))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            Thread.sleep(forTimeInterval: 0.6)
+            slides += 1
+        }
+    }
+
+    /// **カプセルから錠前以外が出た**（#305）: 見本の1回目は錠前、2回目は金の星のチャーム（`TrunkSample.gachaOrder`）。
+    /// 1回目（錠前）をしまって、もう1回回す。出なければ落とす
+    func testCapturesTrunkGachaSecondDraw() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        for draw in 0..<2 {
+            let insert = app.buttons["trunk.gacha.insert"].firstMatch
+            guard insert.waitForExistence(timeout: 10), insert.isEnabled else { return XCTFail("\(draw + 1) 回目の硬貨を入れられない") }
+            insert.tap()
+            let crank = app.buttons["trunk.gacha.crank"].firstMatch
+            guard crank.waitForExistence(timeout: 5) else { return XCTFail("ハンドルが無い") }
+            for _ in 0..<4 {
+                crank.tap()
+                Thread.sleep(forTimeInterval: 0.4)
+            }
+            let capsule = app.buttons["trunk.gacha.openCapsule"].firstMatch
+            guard capsule.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+            capsule.tap()
+            let keep = app.buttons["trunk.gachaOpen.keep"].firstMatch
+            guard keep.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+            Thread.sleep(forTimeInterval: 2)
+            if draw == 1 { shoot(app, "98d-カプセルを開けた（チャーム）") }
+            keep.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+    }
+
     // MARK: - 旅のトランクの中身と回したときの面（2026-10-18・板「旅のトランク」）
 
     /// 見本のメダル 10 枚（8 枠に 7 枚と「ほか 3」）・Pro とサポーターの番号（会員証）・すれちがいの見本（乗車券）
@@ -2667,7 +2808,9 @@ final class ScreenshotTests: XCTestCase {
         } else {
             XCTFail("回す画面の面を描き終えない")
         }
-        for (id, name) in [("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"), ("bottom", "91c-回した底（蝶番と足）")] {
+        // 正面（吊るすタグ・チャーム・鍵が回しても消えない・#305）→ 側面 → 上と背面（上の面と持ち手・紐）→ 底
+        for (id, name) in [("front", "91d-回した正面（吊るす部品）"), ("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"),
+                           ("bottom", "91c-回した底（蝶番と足）")] {
             let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
             guard button.waitForExistence(timeout: 5) else { return XCTFail("向きのボタン \(id) が無い") }
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "向きのボタン \(id) が 44pt 未満")
@@ -2799,6 +2942,137 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "101f-人の乗車券を回す")
+    }
+
+    // MARK: - アイコンとカバー（#304・2026-10-18・板「12 アイコンとカバー」）
+
+    /// 起動（見本の利用者・`-JPPreviewNoCover` でカバーが無い姿）してマイページを開く
+    private func launchProfileLooks(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += extra
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        return app
+    }
+
+    /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**
+    /// （板 52・50・50b・50c）。サーバーには何も送らない（保存は押さない）。出なければ撮らない（この試験の決まり）。
+    /// 額縁・候補・「決める」が 44pt 未満なら落とす
+    func testCapturesProfileCoverPick() {
+        let app = launchProfileLooks(["-JPPreviewNoCover", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let frame = app.descendants(matching: .any)["mypage.coverFrame"].firstMatch
+        guard frame.waitForExistence(timeout: 10) else { return XCTFail("カバーが無いのに額縁が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "104-マイページ（カバーの額縁）")
+        XCTAssertGreaterThanOrEqual(frame.frame.height, 44, "額縁が 44pt 未満")
+        guard frame.isHittable else { return }
+        frame.tap()
+
+        let pick = app.descendants(matching: .any)["profileEdit.coverPick"].firstMatch
+        guard pick.waitForExistence(timeout: 15) else { return XCTFail("額縁からカバーの候補へ進まない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "104a-プロフィールの編集（カバーの候補）")
+        let first = app.buttons["profileEdit.coverPick.0"].firstMatch
+        if first.waitForExistence(timeout: 10) {
+            XCTAssertGreaterThanOrEqual(first.frame.height, 44, "候補が 44pt 未満")
+            let recent = app.buttons["profileEdit.coverSort.recent"].firstMatch
+            XCTAssertGreaterThanOrEqual(recent.frame.height, 44, "「最近」が 44pt 未満")
+            if first.isHittable {
+                first.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "104b-プロフィールの編集（候補を選んだ）")
+            }
+        }
+
+        let avatar = app.buttons["profileEdit.avatar"].firstMatch
+        if avatar.waitForExistence(timeout: 5), avatar.isHittable {
+            avatar.tap()
+            let done = app.buttons["avatarCrop.done"].firstMatch
+            if done.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "104c-アイコンを選ぶ（丸く切り抜く）")
+                XCTAssertGreaterThanOrEqual(app.buttons["avatarCrop.device"].firstMatch.frame.height, 44, "「端末の写真から」が 44pt 未満")
+                goBack(app)
+            }
+        }
+
+        let looks = app.buttons["profileEdit.looks"].firstMatch
+        guard looks.waitForExistence(timeout: 10) else { return }
+        scrollTo(looks, in: app)
+        guard looks.isHittable else { return }
+        looks.tap()
+        guard app.descendants(matching: .any)["profileLooks"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("ほかの人からの見え方が開かない")
+        }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "104d-ほかの人からの見え方")
+    }
+
+    /// **初めての投稿のあと「この1枚をカバーに」**（板 51・`-JPPreviewCoverOffer first`・サーバーには何も送らない）。
+    /// 見本は必ず出るので、出ない・「カバーにする」「あとで」「もう聞かないで」が無い・44pt 未満なら落とす。「あとで」で閉じる
+    func testCapturesCoverOffer() {
+        let app = launchProfileLooks(["-JPPreviewCoverOffer", "first"])
+        let apply = app.buttons["coverOffer.apply"].firstMatch
+        guard apply.waitForExistence(timeout: 45) else { return XCTFail("差し出しが出ない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "105-この1枚をカバーに（初めての投稿）")
+        let later = app.buttons["coverOffer.later"].firstMatch
+        let never = app.buttons["coverOffer.never"].firstMatch
+        for (button, name) in [(apply, "カバーにする"), (later, "あとで"), (never, "もう聞かないで")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "硬貨の行が無い")
+        guard later.isHittable else { return XCTFail("「あとで」を押せない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+    }
+
+    /// **いいねが集まった1枚をカバーに**（板 51b・カバーあり・`-JPPreviewCoverOffer liked`）。「今のままにする」で閉じる
+    func testCapturesCoverOfferLiked() {
+        let app = launchProfileLooks(["-JPPreviewCoverOffer", "liked"])
+        let apply = app.buttons["coverOffer.apply"].firstMatch
+        guard apply.waitForExistence(timeout: 45) else { return XCTFail("差し出しが出ない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "105a-この1枚をカバーに（いいねが集まった）")
+        XCTAssertFalse(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "カバーがあるのに硬貨を約束している")
+        let keep = app.buttons["coverOffer.later"].firstMatch
+        XCTAssertGreaterThanOrEqual(keep.frame.height, 44, "「今のままにする」が 44pt 未満")
+        guard keep.isHittable else { return XCTFail("「今のままにする」を押せない") }
+        keep.tap()
+    }
+
+    /// **アイコン・カバーのお礼**（板 53・`-JPPreviewCoinReward`）。1つ（アイコン）と、設定済みの人に両方まとめた +6。
+    /// 見本は必ず出るので、出ない・「カプセルを回す」「あとで」「閉じる」が無い・44pt 未満なら落とす
+    func testCapturesCoinReward() {
+        for (arg, name) in [("avatar", "106-アイコンを設定したお礼"), ("both", "106a-アイコンとカバーのお礼（設定済みの人）")] {
+            let app = launchProfileLooks(["-JPPreviewCoinReward", arg])
+            let turn = app.buttons["coinReward.turn"].firstMatch
+            guard turn.waitForExistence(timeout: 45) else { return XCTFail("お礼の知らせが出ない（\(arg)）") }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+            for id in ["coinReward.turn", "coinReward.later", "coinReward.close"] {
+                let button = app.buttons[id].firstMatch
+                XCTAssertTrue(button.exists, "\(id) が無い")
+                XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+            }
+            XCTAssertEqual(app.descendants(matching: .any)["coinReward.breakdown"].firstMatch.exists, arg == "both",
+                           "内訳（アイコン +3 · カバー +3）の出し分けが違う")
+            app.terminate()
+        }
     }
 
     // MARK: - 写真で作るキャンプ場（2026-10-18・板「写真で作るキャンプ場」版 25）
