@@ -119,11 +119,14 @@ final class WhatsNewTests: XCTestCase {
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
-        // 1.1.14（2026-10-18）: 乗車券・Pro の券面・重ねて撮るが無料・旅のトランク・構図の作例写真
+        // 1.1.14（2026-10-18）: 乗車券・Pro の券面・重ねて撮るが無料・旅のトランク・構図の作例写真・
+        // 横長の作例の向き（#289）・撮影地の位置の切り替え（#290）・季節のスポットの日替わり・お知らせの履歴
         let next = try XCTUnwrap(releases.first)
         XCTAssertEqual(next.items.map(\.title.ja),
-                       ["わたしの乗車券", "Pro の特別な券面", "重ねて撮るが無料に", "旅のトランク", "構図に作例写真"])
-        XCTAssertEqual(next.items.compactMap(\.destination), [.map, .mypage])
+                       ["わたしの乗車券", "Pro の特別な券面", "重ねて撮るが無料に", "旅のトランク", "構図に作例写真",
+                        "横長の作例は横向きに重ねる", "撮影地の位置を付けるか選べる", "季節の撮影スポットが日替わりに",
+                        "お知らせの履歴"])
+        XCTAssertEqual(next.items.compactMap(\.destination), [.map, .mypage, .map, .home])
         // 1.0.82: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
         let latest = releases[1]
         XCTAssertEqual(latest.items.count, 4)
@@ -242,7 +245,7 @@ final class WhatsNewTests: XCTestCase {
                 .map(\.version), ["1.1.14"], "見た版 \(seen)")
         }
         // 版に足した "date" は今の読み方では無視される（読めなくならない・2026-10-18）
-        XCTAssertEqual(releases.first?.items.count, 5)
+        XCTAssertEqual(releases.first?.items.count, 9)
         // 文字の比較なら "1.1.14" < "1.1.9" で出なかった（数で比べる）
         XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.9"))
         XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.13"))
