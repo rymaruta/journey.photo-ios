@@ -134,8 +134,6 @@ final class StorySpotSuggestionTests: XCTestCase {
         XCTAssertNil(StoryQueue.baseCoords([nil, nil]))
     }
 
-    /// 🔴 作る画面のつなぎ（画面は Linux で描けないので、ソースに呼び出しが残っていることを見る）。
-    /// 候補は**押したときだけ**撮影地に入り、送る座標は候補の決まりを通す
     // MARK: - 「撮影地の位置を付ける」がオフ（2026-10-18）
 
     /// 🔴 オフなら写真の座標は送らない。撮影スポットの名前ならスポットの座標（見る画面で結ばれる）。それ以外は送らない
@@ -172,6 +170,8 @@ final class StorySpotSuggestionTests: XCTestCase {
         XCTAssertTrue(place.needsSpotIndex([nil], spots: [], attachesPhotoLocation: false))
     }
 
+    /// 🔴 作る画面のつなぎ（画面は Linux で描けないので、ソースに呼び出しが残っていることを見る）。
+    /// 候補は**押したときだけ**撮影地に入り、送る座標は候補の決まりを通す
     func testComposerWiring() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

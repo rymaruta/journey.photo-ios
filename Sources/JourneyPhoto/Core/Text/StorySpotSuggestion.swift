@@ -112,14 +112,15 @@ enum StorySpotSuggestion {
 
 /// ストーリーを作る画面の「撮影地の位置を付ける」の言葉（2026-10-18・投稿と同じ覚え `UploadLocationPreference`）。
 /// 名前は投稿と同じ（`UploadDetails.locationToggleTitle`）。下の一言はストーリーの送り方に合わせる
-/// （撮影地を入れたときだけ座標を送る・オフでも撮影スポットの名前ならスポットの位置を付ける）
+/// （撮影地を入れたときだけ座標を送る・オフでも撮影スポットの名前ならスポットの位置を付ける）。
+/// オンの一言は**言い切らない**——撮影地の文字が写真の近くのスポットを指さない回は送らない（`Place.coordsToSend`）
 enum StoryLocationText {
 
     /// 「誰に見せる？」の切り替えの下の一言
     static func toggleNote(attaches: Bool) -> String {
         attaches
-            ? L("撮影地を入れると、写真の位置も一緒に送ります",
-                "Adding a place also sends the photo's location.")
+            ? L("撮影地を入れると、写真の位置も一緒に送ることがあります",
+                "Adding a place may also send the photo's location.")
             : L("写真の位置は送りません。撮影地が撮影スポットの名前なら、スポットの位置を付けます",
                 "The photo's location isn't sent. If the place is a photo spot, the spot's location is added.")
     }
@@ -127,8 +128,8 @@ enum StoryLocationText {
     /// 撮影地を打つ欄の説明。今の値を言い、オフなら変える場所も言う
     static func placeEditorNote(attaches: Bool) -> String {
         attaches
-            ? L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
-                "Adding a place also sends the photo's rounded coordinates (about 1 km).")
+            ? L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ることがあります。",
+                "Adding a place may also send the photo's rounded coordinates (about 1 km).")
             : L("「撮影地の位置を付ける」がオフなので、写真の位置は送りません（「誰に見せる？」で変えられます）。撮影スポットの名前なら、スポットの位置を付けます。",
                 "\"Attach the place's location\" is off, so the photo's location isn't sent (change it in \"Who can see it?\"). If the place is a photo spot, the spot's location is added.")
     }

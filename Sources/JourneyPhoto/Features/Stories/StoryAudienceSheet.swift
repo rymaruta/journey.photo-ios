@@ -69,6 +69,7 @@ struct StoryAudienceSheet: View {
                     .jpPillButton(.main(onPhoto: false))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("story.audience.done")
             .padding(.bottom, 8)
         }
         .padding(.horizontal, 16)

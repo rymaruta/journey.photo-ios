@@ -455,19 +455,30 @@ final class UploadViewModel: ObservableObject {
     var locationPreference = UploadLocationPreference()
     /// 選んだ値の持ち主（ログインしている人）。画面が `auth.userId` を入れる（`useLocationOwner`）
     private(set) var locationOwner: String?
+    /// この画面で持ち主が一度でも決まったか（最初に決まったときだけ、待たせていた地名を引き始める）
+    private var hadLocationOwner = false
     /// 持ち主を決めて、その人の値を読む。**人が替わったら前の人の値を使わない**（覚えが無ければオン）。
     /// 同じ人のままなら何もしない（画面は開くたび・戻るたびに呼ぶ）。
     ///
     /// 🔴 **ログアウト・期限切れ（`userId` が nil）では値を替えない**（2026-10-18 の見直し）。以前は既定のオンに
     /// 戻し、オフにしていた人の並べた写真の座標で地名を問い合わせていた。nil の間は書かない（画面の中だけの値）。
     /// **持ち主が替わって値を当てても、地名は問い合わせない**——問い合わせるのは、本人が切り替えを押したときと
-    /// 写真を足したときだけ（`setAttachesLocation`・`append`）。オフに替わったときは問い合わせを止め、自動の地名を外す
+    /// 写真を足したときだけ（`setAttachesLocation`・`append`）。オフに替わったときは問い合わせを止め、自動の地名を外す。
+    ///
+    /// 🔴 **持ち主が決まるまで（ログインの確かめ中で nil）は地名を引かない**（`startPlaceLookup`・2026-10-18 の再見直し）。
+    /// その人の値が分からないうちに、オフの人の写真の座標を送らないため。**この画面で最初に持ち主が決まったときだけ**、
+    /// その人がオンなら待たせていた写真を引き始める（人が替わったときは引かない——上の決まり）
     func useLocationOwner(_ userId: String?) {
         let id = (userId?.isEmpty ?? true) ? nil : userId
         guard id != locationOwner else { return }
         locationOwner = id
         guard let id else { return }
+        let first = !hadLocationOwner
+        hadLocationOwner = true
         applyAttachesLocation(locationPreference.attachesLocation(userId: id), looksUpPlaces: false)
+        if first, attachesLocation {
+            for item in items { startPlaceLookup(for: item) }
+        }
     }
 
     /// 画面の切り替えから。持ち主の値として覚え、並んでいる写真にも当てる
@@ -494,9 +505,10 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// 写真の位置から撮影地を引き始める（**待たない**——待つと、引き終わるまで投稿ボタンが押せない）。
-    /// 「撮影地の位置を付ける」がオフ・位置の無い写真・本人が空にした・もう入っている・引いている最中なら引かない
+    /// 「撮影地の位置を付ける」がオフ・持ち主がまだ決まっていない・位置の無い写真・本人が空にした・もう入っている・
+    /// 引いている最中なら引かない
     private func startPlaceLookup(for item: PendingPhoto) {
-        guard attachesLocation, let coords = item.prepared.coords, placeTasks[item.id] == nil,
+        guard attachesLocation, locationOwner != nil, let coords = item.prepared.coords, placeTasks[item.id] == nil,
               !item.locationClearedByUser,
               item.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let id = item.id

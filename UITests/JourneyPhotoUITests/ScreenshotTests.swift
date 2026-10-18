@@ -989,16 +989,35 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         guard toggle.exists, toggle.isHittable else { return }
+        // 撮る前の値を確かめる（前の回のオフが残っていたら、まずオンに戻す）
+        guard setLocationToggle(toggle, on: true) else {
+            XCTFail("「撮影地の位置を付ける」をオンにできない（値: \(String(describing: toggle.value))）")
+            return
+        }
         shoot(app, "42b-投稿（撮影地の位置を付ける・オン）")
-        // つまみは行の右端（文字の上を押しても切り替わらない版がある）
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "42c-投稿（撮影地の位置を付ける・オフ）")
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        Thread.sleep(forTimeInterval: 1)
+        if setLocationToggle(toggle, on: false) {
+            shoot(app, "42c-投稿（撮影地の位置を付ける・オフ）")
+        } else {
+            XCTFail("押しても「撮影地の位置を付ける」がオフにならない（値: \(String(describing: toggle.value))）")
+        }
+        // 🔴 **最後は必ずオンに戻す**（値は人ごとに端末に残る。あとの絵・試験をオフのまま撮らない）
+        XCTAssertTrue(setLocationToggle(toggle, on: true),
+                      "「撮影地の位置を付ける」をオンに戻せなかった（値: \(String(describing: toggle.value))）")
         // 下の絵（43〜）は上から探すので、元の位置へ戻す
         app.swipeDown()
         Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// 切り替えを `on` にする（押して値を確かめる・3回まで）。なれたら true
+    private func setLocationToggle(_ toggle: XCUIElement, on: Bool) -> Bool {
+        let want = on ? "1" : "0"
+        for _ in 0..<3 {
+            if (toggle.value as? String) == want { return true }
+            // つまみは行の右端（文字の上を押しても切り替わらない版がある）
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return (toggle.value as? String) == want
     }
 
     /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）

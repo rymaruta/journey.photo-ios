@@ -190,6 +190,91 @@ final class UploadLocationToggleTests: XCTestCase {
         XCTAssertFalse(m.items[0].locationClearedByUser, "本人が空にしたことにした（オンに戻しても座標が落ちる）")
     }
 
+    /// 🔴 **近いスポットを選んだ1枚を下書きに残し、オフで開き直して送っても、写真の座標を送らない。**
+    /// 近いスポットを選ぶと写真の座標が `pickedCoords` に入る（`coordsAfterPicking`）。下書きはどのスポットを
+    /// 選んだか（`pickedSpot`）を残さないので、開き直すと「選んだ地名の座標」と見分けが付かない
+    /// （`chosenPlaceCoords` の、写真の位置と同じ座標は送らない決まり）
+    func testDraftOfANearbySpotPickSendsNoCoordsWhenOff() async {
+        let store = defaults()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = model(defaults: store)
+        first.drafts = UploadDraftStore(defaults: store, directory: directory)
+        first.draftOwner = "a"
+        first.makeDraftThumbnail = { _ in nil }
+        first.useLocationOwner("a")
+        var spotPick = PendingPhoto(prepared: prepared(coords: photoCoords))
+        spotPick.pickedSpot = UploadSpotTarget(spotId: "sp_000000000001", name: "高屋神社", coords: spotCoords)
+        spotPick.pickedCoords = PlaceCoordsRule.coordsForPickedSpot(spotCoords, photo: photoCoords)
+        spotPick.location = "高屋神社"
+        XCTAssertEqual(spotPick.pickedCoords, photoCoords, "前提: 近いスポットは写真の座標が入る")
+        first.items = [spotPick]
+        XCTAssertTrue(first.saveDraft(), "前提: 下書きに書けた")
+
+        scriptUpload()
+        let next = model(defaults: store)
+        next.drafts = UploadDraftStore(defaults: store, directory: directory)
+        next.draftOwner = "a"
+        next.makeDraftThumbnail = { _ in nil }
+        next.useLocationOwner("a")
+        next.setAttachesLocation(false)
+        let restored = await next.restoreDraft()
+        XCTAssertTrue(restored)
+        XCTAssertNil(next.items.first?.pickedSpot, "前提: 下書きはスポットを残さない")
+        XCTAssertEqual(next.items.first?.pickedCoords, photoCoords, "前提: 写真の座標が選んだ座標として戻る")
+        await next.submit()
+        let bodies = saveBodies()
+        XCTAssertEqual(bodies.count, 1, "前提: 保存まで届いた")
+        XCTAssertNil(bodies.first?["coords"], "オフなのに、下書きから戻した写真の座標を送った")
+    }
+
+    /// 🔴 **ログインの確かめ中（持ち主が nil）に並べた写真は、地名を引かない。** 持ち主が決まって、
+    /// その人がオンなら引き始める。オフの人なら引かない
+    func testNoLookupUntilTheOwnerIsKnown() async {
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [.init(match: "/geocode/reverse", status: 200, body: #"{"place":"高松市"}"#)]
+        let store = defaults()
+        let m = model(defaults: store)
+        m.useLocationOwner(nil)
+        m.append(prepared(1, coords: photoCoords))
+        XCTAssertTrue(m.placeTasks.isEmpty, "持ち主が分からないうちに地名を引き始めた")
+        m.useLocationOwner("a")                 // 覚えが無い＝オン
+        XCTAssertEqual(m.placeTasks.count, 1, "持ち主が決まってオンなのに引かない")
+        for task in m.placeTasks.values { await task.value }
+        XCTAssertEqual(m.items.first?.location, "高松市")
+
+        // オフの人なら、持ち主が決まっても引かない
+        ScriptedProtocol.reset()
+        UploadLocationPreference(defaults: store).set(false, userId: "off")
+        let off = model(defaults: store)
+        off.append(prepared(2, coords: photoCoords))
+        off.useLocationOwner("off")
+        XCTAssertTrue(off.placeTasks.isEmpty)
+        XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path.contains("/geocode/reverse") })
+    }
+
+    // MARK: - 写真の編集の「写真を差し替え」
+
+    /// 🔴 **オフなら差し替えた写真の位置を書かない**（`replace.coords` を送らない）。オンは今までどおり
+    func testReplaceDoesNotWriteThePhotoLocationWhenOff() async {
+        XCTAssertTrue(EditPlaceRules.keepsCoordsOnReplace(openedLocation: "高松市", openedHasCoords: true,
+                                                          currentLocation: "高松市", newPhotoCoords: photoCoords),
+                      "前提: オンでピンのある写真は書く（今までどおり）")
+        XCTAssertFalse(EditPlaceRules.keepsCoordsOnReplace(openedLocation: "高松市", openedHasCoords: true,
+                                                           currentLocation: "高松市", newPhotoCoords: photoCoords,
+                                                           attachesPhotoLocation: false),
+                       "オフなのに差し替えた写真の位置を書いた")
+    }
+
+    /// 編集の画面がその人の値を渡している（画面は Linux で描けないので、ソースのつなぎを見る）
+    func testEditScreenPassesThePreference() async throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Profile/EditPhotoView.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("let attaches = UploadLocationPreference().attachesLocation(userId: auth.userId ?? photo.userId)"))
+        XCTAssertTrue(source.contains("attachesPhotoLocation: attaches)"))
+    }
+
     // MARK: - 人ごとに覚える
 
     /// 選んだ値を人ごとに覚える（開き直しても同じ値）

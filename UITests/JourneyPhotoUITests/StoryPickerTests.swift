@@ -264,7 +264,8 @@ final class StoryPickerTests: XCTestCase {
     /// 出なければ撮らずに抜ける（この試験の決まり）。切り替えは押さない（値は人ごとに端末に残る）
     private func captureAudienceSheet(tag: String) {
         let app = XCUIApplication()
-        let audience = app.buttons["見せる相手: フォロワー"].firstMatch
+        // 言葉ではなく印で探す（英語の端末でも見つかる）
+        let audience = app.buttons["story.audience"].firstMatch
         guard audience.waitForExistence(timeout: 5), audience.isHittable else { return }
         audience.tap()
         let toggle = app.switches["story.attachLocation"].firstMatch
@@ -274,7 +275,7 @@ final class StoryPickerTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "\(tag)-7-誰に見せる（撮影地の位置を付ける）")
-        let done = app.buttons["決める"].firstMatch
+        let done = app.buttons["story.audience.done"].firstMatch
         if done.exists, done.isHittable { done.tap() }
     }
 

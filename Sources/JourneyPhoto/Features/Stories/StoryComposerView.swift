@@ -1087,6 +1087,7 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("見せる相手: フォロワー", "Audience: Followers"))
+                .accessibilityIdentifier("story.audience")
                 .accessibilityHint(L("返信と、24時間後も残すかもここで決めます",
                                      "Also set replies and whether to keep it after 24 hours"))
 
