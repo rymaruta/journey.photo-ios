@@ -592,7 +592,10 @@ struct ComposeGuideView: View {
             // 重ね順: 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）
             if showsLines, let composition {
                 CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
-                                 quarterTurns: quarterTurns, rotationDegrees: shownRotation, level: level)
+                                 // 参考写真を重ねている間は、線も作例と同じ向き（2026-10-18・`linesQuarterTurns`）
+                                 quarterTurns: ComposeControls.linesQuarterTurns(
+                                    held: quarterTurns, kind: composition, referenceShown: referenceShown),
+                                 rotationDegrees: shownRotation, level: level)
             }
         }
         .clipped()

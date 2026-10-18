@@ -517,4 +517,43 @@ final class ComposeCameraControlsTests: XCTestCase {
         XCTAssertTrue(view.contains("applyAutoRotation(.compositionChosen, animated: false)"))
         XCTAssertFalse(view.contains("rotation = ComposeControls.straightened(rotation)"))
     }
+
+    // MARK: - 横持ちの線と作例（2026-10-18）
+
+    func testLinesFollowReferenceWhileShown() {
+        XCTAssertEqual(ComposeControls.linesQuarterTurns(held: 3, kind: .goldenSpiral, referenceShown: true), 0)
+        XCTAssertEqual(ComposeControls.linesQuarterTurns(held: 1, kind: .thirds, referenceShown: true), 0)
+        // 線だけのときは今まで通り持った向き
+        XCTAssertEqual(ComposeControls.linesQuarterTurns(held: 3, kind: .goldenSpiral, referenceShown: false), 3)
+        // 水準器はいつも持った向き
+        XCTAssertEqual(ComposeControls.linesQuarterTurns(held: 3, kind: .level, referenceShown: true), 3)
+    }
+
+    func testLandscapeHoldKeepsLinesOnTheTurnedReference() {
+        // 横長の作例を 90° 回して開き、端末を左へ倒して（持った向き 3）横に持つ
+        let kind = CompositionKind.goldenSpiral
+        let turns = Int(ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3,
+                                                     frameAspect: portrait, heldQuarterTurns: 3) / 90)
+        XCTAssertEqual(turns, 1)
+        func lines(held: Int) -> [GuideMark] {
+            CompositionGuide.screenMarks(kind, variant: 0, aspect: portrait,
+                                         quarterTurns: ComposeControls.linesQuarterTurns(
+                                            held: held, kind: kind, referenceShown: true),
+                                         levelDegrees: 0, rotationQuarters: turns)
+        }
+        // 作例は画面に貼り付いているので、持ち替えても線は動かない（作例とずれない）
+        XCTAssertEqual(lines(held: 3), lines(held: 0))
+        // 横に持った人から見て、線は横の写真の向きで立つ（回していない横持ちの線と同じ）
+        XCTAssertEqual(lines(held: 3), CompositionGuide.screenMarks(kind, variant: 0, aspect: portrait,
+                                                                    quarterTurns: 3, levelDegrees: 0))
+        // 以前の作り（持った向きのぶんも回す）では、作例から 90° ずれていた
+        XCTAssertNotEqual(lines(held: 3), CompositionGuide.screenMarks(kind, variant: 0, aspect: portrait,
+                                                                       quarterTurns: 3, levelDegrees: 0,
+                                                                       rotationQuarters: turns))
+    }
+
+    func testViewPassesLinesQuarterTurns() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view.contains("quarterTurns: ComposeControls.linesQuarterTurns("))
+    }
 }

@@ -289,6 +289,21 @@ enum ComposeControls {
         return nearestCumulative(to: target, from: current)
     }
 
+    /// 構図の線に渡す「持った向き」（`CompositionGuide.screenMarks` の `quarterTurns`）。
+    ///
+    /// **2026-10-18 判断（横持ちで線だけが回り、作例とずれる）**: 参考写真は画面に貼り付いた向き
+    /// （`rotation` だけ）で描くのに、線は持った向きのぶんも回していた。横長の作例を 90° 回して開き、
+    /// 端末を横にする——この直しのいちばんの使い方で、作例は正しく立つのに、黄金螺旋・対角・L字・
+    /// 比率の枠などの向きのある線が作例から 90° ずれた（三分割は形が同じなので目立たない）。
+    /// そこで**参考写真を重ねている間は、線も持った向きでは回さず作例と同じ向きにそろえる**（0 を返す）。
+    /// 作例を 90° 回して横に持てば、線は横の写真の向きでちょうど立つ（回した角度が持った向きを打ち消す）。
+    /// - 参考写真が無いとき（線だけ）は今まで通り、持った向きに合わせる（撮れる写真の向きの線）
+    /// - 水準器はいつも持った向き（傾きは重さの向きが基準・回しもしない）
+    static func linesQuarterTurns(held: Int, kind: CompositionKind?, referenceShown: Bool) -> Int {
+        if kind == .level { return held }
+        return referenceShown ? 0 : held
+    }
+
     /// 0〜360 の角度 `target` を、累積の角度 `current` からいちばん短く回る累積の値にする
     /// （90° から 270° へは +180°・0° へは 360° の倍数の近いほう）
     static func nearestCumulative(to target: Double, from current: Double) -> Double {
