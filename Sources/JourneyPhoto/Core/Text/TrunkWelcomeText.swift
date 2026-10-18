@@ -46,6 +46,24 @@ enum TrunkWelcomeText {
         L("カプセルの機械に入れると、トランクの部品が1つ出てきます", "Put one in the capsule machine to get a part for your trunk")
     }
 
+    /// 案内の真ん中に重ねる硬貨（奥から順）。奥の2枚は倒して楕円に、手前の1枚は正面（刻印が読める向き）
+    struct StageCoin: Equatable {
+        let size: Double
+        let tilt: Double
+        /// 面の中での回り（刻印の向き）
+        let turn: Double
+        /// 画面の中での傾き
+        let rotation: Double
+        let x: Double
+        let y: Double
+    }
+
+    static let stageCoins: [StageCoin] = [
+        StageCoin(size: 88, tilt: 62, turn: -24, rotation: -14, x: -74, y: 46),
+        StageCoin(size: 88, tilt: 56, turn: 30, rotation: 12, x: 76, y: 52),
+        StageCoin(size: 116, tilt: 0, turn: -8, rotation: 0, x: 0, y: -10),
+    ]
+
     static var turn: String { L("カプセルを回す", "Turn the capsule machine") }
     static var later: String { L("あとで", "Later") }
 }

@@ -440,20 +440,98 @@ enum TrunkGachaColors {
     }
 }
 
-/// 硬貨の印（真鍮の丸・モックの 26px と 16px）
+/// 硬貨（真鍮の平たい円盤・2026-10-18 に描き直した）。**どの画面の硬貨もこの1つ**（カプセルの機械の数の行・
+/// トランクの札・部品箱・届いた画面の札・はじめての硬貨の案内）。
+///
+/// 縁（リム）→ 一段下がった面 → 浮き彫りの内輪 → 「COIN」の刻印（24pt 以上）。光は左上から斜め、縁の照り返しは右下。
+/// `tilt` で手前へ倒すと楕円になり、下に厚みの帯が出る（重ねて奥行きを出す）。数値は `TrunkCoinGeometry`
 struct TrunkCoinMark: View {
     var size: Double = 26
+    /// 手前へ倒す角度（度）。0 は正面
+    var tilt: Double = 0
+    /// 面の中での回り（度）。刻印の向きが変わる
+    var turn: Double = 0
+
+    private var g: TrunkCoinGeometry { TrunkCoinGeometry(size: size, tilt: tilt) }
+
+    private static let shine = Color(trunk: TrunkRGBA(0xFFF1C4))
+    private static let pale = Color(trunk: TrunkRGBA(0xF2DFAE))
+    private static let mid = Color(trunk: TrunkRGBA(0x8A6B39))
+    private static let deep = Color(trunk: TrunkRGBA(0x7E6438))
+    private static let shade = Color(trunk: TrunkRGBA(0x6E5630))
+    private static let edgeDark = Color(trunk: TrunkRGBA(0x3E301A))
+    private static let ink = Color(trunk: TrunkRGBA(0x3A2A12))
+    private static let line = Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.45))
 
     var body: some View {
-        Circle()
-            .fill(RadialGradient(stops: [Gradient.Stop(color: Color(trunk: TrunkRGBA(0xFFF1C4)), location: 0),
-                                         Gradient.Stop(color: WebTheme.accent, location: 0.5),
-                                         Gradient.Stop(color: Color(trunk: TrunkRGBA(0x7E6438)), location: 1)],
-                                 center: UnitPoint(x: 0.4, y: 0.35), startRadius: 0, endRadius: size * 0.7))
-            .overlay(Circle().strokeBorder(Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.35)), lineWidth: size > 20 ? 2 : 0))
-            .frame(width: size, height: size)
-            .shadow(color: Color.black.opacity(size > 20 ? 0.6 : 0), radius: 1.5, x: 0, y: 2)
-            .accessibilityHidden(true)
+        let g = self.g
+        ZStack(alignment: .top) {
+            // 厚みの帯（倒したときだけ・面の下にずらして見せる）
+            if g.edgeDepth > 0 {
+                Circle()
+                    .fill(LinearGradient(colors: [Self.deep, Self.edgeDark], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: g.size, height: g.size)
+                    .scaleEffect(x: 1, y: g.squash, anchor: .top)
+                    .frame(width: g.size, height: g.size * g.squash, alignment: .top)
+                    .offset(x: 0, y: g.edgeDepth)
+            }
+            face(g)
+                .frame(width: g.size, height: g.size)
+                .scaleEffect(x: 1, y: g.squash, anchor: .top)
+                .frame(width: g.size, height: g.size * g.squash, alignment: .top)
+        }
+        .frame(width: g.size, height: g.drawnHeight, alignment: .top)
+        .shadow(color: Color.black.opacity(g.shadowRadius > 0 ? 0.6 : 0), radius: g.shadowRadius, x: 0, y: g.shadowY)
+        .accessibilityHidden(true)
+    }
+
+    /// 正面から見た面（真円）
+    private func face(_ g: TrunkCoinGeometry) -> some View {
+        ZStack {
+            // 縁（リム）: 左上が照り、右下が陰
+            Circle()
+                .fill(LinearGradient(stops: [Gradient.Stop(color: Self.shine, location: 0),
+                                             Gradient.Stop(color: WebTheme.accent, location: 0.45),
+                                             Gradient.Stop(color: Self.shade, location: 1)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+            // 一段下がった面: 光の向きを逆に（左上が陰・右下が照り＝くぼみ）
+            Circle()
+                .fill(LinearGradient(stops: [Gradient.Stop(color: Self.mid, location: 0),
+                                             Gradient.Stop(color: WebTheme.accent, location: 0.55),
+                                             Gradient.Stop(color: Self.pale, location: 1)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .padding(g.rimWidth)
+            // 段の境の細い影
+            Circle()
+                .strokeBorder(Self.line, lineWidth: max(0.5, g.outlineWidth * 0.6))
+                .padding(g.rimWidth)
+            // 浮き彫りの内輪（左上が照り・右下が陰）
+            Circle()
+                .strokeBorder(LinearGradient(colors: [Self.pale, Self.shade], startPoint: .topLeading, endPoint: .bottomTrailing),
+                              lineWidth: g.ringWidth)
+                .padding(g.ringInset)
+            if g.showsLetters {
+                // 刻印（彫った字の下の縁に照り・板の COIN の口と同じ字）
+                Text(verbatim: "COIN")
+                    .font(.system(size: g.letterSize, weight: .bold))
+                    .tracking(g.letterSize * 0.2)
+                    // 字送りは最後の字の後ろにも付くので、その半分だけ左へ寄せて真ん中に置く
+                    .offset(x: g.letterSize * 0.1, y: 0)
+                    .foregroundStyle(Self.ink)
+                    .shadow(color: Color(trunk: TrunkRGBA(r: 255, g: 240, b: 200, a: 0.6)), radius: 0, x: 0, y: max(0.5, g.size * 0.008))
+                    .rotationEffect(.degrees(turn))
+            }
+            // 真鍮の光: 左上から斜めに差す帯
+            LinearGradient(stops: [Gradient.Stop(color: Color.white.opacity(0), location: 0.18),
+                                   Gradient.Stop(color: Color.white.opacity(0.38), location: 0.32),
+                                   Gradient.Stop(color: Color.white.opacity(0), location: 0.46)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .clipShape(Circle())
+                .allowsHitTesting(false)
+            // 外の縁の暗い線（板の inset 2px）
+            Circle()
+                .strokeBorder(Self.line, lineWidth: g.outlineWidth)
+        }
     }
 }
 

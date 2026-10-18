@@ -98,16 +98,16 @@ struct TrunkWelcomeView: View {
         }
     }
 
-    /// 真鍮の淡い光の上に、硬貨を3枚重ねる（後ろ2枚は小さく、前の1枚は大きく）
+    /// 真鍮の淡い光の上に、硬貨を3枚重ねる。奥の2枚は手前へ倒した楕円（下に厚みの帯）、手前の1枚は正面
+    /// （`TrunkWelcomeText.stageCoins`）
     private var stage: some View {
         ZStack {
             TrunkStyle.glow(width: 340, height: 250)
-            TrunkCoinMark(size: 76)
-                .offset(x: -64, y: 20)
-            TrunkCoinMark(size: 76)
-                .offset(x: 66, y: 26)
-            TrunkCoinMark(size: 112)
-                .offset(x: 0, y: -4)
+            ForEach(Array(TrunkWelcomeText.stageCoins.enumerated()), id: \.offset) { _, coin in
+                TrunkCoinMark(size: coin.size, tilt: coin.tilt, turn: coin.turn)
+                    .rotationEffect(.degrees(coin.rotation))
+                    .offset(x: coin.x, y: coin.y)
+            }
         }
         .frame(height: 230)
         .padding(.top, 12)
