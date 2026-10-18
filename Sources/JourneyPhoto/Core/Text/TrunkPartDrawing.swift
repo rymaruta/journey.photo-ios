@@ -24,6 +24,22 @@ struct TrunkRect: Equatable {
     var maxY: Double { y + h }
 
     func inset(_ d: Double) -> TrunkRect { TrunkRect(x: x + d, y: y + d, w: max(0, w - 2 * d), h: max(0, h - 2 * d)) }
+
+    /// 2つの四角が重なるか（辺が触れるだけなら重ならない）
+    func intersects(_ o: TrunkRect) -> Bool { x < o.maxX && o.x < maxX && y < o.maxY && o.y < maxY }
+
+    /// 点 `(px, py)` を中心に `degrees` 回した四角の外接の四角（SwiftUI の `rotationEffect` と同じ向き・y が下）
+    func rotated(_ degrees: Double, aroundX px: Double, y py: Double) -> TrunkRect {
+        let rad = degrees * .pi / 180
+        let c = cos(rad), s = sin(rad)
+        let pts = [(x, y), (maxX, y), (maxX, maxY), (x, maxY)].map { p -> (Double, Double) in
+            let dx = p.0 - px, dy = p.1 - py
+            return (px + dx * c - dy * s, py + dx * s + dy * c)
+        }
+        let xs = pts.map(\.0), ys = pts.map(\.1)
+        let x0 = xs.min() ?? x, y0 = ys.min() ?? y
+        return TrunkRect(x: x0, y: y0, w: (xs.max() ?? maxX) - x0, h: (ys.max() ?? maxY) - y0)
+    }
 }
 
 /// 字1つ（紙や金属に刷った字。Dynamic Type で伸ばさない）
@@ -272,14 +288,19 @@ enum TrunkPartDrawing {
     // MARK: 角金具
 
     static func cornerShape(_ box: TrunkRect) -> [SVGPath.Segment] {
-        // 角丸 22 4 4 4 の四角を、L の字の多角形（`polygon(0 0, 100% 0, 100% 34%, 34% 34%, 34% 100%, 0 100%)`）で切る
+        // 角丸 22 4 4 4 の四角を、L の字の多角形（`polygon(0 0, 100% 0, 100% 34%, 34% 34%, 34% 100%, 0 100%)`）で切る。
+        // 角丸は枠の大きさ（96 の枠の 72）に比べて縮める（トランクに付けた小さい角金具でも同じ形・#305）
         let arm = box.w * 0.34
+        let u = box.w / 72
+        let big = 22 * u, small = 4 * u
         let k = 0.5522847498
         func p(_ x: Double, _ y: Double) -> SVGPath.Point { SVGPath.Point(x: box.x + x, y: box.y + y) }
-        return [.move(p(0, 22)), .cubic(c1: p(0, 22 * (1 - k)), c2: p(22 * (1 - k), 0), to: p(22, 0)),
-                .line(p(box.w - 4, 0)), .cubic(c1: p(box.w - 4 * (1 - k), 0), c2: p(box.w, 4 * (1 - k)), to: p(box.w, 4)),
+        return [.move(p(0, big)), .cubic(c1: p(0, big * (1 - k)), c2: p(big * (1 - k), 0), to: p(big, 0)),
+                .line(p(box.w - small, 0)),
+                .cubic(c1: p(box.w - small * (1 - k), 0), c2: p(box.w, small * (1 - k)), to: p(box.w, small)),
                 .line(p(box.w, arm)), .line(p(arm, arm)), .line(p(arm, box.h)),
-                .line(p(4, box.h)), .cubic(c1: p(4 * (1 - k), box.h), c2: p(0, box.h - 4 * (1 - k)), to: p(0, box.h - 4)),
+                .line(p(small, box.h)),
+                .cubic(c1: p(small * (1 - k), box.h), c2: p(0, box.h - small * (1 - k)), to: p(0, box.h - small)),
                 .close]
     }
 
@@ -296,22 +317,41 @@ enum TrunkPartDrawing {
     }
 
     static func corner(_ c: TrunkPartLook.Corner) -> [TrunkPartOp] {
-        let box = TrunkRect(x: 12, y: 12, w: 72, h: 72)
+        corner(c, box: TrunkRect(x: 12, y: 12, w: 72, h: 72))
+    }
+
+    /// トランクに付けたとき、穴と鋲をこれより小さくしない（角金具は 30〜46 に縮む・#305「縮んでも潰れない」）
+    static let mountedMinHole: Double = 1.6
+    static let mountedMinRivet: Double = 1.8
+
+    /// 角金具を枠 `box` に描く（96 の枠では 12・12 から 72 角）。**トランクの角に付けたときも同じ L の字・透かし・
+    /// 鋲で描く**（#305: 前は塗りだけを型の角の札に塗り、形と透かしと鋲が出なかった）。
+    /// 縮めると穴と鋲は `mountedMin…` で止め、鋲は L の腕からはみ出さないよう内へ寄せる
+    static func corner(_ c: TrunkPartLook.Corner, box: TrunkRect) -> [TrunkPartOp] {
+        let u = box.w / 72
+        let arm = box.w * 0.34
         let shape = cornerShape(box)
         var inner: [TrunkPartOp] = [.fill(shape, c.paint, bounds: box, evenOdd: false)]
         if let eng = engraving(c.engrave) { inner.append(.fill(shape, eng, bounds: box, evenOdd: false)) }
         if c.pierce {
             // 透かし: 14px の穴と、box-shadow の 18px・36px 先の小さい穴（広がり −3・−4）
             for (x, y, r) in [(13.0, 13.0, 7.0), (31, 13, 4), (49, 13, 3), (13, 31, 4), (13, 49, 3)] {
-                inner.append(.fill(TrunkShapes.circle(box.x + x, box.y + y, r), .solid(TrunkRGBA(0x000000)),
+                let radius = u < 1 ? max(mountedMinHole, r * u) : r
+                inner.append(.fill(TrunkShapes.circle(box.x + x * u, box.y + y * u, radius), .solid(TrunkRGBA(0x000000)),
                                    bounds: box, evenOdd: false))
             }
         }
         inner.append(topLight(shape, box, 0.4))
         var out: [TrunkPartOp] = [.group(inner, .identity, clip: shape)]
         if c.rivets {
-            for (x, y) in [(24.0, 24.0), (70, 22), (22, 70)] {
-                let r = TrunkRect(x: x - 3.5, y: y - 3.5, w: 7, h: 7)
+            // 鋲の真ん中（96 の枠の 24・24／70・22／22・70 を、枠の左上からの距離に）
+            for (x, y) in [(12.0, 12.0), (58, 10), (10, 58)] {
+                let rr = u < 1 ? max(mountedMinRivet, 3.5 * u) : 3.5
+                var cx = x * u, cy = y * u
+                // 腕の太さ（34%）に収める（縮めて鋲だけ止めたとき）
+                if cx > arm { cy = min(cy, arm - rr - 0.4) }
+                if cy > arm { cx = min(cx, arm - rr - 0.4) }
+                let r = TrunkRect(x: box.x + cx - rr, y: box.y + cy - rr, w: rr * 2, h: rr * 2)
                 out.append(.fill(TrunkShapes.ellipse(r), rivetPaint(c.rivetMetal), bounds: r, evenOdd: false))
             }
         }
@@ -661,6 +701,48 @@ enum TrunkPartDrawing {
         return out
     }
 
+    /// 手順が実際に塗る所の外接の四角（96 の枠の座標・置き方を畳んで・線は太さの半分を足す・字は字の枠）。
+    /// トランクに吊るす部品どうしが重ならないかを、枠（96×96）ではなく描いた中身で見る（#305）
+    static func contentBounds(_ ops: [TrunkPartOp], _ outer: TrunkPartTransform = .identity) -> TrunkRect? {
+        var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
+        func add(_ p: SVGPath.Point, pad: Double) {
+            minX = min(minX, p.x - pad); maxX = max(maxX, p.x + pad)
+            minY = min(minY, p.y - pad); maxY = max(maxY, p.y + pad)
+        }
+        func add(_ segments: [SVGPath.Segment], _ t: TrunkPartTransform, pad: Double) {
+            for s in segments {
+                switch s {
+                case .move(let p), .line(let p): add(t.apply(p), pad: pad)
+                case let .cubic(c1, c2, to): for p in [c1, c2, to] { add(t.apply(p), pad: pad) }
+                case let .quad(c, to): for p in [c, to] { add(t.apply(p), pad: pad) }
+                case .close: break
+                }
+            }
+        }
+        func add(_ r: TrunkRect?) {
+            guard let r else { return }
+            add(SVGPath.Point(x: r.x, y: r.y), pad: 0)
+            add(SVGPath.Point(x: r.maxX, y: r.maxY), pad: 0)
+        }
+        for op in ops {
+            switch op {
+            case let .fill(segments, _, _, _):
+                add(segments, outer, pad: 0)
+            case let .stroke(segments, _, width, _, _):
+                add(segments, outer, pad: width / 2 * outer.scale)
+            case let .group(children, t, _):
+                add(contentBounds(children, t.within(outer)))
+            case .text(let column):
+                let t = column.transform.within(outer)
+                let b = column.box
+                add([.move(SVGPath.Point(x: b.x, y: b.y)), .line(SVGPath.Point(x: b.maxX, y: b.y)),
+                     .line(SVGPath.Point(x: b.maxX, y: b.maxY)), .line(SVGPath.Point(x: b.x, y: b.maxY))], t, pad: 0)
+            }
+        }
+        guard minX.isFinite, minY.isFinite else { return nil }
+        return TrunkRect(x: minX, y: minY, w: maxX - minX, h: maxY - minY)
+    }
+
     /// 読み上げの名前（「錠前 · 菊」）
     static func accessibilityLabel(_ part: TrunkPart) -> String {
         "\(part.kind.title) · \(part.name)"
@@ -721,6 +803,39 @@ struct TrunkFittings: Equatable {
         return l.metal
     }
 
+    /// 付けた角金具の形（L の字・彫り・透かし・鋲。トランクの角にも部品1点の絵と同じ形で描く・#305）
+    var cornerLook: TrunkPartLook.Corner? {
+        guard let corner, case .corner(let c) = corner.look else { return nil }
+        return c
+    }
+
+    /// 錠前の部品を縮める割合の幅（型の錠前の高さに胴の高さを合わせる。小さすぎると彫り・数字が潰れ、
+    /// 大きすぎると帯からはみ出す）
+    static let lockMountScale: ClosedRange<Double> = 0.55...0.8
+
+    /// 付けた錠前を、部品1点の絵（96 の枠）を縮めてトランクの錠前の場所に置く（#305）。
+    /// 返すのは縮めた枠の一辺と左上（胴 360×268 の座標）。錠前の胴の真ん中（双子は2枚の真ん中）を型の錠前の真ん中に。
+    /// 前は部品の金属で型の錠前を塗るだけで、南京錠・ダイヤル・双子の形も紋も出なかった
+    func lockMount(_ look: TrunkLook) -> (side: Double, x: Double, y: Double)? {
+        guard let lock, case .lock(let l) = lock.look else { return nil }
+        let body = TrunkPartDrawing.lockBody(l.shape).box
+        let all = TrunkPartDrawing.contentBounds(TrunkPartDrawing.lock(l)) ?? body
+        let k = min(Self.lockMountScale.upperBound, max(Self.lockMountScale.lowerBound, look.lock.height / body.h))
+        let cx = 180.0, cy = TrunkLooks.lockTop(look) + look.lock.height / 2
+        return (TrunkPartDrawing.size * k, cx - all.midX * k, cy - body.midY * k)
+    }
+
+    /// 吊るす部品の紐（立体で、上の面の持ち手から正面の上の縁まで渡す・#305）の太さと色。部品の紐・鎖の色と太さを
+    /// 縮みに合わせて（手荷物タグは紐、チャームは鎖、鍵は輪）
+    static func cord(_ p: Placement) -> (width: Double, color: TrunkRGBA)? {
+        switch p.part.look {
+        case .tag(let t): return (3 * p.scale, t.string)
+        case .charm(let c): return (4 * p.scale, c.ringMetal.midTone)
+        case .key(let k): return (6 * p.scale, k.metal.midTone)
+        default: return nil
+        }
+    }
+
     /// トランクの上に重ねる部品（ピン・ワッペン・チャーム・鍵・タグ）
     struct Placement: Equatable {
         let part: TrunkPart
@@ -734,6 +849,39 @@ struct TrunkFittings: Equatable {
         let anchorY: Double
         /// 胴に付く（3D の箱の表にも描く）。false は持ち手から吊るすもの
         let onBody: Bool
+
+        /// 縮めた枠の一辺
+        var side: Double { TrunkPartDrawing.size * scale }
+
+        /// 吊るす点（回す中心・360×300 の絵の座標）。吊るす部品は紐・輪・鍵の頭がここに来る
+        var hangX: Double { x + anchorX * side }
+        var hangY: Double { y + anchorY * side }
+
+        /// 縮めて回したあとの、描いた中身の外接の四角（360×300 の絵の座標・#305 の重なりの見張り）
+        var frame: TrunkRect {
+            let b = TrunkPartDrawing.contentBounds(TrunkPartDrawing.ops(part))
+                ?? TrunkRect(x: 0, y: 0, w: TrunkPartDrawing.size, h: TrunkPartDrawing.size)
+            let scaled = TrunkRect(x: x + b.x * scale, y: y + b.y * scale, w: b.w * scale, h: b.h * scale)
+            return scaled.rotated(rot, aroundX: hangX, y: hangY)
+        }
+    }
+
+    /// 吊るす部品の置き場（#305 の 2026-10-18 判断）。
+    ///
+    /// 板 Equip のチャーム（112,26）と鍵（196,30）は、ラベルからできる手荷物タグ（x 216・252・278・`TrunkLooks.tagSlots`）
+    /// と、後から足した部品の手荷物タグ（84,34）に重なっていた（鳥居のチャームが「FIRST CLASS」の札に、鍵が行き先の
+    /// タグに）。**ラベルのタグは持ち手の右に吊るす**（板 Trunk のまま）ので、部品は持ち手の左から真ん中へ
+    /// 「部品のタグ → 鍵 → チャーム」の順に並べ、どの組み合わせ（部品のある・なし × ラベルのタグ 0〜3 枚）でも
+    /// 描いた中身が交わらないようにする（`TrunkPartsTests.testHangingNeverOverlaps`）。
+    /// - 部品のタグ: 持ち手の左の外に吊るす（ラベルのタグを右の外に吊るすのと対に）
+    /// - 鍵: 持ち手の左の付け根（120〜140）から、鍵の頭（96 の枠の 21）で吊るす
+    /// - チャーム: 持ち手の真ん中寄り（右のラベルのタグの手前まで）
+    /// 縮み・傾きは板のまま（タグ 0.5・−12°、チャーム 0.6・6°、鍵 0.62・−10°）
+    enum Hang {
+        /// `(左, 上, 縮み, 傾き, 中心x, 中心y)`（板 Equip と同じ書き方・トランクは上 20）
+        static let tag = (left: 26.0, top: 34.0, scale: 0.5, rot: -12.0, ax: 0.5, ay: 0.0)
+        static let key = (left: 96.0, top: 30.0, scale: 0.62, rot: -10.0, ax: 21.0 / 96, ay: 0.0)
+        static let charm = (left: 142.0, top: 26.0, scale: 0.6, rot: 6.0, ax: 0.5, ay: 0.0)
     }
 
     /// 重ねる部品の置き場（モック Equip の `left`・`top`・`transform` を 360×300 の絵へ）。
@@ -756,10 +904,10 @@ struct TrunkFittings: Equatable {
             out.append(i == 0 ? place(patch, 252, 224, 0.58, -8, 0, 0, body: true)
                               : place(patch, 18, 216, 0.58, 7, 0, 0, body: true))
         }
-        // 手荷物タグ: 持ち手の左の付け根から（モックに無い・2026-10-17 判断）
-        if let tag { out.append(place(tag, 84, 34, 0.5, -12, 0.5, 0, body: false)) }
-        if let charm { out.append(place(charm, 112, 26, 0.6, 6, 0.5, 0, body: false)) }
-        if let key { out.append(place(key, 196, 30, 0.62, -10, 0.3, 0, body: false)) }
+        // 吊るす部品（手荷物タグ・チャーム・鍵）: 重ならない置き場（`Hang`・#305）
+        if let tag { let h = Hang.tag; out.append(place(tag, h.left, h.top, h.scale, h.rot, h.ax, h.ay, body: false)) }
+        if let charm { let h = Hang.charm; out.append(place(charm, h.left, h.top, h.scale, h.rot, h.ax, h.ay, body: false)) }
+        if let key { let h = Hang.key; out.append(place(key, h.left, h.top, h.scale, h.rot, h.ax, h.ay, body: false)) }
         return out
     }
 }

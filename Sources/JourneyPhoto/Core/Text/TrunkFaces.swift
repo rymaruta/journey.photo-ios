@@ -121,6 +121,59 @@ enum TrunkFaces {
     /// 持ち手に縫い目があるか（アルミ・漆は無し。正面と同じ）
     static func handleStitched(_ model: TrunkModel) -> Bool { model != .aluminum && model != .urushi }
 
+    // MARK: 吊るす物（立体・#305）
+
+    /// 立体の正面に吊るす物（ラベルの手荷物タグ・部品のタグ・チャーム・鍵）を描くとき、2D の絵（360×300）の y から
+    /// 引く量。2D ではタグの紐の上の端が y 2（胴の上の縁より上）なので、正面の絵では紐の上の端を胴の上の縁（0）に
+    /// そろえ、札・チャーム・鍵が胴の上の縁から下がって見えるようにする（2D のまま胴の座標にすると上の 30 が切れる）
+    static let frontHangLift: Double = TrunkLooks.tagStringTop
+
+    /// 吊るす紐1本（上の面: 持ち手から正面の辺へ・正面: 上の縁から吊るす点へ）
+    struct HangCord: Equatable {
+        let fromX: Double
+        let fromY: Double
+        let toX: Double
+        let toY: Double
+        let width: Double
+        let color: TrunkRGBA
+    }
+
+    /// 上の面の紐の付け根（持ち手の付け根の金具の間・持ち手の帯の真ん中の高さ）。外にあるものは近い付け根から
+    static func cordRoot(_ x: Double) -> (x: Double, y: Double) {
+        let lo = handleClipCenters[0], hi = handleClipCenters[handleClipCenters.count - 1]
+        return (min(hi, max(lo, x)), 30)
+    }
+
+    /// 上の面に渡す紐（吊るす物ごとに1本・持ち手から正面の辺〔y = 厚み〕の吊るす点の真上へ）。
+    /// 立体では正面の絵（`TrunkBoxView` の `hangsOnFront`）が吊るした物を描き、ここで持ち手からつなぐ
+    static func topCords(tags: [TrunkLooks.Tag], fittings: TrunkFittings) -> [HangCord] {
+        var out: [HangCord] = []
+        for t in tags {
+            let x = t.x + TrunkLooks.tagStringInset + TrunkLooks.tagStringWidth / 2
+            let root = cordRoot(x)
+            out.append(HangCord(fromX: root.x, fromY: root.y, toX: x, toY: depth,
+                                width: TrunkLooks.tagStringWidth, color: TrunkLooks.tagStringColor))
+        }
+        for p in fittings.placements where !p.onBody {
+            guard let cord = TrunkFittings.cord(p) else { continue }
+            let root = cordRoot(p.hangX)
+            out.append(HangCord(fromX: root.x, fromY: root.y, toX: p.hangX, toY: depth, width: cord.width, color: cord.color))
+        }
+        return out
+    }
+
+    /// 正面の上の縁から、吊るした部品の吊るす点までの紐（ラベルのタグは自分の紐が縁から始まるので要らない）。
+    /// 座標は正面の絵（胴 360×268）
+    static func frontCords(fittings: TrunkFittings) -> [HangCord] {
+        fittings.placements.filter { !$0.onBody }.compactMap { p in
+            guard let cord = TrunkFittings.cord(p) else { return nil }
+            let y = p.hangY - frontHangLift
+            guard y > 0 else { return nil }
+            // 部品の紐・輪の上の端の少し下まで（つなぎ目を見せない）
+            return HangCord(fromX: p.hangX, fromY: 0, toX: p.hangX, toY: y + 2, width: cord.width, color: cord.color)
+        }
+    }
+
     // MARK: 桟・帯・ベルト
 
     /// 面に描く桟・帯（横なら y・縦なら x）

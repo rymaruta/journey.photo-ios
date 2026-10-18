@@ -2574,6 +2574,86 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。
+    /// 付け替えの画面で錠前を替え、トランクに付けた錠前の形も撮る。タブが無ければ落とす
+    func testCapturesTrunkPartsKinds() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.partsBox") else { return XCTFail("部品箱の入口が無い") }
+        let kinds = [("corner", "99c-部品箱（角金具）"), ("lining", "99d-部品箱（内張り）"), ("tag", "99e-部品箱（タグ）"),
+                     ("patch", "99f-部品箱（ワッペン）"), ("charm", "99g-部品箱（チャーム）"), ("key", "99h-部品箱（鍵）")]
+        for (kind, name) in kinds {
+            let tab = app.buttons["trunk.parts.tab.\(kind)"].firstMatch
+            guard tab.waitForExistence(timeout: 10) else { return XCTFail("部品箱に \(kind) のタブが無い") }
+            revealTab(tab, in: app, toLeft: true)
+            guard tab.isHittable else { return XCTFail("部品箱の \(kind) のタブに届かない") }
+            tab.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, name)
+        }
+        // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
+        let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
+        revealTab(lockTab, in: app, toLeft: false)
+        guard lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
+        lockTab.tap()
+        let equip = app.buttons["trunk.parts.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
+        equip.tap()
+        let equipLock = app.buttons["trunk.equip.tab.lock"].firstMatch
+        guard equipLock.waitForExistence(timeout: 10) else { return XCTFail("付け替えの錠前のタブが無い") }
+        equipLock.tap()
+        Thread.sleep(forTimeInterval: 1)
+        let roundLock = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        if roundLock.exists, roundLock.isHittable {
+            roundLock.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, "99i-部品を付け替える（錠前を替えた）")
+        }
+    }
+
+    /// 横に並んだタブの列を、`tab` が押せるまで送る（右のタブは左へ・左のタブは右へ。4回まで）
+    private func revealTab(_ tab: XCUIElement, in app: XCUIApplication, toLeft: Bool) {
+        let width = app.windows.firstMatch.frame.width
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        var slides = 0
+        while !tab.isHittable, slides < 4 {
+            let y = tab.frame.midY
+            let start = origin.withOffset(CGVector(dx: width * (toLeft ? 0.8 : 0.2), dy: y))
+            let end = origin.withOffset(CGVector(dx: width * (toLeft ? 0.3 : 0.7), dy: y))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            Thread.sleep(forTimeInterval: 0.6)
+            slides += 1
+        }
+    }
+
+    /// **カプセルから錠前以外が出た**（#305）: 見本の1回目は錠前、2回目は金の星のチャーム（`TrunkSample.gachaOrder`）。
+    /// 1回目（錠前）をしまって、もう1回回す。出なければ落とす
+    func testCapturesTrunkGachaSecondDraw() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        for draw in 0..<2 {
+            let insert = app.buttons["trunk.gacha.insert"].firstMatch
+            guard insert.waitForExistence(timeout: 10), insert.isEnabled else { return XCTFail("\(draw + 1) 回目の硬貨を入れられない") }
+            insert.tap()
+            let crank = app.buttons["trunk.gacha.crank"].firstMatch
+            guard crank.waitForExistence(timeout: 5) else { return XCTFail("ハンドルが無い") }
+            for _ in 0..<4 {
+                crank.tap()
+                Thread.sleep(forTimeInterval: 0.4)
+            }
+            let capsule = app.buttons["trunk.gacha.openCapsule"].firstMatch
+            guard capsule.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+            capsule.tap()
+            let keep = app.buttons["trunk.gachaOpen.keep"].firstMatch
+            guard keep.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+            Thread.sleep(forTimeInterval: 2)
+            if draw == 1 { shoot(app, "98d-カプセルを開けた（チャーム）") }
+            keep.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+    }
+
     // MARK: - 旅のトランクの中身と回したときの面（2026-10-18・板「旅のトランク」）
 
     /// 見本のメダル 10 枚（8 枠に 7 枚と「ほか 3」）・Pro とサポーターの番号（会員証）・すれちがいの見本（乗車券）
@@ -2659,7 +2739,9 @@ final class ScreenshotTests: XCTestCase {
         } else {
             XCTFail("回す画面の面を描き終えない")
         }
-        for (id, name) in [("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"), ("bottom", "91c-回した底（蝶番と足）")] {
+        // 正面（吊るすタグ・チャーム・鍵が回しても消えない・#305）→ 側面 → 上と背面（上の面と持ち手・紐）→ 底
+        for (id, name) in [("front", "91d-回した正面（吊るす部品）"), ("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"),
+                           ("bottom", "91c-回した底（蝶番と足）")] {
             let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
             guard button.waitForExistence(timeout: 5) else { return XCTFail("向きのボタン \(id) が無い") }
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "向きのボタン \(id) が 44pt 未満")
