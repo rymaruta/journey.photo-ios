@@ -394,6 +394,8 @@ struct RootView: View {
             .onChange(of: auth.userId) { _, userId in
                 welcomeOffer?.cancel()
                 welcomeOffer = nil
+                // 出しかけの案内も下ろす（立ったまま残ると、次の人の届いた画面と評価のお願いが止まる）
+                trunkWelcomeGrant = nil
                 trunkWelcome.noteUser(userId)
             }
     }
@@ -448,15 +450,23 @@ struct RootView: View {
             let owner = auth.userId
             welcomeAppeared = false
             trunkWelcomeGrant = grant
-            // 出たか確かめる（同じ瞬間に別のシートが出始めると、全画面は黙って出ない）。
-            // 約3秒で出なければ、出している扱いを下ろして待ちへ戻す（届いた画面と評価のお願いを止めたままにしない）
-            for _ in 0..<30 where !welcomeAppeared {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+            // 出たか確かめる（同じ瞬間に別のシートが出始めると、全画面は黙って出ない）。秒数では決めない——
+            // 何かが出ている間（自分の全画面が出かけている間も）は待ち、何も出ていない状態が続いたら「出なかった」と
+            // して出している扱いを下ろし、待ちへ戻す（届いた画面と評価のお願いを止めたままにしない・`WelcomePresentationWatch`）
+            var watch = WelcomePresentationWatch()
+            while !Task.isCancelled, trunkWelcomeGrant == grant, auth.userId == owner {
+                switch watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(), now: Date()) {
+                case .shown:
+                    return
+                case .waiting:
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                case .giveBack:
+                    trunkWelcomeGrant = nil
+                    trunkWelcome.requeue(grant, userId: owner)
+                    offerTrunkWelcomeWhenIdle()
+                    return
+                }
             }
-            guard !welcomeAppeared, trunkWelcomeGrant == grant, auth.userId == owner else { return }
-            trunkWelcomeGrant = nil
-            trunkWelcome.requeue(grant, userId: owner)
-            offerTrunkWelcomeWhenIdle()
         }
     }
 

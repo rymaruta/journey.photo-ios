@@ -66,3 +66,32 @@ enum PostModalGate {
         return ready(snapshot())
     }
 }
+
+/// はじめての硬貨の全画面を出したあと、**本当に出たか**を見る（2026-10-18 の見直し）。
+///
+/// 決まった秒数で「出なかった」と決めない——全画面が出るのが遅い端末で、待ちへ戻したあとに遅れて出て、
+/// 一瞬出て閉じ、もう一度出ていた。決め方:
+/// - 出た合図（`TrunkWelcomeView` の onAppear）が来た → 出た
+/// - 何かが出ている（`ModalProbe`・自分の全画面が出かけている間も含む）→ 待ち続ける
+/// - 何も出ていない状態が `quietSeconds` 続いた → 出なかった（待ちへ戻す）
+struct WelcomePresentationWatch {
+    enum Outcome: Equatable { case shown, waiting, giveBack }
+
+    /// 何も出ていない状態がこれだけ続いたら「出なかった」
+    static let quietSeconds: TimeInterval = 1
+
+    private var quietSince: Date?
+
+    mutating func check(appeared: Bool, modalPresenting: Bool, now: Date) -> Outcome {
+        if appeared { return .shown }
+        if modalPresenting {
+            quietSince = nil
+            return .waiting
+        }
+        guard let since = quietSince else {
+            quietSince = now
+            return .waiting
+        }
+        return now.timeIntervalSince(since) >= Self.quietSeconds ? .giveBack : .waiting
+    }
+}

@@ -463,7 +463,7 @@ final class TrunkWelcomeRulesTests: XCTestCase {
                       "全画面が出たときに控えを消していない")
         XCTAssertTrue(root.contains("trunkWelcome.requeue(grant, userId: owner)"), "出なかった案内を待ちへ戻していない")
         XCTAssertTrue(root.contains("launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil"))
-        XCTAssertTrue(root.contains("welcomeOffer?.cancel()\n                welcomeOffer = nil\n                trunkWelcome.noteUser(userId)"),
+        XCTAssertTrue(root.contains("welcomeOffer?.cancel()\n                welcomeOffer = nil\n"),
                       "人が替わっても前の人の案内の待ちが止まらない")
         let store = "TrunkWelcome"
         XCTAssertTrue(try source("Core/Storage/AccountLocalData.swift").contains(store + ".removeData(for: userId, defaults: defaults)"),
@@ -479,5 +479,42 @@ final class TrunkWelcomeRulesTests: XCTestCase {
         for id in ["trunk.welcome.turn", "trunk.welcome.later", "trunk.welcome.close"] {
             XCTAssertTrue(view.contains(".accessibilityIdentifier(\"\(id)\")"), id)
         }
+    }
+
+    // MARK: 全画面が本当に出たか（2026-10-18 の見直し）
+
+    /// 秒数では決めない: 何かが出ている間（自分の全画面が出かけている・遅い端末）は何秒でも待つ
+    func testSlowPresentationIsNotGivenBack() {
+        var watch = WelcomePresentationWatch()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        for second in 0..<30 {
+            XCTAssertEqual(watch.check(appeared: false, modalPresenting: true, now: t0.addingTimeInterval(Double(second))),
+                           .waiting, "\(second) 秒で、出かけている全画面を下ろした")
+        }
+        XCTAssertEqual(watch.check(appeared: true, modalPresenting: true, now: t0.addingTimeInterval(31)), .shown)
+    }
+
+    /// 何も出ていない状態が続いたら「出なかった」。途中で何かが出たら数え直す
+    func testQuietWithoutAppearanceIsGivenBack() {
+        var watch = WelcomePresentationWatch()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(0.5)), .waiting)
+        // 別のシートが出た: 待ち直し
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: true, now: t0.addingTimeInterval(0.9)), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(1.2)), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(1.9)), .waiting,
+                       "何かが出たあとの静けさを数え直していない")
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false,
+                                   now: t0.addingTimeInterval(1.2 + WelcomePresentationWatch.quietSeconds)), .giveBack)
+    }
+
+    func testRootViewWatchesPresentationAndClearsOnUserSwitch() throws {
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(), now: Date())"),
+                      "出たかを何も出ていないことで確かめていない")
+        XCTAssertFalse(root.contains("for _ in 0..<30 where !welcomeAppeared"), "決まった秒数で出なかったと決めている")
+        XCTAssertTrue(root.contains("welcomeOffer = nil\n                trunkWelcomeGrant = nil\n                trunkWelcome.noteUser(userId)"),
+                      "人が替わっても出しかけの案内が残る")
     }
 }
