@@ -1638,6 +1638,62 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **券面ごとの裏**（2026-10-18 札 #306・板「すれちがい乗車券の裏面」）: わたしの乗車券で、マルス券と特別な券面の5つを
+    /// 順に選び、「裏を見る」で裏返して撮り、表に戻す。見本の利用者は Pro の姿（`-JPPreviewPro`・Debug のみ）。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**券面のボタンが無い・押せない・裏返らない・裏に「ご案内」が無い・
+    /// 特別な券面の裏が券面の名前を言わない（＝裏がマルス券のまま）なら落とす**
+    func testCapturesPassFaceBacks() {
+        guard let (app, card) = openPassPick(pro: true) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let backs: [(id: Int, name: String, shot: String)] = [
+            (0, "マルス券", "89a-裏 00 マルス券"), (1, "真鍮の金属板", "89b-裏 01 真鍮の金属板"),
+            (2, "大圏航路", "89c-裏 06 大圏航路"), (3, "箔押しの硬券", "89d-裏 10 箔押しの硬券"),
+            (4, "漆と蒔絵", "89e-裏 21 漆と蒔絵"), (5, "型押しの革", "89f-裏 26 型押しの革"),
+        ]
+        let flip = app.buttons["pass.pick.flip"].firstMatch
+        let side = { (card.value as? String) ?? "" }
+        for back in backs {
+            let button = app.buttons["pass.pick.face.\(back.id)"].firstMatch
+            guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(back.name)」のボタンが無い") }
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る（testCapturesPassFaces と同じ）
+            var swipes = 0
+            while !button.isHittable, swipes < 4 {
+                let previous = app.buttons["pass.pick.face.\(back.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
+                } else {
+                    app.swipeUp()
+                }
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            guard button.isHittable else { return XCTFail("券面「\(back.name)」を押せない") }
+            button.tap()
+            Thread.sleep(forTimeInterval: 1)
+            // 見本が画面の上に隠れていたら戻す
+            var pulls = 0
+            while card.frame.minY < 60, pulls < 4 {
+                app.swipeDown()
+                Thread.sleep(forTimeInterval: 1)
+                pulls += 1
+            }
+            guard flip.waitForExistence(timeout: 5), flip.isHittable else { return XCTFail("「裏を見る」を押せない") }
+            flip.tap()
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(side().hasSuffix("裏"), "「裏を見る」で裏返らない（\(back.name)・\(side())）")
+            XCTAssertTrue(card.label.contains("ご案内"), "裏に「ご案内」の帯が無い（\(back.name)・\(card.label)）")
+            if back.id != 0 {
+                XCTAssertTrue(card.label.contains(back.name), "裏が券面「\(back.name)」を言わない＝マルス券の裏のまま（\(card.label)）")
+            }
+            shoot(app, back.shot)
+            // 表に戻す（次の券面を選ぶ）
+            flip.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            XCTAssertTrue(side().hasSuffix("表"), "「表を見る」で表に戻らない（\(back.name)・\(side())）")
+        }
+    }
+
     func testCapturesPassOwnCard() {
         guard let (app, card) = openPassPick() else { return }
         Thread.sleep(forTimeInterval: 3)

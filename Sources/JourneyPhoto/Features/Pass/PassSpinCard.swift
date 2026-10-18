@@ -32,8 +32,10 @@ struct PassSpinTicket: View, Animatable {
                 .opacity(back ? 0 : 1)
                 .allowsHitTesting(!back)
                 .accessibilityHidden(back)
-            // 裏の角は表の券面の角に合わせる（2026-10-17）
-            PassCardBack(face: self.back, shine: shine, corner: PassCardFront.corner(front.style))
+            // 裏の角は表の券面の角に合わせる（2026-10-17）。裏の券面も表の券面にそろえる（2026-10-18・札 #306）。
+            // 裏を見ている間だけ、裏の光（傾き）を動かす
+            PassCardBack(face: self.back.styled(front.style), shine: shine, corner: PassCardFront.corner(front.style),
+                         visible: active && back)
                 // 回すときは、裏が鏡に映らないように先に半回転しておく（回さないときはそのまま）
                 .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
                 .opacity(back ? 1 : 0)

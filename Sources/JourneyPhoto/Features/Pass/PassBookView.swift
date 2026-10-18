@@ -27,7 +27,7 @@ struct PassBookView: View {
     @Environment(\.dismiss) private var dismiss
 
     /// 空のときの次の一手の題
-    nonisolated static var settingsTitle: String { L("すれちがいの設定", "Pass settings") }
+    nonisolated static var settingsTitle: String { L("すれちがい乗車券の設定", "Pass ticket settings") }
 
     var body: some View {
         let book = pass.book(hiding: hidden.snapshot)
@@ -52,8 +52,8 @@ struct PassBookView: View {
                         JPLoadingState(kind: .grid)
                     } else {
                         EmptyState(title: L("まだカードがありません", "No cards yet"),
-                                   message: L("すれちがいをオンにして出かけると、近くにいたアプリの人のカードがその日の夕方に届きます。",
-                                              "Turn on Pass and head out — cards from app users you passed arrive that evening."),
+                                   message: L("すれちがい乗車券をオンにして出かけると、近くにいたアプリの人のカードがその日の夕方に届きます。",
+                                              "Turn on Pass tickets and head out — cards from app users you passed arrive that evening."),
                                    actionTitle: Self.settingsTitle, actionIdentifier: "passBook.emptySettings") {
                             if fromSettings { dismiss() } else { showSettings = true }
                         }

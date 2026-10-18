@@ -61,7 +61,7 @@ struct ReportSheet: View {
                         receipt
                     } else {
                         if let passNote {
-                            Text(L("すれちがいのカードに書かれた字：\(passNote)", "Text on a Pass card: \(passNote)"))
+                            Text(L("すれちがい乗車券に書かれた字：\(passNote)", "Text on a Pass ticket: \(passNote)"))
                                 .font(.subheadline)
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(3)

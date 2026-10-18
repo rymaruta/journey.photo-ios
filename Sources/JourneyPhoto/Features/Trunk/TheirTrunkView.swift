@@ -530,7 +530,7 @@ struct TrunkTheirTicketView: View {
                                    via: PassTicket.via(L("旅先", "their trip")),
                                    style: PassTicketFaceStyle.fromWire(ticket.face == 0 ? nil : UInt8(ticket.face)))
         let back = PassTicketBackFace.preview(photoTitle: photo?.displayTitle, note: route.note, name: name,
-                                              origin: choice, homePrefecture: prefecture)
+                                              origin: choice, homePrefecture: prefecture, style: front.style)
         return (front, back)
     }
 }
