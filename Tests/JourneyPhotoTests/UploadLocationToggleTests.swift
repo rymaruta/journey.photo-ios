@@ -260,6 +260,9 @@ final class UploadLocationToggleTests: XCTestCase {
         m.setAttachesLocation(false)
         m.setAttachesLocation(true)
         XCTAssertEqual(m.placeTasks.count, 2, "本人が押してオンにしたのに引かない")
+        // 🔴 引き終わるまで待つ。残したまま次の試験に進むと、`ScriptedProtocol` の控え（共有の配列）を
+        // 次の試験の `reset()` と同時に書きうる（Mac の run 502 で後の UploadRetryVisibilityTests が落ちた。これが原因と見ている）
+        for task in m.placeTasks.values { await task.value }
     }
 
     /// 🔴 オフにしたら、引いている最中の問い合わせを取り消す
