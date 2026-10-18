@@ -25,6 +25,13 @@ final class TrunkWiringTests: XCTestCase {
     }
 
     /// 持っていない部品の影は白 10% 前後の一色の影絵（2026-10-17 owner。板の黒 35% は #121212 の札で見えない）。
+    /// 立体の正面の絵は、吊るす部品を部品ごとの高さ（`TrunkFaces.frontLift`）で上げる（#305 の見直し）。
+    /// 数式のテスト（`TrunkPartsFitTests`）は `TrunkFaces` だけを見るので、絵がそれを使っているかはここで見る
+    func testFrontFaceUsesPerPartLift() throws {
+        let box = try source("Features/Trunk/TrunkBoxView.swift")
+        XCTAssertTrue(box.contains("placed(p, dy: -TrunkFaces.frontLift(p))"), "立体の正面の吊るす部品が錠前にかかる高さで描かれる")
+    }
+
     /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
     func testMissingPartShadowIsFaintWhite() throws {
         XCTAssertGreaterThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.08)
