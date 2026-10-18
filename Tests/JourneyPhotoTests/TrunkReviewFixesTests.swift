@@ -47,7 +47,7 @@ final class TrunkReviewFixesTests: XCTestCase {
     @MainActor
     func testEntryAppearsOnlyAfterTheServerAnswers() async {
         let defaults = UserDefaults(suiteName: "trunk-availability-\(UUID().uuidString)")!
-        let availability = TrunkAvailability(defaults: defaults)
+        let availability = TrunkAvailability(defaults: defaults, entry: TrunkEntryStore())
         // 口が無い（API Gateway の道の無い 404 は本文に error が無い）
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 404, body: #"{"message":"Not Found"}"#)]
         await availability.refresh(userId: "u1", service: trunkService(), preview: false)
@@ -58,7 +58,7 @@ final class TrunkReviewFixesTests: XCTestCase {
         XCTAssertTrue(availability.isAvailable)
         // 一時の失敗では消さない・次に開いたときは読み終わる前から出す（覚えている）
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 500, body: "")]
-        let again = TrunkAvailability(defaults: defaults)
+        let again = TrunkAvailability(defaults: defaults, entry: TrunkEntryStore())
         await again.refresh(userId: "u1", service: trunkService(), preview: false)
         XCTAssertTrue(again.isAvailable)
         // 別の人は別に数える・ログアウトしたら出さない
