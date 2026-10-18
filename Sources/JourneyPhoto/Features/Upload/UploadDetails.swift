@@ -49,6 +49,21 @@ enum UploadDetails {
           "Joins other photos from this place as an example on its place page (from 2 photos)")
     }
 
+    /// 「撮影地の位置を付ける」の切り替えの名前（2026-10-18 判断・`UploadLocationPreference`）。
+    /// **約1kmに丸めることを名前に入れる**——何が送られるかを、切り替える前に読めるように
+    static var locationToggleTitle: String {
+        L("撮影地の位置を付ける（約1kmに丸めて保存）", "Attach the place's location (rounded to about 1 km)")
+    }
+
+    /// 切り替えの下の一言。**いまの値で何が起きるか**を言う（オフで何が残るかも言う——候補から選んだ撮影地は地図に載る）
+    static func locationToggleNote(attaches: Bool) -> String {
+        attaches
+            ? L("写真の位置情報から撮影地を入れ、地図に載せます",
+                "Fills in the place from the photo's location and puts it on the map.")
+            : L("写真の位置は送らず、撮影地も入れません。候補から選んだ撮影地だけ地図に載ります",
+                "The photo's location isn't sent or used to fill in the place. Only a place you pick from the suggestions goes on the map.")
+    }
+
     /// 投稿画面を開いたときに、写真を選ぶ画面を**自動で一度だけ**開くか。
     ///
     /// 「追加」→「ライブラリから選ぶ」の2手を省く。開かないのは:

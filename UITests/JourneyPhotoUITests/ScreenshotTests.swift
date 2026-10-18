@@ -981,6 +981,26 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 42b・42c: 「撮影地の位置を付ける」のオンとオフ（2026-10-18）。撮ったらオンに戻す
+    private func captureLocationToggle(_ app: XCUIApplication) {
+        let toggle = app.switches["upload.attachLocation"].firstMatch
+        for _ in 0..<2 where !(toggle.exists && toggle.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard toggle.exists, toggle.isHittable else { return }
+        shoot(app, "42b-投稿（撮影地の位置を付ける・オン）")
+        // つまみは行の右端（文字の上を押しても切り替わらない版がある）
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "42c-投稿（撮影地の位置を付ける・オフ）")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        // 下の絵（43〜）は上から探すので、元の位置へ戻す
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
     /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）
     private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
@@ -989,6 +1009,10 @@ final class ScreenshotTests: XCTestCase {
         guard editButton.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+
+        // 2026-10-18: 「撮影地の位置を付ける」の切り替え（撮影地の欄の上）。オンとオフの両方を撮り、
+        // **オンに戻す**（選んだ値は人ごとに端末に残る・あとの絵をオフのまま撮らない）。出なければ撮らない
+        captureLocationToggle(app)
 
         // 2026-10-03: 撮影地・作例の一言と、畳んだ「詳しい設定」（計画9）。下へ送って撮り、
         // 開いた絵も撮る。出なければ撮らない（この試験の決まり）
