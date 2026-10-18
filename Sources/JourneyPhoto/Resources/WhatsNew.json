@@ -24,7 +24,7 @@
         {
           "symbol": "suitcase",
           "title": { "ja": "旅のトランク", "en": "Travel trunk" },
-          "detail": { "ja": "公開の投稿1件ごとに、旅のラベルと硬貨が届きます（どちらも1日3枚まで）。硬貨はカプセルの機械で部品と換えられます。入口はマイページの上と設定です。", "en": "Each public post brings a travel label and a coin (up to three a day). Trade coins for trunk parts at the capsule machine. Find it at the top of My Page and in Settings." },
+          "detail": { "ja": "公開の投稿1件ごとに、旅のラベルと硬貨が届きます（どちらも1日3枚まで）。硬貨1枚でカプセルの機械を回すと、トランクの部品が出ます（持っている部品ならかけらに）。入口はマイページの上と設定です。", "en": "Each public post brings a travel label and a coin (up to three a day). Spend a coin at the capsule machine to get a trunk part (a fragment if you already have it). Find it at the top of My Page and in Settings." },
           "destination": "mypage"
         },
         {

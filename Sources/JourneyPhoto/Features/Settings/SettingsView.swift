@@ -249,12 +249,18 @@ struct SettingsView: View {
                                value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
                 }
                 .buttonStyle(JPRowButtonStyle())
-                .accessibilityElement(children: .ignore)
+                // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
                 .accessibilityLabel(TrunkEntryText.title)
                 .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
                 .accessibilityHint(TrunkEntryText.detail)
-                .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("settings.trunk")
+            }
+            // トランクから戻ったら数を読み直す（`markStale` のときだけ読む・2026-10-18 見直し）
+            .onAppear {
+                Task {
+                    await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
+                                             service: environment.trunk)
+                }
             }
         }
     }

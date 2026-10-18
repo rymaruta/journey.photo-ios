@@ -53,6 +53,7 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @State private var trunkForeground = TrunkForegroundGate()
     @Environment(\.scenePhase) private var scenePhase
     /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
@@ -109,9 +110,11 @@ struct MyPageView: View {
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
         .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
-        // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）
+        // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）。
+        // 2026-10-18: **裏から戻ったときだけ**（通知センター・Face ID からの戻りでは読まない・`TrunkForegroundGate`）。
+        // 読めた中身は入口の札の数にも入る（`TrunkEntryStore.read`・1回で両方）
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if trunkForeground.shouldRecheck(isBackground: phase == .background, isActive: phase == .active) {
                 Task { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk, force: true) }
             }
         }
@@ -981,8 +984,6 @@ struct MyPageView: View {
                                          "Stick the travel labels you get for posting"))
                 }
                 .buttonStyle(JPRowButtonStyle())
-                // 戻ったら上の札の数を読み直す（画面の中で硬貨を使う・ラベルを貼る）
-                .simultaneousGesture(TapGesture().onEnded { TrunkEntryStore.shared.markStale() })
                 .accessibilityIdentifier("trips.trunk")
                 JPCardDivider()
             }

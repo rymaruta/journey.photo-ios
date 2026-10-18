@@ -108,11 +108,98 @@ final class TrunkEntryTests: XCTestCase {
         await store.refresh(userId: "u1", available: true, service: svc, now: now.addingTimeInterval(300), preview: nil)
         XCTAssertEqual(trunkReads, 2)
         XCTAssertEqual(store.summary, TrunkEntrySummary(coins: 3, unstuck: 0))
-        // 前面に戻った
+        // 6時間たった
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200, body: body(coins: 13, pocket: 0), once: true)]
-        await store.refresh(userId: "u1", available: true, service: svc, force: true, now: now.addingTimeInterval(320), preview: nil)
+        await store.refresh(userId: "u1", available: true, service: svc, now: now.addingTimeInterval(300 + 6 * 3600), preview: nil)
         XCTAssertEqual(trunkReads, 3)
         XCTAssertEqual(store.summary?.coins, 13, "応答の coins をそのまま出していない")
+    }
+
+    /// 🔴 **読んでいる最中にもう1本呼ばれても、読むのは1回**（2本目は1本目の結果を待つ）
+    func testConcurrentRefreshReadsOnce() async {
+        let store = TrunkEntryStore()
+        let svc = service()
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200, body: body(coins: 5, pocket: 1))]
+        async let a: Void = store.refresh(userId: "u1", available: true, service: svc, preview: nil)
+        async let b: Void = store.refresh(userId: "u1", available: true, service: svc, preview: nil)
+        async let c: Void = store.refresh(userId: "u1", available: true, service: svc, preview: nil)
+        _ = await (a, b, c)
+        XCTAssertEqual(trunkReads, 1, "同時に呼ばれて2回以上読んでいる")
+        XCTAssertEqual(store.summary?.coins, 5)
+    }
+
+    /// 🔴 **口の確かめ（`TrunkAvailability`）と札の数は、1回の `GET /user/trunk` で両方埋まる**
+    /// （起動直後・裏から戻ったときに2回読んでいた）
+    func testAvailabilityAndEntryShareOneRead() async {
+        let defaults = UserDefaults(suiteName: "trunk-entry-\(UUID().uuidString)")!
+        let store = TrunkEntryStore()
+        let availability = TrunkAvailability(defaults: defaults, entry: store)
+        let svc = service()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200, body: body(coins: 7, pocket: 2))]
+        // 起動直後: マイページの口の確かめと、札の読み込みが同時に走る
+        async let check: Void = availability.refresh(userId: "u1", service: svc, now: now, preview: false)
+        async let chip: Void = store.refresh(userId: "u1", available: true, service: svc, now: now, preview: nil)
+        _ = await (check, chip)
+        XCTAssertEqual(trunkReads, 1, "口の確かめと札の数で2回読んでいる")
+        XCTAssertTrue(availability.isAvailable)
+        XCTAssertEqual(store.summary, TrunkEntrySummary(coins: 7, unstuck: 2))
+        // 裏から戻った: 口の確かめ（force）の1回で札の数も入り、札は読み直さない
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200, body: body(coins: 9, pocket: 0))]
+        await availability.refresh(userId: "u1", service: svc, force: true, now: now.addingTimeInterval(600), preview: false)
+        await store.refresh(userId: "u1", available: true, service: svc, now: now.addingTimeInterval(601), preview: nil)
+        XCTAssertEqual(trunkReads, 2, "前面に戻って2回読んでいる")
+        XCTAssertEqual(store.summary?.coins, 9, "口の確かめで読んだ硬貨が札に入っていない")
+        XCTAssertEqual(store.state?.coins, 9)
+    }
+
+    /// 取り消し（`CancellationError`・`URLError(.cancelled)`）は失敗に数えない（10分止めない）
+    func testCancellationIsNotAFailure() async {
+        XCTAssertTrue(TrunkEntryRule.isCancellation(CancellationError()))
+        XCTAssertTrue(TrunkEntryRule.isCancellation(URLError(.cancelled)))
+        XCTAssertFalse(TrunkEntryRule.isCancellation(URLError(.timedOut)))
+        XCTAssertFalse(TrunkEntryRule.isCancellation(APIError.unreachable))
+    }
+
+    /// アプリが**裏から**戻ったときだけ読み直す（通知センター・Face ID からの戻り＝inactive → active では読まない）
+    func testForegroundGateOnlyAfterBackground() async {
+        var gate = TrunkForegroundGate()
+        XCTAssertFalse(gate.shouldRecheck(isBackground: false, isActive: false), "inactive")
+        XCTAssertFalse(gate.shouldRecheck(isBackground: false, isActive: true), "通知センターから戻って読んでいる")
+        XCTAssertFalse(gate.shouldRecheck(isBackground: true, isActive: false))
+        XCTAssertFalse(gate.shouldRecheck(isBackground: false, isActive: false), "background → inactive")
+        XCTAssertTrue(gate.shouldRecheck(isBackground: false, isActive: true), "裏から戻って読まない")
+        XCTAssertFalse(gate.shouldRecheck(isBackground: false, isActive: true), "2回目の active でも読んでいる")
+    }
+
+    private func photo(_ id: String, audience: String? = nil, published: Bool? = nil) throws -> Photo {
+        let a = audience.map { ",\"audience\":\"\($0)\"" } ?? ""
+        let p = published.map { ",\"published\":\($0)" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(a)\(p)}".utf8))
+    }
+
+    /// 投稿の画面を閉じても、**公開の写真を上げたときだけ**読み直す（取り消し・ストーリー・下書き・絞った公開では読まない）
+    func testPostedPublicOnly() async throws {
+        XCTAssertFalse(TrunkEntryRule.postedPublic([]), "取り消し・ストーリー（写真が上がっていない）で読み直している")
+        XCTAssertFalse(TrunkEntryRule.postedPublic([try photo("d", published: false)]), "下書きで読み直している")
+        XCTAssertFalse(TrunkEntryRule.postedPublic([try photo("f", audience: "followers")]), "フォロワー限定で読み直している")
+        XCTAssertTrue(TrunkEntryRule.postedPublic([try photo("p")]))
+        XCTAssertTrue(TrunkEntryRule.postedPublic([try photo("f", audience: "followers"), try photo("e", audience: "everyone")]))
+    }
+
+    /// 札の題の下の型の名前と、読み上げに型の名前（2026-10-18 A′）
+    func testModelNameAndSpokenValue() async throws {
+        let state = TrunkSample.state(isPro: false, coins: 3)
+        let name = try XCTUnwrap(TrunkEntryText.modelName(state))
+        XCTAssertEqual(name, TrunkText.info(state.effectiveModel).name)
+        XCTAssertNil(TrunkEntryText.modelName(nil))
+        let spoken = TrunkEntryText.accessibilityValue(TrunkEntrySummary(state), model: name)
+        XCTAssertTrue(spoken.hasPrefix(name), spoken)
+        XCTAssertTrue(spoken.contains(L("硬貨 3枚", "3 coins")), spoken)
+        // Pro をやめた人は、いま描く型（最後の無料の型）の名前
+        let lapsed = TrunkState(model: .urushi, effectiveModel: .leather, pocket: [], stuck: [], limit: 30, isPro: false,
+                                rerollsLeft: 0, posts: 3, receiveLabels: true)
+        XCTAssertEqual(TrunkEntryText.modelName(lapsed), TrunkText.info(.leather).name)
     }
 
     /// 口が無い人のためには読まない・数も出さない
@@ -180,14 +267,35 @@ final class TrunkEntryTests: XCTestCase {
         let chip = try source("Features/Profile/TrunkProfileChip.swift")
         XCTAssertTrue(chip.contains(#".accessibilityIdentifier("mypage.trunk")"#))
         XCTAssertTrue(chip.contains(".onDisappear { entry.markStale() }"), "トランクから戻っても数を読み直さない")
-        XCTAssertTrue(chip.contains("if phase == .active { Task { await refresh(force: true) } }"), "前面に戻ったときに数を読み直さない")
-        XCTAssertTrue(chip.contains(".onChange(of: tabRouter.postSheetsClosed)"), "投稿を閉じても数を読み直さない")
-        // 真鍮は点だけ（黒地の札の上）。硬貨の数は白
-        XCTAssertTrue(chip.contains(".fill(WebTheme.accent)\n                        .frame(width: 8, height: 8)"))
+        XCTAssertFalse(chip.contains("scenePhase"), "札が前面への戻りで別に読んでいる（口の確かめの1回にまとめる）")
+        XCTAssertTrue(chip.contains("guard TrunkEntryRule.postedPublic(tabRouter.lastPosted) else { return }"),
+                      "投稿の画面を閉じるたびに読み直している")
+        XCTAssertTrue(chip.contains("if isOnScreen { Task { await refresh() } }"), "札が出ていない間に読んでいる")
+        // VoiceOver の2回叩きで開ける（ボタンを `.ignore` で包まない）
+        XCTAssertFalse(chip.contains(".accessibilityElement(children: .ignore)"))
+        // 真鍮は点だけ（黒地の札の上・名前の側に離す）。硬貨の数は白
+        XCTAssertTrue(chip.contains(".fill(WebTheme.accent)\n                            .frame(width: 8, height: 8)"))
+        // A′: 左に自分のトランクの絵（`TrunkBoxView` の胴だけ）・題の下に型の名前（12pt・text-2）・高さ 56
+        XCTAssertTrue(chip.contains("TrunkBoxView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,"))
+        XCTAssertTrue(chip.contains("bodyOnly: true, parts: state.equipped)"))
+        XCTAssertTrue(chip.contains("static let size = CGSize(width: 48, height: 40)"))
+        XCTAssertTrue(chip.contains("Text(model)\n                        .font(JPFont.caption)\n                        .foregroundStyle(WebTheme.text2)"))
+        XCTAssertTrue(chip.contains(".frame(minHeight: 56)"))
+        // MyPage は前面への戻りを裏からのときだけにする（口の確かめ・`TrunkForegroundGate`）
+        XCTAssertTrue(page.contains("if trunkForeground.shouldRecheck(isBackground: phase == .background, isActive: phase == .active) {"))
+        XCTAssertFalse(page.contains("simultaneousGesture(TapGesture().onEnded { TrunkEntryStore"))
         XCTAssertTrue(chip.contains("Text(TrunkEntryText.coins(summary.coins))\n                        .font(JPFont.mono(15, relativeTo: .subheadline))\n                        .foregroundStyle(WebTheme.text)"))
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("passSection\n                    trunkSection\n                    privacySection"))
         XCTAssertTrue(settings.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))
         XCTAssertTrue(settings.contains(#".accessibilityIdentifier("settings.trunk")"#))
+        XCTAssertFalse(settings.contains(".accessibilityElement(children: .ignore)\n                .accessibilityLabel(TrunkEntryText.title)"))
+        // 設定からトランクへ行って戻ったら、行の数を読み直す（`markStale` のときだけ読む）
+        XCTAssertTrue(settings.contains(".onDisappear { trunkEntry.markStale() }"))
+        XCTAssertTrue(settings.contains("            .onAppear {\n                Task {\n                    await trunkEntry.refresh("))
+        // 口の確かめは札の数と1本の読み込み（`TrunkEntryStore.read`）を通る
+        let availability = try source("Core/Storage/TrunkAvailability.swift")
+        XCTAssertTrue(availability.contains("_ = try await entry.read(userId: userId, service: service, now: now)"))
+        XCTAssertFalse(availability.contains("try await service.state()"))
     }
 }
