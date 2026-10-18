@@ -248,4 +248,15 @@ final class CamperWiringTests: XCTestCase {
         XCTAssertEqual(CamperText.dexNote(), L("図鑑 132 · 近日 \(soon)", "Dex 132 · \(soon) soon"))
         XCTAssertEqual(soon, 34)
     }
+
+    /// 車の名前は「とおまわり号」（英語 Detour・owner の決定）。見出しと部品の一覧に出て、眉ラベルの形は変えない
+    func testCarNameIsDetour() throws {
+        XCTAssertEqual(CamperText.carName, L("とおまわり号", "Detour"))
+        XCTAssertEqual(CamperText.partsTitle, L("とおまわり号の部品", "Detour\u{2019}s parts"))
+        XCTAssertEqual(CamperText.eyebrow(owner: nil, stage: .camper), L("わたしの車 · キャンピングカー", "My camper · Camper"))
+        let view = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
+        XCTAssertTrue(view.contains("Text(CamperText.carName)"))
+        XCTAssertTrue(view.contains("Text(CamperText.partsTitle)"))
+        XCTAssertFalse(view.contains("ひかり号"))
+    }
 }

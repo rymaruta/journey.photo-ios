@@ -99,7 +99,8 @@ struct CamperGarageView: View {
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .lineLimit(1)
-            Text(L("写真で作るキャンピングカー", "Photo camper"))
+            // 見出しは車の名前（板 Main: 眉ラベル「〜の車 · 段」の下に「とおまわり号」）
+            Text(CamperText.carName)
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.foreground)
                 .lineLimit(1)
@@ -323,7 +324,7 @@ struct CamperGarageView: View {
     private var collection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(L("部品を集める", "Collect parts")).jpEyebrow().foregroundStyle(WebTheme.accent)
+                Text(CamperText.partsTitle).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Spacer()
                 Text("\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total) · \(CamperText.dexNote())")
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))

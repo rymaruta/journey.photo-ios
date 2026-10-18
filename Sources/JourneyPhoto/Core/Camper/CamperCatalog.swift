@@ -887,6 +887,13 @@ enum CamperCounting {
 /// 読み上げの文（車の様子を言葉で）
 enum CamperText {
 
+    /// 車の名前（2026-10-18 owner の決定: 「とおまわり号」・英語は Detour。板の「ひかり号」から改めた）。
+    /// 板 Main では見出しの大きな字、CamperCollection・CamperDex では「とおまわり号の部品」
+    static var carName: String { L("とおまわり号", "Detour") }
+
+    /// 部品の一覧の眉ラベル（板 CamperCollection「とおまわり号の部品」）
+    static var partsTitle: String { L("\(carName)の部品", "\(carName)\u{2019}s parts") }
+
     /// 見出しの上の眉ラベル。名前を入れていない人（「ユーザー」の代わりの呼び方）には名前を出さない。
     /// 日本語は名前と「の車」の間を空けない（2026-10-18: 実機の絵で「ユーザー の車」と出ていた）
     static func eyebrow(owner: String?, stage: CamperStage) -> String {
@@ -906,7 +913,7 @@ enum CamperText {
     static func accessibilityLabel(stage: CamperStage, mood: CamperMood, loadout: CamperLoadout, doorOpen: Bool,
                                    preview: CamperPart?) -> String {
         var parts: [String] = []
-        parts.append(L("\(stage.name)。\(mood.name)", "\(stage.name), \(mood.name)"))
+        parts.append(L("\(carName)、\(stage.name)。\(mood.name)", "\(carName), \(stage.name), \(mood.name)"))
         parts.append(L("塗装は\(loadout.part(.paint).name)", "Paint: \(loadout.part(.paint).name)"))
         parts.append(L("\(loadout.part(.wheel).name)のホイール", "\(loadout.part(.wheel).name) wheels"))
         parts.append(L("\(loadout.part(.headlight).name)", "\(loadout.part(.headlight).name)"))
