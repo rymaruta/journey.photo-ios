@@ -105,10 +105,7 @@ struct TrunkBoxView: View {
     /// 地・目・しみ・古び・絵・ラベル（z 0）
     @ViewBuilder
     private func surfaceLayers(_ look: TrunkLook) -> some View {
-        surface(look.surface)
-        texture(look.texture)
-        stains(look)
-        modelWear(look)
+        TrunkSkin(look: look, w: Self.W, h: Self.H)
         if let art = look.art {
             TrunkArtCanvas(strokes: TrunkArtwork.strokes(art), viewBox: (Self.W, Self.H), fit: false)
                 .frame(width: Self.W, height: Self.H)
@@ -132,13 +129,8 @@ struct TrunkBoxView: View {
     }
 
     /// 錠前の面（付けた錠前の金属があればそれ・モックの `P.lock`）
-    @ViewBuilder
     private func lockFace(_ look: TrunkLook, _ fittings: TrunkFittings, w: Double, h: Double) -> some View {
-        if let metal = fittings.lockMetal {
-            TrunkPartPaintView(paint: .metal(metal))
-        } else {
-            TrunkFillView(fill: look.lock.fill, stage: stage, w: w, h: h)
-        }
+        TrunkHardwareFace(look: look, fittings: fittings, w: w, h: h)
     }
 
     /// 胴に付けた部品（ピンバッジ・ワッペン）。ラベルと艶の上に（モック Equip の z 10）
@@ -175,150 +167,6 @@ struct TrunkBoxView: View {
         scratches(look)
         gloss(look)
         shade
-    }
-
-    // MARK: 地
-
-    @ViewBuilder
-    private func surface(_ surface: TrunkSurface) -> some View {
-        switch surface {
-        case let .radial(inner, outer, center, radius, outerStop):
-            ZStack(alignment: .topLeading) {
-                Color(trunk: outer)
-                EllipticalGradient(stops: [Gradient.Stop(color: Color(trunk: inner), location: 0),
-                                           Gradient.Stop(color: Color(trunk: outer), location: outerStop),
-                                           Gradient.Stop(color: Color(trunk: outer), location: 1)],
-                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-                    .frame(width: radius.x * Self.W * 2, height: radius.y * Self.H * 2)
-                    .position(x: center.x * Self.W, y: center.y * Self.H)
-            }
-            .frame(width: Self.W, height: Self.H)
-        case let .canvasStripes(base, thin, band):
-            ZStack {
-                Color(trunk: base)
-                TrunkStripes(angle: 90, period: 18, bands: [(8, 9, thin), (16, 18, band)])
-            }
-            .frame(width: Self.W, height: Self.H)
-        case .corrugated:
-            ZStack {
-                Color(trunk: TrunkRGBA(0xDADEE2))
-                TrunkStripes(angle: 180, period: 9, bands: [(7, 8, TrunkRGBA(0xA9AFB5)), (8, 9, TrunkRGBA(0xF1F3F5))])
-            }
-            .frame(width: Self.W, height: Self.H)
-        case let .wicker(a, b, c):
-            ZStack {
-                Color(trunk: a)
-                TrunkStripes(angle: 0, period: 9, bands: [(4, 5, b), (5, 9, c)])
-                TrunkStripes(angle: 90, period: 6, bands: [(0, 1, TrunkRGBA(r: 60, g: 35, b: 10, a: 0.22))])
-            }
-            .frame(width: Self.W, height: Self.H)
-        case let .planks(top, bottom):
-            ZStack {
-                LinearGradient(colors: [Color(trunk: top), Color(trunk: bottom)], startPoint: .top, endPoint: .bottom)
-                TrunkStripes(angle: 91, period: 17, bands: [(0, 2, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.10)),
-                                                             (9, 10, TrunkRGBA(r: 255, g: 220, b: 180, a: 0.05))])
-                TrunkStripes(angle: 180, period: 44, bands: [(0, 1.5, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.45))])
-            }
-            .frame(width: Self.W, height: Self.H)
-        case .polished:
-            TrunkPaint.linear(TrunkGradient(angle: 100, stops: [
-                TrunkStop(color: TrunkRGBA(0x8E969E), location: 0), TrunkStop(color: TrunkRGBA(0xE9EDF0), location: 0.20),
-                TrunkStop(color: TrunkRGBA(0xB7BEC5), location: 0.38), TrunkStop(color: TrunkRGBA(0xF7F9FA), location: 0.52),
-                TrunkStop(color: TrunkRGBA(0x9AA2AA), location: 0.72), TrunkStop(color: TrunkRGBA(0xD4D9DD), location: 1),
-            ]), w: Self.W, h: Self.H)
-            .frame(width: Self.W, height: Self.H)
-        }
-    }
-
-    @ViewBuilder
-    private func texture(_ texture: TrunkTexture) -> some View {
-        switch texture {
-        case .none:
-            EmptyView()
-        case .grain:
-            TrunkGrain.leather.frame(width: Self.W, height: Self.H)
-        case .weave:
-            ZStack {
-                TrunkStripes(angle: 0, period: 3, bands: [(0, 1, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.07))])
-                TrunkStripes(angle: 90, period: 3, bands: [(0, 1, TrunkRGBA(r: 255, g: 255, b: 255, a: 0.05))])
-            }
-            .frame(width: Self.W, height: Self.H)
-        case .sheen:
-            TrunkPaint.linear(TrunkGradient(angle: 115, stops: [
-                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0), location: 0.30),
-                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0.45), location: 0.42),
-                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0), location: 0.54),
-            ]), w: Self.W, h: Self.H)
-            .frame(width: Self.W, height: Self.H)
-        case .seams:
-            TrunkStripes(angle: 180, period: 90, bands: [(89, 90, TrunkRGBA(r: 40, g: 50, b: 60, a: 0.45))])
-                .frame(width: Self.W, height: Self.H)
-        }
-    }
-
-    /// 角の擦れ（明るいしみ）と茶色いしみ（帆布）
-    private func stains(_ look: TrunkLook) -> some View {
-        let st = stage
-        let light = TrunkRGBA(r: 255, g: 240, b: 215, a: 1)
-        let dark = TrunkRGBA(r: 80, g: 50, b: 20, a: 1)
-        return ZStack(alignment: .topLeading) {
-            TrunkSpot(color: light.alpha(look.scuff * st * 1.4), x: Self.W * 0.22, y: Self.H * 0.86, rx: 50, ry: 26)
-            TrunkSpot(color: light.alpha(look.scuff * st * 1.2), x: Self.W * 0.80, y: Self.H * 0.10, rx: 70, ry: 18)
-            TrunkSpot(color: dark.alpha(look.stain * st), x: Self.W * 0.62, y: Self.H * 0.64, rx: 40, ry: 30)
-            TrunkSpot(color: dark.alpha(look.stain * st * 0.8), x: Self.W * 0.14, y: Self.H * 0.40, rx: 30, ry: 22)
-        }
-        .frame(width: Self.W, height: Self.H, alignment: .topLeading)
-    }
-
-    /// 型ごとの古び方（モック MaterialAging・`modelWear`）
-    @ViewBuilder
-    private func modelWear(_ look: TrunkLook) -> some View {
-        let st = stage
-        let w = Self.W, h = Self.H
-        ZStack(alignment: .topLeading) {
-            switch model {
-            case .urushi:
-                // 黒が透けて、角から下塗りの朱が出てくる
-                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.55 * st), x: w * 0.06, y: h * 0.08, rx: w * 0.34, ry: h * 0.22)
-                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.5 * st), x: w * 0.94, y: h * 0.92, rx: w * 0.30, ry: h * 0.20)
-                TrunkSpot(color: TrunkRGBA(r: 170, g: 46, b: 30, a: 0.32 * st), x: w * 0.50, y: h * 0.34, rx: w * 0.22, ry: h * 0.14)
-                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.35 * st), x: w * 0.98, y: h * 0.30, rx: w * 0.18, ry: h * 0.30)
-            case .kori:
-                // 縁が濃く焼け、編み目に明るい筋
-                EllipticalGradient(stops: [Gradient.Stop(color: Color.clear, location: 0),
-                                           Gradient.Stop(color: Color.clear, location: 0.55),
-                                           Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 90, g: 50, b: 18, a: 0.38 * st)), location: 1)],
-                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-                    .frame(width: w * 1.2, height: h)
-                    .position(x: w / 2, y: h / 2)
-                TrunkStripes(angle: 90, period: 83, bands: [(37, 39, TrunkRGBA(r: 255, g: 240, b: 210, a: 0.18 * st))])
-            case .sleeper:
-                TrunkPaint.linear(TrunkGradient(angle: 165, stops: [
-                    TrunkStop(color: TrunkRGBA(r: 255, g: 215, b: 200, a: 0.12 * st), location: 0),
-                    TrunkStop(color: TrunkRGBA(r: 255, g: 215, b: 200, a: 0), location: 0.40),
-                ]), w: w, h: h)
-                TrunkSpot(color: TrunkRGBA(r: 255, g: 220, b: 200, a: 0.12 * st), x: w * 0.5, y: h * 0.92, rx: w * 0.30, ry: h * 0.16)
-            case .captain:
-                TrunkStripes(angle: 180, period: 44, bands: [(0, 20, TrunkRGBA(r: 255, g: 235, b: 210, a: 0.10 * st))])
-                TrunkSpot(color: TrunkRGBA(r: 200, g: 200, b: 190, a: 0.18 * st), x: w * 0.20, y: h * 0.80, rx: w * 0.40, ry: h * 0.30)
-            case .starchart:
-                TrunkSpot(color: TrunkRGBA(r: 201, g: 166, b: 107, a: 0.10 * st), x: w * 0.5, y: h * 0.5, rx: w * 0.5, ry: h * 0.4)
-            case .steamer:
-                TrunkSpot(color: TrunkRGBA(r: 255, g: 240, b: 215, a: 0.12 * st), x: w * 0.30, y: h * 0.70, rx: w * 0.30, ry: h * 0.20)
-                TrunkSpot(color: TrunkRGBA(r: 60, g: 40, b: 20, a: 0.25 * st), x: w * 0.80, y: h * 0.30, rx: w * 0.26, ry: h * 0.18)
-            case .canvas:
-                TrunkPaint.linear(TrunkGradient(angle: 180, stops: [
-                    TrunkStop(color: TrunkRGBA(r: 255, g: 245, b: 225, a: 0.16 * st), location: 0),
-                    TrunkStop(color: TrunkRGBA(r: 255, g: 245, b: 225, a: 0), location: 0.5),
-                ]), w: w, h: h)
-            case .leather:
-                TrunkSpot(color: TrunkRGBA(r: 255, g: 225, b: 190, a: 0.12 * st), x: w * 0.5, y: 0, rx: w * 0.40, ry: h * 0.30)
-            case .aluminum, .clipper:
-                EmptyView()
-            }
-        }
-        .frame(width: w, height: h, alignment: .topLeading)
-        .allowsHitTesting(false)
     }
 
     /// 貼ったラベル（置き場つきはその場所に・置き場なしは新しい 11 枚をおまかせに・古いものほど褪せる）
@@ -390,63 +238,7 @@ struct TrunkBoxView: View {
 
     /// 革のベルト・組紐・麻の縄（縦に通す）
     private func straps(_ look: TrunkLook) -> some View {
-        ZStack(alignment: .topLeading) {
-            if let s = look.straps {
-                ForEach(s.x, id: \.self) { x in
-                    ZStack(alignment: .topLeading) {
-                        LinearGradient(stops: [Gradient.Stop(color: Color.black.opacity(0.4), location: 0),
-                                               Gradient.Stop(color: Color(trunk: s.color), location: 0.18),
-                                               Gradient.Stop(color: Color(trunk: s.color), location: 0.82),
-                                               Gradient.Stop(color: Color.black.opacity(0.4), location: 1)],
-                                       startPoint: .leading, endPoint: .trailing)
-                        TrunkGrain.leather
-                        // 縫い目（左右 3pt の内側の破線）
-                        Path { p in
-                            p.move(to: CGPoint(x: 3, y: 0)); p.addLine(to: CGPoint(x: 3, y: Self.H))
-                            p.move(to: CGPoint(x: s.width - 3, y: 0)); p.addLine(to: CGPoint(x: s.width - 3, y: Self.H))
-                        }
-                        .stroke(Color(trunk: s.edge), style: StrokeStyle(lineWidth: 1.2, dash: [3.6, 2.4]))
-                        // ベルトの穴
-                        ForEach([104.0, 116, 128], id: \.self) { y in
-                            Circle().fill(Color.black.opacity(0.75))
-                                .frame(width: 4, height: 4)
-                                .offset(x: s.width / 2 - 2, y: y)
-                        }
-                    }
-                    .frame(width: s.width, height: Self.H)
-                    .overlay(Rectangle().strokeBorder(Color.black.opacity(0.35), lineWidth: 1))
-                    .shadow(color: Color.black.opacity(0.35), radius: 3, x: 3, y: 0)
-                    .offset(x: x)
-                }
-            }
-            if let c = look.cords {
-                ForEach(c.x, id: \.self) { x in
-                    ZStack {
-                        Color(trunk: TrunkRGBA.mix(0xB3261E, 0xC8503A, stage))
-                        TrunkStripes(angle: 40, period: 7, bands: [(3, 4, TrunkRGBA(0x6E140F)),
-                                                                    (4, 7, TrunkRGBA.mix(0xC8352A, 0xD06048, stage))])
-                    }
-                    .frame(width: c.width, height: Self.H)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .shadow(color: Color.black.opacity(0.5), radius: 2.5, x: 2, y: 0)
-                    .offset(x: x)
-                }
-            }
-            if let hemp = look.hemp {
-                ForEach(hemp.x, id: \.self) { x in
-                    ZStack {
-                        Color(trunk: TrunkRGBA.mix(0xE2D2A8, 0xCDBB8E, stage))
-                        TrunkStripes(angle: 62, period: 7, bands: [(3, 4.5, TrunkRGBA(0xA8955F)),
-                                                                    (4.5, 7, TrunkRGBA.mix(0xD3C094, 0xBFAC7E, stage))])
-                    }
-                    .frame(width: hemp.width, height: Self.H)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .shadow(color: Color.black.opacity(0.4), radius: 2, x: 2, y: 0)
-                    .offset(x: x)
-                }
-            }
-        }
-        .frame(width: Self.W, height: Self.H, alignment: .topLeading)
+        TrunkBandStrips(look: look, height: Self.H, holes: true)
     }
 
     private func rail(_ look: TrunkLook) -> some View {
@@ -514,7 +306,7 @@ struct TrunkBoxView: View {
         return ZStack(alignment: .topLeading) {
             ForEach(Array(dots.indices), id: \.self) { i in
                 let d = dots[i]
-                rivetFace(slat: d.slat, metal: look.rivetMetal, model: look.model, r: d.r)
+                TrunkRivetFace(slat: d.slat, metal: look.rivetMetal, model: look.model, r: d.r)
                     .frame(width: d.r * 2, height: d.r * 2)
                     .clipShape(Circle())
                     .shadow(color: Color.black.opacity(0.6), radius: 0.75, x: 0, y: 1)
@@ -524,29 +316,11 @@ struct TrunkBoxView: View {
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
     }
 
-    @ViewBuilder
-    private func rivetFace(slat: Bool, metal: TrunkMetal?, model: TrunkModel, r: Double) -> some View {
-        if slat {
-            RadialGradient(stops: [Gradient.Stop(color: Color(trunk: TrunkRGBA(0xF6E3B4)), location: 0),
-                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x9C7A42)), location: 0.7),
-                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x9C7A42)), location: 1)],
-                           center: UnitPoint(x: 0.35, y: 0.35), startRadius: 0, endRadius: r * 2)
-        } else if model == .clipper {
-            RadialGradient(stops: [Gradient.Stop(color: Color.white, location: 0),
-                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x8A9198)), location: 0.7),
-                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x8A9198)), location: 1)],
-                           center: UnitPoint(x: 0.35, y: 0.35), startRadius: 0, endRadius: r * 2)
-        } else {
-            // アルミのケースの鋲（新品のクローム）
-            TrunkPaint.metal(metal ?? .chrome, stage: 0, w: r * 2, h: r * 2)
-        }
-    }
-
     private func corners(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         let cs = look.corners.size
         return ZStack(alignment: .topLeading) {
             ForEach(TrunkCorner.allCases, id: \.self) { pos in
-                cornerFace(look, pos, paint: fittings.cornerPaint)
+                TrunkCornerCap(look: look, pos: pos, paint: fittings.cornerPaint, size: cs)
                     .frame(width: cs, height: cs)
                     .clipShape(pos.shape(round: look.corners.round))
                     .overlay(alignment: .top) {
@@ -558,36 +332,6 @@ struct TrunkBoxView: View {
             }
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
-    }
-
-    private func cornerFace(_ look: TrunkLook, _ pos: TrunkCorner, paint: TrunkPartPaint?) -> some View {
-        let cs = look.corners.size
-        let rp = pos.rivetPoint
-        return ZStack(alignment: .topLeading) {
-            if let paint {
-                // 付けた角金具（モックの `P.corner`）
-                TrunkPartPaintView(paint: paint)
-            } else {
-                TrunkFillView(fill: look.corners.fill, stage: stage, w: cs, h: cs)
-            }
-            if model == .captain && stage > 0 {
-                // 真鍮の角が青緑にくすむ（船長の箱）
-                TrunkSpot(color: TrunkRGBA(r: 86, g: 150, b: 120, a: 0.55 * stage), x: rp.x * cs, y: rp.y * cs,
-                          rx: cs * 0.6, ry: cs * 0.6, fadeEnd: 0.7)
-            }
-            if look.corners.rivet {
-                // 角の鋲（明るい頭と暗い縁）
-                RadialGradient(stops: [Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 255, g: 250, b: 235, a: 0.9)), location: 0),
-                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 255, g: 250, b: 235, a: 0.9)), location: 1.2 / 3.2),
-                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.9)), location: 1.6 / 3.2),
-                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.9)), location: 2.8 / 3.2),
-                                       Gradient.Stop(color: Color.clear, location: 1)],
-                               center: .center, startRadius: 0, endRadius: 3.2)
-                    .frame(width: 6.4, height: 6.4)
-                    .position(x: rp.x * cs, y: rp.y * cs)
-            }
-        }
-        .frame(width: cs, height: cs, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -730,6 +474,313 @@ struct TrunkBoxView: View {
     }
 }
 
+/// 胴の地・目・しみ・型ごとの古び（正面の胴と、回したときの面が同じ描き方を使う・2026-10-18）。
+/// CSS の背景と同じく、置く面の大きさ（`w`×`h`）に対して描く
+struct TrunkSkin: View {
+    let look: TrunkLook
+    let w: Double
+    let h: Double
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            surface(look.surface)
+            texture(look.texture)
+            stains
+            modelWear
+        }
+        .frame(width: w, height: h, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func surface(_ surface: TrunkSurface) -> some View {
+        switch surface {
+        case let .radial(inner, outer, center, radius, outerStop):
+            ZStack(alignment: .topLeading) {
+                Color(trunk: outer)
+                EllipticalGradient(stops: [Gradient.Stop(color: Color(trunk: inner), location: 0),
+                                           Gradient.Stop(color: Color(trunk: outer), location: outerStop),
+                                           Gradient.Stop(color: Color(trunk: outer), location: 1)],
+                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+                    .frame(width: radius.x * w * 2, height: radius.y * h * 2)
+                    .position(x: center.x * w, y: center.y * h)
+            }
+            .frame(width: w, height: h)
+        case let .canvasStripes(base, thin, band):
+            ZStack {
+                Color(trunk: base)
+                TrunkStripes(angle: 90, period: 18, bands: [(8, 9, thin), (16, 18, band)])
+            }
+            .frame(width: w, height: h)
+        case .corrugated:
+            ZStack {
+                Color(trunk: TrunkRGBA(0xDADEE2))
+                TrunkStripes(angle: 180, period: 9, bands: [(7, 8, TrunkRGBA(0xA9AFB5)), (8, 9, TrunkRGBA(0xF1F3F5))])
+            }
+            .frame(width: w, height: h)
+        case let .wicker(a, b, c):
+            ZStack {
+                Color(trunk: a)
+                TrunkStripes(angle: 0, period: 9, bands: [(4, 5, b), (5, 9, c)])
+                TrunkStripes(angle: 90, period: 6, bands: [(0, 1, TrunkRGBA(r: 60, g: 35, b: 10, a: 0.22))])
+            }
+            .frame(width: w, height: h)
+        case let .planks(top, bottom):
+            ZStack {
+                LinearGradient(colors: [Color(trunk: top), Color(trunk: bottom)], startPoint: .top, endPoint: .bottom)
+                TrunkStripes(angle: 91, period: 17, bands: [(0, 2, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.10)),
+                                                             (9, 10, TrunkRGBA(r: 255, g: 220, b: 180, a: 0.05))])
+                TrunkStripes(angle: 180, period: 44, bands: [(0, 1.5, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.45))])
+            }
+            .frame(width: w, height: h)
+        case .polished:
+            TrunkPaint.linear(TrunkGradient(angle: 100, stops: [
+                TrunkStop(color: TrunkRGBA(0x8E969E), location: 0), TrunkStop(color: TrunkRGBA(0xE9EDF0), location: 0.20),
+                TrunkStop(color: TrunkRGBA(0xB7BEC5), location: 0.38), TrunkStop(color: TrunkRGBA(0xF7F9FA), location: 0.52),
+                TrunkStop(color: TrunkRGBA(0x9AA2AA), location: 0.72), TrunkStop(color: TrunkRGBA(0xD4D9DD), location: 1),
+            ]), w: w, h: h)
+            .frame(width: w, height: h)
+        }
+    }
+
+    @ViewBuilder
+    private func texture(_ texture: TrunkTexture) -> some View {
+        switch texture {
+        case .none:
+            EmptyView()
+        case .grain:
+            TrunkGrain.leather.frame(width: w, height: h)
+        case .weave:
+            ZStack {
+                TrunkStripes(angle: 0, period: 3, bands: [(0, 1, TrunkRGBA(r: 0, g: 0, b: 0, a: 0.07))])
+                TrunkStripes(angle: 90, period: 3, bands: [(0, 1, TrunkRGBA(r: 255, g: 255, b: 255, a: 0.05))])
+            }
+            .frame(width: w, height: h)
+        case .sheen:
+            TrunkPaint.linear(TrunkGradient(angle: 115, stops: [
+                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0), location: 0.30),
+                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0.45), location: 0.42),
+                TrunkStop(color: TrunkRGBA(r: 255, g: 255, b: 255, a: 0), location: 0.54),
+            ]), w: w, h: h)
+            .frame(width: w, height: h)
+        case .seams:
+            TrunkStripes(angle: 180, period: 90, bands: [(89, 90, TrunkRGBA(r: 40, g: 50, b: 60, a: 0.45))])
+                .frame(width: w, height: h)
+        }
+    }
+
+    /// 角の擦れ（明るいしみ）と茶色いしみ（帆布）
+    private var stains: some View {
+        let st = look.stage
+        let light = TrunkRGBA(r: 255, g: 240, b: 215, a: 1)
+        let dark = TrunkRGBA(r: 80, g: 50, b: 20, a: 1)
+        return ZStack(alignment: .topLeading) {
+            TrunkSpot(color: light.alpha(look.scuff * st * 1.4), x: w * 0.22, y: h * 0.86, rx: 50, ry: 26)
+            TrunkSpot(color: light.alpha(look.scuff * st * 1.2), x: w * 0.80, y: h * 0.10, rx: 70, ry: 18)
+            TrunkSpot(color: dark.alpha(look.stain * st), x: w * 0.62, y: h * 0.64, rx: 40, ry: 30)
+            TrunkSpot(color: dark.alpha(look.stain * st * 0.8), x: w * 0.14, y: h * 0.40, rx: 30, ry: 22)
+        }
+        .frame(width: w, height: h, alignment: .topLeading)
+    }
+
+    /// 型ごとの古び方（モック MaterialAging・`modelWear`）
+    @ViewBuilder
+    private var modelWear: some View {
+        let st = look.stage
+        ZStack(alignment: .topLeading) {
+            switch look.model {
+            case .urushi:
+                // 黒が透けて、角から下塗りの朱が出てくる
+                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.55 * st), x: w * 0.06, y: h * 0.08, rx: w * 0.34, ry: h * 0.22)
+                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.5 * st), x: w * 0.94, y: h * 0.92, rx: w * 0.30, ry: h * 0.20)
+                TrunkSpot(color: TrunkRGBA(r: 170, g: 46, b: 30, a: 0.32 * st), x: w * 0.50, y: h * 0.34, rx: w * 0.22, ry: h * 0.14)
+                TrunkSpot(color: TrunkRGBA(r: 196, g: 58, b: 36, a: 0.35 * st), x: w * 0.98, y: h * 0.30, rx: w * 0.18, ry: h * 0.30)
+            case .kori:
+                // 縁が濃く焼け、編み目に明るい筋
+                EllipticalGradient(stops: [Gradient.Stop(color: Color.clear, location: 0),
+                                           Gradient.Stop(color: Color.clear, location: 0.55),
+                                           Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 90, g: 50, b: 18, a: 0.38 * st)), location: 1)],
+                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+                    .frame(width: w * 1.2, height: h)
+                    .position(x: w / 2, y: h / 2)
+                TrunkStripes(angle: 90, period: 83, bands: [(37, 39, TrunkRGBA(r: 255, g: 240, b: 210, a: 0.18 * st))])
+            case .sleeper:
+                TrunkPaint.linear(TrunkGradient(angle: 165, stops: [
+                    TrunkStop(color: TrunkRGBA(r: 255, g: 215, b: 200, a: 0.12 * st), location: 0),
+                    TrunkStop(color: TrunkRGBA(r: 255, g: 215, b: 200, a: 0), location: 0.40),
+                ]), w: w, h: h)
+                TrunkSpot(color: TrunkRGBA(r: 255, g: 220, b: 200, a: 0.12 * st), x: w * 0.5, y: h * 0.92, rx: w * 0.30, ry: h * 0.16)
+            case .captain:
+                TrunkStripes(angle: 180, period: 44, bands: [(0, 20, TrunkRGBA(r: 255, g: 235, b: 210, a: 0.10 * st))])
+                TrunkSpot(color: TrunkRGBA(r: 200, g: 200, b: 190, a: 0.18 * st), x: w * 0.20, y: h * 0.80, rx: w * 0.40, ry: h * 0.30)
+            case .starchart:
+                TrunkSpot(color: TrunkRGBA(r: 201, g: 166, b: 107, a: 0.10 * st), x: w * 0.5, y: h * 0.5, rx: w * 0.5, ry: h * 0.4)
+            case .steamer:
+                TrunkSpot(color: TrunkRGBA(r: 255, g: 240, b: 215, a: 0.12 * st), x: w * 0.30, y: h * 0.70, rx: w * 0.30, ry: h * 0.20)
+                TrunkSpot(color: TrunkRGBA(r: 60, g: 40, b: 20, a: 0.25 * st), x: w * 0.80, y: h * 0.30, rx: w * 0.26, ry: h * 0.18)
+            case .canvas:
+                TrunkPaint.linear(TrunkGradient(angle: 180, stops: [
+                    TrunkStop(color: TrunkRGBA(r: 255, g: 245, b: 225, a: 0.16 * st), location: 0),
+                    TrunkStop(color: TrunkRGBA(r: 255, g: 245, b: 225, a: 0), location: 0.5),
+                ]), w: w, h: h)
+            case .leather:
+                TrunkSpot(color: TrunkRGBA(r: 255, g: 225, b: 190, a: 0.12 * st), x: w * 0.5, y: 0, rx: w * 0.40, ry: h * 0.30)
+            case .aluminum, .clipper:
+                EmptyView()
+            }
+        }
+        .frame(width: w, height: h, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+}
+
+/// 革のベルト・組紐・麻の縄（縦に通す帯）。正面と、回り込んだ上・底・背面が同じ描き方を使う（2026-10-18）
+struct TrunkBandStrips: View {
+    let look: TrunkLook
+    /// 帯の長さ（面の高さ）
+    let height: Double
+    /// ベルトの穴を描くか（正面だけ）
+    var holes = false
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let s = look.straps {
+                ForEach(s.x, id: \.self) { x in
+                    ZStack(alignment: .topLeading) {
+                        LinearGradient(stops: [Gradient.Stop(color: Color.black.opacity(0.4), location: 0),
+                                               Gradient.Stop(color: Color(trunk: s.color), location: 0.18),
+                                               Gradient.Stop(color: Color(trunk: s.color), location: 0.82),
+                                               Gradient.Stop(color: Color.black.opacity(0.4), location: 1)],
+                                       startPoint: .leading, endPoint: .trailing)
+                        TrunkGrain.leather
+                        // 縫い目（左右 3pt の内側の破線）
+                        Path { p in
+                            p.move(to: CGPoint(x: 3, y: 0)); p.addLine(to: CGPoint(x: 3, y: height))
+                            p.move(to: CGPoint(x: s.width - 3, y: 0)); p.addLine(to: CGPoint(x: s.width - 3, y: height))
+                        }
+                        .stroke(Color(trunk: s.edge), style: StrokeStyle(lineWidth: 1.2, dash: [3.6, 2.4]))
+                        // ベルトの穴（正面だけ。回り込んだ面には無い）
+                        ForEach(holes ? [104.0, 116, 128] : [], id: \.self) { y in
+                            Circle().fill(Color.black.opacity(0.75))
+                                .frame(width: 4, height: 4)
+                                .offset(x: s.width / 2 - 2, y: y)
+                        }
+                    }
+                    .frame(width: s.width, height: height)
+                    .overlay(Rectangle().strokeBorder(Color.black.opacity(0.35), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.35), radius: 3, x: 3, y: 0)
+                    .offset(x: x)
+                }
+            }
+            if let c = look.cords {
+                ForEach(c.x, id: \.self) { x in
+                    ZStack {
+                        Color(trunk: TrunkRGBA.mix(0xB3261E, 0xC8503A, look.stage))
+                        TrunkStripes(angle: 40, period: 7, bands: [(3, 4, TrunkRGBA(0x6E140F)),
+                                                                    (4, 7, TrunkRGBA.mix(0xC8352A, 0xD06048, look.stage))])
+                    }
+                    .frame(width: c.width, height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .shadow(color: Color.black.opacity(0.5), radius: 2.5, x: 2, y: 0)
+                    .offset(x: x)
+                }
+            }
+            if let hemp = look.hemp {
+                ForEach(hemp.x, id: \.self) { x in
+                    ZStack {
+                        Color(trunk: TrunkRGBA.mix(0xE2D2A8, 0xCDBB8E, look.stage))
+                        TrunkStripes(angle: 62, period: 7, bands: [(3, 4.5, TrunkRGBA(0xA8955F)),
+                                                                    (4.5, 7, TrunkRGBA.mix(0xD3C094, 0xBFAC7E, look.stage))])
+                    }
+                    .frame(width: hemp.width, height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .shadow(color: Color.black.opacity(0.4), radius: 2, x: 2, y: 0)
+                    .offset(x: x)
+                }
+            }
+        }
+        .frame(width: TrunkLooks.bodyWidth, height: height, alignment: .topLeading)
+    }
+}
+
+/// 鋲の頭（桟の真鍮の鋲・飛行艇の鋲・アルミの鋲）。正面と回したときの面で同じ
+struct TrunkRivetFace: View {
+    let slat: Bool
+    let metal: TrunkMetal?
+    let model: TrunkModel
+    let r: Double
+
+    var body: some View {
+        if slat {
+            RadialGradient(stops: [Gradient.Stop(color: Color(trunk: TrunkRGBA(0xF6E3B4)), location: 0),
+                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x9C7A42)), location: 0.7),
+                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x9C7A42)), location: 1)],
+                           center: UnitPoint(x: 0.35, y: 0.35), startRadius: 0, endRadius: r * 2)
+        } else if model == .clipper {
+            RadialGradient(stops: [Gradient.Stop(color: Color.white, location: 0),
+                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x8A9198)), location: 0.7),
+                                   Gradient.Stop(color: Color(trunk: TrunkRGBA(0x8A9198)), location: 1)],
+                           center: UnitPoint(x: 0.35, y: 0.35), startRadius: 0, endRadius: r * 2)
+        } else {
+            // アルミのケースの鋲（新品のクローム）
+            TrunkPaint.metal(metal ?? .chrome, stage: 0, w: r * 2, h: r * 2)
+        }
+    }
+}
+
+/// 角金具の面（付けた角金具・船長の箱の青緑のくすみ・角の鋲）。正面と、3つの面にまたがる回したときの面で同じ
+struct TrunkCornerCap: View {
+    let look: TrunkLook
+    let pos: TrunkCorner
+    let paint: TrunkPartPaint?
+    let size: Double
+
+    var body: some View {
+        let rp = pos.rivetPoint
+        return ZStack(alignment: .topLeading) {
+            if let paint {
+                // 付けた角金具（モックの `P.corner`）
+                TrunkPartPaintView(paint: paint)
+            } else {
+                TrunkFillView(fill: look.corners.fill, stage: look.stage, w: size, h: size)
+            }
+            if look.model == .captain && look.stage > 0 {
+                // 真鍮の角が青緑にくすむ（船長の箱）
+                TrunkSpot(color: TrunkRGBA(r: 86, g: 150, b: 120, a: 0.55 * look.stage), x: rp.x * size, y: rp.y * size,
+                          rx: size * 0.6, ry: size * 0.6, fadeEnd: 0.7)
+            }
+            if look.corners.rivet {
+                // 角の鋲（明るい頭と暗い縁）
+                RadialGradient(stops: [Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 255, g: 250, b: 235, a: 0.9)), location: 0),
+                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 255, g: 250, b: 235, a: 0.9)), location: 1.2 / 3.2),
+                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.9)), location: 1.6 / 3.2),
+                                       Gradient.Stop(color: Color(trunk: TrunkRGBA(r: 60, g: 40, b: 15, a: 0.9)), location: 2.8 / 3.2),
+                                       Gradient.Stop(color: Color.clear, location: 1)],
+                               center: .center, startRadius: 0, endRadius: 3.2)
+                    .frame(width: 6.4, height: 6.4)
+                    .position(x: rp.x * size, y: rp.y * size)
+            }
+        }
+        .frame(width: size, height: size, alignment: .topLeading)
+    }
+}
+
+/// 錠前と同じ金属の面（錠前・持ち手の付け根・蝶番。付けた錠前があればその金属・モックの `P.lock`）
+struct TrunkHardwareFace: View {
+    let look: TrunkLook
+    let fittings: TrunkFittings
+    let w: Double
+    let h: Double
+
+    var body: some View {
+        if let metal = fittings.lockMetal {
+            TrunkPartPaintView(paint: .metal(metal))
+        } else {
+            TrunkFillView(fill: look.lock.fill, stage: look.stage, w: w, h: h)
+        }
+    }
+}
+
 /// 手荷物タグ1枚（50×68）
 private struct TrunkTagView: View {
     let tag: TrunkLooks.Tag
@@ -793,6 +844,20 @@ enum TrunkCorner: CaseIterable {
         case .bottomLeading: return (0.3, 0.7)
         case .bottomTrailing: return (0.7, 0.7)
         }
+    }
+
+    /// 回したときの面の角金具の形（板 Trunk の `capCss`: 外の角 10・内の角 6、アルミは 10 の対）
+    func faceShape(round: Bool) -> UnevenRoundedRectangle {
+        let big = 10.0, small = round ? 10.0 : 6.0
+        let r: (tl: Double, tr: Double, br: Double, bl: Double)
+        switch self {
+        case .topLeading: r = (big, 0, small, 0)
+        case .topTrailing: r = (0, big, 0, small)
+        case .bottomLeading: r = (0, small, 0, big)
+        case .bottomTrailing: r = (small, 0, big, 0)
+        }
+        return UnevenRoundedRectangle(topLeadingRadius: r.tl, bottomLeadingRadius: r.bl,
+                                      bottomTrailingRadius: r.br, topTrailingRadius: r.tr)
     }
 
     /// 角の札の形（CSS の border-radius の4つ: 左上・右上・右下・左下）
