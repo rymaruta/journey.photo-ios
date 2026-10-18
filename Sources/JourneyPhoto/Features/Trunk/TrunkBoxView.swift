@@ -458,11 +458,12 @@ struct TrunkBoxView: View {
     // MARK: 手荷物タグ
 
     private func tags(_ look: TrunkLook) -> some View {
-        let count = TrunkAging.tagCount(posts: posts)
+        // 行き先と日付はこの人のラベルから（`TrunkLooks.tags(stuck:posts:)`）。地名が足りなければ枚数も減る
+        let list = TrunkLooks.tags(stuck: stuck, posts: posts)
         let st = stage
         return ZStack(alignment: .topLeading) {
-            ForEach(Array(TrunkLooks.tags.prefix(count).indices), id: \.self) { i in
-                let t = TrunkLooks.tags[i]
+            ForEach(Array(list.indices), id: \.self) { i in
+                let t = list[i]
                 // 吊るす紐
                 Rectangle().fill(Color(trunk: TrunkRGBA(0x2A2A2A)))
                     .frame(width: 3, height: 14)
@@ -834,11 +835,13 @@ private struct TrunkTagView: View {
                     .padding(-2))
                 .padding(.top, 5)
                 .padding(.bottom, 4)
+            // 地名は人ごとに長さが違うので、タグの幅に収まるよう縮める（省くのは `TrunkLooks.tagCode`）
             Text(tag.code)
                 .font(.system(size: 9, weight: .heavy).monospacedDigit())
                 .tracking(9 * 0.06)
                 .lineLimit(1)
-                .fixedSize()
+                .minimumScaleFactor(0.6)
+                .frame(maxWidth: 44)
             // 縞の符号（1・1・2・1 の繰り返し）
             TrunkStripes(angle: 90, period: 5, bands: [(0, 1, TrunkLooks.tagColor(tag.fg, stage: stage)),
                                                         (2, 4, TrunkLooks.tagColor(tag.fg, stage: stage))])
@@ -846,13 +849,15 @@ private struct TrunkTagView: View {
                 .opacity(0.8)
                 .padding(.horizontal, 6)
                 .padding(.top, 3)
-            Text(tag.printedDay)
-                .font(.system(size: 6).monospacedDigit())
-                .tracking(6 * 0.06)
-                .opacity(0.8)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.top, 3)
+            if !tag.printedDay.isEmpty {
+                Text(tag.printedDay)
+                    .font(.system(size: 6).monospacedDigit())
+                    .tracking(6 * 0.06)
+                    .opacity(0.8)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.top, 3)
+            }
             Spacer(minLength: 0)
         }
         .foregroundStyle(fg)
@@ -973,7 +978,7 @@ struct TrunkFigure: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
                                                              labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                             tags: TrunkAging.tagCount(posts: posts), equipped: parts))
+                                                             tags: TrunkLooks.tags(stuck: stuck, posts: posts).count, equipped: parts))
             .accessibilityAddTraits(.isImage)
     }
 }

@@ -38,7 +38,7 @@ struct TrunkSpinViewer: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
                                                                      labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                     tags: TrunkAging.tagCount(posts: posts), equipped: parts))
+                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: posts).count, equipped: parts))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
                     .accessibilityValue(PreviewSession.userId != nil ? renderMarker : "")

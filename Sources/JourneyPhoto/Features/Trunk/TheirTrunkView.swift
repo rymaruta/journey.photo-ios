@@ -298,7 +298,7 @@ struct TheirTrunkView: View {
                          parts: trunk.equipped)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(TrunkText.accessibilityLabel(model: trunk.model, labels: placed.count,
-                                                                 tags: TrunkAging.tagCount(posts: trunk.agingPosts),
+                                                                 tags: TrunkLooks.tags(stuck: trunk.stuck, posts: trunk.agingPosts).count,
                                                                  equipped: trunk.equipped))
                 .accessibilityAddTraits(.isImage)
             ForEach(Array(placed.indices), id: \.self) { i in

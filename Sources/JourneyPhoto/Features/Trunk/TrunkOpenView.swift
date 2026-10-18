@@ -218,7 +218,7 @@ struct TrunkOpenView: View {
                       ownerName: ownerName, parts: parts, wrinkles: wrinkles, lining: lining, contents: contents,
                       cardImage: cardImage, cardLabel: cardLabel, ticketPhotos: ticketPhotos, lifted: held,
                       closedLabel: TrunkText.accessibilityLabel(model: model, labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                tags: TrunkAging.tagCount(posts: posts), equipped: parts),
+                                                                tags: TrunkLooks.tags(stuck: stuck, posts: posts).count, equipped: parts),
                       images: lidImages, onPick: pick, onAdjust: { up in move(to: TrunkLid.stepped(p, up: up)) })
     }
 
