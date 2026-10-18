@@ -342,14 +342,24 @@ struct PassViewerView: View {
         thanking = true
         defer { thanking = false }
         errorMessage = nil
+        // 押した人。失敗の戻しは、この人の控えにだけ書く
+        let owner = favorites.owner
         favorites.set(content.photo.id, favorite: true)
         do {
             _ = try await environment.social.like(photoId: content.photo.id)
         } catch {
-            // 届かなければ戻す（届いたように見せない）
-            favorites.set(content.photo.id, favorite: false)
+            // 届かなければ戻す（届いたように見せない）。
+            // 人が替わっていたら書かない——前の人の戻しが、次の人のいいねを消し、
+            // 同期のあとにも残る印になる（`FavoritesStore.set(_:favorite:for:)`）
+            favorites.set(content.photo.id, favorite: false, for: owner)
+            guard Self.keepsThanks(owner: owner, viewer: favorites.owner) else { return }
             errorMessage = L("ありがとうを送れませんでした。電波のあるところでもう一度お試しください。",
                              "Couldn\u{2019}t send your thanks. Please try again with a signal.")
         }
+    }
+
+    /// ありがとうの失敗を、押した人の画面に書くか
+    nonisolated static func keepsThanks(owner: String?, viewer: String?) -> Bool {
+        owner != nil && owner == viewer
     }
 }

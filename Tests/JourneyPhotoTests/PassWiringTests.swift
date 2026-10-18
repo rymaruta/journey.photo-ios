@@ -158,6 +158,17 @@ final class PassWiringTests: XCTestCase {
         }
     }
 
+    /// ありがとうが届かなかった戻しは、押した人の控えにだけ書く
+    func testThanksFailureStaysWithThePersonWhoPressed() throws {
+        XCTAssertTrue(PassViewerView.keepsThanks(owner: "a", viewer: "a"))
+        XCTAssertFalse(PassViewerView.keepsThanks(owner: "a", viewer: "b"),
+                       "次の人のいいねを、前の人の失敗で消した")
+        XCTAssertFalse(PassViewerView.keepsThanks(owner: nil, viewer: nil))
+        let viewer = try source("Features/Pass/PassViewerView.swift")
+        XCTAssertTrue(viewer.contains("favorites.set(content.photo.id, favorite: false, for: owner)"))
+        XCTAssertEqual(viewer.components(separatedBy: "Self.keepsThanks(owner: owner, viewer: favorites.owner)").count - 1, 1)
+    }
+
     /// 退会・期限切れのログアウトでも電波を止める
     func testRadioStopsOnAccountRemovalAndExpiry() throws {
         // 型の名前を分けて書く（`check-swift-refs.js` が文字列の中の呼び出しを、テストからの呼び出しと読む）
