@@ -301,8 +301,9 @@ final class ReviewPrivacyTests: XCTestCase {
         let home = try code("Sources/JourneyPhoto/Features/Gallery/HomeMosaic.swift")
         XCTAssertEqual(home.components(separatedBy: "guard sender != nil, hidden.owner == sender else { return }").count - 1, 2)
         let edit = try code("Sources/JourneyPhoto/Features/Profile/ProfileEditView.swift")
-        XCTAssertEqual(edit.components(separatedBy: "Self.keepsSave(sender: sender, viewer: auth.userId)").count - 1, 7,
-                       "保存の答え（名前・絵・閉じる）のどれかを、押した人かを見ずに書く")
+        // 2026-10-18: 8つ目は #304 のお礼（`claimReward`）。保存の途中で人が替わったら、次の人の分として頼まない
+        XCTAssertEqual(edit.components(separatedBy: "Self.keepsSave(sender: sender, viewer: auth.userId)").count - 1, 8,
+                       "保存の答え（名前・絵・閉じる・お礼）のどれかを、押した人かを見ずに書く")
         // 🔴 **絵を上げる直前**に押した人かを見る（2026-10-18・名指しで見張る）。数だけ見ていると、
         // この1つを外しても他の6つで足りてしまい、次の人の `profiles/<uid>` に前の人の絵を上げる
         let pick = try XCTUnwrap(edit.range(of: "guard let data else { continue }"))

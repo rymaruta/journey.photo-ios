@@ -503,9 +503,12 @@ final class TrunkWelcomeRulesTests: XCTestCase {
                       "出たことを1回だけ知らせていない")
         XCTAssertTrue(view.contains("TrunkCoinMark("), "カプセルの機械の硬貨の描き方を使っていない")
         XCTAssertTrue(view.contains("JPFont.mono("), "数が等幅の数字でない")
-        for id in ["trunk.welcome.turn", "trunk.welcome.later", "trunk.welcome.close"] {
-            XCTAssertTrue(view.contains(".accessibilityIdentifier(\"\(id)\")"), id)
+        // 2026-10-18（#304）: アイコン・カバーのお礼（板 53）と同じ画面を使うので、目印は言葉の束（`TrunkCoinNoticeCopy.id`）から作る。
+        // はじめての硬貨の束の頭は `trunk.welcome` のまま（`ProfileCoverPickTests.testRewardTexts` が見る）
+        for part in ["turn", "later", "close"] {
+            XCTAssertTrue(view.contains(".accessibilityIdentifier(\"\\(copy.id).\(part)\")"), "trunk.welcome.\(part)")
         }
+        XCTAssertEqual(TrunkCoinNoticeCopy.welcome(.init(added: 10, coins: 12)).id, "trunk.welcome")
     }
 
     // MARK: 全画面が本当に出たか（2026-10-18 の見直し）
