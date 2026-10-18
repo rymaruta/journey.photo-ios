@@ -253,6 +253,8 @@ final class ScreenshotTests: XCTestCase {
     /// **作例を重ねて撮る**（2026-10-09・2026-10-17 から全員無料）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
     /// 開くのに鍵は要らない。起動の鍵（`-JPComposeGuidePreview`）は線を出すためだけ。シミュレータにカメラは無いので
     /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 2026-10-18: 鍵があるときは作例もその上に重ねる——横長の作例が開いたときから 90° 回って
+    /// 縦の枠に収まっているか（`ComposeControls.autoRotation`）を、この絵で見る。
     /// 入口・画面が出なければ撮らない（この試験の決まり）
     private func shootComposeGuide(_ app: XCUIApplication) {
         let entry = app.buttons["spot.official.composeGuide"].firstMatch
@@ -274,6 +276,7 @@ final class ScreenshotTests: XCTestCase {
         // 作例のサムネが読み込まれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13h-作例を重ねて撮る")
+        shootLandscapeSample(app)
         if close.exists, close.isHittable {
             close.tap()
         } else {
@@ -282,6 +285,29 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shootComposeGuideFromSecondSample(app)
+    }
+
+    /// **横長の作例が開いたときから 90° 回って縦の枠に収まる絵**（2026-10-18 owner「縦空くのは嫌」）。
+    /// 右下の「作例を切り替える」で送り、回すボタンの値が「90度」になった作例で撮る
+    /// （回す角度は作例の縦横から自動で決まる・`ComposeControls.autoRotation`）。
+    /// 横長の作例が無い・切り替えが押せないスポットでは撮らない（この試験の決まり）
+    private func shootLandscapeSample(_ app: XCUIApplication) {
+        let rotate = app.buttons["composeGuide.rotate"].firstMatch
+        let next = app.buttons["composeGuide.switch"].firstMatch
+        func turned() -> Bool {
+            guard rotate.exists, let value = rotate.value as? String else { return false }
+            return value.hasPrefix("90")
+        }
+        var switches = 0
+        while !turned(), switches < 6, next.exists, next.isHittable, next.isEnabled {
+            next.tap()
+            Thread.sleep(forTimeInterval: 1)
+            switches += 1
+        }
+        guard turned() else { return }
+        // 作例の写真が読み込まれるのを待つ（Commons の縮小版）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h3-作例を重ねて撮る（横長の作例を回して収める）")
     }
 
     /// **作例の帯の2枚目を押して、その作例から撮る画面を開く**（2026-10-10・owner の報告「作例の1枚目しか
@@ -981,6 +1007,45 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 42b・42c: 「撮影地の位置を付ける」のオンとオフ（2026-10-18）。撮ったらオンに戻す
+    private func captureLocationToggle(_ app: XCUIApplication) {
+        let toggle = app.switches["upload.attachLocation"].firstMatch
+        for _ in 0..<2 where !(toggle.exists && toggle.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard toggle.exists, toggle.isHittable else { return }
+        // 撮る前の値を確かめる（前の回のオフが残っていたら、まずオンに戻す）
+        guard setLocationToggle(toggle, on: true) else {
+            XCTFail("「撮影地の位置を付ける」をオンにできない（値: \(String(describing: toggle.value))）")
+            return
+        }
+        shoot(app, "42b-投稿（撮影地の位置を付ける・オン）")
+        if setLocationToggle(toggle, on: false) {
+            shoot(app, "42c-投稿（撮影地の位置を付ける・オフ）")
+        } else {
+            XCTFail("押しても「撮影地の位置を付ける」がオフにならない（値: \(String(describing: toggle.value))）")
+        }
+        // 🔴 **最後は必ずオンに戻す**（値は人ごとに端末に残る。あとの絵・試験をオフのまま撮らない）
+        XCTAssertTrue(setLocationToggle(toggle, on: true),
+                      "「撮影地の位置を付ける」をオンに戻せなかった（値: \(String(describing: toggle.value))）")
+        // 下の絵（43〜）は上から探すので、元の位置へ戻す
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// 切り替えを `on` にする（押して値を確かめる・3回まで）。なれたら true
+    private func setLocationToggle(_ toggle: XCUIElement, on: Bool) -> Bool {
+        let want = on ? "1" : "0"
+        for _ in 0..<3 {
+            if (toggle.value as? String) == want { return true }
+            // つまみは行の右端（文字の上を押しても切り替わらない版がある）
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return (toggle.value as? String) == want
+    }
+
     /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）
     private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
@@ -989,6 +1054,10 @@ final class ScreenshotTests: XCTestCase {
         guard editButton.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+
+        // 2026-10-18: 「撮影地の位置を付ける」の切り替え（撮影地の欄の上）。オンとオフの両方を撮り、
+        // **オンに戻す**（選んだ値は人ごとに端末に残る・あとの絵をオフのまま撮らない）。出なければ撮らない
+        captureLocationToggle(app)
 
         // 2026-10-03: 撮影地・作例の一言と、畳んだ「詳しい設定」（計画9）。下へ送って撮り、
         // 開いた絵も撮る。出なければ撮らない（この試験の決まり）

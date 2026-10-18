@@ -63,7 +63,16 @@ enum StorySpotSuggestion {
         /// （自宅の町で撮って「東京」と書いた）に写真の位置を付けると、名前で伏せた場所がピン
         /// （残すと `storyKeep.ts` が写真の地図に写す）で分かってしまうので送らない。
         /// 撮影地が空の回は今までどおり（サーバーは撮影地の無い座標を保存しない・`stories.ts`）
-        func coordsToSend(_ coords: [Photo.Coords?], spots: [OfficialSpot]) -> [Photo.Coords?] {
+        ///
+        /// 2026-10-18 判断（投稿の「撮影地の位置を付ける」と同じ覚え・`UploadLocationPreference`）: **オフなら写真の
+        /// 座標は送らない。** 撮影地の文字が1つの撮影スポットを指すときだけ、**スポットの座標**を全部の写真に付ける
+        /// （見る画面でスポットへ結べる・`spotNamed`）。それ以外は送らない
+        func coordsToSend(_ coords: [Photo.Coords?], spots: [OfficialSpot],
+                          attachesPhotoLocation: Bool = true) -> [Photo.Coords?] {
+            guard attachesPhotoLocation else {
+                let spotCoords = Self.spotNamed(location, in: spots)?.coords
+                return coords.map { _ in spotCoords }
+            }
             let sent = StoryQueue.coordsToSend(coords)
             if location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return sent }
             guard PlaceCoordsRule.namesSpotNear(location, photo: StoryQueue.baseCoords(coords), spots: spots)
@@ -73,9 +82,55 @@ enum StorySpotSuggestion {
 
         /// 送る前に撮影スポットの索引を待つか。撮影地があり、GPS の写真があり、索引がまだ無いとき
         /// （待たずに決めると、近くのスポットを指していても座標が落ちてスポットへの導線が消える）
-        func needsSpotIndex(_ coords: [Photo.Coords?], spots: [OfficialSpot]) -> Bool {
+        /// オフ（`attachesPhotoLocation` が false）のときは、写真の位置に関わらず撮影地があれば待つ（スポットの名前か見る）
+        func needsSpotIndex(_ coords: [Photo.Coords?], spots: [OfficialSpot],
+                            attachesPhotoLocation: Bool = true) -> Bool {
             spots.isEmpty && !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && StoryQueue.baseCoords(coords) != nil
+                && (!attachesPhotoLocation || StoryQueue.baseCoords(coords) != nil)
         }
+
+        /// 撮影地の文字が指す撮影スポット（写真の位置を使わずに決める・2026-10-18）。**1つに決まるときだけ**——
+        /// 同じ名前のスポットが離れて2つあれば、どちらか分からないので nil（座標を送らない側に倒す）。
+        /// 当てる決まりは見る画面と同じ（`StorySpotLink.spot`）。スポット自身の座標で当てるので、送ると見る画面で結ばれる
+        static func spotNamed(_ location: String, in spots: [OfficialSpot]) -> OfficialSpot? {
+            let text = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            // 先に名前だけで絞る（1件ずつ当てる。全件で当て直すのは残った候補だけ）
+            let named = spots.filter { spot in
+                spot.coords != nil && StorySpotLink.spot(location: text, coords: spot.coords, in: [spot]) != nil
+            }
+            var found: [String: OfficialSpot] = [:]
+            for candidate in named {
+                if let hit = StorySpotLink.spot(location: text, coords: candidate.coords, in: spots) {
+                    found[hit.spotId] = hit
+                }
+            }
+            return found.count == 1 ? found.values.first : nil
+        }
+    }
+}
+
+/// ストーリーを作る画面の「撮影地の位置を付ける」の言葉（2026-10-18・投稿と同じ覚え `UploadLocationPreference`）。
+/// 名前は投稿と同じ（`UploadDetails.locationToggleTitle`）。下の一言はストーリーの送り方に合わせる
+/// （撮影地を入れたときだけ座標を送る・オフでも撮影スポットの名前ならスポットの位置を付ける）。
+/// オンの一言は**言い切らない**——撮影地の文字が写真の近くのスポットを指さない回は送らない（`Place.coordsToSend`）
+enum StoryLocationText {
+
+    /// 「誰に見せる？」の切り替えの下の一言
+    static func toggleNote(attaches: Bool) -> String {
+        attaches
+            ? L("撮影地を入れると、写真の位置も一緒に送ることがあります",
+                "Adding a place may also send the photo's location.")
+            : L("写真の位置は送りません。撮影地が撮影スポットの名前なら、スポットの位置を付けます",
+                "The photo's location isn't sent. If the place is a photo spot, the spot's location is added.")
+    }
+
+    /// 撮影地を打つ欄の説明。今の値を言い、オフなら変える場所も言う
+    static func placeEditorNote(attaches: Bool) -> String {
+        attaches
+            ? L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ることがあります。",
+                "Adding a place may also send the photo's rounded coordinates (about 1 km).")
+            : L("「撮影地の位置を付ける」がオフなので、写真の位置は送りません（「誰に見せる？」で変えられます）。撮影スポットの名前なら、スポットの位置を付けます。",
+                "\"Attach the place's location\" is off, so the photo's location isn't sent (change it in \"Who can see it?\"). If the place is a photo spot, the spot's location is added.")
     }
 }

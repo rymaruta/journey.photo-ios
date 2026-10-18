@@ -5,7 +5,7 @@ import Foundation
 /// 🔴 **退会しても端末に本人の控えが残っていた。** 控えは人ごとの鍵に分けて
 /// あるので次の人には見えないが、消えるべきもの（いいね・保存・行きたい場所・
 /// ブロック・参加したアルバム・見たストーリー・すれちがいの帳・最近の曲・ストーリーと写真の投稿の書きかけ
-/// とその画像・登録の確認の控え・通知の設定・ホームの札から開いた一冊の印・電波なしで使える旅）が端末に残り続けていた。
+/// とその画像・登録の確認の控え・通知の設定・投稿の「撮影地の位置を付ける」・ホームの札から開いた一冊の印・電波なしで使える旅）が端末に残り続けていた。
 /// 審査 5.1.1(v) の「アカウントの削除」は、端末に残した本人のデータも含む。
 ///
 /// **鍵の形は各控えが持つ**（ここで綴りを写すと、片方だけ変えたときに
@@ -48,6 +48,8 @@ enum AccountLocalData {
         UploadDraftStore(defaults: defaults, directory: draftDirectory, slot: .auto).removeData(for: userId)
         // 送信の控え（投稿ごと・`send:<userId>:<ID>`）を全部。画像の頭も
         UploadDraftStore(defaults: defaults, directory: draftDirectory).removeAllJournals(for: userId)
+        // 投稿の「撮影地の位置を付ける」の選んだ値（2026-10-18）
+        UploadLocationPreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）
