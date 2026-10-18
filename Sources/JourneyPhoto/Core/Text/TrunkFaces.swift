@@ -108,10 +108,14 @@ enum TrunkFaces {
         return TrunkRect(x: 128, y: 30 - t / 2, w: 104, h: t)
     }
 
+    /// 持ち手の付け根の真ん中（胴の左から）。**正面の絵（120・220 に幅 20）・上の面・立体の金具で同じ**
+    /// （板の上の面は 116・224 だったが、正面の付け根と ±4 ずれ、回すと金具が持ち手の脚から外れて見えた・2026-10-18）
+    static let handleClipCenters: [Double] = [130, 230]
+
     /// 持ち手の付け根の金具（錠前と同じ金属・20×20）
     static func handleClips(_ side: TrunkFaceSide) -> [TrunkRect] {
         guard side == .top else { return [] }
-        return [116.0, 224].map { TrunkRect(x: $0, y: 20, w: 20, h: 20) }
+        return handleClipCenters.map { TrunkRect(x: $0 - 10, y: 20, w: 20, h: 20) }
     }
 
     /// 持ち手に縫い目があるか（アルミ・漆は無し。正面と同じ）

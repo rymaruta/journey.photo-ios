@@ -2405,6 +2405,15 @@ final class ScreenshotTests: XCTestCase {
         spin.tap()
         let close = app.buttons["trunk.spin.close"].firstMatch
         guard close.waitForExistence(timeout: 10) else { return XCTFail("回す画面が開かない") }
+        // 面を描き終えるのを待ち、描いた時間を記録する（表を先に・残りを後で描く。引っかかりの見張り）
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+        if XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed {
+            let took = (box.value as? String) ?? ""
+            XCTContext.runActivity(named: "回す画面の面を描いた時間: \(took)") { _ in }
+        } else {
+            XCTFail("回す画面の面を描き終えない")
+        }
         for (id, name) in [("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"), ("bottom", "91c-回した底（蝶番と足）")] {
             let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
             guard button.waitForExistence(timeout: 5) else { return XCTFail("向きのボタン \(id) が無い") }

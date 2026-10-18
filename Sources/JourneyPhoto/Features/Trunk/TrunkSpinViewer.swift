@@ -24,6 +24,8 @@ struct TrunkSpinViewer: View {
     @State private var boxFaces: SpinBoxFaces?
     @State private var flips = 0
     @State private var aim: SpinAim?
+    /// 面を描き終えた印と描いた時間（画面写真の試験が待ち、時間を記録する。見本の起動のときだけ読み上げの値に出す）
+    @State private var renderMarker = ""
 
     var body: some View {
         GeometryReader { geo in
@@ -39,6 +41,7 @@ struct TrunkSpinViewer: View {
                                                                      tags: TrunkAging.tagCount(posts: posts), equipped: parts))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
+                    .accessibilityValue(PreviewSession.userId != nil ? renderMarker : "")
                     .accessibilityIdentifier("trunk.spin.box")
                 VStack(spacing: 8) {
                     Text(L("手に取って回す", "Turn it over"))
@@ -68,9 +71,16 @@ struct TrunkSpinViewer: View {
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
+            // 描く順を分ける（2026-10-18 見直し）: 正面（ラベルごと）を先に描いて出し、画面の処理を一度返してから
+            // 背面・左右・上・底・持ち手を描く。8枚を1度に描くと開いた直後の一瞬が止まる
+            let clock = ContinuousClock()
+            let started = clock.now
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles)
+            let frontTook = started.duration(to: clock.now)
+            await Task.yield()
             boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts)
+            renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
         }
     }
 
@@ -128,22 +138,34 @@ enum TrunkTextures {
                     handle: SpinRGB(r: handle.r / 255, g: handle.g / 255, b: handle.b / 255))
     }
 
+    /// 描き終えた印（「faces-ready front=12ms all=85ms」）
+    nonisolated static func renderMarker(front: Duration, all: Duration) -> String {
+        func ms(_ d: Duration) -> Int {
+            let c = d.components
+            return Int(c.seconds * 1000 + c.attoseconds / 1_000_000_000_000_000)
+        }
+        return "faces-ready front=\(ms(front))ms all=\(ms(all))ms"
+    }
+
+    /// 表（ラベルごとの胴）と芯の色。**背面は後から**（`box`）。表を先に出す
     static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?,
                      parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
                                         parts: parts, wrinkles: wrinkles))
-        // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
-        let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))
-        return MedalTextures.Faces(front: front, back: back, edge: edge, edgeRepeat: 1)
+        // 背面は描き終えるまで縁の色で（白い面を見せない）
+        return MedalTextures.Faces(front: front, back: edge, edge: edge, edgeRepeat: 1)
     }
 
     /// 左右・上・底と持ち手の絵（板 TrunkFaces・正面と同じ古び方と付けた部品）
     static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none) -> SpinBoxFaces {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
         let fittings = TrunkFittings(parts)
-        return SpinBoxFaces(left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
+        // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
+        let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))
+        return SpinBoxFaces(back: back,
+                            left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
                             right: render(TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
                             top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts)),
                             bottom: render(TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
@@ -158,7 +180,11 @@ enum TrunkTextures {
     }
 }
 
-/// 立体の持ち手の面に貼る絵（正面の持ち手と同じ塗り・縫い目。形は SceneKit の U の字が受け持つ）
+/// 立体の持ち手の面に貼る絵（正面の持ち手と同じ塗り・縫い目。形は SceneKit の U の字が受け持つ）。
+///
+/// **上下どちらに貼られても同じに見える絵にする**（2026-10-18 見直し）。`SCNShape` の前後の面の絵の割り付けは
+/// 道（UIKit の y）の向きと逆になりうるが、Linux では確かめられない。縫い目は上下に対称な角丸の線、上の細い光は
+/// 絵に入れず SceneKit の光（キーライト）に任せる。塗りの柄（組紐の斜めの縞など）だけは上下で斜めの向きが替わる
 struct TrunkHandleSkin: View {
     let look: TrunkLook
     let fittings: TrunkFittings
@@ -176,11 +202,6 @@ struct TrunkHandleSkin: View {
                     .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 235, b: 200, a: 0.3)),
                                   style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                     .padding(4)
-            }
-            // 上の細い光（正面の持ち手の `inset 0 2px 0 rgba(255,255,255,0.12)`）
-            VStack(spacing: 0) {
-                Color.white.opacity(0.12).frame(height: 2)
-                Spacer(minLength: 0)
             }
         }
         .frame(width: 100, height: 36)

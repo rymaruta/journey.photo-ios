@@ -159,6 +159,8 @@ struct SpinAim: Equatable {
 /// 旅のトランクの箱の、表と裏のほかの面の絵（板「旅のトランク」の TrunkFaces・2026-10-18）。
 /// 左右の側面（86×268）・上の面と底（360×86）・持ち手の面と付け根の金具。`TrunkTextures.box` が作る
 struct SpinBoxFaces {
+    /// 背面（後から描いて貼る。表を先に出すため・2026-10-18）
+    let back: UIImage?
     let left: UIImage?
     let right: UIImage?
     let top: UIImage?
@@ -289,6 +291,8 @@ final class MedalCoinCoordinator: NSObject {
     var lastAimId: Int?
     /// 向きのボタンで向かう角度（横・縦）
     private var aimTarget: (yaw: Float, pitch: Float)?
+    /// 向きのボタンで着いた向きに止めている（指で払うまで動かさない・板 TrunkSpin どおり）
+    private var aimHeld = false
 
     private(set) var hasTextures = false
     /// 「視差効果を減らす」。変わったら浮き彫りと映り込みの強さを作り直す
@@ -323,6 +327,8 @@ final class MedalCoinCoordinator: NSObject {
     private static let restingPitch: Float = -0.14
     /// 箱を置いたときの傾き（板 TrunkSpin: rotateX(-16deg)。SceneKit では上の面が手前へ傾く向きが正）
     private static let boxRestingPitch: Float = 0.28
+    /// 箱を置いたときの横の向き（板 TrunkSpin: rotateY(-34deg)。正面から始めず、少し斜めから側面が見える）
+    private static let boxRestingYaw: Float = -34 * .pi / 180
     /// 止まりきったあと、ゆっくり回る速さ（板: 9秒で1周 ≈ 0.7rad/s。それより控えめに）
     private static let idleSpin: Float = 0.45
 
@@ -346,6 +352,7 @@ final class MedalCoinCoordinator: NSObject {
         let current = Double(yaw)
         let nearest = target + (((current - target) / turn).rounded()) * turn
         aimTarget = (Float(nearest), Float(targetPitch))
+        aimHeld = false
         flipTarget = nil
         velocity = 0
     }
@@ -354,7 +361,10 @@ final class MedalCoinCoordinator: NSObject {
         self.shape = shape
         super.init()
         // 箱は少し上から見下ろして置く（板 TrunkSpin の rotateX(-16deg)＝上の面と持ち手が見える）
-        if isBox { pitch = Self.boxRestingPitch }
+        if isBox {
+            pitch = Self.boxRestingPitch
+            yaw = Self.boxRestingYaw
+        }
         buildScene()
     }
 
@@ -474,7 +484,8 @@ final class MedalCoinCoordinator: NSObject {
 
     /// 箱の左右・上・底と持ち手の絵を貼る（表と裏は `apply`）
     func applyBox(_ faces: SpinBoxFaces) {
-        for (material, image) in [(left, faces.left), (right, faces.right), (top, faces.top), (bottom, faces.bottom)] {
+        for (material, image) in [(back, faces.back), (left, faces.left), (right, faces.right), (top, faces.top),
+                                  (bottom, faces.bottom)] {
             material.diffuse.contents = image
             // 表と裏と同じく、光の当たらない向きでも絵が沈まないよう少し自ら光らせる
             material.emission.contents = image
@@ -543,7 +554,8 @@ final class MedalCoinCoordinator: NSObject {
         clipMaterial.lightingModel = .blinn
         clipMaterial.specular.contents = UIColor(white: 0.5, alpha: 1)
         clipMaterial.diffuse.contents = UIColor(red: 0.79, green: 0.65, blue: 0.42, alpha: 1)
-        for x in [-50.0, 50.0] {
+        // 付け根は正面の絵・上の面の絵と同じ真ん中（`TrunkFaces.handleClipCenters`・胴の真ん中から ±50）
+        for x in TrunkFaces.handleClipCenters.map({ $0 - TrunkLooks.bodyWidth / 2 }) {
             let clip = SCNBox(width: 20 * unit, height: 14 * unit, length: thickness + 4 * unit, chamferRadius: 2 * unit)
             clip.materials = [clipMaterial]
             let clipNode = SCNNode(geometry: clip)
@@ -778,6 +790,9 @@ final class MedalCoinCoordinator: NSObject {
     func flip() {
         // 決め方はきっぷと同じ1つ（`SpinMotion`・2026-10-16）
         flipTarget = Float(SpinMotion.flipTarget(from: Double(yaw)))
+        // 向きのボタンの寄せ・止めと取り合わない（裏返すが勝つ）
+        aimTarget = nil
+        aimHeld = false
         velocity = 0
     }
 
@@ -792,6 +807,7 @@ final class MedalCoinCoordinator: NSObject {
             dragging = true
             flipTarget = nil
             aimTarget = nil
+            aimHeld = false
             velocity = 0
         case .changed:
             // 幅いっぱい払うと約 1.2 周の 4 割（指に付いてくる量・`SpinMotion.turnPerWidth`）
@@ -825,8 +841,13 @@ final class MedalCoinCoordinator: NSObject {
                 yaw = target.yaw
                 pitch = target.pitch
                 aimTarget = nil
+                // 着いたら止める（惰性・ゆっくり回りに戻さない）
+                aimHeld = true
+                velocity = 0
             }
             applyAngles()
+            return
+        } else if aimHeld {
             return
         } else if let target = flipTarget {
             // なめらかに寄せる（「視差効果を減らす」では一息に）
