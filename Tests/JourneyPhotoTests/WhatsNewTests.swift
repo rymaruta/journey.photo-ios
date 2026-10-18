@@ -164,6 +164,8 @@ final class WhatsNewTests: XCTestCase {
             XCTAssertEqual(WhatsNew.pending(releases: releases, seen: seen, current: "1.1.14", usedBefore: true)
                 .map(\.version), ["1.1.14"], "見た版 \(seen)")
         }
+        // 版に足した "date" は今の読み方では無視される（読めなくならない・2026-10-18）
+        XCTAssertEqual(releases.first?.items.count, 5)
         // 文字の比較なら "1.1.14" < "1.1.9" で出なかった（数で比べる）
         XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.9"))
         XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.13"))
