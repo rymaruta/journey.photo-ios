@@ -50,11 +50,11 @@ final class TheirTrunkModel: ObservableObject {
     /// 読み込みの回（後から始まった回があれば、前の回は何も書かない）
     private var seq = 0
 
-    private let defaults: UserDefaults
+    private let entry: TrunkEntryStore
 
-    init(preview: Bool = PreviewSession.theirTrunkSample, defaults: UserDefaults = .standard) {
+    init(preview: Bool = PreviewSession.theirTrunkSample, entry: TrunkEntryStore? = nil) {
         isPreview = preview
-        self.defaults = defaults
+        self.entry = entry ?? .shared
     }
 
     /// プロフィールに段を出すか（読めて、中身があるときだけ。読み込み中・失敗・404・ブロックの関係では空の枠も出さない）
@@ -85,12 +85,12 @@ final class TheirTrunkModel: ObservableObject {
         if trunk == nil { phase = .loading }
         do {
             if isSelf {
-                // 自分の見せる設定は端末の控え（設定・トランクの入口が読んだ値）を使い、**控えが無いときだけ読む**
-                var shows = TrunkOwnSettings.showTrunk(userId: userId, defaults: defaults)
+                // 自分の見せる設定は入口の店（`TrunkEntryStore`）が読めている中身を使い、**無いときだけ読む**
+                // （読むのも同じ店を通す＝`GET /user/trunk` を1本にまとめる）。端末には書かない
+                var shows = entry.state(for: userId)?.showTrunk
                 if shows == nil {
-                    let own = try await service.state()
+                    let own = try await entry.read(userId: userId, service: service)
                     guard mine == seq, self.userId == userId else { return }
-                    TrunkOwnSettings.note(showTrunk: own.showTrunk, userId: userId, defaults: defaults)
                     shows = own.showTrunk
                 }
                 guard shows == true else {

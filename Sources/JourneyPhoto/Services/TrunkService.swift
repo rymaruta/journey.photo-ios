@@ -25,6 +25,10 @@ import Foundation
 ///     GET    /users/{uid}/trunk                              → 人のトランク（見せないときは 404 → nil）
 ///     PUT    /user/trunk/settings { showTrunk? , ticket? }   → 状態（見せる設定・わたしの乗車券）
 ///
+/// はじめての硬貨（2026-10-18 owner 承認）:
+///
+///     POST   /user/trunk/welcome                             → { granted, added, coins }（`TrunkWelcome`）
+///
 /// **書き込みの応答は、書いたあとの状態。** 画面は自分で足し引きせず、返ってきた状態をそのまま映す
 /// （`TripPlanService` と同じ判断——断られた回に嘘の状態を残さない）。書き込みの応答には `posts` が
 /// 無いので、前に読んだ数を引き継ぐ（`TrunkState.keepingPosts`）。
@@ -100,6 +104,12 @@ struct TrunkService {
         try await refusing {
             try await api.authorized(.post, "/user/trunk/gacha", as: TrunkGachaResult.self)
         }
+    }
+
+    /// はじめての硬貨（硬貨が始まる前から居る人に一度だけ 10 枚）。配ったかどうかは `granted`。
+    /// 断り（4xx）も `Refused` に包まずそのまま返す——呼ぶ側（`TrunkWelcome`）は失敗をみな「印を残さない」で扱う
+    func welcome() async throws -> TrunkWelcomeResult {
+        try await api.authorized(.post, "/user/trunk/welcome", as: TrunkWelcomeResult.self)
     }
 
     private struct ExchangeBody: Encodable { let partId: String }

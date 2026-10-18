@@ -49,6 +49,17 @@ final class PlaceSpotSuggestionsTests: XCTestCase {
         XCTAssertEqual(result.map(\.slug), ["s4", "s3", "s2"])
     }
 
+    /// 同じ距離は slug 順（毎回同じ並び）・座標の無い場所は距離の並びから落ちる（2026-10-18: 型検査の重い式を分けたときの見張り）
+    func testEqualDistanceIsOrderedBySlug() throws {
+        let c = try spot("c", name: "岬C", lat: 34.12, lng: 133.60)
+        let b = try spot("b", name: "岬B", lat: 34.12, lng: 133.60)
+        let a = try spot("a", name: "岬A", lat: 34.12, lng: 133.60)
+        let nearest = try spot("z", name: "岬Z", lat: 34.10, lng: 133.60)
+        XCTAssertEqual(PlaceSpotSuggestions.suggestions(query: "", near: here, index: [c, b, nearest, a]).map(\.slug),
+                       ["z", "a", "b"])
+        XCTAssertEqual(PlaceSpotSuggestions.suggestions(query: "岬", near: here, index: [c, a, b]).map(\.slug), ["a", "b", "c"])
+    }
+
     /// 位置のある写真では、近いスポットを選んでも写真の座標のまま（スポットの座標で置き換えない）。
     /// 2026-10-07: 書き換えた撮影地は写真の座標を送らないので、写真の座標そのものを入れる。
     /// 遠いスポット（名前で当てた別の場所）はスポットの座標（写真の撮った位置を名前に付けない）

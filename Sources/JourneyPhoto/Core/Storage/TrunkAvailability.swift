@@ -15,13 +15,19 @@ final class TrunkAvailability: ObservableObject {
 
     private let defaults: UserDefaults
     private var userId: String?
+    /// 読み込みを通す先（2026-10-18: マイページの札の数と1本にまとめる・`TrunkEntryStore.read`）
+    private let entry: TrunkEntryStore
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, entry: TrunkEntryStore? = nil) {
         self.defaults = defaults
+        self.entry = entry ?? .shared
     }
 
     private static func key(_ userId: String) -> String { "trunk.available.\(userId)" }
     private static func checkedKey(_ userId: String) -> String { "trunk.availableCheckedAt.\(userId)" }
+
+    /// この起動で口を確かめに読んだ人（はじめての硬貨が、マイページの読み込みのあとにもう1本読まないため・2026-10-18）
+    private(set) var checkedThisLaunch: Set<String> = []
 
     /// 入っている人のぶんを出す（要るときだけ読み直す）。見本（画面写真）では読まずに出す
     func refresh(userId: String?, service: TrunkService, force: Bool = false, now: Date = Date(),
@@ -34,12 +40,11 @@ final class TrunkAvailability: ObservableObject {
         let checkedAt = defaults.object(forKey: Self.checkedKey(userId)) as? Date
         guard TrunkAvailabilityRule.needsCheck(remembered: remembered, checkedAt: checkedAt, now: now, force: force) else { return }
         var failure: Error?
-        do {
-            let state = try await service.state()
-            // 自分の見せる設定も控える（自分のページを人の画面で開いたときに読み足さない・`TrunkOwnSettings`）
-            TrunkOwnSettings.note(showTrunk: state.showTrunk, userId: userId, defaults: defaults)
-        } catch is CancellationError { return } catch { failure = error }
+        // 読めた中身は入口の札の数にも入る（同じ `GET /user/trunk` を2回読まない・2026-10-18）
+        do { _ = try await entry.read(userId: userId, service: service, now: now) } catch is CancellationError { return } catch { failure = error }
         guard self.userId == userId, let decided = TrunkAvailabilityRule.decide(failure) else { return }
+        // 答えが決まった（読めた・口が無い）ときだけ「確かめた」と覚える。取り消し・一時の失敗では覚えない
+        checkedThisLaunch.insert(userId)
         isAvailable = decided
         defaults.set(decided, forKey: Self.key(userId))
         defaults.set(now, forKey: Self.checkedKey(userId))

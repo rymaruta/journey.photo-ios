@@ -10,6 +10,7 @@ struct LabelArrivedView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
     /// 画面写真の見本（`-JPPreviewTrunkArrived`）ではサーバーを読まず、見本の手持ちを出す
     @StateObject private var model = TrunkViewModel(preview: PreviewSession.opensTrunkArrived ? .sample
@@ -57,7 +58,7 @@ struct LabelArrivedView: View {
         }
         .statusBarHidden(false)
         .task {
-            model.bind(environment.trunk)
+            model.bind(environment.trunk, userId: auth.userId)
             await model.load(offline: false)
         }
         .fullScreenCover(isPresented: $showReroll, onDismiss: {
@@ -69,7 +70,7 @@ struct LabelArrivedView: View {
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 買えたかもしれない: 作り直せるか読み直す
             Task { await model.refreshAfterPaywall() }
-        }) { PaywallView() }
+        }) { PaywallView(origin: .trunk) }
         // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（作り直しの「図柄を決めました」・
         // 貼れなかったときの知らせ。`NameSideBadgeView` と同じ）
         .overlay(alignment: .top) { ToastOverlay() }

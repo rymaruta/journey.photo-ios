@@ -49,6 +49,28 @@ enum UploadDetails {
           "Joins other photos from this place as an example on its place page (from 2 photos)")
     }
 
+    /// 「撮影地の位置を付ける」の切り替えの名前（2026-10-18 判断・`UploadLocationPreference`）。
+    /// **約1kmに丸めることを名前に入れる**——何が送られるかを、切り替える前に読めるように
+    static var locationToggleTitle: String {
+        L("撮影地の位置を付ける（約1kmに丸めて保存）", "Attach the place's location (rounded to about 1 km)")
+    }
+
+    /// 切り替えの下の一言。**いまの値で何が起きるか**を言う。オンも言い切らない（書き換えた撮影地には
+    /// 写真の位置を付けないことがある・`PlaceCoordsRule`）
+    ///
+    /// オフの一言は次と食い違わないように（2026-10-18 の見直し）:
+    /// - 自分で選んだ場所（候補・撮影スポット・スポットの画面から開いた回）は、その場所の位置が地図に載る
+    /// - 手で書いた地名には、サーバーが地名から大まかな位置を付けることがある（`geoApprox`）
+    /// - 自動の地名を本人が直してからオフにしたら、直した地名は残る（「自動では入れません」とだけ言い、
+    ///   「撮影地を外します」とは言わない）
+    static func locationToggleNote(attaches: Bool) -> String {
+        attaches
+            ? L("写真の位置情報から撮影地を入れ、地図に載せます（撮影地を書き換えると載せないことがあります）",
+                "Fills in the place from the photo's location and puts it on the map (editing the place may keep it off).")
+            : L("写真の位置は送らず、撮影地も自動では入れません。地図に載るのは自分で選んだ場所だけです（書いた地名から大まかな位置を付けることがあります）",
+                "The photo's location isn't sent, and the place isn't filled in for you. Only places you choose go on the map (a rough location may come from a place name you type).")
+    }
+
     /// 投稿画面を開いたときに、写真を選ぶ画面を**自動で一度だけ**開くか。
     ///
     /// 「追加」→「ライブラリから選ぶ」の2手を省く。開かないのは:

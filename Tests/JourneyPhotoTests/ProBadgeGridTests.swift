@@ -216,7 +216,7 @@ final class ProBadgeGridTests: XCTestCase {
         XCTAssertEqual(items.map(\.image), [
             "medal-supporter",
             "medal-pro-spring-2027", "medal-pro-summer-2027", "medal-pro-autumn-2026", "medal-pro-winter-2026",
-            "medal-pro-dawn", "medal-pro-compose", "medal-pro-summit",
+            "medal-pro-dawn", "medal-pro-summit",
         ])
         for item in items { XCTAssertFalse(item.image.hasSuffix("-s"), item.id) }
     }

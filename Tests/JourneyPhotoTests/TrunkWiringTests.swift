@@ -83,7 +83,8 @@ final class TrunkWiringTests: XCTestCase {
         let env = try source("App/AppEnvironment.swift")
         XCTAssertTrue(env.contains("self.trunk = TrunkService(api: api)"))
         for path in ["Features/Trunk/TrunkView.swift", "Features/Trunk/LabelArrivedView.swift"] {
-            XCTAssertTrue(try source(path).contains("model.bind(environment.trunk)"), path)
+            // 見ている人も渡す（硬貨の知らせを自分の人のものだけ受ける・2026-10-18）
+            XCTAssertTrue(try source(path).contains("model.bind(environment.trunk, userId: auth.userId)"), path)
         }
     }
 

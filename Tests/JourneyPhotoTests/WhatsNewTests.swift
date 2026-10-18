@@ -115,9 +115,20 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        XCTAssertEqual(releases.map(\.version), ["1.0.82", "1.0.73", "1.0.67"])
+        XCTAssertEqual(releases.map(\.version), ["1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
+        let versions = releases.map(\.version)
+        XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
+        // 1.1.14（2026-10-18）: 乗車券・Pro の券面・重ねて撮るが無料・旅のトランク・構図の作例写真・
+        // 横長の作例の向き（#289）・撮影地の位置の切り替え（#290）・季節のスポットの日替わり・お知らせの履歴
+        let next = try XCTUnwrap(releases.first)
+        XCTAssertEqual(next.items.map(\.title.ja),
+                       ["わたしの乗車券", "Pro の特別な券面", "重ねて撮るが無料に", "旅のトランク", "構図に作例写真",
+                        "横長の作例は横向きに重ねる", "撮影地の位置を付けるか選べる", "季節の撮影スポットが日替わりに",
+                        "お知らせの履歴"])
+        XCTAssertEqual(next.items.compactMap(\.destination), [.map, .mypage, .map, .home])
         // 1.0.82: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
-        let latest = try XCTUnwrap(releases.first)
+        let latest = releases[1]
         XCTAssertEqual(latest.items.count, 4)
         XCTAssertEqual(latest.items.first?.title.ja, "Journey Photo Pro がはじまりました")
         XCTAssertNil(latest.items.first?.destination)
@@ -125,16 +136,19 @@ final class WhatsNewTests: XCTestCase {
         // 🔴 版は「Pro が入って出る次の Actions の版」。1.0.79（Pro 無し）に続き、1.0.80・1.0.81 も
         // Pro 無しで TestFlight に出た（タグ testflight/1.0.80・1.0.81）。項目が 1.0.80 のままだと、
         // それらを使った人は「見た版 = 1.0.80 / 1.0.81」で、上げても Pro の知らせが出なかった
+        // （1.0.82 の版に入っていた中身＝1.0.82 までの項目で見る。`pending` は今の版を上限にしないので、
+        // 後の版の項目を足した今の JSON をそのまま渡すと 1.1.14 も混ざる——実際の 1.0.82 には入っていない）
+        let bundledIn1082 = releases.filter { !WhatsNew.isNewer($0.version, than: "1.0.82") }
         for seen in ["1.0.79", "1.0.80", "1.0.81"] {
-            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: seen, current: "1.0.82", usedBefore: true)
+            XCTAssertEqual(WhatsNew.pending(releases: bundledIn1082, seen: seen, current: "1.0.82", usedBefore: true)
                 .map(\.version), ["1.0.82"], "見た版 \(seen)")
         }
         // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
-        let medals = releases[1]
+        let medals = releases[2]
         XCTAssertEqual(medals.items.count, 4)
         XCTAssertEqual(medals.items.first?.title.ja, "初期ユーザー章を贈ります")
         XCTAssertEqual(medals.items.compactMap(\.destination), [.mypage, .mypage])
-        let previous = releases[2]
+        let previous = releases[3]
         XCTAssertEqual(previous.items.count, 8)
         XCTAssertEqual(previous.items.first?.title.ja, "撮影スポットに作例写真")
         XCTAssertEqual(previous.items.compactMap(\.destination), [.map, .search, .home, .mypage, .mypage])
@@ -142,6 +156,114 @@ final class WhatsNewTests: XCTestCase {
             XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty || item.detail.ja.isEmpty, item.title.ja)
             XCTAssertFalse(item.symbol.isEmpty, item.title.ja)
         }
+    }
+
+    // MARK: - 日付と履歴（2026-10-18 owner「過去の履歴を見れるようにしたい」）
+
+    private func dated(_ version: String, _ date: String?) -> String {
+        let field = date.map { #","date":"\#($0)""# } ?? ""
+        return #"{"version":"\#(version)"\#(field),"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]}"#
+    }
+
+    /// 🔴 **日付は任意。** ある・無い・壊れた値のどれでも版は捨てない（壊れた日付だけ無視）
+    func testReleaseDateIsOptionalAndLenient() async throws {
+        let data = Data(#"""
+        {"releases":[
+          \#(dated("1.0.9", "2026-10-10")),
+          \#(dated("1.0.8", nil)),
+          \#(dated("1.0.7", "2026-02-30")),
+          \#(dated("1.0.6", "10/04/2026")),
+          \#(dated("1.0.5", "2026-1-4")),
+          {"version":"1.0.4","date":20261004,"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]},
+          {"version":"1.0.3","date":null,"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]}
+        ]}
+        """#.utf8)
+        let releases = WhatsNew.decode(data)
+        XCTAssertEqual(releases.map(\.version), ["1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3"])
+        XCTAssertEqual(releases.first?.date, WhatsNew.Day(year: 2026, month: 10, day: 10))
+        XCTAssertEqual(releases.dropFirst().map(\.date), Array(repeating: nil, count: 6))
+        XCTAssertNil(WhatsNew.Day("２０２６-10-10"))
+        XCTAssertNil(WhatsNew.Day("2026-13-01"))
+        XCTAssertEqual(WhatsNew.Day("2024-02-29"), WhatsNew.Day(year: 2024, month: 2, day: 29))
+        XCTAssertNil(WhatsNew.Day("2025-02-29"))
+        // 🔴 数で作る口も暦に無い日を作らない（月の表を範囲の外で引いて落ちていた）
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 0, day: 1))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 13, day: 1))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 2, day: 30))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 1, day: 0))
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_792_300_000) // 2026-10 の半ば
+
+    /// 区切りの見出し: 「1.0.82 · 10月10日」・"1.0.82 · Oct 10"・日付が無ければ版だけ・今年でなければ年も
+    func testReleaseHeading() async {
+        let r = WhatsNew.Release(version: "1.0.82", items: [], date: WhatsNew.Day(year: 2026, month: 10, day: 10))
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: false), "1.0.82 · 10月10日")
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: true), "1.0.82 · Oct 10")
+        XCTAssertEqual(WhatsNew.heading(for: release("1.0.67"), now: now, english: false), "1.0.67")
+        let old = WhatsNew.Release(version: "0.9.0", items: [], date: WhatsNew.Day(year: 2025, month: 12, day: 1))
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: false), "0.9.0 · 2025年12月1日")
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: true), "0.9.0 · Dec 1, 2025")
+        // 読み上げは「·」や略した月を読ませない
+        XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: false), "バージョン 1.0.82、10月10日")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: true), "Version 1.0.82, October 10")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: release("1.0.67"), now: now, english: false), "バージョン 1.0.67")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: old, now: now, english: true), "Version 0.9.0, December 1, 2025")
+    }
+
+    /// 🔴 **履歴は新しい順・最新は見出し無しで上・2つ目から版ごとに見出し**（JSON の並びに頼らない）
+    func testHistorySectionsAreNewestFirstWithHeadings() async {
+        let data = Data(#"{"releases":[\#(dated("1.0.67", "2026-10-04")),\#(dated("1.0.82", "2026-10-10")),\#(dated("1.0.73", nil))]}"#.utf8)
+        let sections = WhatsNew.sections(WhatsNew.decode(data), mode: .history, now: now)
+        XCTAssertEqual(sections.map(\.id), ["1.0.82", "1.0.73", "1.0.67"])
+        XCTAssertEqual(sections.map(\.heading), [nil, "1.0.73", "1.0.67 · 10月4日"])
+        XCTAssertEqual(sections.map(\.spokenHeading), [nil, "バージョン 1.0.73", "バージョン 1.0.67、10月4日"])
+        XCTAssertEqual(sections.map(\.items.count), [1, 1, 1])
+        XCTAssertEqual(WhatsNew.sections([], mode: .history), [])
+    }
+
+    /// 🔴 **起動時のシートは変えない**: 何版またいでも見出し無しの1かたまりに、項目を新しい順に平らに
+    func testLaunchSheetStaysFlat() async {
+        let releases = [release("1.0.12"), release("1.0.10")]
+        let sections = WhatsNew.sections(releases, mode: .launch, now: now)
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertNil(sections.first?.heading)
+        XCTAssertEqual(sections.first?.items, releases.flatMap(\.items))
+        XCTAssertEqual(WhatsNew.sections([], mode: .launch), [])
+    }
+
+    /// 🔴 **1.1.14 の項目は、次に Actions で出す版（testflight/1.1.13 の次 = 1.1.14）で出る**（2026-10-18）。
+    /// 比べ方は数（`isNewer`）。1.1.x を使っていた人（見た版 1.1.9〜1.1.13）に 1.1.14 の分だけ出し、
+    /// 1.1.14 を見た人・その次の版（項目の無い 1.1.15）では出さない
+    func testNextReleaseShowsOnlyOnTheNextVersion() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
+        let releases = WhatsNew.decode(data)
+        for seen in ["1.1.9", "1.1.10", "1.1.12", "1.1.13"] {
+            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: seen, current: "1.1.14", usedBefore: true)
+                .map(\.version), ["1.1.14"], "見た版 \(seen)")
+        }
+        // 版に足した "date" は今の読み方では無視される（読めなくならない・2026-10-18）
+        XCTAssertEqual(releases.first?.items.count, 9)
+        // 文字の比較なら "1.1.14" < "1.1.9" で出なかった（数で比べる）
+        XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.9"))
+        XCTAssertTrue(WhatsNew.isNewer("1.1.14", than: "1.1.13"))
+        // 1.0.x から飛んで来た人には、見ていない版の分をまとめて
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.0.82", current: "1.1.14", usedBefore: true)
+            .map(\.version), ["1.1.14"])
+        // 2回目（同じ版）・その次の版では出さない
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.14", current: "1.1.14", usedBefore: true).isEmpty)
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.14", current: "1.1.15", usedBefore: true).isEmpty)
+        // 新しいインストールには出さない
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.14", usedBefore: false).isEmpty)
+        // 版の決め方: project.yml の版より、出した印（testflight/1.1.13）の +1 が新しい（`next-marketing-version.sh`）
+        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+        let marketing = try XCTUnwrap(project.components(separatedBy: "\n")
+            .first { $0.contains("MARKETING_VERSION:") }?
+            .components(separatedBy: "\"").dropFirst().first)
+        XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.13"),
+                       "project.yml の版（\(marketing)）が 1.1.13 より新しい——次の版が 1.1.14 にならない。項目の版を見直す")
     }
 
     // MARK: - 配線（Linux では描けないので文で確かめる）
@@ -158,9 +280,32 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertTrue(root.contains("@StateObject private var whatsNew = WhatsNewGate()"))
         XCTAssertTrue(root.contains("whatsNew.markSeen()"))
         XCTAssertTrue(root.contains("WhatsNewView(releases: whatsNewReleases)"))
+        // 起動時は履歴の形にしない（`mode` の既定 `.launch` のまま）
+        XCTAssertFalse(root.contains(".history"))
+        let view = try source("Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift")
+        XCTAssertTrue(view.contains("var mode: WhatsNew.Mode = .launch"))
+        XCTAssertTrue(view.contains("WhatsNew.sections(releases, mode: mode)"))
+        // 見出しは読み上げを持ち、区切り線は札の行の間の線と同じ部品
+        XCTAssertTrue(view.contains(".accessibilityLabel(spoken)"))
+        XCTAssertTrue(view.contains("JPCardDivider()"))
         let settings = try source("Sources/JourneyPhoto/Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("\"settings.whatsNew\""))
-        XCTAssertTrue(settings.contains("WhatsNewView(releases:"))
+        // 設定からは全部の版を履歴の形で（最新の版だけに切らない・2026-10-18）
+        XCTAssertTrue(settings.contains("WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)"),
+                      "設定から開いた「新しくなったこと」が履歴になっていない")
+        XCTAssertFalse(settings.contains("WhatsNew.bundled().prefix(1)"))
+    }
+
+    /// 出した版には日付を入れる（履歴の区切りの見出し「1.0.82 · 10月10日」）。版の重複が無い
+    func testBundledReleasesCarryDates() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let releases = WhatsNew.decode(try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json")))
+        let dates = Dictionary(uniqueKeysWithValues: releases.map { ($0.version, $0.date) })
+        XCTAssertEqual(dates["1.0.82"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 10))
+        XCTAssertEqual(dates["1.0.73"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 9))
+        XCTAssertEqual(dates["1.0.67"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 4))
+        XCTAssertEqual(Set(releases.map(\.version)).count, releases.count, "版が重複している")
     }
 
     /// 項目からホームへ行く合図は回数で伝える

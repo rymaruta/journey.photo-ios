@@ -12,6 +12,9 @@ struct SettingsView: View {
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var pass: PassStore
+    /// 旅のトランクの口が在るか（無い間は行を出さない・マイページと同じ）と、入口の数（2026-10-18）
+    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @ObservedObject private var trunkEntry = TrunkEntryStore.shared
     /// 自分のプロフィール（Pro の節の中身・第2段階）。読めなければ nil
     @State private var myProfile: UserProfile?
     @State private var wantsPush = false
@@ -26,7 +29,6 @@ struct SettingsView: View {
     @State private var showWhatsNew = false
     /// トランクを見せる（板 TrunkPrivacy・2026-10-18）。トランクの口がある人にだけ出す（`TrunkAvailability`）
     @StateObject private var trunkPrivacy = TrunkPrivacyModel()
-    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
 
     /// 「トランクを見せる」を出すか（口が読めたことがあり、いまの設定が読めたとき）
     private var showsTrunkPrivacy: Bool { trunkAvailability.isAvailable && trunkPrivacy.state != nil }
@@ -47,13 +49,16 @@ struct SettingsView: View {
         list
             // Pro の節のためのプロフィール。名前の横を決めた・購入した（`noteProfileChanged`）ら読み直す
             .task(id: auth.profileRevision) { await loadMyProfile() }
-            // トランクの見せる設定と、わたしの乗車券の揃え（入っている人が替わったら読み直す）
+            // 旅のトランクの行（マイページを開く前に設定へ来た人にも出す）と、トランクの見せる設定・わたしの乗車券の揃え。
+            // 読むかはどちらも決まりのとおり（覚えている人は 6 時間に1回・`TrunkAvailabilityRule`・`TrunkEntryRule`）。
+            // `GET /user/trunk` は入口の店（`TrunkEntryStore`）の1本にまとめる
             .task(id: auth.userId) {
                 // 入っている人が替わったら、前の人の設定・見本の札を消してから読む
                 trunkPrivacy.reset(for: auth.userId)
-                guard let userId = auth.userId else { return }
-                await trunkAvailability.refresh(userId: userId, service: environment.trunk)
-                guard trunkAvailability.isAvailable else { return }
+                await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
+                await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
+                                         service: environment.trunk)
+                guard let userId = auth.userId, trunkAvailability.isAvailable else { return }
                 await trunkPrivacy.load(userId: userId, service: environment.trunk, pass: pass.settings)
             }
             .task {
@@ -153,6 +158,7 @@ struct SettingsView: View {
                     ProSettingsSection(profile: myProfile)
                     notificationsSection
                     passSection
+                    trunkSection
                     privacySection
                     if showsTrunkPrivacy {
                         TrunkPrivacyPreview(model: trunkPrivacy, profile: myProfile, userId: auth.userId)
@@ -187,9 +193,9 @@ struct SettingsView: View {
         .navigationTitle(L("設定", "Settings"))
         // ログアウトの途中は戻らせない・シートも払わせない（戻って開き直すと門が新しくなり、
         // 二度押せる。`DeleteAccountView` と同じ2つ）
-        // 開き直すときは一番新しい版の分だけ（版が増えても昔の項目まで並べない）
+        // 設定から開いたときは履歴（新しい版が上・版ごとに区切りの見出し・2026-10-18 owner「過去の履歴を見れるようにしたい」）
         .sheet(isPresented: $showWhatsNew) {
-            WhatsNewView(releases: Array(WhatsNew.bundled().prefix(1)), primaryTitle: Labels.Common.close)
+            WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)
         }
         .navigationBarBackButtonHidden(isSigningOut)
         .interactiveDismissDisabled(isSigningOut)
@@ -238,6 +244,37 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.pass")
+        }
+    }
+
+    /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。すれちがいと同じ形の、機能ごとの節に1行。
+    /// 置き場はすれちがいの下（どちらも旅先・投稿で届くもの）。**口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。
+    /// 右の値は硬貨の枚数（読めていれば・ほかの行の値と同じ等幅の字）。読み上げは硬貨と貼っていないラベルの有無
+    @ViewBuilder
+    private var trunkSection: some View {
+        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
+            section(TrunkEntryText.title) {
+                NavigationLink {
+                    TrunkView(ownerName: myProfile?.name)
+                        .onDisappear { trunkEntry.markStale() }
+                } label: {
+                    JPRowLabel(title: TrunkEntryText.title, detail: TrunkEntryText.detail,
+                               value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
+                }
+                .buttonStyle(JPRowButtonStyle())
+                // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
+                .accessibilityLabel(TrunkEntryText.title)
+                .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
+                .accessibilityHint(TrunkEntryText.detail)
+                .accessibilityIdentifier("settings.trunk")
+            }
+            // トランクから戻ったら数を読み直す（`markStale` のときだけ読む・2026-10-18 見直し）
+            .onAppear {
+                Task {
+                    await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
+                                             service: environment.trunk)
+                }
+            }
         }
     }
 

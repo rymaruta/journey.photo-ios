@@ -145,6 +145,8 @@ struct UploadView: View {
         // 次の人の下書きに入る）。下書きは人ごと（`UploadDraftStore`）
         .onChange(of: auth.userId) { _, id in
             if model.draftOwner != id { model.draftOwner = nil }
+            // 「撮影地の位置を付ける」も次の人の値に替える（前の人の値を使わない・2026-10-18）
+            model.useLocationOwner(id)
         }
         // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
         .interactiveDismissDisabled(model.isWorking || model.hasDraft)
@@ -365,6 +367,9 @@ struct UploadView: View {
                 } else if model.items.count > 1 {
                     groupChoice
                 }
+                // 撮影地の欄のすぐ上（2026-10-18 判断）。**写真を選ぶ前から出す**——撮影地は読み込んだ瞬間に
+                // 写真の位置から引き始めるので、選んでから出しても遅い（Web の切り替えと同じ）
+                locationToggle
                 detailSection
                 inspiredCard
                 rowsCard
@@ -418,6 +423,9 @@ struct UploadView: View {
             hideEditHint()
         }
         .onAppear {
+            // 「撮影地の位置を付ける」の持ち主（人ごとの値・2026-10-18）。**写真を並べるより先に**——
+            // 旅の写真・撮った1枚は下で並べた瞬間に撮影地を引き始める（`UploadViewModel.startPlaceLookup`）
+            model.useLocationOwner(auth.userId)
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
@@ -1172,6 +1180,34 @@ struct UploadView: View {
 
     private func albumTitle(_ album: Album) -> String {
         album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title
+    }
+
+    /// 「撮影地の位置を付ける」（2026-10-18 判断・`UploadViewModel.attachesLocation`）。投稿の全部の写真に効く。
+    /// 人ごとに端末に覚える（`UploadLocationPreference`）。軌道は「SNS にも載せる」と同じ暗い真鍮
+    /// （板: Toggle のオン＝accent-deep。黒地の上）
+    private var locationToggle: some View {
+        JPCard {
+            Toggle(isOn: Binding(get: { model.attachesLocation },
+                                 set: { model.setAttachesLocation($0) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(UploadDetails.locationToggleTitle)
+                        .font(.callout)
+                        .foregroundStyle(WebTheme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(UploadDetails.locationToggleNote(attaches: model.attachesLocation))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(WebTheme.accentDeep)
+            // 送っている間は変えさせない（送る中身は1枚ずつ作り直すので、途中で変わると写真ごとに割れる）
+            .disabled(model.isWorking)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .accessibilityIdentifier("upload.attachLocation")
+        }
     }
 
     /// 投稿したら SNS にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える

@@ -192,7 +192,7 @@ struct TrunkProModelsView: View {
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 買えたかもしれない: Pro の型を選べるか読み直す
             Task { await model.refreshAfterPaywall() }
-        }) { PaywallView() }
+        }) { PaywallView(origin: .trunk) }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける（2026-10-17・run 464）
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.proModels.screen")

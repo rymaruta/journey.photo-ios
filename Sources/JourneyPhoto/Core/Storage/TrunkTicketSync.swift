@@ -40,9 +40,23 @@ final class TrunkTicketSync: ObservableObject {
         let retryRefused: Bool
     }
 
-    init(defaults: UserDefaults = .standard) {
+    /// いまログインしている人（すれちがいの帳の人・`PassStore.userId`）。送る直前に頼みの人と比べる
+    private let currentUser: () -> String?
+
+    /// 設定の「わたしの乗車券もトランクに入れる」の行が出ている数。出ている間は断りの訳を行に出すので、
+    /// 知らせの帯は出さない（同じ訳が2か所に出ないように・`shouldToast`）
+    private(set) var inlineViewers = 0
+
+    init(defaults: UserDefaults = .standard, currentUser: (() -> String?)? = nil) {
         self.defaults = defaults
+        self.currentUser = currentUser ?? { PassStore.shared.userId }
     }
+
+    func inlineAppeared() { inlineViewers += 1 }
+    func inlineDisappeared() { inlineViewers = max(0, inlineViewers - 1) }
+
+    /// 断りの訳を知らせの帯で出すか（設定の行が出ていなければ）
+    var shouldToast: Bool { inlineViewers == 0 }
 
     // MARK: 覚えている物
 
@@ -119,7 +133,11 @@ final class TrunkTicketSync: ObservableObject {
         if wanted == nil { remember(nil, userId: r.userId) }
         let refusal = refusal(r.userId)
         let refused = Rule.blocks(refusal, retry: r.retryRefused) ? refusal?.ticket : nil
-        switch Rule.action(wanted: wanted, server: known(r.userId), refused: refused) {
+        let action = Rule.action(wanted: wanted, server: known(r.userId), refused: refused)
+        // 送る直前に、頼みの人がいまログインしている人か確かめる（待っている間にログアウト・人の切り替えがあったら、
+        // 前の人の乗車券を次の人のトランクに置かない・外さない）。違えば送らずに捨てる
+        guard action == .none || currentUser() == r.userId else { return nil }
+        switch action {
         case .none:
             return nil
         case .remove:
@@ -188,24 +206,5 @@ enum TrunkTicketSyncRule {
     static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: knownKey(userId))
         defaults.removeObject(forKey: refusedKey(userId))
-        TrunkOwnSettings.removeData(for: userId, defaults: defaults)
-    }
-}
-
-/// 自分の「トランクを見せる」の控え（2026-10-18）。自分のページを人の画面で開いたとき、`GET /user/trunk` を
-/// 読み足さずに段を出すかを決める。**読んだ・書いたときに覚え、控えが無いときだけ読む**
-enum TrunkOwnSettings {
-    static func key(_ userId: String) -> String { "trunk.showTrunk.\(userId)" }
-
-    static func showTrunk(userId: String, defaults: UserDefaults = .standard) -> Bool? {
-        defaults.object(forKey: key(userId)) as? Bool
-    }
-
-    static func note(showTrunk: Bool, userId: String, defaults: UserDefaults = .standard) {
-        defaults.set(showTrunk, forKey: key(userId))
-    }
-
-    static func removeData(for userId: String, defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: key(userId))
     }
 }

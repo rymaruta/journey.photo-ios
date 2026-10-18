@@ -3,11 +3,13 @@ import SwiftUI
 /// 設定の「トランクを見せる」（板 TrunkPrivacy・2026-10-18）。
 ///
 /// - 切り替えは `PUT /user/trunk/settings { showTrunk }`（オフの間は人の口が 404）。**送れたら応答の値を映し、
-///   断られた・圏外なら元に戻して一行で知らせる**（嘘の状態を残さない）。見せる設定は端末にも控える（`TrunkOwnSettings`）
+///   断られた・圏外なら元に戻して一行で知らせる**（嘘の状態を残さない）。送れたら入口の店（`TrunkEntryStore`）の中身も直す
+/// - 自分の中身は入口の店の読みを通す（`GET /user/trunk` を1本にまとめる・読めていればそれを使う）
 /// - 「わたしの乗車券もトランクに入れる」（**既定はオフ**・端末の中のすれちがいの設定 `ticketInTrunk`）。
 ///   揃えるのはすれちがいの設定が変わった後ろ（`PassStore.onSettingsChanged` → `TrunkTicketSync`）と、この画面を開いたとき
 ///   （写真が公開でない、の断りはこのときに1回だけ送り直す）。断りの訳は人ごとに覚えていて、開くたびに出す
-/// - ほかの人から見た姿の見本は、人と同じ口（`GET /users/<自分>/trunk`）を描く。読めないときだけ地名なしの形
+/// - ほかの人から見た姿の見本は、人と同じ口（`GET /users/<自分>/trunk`）を描く。読めないときだけ地名なしの形。
+///   見せる設定がオフの間は読まない（人には出ていない）
 /// - 入っている人が替わったら、前の人の設定・見本の札を消す
 /// - 画面写真の見本（`-JPPreviewTrunk`）では、サーバーに何も送らず端末の中だけで切り替える
 @MainActor
@@ -24,14 +26,14 @@ final class TrunkPrivacyModel: ObservableObject {
 
     private let preview: PreviewSession.TrunkPreview?
     private let sync: TrunkTicketSync
-    private let defaults: UserDefaults
+    private let entry: TrunkEntryStore
     private var userId: String?
 
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample, sync: TrunkTicketSync? = nil,
-         defaults: UserDefaults = .standard) {
+         entry: TrunkEntryStore? = nil) {
         self.preview = preview
         self.sync = sync ?? .shared
-        self.defaults = defaults
+        self.entry = entry ?? .shared
     }
 
     var showTrunk: Bool { state?.showTrunk ?? true }
@@ -52,16 +54,20 @@ final class TrunkPrivacyModel: ObservableObject {
             if state == nil { state = TrunkSample.state(isPro: PreviewSession.isPro, empty: preview == .empty) }
             return
         }
-        guard let fresh = try? await service.state(), self.userId == userId else { return }
+        // 入口の店が読めていればそれを使い、無ければ店の読みを通す（`GET /user/trunk` を1本に）
+        let cached = entry.state(for: userId)
+        let read: TrunkState?
+        if let cached { read = cached } else { read = try? await entry.read(userId: userId, service: service) }
+        guard let fresh = read, self.userId == userId else { return }
         state = fresh
-        TrunkOwnSettings.note(showTrunk: fresh.showTrunk, userId: userId, defaults: defaults)
         sync.note(server: fresh.ticket, userId: userId)
         // 開いたとき: 写真が公開でない、で断られた1枚は1回だけ送り直す（本人があとで公開にしたかもしれない）
         await sync.sync(userId: userId, settings: pass, service: service, available: available,
                         preview: false, retryRefused: true)
         guard self.userId == userId else { return }
         if let current = state { state = current.copy(ticket: .some(sync.known(userId))) }
-        // ほかの人から見た姿（自分を読むと、見せない設定でも人と同じ形が返る）
+        // ほかの人から見た姿（自分を読むと、見せない設定でも人と同じ形が返る）。見せていない間は読まない
+        guard state?.showTrunk == true else { seen = nil; return }
         let theirs = try? await service.theirs(userId)
         guard self.userId == userId else { return }
         seen = theirs ?? nil
@@ -85,7 +91,7 @@ final class TrunkPrivacyModel: ObservableObject {
         do {
             let next = try await service.setShowTrunk(on).keepingPosts(from: current)
             state = next
-            if let userId { TrunkOwnSettings.note(showTrunk: next.showTrunk, userId: userId, defaults: defaults) }
+            if let userId { entry.apply(next, userId: userId) }
         } catch {
             state = current
             self.error = TrunkViewModel.message(error)
@@ -123,6 +129,9 @@ struct TrunkShowRow: View {
                 .disabled(!model.showTrunk)
                 .accessibilityIdentifier("settings.ticketInTrunk")
         }
+        // 出ている間は断りの訳をこの行に出す（知らせの帯は出さない・`TrunkTicketSync.shouldToast`）
+        .onAppear { sync.inlineAppeared() }
+        .onDisappear { sync.inlineDisappeared() }
     }
 
     private func note(_ text: String, color: Color) -> some View {

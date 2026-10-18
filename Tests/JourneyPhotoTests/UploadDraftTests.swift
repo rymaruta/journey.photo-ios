@@ -98,7 +98,8 @@ final class UploadDraftTests: XCTestCase {
             .appendingPathComponent("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift"), encoding: .utf8)
         XCTAssertTrue(source.contains("items[index].fillAutomatically(next)"))
         // 送るときは索引を待ってから (c) を見る（`PlaceCoordsRule`）
-        XCTAssertTrue(source.contains("draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit)"))
+        // 2026-10-18: 「撮影地の位置を付ける」の値も渡す（`attachesPhotoLocation:`）
+        XCTAssertTrue(source.contains("draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit,"))
         XCTAssertTrue(source.contains("spotIndexForSubmit = await PlaceCoordsRule.index("))
     }
 
