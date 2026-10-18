@@ -501,6 +501,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testCapturesEveryScreen() {
+        // 2026-10-18 判断: この1本だけ時間の上限を 1200秒に上げる（実測 362〜462秒の約2.6倍）。
+        // ほかの UI テストの既定は 300秒（`Tools/xcode-test.sh` の注記・上限の頭打ちも 1200秒）
+        executionTimeAllowance = 1200
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         // **写真の出どころだけ本番に向ける。** テストは Debug＝staging 設定で
