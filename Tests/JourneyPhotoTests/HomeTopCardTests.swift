@@ -305,7 +305,8 @@ final class HomeTopCardTests: XCTestCase {
     }
 
     /// 🔴 **日替わり**（owner・2026-10-18「日替わりだね」。2026-09-30〜10-17 は週替わり）。同じ日は何度開いても
-    /// 同じ・0時で次の1件。候補は `spotId` の順に並べて日の番号の偶数・奇数で半分に分け、今日の半分の中を進む
+    /// 同じ・0時で次の1件。候補は `spotId` の順に並べて行の番号を3で割った余りで3つの組に分け、今日の組
+    /// （日の番号を3で割った余り）の中を3日ごとに進む（`HomeDailySpots`）
     func testInSeasonRotatesDaily() throws {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
         let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
@@ -317,25 +318,28 @@ final class HomeTopCardTests: XCTestCase {
             guard case .inSeason(let spot, _, _)? = inSeasonCard(seasonCards(list, now: at)) else { return nil }
             return spot.spotId
         }
-        // 2026-09-27 は紀元から 20723 日目（奇数）→ 奇数番目 [b, d] の 20723/2=10361 番目（奇数）→ d。
-        // 翌日（偶数）→ [a, c] の 10362 番目 → a。その次 → [b, d] の 10362 → b。その次 → [a, c] の 10363 → c
+        // 組は [a, d]（0番・3番）・[b]（1番）・[c]（2番）。2026-09-27 は紀元から 20723 日目（3で割って余り2）→ [c]。
+        // 翌日（余り0）→ [a, d] の 6908 回目（偶数）→ a。その次（余り1）→ b。その次 → c。
+        // その次（余り0）→ [a, d] の 6909 回目（奇数）→ d
         XCTAssertEqual(HomeTopCard.dayNumber(try XCTUnwrap(HomeTopCard.today(now, in: utc))), 20_723)
-        XCTAssertEqual((0..<5).map { pick($0) }, ["sp_d", "sp_a", "sp_b", "sp_c", "sp_d"])
+        XCTAssertEqual((0..<6).map { pick($0) }, ["sp_c", "sp_a", "sp_b", "sp_c", "sp_d", "sp_b"])
         // 並び順では変わらない
         XCTAssertEqual(inSeasonCard(seasonCards([a, b, c, d])), inSeasonCard(seasonCards(list)), "並び順で変わっている")
         // 同じ日のうちは変わらない（12:00 UTC の前後 11 時間）
-        XCTAssertEqual(pick(0, hour: -11), "sp_d")
-        XCTAssertEqual(pick(0, hour: 11), "sp_d")
+        XCTAssertEqual(pick(0, hour: -11), "sp_c")
+        XCTAssertEqual(pick(0, hour: 11), "sp_c")
         // 0時を過ぎたら次の1件
         XCTAssertEqual(pick(0, hour: 12.1), "sp_a")
-        // 2件でも毎日替わる（半分に1件ずつ）
+        // 2件でも毎日替わる（3つ目の組は空で、ほかの組から借りる日も昨日の札は避ける）
         let two = [a, b]
-        let pair = (0..<4).map { offset -> String? in
+        let pair = (0..<12).map { offset -> String? in
             guard case .inSeason(let spot, _, _)? = inSeasonCard(seasonCards(two, now: now.addingTimeInterval(Double(offset) * 86_400)))
             else { return nil }
             return spot.spotId
         }
-        XCTAssertEqual(pair, ["sp_b", "sp_a", "sp_b", "sp_a"])
+        for index in 1..<pair.count {
+            XCTAssertNotEqual(pair[index], pair[index - 1], "2件で前の日と同じ札（\(index)日後）: \(pair)")
+        }
     }
 
     func testDayNumberAdvancesEveryDay() throws {
@@ -537,7 +541,7 @@ final class HomeTopCardTests: XCTestCase {
         let choice = try spot("sp_000000000001")   // 外れの選択肢
         let next = try spot("sp_000000000009")     // 選択肢に無い
         XCTAssertTrue(q.choices.map(\.spotId).contains(choice.spotId))
-        // 前提: 問題が無い日、9/28（紀元から偶数の日）は1件目（選択肢の方）が当たる（日替わり・2026-10-18）
+        // 前提: 問題が無い日、9/28（紀元からの日数を3で割って余り0＝選択肢の方の組）は選択肢の方が当たる（日替わり・2026-10-18）
         let now = self.now.addingTimeInterval(86_400)
         XCTAssertEqual(inSeasonCard(seasonCards([choice, next], now: now)),
                        .inSeason(spot: choice, season: "autumn", guide: "秋は紅葉"))

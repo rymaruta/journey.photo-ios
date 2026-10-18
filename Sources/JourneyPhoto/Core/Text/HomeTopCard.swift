@@ -251,36 +251,14 @@ enum HomeTopCard {
         Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
     }
 
-    /// 季節の候補（`seasonGuides` の並び）を、**日の番号の偶数・奇数で半分に分ける**。偶数の日は
-    /// 偶数番目の行、奇数の日は奇数番目の行から選ぶ（季節の札も段も）——**今日出たスポットは、
-    /// 明日は上の札にも段にも出ない**（隣り合う日は別の半分）。
-    ///
-    /// 2026-10-18 判断: 段を「1日に `count` 件ずつ先へ」だけにすると、都道府県で散らすときに
-    /// 窓の外（＝明日の窓）の行を拾い、**翌日も同じスポットが出る**。本番の台帳の秋（194件）で数えると
-    /// 365日中 89日で翌日と重なった（半分に分けると 0日）。`own` が今日の半分、`other` が残り
-    /// （今日の半分で足りないときの埋め草）
-    static func dailyHalves<T>(_ rows: [T], day: Int) -> (own: [T], other: [T]) {
-        let parity = ((day % 2) + 2) % 2
-        var own: [T] = [], other: [T] = []
-        for (index, row) in rows.enumerated() {
-            if index % 2 == parity { own.append(row) } else { other.append(row) }
-        }
-        return (own, other)
-    }
-
-    /// 半分の中で何回目か（日の番号を2で割って切り下げ）。半分は2日に1度しか回ってこないので、
-    /// その半分の中では2日ごとに1つ（段は `count` 件）先へ進む
-    static func halfStep(_ day: Int) -> Int {
-        Int((Double(day) / 2).rounded(.down))
-    }
-
     /// いまの季節の案内を持つ、写真のある公開済みのスポットから**日替わりで1件**。
     ///
     /// - 季節は `today`（端末の暦の今日を UTC 0 時に置いたもの）の月から決める
     ///   （春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。`SpotBodyText.season`）
-    /// - 候補は `spotId` の順に並べ、**今日の半分**（`dailyHalves`）の中を**日ごとに1件ずつ進める**
-    ///   （`dayNumber`・`halfStep`）——同じ日なら何度開いても同じ札、翌日は別の半分なので同じ札は続かない。
-    ///   今日の半分に写真のある候補が無ければ、残りの半分から選ぶ。`spotId` は名前と無関係な
+    /// - 候補は `spotId` の順に並べ、**3つの組と1日ぶんの窓**で選ぶ（`HomeDailySpots`）——同じ日なら
+    ///   何度開いても同じ札、**3日続けて同じ札は出ない**（隣り合う3日は別の組）。窓の中で写真のある
+    ///   最初の1件。写真のある候補の無い組があれば（候補の少ない季節）、写真のある候補を1日1件ずつ回す
+    ///   （2件あれば翌日は別の札）。`spotId` は名前と無関係な
     ///   16進なので、県や種別が続けて並ぶことはない
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
@@ -290,17 +268,8 @@ enum HomeTopCard {
     static func inSeason(today: Date, spots: [OfficialSpot], excluding: Set<String> = []) -> Choice? {
         let guides = seasonGuides(today: today, spots: spots)
         let day = dayNumber(today)
-        // 半分に分けるのは**絞る前**（段と同じ並びで分ける＝今日の札と明日の段も重ならない）
-        let halves = dailyHalves(guides.rows, day: day)
-        let usable: ([(spot: OfficialSpot, guide: String)]) -> [(spot: OfficialSpot, guide: String)] = { rows in
-            rows.filter { $0.spot.hasPhoto && !excluding.contains($0.spot.spotId) }
-        }
-        var candidates = usable(halves.own)
-        if candidates.isEmpty { candidates = usable(halves.other) }
-        guard !candidates.isEmpty else { return nil }
-        let step = halfStep(day)
-        let index = ((step % candidates.count) + candidates.count) % candidates.count
-        return .inSeason(spot: candidates[index].spot, season: guides.season, guide: candidates[index].guide)
+        guard let row = HomeDailySpots.top(guides.rows, day: day, excluding: excluding) else { return nil }
+        return .inSeason(spot: row.spot, season: guides.season, guide: row.guide)
     }
 
     /// いまの季節と、その季節の案内を持つ**公開済み**のスポット（`spotId` の順・案内の文は前後の空白を落とす）。
