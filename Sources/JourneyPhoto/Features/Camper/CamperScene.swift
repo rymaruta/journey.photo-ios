@@ -49,7 +49,7 @@ final class CamperScene {
     private(set) var currentMood: CamperMood = .day
     /// その時刻だけ見せる部品の組と灯り
     private var moodNodes: [(SCNNode, Set<CamperMood>)] = []
-    private var moodLights: [(SCNLight, Double, Set<CamperMood>?)] = []
+    private var moodLights: [(SCNNode, Set<CamperMood>?)] = []
     /// いま組んである形の鍵（時刻を除いた設定）
     private var builtKey: CamperConfig?
 
@@ -148,10 +148,8 @@ final class CamperScene {
         applyMood(mood)
         for (m, scn) in materials { configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood)) }
         for (node, moods) in moodNodes { node.isHidden = !moods.contains(mood) }
-        for (light, intensity, moods) in moodLights {
-            let on = moods.map { $0.contains(mood) } ?? true
-            light.intensity = CGFloat(on ? intensity : 0)
-        }
+        // その時刻でない灯りはノードごと隠す（強さ 0 で残すと、影ありの spot が昼にも影の絵を描き、光の数にも数えられる）
+        for (node, moods) in moodLights { node.isHidden = !(moods.map { $0.contains(mood) } ?? true) }
     }
 
     // MARK: 組み立て
@@ -310,7 +308,7 @@ final class CamperScene {
                 n.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
             }
             car.addChildNode(n)
-            moodLights.append((l, light.intensity, light.moods))
+            moodLights.append((n, light.moods))
         }
         // 車体の下の暗がり（板: 楕円・ぼかし・0.75）。床から少し浮かせる
         let len = (bp.length.upperBound - bp.length.lowerBound + 8) * s

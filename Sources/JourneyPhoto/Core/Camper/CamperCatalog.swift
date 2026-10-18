@@ -740,12 +740,67 @@ struct CamperStore {
     }
 }
 
+/// 画面で付け外しする飾り（2026-10-18 #312 の見直し）。**保存する値は持っていない部品も外さない**——
+/// 数え直しの途中や写真を読む前（数が 0）に外して保存すると、選んだ部品が消える。外すのは見せる時だけ（`worn`）
+struct CamperGarageEditor: Equatable {
+    private(set) var loadout = CamperLoadout.standard
+
+    /// 開いた時: 保存した値をそのまま持つ
+    mutating func open(_ store: CamperStore) { loadout = store.load() }
+
+    /// 画面に出す飾り（持っていない部品を外す）
+    func worn(owned: Set<String>) -> CamperLoadout { loadout.sanitized(owned: owned) }
+
+    /// 持っている部品だけ付けて保存する（持っていなければ何もしない）
+    @discardableResult
+    mutating func equip(_ part: CamperPart, owned: Set<String>, store: CamperStore) -> Bool {
+        guard owned.contains(part.id) else { return false }
+        loadout.pick(part)
+        store.save(loadout)
+        return true
+    }
+
+    /// 付けない（付けないこともできる分類）
+    mutating func remove(_ c: CamperCategory, store: CamperStore) {
+        loadout.remove(c)
+        store.save(loadout)
+    }
+
+    /// オーニングを広げる・畳む（`save` が false なら見せるだけ。部品を見る時に広げる）
+    mutating func setAwning(_ open: Bool, store: CamperStore?) {
+        loadout.awningOpen = open
+        store?.save(loadout)
+    }
+}
+
 // MARK: - 投稿から数える
 
 enum CamperCounting {
 
     /// 自分の写真の一覧から数える（**下書きは数えない**・旅の一冊も公開した写真から）。マイページの写真の一覧
     /// （`MyPageViewModel.photos`）には下書きが入るので、ここで `published != false` に絞る（2026-10-18 #312 の見直し）
+    /// 数え直す目印。数えに使う欄（id・公開か・撮った時・撮影地・題・分類・タグ・位置・代表色）を全部並べた値の hash。
+    /// 先頭と最後の id だけでは、公開と下書きの切り替え・撮影地の直し・間の 1 枚の入れ替えを拾わなかった（#312 の見直し）
+    static func countKey(_ photos: [Photo], loaded: Bool) -> Int {
+        var h = Hasher()
+        h.combine(loaded)
+        h.combine(photos.count)
+        for p in photos {
+            h.combine(p.id)
+            h.combine(p.published)
+            h.combine(p.exif?.dateTimeOriginal)
+            h.combine(p.date)
+            h.combine(p.location)
+            h.combine(p.displayTitle)
+            h.combine(p.category)
+            h.combine(p.tags)
+            h.combine(p.coords?.lat)
+            h.combine(p.coords?.lng)
+            h.combine(p.dominantColor)
+        }
+        return h.finalize()
+    }
+
     static func count(_ photos: [Photo]) -> CamperStats {
         let posted = photos.filter { $0.published != false }
         return stats(photos: posted, books: TripBook.shelfTrips(from: posted).count)

@@ -65,12 +65,15 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(node(scene, "camper.outside")) === body, "夜にしただけで組み直した")
         XCTAssertEqual(markers.last?.hasPrefix("camper-ready camper night"), true, "切り替えの合図が出ない")
         XCTAssertEqual(scene.currentMood, .night)
-        XCTAssertTrue(lights(scene).filter { $0.name.hasPrefix("interior.") }.allSatisfy { $0.light.intensity > 0 })
+        XCTAssertTrue(all(scene.scene.rootNode).filter { $0.light != nil && ($0.name ?? "").hasPrefix("light.") }.allSatisfy { !$0.isHidden })
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
 
         scene.show(day)
         XCTAssertTrue(try XCTUnwrap(node(scene, "camper.outside")) === body)
-        XCTAssertTrue(lights(scene).allSatisfy { $0.light.intensity == 0 }, "昼に夜の灯りが点いている")
+        // 昼は夜の灯りのノードが隠れている（強さ 0 で残さない）
+        let lightNodes = all(scene.scene.rootNode).filter { $0.light != nil && ($0.name ?? "").hasPrefix("light.") }
+        XCTAssertFalse(lightNodes.isEmpty)
+        XCTAssertTrue(lightNodes.allSatisfy(\.isHidden), "昼に夜の灯りが残っている")
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0.2)
 
         // 雪の部品は雪の時だけ見える

@@ -15,7 +15,9 @@ struct CamperGarageView: View {
     let photosLoaded: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var loadout = CamperLoadout.standard
+    /// 付けている飾り（保存する値は外さない・`CamperGarageEditor`）
+    @State private var editor = CamperGarageEditor()
+    private var loadout: CamperLoadout { editor.loadout }
     @State private var loaded = false
     @State private var mood: CamperMood = .day
     @State private var angle = CamperFraming.overview(.camper)
@@ -42,10 +44,10 @@ struct CamperGarageView: View {
 
     /// 画面に出す飾り（持っていない部品は外して見せる）。**保存する値（`loadout`）は外さない**——数え直しの途中や
     /// 写真を読む前に外して保存すると、選んだ部品が消える
-    private var worn: CamperLoadout { loadout.sanitized(owned: owned) }
+    private var worn: CamperLoadout { editor.worn(owned: owned) }
 
     /// 数え直す目印（写真の数・先頭と最後の id・読めたか）
-    private var countKey: String { "\(photosLoaded) \(photos.count) \(photos.first?.id ?? "") \(photos.last?.id ?? "")" }
+    private var countKey: Int { CamperCounting.countKey(photos, loaded: photosLoaded) }
 
     private var config: CamperConfig {
         var shown = worn
@@ -90,7 +92,7 @@ struct CamperGarageView: View {
         guard !loaded else { return }
         loaded = true
         // 覚えている飾りはそのまま持つ（外すのは見せる時だけ・`worn`）
-        loadout = store.load()
+        editor.open(store)
         angle = CamperFraming.overview(actualStage)
     }
 
@@ -108,10 +110,8 @@ struct CamperGarageView: View {
     }
 
     private func equip(_ part: CamperPart) {
-        guard owned.contains(part.id) else { return }
-        loadout.pick(part)
+        guard editor.equip(part, owned: owned, store: store) else { return }
         previewPart = nil
-        store.save(loadout)
     }
 
     // MARK: 見出し
@@ -230,8 +230,7 @@ struct CamperGarageView: View {
             if stage != .van {
                 sceneButton("beach.umbrella", label: loadout.awningOpen ? L("オーニングを畳む", "Stow the awning") : L("オーニングを広げる", "Open the awning"),
                             id: "camper.awning") {
-                    loadout.awningOpen.toggle()
-                    store.save(loadout)
+                    editor.setAwning(!loadout.awningOpen, store: store)
                 }
             }
             sceneButton("arrow.counterclockwise", label: L("初めの向きに戻す", "Reset the view"), id: "camper.reset") {
@@ -283,7 +282,8 @@ struct CamperGarageView: View {
             statTile(L("集めた部品", "Parts"), "\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)",
                      note: CamperText.dexNote())
             statTile(L("写真", "Photos"), "\(stats.posts)")
-            statTile(L("走った旅", "Trips"), "\(stats.books)")
+            // 数えるのは公開した写真の旅（マイページの旅の棚は非公開も入るので、数が違う人がいる・#312 の見直し）
+            statTile(L("公開した旅", "Public trips"), "\(stats.books)")
         }
     }
 
@@ -413,7 +413,7 @@ struct CamperGarageView: View {
         category = c
         group = c.group
         previewPart = nil
-        if c == .awning, !loadout.awningOpen { loadout.awningOpen = true }
+        if c == .awning, !loadout.awningOpen { editor.setAwning(true, store: nil) }
         aim(CamperFraming.focus(c, stage: stage))
     }
 
@@ -425,8 +425,7 @@ struct CamperGarageView: View {
                 let on = worn.key(category) == CamperLoadout.none && previewPart == nil
                 Button {
                     previewPart = nil
-                    loadout.remove(category)
-                    store.save(loadout)
+                    editor.remove(category, store: store)
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: "nosign").font(.system(size: 22)).foregroundStyle(WebTheme.muted2)

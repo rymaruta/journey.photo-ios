@@ -294,6 +294,45 @@ final class CamperModelTests: XCTestCase {
             .appendingPathComponent("Sources/JourneyPhoto/Core/Camper/CamperCatalog.swift").path, encoding: .utf8)) ?? ""
         XCTAssertTrue(source.contains("var name: String { L(nameJa, nameEn) }"), "名前を作った時の言語で固めている")
     }
+
+    /// 開いた時は保存した値をそのまま持ち、持っていない部品も保存から外さない。見せる時だけ外す（#312 の見直し）
+    func testEditorKeepsSavedPicks() {
+        let d = defaults()
+        let store = CamperStore(userId: "me", defaults: d)
+        var saved = CamperLoadout.standard
+        saved.pick(CamperCatalog.part("wheel.steel_black")!)
+        store.save(saved)
+        let none = CamperCatalog.owned(CamperStats())
+        var editor = CamperGarageEditor()
+        editor.open(store)
+        XCTAssertEqual(editor.loadout.key(.wheel), "steel_black", "開いた時に保存の値を外した")
+        XCTAssertEqual(editor.worn(owned: none).key(.wheel), "chrome_dish")
+        // 別の分類を付け替えて保存しても、持っていない間のホイールは保存に残る
+        XCTAssertTrue(editor.equip(CamperCatalog.part("paint.mist")!, owned: none, store: store))
+        XCTAssertEqual(store.load().key(.wheel), "steel_black")
+        XCTAssertEqual(store.load().key(.paint), "mist")
+        // 持っていない部品は付けない
+        XCTAssertFalse(editor.equip(CamperCatalog.part("wheel.brass_spoke")!, owned: none, store: store))
+        XCTAssertEqual(store.load().key(.wheel), "steel_black")
+        // 見せるためにオーニングを広げても保存しない
+        editor.setAwning(true, store: nil)
+        XCTAssertFalse(store.load().awningOpen)
+        editor.remove(.roofTent, store: store)
+        XCTAssertEqual(store.load().key(.wheel), "steel_black")
+    }
+
+    /// 数え直しの目印: 公開と下書きの切り替え・撮影地の直し・間の 1 枚の入れ替え・読めたかで変わる
+    func testCountKeyNoticesEdits() throws {
+        let a = try photo("a", exif: "2024:05:01 10:00:00", location: "長野県"), b = try photo("b", location: "京都府")
+        let c = try photo("c", location: "沖縄県")
+        let base = CamperCounting.countKey([a, b, c], loaded: true)
+        XCTAssertEqual(base, CamperCounting.countKey([a, b, c], loaded: true))
+        XCTAssertNotEqual(base, CamperCounting.countKey([a, b, c], loaded: false))
+        XCTAssertNotEqual(base, CamperCounting.countKey([a, try photo("b", location: "京都府", published: false), c], loaded: true))
+        XCTAssertNotEqual(base, CamperCounting.countKey([a, try photo("b", location: "大阪府"), c], loaded: true))
+        XCTAssertNotEqual(base, CamperCounting.countKey([a, try photo("x", location: "京都府"), c], loaded: true))
+        XCTAssertNotEqual(base, CamperCounting.countKey([a, try photo("b", location: "京都府", title: "海"), c], loaded: true))
+    }
 }
 
 /// 画面のつなぎ（画面は Linux で動かせないので、書き方を見張る）
@@ -336,8 +375,12 @@ final class CamperWiringTests: XCTestCase {
         }
         let view = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
         XCTAssertTrue(view.contains("accessibilityReduceMotion"), "視差効果を減らすを見ていない")
-        XCTAssertTrue(view.contains("store.save(loadout)"))
-        XCTAssertTrue(view.contains("guard owned.contains(part.id) else { return }"), "持っていない部品を付けられる")
+        // 付け外しは CamperGarageEditor を通す（保存する値を外さない・持っていない部品を付けない）
+        XCTAssertTrue(view.contains("editor.open(store)"))
+        XCTAssertTrue(view.contains("guard editor.equip(part, owned: owned, store: store) else { return }"))
+        XCTAssertFalse(view.contains(".sanitized("), "画面で保存する値を外している")
+        XCTAssertFalse(view.contains("store.save("), "画面が editor を通さずに保存している")
+        XCTAssertTrue(view.contains("L(\"公開した旅\", \"Public trips\")"))
     }
 
     /// 画面写真の試験に昼・夜・3 段がある
