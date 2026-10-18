@@ -30,6 +30,8 @@ struct TrunkOpenView: View {
     @State private var dragStart: Double?
     /// 開き切る動きが終わった（平らなふたを置いて中身を押せる）
     @State private var lidSettled = false
+    /// ふたを動かしている間に使い回す絵（ふたの表と裏・胴・持ち手の帯）。中身が替わったら描き直す
+    @State private var lidImages: TrunkLidImages?
     @State private var profile: UserProfile?
     @State private var phase: Phase = .loading
     @State private var cardImage: UIImage?
@@ -88,6 +90,11 @@ struct TrunkOpenView: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: landings)
         .sensoryFeedback(.selection, trigger: picks)
         .task { await load() }
+        .task(id: snapshotKey) { lidImages = TrunkLidImages.make(stage(contents)) }
+        .onAppear {
+            // 動きの終わりの合図が来ないまま画面を離れて戻ったときの逃げ道
+            if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }
+        }
         .fullScreenCover(item: $viewingMedal) { badge in
             MedalViewerView(badge: badge, ownerName: profile?.name ?? ownerName ?? "")
         }
@@ -132,12 +139,19 @@ struct TrunkOpenView: View {
 
     // MARK: 開け閉めできる姿（板 TrunkOpen）
 
+    /// ふたの絵を描き直す合図（中身・会員証の絵・内張りが替わったとき）
+    private var snapshotKey: LidSnapshotKey {
+        LidSnapshotKey(contents: contents, hasCard: cardImage != nil, lining: lining.name, photos: ticketPhotos.map(\.id))
+    }
+
     /// 小さい画面・大きい文字でも舞台を下限（`TrunkLid.minScale`）より縮めない（メダルの押す所 44pt を保つ）。
     /// 入らない分は上下に送って見る。ふたを引く指は舞台の上では送りより先に効く（`highPriorityGesture`）
     private func openable(_ contents: TrunkInsideContents) -> some View {
         GeometryReader { geo in
             let width = Double(geo.size.width)
-            let k = TrunkLid.stageScale(width: width, height: Double(geo.size.height) - 28 - TrunkLid.controlsReserve)
+            let room = Double(geo.size.height) - 28 - TrunkLid.controlsReserve
+            let k = TrunkLid.stageScale(width: width, height: room)
+            let overflows = TrunkLid.overflows(width: width, height: room)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     Text(TrunkText.eyebrow(model))
@@ -152,7 +166,7 @@ struct TrunkOpenView: View {
                         .scaleEffect(k, anchor: .top)
                         .frame(width: width, height: TrunkLid.stageHeight * k, alignment: .top)
                         .contentShape(Rectangle())
-                        .highPriorityGesture(drag(scale: k))
+                        .modifier(LidDragPriority(overflows: overflows, gesture: drag(scale: k)))
                     controls(contents)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 16)
@@ -170,7 +184,7 @@ struct TrunkOpenView: View {
                       cardImage: cardImage, cardLabel: cardLabel, ticketPhotos: ticketPhotos, lifted: held,
                       closedLabel: TrunkText.accessibilityLabel(model: model, labels: TrunkPlacement.layout(stuck, stage: 0).count,
                                                                 tags: TrunkAging.tagCount(posts: posts), equipped: parts),
-                      onPick: pick, onAdjust: { up in move(to: TrunkLid.stepped(p, up: up)) })
+                      images: lidImages, onPick: pick, onAdjust: { up in move(to: TrunkLid.stepped(p, up: up)) })
     }
 
     private var cardLabel: String {
@@ -211,6 +225,11 @@ struct TrunkOpenView: View {
 
     /// 開き具合を動かす（板の 0.55s）。閉じ始めたらすぐ平らなふたを外し、開き切る動きが**終わってから**平らなふたにする
     private func move(to target: Double) {
+        // 行き先がいまと同じ（指で 100% まで引いて離した）なら、動きの終わりを待たずにその場で決める
+        guard TrunkLid.needsMotion(from: p, to: target) else {
+            lidSettled = TrunkLid.isOpen(target)
+            return
+        }
         lidSettled = false
         if reduceMotion {
             p = target
@@ -553,6 +572,8 @@ struct TrunkLidStage: ViewModifier, Animatable {
     let lifted: TrunkHeld?
     /// 閉じている・倒れている途中の読み上げ（トランクの名前）
     let closedLabel: String
+    /// 1度だけ描いた絵（無ければその場で描く）
+    let images: TrunkLidImages?
     let onPick: (TrunkHeld) -> Void
     /// 読み上げの「増やす・減らす」（true で開く方へ1段）
     let onAdjust: (Bool) -> Void
@@ -575,15 +596,11 @@ struct TrunkLidStage: ViewModifier, Animatable {
                     .offset(x: 35, y: pose.baseTop + h - 8 + h * p)
                     .accessibilityHidden(true)
                 // 上の面の持ち手（胴に付いたまま・正面の絵の上 40）
-                TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
-                    .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
-                    .clipped()
+                handleStrip
                     .offset(x: left, y: pose.baseTop - TrunkLooks.bodyTop)
                     .accessibilityHidden(true)
                 // 胴の中。閉じている・倒れている途中は読ませない（ふたの名前だけ読む）
-                TrunkInsideView(model: model, part: .base, lining: lining, contents: contents, cardImage: cardImage,
-                                cardLabel: cardLabel, ticketPhotos: ticketPhotos, interactive: flat, lifted: lifted,
-                                onPick: onPick)
+                base(flat: flat)
                     .offset(x: left, y: pose.baseTop)
                     .accessibilityHidden(!flat)
                 if flat {
@@ -617,19 +634,60 @@ struct TrunkLidStage: ViewModifier, Animatable {
         }
     }
 
+    /// 持ち手の帯（1度だけ描いた絵があればそれ）
+    @ViewBuilder
+    private var handleStrip: some View {
+        if let image = images?.handle {
+            TrunkLidImages.place(image, w: TrunkLooks.canvasWidth, h: 40)
+        } else {
+            TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
+                .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
+                .clipped()
+        }
+    }
+
+    /// 胴の中。開き切ったら押せる生の絵、動かしている間は乗車券の下と上を絵にして、写真の乗車券だけ生きたまま挟む
+    @ViewBuilder
+    private func base(flat: Bool) -> some View {
+        if !flat, let below = images?.baseBelow, let above = images?.baseAbove {
+            ZStack(alignment: .topLeading) {
+                TrunkLidImages.place(below, w: TrunkInsideView.width, h: TrunkInsideView.height)
+                TrunkInsideView(model: model, part: .base, lining: lining, contents: contents,
+                                ticketPhotos: ticketPhotos, layer: .ticketsOnly)
+                TrunkLidImages.place(above, w: TrunkInsideView.width, h: TrunkInsideView.height)
+            }
+            .frame(width: TrunkInsideView.width, height: TrunkInsideView.height, alignment: .topLeading)
+        } else {
+            TrunkInsideView(model: model, part: .base, lining: lining, contents: contents, cardImage: cardImage,
+                            cardLabel: cardLabel, ticketPhotos: ticketPhotos, interactive: flat, lifted: lifted,
+                            onPick: onPick)
+        }
+    }
+
     /// 倒れていくふた。90° までは表（正面の絵・錠前の板が起きる）、越えたら裏（上下を返して描き、回すと正しい向き）
     @ViewBuilder
     private func lid(_ pose: TrunkLid.Pose) -> some View {
         if pose.showsInside {
-            TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents)
+            Group {
+                if let image = images?.lidInside {
+                    TrunkLidImages.place(image, w: TrunkInsideView.width, h: TrunkInsideView.height)
+                } else {
+                    TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents)
+                }
+            }
+            .frame(width: TrunkInsideView.width, height: TrunkInsideView.height, alignment: .topLeading)
                 .overlay {
                     RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(pose.innerShade))
                 }
                 .scaleEffect(x: 1, y: -1)
         } else {
             ZStack(alignment: .topLeading) {
-                TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                             parts: parts, wrinkles: wrinkles)
+                if let image = images?.front {
+                    TrunkLidImages.place(image, w: TrunkLooks.bodyWidth, h: TrunkLooks.bodyHeight)
+                } else {
+                    TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
+                                 parts: parts, wrinkles: wrinkles)
+                }
                 if pose.claspProgress > 0 { clasp(pose) }
                 RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(pose.lidShade))
             }
@@ -700,3 +758,85 @@ private struct StageAccessibility: ViewModifier {
         }
     }
 }
+
+/// ふたの絵を描き直す合図
+private struct LidSnapshotKey: Equatable {
+    let contents: TrunkInsideContents
+    let hasCard: Bool
+    let lining: String
+    let photos: [String]
+}
+
+/// ふたを動かしている間に使い回す絵（2026-10-18 見直し）。動きの途中のコマごとに正面の絵（ラベル・部品）や
+/// 胴の中を作り直さないよう、開いたとき・中身が替わったときに1度だけ描く。影が切れないよう周りに余白を付けて描く
+struct TrunkLidImages {
+    /// 正面（倒れていくふたの表）
+    let front: UIImage?
+    /// 上の面の持ち手の帯（正面の絵の上 40）
+    let handle: UIImage?
+    /// ふたの裏
+    let lidInside: UIImage?
+    /// 胴の、乗車券の下の層と上の層（乗車券は写真が後から届くので生きたまま挟む）
+    let baseBelow: UIImage?
+    let baseAbove: UIImage?
+
+    /// 影のための余白
+    static let pad: Double = 48
+
+    @MainActor
+    static func make(_ stage: TrunkLidStage) -> TrunkLidImages {
+        TrunkLidImages(
+            front: render(TrunkBoxView(model: stage.model, posts: stage.posts, stuck: stage.stuck, ownerName: stage.ownerName,
+                                       bodyOnly: true, parts: stage.parts, wrinkles: stage.wrinkles),
+                          w: TrunkLooks.bodyWidth, h: TrunkLooks.bodyHeight),
+            handle: render(TrunkBoxView(model: stage.model, posts: stage.posts, stuck: stage.stuck, ownerName: stage.ownerName,
+                                        parts: stage.parts, wrinkles: stage.wrinkles)
+                            .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
+                            .clipped(),
+                           w: TrunkLooks.canvasWidth, h: 40),
+            lidInside: render(TrunkInsideView(model: stage.model, part: .lid, lining: stage.lining, contents: stage.contents),
+                              w: TrunkInsideView.width, h: TrunkInsideView.height),
+            baseBelow: render(TrunkInsideView(model: stage.model, part: .base, lining: stage.lining, contents: stage.contents,
+                                              cardImage: stage.cardImage, layer: .belowTickets),
+                              w: TrunkInsideView.width, h: TrunkInsideView.height),
+            baseAbove: render(TrunkInsideView(model: stage.model, part: .base, lining: stage.lining, contents: stage.contents,
+                                              layer: .aboveTickets),
+                              w: TrunkInsideView.width, h: TrunkInsideView.height))
+    }
+
+    @MainActor
+    private static func render<V: View>(_ view: V, w: Double, h: Double) -> UIImage? {
+        let renderer = ImageRenderer(content: view.frame(width: w, height: h, alignment: .topLeading).padding(pad))
+        renderer.scale = 3
+        return renderer.uiImage
+    }
+
+    /// 余白ごと描いた絵を、元の枠（`w`×`h`）の位置に置く
+    @MainActor
+    static func place(_ image: UIImage, w: Double, h: Double) -> some View {
+        Image(uiImage: image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: w + pad * 2, height: h + pad * 2)
+            .offset(x: -pad, y: -pad)
+            .frame(width: w, height: h, alignment: .topLeading)
+            .allowsHitTesting(false)
+    }
+}
+
+/// ふたを引く指と、画面の送りの取り合い（2026-10-18 見直し）。
+/// 画面に収まるときは引く指を先に効かせる（送りは無い）。収まらず送りがあるときは、引く指と送りを両方効かせる
+/// （舞台が画面の大半を占めるので、舞台の上で送れないと下のボタンへ届かない）
+private struct LidDragPriority<G: Gesture>: ViewModifier {
+    let overflows: Bool
+    let gesture: G
+
+    func body(content: Content) -> some View {
+        if overflows {
+            content.simultaneousGesture(gesture)
+        } else {
+            content.highPriorityGesture(gesture)
+        }
+    }
+}
+

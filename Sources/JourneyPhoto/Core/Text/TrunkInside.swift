@@ -119,6 +119,10 @@ enum TrunkLid {
     /// 途中で差し替えると、倒れていく途中のふたが消えて平らなふたが出る
     static func showsFlatLid(_ p: Double, settled: Bool) -> Bool { settled && isOpen(p) }
 
+    /// 開き具合が動くか。**行き先がいまと同じなら動かさない**（指で 100% まで引いて離したとき、動きの終わりの
+    /// 合図が来ず、平らなふたに替わらない・押せないのを避ける。その場で平らなふたにする）
+    static func needsMotion(from current: Double, to target: Double) -> Bool { current != target }
+
     // MARK: 小さい画面・大きい文字（押す所 44pt を保つ）
 
     /// 舞台を縮める下限。これより縮めず、入らない分は上下に送って見る（メダルの押す所が 44pt を割らない）
@@ -131,6 +135,11 @@ enum TrunkLid {
     /// 置ける幅と高さから舞台の縮み（1 を超えず、下限を割らない）
     static func stageScale(width: Double, height: Double) -> Double {
         max(minScale, min(1, width / stageWidth, height / stageHeight))
+    }
+
+    /// 舞台が画面に収まらず、下限で止めて上下に送るか（そのときだけ指の引きと送りを両方効かせる）
+    static func overflows(width: Double, height: Double) -> Bool {
+        min(1, width / stageWidth, height / stageHeight) < minScale
     }
 
     /// 縮めたときのメダルの押す所の短い辺

@@ -29,6 +29,12 @@ struct TrunkInsideView: View {
     /// 持ち上げているもの（少し浮かせる）
     var lifted: TrunkHeld?
     var onPick: (TrunkHeld) -> Void = { _ in }
+    /// 胴（`.base`）のどの層を描くか。ふたを動かしている間は、乗車券の下と上を1度だけ絵にして使い回し、
+    /// 写真の載った乗車券だけを生きたまま挟む（`TrunkOpenView` の `TrunkLidImages`）
+    var layer: BaseLayer = .all
+
+    /// 胴の層（乗車券の束をはさんで下・乗車券・上）
+    enum BaseLayer { case all, belowTickets, ticketsOnly, aboveTickets }
 
     static let width: Double = TrunkLooks.bodyWidth
     static let height: Double = TrunkLooks.bodyHeight
@@ -63,26 +69,33 @@ struct TrunkInsideView: View {
     // MARK: 胴（上）
 
     private func base(_ look: TrunkInsideLook) -> some View {
-        ZStack(alignment: .topLeading) {
-            TrunkPartPaintView(paint: look.rim)
-            liningLayer(look, deep: true)
-            divider(look)
-            if contents.showsCard { card }
-            pocket(look)
-            tickets
-            strap(look)
-            if tabs {
-                tab(L("会員証", "Card"), x: 62, y: 150, w: 90)
-                let tw: Double = 92
-                let left = Self.dividerX + 10
-                tab(contents.ticketTab, x: left + (Self.width - Self.rim - left - tw) / 2, y: 176, w: tw)
+        let below = layer == .all || layer == .belowTickets
+        let above = layer == .all || layer == .aboveTickets
+        let shadowed = layer == .all || layer == .belowTickets
+        return ZStack(alignment: .topLeading) {
+            if below {
+                TrunkPartPaintView(paint: look.rim)
+                liningLayer(look, deep: true)
+                divider(look)
+                if contents.showsCard { card }
+                pocket(look)
             }
-            edgeShade
+            if layer == .all || layer == .ticketsOnly { tickets }
+            if above {
+                strap(look)
+                if tabs {
+                    tab(L("会員証", "Card"), x: 62, y: 150, w: 90)
+                    let tw: Double = 92
+                    let left = Self.dividerX + 10
+                    tab(contents.ticketTab, x: left + (Self.width - Self.rim - left - tw) / 2, y: 176, w: tw)
+                }
+                edgeShade
+            }
         }
         .frame(width: Self.width, height: Self.height, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
-        .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+        .shadow(color: Color.black.opacity(shadowed ? 0.6 : 0), radius: 0, x: 0, y: 3)
+        .shadow(color: Color.black.opacity(shadowed ? 0.75 : 0), radius: 25, x: 0, y: 30)
     }
 
     /// 内張り（縁の内側 10・角 8）。胴の中は奥へ深い陰（板の `inset 0 16px 26px`）
