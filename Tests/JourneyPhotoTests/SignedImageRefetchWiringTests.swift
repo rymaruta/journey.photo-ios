@@ -76,6 +76,30 @@ final class SignedImageRefetchWiringTests: XCTestCase {
         }
     }
 
+
+    /// 🔴 取り直しが失敗しても（圏外など）、絞った写真を一覧から消さない（前の控えのまま出す）
+    func testFailedRefetchKeepsTheRestrictedPhotos() async throws {
+        struct Offline: Error {}
+        let service = gallery()
+        let calls = Calls()
+        let first = try restricted(src: expiredURL)
+        await service.setRestrictedLoader { @MainActor in
+            calls.count += 1
+            if calls.count > 1 { throw Offline() }
+            return first
+        }
+        let model = GalleryViewModel(gallery: service)
+        await model.load()
+        let expired = await service.expireRestricted(containing: URL(string: expiredURL)!)
+        XCTAssertTrue(expired)
+        await model.load()
+        XCTAssertEqual(calls.count, 2, "古いにしたのに取り直しに行っていない")
+        if case .loaded(let photos) = model.state {
+            XCTAssertEqual(Set(photos.map(\.id)), ["pub", "r"], "取り直しに失敗したら絞った写真が消えた")
+        } else {
+            XCTFail("一覧が出ていない")
+        }
+    }
 }
 
 /// 画面の配線（SwiftUI は Linux で動かせないので、ソースを照らす）
