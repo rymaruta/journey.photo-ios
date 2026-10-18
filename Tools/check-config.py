@@ -503,6 +503,47 @@ if testflight_yml.exists() and pr_yml.exists():
         fail("Tools/xcode-test.sh に set -euo pipefail（pipefail）がありません（xcodebuild の失敗が tail に隠れる）")
     if not re.search(r'\| tail -n \d+ \|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
         fail("Tools/xcode-test.sh が xcodebuild の失敗で exit 1 しません")
+    # **1本ごとの時間の上限**（2026-10-18・run 233 で起動の詰まりが 72分待ち続けた）。
+    # 単体・UI の両方に渡し、全部撮る1本の指定が UI の上限（maximum）を越えないこと
+    limits = dict(re.findall(r"^(UNIT_TIME_ALLOWANCE|UNIT_TIME_MAXIMUM|UI_TIME_ALLOWANCE|UI_TIME_MAXIMUM)=(\d+)$",
+                             runner, re.M))
+    if len(limits) != 4:
+        fail(f"Tools/xcode-test.sh に1本ごとの時間の上限（UNIT_/UI_TIME_ALLOWANCE・MAXIMUM）がそろっていません: {limits}")
+    else:
+        limits = {k: int(v) for k, v in limits.items()}
+        if not (60 <= limits["UNIT_TIME_ALLOWANCE"] <= limits["UNIT_TIME_MAXIMUM"]):
+            fail(f"単体テストの時間の上限が変です（60 以上・既定 ≤ 頭打ち）: {limits}")
+        if not (60 <= limits["UI_TIME_ALLOWANCE"] <= limits["UI_TIME_MAXIMUM"]):
+            fail(f"UI テストの時間の上限が変です（60 以上・既定 ≤ 頭打ち）: {limits}")
+        shots = (ROOT / "UITests/JourneyPhotoUITests/ScreenshotTests.swift").read_text(encoding="utf-8")
+        every = re.search(r"func testCapturesEveryScreen\(\) \{(?:\s*//[^\n]*)*\s*executionTimeAllowance = (\d+)", shots)
+        if not every:
+            fail("ScreenshotTests.testCapturesEveryScreen が頭で executionTimeAllowance を上げていません"
+                 "（実測 362〜462秒で、UI の既定の上限に当たる）")
+        elif not (limits["UI_TIME_ALLOWANCE"] < int(every.group(1)) <= limits["UI_TIME_MAXIMUM"]):
+            fail(f"testCapturesEveryScreen の executionTimeAllowance（{every.group(1)}）が、"
+                 f"UI の既定より大きく頭打ち以下になっていません: {limits}")
+        # 実際に xcodebuild へ渡るか（偽の xcodebuild で引数を書き出す）
+        import subprocess as _sp
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            fake = Path(tmp, "xcodebuild")
+            fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$FAKE_XCODEBUILD_ARGS"\n', encoding="utf-8")
+            fake.chmod(0o755)
+            for mode, prefix in (("unit", "UNIT"), ("ui", "UI")):
+                args_file = Path(tmp, f"{mode}.args")
+                run = _sp.run(["bash", str(ROOT / "Tools/xcode-test.sh"), mode, str(Path(tmp, f"{mode}.xcresult"))],
+                              capture_output=True, text=True,
+                              env={**os.environ, "PATH": f"{tmp}:{os.environ.get('PATH', '')}",
+                                   "DEVICE": "iPhone Test", "XCODE_LOG": str(Path(tmp, "x.log")),
+                                   "FAKE_XCODEBUILD_ARGS": str(args_file)})
+                got = args_file.read_text(encoding="utf-8").split("\n") if args_file.exists() else []
+                want = ["-test-timeouts-enabled", "YES",
+                        "-default-test-execution-time-allowance", str(limits[f"{prefix}_TIME_ALLOWANCE"]),
+                        "-maximum-test-execution-time-allowance", str(limits[f"{prefix}_TIME_MAXIMUM"])]
+                if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
+                    fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
+                         f"{run.returncode} {got} {run.stderr[-300:]}")
     # 上げる回・storeShots の回は screens を捨てて全部にする
     scope = step_block(flow, "どこまで流すかを決める") or ""
     if not re.search(r'if \[ "\$\{SUBMIT:-\}" = "true" \] \|\| \[ "\$\{STORE_SHOTS:-\}" = "true" \]; then\n\s*SCREENS=""\n\s*fi', scope):
