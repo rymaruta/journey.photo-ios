@@ -25,6 +25,9 @@ final class CamperScene {
 
     /// 板の単位 → SceneKit の単位（車体の長さ 242 → 2.42）
     static let unit = 0.01
+    /// 灯りの組: 外（太陽・前照灯・焚き火が照らす）と室内（室内の灯りだけが照らす。太陽と周りの光はどちらも照らす）
+    static let outsideMask = 1
+    static let insideMask = 2
 
     let scene = SCNScene()
     let cameraNode = SCNNode()
@@ -96,7 +99,7 @@ final class CamperScene {
         let env = image(CamperTextures.environment(mood), key: "env.\(mood.rawValue)")
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
-        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.3 : (mood == .snow ? 1.45 : 1.35))
+        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
         // 板の光の向き（画面基準）: 昼 (−0.18, −0.72, 0.62)・夜の月 (0.45, −0.6, 0.55)。板は下が +y
         let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
@@ -153,11 +156,14 @@ final class CamperScene {
         }
         let s = Self.unit
         let body = SCNNode()
+        let inside = SCNNode()
         let door = SCNNode()
         // 地面の灯りの溜まり（まとめず・影を落とさない）。扉の口の溜まりは扉を開けた時だけ見せる
         let glow = SCNNode()
         let doorGlow = SCNNode()
-        for spec in bp.nodes {
+        for whole in bp.nodes {
+          let split = whole.splitForInteriorLight()
+          for (spec, isInside) in [(split.inside, true), (split.outside, false)].compactMap({ p in p.0.map { ($0, p.1) } }) {
             guard let geometry = makeGeometry(spec.shape, material: spec.material, lookup: material) else { continue }
             let node = SCNNode(geometry: geometry)
             node.orientation = SCNQuaternion(Float(spec.orientation.x), Float(spec.orientation.y), Float(spec.orientation.z),
@@ -183,15 +189,23 @@ final class CamperScene {
                 (spec.group == .glow ? glow : doorGlow).addChildNode(node)
             } else {
                 node.position = Self.vector(spec.position * s)
-                body.addChildNode(node)
+                (isInside ? inside : body).addChildNode(node)
             }
+          }
         }
         let car = SCNNode()
-        // 止まっている部品は材質ごとにまとめる（描く回数を減らす）
-        car.addChildNode(body.flattenedClone())
+        // 止まっている部品は材質ごとにまとめる（描く回数を減らす）。室内と外は灯りの組が違うので別々に
+        let bodyFlat = body.flattenedClone()
+        bodyFlat.categoryBitMask = Self.outsideMask
+        car.addChildNode(bodyFlat)
+        let insideFlat = inside.flattenedClone()
+        insideFlat.categoryBitMask = Self.insideMask
+        car.addChildNode(insideFlat)
         let pivot = SCNNode()
         pivot.position = Self.vector(bp.doorHinge * s)
-        pivot.addChildNode(door.flattenedClone())
+        let doorFlat = door.flattenedClone()
+        doorFlat.categoryBitMask = Self.outsideMask
+        pivot.addChildNode(doorFlat)
         pivot.eulerAngles = SCNVector3(0, Float(doorOpen ? bp.doorOpenAngle : 0), 0)
         car.addChildNode(pivot)
         glow.castsShadow = false
@@ -208,6 +222,8 @@ final class CamperScene {
             l.attenuationStartDistance = 0
             l.attenuationEndDistance = CGFloat(light.range * s)
             l.attenuationFalloffExponent = 2
+            // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
+            l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
             if light.kind == .spot {
                 l.spotInnerAngle = 20
                 l.spotOuterAngle = 45

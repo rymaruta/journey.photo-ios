@@ -345,4 +345,46 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertLessThan(car / frame, 0.9, "\(stage)")
         }
     }
+
+    /// 室内の灯りは室内だけを照らす: 室内の部品と内張りの材質は「室内」、外の殻・縁・扉は「外」に分かれる
+    /// （run 532: 影の無い室内の灯りが壁を抜け、屋根の縁・窓枠・荷台の棒に光の筋が乗った）
+    func testInteriorLightStaysInside() {
+        let b = build(mood: .night)
+        var insideMaterials = Set<String>(), outsideMaterials = Set<String>()
+        for n in b.nodes {
+            let (i, o) = n.splitForInteriorLight()
+            if let i, case .mesh(let m) = i.shape { m.materials.forEach { insideMaterials.insert("\($0)") } }
+            if let o, case .mesh(let m) = o.shape, !o.name.hasPrefix("interior."), o.group != .door {
+                for mat in m.materials { XCTAssertFalse(CamperNodeSpec.isInteriorMaterial(mat), "\(o.name) \(mat)") }
+                m.materials.forEach { outsideMaterials.insert("\($0)") }
+            }
+            if n.name.hasPrefix("interior.") { XCTAssertNil(o, n.name) }
+            if n.group == .door { XCTAssertNil(i, n.name) }
+        }
+        XCTAssertTrue(insideMaterials.contains { $0.hasPrefix("wallWood") } && insideMaterials.contains("ceiling")
+                      && insideMaterials.contains("floorIn"), "\(insideMaterials.sorted())")
+        XCTAssertTrue(outsideMaterials.contains("chrome") && outsideMaterials.contains("paint"))
+        for l in b.lights { XCTAssertEqual(l.inside, l.name.hasPrefix("interior."), l.name) }
+        // 扉の口のすぐ内に灯りを置かない（口のまわりが白く飛んだ）
+        let hole = CamperBuilder(config: CamperConfig(stage: .camper)).doorHole.map(\.x)
+        for l in b.lights where l.inside {
+            XCTAssertFalse((hole.min()!...hole.max()!).contains(l.position.x) && l.position.z > 0, l.name)
+        }
+    }
+
+    /// 運転席のガラスは夜も光らない。住む所の窓だけがほのかに光る
+    func testOnlyLivingWindowsGlowAtNight() {
+        XCTAssertNil(CamperMaterials.spec(.glass, paint: 0, mood: .night).emission)
+        XCTAssertNotNil(CamperMaterials.spec(.glassLit, paint: 0, mood: .night).emission)
+        let b = build(mood: .night)
+        func materials(_ name: String) -> [CamperMaterial] {
+            b.nodes.filter { $0.name == name }.flatMap { n -> [CamperMaterial] in
+                if case .mesh(let m) = n.shape { return m.materials }
+                return [n.material]
+            }
+        }
+        XCTAssertFalse(materials("cabDoor.window").contains(.glassLit))
+        XCTAssertTrue(materials("window").contains(.glassLit))
+        XCTAssertTrue(materials("door.window").contains(.glassLit))
+    }
 }

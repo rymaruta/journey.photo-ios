@@ -516,6 +516,14 @@ struct CamperMesh: Sendable {
         }
     }
 
+    /// 材質で2つに分ける（`match` に当たる束と、残り）。点は両方にそのまま残す（使わない点は描かれない）
+    func split(_ match: (CamperMaterial) -> Bool) -> (matched: CamperMesh, rest: CamperMesh) {
+        var a = self, b = self
+        a.groups = groups.filter { match($0.material) }
+        b.groups = groups.filter { !match($0.material) }
+        return (a, b)
+    }
+
     /// 点と向きを写す。`mirror`（鏡に映す写し）なら巻きを逆にする
     func mapped(_ f: (CV3) -> CV3, normal nf: (CV3) -> CV3, mirror: Bool = false) -> CamperMesh {
         var out = self

@@ -145,9 +145,10 @@ enum CamperTextures {
                 var light = 0.0
                 if mood == .night {
                     // 月の小さな光と、地平線の上の薄い街明かりの帯
-                    let dx = (fx - 160) / 6, dy = (fy - 26) / 6
-                    light = exp(-(dx * dx + dy * dy)) * 0.6
-                    light += box(fx, fy, 0, 256, 58, 63, soft: 4) * 0.12
+                    // 月は小さく弱く（run 532: 縁のクロームと塗装に細い光の筋がちらついた）
+                    let dx = (fx - 160) / 5, dy = (fy - 26) / 5
+                    light = exp(-(dx * dx + dy * dy)) * 0.3
+                    light += box(fx, fy, 0, 256, 58, 63, soft: 4) * 0.06
                 } else {
                     let k = mood == .snow ? 0.7 : 1.0
                     // 頭の上の大きな光の箱・左右の縦長の箱・地平線の上の細い帯

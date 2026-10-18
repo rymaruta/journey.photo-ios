@@ -179,6 +179,7 @@ open class SCNLight {
     open var attenuationStartDistance: CGFloat = 0
     open var attenuationEndDistance: CGFloat = 0
     open var attenuationFalloffExponent: CGFloat = 2
+    open var categoryBitMask = -1
     open var spotInnerAngle: CGFloat = 0
     open var spotOuterAngle: CGFloat = 45
 }
@@ -210,6 +211,7 @@ open class SCNNode {
     open var castsShadow = true
     open var opacity: CGFloat = 1
     open var renderingOrder = 0
+    open var categoryBitMask = 1
     open var name: String?
     open var isHidden = false
     open func addChildNode(_ child: SCNNode) {}

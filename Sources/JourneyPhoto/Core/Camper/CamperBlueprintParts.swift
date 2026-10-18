@@ -777,7 +777,7 @@ extension CamperBuilder {
             // 2026-10-18（Mac の絵 run 530）: 700・90 では焚き火のまわりが白く飛び、画面の左が真っ白なにじみになった。
             // 夜の主役は窓と扉の口の灯りなので、焚き火は足元を赤く照らすだけにする
             out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xFF8A3C,
-                                              intensity: 220, range: 48))
+                                              intensity: 200, range: 26))
         }
     }
 
@@ -827,7 +827,7 @@ extension CamperBuilder {
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
             if night {
                 out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFFBE6E,
-                                                  intensity: 140, range: 36))
+                                                  intensity: 120, range: 24))
             }
         }
     }

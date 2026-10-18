@@ -22,6 +22,8 @@ enum CamperMaterial: Hashable, Sendable {
     case tint(UInt32)
     /// まだ持っていない部品の影絵（黒・艶なし）
     case silhouette
+    /// 住む所の窓のガラス（夜は室内の灯りでほのかに光る）。運転席のガラスは `.glass`（灯りが無いので暗い）
+    case glassLit
     /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
     case glowPool
 }
@@ -79,9 +81,13 @@ enum CamperMaterials {
         case .pinstripe: return CamperMaterialSpec(color: 0xC9A66B, metalness: 0.6, roughness: 0.3, clearCoat: 1, clearCoatRoughness: 0.08)
         case .pinstripeDark: return CamperMaterialSpec(color: 0x8A6D3D, metalness: 0.5, roughness: 0.35, clearCoat: 1)
         case .glass:
-            // 夜は室内の灯りでガラスがほのかに光る（窓が灯りの主役。2026-10-18 Mac の絵 run 529 のあと）
+            // 運転席・鏡・瓶のガラス。夜も光らない（run 532: フロントガラスが内から光る板に見えた）
+            return CamperMaterialSpec(color: night ? 0x0A0C10 : 0x10161C, roughness: 0.05, opacity: night ? 0.7 : 0.62,
+                                      doubleSided: true)
+        case .glassLit:
+            // 住む所の窓。夜は室内の灯りでほのかに光る（窓が夜の主役。2026-10-18 run 529 のあと）
             return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.42 : 0.62,
-                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.5 : 0, doubleSided: true)
+                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.45 : 0, doubleSided: true)
         case .lens:
             return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.05, opacity: night ? 1 : 0.85,
                                       emission: night ? 0xFFF6E0 : nil, emissionIntensity: night ? 2.2 : 0)
@@ -141,7 +147,7 @@ enum CamperMaterials {
         case .ember:
             return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 1.0 : 0.6)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
-        case .glowPool: return CamperMaterialSpec(color: 0x8A5A2C, texture: .glow, additive: true)
+        case .glowPool: return CamperMaterialSpec(color: 0x6E4826, texture: .glow, additive: true)
         }
     }
 
