@@ -50,9 +50,105 @@ enum WhatsNew {
         }
     }
 
+    /// 版を出した日（"YYYY-MM-DD"）。時刻と時差を持たない暦の日だけ——日付をまたいで1日ずれないように
+    struct Day: Equatable {
+        let year: Int
+        let month: Int
+        let day: Int
+
+        /// "2026-10-04" だけを読む。形が違う・暦に無い日（2026-02-30）は nil
+        init?(_ text: String) {
+            let parts = text.split(separator: "-", omittingEmptySubsequences: false)
+            guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+                  parts.allSatisfy({ $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }),
+                  let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else { return nil }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let components = DateComponents(year: y, month: m, day: d)
+            guard (1...12).contains(m), (1...31).contains(d),
+                  components.isValidDate(in: calendar) else { return nil }
+            year = y
+            month = m
+            day = d
+        }
+
+        init(year: Int, month: Int, day: Int) {
+            self.year = year
+            self.month = month
+            self.day = day
+        }
+    }
+
     struct Release: Decodable, Equatable {
         let version: String
         let items: [Item]
+        /// 任意。無い・壊れた値は nil（見出しは版だけになる）。古い JSON もそのまま読める
+        let date: Day?
+
+        private enum CodingKeys: String, CodingKey { case version, items, date }
+
+        init(version: String, items: [Item], date: Day? = nil) {
+            self.version = version
+            self.items = items
+            self.date = date
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(String.self, forKey: .version)
+            items = try c.decode([Item].self, forKey: .items)
+            // 文字でない値（数・null）も、形の違う文字も、版ごと捨てずに日付だけ無視する
+            date = (try? c.decodeIfPresent(String.self, forKey: .date)).flatMap { $0 }.flatMap(Day.init)
+        }
+    }
+
+    /// 画面の出し方。**起動時のシートは `.launch`**（新しい分を平らに並べる・2026-10-04 から同じ見た目）、
+    /// **設定から開いたときは `.history`**（最新の版を上に、その下に「これまでのお知らせ」と版ごとの区切り）
+    enum Mode: Equatable {
+        case launch, history
+    }
+
+    /// 画面の1かたまり。`heading` があれば区切りの見出し（「1.0.82 · 10月10日」）を上に出す
+    struct Section: Equatable {
+        let id: String
+        let heading: String?
+        let items: [Item]
+    }
+
+    /// 並べ方の決まり（画面は描くだけ）。
+    /// - `.launch`: 渡された版の項目を全部、見出し無しの1かたまりに（今までどおり）
+    /// - `.history`: 1つ目（いちばん新しい版）は見出し無しで上に。2つ目からは版ごとに見出し付き
+    static func sections(_ releases: [Release], mode: Mode, now: Date = Date()) -> [Section] {
+        switch mode {
+        case .launch:
+            let items = releases.flatMap(\.items)
+            return items.isEmpty ? [] : [Section(id: "all", heading: nil, items: items)]
+        case .history:
+            return releases.enumerated().map { index, release in
+                Section(id: release.version,
+                        heading: index == 0 ? nil : heading(for: release, now: now),
+                        items: release.items)
+            }
+        }
+    }
+
+    /// 版の区切りの見出し: 「1.0.82 · 10月10日」（英語 "1.0.82 · Oct 10"）。日付が無ければ版だけ。
+    /// 今年でない日は年も付ける（「2025年12月1日」・"Dec 1, 2025"）——履歴が年をまたいでも読み違えない
+    static func heading(for release: Release, now: Date = Date(),
+                        english: Bool = Locale.preferredAppLanguage == "en") -> String {
+        guard let date = release.date else { return release.version }
+        return "\(release.version)\(PhotoMetaLine.separator)\(dayText(date, now: now, english: english))"
+    }
+
+    /// `english` は試験のため（画面の言語はいま日本語で固定・`Locale.preferredAppLanguage`）
+    static func dayText(_ date: Day, now: Date = Date(),
+                        english: Bool = Locale.preferredAppLanguage == "en") -> String {
+        let thisYear = Calendar(identifier: .gregorian).component(.year, from: now)
+        let showYear = date.year != thisYear
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let en = "\(months[date.month - 1]) \(date.day)" + (showYear ? ", \(date.year)" : "")
+        let ja = (showYear ? "\(date.year)年" : "") + "\(date.month)月\(date.day)日"
+        return english ? en : ja
     }
 
     private struct File: Decodable {

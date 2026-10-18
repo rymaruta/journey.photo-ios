@@ -144,6 +144,69 @@ final class WhatsNewTests: XCTestCase {
         }
     }
 
+    // MARK: - 日付と履歴（2026-10-18 owner「過去の履歴を見れるようにしたい」）
+
+    private func dated(_ version: String, _ date: String?) -> String {
+        let field = date.map { #","date":"\#($0)""# } ?? ""
+        return #"{"version":"\#(version)"\#(field),"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]}"#
+    }
+
+    /// 🔴 **日付は任意。** ある・無い・壊れた値のどれでも版は捨てない（壊れた日付だけ無視）
+    func testReleaseDateIsOptionalAndLenient() async throws {
+        let data = Data(#"""
+        {"releases":[
+          \#(dated("1.0.9", "2026-10-10")),
+          \#(dated("1.0.8", nil)),
+          \#(dated("1.0.7", "2026-02-30")),
+          \#(dated("1.0.6", "10/04/2026")),
+          \#(dated("1.0.5", "2026-1-4")),
+          {"version":"1.0.4","date":20261004,"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]},
+          {"version":"1.0.3","date":null,"items":[{"symbol":"star","title":{"ja":"a","en":"b"},"detail":{"ja":"c","en":"d"}}]}
+        ]}
+        """#.utf8)
+        let releases = WhatsNew.decode(data)
+        XCTAssertEqual(releases.map(\.version), ["1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3"])
+        XCTAssertEqual(releases.first?.date, WhatsNew.Day(year: 2026, month: 10, day: 10))
+        XCTAssertEqual(releases.dropFirst().map(\.date), Array(repeating: nil, count: 6))
+        XCTAssertNil(WhatsNew.Day("２０２６-10-10"))
+        XCTAssertNil(WhatsNew.Day("2026-13-01"))
+        XCTAssertEqual(WhatsNew.Day("2024-02-29"), WhatsNew.Day(year: 2024, month: 2, day: 29))
+        XCTAssertNil(WhatsNew.Day("2025-02-29"))
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_792_300_000) // 2026-10 の半ば
+
+    /// 区切りの見出し: 「1.0.82 · 10月10日」・"1.0.82 · Oct 10"・日付が無ければ版だけ・今年でなければ年も
+    func testReleaseHeading() async {
+        let r = WhatsNew.Release(version: "1.0.82", items: [], date: WhatsNew.Day(year: 2026, month: 10, day: 10))
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: false), "1.0.82 · 10月10日")
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: true), "1.0.82 · Oct 10")
+        XCTAssertEqual(WhatsNew.heading(for: release("1.0.67"), now: now, english: false), "1.0.67")
+        let old = WhatsNew.Release(version: "0.9.0", items: [], date: WhatsNew.Day(year: 2025, month: 12, day: 1))
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: false), "0.9.0 · 2025年12月1日")
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: true), "0.9.0 · Dec 1, 2025")
+    }
+
+    /// 🔴 **履歴は新しい順・最新は見出し無しで上・2つ目から版ごとに見出し**（JSON の並びに頼らない）
+    func testHistorySectionsAreNewestFirstWithHeadings() async {
+        let data = Data(#"{"releases":[\#(dated("1.0.67", "2026-10-04")),\#(dated("1.0.82", "2026-10-10")),\#(dated("1.0.73", nil))]}"#.utf8)
+        let sections = WhatsNew.sections(WhatsNew.decode(data), mode: .history, now: now)
+        XCTAssertEqual(sections.map(\.id), ["1.0.82", "1.0.73", "1.0.67"])
+        XCTAssertEqual(sections.map(\.heading), [nil, "1.0.73", "1.0.67 · 10月4日"])
+        XCTAssertEqual(sections.map(\.items.count), [1, 1, 1])
+        XCTAssertEqual(WhatsNew.sections([], mode: .history), [])
+    }
+
+    /// 🔴 **起動時のシートは変えない**: 何版またいでも見出し無しの1かたまりに、項目を新しい順に平らに
+    func testLaunchSheetStaysFlat() async {
+        let releases = [release("1.0.12"), release("1.0.10")]
+        let sections = WhatsNew.sections(releases, mode: .launch, now: now)
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertNil(sections.first?.heading)
+        XCTAssertEqual(sections.first?.items, releases.flatMap(\.items))
+        XCTAssertEqual(WhatsNew.sections([], mode: .launch), [])
+    }
+
     // MARK: - 配線（Linux では描けないので文で確かめる）
 
     private func source(_ path: String) throws -> String {
@@ -158,6 +221,11 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertTrue(root.contains("@StateObject private var whatsNew = WhatsNewGate()"))
         XCTAssertTrue(root.contains("whatsNew.markSeen()"))
         XCTAssertTrue(root.contains("WhatsNewView(releases: whatsNewReleases)"))
+        // 起動時は履歴の形にしない（`mode` の既定 `.launch` のまま）
+        XCTAssertFalse(root.contains(".history"))
+        let view = try source("Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift")
+        XCTAssertTrue(view.contains("var mode: WhatsNew.Mode = .launch"))
+        XCTAssertTrue(view.contains("WhatsNew.sections(releases, mode: mode)"))
         let settings = try source("Sources/JourneyPhoto/Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("\"settings.whatsNew\""))
         XCTAssertTrue(settings.contains("WhatsNewView(releases:"))
