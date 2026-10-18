@@ -89,19 +89,25 @@ enum PassCardModeration {
         let sender = hidden.owner
         do {
             try await hidden.blockAndHide(owner, environment: environment)
-            guard keepsResult(sender: sender, viewer: hidden.owner) else { return false }
+            guard PassCardBlockRule.keepsResult(sender: sender, viewer: hidden.owner) else { return false }
             toasts.show(L("ブロックしました", "Blocked"))
             return true
         } catch {
-            guard keepsResult(sender: sender, viewer: hidden.owner) else { return false }
+            guard PassCardBlockRule.keepsResult(sender: sender, viewer: hidden.owner) else { return false }
             toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
                         kind: .failure)
             return false
         }
     }
+}
 
+/// カードのブロックの決まり（決まりだけ・`@MainActor` の外）。
+///
+/// 2026-10-18 判断: `PassCardModeration` は `@MainActor` の型で、その静的メンバをテストから呼ぶと
+/// 静的な検査（`Tools/check-swift-refs.js` の 5 番）が NG にする。決まりだけをここへ出す
+enum PassCardBlockRule {
     /// ブロックの結果を、押した人の画面に書くか
-    nonisolated static func keepsResult(sender: String?, viewer: String?) -> Bool {
+    static func keepsResult(sender: String?, viewer: String?) -> Bool {
         sender != nil && sender == viewer
     }
 }
