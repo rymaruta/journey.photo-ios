@@ -412,4 +412,109 @@ final class ComposeCameraControlsTests: XCTestCase {
         XCTAssertTrue(camera.contains("guard event.phase == .ended"))
         XCTAssertTrue(camera.contains(".builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera"))
     }
+
+    // MARK: - 開いたときの向き（2026-10-18 owner「縦空くのは嫌」）
+
+    private let frame = ComposeGuide.frameAspect
+
+    func testLandscapeReferenceStartsTurnedNinety() {
+        // 横長（4:3・16:9）の作例は縦の枠へ 90° 回して重ねる（拡大・切り取りなしで収まる）
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 4000, referenceHeight: 3000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 90)
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 1920, referenceHeight: 1080,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 90)
+    }
+
+    func testPortraitAndSquareReferenceStayStraight() {
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 3000, referenceHeight: 4000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 0)
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 1000, referenceHeight: 1000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 0)
+        // ほぼ正方形（差 2% 未満）も回さない
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 1010, referenceHeight: 1000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 0)
+        // 枠が横長なら回さない・壊れた大きさは 0
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 4000, referenceHeight: 3000,
+                                                    frameAspect: 4.0 / 3, heldQuarterTurns: 0), 0)
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 0, referenceHeight: 3000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 0)
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: .nan, referenceHeight: 3000,
+                                                    frameAspect: frame, heldQuarterTurns: 0), 0)
+    }
+
+    func testAutoRotationFollowsHeldLandscapeSide() {
+        // 既定（縦持ち・平置き・逆さま・左へ倒した横持ち）は 90°。上を右へ倒した横持ちだけ 270°
+        for held in [0, 2, 3, -1] {
+            XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3,
+                                                        frameAspect: frame, heldQuarterTurns: held), 90, "held \(held)")
+        }
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3,
+                                                    frameAspect: frame, heldQuarterTurns: 1), 270)
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3,
+                                                    frameAspect: frame, heldQuarterTurns: 5), 270)
+    }
+
+    func testMirroredReferenceKeepsSameTurn() {
+        // 左右反転は上下を変えないので、回す向きも同じ
+        for held in 0..<4 {
+            XCTAssertEqual(
+                ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3, frameAspect: frame,
+                                             heldQuarterTurns: held, mirrored: true),
+                ComposeControls.autoRotation(referenceWidth: 4, referenceHeight: 3, frameAspect: frame,
+                                             heldQuarterTurns: held, mirrored: false))
+        }
+        XCTAssertEqual(ComposeControls.autoRotation(referenceWidth: 3, referenceHeight: 4, frameAspect: frame,
+                                                    heldQuarterTurns: 0, mirrored: true), 0)
+    }
+
+    func testOpeningUsesAutoOverRememberedWhenReferenceShown() {
+        // 作例があれば、覚えた角度（前の写真のための向き）より自動の向き
+        XCTAssertEqual(ComposeControls.decidedRotation(.opened, current: 0, manual: false, auto: 90, remembered: 180), 90)
+        XCTAssertEqual(ComposeControls.decidedRotation(.opened, current: 0, manual: false, auto: 0, remembered: 270), 0)
+        // 作例なしの入口は今まで通り覚えた角度
+        XCTAssertEqual(ComposeControls.decidedRotation(.opened, current: 0, manual: false, auto: nil, remembered: 270), 270)
+    }
+
+    func testReferenceChangeRedecidesEvenAfterManualTurn() {
+        // 横長 → 縦長へ選び直したら 0°（人が回していても作例が変われば自動へ）
+        XCTAssertEqual(ComposeControls.decidedRotation(.referenceChanged, current: 90, manual: true, auto: 0, remembered: 90), 0)
+        // 縦長 → 横長へ選び直したら 90°
+        XCTAssertEqual(ComposeControls.decidedRotation(.referenceChanged, current: 0, manual: false, auto: 90, remembered: 0), 90)
+        // 累積のまま短く回る（360° から 90° へは 450°）
+        XCTAssertEqual(ComposeControls.decidedRotation(.referenceChanged, current: 360, manual: false, auto: 90, remembered: 0), 450)
+        // 参考写真が無くなった（ライブラリを選ぶ前）は今のまま
+        XCTAssertNil(ComposeControls.decidedRotation(.referenceChanged, current: 90, manual: false, auto: nil, remembered: 0))
+    }
+
+    func testCompositionChosenReturnsToInitialTurn() {
+        // 構図を選び直したら、横長の作例なら 90°、無ければ真っ直ぐ（以前の動き）
+        XCTAssertEqual(ComposeControls.decidedRotation(.compositionChosen, current: 180, manual: true, auto: 90, remembered: 0), 90)
+        XCTAssertEqual(ComposeControls.decidedRotation(.compositionChosen, current: 450, manual: true, auto: nil, remembered: 90), 360)
+        XCTAssertEqual(ComposeControls.decidedRotation(.compositionChosen, current: 90, manual: false, auto: 0, remembered: 0), 0)
+    }
+
+    func testHeldTurnRespectsManualTurn() {
+        // 人が回した向きは、持ち替えても回し直さない
+        XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 0, manual: true, auto: 270, remembered: 0))
+        // 自動のままなら写真が立つ側へ（90° → 270° は +180°）
+        XCTAssertEqual(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: 270, remembered: 0), 270)
+        XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: nil, remembered: 0))
+    }
+
+    func testNearestCumulative() {
+        XCTAssertEqual(ComposeControls.nearestCumulative(to: 0, from: 450), 360)
+        XCTAssertEqual(ComposeControls.nearestCumulative(to: 270, from: 0), -90)
+        XCTAssertEqual(ComposeControls.nearestCumulative(to: 90, from: -90), 90)
+        XCTAssertEqual(ComposeControls.nearestCumulative(to: 90, from: .nan), 90)
+    }
+
+    func testViewUsesAutoRotation() throws {
+        // 画面が決め直しをつないでいること（開いたとき・参考写真が替わった・構図を選び直した・持ち替えた）
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view.contains(".opened, current: 0, manual: false, auto: auto"))
+        XCTAssertTrue(view.contains(".onChange(of: referenceIdentity) { _, _ in applyAutoRotation(.referenceChanged) }"))
+        XCTAssertTrue(view.contains(".onChange(of: quarterTurns) { _, _ in applyAutoRotation(.heldTurned) }"))
+        XCTAssertTrue(view.contains("applyAutoRotation(.compositionChosen, animated: false)"))
+        XCTAssertFalse(view.contains("rotation = ComposeControls.straightened(rotation)"))
+    }
 }

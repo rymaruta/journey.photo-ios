@@ -253,6 +253,8 @@ final class ScreenshotTests: XCTestCase {
     /// **作例を重ねて撮る**（2026-10-09・2026-10-17 から全員無料）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
     /// 開くのに鍵は要らない。起動の鍵（`-JPComposeGuidePreview`）は線を出すためだけ。シミュレータにカメラは無いので
     /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 2026-10-18: 鍵があるときは作例もその上に重ねる——横長の作例が開いたときから 90° 回って
+    /// 縦の枠に収まっているか（`ComposeControls.autoRotation`）を、この絵で見る。
     /// 入口・画面が出なければ撮らない（この試験の決まり）
     private func shootComposeGuide(_ app: XCUIApplication) {
         let entry = app.buttons["spot.official.composeGuide"].firstMatch
