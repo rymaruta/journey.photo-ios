@@ -457,6 +457,7 @@ struct RootView: View {
                 coverOffer = nil
                 rewardGrant = nil
                 profileReward.noteUser(userId)
+                coverOffers.noteUser(userId)
             }
     }
 
@@ -488,11 +489,19 @@ struct RootView: View {
                                                          currentCover: coverOffers.currentCover(userId)) else { return }
         // カバーが分からない（圏外）ときは「入れ替わります」に倒す（硬貨を約束しない）
         let hasCover = await ProfileImageFromPhoto.exists(userId: userId, kind: .cover) ?? true
+        let showsCoins = hasCover ? false : await coverCoinsStillOpen()
         guard !Task.isCancelled, auth.userId == userId else { return }
         coverOffers.offerLiked(.init(kind: .liked(photo.likes ?? CoverOfferRules.likedThreshold), photoId: photo.id,
                                      imageURL: photo.detailImageURL, title: photo.displayTitle, hasCover: hasCover,
-                                     showsCoins: !hasCover && trunkAvailability.isAvailable),
+                                     showsCoins: showsCoins),
                                userId: userId)
+    }
+
+    /// 差し出しの「硬貨 3 枚」の行を出すか: 旅のトランクが使えて、**カバーのお礼の印がまだ無い**（`rewarded == false`）とき。
+    /// カバーが無い人にだけ聞く（無いので配られることは無く、印の有無を読むだけになる）。分からなければ出さない（約束しない）
+    private func coverCoinsStillOpen() async -> Bool {
+        guard trunkAvailability.isAvailable, let answer = try? await environment.trunk.reward(.cover) else { return false }
+        return answer.rewarded == false
     }
 
     /// 見本の差し出し（見本の利用者の公開写真の1枚目）
@@ -541,9 +550,10 @@ struct RootView: View {
                 coverOffers.finishFirstPost(userId: userId, offer: nil, checked: true)
                 return
             }
+            let showsCoins = await coverCoinsStillOpen()
             coverOffers.finishFirstPost(userId: userId, offer: .init(
                 kind: .firstPost, photoId: lead.id, imageURL: lead.detailImageURL, title: lead.displayTitle,
-                hasCover: false, showsCoins: trunkAvailability.isAvailable), checked: true)
+                hasCover: false, showsCoins: showsCoins), checked: true)
         }
     }
 

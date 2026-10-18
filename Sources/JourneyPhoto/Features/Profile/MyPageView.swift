@@ -49,7 +49,8 @@ struct MyPageView: View {
     @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
-    /// カバーが無いと分かった（読み込みに失敗した）。真鍮の額縁を出す（#304・板 52）。読み込み中は false
+    /// カバーが**無いと確かめられた**（HEAD が「無い」と答えた）。真鍮の額縁を出す（#304・板 52）。読み込み中・分からないときは false。
+    /// 2026-10-18 見直し: 絵を読めなかっただけ（圏外など）では出さない——カバーがある人に「ここにあなたの1枚」を見せない
     @State private var coverMissing = false
     /// 額縁を出しているか（見本の `-JPPreviewNoCover` では、カバーがあっても額縁で撮る）
     private var showsCoverFrame: Bool { PreviewSession.forcesNoCover || (coverMissing && !hasCover) }
@@ -338,7 +339,15 @@ struct MyPageView: View {
                                                 : profile.coverURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)),
                                              reserve: hasCover) { loaded in
                                     hasCover = loaded
-                                    coverMissing = !loaded
+                                    coverMissing = false
+                                    guard !loaded else { return }
+                                    let uid = profile.userId
+                                    Task {
+                                        let exists = await ProfileImageFromPhoto.exists(userId: uid, kind: .cover)
+                                        // 待つ間に人が替わった・絵が出た回は使わない
+                                        guard model.profile?.userId == uid, !hasCover else { return }
+                                        coverMissing = CoverFrameRule.shows(exists: exists)
+                                    }
                                 }
                                 // カバーが無ければ、帯の場所に真鍮の額縁（自分のページだけ・板 52）
                                 if showsCoverFrame { CoverFrameBand() }

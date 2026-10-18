@@ -130,6 +130,32 @@ final class ProfileCoverPickTests: XCTestCase {
         XCTAssertFalse(preview.isDeciding, "絵を撮る入り方で投稿を数えた")
     }
 
+    /// 人が替わったら、前の人の差し出し・合図・決めている途中を下ろす（2026-10-18 見直し）
+    func testUserSwitchDropsOffersAndDeciding() async {
+        let store = offers()
+        store.notePosted(userId: "u1", photoIds: ["p1"])
+        XCTAssertTrue(store.isDeciding)
+        store.noteUser("u2")
+        XCTAssertFalse(store.isDeciding, "人が替わっても決めている途中が残る（通知の説明などが止まる）")
+        XCTAssertTrue(store.postedIds.isEmpty)
+        // 決める間に替わった回の差し出しは、いまの人に出さない
+        store.finishFirstPost(userId: "u1", offer: offer(.firstPost), checked: true)
+        XCTAssertFalse(store.hasPending)
+        store.offerLiked(offer(.liked(12)), userId: "u2")
+        XCTAssertTrue(store.hasPending)
+        store.noteUser(nil)
+        XCTAssertFalse(store.hasPending, "ログアウトしても差し出しが残る")
+        var s = PostModalSnapshot()
+        s.coverOfferBusy = store.isDeciding || store.pending?.kind == .firstPost
+        XCTAssertTrue(PostModalGate.pushPrimerWaitIsOver(s))
+    }
+
+    func testCoverFrameOnlyWhenConfirmedMissing() async {
+        XCTAssertTrue(CoverFrameRule.shows(exists: false))
+        XCTAssertFalse(CoverFrameRule.shows(exists: nil), "分からない（圏外）のに額縁を出す")
+        XCTAssertFalse(CoverFrameRule.shows(exists: true))
+    }
+
     func testLikedOfferRemembersPhotoOnlyWhenShown() async {
         let store = offers()
         let liked = offer(.liked(12), "pL")
@@ -150,7 +176,9 @@ final class ProfileCoverPickTests: XCTestCase {
 
     // MARK: お礼（ProfileReward）
 
-    private func reward() -> ProfileReward { ProfileReward(defaults: defaults, center: center) }
+    private func reward(retry: @escaping () async -> Void = {}) -> ProfileReward {
+        ProfileReward(defaults: defaults, center: center, retryWait: retry)
+    }
 
     func testClaimNotifiesOnlyWhenCoinsWereAdded() async {
         let r = reward()
@@ -179,13 +207,69 @@ final class ProfileCoverPickTests: XCTestCase {
         var kinds: [ProfileReward.Kind] = []
         let grant = await r.claimExisting(userId: "u1", available: true) { kind in
             kinds.append(kind)
-            return TrunkWelcomeResult(granted: true, added: 3, coins: kind == .avatar ? 3 : 6)
+            return TrunkWelcomeResult(granted: true, added: 3, coins: kind == .avatar ? 3 : 6, rewarded: true)
         }
         XCTAssertEqual(kinds, [.avatar, .cover])
         XCTAssertEqual(grant, ProfileReward.Grant(kinds: [.avatar, .cover], added: 6, coins: 6, existing: true),
                        "両方そろっていれば1枚の知らせで +6")
         XCTAssertFalse(r.shouldClaimExisting(userId: "u1", available: true), "答えをもらったのに次も呼ぶ")
         XCTAssertFalse(reward().shouldClaimExisting(userId: "u1", available: true), "次の起動でも呼ぶ")
+    }
+
+    /// まだ設定していない種類がある（rewarded false）間は、次の起動でも確かめ直す（2026-10-18 見直し）
+    func testExistingClaimKeepsCheckingUntilBothAreRewarded() async {
+        let r = reward()
+        _ = await r.claimExisting(userId: "u1", available: true) { kind in
+            TrunkWelcomeResult(granted: kind == .avatar, added: kind == .avatar ? 3 : 0, coins: 3, rewarded: kind == .avatar)
+        }
+        XCTAssertTrue(reward().shouldClaimExisting(userId: "u1", available: true), "カバーがまだなのに以後呼ばない印を立てた")
+        let next = reward()
+        _ = await next.claimExisting(userId: "u1", available: true) { _ in
+            TrunkWelcomeResult(granted: false, added: 0, coins: 3, rewarded: true)
+        }
+        XCTAssertFalse(reward().shouldClaimExisting(userId: "u1", available: true), "2つともお礼が済んだのにまだ呼ぶ")
+    }
+
+    /// 置いた直後は CDN がまだ「無い」と答えることがある: 足せず印も無ければ、待って1回だけ頼み直す
+    func testClaimRetriesOnceWhenNotYetVisible() async {
+        var waits = 0
+        let r = reward(retry: { waits += 1 })
+        var answers = [TrunkWelcomeResult(granted: false, added: 0, coins: 2, rewarded: false),
+                       TrunkWelcomeResult(granted: true, added: 3, coins: 5, rewarded: true)]
+        let got = await r.claim([.cover], userId: "u1", available: true) { _ in answers.removeFirst() }
+        XCTAssertEqual(got?.added, 3)
+        XCTAssertEqual(waits, 1)
+        // 2回目もだめなら、それ以上は頼まない
+        var calls = 0
+        _ = await r.claim([.avatar], userId: "u1", available: true) { _ in
+            calls += 1
+            return TrunkWelcomeResult(granted: false, added: 0, coins: 5, rewarded: false)
+        }
+        XCTAssertEqual(calls, 2)
+        // もらい済み（rewarded true）は頼み直さない
+        calls = 0
+        _ = await r.claim([.avatar], userId: "u1", available: true) { _ in
+            calls += 1
+            return TrunkWelcomeResult(granted: false, added: 0, coins: 5, rewarded: true)
+        }
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(waits, 2)
+    }
+
+    /// 頼んでいる間に人が替わった: いまの人には知らせず、数の知らせも流さない。控えは前の人が次に開いたときに出る
+    func testClaimForPreviousUserIsNotShownToNewUser() async {
+        let r = reward()
+        var notes = 0
+        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { _ in notes += 1 }
+        defer { center.removeObserver(token) }
+        let got = await r.claim([.avatar], userId: "u1", available: true) { _ in
+            r.noteUser("u2")
+            return TrunkWelcomeResult(granted: true, added: 3, coins: 3, rewarded: true)
+        }
+        XCTAssertNil(got)
+        XCTAssertFalse(r.hasPending, "替わった人の画面に前の人のお礼を出す")
+        XCTAssertEqual(notes, 0)
+        XCTAssertTrue(reward().restore(userId: "u1"), "前の人の控えが残っていない")
     }
 
     func testExistingClaimKeepsTryingWhenOneCallFailed() async {
@@ -295,6 +379,10 @@ final class ProfileCoverPickTests: XCTestCase {
                                          body: #"{"granted":true,"added":3,"coins":8}"#, once: true)]
         let result = try await service.reward(.cover)
         XCTAssertEqual(result, TrunkWelcomeResult(granted: true, added: 3, coins: 8))
+        XCTAssertNil(result.rewarded, "古いサーバー（rewarded を返さない）は nil")
+        let decoded = try JSONDecoder().decode(TrunkWelcomeResult.self,
+                                               from: Data(#"{"granted":false,"added":0,"coins":2,"rewarded":false}"#.utf8))
+        XCTAssertEqual(decoded.rewarded, false)
         XCTAssertEqual(ScriptedProtocol.calls.last?.method, "POST")
         XCTAssertEqual(ScriptedProtocol.calls.last?.path, "/user/trunk/reward")
         let body = try XCTUnwrap(ScriptedProtocol.calls.last?.body)

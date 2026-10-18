@@ -153,24 +153,30 @@ final class TrunkWelcome: ObservableObject {
 }
 
 /// `POST /user/trunk/welcome` の答え。数は寛容に読む（`LenientInt`）。granted が無い本文は読めない扱い
+///
+/// アイコン・カバーのお礼（`POST /user/trunk/reward`・#304）も同じ形で、`rewarded`（その種類のお礼の印が立っているか）が
+/// 足される。はじめての硬貨は返さない（nil）
 struct TrunkWelcomeResult: Decodable, Equatable {
     let granted: Bool
     let added: Int
     let coins: Int
+    let rewarded: Bool?
 
-    init(granted: Bool, added: Int, coins: Int) {
+    init(granted: Bool, added: Int, coins: Int, rewarded: Bool? = nil) {
         self.granted = granted
         self.added = max(0, added)
         self.coins = max(0, coins)
+        self.rewarded = rewarded
     }
 
-    private enum CodingKeys: String, CodingKey { case granted, added, coins }
+    private enum CodingKeys: String, CodingKey { case granted, added, coins, rewarded }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // granted が無い本文は答えと見なさない（投げる＝印を残さず、次に開いたときにまた呼ぶ）
         self.init(granted: try c.decode(Bool.self, forKey: .granted),
-                  added: LenientInt.read(c, .added) ?? 0, coins: LenientInt.read(c, .coins) ?? 0)
+                  added: LenientInt.read(c, .added) ?? 0, coins: LenientInt.read(c, .coins) ?? 0,
+                  rewarded: try? c.decodeIfPresent(Bool.self, forKey: .rewarded))
     }
 }
 

@@ -8,7 +8,10 @@ import Combine
 /// 配るか・何枚かは**サーバーが決める**（実体を確かめて印を立てる・`api-user/src/trunk.ts` の `rewardCoins`）。ここは呼んで知らせるだけ:
 /// - プロフィールの編集で保存が通ったあと（`claim`）。知らせは編集を閉じてから（`editorOpen` が下りてから）
 /// - **すでに設定済みの人にも、次に開いたときに1回**（はじめての硬貨と同じ呼び方・`claimExisting`）。
-///   2つとも呼び、足せた分を1枚の知らせにまとめる（両方で +6）。答えをもらったら、その人では以後起動のときに呼ばない
+///   2つとも呼び、足せた分を1枚の知らせにまとめる（両方で +6）。**2つとも `rewarded` が true になったら**
+///   以後起動のときに呼ばない（まだ設定していない種類がある間は、起動のたびに確かめ直す・2026-10-18 見直し）
+/// - **置いた直後は「まだ無い」と答えることがある**（サーバーは公開の CDN に HEAD で聞き、CDN は無いキーの 404 を約10秒覚える）。
+///   保存のあとに頼んで足せず印も無ければ、`retryDelay`（約12秒）おいて1回だけ頼み直す
 /// - **知らせは `added > 0` のときだけ**（もらい済み・上限に当たった回は出さない）。足せたら `trunkCoinsChanged` を流す
 /// - 出す知らせは uid ごとに端末へ控え、出たら消す（`TrunkWelcome` と同じ・待ちが切れた回に二度と出なくならない）
 /// - 起動のときにまとめて渡す分は、はじめての硬貨の案内を出した起動では出さない（同じ全画面を続けて出さない・板 53 の付箋）。
@@ -47,10 +50,17 @@ final class ProfileReward: ObservableObject {
     private var owner: String?
     /// この起動で、起動のときの呼び出しをした人
     private var triedThisLaunch: Set<String> = []
+    /// 頼み直すまでの待ち（試験は差し替える）
+    private let retryWait: () async -> Void
 
-    init(defaults: UserDefaults = .standard, center: NotificationCenter = .default) {
+    /// CDN が 404 を覚える約10秒より少し長く
+    nonisolated static let retryDelay: TimeInterval = 12
+
+    init(defaults: UserDefaults = .standard, center: NotificationCenter = .default,
+         retryWait: @escaping () async -> Void = { try? await Task.sleep(nanoseconds: UInt64(ProfileReward.retryDelay * 1_000_000_000)) }) {
         self.defaults = defaults
         self.center = center
+        self.retryWait = retryWait
     }
 
     nonisolated static func existingKey(_ userId: String) -> String { "profile.reward.existing.\(userId)" }
@@ -70,7 +80,13 @@ final class ProfileReward: ObservableObject {
         for kind in kinds {
             // 失敗（古いサーバーの 404・圏外）は黙って飛ばす。サーバーに印が立っていないので、
             // 起動のときの呼び出し（まだならそこで）か、次に設定し直したときに渡せる
-            guard let result = try? await call(kind) else { continue }
+            guard var result = try? await call(kind) else { continue }
+            // 置いた直後で CDN がまだ「無い」と答えた: 少しおいて1回だけ頼み直す
+            if result.added == 0, result.rewarded == false {
+                await retryWait()
+                let again = try? await call(kind)
+                if let again { result = again }
+            }
             coins = result.coins
             if result.added > 0 {
                 got.append(kind)
@@ -96,7 +112,7 @@ final class ProfileReward: ObservableObject {
         var got: [Kind] = []
         var added = 0
         var coins: Int?
-        var answered = 0
+        var settled = 0
         for kind in Kind.allCases {
             let result: TrunkWelcomeResult
             do {
@@ -107,15 +123,16 @@ final class ProfileReward: ObservableObject {
             } catch {
                 continue
             }
-            answered += 1
+            if result.rewarded == true { settled += 1 }
             coins = result.coins
             if result.added > 0 {
                 got.append(kind)
                 added += result.added
             }
         }
-        // 片方でも読めなかった回は印を残さない（次に開いたときにまた呼ぶ。もらった方はサーバーに印があるので二度は来ない）
-        if answered == Kind.allCases.count { defaults.set(true, forKey: Self.existingKey(userId)) }
+        // 2つともお礼の印が立った（rewarded）ときだけ以後呼ばない。まだ設定していない・読めなかった種類があれば、
+        // 次に開いたときに確かめ直す（もらった方はサーバーに印があるので二度は来ない）
+        if settled == Kind.allCases.count { defaults.set(true, forKey: Self.existingKey(userId)) }
         return deliver(kinds: got, added: added, coins: coins, userId: userId, existing: true)
     }
 

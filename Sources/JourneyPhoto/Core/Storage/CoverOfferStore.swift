@@ -50,6 +50,8 @@ final class CoverOfferStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let isPreview: () -> Bool
+    /// いまの持ち主（差し出し・合図はこの人のもの。替わったら下ろす・`noteUser`）
+    private(set) var owner: String?
 
     init(defaults: UserDefaults = .standard,
          isPreview: @escaping () -> Bool = { PreviewSession.userId != nil }) {
@@ -76,6 +78,7 @@ final class CoverOfferStore: ObservableObject {
     func notePosted(userId: String?, photoIds: [String]) {
         guard !isPreview(), let userId, !userId.isEmpty, !photoIds.isEmpty,
               !firstDone(userId), !isNever(userId) else { return }
+        noteUser(userId)
         postedIds = Set(photoIds)
         isDeciding = true
         postRequests += 1
@@ -87,13 +90,15 @@ final class CoverOfferStore: ObservableObject {
         defer { isDeciding = false }
         guard let userId else { return }
         if checked { defaults.set(true, forKey: Self.firstKey(userId)) }
-        guard let offer else { return }
+        // 決める間に人が替わった回は、いまの人に出さない
+        guard let offer, owner == userId else { return }
         pending = offer
         requests += 1
     }
 
     /// いいねが集まった1枚を出す待ちへ入れる（`RootView` が起動のときに確かめた）
     func offerLiked(_ offer: Offer, userId: String) {
+        noteUser(userId)
         guard !isNever(userId), pending == nil else { return }
         pending = offer
         requests += 1
@@ -122,6 +127,16 @@ final class CoverOfferStore: ObservableObject {
     func noteCoverSet(photoId: String?, userId: String?) {
         guard let userId else { return }
         if let photoId { defaults.set(photoId, forKey: Self.coverKey(userId)) } else { defaults.removeObject(forKey: Self.coverKey(userId)) }
+    }
+
+    /// 入っている人が替わった（ログアウトを含む）。前の人の差し出し・合図・決めている途中を下ろす
+    /// （`ProfileReward.noteUser` と同じ形。残すと通知の説明・評価・届いた画面が `coverOfferBusy` で止まったままになる）
+    func noteUser(_ userId: String?) {
+        guard userId != owner else { return }
+        owner = userId
+        pending = nil
+        postedIds = []
+        isDeciding = false
     }
 
     /// 画面写真の見本（`-JPPreviewCoverOffer`）

@@ -244,8 +244,10 @@ enum CoverOfferText {
     static func footnote(_ kind: CoverOfferStore.Offer.Kind) -> String {
         switch kind {
         case .firstPost:
-            return L("「あとで」なら、いいねが集まったときにもう一度だけ聞きます。\nプロフィールの編集から、いつでも選べます。",
-                     "Choose Later and we'll ask once more when it gets likes.\nYou can pick a cover anytime in Edit profile.")
+            // 2026-10-18 見直し: 実装どおりに言う（いいねが決まった件数に届いた写真ごとに1回・`CoverOfferRules.likedCandidate`）
+            let n = CoverOfferRules.likedThreshold
+            return L("「あとで」なら、いいねが \(n) 件に届いた写真が出たときに、その写真でまた聞きます（写真ごとに1回）。\nプロフィールの編集から、いつでも選べます。",
+                     "Choose Later and we'll ask again when a photo reaches \(n) \(likes(n)) (once per photo).\nYou can pick a cover anytime in Edit profile.")
         case .liked:
             return L("プロフィールの編集から、いつでも選び直せます。", "You can change it anytime in Edit profile.")
         }

@@ -37,3 +37,8 @@ struct CoverFrameBand: View {
         .accessibilityIdentifier("mypage.coverFrame")
     }
 }
+
+/// 額縁を出すか（#304・2026-10-18 見直し）。**HEAD が「無い」と答えたときだけ**（nil＝分からない・true＝在るなら出さない）
+enum CoverFrameRule {
+    static func shows(exists: Bool?) -> Bool { exists == false }
+}
