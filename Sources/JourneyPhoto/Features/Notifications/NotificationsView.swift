@@ -97,6 +97,7 @@ struct NotificationsView: View {
     private func rowLink(_ entry: NotificationText.Entry) -> some View {
         let target = model.route(for: entry.lead)
         return NotificationRow(entry: entry, following: model.following,
+                               followBackSending: model.followBackSending,
                                onFollowBack: { await model.followBack($0, environment: environment) },
                                onOpen: target.map { target in { open(target) } },
                                onOpenProfile: { route = .user($0) })
@@ -362,13 +363,14 @@ private struct NotificationRow: View {
     /// 出すかどうかの判断に使う**——既にフォローしている相手に出さない
     /// nil は「まだ分からない」＝フォローバックを出さない
     var following: Set<String>?
+    /// いまフォローバックを送っている相手。**ボタンの側で印を下ろさない**
+    /// ——先に終わった2回目が印を下ろすと、1回目の送信中にまた押せる
+    var followBackSending: Set<String> = []
     var onFollowBack: ((String) async -> Void)?
     /// 行の本体を押したとき。nil なら押せない（行き先が無い）
     var onOpen: (() -> Void)?
     /// 左のアイコンを押したとき（相手のプロフィールを開く）
     var onOpenProfile: ((String) -> Void)?
-
-    @State private var busy = false
 
     private var notification: AppNotification { entry.lead }
 
@@ -505,11 +507,8 @@ private struct NotificationRow: View {
            NotificationsViewModel.showsFollowBack(to: userId, following: following),
            let onFollowBack {
             Button {
-                busy = true
-                Task {
-                    await onFollowBack(userId)
-                    busy = false
-                }
+                // 印は `followBack` が持つ。ここで下ろすと、無視した2回目が1回目の送信中にボタンを戻す
+                Task { await onFollowBack(userId) }
             } label: {
                 // v2（板・Components 01 の行の中の小ボタン）: 白 94% の塗りに墨・13 semibold・見た目 36
                 Text(L("フォローバック", "Follow back"))
@@ -523,8 +522,8 @@ private struct NotificationRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(busy)
-            .opacity(busy ? 0.5 : 1)
+            .disabled(followBackSending.contains(userId))
+            .opacity(followBackSending.contains(userId) ? 0.5 : 1)
         }
     }
 }
@@ -614,6 +613,12 @@ final class NotificationsViewModel: ObservableObject {
     /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
     /// 一覧の上端（下の行で押すと画面の外）に出て、「読み込めていない」とも読める。アラートで出す
     @Published var followBackError: String?
+    /// いまフォローバックを送っている相手。**送りの頭で止める**
+    ///
+    /// 🔴 **ボタンの `disabled` だけでは2本走る**（2026-10-17）。描き直しの前にもう一度押すと、
+    /// 両方の `Task` が `followBack` に入る。ボタン側で印を下ろすと、先に終わった方（送らなかった方）が
+    /// 印を消して、まだ送っている間にまた押せる。プロフィールのフォローと同じ形で、ここで止める
+    @Published private(set) var followBackSending: Set<String> = []
     /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
     ///
     /// `.task` と引っぱって読み直しは同時に走りうる。遅れて返った `.task`
@@ -754,6 +759,9 @@ final class NotificationsViewModel: ObservableObject {
     /// （失敗したのにボタンが消えると、フォローできたように見える）。
     /// **失敗は黙らない**——圏外で押して何も起きないと、押せていないのか分からない
     func followBack(_ userId: String, environment: AppEnvironment) async {
+        // 送っている間の同じ相手は送らない。別の相手は止めない（行が並んでいる）
+        guard followBackSending.insert(userId).inserted else { return }
+        defer { followBackSending.remove(userId) }
         // 送っている間に人が替わった（`forget`）ら、答えも失敗も次の人の画面に書かない
         let era = userEra
         do {
