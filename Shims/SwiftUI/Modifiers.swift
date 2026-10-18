@@ -169,6 +169,9 @@ public struct AnyTransitionShim {
     public static let scale = AnyTransitionShim()
     public static let opacity = AnyTransitionShim()
     public static func move(edge: Edge) -> AnyTransitionShim { AnyTransitionShim() }
+    /// 本物の `AnyTransition.scale(scale:anchor:)`・`offset(x:y:)`（2026-10-18 旅のトランクの中身を持ち上げる）
+    public static func scale(scale: Double, anchor: UnitPoint = .center) -> AnyTransitionShim { AnyTransitionShim() }
+    public static func offset(x: Double = 0, y: Double = 0) -> AnyTransitionShim { AnyTransitionShim() }
     public func combined(with other: AnyTransitionShim) -> AnyTransitionShim { self }
 }
 
@@ -287,6 +290,8 @@ extension View {
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// ぼかし（本物の `blur(radius:opaque:)`・2026-10-18 旅のトランクの中身）
+    public func blur(radius: Double, opaque: Bool = false) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

@@ -195,4 +195,24 @@ enum TrunkArtwork {
         }
     }
 
+    /// 背面の絵（板 Trunk の `face="back"`・2026-10-18）。金蒔絵は波と散らしの点だけ（丸紋は正面だけ）、
+    /// 星図は正面の続きの星座。羅針盤は背面に描かない
+    static func backStrokes(_ art: TrunkArt) -> [TrunkArtStroke] {
+        switch art {
+        case .makie:
+            // 正面の金蒔絵から丸紋（最後の2筆）を外したもの
+            return Array(strokes(.makie).dropLast(2))
+        case .compass:
+            return []
+        case .stars:
+            let lineInk = TrunkArtStroke.Ink.fixed(TrunkRGBA(0xC9A66B))
+            let lines = ["M52 40 L118 70 L170 36 L236 64 L300 32",
+                         "M118 70 L104 128 L182 150 L240 120 L236 64",
+                         "M182 150 L196 214 L262 228 L312 196"].map { S($0, lineInk, line(0.9), opacity: 0.85) }
+            let stars: [(Double, Double, Double)] = [(52, 40, 2), (118, 70, 2.6), (170, 36, 1.8), (236, 64, 2.2), (300, 32, 3),
+                                                     (104, 128, 2.2), (182, 150, 2), (240, 120, 2.6), (196, 214, 2),
+                                                     (262, 228, 2.8), (312, 196, 2)]
+            return lines + stars.map { circle($0.0, $0.1, $0.2, .fixed(TrunkRGBA(0xE3C98F))) }
+        }
+    }
 }
