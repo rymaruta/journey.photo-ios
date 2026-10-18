@@ -1,0 +1,594 @@
+import SwiftUI
+
+/// 写真で作るキャンピングカー（板「写真で作るキャンピングカー」の 1 自分のキャンピングカー・5 車が育つ・6 部品のコレクション）。
+///
+/// 上に立体の車（指で回す・2本の指で寄る・2度たたくと初めの向き）、下に時刻・段・集めた部品。
+/// 第1段（2026-10-18）はサーバーを変えない: 段も部品の「持っている／まだ」も、自分の投稿からこの端末で数える
+/// （`CamperCounting`）。付けた部品は人ごとにこの端末へ覚える（`CamperStore`）。
+struct CamperGarageView: View {
+    let ownerName: String?
+    let userId: String?
+    let stats: CamperStats
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var loadout = CamperLoadout.standard
+    @State private var loaded = false
+    @State private var mood: CamperMood = .day
+    @State private var angle = CamperFraming.overview(.camper)
+    @State private var animateAngle = false
+    @State private var dragStart: CamperAngle?
+    @State private var pinchStart: CamperAngle?
+    @State private var doorOpen = false
+    /// 見本で見ている段（まだ着いていない段も見られる）
+    @State private var previewStage: CamperStage?
+    /// まだ持っていない部品を影絵で見ている
+    @State private var previewPart: CamperPart?
+    @State private var group: CamperGroupKind = .exterior
+    @State private var category: CamperCategory = .wheel
+    @State private var arrival: CamperPart?
+    @State private var readyMarker = ""
+
+    private var store: CamperStore { CamperStore(userId: userId) }
+    private var owned: Set<String> { CamperCatalog.owned(stats) }
+    private var actualStage: CamperStage { CamperStage.stage(books: stats.books) }
+    private var stage: CamperStage { previewStage ?? actualStage }
+
+    private var config: CamperConfig {
+        var shown = loadout
+        if let previewPart { shown.pick(previewPart) }
+        return CamperConfig(stage: stage, mood: mood, loadout: shown, posts: stats.posts, silhouette: previewPart?.category)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                header
+                stageView(width: geo.size.width, height: min(360, max(220, geo.size.width * 0.9), geo.size.height * 0.46))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        moods
+                        statsRow
+                        stagesRow
+                        collection
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 32)
+                }
+            }
+        }
+        .background { backdrop }
+        .navigationTitle(L("キャンピングカー", "Camper"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: load)
+        .sheet(item: $arrival) { part in
+            CamperArrivalView(part: part, collected: owned.count, total: CamperCatalog.all.count, onEquip: {
+                equip(part)
+                arrival = nil
+            }, onClose: { arrival = nil })
+        }
+    }
+
+    // MARK: 読み込み
+
+    private func load() {
+        guard !loaded else { return }
+        loaded = true
+        loadout = store.load().sanitized(owned: owned)
+        angle = CamperFraming.overview(actualStage)
+        // 新しく届いた部品（いちばん珍しいもの）を一度だけ見せる
+        let fresh = CamperStore.arrivals(owned: owned, seen: store.seen)
+        store.markSeen(owned)
+        if let top = fresh.first, PreviewSession.userId == nil || ProcessInfo.processInfo.arguments.contains("-JPPreviewCamperArrival") {
+            arrival = top
+        }
+    }
+
+    private func equip(_ part: CamperPart) {
+        guard owned.contains(part.id) else { return }
+        loadout.pick(part)
+        previewPart = nil
+        store.save(loadout)
+    }
+
+    // MARK: 見出し
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(ownerName.map { L("\($0) の車 · \(actualStage.name)", "\($0)'s camper · \(actualStage.name)") } ?? actualStage.name)
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
+                .lineLimit(1)
+            Text(L("写真で作るキャンピングカー", "Photo camper"))
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(L("旅を重ねるほど車が育ち、撮るほど部品が集まります", "It grows with your trips; parts arrive as you shoot"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    // MARK: 立体の車
+
+    private func stageView(width: CGFloat, height: CGFloat) -> some View {
+        CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion) { marker in
+            readyMarker = marker
+        }
+        .frame(width: width, height: height)
+        .contentShape(Rectangle())
+        .gesture(rotate)
+        .simultaneousGesture(zoom)
+        .onTapGesture(count: 2) { aim(CamperFraming.overview(stage)) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(CamperText.accessibilityLabel(stage: stage, mood: mood, loadout: config.loadout, doorOpen: doorOpen,
+                                                          preview: previewPart))
+        .accessibilityAddTraits(.isImage)
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker : "")
+        .accessibilityAction(named: doorOpen ? L("扉を閉じる", "Close the door") : L("扉を開ける", "Open the door")) { toggleDoor() }
+        .accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 45) }
+        .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -45) }
+        .accessibilityIdentifier("camper.scene")
+        .overlay(alignment: .bottomTrailing) { sceneButtons }
+        .overlay(alignment: .top) {
+            if previewStage != nil && previewStage != actualStage || previewPart != nil {
+                Text(previewPart != nil ? L("まだ持っていない部品 · 見本", "Not yet collected · preview") : L("まだ先 · 見本", "Not yet · preview"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(WebTheme.accentSoft, in: Capsule())
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("camper.previewBadge")
+            }
+        }
+    }
+
+    private var rotate: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                let start = dragStart ?? angle
+                if dragStart == nil { dragStart = angle }
+                animateAngle = false
+                angle = CamperFraming.dragged(start, dx: Double(value.translation.width), dy: Double(value.translation.height))
+            }
+            .onEnded { value in
+                guard let start = dragStart else { return }
+                dragStart = nil
+                // 惰性（離した勢いの 35%。「視差効果を減らす」ではそのまま止める）
+                let extra = reduceMotion ? 0 : Double(value.predictedEndTranslation.width - value.translation.width) * 0.35
+                animateAngle = !reduceMotion
+                angle = CamperFraming.dragged(start, dx: Double(value.translation.width) + extra, dy: Double(value.translation.height))
+            }
+    }
+
+    private var zoom: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStart ?? angle
+                if pinchStart == nil { pinchStart = angle }
+                animateAngle = false
+                angle = CamperFraming.pinched(start, scale: Double(value.magnification))
+            }
+            .onEnded { _ in pinchStart = nil }
+    }
+
+    private func aim(_ a: CamperAngle) {
+        animateAngle = true
+        angle = a
+    }
+
+    private func turn(by degrees: Double) {
+        var a = angle
+        a.yaw += degrees
+        aim(a)
+    }
+
+    private func toggleDoor() {
+        doorOpen.toggle()
+        if doorOpen && stage != .van { aim(CamperFraming.door) }
+    }
+
+    private var sceneButtons: some View {
+        HStack(spacing: 8) {
+            sceneButton(doorOpen ? "door.left.hand.open" : "door.left.hand.closed",
+                        label: doorOpen ? L("扉を閉じる", "Close the door") : L("扉を開ける", "Open the door"),
+                        id: "camper.door") { toggleDoor() }
+            if stage != .van {
+                sceneButton("beach.umbrella", label: loadout.awningOpen ? L("オーニングを畳む", "Stow the awning") : L("オーニングを広げる", "Open the awning"),
+                            id: "camper.awning") {
+                    loadout.awningOpen.toggle()
+                    store.save(loadout)
+                }
+            }
+            sceneButton("arrow.counterclockwise", label: L("初めの向きに戻す", "Reset the view"), id: "camper.reset") {
+                aim(CamperFraming.overview(stage))
+            }
+        }
+        .padding(12)
+    }
+
+    private func sceneButton(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .jpGlass(in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
+    // MARK: 時刻・数・段
+
+    private var moods: some View {
+        HStack(spacing: 8) {
+            ForEach(CamperMood.allCases, id: \.self) { m in
+                Button { mood = m } label: {
+                    Text(m.name)
+                        .font(.system(size: 14, weight: m == mood ? .semibold : .regular))
+                        .foregroundStyle(m == mood ? CamperStyle.brassLight : WebTheme.text)
+                        .frame(minWidth: 60, minHeight: WebTheme.minTapTarget)
+                        .padding(.horizontal, 8)
+                        .overlay(Capsule().strokeBorder(m == mood ? WebTheme.accent : WebTheme.line, lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(m == mood ? .isSelected : [])
+                .accessibilityIdentifier("camper.mood.\(m.rawValue)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("時刻と天気", "Time and weather"))
+    }
+
+    private var statsRow: some View {
+        HStack(spacing: 8) {
+            statTile(L("集めた部品", "Parts"), "\(owned.count) / \(CamperCatalog.all.count)")
+            statTile(L("写真", "Photos"), "\(stats.posts)")
+            statTile(L("走った旅", "Trips"), "\(stats.books)")
+        }
+    }
+
+    private func statTile(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint)
+            Text(value).font(JPFont.number(17, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var stagesRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("車が育つ", "Your camper grows")).jpEyebrow().foregroundStyle(WebTheme.accent)
+            HStack(spacing: 8) {
+                ForEach(CamperStage.allCases, id: \.self) { s in
+                    let reached = s.requiredBooks <= stats.books
+                    let on = s == stage
+                    Button {
+                        previewStage = s == actualStage ? nil : s
+                        doorOpen = false
+                        aim(CamperFraming.overview(s))
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(s.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(s == actualStage ? CamperStyle.brassLight : (reached ? WebTheme.text : WebTheme.muted2))
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                            Text(s == actualStage ? L("いま", "Now")
+                                 : (reached ? L("通ってきた", "Passed") : L("あと \(s.requiredBooks - stats.books) 冊", "\(s.requiredBooks - stats.books) more trips")))
+                                .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                                .foregroundStyle(s == actualStage ? WebTheme.accent : WebTheme.faint)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .background(s == actualStage ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(on ? WebTheme.accent : (reached ? WebTheme.hairline : WebTheme.line),
+                                          style: StrokeStyle(lineWidth: 1, dash: reached || on ? [] : [4, 3])))
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .accessibilityHint(reached ? "" : L("まだ先の段を見本で見ます", "Preview a stage you haven't reached"))
+                    .accessibilityIdentifier("camper.stage.\(s.rawValue)")
+                }
+            }
+        }
+    }
+
+    // MARK: 部品のコレクション
+
+    private var collection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(L("部品を集める", "Collect parts")).jpEyebrow().foregroundStyle(WebTheme.accent)
+                Spacer()
+                Text("\(owned.count) / \(CamperCatalog.all.count)")
+                    .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
+                    .foregroundStyle(WebTheme.text)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(CamperGroupKind.allCases, id: \.self) { g in
+                        Button {
+                            group = g
+                            if let first = CamperCategory.allCases.first(where: { $0.group == g }) { pickCategory(first) }
+                        } label: {
+                            Text(g.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(g == group ? CamperStyle.brassLight : WebTheme.muted2)
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(g == group ? WebTheme.accent : Color.clear).frame(height: 2)
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(g == group ? .isSelected : [])
+                        .accessibilityIdentifier("camper.group.\(g.rawValue)")
+                    }
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CamperCategory.allCases.filter { $0.group == group }, id: \.self) { c in
+                        let have = CamperCatalog.parts(c).filter { owned.contains($0.id) }.count
+                        Button { pickCategory(c) } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: c.symbol).font(.system(size: 13))
+                                Text(c.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                Text("\(have)/\(CamperCatalog.parts(c).count)").font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                                    .foregroundStyle(WebTheme.faint)
+                            }
+                            .foregroundStyle(c == category ? CamperStyle.brassLight : WebTheme.text)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .background(c == category ? WebTheme.accentSoft : WebTheme.card, in: Capsule())
+                            .overlay(Capsule().strokeBorder(c == category ? WebTheme.accent : Color.clear, lineWidth: 1))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(c == category ? .isSelected : [])
+                        .accessibilityIdentifier("camper.category.\(c.rawValue)")
+                    }
+                }
+            }
+            partsGrid
+            if let previewPart {
+                howToGet(previewPart)
+            }
+        }
+    }
+
+    private func pickCategory(_ c: CamperCategory) {
+        category = c
+        group = c.group
+        previewPart = nil
+        if c == .awning, !loadout.awningOpen { loadout.awningOpen = true }
+        aim(CamperFraming.focus(c, stage: stage))
+    }
+
+    private var partsGrid: some View {
+        let parts = CamperCatalog.parts(category)
+        let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+        return LazyVGrid(columns: columns, spacing: 8) {
+            if category.optional {
+                let on = loadout.key(category) == CamperLoadout.none && previewPart == nil
+                Button {
+                    previewPart = nil
+                    loadout.remove(category)
+                    store.save(loadout)
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "nosign").font(.system(size: 22)).foregroundStyle(WebTheme.muted2)
+                        Text(L("付けない", "None")).font(.system(size: 12)).foregroundStyle(WebTheme.text)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 92)
+                    .background(on ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? WebTheme.accent : WebTheme.hairline, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityIdentifier("camper.part.none")
+            }
+            ForEach(parts) { part in
+                partCard(part)
+            }
+        }
+    }
+
+    private func partCard(_ part: CamperPart) -> some View {
+        let have = owned.contains(part.id)
+        let on = previewPart?.id == part.id || (previewPart == nil && loadout.key(part.category) == part.key)
+        return Button {
+            if have {
+                equip(part)
+            } else {
+                previewPart = part
+            }
+        } label: {
+            VStack(spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: part.category.symbol)
+                        .font(.system(size: 24))
+                        .foregroundStyle(have ? WebTheme.foreground : WebTheme.faint)
+                    if let swatch = part.swatch {
+                        Circle().fill(CamperStyle.color(swatch)).frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(Color.black, lineWidth: 1))
+                            .opacity(have ? 1 : 0.3)
+                            .offset(x: 6, y: 4)
+                    }
+                }
+                .frame(height: 30)
+                Text(have ? part.name : L("？？？", "???"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(have ? WebTheme.text : WebTheme.faint)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                CamperRarityDots(rarity: part.rarity)
+                if !have {
+                    CamperProgressBar(fraction: part.unlock.fraction(stats))
+                        .padding(.horizontal, 8)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, minHeight: 92)
+            .background(on ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(on ? WebTheme.accent : (have ? WebTheme.hairline : WebTheme.line),
+                              style: StrokeStyle(lineWidth: 1, dash: have || on ? [] : [3, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(CamperText.partLabel(part, owned: have, stats: stats))
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("camper.part")
+    }
+
+    private func howToGet(_ part: CamperPart) -> some View {
+        let p = part.unlock.progress(stats)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(part.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
+            Text(part.look).font(.system(size: 13)).foregroundStyle(WebTheme.muted2)
+            Text(part.unlock.how).font(.system(size: 13)).foregroundStyle(WebTheme.text)
+            HStack(spacing: 8) {
+                CamperProgressBar(fraction: part.unlock.fraction(stats))
+                Text("\(p.have) / \(p.need)").font(JPFont.number(12, weight: .semibold, relativeTo: .caption)).foregroundStyle(WebTheme.accent)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("camper.howToGet")
+    }
+
+    private var backdrop: some View {
+        RadialGradient(colors: [CamperStyle.color(CamperMaterials.backdrop(mood)), Color.black],
+                       center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 520)
+            .ignoresSafeArea()
+    }
+}
+
+/// 珍しさの印（真鍮の四角 4 つ・黒地の上だけ）
+struct CamperRarityDots: View {
+    let rarity: CamperRarity
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(1...4, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(i <= rarity.rawValue ? WebTheme.accent : CamperStyle.color(0x333333))
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rarity.name)
+    }
+}
+
+/// 部品が届いたときの画面（板 CamperGet: 光の輪・名前・届いた理由・いま車に付ける）
+struct CamperArrivalView: View {
+    let part: CamperPart
+    let collected: Int
+    let total: Int
+    let onEquip: () -> Void
+    let onClose: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            ZStack {
+                // 光の輪（板: 24 秒で 1 回転。「視差効果を減らす」では止める）
+                TimelineView(.animation(paused: reduceMotion)) { context in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    Circle()
+                        .fill(AngularGradient(colors: [WebTheme.accent.opacity(0.35), Color.clear, WebTheme.accent.opacity(0.25), Color.clear,
+                                                       WebTheme.accent.opacity(0.35)], center: .center,
+                                              startAngle: .degrees(0), endAngle: .degrees(360)))
+                        .frame(width: 220, height: 220)
+                        .rotationEffect(.degrees(reduceMotion ? 0 : (t.truncatingRemainder(dividingBy: 24)) / 24 * 360))
+                }
+                Image(systemName: part.category.symbol)
+                    .font(.system(size: 64, weight: .light))
+                    .foregroundStyle(WebTheme.foreground)
+            }
+            .accessibilityHidden(true)
+            VStack(spacing: 12) {
+                Text(L("部品が届いた", "A part arrived")).jpEyebrow().foregroundStyle(WebTheme.accent)
+                Text(part.name).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
+                CamperRarityDots(rarity: part.rarity)
+                Text(part.unlock.because).font(.subheadline).foregroundStyle(WebTheme.text).multilineTextAlignment(.center)
+                Text(part.look).font(.footnote).foregroundStyle(WebTheme.muted2).multilineTextAlignment(.center)
+                Text(L("\(part.category.name) · 部品 \(collected) / \(total)", "\(part.category.name) · \(collected) of \(total) parts"))
+                    .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                    .foregroundStyle(WebTheme.faint)
+            }
+            Spacer(minLength: 0)
+            Button(action: onEquip) {
+                Text(L("いま車に付ける", "Put it on now"))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(WebTheme.accentFill, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("camper.arrival.equip")
+            Button(action: onClose) {
+                Text(L("あとで", "Later"))
+                    .font(.system(size: 15))
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("camper.arrival.close")
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { Color.black.ignoresSafeArea() }
+    }
+}
+
+/// 色（キャンピングカーの画面だけで使う真鍮の明るい字・0xRRGGBB の色）
+enum CamperStyle {
+    /// 板の選択中の字 #F3DCA6
+    static let brassLight = color(0xF3DCA6)
+
+    static func color(_ hex: UInt32) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+    }
+}
+
+/// 進み具合の細い棒（真鍮・板 CamperCatalog）
+struct CamperProgressBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(WebTheme.surface)
+                Capsule().fill(WebTheme.accent).frame(width: geo.size.width * max(0, min(1, fraction)))
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
