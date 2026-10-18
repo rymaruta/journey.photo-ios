@@ -2332,8 +2332,9 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - 旅のトランクの中身と回したときの面（2026-10-18・板「旅のトランク」）
 
-    /// 見本のメダル 10 枚（8 枠に 7 枚と「ほか 3」）・Pro（会員証）・すれちがいの見本（乗車券）
-    private static let trunkInsideArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewPass", "YES",
+    /// 見本のメダル 10 枚（8 枠に 7 枚と「ほか 3」）・Pro とサポーターの番号（会員証）・すれちがいの見本（乗車券）
+    private static let trunkInsideArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewSupporter", "7",
+                                          "-JPPreviewPass", "YES",
                                           "-JPPreviewBadges",
                                           "earlyUser:1,first:1,prefectures:2,countries:1,seasons:1,morning:1,night:1,books:1,wish:1,supporter:1"]
 

@@ -104,7 +104,13 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     private let supporter: LenientSupporter?
 
     /// サポーター証の中身。申し込んだことのない人・古いサーバーでは nil
-    var supporterInfo: SupporterInfo? { supporter?.value }
+    var supporterInfo: SupporterInfo? {
+        #if DEBUG
+        // UI テストの見本のサポーターの印（`PreviewSession.supporter`・入っている本人だけ）
+        if userId == PreviewSession.userId, let preview = PreviewSession.supporter { return preview }
+        #endif
+        return supporter?.value
+    }
 
     /// 光と天気の知らせ（Pro・2026-10-09）を受け取るか。**本人の応答だけに載る**（公開プロフィールには無い）。
     /// サーバーは行に無ければ「受け取る」を返す（`userProfile.ts` の `withBadgeFields`）

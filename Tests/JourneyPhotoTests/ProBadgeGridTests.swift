@@ -365,4 +365,24 @@ final class ProBadgeGridTests: XCTestCase {
         defaults.removeObject(forKey: PreviewSession.proKey)
         XCTAssertFalse(me.isPro)
     }
+
+    /// 見本のサポーターの印（Debug のみ・2026-10-18）: 入っている本人にだけ重ね、番号の無い値・0 以下は読まない
+    func testPreviewSupporterOnlyForThePreviewUser() throws {
+        let defaults = UserDefaults.standard
+        defaults.set("me", forKey: PreviewSession.defaultsKey)
+        defaults.set("7", forKey: PreviewSession.supporterKey)
+        defer {
+            defaults.removeObject(forKey: PreviewSession.defaultsKey)
+            defaults.removeObject(forKey: PreviewSession.supporterKey)
+        }
+        let me = try JSONDecoder.api.decode(UserProfile.self, from: Data(#"{"userId":"me","displayName":"丸田"}"#.utf8))
+        XCTAssertEqual(me.supporterInfo?.number, 7)
+        let other = try JSONDecoder.api.decode(UserProfile.self,
+                                               from: Data(#"{"userId":"u2","displayName":"他の人"}"#.utf8))
+        XCTAssertNil(other.supporterInfo, "見本のサポーターの印は本人だけ")
+        defaults.set("0", forKey: PreviewSession.supporterKey)
+        XCTAssertNil(me.supporterInfo)
+        defaults.removeObject(forKey: PreviewSession.supporterKey)
+        XCTAssertNil(me.supporterInfo)
+    }
 }

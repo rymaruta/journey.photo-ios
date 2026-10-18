@@ -145,6 +145,12 @@ final class TrunkWiringTests: XCTestCase {
         // 次の版（2026-10-17）: 硬貨の枚数の見本（カプセルの機械の「硬貨がありません」を撮る）
         XCTAssertTrue(preview.contains("static let trunkCoinsKey = \"JPPreviewTrunkCoins\""))
         XCTAssertNil(PreviewSession.trunkCoins)
+        // ふたを開けた画面写真の会員証（2026-10-18）: 見本のサポーターの番号も Debug だけ・入っている本人だけ
+        XCTAssertTrue(preview.contains("static let supporterKey = \"JPPreviewSupporter\""))
+        XCTAssertNil(PreviewSession.supporter)
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        XCTAssertTrue(shots.contains("\"-JPPreviewPro\", \"YES\", \"-JPPreviewSupporter\", \"7\""),
+                      "ふたを開けた画面写真に会員証が出ない（見本の利用者の公開プロフィールに番号が無い）")
     }
 
     /// 知らせ: 押して進む画面には重ねず（`RootView` の全体の知らせ）、全画面の届いた画面にだけ置く。
