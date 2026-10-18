@@ -26,6 +26,29 @@ LOG="${XCODE_LOG:-/tmp/xcodebuild-full.log}"
 DEVICE="${DEVICE:-$(python3 Tools/pick-simulator.py)}"
 echo "シミュレータ: $DEVICE"
 
+# **1本ごとの時間の上限（秒）。** 2026-10-18 判断。
+# 🔴 上限が無いと、1本が待ち続けたときに段ごと 90分のジョブの上限まで抜けられない。
+# run 233（#274）: xcodebuild が 63秒止まって起動の頼みが遅れ、1本目が「Timed out while launching
+# application」で落ちたあと、2本目の起動は「起動の進み具合 0」のまま 72分待ち続けて取り消された
+# （signal 19 を送れなかった起動が終わらない）。どの1本で止まったかも結果に残らなかった。
+# 上限を越えた1本は Xcode が止め（spindump を取り、テストの実行役を立て直す）、**その1本だけ落として
+# 次へ進む**。結果（xcresult）にはその1本が「時間の上限を越えた」として残る。
+# Xcode は上限を分単位に切り上げる（60 未満は 60）。
+#
+# 数の根拠（成功した run 225〜232・TestFlight 515〜522 の xcodebuild のログ、計10回の実測）:
+#   - UI テスト: 画面を全部撮る `ScreenshotTests.testCapturesEveryScreen` がいちばん長く 362〜462秒。
+#     それ以外は最長 119秒（起動直後の `MedalViewerTests.testNameSideCloseAfterSpin`）。
+#     → 既定 300秒（119 の約2.5倍）。全部撮る1本だけはテストの中で `executionTimeAllowance` を
+#       1200秒に上げ、上限（maximum）も 1200秒（462 の約2.6倍）。上限はテスト側の指定も頭打ちにする
+#   - 単体テスト: 最長 2.3秒（Linux の模型・4088件）。Xcode の最小の 60秒（約25倍）
+# 長いテストを足して上限に当たったら、ここの数ではなく、そのテストの `executionTimeAllowance` を
+# 実測の2〜3倍で付ける（既定を上げると、詰まった1本を待つ時間が全部のテストで延びる）。
+# `Tools/check-config.py` が、この数・渡し方・全部撮る1本の指定を見張る
+UNIT_TIME_ALLOWANCE=60
+UNIT_TIME_MAXIMUM=60
+UI_TIME_ALLOWANCE=300
+UI_TIME_MAXIMUM=1200
+
 # `set -u` の bash 3.2 は空の "$@" を「未定義」と言うので、`shift` で進める
 shift
 case "$mode" in
@@ -38,12 +61,18 @@ case "$mode" in
         rm -rf "$result"
         action="test-without-building"
         extra="-resultBundlePath $result -only-testing:JourneyPhotoTests"
+        extra="$extra -test-timeouts-enabled YES"
+        extra="$extra -default-test-execution-time-allowance $UNIT_TIME_ALLOWANCE"
+        extra="$extra -maximum-test-execution-time-allowance $UNIT_TIME_MAXIMUM"
         ;;
     ui)
         result="${1:?結果の .xcresult の置き場を渡す}"
         rm -rf "$result"
         action="test-without-building"
         extra="-resultBundlePath $result"
+        extra="$extra -test-timeouts-enabled YES"
+        extra="$extra -default-test-execution-time-allowance $UI_TIME_ALLOWANCE"
+        extra="$extra -maximum-test-execution-time-allowance $UI_TIME_MAXIMUM"
         only=""
         if [ -n "${2:-}" ] && [ -s "$2" ]; then
             while IFS= read -r line; do
@@ -60,7 +89,7 @@ case "$mode" in
 esac
 
 mkdir -p "$(dirname "$LOG")"
-# `extra` は空白を含まない語の並び（置き場の名前と -only-testing:…）なので、わざと分けて渡す
+# `extra` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
 # shellcheck disable=SC2086
 xcodebuild \
     -project JourneyPhoto.xcodeproj \
