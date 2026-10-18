@@ -119,11 +119,23 @@ final class TrunkWelcome: ObservableObject {
 
     var hasPending: Bool { pending != nil }
 
-    /// 出す中身を受け取る（受け取ったら空にし、端末の控えも消す＝出した）
+    /// 出す中身を受け取る（受け取ったら空にする）。**端末の控えは消さない**——全画面が実際に出たときに
+    /// `noteShown` で消す（2026-10-18 の見直し: 同じ瞬間に別のシートが出始めて全画面が出なかった回に、案内が二度と出なくなる）
     func consume() -> Grant? {
         defer { pending = nil }
-        if pending != nil, let owner { defaults.removeObject(forKey: Self.pendingKey(owner)) }
         return pending
+    }
+
+    /// 案内の全画面が実際に出た（`TrunkWelcomeView` の `onAppear`）。端末の控えを消す＝次の起動ではもう出さない
+    func noteShown(userId: String?) {
+        guard let userId else { return }
+        defaults.removeObject(forKey: Self.pendingKey(userId))
+    }
+
+    /// 出そうとした全画面が出なかった（ほかのシートと重なった）。出す待ちへ戻す（同じ人のときだけ）
+    func requeue(_ grant: Grant, userId: String?) {
+        guard userId == owner, pending == nil else { return }
+        pending = grant
     }
 
     /// 入っている人が替わった（ログアウトを含む）。前の人の案内を下ろす（端末の控えは残す＝その人が次に開いたときに出す）

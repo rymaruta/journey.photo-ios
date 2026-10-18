@@ -10,6 +10,9 @@ import SwiftUI
 /// 「カプセルを回す」は、この全画面の中でカプセルの機械（`TrunkGachaView`）へ進む
 struct TrunkWelcomeView: View {
     let grant: TrunkWelcome.Grant
+    /// 実際に出た（`RootView` が端末の控えを消し、出たことを覚える）。カプセルの機械から戻ったときは呼び直さない
+    var onShown: () -> Void = {}
+    @State private var shown = false
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
@@ -26,6 +29,11 @@ struct TrunkWelcomeView: View {
                 .navigationDestination(isPresented: $showGacha) { TrunkGachaView(model: model) }
         }
         .task { model.bind(environment.trunk, userId: auth.userId) }
+        .onAppear {
+            guard !shown else { return }
+            shown = true
+            onShown()
+        }
         // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（カプセルの機械の「部品箱に入りました」など）
         .overlay(alignment: .top) { ToastOverlay() }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける

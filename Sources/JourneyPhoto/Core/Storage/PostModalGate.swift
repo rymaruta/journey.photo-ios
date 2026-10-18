@@ -9,7 +9,8 @@ import Foundation
 /// - 届いた画面は、通知の説明が決め終わり（出していれば閉じてから）、評価のお願いが決め終わってから出す
 ///
 /// はじめての硬貨の案内（`TrunkWelcome`）は**いちばん後ろ**:
-/// - 起動のときの案内（新しくなったこと → 初期ユーザー章の贈り物）が決め終わり、通知の説明・評価のお願い・
+/// - アプリが前面に出ていて（裏にいる間に出すと、戻ったときには閉じる手前の画面が見えないまま残る）、
+///   起動のときの案内（新しくなったこと → 初期ユーザー章の贈り物）が決め終わり、通知の説明・評価のお願い・
 ///   届いた画面のどれも出ていない・決めている最中でない・届いた画面に出すものが残っていないときに出す
 /// - 案内が出ている間は、評価のお願いを頼まず、届いた画面も出さない（閉じてから出す）
 ///
@@ -23,8 +24,10 @@ struct PostModalSnapshot: Equatable {
     var trunkShowing = false
     /// 起動のときの案内（新しくなったこと・初期ユーザー章）を決めている・出している
     var launchNoticesDeciding = false
-    /// はじめての硬貨の案内を出している
+    /// はじめての硬貨の案内を出している（出そうとしている間も含む）
     var welcomeShowing = false
+    /// アプリが前面に出ている（`scenePhase == .active`）。裏にいる間は案内を出さない
+    var sceneActive = true
 }
 
 enum PostModalGate {
@@ -48,7 +51,7 @@ enum PostModalGate {
 
     /// はじめての硬貨の案内を出してよいか（いちばん後ろ。ほかのどれも出ていない・決めていない・残っていない）
     static func welcomeMayShow(_ s: PostModalSnapshot) -> Bool {
-        !s.modalPresenting && !s.launchNoticesDeciding && !s.pushPrimerDeciding && !s.pushPrimerShowing
+        s.sceneActive && !s.modalPresenting && !s.launchNoticesDeciding && !s.pushPrimerDeciding && !s.pushPrimerShowing
             && !s.reviewDeciding && !s.trunkPending && !s.trunkShowing && !s.welcomeShowing
     }
 

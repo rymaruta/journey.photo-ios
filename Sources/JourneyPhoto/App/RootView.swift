@@ -54,6 +54,8 @@ struct RootView: View {
     @ObservedObject private var trunkWelcome = TrunkWelcome.shared
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     @State private var trunkWelcomeGrant: TrunkWelcome.Grant?
+    /// 案内の全画面が実際に出たか（`TrunkWelcomeView` の `onAppear` が立てる）
+    @State private var welcomeAppeared = false
     /// 案内を出す頃合いを待っている仕事（1本だけ・人が替わったら止める）
     @State private var welcomeOffer: Task<Void, Never>?
     /// 画面写真の見本の案内を出したか（起動のあと1回だけ）
@@ -380,7 +382,14 @@ struct RootView: View {
             .fullScreenCover(item: $trunkWelcomeGrant, onDismiss: {
                 // 案内の間に入った届いた束は、閉じてから出す（`PostModalGate.trunkMayShow`）
                 if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
-            }) { grant in TrunkWelcomeView(grant: grant) }
+                welcomeAppeared = false
+            }) { grant in
+                // 実際に出たときだけ控えを消す（`TrunkWelcome.noteShown`）。出たことは待ちの仕事も見る
+                TrunkWelcomeView(grant: grant) {
+                    welcomeAppeared = true
+                    trunkWelcome.noteShown(userId: auth.userId)
+                }
+            }
             // 人が替わった（ログアウトを含む）: 前の人の案内を下ろす
             .onChange(of: auth.userId) { _, userId in
                 welcomeOffer?.cancel()
@@ -436,7 +445,18 @@ struct RootView: View {
             if Task.isCancelled { return }
             welcomeOffer = nil
             guard ready, trunkWelcomeGrant == nil, let grant = trunkWelcome.consume() else { return }
+            let owner = auth.userId
+            welcomeAppeared = false
             trunkWelcomeGrant = grant
+            // 出たか確かめる（同じ瞬間に別のシートが出始めると、全画面は黙って出ない）。
+            // 約3秒で出なければ、出している扱いを下ろして待ちへ戻す（届いた画面と評価のお願いを止めたままにしない）
+            for _ in 0..<30 where !welcomeAppeared {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard !welcomeAppeared, trunkWelcomeGrant == grant, auth.userId == owner else { return }
+            trunkWelcomeGrant = nil
+            trunkWelcome.requeue(grant, userId: owner)
+            offerTrunkWelcomeWhenIdle()
         }
     }
 
@@ -493,7 +513,8 @@ struct RootView: View {
                           pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
                           trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil,
                           launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil,
-                          welcomeShowing: trunkWelcomeGrant != nil)
+                          welcomeShowing: trunkWelcomeGrant != nil,
+                          sceneActive: scenePhase == .active)
     }
 
     private func offerPreviewTrunkArrival() async {

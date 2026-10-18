@@ -210,7 +210,10 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertEqual(second.requests, 1)
         XCTAssertEqual(second.consume(), TrunkWelcome.Grant(added: 10, coins: 12))
         XCTAssertEqual(counter.calls, 1, "戻すのにサーバーを呼んだ")
-        // 出したら控えを消す: その次の起動ではもう出ない
+        // 受け取っただけ（全画面がまだ出ていない）では控えを消さない
+        XCTAssertEqual(gate().storedGrant("u1"), TrunkWelcome.Grant(added: 10, coins: 12), "出る前に控えを消した")
+        // 実際に出た（`TrunkWelcomeView` の onAppear）ら控えを消す: その次の起動ではもう出ない
+        second.noteShown(userId: "u1")
         let third = gate()
         XCTAssertFalse(third.restore(userId: "u1"), "出した案内がまた出る")
         XCTAssertFalse(third.hasPending)
@@ -220,6 +223,26 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertFalse(fourth.restore(userId: "u9"), "出す待ちに二重に積んだ")
         XCTAssertEqual(fourth.requests, 1)
         XCTAssertEqual(fourth.storedGrant("u9"), TrunkWelcome.Grant(added: 4, coins: 99), "上限に当たった枚数を控えていない")
+    }
+
+    /// 出そうとした全画面が出なかった（同じ瞬間に別のシートが出始めた）: 控えは残り、出す待ちへ戻る（2026-10-18 の見直し）
+    func testPresentationThatNeverAppearedIsRequeued() async {
+        let welcome = gate()
+        _ = await welcome.claim(userId: "u1", available: true) { TrunkWelcomeResult(granted: true, added: 10, coins: 10) }
+        let grant = try? XCTUnwrap(welcome.consume())
+        XCTAssertFalse(welcome.hasPending)
+        welcome.requeue(TrunkWelcome.Grant(added: 10, coins: 10), userId: "u1")
+        XCTAssertTrue(welcome.hasPending, "出なかった案内が待ちへ戻らない")
+        XCTAssertEqual(welcome.consume(), grant)
+        XCTAssertNotNil(welcome.storedGrant("u1"), "出ていないのに控えが消えた")
+        // 別の人には戻さない
+        welcome.noteUser("u2")
+        welcome.requeue(TrunkWelcome.Grant(added: 10, coins: 10), userId: "u1")
+        XCTAssertFalse(welcome.hasPending, "別の人の待ちに前の人の案内を戻した")
+        // 出たら消える
+        welcome.noteShown(userId: "u1")
+        XCTAssertNil(welcome.storedGrant("u1"))
+        welcome.noteShown(userId: nil)
     }
 
     /// 待つ間に人が替わった: いまの人には出さず知らせも流さない。配った人が次に開いたときに出す
@@ -400,6 +423,7 @@ final class TrunkWelcomeRulesTests: XCTestCase {
             ("届いた画面に出すものが残っている", PostModalSnapshot(trunkPending: true)),
             ("届いた画面が出ている", PostModalSnapshot(trunkShowing: true)),
             ("案内がもう出ている", PostModalSnapshot(welcomeShowing: true)),
+            ("アプリが前面に出ていない", PostModalSnapshot(sceneActive: false)),
         ]
         for (name, s) in blockers {
             XCTAssertFalse(PostModalGate.welcomeMayShow(s), "\(name)のに案内を出す")
@@ -426,7 +450,6 @@ final class TrunkWelcomeRulesTests: XCTestCase {
     func testRootViewWiring() throws {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("tabsWithTrunkWelcome\n"), "案内の修飾子が繋がっていない")
-        XCTAssertTrue(root.contains("}) { grant in TrunkWelcomeView(grant: grant) }"))
         XCTAssertTrue(root.contains("until: PostModalGate.welcomeMayShow"), "案内が順番の決まりを通っていない")
         XCTAssertTrue(root.contains("await trunkWelcome.claim(userId: userId, available: trunkAvailability.isAvailable) { try await service.welcome() }"),
                       "トランクが使えるかを見ずに呼んでいる")
@@ -435,6 +458,10 @@ final class TrunkWelcomeRulesTests: XCTestCase {
         XCTAssertTrue(root.contains("scenePhase == .active"), "前面に戻ったときに出し直さない")
         XCTAssertTrue(root.contains("[tabRouter.postSheetsClosed, tabRouter.menuSheetsClosed]"), "シートを閉じたときに出し直さない")
         XCTAssertTrue(root.contains("welcomeShowing: trunkWelcomeGrant != nil"), "案内が出ていることを順番に渡していない")
+        XCTAssertTrue(root.contains("sceneActive: scenePhase == .active"), "裏にいる間も案内を出す")
+        XCTAssertTrue(root.contains("TrunkWelcomeView(grant: grant) {\n                    welcomeAppeared = true\n                    trunkWelcome.noteShown(userId: auth.userId)"),
+                      "全画面が出たときに控えを消していない")
+        XCTAssertTrue(root.contains("trunkWelcome.requeue(grant, userId: owner)"), "出なかった案内を待ちへ戻していない")
         XCTAssertTrue(root.contains("launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil"))
         XCTAssertTrue(root.contains("welcomeOffer?.cancel()\n                welcomeOffer = nil\n                trunkWelcome.noteUser(userId)"),
                       "人が替わっても前の人の案内の待ちが止まらない")
@@ -445,6 +472,8 @@ final class TrunkWelcomeRulesTests: XCTestCase {
         XCTAssertTrue(view.contains(".navigationDestination(isPresented: $showGacha) { TrunkGachaView(model: model) }"),
                       "「カプセルを回す」がカプセルの機械へ進まない")
         XCTAssertTrue(view.contains("model.bind(environment.trunk, userId: auth.userId)"))
+        XCTAssertTrue(view.contains(".onAppear {\n            guard !shown else { return }\n            shown = true\n            onShown()"),
+                      "出たことを1回だけ知らせていない")
         XCTAssertTrue(view.contains("TrunkCoinMark("), "カプセルの機械の硬貨の描き方を使っていない")
         XCTAssertTrue(view.contains("JPFont.mono("), "数が等幅の数字でない")
         for id in ["trunk.welcome.turn", "trunk.welcome.later", "trunk.welcome.close"] {
