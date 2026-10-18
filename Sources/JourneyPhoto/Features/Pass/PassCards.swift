@@ -307,15 +307,15 @@ enum PassCardStyle {
     // 字は表と裏と同じく固定の大きさ（文字を大きくする設定では変わらない・札からはみ出さない）
 
     /// 左右の内側の余白・行の間
-    static let miniInset: CGFloat = 6
+    static let miniInset: CGFloat = 5
     static let miniSpacing: CGFloat = 2
     /// 「乗車券」（明朝 12・字間は表と同じ 0.3em）
     static let miniHeadSize: CGFloat = 12
     /// 区間の地名（明朝 14 から、長い地名は本文系の下限 12 まで。発・着は同じ大きさ）
     static let miniRouteSize: Double = 14
     static let miniRouteMinSize: Double = 12
-    /// 区間の矢印（幅 10・左右のすき間 2）
-    static let miniArrow: (width: Double, gap: Double) = (10, 2)
+    /// 区間の矢印（幅 8・左右のすき間 1）。ホームの束（92）でも3字の地名が 12 で入る幅を残す
+    static let miniArrow: (width: Double, gap: Double) = (8, 1)
     /// 小さなきっぷの角（板の束 9）。特別な券面は表の角の比で（`PassMiniTicket.corner`）
     static let miniCorner: CGFloat = stackCorner
 
@@ -872,7 +872,7 @@ struct PassMiniTicket: View {
         // 字は窓（と写真の下端の線）の下から
         let textTop: CGFloat = (window.maxY + CGFloat(6)) * sy + CGFloat(2)
         ZStack(alignment: .topLeading) {
-            PassFaceGround(style: face.style)
+            PassFaceGround(style: face.style, behindText: true)
                 .scaleEffect(x: sx, y: sy, anchor: .topLeading)
                 .frame(width: size.width, height: size.height, alignment: .topLeading)
             PassFacePhoto(photo: face.photo, width: window.width * sx, height: window.height * sy,

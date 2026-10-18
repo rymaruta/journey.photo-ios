@@ -1010,6 +1010,9 @@ struct PassLeatherFace: View {
 /// 覆輪・裾の金の霞・ステッチを太く明るく描く（見本で決めた形）。**写真の窓には何も描かない**（窓の位置は `window`）
 struct PassFaceGround: View {
     let style: PassTicketFaceStyle
+    /// 字の下に敷く（小さなきっぷ）。06 の弧は字と重なるので薄くし、名前の行の下へ下げる
+    /// （2026-10-17 の Mac の画面写真: 弧の破線が「乗車券」と番号の間を横切っていた）
+    var behindText: Bool = false
 
     static let size = CGSize(width: 300, height: 430)
 
@@ -1033,7 +1036,9 @@ struct PassFaceGround: View {
             case .greatCircle:
                 PassRouteMaterial()
                 PassGreatCircleGrid().offset(y: 206)
-                PassGreatCircleArc(lineWidth: 4, dash: 9).offset(y: 206)
+                PassGreatCircleArc(lineWidth: 4, dash: 9)
+                    .opacity(behindText ? 0.4 : 1)
+                    .offset(y: behindText ? 300 : 206)
             case .foilHard:
                 PassFaceColor.of(PassFacePalette.paper)
                 PassFaceColor.foil(.center).frame(width: 300, height: 6).offset(y: 200)

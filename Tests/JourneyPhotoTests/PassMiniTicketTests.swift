@@ -93,9 +93,12 @@ final class PassMiniTicketTests: XCTestCase {
         let long = PassCardStyle.miniRoute(origin: "京都", destination: "ニューヨーク", width: width)
         XCTAssertEqual(long.fontSize, PassCardStyle.miniRouteMinSize, accuracy: 1e-9)
         XCTAssertEqual(long.columnWidth, short.columnWidth, accuracy: 1e-9, "左右の欄の幅が字数で変わる")
-        // 3字は 98pt の札に縮めずに入る
-        let three = PassCardStyle.miniRoute(origin: "京都市", destination: "金沢市", width: width)
-        XCTAssertLessThanOrEqual(3 * three.fontSize, three.columnWidth + 1e-9, "3字の地名が欄に入らない")
+        // 3字は帳の札（98）にもホームの束（92）にも 12 で入る（2026-10-17 の画面写真: 束で「どこか」が切れていた）
+        for card in [98.0, Double(PassCardStyle.stackSize.width)] {
+            let three = PassCardStyle.miniRoute(origin: "京都市", destination: "金沢市",
+                                                width: card - Double(PassCardStyle.miniInset) * 2)
+            XCTAssertLessThanOrEqual(3 * three.fontSize, three.columnWidth + 1e-9, "\(card)pt の札で3字の地名が欄に入らない")
+        }
     }
 
     /// 大きい札の並べ方は変わらない（引数を足しただけ）
@@ -120,7 +123,7 @@ final class PassMiniTicketTests: XCTestCase {
                       "ホームの束に券面が渡っていない（Pro の券面が束に出ない）")
 
         let mini = try miniBody()
-        for part in ["PassFaceGround(style: face.style)", "PassFaceGround.window(face.style)", "PassFacePhoto(photo: face.photo",
+        for part in ["PassFaceGround(style: face.style, behindText: true)", "PassFaceGround.window(face.style)", "PassFacePhoto(photo: face.photo",
                      ".background { PassTicketGlow(kind: face.kind, corner: corner) }",
                      ".overlay(PassTicketEdge(kind: face.kind, corner: corner))",
                      "PassCardStyle.miniRoute(origin: face.origin, destination: face.destination, width: width)",
