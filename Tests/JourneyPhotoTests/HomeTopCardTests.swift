@@ -377,9 +377,19 @@ final class HomeTopCardTests: XCTestCase {
                       "日が進んでも今日の一問を取り直さない")
         XCTAssertTrue(view.contains(".task(id: cardsDay) { await waitForNextDay() }"), "ホームのまま 0 時を過ぎても進まない")
         XCTAssertTrue(view.contains("private func applyPendingQuiz() {\n        advanceDay()"),
-                      "前面に戻ったときに日を進めない")
-        XCTAssertTrue(view.contains("guard !Task.isCancelled, isShown else { return }\n        advanceDay()"),
+                      "一問を整えるときに日を進めない")
+        // 🔴 一問が「もう今日の分」で早抜けしても日を確かめる（日本の外では一問と札の 0 時が別・96e499b7 のレビュー）
+        XCTAssertTrue(view.contains("if quiz?.date == date {\n            \n            if isShown { advanceDay() }"),
+                      "一問の早抜けで札の日を進めない")
+        // 前面に戻ったら、一問の読み直しに頼らずに進める
+        XCTAssertTrue(view.contains(".onChange(of: scenePhase) { _, phase in\n                if phase == .active, isShown { advanceDay() }"),
+                      "前面に戻っても札の日を進めない")
+        // 0 時の待ちは壁時計で確かめ直す（眠っている間は待ちが進まない）。見えていないときは進めない
+        XCTAssertTrue(view.contains("HomeDailySpots.secondsUntilRecheck(now: Date(), in: .current)"), "0 時の待ちが壁時計を見直さない")
+        XCTAssertTrue(view.contains("if isShown, HomeDailySpots.shouldAdvance(shown: cardsNow, now: Date(), in: .current) {\n                advanceDay()"),
                       "見えていないのに日を進める")
+        XCTAssertTrue(view.contains("guard HomeDailySpots.shouldAdvance(shown: cardsNow, now: now, in: .current) else { return }"),
+                      "日を進める判定が時刻帯の暦日で決まらない")
     }
 
     /// 行きたい場所の札も**日替わり**（2026-10-18・季節の札にそろえた）。2件以上あれば翌日は別の札

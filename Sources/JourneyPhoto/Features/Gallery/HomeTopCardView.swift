@@ -77,8 +77,12 @@ struct HomeTopCardView: View {
     /// 札・段は毎日 0 時に替わるので、その場で読むと、札から開いた撮影スポットの画面が前に出ている間に
     /// 日をまたいだあと、何かで描き直した瞬間に押した元のリンクが消えて**開いていた画面が閉じる**
     /// （一冊の札・今日の一問と同じ形）。進めるのはホームが見えているときだけ（`advanceDay`）:
-    /// 前面が確定したとき・前面に戻って今日の一問を読み直したとき・ホームのまま 0 時を過ぎたとき
+    /// 前面が確定したとき（`landHomeCards`）・アプリが前面に戻ったとき（`scenePhase` が `.active`）・
+    /// 今日の一問を読み直したとき（早抜けの回も）・ホームのまま 0 時を過ぎたとき（`waitForNextDay`）。
+    /// 🔴 **一問の読み直しだけに頼らない**——一問は日本時間で替わるので、日本の外では前面に戻っても
+    /// 一問が「もう今日の分」で早抜けし、札が昨日のまま残った（96e499b7 のレビュー）
     @State private var cardsNow = Date()
+    @Environment(\.scenePhase) private var scenePhase
 
     private let opened = OpenedTripBooks()
 
@@ -98,8 +102,12 @@ struct HomeTopCardView: View {
             .task(id: SpotDetailNeeds.key(detailNeeds(choices))) { await loadDetails(choices) }
             // 日が進んだら今日の一問も取り直す（ホームのまま 0 時を過ぎた回）
             .task(id: "\(reloadToken)#\(cardsDay)") { await loadQuiz() }
-            // ホームのまま 0 時を過ぎたら札と段を今日へ（`advanceDay`）。前面に戻った回は `reloadToken` の側
+            // ホームのまま 0 時を過ぎたら札と段を今日へ（`advanceDay`・壁時計で確かめ直す）
             .task(id: cardsDay) { await waitForNextDay() }
+            // 前面に戻ったら、一問の読み直しを待たずに日を確かめる（ホームが見えているときだけ）
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, isShown { advanceDay() }
+            }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
             //
@@ -475,6 +483,8 @@ struct HomeTopCardView: View {
     private func loadQuiz() async {
         let date = DailyQuiz.today()
         if quiz?.date == date {
+            // 一問は日本時間で替わる。**早抜けでも札と段の日は確かめる**（日本の外では端末の 0 時が別）
+            if isShown { advanceDay() }
             quizSettled = true
             return
         }
@@ -498,22 +508,25 @@ struct HomeTopCardView: View {
     /// 昨日のものなら、一問が決着するまで段を下げる（`quizSettled`・昨日の選択肢で除いた段を一瞬出さない）
     private func advanceDay() {
         let now = Date()
-        guard TripPlanText.ymd(pickedIn: .current, now) != cardsDay else { return }
+        guard HomeDailySpots.shouldAdvance(shown: cardsNow, now: now, in: .current) else { return }
         cardsNow = now
         if let current = quiz, current.date != DailyQuiz.today(now) { quizSettled = false }
     }
 
-    /// 次の 0 時（端末の暦）まで待ち、ホームが見えていれば札と段を今日へ進める。見えていなければ
-    /// 何もしない（戻ったときの `landHomeCards` が進める）。止められたら何もしない
+    /// ホームのまま日をまたぐのを待つ。次の 0 時（端末の暦）か最大15分ごとに起き、**壁時計で日を確かめ直す**
+    /// （`HomeDailySpots.secondsUntilRecheck`）——端末が眠っている間は待ちが進まない見込みで、時計や時刻帯が
+    /// 変わることもある。日が変わっていてホームが見えていれば進める（`cardsDay` が変わり、この待ちは掛け直される）。
+    /// 見えていなければ待ち続ける（戻ったときの `landHomeCards` が進める）。止められたら抜ける
     private func waitForNextDay() async {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
-        guard let next = calendar.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0, second: 0),
-                                           matchingPolicy: .nextTime) else { return }
-        let seconds = max(next.timeIntervalSinceNow, 0) + 1
-        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        guard !Task.isCancelled, isShown else { return }
-        advanceDay()
+        while !Task.isCancelled {
+            let seconds = HomeDailySpots.secondsUntilRecheck(now: Date(), in: .current)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            if isShown, HomeDailySpots.shouldAdvance(shown: cardsNow, now: Date(), in: .current) {
+                advanceDay()
+                return
+            }
+        }
     }
 
     /// 今日の一問の札を整える（ホームが見えているときだけ呼ぶ）: 取り直したものがあれば差し替え、
