@@ -110,7 +110,7 @@ final class CampStore: ObservableObject {
     /// キャンプ場の名前（無ければ持ち主の名前から）
     func displayName(owner: String?) -> String {
         if let name = snapshot.name, !name.isEmpty { return name }
-        return L("はじまりの野営地", "First Camp")
+        return L("とおまわり野営地", "Detour Camp")
     }
 
     func imageURL(cutout id: String, layer: Int) -> URL { directory.appendingPathComponent("\(id)-\(layer).png") }

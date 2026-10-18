@@ -169,14 +169,14 @@ struct CampGrowView: View {
             Text(L("キャンプ場の名前", "Campsite name"))
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
-            TextField(L("はじまりの野営地", "First Camp"), text: $draftName)
+            TextField(L("とおまわり野営地", "Detour Camp"), text: $draftName)
                 .font(JPFont.body)
                 .foregroundStyle(WebTheme.text)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 48)
                 .background { RoundedRectangle(cornerRadius: 12).fill(WebTheme.surface) }
                 .accessibilityIdentifier("camp.grow.name")
-            Text(L("20 字まで。空にすると「はじまりの野営地」", "Up to 20 characters. Leave empty for \u{201C}First Camp\u{201D}"))
+            Text(L("20 字まで。空にすると「とおまわり野営地」", "Up to 20 characters. Leave empty for \u{201C}Detour Camp\u{201D}"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
             HStack(spacing: 8) {

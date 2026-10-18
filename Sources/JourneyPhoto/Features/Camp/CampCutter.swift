@@ -308,7 +308,7 @@ enum CampCutter {
         let frame = CampCrop.frame(width: 390, height: 844)
         let result = await cut(photo, frame: CGRect(x: frame.x, y: frame.y, width: frame.w, height: frame.h), viewSize: screen)
         var snapshot = CampStore.Snapshot()
-        snapshot.name = L("ひかり野営地", "Hikari Camp")
+        snapshot.name = L("とおまわり野営地", "Detour Camp")
         snapshot.shots = CampPreview.sampleShots()
         let now = Date()
         for (i, spot) in [0, 2].enumerated() {

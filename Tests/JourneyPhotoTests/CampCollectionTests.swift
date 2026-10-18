@@ -157,8 +157,8 @@ final class CampCollectionTests: XCTestCase {
         XCTAssertTrue(store.unseen.contains("camp.firewood.log_round"))
         store.markSeen()
         XCTAssertTrue(store.unseen.isEmpty)
-        store.rename("  ひかり野営地  ")
-        XCTAssertEqual(store.displayName(owner: nil), "ひかり野営地")
+        store.rename("  ほしぞら野営地  ")
+        XCTAssertEqual(store.displayName(owner: nil), "ほしぞら野営地")
         store.rename("")
         XCTAssertFalse(store.displayName(owner: nil).isEmpty)
     }
