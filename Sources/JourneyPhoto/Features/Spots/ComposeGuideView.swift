@@ -88,6 +88,8 @@ struct ComposeGuideView: View {
     /// 人が回すボタン・ひねりで回したか（2026-10-18）。true の間は持った向きが変わっても自動で回し直さない。
     /// 参考写真・構図が替わったら false（自動に戻す・`ComposeControls.decidedRotation`）
     @State private var rotationManual = false
+    /// 画面が出た時刻。開いた直後の持った向きでの回し直しには動きを付けない（`ComposeControls.animatesHeldTurn`）
+    @State private var appearedAt: Date?
     /// 2本指でひねっている間の角度（指のそのままの値。効かせるかは `twistState`）
     @GestureState private var twist = 0.0
     /// ひねりを効かせたか・拡大の指とみなしたか（2026-10-16 確かめ役の指摘「つまむたびに回る」・
@@ -242,7 +244,10 @@ struct ComposeGuideView: View {
         }
         .preferredColorScheme(.dark)
         .task { await camera.start() }
-        .onAppear { updateLevel() }
+        .onAppear {
+            appearedAt = Date()
+            updateLevel()
+        }
         .onChange(of: composition) { _, _ in updateLevel() }
         // 2026-10-18: 参考写真が替わったら、その縦横で向きを決め直す。持った向きが変わったら、
         // 人が回していなければ写真が立つ側へ（`ComposeControls.decidedRotation`）
@@ -594,7 +599,7 @@ struct ComposeGuideView: View {
                 CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
                                  // 参考写真を重ねている間は、線も作例と同じ向き（2026-10-18・`linesQuarterTurns`）
                                  quarterTurns: ComposeControls.linesQuarterTurns(
-                                    held: quarterTurns, kind: composition, referenceShown: referenceShown),
+                                    held: quarterTurns, kind: composition, referenceShown: hasReference),
                                  rotationDegrees: shownRotation, level: level)
             }
         }
@@ -1328,10 +1333,13 @@ struct ComposeGuideView: View {
         if trigger == .heldTurned, twistState.engaged { return }
         guard let next = ComposeControls.decidedRotation(
             trigger, current: rotation, manual: rotationManual, auto: autoReferenceRotation,
-            remembered: preferences.rotation(for: composition)) else { return }
+            remembered: preferences.rotation(for: composition), held: quarterTurns) else { return }
         if trigger != .heldTurned { rotationManual = false }
         guard next != rotation else { return }
-        if reduceMotion || !animated {
+        // 開いた直後に最初の傾きの値で回し直すときは動きを付けない（180° 回って見えないように）
+        let settling = trigger == .heldTurned && !ComposeControls.animatesHeldTurn(
+            secondsSinceAppear: appearedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        if reduceMotion || !animated || settling {
             rotation = next
         } else {
             withAnimation(.easeOut(duration: 0.2)) { rotation = next }

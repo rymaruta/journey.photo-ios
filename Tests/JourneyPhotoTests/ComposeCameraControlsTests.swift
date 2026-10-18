@@ -497,7 +497,8 @@ final class ComposeCameraControlsTests: XCTestCase {
         // 人が回した向きは、持ち替えても回し直さない
         XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 0, manual: true, auto: 270, remembered: 0))
         // 自動のままなら写真が立つ側へ（90° → 270° は +180°）
-        XCTAssertEqual(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: 270, remembered: 0), 270)
+        XCTAssertEqual(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: 270, remembered: 0,
+                                                       held: 1), 270)
         XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: nil, remembered: 0))
     }
 
@@ -555,5 +556,52 @@ final class ComposeCameraControlsTests: XCTestCase {
     func testViewPassesLinesQuarterTurns() throws {
         let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
         XCTAssertTrue(view.contains("quarterTurns: ComposeControls.linesQuarterTurns("))
+    }
+
+    // MARK: - 見直しの指摘（2026-10-18）
+
+    func testBackToPortraitKeepsSidewaysTurn() {
+        // 時計回りの横持ち（270°）から縦持ち・逆さまに戻しても、作例を 180° ひっくり返さない
+        for held in [0, 2] {
+            XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 270, manual: false, auto: 90,
+                                                         remembered: 0, held: held), "held \(held)")
+            XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: -90, manual: false, auto: 90,
+                                                         remembered: 0, held: held), "held \(held)")
+            XCTAssertNil(ComposeControls.decidedRotation(.heldTurned, current: 90, manual: false, auto: 90,
+                                                         remembered: 0, held: held), "held \(held)")
+        }
+        // 逆の横持ちへ替えたときは、写真が立つ側へ回し直す
+        XCTAssertEqual(ComposeControls.decidedRotation(.heldTurned, current: 270, manual: false, auto: 90,
+                                                       remembered: 0, held: 3), 450)
+        // 真っ直ぐ（0°）のときは今まで通り自動の向きへ
+        XCTAssertEqual(ComposeControls.decidedRotation(.heldTurned, current: 0, manual: false, auto: 90,
+                                                       remembered: 0, held: 0), 90)
+    }
+
+    func testOpeningHeldTurnIsNotAnimated() {
+        XCTAssertFalse(ComposeControls.animatesHeldTurn(secondsSinceAppear: 0))
+        XCTAssertFalse(ComposeControls.animatesHeldTurn(secondsSinceAppear: 0.3))
+        XCTAssertTrue(ComposeControls.animatesHeldTurn(secondsSinceAppear: ComposeControls.openingSettle))
+        XCTAssertTrue(ComposeControls.animatesHeldTurn(secondsSinceAppear: 5))
+        let view = try? source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view?.contains("if reduceMotion || !animated || settling {") ?? false)
+    }
+
+    func testHidingReferenceKeepsLineTurn() throws {
+        // 作例を隠しているだけのときは、線の向きを作例に合わせたまま（隠すたびに 90° 回らない）
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view.contains("held: quarterTurns, kind: composition, referenceShown: hasReference)"))
+        // hasReference は「隠しているか」を含まない
+        let start = try XCTUnwrap(view.range(of: "private var hasReference: Bool {"))
+        let body = view[start.upperBound...].prefix(while: { $0 != "}" })
+        XCTAssertFalse(body.contains("hidden"))
+        // 隠している間（線の向きは hasReference で決まる）と出している間で、線が同じ
+        let kind = CompositionKind.goldenSpiral
+        let shown = ComposeControls.linesQuarterTurns(held: 3, kind: kind, referenceShown: true)
+        let hiddenButPresent = ComposeControls.linesQuarterTurns(held: 3, kind: kind, referenceShown: true)
+        XCTAssertEqual(CompositionGuide.screenMarks(kind, variant: 0, aspect: portrait, quarterTurns: shown,
+                                                    levelDegrees: 0, rotationQuarters: 1),
+                       CompositionGuide.screenMarks(kind, variant: 0, aspect: portrait, quarterTurns: hiddenButPresent,
+                                                    levelDegrees: 0, rotationQuarters: 1))
     }
 }

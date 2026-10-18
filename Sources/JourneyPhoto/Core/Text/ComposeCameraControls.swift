@@ -274,19 +274,37 @@ enum ComposeControls {
     /// - 参考写真が無いとき（作例なしの入口・ライブラリの写真を選ぶ前）は今まで通り: 開いたら覚えた角度、
     ///   構図を選び直したら 0°（`CompositionPreferences.select` と同じ）
     /// - 自動の向きは覚えない（覚えるのは人が回した角度だけ・`setRotation`）
+    /// - **縦持ち・逆さまに戻したとき（`held` が 0・2）は、横向き（90°・270°）をそのまま保つ**
+    ///   （2026-10-18 確かめ役の指摘）。270° で横に持ってから縦に戻すと、既定の 90° へ戻して作例が
+    ///   180° ひっくり返っていた。縦持ちではどちらの横向きでも同じだけ収まるので、動かさない
     static func decidedRotation(_ trigger: RotationTrigger, current: Double, manual: Bool,
-                                auto: Double?, remembered: Double) -> Double? {
+                                auto: Double?, remembered: Double, held: Int = 0) -> Double? {
         let target: Double?
         switch trigger {
         case .opened: target = auto ?? remembered
         case .referenceChanged: target = auto
         case .compositionChosen: target = auto ?? 0
-        case .heldTurned: target = manual ? nil : auto
+        case .heldTurned:
+            let sideways = CompositionGuide.normalizedRotation(current) == 90
+                || CompositionGuide.normalizedRotation(current) == 270
+            target = manual || (held % 2 == 0 && sideways) ? nil : auto
         }
         guard let target else { return nil }
         // 開いたときは回る前の角度が無いので 0〜360 のまま（覚えた 270° を -90° にしない）
         if trigger == .opened { return CompositionGuide.normalizedRotation(target) }
         return nearestCumulative(to: target, from: current)
+    }
+
+    /// 開いてからこの秒数の内に持った向きで回し直すときは、動きを付けない（2026-10-18 確かめ役の指摘）。
+    /// 時計回りの横持ちで開くと、最初の傾きの値が届くまでは既定の 90° で描き、届いたら 270° へ回し直す——
+    /// 動きを付けると、開いた直後に作例が 180° 回って見えた。傾きは 10 回/秒で読む（`LevelMotion`）ので、
+    /// 最初の値は 1 秒より十分前に届く
+    static let openingSettle = 1.0
+
+    /// 持った向きで回し直すときに動きを付けるか（開いた直後は付けない）
+    static func animatesHeldTurn(secondsSinceAppear: Double) -> Bool {
+        guard secondsSinceAppear.isFinite else { return true }
+        return secondsSinceAppear >= openingSettle
     }
 
     /// 構図の線に渡す「持った向き」（`CompositionGuide.screenMarks` の `quarterTurns`）。
@@ -297,6 +315,8 @@ enum ComposeControls {
     /// 比率の枠などの向きのある線が作例から 90° ずれた（三分割は形が同じなので目立たない）。
     /// そこで**参考写真を重ねている間は、線も持った向きでは回さず作例と同じ向きにそろえる**（0 を返す）。
     /// 作例を 90° 回して横に持てば、線は横の写真の向きでちょうど立つ（回した角度が持った向きを打ち消す）。
+    /// `referenceShown` には**隠しているかを含めない**（`hasReference`）——作例を一時的に隠しても、
+    /// 作例の向きに合わせた線の向きは保つ（隠すたびに線が 90° 回らない・2026-10-18 確かめ役の指摘）。
     /// - 参考写真が無いとき（線だけ）は今まで通り、持った向きに合わせる（撮れる写真の向きの線）
     /// - 水準器はいつも持った向き（傾きは重さの向きが基準・回しもしない）
     static func linesQuarterTurns(held: Int, kind: CompositionKind?, referenceShown: Bool) -> Int {
