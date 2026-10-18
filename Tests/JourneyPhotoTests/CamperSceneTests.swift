@@ -74,7 +74,8 @@ final class CamperSceneTests: XCTestCase {
         let lightNodes = all(scene.scene.rootNode).filter { $0.light != nil && ($0.name ?? "").hasPrefix("light.") }
         XCTAssertFalse(lightNodes.isEmpty)
         XCTAssertTrue(lightNodes.allSatisfy(\.isHidden), "昼に夜の灯りが残っている")
-        XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0.2)
+        // 本物の SceneKit は Float で持つので 0.2 が 0.20000000298… になる（Mac run 39168741248）。誤差つきで比べる
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.bloomIntensity)), 0.2, accuracy: 0.0001)
 
         // 雪の部品は雪の時だけ見える
         let snowGroups = all(scene.scene.rootNode).filter { ($0.name ?? "").hasPrefix("camper.mood") && ($0.name ?? "").contains("snow") }
