@@ -3,8 +3,10 @@ import UIKit
 
 /// 旅のトランクを手に取って回す（全画面・メダルとサポーター証と同じ仕組み `MedalCoinView`・2026-10-17）。
 ///
-/// 箱の表＝胴の絵（貼ったラベルごと・`TrunkBoxView` を1枚の絵にしたもの）、裏＝ラベルの無い胴、
-/// 側面＝縁の色、上に持ち手。指で横に払うと回り、離すと惰性で少し回って止まる。
+/// 箱の表＝胴の絵（貼ったラベルごと・`TrunkBoxView` を1枚の絵にしたもの）。裏・左右・上・底は
+/// 板「旅のトランク」の TrunkFaces（2026-10-18）どおり、正面と同じ素材・古び方・付けた部品で描いた面
+/// （`TrunkFaceView`）。上に持ち手の立体。指で払うと回り（縦にも傾く）、離すと惰性で少し回って止まる。
+/// 下の4つのボタン（正面・側面・上と背面・底）で、その向きへ回せる（板 TrunkSpin）。
 /// 「視差効果を減らす」の人には勝手に回さない。読み上げでは「裏返す」で表と裏を替えられる。
 struct TrunkSpinViewer: View {
     let model: TrunkModel
@@ -19,7 +21,9 @@ struct TrunkSpinViewer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var textures: MedalTextures.Faces?
+    @State private var boxFaces: SpinBoxFaces?
     @State private var flips = 0
+    @State private var aim: SpinAim?
 
     var body: some View {
         GeometryReader { geo in
@@ -27,7 +31,7 @@ struct TrunkSpinViewer: View {
             VStack(spacing: 20) {
                 Spacer(minLength: 0)
                 MedalCoinView(textures: textures, fallbackImage: "", reduceMotion: reduceMotion, flips: flips,
-                              shape: TrunkTextures.shape(model: model, posts: posts, parts: parts))
+                              shape: TrunkTextures.shape(model: model, posts: posts, parts: parts), box: boxFaces, aim: aim)
                     .frame(width: stage, height: stage)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
@@ -46,13 +50,15 @@ struct TrunkSpinViewer: View {
                     Text(L("ラベル \(stuck.count) 枚 · 投稿 \(posts)", "\(stuck.count) labels · \(posts) posts"))
                         .font(JPFont.mono(12))
                         .foregroundStyle(WebTheme.muted2)
-                    Text(L("指で横に払うと回ります。裏はまだ何も貼っていない面です。",
-                           "Swipe sideways to turn it. The back has no labels yet."))
+                    Text(L("指で回すと、側面・上・底・背面が見えます",
+                           "Turn it with your finger to see the sides, top, bottom and back"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                 }
+                viewButtons
+                    .padding(.horizontal, 20)
                 Spacer(minLength: 0)
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -64,6 +70,30 @@ struct TrunkSpinViewer: View {
             guard textures == nil else { return }
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles)
+            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts)
+        }
+    }
+
+    /// 向きのボタン（板 TrunkSpin: 4つ並び・高さ 44・#1A1A1A・13pt）
+    private var viewButtons: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(TrunkFaces.views.enumerated()), id: \.offset) { i, view in
+                Button {
+                    aim = SpinAim(id: (aim?.id ?? 0) + 1, yaw: view.yaw, pitch: view.pitch)
+                } label: {
+                    Text(view.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(view.label)
+                .accessibilityIdentifier("trunk.spin.view.\(view.id)")
+            }
         }
     }
 
@@ -102,15 +132,57 @@ enum TrunkTextures {
                      parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
                                         parts: parts, wrinkles: wrinkles))
-        let back = render(TrunkBoxView(model: model, posts: posts, stuck: [], ownerName: nil, bodyOnly: true))
+        // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
+        let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))
         return MedalTextures.Faces(front: front, back: back, edge: edge, edgeRepeat: 1)
+    }
+
+    /// 左右・上・底と持ち手の絵（板 TrunkFaces・正面と同じ古び方と付けた部品）
+    static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none) -> SpinBoxFaces {
+        let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
+        let fittings = TrunkFittings(parts)
+        return SpinBoxFaces(left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
+                            right: render(TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
+                            top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts)),
+                            bottom: render(TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
+                            handle: render(TrunkHandleSkin(look: look, fittings: fittings)),
+                            clip: render(TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))
     }
 
     private static func render<V: View>(_ view: V) -> UIImage? {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 3
         return renderer.uiImage
+    }
+}
+
+/// 立体の持ち手の面に貼る絵（正面の持ち手と同じ塗り・縫い目。形は SceneKit の U の字が受け持つ）
+struct TrunkHandleSkin: View {
+    let look: TrunkLook
+    let fittings: TrunkFittings
+
+    var body: some View {
+        ZStack {
+            if let part = fittings.handlePaint {
+                TrunkPartPaintView(paint: part.paint)
+            } else {
+                Color(trunk: look.handle)
+            }
+            if TrunkFaces.handleStitched(look.model) {
+                // 縫い目（正面の持ち手の内側の破線と同じ色・刻み）
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 235, b: 200, a: 0.3)),
+                                  style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                    .padding(4)
+            }
+            // 上の細い光（正面の持ち手の `inset 0 2px 0 rgba(255,255,255,0.12)`）
+            VStack(spacing: 0) {
+                Color.white.opacity(0.12).frame(height: 2)
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(width: 100, height: 36)
     }
 }
