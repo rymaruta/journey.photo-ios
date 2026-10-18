@@ -282,18 +282,20 @@ enum PassCardStyle {
     }
 
     /// `width` と `maxSize` は特別な券面（2026-10-17・モックの区間は幅 260・明朝 24.5）。マルス券は既定のまま。
-    /// `minSize`・`arrow` は小さなきっぷ（`PassMiniTicket`・2026-10-17）。並べ方の決まりは大きい札と同じ
+    /// `minSize`・`arrow`・`slack` は小さなきっぷ（`PassMiniTicket`・2026-10-17）。並べ方の決まりは大きい札と同じ。
+    /// `slack` は欄に残す余裕（字幅の見積もりが外れても「…」で切れないように）
     nonisolated static func routeLayout(origin: String, destination: String,
                                         marks: (origin: String, destination: String) =
                                             (PassTicket.originMark, PassTicket.destinationMark),
                                         width: Double = routeWidth, maxSize: Double = routeSize,
                                         minSize: Double = routeMinSize,
                                         arrow: (width: Double, gap: Double) =
-                                            (PassCardStyle.arrowWidth, PassCardStyle.arrowGap)) -> RouteLayout {
+                                            (PassCardStyle.arrowWidth, PassCardStyle.arrowGap),
+                                        slack: Double = 0) -> RouteLayout {
         let column = (width - arrow.width - arrow.gap * 2) / 2
         let longest = max(routeEms(origin), routeEms(destination))
         let marked = markWidth(origin: marks.origin, destination: marks.destination)
-        let room = column - marked
+        let room = column - marked - slack
         let size = longest > 0 ? min(maxSize, max(minSize, room / longest)) : maxSize
         return RouteLayout(fontSize: size, columnWidth: column,
                            arrowCenter: column + arrow.gap + arrow.width / 2, markWidth: marked)
@@ -307,22 +309,24 @@ enum PassCardStyle {
     // 字は表と裏と同じく固定の大きさ（文字を大きくする設定では変わらない・札からはみ出さない）
 
     /// 左右の内側の余白・行の間
-    static let miniInset: CGFloat = 5
+    static let miniInset: CGFloat = 4
     static let miniSpacing: CGFloat = 2
     /// 「乗車券」（明朝 12・字間は表と同じ 0.3em）
     static let miniHeadSize: CGFloat = 12
     /// 区間の地名（明朝 14 から、長い地名は本文系の下限 12 まで。発・着は同じ大きさ）
     static let miniRouteSize: Double = 14
     static let miniRouteMinSize: Double = 12
-    /// 区間の矢印（幅 8・左右のすき間 1）。ホームの束（92）でも3字の地名が 12 で入る幅を残す
+    /// 区間の矢印（幅 8・左右のすき間 1）。ホームの束（92）でも3字の地名が 12 で、1pt 以上の余裕を持って入る幅を残す
     static let miniArrow: (width: Double, gap: Double) = (8, 1)
+    /// 区間の欄に残す余裕（2026-10-17 の見直し: 束の3字がぴったりで余裕が無かった）
+    static let miniRouteSlack: Double = 1
     /// 小さなきっぷの角（板の束 9）。特別な券面は表の角の比で（`PassMiniTicket.corner`）
     static let miniCorner: CGFloat = stackCorner
 
     /// 小さなきっぷの区間（`routeLayout` を幅だけ変えて使う・「発」「着」は省く）
     nonisolated static func miniRoute(origin: String, destination: String, width: Double) -> RouteLayout {
         routeLayout(origin: origin, destination: destination, marks: ("", ""), width: width,
-                    maxSize: miniRouteSize, minSize: miniRouteMinSize, arrow: miniArrow)
+                    maxSize: miniRouteSize, minSize: miniRouteMinSize, arrow: miniArrow, slack: miniRouteSlack)
     }
 }
 
@@ -443,18 +447,6 @@ struct PassTicketDash: View {
                 }
             }
             .frame(height: 1)
-            .accessibilityHidden(true)
-    }
-}
-
-/// 改札の穴（板: 14 の黒い丸に真鍮 50% の縁）
-struct PassTicketPunch: View {
-    var size: CGFloat = 14
-    var body: some View {
-        Circle()
-            .fill(Color.black)
-            .overlay(Circle().strokeBorder(WebTheme.accent.opacity(PassCardStyle.dashOpacity), lineWidth: JPStroke.hairline))
-            .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }
@@ -822,6 +814,14 @@ struct PassMiniTicket: View {
     /// 名前の行（と種類の言葉）を出すか（ホームの束は高さが足りないので出さない）
     var showsName: Bool = true
 
+    /// 縁と後ろの光の種類（2026-10-17 の見直し）。種類を言葉で言えるとき（名前の行の種類の言葉）だけ種類ごとの縁と
+    /// 「はじめて」の光にする。ホームの束は言葉が無いので、**縁の色と光だけで種類を伝えない**よう、ふつうの縁で光らせない
+    /// （重ねた束では、上のきっぷの光が下のきっぷの写真にかかるのも避ける）
+    nonisolated static func edgeKind(_ kind: PassTicket.Kind, showsName: Bool) -> PassTicket.Kind {
+        showsName ? kind : .plain
+    }
+    private var edgeKind: PassTicket.Kind { Self.edgeKind(face.kind, showsName: showsName) }
+
     /// 角（板の束 9。特別な券面は表の角の比で: 10 硬券は小さく・26 革は大きく）
     nonisolated static func corner(_ style: PassTicketFaceStyle) -> CGFloat {
         PassCardStyle.miniCorner * PassCardFront.corner(style) / PassCardStyle.deckCorner
@@ -919,9 +919,9 @@ struct PassMiniTicket: View {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: corner))
-        .background { PassTicketGlow(kind: face.kind, corner: corner) }
+        .background { PassTicketGlow(kind: edgeKind, corner: corner) }
         // 縁は外側に（写真の上に真鍮をかけない）
-        .overlay(PassTicketEdge(kind: face.kind, corner: corner))
+        .overlay(PassTicketEdge(kind: edgeKind, corner: corner))
     }
 
     /// 区間（大きい札と同じ並べ方: 矢印は中央・発と着は同じ幅の欄に同じ大きさ。`minimumScaleFactor` を付けない）

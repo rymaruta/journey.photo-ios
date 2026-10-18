@@ -393,7 +393,8 @@ final class PassStore: ObservableObject {
     /// **起動のたびに入れ直す**（前の回に開いた印が残ると、ホームの札が出ず絵が撮れない）
     ///
     /// 2〜6枚目は特別な券面（01・06・10・21・26）にし、その持ち主を**端末の中だけ** Pro の姿にする（2026-10-17・
-    /// 帳の札とホームの束で券面の地が分かるかを撮る）。1枚目はマルス券のまま（束の表の絵）
+    /// 帳の札とホームの束で券面の地が分かるかを撮る）。1枚目はマルス券のまま（束を開いた最初の表の絵）。
+    /// ホームの束は1〜3枚目で、いちばん上に重なるのは `PassMiniStack` の `ForEach` の最後＝3枚目（06 大圏航路）
     func seedPreview(photos: [Photo], now: Date = Date()) {
         let photoIds = photos.map(\.id)
         guard userId != nil, !photoIds.isEmpty else { return }

@@ -97,7 +97,8 @@ final class PassMiniTicketTests: XCTestCase {
         for card in [98.0, Double(PassCardStyle.stackSize.width)] {
             let three = PassCardStyle.miniRoute(origin: "京都市", destination: "金沢市",
                                                 width: card - Double(PassCardStyle.miniInset) * 2)
-            XCTAssertLessThanOrEqual(3 * three.fontSize, three.columnWidth + 1e-9, "\(card)pt の札で3字の地名が欄に入らない")
+            // 字幅の見積もりの外れに 1pt の余裕を持たせる（ぴったりだと「…」で切れ得る）
+            XCTAssertLessThanOrEqual(3 * three.fontSize, three.columnWidth - 1, "\(card)pt の札で3字の地名が欄に余裕を持って入らない")
         }
     }
 
@@ -119,13 +120,14 @@ final class PassMiniTicketTests: XCTestCase {
         XCTAssertEqual(rest.components(separatedBy: "PassMiniTicket(face:").count - 1, 2, "帳の札か束が小さなきっぷを使っていない")
         XCTAssertFalse(rest.contains("RemoteImage("), "帳の札・束が写真を自分で描いている（窓の決まりを通らない）")
         XCTAssertFalse(rest.contains("PassTicketPunch"), "前の改札の穴が残っている")
-        XCTAssertTrue(try source("Features/Pass/PassHomeSlot.swift").contains("PassMiniStack(faces: cards.map { $0.face() })"),
+        XCTAssertTrue(try source("Features/Pass/PassHomeSlot.swift").contains("PassMiniStack(faces: cards.prefix(3).map { $0.face() })"),
                       "ホームの束に券面が渡っていない（Pro の券面が束に出ない）")
 
         let mini = try miniBody()
         for part in ["PassFaceGround(style: face.style, behindText: true)", "PassFaceGround.window(face.style)", "PassFacePhoto(photo: face.photo",
-                     ".background { PassTicketGlow(kind: face.kind, corner: corner) }",
-                     ".overlay(PassTicketEdge(kind: face.kind, corner: corner))",
+                     ".background { PassTicketGlow(kind: edgeKind, corner: corner) }",
+                     ".overlay(PassTicketEdge(kind: edgeKind, corner: corner))",
+                     "private var edgeKind: PassTicket.Kind { Self.edgeKind(face.kind, showsName: showsName) }",
                      "PassCardStyle.miniRoute(origin: face.origin, destination: face.destination, width: width)",
                      "Text(PassTicket.headline(.plain))", ".accessibilityLabel(PassTicket.spokenRoute("] {
             XCTAssertTrue(mini.contains(part), "小さなきっぷに \(part) が無い")
@@ -173,6 +175,24 @@ final class PassMiniTicketTests: XCTestCase {
         // 字の大きさは決まった定数だけ（10 などの数を直に書かない）
         XCTAssertNil(mini.range(of: #"size: \d"#, options: .regularExpression), "小さなきっぷに字の大きさを直に書いた")
         XCTAssertNil(mini.range(of: #"fixedSize: \d"#, options: .regularExpression), "小さなきっぷに字の大きさを直に書いた")
+    }
+
+    /// 🔴 ホームの束（名前の行なし＝種類の言葉なし）は、縁の色と光だけで種類を伝えない: ふつうの縁で光らせない。
+    /// 帳の札（種類の言葉あり）は種類ごとの縁
+    func testStackDoesNotTellKindByEdgeAlone() throws {
+        for kind in [PassTicket.Kind.first, .again(2), .far(900), .plain] {
+            XCTAssertEqual(PassMiniTicket.edgeKind(kind, showsName: false), .plain, "束で種類を縁の色と光だけで伝えている")
+            XCTAssertEqual(PassMiniTicket.edgeKind(kind, showsName: true), kind, "帳の札が種類ごとの縁でない")
+        }
+        let cards = try source("Features/Pass/PassCards.swift")
+        let stack = try XCTUnwrap(cards.range(of: "struct PassMiniStack"))
+        let full = try XCTUnwrap(cards.range(of: "struct PassPhotoFullView"))
+        XCTAssertTrue(cards[stack.lowerBound..<full.lowerBound].contains("showsName: false"), "束に名前の行の判断が渡っていない")
+        // 使われなくなった改札の穴は消した・空の枠の角は帳の札と同じ
+        XCTAssertFalse(cards.contains("struct PassTicketPunch"))
+        let book = try source("Features/Pass/PassBookView.swift")
+        XCTAssertTrue(book.contains("RoundedRectangle(cornerRadius: PassCardStyle.miniCorner)"), "空の枠の角が札とそろっていない")
+        XCTAssertFalse(book.contains("RoundedRectangle(cornerRadius: 8)"))
     }
 
     /// 角は板の束（9）。特別な券面は表の角の比で（硬券は小さく・革は大きく）
