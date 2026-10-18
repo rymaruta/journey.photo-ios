@@ -399,4 +399,23 @@ final class TrunkInsideTests: XCTestCase {
         let mid = TrunkFaces.edgeWear(.canvas, stage: TrunkAging.stage(posts: 50), front: true)
         XCTAssertEqual(mid?.alpha ?? 0, 0.08, accuracy: 0.0001)
     }
+
+    /// 指で 100% まで引いて離した: 行き先が同じなら動かさず、その場で平らなふたにする（動きの終わりの合図を待たない）
+    func testNoMotionWhenAlreadyThere() {
+        XCTAssertFalse(TrunkLid.needsMotion(from: 1, to: 1))
+        XCTAssertFalse(TrunkLid.needsMotion(from: 0, to: 0))
+        XCTAssertTrue(TrunkLid.needsMotion(from: 0.97, to: 1))
+        XCTAssertTrue(TrunkLid.showsFlatLid(1, settled: true))
+    }
+
+    /// 送りがあるのは、舞台を下限まで縮めても収まらないときだけ
+    func testOverflowOnlyWhenTheStageCannotShrinkMore() {
+        XCTAssertFalse(TrunkLid.overflows(width: 390, height: 584))
+        // 6.1 インチ（393×852）は収まる。SE（375×667）は下限 0.6 に少し届かず、少しだけ送る
+        XCTAssertFalse(TrunkLid.overflows(width: 393, height: 852 - 100 - 28 - TrunkLid.controlsReserve))
+        XCTAssertTrue(TrunkLid.overflows(width: 375, height: 667 - 64 - 28 - TrunkLid.controlsReserve))
+        XCTAssertTrue(TrunkLid.overflows(width: 375, height: 200), "収まらないのに送れない")
+        XCTAssertEqual(TrunkLid.overflows(width: 390, height: 584 * TrunkLid.minScale - 1), true)
+    }
 }
+

@@ -298,7 +298,18 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(open.contains(".accessibilityHidden(!flat)"))
         XCTAssertTrue(open.contains(".accessibilityAdjustableAction { direction in"))
         XCTAssertTrue(open.contains("move(to: TrunkLid.stepped(p, up: up))"))
-        XCTAssertTrue(open.contains(".highPriorityGesture(drag(scale: k))"))
+        // 引く指と送り: 収まるときは引く指が先、送りがあるときは両方
+        XCTAssertTrue(open.contains(".modifier(LidDragPriority(overflows: overflows, gesture: drag(scale: k)))"))
+        XCTAssertTrue(open.contains("content.simultaneousGesture(gesture)"))
+        XCTAssertTrue(open.contains("content.highPriorityGesture(gesture)"))
+        // 100% まで引いて離した・合図が来なかったときの逃げ道
+        XCTAssertTrue(open.contains("guard TrunkLid.needsMotion(from: p, to: target) else {\n            lidSettled = TrunkLid.isOpen(target)\n            return"))
+        XCTAssertTrue(open.contains("if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }"))
+        // 動きの途中のコマで正面の絵・胴の中を作り直さない（1度だけ絵にして使い回す）
+        XCTAssertTrue(open.contains(".task(id: snapshotKey) { lidImages = TrunkLidImages.make(stage(contents)) }"))
+        for use in ["images?.front", "images?.lidInside", "images?.handle", "images?.baseBelow", "images?.baseAbove"] {
+            XCTAssertTrue(open.contains(use), "\(use) を使い回していない")
+        }
         XCTAssertTrue(open.contains("settle(to: TrunkLid.settled(p))"), "指を離しても近い方へ寄らない")
         XCTAssertTrue(open.contains(".accessibilityValue(TrunkLid.accessibilityValue(p))"), "開き具合を読み上げない")
         // 本物の中身（新しい通信は増やさない: 自分のプロフィールと端末の中のすれちがい帳）
@@ -346,7 +357,7 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("private static let boxRestingYaw: Float = -34 * .pi / 180"))
         XCTAssertTrue(medal.contains("for x in TrunkFaces.handleClipCenters.map("), "立体の付け根が絵とずれる")
         // 描く順: 表を先に、残りは処理を一度返してから
-        XCTAssertTrue(spin.contains("await Task.yield()\n            boxFaces = " + "TrunkTextures" + ".box("))
+        XCTAssertTrue(spin.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }\n            boxFaces = " + "TrunkTextures" + ".box("))
         XCTAssertFalse(medal.contains("buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)"),
                        "箱が押し出しの形（側面が1つの材質）に戻っている")
         // 正面と同じ描き方を使う（2度書かない）
