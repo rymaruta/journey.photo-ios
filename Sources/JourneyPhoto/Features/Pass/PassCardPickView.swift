@@ -58,7 +58,7 @@ struct PassCardPickView: View {
     private var previewBack: PassTicketBackFace {
         PassTicketBackFace.preview(photoTitle: selectedPhoto?.displayTitle, note: note,
                                    name: profile?.name ?? L("あなた", "You"),
-                                   origin: originChoice, homePrefecture: pass.homePrefecture)
+                                   origin: originChoice, homePrefecture: pass.homePrefecture, style: shownFace)
     }
 
     /// ひとことが長すぎる（字数か、電波に載る大きさ）

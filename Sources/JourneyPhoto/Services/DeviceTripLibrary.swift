@@ -392,6 +392,13 @@ final class DeviceTripShelfStore: ObservableObject {
     private let now: () -> Date
     /// 変化の知らせを受ける役を登録するか（試験では登録しない）
     private let observesLibrary: Bool
+    /// 読みの優先度。**本物は `.background`**（画面の動きに譲る）。
+    ///
+    /// 試験で門（`FetchGate`）や輪の数を待つときだけ上げる（2026-10-18・Mac で2本が60秒の上限に当たった）。
+    /// `.background` の仕事は、待つ側が `task.value` を待てば優先度が引き上げられるが、
+    /// 門や輪の数（続きの約束）で待っても引き上げられない。Mac の CI のシミュレーターでは
+    /// `.background` の糸が「動ける」のまま優先度 0 に落とされ、何十秒も走らなかった（spindump で確認）
+    private let runPriority: TaskPriority
 
     init(defaults: UserDefaults = .standard,
          url: URL? = DeviceTripIndexFile.defaultURL(),
@@ -402,7 +409,8 @@ final class DeviceTripShelfStore: ObservableObject {
          lookupPauseNanos: UInt64 = DeviceTrips.lookupPauseNanos,
          now: @escaping () -> Date = Date.init,
          observesLibrary: Bool = true,
-         signedIn: Bool = false) {
+         signedIn: Bool = false,
+         runPriority: TaskPriority = .background) {
         self.defaults = defaults
         self.writer = DeviceTripIndexWriter(url: url)
         self.source = source
@@ -413,6 +421,7 @@ final class DeviceTripShelfStore: ObservableObject {
         self.now = now
         self.observesLibrary = observesLibrary
         self.isSignedIn = signedIn
+        self.runPriority = runPriority
         self.status = status()
         introDismissed = defaults.bool(forKey: Self.introDismissedKey)
     }
@@ -471,7 +480,7 @@ final class DeviceTripShelfStore: ObservableObject {
         runId += 1
         runsStarted += 1
         let run = runId
-        task = Task(priority: .background) { await runLoop(run) }
+        task = Task(priority: runPriority) { await runLoop(run) }
     }
 
     /// まだ一度も読み始めていなければ読む（棚が出たとき）。**許可の段は毎回読み直す**

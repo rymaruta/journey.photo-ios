@@ -377,8 +377,8 @@ struct ProBenefit: Identifiable, Equatable {
             // 2026-10-17: すれちがいの「特別な乗車券」（券面を選べる・`PassTicketFaceStyle`）
             ProBenefit(icon: .card,
                        title: L("特別な乗車券", "Special Pass tickets"),
-                       body: L("すれちがいの乗車券を、真鍮・漆・革などの券面で。相手の手元にもその券面で届く",
-                               "Pick a brass, lacquer, leather or other design for your Pass ticket — it reaches others that way")),
+                       body: L("すれちがい乗車券を、真鍮・漆・革などの券面で。表も裏も、その券面で相手に届く",
+                               "Pick a brass, lacquer, leather or other design for your Pass ticket — front and back, it reaches others that way")),
             trunk,
         ]
     }

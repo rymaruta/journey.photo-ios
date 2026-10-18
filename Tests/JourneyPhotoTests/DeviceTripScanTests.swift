@@ -309,7 +309,7 @@ extension DeviceTripScanTests {
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
-                                         signedIn: true)
+                                         signedIn: true, runPriority: Self.gatedPriority)
         // **時間に頼らず、順を手で進める**:
         // 1本目を読みの途中（取り出し）で止める → 消す → 2本目を始めて同じく止める → 1本目だけ放す
         store.startIfAllowed()                  // 1本目
@@ -392,7 +392,7 @@ extension DeviceTripScanTests {
         let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
                                          status: { .authorized }, place: { _ in (nil, nil) },
                                          pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
-                                         signedIn: true)
+                                         signedIn: true, runPriority: Self.gatedPriority)
         XCTAssertNil(store.preloadedShots, "まだ何も読んでいない")
         store.startIfAllowed()
         await gate.waitForWaiting(1)            // 覚えた要約を出し、続きを取り出すところで止まった
@@ -442,6 +442,23 @@ extension DeviceTripScanTests {
         source.items.append(item("picked", hours: -24 * 60, home))
         let index = await scan(source, Counter()).run(start: first, now: now, publishCached: false, forceSweep: true)
         XCTAssertTrue(index.shots.contains { $0.id == "picked" }, "選び足した写真が棚に入らない")
+    }
+
+    /// 🔴 **門や輪の数で待つ試験は、読みの優先度を待つ側にそろえる**（2026-10-18）。
+    /// 門（`FetchGate.waitForWaiting`）や `waitForLoopsFinished` は続きの約束で待つので、
+    /// `task.value` を待つ `waitUntilIdle` と違い `.background` の読みの優先度を引き上げない。
+    /// Mac の CI では `.background` の糸が優先度 0 に落とされて60秒走らず、2本が上限に当たった
+    /// （spindump: 読みの糸は「動ける」のまま CPU 0.003 秒・主の糸は空いていた）
+    static let gatedPriority: TaskPriority = .userInitiated
+
+    /// 本物の読みは低い優先度のまま（試験のために上げたのは、門で待つ試験だけ）
+    func testShelfReadsAtBackgroundPriorityByDefault() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Services/DeviceTripLibrary.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("runPriority: TaskPriority = .background"), "本物の読みの優先度が変わった")
+        XCTAssertTrue(text.contains("Task(priority: runPriority)"), "読みが渡した優先度で走らない")
     }
 
     private func tempURLForGate() -> URL {

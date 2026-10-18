@@ -161,10 +161,14 @@ struct HomeFeedTile: View {
 
     private func block() async {
         guard let ownerId else { return }
+        // 押した人。次の人の画面に「ブロックしました」「ブロックできませんでした」を出さない
+        let sender = hidden.owner
         do {
             try await hidden.blockAndHide(ownerId, environment: environment)
+            guard sender != nil, hidden.owner == sender else { return }
             toasts.show(L("ブロックしました", "Blocked"))
         } catch {
+            guard sender != nil, hidden.owner == sender else { return }
             toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
                         kind: .failure)
         }
