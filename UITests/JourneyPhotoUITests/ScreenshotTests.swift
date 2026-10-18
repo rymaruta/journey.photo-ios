@@ -2237,6 +2237,11 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["camper.mood.night"].firstMatch.tap()
         waitCamper(app, "night")
         shoot(app, "95b-写真で作るキャンピングカー（夜）")
+        // 夜に扉を開けた所（室内の灯りと、扉の口から地面へこぼれる灯り）
+        app.buttons["camper.door"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "95f-写真で作るキャンピングカー（夜・扉を開けた）")
+        app.buttons["camper.door"].firstMatch.tap()
         app.buttons["camper.mood.day"].firstMatch.tap()
         waitCamper(app, "day")
         // 3 段

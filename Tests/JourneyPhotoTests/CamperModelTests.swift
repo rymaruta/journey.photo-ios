@@ -228,4 +228,24 @@ final class CamperWiringTests: XCTestCase {
             XCTAssertTrue(ui.contains(name), name)
         }
     }
+
+    /// 見出しの眉ラベル: 名前と「の車」の間を空けない。名前を入れていない人（「ユーザー」）には名前を出さない
+    /// （2026-10-18 Mac の絵 run 529 で「ユーザー の車」と出ていた）
+    func testEyebrowName() {
+        let named = CamperText.eyebrow(owner: "旅人", stage: .camper)
+        XCTAssertEqual(named, L("旅人の車 · キャンピングカー", "旅人\u{2019}s camper · Camper"))
+        XCTAssertFalse(named.contains(" の車"), "名前と「の車」の間が空いている")
+        for none in [nil, "", "  ", "ユーザー", "User", Labels.Common.unnamedUser] {
+            let text = CamperText.eyebrow(owner: none, stage: .camper)
+            XCTAssertEqual(text, L("わたしの車 · キャンピングカー", "My camper · Camper"), String(describing: none))
+            XCTAssertFalse(text.contains("ユーザー") || text.contains("User"))
+        }
+    }
+
+    /// 図鑑は 132（塗装は別）。分母は第1段で集められる数で、残りは「近日」と書いて見せる
+    func testDexNoteShows132() {
+        let soon = 132 - CamperCatalog.available.count
+        XCTAssertEqual(CamperText.dexNote(), L("図鑑 132 · 近日 \(soon)", "Dex 132 · \(soon) soon"))
+        XCTAssertEqual(soon, 34)
+    }
 }

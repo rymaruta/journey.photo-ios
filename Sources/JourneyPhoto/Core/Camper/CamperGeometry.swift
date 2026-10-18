@@ -599,6 +599,16 @@ struct CamperMesh: Sendable {
 }
 
 /// 塗り分けの帯（下の Y から上の Y まで・上が +Y）
+/// 紙の反り（`center` から `direction` の向きへ測って `start` から先が浮き、`end` で `lift` まで）
+struct CamperCurl: Sendable {
+    var center: CV2
+    var direction: CV2
+    var start: Double
+    var end: Double
+    var lift: Double
+    var slices = 6
+}
+
 struct CamperBand: Sendable {
     var minY: Double
     var maxY: Double
@@ -833,6 +843,64 @@ enum CamperMeshKit {
     }
 
     /// 平らな形（穴なし）を厚み `depth` で押し出す（ステッカー・札など）。表は +Z
+    /// 貼った紙（ステッカー）。表は Z=0 で +Z を向き、裏は Z=-`depth`。`curl` の向きの先の端が壁から浮いて反る。
+    ///
+    /// 平らな板のままだと反らせても面が曲がらないので、反る所は表も裏も `curl.slices` 本の帯に割る
+    /// （輪郭にも帯の切れ目の点を入れ、側面と表の継ぎ目に隙間を作らない）
+    static func paper(_ outline: [CV2], holes: [[CV2]] = [], depth: Double, front: CamperMaterial, side: CamperMaterial,
+                      back: CamperMaterial, curl: CamperCurl) -> CamperMesh {
+        let len = max(curl.direction.length, 1e-9)
+        let d = CV2(curl.direction.x / len, curl.direction.y / len)
+        let c = curl.center
+        // 反りの向きを +Y にした平面（回すだけ・裏返さない）
+        func local(_ p: CV2) -> CV2 {
+            let q = p - c
+            return CV2(q.x * d.y - q.y * d.x, q.x * d.x + q.y * d.y)
+        }
+        let n = max(1, curl.slices)
+        let cuts = (0...n).map { curl.start + (curl.end - curl.start) * Double($0) / Double(n) }
+        /// 輪の辺が帯の切れ目をまたぐ所に点を足す
+        func densified(_ loop: [CV2]) -> [CV2] {
+            var out: [CV2] = []
+            for i in loop.indices {
+                let a = loop[i], b = loop[(i + 1) % loop.count]
+                out.append(a)
+                guard abs(b.y - a.y) > 1e-9 else { continue }
+                let crossing = cuts.filter { ($0 - a.y) * ($0 - b.y) < 0 }
+                    .sorted { b.y > a.y ? $0 < $1 : $0 > $1 }
+                for y in crossing { out.append(a + (b - a) * ((y - a.y) / (b.y - a.y))) }
+            }
+            return out
+        }
+        let outer = densified(CamperPolygon.ccw(CamperPolygon.cleaned(outline.map(local))))
+        let hs = holes.map { densified(CamperPolygon.cw(CamperPolygon.cleaned($0.map(local)))) }
+        let bounds = [-Double.infinity] + cuts + [Double.infinity]
+        func bands(_ m: CamperMaterial) -> [CamperBand] {
+            (0..<(bounds.count - 1)).map { CamperBand(minY: bounds[$0], maxY: bounds[$0 + 1], material: m) }
+        }
+        var mesh = CamperMesh()
+        face(&mesh, outline: outer, holes: hs, z: 0, facing: 1, bands: bands(front))
+        face(&mesh, outline: outer, holes: hs, z: -depth, facing: -1, bands: bands(back))
+        strip(&mesh, a: outer, za: 0, b: outer, zb: -depth, tiltA: 0, tiltB: 0) { _ in side }
+        for h in hs { strip(&mesh, a: h, za: 0, b: h, zb: -depth, tiltA: 0, tiltB: 0) { _ in side } }
+        // 反らせる（帯の切れ目から先を、端で `lift` だけ浮かせる。向きも同じだけ起こす）。最後に元の向きへ戻す
+        let span = max(curl.end - curl.start, 1e-9)
+        for i in mesh.positions.indices {
+            let p = mesh.positions[i]
+            var nn = mesh.normals[i]
+            var z = p.z
+            if p.y > curl.start {
+                let t = min(1, (p.y - curl.start) / span)
+                z += curl.lift * t * t
+                let tilt = atan(2 * curl.lift * t / span)
+                nn = CV3(nn.x, nn.y * cos(tilt) - nn.z * sin(tilt), nn.y * sin(tilt) + nn.z * cos(tilt))
+            }
+            mesh.positions[i] = CV3(c.x + p.x * d.y + p.y * d.x, c.y - p.x * d.x + p.y * d.y, z)
+            mesh.normals[i] = CV3(nn.x * d.y + nn.y * d.x, -nn.x * d.x + nn.y * d.y, nn.z).normalized
+        }
+        return mesh
+    }
+
     static func extrude(_ outline: [CV2], holes: [[CV2]] = [], depth: Double, front: CamperMaterial,
                         side: CamperMaterial, back: CamperMaterial? = nil, bevel: Double = 0) -> CamperMesh {
         slab(outline: outline, holes: holes, thickness: depth, bevel: bevel, holeBevel: 0,

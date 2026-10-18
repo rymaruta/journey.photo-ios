@@ -89,6 +89,15 @@ open class SCNMaterial {
     open var isDoubleSided = false
     open var writesToDepthBuffer = true
     open var readsFromDepthBuffer = true
+    open var shaderModifiers: [SCNShaderModifierEntryPoint: String]?
+}
+
+public struct SCNShaderModifierEntryPoint: Hashable {
+    let raw: String
+    public static let geometry = SCNShaderModifierEntryPoint(raw: "geometry")
+    public static let surface = SCNShaderModifierEntryPoint(raw: "surface")
+    public static let lightingModel = SCNShaderModifierEntryPoint(raw: "lightingModel")
+    public static let fragment = SCNShaderModifierEntryPoint(raw: "fragment")
 }
 
 open class SCNGeometrySource {
@@ -199,6 +208,8 @@ open class SCNNode {
     open var scale = SCNVector3(1, 1, 1)
     open var pivot = SCNMatrix4()
     open var castsShadow = true
+    open var opacity: CGFloat = 1
+    open var renderingOrder = 0
     open var name: String?
     open var isHidden = false
     open func addChildNode(_ child: SCNNode) {}

@@ -35,6 +35,10 @@ enum CamperGroup: Sendable, Equatable {
     case body
     /// 扉（蝶番のまわりに回る）
     case door
+    /// 夜、窓から地面へこぼれる灯りの溜まり（まとめない・影を落とさない）
+    case glow
+    /// 夜、開けた扉の口から地面へこぼれる灯り（扉を開けた時だけ見える）
+    case doorGlow
 }
 
 /// 部品1つ
@@ -54,7 +58,12 @@ struct CamperNodeSpec: Sendable {
     var triangleEstimate: Int {
         switch shape {
         case .mesh(let m): return m.triangleCount
-        case .box(_, let c): return c > 0 ? 12 + 8 * 2 * 4 + 12 * 4 : 12
+        // 角の丸めは SceneKit の段数（`CamperScene` が 0.8 を超えたら 3 段・それ以下は 1 段）で数える:
+        // 面 12・辺 12 本 × 段 × 2・角 8 × 段²（2026-10-18: 以前はどちらも 124 と見積もっていた）
+        case .box(_, let c):
+            guard c > 0 else { return 12 }
+            let seg = c > 0.8 ? 3 : 1
+            return 12 + 12 * seg * 2 + 8 * seg * seg
         case .cylinder(_, _, let s): return s * 4
         case .torus: return 24 * 12 * 2
         case .sphere: return 24 * 12 * 2
@@ -1019,15 +1028,21 @@ struct CamperBuilder {
                 }
                 outline = wavy
             }
-            var m = CamperMeshKit.extrude(outline, depth: edgeDepth, front: edge, side: edge)
+            // 貼った紙: 厚みのある縁（側面は紙の白・裏は糊の面）と、下の前の角がわずかに壁から浮いて反る
+            // （2026-10-18 Mac の絵 run 529: 平らな円盤に見えた）。図柄の層も同じだけ反る
+            let r = outline.map { ($0 - spot.0).length }.max() ?? spot.1
+            let curl = CamperCurl(center: spot.0, direction: CV2(1, -1.2), start: r * 0.3, end: r, lift: 1.3, slices: 4)
+            var m = CamperMeshKit.paper(outline, depth: edgeDepth, front: edge, side: edgeKey == "white_cut" ? .paper : edge,
+                                        back: .paper, curl: curl)
             if edgeKey == "gold_foil" {
-                let rim = CamperMeshKit.extrude(CamperPolygon.offset(shapes[0].0, by: 1.8), holes: [CamperPolygon.offset(shapes[0].0, by: 1.1)],
-                                                depth: 0.5, front: .foil, side: .foil)
-                m.append(rim)
+                let rim = CamperMeshKit.paper(CamperPolygon.offset(shapes[0].0, by: 1.8), holes: [CamperPolygon.offset(shapes[0].0, by: 1.1)],
+                                              depth: 0.5, front: .foil, side: .foil, back: .foil, curl: curl)
+                // 縁の輪は紙より 0.2 盛り上がる（裏は紙と同じく壁に付く）
+                m.append(rim.translated(CV3(0, 0, 0.5 - edgeDepth)))
             }
             m = m.translated(CV3(0, 0, BW + edgeDepth))
             for (i, s) in shapes.enumerated() {
-                m.append(CamperMeshKit.extrude(s.0, depth: 0.2, front: s.1, side: s.1)
+                m.append(CamperMeshKit.paper(s.0, depth: 0.2, front: s.1, side: s.1, back: s.1, curl: curl)
                     .translated(CV3(0, 0, BW + edgeDepth + 0.2 + Double(i) * 0.15)))
             }
             if edgeKey == "signed" {
@@ -1036,7 +1051,8 @@ struct CamperBuilder {
                 let r = shapes[0].0.map { ($0 - c).length }.max() ?? 8
                 var stroke: [CV2] = []
                 for i in 0...10 { stroke.append(CV2(c.x - r * 0.5 + Double(i) * r * 0.1, c.y - r - 0.9 + sin(Double(i) * 1.7) * 0.4)) }
-                let line = CamperMeshKit.extrude(stroke + stroke.reversed().map { CV2($0.x, $0.y - 0.35) }, depth: 0.12, front: .brass, side: .brass)
+                let line = CamperMeshKit.paper(stroke + stroke.reversed().map { CV2($0.x, $0.y - 0.35) }, depth: 0.12, front: .brass,
+                                               side: .brass, back: .brass, curl: curl)
                 m.append(line.translated(CV3(0, 0, BW + edgeDepth + 0.05)))
             }
             shapes.removeAll()
@@ -1047,9 +1063,13 @@ struct CamperBuilder {
             let c = CV2(0, 0)
             let shapes = stickerShapes(key, center: c, size: 9)
             if !shapes.isEmpty {
-                var m = CamperMeshKit.extrude(CamperPolygon.offset(shapes[0].0, by: 1.4), depth: 0.3, front: edge, side: edge)
+                // カバーの丸みに沿って、上の縁がわずかに浮く
+                let curl = CamperCurl(center: c, direction: CV2(0, 1), start: 4, end: 11, lift: 0.8, slices: 3)
+                var m = CamperMeshKit.paper(CamperPolygon.offset(shapes[0].0, by: 1.4), depth: 0.3, front: edge, side: edge,
+                                            back: .paper, curl: curl)
                 for (i, s) in shapes.enumerated() {
-                    m.append(CamperMeshKit.extrude(s.0, depth: 0.2, front: s.1, side: s.1).translated(CV3(0, 0, 0.2 + Double(i) * 0.15)))
+                    m.append(CamperMeshKit.paper(s.0, depth: 0.2, front: s.1, side: s.1, back: s.1, curl: curl)
+                        .translated(CV3(0, 0, 0.2 + Double(i) * 0.15)))
                 }
                 // +Z を -X へ（後ろ向き）。カバーの面は x = rear - 14.6
                 let q = CQuat.rotation(from: CV3(0, 0, 1), to: CV3(-1, 0, 0))
@@ -1188,18 +1208,40 @@ struct CamperBuilder {
 
     // MARK: 夜の灯り（板の付箋「灯りと光の強さ」）
 
+    /// 地面に寝かせた四角（上向き・貼り絵は 0〜1 に一度だけ）。灯りの溜まりに使う
+    func glowQuad(width w: Double, depth d: Double) -> CamperMesh {
+        var m = CamperMesh()
+        let up = CV3(0, 1, 0)
+        m.quad(CV3(-w / 2, 0, -d / 2), CV3(w / 2, 0, -d / 2), CV3(w / 2, 0, d / 2), CV3(-w / 2, 0, d / 2), up, up, up, up, .glowPool)
+        m.uvs = m.positions.map { CV2($0.x / w + 0.5, $0.z / d + 0.5) }
+        return m
+    }
+
     mutating func nightLights() {
         guard night else { return }
         let warm: UInt32 = 0xFFB260
+        // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
         if !van {
             out.lights.append(CamperLightSpec(name: "interior.rear", kind: .omni, position: B(-70, -30, 0), color: warm,
-                                              intensity: 900, range: 70))
+                                              intensity: 1500, range: 80))
             out.lights.append(CamperLightSpec(name: "interior.front", kind: .omni, position: B(40, -30, 0), color: warm,
-                                              intensity: 600, range: 56))
+                                              intensity: 1000, range: 64))
         } else {
             out.lights.append(CamperLightSpec(name: "interior.van", kind: .omni, position: B(-40, -30, 0), color: warm,
-                                              intensity: 700, range: 70))
+                                              intensity: 1200, range: 80))
         }
+        // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
+        for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
+            for (k, w) in windows.enumerated() {
+                let xs = w.map(\.x)
+                guard let lo = xs.min(), let hi = xs.max() else { continue }
+                add("glow.window.\(side > 0 ? "near" : "far").\(k)", .mesh(glowQuad(width: (hi - lo) * 1.6 + 24, depth: 58)),
+                    .glowPool, at: CV3((lo + hi) / 2, 0.4, side * (BW + 30)), group: .glow)
+            }
+        }
+        let dx = doorHole.map(\.x)
+        add("glow.door", .mesh(glowQuad(width: 64, depth: 90)), .glowPool,
+            at: CV3(((dx.min() ?? 33.5) + (dx.max() ?? 56.5)) / 2, 0.5, BW + 40), group: .doorGlow)
         for s in [-1.0, 1.0] {
             out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, position: B(front + 3, 14, s * 37),
                                               direction: CV3(1, -0.08, 0), color: 0xFFF1CF, intensity: 1800, range: 220))
@@ -1254,8 +1296,18 @@ enum CamperFraming {
         }
     }
 
-    /// 扉を開けた所（板 CamperViews の 9: t[36,−8,40] z1.75 rx−6 ry−12）
-    static let door = CamperAngle(target: CamperBuilder.B(36, -8, 40), yaw: -12, elevation: 6, zoom: 1.75)
+    /// 扉を開けた所（板 CamperViews の 9 は t[36,−8,40] z1.75 ry−12）。
+    ///
+    /// 2026-10-18 判断（Mac の絵 run 529）: 板の向きでは車の横をほぼ真横から見るので、開いた扉の口が
+    /// 細い縦の帯にしか見えず、室内が見えなかった。扉は後ろの縁に蝶番があり外へ 100° 開く（扉の板は口の
+    /// 後ろ側に立つ）ので、**前の側から斜めに**口をのぞく。視線は口から向こうの壁の台所（流し・コンロ・やかん）と
+    /// 吊りランプへ抜ける。口（幅 23・高さ 77）が画面の高さの半分ほどになる寄り（2.1）。車の後ろ半分は
+    /// 枠の外になる（口は車の長さの 1/10 なので、車ごと収めると室内は数 px になる）
+    static func door(_ stage: CamperStage) -> CamperAngle {
+        // 扉の口の真ん中（バンは x −10〜16、ほかは 33.5〜56.5）の、壁の少し内側
+        let cx = stage == .van ? 3.0 : 45.0
+        return CamperAngle(target: CamperBuilder.B(cx, -10, 34), yaw: -34, elevation: 5, zoom: 2.1)
+    }
     /// 下から（板の under: t[0,24,0] rx46 ry−28）
     static let under = CamperAngle(target: CamperBuilder.B(0, 24, 0), yaw: -28, elevation: -46, zoom: 1.0)
     /// 後ろ（板 rear: t[−118,−16,0] z1.7 rx−10 ry50）

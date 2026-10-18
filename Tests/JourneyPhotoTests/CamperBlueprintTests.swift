@@ -220,4 +220,77 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertEqual(builder.wheels[1] - builder.wheels[0], 158)
         XCTAssertEqual(builder.wheelR, 22)
     }
+
+    /// 夜は窓と扉の口から地面へ灯りがこぼれる（光の溜まり。光の数は増やさない）。昼は無い
+    func testNightGlowPools() {
+        XCTAssertTrue(build(mood: .day).nodes.allSatisfy { $0.group != .glow && $0.group != .doorGlow })
+        for stage in CamperStage.allCases {
+            let b = build(stage, mood: .night)
+            let builder = CamperBuilder(config: CamperConfig(stage: stage, mood: .night))
+            let pools = b.nodes.filter { $0.group == .glow }
+            XCTAssertEqual(pools.count, builder.windowsNear.count + builder.windowsFar.count, "\(stage)")
+            XCTAssertEqual(b.nodes.filter { $0.group == .doorGlow }.count, 1, "\(stage)")
+            for p in pools + b.nodes.filter({ $0.group == .doorGlow }) {
+                XCTAssertEqual(p.material, .glowPool)
+                XCTAssertLessThan(p.position.y, 1, "地面に寝ている")
+                XCTAssertGreaterThan(abs(p.position.z), builder.BW, "車の外の地面")
+            }
+        }
+        XCTAssertEqual(CamperMaterials.spec(.glowPool, paint: 0, mood: .night).additive, true)
+    }
+
+    /// ステッカーは貼った紙: 厚みがあり、端が壁からわずかに浮いて反る（平らな円盤にしない）
+    func testStickerIsCurledPaper() {
+        for edge in ["white_cut", "gold_foil", "holo", "signed"] {
+            var l = CamperLoadout.standard
+            l.picks[CamperCategory.stickerEdge.rawValue] = edge
+            let b = build(loadout: l)
+            guard let node = b.nodes.first(where: { $0.name == "sticker.0" }), case .mesh(let m) = node.shape else {
+                return XCTFail(edge)
+            }
+            let box = m.bounds
+            XCTAssertEqual(box.min.z, 50, accuracy: 0.01, "\(edge): 裏は壁に付く")
+            XCTAssertGreaterThan(box.max.z - box.min.z, 1.3, "\(edge): 端が浮いていない")
+            XCTAssertLessThan(box.max.z - box.min.z, 3.5, "\(edge): 反りすぎ")
+        }
+    }
+
+    /// 扉を開けた所は、扉の口を前の側から斜めにのぞく（口の真ん中を狙う・真横から見ない）
+    func testDoorFramingLooksIntoTheDoorway() {
+        for stage in CamperStage.allCases {
+            let a = CamperFraming.door(stage)
+            let hole = CamperBuilder(config: CamperConfig(stage: stage)).doorHole
+            let xs = hole.map(\.x), ys = hole.map(\.y)
+            XCTAssertTrue((xs.min()!...xs.max()!).contains(a.target.x), "\(stage)")
+            XCTAssertTrue((ys.min()!...ys.max()!).contains(a.target.y), "\(stage)")
+            XCTAssertLessThan(a.yaw, -25, "前の側から斜めに")
+            XCTAssertTrue(CamperFraming.zoomRange.contains(a.zoom))
+        }
+    }
+
+    /// 床は暗い一色で、車から離れるほど透けて消える（絵を貼らない・地平線の線を出さない）
+    func testFloorMeltsIntoTheBackdrop() {
+        for mood in CamperMood.allCases {
+            let f = CamperMaterials.floor(mood)
+            let c = CamperTextures.rgb(f.color)
+            if mood != .snow { XCTAssertLessThan(max(c.0, c.1, c.2), 0.15, "\(mood) の床が明るい") }
+            XCTAssertTrue(f.shaderModifier.contains("smoothstep(\(f.fadeStart), \(f.fadeEnd)"))
+            XCTAssertTrue(f.shaderModifier.contains("_output.color *="))
+            XCTAssertFalse(f.shaderModifier.contains("#pragma transparent"), "透ける組では太陽の影が落ちない")
+            // 車体（半分 1.21）の下は濃く、トレーラーの後ろ（2.9）より先で消える
+            XCTAssertGreaterThan(f.fadeStart, 1.21)
+            XCTAssertGreaterThan(f.fadeEnd, 2.9)
+        }
+    }
+
+    /// 映り込みの元: 地平線がくっきりし（空の下端は明るく、すぐ下の地面は暗い）、光の箱がある
+    func testEnvironmentHasCrispHorizonAndSoftboxes() {
+        let env = CamperTextures.environment(.day)
+        let sky = env.pixel(100, 62), ground = env.pixel(100, 66)
+        XCTAssertGreaterThan(Int(sky.r) - Int(ground.r), 120)
+        let box = env.pixel(128, 14)
+        XCTAssertGreaterThan(Int(box.r), 240)
+        XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoat, 1)
+        XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoatRoughness, 0.08)
+    }
 }

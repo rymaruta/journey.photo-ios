@@ -886,6 +886,22 @@ enum CamperCounting {
 /// 読み上げの文（車の様子を言葉で）
 enum CamperText {
 
+    /// 見出しの上の眉ラベル。名前を入れていない人（「ユーザー」の代わりの呼び方）には名前を出さない。
+    /// 日本語は名前と「の車」の間を空けない（2026-10-18: 実機の絵で「ユーザー の車」と出ていた）
+    static func eyebrow(owner: String?, stage: CamperStage) -> String {
+        let name = owner?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty, name != Labels.Common.unnamedUser, name != "ユーザー", name != "User" else {
+            return L("わたしの車 · \(stage.name)", "My camper · \(stage.name)")
+        }
+        return L("\(name)の車 · \(stage.name)", "\(name)\u{2019}s camper · \(stage.name)")
+    }
+
+    /// 図鑑の数の注記（分母は第1段で集められる数。図鑑そのものは 132・「近日」はまだ数えない）
+    static func dexNote() -> String {
+        let soon = CamperCatalog.dex.count - CamperCatalog.available.count
+        return L("図鑑 \(CamperCatalog.dex.count) · 近日 \(soon)", "Dex \(CamperCatalog.dex.count) · \(soon) soon")
+    }
+
     static func accessibilityLabel(stage: CamperStage, mood: CamperMood, loadout: CamperLoadout, doorOpen: Bool,
                                    preview: CamperPart?) -> String {
         var parts: [String] = []

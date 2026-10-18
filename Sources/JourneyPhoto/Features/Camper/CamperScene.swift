@@ -35,6 +35,7 @@ final class CamperScene {
     private let ambientNode = SCNNode()
     private var carNode: SCNNode?
     private var doorPivot: SCNNode?
+    private var doorGlowNode: SCNNode?
     private var buildTask: Task<Void, Never>?
     private var textureCache: [String: CGImage] = [:]
 
@@ -65,12 +66,10 @@ final class CamperScene {
         scene.rootNode.addChildNode(cameraRig)
         scene.rootNode.addChildNode(turntable)
 
-        // 床（映り込みと落ち影を受ける。外へ透けていく楕円の絵）
+        // 床（映り込みと落ち影を受ける。果ては無く、車から離れるほど透けて画面の黒い地に溶ける）
         let floor = SCNFloor()
         floor.reflectionFalloffEnd = 0.8
         floor.reflectionResolutionScaleFactor = 0.5
-        floor.width = 7
-        floor.length = 7
         floorNode.geometry = floor
         scene.rootNode.addChildNode(floorNode)
 
@@ -96,33 +95,33 @@ final class CamperScene {
     private func applyMood(_ mood: CamperMood) {
         let env = image(CamperTextures.environment(mood), key: "env.\(mood.rawValue)")
         scene.lightingEnvironment.contents = env
-        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.22 : (mood == .snow ? 1.35 : 1.0))
+        // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
+        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.3 : (mood == .snow ? 1.45 : 1.35))
         // 板の光の向き（画面基準）: 昼 (−0.18, −0.72, 0.62)・夜の月 (0.45, −0.6, 0.55)。板は下が +y
         let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        sunNode.light?.intensity = CGFloat(mood == .night ? 140 : (mood == .snow ? 1100 : 1400))
+        sunNode.light?.intensity = CGFloat(mood == .night ? 140 : (mood == .snow ? 1000 : 1200))
         sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
             : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
         ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
-        cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 1.1 : 0.2)
+        // 夜の光の粒が散らないよう、明るい所だけをにじませる（run 529 の夜は電球と小さな灯りが点々と光った）
+        cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0.7 : 0.2)
+        cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.0 : 0.85)
 
+        // 床: 暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）
+        let f = CamperMaterials.floor(mood)
         let floorMaterial = SCNMaterial()
         floorMaterial.lightingModel = .physicallyBased
-        floorMaterial.diffuse.contents = image(CamperTextures.floor(mood).premultiplied(), key: "floor.\(mood.rawValue)")
-        // 床の絵は 1 単位に 1 回並ぶ。7 単位の床に 1 枚だけ（真ん中に）
-        floorMaterial.diffuse.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1.0 / 7, 1.0 / 7, 1),
-                                                                 SCNMatrix4MakeTranslation(0.5, 0.5, 0))
-        floorMaterial.diffuse.wrapS = .clamp
-        floorMaterial.diffuse.wrapT = .clamp
-        floorMaterial.roughness.contents = 0.9
+        floorMaterial.diffuse.contents = Self.color(f.color)
+        floorMaterial.roughness.contents = f.roughness
         floorMaterial.metalness.contents = 0.0
-        floorMaterial.transparencyMode = .aOne
         floorMaterial.blendMode = .alpha
+        floorMaterial.shaderModifiers = [.fragment: f.shaderModifier]
         floorNode.geometry?.materials = [floorMaterial]
-        (floorNode.geometry as? SCNFloor)?.reflectivity = CGFloat(mood == .snow ? 0.12 : (mood == .night ? 0.16 : 0.2))
+        (floorNode.geometry as? SCNFloor)?.reflectivity = CGFloat(f.reflectivity)
     }
 
     // MARK: 組み立て
@@ -154,6 +153,9 @@ final class CamperScene {
         let s = Self.unit
         let body = SCNNode()
         let door = SCNNode()
+        // 地面の灯りの溜まり（まとめず・影を落とさない）。扉の口の溜まりは扉を開けた時だけ見せる
+        let glow = SCNNode()
+        let doorGlow = SCNNode()
         for spec in bp.nodes {
             guard let geometry = makeGeometry(spec.shape, material: spec.material, lookup: material) else { continue }
             let node = SCNNode(geometry: geometry)
@@ -172,6 +174,12 @@ final class CamperScene {
             if spec.group == .door {
                 node.position = Self.vector((spec.position - bp.doorHinge) * s)
                 door.addChildNode(node)
+            } else if spec.group == .glow || spec.group == .doorGlow {
+                node.position = Self.vector(spec.position * s)
+                node.castsShadow = false
+                // 床（不透明の組）を描いた後に足す
+                node.renderingOrder = 10
+                (spec.group == .glow ? glow : doorGlow).addChildNode(node)
             } else {
                 node.position = Self.vector(spec.position * s)
                 body.addChildNode(node)
@@ -185,6 +193,11 @@ final class CamperScene {
         pivot.addChildNode(door.flattenedClone())
         pivot.eulerAngles = SCNVector3(0, Float(doorOpen ? bp.doorOpenAngle : 0), 0)
         car.addChildNode(pivot)
+        glow.castsShadow = false
+        doorGlow.castsShadow = false
+        doorGlow.opacity = doorOpen ? 1 : 0
+        car.addChildNode(glow)
+        car.addChildNode(doorGlow)
         // 灯り（夜）
         for light in bp.lights {
             let l = SCNLight()
@@ -227,6 +240,7 @@ final class CamperScene {
         turntable.addChildNode(car)
         carNode = car
         doorPivot = pivot
+        doorGlowNode = doorGlow
         blueprint = bp
     }
 
@@ -261,6 +275,7 @@ final class CamperScene {
         SCNTransaction.animationDuration = animated ? (open ? 0.6 : 0.4) : 0
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(controlPoints: 0.0, 0.0, 0.2, 1)
         pivot.eulerAngles = SCNVector3(0, Float(open ? bp.doorOpenAngle : 0), 0)
+        doorGlowNode?.opacity = open ? 1 : 0
         SCNTransaction.commit()
     }
 
@@ -320,6 +335,19 @@ final class CamperScene {
 
     private func makeMaterial(_ spec: CamperMaterialSpec) -> SCNMaterial {
         let m = SCNMaterial()
+        if spec.additive {
+            // 下の色に光を足す（黒は何も足さない）。奥行きは書かず、灯りの溜まりどうしが重なっても欠けない
+            m.lightingModel = .constant
+            if let kind = spec.texture {
+                m.diffuse.contents = image(CamperTextures.make(kind).tinted(spec.color), key: "\(kind.rawValue).\(spec.color)")
+            } else {
+                m.diffuse.contents = Self.color(spec.color)
+            }
+            m.blendMode = .add
+            m.writesToDepthBuffer = false
+            m.isDoubleSided = true
+            return m
+        }
         if spec.unlit {
             m.lightingModel = .constant
             m.diffuse.contents = Self.color(spec.color)

@@ -22,6 +22,8 @@ enum CamperMaterial: Hashable, Sendable {
     case tint(UInt32)
     /// まだ持っていない部品の影絵（黒・艶なし）
     case silhouette
+    /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
+    case glowPool
 }
 
 /// 素材の値（SceneKit の physicallyBased にそのまま渡す）。板の付箋「素材の値（実装用）」の推奨値
@@ -40,6 +42,8 @@ struct CamperMaterialSpec: Equatable, Sendable {
     var doubleSided = false
     /// 光を受けない一色（影絵）
     var unlit = false
+    /// 下の色に足し合わせる光（地面の灯りの溜まり）。光を受けず、影も奥行きも書かない
+    var additive = false
 }
 
 /// 手で描く小さな貼り絵（`CamperTextures`）
@@ -48,6 +52,8 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case weave
     case solarCells
     case brushed
+    /// 真ん中が明るく外へ消える丸（灯りの溜まり）
+    case glow
 }
 
 enum CamperMaterials {
@@ -73,8 +79,9 @@ enum CamperMaterials {
         case .pinstripe: return CamperMaterialSpec(color: 0xC9A66B, metalness: 0.6, roughness: 0.3, clearCoat: 1, clearCoatRoughness: 0.08)
         case .pinstripeDark: return CamperMaterialSpec(color: 0x8A6D3D, metalness: 0.5, roughness: 0.35, clearCoat: 1)
         case .glass:
-            return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.38 : 0.62,
-                                      doubleSided: true)
+            // 夜は室内の灯りでガラスがほのかに光る（窓が灯りの主役。2026-10-18 Mac の絵 run 529 のあと）
+            return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.42 : 0.62,
+                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.5 : 0, doubleSided: true)
         case .lens:
             return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.05, opacity: night ? 1 : 0.85,
                                       emission: night ? 0xFFF6E0 : nil, emissionIntensity: night ? 2.2 : 0)
@@ -88,8 +95,9 @@ enum CamperMaterials {
             return CamperMaterialSpec(color: night ? 0xFFB347 : 0xC9772A, roughness: 0.1, clearCoat: 1,
                                       emission: night ? 0xFFB347 : nil, emissionIntensity: night ? 1.2 : 0)
         case .lamp:
+            // 電球は小さいので、強すぎると光の粒が散って見える（run 529 の夜）。窓の灯りより少し上まで
             return CamperMaterialSpec(color: 0xFFD890, roughness: 0.3, emission: night ? 0xFFD890 : nil,
-                                      emissionIntensity: night ? 2 : 0)
+                                      emissionIntensity: night ? 1.1 : 0)
         case .chrome: return CamperMaterialSpec(color: 0xC9CCD0, metalness: 1, roughness: 0.12)
         case .chromeDark: return CamperMaterialSpec(color: 0x8D9196, metalness: 1, roughness: 0.18)
         case .brass: return CamperMaterialSpec(color: 0xC9A66B, metalness: 1, roughness: 0.3)
@@ -133,24 +141,30 @@ enum CamperMaterials {
         case .ember:
             return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 2.4 : 0.8)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
+        case .glowPool: return CamperMaterialSpec(color: 0x8A5A2C, texture: .glow, additive: true)
         }
     }
 
     /// 周りの空（映り込みの元・板の env の色: 空の上・地平線・地面の手前・地面の奥）
     static func sky(_ mood: CamperMood) -> (top: UInt32, horizon: UInt32, groundNear: UInt32, groundFar: UInt32) {
         switch mood {
-        case .day: return (0x5F87B0, 0xE8DCC4, 0x6B6152, 0x2A2620)
+        // 地面は暗く（映り込みの地平線をくっきりさせる・車の下側が明るくなりすぎない）
+        case .day: return (0x5F87B0, 0xEFE5D0, 0x2E2A23, 0x16140F)
         case .night: return (0x0B1220, 0x2A3550, 0x141A24, 0x07090C)
         case .snow: return (0x9FB0C2, 0xEEF2F6, 0xD9E1EA, 0x8D99A6)
         }
     }
 
-    /// 床（板の付箋「接地の影と床」: 真ん中の色・外の色、どちらも透け具合つき）
-    static func floor(_ mood: CamperMood) -> (inner: (UInt32, Double), outer: (UInt32, Double)) {
+    /// 床（板の付箋「接地の影と床」）。
+    ///
+    /// 2026-10-18 判断（Mac の絵 run 529）: 床に貼った楕円の絵が SCNFloor では引き伸ばされ、ベージュの平たい板と
+    /// その奥の地平線の線に見えた（安っぽい）。床は**暗い一色**にし、透け具合は絵ではなく車からの距離で決める
+    /// （`CamperFloor.shaderModifier`）。真ん中は映り込みと落ち影を受け、外へ行くほど消えて画面の黒い地に溶ける。境目の線は無い
+    static func floor(_ mood: CamperMood) -> CamperFloor {
         switch mood {
-        case .day: return ((0x5C5648, 0.5), (0x282620, 0.35))
-        case .night: return ((0x28344E, 0.55), (0x0C101A, 0.4))
-        case .snow: return ((0xD6E0EA, 0.5), (0x96A6B8, 0.22))
+        case .day: return CamperFloor(color: 0x1C1A16, reflectivity: 0.22)
+        case .night: return CamperFloor(color: 0x0E121B, reflectivity: 0.2)
+        case .snow: return CamperFloor(color: 0x8C99A8, reflectivity: 0.1)
         }
     }
 
@@ -161,5 +175,30 @@ enum CamperMaterials {
         case .night: return 0x101A2C
         case .snow: return 0x222A33
         }
+    }
+}
+
+/// 床の値（SceneKit の `SCNFloor` に渡す。素の Swift なので試験できる）
+struct CamperFloor: Equatable, Sendable {
+    var color: UInt32
+    var roughness = 0.85
+    /// 映り込みの強さ
+    var reflectivity: Double
+    /// ここ（車の真ん中からの距離・SceneKit の単位）までは濃く、`fadeEnd` で消える。
+    /// 車体の長さは 2.42、トレーラーつきは後ろへ 1.6 ほど伸びる
+    var fadeStart = 1.5
+    var fadeEnd = 4.2
+
+    /// 床の透け具合を距離で決める（Metal の fragment の shader modifier）。
+    /// `_output.color` に掛けると、色も透け具合も一緒に 0 へ向かう（地平線の線が出ない。SCNView の地は透明なので、
+    /// 0 の所は後ろの画面の地がそのまま見える）。**不透明の組で描く**（`#pragma transparent` を付けない）:
+    /// 透ける組は落ち影（deferred）を描いた後に描かれ、太陽の影が床に落ちなくなる
+    var shaderModifier: String {
+        """
+        #pragma body
+        float4 jpWorld = scn_frame.inverseViewTransform * float4(_surface.position, 1.0);
+        float jpFade = 1.0 - smoothstep(\(fadeStart), \(fadeEnd), length(jpWorld.xz));
+        _output.color *= jpFade;
+        """
     }
 }

@@ -95,7 +95,7 @@ struct CamperGarageView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(ownerName.map { L("\($0) の車 · \(actualStage.name)", "\($0)'s camper · \(actualStage.name)") } ?? actualStage.name)
+            Text(CamperText.eyebrow(owner: ownerName, stage: actualStage))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .lineLimit(1)
@@ -190,7 +190,12 @@ struct CamperGarageView: View {
 
     private func toggleDoor() {
         doorOpen.toggle()
-        if doorOpen && stage != .van { aim(CamperFraming.door) }
+        // 開けたら扉の口から室内へ寄る。閉じたら初めの向きへ戻す（寄ったまま夜や段を見ない）
+        if doorOpen {
+            aim(CamperFraming.door(stage))
+        } else if angle == CamperFraming.door(stage) {
+            aim(CamperFraming.overview(stage))
+        }
     }
 
     private var sceneButtons: some View {
@@ -251,17 +256,22 @@ struct CamperGarageView: View {
 
     private var statsRow: some View {
         HStack(spacing: 8) {
-            statTile(L("集めた部品", "Parts"), "\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)")
+            statTile(L("集めた部品", "Parts"), "\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)",
+                     note: CamperText.dexNote())
             statTile(L("写真", "Photos"), "\(stats.posts)")
             statTile(L("走った旅", "Trips"), "\(stats.books)")
         }
     }
 
-    private func statTile(_ label: String, _ value: String) -> some View {
+    private func statTile(_ label: String, _ value: String, note: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint)
             Text(value).font(JPFont.number(17, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
                 .lineLimit(1).minimumScaleFactor(0.7)
+            if let note {
+                Text(note).font(JPFont.number(12, weight: .regular, relativeTo: .caption)).foregroundStyle(WebTheme.faint)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -315,7 +325,7 @@ struct CamperGarageView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(L("部品を集める", "Collect parts")).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Spacer()
-                Text("\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)")
+                Text("\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total) · \(CamperText.dexNote())")
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
             }

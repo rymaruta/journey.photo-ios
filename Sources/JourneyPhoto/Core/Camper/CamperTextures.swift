@@ -56,6 +56,7 @@ enum CamperTextures {
         case .weave: return weave()
         case .solarCells: return solarCells()
         case .brushed: return brushed()
+        case .glow: return glow()
         }
     }
 
@@ -115,58 +116,62 @@ enum CamperTextures {
         return b
     }
 
-    /// 周りの空（正距円筒・256×128）。上から空・地平線・地面。昼は左上に太陽の柔らかい光
+    /// 周りの空（正距円筒・256×128）。上から空・地平線・地面。
+    ///
+    /// 2026-10-18 判断（Mac の絵 run 529: 塗装の映り込みがほとんど感じられない）: 空と地面のなだらかな色の差だけでは
+    /// clearCoat に映るものが無い。写真のスタジオと同じく、**くっきりした地平線**（明るい空の下端と暗い地面の境）と、
+    /// 縁のはっきりした光の箱（頭の上の大きな箱・左右の縦長の箱）を置く。回すと塗装の面の上を線と箱が流れる
     static func environment(_ mood: CamperMood) -> CamperBitmap {
         var b = CamperBitmap(width: 256, height: 128)
         let s = CamperMaterials.sky(mood)
         let top = rgb(s.top), hor = rgb(s.horizon), gn = rgb(s.groundNear), gf = rgb(s.groundFar)
+        /// 縁の柔らかい四角（1 で中・0 で外。縁の幅 `soft` 画素）
+        func box(_ x: Double, _ y: Double, _ x0: Double, _ x1: Double, _ y0: Double, _ y1: Double, soft: Double) -> Double {
+            let dx = max(x0 - x, x - x1, 0), dy = max(y0 - y, y - y1, 0)
+            return max(0, 1 - (dx * dx + dy * dy).squareRoot() / soft)
+        }
         for y in 0..<b.height {
-            let v = Double(y) / Double(b.height - 1)
+            let v = (Double(y) + 0.5) / Double(b.height)
             for x in 0..<b.width {
+                let fx = Double(x) + 0.5, fy = Double(y) + 0.5
                 var c: (Double, Double, Double)
                 if v < 0.5 {
-                    c = lerp(top, hor, pow(v / 0.5, 1.6))
+                    c = lerp(top, hor, pow(v / 0.5, 2.2))
                 } else {
-                    c = lerp(gn, gf, (v - 0.5) / 0.5)
+                    // 地平線の下は 1.5 画素で暗い地面へ落ちる（映り込みの線がくっきり出る）
+                    let edge = min(1, (v - 0.5) * Double(b.height) / 1.5)
+                    c = lerp(hor, lerp(gn, gf, (v - 0.5) / 0.5), edge)
                 }
-                if mood != .night {
-                    // 光の箱（左上）と細い縦の光（右）。回すとクロームと塗装の上を流れる
-                    let dx = (Double(x) - 92) / 26, dy = (Double(y) - 30) / 20
-                    let glow = exp(-(dx * dx + dy * dy)) * (mood == .snow ? 0.5 : 0.7)
-                    let ex = (Double(x) - 176) / 5, ey = (Double(y) - 46) / 22
-                    let strip = exp(-(ex * ex + ey * ey)) * 0.4
-                    c = (min(1, c.0 + glow + strip), min(1, c.1 + glow + strip), min(1, c.2 + glow * 0.95 + strip))
+                var light = 0.0
+                if mood == .night {
+                    // 月の小さな光と、地平線の上の薄い街明かりの帯
+                    let dx = (fx - 160) / 6, dy = (fy - 26) / 6
+                    light = exp(-(dx * dx + dy * dy)) * 0.6
+                    light += box(fx, fy, 0, 256, 58, 63, soft: 4) * 0.12
                 } else {
-                    // 夜は月の小さな光
-                    let dx = (Double(x) - 160) / 6, dy = (Double(y) - 26) / 6
-                    let moon = exp(-(dx * dx + dy * dy)) * 0.6
-                    c = (min(1, c.0 + moon), min(1, c.1 + moon), min(1, c.2 + moon))
+                    let k = mood == .snow ? 0.7 : 1.0
+                    // 頭の上の大きな光の箱・左右の縦長の箱・地平線の上の細い帯
+                    light += box(fx, fy, 70, 186, 6, 24, soft: 3) * 0.9 * k
+                    light += box(fx, fy, 20, 34, 24, 56, soft: 2) * 0.75 * k
+                    light += box(fx, fy, 150, 162, 22, 56, soft: 2) * 0.65 * k
+                    light += box(fx, fy, 216, 236, 30, 54, soft: 2) * 0.5 * k
                 }
+                c = (min(1, c.0 + light), min(1, c.1 + light), min(1, c.2 + light * 0.97))
                 b.set(x, y, c)
             }
         }
         return b
     }
 
-    /// 床（真ん中から外へ透けていく楕円・板の floor）。256×256
-    static func floor(_ mood: CamperMood) -> CamperBitmap {
-        var b = CamperBitmap(width: 256, height: 256)
-        let f = CamperMaterials.floor(mood)
-        let a = rgb(f.inner.0), o = rgb(f.outer.0)
+    /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない
+    static func glow() -> CamperBitmap {
+        var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
-                let dx = (Double(x) - 127.5) / 127.5, dy = (Double(y) - 127.5) / 127.5
+                let dx = (Double(x) - 31.5) / 31.5, dy = (Double(y) - 31.5) / 31.5
                 let r = (dx * dx + dy * dy).squareRoot()
-                let c: (Double, Double, Double)
-                let alpha: Double
-                if r < 0.55 {
-                    c = lerp(a, o, r / 0.55)
-                    alpha = f.inner.1 + (f.outer.1 - f.inner.1) * (r / 0.55)
-                } else {
-                    c = o
-                    alpha = max(0, f.outer.1 * (1 - (r - 0.55) / 0.45))
-                }
-                b.set(x, y, c, alpha)
+                let v = r >= 1 ? 0 : pow(1 - r, 2.2)
+                b.set(x, y, (v, v, v))
             }
         }
         return b

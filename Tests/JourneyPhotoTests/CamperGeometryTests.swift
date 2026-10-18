@@ -91,4 +91,22 @@ final class CamperGeometryTests: XCTestCase {
         let r = CQuat.rotation(from: CV3(0, 0, 1), to: CV3(-1, 0, 0)).rotate(CV3(0, 0, 1))
         XCTAssertEqual(r.x, -1, accuracy: 1e-9)
     }
+
+    /// 貼った紙: 閉じた立体のまま、`curl` の先だけが浮く（裏の糊の面も一緒に）
+    func testPaperCurlsClosed() {
+        let disc = CamperPolygon.circle(CV2(10, 20), 8, count: 32)
+        let curl = CamperCurl(center: CV2(10, 20), direction: CV2(1, -1), start: 2, end: 8, lift: 1.5)
+        let m = CamperMeshKit.paper(disc, depth: 0.3, front: .paper, side: .paper, back: .tint(0xFFFFFF), curl: curl)
+        XCTAssertEqual(m.openEdgeCount, 0)
+        XCTAssertEqual(m.bounds.min.z, -0.3, accuracy: 1e-9)
+        XCTAssertEqual(m.bounds.max.z, 1.5, accuracy: 0.05)
+        // 反りと逆の側（上の後ろ）は平ら
+        for p in m.positions where (p.x - 10) - (p.y - 20) < 0 {
+            XCTAssertTrue(abs(p.z) < 1e-9 || abs(p.z + 0.3) < 1e-9, "\(p)")
+        }
+        // 浮いた所の表は、反りの向きへ傾く
+        let tilted = zip(m.positions, m.normals).filter { $0.0.z > 1 && $0.1.z > 0.5 }
+        XCTAssertFalse(tilted.isEmpty)
+        for (_, n) in tilted { XCTAssertLessThan(n.x - n.y, 0) }
+    }
 }
