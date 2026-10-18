@@ -149,6 +149,19 @@ final class CampStore: ObservableObject {
         save()
     }
 
+    /// 切り絵を外す（切り抜きを直す・撮り直すとき）。紙の絵も消す。元の写真の記録（集める数）は残す
+    func remove(cutout id: String) {
+        snapshot.cutouts.removeAll { $0.id == id }
+        for k in 0..<3 { try? FileManager.default.removeItem(at: imageURL(cutout: id, layer: k)) }
+        try? FileManager.default.removeItem(at: photoURL(cutout: id))
+        save()
+    }
+
+    /// まだ立てていない切り絵（新しい順）
+    var unplaced: [CampCutoutRecord] {
+        snapshot.cutouts.filter { $0.spot == nil }.sorted { $0.createdAt > $1.createdAt }
+    }
+
     func rename(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         snapshot.name = trimmed.isEmpty ? nil : String(trimmed.prefix(20))

@@ -108,25 +108,29 @@ struct CampView: Equatable, Sendable {
     let season: CampSeason
     let stage: CampStage
     let angle: CampAngle
+    /// 部品に寄った図の地の光（板の `glow`）
+    let glow: UInt32
 
     static func all() -> [CampView] {
         func v(_ n: Int, _ title: String, focus: CampFocus = .all, time: CampTime = .evening,
-               season: CampSeason = .summer, stage: CampStage = .tent, rx: Double? = nil, ry: Double? = nil) -> CampView {
+               season: CampSeason = .summer, stage: CampStage = .tent, rx: Double? = nil, ry: Double? = nil,
+               glow: UInt32 = 0x16140F) -> CampView {
             let p = focus.preset
             return CampView(number: n, title: title, focus: focus, time: time, season: season, stage: stage,
-                            angle: CampAngle(rx: rx ?? p.rx ?? CampAngle.resting.rx, ry: ry ?? p.ry ?? CampAngle.resting.ry))
+                            angle: CampAngle(rx: rx ?? p.rx ?? CampAngle.resting.rx, ry: ry ?? p.ry ?? CampAngle.resting.ry),
+                            glow: glow)
         }
         return [
             v(1, L("いつもの向き（夕）", "Usual view (evening)")),
             v(2, L("後ろ", "Back"), rx: -14, ry: 144),
             v(3, L("横", "Side"), rx: -8, ry: -100),
             v(4, L("上", "Top"), rx: -80, ry: -20),
-            v(5, L("下（岩の底）", "Below (rock base)"), focus: .island, rx: 18, ry: -30),
-            v(6, L("テントの扉", "Tent door"), focus: .tent, time: .day),
-            v(7, L("テントの裏", "Tent back"), focus: .tent, time: .day, ry: 140),
-            v(8, L("焚き火（夜）", "Fire (night)"), focus: .fire, time: .night),
-            v(9, L("写真の切り絵（表）", "Photo cutout (front)"), focus: .cutout, time: .morning),
-            v(10, L("写真の切り絵（裏）", "Photo cutout (back)"), focus: .cutout, time: .morning, ry: 150),
+            v(5, L("下（岩の底）", "Below (rock base)"), focus: .island, rx: 18, ry: -30, glow: 0x101010),
+            v(6, L("テントの扉", "Tent door"), focus: .tent, time: .day, glow: 0x101010),
+            v(7, L("テントの裏", "Tent back"), focus: .tent, time: .day, ry: 140, glow: 0x101010),
+            v(8, L("焚き火（夜）", "Fire (night)"), focus: .fire, time: .night, glow: 0x1C1206),
+            v(9, L("写真の切り絵（表）", "Photo cutout (front)"), focus: .cutout, time: .morning, glow: 0x101010),
+            v(10, L("写真の切り絵（裏）", "Photo cutout (back)"), focus: .cutout, time: .morning, ry: 150, glow: 0x101010),
             v(11, L("夜（キャンプ場まで育った島）", "Night (grown campsite)"), time: .night, stage: .camp),
             v(12, L("冬", "Winter"), time: .day, season: .winter, stage: .camp),
         ]

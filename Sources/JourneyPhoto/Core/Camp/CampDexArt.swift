@@ -1,20 +1,11 @@
 import Foundation
 
-// 図鑑の部品の絵（板 CampDex の 120 × 96 の SVG）を読む。
+// 図鑑の部品の絵（板 CampDex の 120 × 96 の SVG）を読む。線（path の d）は既存の `SVGPath` で読む。
 //
 // 板の注記は「部品の絵は SceneKit で 1 個ずつ回して撮った静止画を一覧に使う」だが、板の 3D に形がある部品は
 // 9 個だけ（付箋「部品の Camp の値」）。残りの 87 個を板の絵と違う形で作ると図鑑が板からずれるので、
 // **96 個とも板の絵をそのまま描く**（2026-10-18 判断）。読むのは path / ellipse / circle / rect と、
 // 塗り・線・濃さ・破線・板の 10 の階調（`dxchrome` ほか）だけ。
-
-/// 線の命令（SVG の path を絶対座標にほどいたもの）
-enum CampPathOp: Equatable, Sendable {
-    case move(CampVec2)
-    case line(CampVec2)
-    case cubic(CampVec2, CampVec2, CampVec2)
-    case quad(CampVec2, CampVec2)
-    case close
-}
 
 /// 塗り方
 enum CampArtPaint: Equatable, Sendable {
@@ -26,7 +17,8 @@ enum CampArtPaint: Equatable, Sendable {
 /// 絵の形 1 つ
 struct CampArtElement: Equatable, Sendable {
     enum Shape: Equatable, Sendable {
-        case path([CampPathOp])
+        /// 線（既存の `SVGPath` で読んだ並び。旅のトランクの絵と同じ道具）
+        case path([SVGPath.Segment])
         case ellipse(cx: Double, cy: Double, rx: Double, ry: Double)
         case rect(x: Double, y: Double, w: Double, h: Double, rx: Double)
     }
@@ -47,9 +39,9 @@ struct CampArtElement: Equatable, Sendable {
             var pts: [CampVec2] = []
             for op in ops {
                 switch op {
-                case .move(let p), .line(let p): pts.append(p)
-                case let .cubic(a, b, c): pts += [a, b, c]
-                case let .quad(a, b): pts += [a, b]
+                case .move(let p), .line(let p): pts.append(CampVec2(p.x, p.y))
+                case let .cubic(a, b, c): pts += [a, b, c].map { CampVec2($0.x, $0.y) }
+                case let .quad(a, b): pts += [a, b].map { CampVec2($0.x, $0.y) }
                 case .close: break
                 }
             }
@@ -134,7 +126,7 @@ enum CampDexArt {
             func num(_ k: String) -> Double { Double(attrs[k] ?? "") ?? 0 }
             let shape: CampArtElement.Shape
             switch name {
-            case "path": shape = .path(parsePath(attrs["d"] ?? ""))
+            case "path": shape = .path(SVGPath.parse(attrs["d"] ?? ""))
             case "ellipse": shape = .ellipse(cx: num("cx"), cy: num("cy"), rx: num("rx"), ry: num("ry"))
             case "circle": shape = .ellipse(cx: num("cx"), cy: num("cy"), rx: num("r"), ry: num("r"))
             case "rect": shape = .rect(x: num("x"), y: num("y"), w: num("width"), h: num("height"), rx: num("rx"))
@@ -178,112 +170,5 @@ enum CampDexArt {
         var hex = String(v.dropFirst())
         if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
         return .color(UInt32(hex, radix: 16) ?? 0)
-    }
-
-    /// path の d（M L H V C S Q T Z と小文字の相対）を絶対座標の命令へ
-    static func parsePath(_ d: String) -> [CampPathOp] {
-        var tokens: [String] = []
-        var cur = ""
-        func flush() { if !cur.isEmpty { tokens.append(cur); cur = "" } }
-        for ch in d {
-            if ch.isLetter && ch != "e" && ch != "E" {
-                flush()
-                tokens.append(String(ch))
-            } else if ch == " " || ch == "," || ch == "\n" || ch == "\t" {
-                flush()
-            } else if ch == "-" && !cur.isEmpty && cur.last != "e" && cur.last != "E" {
-                flush()
-                cur.append(ch)
-            } else if ch == "." && cur.contains(".") {
-                flush()
-                cur.append(ch)
-            } else {
-                cur.append(ch)
-            }
-        }
-        flush()
-        var ops: [CampPathOp] = []
-        var i = 0
-        var cmd: Character = "M"
-        var p = CampVec2(0, 0), start = CampVec2(0, 0)
-        var lastControl: CampVec2?
-        var lastQuad: CampVec2?
-        func next() -> Double? {
-            guard i < tokens.count, let v = Double(tokens[i]) else { return nil }
-            i += 1
-            return v
-        }
-        while i < tokens.count {
-            if let c = tokens[i].first, c.isLetter {
-                cmd = c
-                i += 1
-                if c == "Z" || c == "z" {
-                    ops.append(.close)
-                    p = start
-                    lastControl = nil
-                    lastQuad = nil
-                    continue
-                }
-            }
-            let rel = cmd.isLowercase
-            let base = rel ? p : CampVec2(0, 0)
-            func pt(_ x: Double, _ y: Double) -> CampVec2 { CampVec2(base.x + x, base.y + y) }
-            switch cmd.uppercased().first! {
-            case "M":
-                guard let x = next(), let y = next() else { i = tokens.count; break }
-                p = pt(x, y)
-                start = p
-                ops.append(.move(p))
-                // 続く座標は線（SVG の決まり）
-                cmd = rel ? "l" : "L"
-                lastControl = nil; lastQuad = nil
-            case "L":
-                guard let x = next(), let y = next() else { i = tokens.count; break }
-                p = pt(x, y)
-                ops.append(.line(p))
-                lastControl = nil; lastQuad = nil
-            case "H":
-                guard let x = next() else { i = tokens.count; break }
-                p = CampVec2(rel ? p.x + x : x, p.y)
-                ops.append(.line(p))
-                lastControl = nil; lastQuad = nil
-            case "V":
-                guard let y = next() else { i = tokens.count; break }
-                p = CampVec2(p.x, rel ? p.y + y : y)
-                ops.append(.line(p))
-                lastControl = nil; lastQuad = nil
-            case "C":
-                guard let x1 = next(), let y1 = next(), let x2 = next(), let y2 = next(), let x = next(), let y = next()
-                else { i = tokens.count; break }
-                let c1 = pt(x1, y1), c2 = pt(x2, y2), e = pt(x, y)
-                ops.append(.cubic(c1, c2, e))
-                p = e
-                lastControl = c2; lastQuad = nil
-            case "S":
-                guard let x2 = next(), let y2 = next(), let x = next(), let y = next() else { i = tokens.count; break }
-                let c1 = lastControl.map { CampVec2(2 * p.x - $0.x, 2 * p.y - $0.y) } ?? p
-                let c2 = pt(x2, y2), e = pt(x, y)
-                ops.append(.cubic(c1, c2, e))
-                p = e
-                lastControl = c2; lastQuad = nil
-            case "Q":
-                guard let x1 = next(), let y1 = next(), let x = next(), let y = next() else { i = tokens.count; break }
-                let c = pt(x1, y1), e = pt(x, y)
-                ops.append(.quad(c, e))
-                p = e
-                lastQuad = c; lastControl = nil
-            case "T":
-                guard let x = next(), let y = next() else { i = tokens.count; break }
-                let c = lastQuad.map { CampVec2(2 * p.x - $0.x, 2 * p.y - $0.y) } ?? p
-                let e = pt(x, y)
-                ops.append(.quad(c, e))
-                p = e
-                lastQuad = c; lastControl = nil
-            default:
-                // 読めない命令（A など）は飛ばす。板の 96 部品には無い
-                i += 1
-            }
-        }
-        return ops
     }
 }

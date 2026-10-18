@@ -158,16 +158,18 @@ final class CampCatalogTests: XCTestCase {
         }
     }
 
-    /// 絵の path を読む（相対・H/V・Q/T・M の後の続きの座標は線）
+    /// 絵の path を読む（既存の `SVGPath` に足した相対・S・T。M の後の続きの座標は線）
     func testPathParser() {
-        let ops = CampDexArt.parsePath("M10 20 l5 0 H30 v-5 Q40 10 50 15 T70 15 C1 2 3 4 5 6 Z")
+        typealias P = SVGPath.Point
+        let ops = SVGPath.parse("M10 20 l5 0 H30 v-5 Q40 10 50 15 T70 15 C1 2 3 4 5 6 s2 2 4 4 Z")
         XCTAssertEqual(ops, [
-            .move(CampVec2(10, 20)), .line(CampVec2(15, 20)), .line(CampVec2(30, 20)), .line(CampVec2(30, 15)),
-            .quad(CampVec2(40, 10), CampVec2(50, 15)), .quad(CampVec2(60, 20), CampVec2(70, 15)),
-            .cubic(CampVec2(1, 2), CampVec2(3, 4), CampVec2(5, 6)), .close,
+            .move(P(x: 10, y: 20)), .line(P(x: 15, y: 20)), .line(P(x: 30, y: 20)), .line(P(x: 30, y: 15)),
+            .quad(c: P(x: 40, y: 10), to: P(x: 50, y: 15)), .quad(c: P(x: 60, y: 20), to: P(x: 70, y: 15)),
+            .cubic(c1: P(x: 1, y: 2), c2: P(x: 3, y: 4), to: P(x: 5, y: 6)),
+            .cubic(c1: P(x: 7, y: 8), c2: P(x: 7, y: 8), to: P(x: 9, y: 10)), .close,
         ])
-        XCTAssertEqual(CampDexArt.parsePath("M0 0 10 10 20 0"), [.move(CampVec2(0, 0)), .line(CampVec2(10, 10)), .line(CampVec2(20, 0))])
-        XCTAssertEqual(CampDexArt.parsePath("M1-2L3.5.5"), [.move(CampVec2(1, -2)), .line(CampVec2(3.5, 0.5))])
+        XCTAssertEqual(SVGPath.parse("m1 1 2 2 z"), [.move(P(x: 1, y: 1)), .line(P(x: 3, y: 3)), .close])
+        XCTAssertEqual(SVGPath.parse("M1-2L3.5.5"), [.move(P(x: 1, y: -2)), .line(P(x: 3.5, y: 0.5))])
         XCTAssertEqual(CampDexArt.paint("#abc"), .color(0xAABBCC))
         XCTAssertEqual(CampDexArt.paint("url(#dxwood)"), .gradient("dxwood"))
         XCTAssertNil(CampDexArt.paint("none"))

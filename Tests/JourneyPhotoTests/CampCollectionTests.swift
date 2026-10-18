@@ -178,3 +178,56 @@ final class CampCollectionTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 }
+
+/// 写った物の分類の拾い方と、マイページの入口（画面は模型で動かせないので、書いてあることを見る）
+final class CampWiringTests: XCTestCase {
+
+    func testSubjectsFromClassifierLabels() {
+        let labels: [(String, Float)] = [("forest", 0.8), ("snow", 0.5), ("beach", 0.1), ("night_sky", 0.4), ("tree", 0.6)]
+        XCTAssertEqual(CampSubjectRule.subjects(labels: labels), [.starrySky, .forest, .snow])
+        XCTAssertTrue(CampSubjectRule.showsPeople(labels: [("people", 0.7)]))
+        XCTAssertFalse(CampSubjectRule.showsPeople(labels: [("people", 0.2)]))
+        XCTAssertFalse(CampSubjectRule.title([.forest], season: .summer).isEmpty)
+        XCTAssertNotEqual(CampSubjectRule.title([.forest], season: .summer), CampSubjectRule.title([], season: .summer))
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 入口はマイページの旅の記録の札（旅のトランクの行のすぐ下）。サーバーを待たずに出す
+    func testMyPageHasCampEntryBelowTrunk() throws {
+        let view = try source("Features/Profile/MyPageView.swift")
+        guard let trunk = view.range(of: "\"trips.trunk\""),
+              let camp = view.range(of: "NavigationLink { CampHomeView(ownerName: model.profile?.name) }"),
+              let albums = view.range(of: "NavigationLink { AlbumsView() }") else {
+            return XCTFail("旅のトランク・キャンプ場・共同アルバムの行のどれかが無い")
+        }
+        XCTAssertLessThan(trunk.lowerBound, camp.lowerBound)
+        XCTAssertLessThan(camp.lowerBound, albums.lowerBound)
+        XCTAssertTrue(view.contains("\"trips.camp\""), "画面写真で探す名前が無い")
+        // トランクの「口が読めた人だけ」の条件の中に入れていない
+        let between = view[trunk.upperBound..<camp.lowerBound]
+        XCTAssertTrue(between.contains("}"), "キャンプ場の行がトランクの出し分けの中にある")
+    }
+
+    /// 写真の上（撮る・切り出す）は白だけ。真鍮は置く画面（写真の無い黒地）の主ボタンと眉ラベルだけ
+    func testCaptureUsesWhiteOnPhoto() throws {
+        let capture = try source("Features/Camp/CampCaptureView.swift")
+        XCTAssertTrue(capture.contains("let accent = onPhoto ? Color.white : WebTheme.accent"), "写真の上の手順の印が白でない")
+        let stage = try source("Features/Camp/CampCutStage.swift")
+        XCTAssertFalse(stage.contains("WebTheme.accent"), "切り出す写真の上に真鍮がある")
+        // 「捨てる」と言わない（保存せずに閉じる）
+        XCTAssertTrue(capture.contains("保存せずに閉じる"))
+    }
+
+    /// 要サーバーの部品は「近日」（図鑑）。サーバーの口は足していない（DB と費用は owner の承認が要る）
+    func testServerPartsShowComingSoon() throws {
+        let dex = try source("Features/Camp/CampDexView.swift")
+        XCTAssertTrue(dex.contains("L(\"近日\", \"Soon\")"))
+        let catalog = try source("Core/Camp/CampCatalog.swift")
+        XCTAssertFalse(catalog.contains("APIClient"))
+    }
+}
