@@ -15,6 +15,7 @@ struct PassSettingsView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.openURL) private var openURL
     /// Bluetooth の電源（切れていたら案内を出す・2026-10-16）
     @ObservedObject private var radio = PassRadio.shared
@@ -62,6 +63,15 @@ struct PassSettingsView: View {
         }
         .navigationDestination(isPresented: $showPick) { PassCardPickView() }
         .task(id: pass.settings.cardPhotoId) { await loadCard() }
+        // すれちがいの入切・乗車券の選び直し（この画面から開く `PassCardPickView` も含む）で、トランクに入れた
+        // 乗車券を揃える（本人が「トランクに入れる」をオンにしたときだけ置き、外れたら外す・`TrunkTicketSync`）
+        .onChange(of: pass.settings) { _, settings in
+            let userId = auth.userId, trunk = environment.trunk
+            Task {
+                let refusal = await TrunkTicketSync.shared.sync(userId: userId, settings: settings, service: trunk)
+                if let refusal { toasts.show(refusal, kind: .failure) }
+            }
+        }
         .task {
             if push.permission == .unknown { await push.refreshAuthorization() }
             let profile = try? await environment.profiles.myProfile()

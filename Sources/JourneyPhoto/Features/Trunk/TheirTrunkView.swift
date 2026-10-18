@@ -54,15 +54,20 @@ final class TheirTrunkModel: ObservableObject {
         isPreview = preview
     }
 
-    /// プロフィールに段を出すか（読めて、中身があるときだけ。読み込み中・失敗・404 は空の枠も出さない）
-    var showsOnProfile: Bool { phase == .loaded && trunk != nil }
+    /// プロフィールに段を出すか（読めて、中身があるときだけ。読み込み中・失敗・404・ブロックの関係では空の枠も出さない）
+    func showsOnProfile(blocked: Bool) -> Bool { !blocked && phase == .loaded && trunk != nil }
 
-    func load(userId: String, service: TrunkService, signedIn: Bool, offline: Bool) async {
+    /// - Parameter isSelf: 自分のプロフィールを人の画面で開いた。人の口は自分には見せない設定でも中身を返すので、
+    ///   **自分の設定（`GET /user/trunk` の `showTrunk`）がオフなら見せない**（人には出ていない段を出さない）
+    func load(userId: String, service: TrunkService, signedIn: Bool, offline: Bool, isSelf: Bool = false) async {
         if self.userId != userId {
             self.userId = userId
             trunk = nil
             phase = .idle
         }
+        // どの枝でも回を進める（前に始まった回の答えが、あとの「見せない」「見本」を上書きしない）
+        seq += 1
+        let mine = seq
         // 人の口はログインした人だけ
         guard signedIn else {
             trunk = nil
@@ -74,10 +79,17 @@ final class TheirTrunkModel: ObservableObject {
             phase = .loaded
             return
         }
-        seq += 1
-        let mine = seq
         if trunk == nil { phase = .loading }
         do {
+            if isSelf {
+                let own = try await service.state()
+                guard mine == seq, self.userId == userId else { return }
+                guard own.showTrunk else {
+                    trunk = nil
+                    phase = .hidden
+                    return
+                }
+            }
             let fresh = try await service.theirs(userId)
             guard mine == seq, self.userId == userId else { return }
             if let fresh {
@@ -188,7 +200,7 @@ struct TheirTrunkView: View {
 
     private func reload() async {
         await model.load(userId: userId, service: environment.trunk, signedIn: auth.userId != nil,
-                         offline: connectivity.isOffline)
+                         offline: connectivity.isOffline, isSelf: userId == auth.userId)
         if selectedId == nil, let trunk = model.trunk {
             selectedId = TheirTrunkText.defaultSelection(trunk, drawn: drawn(trunk).map(\.label))
         }
@@ -487,18 +499,20 @@ struct TrunkTheirTicketView: View {
     /// 表と裏（自分の乗車券の見本と同じ組み方・会ってから決まる欄は「—」）
     static func faces(_ ticket: TrunkTicket, theirs: TheirTrunkInside) -> (front: PassTicketFace, back: PassTicketBackFace) {
         let name = TheirTrunkText.owner(theirs.name)
-        let choice = ticket.originChoice
+        // 連絡先の形は券に出さない（`TheirTrunkText.ticketRoute`）
+        let route = TheirTrunkText.ticketRoute(ticket)
+        let choice = route.choice
         let prefecture = PassExchange.homePrefecture(theirs.homeLocation)
         let photo = theirs.ticketPhoto
         let front = PassTicketFace(photo: photo, kind: .plain, number: nil,
-                                   origin: PassTicket.previewOrigin(choice, text: ticket.origin, homePrefecture: prefecture),
-                                   destination: PassTicket.previewDestination(custom: !ticket.destination.isEmpty,
-                                                                              text: ticket.destination),
+                                   origin: PassTicket.previewOrigin(choice, text: route.origin, homePrefecture: prefecture),
+                                   destination: PassTicket.previewDestination(custom: !route.destination.isEmpty,
+                                                                              text: route.destination),
                                    name: name, distance: nil, date: nil,
                                    count: PassTicket.countLabel(.plain, meetingCount: nil),
                                    via: PassTicket.via(L("旅先", "their trip")),
                                    style: PassTicketFaceStyle.fromWire(ticket.face == 0 ? nil : UInt8(ticket.face)))
-        let back = PassTicketBackFace.preview(photoTitle: photo?.displayTitle, note: ticket.note, name: name,
+        let back = PassTicketBackFace.preview(photoTitle: photo?.displayTitle, note: route.note, name: name,
                                               origin: choice, homePrefecture: prefecture)
         return (front, back)
     }

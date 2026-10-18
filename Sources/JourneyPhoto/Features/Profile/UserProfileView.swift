@@ -125,7 +125,7 @@ struct UserProfileView: View {
 
     private func loadTrunk() async {
         await trunk.load(userId: userId, service: environment.trunk, signedIn: auth.userId != nil,
-                         offline: connectivity.isOffline)
+                         offline: connectivity.isOffline, isSelf: userId == auth.userId)
     }
 
     /// 前面確定後: 写しを当て、ブロック解除後の読み直しがあれば走らせる
@@ -210,7 +210,7 @@ struct UserProfileView: View {
     /// 読み込み中・失敗・ブロックの関係では、空の枠も灰色の空き地も置かない
     @ViewBuilder
     private var theirTrunk: some View {
-        if !isBlocked, trunk.showsOnProfile, let shown = trunk.trunk {
+        if trunk.showsOnProfile(blocked: isBlocked), let shown = trunk.trunk {
             NavigationLink {
                 TheirTrunkView(userId: userId, ownerName: model.shownName, handle: model.profile?.username,
                                homeLocation: model.profile?.homeLocation, profile: model.profile, photos: shownPhotos,

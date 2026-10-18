@@ -441,14 +441,8 @@ struct PassCardPickView: View {
             settings.setDestination(custom: destinationCustom, text: destinationText)
         }
         PassCoordinator.shared.refresh()
-        // 人のトランクの中に出す「わたしの乗車券」をサーバーにも置く（2026-10-18・`PUT /user/trunk/settings { ticket }`）。
-        // トランクの口がある人だけ・画面写真の見本では送らない。送れなかったら次に設定を開いたときに揃える
-        // （`TrunkPrivacyModel.load`）
-        if TrunkAvailability.shared.isAvailable, PreviewSession.trunkSample == nil,
-           let ticket = TrunkTicket.mine(pass.settings) {
-            let trunk = environment.trunk
-            Task { _ = try? await trunk.setTicket(ticket) }
-        }
+        // トランクに入れる乗車券（本人が選んだときだけ）は、すれちがいの画面が設定の変化を見て揃える
+        // （`PassSettingsView` の `TrunkTicketSync`）
         dismiss()
     }
 }

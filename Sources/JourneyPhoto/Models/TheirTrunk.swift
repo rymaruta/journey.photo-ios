@@ -68,15 +68,26 @@ struct TrunkTicket: Codable, Equatable, Hashable {
     /// サーバーの上限（コードポイントの数とバイト数）に**字の途中で切らずに**収める
     static func mine(_ settings: PassSettings) -> TrunkTicket? {
         guard let id = settings.cardPhotoId, PassExchange.isValidPhotoId(id) else { return nil }
-        let rawNote = PassExchange.cleanNote(settings.note)
-        let note = PassExchange.containsContact(rawNote) ? "" : rawNote
+        // ひとこと・発・着の3つとも、電波の中身（`PassStore.payload`）と同じく連絡先の形は載せない
+        func kept(_ text: String, clean: (String) -> String, chars: Int, bytes: Int) -> String {
+            fit(PassExchange.shareable(clean(text)), chars: chars, bytes: bytes)
+        }
         return TrunkTicket(photoId: id,
-                           note: fit(note, chars: noteChars, bytes: noteBytes),
-                           origin: fit(PassExchange.cleanLabel(settings.originLabel ?? ""), chars: labelChars, bytes: labelBytes),
-                           destination: fit(PassExchange.cleanLabel(settings.destinationLabel ?? ""),
-                                            chars: labelChars, bytes: labelBytes),
+                           note: kept(settings.note, clean: PassExchange.cleanNote, chars: noteChars, bytes: noteBytes),
+                           origin: kept(settings.originLabel ?? "", clean: PassExchange.cleanLabel,
+                                        chars: labelChars, bytes: labelBytes),
+                           destination: kept(settings.destinationLabel ?? "", clean: PassExchange.cleanLabel,
+                                             chars: labelChars, bytes: labelBytes),
                            face: Int(settings.faceStyle ?? 0),
                            showsFrom: settings.showsFrom)
+    }
+
+    /// トランクに入れる1枚。**本人が「わたしの乗車券もトランクに入れる」をオンにし、すれちがいがオンで、
+    /// 乗車券を選んであるときだけ**（電波の中身 `PassStore.payload` と同じ決まりに、本人の選びを重ねる）。
+    /// どれかが外れたら nil（サーバーの1枚を外す・`TrunkTicketSync`）
+    static func wanted(_ settings: PassSettings) -> TrunkTicket? {
+        guard settings.ticketInTrunk == true, settings.enabled else { return nil }
+        return mine(settings)
     }
 
     /// 字（書記素）の切れ目で、コードポイントの数とバイト数の両方に収める

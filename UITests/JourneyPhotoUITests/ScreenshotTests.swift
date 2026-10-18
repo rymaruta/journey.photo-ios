@@ -2517,6 +2517,36 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "101c-人のトランクの中")
         XCTAssertFalse(app.buttons["trunk.open.emptyPost"].firstMatch.exists, "人のトランクに「写真を投稿する」が出る")
         XCTAssertFalse(app.buttons["trunk.open.toggle"].firstMatch.exists, "人のトランクに開け閉めのボタンが出る")
+
+        // 会員証を手に取って回す（番号と始めた年月を出さない）
+        let go = app.buttons["trunk.hold.go"].firstMatch
+        let putBack = app.buttons["trunk.hold.putBack"].firstMatch
+        let card = app.buttons["trunk.inside.card"].firstMatch
+        guard card.waitForExistence(timeout: 5), card.isHittable else { return XCTFail("人のトランクの内ポケットに会員証が無い") }
+        card.tap()
+        guard go.waitForExistence(timeout: 10) else { return XCTFail("会員証を押しても持ち上がらない") }
+        go.tap()
+        let viewerClose = app.buttons["supporter.viewer.close"].firstMatch
+        guard viewerClose.waitForExistence(timeout: 10) else { return XCTFail("会員証を回す画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "101e-人の会員証を回す（番号なし）")
+        XCTAssertFalse(app.staticTexts["supporter.viewer.number"].firstMatch.exists, "人の会員証を回す画面に番号が出る")
+        let numbered = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "No.")).firstMatch
+        XCTAssertFalse(numbered.exists, "人の会員証を回す画面に番号が出る")
+        viewerClose.tap()
+
+        // わたしの乗車券を手に取って回す
+        let tickets = app.buttons["trunk.inside.tickets"].firstMatch
+        guard tickets.waitForExistence(timeout: 10), tickets.isHittable else { return XCTFail("人のトランクに乗車券が無い") }
+        tickets.tap()
+        guard go.waitForExistence(timeout: 10) else { return XCTFail("乗車券を押しても持ち上がらない") }
+        XCTAssertGreaterThanOrEqual(putBack.frame.height, 44, "「トランクに戻す」が 44pt 未満")
+        go.tap()
+        guard app.descendants(matching: .any)["trunk.their.ticket"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("乗車券を回す画面が開かない")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "101f-人の乗車券を回す")
     }
 }
 

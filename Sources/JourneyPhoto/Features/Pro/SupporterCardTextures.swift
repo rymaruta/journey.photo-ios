@@ -56,10 +56,14 @@ struct SupporterCardFace: Equatable {
     /// 番号を刷るか（2026-10-18: 人のトランクの会員証は名前とサポーター証の絵だけ。番号と始めた年月は出さない）
     var showsNumber = true
 
+    /// 番号の行（「No. 0001」）。刷らない札（人のトランクの会員証）は nil——表の絵・回す画面の行・読み上げの
+    /// どれもここを通す（画面ごとに出し分けを割らない）
+    var numberLine: String? { showsNumber ? SupporterText.numberLabel(number) : nil }
+
     /// 読み上げ（「サポーター証 No. 0001、丸田、@maruta、MEMBER SINCE 2026.10」）
     var accessibilityLabel: String {
         var parts = [L("サポーター証", "Supporter card")]
-        if showsNumber { parts.append(SupporterText.numberLabel(number)) }
+        if let numberLine { parts.append(numberLine) }
         if !name.isEmpty { parts.append(name) }
         if let handle { parts.append("@\(handle)") }
         if let since { parts.append("MEMBER SINCE \(since)") }
@@ -135,13 +139,13 @@ enum SupporterCardTextures {
             }
 
             // 番号（右寄せ）。刷らない札（人のトランクの会員証）はここまで
-            guard face.showsNumber else { return }
+            guard let numberLine = face.numberLine else { return }
             let numberAttributes: [NSAttributedString.Key: Any] = [
                 .font: display(SupporterCardLayout.numberFont * k),
                 .foregroundColor: color(SupporterCardLayout.numberRGB),
                 .kern: 0.06 * SupporterCardLayout.numberFont * k,
             ]
-            let number = SupporterText.numberLabel(face.number) as NSString
+            let number = numberLine as NSString
             let numberSize = number.size(withAttributes: numberAttributes)
             number.draw(at: CGPoint(x: SupporterCardLayout.numberRight * k - Double(numberSize.width),
                                     y: SupporterCardLayout.numberCenterY * k - Double(numberSize.height) / 2),

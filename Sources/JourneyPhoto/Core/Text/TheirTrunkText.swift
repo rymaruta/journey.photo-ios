@@ -113,6 +113,16 @@ enum TheirTrunkText {
         Frame(x: p.x - 5, y: p.y + TrunkLooks.bodyTop - 5, w: p.w + 10, h: p.h + 10, rot: p.rot)
     }
 
+    /// ほかの人から見た形の見本（設定の「ほかの人から見たあなたのプロフィール」）。どのラベルの地名が人に見えるかは
+    /// サーバーの確かめの印で決まり iOS では分からないので、**地名も日付・季節・時刻・節目も落とした人の口の形**で描く
+    /// （伏せたラベルと同じ `{ kind, seed, foil, pos }` だけ）
+    static func asSeenByOthers(_ labels: [TrunkLabel]) -> [TrunkLabel] {
+        labels.map {
+            TrunkLabel(id: $0.id, photoId: $0.id, kind: $0.kind, place: .init(name: "", latin: nil, country: nil),
+                       seed: $0.seed, at: "", foil: $0.foil, pos: $0.pos)
+        }
+    }
+
     // MARK: プロフィールの段（板 ProfileTrunk）
 
     static var cardEyebrow: String { L("旅のトランク", "Travel trunk") }
@@ -148,6 +158,22 @@ enum TheirTrunkText {
                                        " shows only the name and the card art \u{2014} never the number or start date.")),
          (L("乗車券", "Ticket"), L("はこの人の「わたしの乗車券」1枚だけ。受け取った乗車券は、すれちがった相手の写真と名前が入るので出しません。",
                                   " is only this person\u{2019}s own ticket. Tickets they received carry other people\u{2019}s photos and names, so they stay private."))]
+    }
+
+    /// 人の乗車券に刷る字（区間の発・着とひとこと）。**サーバーから来た字でも連絡先の形は券に出さない**
+    /// （送る側と同じ `PassExchange.shareable`）。発に書いた字が落ちたら、居住地か「どこか」に戻す
+    struct TicketRoute: Equatable {
+        let choice: PassSettings.Origin
+        let origin: String
+        let destination: String
+        let note: String
+    }
+
+    static func ticketRoute(_ ticket: TrunkTicket) -> TicketRoute {
+        let origin = PassExchange.shareable(ticket.origin)
+        let choice: PassSettings.Origin = !origin.isEmpty ? .custom : (ticket.showsFrom ? .home : .hidden)
+        return TicketRoute(choice: choice, origin: origin, destination: PassExchange.shareable(ticket.destination),
+                           note: PassExchange.shareable(ticket.note))
     }
 
     /// 乗車券の写真。人の公開写真の一覧から引く（無ければ nil）。画面写真の見本だけ、一覧の先頭を使う

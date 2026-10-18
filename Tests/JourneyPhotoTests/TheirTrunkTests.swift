@@ -154,17 +154,18 @@ final class TheirTrunkTests: XCTestCase {
         StubProtocol.respond(status: 404, body: #"{"error":"x","code":"notFound"}"#)
         await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
         XCTAssertEqual(model.phase, .hidden)
-        XCTAssertFalse(model.showsOnProfile, "404 は段ごと出さない")
+        XCTAssertFalse(model.showsOnProfile(blocked: false), "404 は段ごと出さない")
 
         StubProtocol.respond(status: 200, body: Self.full)
         await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
         XCTAssertEqual(model.phase, .loaded)
-        XCTAssertTrue(model.showsOnProfile)
+        XCTAssertTrue(model.showsOnProfile(blocked: false))
+        XCTAssertFalse(model.showsOnProfile(blocked: true), "ブロックの関係でも段を出す")
 
         // 読み直しの失敗では、読めた中身を消さない
         StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
         await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
-        XCTAssertTrue(model.showsOnProfile)
+        XCTAssertTrue(model.showsOnProfile(blocked: false))
 
         // 人が替わったら前の人の中身を出さない。初回の失敗は「失敗」
         await model.load(userId: "u-2", service: service(), signedIn: true, offline: false)
@@ -321,12 +322,25 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertEqual(mine.actionTitle(.tickets), L("すれちがい帳を開く", "Open the pass book"))
     }
 
-    /// 会員証の表は番号を刷らず、読み上げにも番号を出さない
-    func testTheirCardHasNoNumber() {
+    /// 会員証は番号を刷らない: 表の絵・回す画面の番号の行・読み上げが同じ `numberLine` を通る
+    /// （見直し 1: 回す画面 `SupporterCardViewer` が showsNumber を見ずに「No. 0000」を出していた）
+    func testTheirCardHasNoNumber() throws {
         let face = SupporterCardFace(name: "丸田", handle: "maruta", number: 0, since: nil, showsNumber: false)
+        XCTAssertNil(face.numberLine, "番号の行を出す")
         XCTAssertFalse(face.accessibilityLabel.contains("No."))
+        let theirs = TheirTrunkInside(userId: "u-1", name: "丸田", handle: "maruta", homeLocation: nil,
+                                      trunk: try decode(TheirTrunk.self, Self.full), profile: nil, photos: [])
+        XCTAssertNil(theirs.cardFace.numberLine, "人の会員証に番号が出る")
+        XCTAssertNil(theirs.cardFace.since)
         let mine = SupporterCardFace(name: "丸田", handle: nil, number: 7, since: nil)
+        XCTAssertEqual(mine.numberLine, SupporterText.numberLabel(7))
         XCTAssertTrue(mine.accessibilityLabel.contains(SupporterText.numberLabel(7)))
+        // 回す画面と表の絵は番号を `numberLine` からしか取らない（ほかに番号を書く道が無い）
+        for path in ["Features/Pro/SupporterCardView.swift", "Features/Pro/SupporterCardTextures.swift"] {
+            let text = try source(path)
+            let viewer = path.hasSuffix("View.swift") ? text.components(separatedBy: "struct SupporterCardViewer")[1] : text
+            XCTAssertFalse(viewer.contains("numberLabel(face.number)"), "\(path) が showsNumber を見ずに番号を書く")
+        }
     }
 
     // MARK: 見せる設定・乗車券の送り方
@@ -402,6 +416,203 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertNil(TrunkTicket.mine(settings))
     }
 
+    // MARK: 見直し（2026-10-18）
+
+    /// 見直し 2: 発・着・ひとことの3つとも、連絡先の形は送らない（電波の中身と同じ判定を共有）
+    func testContactsNeverLeaveInTicket() {
+        let contact = "www.ab"
+        XCTAssertTrue(PassExchange.containsContact(contact), "前提: 連絡先の形")
+        var settings = PassSettings()
+        settings.cardPhotoId = "p-1"
+        settings.originLabel = contact
+        settings.destinationLabel = contact
+        settings.note = "連絡は www.example.jp"
+        let ticket = TrunkTicket.mine(settings)
+        XCTAssertEqual(ticket?.origin, "", "発に連絡先を載せた")
+        XCTAssertEqual(ticket?.destination, "", "着に連絡先を載せた")
+        XCTAssertEqual(ticket?.note, "")
+        XCTAssertEqual(ticket?.originChoice, .home, "発が落ちたら居住地に戻す")
+        // 電波の中身も同じ判定（同じ関数を通る）
+        XCTAssertEqual(PassExchange.shareable(contact), "")
+        XCTAssertEqual(PassExchange.shareable("海"), "海")
+    }
+
+    /// 見直し 2: サーバーから来た字でも、連絡先の形は券に刷らない
+    func testTheirTicketRouteDropsContacts() {
+        let route = TheirTrunkText.ticketRoute(TrunkTicket(photoId: "p-1", note: "www.example.jp まで", origin: "www.ab",
+                                                           destination: "www.cd", face: 0, showsFrom: false))
+        XCTAssertEqual(route, TheirTrunkText.TicketRoute(choice: .hidden, origin: "", destination: "", note: ""))
+        let plain = TheirTrunkText.ticketRoute(TrunkTicket(photoId: "p-1", note: "霧", origin: "東京", destination: "海"))
+        XCTAssertEqual(plain, TheirTrunkText.TicketRoute(choice: .custom, origin: "東京", destination: "海", note: "霧"))
+    }
+
+    /// 見直し 3: トランクに入れるのは、本人がオンにし（既定はオフ）、すれちがいがオンで、乗車券を選んであるときだけ
+    func testTicketIsOptIn() throws {
+        var settings = PassSettings()
+        settings.cardPhotoId = "p-1"
+        settings.enabled = true
+        XCTAssertNil(settings.ticketInTrunk, "既定はオフ")
+        XCTAssertNil(TrunkTicket.wanted(settings), "選んでいないのに送る")
+        settings.ticketInTrunk = true
+        XCTAssertEqual(TrunkTicket.wanted(settings)?.photoId, "p-1")
+        settings.enabled = false
+        XCTAssertNil(TrunkTicket.wanted(settings), "すれちがいがオフでも送る")
+        settings.enabled = true
+        settings.cardPhotoId = nil
+        XCTAssertNil(TrunkTicket.wanted(settings))
+        // 前の版の設定（項目が無い）も読める・オフのまま
+        let old = try JSONDecoder().decode(PassSettings.self, from: Data(#"{"enabled":true,"mode":"traveling","cardPhotoId":"p-1","note":"","showsFrom":true}"#.utf8))
+        XCTAssertNil(TrunkTicket.wanted(old))
+        XCTAssertTrue(TrunkPrivacyText.seenNote.contains(L("わたしの乗車券もトランクに入れる", "Put my ticket in the trunk too")),
+                      "見本の説明に、乗車券は切り替えをオンにしたときだけと書いていない")
+    }
+
+    func testSyncActionTable() {
+        let a = TrunkTicket(photoId: "a"), b = TrunkTicket(photoId: "b")
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: a, server: a, refused: nil), .none)
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: nil, server: nil, refused: nil), .none)
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: nil, server: a, refused: nil), .remove, "外れたのにサーバーに残す")
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: a, server: nil, refused: nil), .put(a))
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: a, server: b, refused: a), .none, "断られた中身を送り直す")
+        XCTAssertEqual(TrunkTicketSyncRule.action(wanted: b, server: nil, refused: a), .put(b))
+    }
+
+    private func optedIn() -> PassSettings {
+        var settings = PassSettings()
+        settings.cardPhotoId = "p-1"
+        settings.enabled = true
+        settings.ticketInTrunk = true
+        return settings
+    }
+
+    /// 見直し 3・6: 断られたら一言を返し、同じ中身では二度と送らない。外れたら null で外す
+    @MainActor
+    func testSyncRemembersRefusalAndRemoves() async {
+        let defaults = UserDefaults(suiteName: "TheirTrunkTests.\(UUID().uuidString)")!
+        let sync = TrunkTicketSync(defaults: defaults)
+        StubProtocol.respond(status: 409, body: #"{"error":"公開している自分の写真を選んでください","code":"ticketNotPublic"}"#)
+        let first = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
+        XCTAssertNotNil(first, "断りを本人に知らせない")
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+        let again = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
+        XCTAssertNil(again)
+        XCTAssertEqual(StubProtocol.requestCount, 1, "断られた中身で毎回送り直す")
+
+        // 置けた1枚を覚え、切り替えを外したら null で外す
+        StubProtocol.respond(status: 200, body: #"{"pocket":[],"stuck":[],"ticket":{"photoId":"p-2"}}"#)
+        var other = optedIn()
+        other.cardPhotoId = "p-2"
+        _ = await sync.sync(userId: "me", settings: other, service: service(), available: true, preview: false)
+        XCTAssertEqual(sync.known("me")?.photoId, "p-2")
+        XCTAssertNil(sync.refused("me"), "置けたのに断りを覚えたまま")
+        StubProtocol.respond(status: 200, body: #"{"pocket":[],"stuck":[]}"#)
+        other.ticketInTrunk = nil
+        _ = await sync.sync(userId: "me", settings: other, service: service(), available: true, preview: false)
+        XCTAssertTrue(json(StubProtocol.lastBody)?["ticket"] is NSNull, "外したのにサーバーに残す")
+        XCTAssertNil(sync.known("me"))
+        // 揃っていれば送らない・口が無い人・見本は何もしない
+        let count = StubProtocol.requestCount
+        _ = await sync.sync(userId: "me", settings: other, service: service(), available: true, preview: false)
+        _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: false, preview: false)
+        _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: true)
+        XCTAssertEqual(StubProtocol.requestCount, count)
+        TrunkTicketSyncRule.removeData(for: "me", defaults: defaults)
+        XCTAssertNil(sync.known("me"))
+    }
+
+    /// 見直し 5: 入っている人が替わったら前の人の設定・数を消す
+    @MainActor
+    func testPrivacyModelResetsOnAccountChange() async {
+        let model = TrunkPrivacyModel(preview: .sample)
+        await model.load(userId: "a", service: service(), pass: PassSettings())
+        XCTAssertNotNil(model.state)
+        model.reset(for: "b")
+        XCTAssertNil(model.state, "前の人の設定が残る")
+        XCTAssertNil(model.followers)
+        model.reset(for: nil)
+        XCTAssertNil(model.state)
+    }
+
+    /// 見直し 3: 設定を開いたときの揃えも、断られたら一言を出し、開き直しても送り直さない
+    @MainActor
+    func testPrivacyModelShowsRefusalOnce() async {
+        let defaults = UserDefaults(suiteName: "TheirTrunkTests.\(UUID().uuidString)")!
+        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults))
+        StubProtocol.respond(path: "/user/trunk/settings", status: 409,
+                             body: #"{"error":"公開している自分の写真を選んでください","code":"ticketNotPublic"}"#)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[]}"#)
+        await model.load(userId: "me", service: service(), pass: optedIn())
+        XCTAssertNotNil(model.ticketError)
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("PUT") }.count, 1)
+        await model.load(userId: "me", service: service(), pass: optedIn())
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("PUT") }.count, 1, "開くたびに同じ中身を送る")
+        // 切り替えがオフなら、今まで置いていない人には何も送らない
+        let quiet = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults))
+        var off = optedIn()
+        off.ticketInTrunk = nil
+        await quiet.load(userId: "me", service: service(), pass: off)
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("PUT") }.count, 1, "選んでいないのに送る")
+    }
+
+    /// 見直し 9: 「ログインしていない」「見本」の枝でも回を進める（前に始まった回が後の答えを上書きしない）
+    @MainActor
+    func testLaterHiddenWinsOverEarlierLoad() async {
+        let gate = Gate(holds: 1)
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: StubTokenProvider(token: "t"),
+                            session: session, beforeRequest: { _ in await gate.wait() })
+        let slow = TrunkService(api: api)
+        StubProtocol.respond(status: 200, body: Self.full)
+        let model = TheirTrunkModel(preview: false)
+        let first = Task { await model.load(userId: "u-1", service: slow, signedIn: true, offline: false) }
+        await gate.untilWaiting(1)
+        await model.load(userId: "u-1", service: slow, signedIn: false, offline: false)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(model.phase, .hidden, "ログアウトのあとに前の回の中身が出る")
+        XCTAssertNil(model.trunk)
+    }
+
+    /// 見直し 10: 自分のページを人の画面で開いたとき、見せる設定がオフなら段を出さない
+    @MainActor
+    func testOwnProfileFollowsShowTrunk() async {
+        StubProtocol.respond(path: "/users/me/trunk", status: 200, body: Self.full)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":false}"#)
+        let model = TheirTrunkModel(preview: false)
+        await model.load(userId: "me", service: service(), signedIn: true, offline: false, isSelf: true)
+        XCTAssertEqual(model.phase, .hidden)
+        XCTAssertFalse(model.showsOnProfile(blocked: false), "人に出ていない段を自分のページに出す")
+        XCTAssertFalse(StubProtocol.requests.contains("GET /users/me/trunk"), "見せない設定なのに人の口を読む")
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/me/trunk", status: 200, body: Self.full)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
+        await model.load(userId: "me", service: service(), signedIn: true, offline: false, isSelf: true)
+        XCTAssertTrue(model.showsOnProfile(blocked: false))
+    }
+
+    /// 見直し 8: 見本の札はほかの人から見た形（地名・日付・季節・時刻・節目を落とし、絵の種と置き場は残す）
+    func testPreviewIsAsSeenByOthers() {
+        let seen = TheirTrunkText.asSeenByOthers(TrunkSample.stuck)
+        XCTAssertEqual(seen.map(\.id), TrunkSample.stuck.map(\.id))
+        XCTAssertEqual(seen.map(\.seed), TrunkSample.stuck.map(\.seed))
+        XCTAssertTrue(seen.allSatisfy { $0.place.name.isEmpty && $0.season == nil && $0.timeslot == nil && $0.milestone == nil })
+        XCTAssertTrue(seen.allSatisfy(TrunkLabelDesign.isSealed), "人から見た形と違う絵になる")
+        XCTAssertTrue(TrunkPrivacyText.seenNote.contains(L("地名は、公開の写真と同じ撮影地のときだけ出ます", "Place names appear only")))
+    }
+
+    /// 見直し 4: 撮影地も値も無いラベルは、自分の画面でも封の図案（画面ごとに見た目を割らない）。
+    /// 自分の口のラベルと、人の口から来た同じラベルは同じ絵
+    func testOwnLabelWithoutPlaceUsesTheSealedDesignToo() throws {
+        let own = TrunkLabel(id: "abc-123", photoId: "abc-123", kind: .place, place: .init(name: "", latin: nil, country: nil),
+                             seed: 4_242, at: "2025-09-01T10:00:00Z")
+        XCTAssertTrue(TrunkLabelDesign.isSealed(own))
+        let theirs = try decode(TheirTrunk.self, #"{"stuck":[{"id":"s0","kind":"place","seed":4242,"place":{"name":""},"where":null}]}"#)
+        XCTAssertEqual(TrunkLabelDesign.spec(for: own), TrunkLabelDesign.spec(for: theirs.stuck[0]), "自分の画面と人の画面で絵が割れる")
+        XCTAssertEqual(TrunkLabelDesign.spec(for: own).art, .postmark)
+        // 地名の無い節目（10 枚目）は値があるので節目の絵のまま
+        let ten = try XCTUnwrap(TrunkSample.pocket.first { $0.id == "p-ten" })
+        XCTAssertFalse(TrunkLabelDesign.isSealed(ten))
+    }
+
     // MARK: 画面のつなぎ（Linux で描けないので書き方で見る）
 
     private var root: URL {
@@ -414,8 +625,8 @@ final class TheirTrunkTests: XCTestCase {
 
     func testWiring() throws {
         let profile = try source("Features/Profile/UserProfileView.swift")
-        XCTAssertTrue(profile.contains("if !isBlocked, trunk.showsOnProfile, let shown = trunk.trunk {"),
-                      "404・読み込み中・ブロックでも段を出す")
+        XCTAssertTrue(profile.contains("if trunk.showsOnProfile(blocked: isBlocked), let shown = trunk.trunk {"),
+                      "段の出し分けを通していない（決まりは testModelPhases が値で見る）")
         XCTAssertTrue(profile.contains(#".accessibilityIdentifier("profile.trunk")"#))
         let view = try source("Features/Trunk/TheirTrunkView.swift")
         for id in ["trunk.their.loading", "trunk.their.failed", "trunk.their.offline", "trunk.their.hidden"] {
@@ -432,8 +643,12 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertTrue(open.contains("SupporterCardViewer(face: theirs.cardFace)"))
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("TrunkShowRow(model: trunkPrivacy, service: environment.trunk)"))
+        XCTAssertTrue(settings.contains("trunkPrivacy.reset(for: auth.userId)"), "人が替わっても前の設定が残る")
+        // 乗車券は本人の操作なしに送らない: 送るのは揃えの1か所だけ
         let pick = try source("Features/Pass/PassCardPickView.swift")
-        XCTAssertTrue(pick.contains("Task { _ = try? await trunk.setTicket(ticket) }"), "わたしの乗車券をサーバーに置かない")
+        XCTAssertFalse(pick.contains("setTicket("), "選び直しだけで乗車券をトランクに置く")
+        let passSettings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(passSettings.contains("TrunkTicketSync.shared.sync(userId: userId, settings: settings, service: trunk)"))
         // 入れ物の目印は子のボタンの目印を上書きしない（`TrunkWiringTests` と同じ決まり）
         let lines = (view + open).components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         for id in ["trunk.their.loading", "trunk.their.failed", "trunk.their.offline", "trunk.their.hidden",
@@ -452,7 +667,8 @@ final class TheirTrunkTests: XCTestCase {
         let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
                                encoding: .utf8)
         for name in ["101-人のプロフィールのトランク", "101a-人のトランク", "101b-人のトランク（地名の無いラベル）",
-                     "101c-人のトランクの中", "101d-人のトランクを回した"] {
+                     "101c-人のトランクの中", "101d-人のトランクを回した", "101e-人の会員証を回す（番号なし）",
+                     "101f-人の乗車券を回す"] {
             XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
         }
     }

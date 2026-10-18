@@ -49,10 +49,12 @@ struct SettingsView: View {
             .task(id: auth.profileRevision) { await loadMyProfile() }
             // トランクの見せる設定と、わたしの乗車券の揃え（入っている人が替わったら読み直す）
             .task(id: auth.userId) {
-                guard auth.userId != nil else { return }
-                await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
+                // 入っている人が替わったら、前の人の設定・見本の札を消してから読む
+                trunkPrivacy.reset(for: auth.userId)
+                guard let userId = auth.userId else { return }
+                await trunkAvailability.refresh(userId: userId, service: environment.trunk)
                 guard trunkAvailability.isAvailable else { return }
-                await trunkPrivacy.load(service: environment.trunk, pass: pass.settings)
+                await trunkPrivacy.load(userId: userId, service: environment.trunk, pass: pass.settings)
             }
             .task {
                 await push.refreshAuthorization()

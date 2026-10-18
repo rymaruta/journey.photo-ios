@@ -143,11 +143,11 @@ final class PassStore: ObservableObject {
     /// 電波に載せる中身。**オンで、乗車券を選んであるときだけ**
     var payload: PassExchange.Payload? {
         guard userId != nil, settings.enabled, let photoId = settings.cardPhotoId else { return nil }
-        // 連絡先の形の字は載せない（前の版で書いて残っている字も・2026-10-16 owner の決定）
-        func allowed(_ text: String) -> String { PassExchange.containsContact(text) ? "" : text }
-        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: allowed(settings.note),
-                                    origin: allowed(settings.originLabel ?? ""),
-                                    destination: allowed(settings.destinationLabel ?? ""),
+        // 連絡先の形の字は載せない（前の版で書いて残っている字も・2026-10-16 owner の決定・`PassExchange.shareable`）
+        return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom,
+                                    note: PassExchange.shareable(settings.note),
+                                    origin: PassExchange.shareable(settings.originLabel ?? ""),
+                                    destination: PassExchange.shareable(settings.destinationLabel ?? ""),
                                     face: settings.faceStyle ?? PassTicketFaceStyle.mars.rawValue)
     }
 

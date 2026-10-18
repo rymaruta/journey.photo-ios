@@ -98,6 +98,10 @@ struct PassSettings: Codable, Equatable {
     /// 選んだ券面の電波の番号（2026-10-17・nil はマルス券）。**Pro をやめても残す**（自分の見本はマルス券に戻し、
     /// また Pro になれば選んだ券面に戻る・`PassTicketFaceStyle.own`）
     var faceStyle: UInt8? = nil
+    /// わたしの乗車券を旅のトランクにも入れるか（2026-10-18・人のトランク）。**既定はオフ（nil）**——今まで乗車券は
+    /// 近くの人に電波で渡るだけだったので、広く見える所へ黙って出さない。オンでも、すれちがいがオンで乗車券を
+    /// 選んであるときだけ入る（`TrunkTicket.wanted`）。前の版の設定には無いので省略できる形
+    var ticketInTrunk: Bool? = nil
 
     /// 「発」の選び方
     enum Origin: String, CaseIterable, Identifiable {

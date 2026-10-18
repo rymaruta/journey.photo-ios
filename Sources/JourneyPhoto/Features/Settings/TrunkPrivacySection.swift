@@ -4,8 +4,10 @@ import SwiftUI
 ///
 /// - 切り替えは `PUT /user/trunk/settings { showTrunk }`（オフの間は人の口が 404）。**送れたら応答の値を映し、
 ///   断られた・圏外なら元に戻して一行で知らせる**（嘘の状態を残さない）
-/// - わたしの乗車券（端末の中のすれちがいの設定）を、サーバーに置いた1枚と揃える（人のトランクの中に出る1枚）。
-///   揃っていれば送らない
+/// - 「わたしの乗車券もトランクに入れる」（**既定はオフ**・端末の中のすれちがいの設定 `ticketInTrunk`）。
+///   オンで、すれちがいがオンで、乗車券を選んであるときだけサーバーに置き、外れたら外す（`TrunkTicketSync`）。
+///   断られた中身は覚えて送り直さず、一行で知らせる
+/// - 入っている人が替わったら、前の人の設定・見本の札を消す
 /// - 画面写真の見本（`-JPPreviewTrunk`）では、サーバーに何も送らず端末の中だけで切り替える
 @MainActor
 final class TrunkPrivacyModel: ObservableObject {
@@ -13,37 +15,65 @@ final class TrunkPrivacyModel: ObservableObject {
     @Published private(set) var state: TrunkState?
     @Published private(set) var busy = false
     @Published private(set) var error: String?
-    /// ほかの人から見た姿の見本の数（読めなければ nil・行ごと出さない）
+    /// 乗車券を置けなかった訳（断られた中身を覚えている間）
+    @Published private(set) var ticketError: String?
+    /// ほかの人から見た姿の見本のフォロワー数（読めなければ nil・数の行ごと出さない）。
+    /// **写真の数のためだけに一覧を丸ごと取らない**（2026-10-18 見直し）ので、写真の数は出さない
     @Published private(set) var followers: Int?
-    @Published private(set) var photos: Int?
 
     private let preview: PreviewSession.TrunkPreview?
+    private let sync: TrunkTicketSync
+    private var userId: String?
 
-    init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample) {
+    init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample, sync: TrunkTicketSync? = nil) {
         self.preview = preview
+        self.sync = sync ?? .shared
     }
 
     var showTrunk: Bool { state?.showTrunk ?? true }
 
-    func load(service: TrunkService, pass: PassSettings) async {
+    /// 入っている人に合わせる。替わったら（ログアウトも）前の人の中身を消す
+    func reset(for userId: String?) {
+        guard self.userId != userId else { return }
+        self.userId = userId
+        state = nil
+        error = nil
+        ticketError = nil
+        followers = nil
+    }
+
+    func load(userId: String, service: TrunkService, pass: PassSettings, available: Bool = true) async {
+        reset(for: userId)
         if let preview {
             if state == nil { state = TrunkSample.state(isPro: PreviewSession.isPro, empty: preview == .empty) }
             return
         }
-        guard let fresh = try? await service.state() else { return }
+        guard let fresh = try? await service.state(), self.userId == userId else { return }
         state = fresh
-        // わたしの乗車券を揃える（端末で選んだ1枚があって、サーバーの1枚と違うときだけ）
-        guard let mine = TrunkTicket.mine(pass), fresh.ticket != mine else { return }
-        let synced = try? await service.setTicket(mine)
-        if let synced { state = synced.keepingPosts(from: fresh) }
+        sync.note(server: fresh.ticket, userId: userId)
+        await syncTicket(userId: userId, pass: pass, service: service, available: available)
     }
 
-    /// 見本の数（フォロワー・写真）。読めなければ出さない
+    /// 乗車券を揃える（置く条件のときだけ置き、外れたら外す。同じ中身・断られた中身は送らない）
+    func syncTicket(userId: String, pass: PassSettings, service: TrunkService, available: Bool = true) async {
+        let refusal = await sync.sync(userId: userId, settings: pass, service: service, available: available,
+                                      preview: preview != nil)
+        guard self.userId == userId else { return }
+        let wanted = TrunkTicket.wanted(pass)
+        if let refusal {
+            ticketError = refusal
+        } else if wanted == nil || wanted != sync.refused(userId) {
+            // 断られた中身から変わった（外した・選び直した）ら、訳を下ろす。同じ中身の間は出したまま
+            ticketError = nil
+        }
+        if let current = state { state = current.copy(ticket: .some(sync.known(userId))) }
+    }
+
+    /// 見本のフォロワー数。読めなければ出さない
     func loadCounts(userId: String, environment: AppEnvironment) async {
         let stats = try? await environment.social.followStats(userId: userId)
+        guard self.userId == nil || self.userId == userId else { return }
         if let stats { followers = stats.followers }
-        let all = try? await environment.gallery.fetchPhotos()
-        if let all { photos = all.filter { ($0.userId ?? $0.uploadedBy) == userId }.count }
     }
 
     func setShowTrunk(_ on: Bool, service: TrunkService) async {
@@ -63,10 +93,13 @@ final class TrunkPrivacyModel: ObservableObject {
     }
 }
 
-/// 「トランクを見せる」の行（プライバシーの札の中）
+/// 「トランクを見せる」と「わたしの乗車券もトランクに入れる」の行（プライバシーの札の中）
 struct TrunkShowRow: View {
     @ObservedObject var model: TrunkPrivacyModel
     let service: TrunkService
+
+    @EnvironmentObject private var pass: PassStore
+    @EnvironmentObject private var auth: AuthStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,15 +110,55 @@ struct TrunkShowRow: View {
                                       set: { on in Task { await model.setShowTrunk(on, service: service) } }))
                 .disabled(model.busy)
                 .accessibilityIdentifier("settings.showTrunk")
-            if let error = model.error {
-                Text(error)
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.danger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
-            }
+            if let error = model.error { note(error, color: WebTheme.danger) }
+            JPCardDivider()
+            JPToggleRow(title: L("わたしの乗車券もトランクに入れる", "Put my ticket in the trunk too"),
+                        detail: TrunkPrivacyText.ticketDetail(pass.settings),
+                        isOn: Binding(get: { pass.settings.ticketInTrunk == true },
+                                      set: { on in setTicketInTrunk(on) }))
+                .disabled(!model.showTrunk)
+                .accessibilityIdentifier("settings.ticketInTrunk")
+            if let error = model.ticketError { note(error, color: WebTheme.danger) }
         }
+    }
+
+    private func setTicketInTrunk(_ on: Bool) {
+        pass.update { $0.ticketInTrunk = on ? true : nil }
+        guard let userId = auth.userId else { return }
+        let settings = pass.settings
+        Task { await model.syncTicket(userId: userId, pass: settings, service: service) }
+    }
+
+    private func note(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(JPFont.caption)
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+    }
+}
+
+/// 設定の文言（`SwiftUI` を読まない部分・テストで見る）
+enum TrunkPrivacyText {
+    /// 乗車券の切り替えの説明。入らない訳（すれちがいがオフ・乗車券を選んでいない）があればそれを言う
+    static func ticketDetail(_ settings: PassSettings) -> String {
+        let base = L("オンにすると、すれちがいのわたしの乗車券1枚がトランクの中に入り、ほかの人も見られます。",
+                     "When on, your pass ticket goes inside your trunk where others can see it.")
+        guard settings.ticketInTrunk == true else { return base }
+        if !settings.enabled {
+            return base + L("いまはすれちがいがオフなので入りません。", " Pass is off, so it isn\u{2019}t in the trunk now.")
+        }
+        if settings.cardPhotoId == nil {
+            return base + L("乗車券を選ぶと入ります。", " Choose a ticket to put it in.")
+        }
+        return base
+    }
+
+    /// ほかの人から見た姿の見本に添える一言
+    static var seenNote: String {
+        L("地名は、公開の写真と同じ撮影地のときだけ出ます。乗車券は「わたしの乗車券もトランクに入れる」をオンにしたときだけ入ります。",
+          "Place names appear only when they match a public photo\u{2019}s location. Your ticket goes in only when \u{201C}Put my ticket in the trunk too\u{201D} is on.")
     }
 }
 
@@ -156,9 +229,8 @@ struct TrunkPrivacyPreview: View {
                         .font(JPFont.display(17, relativeTo: .headline))
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
-                    if let followers = model.followers, let photos = model.photos {
-                        Text(L("\(followers) フォロワー · \(photos) 写真",
-                               "\(followers) \(followers == 1 ? "follower" : "followers") · \(photos) \(photos == 1 ? "photo" : "photos")"))
+                    if let followers = model.followers {
+                        Text(L("\(followers) フォロワー", followers == 1 ? "1 follower" : "\(followers) followers"))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(WebTheme.text3)
                     }
@@ -167,7 +239,9 @@ struct TrunkPrivacyPreview: View {
             if model.showTrunk, let state = model.state {
                 HStack(spacing: 10) {
                     // 板: 360×300 を 0.233 倍（84×70）
-                    TrunkFigure(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
+                    // ほかの人から見た形: どのラベルの地名が出るかは iOS では分からないので、地名を出さない形で描く
+                    TrunkFigure(model: state.effectiveModel, posts: state.posts ?? 0,
+                                stuck: TheirTrunkText.asSeenByOthers(state.stuck),
                                 ownerName: profile?.name, parts: state.equipped, width: 84)
                         .frame(width: 84, height: 70, alignment: .topLeading)
                     VStack(alignment: .leading, spacing: 3) {
@@ -184,6 +258,11 @@ struct TrunkPrivacyPreview: View {
                 .padding(8)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                Text(TrunkPrivacyText.seenNote)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(L("トランクの札は出ません。閉じたトランクも置きません（ラベルの土地が、行った場所の記録になるため）。",
                        "No trunk appears \u{2014} not even a closed one, since label places record where you\u{2019}ve been."))
