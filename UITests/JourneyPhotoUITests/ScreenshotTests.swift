@@ -41,9 +41,14 @@ final class ScreenshotTests: XCTestCase {
     /// 🔴 **`swipeUp` は使わない・撮ったら上へ戻す。** 勢いで流れると、後の `20`・`21` が探す
     /// 1枚目の写真の位置が変わる（`feedPushes` の注記）。同じ短い引き（画面の 35%）で送り、
     /// 送った回数だけ逆に引いて戻す
+    ///
+    /// 2026-10-18: 札の下端の「行きたい」（`home.spotShelf.wish`）まで画面に入れて撮る
+    /// （ボタンの位置・余白を写真で確かめる）。ボタンが無い版では札だけを待つ
     private func shootSpotShelf(_ app: XCUIApplication) {
-        let card = app.buttons["home.spotShelf.card"].firstMatch
-        guard card.waitForExistence(timeout: 10) else { return }
+        let photo = app.buttons["home.spotShelf.card"].firstMatch
+        guard photo.waitForExistence(timeout: 10) else { return }
+        let wish = app.buttons["home.spotShelf.wish"].firstMatch
+        let card = wish.exists ? wish : photo
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0

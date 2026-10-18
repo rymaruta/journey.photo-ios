@@ -193,6 +193,16 @@ enum HomeSpotShelf {
 
     static var heading: String { L("いまの季節の撮影スポット", "Photo spots for this season") }
 
+    /// 札の「行きたい」の読み上げ名。札が横に並ぶので、**どの場所の「行きたい」か**を名前で添える
+    static func wishSpokenLabel(_ spotName: String) -> String {
+        L("\(spotName)を行きたいに保存", "Save \(spotName) to Want to go")
+    }
+
+    /// 札の「行きたい」の読み上げの値。**塗りの色だけで保存済みを伝えない**（板 04「色だけで状態を言わない」）
+    static func wishSpokenValue(saved: Bool) -> String {
+        saved ? L("保存済み", "Saved") : L("未保存", "Not saved")
+    }
+
     /// 段の注記。**作例の撮影者はこのアプリの利用者ではない**と添える（docs/spot-samples-commons.md）。
     /// 2026-10-04 判断: 作例の出どころが Commons 以外（Flickr・環境省・県の観光連盟など）にも増えたので、
     /// 出どころの名前は書かず、各写真の下の出典の行に任せる（札ごとに本文を読むので段では決まらない）

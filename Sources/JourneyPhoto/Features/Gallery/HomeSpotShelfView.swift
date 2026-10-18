@@ -118,6 +118,10 @@ struct HomeSpotShelfView: View {
             if let picture {
                 credit(picture)
             }
+            // 2026-10-18 判断: 「行きたい」は札の**下端にそろえる**。出典の無い札（代表写真・ピンだけ）は
+            // 出典の行の分だけ背が低く、そのままだとボタンが札ごとに上下にずれる。段は背をそろえている
+            // （`fixedSize(vertical:)`＋札の `maxHeight: .infinity`）ので、ここで余りを空けて下へ送る
+            Spacer(minLength: 0)
             // ホームで見つけた場所を、詳細へ入らずに「行きたい」へ保存できる。
             Button {
                 Task {
@@ -136,8 +140,13 @@ struct HomeSpotShelfView: View {
             }
             .buttonStyle(.plain)
             .disabled(wishlist.isSending(wishKey))
+            // 札の縁から 12 離す（板の札の余白 12）。下を空けないと、ボタンの角が札の縁に貼りつく
             .padding(.horizontal, 12)
             .padding(.top, 8)
+            .padding(.bottom, 12)
+            // どの場所の「行きたい」か・保存済みかを読み上げでも分かるように（塗りの色だけにしない）
+            .accessibilityLabel(HomeSpotShelf.wishSpokenLabel(entry.spot.name))
+            .accessibilityValue(HomeSpotShelf.wishSpokenValue(saved: wanted))
             .accessibilityIdentifier("home.spotShelf.wish")
         }
         .frame(width: Self.cardWidth, alignment: .topLeading)
