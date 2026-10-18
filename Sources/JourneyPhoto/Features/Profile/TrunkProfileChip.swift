@@ -129,7 +129,8 @@ struct TrunkProfileChip: View {
 ///
 /// 描き方はトランクの画面と同じ `TrunkBoxView`（胴だけ・`bodyOnly`）を、回す画面の絵（`TrunkTextures`）と同じく
 /// **1枚の絵にしてから**縮めて出す。小さく描くので、影・ぼかし・重なりの重い描き方を毎回の描画でしない。
-/// 絵を作るのは画面に出ている間だけ（`.task`）で、中身（型・投稿の数・貼ったラベル・部品）が変わったときだけ作り直す
+/// 絵を作るのは画面に出ている間だけ（`.task`）で、**絵に使うもの**（型・投稿の数・貼ったラベル・部品・名札の名前・倍率・
+/// `TrunkEntryThumbKey`）が変わったときだけ作り直す。硬貨・手持ち・作り直しの回数などが変わっても作り直さない
 struct TrunkEntryThumb: View {
 
     let state: TrunkState
@@ -139,11 +140,6 @@ struct TrunkEntryThumb: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
-
-    private struct Key: Equatable {
-        let state: TrunkState
-        let ownerName: String?
-    }
 
     var body: some View {
         Group {
@@ -156,8 +152,8 @@ struct TrunkEntryThumb: View {
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .task(id: Key(state: state, ownerName: ownerName)) {
-            image = TrunkEntryThumbs.image(state: state, ownerName: ownerName, scale: displayScale)
+        .task(id: TrunkEntryThumbKey(state, ownerName: ownerName, scale: Double(displayScale))) {
+            image = TrunkEntryThumbs.image(TrunkEntryThumbKey(state, ownerName: ownerName, scale: Double(displayScale)))
         }
     }
 }
@@ -166,17 +162,17 @@ struct TrunkEntryThumb: View {
 @MainActor
 enum TrunkEntryThumbs {
 
-    private static var last: (state: TrunkState, ownerName: String?, scale: CGFloat, image: UIImage)?
+    private static var last: (key: TrunkEntryThumbKey, image: UIImage)?
 
-    static func image(state: TrunkState, ownerName: String?, scale: CGFloat) -> UIImage? {
-        if let last, last.state == state, last.ownerName == ownerName, last.scale == scale { return last.image }
-        let box = TrunkBoxView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
-                               ownerName: ownerName, bodyOnly: true, parts: state.equipped)
+    static func image(_ key: TrunkEntryThumbKey) -> UIImage? {
+        if let last, last.key == key { return last.image }
+        let box = TrunkBoxView(model: key.model, posts: key.posts, stuck: key.stuck,
+                               ownerName: key.ownerName, bodyOnly: true, parts: key.parts)
         let renderer = ImageRenderer(content: box)
         // 横 360 の胴を 48pt に（端末の倍率ぶん細かく）
-        renderer.scale = max(1, scale) * TrunkEntryThumb.size.width / TrunkLooks.bodyWidth
+        renderer.scale = CGFloat(max(1, key.scale) * Double(TrunkEntryThumb.size.width) / TrunkLooks.bodyWidth)
         guard let made = renderer.uiImage else { return nil }
-        last = (state, ownerName, scale, made)
+        last = (key, made)
         return made
     }
 }

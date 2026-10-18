@@ -33,14 +33,22 @@ final class TrunkEntryStore: ObservableObject {
     private var readAt: Date?
     private var failedAt: Date?
     private var stale = false
+    /// 「中身が変わった」の印の世代（`markStale` のたびに進む）。読み始めたときの世代のままなら、読み終えたときに印を下ろす
+    /// ——読んでいる最中に付いた印を、古い読み込みの完了で消さない（2026-10-18 2回目の見直し）
+    private var staleGeneration = 0
     /// 走っている読み込み（同じ人なら相乗りする）
     private var inFlight: (token: Int, userId: String, task: Task<TrunkState, Error>)?
     private var nextToken = 0
+    /// 最後に札へ入れた読み込みの番号（後から始めた読み込みの答えを、先に始めた読み込みの答えで上書きしない）
+    private var appliedToken = 0
 
     init() {}
 
     /// トランクの中身が変わったかもしれない（トランクの画面から戻った・投稿した）。次の `refresh` で読み直す
-    func markStale() { stale = true }
+    func markStale() {
+        stale = true
+        staleGeneration += 1
+    }
 
     private func use(_ userId: String?) {
         guard userId != self.userId else { return }
@@ -56,24 +64,33 @@ final class TrunkEntryStore: ObservableObject {
     /// `GET /user/trunk` を1回読み、札の数にも入れる（`TrunkAvailability` もここを通す）。
     /// 同じ人の読み込みが走っていれば、その結果を待つ（2本目を出さない）
     func read(userId: String, service: TrunkService, now: Date = Date()) async throws -> TrunkState {
+        try await read(userId: userId, now: now) { try await service.state() }
+    }
+
+    /// 読み方を差し替えられる形（テストで返事を止めておく）
+    func read(userId: String, now: Date = Date(),
+              fetch: @escaping @MainActor () async throws -> TrunkState) async throws -> TrunkState {
         if let running = inFlight, running.userId == userId {
             return try await running.task.value
         }
         use(userId)
         nextToken += 1
         let token = nextToken
+        let generation = staleGeneration
         // 呼び手が取り消されても、相乗りしている側のために読み切る
-        let task = Task { try await service.state() }
+        let task = Task { @MainActor in try await fetch() }
         inFlight = (token, userId, task)
         defer { if inFlight?.token == token { inFlight = nil } }
         do {
             let state = try await task.value
-            if self.userId == userId {
+            // 🔴 人が替わっていたら、前の人の答えを入れない
+            if self.userId == userId, token > appliedToken {
+                appliedToken = token
                 summary = TrunkEntrySummary(state)
                 self.state = state
                 readAt = now
                 failedAt = nil
-                stale = false
+                if staleGeneration == generation { stale = false }
             }
             return state
         } catch {
@@ -87,6 +104,16 @@ final class TrunkEntryStore: ObservableObject {
     func refresh(userId: String?, available: Bool, service: TrunkService, now: Date = Date(),
                  preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
                  previewPro: Bool = PreviewSession.isPro) async {
+        await refresh(userId: userId, available: available, now: now, preview: preview, previewPro: previewPro) {
+            try await service.state()
+        }
+    }
+
+    /// 読み方を差し替えられる形（テストで返事を止めておく）
+    func refresh(userId: String?, available: Bool, now: Date = Date(),
+                 preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
+                 previewPro: Bool = PreviewSession.isPro,
+                 fetch: @escaping @MainActor () async throws -> TrunkState) async {
         use(userId)
         guard let userId, available else { return }
         if let preview {
@@ -95,14 +122,44 @@ final class TrunkEntryStore: ObservableObject {
             state = sample
             return
         }
-        let running = inFlight?.userId == userId
-        guard running || TrunkEntryRule.needsRead(readAt: readAt, failedAt: failedAt, stale: stale, now: now) else { return }
+        // 走っている読み込みがあれば相乗りする。**その読み込みが始まった後に印が付いていたら**（読み終えても印が
+        // 残っている）、もう1回読む
+        if let running = inFlight, running.userId == userId {
+            do { _ = try await running.task.value } catch {
+                if TrunkEntryRule.isCancellation(error) { stale = true }
+            }
+            // 終わった読み込みを相乗りの先に残さない（読み直しが、終わった読み込みにまた相乗りしない）
+            if inFlight?.token == running.token { inFlight = nil }
+            guard self.userId == userId, stale else { return }
+        }
+        guard TrunkEntryRule.needsRead(readAt: readAt, failedAt: failedAt, stale: stale, now: now) else { return }
         do {
-            _ = try await read(userId: userId, service: service, now: now)
+            _ = try await read(userId: userId, now: now, fetch: fetch)
         } catch {
             // 取り消されたら、次の機会に読み直す
             if TrunkEntryRule.isCancellation(error) { stale = true }
         }
+    }
+}
+
+/// 札の絵を作り直すかを比べる鍵（2026-10-18 2回目の見直し）。**絵に使うものだけ**:
+/// いま描く型・投稿の数（古び方）・貼ったラベル・付けた部品・名札の名前・倍率。
+/// 硬貨・手持ち・作り直しの回数・受け取りの設定が変わっても、絵は作り直さない
+struct TrunkEntryThumbKey: Equatable {
+    let model: TrunkModel
+    let posts: Int
+    let stuck: [TrunkLabel]
+    let parts: TrunkEquipped
+    let ownerName: String?
+    let scale: Double
+
+    init(_ state: TrunkState, ownerName: String?, scale: Double) {
+        model = state.effectiveModel
+        posts = state.posts ?? 0
+        stuck = state.stuck
+        parts = state.equipped
+        self.ownerName = ownerName
+        self.scale = scale
     }
 }
 

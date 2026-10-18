@@ -153,6 +153,79 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertEqual(store.state?.coins, 9)
     }
 
+    /// 🔴 **人が替わった直後に、前の人の答えを入れない**（A さんの読み込み中に B さんに替わった）
+    func testAnswerForPreviousUserIsDropped() async {
+        let store = TrunkEntryStore()
+        let held = HeldFetch()
+        let reading = Task { @MainActor in try? await store.read(userId: "A", fetch: held.fetch) }
+        await held.waitUntilAsked()
+        // B さんに替わる（口が無い扱いで、読まずに人だけ替える）
+        await store.refresh(userId: "B", available: false, preview: nil) { XCTFail("B さんのために読んだ"); throw CancellationError() }
+        held.answer(TrunkSample.state(isPro: false, coins: 9))
+        _ = await reading.value
+        XCTAssertNil(store.summary, "前の人の硬貨が次の人の札に出ている")
+        XCTAssertNil(store.state, "前の人のトランクの絵が次の人の札に出ている")
+    }
+
+    /// 🔴 **読んでいる最中に付いた「中身が変わった」の印を、古い読み込みの完了で消さない**
+    func testStaleMarkedDuringReadSurvives() async {
+        let store = TrunkEntryStore()
+        let held = HeldFetch()
+        let first = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        // 読んでいる最中に、トランクの画面から戻った（硬貨を使った）
+        store.markStale()
+        held.answer(TrunkSample.state(isPro: false, coins: 4))
+        await first.value
+        XCTAssertEqual(store.summary?.coins, 4)
+        // 印は残っているので、次の refresh で読み直す
+        let second = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        held.answer(TrunkSample.state(isPro: false, coins: 3))
+        await second.value
+        XCTAssertEqual(held.calls, 2, "読んでいる最中に付いた印が、古い読み込みの完了で消えた")
+        XCTAssertEqual(store.summary?.coins, 3)
+        // 印の無い読み込みの後は読まない
+        await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch)
+        XCTAssertEqual(held.calls, 2)
+    }
+
+    /// 🔴 **相乗りした側も、印が後から付いていたら読み直す**
+    func testJoinerRereadsWhenMarkedAfterStart() async {
+        let store = TrunkEntryStore()
+        let held = HeldFetch()
+        let first = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        store.markStale()
+        // 2本目は走っている読み込みに相乗りする
+        let joiner = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await Task.yield()
+        XCTAssertEqual(held.calls, 1, "相乗りせずに2本目を出した")
+        held.answer(TrunkSample.state(isPro: false, coins: 4))
+        await first.value
+        // 相乗りした側が、印を見てもう1回読む
+        await held.waitUntilAsked()
+        held.answer(TrunkSample.state(isPro: false, coins: 1))
+        await joiner.value
+        XCTAssertEqual(held.calls, 2, "印が後から付いたのに、相乗りした側が読み直さない")
+        XCTAssertEqual(store.summary?.coins, 1)
+    }
+
+    /// 札の絵は、**絵に使うものが変わったときだけ**作り直す（硬貨・手持ちの変化では作り直さない）
+    func testThumbKeyOnlyWatchesWhatIsDrawn() async {
+        let base = TrunkSample.state(isPro: true, coins: 3)
+        let key = TrunkEntryThumbKey(base, ownerName: "旅人", scale: 3)
+        XCTAssertEqual(key, TrunkEntryThumbKey(base.copy(pocket: [], rerollsLeft: 0, receiveLabels: false, coins: 0, fragments: 9),
+                                               ownerName: "旅人", scale: 3),
+                       "絵に関係ない変化（硬貨・手持ち・作り直し・かけら）で作り直している")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(stuck: []), ownerName: "旅人", scale: 3), "貼ったラベル")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(effectiveModel: .aluminum), ownerName: "旅人", scale: 3), "型")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(posts: .some(999)), ownerName: "旅人", scale: 3), "古び方")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(equipped: base.equipped.setting(.pin, ["pin-test"])), ownerName: "旅人", scale: 3), "部品")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base, ownerName: "別の人", scale: 3), "名札")
+        XCTAssertNotEqual(key, TrunkEntryThumbKey(base, ownerName: "旅人", scale: 2), "倍率")
+    }
+
     /// 取り消し（`CancellationError`・`URLError(.cancelled)`）は失敗に数えない（10分止めない）
     func testCancellationIsNotAFailure() async {
         XCTAssertTrue(TrunkEntryRule.isCancellation(CancellationError()))
@@ -276,8 +349,10 @@ final class TrunkEntryTests: XCTestCase {
         // 真鍮は点だけ（黒地の札の上・名前の側に離す）。硬貨の数は白
         XCTAssertTrue(chip.contains(".fill(WebTheme.accent)\n                            .frame(width: 8, height: 8)"))
         // A′: 左に自分のトランクの絵（`TrunkBoxView` の胴だけ）・題の下に型の名前（12pt・text-2）・高さ 56
-        XCTAssertTrue(chip.contains("TrunkBoxView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,"))
-        XCTAssertTrue(chip.contains("bodyOnly: true, parts: state.equipped)"))
+        XCTAssertTrue(chip.contains("TrunkBoxView(model: key.model, posts: key.posts, stuck: key.stuck,"))
+        XCTAssertTrue(chip.contains("bodyOnly: true, parts: key.parts)"))
+        XCTAssertTrue(chip.contains(".task(id: TrunkEntryThumbKey(state, ownerName: ownerName, scale: Double(displayScale)))"),
+                      "絵を作り直す鍵が、絵に使うものだけになっていない")
         XCTAssertTrue(chip.contains("static let size = CGSize(width: 48, height: 40)"))
         XCTAssertTrue(chip.contains("Text(model)\n                        .font(JPFont.caption)\n                        .foregroundStyle(WebTheme.text2)"))
         XCTAssertTrue(chip.contains(".frame(minHeight: 56)"))
@@ -297,5 +372,27 @@ final class TrunkEntryTests: XCTestCase {
         let availability = try source("Core/Storage/TrunkAvailability.swift")
         XCTAssertTrue(availability.contains("_ = try await entry.read(userId: userId, service: service, now: now)"))
         XCTAssertFalse(availability.contains("try await service.state()"))
+    }
+}
+
+/// 返事を止めておける読み方（`TrunkEntryStore` の `fetch` に渡す）
+@MainActor
+final class HeldFetch {
+    private var continuation: CheckedContinuation<TrunkState, Error>?
+    private(set) var calls = 0
+
+    func fetch() async throws -> TrunkState {
+        calls += 1
+        return try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+
+    /// 読みに来るまで待つ
+    func waitUntilAsked() async {
+        for _ in 0..<1000 where continuation == nil { await Task.yield() }
+    }
+
+    func answer(_ state: TrunkState) {
+        continuation?.resume(returning: state)
+        continuation = nil
     }
 }
