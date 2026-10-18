@@ -11,8 +11,10 @@ import Foundation
 ///
 /// - 候補は季節の札と同じ（`HomeTopCard.seasonGuides`: 公開済み・いまの季節の案内を持つ）。
 ///   **写真の有無では絞らない**——作例は本文にしか無く、取る前には分からない
-/// - **週替わり**（owner・2026-09-30「ホームのスポットは週替わり」）。`spotId` の順に並べ、
-///   週ごとに `count` 件ずつ先へ進める。**除く前に回す**——上の札が替わっても、残りの並びがずれない
+/// - **日替わり**（🔴 owner・2026-10-18「今の季節の撮影スポットが毎日同じにみえる」→「日替わりだね」。
+///   2026-09-30 の「ホームのスポットは週替わり」を覆した）。上の季節の札と同じ並びから選ぶ
+///   （`HomeDailySpots`: 3つの組と1日ぶんの窓）——**3日続けて同じスポットを出さない**。
+///   **除く前に回す**——上の札が替わっても、残りの並びがずれない
 /// - **都道府県で散らす**（板の注記「都道府県で散らす」）。1周目は同じ県（国外は国）を飛ばし、
 ///   足りなければ飛ばした行で埋める
 /// - **上の札に出ているスポットと、今日の一問の選択肢（4つ）は除く**（`excluded`）。答えが
@@ -59,29 +61,14 @@ enum HomeSpotShelf {
         let entries: [Entry]
     }
 
-    /// 今週の段。候補が無ければ nil（**空き地を作らない**——段ごと出さない）
+    /// 今日の段。候補が無ければ nil（**空き地を作らない**——段ごと出さない）
     static func shelf(today: Date, spots: [OfficialSpot], excluding: Set<String> = [],
                       limit: Int = count) -> Shelf? {
         let guides = HomeTopCard.seasonGuides(today: today, spots: spots)
         let rows = guides.rows
         guard !rows.isEmpty, limit > 0 else { return nil }
-        // 週ごとに `limit` 件ずつ先へ（除く前に回す）
-        let week = HomeTopCard.weekNumber(today)
-        let start = (((week * limit) % rows.count) + rows.count) % rows.count
-        let rotated = (rows[start...] + rows[..<start]).filter { !excluding.contains($0.spot.spotId) }
-        var picked: [(spot: OfficialSpot, guide: String)] = []
-        var skipped: [(spot: OfficialSpot, guide: String)] = []
-        var regions = Set<String>()
-        for row in rotated where picked.count < limit {
-            let key = Entry(spot: row.spot, guide: row.guide).regionLabel
-            // 地域の分からない行は散らす対象にしない（どれとも重ならない）
-            if let key, !regions.insert(key).inserted {
-                skipped.append(row)
-            } else {
-                picked.append(row)
-            }
-        }
-        picked += skipped.prefix(max(limit - picked.count, 0))
+        // 上の札と同じ並びから、今日の窓を（除く前に回す）
+        let picked = HomeDailySpots.shelf(rows, day: HomeTopCard.dayNumber(today), excluding: excluding, limit: limit)
         guard !picked.isEmpty else { return nil }
         return Shelf(season: guides.season, entries: picked.map { Entry(spot: $0.spot, guide: $0.guide) })
     }
