@@ -6,6 +6,12 @@
       "date": "2026-10-18",
       "items": [
         {
+          "symbol": "suitcase",
+          "title": { "ja": "トランクの部品がきれいに付く", "en": "Trunk parts fit properly" },
+          "detail": { "ja": "錠前・角金具・タグ・チャーム・鍵が、トランクの決まった場所に正しい形で付くようになりました。指で回したときの向きも自然になりました。", "en": "Locks, corner guards, tags, charms and keys now sit in the right places on your trunk, in the right shapes. Turning it with a finger feels more natural, too." },
+          "destination": "mypage"
+        },
+        {
           "symbol": "sparkles",
           "title": { "ja": "特別な券面は裏まで", "en": "Special designs on the back, too" },
           "detail": { "ja": "Pro の5つの券面は、裏も表と同じ素材と飾りになりました。真鍮の板・大圏航路の地図・箔の罫・漆の金粉・型押しの革で届きます。", "en": "The five Pro ticket designs now carry the same material and details on the back: brass plate, great-circle map, foil rules, gold dust on lacquer, and embossed leather." }
