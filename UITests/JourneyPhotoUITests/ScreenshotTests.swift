@@ -2591,7 +2591,7 @@ final class ScreenshotTests: XCTestCase {
             let tab = app.buttons["trunk.parts.tab.\(kind)"].firstMatch
             guard tab.waitForExistence(timeout: 10) else { return XCTFail("部品箱に \(kind) のタブが無い") }
             revealTab(tab, in: app, toLeft: true)
-            guard tab.isHittable else { return XCTFail("部品箱の \(kind) のタブに届かない") }
+            guard tab.frame.maxX <= app.windows.firstMatch.frame.width, tab.isHittable else { return XCTFail("部品箱の \(kind) のタブに届かない") }
             tab.tap()
             Thread.sleep(forTimeInterval: 1.5)
             shoot(app, name)
@@ -2599,7 +2599,7 @@ final class ScreenshotTests: XCTestCase {
         // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
         let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
         revealTab(lockTab, in: app, toLeft: false)
-        guard lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
+        guard lockTab.frame.minX >= 0, lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
         lockTab.tap()
         let equip = app.buttons["trunk.parts.equip"].firstMatch
         guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
@@ -2616,12 +2616,17 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// 横に並んだタブの列を、`tab` が押せるまで送る（右のタブは左へ・左のタブは右へ。4回まで）
+    /// 横に並んだタブの列を、`tab` が画面に入りきるまで送る（右のタブは左へ・左のタブは右へ。6回まで）。
+    /// 画面の外のタブに `isHittable` を聞くと「押す点が決まらない」で落ちるので、枠で見る（Mac run 525）
     private func revealTab(_ tab: XCUIElement, in app: XCUIApplication, toLeft: Bool) {
         let width = app.windows.firstMatch.frame.width
         let origin = app.coordinate(withNormalizedOffset: .zero)
+        func onScreen() -> Bool {
+            let f = tab.frame
+            return !f.isEmpty && f.minX >= 0 && f.maxX <= width
+        }
         var slides = 0
-        while !tab.isHittable, slides < 4 {
+        while !onScreen(), slides < 6 {
             let y = tab.frame.midY
             let start = origin.withOffset(CGVector(dx: width * (toLeft ? 0.8 : 0.2), dy: y))
             let end = origin.withOffset(CGVector(dx: width * (toLeft ? 0.3 : 0.7), dy: y))
