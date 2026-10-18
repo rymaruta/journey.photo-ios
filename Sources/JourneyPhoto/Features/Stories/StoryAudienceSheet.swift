@@ -18,6 +18,8 @@ struct StoryAudienceSheet: View {
 
     @Binding var allowReplies: Bool
     @Binding var keepInArchive: Bool
+    /// 「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え。書くのは作る画面）
+    @Binding var attachesLocation: Bool
     var onDone: () -> Void
 
     var body: some View {
@@ -51,6 +53,12 @@ struct StoryAudienceSheet: View {
                 JPToggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
                             detail: L("ハイライトに入れられます", "You can add it to highlights"),
                             isOn: $keepInArchive)
+                JPCardDivider()
+                // 投稿の画面と同じ切り替え・同じ言葉（`UploadDetails`）。値も投稿と共有する
+                JPToggleRow(title: UploadDetails.locationToggleTitle,
+                            detail: StoryLocationText.toggleNote(attaches: attachesLocation),
+                            isOn: $attachesLocation)
+                    .accessibilityIdentifier("story.attachLocation")
             }
 
             Spacer(minLength: 8)
@@ -61,6 +69,7 @@ struct StoryAudienceSheet: View {
                     .jpPillButton(.main(onPhoto: false))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("story.audience.done")
             .padding(.bottom, 8)
         }
         .padding(.horizontal, 16)

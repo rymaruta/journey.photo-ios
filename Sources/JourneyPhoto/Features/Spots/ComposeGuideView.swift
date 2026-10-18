@@ -3,9 +3,12 @@ import PhotosUI
 import UIKit
 import ImageIO
 
-/// 作例・構図を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
+/// 作例・構図を重ねて撮る（板 ComposeGuide・2026-10-09）。全画面・黒地。
 ///
-/// 入口は2つ（Pro の確かめはどちらも `ComposeGuideLauncher`。この画面は Pro の人だけが開く）:
+/// 2026-10-17 判断（owner）: **全員無料。** 誰でも開ける（ログインしていなくても・圏外でも）。
+/// ログインが要るのは「投稿」で投稿画面へ進んだ先だけ（`UploadView` がログインを求める）。
+///
+/// 入口は2つ（開く流れはどちらも `ComposeGuideLauncher`）:
 /// - 撮影スポットの画面の作例の節（`OfficialSpotView.composeEntry`＝1枚目から、
 ///   帯の作例の写真＝押した1枚から・2026-10-10）
 /// - 投稿のシートの「構図を重ねて撮る」（2026-10-10・**作例なし**）。上の札・作例のサムネ・濃さ・
@@ -70,6 +73,8 @@ struct ComposeGuideView: View {
     @State private var librarySelection: PhotosPickerItem?
     @State private var libraryImage: UIImage?
     @State private var loadingLibrary = false
+    /// ライブラリから読めた回数（選び直したら参考写真が替わった合図・`referenceIdentity`）
+    @State private var libraryLoads = 0
     @GestureState private var dragTranslation: CGSize = .zero
     @GestureState private var pinchFactor = 1.0
 
@@ -77,8 +82,14 @@ struct ComposeGuideView: View {
     @State private var composition: CompositionKind?
     @State private var variant: Int
     @State private var lineOpacity: Double
-    /// 構図の線と参考写真を回した角度（時計回りの度・2026-10-16）。その構図を選び直すまで保つ
+    /// 構図の線と参考写真を回した角度（時計回りの度・2026-10-16）。その構図を選び直すまで保つ。
+    /// 2026-10-18: 横長の参考写真は開いたときから 90° 回しておく（`ComposeControls.autoRotation`）
     @State private var rotation: Double
+    /// 人が回すボタン・ひねりで回したか（2026-10-18）。true の間は持った向きが変わっても自動で回し直さない。
+    /// 参考写真・構図が替わったら false（自動に戻す・`ComposeControls.decidedRotation`）
+    @State private var rotationManual = false
+    /// 画面が出た時刻。開いた直後の持った向きでの回し直しには動きを付けない（`ComposeControls.animatesHeldTurn`）
+    @State private var appearedAt: Date?
     /// 2本指でひねっている間の角度（指のそのままの値。効かせるかは `twistState`）
     @GestureState private var twist = 0.0
     /// ひねりを効かせたか・拡大の指とみなしたか（2026-10-16 確かめ役の指摘「つまむたびに回る」・
@@ -129,7 +140,15 @@ struct ComposeGuideView: View {
         _composition = State(initialValue: kind)
         _variant = State(initialValue: kind.map { prefs.variant(for: $0) } ?? 0)
         _lineOpacity = State(initialValue: prefs.lineOpacity)
-        _rotation = State(initialValue: prefs.rotation(for: kind))
+        // 2026-10-18 判断: 作例を重ねて開くときは、作例の縦横で初めの向きを決める（横長なら 90°）。
+        // 作例なしの入口は今まで通り覚えた角度（`ComposeControls.decidedRotation` の注記）
+        let first = samples.isEmpty ? nil : samples[ComposeGuide.normalized(startIndex, count: samples.count)]
+        let auto = first.map {
+            ComposeControls.autoRotation(referenceWidth: $0.width, referenceHeight: $0.height,
+                                         frameAspect: ComposeGuide.frameAspect, heldQuarterTurns: 0)
+        }
+        _rotation = State(initialValue: ComposeControls.decidedRotation(
+            .opened, current: 0, manual: false, auto: auto, remembered: prefs.rotation(for: kind)) ?? 0)
     }
 
     /// 1本の指の始まり（映像の枠の上）
@@ -165,6 +184,27 @@ struct ComposeGuideView: View {
     /// 回せるか。構図の線（水準器は除く——傾きは重さの向きが基準なので回さない）か、参考写真があるとき
     private var canRotate: Bool {
         (composition != nil && composition != .level) || referenceShown
+    }
+    /// いま重ねている参考写真の縦横から決めた、自動の向き（参考写真が無ければ nil・2026-10-18）
+    private var autoReferenceRotation: Double? {
+        let size: (width: Double, height: Double)?
+        if reference.source == .samples, let sample {
+            size = (sample.width, sample.height)
+        } else if reference.source == .library, let libraryImage {
+            size = (Double(libraryImage.size.width), Double(libraryImage.size.height))
+        } else {
+            size = nil
+        }
+        guard let size else { return nil }
+        return ComposeControls.autoRotation(referenceWidth: size.width, referenceHeight: size.height,
+                                            frameAspect: ComposeGuide.frameAspect,
+                                            heldQuarterTurns: quarterTurns, mirrored: reference.mirrored)
+    }
+    /// 重ねている参考写真の見分け（替わったら向きを決め直す）。隠しても替わらない
+    private var referenceIdentity: String? {
+        if reference.source == .samples, let sample { return "sample:" + sample.sourceUrl.absoluteString }
+        if reference.source == .library, libraryImage != nil { return "library:\(libraryLoads)" }
+        return nil
     }
     /// 描くときの角度（累積・ひねっている間も 0/90/180/270 の近くでは吸い付く）。
     /// 2026-10-16（確かめ役の指摘）: 角度は 0〜360 に丸めず累積で持つ。270° から右へ回すと 360° になり、
@@ -204,8 +244,15 @@ struct ComposeGuideView: View {
         }
         .preferredColorScheme(.dark)
         .task { await camera.start() }
-        .onAppear { updateLevel() }
+        .onAppear {
+            appearedAt = Date()
+            updateLevel()
+        }
         .onChange(of: composition) { _, _ in updateLevel() }
+        // 2026-10-18: 参考写真が替わったら、その縦横で向きを決め直す。持った向きが変わったら、
+        // 人が回していなければ写真が立つ側へ（`ComposeControls.decidedRotation`）
+        .onChange(of: referenceIdentity) { _, _ in applyAutoRotation(.referenceChanged) }
+        .onChange(of: quarterTurns) { _, _ in applyAutoRotation(.heldTurned) }
         .onDisappear {
             camera.stop()
             // 写っているものの見張りを外す（確かめ役の指摘・開き直したら `ComposeCamera.run` が付け直す）
@@ -542,10 +589,18 @@ struct ComposeGuideView: View {
                     .tint(WebTheme.foreground)
                     .accessibilityLabel(L("カメラを準備しています", "Preparing the camera"))
             }
+            // 画面写真の試験の鍵があるときだけ（Debug のみ・2026-10-18）: カメラの無いシミュレータでも
+            // 作例の重なり（横長の作例を 90° 回して収めた向き）を絵に残す
+            if camera.state != .ready, ComposeGuideAccess.previewUnlocked {
+                overlay
+            }
             // 重ね順: 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）
             if showsLines, let composition {
                 CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
-                                 quarterTurns: quarterTurns, rotationDegrees: shownRotation, level: level)
+                                 // 参考写真を重ねている間は、線も作例と同じ向き（2026-10-18・`linesQuarterTurns`）
+                                 quarterTurns: ComposeControls.linesQuarterTurns(
+                                    held: quarterTurns, kind: composition, referenceShown: hasReference),
+                                 rotationDegrees: shownRotation, level: level)
             }
         }
         .clipped()
@@ -1222,6 +1277,7 @@ struct ComposeGuideView: View {
                 return
             }
             libraryImage = image
+            libraryLoads += 1
             reference.useLibrary()
         } catch {
             show(L("写真を読み込めませんでした。別の写真をお試しください",
@@ -1235,9 +1291,10 @@ struct ComposeGuideView: View {
     private func choose(_ picked: CompositionKind?) {
         composition = picked
         variant = picked.map { preferences.variant(for: $0) } ?? 0
-        // 選び直したら回転は真っ直ぐに戻す（`CompositionPreferences.select` が覚えた角度も 0 にする）。
-        // 累積の角度はいちばん近い 360° の倍数へ（逆回りに大きく回らない）
-        rotation = ComposeControls.straightened(rotation)
+        // 選び直したら回転は初めの向きに戻す（`CompositionPreferences.select` が覚えた角度は 0 にする）。
+        // 2026-10-18: 初めの向きは、横長の参考写真を重ねていれば 90°、それ以外は真っ直ぐ（0°）。
+        // 累積の角度はいちばん短く回る値へ（逆回りに大きく回らない）
+        applyAutoRotation(.compositionChosen, animated: false)
         preferences.select(picked)
         announce(CompositionGuide.accessibilityLabel(picked))
     }
@@ -1258,6 +1315,8 @@ struct ComposeGuideView: View {
     /// 状態は累積のまま持ち（絵がいちばん短い向きに回る）、覚える値と読み上げは 0〜360 に戻す
     private func setRotation(_ degrees: Double) {
         guard degrees.isFinite else { return }
+        // 人が選んだ向き（2026-10-18）。参考写真・構図が替わるまで自動で回し直さない
+        rotationManual = true
         if reduceMotion {
             rotation = degrees
         } else {
@@ -1266,6 +1325,25 @@ struct ComposeGuideView: View {
         let normalized = CompositionGuide.normalizedRotation(degrees)
         preferences.setRotation(normalized, for: composition)
         announce(CompositionGuide.rotationAccessibilityValue(normalized))
+    }
+
+    /// 自動の向きに決め直す（2026-10-18・`ComposeControls.decidedRotation`）。自動の向きは覚えない
+    /// （覚えるのは人が回した角度だけ）。ひねっている最中は持った向きで回し直さない
+    private func applyAutoRotation(_ trigger: ComposeControls.RotationTrigger, animated: Bool = true) {
+        if trigger == .heldTurned, twistState.engaged { return }
+        guard let next = ComposeControls.decidedRotation(
+            trigger, current: rotation, manual: rotationManual, auto: autoReferenceRotation,
+            remembered: preferences.rotation(for: composition), held: quarterTurns) else { return }
+        if trigger != .heldTurned { rotationManual = false }
+        guard next != rotation else { return }
+        // 開いた直後に最初の傾きの値で回し直すときは動きを付けない（180° 回って見えないように）
+        let settling = trigger == .heldTurned && !ComposeControls.animatesHeldTurn(
+            secondsSinceAppear: appearedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        if reduceMotion || !animated || settling {
+            rotation = next
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { rotation = next }
+        }
     }
 
     /// UI を隠す・戻す。隠すときはピントの枠も消し、戻し方を読み上げで伝える

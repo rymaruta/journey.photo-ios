@@ -14,6 +14,20 @@ final class TripRouteLayoutTests: XCTestCase {
         (label.centerY - labelHeight / 2, label.centerY + labelHeight / 2)
     }
 
+    /// 点の横の位置: 1つなら真ん中、2つ以上なら左右の余白（inset）の間に等間隔（2026-10-18: 重い式を分けたときの見張り）
+    func testPointsAreEvenlySpacedBetweenInsets() {
+        XCTAssertEqual(TripRouteLayout.layout(count: 1, width: 300, labelHeight: 32).points.map(\.x), [150])
+        let xs = TripRouteLayout.layout(count: 4, width: 344, labelHeight: 32).points.map(\.x)
+        let inset = TripRouteLayout.inset
+        XCTAssertEqual(xs.count, 4)
+        for (i, expected) in [inset, inset + 256.0 / 3, inset + 512.0 / 3, 344 - inset].enumerated() {
+            XCTAssertEqual(xs[i], expected, accuracy: 0.0001, "点 \(i)")
+        }
+        // 幅が余白より狭いときは全部左の余白に寄る（幅が負にならない）
+        XCTAssertEqual(TripRouteLayout.layout(count: 3, width: 60, labelHeight: 32).points.map(\.x), [inset, inset, inset])
+        XCTAssertTrue(TripRouteLayout.layout(count: 0, width: 300, labelHeight: 32).points.isEmpty)
+    }
+
     /// 端の札も図の外へはみ出さない（iPhone SE の幅〜iPad の幅・点2〜4つ）
     func testLabelsStayInside() {
         for width in [280.0, 335.0, 350.0, 700.0] as [CGFloat] {

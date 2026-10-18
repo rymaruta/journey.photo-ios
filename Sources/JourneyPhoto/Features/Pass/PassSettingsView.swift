@@ -6,7 +6,7 @@ import CoreBluetooth
 ///
 /// - **既定はオフ。** オンにする時は先に説明（`PassIntroSheet`）を出し、「オンにする」を押してから
 ///   電波を出す（そこで初めて iPhone が Bluetooth の使用を尋ねる）
-/// - 名刺の一枚を選ぶまでは電波を出さない（オンにして選んでいなければ、そのまま選ぶ画面へ進む）
+/// - 乗車券を選ぶまでは電波を出さない（オンにして選んでいなければ、そのまま選ぶ画面へ進む）
 /// - 「いつ」: いつでも／旅のあいだ（家から 50km 以上離れた日だけ）／開いている間
 struct PassSettingsView: View {
 
@@ -21,7 +21,7 @@ struct PassSettingsView: View {
 
     @State private var showIntro = false
     @State private var showPick = false
-    /// 名刺の一枚（公開一覧から引いた自分の写真）
+    /// 乗車券の写真（公開一覧から引いた自分の写真）
     @State private var cardPhoto: Photo?
     @State private var isTurningOnPush = false
 
@@ -54,7 +54,7 @@ struct PassSettingsView: View {
                 showIntro = false
                 pass.update { $0.enabled = true }
                 PassCoordinator.shared.turnedOn()
-                // 名刺を選んでいなければ、そのまま選ぶ画面へ（選ぶまで電波は出さない）
+                // 乗車券を選んでいなければ、そのまま選ぶ画面へ（選ぶまで電波は出さない）
                 if pass.settings.cardPhotoId == nil {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPick = true }
                 }
@@ -90,8 +90,8 @@ struct PassSettingsView: View {
     private var mainCard: some View {
         JPCard {
             JPToggleRow(title: L("すれちがう", "Pass"),
-                        detail: L("近くにいたアプリの人と、名刺の一枚をカードで交換します",
-                                  "Swap your calling-card photo with app users you pass nearby"),
+                        detail: L("近くにいたアプリの人と、わたしの乗車券をカードで交換します",
+                                  "Swap your ticket with app users you pass nearby"),
                         isOn: enabledBinding)
                 .accessibilityIdentifier("pass.settings.toggle")
             JPCardDivider()
@@ -177,7 +177,7 @@ struct PassSettingsView: View {
                 .strokeBorder(WebTheme.accent.opacity(0.45), lineWidth: JPStroke.hairline))
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(L("名刺の一枚", "Your card"))
+                Text(L("わたしの乗車券", "My ticket"))
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
                 Text(cardDetail)
@@ -248,10 +248,10 @@ struct PassSettingsView: View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             eyebrow(L("カードに載るもの", "On your card"))
             JPCard {
-                JPRowLabel(title: L("名刺の一枚・名前・ひとこと", "Card photo, name and note"),
+                JPRowLabel(title: L("乗車券の写真・名前・ひとこと", "Ticket photo, name and note"),
                            detail: L("いつも載ります", "Always included"), chevron: false)
                 JPCardDivider()
-                // 乗車券の「発」（2026-10-16）。自分で書く字は名刺の一枚の画面で選ぶ。ここでは居住地を出す／出さない
+                // 乗車券の「発」（2026-10-16）。自分で書く字はわたしの乗車券の画面で選ぶ。ここでは居住地を出す／出さない
                 NavigationLink { PassCardPickView() } label: {
                     JPRowLabel(title: L("乗車券の区間（発・着）", "Ticket route (from / to)"),
                                detail: PassSettingsText.route(pass.settings))
@@ -368,7 +368,7 @@ struct PassIntroSheet: View {
                     Text(L("すれちがい", "Pass"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
-                    Text(L("旅先で、名刺の一枚を交換する", "Swap a calling-card photo on your travels"))
+                    Text(L("旅先で、わたしの乗車券を交換する", "Swap your ticket on your travels"))
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.text)
                         .fixedSize(horizontal: false, vertical: true)

@@ -83,9 +83,13 @@ enum EditPlaceRules {
     ///
     /// 🔴 **`spots` が nil（索引を読めなかった）なら、撮影地を空にした回のほかはピンを残す**
     /// （`clearsCoords` と同じ理由。分からないことを「落とす」にしない）
+    ///
+    /// 2026-10-18 判断: 「撮影地の位置を付ける」（投稿と同じ人ごとの覚え・`UploadLocationPreference`）が**オフなら書かない**
+    /// （`replace.coords` を送らない＝今のピンはそのまま）。オフの人の差し替えた写真の位置を送らない
     static func keepsCoordsOnReplace(openedLocation: String?, openedHasCoords: Bool, currentLocation: String,
-                                     newPhotoCoords: Photo.Coords? = nil, spots: [OfficialSpot]? = []) -> Bool {
-        guard openedHasCoords else { return false }
+                                     newPhotoCoords: Photo.Coords? = nil, spots: [OfficialSpot]? = [],
+                                     attachesPhotoLocation: Bool = true) -> Bool {
+        guard attachesPhotoLocation, openedHasCoords else { return false }
         guard changedByUser(openedLocation: openedLocation, currentLocation: currentLocation) else { return true }
         guard let spots else { return !trim(currentLocation).isEmpty }
         return PlaceCoordsRule.namesSpotNear(currentLocation, photo: newPhotoCoords, spots: spots)

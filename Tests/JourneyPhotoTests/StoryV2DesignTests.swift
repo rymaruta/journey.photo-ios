@@ -261,7 +261,8 @@ final class StoryV2DesignTests: XCTestCase {
 
     // MARK: - 投稿の2択（v2 PostSheet）
 
-    func testPostSheetRows() throws {
+    @MainActor
+    func testPostSheetRows() async throws {
         XCTAssertEqual(PostSheet.tileSize, 52)
         XCTAssertEqual(PostSheet.tileRadius, JPRadius.l)
         let sheet = try source("Features/Upload/PostSheet.swift")
@@ -275,9 +276,15 @@ final class StoryV2DesignTests: XCTestCase {
         }
         // owner の決まり: 札に敷くのは自分の写真（v2 の板の印だけの札より優先）
         XCTAssertTrue(sheet.contains("PostSheetThumbs.pick(fromMine: mine, count: 4)"))
-        // PRO は真鍮の縁と字（黒地の上）
-        assertInOrder(["Text(badge)", ".foregroundStyle(WebTheme.accent)",
-                       "Capsule().strokeBorder(WebTheme.accent.opacity(0.6)"], in: sheet, "PRO の合図")
+        // 2026-10-17 判断（owner）: 構図を重ねて撮るは全員無料。題の横の「PRO」の合図は出さない。
+        // 写真の無い札の構図の印だけ真鍮（黒地の上）のまま
+        XCTAssertFalse(sheet.contains("\"PRO\""), "投稿のシートに PRO の合図が残っている")
+        XCTAssertFalse(sheet.contains("Pro の機能"), "投稿のシートに Pro の読み上げが残っている")
+        XCTAssertTrue(sheet.contains("kind: .composition,\n                accentIcon: true,"))
+        let onBlack = PostSheet.iconColor(hasPhoto: false, accent: true)
+        let onPhoto = PostSheet.iconColor(hasPhoto: true, accent: true)
+        XCTAssertEqual(onBlack, WebTheme.accent)
+        XCTAssertEqual(onPhoto, WebTheme.foreground, "写真の上に真鍮を置いた")
     }
 
     // MARK: - 曲を選ぶ（v2 SongPicker）
@@ -343,9 +350,10 @@ final class StoryV2DesignTests: XCTestCase {
         }
     }
 
-    /// 構図のシートは1行ずつの札。選んだ札は真鍮の縁 2＋チェック（owner の決定 2026-10-10）
+    /// 構図のシートは1行ずつの札。選んだ札は真鍮の縁 2＋チェック（owner の決定 2026-10-10）。
+    /// 札の高さは板の 60 から 72 に（2026-10-17 owner: 右に作例写真 64 を置くため・`CompositionRowPhotoTests`）
     func testCompositionSheetRows() throws {
-        XCTAssertEqual(CompositionPicker.rowHeight, 60)
+        XCTAssertEqual(CompositionPicker.rowHeight, 72)
         let picker = try source("Features/Spots/CompositionPicker.swift")
         let card = member("private func card(_ kind: CompositionKind?)", in: picker)
         assertInOrder(["Image(systemName: \"checkmark\")", "WebTheme.accent",

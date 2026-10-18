@@ -177,6 +177,15 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertTrue(link.contains(".foregroundStyle(WebTheme.accent)"), "BGM の行の印は真鍮（黒地の上）")
     }
 
+    /// 自己紹介の欄は空でも5行分を開ける（owner 2026-10-12: 枠が小さい・#227）
+    func testBioFieldIsTall() throws {
+        XCTAssertEqual(ProfileEditView.bioLines.lowerBound, 5, "自己紹介の欄が小さい（2行に戻っている）")
+        XCTAssertEqual(ProfileEditView.bioLines.upperBound, 12)
+        let edit = try source("Features/Profile/ProfileEditView.swift")
+        let bio = try slice(edit, from: "labeled(L(\"自己紹介\", \"Bio\")", to: "} header:")
+        XCTAssertTrue(bio.contains(".lineLimit(Self.bioLines)"), "自己紹介の欄が bioLines を使っていない")
+    }
+
     // MARK: - フォロー一覧
 
     func testFollowListRowsAndButton() throws {
