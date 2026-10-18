@@ -281,12 +281,24 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(main.contains(#".accessibilityIdentifier("trunk.open")"#))
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         // 前開き: 下の辺が軸で手前へ倒れる
-        XCTAssertTrue(open.contains(".rotation3DEffect(.degrees(-TrunkLid.angle(p)), axis: (x: 1, y: 0, z: 0), anchor: .bottom,"))
+        XCTAssertTrue(open.contains(".rotation3DEffect(.degrees(-pose.angle), axis: (x: 1, y: 0, z: 0), anchor: .bottom,"))
+        // 途中の値から描く（Animatable）・平らなふたへは動きの終わりに
+        XCTAssertTrue(open.contains("struct TrunkLidStage: ViewModifier, Animatable {"))
+        XCTAssertTrue(open.contains("var animatableData: Double {\n        get { p }\n        set { p = newValue }"))
+        XCTAssertTrue(open.contains("let pose = TrunkLid.pose(p)"))
+        XCTAssertTrue(open.contains("} completion: {"), "平らなふたへの差し替えが動きの終わりでない")
+        XCTAssertTrue(open.contains("duration: TrunkLid.settleDuration"))
+        // 閉じている・途中のふたは読ませない。読み上げで1段ずつ開け閉め
+        XCTAssertTrue(open.contains(".accessibilityHidden(!flat)"))
+        XCTAssertTrue(open.contains(".accessibilityAdjustableAction { direction in"))
+        XCTAssertTrue(open.contains("move(to: TrunkLid.stepped(p, up: up))"))
+        XCTAssertTrue(open.contains(".highPriorityGesture(drag(scale: k))"))
         XCTAssertTrue(open.contains("settle(to: TrunkLid.settled(p))"), "指を離しても近い方へ寄らない")
         XCTAssertTrue(open.contains(".accessibilityValue(TrunkLid.accessibilityValue(p))"), "開き具合を読み上げない")
         // 本物の中身（新しい通信は増やさない: 自分のプロフィールと端末の中のすれちがい帳）
         XCTAssertTrue(open.contains("environment.profiles.myProfile()"))
         XCTAssertTrue(open.contains("isPro: profile?.isPro ?? false"), "会員証の出し分けが Pro を見ていない")
+        XCTAssertTrue(open.contains("supporter: profile?.supporterInfo"), "サポーター証の中身を見ていない")
         XCTAssertTrue(open.contains("pass.book(hiding: hidden.snapshot)"), "乗車券がすれちがい帳から来ていない")
         // 出口は今ある画面
         XCTAssertTrue(open.contains("MedalViewerView(badge: badge,"))
@@ -321,6 +333,14 @@ final class TrunkWiringTests: XCTestCase {
         let medal = try source("Features/Profile/MedalViewerView.swift")
         XCTAssertTrue(medal.contains("buildBox(aspect: aspect, depthRatio: depth, cornerRatio: corner)"))
         XCTAssertTrue(medal.contains("shape.materials = [handleCap, handleCap, handleSide]"), "持ち手が1色のまま")
+        // 向きのボタン: 着いたら止める・裏返すと寄せを外す・最初は板の -34°
+        XCTAssertTrue(medal.contains("aimHeld = true\n                velocity = 0"), "向きに着いても止まらない")
+        XCTAssertTrue(medal.contains("} else if aimHeld {\n            return"))
+        XCTAssertTrue(medal.contains("flipTarget = Float(SpinMotion.flipTarget(from: Double(yaw)))\n        aimTarget = nil\n        aimHeld = false"), "裏返すと向きの寄せとぶつかる")
+        XCTAssertTrue(medal.contains("private static let boxRestingYaw: Float = -34 * .pi / 180"))
+        XCTAssertTrue(medal.contains("for x in TrunkFaces.handleClipCenters.map("), "立体の付け根が絵とずれる")
+        // 描く順: 表を先に、残りは処理を一度返してから
+        XCTAssertTrue(spin.contains("await Task.yield()\n            boxFaces = " + "TrunkTextures" + ".box("))
         XCTAssertFalse(medal.contains("buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)"),
                        "箱が押し出しの形（側面が1つの材質）に戻っている")
         // 正面と同じ描き方を使う（2度書かない）
@@ -331,6 +351,8 @@ final class TrunkWiringTests: XCTestCase {
         }
         let box = try source("Features/Trunk/TrunkBoxView.swift")
         XCTAssertTrue(box.contains("TrunkSkin(look: look, w: Self.W, h: Self.H)"))
+        XCTAssertTrue(box.contains("TrunkEdgeWear(look: look, w: Self.W, h: Self.H, corner: 16, front: true)"),
+                      "正面に縁の擦れが無い（回したときの面とそろわない）")
     }
 
     /// 🔴 胴の地（`TrunkSkin`）は押せる（c6865c9a で地ごと押せなくなり、ラベルの少ない人が革の面を押しても

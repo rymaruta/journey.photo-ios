@@ -90,6 +90,52 @@ enum TrunkLid {
         p >= 0.5 ? L("ふたを閉じる", "Close the lid") : L("ふたを開ける", "Open the lid")
     }
 
+    // MARK: 途中の姿（動きの途中の値から決める・2026-10-18 見直し）
+
+    /// ある開き具合のときの舞台の姿。**動きの途中の値ごとに**ここから描く（`TrunkLidStage` の `animatableData`）。
+    /// 行き先の値で決めると、ボタンや離して寄る動きでふたが倒れず・起きず、パッと替わる
+    struct Pose: Equatable {
+        /// ふたの倒れた角度（度）
+        let angle: Double
+        /// ふたの裏を描くか（90° を越えた）
+        let showsInside: Bool
+        /// 胴の上の位置
+        let baseTop: Double
+        let hingesVisible: Bool
+        /// 錠前の板の起きた角度（度）と、起き具合
+        let claspAngle: Double
+        let claspProgress: Double
+        /// 表の陰・裏の陰の濃さ
+        let lidShade: Double
+        let innerShade: Double
+    }
+
+    static func pose(_ p: Double) -> Pose {
+        Pose(angle: angle(p), showsInside: showsInside(p), baseTop: baseTop(p), hingesVisible: hingesVisible(p),
+             claspAngle: claspAngle(p), claspProgress: claspProgress(p), lidShade: lidShade(p), innerShade: innerShade(p))
+    }
+
+    /// ふたの裏を平らに置いて押せるようにするか。**開き切る動きが終わってから**（`settled`）だけ。
+    /// 途中で差し替えると、倒れていく途中のふたが消えて平らなふたが出る
+    static func showsFlatLid(_ p: Double, settled: Bool) -> Bool { settled && isOpen(p) }
+
+    // MARK: 小さい画面・大きい文字（押す所 44pt を保つ）
+
+    /// 舞台を縮める下限。これより縮めず、入らない分は上下に送って見る（メダルの押す所が 44pt を割らない）
+    static let minScale: Double = 0.6
+    /// 舞台の下の一言・棒・ボタンに取っておく高さ（文字を大きくしても下限で止め、はみ出す分は送る）
+    static let controlsReserve: Double = 236
+    /// メダルの枠の押す所（凹みの升 79×100 の内側。絵は 64）
+    static let medalHit: (w: Double, h: Double) = (76, 88)
+
+    /// 置ける幅と高さから舞台の縮み（1 を超えず、下限を割らない）
+    static func stageScale(width: Double, height: Double) -> Double {
+        max(minScale, min(1, width / stageWidth, height / stageHeight))
+    }
+
+    /// 縮めたときのメダルの押す所の短い辺
+    static func medalHitSide(scale: Double) -> Double { min(medalHit.w, medalHit.h) * scale }
+
     private static func clamp(_ v: Double) -> Double { min(1, max(0, v)) }
 }
 
@@ -366,10 +412,14 @@ struct TrunkInsideContents: Equatable {
     }
 
     /// 本物の持ち物から作る。メダルは `BadgeCatalog.owned`（台帳の順・絵の無い鍵は出さない）、
-    /// 会員証は Pro のときだけ（サポーターの印が残っていても、Pro をやめていたら入れない）
-    init(badges: BadgeSet, isPro: Bool, ticketCount: Int) {
-        self.init(medals: BadgeCatalog.owned(badges), showsCard: isPro, ticketCount: ticketCount)
+    /// 会員証は **Pro で、サポーター証の中身（番号）があるときだけ**（設定の「サポーター証」の行と同じ決まり。
+    /// サポーターの印が残っていても Pro をやめていたら入れず、Pro でも番号の無い人に「No. 0」の札を出さない）
+    init(badges: BadgeSet, isPro: Bool, supporter: SupporterInfo?, ticketCount: Int) {
+        self.init(medals: BadgeCatalog.owned(badges), showsCard: Self.showsCard(isPro: isPro, supporter: supporter),
+                  ticketCount: ticketCount)
     }
+
+    static func showsCard(isPro: Bool, supporter: SupporterInfo?) -> Bool { isPro && supporter != nil }
 
     /// 留めきれないメダルの数（9枚以上なら、7枚を留めて残りを「ほか N」）
     var overflow: Int { medals.count > Self.medalSlots ? medals.count - (Self.medalSlots - 1) : 0 }

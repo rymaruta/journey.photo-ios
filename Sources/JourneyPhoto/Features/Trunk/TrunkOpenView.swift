@@ -28,6 +28,8 @@ struct TrunkOpenView: View {
     @State private var p: Double = 0
     /// 指で引いている間の、引き始めの開き具合
     @State private var dragStart: Double?
+    /// 開き切る動きが終わった（平らなふたを置いて中身を押せる）
+    @State private var lidSettled = false
     @State private var profile: UserProfile?
     @State private var phase: Phase = .loading
     @State private var cardImage: UIImage?
@@ -51,7 +53,7 @@ struct TrunkOpenView: View {
             return TrunkInsideContents(medals: [], showsCard: false, ticketCount: 0)
         }
         return TrunkInsideContents(badges: profile?.earnedBadges ?? BadgeSet(), isPro: profile?.isPro ?? false,
-                            ticketCount: ticketContents.count)
+                                   supporter: profile?.supporterInfo, ticketCount: ticketContents.count)
     }
 
     /// すれちがい帳に綴じた乗車券（届いたもの・見せてよいもの）
@@ -115,9 +117,8 @@ struct TrunkOpenView: View {
             let fetched = try await environment.profiles.myProfile()
             profile = fetched
             phase = .loaded
-            if fetched.isPro {
-                let supporter = fetched.supporterInfo
-                cardImage = SupporterCardTextures.front(cardFace(fetched, supporter))
+            if TrunkInsideContents.showsCard(isPro: fetched.isPro, supporter: fetched.supporterInfo) {
+                cardImage = SupporterCardTextures.front(cardFace(fetched, fetched.supporterInfo))
             }
         } catch {
             phase = .failed
@@ -131,130 +132,45 @@ struct TrunkOpenView: View {
 
     // MARK: 開け閉めできる姿（板 TrunkOpen）
 
+    /// 小さい画面・大きい文字でも舞台を下限（`TrunkLid.minScale`）より縮めない（メダルの押す所 44pt を保つ）。
+    /// 入らない分は上下に送って見る。ふたを引く指は舞台の上では送りより先に効く（`highPriorityGesture`）
     private func openable(_ contents: TrunkInsideContents) -> some View {
-        VStack(spacing: 0) {
-            Text(TrunkText.eyebrow(model))
-                .font(JPFont.eyebrow)
-                .tracking(11 * 0.12)
-                .foregroundStyle(WebTheme.accent)
-                .lineLimit(1)
-                .padding(.top, 4)
-            GeometryReader { geo in
-                let k = min(1, Double(geo.size.width) / TrunkLid.stageWidth, Double(geo.size.height) / TrunkLid.stageHeight)
-                stage(contents)
-                    .frame(width: TrunkLid.stageWidth, height: TrunkLid.stageHeight, alignment: .topLeading)
-                    .scaleEffect(k, anchor: .top)
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    .contentShape(Rectangle())
-                    .gesture(drag(scale: k))
-            }
-            controls(contents)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
-        }
-    }
-
-    /// 舞台（390×584）: 床の光・持ち手・胴（中）・ふた・蝶番
-    private func stage(_ contents: TrunkInsideContents) -> some View {
-        let baseTop = TrunkLid.baseTop(p)
-        let open = TrunkLid.isOpen(p) && dragStart == nil
-        let left = TrunkLid.bodyLeft
-        let h = TrunkLid.bodyHeight
-        return ZStack(alignment: .topLeading) {
-            // 床に落ちる真鍮の淡い光（ふたが倒れると下へ）
-            EllipticalGradient(colors: [WebTheme.accent.opacity(0.14), Color.clear])
-                .frame(width: 320, height: 26)
-                .offset(x: 35, y: baseTop + h - 8 + h * p)
-                .accessibilityHidden(true)
-            // 上の面の持ち手（胴に付いたまま・正面の絵の上 40）
-            TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
-                .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
-                .clipped()
-                .offset(x: left, y: baseTop - TrunkLooks.bodyTop)
-                .accessibilityHidden(true)
-            TrunkInsideView(model: model, part: .base, lining: lining, contents: contents, cardImage: cardImage,
-                            cardLabel: cardLabel, ticketPhotos: ticketPhotos, interactive: open, lifted: held,
-                            onPick: pick)
-                .offset(x: left, y: baseTop)
-            if open {
-                // 開き切った: ふたの裏は平らに置いて押せるようにする（3D の回転の中では押す場所がずれる）
-                TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents, interactive: true,
-                                lifted: held, onPick: pick)
-                    .offset(x: left, y: baseTop + h)
-            } else {
-                lid(contents)
-                    .rotation3DEffect(.degrees(-TrunkLid.angle(p)), axis: (x: 1, y: 0, z: 0), anchor: .bottom,
-                                      perspective: TrunkLid.perspective)
-                    .offset(x: left, y: baseTop)
-                    .allowsHitTesting(false)
-            }
-            if TrunkLid.hingesVisible(p) {
-                ForEach([64.0, 268], id: \.self) { x in
-                    TrunkPartPaintView(paint: TrunkInsideLooks.look(model).metal)
-                        .frame(width: 28, height: 14)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.45)).frame(height: 1) }
-                        .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 2)
-                        .offset(x: left + x, y: baseTop + h - 7)
-                        .accessibilityHidden(true)
+        GeometryReader { geo in
+            let width = Double(geo.size.width)
+            let k = TrunkLid.stageScale(width: width, height: Double(geo.size.height) - 28 - TrunkLid.controlsReserve)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    Text(TrunkText.eyebrow(model))
+                        .font(JPFont.eyebrow)
+                        .tracking(11 * 0.12)
+                        .foregroundStyle(WebTheme.accent)
+                        .lineLimit(1)
+                        .padding(.top, 4)
+                    Color.clear
+                        .frame(width: TrunkLid.stageWidth, height: TrunkLid.stageHeight)
+                        .modifier(stage(contents))
+                        .scaleEffect(k, anchor: .top)
+                        .frame(width: width, height: TrunkLid.stageHeight * k, alignment: .top)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(drag(scale: k))
+                    controls(contents)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
                 }
+                .frame(minHeight: Double(geo.size.height), alignment: .top)
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("trunk.open.stage")
-    }
-
-    /// 倒れていくふた。90° までは表（正面の絵・錠前の板が起きる）、越えたら裏（上下を返して描き、回すと正しい向き）
-    @ViewBuilder
-    private func lid(_ contents: TrunkInsideContents) -> some View {
-        if TrunkLid.showsInside(p) {
-            TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(TrunkLid.innerShade(p)))
-                }
-                .scaleEffect(x: 1, y: -1)
-        } else {
-            ZStack(alignment: .topLeading) {
-                TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                             parts: parts, wrinkles: wrinkles)
-                if p > 0 { clasp }
-                RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(TrunkLid.lidShade(p)))
-            }
-            .frame(width: TrunkLooks.bodyWidth, height: TrunkLooks.bodyHeight, alignment: .topLeading)
         }
     }
 
-    /// 錠前の板（開け始めの 10% で手前へ起き、下の受けが見える）
-    private var clasp: some View {
-        let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
-        let fittings = TrunkFittings(parts)
-        let w = look.lock.width, h = look.lock.height
-        let x = 180 - w / 2, y = TrunkLooks.lockTop(look)
-        return ZStack(alignment: .topLeading) {
-            // 受け（暗い凹みと、掛け金の穴）
-            ZStack {
-                LinearGradient(colors: [Color(trunk: TrunkRGBA(0x3A2A14)), Color(trunk: TrunkRGBA(0x1A1008))],
-                               startPoint: .top, endPoint: .bottom)
-                Circle().fill(Color(trunk: TrunkRGBA(0x2A1A0A))).frame(width: 6, height: 6).offset(y: h * 0.2)
-            }
-            .frame(width: w, height: h)
-            .clipShape(TrunkLockShape(round: look.lock.round))
-            .offset(x: x, y: y)
-            // 起きる板
-            ZStack {
-                TrunkHardwareFace(look: look, fittings: fittings, w: w, h: h)
-                UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 4)
-                    .fill(Color.black.opacity(0.65))
-                    .frame(width: 7, height: 11)
-            }
-            .frame(width: w, height: h)
-            .clipShape(TrunkLockShape(round: look.lock.round))
-            .shadow(color: Color.black.opacity(0.6), radius: 2 + 3 * TrunkLid.claspProgress(p), x: 0,
-                    y: 2 + 8 * TrunkLid.claspProgress(p))
-            .rotation3DEffect(.degrees(TrunkLid.claspAngle(p)), axis: (x: 1, y: 0, z: 0), anchor: .top, perspective: 0.6)
-            .offset(x: x, y: y)
-        }
-        .accessibilityHidden(true)
+    /// 舞台（390×584）。**ふたの角度・表と裏・胴の位置は、動きの途中の値から決める**（`TrunkLidStage` の
+    /// `animatableData`）。平らなふた（押せる）への差し替えは開き切る動きが終わってから（`lidSettled`）
+    private func stage(_ contents: TrunkInsideContents) -> TrunkLidStage {
+        TrunkLidStage(p: p, settled: lidSettled && dragStart == nil, model: model, posts: posts, stuck: stuck,
+                      ownerName: ownerName, parts: parts, wrinkles: wrinkles, lining: lining, contents: contents,
+                      cardImage: cardImage, cardLabel: cardLabel, ticketPhotos: ticketPhotos, lifted: held,
+                      closedLabel: TrunkText.accessibilityLabel(model: model, labels: TrunkPlacement.layout(stuck, stage: 0).count,
+                                                                tags: TrunkAging.tagCount(posts: posts), equipped: parts),
+                      onPick: pick, onAdjust: { up in move(to: TrunkLid.stepped(p, up: up)) })
     }
 
     private var cardLabel: String {
@@ -272,6 +188,7 @@ struct TrunkOpenView: View {
                 guard held == nil else { return }
                 let start = dragStart ?? p
                 if dragStart == nil { dragStart = p }
+                lidSettled = false
                 let next = TrunkLid.dragged(from: start, dy: Double(value.translation.height) / max(0.1, k))
                 if TrunkLid.claspProgress(p) < 1, TrunkLid.claspProgress(next) >= 1 { claspTicks += 1 }
                 p = next
@@ -282,17 +199,30 @@ struct TrunkOpenView: View {
             }
     }
 
+    /// 開き切るか閉じ切る（指を離した・ボタン）。寄り切ったら触覚
     private func settle(to target: Double) {
         if target > 0, TrunkLid.claspProgress(p) < 1 {
             claspTicks += 1
             TrunkSound.tick()
         }
+        move(to: target)
+        landings += 1
+    }
+
+    /// 開き具合を動かす（板の 0.55s）。閉じ始めたらすぐ平らなふたを外し、開き切る動きが**終わってから**平らなふたにする
+    private func move(to target: Double) {
+        lidSettled = false
         if reduceMotion {
             p = target
-        } else {
-            withAnimation(.timingCurve(0.2, 0.75, 0.25, 1, duration: TrunkLid.settleDuration)) { p = target }
+            lidSettled = TrunkLid.isOpen(target)
+            return
         }
-        landings += 1
+        withAnimation(.timingCurve(0.2, 0.75, 0.25, 1, duration: TrunkLid.settleDuration), completionCriteria: .logicallyComplete) {
+            p = target
+        } completion: {
+            // 途中で指が触れた・別の行き先に替わったときは差し替えない
+            if p == target, dragStart == nil { lidSettled = TrunkLid.isOpen(target) }
+        }
     }
 
     // MARK: 下の一言・棒・ボタン（板 TrunkOpen）
@@ -313,7 +243,7 @@ struct TrunkOpenView: View {
                     .font(.caption)
                     .foregroundStyle(TrunkStyle.faint)
                     .accessibilityHidden(true)
-                Slider(value: Binding(get: { p }, set: { p = $0 }), in: 0...1)
+                Slider(value: Binding(get: { p }, set: { p = $0; lidSettled = TrunkLid.isOpen($0) }), in: 0...1)
                     .tint(Color(trunk: TrunkRGBA(0x2A2A2A)))
                     .accessibilityLabel(L("ふたの開き具合", "How far the lid is open"))
                     .accessibilityValue(TrunkLid.accessibilityValue(p))
@@ -599,5 +529,174 @@ struct TrunkOpenView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// ふたを開ける舞台（390×584・板 TrunkOpen）。**`p`（開き具合）が動きの途中の値で毎コマ描き直される**
+/// （`animatableData`）ので、ボタン・離して寄る動きでも、ふたは途中の角度を通って倒れ・起き、90° を越えた
+/// コマから裏を描く。床の光・持ち手・胴（中）・ふた・蝶番を重ねる
+struct TrunkLidStage: ViewModifier, Animatable {
+    var p: Double
+    /// 開き切る動きが終わった（平らなふたを置いて押せる）
+    let settled: Bool
+    let model: TrunkModel
+    let posts: Int
+    let stuck: [TrunkLabel]
+    let ownerName: String?
+    let parts: TrunkEquipped
+    let wrinkles: [String: Double]
+    let lining: TrunkLining
+    let contents: TrunkInsideContents
+    let cardImage: UIImage?
+    let cardLabel: String
+    let ticketPhotos: [Photo]
+    let lifted: TrunkHeld?
+    /// 閉じている・倒れている途中の読み上げ（トランクの名前）
+    let closedLabel: String
+    let onPick: (TrunkHeld) -> Void
+    /// 読み上げの「増やす・減らす」（true で開く方へ1段）
+    let onAdjust: (Bool) -> Void
+
+    var animatableData: Double {
+        get { p }
+        set { p = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let pose = TrunkLid.pose(p)
+        let flat = TrunkLid.showsFlatLid(p, settled: settled)
+        let left = TrunkLid.bodyLeft
+        let h = TrunkLid.bodyHeight
+        return content.overlay(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                // 床に落ちる真鍮の淡い光（ふたが倒れると下へ）
+                EllipticalGradient(colors: [WebTheme.accent.opacity(0.14), Color.clear])
+                    .frame(width: 320, height: 26)
+                    .offset(x: 35, y: pose.baseTop + h - 8 + h * p)
+                    .accessibilityHidden(true)
+                // 上の面の持ち手（胴に付いたまま・正面の絵の上 40）
+                TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
+                    .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
+                    .clipped()
+                    .offset(x: left, y: pose.baseTop - TrunkLooks.bodyTop)
+                    .accessibilityHidden(true)
+                // 胴の中。閉じている・倒れている途中は読ませない（ふたの名前だけ読む）
+                TrunkInsideView(model: model, part: .base, lining: lining, contents: contents, cardImage: cardImage,
+                                cardLabel: cardLabel, ticketPhotos: ticketPhotos, interactive: flat, lifted: lifted,
+                                onPick: onPick)
+                    .offset(x: left, y: pose.baseTop)
+                    .accessibilityHidden(!flat)
+                if flat {
+                    // 開き切った: ふたの裏は平らに置いて押せるようにする（3D の回転の中では押す場所がずれる）
+                    TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents, interactive: true,
+                                    lifted: lifted, onPick: onPick)
+                        .offset(x: left, y: pose.baseTop + h)
+                } else {
+                    lid(pose)
+                        .rotation3DEffect(.degrees(-pose.angle), axis: (x: 1, y: 0, z: 0), anchor: .bottom,
+                                          perspective: TrunkLid.perspective)
+                        .offset(x: left, y: pose.baseTop)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                if pose.hingesVisible {
+                    ForEach([64.0, 268], id: \.self) { x in
+                        TrunkPartPaintView(paint: TrunkInsideLooks.look(model).metal)
+                            .frame(width: 28, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.45)).frame(height: 1) }
+                            .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 2)
+                            .offset(x: left + x, y: pose.baseTop + h - 7)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+            .frame(width: TrunkLid.stageWidth, height: TrunkLid.stageHeight, alignment: .topLeading)
+            .modifier(StageAccessibility(open: flat, label: closedLabel, value: TrunkLid.accessibilityValue(p),
+                                         onAdjust: onAdjust))
+        }
+    }
+
+    /// 倒れていくふた。90° までは表（正面の絵・錠前の板が起きる）、越えたら裏（上下を返して描き、回すと正しい向き）
+    @ViewBuilder
+    private func lid(_ pose: TrunkLid.Pose) -> some View {
+        if pose.showsInside {
+            TrunkInsideView(model: model, part: .lid, lining: lining, contents: contents)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(pose.innerShade))
+                }
+                .scaleEffect(x: 1, y: -1)
+        } else {
+            ZStack(alignment: .topLeading) {
+                TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
+                             parts: parts, wrinkles: wrinkles)
+                if pose.claspProgress > 0 { clasp(pose) }
+                RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(pose.lidShade))
+            }
+            .frame(width: TrunkLooks.bodyWidth, height: TrunkLooks.bodyHeight, alignment: .topLeading)
+        }
+    }
+
+    /// 錠前の板（開け始めの 10% で手前へ起き、下の受けが見える）
+    private func clasp(_ pose: TrunkLid.Pose) -> some View {
+        let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
+        let fittings = TrunkFittings(parts)
+        let w = look.lock.width, h = look.lock.height
+        let x = 180 - w / 2, y = TrunkLooks.lockTop(look)
+        return ZStack(alignment: .topLeading) {
+            // 受け（暗い凹みと、掛け金の穴）
+            ZStack {
+                LinearGradient(colors: [Color(trunk: TrunkRGBA(0x3A2A14)), Color(trunk: TrunkRGBA(0x1A1008))],
+                               startPoint: .top, endPoint: .bottom)
+                Circle().fill(Color(trunk: TrunkRGBA(0x2A1A0A))).frame(width: 6, height: 6).offset(y: h * 0.2)
+            }
+            .frame(width: w, height: h)
+            .clipShape(TrunkLockShape(round: look.lock.round))
+            .offset(x: x, y: y)
+            // 起きる板
+            ZStack {
+                TrunkHardwareFace(look: look, fittings: fittings, w: w, h: h)
+                UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 1, bottomTrailingRadius: 1, topTrailingRadius: 4)
+                    .fill(Color.black.opacity(0.65))
+                    .frame(width: 7, height: 11)
+            }
+            .frame(width: w, height: h)
+            .clipShape(TrunkLockShape(round: look.lock.round))
+            .shadow(color: Color.black.opacity(0.6), radius: 2 + 3 * pose.claspProgress, x: 0, y: 2 + 8 * pose.claspProgress)
+            .rotation3DEffect(.degrees(pose.claspAngle), axis: (x: 1, y: 0, z: 0), anchor: .top, perspective: 0.6)
+            .offset(x: x, y: y)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// 舞台の読み上げ。開き切ったら中の押せるものを1つずつ、閉じている・途中は1つの要素（名前・開き具合・
+/// 「増やす／減らす」で1段ずつ開け閉め）
+private struct StageAccessibility: ViewModifier {
+    let open: Bool
+    let label: String
+    let value: String
+    let onAdjust: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if open {
+            content
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("trunk.open.stage")
+        } else {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
+                .accessibilityHint(L("上下に払うと、ふたを開け閉めします", "Swipe up or down to open or close the lid"))
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: onAdjust(true)
+                    case .decrement: onAdjust(false)
+                    @unknown default: break
+                    }
+                }
+                .accessibilityIdentifier("trunk.open.closed")
+        }
     }
 }

@@ -251,22 +251,25 @@ final class TrunkInsideTests: XCTestCase {
     /// 本物の持ち物から: 知らない鍵は出さない・**Pro でない人に会員証を出さない**
     func testContentsFromRealData() {
         let set = BadgeSet([badge("first"), badge("prefectures", 2), badge("unknownKey"), badge("supporter")])
-        let free = TrunkInsideContents(badges: set, isPro: false, ticketCount: 3)
+        let card = SupporterInfo(number: 12, since: "2026-10-01", months: 1)
+        let free = TrunkInsideContents(badges: set, isPro: false, supporter: card, ticketCount: 3)
         XCTAssertFalse(free.showsCard, "Pro でない人に会員証が入る（サポーターの印が残っていても）")
         XCTAssertFalse(free.medals.contains { $0.key == "unknownKey" })
         XCTAssertEqual(free.medals.map(\.key), ["first", "prefectures", "supporter"], "台帳の順でない")
         XCTAssertEqual(free.ticketTab, L("乗車券 3", "Tickets 3"))
-        let pro = TrunkInsideContents(badges: set, isPro: true, ticketCount: 0)
+        let pro = TrunkInsideContents(badges: set, isPro: true, supporter: card, ticketCount: 0)
         XCTAssertTrue(pro.showsCard)
+        // Pro でもサポーター証の中身（番号）が無ければ出さない（「No. 0」の札を出さない・設定の行と同じ決まり）
+        XCTAssertFalse(TrunkInsideContents(badges: set, isPro: true, supporter: nil, ticketCount: 0).showsCard)
         XCTAssertEqual(pro.ticketTab, L("乗車券", "Tickets"))
     }
 
     /// 空のトランク: メダルも会員証も乗車券も無いときだけ
     func testEmptyTrunk() {
-        XCTAssertTrue(TrunkInsideContents(badges: BadgeSet(), isPro: false, ticketCount: 0).isEmpty)
-        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet(), isPro: true, ticketCount: 0).isEmpty, "Pro の人の会員証が空扱い")
-        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet(), isPro: false, ticketCount: 1).isEmpty)
-        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet([badge("first")]), isPro: false, ticketCount: 0).isEmpty)
+        XCTAssertTrue(TrunkInsideContents(badges: BadgeSet(), isPro: false, supporter: nil, ticketCount: 0).isEmpty)
+        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet(), isPro: true, supporter: SupporterInfo(number: 3, since: nil, months: 0), ticketCount: 0).isEmpty, "Pro の人の会員証が空扱い")
+        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet(), isPro: false, supporter: nil, ticketCount: 1).isEmpty)
+        XCTAssertFalse(TrunkInsideContents(badges: BadgeSet([badge("first")]), isPro: false, supporter: nil, ticketCount: 0).isEmpty)
         XCTAssertEqual(TrunkInsideEmpty.rows.map(\.shape), [.medal, .card, .ticket])
         XCTAssertEqual(TrunkInsideEmpty.actionTitle, L("写真を投稿する", "Post a photo"))
     }
@@ -330,5 +333,70 @@ final class TrunkInsideTests: XCTestCase {
         XCTAssertTrue(label.contains(TrunkText.info(.leather).name))
         XCTAssertTrue(label.contains("12"))
         XCTAssertEqual(TrunkInsideContents.slotLabel(.more(3)), L("ほかのメダル 3 枚", "3 more medals"))
+    }
+
+    // MARK: - 見直し（2026-10-18）
+
+    /// 動きの途中の値から姿を決める: 途中のコマでふたは途中の角度・90° を越えたコマから裏
+    func testPoseFollowsTheInBetweenValue() {
+        let quarter = TrunkLid.pose(0.25)
+        XCTAssertEqual(quarter.angle, 45, accuracy: 0.0001)
+        XCTAssertFalse(quarter.showsInside)
+        XCTAssertEqual(quarter.baseTop, 148, accuracy: 0.0001)
+        XCTAssertEqual(quarter.claspProgress, 1)
+        let late = TrunkLid.pose(0.7)
+        XCTAssertEqual(late.angle, 126, accuracy: 0.0001)
+        XCTAssertTrue(late.showsInside, "90° を越えたのに表のまま")
+        XCTAssertTrue(late.hingesVisible)
+        XCTAssertEqual(TrunkLid.pose(0.05).claspAngle, 70, accuracy: 0.0001, "錠前の板が途中の角度を通らない")
+        // 途中の値が単調に進む（ボタンで 0 → 1 の間にパッと替わらない）
+        let angles = stride(from: 0.0, through: 1.0, by: 0.05).map { TrunkLid.pose($0).angle }
+        XCTAssertEqual(angles, angles.sorted())
+        XCTAssertEqual(Set(angles).count, angles.count)
+    }
+
+    /// 平らなふた（押せる）は開き切る動きが終わってからだけ
+    func testFlatLidOnlyAfterSettling() {
+        XCTAssertFalse(TrunkLid.showsFlatLid(1, settled: false), "動きの途中で平らなふたに差し替わる")
+        XCTAssertTrue(TrunkLid.showsFlatLid(1, settled: true))
+        XCTAssertFalse(TrunkLid.showsFlatLid(0.9, settled: true))
+    }
+
+    /// 小さい画面（SE）・最大の文字でも、メダルの押す所は 44pt を割らない
+    func testMedalTapTargetOnSmallScreens() {
+        // SE（375×667）: ナビと眉ラベルを引いた高さ、最大の文字で下の一言とボタンが伸びた分まで差し引く
+        for (w, h) in [(375.0, 667.0 - 64), (375.0, 667.0 - 64 - 260), (320.0, 480.0), (430.0, 932.0 - 100)] {
+            let k = TrunkLid.stageScale(width: w, height: h - 28 - TrunkLid.controlsReserve)
+            XCTAssertGreaterThanOrEqual(k, TrunkLid.minScale)
+            XCTAssertLessThanOrEqual(k, 1)
+            XCTAssertGreaterThanOrEqual(TrunkLid.medalHitSide(scale: k), 44, "\(w)×\(h) でメダルの押す所が 44pt 未満")
+        }
+        // 押す所が凹みの升（79×100）に収まる（隣の枠と重ならない）
+        XCTAssertLessThanOrEqual(TrunkLid.medalHit.w, 316.0 / 4)
+        XCTAssertLessThanOrEqual(TrunkLid.medalHit.h, 100)
+        XCTAssertEqual(TrunkLid.stageScale(width: 430, height: 2000), 1)
+    }
+
+    /// 持ち手の付け根は正面・上の面・立体で同じ真ん中（胴の真ん中から ±50）
+    func testHandleClipsLineUp() {
+        XCTAssertEqual(TrunkFaces.handleClipCenters.map { $0 - TrunkLooks.bodyWidth / 2 }, [-50, 50])
+        XCTAssertEqual(TrunkFaces.handleClips(.top).map(\.midX), TrunkFaces.handleClipCenters)
+    }
+
+    /// 正面にも縁の擦れ（板 Trunk の `edgeWear`）。**変わるのは古びた段だけ**（投稿 0 と金属・漆の型は今までどおり）
+    func testFrontEdgeWearOnlyWhenAged() {
+        for model in TrunkModel.allCases {
+            XCTAssertNil(TrunkFaces.edgeWear(model, stage: TrunkAging.stage(posts: 0), front: true), "\(model) の新品に擦れ")
+        }
+        for model in [TrunkModel.aluminum, .clipper, .urushi, .kori, .captain] {
+            XCTAssertNil(TrunkFaces.edgeWear(model, stage: 1, front: true), "\(model) に擦れが出る")
+        }
+        let front = TrunkFaces.edgeWear(.leather, stage: 1, front: true)
+        let face = TrunkFaces.edgeWear(.leather, stage: 1)
+        XCTAssertEqual(front?.width, 7, "正面の縁は 2+5st")
+        XCTAssertEqual(face?.width, 6, "面の縁は 2+4st")
+        XCTAssertGreaterThan(front?.blur ?? 0, face?.blur ?? 0)
+        let mid = TrunkFaces.edgeWear(.canvas, stage: TrunkAging.stage(posts: 50), front: true)
+        XCTAssertEqual(mid?.alpha ?? 0, 0.08, accuracy: 0.0001)
     }
 }
