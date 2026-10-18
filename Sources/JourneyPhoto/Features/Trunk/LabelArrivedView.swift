@@ -10,6 +10,7 @@ struct LabelArrivedView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
     /// 画面写真の見本（`-JPPreviewTrunkArrived`）ではサーバーを読まず、見本の手持ちを出す
     @StateObject private var model = TrunkViewModel(preview: PreviewSession.opensTrunkArrived ? .sample
@@ -57,7 +58,7 @@ struct LabelArrivedView: View {
         }
         .statusBarHidden(false)
         .task {
-            model.bind(environment.trunk)
+            model.bind(environment.trunk, userId: auth.userId)
             await model.load(offline: false)
         }
         .fullScreenCover(isPresented: $showReroll, onDismiss: {

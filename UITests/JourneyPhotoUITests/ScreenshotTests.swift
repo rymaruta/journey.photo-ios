@@ -1264,6 +1264,63 @@ final class ScreenshotTests: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
 
+    /// **設定から開いた「新しくなったこと」の履歴**（2026-10-18・`WhatsNewView(mode: .history)`）。
+    ///
+    /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。設定は全部の版を `mode: .history` で渡すので、
+    /// 2枚目（「これまでのお知らせ」と版の区切りの見出し）まで撮れる。シートが開いたのに履歴が無ければ落とす
+    func testCapturesWhatsNewHistory() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let row = app.buttons["settings.whatsNew"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !row.isHittable, pushes < 8 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return }
+        row.tap()
+        // シートの主ボタンで待つ——見出しの文字「新しくなったこと」は設定の行にもあり、開く前に通ってしまう
+        let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02e-新しくなったこと（設定から）")
+
+        // 履歴の形のときだけ: 「これまでのお知らせ」と版の区切りが見えるまで送って撮る
+        let history = app.descendants(matching: .any)["whatsNew.history"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "設定から開いた「新しくなったこと」が履歴の形でない")
+        if history.exists {
+            // 見えているだけでは送らない——「これまでのお知らせ」が画面の上半分に来るまで送る（画面の下の端に
+            // 見出しだけ覗いた姿は 02e と同じ絵になる）
+            var down = 0
+            while !history.isHittable || history.frame.minY > app.frame.height * 0.45, down < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                down += 1
+            }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "02f-新しくなったこと（これまでのお知らせ）")
+        }
+        if close.exists, close.isHittable { close.tap() }
+    }
+
     /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）と、
     /// マイページの名前の行 → 名前の横の画面の「PRO 限定」（板 BadgePicker）。
     ///
@@ -2327,6 +2384,53 @@ final class ScreenshotTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: stick)], timeout: 5)
         XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
+    }
+
+    // MARK: - はじめての硬貨（2026-10-18 owner 承認）
+
+    /// **はじめての硬貨**（`-JPPreviewTrunkWelcome YES`・サーバーには何も送らない）。見本は必ず出るので、
+    /// **出ない・「カプセルを回す」「あとで」「閉じる」が無い・44pt 未満なら落とす**。
+    /// 「カプセルを回す」でカプセルの機械へ進み、戻って「あとで」で閉じる
+    func testCapturesTrunkWelcome() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "YES", "-JPPreviewTrunk", "YES"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96c-はじめての硬貨")
+        let later = app.buttons["trunk.welcome.later"].firstMatch
+        let close = app.buttons["trunk.welcome.close"].firstMatch
+        for (button, name) in [(turn, "カプセルを回す"), (later, "あとで"), (close, "閉じる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.added"].firstMatch.exists, "「硬貨 +10 枚」が無い")
+        XCTAssertFalse(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "10 枚の回に上限の一言が出ている")
+        guard turn.isHittable else { return XCTFail("「カプセルを回す」を押せない") }
+        turn.tap()
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        XCTAssertTrue(insert.waitForExistence(timeout: 10), "「カプセルを回す」でカプセルの機械へ進まない")
+        Thread.sleep(forTimeInterval: 1)
+        // 機械の手持ちは案内と同じ「配ったあとの数」（見本は 2 + 10 = 12 枚）。2 枚に戻って見えたら落とす
+        let coins = app.descendants(matching: .any)["trunk.gacha.coins"].firstMatch
+        XCTAssertTrue(coins.waitForExistence(timeout: 5), "カプセルの機械に硬貨の数が無い")
+        XCTAssertTrue(coins.label.contains("12"), "カプセルの機械の硬貨が案内の数（12）と違う: \(coins.label)")
+        shoot(app, "96d-はじめての硬貨（カプセルの機械へ）")
+        goBack(app)
+        guard later.waitForExistence(timeout: 10), later.isHittable else { return XCTFail("機械から案内へ戻れない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: turn)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+    }
+
+    /// **はじめての硬貨（上限に当たって 3 枚だけ）**: 実際の枚数と上限の一言
+    func testCapturesTrunkWelcomeCapped() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "3"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96e-はじめての硬貨（上限に当たった）")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "上限の一言が無い")
     }
 
     // MARK: - 旅のトランクの次の版（2026-10-17・自分の手で貼る・カプセルの機械・部品箱）

@@ -31,11 +31,34 @@
           "symbol": "photo.on.rectangle",
           "title": { "ja": "構図に作例写真", "en": "Example photos for compositions" },
           "detail": { "ja": "構図を選ぶシートと構図一覧で、各構図の右に作例写真が出ます。どんな場面で使う構図か、撮る前に分かります。", "en": "The composition sheet and the composition guide now show an example photo beside each composition, so you know when to use it before you shoot." }
+        },
+        {
+          "symbol": "rotate.right",
+          "title": { "ja": "横長の作例は横向きに重ねる", "en": "Landscape samples overlay sideways" },
+          "detail": { "ja": "構図を重ねて撮るとき、横長の作例ははじめから横向きに回して重ねます。縦の画面で上下が空きません。", "en": "When you shoot over a sample, landscape samples are rotated sideways from the start, so no space is left above and below on a portrait screen." },
+          "destination": "map"
+        },
+        {
+          "symbol": "location",
+          "title": { "ja": "撮影地の位置を付けるか選べる", "en": "Choose whether to attach your location" },
+          "detail": { "ja": "投稿とストーリーに「撮影地の位置を付ける」の切り替えができました。付けるときは約1kmに丸めて保存し、オフにすると写真の位置情報は送りません。", "en": "Posts and stories now have an \"Attach location\" switch. When on, the location is rounded to about 1 km; when off, the photo's location isn't sent." }
+        },
+        {
+          "symbol": "calendar",
+          "title": { "ja": "季節の撮影スポットが日替わりに", "en": "Seasonal spots change daily" },
+          "detail": { "ja": "ホームの今の季節の撮影スポットが、毎日違う組み合わせで並びます。", "en": "The seasonal photo spots on Home now show a different selection every day." },
+          "destination": "home"
+        },
+        {
+          "symbol": "clock.arrow.circlepath",
+          "title": { "ja": "お知らせの履歴", "en": "Update history" },
+          "detail": { "ja": "設定の「新しくなったこと」から、前の版のお知らせも日付つきで見られます。", "en": "Open \"What's New\" in Settings to see earlier updates with their dates." }
         }
       ]
     },
     {
       "version": "1.0.82",
+      "date": "2026-10-10",
       "items": [
         {
           "symbol": "sparkles",
@@ -63,6 +86,7 @@
     },
     {
       "version": "1.0.73",
+      "date": "2026-10-09",
       "items": [
         {
           "symbol": "seal",
@@ -90,6 +114,7 @@
     },
     {
       "version": "1.0.67",
+      "date": "2026-10-04",
       "items": [
         {
           "symbol": "photo.on.rectangle.angled",

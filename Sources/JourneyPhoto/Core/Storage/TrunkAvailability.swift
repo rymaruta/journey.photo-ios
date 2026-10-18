@@ -26,6 +26,9 @@ final class TrunkAvailability: ObservableObject {
     private static func key(_ userId: String) -> String { "trunk.available.\(userId)" }
     private static func checkedKey(_ userId: String) -> String { "trunk.availableCheckedAt.\(userId)" }
 
+    /// この起動で口を確かめに読んだ人（はじめての硬貨が、マイページの読み込みのあとにもう1本読まないため・2026-10-18）
+    private(set) var checkedThisLaunch: Set<String> = []
+
     /// 入っている人のぶんを出す（要るときだけ読み直す）。見本（画面写真）では読まずに出す
     func refresh(userId: String?, service: TrunkService, force: Bool = false, now: Date = Date(),
                  preview: Bool = PreviewSession.trunkSample != nil) async {
@@ -40,6 +43,8 @@ final class TrunkAvailability: ObservableObject {
         // 読めた中身は入口の札の数にも入る（同じ `GET /user/trunk` を2回読まない・2026-10-18）
         do { _ = try await entry.read(userId: userId, service: service, now: now) } catch is CancellationError { return } catch { failure = error }
         guard self.userId == userId, let decided = TrunkAvailabilityRule.decide(failure) else { return }
+        // 答えが決まった（読めた・口が無い）ときだけ「確かめた」と覚える。取り消し・一時の失敗では覚えない
+        checkedThisLaunch.insert(userId)
         isAvailable = decided
         defaults.set(decided, forKey: Self.key(userId))
         defaults.set(now, forKey: Self.checkedKey(userId))

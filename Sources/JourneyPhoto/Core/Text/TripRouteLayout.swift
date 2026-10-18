@@ -50,9 +50,14 @@ enum TripRouteLayout {
         let total = height(labelHeight: labelHeight)
         guard count > 0 else { return Layout(points: [], labels: [], height: total) }
 
-        let span = max(0, width - inset * 2)
-        let xs: [CGFloat] = (0..<count).map { index in
-            count > 1 ? inset + span * CGFloat(index) / CGFloat(count - 1) : width / 2
+        // 2026-10-18: 三項の中に CGFloat の四則を連ねた式が型検査に約4秒かかった（Linux の模型で計測）。
+        // 段に分けて型を書く（値は前と同じ: inset + span × index ÷ (count − 1)、1つなら真ん中）
+        let span: CGFloat = max(0, width - inset * 2)
+        let gaps: CGFloat = CGFloat(max(1, count - 1))
+        let xs: [CGFloat] = (0..<count).map { (index: Int) -> CGFloat in
+            guard count > 1 else { return width / 2 }
+            let along: CGFloat = span * CGFloat(index)
+            return inset + along / gaps
         }
         let points = xs.indices.map { index in
             CGPoint(x: xs[index], y: index.isMultiple(of: 2) ? lowerY : upperY)

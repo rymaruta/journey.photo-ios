@@ -180,9 +180,9 @@ struct SettingsView: View {
         .navigationTitle(L("設定", "Settings"))
         // ログアウトの途中は戻らせない・シートも払わせない（戻って開き直すと門が新しくなり、
         // 二度押せる。`DeleteAccountView` と同じ2つ）
-        // 開き直すときは一番新しい版の分だけ（版が増えても昔の項目まで並べない）
+        // 設定から開いたときは履歴（新しい版が上・版ごとに区切りの見出し・2026-10-18 owner「過去の履歴を見れるようにしたい」）
         .sheet(isPresented: $showWhatsNew) {
-            WhatsNewView(releases: Array(WhatsNew.bundled().prefix(1)), primaryTitle: Labels.Common.close)
+            WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)
         }
         .navigationBarBackButtonHidden(isSigningOut)
         .interactiveDismissDisabled(isSigningOut)
