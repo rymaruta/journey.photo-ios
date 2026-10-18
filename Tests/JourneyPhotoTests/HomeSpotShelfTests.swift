@@ -361,6 +361,34 @@ final class HomeSpotShelfTests: XCTestCase {
         XCTAssertFalse(HomeSpotShelf.note.contains("Wikimedia Commons"), "出どころは Commons だけではない（2026-10-04）")
     }
 
+    /// 札の「行きたい」は、どの場所か・保存済みかを読み上げでも伝える（塗りの色だけにしない・2026-10-18）
+    func testWishButtonSpeaksThePlaceAndWhetherSaved() {
+        XCTAssertEqual(HomeSpotShelf.wishSpokenValue(saved: true), "保存済み")
+        XCTAssertEqual(HomeSpotShelf.wishSpokenValue(saved: false), "未保存")
+        XCTAssertTrue(HomeSpotShelf.wishSpokenLabel("備中松山城").contains("備中松山城"), "どの札の「行きたい」か分からない")
+    }
+
+    /// 🔴 **「行きたい」は札の下端にそろえ、縁から離す**（2026-10-18）。出典の無い札は背が低く、
+    /// ボタンを出典のすぐ下に置くと札ごとに上下にずれる。下を空けないと角が札の縁に貼りつく
+    func testWishButtonSitsAtTheCardBottomWithMargin() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Gallery/HomeSpotShelfView.swift"), encoding: .utf8)
+        let credit = try XCTUnwrap(view.range(of: "credit(picture)"))
+        let spacer = try XCTUnwrap(view.range(of: "Spacer(minLength: 0)", range: credit.upperBound..<view.endIndex),
+                                   "出典とボタンの間で余りを空けていない（ボタンの高さが札ごとにずれる）")
+        let wish = try XCTUnwrap(view.range(of: "WishlistSync.toggle", range: spacer.upperBound..<view.endIndex))
+        let id = try XCTUnwrap(view.range(of: "\"home.spotShelf.wish\"", range: wish.upperBound..<view.endIndex))
+        let modifiers = String(view[wish.upperBound..<id.lowerBound])
+        XCTAssertTrue(modifiers.contains(".padding(.bottom, 12)"), "ボタンの下が札の縁に貼りつく")
+        XCTAssertTrue(modifiers.contains(".accessibilityValue(HomeSpotShelf.wishSpokenValue(saved: wanted))"))
+        XCTAssertTrue(modifiers.contains(".accessibilityLabel(HomeSpotShelf.wishSpokenLabel(entry.spot.name))"))
+        // 背をそろえる仕組み（これが無いと Spacer で札が伸びきる・そろわない）
+        XCTAssertTrue(view.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertTrue(view.contains(".frame(maxHeight: .infinity, alignment: .top)"))
+    }
+
     /// 札の地域は県（国外は国）。空なら出さない
     func testEntryRegionLabel() throws {
         XCTAssertEqual(HomeSpotShelf.Entry(spot: try spot("a", prefecture: "岡山県"), guide: "").regionLabel, "岡山県")
