@@ -19,6 +19,8 @@ struct EditPhotoView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 非公開にした・公開に戻した写真を、公開一覧から落とす／戻す（`hideGone`）
     @EnvironmentObject private var hidden: ModerationStore
+    /// 「撮影地の位置を付ける」の持ち主（2026-10-18・差し替えで写真の位置を書くか）
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -532,16 +534,20 @@ struct EditPhotoView: View {
             }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない。
             // 索引を読めなかった（nil）ときは、分からないのでピンを残す（`keepsCoordsOnReplace`）
+            // 「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え）。持ち主はログインしている人
+            // （取れなければ写真の人＝自分の写真）。オフなら差し替えた写真の位置を送らない
+            let attaches = UploadLocationPreference().attachesLocation(userId: auth.userId ?? photo.userId)
             let spots = await PlaceCoordsRule.lookup(
                 current: [],
-                needed: photo.coords != nil && EditPlaceRules.needsSpotIndex(
+                needed: attaches && photo.coords != nil && EditPlaceRules.needsSpotIndex(
                     openedLocation: photo.location, currentLocation: location, pickedCoords: false,
                     photoCoords: prepared.coords),
                 fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
                                                            currentLocation: location,
-                                                           newPhotoCoords: prepared.coords, spots: spots)
+                                                           newPhotoCoords: prepared.coords, spots: spots,
+                                                           attachesPhotoLocation: attaches)
             let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                                    uploads: environment.uploads,
                                                                    keepCoords: keep)

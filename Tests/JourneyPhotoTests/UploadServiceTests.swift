@@ -748,12 +748,39 @@ final class ScriptedProtocol: URLProtocol {
         var body: Data? = nil
     }
 
-    nonisolated(unsafe) static var script: [Step] = []
-    nonisolated(unsafe) static var calls: [Call] = []
+    /// 🔴 **控えは錠を掛けて読み書きする**（2026-10-18）。`startLoading` は URL の読み込みのスレッドで走るので、
+    /// 試験の `reset()`・`script =`（主スレッド）と同時に配列を書くと壊れうる（Mac の run 502 で単体テストの途中に
+    /// 落ちた。その候補）。外から見た形（`script`・`calls` の読み書き）は変えない
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var storedScript: [Step] = []
+    nonisolated(unsafe) private static var storedCalls: [Call] = []
+
+    static var script: [Step] {
+        get { lock.withLock { storedScript } }
+        set { lock.withLock { storedScript = newValue } }
+    }
+
+    static var calls: [Call] {
+        get { lock.withLock { storedCalls } }
+        set { lock.withLock { storedCalls = newValue } }
+    }
 
     static func reset() {
-        script = []
-        calls = []
+        lock.withLock {
+            storedScript = []
+            storedCalls = []
+        }
+    }
+
+    /// 呼ばれた記録を残し、当たる答えを1つ選ぶ（1回きりの答えは外す）。**ひとまとめに錠の中で**
+    private static func record(_ call: Call, path: String) -> Step? {
+        lock.withLock {
+            storedCalls.append(call)
+            guard let index = storedScript.firstIndex(where: { path.contains($0.match) }) else { return nil }
+            let step = storedScript[index]
+            if step.once { storedScript.remove(at: index) }
+            return step
+        }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -761,15 +788,12 @@ final class ScriptedProtocol: URLProtocol {
 
     override func startLoading() {
         let path = request.url?.path ?? ""
-        ScriptedProtocol.calls.append(.init(
+        let step = Self.record(.init(
             path: path,
             method: request.httpMethod ?? "",
             contentType: request.value(forHTTPHeaderField: "Content-Type"),
             body: request.httpBody ?? Self.read(request.httpBodyStream)
-        ))
-        let index = ScriptedProtocol.script.firstIndex { path.contains($0.match) }
-        let step = index.map { ScriptedProtocol.script[$0] }
-        if let index, step?.once == true { ScriptedProtocol.script.remove(at: index) }
+        ), path: path)
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: step?.status ?? 404,
