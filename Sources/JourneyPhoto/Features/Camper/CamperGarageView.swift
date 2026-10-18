@@ -23,7 +23,7 @@ struct CamperGarageView: View {
     @State private var previewStage: CamperStage?
     /// まだ持っていない部品を影絵で見ている
     @State private var previewPart: CamperPart?
-    @State private var group: CamperGroupKind = .exterior
+    @State private var group: CamperGroupKind = .ext
     @State private var category: CamperCategory = .wheel
     @State private var arrival: CamperPart?
     @State private var readyMarker = ""
@@ -62,7 +62,7 @@ struct CamperGarageView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
         .sheet(item: $arrival) { part in
-            CamperArrivalView(part: part, collected: owned.count, total: CamperCatalog.all.count, onEquip: {
+            CamperArrivalView(part: part, collected: CamperCatalog.dexCount(owned).have, total: CamperCatalog.dexCount(owned).total, onEquip: {
                 equip(part)
                 arrival = nil
             }, onClose: { arrival = nil })
@@ -251,7 +251,7 @@ struct CamperGarageView: View {
 
     private var statsRow: some View {
         HStack(spacing: 8) {
-            statTile(L("集めた部品", "Parts"), "\(owned.count) / \(CamperCatalog.all.count)")
+            statTile(L("集めた部品", "Parts"), "\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)")
             statTile(L("写真", "Photos"), "\(stats.posts)")
             statTile(L("走った旅", "Trips"), "\(stats.books)")
         }
@@ -315,7 +315,7 @@ struct CamperGarageView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(L("部品を集める", "Collect parts")).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Spacer()
-                Text("\(owned.count) / \(CamperCatalog.all.count)")
+                Text("\(CamperCatalog.dexCount(owned).have) / \(CamperCatalog.dexCount(owned).total)")
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
             }
@@ -346,11 +346,12 @@ struct CamperGarageView: View {
                 HStack(spacing: 8) {
                     ForEach(CamperCategory.allCases.filter { $0.group == group }, id: \.self) { c in
                         let have = CamperCatalog.parts(c).filter { owned.contains($0.id) }.count
+                        let total = CamperCatalog.parts(c).filter { $0.unlock.isAvailable }.count
                         Button { pickCategory(c) } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: c.symbol).font(.system(size: 13))
                                 Text(c.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                                Text("\(have)/\(CamperCatalog.parts(c).count)").font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                                Text("\(have)/\(total)").font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                                     .foregroundStyle(WebTheme.faint)
                             }
                             .foregroundStyle(c == category ? CamperStyle.brassLight : WebTheme.text)
@@ -441,8 +442,16 @@ struct CamperGarageView: View {
                     .minimumScaleFactor(0.85)
                 CamperRarityDots(rarity: part.rarity)
                 if !have {
-                    CamperProgressBar(fraction: part.unlock.fraction(stats))
-                        .padding(.horizontal, 8)
+                    if part.unlock.isAvailable {
+                        CamperProgressBar(fraction: part.unlock.fraction(stats))
+                            .padding(.horizontal, 8)
+                    } else {
+                        // 要サーバー（第1段では届かない）。数の分母にも入れない
+                        Text(L("近日", "Soon"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(WebTheme.accent)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             .padding(.vertical, 10)
@@ -466,9 +475,11 @@ struct CamperGarageView: View {
             Text(part.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
             Text(part.look).font(.system(size: 13)).foregroundStyle(WebTheme.muted2)
             Text(part.unlock.how).font(.system(size: 13)).foregroundStyle(WebTheme.text)
-            HStack(spacing: 8) {
-                CamperProgressBar(fraction: part.unlock.fraction(stats))
-                Text("\(p.have) / \(p.need)").font(JPFont.number(12, weight: .semibold, relativeTo: .caption)).foregroundStyle(WebTheme.accent)
+            if part.unlock.isAvailable {
+                HStack(spacing: 8) {
+                    CamperProgressBar(fraction: part.unlock.fraction(stats))
+                    Text("\(p.have) / \(p.need)").font(JPFont.number(12, weight: .semibold, relativeTo: .caption)).foregroundStyle(WebTheme.accent)
+                }
             }
         }
         .padding(12)

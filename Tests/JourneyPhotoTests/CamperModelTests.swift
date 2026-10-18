@@ -21,34 +21,59 @@ final class CamperModelTests: XCTestCase {
         XCTAssertEqual(CamperStage.stage(books: 99), .trailer)
     }
 
-    /// 一覧: 31 分類・各 4 種類以上・id は重ならない・珍しさは「いつもの」が多く「とても珍しい」が少ない
-    func testCatalogShape() {
-        XCTAssertGreaterThanOrEqual(CamperCategory.allCases.count, 18)
-        XCTAssertGreaterThanOrEqual(CamperCatalog.all.count, 80)
-        for c in CamperCategory.allCases {
-            XCTAssertGreaterThanOrEqual(CamperCatalog.parts(c).count, 4, c.rawValue)
-            if !c.optional {
-                XCTAssertGreaterThanOrEqual(CamperCatalog.parts(c).filter { $0.unlock == .starter }.count, 1, "\(c) に最初から持つ部品が無い")
-            }
-        }
+    /// 図鑑（板 CamperDex）: 33 分類 × 4 つ = 132 個・id は「分類.部品」（英小文字と _）・珍しさ 32/41/40/19・
+    /// 端末だけ 99（うち 1 つはキャンプ場が出来てから）／要サーバー 33・いつものは最初から（ルーフテントだけ空き）
+    func testDexMatchesTheBoard() {
+        let dexCats = CamperCategory.allCases.filter(\.inDex)
+        XCTAssertEqual(dexCats.count, 33)
+        XCTAssertEqual(CamperCatalog.dex.count, 132)
+        for c in dexCats { XCTAssertEqual(CamperCatalog.parts(c).count, 4, c.rawValue) }
         XCTAssertEqual(Set(CamperCatalog.all.map(\.id)).count, CamperCatalog.all.count, "id が重なっている")
-        let count = { (r: CamperRarity) in CamperCatalog.all.filter { $0.rarity == r }.count }
-        XCTAssertGreaterThan(count(.common), count(.occasional))
-        XCTAssertGreaterThan(count(.occasional), count(.rare))
-        XCTAssertGreaterThan(count(.rare), count(.veryRare))
-        XCTAssertGreaterThan(count(.veryRare), 0)
+        for p in CamperCatalog.dex {
+            XCTAssertNotNil(p.id.range(of: "^[a-z_]+\\.[a-z_]+$", options: .regularExpression), p.id)
+        }
+        let count = { (r: CamperRarity) in CamperCatalog.dex.filter { $0.rarity == r }.count }
+        XCTAssertEqual([count(.common), count(.occasional), count(.rare), count(.veryRare)], [32, 41, 40, 19])
+        let server = CamperCatalog.dex.filter { if case .server = $0.unlock { return true }; return false }
+        XCTAssertEqual(server.count, 33)
+        XCTAssertEqual(CamperCatalog.available.count, 98, "端末だけ 99 のうち、キャンプ場の焚き火はキャンプ場ができてから")
+        XCTAssertEqual(CamperCatalog.dex.filter { $0.unlock == .starter }.count, 32)
+        XCTAssertTrue(CamperCatalog.parts(.roofTent).allSatisfy { $0.unlock != .starter })
+        // 図鑑の付箋の対応表
+        for id in ["wheel.chrome_dish", "wheel.steel_black", "wheel.brass_spoke", "headlight.rally_brass", "roof_cargo.crate_mat",
+                   "roof_cargo.canoe", "awning.indigo_stripe", "awning.rust_stripe", "sticker_edge.signed"] {
+            XCTAssertNotNil(CamperCatalog.part(id), id)
+        }
+        // 塗装は図鑑の数に入れない
+        XCTAssertEqual(CamperCatalog.paints.count, 4)
+        XCTAssertFalse(CamperCatalog.dex.contains { $0.category == .paint })
+    }
+
+    /// 要サーバーの部品は数をいくら重ねても届かない（「近日」）
+    func testServerPartsNeverArrive() {
+        var s = CamperStats()
+        s.posts = 10_000
+        s.books = 1000
+        s.prefectures = 47
+        let owned = CamperCatalog.owned(s)
+        XCTAssertFalse(owned.contains("wheel.brass_spoke"))
+        XCTAssertFalse(owned.contains("sticker_edge.holo"))
+        XCTAssertEqual(CamperUnlock.server("x").fraction(s), 0)
+        XCTAssertLessThanOrEqual(CamperCatalog.dexCount(owned).total, 98)
     }
 
     /// 持っている部品は端末で数えた値で決まる
     func testOwnership() {
         var s = CamperStats()
         let starters = CamperCatalog.owned(s)
-        XCTAssertTrue(starters.contains("wheel.chrome"))
-        XCTAssertFalse(starters.contains("wheel.steel"))
+        XCTAssertTrue(starters.contains("wheel.chrome_dish"))
+        XCTAssertFalse(starters.contains("wheel.steel_black"))
         s.posts = 30
-        XCTAssertTrue(CamperCatalog.owned(s).contains("wheel.steel"))
+        XCTAssertTrue(CamperCatalog.owned(s).contains("wheel.steel_black"))
         s.earlyShots = 3
-        XCTAssertTrue(CamperCatalog.owned(s).contains("light.rally"))
+        XCTAssertTrue(CamperCatalog.owned(s).contains("headlight.rally_brass"))
+        s.books = 10
+        XCTAssertTrue(CamperCatalog.owned(s).contains("mirror.tall_tow"), "トレーラーまで育てる")
         XCTAssertEqual(CamperUnlock.posts(30).fraction(CamperStats(posts: 15)), 0.5, accuracy: 1e-9)
     }
 
@@ -71,13 +96,13 @@ final class CamperModelTests: XCTestCase {
     /// 持っていない部品は覚えていても付けない（最初の部品・付けないに戻す）
     func testSanitizeDropsLockedParts() {
         var l = CamperLoadout.standard
-        l.pick(CamperCatalog.part("wheel.deep")!)
-        l.pick(CamperCatalog.part("chair.hammock")!)
+        l.pick(CamperCatalog.part("wheel.brass_spoke")!)
+        l.pick(CamperCatalog.part("roof_tent.wing")!)
         let owned = CamperCatalog.owned(CamperStats())
         let clean = l.sanitized(owned: owned)
-        XCTAssertEqual(clean.key(.wheel), "chrome")
-        XCTAssertEqual(clean.key(.chair), CamperLoadout.none)
-        XCTAssertNil(clean.pickedPart(.chair))
+        XCTAssertEqual(clean.key(.wheel), "chrome_dish")
+        XCTAssertEqual(clean.key(.roofTent), CamperLoadout.none)
+        XCTAssertNil(clean.pickedPart(.roofTent))
     }
 
     /// 届いた部品: 見せた印より後に増えたものだけ・最初から持つ部品は出さない・珍しい順
@@ -89,7 +114,7 @@ final class CamperModelTests: XCTestCase {
         let arrivals = CamperStore.arrivals(owned: owned, seen: CamperCatalog.owned(CamperStats()))
         XCTAssertFalse(arrivals.isEmpty)
         XCTAssertFalse(arrivals.contains { $0.unlock == .starter })
-        XCTAssertEqual(arrivals.first?.id, "light.rally", "いちばん珍しいものが先")
+        XCTAssertEqual(arrivals.first?.id, "headlight.rally_brass", "いちばん珍しいものが先")
         XCTAssertTrue(CamperStore.arrivals(owned: owned, seen: owned).isEmpty)
         let d = defaults()
         let store = CamperStore(userId: "me", defaults: d)
@@ -98,7 +123,7 @@ final class CamperModelTests: XCTestCase {
         XCTAssertEqual(store.seen, owned)
     }
 
-    /// 投稿から数える（夜・朝・季節・都道府県・同じ場所・日）
+    /// 投稿から数える（夜・朝・季節・都道府県・場所・同じ場所・山と海・満月）
     func testCountingFromPhotos() throws {
         func photo(_ id: String, exif: String?, location: String?, lat: Double? = nil, color: String? = nil) throws -> Photo {
             var json: [String: Any] = ["id": id, "src": "https://example.com/\(id).jpg"]
@@ -109,25 +134,33 @@ final class CamperModelTests: XCTestCase {
             return try JSONDecoder().decode(Photo.self, from: JSONSerialization.data(withJSONObject: json))
         }
         let photos = [
-            try photo("1", exif: "2024:12:24 21:10:00", location: "京都府京都市", lat: 35.0, color: "#2f6a30"),
-            try photo("2", exif: "2024:07:01 05:20:00", location: "長野県松本市", lat: 35.0, color: "#6f9fd8"),
-            try photo("3", exif: "2024-04-10T12:00", location: "神奈川県鎌倉市", lat: 35.0),
-            try photo("4", exif: nil, location: "東京都", lat: 36.0),
+            // 2024-09-18 は満月（中秋の名月の翌日）。山の夜
+            try photo("1", exif: "2024:09:18 21:10:00", location: "長野県 八ヶ岳", lat: 35.0, color: "#2f6a30"),
+            // 同じ日に海辺
+            try photo("2", exif: "2024:09:18 05:20:00", location: "神奈川県鎌倉市 由比ヶ浜", lat: 35.0, color: "#6f9fd8"),
+            try photo("3", exif: "2024-12-10T08:00", location: "京都府京都市", lat: 35.0),
+            try photo("4", exif: nil, location: "沖縄県 那覇市", lat: 26.2),
         ]
         let s = CamperCounting.stats(photos: photos, books: 2)
         XCTAssertEqual(s.posts, 4)
         XCTAssertEqual(s.books, 2)
         XCTAssertEqual(s.nightShots, 1)
         XCTAssertEqual(s.earlyShots, 1)
+        XCTAssertEqual(s.morningShots, 2)
         XCTAssertEqual(s.winterShots, 1)
-        XCTAssertEqual(s.summerShots, 1)
-        XCTAssertEqual(s.springShots, 1)
         XCTAssertEqual(s.prefectures, 4)
+        XCTAssertEqual(s.places, 2)
         XCTAssertEqual(s.samePlace, 3)
         XCTAssertEqual(s.forestShots, 1)
         XCTAssertEqual(s.skyShots, 1)
-        XCTAssertEqual(s.days, 3)
+        XCTAssertEqual(s.mountainShots, 1)
+        XCTAssertEqual(s.seaShots, 1)
+        XCTAssertEqual(s.seaAndMountainDays, 1)
+        XCTAssertEqual(s.fullMoonShots, 1)
+        XCTAssertEqual(s.southIslandShots, 1)
+        XCTAssertEqual(s.months, 2)
         XCTAssertEqual(CamperCounting.prefecture(in: "神奈川県"), "神奈川", "奈良に当たっている")
+        XCTAssertFalse(CamperCounting.isFullMoon(year: 2024, month: 10, day: 2), "新月の日を満月と数えた")
     }
 
     func testPlateNumber() {
@@ -140,10 +173,10 @@ final class CamperModelTests: XCTestCase {
     func testAccessibilityLabel() {
         var l = CamperLoadout.standard
         l.awningOpen = true
-        l.pick(CamperCatalog.part("chair.canvas")!)
+        l.pick(CamperCatalog.part("chair.director_chair")!)
         let text = CamperText.accessibilityLabel(stage: .camper, mood: .night, loadout: l, doorOpen: true, preview: nil)
         XCTAssertTrue(text.contains("キャンピングカー") || text.contains("Camper"))
-        XCTAssertTrue(text.contains("帆布の椅子") || text.contains("Canvas chair"))
+        XCTAssertTrue(text.contains("ディレクターズ") || text.contains("Director chair"))
         XCTAssertTrue(text.contains("扉が開いている") || text.contains("Door open"))
     }
 }

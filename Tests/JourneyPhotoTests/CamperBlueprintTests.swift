@@ -64,7 +64,7 @@ final class CamperBlueprintTests: XCTestCase {
             let bb = m.bounds
             XCTAssertEqual(bb.max.z - bb.min.z, 2.4, accuracy: 0.01, "扉の板の厚み")
             XCTAssertEqual(m.openEdgeCount, 0, "扉の板が閉じていない")
-            XCTAssertTrue(m.materials.contains(.wallWood(0xD9C9A8)), "扉の内側が内装（壁の木）の色でない")
+            XCTAssertTrue(m.materials.contains(.wallWood(0xD9B98A)), "扉の内側が内装（壁の木・松の板）の色でない")
         } else { XCTFail("扉の板が網でない") }
         for name in ["interior.doorMat", "interior.doorLamp", "interior.kitchen", "interior.cupboard", "interior.floor"] {
             XCTAssertGreaterThanOrEqual(count(b, name), 1, name)
@@ -82,18 +82,18 @@ final class CamperBlueprintTests: XCTestCase {
         }
         XCTAssertEqual(count(b, "interior.seat"), 2)
         XCTAssertEqual(count(b, "interior.seatBack"), 2)
-        XCTAssertEqual(count(b, "interior.curtain"), 12, "窓 A・B の左右にひだ 3 枚ずつ")
+        XCTAssertEqual(count(b, "interior.curtain"), 20, "窓 A・B の左右にひだ 5 つずつ（図鑑の麻のひだ）")
     }
 
     /// 前・後ろ・横・上（CamperViews の 1〜5）
     func testOutsideParts() {
         let b = build()
-        XCTAssertEqual(count(b, "front.grilleBar"), 4)
+        XCTAssertEqual(count(b, "front.grilleBar"), 5, "図鑑: クロームの桟 5 本")
         XCTAssertEqual(count(b, "front.emblem"), 1)
         XCTAssertEqual(count(b, "front.wiper"), 2)
         XCTAssertEqual(count(b, "light.bezel"), 2)
         XCTAssertEqual(count(b, "light.reflectorRing"), 4, "反射板の輪 2 ずつ")
-        XCTAssertEqual(count(b, "rear.ladderRung"), 8)
+        XCTAssertEqual(count(b, "rear.ladderRung"), 7, "図鑑: 柱 2 と段 7")
         XCTAssertEqual(count(b, "rear.ladderRail"), 2)
         XCTAssertEqual(count(b, "rear.ladderClamp"), 4)
         XCTAssertEqual(count(b, "rear.taillight"), 2)
@@ -145,37 +145,48 @@ final class CamperBlueprintTests: XCTestCase {
             return build(loadout: l)
         }
         XCTAssertEqual(count(build(), "wheel.hole"), 0)
-        XCTAssertEqual(count(with(.wheel, "steel"), "wheel.hole"), 24)
+        XCTAssertEqual(count(with(.wheel, "steel_black"), "wheel.hole"), 24)
         XCTAssertEqual(count(with(.wheel, "whitewall"), "wheel.whitewall"), 4)
-        XCTAssertEqual(count(with(.light, "rally"), "light.rally"), 2)
-        XCTAssertEqual(count(with(.light, "rally"), "light.rallyLens"), 2)
-        XCTAssertEqual(count(with(.light, "square"), "light.reflectorRing"), 0)
-        XCTAssertEqual(count(with(.roof, "box"), "cargo.box"), 1)
-        XCTAssertEqual(count(with(.roof, "box"), "cargo.crate"), 0)
-        XCTAssertEqual(count(with(.trinket, "guitar"), "trinket.guitarNeck"), 1)
-        XCTAssertEqual(count(with(.trinket, "globe"), "trinket.globe"), 1)
-        XCTAssertEqual(count(with(.trinket, "globe"), "trinket.globeMeridian"), 1)
-        XCTAssertEqual(count(with(.trinket, "books"), "trinket.book"), 5)
+        XCTAssertEqual(count(with(.wheel, "brass_spoke"), "wheel.spoke"), 64, "真鍮のスポーク 16 本 × 4")
+        XCTAssertEqual(count(with(.headlight, "rally_brass"), "light.rally"), 2)
+        XCTAssertEqual(count(with(.headlight, "square"), "light.reflectorRing"), 0)
+        XCTAssertEqual(count(with(.roofCargo, "roof_box"), "cargo.box"), 1)
+        XCTAssertEqual(count(with(.roofCargo, "roof_box"), "cargo.crate"), 0)
+        XCTAssertEqual(count(with(.plant, "monstera"), "interior.leaf"), 6)
+        XCTAssertEqual(count(build(), "tent.base"), 0, "ルーフテントは最初は付けない")
+        XCTAssertEqual(count(with(.roofTent, "clamshell"), "tent.base"), 1)
         var open = CamperLoadout.standard
         open.awningOpen = true
         XCTAssertEqual(count(build(), "awning.leg"), 0)
         XCTAssertEqual(count(build(loadout: open), "awning.leg"), 2)
         XCTAssertEqual(count(build(loadout: open), "awning.stripe"), 10)
-        // 全部の部品が、少なくとも 1 つの形を出す（データだけの部品を作らない）
-        for part in CamperCatalog.all where part.category != .paint && part.category != .stickerEdge {
-            var l = CamperLoadout.standard
-            l.awningOpen = true
-            l.pick(part)
-            let b = build(loadout: l)
-            XCTAssertFalse(b.nodes.filter { $0.category == part.category }.isEmpty, part.id)
+    }
+
+    /// 図鑑の 132 個はどれも形を出し、同じ分類の 4 つは形で見分けられる（色違いだけにしない）
+    func testEveryDexPartHasItsOwnShape() {
+        for c in CamperCategory.allCases where c.inDex {
+            var signatures: [String: String] = [:]
+            for part in CamperCatalog.parts(c) {
+                var l = CamperLoadout.standard
+                l.awningOpen = true
+                l.pick(part)
+                let nodes = build(loadout: l).nodes.filter { $0.category == c }
+                XCTAssertFalse(nodes.isEmpty, "\(part.id) の形が無い")
+                // 形の名前・数・面の数・置き場所（材質＝色は入れない）
+                let sig = nodes.map { n in
+                    "\(n.name)|\(n.triangleEstimate)|\(Int(n.position.x)),\(Int(n.position.y)),\(Int(n.position.z))|\(Int(n.scale.x * 10))"
+                }.sorted().joined(separator: ";")
+                if let other = signatures[sig] { XCTFail("\(part.id) と \(other) の形が同じ（色違いだけ）") }
+                signatures[sig] = part.id
+            }
         }
     }
 
     /// 金の箔押しの縁は縁の素材が替わる
     func testStickerEdge() {
         var l = CamperLoadout.standard
-        l.picks[CamperCategory.stickerEdge.rawValue] = "gold"
-        let gold = build(loadout: l).nodes.filter { $0.category == .sticker }
+        l.picks[CamperCategory.stickerEdge.rawValue] = "gold_foil"
+        let gold = build(loadout: l).nodes.filter { $0.category == .stickerEdge }
         XCTAssertFalse(gold.isEmpty)
         XCTAssertTrue(gold.allSatisfy { $0.material == .foil })
     }
@@ -194,7 +205,8 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertTrue(build(mood: .day).lights.isEmpty)
         let lights = build(mood: .night).lights
         XCTAssertEqual(lights.filter { $0.kind == .spot }.count, 2)
-        XCTAssertEqual(lights.count, 5)
+        // 室内 2・前照灯 2・尾灯 1・焚き火 1・外のランタン 1
+        XCTAssertEqual(lights.count, 7)
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")
     }
 

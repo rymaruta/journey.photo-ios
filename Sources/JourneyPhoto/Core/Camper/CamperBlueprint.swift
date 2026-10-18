@@ -323,7 +323,8 @@ struct CamperBuilder {
         b.underbody()
         b.awning()
         b.stickers()
-        b.rearCarrier()
+        b.bikeRack()
+        b.roofTent()
         b.campsite()
         b.wallSeams()
         if config.stage == .trailer { b.trailer() }
@@ -527,8 +528,8 @@ struct CamperBuilder {
             let placed = s > 0 ? slab.translated(CV3(0, 0, BW)) : slab.mirroredZ().translated(CV3(0, 0, -BW))
             mesh(s > 0 ? "body.side.near" : "body.side.far", placed)
             for w in (s > 0 ? windowsNear : windowsFar) {
-                windowTrim(w, plane: .side(s * BW), name: "window", category: .window)
-                windowMullions(w, z: s * BW)
+                windowTrim(w, plane: .side(s * BW), name: "window", category: .windowShape)
+                windowDetails(w, z: s * BW)
             }
         }
     }
@@ -654,10 +655,11 @@ struct CamperBuilder {
             rbox("interior.doorMat", CV3(45, 34.4, BW - 9), CV3(20, 0.8, 11), 0.3, .mat)
             lathe("interior.doorLamp", CV3(45, 128, BW - 14), axis: CV3(0, -1, 0), [(0.3, 0), (0.3, 2), (3.4, 3), (3.8, 4.6), (0.01, 5)],
                   segments: 12) { [lampLit = night] _ in lampLit ? .lamp : .brass }
-            trinket()
-            shelf()
+            bookshelf()
         }
         cushions()
+        plant()
+        mug()
         // 運転席: ダッシュボード・座席 2・ハンドル・柱・シフト
         rbox("interior.dash", CV3(van ? 92 : 96, 74, 0), CV3(12, 8, (BW - wall) * 2 - 4), 2, .dash)
         for z in [-22.0, 22.0] {
@@ -671,45 +673,6 @@ struct CamperBuilder {
         rod("interior.column", B(88, -18, 22), B(95, -8, 22), 1, .black)
         rod("interior.gear", CV3(82, 40, 0), CV3(80, 52, 0), 0.6, .black)
         add("interior.gearKnob", .sphere(radius: 1.6), .black, at: CV3(80, 53, 0))
-    }
-
-    /// 内装の小物（座卓の上と長椅子の横）
-    mutating func trinket() {
-        let c = CamperCategory.trinket
-        switch config.loadout.key(.trinket) {
-        case "books":
-            let colors: [UInt32] = [0x7A2E22, 0x2F4F74, 0xC9A66B, 0x4A5A46, 0xD9D4C7]
-            for (k, col) in colors.enumerated() {
-                rbox("trinket.book", CV3(-89 + Double(k % 2) * 0.8, 62.3 + Double(k) * 1.6, 22),
-                     CV3(10 - Double(k) * 0.6, 1.5, 7 - Double(k % 3) * 0.4), 0.2, .tint(col),
-                     CQuat.axisAngle(CV3(0, 1, 0), Double(k) * 0.18), category: c)
-            }
-        case "guitar":
-            // 長椅子に立てかけた木のギター（胴 2 つの円柱・棹・頭・弦の受け）
-            let lean = CQuat.axisAngle(CV3(0, 0, 1), 0.25) * CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-            add("trinket.guitarBody", .cylinder(radius: 7, height: 3.6, segments: 24), .wood, at: CV3(-92, 44, 36), lean, category: c)
-            add("trinket.guitarBody", .cylinder(radius: 5.4, height: 3.6, segments: 24), .wood, at: CV3(-89.5, 53, 36), lean, category: c)
-            add("trinket.guitarHole", .cylinder(radius: 1.8, height: 3.8, segments: 16), .black, at: CV3(-90.6, 49, 36), lean, category: c)
-            rod("trinket.guitarNeck", CV3(-88.5, 56, 36), CV3(-84, 74, 36), 1, .woodDark, category: c)
-            rbox("trinket.guitarHead", CV3(-83.4, 76.5, 36), CV3(2.6, 5, 1.2), 0.3, .woodDark,
-                 CQuat.axisAngle(CV3(0, 0, 1), 0.25), category: c)
-        case "globe":
-            add("trinket.globe", .sphere(radius: 5), .tint(0x3E6E8E), at: CV3(-89, 72, 22), category: c)
-            add("trinket.globeMeridian", .torus(ring: 5.8, pipe: 0.35), .brass, at: CV3(-89, 72, 22),
-                CQuat.axisAngle(CV3(0, 0, 1), .pi / 2) * CQuat.axisAngle(CV3(1, 0, 0), 0.4), category: c)
-            lathe("trinket.globeStand", CV3(-89, 61.1, 22), axis: CV3(0, 1, 0), [(4, 0), (3.6, 0.8), (0.8, 1.6), (0.8, 5.4)],
-                  segments: 14, capStart: .brass, category: c) { _ in .brass }
-        default:
-            // 鉢植え: 素焼きの鉢・土・丸い葉
-            lathe("trinket.pot", CV3(-74, 60, 30), axis: CV3(0, 1, 0), [(2.8, 0), (3.6, 5), (4, 5.4), (4, 6.2)], segments: 14,
-                  capStart: .tint(0xA4532E), category: c) { _ in .tint(0xA4532E) }
-            add("trinket.soil", .cylinder(radius: 3.5, height: 0.6, segments: 14), .tint(0x3B2A1A), at: CV3(-74, 65.7, 30), category: c)
-            let leaves: [(Double, Double, Double, Double)] = [(0, 69, 0, 3.2), (2.2, 68, 1.5, 2.4), (-2, 68.4, -1.2, 2.6),
-                                                            (1, 71, -1.8, 2.2), (-1.4, 70.8, 1.6, 2.1)]
-            for (dx, y, dz, r) in leaves {
-                add("trinket.leaf", .sphere(radius: r), .tint(0x5D7A3A), at: CV3(-74 + dx, y, 30 + dz), category: c)
-            }
-        }
     }
 
     // MARK: 外の細部（扉の側・反対側・ミラー・方向指示）
@@ -760,10 +723,10 @@ struct CamperBuilder {
         grille(FX)
         lathe("front.emblem", B(FX + 2.2, 15.5, 0), axis: CV3(1, 0, 0), [(2.6, 0), (2.6, 0.6), (0.01, 0.9)], segments: 16,
               capStart: .brass) { _ in .brass }
-        let lc = CamperCategory.light
+        let lc = CamperCategory.headlight
         for s in [-1.0, 1.0] {
-            switch config.loadout.key(.light) {
-            case "twin":
+            switch config.loadout.key(.headlight) {
+            case "twin_round":
                 for dz in [-5.2, 5.2] {
                     let c = B(FX - 0.5, 14, s * 37 + dz)
                     lathe("light.bezel", c, axis: CV3(1, 0, 0), [(4.2, 0), (4.4, 1.2), (3.6, 2)], segments: 18, capStart: .chrome,
@@ -786,7 +749,7 @@ struct CamperBuilder {
                 lathe("light.lens", B(FX + 0.6, 14, s * 37), axis: CV3(1, 0, 0), [(5.6, 0), (4.4, 1.2), (0.01, 1.8)], segments: 20,
                       category: lc) { _ in .lens }
             }
-            if config.loadout.key(.light) == "rally" {
+            if config.loadout.key(.headlight) == "rally_brass" {
                 lathe("light.rally", B(FX + 5, 26, s * 18), axis: CV3(1, 0, 0), [(4.2, 0), (4.6, 1.6), (3.8, 2.4)], segments: 18,
                       capStart: .brass, category: lc) { _ in .brass }
                 lathe("light.rallyLens", B(FX + 6.8, 26, s * 18), axis: CV3(1, 0, 0), [(3.8, 0), (2.6, 0.9), (0.01, 1.3)],
@@ -806,27 +769,12 @@ struct CamperBuilder {
 
     /// ナンバー（板 24×6・厚み 0.8 に、立体の文字）
     mutating func plate(at c: CV3, facing: CV3, name: String) {
-        let pc = CamperCategory.plate
-        let key = config.loadout.key(.plate)
-        let base: UInt32 = CamperCatalog.parts(.plate).first { $0.key == key }?.swatch ?? 0xECE7DA
-        let ink: UInt32 = key == "yellow" ? 0x1B1C1F : (key == "brass" ? 0x3B2A16 : (key == "wood" ? 0x2A1A10 : 0x1F5A3A))
-        // 板は X が厚み・Z が幅（前）。後ろは向きを返す
+        // 板は X が厚み・Z が幅（前）。後ろは向きを返す。ナンバーは図鑑の部品ではない（白い板に緑の数字）
         let q = CQuat.rotation(from: CV3(1, 0, 0), to: facing)
-        let plateMaterial: CamperMaterial = key == "wood" ? .wood : .plate(base)
-        rbox(name, c, q.rotate(CV3(key == "wood" ? 1.6 : 0.8, key == "wood" ? 7 : 6, key == "wood" ? 26 : 24)).abs,
-             key == "wood" ? 1.6 : 0.4, plateMaterial, category: pc)
-        if key == "brass" {
-            for dz in [-10.5, 10.5] {
-                for dy in [-2.2, 2.2] {
-                    add(name + ".screw", .cylinder(radius: 0.6, height: 0.5, segments: 8), .chromeDark,
-                        at: c + facing * 0.5 + q.rotate(CV3(0, dy, dz)), CQuat.yTo(facing), category: pc)
-                }
-            }
-        }
+        rbox(name, c, q.rotate(CV3(0.8, 6, 24)).abs, 0.4, .plate(0xECE7DA))
         // 文字は +Z を向く形で作られる。前を向くよう回す
-        let textQ = CQuat.rotation(from: CV3(0, 0, 1), to: facing)
-        add(name + ".number", .text(CamperCounting.plateNumber(config.posts), height: 3.6, depth: 0.3), .plateInk(ink),
-            at: c + facing * 0.45, textQ, category: pc)
+        add(name + ".number", .text(CamperCounting.plateNumber(config.posts), height: 3.6, depth: 0.3), .plateInk(0x1F5A3A),
+            at: c + facing * 0.45, CQuat.rotation(from: CV3(0, 0, 1), to: facing))
     }
 
     // MARK: 後ろ（尾灯・バンパー・はしご・予備タイヤ・ナンバー）
@@ -844,13 +792,8 @@ struct CamperBuilder {
         guard !van else { return }
         // はしご（柱 2・段 8・留め具 4。分類の部品）
         ladder(BX)
-        // 予備タイヤのカバー（半径 21・厚み 13.6・真鍮の輪・縫い目・ステッカー）
-        let cover = CamperMeshKit.lathe([CV2(18.5, 0), CV2(20.6, 1.4), CV2(21, 3), CV2(21, 10.4), CV2(20.2, 12.2), CV2(17, 13.2), CV2(0.01, 13.6)],
-                                        segments: 32, material: { _ in .fabricDark }, capStart: .fabricDark)
-        add("rear.spareCover", .mesh(cover), .fabricDark, at: B(BX - 1, -6, -20), CQuat.yTo(CV3(-1, 0, 0)))
-        add("rear.spareRing", .torus(ring: 16.8, pipe: 0.8), .brass, at: B(BX - 14.4, -6, -20), CQuat.yTo(CV3(1, 0, 0)))
-        add("rear.spareStitch", .torus(ring: 18.6, pipe: 0.25), .canvasLight, at: B(BX - 14.0, -6, -20), CQuat.yTo(CV3(1, 0, 0)))
-        rbox("rear.spareMount", B(BX - 0.5, -6, -20), CV3(2, 8, 8), 0.6, .black)
+        // 予備タイヤのカバー（分類の部品）
+        spareCover(BX)
     }
 
     // MARK: タイヤとホイール
@@ -876,41 +819,36 @@ struct CamperBuilder {
         let ts = treadSpec
         let lugs = CamperMeshKit.treadBlocks(radius: 22, depth: ts.depth, rows: ts.rows, pitches: ts.pitches, land: ts.land,
                                              material: .tread)
-        add("wheel.tread", .mesh(lugs), .tread, at: origin, q, category: .tread)
+        add("wheel.tread", .mesh(lugs), .tread, at: origin, q, category: .tireTread)
         let key = config.loadout.key(.wheel)
         let face = center + axis * 11
         let inward = CQuat.yTo(-axis)
         switch key {
-        case "steel":
+        case "steel_black":
             // 黒い鉄の皿に丸い穴 6（穴は本当に抜けて、奥のブレーキの胴が見える）、クロームのキャップ
             let dish = CamperMeshKit.lathe([CV2(14.2, 0), CV2(12.6, 2), CV2(9.6, 4.4), CV2(6.2, 4), CV2(3.6, 3.2), CV2(0.01, 2.8)],
-                                           segments: 32, material: { k in k == 4 ? .chrome : .steel })
+                                           segments: 32, material: { k in k == 4 ? .chromeDark : .steel })
             add("wheel.dish", .mesh(dish), .steel, at: face, inward, category: wc)
             for k in 0..<6 {
                 let t = Double(k) / 6 * 2 * .pi
                 add("wheel.hole", .cylinder(radius: 1.7, height: 1.2, segments: 12), .well,
                     at: center + CV3(cos(t) * 11, sin(t) * 11, dir * 7.4), q, category: wc)
             }
-        case "spoke":
+        case "brass_spoke":
             // 外の輪・芯・スポーク 8（隙間から奥のブレーキの胴が見える）
             let rim = CamperMeshKit.lathe([CV2(14.2, 0), CV2(13.2, 1.4), CV2(12.4, 1.4), CV2(12.4, 0.2)], segments: 32,
-                                          material: { _ in .chrome })
-            add("wheel.dish", .mesh(rim), .chrome, at: face, inward, category: wc)
+                                          material: { _ in .brass })
+            add("wheel.dish", .mesh(rim), .brass, at: face, inward, category: wc)
             lathe("wheel.hub", face - axis * 2, axis: axis, [(3.4, 0), (3.4, 2.4), (1.8, 3.4), (0.01, 3.6)], segments: 16,
                   category: wc) { k in k == 2 ? .brass : .chrome }
-            for k in 0..<8 {
-                let t = Double(k) / 8 * 2 * .pi
-                rod("wheel.spoke", center + CV3(cos(t) * 3, sin(t) * 3, dir * 9.6), center + CV3(cos(t) * 12.6, sin(t) * 12.6, dir * 10.4),
-                    0.7, .chrome, segments: 6, category: wc)
+            for k in 0..<16 {
+                let t = Double(k) / 16 * 2 * .pi
+                rod("wheel.spoke", center + CV3(cos(t) * 3, sin(t) * 3, dir * (k % 2 == 0 ? 9.0 : 10.0)),
+                    center + CV3(cos(t + 0.2) * 12.6, sin(t + 0.2) * 12.6, dir * 10.4), 0.45, .brass, segments: 6, category: wc)
             }
-        case "deep":
-            // 深い縁（磨いたアルミ）と小さな芯
-            let dish = CamperMeshKit.lathe([CV2(14.4, 0), CV2(13.8, 0.6), CV2(13.4, 5.4), CV2(6.4, 5.8), CV2(4.4, 4.6), CV2(0.01, 4.2)],
-                                           segments: 32, material: { k in k == 2 ? .chromeDark : (k == 4 ? .brass : .chrome) })
-            add("wheel.dish", .mesh(dish), .chrome, at: face, inward, category: wc)
         default:
             let dish = CamperMeshKit.lathe([CV2(14.2, 0), CV2(12.6, 2), CV2(9.6, 4.4), CV2(6.2, 4), CV2(3.6, 3.2), CV2(0.01, 2.8)],
-                                           segments: 32, material: { k in k == 4 ? .brass : (k == 2 ? .chromeDark : .chrome) })
+                                           segments: 32, material: { k in k == 2 || k == 4 ? .chromeDark : .chrome })
             add("wheel.dish", .mesh(dish), .chrome, at: face, inward, category: wc)
             // 放射の筋 12（浅い溝）
             for k in 0..<12 {
@@ -920,6 +858,8 @@ struct CamperBuilder {
                     CQuat.axisAngle(CV3(0, 0, 1), t) * CQuat.axisAngle(CV3(0, 1, 0), dir * 0.5), category: wc)
             }
         }
+        // 真ん中のキャップ（分類の部品）
+        hubcap(at: face - axis * 2.6, axis: axis)
         if key == "whitewall" {
             // 側面の白い帯（薄い輪の板）
             add("wheel.whitewall", .mesh(CamperMeshKit.lathe([CV2(15.6, 0), CV2(19, 0), CV2(19, 0.3), CV2(15.6, 0.3)], segments: 40,
@@ -940,11 +880,10 @@ struct CamperBuilder {
 
     mutating func roof() {
         let RT = roofTop
-        let rc = CamperCategory.roof
         if van {
             for z in [-36.0, 36] { rbox("roof.rail", CV3(-20, RT + 2, z), CV3(120, 3, 3), 1.2, .chrome) }
             for x in [-70.0, 30] { for z in [-36.0, 36] { rbox("roof.railFoot", CV3(x, RT + 0.6, z), CV3(4, 1.4, 4), 0.5, .black) } }
-            cargo(base: RT + 3.5, x: -20, category: rc)
+            cargo(base: RT + 3.5, x: -20)
             antenna()
             flag()
             if snow { rbox("roof.snow", CV3(-22, RT + 3, 0), CV3(148, 5, 90), 2.5, .snow) }
@@ -959,52 +898,11 @@ struct CamperBuilder {
         for x in [-4.0, 66] { for z in [-40.0, 40] { rbox("roof.rackFoot", CV3(x, RT + 3, z), CV3(4, 6, 4), 1, .black) } }
         for z in [-40.0, 40] { rbox("roof.rackRail", CV3(31, RT + 6.5, z), CV3(76, 3, 3), 1.2, .black) }
         for x in [0.0, 31, 62] { rbox("roof.rackBar", CV3(x, RT + 9.5, 0), CV3(3, 3, 86), 1.2, .alu) }
-        cargo(base: RT + 11, x: 31, category: rc)
+        cargo(base: RT + 11, x: 31)
         antenna()
         flag()
         if snow {
             rbox("roof.snow", CV3(-24, RT + 3, 0), CV3(188, 6, 96), 3, .snow)
-        }
-    }
-
-    /// 積み荷（分類の部品）。`base` は荷台の上の高さ
-    mutating func cargo(base y: Double, x cx: Double, category rc: CamperCategory) {
-        if cargoExtra(config.loadout.key(.roof), base: y, x: cx) { return }
-        switch config.loadout.key(.roof) {
-        case "box":
-            // 車体色の流線形の箱（角の大きく丸い箱を2つ重ねて流線形に）・クロームの留め金 2・継ぎ目
-            rbox("cargo.box", CV3(cx, y + 6, 0), CV3(80, 12, 60), 5, .roofBox, category: rc)
-            rbox("cargo.boxNose", CV3(cx + 38, y + 4.5, 0), CV3(12, 9, 54), 4, .roofBox, category: rc)
-            rbox("cargo.boxSeam", CV3(cx, y + 8.4, 0), CV3(78, 0.5, 60.4), 0.2, .black, category: rc)
-            for dx in [-21.0, 21] { rbox("cargo.latch", CV3(cx + dx, y + 8, 30.4), CV3(6, 2, 1), 0.4, .chrome, category: rc) }
-            if snow { rbox("cargo.snow", CV3(cx, y + 13, 0), CV3(76, 2.6, 56), 1.2, .snow) }
-        default:
-            // 木箱（木目・黒い角金具・真鍮の鋲）・巻いたマット（縫い目・帯 2）・赤い携行缶
-            let crate = CV3(cx - 19, y + 8.5, -16)
-            rbox("cargo.crate", crate, CV3(26, 17, 36), 1.6, .wood, category: rc)
-            for k in 0..<3 {
-                rbox("cargo.crateSlat", crate + CV3(0, -5.4 + Double(k) * 5.4, 18.1), CV3(26, 0.6, 0.4), 0.1, .woodDark, category: rc)
-            }
-            for dx in [-12.4, 12.4] {
-                for dz in [-17.6, 17.6] {
-                    rbox("cargo.crateCorner", crate + CV3(dx, 0, dz), CV3(1.6, 17.4, 1.6), 0.3, .black, category: rc)
-                }
-                for dy in [-6.5, 6.5] {
-                    add("cargo.rivet", .sphere(radius: 0.6), .brass, at: crate + CV3(dx, dy, 18.2), category: rc)
-                }
-            }
-            let mat = CamperMeshKit.lathe([CV2(0.01, 0), CV2(6.5, 0), CV2(6.8, 1.5), CV2(6.8, 46.5), CV2(6.5, 48), CV2(0.01, 48)],
-                                          segments: 18, material: { k in k == 0 || k == 4 ? .fabricDark : .fabric })
-            add("cargo.mat", .mesh(mat), .fabric, at: CV3(cx + 13, y + 7, -22), CQuat.yTo(CV3(0, 0, 1)), category: rc)
-            for z in [-10.0, 14] {
-                add("cargo.matStrap", .torus(ring: 7.0, pipe: 0.6), .tint(0x4A2E17), at: CV3(cx + 13, y + 7, z),
-                    CQuat.yTo(CV3(0, 0, 1)), category: rc)
-            }
-            rbox("cargo.jerry", CV3(cx + 31, y + 8, 24), CV3(11, 16, 18), 1.6, .jerry, category: rc)
-            rbox("cargo.jerryRib", CV3(cx + 25.4, y + 8, 24), CV3(0.6, 12, 14), 0.2, .jerry, category: rc)
-            lathe("cargo.jerryCap", CV3(cx + 33, y + 16, 28), axis: CV3(0, 1, 0), [(1.6, 0), (1.6, 2.6), (0.01, 2.8)],
-                  segments: 10, capStart: .black, category: rc) { _ in .black }
-            if snow { rbox("cargo.snow", crate + CV3(0, 10, 0), CV3(27, 3, 37), 1.4, .snow) }
         }
     }
 
@@ -1058,35 +956,17 @@ struct CamperBuilder {
         let width = (x1 - x0) / Double(n)
         let len = (out * out + drop * drop).squareRoot()
         let key = config.loadout.key(.awning)
-        if key == "tarp" {
-            // 三角のタープ: ケースの両端と、一本の柱の先を結ぶ布（厚み 0.4）
-            let a = CV3(x0, y0, BW + 6), b = CV3(x1, y0, BW + 6), apex = CV3((x0 + x1) / 2, y0 - 4, BW + 76)
-            var m = CamperMesh()
-            let n0 = (b - a).cross(apex - a).normalized
-            let off = n0 * 0.4
-            m.tri(a, b, apex, normal: n0, .canvas(color))
-            m.tri(a - off, apex - off, b - off, normal: -n0, .canvas(color))
-            for (p, q) in [(a, b), (b, apex), (apex, a)] {
-                let e = (q - p).cross(n0).normalized
-                m.quad(p, q, q - off, p - off, e, e, e, e, .canvas(color))
-            }
-            add("awning.tarp", .mesh(m), .canvas(color), at: .zero, category: ac)
-            rod("awning.leg", apex, CV3(apex.x, 0.5, apex.z), 0.9, .alu, category: ac)
-            for dx in [-26.0, 26] {
-                let peg = CV3(apex.x + dx, 0.2, apex.z + 20)
-                rod("awning.rope", apex, peg, 0.25, .canvasLight, segments: 6, category: ac)
-                rod("awning.peg", peg, peg + CV3(0, 2.5, 0), 0.4, .alu, segments: 6, category: ac)
-            }
-            return
-        }
-        let striped = key != "canvas"
-        for k in 0..<(striped ? n : 1) {
-            let w = striped ? width : x1 - x0
-            let xc = striped ? x0 + width * (Double(k) + 0.5) : (x0 + x1) / 2
+        let striped = key != "scalloped_edge"
+        // 縞の数で形を分ける（藍 10・森の緑 14 の細縞・赤茶 6 の太縞）
+        let stripes = key == "forest_stripe" ? 14 : (key == "rust_stripe" ? 6 : n)
+        let sw = (x1 - x0) / Double(stripes)
+        for k in 0..<(striped ? stripes : 1) {
+            let w = striped ? sw : x1 - x0
+            let xc = striped ? x0 + sw * (Double(k) + 0.5) : (x0 + x1) / 2
             let m: CamperMaterial = (k % 2 == 0 || !striped) ? .canvas(color) : .canvasLight
             rbox("awning.stripe", CV3(xc, y0 - drop / 2, BW + 6 + out / 2), CV3(w, 0.4, len), 0.1, m,
                  CQuat.axisAngle(CV3(1, 0, 0), slope), category: ac)
-            if key == "forest" {
+            if key == "scalloped_edge" {
                 // 波の垂れ（下が半円の布）
                 let poly = [CV2(w / 2, 0), CV2(-w / 2, 0)] + (0...8).map { i -> CV2 in
                     let t = Double(i) / 8 * .pi
@@ -1111,28 +991,53 @@ struct CamperBuilder {
     // MARK: ステッカー（図柄・白か金の縁。厚みのある紙）
 
     mutating func stickers() {
-        let key = config.loadout.key(.sticker)
+        // 図柄は山並み（写真のステッカーは第2段）。縁が分類の部品
+        let key = "mountain"
         let edgeKey = config.loadout.key(.stickerEdge)
-        let edge: CamperMaterial = edgeKey == "gold" ? .foil : (edgeKey == "black" ? .tint(0x1B1C1F) : (edgeKey == "patch" ? .canvas(0x2F4F74) : .paper))
-        let edgeDepth = edgeKey == "patch" ? 0.9 : 0.3
-        let sc = CamperCategory.sticker
+        let edge: CamperMaterial = edgeKey == "gold_foil" ? .foil : (edgeKey == "holo" ? .holo : .paper)
+        let edgeDepth = edgeKey == "signed" ? 0.5 : 0.3
+        let sc = CamperCategory.stickerEdge
         // 扉の側の壁（窓の下）と、予備タイヤのカバー
         let spots: [(CV2, Double)] = van ? [(CV2(-70, 70), 9), (CV2(-30, 70), 7)] : [(CV2(-88, 74), 11), (CV2(-50, 72), 8)]
         for (k, spot) in spots.enumerated() {
             var shapes = stickerShapes(key, center: spot.0, size: spot.1)
             guard !shapes.isEmpty else { continue }
-            let outline = CamperPolygon.offset(shapes[0].0, by: 1.8)
+            // 縁の形: 白い切り抜き 1.8・金の箔押しは縁に盛り上がった輪・ホログラムは広い 2.4 の縁
+            var outline = CamperPolygon.offset(shapes[0].0, by: edgeKey == "holo" ? 2.4 : 1.8)
+            if edgeKey == "holo" {
+                // ホログラムは縁が細かく波打つ（光の当たる面が増えて、回すと色が流れる）
+                let c = outline.reduce(CV2(0, 0)) { $0 + $1 } * (1 / Double(outline.count))
+                var wavy: [CV2] = []
+                for (i, p) in outline.enumerated() {
+                    let q = outline[(i + 1) % outline.count]
+                    for (j, t) in [0.0, 0.5].enumerated() {
+                        let pt = p + (q - p) * t
+                        let d = pt - c
+                        let l = max(d.length, 1e-6)
+                        wavy.append(pt + d * ((j == 0 ? 0.0 : 0.6) / l))
+                    }
+                }
+                outline = wavy
+            }
             var m = CamperMeshKit.extrude(outline, depth: edgeDepth, front: edge, side: edge)
+            if edgeKey == "gold_foil" {
+                let rim = CamperMeshKit.extrude(CamperPolygon.offset(shapes[0].0, by: 1.8), holes: [CamperPolygon.offset(shapes[0].0, by: 1.1)],
+                                                depth: 0.5, front: .foil, side: .foil)
+                m.append(rim)
+            }
             m = m.translated(CV3(0, 0, BW + edgeDepth))
             for (i, s) in shapes.enumerated() {
                 m.append(CamperMeshKit.extrude(s.0, depth: 0.2, front: s.1, side: s.1)
                     .translated(CV3(0, 0, BW + edgeDepth + 0.2 + Double(i) * 0.15)))
             }
-            if edgeKey == "patch" {
-                // 刺繍の縫い目（縁の内側の細い輪）
-                let ring = CamperMeshKit.extrude(CamperPolygon.offset(shapes[0].0, by: 1.35), holes: [CamperPolygon.offset(shapes[0].0, by: 0.95)],
-                                                 depth: 0.15, front: .canvasLight, side: .canvasLight)
-                m.append(ring.translated(CV3(0, 0, BW + edgeDepth + 0.1)))
+            if edgeKey == "signed" {
+                // 友達の名前の刻印（縁の下の細い真鍮の筆跡）
+                let c = shapes[0].0.reduce(CV2(0, 0)) { $0 + $1 } * (1 / Double(shapes[0].0.count))
+                let r = shapes[0].0.map { ($0 - c).length }.max() ?? 8
+                var stroke: [CV2] = []
+                for i in 0...10 { stroke.append(CV2(c.x - r * 0.5 + Double(i) * r * 0.1, c.y - r - 0.9 + sin(Double(i) * 1.7) * 0.4)) }
+                let line = CamperMeshKit.extrude(stroke + stroke.reversed().map { CV2($0.x, $0.y - 0.35) }, depth: 0.12, front: .brass, side: .brass)
+                m.append(line.translated(CV3(0, 0, BW + edgeDepth + 0.05)))
             }
             shapes.removeAll()
             add("sticker.\(k)", .mesh(m), edge, at: .zero, category: sc)
@@ -1325,27 +1230,27 @@ enum CamperFraming {
         let van = stage == .van
         let rearX = van ? -100.0 : -122
         switch c {
-        case .wheel, .tread: return CamperAngle(target: B(88, 40, 52), yaw: -18, elevation: 6, zoom: 4.4 * 0.8)
-        case .light, .grille, .bumper:
+        case .wheel, .hubcap, .tireTread: return CamperAngle(target: B(88, 40, 52), yaw: -18, elevation: 6, zoom: 4.4 * 0.8)
+        case .headlight, .grille, .bumper:
             return CamperAngle(target: B(van ? 99 : 100, 12, 0), yaw: -62, elevation: 8, zoom: 2.3 * 0.8)
         case .mirror: return CamperAngle(target: B(van ? 60 : 68, -20, 56), yaw: -40, elevation: 8, zoom: 3.4)
         case .mudflap: return CamperAngle(target: B(60, 46, 50), yaw: 30, elevation: 4, zoom: 3.6)
-        case .ladder, .rear: return CamperAngle(target: B(rearX - 10, -10, 10), yaw: 60, elevation: 10, zoom: 1.6)
+        case .ladder, .bikeRack, .spareCover: return CamperAngle(target: B(rearX - 10, -10, 10), yaw: 60, elevation: 10, zoom: 1.6)
         case .handle: return CamperAngle(target: B(50, -6, 50), yaw: -14, elevation: 4, zoom: 4.2)
-        case .window: return CamperAngle(target: B(-40, -32, 50), yaw: -6, elevation: 4, zoom: 1.7)
-        case .roof, .solar, .antenna, .flag:
+        case .windowShape: return CamperAngle(target: B(-40, -32, 50), yaw: -6, elevation: 4, zoom: 1.7)
+        case .roofCargo, .roofTent, .solar, .antenna, .flag:
             return CamperAngle(target: B(-10, van ? -80 : -88, 0), yaw: -30, elevation: 32, zoom: 1.5)
         case .awning: return CamperAngle(target: B(-42, -24, 70), yaw: -24, elevation: 12, zoom: 1.0)
         case .paint: return overview(stage)
-        case .stickerEdge, .sticker: return CamperAngle(target: B(-60, 0, 50), yaw: -6, elevation: 4, zoom: 2.0)
-        case .plate: return CamperAngle(target: B(van ? 120 : 126, 32, 0), yaw: -70, elevation: 6, zoom: 4.0)
-        case .chair, .table, .outLight, .rug:
-            return CamperAngle(target: CV3(-40, 18, 90), yaw: -20, elevation: 22, zoom: 1.2)
-        case .curtain, .lamp, .wall:
+        case .stickerEdge: return CamperAngle(target: B(-70, -10, 50), yaw: -6, elevation: 4, zoom: 2.6)
+        case .chair, .table, .firePit, .outdoorLight, .rug:
+            return CamperAngle(target: CV3(-40, 18, 96), yaw: -20, elevation: 24, zoom: 1.1)
+        case .curtain, .hangingLamp, .wallWood:
             return CamperAngle(target: B(-80, -24, 30), yaw: -10, elevation: 6, zoom: 2.4)
-        case .cushion, .trinket, .floor:
+        case .cushion, .floor, .mug:
             return CamperAngle(target: B(-89, 0, 30), yaw: -12, elevation: 14, zoom: 3.0)
-        case .shelf: return CamperAngle(target: B(-62, -38, -20), yaw: -8, elevation: 10, zoom: 2.4)
+        case .plant: return CamperAngle(target: B(10, -6, -30), yaw: -8, elevation: 12, zoom: 2.6)
+        case .bookshelf: return CamperAngle(target: B(-62, -38, -20), yaw: -8, elevation: 10, zoom: 2.4)
         }
     }
 

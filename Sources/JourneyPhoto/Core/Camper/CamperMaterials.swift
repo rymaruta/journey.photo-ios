@@ -12,6 +12,8 @@ enum CamperMaterial: Hashable, Sendable {
     case canvas(UInt32), canvasLight
     case roofBox
     case paper, foil
+    /// ホログラムの縁（見る角度で色が変わる箔）
+    case holo
     /// 壁の木（色ちがいの木目）
     case wallWood(UInt32)
     /// 燃えている薪・ストーブの窓（昼も少し光る）
@@ -125,6 +127,7 @@ enum CamperMaterials {
         case .roofBox: return CamperMaterialSpec(color: mix(paint, 0x0A0B0D, 0.35), roughness: 0.3, clearCoat: 1)
         case .paper: return CamperMaterialSpec(color: 0xF4F1E8, roughness: 0.4, clearCoat: 0.6)
         case .foil: return CamperMaterialSpec(color: 0xD9B877, metalness: 1, roughness: 0.18)
+        case .holo: return CamperMaterialSpec(color: 0xC8B8F0, metalness: 1, roughness: 0.12, clearCoat: 1, clearCoatRoughness: 0.05)
         case .tint(let c): return CamperMaterialSpec(color: c, roughness: 0.5, clearCoat: 0.3)
         case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .woodGrain)
         case .ember:
