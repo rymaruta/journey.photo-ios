@@ -136,8 +136,8 @@ enum CampLayerSplit {
             }
             if any { method = .foregroundMask }
         }
-        // ならす（隣 2 列ずつ）
-        tops = tops.map { smooth($0, radius: 2) }
+        // ならす（隣 3 列ずつ・板の稜線のようななだらかな波にする）
+        tops = tops.map { smooth(smooth($0, radius: 3), radius: 2) }
         // 奥 ≤ 中 ≤ 手前（下が大きい）。間を空け、どの層も高さを残す
         let gap = minGap * Double(height)
         let maxTop = Double(height) * (1 - minLayerHeight)

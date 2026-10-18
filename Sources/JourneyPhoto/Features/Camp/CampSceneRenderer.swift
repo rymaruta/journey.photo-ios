@@ -609,19 +609,20 @@ final class CampSceneCoordinator: NSObject {
     private static func smoke(at p: CampVec3, opacity: Double, dusk: Bool) -> SCNNode {
         let ps = SCNParticleSystem()
         ps.particleImage = CampTexturePainter.softDot()
-        ps.birthRate = 1.6
+        // 板の煙は太さ 7・60% に縮めた細い筋（4 秒で 90 上がる）。粒は小さく、薄く重ねて筋に見せる
+        ps.birthRate = 6
         ps.particleLifeSpan = 4
-        ps.particleSize = 4
-        ps.particleColor = CampTexturePainter.color(dusk ? 0xC9A48A : 0xE8E6E0, CGFloat(0.55 * opacity))
+        ps.particleSize = 1.6
+        ps.particleColor = CampTexturePainter.color(dusk ? 0xC9A48A : 0xE8E6E0, CGFloat(0.3 * opacity))
         ps.blendMode = .alpha
         ps.emitterShape = SCNSphere(radius: 2)
         ps.emittingDirection = SCNVector3(0, 1, 0)
-        ps.spreadingAngle = 8
+        ps.spreadingAngle = 4
         ps.particleVelocity = 22
-        ps.acceleration = SCNVector3(1.4, 0, 0)
+        ps.acceleration = SCNVector3(1.2, 0, 0)
         ps.isLocal = true
         let grow = CAKeyframeAnimation()
-        grow.values = [3.5, 9, 14]
+        grow.values = [1.6, 2.6, 3.6]
         grow.keyTimes = [0, 0.5, 1]
         let fade = CAKeyframeAnimation()
         fade.values = [0, 1, 0]

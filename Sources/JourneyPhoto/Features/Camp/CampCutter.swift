@@ -256,19 +256,20 @@ enum CampCutter {
         format.scale = 1
         return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             let g = ctx.cgContext
-            let sky = [CampTexturePainter.color(0xD7DCDA).cgColor, CampTexturePainter.color(0xE9E6DD).cgColor] as CFArray
+            let sky = [CampTexturePainter.color(0xD9E0DC).cgColor, CampTexturePainter.color(0xEEEEE6).cgColor] as CFArray
             if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: sky, locations: [0, 1]) {
                 g.drawLinearGradient(grad, start: .zero, end: CGPoint(x: 0, y: 900), options: [.drawsAfterEndLocation])
             }
             var rnd = CampRandom(5)
             // 奥（白く霞む）・中・手前（黒い）の木の並び。稜線の高さ・木の高さ・色
-            for (base, height, color, spacing) in [(820.0, 260.0, UInt32(0xA9B2AE), 46.0), (1060.0, 360.0, UInt32(0x5F6E68), 62.0),
-                                                   (1300.0, 520.0, UInt32(0x1F2925), 90.0)] {
+            // 霧の針葉樹林（板の見本の写真に近づける: 遠くは淡い緑灰・近くは深い緑。梢の高さはそろえ気味）
+            for (base, height, color, spacing) in [(860.0, 230.0, UInt32(0xB4C0B6), 70.0), (1080.0, 300.0, UInt32(0x6B8070), 92.0),
+                                                   (1320.0, 420.0, UInt32(0x24352A), 130.0)] {
                 g.setFillColor(CampTexturePainter.color(color).cgColor)
                 g.fill(CGRect(x: 0, y: base, width: size.width, height: size.height - base))
                 var x = -40.0
                 while x < Double(size.width) + 60 {
-                    let h = height * (0.55 + rnd.next() * 0.55), w = spacing * (0.9 + rnd.next() * 0.5)
+                    let h = height * (0.78 + rnd.next() * 0.3), w = spacing * (1.1 + rnd.next() * 0.4)
                     let top = base - h
                     let tree = CGMutablePath()
                     tree.move(to: CGPoint(x: x, y: top))
@@ -288,7 +289,7 @@ enum CampCutter {
                     tree.closeSubpath()
                     g.addPath(tree)
                     g.fillPath()
-                    x += spacing * (0.6 + rnd.next() * 0.5)
+                    x += spacing * (0.45 + rnd.next() * 0.3)
                 }
                 // 霧（下ほど濃い）
                 let fog = [CampTexturePainter.color(0xE4E6E1, 0).cgColor, CampTexturePainter.color(0xE4E6E1, 0.35).cgColor] as CFArray
