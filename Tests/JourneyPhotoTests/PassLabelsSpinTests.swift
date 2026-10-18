@@ -89,7 +89,7 @@ final class PassLabelsSpinTests: XCTestCase {
         XCTAssertEqual(PassTicket.origin("北海道", written: nil), "北海道")
         XCTAssertEqual(PassTicket.destination("京都市", written: "北陸ひとり旅"), "北陸ひとり旅")
         XCTAssertEqual(PassTicket.destination("京都市", written: ""), "京都")
-        XCTAssertTrue(PassTicket.alighting("京都市").contains("京都市"))
+        XCTAssertTrue(PassTicket.via("京都市")?.contains("京都市") == true)
         XCTAssertEqual(PassTicket.previewOrigin(.custom, text: "雪国", homePrefecture: "北海道"), "雪国")
         XCTAssertEqual(PassTicket.previewOrigin(.home, text: "雪国", homePrefecture: "北海道"), "北海道")
         XCTAssertEqual(PassTicket.previewOrigin(.hidden, text: "", homePrefecture: "北海道"), PassTicket.origin(nil))
@@ -127,7 +127,8 @@ final class PassLabelsSpinTests: XCTestCase {
         XCTAssertEqual(PassExchange.labelLimit, 6)
         XCTAssertTrue(PassCardStyle.routeFits(chars: PassExchange.labelLimit), "6 字＋6 字が区間に収まらない")
         XCTAssertFalse(PassCardStyle.routeFits(chars: PassExchange.labelLimit + 1))
-        XCTAssertGreaterThanOrEqual(PassCardStyle.routeSize * Double(PassCardStyle.routeMinScale), 15, "明朝 15 を割る")
+        // 2026-10-17 判断（マルス券）: 「発」「着」を添える分、下限を 15 から 13 に下げた。本文系の 12 は割らない
+        XCTAssertGreaterThanOrEqual(PassCardStyle.routeMinSize, 13, "明朝 13 を割る")
     }
 
     /// 「自分で書く」を空のまま保存したら、発は「出さない」・着は「すれちがった所」

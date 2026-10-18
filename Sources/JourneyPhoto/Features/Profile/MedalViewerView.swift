@@ -131,11 +131,21 @@ struct MedalViewerView: View {
 
 // MARK: - 硬貨
 
-/// 手に取って回すものの形。硬貨（メダル）か、角の丸いカード（サポーター証・板 Badge3D）
+/// 手に取って回すものの形。硬貨（メダル）か、角の丸いカード（サポーター証・板 Badge3D）か、
+/// 旅のトランク（2026-10-17・角の丸い箱に持ち手）
 enum SpinShape: Equatable {
     case coin
     /// 横 ÷ 縦（サポーター証は 342:216）
     case card(aspect: Double)
+    /// 旅のトランク。横 ÷ 縦（胴は 360:268）・厚み ÷ 横・角の丸み ÷ 横・持ち手の色（0〜1 の RGB）
+    case box(aspect: Double, depth: Double, corner: Double, handle: SpinRGB)
+}
+
+/// 3D の部品の色（SwiftUI・UIKit を読まない形で渡す）
+struct SpinRGB: Equatable {
+    let r: Double
+    let g: Double
+    let b: Double
 }
 
 /// 硬貨・カード。iOS では SceneKit（`MedalSceneView`）、SceneKit の無い Linux の模型では絵を置くだけ
@@ -267,6 +277,13 @@ final class MedalCoinCoordinator: NSObject {
     /// 止まりきったあと、ゆっくり回る速さ（板: 9秒で1周 ≈ 0.7rad/s。それより控えめに）
     private static let idleSpin: Float = 0.45
 
+    /// 止まりきったあとに回る速さ。**トランクは勝手に回さず、-20° の斜めで止めて置く**
+    /// （2026-10-17・run 466: 回り続けると、開いて数秒で横を向き正面の絵が見えなかった）。払えば惰性で回る
+    private var restingSpin: Float {
+        if case .box = shape { return 0 }
+        return Self.idleSpin
+    }
+
     private let shape: SpinShape
 
     init(shape: SpinShape = .coin) {
@@ -279,20 +296,29 @@ final class MedalCoinCoordinator: NSObject {
         switch shape {
         case .coin: buildCoin()
         case .card(let aspect): buildCard(aspect: aspect)
+        case let .box(aspect, depth, corner, handle):
+            // 旅のトランク: 角の丸い箱（表＝胴の絵・裏＝ラベルの無い胴・側面＝縁の色）に、上の持ち手
+            buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)
+            addHandle(aspect: aspect, depth: depth, color: handle)
         }
         addLightsAndCamera()
+        if case .box = shape { brightenForBox() }
         applyAngles()
     }
 
     /// サポーター証（板 Badge3D: 342×216・角 16・厚み 4・縁は角の丸みまで金の小口）。
     /// 縁は角丸の四角を押し出した形（`SCNShape`）に金の帯を貼り、表と裏は角を丸めた平面
-    private func buildCard(aspect: Double) {
+    private func buildCard(aspect: Double,
+                           cornerRatio: Double = SupporterCardLayout.cornerRadius / SupporterCardLayout.width,
+                           thicknessRatio: Double = SupporterCardLayout.thickness / SupporterCardLayout.width,
+                           glossyEdge: Bool = true) {
         // 舞台は硬貨と同じ正方形（視野 30° で、5.2 離れて見える高さは約 2.79）。カードは
         // 横幅が舞台の 9 割ほどになる 2.56 にする（硬貨の直径 2 のままだと板より小さく見える）
-        let width: CGFloat = 2.56
+        // トランクは厚みがあるので、斜めから見ても舞台に収まるよう少し小さく（2.2）
+        let width: CGFloat = glossyEdge ? 2.56 : 2.2
         let height = width / CGFloat(max(0.1, aspect))
-        let corner = width * CGFloat(SupporterCardLayout.cornerRadius / SupporterCardLayout.width)
-        let thickness = width * CGFloat(SupporterCardLayout.thickness / SupporterCardLayout.width)
+        let corner = width * CGFloat(cornerRatio)
+        let thickness = width * CGFloat(thicknessRatio)
 
         let outline = UIBezierPath(roundedRect: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
                                    cornerRadius: corner)
@@ -300,9 +326,9 @@ final class MedalCoinCoordinator: NSObject {
         outline.flatness = 0.002
         let slab = SCNShape(path: outline, extrusionDepth: thickness)
         setUpMetal(edge)
-        // 金の小口は光らせる（回すと光が縁を滑る）
-        edge.specular.contents = UIColor(white: 0.9, alpha: 1)
-        edge.shininess = 0.6
+        // 金の小口は光らせる（回すと光が縁を滑る）。トランクの側面（革・布・木）は光らせない
+        edge.specular.contents = UIColor(white: glossyEdge ? 0.9 : 0.12, alpha: 1)
+        edge.shininess = glossyEdge ? 0.6 : 0.2
         edge.diffuse.wrapS = .clamp
         edge.diffuse.wrapT = .clamp
         slab.materials = [edge, edge, edge]
@@ -322,6 +348,50 @@ final class MedalCoinCoordinator: NSObject {
             coin.addChildNode(node)
         }
         scene.rootNode.addChildNode(coin)
+    }
+
+    /// トランクの光（2026-10-17・run 466 の見比べ）: 正面の絵がトランクの画面（板 Main）と同じ明るさに見えるよう、
+    /// 正面の少し左上にキーライトを足し、環境光は弱いまま。表と裏は光らせず（金属の映り込みは付けない）、
+    /// 絵そのものを少し自ら光らせて暗く沈まないようにする
+    private func brightenForBox() {
+        let key = SCNNode()
+        key.light = SCNLight()
+        key.light?.type = .omni
+        key.light?.intensity = 1100
+        key.position = SCNVector3(-1.2, 1.4, 5)
+        scene.rootNode.addChildNode(key)
+        for material in [front, back] {
+            material.lightingModel = .lambert
+            material.specular.contents = UIColor(white: 0, alpha: 1)
+        }
+    }
+
+    /// トランクの持ち手（上の角が丸い U の字を、胴の上に立てる・2026-10-17）
+    private func addHandle(aspect: Double, depth: Double, color: SpinRGB) {
+        let width: CGFloat = 2.2
+        let height = width / CGFloat(max(0.1, aspect))
+        // 胴の 360pt に対して 幅 100・高さ 36・太さ 10（2D の絵と同じ割合）
+        let unit = width / 360
+        let outer = UIBezierPath(roundedRect: CGRect(x: -50 * unit, y: 0, width: 100 * unit, height: 36 * unit),
+                                 byRoundingCorners: [.bottomLeft, .bottomRight],
+                                 cornerRadii: CGSize(width: 22 * unit, height: 22 * unit))
+        let inner = UIBezierPath(roundedRect: CGRect(x: -40 * unit, y: 0, width: 80 * unit, height: 26 * unit),
+                                 byRoundingCorners: [.bottomLeft, .bottomRight],
+                                 cornerRadii: CGSize(width: 12 * unit, height: 12 * unit))
+        outer.append(inner.reversing())
+        outer.usesEvenOddFillRule = true
+        outer.flatness = 0.002
+        let shape = SCNShape(path: outer, extrusionDepth: width * CGFloat(depth) * 0.25)
+        let material = SCNMaterial()
+        material.lightingModel = .blinn
+        material.diffuse.contents = UIColor(red: CGFloat(color.r), green: CGFloat(color.g), blue: CGFloat(color.b), alpha: 1)
+        material.specular.contents = UIColor(white: 0.2, alpha: 1)
+        shape.materials = [material]
+        let node = SCNNode(geometry: shape)
+        // SceneKit の形は上が +y（UIKit の「下」の角＝maxY が上になる）。U の字の開いた側（y=0）を
+        // 胴の上の縁に合わせ、2D の絵と同じく 6pt ぶん埋める
+        node.position = SCNVector3(0, Float(height / 2 - 6 * unit), 0)
+        coin.addChildNode(node)
     }
 
     private func buildCoin() {
@@ -404,6 +474,13 @@ final class MedalCoinCoordinator: NSObject {
         }
         hasTextures = textures.front != nil
         faces = textures
+        if case .box = shape {
+            // 箱の表と裏は絵を少し自ら光らせる（光の当たらない向きでも絵が沈まない・`brightenForBox`）
+            front.emission.contents = textures.front
+            front.emission.intensity = 0.45
+            back.emission.contents = textures.back
+            back.emission.intensity = 0.45
+        }
         // 面のふくらみ・浮き彫り・面取り・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
         if case .coin = shape { applyRelief(textures) }
     }
@@ -529,7 +606,7 @@ final class MedalCoinCoordinator: NSObject {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
-        velocity = reduceMotion || !poses.isEmpty ? 0 : Self.idleSpin
+        velocity = reduceMotion || !poses.isEmpty ? 0 : restingSpin
     }
 
     func stop() {
@@ -586,7 +663,7 @@ final class MedalCoinCoordinator: NSObject {
         } else {
             yaw += velocity * dt
             // 速さは、ゆっくり回る速さ（減らす設定では 0）へ戻っていく
-            let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -Self.idleSpin : Self.idleSpin)
+            let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -restingSpin : restingSpin)
             let damping: Float = reduceMotion ? 6 : 1.6
             velocity += (resting - velocity) * min(1, dt * damping)
         }

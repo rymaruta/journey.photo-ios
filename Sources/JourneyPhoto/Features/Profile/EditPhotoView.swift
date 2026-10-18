@@ -19,6 +19,8 @@ struct EditPhotoView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 非公開にした・公開に戻した写真を、公開一覧から落とす／戻す（`hideGone`）
     @EnvironmentObject private var hidden: ModerationStore
+    /// 「撮影地の位置を付ける」の持ち主（2026-10-18・差し替えで写真の位置を書くか）
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -431,7 +433,8 @@ struct EditPhotoView: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.border, lineWidth: 1))
+            // 縁は題・説明の欄（`JPField`）と同じ `outline`（部品の縁の 3:1・2026-10-17）
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
             Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
@@ -531,16 +534,20 @@ struct EditPhotoView: View {
             }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない。
             // 索引を読めなかった（nil）ときは、分からないのでピンを残す（`keepsCoordsOnReplace`）
+            // 「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え）。持ち主はログインしている人
+            // （取れなければ写真の人＝自分の写真）。オフなら差し替えた写真の位置を送らない
+            let attaches = UploadLocationPreference().attachesLocation(userId: auth.userId ?? photo.userId)
             let spots = await PlaceCoordsRule.lookup(
                 current: [],
-                needed: photo.coords != nil && EditPlaceRules.needsSpotIndex(
+                needed: attaches && photo.coords != nil && EditPlaceRules.needsSpotIndex(
                     openedLocation: photo.location, currentLocation: location, pickedCoords: false,
                     photoCoords: prepared.coords),
                 fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
                                                            currentLocation: location,
-                                                           newPhotoCoords: prepared.coords, spots: spots)
+                                                           newPhotoCoords: prepared.coords, spots: spots,
+                                                           attachesPhotoLocation: attaches)
             let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                                    uploads: environment.uploads,
                                                                    keepCoords: keep)
@@ -689,7 +696,12 @@ struct EditPhotoView: View {
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
         do {
-            try await environment.photos.update(photoId: photo.id, patch: patch)
+            let dealt = try await environment.photos.update(photoId: photo.id, patch: patch)
+            // 旅のトランク（2026-10-17）: 下書きを初めて公開した回は、投稿と同じく届いた画面（または一言）を出す。
+            // 出すのはこの画面が閉じてから（`RootView` が待つ）
+            if patch.published == true {
+                TrunkArrivals.shared.deliver(dealt, photoTitle: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
             // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
             // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
             // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。

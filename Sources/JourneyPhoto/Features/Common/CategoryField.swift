@@ -14,7 +14,7 @@ struct CategoryField: View {
             Text(L("カテゴリ", "Category"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            FlowLayout(spacing: 6) {
+            FlowLayout(spacing: FormChip.spacing, lineSpacing: FormChip.lineSpacing) {
                 ForEach(CategoryChoices.all, id: \.self) { choice in
                     chip(choice)
                 }
@@ -24,9 +24,6 @@ struct CategoryField: View {
                 .font(.callout)
         }
     }
-
-    /// 札の当たりを外へ広げる幅（`FlowLayout(spacing: 6)` の半分）
-    private static let tapSlack: CGFloat = 3
 
     private func chip(_ choice: String) -> some View {
         let chosen = CategoryChoices.isChosen(current: category, choice: choice)
@@ -40,15 +37,8 @@ struct CategoryField: View {
                 // **選んでいるものは白の塗りに墨の字**（白＝選択）。以前は
                 // AccentColor の 20% で、黒地の上ではほとんど見分けがつかなかった
                 .foregroundStyle(chosen ? WebTheme.accentText : WebTheme.muted)
-                .background(chosen ? WebTheme.accentBackground : WebTheme.surface,
-                            in: Capsule())
-                // **当たりを札の間（6pt）の半分まで広げる。** 外へ広げて同じだけ詰めるので、
-                // 並び（`FlowLayout` が測る大きさ）も見た目も変わらない。
-                // 44pt には届かない——札は縦に 32pt おきに並ぶので、それ以上広げると
-                // 隣の札の押し下げを奪う。届かせるには並びの間を空ける（見た目が変わる）
-                .padding(Self.tapSlack)
-                .contentShape(Rectangle())
-                .padding(-Self.tapSlack)
+                // 見た目 32・当たり 44（`FormChip`・タグの札と同じ形）
+                .formChipFace(fill: chosen ? WebTheme.accentBackground : WebTheme.surface)
         }
         .buttonStyle(.borderless)
         // **押せる状態を読み上げに載せる。** 見た目の色だけだと、

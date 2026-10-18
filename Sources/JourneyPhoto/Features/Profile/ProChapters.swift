@@ -13,7 +13,7 @@ import Foundation
 /// （`BadgeCatalog` の「知らない鍵は出さない」と同じ判断）。新しい年の絵が届いたら
 /// `artYears` と絵（`medal-pro-<季節>-<年>`）を足す。
 ///
-/// ## 機能の章（暁・構図・圏外）
+/// ## 機能の章（暁・圏外。構図は 2026-10-18 に外した——`featureChapters` の注記）
 ///
 /// 第3段階（機能ができてから）配る。鍵はまだ無い——名前の横の画面の「PRO 限定」に
 /// 「まだ持っていない」絵として並べるだけ（板 BadgePicker のとおり）。
@@ -132,9 +132,11 @@ enum ProChapters {
         var largeImage: String { "medal-pro-\(id)" }
     }
 
+    /// 2026-10-18 判断（owner「お任せします」）: **構図の章を外した。** 作例を重ねて撮る（構図を重ねて撮る）が
+    /// 2026-10-17 に全員無料になったので、「PRO 限定」に並べると Pro の特典に見えてしまう。絵
+    /// （`medal-pro-compose`）は残してある——誰でも取れるメダルにするかは、配る仕組み（第3段階）を作るときに決める
     static let featureChapters: [FeatureChapter] = [
         FeatureChapter(id: "dawn", ja: "暁", en: "Dawn"),
-        FeatureChapter(id: "compose", ja: "構図", en: "Composition"),
         FeatureChapter(id: "summit", ja: "圏外", en: "Off-grid"),
     ]
 

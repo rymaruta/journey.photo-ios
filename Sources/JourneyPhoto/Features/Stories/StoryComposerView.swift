@@ -54,6 +54,11 @@ struct StoryComposerView: View {
     @State private var keepInArchive = false
     /// 返信を受けるか（Web の「返信を許可」。既定は入）
     @State private var allowReplies = true
+    /// 「撮影地の位置を付ける」（2026-10-18 判断）。**投稿と同じ人ごとの覚え**（`UploadLocationPreference`）を
+    /// 使う——Web はストーリーにも同じ設定を効かせている。オフなら写真の位置を送らず、撮影地の候補も写真の位置から
+    /// 探さない（`StorySpotSuggestion.Place.coordsToSend`）。変えるのは「誰に見せる？」のシート。
+    /// ログアウト・期限切れ（`auth.userId` が nil）では替えない（投稿の画面と同じ）
+    @State private var attachesLocation = UploadLocationPreference.defaultValue
     @State private var showCamera = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     /// 「続きから」で**残すと決めた下書きの印**（`savedAt`）。真偽では持たない——
@@ -295,7 +300,13 @@ struct StoryComposerView: View {
         .onChange(of: shots.isEmpty) { _, empty in if !empty { librarySelection = [] } }
         // 誰に見せる（前は足元にあった「フォロワーが見られます」と2つのスイッチ）
         .sheet(isPresented: $showAudience) {
-            StoryAudienceSheet(allowReplies: $allowReplies, keepInArchive: $keepInArchive) {
+            StoryAudienceSheet(allowReplies: $allowReplies, keepInArchive: $keepInArchive,
+                               attachesLocation: Binding(
+                                   get: { attachesLocation },
+                                   set: { value in
+                                       attachesLocation = value
+                                       UploadLocationPreference().set(value, userId: auth.userId)
+                                   })) {
                 showAudience = false
             }
             .presentationDetents([.medium, .large])
@@ -348,9 +359,12 @@ struct StoryComposerView: View {
             spotIndex = fetched
         }
         // 候補は**写真の位置か索引が変わったときだけ**解く（描き直しのたびに全件を当てない）
-        .task(id: SuggestionKey(coords: shots.map(\.prepared.coords), spots: spotIndex.count)) {
-            place.resolve(coords: shots.map(\.prepared.coords), spots: spotIndex)
+        // 「撮影地の位置を付ける」がオフなら、写真の位置から候補を探さない（2026-10-18・候補が消える）
+        .task(id: SuggestionKey(coords: suggestionCoords, spots: spotIndex.count)) {
+            place.resolve(coords: suggestionCoords, spots: spotIndex)
         }
+        // 人が替わったら、その人の「撮影地の位置を付ける」を読む（nil では替えない・2026-10-18）
+        .onChange(of: auth.userId) { _, id in loadAttachesLocation(for: id) }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
             // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
@@ -362,9 +376,9 @@ struct StoryComposerView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）
-            Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
-                   "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
+            // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）。
+            // 「撮影地の位置を付ける」の今の値で言い分ける（2026-10-18・変えるのは「誰に見せる？」）
+            Text(StoryLocationText.placeEditorNote(attaches: attachesLocation))
         }
         // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
         .onDisappear { stopWaitingToPost() }
@@ -373,6 +387,7 @@ struct StoryComposerView: View {
         .onAppear {
             drafts.use(userId: auth.userId)
             autoDrafts.use(userId: auth.userId)
+            loadAttachesLocation(for: auth.userId)
             // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
@@ -902,6 +917,17 @@ struct StoryComposerView: View {
     }
 
     /// 撮影地の候補を解き直す鍵（写真の座標の並びと索引の数）
+    /// 撮影地の候補を探す写真の位置。「撮影地の位置を付ける」がオフなら使わない（空）
+    private var suggestionCoords: [Photo.Coords?] {
+        attachesLocation ? shots.map(\.prepared.coords) : []
+    }
+
+    /// その人の「撮影地の位置を付ける」を読む。**nil（ログアウト・期限切れ）では替えない**
+    private func loadAttachesLocation(for userId: String?) {
+        guard let userId, !userId.isEmpty else { return }
+        attachesLocation = UploadLocationPreference().attachesLocation(userId: userId)
+    }
+
     private struct SuggestionKey: Equatable {
         let coords: [Photo.Coords?]
         let spots: Int
@@ -1061,6 +1087,7 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("見せる相手: フォロワー", "Audience: Followers"))
+                .accessibilityIdentifier("story.audience")
                 .accessibilityHint(L("返信と、24時間後も残すかもここで決めます",
                                      "Also set replies and whether to keep it after 24 hours"))
 
@@ -1732,7 +1759,8 @@ struct StoryComposerView: View {
         // 撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule` の (c)）は索引が無いと決められない。
         // まだ読めていなければ少しだけ待って（控えがあればすぐ返る）から出し直す（2026-10-07）
         let shotCoords = shots.map(\.prepared.coords)
-        if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {
+        if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex,
+                                                     attachesPhotoLocation: attachesLocation) {
             isWaitingForSpots = true
             let current = spotIndex
             spotWait?.cancel()
@@ -1757,7 +1785,9 @@ struct StoryComposerView: View {
         // （読み書きの往復で画質を落とさない）
         // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）。
         // 手で書いた撮影地が写真の近くのスポットを指さなければ、座標を送らない（`Place.coordsToSend`・2026-10-07）
-        let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex)
+        // 「撮影地の位置を付ける」がオフなら写真の座標は送らない（スポットを指すときだけスポットの座標・2026-10-18）
+        let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex,
+                                        attachesPhotoLocation: attachesLocation)
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),

@@ -43,7 +43,8 @@ final class PassTicketTests: XCTestCase {
         XCTAssertNil(PassTicket.distanceLabel(nil))
         XCTAssertNil(PassTicket.distanceLabel(0))
         XCTAssertEqual(PassTicket.distanceLabel(1047), "1,047 km")
-        XCTAssertNotEqual(PassTicket.alighting(nil), PassTicket.alighting("京都市"))
+        XCTAssertNil(PassTicket.via(nil), "場所が無いのに「経由」の行を出す")
+        XCTAssertNotNil(PassTicket.via("京都市"))
         XCTAssertEqual(PassTicket.issuer(name: "mio.k", prefecture: nil), "mio.k")
     }
 
@@ -59,7 +60,8 @@ final class PassTicketTests: XCTestCase {
     func testDateLabelHasNoMinutes() {
         let at = calendar.date(from: DateComponents(year: 2026, month: 10, day: 16, hour: 15, minute: 42))!
         let label = PassTicket.dateLabel(at, calendar: calendar)
-        XCTAssertTrue(label.hasPrefix("26.10.16 "), label)
+        XCTAssertTrue(label.hasPrefix("10.16 "), label)
+        XCTAssertFalse(label.contains("26."), "日付の欄に年を入れた（欄からはみ出す）: \(label)")
         XCTAssertFalse(label.contains("42"), label)
         XCTAssertFalse(label.contains(":"), label)
     }

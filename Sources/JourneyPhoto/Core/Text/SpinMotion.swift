@@ -104,6 +104,22 @@ enum PassSpinGesture {
         let t = min(1, max(0, (elapsed - flickDuration) / blendDuration))
         return base + early + (full - early) * t
     }
+    /// ScrollView の中のきっぷ（自分のカードの見本・`PassSpinCard`）で、指が横に回すのか、たてに送るのか。
+    ///
+    /// 2026-10-16 判断: 束の画面は全面なので「回すか払うか」（`classify`）だけを決めればよかったが、見本は
+    /// たてに送る画面の中にある。**最初に動いた向きで決め、離すまで変えない**——横がたての `axisBias` 倍を
+    /// 越えたときだけ回し、それ以外はたての送りに任せる（斜めの指で、送りながら回り出さない）
+    enum Axis: Equatable {
+        case horizontal
+        case vertical
+    }
+
+    static let axisBias = 1.2
+
+    static func axis(dx: Double, dy: Double) -> Axis {
+        abs(dx) > abs(dy) * axisBias ? .horizontal : .vertical
+    }
+
     static let flickDistance = 200.0
     static let flickTravel = 120.0
 
