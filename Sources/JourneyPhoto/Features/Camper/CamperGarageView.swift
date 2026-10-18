@@ -8,7 +8,11 @@ import SwiftUI
 struct CamperGarageView: View {
     let ownerName: String?
     let userId: String?
-    let stats: CamperStats
+    /// 自分の写真の一覧（下書きを含む。数えるのは `CamperCounting.count` が公開した写真だけ）
+    let photos: [Photo]
+    /// 写真を一度でも読めたか。読めるまでは「届いた」の判定も保存もしない（2026-10-18 #312 の見直し:
+    /// 読み込み前に開くと、数が 0 で飾りが外れ、「届いた」がもう一度出た）
+    let photosLoaded: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var loadout = CamperLoadout.standard
@@ -27,14 +31,24 @@ struct CamperGarageView: View {
     @State private var category: CamperCategory = .wheel
     @State private var arrival: CamperPart?
     @State private var readyMarker = ""
+    /// 数えた結果（マイページの描き直しのたびに数えない。この画面の中で、写真が変わった時だけ数える）
+    @State private var stats = CamperStats()
+    @State private var arrivalChecked = false
 
     private var store: CamperStore { CamperStore(userId: userId) }
     private var owned: Set<String> { CamperCatalog.owned(stats) }
     private var actualStage: CamperStage { CamperStage.stage(books: stats.books) }
     private var stage: CamperStage { previewStage ?? actualStage }
 
+    /// 画面に出す飾り（持っていない部品は外して見せる）。**保存する値（`loadout`）は外さない**——数え直しの途中や
+    /// 写真を読む前に外して保存すると、選んだ部品が消える
+    private var worn: CamperLoadout { loadout.sanitized(owned: owned) }
+
+    /// 数え直す目印（写真の数・先頭と最後の id・読めたか）
+    private var countKey: String { "\(photosLoaded) \(photos.count) \(photos.first?.id ?? "") \(photos.last?.id ?? "")" }
+
     private var config: CamperConfig {
-        var shown = loadout
+        var shown = worn
         if let previewPart { shown.pick(previewPart) }
         return CamperConfig(stage: stage, mood: mood, loadout: shown, posts: stats.posts, silhouette: previewPart?.category)
     }
@@ -61,6 +75,7 @@ struct CamperGarageView: View {
         .navigationTitle(L("キャンピングカー", "Camper"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
+        .task(id: countKey) { recount() }
         .sheet(item: $arrival) { part in
             CamperArrivalView(part: part, collected: CamperCatalog.dexCount(owned).have, total: CamperCatalog.dexCount(owned).total, onEquip: {
                 equip(part)
@@ -74,11 +89,19 @@ struct CamperGarageView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
-        loadout = store.load().sanitized(owned: owned)
+        // 覚えている飾りはそのまま持つ（外すのは見せる時だけ・`worn`）
+        loadout = store.load()
         angle = CamperFraming.overview(actualStage)
-        // 新しく届いた部品（いちばん珍しいもの）を一度だけ見せる
-        let fresh = CamperStore.arrivals(owned: owned, seen: store.seen)
-        store.markSeen(owned)
+    }
+
+    /// 写真から数え直す。写真を一度でも読めたら、新しく届いた部品（いちばん珍しいもの）を一度だけ見せる
+    private func recount() {
+        let before = actualStage
+        stats = CamperCounting.count(photos)
+        if actualStage != before, previewStage == nil, !doorOpen { angle = CamperFraming.overview(actualStage) }
+        guard photosLoaded, !arrivalChecked else { return }
+        arrivalChecked = true
+        let fresh = store.openArrivals(owned: owned, photosLoaded: photosLoaded)
         if let top = fresh.first, PreviewSession.userId == nil || ProcessInfo.processInfo.arguments.contains("-JPPreviewCamperArrival") {
             arrival = top
         }
@@ -360,7 +383,8 @@ struct CamperGarageView: View {
                         let total = CamperCatalog.parts(c).filter { $0.unlock.isAvailable }.count
                         Button { pickCategory(c) } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: c.symbol).font(.system(size: 13))
+                                // 選んでいる分類は色だけでなく印の形でも示す（#312 の見直し）
+                                Image(systemName: c == category ? "checkmark" : c.symbol).font(.system(size: 13, weight: c == category ? .bold : .regular))
                                 Text(c.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                 Text("\(have)/\(total)").font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                                     .foregroundStyle(WebTheme.faint)
@@ -369,7 +393,7 @@ struct CamperGarageView: View {
                             .padding(.horizontal, 12)
                             .frame(minHeight: WebTheme.minTapTarget)
                             .background(c == category ? WebTheme.accentSoft : WebTheme.card, in: Capsule())
-                            .overlay(Capsule().strokeBorder(c == category ? WebTheme.accent : Color.clear, lineWidth: 1))
+                            .overlay(Capsule().strokeBorder(c == category ? WebTheme.accent : Color.clear, lineWidth: c == category ? 2 : 1))
                             .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -398,7 +422,7 @@ struct CamperGarageView: View {
         let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: columns, spacing: 8) {
             if category.optional {
-                let on = loadout.key(category) == CamperLoadout.none && previewPart == nil
+                let on = worn.key(category) == CamperLoadout.none && previewPart == nil
                 Button {
                     previewPart = nil
                     loadout.remove(category)
@@ -410,7 +434,8 @@ struct CamperGarageView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 92)
                     .background(on ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? WebTheme.accent : WebTheme.hairline, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? WebTheme.accent : WebTheme.hairline, lineWidth: on ? 2 : 1))
+                    .overlay(alignment: .topTrailing) { if on { CamperSelectedMark() } }
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(on ? .isSelected : [])
@@ -424,7 +449,7 @@ struct CamperGarageView: View {
 
     private func partCard(_ part: CamperPart) -> some View {
         let have = owned.contains(part.id)
-        let on = previewPart?.id == part.id || (previewPart == nil && loadout.key(part.category) == part.key)
+        let on = previewPart?.id == part.id || (previewPart == nil && worn.key(part.category) == part.key)
         return Button {
             if have {
                 equip(part)
@@ -459,7 +484,7 @@ struct CamperGarageView: View {
                     } else {
                         // 要サーバー（第1段では届かない）。数の分母にも入れない
                         Text(L("近日", "Soon"))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(WebTheme.accent)
                             .accessibilityHidden(true)
                     }
@@ -471,7 +496,9 @@ struct CamperGarageView: View {
             .background(on ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(on ? WebTheme.accent : (have ? WebTheme.hairline : WebTheme.line),
-                              style: StrokeStyle(lineWidth: 1, dash: have || on ? [] : [3, 3])))
+                              style: StrokeStyle(lineWidth: on ? 2 : 1, dash: have || on ? [] : [3, 3])))
+            // 付けている部品は色だけでなくチェックの印でも示す（#312 の見直し）
+            .overlay(alignment: .topTrailing) { if on { CamperSelectedMark() } }
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -504,6 +531,17 @@ struct CamperGarageView: View {
         RadialGradient(colors: [CamperStyle.color(CamperMaterials.backdrop(mood)), Color.black],
                        center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 520)
             .ignoresSafeArea()
+    }
+}
+
+/// 選んでいる印（真鍮の丸にチェック・黒地の上だけ）。色だけで選択を示さないための形
+struct CamperSelectedMark: View {
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(WebTheme.accent, Color.black)
+            .padding(6)
+            .accessibilityHidden(true)
     }
 }
 

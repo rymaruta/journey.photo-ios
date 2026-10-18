@@ -24,6 +24,8 @@ enum CamperMaterial: Hashable, Sendable {
     case silhouette
     /// 住む所の窓のガラス（夜は室内の灯りでほのかに光る）。運転席のガラスは `.glass`（灯りが無いので暗い）
     case glassLit
+    /// 夜は灯り（`.lamp`）、昼と雪は `base`（電球・提灯・ランプの笠）。時刻で組み直さず、材質の値だけ替えるため
+    indirect case byNight(CamperMaterial)
     /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
     case glowPool
 }
@@ -147,6 +149,7 @@ enum CamperMaterials {
         case .ember:
             return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 1.0 : 0.6)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
+        case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)
         case .glowPool: return CamperMaterialSpec(color: 0x6E4826, texture: .glow, additive: true)
         }
     }

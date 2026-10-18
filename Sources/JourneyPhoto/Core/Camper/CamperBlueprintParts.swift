@@ -407,7 +407,7 @@ extension CamperBuilder {
             rbox("cargo.boxNose", CV3(cx + 38, y + 4.5, 0), CV3(12, 9, 54), 4, .roofBox, category: rc)
             rbox("cargo.boxSeam", CV3(cx, y + 8.4, 0), CV3(78, 0.5, 60.4), 0.2, .black, category: rc)
             for dx in [-21.0, 21] { rbox("cargo.latch", CV3(cx + dx, y + 8, 30.4), CV3(6, 2, 1), 0.4, .chrome, category: rc) }
-            if snow { rbox("cargo.snow", CV3(cx, y + 13, 0), CV3(76, 2.6, 56), 1.2, .snow) }
+            only([.snow]) { $0.rbox("cargo.snow", CV3(cx, y + 13, 0), CV3(76, 2.6, 56), 1.2, .snow) }
         case "canoe":
             let hull = CamperMeshKit.lathe([CV2(0.01, 0), CV2(5, 9), CV2(7.4, 28), CV2(7.8, 46), CV2(7.4, 64), CV2(5, 83), CV2(0.01, 92)],
                                            segments: 18, material: { _ in .wallWood(0xA4532E) })
@@ -445,7 +445,7 @@ extension CamperBuilder {
             rbox("cargo.jerryRib", CV3(cx + 25.4, y + 8, 24), CV3(0.6, 12, 14), 0.2, .jerry, category: rc)
             lathe("cargo.jerryCap", CV3(cx + 33, y + 16, 28), axis: CV3(0, 1, 0), [(1.6, 0), (1.6, 2.6), (0.01, 2.8)], segments: 10,
                   capStart: .black, category: rc) { _ in .black }
-            if snow { rbox("cargo.snow", crate + CV3(0, 10, 0), CV3(27, 3, 37), 1.4, .snow) }
+            only([.snow]) { $0.rbox("cargo.snow", crate + CV3(0, 10, 0), CV3(27, 3, 37), 1.4, .snow) }
         }
     }
 
@@ -505,7 +505,12 @@ extension CamperBuilder {
     // MARK: ソーラー・アンテナ・旗
 
     mutating func solarPanels() {
-        guard !snow, !van else { return }
+        guard !van else { return }
+        // 雪の日は雪に埋もれて見えない
+        only([.day, .night]) { $0.solarPanelsBody() }
+    }
+
+    private mutating func solarPanelsBody() {
         let RT = roofTop
         let sc = CamperCategory.solar
         func panel(_ c: CV3, _ w: Double, _ d: Double, _ q: CQuat = .identity) {
@@ -773,11 +778,11 @@ extension CamperBuilder {
             }
         }
         add("fire.ember", .sphere(radius: 3.2), .ember, at: emberAt, category: fc, scale: CV3(1, 0.7, 1))
-        if night {
-            // 2026-10-18（Mac の絵 run 530）: 700・90 では焚き火のまわりが白く飛び、画面の左が真っ白なにじみになった。
-            // 夜の主役は窓と扉の口の灯りなので、焚き火は足元を赤く照らすだけにする
-            out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xFF8A3C,
-                                              intensity: 200, range: 26))
+        // 2026-10-18（Mac の絵 run 530）: 700・90 では焚き火のまわりが白く飛び、画面の左が真っ白なにじみになった。
+        // 夜の主役は窓と扉の口の灯りなので、焚き火は足元を赤く照らすだけにする
+        only([.night]) {
+            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xFF8A3C,
+                                                 intensity: 200, range: 26))
         }
     }
 
@@ -797,15 +802,15 @@ extension CamperBuilder {
                 if i < 9 { add("light.bulb", .sphere(radius: 1.0), .lamp, at: p + CV3(0, -1.6, 0), category: oc) }
                 prev = p
             }
-            if night {
-                out.lights.append(CamperLightSpec(name: "string", kind: .omni, position: CV3(-40, 60, z + 44), color: 0xFFD27A,
-                                                  intensity: 200, range: 70))
+            only([.night]) {
+                $0.out.lights.append(CamperLightSpec(name: "string", kind: .omni, position: CV3(-40, 60, z + 44), color: 0xFFD27A,
+                                                     intensity: 200, range: 70))
             }
         case "paper_lantern":
             let c = CV3(-96, 0, z + 14)
             rod("light.stand", c, c + CV3(0, 46, 0), 0.6, .woodDark, category: oc)
             rod("light.standArm", c + CV3(0, 46, 0), c + CV3(10, 46, 0), 0.4, .woodDark, category: oc)
-            add("light.paperLantern", .sphere(radius: 6), night ? .lamp : .tint(0xC23B22), at: c + CV3(10, 36, 0), category: oc,
+            add("light.paperLantern", .sphere(radius: 6), .byNight(.tint(0xC23B22)), at: c + CV3(10, 36, 0), category: oc,
                 scale: CV3(1, 1.25, 1))
             for y in [43.0, 29] { add("light.paperRim", .cylinder(radius: 3, height: 1.2, segments: 14), .black, at: c + CV3(10, y, 0), category: oc) }
         case "oil_lamp":
@@ -826,9 +831,9 @@ extension CamperBuilder {
             lathe("light.lanternGlass", l + CV3(0, 2.4, 0), axis: CV3(0, 1, 0), [(3, 0), (3.2, 3.6), (3, 7.2)], segments: 12,
                   capStart: .lamp, capEnd: .lamp, category: oc) { _ in .lamp }
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
-            if night {
-                out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFFBE6E,
-                                                  intensity: 120, range: 24))
+            only([.night]) {
+                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFFBE6E,
+                                                     intensity: 120, range: 24))
             }
         }
     }
@@ -925,7 +930,7 @@ extension CamperBuilder {
             lathe("interior.lamp", top - CV3(0, 22, 0), axis: CV3(0, 1, 0), [(6, 0), (6.2, 0.6), (1.2, 8)], segments: 18,
                   category: lc) { _ in .tint(0x3E6B4A) }
             add("interior.lampRim", .torus(ring: 6.1, pipe: 0.35), .tint(0xEDEAE2), at: top - CV3(0, 22, 0), category: lc)
-            add("interior.lampBulb", .sphere(radius: 1.6), night ? .lamp : .glass, at: top - CV3(0, 20.6, 0), category: lc)
+            add("interior.lampBulb", .sphere(radius: 1.6), .byNight(.glass), at: top - CV3(0, 20.6, 0), category: lc)
         case "rattan":
             rod("interior.lampCord", top, top - CV3(0, 12, 0), 0.25, .black, category: lc)
             lathe("interior.lamp", top - CV3(0, 22, 0), axis: CV3(0, 1, 0), [(7, 0), (6.6, 4), (4.6, 8), (1, 10)], segments: 20,
@@ -934,15 +939,15 @@ extension CamperBuilder {
                 add("interior.lampWeave", .torus(ring: 6.9 - Double(i) * 0.7, pipe: 0.25), .tint(0x8A6D3D),
                     at: top - CV3(0, 21 - Double(i) * 2.4, 0), category: lc)
             }
-            if night { add("interior.lampBulb", .sphere(radius: 2), .lamp, at: top - CV3(0, 19, 0), category: lc) }
+            only([.night]) { $0.add("interior.lampBulb", .sphere(radius: 2), .lamp, at: top - CV3(0, 19, 0), category: lc) }
         case "glass_globe":
             rod("interior.lampCord", top, top - CV3(0, 12, 0), 0.25, .black, category: lc)
             add("interior.lampCap", .cylinder(radius: 1.4, height: 2, segments: 12), .brass, at: top - CV3(0, 13, 0), category: lc)
-            add("interior.lamp", .sphere(radius: 6.4), night ? .lamp : .tint(0xF1EEE6), at: top - CV3(0, 20, 0), category: lc)
+            add("interior.lamp", .sphere(radius: 6.4), .byNight(.tint(0xF1EEE6)), at: top - CV3(0, 20, 0), category: lc)
         default:
             rod("interior.lampCord", top, top - CV3(0, 14, 0), 0.3, .black, category: lc)
             lathe("interior.lamp", top - CV3(0, 21, 0), axis: CV3(0, 1, 0), [(0.01, 0), (5.5, 1), (4.5, 5), (0.3, 7)], segments: 14,
-                  category: lc) { [lit = night] _ in lit ? .lamp : .brass }
+                  category: lc) { _ in .byNight(.brass) }
         }
     }
 

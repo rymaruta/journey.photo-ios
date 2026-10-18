@@ -53,6 +53,9 @@ struct CamperNodeSpec: Sendable {
     var group: CamperGroup = .body
     /// どの分類の部品か（影絵の見本と試験に使う）
     var category: CamperCategory?
+    /// その時刻・天気の時だけ見せる部品（nil は いつも）。場面のために全部の時刻を一度に組む時だけ付く
+    /// （`CamperBuilder.build(_:allMoods:)`）。昼・夜・雪の切り替えで車を組み直さず、見せる・隠すだけにする
+    var moods: Set<CamperMood>?
 
     /// 内張りの材質（壁・床・天井の室内の側）。室内の灯りはここと `interior.` の部品だけを照らす
     static func isInteriorMaterial(_ m: CamperMaterial) -> Bool {
@@ -113,6 +116,8 @@ struct CamperLightSpec: Sendable, Equatable {
     var spotInner = 20.0
     var spotOuter = 45.0
     var castsShadow = false
+    /// その時刻だけ灯る（nil は いつも。全部の時刻を一度に組む時だけ付く）
+    var moods: Set<CamperMood>?
 
     /// 室内の灯り（室内の部品だけを照らす。壁の外の縁・扉・屋根の棒に光の筋を乗せない）
     var inside: Bool { name.hasPrefix("interior.") }
@@ -179,11 +184,24 @@ struct CamperBuilder {
 
     let config: CamperConfig
     var out = CamperBlueprint()
+    /// 昼・夜・雪の全部を一度に組む（場面の側が見せる・隠すで切り替える。2026-10-18 #312 の見直し）
+    var allMoods = false
 
     var stage: CamperStage { config.stage }
     var night: Bool { config.mood == .night }
     var snow: Bool { config.mood == .snow }
     var van: Bool { config.stage == .van }
+
+    /// その時刻・天気だけの部品と灯りを足す。いつもの組み立てでは、いまの時刻に当たる時だけ足す。
+    /// 全部の時刻を組む時は、印（`moods`）を付けて足す
+    mutating func only(_ moods: Set<CamperMood>, _ body: (inout CamperBuilder) -> Void) {
+        guard allMoods || moods.contains(config.mood) else { return }
+        let n0 = out.nodes.count, l0 = out.lights.count
+        body(&self)
+        guard allMoods else { return }
+        for i in n0..<out.nodes.count { out.nodes[i].moods = out.nodes[i].moods.map { $0.intersection(moods) } ?? moods }
+        for i in l0..<out.lights.count { out.lights[i].moods = out.lights[i].moods.map { $0.intersection(moods) } ?? moods }
+    }
 
     // 車体の寸法（板の付箋「寸法」）
     var BW: Double { van ? 48 : 50 }
@@ -345,8 +363,9 @@ struct CamperBuilder {
 
     // MARK: 全体
 
-    static func build(_ config: CamperConfig) -> CamperBlueprint {
+    static func build(_ config: CamperConfig, allMoods: Bool = false) -> CamperBlueprint {
         var b = CamperBuilder(config: config)
+        b.allMoods = allMoods
         b.out.length = (config.stage == .trailer ? -264 : (config.stage == .van ? -100 : -122))...(config.stage == .van ? 119 : 120)
         b.out.halfWidth = b.BW
         b.out.doorHinge = CV3(b.doorHole.map(\.x).min() ?? 33.5, 0, b.BW)
@@ -697,7 +716,7 @@ struct CamperBuilder {
             // 扉を開けた所: 玄関マット・天井の灯り・内側のつかみ
             rbox("interior.doorMat", CV3(45, 34.4, BW - 9), CV3(20, 0.8, 11), 0.3, .mat)
             lathe("interior.doorLamp", CV3(45, 128, BW - 14), axis: CV3(0, -1, 0), [(0.3, 0), (0.3, 2), (3.4, 3), (3.8, 4.6), (0.01, 5)],
-                  segments: 12) { [lampLit = night] _ in lampLit ? .lamp : .brass }
+                  segments: 12) { _ in .byNight(.brass) }
             bookshelf()
         }
         cushions()
@@ -929,7 +948,7 @@ struct CamperBuilder {
             cargo(base: RT + 3.5, x: -20)
             antenna()
             flag()
-            if snow { rbox("roof.snow", CV3(-22, RT + 3, 0), CV3(148, 5, 90), 2.5, .snow) }
+            only([.snow]) { $0.rbox("roof.snow", CV3(-22, RT + 3, 0), CV3(148, 5, 90), 2.5, .snow) }
             return
         }
         solarPanels()
@@ -944,9 +963,7 @@ struct CamperBuilder {
         cargo(base: RT + 11, x: 31)
         antenna()
         flag()
-        if snow {
-            rbox("roof.snow", CV3(-24, RT + 3, 0), CV3(188, 6, 96), 3, .snow)
-        }
+        only([.snow]) { $0.rbox("roof.snow", CV3(-24, RT + 3, 0), CV3(188, 6, 96), 3, .snow) }
     }
 
     // MARK: 床下（車台）
@@ -1252,7 +1269,10 @@ struct CamperBuilder {
     }
 
     mutating func nightLights() {
-        guard night else { return }
+        only([.night]) { $0.nightLightsBody() }
+    }
+
+    private mutating func nightLightsBody() {
         let warm: UInt32 = 0xFFB260
         // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
         if !van {

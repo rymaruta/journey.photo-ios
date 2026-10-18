@@ -58,7 +58,7 @@ final class CamperModelTests: XCTestCase {
         let owned = CamperCatalog.owned(s)
         XCTAssertFalse(owned.contains("wheel.brass_spoke"))
         XCTAssertFalse(owned.contains("sticker_edge.holo"))
-        XCTAssertEqual(CamperUnlock.server("x").fraction(s), 0)
+        XCTAssertEqual(CamperUnlock.server("x", "x").fraction(s), 0)
         XCTAssertLessThanOrEqual(CamperCatalog.dexCount(owned).total, 98)
     }
 
@@ -158,7 +158,8 @@ final class CamperModelTests: XCTestCase {
         XCTAssertEqual(s.seaAndMountainDays, 1)
         XCTAssertEqual(s.fullMoonShots, 1)
         XCTAssertEqual(s.southIslandShots, 1)
-        XCTAssertEqual(s.months, 2)
+        // 2024 年 9 月と 12 月は続いていない（続いた月の最長は 1）
+        XCTAssertEqual(s.months, 1)
         XCTAssertEqual(CamperCounting.prefecture(in: "神奈川県"), "神奈川", "奈良に当たっている")
         XCTAssertFalse(CamperCounting.isFullMoon(year: 2024, month: 10, day: 2), "新月の日を満月と数えた")
     }
@@ -179,6 +180,120 @@ final class CamperModelTests: XCTestCase {
         XCTAssertTrue(text.contains("ディレクターズ") || text.contains("Director chair"))
         XCTAssertTrue(text.contains("扉が開いている") || text.contains("Door open"))
     }
+
+    private func photo(_ id: String, exif: String? = nil, location: String? = nil, title: String? = nil,
+                       published: Bool? = nil) throws -> Photo {
+        var json: [String: Any] = ["id": id, "src": "https://example.com/\(id).jpg"]
+        if let exif { json["exif"] = ["dateTimeOriginal": exif] }
+        if let location { json["location"] = location }
+        if let title { json["title"] = title }
+        if let published { json["published"] = published }
+        return try JSONDecoder().decode(Photo.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// 下書き（published == false）は数えない。公開・不明（古い投稿）は数える（#312 の見直し）
+    func testDraftsAreNotCounted() throws {
+        let photos = [try photo("a", exif: "2024:05:01 21:00:00", location: "長野県 八ヶ岳", published: true),
+                      try photo("b", exif: "2024:05:02 21:00:00", location: "長野県 八ヶ岳"),
+                      try photo("draft", exif: "2024:05:03 21:00:00", location: "長野県 八ヶ岳", published: false)]
+        let s = CamperCounting.count(photos)
+        XCTAssertEqual(s.posts, 2, "下書きを数えた")
+        XCTAssertEqual(s.nightShots, 2)
+        XCTAssertEqual(s.mountainShots, 2)
+        XCTAssertEqual(CamperCounting.stats(photos: photos, books: 0).posts, 2)
+        XCTAssertEqual(CamperCounting.count([try photo("d", published: false)]).posts, 0)
+    }
+
+    /// 地名の中の「山・海・浜・港」に当たらない（北海道・岡山・富山・山形・山口・山梨・和歌山・横浜・浜松・港区）
+    func testPlaceNamesAreNotNature() throws {
+        for loc in ["北海道札幌市", "岡山県岡山市", "富山県富山市", "山形県", "山口県下関市", "山梨県甲府市", "和歌山県",
+                    "神奈川県横浜市", "静岡県浜松市", "東京都港区"] {
+            let s = CamperCounting.count([try photo(loc, location: loc)])
+            XCTAssertEqual(s.mountainShots, 0, loc)
+            XCTAssertEqual(s.seaShots, 0, loc)
+        }
+        // 地名を外しても、景色の言葉は残る
+        XCTAssertEqual(CamperCounting.count([try photo("1", location: "北海道 羊蹄山")]).mountainShots, 1)
+        XCTAssertEqual(CamperCounting.count([try photo("2", location: "静岡県浜松市 中田島の浜")]).seaShots, 1)
+        XCTAssertEqual(CamperCounting.count([try photo("3", location: "富山県 富山湾")]).seaShots, 1)
+    }
+
+    /// 「海と山を同じ日」は別々の写真に限る（1 枚が海と山の両方に当たるだけでは数えない）
+    func testSeaAndMountainNeedTwoPhotos() throws {
+        let both = try photo("both", exif: "2024:07:01 10:00:00", location: "鳥取県 大山と日本海")
+        XCTAssertEqual(CamperCounting.count([both]).seaAndMountainDays, 0)
+        let sea = try photo("sea", exif: "2024:07:01 15:00:00", location: "鳥取県 白兎海岸")
+        XCTAssertEqual(CamperCounting.count([both, sea]).seaAndMountainDays, 1)
+        let mountainOnly = try photo("m", exif: "2024:07:02 09:00:00", location: "長野県 槍ヶ岳")
+        let seaOtherDay = try photo("s", exif: "2024:07:03 09:00:00", location: "神奈川県 七里ヶ浜")
+        XCTAssertEqual(CamperCounting.count([mountainOnly, seaOtherDay]).seaAndMountainDays, 0)
+    }
+
+    /// 「一年続けて撮る」は続いた 12 か月（年をまたいでもよい・飛んだら数え直し）
+    func testMonthsInARow() throws {
+        func run(_ months: [(Int, Int)]) throws -> Int {
+            try CamperCounting.count(months.enumerated().map { i, ym in
+                try photo("p\(i)", exif: String(format: "%04d:%02d:15 12:00:00", ym.0, ym.1))
+            }).months
+        }
+        let year = (0..<12).map { k in (2023 + (k + 4) / 12, (k + 4) % 12 + 1) }  // 2023-05 〜 2024-04
+        XCTAssertEqual(try run(year), 12)
+        XCTAssertTrue(CamperUnlock.months(12).isMet({ var s = CamperStats(); s.months = 12; return s }()))
+        // 12 個の月でも、続いていなければ届かない（2023 年の 6 か月と 2025 年の 6 か月）
+        let split = (1...6).map { (2023, $0) } + (1...6).map { (2025, $0) }
+        XCTAssertEqual(try run(split), 6)
+        XCTAssertEqual(CamperCounting.longestMonthRun([]), 0)
+    }
+
+    /// 写真を読む前に開いても、飾りは消えず「届いた」も出し直さない。印は前の印との和集合（#312 の見直し）
+    func testArrivalsWaitForPhotos() {
+        let d = defaults()
+        let store = CamperStore(userId: "me", defaults: d)
+        var many = CamperStats()
+        many.posts = 30
+        many.earlyShots = 3
+        let owned = CamperCatalog.owned(many)
+        store.markSeen(owned)
+        // 写真を読む前（数は 0）: 判定しない・印を消さない
+        XCTAssertTrue(store.openArrivals(owned: CamperCatalog.owned(CamperStats()), photosLoaded: false).isEmpty)
+        XCTAssertEqual(store.seen, owned)
+        // 読めた後: 前に見せたものは出し直さない
+        XCTAssertTrue(store.openArrivals(owned: owned, photosLoaded: true).isEmpty)
+        // 一時的に数が減っても（読み直しの途中など）、印は減らない
+        _ = store.openArrivals(owned: CamperCatalog.owned(CamperStats()), photosLoaded: true)
+        XCTAssertEqual(store.seen, owned)
+        // 選んだ部品は、持っていない間も保存の値から外さない（見せる時だけ外す）
+        var l = CamperLoadout.standard
+        l.pick(CamperCatalog.part("wheel.steel_black")!)
+        store.save(l)
+        XCTAssertEqual(store.load().key(.wheel), "steel_black")
+        XCTAssertEqual(store.load().sanitized(owned: CamperCatalog.owned(CamperStats())).key(.wheel), "chrome_dish")
+        XCTAssertEqual(store.load().key(.wheel), "steel_black", "見せるために外した値が保存に残った")
+    }
+
+    /// 部品の名前・説明・要サーバーの条件に英語がある。言葉は読むたびに選ぶ（一覧を作った時の言語で固めない）
+    func testPartsHaveEnglish() {
+        for p in CamperCatalog.all {
+            XCTAssertFalse(p.nameEn.isEmpty, p.id)
+            XCTAssertFalse(p.lookEn.isEmpty, p.id)
+            XCTAssertNil(p.nameEn.range(of: "[ぁ-んァ-ン一-龥]", options: .regularExpression), p.id)
+            XCTAssertNil(p.lookEn.range(of: "[ぁ-んァ-ン一-龥]", options: .regularExpression), p.id)
+            XCTAssertNotEqual(p.lookEn, p.nameEn, "\(p.id): 説明が名前のまま")
+            XCTAssertEqual(p.name, L(p.nameJa, p.nameEn))
+            XCTAssertEqual(p.look, L(p.lookJa, p.lookEn))
+            switch p.unlock {
+            case let .server(ja, en), let .later(ja, en):
+                XCTAssertFalse(ja.isEmpty, p.id)
+                XCTAssertNil(en.range(of: "[ぁ-んァ-ン一-龥]", options: .regularExpression), p.id)
+                XCTAssertEqual(p.unlock.condition, L(ja, en))
+            default: break
+            }
+        }
+        let source = (try? String(contentsOfFile: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Core/Camper/CamperCatalog.swift").path, encoding: .utf8)) ?? ""
+        XCTAssertTrue(source.contains("var name: String { L(nameJa, nameEn) }"), "名前を作った時の言語で固めている")
+    }
 }
 
 /// 画面のつなぎ（画面は Linux で動かせないので、書き方を見張る）
@@ -196,8 +311,13 @@ final class CamperWiringTests: XCTestCase {
     /// 入口: マイページの旅の道具の札（トランクの行と同じ形）。数は投稿から端末で数える
     func testEntryOnMyPage() throws {
         let page = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("CamperGarageView(ownerName: model.profile?.name, userId: auth.userId,"))
-        XCTAssertTrue(page.contains("CamperCounting.stats(photos: model.photos, books: TripBook.shelfTrips(from: model.photos).count)"))
+        XCTAssertTrue(page.contains("CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,"))
+        XCTAssertTrue(page.contains("photosLoaded: model.hasLoadedPhotos)"))
+        // マイページを描き直すたびに数えない（数えるのは行き先の中・#312 の見直し）
+        XCTAssertFalse(page.contains("CamperCounting.stats("))
+        XCTAssertFalse(page.contains("CamperCounting.count("))
+        let garage = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
+        XCTAssertTrue(garage.contains("stats = CamperCounting.count(photos)"))
         XCTAssertTrue(page.contains(".accessibilityIdentifier(\"trips.camper\")"))
     }
 
@@ -211,7 +331,7 @@ final class CamperWiringTests: XCTestCase {
     func testSceneKitFollowsTheBoard() throws {
         let scene = try source("Sources/JourneyPhoto/Features/Camper/CamperScene.swift")
         for needle in [".physicallyBased", "clearCoat.contents", "SCNFloor()", "castsShadow = true", "flattenedClone()",
-                       "reflectivity", "lightingEnvironment", "CamperBuilder.build(next)", "Task.detached"] {
+                       "reflectivity", "lightingEnvironment", "CamperScenePlan.make(next)", "Task.detached"] {
             XCTAssertTrue(scene.contains(needle), needle)
         }
         let view = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")

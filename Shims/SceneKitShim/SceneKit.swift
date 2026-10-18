@@ -101,6 +101,14 @@ public struct SCNShaderModifierEntryPoint: Hashable {
 }
 
 open class SCNGeometrySource {
+    public struct Semantic: Hashable {
+        let raw: String
+        public static let vertex = Semantic(raw: "vertex")
+        public static let normal = Semantic(raw: "normal")
+        public static let texcoord = Semantic(raw: "texcoord")
+    }
+    public init(data: Data, semantic: Semantic, vectorCount: Int, usesFloatComponents: Bool, componentsPerVector: Int,
+                bytesPerComponent: Int, dataOffset: Int, dataStride: Int) {}
     public init(vertices: [SCNVector3]) {}
     public init(normals: [SCNVector3]) {}
     public init(textureCoordinates: [CGPoint]) {}
@@ -215,9 +223,18 @@ open class SCNNode {
     open var categoryBitMask = 1
     open var name: String?
     open var isHidden = false
-    open var childNodes: [SCNNode] = []
-    open func addChildNode(_ child: SCNNode) {}
-    open func removeFromParentNode() {}
+    // 試験で組み上げた場面をたどれるよう、子と親は本当に覚える
+    public private(set) var childNodes: [SCNNode] = []
+    public private(set) weak var parent: SCNNode?
+    open func addChildNode(_ child: SCNNode) {
+        child.removeFromParentNode()
+        child.parent = self
+        childNodes.append(child)
+    }
+    open func removeFromParentNode() {
+        parent?.childNodes.removeAll { $0 === self }
+        parent = nil
+    }
     open func flattenedClone() -> Self { self }
 }
 

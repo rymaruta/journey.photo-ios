@@ -1001,8 +1001,9 @@ struct MyPageView: View {
             // 写真で作るキャンピングカー（2026-10-18・札 #307）。旅のトランクと同じ並びに置く（板に入口の指定が無いので、
             // トランクの行と同じ形の行を1つ足す）。数は自分の投稿からこの端末で数える（サーバーには聞かない）
             NavigationLink {
-                CamperGarageView(ownerName: model.profile?.name, userId: auth.userId,
-                                 stats: CamperCounting.stats(photos: model.photos, books: TripBook.shelfTrips(from: model.photos).count))
+                // 数えるのは行き先の中（マイページを描き直すたびに数えない・下書きは数えない）
+                CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,
+                                 photosLoaded: model.hasLoadedPhotos)
             } label: {
                 JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"), systemImage: "bus",
                            detail: L("旅を重ねるほど育つ車。撮るほど部品が集まる",

@@ -299,10 +299,10 @@ enum CamperUnlock: Equatable, Sendable {
     case fullMoon(Int)
     case months(Int)
     case seaAndMountain(Int)
-    /// 要サーバー（旅の投稿の数・友達・スポットの種類・行事の暦・天気）。第1段では届かない
-    case server(String)
-    /// 端末で決まるが、まだアプリに無いもの（キャンプ場など）。第1段では届かない
-    case later(String)
+    /// 要サーバー（旅の投稿の数・友達・スポットの種類・行事の暦・天気）。第1段では届かない。条件の文（日本語・英語）
+    case server(String, String)
+    /// 端末で決まるが、まだアプリに無いもの（キャンプ場など）。第1段では届かない。条件の文（日本語・英語）
+    case later(String, String)
 
     /// 第1段で届くか（要サーバー・まだ無いものは「近日」）
     var isAvailable: Bool {
@@ -381,9 +381,11 @@ enum CamperUnlock: Equatable, Sendable {
         case .city(let n): return L("街の写真 \(n) 枚", "\(n) city photos")
         case .southIsland: return L("南の島の写真", "A photo from a southern island")
         case .fullMoon: return L("満月の夜に撮る", "Shoot on a full-moon night")
-        case .months(let n): return n >= 12 ? L("一年続けて撮る", "Shoot through a whole year") : L("\(n) か月撮る", "\(n) months")
+        case .months(let n):
+            return n >= 12 ? L("一年続けて撮る（続いた 12 か月）", "Shoot every month for a year (12 months in a row)")
+                : L("\(n) か月続けて撮る", "Months in a row: \(n)")
         case .seaAndMountain: return L("海と山を同じ日に撮る", "Shoot the sea and a mountain on one day")
-        case .server(let text), .later(let text): return text
+        case .server(let ja, let en), .later(let ja, let en): return L(ja, en)
         }
     }
 
@@ -407,9 +409,14 @@ struct CamperPart: Equatable, Sendable, Identifiable {
     let category: CamperCategory
     /// 分類の中の名前（保存の鍵・図鑑の id の後ろ半分。変えない）
     let key: String
-    let name: String
-    /// 見た目の一行（図鑑の説明）
-    let look: String
+    /// 名前と見た目の一行（図鑑の説明）の日本語・英語。画面の言葉は読むたびに選ぶ（`name`・`look`）——一覧は
+    /// 一度だけ作る `static let` なので、作った時の言語で固めると、言語を替えても変わらない（#312 の見直し）
+    let nameJa: String
+    let nameEn: String
+    let lookJa: String
+    let lookEn: String
+    var name: String { L(nameJa, nameEn) }
+    var look: String { L(lookJa, lookEn) }
     let rarity: CamperRarity
     let unlock: CamperUnlock
     /// 色の見本（塗装・オーニング。札の丸に出す）
@@ -420,194 +427,188 @@ struct CamperPart: Equatable, Sendable, Identifiable {
 }
 
 /// 部品の一覧（板「部品図鑑」CamperDex が正・2026-10-18。33 分類 132 個・端末だけ 99／要サーバー 33。
-/// 名前と説明と珍しさと入手の条件は図鑑のまま。英語の名前は id から作る）
+/// 名前と説明と珍しさと入手の条件は図鑑のまま。英語の名前・説明・要サーバーの条件は 2026-10-18 に付けた・#312 の見直し）
 enum CamperCatalog {
 
-    private static func english(_ key: String) -> String {
-        let words = key.split(separator: "_").map(String.init)
-        guard let first = words.first else { return key }
-        return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
-    }
-
-    private static func p(_ c: CamperCategory, _ key: String, _ ja: String, _ look: String, _ r: CamperRarity, _ u: CamperUnlock,
-                          _ swatch: UInt32? = nil) -> CamperPart {
-        CamperPart(category: c, key: key, name: L(ja, english(key)), look: L(look, english(key)), rarity: r, unlock: u, swatch: swatch)
+    private static func p(_ c: CamperCategory, _ key: String, _ ja: String, _ en: String, _ look: String, _ lookEn: String,
+                          _ r: CamperRarity, _ u: CamperUnlock, _ swatch: UInt32? = nil) -> CamperPart {
+        CamperPart(category: c, key: key, nameJa: ja, nameEn: en, lookJa: look, lookEn: lookEn, rarity: r, unlock: u, swatch: swatch)
     }
 
     static let dex: [CamperPart] = [
         // ホイール（wheel）
-        p(.wheel, "chrome_dish", "クロームの皿", "鏡の皿・ナット 6・真鍮のキャップ", .common, .starter),
-        p(.wheel, "steel_black", "黒い鉄ホイール", "黒い鉄に丸い穴 6", .occasional, .posts(30)),
-        p(.wheel, "whitewall", "白い帯のタイヤ", "側面に白い帯", .occasional, .prefectures(5)),
-        p(.wheel, "brass_spoke", "真鍮のスポーク", "細い真鍮のスポーク 16 本", .veryRare, .server("旅を 20 回投稿")),
+        p(.wheel, "chrome_dish", "クロームの皿", "Chrome dish", "鏡の皿・ナット 6・真鍮のキャップ", "Mirror dish, six nuts and a brass cap", .common, .starter),
+        p(.wheel, "steel_black", "黒い鉄ホイール", "Black steel wheel", "黒い鉄に丸い穴 6", "Black steel with six round holes", .occasional, .posts(30)),
+        p(.wheel, "whitewall", "白い帯のタイヤ", "Whitewall tyre", "側面に白い帯", "A white band on the sidewall", .occasional, .prefectures(5)),
+        p(.wheel, "brass_spoke", "真鍮のスポーク", "Brass spokes", "細い真鍮のスポーク 16 本", "Sixteen thin brass spokes", .veryRare, .server("旅を 20 回投稿", "Post 20 trips")),
         // ホイールキャップ（hubcap）
-        p(.hubcap, "dome_chrome", "丸いクローム", "半球の鏡", .common, .starter),
-        p(.hubcap, "flat_brass", "平らな真鍮", "放射の筋の真鍮", .occasional, .samePlace(3)),
-        p(.hubcap, "star_cap", "星のキャップ", "五つの角の星", .rare, .night(10)),
-        p(.hubcap, "baby_moon", "小さな月", "白い縁に小さな鏡", .rare, .fullMoon(1)),
+        p(.hubcap, "dome_chrome", "丸いクローム", "Chrome dome", "半球の鏡", "A half-sphere mirror", .common, .starter),
+        p(.hubcap, "flat_brass", "平らな真鍮", "Flat brass", "放射の筋の真鍮", "Brass with radiating lines", .occasional, .samePlace(3)),
+        p(.hubcap, "star_cap", "星のキャップ", "Star cap", "五つの角の星", "A five-pointed star", .rare, .night(10)),
+        p(.hubcap, "baby_moon", "小さな月", "Baby moon", "白い縁に小さな鏡", "A small mirror with a white rim", .rare, .fullMoon(1)),
         // タイヤの溝（tire_tread）
-        p(.tireTread, "road_rib", "縦溝", "縦にまっすぐの溝 4 本", .common, .starter),
-        p(.tireTread, "all_terrain", "山道の溝", "斜めにずれたブロック", .occasional, .mountain(10)),
-        p(.tireTread, "mud_block", "泥のブロック", "大きな角ブロック", .rare, .server("雨の日に撮る")),
-        p(.tireTread, "snow_sipe", "雪の切れ込み", "細いジグザグの切れ込み", .occasional, .winter(20)),
+        p(.tireTread, "road_rib", "縦溝", "Road ribs", "縦にまっすぐの溝 4 本", "Four straight grooves", .common, .starter),
+        p(.tireTread, "all_terrain", "山道の溝", "All-terrain", "斜めにずれたブロック", "Staggered diagonal blocks", .occasional, .mountain(10)),
+        p(.tireTread, "mud_block", "泥のブロック", "Mud blocks", "大きな角ブロック", "Big square blocks", .rare, .server("雨の日に撮る", "Shoot on a rainy day")),
+        p(.tireTread, "snow_sipe", "雪の切れ込み", "Snow sipes", "細いジグザグの切れ込み", "Fine zigzag cuts", .occasional, .winter(20)),
         // 前照灯（headlight）
-        p(.headlight, "round", "丸い前照灯", "クロームの縁と反射板の輪", .common, .starter),
-        p(.headlight, "square", "角形", "四角い縁と平らなレンズ", .occasional, .night(10)),
-        p(.headlight, "twin_round", "二灯", "小さな丸を二つ並べる", .occasional, .places(3)),
-        p(.headlight, "rally_brass", "真鍮のラリーランプ", "真鍮の丸灯 2 と横の棒", .rare, .early(3)),
+        p(.headlight, "round", "丸い前照灯", "Round headlights", "クロームの縁と反射板の輪", "Chrome rims and reflector rings", .common, .starter),
+        p(.headlight, "square", "角形", "Square", "四角い縁と平らなレンズ", "Square rims and flat lenses", .occasional, .night(10)),
+        p(.headlight, "twin_round", "二灯", "Twin round", "小さな丸を二つ並べる", "Two small rounds side by side", .occasional, .places(3)),
+        p(.headlight, "rally_brass", "真鍮のラリーランプ", "Brass rally lamps", "真鍮の丸灯 2 と横の棒", "Two brass lamps on a bar", .rare, .early(3)),
         // グリル（grille）
-        p(.grille, "bars_chrome", "横の桟", "クロームの桟 5 本", .common, .starter),
-        p(.grille, "vertical_slats", "縦の桟", "細い縦の桟 10 本", .occasional, .posts(60)),
-        p(.grille, "honeycomb", "蜂の巣", "六角の網", .rare, .server("旅を 5 回投稿")),
-        p(.grille, "mesh_brass", "真鍮の網", "斜めに編んだ真鍮", .veryRare, .months(12)),
+        p(.grille, "bars_chrome", "横の桟", "Chrome bars", "クロームの桟 5 本", "Five chrome bars", .common, .starter),
+        p(.grille, "vertical_slats", "縦の桟", "Vertical slats", "細い縦の桟 10 本", "Ten thin vertical slats", .occasional, .posts(60)),
+        p(.grille, "honeycomb", "蜂の巣", "Honeycomb", "六角の網", "Hexagon mesh", .rare, .server("旅を 5 回投稿", "Post 5 trips")),
+        p(.grille, "mesh_brass", "真鍮の網", "Brass mesh", "斜めに編んだ真鍮", "Diagonally woven brass", .veryRare, .months(12)),
         // バンパー（bumper）
-        p(.bumper, "chrome_blade", "クロームの刃", "細く長い鏡の棒", .common, .starter),
-        p(.bumper, "black_steel", "黒い鉄板", "ボルト 8 の鉄板", .occasional, .posts(90)),
-        p(.bumper, "wood_beam", "木の梁", "木目の梁と黒い金具", .rare, .server("森のスポットで撮る")),
-        p(.bumper, "bullbar", "ブルバー", "前を囲う太い鉄の枠", .rare, .prefectures(10)),
+        p(.bumper, "chrome_blade", "クロームの刃", "Chrome blade", "細く長い鏡の棒", "A long thin mirror bar", .common, .starter),
+        p(.bumper, "black_steel", "黒い鉄板", "Black steel plate", "ボルト 8 の鉄板", "A steel plate with eight bolts", .occasional, .posts(90)),
+        p(.bumper, "wood_beam", "木の梁", "Wooden beam", "木目の梁と黒い金具", "A wood-grain beam with black fittings", .rare, .server("森のスポットで撮る", "Shoot at a forest spot")),
+        p(.bumper, "bullbar", "ブルバー", "Bull bar", "前を囲う太い鉄の枠", "A thick steel frame around the front", .rare, .prefectures(10)),
         // ミラー（mirror）
-        p(.mirror, "rect_black", "四角い黒", "黒い枠の四角い鏡", .common, .starter),
-        p(.mirror, "round_chrome", "丸いクローム", "丸い鏡と細い腕", .occasional, .samePlace(3)),
-        p(.mirror, "tall_tow", "縦長の牽引ミラー", "上下二本の腕で支える", .rare, .books(10)),
-        p(.mirror, "brass_oval", "真鍮の楕円", "楕円の真鍮の枠", .veryRare, .server("友達から贈られる")),
+        p(.mirror, "rect_black", "四角い黒", "Black rectangle", "黒い枠の四角い鏡", "A square mirror in a black frame", .common, .starter),
+        p(.mirror, "round_chrome", "丸いクローム", "Round chrome", "丸い鏡と細い腕", "A round mirror on a thin arm", .occasional, .samePlace(3)),
+        p(.mirror, "tall_tow", "縦長の牽引ミラー", "Tall tow mirror", "上下二本の腕で支える", "Held by two arms, top and bottom", .rare, .books(10)),
+        p(.mirror, "brass_oval", "真鍮の楕円", "Brass oval", "楕円の真鍮の枠", "An oval brass frame", .veryRare, .server("友達から贈られる", "Get it as a gift from a friend")),
         // 泥よけ（mudflap）
-        p(.mudflap, "rubber_plain", "黒いゴム", "無地の黒い板", .common, .starter),
-        p(.mudflap, "logo_brass", "真鍮の印", "丸い真鍮の印つき", .occasional, .posts(50)),
-        p(.mudflap, "checker", "市松", "白黒の市松", .rare, .server("旅を 3 回投稿")),
-        p(.mudflap, "long_rally", "長いラリー", "長く垂れて赤い帯", .rare, .seaAndMountain(1)),
+        p(.mudflap, "rubber_plain", "黒いゴム", "Plain rubber", "無地の黒い板", "A plain black flap", .common, .starter),
+        p(.mudflap, "logo_brass", "真鍮の印", "Brass badge", "丸い真鍮の印つき", "With a round brass badge", .occasional, .posts(50)),
+        p(.mudflap, "checker", "市松", "Checker", "白黒の市松", "Black and white checks", .rare, .server("旅を 3 回投稿", "Post 3 trips")),
+        p(.mudflap, "long_rally", "長いラリー", "Long rally", "長く垂れて赤い帯", "Long flaps with a red band", .rare, .seaAndMountain(1)),
         // 取っ手（handle）
-        p(.handle, "chrome_bar", "クロームの棒", "棒と留め具 2", .common, .starter),
-        p(.handle, "recessed", "埋め込み", "扉に沈んだ取っ手と鍵", .occasional, .posts(40)),
-        p(.handle, "brass_lever", "真鍮のレバー", "丸い座金と横のレバー", .rare, .samePlace(5)),
-        p(.handle, "rope_loop", "縄の輪", "真鍮の環に麻縄", .rare, .sea(10)),
+        p(.handle, "chrome_bar", "クロームの棒", "Chrome bar", "棒と留め具 2", "A bar with two mounts", .common, .starter),
+        p(.handle, "recessed", "埋め込み", "Recessed", "扉に沈んだ取っ手と鍵", "Sunk into the door with a lock", .occasional, .posts(40)),
+        p(.handle, "brass_lever", "真鍮のレバー", "Brass lever", "丸い座金と横のレバー", "A round plate and a lever", .rare, .samePlace(5)),
+        p(.handle, "rope_loop", "縄の輪", "Rope loop", "真鍮の環に麻縄", "Hemp rope through a brass ring", .rare, .sea(10)),
         // 窓の形（window_shape）
-        p(.windowShape, "rounded_rect", "角丸の窓", "角の丸い一枚窓", .common, .starter),
-        p(.windowShape, "slider_split", "引き違い", "二枚の引き違い", .occasional, .posts(70)),
-        p(.windowShape, "porthole", "丸窓", "ネジ 10 のクロームの丸窓", .rare, .server("港で撮る")),
-        p(.windowShape, "arched", "アーチの窓", "上が弧の窓と十字の桟", .veryRare, .server("季節の行事の日に撮る")),
+        p(.windowShape, "rounded_rect", "角丸の窓", "Rounded window", "角の丸い一枚窓", "One pane with rounded corners", .common, .starter),
+        p(.windowShape, "slider_split", "引き違い", "Sliding pair", "二枚の引き違い", "Two sliding panes", .occasional, .posts(70)),
+        p(.windowShape, "porthole", "丸窓", "Porthole", "ネジ 10 のクロームの丸窓", "A chrome porthole with ten screws", .rare, .server("港で撮る", "Shoot at a harbour")),
+        p(.windowShape, "arched", "アーチの窓", "Arched window", "上が弧の窓と十字の桟", "An arched top with a cross bar", .veryRare, .server("季節の行事の日に撮る", "Shoot on a seasonal festival day")),
         // はしご（ladder）
-        p(.ladder, "chrome_rails", "クロームのはしご", "柱 2 と段 7", .common, .starter),
-        p(.ladder, "black_alu", "黒いアルミ", "滑り止めの段", .occasional, .posts(80)),
-        p(.ladder, "folding", "折りたたみ", "途中で折れる真鍮の蝶番", .rare, .prefectures(7)),
-        p(.ladder, "wood_rungs", "木の段", "木の柱と木の段", .veryRare, .server("友達のはしごを 3 回見に行く")),
+        p(.ladder, "chrome_rails", "クロームのはしご", "Chrome ladder", "柱 2 と段 7", "Two rails and seven rungs", .common, .starter),
+        p(.ladder, "black_alu", "黒いアルミ", "Black aluminium", "滑り止めの段", "Non-slip rungs", .occasional, .posts(80)),
+        p(.ladder, "folding", "折りたたみ", "Folding", "途中で折れる真鍮の蝶番", "Brass hinges halfway up", .rare, .prefectures(7)),
+        p(.ladder, "wood_rungs", "木の段", "Wooden rungs", "木の柱と木の段", "Wooden rails and rungs", .veryRare, .server("友達のはしごを 3 回見に行く", "Visit a friend's ladder 3 times")),
         // 自転車の台（bike_rack）
-        p(.bikeRack, "rear_two", "後ろに 2 台", "後ろの台に自転車 2", .occasional, .server("自転車道で撮る")),
-        p(.bikeRack, "roof_one", "屋根に 1 台", "屋根の台に大きめの 1 台", .occasional, .posts(100)),
-        p(.bikeRack, "folding_bike", "折りたたみ自転車", "小さな真鍮色の自転車", .rare, .server("旅を 8 回投稿")),
-        p(.bikeRack, "cargo_basket", "荷かご", "鉄のかごに木箱と布の袋", .common, .starter),
+        p(.bikeRack, "rear_two", "後ろに 2 台", "Two at the back", "後ろの台に自転車 2", "Two bikes on a rear rack", .occasional, .server("自転車道で撮る", "Shoot on a cycling road")),
+        p(.bikeRack, "roof_one", "屋根に 1 台", "One on the roof", "屋根の台に大きめの 1 台", "One larger bike on the roof", .occasional, .posts(100)),
+        p(.bikeRack, "folding_bike", "折りたたみ自転車", "Folding bike", "小さな真鍮色の自転車", "A small brass-coloured bike", .rare, .server("旅を 8 回投稿", "Post 8 trips")),
+        p(.bikeRack, "cargo_basket", "荷かご", "Cargo basket", "鉄のかごに木箱と布の袋", "A steel basket with a crate and a bag", .common, .starter),
         // スペアタイヤのカバー（spare_cover）
-        p(.spareCover, "canvas_brass_ring", "帆布と真鍮の輪", "帆布に真鍮の輪と写真", .common, .starter),
-        p(.spareCover, "leather", "革", "革に縫い目と真鍮の留め", .occasional, .posts(60)),
-        p(.spareCover, "hardshell", "硬い殻", "鏡の殻と黒い中心", .rare, .server("旅を 6 回投稿")),
-        p(.spareCover, "map_print", "地図柄", "自分の旅の道が描かれる", .veryRare, .prefectures(15)),
+        p(.spareCover, "canvas_brass_ring", "帆布と真鍮の輪", "Canvas and brass ring", "帆布に真鍮の輪と写真", "Canvas with a brass ring and a photo", .common, .starter),
+        p(.spareCover, "leather", "革", "Leather", "革に縫い目と真鍮の留め", "Stitched leather with a brass clasp", .occasional, .posts(60)),
+        p(.spareCover, "hardshell", "硬い殻", "Hard shell", "鏡の殻と黒い中心", "A mirror shell with a black centre", .rare, .server("旅を 6 回投稿", "Post 6 trips")),
+        p(.spareCover, "map_print", "地図柄", "Map print", "自分の旅の道が描かれる", "Printed with the roads of your trips", .veryRare, .prefectures(15)),
         // 屋根の積み荷（roof_cargo）
-        p(.roofCargo, "crate_mat", "木箱とマット", "木目の箱と縫い目のマット", .common, .starter),
-        p(.roofCargo, "roof_box", "ルーフボックス", "車体色の流線形", .occasional, .winter(20)),
-        p(.roofCargo, "canoe", "木のカヌー", "赤茶の舟を伏せて留める", .rare, .server("水辺のスポットで撮る")),
-        p(.roofCargo, "surfboard", "サーフボード", "白い板に青い線", .rare, .sea(15)),
+        p(.roofCargo, "crate_mat", "木箱とマット", "Crate and mat", "木目の箱と縫い目のマット", "A wooden crate and a stitched mat", .common, .starter),
+        p(.roofCargo, "roof_box", "ルーフボックス", "Roof box", "車体色の流線形", "A streamlined box in the body colour", .occasional, .winter(20)),
+        p(.roofCargo, "canoe", "木のカヌー", "Wooden canoe", "赤茶の舟を伏せて留める", "A russet canoe strapped upside down", .rare, .server("水辺のスポットで撮る", "Shoot at a waterside spot")),
+        p(.roofCargo, "surfboard", "サーフボード", "Surfboard", "白い板に青い線", "A white board with a blue stripe", .rare, .sea(15)),
         // ルーフテント（roof_tent）
-        p(.roofTent, "clamshell", "貝殻", "斜めに開く硬い殻", .occasional, .posts(120)),
-        p(.roofTent, "popup_canvas", "帆布の箱", "窓 3 つの帆布の箱", .occasional, .server("旅を 4 回投稿")),
-        p(.roofTent, "triangle_hardtop", "三角の硬い屋根", "塗装の三角と窓", .rare, .mountain(1)),
-        p(.roofTent, "wing", "翼のタープ", "片側に張る翼の布", .veryRare, .server("友達と同じ日に旅をする")),
+        p(.roofTent, "clamshell", "貝殻", "Clamshell", "斜めに開く硬い殻", "A hard shell that opens at an angle", .occasional, .posts(120)),
+        p(.roofTent, "popup_canvas", "帆布の箱", "Pop-up canvas", "窓 3 つの帆布の箱", "A canvas box with three windows", .occasional, .server("旅を 4 回投稿", "Post 4 trips")),
+        p(.roofTent, "triangle_hardtop", "三角の硬い屋根", "Triangle hardtop", "塗装の三角と窓", "A painted triangle with a window", .rare, .mountain(1)),
+        p(.roofTent, "wing", "翼のタープ", "Wing tarp", "片側に張る翼の布", "A wing of cloth on one side", .veryRare, .server("友達と同じ日に旅をする", "Travel on the same day as a friend")),
         // ソーラーパネル（solar）
-        p(.solar, "flat_one", "一枚", "8×2 の電池板", .common, .starter),
-        p(.solar, "twin", "二枚", "二枚を並べる", .occasional, .sky(30)),
-        p(.solar, "folding_suitcase", "折りたたみ", "鞄のように開く板", .rare, .server("旅を 5 回投稿")),
-        p(.solar, "flexible_curve", "曲がる板", "屋根の丸みに沿う", .rare, .early(5)),
+        p(.solar, "flat_one", "一枚", "Single panel", "8×2 の電池板", "An 8 by 2 cell panel", .common, .starter),
+        p(.solar, "twin", "二枚", "Twin panels", "二枚を並べる", "Two panels side by side", .occasional, .sky(30)),
+        p(.solar, "folding_suitcase", "折りたたみ", "Folding case", "鞄のように開く板", "Panels that open like a suitcase", .rare, .server("旅を 5 回投稿", "Post 5 trips")),
+        p(.solar, "flexible_curve", "曲がる板", "Flexible panel", "屋根の丸みに沿う", "Follows the curve of the roof", .rare, .early(5)),
         // アンテナ（antenna）
-        p(.antenna, "whip", "細い竿", "しなる細い竿", .common, .starter),
-        p(.antenna, "mushroom_gps", "きのこ型", "白い半球", .occasional, .places(5)),
-        p(.antenna, "dish", "パラボラ", "斜めの皿と受信部", .rare, .night(5)),
-        p(.antenna, "ham_long", "長い無線の竿", "横棒 5 の長い竿", .veryRare, .server("友達 10 人と旅を交わす")),
+        p(.antenna, "whip", "細い竿", "Whip", "しなる細い竿", "A thin, springy rod", .common, .starter),
+        p(.antenna, "mushroom_gps", "きのこ型", "Mushroom", "白い半球", "A white half-sphere", .occasional, .places(5)),
+        p(.antenna, "dish", "パラボラ", "Dish", "斜めの皿と受信部", "A tilted dish and receiver", .rare, .night(5)),
+        p(.antenna, "ham_long", "長い無線の竿", "Long radio mast", "横棒 5 の長い竿", "A tall mast with five cross bars", .veryRare, .server("友達 10 人と旅を交わす", "Swap trips with 10 friends")),
         // 旗とペナント（flag）
-        p(.flag, "pennant_triangle", "三角のペナント", "赤茶の三角に白い線", .common, .starter),
-        p(.flag, "swallowtail", "燕尾の旗", "先が割れた藍の旗", .occasional, .server("旅を 2 回投稿")),
-        p(.flag, "prayer_line", "連なる旗", "色の旗を紐に 6 枚", .rare, .server("旅先で 5 つの祭りの写真")),
-        p(.flag, "windsock", "吹き流し", "橙と白の筒", .occasional, .server("風の強い日に撮る")),
+        p(.flag, "pennant_triangle", "三角のペナント", "Triangle pennant", "赤茶の三角に白い線", "A russet triangle with a white line", .common, .starter),
+        p(.flag, "swallowtail", "燕尾の旗", "Swallowtail flag", "先が割れた藍の旗", "An indigo flag with a split tip", .occasional, .server("旅を 2 回投稿", "Post 2 trips")),
+        p(.flag, "prayer_line", "連なる旗", "Flag line", "色の旗を紐に 6 枚", "Six coloured flags on a string", .rare, .server("旅先で 5 つの祭りの写真", "Photos of 5 festivals on your trips")),
+        p(.flag, "windsock", "吹き流し", "Windsock", "橙と白の筒", "An orange and white tube", .occasional, .server("風の強い日に撮る", "Shoot on a windy day")),
         // 椅子（chair）
-        p(.chair, "folding_chair", "布の折りたたみ", "縫い目のある布と黒い脚", .common, .starter),
-        p(.chair, "director_chair", "ディレクターズ", "木の脚と藍の布", .occasional, .posts(50)),
-        p(.chair, "wooden_stool", "木の丸椅子", "丸い座面と 4 本脚", .occasional, .forest(10)),
-        p(.chair, "hammock", "ハンモック", "二本の柱に橙の布", .veryRare, .summer(30)),
+        p(.chair, "folding_chair", "布の折りたたみ", "Folding chair", "縫い目のある布と黒い脚", "Stitched cloth on black legs", .common, .starter),
+        p(.chair, "director_chair", "ディレクターズ", "Director chair", "木の脚と藍の布", "Wooden legs and indigo cloth", .occasional, .posts(50)),
+        p(.chair, "wooden_stool", "木の丸椅子", "Wooden stool", "丸い座面と 4 本脚", "A round seat on four legs", .occasional, .forest(10)),
+        p(.chair, "hammock", "ハンモック", "Hammock", "二本の柱に橙の布", "Orange cloth between two posts", .veryRare, .summer(30)),
         // 机（table）
-        p(.table, "folding_alu", "アルミの折りたたみ", "細い脚の銀の机", .common, .starter),
-        p(.table, "rolltop", "巻ける天板", "木の板を巻いて運ぶ", .occasional, .posts(70)),
-        p(.table, "wooden_crate_table", "木箱の机", "木箱を伏せて天板を載せる", .rare, .server("旅を 6 回投稿")),
-        p(.table, "camp_cube", "箱の机", "保冷箱を兼ねる箱", .occasional, .lake(5)),
+        p(.table, "folding_alu", "アルミの折りたたみ", "Folding aluminium", "細い脚の銀の机", "A silver table on thin legs", .common, .starter),
+        p(.table, "rolltop", "巻ける天板", "Roll-top", "木の板を巻いて運ぶ", "Wooden slats that roll up", .occasional, .posts(70)),
+        p(.table, "wooden_crate_table", "木箱の机", "Crate table", "木箱を伏せて天板を載せる", "A crate upside down with a top", .rare, .server("旅を 6 回投稿", "Post 6 trips")),
+        p(.table, "camp_cube", "箱の机", "Camp cube", "保冷箱を兼ねる箱", "A box that doubles as a cooler", .occasional, .lake(5)),
         // 焚き火台（fire_pit）
-        p(.firePit, "steel_bowl", "鉄の鉢", "黒い鉢と 2 本脚", .common, .starter),
-        p(.firePit, "stone_ring", "石の輪", "石 9 つと三本の薪", .occasional, .later("キャンプ場で焚き火をする")),
-        p(.firePit, "brazier", "火鉢", "穴の空いた鏡の鉢", .rare, .winterNight(5)),
-        p(.firePit, "tripod_kettle", "三脚とやかん", "三脚から吊るす鉄の鍋", .veryRare, .server("友達の焚き火に薪をくべる 10 回")),
+        p(.firePit, "steel_bowl", "鉄の鉢", "Steel bowl", "黒い鉢と 2 本脚", "A black bowl on two legs", .common, .starter),
+        p(.firePit, "stone_ring", "石の輪", "Stone ring", "石 9 つと三本の薪", "Nine stones and three logs", .occasional, .later("キャンプ場で焚き火をする", "Light a fire at a campsite")),
+        p(.firePit, "brazier", "火鉢", "Brazier", "穴の空いた鏡の鉢", "A mirror bowl with holes", .rare, .winterNight(5)),
+        p(.firePit, "tripod_kettle", "三脚とやかん", "Tripod and kettle", "三脚から吊るす鉄の鍋", "An iron pot hung from a tripod", .veryRare, .server("友達の焚き火に薪をくべる 10 回", "Add wood to a friend's fire 10 times")),
         // 外の灯り（outdoor_light）
-        p(.outdoorLight, "brass_lantern", "真鍮のランタン", "真鍮の枠と硝子", .common, .starter),
-        p(.outdoorLight, "string_lights", "電球の紐", "小さな電球 8 つ", .occasional, .night(15)),
-        p(.outdoorLight, "paper_lantern", "提灯", "朱の紙の提灯", .rare, .server("夏祭りの写真")),
-        p(.outdoorLight, "oil_lamp", "オイルランプ", "真鍮の油壺と硝子の火屋", .rare, .early(3)),
+        p(.outdoorLight, "brass_lantern", "真鍮のランタン", "Brass lantern", "真鍮の枠と硝子", "A brass frame and glass", .common, .starter),
+        p(.outdoorLight, "string_lights", "電球の紐", "String lights", "小さな電球 8 つ", "Eight small bulbs", .occasional, .night(15)),
+        p(.outdoorLight, "paper_lantern", "提灯", "Paper lantern", "朱の紙の提灯", "A vermilion paper lantern", .rare, .server("夏祭りの写真", "A photo of a summer festival")),
+        p(.outdoorLight, "oil_lamp", "オイルランプ", "Oil lamp", "真鍮の油壺と硝子の火屋", "A brass oil pot and glass chimney", .rare, .early(3)),
         // 外のラグ（rug）
-        p(.rug, "woven_mat", "編んだ敷物", "麦わら色の編み目", .common, .starter),
-        p(.rug, "striped", "縞のラグ", "藍と赤の縞", .occasional, .posts(40)),
-        p(.rug, "round_braided", "丸い三つ編み", "色の輪を重ねる", .rare, .places(8)),
-        p(.rug, "kilim", "キリム", "赤地に金のひし形", .veryRare, .server("友達から贈られる")),
+        p(.rug, "woven_mat", "編んだ敷物", "Woven mat", "麦わら色の編み目", "A straw-coloured weave", .common, .starter),
+        p(.rug, "striped", "縞のラグ", "Striped rug", "藍と赤の縞", "Indigo and red stripes", .occasional, .posts(40)),
+        p(.rug, "round_braided", "丸い三つ編み", "Round braided", "色の輪を重ねる", "Rings of colour", .rare, .places(8)),
+        p(.rug, "kilim", "キリム", "Kilim", "赤地に金のひし形", "Gold diamonds on red", .veryRare, .server("友達から贈られる", "Get it as a gift from a friend")),
         // カーテン（curtain）
-        p(.curtain, "pleated_linen", "麻のひだ", "左右にひだ 5 つずつ", .common, .starter),
-        p(.curtain, "cafe_short", "短いカフェ", "下半分だけの白", .occasional, .morning(10)),
-        p(.curtain, "roman_blind", "たくし上げ", "段に上がる緑の布", .occasional, .posts(60)),
-        p(.curtain, "beaded", "玉すだれ", "真鍮と朱と藍の玉", .veryRare, .server("季節の行事の日に撮る")),
+        p(.curtain, "pleated_linen", "麻のひだ", "Pleated linen", "左右にひだ 5 つずつ", "Five pleats on each side", .common, .starter),
+        p(.curtain, "cafe_short", "短いカフェ", "Short café", "下半分だけの白", "White on the lower half only", .occasional, .morning(10)),
+        p(.curtain, "roman_blind", "たくし上げ", "Roman blind", "段に上がる緑の布", "Green cloth folding up in steps", .occasional, .posts(60)),
+        p(.curtain, "beaded", "玉すだれ", "Bead curtain", "真鍮と朱と藍の玉", "Brass, vermilion and indigo beads", .veryRare, .server("季節の行事の日に撮る", "Shoot on a seasonal festival day")),
         // クッション（cushion）
-        p(.cushion, "square_plain", "四角", "生成りの四角", .common, .starter),
-        p(.cushion, "bolster_round", "円筒", "緑の筒に真鍮の帯", .occasional, .posts(30)),
-        p(.cushion, "knitted", "編み目", "縄編みの橙", .rare, .winter(15)),
-        p(.cushion, "tasseled", "房飾り", "藍に金の房 4", .rare, .server("旅を 4 回投稿")),
+        p(.cushion, "square_plain", "四角", "Square", "生成りの四角", "A plain square in natural cloth", .common, .starter),
+        p(.cushion, "bolster_round", "円筒", "Bolster", "緑の筒に真鍮の帯", "A green roll with brass bands", .occasional, .posts(30)),
+        p(.cushion, "knitted", "編み目", "Knitted", "縄編みの橙", "Orange cable knit", .rare, .winter(15)),
+        p(.cushion, "tasseled", "房飾り", "Tasselled", "藍に金の房 4", "Indigo with four gold tassels", .rare, .server("旅を 4 回投稿", "Post 4 trips")),
         // 吊りランプ（hanging_lamp）
-        p(.hangingLamp, "brass_dome", "真鍮の笠", "半球の真鍮", .common, .starter),
-        p(.hangingLamp, "enamel_cone", "ホーローの円錐", "緑のホーローに白い縁", .occasional, .posts(50)),
-        p(.hangingLamp, "rattan", "籐", "籐を編んだ笠", .rare, .southIsland(1)),
-        p(.hangingLamp, "glass_globe", "硝子の球", "乳白の硝子の球", .veryRare, .night(30)),
+        p(.hangingLamp, "brass_dome", "真鍮の笠", "Brass dome", "半球の真鍮", "A half-sphere of brass", .common, .starter),
+        p(.hangingLamp, "enamel_cone", "ホーローの円錐", "Enamel cone", "緑のホーローに白い縁", "Green enamel with a white rim", .occasional, .posts(50)),
+        p(.hangingLamp, "rattan", "籐", "Rattan", "籐を編んだ笠", "A woven rattan shade", .rare, .southIsland(1)),
+        p(.hangingLamp, "glass_globe", "硝子の球", "Glass globe", "乳白の硝子の球", "A milky glass globe", .veryRare, .night(30)),
         // 観葉植物（plant）
-        p(.plant, "cactus", "サボテン", "腕 2 本に花", .common, .starter),
-        p(.plant, "monstera", "モンステラ", "大きな葉 6 枚", .occasional, .plants(10)),
-        p(.plant, "hanging_ivy", "吊るしたつる", "鉢から垂れるつる", .rare, .server("雨の写真 5 枚")),
-        p(.plant, "bonsai", "盆栽", "黒い鉢と曲がった幹", .veryRare, .months(12)),
+        p(.plant, "cactus", "サボテン", "Cactus", "腕 2 本に花", "Two arms and a flower", .common, .starter),
+        p(.plant, "monstera", "モンステラ", "Monstera", "大きな葉 6 枚", "Six big leaves", .occasional, .plants(10)),
+        p(.plant, "hanging_ivy", "吊るしたつる", "Hanging ivy", "鉢から垂れるつる", "Vines trailing from a pot", .rare, .server("雨の写真 5 枚", "5 photos in the rain")),
+        p(.plant, "bonsai", "盆栽", "Bonsai", "黒い鉢と曲がった幹", "A black pot and a twisted trunk", .veryRare, .months(12)),
         // マグ（mug）
-        p(.mug, "enamel_white", "ホーローの白", "藍の縁の白いマグ", .common, .starter),
-        p(.mug, "tin_cup", "ブリキのカップ", "銀の筒と細い取っ手", .occasional, .posts(20)),
-        p(.mug, "ceramic_glazed", "釉薬の陶器", "青い釉薬の丸み", .rare, .server("焼き物の町で撮る")),
-        p(.mug, "double_wall", "二重硝子", "硝子の中に浮くコーヒー", .rare, .morning(20)),
+        p(.mug, "enamel_white", "ホーローの白", "White enamel", "藍の縁の白いマグ", "A white mug with an indigo rim", .common, .starter),
+        p(.mug, "tin_cup", "ブリキのカップ", "Tin cup", "銀の筒と細い取っ手", "A silver cup with a thin handle", .occasional, .posts(20)),
+        p(.mug, "ceramic_glazed", "釉薬の陶器", "Glazed ceramic", "青い釉薬の丸み", "A round cup in blue glaze", .rare, .server("焼き物の町で撮る", "Shoot in a pottery town")),
+        p(.mug, "double_wall", "二重硝子", "Double-wall glass", "硝子の中に浮くコーヒー", "Coffee floating in glass", .rare, .morning(20)),
         // 本棚（bookshelf）
-        p(.bookshelf, "small_shelf", "小さな棚", "二段に本 17 冊", .common, .starter),
-        p(.bookshelf, "wall_rack", "壁の棚板", "壁に二枚の板と小物", .occasional, .posts(80)),
-        p(.bookshelf, "crate_stack", "木箱の棚", "木箱 3 つを積む", .rare, .server("旅を 7 回投稿")),
-        p(.bookshelf, "map_drawer", "地図の引き出し", "真鍮の取っ手 4 と地図", .veryRare, .prefectures(20)),
+        p(.bookshelf, "small_shelf", "小さな棚", "Small shelf", "二段に本 17 冊", "Seventeen books on two shelves", .common, .starter),
+        p(.bookshelf, "wall_rack", "壁の棚板", "Wall rack", "壁に二枚の板と小物", "Two boards and small things", .occasional, .posts(80)),
+        p(.bookshelf, "crate_stack", "木箱の棚", "Crate shelf", "木箱 3 つを積む", "Three crates stacked", .rare, .server("旅を 7 回投稿", "Post 7 trips")),
+        p(.bookshelf, "map_drawer", "地図の引き出し", "Map drawer", "真鍮の取っ手 4 と地図", "Four brass pulls and maps", .veryRare, .prefectures(20)),
         // 壁の木（wall_wood）
-        p(.wallWood, "pine_boards", "松の板", "縦張りの明るい板と節", .common, .starter),
-        p(.wallWood, "plywood_birch", "樺の合板", "細かい木目の白い板", .occasional, .posts(50)),
-        p(.wallWood, "dark_walnut", "胡桃の横張り", "濃い横張り", .rare, .forest(20)),
-        p(.wallWood, "herringbone", "ヘリンボーン", "矢筈に組む", .veryRare, .server("旅を 12 回投稿")),
+        p(.wallWood, "pine_boards", "松の板", "Pine boards", "縦張りの明るい板と節", "Light vertical boards with knots", .common, .starter),
+        p(.wallWood, "plywood_birch", "樺の合板", "Birch plywood", "細かい木目の白い板", "Pale board with a fine grain", .occasional, .posts(50)),
+        p(.wallWood, "dark_walnut", "胡桃の横張り", "Walnut boards", "濃い横張り", "Dark horizontal boards", .rare, .forest(20)),
+        p(.wallWood, "herringbone", "ヘリンボーン", "Herringbone", "矢筈に組む", "Laid in a herringbone", .veryRare, .server("旅を 12 回投稿", "Post 12 trips")),
         // 床（floor）
-        p(.floor, "oak_planks", "ナラの板", "長い板の床", .common, .starter),
-        p(.floor, "cork", "コルク", "粒の見える柔らかい床", .occasional, .posts(40)),
-        p(.floor, "chevron", "シェブロン", "くの字に組む", .rare, .places(6)),
-        p(.floor, "checker_tiles", "市松のタイル", "白黒のタイル", .rare, .city(20)),
+        p(.floor, "oak_planks", "ナラの板", "Oak planks", "長い板の床", "Long plank floor", .common, .starter),
+        p(.floor, "cork", "コルク", "Cork", "粒の見える柔らかい床", "A soft floor with a fine grain", .occasional, .posts(40)),
+        p(.floor, "chevron", "シェブロン", "Chevron", "くの字に組む", "Laid in a chevron", .rare, .places(6)),
+        p(.floor, "checker_tiles", "市松のタイル", "Checker tiles", "白黒のタイル", "Black and white tiles", .rare, .city(20)),
         // オーニング（awning）
-        p(.awning, "indigo_stripe", "藍の縞", "藍と生成りの縞", .common, .starter, 0x2F4F74),
-        p(.awning, "forest_stripe", "森の緑の縞", "緑と生成りの縞", .occasional, .forest(15), 0x4A5A46),
-        p(.awning, "scalloped_edge", "波の縁", "黄の布に波形の縁", .rare, .sea(20), 0xD9B24A),
-        p(.awning, "rust_stripe", "赤茶の縞", "赤茶と生成りの縞", .veryRare, .server("友達から贈られる"), 0x7A2E22),
+        p(.awning, "indigo_stripe", "藍の縞", "Indigo stripes", "藍と生成りの縞", "Indigo and natural stripes", .common, .starter, 0x2F4F74),
+        p(.awning, "forest_stripe", "森の緑の縞", "Forest stripes", "緑と生成りの縞", "Green and natural stripes", .occasional, .forest(15), 0x4A5A46),
+        p(.awning, "scalloped_edge", "波の縁", "Scalloped edge", "黄の布に波形の縁", "Yellow cloth with a wavy edge", .rare, .sea(20), 0xD9B24A),
+        p(.awning, "rust_stripe", "赤茶の縞", "Rust stripes", "赤茶と生成りの縞", "Russet and natural stripes", .veryRare, .server("友達から贈られる", "Get it as a gift from a friend"), 0x7A2E22),
         // ステッカーの縁（sticker_edge）
-        p(.stickerEdge, "white_cut", "白い切り抜き", "白い紙の縁", .common, .starter),
-        p(.stickerEdge, "gold_foil", "金の箔押し", "真鍮色の箔の縁", .rare, .samePlace(3)),
-        p(.stickerEdge, "holo", "ホログラム", "見る角度で虹色", .veryRare, .server("季節の行事の日に撮る")),
-        p(.stickerEdge, "signed", "友達の署名入り", "友達の名前の刻印", .veryRare, .server("友達が贈る")),
+        p(.stickerEdge, "white_cut", "白い切り抜き", "White cut", "白い紙の縁", "A white paper edge", .common, .starter),
+        p(.stickerEdge, "gold_foil", "金の箔押し", "Gold foil", "真鍮色の箔の縁", "A brass-coloured foil edge", .rare, .samePlace(3)),
+        p(.stickerEdge, "holo", "ホログラム", "Hologram", "見る角度で虹色", "Rainbow at every angle", .veryRare, .server("季節の行事の日に撮る", "Shoot on a seasonal festival day")),
+        p(.stickerEdge, "signed", "友達の署名入り", "Signed by a friend", "友達の名前の刻印", "Your friend's name stamped on it", .veryRare, .server("友達が贈る", "A friend gives it to you")),
     ]
 
     /// 塗装（図鑑の数に入れない・paint.*。板 CamperDecorate の 4 色）
     static let paints: [CamperPart] = [
-        p(.paint, "cloud", "雲の影の灰", "撮った写真から拾った色", .common, .starter, 0x5B6168),
-        p(.paint, "mist", "霧の白", "撮った写真から拾った色", .common, .starter, 0xD9D4C7),
-        p(.paint, "sky", "朝の空の青", "晴れの写真から拾った色", .occasional, .sky(1), 0x7F97AB),
-        p(.paint, "forest", "森の緑", "森の写真から拾った色", .occasional, .forest(15), 0x4A5A46),
+        p(.paint, "cloud", "雲の影の灰", "Cloud grey", "撮った写真から拾った色", "A colour picked from your photos", .common, .starter, 0x5B6168),
+        p(.paint, "mist", "霧の白", "Mist white", "撮った写真から拾った色", "A colour picked from your photos", .common, .starter, 0xD9D4C7),
+        p(.paint, "sky", "朝の空の青", "Morning sky blue", "晴れの写真から拾った色", "A colour picked from clear-sky photos", .occasional, .sky(1), 0x7F97AB),
+        p(.paint, "forest", "森の緑", "Forest green", "森の写真から拾った色", "A colour picked from forest photos", .occasional, .forest(15), 0x4A5A46),
     ]
 
     static let all: [CamperPart] = dex + paints
@@ -716,6 +717,16 @@ struct CamperStore {
         defaults.set(ids.sorted(), forKey: Self.seenKey(userId))
     }
 
+    /// 画面を開いた時の「届いた」。**写真を一度でも読めた時だけ**判定して印を付ける（読む前は数が 0 で、
+    /// 前の印を消すと次に読めた時に同じ部品がもう一度「届いた」になる）。印は前の印との和集合で残す
+    func openArrivals(owned: Set<String>, photosLoaded: Bool) -> [CamperPart] {
+        guard photosLoaded else { return [] }
+        let previous = seen
+        let fresh = Self.arrivals(owned: owned, seen: previous)
+        markSeen(owned.union(previous ?? []))
+        return fresh
+    }
+
     /// 新しく届いた部品（最初から持っているものは数えない）。珍しい順・一覧の順
     static func arrivals(owned: Set<String>, seen: Set<String>?) -> [CamperPart] {
         let fresh = owned.subtracting(seen ?? [])
@@ -733,19 +744,29 @@ struct CamperStore {
 
 enum CamperCounting {
 
+    /// 自分の写真の一覧から数える（**下書きは数えない**・旅の一冊も公開した写真から）。マイページの写真の一覧
+    /// （`MyPageViewModel.photos`）には下書きが入るので、ここで `published != false` に絞る（2026-10-18 #312 の見直し）
+    static func count(_ photos: [Photo]) -> CamperStats {
+        let posted = photos.filter { $0.published != false }
+        return stats(photos: posted, books: TripBook.shelfTrips(from: posted).count)
+    }
+
     /// 自分の投稿から数える（段と部品の入手）。`books` は旅の一冊の数（呼ぶ側が `TripBook.shelfTrips` で数える）。
     /// 2026-10-18 判断: 山・海辺・湖・植物・街は撮影地と題とタグの言葉で読む（写真の位置の標高は投稿に無い）。
-    /// 一年続けて撮るは「撮った年と月が 12 個」。人の写った写真を外すのは第2段の切り抜きと一緒に入れる
-    static func stats(photos: [Photo], books: Int) -> CamperStats {
+    /// 地名（都道府県・市区町村・「横浜」など）は先に外す（`natureText`）。
+    /// 一年続けて撮るは「続いた 12 か月」（`longestMonthRun`）。人の写った写真を外すのは第2段の切り抜きと一緒に入れる
+    static func stats(photos all: [Photo], books: Int) -> CamperStats {
+        let photos = all.filter { $0.published != false }
         var s = CamperStats()
         s.posts = photos.count
         s.books = books
         var prefs = Set<String>()
         var places: [String: Int] = [:]
-        var months = Set<String>()
-        var seaDays = Set<String>(), mountainDays = Set<String>()
+        var months = Set<Int>()
+        // 日ごとの海の写真と山の写真（「海と山を同じ日」は別々の写真に限る）
+        var seaByDay: [String: Set<String>] = [:], mountainByDay: [String: Set<String>] = [:]
         for p in photos {
-            let words = text(of: p)
+            let words = natureText(of: p)
             let isMountain = has(words, mountainWords), isSea = has(words, seaWords)
             if isMountain { s.mountainShots += 1 }
             if isSea { s.seaShots += 1 }
@@ -766,9 +787,9 @@ enum CamperCounting {
                 default: break
                 }
                 if night, isFullMoon(year: t.year, month: t.month, day: t.dayOfMonth) { s.fullMoonShots += 1 }
-                months.insert("\(t.year)-\(t.month)")
-                if isSea { seaDays.insert(t.day) }
-                if isMountain { mountainDays.insert(t.day) }
+                months.insert(t.year * 12 + (t.month - 1))
+                if isSea { seaByDay[t.day, default: []].insert(p.id) }
+                if isMountain { mountainByDay[t.day, default: []].insert(p.id) }
             }
             let pref = prefecture(in: p.location)
             if let pref { prefs.insert(pref) }
@@ -785,9 +806,24 @@ enum CamperCounting {
         s.prefectures = prefs.count
         s.places = places.count
         s.samePlace = places.values.max() ?? 0
-        s.months = months.count
-        s.seaAndMountainDays = seaDays.intersection(mountainDays).count
+        s.months = longestMonthRun(months)
+        s.seaAndMountainDays = seaByDay.keys.filter { day in
+            guard let sea = seaByDay[day], let mountain = mountainByDay[day] else { return false }
+            // 海の写真と山の写真が別々に在る（1 枚が海と山の両方に当たるだけでは数えない）
+            return sea.contains { a in mountain.contains { $0 != a } }
+        }.count
         return s
+    }
+
+    /// 続いた月の最長（月は 年×12＋月−1 の通し番号）。「一年続けて撮る」は 12
+    static func longestMonthRun(_ months: Set<Int>) -> Int {
+        var best = 0
+        for m in months where !months.contains(m - 1) {
+            var n = 1
+            while months.contains(m + n) { n += 1 }
+            best = max(best, n)
+        }
+        return best
     }
 
     static let mountainWords = ["山", "岳", "峠", "高原", "mountain", "Mt."]
@@ -796,8 +832,26 @@ enum CamperCounting {
     static let plantWords = ["花", "植物", "庭", "苔", "桜", "紅葉", "flower", "garden", "plant"]
     static let cityWords = ["街", "通り", "駅", "商店", "city", "street"]
 
-    private static func text(of p: Photo) -> String {
-        ([p.location ?? "", p.displayTitle, p.category ?? ""] + (p.tags ?? [])).joined(separator: " ").lowercased()
+    /// 山・海などの言葉に当たる地名（市の名前・区の名前）。部分一致で「北海道→海」「横浜→浜」などに当たらないよう、先に外す
+    static let placeNamesWithNatureWords = [
+        "北海道", "横浜", "浜松", "浜田", "浜北", "郡山", "松山", "岡山", "富山", "和歌山", "山形", "山口", "山梨", "港区",
+        "海老名", "海南", "小浜", "高山", "館山", "小山", "福山", "山陽", "山陰", "湖西", "湖南",
+    ]
+
+    /// 撮影地・題・タグの言葉から、地名を外した文（都道府県名・「〜市」「〜区」「〜町」「〜村」「〜郡」・地名の表）
+    static func natureText(of p: Photo) -> String {
+        natureText(([p.location ?? "", p.displayTitle, p.category ?? ""] + (p.tags ?? [])).joined(separator: " "))
+    }
+
+    static func natureText(_ raw: String) -> String {
+        var t = raw
+        for name in prefectureNames.sorted(by: { $0.count > $1.count }) {
+            for suffix in ["都", "道", "府", "県", ""] { t = t.replacingOccurrences(of: name + suffix, with: " ") }
+        }
+        for name in placeNamesWithNatureWords { t = t.replacingOccurrences(of: name, with: " ") }
+        // 漢字の続きで終わる市区町村・郡（「鎌倉市」「港区」「山中湖村」）
+        t = t.replacingOccurrences(of: "[\\p{Han}々ヶケ]{1,6}[市区町村郡]", with: " ", options: .regularExpression)
+        return t.lowercased()
     }
 
     private static func has(_ text: String, _ words: [String]) -> Bool {

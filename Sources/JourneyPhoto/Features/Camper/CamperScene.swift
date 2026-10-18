@@ -41,6 +41,17 @@ final class CamperScene {
     private var doorGlowNode: SCNNode?
     private var buildTask: Task<Void, Never>?
     private var textureCache: [String: CGImage] = [:]
+    /// 下ごしらえの貼り絵（`CamperScenePlan.bitmaps`）
+    private var planBitmaps: [String: CamperBitmap] = [:]
+    /// 材質（同じ材質は 1 つ。時刻を替えたら値を入れ直す）
+    private var materials: [CamperMaterial: SCNMaterial] = [:]
+    private var paint: UInt32 = 0x5B6168
+    private(set) var currentMood: CamperMood = .day
+    /// その時刻だけ見せる部品の組と灯り
+    private var moodNodes: [(SCNNode, Set<CamperMood>)] = []
+    private var moodLights: [(SCNLight, Double, Set<CamperMood>?)] = []
+    /// いま組んである形の鍵（時刻を除いた設定）
+    private var builtKey: CamperConfig?
 
     private(set) var config: CamperConfig?
     private(set) var blueprint: CamperBlueprint?
@@ -96,7 +107,7 @@ final class CamperScene {
     // MARK: 時刻・天気
 
     private func applyMood(_ mood: CamperMood) {
-        let env = image(CamperTextures.environment(mood), key: "env.\(mood.rawValue)")
+        let env = image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
         scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
@@ -116,7 +127,6 @@ final class CamperScene {
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
         // 夜は露出を少し下げる（口の中・窓の灯りを白く飛ばさない）
         cameraNode.camera?.exposureOffset = CGFloat(mood == .night ? -0.15 : 0)
-        // 焚き火・ランタンの面（emission 1 前後）はにじませない。前照灯・尾灯（1.6〜2.2）だけ（run 530）
         cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.3 : 0.85)
 
         // 床: 暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）
@@ -132,44 +142,75 @@ final class CamperScene {
         (floorNode.geometry as? SCNFloor)?.reflectivity = CGFloat(f.reflectivity)
     }
 
-    // MARK: 組み立て
-
-    /// 飾り・段・時刻が変わったら組み直す（組み立て図は画面の処理の外で作る）
-    func show(_ next: CamperConfig) {
-        guard next != config else { return }
-        config = next
-        buildTask?.cancel()
-        let started = Date()
-        buildTask = Task { [weak self] in
-            let blueprint = await Task.detached(priority: .userInitiated) { CamperBuilder.build(next) }.value
-            guard !Task.isCancelled, let self, self.config == next else { return }
-            self.install(blueprint, config: next)
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            self.onReady?("camper-ready \(next.stage.rawValue) \(next.mood.rawValue) tris=\(blueprint.triangleEstimate) ms=\(ms)")
+    /// 昼・夜・雪を切り替える（組み直さない。光・材質の値・その時刻だけの部品と灯りの見せる／隠すだけ）
+    func setMood(_ mood: CamperMood) {
+        currentMood = mood
+        applyMood(mood)
+        for (m, scn) in materials { configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood)) }
+        for (node, moods) in moodNodes { node.isHidden = !moods.contains(mood) }
+        for (light, intensity, moods) in moodLights {
+            let on = moods.map { $0.contains(mood) } ?? true
+            light.intensity = CGFloat(on ? intensity : 0)
         }
     }
 
-    private func install(_ bp: CamperBlueprint, config: CamperConfig) {
-        applyMood(config.mood)
-        var materials: [CamperMaterial: SCNMaterial] = [:]
-        func material(_ m: CamperMaterial) -> SCNMaterial {
-            if let hit = materials[m] { return hit }
-            let made = makeMaterial(CamperMaterials.spec(m, paint: config.loadout.paint, mood: config.mood))
-            materials[m] = made
-            return made
+    // MARK: 組み立て
+
+    /// 飾り・段が変わったら組み直す（下ごしらえは画面の処理の外で作る）。時刻・天気だけなら組み直さない
+    func show(_ next: CamperConfig) {
+        guard next != config else { return }
+        config = next
+        if builtKey == next.buildKey, blueprint != nil {
+            buildTask?.cancel()
+            setMood(next.mood)
+            onReady?(Self.marker(next, blueprint: blueprint, ms: 0))
+            return
         }
+        buildTask?.cancel()
+        let started = Date()
+        buildTask = Task { [weak self] in
+            let plan = await Task.detached(priority: .userInitiated) { CamperScenePlan.make(next) }.value
+            guard !Task.isCancelled, let self, let now = self.config, now.buildKey == next.buildKey else { return }
+            self.install(plan, config: now)
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            self.onReady?(Self.marker(now, blueprint: plan.blueprint, ms: ms))
+        }
+    }
+
+    /// 組み終えた合図（画面写真の試験が待つ）
+    static func marker(_ c: CamperConfig, blueprint: CamperBlueprint?, ms: Int) -> String {
+        "camper-ready \(c.stage.rawValue) \(c.mood.rawValue) tris=\(blueprint?.triangleEstimate ?? 0) ms=\(ms)"
+    }
+
+    /// 試験用: 下ごしらえから組むまでを、いまの処理の中で（Linux の試験で組み上げた場面を確かめる）
+    func installNow(_ next: CamperConfig) {
+        config = next
+        install(CamperScenePlan.make(next), config: next)
+    }
+
+    private func install(_ plan: CamperScenePlan, config: CamperConfig) {
+        let bp = plan.blueprint
+        planBitmaps = plan.bitmaps
+        paint = config.loadout.paint
+        currentMood = config.mood
+        materials = [:]
+        moodNodes = []
+        moodLights = []
+        builtKey = config.buildKey
         let s = Self.unit
         let body = SCNNode()
         let inside = SCNNode()
         let door = SCNNode()
+        // その時刻だけの部品（雪・夜の電球など）。時刻と灯りの組ごとに別にまとめ、見せる・隠すで切り替える
+        var moodGroups: [String: (node: SCNNode, moods: Set<CamperMood>, inside: Bool)] = [:]
         // 地面の灯りの溜まり（まとめず・影を落とさない）。扉の口の溜まりは扉を開けた時だけ見せる
         let glow = SCNNode()
         let doorGlow = SCNNode()
-        for whole in bp.nodes {
-          let split = whole.splitForInteriorLight()
-          for (spec, isInside) in [(split.inside, true), (split.outside, false)].compactMap({ p in p.0.map { ($0, p.1) } }) {
-            guard let geometry = makeGeometry(spec.shape, material: spec.material, lookup: material) else { continue }
+        for prepared in plan.nodes {
+            let spec = prepared.spec
+            guard let geometry = makeGeometry(prepared) else { continue }
             let node = SCNNode(geometry: geometry)
+            node.name = spec.name
             node.orientation = SCNQuaternion(Float(spec.orientation.x), Float(spec.orientation.y), Float(spec.orientation.z),
                                              Float(spec.orientation.w))
             if case .text = spec.shape {
@@ -191,23 +232,38 @@ final class CamperScene {
                 // 床（不透明の組）を描いた後に足す
                 node.renderingOrder = 10
                 (spec.group == .glow ? glow : doorGlow).addChildNode(node)
+            } else if let moods = spec.moods {
+                node.position = Self.vector(spec.position * s)
+                let key = "\(moods.map(\.rawValue).sorted()) \(prepared.inside)"
+                let holder = moodGroups[key]?.node ?? SCNNode()
+                holder.addChildNode(node)
+                moodGroups[key] = (holder, moods, prepared.inside)
             } else {
                 node.position = Self.vector(spec.position * s)
-                (isInside ? inside : body).addChildNode(node)
+                (prepared.inside ? inside : body).addChildNode(node)
             }
-          }
         }
         let car = SCNNode()
         // 止まっている部品は材質ごとにまとめる（描く回数を減らす）。室内と外は灯りの組が違うので別々に
         let bodyFlat = body.flattenedClone()
+        bodyFlat.name = "camper.outside"
         Self.mask(bodyFlat, Self.outsideMask)
         car.addChildNode(bodyFlat)
         let insideFlat = inside.flattenedClone()
+        insideFlat.name = "camper.inside"
         Self.mask(insideFlat, Self.insideMask)
         car.addChildNode(insideFlat)
+        for (key, group) in moodGroups.sorted(by: { $0.key < $1.key }) {
+            let flat = group.node.flattenedClone()
+            flat.name = "camper.mood \(key)"
+            Self.mask(flat, group.inside ? Self.insideMask : Self.outsideMask)
+            car.addChildNode(flat)
+            moodNodes.append((flat, group.moods))
+        }
         let pivot = SCNNode()
         pivot.position = Self.vector(bp.doorHinge * s)
         let doorFlat = door.flattenedClone()
+        doorFlat.name = "camper.door"
         Self.mask(doorFlat, Self.outsideMask)
         pivot.addChildNode(doorFlat)
         pivot.eulerAngles = SCNVector3(0, Float(doorOpen ? bp.doorOpenAngle : 0), 0)
@@ -217,6 +273,9 @@ final class CamperScene {
         doorGlow.opacity = doorOpen ? 1 : 0
         car.addChildNode(glow)
         car.addChildNode(doorGlow)
+        // 地面の灯りの溜まりは夜だけ
+        moodNodes.append((glow, [.night]))
+        moodNodes.append((doorGlow, [.night]))
         // 灯り（夜）
         for light in bp.lights {
             let l = SCNLight()
@@ -243,6 +302,7 @@ final class CamperScene {
                 l.shadowColor = Self.color(0x000000, alpha: 1)
             }
             let n = SCNNode()
+            n.name = "light.\(light.name)"
             n.light = l
             n.position = Self.vector(light.position * s)
             if light.kind == .spot {
@@ -250,13 +310,14 @@ final class CamperScene {
                 n.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
             }
             car.addChildNode(n)
+            moodLights.append((l, light.intensity, light.moods))
         }
         // 車体の下の暗がり（板: 楕円・ぼかし・0.75）。床から少し浮かせる
         let len = (bp.length.upperBound - bp.length.lowerBound + 8) * s
         let plane = SCNPlane(width: CGFloat(len), height: CGFloat((bp.halfWidth * 2 + 12) * s))
         let shade = SCNMaterial()
         shade.lightingModel = .constant
-        shade.diffuse.contents = image(CamperTextures.contactShadow().premultiplied(), key: "contact")
+        shade.diffuse.contents = image(key: "contact") { CamperTextures.contactShadow().premultiplied() }
         shade.transparencyMode = .aOne
         shade.blendMode = .alpha
         shade.writesToDepthBuffer = false
@@ -273,6 +334,7 @@ final class CamperScene {
         doorPivot = pivot
         doorGlowNode = doorGlow
         blueprint = bp
+        setMood(config.mood)
     }
 
     // MARK: 向き・扉
@@ -317,81 +379,103 @@ final class CamperScene {
 
     // MARK: 形と素材
 
-    private func makeGeometry(_ shape: CamperShape, material: CamperMaterial,
-                              lookup: (CamperMaterial) -> SCNMaterial) -> SCNGeometry? {
+    /// 材質（同じ材質は 1 つを使い回す。時刻を替えたら値だけ入れ直す・`setMood`）
+    private func material(_ m: CamperMaterial) -> SCNMaterial {
+        if let hit = materials[m] { return hit }
+        let made = SCNMaterial()
+        configure(made, CamperMaterials.spec(m, paint: paint, mood: currentMood))
+        materials[m] = made
+        return made
+    }
+
+    private func makeGeometry(_ prepared: CamperPreparedNode) -> SCNGeometry? {
         let s = Self.unit
-        switch shape {
-        case .mesh(let m):
-            guard !m.isEmpty else { return nil }
-            let vertices = m.positions.map { Self.vector($0 * s) }
-            let normals = m.normals.map { Self.vector($0) }
-            let uvs = m.uvs.map { CGPoint(x: $0.x, y: $0.y) }
-            let sources = [SCNGeometrySource(vertices: vertices), SCNGeometrySource(normals: normals),
-                           SCNGeometrySource(textureCoordinates: uvs)]
-            let groups = m.groups.filter { !$0.indices.isEmpty }
-            let elements = groups.map { SCNGeometryElement(indices: $0.indices, primitiveType: .triangles) }
+        let spec = prepared.spec
+        if let m = prepared.mesh {
+            guard m.vertexCount > 0, !m.groups.isEmpty else { return nil }
+            func source(_ values: [Float], _ semantic: SCNGeometrySource.Semantic, _ components: Int) -> SCNGeometrySource {
+                let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+                return SCNGeometrySource(data: data, semantic: semantic, vectorCount: values.count / components,
+                                         usesFloatComponents: true, componentsPerVector: components,
+                                         bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
+                                         dataStride: MemoryLayout<Float>.size * components)
+            }
+            let sources = [source(m.positions, .vertex, 3), source(m.normals, .normal, 3), source(m.uvs, .texcoord, 2)]
+            let elements = m.groups.map { SCNGeometryElement(indices: $0.indices, primitiveType: .triangles) }
             let g = SCNGeometry(sources: sources, elements: elements)
-            g.materials = groups.map { lookup($0.material) }
+            g.materials = m.groups.map { material($0.material) }
             return g
+        }
+        switch spec.shape {
+        case .mesh:
+            return nil
         case let .box(size, chamfer):
             let b = SCNBox(width: CGFloat(size.x * s), height: CGFloat(size.y * s), length: CGFloat(size.z * s),
                            chamferRadius: CGFloat(chamfer * s))
             b.chamferSegmentCount = chamfer > 0.8 ? 3 : 1
-            b.materials = [lookup(material)]
+            b.materials = [material(spec.material)]
             return b
         case let .cylinder(radius, height, segments):
             let c = SCNCylinder(radius: CGFloat(radius * s), height: CGFloat(height * s))
             c.radialSegmentCount = max(3, segments)
-            c.materials = [lookup(material)]
+            c.materials = [material(spec.material)]
             return c
         case let .torus(ring, pipe):
             let t = SCNTorus(ringRadius: CGFloat(ring * s), pipeRadius: CGFloat(pipe * s))
             t.ringSegmentCount = 32
             t.pipeSegmentCount = 10
-            t.materials = [lookup(material)]
+            t.materials = [material(spec.material)]
             return t
         case .sphere(let radius):
             let sp = SCNSphere(radius: CGFloat(radius * s))
             sp.segmentCount = 18
-            sp.materials = [lookup(material)]
+            sp.materials = [material(spec.material)]
             return sp
         case let .text(string, _, depth):
             let t = SCNText(string: string, extrusionDepth: CGFloat(depth * 10))
             t.font = UIFont.systemFont(ofSize: 10, weight: .bold)
             t.flatness = 0.2
-            t.materials = [lookup(material)]
+            t.materials = [material(spec.material)]
             return t
         }
     }
 
-    private func makeMaterial(_ spec: CamperMaterialSpec) -> SCNMaterial {
-        let m = SCNMaterial()
+    /// 材質に値を入れる（作る時と、時刻を替えた時。前の時刻の値が残らないよう、全部入れ直す）
+    private func configure(_ m: SCNMaterial, _ spec: CamperMaterialSpec) {
+        m.diffuse.contents = Self.color(spec.color)
+        m.metalness.contents = 0.0
+        m.roughness.contents = 1.0
+        m.clearCoat.contents = 0.0
+        m.clearCoatRoughness.contents = 0.0
+        m.emission.contents = Self.color(0x000000)
+        m.emission.intensity = 0
+        m.transparency = 1
+        m.transparencyMode = .aOne
+        m.blendMode = .alpha
+        m.writesToDepthBuffer = true
+        m.isDoubleSided = spec.doubleSided
+        func texture(_ kind: CamperTextureKind) -> CGImage? {
+            image(key: CamperScenePlan.textureKey(kind, spec.color)) { CamperTextures.make(kind).tinted(spec.color) }
+        }
         if spec.additive {
             // 下の色に光を足す（黒は何も足さない）。奥行きは書かず、灯りの溜まりどうしが重なっても欠けない
             m.lightingModel = .constant
-            if let kind = spec.texture {
-                m.diffuse.contents = image(CamperTextures.make(kind).tinted(spec.color), key: "\(kind.rawValue).\(spec.color)")
-            } else {
-                m.diffuse.contents = Self.color(spec.color)
-            }
+            if let kind = spec.texture { m.diffuse.contents = texture(kind) }
             m.blendMode = .add
             m.writesToDepthBuffer = false
             m.isDoubleSided = true
-            return m
+            return
         }
         if spec.unlit {
             m.lightingModel = .constant
-            m.diffuse.contents = Self.color(spec.color)
-            return m
+            return
         }
         m.lightingModel = .physicallyBased
         if let kind = spec.texture {
-            m.diffuse.contents = image(CamperTextures.make(kind).tinted(spec.color), key: "\(kind.rawValue).\(spec.color)")
+            m.diffuse.contents = texture(kind)
             m.diffuse.wrapS = .repeat
             m.diffuse.wrapT = .repeat
             m.diffuse.mipFilter = .linear
-        } else {
-            m.diffuse.contents = Self.color(spec.color)
         }
         m.metalness.contents = spec.metalness
         m.roughness.contents = spec.roughness
@@ -402,18 +486,17 @@ final class CamperScene {
         if spec.opacity < 1 {
             m.transparency = CGFloat(spec.opacity)
             m.transparencyMode = .dualLayer
-            m.blendMode = .alpha
         }
         if let e = spec.emission, spec.emissionIntensity > 0 {
             m.emission.contents = Self.color(e)
             m.emission.intensity = CGFloat(spec.emissionIntensity)
         }
-        m.isDoubleSided = spec.doubleSided
-        return m
     }
 
-    private func image(_ bitmap: CamperBitmap, key: String) -> CGImage? {
+    /// 貼り絵（下ごしらえで作った画素があればそれを、無ければその場で作る）
+    private func image(key: String, make: () -> CamperBitmap) -> CGImage? {
         if let hit = textureCache[key] { return hit }
+        let bitmap = planBitmaps[key] ?? make()
         guard let provider = CGDataProvider(data: Data(bitmap.rgba) as CFData),
               let made = CGImage(width: bitmap.width, height: bitmap.height, bitsPerComponent: 8, bitsPerPixel: 32,
                                  bytesPerRow: bitmap.width * 4, space: CGColorSpaceCreateDeviceRGB(),
@@ -444,31 +527,5 @@ extension CamperShape {
     var textHeight: Double {
         if case let .text(_, height, _) = self { return height }
         return 1
-    }
-}
-
-extension CamperBitmap {
-    /// 透け具合を色に掛けておく（CGImage の premultipliedLast に合わせる）
-    func premultiplied() -> CamperBitmap {
-        var out = self
-        var i = 0
-        while i + 3 < out.rgba.count {
-            let a = Double(out.rgba[i + 3]) / 255
-            for c in 0..<3 { out.rgba[i + c] = UInt8((Double(out.rgba[i + c]) * a).rounded()) }
-            i += 4
-        }
-        return out
-    }
-
-    /// 白〜灰の貼り絵に色を掛ける
-    func tinted(_ hex: UInt32) -> CamperBitmap {
-        var out = self
-        let rgb = [Double((hex >> 16) & 0xFF) / 255, Double((hex >> 8) & 0xFF) / 255, Double(hex & 0xFF) / 255]
-        var i = 0
-        while i + 3 < out.rgba.count {
-            for c in 0..<3 { out.rgba[i + c] = UInt8(max(0, min(255, (Double(out.rgba[i + c]) * rgb[c]).rounded()))) }
-            i += 4
-        }
-        return out
     }
 }
