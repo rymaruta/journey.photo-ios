@@ -582,10 +582,11 @@ enum TrunkLooks {
         look.lock.tab ? railY - 4 : railY - look.lock.height / 2 + look.rail.height / 2
     }
 
-    /// 手荷物タグ（モックの3枚。投稿の数で増える・`TrunkAging.tagCount`）
+    /// 手荷物タグ（投稿の数で増える・`TrunkAging.tagCount`）。**行き先と日付は、その人自身のラベルから作る**
+    /// （2026-10-18 owner「hnd hel がデフォルトでついてるのなんで？」——モックの3枚の固定の行き先と日付を、誰にでも貼っていた）
     struct Tag: Equatable {
         let code: String
-        /// タグに刷った日（「2025.06.20」・飾りの字。生の日時ではない）
+        /// タグに刷った日（ラベルの日・「2026.04.03」）。日の分からないラベルは空（日の行を出さない）
         let printedDay: String
         let x: Double
         let rot: Double
@@ -593,11 +594,66 @@ enum TrunkLooks {
         let fg: TrunkRGBA
     }
 
-    static let tags: [Tag] = [
-        Tag(code: "HND→HEL", printedDay: "2025.06.20", x: 252, rot: 14, bg: TrunkRGBA(0xEFE6D2), fg: TrunkRGBA(0x1E1E1E)),
-        Tag(code: "KIX→BCN", printedDay: "2023.08.02", x: 216, rot: -5, bg: TrunkRGBA(0xF2C9A0), fg: TrunkRGBA(0x3A1E10)),
-        Tag(code: "CTS", printedDay: "2019.02.08", x: 278, rot: 26, bg: TrunkRGBA(0xC7D8E2), fg: TrunkRGBA(0x13303F)),
+    /// タグを吊るす場所と色（モックの3枚の位置・傾き・紙の色。字は持たない）
+    struct TagSlot: Equatable {
+        let x: Double
+        let rot: Double
+        let bg: TrunkRGBA
+        let fg: TrunkRGBA
+    }
+
+    static let tagSlots: [TagSlot] = [
+        TagSlot(x: 252, rot: 14, bg: TrunkRGBA(0xEFE6D2), fg: TrunkRGBA(0x1E1E1E)),
+        TagSlot(x: 216, rot: -5, bg: TrunkRGBA(0xF2C9A0), fg: TrunkRGBA(0x3A1E10)),
+        TagSlot(x: 278, rot: 26, bg: TrunkRGBA(0xC7D8E2), fg: TrunkRGBA(0x13303F)),
     ]
+
+    /// タグの字の幅の目安（板のタグ 50pt に 9pt の太字で収まる量）。ローマ字・数字は 1、ほかの字（かな・漢字）は 2 と数える
+    static let tagCodeBudget = 10
+
+    /// 1枚のタグの字（ラテン文字の地名があれば大文字、無ければ地名）。長ければ字の切れ目で省く（はみ出さない）
+    static func tagCode(_ label: TrunkLabel) -> String {
+        let latin = label.place.latin?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let text = latin.isEmpty ? label.place.name : latin
+        var out = ""
+        var used = 0
+        for ch in text {
+            let w = ch.unicodeScalars.allSatisfy { $0.isASCII } ? 1 : 2
+            guard used + w <= tagCodeBudget else { break }
+            out.append(ch)
+            used += w
+        }
+        return out.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// タグを作るラベル（描くラベルを減らした画面でも、渡されていれば全部のラベルから）
+    static func tagSource(stuck: [TrunkLabel], tagsFrom: [TrunkLabel]?) -> [TrunkLabel] { tagsFrom ?? stuck }
+
+    /// 型を選ぶ画面の見本のトランク: 絵に描くのは新しいラベル `count` 枚（板 Models）、タグは全部のラベルから
+    static func modelsPreview(_ stuck: [TrunkLabel], count: Int) -> (stuck: [TrunkLabel], tagsFrom: [TrunkLabel]) {
+        (Array(stuck.prefix(count)), stuck)
+    }
+
+    /// 吊るすタグ（貼ったラベルの**新しい順**に、違う撮影地を `TrunkAging.tagCount(posts:)` 枚まで）。
+    /// - 地名の無いラベル（人のトランクで地名を伏せた・もともと無い）は使わない
+    /// - 使える地名が足りなければ、足りない枚数ぶんタグを出さない（偽の行き先で埋めない）
+    static func tags(stuck newestFirst: [TrunkLabel], posts: Int) -> [Tag] {
+        let count = min(tagSlots.count, TrunkAging.tagCount(posts: posts))
+        guard count > 0 else { return [] }
+        var seen = Set<String>()
+        var out: [Tag] = []
+        for label in newestFirst {
+            let name = label.place.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, seen.insert(name).inserted else { continue }
+            let code = tagCode(label)
+            guard !code.isEmpty else { continue }
+            let slot = tagSlots[out.count]
+            let day = label.day.map { String(format: "%04d.%02d.%02d", $0.year, $0.month, $0.day) } ?? ""
+            out.append(Tag(code: code, printedDay: day, x: slot.x, rot: slot.rot, bg: slot.bg, fg: slot.fg))
+            if out.count == count { break }
+        }
+        return out
+    }
 
     /// 手荷物タグの褪せ（モックの `saturate(1 - st * 0.4) sepia(st * 0.25)`）
     static func tagColor(_ color: TrunkRGBA, stage st: Double) -> TrunkRGBA {

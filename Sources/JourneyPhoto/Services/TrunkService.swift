@@ -20,6 +20,11 @@ import Foundation
 ///     POST   /user/trunk/parts/exchange { partId }           → 状態＋part（かけら5つ）
 ///     PUT    /user/trunk/equip { handle…key, pins[], patches[] } → 状態
 ///
+/// 人のトランク（2026-10-18）:
+///
+///     GET    /users/{uid}/trunk                              → 人のトランク（見せないときは 404 → nil）
+///     PUT    /user/trunk/settings { showTrunk? , ticket? }   → 状態（見せる設定・わたしの乗車券）
+///
 /// はじめての硬貨（2026-10-18 owner 承認）:
 ///
 ///     POST   /user/trunk/welcome                             → { granted, added, coins }（`TrunkWelcome`）
@@ -160,6 +165,51 @@ struct TrunkService {
     func setReceiveLabels(_ on: Bool) async throws -> TrunkState {
         try await refusing {
             try await api.authorized(.put, "/user/trunk/settings", body: SettingsBody(receiveLabels: on), as: TrunkState.self)
+        }
+    }
+
+    // MARK: 人のトランク（2026-10-18）
+
+    /// `PUT /user/trunk/settings { showTrunk }` の本文（**送るのはこの1項目だけ**。ほかの設定は変えない）
+    struct ShowTrunkBody: Encodable, Equatable { let showTrunk: Bool }
+
+    /// ほかの人にトランクを見せるか（オフの間は人の口が 404）
+    func setShowTrunk(_ on: Bool) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.put, "/user/trunk/settings", body: ShowTrunkBody(showTrunk: on), as: TrunkState.self)
+        }
+    }
+
+    /// `PUT /user/trunk/settings { ticket }` の本文。**外すときは `null` を書く**（項目を落とすと「変えない」になる）
+    struct TicketBody: Encodable, Equatable {
+        let ticket: TrunkTicket?
+
+        private enum CodingKeys: String, CodingKey { case ticket }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let ticket { try c.encode(ticket, forKey: .ticket) } else { try c.encodeNil(forKey: .ticket) }
+        }
+    }
+
+    /// わたしの乗車券をサーバーに置く（人のトランクの中に出す1枚）。nil で外す。
+    /// 写真が本人の公開写真でなければ 409 `ticketNotPublic`・字の形が違えば 400 `badTicket`
+    func setTicket(_ ticket: TrunkTicket?) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.put, "/user/trunk/settings", body: TicketBody(ticket: ticket), as: TrunkState.self)
+        }
+    }
+
+    /// 人のトランク（`GET /users/{uid}/trunk`・ログインした人だけ）。
+    /// **見せていない（404）は nil**——見せない設定・ブロック・退会・行が無いを、サーバーは区別せずに返すので、
+    /// 画面も区別しない（段ごと出さない）。人の id の形でない値は要求を出さずに nil（サーバーも 404 にする形）
+    func theirs(_ userId: String) async throws -> TheirTrunk? {
+        let segment: String
+        do { segment = try encoded(userId) } catch { return nil }
+        do {
+            return try await api.authorized(.get, "/users/\(segment)/trunk", as: TheirTrunk.self)
+        } catch let APIError.server(status, _) where status == 404 {
+            return nil
         }
     }
 }

@@ -441,6 +441,8 @@ struct PassCardPickView: View {
             settings.setDestination(custom: destinationCustom, text: destinationText)
         }
         PassCoordinator.shared.refresh()
+        // トランクに入れる乗車券（本人が選んだときだけ）は、すれちがいの画面が設定の変化を見て揃える
+        // （`PassSettingsView` の `TrunkTicketSync`）
         dismiss()
     }
 }

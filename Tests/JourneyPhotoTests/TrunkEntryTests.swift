@@ -312,6 +312,94 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertEqual(store.summary?.hasUnstuck, false)
     }
 
+    // MARK: - 硬貨が変わった知らせ（`trunkCoinsChanged`）
+
+    /// 知らせが見張りに届くまで待つ（`queue: .main` から MainActor の Task で受ける）
+    private func waitCoinsChanged(_ store: TrunkEntryStore, _ n: Int) async throws {
+        for _ in 0..<100 where store.coinsChanged < n { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    /// 🔴 **いまの人の硬貨が変わった知らせで印が付き、次の refresh で読み直す**（印が無いと 6 時間読まない）
+    func testCoinsChangedNotificationMarksStale() async throws {
+        let center = NotificationCenter()
+        let store = TrunkEntryStore(center: center)
+        let held = HeldFetch()
+        let first = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        held.answer(TrunkSample.state(isPro: false, coins: 1))
+        await first.value
+        XCTAssertEqual(store.summary?.coins, 1)
+        // はじめての硬貨が配られた（`TrunkWelcome` と同じ形の知らせ）
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": 11, "userId": "u1"])
+        try await waitCoinsChanged(store, 1)
+        XCTAssertEqual(store.coinsChanged, 1, "知らせを受けていない")
+        let second = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        held.answer(TrunkSample.state(isPro: false, coins: 11))
+        await second.value
+        XCTAssertEqual(held.calls, 2, "硬貨が変わった知らせで印が付いていない")
+        XCTAssertEqual(store.summary?.coins, 11)
+        // 読んだら印は下りる
+        await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch)
+        XCTAssertEqual(held.calls, 2)
+    }
+
+    /// 🔴 **別の人の知らせ・人の分からない知らせは受けない**（人が替わった直後に前の人の値で読み直さない）
+    func testCoinsChangedForOtherUserIsIgnored() async throws {
+        let center = NotificationCenter()
+        let store = TrunkEntryStore(center: center)
+        let held = HeldFetch()
+        let first = Task { @MainActor in await store.refresh(userId: "u2", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        held.answer(TrunkSample.state(isPro: false, coins: 2))
+        await first.value
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": 11, "userId": "u1"])
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": 11])
+        store.noteCoinsChanged(userId: "u1")
+        store.noteCoinsChanged(userId: nil)
+        for _ in 0..<20 { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(store.coinsChanged, 0, "別の人の知らせで札を読み直す合図を出した")
+        // 印が付いていれば読みに行く（止めずにすぐ答える読み方で数える）
+        let counting = CountingFetch()
+        await store.refresh(userId: "u2", available: true, preview: nil, fetch: counting.fetch)
+        XCTAssertEqual(counting.calls, 0, "別の人の知らせで印が付いた")
+        // まだ誰の分も読んでいない入口は、知らせを受けない（札が出たときに初めて読む）
+        let fresh = TrunkEntryStore(center: center)
+        fresh.noteCoinsChanged(userId: "u1")
+        XCTAssertEqual(fresh.coinsChanged, 0)
+    }
+
+    /// 🔴 **読み込みの最中に知らせが続けて届いても、読み込みは重ならない**（札の読み直しは走っている読み込みに相乗りし、
+    /// 読み終えてから1回だけ読み直す）
+    func testCoinsChangedDuringReadDoesNotOverlap() async throws {
+        let center = NotificationCenter()
+        let store = TrunkEntryStore(center: center)
+        let held = HeldFetch()
+        let first = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        await held.waitUntilAsked()
+        // 読んでいる最中に知らせが2回届き、出ている札がそのたびに読み直す
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": 11, "userId": "u1"])
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": 12, "userId": "u1"])
+        try await waitCoinsChanged(store, 2)
+        XCTAssertEqual(store.coinsChanged, 2)
+        let a = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        let b = Task { @MainActor in await store.refresh(userId: "u1", available: true, preview: nil, fetch: held.fetch) }
+        for _ in 0..<20 { await Task.yield() }
+        // 重なると止めた返事が上書きされて待ち続けるので、落として抜ける
+        guard held.calls == 1 else { return XCTFail("知らせのたびに読み込みを重ねて出した（\(held.calls)本）") }
+        held.answer(TrunkSample.state(isPro: false, coins: 10))
+        await first.value
+        // 読み始めた後に印が付いたので、もう1回だけ読む（a と b は同じ読み込みに乗る）
+        await held.waitUntilAsked()
+        for _ in 0..<20 { await Task.yield() }
+        guard held.calls == 2 else { return XCTFail("読み込みは2本（最初の1本と、印を見た読み直し1本）のはずが \(held.calls) 本") }
+        held.answer(TrunkSample.state(isPro: false, coins: 12))
+        await a.value
+        await b.value
+        XCTAssertEqual(held.calls, 2, "読み込みは2本のはずが \(held.calls) 本")
+        XCTAssertEqual(store.summary?.coins, 12)
+    }
+
     // MARK: - 配線（Linux では描けないので文で確かめる）
 
     private func source(_ path: String) throws -> String {
@@ -344,6 +432,9 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertTrue(chip.contains("guard TrunkEntryRule.postedPublic(tabRouter.lastPosted) else { return }"),
                       "投稿の画面を閉じるたびに読み直している")
         XCTAssertTrue(chip.contains("if isOnScreen { Task { await refresh() } }"), "札が出ていない間に読んでいる")
+        // 硬貨が変わった知らせ（印は入口の店が付ける）で、出ていれば読み直す
+        XCTAssertTrue(chip.contains(".onChange(of: entry.coinsChanged) { _, _ in\n            if isOnScreen { Task { await refresh() } }"),
+                      "硬貨が変わっても札を読み直さない")
         // VoiceOver の2回叩きで開ける（ボタンを `.ignore` で包まない）
         XCTAssertFalse(chip.contains(".accessibilityElement(children: .ignore)"))
         // 真鍮は点だけ（黒地の札の上・名前の側に離す）。硬貨の数は白
@@ -394,5 +485,16 @@ final class HeldFetch {
     func answer(_ state: TrunkState) {
         continuation?.resume(returning: state)
         continuation = nil
+    }
+}
+
+/// 止めずにすぐ答え、呼ばれた回数を数える読み方
+@MainActor
+final class CountingFetch {
+    private(set) var calls = 0
+
+    func fetch() async throws -> TrunkState {
+        calls += 1
+        return TrunkSample.state(isPro: false, coins: 0)
     }
 }

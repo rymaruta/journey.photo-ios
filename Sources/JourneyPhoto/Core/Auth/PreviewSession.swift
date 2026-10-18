@@ -87,6 +87,24 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
+    ///
+    /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
+    /// （Pro でサポーター証の番号があるときだけ・`TrunkInsideContents.showsCard`）が出ない。会員証の絵を撮るために、
+    /// **入っている本人のプロフィールにだけ**番号を重ねる（申し込んだ日は 2026-10-01・続けた月 1）。
+    /// 本番の決まりは変えない。Release では必ず nil
+    static let supporterKey = "JPPreviewSupporter"
+
+    static var supporter: SupporterInfo? {
+        #if DEBUG
+        guard userId != nil, let raw = UserDefaults.standard.string(forKey: supporterKey),
+              let number = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)), number >= 1 else { return nil }
+        return SupporterInfo(number: number, since: "2026-10-01T09:00:00Z", months: 1)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでメダルを回す全画面の硬貨を止める向きと強さ（Debug のみ）。
     /// `-JPPreviewMedalPoses "0:1,0.45:1,1.1:1"`（横の回り:浮き彫りの強さ）。
     ///
@@ -239,6 +257,23 @@ enum PreviewSession {
         #if DEBUG
         guard userId != nil else { return false }
         return UserDefaults.standard.bool(forKey: trunkArrivedKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストで、人のプロフィールに見本の人のトランクを出す（Debug のみ・2026-10-18）。`-JPPreviewTheirTrunk YES`。
+    ///
+    /// 人の口（`GET /users/{uid}/trunk`）は鍵を持たない入り方では読めず、本番にもまだ無いので、人のトランクの段と
+    /// 画面の絵が撮れない。**サーバーには何も送らない**——どの人のページでも見本のトランク（`TheirTrunkSample`）を
+    /// 出す。ラベルの写真はその人の公開写真から引く。地名の無いラベルも混ぜる。入っている見本の利用者のときだけ効く。
+    /// Release では必ず false
+    static let theirTrunkKey = "JPPreviewTheirTrunk"
+
+    static var theirTrunkSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: theirTrunkKey)
         #else
         return false
         #endif

@@ -407,12 +407,20 @@ struct CloseFriendsView: View {
     private func save() async {
         let changes = pending
         guard !isSaving, !changes.isEmpty, !overLimit else { return }
+        // 押した人。1人ずつ送るので、途中でアカウントが替わると、
+        // 残りの人が次の人の親しい友達になる（トークンは送るときのログイン）
+        let sender = auth.userId
+        guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
         isSaving = true
         defer { isSaving = false }
         let social = environment.social
         let outcome = await CloseFriendsRows.save(saved: saved, changes: changes) { change in
-            try await social.setCloseFriend(userId: change.userId, wanted: change.wanted)
+            guard Self.keepsSave(sender: sender, viewer: auth.userId) else {
+                throw CancellationError()
+            }
+            return try await social.setCloseFriend(userId: change.userId, wanted: change.wanted)
         }
+        guard Self.keepsSave(sender: sender, viewer: auth.userId) else { return }
         saved = outcome.saved
         // 全部送れたら閉じる（プロフィールの編集の「保存」と同じ）
         if outcome.finished {
@@ -420,5 +428,10 @@ struct CloseFriendsView: View {
         } else {
             saveError = CloseFriendsRows.partialMessage(outcome)
         }
+    }
+
+    /// 保存の続きを送るか、答えをこの画面に書くか。**押した人が、まだその人のときだけ**
+    nonisolated static func keepsSave(sender: String?, viewer: String?) -> Bool {
+        sender != nil && sender == viewer
     }
 }

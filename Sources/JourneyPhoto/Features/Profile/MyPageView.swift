@@ -101,6 +101,17 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load(for: auth.userId)
         }
+        // 自分の一覧の絞った写真は期限つきの URL（`/user/photos` が署名する）。期限切れで
+        // 割れたら読み直して新しい URL をもらう（2026-10-18・札 #294・`SignedImageExpiry`）
+        .task(id: auth.userId) {
+            guard auth.userId != nil else { return }
+            var gate = SignedImageRefetchGate()
+            for await url in SignedImageExpiry.signals() {
+                // **この画面の写真のときだけ**・15秒に1回まで（ホームの1枚でマイページを読み直さない）
+                guard model.photos.containsImageURL(url), gate.shouldRefetch(after: url, now: Date()) else { continue }
+                await model.load(for: auth.userId)
+            }
+        }
         // **外で書き換えたプロフィールを取り直す。** `load()` は走っている間の
         // 2本目を捨てるので、ここはプロフィールだけを読み直す
         .onChange(of: auth.profileRevision) { _, _ in
@@ -1464,17 +1475,44 @@ final class MyPageViewModel: ObservableObject {
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
 
+    /// ピン留めは1本ずつ。先の要求の答えが後から着くと、あとの留めを画面から消す
+    private var pinTail: Task<Void, Never>?
+
     /// ピン留めの増減。
     ///
     /// **画面を先に動かさない。** 3枚の上限はサーバーが持っていて
     /// （`userProfile.ts`）、断られたときにそのときの一覧も返ってくる。
     /// 先に動かすと「留まったように見えて、次の読み込みで戻る」になる。
     func setPinned(_ photoId: String, pinned: Bool) async {
+        // 🔴 **重ねて送らない**（2026-10-17）。長押しを続けて2枚留めると、先に返った
+        // 古い一覧が、後の留めを画面から消していた。1本終わってから次を送る。
+        // 押した時点の人を渡す——待ち行列の中で人が替わったら、その1本は送らない
+        let user = activeUser
+        let gen = generation
+        let earlier = pinTail
+        let job = Task { @MainActor in
+            await earlier?.value
+            await self.writePin(photoId, pinned: pinned, user: user, generation: gen)
+        }
+        pinTail = job
+        await job.value
+    }
+
+    /// ピン留めを1本送って、**押した人の画面にだけ**書く
+    private func writePin(_ photoId: String, pinned: Bool, user: String?, generation gen: Int) async {
+        // 🔴 **人が替わったあとの答えは書かない**（2026-10-17）。
+        // 読み込みは `generation` で捨てているのに、ここだけ書いていたので、
+        // ログアウトしたあとに返った前の人のピンが次の人の画面に残った
+        let still = { gen == self.generation && user == self.activeUser }
+        guard still() else { return }
         do {
-            pinnedIds = try await profiles.setPinned(photoId: photoId, pinned: pinned)
+            let ids = try await profiles.setPinned(photoId: photoId, pinned: pinned)
+            guard still() else { return }
+            pinnedIds = ids
             photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
             actionMessage = nil
         } catch {
+            guard still() else { return }
             // 上限（409）のときは、サーバーが「ピン留めは3枚までです」を返す。
             // **一覧を消さない側に入れる**——消すと解除する手立てが無くなる
             actionMessage = (error as? LocalizedError)?.errorDescription
@@ -1490,6 +1528,7 @@ final class MyPageViewModel: ObservableObject {
             // ——`Tools/check-swift-syntax.js` が使っている tree-sitter の
             // 文法が解釈できず、検査が赤くなる（Swift としては正しい）
             let fresh = try? await profiles.myProfile()
+            guard still() else { return }
             if let ids = fresh?.pinnedPhotoIds {
                 pinnedIds = ids
                 photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)

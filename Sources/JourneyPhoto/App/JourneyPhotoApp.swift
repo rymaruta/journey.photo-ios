@@ -198,6 +198,19 @@ struct JourneyPhotoApp: App {
                 // `AppDelegate` の起動から居る1つ（`PassStore.shared`）を配る
                 .environmentObject(PassStore.shared)
                 .task { connectivity.start() }
+                // すれちがいの設定が変わったら、旅のトランクに入れた乗車券を揃える（本人がオンにしたときだけ置き、
+                // 外れたら外す・断られたら一言・`TrunkTicketSync`）。設定の画面に頼らず、変えた所の後ろで必ず走る
+                .task {
+                    let trunk = environment.trunk
+                    let toasts = toasts
+                    PassStore.shared.onSettingsChanged = { userId, settings in
+                        Task { @MainActor in
+                            let refusal = await TrunkTicketSync.shared.sync(userId: userId, settings: settings, service: trunk)
+                            // 設定の行が出ている間は、行に訳を出すので帯は出さない
+                            if let refusal, TrunkTicketSync.shared.shouldToast { toasts.show(refusal, kind: .failure) }
+                        }
+                    }
+                }
                 .task { await auth.restore() }
                 // **取引は起動直後から聞く**（Apple の決まり。更新・別の端末での購入・返金が届く）。
                 // サーバーへ渡し終えたら、マイページ・設定がプロフィールを読み直す

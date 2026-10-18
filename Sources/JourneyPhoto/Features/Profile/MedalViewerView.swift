@@ -148,6 +148,29 @@ struct SpinRGB: Equatable {
     let b: Double
 }
 
+/// 決まった向きへ回す合図（旅のトランクの「正面・側面・上と背面・底」・板 TrunkSpin）。
+/// `id` を替えるたびに、その向きへなめらかに回す（ラジアン。横の回りと縦の傾き）
+struct SpinAim: Equatable {
+    let id: Int
+    let yaw: Double
+    let pitch: Double
+}
+
+/// 旅のトランクの箱の、表と裏のほかの面の絵（板「旅のトランク」の TrunkFaces・2026-10-18）。
+/// 左右の側面（86×268）・上の面と底（360×86）・持ち手の面と付け根の金具。`TrunkTextures.box` が作る
+struct SpinBoxFaces {
+    /// 背面（後から描いて貼る。表を先に出すため・2026-10-18）
+    let back: UIImage?
+    let left: UIImage?
+    let right: UIImage?
+    let top: UIImage?
+    let bottom: UIImage?
+    /// 持ち手の面（正面の持ち手と同じ塗り・縫い目）
+    let handle: UIImage?
+    /// 持ち手の付け根の金具（錠前と同じ金属）
+    let clip: UIImage?
+}
+
 /// 硬貨・カード。iOS では SceneKit（`MedalSceneView`）、SceneKit の無い Linux の模型では絵を置くだけ
 struct MedalCoinView: View {
     let textures: MedalTextures.Faces?
@@ -159,13 +182,17 @@ struct MedalCoinView: View {
     var poses: [MedalPose]? = nil
     /// 画面写真の向きの準備の具合（「pose-<番号>-ready」など）を受け取る
     var onPoseReady: ((String) -> Void)? = nil
+    /// 旅のトランクの箱の、表と裏のほかの面（`.box` のときだけ）
+    var box: SpinBoxFaces? = nil
+    /// 決まった向きへ回す合図（旅のトランクの向きのボタン）
+    var aim: SpinAim? = nil
 
     var body: some View { coin }
 
     #if canImport(SceneKit)
     private var coin: some View {
         MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape, poses: poses,
-                       onPoseReady: onPoseReady)
+                       onPoseReady: onPoseReady, box: box, aim: aim)
     }
     #else
     /// Linux の模型のための代わり。**実機では使わない**
@@ -187,6 +214,8 @@ private struct MedalSceneView: UIViewRepresentable {
     let shape: SpinShape
     let poses: [MedalPose]?
     let onPoseReady: ((String) -> Void)?
+    let box: SpinBoxFaces?
+    let aim: SpinAim?
 
     func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
 
@@ -212,6 +241,8 @@ private struct MedalSceneView: UIViewRepresentable {
         context.coordinator.reduceMotion = reduceMotion
         context.coordinator.lastFlips = flips
         if let textures { context.coordinator.apply(textures) }
+        if let box { context.coordinator.applyBox(box) }
+        context.coordinator.lastAimId = aim?.id
         context.coordinator.start()
         return view
     }
@@ -220,6 +251,11 @@ private struct MedalSceneView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.reduceMotion = reduceMotion
         if let textures, !coordinator.hasTextures { coordinator.apply(textures) }
+        if let box, !coordinator.hasBoxFaces { coordinator.applyBox(box) }
+        if let aim, aim.id != coordinator.lastAimId {
+            coordinator.lastAimId = aim.id
+            coordinator.aim(yaw: aim.yaw, pitch: aim.pitch)
+        }
         if flips != coordinator.lastFlips {
             coordinator.lastFlips = flips
             coordinator.flip()
@@ -242,6 +278,21 @@ final class MedalCoinCoordinator: NSObject {
     private let back = SCNMaterial()
     private let edge = SCNMaterial()
     private let cap = SCNMaterial()
+    /// 旅のトランクの箱の面（左・右・上・底）と持ち手（2026-10-18・面ごとに絵を貼る）
+    private let left = SCNMaterial()
+    private let right = SCNMaterial()
+    private let top = SCNMaterial()
+    private let bottom = SCNMaterial()
+    private let handleCap = SCNMaterial()
+    private let handleSide = SCNMaterial()
+    private let clipMaterial = SCNMaterial()
+    private(set) var hasBoxFaces = false
+    /// 最後に受けた向きの合図
+    var lastAimId: Int?
+    /// 向きのボタンで向かう角度（横・縦）
+    private var aimTarget: (yaw: Float, pitch: Float)?
+    /// 向きのボタンで着いた向きに止めている（指で払うまで動かさない・板 TrunkSpin どおり）
+    private var aimHeld = false
 
     private(set) var hasTextures = false
     /// 「視差効果を減らす」。変わったら浮き彫りと映り込みの強さを作り直す
@@ -274,6 +325,10 @@ final class MedalCoinCoordinator: NSObject {
 
     /// 置いたときの傾き（板: rotateX(-8deg)）
     private static let restingPitch: Float = -0.14
+    /// 箱を置いたときの傾き（板 TrunkSpin: rotateX(-16deg)。SceneKit では上の面が手前へ傾く向きが正）
+    private static let boxRestingPitch: Float = 0.28
+    /// 箱を置いたときの横の向き（板 TrunkSpin: rotateY(-34deg)。正面から始めず、少し斜めから側面が見える）
+    private static let boxRestingYaw: Float = -34 * .pi / 180
     /// 止まりきったあと、ゆっくり回る速さ（板: 9秒で1周 ≈ 0.7rad/s。それより控えめに）
     private static let idleSpin: Float = 0.45
 
@@ -286,9 +341,30 @@ final class MedalCoinCoordinator: NSObject {
 
     private let shape: SpinShape
 
+    private var isBox: Bool {
+        if case .box = shape { return true }
+        return false
+    }
+
+    /// 決まった向きへ回す（旅のトランクの向きのボタン）。いまの横の回りから近い周に寄せる
+    func aim(yaw target: Double, pitch targetPitch: Double) {
+        let turn = 2 * Double.pi
+        let current = Double(yaw)
+        let nearest = target + (((current - target) / turn).rounded()) * turn
+        aimTarget = (Float(nearest), Float(targetPitch))
+        aimHeld = false
+        flipTarget = nil
+        velocity = 0
+    }
+
     init(shape: SpinShape = .coin) {
         self.shape = shape
         super.init()
+        // 箱は少し上から見下ろして置く（板 TrunkSpin の rotateX(-16deg)＝上の面と持ち手が見える）
+        if isBox {
+            pitch = Self.boxRestingPitch
+            yaw = Self.boxRestingYaw
+        }
         buildScene()
     }
 
@@ -297,8 +373,8 @@ final class MedalCoinCoordinator: NSObject {
         case .coin: buildCoin()
         case .card(let aspect): buildCard(aspect: aspect)
         case let .box(aspect, depth, corner, handle):
-            // 旅のトランク: 角の丸い箱（表＝胴の絵・裏＝ラベルの無い胴・側面＝縁の色）に、上の持ち手
-            buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)
+            // 旅のトランク: 6つの面に絵を貼った箱（表＝胴の絵・裏＝背面・左右・上・底＝板 TrunkFaces）に、上の持ち手
+            buildBox(aspect: aspect, depthRatio: depth, cornerRatio: corner)
             addHandle(aspect: aspect, depth: depth, color: handle)
         }
         addLightsAndCamera()
@@ -350,6 +426,80 @@ final class MedalCoinCoordinator: NSObject {
         scene.rootNode.addChildNode(coin)
     }
 
+    /// 旅のトランクの箱（板「旅のトランク」の TrunkSpin・TrunkFaces・2026-10-18）。
+    ///
+    /// 板と同じく**6枚の面を角の丸い平面で組む**（表と裏は角 16・ほかの面は角 10。寸法は胴 360×268・
+    /// 厚み 86）。押し出しの形（`SCNShape`）では側面が1つの材質で、面ごとの絵が貼れなかった。
+    /// 面の角の丸みで空く隅は、少し小さい暗い芯の箱で埋める（縁の陰に見える）。
+    /// 向きは展開図のまま: 上の面は正面の辺が下、底は正面の辺が上、側面は正面の辺が内側
+    private func buildBox(aspect: Double, depthRatio: Double, cornerRatio: Double) {
+        let width: CGFloat = 2.2
+        let unit = width / 360
+        let height = width / CGFloat(max(0.1, aspect))
+        let depth = width * CGFloat(depthRatio)
+        let faceCorner = 10 * unit
+
+        // 芯（面の角の丸みで空く隅を埋める）
+        let core = SCNBox(width: width - 4 * unit, height: height - 4 * unit, length: depth - 4 * unit, chamferRadius: 6 * unit)
+        core.materials = [edge]
+        edge.lightingModel = .lambert
+        edge.specular.contents = UIColor(white: 0, alpha: 1)
+        coin.addChildNode(SCNNode(geometry: core))
+
+        func face(_ material: SCNMaterial, w: CGFloat, h: CGFloat, corner: CGFloat,
+                  position: SCNVector3, euler: SCNVector3) {
+            material.lightingModel = .lambert
+            material.specular.contents = UIColor(white: 0, alpha: 1)
+            material.locksAmbientWithDiffuse = true
+            material.diffuse.mipFilter = .linear
+            let plane = SCNPlane(width: w, height: h)
+            plane.cornerRadius = corner
+            plane.cornerSegmentCount = 12
+            plane.materials = [material]
+            let node = SCNNode(geometry: plane)
+            node.position = position
+            node.eulerAngles = euler
+            coin.addChildNode(node)
+        }
+        let half = Float.pi / 2
+        let lift: Float = 0.001
+        face(front, w: width, h: height, corner: width * CGFloat(cornerRatio),
+             position: SCNVector3(0, 0, Float(depth / 2) + lift), euler: SCNVector3(0, 0, 0))
+        face(back, w: width, h: height, corner: width * CGFloat(cornerRatio),
+             position: SCNVector3(0, 0, -Float(depth / 2) - lift), euler: SCNVector3(0, Float.pi, 0))
+        // 左の側面は -x を向き、絵の右（正面の辺）が手前へ
+        face(left, w: depth, h: height, corner: faceCorner,
+             position: SCNVector3(-Float(width / 2) - lift, 0, 0), euler: SCNVector3(0, -half, 0))
+        // 右の側面は +x を向き、絵の左（正面の辺）が手前へ
+        face(right, w: depth, h: height, corner: faceCorner,
+             position: SCNVector3(Float(width / 2) + lift, 0, 0), euler: SCNVector3(0, half, 0))
+        // 上の面は +y を向き、絵の下（正面の辺）が手前へ
+        face(top, w: width, h: depth, corner: faceCorner,
+             position: SCNVector3(0, Float(height / 2) + lift, 0), euler: SCNVector3(-half, 0, 0))
+        // 底は -y を向き、絵の上（正面の辺）が手前へ
+        face(bottom, w: width, h: depth, corner: faceCorner,
+             position: SCNVector3(0, -Float(height / 2) - lift, 0), euler: SCNVector3(half, 0, 0))
+        scene.rootNode.addChildNode(coin)
+    }
+
+    /// 箱の左右・上・底と持ち手の絵を貼る（表と裏は `apply`）
+    func applyBox(_ faces: SpinBoxFaces) {
+        for (material, image) in [(back, faces.back), (left, faces.left), (right, faces.right), (top, faces.top),
+                                  (bottom, faces.bottom)] {
+            material.diffuse.contents = image
+            // 表と裏と同じく、光の当たらない向きでも絵が沈まないよう少し自ら光らせる
+            material.emission.contents = image
+            material.emission.intensity = 0.45
+        }
+        if let handle = faces.handle {
+            handleCap.diffuse.contents = handle
+            handleCap.diffuse.wrapS = .clamp
+            handleCap.diffuse.wrapT = .clamp
+        }
+        if let clip = faces.clip { clipMaterial.diffuse.contents = clip }
+        hasBoxFaces = faces.left != nil
+    }
+
     /// トランクの光（2026-10-17・run 466 の見比べ）: 正面の絵がトランクの画面（板 Main）と同じ明るさに見えるよう、
     /// 正面の少し左上にキーライトを足し、環境光は弱いまま。表と裏は光らせず（金属の映り込みは付けない）、
     /// 絵そのものを少し自ら光らせて暗く沈まないようにする
@@ -381,17 +531,37 @@ final class MedalCoinCoordinator: NSObject {
         outer.append(inner.reversing())
         outer.usesEvenOddFillRule = true
         outer.flatness = 0.002
-        let shape = SCNShape(path: outer, extrusionDepth: width * CGFloat(depth) * 0.25)
-        let material = SCNMaterial()
-        material.lightingModel = .blinn
-        material.diffuse.contents = UIColor(red: CGFloat(color.r), green: CGFloat(color.g), blue: CGFloat(color.b), alpha: 1)
-        material.specular.contents = UIColor(white: 0.2, alpha: 1)
-        shape.materials = [material]
+        let thickness = width * CGFloat(depth) * 0.25
+        let shape = SCNShape(path: outer, extrusionDepth: thickness)
+        // 持ち手は正面と同じ塗りの立体（2026-10-18）: 前と後ろの面に持ち手の絵（塗り・縫い目）、
+        // 押し出しの側面は同じ色の暗い方。絵が届く前は1色
+        let base = UIColor(red: CGFloat(color.r), green: CGFloat(color.g), blue: CGFloat(color.b), alpha: 1)
+        for material in [handleCap, handleSide] {
+            material.lightingModel = .blinn
+            material.specular.contents = UIColor(white: 0.2, alpha: 1)
+            material.diffuse.contents = base
+        }
+        handleSide.multiply.contents = UIColor(white: 0.72, alpha: 1)
+        shape.materials = [handleCap, handleCap, handleSide]
         let node = SCNNode(geometry: shape)
         // SceneKit の形は上が +y（UIKit の「下」の角＝maxY が上になる）。U の字の開いた側（y=0）を
-        // 胴の上の縁に合わせ、2D の絵と同じく 6pt ぶん埋める
-        node.position = SCNVector3(0, Float(height / 2 - 6 * unit), 0)
+        // 胴の上の縁に合わせ、2D の絵と同じく 6pt ぶん埋める。前後は上の面の持ち手の場所（正面から 56・
+        // 真ん中から奥へ 13）に立てる（板 TrunkSpin の `translateZ(-13px)`）
+        let behind = -13 * Float(unit)
+        node.position = SCNVector3(0, Float(height / 2 - 6 * unit), behind)
         coin.addChildNode(node)
+        // 付け根の金具（錠前と同じ金属・20×14 を持ち手より少し厚く）
+        clipMaterial.lightingModel = .blinn
+        clipMaterial.specular.contents = UIColor(white: 0.5, alpha: 1)
+        clipMaterial.diffuse.contents = UIColor(red: 0.79, green: 0.65, blue: 0.42, alpha: 1)
+        // 付け根は正面の絵・上の面の絵と同じ真ん中（`TrunkFaces.handleClipCenters`・胴の真ん中から ±50）
+        for x in TrunkFaces.handleClipCenters.map({ $0 - TrunkLooks.bodyWidth / 2 }) {
+            let clip = SCNBox(width: 20 * unit, height: 14 * unit, length: thickness + 4 * unit, chamferRadius: 2 * unit)
+            clip.materials = [clipMaterial]
+            let clipNode = SCNNode(geometry: clip)
+            clipNode.position = SCNVector3(Float(x * Double(unit)), Float(height / 2 - 1 * unit), behind)
+            coin.addChildNode(clipNode)
+        }
     }
 
     private func buildCoin() {
@@ -620,6 +790,9 @@ final class MedalCoinCoordinator: NSObject {
     func flip() {
         // 決め方はきっぷと同じ1つ（`SpinMotion`・2026-10-16）
         flipTarget = Float(SpinMotion.flipTarget(from: Double(yaw)))
+        // 向きのボタンの寄せ・止めと取り合わない（裏返すが勝つ）
+        aimTarget = nil
+        aimHeld = false
         velocity = 0
     }
 
@@ -633,11 +806,15 @@ final class MedalCoinCoordinator: NSObject {
         case .began:
             dragging = true
             flipTarget = nil
+            aimTarget = nil
+            aimHeld = false
             velocity = 0
         case .changed:
             // 幅いっぱい払うと約 1.2 周の 4 割（指に付いてくる量・`SpinMotion.turnPerWidth`）
             yaw += Float(SpinMotion.yawDelta(dx: Double(move.x), width: Double(width)))
-            pitch = min(0.6, max(-0.6, pitch + Float(move.y) / width * 1.2))
+            // 箱は底と上まで見られるよう大きく傾ける（板 TrunkSpin の ±85°）。硬貨・カードは少しだけ
+            let limit: Float = isBox ? 1.48 : 0.6
+            pitch = min(limit, max(-limit, pitch + Float(move.y) / width * 1.2))
         case .ended, .cancelled, .failed:
             dragging = false
             // 惰性は付けるが、速すぎる払いは抑える。「視差効果を減らす」では弱く（`SpinMotion.releaseVelocity`）
@@ -655,7 +832,24 @@ final class MedalCoinCoordinator: NSObject {
         lastTimestamp = now
         guard dt > 0, dt < 0.1, !dragging, poses.isEmpty else { return }
 
-        if let target = flipTarget {
+        if let target = aimTarget {
+            // 向きのボタン: 横と縦をなめらかに寄せる（「視差効果を減らす」では一息に）
+            let step = Float(SpinMotion.approachStep(dt: Double(dt), reduceMotion: reduceMotion))
+            yaw += (target.yaw - yaw) * step
+            pitch += (target.pitch - pitch) * step
+            if abs(target.yaw - yaw) < 0.002, abs(target.pitch - pitch) < 0.002 {
+                yaw = target.yaw
+                pitch = target.pitch
+                aimTarget = nil
+                // 着いたら止める（惰性・ゆっくり回りに戻さない）
+                aimHeld = true
+                velocity = 0
+            }
+            applyAngles()
+            return
+        } else if aimHeld {
+            return
+        } else if let target = flipTarget {
             // なめらかに寄せる（「視差効果を減らす」では一息に）
             let step = Float(SpinMotion.approachStep(dt: Double(dt), reduceMotion: reduceMotion))
             yaw += (target - yaw) * step
@@ -667,8 +861,8 @@ final class MedalCoinCoordinator: NSObject {
             let damping: Float = reduceMotion ? 6 : 1.6
             velocity += (resting - velocity) * min(1, dt * damping)
         }
-        // 傾きは置いたときの角度へゆっくり戻す
-        pitch += (Self.restingPitch - pitch) * min(1, dt * 2.5)
+        // 傾きは置いたときの角度へゆっくり戻す。**箱は戻さない**（傾けて底や上を見ている途中で起き上がらない）
+        if !isBox { pitch += (Self.restingPitch - pitch) * min(1, dt * 2.5) }
         applyAngles()
     }
 

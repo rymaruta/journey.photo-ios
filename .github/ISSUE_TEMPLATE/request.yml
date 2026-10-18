@@ -1,0 +1,16 @@
+name: 要望
+description: 足したい・変えたいこと
+title: "[要望] "
+labels: ["種類: 要望"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: どうしたいか
+      description: 画面の写真や、似たアプリの例があれば貼ってください
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: なぜ（困っていること）

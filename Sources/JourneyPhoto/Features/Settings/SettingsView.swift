@@ -27,6 +27,12 @@ struct SettingsView: View {
     private var isSigningOut: Bool { auth.isSigningOut }
     /// 「新しくなったこと」を開き直す（起動で出たものと同じ画面・2026-10-04）
     @State private var showWhatsNew = false
+    /// トランクを見せる（板 TrunkPrivacy・2026-10-18）。トランクの口がある人にだけ出す（`TrunkAvailability`）
+    @StateObject private var trunkPrivacy = TrunkPrivacyModel()
+
+    /// 「トランクを見せる」を出すか（口が読めたことがあり、いまの設定が読めたとき）
+    /// サーバーが対応していない（`GET /user/trunk` に `showTrunk` の欄が無い）間は出さない（`TrunkState.supportsSharing`）
+    private var showsTrunkPrivacy: Bool { trunkAvailability.isAvailable && trunkPrivacy.supported }
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -44,12 +50,17 @@ struct SettingsView: View {
         list
             // Pro の節のためのプロフィール。名前の横を決めた・購入した（`noteProfileChanged`）ら読み直す
             .task(id: auth.profileRevision) { await loadMyProfile() }
-            // 旅のトランクの行（マイページを開く前に設定へ来た人にも出す）。読むかはどちらも決まりのとおり
-            // （覚えている人は 6 時間に1回・`TrunkAvailabilityRule`・`TrunkEntryRule`）
+            // 旅のトランクの行（マイページを開く前に設定へ来た人にも出す）と、トランクの見せる設定・わたしの乗車券の揃え。
+            // 読むかはどちらも決まりのとおり（覚えている人は 6 時間に1回・`TrunkAvailabilityRule`・`TrunkEntryRule`）。
+            // `GET /user/trunk` は入口の店（`TrunkEntryStore`）の1本にまとめる
             .task(id: auth.userId) {
+                // 入っている人が替わったら、前の人の設定・見本の札を消してから読む
+                trunkPrivacy.reset(for: auth.userId)
                 await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
                 await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
                                          service: environment.trunk)
+                guard let userId = auth.userId, trunkAvailability.isAvailable else { return }
+                await trunkPrivacy.load(userId: userId, service: environment.trunk, pass: pass.settings)
             }
             .task {
                 await push.refreshAuthorization()
@@ -150,6 +161,9 @@ struct SettingsView: View {
                     passSection
                     trunkSection
                     privacySection
+                    if showsTrunkPrivacy {
+                        TrunkPrivacyPreview(model: trunkPrivacy, profile: myProfile, userId: auth.userId)
+                    }
                 }
                 compositionSection
                 storageSection
@@ -289,6 +303,11 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
+            // 板 TrunkPrivacy: 親しい友達の下（人に見せるかの切り替え）
+            if showsTrunkPrivacy {
+                TrunkShowRow(model: trunkPrivacy, service: environment.trunk)
+                JPCardDivider()
+            }
             // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
             // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
             NavigationLink { FavoritesView() } label: {

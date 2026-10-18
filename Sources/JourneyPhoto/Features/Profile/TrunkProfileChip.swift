@@ -15,7 +15,8 @@ import UIKit
 ///   （12pt・text-2）。札は設定・旅の記録の行と同じ地（`WebTheme.card`・白 8% の縁・角 14）。高さは 56
 /// - 読み上げは「旅のトランク、革の旅行鞄、硬貨 3枚、まだ貼っていないラベルが 2枚あります」（点の色だけで伝えない）
 /// - 数は `TrunkEntryStore`（`GET /user/trunk` の `coins`・`pocket`）。**開くたびには読まない**:
-///   初回・6時間ごと・この札からトランクへ行って戻った・公開の写真を投稿した（`markStale`）ときだけ。
+///   初回・6時間ごと・この札からトランクへ行って戻った・公開の写真を投稿した・硬貨が変わった知らせが来た
+///   （`markStale`）ときだけ。
 ///   アプリが裏から戻ったときは、マイページの口の確かめ（`TrunkAvailability.refresh(force:)`）の1回で数も入る。
 ///   **札が画面に出ていない間は読まない**（別のタブで投稿したら、マイページに来たときに読む）
 /// - 旅の記録のタブの行からトランクへ行って戻った回は、ここでは拾えない（その行は `MyPageView` のまま・
@@ -62,6 +63,11 @@ struct TrunkProfileChip: View {
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
             guard TrunkEntryRule.postedPublic(tabRouter.lastPosted) else { return }
             entry.markStale()
+            if isOnScreen { Task { await refresh() } }
+        }
+        // 硬貨が変わった知らせ（いまの人の分だけ・印は `TrunkEntryStore` が付ける）。出ていれば読み直す。
+        // 続けて届いても、走っている読み込みに相乗りするので重ならない
+        .onChange(of: entry.coinsChanged) { _, _ in
             if isOnScreen { Task { await refresh() } }
         }
     }

@@ -95,6 +95,25 @@ final class LibraryTripModel: ObservableObject {
         failedAt = [:]
     }
 
+    /// 端末の一冊が**もう引いた**地名と時間帯を、この流れの控えに写す。
+    ///
+    /// 🔴 **写さないと、同じ場所を Apple の地図にもう一度聞く**（2026-10-17）。棚は一冊につき1回と
+    /// 約束しているのに、「この旅の写真を投稿する」が流れの側で知らないので聞き直し、答えが返るまで
+    /// 日の切り方が目安のまま残る。時間帯が分かっているときだけ写す——地名だけ覚えると、
+    /// この流れは「もう知っている」と見なして時間帯を引きに行かなくなる。
+    /// 流れが先に覚えていた分は上書きしない
+    func adoptDevicePlace(of trip: LibraryTrip, names shelfNames: [String: String], zones: [String: String]) {
+        guard let center = trip.center else { return }
+        let key = LibraryTrips.lookupKey(center)
+        guard Self.knownZones[key] == nil, let id = zones[trip.id], let zone = TimeZone(identifier: id) else { return }
+        Self.knownZones[key] = zone
+        if Self.knownNames[key] == nil {
+            let name = shelfNames[trip.id]?.trimmingCharacters(in: .whitespaces) ?? ""
+            if !name.isEmpty { Self.knownNames[key] = name }
+        }
+        if let name = Self.knownNames[key] { names[key] = name }
+    }
+
     /// 棚が読んだ写真の要約（最初の1回だけ使う。選び足しの後は読み直す）
     private var preloaded: [LibraryShot]?
 
@@ -153,6 +172,12 @@ final class LibraryTripModel: ObservableObject {
     func name(for coords: Photo.Coords?) -> String? {
         guard let coords else { return nil }
         return names[LibraryTrips.lookupKey(coords)]
+    }
+
+    /// 撮った土地の時間帯（端末の一冊から写したもの・この流れで引いたもの）。無ければ nil
+    func zone(for coords: Photo.Coords?) -> TimeZone? {
+        guard let coords else { return nil }
+        return Self.knownZones[LibraryTrips.lookupKey(coords)]
     }
 
     /// 地名を**1つずつ順に**引く（Apple の地名引きは短い間に何度も呼ぶと断られる）。

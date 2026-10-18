@@ -146,6 +146,12 @@ final class TrunkWiringTests: XCTestCase {
         // 次の版（2026-10-17）: 硬貨の枚数の見本（カプセルの機械の「硬貨がありません」を撮る）
         XCTAssertTrue(preview.contains("static let trunkCoinsKey = \"JPPreviewTrunkCoins\""))
         XCTAssertNil(PreviewSession.trunkCoins)
+        // ふたを開けた画面写真の会員証（2026-10-18）: 見本のサポーターの番号も Debug だけ・入っている本人だけ
+        XCTAssertTrue(preview.contains("static let supporterKey = \"JPPreviewSupporter\""))
+        XCTAssertNil(PreviewSession.supporter)
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        XCTAssertTrue(shots.contains("\"-JPPreviewPro\", \"YES\", \"-JPPreviewSupporter\", \"7\""),
+                      "ふたを開けた画面写真に会員証が出ない（見本の利用者の公開プロフィールに番号が無い）")
     }
 
     /// 知らせ: 押して進む画面には重ねず（`RootView` の全体の知らせ）、全画面の届いた画面にだけ置く。
@@ -196,7 +202,9 @@ final class TrunkWiringTests: XCTestCase {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
                           "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
                           // 次の版（2026-10-17）
-                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip"]
+                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip",
+                          // ふたを開ける（2026-10-18）
+                          "trunk.open.screen", "trunk.open.stage", "trunk.open.empty", "trunk.hold"]
         var found = Set<String>()
         for (name, text) in try trunkFiles() {
             let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -268,7 +276,131 @@ final class TrunkWiringTests: XCTestCase {
             XCTAssertTrue(try source(path).contains("wrinkles: TrunkWrinkles(userId: auth.userId).strengths"), "\(path) によれが無い")
         }
         XCTAssertTrue(try source("Features/Trunk/TrunkStickView.swift").contains("wrinkles: wrinkles, pop: pop"))
-        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles)"),
+        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles,\n                     tagsFrom: tagsFrom)"),
                       "TrunkFigure がよれを箱に渡していない")
     }
+
+    /// ふたを開ける（2026-10-18・板 TrunkOpen・InsideHold・InsideEmpty）: 入口・前開き・本物の中身・出口・触覚
+    func testOpenLidIsWired() throws {
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains("TrunkOpenView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,"),
+                      "トランクの画面からふたを開けられない")
+        XCTAssertTrue(main.contains(#".accessibilityIdentifier("trunk.open")"#))
+        let open = try source("Features/Trunk/TrunkOpenView.swift")
+        // 前開き: 下の辺が軸で手前へ倒れる
+        XCTAssertTrue(open.contains(".rotation3DEffect(.degrees(-pose.angle), axis: (x: 1, y: 0, z: 0), anchor: .bottom,"))
+        // 途中の値から描く（Animatable）・平らなふたへは動きの終わりに
+        XCTAssertTrue(open.contains("struct TrunkLidStage: ViewModifier, Animatable {"))
+        XCTAssertTrue(open.contains("var animatableData: Double {\n        get { p }\n        set { p = newValue }"))
+        XCTAssertTrue(open.contains("let pose = TrunkLid.pose(p)"))
+        XCTAssertTrue(open.contains("} completion: {"), "平らなふたへの差し替えが動きの終わりでない")
+        XCTAssertTrue(open.contains("duration: TrunkLid.settleDuration"))
+        // 閉じている・途中のふたは読ませない。読み上げで1段ずつ開け閉め
+        XCTAssertTrue(open.contains(".accessibilityHidden(!flat)"))
+        XCTAssertTrue(open.contains(".accessibilityAdjustableAction { direction in"))
+        XCTAssertTrue(open.contains("move(to: TrunkLid.stepped(p, up: up))"))
+        // 引く指と送り: 収まるときは引く指が先、送りがあるときは両方
+        XCTAssertTrue(open.contains(".modifier(LidDragPriority(overflows: overflows, gesture: drag(scale: k)))"))
+        // 枝分けで View を替えず、効かせない方を GestureMask で止める（舞台を作り直さない）
+        XCTAssertTrue(open.contains(".highPriorityGesture(gesture, including: Self.highPriorityMask(overflows: overflows))\n            .simultaneousGesture(gesture, including: Self.simultaneousMask(overflows: overflows))"))
+        XCTAssertTrue(open.contains("static func highPriorityMask(overflows: Bool) -> GestureMask { overflows ? .subviews : .all }"))
+        XCTAssertTrue(open.contains("static func simultaneousMask(overflows: Bool) -> GestureMask { overflows ? .all : .subviews }"))
+        let priority = open.components(separatedBy: "private struct LidDragPriority")[1]
+        XCTAssertFalse(priority.contains("if overflows {"), "枝分けで舞台がまるごと作り直される")
+        // 100% まで引いて離した・合図が来なかったときの逃げ道
+        XCTAssertTrue(open.contains("guard TrunkLid.needsMotion(from: p, to: target) else {\n            lidSettled = TrunkLid.isOpen(target)\n            return"))
+        XCTAssertTrue(open.contains("if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }"))
+        // 動きの途中のコマで正面の絵・胴の中を作り直さない（1度だけ絵にして使い回す）
+        XCTAssertTrue(open.contains(".task(id: snapshotKey) {\n            if let images = await TrunkLidImages.make(stage(contents)) { lidImages = images }"))
+        // 描く前に1コマ待ち、取り消されたら描かない
+        XCTAssertTrue(open.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return nil }\n        guard !Task.isCancelled else { return nil }"))
+        // 合図: 正面の絵に効くものは入れ、生で描く乗車券の写真は入れない
+        let key = open.components(separatedBy: "private struct LidSnapshotKey: Equatable {")[1].components(separatedBy: "}")[0]
+        for field in ["let model: TrunkModel", "let posts: Int", "let stuck: [TrunkLabel]", "let parts: TrunkEquipped",
+                      "let wrinkles: [String: Double]", "let ownerName: String?", "let contents: TrunkInsideContents"] {
+            XCTAssertTrue(key.contains(field), "ふたの絵の描き直しの合図に \(field) が無い（親が新しくなっても古い絵が残る）")
+        }
+        XCTAssertFalse(key.contains("photos"), "写真が届くたびに5枚描き直す")
+        // 影の無い層は余白なし（絵を小さく持つ）
+        XCTAssertTrue(open.contains("w: TrunkLooks.canvasWidth, h: 40, pad: 0),"))
+        XCTAssertTrue(open.contains("w: TrunkInsideView.width, h: TrunkInsideView.height, pad: 0))"))
+        for use in ["images?.front", "images?.lidInside", "images?.handle", "images?.baseBelow", "images?.baseAbove"] {
+            XCTAssertTrue(open.contains(use), "\(use) を使い回していない")
+        }
+        XCTAssertTrue(open.contains("settle(to: TrunkLid.settled(p))"), "指を離しても近い方へ寄らない")
+        XCTAssertTrue(open.contains(".accessibilityValue(TrunkLid.accessibilityValue(p))"), "開き具合を読み上げない")
+        // 本物の中身（新しい通信は増やさない: 自分のプロフィールと端末の中のすれちがい帳）
+        XCTAssertTrue(open.contains("environment.profiles.myProfile()"))
+        XCTAssertTrue(open.contains("isPro: profile?.isPro ?? false"), "会員証の出し分けが Pro を見ていない")
+        XCTAssertTrue(open.contains("supporter: profile?.supporterInfo"), "サポーター証の中身を見ていない")
+        XCTAssertTrue(open.contains("pass.book(hiding: hidden.snapshot)"), "乗車券がすれちがい帳から来ていない")
+        // 出口は今ある画面
+        XCTAssertTrue(open.contains("MedalViewerView(badge: badge,"))
+        XCTAssertTrue(open.contains("BadgeShelfView(mode: .mine, preloaded: profile)"))
+        XCTAssertTrue(open.contains("SupporterCardView(profile: profile)"))
+        XCTAssertTrue(open.contains("PassBookView()"))
+        XCTAssertTrue(open.contains("tabRouter.openPost(.photo)"), "空のトランクから投稿へ行けない")
+        // 触覚と「視差効果を減らす」
+        XCTAssertTrue(open.contains(".sensoryFeedback(.impact(weight: .medium), trigger: landings)"))
+        XCTAssertTrue(open.contains(".sensoryFeedback(.selection, trigger: picks)"))
+        XCTAssertTrue(open.contains("if reduceMotion {"))
+        XCTAssertTrue(open.contains("TrunkSound" + ".tick()"), "持ち上げたときに音が無い")
+        // 押せるもの 44pt 以上（棒の行・ボタン 48・主ボタン 52）
+        XCTAssertTrue(open.contains(".frame(minHeight: WebTheme.minTapTarget)"))
+        XCTAssertTrue(open.contains("kind: .secondary, height: 48"))
+        // 画面写真（ふたを開けた・中身を手に取った・空のトランク・回した側面）
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        for name in ["100a-ふたを開けた", "100b-中身を手に取った（メダル）", "100e-空のトランク", "91a-回した側面", "91c-回した底（蝶番と足）"] {
+            XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
+        }
+    }
+
+    /// 回したときの面: 裏・左右・上・底を板 TrunkFaces の面で貼る（1色の側面に戻さない）
+    func testSpinUsesTheFaces() throws {
+        let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
+        XCTAssertTrue(spin.contains("let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))"),
+                      "裏がラベルの無い正面のまま（尾錠と錠前が背面に出る）")
+        for side in ["left", "right", "top", "bottom"] {
+            XCTAssertTrue(spin.contains("render(TrunkFaceView(model: model, posts: posts, side: .\(side), parts: parts))"), side)
+        }
+        XCTAssertTrue(spin.contains("box: boxFaces, aim: aim)"))
+        let medal = try source("Features/Profile/MedalViewerView.swift")
+        XCTAssertTrue(medal.contains("buildBox(aspect: aspect, depthRatio: depth, cornerRatio: corner)"))
+        XCTAssertTrue(medal.contains("shape.materials = [handleCap, handleCap, handleSide]"), "持ち手が1色のまま")
+        // 向きのボタン: 着いたら止める・裏返すと寄せを外す・最初は板の -34°
+        XCTAssertTrue(medal.contains("aimHeld = true\n                velocity = 0"), "向きに着いても止まらない")
+        XCTAssertTrue(medal.contains("} else if aimHeld {\n            return"))
+        XCTAssertTrue(medal.contains("flipTarget = Float(SpinMotion.flipTarget(from: Double(yaw)))\n        aimTarget = nil\n        aimHeld = false"), "裏返すと向きの寄せとぶつかる")
+        XCTAssertTrue(medal.contains("private static let boxRestingYaw: Float = -34 * .pi / 180"))
+        XCTAssertTrue(medal.contains("for x in TrunkFaces.handleClipCenters.map("), "立体の付け根が絵とずれる")
+        // 描く順: 表を先に、残りは処理を一度返してから
+        XCTAssertTrue(spin.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }\n            boxFaces = " + "TrunkTextures" + ".box("))
+        XCTAssertFalse(medal.contains("buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)"),
+                       "箱が押し出しの形（側面が1つの材質）に戻っている")
+        // 正面と同じ描き方を使う（2度書かない）
+        let face = try source("Features/Trunk/TrunkFaceView.swift")
+        for shared in ["TrunkSkin(look: look", "TrunkBandStrips(look: look", "TrunkCornerCap(look: look", "TrunkRivetFace(",
+                       "TrunkHardwareFace(look: look"] {
+            XCTAssertTrue(face.contains(shared), "\(shared) を使っていない")
+        }
+        let box = try source("Features/Trunk/TrunkBoxView.swift")
+        XCTAssertTrue(box.contains("TrunkSkin(look: look, w: Self.W, h: Self.H)"))
+        XCTAssertTrue(box.contains("TrunkEdgeWear(look: look, w: Self.W, h: Self.H, corner: 16, front: true)"),
+                      "正面に縁の擦れが無い（回したときの面とそろわない）")
+    }
+
+    /// 🔴 胴の地（`TrunkSkin`）は押せる（c6865c9a で地ごと押せなくなり、ラベルの少ない人が革の面を押しても
+    /// 回す画面が開かなかった）。古びの層だけが押すのを通す。トランクのボタンは枠いっぱいが押せる
+    func testTrunkBodyStaysTappable() throws {
+        let box = try source("Features/Trunk/TrunkBoxView.swift")
+        let parts = box.components(separatedBy: "struct TrunkSkin: View {")
+        XCTAssertEqual(parts.count, 2)
+        let skinBody = parts[1].components(separatedBy: "@ViewBuilder")[0]
+        XCTAssertTrue(skinBody.contains("surface(look.surface)"), "TrunkSkin の body が見つからない（見張りが空振り）")
+        XCTAssertFalse(skinBody.contains(".allowsHitTesting(false)"), "胴の地がまるごと押せない")
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains(".contentShape(Rectangle())\n            }\n            .buttonStyle(TrunkPressStyle())"),
+                      "トランクのボタンの押せる範囲が絵の層まかせ")
+    }
 }
+

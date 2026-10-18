@@ -74,7 +74,12 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
   - 表に出る版の最後の数字が毎回 +1（1.0.0 → 1.0.1 → 1.0.2 …）。
     決めるのは `Tools/next-marketing-version.sh`、出した版は
     `testflight/<版>` のタグで覚える（上げるのに成功した回だけタグが付く）
-  - ビルド番号（`CURRENT_PROJECT_VERSION`）は TestFlight の最新 +1
+  - ビルド番号（`CURRENT_PROJECT_VERSION`）は**表に出る版ごとに 1 から数える**——
+    その回の版の TestFlight の最新 +1、まだ無ければ 1（**2026-10-18 owner の判断**:
+    TestFlight の表示を「1.1.14 (124)」ではなく「1.1.15 (1)」の形に）。
+    Apple の決まりは「同じ版の中で重ならず上がっていく」こと。版は毎回上がるので
+    1 から数え直せる（App Store Connect が求めるのは「版とビルド番号の組み合わせ」が
+    重ならないこと。iOS は新しい版で小さい番号に戻してよい——Apple「Setting the next build number for Xcode Cloud builds」 で確認）
 - **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
   main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
   `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は
@@ -83,9 +88,28 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
   変わる版のときに `bash Tools/bump-build.sh 1.1.0` でコミットしてから流す。
   自動で上げない
 - **手元の Xcode から Archive して出すときだけ**、`bash Tools/bump-build.sh <版>` で
-  版とビルド番号を自分で上げる。この経路はタグが付かないので、次に Actions で
+  版とビルド番号を自分で上げる（版を変えたらビルド番号 1・同じ版でもう一度なら +1）。
+  この経路はタグが付かないので、次に Actions で
   出すときに同じ版を二度使わないよう、出した版を owner に伝える
 - 詳しい手順は `docs/RELEASE.md`・`docs/TESTFLIGHT.md`
+
+## 作業の置き場は GitHub の Issue（2026-10-18 owner のルール）
+
+**不具合・要望・owner の判断待ちは、journey.photo-ios の Issue（札）に置く。** 会話の中だけに置かない。
+iOS・サーバー・Web の分も、ここに1か所で置く（photo-gallery の分も「場所: サーバー／Web」の印で）。
+
+- **札の型**: 不具合・要望・owner の判断待ち（`.github/ISSUE_TEMPLATE/`）。owner は iPhone の GitHub から
+  画面写真を付けて出せる。会話で受けた不具合・要望も、作業する側が札にしてから手を付ける
+- **owner の判断待ち**: 本番・TestFlight の許可、費用・DB・GSI、方針の転換は、この印の札にする。
+  札に「決めてほしいこと・推奨と理由・影響と費用・関係する PR」を書く。owner は札に「いいよ」とコメントする。
+  返事が会話で来たら、その札にも書き写してから閉じる
+- **作業中**: 手を付けるセッションは「作業中」の印を付け、札のコメントに担当（どのセッションか）と枝を書く。
+  同じファイルを触る作業が重なるときは、札の中で順番を決める
+- **PR と札をつなぐ**: PR の本文に `closes #番号`（photo-gallery の PR なら
+  `closes rymaruta/journey.photo-ios#番号`）。マージで札が閉じる
+- **本番に出す順番**: 「本番に出す」の印の札で、前の反映（Deploy API Lambdas・Deploy Site・TestFlight）が
+  終わってから次を入れる。別のセッションの反映と重ねない（2026-10-18 に硬貨・#398・#400 をその場の連絡で並べた）
+- **他の道具が出した PR**（Cursor など）も、見つけたら札にして担当を決める（2026-10-18 に7本が止まっていた）
 
 ## 検査
 

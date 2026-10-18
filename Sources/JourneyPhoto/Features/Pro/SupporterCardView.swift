@@ -213,9 +213,13 @@ struct SupporterCardViewer: View {
                         Text(L("サポーター証", "Supporter card"))
                             .font(JPFont.cardTitle)
                             .foregroundStyle(WebTheme.foreground)
-                        Text(SupporterText.numberLabel(face.number))
-                            .font(JPFont.mono(12))
-                            .foregroundStyle(WebTheme.muted2)
+                        // 番号を刷らない札（人のトランクの会員証）は行ごと出さない
+                        if let numberLine = face.numberLine {
+                            Text(numberLine)
+                                .font(JPFont.mono(12))
+                                .foregroundStyle(WebTheme.muted2)
+                                .accessibilityIdentifier("supporter.viewer.number")
+                        }
                         Text(L("指で横に払うと裏返ります。", "Swipe sideways to turn it over."))
                             .font(.caption)
                             .foregroundStyle(WebTheme.faint)
@@ -236,6 +240,7 @@ struct SupporterCardViewer: View {
                 .padding(.trailing, 12)
                 .padding(.top, 8)
                 .accessibilityLabel(Labels.Common.close)
+                .accessibilityIdentifier("supporter.viewer.close")
             }
         }
         .background { SupporterCardStyle.background.ignoresSafeArea() }

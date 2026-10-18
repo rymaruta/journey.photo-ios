@@ -36,6 +36,11 @@ struct LibraryTripListView: View {
         .navigationTitle(L("旅の写真から", "From your trips"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // 端末の一冊が引いた地名・時間帯を、探し直す前に写す（同じ場所を地図にもう一度聞かない）
+            if let opening {
+                model.adoptDevicePlace(of: opening, names: DeviceTripShelfStore.shared.names,
+                                       zones: DeviceTripShelfStore.shared.zones)
+            }
             // 投稿済みの日は自分の投稿から。ログインしていない・取れないときは無しで出す
             let signedIn = auth.userId != nil
             let photos = environment.photos

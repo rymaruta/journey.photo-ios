@@ -124,6 +124,9 @@ struct DownsampledRemoteImage: View {
         } catch {
             // 取り消し（スクロールで外れた・別の写真に替わった）は失敗にしない
             guard !Task.isCancelled else { return }
+            // 期限の切れた署名つき URL なら、一覧を取り直す合図を出す（読み直しても 403 のまま。
+            // 2026-10-18・札 #294。署名の無い URL・期限内の失敗では何もしない）
+            SignedImageExpiry.report(url)
             if case .retryAutomatically(let seconds) = RemoteImageRetry.step(automaticDone: automaticRetries,
                                                                                manualDone: 0) {
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))

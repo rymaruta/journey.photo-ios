@@ -10,7 +10,7 @@ import Combine
 ///
 /// 2026-10-18 判断: **マイページを開くたびに読まない。** 読むのは、
 /// まだ読んでいない・前に読んでから 6 時間（`TrunkAvailabilityRule.recheckInterval` と同じ）・
-/// トランクの画面から戻った／公開の写真を投稿した（`markStale`）ときだけ。読めなかった回は 10 分あけてから読み直す。
+/// トランクの画面から戻った／公開の写真を投稿した／硬貨が変わった知らせ（`trunkCoinsChanged`）が来た（`markStale`）ときだけ。読めなかった回は 10 分あけてから読み直す。
 ///
 /// **`GET /user/trunk` は1本にまとめる**（2026-10-18 見直し）: 口の有無（`TrunkAvailability`）も `read` を通して読み、
 /// 読めた中身をこちらにも入れる。同じ人の読み込みが走っている間に呼ばれたら、新しく読まずにその結果を待つ
@@ -31,6 +31,9 @@ final class TrunkEntryStore: ObservableObject {
 
     private var userId: String?
     private var readAt: Date?
+    /// 中身を最後に入れた時刻（読めた・書き込みの応答を入れた）。乗車券の記憶が、この中身より新しいかを比べる
+    /// （`TrunkTicketSync.note(server:userId:at:)`）
+    private var changedAt: Date?
     private var failedAt: Date?
     private var stale = false
     /// 「中身が変わった」の印の世代（`markStale` のたびに進む）。読み始めたときの世代のままなら、読み終えたときに印を下ろす
@@ -42,12 +45,41 @@ final class TrunkEntryStore: ObservableObject {
     /// 最後に札へ入れた読み込みの番号（後から始めた読み込みの答えを、先に始めた読み込みの答えで上書きしない）
     private var appliedToken = 0
 
-    init() {}
+    /// 硬貨が変わった知らせ（`trunkCoinsChanged`）を、いまの人のものとして受けた回数。
+    /// 札（`TrunkProfileChip`）が出ていれば、これが進んだときに読み直す
+    @Published private(set) var coinsChanged = 0
+    /// 硬貨が変わった知らせの見張り
+    private var coinsObserver: NSObjectProtocol?
+    private let center: NotificationCenter
+
+    /// 2026-10-18 判断: 硬貨が変わった知らせ（はじめての硬貨・`TrunkWelcome` が流す）は**ここで受ける**。
+    /// 印（`markStale`）も相乗りの読み込みもここにあるので、札の側は「出ていれば読み直す」だけにする
+    /// （札が出ていない間に届いても印は残り、次に札が出たときに読む）
+    init(center: NotificationCenter = .default) {
+        self.center = center
+        coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
+            let userId = note.userInfo?["userId"] as? String
+            Task { @MainActor in self?.noteCoinsChanged(userId: userId) }
+        }
+    }
+
+    deinit {
+        if let coinsObserver { center.removeObserver(coinsObserver) }
+    }
 
     /// トランクの中身が変わったかもしれない（トランクの画面から戻った・投稿した）。次の `refresh` で読み直す
     func markStale() {
         stale = true
         staleGeneration += 1
+    }
+
+    /// サーバーで硬貨が変わった（`trunkCoinsChanged`）。**いまの人の知らせだけ**印を付ける
+    /// （人が替わった直後に届いた前の人の知らせ・人の分からない知らせでは何もしない——前の人の値を書かない）。
+    /// まだ誰の分も読んでいなければ印は要らない（札が出たときに初めて読む）
+    func noteCoinsChanged(userId: String?) {
+        guard let userId, let mine = self.userId, userId == mine else { return }
+        markStale()
+        coinsChanged += 1
     }
 
     private func use(_ userId: String?) {
@@ -57,6 +89,7 @@ final class TrunkEntryStore: ObservableObject {
         summary = nil
         state = nil
         readAt = nil
+        changedAt = nil
         failedAt = nil
         stale = false
     }
@@ -89,6 +122,7 @@ final class TrunkEntryStore: ObservableObject {
                 summary = TrunkEntrySummary(state)
                 self.state = state
                 readAt = now
+                changedAt = now
                 failedAt = nil
                 if staleGeneration == generation { stale = false }
             }
@@ -98,6 +132,34 @@ final class TrunkEntryStore: ObservableObject {
             if self.userId == userId, !TrunkEntryRule.isCancellation(error) { failedAt = now }
             throw error
         }
+    }
+
+    /// 読めている、その人の中身（人が替わっていれば nil）。自分のページの「トランクを見せる」を読み足さずに見る
+    /// （`TheirTrunkModel`・人のトランク 2026-10-18）
+    func state(for userId: String) -> TrunkState? {
+        self.userId == userId ? state : nil
+    }
+
+    /// 書き込みの応答（見せる設定を替えた・`TrunkPrivacyModel`）を中身に入れる。人が替わっていれば入れない。
+    /// 書き込みの応答には `posts` が無いので、前に読んだ数を引き継ぐ
+    func apply(_ written: TrunkState, userId: String, now: Date = Date()) {
+        guard self.userId == userId else { return }
+        // 🔴 これより前に始まった読み込みの答え（書く前の中身）を、あとから入れない（番号を進める・2026-10-18 4回目の見直し）
+        nextToken += 1
+        appliedToken = nextToken
+        let next = written.keepingPosts(from: state)
+        summary = TrunkEntrySummary(next)
+        state = next
+        changedAt = now
+    }
+
+    /// サーバーが人のトランクに対応しているか（入っている人の `GET /user/trunk` の応答に `showTrunk` の欄があったか）。
+    /// まだ読めていなければ nil（分からない）
+    var knownSupportsSharing: Bool? { state?.supportsSharing }
+
+    /// その人の中身を最後に入れた時刻（人が替わっていれば nil）
+    func changedAt(for userId: String) -> Date? {
+        self.userId == userId ? changedAt : nil
     }
 
     /// 入口の数を（要るときだけ）読む。`available` は `TrunkAvailability.isAvailable`（口が無い間は読まない）

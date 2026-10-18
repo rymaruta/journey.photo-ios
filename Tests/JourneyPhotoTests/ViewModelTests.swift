@@ -280,6 +280,91 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **前の人が押したブロックの答えで、次の人の格子を空にしない**（2026-10-17）。
+    /// 失敗も次の人の画面に出さない。`blockWrites` を進めると、次の読み込みが写真を書き戻せない
+    func testProfileBlockAnswerForThePreviousViewerIsDropped() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200,
+                             body: #"[{"id":"p1","src":"https://x/p1.jpg","userId":"u1"}]"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":1,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /users/u1/block": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let blocking = Task {
+            await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter())
+        }
+        await gate.untilWaiting()
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await blocking.value
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "前の人のブロックで次の人の格子を空にした")
+        XCTAssertEqual(model.photoCount, .loaded(1))
+        XCTAssertNil(model.actionMessage)
+
+        let failGate = Gate(holds: 1)
+        let failEnv = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                     gallery: env.gallery,
+                                     api: api(gates: PathGates(["POST /users/u1/block": failGate])))
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200,
+                             body: #"[{"id":"p1","src":"https://x/p1.jpg","userId":"u1"}]"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":1,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 500, body: #"{"error":"x"}"#)
+        let failing = Task {
+            await model.block(userId: "u1", environment: failEnv, store: store, toasts: ToastCenter())
+        }
+        await failGate.untilWaiting()
+        await model.load(userId: "u1", environment: failEnv, viewerId: "c")
+        await failGate.open()
+        await failing.value
+        XCTAssertNil(model.actionMessage, "前の人のブロックの失敗を次の人の画面に出した")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+    }
+
+    /// 🔴 **前の人のピン留めを、次の人の画面に書かない**（2026-10-17）。
+    /// 重なった2枚は、先の答えが後から着いてあとの留めを消さない（1本ずつ送る）
+    func testPinAnswerForThePreviousViewerIsDropped() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        StubProtocol.respondInOrder([
+            (status: 200, body: #"{"pinnedPhotoIds":["a1"]}"#),
+            (status: 200, body: #"{"pinnedPhotoIds":["a1","b1"]}"#),
+        ])
+        let model = MyPageViewModel(api: api(gates: PathGates(["PUT /user/profile": gate])))
+        model.forgetPhotos(for: "a")
+        let first = Task { await model.setPinned("a1", pinned: true) }
+        await gate.untilWaiting()
+        let second = Task { await model.setPinned("b1", pinned: true) }
+        for _ in 0..<20 { await Task.yield() }
+        let arrived = await gate.arrived
+        XCTAssertEqual(arrived, 1, "1本目の途中に2本目も送り始めた")
+        model.forgetPhotos(for: "b")
+        await gate.open()
+        await first.value
+        await second.value
+        XCTAssertEqual(model.pinnedIds, [], "前の人のピン留めを次の人の画面に書いた")
+        XCTAssertNil(model.actionMessage)
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"pinnedPhotoIds":["b1"]}"#)
+        await model.setPinned("b1", pinned: true)
+        XCTAssertEqual(model.pinnedIds, ["b1"], "いまの人のピン留めまで捨てた")
+    }
+
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
     /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
     /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた
@@ -544,6 +629,39 @@ final class ViewModelTests: XCTestCase {
         await first.value
         XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"], "送っている間の2回目も送った")
         XCTAssertFalse(model.isWorking)
+    }
+
+    /// 🔴 **お知らせのフォローバックも、送っている間の2回目は送らない**（2026-10-17）。
+    /// ボタンの `disabled` は描き直しの後にしか効かず、先に終わった方（送らなかった方）が
+    /// 印を下ろすと、1回目の送信中にまた押せた。別の相手は止めない。終わったあとはもう一度送れる
+    func testFollowBackSecondPressWhileSendingIsIgnored() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":2}"#)
+        StubProtocol.respond(path: "/users/u2/follow", status: 200, body: #"{"following":true,"followers":1}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["POST /users/u1/follow": gate])))
+        let model = NotificationsViewModel()
+        let first = Task { await model.followBack("u1", environment: env) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.followBackSending.contains("u1"), "前提: 1本目を送っている")
+        // 1本目はまだ門の手前（要求の記録の前）にいる。2回目で増えていないことだけ見る
+        let u1WhileSending = StubProtocol.requests.filter { $0.contains("/users/u1/") }.count
+        await model.followBack("u1", environment: env)
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("/users/u1/") }.count, u1WhileSending,
+                       "同じ相手の2回目も送った")
+        await model.followBack("u2", environment: env)
+        XCTAssertTrue(StubProtocol.requests.contains("POST /users/u2/follow"), "別の相手まで止めた")
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("/users/u1/") }, ["POST /users/u1/follow"])
+        XCTAssertTrue(model.followBackSending.isEmpty, "終わったあとも送り中のまま")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":2}"#)
+        await model.followBack("u1", environment: env)
+        XCTAssertEqual(StubProtocol.requests, ["POST /users/u1/follow"], "終わったあとに送り直せない")
+        XCTAssertTrue(model.followBackSending.isEmpty)
     }
 
     /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
