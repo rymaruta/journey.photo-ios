@@ -304,30 +304,72 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(seasonCards([]), [.theme])
     }
 
-    /// 🔴 **週替わり**（owner・2026-09-30）。同じ週は何度開いても同じ・月曜で次の1件
-    /// （`spotId` の順・週の番号で進む）
-    func testInSeasonRotatesWeeklyOnMondays() throws {
+    /// 🔴 **日替わり**（owner・2026-10-18「日替わりだね」。2026-09-30〜10-17 は週替わり）。同じ日は何度開いても
+    /// 同じ・0時で次の1件。候補は `spotId` の順に並べて日の番号の偶数・奇数で半分に分け、今日の半分の中を進む
+    func testInSeasonRotatesDaily() throws {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
         let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
-        // 2026-09-27（日曜）は紀元から 20723 日目 → 週 (20723+3)/7 = 2960 → 2960 % 2 = 0 → 1件目
-        XCTAssertEqual(inSeasonCard(seasonCards([b, a])), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b])), .inSeason(spot: a, season: "autumn", guide: "Aの秋"), "並び順で変わっている")
-        // 同じ週の前の日（火曜 9/22〜日曜 9/27 の間）は同じ札
-        let tuesday = now.addingTimeInterval(-5 * 86_400)
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: tuesday)), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
-        // 月曜 9/28 で次の1件
-        let monday = now.addingTimeInterval(86_400)
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: monday)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
-        // その週のあいだは変わらない（日曜 10/4 まで）
-        let sunday = now.addingTimeInterval(7 * 86_400)
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: sunday)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        let c = try spot("sp_c", seasons: [("autumn", "Cの秋")])
+        let d = try spot("sp_d", seasons: [("autumn", "Dの秋")])
+        let list = [d, b, c, a]
+        func pick(_ offset: Int, hour: Double = 0) -> String? {
+            let at = now.addingTimeInterval(Double(offset) * 86_400 + hour * 3_600)
+            guard case .inSeason(let spot, _, _)? = inSeasonCard(seasonCards(list, now: at)) else { return nil }
+            return spot.spotId
+        }
+        // 2026-09-27 は紀元から 20723 日目（奇数）→ 奇数番目 [b, d] の 20723/2=10361 番目（奇数）→ d。
+        // 翌日（偶数）→ [a, c] の 10362 番目 → a。その次 → [b, d] の 10362 → b。その次 → [a, c] の 10363 → c
+        XCTAssertEqual(HomeTopCard.dayNumber(try XCTUnwrap(HomeTopCard.today(now, in: utc))), 20_723)
+        XCTAssertEqual((0..<5).map { pick($0) }, ["sp_d", "sp_a", "sp_b", "sp_c", "sp_d"])
+        // 並び順では変わらない
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b, c, d])), inSeasonCard(seasonCards(list)), "並び順で変わっている")
+        // 同じ日のうちは変わらない（12:00 UTC の前後 11 時間）
+        XCTAssertEqual(pick(0, hour: -11), "sp_d")
+        XCTAssertEqual(pick(0, hour: 11), "sp_d")
+        // 0時を過ぎたら次の1件
+        XCTAssertEqual(pick(0, hour: 12.1), "sp_a")
+        // 2件でも毎日替わる（半分に1件ずつ）
+        let two = [a, b]
+        let pair = (0..<4).map { offset -> String? in
+            guard case .inSeason(let spot, _, _)? = inSeasonCard(seasonCards(two, now: now.addingTimeInterval(Double(offset) * 86_400)))
+            else { return nil }
+            return spot.spotId
+        }
+        XCTAssertEqual(pair, ["sp_b", "sp_a", "sp_b", "sp_a"])
     }
 
-    func testWeekStartsOnMonday() throws {
+    func testDayNumberAdvancesEveryDay() throws {
         let sunday = try XCTUnwrap(HomeTopCard.today(now, in: utc))              // 2026-09-27 日
-        let monday = sunday.addingTimeInterval(86_400)                          // 2026-09-28 月
-        XCTAssertEqual(HomeTopCard.weekNumber(monday), HomeTopCard.weekNumber(sunday) + 1)
-        XCTAssertEqual(HomeTopCard.weekNumber(monday.addingTimeInterval(6 * 86_400)), HomeTopCard.weekNumber(monday))
+        // 曜日に関係なく毎日1つ進む（週替わりの間は月曜だけ進んでいた）
+        for offset in 0..<7 {
+            let day = sunday.addingTimeInterval(Double(offset) * 86_400)
+            XCTAssertEqual(HomeTopCard.dayNumber(day.addingTimeInterval(86_400)), HomeTopCard.dayNumber(day) + 1,
+                           "\(offset)日後から次の日へ進まない")
+        }
+        // 端末の暦の 0 時で替わる（東京の 9/28 0:30 は UTC では 9/27 だが、東京の暦では翌日）
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        let jstAfterMidnight = Date(timeIntervalSince1970: 1_790_521_200 + 1_800)  // 2026-09-27 15:30 UTC = 9/28 00:30 JST
+        XCTAssertEqual(HomeTopCard.dayNumber(try XCTUnwrap(HomeTopCard.today(jstAfterMidnight, in: tokyo))),
+                       HomeTopCard.dayNumber(sunday) + 1)
+        XCTAssertEqual(HomeTopCard.dayNumber(try XCTUnwrap(HomeTopCard.today(jstAfterMidnight, in: utc))),
+                       HomeTopCard.dayNumber(sunday))
+    }
+
+    /// 行きたい場所の札も**日替わり**（2026-10-18・季節の札にそろえた）。2件以上あれば翌日は別の札
+    func testWishlistSeasonRotatesDaily() throws {
+        let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
+        let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
+        let keys: Set<String> = ["SPOT-sp_a", "SPOT-sp_b"]
+        func wished(_ offset: Int, hour: Double = 0) -> String? {
+            let at = now.addingTimeInterval(Double(offset) * 86_400 + hour * 3_600)
+            let cards = HomeTopCard.cards(now: at, plans: [], myPhotos: [], openedBookDays: [],
+                                          spots: [a, b], wishlist: keys, timeZone: utc)
+            guard case .wishlistSeason(let spot, _, _)? = cards.first(where: { $0.slot == "wishlistSeason" }) else { return nil }
+            return spot.spotId
+        }
+        // 20723 % 2 = 1 → 2件目
+        XCTAssertEqual((0..<4).map { wished($0) }, ["sp_b", "sp_a", "sp_b", "sp_a"])
+        XCTAssertEqual(wished(0, hour: 11), "sp_b", "同じ日で替わった")
     }
 
     /// 季節は**端末の暦の月**で決める。12/1 は冬（UTC では 11/30 でも、東京の 12/1 なら冬）
@@ -390,9 +432,9 @@ final class HomeTopCardTests: XCTestCase {
 
     /// 見出しは季節の名前（「見頃」とは言わない）
     func testSeasonEyebrowNamesTheSeason() {
-        // 週替わりなので「今週の」と名乗る（owner・2026-09-30）
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("今週の撮影スポット・秋", "This week's photo spot · Autumn"))
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("今週の撮影スポット", "This week's photo spot"))
+        // 日替わりなので「今日の」と名乗る（owner・2026-10-18。週替わりの間は「今週の」）
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("今日の撮影スポット・秋", "Today's photo spot · Autumn"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("今日の撮影スポット", "Today's photo spot"))
     }
 
     /// 索引の季節の案内は**行ごとは落とさない**。壊れた項目・知らない季節・空の文だけ落とす
@@ -465,24 +507,27 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(other, ["inSeason", "theme", "quiz"])
     }
 
-    /// 🔴 **選んでから札ごと落とさない**（2026-10-07 のレビュー）。今週当たる候補が今日の一問の
+    /// 🔴 **選んでから札ごと落とさない**（2026-10-07 のレビュー）。今日当たる候補が今日の一問の
     /// 選択肢なら、それを外した中から選ぶ——次の候補の札が出る
     func testSeasonCardSkipsAQuizChoiceAndShowsTheNextSpot() throws {
         let q = try quiz()
         let choice = try spot("sp_000000000001")   // 外れの選択肢
         let next = try spot("sp_000000000009")     // 選択肢に無い
         XCTAssertTrue(q.choices.map(\.spotId).contains(choice.spotId))
-        // 前提: 問題が無い日、9/27 の週は1件目（選択肢の方）が当たる
-        XCTAssertEqual(inSeasonCard(seasonCards([choice, next])),
+        // 前提: 問題が無い日、9/28（紀元から偶数の日）は1件目（選択肢の方）が当たる（日替わり・2026-10-18）
+        let now = self.now.addingTimeInterval(86_400)
+        XCTAssertEqual(inSeasonCard(seasonCards([choice, next], now: now)),
                        .inSeason(spot: choice, season: "autumn", guide: "秋は紅葉"))
         let cards = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
                                       spots: [choice, next], quiz: q, timeZone: utc)
-        XCTAssertEqual(cards.map(\.slot), ["inSeason", "theme", "quiz"], "選択肢に当たった週に季節の札ごと消えた")
+        XCTAssertEqual(cards.map(\.slot), ["inSeason", "theme", "quiz"], "選択肢に当たった日に季節の札ごと消えた")
         XCTAssertEqual(inSeasonCard(cards), .inSeason(spot: next, season: "autumn", guide: "秋は紅葉"))
 
         // 行きたい場所の札も同じ（選択肢を外して、次に行きたい場所を出す）
         let wish: Set<String> = [SavedSpotKey.official(choice.slug), SavedSpotKey.official(next.slug)]
-        XCTAssertEqual(wishCards([choice, next], wishlist: wish).first { $0.slot == "wishlistSeason" },
+        XCTAssertEqual(HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                         spots: [choice, next], wishlist: wish, timeZone: utc)
+                        .first { $0.slot == "wishlistSeason" },
                        .wishlistSeason(spot: choice, season: "autumn", guide: "秋は紅葉"), "試験の前提")
         let wished = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
                                        spots: [choice, next], wishlist: wish, quiz: q, timeZone: utc)

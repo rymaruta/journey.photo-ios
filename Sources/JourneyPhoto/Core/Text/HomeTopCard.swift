@@ -18,12 +18,13 @@ import Foundation
 ///  3. **一冊ができた** — 旅が閉じて（最後の写真から `TripBook.maxGapDays` 日空いて）
 ///     から `bookFreshDays` 日以内で、**まだ開いていない**一冊
 ///  4. **行きたい場所のこの季節** — 「行きたい」に入れた公開済みのスポットのうち、
-///     いまの季節の案内を持つものを**週替わり**で1件（2026-09-29・owner「こういう感じのを
-///     もっと増やしたい」）
+///     いまの季節の案内を持つものを**日替わり**で1件（2026-09-29・owner「こういう感じのを
+///     もっと増やしたい」。2026-10-18 に季節の札と一緒に週替わりから日替わりへ）
 ///  5. **この季節の撮影スポット** — 公開済みで写真があり、**いまの季節の案内を持つ**
-///     スポットを**週替わり**で1件（2026-09-29 に日替わりで入れた・owner「毎日開きたくなる
+///     スポットを**日替わり**で1件（2026-09-29 に日替わりで入れた・owner「毎日開きたくなる
 ///     仕組みがアプリ側にない」。2026-09-30 に owner「週替わりとかにして欲しい」で週替わりへ。
-///     毎日替わる札は「今日のテーマ」が受け持つ）。4 と同じスポットの週は出さない
+///     🔴 **2026-10-18 に owner の決定で日替わりに戻した**——「今の季節の撮影スポットが毎日同じに
+///     みえる」→「日替わりだね」。9/30 の「週替わり」はこれで覆った）。4 と同じスポットの日は出さない
 ///  6. **今日のテーマ** — 毎日（当たる札が無い日は、これ1枚）
 ///  6'. **今日の一問** — その日の問題のファイルが取れた日だけ（2026-09-30・owner「毎日開く理由を
 ///     作りたい」への案①）。問題は Web がビルド時に書き出したもの（`DailyQuiz`）
@@ -241,32 +242,64 @@ enum HomeTopCard {
 
     // MARK: - 6. この季節の撮影スポット
 
-    /// **週の番号**（月曜はじまり）。紀元（1970-01-01・木曜）からの日数に3を足して7で割る
-    /// ——月曜 0 時（端末の暦）で次の週に替わる。ホームのスポットの札は**週替わり**
-    /// （owner・2026-09-30「ホームのスポットは週替わりとかにして欲しい」。以前は日替わり）
-    static func weekNumber(_ today: Date) -> Int {
-        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
-        return Int((Double(day + 3) / 7).rounded(.down))
+    /// **日の番号**。`today`（端末の暦の今日を UTC 0 時に置いたもの・`today(_:in:)`）の、紀元
+    /// （1970-01-01）からの日数——端末の暦で 0 時を過ぎたら次の日に替わり、同じ日なら何度開いても同じ。
+    /// ホームのスポット（季節の札・行きたい場所の札・「いまの季節の撮影スポット」の段）は**日替わり**
+    /// （🔴 owner・2026-10-18「今の季節の撮影スポットが毎日同じにみえる」→「日替わりだね」。
+    /// 2026-09-30 の「ホームのスポットは週替わり」を覆した。週の番号 `weekNumber` は消した）
+    static func dayNumber(_ today: Date) -> Int {
+        Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
     }
 
-    /// いまの季節の案内を持つ、写真のある公開済みのスポットから**週替わりで1件**。
+    /// 季節の候補（`seasonGuides` の並び）を、**日の番号の偶数・奇数で半分に分ける**。偶数の日は
+    /// 偶数番目の行、奇数の日は奇数番目の行から選ぶ（季節の札も段も）——**今日出たスポットは、
+    /// 明日は上の札にも段にも出ない**（隣り合う日は別の半分）。
+    ///
+    /// 2026-10-18 判断: 段を「1日に `count` 件ずつ先へ」だけにすると、都道府県で散らすときに
+    /// 窓の外（＝明日の窓）の行を拾い、**翌日も同じスポットが出る**。本番の台帳の秋（194件）で数えると
+    /// 365日中 89日で翌日と重なった（半分に分けると 0日）。`own` が今日の半分、`other` が残り
+    /// （今日の半分で足りないときの埋め草）
+    static func dailyHalves<T>(_ rows: [T], day: Int) -> (own: [T], other: [T]) {
+        let parity = ((day % 2) + 2) % 2
+        var own: [T] = [], other: [T] = []
+        for (index, row) in rows.enumerated() {
+            if index % 2 == parity { own.append(row) } else { other.append(row) }
+        }
+        return (own, other)
+    }
+
+    /// 半分の中で何回目か（日の番号を2で割って切り下げ）。半分は2日に1度しか回ってこないので、
+    /// その半分の中では2日ごとに1つ（段は `count` 件）先へ進む
+    static func halfStep(_ day: Int) -> Int {
+        Int((Double(day) / 2).rounded(.down))
+    }
+
+    /// いまの季節の案内を持つ、写真のある公開済みのスポットから**日替わりで1件**。
     ///
     /// - 季節は `today`（端末の暦の今日を UTC 0 時に置いたもの）の月から決める
     ///   （春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。`SpotBodyText.season`）
-    /// - 候補は `spotId` の順に並べ、**週の番号で1件ずつ進める**（`weekNumber`）——同じ週なら
-    ///   何度開いても同じ札。`spotId` は名前と無関係な
+    /// - 候補は `spotId` の順に並べ、**今日の半分**（`dailyHalves`）の中を**日ごとに1件ずつ進める**
+    ///   （`dayNumber`・`halfStep`）——同じ日なら何度開いても同じ札、翌日は別の半分なので同じ札は続かない。
+    ///   今日の半分に写真のある候補が無ければ、残りの半分から選ぶ。`spotId` は名前と無関係な
     ///   16進なので、県や種別が続けて並ぶことはない
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
     ///
     /// - Parameter excluding: 候補から外す `spotId`（行きたい場所の札に出したもの・今日の一問の選択肢）。
-    ///   **選ぶ前に外す**ので、外れた週も次の候補が出る
+    ///   **選ぶ前に外す**ので、外れた日も次の候補が出る
     static func inSeason(today: Date, spots: [OfficialSpot], excluding: Set<String> = []) -> Choice? {
         let guides = seasonGuides(today: today, spots: spots)
-        let candidates = guides.rows.filter { $0.spot.hasPhoto && !excluding.contains($0.spot.spotId) }
+        let day = dayNumber(today)
+        // 半分に分けるのは**絞る前**（段と同じ並びで分ける＝今日の札と明日の段も重ならない）
+        let halves = dailyHalves(guides.rows, day: day)
+        let usable: ([(spot: OfficialSpot, guide: String)]) -> [(spot: OfficialSpot, guide: String)] = { rows in
+            rows.filter { $0.spot.hasPhoto && !excluding.contains($0.spot.spotId) }
+        }
+        var candidates = usable(halves.own)
+        if candidates.isEmpty { candidates = usable(halves.other) }
         guard !candidates.isEmpty else { return nil }
-        let week = weekNumber(today)
-        let index = ((week % candidates.count) + candidates.count) % candidates.count
+        let step = halfStep(day)
+        let index = ((step % candidates.count) + candidates.count) % candidates.count
         return .inSeason(spot: candidates[index].spot, season: guides.season, guide: candidates[index].guide)
     }
 
@@ -296,19 +329,20 @@ enum HomeTopCard {
         return L("行きたい場所・\(label)", "Your wishlist · \(label)")
     }
 
-    /// 季節の札の見出しの読み（「今週の撮影スポット・秋」）。**週替わり**なのでそう名乗る。
-    /// 知らない季節は季節を付けない
+    /// 季節の札の見出しの読み（「今日の撮影スポット・秋」）。**日替わり**なのでそう名乗る（2026-10-18・
+    /// 週替わりの間は「今週の」）。知らない季節は季節を付けない
     static func seasonEyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else {
-            return L("今週の撮影スポット", "This week's photo spot")
+            return L("今日の撮影スポット", "Today's photo spot")
         }
-        return L("今週の撮影スポット・\(label)", "This week's photo spot · \(label)")
+        return L("今日の撮影スポット・\(label)", "Today's photo spot · \(label)")
     }
 
     // MARK: - 5. 行きたい場所のこの季節
 
     /// 「行きたい」に入れた公開済みのスポットのうち、いまの季節の案内を持つものから
-    /// **週替わりで1件**（並べ方・回し方は `inSeason` と同じ）。
+    /// **日替わりで1件**（2026-10-18・季節の札と段にそろえて週替わりから変えた。`spotId` の順に並べ、
+    /// 日の番号で1件ずつ進める。行きたい場所は数件しかないので半分には分けない——2件以上あれば翌日は別の札）。
     /// **写真は無くてもよい**——自分で選んだ場所なので、写真が無くても出す価値がある。
     /// `excluding`（今日の一問の選択肢の `spotId`）は**選ぶ前に外す**（`inSeason` と同じ）
     static func wishlistSeason(today: Date, spots: [OfficialSpot], wishlist: Set<String>,
@@ -326,8 +360,8 @@ enum HomeTopCard {
             }
             .sorted { $0.0.spotId < $1.0.spotId }
         guard !candidates.isEmpty else { return nil }
-        let week = weekNumber(today)
-        let index = ((week % candidates.count) + candidates.count) % candidates.count
+        let day = dayNumber(today)
+        let index = ((day % candidates.count) + candidates.count) % candidates.count
         return .wishlistSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 }

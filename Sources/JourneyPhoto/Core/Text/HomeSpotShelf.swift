@@ -11,8 +11,12 @@ import Foundation
 ///
 /// - 候補は季節の札と同じ（`HomeTopCard.seasonGuides`: 公開済み・いまの季節の案内を持つ）。
 ///   **写真の有無では絞らない**——作例は本文にしか無く、取る前には分からない
-/// - **週替わり**（owner・2026-09-30「ホームのスポットは週替わり」）。`spotId` の順に並べ、
-///   週ごとに `count` 件ずつ先へ進める。**除く前に回す**——上の札が替わっても、残りの並びがずれない
+/// - **日替わり**（🔴 owner・2026-10-18「今の季節の撮影スポットが毎日同じにみえる」→「日替わりだね」。
+///   2026-09-30 の「ホームのスポットは週替わり」を覆した）。`spotId` の順に並べ、日の番号の偶数・奇数で
+///   半分に分け（`HomeTopCard.dailyHalves`・上の季節の札と同じ分け方）、今日の半分の中を `count` 件ずつ
+///   先へ進める——**今日出たスポットは明日は出ない**（隣り合う日は別の半分。散らすときに窓の外を拾っても
+///   明日の半分には触らない）。今日の半分で足りない（県が重なる・候補が少ない）ときだけ残りの半分へ。
+///   **除く前に回す**——上の札が替わっても、残りの並びがずれない
 /// - **都道府県で散らす**（板の注記「都道府県で散らす」）。1周目は同じ県（国外は国）を飛ばし、
 ///   足りなければ飛ばした行で埋める
 /// - **上の札に出ているスポットと、今日の一問の選択肢（4つ）は除く**（`excluded`）。答えが
@@ -59,16 +63,35 @@ enum HomeSpotShelf {
         let entries: [Entry]
     }
 
-    /// 今週の段。候補が無ければ nil（**空き地を作らない**——段ごと出さない）
+    /// 今日の段。候補が無ければ nil（**空き地を作らない**——段ごと出さない）
     static func shelf(today: Date, spots: [OfficialSpot], excluding: Set<String> = [],
                       limit: Int = count) -> Shelf? {
         let guides = HomeTopCard.seasonGuides(today: today, spots: spots)
         let rows = guides.rows
         guard !rows.isEmpty, limit > 0 else { return nil }
-        // 週ごとに `limit` 件ずつ先へ（除く前に回す）
-        let week = HomeTopCard.weekNumber(today)
-        let start = (((week * limit) % rows.count) + rows.count) % rows.count
-        let rotated = (rows[start...] + rows[..<start]).filter { !excluding.contains($0.spot.spotId) }
+        // 今日の半分の中を、日ごとに `limit` 件ずつ先へ（除く前に回す）
+        let day = HomeTopCard.dayNumber(today)
+        let halves = HomeTopCard.dailyHalves(rows, day: day)
+        let step = HomeTopCard.halfStep(day)
+        // 今日の半分を先に見て、足りないときだけ残りの半分へ（候補の少ない季節・除くものが多い日）。
+        // 散らすのは両方を通して——今日の半分で県が重なるなら、同じ県を出す前に残りの半分の別の県を出す
+        let picked = scattered(rotate(halves.own, step: step, limit: limit, excluding: excluding)
+                               + rotate(halves.other, step: step, limit: limit, excluding: excluding), limit: limit)
+        guard !picked.isEmpty else { return nil }
+        return Shelf(season: guides.season, entries: picked.map { Entry(spot: $0.spot, guide: $0.guide) })
+    }
+
+    /// `step × limit` 件先から始めて一周させ、除くものを落とす（**除く前に回す**）
+    private static func rotate(_ rows: [(spot: OfficialSpot, guide: String)], step: Int, limit: Int,
+                               excluding: Set<String>) -> [(spot: OfficialSpot, guide: String)] {
+        guard !rows.isEmpty else { return [] }
+        let start = (((step * limit) % rows.count) + rows.count) % rows.count
+        return Array(rows[start...] + rows[..<start]).filter { !excluding.contains($0.spot.spotId) }
+    }
+
+    /// 都道府県で散らして `limit` 件まで選ぶ。1周目は同じ県（国外は国）を飛ばし、足りなければ飛ばした行で埋める
+    private static func scattered(_ rotated: [(spot: OfficialSpot, guide: String)],
+                                  limit: Int) -> [(spot: OfficialSpot, guide: String)] {
         var picked: [(spot: OfficialSpot, guide: String)] = []
         var skipped: [(spot: OfficialSpot, guide: String)] = []
         var regions = Set<String>()
@@ -81,9 +104,7 @@ enum HomeSpotShelf {
                 picked.append(row)
             }
         }
-        picked += skipped.prefix(max(limit - picked.count, 0))
-        guard !picked.isEmpty else { return nil }
-        return Shelf(season: guides.season, entries: picked.map { Entry(spot: $0.spot, guide: $0.guide) })
+        return picked + skipped.prefix(max(limit - picked.count, 0))
     }
 
     /// ホームに出す段（画面 `HomeTopCardView` が呼ぶ）。
