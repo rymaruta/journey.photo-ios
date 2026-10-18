@@ -60,7 +60,8 @@ final class TrunkPrivacyModel: ObservableObject {
         if let cached { read = cached } else { read = try? await entry.read(userId: userId, service: service) }
         guard let fresh = read, self.userId == userId else { return }
         state = fresh
-        sync.note(server: fresh.ticket, userId: userId)
+        // 店の中身を入れた時刻で覚える（置けた・外せた記憶より古い中身なら、記憶を戻さない）
+        sync.note(server: fresh.ticket, userId: userId, at: entry.changedAt(for: userId) ?? .distantPast)
         // 開いたとき: 写真が公開でない、で断られた1枚は1回だけ送り直す（本人があとで公開にしたかもしれない）
         await sync.sync(userId: userId, settings: pass, service: service, available: available,
                         preview: false, retryRefused: true)
@@ -130,8 +131,8 @@ struct TrunkShowRow: View {
                 .accessibilityIdentifier("settings.ticketInTrunk")
         }
         // 出ている間は断りの訳をこの行に出す（知らせの帯は出さない・`TrunkTicketSync.shouldToast`）
-        .onAppear { sync.inlineAppeared() }
-        .onDisappear { sync.inlineDisappeared() }
+        .onAppear { sync.setInline("settings.ticketInTrunk", shown: true) }
+        .onDisappear { sync.setInline("settings.ticketInTrunk", shown: false) }
     }
 
     private func note(_ text: String, color: Color) -> some View {

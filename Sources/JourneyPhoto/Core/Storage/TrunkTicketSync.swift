@@ -43,20 +43,27 @@ final class TrunkTicketSync: ObservableObject {
     /// いまログインしている人（すれちがいの帳の人・`PassStore.userId`）。送る直前に頼みの人と比べる
     private let currentUser: () -> String?
 
-    /// 設定の「わたしの乗車券もトランクに入れる」の行が出ている数。出ている間は断りの訳を行に出すので、
-    /// 知らせの帯は出さない（同じ訳が2か所に出ないように・`shouldToast`）
-    private(set) var inlineViewers = 0
+    /// 設定の「わたしの乗車券もトランクに入れる」の行のうち、いま出ているもの（行の id の集合）。出ている間は断りの訳を
+    /// 行に出すので、知らせの帯は出さない（同じ訳が2か所に出ないように・`shouldToast`）。**数で数えない**——
+    /// 出る合図が2回来ても、消える合図1回で「出ていない」に戻る（2026-10-18 4回目の見直し）
+    private(set) var inlineShown: Set<String> = []
 
-    init(defaults: UserDefaults = .standard, currentUser: (() -> String?)? = nil) {
+    /// 置けた・外せた答えを入れる入口の店（設定を開いたときに古い中身で記憶を戻さないように）
+    private let entry: TrunkEntryStore
+
+    init(defaults: UserDefaults = .standard, currentUser: (() -> String?)? = nil, entry: TrunkEntryStore? = nil) {
         self.defaults = defaults
         self.currentUser = currentUser ?? { PassStore.shared.userId }
+        self.entry = entry ?? .shared
     }
 
-    func inlineAppeared() { inlineViewers += 1 }
-    func inlineDisappeared() { inlineViewers = max(0, inlineViewers - 1) }
+    /// 行が出た・消えた（同じ行の合図は何度来ても1つ）
+    func setInline(_ id: String, shown: Bool) {
+        if shown { inlineShown.insert(id) } else { inlineShown.remove(id) }
+    }
 
     /// 断りの訳を知らせの帯で出すか（設定の行が出ていなければ）
-    var shouldToast: Bool { inlineViewers == 0 }
+    var shouldToast: Bool { inlineShown.isEmpty }
 
     // MARK: 覚えている物
 
@@ -65,8 +72,11 @@ final class TrunkTicketSync: ObservableObject {
         return try? JSONDecoder().decode(TrunkTicket.self, from: data)
     }
 
-    /// サーバーに今ある1枚（読んだ・書いた値）を覚える
-    func note(server ticket: TrunkTicket?, userId: String) {
+    /// サーバーに今ある1枚（読んだ・書いた値）を覚える。`at` はその値をサーバーから得た時刻で、
+    /// **覚えている値より古ければ上書きしない**（入口の店に残った書く前の中身で、置けた1枚の記憶を戻さない）
+    func note(server ticket: TrunkTicket?, userId: String, at: Date = Date()) {
+        if let knownAt = defaults.object(forKey: Rule.knownAtKey(userId)) as? Date, at < knownAt { return }
+        defaults.set(at, forKey: Rule.knownAtKey(userId))
         if let ticket, let data = try? JSONEncoder().encode(ticket) {
             defaults.set(data, forKey: Rule.knownKey(userId))
         } else {
@@ -127,6 +137,13 @@ final class TrunkTicketSync: ObservableObject {
         return reason
     }
 
+    /// 置けた・外せた答え（書いたあとの状態）を覚え、入口の店にも入れる（店の古い中身で記憶を戻さない）
+    private func written(_ state: TrunkState, userId: String) {
+        let now = Date()
+        note(server: state.ticket, userId: userId, at: now)
+        entry.apply(state, userId: userId, now: now)
+    }
+
     private func once(_ r: Request) async -> String? {
         let wanted = TrunkTicket.wanted(r.settings)
         // 切り替えを外した（置きたい1枚が無い）ら断りは忘れる（入れ直したら送る）
@@ -143,12 +160,12 @@ final class TrunkTicketSync: ObservableObject {
         case .remove:
             // 外す側は写真を確かめないので断られない。届かなければ次に揃える
             let state = try? await r.service.setTicket(nil)
-            if let state { note(server: state.ticket, userId: r.userId) }
+            if let state { written(state, userId: r.userId) }
             return nil
         case .put(let ticket):
             do {
                 let state = try await r.service.setTicket(ticket)
-                note(server: state.ticket, userId: r.userId)
+                written(state, userId: r.userId)
                 remember(nil, userId: r.userId)
                 return nil
             } catch let refused as TrunkService.Refused {
@@ -200,11 +217,13 @@ enum TrunkTicketSyncRule {
     }
 
     static func knownKey(_ userId: String) -> String { "trunk.ticket.known.\(userId)" }
+    static func knownAtKey(_ userId: String) -> String { "trunk.ticket.knownAt.\(userId)" }
     static func refusedKey(_ userId: String) -> String { "trunk.ticket.refusal.\(userId)" }
 
     /// 退会のとき（`AccountLocalData.remove`）
     static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: knownKey(userId))
+        defaults.removeObject(forKey: knownAtKey(userId))
         defaults.removeObject(forKey: refusedKey(userId))
     }
 }

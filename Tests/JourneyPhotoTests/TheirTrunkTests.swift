@@ -712,13 +712,69 @@ final class TheirTrunkTests: XCTestCase {
     func testToastIsSkippedWhileTheRowShowsTheReason() async throws {
         let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
         XCTAssertTrue(sync.shouldToast)
-        sync.inlineAppeared()
+        sync.setInline("row", shown: true)
         XCTAssertFalse(sync.shouldToast, "行と帯に同じ訳が2つ出る")
-        sync.inlineDisappeared()
-        sync.inlineDisappeared()
+        sync.setInline("row", shown: false)
+        sync.setInline("row", shown: false)
         XCTAssertTrue(sync.shouldToast, "行を閉じても帯が出ないまま")
         let app = try source("App/JourneyPhotoApp.swift")
         XCTAssertTrue(app.contains("if let refusal, TrunkTicketSync.shared.shouldToast {"), "起動の揃えが行の有無を見ていない")
+    }
+
+    /// 4回目の見直し 2: 行が出た合図が2回来ても、消えた合図1回で帯が出る（数で数えない）
+    @MainActor
+    func testInlineRowIsATruthNotACount() async {
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
+        sync.setInline("settings.ticketInTrunk", shown: true)
+        sync.setInline("settings.ticketInTrunk", shown: true)
+        XCTAssertFalse(sync.shouldToast)
+        sync.setInline("settings.ticketInTrunk", shown: false)
+        XCTAssertTrue(sync.shouldToast, "出る合図が2回来たあと、閉じても帯が出なくなる")
+        // 別の行が出ている間は止めたまま
+        sync.setInline("a", shown: true)
+        sync.setInline("b", shown: true)
+        sync.setInline("a", shown: false)
+        XCTAssertFalse(sync.shouldToast)
+    }
+
+    /// 4回目の見直し 1: 設定を3回開いても PUT が増えない（置けた答えを入口の店にも入れ、店の古い中身で記憶を戻さない）
+    @MainActor
+    func testOpeningSettingsThriceSendsOnce() async {
+        let defaults = suite()
+        let entry = TrunkEntryStore()
+        let sync = TrunkTicketSync(defaults: defaults, currentUser: { "me" }, entry: entry)
+        let model = TrunkPrivacyModel(preview: nil, sync: sync, entry: entry)
+        StubProtocol.respond(path: "/user/trunk/settings", status: 200,
+                             body: #"{"pocket":[],"stuck":[],"showTrunk":false,"ticket":{"photoId":"p-1"}}"#)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":false}"#)
+        let puts = { StubProtocol.requests.filter { $0.hasPrefix("PUT") }.count }
+        for _ in 0..<3 { await model.load(userId: "me", service: service(), pass: optedIn()) }
+        XCTAssertEqual(puts(), 1, "設定を開くたびに同じ乗車券を送る")
+        XCTAssertEqual(entry.state(for: "me")?.ticket?.photoId, "p-1", "置けた答えが入口の店に入っていない")
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("GET") }.count, 1, "GET /user/trunk が1本にまとまっていない")
+        // 書く前の古い中身を、あとから覚え直さない
+        sync.note(server: nil, userId: "me", at: .distantPast)
+        XCTAssertEqual(sync.known("me")?.photoId, "p-1", "古い中身で置けた記憶を戻した")
+    }
+
+    /// 4回目の見直し 3: 前に始まった読み込みが、書き込みの応答を入れたあとに終わっても、古い値に戻さない
+    @MainActor
+    func testEntryApplyWinsOverAnEarlierRead() async throws {
+        let entry = TrunkEntryStore()
+        let gate = Gate(holds: 1)
+        let old = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":false}"#)
+        let fresh = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
+        // 1回目の読み（すぐ終わる）で人を決め、2回目の読みを止めておく
+        _ = try await entry.read(userId: "me") { old }
+        let reading = Task { try await entry.read(userId: "me") { await gate.wait(); return old } }
+        await gate.untilWaiting(1)
+        entry.apply(fresh, userId: "me")
+        await gate.open()
+        _ = try await reading.value
+        XCTAssertEqual(entry.state(for: "me")?.showTrunk, true, "書く前に始まった読み込みで、見せる設定が古い値に戻る")
+        // apply のあとに始めた読み込みは入る
+        _ = try await entry.read(userId: "me") { old }
+        XCTAssertEqual(entry.state(for: "me")?.showTrunk, false)
     }
 
     /// 2回目の見直し 4: 設定の見本は人と同じ口の中身を描く（読めないときだけ地名なしの形）
