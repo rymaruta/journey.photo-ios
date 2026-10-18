@@ -295,4 +295,51 @@ enum PreviewSession {
         return nil
         #endif
     }
+
+    // MARK: アイコンとカバー（#304・2026-10-18）。どれも Debug のみ・入っている見本の利用者のときだけ・**サーバーには何も送らない**
+
+    /// 起動のときに「この1枚をカバーに」を1回出す。`first`（初めての投稿・51）・`liked`（いいね・カバーあり・51b）・
+    /// `likedNoCover`（いいね・カバーなし）。写真は見本の利用者の公開写真の1枚目
+    static let coverOfferKey = "JPPreviewCoverOffer"
+
+    enum CoverOfferPreview: String { case first, liked, likedNoCover }
+
+    static var coverOffer: CoverOfferPreview? {
+        #if DEBUG
+        guard userId != nil, let raw = UserDefaults.standard.string(forKey: coverOfferKey) else { return nil }
+        return CoverOfferPreview(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        #else
+        return nil
+        #endif
+    }
+
+    /// 起動のときにアイコン・カバーのお礼（板 53）を1回出す。`avatar`・`cover`・`both`（設定済みの人に +6）
+    static let coinRewardKey = "JPPreviewCoinReward"
+
+    static var coinReward: ProfileReward.Grant? {
+        #if DEBUG
+        guard userId != nil, let raw = UserDefaults.standard.string(forKey: coinRewardKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return nil }
+        switch raw {
+        case "avatar": return ProfileReward.Grant(kinds: [.avatar], added: 3, coins: 5)
+        case "cover": return ProfileReward.Grant(kinds: [.cover], added: 3, coins: 5)
+        case "both": return ProfileReward.Grant(kinds: [.avatar, .cover], added: 6, coins: 8, existing: true)
+        default: return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
+    /// マイページでカバーが無いことにする（額縁・板 52 を撮る。見本の利用者がカバーを持っていても）
+    static let noCoverKey = "JPPreviewNoCover"
+
+    static var forcesNoCover: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: noCoverKey)
+        #else
+        return false
+        #endif
+    }
 }

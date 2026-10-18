@@ -2797,5 +2797,136 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "101f-人の乗車券を回す")
     }
+
+    // MARK: - アイコンとカバー（#304・2026-10-18・板「12 アイコンとカバー」）
+
+    /// 起動（見本の利用者・`-JPPreviewNoCover` でカバーが無い姿）してマイページを開く
+    private func launchProfileLooks(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += extra
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        return app
+    }
+
+    /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**
+    /// （板 52・50・50b・50c）。サーバーには何も送らない（保存は押さない）。出なければ撮らない（この試験の決まり）。
+    /// 額縁・候補・「決める」が 44pt 未満なら落とす
+    func testCapturesProfileCoverPick() {
+        let app = launchProfileLooks(["-JPPreviewNoCover", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let frame = app.descendants(matching: .any)["mypage.coverFrame"].firstMatch
+        guard frame.waitForExistence(timeout: 10) else { return XCTFail("カバーが無いのに額縁が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "104-マイページ（カバーの額縁）")
+        XCTAssertGreaterThanOrEqual(frame.frame.height, 44, "額縁が 44pt 未満")
+        guard frame.isHittable else { return }
+        frame.tap()
+
+        let pick = app.descendants(matching: .any)["profileEdit.coverPick"].firstMatch
+        guard pick.waitForExistence(timeout: 15) else { return XCTFail("額縁からカバーの候補へ進まない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "104a-プロフィールの編集（カバーの候補）")
+        let first = app.buttons["profileEdit.coverPick.0"].firstMatch
+        if first.waitForExistence(timeout: 10) {
+            XCTAssertGreaterThanOrEqual(first.frame.height, 44, "候補が 44pt 未満")
+            let recent = app.buttons["profileEdit.coverSort.recent"].firstMatch
+            XCTAssertGreaterThanOrEqual(recent.frame.height, 44, "「最近」が 44pt 未満")
+            if first.isHittable {
+                first.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "104b-プロフィールの編集（候補を選んだ）")
+            }
+        }
+
+        let avatar = app.buttons["profileEdit.avatar"].firstMatch
+        if avatar.waitForExistence(timeout: 5), avatar.isHittable {
+            avatar.tap()
+            let done = app.buttons["avatarCrop.done"].firstMatch
+            if done.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "104c-アイコンを選ぶ（丸く切り抜く）")
+                XCTAssertGreaterThanOrEqual(app.buttons["avatarCrop.device"].firstMatch.frame.height, 44, "「端末の写真から」が 44pt 未満")
+                goBack(app)
+            }
+        }
+
+        let looks = app.buttons["profileEdit.looks"].firstMatch
+        guard looks.waitForExistence(timeout: 10) else { return }
+        scrollTo(looks, in: app)
+        guard looks.isHittable else { return }
+        looks.tap()
+        guard app.descendants(matching: .any)["profileLooks"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("ほかの人からの見え方が開かない")
+        }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "104d-ほかの人からの見え方")
+    }
+
+    /// **初めての投稿のあと「この1枚をカバーに」**（板 51・`-JPPreviewCoverOffer first`・サーバーには何も送らない）。
+    /// 見本は必ず出るので、出ない・「カバーにする」「あとで」「もう聞かないで」が無い・44pt 未満なら落とす。「あとで」で閉じる
+    func testCapturesCoverOffer() {
+        let app = launchProfileLooks(["-JPPreviewCoverOffer", "first"])
+        let apply = app.buttons["coverOffer.apply"].firstMatch
+        guard apply.waitForExistence(timeout: 45) else { return XCTFail("差し出しが出ない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "105-この1枚をカバーに（初めての投稿）")
+        let later = app.buttons["coverOffer.later"].firstMatch
+        let never = app.buttons["coverOffer.never"].firstMatch
+        for (button, name) in [(apply, "カバーにする"), (later, "あとで"), (never, "もう聞かないで")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "硬貨の行が無い")
+        guard later.isHittable else { return XCTFail("「あとで」を押せない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+    }
+
+    /// **いいねが集まった1枚をカバーに**（板 51b・カバーあり・`-JPPreviewCoverOffer liked`）。「今のままにする」で閉じる
+    func testCapturesCoverOfferLiked() {
+        let app = launchProfileLooks(["-JPPreviewCoverOffer", "liked"])
+        let apply = app.buttons["coverOffer.apply"].firstMatch
+        guard apply.waitForExistence(timeout: 45) else { return XCTFail("差し出しが出ない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "105a-この1枚をカバーに（いいねが集まった）")
+        XCTAssertFalse(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "カバーがあるのに硬貨を約束している")
+        let keep = app.buttons["coverOffer.later"].firstMatch
+        XCTAssertGreaterThanOrEqual(keep.frame.height, 44, "「今のままにする」が 44pt 未満")
+        guard keep.isHittable else { return XCTFail("「今のままにする」を押せない") }
+        keep.tap()
+    }
+
+    /// **アイコン・カバーのお礼**（板 53・`-JPPreviewCoinReward`）。1つ（アイコン）と、設定済みの人に両方まとめた +6。
+    /// 見本は必ず出るので、出ない・「カプセルを回す」「あとで」「閉じる」が無い・44pt 未満なら落とす
+    func testCapturesCoinReward() {
+        for (arg, name) in [("avatar", "106-アイコンを設定したお礼"), ("both", "106a-アイコンとカバーのお礼（設定済みの人）")] {
+            let app = launchProfileLooks(["-JPPreviewCoinReward", arg])
+            let turn = app.buttons["coinReward.turn"].firstMatch
+            guard turn.waitForExistence(timeout: 45) else { return XCTFail("お礼の知らせが出ない（\(arg)）") }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+            for id in ["coinReward.turn", "coinReward.later", "coinReward.close"] {
+                let button = app.buttons[id].firstMatch
+                XCTAssertTrue(button.exists, "\(id) が無い")
+                XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+            }
+            XCTAssertEqual(app.descendants(matching: .any)["coinReward.breakdown"].firstMatch.exists, arg == "both",
+                           "内訳（アイコン +3 · カバー +3）の出し分けが違う")
+            app.terminate()
+        }
+    }
 }
 

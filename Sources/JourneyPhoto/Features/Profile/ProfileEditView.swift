@@ -26,7 +26,6 @@ struct ProfileEditView: View {
     @State private var songs: [Photo.Song] = []
     @State private var showSongPicker = false
 
-    @State private var avatarItem: PhotosPickerItem?
     @State private var coverItem: PhotosPickerItem?
     @State private var pendingAvatar: Data?
     @State private var pendingCover: Data?
@@ -58,10 +57,24 @@ struct ProfileEditView: View {
     @State private var loadedProfile: UserProfile?
     /// 名前の横の画面（メダルを1つ選ぶ）。**入口はここ**（2026-10-09 owner:「入り口はプロフィールを編集の中でいい」）
     @State private var showNameSide = false
+    // #304（2026-10-18）: アイコン・カバーを自分の写真から
+    /// 自分の写真（カバーの候補・アイコンの切り抜きの元）。nil は読み込み中・読めなかった
+    @State private var myPhotos: [Photo]?
+    @State private var coverSort: CoverCandidates.Sort = .likes
+    /// 候補から選んだカバーの写真（端末から選んだら nil）。保存が通ったら「いまのカバー」として覚える
+    @State private var pickedCoverId: String?
+    /// アイコンを切り抜く画面（板 50b）
+    @State private var showAvatarCrop = false
+    /// ほかの人からの見え方（板 50c）
+    @State private var showLooks = false
+    /// 積んだ画面（切り抜き・見え方）が開いている（その間は「編集を閉じた」と数えない・`ProfileReward.editorOpen`）
+    @State private var childOpen = false
 
     var body: some View {
         Form {
             imagesHeader
+
+            coverPickSection
 
             // **知らせは上に出す。** 保存は右上なので、下に出すと失敗しても
             // 「押しても何も起きない」に見える（読めなかった警告も同じ）
@@ -93,6 +106,8 @@ struct ProfileEditView: View {
                 Text(L("基本情報", "About you"))
             }
             .listRowBackground(Color.clear)
+
+            looksSection
 
             Section {
                 labeled(L("居住地", "Where you're based"), over: PostLimits.overLimitNote(homeLocation, limit: PostLimits.Profile.homeLocation)) {
@@ -195,12 +210,64 @@ struct ProfileEditView: View {
                 NameSideBadgeView(profile: loadedProfile)
             }
         }
-        .onChange(of: avatarItem) { _, item in
-            Task { await stage(item, kind: .avatar) }
-        }
         .onChange(of: coverItem) { _, item in
+            pickedCoverId = nil
             Task { await stage(item, kind: .cover) }
         }
+        // アイコンを自分の写真から丸く切り抜く（板 50b）。決めたら見本に入り、保存で反映（カバーと同じ約束）
+        .navigationDestination(isPresented: $showAvatarCrop) {
+            AvatarCropView(photos: myPhotos ?? []) { data, image in
+                pendingAvatar = data
+                avatarPreview = image
+                message = L("写真を選びました。右上の「保存」で反映されます。", "Photo selected. Tap Save to apply it.")
+            }
+        }
+        .navigationDestination(isPresented: $showLooks) {
+            ProfileLooksView(userId: userId ?? auth.userId,
+                             name: displayName.isEmpty ? (loadedProfile?.name ?? "") : displayName,
+                             username: username.isEmpty ? nil : username,
+                             avatarPreview: avatarPreview, coverPreview: coverPreview)
+        }
+        .onChange(of: showAvatarCrop) { _, open in childOpen = open }
+        .onChange(of: showLooks) { _, open in childOpen = open }
+        // お礼の知らせは編集を閉じてから（板 53）。積んだ画面へ進んだときは閉じたと数えない
+        .onAppear {
+            childOpen = false
+            ProfileReward.shared.editorOpen = true
+        }
+        .onDisappear {
+            if !childOpen { ProfileReward.shared.editorOpen = false }
+        }
+    }
+
+    /// カバーにする写真（#304・板 50）。押すと上の帯の見本に入る（保存で反映）
+    private var coverPickSection: some View {
+        Section {
+            CoverPickRow(photos: myPhotos, sort: $coverSort, selectedId: pickedCoverId,
+                         disabled: !loaded || isSaving || preparingImage != nil,
+                         onPick: { photo in Task { await stagePhoto(photo) } },
+                         onPost: { TabRouter.shared.openPost(.photo) })
+                .listRowInsets(EdgeInsets(top: JPSpace.s, leading: ProfileV2.gutter, bottom: JPSpace.s, trailing: ProfileV2.gutter))
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    /// ほかの人からの見え方（#304・板 50c）。人のページとコメントの横の見本
+    private var looksSection: some View {
+        Section {
+            Button {
+                childOpen = true
+                showLooks = true
+            } label: {
+                linkRow(title: L("ほかの人からの見え方", "How others see you"),
+                        detail: L("人のページ・コメントの横", "Your page and beside comments"), systemImage: "eye")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profileEdit.looks")
+            .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
+        }
+        .listRowBackground(Color.clear)
     }
 
     /// カバーとアイコンの見本（板 v2 ProfileEdit の上端）。**見える場所でそのまま選び直せる**。
@@ -227,7 +294,8 @@ struct ProfileEditView: View {
                     .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
                     .overlay(alignment: .bottomTrailing) {
                         PhotosPicker(selection: $coverItem, matching: .images) {
-                            Label(L("カバーを変える", "Change cover"), systemImage: "camera")
+                            // 板 50: 候補（下の「カバーにする写真」）のほかの写真から選ぶ口
+                            Label(L("ほかの写真から", "Other photos"), systemImage: "photo")
                                 .font(JPFont.footnote.weight(.semibold))
                                 .foregroundStyle(WebTheme.foreground)
                                 .padding(.horizontal, 14)
@@ -245,7 +313,10 @@ struct ProfileEditView: View {
                         .padding(.trailing, 10)
                         .padding(.bottom, 6)
                     }
-                PhotosPicker(selection: $avatarItem, matching: .images) {
+                Button {
+                    childOpen = true
+                    showAvatarCrop = true
+                } label: {
                     Group {
                         if let avatarPreview {
                             Image(uiImage: avatarPreview).resizable().scaledToFill()
@@ -273,6 +344,7 @@ struct ProfileEditView: View {
                 .buttonStyle(.borderless)
                 .disabled(!loaded || isSaving || preparingImage != nil)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
+                .accessibilityIdentifier("profileEdit.avatar")
                 .padding(.leading, JPSpace.m)
                 .padding(.top, Self.coverHeight - 40)
             }
@@ -489,6 +561,8 @@ struct ProfileEditView: View {
         themeColor = draft.themeColor
         songs = draft.songs
         loaded = true
+        // 候補の元（読めなくても編集はできる。候補の節が出ないだけ）
+        myPhotos = await ProfileImageFromPhoto.myPhotos(environment: environment) ?? []
     }
 
     /// いま欄に入っている姿
@@ -535,6 +609,9 @@ struct ProfileEditView: View {
             }
         }
 
+        var uploaded: [ProfileReward.Kind] = []
+        // 上がった分のお礼を頼む（#304）。途中で失敗して戻る回も、上がった分は頼む
+        defer { claimReward(uploaded) }
         for kind in [ProfileService.ImageKind.avatar, .cover] {
             let data = kind == .avatar ? pendingAvatar : pendingCover
             guard let data else { continue }
@@ -543,9 +620,13 @@ struct ProfileEditView: View {
                 if kind == .avatar {
                     pendingAvatar = nil
                     avatarPreview = nil
+                    uploaded.append(.avatar)
                 } else {
                     pendingCover = nil
                     coverPreview = nil
+                    uploaded.append(.cover)
+                    // いいねの差し出しで、いまのカバーと同じ写真を出さない（端末から選んだら忘れる）
+                    CoverOfferStore.shared.noteCoverSet(photoId: pickedCoverId, userId: userId ?? auth.userId)
                 }
                 if let uid = userId ?? auth.userId {
                     ProfileImageVersions.shared.bump(uid)
@@ -565,10 +646,48 @@ struct ProfileEditView: View {
         dismiss()
     }
 
+    /// 初めて設定したお礼（#304・`POST /user/trunk/reward`）。知らせは編集を閉じてから `RootView` が出す
+    private func claimReward(_ kinds: [ProfileReward.Kind]) {
+        guard !kinds.isEmpty, let uid = userId ?? auth.userId else { return }
+        let trunk = environment.trunk
+        Task {
+            await ProfileReward.shared.claim(kinds, userId: uid, available: TrunkAvailability.shared.isAvailable) {
+                try await trunk.reward($0)
+            }
+        }
+    }
+
+    /// 候補から選んだ写真をカバーの見本に入れる（取り直して、端末から選ぶときと同じ JPEG にする）
+    private func stagePhoto(_ photo: Photo) async {
+        guard let url = photo.detailImageURL else { return }
+        guard preparingImage == nil, !isSaving else {
+            message = isSaving
+                ? L("保存が終わるまでお待ちください", "Please wait until saving finishes")
+                : L("いま準備中です。終わってから選んでください", "Still preparing. Please choose again when it finishes")
+            return
+        }
+        preparingImage = .cover
+        message = L("カバーを準備しています…", "Preparing cover…")
+        defer { preparingImage = nil }
+        do {
+            let data = try await ProfileImageFromPhoto.preparedJPEG(url)
+            guard let preview = UIImage(data: data) else {
+                message = L("画像を表示できませんでした", "Couldn't preview the image")
+                return
+            }
+            pendingCover = data
+            coverPreview = preview
+            pickedCoverId = photo.id
+            message = L("写真を選びました。右上の「保存」で反映されます。", "Photo selected. Tap Save to apply it.")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? L("画像を準備できませんでした", "Couldn't prepare the image")
+        }
+    }
+
     private func stage(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
         guard let item else { return }
         guard preparingImage == nil, !isSaving else {
-            if kind == .avatar { avatarItem = nil } else { coverItem = nil }
+            coverItem = nil
             // 黙って選択だけ消すと壊れているように見える——忙しい理由を出す
             message = isSaving
                 ? L("保存が終わるまでお待ちください", "Please wait until saving finishes")
@@ -580,7 +699,7 @@ struct ProfileEditView: View {
                                   : L("カバーを準備しています…", "Preparing cover…")
         defer {
             preparingImage = nil
-            if kind == .avatar { avatarItem = nil } else { coverItem = nil }
+            coverItem = nil
         }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {

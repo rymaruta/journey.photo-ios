@@ -8,8 +8,13 @@ import SwiftUI
 /// `TrunkCoinMark` を重ねたもの）→ 硬貨の数の行（機械の数の行と同じ並び・数は `JPFont.mono`）→
 /// もらい方と使い道の札（GachaOpen の #121212 の札）→ 主ボタン「カプセルを回す」（真鍮の塗り＋墨）・「あとで」。
 /// 「カプセルを回す」は、この全画面の中でカプセルの機械（`TrunkGachaView`）へ進む
+///
+/// **アイコン・カバーを初めて設定したお礼（#304・板 53 CoinReward）も同じ形で出す**（`copy` を替えるだけ・
+/// 2026-10-18 判断: 板 53 は「はじめての硬貨の案内にそろえる」と書いているので、写しを作らずこの画面を使い回す）
 struct TrunkWelcomeView: View {
     let grant: TrunkWelcome.Grant
+    /// 言葉と目印（はじめての硬貨か、アイコン・カバーのお礼か）
+    var copy: TrunkCoinNoticeCopy
     /// 実際に出た（`RootView` が端末の控えを消し、出たことを覚える）。カプセルの機械から戻ったときは呼び直さない
     var onShown: () -> Void = {}
     @State private var shown = false
@@ -21,10 +26,12 @@ struct TrunkWelcomeView: View {
     /// （案内の「手持ちの硬貨 12 枚」から機械へ進んで 2 枚に戻って見えないように）
     @StateObject private var model: TrunkViewModel
 
-    init(grant: TrunkWelcome.Grant, onShown: @escaping () -> Void = {}) {
+    init(grant: TrunkWelcome.Grant, copy: TrunkCoinNoticeCopy? = nil, onShown: @escaping () -> Void = {}) {
         self.grant = grant
+        self.copy = copy ?? .welcome(grant)
         self.onShown = onShown
-        let previewWelcome = PreviewSession.trunkWelcomeAdded != nil
+        // 見本（はじめての硬貨・アイコンとカバーのお礼の `-JPPreview…`）ではサーバーを読まない
+        let previewWelcome = PreviewSession.trunkWelcomeAdded != nil || PreviewSession.coinReward != nil
         _model = StateObject(wrappedValue: TrunkViewModel(
             preview: previewWelcome ? .sample : PreviewSession.trunkSample,
             previewCoins: previewWelcome ? grant.coins : PreviewSession.trunkCoins))
@@ -47,7 +54,7 @@ struct TrunkWelcomeView: View {
         .overlay(alignment: .top) { ToastOverlay() }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("trunk.welcome")
+        .accessibilityIdentifier(copy.id)
     }
 
     private var content: some View {
@@ -65,7 +72,7 @@ struct TrunkWelcomeView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("trunk.welcome.close")
+                    .accessibilityIdentifier("\(copy.id).close")
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 56)
@@ -84,12 +91,12 @@ struct TrunkWelcomeView: View {
 
     private var heading: some View {
         VStack(spacing: 0) {
-            Text(TrunkWelcomeText.eyebrow)
+            Text(copy.eyebrow)
                 .font(JPFont.eyebrow)
                 .tracking(11 * 0.12)
                 .foregroundStyle(WebTheme.accent)
                 .padding(.top, 18)
-            Text(TrunkWelcomeText.title)
+            Text(copy.title)
                 .font(JPFont.display(22, relativeTo: .title2))
                 .foregroundStyle(WebTheme.text)
                 .multilineTextAlignment(.center)
@@ -97,7 +104,7 @@ struct TrunkWelcomeView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
                 .accessibilityAddTraits(.isHeader)
-            Text(TrunkWelcomeText.thanks)
+            Text(copy.thanks)
                 .font(.subheadline)
                 .foregroundStyle(TrunkStyle.muted)
                 .multilineTextAlignment(.center)
@@ -140,7 +147,13 @@ struct TrunkWelcomeView: View {
             .foregroundStyle(WebTheme.text)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(added.joined)
-            .accessibilityIdentifier("trunk.welcome.added")
+            .accessibilityIdentifier("\(copy.id).added")
+            if let breakdown = copy.breakdown {
+                Text(breakdown)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(TrunkStyle.muted)
+                    .accessibilityIdentifier("\(copy.id).breakdown")
+            }
             HStack(spacing: 4) {
                 Text(total.before)
                 Text(total.number).font(JPFont.mono(13, medium: true, relativeTo: .footnote))
@@ -149,14 +162,14 @@ struct TrunkWelcomeView: View {
             .font(JPFont.footnote)
             .foregroundStyle(TrunkStyle.faint)
             .accessibilityElement(children: .combine)
-            if let note = TrunkWelcomeText.cappedNote(grant.added) {
+            if let note = copy.cappedNote {
                 Text(note)
                     .font(JPFont.footnote)
                     .foregroundStyle(TrunkStyle.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 24)
-                    .accessibilityIdentifier("trunk.welcome.capped")
+                    .accessibilityIdentifier("\(copy.id).capped")
             }
         }
         .padding(.top, 4)
@@ -165,7 +178,7 @@ struct TrunkWelcomeView: View {
     /// もらい方と使い道（GachaOpen の札と同じ #121212・角 14）
     private var explain: some View {
         VStack(alignment: .leading, spacing: 0) {
-            row(symbol: "photo.on.rectangle", text: TrunkWelcomeText.howToEarn)
+            row(symbol: copy.firstRow.symbol, text: copy.firstRow.text)
             TrunkStyle.line.frame(height: 1).padding(.leading, 46)
             row(symbol: "shippingbox", text: TrunkWelcomeText.whatItDoes)
         }
@@ -199,12 +212,12 @@ struct TrunkWelcomeView: View {
                 TrunkButtonFace(title: TrunkWelcomeText.turn)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("trunk.welcome.turn")
+            .accessibilityIdentifier("\(copy.id).turn")
             Button { dismiss() } label: {
                 TrunkButtonFace(title: TrunkWelcomeText.later, kind: .secondary, height: 48, size: 15)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("trunk.welcome.later")
+            .accessibilityIdentifier("\(copy.id).later")
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 28)

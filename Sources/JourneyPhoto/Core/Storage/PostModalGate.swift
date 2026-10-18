@@ -14,6 +14,11 @@ import Foundation
 ///   届いた画面のどれも出ていない・決めている最中でない・届いた画面に出すものが残っていないときに出す
 /// - 案内が出ている間は、評価のお願いを頼まず、届いた画面も出さない（閉じてから出す）
 ///
+/// #304（2026-10-18）の「この1枚をカバーに」とアイコン・カバーのお礼（板の付箋の順）:
+/// - **初めての投稿の差し出しは通知の説明より前**。決めている・出している間（`coverOfferBusy`）は、通知の説明・評価・
+///   届いた画面・はじめての硬貨を待たせる
+/// - **お礼といいねの差し出しは最後**: はじめての硬貨の案内（出ている・残っている）のあと。お礼 → いいねの差し出しの順
+///
 /// `RootView` は `wait` で待ち、決め方はここの関数だけを使う（待ち方を画面に書き散らさない）
 struct PostModalSnapshot: Equatable {
     var modalPresenting = false
@@ -28,6 +33,12 @@ struct PostModalSnapshot: Equatable {
     var welcomeShowing = false
     /// アプリが前面に出ている（`scenePhase == .active`）。裏にいる間は案内を出さない
     var sceneActive = true
+    /// 初めての投稿の「この1枚をカバーに」を決めている・出している（出す待ちも含む）
+    var coverOfferBusy = false
+    /// はじめての硬貨の案内が出す待ちに残っている
+    var welcomePending = false
+    /// お礼かいいねの差し出しを出している
+    var extrasShowing = false
 }
 
 enum PostModalGate {
@@ -40,19 +51,35 @@ enum PostModalGate {
     /// 評価のお願いを頼んでよいか
     static func reviewMayAsk(_ s: PostModalSnapshot) -> Bool {
         !s.modalPresenting && !s.pushPrimerShowing && !s.pushPrimerDeciding && !s.trunkPending && !s.trunkShowing
-            && !s.welcomeShowing
+            && !s.welcomeShowing && !s.coverOfferBusy && !s.extrasShowing
     }
 
     /// 届いた画面を出してよいか
     static func trunkMayShow(_ s: PostModalSnapshot) -> Bool {
         !s.modalPresenting && !s.pushPrimerDeciding && !s.pushPrimerShowing && !s.reviewDeciding && !s.trunkShowing
-            && !s.welcomeShowing
+            && !s.welcomeShowing && !s.coverOfferBusy && !s.extrasShowing
     }
 
     /// はじめての硬貨の案内を出してよいか（いちばん後ろ。ほかのどれも出ていない・決めていない・残っていない）
     static func welcomeMayShow(_ s: PostModalSnapshot) -> Bool {
         s.sceneActive && !s.modalPresenting && !s.launchNoticesDeciding && !s.pushPrimerDeciding && !s.pushPrimerShowing
             && !s.reviewDeciding && !s.trunkPending && !s.trunkShowing && !s.welcomeShowing
+            && !s.coverOfferBusy && !s.extrasShowing
+    }
+
+    /// 通知の説明の待ちが終わったか（ほかの画面が出ていない・初めての投稿の差し出しを決め終えて閉じた・#304）
+    static func pushPrimerWaitIsOver(_ s: PostModalSnapshot) -> Bool {
+        !s.modalPresenting && !s.coverOfferBusy && !s.extrasShowing
+    }
+
+    /// アイコン・カバーのお礼を出してよいか（はじめての硬貨の案内のあと・#304）
+    static func rewardMayShow(_ s: PostModalSnapshot) -> Bool {
+        welcomeMayShow(s) && !s.welcomePending
+    }
+
+    /// いいねが集まった1枚の差し出しを出してよいか（いちばん後ろ・#304）。お礼が残っていれば、`RootView` がお礼を先に出す
+    static func likedOfferMayShow(_ s: PostModalSnapshot) -> Bool {
+        welcomeMayShow(s) && !s.welcomePending
     }
 
     /// `ready` になるまで最大 `tries` 回待つ。なったら true（`sleep` はテストで差し替える）

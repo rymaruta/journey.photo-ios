@@ -427,6 +427,10 @@ final class UploadViewModel: ObservableObject {
     /// 保存が通った1枚（保存の応答の行）。下の「投稿」から開いた画面が `TabRouter` に渡し、
     /// マイページ・ホームが読み直しを待たずに先に並べる（`PostedPhotos`・2026-10-03）
     var onSaved: ((Photo) -> Void)?
+    /// この送信で保存が通った写真の ID（初めての投稿の「この1枚をカバーに」・`CoverOfferStore.notePosted`・#304）
+    private var savedPhotoIds: [String] = []
+    /// その写真の持ち主（保存の応答の行の `userId`。無ければ下書きの持ち主）
+    private var savedPhotoOwner: String?
     /// 送信中。**読み込み中とは分ける**——一緒にすると、写真を選んでいる
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
@@ -1495,6 +1499,8 @@ final class UploadViewModel: ObservableObject {
                                         make: { UploadGrouping.newGroupId(fromTrip: fromTripImport) })
 
         var done: [UUID] = []
+        savedPhotoIds = []
+        savedPhotoOwner = nil
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
         var songFailures = 0
@@ -1621,6 +1627,9 @@ final class UploadViewModel: ObservableObject {
                 if didPostAll {
                     // 通知の説明は**評価のお願いより先に**合図する（同じ投稿で両方が来たら、説明が先に出る）。
                     // いいね・コメントが届くのは投稿してから——通知が役に立つ最初の場面（`PushPrimer`・2026-10-11）
+                    // 初めての投稿の「この1枚をカバーに」は**通知の説明より前**（#304・板 51）。ここで「決めている途中」を立て、
+                    // 通知の説明はそれが下りるまで待つ（`RootView.offerPushPrimerWhenIdle`）
+                    CoverOfferStore.shared.notePosted(userId: savedPhotoOwner ?? draftOwner, photoIds: savedPhotoIds)
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
                 }
@@ -1770,7 +1779,11 @@ final class UploadViewModel: ObservableObject {
         }
         staged[item.id] = nil
         stagedEdits[item.id] = nil
-        if let photo { onSaved?(photo) }
+        if let photo {
+            savedPhotoIds.append(photo.id)
+            if savedPhotoOwner == nil { savedPhotoOwner = photo.userId }
+            onSaved?(photo)
+        }
         // 元の写真は1枚に付けたら済み（付かなかった回も、同じ理由で次の写真も付かないので送らない）
         if draft.inspiredBy != nil {
             inspiredSaved(item.id)
