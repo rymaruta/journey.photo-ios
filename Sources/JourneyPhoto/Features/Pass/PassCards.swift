@@ -183,7 +183,8 @@ enum PassCardStyle {
     // 2026-10-17 判断: きっぷの表と裏の字は**固定の大きさ**で描き、文字を大きくする設定では変わらない（区間の地名と
     // 同じ考え）。札は寸法の決まった物で、字だけ大きくすると欄の格子や裾の行が札からはみ出す。
     // **中身は読み上げで全部読める**（区間・欄・空の欄の「なし」・裏のひとことと裾まで）。だから表と裏には
-    // `.dynamicTypeSize` を付けない（固定の字には効かず、効くように見えて紛らわしい）。帳の小さな札だけ `typeLimit`。
+    // `.dynamicTypeSize` を付けない（固定の字には効かず、効くように見えて紛らわしい）。小さなきっぷも同じ
+    // （2026-10-17 判断: マルス券の縮小版にしたので、帳の札も固定の字にした・読み上げは札のボタンの名前）。
     // 板の明朝 15・12 は CLAUDE.md の明朝の下限 18 より小さいが、owner が選んだ板の字組を取った（本文系 12 は割らない）
 
     /// 内側の余白（板 左右 18・表の上 13・下 12）と、表の行の間（板 9）
@@ -280,22 +281,53 @@ enum PassCardStyle {
         let markWidth: Double
     }
 
-    /// `width` と `maxSize` は特別な券面（2026-10-17・モックの区間は幅 260・明朝 24.5）。マルス券は既定のまま
+    /// `width` と `maxSize` は特別な券面（2026-10-17・モックの区間は幅 260・明朝 24.5）。マルス券は既定のまま。
+    /// `minSize`・`arrow`・`slack` は小さなきっぷ（`PassMiniTicket`・2026-10-17）。並べ方の決まりは大きい札と同じ。
+    /// `slack` は欄に残す余裕（字幅の見積もりが外れても「…」で切れないように）
     nonisolated static func routeLayout(origin: String, destination: String,
                                         marks: (origin: String, destination: String) =
                                             (PassTicket.originMark, PassTicket.destinationMark),
-                                        width: Double = routeWidth, maxSize: Double = routeSize) -> RouteLayout {
-        let column = (width - arrowWidth - arrowGap * 2) / 2
+                                        width: Double = routeWidth, maxSize: Double = routeSize,
+                                        minSize: Double = routeMinSize,
+                                        arrow: (width: Double, gap: Double) =
+                                            (PassCardStyle.arrowWidth, PassCardStyle.arrowGap),
+                                        slack: Double = 0) -> RouteLayout {
+        let column = (width - arrow.width - arrow.gap * 2) / 2
         let longest = max(routeEms(origin), routeEms(destination))
         let marked = markWidth(origin: marks.origin, destination: marks.destination)
-        let room = column - marked
-        let size = longest > 0 ? min(maxSize, max(routeMinSize, room / longest)) : maxSize
+        let room = column - marked - slack
+        let size = longest > 0 ? min(maxSize, max(minSize, room / longest)) : maxSize
         return RouteLayout(fontSize: size, columnWidth: column,
-                           arrowCenter: column + arrowGap + arrowWidth / 2, markWidth: marked)
+                           arrowCenter: column + arrow.gap + arrow.width / 2, markWidth: marked)
     }
-    /// 帳の小さな札（`PassTicketSlot`・字は `JPFont` で設定に合わせて大きくなる）は、文字の大きさの設定を
-    /// xLarge までに留める（はみ出さない）。表と裏は固定の字なので付けない（上の字組の注記）
-    static let typeLimit: DynamicTypeSize = .xLarge
+
+    // MARK: 小さなきっぷ（帳の札・ホームの束・**2026-10-17 判断**: マルス券の縮小版）
+    //
+    // 地・写真の窓・縁は大きい札と同じ決まり（`PassFaceGround`・`PassTicketEdge`）を縮めて使う。字は縮めない
+    // （本文系 12・番号と種類の言葉だけ 11）。入らない欄（経由・日付／区間／回数・ずっと有効）は省く。
+    // 「発」「着」の字（12）も 100pt 幅の札には入らないので省き、矢印で向きを言う（読み上げは今と同じ）。
+    // 字は表と裏と同じく固定の大きさ（文字を大きくする設定では変わらない・札からはみ出さない）
+
+    /// 左右の内側の余白・行の間
+    static let miniInset: CGFloat = 4
+    static let miniSpacing: CGFloat = 2
+    /// 「乗車券」（明朝 12・字間は表と同じ 0.3em）
+    static let miniHeadSize: CGFloat = 12
+    /// 区間の地名（明朝 14 から、長い地名は本文系の下限 12 まで。発・着は同じ大きさ）
+    static let miniRouteSize: Double = 14
+    static let miniRouteMinSize: Double = 12
+    /// 区間の矢印（幅 8・左右のすき間 1）。ホームの束（92）でも3字の地名が 12 で、1pt 以上の余裕を持って入る幅を残す
+    static let miniArrow: (width: Double, gap: Double) = (8, 1)
+    /// 区間の欄に残す余裕（2026-10-17 の見直し: 束の3字がぴったりで余裕が無かった）
+    static let miniRouteSlack: Double = 1
+    /// 小さなきっぷの角（板の束 9）。特別な券面は表の角の比で（`PassMiniTicket.corner`）
+    static let miniCorner: CGFloat = stackCorner
+
+    /// 小さなきっぷの区間（`routeLayout` を幅だけ変えて使う・「発」「着」は省く）
+    nonisolated static func miniRoute(origin: String, destination: String, width: Double) -> RouteLayout {
+        routeLayout(origin: origin, destination: destination, marks: ("", ""), width: width,
+                    maxSize: miniRouteSize, minSize: miniRouteMinSize, arrow: miniArrow, slack: miniRouteSlack)
+    }
 }
 
 /// 種類ごとの縁（板 CardKinds: ふつう＝細い線・はじめて＝光る真鍮・また会えた＝2本線・遠くから＝沈む真鍮）。
@@ -419,33 +451,29 @@ struct PassTicketDash: View {
     }
 }
 
-/// 改札の穴（板: 14 の黒い丸に真鍮 50% の縁）
-struct PassTicketPunch: View {
-    var size: CGFloat = 14
-    var body: some View {
-        Circle()
-            .fill(Color.black)
-            .overlay(Circle().strokeBorder(WebTheme.accent.opacity(PassCardStyle.dashOpacity), lineWidth: JPStroke.hairline))
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-}
-
 /// 区間の矢印（板: 56×14 の細い線・真鍮）。01 真鍮の金属板は墨（2026-10-17）
 struct PassTicketArrow: View {
     var color: Color = WebTheme.accent
     var lineWidth: CGFloat = 1.6
+    /// 幅（大きい札 56・小さなきっぷ `PassCardStyle.miniArrow`）
+    var width: CGFloat = CGFloat(PassCardStyle.arrowWidth)
 
     var body: some View {
-        Path { p in
-            p.move(to: CGPoint(x: 2, y: 7))
-            p.addLine(to: CGPoint(x: 50, y: 7))
-            p.move(to: CGPoint(x: 44, y: 2))
-            p.addLine(to: CGPoint(x: 50, y: 7))
-            p.addLine(to: CGPoint(x: 44, y: 12))
+        // 大きい札は板の形のまま（2→50・頭 6）。小さなきっぷは幅いっぱいに引き、頭を小さく
+        let large = width >= 24
+        let start: CGFloat = large ? 2 : 1
+        let end: CGFloat = large ? width - 6 : width - 1
+        let head: CGFloat = large ? 6 : 3.5
+        let half = head * 5 / 6
+        return Path { p in
+            p.move(to: CGPoint(x: start, y: 7))
+            p.addLine(to: CGPoint(x: end, y: 7))
+            p.move(to: CGPoint(x: end - head, y: 7 - half))
+            p.addLine(to: CGPoint(x: end, y: 7))
+            p.addLine(to: CGPoint(x: end - head, y: 7 + half))
         }
         .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-        .frame(width: 56, height: 14)
+        .frame(width: width, height: 14)
         .accessibilityHidden(true)
     }
 }
@@ -771,7 +799,159 @@ struct PassCardBack: View {
     }
 }
 
-/// 帳の綴じの小さなきっぷ（写真・名前・種類の言葉と番号・破線と穴）
+/// 小さなきっぷ（**マルス券の縮小版・2026-10-17 判断**）。帳の札（`PassTicketSlot`）とホームの束（`PassMiniStack`）が使う。
+///
+/// - 地・写真の窓・縁は大きい札と同じ決まり（`PassFaceGround`・`PassTicketEdge`・`PassTicketGlow`）を縮めて使う。
+///   特別な券面（Pro）は、その券面の地（真鍮・漆・革など）が分かる。傾きの光・弧をたどる光・細かい地紋は描かない
+/// - 字は縮めない: 頭の「乗車券」（明朝 12・真鍮）と番号（11）・「東京 → フランス」（`PassCardStyle.miniRoute`・
+///   発と着は同じ大きさ）・名前と種類の言葉（帳の札だけ）。入らない欄（経由・日付／区間／回数・ずっと有効）は省く
+/// - 🔴 写真は `PassFacePhoto`（窓に収めて角を丸めるだけ）。写真の上には何も重ねない
+struct PassMiniTicket: View {
+    let face: PassTicketFace
+    let size: CGSize
+    /// 頭の右の番号（帳の札は「0087」・ホームの束は nil）
+    var number: String? = nil
+    /// 名前の行（と種類の言葉）を出すか（ホームの束は高さが足りないので出さない）
+    var showsName: Bool = true
+
+    /// 縁と後ろの光の種類（2026-10-17 の見直し）。種類を言葉で言えるとき（名前の行の種類の言葉）だけ種類ごとの縁と
+    /// 「はじめて」の光にする。ホームの束は言葉が無いので、**縁の色と光だけで種類を伝えない**よう、ふつうの縁で光らせない
+    /// （重ねた束では、上のきっぷの光が下のきっぷの写真にかかるのも避ける）
+    nonisolated static func edgeKind(_ kind: PassTicket.Kind, showsName: Bool) -> PassTicket.Kind {
+        showsName ? kind : .plain
+    }
+    private var edgeKind: PassTicket.Kind { Self.edgeKind(face.kind, showsName: showsName) }
+
+    /// 角（板の束 9。特別な券面は表の角の比で: 10 硬券は小さく・26 革は大きく）
+    nonisolated static func corner(_ style: PassTicketFaceStyle) -> CGFloat {
+        PassCardStyle.miniCorner * PassCardFront.corner(style) / PassCardStyle.deckCorner
+    }
+
+    /// 字の色（券面ごと・大きい札と同じ組み合わせ）
+    private struct Ink {
+        let head: AnyShapeStyle
+        let number: AnyShapeStyle
+        let names: AnyShapeStyle
+        let arrow: Color
+        let meta: Color
+        let kind: AnyShapeStyle
+    }
+
+    private var ink: Ink {
+        let accent = AnyShapeStyle(WebTheme.accent)
+        let foil = AnyShapeStyle(PassFaceColor.foil(.center))
+        let text2 = PassFaceColor.of(PassFacePalette.text2)
+        switch face.style {
+        case .mars, .greatCircle:
+            return Ink(head: accent, number: accent, names: AnyShapeStyle(WebTheme.text), arrow: WebTheme.accent,
+                       meta: WebTheme.text2, kind: accent)
+        case .brassPlate:
+            // 真鍮の板の上は墨（真鍮の面に真鍮・白を置かない）
+            let ink = PassFaceColor.of(PassFacePalette.brassInk)
+            return Ink(head: AnyShapeStyle(ink), number: AnyShapeStyle(ink), names: AnyShapeStyle(ink), arrow: ink,
+                       meta: PassFaceColor.of(PassFacePalette.brassInk, PassFacePalette.brassSmallInkOpacity),
+                       kind: AnyShapeStyle(ink))
+        case .foilHard:
+            return Ink(head: foil, number: AnyShapeStyle(text2), names: foil, arrow: WebTheme.accent, meta: text2, kind: foil)
+        case .urushi:
+            return Ink(head: foil, number: foil, names: AnyShapeStyle(Color.white), arrow: WebTheme.accent, meta: text2,
+                       kind: foil)
+        case .leather:
+            let number = AnyShapeStyle(PassFaceColor.of(PassFacePalette.leatherNumber))
+            return Ink(head: foil, number: number, names: foil, arrow: WebTheme.accent,
+                       meta: PassFaceColor.of(PassFacePalette.leatherName), kind: number)
+        }
+    }
+
+    var body: some View {
+        let sx = size.width / PassFaceGround.size.width
+        let sy = size.height / PassFaceGround.size.height
+        let window = PassFaceGround.window(face.style)
+        let corner = Self.corner(face.style)
+        let ink = ink
+        // 字は窓（と写真の下端の線）の下から
+        let textTop: CGFloat = (window.maxY + CGFloat(6)) * sy + CGFloat(2)
+        ZStack(alignment: .topLeading) {
+            PassFaceGround(style: face.style, behindText: true)
+                .scaleEffect(x: sx, y: sy, anchor: .topLeading)
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
+            PassFacePhoto(photo: face.photo, width: window.width * sx, height: window.height * sy,
+                          corner: PassFaceGround.windowCorner(face.style) * sx)
+                .offset(x: window.minX * sx, y: window.minY * sy)
+            VStack(alignment: .leading, spacing: PassCardStyle.miniSpacing) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(PassTicket.headline(.plain))
+                        .font(.custom(JPFont.displayName, fixedSize: PassCardStyle.miniHeadSize))
+                        .tracking(PassCardStyle.miniHeadSize * PassCardStyle.headTracking)
+                        .foregroundStyle(ink.head)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let number {
+                        Text(number)
+                            .font(.system(size: PassCardStyle.numberSize, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(ink.number)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                route(ink)
+                if showsName {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(face.name)
+                            .font(.system(size: PassCardStyle.metaSize))
+                            .foregroundStyle(ink.meta)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                        if let kind = PassTicket.miniKind(face.kind) {
+                            Text(kind)
+                                .font(.system(size: PassCardStyle.numberSize, weight: .semibold))
+                                .foregroundStyle(ink.kind)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, PassCardStyle.miniInset)
+            .frame(width: size.width, alignment: .topLeading)
+            .offset(y: textTop)
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: corner))
+        .background { PassTicketGlow(kind: edgeKind, corner: corner) }
+        // 縁は外側に（写真の上に真鍮をかけない）
+        .overlay(PassTicketEdge(kind: edgeKind, corner: corner))
+    }
+
+    /// 区間（大きい札と同じ並べ方: 矢印は中央・発と着は同じ幅の欄に同じ大きさ。`minimumScaleFactor` を付けない）
+    private func route(_ ink: Ink) -> some View {
+        let width = Double(size.width - PassCardStyle.miniInset * 2)
+        let route = PassCardStyle.miniRoute(origin: face.origin, destination: face.destination, width: width)
+        return HStack(alignment: .center, spacing: 0) {
+            routeName(face.origin, route, ink)
+                .frame(width: CGFloat(route.columnWidth), alignment: .trailing)
+            PassTicketArrow(color: ink.arrow, lineWidth: 1.2, width: CGFloat(PassCardStyle.miniArrow.width))
+                .padding(.horizontal, CGFloat(PassCardStyle.miniArrow.gap))
+            routeName(face.destination, route, ink)
+                .frame(width: CGFloat(route.columnWidth), alignment: .leading)
+        }
+        .frame(width: CGFloat(width))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(PassTicket.spokenRoute(origin: face.origin, destination: face.destination))
+    }
+
+    private func routeName(_ text: String, _ route: PassCardStyle.RouteLayout, _ ink: Ink) -> some View {
+        Text(text)
+            .font(.custom(JPFont.displayName, fixedSize: CGFloat(route.fontSize)))
+            .foregroundStyle(ink.names)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+}
+
+/// 帳の綴じの小さなきっぷ（マルス券の縮小版 `PassMiniTicket`・番号と名前と種類の言葉つき）。
+/// 読み上げは札のボタンの名前（`PassBookView`「〇〇 のカード」）
 struct PassTicketSlot: View {
     let content: PassCardContent
 
@@ -780,81 +960,29 @@ struct PassTicketSlot: View {
             .aspectRatio(5.0 / 7.0, contentMode: .fit)
             .overlay {
                 GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        RemoteImage(url: content.photo.gridImageURL, alignment: content.photo.gridAlignment)
-                            .frame(height: geo.size.height * 0.6)
-                            .clipped()
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(content.name)
-                                .font(JPFont.caption.weight(.semibold))
-                                .foregroundStyle(WebTheme.text)
-                                .lineLimit(1)
-                            HStack(spacing: 2) {
-                                Text(PassTicket.eyebrow(content.kind))
-                                    .font(JPFont.eyebrow)
-                                    .foregroundStyle(WebTheme.accent)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                                Text(PassExchange.shortNumber(content.card.number))
-                                    .font(JPFont.meta)
-                                    .foregroundStyle(WebTheme.accent)
-                                    .fixedSize()
-                            }
-                            Spacer(minLength: 0)
-                            HStack {
-                                PassTicketDash()
-                                PassTicketPunch(size: 8)
-                            }
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .background(PassCardStyle.face)
-                    }
+                    PassMiniTicket(face: content.face(), size: geo.size,
+                                   number: PassExchange.shortNumber(content.card.number))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .background { PassTicketGlow(kind: content.kind, corner: 8) }
-            .overlay(PassTicketEdge(kind: content.kind, corner: 8))
-            .dynamicTypeSize(...PassCardStyle.typeLimit)
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: PassMiniTicket.corner(content.faceStyle)))
     }
 }
 
-/// ホームの束（3枚の小さなきっぷを少しずつ傾けて重ねる・板 PassHome）
+/// ホームの束（3枚の小さなきっぷを少しずつ傾けて重ねる・板 PassHome）。1枚ずつ `PassMiniTicket`（名前の行なし）
 struct PassMiniStack: View {
 
-    let photos: [Photo]
+    let faces: [PassTicketFace]
 
     private static let tilts: [Double] = [-9, 6, -3]
     private static let lefts: [CGFloat] = [0, 14, 28]
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(Array(photos.prefix(3).enumerated()), id: \.offset) { index, photo in
-                VStack(spacing: 0) {
-                    RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                        .frame(height: 76)
-                        .clipped()
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        HStack(spacing: 4) {
-                            PassTicketDash()
-                            PassTicketPunch(size: 7)
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.bottom, 8)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(PassCardStyle.face)
-                }
-                .frame(width: PassCardStyle.stackSize.width, height: PassCardStyle.stackSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: PassCardStyle.stackCorner))
-                // 縁は外側に（写真の上に真鍮をかけない）
-                .overlay(PassTicketEdge(kind: .plain, corner: PassCardStyle.stackCorner))
-                .shadow(color: Color.black.opacity(0.6), radius: 9, x: 0, y: 10)
-                .rotationEffect(.degrees(Self.tilts[index]))
-                .offset(x: Self.lefts[index], y: 6)
+            ForEach(Array(faces.prefix(3).enumerated()), id: \.offset) { index, face in
+                PassMiniTicket(face: face, size: PassCardStyle.stackSize, showsName: false)
+                    .shadow(color: Color.black.opacity(0.6), radius: 9, x: 0, y: 10)
+                    .rotationEffect(.degrees(Self.tilts[index]))
+                    .offset(x: Self.lefts[index], y: 6)
             }
         }
         .frame(width: 140, height: 144, alignment: .topLeading)

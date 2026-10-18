@@ -291,6 +291,21 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertFalse(welcome.isDone("u1"), "404 で印を残した")
     }
 
+    /// 口の有無はマイページの札と同じ1回の読み込みを使う: 確かめた人（口が無かった人も）は、
+    /// はじめての硬貨の側からもう1本読まない（`TrunkAvailability.checkedThisLaunch`・2026-10-18）
+    func testAvailabilityCheckIsNotRepeatedForTheWelcome() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let availability = TrunkAvailability(defaults: defaults, entry: TrunkEntryStore())
+        XCTAssertFalse(availability.checkedThisLaunch.contains("u1"))
+        ScriptedProtocol.script = []  // 口が無い（404）
+        await availability.refresh(userId: "u1", service: TrunkService(api: api), preview: false)
+        XCTAssertFalse(availability.isAvailable)
+        XCTAssertTrue(availability.checkedThisLaunch.contains("u1"), "確かめたことを覚えていない（もう1本読む）")
+        XCTAssertFalse(availability.checkedThisLaunch.contains("u2"))
+        XCTAssertEqual(ScriptedProtocol.calls.count, 1)
+    }
+
     // MARK: 硬貨の数の読み直し
 
     private func label(_ id: String) -> String {
@@ -455,6 +470,8 @@ final class TrunkWelcomeRulesTests: XCTestCase {
                       "トランクが使えるかを見ずに呼んでいる")
         XCTAssertTrue(root.contains(".task(id: auth.userId) { await claimTrunkWelcome() }"))
         XCTAssertTrue(root.contains("if trunkWelcome.restore(userId: auth.userId) { return }"), "出せなかった案内を起動で戻していない")
+        XCTAssertTrue(root.contains("if !trunkAvailability.isAvailable, !trunkAvailability.checkedThisLaunch.contains(userId) {"),
+                      "マイページの札と別に GET /user/trunk をもう1本読む")
         XCTAssertTrue(root.contains("scenePhase == .active"), "前面に戻ったときに出し直さない")
         XCTAssertTrue(root.contains("[tabRouter.postSheetsClosed, tabRouter.menuSheetsClosed]"), "シートを閉じたときに出し直さない")
         XCTAssertTrue(root.contains("welcomeShowing: trunkWelcomeGrant != nil"), "案内が出ていることを順番に渡していない")

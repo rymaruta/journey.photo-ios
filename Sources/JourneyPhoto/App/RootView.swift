@@ -422,10 +422,13 @@ struct RootView: View {
         // まだ出していない案内の控えがあれば、サーバーを呼ばずに出す待ちへ戻す（待ちが切れた・終わった・落ちた回）
         if trunkWelcome.restore(userId: auth.userId) { return }
         guard let userId = auth.userId, !trunkWelcome.isDone(userId) else { return }
-        // マイページの口の確かめ（`TrunkAvailability.refresh`）と同時に `GET /user/trunk` を2本出さないよう、少し待つ
+        // マイページの札（`TrunkAvailability.refresh` → `TrunkEntryStore.read`）が先に読めるよう、少し待つ。
+        // 口の有無はその1回の読み込みを使い、**この起動でまだ誰も確かめていないときだけ**こちらから確かめる
+        // （同じ人の読み込みが走っていれば `TrunkEntryStore.read` が相乗りさせる）。口が後から読めたら
+        // `onChange(of: trunkAvailability.isAvailable)` でもう一度ここへ来る
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         guard !Task.isCancelled, auth.userId == userId else { return }
-        if !trunkAvailability.isAvailable {
+        if !trunkAvailability.isAvailable, !trunkAvailability.checkedThisLaunch.contains(userId) {
             await trunkAvailability.refresh(userId: userId, service: environment.trunk)
         }
         guard !Task.isCancelled, auth.userId == userId else { return }
