@@ -332,4 +332,19 @@ final class TrunkWiringTests: XCTestCase {
         let box = try source("Features/Trunk/TrunkBoxView.swift")
         XCTAssertTrue(box.contains("TrunkSkin(look: look, w: Self.W, h: Self.H)"))
     }
+
+    /// 🔴 胴の地（`TrunkSkin`）は押せる（c6865c9a で地ごと押せなくなり、ラベルの少ない人が革の面を押しても
+    /// 回す画面が開かなかった）。古びの層だけが押すのを通す。トランクのボタンは枠いっぱいが押せる
+    func testTrunkBodyStaysTappable() throws {
+        let box = try source("Features/Trunk/TrunkBoxView.swift")
+        let parts = box.components(separatedBy: "struct TrunkSkin: View {")
+        XCTAssertEqual(parts.count, 2)
+        let skinBody = parts[1].components(separatedBy: "@ViewBuilder")[0]
+        XCTAssertTrue(skinBody.contains("surface(look.surface)"), "TrunkSkin の body が見つからない（見張りが空振り）")
+        XCTAssertFalse(skinBody.contains(".allowsHitTesting(false)"), "胴の地がまるごと押せない")
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains(".contentShape(Rectangle())\n            }\n            .buttonStyle(TrunkPressStyle())"),
+                      "トランクのボタンの押せる範囲が絵の層まかせ")
+    }
 }
+

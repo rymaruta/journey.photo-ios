@@ -489,7 +489,6 @@ struct TrunkSkin: View {
             modelWear
         }
         .frame(width: w, height: h, alignment: .topLeading)
-        .allowsHitTesting(false)
     }
 
     @ViewBuilder

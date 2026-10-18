@@ -141,6 +141,8 @@ struct TrunkView: View {
                     .padding(.horizontal, 15)
                     .padding(.vertical, 12)
                     .frame(maxWidth: 378)
+                    // 押せる範囲は枠いっぱい（絵の透けた所・縁の余白でも開く。絵の層の押し分けに頼らない）
+                    .contentShape(Rectangle())
             }
             .buttonStyle(TrunkPressStyle())
             .accessibilityLabel(L("トランクを手に取って回す", "Pick up and turn your trunk"))
