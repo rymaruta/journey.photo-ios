@@ -867,7 +867,14 @@ final class MedalCoinCoordinator: NSObject {
     }
 
     private func applyAngles() {
-        coin.eulerAngles = SCNVector3(pitch, yaw, 0)
+        guard isBox else {
+            coin.eulerAngles = SCNVector3(pitch, yaw, 0)
+            return
+        }
+        // 箱は横に回してから画面の横の軸で傾ける（板 TrunkSpin と同じ順・`SpinMotion.boxOrientation`・#305）。
+        // `eulerAngles` のままでは横に 90° を越えると傾きが裏返り、「上と背面」で底が見えていた
+        let q = SpinMotion.boxOrientation(yaw: Double(yaw), pitch: Double(pitch))
+        coin.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
     }
 }
 

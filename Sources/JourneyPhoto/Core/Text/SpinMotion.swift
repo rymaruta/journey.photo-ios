@@ -64,6 +64,53 @@ enum SpinMotion {
         if f < 0 { f += 1 }
         return f * 1.6 - 0.3
     }
+
+    // MARK: 箱（旅のトランク）の向き
+
+    /// 3つの数の向き（SceneKit の座標: 右が +x・上が +y・手前〔カメラの側〕が +z）
+    struct Vector: Equatable {
+        let x: Double
+        let y: Double
+        let z: Double
+    }
+
+    /// 四元数（SceneKit の `orientation` に x・y・z・w の順で渡す）
+    struct Quaternion: Equatable {
+        let x: Double
+        let y: Double
+        let z: Double
+        let w: Double
+    }
+
+    /// 箱の向き。**先に箱の縦の軸で横に回し、そのあと画面の横の軸で傾ける**（板 TrunkSpin の CSS
+    /// `rotateX(rx) rotateY(ry)` と同じ順・2026-10-18 #305）。
+    ///
+    /// 前は SceneKit の `eulerAngles = (pitch, yaw, 0)` で回していた。SceneKit は傾きを**箱の側の軸**でかけてから
+    /// 横に回すので、横に 90° を越えて回すと傾きが裏返る——「上と背面」（横 −160°・縦 48°）で上の面ではなく
+    /// 底が見え、「側面」（横 −90°）では上の面が真横を向いて消えていた。ここでは傾きを画面の軸でかけるので、
+    /// どれだけ横に回しても「縦に傾けると上の面が手前へ来る」が変わらない
+    static func boxOrientation(yaw: Double, pitch: Double) -> Quaternion {
+        // q = q(画面の横の軸, 傾き) × q(縦の軸, 横の回り)。右から順に効く（横に回してから傾ける）
+        let sx = sin(pitch / 2), cx = cos(pitch / 2)
+        let sy = sin(yaw / 2), cy = cos(yaw / 2)
+        return Quaternion(x: sx * cy, y: cx * sy, z: sx * sy, w: cx * cy)
+    }
+
+    /// 箱の上の向き（面の法線など）を、その向きに回した先（`boxOrientation` と同じ回し方）
+    static func rotate(_ v: Vector, yaw: Double, pitch: Double) -> Vector {
+        // 縦の軸で横に回す
+        let x1 = v.x * cos(yaw) + v.z * sin(yaw)
+        let z1 = -v.x * sin(yaw) + v.z * cos(yaw)
+        // 画面の横の軸で傾ける（正の傾きで上〔+y〕が手前〔+z〕へ）
+        let y2 = v.y * cos(pitch) - z1 * sin(pitch)
+        let z2 = v.y * sin(pitch) + z1 * cos(pitch)
+        return Vector(x: x1, y: y2, z: z2)
+    }
+
+    /// その向きで、面（外向きの法線 `normal`）がカメラに見えているか。真横に近い面（`threshold` 以下）は見えないと数える
+    static func faceVisible(_ normal: Vector, yaw: Double, pitch: Double, threshold: Double = 0.05) -> Bool {
+        rotate(normal, yaw: yaw, pitch: pitch).z > threshold
+    }
 }
 
 /// 束の画面できっぷに指を置いて動かしたとき、何をするか（**2026-10-16 判断**）。

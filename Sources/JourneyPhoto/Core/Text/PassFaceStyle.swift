@@ -304,6 +304,14 @@ enum PassFacePalette {
     static let leatherName: UInt32 = 0xC9B8A2
     static let leatherNumber: UInt32 = 0xD9B878
 
+    // 裏（2026-10-18・札 #306・板「すれちがい乗車券の裏面」）
+    /// 06 の裏に敷く経緯線の濃さ（表は 0.18。裏は字の下まで敷くので薄く）
+    static let routeBackGridOpacity = 0.10
+    /// 26 の型押しの欄・帯の沈み（革に黒をこの濃さで重ねる）
+    static let debossShade = 0.22
+    /// 26 の型押しの地（革を沈めた色）
+    static var debossGround: UInt32 { mix(0x000000, over: leather, opacity: debossShade) }
+
     // 黒い地の上の字（06・10・21）
     static let text2: UInt32 = BrandPalette.text2
     static let text3: UInt32 = 0x999999
@@ -349,6 +357,20 @@ enum PassFacePalette {
             Pair(name: "26 値／革", text: leatherValue, ground: leather, required: 4.5),
             Pair(name: "26 名前／革", text: leatherName, ground: leather, required: 4.5),
             Pair(name: "26 番号／革", text: leatherNumber, ground: leather, required: 4.5),
+            // 裏（2026-10-18）。表と同じ組（墨／板・箔／綿紙・#999／漆 など）は上で測っている。ここは裏で新しく出る地
+            Pair(name: "裏 06 注記（#999）／経緯線の上", text: text3,
+                 ground: mix(BrandPalette.accent, over: routeGround, opacity: routeBackGridOpacity), required: 4.5),
+            Pair(name: "裏 06 帯の字（真鍮）／経緯線の上", text: BrandPalette.accent,
+                 ground: mix(BrandPalette.accent, over: routeGround, opacity: routeBackGridOpacity), required: 4.5),
+            Pair(name: "裏 06 本文（白 95%）／経緯線の上", text: mix(0xFFFFFF, over: routeGround, opacity: 0.95),
+                 ground: mix(BrandPalette.accent, over: routeGround, opacity: routeBackGridOpacity), required: 4.5),
+            Pair(name: "裏 10 注記（#999）／綿紙", text: text3, ground: paper, required: 4.5),
+            Pair(name: "裏 10 本文（白 95%）／綿紙", text: mix(0xFFFFFF, over: paper, opacity: 0.95), ground: paper,
+                 required: 4.5),
+            Pair(name: "裏 26 ラベル／型押しの欄", text: leatherLabel, ground: debossGround, required: 4.5),
+            Pair(name: "裏 26 値／型押しの欄", text: leatherValue, ground: debossGround, required: 4.5),
+            Pair(name: "裏 26 箔の暗い所／型押しの帯", text: foilDark, ground: debossGround, required: 4.5),
+            Pair(name: "裏 26 番号／型押しの帯", text: leatherNumber, ground: debossGround, required: 4.5),
         ]
     }
 }
