@@ -13,6 +13,7 @@ struct TrunkWelcomeView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     /// カプセルの機械へ渡す状態。見本（`-JPPreviewTrunkWelcome`）ではサーバーを読まない
     @StateObject private var model = TrunkViewModel(preview: PreviewSession.trunkWelcomeAdded != nil ? .sample
                                                              : PreviewSession.trunkSample)
@@ -24,7 +25,7 @@ struct TrunkWelcomeView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(isPresented: $showGacha) { TrunkGachaView(model: model) }
         }
-        .task { model.bind(environment.trunk) }
+        .task { model.bind(environment.trunk, userId: auth.userId) }
         // 全画面の上では `RootView` の知らせが隠れるので、ここにも置く（カプセルの機械の「部品箱に入りました」など）
         .overlay(alignment: .top) { ToastOverlay() }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける

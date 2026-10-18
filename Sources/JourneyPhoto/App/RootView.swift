@@ -54,6 +54,8 @@ struct RootView: View {
     @ObservedObject private var trunkWelcome = TrunkWelcome.shared
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     @State private var trunkWelcomeGrant: TrunkWelcome.Grant?
+    /// 案内を出す頃合いを待っている仕事（1本だけ・人が替わったら止める）
+    @State private var welcomeOffer: Task<Void, Never>?
     /// 画面写真の見本の案内を出したか（起動のあと1回だけ）
     @State private var previewWelcomeDelivered = false
     /// 起動のときの案内（新しくなったこと → 初期ユーザー章）を決め終えるまで true。
@@ -370,7 +372,8 @@ struct RootView: View {
                 if available { Task { await claimTrunkWelcome() } }
             }
             .onChange(of: trunkWelcome.requests) { _, _ in offerTrunkWelcomeWhenIdle() }
-            // 待っていたものが終わったら、待ちきれずに残った案内を出し直す（起動の案内・届いた画面・通知の説明・評価）
+            // 待っていたものが終わったら、待ちきれずに残った案内を出し直す（起動の案内・届いた画面・通知の説明・評価・
+            // 投稿やメニューのシートを閉じた・前面に戻った）
             .onChange(of: welcomeWaitKey) { _, _ in
                 if trunkWelcome.hasPending { offerTrunkWelcomeWhenIdle() }
             }
@@ -379,12 +382,20 @@ struct RootView: View {
                 if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
             }) { grant in TrunkWelcomeView(grant: grant) }
             // 人が替わった（ログアウトを含む）: 前の人の案内を下ろす
-            .onChange(of: auth.userId) { _, userId in trunkWelcome.noteUser(userId) }
+            .onChange(of: auth.userId) { _, userId in
+                welcomeOffer?.cancel()
+                welcomeOffer = nil
+                trunkWelcome.noteUser(userId)
+            }
     }
 
-    /// はじめての硬貨の案内が待っているもの（どれかが変わったら出せるか見直す）
-    private var welcomeWaitKey: [Bool] {
-        [launchNoticesDeciding, showWhatsNew, foundingGiftName != nil, trunkBatch != nil, showPushPrimer, reviewDeciding]
+    /// はじめての硬貨の案内が待っているもの（どれかが変わったら出せるか見直す）。
+    /// 2026-10-18 の見直し: 写真の全画面やシートを開いたまま待ちが切れても、閉じた・前面に戻ったときに出し直す
+    /// （投稿のシート `postSheetsClosed`・メニュー `menuSheetsClosed`・`scenePhase == .active`）
+    private var welcomeWaitKey: [Int] {
+        [launchNoticesDeciding, showWhatsNew, foundingGiftName != nil, trunkBatch != nil, showPushPrimer, reviewDeciding,
+         scenePhase == .active, showNotifications, showMenu].map { $0 ? 1 : 0 }
+            + [tabRouter.postSheetsClosed, tabRouter.menuSheetsClosed]
     }
 
     /// はじめての硬貨を呼ぶ（`TrunkWelcome.claim`: ログイン済み・トランクが使える・印が無い・この起動でまだ）。
@@ -397,6 +408,8 @@ struct RootView: View {
             trunkWelcome.deliverPreview(.init(added: added, coins: 2 + added))
             return
         }
+        // まだ出していない案内の控えがあれば、サーバーを呼ばずに出す待ちへ戻す（待ちが切れた・終わった・落ちた回）
+        if trunkWelcome.restore(userId: auth.userId) { return }
         guard let userId = auth.userId, !trunkWelcome.isDone(userId) else { return }
         // マイページの口の確かめ（`TrunkAvailability.refresh`）と同時に `GET /user/trunk` を2本出さないよう、少し待つ
         try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -410,12 +423,18 @@ struct RootView: View {
     }
 
     /// **ほかの画面が閉じてから**はじめての硬貨の案内を出す（いちばん後ろ・`PostModalGate.welcomeMayShow`）。
-    /// 最長で約60秒待つ。待ちきれなければ案内は残し、待っていたものが閉じたら出し直す（硬貨はもう手持ちに在る）
+    /// 待つのは1本だけ・最長で約10分（2026-10-18 の見直し: 写真の全画面のように閉じた合図の無い画面を開いたままでも、
+    /// 閉じたあとに出せるように長く待つ）。待ちきれなければ案内は残し（端末にも控えてある）、シートを閉じた・前面に
+    /// 戻った・次の起動のときに出し直す（硬貨はもう手持ちに在る）
     private func offerTrunkWelcomeWhenIdle() {
-        Task { @MainActor in
-            let ready = await PostModalGate.wait(tries: 60, snapshot: postModalSnapshot,
+        guard welcomeOffer == nil else { return }
+        welcomeOffer = Task { @MainActor in
+            let ready = await PostModalGate.wait(tries: 600, snapshot: postModalSnapshot,
                                                  until: PostModalGate.welcomeMayShow,
                                                  sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            // 取り消された仕事は、あとから始まった仕事の席を空けない（人が替わったときに止めて空けてある）
+            if Task.isCancelled { return }
+            welcomeOffer = nil
             guard ready, trunkWelcomeGrant == nil, let grant = trunkWelcome.consume() else { return }
             trunkWelcomeGrant = grant
         }

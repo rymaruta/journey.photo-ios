@@ -10,7 +10,11 @@ import Combine
 /// - 失敗（古いサーバーで口が無い 404・圏外・500・読めない本文）は**印を残さない**——次に開いたときにまた呼ぶ。
 ///   ただし**同じ起動中に同じ人で二度は呼ばない**（`triedThisLaunch`）
 /// - 配った回だけ、`RootView` がほかの画面と重ならない頃合いに案内を1回出す（`PostModalGate.welcomeMayShow`）
-/// - 配ったら `trunkCoinsChanged` を流す。硬貨の数を見せている画面（トランク・カプセルの機械）が読み直す
+/// - **出す案内も uid ごとに端末へ控える**（`trunk.welcome.pending.<uid>`・2026-10-18 の見直し）。呼ぶ印は応答のときに
+///   残るので、案内をメモリにだけ持つと、出す前に待ちが切れた・アプリが終わった・落ちた回に**二度と出ない**。
+///   控えは出したら消し、次の起動では控えがあればサーバーを呼ばずに戻す（`restore`）
+/// - 配ったら `trunkCoinsChanged` を流す（`userInfo` に uid）。硬貨の数を見せている画面（トランク・カプセルの機械）が
+///   **自分の人の知らせだけ**を受けて読み直す
 @MainActor
 final class TrunkWelcome: ObservableObject {
 
@@ -42,6 +46,25 @@ final class TrunkWelcome: ObservableObject {
     }
 
     nonisolated static func key(_ userId: String) -> String { "trunk.welcome.done.\(userId)" }
+    /// まだ出していない案内の控え（`added`・`coins`）
+    nonisolated static func pendingKey(_ userId: String) -> String { "trunk.welcome.pending.\(userId)" }
+
+    /// 端末に控えた、まだ出していない案内（無ければ nil）
+    func storedGrant(_ userId: String) -> Grant? {
+        guard let raw = defaults.dictionary(forKey: Self.pendingKey(userId)),
+              let added = raw["added"] as? Int, added > 0 else { return nil }
+        return Grant(added: added, coins: max(0, raw["coins"] as? Int ?? 0))
+    }
+
+    /// 起動のとき（人が替わったときも）: 控えた案内があれば、サーバーを呼ばずに出す待ちへ戻す。戻したら true
+    @discardableResult
+    func restore(userId: String?) -> Bool {
+        noteUser(userId)
+        guard let userId, pending == nil, let grant = storedGrant(userId) else { return false }
+        pending = grant
+        requests += 1
+        return true
+    }
 
     /// その人について、もう答えをもらったか（以後呼ばない印）
     func isDone(_ userId: String) -> Bool { defaults.bool(forKey: Self.key(userId)) }
@@ -73,10 +96,16 @@ final class TrunkWelcome: ObservableObject {
         // 答えをもらった: 配った・既に配った・対象外のどれでも、この人では以後呼ばない
         defaults.set(true, forKey: Self.key(userId))
         guard result.granted else { return nil }
-        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": result.coins])
-        // 増えていない（上限に当たっていた）回と、待つ間に人が替わった回は案内を出さない
-        guard result.added > 0, owner == userId else { return nil }
         let grant = Grant(added: result.added, coins: result.coins)
+        // 増えた回は案内を端末に控える（待つ間に人が替わっても、その人が次に開いたときに出す）
+        if result.added > 0 {
+            defaults.set(["added": grant.added, "coins": grant.coins], forKey: Self.pendingKey(userId))
+        }
+        // 待つ間に人が替わった回は、いまの人の画面に知らせも案内も出さない
+        guard owner == userId else { return nil }
+        center.post(name: .trunkCoinsChanged, object: nil, userInfo: ["coins": result.coins, "userId": userId])
+        // 増えていない（上限に当たっていた）回は案内を出さない（「+0 枚」を見せない）
+        guard result.added > 0 else { return nil }
         pending = grant
         requests += 1
         return grant
@@ -90,13 +119,14 @@ final class TrunkWelcome: ObservableObject {
 
     var hasPending: Bool { pending != nil }
 
-    /// 出す中身を受け取る（受け取ったら空にする）
+    /// 出す中身を受け取る（受け取ったら空にし、端末の控えも消す＝出した）
     func consume() -> Grant? {
         defer { pending = nil }
+        if pending != nil, let owner { defaults.removeObject(forKey: Self.pendingKey(owner)) }
         return pending
     }
 
-    /// 入っている人が替わった（ログアウトを含む）。前の人の案内を下ろす
+    /// 入っている人が替わった（ログアウトを含む）。前の人の案内を下ろす（端末の控えは残す＝その人が次に開いたときに出す）
     func noteUser(_ userId: String?) {
         guard userId != owner else { return }
         owner = userId
@@ -106,6 +136,7 @@ final class TrunkWelcome: ObservableObject {
     /// 退会のとき（`AccountLocalData.remove`）
     nonisolated static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: key(userId))
+        defaults.removeObject(forKey: pendingKey(userId))
     }
 }
 
@@ -132,7 +163,7 @@ struct TrunkWelcomeResult: Decodable, Equatable {
 }
 
 extension Notification.Name {
-    /// 旅のトランクの硬貨がサーバーで増えた（はじめての硬貨・`TrunkWelcome`）。`userInfo["coins"]` は増えたあとの数。
-    /// `TrunkViewModel` が受けて読み直す（トランク・カプセルの機械の数を新しくする）
+    /// 旅のトランクの硬貨がサーバーで増えた（はじめての硬貨・`TrunkWelcome`）。`userInfo["coins"]` は増えたあとの数、
+    /// `userInfo["userId"]` は配った人。`TrunkViewModel` が**自分の人の知らせだけ**受けて読み直す（トランク・カプセルの機械の数）
     static let trunkCoinsChanged = Notification.Name("jp.trunkCoinsChanged")
 }

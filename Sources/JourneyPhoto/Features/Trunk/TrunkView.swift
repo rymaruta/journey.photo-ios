@@ -25,7 +25,7 @@ struct TrunkView: View {
             .navigationTitle(L("旅のトランク", "Travel trunk"))
             .navigationBarTitleDisplayMode(.inline)
             .task {
-                model.bind(environment.trunk)
+                model.bind(environment.trunk, userId: auth.userId)
                 await model.load(offline: connectivity.isOffline)
                 noteAging()
             }

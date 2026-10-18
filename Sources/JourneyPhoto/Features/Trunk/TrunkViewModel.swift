@@ -42,7 +42,8 @@ final class TrunkViewModel: ObservableObject {
         // 硬貨の数を見せている画面（トランク・カプセルの機械）は、はじめての硬貨が配られたら読み直す（2026-10-18）
         coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
             let coins = note.userInfo?["coins"] as? Int
-            Task { @MainActor in await self?.noteCoinsChanged(coins: coins) }
+            let userId = note.userInfo?["userId"] as? String
+            Task { @MainActor in await self?.noteCoinsChanged(coins: coins, userId: userId) }
         }
     }
 
@@ -53,19 +54,29 @@ final class TrunkViewModel: ObservableObject {
     /// サーバーで硬貨が増えた（はじめての硬貨）。**読めている画面だけ**読み直す（まだ読んでいない画面は開いたときに読む）。
     /// 黙って読み直す——読めなかったら知らせの数（増えたあとの硬貨）だけを映し、失敗の一行は出さない（押していない人に
     /// 「読み込めませんでした」を見せない）。見本ではサーバーを読まない
-    func noteCoinsChanged(coins: Int? = nil) async {
+    ///
+    /// **人を確かめる**（2026-10-18 の見直し）: 知らせの人（`userId`）と見ている人が違えば受けない。
+    /// 知らせの数を映すのは、知らせの人と見ている人が同じと分かっているときだけ（別の人の枚数を映さない）
+    func noteCoinsChanged(coins: Int? = nil, userId: String? = nil) async {
         guard preview == nil, let service, state != nil else { return }
+        if let userId, let mine = self.userId, userId != mine { return }
+        let sameUser = userId != nil && userId == self.userId
         do {
             let fresh = try await service.state()
             state = fresh.keepingPosts(from: state)
         } catch {
-            if let coins, let current = state { state = current.copy(coins: coins) }
+            if sameUser, let coins, let current = state { state = current.copy(coins: coins) }
         }
     }
 
-    func bind(_ service: TrunkService) {
+    /// - Parameter userId: 見ている人（硬貨の知らせ `trunkCoinsChanged` を自分の人のものだけ受けるため）
+    func bind(_ service: TrunkService, userId: String? = nil) {
         if self.service == nil { self.service = service }
+        if let userId { self.userId = userId }
     }
+
+    /// 見ている人（`bind`）。知らせの人と違えば受けない
+    private(set) var userId: String?
 
     /// 見本で動いているか（画面写真の起動の鍵）
     var isPreview: Bool { preview != nil }

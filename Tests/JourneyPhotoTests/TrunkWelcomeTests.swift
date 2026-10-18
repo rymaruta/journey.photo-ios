@@ -185,6 +185,66 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertTrue(welcome.isDone("u1"))
         TrunkWelcome.removeData(for: "u1", defaults: defaults)
         XCTAssertFalse(welcome.isDone("u1"))
+        // まだ出していない案内の控えも消す
+        _ = await welcome.claim(userId: "u2", available: true) { TrunkWelcomeResult(granted: true, added: 10, coins: 10) }
+        XCTAssertNotNil(welcome.storedGrant("u2"))
+        TrunkWelcome.removeData(for: "u2", defaults: defaults)
+        XCTAssertNil(welcome.storedGrant("u2"), "退会しても案内の控えが残る")
+    }
+
+    // MARK: 出せなかった案内の控え（2026-10-18 の見直し）
+
+    /// 応答のあとに待ちが切れた・アプリが終わった・落ちた: 次の起動で、サーバーを呼ばずに一度だけ出す
+    func testUnshownNoticeComesBackNextLaunchOnce() async {
+        let counter = Counter()
+        let first = gate()
+        _ = await first.claim(userId: "u1", available: true) {
+            counter.calls += 1
+            return TrunkWelcomeResult(granted: true, added: 10, coins: 12)
+        }
+        XCTAssertTrue(first.hasPending)
+        // ここで出さずに終わった（consume していない）。次の起動
+        let second = gate()
+        XCTAssertFalse(second.shouldClaim(userId: "u1", available: true), "二重に配られる（呼ぶ印が無い）")
+        XCTAssertTrue(second.restore(userId: "u1"), "出せなかった案内が次の起動で戻らない")
+        XCTAssertEqual(second.requests, 1)
+        XCTAssertEqual(second.consume(), TrunkWelcome.Grant(added: 10, coins: 12))
+        XCTAssertEqual(counter.calls, 1, "戻すのにサーバーを呼んだ")
+        // 出したら控えを消す: その次の起動ではもう出ない
+        let third = gate()
+        XCTAssertFalse(third.restore(userId: "u1"), "出した案内がまた出る")
+        XCTAssertFalse(third.hasPending)
+        // 同じ起動の中で restore を何度呼んでも二重に積まない
+        let fourth = gate()
+        _ = await fourth.claim(userId: "u9", available: true) { TrunkWelcomeResult(granted: true, added: 4, coins: 99) }
+        XCTAssertFalse(fourth.restore(userId: "u9"), "出す待ちに二重に積んだ")
+        XCTAssertEqual(fourth.requests, 1)
+        XCTAssertEqual(fourth.storedGrant("u9"), TrunkWelcome.Grant(added: 4, coins: 99), "上限に当たった枚数を控えていない")
+    }
+
+    /// 待つ間に人が替わった: いまの人には出さず知らせも流さない。配った人が次に開いたときに出す
+    func testSwitchedUserGetsNoNoticeButOwnerSeesItLater() async {
+        let welcome = gate()
+        var notes: [[AnyHashable: Any]] = []
+        let token = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: nil) { note in
+            notes.append(note.userInfo ?? [:])
+        }
+        defer { center.removeObserver(token) }
+        _ = await welcome.claim(userId: "A", available: true) {
+            welcome.noteUser("B")
+            return TrunkWelcomeResult(granted: true, added: 10, coins: 10)
+        }
+        XCTAssertTrue(notes.isEmpty, "人が替わったあとに前の人の硬貨の知らせを流した")
+        XCTAssertFalse(welcome.restore(userId: "B"), "次の人に前の人の案内を出す")
+        XCTAssertFalse(welcome.hasPending)
+        // A さんが入り直した
+        XCTAssertTrue(welcome.restore(userId: "A"))
+        XCTAssertEqual(welcome.consume()?.added, 10)
+        // 知らせには配った人が入る
+        let other = gate()
+        _ = await other.claim(userId: "C", available: true) { TrunkWelcomeResult(granted: true, added: 10, coins: 15) }
+        XCTAssertEqual(notes.last?["userId"] as? String, "C")
+        XCTAssertEqual(notes.last?["coins"] as? Int, 15)
     }
 
     func testServicePostsToWelcomeAndThrowsOnMissingRoute() async throws {
@@ -240,14 +300,39 @@ final class TrunkWelcomeTests: XCTestCase {
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "t"), session: session)
         let model = TrunkViewModel(preview: nil, center: center)
-        model.bind(TrunkService(api: api))
+        model.bind(TrunkService(api: api), userId: "u1")
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200,
                                          body: #"{"pocket":[],"stuck":[],"coins":2}"#, once: true)]
         await model.load(offline: false)
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 500, body: "")]
-        await model.noteCoinsChanged(coins: 12)
+        await model.noteCoinsChanged(coins: 12, userId: "u1")
         XCTAssertEqual(model.state?.coins, 12)
         XCTAssertNil(model.actionError, "押していないのに失敗の一行を出した")
+    }
+
+    /// 別の人の知らせは受けない。人が分からない知らせの数は、読み直しが失敗しても映さない（2026-10-18 の見直し）
+    func testCoinsNoticeForAnotherUserIsIgnored() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = TrunkViewModel(preview: nil, center: center)
+        model.bind(TrunkService(api: api), userId: "B")
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200,
+                                         body: #"{"pocket":[],"stuck":[],"coins":2}"#, once: true)]
+        await model.load(offline: false)
+        let callsBefore = ScriptedProtocol.calls.count
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 500, body: "")]
+        await model.noteCoinsChanged(coins: 50, userId: "A")
+        XCTAssertEqual(model.state?.coins, 2, "別の人の枚数を映した")
+        XCTAssertEqual(ScriptedProtocol.calls.count, callsBefore, "別の人の知らせで読み直した")
+        // 見ている人が分からない画面: 読み直しはするが、失敗しても知らせの数は映さない
+        let unknown = TrunkViewModel(preview: nil, center: center)
+        unknown.bind(TrunkService(api: api))
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200,
+                                         body: #"{"pocket":[],"stuck":[],"coins":3}"#, once: true)]
+        await unknown.load(offline: false)
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 500, body: "")]
+        await unknown.noteCoinsChanged(coins: 50, userId: "A")
+        XCTAssertEqual(unknown.state?.coins, 3, "誰の知らせか確かめずに枚数を映した")
     }
 
     /// まだ読んでいない画面・見本は読まない（開いたときに読む）
@@ -346,16 +431,20 @@ final class TrunkWelcomeRulesTests: XCTestCase {
         XCTAssertTrue(root.contains("await trunkWelcome.claim(userId: userId, available: trunkAvailability.isAvailable) { try await service.welcome() }"),
                       "トランクが使えるかを見ずに呼んでいる")
         XCTAssertTrue(root.contains(".task(id: auth.userId) { await claimTrunkWelcome() }"))
+        XCTAssertTrue(root.contains("if trunkWelcome.restore(userId: auth.userId) { return }"), "出せなかった案内を起動で戻していない")
+        XCTAssertTrue(root.contains("scenePhase == .active"), "前面に戻ったときに出し直さない")
+        XCTAssertTrue(root.contains("[tabRouter.postSheetsClosed, tabRouter.menuSheetsClosed]"), "シートを閉じたときに出し直さない")
         XCTAssertTrue(root.contains("welcomeShowing: trunkWelcomeGrant != nil"), "案内が出ていることを順番に渡していない")
         XCTAssertTrue(root.contains("launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil"))
-        XCTAssertTrue(root.contains(".onChange(of: auth.userId) { _, userId in trunkWelcome.noteUser(userId) }"))
+        XCTAssertTrue(root.contains("welcomeOffer?.cancel()\n                welcomeOffer = nil\n                trunkWelcome.noteUser(userId)"),
+                      "人が替わっても前の人の案内の待ちが止まらない")
         let store = "TrunkWelcome"
         XCTAssertTrue(try source("Core/Storage/AccountLocalData.swift").contains(store + ".removeData(for: userId, defaults: defaults)"),
                       "退会で印を消していない")
         let view = try source("Features/Trunk/TrunkWelcomeView.swift")
         XCTAssertTrue(view.contains(".navigationDestination(isPresented: $showGacha) { TrunkGachaView(model: model) }"),
                       "「カプセルを回す」がカプセルの機械へ進まない")
-        XCTAssertTrue(view.contains("model.bind(environment.trunk)"))
+        XCTAssertTrue(view.contains("model.bind(environment.trunk, userId: auth.userId)"))
         XCTAssertTrue(view.contains("TrunkCoinMark("), "カプセルの機械の硬貨の描き方を使っていない")
         XCTAssertTrue(view.contains("JPFont.mono("), "数が等幅の数字でない")
         for id in ["trunk.welcome.turn", "trunk.welcome.later", "trunk.welcome.close"] {
