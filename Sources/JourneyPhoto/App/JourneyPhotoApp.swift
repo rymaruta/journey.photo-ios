@@ -315,9 +315,9 @@ struct JourneyPhotoApp: App {
                     // 見本のカード（絵の撮影・Debug のみ）
                     if PreviewSession.passSample, auth.userId != nil {
                         let all = (try? await environment.gallery.fetchPhotos()) ?? []
-                        let ids = all.filter { PassExchange.isPublicCard($0) && ($0.userId ?? $0.uploadedBy) != auth.userId }
-                            .prefix(7).map(\.id)
-                        PassStore.shared.seedPreview(photoIds: Array(ids))
+                        let picked = all.filter { PassExchange.isPublicCard($0) && ($0.userId ?? $0.uploadedBy) != auth.userId }
+                            .prefix(7)
+                        PassStore.shared.seedPreview(photos: Array(picked))
                     }
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も

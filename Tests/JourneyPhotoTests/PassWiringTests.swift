@@ -99,15 +99,12 @@ final class PassWiringTests: XCTestCase {
         XCTAssertFalse(edgeBody.contains(".shadow("), "「はじめて」の光を縁に付けている（写真に光が落ちる）")
         XCTAssertEqual(cards.components(separatedBy: ".background { PassTicketGlow(").count - 1, 3)
         // 2026-10-17 判断: 表と裏は固定の字（文字を大きくする設定では変わらない・読み上げで全部読める）なので
-        // `.dynamicTypeSize` を付けない。設定に合わせて大きくなる字（`JPFont`）を使うのは帳の小さな札だけで、上限はそこに1つ
-        XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 1)
-        let slot = try XCTUnwrap(cards.range(of: "struct PassTicketSlot"))
-        let mini = try XCTUnwrap(cards.range(of: "struct PassMiniStack"))
-        XCTAssertTrue(cards[slot.upperBound..<mini.lowerBound].contains(".dynamicTypeSize(...PassCardStyle.typeLimit)"),
-                      "帳の小さな札に文字の大きさの上限が無い")
+        // `.dynamicTypeSize` を付けない。小さなきっぷ（帳の札・ホームの束）もマルス券の縮小版にしたので同じく固定の字
+        XCTAssertFalse(cards.contains(".dynamicTypeSize("), "固定の字の札に効かない文字の大きさの上限が残っている")
         let front = try XCTUnwrap(cards.range(of: "struct PassCardFront")).lowerBound
-        XCTAssertFalse(cards[front..<slot.lowerBound].contains(".font(JPFont."),
-                       "表と裏に設定で大きくなる字が入った（固定の字の判断が崩れる・札からはみ出す）")
+        let full = try XCTUnwrap(cards.range(of: "struct PassPhotoFullView")).lowerBound
+        XCTAssertFalse(cards[front..<full].contains(".font(JPFont."),
+                       "きっぷ（表・裏・小さなきっぷ）に設定で大きくなる字が入った（固定の字の判断が崩れる・札からはみ出す）")
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
         XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(back)"))
