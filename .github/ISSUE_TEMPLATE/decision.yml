@@ -1,0 +1,29 @@
+name: owner の判断待ち
+description: owner に決めてもらうこと（作業する側が出す）
+title: "[判断] "
+labels: ["owner の判断待ち"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: 決めてほしいこと
+      description: 1〜2行。「はい／いいえ」か選択肢で答えられる形に
+    validations:
+      required: true
+  - type: textarea
+    id: recommend
+    attributes:
+      label: 推奨とその理由
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影響（利用者・本番・データ）と費用
+      description: 費用が増えないなら「増えない」と書く。確かめていないことは「確かめていない」と書く
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: 関係する PR・札
