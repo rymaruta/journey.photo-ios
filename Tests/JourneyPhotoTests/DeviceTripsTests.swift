@@ -218,6 +218,27 @@ final class DeviceTripsTests: XCTestCase {
 
     // MARK: - 投稿の流れへ
 
+    /// 🔴 **開いた一冊は、あとから分かった土地の時間帯で日を切り直す**（2026-10-17）。
+    /// 開いたときの値のままだと、海外の旅の日が1日ずれたまま「この旅の写真を投稿する」へ渡る
+    func testShownBookUsesTheResolvedTimeZone() throws {
+        let utc = TimeZone(identifier: "UTC")!
+        // 2026-09-11 20:00 UTC は日本では 2026-09-12 05:00。日をまたぐ
+        let evening = Date(timeIntervalSince1970: 1_789_156_800)
+        let shots = (0..<6).map { i in
+            LibraryShot(id: "k\(i)", date: evening.addingTimeInterval(Double(i) * 3600), lat: kyoto.lat, lng: kyoto.lng)
+        }
+        let homeShots = (0..<8).map { i in
+            LibraryShot(id: "h\(i)", date: evening.addingTimeInterval(Double(-48 + i) * 3600), lat: home.lat, lng: home.lng)
+        }
+        let trip = try XCTUnwrap(LibraryTrips.find(homeShots + shots, home: home, timeZone: utc).first)
+        let shown = DeviceTrips.shown(trip, trips: [trip], zones: [trip.id: tokyo.identifier])
+        XCTAssertEqual(shown.timeZone.identifier, tokyo.identifier)
+        XCTAssertTrue(shown.zoneIsKnown)
+        XCTAssertNotEqual(shown.days.map(\.key), trip.days.map(\.key), "土地の時間帯で日を切り直していない")
+        // 時間帯が無ければ、開いたときの旅のまま
+        XCTAssertEqual(DeviceTrips.shown(trip, trips: [], zones: [:]).days.map(\.key), trip.days.map(\.key))
+    }
+
     func testMatchingFindsTheSameTripOrTheTripWithTheCover() throws {
         let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
         XCTAssertEqual(DeviceTrips.matching(trip, in: [trip])?.id, trip.id)
