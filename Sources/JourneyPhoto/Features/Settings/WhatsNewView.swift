@@ -45,7 +45,8 @@ struct WhatsNewView: View {
                         }
                         if let heading = section.heading {
                             // 眉ラベルの真下の1つ目は線を引かない（眉ラベルの線と二重になる）
-                            releaseHeading(heading, version: section.id, rule: index > 1)
+                            releaseHeading(heading, spoken: section.spokenHeading ?? heading,
+                                           version: section.id, rule: index > 1)
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(section.items.enumerated()), id: \.offset) { i, item in
@@ -82,17 +83,19 @@ struct WhatsNewView: View {
         // 上書きされ、UI テストが主ボタンを見つけられなかった（run 344）
     }
 
-    /// 版の区切り: 白 8% の 1px の線（板 Settings の行の間の線）→ 12 の余白 → 見出し（12・500・text3）
+    /// 版の区切り: 白 8% の 1px の線（`JPCardDivider`・板 Settings の行の間の線）→ 12 の余白 →
+    /// 見出し（12・500・text3）。読み上げは「バージョン 1.0.82、10月10日」
     @ViewBuilder
-    private func releaseHeading(_ text: String, version: String, rule: Bool) -> some View {
+    private func releaseHeading(_ text: String, spoken: String, version: String, rule: Bool) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             if rule {
-                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                JPCardDivider()
                     .accessibilityHidden(true)
             }
             Text(text)
                 .font(JPFont.mono(JPTypeScale.caption, medium: true))
                 .foregroundStyle(WebTheme.text3)
+                .accessibilityLabel(spoken)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("whatsNew.release.\(version)")
         }

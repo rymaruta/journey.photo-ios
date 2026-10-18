@@ -1229,7 +1229,9 @@ final class ScreenshotTests: XCTestCase {
         }
         guard row.isHittable else { return }
         row.tap()
-        guard app.staticTexts["新しくなったこと"].firstMatch.waitForExistence(timeout: 10) else { return }
+        // シートの主ボタンで待つ——見出しの文字「新しくなったこと」は設定の行にもあり、開く前に通ってしまう
+        let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "02c-新しくなったこと（設定から）")
 
@@ -1245,7 +1247,6 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "02d-新しくなったこと（これまでのお知らせ）")
         }
-        let close = app.buttons["whatsNew.close"].firstMatch
         if close.exists, close.isHittable { close.tap() }
     }
 

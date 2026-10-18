@@ -62,17 +62,16 @@ enum WhatsNew {
             guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
                   parts.allSatisfy({ $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }),
                   let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else { return nil }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
-            let components = DateComponents(year: y, month: m, day: d)
-            guard (1...12).contains(m), (1...31).contains(d),
-                  components.isValidDate(in: calendar) else { return nil }
-            year = y
-            month = m
-            day = d
+            self.init(year: y, month: m, day: d)
         }
 
-        init(year: Int, month: Int, day: Int) {
+        /// 暦に無い日（月 0・13、2026-02-30）は nil。**作る口はどれもここを通る**ので、
+        /// `dayText` の月の表を範囲の外で引かない
+        init?(year: Int, month: Int, day: Int) {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            guard (1...12).contains(month), (1...31).contains(day),
+                  DateComponents(year: year, month: month, day: day).isValidDate(in: calendar) else { return nil }
             self.year = year
             self.month = month
             self.day = day
@@ -108,10 +107,12 @@ enum WhatsNew {
         case launch, history
     }
 
-    /// 画面の1かたまり。`heading` があれば区切りの見出し（「1.0.82 · 10月10日」）を上に出す
+    /// 画面の1かたまり。`heading` があれば区切りの見出し（「1.0.82 · 10月10日」）を上に出す。
+    /// `spokenHeading` はその読み上げ（「バージョン 1.0.82、10月10日」）
     struct Section: Equatable {
         let id: String
         let heading: String?
+        var spokenHeading: String? = nil
         let items: [Item]
     }
 
@@ -127,6 +128,7 @@ enum WhatsNew {
             return releases.enumerated().map { index, release in
                 Section(id: release.version,
                         heading: index == 0 ? nil : heading(for: release, now: now),
+                        spokenHeading: index == 0 ? nil : spokenHeading(for: release, now: now),
                         items: release.items)
             }
         }
@@ -140,13 +142,27 @@ enum WhatsNew {
         return "\(release.version)\(PhotoMetaLine.separator)\(dayText(date, now: now, english: english))"
     }
 
+    /// 見出しの読み上げ: 「バージョン 1.0.82、10月10日」・"Version 1.0.82, October 10"。
+    /// 「·」や "Oct" を読ませない
+    static func spokenHeading(for release: Release, now: Date = Date(),
+                              english: Bool = Locale.preferredAppLanguage == "en") -> String {
+        let version = english ? "Version \(release.version)" : "バージョン \(release.version)"
+        guard let date = release.date else { return version }
+        return version + (english ? ", " : "、") + dayText(date, now: now, english: english, spoken: true)
+    }
+
     /// `english` は試験のため（画面の言語はいま日本語で固定・`Locale.preferredAppLanguage`）
     static func dayText(_ date: Day, now: Date = Date(),
-                        english: Bool = Locale.preferredAppLanguage == "en") -> String {
+                        english: Bool = Locale.preferredAppLanguage == "en", spoken: Bool = false) -> String {
         let thisYear = Calendar(identifier: .gregorian).component(.year, from: now)
         let showYear = date.year != thisYear
-        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        let en = "\(months[date.month - 1]) \(date.day)" + (showYear ? ", \(date.year)" : "")
+        let months = spoken
+            ? ["January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December"]
+            : ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        // `Day` は作る時点で 1〜12 に収めてあるが、表を範囲の外で引かないよう念のため収める
+        let month = months[min(max(date.month, 1), 12) - 1]
+        let en = "\(month) \(date.day)" + (showYear ? ", \(date.year)" : "")
         let ja = (showYear ? "\(date.year)年" : "") + "\(date.month)月\(date.day)日"
         return english ? en : ja
     }

@@ -116,6 +116,9 @@ final class WhatsNewTests: XCTestCase {
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
         XCTAssertEqual(releases.map(\.version), ["1.0.82", "1.0.73", "1.0.67"])
+        // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
+        let versions = releases.map(\.version)
+        XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
         // 1.0.82: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
         let latest = try XCTUnwrap(releases.first)
         XCTAssertEqual(latest.items.count, 4)
@@ -172,6 +175,11 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertNil(WhatsNew.Day("2026-13-01"))
         XCTAssertEqual(WhatsNew.Day("2024-02-29"), WhatsNew.Day(year: 2024, month: 2, day: 29))
         XCTAssertNil(WhatsNew.Day("2025-02-29"))
+        // 🔴 数で作る口も暦に無い日を作らない（月の表を範囲の外で引いて落ちていた）
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 0, day: 1))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 13, day: 1))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 2, day: 30))
+        XCTAssertNil(WhatsNew.Day(year: 2026, month: 1, day: 0))
     }
 
     private let now = Date(timeIntervalSince1970: 1_792_300_000) // 2026-10 の半ば
@@ -185,6 +193,11 @@ final class WhatsNewTests: XCTestCase {
         let old = WhatsNew.Release(version: "0.9.0", items: [], date: WhatsNew.Day(year: 2025, month: 12, day: 1))
         XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: false), "0.9.0 · 2025年12月1日")
         XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: true), "0.9.0 · Dec 1, 2025")
+        // 読み上げは「·」や略した月を読ませない
+        XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: false), "バージョン 1.0.82、10月10日")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: true), "Version 1.0.82, October 10")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: release("1.0.67"), now: now, english: false), "バージョン 1.0.67")
+        XCTAssertEqual(WhatsNew.spokenHeading(for: old, now: now, english: true), "Version 0.9.0, December 1, 2025")
     }
 
     /// 🔴 **履歴は新しい順・最新は見出し無しで上・2つ目から版ごとに見出し**（JSON の並びに頼らない）
@@ -193,6 +206,7 @@ final class WhatsNewTests: XCTestCase {
         let sections = WhatsNew.sections(WhatsNew.decode(data), mode: .history, now: now)
         XCTAssertEqual(sections.map(\.id), ["1.0.82", "1.0.73", "1.0.67"])
         XCTAssertEqual(sections.map(\.heading), [nil, "1.0.73", "1.0.67 · 10月4日"])
+        XCTAssertEqual(sections.map(\.spokenHeading), [nil, "バージョン 1.0.73", "バージョン 1.0.67、10月4日"])
         XCTAssertEqual(sections.map(\.items.count), [1, 1, 1])
         XCTAssertEqual(WhatsNew.sections([], mode: .history), [])
     }
@@ -226,6 +240,9 @@ final class WhatsNewTests: XCTestCase {
         let view = try source("Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift")
         XCTAssertTrue(view.contains("var mode: WhatsNew.Mode = .launch"))
         XCTAssertTrue(view.contains("WhatsNew.sections(releases, mode: mode)"))
+        // 見出しは読み上げを持ち、区切り線は札の行の間の線と同じ部品
+        XCTAssertTrue(view.contains(".accessibilityLabel(spoken)"))
+        XCTAssertTrue(view.contains("JPCardDivider()"))
         let settings = try source("Sources/JourneyPhoto/Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("\"settings.whatsNew\""))
         XCTAssertTrue(settings.contains("WhatsNewView(releases:"))
