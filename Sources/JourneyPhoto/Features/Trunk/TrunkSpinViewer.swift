@@ -78,7 +78,10 @@ struct TrunkSpinViewer: View {
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles)
             let frontTook = started.duration(to: clock.now)
-            await Task.yield()
+            // 1コマ待って正面を画面に出してから残りを描く（`Task.yield` では同じコマのうちに戻りうる）。
+            // 待つ間に閉じられたら描かずに抜ける
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            guard !Task.isCancelled else { return }
             boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts)
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
         }
