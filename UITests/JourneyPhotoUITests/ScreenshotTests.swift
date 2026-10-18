@@ -1195,6 +1195,61 @@ final class ScreenshotTests: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
 
+    /// **設定から開いた「新しくなったこと」の履歴**（2026-10-18・`WhatsNewView(mode: .history)`）。
+    ///
+    /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。⚠️ 設定がまだ最新の版だけを渡している
+    /// （`prefix(1)`）間は履歴にならず、最新の版だけが撮れる——「これまでのお知らせ」の2枚目は撮らずに抜ける。
+    /// 設定の1行が `mode: .history` に替わると、2枚目（区切りの見出し）まで撮れる。出なければ撮らない（この試験の決まり）
+    func testCapturesWhatsNewHistory() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let row = app.buttons["settings.whatsNew"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !row.isHittable, pushes < 8 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return }
+        row.tap()
+        // シートの主ボタンで待つ——見出しの文字「新しくなったこと」は設定の行にもあり、開く前に通ってしまう
+        let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02c-新しくなったこと（設定から）")
+
+        // 履歴の形のときだけ: 「これまでのお知らせ」と版の区切りが見えるまで送って撮る
+        let history = app.descendants(matching: .any)["whatsNew.history"].firstMatch
+        if history.waitForExistence(timeout: 3) {
+            var down = 0
+            while !history.isHittable, down < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                down += 1
+            }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "02d-新しくなったこと（これまでのお知らせ）")
+        }
+        if close.exists, close.isHittable { close.tap() }
+    }
+
     /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）と、
     /// マイページの名前の行 → 名前の横の画面の「PRO 限定」（板 BadgePicker）。
     ///
