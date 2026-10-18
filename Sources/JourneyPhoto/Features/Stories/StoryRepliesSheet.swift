@@ -225,11 +225,17 @@ struct StoryRepliesSheet: View {
     /// ブロック（確認の後）。**サーバーに送り、その場で一覧から外す**
     private func block(_ item: StoryReply) async {
         guard let uid = item.uid else { return }
+        // 押した人。🔴 **次の人の返信一覧から外さない**（2026-10-17）。
+        // 控え（`hidden`）は人が替わっていたら書かないが、このシートの `blockedHere` は
+        // 書いていたので、次の人の返信がその場で消えていた
+        let sender = hidden.owner
         do {
             try await hidden.blockAndHide(uid, environment: environment)
+            guard StoryReplyActions.keepsBlock(sender: sender, viewer: hidden.owner) else { return }
             blockedHere.insert(uid)
             toasts.show(L("ブロックしました。設定から解除できます。", "Blocked. You can undo this in Settings."))
         } catch {
+            guard StoryReplyActions.keepsBlock(sender: sender, viewer: hidden.owner) else { return }
             toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
                         kind: .failure)
         }
@@ -291,6 +297,11 @@ struct StoryReplyActions: Equatable {
     /// 吹き出しの右に必ず空ける幅。「…」がある行は「…」（44pt）が幅を取るので詰め、
     /// 無い行（自分の返信）は v2 の板どおり節の間（32）を空ける
     var trailingSpace: CGFloat { hasMenu ? JPSpace.s : JPSpace.section }
+
+    /// ブロックの答えを、このシートに書くか。**押した人が、まだその人のときだけ**
+    static func keepsBlock(sender: String?, viewer: String?) -> Bool {
+        sender != nil && sender == viewer
+    }
 
     /// このシートでブロックした人の返信を外す
     static func visible(_ items: [StoryReply], blockedHere: Set<String>) -> [StoryReply] {

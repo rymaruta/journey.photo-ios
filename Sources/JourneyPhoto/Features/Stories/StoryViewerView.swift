@@ -1660,14 +1660,18 @@ struct StoryViewerView: View {
         isSending = true
         defer { isSending = false }
         let owner = hidden.owner
+        let storyId = story.id
         do {
             try await environment.moderation.block(userId: userId)
             hidden.block(userId, for: owner)
             await environment.gallery.setHidden(hidden.snapshot)
+            // 人が替わった、または別の1本を見ているなら、束を飛ばさない
+            guard hidden.owner == owner, owner != nil, current?.id == storyId else { return }
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
             leaveGroup()
         } catch {
+            guard hidden.owner == owner, owner != nil, current?.id == storyId else { return }
             message = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
