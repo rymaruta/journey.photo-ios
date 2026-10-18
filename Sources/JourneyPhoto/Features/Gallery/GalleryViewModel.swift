@@ -559,6 +559,12 @@ final class GalleryViewModel: ObservableObject {
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
 
+    /// 割れた画像の URL が、この画面に出している写真のものか（署名つき画像の取り直し・`SignedImageExpiry`）
+    func showsImage(_ url: URL) -> Bool {
+        if case .loaded(let photos) = state, photos.containsImageURL(url) { return true }
+        return all.containsImageURL(url)
+    }
+
     /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）。
     /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }

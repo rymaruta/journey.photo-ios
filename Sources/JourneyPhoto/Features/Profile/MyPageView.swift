@@ -105,7 +105,10 @@ struct MyPageView: View {
         // 割れたら読み直して新しい URL をもらう（2026-10-18・札 #294・`SignedImageExpiry`）
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
-            for await _ in SignedImageExpiry.signals() {
+            var gate = SignedImageRefetchGate()
+            for await url in SignedImageExpiry.signals() {
+                // **この画面の写真のときだけ**・15秒に1回まで（ホームの1枚でマイページを読み直さない）
+                guard model.photos.containsImageURL(url), gate.shouldRefetch(after: url, now: Date()) else { continue }
                 await model.load(for: auth.userId)
             }
         }

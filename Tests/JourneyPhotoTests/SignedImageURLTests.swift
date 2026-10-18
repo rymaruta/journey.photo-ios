@@ -44,40 +44,55 @@ final class SignedImageURLTests: XCTestCase {
         XCTAssertTrue(gate.shouldRefetch(after: signed(t - 60), now: now.addingTimeInterval(16)))
     }
 
-    func testReportPostsTheRefetchSignal() {
-        SignedImageExpiry.resetForTesting()
-        defer { SignedImageExpiry.resetForTesting() }
+    func testReportPostsOnlyExpiredSignedURLsWithTheURL() {
         let center = NotificationCenter()
-        let posted = Counter()
-        let token = center.addObserver(forName: .signedImagesExpired, object: nil, queue: nil) { _ in posted.add() }
+        let got = Box<[URL]>([])
+        let token = center.addObserver(forName: .signedImagesExpired, object: nil, queue: nil) { note in
+            if let url = note.userInfo?[SignedImageExpiry.urlKey] as? URL { got.mutate { $0.append(url) } }
+        }
         defer { center.removeObserver(token) }
         let t = now.timeIntervalSince1970
         SignedImageExpiry.report(signed(t + 600), now: now, center: center)
-        XCTAssertEqual(posted.value, 0)
+        SignedImageExpiry.report(URL(string: "https://cdn.example.com/uploads/u/p.jpg"), now: now, center: center)
+        SignedImageExpiry.report(nil, now: now, center: center)
+        XCTAssertEqual(got.value, [])
         SignedImageExpiry.report(signed(t - 60), now: now, center: center)
-        SignedImageExpiry.report(signed(t - 60), now: now.addingTimeInterval(1), center: center)
-        XCTAssertEqual(posted.value, 1)
+        XCTAssertEqual(got.value, [signed(t - 60)], "どの画像が割れたかを載せる（受ける画面が自分の写真か確かめる）")
     }
 
-    func testSignalsStreamDeliversTheRefetchSignal() async {
+    func testSignalsStreamDeliversTheFailedURL() async {
         let center = NotificationCenter()
         let stream = SignedImageExpiry.signals(center: center)
-        let received = Task { () -> Bool in
-            for await _ in stream { return true }
-            return false
+        let received = Task { () -> URL? in
+            for await url in stream { return url }
+            return nil
         }
         // 受け口が付くまで少し待ってから流す
         try? await Task.sleep(nanoseconds: 50_000_000)
-        center.post(name: .signedImagesExpired, object: nil)
+        let url = signed(now.timeIntervalSince1970 - 60)
+        center.post(name: .signedImagesExpired, object: nil, userInfo: [SignedImageExpiry.urlKey: url])
         let got = await received.value
-        XCTAssertTrue(got)
+        XCTAssertEqual(got, url)
+    }
+
+    func testPhotoKnowsItsImageURLs() throws {
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data("""
+        {"id":"p","src":"https://x/p.jpg","thumbSrc":"https://x/p_t.webp","thumbSmAvif":"https://x/p_s.avif",
+         "createdAt":"2026-01-02T00:00:00Z"}
+        """.utf8))
+        XCTAssertTrue(photo.usesImageURL(URL(string: "https://x/p_t.webp")!))
+        XCTAssertTrue(photo.usesImageURL(URL(string: "https://x/p_s.avif")!))
+        XCTAssertFalse(photo.usesImageURL(URL(string: "https://x/other.jpg")!))
+        XCTAssertTrue([photo].containsImageURL(URL(string: "https://x/p.jpg")!))
+        XCTAssertFalse([Photo]().containsImageURL(URL(string: "https://x/p.jpg")!))
     }
 }
 
-/// 受け口（別のスレッドから呼ばれうる）で数える箱
-private final class Counter: @unchecked Sendable {
+/// 受け口（別のスレッドから呼ばれうる）で値を持つ箱
+private final class Box<T>: @unchecked Sendable {
     private let lock = NSLock()
-    private var count = 0
-    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
-    func add() { lock.lock(); count += 1; lock.unlock() }
+    private var stored: T
+    init(_ value: T) { stored = value }
+    var value: T { lock.lock(); defer { lock.unlock() }; return stored }
+    func mutate(_ change: (inout T) -> Void) { lock.lock(); change(&stored); lock.unlock() }
 }

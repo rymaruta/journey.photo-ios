@@ -33,7 +33,7 @@ enum SignedImageURL {
 /// 期限切れで割れた画像を見て、**一覧を取り直すか**（画面を持たない計算）。
 ///
 /// 格子では一度に何枚も割れるので、取り直しは `minInterval` に1回だけ
-/// （1枚ごとに一覧を取り直さない）。
+/// （1枚ごとに一覧を取り直さない）。**受ける画面ごとに1つ**持つ（`.task` の中の変数）。
 struct SignedImageRefetchGate {
     var minInterval: TimeInterval = 15
     private(set) var lastRefetch: Date?
@@ -51,43 +51,53 @@ struct SignedImageRefetchGate {
     }
 }
 
+extension Photo {
+    /// この写真が画面に出しうる画像の URL（本体・派生）
+    var imageURLStrings: [String] {
+        [src, thumbSrc, src256, thumbAvif, thumbSm, thumbSmAvif, srcAvif].compactMap { $0 }.filter { !$0.isEmpty }
+    }
+
+    /// 割れた画像の URL が、この写真のものか
+    func usesImageURL(_ url: URL) -> Bool {
+        let target = url.absoluteString
+        return imageURLStrings.contains(target)
+    }
+}
+
+extension Array where Element == Photo {
+    /// 割れた画像の URL を持つ写真が、この一覧に在るか（**関係ない画面は読み直さない**ための判定）
+    func containsImageURL(_ url: URL) -> Bool {
+        contains { $0.usesImageURL(url) }
+    }
+}
+
 extension Notification.Name {
-    /// 期限の切れた署名つき画像が割れた（一覧を取り直す合図）。`SignedImageExpiry` が流す
+    /// 期限の切れた署名つき画像が割れた（`userInfo["url"]` にその URL）。`SignedImageExpiry` が流す
     static let signedImagesExpired = Notification.Name("JourneyPhoto.signedImagesExpired")
 }
 
-/// 割れた画像を受け取り、取り直すと決めたら `signedImagesExpired` を流す（アプリに1つ）。
+/// 割れた画像を受け取り、**期限の切れた署名つき URL なら、その URL を載せて合図を流す**（アプリに1つ）。
 ///
 /// 画面ごとに取り直しの口を配って回らない——`RemoteImage` が1か所で報告し、
-/// 署名つき URL を出す一覧（限定公開の取り口・マイページ）がこの合図で読み直す。
+/// 署名つき URL を出す一覧（限定公開を重ねるホーム・探す・マイページ）が受ける。
+/// **受ける側が「自分の一覧の写真か」を確かめ**、自分の `SignedImageRefetchGate` で間を置く
+/// （マイページの1枚が割れても、ホームと探すは読み直さない・2026-10-18 のレビュー）。
 ///
-/// **どの actor からでも呼べる**（`AsyncImage` の `onAppear` からも、画像を読む非同期の関数からも）。
-/// 覚えている時刻は鍵で守る。
+/// どの actor からでも呼べる（`AsyncImage` の `onAppear` からも、画像を読む非同期の関数からも）。
 enum SignedImageExpiry {
-    private static let lock = NSLock()
-    private static var gate = SignedImageRefetchGate()
+    static let urlKey = "url"
 
     static func report(_ failedURL: URL?, now: Date = Date(), center: NotificationCenter = .default) {
-        lock.lock()
-        let refetch = gate.shouldRefetch(after: failedURL, now: now)
-        lock.unlock()
-        guard refetch else { return }
-        center.post(name: .signedImagesExpired, object: nil)
+        guard let failedURL, SignedImageURL.isExpired(failedURL, now: now) else { return }
+        center.post(name: .signedImagesExpired, object: nil, userInfo: [urlKey: failedURL])
     }
 
-    /// 試験で間隔の覚えを消す
-    static func resetForTesting() {
-        lock.lock()
-        gate = SignedImageRefetchGate()
-        lock.unlock()
-    }
-
-    /// 取り直しの合図を、画面の `.task` で `for await` できる形で流す
+    /// 割れた URL を、画面の `.task` で `for await` できる形で流す
     /// （画面が消えれば `.task` が取り消され、受け口も外れる）
-    static func signals(center: NotificationCenter = .default) -> AsyncStream<Void> {
+    static func signals(center: NotificationCenter = .default) -> AsyncStream<URL> {
         AsyncStream { continuation in
-            let token = ObserverToken(center.addObserver(forName: .signedImagesExpired, object: nil, queue: nil) { _ in
-                continuation.yield()
+            let token = ObserverToken(center.addObserver(forName: .signedImagesExpired, object: nil, queue: nil) { note in
+                if let url = note.userInfo?[urlKey] as? URL { continuation.yield(url) }
             })
             continuation.onTermination = { _ in center.removeObserver(token.value) }
         }

@@ -163,11 +163,15 @@ struct GalleryView: View {
                 await model.load()
             }
         }
-        // **限定公開の写真の画像が期限切れで割れたら、取り直して新しい URL をもらう**
-        // （2026-10-18・札 #294。`SignedImageExpiry`）。控えを使わず読む（控えの URL も同じ期限）
+        // **限定公開の写真の画像が期限切れで割れたら、限定公開だけ取り直して新しい URL をもらう**
+        // （2026-10-18・札 #294。`SignedImageExpiry`）。**この画面の写真のときだけ**・15秒に1回まで。
+        // `force` なしで読む＝ページ・位置・全件の控えはそのまま（「新着」を1ページ目へ戻さない）
         .task {
-            for await _ in SignedImageExpiry.signals() {
-                await model.load(force: true)
+            var gate = SignedImageRefetchGate()
+            for await url in SignedImageExpiry.signals() {
+                guard model.showsImage(url), gate.shouldRefetch(after: url, now: Date()) else { continue }
+                await environment.gallery.expireRestricted(containing: url)
+                await model.load()
             }
         }
         .sheet(item: $reportTarget) { target in
