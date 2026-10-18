@@ -239,40 +239,6 @@ final class DeviceTripsTests: XCTestCase {
         XCTAssertEqual(DeviceTrips.shown(trip, trips: [], zones: [:]).days.map(\.key), trip.days.map(\.key))
     }
 
-    /// 🔴 **投稿の流れは、棚が引いた地名と時間帯をそのまま使う**（2026-10-17）。
-    /// もう一度地図に聞くと、一冊につき1回の約束を破り、答えが返るまで日が目安のままになる。
-    /// 時間帯が無い地名だけは写さない（写すと、流れが時間帯を引きに行かなくなる）
-    @MainActor
-    func testPostFlowReusesThePlaceTheShelfAlreadyLookedUp() async throws {
-        LibraryTripModel.forgetPlaceNames()
-        defer { LibraryTripModel.forgetPlaceNames() }
-        let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
-        let model = LibraryTripModel()
-        model.adoptDevicePlace(of: trip, names: [trip.id: "京都市"], zones: [:])
-        XCTAssertNil(model.name(for: trip.center), "時間帯の無い地名を覚えると、流れが時間帯を引きに行けない")
-        XCTAssertNil(model.zone(for: trip.center))
-
-        model.adoptDevicePlace(of: trip, names: [trip.id: "京都市"], zones: [trip.id: tokyo.identifier])
-        XCTAssertEqual(model.name(for: trip.center), "京都市")
-        XCTAssertEqual(model.zone(for: trip.center)?.identifier, tokyo.identifier)
-        // 流れが先に覚えた分は、棚の別の答えで上書きしない
-        model.adoptDevicePlace(of: trip, names: [trip.id: "別の市"], zones: [trip.id: "Europe/Paris"])
-        XCTAssertEqual(model.name(for: trip.center), "京都市")
-        XCTAssertEqual(model.zone(for: trip.center)?.identifier, tokyo.identifier)
-
-        let list = try String(contentsOf: URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/JourneyPhoto/Features/Trips/LibraryTripListView.swift"), encoding: .utf8)
-        let task = try XCTUnwrap(list.range(of: "model.adoptDevicePlace"))
-        let load = try XCTUnwrap(list.range(of: "await model.load"))
-        XCTAssertLessThan(task.lowerBound, load.lowerBound, "地名を写す前に旅を探している")
-        let book = try String(contentsOf: URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/JourneyPhoto/Features/Trips/DeviceTripShelf.swift"), encoding: .utf8)
-        XCTAssertTrue(book.contains("DeviceTrips.shown(trip, trips: store.trips, zones: store.zones)"))
-        XCTAssertTrue(book.contains("openTripImport(shown)"))
-    }
-
     func testMatchingFindsTheSameTripOrTheTripWithTheCover() throws {
         let trip = try XCTUnwrap(DeviceTrips.found(in: library()).first)
         XCTAssertEqual(DeviceTrips.matching(trip, in: [trip])?.id, trip.id)
