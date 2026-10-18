@@ -141,7 +141,7 @@ final class TrunkDesignTests: XCTestCase {
         XCTAssertEqual(TrunkLabelShape.burstPoints.count, 56)
         XCTAssertEqual(TrunkLabelShape.burstPoints[0], .init(x: 1.0, y: 0.5))
         XCTAssertEqual(TrunkLabelShape.allCases.count, 10)
-        XCTAssertEqual(TrunkLabelArt.allCases.count, 22)
+        XCTAssertEqual(TrunkLabelArt.allCases.count, 26)
         let oval = TrunkLabelShape.oval.fitted(maxWidth: 92, maxHeight: 76)
         XCTAssertEqual(oval.w, 92)
         XCTAssertEqual(oval.h, 60.5, accuracy: 0.05)

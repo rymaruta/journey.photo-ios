@@ -141,6 +141,9 @@ enum TrunkLabelShape: String, CaseIterable {
 enum TrunkLabelArt: String, CaseIterable {
     case fuji, pagoda, wave, sun, skyline, snow, aurora, plane, ship, train, torii
     case sakura, maple, lighthouse, moon, star, firework, rain, fog, cloud, camera, globe
+    /// 地名も季節・時刻・節目の値も無いラベルの図案（2026-10-18・`TrunkLabelDesign.isSealed`）:
+    /// 消印（土地）・四季の枝（季節）・文字盤（時刻）・記章（節目）。どれも値を言わない図案
+    case postmark, branch, dial, rosette
 }
 
 // MARK: - 1枚の図柄
@@ -200,6 +203,9 @@ enum TrunkLabelDesign {
         "abroad": [p(0x8C2F2B, 0xF2E6CC, 0xE7C77A), p(0x1E3A55, 0xEFE3C8, 0xE7B85A), p(0xE3B23C, 0x6A1E14, 0xB3261E),
                    p(0xF4F1EA, 0x1F4E8C, 0x5B8FC9), p(0x253A52, 0xE6F2F4, 0x7FE0A8), p(0xE9E2D2, 0x1A1A1A, 0xC8352A),
                    p(0x2E4E5E, 0xF0E2C2, 0xE7B85A), p(0x3B2E5A, 0xD8F0E0, 0x7FE0A8)],
+        // 地名も値も無いラベル（`isSealed`）: 古い旅行鞄の貼り紙の落ち着いた色（紺・生成り・えんじ・深緑に金の差し色）
+        "journey": [p(0x22303F, 0xEFE3C8, 0xD9B566), p(0xEFE6D2, 0x2B2A28, 0xA8432E), p(0x3A2620, 0xF0E2C2, 0xD9B566),
+                    p(0x2F4A3E, 0xF0E6CE, 0xE7C77A), p(0xE8DFCB, 0x22405E, 0xB88A3E)],
     ]
 
     /// 箔押しの色（モック Labels の「箔押し」: 地 #3A2A12・字 #3A2410・差し色 #FFF1C4）
@@ -220,6 +226,10 @@ enum TrunkLabelDesign {
         "firstCountry": [.globe, .plane],
         "home": [.pagoda, .torii, .fuji, .ship, .train, .lighthouse, .wave, .cloud, .fog],
         "abroad": [.skyline, .ship, .lighthouse, .sun, .wave, .plane, .aurora, .rain],
+        "sealed-place": [.postmark],
+        "sealed-season": [.branch],
+        "sealed-timeslot": [.dial],
+        "sealed-milestone": [.rosette],
     ]
 
     /// 日本の土地か（国名が無いか「日本」）。国内と海外で色と絵の組を分ける
@@ -228,8 +238,25 @@ enum TrunkLabelDesign {
         return country == "日本" || country.lowercased() == "japan"
     }
 
+    /// 地名も、種類に合う値（季節・時刻・節目）も無いラベル（2026-10-18・人のトランク）。
+    ///
+    /// 人の口（`GET /users/{uid}/trunk`）は、地名を見せてよいと確かめていないラベルと地名がもともと無いラベルを
+    /// 同じ形（`kind`・`seed`・`foil`・`pos` だけ）で返す。そのまま描くと季節・時刻の札が土地の色と絵に落ち、
+    /// 本人の画面と別の札に見える。**値を言わない専用の図案**（種類ごとの絵・落ち着いた色・決まった刷りの字）で描く。
+    /// 判定はラベルの中身だけで決める——どの画面でも同じラベルは同じ絵（画面ごとに見た目を割らない）
+    static func isSealed(_ label: TrunkLabel) -> Bool {
+        guard label.place.name.isEmpty else { return false }
+        switch label.kind {
+        case .season: return label.season == nil
+        case .timeslot: return label.timeslot == nil
+        case .milestone: return label.milestone == nil
+        case .place: return true
+        }
+    }
+
     /// 色と絵の組の名前（季節・時刻・節目・土地）
     static func theme(_ label: TrunkLabel) -> (palette: String, art: String) {
+        if isSealed(label) { return ("journey", "sealed-\(label.kind.rawValue)") }
         switch label.kind {
         case .milestone:
             switch label.milestone {
@@ -288,6 +315,7 @@ enum TrunkLabelDesign {
 
     /// ラベルの3行（上の欧文・土地の名前・下の行）。**紙に刷った文字なので、画面の言語で変えない**
     static func texts(_ label: TrunkLabel) -> (t1: String, t2: String, t3: String) {
+        if isSealed(label) { return (sealedHeading(label.kind), "旅の記録", "JOURNEY PHOTO") }
         let name = label.place.name
         let latin = label.place.latin?.uppercased()
         if label.kind == .milestone, let m = label.milestone {
@@ -312,6 +340,16 @@ enum TrunkLabelDesign {
             t3 = "JOURNEY PHOTO"
         }
         return (t1, t2, t3)
+    }
+
+    /// 地名も値も無いラベルの上の欧文（種類の名前だけ。季節・時刻・節目の値は言わない）
+    static func sealedHeading(_ kind: TrunkLabel.Kind) -> String {
+        switch kind {
+        case .season: return "FOUR SEASONS"
+        case .timeslot: return "ALL HOURS"
+        case .milestone: return "MILESTONE"
+        case .place: return "JOURNEY"
+        }
     }
 
     /// 一覧の札の下の短い説明（モック Main の「京都 · 桜」）と読み上げ

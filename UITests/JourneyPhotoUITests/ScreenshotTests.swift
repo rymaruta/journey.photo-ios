@@ -2425,5 +2425,98 @@ final class ScreenshotTests: XCTestCase {
         }
         close.tap()
     }
+
+    // MARK: - 人のトランク（2026-10-18・板 TheirTrunk・TheirInside・ProfileTrunk）
+
+    /// **人のトランク**（`-JPPreviewTheirTrunk`・Debug のみ。サーバーには何も送らない見本）: ホームの写真 → 作者の
+    /// プロフィールのトランクの段 → 人のトランク（ラベルを選ぶ・地名の無いラベル）→ 回す → ふたを開ける。
+    /// 作者の行が出ない（写真の並び次第）なら撮らずに抜ける。**プロフィールが出たのに段が無ければ落とす**。押せる所は 44pt 以上
+    func testCapturesTheirTrunk() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        // 人のページの見出し（公開プロフィール）は本番から読む（staging にこの人は居ない・一巡と同じ）
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewTheirTrunk", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
+
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        guard firstPhoto.exists, firstPhoto.isHittable else { return }
+        firstPhoto.tap()
+        let toAuthor = app.buttons["photo.author"].firstMatch
+        var authorPushes = 0
+        while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, authorPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            authorPushes += 1
+        }
+        guard toAuthor.exists, toAuthor.isHittable else { return }
+        toAuthor.tap()
+
+        let card = app.buttons["profile.trunk"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return XCTFail("人のプロフィールにトランクの段が無い") }
+        scrollTo(card, in: app)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "101-人のプロフィールのトランク")
+        XCTAssertGreaterThanOrEqual(card.frame.height, 44, "トランクの段が 44pt 未満")
+        card.tap()
+
+        let open = app.buttons["trunk.their.open"].firstMatch
+        guard open.waitForExistence(timeout: 15) else { return XCTFail("人のトランクの画面が開かない") }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "101a-人のトランク")
+        for id in ["trunk.their.open", "trunk.their.spin"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        let labels = app.buttons.matching(identifier: "trunk.their.label")
+        XCTAssertGreaterThan(labels.count, 0, "トランクのラベルが押せない")
+        for i in 0..<labels.count {
+            let frame = labels.element(boundBy: i).frame
+            XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44 - 0.5, "ラベルの押せる所が 44pt 未満")
+        }
+        // 地名の無いラベル（地名なしの形）を選ぶ
+        let sealed = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
+                                                      "trunk.their.label", "旅の記録")).firstMatch
+        if sealed.exists, sealed.isHittable {
+            sealed.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "101b-人のトランク（地名の無いラベル）")
+        } else {
+            XCTFail("見本の地名の無いラベルが押せない")
+        }
+
+        app.buttons["trunk.their.spin"].firstMatch.tap()
+        let close = app.buttons["trunk.spin.close"].firstMatch
+        if close.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "101d-人のトランクを回した")
+            close.tap()
+        } else {
+            XCTFail("人のトランクを回す画面が開かない")
+        }
+
+        guard open.waitForExistence(timeout: 10), open.isHittable else { return XCTFail("「ふたを開ける」が押せない") }
+        open.tap()
+        let medal = app.buttons["trunk.inside.medal"].firstMatch
+        guard medal.waitForExistence(timeout: 15) else { return XCTFail("人のトランクのふたが開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "101c-人のトランクの中")
+        XCTAssertFalse(app.buttons["trunk.open.emptyPost"].firstMatch.exists, "人のトランクに「写真を投稿する」が出る")
+        XCTAssertFalse(app.buttons["trunk.open.toggle"].firstMatch.exists, "人のトランクに開け閉めのボタンが出る")
+    }
 }
 

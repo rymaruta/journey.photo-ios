@@ -406,18 +406,41 @@ struct TrunkInsideContents: Equatable {
     let medals: [EarnedBadge]
     /// 会員証を入れるか（**Pro のときだけ**）
     let showsCard: Bool
-    /// すれちがい帳に綴じた乗車券の枚数
+    /// すれちがい帳に綴じた乗車券の枚数（人のトランクは「わたしの乗車券」の 0 か 1）
     let ticketCount: Int
+    /// 誰のトランクか（2026-10-18・人のトランク。人のは読むだけで、乗車券はその人の1枚）
+    let owner: Owner
+
+    enum Owner: Equatable {
+        case mine
+        /// 人のトランク（名前）
+        case theirs(String)
+    }
+
+    var isTheirs: Bool { owner != .mine }
+
+    private var ownerName: String {
+        if case .theirs(let name) = owner { return TheirTrunkText.owner(name) }
+        return ""
+    }
 
     /// ふたの裏に留められるメダルの数（板の 8 枠）
     static let medalSlots = 8
     /// 内ポケット・仕切りに見せる乗車券の束の枚数
     static let ticketStack = 3
 
-    init(medals: [EarnedBadge], showsCard: Bool, ticketCount: Int) {
+    init(medals: [EarnedBadge], showsCard: Bool, ticketCount: Int, owner: Owner = .mine) {
         self.medals = medals
         self.showsCard = showsCard
-        self.ticketCount = max(0, ticketCount)
+        self.owner = owner
+        // 人のトランクの乗車券は「わたしの乗車券」1枚だけ
+        self.ticketCount = owner == .mine ? max(0, ticketCount) : min(1, max(0, ticketCount))
+    }
+
+    /// 人のトランク（`GET /users/{uid}/trunk` の `inside`）。会員証は自分のと同じく Pro のときだけ（`TheirTrunk.showsCard`）
+    init(theirs trunk: TheirTrunk, name: String?) {
+        self.init(medals: BadgeCatalog.owned(trunk.badges), showsCard: trunk.showsCard,
+                  ticketCount: trunk.ticket == nil ? 0 : 1, owner: .theirs(TheirTrunkText.owner(name)))
     }
 
     /// 本物の持ち物から作る。メダルは `BadgeCatalog.owned`（台帳の順・絵の無い鍵は出さない）、
@@ -451,7 +474,23 @@ struct TrunkInsideContents: Equatable {
     var medalTab: String { medals.isEmpty ? L("メダル", "Medals") : L("メダル \(medals.count)", "Medals \(medals.count)") }
 
     /// 縫い付けの札（仕切り）
-    var ticketTab: String { ticketCount > 0 ? L("乗車券 \(ticketCount)", "Tickets \(ticketCount)") : L("乗車券", "Tickets") }
+    var ticketTab: String {
+        if isTheirs { return L("わたしの乗車券", "Their ticket") }
+        return ticketCount > 0 ? L("乗車券 \(ticketCount)", "Tickets \(ticketCount)") : L("乗車券", "Tickets")
+    }
+
+    /// 仕切りの札の幅（板: 人のトランクは「わたしの乗車券」で 112・自分のは 92）
+    var ticketTabWidth: Double { isTheirs ? 112 : 92 }
+
+    /// 仕切りに挿す乗車券の傾きと左への寄せ（板: 自分のは3枚を扇に、人のは1枚を真ん中に少し傾けて）
+    var ticketPoses: [(rot: Double, x: Double)] {
+        isTheirs ? [(-3, 14)] : [(-9, 0), (6, 14), (-3, 28)]
+    }
+
+    /// 手に取ったときの乗車券の傾きと寄せ
+    var heldTicketPoses: [(rot: Double, x: Double)] {
+        isTheirs ? [(-3, 34)] : [(-9, 10), (6, 34), (-3, 58)]
+    }
 
     /// 「中身を手に取る」で最初に持ち上げるもの（メダル → 会員証 → 乗車券）
     var firstItem: TrunkHeld? {
@@ -466,7 +505,9 @@ struct TrunkInsideContents: Equatable {
         var items: [String] = [medals.isEmpty ? L("メダルはまだありません", "no medals yet")
                                               : L("メダル \(medals.count) 枚", "\(medals.count) medals")]
         if showsCard { items.append(L("会員証", "member card")) }
-        if ticketCount > 0 { items.append(L("乗車券 \(ticketCount) 枚", "\(ticketCount) tickets")) }
+        if ticketCount > 0 {
+            items.append(isTheirs ? L("わたしの乗車券", "their ticket") : L("乗車券 \(ticketCount) 枚", "\(ticketCount) tickets"))
+        }
         let name = TrunkText.info(model).name
         return L("\(name)の中。内張りは\(lining.name)。\(items.joined(separator: "、"))",
                  "Inside the \(name). Lined with \(lining.name). \(items.joined(separator: ", "))")
@@ -484,7 +525,10 @@ struct TrunkInsideContents: Equatable {
     }
 
     /// 乗車券の束の読み上げ
-    var ticketLabel: String { L("すれちがいの乗車券 \(ticketCount) 枚", "\(ticketCount) pass tickets") }
+    var ticketLabel: String {
+        if isTheirs { return L("\(ownerName)さんの乗車券", "\(ownerName)\u{2019}s ticket") }
+        return L("すれちがいの乗車券 \(ticketCount) 枚", "\(ticketCount) pass tickets")
+    }
 
     // MARK: 持ち上げたとき（板 InsideHold）
 
@@ -493,7 +537,7 @@ struct TrunkInsideContents: Equatable {
         case .medal(let badge): return BadgeCatalog.fullName(badge.key, tier: badge.tier)
         case .more: return L("ほかのメダル \(overflow) 枚", "\(overflow) more medals")
         case .card: return L("サポーター証", "Supporter card")
-        case .tickets: return L("すれちがいの乗車券", "Pass tickets")
+        case .tickets: return isTheirs ? ticketLabel : L("すれちがいの乗車券", "Pass tickets")
         }
     }
 
@@ -507,7 +551,14 @@ struct TrunkInsideContents: Equatable {
             return L("\(names)。ふたの裏に留められるのは \(Self.medalSlots) 枚までです",
                      "\(names). The lid holds up to \(Self.medalSlots) medals")
         case .card:
+            if isTheirs {
+                return L("名前とサポーター証の絵だけです。押すと表と裏を回せます",
+                         "Only the name and the card art. Open it to turn it over")
+            }
             return L("内ポケットから出しました。押すと表と裏を回せます", "Taken from the inner pocket. Open it to turn it over")
+        case .tickets where isTheirs:
+            return L("\(ownerName)さんの「わたしの乗車券」。押すと表と裏を回せます",
+                     "\(ownerName)\u{2019}s own ticket. Open it to turn it over")
         case .tickets:
             return L("旅先ですれちがった人から届いた \(ticketCount) 枚。帳を開くと、全部を綴じた順に見られます",
                      "\(ticketCount) tickets from people you passed on your travels. Open the book to see them all in order")
@@ -519,8 +570,8 @@ struct TrunkInsideContents: Equatable {
         switch held {
         case .medal: return L("メダルを回して見る", "Turn the medal")
         case .more: return L("バッジの棚で見る", "See them on the badge shelf")
-        case .card: return L("サポーター証を開く", "Open the supporter card")
-        case .tickets: return L("すれちがい帳を開く", "Open the pass book")
+        case .card: return isTheirs ? L("サポーター証を回して見る", "Turn the card") : L("サポーター証を開く", "Open the supporter card")
+        case .tickets: return isTheirs ? L("乗車券を回して見る", "Turn the ticket") : L("すれちがい帳を開く", "Open the pass book")
         }
     }
 

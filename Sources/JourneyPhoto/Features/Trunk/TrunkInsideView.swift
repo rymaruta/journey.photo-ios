@@ -85,7 +85,7 @@ struct TrunkInsideView: View {
                 strap(look)
                 if tabs {
                     tab(L("会員証", "Card"), x: 62, y: 150, w: 90)
-                    let tw: Double = 92
+                    let tw = contents.ticketTabWidth
                     let left = Self.dividerX + 10
                     tab(contents.ticketTab, x: left + (Self.width - Self.rim - left - tw) / 2, y: 176, w: tw)
                 }
@@ -204,13 +204,13 @@ struct TrunkInsideView: View {
         let count = min(TrunkInsideContents.ticketStack, contents.ticketCount)
         if count > 0 {
             let up = lifted == .tickets
-            let rots: [Double] = [-9, 6, -3], xs: [Double] = [0, 14, 28]
+            let poses = contents.ticketPoses
             ZStack(alignment: .topLeading) {
-                ForEach(0..<count, id: \.self) { i in
+                ForEach(0..<min(count, poses.count), id: \.self) { i in
                     ticket(ticketPhotos.indices.contains(i) ? ticketPhotos[i] : nil)
-                        .rotationEffect(.degrees(rots[i]))
+                        .rotationEffect(.degrees(poses[i].rot))
                         .shadow(color: Color.black.opacity(0.6), radius: up ? 7 : 4, x: 0, y: up ? 14 : 8)
-                        .offset(x: 226 + xs[i] * 0.82, y: 27 - (up ? 14 : 0))
+                        .offset(x: 226 + poses[i].x * 0.82, y: 27 - (up ? 14 : 0))
                 }
                 Button { onPick(.tickets) } label: {
                     Color.clear.frame(width: 128, height: 132).contentShape(Rectangle())

@@ -306,11 +306,15 @@ struct TrunkState: Decodable, Equatable {
     let fragments: Int
     /// 付けている部品（持っているものだけ）
     let equipped: TrunkEquipped
+    /// ほかの人にトランクを見せるか（2026-10-18・人のトランク）。古いサーバーは項目が無い → 既定の true
+    let showTrunk: Bool
+    /// わたしの乗車券（人のトランクの中に出す1枚・サーバーに置いたもの）。置いていなければ nil
+    let ticket: TrunkTicket?
 
     init(model: TrunkModel, effectiveModel: TrunkModel? = nil, pocket: [TrunkLabel], stuck: [TrunkLabel],
          limit: Int, isPro: Bool, rerollsLeft: Int, pendingReroll: TrunkPendingReroll? = nil,
          posts: Int?, receiveLabels: Bool, coins: Int = 0, parts: [String] = [], fragments: Int = 0,
-         equipped: TrunkEquipped = .none) {
+         equipped: TrunkEquipped = .none, showTrunk: Bool = true, ticket: TrunkTicket? = nil) {
         self.model = model
         self.effectiveModel = effectiveModel ?? model
         self.pocket = pocket
@@ -325,6 +329,8 @@ struct TrunkState: Decodable, Equatable {
         self.parts = parts
         self.fragments = max(0, fragments)
         self.equipped = equipped
+        self.showTrunk = showTrunk
+        self.ticket = ticket
     }
 
     /// 同じ状態で一部だけ替えたもの（端末の中の移り変わり・ガチャの結果を足す）
@@ -332,14 +338,15 @@ struct TrunkState: Decodable, Equatable {
               effectiveModel: TrunkModel? = nil, rerollsLeft: Int? = nil,
               pendingReroll: TrunkPendingReroll?? = nil, posts: Int?? = nil, receiveLabels: Bool? = nil,
               coins: Int? = nil, parts: [String]? = nil, fragments: Int? = nil,
-              equipped: TrunkEquipped? = nil) -> TrunkState {
+              equipped: TrunkEquipped? = nil, showTrunk: Bool? = nil, ticket: TrunkTicket?? = nil) -> TrunkState {
         TrunkState(model: model ?? self.model, effectiveModel: effectiveModel ?? self.effectiveModel,
                    pocket: pocket ?? self.pocket, stuck: stuck ?? self.stuck, limit: limit, isPro: isPro,
                    rerollsLeft: rerollsLeft ?? self.rerollsLeft,
                    pendingReroll: pendingReroll == nil ? self.pendingReroll : pendingReroll!,
                    posts: posts == nil ? self.posts : posts!, receiveLabels: receiveLabels ?? self.receiveLabels,
                    coins: coins ?? self.coins, parts: parts ?? self.parts, fragments: fragments ?? self.fragments,
-                   equipped: equipped ?? self.equipped)
+                   equipped: equipped ?? self.equipped, showTrunk: showTrunk ?? self.showTrunk,
+                   ticket: ticket == nil ? self.ticket : ticket!)
     }
 
     /// 持っている部品（台帳の順ではなく、届いた新しい順）
@@ -351,7 +358,7 @@ struct TrunkState: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case model, effectiveModel, pocket, stuck, limit, isPro, rerolls, pendingReroll, posts, receiveLabels
-        case coins, parts, fragments, equipped
+        case coins, parts, fragments, equipped, showTrunk, ticket
     }
     private enum RerollKeys: String, CodingKey { case left, month }
     private enum PendingKeys: String, CodingKey { case labelId, seeds }
@@ -402,6 +409,9 @@ struct TrunkState: Decodable, Equatable {
         fragments = max(0, LenientInt.read(c, .fragments) ?? 0)
         let rawEquipped = (try? c.decodeIfPresent(Lenient<TrunkEquipped>.self, forKey: .equipped))??.value ?? .none
         equipped = rawEquipped.sanitized(owned: Set(parts))
+        // 見せる設定とわたしの乗車券（2026-10-18）。**包みで読み、無ければ見せる・乗車券なし**
+        showTrunk = ((try? c.decodeIfPresent(Bool.self, forKey: .showTrunk)) ?? nil) ?? true
+        ticket = (try? c.decodeIfPresent(Lenient<TrunkTicket>.self, forKey: .ticket))??.value
     }
 
     /// 書き込みの応答（`posts` が無い）に、前に読んだ投稿の数を引き継ぐ

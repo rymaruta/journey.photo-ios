@@ -10,6 +10,11 @@ import UIKit
 /// 中身は本物の持ち物: メダル＝持っているバッジ、会員証＝サポーター証（Pro のときだけ）、乗車券＝すれちがい帳。
 /// 押すと持ち上がり（板 InsideHold）、出口のボタンで今ある画面へ（メダルを回す・サポーター証・すれちがい帳・
 /// 「ほか N」はバッジの棚）。何も入っていなければ空のトランク（板 InsideEmpty）。
+///
+/// **人のトランク**（`theirs`・2026-10-18・板 TheirInside）も同じ画面で開ける。中身は人の口の `inside`
+/// （メダル・会員証〔番号なし〕・わたしの乗車券1枚）で、**読むだけ**（貼る・はがす・投稿へ、は出さない）。
+/// 開いたら自分でふたが開き（「視差効果を減らす」ならその場で）、下の棒とボタンの代わりに板の一言と注記を置く。
+/// 空でも手に入れ方の案内は出さない（人の物なので、空いた枠のまま見せる）
 struct TrunkOpenView: View {
     let model: TrunkModel
     let posts: Int
@@ -17,6 +22,8 @@ struct TrunkOpenView: View {
     var ownerName: String?
     var parts: TrunkEquipped = .none
     var wrinkles: [String: Double] = [:]
+    /// 人のトランク（nil なら自分のトランク）
+    var theirs: TheirTrunkInside?
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var pass: PassStore
@@ -40,6 +47,9 @@ struct TrunkOpenView: View {
     @State private var showShelf = false
     @State private var showCard = false
     @State private var showBook = false
+    /// 人のトランクの会員証・乗車券を回して見る
+    @State private var showTheirCard = false
+    @State private var showTheirTicket = false
     /// 触覚の合図（留め金が外れた・ふたが寄り切った・中身を持ち上げた）
     @State private var claspTicks = 0
     @State private var landings = 0
@@ -50,6 +60,7 @@ struct TrunkOpenView: View {
     private var lining: TrunkLining { TrunkInsideLooks.lining(model: model, equipped: parts) }
 
     private var contents: TrunkInsideContents {
+        if let theirs { return TrunkInsideContents(theirs: theirs.trunk, name: theirs.name) }
         // 画面写真の「空のトランク」（`-JPPreviewTrunk empty`・Debug のみ。Release では必ず nil）
         if PreviewSession.trunkSample == .empty {
             return TrunkInsideContents(medals: [], showsCard: false, ticketCount: 0)
@@ -68,7 +79,7 @@ struct TrunkOpenView: View {
         let contents = contents
         ZStack {
             Group {
-                if phase == .loaded && contents.isEmpty {
+                if phase == .loaded && contents.isEmpty && theirs == nil {
                     emptyTrunk(contents)
                 } else {
                     openable(contents)
@@ -84,7 +95,7 @@ struct TrunkOpenView: View {
             }
         }
         .background { TrunkStyle.stageBackground(centerY: 0.4) }
-        .navigationTitle(L("旅のトランク", "Travel trunk"))
+        .navigationTitle(theirs.map { TheirTrunkText.title($0.name) } ?? L("旅のトランク", "Travel trunk"))
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: claspTicks)
         .sensoryFeedback(.impact(weight: .medium), trigger: landings)
@@ -96,11 +107,25 @@ struct TrunkOpenView: View {
         .onAppear {
             // 動きの終わりの合図が来ないまま画面を離れて戻ったときの逃げ道
             if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }
+            // 人のトランクは開けたところを見に来た画面（板 TheirInside）: 来たらふたを開ける
+            if theirs != nil, p == 0, dragStart == nil { settle(to: 1) }
         }
         .fullScreenCover(item: $viewingMedal) { badge in
-            MedalViewerView(badge: badge, ownerName: profile?.name ?? ownerName ?? "")
+            MedalViewerView(badge: badge, ownerName: theirs.map { TheirTrunkText.owner($0.name) } ?? profile?.name ?? ownerName ?? "")
         }
-        .navigationDestination(isPresented: $showShelf) { BadgeShelfView(mode: .mine, preloaded: profile) }
+        .fullScreenCover(isPresented: $showTheirCard) {
+            if let theirs { SupporterCardViewer(face: theirs.cardFace) }
+        }
+        .navigationDestination(isPresented: $showShelf) {
+            if let theirs {
+                BadgeShelfView(mode: .other(userId: theirs.userId), preloaded: theirs.profile)
+            } else {
+                BadgeShelfView(mode: .mine, preloaded: profile)
+            }
+        }
+        .navigationDestination(isPresented: $showTheirTicket) {
+            if let theirs { TrunkTheirTicketView(theirs: theirs) }
+        }
         .navigationDestination(isPresented: $showCard) {
             if let profile { SupporterCardView(profile: profile) }
         }
@@ -113,6 +138,12 @@ struct TrunkOpenView: View {
     // MARK: 読み込み
 
     private func load() async {
+        // 人のトランクは中身が届いている（会員証の絵だけ描く・番号は刷らない）
+        if let theirs {
+            phase = .loaded
+            if theirs.trunk.showsCard { cardImage = SupporterCardTextures.front(theirs.cardFace) }
+            return
+        }
         if PreviewSession.trunkSample == .empty {
             phase = .loaded
             return
@@ -192,11 +223,15 @@ struct TrunkOpenView: View {
     }
 
     private var cardLabel: String {
+        if let theirs { return theirs.cardFace.accessibilityLabel }
         guard let profile else { return L("サポーター証", "Supporter card") }
         return cardFace(profile, profile.supporterInfo).accessibilityLabel
     }
 
-    private var ticketPhotos: [Photo] { ticketContents.prefix(TrunkInsideContents.ticketStack).map(\.photo) }
+    private var ticketPhotos: [Photo] {
+        if let theirs { return theirs.ticketPhoto.map { [$0] } ?? [] }
+        return ticketContents.prefix(TrunkInsideContents.ticketStack).map(\.photo)
+    }
 
     // MARK: 指で引き下ろす
 
@@ -250,7 +285,42 @@ struct TrunkOpenView: View {
 
     // MARK: 下の一言・棒・ボタン（板 TrunkOpen）
 
+    @ViewBuilder
     private func controls(_ contents: TrunkInsideContents) -> some View {
+        if theirs != nil {
+            theirControls
+        } else {
+            mineControls(contents)
+        }
+    }
+
+    /// 人のトランクの下（板 TheirInside）: 一言と、会員証・乗車券で出さない物の注記。開け閉めのボタンは置かない
+    /// （ふたは指で引いても、読み上げの「増やす／減らす」でも動く）
+    private var theirControls: some View {
+        VStack(spacing: 10) {
+            Text(TrunkLid.isOpen(p) ? TheirTrunkText.insideHint : TrunkLid.hint(p))
+                .font(.footnote)
+                .foregroundStyle(TrunkStyle.muted)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 20)
+                .accessibilityIdentifier("trunk.open.hint")
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(TheirTrunkText.insideNotes.enumerated()), id: \.offset) { _, note in
+                    (Text(note.head).foregroundStyle(WebTheme.text) + Text(note.body).foregroundStyle(TrunkStyle.muted))
+                        .font(.caption)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func mineControls(_ contents: TrunkInsideContents) -> some View {
         VStack(spacing: 10) {
             Text(phase == .failed
                  ? L("メダルと会員証を読み込めませんでした。電波のあるところで開き直すと入ります。",
@@ -413,11 +483,12 @@ struct TrunkOpenView: View {
             .accessibilityLabel(cardLabel)
         case .tickets:
             let photos = ticketPhotos
+            let poses = contents.heldTicketPoses
             ZStack(alignment: .topLeading) {
-                ForEach(0..<min(TrunkInsideContents.ticketStack, max(1, contents.ticketCount)), id: \.self) { i in
+                ForEach(0..<min(poses.count, max(1, contents.ticketCount)), id: \.self) { i in
                     bigTicket(photos.indices.contains(i) ? photos[i] : nil)
-                        .rotationEffect(.degrees([-9.0, 6, -3][i]))
-                        .offset(x: [10.0, 34, 58][i], y: 12)
+                        .rotationEffect(.degrees(poses[i].rot))
+                        .offset(x: poses[i].x, y: 12)
                 }
             }
             .frame(width: 210, height: 220, alignment: .topLeading)
@@ -463,6 +534,17 @@ struct TrunkOpenView: View {
 
     /// 出口: 今ある画面へ
     private func go(_ item: TrunkHeld) {
+        if theirs != nil {
+            // 人のトランク: メダルは回して見る・「ほか N」はその人の棚・会員証と乗車券は回して見る（番号は出さない）
+            switch item {
+            case .medal(let badge): viewingMedal = badge
+            case .more: showShelf = true
+            case .card: showTheirCard = true
+            case .tickets: showTheirTicket = true
+            }
+            held = nil
+            return
+        }
         switch item {
         case .medal(let badge): viewingMedal = badge
         case .more: showShelf = true

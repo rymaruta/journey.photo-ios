@@ -261,4 +261,21 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// UI テストで、人のプロフィールに見本の人のトランクを出す（Debug のみ・2026-10-18）。`-JPPreviewTheirTrunk YES`。
+    ///
+    /// 人の口（`GET /users/{uid}/trunk`）は鍵を持たない入り方では読めず、本番にもまだ無いので、人のトランクの段と
+    /// 画面の絵が撮れない。**サーバーには何も送らない**——どの人のページでも見本のトランク（`TheirTrunkSample`）を
+    /// 出す。ラベルの写真はその人の公開写真から引く。地名の無いラベルも混ぜる。入っている見本の利用者のときだけ効く。
+    /// Release では必ず false
+    static let theirTrunkKey = "JPPreviewTheirTrunk"
+
+    static var theirTrunkSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: theirTrunkKey)
+        #else
+        return false
+        #endif
+    }
 }
