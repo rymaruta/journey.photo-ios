@@ -392,11 +392,11 @@ final class TrunkEntryTests: XCTestCase {
         // 読み始めた後に印が付いたので、もう1回だけ読む（a と b は同じ読み込みに乗る）
         await held.waitUntilAsked()
         for _ in 0..<20 { await Task.yield() }
-        guard held.calls == 2 else { return XCTFail("読み直しが重なった（\(held.calls)本）") }
+        guard held.calls == 2 else { return XCTFail("読み込みは2本（最初の1本と、印を見た読み直し1本）のはずが \(held.calls) 本") }
         held.answer(TrunkSample.state(isPro: false, coins: 12))
         await a.value
         await b.value
-        XCTAssertEqual(held.calls, 2, "読み直しが重なった")
+        XCTAssertEqual(held.calls, 2, "読み込みは2本のはずが \(held.calls) 本")
         XCTAssertEqual(store.summary?.coins, 12)
     }
 
