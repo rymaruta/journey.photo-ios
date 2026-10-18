@@ -41,7 +41,7 @@
         {
           "symbol": "ticket",
           "title": { "ja": "わたしの乗車券", "en": "My ticket" },
-          "detail": { "ja": "旅先ですれちがった人の手元に、マルス券の形の一枚が届きます。自分の券も指で回して裏まで見られます。設定の「すれちがい」から。", "en": "People you pass on your travels receive your ticket, styled like a classic railway ticket. Turn your own with a finger to see the back. Find it in Settings → Pass." }
+          "detail": { "ja": "旅先ですれちがった人の手元に、マルス券の形の一枚が届きます。自分の券も指で回して裏まで見られます。設定の「すれちがい乗車券」から。", "en": "People you pass on your travels receive your ticket, styled like a classic railway ticket. Turn your own with a finger to see the back. Find it in Settings → Pass tickets." }
         },
         {
           "symbol": "sparkles",

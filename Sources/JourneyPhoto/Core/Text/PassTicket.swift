@@ -44,6 +44,11 @@ enum PassTicket {
         return .first
     }
 
+    /// 機能の呼び名（設定の行・節・画面の題・オンにする説明の眉ラベル）。**2026-10-18 に「すれちがい乗車券」へそろえた**
+    /// （前は「すれちがい」だけ）。英語は前から使っていた「Pass ticket」の複数形。識別子（`settings.pass` など）と
+    /// サーバーの欄は変えない。古い呼び名が文に残っていないかは `PassBackFaceTests.testFeatureNameIsUnified` が見張る
+    static var featureName: String { L("すれちがい乗車券", "Pass tickets") }
+
     /// 帳の小さなきっぷの眉ラベル（`PassTicketSlot`）
     static func eyebrow(_ kind: Kind) -> String {
         switch kind {
@@ -247,7 +252,12 @@ enum PassTicket {
     }
 
     /// 裏の「有効」
-    static var validity: String { L("ずっと（帳に綴じる）", "Forever (kept in your book)") }
+    static var validity: String { L(validityJa, validityEn) }
+    /// 裏の「有効」の値（日本語・英語）。**欄に1行では入らない長さ**なので、この欄だけ2行まで許す
+    /// （`PassCardStyle.backValueLines`・字は縮めない・2026-10-18）。2つとも書き出すのは、言語を切り替えずに
+    /// 幅を見積もって見張るため（`PassBackFaceTests`）
+    static let validityJa = "ずっと（帳に綴じる）"
+    static let validityEn = "Forever, in your book"
 
     /// 読み上げ: 表の区間（2026-10-17 判断: 札の字と同じく「東京発、フランス着」と読む）
     static func spokenRoute(origin: String, destination: String) -> String {

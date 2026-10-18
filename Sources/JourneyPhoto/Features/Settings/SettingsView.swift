@@ -236,11 +236,12 @@ struct SettingsView: View {
     /// すれちがい（板 PassSettings の戻り先が設定・2026-10-16）。お知らせとプライバシーの間
     /// （近くの人とカードを交換する＝届くものと、見せるものの両方に関わる）
     private var passSection: some View {
-        section(L("すれちがい", "Pass")) {
+        section(PassTicket.featureName) {
             NavigationLink { PassSettingsView() } label: {
-                JPRowLabel(title: L("すれちがい", "Pass"),
-                           detail: L("旅先で近くにいた人と、わたしの乗車券をカードで交換する",
-                                     "Swap your ticket with people you pass on your travels"),
+                // 題に「乗車券」が入るので、説明は短く（2026-10-18・呼び名を「すれちがい乗車券」にそろえた）
+                JPRowLabel(title: PassTicket.featureName,
+                           detail: L("旅先で近くにいた人と、カードで交換する",
+                                     "Swap cards with people you pass on your travels"),
                            value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
             }
             .buttonStyle(JPRowButtonStyle())

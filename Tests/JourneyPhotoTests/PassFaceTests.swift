@@ -553,17 +553,23 @@ final class PassFaceWiringTests: XCTestCase {
 
     /// 傾きの読み取りは表示中・前面・光が動く券面・「視差効果を減らす」でないときだけ
     func testTiltIsReadOnlyWhileShown() throws {
-        let face = try block(try source("Features/Pass/PassFaces.swift"), "PassSpecialFace")
-        XCTAssertTrue(face.contains("PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: scenePhase == .active,"))
-        XCTAssertTrue(face.contains(".onDisappear"))
-        XCTAssertTrue(face.contains("tilt.release()"))
+        // 読むかの決め方は表と裏で同じ部品（`PassTiltHold`・2026-10-18 に裏も傾きで光るようにして出した）
+        let hold = try block(try source("Features/Pass/PassFaces.swift"), "PassTiltHold")
+        XCTAssertTrue(hold.contains("PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: scenePhase == .active,"))
+        XCTAssertTrue(hold.contains(".onDisappear"))
+        XCTAssertTrue(hold.contains("PassTiltMotion.shared.release()"))
         // 前面・「視差効果を減らす」・券面・見えているか、のどれが変わっても決め直す
-        for value in ["scenePhase", "reduceMotion", "face.style", "visible"] {
-            XCTAssertTrue(face.contains(".onChange(of: \(value)) { _, _ in updateHold() }"), "\(value) が変わっても決め直さない")
+        for value in ["scenePhase", "reduceMotion", "style", "visible"] {
+            XCTAssertTrue(hold.contains(".onChange(of: \(value)) { _, _ in updateHold() }"), "\(value) が変わっても決め直さない")
         }
-        // 裏を見ている間・全面の写真が上にある間は止める（見えているかを渡す）
+        let face = try block(try source("Features/Pass/PassFaces.swift"), "PassSpecialFace")
+        XCTAssertTrue(face.contains(".modifier(PassTiltHold(style: face.style, visible: visible))"))
+        let back = try block(try source("Features/Pass/PassBacks.swift"), "PassSpecialBack")
+        XCTAssertTrue(back.contains(".modifier(PassTiltHold(style: face.style, visible: visible))"))
+        // 裏を見ている間・全面の写真が上にある間は表を止める。裏は裏が見えている間だけ（見えているかを渡す）
         let spin = try source("Features/Pass/PassSpinCard.swift")
         XCTAssertTrue(spin.contains("PassCardFront(face: front, onPhotoTap: onPhotoTap, shine: shine, visible: active && !back)"))
+        XCTAssertTrue(spin.contains("visible: active && back)"))
         XCTAssertTrue(try source("Features/Pass/PassViewerView.swift").contains("active: fullPhoto == nil"))
         XCTAssertTrue(try source("Features/Pass/PassCardPickView.swift").contains("active: !showPaywall"))
         let faces = try source("Features/Pass/PassFaces.swift")
@@ -586,7 +592,7 @@ final class PassFaceWiringTests: XCTestCase {
         XCTAssertTrue(cards.contains("PassSpecialFace(face: face, onPhotoTap: onPhotoTap, shine: shine, visible: visible)"))
         // 裏の角は表の券面の角に合わせる
         XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift")
-            .contains("PassCardBack(face: self.back, shine: shine, corner: PassCardFront.corner(front.style))"))
+            .contains("PassCardBack(face: self.back.styled(front.style), shine: shine, corner: PassCardFront.corner(front.style),"))
         XCTAssertTrue(try block(cards, "PassCardBack").contains(".clipShape(RoundedRectangle(cornerRadius: corner))"))
         XCTAssertTrue(cards.contains("PassTicketFaceStyle.shown(wire: card.face, ownerIsPro: owner?.showsPassFace)"))
         let faces = try source("Features/Pass/PassFaces.swift")

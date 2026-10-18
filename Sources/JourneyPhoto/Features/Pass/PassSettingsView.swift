@@ -28,7 +28,7 @@ struct PassSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.xl) {
-                Text(L("すれちがい", "Pass"))
+                Text(PassTicket.featureName)
                     .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
                     .padding(.horizontal, JPSpace.xxs)
@@ -44,7 +44,7 @@ struct PassSettingsView: View {
             .padding(.bottom, JPSpace.emptyTop)
         }
         .webScreen()
-        .navigationTitle(L("すれちがい", "Pass"))
+        .navigationTitle(PassTicket.featureName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
@@ -89,7 +89,7 @@ struct PassSettingsView: View {
 
     private var mainCard: some View {
         JPCard {
-            JPToggleRow(title: L("すれちがう", "Pass"),
+            JPToggleRow(title: L("すれちがう", "Swap with people nearby"),
                         detail: L("近くにいたアプリの人と、わたしの乗車券をカードで交換します",
                                   "Swap your ticket with app users you pass nearby"),
                         isOn: enabledBinding)
@@ -142,8 +142,8 @@ struct PassSettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Bluetooth がオフです", "Bluetooth is off"))
                         .font(JPFont.bodyEmphasis)
-                    Text(L("オンにするまで、すれちがいは止まっています。コントロールセンターか設定アプリで入れてください。",
-                           "Pass is paused until you turn Bluetooth on in Control Center or the Settings app."))
+                    Text(L("オンにするまで、すれちがい乗車券は止まっています。コントロールセンターか設定アプリで入れてください。",
+                           "Pass tickets are paused until you turn Bluetooth on in Control Center or the Settings app."))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.accent.opacity(LightAlertSettingsStyle.noticeDetailOpacity))
                         .fixedSize(horizontal: false, vertical: true)
@@ -365,7 +365,7 @@ struct PassIntroSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.l) {
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("すれちがい", "Pass"))
+                    Text(PassTicket.featureName)
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(L("旅先で、わたしの乗車券を交換する", "Swap your ticket on your travels"))
