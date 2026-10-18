@@ -74,7 +74,12 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
   - 表に出る版の最後の数字が毎回 +1（1.0.0 → 1.0.1 → 1.0.2 …）。
     決めるのは `Tools/next-marketing-version.sh`、出した版は
     `testflight/<版>` のタグで覚える（上げるのに成功した回だけタグが付く）
-  - ビルド番号（`CURRENT_PROJECT_VERSION`）は TestFlight の最新 +1
+  - ビルド番号（`CURRENT_PROJECT_VERSION`）は**表に出る版ごとに 1 から数える**——
+    その回の版の TestFlight の最新 +1、まだ無ければ 1（**2026-10-18 owner の判断**:
+    TestFlight の表示を「1.1.14 (124)」ではなく「1.1.15 (1)」の形に）。
+    Apple の決まりは「同じ版の中で重ならず上がっていく」こと。版は毎回上がるので
+    1 から数え直せる（App Store Connect が求めるのは「版とビルド番号の組み合わせ」が
+    重ならないこと。iOS は新しい版で小さい番号に戻してよい——Apple「Setting the next build number for Xcode Cloud builds」 で確認）
 - **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
   main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
   `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は
@@ -83,7 +88,8 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
   変わる版のときに `bash Tools/bump-build.sh 1.1.0` でコミットしてから流す。
   自動で上げない
 - **手元の Xcode から Archive して出すときだけ**、`bash Tools/bump-build.sh <版>` で
-  版とビルド番号を自分で上げる。この経路はタグが付かないので、次に Actions で
+  版とビルド番号を自分で上げる（版を変えたらビルド番号 1・同じ版でもう一度なら +1）。
+  この経路はタグが付かないので、次に Actions で
   出すときに同じ版を二度使わないよう、出した版を owner に伝える
 - 詳しい手順は `docs/RELEASE.md`・`docs/TESTFLIGHT.md`
 
