@@ -2239,6 +2239,82 @@ final class ScreenshotTests: XCTestCase {
         return app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15)
     }
 
+    // MARK: - 写真で作るキャンピングカー（2026-10-18・札 #307）
+
+    /// マイページ → 旅の記録のタブ → 「写真で作るキャンピングカー」の行。開けたら true
+    private func openCamper(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        var pushes = 0
+        while !tripsTab.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard tripsTab.isHittable else { return false }
+        tripsTab.tap()
+        let row = app.buttons["trips.camper"].firstMatch
+        guard row.waitForExistence(timeout: 15) else { return false }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return false }
+        row.tap()
+        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// 立体の車を組み終えるまで待つ（読み上げの値に「camper-ready 段 時刻」が出る・見本の起動のときだけ）
+    @discardableResult
+    private func waitCamper(_ app: XCUIApplication, _ marker: String) -> Bool {
+        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
+        let ready = NSPredicate(format: "value CONTAINS %@", marker)
+        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40) == .completed
+        // 組んだ形が次のコマで描かれ、向きの動き（0.6 秒）が止まるまで
+        Thread.sleep(forTimeInterval: 2)
+        return done
+    }
+
+    /// **写真で作るキャンピングカー**: 昼・夜・扉を開けた室内・3 段（バン・キャンピングカー・トレーラーつき）。
+    /// 出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
+    func testCapturesCamper() {
+        let app = launchTrunk([])
+        guard openCamper(app) else { return }
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        shoot(app, "95-写真で作るキャンピングカー（昼）")
+        for id in ["camper.door", "camper.reset", "camper.mood.night", "camper.stage.van"] {
+            let b = app.buttons[id].firstMatch
+            XCTAssertTrue(b.exists, "\(id) が無い")
+            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
+        }
+        // 扉を開けた室内
+        app.buttons["camper.door"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "95a-写真で作るキャンピングカー（扉を開けた室内）")
+        app.buttons["camper.door"].firstMatch.tap()
+        // 夜
+        app.buttons["camper.mood.night"].firstMatch.tap()
+        waitCamper(app, "night")
+        shoot(app, "95b-写真で作るキャンピングカー（夜）")
+        // 夜に扉を開けた所（室内の灯りと、扉の口から地面へこぼれる灯り）
+        app.buttons["camper.door"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "95f-写真で作るキャンピングカー（夜・扉を開けた）")
+        app.buttons["camper.door"].firstMatch.tap()
+        app.buttons["camper.mood.day"].firstMatch.tap()
+        waitCamper(app, "day")
+        // 3 段
+        for (id, name) in [("van", "95c-キャンピングカー（バン）"), ("camper", "95d-キャンピングカー（キャンピングカー）"),
+                           ("trailer", "95e-キャンピングカー（トレーラーつき）")] {
+            let b = app.buttons["camper.stage.\(id)"].firstMatch
+            guard b.exists else { continue }
+            if !b.isHittable { scrollTo(b, in: app) }
+            b.tap()
+            waitCamper(app, "camper-ready \(id)")
+            shoot(app, name)
+        }
+    }
+
     /// 押したい行が画面に収まるまで送る
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         let bottom = app.windows.firstMatch.frame.maxY - 60
