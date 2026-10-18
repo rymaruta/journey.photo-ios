@@ -96,6 +96,17 @@ struct SearchView: View {
                 await model.loadPhotos(environment: environment, epoch: epoch)
             }
         }
+        // 限定公開の写真の画像が期限切れで割れたら、限定公開だけ取り直して新しい URL をもらう
+        // （2026-10-18・札 #294）。**この画面の写真のときだけ**・15秒に1回まで。
+        // **人は替わっていない**ので選択は外さない（回は進めない）。`force` なし＝全件の控えはそのまま
+        .task {
+            var gate = SignedImageRefetchGate()
+            for await url in SignedImageExpiry.signals() {
+                guard model.everything.containsImageURL(url), gate.shouldRefetch(after: url, now: Date()) else { continue }
+                await environment.gallery.expireRestricted(containing: url)
+                await model.reloadPhotos(environment: environment)
+            }
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }

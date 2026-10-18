@@ -112,6 +112,24 @@ actor PublicGalleryService {
     private var restrictedCache: [Photo]?
     private var restrictedCachedAt: Date?
 
+    /// **割れた署名つき画像の URL を持つ限定公開の控えを「古い」にする**（2026-10-18・札 #294）。
+    ///
+    /// 控えの URL は期限つき（10〜15分）で、控えの寿命（60秒）より長いが、画面が一覧を持ち続けると
+    /// 期限を過ぎる。古いにすれば、次の読み直し（`force` なし）が限定公開だけを取り直す
+    /// ——ページ・位置・全件（`photos.json`）の控えはそのまま。読み出し口の回（`restrictedEpoch`）は
+    /// 進めない（人は替わっていない）。
+    ///
+    /// 🔴 **控えの中身は捨てない**（時刻だけ消す）。捨てると、取り直しが失敗した回（圏外など）に
+    /// 絞った写真が一覧から消える。`restrictedPhotos` は失敗したら前の控えを返すので、
+    /// 中身を残しておけば「割れた絵のまま残る」で済む（次の合図でまた取り直す）
+    /// - Returns: 控えにその URL があったか
+    @discardableResult
+    func expireRestricted(containing url: URL) -> Bool {
+        guard let restrictedCache, restrictedCache.containsImageURL(url) else { return false }
+        restrictedCachedAt = nil
+        return true
+    }
+
     /// 絞られたぶんを取る。**失敗しても公開一覧は出す。**
     /// ここで投げると、絞った写真が1枚も無い大多数の人まで
     /// 「読み込めませんでした」になる。
