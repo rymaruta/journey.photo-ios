@@ -11,7 +11,8 @@
 #
 # **TestFlight は同じ版の中で同じビルド番号を受け付けない。** 上げ忘れは
 # 上げ切ったあとに気づくので、毎回これを通す。別の版なら番号を使い直してよい
-# （Apple の TN2420 "Version Numbers and Build Numbers" で確認・iOS の場合）。
+# （App Store Connect は「版とビルド番号の組み合わせ」が重ならないことを求める。
+#  iOS の場合。Apple「Setting the next build number for Xcode Cloud builds」・2026-10-18 確認）。
 #
 # 手元の project.yml の番号から数えるので、TestFlight に同じ版の手元にない
 # ビルドがあると重なる。そのときは `Tools/set-build-number.sh <番号>` で直に決める

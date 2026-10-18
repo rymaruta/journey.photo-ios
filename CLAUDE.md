@@ -78,8 +78,8 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
     その回の版の TestFlight の最新 +1、まだ無ければ 1（**2026-10-18 owner の判断**:
     TestFlight の表示を「1.1.14 (124)」ではなく「1.1.15 (1)」の形に）。
     Apple の決まりは「同じ版の中で重ならず上がっていく」こと。版は毎回上がるので
-    1 から数え直せる（iOS は別の版なら同じ番号を使い直してよい——Apple の TN2420
-    で確認。アーカイブの文書で、今の `CFBundleVersion` の説明には書かれていない）
+    1 から数え直せる（App Store Connect が求めるのは「版とビルド番号の組み合わせ」が
+    重ならないこと。iOS は新しい版で小さい番号に戻してよい——Apple「Setting the next build number for Xcode Cloud builds」 で確認）
 - **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
   main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
   `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は

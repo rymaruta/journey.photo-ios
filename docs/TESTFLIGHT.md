@@ -82,7 +82,7 @@ open JourneyPhoto.xcodeproj
 > GitHub Actions ではその版の TestFlight の最新 +1（無ければ 1）を自動で付ける。
 > 手で上げるときは `bash Tools/bump-build.sh <版>`（版を変えたら 1・同じ版なら +1）の
 > あと `xcodegen generate`。
-> Apple の決まりは「同じ版の中でビルド番号が重ならず上がっていく」こと（iOS は別の版なら同じ番号を使い直してよい。Apple の TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認。今の CFBundleVersion の説明にはこの決まりは書かれていない）。
+> Apple の決まりは「版とビルド番号の組み合わせが重ならない」こと（iOS は新しい版で前より小さい番号を使ってよい。Mac は版をまたいでも上がり続ける必要がある）。出典: [Setting the next build number for Xcode Cloud builds](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds)（2026-10-18 確認）。
 > 表に出るバージョン（`MARKETING_VERSION`）は、**GitHub Actions で上げるときは
 > 毎回自動で最後の数字が1つ上がる**（0.2.0 → 0.2.1 …・`Tools/next-marketing-version.sh`。
 > 出した版は `testflight/<版>` のタグで覚える）。大きく変わる版で真ん中の数字を

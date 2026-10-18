@@ -74,7 +74,7 @@ Xcode の **Product → Archive**（スキームの Archive は Release ＝本�
       - **手元の Xcode から上げるときだけ**、`bash Tools/bump-build.sh 1.0.1` の
         ように版とビルド番号を自分で上げる（版を変えたらビルド番号 1・同じ版で
         もう一度なら +1）。同じ版の中で同じ番号は受け付けられない
-      - Apple の決まりは「同じ版の中でビルド番号が重ならず上がっていく」こと（iOS は別の版なら同じ番号を使い直してよい。Apple の TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認。今の CFBundleVersion の説明にはこの決まりは書かれていない）
+      - Apple の決まりは「版とビルド番号の組み合わせが重ならない」こと（iOS は新しい版で前より小さい番号を使ってよい。Mac は版をまたいでも上がり続ける必要がある）。出典: [Setting the next build number for Xcode Cloud builds](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds)（2026-10-18 確認）
       - 真ん中・先頭の数字（1.1.0・2.0.0）を上げるのは、大きく変わる版のときに
         人が決める：`bash Tools/bump-build.sh 1.1.0` でコミットしてから流す
 - [ ] アイコンが入っている（`Assets.xcassets/AppIcon`）

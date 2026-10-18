@@ -414,9 +414,11 @@ jobs:
           #   preReleaseVersions を `filter[version]` で引く）で確認した（2026-10-18）
           # - 見つからないとき CLI は何も出さない（`Did not find latest build` を
           #   ログに出して None を返す）。失敗・空・数字でないものは 0 として扱う
-          # - Apple の決まり: iOS のビルド番号は「同じ版（release train）の中で重ならず、
-          #   上がっていく」ことが要り、別の版なら同じ番号を使い直してよい
-          #   （TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認）。
+          # - Apple の決まり: App Store Connect は「版とビルド番号の組み合わせ」が重ならない
+          #   ことを求める。iOS は新しい版で前より小さいビルド番号を使ってよい（Mac は版を
+          #   またいでも上がり続ける必要がある）。出典（2026-10-18 確認）:
+          #   Apple「Setting the next build number for Xcode Cloud builds」
+          #   https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds
           #   版は毎回上がるので 1 から数え直せる
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" \
                      --pre-release-version "$MARKETING" || true)
