@@ -2,7 +2,7 @@ import XCTest
 @testable import JourneyPhoto
 
 /// ホームの「いまの季節のスポット」の段（`HomeSpotShelf`・2026-10-03）。
-/// 候補は季節の札と同じ・週替わり・都道府県で散らす・上の札と今日の一問の選択肢は除く。
+/// 候補は季節の札と同じ・日替わり（2026-10-18・以前は週替わり）・都道府県で散らす・上の札と今日の一問の選択肢は除く。
 /// 写真は作例 → 索引の代表写真 → 無し。作例は小さい縮小版で出す
 final class HomeSpotShelfTests: XCTestCase {
 
@@ -68,18 +68,104 @@ final class HomeSpotShelfTests: XCTestCase {
         XCTAssertEqual(ids(HomeSpotShelf.shelf(today: today, spots: try spots(3))).count, 3)
     }
 
-    /// **週替わり**: 同じ週は同じ並び、次の週は `count` 件先から
-    func testRotatesWeekly() throws {
+    /// 🔴 **日替わり**（owner・2026-10-18「日替わりだね」・以前は週替わり）: 同じ日は何度開いても同じ並び、
+    /// 次の日・次の次の日は別の組（`HomeDailySpots`・行の番号を3で割った余り）、その組には3日ごとに
+    /// 1日ぶんの窓（上の札1＋段5＝6件）先から戻る
+    func testRotatesDaily() throws {
         let list = try spots(40)
-        let thisWeek = ids(HomeSpotShelf.shelf(today: today, spots: list))
-        // 9/27 は日曜。前の日（土曜）は同じ週（週は月曜はじまり）
-        let sameWeek = ids(HomeSpotShelf.shelf(today: today.addingTimeInterval(-86_400), spots: list))
-        XCTAssertEqual(thisWeek, sameWeek, "同じ週で並びが変わった")
-        let week = HomeTopCard.weekNumber(today)
-        let start = (week * 5) % 40
-        XCTAssertEqual(thisWeek, (0..<5).map { String(format: "sp_%02d", (start + $0) % 40) })
-        let nextWeek = ids(HomeSpotShelf.shelf(today: today.addingTimeInterval(7 * 86_400), spots: list))
-        XCTAssertEqual(nextWeek, (0..<5).map { String(format: "sp_%02d", (start + 5 + $0) % 40) })
+        let todays = ids(HomeSpotShelf.shelf(today: today, spots: list))
+        // 同じ日の別の時刻（同じ `today`）は同じ並び
+        let again = ids(HomeSpotShelf.shelf(today: HomeTopCard.today(now.addingTimeInterval(11 * 3_600), in: utc)!,
+                                            spots: list))
+        XCTAssertEqual(todays, again, "同じ日で並びが変わった")
+        // 期待を自前で組む: 今日の組の行を、組の回数 × 6 件先から5件
+        func expected(_ day: Int) -> [String] {
+            let group = (0..<40).filter { $0 % 3 == day % 3 }
+            let start = (day / 3 * 6) % group.count
+            return (0..<5).map { String(format: "sp_%02d", group[(start + $0) % group.count]) }
+        }
+        let day = HomeTopCard.dayNumber(today)
+        XCTAssertEqual(todays, expected(day))
+        for offset in 1...3 {
+            let later = ids(HomeSpotShelf.shelf(today: today.addingTimeInterval(Double(offset) * 86_400), spots: list))
+            XCTAssertEqual(later, expected(day + offset), "\(offset)日後")
+            if offset < 3 {
+                XCTAssertTrue(Set(todays).isDisjoint(with: later), "\(offset)日後も同じスポットが出た: \(todays) / \(later)")
+            }
+        }
+    }
+
+    /// 🔴 **3日続けて同じスポットを出さない**（昨日・一昨日と重ならない）——上の季節の札と段を通して見る。
+    /// 都道府県で散らすと窓の外を拾う（同じ県が組の中で続く台帳）。単位を日に替えただけだと拾った行が
+    /// 翌日の窓の先頭になり（本番の秋の台帳で 365日中 105日）、偶奇の2組では2日後に出た（同 126日）
+    func testNoSpotRepeatsWithinThreeDays() throws {
+        // 90件・県は9件ずつ（組の中では同じ県が3件ずつ続く）＝窓の中だけでは5県そろわず、窓の外を拾う
+        let list = try (0..<90).map {
+            try spot(String(format: "sp_%02d", $0), image: true, prefecture: "県\($0 / 9)")
+        }
+        let utcCal = TripPlanText.calendar
+        var history: [Set<String>] = []
+        for offset in 0..<60 {
+            let day = utcCal.date(byAdding: .day, value: offset, to: today)!
+            let instant = day.addingTimeInterval(12 * 3_600)
+            let cards = HomeTopCard.cards(now: instant, plans: [], myPhotos: [], openedBookDays: [],
+                                          spots: list, timeZone: utc)
+            let shelf = HomeSpotShelf.shelf(today: day, spots: list,
+                                            excluding: HomeSpotShelf.excluded(by: cards, quizSpots: []))
+            var shown = Set(ids(shelf))
+            for case .inSeason(let spot, _, _) in cards { shown.insert(spot.spotId) }
+            XCTAssertEqual(shown.count, 6, "札1＋段5（\(offset)日目）")
+            for (back, past) in history.suffix(2).reversed().enumerated() {
+                XCTAssertTrue(past.isDisjoint(with: shown),
+                              "\(offset)日目に\(back + 1)日前と同じスポット: \(past.intersection(shown).sorted())")
+            }
+            // 都道府県で散らす決まりは保つ（段の中で県が重ならない）
+            let regions = shelf?.entries.compactMap(\.regionLabel) ?? []
+            XCTAssertEqual(Set(regions).count, regions.count, "段で県が重なった（\(offset)日目）: \(regions)")
+            history.append(shown)
+        }
+    }
+
+    /// 散らすときに窓の外を拾う順は**次の窓を最後に**——次の窓は3日後の札と段（同じ組の次の回）。
+    /// 回さないと3日後に同じスポットが出た（本番の秋の台帳で 365日中 95日）。窓ごとに同じ県が1組ある台帳で、
+    /// 翌日から5日後まで重ならないことを見る
+    func testSpreadingSkipsTheNextWindow() throws {
+        // 90件。組の中の番号 k が 6m+1 と 6m+2 の行は同じ県（窓の中で1組だけ重なる）＝段は窓の外を1件拾う
+        let list = try (0..<90).map { i -> OfficialSpot in
+            let group = i % 3, k = i / 3
+            let key = k % 6 == 2 ? k - 1 : k
+            return try spot(String(format: "sp_%02d", i), image: true, prefecture: "県\(group)-\(key)")
+        }
+        let utcCal = TripPlanText.calendar
+        var history: [Set<String>] = []
+        for offset in 0..<45 {
+            let day = utcCal.date(byAdding: .day, value: offset, to: today)!
+            let cards = HomeTopCard.cards(now: day.addingTimeInterval(12 * 3_600), plans: [], myPhotos: [],
+                                          openedBookDays: [], spots: list, timeZone: utc)
+            let shelf = HomeSpotShelf.shelf(today: day, spots: list,
+                                            excluding: HomeSpotShelf.excluded(by: cards, quizSpots: []))
+            var shown = Set(ids(shelf))
+            for case .inSeason(let spot, _, _) in cards { shown.insert(spot.spotId) }
+            XCTAssertEqual(shown.count, 6)
+            let regions = shelf?.entries.compactMap(\.regionLabel) ?? []
+            XCTAssertEqual(Set(regions).count, regions.count, "段で県が重なった（\(offset)日目）")
+            for (back, past) in history.suffix(5).reversed().enumerated() {
+                XCTAssertTrue(past.isDisjoint(with: shown),
+                              "\(offset)日目に\(back + 1)日前と同じスポット: \(past.intersection(shown).sorted())")
+            }
+            history.append(shown)
+        }
+    }
+
+    /// 今日の組で足りなければ、ほかの組で埋める（数を減らさない）
+    func testFillsFromOtherGroupsWhenShort() throws {
+        let list = try spots(6)
+        // 2件ずつの組。今日の組の2件を全部除くと、ほかの組の4件が出る（段ごと消えない）
+        let day = HomeTopCard.dayNumber(today)
+        let own = (0..<6).filter { $0 % 3 == day % 3 }.map { String(format: "sp_%02d", $0) }
+        let shelf = ids(HomeSpotShelf.shelf(today: today, spots: list, excluding: Set(own)))
+        XCTAssertEqual(Set(shelf), Set(list.map(\.spotId)).subtracting(own))
+        XCTAssertEqual(ids(HomeSpotShelf.shelf(today: today, spots: list)).count, 5, "6件あれば5件出る")
     }
 
     /// **都道府県で散らす**: 同じ県は1周目で飛ばし、足りなければ飛ばした行で埋める

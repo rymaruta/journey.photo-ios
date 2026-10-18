@@ -10,6 +10,7 @@ import SwiftUI
 /// - **選んでいる札は真鍮の縁 2pt＋チェック**（owner の決定 2026-10-10。黒地の上。色だけで伝えないよう
 ///   チェックの印と読み上げの「選択中」も付ける）
 /// - 先頭の段「よく使う」に「なし」と最近の4つ。下に「線の濃さ」（0.15〜0.7・既定 0.35）と今の %
+/// - **札の右に作例写真**（2026-10-17 owner・`CompositionExampleThumb`。構図一覧の行と同じ形）
 struct CompositionPicker: View {
 
     /// 選んでいる構図（nil は「なし」）
@@ -34,7 +35,7 @@ struct CompositionPicker: View {
                 VStack(alignment: .leading, spacing: 0) {
                     chips(proxy)
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
+                        LazyVStack(alignment: .leading, spacing: 24) {
                             group(id: "recent", title: L("よく使う", "Recent"), kinds: recents, includesNone: true)
                             ForEach(CompositionSection.allCases) { section in
                                 group(id: section.id, title: section.title, kinds: section.kinds, includesNone: false)
@@ -159,8 +160,11 @@ struct CompositionPicker: View {
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityHidden(true)
                 }
+                // 2026-10-17 owner: 右に作例写真（どんな場面で使う構図か、撮る前に分かるように）
+                if let kind { CompositionExampleThumb(kind: kind) }
             }
             .padding(.horizontal, JPSpace.s)
+            .padding(.vertical, JPSpace.xxs)
             .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
             .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
             .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
@@ -177,8 +181,8 @@ struct CompositionPicker: View {
         .accessibilityIdentifier("composition.card.\(kind?.rawValue ?? "none")")
     }
 
-    /// 札の高さ（板 60）と小さな絵（3:4 を 44 の枠に）
-    static let rowHeight: CGFloat = 60
+    /// 札の高さと小さな絵（3:4 を 44 の枠に）。板は 60 だが、右に作例写真（64）を置くので 72（2026-10-17）
+    static let rowHeight: CGFloat = 72
     static let thumbBox: CGFloat = 44
     static let thumbSize = (width: CGFloat(33), height: CGFloat(44))
 

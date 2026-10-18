@@ -120,6 +120,7 @@ struct PhotoEditScreen: Equatable {
     /// 調整のつまみの値は残す（プリセットの上に足す作り・`PhotoRecipe`）
     mutating func selectPreset(_ id: String?) {
         guard id != selectedPresetId else { return }
+        endActionCompare()
         var next = current
         next.preset = id.map { PhotoRecipe.PresetChoice(id: $0, strength: Self.defaultPresetStrength) }
         history.apply(next)
@@ -133,6 +134,7 @@ struct PhotoEditScreen: Equatable {
     /// 強さのつまみを動かしている途中（手は増やさない。離したら `endDrag`）
     mutating func dragStrength(_ slider: Double) {
         guard var preset = current.preset else { return }
+        endActionCompare()
         preset.strength = PhotoRecipe.clamp(slider, Self.strengthSliderRange).rounded() / 100
         var next = current
         next.preset = preset
@@ -144,12 +146,14 @@ struct PhotoEditScreen: Equatable {
     var adjustmentSlider: Double { adjustment.sliderValue(in: current).rounded() }
 
     mutating func dragAdjustment(_ slider: Double) {
+        endActionCompare()
         history.preview(adjustment.setting(adjustment.recipeValue(slider: slider), in: current))
     }
 
     /// 「0に戻す」（1手として。取り消せる）
     mutating func resetAdjustment() {
         guard adjustment.isChanged(in: current) else { return }
+        endActionCompare()
         history.apply(adjustment.setting(0, in: current))
     }
 
@@ -170,8 +174,14 @@ struct PhotoEditScreen: Equatable {
 
     var canUndo: Bool { history.canUndo }
     var canRedo: Bool { history.canRedo }
-    mutating func undo() { history.undo() }
-    mutating func redo() { history.redo() }
+    mutating func undo() {
+        endActionCompare()
+        history.undo()
+    }
+    mutating func redo() {
+        endActionCompare()
+        history.redo()
+    }
 
     // MARK: - 長押しで編集前と比べる（owner 2026-10-02: 比べ方は長押し）
 
@@ -208,12 +218,51 @@ struct PhotoEditScreen: Equatable {
             history.setComparing(true)
         case .ended:
             pressedAt = nil
+            comparingByAction = false
             history.setComparing(false)
         }
     }
 
-    /// 「編集前」の札を出すか（長押しと認めてから、指を離すまで）
+    /// 「編集前」の札を出すか（長押しと認めてから、指を離すまで。読み上げの操作で切り替えた間も）
     var showsBeforeLabel: Bool { history.isComparing }
+
+    // MARK: - 読み上げの操作で編集前と比べる（2026-10-17 判断）
+
+    // VoiceOver では長押し（距離 0 の DragGesture）が届かず、編集前を見る道が無かった。
+    // 写真の読み上げに操作「編集前を見る」を足し、**押すたびに切り替える**（離す合図が来ないので、
+    // 押している間だけ、という形は取れない）。指の長押しの作りは変えない。
+    // 切り替えたまま編集すると、写真が編集前のまま動かず「効いていない」と取り違えるので、
+    // **編集したら編集後へ戻す**（`endActionCompare`）。長押しの最中のつまみ（二本指）は今までどおり
+
+    /// 読み上げの操作で編集前を出しているか（長押しの比べとは分けて持つ）
+    private(set) var comparingByAction = false
+
+    /// 読み上げの操作「編集前を見る」「編集後に戻す」
+    mutating func toggleCompare() {
+        pressedAt = nil
+        let next = !history.isComparing
+        history.setComparing(next)
+        comparingByAction = next
+    }
+
+    /// 写真の読み上げの操作の名前（今の向きの逆を言う）
+    var compareActionName: String {
+        showsBeforeLabel ? L("編集後に戻す", "Show the edited photo")
+                         : L("編集前を見る", "Show the original")
+    }
+
+    /// 切り替えた後に読み上げる一言
+    var compareAnnouncement: String {
+        showsBeforeLabel ? L("編集前の写真を表示しています", "Showing the original photo")
+                         : L("編集後の写真を表示しています", "Showing the edited photo")
+    }
+
+    /// 編集した。読み上げの操作で出していた編集前を戻す（長押しの比べは触らない）
+    private mutating func endActionCompare() {
+        guard comparingByAction else { return }
+        comparingByAction = false
+        history.setComparing(false)
+    }
 
     // MARK: - 写真の欄に何を出すか（2026-10-03）
 

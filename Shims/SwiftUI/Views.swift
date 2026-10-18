@@ -5,6 +5,8 @@ public struct Text: View {
     public init(_ s: String) {}
     public init(_ s: Substring) {}
     public init<S: StringProtocol>(_ s: S) {}
+    /// 訳さずにそのまま出す字（本物と同じ）
+    public init(verbatim content: String) {}
     /// 部分にリンク（`.link`）を付けた文字。本物は iOS 15〜
     public init(_ attributed: AttributedString) {}
     public var body: Never { fatalError("模型") }
@@ -91,8 +93,9 @@ public struct StrokeStyle {
     public var lineWidth: Double
     public var lineCap: LineCapShim
     public var lineJoin: LineJoinShim
-    public var dash: [Double]
-    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, lineJoin: LineJoinShim = .miter, dash: [Double] = []) {
+    /// 本物と同じ `[CGFloat]`（`[Double]` の変数をそのまま渡すと Mac でだけ落ちる・2026-10-17 run 480）
+    public var dash: [CGFloat]
+    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, lineJoin: LineJoinShim = .miter, dash: [CGFloat] = []) {
         self.lineWidth = lineWidth
         self.lineCap = lineCap
         self.lineJoin = lineJoin
@@ -297,20 +300,20 @@ extension Shape {
 }
 /// 自由な線（旅の一冊のルート図）。本物と同じく、閉包の中で点を足していく
 public struct Path: View, Shape {
-    public init() {}
-    public init(_ callback: (inout Path) -> Void) {}
-    public mutating func move(to point: CGPoint) {}
-    public mutating func addLine(to point: CGPoint) {}
-    public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
+    nonisolated public init() {}
+    nonisolated public init(_ callback: (inout Path) -> Void) {}
+    nonisolated public mutating func move(to point: CGPoint) {}
+    nonisolated public mutating func addLine(to point: CGPoint) {}
+    nonisolated public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
     /// 二次の曲線・丸・角丸の四角・弧（Pro の案内の線の絵）
-    public mutating func addQuadCurve(to point: CGPoint, control: CGPoint) {}
-    public mutating func addEllipse(in rect: CGRect) {}
+    nonisolated public mutating func addQuadCurve(to point: CGPoint, control: CGPoint) {}
+    nonisolated public mutating func addEllipse(in rect: CGRect) {}
     /// 四角（構図の切り出し枠の外の暗がり）
-    public mutating func addRect(_ rect: CGRect) {}
-    public mutating func addRoundedRect(in rect: CGRect, cornerSize: CGSize) {}
-    public mutating func addArc(center: CGPoint, radius: CGFloat, startAngle: Angle, endAngle: Angle, clockwise: Bool) {}
+    nonisolated public mutating func addRect(_ rect: CGRect) {}
+    nonisolated public mutating func addRoundedRect(in rect: CGRect, cornerSize: CGSize) {}
+    nonisolated public mutating func addArc(center: CGPoint, radius: CGFloat, startAngle: Angle, endAngle: Angle, clockwise: Bool) {}
     /// 線を閉じる（Pro マークの六角形・本物と同じ）
-    public mutating func closeSubpath() {}
+    nonisolated public mutating func closeSubpath() {}
     /// 塗る（本物は `Shape` の修飾子）
     public func fill<S: ShapeStyle>(_ style: S) -> Path { self }
     /// 一部だけ描く（旅の記録の線を古い順に引く）。本物は `Shape` の修飾子
@@ -319,7 +322,7 @@ public struct Path: View, Shape {
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
 public struct UnevenRoundedRectangle: View, Shape {
-    public init(topLeadingRadius: Double = 0, bottomLeadingRadius: Double = 0,
+    nonisolated public init(topLeadingRadius: Double = 0, bottomLeadingRadius: Double = 0,
                 bottomTrailingRadius: Double = 0, topTrailingRadius: Double = 0) {}
     public var body: Never { fatalError("模型") }
 }

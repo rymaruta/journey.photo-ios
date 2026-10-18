@@ -126,7 +126,7 @@ final class PassStore: ObservableObject {
         return cleaned
     }
 
-    /// 設定を変える。**ログインしていなければ何もしない**（誰の名刺か決まらない）
+    /// 設定を変える。**ログインしていなければ何もしない**（誰の乗車券か決まらない）
     func update(_ change: (inout PassSettings) -> Void) {
         guard userId != nil else { return }
         var next = settings
@@ -140,14 +140,15 @@ final class PassStore: ObservableObject {
         save()
     }
 
-    /// 電波に載せる中身。**オンで、名刺の一枚を選んであるときだけ**
+    /// 電波に載せる中身。**オンで、乗車券を選んであるときだけ**
     var payload: PassExchange.Payload? {
         guard userId != nil, settings.enabled, let photoId = settings.cardPhotoId else { return nil }
         // 連絡先の形の字は載せない（前の版で書いて残っている字も・2026-10-16 owner の決定）
         func allowed(_ text: String) -> String { PassExchange.containsContact(text) ? "" : text }
         return PassExchange.Payload(photoId: photoId, showsFrom: settings.showsFrom, note: allowed(settings.note),
                                     origin: allowed(settings.originLabel ?? ""),
-                                    destination: allowed(settings.destinationLabel ?? ""))
+                                    destination: allowed(settings.destinationLabel ?? ""),
+                                    face: settings.faceStyle ?? PassTicketFaceStyle.mars.rawValue)
     }
 
     /// 自分の居住地を覚える（マイページ・設定がプロフィールを読んだとき）
@@ -160,7 +161,7 @@ final class PassStore: ObservableObject {
         save()
     }
 
-    /// 自分の居住地の都道府県（「旅のあいだ」・名刺の表の「〇〇から」）
+    /// 自分の居住地の都道府県（「旅のあいだ」・乗車券の表の「〇〇から」）
     var homePrefecture: String? { PassExchange.homePrefecture(homeLocation) }
 
     /// 今日は家から離れているかを覚える（前面で位置が取れた・分からなかった）
@@ -178,7 +179,7 @@ final class PassStore: ObservableObject {
         return away.value
     }
 
-    /// いま交換してよいか（オン・名刺あり・「いつ」の決まり）
+    /// いま交換してよいか（オン・乗車券あり・「いつ」の決まり）
     func exchangeAllowed(isForeground: Bool, now: Date = Date()) -> Bool {
         guard payload != nil else { return false }
         return PassExchange.allowsExchange(mode: settings.mode, isForeground: isForeground,
@@ -188,7 +189,7 @@ final class PassStore: ObservableObject {
     // MARK: - 受け取る
 
     /// この中身を受け取るか（**場所を引く前に**決める——要らない回に位置や地名を引かない）。
-    /// 自分の名刺・同じ日に同じ写真・1日の上限を超えた回は受け取らない
+    /// 自分の乗車券・同じ日に同じ写真・1日の上限を超えた回は受け取らない
     func accepts(_ payload: PassExchange.Payload, at date: Date = Date()) -> Bool {
         guard userId != nil, settings.enabled else { return false }
         if payload.photoId == settings.cardPhotoId { return false }
@@ -216,6 +217,8 @@ final class PassStore: ObservableObject {
                                  opened: false, ownerId: nil,
                                  originLabel: payload.origin.isEmpty ? nil : payload.origin,
                                  destinationLabel: payload.destination.isEmpty ? nil : payload.destination,
+                                 // 券面の番号はそのまま持つ（見せるときに相手が Pro かを確かめる・知らない番号はマルス券）
+                                 face: payload.face == PassTicketFaceStyle.mars.rawValue ? nil : payload.face,
                                  // 連絡先の形は受け取った時に一度だけ判定して持つ（描くたびに判定し直さない）
                                  noteContact: PassExchange.containsContact(payload.note),
                                  originContact: PassExchange.containsContact(payload.origin),
@@ -388,7 +391,12 @@ final class PassStore: ObservableObject {
 
     /// 見本のカードを入れる（`PreviewSession.passSample`・Debug のみ）。公開一覧の写真から作る。
     /// **起動のたびに入れ直す**（前の回に開いた印が残ると、ホームの札が出ず絵が撮れない）
-    func seedPreview(photoIds: [String], now: Date = Date()) {
+    ///
+    /// 2〜6枚目は特別な券面（01・06・10・21・26）にし、その持ち主を**端末の中だけ** Pro の姿にする（2026-10-17・
+    /// 帳の札とホームの束で券面の地が分かるかを撮る）。1枚目はマルス券のまま（束を開いた最初の表の絵）。
+    /// ホームの束は1〜3枚目で、いちばん上に重なるのは `PassMiniStack` の `ForEach` の最後＝3枚目（06 大圏航路）
+    func seedPreview(photos: [Photo], now: Date = Date()) {
+        let photoIds = photos.map(\.id)
         guard userId != nil, !photoIds.isEmpty else { return }
         let names = ["京都市", "京都市", "金沢市", "札幌市", "京都市", "鳥取市", "京都市"]
         encounters = photoIds.prefix(7).enumerated().map { index, id in
@@ -397,9 +405,24 @@ final class PassStore: ObservableObject {
                 id: UUID().uuidString, photoId: id, note: index == 0 ? "夕方の街を歩くのが好き" : "",
                 showsFrom: true, metHour: PassExchange.hourStart(met, calendar: calendar),
                 deliverAt: now.addingTimeInterval(-60), placeName: names[index % names.count],
-                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil)
+                placeLat: 35.0, placeLng: 135.8, number: index + 1, opened: false, ownerId: nil,
+                // 1枚目は和文2字と和文4字の区間（字数が違っても発・着の大きさがそろい、矢印が中央に来るかを撮る）
+                originLabel: index == 0 ? "東京" : nil, destinationLabel: index == 0 ? "フランス" : nil,
+                face: (1...5).contains(index) ? UInt8(index) : nil)
         }
+        #if DEBUG
+        for (index, photo) in photos.prefix(7).enumerated() where (1...5).contains(index) {
+            guard let owner = photo.userId ?? photo.uploadedBy, owners[owner] == nil else { continue }
+            let fields: [String: Any] = ["userId": owner, "displayName": photo.displayName ?? "", "pro": true, "passFace": true]
+            guard let data = try? JSONSerialization.data(withJSONObject: fields) else { continue }
+            owners[owner] = try? JSONDecoder.api.decode(UserProfile.self, from: data)
+        }
+        #endif
         settings.enabled = true
+        // 自分のカードの見本（乗車券を選ぶ画面）も同じ区間・裏のひとことつきで撮る
+        settings.setOrigin(.custom, text: "東京")
+        settings.setDestination(custom: true, text: "フランス")
+        if settings.note.isEmpty { settings.note = "霧の朝が好きです" }
         save()
     }
 

@@ -16,8 +16,8 @@ struct CompositionCatalogView: View {
                     .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
-                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。図はガイド線の例で、実際の写真ではありません。",
-                       "Explore ways to frame a scene. Illustrations show guide lines, not actual photographs."))
+                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。左の図はガイド線の配置、右は構図の作例写真です。",
+                       "Explore ways to frame a scene. The diagram shows the guide lines; the photo on the right is an example."))
                     .font(JPFont.footnote)
                     .lineSpacing(3)
                     .foregroundStyle(WebTheme.text2)
@@ -40,6 +40,8 @@ struct CompositionCatalogView: View {
                                             .lineLimit(2)
                                     }
                                     Spacer(minLength: 4)
+                                    // 2026-10-17 owner: 右に作例写真（構図のシートの札と同じ形）
+                                    CompositionExampleThumb(kind: kind)
                                     Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                                         .foregroundStyle(WebTheme.text3)
                                         .accessibilityHidden(true)
