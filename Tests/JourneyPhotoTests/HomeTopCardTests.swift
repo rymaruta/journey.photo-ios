@@ -355,6 +355,29 @@ final class HomeTopCardTests: XCTestCase {
                        HomeTopCard.dayNumber(sunday))
     }
 
+    /// 🔴 **画面は札と段の「今日」を持ち、見えているときだけ進める**（2026-10-18）。`Date()` をその場で読むと、
+    /// 札から開いた撮影スポットの画面が前に出ている間に 0 時を過ぎたあと、描き直しで押した元のリンクが消えて
+    /// 開いていた画面が閉じる。ホームのまま 0 時を過ぎたら進め、日が進んだら今日の一問も取り直す
+    func testHomeViewPinsTheDayAndAdvancesOnlyWhenShown() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift"),
+                              encoding: .utf8)
+            .components(separatedBy: "\n")
+            .map { line in line.range(of: "//").map { String(line[..<$0.lowerBound]) } ?? line }
+            .joined(separator: "\n")
+        XCTAssertTrue(view.contains("HomeTopCard.cards(now: cardsNow"), "札がその場の時刻で決まる")
+        XCTAssertFalse(view.contains("HomeTopCard.cards(now: Date()"))
+        XCTAssertFalse(view.contains("visibleShelf(today: HomeTopCard.today(Date()"), "段がその場の時刻で決まる")
+        XCTAssertTrue(view.contains(".task(id: \"\\(reloadToken)#\\(cardsDay)\") { await loadQuiz() }"),
+                      "日が進んでも今日の一問を取り直さない")
+        XCTAssertTrue(view.contains(".task(id: cardsDay) { await waitForNextDay() }"), "ホームのまま 0 時を過ぎても進まない")
+        XCTAssertTrue(view.contains("private func applyPendingQuiz() {\n        advanceDay()"),
+                      "前面に戻ったときに日を進めない")
+        XCTAssertTrue(view.contains("guard !Task.isCancelled, isShown else { return }\n        advanceDay()"),
+                      "見えていないのに日を進める")
+    }
+
     /// 行きたい場所の札も**日替わり**（2026-10-18・季節の札にそろえた）。2件以上あれば翌日は別の札
     func testWishlistSeasonRotatesDaily() throws {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])

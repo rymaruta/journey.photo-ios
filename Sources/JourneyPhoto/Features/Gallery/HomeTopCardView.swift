@@ -73,6 +73,12 @@ struct HomeTopCardView: View {
     /// （`HomeSpotShelf.visibleShelf`）。差し替えと同じく、見えている間に移す（`pendingQuizSettled`）
     @State private var quizSettled = false
     @State private var pendingQuizSettled = false
+    /// 札と段の「今日」。🔴 **`Date()` をその場で読まない**（2026-10-18・スポットを日替わりにしたとき）。
+    /// 札・段は毎日 0 時に替わるので、その場で読むと、札から開いた撮影スポットの画面が前に出ている間に
+    /// 日をまたいだあと、何かで描き直した瞬間に押した元のリンクが消えて**開いていた画面が閉じる**
+    /// （一冊の札・今日の一問と同じ形）。進めるのはホームが見えているときだけ（`advanceDay`）:
+    /// 前面が確定したとき・前面に戻って今日の一問を読み直したとき・ホームのまま 0 時を過ぎたとき
+    @State private var cardsNow = Date()
 
     private let opened = OpenedTripBooks()
 
@@ -90,7 +96,10 @@ struct HomeTopCardView: View {
             // 札・段・当日の行に出るスポットの詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ読む
             // （`SpotDetailNeeds`・2026-10-07）。重ねたら鍵が空になって止まる
             .task(id: SpotDetailNeeds.key(detailNeeds(choices))) { await loadDetails(choices) }
-            .task(id: "\(reloadToken)") { await loadQuiz() }
+            // 日が進んだら今日の一問も取り直す（ホームのまま 0 時を過ぎた回）
+            .task(id: "\(reloadToken)#\(cardsDay)") { await loadQuiz() }
+            // ホームのまま 0 時を過ぎたら札と段を今日へ（`advanceDay`）。前面に戻った回は `reloadToken` の側
+            .task(id: cardsDay) { await waitForNextDay() }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
             //
@@ -135,7 +144,7 @@ struct HomeTopCardView: View {
 
     /// 今日の札の並び（`HomeTopCard.cards`）。段（`spotShelf`）も同じ並びを見て、札に出ている場所を除く
     private var choices: [HomeTopCard.Choice] {
-        HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
+        HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
                           myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
                           wishlist: wishedKeys, quiz: quiz)
     }
@@ -146,7 +155,7 @@ struct HomeTopCardView: View {
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     @ViewBuilder
     private func spotShelf(_ choices: [HomeTopCard.Choice]) -> some View {
-        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                                   choices: choices, quiz: quiz, quizSettled: quizSettled) {
             HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos, reloadToken: reloadToken)
         }
@@ -390,7 +399,7 @@ struct HomeTopCardView: View {
 
     /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
     private func tripLight(_ plan: TripPlan) -> String? {
-        guard let today = HomeTopCard.today(Date(), in: .current),
+        guard let today = HomeTopCard.today(cardsNow, in: .current),
               let entry = TripLight.entry(plan: plan, today: today, spots: spots) else { return nil }
         return TripLight.line(entry)
     }
@@ -423,7 +432,7 @@ struct HomeTopCardView: View {
     /// 札・段・当日の行に出る、まだ索引だけのスポット
     private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         guard !spots.isEmpty else { return [] }
-        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                                choices: choices, quiz: quiz, quizSettled: quizSettled)
         return SpotDetailNeeds.home(choices: choices, shelf: shelf, spots: spots)
     }
@@ -482,9 +491,36 @@ struct HomeTopCardView: View {
         if isShown { applyPendingQuiz() }
     }
 
+    /// 札と段の日（`cardsNow` の端末の暦の日）。変わったら今日の一問と 0 時の待ちを掛け直す
+    private var cardsDay: String { TripPlanText.ymd(pickedIn: .current, cardsNow) }
+
+    /// 札と段の「今日」を今へ進める（**ホームが見えているときだけ呼ぶ**）。日が替わって今日の一問がまだ
+    /// 昨日のものなら、一問が決着するまで段を下げる（`quizSettled`・昨日の選択肢で除いた段を一瞬出さない）
+    private func advanceDay() {
+        let now = Date()
+        guard TripPlanText.ymd(pickedIn: .current, now) != cardsDay else { return }
+        cardsNow = now
+        if let current = quiz, current.date != DailyQuiz.today(now) { quizSettled = false }
+    }
+
+    /// 次の 0 時（端末の暦）まで待ち、ホームが見えていれば札と段を今日へ進める。見えていなければ
+    /// 何もしない（戻ったときの `landHomeCards` が進める）。止められたら何もしない
+    private func waitForNextDay() async {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let next = calendar.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0, second: 0),
+                                           matchingPolicy: .nextTime) else { return }
+        let seconds = max(next.timeIntervalSinceNow, 0) + 1
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        guard !Task.isCancelled, isShown else { return }
+        advanceDay()
+    }
+
     /// 今日の一問の札を整える（ホームが見えているときだけ呼ぶ）: 取り直したものがあれば差し替え、
-    /// **昨日の札は下げる**（0時をまたいだ・取り直しに失敗した）。答えたかも読み直す
+    /// **昨日の札は下げる**（0時をまたいだ・取り直しに失敗した）。答えたかも読み直す。
+    /// 先に札と段の日を今日へ進める（`advanceDay`）
     private func applyPendingQuiz() {
+        advanceDay()
         if let pendingQuiz {
             quiz = pendingQuiz
             self.pendingQuiz = nil
