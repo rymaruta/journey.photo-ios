@@ -388,6 +388,8 @@ struct FollowListView: View {
                 myFollowing?.remove(id)
             }
         } catch {
+            // 前の人が押した失敗を、次の人の画面に出さない（成功の側は上で捨てている）
+            guard auth.userId == viewer else { return }
             actionError = (error as? LocalizedError)?.errorDescription
                 ?? L("もう一度お試しください", "Please try again")
         }

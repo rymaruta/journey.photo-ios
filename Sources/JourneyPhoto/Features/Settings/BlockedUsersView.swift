@@ -154,16 +154,27 @@ struct BlockedUsersView: View {
         defer { working.remove(userId) }
         errorMessage = nil
         let owner = hidden.owner
+        // 押した人。🔴 **次の人の読み込みを捨てない**（2026-10-17）。
+        // ここで世代を進めると、人が替わったあとに始まった読み込みの答えが落ち、
+        // 前の人の一覧から1人消した姿が次の人の画面に残る
+        let sender = auth.userId
         do {
             try await environment.moderation.unblock(userId: userId)
+            guard Self.keepsUnblock(sender: sender, viewer: auth.userId) else { return }
             loadGeneration += 1
             isLoading = false
             hidden.unblock(userId, for: owner)
             await apply()
             users.removeAll { $0.id == userId }
         } catch {
+            guard Self.keepsUnblock(sender: sender, viewer: auth.userId) else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("解除できませんでした", "Couldn't unblock")
         }
+    }
+
+    /// 解除の答えを書くか。**押した人が、まだその人のときだけ**
+    static func keepsUnblock(sender: String?, viewer: String?) -> Bool {
+        sender != nil && sender == viewer
     }
 }
 

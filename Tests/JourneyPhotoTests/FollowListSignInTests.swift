@@ -49,4 +49,12 @@ final class FollowListSignInTests: XCTestCase {
         XCTAssertTrue(prompt.contains(".foregroundStyle(WebTheme.muted2)"))
         XCTAssertFalse(prompt.contains("danger"), "エラーではないので赤にしない")
     }
+
+    /// フォローの失敗も、押した人の画面にだけ出す（成功の側は既に捨てている）
+    func testFollowListDropsThePreviousViewersFailure() throws {
+        let view = try source("Features/Profile/FollowListView.swift")
+        let fn = view.components(separatedBy: "private func setFollowing").last ?? ""
+        XCTAssertEqual(fn.components(separatedBy: "guard auth.userId == viewer else { return }").count - 1, 2,
+                       "失敗を次の人の画面に出している")
+    }
 }

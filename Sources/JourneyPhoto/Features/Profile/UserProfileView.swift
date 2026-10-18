@@ -698,11 +698,17 @@ final class UserProfileViewModel: ObservableObject {
         actionMessage = nil
         // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
+        // 押した時点で見ていた人。🔴 **前の人のブロックで次の人の格子を空にしない**
+        // （2026-10-17）。答えが返ってから `photos = []` と `blockWrites` を進めていたので、
+        // ログアウトして入り直したあとに、次の人の読み込みが写真を書き戻せなくなっていた
+        let viewer = lastViewerId
         do {
             try await environment.moderation.block(userId: userId)
+            // 人が替わっていたら、格子も `blockWrites` も触らない。
+            // 進めたまま格子を空にすると、次の人の読み込みが写真を書き戻せない
+            guard lastViewerId == viewer else { return }
             blockWrites += 1
             store.block(userId, for: owner)
-            await environment.gallery.setHidden(store.snapshot)
             isFollowing = false
             followUnknown = false
             photos = []
@@ -712,7 +718,9 @@ final class UserProfileViewModel: ObservableObject {
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
+            await environment.gallery.setHidden(store.snapshot)
         } catch {
+            guard lastViewerId == viewer else { return }
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }

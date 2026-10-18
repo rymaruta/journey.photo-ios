@@ -131,4 +131,25 @@ final class CloseFriendsSaveTests: XCTestCase {
         XCTAssertTrue(CloseFriendsRows.overLimit(Set(ids)))
     }
 
+    /// 保存の続きは、押した人がまだその人のときだけ送る。
+    /// 1人ずつ送るので、途中でアカウントが替わると次の人の親しい友達になる
+    func testSaveStaysWithThePersonWhoPressed() throws {
+        XCTAssertTrue(CloseFriendsView.keepsSave(sender: "a", viewer: "a"))
+        XCTAssertFalse(CloseFriendsView.keepsSave(sender: "a", viewer: "b"),
+                       "次の人の親しい友達に、前の人の残りを送った")
+        XCTAssertFalse(CloseFriendsView.keepsSave(sender: nil, viewer: nil))
+        let text = try source("Features/Social/CloseFriendsView.swift")
+        XCTAssertEqual(text.components(separatedBy: "Self.keepsSave(sender: sender, viewer: auth.userId)").count - 1, 3,
+                       "送る前と、答えを書く前に、押した人かを見ていない")
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+        return text.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
 }

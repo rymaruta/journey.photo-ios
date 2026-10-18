@@ -1,0 +1,33 @@
+name: 不具合
+description: 動きがおかしい・壊れている・見た目が崩れている
+title: "[不具合] "
+labels: ["種類: 不具合"]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: どこで
+      options:
+        - iPhone アプリ
+        - ウェブサイト
+        - 分からない
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きたか
+      description: 画面の写真や動画があれば、ここに貼ってください
+      placeholder: 例）トランクを回すと、裏面に名前と「が出る
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: どうするとそうなるか（分かれば）
+      placeholder: 例）マイページ → トランク → 回す
+  - type: input
+    id: version
+    attributes:
+      label: アプリの版（分かれば）
+      placeholder: 例）1.1.14 (124)
