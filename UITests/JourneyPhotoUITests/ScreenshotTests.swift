@@ -2329,4 +2329,91 @@ final class ScreenshotTests: XCTestCase {
             save.tap()
         }
     }
+
+    // MARK: - 旅のトランクの中身と回したときの面（2026-10-18・板「旅のトランク」）
+
+    /// 見本のメダル 10 枚（8 枠に 7 枚と「ほか 3」）・Pro（会員証）・すれちがいの見本（乗車券）
+    private static let trunkInsideArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewPass", "YES",
+                                          "-JPPreviewBadges",
+                                          "earlyUser:1,first:1,prefectures:2,countries:1,seasons:1,morning:1,night:1,books:1,wish:1,supporter:1"]
+
+    /// **ふたを開ける → 中身を手に取る**: 閉じた姿・開けた姿（胴に会員証と乗車券・ふたの裏にメダル）・
+    /// メダルを持ち上げた・「ほか N」を持ち上げた。目印が無ければ落とす。押せる所は 44pt 以上
+    func testCapturesTrunkOpen() {
+        let app = launchTrunk(Self.trunkInsideArgs)
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い") }
+        let toggle = app.buttons["trunk.open.toggle"].firstMatch
+        guard toggle.waitForExistence(timeout: 15) else { return XCTFail("「ふたを開ける」のボタンが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "100-ふたを開ける（閉じている）")
+        for id in ["trunk.open.toggle", "trunk.open.take"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        toggle.tap()
+        let medal = app.buttons["trunk.inside.medal"].firstMatch
+        guard medal.waitForExistence(timeout: 15) else { return XCTFail("開けたふたの裏にメダルが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "100a-ふたを開けた")
+        XCTAssertTrue(app.buttons["trunk.inside.card"].firstMatch.exists, "Pro の人の内ポケットに会員証が無い")
+        XCTAssertTrue(app.buttons["trunk.inside.more"].firstMatch.exists, "メダル 10 枚なのに「ほか N」が無い")
+        medal.tap()
+        let go = app.buttons["trunk.hold.go"].firstMatch
+        guard go.waitForExistence(timeout: 10) else { return XCTFail("メダルを押しても持ち上がらない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "100b-中身を手に取った（メダル）")
+        let putBack = app.buttons["trunk.hold.putBack"].firstMatch
+        XCTAssertGreaterThanOrEqual(go.frame.height, 44, "出口のボタンが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(putBack.frame.height, 44, "「トランクに戻す」が 44pt 未満")
+        putBack.tap()
+        let more = app.buttons["trunk.inside.more"].firstMatch
+        guard more.waitForExistence(timeout: 10), more.isHittable else { return XCTFail("戻したあと「ほか N」を押せない") }
+        more.tap()
+        guard go.waitForExistence(timeout: 10) else { return XCTFail("「ほか N」を押しても持ち上がらない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "100c-中身を手に取った（ほかのメダル）")
+        putBack.tap()
+        let card = app.buttons["trunk.inside.card"].firstMatch
+        if card.waitForExistence(timeout: 5), card.isHittable {
+            card.tap()
+            if go.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "100d-中身を手に取った（会員証）")
+                putBack.tap()
+            }
+        }
+    }
+
+    /// **空のトランク**（メダルも会員証も乗車券も無い人・`-JPPreviewTrunk empty`）: 手に入れ方の3行と「写真を投稿する」
+    func testCapturesTrunkOpenEmpty() {
+        let app = launchTrunk(["-JPPreviewTrunk", "empty"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い") }
+        let post = app.buttons["trunk.open.emptyPost"].firstMatch
+        guard post.waitForExistence(timeout: 15) else { return XCTFail("空のトランクに「写真を投稿する」が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "100e-空のトランク")
+        XCTAssertGreaterThanOrEqual(post.frame.height, 44, "「写真を投稿する」が 44pt 未満")
+    }
+
+    /// **回したときの面**: 手に取って回す → 側面 → 上と背面 → 底（板 TrunkFaces）。向きのボタンが無ければ落とす
+    func testCapturesTrunkSpinFaces() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let spin = app.buttons["trunk.spin"].firstMatch
+        guard spin.isHittable else { return XCTFail("トランクを押せない") }
+        spin.tap()
+        let close = app.buttons["trunk.spin.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return XCTFail("回す画面が開かない") }
+        for (id, name) in [("side", "91a-回した側面"), ("topBack", "91b-回した上と背面"), ("bottom", "91c-回した底（蝶番と足）")] {
+            let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
+            guard button.waitForExistence(timeout: 5) else { return XCTFail("向きのボタン \(id) が無い") }
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "向きのボタン \(id) が 44pt 未満")
+            button.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+        }
+        close.tap()
+    }
 }
+
