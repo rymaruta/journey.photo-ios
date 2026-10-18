@@ -128,6 +128,27 @@ enum TrunkFaces {
     /// そろえ、札・チャーム・鍵が胴の上の縁から下がって見えるようにする（2D のまま胴の座標にすると上の 30 が切れる）
     static let frontHangLift: Double = TrunkLooks.tagStringTop
 
+    /// 立体の正面で、吊るす部品（タグ・チャーム・鍵）の吊るす点を置く高さ（胴の上の縁から）。
+    /// 2D では吊るす点が持ち手・付け根の高さ（y 6〜32）にあり、ラベルのタグと同じ量（2）だけ上げると部品が胴の上の縁から
+    /// 最大 30 下がって、南京錠のつるにかかった（#305 の見直し）。**部品は1つずつ、吊るす点を胴の上の縁のすぐ下へ上げる**
+    /// （上の面から紐が縁を越えて、そこから下がる形）
+    static let frontHangTop: Double = 3
+
+    /// 吊るす部品を立体の正面に描くとき、2D の絵の y から引く量（部品ごと）
+    static func frontLift(_ p: TrunkFittings.Placement) -> Double { p.hangY - frontHangTop }
+
+    /// 立体の正面の絵（胴 360×268）での、吊るす部品の描いた中身の外接の四角
+    static func frontFrame(_ p: TrunkFittings.Placement) -> TrunkRect {
+        let f = p.frame
+        return TrunkRect(x: f.x, y: f.y - frontLift(p), w: f.w, h: f.h)
+    }
+
+    /// 立体の正面の絵での、ラベルの手荷物タグの外接の四角
+    static func frontTagFrame(x: Double, rot: Double) -> TrunkRect {
+        let f = TrunkLooks.tagFrame(x: x, rot: rot)
+        return TrunkRect(x: f.x, y: f.y - frontHangLift, w: f.w, h: f.h)
+    }
+
     /// 吊るす紐1本（上の面: 持ち手から正面の辺へ・正面: 上の縁から吊るす点へ）
     struct HangCord: Equatable {
         let fromX: Double
@@ -162,15 +183,13 @@ enum TrunkFaces {
         return out
     }
 
-    /// 正面の上の縁から、吊るした部品の吊るす点までの紐（ラベルのタグは自分の紐が縁から始まるので要らない）。
-    /// 座標は正面の絵（胴 360×268）
+    /// 正面の上の縁から、吊るした部品の吊るす点（`frontHangTop`）までの短い紐（ラベルのタグは自分の紐が縁から
+    /// 始まるので要らない）。座標は正面の絵（胴 360×268）
     static func frontCords(fittings: TrunkFittings) -> [HangCord] {
         fittings.placements.filter { !$0.onBody }.compactMap { p in
             guard let cord = TrunkFittings.cord(p) else { return nil }
-            let y = p.hangY - frontHangLift
-            guard y > 0 else { return nil }
             // 部品の紐・輪の上の端の少し下まで（つなぎ目を見せない）
-            return HangCord(fromX: p.hangX, fromY: 0, toX: p.hangX, toY: y + 2, width: cord.width, color: cord.color)
+            return HangCord(fromX: p.hangX, fromY: 0, toX: p.hangX, toY: frontHangTop + 2, width: cord.width, color: cord.color)
         }
     }
 

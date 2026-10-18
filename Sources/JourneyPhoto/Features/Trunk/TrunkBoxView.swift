@@ -52,15 +52,19 @@ struct TrunkBoxView: View {
                 tags(look)
                 hanging(fittings)
             } else if hangsOnFront {
-                // 立体の正面: 紐の上の端を胴の上の縁にそろえて吊るす（`TrunkFaces.frontHangLift`）
+                // 立体の正面: ラベルのタグは紐の上の端を胴の上の縁に（`TrunkFaces.frontHangLift`）、部品は吊るす点を
+                // 縁のすぐ下に（`TrunkFaces.frontLift`・錠前にかからない）
                 ZStack(alignment: .topLeading) {
                     TrunkHangCords(cords: TrunkFaces.frontCords(fittings: fittings))
                         .frame(width: Self.W, height: Self.H)
-                        .offset(y: TrunkFaces.frontHangLift)
                     tags(look)
-                    hanging(fittings)
+                        .offset(y: -TrunkFaces.frontHangLift)
+                    ForEach(Array(fittings.placements.filter { !$0.onBody }.enumerated()), id: \.offset) { _, p in
+                        placed(p, dy: -TrunkFaces.frontLift(p))
+                    }
                 }
-                .offset(y: -TrunkFaces.frontHangLift)
+                .frame(width: Self.W, height: Self.H, alignment: .topLeading)
+                .allowsHitTesting(false)
             }
         }
         .frame(width: TrunkLooks.canvasWidth, height: bodyOnly ? Self.H : TrunkLooks.canvasHeight, alignment: .topLeading)

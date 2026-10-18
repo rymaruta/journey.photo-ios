@@ -87,29 +87,36 @@ final class TrunkPartsFitTests: XCTestCase {
     func testHangingNeverOverlaps() {
         let tagFrames = TrunkLooks.tagSlots.map { TrunkLooks.tagFrame(x: $0.x, rot: $0.rot) }
         // 1点ずつの外接の四角を先に作る（2,197 通り × 4 で毎回作らない）
-        func frame(_ part: TrunkPart?) -> TrunkRect? {
-            guard let part else { return nil }
-            let e: TrunkEquipped
-            switch part.kind {
-            case .tag: e = TrunkEquipped(tag: part.id)
-            case .charm: e = TrunkEquipped(charm: part.id)
-            default: e = TrunkEquipped(key: part.id)
-            }
-            return TrunkFittings(e).placements.first?.frame
+        func placement(_ part: TrunkPart?) -> TrunkFittings.Placement? {
+            part.flatMap { Self.hung($0) }
         }
-        let tags = parts(.tag).map(frame), charms = parts(.charm).map(frame), keys = parts(.key).map(frame)
-        let lockTop = TrunkModel.allCases.map { m -> Double in
-            let look = TrunkLooks.look(m, stage: 0)
-            let mount = TrunkFittings(TrunkEquipped(lock: "lock.9")).lockMount(look)
-            return TrunkLooks.bodyTop + min(TrunkLooks.lockTop(look), mount.map { $0.y + 14 * $0.side / 96 } ?? .infinity)
-        }.min() ?? 0
+        let tagParts = parts(.tag).map(placement), charmParts = parts(.charm).map(placement), keyParts = parts(.key).map(placement)
+        let tags = tagParts.map { $0?.frame }, charms = charmParts.map { $0?.frame }, keys = keyParts.map { $0?.frame }
+        // 立体の正面の絵でも（部品は吊るす点を縁のすぐ下へ・ラベルのタグは紐の上の端を縁へ上げる）
+        let frontLabels = TrunkLooks.tagSlots.map { TrunkFaces.frontTagFrame(x: $0.x, rot: $0.rot) }
+        for t in tagParts { for c in charmParts { for k in keyParts {
+            let hung = [t, c, k].compactMap { $0.map(TrunkFaces.frontFrame) }
+            for i in hung.indices { for j in hung.indices where j > i {
+                XCTAssertFalse(hung[i].intersects(hung[j]), "立体の正面で吊るす部品どうしが重なる: \(hung[i]) と \(hung[j])")
+            } }
+            for f in hung { for g in frontLabels {
+                XCTAssertFalse(f.intersects(g), "立体の正面で吊るす部品がラベルのタグに重なる: \(f) と \(g)")
+            } }
+        } } }
+        // 錠前（全部の型 × 型のまま・12点）の描いた所を 360×300 の絵の座標に
+        let locks = TrunkModel.allCases.flatMap { m in
+            ([nil] + TrunkPartCatalog.parts(of: .lock).map { Optional($0) }).map { lock -> TrunkRect in
+                let r = Self.lockRect(m, lock: lock)
+                return TrunkRect(x: r.x, y: r.y + TrunkLooks.bodyTop, w: r.w, h: r.h)
+            }
+        }
         var checked = 0
         for t in tags { for c in charms { for k in keys {
             let hung = [t, c, k].compactMap { $0 }
             for f in hung {
                 XCTAssertGreaterThanOrEqual(f.x, 0, "吊るす部品が絵の左からはみ出す")
                 XCTAssertLessThanOrEqual(f.maxX, TrunkLooks.canvasWidth, "吊るす部品が絵の右からはみ出す")
-                XCTAssertLessThan(f.maxY, lockTop, "吊るす部品が錠前にかかる")
+                XCTAssertFalse(locks.contains { $0.intersects(f) }, "吊るす部品が錠前にかかる: \(f)")
             }
             for i in hung.indices { for j in hung.indices where j > i {
                 XCTAssertFalse(hung[i].intersects(hung[j]), "吊るす部品どうしが重なる: \(hung[i]) と \(hung[j])")
@@ -123,6 +130,66 @@ final class TrunkPartsFitTests: XCTestCase {
         } } }
         XCTAssertEqual(checked, 13 * 13 * 13 * 4)
         // ラベルのタグどうしは板どおり重ねて吊るす（板 Trunk の3枚）。それは見ない
+    }
+
+    private static func hung(_ part: TrunkPart) -> TrunkFittings.Placement? {
+        let e: TrunkEquipped
+        switch part.kind {
+        case .tag: e = TrunkEquipped(tag: part.id)
+        case .charm: e = TrunkEquipped(charm: part.id)
+        default: e = TrunkEquipped(key: part.id)
+        }
+        return TrunkFittings(e).placements.first
+    }
+
+    /// 錠前の描いた所（胴 360×268 の座標）。付けた錠前の部品は部品の絵を縮めた中身、無ければ型の錠前
+    private static func lockRect(_ model: TrunkModel, lock: TrunkPart?) -> TrunkRect {
+        let look = TrunkLooks.look(model, stage: 0)
+        guard let lock, case .lock(let l) = lock.look,
+              let m = TrunkFittings(TrunkEquipped(lock: lock.id)).lockMount(look),
+              let all = TrunkPartDrawing.contentBounds(TrunkPartDrawing.lock(l)) else {
+            return TrunkRect(x: 180 - look.lock.width / 2, y: TrunkLooks.lockTop(look), w: look.lock.width, h: look.lock.height)
+        }
+        let k = m.side / TrunkPartDrawing.size
+        return TrunkRect(x: m.x + all.x * k, y: m.y + all.y * k, w: all.w * k, h: all.h * k)
+    }
+
+    /// 立体の正面の絵で、吊るす部品・ラベルのタグが錠前にかからない（全部の型 × 錠前なし・12点 × 吊るす部品 36点）。
+    /// 見直しで、チャームの下端が南京錠のつるに、鍵が漆・汽船の錠前にかかっていた（#305）
+    func testFrontHangingClearsTheLock() {
+        let hung = ([TrunkPartKind.tag, .charm, .key]).flatMap { TrunkPartCatalog.parts(of: $0) }.compactMap(Self.hung)
+        XCTAssertEqual(hung.count, 36)
+        let labels = TrunkLooks.tagSlots.map { TrunkFaces.frontTagFrame(x: $0.x, rot: $0.rot) }
+        var nearest = Double.infinity
+        for model in TrunkModel.allCases {
+            for lock in [nil] + TrunkPartCatalog.parts(of: .lock).map({ Optional($0) }) {
+                let rect = Self.lockRect(model, lock: lock)
+                for p in hung {
+                    let f = TrunkFaces.frontFrame(p)
+                    XCTAssertFalse(f.intersects(rect), "立体の正面で \(p.part.id) が \(model) の錠前 \(lock?.id ?? "（型のまま）") にかかる: \(f) と \(rect)")
+                    if f.x < rect.maxX, rect.x < f.maxX { nearest = min(nearest, rect.y - f.maxY) }
+                }
+                for g in labels {
+                    XCTAssertFalse(g.intersects(rect), "立体の正面でラベルのタグが \(model) の錠前にかかる")
+                }
+            }
+        }
+        // 横に重なる組では、上下に 3 以上あける（影の分）
+        XCTAssertGreaterThanOrEqual(nearest, 3, "錠前との隙間が狭い: \(nearest)")
+    }
+
+    /// 鍵とチャームは持ち手か付け根の金具から吊るす（宙に浮かせない）。部品のタグは紐で下げる札なので
+    /// ラベルのタグと同じく持ち手の外から下げてよい
+    func testHooksHangFromTheHandle() {
+        for kind in [TrunkPartKind.key, .charm] {
+            for part in TrunkPartCatalog.parts(of: kind) {
+                guard let p = Self.hung(part) else { return XCTFail("\(part.id) を吊るせない") }
+                let on = TrunkFittings.handleRegions.contains { r in
+                    p.hangX >= r.x && p.hangX <= r.maxX && p.hangY >= r.y && p.hangY <= r.maxY
+                }
+                XCTAssertTrue(on, "\(part.id) の吊るす点（\(p.hangX), \(p.hangY)）が持ち手・付け根の上に無い")
+            }
+        }
     }
 
     /// 見本（#305 の画面写真の組み合わせ: 一等船室のタグ・鳥居のチャーム・赤い札の鍵）を名指しで
@@ -175,8 +242,12 @@ final class TrunkPartsFitTests: XCTestCase {
         XCTAssertEqual(cords.count, 3)
         for c in cords {
             XCTAssertEqual(c.fromY, 0)
-            XCTAssertGreaterThan(c.toY, 0)
+            XCTAssertEqual(c.toY, TrunkFaces.frontHangTop + 2)
             XCTAssertEqual(c.fromX, c.toX)
+        }
+        // 部品は吊るす点が縁のすぐ下に来る
+        for p in fittings.placements where !p.onBody {
+            XCTAssertEqual(p.hangY - TrunkFaces.frontLift(p), TrunkFaces.frontHangTop, accuracy: 1e-9)
         }
         XCTAssertEqual(TrunkLooks.tagStringTop - TrunkFaces.frontHangLift, 0, "ラベルのタグの紐が正面の上の縁から始まらない")
     }
@@ -196,9 +267,14 @@ final class TrunkPartsFitTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(k, TrunkFittings.lockMountScale.lowerBound - 1e-9, "\(part.id) の縮みが小さすぎる: \(k)")
                 XCTAssertLessThanOrEqual(k, TrunkFittings.lockMountScale.upperBound + 1e-9, "\(part.id) の縮みが大きすぎる: \(k)")
                 let body = TrunkPartDrawing.lockBody(l.shape).box
-                XCTAssertEqual(m.y + body.midY * k, TrunkLooks.lockTop(look) + look.lock.height / 2, accuracy: 1e-9,
-                               "\(model) \(part.id) の胴が型の錠前の高さの真ん中に無い")
                 let all = TrunkPartDrawing.contentBounds(TrunkPartDrawing.lock(l))!
+                if l.shape == .padlock {
+                    // 南京錠は留め金から吊るす: つるの上の端が型の錠前の上の端
+                    XCTAssertEqual(m.y + all.y * k, TrunkLooks.lockTop(look), accuracy: 1e-9, "\(model) の南京錠のつるが留め金に無い")
+                } else {
+                    XCTAssertEqual(m.y + body.midY * k, TrunkLooks.lockTop(look) + look.lock.height / 2, accuracy: 1e-9,
+                                   "\(model) \(part.id) の胴が型の錠前の高さの真ん中に無い")
+                }
                 XCTAssertEqual(m.x + all.midX * k, 180, accuracy: 1e-9, "\(part.id) が真ん中に無い")
                 // 胴の中に収まる（左右・上）
                 XCTAssertGreaterThan(m.x + all.x * k, 0)

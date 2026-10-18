@@ -815,6 +815,8 @@ struct TrunkFittings: Equatable {
 
     /// 付けた錠前を、部品1点の絵（96 の枠）を縮めてトランクの錠前の場所に置く（#305）。
     /// 返すのは縮めた枠の一辺と左上（胴 360×268 の座標）。錠前の胴の真ん中（双子は2枚の真ん中）を型の錠前の真ん中に。
+    /// **南京錠だけは、つるの上の端を型の錠前の上の端に**（留め金から吊るす形）。胴の真ん中にそろえると、つるが
+    /// 型の錠前より 20 ほど上へ伸び、立体の正面で吊るしたチャームの下端にかかった（#305 の見直し）。
     /// 前は部品の金属で型の錠前を塗るだけで、南京錠・ダイヤル・双子の形も紋も出なかった
     func lockMount(_ look: TrunkLook) -> (side: Double, x: Double, y: Double)? {
         guard let lock, case .lock(let l) = lock.look else { return nil }
@@ -822,7 +824,8 @@ struct TrunkFittings: Equatable {
         let all = TrunkPartDrawing.contentBounds(TrunkPartDrawing.lock(l)) ?? body
         let k = min(Self.lockMountScale.upperBound, max(Self.lockMountScale.lowerBound, look.lock.height / body.h))
         let cx = 180.0, cy = TrunkLooks.lockTop(look) + look.lock.height / 2
-        return (TrunkPartDrawing.size * k, cx - all.midX * k, cy - body.midY * k)
+        let y = l.shape == .padlock ? TrunkLooks.lockTop(look) - all.y * k : cy - body.midY * k
+        return (TrunkPartDrawing.size * k, cx - all.midX * k, y)
     }
 
     /// 吊るす部品の紐（立体で、上の面の持ち手から正面の上の縁まで渡す・#305）の太さと色。部品の紐・鎖の色と太さを
@@ -872,17 +875,29 @@ struct TrunkFittings: Equatable {
     /// と、後から足した部品の手荷物タグ（84,34）に重なっていた（鳥居のチャームが「FIRST CLASS」の札に、鍵が行き先の
     /// タグに）。**ラベルのタグは持ち手の右に吊るす**（板 Trunk のまま）ので、部品は持ち手の左から真ん中へ
     /// 「部品のタグ → 鍵 → チャーム」の順に並べ、どの組み合わせ（部品のある・なし × ラベルのタグ 0〜3 枚）でも
-    /// 描いた中身が交わらないようにする（`TrunkPartsTests.testHangingNeverOverlaps`）。
-    /// - 部品のタグ: 持ち手の左の外に吊るす（ラベルのタグを右の外に吊るすのと対に）
-    /// - 鍵: 持ち手の左の付け根（120〜140）から、鍵の頭（96 の枠の 21）で吊るす
-    /// - チャーム: 持ち手の真ん中寄り（右のラベルのタグの手前まで）
-    /// 縮み・傾きは板のまま（タグ 0.5・−12°、チャーム 0.6・6°、鍵 0.62・−10°）
+    /// 描いた中身が交わらないようにする（`TrunkPartsFitTests.testHangingNeverOverlaps`）。立体の正面の絵
+    /// （`TrunkFaces.frontFrame`）でも、互いに・ラベルのタグに・錠前（どの型・どの錠前の部品でも）に交わらない
+    /// （`TrunkPartsFitTests.testFrontHangingClearsTheLock`）。
+    /// - 部品のタグ: 持ち手の左の外に吊るす（ラベルのタグを右の外に吊るすのと対に・紐で下げる札なので宙から下げてよい）
+    /// - 鍵: 持ち手の左の付け根の金具（x 120〜140・y 26〜40）に鍵の頭（96 の枠の 21）を掛ける。傾きは外（左）へ
+    /// - チャーム: 持ち手の上の帯（y 2〜12）に輪を掛ける（右のラベルのタグの手前まで）
+    /// 鍵とチャームの吊るす点は持ち手か付け根の上（`TrunkFittings.handleRegions`・`testHooksHangFromTheHandle`）
     enum Hang {
         /// `(左, 上, 縮み, 傾き, 中心x, 中心y)`（板 Equip と同じ書き方・トランクは上 20）
         static let tag = (left: 26.0, top: 34.0, scale: 0.5, rot: -12.0, ax: 0.5, ay: 0.0)
-        static let key = (left: 96.0, top: 30.0, scale: 0.62, rot: -10.0, ax: 21.0 / 96, ay: 0.0)
+        static let key = (left: 105.0, top: 52.0, scale: 0.62, rot: 10.0, ax: 21.0 / 96, ay: 0.0)
         static let charm = (left: 142.0, top: 26.0, scale: 0.6, rot: 6.0, ax: 0.5, ay: 0.0)
     }
+
+    /// 持ち手と付け根の金具の場所（360×300 の絵の座標・`TrunkBoxView.handle`: 持ち手 100×36 を 130・2 に太さ 10、
+    /// 付け根 20×14 を 120・220 の 26 に）。鍵・チャームはこのどこかから吊るす
+    static let handleRegions: [TrunkRect] = [
+        TrunkRect(x: 130, y: 2, w: 100, h: 10),
+        TrunkRect(x: 130, y: 2, w: 10, h: 36),
+        TrunkRect(x: 220, y: 2, w: 10, h: 36),
+        TrunkRect(x: 120, y: 26, w: 20, h: 14),
+        TrunkRect(x: 220, y: 26, w: 20, h: 14),
+    ]
 
     /// 重ねる部品の置き場（モック Equip の `left`・`top`・`transform` を 360×300 の絵へ）。
     /// CSS の `transform-origin` を残すため、縮めた枠の左上をここで出す
