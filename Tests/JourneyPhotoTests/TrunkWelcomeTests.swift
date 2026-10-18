@@ -509,9 +509,41 @@ final class TrunkWelcomeRulesTests: XCTestCase {
                                    now: t0.addingTimeInterval(1.2 + WelcomePresentationWatch.quietSeconds)), .giveBack)
     }
 
+    /// 裏にいる間は数えない: 裏へ回る前の静けさを起点に残さず、前面に戻ってから1秒数え直す
+    func testBackgroundResetsTheQuietCount() {
+        var watch = WelcomePresentationWatch()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, sceneActive: false, now: t0.addingTimeInterval(0.5)), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, sceneActive: false, now: t0.addingTimeInterval(20)), .waiting,
+                       "裏にいる間に「出なかった」と決めた")
+        // 前面に戻った瞬間には決めない
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(20.1)), .waiting,
+                       "前面に戻った瞬間に「出なかった」と決めた（一瞬二度出る）")
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(20.6)), .waiting)
+        XCTAssertEqual(watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(21.2)), .giveBack)
+    }
+
+    /// 何かが出たまま3秒続いたら問い合わせを1秒に延ばし、閉じたら0.1秒に戻す
+    func testPollingSlowsWhileSomethingStaysOpen() {
+        var watch = WelcomePresentationWatch()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(watch.pollInterval, 0.1)
+        _ = watch.check(appeared: false, modalPresenting: true, now: t0)
+        _ = watch.check(appeared: false, modalPresenting: true, now: t0.addingTimeInterval(2.9))
+        XCTAssertEqual(watch.pollInterval, 0.1, "3秒たつ前に延ばした")
+        _ = watch.check(appeared: false, modalPresenting: true, now: t0.addingTimeInterval(3.0))
+        XCTAssertEqual(watch.pollInterval, 1, "出たままなのに 0.1 秒ごとに問い続ける")
+        _ = watch.check(appeared: false, modalPresenting: false, now: t0.addingTimeInterval(10))
+        XCTAssertEqual(watch.pollInterval, 0.1, "閉じたのに延ばしたまま")
+        // 次に出たときは、また3秒から数える
+        _ = watch.check(appeared: false, modalPresenting: true, now: t0.addingTimeInterval(10.5))
+        XCTAssertEqual(watch.pollInterval, 0.1, "前の出たままの起点が残っている")
+    }
+
     func testRootViewWatchesPresentationAndClearsOnUserSwitch() throws {
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(), now: Date())"),
+        XCTAssertTrue(root.contains("watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(),\n                                   sceneActive: scenePhase == .active, now: Date())"),
                       "出たかを何も出ていないことで確かめていない")
         XCTAssertFalse(root.contains("for _ in 0..<30 where !welcomeAppeared"), "決まった秒数で出なかったと決めている")
         XCTAssertTrue(root.contains("welcomeOffer = nil\n                trunkWelcomeGrant = nil\n                trunkWelcome.noteUser(userId)"),

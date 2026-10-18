@@ -74,20 +74,36 @@ enum PostModalGate {
 /// - 出た合図（`TrunkWelcomeView` の onAppear）が来た → 出た
 /// - 何かが出ている（`ModalProbe`・自分の全画面が出かけている間も含む）→ 待ち続ける
 /// - 何も出ていない状態が `quietSeconds` 続いた → 出なかった（待ちへ戻す）
+/// - 前面に出ていない間は数えない（裏へ回った直後の起点が残ると、前面に戻った瞬間に「出なかった」となり一瞬二度出る）
+///
+/// 問い合わせの間隔（`pollInterval`）は 0.1 秒。何かが出たまま（または裏にいるまま）`slowAfterSeconds` 続いたら 1 秒に延ばし、
+/// 閉じたら 0.1 秒に戻す（長く開いている写真の全画面の間、毎秒10回問わない）
 struct WelcomePresentationWatch {
     enum Outcome: Equatable { case shown, waiting, giveBack }
 
     /// 何も出ていない状態がこれだけ続いたら「出なかった」
     static let quietSeconds: TimeInterval = 1
+    /// 何かが出たままの状態がこれだけ続いたら、問い合わせを延ばす
+    static let slowAfterSeconds: TimeInterval = 3
+    static let fastInterval: TimeInterval = 0.1
+    static let slowInterval: TimeInterval = 1
 
     private var quietSince: Date?
+    private var busySince: Date?
+    /// 次に問うまでの間（秒）
+    private(set) var pollInterval: TimeInterval = fastInterval
 
-    mutating func check(appeared: Bool, modalPresenting: Bool, now: Date) -> Outcome {
+    mutating func check(appeared: Bool, modalPresenting: Bool, sceneActive: Bool = true, now: Date) -> Outcome {
         if appeared { return .shown }
-        if modalPresenting {
+        if modalPresenting || !sceneActive {
             quietSince = nil
+            let since = busySince ?? now
+            busySince = since
+            pollInterval = now.timeIntervalSince(since) >= Self.slowAfterSeconds ? Self.slowInterval : Self.fastInterval
             return .waiting
         }
+        busySince = nil
+        pollInterval = Self.fastInterval
         guard let since = quietSince else {
             quietSince = now
             return .waiting

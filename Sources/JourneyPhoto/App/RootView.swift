@@ -455,11 +455,12 @@ struct RootView: View {
             // して出している扱いを下ろし、待ちへ戻す（届いた画面と評価のお願いを止めたままにしない・`WelcomePresentationWatch`）
             var watch = WelcomePresentationWatch()
             while !Task.isCancelled, trunkWelcomeGrant == grant, auth.userId == owner {
-                switch watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(), now: Date()) {
+                switch watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(),
+                                   sceneActive: scenePhase == .active, now: Date()) {
                 case .shown:
                     return
                 case .waiting:
-                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(watch.pollInterval * 1_000_000_000))
                 case .giveBack:
                     trunkWelcomeGrant = nil
                     trunkWelcome.requeue(grant, userId: owner)
