@@ -153,11 +153,25 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertFalse(BlockedUsersView.keepsUnblock(sender: nil, viewer: nil))
     }
 
-    /// 画面がこの判断を、削除・ブロック・解除の成功と失敗の両方で通す
+    /// 🔴 **削除の成功で閉じるかは、消した1枚をまだ見ているかだけで決める**（2026-10-18）。
+    /// 人が替わっても、消した1枚を見ているなら閉じる（もう無い写真を編集・削除できない）。隣へ送ったら閉じない
+    func testDeleteClosesOnlyWhileTheDeletedPhotoIsShown() async {
+        XCTAssertTrue(PhotoDetailRules.closesAfterDelete(photoId: "p1", currentId: "p1"))
+        XCTAssertFalse(PhotoDetailRules.closesAfterDelete(photoId: "p1", currentId: "p2"), "隣の写真まで閉じた")
+    }
+
+    /// 画面がこの判断を、削除の失敗・ブロック・解除の成功と失敗で通す
     func testStaleActionAnswersAreDroppedInTheScreens() async throws {
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        XCTAssertEqual(detail.components(separatedBy: "PhotoDetailRules.appliesHere(photoId:").count - 1, 4,
-                       "削除かブロックの、成功か失敗が隣の写真に残る")
+        XCTAssertEqual(detail.components(separatedBy: "PhotoDetailRules.appliesHere(photoId:").count - 1, 3,
+                       "削除の失敗か、ブロックの成功か失敗が隣の写真に残る")
+        // 削除の成功で閉じるかは、写真だけで決める（人を見ると、消した1枚の画面に残る）
+        let deleteBody = try XCTUnwrap(detail.range(of: "try await environment.photos.delete(photoId: photoId)"))
+        let close = try XCTUnwrap(detail.range(of: "dismiss()", range: deleteBody.upperBound..<detail.endIndex))
+        let success = String(detail[deleteBody.upperBound..<close.lowerBound])
+        XCTAssertTrue(success.contains("guard PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) else { return }"),
+                      "削除の成功で閉じるかを、写真で決めていない")
+        XCTAssertFalse(success.contains("appliesHere"), "人が替わると、消した1枚の画面に残る")
         let blocked = try source("Features/Settings/BlockedUsersView.swift")
         XCTAssertEqual(blocked.components(separatedBy: "Self.keepsUnblock(sender: sender, viewer: auth.userId)").count - 1, 2,
                        "解除の成功か失敗が次の人の一覧に残る")

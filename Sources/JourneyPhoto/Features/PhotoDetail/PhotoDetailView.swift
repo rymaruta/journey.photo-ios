@@ -2040,10 +2040,11 @@ struct PhotoDetailView: View {
             await hidden.hideGone(photoId, for: owner, environment: environment, deleted: true)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
             // 編集したり、もう一度削除を押したりできてしまう。
-            // 🔴 **隣へ送ったあと・人が替わったあとは閉じない**（2026-10-17）。
-            // 閉じると、いま見ている別の写真まで一緒に閉じていた。失敗の文も隣に出さない
-            guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
-                                               sender: sender, viewer: auth.userId) else { return }
+            // 🔴 **隣へ送ったあとは閉じない**（2026-10-17）。
+            // 閉じると、いま見ている別の写真まで一緒に閉じていた。失敗の文も隣に出さない。
+            // 2026-10-18 判断: **閉じるかは「消した1枚をまだ見ているか」だけで決める。**
+            // 人が替わっても消した1枚を見ていれば、もう無い写真の画面に残さない（`closesAfterDelete`）
+            guard PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) else { return }
             dismiss()
         } catch {
             guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
@@ -2410,6 +2411,14 @@ enum PhotoDetailRules {
     /// ログアウトしたあとに書くと、別の写真が閉じたり、次の人に前の人の失敗が出る
     static func appliesHere(photoId: String, currentId: String, sender: String?, viewer: String?) -> Bool {
         photoId == currentId && sender != nil && sender == viewer
+    }
+
+    /// 削除が成功したあと、画面を閉じるか。**消した1枚をまだ見ているときだけ**（人は問わない）。
+    ///
+    /// 隣へ送ったあとに閉じると、いま見ている別の写真まで閉じる。逆に人が替わっても
+    /// 消した1枚を見ているなら閉じる——残すと、もう無い写真を編集・削除できてしまう
+    static func closesAfterDelete(photoId: String, currentId: String) -> Bool {
+        photoId == currentId
     }
 
     /// 詳細の上で左右に送る束と、いま見ている位置。**大きく見る画面（`viewerLineup`）と
