@@ -81,18 +81,57 @@ struct PassSpecialFace: View {
     /// 表がいま見えているか（裏を見ている・全面の写真や Pro の案内が上にある間は false）
     var visible: Bool = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        PassTiltLight(visible: visible, shine: shine) { light in
+            PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
+        }
+        .modifier(PassTiltHold(style: face.style, visible: visible))
+    }
+}
+
+/// 光の位置を渡して描く。**見えている面だけ**傾き（`PassTiltMotion`）を見て描き直し、見えていない面（裏返して透明度
+/// 0 の面）は正面の光で止めて、傾きの知らせ（30 回/秒）で描き直さない（2026-10-18 の見直し）
+struct PassTiltLight<Content: View>: View {
+    let visible: Bool
+    let shine: Double?
+    let content: (PassFaceLight.Point) -> Content
+
+    init(visible: Bool, shine: Double?, @ViewBuilder content: @escaping (PassFaceLight.Point) -> Content) {
+        self.visible = visible
+        self.shine = shine
+        self.content = content
+    }
+
+    var body: some View {
+        if visible {
+            PassTiltReader(shine: shine, content: content)
+        } else {
+            content(.center)
+        }
+    }
+}
+
+/// 傾きを見る側（`PassTiltLight` の見えている面だけが置く）
+private struct PassTiltReader<Content: View>: View {
+    let shine: Double?
+    let content: (PassFaceLight.Point) -> Content
+
     @ObservedObject private var tilt = PassTiltMotion.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let light = PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion)
-        PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
-            .modifier(PassTiltHold(style: face.style, visible: visible))
+        content(PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion))
     }
 }
 
 /// 傾きを読むかを決め、読む間だけ `PassTiltMotion` を握る（表の `PassSpecialFace`・裏の `PassSpecialBack` が使う）。
-/// 表と裏が同時に握っても、数えて持つ（`PassTiltMotion.hold`）ので、両方が離すまで止めない
+/// 表と裏が同時に握っても、数えて持つ（`PassTiltMotion.hold`）ので、両方が離すまで止めない。
+///
+/// **離すのは少し遅らせる**（`releaseDelay`・2026-10-18 の見直し）。裏返すと、表が離すのと裏が握るのが同じ描き直しで
+/// 起き、離すのが先だと数が 0 になって止まり（`stop` で光が正面へ戻る）、すぐ握り直して光が正面から跳ねる。
+/// 握るのはすぐ・離すのは後なので、裏返す間も数は 0 にならない
 struct PassTiltHold: ViewModifier {
     let style: PassTicketFaceStyle
     /// その面がいま見えているか
@@ -126,8 +165,18 @@ struct PassTiltHold: ViewModifier {
                                             style: style, reduceMotion: reduceMotion)
         guard wants != holding else { return }
         holding = wants
-        if wants { PassTiltMotion.shared.hold() } else { PassTiltMotion.shared.release() }
+        if wants {
+            PassTiltMotion.shared.hold()
+        } else {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: Self.releaseDelay)
+                PassTiltMotion.shared.release()
+            }
+        }
     }
+
+    /// 離すのを遅らせる長さ（裏返す 0.5 秒のばねの途中で、もう一方の面が握るのを待つ）
+    nonisolated static let releaseDelay: UInt64 = 600_000_000
 }
 
 /// 券面ごとに描き分ける（光の位置は渡されたものだけを使う）

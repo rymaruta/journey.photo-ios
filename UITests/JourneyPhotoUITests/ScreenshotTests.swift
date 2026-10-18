@@ -1656,13 +1656,12 @@ final class ScreenshotTests: XCTestCase {
         for back in backs {
             let button = app.buttons["pass.pick.face.\(back.id)"].firstMatch
             guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(back.name)」のボタンが無い") }
-            // 券面の欄は横に並ぶ。右に隠れていたら左へ払う・左に隠れていたら右へ払う・下に隠れていたら送る
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る（testCapturesPassFaces と同じ）
             var swipes = 0
             while !button.isHittable, swipes < 4 {
-                if button.frame.minX > app.frame.maxX - 40 {
-                    button.swipeLeft()
-                } else if button.frame.maxX < 40 {
-                    button.swipeRight()
+                let previous = app.buttons["pass.pick.face.\(back.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
                 } else {
                     app.swipeUp()
                 }

@@ -237,7 +237,7 @@ enum PassCardStyle {
     // MARK: 裏の欄の値の行数（2026-10-18）
     //
     // 「有効」の値（`PassTicket.validity`「ずっと（帳に綴じる）」）は 14pt で幅がおよそ 140 あり、欄（126）に1行では
-    // 入らず末尾が「…」で切れていた。**字は縮めず、この欄だけ2行まで許す**。行は上でそろえる（`HStack(alignment: .top)`）
+    // 入らず末尾が「…」で切れていた。**字は縮めず、この欄だけ2行まで許す**（日本語は折れ目を改行で決めてある）。行は上でそろえる（`HStack(alignment: .top)`）
     // ので、隣の欄と格子は崩れず、増えた1行ぶんは作品名と欄の間の空き（Spacer）が受け持つ
 
     /// 欄の値の行数の上限。「有効」だけ2行、ほかは1行（入らなければ末尾を「…」）
@@ -251,13 +251,25 @@ enum PassCardStyle {
         text.reduce(0) { $0 + ($1.isASCII ? bodyLatinEm : 1) }
     }
 
-    /// 語の切れ目で折る分の余裕（見積もりを 15% 長めに取る）
-    nonisolated static let wrapSlack = 1.15
-
-    /// 見積もりの行数（`width` に `size` の字で並べたとき）
-    nonisolated static func estimatedLines(_ text: String, size: Double, width: Double) -> Int {
-        guard width > 0 else { return Int.max }
-        return Int((bodyEms(text) * size * wrapSlack / width).rounded(.up))
+    /// 語の切れ目で折った行（見積もり）。改行（`\n`）はそこで折る。欧文は空白で区切った語を詰め、和文の
+    /// ひと続き（空白の無いまとまり）は1語として扱う。**1語が幅に入らなければ nil**（＝語の途中で折れる）
+    nonisolated static func wrappedLines(_ text: String, size: Double, width: Double) -> [String]? {
+        var lines: [String] = []
+        for paragraph in text.components(separatedBy: "\n") {
+            var line = ""
+            for word in paragraph.split(separator: " ").map(String.init) {
+                guard bodyEms(word) * size <= width else { return nil }
+                let joined = line.isEmpty ? word : line + " " + word
+                if bodyEms(joined) * size <= width {
+                    line = joined
+                } else {
+                    lines.append(line)
+                    line = word
+                }
+            }
+            lines.append(line)
+        }
+        return lines
     }
 
     /// 裏の欄1つの値に使える幅（券面ごと・いちばん狭い欄）。札 300 − 左右の内側 18 × 2 を2つに分け、
@@ -268,10 +280,72 @@ enum PassCardStyle {
         switch style {
         case .mars, .greatCircle, .urushi: return column
         case .brassPlate, .foilHard: return column - Double(PassBackFields.ruleIndent)
-        case .leather:
-            let outset = Double(PassBackFields.debossOutset), gap = Double(PassBackFields.debossGap)
-            return (inner + outset * 2 - gap) / 2 - Double(PassBackFields.debossPadding) * 2
+        case .leather: return column - Double(PassBackFields.debossPadding) * 2
         }
+    }
+
+    // MARK: 裏の縦の配分（2026-10-18 の見直し・札 #306）
+    //
+    // 札は 430 で決まっていて、作品名（2行まで）・ひとこと（`PassExchange.noteLimit` 字＝2行）・注記（2行）・
+    // 「有効」（2行）・裾（2行）が**全部いちばん長いとき**でも、どれも「…」で切れずに収まるよう縦を配る。
+    // 見積もりの行の高さは字の大きさ × `minchoLineHeight`（明朝）・`bodyLineHeight`（本文）。
+    // **実機の字の高さでは測っていない**（Linux の見積もり）。画面写真で確かめる
+
+    /// 行の高さの見積もり（字の大きさに掛ける）
+    nonisolated static let minchoLineHeight = 1.4
+    nonisolated static let bodyLineHeight = 1.25
+
+    /// 裏の縦の寸法（券面ごと）。`PassBackLayout`・`PassBackFields` はこの値で描く（見積もりと描き方を1つにする）
+    struct BackMetrics: Equatable {
+        /// 帯を札の上から離す（26: ステッチの内側）
+        var bandTop: CGFloat = 0
+        /// 帯（44）の中で字を下げる（21: 覆輪の内側）
+        var bandInnerTop: CGFloat = 0
+        /// 帯の下の線の太さ（線が無ければ 0）
+        var rule: CGFloat = JPStroke.hairline
+        /// 本文の上の余白
+        var bodyTop: CGFloat = PassCardStyle.backTop
+        /// 本文の段の間
+        var spacing: CGFloat = PassCardStyle.backSpacing
+        /// 欄の上の余白（上の線から値まで）。型押しの欄は 0（箱の中の余白で取る）
+        var fieldTop: CGFloat = PassCardStyle.backFieldGap
+        /// 欄の箱の上下の余白（型押しの欄だけ）
+        var cellVertical: CGFloat = 0
+        /// 破線の太さ
+        var dash: CGFloat = 1
+    }
+
+    nonisolated static func backMetrics(_ style: PassTicketFaceStyle) -> BackMetrics {
+        switch style {
+        case .mars, .greatCircle:
+            return BackMetrics()
+        case .brassPlate:
+            return BackMetrics(rule: 2, bodyTop: backTop - 1)
+        case .foilHard:
+            return BackMetrics(rule: 2, bodyTop: backTop - 1)
+        case .urushi:
+            return BackMetrics(bandInnerTop: 4, rule: 1.5)
+        case .leather:
+            // 帯をステッチの内側へ 16 下げ、箱の上下 6 を足した分を、段の間（14 → 10）と本文の上（16 → 12）で返す
+            return BackMetrics(bandTop: 16, rule: 0, bodyTop: backTop - 4, spacing: 10, fieldTop: 0, cellVertical: 6,
+                               dash: 1.2)
+        }
+    }
+
+    /// いちばん長い中身のときの裏の高さの見積もり（430 以下なら、どれも切れずに収まる）
+    nonisolated static func worstBackHeight(_ style: PassTicketFaceStyle) -> Double {
+        let m = backMetrics(style)
+        let body = bodyLineHeight
+        let label = Double(backLabelSize) * body
+        let value = Double(backValueSize) * body
+        let title = 2 * Double(backTitleSize) * minchoLineHeight
+        let note = 2 * Double(noteSize) * body + 5 + Double(JPSpace.xxs) + 2 * label
+        let cell = 2 * Double(m.cellVertical) + label + 2
+        let fields = Double(m.fieldTop) + (cell + 2 * value) + Double(backFieldGap) + (cell + value)
+        let footnote = 2 * Double(footnoteSize) * body + 4
+        let gaps = 5 * Double(m.spacing)
+        return Double(m.bandTop) + Double(bandHeight) + Double(m.rule) + Double(m.bodyTop) + title + note + fields
+            + Double(m.dash) + footnote + gaps + Double(backPadding)
     }
 
     /// 区間の地名（明朝 30）。長い地名は縮める——**明朝 13 まで**。

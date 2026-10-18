@@ -19,13 +19,11 @@ struct PassSpecialBack: View {
     /// 裏がいま見えているか（表を見ている・全面の写真や Pro の案内が上にある間は false）
     var visible: Bool = true
 
-    @ObservedObject private var tilt = PassTiltMotion.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
-        let light = PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion)
-        PassBackBody(face: face, light: light, shine: shine)
-            .modifier(PassTiltHold(style: face.style, visible: visible))
+        PassTiltLight(visible: visible, shine: shine) { light in
+            PassBackBody(face: face, light: light, shine: shine)
+        }
+        .modifier(PassTiltHold(style: face.style, visible: visible))
     }
 }
 
@@ -201,13 +199,13 @@ struct PassBackFields: View {
     let fields: [PassTicket.Field]
     let ink: PassBackInk
     let style: Style
+    /// 縦の寸法（欄の上の余白・箱の上下）。`PassCardStyle.backMetrics`
+    var metrics = PassCardStyle.BackMetrics()
 
     /// 罫で区切る券面（01・10）の右の欄の字下げ（罫から字を離す）
     nonisolated static let ruleIndent: CGFloat = 5
-    /// 型押しの欄: 欄の並びを左右に広げる幅・欄の間・箱の内側
-    nonisolated static let debossOutset: CGFloat = 3
-    nonisolated static let debossGap: CGFloat = 8
-    nonisolated static let debossPadding: CGFloat = 6
+    /// 型押しの欄の箱の左右の内側（板どおり 8・欄は左右に張り出さない＝値の幅 110）
+    nonisolated static let debossPadding: CGFloat = 8
 
     private var isDebossed: Bool {
         if case .debossed = style { return true }
@@ -221,7 +219,7 @@ struct PassBackFields: View {
         }
     }
 
-    private var gap: CGFloat { isDebossed ? Self.debossGap : PassCardStyle.backFieldGap }
+    private var gap: CGFloat { PassCardStyle.backFieldGap }
 
     /// 行の間の罫の上下（罫の太さを引いた残りを半分ずつ）
     private static func separatorPadding(gap: CGFloat) -> CGFloat {
@@ -243,9 +241,8 @@ struct PassBackFields: View {
             }
         }
         .overlay { columnRule }
-        .padding(.top, isDebossed ? 0 : PassCardStyle.backFieldGap)
+        .padding(.top, metrics.fieldTop)
         .overlay(alignment: .top) { topRule }
-        .padding(.horizontal, isDebossed ? -Self.debossOutset : 0)
     }
 
     private func cell(_ field: PassTicket.Field, indent: CGFloat) -> some View {
@@ -264,7 +261,8 @@ struct PassBackFields: View {
                 .passFaceShadows(ink.valueShadows)
         }
         .padding(.leading, indent)
-        .padding(isDebossed ? Self.debossPadding : 0)
+        .padding(.horizontal, isDebossed ? Self.debossPadding : 0)
+        .padding(.vertical, metrics.cellVertical)
         .frame(maxWidth: .infinity, maxHeight: isDebossed ? .infinity : nil, alignment: .topLeading)
         .background {
             if isDebossed { PassDeboss(corner: 5) }
@@ -392,16 +390,15 @@ struct PassBackDash: View {
     }
 }
 
-/// 裏の並び（どの券面も同じ）。帯の地・帯の下の線・空きの飾り・破線・欄の区切り方だけを券面が決める
+/// 裏の並び（どの券面も同じ）。帯の地・帯の下の線・空きの飾り・破線・欄の区切り方だけを券面が決める。
+/// 縦の寸法は `PassCardStyle.backMetrics`（いちばん長い中身でも切れない配分を `worstBackHeight` で見張る）
 struct PassBackLayout<BandGround: View, Rule: View, Ornament: View, Dash: View>: View {
     let face: PassTicketBackFace
     let ink: PassBackInk
     let fields: PassBackFields.Style
-    /// 帯を札の縁から離す（26: ステッチの内側に入れる）。帯の高さは 44 のまま
-    let bandTop: CGFloat
+    let metrics: PassCardStyle.BackMetrics
+    /// 帯を札の左右の縁から離す（26: ステッチの内側に入れる）。帯の高さは 44 のまま
     let bandSide: CGFloat
-    /// 本文の上の余白（既定はマルス券の 16）
-    let bodyTop: CGFloat
     /// 飾りを出す空きの高さの下限
     let ornamentMinHeight: CGFloat
     let bandGround: BandGround
@@ -410,16 +407,14 @@ struct PassBackLayout<BandGround: View, Rule: View, Ornament: View, Dash: View>:
     let dash: Dash
 
     init(face: PassTicketBackFace, ink: PassBackInk, fields: PassBackFields.Style,
-         bandTop: CGFloat = 0, bandSide: CGFloat = 0, bodyTop: CGFloat = PassCardStyle.backTop,
-         ornamentMinHeight: CGFloat = 0,
+         bandSide: CGFloat = 0, ornamentMinHeight: CGFloat = 0,
          @ViewBuilder bandGround: () -> BandGround, @ViewBuilder rule: () -> Rule,
          @ViewBuilder ornament: () -> Ornament, @ViewBuilder dash: () -> Dash) {
         self.face = face
         self.ink = ink
         self.fields = fields
-        self.bandTop = bandTop
+        self.metrics = PassCardStyle.backMetrics(face.style)
         self.bandSide = bandSide
-        self.bodyTop = bodyTop
         self.ornamentMinHeight = ornamentMinHeight
         self.bandGround = bandGround()
         self.rule = rule()
@@ -431,16 +426,18 @@ struct PassBackLayout<BandGround: View, Rule: View, Ornament: View, Dash: View>:
         VStack(spacing: 0) {
             PassBackBand(face: face, ink: ink)
                 .padding(.horizontal, PassCardStyle.inset - bandSide)
+                .padding(.top, metrics.bandInnerTop)
                 .frame(maxWidth: .infinity)
                 .frame(height: PassCardStyle.bandHeight)
                 .background { bandGround }
                 .padding(.horizontal, bandSide)
-                .padding(.top, bandTop)
+                .padding(.top, metrics.bandTop)
             rule
-            VStack(alignment: .leading, spacing: PassCardStyle.backSpacing) {
+                .frame(height: metrics.rule)
+            VStack(alignment: .leading, spacing: metrics.spacing) {
                 PassBackText(face: face, ink: ink)
                 PassBackOrnamentSpace(minHeight: ornamentMinHeight) { ornament }
-                PassBackFields(fields: face.fields, ink: ink, style: fields)
+                PassBackFields(fields: face.fields, ink: ink, style: fields, metrics: metrics)
                 dash
                 Text(face.footnote)
                     .font(.system(size: PassCardStyle.footnoteSize))
@@ -451,7 +448,7 @@ struct PassBackLayout<BandGround: View, Rule: View, Ornament: View, Dash: View>:
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, PassCardStyle.backPadding)
-            .padding(.top, bodyTop)
+            .padding(.top, metrics.bodyTop)
             .padding(.bottom, PassCardStyle.backPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -482,7 +479,7 @@ struct PassBrassPlateBack: View {
                                 value: ink, valueWeight: .semibold, valueShadows: [engraved[0]])
         ZStack(alignment: .topLeading) {
             PassBrassMaterial(light: light)
-            PassBackLayout(face: face, ink: style, fields: .engraved, bodyTop: PassCardStyle.backTop - 1) {
+            PassBackLayout(face: face, ink: style, fields: .engraved) {
                 Color.clear
             } rule: {
                 PassEngravedRule(vertical: false).padding(.horizontal, 14)
@@ -529,25 +526,36 @@ struct PassGreatCircleBack: View {
     }
 }
 
-/// 06 の裏の弧（表の弧・発の点・着の輪を 0.6 倍に縮めて、空きの真ん中に置く）
+/// 06 の裏の弧（板どおり**弧の所だけを切り出して** 220×66 に描く）。表の地図（300×120）の x 30〜270・y 10〜82 を
+/// 切り出し、220/240 倍に置き直す。**線の太さは縮めない**（座標だけ置き直し、線は 1.3・点と輪は表と同じ大きさ）
 struct PassGreatCircleBackArc: View {
-    static let scale: CGFloat = 0.6
-    /// 弧が収まる高さ（表の地図 120 × 0.6）
-    static let height: CGFloat = 72
+    nonisolated static let size = CGSize(width: 220, height: 66)
+    /// 表の地図から切り出す所
+    nonisolated static let crop = CGRect(x: 30, y: 10, width: 240, height: 72)
+    nonisolated static var scale: CGFloat { size.width / crop.width }
+    nonisolated static let lineWidth: CGFloat = 1.3
+    /// 弧が収まる高さ
+    nonisolated static var height: CGFloat { size.height }
+
+    /// 表の地図の座標を、切り出した 220×66 の座標に
+    nonisolated static func place(_ p: (x: Double, y: Double)) -> CGPoint {
+        CGPoint(x: (CGFloat(p.x) - crop.minX) * scale, y: (CGFloat(p.y) - crop.minY) * scale)
+    }
 
     var body: some View {
-        let start = PassGreatCircle.start, end = PassGreatCircle.end
+        let start = Self.place(PassGreatCircle.start), end = Self.place(PassGreatCircle.end)
         ZStack(alignment: .topLeading) {
-            PassGreatCircleArc()
-                .opacity(0.7)
+            Path { p in
+                p.move(to: start)
+                p.addCurve(to: end, control1: Self.place(PassGreatCircle.control1), control2: Self.place(PassGreatCircle.control2))
+            }
+            .stroke(WebTheme.accent.opacity(0.7), style: StrokeStyle(lineWidth: Self.lineWidth, dash: [3, 3]))
             Circle().fill(WebTheme.accent.opacity(0.85)).frame(width: 7, height: 7)
                 .position(x: start.x, y: start.y)
             Circle().strokeBorder(WebTheme.accent.opacity(0.85), lineWidth: 1.4).frame(width: 8.4, height: 8.4)
                 .position(x: end.x, y: end.y)
         }
-        .frame(width: 300, height: 120, alignment: .topLeading)
-        .scaleEffect(Self.scale)
-        .frame(width: 300 * Self.scale, height: Self.height)
+        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityHidden(true)
     }
@@ -570,11 +578,10 @@ struct PassFoilHardBack: View {
                               small: PassFaceColor.of(PassFacePalette.text3), value: WebTheme.text)
         ZStack(alignment: .topLeading) {
             PassPaperMaterial()
-            PassBackLayout(face: face, ink: ink, fields: .foilRules, bodyTop: PassCardStyle.backTop - 1,
-                           ornamentMinHeight: Self.embossSize) {
+            PassBackLayout(face: face, ink: ink, fields: .foilRules, ornamentMinHeight: Self.embossSize) {
                 Color.clear
             } rule: {
-                PassFoilRule(vertical: false).frame(height: 2)
+                PassFoilRule(vertical: false)
             } ornament: {
                 if let embossed = PassTicket.embossedNumber(face.number) {
                     // 空押し（色なしの型押し）: 表と同じ（右下に明るい縁・左上に暗い縁だけ）
@@ -625,14 +632,13 @@ struct PassUrushiBack: View {
                 .frame(width: Self.rimSize.width, height: Self.rimSize.height)
                 .offset(x: Self.rimInset, y: Self.rimInset)
                 .accessibilityHidden(true)
-            PassBackLayout(face: face, ink: ink, fields: .hairline(WebTheme.accent.opacity(0.28)), bandTop: 4,
-                           bodyTop: PassCardStyle.backTop - 2, ornamentMinHeight: PassHirame.size.height) {
+            PassBackLayout(face: face, ink: ink, fields: .hairline(WebTheme.accent.opacity(0.28)),
+                           ornamentMinHeight: PassHirame.size.height) {
                 Color.clear
             } rule: {
                 LinearGradient(colors: [PassFaceColor.of(PassFacePalette.rimDark), PassFaceColor.of(PassFacePalette.rimLight),
                                         PassFaceColor.of(PassFacePalette.rimDark)],
                                startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 1.5)
                     .padding(.horizontal, Self.rimInset + 3)
                     .accessibilityHidden(true)
             } ornament: {
@@ -681,8 +687,7 @@ struct PassLeatherBack: View {
                               value: PassFaceColor.of(PassFacePalette.leatherValue))
         ZStack(alignment: .topLeading) {
             PassLeatherMaterial(light: light)
-            PassBackLayout(face: face, ink: ink, fields: .debossed, bandTop: 16, bandSide: 12,
-                           bodyTop: PassCardStyle.backTop - 2) {
+            PassBackLayout(face: face, ink: ink, fields: .debossed, bandSide: 12) {
                 PassDeboss(corner: 6)
             } rule: {
                 EmptyView()

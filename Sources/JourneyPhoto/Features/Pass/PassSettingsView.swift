@@ -89,7 +89,7 @@ struct PassSettingsView: View {
 
     private var mainCard: some View {
         JPCard {
-            JPToggleRow(title: L("すれちがう", "Swap with people nearby"),
+            JPToggleRow(title: L("すれちがう", "Swap passes nearby"),
                         detail: L("近くにいたアプリの人と、わたしの乗車券をカードで交換します",
                                   "Swap your ticket with app users you pass nearby"),
                         isOn: enabledBinding)

@@ -89,28 +89,57 @@ final class PassBackFaceTests: XCTestCase {
     // MARK: - 「有効」の欄
 
     /// 🔴 「有効」の値（「ずっと（帳に綴じる）」）は1行では欄に入らない。**この欄だけ2行まで**許し、どの券面の欄の幅でも
-    /// 日本語・英語とも2行に収まる（見積もりは本文の字の幅・語の切れ目の余裕 15% つき）。字は縮めない
-    func testValidityFieldWrapsToTwoLinesWithoutTruncating() {
+    /// 日本語・英語とも2行に収まり、**語の途中で折れない**（日本語は「ずっと」/「（帳に綴じる）」で改行・
+    /// 英語は語の切れ目）。字は縮めない
+    func testValidityFieldWrapsToTwoLinesWithoutTruncating() throws {
         let size = Double(PassCardStyle.backValueSize)
+        XCTAssertEqual(PassTicket.validityJa.components(separatedBy: "\n"), ["ずっと", "（帳に綴じる）"],
+                       "日本語の折れ目を決めていない（任せると「帳に綴」の途中で折れる）")
         for text in [PassTicket.validityJa, PassTicket.validityEn] {
             let field = PassTicket.Field(label: "有効", value: text)
             XCTAssertEqual(PassCardStyle.backValueLines(field), 2, "「\(text)」が1行に切られる")
             for style in PassTicketFaceStyle.allCases {
                 let width = PassCardStyle.backValueWidth(style)
-                let lines = PassCardStyle.estimatedLines(text, size: size, width: width)
-                XCTAssertGreaterThan(lines, 1, "「\(text)」は \(style) の欄（\(width)）に1行で入る見積もり——2行を許す訳が無い")
-                XCTAssertLessThanOrEqual(lines, 2, "「\(text)」が \(style) の欄（\(width)）に2行でも入らない")
+                let lines = try XCTUnwrap(PassCardStyle.wrappedLines(text, size: size, width: width),
+                                          "「\(text)」が \(style) の欄（\(width)）で語の途中で折れる")
+                XCTAssertEqual(lines.count, 2, "「\(text)」が \(style) の欄（\(width)）で \(lines)")
             }
         }
+        // 折れ目（いちばん狭い欄で）
+        let narrow = PassCardStyle.backValueWidth(.leather)
+        XCTAssertEqual(PassCardStyle.wrappedLines(PassTicket.validityJa, size: size, width: narrow), ["ずっと", "（帳に綴じる）"])
+        XCTAssertEqual(PassCardStyle.wrappedLines(PassTicket.validityEn, size: size, width: narrow), ["Forever, in", "your book"])
+        // 改行を入れないと語の途中で折れる（見積もりが折れを見つけられること）
+        XCTAssertNil(PassCardStyle.wrappedLines("ずっと（帳に綴じる）", size: size, width: narrow))
         // ほかの欄は1行のまま（格子の高さを変えない）
         for field in PassTicket.backFields(issuer: "東京の mio.k", section: "9,712 km", count: "はじめて")
             where ![PassTicket.validityJa, PassTicket.validityEn].contains(field.value) {
             XCTAssertEqual(PassCardStyle.backValueLines(field), 1, "\(field.label) が2行になる")
         }
         XCTAssertTrue([PassTicket.validityJa, PassTicket.validityEn].contains(PassTicket.validity))
-        // 見積もりの元: 欄の幅（マルス券 126・罫の券面は字下げ・型押しは箱の内側を引く）
+        // 見積もりの元: 欄の幅（マルス券 126・罫の券面は字下げ 5・型押しは箱の内側 8 を左右で引く＝板の 110）
         XCTAssertEqual(PassCardStyle.backValueWidth(.mars), 126)
-        XCTAssertEqual(PassCardStyle.backValueWidth(.leather), 119)
+        XCTAssertEqual(PassCardStyle.backValueWidth(.brassPlate), 121)
+        XCTAssertEqual(PassCardStyle.backValueWidth(.leather), 110)
+    }
+
+    /// 🔴 いちばん長い中身（作品名2行・ひとこと `noteLimit` 字＝2行・注記2行・「有効」2行・裾2行）でも、
+    /// どの券面の裏も札の高さ（430）に収まる＝どれも「…」で切れない（行の高さは見積もり）
+    func testWorstCaseBackFitsTheCard() {
+        // ひとことの最大字数は2行に収まる（3行目を見積もりに入れなくてよい根拠）
+        let note = "「" + String(repeating: "あ", count: PassExchange.noteLimit) + "」"
+        let noteWidth = 300 - Double(PassCardStyle.backPadding) * 2
+        XCTAssertLessThanOrEqual(PassCardStyle.bodyEms(note) * Double(PassCardStyle.noteSize), noteWidth * 2)
+        for style in PassTicketFaceStyle.allCases {
+            let height = PassCardStyle.worstBackHeight(style)
+            XCTAssertLessThanOrEqual(height, Double(PassCardStyle.deckSize.height),
+                                     "\(style) の裏がいちばん長い中身で \(String(format: "%.1f", height)) と札を超える")
+        }
+        // 縦の配分: 26 は帯をステッチの内側（上 16）へ、21 は帯の高さ 44 の中で上 4 を空ける（帯の下の線は 44 の位置）
+        XCTAssertEqual(PassCardStyle.backMetrics(.leather).bandTop, 16)
+        XCTAssertEqual(PassCardStyle.backMetrics(.urushi).bandTop, 0)
+        XCTAssertEqual(PassCardStyle.backMetrics(.urushi).bandInnerTop, 4)
+        XCTAssertEqual(PassCardStyle.backMetrics(.mars), PassCardStyle.BackMetrics(), "マルス券の裏の寸法が変わった")
     }
 
     /// 画面の書き方: どの裏も欄の値の行数は `backValueLines`、縦は縮めずに伸ばす（`fixedSize`）。行は上でそろえる
@@ -182,6 +211,41 @@ final class PassBackFaceTests: XCTestCase {
         XCTAssertTrue(PassBackOrnamentSpace<PassHirame>.shows(height: 0, minHeight: 0))
     }
 
+    /// 06 の裏の弧は、板どおり弧の所だけを切り出して 220×66 に描き、線の太さは縮めない（scaleEffect で縮めない）
+    func testGreatCircleBackArcIsCroppedNotShrunk() throws {
+        XCTAssertEqual(PassGreatCircleBackArc.size, CGSize(width: 220, height: 66))
+        XCTAssertEqual(PassGreatCircleBackArc.lineWidth, 1.3)
+        for p in [PassGreatCircle.start, PassGreatCircle.control1, PassGreatCircle.control2, PassGreatCircle.end] {
+            let placed = PassGreatCircleBackArc.place(p)
+            XCTAssertTrue(placed.x >= 0 && placed.x <= 220, "弧が切り出しの外（\(placed)）")
+        }
+        // 弧の上の点（端と頂）は切り出しの中
+        for t in stride(from: 0.0, through: 1.0, by: 0.1) {
+            let placed = PassGreatCircleBackArc.place(PassGreatCircle.point(t))
+            XCTAssertTrue(placed.y >= 0 && placed.y <= 66 && placed.x >= 0 && placed.x <= 220, "弧が切り出しの外（\(placed)）")
+        }
+        let arc = try block(try source("Features/Pass/PassBacks.swift"), "PassGreatCircleBackArc")
+        XCTAssertFalse(arc.contains("scaleEffect"), "縮めて描いている（線も細くなる）")
+        XCTAssertTrue(arc.contains("lineWidth: Self.lineWidth"))
+    }
+
+    /// 見えていない面は傾きで描き直さない（正面の光で止める）。離すのは遅らせ、裏返す間に数が 0 にならない
+    func testHiddenSideDoesNotRedrawAndReleaseIsDelayed() throws {
+        let faces = try source("Features/Pass/PassFaces.swift")
+        let light = try XCTUnwrap(try block(faces, "PassTiltLight<Content").components(separatedBy: "struct PassTiltReader").first)
+        XCTAssertTrue(light.contains("if visible {\n            PassTiltReader(shine: shine, content: content)\n        } else {\n            content(.center)"))
+        XCTAssertFalse(light.contains("@ObservedObject"), "見えていない面も傾きを見ている")
+        XCTAssertTrue(try block(faces, "PassSpecialFace").contains("PassTiltLight(visible: visible, shine: shine)"))
+        XCTAssertFalse(try block(faces, "PassSpecialFace").contains("@ObservedObject"))
+        let backs = try source("Features/Pass/PassBacks.swift")
+        XCTAssertTrue(try block(backs, "PassSpecialBack").contains("PassTiltLight(visible: visible, shine: shine)"))
+        XCTAssertFalse(try block(backs, "PassSpecialBack").contains("@ObservedObject"))
+        let hold = try block(faces, "PassTiltHold")
+        XCTAssertTrue(hold.contains("PassTiltMotion.shared.hold()\n        } else {\n            Task { @MainActor in\n                try? await Task.sleep(nanoseconds: Self.releaseDelay)\n                PassTiltMotion.shared.release()"),
+                      "離すのを遅らせていない（裏返すと光が正面へ跳ねる）")
+        XCTAssertGreaterThan(PassTiltHold.releaseDelay, 500_000_000, "裏返すばね（0.5 秒）より短い")
+    }
+
     /// 21 の蒔絵（2026-10-18 owner: すやり霞は「好きではない」・すすきは「余計」）: 右下の隅の平目地だけ。
     /// 粒は 140×64 の中で、右下の4分の1に半分より多く寄る
     func testUrushiOrnamentIsCornerDustOnly() throws {
@@ -193,9 +257,10 @@ final class PassBackFaceTests: XCTestCase {
                           && dot.y - dot.r >= -1 && dot.y + dot.r <= size.height + 1, "粒が箱の外（\(dot)）")
         }
         let backs = try source("Features/Pass/PassBacks.swift")
-        for gone in ["PassKasumi", "PassMakieSusuki", "addCurve"] {
+        for gone in ["PassKasumi", "PassMakieSusuki"] {
             XCTAssertFalse(backs.contains(gone), "外した飾り（\(gone)）が残っている")
         }
+        XCTAssertFalse(try block(backs, "PassHirame").contains("Path {"), "金粉のほかに線（すすき）を描いている")
         XCTAssertTrue(try block(backs, "PassUrushiBack").contains("PassHirame()"))
         XCTAssertTrue(try block(backs, "PassHirame").contains("alignment: .bottomTrailing"), "右下の隅に寄せていない")
         XCTAssertEqual(PassFaceTextures.hirameDots.count, PassFaceTextures.hirameCount, "粒が足りない")

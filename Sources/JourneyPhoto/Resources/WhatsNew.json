@@ -2,6 +2,22 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.16",
+      "date": "2026-10-18",
+      "items": [
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "特別な券面は裏まで", "en": "Special designs on the back, too" },
+          "detail": { "ja": "Pro の5つの券面は、裏も表と同じ素材と飾りになりました。真鍮の板・大圏航路の地図・箔の罫・漆の金粉・型押しの革で届きます。", "en": "The five Pro ticket designs now carry the same material and details on the back: brass plate, great-circle map, foil rules, gold dust on lacquer, and embossed leather." }
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "すれちがい乗車券", "en": "Pass tickets" },
+          "detail": { "ja": "旅先で乗車券を交換する機能の名前を「すれちがい乗車券」にそろえました。設定の「すれちがい乗車券」から使えます。", "en": "The feature for swapping tickets on your travels is now called Pass tickets. Find it in Settings → Pass tickets." }
+        }
+      ]
+    },
+    {
       "version": "1.1.15",
       "date": "2026-10-18",
       "items": [

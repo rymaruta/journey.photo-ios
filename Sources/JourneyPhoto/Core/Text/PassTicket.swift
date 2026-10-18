@@ -255,8 +255,10 @@ enum PassTicket {
     static var validity: String { L(validityJa, validityEn) }
     /// 裏の「有効」の値（日本語・英語）。**欄に1行では入らない長さ**なので、この欄だけ2行まで許す
     /// （`PassCardStyle.backValueLines`・字は縮めない・2026-10-18）。2つとも書き出すのは、言語を切り替えずに
-    /// 幅を見積もって見張るため（`PassBackFaceTests`）
-    static let validityJa = "ずっと（帳に綴じる）"
+    /// 幅を見積もって見張るため（`PassBackFaceTests`）。
+    /// 日本語は**折れ目を自分で決める**（「ずっと」と「（帳に綴じる）」の間）。任せると語の途中（「帳に綴」で）折れる。
+    /// 英語は語の切れ目で折れる（「Forever, in」/「your book」）
+    static let validityJa = "ずっと\n（帳に綴じる）"
     static let validityEn = "Forever, in your book"
 
     /// 読み上げ: 表の区間（2026-10-17 判断: 札の字と同じく「東京発、フランス着」と読む）

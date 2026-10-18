@@ -240,8 +240,8 @@ struct SettingsView: View {
             NavigationLink { PassSettingsView() } label: {
                 // 題に「乗車券」が入るので、説明は短く（2026-10-18・呼び名を「すれちがい乗車券」にそろえた）
                 JPRowLabel(title: PassTicket.featureName,
-                           detail: L("旅先で近くにいた人と、カードで交換する",
-                                     "Swap cards with people you pass on your travels"),
+                           detail: L("旅先で近くにいた人と、乗車券のカードを交換する",
+                                     "Swap ticket cards with people you pass on your travels"),
                            value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
             }
             .buttonStyle(JPRowButtonStyle())

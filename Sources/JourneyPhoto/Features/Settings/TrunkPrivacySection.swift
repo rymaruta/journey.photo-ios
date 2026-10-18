@@ -154,7 +154,7 @@ struct TrunkShowRow: View {
 enum TrunkPrivacyText {
     /// 乗車券の切り替えの説明。入らない訳（すれちがいがオフ・乗車券を選んでいない）があればそれを言う
     static func ticketDetail(_ settings: PassSettings, refusal: String? = nil) -> String {
-        let base = L("オンにすると、すれちがい乗車券で使うわたしの乗車券1枚がトランクの中に入り、ほかの人も見られます。",
+        let base = L("オンにすると、わたしの乗車券（すれちがい乗車券で交換する1枚）がトランクの中に入り、ほかの人も見られます。",
                      "When on, your pass ticket goes inside your trunk where others can see it.")
         guard settings.ticketInTrunk == true else { return base }
         // 断られていれば、入っていないことと訳を言う（「入ります」のまま黙らない）
