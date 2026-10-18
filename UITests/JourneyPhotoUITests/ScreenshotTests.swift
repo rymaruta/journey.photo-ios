@@ -1238,8 +1238,10 @@ final class ScreenshotTests: XCTestCase {
         let history = app.descendants(matching: .any)["whatsNew.history"].firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 5), "設定から開いた「新しくなったこと」が履歴の形でない")
         if history.exists {
+            // 見えているだけでは送らない——「これまでのお知らせ」が画面の上半分に来るまで送る（画面の下の端に
+            // 見出しだけ覗いた姿は 02e と同じ絵になる）
             var down = 0
-            while !history.isHittable, down < 4 {
+            while !history.isHittable || history.frame.minY > app.frame.height * 0.45, down < 4 {
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 1)
                 down += 1
@@ -2339,6 +2341,10 @@ final class ScreenshotTests: XCTestCase {
         let insert = app.buttons["trunk.gacha.insert"].firstMatch
         XCTAssertTrue(insert.waitForExistence(timeout: 10), "「カプセルを回す」でカプセルの機械へ進まない")
         Thread.sleep(forTimeInterval: 1)
+        // 機械の手持ちは案内と同じ「配ったあとの数」（見本は 2 + 10 = 12 枚）。2 枚に戻って見えたら落とす
+        let coins = app.descendants(matching: .any)["trunk.gacha.coins"].firstMatch
+        XCTAssertTrue(coins.waitForExistence(timeout: 5), "カプセルの機械に硬貨の数が無い")
+        XCTAssertTrue(coins.label.contains("12"), "カプセルの機械の硬貨が案内の数（12）と違う: \(coins.label)")
         shoot(app, "96d-はじめての硬貨（カプセルの機械へ）")
         goBack(app)
         guard later.waitForExistence(timeout: 10), later.isHittable else { return XCTFail("機械から案内へ戻れない") }

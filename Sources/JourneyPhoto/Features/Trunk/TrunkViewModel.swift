@@ -28,6 +28,8 @@ final class TrunkViewModel: ObservableObject {
     private var service: TrunkService?
     private let preview: PreviewSession.TrunkPreview?
     private let previewPro: Bool
+    /// 見本の手持ちの硬貨（`-JPPreviewTrunkCoins`・はじめての硬貨の見本では配ったあとの数）
+    private let previewCoins: Int?
 
     /// 硬貨が増えた知らせ（はじめての硬貨・`Notification.Name.trunkCoinsChanged`）の見張り
     private var coinsObserver: NSObjectProtocol?
@@ -35,9 +37,11 @@ final class TrunkViewModel: ObservableObject {
 
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
          previewPro: Bool = PreviewSession.isPro,
+         previewCoins: Int? = PreviewSession.trunkCoins,
          center: NotificationCenter = .default) {
         self.preview = preview
         self.previewPro = previewPro
+        self.previewCoins = previewCoins
         self.center = center
         // 硬貨の数を見せている画面（トランク・カプセルの機械）は、はじめての硬貨が配られたら読み直す（2026-10-18）
         coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
@@ -89,7 +93,7 @@ final class TrunkViewModel: ObservableObject {
         if let preview {
             // 一度動かした見本（貼った・回した・付け替えた）は、画面を開き直しても消さない
             if state == nil {
-                state = TrunkSample.state(isPro: previewPro, empty: preview == .empty, coins: PreviewSession.trunkCoins)
+                state = TrunkSample.state(isPro: previewPro, empty: preview == .empty, coins: previewCoins)
             }
             phase = .loaded
             return

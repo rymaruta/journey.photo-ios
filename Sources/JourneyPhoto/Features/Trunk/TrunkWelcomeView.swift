@@ -17,9 +17,18 @@ struct TrunkWelcomeView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
-    /// カプセルの機械へ渡す状態。見本（`-JPPreviewTrunkWelcome`）ではサーバーを読まない
-    @StateObject private var model = TrunkViewModel(preview: PreviewSession.trunkWelcomeAdded != nil ? .sample
-                                                             : PreviewSession.trunkSample)
+    /// カプセルの機械へ渡す状態。見本（`-JPPreviewTrunkWelcome`）ではサーバーを読まず、手持ちは配ったあとの数
+    /// （案内の「手持ちの硬貨 12 枚」から機械へ進んで 2 枚に戻って見えないように）
+    @StateObject private var model: TrunkViewModel
+
+    init(grant: TrunkWelcome.Grant, onShown: @escaping () -> Void = {}) {
+        self.grant = grant
+        self.onShown = onShown
+        let previewWelcome = PreviewSession.trunkWelcomeAdded != nil
+        _model = StateObject(wrappedValue: TrunkViewModel(
+            preview: previewWelcome ? .sample : PreviewSession.trunkSample,
+            previewCoins: previewWelcome ? grant.coins : PreviewSession.trunkCoins))
+    }
     @State private var showGacha = false
 
     var body: some View {
