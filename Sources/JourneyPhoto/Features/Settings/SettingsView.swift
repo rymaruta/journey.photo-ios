@@ -12,6 +12,9 @@ struct SettingsView: View {
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var pass: PassStore
+    /// 旅のトランクの口が在るか（無い間は行を出さない・マイページと同じ）と、入口の数（2026-10-18）
+    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @ObservedObject private var trunkEntry = TrunkEntryStore.shared
     /// 自分のプロフィール（Pro の節の中身・第2段階）。読めなければ nil
     @State private var myProfile: UserProfile?
     @State private var wantsPush = false
@@ -41,6 +44,13 @@ struct SettingsView: View {
         list
             // Pro の節のためのプロフィール。名前の横を決めた・購入した（`noteProfileChanged`）ら読み直す
             .task(id: auth.profileRevision) { await loadMyProfile() }
+            // 旅のトランクの行（マイページを開く前に設定へ来た人にも出す）。読むかはどちらも決まりのとおり
+            // （覚えている人は 6 時間に1回・`TrunkAvailabilityRule`・`TrunkEntryRule`）
+            .task(id: auth.userId) {
+                await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
+                await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
+                                         service: environment.trunk)
+            }
             .task {
                 await push.refreshAuthorization()
                 // **本人の意思で見る。** 「預けられたか」で見ると、
@@ -138,6 +148,7 @@ struct SettingsView: View {
                     ProSettingsSection(profile: myProfile)
                     notificationsSection
                     passSection
+                    trunkSection
                     privacySection
                 }
                 compositionSection
@@ -220,6 +231,31 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.pass")
+        }
+    }
+
+    /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。すれちがいと同じ形の、機能ごとの節に1行。
+    /// 置き場はすれちがいの下（どちらも旅先・投稿で届くもの）。**口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。
+    /// 右の値は硬貨の枚数（読めていれば・ほかの行の値と同じ等幅の字）。読み上げは硬貨と貼っていないラベルの有無
+    @ViewBuilder
+    private var trunkSection: some View {
+        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
+            section(TrunkEntryText.title) {
+                NavigationLink {
+                    TrunkView(ownerName: myProfile?.name)
+                        .onDisappear { trunkEntry.markStale() }
+                } label: {
+                    JPRowLabel(title: TrunkEntryText.title, detail: TrunkEntryText.detail,
+                               value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(TrunkEntryText.title)
+                .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
+                .accessibilityHint(TrunkEntryText.detail)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("settings.trunk")
+            }
         }
     }
 
