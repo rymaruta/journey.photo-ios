@@ -104,7 +104,8 @@ final class CamperScene {
         let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        sunNode.light?.intensity = CGFloat(mood == .night ? 140 : (mood == .snow ? 1000 : 1200))
+        // 夜の月は車体の形が読める強さ（縁に青白いリムが乗る程度・run 538 で車が影絵になった）
+        sunNode.light?.intensity = CGFloat(mood == .night ? 260 : (mood == .snow ? 1000 : 1200))
         sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
@@ -114,7 +115,7 @@ final class CamperScene {
         // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
         // 夜は露出を少し下げる（口の中・窓の灯りを白く飛ばさない）
-        cameraNode.camera?.exposureOffset = CGFloat(mood == .night ? -0.4 : 0)
+        cameraNode.camera?.exposureOffset = CGFloat(mood == .night ? -0.15 : 0)
         // 焚き火・ランタンの面（emission 1 前後）はにじませない。前照灯・尾灯（1.6〜2.2）だけ（run 530）
         cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.3 : 0.85)
 
@@ -232,12 +233,14 @@ final class CamperScene {
                 l.spotOuterAngle = CGFloat(light.spotOuter)
             }
             if light.castsShadow {
+                // 影はその灯りの光だけを減らす forward で（2026-10-18 Mac の絵 run 538）。deferred は画面の色そのものに
+                // 影の色を掛けるので、円錐の外の全部（車体・窓・前照灯）が 0.9 の黒で塗られ、夜が影絵になった
                 l.castsShadow = true
-                l.shadowMode = .deferred
+                l.shadowMode = .forward
                 l.shadowSampleCount = 8
                 l.shadowRadius = 3
                 l.shadowMapSize = CGSize(width: 1024, height: 1024)
-                l.shadowColor = Self.color(0x000000, alpha: 0.9)
+                l.shadowColor = Self.color(0x000000, alpha: 1)
             }
             let n = SCNNode()
             n.light = l

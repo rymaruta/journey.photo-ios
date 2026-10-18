@@ -86,24 +86,24 @@ enum CamperMaterials {
                                       doubleSided: true)
         case .glassLit:
             // 住む所の窓。夜は室内の灯りでほのかに光る（窓が夜の主役。2026-10-18 run 529 のあと）
-            return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.42 : 0.62,
-                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.45 : 0, doubleSided: true)
+            return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.62 : 0.62,
+                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.7 : 0, doubleSided: true)
         case .lens:
             return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.05, opacity: night ? 1 : 0.85,
-                                      emission: night ? 0xFFF6E0 : nil, emissionIntensity: night ? 2.2 : 0)
+                                      emission: night ? 0xFFF6E0 : nil, emissionIntensity: night ? 1.0 : 0)
         case .lensAmber:
             return CamperMaterialSpec(color: 0xE8B44A, roughness: 0.05, opacity: 0.9,
-                                      emission: night ? 0xFFD27A : nil, emissionIntensity: night ? 1.8 : 0)
+                                      emission: night ? 0xFFD27A : nil, emissionIntensity: night ? 1.0 : 0)
         case .red:
             return CamperMaterialSpec(color: night ? 0xFF4A3C : 0x8E1D1A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFF4A3C : nil, emissionIntensity: night ? 1.6 : 0)
+                                      emission: night ? 0xFF4A3C : nil, emissionIntensity: night ? 1.0 : 0)
         case .amber:
             return CamperMaterialSpec(color: night ? 0xFFB347 : 0xC9772A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFFB347 : nil, emissionIntensity: night ? 1.2 : 0)
+                                      emission: night ? 0xFFB347 : nil, emissionIntensity: night ? 0.9 : 0)
         case .lamp:
             // 電球は小さいので、強すぎると光の粒が散って見える（run 529 の夜）。窓の灯りより少し上まで
             return CamperMaterialSpec(color: 0xFFD890, roughness: 0.3, emission: night ? 0xFFD890 : nil,
-                                      emissionIntensity: night ? 1.1 : 0)
+                                      emissionIntensity: night ? 1.0 : 0)
         case .chrome: return CamperMaterialSpec(color: 0xC9CCD0, metalness: 1, roughness: 0.12)
         case .chromeDark: return CamperMaterialSpec(color: 0x8D9196, metalness: 1, roughness: 0.18)
         case .brass: return CamperMaterialSpec(color: 0xC9A66B, metalness: 1, roughness: 0.3)

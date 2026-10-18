@@ -399,4 +399,15 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertTrue(materials("window").contains(.glassLit))
         XCTAssertTrue(materials("door.window").contains(.glassLit))
     }
+
+    /// 夜に光る面は emission 1 まで（にじみ無しで読め、HDR の値が大きくならない・run 533 の黒い四角）。住む所の窓は灯る
+    func testNightEmissionStaysModest() {
+        let all: [CamperMaterial] = [.glassLit, .lens, .lensAmber, .red, .amber, .lamp, .ember, .curtain]
+        for m in all {
+            let spec = CamperMaterials.spec(m, paint: 0, mood: .night)
+            XCTAssertLessThanOrEqual(spec.emissionIntensity, 1.0, "\(m)")
+        }
+        XCTAssertGreaterThanOrEqual(CamperMaterials.spec(.glassLit, paint: 0, mood: .night).emissionIntensity, 0.5)
+        XCTAssertGreaterThanOrEqual(CamperMaterials.spec(.lens, paint: 0, mood: .night).emissionIntensity, 0.9)
+    }
 }
