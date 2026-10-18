@@ -30,6 +30,16 @@ on:
         description: "テストも流す（main は PR の検証で通っているので要らない。main 以外の枝を確かめるときだけ）"
         type: boolean
         default: false
+      # 2026-10-17 判断: 枝の確認（submit=false）の UI テストを、変えた画面だけに絞れるようにする。
+      # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
+      # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
+      # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
+      # 上げる回（submit=true）と storeShots の回では絞らない（ここに何を書いても無視）。
+      # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
+      screens:
+        description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
+        type: string
+        default: ""
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -68,6 +78,35 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
+      # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
+      # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
+      - name: どこまで流すかを決める
+        id: scope
+        env:
+          SCREENS: ${{ inputs.screens }}
+          SUBMIT: ${{ inputs.submit }}
+          STORE_SHOTS: ${{ inputs.storeShots }}
+        run: |
+          set -euo pipefail
+          if [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
+            SCREENS=""
+          fi
+          python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
+          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+            echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### UI テストを絞った回（screens: ${SCREENS}）"
+              echo "この回は「Mac でテスト済み」と数えません。main に入る前に「PR の検証」が全部を回します。"
+              echo
+              sed 's/^/- /' /tmp/ui-only-testing.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat /tmp/ui-only-testing.txt
 
       # **依存の作り直しに毎回30分以上かかる。**
       # Amplify → aws-sdk-swift → smithy-swift は桁違いに大きく、
@@ -209,19 +248,38 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
+      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
+      - name: 控えの鍵を決める
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      # 🔴 **控えは main の回だけが書く・枝は読むだけ**（2026-10-17 判断）。
+      # 控えは1つ約7GB（run 461 の実測 7111MB）で、GitHub の置き場は10GBまで——**2つ目を書くと
+      # 前のが追い出される**。しかも控えは枝ごとに区切られ、別の枝からは main の分しか読めない。
+      # 前は枝の回がそれぞれ書いては互いを追い出し、直近の枝の回の半分以上（run 454〜465 の
+      # 12回中9回）と PR の検証の Mac（見た3回とも）が「控え無し」で始まって、ビルドが約10分
+      # 余計にかかっていた（run 462: 控え無しでテストの段 55分 / run 461: 控え有りで 41分）。
+      # main の回が下の「控えを温める」でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
       - name: 前回の作りかけを控えから戻す
-        uses: actions/cache@v4
+        id: cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           # **Xcode の版を鍵に入れる。** 入れないと、ランナーの像が
           # 上がって Xcode が変わった回に**古い中間生成物が混ざる**。
           # しかも鍵は当たり続けるので控えは作り直されず、以後ずっと
           # 同じ壊れた控えから始まる（原因のいちばん見えにくい壊れ方）
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
+          #
+          # **鍵の末尾に回の番号を付ける**（2026-10-17）。main の回は毎回新しい鍵で書き、
+          # 読む側は頭が合ういちばん新しいものを拾う。番号が無いと、鍵が当たり続けて
+          # 控えが古いまま（ソースとの差が広がって差分のビルドが年々長くなる）
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
+            ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
       - name: 設定の検査
@@ -247,13 +305,18 @@ jobs:
       # もう一度流すと、Mac を30分ほど二重に使っていた。main 以外の枝を確かめるときは `tests: true`。
       # 画面の絵（下の `screenshots` の段）はこのテストの結果から作るので、テストを流した回だけ置く
       # 上げない回（submit=false・`/mac-check`）は絵とテストが目的なので、`tests` が無くても流す
-      - name: テスト（本物の SwiftUI で型検査される最初の機会）
+      #
+      # 🔴 **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI まで
+      # 行かずに止まる（前は1回の `test` で、単体が落ちても UI の33分を待ってから赤になった）。
+      # 🔴 **段の名前を「テスト」で始めない。** 「PR の検証」の「同じコミットが Mac でテスト済みか」は、
+      # 前は「テスト」で始まる最初の段の成否を見ていた。名前を変えれば古い数え方は何も数えず
+      # （＝飛ばさない側に倒れ）、新しい数え方は下の「全部のテストが通った」の印だけを数える
+      - name: 組む（本物の SwiftUI で型検査される最初の機会）
         if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
         run: |
           set -euo pipefail
-          # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
-          DEVICE="$(python3 Tools/pick-simulator.py)"
-          echo "テストに使うシミュレータ: $DEVICE"
+          # 3段で同じシミュレータを使う
+          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
           # **`-sdk iphonesimulator` は渡さない。** `-destination` と
           # 併用すると SDK 側の arch 一覧（arm64 と x86_64）が勝ち、
           # 行き先に `arch=arm64` を書いても x86_64 で組み立てにいく
@@ -273,25 +336,35 @@ jobs:
           # 「0件で失敗」としか残らない。run #1〜#3 をこれで空振りさせた
           # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
           # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
-          set -o pipefail
-          xcodebuild \
-            -project JourneyPhoto.xcodeproj \
-            -scheme JourneyPhoto \
-            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            -resultBundlePath build/ios/test/Test.xcresult \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            test 2>&1 | tee /tmp/xcodebuild-full.log | tail -n 400 || {
-              echo "::group::error: の行だけ"
-              grep -E "error:" /tmp/xcodebuild-full.log | sort -u | head -200 || true
-              echo "::endgroup::"
-              exit 1
-            }
+          # （この3つは `Tools/xcode-test.sh` の中に書いてある）
+          DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
+      - name: 単体テスト
+        id: unit
+        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
+
+      # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
+      # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
+      - name: UI テスト（画面の絵）
+        id: ui
+        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
+
+      # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
+      # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は
+      # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
+      # `ios-pr.yml` の `tested` の job も合わせる
+      - name: 全部のテストが通った（PR の検証が数える印）
+        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
+        run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
+
+      # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
+      # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の
+      # 組み立ては全部の回（screens 空）と、上げる回（submit=true・いつも全部）で見る。
+      # `steps.scope.outputs.full` は上げる回では必ず true なので、上げる回には効かない
       - name: 署名の用意（証明書とプロファイルを API キーから作る）
-        if: ${{ steps.secrets.outputs.signing == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -314,7 +387,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド番号を決める
-        if: ${{ steps.secrets.outputs.signing == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -341,7 +414,8 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド
-        if: ${{ steps.secrets.outputs.signing == 'true' }}
+        id: archive
+        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
         run: |
           set -euo pipefail
           # **プラグインの関所はビルドにも立つ。** Amplify →
@@ -425,6 +499,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
+          # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
+          NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 
       - name: 落ちたときに読むものを集める
@@ -438,6 +514,7 @@ jobs:
           # **xcodebuild を直に叩くようにしたので、伏せ先はもう無い。**
           # 拾うのは自分で書いた全文ログと、`-resultBundlePath` の結果
           cp /tmp/xcodebuild-full.log build/logs/ 2>/dev/null || true
+          cp -R build/ios/test/Unit.xcresult build/logs/ 2>/dev/null || true
           cp -R build/ios/test/Test.xcresult build/logs/ 2>/dev/null || true
           ls -la build/logs || true
 
@@ -456,3 +533,38 @@ jobs:
             build/logs/**
           retention-days: 7
           if-no-files-found: ignore
+
+      # 🔴 **控えを書くのは main の回だけ**（2026-10-17 判断・上の「前回の作りかけを控えから戻す」）。
+      # main の上げる回はテストを流さない（Release の Archive だけ）ので、そのままでは控えに
+      # シミュレータ向けの組み立てが入らず、枝・PR の回の役に立たない。ここで組んでから書く。
+      # main の控えから差分で組むので、2回目からは数分（run 461 は控え有りで、組むのは逆算で1〜2分。控え無しの run 462 は約12分）。
+      # **上げる・印を付けるが済んだあと**に置き、落ちても赤にしない（上げる回の邪魔をしない）
+      # Archive（「ビルド」）が通った回だけ温める・書く。落ちた回の作りかけは書かない。
+      # **path の `!…/ArchiveIntermediates`**: Archive の中間物は控えに入れない（10GB を超えないように）。
+      # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）
+      - name: 控えを温める（main の回だけ・シミュレータ向けに組む）
+        id: warm
+        if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 30
+        # 🔴 **元のプロジェクトに戻してから組む**（2026-10-17 判断）。ここに来るまでに「ビルド番号を
+        # 決める」が project.yml の版・ビルド番号を書き換え、`xcode-project use-profiles` が署名の設定を
+        # .xcodeproj に入れている。そのまま組むと、控えに入るのは**枝や PR では作られない設定**の
+        # 中間物になり、読む側で差分が大きくなる（設定が違えば組み直し）。project.yml を checkout の
+        # 状態へ戻し、.xcodeproj（git に入っていない）を作り直してから組む
+        run: |
+          set -euo pipefail
+          git checkout -- project.yml
+          xcodegen generate
+          XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
+
+      - name: 控えを書く（main の回だけ）
+        if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}

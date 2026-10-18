@@ -19,6 +19,8 @@ struct PillChip: View {
     let title: String
     /// 添える件数（タグの枚数など）。nil なら出さない
     var count: Int?
+    /// 件数を字で添える（旅のトランクの部品箱の「4/12」・2026-10-17）。`count` より先に見る
+    var countText: String?
     let selected: Bool
     let action: () -> Void
 
@@ -27,9 +29,10 @@ struct PillChip: View {
     /// 札の上下に足す押せるだけの余白（34＋5＋5＝44）
     nonisolated static let tapSlack: CGFloat = (WebTheme.minTapTarget - height) / 2
 
-    init(title: String, count: Int? = nil, selected: Bool, action: @escaping () -> Void) {
+    init(title: String, count: Int? = nil, countText: String? = nil, selected: Bool, action: @escaping () -> Void) {
         self.title = title
         self.count = count
+        self.countText = countText
         self.selected = selected
         self.action = action
     }
@@ -46,8 +49,8 @@ struct PillChip: View {
                 Text(title)
                     .font(JPFont.footnote.weight(selected ? .semibold : .regular))
                     .lineLimit(1)
-                if let count {
-                    Text("\(count)")
+                if let label = countText ?? count.map({ "\($0)" }) {
+                    Text(label)
                         .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
                         // 選んだ札の上は墨のまま（白の上の灰は沈みすぎる）
                         .foregroundStyle(selected ? WebTheme.accentText : WebTheme.text3)

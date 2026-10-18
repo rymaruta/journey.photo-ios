@@ -49,7 +49,7 @@ struct PassHomeCard: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JPSpace.m) {
-                PassMiniStack(photos: cards.map(\.photo))
+                PassMiniStack(faces: cards.prefix(3).map { $0.face() })
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L("カードが届きました", "Cards have arrived"))
                         .jpEyebrow()

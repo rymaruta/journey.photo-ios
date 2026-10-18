@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて／構図を重ねて撮る（Pro）」の4択。
+/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて／構図を重ねて撮る」の4択（＋カメラで撮る）。
 ///
 /// Web 側の `app/components/PostSheet.tsx` と対。owner:「写真を追加のとこで
 /// 投稿かストーリーを選べるようにしたい」。
@@ -27,8 +27,8 @@ struct PostSheet: View {
         case camera
         /// 端末の写真ライブラリから旅を見つけて、まとめて投稿（`LibraryTripFlowView`）
         case trip
-        /// 構図を重ねて撮る（Pro・作例なし・2026-10-10 owner）。撮ってから投稿へ進める。
-        /// Pro でなければ Pro の案内（`ComposeGuideLauncher`・呼び手が開く）
+        /// 構図を重ねて撮る（作例なし・2026-10-10 owner）。撮ってから投稿へ進める（`ComposeGuideLauncher`・呼び手が開く）。
+        /// 2026-10-17 判断（owner）: 全員無料。Pro の案内は出さない
         case composition
     }
 
@@ -86,7 +86,8 @@ struct PostSheet: View {
                 systemImage: "suitcase",
                 kind: .trip
             )
-            // 2026-10-10: 4つ目。題の横に合図の「PRO」（真鍮の縁と字・黒地の上）。印も真鍮の線（v2）
+            // 2026-10-10: 4つ目。印は真鍮の線（v2）。
+            // 2026-10-17 判断（owner）: 全員無料にしたので、板にある題の横の「PRO」の合図は外した
             choice(
                 thumb: thumbs.dropFirst(3).first,
                 title: L("構図を重ねて撮る", "Shoot with a composition guide"),
@@ -94,7 +95,7 @@ struct PostSheet: View {
                           "Overlay thirds, golden ratio and more on the camera, then post."),
                 systemImage: "camera.viewfinder",
                 kind: .composition,
-                badge: "PRO",
+                accentIcon: true,
                 last: true
             )
             Spacer(minLength: 0)
@@ -152,7 +153,7 @@ struct PostSheet: View {
     /// 「その人自身が最近出した写真」という owner の決まり（`PostSheetThumbs`）があり、板より優先した。
     /// 写真の上の印は白（写真の上に真鍮を置かない）。写真が無いときだけ構図の印を真鍮にする
     private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
-                        badge: String? = nil, last: Bool = false) -> some View {
+                        accentIcon: Bool = false, last: Bool = false) -> some View {
         Button {
             // 選択を先に記録し、シートが閉じきった後に呼び手が次の画面を開く
             onSelect(kind)
@@ -174,27 +175,15 @@ struct PostSheet: View {
                     .overlay {
                         Image(systemName: systemImage)
                             .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(Self.iconColor(hasPhoto: thumb != nil, pro: badge != nil))
+                            .foregroundStyle(Self.iconColor(hasPhoto: thumb != nil, accent: accentIcon))
                             .shadow(color: Color.black.opacity(thumb == nil ? 0 : 0.8), radius: 3, x: 0, y: 1)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Self.tileRadius))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: JPSpace.xs) {
-                        Text(title)
-                            .font(JPFont.rowTitle)
-                            .foregroundStyle(WebTheme.text)
-                        if let badge {
-                            // v2: PRO の合図は真鍮の縁と字（黒地の上・Components 03）
-                            Text(badge)
-                                .jpEyebrow()
-                                .foregroundStyle(WebTheme.accent)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 1)
-                                .overlay(Capsule().strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
-                                .accessibilityLabel(L("Pro の機能", "Pro feature"))
-                        }
-                    }
+                    Text(title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.text)
                     Text(detail)
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text2)
@@ -218,8 +207,8 @@ struct PostSheet: View {
     }
 
     /// 印の色。**写真の上は白、写真が無い札の上の構図の印だけ真鍮**（v2 の板の真鍮の線・黒い札の上）
-    @MainActor static func iconColor(hasPhoto: Bool, pro: Bool) -> Color {
-        !hasPhoto && pro ? WebTheme.accent : WebTheme.foreground
+    @MainActor static func iconColor(hasPhoto: Bool, accent: Bool) -> Color {
+        !hasPhoto && accent ? WebTheme.accent : WebTheme.foreground
     }
 }
 
