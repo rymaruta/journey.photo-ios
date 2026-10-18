@@ -599,3 +599,73 @@ final class ProMarkCenterTests: XCTestCase {
         XCTAssertTrue(text.contains("fit.nudge + ProMarkFit.sealCenterNudge"), "Pro の印が封印の中央へ下がっていない")
     }
 }
+
+// MARK: - Pro の章を公開プロフィールに出すか（2026-10-18・#296）
+
+final class ProBadgesPublicTests: XCTestCase {
+
+    private func profile(_ json: String) throws -> UserProfile {
+        try JSONDecoder.api.decode(UserProfile.self, from: Data(json.utf8))
+    }
+
+    private func json(_ patch: ProfilePatch) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(patch)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// 本人の応答の `proBadgesHidden` を読む。古いサーバー（項目なし）は nil
+    func testDecodesFlagAndOldServerIsNil() throws {
+        XCTAssertEqual(try profile(#"{"userId":"u1","proBadgesHidden":true}"#).proBadgesHiddenFlag, true)
+        XCTAssertEqual(try profile(#"{"userId":"u1","proBadgesHidden":false}"#).proBadgesHiddenFlag, false)
+        XCTAssertNil(try profile(#"{"userId":"u1"}"#).proBadgesHiddenFlag)
+        // 型違いでも全体の復号は落とさない
+        XCTAssertNoThrow(try profile(#"{"userId":"u1","proBadgesHidden":"yes"}"#))
+    }
+
+    /// Pro の鍵の判定はサーバー（`badgeKeys.ts` の `isProBadgeKey`）と同じ
+    func testProBadgeKeys() {
+        for key in ["supporter", "supporterYear", "proAutumn2026", "proWinter2031"] {
+            XCTAssertTrue(ProBadgesPublicRule.isProBadgeKey(key), key)
+        }
+        for key in ["first", "earlyUser", "prefectures", "proAutumn", "proSpring1999", ""] {
+            XCTAssertFalse(ProBadgesPublicRule.isProBadgeKey(key), key)
+        }
+    }
+
+    /// 行を出すのは、新しいサーバーで、番号か Pro のメダルを持つ人だけ
+    func testShowsRowOnlyForSupportersOnNewServer() throws {
+        let at = "2026-10-01T00:00:00.000Z"
+        XCTAssertTrue(ProBadgesPublicRule.showsRow(try profile(
+            #"{"userId":"u1","proBadgesHidden":false,"supporter":{"number":3,"since":"\#(at)","months":1}}"#)))
+        XCTAssertTrue(ProBadgesPublicRule.showsRow(try profile(
+            #"{"userId":"u1","proBadgesHidden":true,"badges":{"proAutumn2026":{"tier":1,"at":"\#(at)"}}}"#)))
+        // Pro と関係ないメダルだけ
+        XCTAssertFalse(ProBadgesPublicRule.showsRow(try profile(
+            #"{"userId":"u1","proBadgesHidden":false,"badges":{"first":{"tier":1,"at":"\#(at)"},"earlyUser":{"tier":1,"at":"\#(at)"}}}"#)))
+        // 古いサーバー（項目が無い）——押しても効かない入切を出さない
+        XCTAssertFalse(ProBadgesPublicRule.showsRow(try profile(
+            #"{"userId":"u1","supporter":{"number":3,"since":"\#(at)","months":1}}"#)))
+    }
+
+    /// 送る形: オン（出す）は false、オフ（隠す）は true。ほかの項目は載せない
+    func testPatchSendsOnlyTheFlag() throws {
+        XCTAssertEqual(try json(ProBadgesPublicRule.patch(show: false)) as NSDictionary, ["proBadgesHidden": true] as NSDictionary)
+        XCTAssertEqual(try json(ProBadgesPublicRule.patch(show: true)) as NSDictionary, ["proBadgesHidden": false] as NSDictionary)
+        XCTAssertNil(try json(ProfilePatch())["proBadgesHidden"])
+    }
+
+    /// 文言は板（43 設定）のとおり
+    func testCopyMatchesBoard() {
+        XCTAssertEqual(ProBadgesPublicRule.title, L("公開プロフィールに Pro の章を出す", "Show Pro medals on your public profile"))
+        XCTAssertTrue(ProBadgesPublicRule.detail.contains(L("いま Pro かどうかは乗車券の券面で分かります", "pass face")))
+    }
+
+    /// 他の人の公開プロフィールで隠されたとき（サーバーが Pro の章と supporter を落とす）も読める
+    func testHiddenPublicProfileStillDecodes() throws {
+        let p = try profile(#"{"userId":"u2","badges":{"first":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}},"displayBadge":null,"pro":true,"proMarkStyle":"iris","passFace":true}"#)
+        XCTAssertNil(p.supporterInfo)
+        XCTAssertNil(p.shownBadge)
+        XCTAssertEqual(p.earnedBadges.byKey.keys.sorted(), ["first"])
+        XCTAssertTrue(p.showsPassFace)
+    }
+}

@@ -59,6 +59,11 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// 本人が認証済みの印を外しているか（2026-10-10）。**本人の応答だけに載る**。
     /// 公開プロフィールでは、外した人は `verified` ごと返ってこない（サーバーの `toPublicProfile`）
     private let verifiedMarkOff: LenientFlag?
+    /// 本人が **Pro の章を公開プロフィールに出さない**か（2026-10-18 owner・#296）。**本人の応答だけに載る**
+    /// （サーバーの `withBadgeFields` が常に真偽で載せる）。公開プロフィールでは、隠した人の Pro のメダルと
+    /// `supporter` はサーバーが落として返す（`toPublicProfile`）ので、他の人の画面は何もしなくてよい。
+    /// 古いサーバーは返さない → nil（設定の入切を出さない。`ProBadgesPublicRule`）
+    private let proBadgesHidden: LenientFlag?
 
     /// 持っているバッジ。返さないサーバーでは空
     var earnedBadges: BadgeSet {
@@ -135,6 +140,9 @@ struct UserProfile: Decodable, Equatable, Identifiable {
 
     /// 本人が認証済みの印を外しているか
     var verifiedMarkRemoved: Bool { verifiedMarkOff?.value ?? false }
+
+    /// Pro の章を公開プロフィールから隠しているか。**nil は古いサーバー**（隠す設定が無い）
+    var proBadgesHiddenFlag: Bool? { proBadgesHidden?.value }
 
     /// 名前の横に認証済みの印を出すか。資格があり、外していないときだけ
     var showsVerifiedMark: Bool { verified == true && !verifiedMarkRemoved }

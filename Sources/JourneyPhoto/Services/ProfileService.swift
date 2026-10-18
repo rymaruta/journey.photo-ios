@@ -186,4 +186,7 @@ struct ProfilePatch: Encodable {
     /// 光と天気の知らせを受け取るか（Pro・2026-10-09）。**真偽だけ**（サーバーは文字の "false" を 400 で断る）。
     /// `nil` は「触らない」
     var lightAlert: Bool?
+    /// Pro の章を公開プロフィールに出さないか（2026-10-18・#296）。**真偽だけ**。`true` で隠す・`false` で出す・
+    /// `nil` は「触らない」
+    var proBadgesHidden: Bool?
 }

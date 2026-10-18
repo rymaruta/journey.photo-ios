@@ -9,6 +9,7 @@ import SwiftUI
 /// 2. 「サポーター証」（真鍮のカードの線の絵）。「No. 0001 · 手に取って回せます」。**番号を持つ人だけ**
 ///    （やめても番号は残るので、Pro でなくなっても出る・板 64 の注記）
 /// 3. 「名前の横のバッジと Pro マーク」（真鍮のメダルの線の絵）。「初期ユーザー · Pro マークは 絞り羽根」
+/// 3a. 「公開プロフィールに Pro の章を出す」の入切（2026-10-18・#296）。番号か Pro のメダルを持つ人だけ（`ProBadgesPublicRow`）
 /// 4.「保存した旅」（電波なしで使える旅・板 72e）。「2 件 · 48 MB」。Pro か、保存した旅があるときだけ
 ///
 /// 板の「お知らせ」の節にある「光と天気の知らせ」は、この節の最後に置く（`LightAlertSettingsRows` の注記）。
@@ -50,6 +51,10 @@ struct ProSettingsSection: View {
                 }
                 .buttonStyle(JPRowButtonStyle())
                 .accessibilityIdentifier("settings.nameSide")
+            }
+            // 公開プロフィールに Pro の章を出す（2026-10-18・#296）。番号か Pro のメダルを持つ人だけ
+            if let profile, ProBadgesPublicRule.showsRow(profile) {
+                ProBadgesPublicRow(profile: profile)
             }
             // 4. 保存した旅（板 72e・2026-10-09）。Pro が切れても、保存した旅があれば出す（見る・消すは誰でも）
             OfflineSavedSettingsRow(isPro: isPro)
