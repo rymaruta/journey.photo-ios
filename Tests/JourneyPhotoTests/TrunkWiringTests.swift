@@ -300,13 +300,29 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(open.contains("move(to: TrunkLid.stepped(p, up: up))"))
         // 引く指と送り: 収まるときは引く指が先、送りがあるときは両方
         XCTAssertTrue(open.contains(".modifier(LidDragPriority(overflows: overflows, gesture: drag(scale: k)))"))
-        XCTAssertTrue(open.contains("content.simultaneousGesture(gesture)"))
-        XCTAssertTrue(open.contains("content.highPriorityGesture(gesture)"))
+        // 枝分けで View を替えず、効かせない方を GestureMask で止める（舞台を作り直さない）
+        XCTAssertTrue(open.contains(".highPriorityGesture(gesture, including: Self.highPriorityMask(overflows: overflows))\n            .simultaneousGesture(gesture, including: Self.simultaneousMask(overflows: overflows))"))
+        XCTAssertTrue(open.contains("static func highPriorityMask(overflows: Bool) -> GestureMask { overflows ? .subviews : .all }"))
+        XCTAssertTrue(open.contains("static func simultaneousMask(overflows: Bool) -> GestureMask { overflows ? .all : .subviews }"))
+        let priority = open.components(separatedBy: "private struct LidDragPriority")[1]
+        XCTAssertFalse(priority.contains("if overflows {"), "枝分けで舞台がまるごと作り直される")
         // 100% まで引いて離した・合図が来なかったときの逃げ道
         XCTAssertTrue(open.contains("guard TrunkLid.needsMotion(from: p, to: target) else {\n            lidSettled = TrunkLid.isOpen(target)\n            return"))
         XCTAssertTrue(open.contains("if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }"))
         // 動きの途中のコマで正面の絵・胴の中を作り直さない（1度だけ絵にして使い回す）
-        XCTAssertTrue(open.contains(".task(id: snapshotKey) { lidImages = TrunkLidImages.make(stage(contents)) }"))
+        XCTAssertTrue(open.contains(".task(id: snapshotKey) {\n            if let images = await TrunkLidImages.make(stage(contents)) { lidImages = images }"))
+        // 描く前に1コマ待ち、取り消されたら描かない
+        XCTAssertTrue(open.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return nil }\n        guard !Task.isCancelled else { return nil }"))
+        // 合図: 正面の絵に効くものは入れ、生で描く乗車券の写真は入れない
+        let key = open.components(separatedBy: "private struct LidSnapshotKey: Equatable {")[1].components(separatedBy: "}")[0]
+        for field in ["let model: TrunkModel", "let posts: Int", "let stuck: [TrunkLabel]", "let parts: TrunkEquipped",
+                      "let wrinkles: [String: Double]", "let ownerName: String?", "let contents: TrunkInsideContents"] {
+            XCTAssertTrue(key.contains(field), "ふたの絵の描き直しの合図に \(field) が無い（親が新しくなっても古い絵が残る）")
+        }
+        XCTAssertFalse(key.contains("photos"), "写真が届くたびに5枚描き直す")
+        // 影の無い層は余白なし（絵を小さく持つ）
+        XCTAssertTrue(open.contains("w: TrunkLooks.canvasWidth, h: 40, pad: 0),"))
+        XCTAssertTrue(open.contains("w: TrunkInsideView.width, h: TrunkInsideView.height, pad: 0))"))
         for use in ["images?.front", "images?.lidInside", "images?.handle", "images?.baseBelow", "images?.baseAbove"] {
             XCTAssertTrue(open.contains(use), "\(use) を使い回していない")
         }

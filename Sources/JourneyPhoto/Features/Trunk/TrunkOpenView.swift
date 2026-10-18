@@ -90,7 +90,9 @@ struct TrunkOpenView: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: landings)
         .sensoryFeedback(.selection, trigger: picks)
         .task { await load() }
-        .task(id: snapshotKey) { lidImages = TrunkLidImages.make(stage(contents)) }
+        .task(id: snapshotKey) {
+            if let images = await TrunkLidImages.make(stage(contents)) { lidImages = images }
+        }
         .onAppear {
             // 動きの終わりの合図が来ないまま画面を離れて戻ったときの逃げ道
             if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }
@@ -139,9 +141,11 @@ struct TrunkOpenView: View {
 
     // MARK: 開け閉めできる姿（板 TrunkOpen）
 
-    /// ふたの絵を描き直す合図（中身・会員証の絵・内張りが替わったとき）
+    /// ふたの絵を描き直す合図（中身・会員証の絵・内張り・正面の絵〔型・古び・ラベル・部品・よれ・名札〕が替わったとき）。
+    /// 乗車券の写真は絵にせず生きたまま描くので、合図に入れない（写真が届くたびに描き直さない）
     private var snapshotKey: LidSnapshotKey {
-        LidSnapshotKey(contents: contents, hasCard: cardImage != nil, lining: lining.name, photos: ticketPhotos.map(\.id))
+        LidSnapshotKey(contents: contents, hasCard: cardImage != nil, lining: lining.name, model: model, posts: posts,
+                       stuck: stuck, parts: parts, wrinkles: wrinkles, ownerName: ownerName)
     }
 
     /// 小さい画面・大きい文字でも舞台を下限（`TrunkLid.minScale`）より縮めない（メダルの押す所 44pt を保つ）。
@@ -638,7 +642,7 @@ struct TrunkLidStage: ViewModifier, Animatable {
     @ViewBuilder
     private var handleStrip: some View {
         if let image = images?.handle {
-            TrunkLidImages.place(image, w: TrunkLooks.canvasWidth, h: 40)
+            TrunkLidImages.place(image, w: TrunkLooks.canvasWidth, h: 40, pad: 0)
         } else {
             TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
                 .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
@@ -654,7 +658,7 @@ struct TrunkLidStage: ViewModifier, Animatable {
                 TrunkLidImages.place(below, w: TrunkInsideView.width, h: TrunkInsideView.height)
                 TrunkInsideView(model: model, part: .base, lining: lining, contents: contents,
                                 ticketPhotos: ticketPhotos, layer: .ticketsOnly)
-                TrunkLidImages.place(above, w: TrunkInsideView.width, h: TrunkInsideView.height)
+                TrunkLidImages.place(above, w: TrunkInsideView.width, h: TrunkInsideView.height, pad: 0)
             }
             .frame(width: TrunkInsideView.width, height: TrunkInsideView.height, alignment: .topLeading)
         } else {
@@ -764,7 +768,13 @@ private struct LidSnapshotKey: Equatable {
     let contents: TrunkInsideContents
     let hasCard: Bool
     let lining: String
-    let photos: [String]
+    // 倒れるふたの表・持ち手の帯（正面の絵）に効くもの
+    let model: TrunkModel
+    let posts: Int
+    let stuck: [TrunkLabel]
+    let parts: TrunkEquipped
+    let wrinkles: [String: Double]
+    let ownerName: String?
 }
 
 /// ふたを動かしている間に使い回す絵（2026-10-18 見直し）。動きの途中のコマごとに正面の絵（ラベル・部品）や
@@ -780,12 +790,15 @@ struct TrunkLidImages {
     let baseBelow: UIImage?
     let baseAbove: UIImage?
 
-    /// 影のための余白
+    /// 影のための余白（影のある絵だけ。胴の上の層と持ち手の帯は影が無いので余白なし＝絵を小さく持つ）
     static let pad: Double = 48
 
+    /// 1コマ待ってから描く（画面が押し出される途中で止まらないように）。待つ間に取り消されたら描かずに nil
     @MainActor
-    static func make(_ stage: TrunkLidStage) -> TrunkLidImages {
-        TrunkLidImages(
+    static func make(_ stage: TrunkLidStage) async -> TrunkLidImages? {
+        do { try await Task.sleep(for: .milliseconds(16)) } catch { return nil }
+        guard !Task.isCancelled else { return nil }
+        return TrunkLidImages(
             front: render(TrunkBoxView(model: stage.model, posts: stage.posts, stuck: stage.stuck, ownerName: stage.ownerName,
                                        bodyOnly: true, parts: stage.parts, wrinkles: stage.wrinkles),
                           w: TrunkLooks.bodyWidth, h: TrunkLooks.bodyHeight),
@@ -793,7 +806,7 @@ struct TrunkLidImages {
                                         parts: stage.parts, wrinkles: stage.wrinkles)
                             .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
                             .clipped(),
-                           w: TrunkLooks.canvasWidth, h: 40),
+                           w: TrunkLooks.canvasWidth, h: 40, pad: 0),
             lidInside: render(TrunkInsideView(model: stage.model, part: .lid, lining: stage.lining, contents: stage.contents),
                               w: TrunkInsideView.width, h: TrunkInsideView.height),
             baseBelow: render(TrunkInsideView(model: stage.model, part: .base, lining: stage.lining, contents: stage.contents,
@@ -801,11 +814,11 @@ struct TrunkLidImages {
                               w: TrunkInsideView.width, h: TrunkInsideView.height),
             baseAbove: render(TrunkInsideView(model: stage.model, part: .base, lining: stage.lining, contents: stage.contents,
                                               layer: .aboveTickets),
-                              w: TrunkInsideView.width, h: TrunkInsideView.height))
+                              w: TrunkInsideView.width, h: TrunkInsideView.height, pad: 0))
     }
 
     @MainActor
-    private static func render<V: View>(_ view: V, w: Double, h: Double) -> UIImage? {
+    private static func render<V: View>(_ view: V, w: Double, h: Double, pad: Double = pad) -> UIImage? {
         let renderer = ImageRenderer(content: view.frame(width: w, height: h, alignment: .topLeading).padding(pad))
         renderer.scale = 3
         return renderer.uiImage
@@ -813,7 +826,7 @@ struct TrunkLidImages {
 
     /// 余白ごと描いた絵を、元の枠（`w`×`h`）の位置に置く
     @MainActor
-    static func place(_ image: UIImage, w: Double, h: Double) -> some View {
+    static func place(_ image: UIImage, w: Double, h: Double, pad: Double = pad) -> some View {
         Image(uiImage: image)
             .resizable()
             .interpolation(.high)
@@ -826,17 +839,22 @@ struct TrunkLidImages {
 
 /// ふたを引く指と、画面の送りの取り合い（2026-10-18 見直し）。
 /// 画面に収まるときは引く指を先に効かせる（送りは無い）。収まらず送りがあるときは、引く指と送りを両方効かせる
-/// （舞台が画面の大半を占めるので、舞台の上で送れないと下のボタンへ届かない）
+/// （舞台が画面の大半を占めるので、舞台の上で送れないと下のボタンへ届かない）。
+/// **枝分けで View を替えない**——どちらでも同じ形のまま、効かせない方を `GestureMask` で止める
+/// （if/else で包むと切り替わるたびに舞台がまるごと作り直され、中の状態・写真の読み込みが消える）
 private struct LidDragPriority<G: Gesture>: ViewModifier {
     let overflows: Bool
     let gesture: G
 
     func body(content: Content) -> some View {
-        if overflows {
-            content.simultaneousGesture(gesture)
-        } else {
-            content.highPriorityGesture(gesture)
-        }
+        content
+            .highPriorityGesture(gesture, including: Self.highPriorityMask(overflows: overflows))
+            .simultaneousGesture(gesture, including: Self.simultaneousMask(overflows: overflows))
     }
+
+    /// 収まるときだけ、引く指を先に（止めるときも中のボタンの指は通す）
+    static func highPriorityMask(overflows: Bool) -> GestureMask { overflows ? .subviews : .all }
+    /// 送りがあるときだけ、引く指と送りを両方
+    static func simultaneousMask(overflows: Bool) -> GestureMask { overflows ? .all : .subviews }
 }
 
