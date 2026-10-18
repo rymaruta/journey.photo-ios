@@ -1233,7 +1233,7 @@ final class ScreenshotTests: XCTestCase {
         let close = app.buttons["whatsNew.close"].firstMatch
         guard close.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "02c-新しくなったこと（設定から）")
+        shoot(app, "02e-新しくなったこと（設定から）")
 
         // 履歴の形のときだけ: 「これまでのお知らせ」と版の区切りが見えるまで送って撮る
         let history = app.descendants(matching: .any)["whatsNew.history"].firstMatch
@@ -1245,7 +1245,7 @@ final class ScreenshotTests: XCTestCase {
                 down += 1
             }
             Thread.sleep(forTimeInterval: 1)
-            shoot(app, "02d-新しくなったこと（これまでのお知らせ）")
+            shoot(app, "02f-新しくなったこと（これまでのお知らせ）")
         }
         if close.exists, close.isHittable { close.tap() }
     }
