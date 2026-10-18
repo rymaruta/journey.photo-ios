@@ -19,7 +19,13 @@ open class UIView {
     /// 指を受けるか（本物の既定は true）
     open var isUserInteractionEnabled: Bool = true
     open func layoutSubviews() {}
+    /// 部品に足す働き（音量ボタンで撮る `AVCaptureEventInteraction` など・本物と同じ形）
+    open func addInteraction(_ interaction: UIInteraction) {}
+    open func removeInteraction(_ interaction: UIInteraction) {}
 }
+
+/// 部品に足す働き（本物は `NSObjectProtocol` を継ぐ）
+public protocol UIInteraction: AnyObject {}
 
 public protocol UIViewRepresentable: View {
     associatedtype UIViewType: UIView

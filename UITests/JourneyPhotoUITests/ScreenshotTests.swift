@@ -62,6 +62,28 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **ホームの右上の見出し（探す・お知らせ・メニューのガラスの帯）を寄りで撮る**（2026-10-14）。
+    /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
+    /// 見比べられるように、上のバーだけを切り出す。3つの押せる範囲（frame）も文で残す
+    /// （帯の高さは絵より数字の方が比べやすい）。出なければ撮らない
+    private func shootHeaderBand(_ app: XCUIApplication) {
+        let bar = app.navigationBars.firstMatch
+        guard bar.exists else { return }
+        let shot = XCTAttachment(screenshot: bar.screenshot())
+        shot.name = "10e-ホーム（右上の見出しの帯・寄り）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let ids = ["header.search", "header.notifications", "header.menu"]
+        let lines = ids.map { id -> String in
+            let button = app.buttons[id].firstMatch
+            return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
+        }
+        let note = XCTAttachment(string: (["バー: \(bar.frame)"] + lines).joined(separator: "\n"))
+        note.name = "10e-ホーム（見出しの寸法）"
+        note.lifetime = .keepAlways
+        add(note)
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
@@ -228,9 +250,11 @@ final class ScreenshotTests: XCTestCase {
         shootComposeGuide(app)
     }
 
-    /// **作例を重ねて撮る**（Pro・2026-10-09）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
-    /// 起動の鍵（`-JPComposeGuidePreview`）で Pro の確かめを飛ばしている。シミュレータにカメラは無いので
+    /// **作例を重ねて撮る**（2026-10-09・2026-10-17 から全員無料）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
+    /// 開くのに鍵は要らない。起動の鍵（`-JPComposeGuidePreview`）は線を出すためだけ。シミュレータにカメラは無いので
     /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 2026-10-18: 鍵があるときは作例もその上に重ねる——横長の作例が開いたときから 90° 回って
+    /// 縦の枠に収まっているか（`ComposeControls.autoRotation`）を、この絵で見る。
     /// 入口・画面が出なければ撮らない（この試験の決まり）
     private func shootComposeGuide(_ app: XCUIApplication) {
         let entry = app.buttons["spot.official.composeGuide"].firstMatch
@@ -252,6 +276,7 @@ final class ScreenshotTests: XCTestCase {
         // 作例のサムネが読み込まれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13h-作例を重ねて撮る")
+        shootLandscapeSample(app)
         if close.exists, close.isHittable {
             close.tap()
         } else {
@@ -260,6 +285,29 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shootComposeGuideFromSecondSample(app)
+    }
+
+    /// **横長の作例が開いたときから 90° 回って縦の枠に収まる絵**（2026-10-18 owner「縦空くのは嫌」）。
+    /// 右下の「作例を切り替える」で送り、回すボタンの値が「90度」になった作例で撮る
+    /// （回す角度は作例の縦横から自動で決まる・`ComposeControls.autoRotation`）。
+    /// 横長の作例が無い・切り替えが押せないスポットでは撮らない（この試験の決まり）
+    private func shootLandscapeSample(_ app: XCUIApplication) {
+        let rotate = app.buttons["composeGuide.rotate"].firstMatch
+        let next = app.buttons["composeGuide.switch"].firstMatch
+        func turned() -> Bool {
+            guard rotate.exists, let value = rotate.value as? String else { return false }
+            return value.hasPrefix("90")
+        }
+        var switches = 0
+        while !turned(), switches < 6, next.exists, next.isHittable, next.isEnabled {
+            next.tap()
+            Thread.sleep(forTimeInterval: 1)
+            switches += 1
+        }
+        guard turned() else { return }
+        // 作例の写真が読み込まれるのを待つ（Commons の縮小版）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h3-作例を重ねて撮る（横長の作例を回して収める）")
     }
 
     /// **作例の帯の2枚目を押して、その作例から撮る画面を開く**（2026-10-10・owner の報告「作例の1枚目しか
@@ -482,8 +530,8 @@ final class ScreenshotTests: XCTestCase {
         // 見本の利用者は章を持っていて、まだ名前の横に飾っていないと、新しいシミュレータの
         // 最初の3回の起動で全画面が上に被さり、タブも名前の行も押せなくなる（run 403）
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
-        // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
+        // **「作例を重ねて撮る」の線を、カメラの無いシミュレータでも出す鍵**（Debug のみ・`ComposeGuideAccess`）。
+        // 撮る画面の絵（13h）を撮るため。2026-10-17 から全員無料なので、開くのに鍵は要らない
         app.launchArguments += ["-JPComposeGuidePreview", "YES"]
         // 撮る画面の構図は端末に覚える（`CompositionPreferences`）。前の試験で選んだ構図を引きずらないよう、
         // 13h は既定の三分割で撮る（2026-10-10）
@@ -531,6 +579,7 @@ final class ScreenshotTests: XCTestCase {
             // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
             // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
             // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
+            if name == "ホーム" { shootHeaderBand(app) }
             if name == "ホーム" {
                 let latest = app.buttons["新着"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
@@ -688,6 +737,19 @@ final class ScreenshotTests: XCTestCase {
                 if albumsRow.waitForExistence(timeout: 5), albumsRow.isHittable {
                     shoot(app, "32-旅の記録の入口")
                 }
+                // **端末の写真の一冊の説明の札**（2026-10-16・写真の許可がまだのときだけ出る）。
+                // 札は入口の行より上にあるので、押せる所まで戻して撮る。**許可のボタンは押さない**
+                // （iOS の許可のダイアログが出て、後の節を覆う）。出なければ撮らない
+                let deviceAllow = app.buttons["trips.deviceAllow"].firstMatch
+                var allowPulls = 0
+                while deviceAllow.exists, !deviceAllow.isHittable, allowPulls < 4 {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    allowPulls += 1
+                }
+                if deviceAllow.exists, deviceAllow.isHittable {
+                    shoot(app, "33-端末の写真の一冊の説明")
+                }
             }
         }
 
@@ -744,6 +806,53 @@ final class ScreenshotTests: XCTestCase {
                 shoot(app, "20b-写真から撮影地へ")
                 app.navigationBars.buttons.firstMatch.tap()
                 Thread.sleep(forTimeInterval: 2)
+            }
+
+            // **写真から、次の旅へ**（2026-10-14）: 行き先の段（行きたい・経路・いつ）。
+            // 撮影地の無い写真では出ない——**出なければ撮らない**（この試験の決まり）。
+            // 少しずつ送って見える位置まで出す（上限あり）
+            let trip = app.descendants(matching: .any).matching(identifier: "photo.trip").firstMatch
+            if trip.waitForExistence(timeout: 3) {
+                var tripPushes = 0
+                while !app.buttons["photo.trip.wish"].firstMatch.isHittable, tripPushes < 3 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    tripPushes += 1
+                }
+                let hasSpot = app.buttons["photo.trip.directions"].firstMatch.exists
+                shoot(app, "20c-写真の詳細（行き先\(hasSpot ? "・撮影スポット" : "")）")
+                // 撮影スポットの付いた写真なら、題の上の「撮影スポット」の行からスポットの頁へ（本番にまだ少ない・出なければ撮らない）
+                let guide = app.buttons["photo.spotGuide"].firstMatch
+                if guide.exists {
+                    app.swipeDown()
+                    Thread.sleep(forTimeInterval: 1)
+                    if guide.isHittable {
+                        guide.tap()
+                        if app.buttons["spot.official.wish"].firstMatch.waitForExistence(timeout: 10) {
+                            Thread.sleep(forTimeInterval: 2)
+                            shoot(app, "20d-写真から撮影スポットへ")
+                        }
+                        app.navigationBars.buttons.firstMatch.tap()
+                        Thread.sleep(forTimeInterval: 2)
+                    }
+                }
+            }
+
+            // 「この写真を見て撮影」の行（2026-10-14）。元の写真が付いた写真はまだ少なく、口は本番に
+            // まだ無いこともある——**出なければ撮らない**（この試験の決まり）。押して元の写真へ移るのも撮る
+            let inspiredLine = app.buttons["photo.inspiredBy"].firstMatch
+            // 送らない（このあとの作者の行を画面の外へ押し出さないため）。見えていなければ撮らない
+            if inspiredLine.waitForExistence(timeout: 3) {
+                if inspiredLine.isHittable {
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    inspiredLine.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                    app.navigationBars.buttons.firstMatch.tap()
+                    Thread.sleep(forTimeInterval: 2)
+                }
             }
 
             // **人のページ**（モック2 と同じ部品で組んである）。
@@ -829,8 +938,10 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// **別の試験にしてある。** 投稿画面は札（sheet）で、書きかけがあると閉じるのに確認が要る——
     /// 一巡（`testCapturesEveryScreen`）の途中に置くと、閉じ損ねたときにあとの絵が全部消える。
-    /// 写真はシミュレータのライブラリの見本から1枚選ぶ。選ぶ画面（PHPicker）は別プロセスで、
-    /// 中が触れない回もある——**出なければ撮らない**（この試験の決まり）
+    /// 🔴 **写真は見本の1枚を選んだ状態で開く**（`-JPPreviewUploadSample YES`・Debug のみ・2026-10-14）。
+    /// 選ぶ画面（PHPicker）は別プロセスで、中の写真に触れない回が続き、run 428 まで 42〜45c が
+    /// 1枚も撮れていなかった。見本が入らなかった回だけ、前の道（ライブラリから1枚選ぶ）を試す。
+    /// どちらでも**出なければ撮らない**（この試験の決まり）
     func testCapturesUploadEditEntry() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -839,6 +950,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -850,6 +962,16 @@ final class ScreenshotTests: XCTestCase {
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
 
+        // 見本の1枚が帯に入れば、選ぶ画面を通らない
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        if !thumb.waitForExistence(timeout: 15) {
+            pickFirstLibraryPhoto(app)
+        }
+        captureUploadScreens(app, thumb: thumb)
+    }
+
+    /// 前の道: 帯の「追加」→「ライブラリから選ぶ」→ 1枚目（見本が入らなかった回だけ）
+    private func pickFirstLibraryPhoto(_ app: XCUIApplication) {
         // 2026-10-03: 投稿画面は**開くと写真を選ぶ画面が自動で出る**（`UploadDetails.autoOpensLibrary`）。
         // 出るのを待ち、出なかった回（帯の「追加」がまだ押せる）だけ「追加」→「ライブラリから選ぶ」。
         // 未ログインの回はログイン画面で「追加」が無いので、ここで抜ける
@@ -883,14 +1005,59 @@ final class ScreenshotTests: XCTestCase {
                 break
             }
         }
+    }
 
+    /// 42b・42c: 「撮影地の位置を付ける」のオンとオフ（2026-10-18）。撮ったらオンに戻す
+    private func captureLocationToggle(_ app: XCUIApplication) {
+        let toggle = app.switches["upload.attachLocation"].firstMatch
+        for _ in 0..<2 where !(toggle.exists && toggle.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard toggle.exists, toggle.isHittable else { return }
+        // 撮る前の値を確かめる（前の回のオフが残っていたら、まずオンに戻す）
+        guard setLocationToggle(toggle, on: true) else {
+            XCTFail("「撮影地の位置を付ける」をオンにできない（値: \(String(describing: toggle.value))）")
+            return
+        }
+        shoot(app, "42b-投稿（撮影地の位置を付ける・オン）")
+        if setLocationToggle(toggle, on: false) {
+            shoot(app, "42c-投稿（撮影地の位置を付ける・オフ）")
+        } else {
+            XCTFail("押しても「撮影地の位置を付ける」がオフにならない（値: \(String(describing: toggle.value))）")
+        }
+        // 🔴 **最後は必ずオンに戻す**（値は人ごとに端末に残る。あとの絵・試験をオフのまま撮らない）
+        XCTAssertTrue(setLocationToggle(toggle, on: true),
+                      "「撮影地の位置を付ける」をオンに戻せなかった（値: \(String(describing: toggle.value))）")
+        // 下の絵（43〜）は上から探すので、元の位置へ戻す
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// 切り替えを `on` にする（押して値を確かめる・3回まで）。なれたら true
+    private func setLocationToggle(_ toggle: XCUIElement, on: Bool) -> Bool {
+        let want = on ? "1" : "0"
+        for _ in 0..<3 {
+            if (toggle.value as? String) == want { return true }
+            // つまみは行の右端（文字の上を押しても切り替わらない版がある）
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return (toggle.value as? String) == want
+    }
+
+    /// 投稿画面の 42〜45c（帯に写真が1枚入った状態から）
+    private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
         guard thumb.waitForExistence(timeout: 15) else { return }
         let editButton = app.buttons["upload.editButton"].firstMatch
         guard editButton.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+
+        // 2026-10-18: 「撮影地の位置を付ける」の切り替え（撮影地の欄の上）。オンとオフの両方を撮り、
+        // **オンに戻す**（選んだ値は人ごとに端末に残る・あとの絵をオフのまま撮らない）。出なければ撮らない
+        captureLocationToggle(app)
 
         // 2026-10-03: 撮影地・作例の一言と、畳んだ「詳しい設定」（計画9）。下へ送って撮り、
         // 開いた絵も撮る。出なければ撮らない（この試験の決まり）
@@ -904,6 +1071,107 @@ final class ScreenshotTests: XCTestCase {
         details.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "44-投稿（詳しい設定・開いた）")
+
+        // 2026-10-14: 「この写真を見て撮影」の欄と、元の写真を選ぶ画面（保存した写真・行きたい場所）。
+        // 選ぶ画面は閉じるだけ（選ぶと書きかけが増える）。出なければ撮らない（この試験の決まり）
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        // 欄は「詳しい設定」の上にある。開いた設定の下に隠れていたら下へ送って探す（上限あり）
+        for _ in 0..<3 where !(inspired.exists && inspired.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.exists, inspired.isHittable else { return }
+        shoot(app, "45-投稿（この写真を見て撮影の欄）")
+        inspired.tap()
+        let savedShelf = app.buttons["inspiredPicker.shelf.saved"].firstMatch
+        guard savedShelf.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "45b-元の写真を選ぶ")
+        let wishShelf = app.buttons["inspiredPicker.shelf.wishlist"].firstMatch
+        if wishShelf.exists, wishShelf.isHittable {
+            wishShelf.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "45c-元の写真を選ぶ（行きたい場所）")
+        }
+        let close = app.buttons["inspiredPicker.close"].firstMatch
+        if close.exists, close.isHittable { close.tap() }
+    }
+
+    /// **「この写真を見て撮影」の見本**（2026-10-14・`-JPPreviewInspired YES`・Debug のみ）。
+    /// 元の写真の付いた写真も `GET /user/inspired` も本番にまだ無いので、見本の鍵で
+    /// 写真の詳細の行（20e）・元の写真へ（20f）・元の写真を選んだ投稿の欄（45d）を撮る。
+    /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ撮らない**
+    func testCapturesInspiredBy() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES", "-JPPreviewInspired", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+
+        // 写真の詳細（ホームの写真を名指しで押す・一巡と同じく短い引きで少しずつ送る）
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        if firstPhoto.exists, firstPhoto.isHittable {
+            firstPhoto.tap()
+            let line = app.buttons["photo.inspiredBy"].firstMatch
+            if line.waitForExistence(timeout: 10) {
+                // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
+                var linePushes = 0
+                while !line.isHittable, linePushes < 4 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                    linePushes += 1
+                }
+                if line.isHittable {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+                    line.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "20f-元の写真へ")
+                }
+            }
+        }
+
+        // 投稿画面（見本の1枚・見本の元の写真を選んだ状態）。開いた詳細は戻ってから（下のタブを出す）
+        for _ in 0..<2 where !(tabBar.exists && tabBar.isHittable) {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        guard tabBar.exists, tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        let inspired = app.buttons["upload.inspired"].firstMatch
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
+              inspired.waitForExistence(timeout: 10) else { return }
+        for _ in 0..<3 where !inspired.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard inspired.isHittable else { return }
+        // 見本の元の写真が欄に入る（公開一覧を読むので少し待つ）
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "45d-投稿（元の写真を選んだ欄）")
     }
 
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、
@@ -994,6 +1262,63 @@ final class ScreenshotTests: XCTestCase {
         if close.exists { close.tap() } else { app.buttons["はじめる"].firstMatch.tap() }
         // 閉じたあとはホームが見える（主ボタンで閉じられる）
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
+    }
+
+    /// **設定から開いた「新しくなったこと」の履歴**（2026-10-18・`WhatsNewView(mode: .history)`）。
+    ///
+    /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。設定は全部の版を `mode: .history` で渡すので、
+    /// 2枚目（「これまでのお知らせ」と版の区切りの見出し）まで撮れる。シートが開いたのに履歴が無ければ落とす
+    func testCapturesWhatsNewHistory() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let row = app.buttons["settings.whatsNew"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !row.isHittable, pushes < 8 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return }
+        row.tap()
+        // シートの主ボタンで待つ——見出しの文字「新しくなったこと」は設定の行にもあり、開く前に通ってしまう
+        let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02e-新しくなったこと（設定から）")
+
+        // 履歴の形のときだけ: 「これまでのお知らせ」と版の区切りが見えるまで送って撮る
+        let history = app.descendants(matching: .any)["whatsNew.history"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "設定から開いた「新しくなったこと」が履歴の形でない")
+        if history.exists {
+            // 見えているだけでは送らない——「これまでのお知らせ」が画面の上半分に来るまで送る（画面の下の端に
+            // 見出しだけ覗いた姿は 02e と同じ絵になる）
+            var down = 0
+            while !history.isHittable || history.frame.minY > app.frame.height * 0.45, down < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                down += 1
+            }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "02f-新しくなったこと（これまでのお知らせ）")
+        }
+        if close.exists, close.isHittable { close.tap() }
     }
 
     /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）と、
@@ -1141,9 +1466,211 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
-    /// **構図を重ねて撮る**（Pro・2026-10-10）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
-    /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。起動の鍵（`-JPComposeGuidePreview`・Debug のみ）で
-    /// Pro の確かめを飛ばす。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、線は鍵があるときだけ重なる。
+    /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
+    /// 束を開く（表）→ 写真を押して全面 → 閉じる → 下を押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
+    /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
+    ///
+    /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
+    /// 束が開かない・閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす
+    func testCapturesPass() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let open = app.buttons["pass.home.open"].firstMatch
+        // 札が出なければ落とす（2026-10-16 の読み直し: 出ないまま抜けると、札の .task が走らない回を見逃した）
+        guard open.waitForExistence(timeout: 45) else {
+            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "80-すれちがいの束")
+        open.tap()
+
+        let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "札を押しても束が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        // 表はマルス券（2026-10-17 owner「マルス券いいね」）: 「〇〇発 → 〇〇着」と「ずっと有効」
+        XCTAssertTrue(card.label.contains("着"), "表の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
+        XCTAssertTrue(card.label.contains("ずっと有効"), "表に「すれちがいの日から ずっと有効」が無い（\(card.label)）")
+        shoot(app, "81-すれちがいのカード（表）")
+        // 写真（きっぷの上 214/430・マルス券）を押すと全面で見る
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        let photoClose = app.buttons["pass.photo.close"].firstMatch
+        XCTAssertTrue(photoClose.waitForExistence(timeout: 5), "写真を押しても全面で見られない")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "84-すれちがいの写真（全面）")
+        XCTAssertGreaterThanOrEqual(photoClose.frame.height, 44, "全面の × が 44pt 未満")
+        photoClose.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // きっぷの下（写真ではない所）を押すと裏返る
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(card.label.contains("ご案内"), "裏に「ご案内」の帯が無い（\(card.label)）")
+        XCTAssertTrue(card.label.contains("届きました"), "裏の裾に由来の一行が無い（\(card.label)）")
+        shoot(app, "82-すれちがいのカード（裏）")
+
+        let close = app.buttons["pass.viewer.close"].firstMatch
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        let file = app.buttons["pass.viewer.file"].firstMatch
+        for (button, name) in [(close, "閉じる"), (thanks, "ありがとう"), (file, "帳に入れる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        guard file.exists, file.isHittable else { return XCTFail("「帳に入れる」を押せない") }
+        file.tap()
+        let book = app.staticTexts["すれちがい帳"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 10), "「帳に入れる」で帳が開かない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "83-すれちがい帳")
+    }
+
+    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
+    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
+    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
+    /// 横に回しても裏にならなければ落とす**
+    /// わたしの乗車券（マイページ → 設定 → すれちがい → わたしの乗車券）まで進めて、回る見本を返す。
+    /// 画面まで行けなければ nil（撮らずに抜ける）。`pro` は見本の利用者を Pro の姿にする（`-JPPreviewPro`）
+    private func openPassPick(pro: Bool = false) -> (XCUIApplication, XCUIElement)? {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        if pro { app.launchArguments += ["-JPPreviewPro", "YES"] }
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return nil }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return nil }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return nil }
+        gear.tap()
+        let row = app.buttons["settings.pass"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return nil }
+        var pushes = 0
+        while !row.isHittable, pushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return nil }
+        row.tap()
+        let cardRow = app.buttons["pass.settings.card"].firstMatch
+        guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return nil }
+        cardRow.tap()
+        let card = app.descendants(matching: .any)["pass.pick.card"].firstMatch
+        guard card.waitForExistence(timeout: 15) else {
+            XCTFail("乗車券の画面に回る見本が無い")
+            return nil
+        }
+        return (app, card)
+    }
+
+    /// **特別な券面**（Pro・2026-10-17 owner が確定）: わたしの乗車券で、券面を選ぶ欄の5つを順に押し、見本の表を撮る。
+    /// 見本の利用者を Pro の姿（`-JPPreviewPro`）にして選べるようにする。最後に選ぶ欄を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**欄が出たのに券面のボタンが無い・44pt 未満・押しても読み上げが
+    /// 券面の名前を言わなければ落とす**
+    func testCapturesPassFaces() {
+        guard let (app, card) = openPassPick(pro: true) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let faces: [(id: Int, name: String, shot: String)] = [
+            (1, "真鍮の金属板", "88a-券面 01 真鍮の金属板"), (2, "大圏航路", "88b-券面 06 大圏航路"),
+            (3, "箔押しの硬券", "88c-券面 10 箔押しの硬券"), (4, "漆と蒔絵", "88d-券面 21 漆と蒔絵"),
+            (5, "型押しの革", "88e-券面 26 型押しの革"),
+        ]
+        for face in faces {
+            let button = app.buttons["pass.pick.face.\(face.id)"].firstMatch
+            guard button.waitForExistence(timeout: 10) else { return XCTFail("券面「\(face.name)」のボタンが無い") }
+            // 券面の欄は横に並ぶ。右に隠れていたら一つ前の券面の上で左へ払う・下に隠れていたら送る
+            var pushes = 0
+            while !button.isHittable, pushes < 4 {
+                let previous = app.buttons["pass.pick.face.\(face.id - 1)"].firstMatch
+                if button.frame.minX > app.frame.maxX - 40, previous.exists {
+                    previous.swipeLeft()
+                } else {
+                    app.swipeUp()
+                }
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard button.isHittable else { return XCTFail("券面「\(face.name)」を押せない") }
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "券面「\(face.name)」のボタンが 44pt 未満")
+            button.tap()
+            Thread.sleep(forTimeInterval: 1)
+            // 見本が画面の上に隠れていたら戻す
+            pushes = 0
+            while card.frame.minY < 60, pushes < 4 {
+                app.swipeDown()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(card.label.contains(face.name), "見本の読み上げが券面「\(face.name)」を言わない（\(card.label)）")
+            shoot(app, face.shot)
+        }
+        // 選ぶ欄を左端に戻して撮る
+        let last = app.buttons["pass.pick.face.5"].firstMatch
+        if last.exists, last.isHittable {
+            last.swipeRight()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, "88f-券面を選ぶ")
+        }
+    }
+
+    func testCapturesPassOwnCard() {
+        guard let (app, card) = openPassPick() else { return }
+        Thread.sleep(forTimeInterval: 3)
+        // 呼び名は「わたしの乗車券」（2026-10-17 owner）
+        XCTAssertTrue(app.navigationBars["わたしの乗車券"].firstMatch.exists, "選ぶ画面の題が「わたしの乗車券」でない")
+        // 表はマルス券（2026-10-17）: 「東京発、フランス着」と読む・「乗車券」の名
+        XCTAssertTrue(card.label.contains("発、") && card.label.contains("着"),
+                      "見本の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
+        XCTAssertTrue(card.label.contains("乗車券"), "見本の表に「乗車券」が無い（\(card.label)）")
+        // 見本の日付・区間・回数は空（「—」）。読み上げは「ダッシュ」でなく「なし」（2026-10-17）
+        XCTAssertTrue(card.label.contains("日付 なし"), "空の欄が「なし」と読めない（\(card.label)）")
+        XCTAssertFalse(card.label.contains("—"), "空の欄の「—」をそのまま読ませている（\(card.label)）")
+        shoot(app, "85-自分のカード（表・東京→フランス）")
+        let flip = app.buttons["pass.pick.flip"].firstMatch
+        XCTAssertTrue(flip.exists, "回さずに裏を見る口（「裏を見る」）が無い")
+        XCTAssertGreaterThanOrEqual(flip.frame.height, 44, "「裏を見る」が 44pt 未満")
+        let value = { (card.value as? String) ?? "" }
+        XCTAssertTrue(value().hasSuffix("表"), "読み上げで表と言わない（\(value())）")
+        guard flip.isHittable else { return XCTFail("「裏を見る」を押せない") }
+        flip.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(value().hasSuffix("裏"), "「裏を見る」で裏にならない（\(value())）")
+        XCTAssertTrue(card.label.contains("届きます"), "見本の裏の裾が自分向け（「届きます」）でない（\(card.label)）")
+        shoot(app, "86-自分のカード（裏）")
+        // 表に戻してから、指を置いて横に回す（ScrollView の中でも回る・離すと近い面＝裏に吸い付く）
+        flip.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        let from = card.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.75))
+        let to = card.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.75))
+        from.press(forDuration: 0.4, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(value().hasSuffix("裏"), "見本を指で横に回しても裏にならない（\(value())）")
+        shoot(app, "87-自分のカード（指で回した後）")
+    }
+
+    /// **構図を重ねて撮る**（2026-10-10・2026-10-17 から全員無料）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
+    /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、
+    /// 線は起動の鍵（`-JPComposeGuidePreview`・Debug のみ）があるときだけ重なる。
     ///
     /// 入口・画面が出なければ撮らずに抜ける（この試験の決まり）。**出たのに中身が違えば落とす**
     /// （作例なしなのに上の札がある・構図の行が無い・選んだ構図にならない）。
@@ -1543,5 +2070,507 @@ final class ScreenshotTests: XCTestCase {
         target.tap()
         guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
+    }
+
+    /// **メダルの浮き彫りと面取り**（2026-10-14 owner「回転した時に表と裏があまりにも凹凸感なさすぎて…
+    /// ほんの少しだけ凹凸感欲しい」）。メダルを回す全画面の硬貨を、決まった角度で止めて撮る。
+    ///
+    /// 硬貨はふだん勝手に回るので、`-JPPreviewMedalPoses`（Debug のみ・`PreviewSession.medalPoses`）で
+    /// 最初の向きに止め、硬貨を押すたびに次の向きへ進める。並びは「横の回り:浮き彫りの強さ」:
+    /// 既定の強さ（2.5・owner が選んだ）で少し傾けた（約26°）・正面・大きく傾けた（約63°）、
+    /// 比べる用に少し傾けたまま強さ 0（前の作り）。メダルは段のある都道府県（銀）。
+    ///
+    /// 🔴 **浮き彫りを貼り終えた印を待ってから撮る**（run 427: 強さを変えた直後に撮り、2 と 0 が同じ絵だった）。
+    /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ撮らない（この試験の決まり）
+    func testCapturesMedalRelief() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewBadges", "prefectures:2,earlyUser:1"]
+        app.launchArguments += ["-JPPreviewMedalPoses", "0.45:2.5,0:2.5,1.1:2.5,0.45:0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return }
+        nameLine.tap()
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        // 名前の横の画面でメダルを長押しすると全画面で手に取れる（`MedalViewerTests` と同じ道）
+        let badge = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
+        guard badge.waitForExistence(timeout: 15), badge.isHittable else { return }
+        badge.press(forDuration: 1.0)
+        let coin = app.descendants(matching: .any)["medalViewer.coin"].firstMatch
+        guard coin.waitForExistence(timeout: 15) else { return }
+
+        let names = ["85a-メダルの浮き彫り（少し傾けた・既定の強さ2.5）",
+                     "85b-メダルの浮き彫り（正面・既定の強さ2.5）",
+                     "85c-メダルの浮き彫り（大きく傾けた・既定の強さ2.5）",
+                     "85f-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）"]
+        for (index, name) in names.enumerated() {
+            if index > 0 {
+                guard coin.exists, coin.isHittable else { return }
+                coin.tap()
+            }
+            // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。貼り終えた印を待つ
+            let ready = NSPredicate(format: "value == %@", "pose-\(index)-ready")
+            let waited = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: coin)], timeout: 30)
+            guard waited == .completed else { return }
+            // 貼った絵が次のコマで描かれるまで
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, name)
+        }
+    }
+
+    // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
+
+    /// 旅のトランクの見本で起動する（`-JPPreviewTrunk`・Debug のみ。サーバーには何も送らない）
+    private func launchTrunk(_ extra: [String]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += extra
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        return app
+    }
+
+    /// マイページ → 旅の記録のタブ → 「旅のトランク」の行。開けたら true
+    private func openTrunk(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        var pushes = 0
+        while !tripsTab.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard tripsTab.isHittable else { return false }
+        tripsTab.tap()
+        let row = app.buttons["trips.trunk"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return false }
+        var rowPushes = 0
+        let bottom = app.windows.firstMatch.frame.maxY - 100
+        while row.exists, row.frame.maxY > bottom || !row.isHittable, rowPushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            rowPushes += 1
+        }
+        guard row.isHittable else { return false }
+        row.tap()
+        return app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// 押したい行が画面に収まるまで送る
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        let bottom = app.windows.firstMatch.frame.maxY - 60
+        var pushes = 0
+        while element.exists, element.frame.maxY > bottom || !element.isHittable, pushes < 5 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+    }
+
+    /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札
+    /// （硬貨の枚数・貼っていないラベルの真鍮の点）と、設定の「旅のトランク」の行。見本（`-JPPreviewTrunk`）で撮る。
+    /// **見本では入口が必ず出るので、出なければ落とす**（commit 66d7f872 の方針）。44pt 未満・読み上げに硬貨が無いときも落とす
+    func testCapturesTrunkEntry() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let card = app.buttons["mypage.trunk"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return XCTFail("マイページの上に旅のトランクの札が無い") }
+        // タブを切り替えずに見える（カバーの高い人・小さい画面では少し送る）
+        scrollTo(card, in: app)
+        XCTAssertTrue(card.isHittable, "マイページの上の札に届かない")
+        XCTAssertGreaterThanOrEqual(card.frame.height, 44, "旅のトランクの札が 44pt 未満")
+        let spoken = (card.value as? String) ?? ""
+        XCTAssertTrue(spoken.contains("硬貨 3枚"), "読み上げに硬貨の枚数が無い: \(spoken)")
+        XCTAssertTrue(spoken.contains("貼っていないラベル"), "読み上げに貼っていないラベルの有無が無い: \(spoken)")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90a-マイページ（旅のトランクの札）")
+        // 押すとトランクへ
+        card.tap()
+        guard app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15) else {
+            return XCTFail("札を押してもトランクが開かない")
+        }
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
+        // 設定の行
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+        let row = app.buttons["settings.trunk"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に旅のトランクの行が無い") }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return XCTFail("設定の旅のトランクの行に届かない") }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "設定の旅のトランクの行が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "90b-設定（旅のトランク）")
+    }
+
+    /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
+    /// 型 → 特別なトランク。出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
+    func testCapturesTrunk() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"])
+        guard openTrunk(app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90-旅のトランク")
+
+        let spin = app.buttons["trunk.spin"].firstMatch
+        if spin.isHittable {
+            spin.tap()
+            let close = app.buttons["trunk.spin.close"].firstMatch
+            if close.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 3)
+                shoot(app, "91-トランクを手に取って回す")
+                XCTAssertGreaterThanOrEqual(close.frame.height, 44, "回す画面の × が 44pt 未満")
+                close.tap()
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
+
+        let pocketRow = app.buttons["trunk.pocket"].firstMatch
+        scrollTo(pocketRow, in: app)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "90a-旅のトランク（下・最近貼ったラベルと札）")
+        guard pocketRow.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(pocketRow.frame.height, 44, "手持ちの行が 44pt 未満")
+        pocketRow.tap()
+        let cell = app.buttons["trunk.pocket.cell"].firstMatch
+        guard cell.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "92-手持ちのラベル")
+        cell.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "92a-手持ちのラベル（選んでいる）")
+        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        let reroll = app.buttons["trunk.pocket.reroll"].firstMatch
+        if reroll.isHittable {
+            reroll.tap()
+            let close = app.buttons["trunk.reroll.close"].firstMatch
+            if close.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "93-図柄を作り直す（押す前）")
+                // 押す前は「この図柄にする」を出さない（開いただけでは回数を使わない・2026-10-17）
+                XCTAssertFalse(app.buttons["trunk.reroll.choose"].firstMatch.exists, "押す前なのに「この図柄にする」が出ている")
+                let start = app.buttons["trunk.reroll.start"].firstMatch
+                if start.exists, start.isHittable {
+                    XCTAssertGreaterThanOrEqual(start.frame.height, 44, "「作り直す」が 44pt 未満")
+                    start.tap()
+                    let options = app.buttons.matching(identifier: "trunk.reroll.option")
+                    _ = options.firstMatch.waitForExistence(timeout: 10)
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "93a-図柄を作り直す（候補）")
+                    if options.count > 2 {
+                        options.element(boundBy: 2).tap()
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "93b-図柄を作り直す（案2を選んだ）")
+                    }
+                    XCTAssertGreaterThanOrEqual(app.buttons["trunk.reroll.choose"].firstMatch.frame.height, 44)
+                }
+                close.tap()
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
+
+        let modelsRow = app.buttons["trunk.models"].firstMatch
+        scrollTo(modelsRow, in: app)
+        guard modelsRow.waitForExistence(timeout: 5), modelsRow.isHittable else { return }
+        modelsRow.tap()
+        let proRow = app.buttons["trunk.models.pro"].firstMatch
+        guard proRow.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "94-トランクの型")
+        scrollTo(proRow, in: app)
+        guard proRow.isHittable else { return }
+        proRow.tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "95-特別なトランク（Pro）")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "95a-特別なトランク（下）")
+    }
+
+    /// **旅のトランク（届いたラベルが1枚も無い人）**: 空の状態（「写真を投稿」の一手）と、空の手持ち
+    func testCapturesTrunkEmpty() {
+        let app = launchTrunk(["-JPPreviewTrunk", "empty"])
+        guard openTrunk(app) else { return }
+        let empty = app.buttons["trunk.emptyPost"].firstMatch
+        XCTAssertTrue(empty.waitForExistence(timeout: 10), "ラベルの無い人に空の状態が出ない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90b-旅のトランク（まだラベルが無い）")
+        let pocketRow = app.buttons["trunk.pocket"].firstMatch
+        scrollTo(pocketRow, in: app)
+        guard pocketRow.isHittable else { return }
+        pocketRow.tap()
+        if app.descendants(matching: .any)["trunk.pocket.empty"].firstMatch.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "92b-手持ちのラベル（空・Pro の案内）")
+        }
+    }
+
+    /// **トランクから開いた Pro の案内**（2026-10-18 判断）: Pro でない見本（`-JPPreviewTrunk empty`）の手持ち →
+    /// 「Pro なら 150 枚まで持てます」→ 案内。トランクの利点がいちばん上に来ていなければ落とす。**何も買わない**。
+    /// 2026-10-18 判断（見直し）: 見本の起動なので、途中で進めなければ黙って抜けずに落とす
+    /// （トランクの入口のテストと同じ方針。何も確かめずに緑にしない）
+    func testCapturesProPaywallFromTrunk() {
+        let app = launchTrunk(["-JPPreviewTrunk", "empty"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let pocketRow = app.buttons["trunk.pocket"].firstMatch
+        scrollTo(pocketRow, in: app)
+        guard pocketRow.isHittable else { return XCTFail("手持ちの行を押せない") }
+        pocketRow.tap()
+        let proLink = app.buttons["trunk.pocket.pro"].firstMatch
+        guard proLink.waitForExistence(timeout: 10) else { return XCTFail("Pro でない見本の手持ちに「Pro なら…」が無い") }
+        scrollTo(proLink, in: app)
+        guard proLink.isHittable else { return XCTFail("「Pro なら…」を押せない") }
+        proLink.tap()
+        guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else {
+            return XCTFail("トランクから Pro の案内が開かない")
+        }
+        let trunk = app.descendants(matching: .any)["paywall.benefit.trunk"].firstMatch
+        let light = app.descendants(matching: .any)["paywall.benefit.light"].firstMatch
+        guard trunk.waitForExistence(timeout: 5) else { return XCTFail("トランクから開いたのにトランクの利点が無い") }
+        guard light.exists else { return XCTFail("案内に光と天気の知らせの利点が無い") }
+        XCTAssertLessThan(trunk.frame.minY, light.frame.minY, "トランクから開いたのにトランクの利点が上に無い")
+        // 上の写真と値段が届くのを待つ（`testCapturesProPaywall` と同じ）
+        Thread.sleep(forTimeInterval: 10)
+        shoot(app, "92c-Pro の案内（トランクから）")
+        let close = app.buttons["paywall.close"].firstMatch
+        if close.waitForExistence(timeout: 5), close.isHittable { close.tap() }
+    }
+
+    /// **ラベルが届いた**（投稿のお礼・`-JPPreviewTrunkArrived`）。出なければ撮らずに抜ける。
+    /// 出たのに3つの手が無い・44pt 未満・「手持ちに入れておく」で閉じなければ落とす
+    func testCapturesTrunkArrived() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES"])
+        let stick = app.buttons["trunk.arrived.stick"].firstMatch
+        guard stick.waitForExistence(timeout: 30) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96-ラベルが届いた")
+        let keep = app.buttons["trunk.arrived.keep"].firstMatch
+        let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
+        let close = app.buttons["trunk.arrived.close"].firstMatch
+        for (button, name) in [(stick, "トランクに貼る"), (keep, "手持ちに入れておく"), (reroll, "図柄を作り直す"), (close, "閉じる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        guard keep.isHittable else { return XCTFail("「手持ちに入れておく」を押せない") }
+        keep.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: stick)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
+    }
+
+    // MARK: - はじめての硬貨（2026-10-18 owner 承認）
+
+    /// **はじめての硬貨**（`-JPPreviewTrunkWelcome YES`・サーバーには何も送らない）。見本は必ず出るので、
+    /// **出ない・「カプセルを回す」「あとで」「閉じる」が無い・44pt 未満なら落とす**。
+    /// 「カプセルを回す」でカプセルの機械へ進み、戻って「あとで」で閉じる
+    func testCapturesTrunkWelcome() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "YES", "-JPPreviewTrunk", "YES"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96c-はじめての硬貨")
+        let later = app.buttons["trunk.welcome.later"].firstMatch
+        let close = app.buttons["trunk.welcome.close"].firstMatch
+        for (button, name) in [(turn, "カプセルを回す"), (later, "あとで"), (close, "閉じる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.added"].firstMatch.exists, "「硬貨 +10 枚」が無い")
+        XCTAssertFalse(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "10 枚の回に上限の一言が出ている")
+        guard turn.isHittable else { return XCTFail("「カプセルを回す」を押せない") }
+        turn.tap()
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        XCTAssertTrue(insert.waitForExistence(timeout: 10), "「カプセルを回す」でカプセルの機械へ進まない")
+        Thread.sleep(forTimeInterval: 1)
+        // 機械の手持ちは案内と同じ「配ったあとの数」（見本は 2 + 10 = 12 枚）。2 枚に戻って見えたら落とす
+        let coins = app.descendants(matching: .any)["trunk.gacha.coins"].firstMatch
+        XCTAssertTrue(coins.waitForExistence(timeout: 5), "カプセルの機械に硬貨の数が無い")
+        XCTAssertTrue(coins.label.contains("12"), "カプセルの機械の硬貨が案内の数（12）と違う: \(coins.label)")
+        shoot(app, "96d-はじめての硬貨（カプセルの機械へ）")
+        goBack(app)
+        guard later.waitForExistence(timeout: 10), later.isHittable else { return XCTFail("機械から案内へ戻れない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: turn)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+    }
+
+    /// **はじめての硬貨（上限に当たって 3 枚だけ）**: 実際の枚数と上限の一言
+    func testCapturesTrunkWelcomeCapped() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "3"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96e-はじめての硬貨（上限に当たった）")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "上限の一言が無い")
+    }
+
+    // MARK: - 旅のトランクの次の版（2026-10-17・自分の手で貼る・カプセルの機械・部品箱）
+
+    /// トランクの画面の入口（`trunk.stick.open`・`trunk.partsBox`・`trunk.gacha.open`）を押す。押せたら true
+    private func openTrunkRow(_ app: XCUIApplication, _ id: String) -> Bool {
+        let row = app.buttons[id].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return false }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return false }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) の行が 44pt 未満")
+        row.tap()
+        return true
+    }
+
+    /// **自分の手で貼る**: 手持ちのラベルを押さえてトランクへ運ぶ → 貼った → 右に回す。出なければ撮らずに抜ける
+    func testCapturesTrunkStick() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.stick.open") else { return XCTFail("「ラベルを貼る」の入口が無い") }
+        let done = app.buttons["trunk.stick.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("貼る画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97-ラベルを貼る")
+        for id in ["trunk.stick.done", "trunk.stick.undo", "trunk.stick.auto", "trunk.stick.peel"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        let cell = app.buttons.matching(identifier: "trunk.stick.tray").firstMatch
+        let trunk = app.descendants(matching: .any)["trunk.stick.trunk"].firstMatch
+        guard cell.waitForExistence(timeout: 5), trunk.exists else { return XCTFail("手持ちの札かトランクが無い") }
+        do {
+            cell.press(forDuration: 0.3, thenDragTo: trunk)
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "97a-ラベルを貼る（運んで貼った）")
+            let right = app.buttons["trunk.stick.rotateRight"].firstMatch
+            if right.waitForExistence(timeout: 5) {
+                XCTAssertGreaterThanOrEqual(right.frame.height, 44, "回すボタンが 44pt 未満")
+                right.tap()
+                right.tap()
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "97b-ラベルを貼る（回した）")
+            }
+        }
+        let auto = app.buttons["trunk.stick.auto"].firstMatch
+        if auto.isHittable {
+            auto.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "97c-ラベルを貼る（おまかせで並べた）")
+        }
+        done.tap()
+    }
+
+    /// **カプセルの機械**: 硬貨を入れる → ハンドルを4回押して1周 → カプセルを開ける → 中身と確率
+    func testCapturesTrunkGacha() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨を入れる」が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98-カプセルの機械")
+        XCTAssertGreaterThanOrEqual(insert.frame.height, 44, "「硬貨を入れる」が 44pt 未満")
+        insert.tap()
+        let crank = app.buttons["trunk.gacha.crank"].firstMatch
+        guard crank.waitForExistence(timeout: 5) else { return XCTFail("ハンドルが無い") }
+        XCTAssertGreaterThanOrEqual(crank.frame.height, 44, "ハンドルが 44pt 未満")
+        crank.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "98-カプセルの機械（回している）")
+        for _ in 0..<3 {
+            crank.tap()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        let open = app.buttons["trunk.gacha.openCapsule"].firstMatch
+        guard open.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "98-カプセルの機械（出てきた）")
+        open.tap()
+        let equip = app.buttons["trunk.gachaOpen.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98a-カプセルを開けた")
+        for id in ["trunk.gachaOpen.equip", "trunk.gachaOpen.keep", "trunk.gachaOpen.close"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        app.buttons["trunk.gachaOpen.keep"].firstMatch.tap()
+        let odds = app.buttons["trunk.gacha.odds"].firstMatch
+        guard odds.waitForExistence(timeout: 10) else { return XCTFail("「中身と確率」が無い") }
+        odds.tap()
+        guard app.descendants(matching: .any)["trunk.odds.perPart"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("中身と確率に1点あたりの確率が無い")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "98b-中身と確率")
+    }
+
+    /// **カプセルの機械（硬貨がありません）**: `-JPPreviewTrunkCoins 0`。入れ口のボタンが押せないこと
+    func testCapturesTrunkGachaNoCoins() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "0"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨がありません」のボタンが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98c-カプセルの機械（硬貨がありません）")
+        XCTAssertFalse(insert.isEnabled, "硬貨 0 で硬貨を入れられる")
+    }
+
+    /// **部品箱 → 付け替える**: 種類のタブ（錠前）・ピンバッジの付け替え
+    func testCapturesTrunkPartsBox() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.partsBox") else { return XCTFail("部品箱の入口が無い") }
+        let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
+        guard lockTab.waitForExistence(timeout: 10) else { return XCTFail("部品箱の種類のタブが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99-部品箱")
+        XCTAssertGreaterThanOrEqual(lockTab.frame.height, 44, "種類のタブが 44pt 未満")
+        lockTab.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99-部品箱（錠前）")
+        let equip = app.buttons["trunk.parts.equip"].firstMatch
+        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
+        equip.tap()
+        let pinTab = app.buttons["trunk.equip.tab.pin"].firstMatch
+        guard pinTab.waitForExistence(timeout: 10) else { return XCTFail("付け替えの場所のタブが無い") }
+        pinTab.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99a-部品を付け替える")
+        let part = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        if part.exists, part.isHittable {
+            XCTAssertGreaterThanOrEqual(part.frame.height, 44)
+            part.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "99b-部品を付け替える（ピンを足した）")
+            let save = app.buttons["trunk.equip.save"].firstMatch
+            XCTAssertTrue(save.isEnabled, "付け替えたのに保存できない")
+            save.tap()
+        }
     }
 }

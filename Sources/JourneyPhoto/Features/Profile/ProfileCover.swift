@@ -19,12 +19,17 @@ struct ProfileCover: View {
     var reserve = false
     var onLoaded: (Bool) -> Void = { _ in }
 
-    /// 板どおりの高さ。下の 110pt を黒へ溶かす（アイコンと名前が乗る側）
-    static let height: CGFloat = 180
-    /// 見出しのアイコン（板 84pt）と、帯の下端へ引き上げる量（板 50pt）。
-    /// マイページ（板 05c）と人のページ（板 31）で同じ——以前は人のページだけ 64pt・28pt
-    static let avatarSize: CGFloat = 84
-    static let avatarOverlap: CGFloat = 50
+    /// 板 v2（MyPage・UserProfile）の高さ 196。上 25% の黒 → 40% で透明 → 下端で黒へ溶かす
+    /// （上は時計とガラスの丸の地・下はアイコンと名前が乗る側）。v1 は 180・下 110pt だけ
+    nonisolated static let height: CGFloat = 196
+    /// 見出しのアイコン（板 v2 88pt）と、帯の下端へ引き上げる量（板 v2 44pt）。
+    /// マイページと人のページで同じ。v1 は 84・50
+    nonisolated static let avatarSize: CGFloat = 88
+    nonisolated static let avatarOverlap: CGFloat = 44
+    /// カバーの無い人のアイコン（板 MyPageNoCover: 72pt・名前と横に並べる）
+    nonisolated static let compactAvatarSize: CGFloat = 72
+    /// カバーに重なるアイコンの黒い縁（板 v2: `box-shadow: 0 0 0 4px #000`）。v1 は 3
+    nonisolated static let cutoutWidth: CGFloat = 4
 
     var body: some View {
         if let url {
@@ -59,10 +64,11 @@ struct ProfileCover: View {
             .overlay {
                 image.resizable().aspectRatio(contentMode: .fill)
             }
-            .overlay(alignment: .bottom) {
-                LinearGradient(colors: [WebTheme.background.opacity(0), WebTheme.background],
+            .overlay {
+                LinearGradient(stops: [.init(color: WebTheme.background.opacity(0.25), location: 0),
+                                       .init(color: WebTheme.background.opacity(0), location: 0.4),
+                                       .init(color: WebTheme.background, location: 1)],
                                startPoint: .top, endPoint: .bottom)
-                    .frame(height: 110)
             }
             .clipped()
             // 飾り。読み上げは名前から始める
@@ -71,11 +77,12 @@ struct ProfileCover: View {
 }
 
 extension View {
-    /// カバーに重なるアイコンの縁。**板どおり黒の 3pt**で、写真の上でも丸が割れない
+    /// カバーに重なるアイコンの縁。**板 v2 どおり黒の 4pt**で、写真の上でも丸が割れない
     @ViewBuilder
     func coverCutout(_ onCover: Bool) -> some View {
         if onCover {
-            overlay(Circle().strokeBorder(WebTheme.background, lineWidth: 3).padding(-3))
+            overlay(Circle().strokeBorder(WebTheme.background, lineWidth: ProfileCover.cutoutWidth)
+                .padding(-ProfileCover.cutoutWidth))
         } else {
             self
         }

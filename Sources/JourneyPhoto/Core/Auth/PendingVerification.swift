@@ -24,8 +24,33 @@ enum PendingVerification {
     /// **小文字に揃える。** Cognito のメールエイリアスは大小を区別しないので、
     /// `Taro@Example.com` で登録して `taro@example.com` でログインが成立する。
     /// 生の入力を鍵にすると、その場合だけ控えを拾えず**行き止まりに戻る**。
+    ///
+    /// **2026-10-16 判断: 鍵にメールアドレスをそのまま入れない。** UserDefaults は端末のバックアップにも
+    /// 載る平文の plist なので、`jp_verify_<メール>` だと鍵の一覧だけでメールアドレスが読めた。
+    /// 揃えたメールアドレスの SHA-1（16 進）を鍵にする（アプリの中で控えを引くためだけの指紋。
+    /// 署名や秘密には使わない・CryptoKit は Linux の模型に無いので `SHA1` を使い回す）。
+    /// 前の形の鍵は `PendingVerificationStore.migrateLegacyKeys` が移し替える
     static func key(for email: String) -> String {
-        "jp_verify_\(email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+        let normalized = normalize(email)
+        let digest = SHA1.digest(Array((hashSalt + normalized).utf8))
+        return keyPrefix + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 鍵の頭（ハッシュの形）。前の形（`legacyKeyPrefix`）と重ならない綴りにする
+    static let keyPrefix = "jp_pending_"
+    /// 前の形の鍵の頭（`jp_verify_<メール>`・2026-10-16 まで）
+    static let legacyKeyPrefix = "jp_verify_"
+    /// 指紋の前に付ける字（同じ形のほかの控えと指紋が重ならないように）
+    private static let hashSalt = "journeyphoto.pending-verification|"
+
+    /// メールアドレスを揃える（前後の空白を落とし小文字に）
+    static func normalize(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// 前の形の鍵（移し替えのためだけ）
+    static func legacyKey(for email: String) -> String {
+        legacyKeyPrefix + normalize(email)
     }
 
     /// 控えが生きているか。
@@ -58,13 +83,45 @@ struct PendingVerificationStore {
         let entry = Entry(username: username, savedAt: now,
                           displayName: displayName?.isEmpty == true ? nil : displayName)
         guard let data = try? JSONEncoder().encode(entry) else { return }
+        // 前の形の鍵が残っていれば消す（メールアドレスを平文で残さない）
+        defaults.removeObject(forKey: PendingVerification.legacyKey(for: email))
         defaults.set(data, forKey: PendingVerification.key(for: email))
+    }
+
+    /// そのメールアドレスの控えの鍵。**前の形の鍵（メールそのまま）が残っていれば、ここで移し替える**
+    /// （起動のときの `migrateLegacyKeys` より前に引かれても取りこぼさない）
+    private func entryKey(for email: String) -> String {
+        let key = PendingVerification.key(for: email)
+        let legacy = PendingVerification.legacyKey(for: email)
+        if let data = defaults.data(forKey: legacy) {
+            if defaults.object(forKey: key) == nil { defaults.set(data, forKey: key) }
+            defaults.removeObject(forKey: legacy)
+        }
+        return key
+    }
+
+    /// 前の形の鍵（`jp_verify_<メール>`）を全部ハッシュの鍵へ移し、前の鍵を消す（2026-10-16）。
+    ///
+    /// 起動のたびに呼ぶ（`AppDelegate`）。前の鍵はメールアドレスそのものなので、それを揃え直して
+    /// 新しい鍵を作れる。**読めない値・切れた控えは移さずに消す**（切れた控えは使い道が無く、
+    /// メールアドレスを残す理由にならない）。新しい鍵に既に値があればそちらを残す
+    func migrateLegacyKeys(now: Date = Date()) {
+        for (key, value) in defaults.dictionaryRepresentation()
+        where key.hasPrefix(PendingVerification.legacyKeyPrefix) {
+            defer { defaults.removeObject(forKey: key) }
+            let email = String(key.dropFirst(PendingVerification.legacyKeyPrefix.count))
+            guard !email.isEmpty, let data = value as? Data,
+                  let entry = try? JSONDecoder().decode(Entry.self, from: data),
+                  PendingVerification.isFresh(savedAt: entry.savedAt, now: now) else { continue }
+            let newKey = PendingVerification.key(for: email)
+            if defaults.object(forKey: newKey) == nil { defaults.set(data, forKey: newKey) }
+        }
     }
 
     /// 生きている控えだけ返す。切れていたらその場で捨てる。
     /// 使い終えた控え（名前だけ預かっている・`signUpDone`）と、ID の空の控えは nil
     func username(for email: String, now: Date = Date()) -> String? {
-        let key = PendingVerification.key(for: email)
+        let key = entryKey(for: email)
         guard let data = defaults.data(forKey: key),
               let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
         guard PendingVerification.isFresh(savedAt: entry.savedAt, now: now) else {
@@ -85,7 +142,7 @@ struct PendingVerificationStore {
     ///   それに書き換える——同じメールの別アカウント（aliasExists）に入った回、退会の後始末
     ///   （`forget(username:)`、ID で探す）が控えに当たらず、メールと名前が端末に残った
     func forgetSignUp(email: String, signedInAs: String? = nil) {
-        let key = PendingVerification.key(for: email)
+        let key = entryKey(for: email)
         guard let data = defaults.data(forKey: key),
               let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return }
         guard let name = entry.displayName, !name.isEmpty else {
@@ -101,7 +158,7 @@ struct PendingVerificationStore {
     /// 預かっている表示名（**メールアドレスごと**——共有の端末で、
     /// 次にログインした別人の名前にしない。Web の `pendingNameKey` と同じ理由）。
     func displayName(for email: String, now: Date = Date()) -> String? {
-        let key = PendingVerification.key(for: email)
+        let key = entryKey(for: email)
         guard let data = defaults.data(forKey: key),
               let entry = try? JSONDecoder().decode(Entry.self, from: data),
               PendingVerification.isFresh(savedAt: entry.savedAt, now: now) else { return nil }
@@ -110,6 +167,7 @@ struct PendingVerificationStore {
 
     func forget(email: String) {
         defaults.removeObject(forKey: PendingVerification.key(for: email))
+        defaults.removeObject(forKey: PendingVerification.legacyKey(for: email))
     }
 
     /// その登録（Cognito のユーザー名＝UUID）の控えを消す。
@@ -118,7 +176,9 @@ struct PendingVerificationStore {
     /// 控えの中身（ユーザー名）で探す。確認のあと名前を入れられなかった回
     /// （`SignInView.applyDisplayName`）は、使い終えた印（`signUpDone`）付きで控えが残っている
     func forget(username: String) {
-        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix("jp_verify_") {
+        // 新しい形（ハッシュ）と前の形（メールそのまま・移し替える前に退会した回）の両方を探す
+        for (key, value) in defaults.dictionaryRepresentation()
+        where key.hasPrefix(PendingVerification.keyPrefix) || key.hasPrefix(PendingVerification.legacyKeyPrefix) {
             guard let data = value as? Data,
                   let entry = try? JSONDecoder().decode(Entry.self, from: data),
                   entry.username == username else { continue }

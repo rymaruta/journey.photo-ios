@@ -73,6 +73,16 @@ struct HomeTopCardView: View {
     /// （`HomeSpotShelf.visibleShelf`）。差し替えと同じく、見えている間に移す（`pendingQuizSettled`）
     @State private var quizSettled = false
     @State private var pendingQuizSettled = false
+    /// 札と段の「今日」。🔴 **`Date()` をその場で読まない**（2026-10-18・スポットを日替わりにしたとき）。
+    /// 札・段は毎日 0 時に替わるので、その場で読むと、札から開いた撮影スポットの画面が前に出ている間に
+    /// 日をまたいだあと、何かで描き直した瞬間に押した元のリンクが消えて**開いていた画面が閉じる**
+    /// （一冊の札・今日の一問と同じ形）。進めるのはホームが見えているときだけ（`advanceDay`）:
+    /// 前面が確定したとき（`landHomeCards`）・アプリが前面に戻ったとき（`scenePhase` が `.active`）・
+    /// 今日の一問を読み直したとき（早抜けの回も）・ホームのまま 0 時を過ぎたとき（`waitForNextDay`）。
+    /// 🔴 **一問の読み直しだけに頼らない**——一問は日本時間で替わるので、日本の外では前面に戻っても
+    /// 一問が「もう今日の分」で早抜けし、札が昨日のまま残った（96e499b7 のレビュー）
+    @State private var cardsNow = Date()
+    @Environment(\.scenePhase) private var scenePhase
 
     private let opened = OpenedTripBooks()
 
@@ -90,7 +100,14 @@ struct HomeTopCardView: View {
             // 札・段・当日の行に出るスポットの詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ読む
             // （`SpotDetailNeeds`・2026-10-07）。重ねたら鍵が空になって止まる
             .task(id: SpotDetailNeeds.key(detailNeeds(choices))) { await loadDetails(choices) }
-            .task(id: "\(reloadToken)") { await loadQuiz() }
+            // 日が進んだら今日の一問も取り直す（ホームのまま 0 時を過ぎた回）
+            .task(id: "\(reloadToken)#\(cardsDay)") { await loadQuiz() }
+            // ホームのまま 0 時を過ぎたら札と段を今日へ（`advanceDay`・壁時計で確かめ直す）
+            .task(id: cardsDay) { await waitForNextDay() }
+            // 前面に戻ったら、一問の読み直しを待たずに日を確かめる（ホームが見えているときだけ）
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, isShown { advanceDay() }
+            }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
             //
@@ -127,15 +144,15 @@ struct HomeTopCardView: View {
     }
 
     /// 札のあいだ
-    private static let spacing: CGFloat = 10
+    private static let spacing: CGFloat = JPSpace.xs
     /// 左右の余白（1枚の日の札と同じ）
-    private static let margin: CGFloat = 16
+    private static let margin: CGFloat = JPSpace.gutter
     /// 画面の右端に見せる次の札の幅（めくれることの合図）
-    private static let peek: CGFloat = 24
+    private static let peek: CGFloat = JPSpace.xl
 
     /// 今日の札の並び（`HomeTopCard.cards`）。段（`spotShelf`）も同じ並びを見て、札に出ている場所を除く
     private var choices: [HomeTopCard.Choice] {
-        HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
+        HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
                           myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
                           wishlist: wishedKeys, quiz: quiz)
     }
@@ -146,7 +163,7 @@ struct HomeTopCardView: View {
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     @ViewBuilder
     private func spotShelf(_ choices: [HomeTopCard.Choice]) -> some View {
-        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                                   choices: choices, quiz: quiz, quizSettled: quizSettled) {
             HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos, reloadToken: reloadToken)
         }
@@ -302,70 +319,83 @@ struct HomeTopCardView: View {
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
                       trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
                       inCarousel: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(eyebrow)
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
+        // **v2（2026-10-14・Main の板「上の札を写真つきの横長カードに」）**:
+        // 左に写真（幅 112・札の高さいっぱい・薄めない）、右に 眉（真鍮＋消える線）→ 明朝の題 →
+        // 12 の text-2 の一行 → 出典。地は札の面（#0E0E0F）に白 8% の縁・角 16。
+        // 以前は写真を右に 35% の薄さで敷き、題は明朝 26 だった。写真を薄めずに置けるので、
+        // 字を写真の上に重ねない（真鍮の眉を黒地の上に置ける・CLAUDE.md）
+        HStack(alignment: .center, spacing: 0) {
+            cardPhoto(backdrop: backdrop, backdropURL: backdropURL)
+            HStack(alignment: .center, spacing: JPSpace.xs) {
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 英字の眉は読み上げでは日本語で（今日のテーマの札と同じ）
-                    .accessibilityLabel(eyebrowLabel)
-                Text(title)
-                    .font(JPFont.screenTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(2)
-                Text(line)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .lineLimit(2)
-                if let detail {
-                    // **2行まで。** 写真の作者名には100文字を超える機械文がある（Commons の
-                    // 「No machine-readable author provided…」）。並びは背を揃えるので、
-                    // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
-                    // 切るのは真ん中——末尾のライセンス名を残す
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted)
+                    JPEyebrowLine(eyebrow, spoken: eyebrowLabel)
+                    Text(title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.text)
                         .lineLimit(2)
-                        // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
-                        // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
-                        .truncationMode(detailTruncation)
+                    Text(line)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineLimit(2)
+                    if let detail {
+                        // **2行まで。** 写真の作者名には100文字を超える機械文がある（Commons の
+                        // 「No machine-readable author provided…」）。並びは背を揃えるので、
+                        // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
+                        // 切るのは真ん中——末尾のライセンス名を残す
+                        Text(detail)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(2)
+                            // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                            // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
+                            .truncationMode(detailTruncation)
+                    }
                 }
+                Spacer(minLength: 0)
+                Image(systemName: trailingSymbol)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text2)
+                    .accessibilityHidden(true)
             }
-            Spacer(minLength: 0)
-            Image(systemName: trailingSymbol)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.muted)
+            .padding(.leading, JPSpace.m)
+            .padding(.trailing, JPSpace.s)
+            .padding(.vertical, JPSpace.s)
+            // 並びの中では高さいっぱい（隣の札と背を揃える）・文字は上に寄せる
+            .frame(maxWidth: .infinity, maxHeight: inCarousel ? .infinity : nil,
+                   alignment: inCarousel ? .topLeading : .leading)
         }
-        .padding(16)
-        // 並びの中では高さいっぱい（隣の札と背を揃える）・文字は上に寄せる
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: inCarousel ? .infinity : nil,
-               alignment: inCarousel ? .topLeading : .leading)
-        .background(alignment: .trailing) {
-            if let backdrop {
-                // **写真は右側に薄く**（今日のテーマの札と同じ——文字を読めなくしない）
-                RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
-                    .frame(width: 160)
-                    .opacity(0.35)
-                    .mask {
-                        LinearGradient(colors: [Color.black.opacity(0), Color.black],
-                                       startPoint: .leading, endPoint: .trailing)
-                    }
-            } else if let backdropURL {
-                // 撮影スポットの写真（`Photo` ではない）。薄さ・幅は上と同じ
-                RemoteImage(url: backdropURL)
-                    .frame(width: 160)
-                    .opacity(0.35)
-                    .mask {
-                        LinearGradient(colors: [Color.black.opacity(0), Color.black],
-                                       startPoint: .leading, endPoint: .trailing)
-                    }
-            }
-        }
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .frame(maxWidth: .infinity, minHeight: Self.cardHeight,
+               maxHeight: inCarousel ? .infinity : nil, alignment: .leading)
+        .jpCardFace()
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .accessibilityElement(children: .combine)
-        .padding(.horizontal, inCarousel ? 0 : 16)
+        .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
+    }
+
+    /// 札の背（板の 116）。中身が多い札はそれより伸びる
+    nonisolated static let cardHeight: CGFloat = 116
+    /// 札の左の写真の幅（板の 112）
+    nonisolated static let photoWidth: CGFloat = 112
+
+    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない
+    @ViewBuilder
+    private func cardPhoto(backdrop: Photo?, backdropURL: URL?) -> some View {
+        if let backdrop {
+            RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
+                .frame(width: Self.photoWidth)
+                .frame(maxHeight: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+        } else if let backdropURL {
+            // 撮影スポット・今日の一問の写真（`Photo` ではない）。出典は右の字に出す
+            RemoteImage(url: backdropURL)
+                .frame(width: Self.photoWidth)
+                .frame(maxHeight: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+        }
     }
 
     /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**
@@ -377,7 +407,7 @@ struct HomeTopCardView: View {
 
     /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
     private func tripLight(_ plan: TripPlan) -> String? {
-        guard let today = HomeTopCard.today(Date(), in: .current),
+        guard let today = HomeTopCard.today(cardsNow, in: .current),
               let entry = TripLight.entry(plan: plan, today: today, spots: spots) else { return nil }
         return TripLight.line(entry)
     }
@@ -410,7 +440,7 @@ struct HomeTopCardView: View {
     /// 札・段・当日の行に出る、まだ索引だけのスポット
     private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         guard !spots.isEmpty else { return [] }
-        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                                choices: choices, quiz: quiz, quizSettled: quizSettled)
         return SpotDetailNeeds.home(choices: choices, shelf: shelf, spots: spots)
     }
@@ -453,6 +483,8 @@ struct HomeTopCardView: View {
     private func loadQuiz() async {
         let date = DailyQuiz.today()
         if quiz?.date == date {
+            // 一問は日本時間で替わる。**早抜けでも札と段の日は確かめる**（日本の外では端末の 0 時が別）
+            if isShown { advanceDay() }
             quizSettled = true
             return
         }
@@ -469,9 +501,39 @@ struct HomeTopCardView: View {
         if isShown { applyPendingQuiz() }
     }
 
+    /// 札と段の日（`cardsNow` の端末の暦の日）。変わったら今日の一問と 0 時の待ちを掛け直す
+    private var cardsDay: String { TripPlanText.ymd(pickedIn: .current, cardsNow) }
+
+    /// 札と段の「今日」を今へ進める（**ホームが見えているときだけ呼ぶ**）。日が替わって今日の一問がまだ
+    /// 昨日のものなら、一問が決着するまで段を下げる（`quizSettled`・昨日の選択肢で除いた段を一瞬出さない）
+    private func advanceDay() {
+        let now = Date()
+        guard HomeDailySpots.shouldAdvance(shown: cardsNow, now: now, in: .current) else { return }
+        cardsNow = now
+        if let current = quiz, current.date != DailyQuiz.today(now) { quizSettled = false }
+    }
+
+    /// ホームのまま日をまたぐのを待つ。次の 0 時（端末の暦）か最大15分ごとに起き、**壁時計で日を確かめ直す**
+    /// （`HomeDailySpots.secondsUntilRecheck`）——端末が眠っている間は待ちが進まない見込みで、時計や時刻帯が
+    /// 変わることもある。日が変わっていてホームが見えていれば進める（`cardsDay` が変わり、この待ちは掛け直される）。
+    /// 見えていなければ待ち続ける（戻ったときの `landHomeCards` が進める）。止められたら抜ける
+    private func waitForNextDay() async {
+        while !Task.isCancelled {
+            let seconds = HomeDailySpots.secondsUntilRecheck(now: Date(), in: .current)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            if isShown, HomeDailySpots.shouldAdvance(shown: cardsNow, now: Date(), in: .current) {
+                advanceDay()
+                return
+            }
+        }
+    }
+
     /// 今日の一問の札を整える（ホームが見えているときだけ呼ぶ）: 取り直したものがあれば差し替え、
-    /// **昨日の札は下げる**（0時をまたいだ・取り直しに失敗した）。答えたかも読み直す
+    /// **昨日の札は下げる**（0時をまたいだ・取り直しに失敗した）。答えたかも読み直す。
+    /// 先に札と段の日を今日へ進める（`advanceDay`）
     private func applyPendingQuiz() {
+        advanceDay()
         if let pendingQuiz {
             quiz = pendingQuiz
             self.pendingQuiz = nil

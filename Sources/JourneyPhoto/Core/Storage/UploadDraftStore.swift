@@ -46,6 +46,9 @@ final class UploadDraftStore {
         /// 届いたか分からないまま閉じた写真は立ったまま残り、**開き直しても戻さない**（2026-10-11 判断・
         /// `UploadDraftStore.restorable`）——戻すと、届いていた写真がもう一度投稿される
         var inFlight: Bool? = nil
+        /// 自動の枠だけ: **本人の下書きの中の同じ1枚の印**（`key`・2026-10-16）。本人の下書きを開いて送る途中で
+        /// 終了 →「続きから」で送ったとき、上がった写真を本人の下書きからも外す（残すと次にまた投稿される）
+        var savedKey: String? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -73,6 +76,11 @@ final class UploadDraftStore {
         var savedAt: String
         /// 撮影スポットの紐付け（スポットの画面から開いた投稿）。無ければ nil
         var spot: Spot? = nil
+        /// 「この写真を見て撮影」の元の写真（2026-10-14）。無ければ nil。**前の版の下書きには無い**（nil で読む）
+        var inspired: InspiredBy.Pick? = nil
+        /// 束の印（「1つの投稿にまとめる」の `groupId`・2026-10-16）。途中まで送った束を続きから送るとき、
+        /// 同じ束に入れる（新しい印にすると投稿が2つに割れる）。前の版の下書きには無い（nil）
+        var groupId: String? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -98,13 +106,32 @@ final class UploadDraftStore {
     /// 保存のたびの印（試験で差し替えて、途中で書けない形を作る）
     var makeToken: () -> String = { String(UUID().uuidString.prefix(8)).lowercased() }
 
+    /// 下書きの枠（2026-10-16 判断）。
+    ///
+    /// - `saved`: 本人が「下書きに保存」で残したもの（今までの下書き）
+    /// - `auto`: **アプリが黙って残す書きかけ**（1件）——裏に回ったとき（`scenePhase == .background`）の
+    ///   自動の下書き。本人の下書きを黙って上書きしないよう、**別の鍵・別のファイル名**に置く。
+    ///   画面を閉じる（投稿し終えた・やめた・下書きに保存した）と消える。残っていたら、
+    ///   アプリが途中で終了した——次に開いたとき「続きから」を出す
+    /// - `send(id)`: **送信の控え（投稿ごとに1件）**（2026-10-16 判断）。「投稿する」を押すたびに
+    ///   その画面の控えを書き、上がった写真から外れ、空になれば消える。**ほかの枠には触らない**——
+    ///   書きかけの枠を共有していた頃は、テーマ・スポットから開いた回の送信が前の書きかけを上書きするか、
+    ///   控えを書かずに送るかの二択になった。残っていたら送っている途中でアプリが終了した
+    ///   （次の起動で「送れなかった投稿が N 件あります」・`UploadDraftRules.interruptedNotice`）
+    enum Slot: Equatable {
+        case saved, auto
+        case send(String)
+    }
+
+    let slot: Slot
     private let defaults: UserDefaults
     private let directory: URL
 
     /// - Parameter directory: 画像を置く場所。既定は Application Support
     ///   （利用者に見せるものではなく、端末の掃除で勝手に消えては困る）
-    init(defaults: UserDefaults = .standard, directory: URL? = nil) {
+    init(defaults: UserDefaults = .standard, directory: URL? = nil, slot: Slot = .saved) {
         self.defaults = defaults
+        self.slot = slot
         self.directory = directory ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -113,10 +140,98 @@ final class UploadDraftStore {
     static let keyPrefix = "journey-photo-upload-draft"
     private static let filePrefix = "upload-draft-"
 
-    /// **人ごとの鍵。** ログインしていない人の下書きは作らない（空の userId は nil）
-    static func key(for userId: String) -> String? {
-        userId.isEmpty ? nil : "\(keyPrefix):\(userId)"
+    /// **人ごとの鍵。** ログインしていない人の下書きは作らない（空の userId は nil）。
+    /// 自動の枠は `journey-photo-upload-draft:auto:<userId>`——前置きが同じなので、
+    /// 起動のときの掃除（`sweepOrphans`）は両方の枠の画像を「指されている」と読む
+    static func key(for userId: String, slot: Slot = .saved) -> String? {
+        guard !userId.isEmpty else { return nil }
+        switch slot {
+        case .saved: return "\(keyPrefix):\(userId)"
+        case .auto: return "\(keyPrefix):auto:\(userId)"
+        case .send(let id):
+            // 控えの ID は UUID だけ（区切りの「:」を含まない・取り違えない）
+            guard UUID(uuidString: id) != nil else { return nil }
+            return "\(sendPrefix(for: userId))\(id)"
+        }
     }
+
+    /// その人の送信の控えの鍵の頭（`journey-photo-upload-draft:send:<userId>:`）
+    static func sendPrefix(for userId: String) -> String { "\(keyPrefix):send:\(userId):" }
+
+    /// 鍵がその人の送信の控えなら、その ID。**頭の後ろが UUID ちょうどのときだけ**——userId に「:」を
+    /// 含む別の人（"a" と "a:b"）の控えを取り違えない
+    static func journalId(fromKey key: String, userId: String) -> String? {
+        let prefix = sendPrefix(for: userId)
+        guard !userId.isEmpty, key.hasPrefix(prefix) else { return nil }
+        let rest = String(key.dropFirst(prefix.count))
+        guard let uuid = UUID(uuidString: rest), uuid.uuidString == rest.uppercased() else { return nil }
+        return rest
+    }
+
+    /// 同じ置き場の別の枠（送信の控えを開くため）
+    func sibling(_ slot: Slot) -> UploadDraftStore {
+        let other = UploadDraftStore(defaults: defaults, directory: directory, slot: slot)
+        other.writeFiles = writeFiles
+        return other
+    }
+
+    /// その人の送信の控え（**古い順**）。中身の読めないもの・画像の欠けたものは片づけて数えない
+    func journals(for userId: String) -> [(id: String, draft: Draft)] {
+        let ids = defaults.dictionaryRepresentation().keys.compactMap { Self.journalId(fromKey: $0, userId: userId) }
+        return ids.compactMap { id in sibling(.send(id)).draft(for: userId).map { (id: id, draft: $0) } }
+            .sorted {
+                let (a, b) = (Self.savedDate($0.draft.savedAt) ?? .distantPast, Self.savedDate($1.draft.savedAt) ?? .distantPast)
+                return a != b ? a < b : $0.id < $1.id
+            }
+    }
+
+    /// 保存した時刻の書き方（**ミリ秒まで**——同じ秒に2つ送ると古い順が決まらない）
+    static func savedAtString(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
+    }
+
+    /// 保存した時刻を読む（ミリ秒あり・なしの両方。前の版の下書きはミリ秒が無い）
+    static func savedDate(_ text: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    /// 退会: その人の送信の控えを全部（記録と画像）消す。記録から外れた画像も、鍵の16進の頭と
+    /// **その後ろの UUID** を確かめて拾う（別の人の画像を消さない）
+    func removeAllJournals(for userId: String) {
+        for key in defaults.dictionaryRepresentation().keys {
+            if let id = Self.journalId(fromKey: key, userId: userId) { sibling(.send(id)).clear(for: userId) }
+        }
+        guard !userId.isEmpty,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let head = Self.filePrefix + Self.hex(Self.sendPrefix(for: userId))
+        for name in names where name.hasPrefix(head) {
+            // 頭の後ろは UUID（36字＝16進で72字）と「-」
+            let rest = name.dropFirst(head.count)
+            guard rest.count > 73, rest[rest.index(rest.startIndex, offsetBy: 72)] == "-",
+                  let id = Self.unhex(String(rest.prefix(72))), UUID(uuidString: id) != nil else { continue }
+            try? FileManager.default.removeItem(at: fileURL(name))
+        }
+    }
+
+    private static func hex(_ text: String) -> String { text.utf8.map { String(format: "%02x", $0) }.joined() }
+
+    private static func unhex(_ hex: String) -> String? {
+        var bytes: [UInt8] = []
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            guard let b = UInt8(hex[i..<j], radix: 16) else { return nil }
+            bytes.append(b)
+            i = j
+        }
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    private func storageKey(_ userId: String) -> String? { Self.key(for: userId, slot: slot) }
 
     /// 画像の名前。鍵の文字を16進にするので、人ごとに必ず別の名前になる
     static func imageFileName(forKey key: String, token: String, index: Int) -> String {
@@ -126,7 +241,7 @@ final class UploadDraftStore {
     /// その人の画像の名前の前置き（`upload-draft-<鍵の16進>-`）。終わりの `-` で、鍵が前方一致する
     /// 別の人（"a" と "ab"）を取り違えない
     static func filePrefix(forKey key: String) -> String {
-        "\(filePrefix)\(key.utf8.map { String(format: "%02x", $0) }.joined())-"
+        "\(filePrefix)\(hex(key))-"
     }
 
     private func fileURL(_ name: String) -> URL { directory.appendingPathComponent(name) }
@@ -145,7 +260,7 @@ final class UploadDraftStore {
     /// その人の下書き。**画像が1枚でも消えていたら、無いものとして片づける**
     /// ——欠けたまま戻すと、書いた題が別の写真に付く
     func draft(for userId: String) -> Draft? {
-        guard let key = Self.key(for: userId),
+        guard let key = storageKey(userId),
               let data = defaults.data(forKey: key) else { return nil }
         guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty,
               saved.items.allSatisfy({ FileManager.default.fileExists(atPath: fileURL($0.imageFile).path) }) else {
@@ -172,10 +287,10 @@ final class UploadDraftStore {
     /// - Returns: 書けたか（**黙って失敗しない**——画面が知らせを出す）
     @discardableResult
     func save(_ inputs: [ItemInput], fields: Draft, for userId: String) -> Bool {
-        guard let key = Self.key(for: userId), !inputs.isEmpty else { return false }
+        guard let key = storageKey(userId), !inputs.isEmpty else { return false }
+        _ = bump(key)
         let token = makeToken()
         let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
-        let previous = files(atKey: key)
         var written: [String] = []
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -187,6 +302,56 @@ final class UploadDraftStore {
             for name in written { try? FileManager.default.removeItem(at: fileURL(name)) }
             return false
         }
+        return commit(inputs, names: names, fields: fields, key: key)
+    }
+
+    /// 保存の回（**鍵ごと**・`save`・`saveInBackground`・`clear`・1枚ずつの書き換えで進む）。
+    /// **後から始まった回が勝つ**——先に始まった裏の書き込みが遅れて終わっても、新しい記録・
+    /// 1枚ずつ外した記録を古い中身で上書きしない。入れ物（このクラスの1つ）ごとではなく鍵ごとに数える——
+    /// 同じ鍵を別の入れ物から触っても（`sibling`・起動の知らせ）同じ数を見る
+    private static var generations: [String: Int] = [:]
+
+    private func bump(_ key: String) -> Int {
+        let next = (Self.generations[key] ?? 0) + 1
+        Self.generations[key] = next
+        return next
+    }
+
+    /// 画像を書く口（**主スレッドの外で書く**・試験で遅らせて順番を作る）
+    var writeFiles: @Sendable ([(Data, URL)]) async throws -> Void = { pairs in
+        try await Task.detached(priority: .userInitiated) {
+            for (data, url) in pairs { try data.write(to: url, options: .atomic) }
+        }.value
+    }
+
+    /// `save` と同じことを、**画像の書き込みを主スレッドの外で**する（2026-10-16 判断）。
+    /// 送信の控え（最大10枚）と裏に回ったときの自動の書きかけで使う——主スレッドで数十MB書くと、
+    /// 「投稿する」を押した直後や裏に回る瞬間に画面が固まる。
+    /// 書いている間に新しい保存・`clear` が始まったら、この回の記録は書かない（書いた画像も消す）
+    func saveInBackground(_ inputs: [ItemInput], fields: Draft, for userId: String) async -> Bool {
+        guard let key = storageKey(userId), !inputs.isEmpty else { return false }
+        let mine = bump(key)
+        let token = makeToken()
+        let names = inputs.indices.map { Self.imageFileName(forKey: key, token: token, index: $0) }
+        let urls = names.map { fileURL($0) }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try await writeFiles(Array(zip(inputs.map(\.imageData), urls)))
+        } catch {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        guard mine == Self.generations[key] else {
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        return commit(inputs, names: names, fields: fields, key: key)
+    }
+
+    /// 画像を書き終えた後に記録を差し替え、前の画像を消す（**前の画像は差し替える時点で読む**）
+    private func commit(_ inputs: [ItemInput], names: [String], fields: Draft, key: String) -> Bool {
+        let previous = files(atKey: key)
+        let written = names
         var saved = fields
         saved.items = zip(inputs, names).map { input, name in
             var item = input.item
@@ -207,11 +372,13 @@ final class UploadDraftStore {
 
     /// 記録を読み、1枚ずつの書き換えをして書き戻す（画像は書き換えない）。最後の1枚が外れたら下書きごと消す
     private func update(for userId: String, _ change: (inout [Item]) -> Void) {
-        guard let key = Self.key(for: userId), let data = defaults.data(forKey: key),
+        guard let key = storageKey(userId), let data = defaults.data(forKey: key),
               var saved = try? JSONDecoder().decode(Draft.self, from: data) else { return }
         let before = saved.items
         change(&saved.items)
         guard saved.items != before else { return }
+        // 書いている途中の裏の保存が、外した写真を書き戻さないように
+        _ = bump(key)
         let kept = Set(saved.items.map(\.imageFile))
         if saved.items.isEmpty {
             defaults.removeObject(forKey: key)
@@ -238,9 +405,21 @@ final class UploadDraftStore {
         }
     }
 
+    /// 記録にある下書きから「この写真を見て撮影」の元の写真を外す（付ける1枚の保存が通ったとき）。
+    /// 写真と欄はそのまま
+    func clearInspired(for userId: String) {
+        guard let key = storageKey(userId), let data = defaults.data(forKey: key),
+              var saved = try? JSONDecoder().decode(Draft.self, from: data), saved.inspired != nil else { return }
+        _ = bump(key)
+        saved.inspired = nil
+        if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: key) }
+    }
+
     /// 捨てる（「下書きを削除」・投稿し終えたとき）。**画像のファイルも消す**
     func clear(for userId: String) {
-        guard let key = Self.key(for: userId) else { return }
+        guard let key = storageKey(userId) else { return }
+        // 書いている途中の裏の保存（`saveInBackground`）が、消した後に記録を書き戻さないように
+        _ = bump(key)
         for name in files(atKey: key) { try? FileManager.default.removeItem(at: fileURL(name)) }
         defaults.removeObject(forKey: key)
     }
@@ -249,7 +428,7 @@ final class UploadDraftStore {
     /// 16進の前置き（`imageFileName`）で拾って消す（書きかけの途中で落ちた回の取りこぼし）
     func removeData(for userId: String) {
         clear(for: userId)
-        guard let key = Self.key(for: userId),
+        guard let key = storageKey(userId),
               let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
         let prefix = Self.filePrefix(forKey: key)
         for name in names where name.hasPrefix(prefix) {

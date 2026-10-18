@@ -76,6 +76,11 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// `location` の文字列だけを持つ——台帳はその上に足す情報で、
     /// 撮影地を置き換えるものではない。
     let spotId: String?
+    /// 「この写真を見て撮影」の元の写真の ID（2026-10-14・サーバーの `inspiredBy`）。
+    ///
+    /// **ID だけ・今も見られるかは分からない。** 中身（題・画像・作者）は写真の詳細を開いたときに
+    /// `GET /user/inspired/{id}` で確かめてから出す（`InspiredBy`）。ID だけで行を作らない
+    let inspiredBy: String?
     /// 正方形に切り抜くときの中心（0〜1）。未設定なら中央
     let focalPoint: FocalPoint?
     let exif: Exif?

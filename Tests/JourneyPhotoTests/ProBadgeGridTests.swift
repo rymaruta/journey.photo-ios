@@ -47,7 +47,7 @@ final class ProBadgeGridTests: XCTestCase {
         let shelf = try source("Features/Profile/BadgeShelfView.swift")
         let decorate = try slice(shelf, from: "private func decorateSection", to: "Text(L(\"変える\"")
         XCTAssertFalse(decorate.contains("smallImage"))
-        XCTAssertTrue(decorate.contains("RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 40)"))
+        XCTAssertTrue(decorate.contains("RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 52)"), "板 v2 Shelf: 飾っているバッジは 52pt")
 
         let notes = try source("Features/Notifications/NotificationsView.swift")
         let avatar = try slice(notes, from: "private var avatar", to: "private var personAvatar")
@@ -216,7 +216,7 @@ final class ProBadgeGridTests: XCTestCase {
         XCTAssertEqual(items.map(\.image), [
             "medal-supporter",
             "medal-pro-spring-2027", "medal-pro-summer-2027", "medal-pro-autumn-2026", "medal-pro-winter-2026",
-            "medal-pro-dawn", "medal-pro-compose", "medal-pro-summit",
+            "medal-pro-dawn", "medal-pro-summit",
         ])
         for item in items { XCTAssertFalse(item.image.hasSuffix("-s"), item.id) }
     }

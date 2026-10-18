@@ -35,6 +35,8 @@ struct SpotDetailView: View {
     @State private var page = 0
     @State private var expanded = false
     @State private var camera: MapCameraPosition = .automatic
+    /// この近くの撮影スポット（台帳・2026-10-16）。`spotId` の欄には読んだ座標の鍵を入れる（`nearbySpotKey`）
+    @State private var nearbySpotLoaded: PhotoTrip.Loaded?
 
     private var linked: [Photo] { dropped.visible(spot.photos) }
 
@@ -75,6 +77,7 @@ struct SpotDetailView: View {
                 summary
                 actions
                 stats
+                nearbySpotRow
                 spotPhotos
                 nearbySpots
                 map
@@ -100,6 +103,8 @@ struct SpotDetailView: View {
             frontSettle = nil
             front.disappear()
         }
+        // この近くの撮影スポット（座標のある撮影地だけ）。写真の詳細と同じ索引の口（控えがあれば通信しない）
+        .task(id: nearbySpotKey ?? "") { await loadNearbySpot() }
         .webScreen()
         .navigationTitle(LocationMatch.display(spot.label))
         .navigationBarTitleDisplayMode(.inline)
@@ -161,7 +166,7 @@ struct SpotDetailView: View {
                 // **「1/10」は数えた数**（紐づいた公開写真の枚数そのもの）
                 if hero.count > 1 {
                     Text(SpotScreen.pagerLabel(page: page, count: hero.count) ?? "")
-                        .font(.caption.weight(.semibold))
+                        .font(JPFont.number(JPTypeScale.caption, weight: .semibold))
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -178,8 +183,9 @@ struct SpotDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             // 見出しは画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。
             // 鍵・突き合わせ・地図の検索は元の文字のまま
+            // v2（2026-10-14）: 撮影スポットの頁と同じ明朝 32（`JPFont.photoTitle`）
             Text(LocationMatch.display(spot.label))
-                .font(JPFont.display(28, relativeTo: .title))
+                .font(JPFont.photoTitle)
                 .foregroundStyle(WebTheme.foreground)
             // ⚠️ **ふりがなは出さない。** Web は `content/spot-master.json` に
             // 人が書いたぶんだけ持つ形で（いまは空）、アプリへ配る経路が無い。
@@ -190,8 +196,8 @@ struct SpotDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(WebTheme.faint)
                     Text(line)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
                 }
             }
             // 分類のチップ。**写真が実際に持っているものだけ**（多い順）
@@ -228,7 +234,8 @@ struct SpotDetailView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
+        HStack(spacing: JPSpace.xs) {
             // 🔴 **鍵（スラッグ）が空の地点には「行きたい」を出さない。** 記号だけの
             // 撮影地（「---」など）はスラッグが空になり、押しても `WishlistStore` は
             // 何も残さない——以前は押すと「追加しました」と知らせて、どこにも出なかった
@@ -291,6 +298,71 @@ struct SpotDetailView: View {
         .padding(.horizontal, 16)
     }
 
+    // MARK: - この近くの撮影スポット（台帳）
+
+    /// 撮影地の座標。**`place` を作らずに直に取る**（`place` は分類・広い撮影地を毎回数え直す・`place.coords` と同じ値）
+    private var nearbyCoords: Photo.Coords? { linked.compactMap(\.coords).first }
+
+    /// 読みに行く鍵（撮影地の座標）。座標の無い撮影地は nil（行を出さない）
+    private var nearbySpotKey: String? {
+        nearbyCoords.map { "near|\(spot.slug)|\($0.lat),\($0.lng)" }
+    }
+
+    /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。撮影地の集まりの頁から、
+    /// 台帳の撮影スポットの頁（撮り方・季節・経路）へ。選び方は写真の詳細と同じ（`PhotoTrip.nearbySpot`・2km）。
+    /// 黒地の上なので、合図の字は真鍮・名前は白・矢印は白 50%（写真の詳細の「この写真を見て撮影」の行と同じ形）。当たり 44pt
+    @ViewBuilder
+    private var nearbySpotRow: some View {
+        if let loaded = nearbySpotLoaded, loaded.spotId == nearbySpotKey, let official = loaded.spot {
+            NavigationLink {
+                OfficialSpotView(spot: official, spots: loaded.index, photos: dropped.visible(loaded.photos ?? []),
+                                 photosKnown: loaded.photos != nil)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityHidden(true)
+                    Text(PhotoTrip.nearbySpotTitle)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text(official.name)
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text("›")
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .accessibilityLabel(PhotoTrip.nearbySpotTitle + ": " + official.name)
+            .accessibilityIdentifier("spot.nearbySpot")
+        }
+    }
+
+    /// 台帳の索引を読み、いちばん近い撮影スポットを引く。読めなかった回は覚えない
+    private func loadNearbySpot() async {
+        guard let key = nearbySpotKey else { return }
+        let coords = nearbyCoords
+        let stillHere = { !Task.isCancelled && nearbySpotKey == key }
+        if nearbySpotLoaded?.spotId != key {
+            guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
+            nearbySpotLoaded = PhotoTrip.Loaded(spotId: key, spot: PhotoTrip.nearbySpot(to: coords, in: rows),
+                                                index: rows, photos: nil)
+        }
+        guard let loaded = nearbySpotLoaded, loaded.spotId == key, loaded.spot != nil, loaded.photos == nil else { return }
+        guard let feed = try? await environment.gallery.fetchPhotos(), stillHere(),
+              nearbySpotLoaded?.spotId == key else { return }
+        nearbySpotLoaded = loaded.withPhotos(feed)
+    }
+
     // MARK: - 写真と近くのスポット
 
     @ViewBuilder
@@ -301,8 +373,8 @@ struct SpotDetailView: View {
                 // **空を隠さない。** 「まだ紐づいていない」と「読み込み中」は別
                 Text(L("この撮影地に紐づいた公開写真はまだありません。投稿するときに場所を選ぶと、ここに並びます。",
                        "No public photos are linked to this place yet."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
                     .padding(.horizontal, 16)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -354,9 +426,8 @@ struct SpotDetailView: View {
                 SpotDetailParts.sectionHeader(L("地図", "Map"))
                 Map(position: $camera) {
                     Annotation(LocationMatch.display(spot.label), coordinate: center) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(WebTheme.foreground)
+                        // **地図のピンは真鍮**（owner の好み・CLAUDE.md）。地図のタブの撮影スポットと同じ印
+                        SpotMapMarker(photoURL: nil)
                     }
                 }
                 .onAppear {
@@ -366,8 +437,8 @@ struct SpotDetailView: View {
                         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
                 }
                 .frame(height: 200)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 16)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+                .padding(.horizontal, JPSpace.m)
                 .allowsHitTesting(false)
                 .accessibilityLabel(L("\(LocationMatch.display(spot.label)) の地図", "Map of \(LocationMatch.display(spot.label))"))
             }

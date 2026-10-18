@@ -95,6 +95,8 @@ final class ViewModelTests: XCTestCase {
     /// 投稿画面を閉じたら、その画面で上がった写真を渡す（次に閉じたら入れ替わる）
     func testPostSheetCloseHandsOverPostedPhotos() async throws {
         let router = TabRouter()
+        // 公開の一覧に重ねる控え（共有）も書くので、ほかの試験に残さない
+        defer { PostedPhotos.Ledger.shared.clear() }
         let p = try postedPhoto("new")
         router.notePosted(p)
         XCTAssertTrue(router.lastPosted.isEmpty, "閉じる前に渡した")
@@ -523,6 +525,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.isFollowing)   // 読み込みが「外れていた」と書いた後の姿
         await model.toggleFollow(userId: "u1", environment: env, follow: false)
         XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"])
+    }
+
+    /// 🔴 **送っている間にもう一度押しても、2本目を送らない**（2026-10-16）。
+    /// `disabled` は描き直しの後にしか効かず、素早い2回で2本走っていた
+    func testProfileFollowSecondPressWhileSendingIsIgnored() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["DELETE /users/u1/follow": gate])))
+        let model = UserProfileViewModel()
+        let first = Task { await model.toggleFollow(userId: "u1", environment: env, follow: false) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.isWorking, "前提: 1本目を送っている")
+        await model.toggleFollow(userId: "u1", environment: env, follow: false)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"], "送っている間の2回目も送った")
+        XCTAssertFalse(model.isWorking)
     }
 
     /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
@@ -2140,7 +2161,8 @@ final class NotificationDestinationTests: XCTestCase {
         }
     }
 
-    /// ストーリーへの返信は行き先が無い（24時間で消えるため）。
+    /// ストーリーへの返信は、そのストーリーがまだ出ていると分かるまで行き先が無い（24時間で消えるため）。
+    /// 出ている間は返信の一覧へ行く（2026-10-16・`UXDeadEndsTests`）
     func testStoryReplyGoesNowhere() async throws {
         let n = try notification(#"{"type":"storyreply","photoId":"s1"}"#)
         guard case .none = model(feed: []).destination(for: n) else {

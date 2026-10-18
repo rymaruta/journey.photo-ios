@@ -36,7 +36,10 @@ struct OfflineTripCard: View {
         Group {
             switch phase {
             case .hidden:
-                EmptyView()
+                // 🔴 **EmptyView にしない**（2026-10-16 判断）。最初は Pro かどうか読めていない（nil）ので
+                // `.hidden` になり、中身が EmptyView だけだと下の `.task` が走らず、`isPro` が nil のまま
+                // 札がいつまでも出なかった（StoriesRow の 1.1.5 と同じ形）。高さ 0 の見えない1枚を置く
+                StoriesRow.loadingAnchor
             case .free:
                 freeCard
             default:
@@ -78,31 +81,34 @@ struct OfflineTripCard: View {
                 }
                 if let error = accessError ?? status.error {
                     Text(error)
-                        .font(.footnote)
+                        .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .offlineCardFace()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("電波なしで使う", "Use offline"))
     }
 
-    private func header(_ title: String, saved: Bool = false, detail: String? = nil) -> some View {
+    /// 札の見出し（板 `.ot`: 16 の太字。電話の印は真鍮。保存済みかどうかは印の形（矢印・チェック）で言い分ける。
+    /// 2026-10-14 判断: 板の注記は保存済みを緑にしていたが、画面の色は白・黒・真鍮・危険の色だけ（CLAUDE.md）。
+    /// 緑は入れない）。
+    /// `icon: false` は印を置かない姿（保存中・途中で止まった・削除の確かめ）
+    private func header(_ title: String, saved: Bool = false, icon: Bool = true, detail: String? = nil) -> some View {
         HStack(spacing: 10) {
-            OfflinePhoneIcon(saved: saved)
+            if icon {
+                OfflinePhoneIcon(saved: saved, color: WebTheme.accent)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
                 if let detail {
                     Text(detail)
-                        .font(JPFont.mono(12))
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.meta)
+                        .foregroundStyle(WebTheme.text3)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -115,13 +121,13 @@ struct OfflineTripCard: View {
         VStack(alignment: .leading, spacing: 10) {
             header(L("電波なしで使えるようにする", "Make available offline"))
             Text(OfflineTripText.beforeBody(stops: plan.itemCount))
-                .font(.footnote)
-                .lineSpacing(3)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.footnote)
+                .lineSpacing(4)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             Text(OfflineTripText.estimateLine(stops: plan.itemCount))
-                .font(JPFont.mono(12))
-                .foregroundStyle(WebTheme.faint)
+                .font(JPFont.meta)
+                .foregroundStyle(WebTheme.text3)
             primaryButton(L("端末に保存する", "Save to this iPhone"), action: .save)
         }
     }
@@ -129,20 +135,20 @@ struct OfflineTripCard: View {
     /// 2 保存中
     private func saving(_ p: OfflineSaveStatus.Progress) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(L("端末に保存しています", "Saving to this iPhone"))
+            header(L("端末に保存しています", "Saving to this iPhone"), icon: false)
             OfflineProgressBar(done: p.done, total: p.total)
             HStack {
                 Text(OfflineTripText.progressPlaces(done: p.done, total: p.total))
                 Spacer()
                 Text(OfflineTripText.progressBytes(bytes: p.bytes, estimate: p.estimate))
             }
-            .font(JPFont.mono(12))
-            .foregroundStyle(WebTheme.muted2)
+            .font(JPFont.mono(13, relativeTo: .footnote))
+            .foregroundStyle(WebTheme.text2)
             .accessibilityHidden(true)
             Text(L("ほかの画面に移っても続きます", "Keeps going if you leave this screen"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-            outlineButton(L("止める", "Stop"), color: WebTheme.foreground) {
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+            TripOutlineButton(title: L("止める", "Stop")) {
                 offline.stop(plan.planId)
             }
         }
@@ -151,15 +157,20 @@ struct OfflineTripCard: View {
     /// 途中で止まった（owner 2026-10-09: 次に開いたら「続きから保存」）。板 72b-2 の姿で、棒は止まったところ
     private func interrupted(_ p: OfflineSaveStatus.Partial) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(L("保存が途中で止まりました", "Saving stopped partway"))
-            OfflineProgressBar(done: p.done, total: p.total)
+            header(L("保存が途中で止まりました", "Saving stopped partway"), icon: false)
+            // 止まったところの棒（板 7: 真鍮 50%）
+            OfflineProgressBar(done: p.done, total: p.total, stalled: true)
             Text(OfflineTripText.interruptedBody(done: p.done, total: p.total))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.footnote)
+                .lineSpacing(4)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
-            primaryButton(L("続きから保存", "Continue saving"), action: .resume)
-            outlineButton(L("端末から削除", "Remove from iPhone"), color: WebTheme.danger) {
-                offline.delete(plan.planId)
+            // 板 7: 主ボタンと「端末から削除」の線を横に並べる
+            HStack(spacing: JPSpace.xs) {
+                primaryButton(L("続きから保存", "Continue saving"), action: .resume)
+                TripOutlineButton(title: L("端末から削除", "Remove from iPhone"), danger: true) {
+                    offline.delete(plan.planId)
+                }
             }
         }
     }
@@ -170,49 +181,41 @@ struct OfflineTripCard: View {
             header(L("電波なしで使えます", "Available offline"), saved: true,
                    detail: OfflineTripText.savedLine(bytes: s.bytes, savedAt: s.savedAt))
             if let change, let message = OfflineTripText.staleMessage(change) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Circle().fill(WebTheme.accent).frame(width: 8, height: 8).accessibilityHidden(true)
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                // プランが変わった知らせ（板 4: 真鍮 8% の帯に真鍮の字・黒地の上の合図）
+                Text(message)
+                    .font(JPFont.footnote)
+                    .lineSpacing(3)
+                    .foregroundStyle(WebTheme.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, JPSpace.s)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(WebTheme.accentSoft, in: RoundedRectangle(cornerRadius: JPRadius.s))
+                HStack(spacing: JPSpace.xs) {
+                    primaryButton(L("保存し直す", "Save again"), action: .resave)
+                    TripOutlineButton(title: L("端末から削除", "Remove from iPhone"), danger: true) {
+                        confirmingDelete = true
+                    }
                 }
-                primaryButton(L("保存し直す", "Save again"), action: .resave)
-                Button {
-                    confirmingDelete = true
-                } label: {
-                    Text(L("端末から削除", "Remove from iPhone"))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.danger)
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
             } else {
                 if let manifest = offline.manifest(plan.planId) {
-                    VStack(spacing: 0) {
-                        JPCardDivider()
-                        NavigationLink {
-                            OfflineTripView(manifest: manifest, preview: true)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(L("電波がないときの見え方を確かめる", "See how it looks offline"))
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                            }
-                            .font(.footnote.weight(.semibold))
+                    // 真鍮の文字のリンク（板 3・黒地の上の手がかり）
+                    NavigationLink {
+                        OfflineTripView(manifest: manifest, preview: true)
+                    } label: {
+                        Text(L("電波がないときの見え方を確かめる ›", "See how it looks offline ›"))
+                            .font(JPFont.body)
                             .foregroundStyle(WebTheme.accent)
-                            .frame(minHeight: WebTheme.minTapTarget)
+                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
                             .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
                     }
+                    .buttonStyle(.plain)
                 }
-                HStack(spacing: 8) {
-                    outlineButton(L("保存し直す", "Save again"), color: WebTheme.foreground) {
+                HStack(spacing: JPSpace.xs) {
+                    TripOutlineButton(title: L("保存し直す", "Save again")) {
                         run(.resave)
                     }
-                    outlineButton(L("端末から削除", "Remove from iPhone"), color: WebTheme.danger) {
+                    TripOutlineButton(title: L("端末から削除", "Remove from iPhone"), danger: true) {
                         confirmingDelete = true
                     }
                 }
@@ -223,19 +226,21 @@ struct OfflineTripCard: View {
     /// 5 削除の確かめ（札の中で開く）
     private func deleteConfirm(bytes: Int64) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(L("端末から削除しますか？", "Remove from this iPhone?"), saved: true)
+            header(L("端末から削除しますか？", "Remove from this iPhone?"), icon: false)
             Text(OfflineTripText.deleteBody(bytes: bytes))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
+                .font(JPFont.footnote)
+                .lineSpacing(4)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                outlineButton(L("削除する", "Remove"), color: WebTheme.danger, bold: true) {
+            // 板 5: 「削除する」は赤 16% の地・赤 50% の線・白の字。キャンセルは線
+            HStack(spacing: JPSpace.xs) {
+                TripOutlineButton(title: L("削除する", "Remove"), strong: true) {
                     confirmingDelete = false
                     offline.delete(plan.planId)
                     UIAccessibility.post(notification: .announcement,
                                          argument: L("端末から削除しました", "Removed from this iPhone"))
                 }
-                outlineButton(Labels.Common.cancel, color: WebTheme.foreground) {
+                TripOutlineButton(title: Labels.Common.cancel) {
                     confirmingDelete = false
                 }
             }
@@ -247,41 +252,31 @@ struct OfflineTripCard: View {
         Button { showPaywall = true } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    OfflinePhoneIcon(color: WebTheme.muted2)
                     Text(L("電波なしで使えるようにする", "Make available offline"))
-                        .font(.subheadline.weight(.semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(WebTheme.text)
+                    // Pro の印（板 6: 真鍮の線の札・眉ラベルと同じ字）
                     Text("PRO")
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(0.9)
+                        .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, 5)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 1)
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(WebTheme.accent, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
+                            .strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
                 }
                 Text(L("作例・光の時刻・メモと周りの地図を端末に保存して、圏外でも旅を確かめられます。",
                        "Save examples, light times, notes and map images to your iPhone to check your trip with no signal."))
-                    .font(.footnote)
-                    .lineSpacing(3)
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.footnote)
+                    .lineSpacing(4)
+                    .foregroundStyle(WebTheme.text2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: 0) {
-                    JPCardDivider()
-                    HStack(spacing: 6) {
-                        Text(L("Pro について見る", "Learn about Pro"))
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                    }
-                    .font(.footnote.weight(.semibold))
+                Text(L("Pro について見る ›", "Learn about Pro ›"))
+                    .font(JPFont.body)
                     .foregroundStyle(WebTheme.accent)
                     .frame(minHeight: WebTheme.minTapTarget)
-                }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .offlineCardFace()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -334,52 +329,25 @@ struct OfflineTripCard: View {
 
     // MARK: - ボタン
 
-    /// 主ボタン（写真の無い画面＝真鍮の塗りに墨・デザインシステム）
+    /// 主ボタン（写真の無い画面＝真鍮の塗りに墨・`JPPillStyle.main(onPhoto: false)`）
     private func primaryButton(_ title: String, action: OfflineTripAccess.Action) -> some View {
         let ready = sourcesReady && plan.itemCount > 0 && !preparing
         return Button { run(action) } label: {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(WebTheme.accentText)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                .background(WebTheme.accentFill, in: Capsule())
-                .contentShape(Capsule())
+                .jpPillButton(.main(onPhoto: false))
         }
         .buttonStyle(.plain)
         .disabled(!ready)
         .opacity(ready ? 1 : 0.5)
     }
-
-    private func outlineButton(_ title: String, color: Color, bold: Bool = false,
-                               action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(bold ? .footnote.weight(.semibold) : .footnote)
-                .foregroundStyle(color)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
-/// 保存の進み（板: 高さ 6・白 12% の地に真鍮）
-struct OfflineProgressBar: View {
-    let done: Int
-    let total: Int
-
-    var body: some View {
-        let fraction = total > 0 ? min(max(Double(done) / Double(total), 0), 1) : 0
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.12))
-                Capsule().fill(WebTheme.accent).frame(width: geo.size.width * fraction)
-            }
-        }
-        .frame(height: 6)
-        .accessibilityElement()
-        .accessibilityLabel(L("端末への保存", "Saving to this iPhone"))
-        .accessibilityValue(OfflineTripText.progressAccessibility(done: done, total: total))
+extension View {
+    /// 電波なしで使う札の面（板 `.oc`: surface-1・白 8% の縁・角 16・内側 16）
+    func offlineCardFace() -> some View {
+        self
+            .padding(JPSpace.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .jpCardFace()
     }
 }

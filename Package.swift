@@ -39,12 +39,16 @@ let package = Package(
         .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
         .target(name: "MapKit", dependencies: ["SwiftUI", "UIKit", "CoreLocation"], path: "Shims/MapKit"),
         .target(name: "AVFoundation", dependencies: ["QuartzCore"], path: "Shims/AVFoundation"),
-        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], path: "Shims/AVKit"),
+        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation", "UIKit"], path: "Shims/AVKit"),
         .target(name: "UserNotifications", path: "Shims/UserNotifications"),
         // 電波の有無の見張り（`NWPathMonitor`・電波なしで使える旅）
         .target(name: "Network", path: "Shims/Network"),
         // 端末の傾き（構図の水準器 `LevelMotion`・2026-10-10）
         .target(name: "CoreMotion", path: "Shims/CoreMotion"),
+        // 近くの人を見つける電波（すれちがい `PassRadio`・2026-10-16）
+        .target(name: "CoreBluetooth", path: "Shims/CoreBluetooth"),
+        // 短い効果音（旅のトランクの貼る・ハンドルの目盛り・カプセル `TrunkSound`・2026-10-17）
+        .target(name: "AudioToolbox", path: "Shims/AudioToolbox"),
         // 定期購入（Pro）。SwiftUI と重なる口（`manageSubscriptionsSheet`）があるので SwiftUI を読む
         .target(name: "StoreKit", dependencies: ["SwiftUI"], path: "Shims/StoreKit"),
         .target(name: "ImageIO", path: "Shims/ImageIO"),
@@ -64,7 +68,7 @@ let package = Package(
             dependencies: [
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
-                "StoreKit", "QuartzCore", "Network", "CoreMotion", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "StoreKit", "QuartzCore", "Network", "CoreMotion", "CoreBluetooth", "AudioToolbox", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

@@ -296,12 +296,15 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView() }"))
         // 評価のお願いと重ねない（2026-10-11）: 説明が決め終わるまで待ち、出ている・出した回は頼まない
         XCTAssertTrue(root.contains("defer { pushPrimer.finishDeciding() }"), "説明を決め終えても評価の待ちを解いていない")
-        XCTAssertTrue(root.contains(", !pushPrimer.isDeciding { break }"),
+        // 2026-10-17: 待ち方と条件は `PostModalGate` に寄せた（条件そのものは TrunkReviewFixesTests が振る舞いで見る）
+        XCTAssertTrue(root.contains("until: PostModalGate.reviewWaitIsOver"),
                       "評価のお願いが説明を決め終わるのを待っていない")
+        XCTAssertFalse(PostModalGate.reviewWaitIsOver(PostModalSnapshot(pushPrimerDeciding: true)))
+        XCTAssertFalse(PostModalGate.reviewMayAsk(PostModalSnapshot(pushPrimerShowing: true)),
+                       "評価のお願いが、出ている通知の説明を見ていない")
         let rootLines = root.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        // 評価のお願いの guard（出ている画面を見る行）の終わりに、出ている説明を見る条件がある
-        guard let guardLine = rootLines.firstIndex(where: { $0.hasPrefix("guard !") && $0.hasSuffix(", !showPushPrimer,") }) else {
-            return XCTFail("評価のお願いが、出ている通知の説明を見ていない（`!showPushPrimer`）")
+        guard let guardLine = rootLines.firstIndex(where: { $0 == "guard PostModalGate.reviewMayAsk(postModalSnapshot())," }) else {
+            return XCTFail("評価のお願いが、出ている画面を見ていない")
         }
         XCTAssertEqual(rootLines[guardLine + 1], "pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),",
                        "説明を出した回にも評価を頼む")
@@ -317,9 +320,16 @@ final class ScreenWiringTests: XCTestCase {
                       "断られた人を設定アプリの「通知」へ案内していない")
         XCTAssertFalse(rows.contains("UIApplication.openSettingsURLString"),
                        "通知の案内がアプリの設定の一番上を開く（「通知」の行を探す手間が増える）")
-        XCTAssertTrue(rows.contains(".background(WebTheme.accent.opacity(0.08))"),
+        // v2（2026-10-14）: 地は brass-soft（真鍮 8% を黒に重ねた #1C170E）。行いっぱいの矩形のまま。
+        // 2026-10-16: ボタンに付けた地は実機で上の角が丸く抜けた → ボタンの後ろに別の矩形として敷く
+        // 2026-10-16: 行は部品（`PushOffNoticeRow`）に出した（すれちがいの設定と同じものを使う）
+        XCTAssertTrue(rows.contains("PushOffNoticeRow(notice: notice"), "「前の晩に知らせる」が案内の行の部品を使っていない")
+        let notice = try source("Features/Common/PushOffNoticeRow.swift")
+        XCTAssertTrue(notice.contains(".fill(WebTheme.accentSoft)"),
                       "「通知がオフのため届きません」の地が行いっぱいに塗られていない")
-        XCTAssertFalse(rows.contains("RoundedRectangle(cornerRadius: 12)"),
+        XCTAssertFalse(notice.contains(".background(WebTheme.accentSoft)"),
+                       "案内の地をボタンに付けると、実機で上の角が丸く抜ける（2026-10-16）")
+        XCTAssertFalse(notice.contains("RoundedRectangle(cornerRadius: 12)"),
                        "案内の地を角丸にすると、角の外側が札の地のまま残り文字が塗りの外に出る")
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),

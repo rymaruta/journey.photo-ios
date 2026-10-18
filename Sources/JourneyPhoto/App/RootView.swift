@@ -11,15 +11,16 @@ struct RootView: View {
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
-    /// 「構図を重ねて撮る」（Pro）の確かめに使う（渡し終えた回数・2026-10-10）
-    @EnvironmentObject private var store: StoreService
-    /// 投稿のシートの「構図を重ねて撮る」（Pro・作例なし）を開く流れ（`ComposeGuideLauncher`）
+    /// 投稿のシートの「構図を重ねて撮る」（作例なし・2026-10-17 から全員無料）を開く流れ（`ComposeGuideLauncher`）
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
     @State private var pendingCapture: CameraCapture?
     /// 投稿のシートで「構図を重ねて撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
     /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）
     @State private var openCompositionAfterPostSheet = false
+    /// 投稿のシートの「カメラで撮る」（2026-10-16）。撮った1枚は `pendingCapture` に入れ、
+    /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
+    @State private var showPostCamera = false
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -28,6 +29,12 @@ struct RootView: View {
     /// 投稿の選択。シートが閉じきった後に次の画面を開く
     @State private var pendingPostChoice: PostSheet.Kind?
     @State private var showPhotoUpload = false
+    /// 「送れなかった投稿があります」（送っている途中でアプリが終了した・起動のあと一度だけ・2026-10-16）
+    @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
+    /// 送れなかった投稿を確かめた人（人ごとに起動のあと一度だけ）
+    @State private var checkedInterruptedFor: String?
+    /// 起動のときの知らせで「続きから」を押した控え（投稿の画面で尋ね直さずに戻す・閉じたら下ろす）
+    @State private var resumeJournalId: String?
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
@@ -38,6 +45,24 @@ struct RootView: View {
     @ObservedObject private var pushPrimer = PushPrimerStore.shared
     @EnvironmentObject private var push: PushCenter
     @State private var showPushPrimer = false
+    /// 旅のトランク: 投稿のお礼に届いたラベル（`TrunkArrivals`・2026-10-17）。出している束
+    @ObservedObject private var trunkArrivals = TrunkArrivals.shared
+    @State private var trunkBatch: TrunkArrivals.Batch?
+    /// 評価のお願いが決めている最中（届いた画面はこれが終わるまで待つ・`PostModalGate`）
+    @State private var reviewDeciding = false
+    /// 旅のトランクの「はじめての硬貨」（`TrunkWelcome`・2026-10-18）。出している案内
+    @ObservedObject private var trunkWelcome = TrunkWelcome.shared
+    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @State private var trunkWelcomeGrant: TrunkWelcome.Grant?
+    /// 案内の全画面が実際に出たか（`TrunkWelcomeView` の `onAppear` が立てる）
+    @State private var welcomeAppeared = false
+    /// 案内を出す頃合いを待っている仕事（1本だけ・人が替わったら止める）
+    @State private var welcomeOffer: Task<Void, Never>?
+    /// 画面写真の見本の案内を出したか（起動のあと1回だけ）
+    @State private var previewWelcomeDelivered = false
+    /// 起動のときの案内（新しくなったこと → 初期ユーザー章）を決め終えるまで true。
+    /// はじめての硬貨の案内はこれが終わってから出す（`PostModalGate.welcomeMayShow`）
+    @State private var launchNoticesDeciding = true
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -46,6 +71,9 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
+    /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
+    /// 流れを閉じたら忘れる
+    @State private var importTrip: LibraryTrip?
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -295,7 +323,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithPushPrimer
+        tabsWithTrunkWelcome
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -304,6 +332,12 @@ struct RootView: View {
                     auth.noteProfileChanged()
                 }
             }
+    }
+
+    /// 贈り物を決めて、起動のときの案内を決め終える（はじめての硬貨の案内はこのあと・`PostModalGate.welcomeMayShow`）
+    private func decideFoundingGift() async {
+        await presentFoundingGiftIfNeeded()
+        launchNoticesDeciding = false
     }
 
     /// 初期ユーザー章を持っていて、まだ飾っていない人に贈り物の画面を出す（`FoundingGiftGate`）。
@@ -328,6 +362,184 @@ struct RootView: View {
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
             .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+    }
+
+    /// 届いた画面に、旅のトランクの「はじめての硬貨」の案内（2026-10-18 owner 承認）を足したもの。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithTrunkWelcome: some View {
+        tabsWithTrunkArrival
+            // 開いたとき（人が替わったときも）に一度だけ呼ぶ。入口の口が後から読めたら、そのときにも確かめる
+            .task(id: auth.userId) { await claimTrunkWelcome() }
+            .onChange(of: trunkAvailability.isAvailable) { _, available in
+                if available { Task { await claimTrunkWelcome() } }
+            }
+            .onChange(of: trunkWelcome.requests) { _, _ in offerTrunkWelcomeWhenIdle() }
+            // 待っていたものが終わったら、待ちきれずに残った案内を出し直す（起動の案内・届いた画面・通知の説明・評価・
+            // 投稿やメニューのシートを閉じた・前面に戻った）
+            .onChange(of: welcomeWaitKey) { _, _ in
+                if trunkWelcome.hasPending { offerTrunkWelcomeWhenIdle() }
+            }
+            .fullScreenCover(item: $trunkWelcomeGrant, onDismiss: {
+                // 案内の間に入った届いた束は、閉じてから出す（`PostModalGate.trunkMayShow`）
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+                welcomeAppeared = false
+            }) { grant in
+                // 実際に出たときだけ控えを消す（`TrunkWelcome.noteShown`）。出たことは待ちの仕事も見る
+                TrunkWelcomeView(grant: grant) {
+                    welcomeAppeared = true
+                    trunkWelcome.noteShown(userId: auth.userId)
+                }
+            }
+            // 人が替わった（ログアウトを含む）: 前の人の案内を下ろす
+            .onChange(of: auth.userId) { _, userId in
+                welcomeOffer?.cancel()
+                welcomeOffer = nil
+                // 出しかけの案内も下ろす（立ったまま残ると、次の人の届いた画面と評価のお願いが止まる）
+                trunkWelcomeGrant = nil
+                trunkWelcome.noteUser(userId)
+            }
+    }
+
+    /// はじめての硬貨の案内が待っているもの（どれかが変わったら出せるか見直す）。
+    /// 2026-10-18 の見直し: 写真の全画面やシートを開いたまま待ちが切れても、閉じた・前面に戻ったときに出し直す
+    /// （投稿のシート `postSheetsClosed`・メニュー `menuSheetsClosed`・`scenePhase == .active`）
+    private var welcomeWaitKey: [Int] {
+        [launchNoticesDeciding, showWhatsNew, foundingGiftName != nil, trunkBatch != nil, showPushPrimer, reviewDeciding,
+         scenePhase == .active, showNotifications, showMenu].map { $0 ? 1 : 0 }
+            + [tabRouter.postSheetsClosed, tabRouter.menuSheetsClosed]
+    }
+
+    /// はじめての硬貨を呼ぶ（`TrunkWelcome.claim`: ログイン済み・トランクが使える・印が無い・この起動でまだ）。
+    /// 画面写真の見本（`-JPPreviewTrunkWelcome`）ではサーバーを呼ばずに案内だけ出す
+    private func claimTrunkWelcome() async {
+        if let added = PreviewSession.trunkWelcomeAdded {
+            guard !previewWelcomeDelivered else { return }
+            previewWelcomeDelivered = true
+            trunkWelcome.noteUser(auth.userId)
+            trunkWelcome.deliverPreview(.init(added: added, coins: 2 + added))
+            return
+        }
+        // まだ出していない案内の控えがあれば、サーバーを呼ばずに出す待ちへ戻す（待ちが切れた・終わった・落ちた回）
+        if trunkWelcome.restore(userId: auth.userId) { return }
+        guard let userId = auth.userId, !trunkWelcome.isDone(userId) else { return }
+        // マイページの札（`TrunkAvailability.refresh` → `TrunkEntryStore.read`）が先に読めるよう、少し待つ。
+        // 口の有無はその1回の読み込みを使い、**この起動でまだ誰も確かめていないときだけ**こちらから確かめる
+        // （同じ人の読み込みが走っていれば `TrunkEntryStore.read` が相乗りさせる）。口が後から読めたら
+        // `onChange(of: trunkAvailability.isAvailable)` でもう一度ここへ来る
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        if !trunkAvailability.isAvailable, !trunkAvailability.checkedThisLaunch.contains(userId) {
+            await trunkAvailability.refresh(userId: userId, service: environment.trunk)
+        }
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        let service = environment.trunk
+        await trunkWelcome.claim(userId: userId, available: trunkAvailability.isAvailable) { try await service.welcome() }
+    }
+
+    /// **ほかの画面が閉じてから**はじめての硬貨の案内を出す（いちばん後ろ・`PostModalGate.welcomeMayShow`）。
+    /// 待つのは1本だけ・最長で約10分（2026-10-18 の見直し: 写真の全画面のように閉じた合図の無い画面を開いたままでも、
+    /// 閉じたあとに出せるように長く待つ）。待ちきれなければ案内は残し（端末にも控えてある）、シートを閉じた・前面に
+    /// 戻った・次の起動のときに出し直す（硬貨はもう手持ちに在る）
+    private func offerTrunkWelcomeWhenIdle() {
+        guard welcomeOffer == nil else { return }
+        welcomeOffer = Task { @MainActor in
+            let ready = await PostModalGate.wait(tries: 600, snapshot: postModalSnapshot,
+                                                 until: PostModalGate.welcomeMayShow,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            // 取り消された仕事は、あとから始まった仕事の席を空けない（人が替わったときに止めて空けてある）
+            if Task.isCancelled { return }
+            welcomeOffer = nil
+            guard ready, trunkWelcomeGrant == nil, let grant = trunkWelcome.consume() else { return }
+            let owner = auth.userId
+            welcomeAppeared = false
+            trunkWelcomeGrant = grant
+            // 出たか確かめる（同じ瞬間に別のシートが出始めると、全画面は黙って出ない）。秒数では決めない——
+            // 何かが出ている間（自分の全画面が出かけている間も）は待ち、何も出ていない状態が続いたら「出なかった」と
+            // して出している扱いを下ろし、待ちへ戻す（届いた画面と評価のお願いを止めたままにしない・`WelcomePresentationWatch`）
+            var watch = WelcomePresentationWatch()
+            while !Task.isCancelled, trunkWelcomeGrant == grant, auth.userId == owner {
+                switch watch.check(appeared: welcomeAppeared, modalPresenting: ModalProbe.isPresenting(),
+                                   sceneActive: scenePhase == .active, now: Date()) {
+                case .shown:
+                    return
+                case .waiting:
+                    try? await Task.sleep(nanoseconds: UInt64(watch.pollInterval * 1_000_000_000))
+                case .giveBack:
+                    trunkWelcomeGrant = nil
+                    trunkWelcome.requeue(grant, userId: owner)
+                    offerTrunkWelcomeWhenIdle()
+                    return
+                }
+            }
+        }
+    }
+
+    /// 通知の説明に、旅のトランクの「ラベルが届きました」（モック LabelArrived・2026-10-17）を足したもの。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithTrunkArrival: some View {
+        tabsWithPushPrimer
+            .onChange(of: trunkArrivals.requests) { _, _ in offerTrunkArrivalWhenIdle() }
+            // 一部だけ上がった回は投稿の画面が開いたまま。閉じたら出し直す（待ちきれずに残った束も）
+            .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensTrunkArrived`・Debug のみ）
+            .task { await offerPreviewTrunkArrival() }
+            .fullScreenCover(item: $trunkBatch, onDismiss: {
+                // 届いた画面で貼った: 閉じ切ってから全体の知らせを1つだけ（届いた画面の上には出さない）
+                if trunkArrivals.consumeStuckFromArrival() { toasts.show(L("トランクに貼りました", "Stuck on your trunk")) }
+                // 閉じている間に次の束が入っていれば出す
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { batch in LabelArrivedView(batch: batch) }
+            // 待っていた画面が閉じたら、待ちきれずに残った束を出し直す（通知の説明・評価の判断）
+            .onChange(of: showPushPrimer) { _, showing in
+                if !showing, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            .onChange(of: reviewDeciding) { _, deciding in
+                if !deciding, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }
+            // 人が替わった（ログアウトを含む）: 前の人に届いた束と一言を捨てる
+            .onChange(of: auth.userId) { _, userId in trunkArrivals.noteUser(userId) }
+            .task { trunkArrivals.noteUser(auth.userId) }
+    }
+
+    /// **ほかの画面が閉じてから**届いた画面を出す（投稿の画面・Threads への共有の画面が閉じきるまで待つ。
+    /// 最長で約30秒。待ちきれなければ出さない——ラベルは手持ちに届いているので、トランクを開けば在る）。
+    /// 手持ちがいっぱいで届かなかった回は、手持ちへ案内する一言（`TrunkText.fullNotice`）
+    private func offerTrunkArrivalWhenIdle() {
+        Task { @MainActor in
+            // 通知の説明 → 評価のお願い → 届いた画面の順（`PostModalGate`）
+            let ready = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                                 until: PostModalGate.trunkMayShow,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            guard ready else { return }
+            if let batch = trunkArrivals.consume() {
+                trunkBatch = batch
+            } else if let notice = trunkArrivals.consumeNotice() {
+                toasts.show(notice.text, kind: .info)
+            }
+        }
+    }
+
+    /// いま出ているものの様子（`PostModalGate` に渡す）
+    private func postModalSnapshot() -> PostModalSnapshot {
+        PostModalSnapshot(modalPresenting: ModalProbe.isPresenting(), pushPrimerDeciding: pushPrimer.isDeciding,
+                          pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
+                          trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil,
+                          launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil,
+                          welcomeShowing: trunkWelcomeGrant != nil,
+                          sceneActive: scenePhase == .active)
+    }
+
+    private func offerPreviewTrunkArrival() async {
+        guard PreviewSession.opensTrunkArrived else { return }
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if !ModalProbe.isPresenting() { break }
+        }
+        guard !ModalProbe.isPresenting() else { return }
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")], coins: 1)
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。
@@ -376,11 +588,14 @@ struct RootView: View {
             // 通知の説明と1つの判断にする（2026-10-11 判断・`PushPrimerStore.letsReviewAsk`）。
             // 同じ投稿のあとに両方の合図が来る。説明が決め終わるまで待ち、説明を出した回は頼まない
             let offeredAtStart = pushPrimer.alreadyOffered
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if !ModalProbe.isPresenting(), !pushPrimer.isDeciding { break }
-            }
-            guard !ModalProbe.isPresenting(), !showPushPrimer,
+            // 届いた画面はこの判断が終わるまで待つ（評価の窓と全画面を重ねない・`PostModalGate`）
+            reviewDeciding = true
+            defer { reviewDeciding = false }
+            _ = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                         until: PostModalGate.reviewWaitIsOver,
+                                         sleep: { try? await Task.sleep(nanoseconds: 1_500_000_000) })
+            // 届いた画面が出ている・出すものが残っている間は頼まない（次のうれしい瞬間に回す）
+            guard PostModalGate.reviewMayAsk(postModalSnapshot()),
                   pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
                   reviewPrompt.consume() else { return }
             #if canImport(StoreKit)
@@ -411,17 +626,21 @@ struct RootView: View {
         .task {
             // 「新しくなったこと」が出ない回は、そのまま初期ユーザー章の贈り物を確かめる
             guard whatsNew.shouldPresent else {
-                await presentFoundingGiftIfNeeded()
+                await decideFoundingGift()
                 return
             }
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
+            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else {
+                // 出さなかった回も、起動の案内は決め終わり（はじめての硬貨の案内を待たせない）
+                launchNoticesDeciding = false
+                return
+            }
             whatsNewReleases = whatsNew.pending
             whatsNew.markSeen()
             showWhatsNew = true
         }
         // 「新しくなったこと」を閉じたら、続けて贈り物を確かめる（重ねて出さない）
-        .sheet(isPresented: $showWhatsNew, onDismiss: { Task { await presentFoundingGiftIfNeeded() } }) {
+        .sheet(isPresented: $showWhatsNew, onDismiss: { Task { await decideFoundingGift() } }) {
             WhatsNewView(releases: whatsNewReleases)
         }
     }
@@ -431,6 +650,30 @@ struct RootView: View {
     /// 1つの式を短くした。`tabsBase` → `tabsWithPostChoice` → `tabsWithPostSheets` → `tabs`）
     private var tabs: some View {
         tabsWithPostSheets
+            .task(id: auth.userId) { await offerInterruptedUpload() }
+            .alert(L("送れなかった投稿があります", "Posts didn\u{2019}t finish sending"),
+                   isPresented: Binding(get: { interruptedUpload != nil },
+                                        set: { if !$0 { interruptedUpload = nil } }),
+                   presenting: interruptedUpload) { notice in
+                if let id = notice.resumeId {
+                    // 古い順に1件だけ戻す。残りは次に投稿の画面を開いたとき・次の起動で
+                    Button(L("続きから", "Continue")) {
+                        settleInterruptedUpload(notice, cleaning: false)
+                        resumeJournalId = id
+                        showPhotoUpload = true
+                    }
+                }
+                if !notice.cleanupIds.isEmpty {
+                    Button(UploadDraftRules.cleanupButtonTitle(count: notice.cleanupIds.count), role: .destructive) {
+                        settleInterruptedUpload(notice, cleaning: true)
+                    }
+                }
+                Button(notice.resumeId == nil ? L("OK", "OK") : L("あとで", "Later"), role: .cancel) {
+                    settleInterruptedUpload(notice, cleaning: false)
+                }
+            } message: { notice in
+                Text(notice.message)
+            }
             .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
                 NavigationStack { SiteMenuView() }
             }
@@ -463,13 +706,30 @@ struct RootView: View {
         tabsWithPostChoice
             // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+                importTrip = nil
                 pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
                 if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
             }) {
-                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
-                LibraryTripFlowView { photos in
+                // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
+                // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
+                LibraryTripFlowView(opening: importTrip,
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.preloadedShots) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
+            }
+            // 端末の写真の一冊の「この旅の写真を投稿する」（2026-10-16）。ほかの投稿の画面が出ていたら開かない
+            .onChange(of: tabRouter.tripImportRequests) { _, _ in
+                let trip = tabRouter.takePendingImportTrip()
+                guard PostRequestGate.opens(busy: postScreensShown) else { return }
+                importTrip = trip
+                pendingTripPhotos = []
+                showTripImport = true
+            }
+            // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
+            .task(id: auth.userId) {
+                // ログインの有無を店に知らせる（ログインしていない間は前面に戻っても読まない）
+                DeviceTripShelfStore.shared.setSignedIn(auth.userId != nil)
+                if auth.userId != nil { DeviceTripShelfStore.shared.startIfAllowed() }
             }
             // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
             // 格子とストーリーの行はこれを見て読み直す
@@ -481,12 +741,35 @@ struct RootView: View {
             }
     }
 
+    /// 🔴 **送っている途中でアプリが終了した投稿を知らせる**（2026-10-16）。以前はまだ送れていない写真が
+    /// 知らせも無く消えた。控え（`UploadDraftStore.Slot.auto` の `sending`）が残っていたら、起動のあと一度だけ。
+    /// ほかの画面（規約・新しくなったこと）が出ていたら出さない——投稿の画面を開いたときにも尋ねる
+    private func offerInterruptedUpload() async {
+        guard let userId = auth.userId, checkedInterruptedFor != userId else { return }
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
+        checkedInterruptedFor = userId
+        // 送信の控え（`journey-photo-upload-draft:send:<userId>:<ID>`）を古い順に数える
+        interruptedUpload = UploadDraftRules.interruptedNotice(UploadDraftStore().journals(for: userId))
+    }
+
+    /// 知らせに答えた。戻せない控え（届いたか分からない写真だけ）は片づけ、「古いものを片づける」なら
+    /// 勧めた控えも消す（`UploadDraftRules.journalsToClean`）
+    private func settleInterruptedUpload(_ notice: UploadDraftRules.InterruptedNotice, cleaning: Bool) {
+        guard let userId = auth.userId else { return }
+        let store = UploadDraftStore()
+        for id in notice.unsureOnlyIds + (cleaning ? notice.cleanupIds : []) {
+            store.sibling(.send(id)).clear(for: userId)
+        }
+    }
+
     /// 投稿画面。旅の写真から来たときは、その写真を並べて**非公開で**始める
     private var uploadSheet: some View {
         NavigationStack {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
                        startPrivate: !pendingTripPhotos.isEmpty,
                        initialCapture: pendingCapture,
+                       resumeJournal: resumeJournalId,
                        // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                        onSaved: { tabRouter.notePosted($0) })
         }
@@ -504,6 +787,8 @@ struct RootView: View {
                     pendingTripPhotos = []
                     // 構図を重ねて撮った1枚も同じ
                     pendingCapture = nil
+                    // 送れなかった投稿の「続きから」も1回だけ
+                    resumeJournalId = nil
                 }
             }
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
@@ -513,6 +798,25 @@ struct RootView: View {
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
+            // 「カメラで撮る」。投稿画面の帯の「追加」→「写真を撮る」と同じカメラ（`CameraPicker`）
+            .fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {
+                CameraPicker { capture in pendingCapture = capture }
+                    .ignoresSafeArea()
+            }
+            // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
+            // （端末の旅の一冊の「この旅の写真を投稿する」と同じ `postScreensShown` を見る）
+            .onChange(of: tabRouter.postRequests) { _, _ in
+                guard let kind = tabRouter.takePendingPost(),
+                      PostRequestGate.opens(busy: postScreensShown) else { return }
+                choosePost(kind)
+            }
+    }
+
+    /// **投稿の画面が出ているか**の旗の並び。空の画面の一手と端末の旅の一冊は、どれか1つでも出ていたら
+    /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
+    /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
+    private var postScreensShown: [Bool] {
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
     }
 
     /// 投稿の選択シートが閉じきってから、次の画面を開く。
@@ -538,18 +842,18 @@ struct RootView: View {
         case .composition:
             // シートが閉じきってから開く（`openCompositionIfRequested`）
             openCompositionAfterPostSheet = true
+        case .camera:
+            pendingCapture = nil
+            showPostCamera = true
         }
     }
 
-    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、Pro の確かめ（Pro でなければ案内）を経て作例なしで開く
+    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、作例なしで開く
+    /// （2026-10-17 判断: 全員無料。Pro の確かめもサーバーへの問い合わせもしない・`ComposeGuideLauncher`）
     private func openCompositionIfRequested() {
         guard openCompositionAfterPostSheet else { return }
         openCompositionAfterPostSheet = false
-        Task {
-            await ComposeGuidePresenter.request(
-                composeLauncher, make: { ComposeGuide.Launch(sample: nil, samples: []) },
-                auth: auth, store: store, environment: environment, toasts: toasts)
-        }
+        composeLauncher.open(make: { ComposeGuide.Launch(sample: nil, samples: []) })
     }
 
     /// 構図を重ねて撮る画面が閉じきった。「投稿」で撮った1枚があれば投稿画面を開く
@@ -626,6 +930,8 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
+            // 端末の写真の一冊は前面にいる間だけ読む（`DeviceTripShelfStore.setActive`・2026-10-16）
+            DeviceTripShelfStore.shared.setActive(phase == .active)
             if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }

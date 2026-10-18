@@ -4,56 +4,68 @@ import UIKit
 
 /// 撮影画面と同じ37種類を、撮影前にも学べる読み物として見せる。
 /// 図は実際の写真ではなく、カメラに出るガイド線の配置例。
+///
+/// **v2（2026-10-14・板 Compositions）**: バーの中央は「撮影ガイド」（設定の節の名前）、大見出しは明朝 30 の
+/// 「構図一覧」。節の見出しは真鍮の眉ラベルと消えていく線（`JPEyebrowLine`）、行は札に入れず 64 の素の行に
+/// 白 8% の区切り線。構図の名前 16 semibold・場面は 12 の text-3
 struct CompositionCatalogView: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
                 Text(L("構図一覧", "Composition guide"))
-                    .font(JPFont.display(30, relativeTo: .largeTitle))
+                    .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
-                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。図はガイド線の例で、実際の写真ではありません。",
-                       "Explore ways to frame a scene. Illustrations show guide lines, not actual photographs."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                Text(L("撮りたい場面から構図を選び、線の使い方を確認できます。左の図はガイド線の配置、右は構図の作例写真です。",
+                       "Explore ways to frame a scene. The diagram shows the guide lines; the photo on the right is an example."))
+                    .font(JPFont.footnote)
+                    .lineSpacing(3)
+                    .foregroundStyle(WebTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(CompositionSection.allCases) { section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        JPSectionTitle(section.title)
-                        JPCard {
-                            ForEach(section.kinds) { kind in
-                                if kind != section.kinds.first { JPCardDivider() }
-                                NavigationLink { CompositionExplanationView(kind: kind) } label: {
-                                    HStack(spacing: 14) {
-                                        CompositionThumbnail(kind: kind, cornerRadius: 5)
-                                            .frame(width: 44)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(kind.name).font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(WebTheme.text)
-                                            Text(CompositionExample.scene(for: kind))
-                                                .font(.caption).foregroundStyle(WebTheme.muted2)
-                                                .lineLimit(2)
-                                        }
-                                        Spacer(minLength: 4)
-                                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                                            .foregroundStyle(WebTheme.faint)
+                    VStack(alignment: .leading, spacing: 0) {
+                        JPEyebrowLine(section.title)
+                            .padding(.top, JPSpace.xl)
+                            .padding(.bottom, JPSpace.xxs)
+                        ForEach(section.kinds) { kind in
+                            NavigationLink { CompositionExplanationView(kind: kind) } label: {
+                                HStack(spacing: 14) {
+                                    CompositionThumbnail(kind: kind, cornerRadius: 8)
+                                        .frame(width: 44)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(kind.name).font(.callout.weight(.semibold))
+                                            .foregroundStyle(WebTheme.text)
+                                        Text(CompositionExample.scene(for: kind))
+                                            .font(JPFont.caption).foregroundStyle(WebTheme.text3)
+                                            .lineLimit(2)
                                     }
-                                    .padding(.horizontal, 14)
-                                    .frame(minHeight: 64)
-                                    .contentShape(Rectangle())
+                                    Spacer(minLength: 4)
+                                    // 2026-10-17 owner: 右に作例写真（構図のシートの札と同じ形）
+                                    CompositionExampleThumb(kind: kind)
+                                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                        .foregroundStyle(WebTheme.text3)
+                                        .accessibilityHidden(true)
                                 }
-                                .buttonStyle(JPRowButtonStyle())
-                                .accessibilityIdentifier("composition.catalog.\(kind.rawValue)")
+                                .padding(.vertical, 10)
+                                .frame(minHeight: JPHeight.tallRow)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(JPRowButtonStyle())
+                            .accessibilityIdentifier("composition.catalog.\(kind.rawValue)")
                         }
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.section)
         }
         .webScreen()
-        .navigationTitle(L("構図一覧", "Composition guide"))
+        // 板 v2: バーの中央は設定の節の名前（大見出しの「構図一覧」と二重にしない）
+        .navigationTitle(L("撮影ガイド", "Shooting guide"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -64,24 +76,33 @@ struct CompositionExplanationView: View {
     @State private var showGuideLines = true
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var exampleImage: UIImage?
+    /// 開いている解説の段。最初は「どういう構図か」だけ開く（長い文を一度に並べない）
+    @State private var openParts: Set<CompositionLesson.Part> = [.what]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(kind.name)
-                    .font(JPFont.display(30, relativeTo: .largeTitle))
-                    .foregroundStyle(WebTheme.text)
-                    .accessibilityAddTraits(.isHeader)
-                Text(kind.difficulty.label)
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
+            VStack(alignment: .leading, spacing: JPSpace.m) {
+                // 板 v2: 明朝 30 の題の右に、難しさの札（12・text-2・白 14% の線）
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(kind.name)
+                        .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                        .foregroundStyle(WebTheme.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(kind.difficulty.label)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .padding(.horizontal, JPSpace.xs)
+                        .padding(.vertical, 1)
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.s).strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
+                }
 
                 // 作例写真は端末内だけで扱う。未選択時は従来の配置図を表示。
+                // 板 v2: 線のボタン（44・白 14% の縁）
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Label(L("自分の写真で構図を確認", "Try with your photo"), systemImage: "photo.on.rectangle")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .jpPillButton(.outline)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("composition.explanation.choosePhoto")
 
                 // 作例の配置図。写真が選ばれた場合は写真の上に同じガイド線を重ねる。
@@ -114,19 +135,23 @@ struct CompositionExplanationView: View {
                     }
                     .aspectRatio(0.75, contentMode: .fit)
                     .frame(maxWidth: 270)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(WebTheme.border, lineWidth: 1))
+                    // 板 v2: 写真の札の角 14
+                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                    .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
+                        .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
                     .frame(maxWidth: .infinity)
                     Text(exampleImage != nil
                          ? L("端末内の写真（アップロードされません）", "Photo on your device (not uploaded)")
                          : (UIImage(named: "composition-ai-\(kind.rawValue)") != nil
-                            ? L("AI生成の構図作例", "AI-generated composition example")
+                            ? CompositionExample.bundledCaption
                             : L("作例の配置図（写真ではありません）", "Example layout (illustration, not a photo)")))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                     Toggle(L("ガイド線を表示", "Show guide lines"), isOn: $showGuideLines)
-                        .tint(WebTheme.accent)
+                        .font(JPFont.body)
+                        // 板 v2: 軌道は暗い真鍮（brass-deep）。白いつまみが乗って入切が見える（`JPToggleRow` と同じ）
+                        .tint(WebTheme.accentDeep)
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .accessibilityIdentifier("composition.explanation.showLines")
                     if kind.hasVariants {
                         Button {
@@ -145,10 +170,11 @@ struct CompositionExplanationView: View {
                 explanationSection(L("どんな構図？", "How it works"), text: CompositionExample.explanation(for: kind))
                 explanationSection(L("こんな場面で", "Example scene"), text: CompositionExample.scene(for: kind))
                 explanationSection(L("撮るときのコツ", "Shooting tip"), text: kind.tip)
+                lessonSection
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.section)
         }
         .webScreen()
         .navigationTitle(kind.name)
@@ -166,54 +192,156 @@ struct CompositionExplanationView: View {
         }
     }
 
+    /// 解説の節（板 v2: 真鍮の眉と消えていく線 → 本文 15・text-2。札に入れない）
     private func explanationSection(_ title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            JPSectionTitle(title)
-            JPCard {
-                Text(text)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            JPEyebrowLine(title)
+            Text(text)
+                .font(JPFont.body)
+                .lineSpacing(5)
+                .foregroundStyle(WebTheme.text2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, JPSpace.xs)
+    }
+
+    /// 詳しい解説（2026-10-16 owner「構図の説明が軽い」・`CompositionLessons`）。
+    ///
+    /// 2026-10-16 判断: 一覧は軽いまま、この画面の下に6つの段を折りたたみで置く。段の見出しは明朝 18
+    /// （明朝の下限）・押せる高さ 44・右に開閉の山形（text-3）。本文は 15 の text-2、手順の番号は SF の
+    /// 等幅数字で text-3（数は合図ではないので真鍮にしない・CLAUDE.md の実例）。真鍮は黒地の上の眉ラベルだけ
+    private var lessonSection: some View {
+        let lesson = CompositionLessons.lesson(for: kind)
+        return VStack(alignment: .leading, spacing: 0) {
+            JPEyebrowLine(L("詳しい解説", "In depth"))
+                .padding(.bottom, JPSpace.xxs)
+            ForEach(CompositionLesson.Part.allCases, id: \.self) { part in
+                lessonRow(part, lesson: lesson)
             }
         }
+        .padding(.top, JPSpace.m)
+    }
+
+    private func lessonRow(_ part: CompositionLesson.Part, lesson: CompositionLesson) -> some View {
+        let isOpen = openParts.contains(part)
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isOpen { openParts.remove(part) } else { openParts.insert(part) }
+                }
+            } label: {
+                HStack(spacing: JPSpace.s) {
+                    Text(part.title)
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.text3)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(isOpen ? L("開いています", "Expanded") : L("閉じています", "Collapsed"))
+            .accessibilityIdentifier("composition.lesson.\(part)")
+            if isOpen {
+                lessonBody(part, lesson: lesson)
+                    .padding(.bottom, JPSpace.s)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+    }
+
+    @ViewBuilder
+    private func lessonBody(_ part: CompositionLesson.Part, lesson: CompositionLesson) -> some View {
+        switch part {
+        case .steps:
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                ForEach(Array(lesson.steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+                        Text("\(index + 1)")
+                            .font(JPFont.mono(JPTypeScale.body, medium: true, relativeTo: .subheadline))
+                            .foregroundStyle(WebTheme.text3)
+                            .frame(minWidth: 16, alignment: .leading)
+                            .accessibilityHidden(true)
+                        lessonText(step)
+                            .accessibilityLabel(L("手順\(index + 1)、\(step)", "Step \(index + 1), \(step)"))
+                    }
+                }
+            }
+        case .what: lessonText(lesson.what)
+        case .why: lessonText(lesson.why)
+        case .scenes: lessonText(lesson.scenes)
+        case .mistakes: lessonText(lesson.mistakes)
+        case .versus: lessonText(lesson.versus)
+        }
+    }
+
+    private func lessonText(_ text: String) -> some View {
+        Text(text)
+            .font(JPFont.body)
+            .lineSpacing(5)
+            .foregroundStyle(WebTheme.text2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 /// 一覧と詳細で同じ作例・解説を使い、撮影時の線と食い違わないようにする。
 enum CompositionExample {
+    /// 作例の絵の下の札。入っている作例は**すべて実際の写真**（出典と許諾は
+    /// `Tools/composition-examples/photo-sources.json`、確認の記録は `docs/composition-ai-review.json`・source: photo）。
+    ///
+    /// 2026-10-14 判断（owner）: 文字どおりの形を描いた AI の絵（Z の字の道・線だけの絵）は写真の作例に
+    /// なっていなかったので、無料で商用に使え表記の要らない写真（CC0・パブリックドメイン）に替えた。
+    /// 2026-10-15 判断（owner「他もお願い」）: 残りの21枚も写真に替え、AI の絵はもう入っていない。
+    /// 「AI生成」の札と、写真の構図を分けていた集合（photoKinds）は外した。AI の絵（source: individual）を
+    /// 戻すと `CompositionAIExampleTests` が落ちる
+    static var bundledCaption: String { L("構図の作例写真", "Composition example photo") }
+
     static func scene(for kind: CompositionKind) -> String {
         switch kind {
-        case .thirds, .iphone: return L("海辺の人物を交点に置く", "Place a person on an intersection by the sea")
-        case .halves: return L("水面と空を半分ずつ写す", "Divide a lake and sky equally")
-        case .symmetry: return L("建物の正面を中心軸で揃える", "Center a building's facade")
-        case .hinomaru: return L("一輪の花を画面の中央に", "Center a single flower")
-        case .horizon: return L("夕空を広く見せる海岸", "Show more of the sunset sky above the sea")
-        case .grid4, .squareGrid, .tianzige, .mizige, .grid6x4:
+        case .thirds: return L("灯台を縦の線に、水平線を下の線に", "A lighthouse on a vertical line, the horizon on the lower line")
+        case .iphone: return L("砂浜を歩く人を交点に置く", "Place a person walking on the beach at an intersection")
+        case .halves: return L("湖の島と映り込みを半分ずつ写す", "Split a lake island and its reflection in half")
+        case .symmetry: return L("桟橋を中心の軸で左右に揃える", "Center a pier on the axis")
+        case .hinomaru: return L("空に浮かぶ気球を画面の中央に", "Center a hot-air balloon in the sky")
+        case .horizon: return L("白い砂丘の上に空を広く見せる", "Show more of the sky above white dunes")
+        case .grid4, .squareGrid, .grid6x4:
             return L("建物の窓や柱の並びを整える", "Align rows of windows or columns")
-        case .phiGrid: return L("街角の人物を内寄りの交点に", "Place a person at an inner intersection")
-        case .goldenSpiral: return L("曲がる道の先に主役を置く", "Place the subject at the end of a winding path")
+        case .tianzige: return L("水辺の建物と映り込みを十字で釣り合わせる", "Balance a waterside building and its reflection on the cross")
+        case .mizige: return L("回廊の線が中心の奥へ集まる", "Corridor lines converging on the center")
+        case .phiGrid: return L("広い景色の小さな人影を内寄りの交点に", "Place a small figure at an inner intersection")
+        case .goldenSpiral: return L("らせん階段の巻き込む先を渦の目に", "A spiral staircase curling into the eye")
         case .fibonacciGrid: return L("階段をたどって奥の扉へ", "Follow stairs toward a distant door")
         case .goldenTriangle: return L("斜面と人物を対角に並べる", "Arrange a slope and person diagonally")
         case .diagonals, .diagonal45, .obliqueThirds: return L("斜めに延びる道や稜線", "A sloping road or mountain ridge")
-        case .thirdsDiagonals: return L("道の斜線と奥の人物", "A diagonal road leading to a person")
-        case .dynamicSymmetry, .armature: return L("交差する街路と建物の輪郭", "Crossing streets and building edges")
-        case .rootRectangle: return L("√2に切り出す街並み", "A cityscape framed for a √2 crop")
-        case .triangle: return L("3人の位置で三角形を作る", "Arrange three people in a triangle")
+        case .thirdsDiagonals: return L("桟橋の先に座る人を交点に", "A person at the end of a pier, on a crossing")
+        case .dynamicSymmetry: return L("斜面を登る人を線の交わる点に", "Hikers on a slope where the lines cross")
+        case .armature: return L("橋のケーブルが斜めに集まる", "Bridge cables converging on the diagonals")
+        case .rootRectangle: return L("√2に切り出す塔と山", "A pagoda and mountain framed for a √2 crop")
+        case .triangle: return L("とがった山を三角に収める", "A pointed mountain inside the triangle")
         case .radial: return L("一点へ集まる線路や光", "Tracks or light converging at one point")
-        case .tunnel: return L("木のトンネルの奥に人物", "A person beyond a tunnel of trees")
-        case .frameWithin: return L("門の向こうに見える街並み", "A cityscape seen through a gate")
-        case .negativeSpace: return L("広い空に小さな鳥を置く", "A small bird against a wide sky")
-        case .lShape: return L("岸辺と桟橋でL字を作る", "A shoreline and pier forming an L")
-        case .zShape: return L("折り返す山道をたどる", "A winding mountain path")
+        case .tunnel: return L("鳥居や木のトンネルの奥へ", "Into a tunnel of torii gates or trees")
+        case .frameWithin: return L("窓の向こうに見える海と小舟", "The sea and boats seen through a window")
+        case .negativeSpace: return L("広い海に小さな灯台を置く", "A small lighthouse in a wide sea")
+        case .lShape: return L("一本の木と地平線でL字を作る", "A lone tree and the horizon forming an L")
+        case .zShape: return L("折り返す道を手前から奥へたどる", "Follow a winding road from near to far")
         case .sCurve: return L("S字に曲がる川の流れ", "An S-shaped river")
         case .cCurve: return L("湾曲する海岸線", "A curved coastline")
         case .square: return L("中央の建物を正方形に収める", "A building composed inside a square")
-        case .ratio4x5: return L("縦長に切り出す人物写真", "A portrait framed for 4:5")
+        case .ratio4x5: return L("縦長に切り出す街並み", "A street scene framed for 4:5")
         case .ratio9x16: return L("縦いっぱいに伸びる塔", "A tall tower in a 9:16 frame")
         case .ratio16x9: return L("横に広がる山並み", "A mountain panorama in 16:9")
-        case .otherRatios: return L("横長の街並みを比率で切り出す", "Frame a wide cityscape for the chosen ratio")
-        case .level: return L("海や建物の水平を確認する", "Level the sea or building edges")
+        case .otherRatios: return L("雪の旧市街を比率で切り出す", "Frame a snowy old town for the chosen ratio")
+        case .level: return L("海の水平線の傾きを確かめる", "Check that the sea horizon is level")
         }
     }
 
@@ -255,8 +383,8 @@ enum CompositionExample {
                                  "A network of diagonals and midpoints; use only the lines that help a busy scene.")
         case .rootRectangle: return L("√2比率の切り出し枠とその中の対角線です。明るい範囲に主役を収めます。",
                                      "Compose within a √2 crop, using its diagonals as placement cues.")
-        case .triangle: return L("三つの主役を結んで三角形を作ります。上向きは安定、逆向きは緊張感が出ます。",
-                                 "Three subjects form a triangle: upright feels stable, inverted more tense.")
+        case .triangle: return L("三角の形か、三つの主役を結んで三角形を作ります。上向きは安定、逆向きは緊張感が出ます。",
+                                 "Use a triangular shape, or link three subjects into a triangle: upright feels stable, inverted more tense.")
         case .radial: return L("線が一点へ集まる場所を探します。中心を変えると主役を端にも置けます。",
                                "Find lines converging at one point; move the center to position the subject.")
         case .tunnel: return L("アーチのような形で奥の主役を囲みます。手前と奥の距離も伝えられます。",

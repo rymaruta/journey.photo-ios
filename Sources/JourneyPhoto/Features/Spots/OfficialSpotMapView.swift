@@ -30,7 +30,9 @@ struct OfficialSpotMapView: View {
                     UserAnnotation()
                     // 題は MapKit がピンの下に字で描く（地図のタブの撮影スポットと同じ）
                     Annotation(spot.name, coordinate: Self.coordinate(coords)) {
+                        // 開いているスポットなので「選んだとき」の形（v2 の板 OfficialSpotMap: 1.27 倍・光の輪）
                         SpotMapMarker(photoURL: spot.photo?.smallURL, fallbackURL: spot.photo?.smallFallbackURL)
+                            .selected(true)
                             // 読み上げはピンに名前ごと（`TripDayMapView` と同じ）
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(spot.name)
@@ -72,18 +74,26 @@ struct OfficialSpotMapView: View {
         CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)
     }
 
-    /// 下の帯: 名前・地域と「経路」（Apple のマップ・今いる場所から）
+    /// 下の帯: 名前・地域と「経路」（Apple のマップ・今いる場所から）。
+    ///
+    /// **v2（2026-10-14・板 OfficialSpotMap）**: 黒地の札（上の角 24）に、真鍮の眉ラベル →
+    /// 明朝の名前 → 13 の text-2 の地域 → 真鍮の塗りの「経路 ↗」（外へ出る印）→ 12 の text-3 の断り書き。
+    /// 板にある座標の行は出さない——索引の座標は約1km に丸めてあり、小数4桁で出すと持っていない精度を言う
     private func bottomBar(_ coords: Photo.Coords) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                // 黒地の上なので真鍮（下書きは「下書き・未確認」を灰で・頁の頭と同じ）
+                Text(SpotScreen.eyebrow(review: spot.isDraft))
+                    .jpEyebrow()
+                    .foregroundStyle(spot.isDraft ? WebTheme.muted : WebTheme.accent)
                 Text(spot.name)
-                    .font(.headline)
+                    .font(JPFont.cardTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
                 if let region = spot.regionLabel {
                     Text(region)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.text2)
                 }
             }
             Button {
@@ -95,16 +105,39 @@ struct OfficialSpotMapView: View {
                     await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
                 }
             } label: {
-                Label(opening ? L("開いています…", "Opening…") : L("経路", "Directions"),
-                      systemImage: "arrow.triangle.turn.up.right.diamond")
-                    .jpPillButton(.accent)
+                HStack(spacing: JPSpace.xs) {
+                    Label(opening ? L("開いています…", "Opening…") : L("経路", "Directions"),
+                          systemImage: "arrow.triangle.turn.up.right.diamond")
+                    // 外（Apple のマップ）へ出る印（板）。読み上げは名前と「Apple のマップで開きます」が言う
+                    Text("↗")
+                        .opacity(0.7)
+                        .accessibilityHidden(true)
+                }
+                // 写真の無い画面（地図）の主ボタン＝真鍮の塗りに墨（CLAUDE.md の owner の決まり）
+                .jpPillButton(.main(onPhoto: false))
             }
             .buttonStyle(.plain)
             .disabled(opening)
             .accessibilityLabel(L("\(spot.name)への経路", "Directions to \(spot.name)"))
             .accessibilityHint(L("Apple のマップで開きます", "Opens in Apple Maps"))
             .accessibilityIdentifier("spot.official.mapScreen.directions")
+            Text(L("経路だけ Apple のマップで開きます。地図はこの中で動かせます",
+                   "Only directions open in Apple Maps. You can move this map here."))
+                .font(.caption)
+                .foregroundStyle(WebTheme.text3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .jpBottomBar()
+        .padding(.horizontal, JPSpace.m)
+        .padding(.top, JPSpace.l)
+        .padding(.bottom, JPSpace.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // 家のバーの下まで黒（板の黒地の札・上の角だけ丸める）
+        .background(Color.black, in: UnevenRoundedRectangle(topLeadingRadius: JPRadius.xl,
+                                                             topTrailingRadius: JPRadius.xl))
+        .background {
+            Color.black.padding(.top, JPRadius.xl).ignoresSafeArea(edges: .bottom)
+        }
     }
 }

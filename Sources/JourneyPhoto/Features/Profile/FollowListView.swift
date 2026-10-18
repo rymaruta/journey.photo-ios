@@ -70,20 +70,36 @@ struct FollowListView: View {
 
     var body: some View {
         List {
+            // 板 v2 FollowList: 切り替えは画面の幅いっぱい（左右の余白なし）・下に白 8% の線
             tabs
+                .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             if needsSignIn {
                 signInPrompt
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } else if let errorMessage {
-                Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
+                // v2 Components 06: 失敗は共通の並び（何が起きたか → もう一度）
+                ErrorBanner(message: errorMessage, isBusy: isLoading) { Task { await load() } }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } else if users.isEmpty && !isLoading && total == 0 {
-                Text(L("まだいません", "No one yet")).foregroundStyle(.secondary)
+                EmptyState(message: L("まだいません", "No one yet"))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             ForEach(users) { user in
                 row(user)
+                    // 板 v2 Components 05 の人の行: 64・アイコン 44・区切りは白 8%
+                    .frame(minHeight: JPHeight.tallRow)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             // **一覧の長さと数え札は一致しない。** 50人で切ったぶん・一覧が
@@ -91,15 +107,26 @@ struct FollowListView: View {
             // （api-user/src/follow.ts の注記）。黙って食い違わせない
             if total > users.count {
                 Text(L("全 \(total) 人のうち \(users.count) 人を表示しています", "Showing \(users.count) of \(total)"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(JPFont.caption.monospacedDigit())
+                    .foregroundStyle(WebTheme.text3)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
+        .listStyle(.plain)
         .webScreen()
         .navigationTitle(ownerName ?? current.title)
         .navigationBarTitleDisplayMode(.inline)
-        .overlay { if isLoading && lists.isEmpty { ProgressView() } }
+        // v2: 読み込みは行と同じ形の骨格（0.3 秒より早ければ出さない）
+        .overlay(alignment: .top) {
+            if isLoading && lists.isEmpty {
+                JPLoadingState(kind: .rows)
+                    .padding(.horizontal, ProfileV2.gutter)
+                    .padding(.top, WebTheme.minTapTarget + JPSpace.xs)
+            }
+        }
         .unfollowConfirmation(isPresented: $showUnfollow) {
             if let id = unfollowTargetId {
                 unfollowTargetId = nil
@@ -187,11 +214,16 @@ struct FollowListView: View {
         .padding(.vertical, 8)
     }
 
-    /// 「フォロワー N ／ フォロー中 N」（板の下線の切り替え）
+    /// 「フォロワー N ／ フォロー中 N」（板 v2 FollowList の下線の切り替え）。
+    /// **選んでいる方は真鍮の字と真鍮の 2pt の下線**（CLAUDE.md の owner の好み・マイページの札と同じ
+    /// `ProfileTabBar.color`）。数は SF の等幅数字で、太さは名前だけ変える
     private var tabs: some View {
         HStack(spacing: 0) {
             tab(.followers)
             tab(.following)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
     }
 
@@ -201,15 +233,22 @@ struct FollowListView: View {
         return Button {
             picked = which
         } label: {
-            VStack(spacing: 8) {
-                Text(count.map { "\(which.title) \($0)" } ?? which.title)
-                    .font(.subheadline.weight(selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? WebTheme.foreground : WebTheme.muted2)
-                Rectangle()
-                    .fill(selected ? WebTheme.foreground : Color.clear)
-                    .frame(height: 2)
+            HStack(spacing: 6) {
+                Text(which.title)
+                    .font(selected ? JPFont.bodyEmphasis : JPFont.body)
+                if let count {
+                    Text("\(count)")
+                        .font(JPFont.number(JPTypeScale.body, weight: .regular, relativeTo: .subheadline))
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .lineLimit(1)
+            .foregroundStyle(ProfileTabBar.color(selected: selected))
+            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(selected ? WebTheme.accent : Color.clear)
+                    .frame(height: JPStroke.emphasis)
+            }
             .contentShape(Rectangle())
         }
         // 同じ行に2つ並ぶので borderless（行全体が1つのボタンにならないように）
@@ -222,7 +261,7 @@ struct FollowListView: View {
         HStack(spacing: 12) {
             if user.deleted == true {
                 // 退会した人にはプロフィールへの導線も札も出さない
-                person(user).foregroundStyle(.secondary)
+                person(user).foregroundStyle(WebTheme.text3)
             } else {
                 NavigationLink { UserProfileView(userId: user.id) } label: { person(user) }
                 followButton(user)
@@ -235,15 +274,18 @@ struct FollowListView: View {
             RemoteImage(url: user.deleted == true ? nil
                         : UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                 .frame(width: 44, height: 44)
-                .background(WebTheme.surface)
+                .background(WebTheme.card)
                 .clipShape(Circle())
             PersonNameLines(user: user)
             Spacer(minLength: 0)
         }
     }
 
-    /// 「フォロー中」（枠線）／「フォローする」（白地）。**自分と、フォロー状態が
-    /// 分からないときは出さない**
+    /// 「フォロー中」（線）／「フォローする」（白 94% の塗り）。**自分と、フォロー状態が
+    /// 分からないときは出さない**。
+    ///
+    /// v2（板 FollowList・Components 01 の行の中の小ボタン）: 見た目 36・幅 96 以上・線は白 14%
+    /// （`WebTheme.line`・v1 は 28%）。当たりは 44
     @ViewBuilder
     private func followButton(_ user: FollowUser) -> some View {
         if let myFollowing, let me = auth.userId, user.id != me {
@@ -259,14 +301,16 @@ struct FollowListView: View {
             } label: {
                 // 余白と枠は中身の側に置く（外に付けると押せるのは文字だけ）
                 Text(isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
-                    .font(.footnote.weight(.semibold))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .lineLimit(1)
                     .foregroundStyle(isFollowing ? WebTheme.foreground : WebTheme.accentText)
                     .padding(.horizontal, 14)
-                    .frame(minWidth: 44, minHeight: 36)
+                    .frame(minWidth: Self.followButtonMinWidth, minHeight: JPHeight.inlineButton)
                     .background(isFollowing ? Color.clear : WebTheme.accentBackground, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(isFollowing ? 0.28 : 0), lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(isFollowing ? WebTheme.line : Color.clear,
+                                                    lineWidth: JPStroke.hairline))
                     // 見た目は 36pt、押せる高さは 44pt（`FollowPill` と同じ）
-                    .padding(.vertical, 4)
+                    .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
                     .contentShape(Rectangle())
             }
             // 行の中のボタンは borderless にしないと、行のどこを押しても反応する
@@ -274,6 +318,9 @@ struct FollowListView: View {
             .disabled(working.contains(user.id))
         }
     }
+
+    /// フォローの札の最小の幅（板 v2 FollowList: 96）。「フォロー中」と「フォローする」で幅が揺れない
+    nonisolated static let followButtonMinWidth: CGFloat = 96
 
     private func load() async {
         isLoading = true

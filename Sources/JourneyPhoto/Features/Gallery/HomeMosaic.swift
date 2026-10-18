@@ -20,7 +20,15 @@ struct HomeMosaic: View {
     var onReport: (Photo) -> Void = { _ in }
 
     /// 段どうし・段の中の隙間（板: 4px）
-    private let gap: CGFloat = 4
+    private let gap: CGFloat = JPSpace.xxs
+
+    /// **v2（2026-10-14・Main の板）: 写真は端 8 まで広げ、角 14 で丸める。**
+    /// 板の付箋「フィードの1枚目は端 8 まで広げ」。ほかの中身（札・タブ）は端 16 なので、
+    /// 写真だけが一段外へ出て主役に見える。1枚目だけ 8 にすると2段目から端が揃わないので、
+    /// 並び全体を 8 にした（2026-10-14 判断）
+    nonisolated static let edge: CGFloat = JPSpace.xs
+    /// 写真の角（v2 の radius-m・写真の札）
+    nonisolated static let corner: CGFloat = JPRadius.m
 
     var body: some View {
         let byCover = Dictionary(groups.map { ($0.cover.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -42,6 +50,7 @@ struct HomeMosaic: View {
                 }
             }
         }
+        .padding(.horizontal, Self.edge)
     }
 
     @ViewBuilder
@@ -85,13 +94,14 @@ struct HomeFeedTile: View {
                         RemoteImage(url: large ? photo.detailImageURL : photo.gridImageURL,
                                     alignment: photo.gridAlignment)
                     }
-                    .clipped()
                     .overlay(alignment: .bottomLeading) { caption }
                     .overlay(alignment: .topTrailing) {
                         // 「…」の丸と重ならないよう、印はその左
                         multipleMark.padding(.trailing, showsMore ? 44 : 0)
                     }
-                    .contentShape(Rectangle())
+                    // v2: 角 14（`HomeMosaic.corner`）。下の暗がりも同じ角で切る
+                    .clipShape(RoundedRectangle(cornerRadius: HomeMosaic.corner))
+                    .contentShape(RoundedRectangle(cornerRadius: HomeMosaic.corner))
             }
             .buttonStyle(.plain)
             // 絵の上の文字（撮影地・撮った人・複数枚の印）も読む。題だけにすると、
@@ -172,21 +182,23 @@ struct HomeFeedTile: View {
         let place = HomeTileText.place(photo.location)
         if !place.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
+                // 写真の上は白だけ（CLAUDE.md）。明朝は字の段の 22（大きい段）と 18（2枚の段・明朝の下限）
                 Text(place)
-                    .font(JPFont.display(large ? 22 : 18, relativeTo: large ? .title2 : .title3))
+                    .font(large ? JPFont.cardTitle : JPFont.rowTitle)
                     .foregroundStyle(Color.white)
                     .shadow(color: Color.black.opacity(0.4), radius: 4, x: 0, y: 1)
                     .lineLimit(1)
+                // 写真の上の副文は透過の白（不透明の灰は明るい写真の上で沈む・`WebTheme.muted2` の注記）
                 Text(byline)
-                    .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.82))
+                    .font(large ? JPFont.footnote : JPFont.caption)
+                    .foregroundStyle(WebTheme.muted)
                     .lineLimit(1)
             }
             // いいねの丸と重ならないよう右を空ける
-            .padding(.leading, 14)
+            .padding(.leading, JPSpace.m)
             .padding(.trailing, 70)
-            .padding(.bottom, 12)
-            .padding(.top, 48)
+            .padding(.bottom, JPSpace.m)
+            .padding(.top, JPSpace.emptyTop)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 LinearGradient(stops: [

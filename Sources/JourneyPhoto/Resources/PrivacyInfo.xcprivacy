@@ -61,7 +61,10 @@
             </array>
         </dict>
 
-        <!-- コメント・キャプション -->
+        <!--
+          コメント・キャプション・プロフィールの文（自己紹介・居住地・Web サイト）・
+          通報の補足・行きたい場所・旅の計画など、本人が書いて送る中身
+        -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>
             <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
@@ -111,6 +114,41 @@
             </array>
         </dict>
 
+        <!--
+          ストーリーへの返信（2026-10-16 判断: 相手1人にだけ届く文なので「その他のユーザーコンテンツ」ではなく
+          メッセージとしても申告する。`StoryService.reply` → `POST /stories/{id}/replies`）
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeEmailsOrTextMessages</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!--
+          購入の記録（Pro の定期購入）。StoreKit が署名した取引を `POST /user/purchases` で送り、
+          サーバーが本人に Pro・サポーターの番号を付ける（`PurchaseService.submit`）。
+          本人と結びつく・アプリの機能（権利を付ける）だけ・トラッキングなし
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
         <!-- Cognito の sub（ユーザーID）。公開ページの URL にも出る -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>
@@ -138,6 +176,22 @@
             <key>NSPrivacyAccessedAPITypeReasons</key>
             <array>
                 <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!--
+          ディスクの空き（`OfflineSavedView.freeSpace` の `volumeAvailableCapacityForImportantUsageKey`）。
+          2026-10-16 判断: 理由コード 85F4.1 = 空きを画面に出して本人に見せる（「電波なしで使える旅」の
+          画面の「iPhone の空き 〇」と使っている割合の線）。端末の外へは送らない。書く前に空きを確かめて止める・消す使い方
+          （E174.1）はしていない——容量不足は書いたときの失敗（`NSFileWriteOutOfSpaceError`）で知る。
+          確かめ方を変えたら理由も足すこと
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>85F4.1</string>
             </array>
         </dict>
     </array>

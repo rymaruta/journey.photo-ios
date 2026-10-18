@@ -1,6 +1,6 @@
 import Foundation
 
-/// お知らせ（いいね・コメント・フォロー・ストーリー返信・新しいメダル）。
+/// お知らせ（いいね・コメント・フォロー・ストーリー返信・新しいメダル・この写真を見て撮影）。
 struct NotificationService {
 
     private let api: APIClient
@@ -32,7 +32,12 @@ struct NotificationService {
 struct AppNotification: Decodable, Identifiable, Equatable {
 
     enum Kind: String, Decodable {
-        case like, comment, follow, storyreply, badge
+        case like, comment, follow, storyreply, badge, inspired
+        // `inspired`＝「この写真を見て撮影」（2026-10-14・`api-user/src/inspired.ts`）。だれかが**自分の写真を元に**
+        // 撮った写真を公開した。`photoId`・`photoSrc` は**付けた人の新しい写真**（押すとそこへ）、
+        // `sourcePhotoId` は元になった自分の写真。1枚につき1回だけ届く。
+        // 🔴 **サーバーの種別（`notify.ts` の union）は `{` の直後の1行目の `case` に並べる**——Web 版との
+        // 突き合わせ（`check-api-parity.py`）はそこだけを読む。別の行に置くと「アプリが知りません」と NG になる
         /// 光と天気の知らせ（Pro・前の晩 20:00 のプッシュ・2026-10-09）。**プッシュにだけ来る**——
         /// サーバーはお知らせの一覧に積まない（`lightForecast.ts` の `alertOne`）。押したら一覧
         /// 「行きたい場所の光」を開く。一覧に紛れ込んでも行の文言を持たないので描かれない
@@ -55,6 +60,9 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     /// 新しいメダル（`badge`）の鍵と段。**自分の出来事**なので相手（`byId`）は持たない
     let key: String?
     let tier: Int?
+    /// 「この写真を見て撮影」（`inspired`）だけ: 元になった（自分の）写真の id。
+    /// 行き先には使わない（押した先は `photoId`＝付けた人の写真）
+    let sourcePhotoId: String?
 
     /// サーバーは id を持たない。並びは安定しているので、
     /// 時刻と相手と写真の組で区別する
@@ -66,7 +74,7 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, photoId, photoSrc, byName, byId, atLocation, targetUserId, t, deleted, key, tier
+        case type, photoId, photoSrc, byName, byId, atLocation, targetUserId, t, deleted, key, tier, sourcePhotoId
     }
 
     init(from decoder: Decoder) throws {
@@ -86,19 +94,21 @@ struct AppNotification: Decodable, Identifiable, Equatable {
         let rawKey: String? = try? container.decodeIfPresent(String.self, forKey: .key)
         self.key = (rawKey?.isEmpty ?? true) ? nil : rawKey
         self.tier = LenientInt.read(container, .tier)
+        self.sourcePhotoId = try? container.decodeIfPresent(String.self, forKey: .sourcePhotoId)
     }
 
     // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）
 
     /// 押されたプッシュ通知の中身から、行き先を決めるための1件を作る。
     ///
-    /// サーバーは中身の最上位に `type`・`photoId`・`byId`・`targetUserId`（メダルは `key`・`tier`）を入れて送る
+    /// サーバーは中身の最上位に `type`・`photoId`・`byId`・`targetUserId`（メダルは `key`・`tier`、
+    /// この写真を見て撮影は `sourcePhotoId`）を入れて送る
     /// （`api-user/src/notify.ts` の `deliverPush`・`apns.ts` の `pushPayload`）。
     /// **お知らせの一覧と同じ復号を通す**——知らない種類は nil のまま（行き先なし）。
     /// 文字列でない値・`aps` は読まない。種類が無ければ nil（押しても一覧を開くだけ）
     static func fromPush(_ userInfo: [AnyHashable: Any]) -> AppNotification? {
         var fields: [String: String] = [:]
-        for key in ["type", "photoId", "byId", "targetUserId", "key"] {
+        for key in ["type", "photoId", "byId", "targetUserId", "key", "sourcePhotoId"] {
             if let value = userInfo[key] as? String, !value.isEmpty { fields[key] = value }
         }
         // 段は数で届くことがある（APNs の中身の JSON）。文字にして同じ復号に通す

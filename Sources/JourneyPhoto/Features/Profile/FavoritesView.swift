@@ -38,14 +38,15 @@ struct FavoritesView: View {
     /// 戻り `onAppear` のあと前面確定を待つ仕事（スワイプキャンセルで消す）
     @State private var frontSettle: Task<Void, Never>?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-    ]
+    /// 板 v2 Favorites: 先頭の1枚の下は 3 列・すき間 2・正方形
+    private let columns = ProfileV2.gridItems
+
+    /// 先頭の大きな1枚の高さ（板 v2 Favorites: 280）
+    nonisolated static let heroHeight: CGFloat = 280
 
     var body: some View {
         ScrollView {
+            header
             if screen.shown.partial {
                 ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
                                        "Couldn't reach the server — showing what's on this device")) {
@@ -55,10 +56,14 @@ struct FavoritesView: View {
             if photos.isEmpty {
                 switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
-                    // 取得中に空の格子を出さない（以前のタブと同じく ProgressView）
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                    // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）
+                    JPLoadingState(kind: .grid)
                 case .none:
-                    EmptyState(message: L("まだお気に入りがありません", "No liked photos yet"))
+                    // 2026-10-17: いいねは写真から。写真に出会う所（ホーム）へ1手（マイページの保存0枚と同じ道）
+                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"),
+                               actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "favorites.emptyBrowse") {
+                        TabRouter.shared.openHome()
+                    }
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
@@ -70,20 +75,41 @@ struct FavoritesView: View {
             } else {
                 // 公開一覧から引き当てた写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
                 let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(screen.shown.feed))
-                LazyVGrid(columns: columns, spacing: 2) {
-                    ForEach(photos) { photo in
+                // 板 v2 Favorites: 先頭を大きな1枚に（題は写真の上に白・写真の上は白だけ）
+                if let first = photos.first {
+                    NavigationLink {
+                        PhotoDetailView(photo: first, fromPublicFeed: isPublic(first), context: photos)
+                    } label: {
+                        hero(first)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(first.accessibilityText)
+                    .padding(.top, JPSpace.m)
+                }
+                LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
+                    ForEach(photos.dropFirst()) { photo in
                         NavigationLink {
                             PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: photos)
                         } label: {
-                            PhotoFrame(photo: photo)
+                            PhotoFrame(photo: photo, corner: 0)
+                                .background(WebTheme.card)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.top, ProfileV2.gridSpacing)
             }
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.favorites)
+        .navigationBarTitleDisplayMode(.inline)
+        // 題は下の明朝の見出しが受け持つ（板 v2）。バーの中央は空けておく（戻る文字と読み上げには題を持つ）
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
+            }
+        }
         // **ログイン状態が決まってから**聞く。確認中（`isResolving`）を
         // 未ログインと同じに扱わない。決まったら id が変わって読み直す
         // 鍵に戻ってきた回数を入れる——戻るたびに読み直す（消した自分の写真を落とす・H-2）
@@ -108,6 +134,71 @@ struct FavoritesView: View {
             frontSettle = nil
             screen.disappear()
         }
+    }
+
+    /// 見出し（板 v2 Favorites）: 眉「LIKED · N枚」（真鍮・黒地）→ 明朝の題 → 何の一覧かの一行（13・text-2）。
+    /// 板の題は明朝 30 だが、字の段（`JPTypeScale`）に 30 は無いので画面の題の 26（`JPFont.screenTitle`）
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(photos.isEmpty ? L("LIKED", "LIKED") : L("LIKED · \(photos.count)枚", "LIKED · \(photos.count)"))
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+            Text(Labels.Navigation.favorites)
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityAddTraits(.isHeader)
+            Text(L("ハートを押した写真。作者に届き、ほかの端末や Web でも同じ一覧が見られます。しおりで保存した写真はマイページの「保存」に。",
+                   "Photos you liked. The photographer is notified, and the same list appears on your other devices and the web. Bookmarked photos are under Saved on your page."))
+                .font(JPFont.footnote)
+                .lineSpacing(4)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, ProfileV2.gutter)
+        .padding(.top, JPSpace.xs)
+    }
+
+    /// 先頭の大きな1枚（板 v2 Favorites: 高さ 280・下 120pt を黒 70% へ・左下に明朝 20 の題と撮影地）
+    private func hero(_ photo: Photo) -> some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.heroHeight)
+            .overlay {
+                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+            }
+            .background(WebTheme.card)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 120)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !photo.displayTitle.isEmpty {
+                        Text(photo.displayTitle)
+                            .font(JPFont.stateTitle)
+                            .lineLimit(2)
+                    }
+                    let place = LocationMatch.display(photo.location)
+                    if !place.isEmpty {
+                        Text(place)
+                            .font(JPFont.footnote)
+                            .opacity(0.88)
+                            .lineLimit(1)
+                    }
+                }
+                // 写真の上は白だけ（CLAUDE.md）
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, ProfileV2.gutter)
+                .padding(.bottom, 14)
+                .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
     }
 
     private func refilter() {

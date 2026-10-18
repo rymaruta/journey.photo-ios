@@ -62,12 +62,31 @@ struct PhotoService {
     /// 写真の中身を書き換える。`PUT /photos/{id}`。
     ///
     /// **送った項目だけが変わる。** 何も送らないと 400「更新項目がありません」。
-    func update(photoId: String, patch: PhotoPatch) async throws {
-        try await api.authorizedVoid(
+    /// - Returns: 下書きを初めて公開した回に配られた旅のトランクのラベル（`label`・`labelSkipped`・2026-10-17）。
+    ///   それ以外の回・古いサーバーでは空
+    @discardableResult
+    func update(photoId: String, patch: PhotoPatch) async throws -> TrunkDealt {
+        let data = try await api.authorizedVoid(
             .put,
             "/photos/\(encoded(photoId))",
             body: patch
         )
+        return TrunkDealt.read(data)
+    }
+
+    /// 写真 `photoId` に付いている「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・認証）。
+    ///
+    /// サーバーが**読むときにも見られるか確かめた**ものだけが返る（閲覧者・付けた人と元の作者の
+    /// ブロック、非公開・削除）。`{ inspiredBy: null }` と **404**（この写真を見せられない）は nil——
+    /// どちらも「出すものが無い」。それ以外の失敗（500・圏外）は投げる（画面は何も出さない）
+    func inspiredSource(photoId: String) async throws -> InspiredBy.Source? {
+        do {
+            let response = try await api.authorized(.get, "/user/inspired/\(encoded(photoId))",
+                                                    as: InspiredBy.Response.self)
+            return response.inspiredBy
+        } catch where SocialService.isNotFound(error) {
+            return nil
+        }
     }
 
     /// 写真そのものを差し替える。`PUT /photos/{id}` に `key` と `publicUrl` を送る。
@@ -232,15 +251,24 @@ struct PhotoPatch: Encodable {
     /// サーバーは `"coords" in body` で見て、使えない値（null）なら消す
     /// （`photoUpdate.ts` の `applyMeta("coords", …)`）
     var clearCoords = false
+    /// 撮影スポットの紐付けを**外す**（本文に `"spotId": null`・2026-10-14）。
+    /// 撮影地を台帳のスポットの名前から離したとき（`EditPlaceRules.clearsSpotId`）。
+    /// サーバーは null か空文字で外す（`photoUpdate.ts` の `applyMeta("spotId", …)`）。付ける口はここに無い
+    var clearSpotId = false
+    /// 「この写真を見て撮影」の元の写真を**外す**（本文に `"inspiredBy": null`・2026-10-14）。
+    /// サーバーは null か空文字で外す（`photoUpdate.ts`。確かめずに REMOVE）。付け直す口はここに無い
+    var clearInspiredBy = false
 
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
             && category == nil && tags == nil && date == nil && published == nil
-            && song == nil && coords == nil && audience == nil && !clearCoords
+            && song == nil && coords == nil && audience == nil && !clearCoords && !clearSpotId
+            && !clearInspiredBy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case title, description, location, category, tags, date, published, coords, song, audience
+        case title, description, location, category, tags, date, published, coords, song, audience, spotId
+        case inspiredBy
     }
 
     /// 自動生成と同じく **nil のキーは載せない**。`clearCoords` のときだけ
@@ -261,5 +289,7 @@ struct PhotoPatch: Encodable {
         }
         try c.encodeIfPresent(song, forKey: .song)
         try c.encodeIfPresent(audience, forKey: .audience)
+        if clearSpotId { try c.encodeNil(forKey: .spotId) }
+        if clearInspiredBy { try c.encodeNil(forKey: .inspiredBy) }
     }
 }

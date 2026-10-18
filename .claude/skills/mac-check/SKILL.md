@@ -15,6 +15,27 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
   -f ref=<枝> -f 'inputs[submit]=false'
 ```
 
+### 変えた画面の絵だけ撮る（`screens`・2026-10-17）
+
+全部を流すと1回 約70分（run 462: 組む12分・単体6分・UI 33分・Archive 11分）。枝の確認では
+**変えた画面の名前（撮る絵の名前の一部）かテスト名の一部**を `screens` に渡して絞る:
+
+```bash
+gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+  -f ref=<枝> -f 'inputs[submit]=false' -f 'inputs[screens]=撮影スポット, すれちがい'
+```
+
+- 区切りは `,` か `、`。何に当たるかは手元で `python3 Tools/pick-ui-tests.py "<screens>"` で先に見る
+  （当たらない語があると候補を出して止まる。Mac でも最初の数秒で止まる）
+- 起動の見張り（`SmokeTests`）はいつも入る。`none` なら見張りだけ（絵の要らない直し）
+- 単体テストは絞らない（全3700件・6分）。単体が落ちたら UI まで行かずに止まる
+- 絞った回は Archive（Release の組み立て・約10分）もしない
+- 🔴 **絞った回は「Mac でテスト済み」と数えない。** PR の検証の Mac の job が全部を回す
+  （同じコミットを `screens` 空で流して通っていれば、そちらを数えて飛ばす）。
+  だから **PR をマージするのは、PR の検証の「Xcode のビルドとテスト」が緑（か、全部の回が
+  済んでいて skipped）になってから**
+- 全部を見たいとき（画面を広く変えた・統合ブランチ）は `screens` を付けない
+
 待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。
 

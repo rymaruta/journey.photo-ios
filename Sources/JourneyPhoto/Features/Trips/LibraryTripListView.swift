@@ -11,8 +11,13 @@ struct LibraryTripListView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @ObservedObject var model: LibraryTripModel
+    /// 開いたらすぐ選ぶ画面へ進む旅（端末の写真の一冊から・2026-10-16）
+    var opening: LibraryTrip? = nil
     /// 選んだ写真を整えたものを渡す（投稿画面へ）
     let onDone: ([ImagePreparer.Prepared]) -> Void
+    /// `opening` に当たる旅（見つかったら一度だけ押し込む）
+    @State private var autoOpen: LibraryTrip?
+    @State private var didAutoOpen = false
 
     private var fresh: [LibraryTrip] {
         model.trips.filter { LibraryTrips.postedDays(trip: $0, posted: model.posted) == 0 }
@@ -38,8 +43,17 @@ struct LibraryTripListView: View {
                 guard signedIn else { return [] }
                 return (try? await photos.myPhotos()) ?? []
             }
+            // 端末の一冊から来たら、その旅の選ぶ画面へ（一度だけ・見つからなければ一覧のまま）
+            if let opening, !didAutoOpen {
+                didAutoOpen = true
+                autoOpen = DeviceTrips.matching(opening, in: model.trips)
+            }
             // 旅の名前は新しい旅から順に（画面の上から埋まる）
             await model.resolveNames(model.trips.map(\.center))
+        }
+        .navigationDestination(item: $autoOpen) { trip in
+            LibraryTripPickView(trip: trip, title: model.name(for: trip.center) ?? LibraryTrips.periodText(trip),
+                                model: model, onDone: onDone)
         }
     }
 

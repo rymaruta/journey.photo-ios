@@ -4,6 +4,10 @@ import SwiftUI
 ///
 /// **解除できる場所が要る。** ブロックだけできて外せないと、
 /// 誤って押した人が戻せない。
+///
+/// **v2（2026-10-14・板 BlockedUsers）**: 左寄せの明朝 30 の大見出しと説明（13・text-2）、人の行は 64 で
+/// 下に白 8% の区切り線、アイコンは少し灰色に（見えなくなった人だと分かる・`BlockedUsersLayout.avatarGrayscale`）、
+/// 「解除」は線のボタン（白 14%）
 struct BlockedUsersView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -24,22 +28,29 @@ struct BlockedUsersView: View {
 
     var body: some View {
         List {
-            // 板 45 の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
-            // 板: 11px・白60%（本文の下限 12pt に上げた）
+            Text(L("ブロックした人", "Blocked people"))
+                .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                .foregroundStyle(WebTheme.text)
+                .padding(.horizontal, JPSpace.xxs)
+                .accessibilityAddTraits(.isHeader)
+                .plainRow(top: JPSpace.xs, bottom: 0)
+            // 板の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
+            // 板 v2: 13・text-2
             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。",
                    "Blocking hides each other's posts, stories and notifications."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 4)
-                // 板: 上 16・説明と一覧の間 12（＝ここの下 3 ＋ 行の上 9）
-                .plainRow(top: 16, bottom: 3)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .padding(.horizontal, JPSpace.xxs)
+                .plainRow(top: 6, bottom: JPSpace.s)
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
                     .padding(.horizontal, 4)
                     .plainRow()
             } else if users.isEmpty && !isLoading && hasLoaded {
-                Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
+                Text(L("ブロックしている人はいません", "No one is blocked"))
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.horizontal, JPSpace.xxs)
                     .plainRow()
             }
             ForEach(users) { user in
@@ -53,10 +64,12 @@ struct BlockedUsersView: View {
                         // 余白と枠は**中身の側**に置く。外に付けると押せるのは文字だけで、
                         // 枠の縁を押すと行の方が反応していた
                         Text(L("解除", "Unblock"))
-                            .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 14)
-                            .frame(minWidth: 44, minHeight: 36)
-                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
+                            .font(JPFont.footnote.weight(.semibold))
+                            .foregroundStyle(WebTheme.text)
+                            .padding(.horizontal, JPSpace.m)
+                            .frame(minWidth: 44, minHeight: JPHeight.inlineButton)
+                            // 板 v2: 線のボタンの縁（白 14%）
+                            .overlay(Capsule().strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
                             // 見た目は 36pt、押せる高さは 44pt（`FollowPill` と同じ）
                             .padding(.vertical, 4)
                             .contentShape(Rectangle())
@@ -66,14 +79,22 @@ struct BlockedUsersView: View {
                     .buttonStyle(.borderless)
                     .disabled(working.contains(user.id))
                 }
-                // 板は札も区切り線も無い素の並び（最小62pt）
-                .frame(minHeight: 44)
-                .plainRow(top: 9, bottom: 9)
+                // 板 v2: 人の行は 64、下に白 8% の区切り線
+                .frame(minHeight: JPHeight.tallRow)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                }
+                .plainRow(top: 0, bottom: 0)
             }
         }
         .listStyle(.plain)
         .webScreen()
+        // 戻るボタンの文言のために題は持つが、バーの中央には出さない（板は左寄せの大見出しだけ・設定と同じ）
         .navigationTitle(L("ブロックした人", "Blocked people"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+        }
         .task { await load() }
         .refreshable { await load() }
         .overlay { if isLoading { ProgressView() } }
@@ -87,6 +108,8 @@ struct BlockedUsersView: View {
                 .frame(width: 44, height: 44)
                 .background(WebTheme.surface)
                 .clipShape(Circle())
+                // 板 v2: 少し灰色に（見えなくなった人だと分かる）。名前は白のまま
+                .grayscale(BlockedUsersLayout.avatarGrayscale)
             PersonNameLines(user: user, lineLimit: 1)
             Spacer(minLength: 0)
         }
@@ -142,6 +165,12 @@ struct BlockedUsersView: View {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("解除できませんでした", "Couldn't unblock")
         }
     }
+}
+
+/// ブロックした人の画面の決まり（v2 の板 BlockedUsers）。テストで見張る
+enum BlockedUsersLayout {
+    /// アイコンの灰色の度合い（板: grayscale(.6)）
+    static let avatarGrayscale: Double = 0.6
 }
 
 private extension View {

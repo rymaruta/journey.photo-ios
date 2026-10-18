@@ -128,7 +128,8 @@ enum AppAccountToken {
     }
 }
 
-/// SHA-1（UUID 第5版のためだけ）。**署名や秘密には使わない**——CryptoKit は Linux の模型に無いので
+/// SHA-1。使い道は2つだけ: UUID 第5版（購入者の印）と、登録の確認の控えの鍵（メールアドレスを鍵に
+/// 平文で残さないための指紋・`PendingVerification.key`・2026-10-16）。**署名や秘密には使わない**——CryptoKit は Linux の模型に無いので
 /// 自前で持つ（RFC 3174）。正しさはテストの既知の値で見張る
 enum SHA1 {
     static func digest(_ message: [UInt8]) -> [UInt8] {
@@ -363,7 +364,7 @@ enum ProStatusText {
 
     /// **Pro でないと読めたときだけ案内を開く**（2026-10-09 判断）。プロフィールが読めていない
     /// （圏外・読み込みの失敗で nil）ときは管理を開く——払っている人に案内を出さない
-    /// （`ComposeGuideText.destination` の `.unreachable` と同じ考え。権利を決めるのはサーバー）
+    /// （権利を決めるのはサーバー。2026-10-17 までの「作例を重ねて撮る」の入口も同じ考えだった）
     static func settingsAction(isPro: Bool?) -> SettingsAction {
         isPro == false ? .paywall : .manage
     }
@@ -402,5 +403,19 @@ enum ProStatusText {
             parts.append(L("公式の印は外しています", "Verified mark off"))
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - 案内の自動更新の一文（審査 3.1.2）
+
+/// Pro の案内（`PaywallView`）の下に出す、自動更新の定期購入の決まり文（2026-10-16 判断）。
+///
+/// 審査 3.1.2 は、自動更新の定期購入の案内に「期間・値段・自動で更新されること・止め方」を求める。
+/// 値段と期間はプランの札（`ProPlan.priceLine`）に出ているので、ここは**自動更新と止め方**だけ。
+/// テストで見張る（`ReviewPrivacyTests`）
+enum ProPaywallText {
+    static var autoRenewNotice: String {
+        L("お支払いは購入の確定時に Apple ID に請求されます。定期購入は、期間が終わる24時間前までに解約しない限り自動で更新され、終わる前の24時間以内に次の期間の料金が請求されます。解約は「設定」アプリ → 自分の名前 →「サブスクリプション」（App Store の定期購入の管理）からいつでもできます。",
+          "Payment is charged to your Apple ID when you confirm the purchase. The subscription renews automatically unless you cancel at least 24 hours before the end of the current period, and the next period is charged within 24 hours before it ends. Cancel anytime in the Settings app \u{2192} your name \u{2192} Subscriptions (App Store subscription settings).")
     }
 }

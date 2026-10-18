@@ -29,8 +29,11 @@ public enum CLAuthorizationStatus {
 
 open class CLLocation: NSObject {
     public let coordinate: CLLocationCoordinate2D
+    /// 取れた時刻（すれちがいが「新しい位置か」を見る・2026-10-16）
+    public let timestamp: Date
     public init(latitude: CLLocationDegrees, longitude: CLLocationDegrees) {
         coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        timestamp = Date()
     }
 }
 
@@ -55,6 +58,8 @@ open class CLLocationManager: NSObject {
     public func requestWhenInUseAuthorization() {}
     /// 1回だけ取る口。`startUpdatingLocation`（追跡）は使わないので写していない
     public func requestLocation() {}
+    /// 最後に取れた位置（取りにいかない・すれちがいの粗い場所に使う・2026-10-16）
+    public var location: CLLocation? { nil }
 }
 
 /// 地名（住所の部品）。使うのは市区町村と都道府県と、その土地の時間帯

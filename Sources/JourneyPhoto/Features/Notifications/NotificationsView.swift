@@ -7,6 +7,8 @@ struct NotificationsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    /// ブロックした人の行・プッシュの行き先を手元で落とすため（`shown`・`opensPushTarget`）
+    @EnvironmentObject private var hidden: ModerationStore
     /// **通知を押すたびに読み直すため**に見ている。
     ///
     /// お知らせタブを開いたまま通知を押した回は、`RootView` の
@@ -23,6 +25,9 @@ struct NotificationsView: View {
     /// 行の本体・アイコンをそれぞれ横並びの別ボタンにして、押したら
     /// ここに行き先を立て、一覧の外（`navigationDestination`）から開く
     @State private var route: NotificationsViewModel.Route?
+    /// ストーリーへの返信の通知から開く返信の一覧（シート・2026-10-16）。`StoryRepliesSheet` は
+    /// シートとして作られている（自分の見出しのバーを持つ）ので、積まずに下から出す
+    @State private var repliesStory: StoryRepliesTarget?
     /// 「通知をオンにする」の帯（`ActivityPushBanner`・2026-10-11）から許可を尋ねている最中（二度押しで重ねない）
     @State private var isTurningOnPush = false
     @Environment(\.openURL) private var openURL
@@ -30,7 +35,8 @@ struct NotificationsView: View {
     var body: some View {
         Group {
             if auth.isResolving {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // v2（Components 06）: 回る印ではなく行の形の灰の骨格
+                ScrollView { JPLoadingState(kind: .rows).padding(.horizontal, JPSpace.gutter) }
             } else if auth.userId == nil {
                 SignInView(reason: L("お知らせを見るにはログインしてください", "Sign in to see your activity"))
             } else {
@@ -60,42 +66,30 @@ struct NotificationsView: View {
 
     /// 種類で絞る（提案の絵）。**数の多い順ではなく決まった並び**
     /// ——押すたびに位置が変わると、目で追えない
+    ///
+    /// **v2（2026-10-14・Notifications の板）: 共通のチップ（`PillChip`）に寄せた。**
+    /// 見た目 34・当たり 44・選ぶと白の塗り＋チェック。以前はここだけ自前の札（40 前後・印なし）だった
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: JPSpace.xs) {
                 ForEach(NotificationFilter.allCases) { option in
-                    let selected = filter == option
-                    Button {
+                    PillChip(title: option.label, selected: filter == option) {
                         filter = option
-                    } label: {
-                        Text(option.label)
-                            .font(.subheadline.weight(selected ? .semibold : .regular))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                                 : AnyShapeStyle(WebTheme.surface),
-                                        in: Capsule())
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                            // 札は 40pt 前後。押せる高さを 44pt にする（見た目は変えない）
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, JPSpace.gutter)
         }
     }
 
+    /// 出す行（ブロックで落とし、種類で絞る・`Self.shown`）。
+    ///
+    /// **描くたびに `hidden.blockedUserIds` で絞る**（2026-10-16 判断）——`hidden` が変わると描き直されるので、
+    /// ブロックした瞬間にも、表示のときにも効く。ほかの一覧（`FollowListView`）は行が `NavigationLink` なので
+    /// 写しを取るが、ここの行き先は `route`・`repliesStory` に持っていて行とは切れている
+    /// ——行が消えても開いている画面は閉じない
     private var shownRows: [AppNotification] {
-        // **種類の分からないお知らせは「すべて」にだけ出す。**
-        // 捨てると届いたことが伝わらないし、当て推量で仕分けると嘘になる
-        model.rows.filter { row in
-            guard let kind = row.kind else { return filter == .all }
-            return filter.matches(kind)
-        }
+        Self.shown(model.rows, blocked: hidden.blockedUserIds, filter: filter)
     }
 
     /// 1件ぶん。**押せるようにする**——行き止まりの一覧は「壊れている」に見える。
@@ -104,8 +98,19 @@ struct NotificationsView: View {
         let target = model.route(for: entry.lead)
         return NotificationRow(entry: entry, following: model.following,
                                onFollowBack: { await model.followBack($0, environment: environment) },
-                               onOpen: target.map { target in { route = target } },
+                               onOpen: target.map { target in { open(target) } },
                                onOpenProfile: { route = .user($0) })
+    }
+
+    /// 行き先を開く。ストーリーの返信の一覧だけシートで出す（ほかは積む）
+    private func open(_ target: NotificationsViewModel.Route) {
+        if case .storyReplies(let storyId) = target {
+            repliesStory = StoryRepliesTarget(storyId: storyId)
+        } else {
+            // 返信のシートが出ていたら閉じてから積む（シートの下で別の画面が開いて見えない）
+            repliesStory = nil
+            route = target
+        }
     }
 
     /// 行き先の画面。写真は**押した時点の値**で開く（`Route` を参照）
@@ -122,31 +127,30 @@ struct NotificationsView: View {
         case .light:
             // 光と天気の知らせ（プッシュだけ）→ 行きたい場所の光（板 LightAlert）
             LightForecastView()
+        case .storyReplies:
+            // **ここへは来ない**: 返信の一覧は必ずシートで出す（`open` が `route` に入れない）。
+            // `StoryRepliesSheet` は自分の `NavigationStack` を持つので、積むと入れ子になる。何も出さない
+            EmptyView()
         }
     }
 
     /// 何も無いときの画面（モック10 の「まだ通知はありません」）。
     /// **「1件も無い」と「この種類が無い」を分ける**
+    ///
+    /// **v2（2026-10-14・Components 06）: 共通の `EmptyState`**（明朝 20 の見出し → 15 の text-2）。
+    /// 板の空の状態にある「写真を投稿する」の主ボタンと季節のスポット2件は置かない
+    /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bell")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(WebTheme.faint)
-            Text(model.rows.isEmpty
-                 ? L("まだお知らせはありません", "Nothing yet")
-                 : L("この種類のお知らせはありません", "Nothing of this kind"))
-                .font(.headline)
-                .foregroundStyle(WebTheme.foreground)
-            if model.rows.isEmpty {
-                Text(L("新しいいいねやコメント、フォローが届くとここに出ます。",
-                       "Likes, comments and follows will show up here."))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        let total = Self.emptyIsTotal(rows: model.rows, blocked: hidden.blockedUserIds)
+        return EmptyState(title: total
+                       ? L("まだお知らせはありません", "Nothing yet")
+                       : L("この種類のお知らせはありません", "Nothing of this kind"),
+                   message: total
+                       ? L("写真を投稿すると、いいねやコメント、フォローがここに届きます。",
+                           "Likes, comments and follows on your photos will show up here.")
+                       : L("「すべて」に戻すと、ほかの種類のお知らせが見られます。",
+                           "Switch back to All to see other activity."))
+        .padding(.top, JPSpace.xl)
     }
 
     private var list: some View {
@@ -160,12 +164,30 @@ struct NotificationsView: View {
             }
             filterChips
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
 
+            // v2（Components 06）: 読めなかった回は共通の `ErrorBanner`（灰の三角・「もう一度試す」）。
+            // 以前は赤い字だけだった——読めないのは人の誤りではなく、危険の色は使わない
             if let message = model.errorMessage {
-                Text(message).foregroundStyle(WebTheme.danger).font(.callout)
+                ErrorBanner(message: message, isBusy: model.isLoading) {
+                    Task {
+                        if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
+                            await push.clearBadge()
+                        }
+                    }
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } else if model.rows.isEmpty && model.isLoading {
+                // 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
+                JPLoadingState(kind: .rows)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } else if shownRows.isEmpty && !model.isLoading {
                 emptyState
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             // **時間ごとにまとめる**（モック10）。並べ替えはしない
@@ -177,14 +199,21 @@ struct NotificationsView: View {
                     // 吸い込むと、見出しの「今日」が嘘になる
                     ForEach(NotificationText.collapse(group.rows, unreadIds: model.unreadIds)) { entry in
                         rowLink(entry)
+                            // v2: 行の間に線を引かない（板）。左の 20 は未読の真鍮の点の居場所
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: JPSpace.l, bottom: 0, trailing: JPSpace.m))
                     }
                 } header: {
-                    Text(group.bucket.label)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(WebTheme.foreground)
+                    // v2（板）: 日付の区切りは眉（真鍮）＋右へ消える線。黒地の上なので真鍮
+                    JPEyebrowLine(group.bucket.label)
+                        .padding(.top, JPSpace.l)
+                        .padding(.bottom, JPSpace.xxs)
                 }
             }
         }
+        // v2: 行を札で囲まない（板の行は黒地にそのまま並ぶ）
+        .listStyle(.plain)
         .navigationDestination(item: $route) { route in
             // 開いている写真の上で別の通知を押したとき、前の写真の画面の状態を引き継がない
             // （`PhotoDetailView` は写真を init でしか受け取らない）
@@ -204,8 +233,14 @@ struct NotificationsView: View {
             if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
             // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
             // 引けなければ一覧に留まる
-            guard !Task.isCancelled, let target, let destination = model.route(for: target) else { return }
-            route = destination
+            // **ブロックした人の通知は開かない**（ブロックの前に届いたプッシュを後で押した回・`opensPushTarget`）
+            guard !Task.isCancelled, let target,
+                  Self.opensPushTarget(target, blocked: hidden.blockedUserIds),
+                  let destination = model.route(for: target) else { return }
+            open(destination)
+        }
+        .sheet(item: $repliesStory) { target in
+            StoryRepliesLoader(storyId: target.storyId)
         }
         // 許可の段階をまだ読んでいなければ読む（帯を出すか決める。前面に戻ったときは `PushCenter.use` が読み直す）
         .task { if push.permission == .unknown { await push.refreshAuthorization() } }
@@ -226,6 +261,36 @@ struct NotificationsView: View {
 }
 
 extension NotificationsView {
+
+    /// 1件の行の最小の高さ（v2 の板 Notifications の `.nr` 68）
+    nonisolated static let rowHeight: CGFloat = 68
+    /// フォローバックの見た目 36 の上下に足す押せる余白（36＋4＋4＝44）
+    nonisolated static let followBackSlack: CGFloat = (WebTheme.minTapTarget - JPHeight.inlineButton) / 2
+
+    /// 一覧に出す行（2026-10-16 判断）。**ブロックした人（行の送り手）を落としてから種類で絞る。**
+    /// サーバー（`api-user/src/notifications.ts`）は読み直せば落とすが、返信の一覧のシートや人のページで
+    /// ブロックして戻ると、読み直すまでその人の名前・顔・行が残っていた。
+    /// 種類の分からないお知らせは「すべて」にだけ出す——捨てると届いたことが伝わらないし、
+    /// 当て推量で仕分けると嘘になる
+    nonisolated static func shown(_ rows: [AppNotification], blocked: Set<String>,
+                                  filter: NotificationFilter) -> [AppNotification] {
+        BlockFilter.notifications(rows, blocked: blocked).filter { row in
+            guard let kind = row.kind else { return filter == .all }
+            return filter.matches(kind)
+        }
+    }
+
+    /// 空の画面が「1件も無い」側か（「この種類が無い」側でなく）。**ブロックで落とした後で数える**
+    /// ——全部ブロックした人の行だったのに「『すべて』に戻すと…」と言わない
+    nonisolated static func emptyIsTotal(rows: [AppNotification], blocked: Set<String>) -> Bool {
+        BlockFilter.notifications(rows, blocked: blocked).isEmpty
+    }
+
+    /// 押したプッシュの行き先を開くか（2026-10-16 判断）。**送り手をブロックしていたら開かない**——
+    /// ブロックの前に届いたプッシュを後で押すと、その人の写真・人のページへ進んでいた。お知らせの一覧に留まる
+    nonisolated static func opensPushTarget(_ target: AppNotification, blocked: Set<String>) -> Bool {
+        !BlockFilter.notifications([target], blocked: blocked).isEmpty
+    }
 
     /// 「通知をオンにする」の帯。写真の無い画面なので板（DesignSystem「黒塗りの真鍮」）どおり:
     /// 案内の帯は accent-soft の地・合図のアイコンは真鍮（黒地の上）・文字は白・押す所は
@@ -315,7 +380,7 @@ private struct NotificationRow: View {
                 main(line)
                 followBackButton
             }
-            .frame(minHeight: 66)
+            .frame(minHeight: NotificationsView.rowHeight)
             // **未読の印は行の頭の真鍮の点**（板 15）。真鍮＝合図
             .overlay(alignment: .leading) {
                 if entry.unread {
@@ -347,21 +412,23 @@ private struct NotificationRow: View {
     }
 
     private func mainContent(_ line: NotificationText.Line) -> some View {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: JPSpace.s) {
+                VStack(alignment: .leading, spacing: 2) {
                     // 新しいメダルは眉ラベル（黒地の上なので真鍮・板 15）
                     if notification.kind == .badge {
                         Text("NEW MEDAL")
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
+                            .accessibilityLabel(L("新しいメダル", "New medal"))
                     }
-                    (Text(line.who).bold() + Text(line.rest))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.text)
+                    // v2（板）: 誰が＝白の 600、何をした＝text-2。字の太さだけに頼らず明るさでも分ける
+                    (Text(line.who).bold().foregroundStyle(WebTheme.text)
+                        + Text(line.rest).foregroundStyle(WebTheme.text2))
+                        .font(JPFont.body)
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                     }
                 }
                 Spacer(minLength: 0)
@@ -370,19 +437,20 @@ private struct NotificationRow: View {
                     RemoteImage(url: url)
                         .frame(width: 44, height: 44)
                         .background(WebTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        // v2: 小さい写真の角（radius-xs 6）
+                        .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
                         .accessibilityHidden(true)
                 }
                 // メダルは押すと棚へ進む（板 15 の右の矢印）
                 if notification.kind == .badge {
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(WebTheme.text3)
                         .frame(width: 44, height: 44)
                         .accessibilityHidden(true)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: NotificationsView.rowHeight, alignment: .leading)
             .contentShape(Rectangle())
     }
 
@@ -443,14 +511,15 @@ private struct NotificationRow: View {
                     busy = false
                 }
             } label: {
+                // v2（板・Components 01 の行の中の小ボタン）: 白 94% の塗りに墨・13 semibold・見た目 36
                 Text(L("フォローバック", "Follow back"))
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .background(WebTheme.foreground, in: Capsule())
+                    .font(JPFont.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: JPHeight.inlineButton)
+                    .background(WebTheme.accentBackground, in: Capsule())
                     .foregroundStyle(WebTheme.accentText)
-                    // 見た目は 32pt、押せる高さは 44pt
-                    .padding(.vertical, 6)
+                    // 見た目は 36pt、押せる高さは 44pt
+                    .padding(.vertical, NotificationsView.followBackSlack)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -474,6 +543,8 @@ final class NotificationsViewModel: ObservableObject {
         case shelf
         /// 行きたい場所の光（光と天気の知らせ・プッシュだけ）
         case light
+        /// 自分のストーリーの返信の一覧（ストーリーへの返信・まだ消えていない自分のストーリーだけ）
+        case storyReplies(String)
         case none
     }
 
@@ -487,6 +558,7 @@ final class NotificationsViewModel: ObservableObject {
         case user(String)
         case shelf
         case light
+        case storyReplies(String)
 
         static func == (lhs: Route, rhs: Route) -> Bool {
             switch (lhs, rhs) {
@@ -494,6 +566,7 @@ final class NotificationsViewModel: ObservableObject {
             case let (.user(a), .user(b)): return a == b
             case (.shelf, .shelf): return true
             case (.light, .light): return true
+            case let (.storyReplies(a), .storyReplies(b)): return a == b
             default: return false
             }
         }
@@ -508,6 +581,8 @@ final class NotificationsViewModel: ObservableObject {
                 hasher.combine(2)
             case .light:
                 hasher.combine(3)
+            case .storyReplies(let id):
+                hasher.combine(4); hasher.combine(id)
             }
         }
     }
@@ -531,6 +606,9 @@ final class NotificationsViewModel: ObservableObject {
     /// **nil は「まだ分からない」**（読めていない・読めなかった）。空集合と
     /// 分けないと、取れなかった回に全員へフォローバックが出る
     @Published private(set) var following: Set<String>?
+    /// **まだ出ている自分のストーリー**の id（`GET /stories` のうち自分の行）。ストーリーへの返信の
+    /// 行き先を決めるのに使う（2026-10-16）。nil は「まだ分からない」——押せないまま出す
+    @Published private(set) var liveStoryIds: Set<String>?
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
@@ -568,6 +646,7 @@ final class NotificationsViewModel: ObservableObject {
         unread = 0
         unreadIds = []
         following = nil
+        liveStoryIds = nil
         isLoading = false
         errorMessage = nil
         followBackError = nil
@@ -576,6 +655,12 @@ final class NotificationsViewModel: ObservableObject {
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
     func setMineForTesting(_ photos: [Photo]) { mine = photos }
+    func setLiveStoryIdsForTesting(_ ids: Set<String>?) { liveStoryIds = ids }
+
+    /// 自分のストーリーのうち、まだ出ているものの id（一覧の自分の行だけ）
+    nonisolated static func liveStoryIds(_ stories: [Story], viewerId: String) -> Set<String> {
+        Set(stories.filter { $0.userId == viewerId }.map(\.id))
+    }
 
     /// 行き先を決める。
     ///
@@ -584,7 +669,11 @@ final class NotificationsViewModel: ObservableObject {
     ///   引き当てる（投稿直後・下書きは公開一覧に載っていない）。
     ///   どちらにも無ければ押せないまま
     ///   にする（非公開にされた／消された写真を押して空振りさせない）
-    /// - ストーリーへの返信は行き先が無い（24時間で消えるため）
+    /// - この写真を見て撮影（`inspired`）は**付けた人の新しい写真**（`photoId`）。引き当て方は
+    ///   いいね・コメントと同じ（公開でしか届かないので、ふつうは公開一覧に居る）
+    /// - ストーリーへの返信は、**そのストーリーがまだ出ている間だけ**自分の返信の一覧（2026-10-16）。
+    ///   サーバーは `photoId` にストーリーの id を入れて送る（`api-user/src/storyReplies.ts`）。
+    ///   消えた（24時間・削除）・分からない間は押せないまま（空振りの一覧を開かない）
     /// - 新しいメダルは自分のバッジの棚（知らない鍵は行が描かれないので押せない）
     /// - 光と天気の知らせ（プッシュだけ）は行きたい場所の光。Pro でなくなっていたら、その画面が
     ///   「Pro の機能です」と言う（ここでは Pro かを見ない——見るのはサーバー）
@@ -595,7 +684,7 @@ final class NotificationsViewModel: ObservableObject {
                 return .user(id)
             }
             return .none
-        case .like, .comment:
+        case .like, .comment, .inspired:
             guard let id = notification.photoId else { return .none }
             if let photo = feed.first(where: { $0.id == id }) {
                 return .photo(photo, fromPublicFeed: true)
@@ -609,7 +698,10 @@ final class NotificationsViewModel: ObservableObject {
             return .shelf
         case .light:
             return .light
-        case .storyreply, .none:
+        case .storyreply:
+            guard let id = notification.photoId, liveStoryIds?.contains(id) == true else { return .none }
+            return .storyReplies(id)
+        case .none:
             return .none
         }
     }
@@ -620,6 +712,7 @@ final class NotificationsViewModel: ObservableObject {
         case .user(let id): return .user(id)
         case .shelf: return .shelf
         case .light: return .light
+        case .storyReplies(let id): return .storyReplies(id)
         case .none: return nil
         }
     }
@@ -640,6 +733,15 @@ final class NotificationsViewModel: ObservableObject {
         // 人が替わった（`forget`）後に返った前の人の答えは書かない
         guard era == userEra else { return }
         following = Set(ids)
+    }
+
+    /// まだ出ている自分のストーリーを読む（ストーリーへの返信の行き先・2026-10-16）。
+    /// 返信の行が無ければ読みに行かない。人が替わった後に返った答えは書かない
+    private func loadLiveStories(_ items: [AppNotification], environment: AppEnvironment,
+                                 viewerId: String?, era: Int) async {
+        guard let me = viewerId, !me.isEmpty, items.contains(where: { $0.kind == .storyreply }) else { return }
+        guard let stories = try? await environment.stories.list(), era == userEra else { return }
+        liveStoryIds = Self.liveStoryIds(stories, viewerId: me)
     }
 
     /// フォローバックを出すか。**フォロー中が分からない間（nil）は出さない**
@@ -746,6 +848,8 @@ final class NotificationsViewModel: ObservableObject {
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
             await loadFollowing(environment: environment, viewerId: viewerId, era: era)
+            // ストーリーへの返信の行があるときだけ、自分のストーリーがまだ出ているかを読む（取れなければ押せないまま）
+            await loadLiveStories(page.items, environment: environment, viewerId: viewerId, era: era)
             // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
             // サーバーの既読化（`api-user/src/notifications.ts` の
             // `readNotifications`）は無条件の `SET unread = :z` なので、

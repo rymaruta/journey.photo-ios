@@ -71,11 +71,12 @@ final class FoundingGiftTests: XCTestCase {
         XCTAssertEqual(FoundingGiftGate.name(try profile(#"{"userId":"u1"}"#)), "")
     }
 
-    /// 板の寸法: 390pt の画面でメダル 360pt、小さい画面では縮める
+    /// 板 v2 の寸法: メダル 220pt（v1 は画面の幅いっぱいの 360）。とても狭い画面では左右 28 を残して縮める
     func testMedalSide() {
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 390), 360)
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 320), 290)
-        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 430), 360)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 390), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 320), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 430), 220)
+        XCTAssertEqual(FoundingGiftLayout.medalSide(screenWidth: 240), 184)
     }
 
     /// 配線: 起動のあと（「新しくなったこと」を閉じたあと）に確かめ、飾ったら覚えてマイページを読み直す
@@ -85,7 +86,9 @@ final class FoundingGiftTests: XCTestCase {
         let source = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/App/RootView.swift"),
                                 encoding: .utf8)
         XCTAssertTrue(source.contains("tabsWithFoundingGift"))
-        XCTAssertTrue(source.contains("onDismiss: { Task { await presentFoundingGiftIfNeeded() } }"))
+        // 閉じたら贈り物を決める（決め終えたら、はじめての硬貨の案内の待ちを解く・`decideFoundingGift`・2026-10-18）
+        XCTAssertTrue(source.contains("onDismiss: { Task { await decideFoundingGift() } }"))
+        XCTAssertTrue(source.contains("await presentFoundingGiftIfNeeded()\n        launchNoticesDeciding = false"))
         XCTAssertTrue(source.contains("FoundingGiftGate().noteAccepted(userId: userId)"))
         XCTAssertTrue(source.contains("gate.noteShown(userId: userId)"))
         let view = try String(contentsOf: root.appendingPathComponent(

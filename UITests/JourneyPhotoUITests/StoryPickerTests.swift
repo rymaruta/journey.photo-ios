@@ -197,11 +197,12 @@ final class StoryPickerTests: XCTestCase {
 
         // 続けて、仕上げる段の「＋」→「ライブラリ」（シートの写真選び）から1枚足す
         guard took != nil else { return }
-        addFromLibrarySheet(app, tag: "\(tag)-6")
+        addFromLibrarySheet(app, tag: "\(tag)-6", before: count)
     }
 
-    /// 仕上げる段の並びの「＋」→「ライブラリ」で1枚足す。足した後も「シェアする」が押せること
-    private func addFromLibrarySheet(_ app: XCUIApplication, tag: String) {
+    /// 仕上げる段の並びの「＋」→「ライブラリ」で1枚足す。足した後も「シェアする」が押せること。
+    /// `before` は足す前に並んでいる枚数
+    private func addFromLibrarySheet(_ app: XCUIApplication, tag: String, before: Int) {
         let plus = app.buttons["写真を追加"].firstMatch
         guard plus.waitForExistence(timeout: 5), plus.isHittable else {
             note("\(tag)-＋が無い", app.debugDescription)
@@ -241,12 +242,41 @@ final class StoryPickerTests: XCTestCase {
         }
         note("\(tag)-追加を押せた", added.description)
         shoot(app, "\(tag)-3-追加の直後")
+        // 🔴 **足した1枚が並びに出るのを待ってから**「シェアする」を見る（2026-10-16）。前の写真だけで
+        // 「シェアする」は押せるので、待たないと読み込みの前に通ってしまい、足した1枚が届かなくても緑になった
+        let addedShot = app.buttons["\(before + 1)枚目"].firstMatch
+        guard addedShot.waitForExistence(timeout: Self.shareDeadline) else {
+            shoot(app, "\(tag)-並びに出ない")
+            note("\(tag)-並びに出ない", app.debugDescription)
+            XCTFail("＋から1枚足したのに、\(Int(Self.shareDeadline))秒たっても並びに「\(before + 1)枚目」が出ない")
+            return
+        }
         let took = waitForShare(app, tag: "\(tag)-4")
         XCTAssertNotNil(took, "＋から1枚足した後、「シェアする」が押せない")
     }
 
     func testPickOnePhotoEnablesShare() {
         pickOnPickStage(count: 1, tag: "90-ストーリー1枚")
+        captureAudienceSheet(tag: "90-ストーリー1枚")
+    }
+
+    /// 「誰に見せる？」のシートの「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え）。
+    /// 出なければ撮らずに抜ける（この試験の決まり）。切り替えは押さない（値は人ごとに端末に残る）
+    private func captureAudienceSheet(tag: String) {
+        let app = XCUIApplication()
+        // 言葉ではなく印で探す（英語の端末でも見つかる）
+        let audience = app.buttons["story.audience"].firstMatch
+        guard audience.waitForExistence(timeout: 5), audience.isHittable else { return }
+        audience.tap()
+        let toggle = app.switches["story.attachLocation"].firstMatch
+        guard toggle.waitForExistence(timeout: 5) else {
+            shoot(app, "\(tag)-7-誰に見せる（切り替えが出ない）")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "\(tag)-7-誰に見せる（撮影地の位置を付ける）")
+        let done = app.buttons["story.audience.done"].firstMatch
+        if done.exists, done.isHittable { done.tap() }
     }
 
     func testPickThreePhotosEnablesShare() {

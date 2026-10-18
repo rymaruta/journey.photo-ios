@@ -12,18 +12,20 @@ import SwiftUI
 /// （かんたん版の狙いに反する）ので、「フォロワーに届きます」の説明1行だけにする。
 /// サーバーが受けるようになったら、ここに選ぶ口を足して `CloseFriendsView` へつなぐ。
 ///
-/// 地は黒、行の面は #121212 相当（`WebTheme.surface`）。トグルのオンは暗い真鍮（#796440）。
+/// 地は黒、行は共通の札（`JPCard`・v2 の surface-1）。トグルのオンは暗い真鍮（#796440）。
 /// 写真の無いシートなので、主ボタン「決める」は accent-fill（#B8955A）に墨（owner の好み「白より真鍮」）。
 struct StoryAudienceSheet: View {
 
     @Binding var allowReplies: Bool
     @Binding var keepInArchive: Bool
+    /// 「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え。書くのは作る画面）
+    @Binding var attachesLocation: Bool
     var onDone: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L("誰に見せる？", "Who can see it?"))
-                .font(JPFont.display(22, relativeTo: .title2))
+                .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
                 .padding(.top, 24)
 
@@ -31,7 +33,7 @@ struct StoryAudienceSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: "person.2")
                     .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.text2)
                     .accessibilityHidden(true)
                 Text(L("フォロワーに届きます", "Goes to your followers"))
                     .font(.subheadline)
@@ -39,51 +41,39 @@ struct StoryAudienceSheet: View {
             }
             .accessibilityElement(children: .combine)
 
-            VStack(spacing: 0) {
-                toggleRow(title: L("返信を受け取る", "Receive replies"), detail: nil, isOn: $allowReplies)
-                Divider().overlay(WebTheme.border)
+            // v2: 共通の札と入切の行（`JPCard`・`JPToggleRow`・軌道は暗い真鍮）。返信を切ったら何が起きるかを一行で
+            // （v2 StoryComposer の「切ると、見る人に返信欄と ♡ が出ません」）
+            JPCard {
+                JPToggleRow(title: L("返信を受け取る", "Receive replies"),
+                            detail: L("切ると、見る人に返信欄と ♡ が出ません",
+                                      "If off, viewers won't see the reply field or ♡"),
+                            isOn: $allowReplies)
+                JPCardDivider()
                 // **ハイライトに入れられるのは残したものだけ**（`api-user/src/highlights.ts`）。既定は残さない
-                toggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
-                          detail: L("ハイライトに入れられます", "You can add it to highlights"),
-                          isOn: $keepInArchive)
+                JPToggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
+                            detail: L("ハイライトに入れられます", "You can add it to highlights"),
+                            isOn: $keepInArchive)
+                JPCardDivider()
+                // 投稿の画面と同じ切り替え・同じ言葉（`UploadDetails`）。値も投稿と共有する
+                JPToggleRow(title: UploadDetails.locationToggleTitle,
+                            detail: StoryLocationText.toggleNote(attaches: attachesLocation),
+                            isOn: $attachesLocation)
+                    .accessibilityIdentifier("story.attachLocation")
             }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
 
             Spacer(minLength: 8)
 
             Button(action: onDone) {
                 Text(L("決める", "Done"))
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(WebTheme.accentText)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    // 写真の無いシートの主ボタンは accent-fill に墨（owner の好み「白より真鍮」）
-                    .background(WebTheme.accentFill, in: Capsule())
+                    // 写真の無いシートの主ボタンは accent-fill に墨（owner の好み「白より真鍮」・v2 の 50）
+                    .jpPillButton(.main(onPhoto: false))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("story.audience.done")
             .padding(.bottom, 8)
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(WebTheme.background)
-    }
-
-    private func toggleRow(title: String, detail: String?, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted2)
-                }
-            }
-        }
-        // **軌道は暗い真鍮。** 既定（白）だと白い軌道に白いつまみが乗る
-        .tint(WebTheme.accentDeep)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .frame(minHeight: 56)
     }
 }

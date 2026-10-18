@@ -3,8 +3,8 @@ import SwiftUI
 import PhotosUI
 @testable import JourneyPhoto
 
-/// 「作例を重ねて撮る」（Pro・板 ComposeGuide・2026-10-09）の画面を持たない決まり（`ComposeGuide`）。
-/// 濃さの範囲・作例の順・上の札と案内の札の文・距離と方角・入口の行き先・カメラが使えないときの文
+/// 「作例を重ねて撮る」（板 ComposeGuide・2026-10-09。2026-10-17 から全員無料）の画面を持たない決まり（`ComposeGuide`）。
+/// 濃さの範囲・作例の順・上の札と案内の札の文・距離と方角・カメラが使えないときの文
 final class ComposeGuideTests: XCTestCase {
 
     // MARK: - 濃さ
@@ -265,7 +265,7 @@ final class ComposeGuideTests: XCTestCase {
                       "撮る画面に Launch の並びと始める番号を渡していない")
         XCTAssertEqual(launcher.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
         XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "撮影スポットの頁が直に開いている")
-        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name)"),
+        XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name,"),
                       "撮影スポットの頁が共通の部品で開いていない")
         // 頼みは開く時点の帯の並びで作る
         XCTAssertTrue(spot.contains("ComposeGuide.Launch(sample: sample, samples: shownSamples)"), "帯の並びで開いていない")
@@ -273,7 +273,7 @@ final class ComposeGuideTests: XCTestCase {
         XCTAssertTrue(spot.contains("openComposeGuide(from: sample.sourceUrl)"), "帯の写真から開いていない")
         XCTAssertTrue(spot.contains("openComposeGuide(from: nil)"), "入口のボタンが1枚目から開いていない")
         // 開いている間は開き直さない（素早い2回押し・`ComposeGuideLauncherTests.testDoesNotReopenWhileOpen`）
-        XCTAssertTrue(launcher.contains("guard !checking, launch == nil, !showPaywall"), "開いている間の2回押しを止めていない")
+        XCTAssertTrue(launcher.contains("guard launch == nil else { return .ignored }"), "開いている間の2回押しを止めていない")
     }
 
     /// 撮る画面は渡された番号から始め、映像に指を取らせない
@@ -296,14 +296,6 @@ final class ComposeGuideTests: XCTestCase {
     func testEntryOnlyWithSamples() {
         XCTAssertFalse(ComposeGuide.showsEntry(sampleCount: 0))
         XCTAssertTrue(ComposeGuide.showsEntry(sampleCount: 1))
-    }
-
-    func testDestination() {
-        XCTAssertEqual(ComposeGuide.destination(signedIn: true, isPro: true), .camera)
-        XCTAssertEqual(ComposeGuide.destination(signedIn: true, isPro: false), .paywall)
-        XCTAssertEqual(ComposeGuide.destination(signedIn: false, isPro: nil), .paywall)
-        // Pro かを確かめられなかった（圏外）→ Pro の人に案内を出さない
-        XCTAssertEqual(ComposeGuide.destination(signedIn: true, isPro: nil), .unreachable)
     }
 
     func testPreviewKeyIsOffByDefault() {

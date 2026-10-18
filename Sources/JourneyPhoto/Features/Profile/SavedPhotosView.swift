@@ -32,9 +32,15 @@ struct SavedPhotosView: View {
             if photos.isEmpty {
                 switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                    // v2: 格子の骨格（0.3 秒より早ければ出さない）
+                    JPLoadingState(kind: .grid)
                 case .none:
-                    EmptyState(message: Self.emptyMessage)
+                    // 2026-10-17: 保存は写真の詳細のしおりから。写真に出会う所（ホーム）へ1手
+                    // （マイページの保存0枚 `mypage.emptySaved` と同じ道）
+                    EmptyState(message: Self.emptyMessage,
+                               actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "savedPhotos.emptyBrowse") {
+                        TabRouter.shared.openHome()
+                    }
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:

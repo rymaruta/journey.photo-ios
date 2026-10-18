@@ -85,19 +85,29 @@ targets:
         JPStoreProductPrefix: $(JP_BUNDLE_ID)
         # 5.1.1 / 4.2 で審査官が読む利用目的。日本語と英語の両方を出す
         NSCameraUsageDescription: 写真を撮って投稿するため、また作例を重ねて撮るためにカメラを使います。
-        NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日と場所から旅を見つけるために使います。写真は選んだものだけを送ります。
+        NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日時と場所から旅を見つけて旅の記録に並べるために使います。旅を探すのは端末の中だけで、写真も位置もどこにも送りません（旅の名前を引くときだけ、おおよその位置を Apple の地図に渡します）。投稿するのは選んだ写真だけです。
         NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
         # 一部だけ許可（.limited）のとき、iOS が起動ごとに出す「写真を選び直す」案内を止める。
         # 選び足す口は旅の一覧の上に置く（`PhotoLibrary.presentLimitedPicker`）
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         # 実際に位置を要求するのは撮影地マップの現在地ボタン（寄せる・点と向きを描く・保存しない）。
         # 投稿の撮影地は写真の EXIF から読むので、ここで取った位置は使わない
-        NSLocationWhenInUseUsageDescription: 撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。位置は保存も送信もしません。
+        # すれちがい（2026-10-16）をオンにした人だけ、すれちがった場所を市区町村ほどの粗さでこの端末の中に残す。
+        # 尋ねるのは今までどおり撮影地マップだけ（すれちがいからは尋ねない）。サーバーへは送らない。
+        # 地名を引くときだけ約1kmに丸めた座標を Apple の地図に渡す（`PassExchange.lookupCoords`・2026-10-16）
+        NSLocationWhenInUseUsageDescription: 撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。すれちがいをオンにしているときは、すれちがった所の市区町村の名前を調べるために、約1kmに丸めたおおよその位置だけを Apple の地図に渡し、市区町村の名前と粗い位置をこの端末の中にだけ残します。Journey Photo のサーバーへ位置を送ることはありません。
+        # すれちがい（2026-10-16）: 近くにいるアプリの人を Bluetooth で見つけ、わたしの乗車券（公開写真の id）を交換する。
+        # 電波を出すのは設定でオンにした人だけ（既定はオフ・オンにする前に説明を出す）
+        NSBluetoothAlwaysUsageDescription: すれちがいをオンにしたとき、近くにいる Journey Photo の利用者を見つけて、乗車券に選んだ公開写真・ひとこと・乗車券の発と着の字・券面の種類をカードとして交換するために Bluetooth を使います。居住地を出す設定なら、相手にはプロフィールの都道府県が表示されます。位置や連絡先は送りません。
+        # 画面を閉じている間も、すれちがいのカードを交換する（オンにした人だけ電波を出す・`PassRadio`）
+        UIBackgroundModes:
+          - bluetooth-central
+          - bluetooth-peripheral
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "1.1.8"
+        CURRENT_PROJECT_VERSION: "4"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_USER_SCRIPT_SANDBOXING: YES

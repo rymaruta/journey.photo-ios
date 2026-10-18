@@ -22,9 +22,12 @@ enum EditPhotoChanges {
         var date: String
         var published: Bool
         var audience: Audience
+        /// 「この写真を見て撮影」の元の写真を外す（2026-10-14）。開いたときは false
+        var removeInspired: Bool
 
         init(title: String, caption: String, location: String, pickedCoords: Photo.Coords?,
-             tagsText: String, category: String, date: String, published: Bool, audience: Audience) {
+             tagsText: String, category: String, date: String, published: Bool, audience: Audience,
+             removeInspired: Bool = false) {
             self.title = title
             self.caption = caption
             self.location = location
@@ -34,6 +37,7 @@ enum EditPhotoChanges {
             self.date = date
             self.published = published
             self.audience = audience
+            self.removeInspired = removeInspired
         }
 
         /// 開いたときの欄（画面の初期値）。**知らない公開範囲は「全体」で置く**
@@ -88,6 +92,9 @@ enum EditPhotoChanges {
                                                         currentLocation: f.location,
                                                         pickedCoords: f.pickedCoords != nil,
                                                         photoCoords: photo.coords, spots: spots)
+        // 撮影地を台帳のスポットの名前から離したら、スポットの紐付けも外す（2026-10-14）
+        patch.clearSpotId = EditPlaceRules.clearsSpotId(spotId: photo.spotId, openedLocation: photo.location,
+                                                        currentLocation: f.location, spots: spots)
         // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
         // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(f.tagsText)
@@ -108,6 +115,8 @@ enum EditPhotoChanges {
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
         // 入っていた日付を消したら空文字を送る（サーバーが撮影日を消す）
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date), field: f.date)
+        // 元の写真は**付いている写真で、外すを選んだときだけ** null を送る（付いていない写真に送らない）
+        patch.clearInspiredBy = f.removeInspired && InspiredBy.isAttached(photo)
         return patch
     }
 

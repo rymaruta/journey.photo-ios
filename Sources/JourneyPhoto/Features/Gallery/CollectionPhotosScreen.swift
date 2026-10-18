@@ -21,6 +21,11 @@ struct CollectionPhotosScreen: View {
     /// 読み込めなかった回の出口。**渡されたときだけ**、0枚を
     /// 「読み込めませんでした」＋「もう一度試す」で出す（「該当する写真がありません」と分ける）
     var retry: (() -> Void)?
+    /// 題の上の眉（「COLOR」「GEAR」「THIS SEASON」）。無ければ集約の種類から決める
+    /// （`CollectionScreen.eyebrow(for:)`）。どちらも無ければ眉を出さない
+    var eyebrow: String?
+    /// 眉の読み上げ（英字の眉を日本語で読ませる）
+    var eyebrowSpoken: String?
 
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
@@ -36,26 +41,62 @@ struct CollectionPhotosScreen: View {
     private var shown: [Photo] { dropped.visible(photos) }
     private var sorted: [Photo] { sort.apply(shown) }
 
+    /// 一覧の上の見出し。**v2（2026-10-14・TagPhotos の板）**: 眉（真鍮）→ 明朝 32 の題 →
+    /// 13 の text-2 の枚数の一行。以前はバーの中央に 16 の題と 12 の枚数を2行で出していた
+    /// ——題が小さく、何の一覧かが写真より先に読めなかった
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            if let mark = eyebrowMark {
+                Text(mark.text)
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityLabel(mark.spoken)
+            }
+            Text(title)
+                .font(JPFont.photoTitle)
+                .foregroundStyle(WebTheme.text)
+                .lineLimit(2)
+                .accessibilityAddTraits(.isHeader)
+            // 読み込めずに0枚の回も枚数を出さない（数えていないものを「0枚」と言わない）
+            let subtitle = CollectionScreen.subtitle(count: shown.count, note: note,
+                                                     isLoading: isLoading || (retry != nil && photos.isEmpty))
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(JPFont.footnote.monospacedDigit())
+                    .foregroundStyle(WebTheme.text2)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, JPSpace.gutter)
+    }
+
+    /// 眉の字と読み上げ（渡されたもの → 集約の種類から）
+    private var eyebrowMark: (text: String, spoken: String)? {
+        if let eyebrow { return (eyebrow, eyebrowSpoken ?? eyebrow) }
+        return CollectionScreen.eyebrow(for: kind)
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                heading
                 if let lede, !lede.isEmpty {
                     Text(lede)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
-                        .padding(.horizontal, 16)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
+                        .padding(.horizontal, JPSpace.gutter)
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: JPSpace.xs) {
                         ForEach(GallerySort.collectionChoices) { option in
                             PillChip(title: option.chipLabel, selected: sort == option) {
                                 sort = option
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, JPSpace.gutter)
                 }
-                // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+                // 札の押せる余白（上下 5）の分だけ詰め、並びの見た目の間隔は前のまま
                 .padding(.vertical, -PillChip.tapSlack)
 
                 // 読めなかった回は `photos` が空（ブロックで伏せた0枚とは分ける）
@@ -70,8 +111,8 @@ struct CollectionPhotosScreen: View {
                     }
                 }
             }
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.top, JPSpace.xxs)
+            .padding(.bottom, JPSpace.xl)
         }
         .webScreen()
         .onAppear {
@@ -92,27 +133,13 @@ struct CollectionPhotosScreen: View {
             frontSettle = nil
             front.disappear()
         }
-        // 読み上げと次の画面の「戻る」に使う。見た目は下の2行の見出し
+        // 読み上げと次の画面の「戻る」に使う。見た目は一覧の上の見出し（`heading`）。
+        // バーの中央は空けておく（題を2か所に出さない）
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(title)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(1)
-                    // 読み込めずに0枚の回も枚数を出さない（数えていないものを「0枚」と言わない）
-                    let subtitle = CollectionScreen.subtitle(count: shown.count, note: note,
-                                                             isLoading: isLoading || (retry != nil && photos.isEmpty))
-                    if !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                            .lineLimit(1)
-                    }
-                }
-                .accessibilityElement(children: .combine)
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: CollectionScreen.shareText(title: title, count: shown.count,

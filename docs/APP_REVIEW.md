@@ -21,6 +21,35 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > ・写真ファイルに埋め込まれた撮影情報（EXIF・GPS）は端末側で取り除いてから
 >   送信し、位置は約1kmに丸めて保存します。精細な位置情報は保存していません。
 >   カメラの機種・レンズ・撮影日は、写真ページの「撮影情報」に表示します。
+> ・ストーリーへの返信は、返信の一覧の各行の「…」から通報（運営の宛先へのメール）と
+>   ブロックができます。
+> ・**背景での Bluetooth（UIBackgroundModes: bluetooth-central / bluetooth-peripheral）**は
+>   「すれちがい」のためだけに使います。「マイページ → 設定 → すれちがい」でオンにした人だけ
+>   （既定はオフ）、画面を閉じている間も近くの Journey Photo 利用者と「わたしの乗車券」のカード
+>   （本人が選んだ公開写真1枚・ひとこと・乗車券の発・着の字・券面の種類）を交換します。位置・連絡先は送りません。
+> ・**すれちがいを試すには iPhone が2台要ります**（2台とも審査用のアカウントでログインし、
+>   それぞれで「すれちがい」をオンにして近くに置く。カードはその日の 18 時にまとめて届きます）。
+>   2台で動いている様子の動画: 【owner が用意する: 動画の URL】
+> ・**端末の写真から旅の一冊（写真ライブラリの許可・2026-10-16）**: ログインした人の
+>   「マイページ → 旅の記録」に説明の札を出し、「続ける」を押したときに初めて写真の許可を尋ねます
+>   （「今はしない」で閉じられます。一部の写真だけの許可でも動きます）。読むのは各写真の撮影日時・
+>   位置（小数4桁に丸める）・識別子だけで、**写真の本体は読まず、サーバーにも送りません**。
+>   見つけた旅は本人のマイページにだけ「端末の中だけ」の印つきで並び、共有の口はありません。
+>   外へ出るのは、旅の名前を引くための約1kmに丸めた位置だけ（Apple の地図・一冊につき1回）。
+>   要約は端末の中（Application Support）だけに置き、iCloud のバックアップから外します。
+>   ログアウト・退会・写真の許可の取り消し（次に開いたとき）で消します。
+>   読むのはアプリを開いている間だけ、優先度の低い後ろの仕事で、直近3年・新しい方から最大5万枚。
+>   500枚ごとに少し休み、2回目からは新しい写真だけを読みます（ライブラリの変化の後は前の読みから
+>   60秒あける）。試し方: 審査用アカウントでログイン →「マイページ → 旅の記録」→「続ける」→
+>   写真を許可。家（いちばん多く撮った場所）から50km以上離れて撮った写真のまとまりが一冊ずつ並びます
+>   （位置情報つきの写真が要ります）。
+> ・**Pro（自動更新の定期購入）**: 「Journey Photo Pro」月額（`<束の名前>.pro.monthly`・¥500/月）と
+>   年額（`<束の名前>.pro.yearly`・¥5,000/年）。同じサブスクリプショングループ「Journey Photo Pro」。
+>   無料の試用はありません。中身は「光と天気の知らせ」「電波なしで使える旅」「名前の横の Pro マーク」「特別な乗車券（すれちがいの券面を選べる）」。
+>   （「作例・構図を重ねて撮る」は 2026-10-17 から全員無料。ログインしていなくても撮れます）
+>   試し方: 「マイページ → 設定 → Pro → Journey Photo Pro」で案内を開き、
+>   プランを選んで「Pro をはじめる」（Sandbox のアカウントで購入できます）。案内の下の
+>   「購入を復元」で復元、解約は App Store の定期購入の管理から。
 
 > This app is a personal travel photo gallery. Browsing requires no account;
 > posting requires an email sign-up.
@@ -37,6 +66,40 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > - Embedded EXIF/GPS metadata is stripped from the image file on device before
 >   upload; coordinates are rounded to ~1km. Camera model, lens and capture date
 >   are shown publicly in the photo's "Shooting info" section.
+> - Replies to a story can be reported (by email to the address above) and their
+>   senders blocked from the "…" on each reply in the replies list.
+> - **Background Bluetooth (UIBackgroundModes: bluetooth-central / bluetooth-peripheral)**
+>   is used only for "Pass". Only users who turn it on under My Page → Settings → Pass
+>   (off by default) swap a "card" (one public photo they chose, a short note, the
+>   from/to text on the ticket and the ticket design) with Journey Photo users nearby, also while the app is
+>   in the background. No location or contact details are sent.
+> - **Testing Pass needs two iPhones** (sign in on both, turn Pass on on both and keep
+>   them close; received cards arrive together at 6 PM that day).
+>   Video of it working on two devices: [OWNER TO FILL IN: video URL]
+> - **Trips from photos on this iPhone (photo library access, 2026-10-16)**: for signed-in
+>   users, My Page → Trips shows an explanation card, and the photo permission is asked only
+>   when they tap "Continue" ("Not now" dismisses it; limited access also works). The app reads
+>   only each photo's capture date, location (rounded to 4 decimals) and identifier. **Image data
+>   is not read and nothing is sent to our server.** Found trips appear only on the user's own
+>   My Page, marked "On this iPhone only", with no way to share them. The only thing leaving the
+>   device is a location rounded to ~1km, sent to Apple Maps once per trip to name it.
+>   The summary is kept only on the device (Application Support), excluded from iCloud backup,
+>   and deleted on sign-out, account deletion, or when photo access is revoked (next app launch
+>   or return to the app). Reading runs only while the app is open, as a low-priority task,
+>   covering the last 3 years and at most 50,000 photos (newest first), pausing every 500 photos;
+>   later runs read only new photos (at least 60 seconds apart after library changes).
+>   To test: sign in with the demo account → My Page → Trips → "Continue" → allow photos.
+>   Groups of photos taken 50 km or more from home (the most-photographed area) appear as
+>   trips (photos need location data).
+> - **Pro (auto-renewable subscription)**: "Journey Photo Pro" monthly
+>   (`<bundle id>.pro.monthly`, ¥500/month) and yearly (`<bundle id>.pro.yearly`,
+>   ¥5,000/year) in the subscription group "Journey Photo Pro". No free trial.
+>   Pro adds light & weather alerts, offline trips, a Pro mark and special Pass ticket
+>   designs. (Shooting with a
+>   composition / example overlay is free for everyone and works without signing in.)
+>   To test: My Page → Settings → Pro → Journey Photo Pro, pick a plan and tap
+>   "Start Pro" (Sandbox account). "Restore" is under the plans; cancel from
+>   the App Store subscription settings.
 
 ## 審査用アカウント
 
@@ -64,7 +127,11 @@ App Store Connect の Demo Account に入れる。
 | 5.1.1(v) | アプリ内でのアカウント削除 | 設定 → アカウントの削除（確認語の入力つき） | `DeleteAccountView.swift` |
 | 5.1.1 | 必要のないログイン要求は不可 | 閲覧・検索・地図はログイン不要 | `RootView.swift` |
 | 5.1.2 | 位置情報の最小化 | 精細な位置は保存しない（約1kmに丸める） | `ImagePreparer.readCoords` |
-| 2.1 | プライバシーマニフェスト | 収集項目と UserDefaults の理由を申告 | `Resources/PrivacyInfo.xcprivacy` |
+| 5.1.1 / 5.1.2 | Bluetooth（すれちがい・2026-10-16） | **既定はオフ**。オンにする前に説明を出し、そこで初めて Bluetooth を尋ねる。電波で渡すのは版・公開写真の id・ひとこと（20字・80 バイトまで）・乗車券の発・着の字（6字まで）・居住地を出すかの印・券面の種類（1 バイト・2026-10-17）だけ（出す設定のときは、受け取った端末が公開プロフィールから居住地の都道府県を引いて出す）。**特性は暗号化しておらず、近くの Bluetooth 機器なら誰でも読める**（写真の id から持ち主も分かる・乗車券を変えるまで同じ値・ブロックした相手にも届きうる）——設定とオンにする前の説明にそのまま書いてある（`PassPrivacyText`）。カードの「…」から通報・ブロック・帳から外すができる（審査 1.2）。受け取ったカード・すれちがった場所（市区町村ほど・0.1 度に丸める）は**端末の中だけ**でサーバーへ送らない（＝収集しない）。地名を引くときは約1kmに丸めた座標だけを Apple の地図（`CLGeocoder`）に渡す（`PassExchange.lookupCoords`）。背景の Bluetooth（UIBackgroundModes）はこのためだけ。位置は撮影地マップで許可済みのときだけ使い、すれちがいからは尋ねない | `PassRadio.swift` / `PassStore.swift` / `PassExchange.swift` |
+| 5.1.1 / 5.1.2 | 写真ライブラリ（端末の写真から旅の一冊・2026-10-16） | マイページの旅の記録の説明の札で「続ける」を押したときに初めて尋ねる（ログインしている人だけ読む）。読むのは撮影日時・位置（小数4桁）・識別子だけで画像もサーバーへも送らない。要約は端末の中（バックアップ外）で、ログアウト・退会・許可の取り消しで消す。上限は直近3年・5万枚・500枚ごとに休む。地名は約1kmに丸めて Apple の地図へ一冊1回 | `DeviceTrips.swift` / `DeviceTripLibrary.swift` / `DeviceTripShelf.swift` |
+| 1.2 UGC | ストーリーへの返信の通報・ブロック | 返信の一覧の各行の「…」。**通報はメール**（返信を通報するサーバーの口が無く、写真の通報の口は自分のストーリーを受けない＝400）。宛先は問い合わせと同じ。ブロックは既存の口でその場で一覧から消える | `StoryRepliesSheet.swift` / `ModerationService.storyReplyReportURL` |
+| 2.1 | プライバシーマニフェスト | 収集項目と、理由の要る API（UserDefaults: CA92.1・ディスクの空き: 85F4.1）を申告 | `Resources/PrivacyInfo.xcprivacy` |
+| 3.1.2 | 自動更新の定期購入 | 案内に値段・期間・自動更新の一文（24時間前までに解約しない限り更新・止め方）・利用規約とプライバシーポリシーのリンク・購入の復元 | `PaywallView.swift` / `ProPaywallText` |
 | 2.5.1 | 非公開 API 不使用 | 依存は Amplify Swift 1本のみ | `project.yml` |
 | 4.8 Sign in with Apple | **対象外** | 第三者ログイン（Google・Facebook 等）を使っていない。認証は自前の Cognito でメール＋パスワードのみ | `AuthGateway.swift` |
 
@@ -77,12 +144,22 @@ App Store Connect の Demo Account に入れる。
 | メールアドレス | はい | アプリの機能 | はい | いいえ |
 | 名前（表示名） | はい | アプリの機能 | はい | いいえ |
 | 写真 | はい | アプリの機能 | はい | いいえ |
-| その他のユーザーコンテンツ（コメント） | はい | アプリの機能 | はい | いいえ |
+| その他のユーザーコンテンツ（コメント・キャプション・プロフィールの文・通報の補足・行きたい場所・旅の計画） | はい | アプリの機能 | はい | いいえ |
+| メールまたはテキストメッセージ（ストーリーへの返信） | はい | アプリの機能 | はい | いいえ |
+| 購入履歴（Pro の定期購入の取引） | はい | アプリの機能 | はい | いいえ |
 | おおよその位置 | はい | アプリの機能 | はい | いいえ |
 | ユーザーID | はい | アプリの機能 | はい | いいえ |
 | デバイスID（プッシュ通知の宛先） | はい | アプリの機能 | はい | いいえ |
 
 **精細な位置（Precise Location）は「いいえ」。** 保存前に約1kmへ丸めている。
+
+**写真**にはアイコン・カバー・ストーリーの写真も入る。**集めないもの**: すれちがいで受け取ったカードと
+すれちがった場所（端末の中だけ）・端末の写真の一冊の要約（写真の撮影日時と位置・端末の中だけ。旅の名前を引く約1kmの位置は Apple の地図へ渡すだけで、こちらは受け取らない）・連絡先・健康・閲覧履歴・検索履歴（その場の問い合わせだけで残さない）・
+診断（解析やクラッシュの SDK は入れていない）。
+
+**購入履歴を落とさない**（2026-10-16 に足した）。Pro の取引は `POST /user/purchases` でサーバーへ送り、
+本人の Pro・サポーターの番号に結びつけて残す（`PurchaseService.swift`）。表と
+`PrivacyInfo.xcprivacy` は `ReviewPrivacyTests` が突き合わせる。
 
 **デバイスID を落とさない。** 以前この表から抜けていたが、`PrivacyInfo.xcprivacy`
 は申告している（APNs の端末トークン・通知を許可した人だけ）。食い違うと
@@ -130,7 +207,11 @@ owner が消す運用で、押した本人の画面からはその場で消え�
 - [ ] サポート URL・プライバシーポリシー URL（`docs/APP_STORE_METADATA.md`）
 - [ ] App Store Connect の「バージョン」欄と、ビルドの版（`testflight/<版>` のタグ）が一致
       （版は CI が毎回 +1 する。並行して上げると番号が進むので、提出するビルドの版を見る）
-- [ ] Notes に上の文面を貼った
+- [ ] Notes に上の文面を貼った（すれちがいの動画の URL を入れたか）
+- [ ] 自動更新の定期購入: App の説明文か、App Store Connect の「使用許諾契約（EULA）」の欄に
+      利用規約のリンク（`https://<サイト>/terms`）を入れた（審査 3.1.2）
+- [ ] 課金の商品（`pro.monthly`・`pro.yearly`）を**この版と一緒に審査へ出した**
+      （版の「App 内課金とサブスクリプション」に追加。初めての商品は版と一緒でないと審査されない）
 
 ### 想定される区分
 

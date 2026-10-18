@@ -166,6 +166,8 @@ public struct DismissAction {
 
 public struct OpenURLAction {
     public func callAsFunction(_ url: URL) {}
+    /// 開けたかを受け取る形（本物と同じ）
+    public func callAsFunction(_ url: URL, completion: @escaping (Bool) -> Void) {}
 }
 
 public enum ColorScheme { case light, dark }
@@ -314,6 +316,14 @@ public struct Animation {
     public static func easeInOut(duration: Double) -> Animation { Animation() }
     public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825) -> Animation { Animation() }
     public static let `default` = Animation()
+    /// 3次の曲線（旅の記録の線を引く動き）
+    public static func timingCurve(_ c0x: Double, _ c0y: Double, _ c1x: Double, _ c1y: Double,
+                                   duration: Double) -> Animation { Animation() }
+}
+/// 値の途中を毎コマ描き直す部品（本物は `animatableData` を補間する）
+public protocol Animatable {
+    associatedtype AnimatableData
+    var animatableData: AnimatableData { get set }
 }
 /// 本物は `Result` を返す。模型は中身を1回呼ぶだけ
 @discardableResult
@@ -402,15 +412,21 @@ public struct Gradient {
     }
 }
 public struct LinearGradient: View, ShapeStyle {
-    public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
-    public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    nonisolated public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    nonisolated public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    public var body: Never { fatalError() }
+}
+
+/// 円周に沿うグラデーション（ストーリーの未見の輪の金属の光・本物と同じ）
+public struct AngularGradient: View, ShapeStyle {
+    public init(colors: [Color], center: UnitPoint, startAngle: Angle, endAngle: Angle) {}
     public var body: Never { fatalError() }
 }
 
 /// 丸いグラデーション（メダルを手に取る画面の地と後光・本物と同じ）
 public struct RadialGradient: View, ShapeStyle {
-    public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
-    public init(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
+    nonisolated public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
+    nonisolated public init(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
     public var body: Never { fatalError() }
 }
 

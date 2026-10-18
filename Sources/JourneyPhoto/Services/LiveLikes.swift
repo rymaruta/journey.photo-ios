@@ -8,10 +8,83 @@ import Foundation
 /// 食い違っていた。
 ///
 /// 管理 API の `GET /photos` は未認証で読め、DynamoDB の `likes` をそのまま
-/// 返す（Web の `usePhotos` が同じ口で一覧を差し替えている）。**一覧の中身は
-/// 静的 JSON のまま**にして、数だけをここから写す——こちらが落ちても
-/// 一覧は出るし、数が古いだけで済む。
+/// 返す（Web の `usePhotos` が同じ口で一覧を差し替えている）。
+///
+/// 2026-10-16 判断: **一覧の中身もこの答えで置き換える**（`read`・`list`）。以前は数だけを
+/// 写し、`photos.json` に無い id を捨てていた。サイトの作り直しが見送られて定期ビルドも
+/// 止まり、`photos.json` は 2026-09-28 の 44 件で止まっている——Web では見える写真（題「焚き火🔥」）
+/// が iOS のホームのおすすめ・探す・地図などに出なかった。Web の `usePhotos` と同じ決まりにそろえる:
+/// - 答えが**空でない配列**なら、その並びで置き換える（同じ id は生の行が正）
+/// - 失敗・空・配列でない答えなら、今までどおり `photos.json`
+/// こちらが落ちても一覧は出る（静的 JSON に戻るだけ）
 enum LiveLikes {
+
+    /// `GET /photos` の答えを読んだもの。**1回の要求から、数と行の両方を作る**（二重に叩かない）
+    struct Snapshot {
+        /// `id → likes`（`counts(from:)`）
+        let counts: [String: Int]
+        /// 答えの行の id。**答えの並び**（サーバーが `createdAt` の新しい順に並べている）
+        let ids: [String]
+        /// 写真として読めた行（`LenientPhotoList`）
+        let photos: [String: Photo]
+    }
+
+    /// 答えを読む。**読めなければ nil**（＝置き換えない・数も写さない）。
+    ///
+    /// 行は `LenientPhotoList`（`photos.json` と同じ緩い読み方）で読む。
+    /// 写真として読めない行（`src` が無いなど）でも id と数は残す——`list` がその id を
+    /// `photos.json` の行で埋める（1行の型違いで、在る写真を一覧から消さない）
+    static func read(_ data: Data) -> Snapshot? {
+        guard let counts = counts(from: data),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+        var ids: [String] = []
+        var seen = Set<String>()
+        for row in rows {
+            guard let dict = row as? [String: Any],
+                  let id = dict["id"] as? String, !id.isEmpty, seen.insert(id).inserted else { continue }
+            // 公開範囲を絞った行は**id ごと**一覧に入れない（`isRestrictedRow`）
+            if isRestrictedRow(dict["audience"]) { continue }
+            ids.append(id)
+        }
+        let decoded = (try? JSONDecoder.api.decode(LenientPhotoList.self, from: data))?.photos ?? []
+        let photos = Dictionary(decoded.filter { !isRestrictedRow($0.audience) }.map { ($0.id, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        return Snapshot(counts: counts, ids: ids, photos: photos)
+    }
+
+    /// 公開範囲を絞った行か。**サーバーの `isRestricted`（`api/src/photos.ts`）と同じ線**——空でない
+    /// 文字列、または null 以外の値なら絞った行とみなす（知らない値も隠す側に倒す）。
+    ///
+    /// 2026-10-16 判断: `GET /photos` は絞った行を返さない（Scan の `attribute_not_exists(audience)`）が、
+    /// 念のため端末でも落とす。限定公開は `GET /feed/restricted` から `RestrictedFeed.merge` が別に重ねる
+    /// ——生の行で混ざると、見てよい人の判定（サーバーの `isVisiblePhoto`）を通らずに出てしまう
+    static func isRestrictedRow(_ audience: Any?) -> Bool {
+        switch audience {
+        case nil, is NSNull: return false
+        case let text as String: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default: return true
+        }
+    }
+
+    /// 一覧の元。**Web の `usePhotos` と同じ決まり**（2026-10-16 判断）。
+    ///
+    /// - `live` が無い・行が0件 → `photos.json`（数も写さない＝今までどおり）
+    /// - それ以外 → **答えの並びで置き換える。** 同じ id は生の行が正。生の行が写真として
+    ///   読めなかった id だけ `photos.json` の行で埋める。答えに無い `photos.json` の行は
+    ///   出さない（サーバーで消した・非公開にした写真。Web も置き換えで消えている）
+    /// - 数といまの時刻（`asOf`）は、置き換えた一覧の全部に写す（`apply`）
+    ///
+    /// 絞り込み（公開範囲・ブロック・通報・消した写真・`published`）はここでは掛けない。
+    /// 呼ぶ側（`PublicGalleryService.merged`）が、合わせた後に必ず通す
+    static func list(live: Snapshot?, asOf: Date, static staticPhotos: [Photo]) -> [Photo] {
+        guard let live, !live.ids.isEmpty else { return staticPhotos }
+        let staticById = Dictionary(staticPhotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let replaced = live.ids.compactMap { live.photos[$0] ?? staticById[$0] }
+            .filter { !isRestrictedRow($0.audience) }
+        // 1行も写真にできなかった答え（形の変わった答えなど）で一覧を空にしない。数だけ写す
+        guard !replaced.isEmpty else { return apply(live.counts, asOf: asOf, to: staticPhotos) }
+        return apply(live.counts, asOf: asOf, to: replaced)
+    }
 
     /// 応答から `id → likes` を作る。**読めなければ nil**（＝上書きしない）。
     ///

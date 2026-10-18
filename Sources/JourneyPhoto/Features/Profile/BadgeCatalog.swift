@@ -15,7 +15,7 @@ import Foundation
 /// - 季節の章は**年ごとの鍵** `pro<Spring|Summer|Autumn|Winter><西暦>`（例 `proAutumn2026`）。
 ///   サーバーの `badgeKeys.ts` と同じ形。**絵のある年だけ**出す（`ProChapters.artYears`）
 /// - 縁と裏は真鍮。名前の横では円の 91%（季節の章）
-/// - 機能の章（暁・構図・圏外）は第3段階で配る。鍵はまだ無いので、PRO 限定の段の「まだ」の絵だけ
+/// - 機能の章（暁・圏外。構図は 2026-10-18 に外した）は第3段階で配る。鍵はまだ無いので、PRO 限定の段の「まだ」の絵だけ
 ///
 /// 画面に依らない計算だけを持つ（Linux の模型でもテストできるように）。
 enum BadgeCatalog {
@@ -302,6 +302,11 @@ enum ProMarkFit {
     static let systemRatio: Double = 0.885
     /// これより小さいときは小さい版
     static let smallBelow: Double = 15
+    /// 公式の封印（`checkmark.seal.fill`）の見た目の中央に合わせて、印の高さに対して下へずらす量。
+    /// 封印は記号なので、見た目の中央が枠の中央より少し下にある。印は正方形の枠の真ん中に描くので、
+    /// 同じ中央に置くと印だけ少し上に見えた（2026-10-14 owner「中心ズレてる？」。実機の絵を画素で測って
+    /// 封印の中央 y=77・印 y=75（約3倍）＝約 0.66pt 上 ÷ 印の高さ 21.7pt ≈ 0.03）
+    static let sealCenterNudge: Double = 0.03
 
     /// 印の高さ（絞り羽根は一辺）
     static func side(nameSize: Double, mincho: Bool) -> Double {

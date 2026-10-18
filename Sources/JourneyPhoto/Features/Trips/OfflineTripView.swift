@@ -38,34 +38,37 @@ struct OfflinePhoneIcon: View {
     }
 }
 
-/// 圏外の帯（板 72c・72d: 真鍮の薄い地 #201B11・電波の無い印は真鍮）
+/// 圏外の帯（v2 の板 OfflineTrip: surface-1 の札・白 8% の縁・角 14。電波の無い印は真鍮、
+/// 見出しは 14 の太字、添え書きは 12 の text-3）。v1 の真鍮の薄い地はやめた（合図は印だけで足りる）
 struct OfflineBanner: View {
     let title: String
     var detail: String?
 
     var body: some View {
-        HStack(alignment: detail == nil ? .center : .top, spacing: 10) {
+        HStack(alignment: .top, spacing: JPSpace.s) {
             Image(systemName: "wifi.slash")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(WebTheme.accent)
+                .padding(.top, 1)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.footnote.weight(.semibold))
+                    .font(JPFont.footnote.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail)
-                        .font(JPFont.mono(12))
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.meta)
+                        .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(WebTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 14)
+        .padding(.vertical, JPSpace.s)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
         .accessibilityElement(children: .combine)
     }
 }
@@ -99,16 +102,12 @@ struct OfflineStoredImage: View {
     }
 }
 
-/// 番号の丸（板 72c: 24pt・真鍮の地に墨の数字）
+/// 番号の丸。**v2（板 OfflineTrip）: 真鍮の線と真鍮の数字**（旅行プランの日程と同じ `TripStopNumber`）。
+/// 地図の画像の点と同じ番号
 struct OfflineStopNumber: View {
     let number: Int
     var body: some View {
-        Text("\(number)")
-            .font(JPFont.number(12, weight: .bold))
-            .foregroundStyle(WebTheme.accentText)
-            .frame(width: 24, height: 24)
-            .background(WebTheme.accent, in: Circle())
-            .accessibilityHidden(true)
+        TripStopNumber(number: number)
     }
 }
 
@@ -125,9 +124,9 @@ struct OfflineTripView: View {
     var body: some View {
         ScrollView {
             OfflineTripContent(manifest: manifest, preview: preview)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.horizontal, JPSpace.gutter)
+                .padding(.top, JPSpace.xxs)
+                .padding(.bottom, JPSpace.screenEnd)
         }
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
@@ -148,65 +147,51 @@ struct OfflineTripContent: View {
             OfflineBanner(title: preview ? OfflineTripText.previewBanner : OfflineTripText.offlineBanner,
                           detail: OfflineTripText.bannerDetail(savedAt: manifest.savedAt))
 
-            VStack(alignment: .leading, spacing: 4) {
+            // 題（v2 の板 OfflineTrip: 明朝 26 → 13 の text-2 の等幅の1行）
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 Text(manifest.title.isEmpty ? L("無題のプラン", "Untitled trip") : manifest.title)
-                    .font(JPFont.cardTitle)
+                    .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityAddTraits(.isHeader)
                 Text(subtitle)
-                    .font(JPFont.mono(12))
-                    .foregroundStyle(WebTheme.muted2)
+                    .font(JPFont.mono(13, relativeTo: .footnote))
+                    .foregroundStyle(WebTheme.text2)
             }
-            .padding(.horizontal, 4)
+            .padding(.top, JPSpace.xxs)
 
             if let url = offline.fileURL(planId: manifest.planId, file: manifest.overviewMap) {
                 VStack(alignment: .leading, spacing: 6) {
                     OfflineStoredImage(url: url)
                         .frame(maxWidth: .infinity)
                         .frame(height: OfflineTripMap.overviewSize.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
                         .accessibilityElement()
                         .accessibilityLabel(L("保存した地図の画像。場所 1 から \(manifest.stopCount) の位置",
                                               "Saved map image showing places 1 to \(manifest.stopCount)"))
                         .accessibilityAddTraits(.isImage)
                     Text(L("保存した地図の画像です。拡大や道案内はできません",
                            "This is a saved map image. You can't zoom or get directions."))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .padding(.horizontal, 4)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                 }
             }
 
             ForEach(manifest.days, id: \.number) { day in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 0) {
-                        Text(L("\(day.number) 日目", "Day \(day.number)"))
-                        if let label = TakenDay.label(day.date) {
-                            Text(L("・\(label)", " · \(label)")).font(JPFont.mono(12))
+                // v2 の板 OfflineTrip: 真鍮の眉「1日目 · 12月24日」と消える線 → 区切り線の行（札で囲まない）
+                VStack(alignment: .leading, spacing: 0) {
+                    JPEyebrowLine(Self.dayHeading(day))
+                        .padding(.bottom, JPSpace.xxs)
+                    ForEach(day.stops) { stop in
+                        NavigationLink {
+                            OfflineSpotView(manifest: manifest, stop: stop, day: day, preview: preview)
+                        } label: {
+                            row(stop)
                         }
+                        .buttonStyle(JPRowButtonStyle())
                     }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isHeader)
-
-                    VStack(spacing: 0) {
-                        ForEach(Array(day.stops.enumerated()), id: \.element.number) { i, stop in
-                            if i > 0 { JPCardDivider() }
-                            NavigationLink {
-                                OfflineSpotView(manifest: manifest, stop: stop, day: day, preview: preview)
-                            } label: {
-                                row(stop)
-                            }
-                            .buttonStyle(JPRowButtonStyle())
-                        }
-                    }
-                    .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
+                .padding(.top, JPSpace.xxs)
             }
         }
     }
@@ -220,29 +205,44 @@ struct OfflineTripContent: View {
         return parts.joined(separator: " · ")
     }
 
+    /// 日の眉（「1 日目 · 12月24日」）
+    nonisolated static func dayHeading(_ day: OfflineTripManifest.Day) -> String {
+        var head = L("\(day.number) 日目", "Day \(day.number)")
+        if let label = TakenDay.label(day.date) { head += " · \(label)" }
+        return head
+    }
+
+    /// 行（v2 の板 OfflineTrip の `.st`: 64・番号の丸 → 明朝の名前（撮影スポット）→ 太陽の印と光の時刻・下に区切り線）
     private func row(_ stop: OfflineTripManifest.Stop) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JPSpace.s) {
             OfflineStopNumber(number: stop.number)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(stop.name)
-                    .font(.body)
+                    .font(stop.key.hasPrefix("spot:") ? JPFont.rowTitle : JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
                 if let line = stop.light?.line {
-                    Text(line)
-                        .font(JPFont.mono(12))
-                        .foregroundStyle(WebTheme.muted2)
+                    HStack(spacing: 6) {
+                        Image(systemName: "sun.horizon")
+                            .font(.caption)
+                            .accessibilityHidden(true)
+                        Text(line)
+                            .font(JPFont.mono(13, relativeTo: .footnote))
+                    }
+                    .foregroundStyle(WebTheme.text2)
                 }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.footnote)
-                .foregroundStyle(Color.white.opacity(0.35))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(minHeight: 54)
+        .padding(.vertical, 10)
+        .frame(minHeight: JPHeight.tallRow)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel([String(stop.number), stop.name, stop.light?.line].compactMap { $0 }.joined(separator: " · "))
@@ -271,8 +271,9 @@ struct OfflineSpotView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 hero
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: JPSpace.m) {
+                    // 写真の下端の上に重ねる題（写真の上なので白・灰は透過の `muted2`）
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(stop.name)
                             .font(JPFont.screenTitle)
                             .foregroundStyle(WebTheme.foreground)
@@ -280,23 +281,33 @@ struct OfflineSpotView: View {
                             .accessibilityAddTraits(.isHeader)
                         if let address = stop.address {
                             Text(address)
-                                .font(.caption)
+                                .font(JPFont.footnote)
                                 .foregroundStyle(WebTheme.muted2)
                         }
                     }
-                    .padding(.horizontal, 4)
 
+                    // 圏外の1行（v2 の板 OfflineSpot: 札にせず、真鍮の印と 12 の text-3 の1行）
                     if connectivity.isOffline || preview {
-                        OfflineBanner(title: preview && !connectivity.isOffline
-                                      ? OfflineTripText.previewBanner : OfflineTripText.offlineBanner)
+                        HStack(spacing: JPSpace.xs) {
+                            Image(systemName: "wifi.slash")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(WebTheme.accent)
+                                .accessibilityHidden(true)
+                            Text(preview && !connectivity.isOffline
+                                 ? OfflineTripText.previewBanner : OfflineTripText.offlineBanner)
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.text3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     lightSection
                     samplesSection
                     placeSection
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, JPSpace.gutter)
                 .padding(.top, -58)
-                .padding(.bottom, 32)
+                .padding(.bottom, JPSpace.screenEnd)
             }
         }
         .webScreen()
@@ -307,49 +318,45 @@ struct OfflineSpotView: View {
         }
     }
 
-    /// 頭の写真（1枚目の作例）。下を黒へ溶かす（板: 230pt・溶け 120pt）
+    /// 頭の写真（1枚目の作例）。下を黒へ溶かす（v2 の板 OfflineSpot: 250pt・溶け 140pt）
     private var hero: some View {
         ZStack(alignment: .bottom) {
             OfflineStoredImage(url: url(stop.samples.first?.file))
             LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
-                .frame(height: 120)
+                .frame(height: 140)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 230)
+        .frame(height: 250)
         .clipped()
         .accessibilityElement()
         .accessibilityLabel(L("\(stop.name)の作例（端末に保存したもの）", "Example of \(stop.name) (saved on this iPhone)"))
         .accessibilityAddTraits(.isImage)
     }
 
+    /// 光の時刻（v2 の板 OfflineSpot: 眉と消える線 → 4行の表。名前は 14、時刻は 17 の細い等幅の数字・行の下に区切り線）
     @ViewBuilder
     private var lightSection: some View {
         if let light = stop.light, !light.entries.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(lightHeading)
-                    .font(JPFont.mono(12, medium: true))
-                    .foregroundStyle(WebTheme.faint)
-                    .accessibilityAddTraits(.isHeader)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                          alignment: .leading, spacing: 8) {
-                    ForEach(light.entries, id: \.label) { entry in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(entry.label)
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.muted2)
-                            Text(entry.value)
-                                .font(JPFont.number(17, weight: .semibold, relativeTo: .body))
-                                .foregroundStyle(WebTheme.text)
-                        }
-                        .accessibilityElement(children: .combine)
+            VStack(alignment: .leading, spacing: 0) {
+                JPEyebrowLine(lightHeading)
+                    .padding(.bottom, JPSpace.xxs)
+                ForEach(light.entries, id: \.label) { entry in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(entry.label)
+                            .font(JPFont.body)
+                            .foregroundStyle(WebTheme.text)
+                        Spacer(minLength: JPSpace.xs)
+                        Text(entry.value)
+                            .font(JPFont.number(17, weight: JPFont.figureWeight, relativeTo: .body))
+                            .foregroundStyle(WebTheme.text)
                     }
+                    .frame(minHeight: TripStyle.lightRowMinHeight)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         }
     }
 
@@ -363,12 +370,8 @@ struct OfflineSpotView: View {
     @ViewBuilder
     private var samplesSection: some View {
         if !stop.samples.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L("保存した作例 · \(stop.samples.count) 枚", "Saved examples · \(stop.samples.count)"))
-                    .font(JPFont.mono(12, medium: true))
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
-                    .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                JPEyebrowLine(L("保存した作例 · \(stop.samples.count) 枚", "Saved examples · \(stop.samples.count)"))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                     ForEach(Array(stop.samples.enumerated()), id: \.offset) { i, sample in
                         Button {
@@ -377,7 +380,7 @@ struct OfflineSpotView: View {
                             OfflineStoredImage(url: url(sample.file))
                                 .frame(height: 76)
                                 .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -389,15 +392,16 @@ struct OfflineSpotView: View {
     }
 
     /// メモ・周りの地図・座標・地図アプリで開く
+    @ViewBuilder
     private var placeSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let note = stop.note {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("メモ", "Note"))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
                     Text(note)
-                        .font(.subheadline)
+                        .font(JPFont.body)
                         .foregroundStyle(WebTheme.text)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -420,23 +424,25 @@ struct OfflineSpotView: View {
             }
             if let coords = stop.coords {
                 coordsRow(coords)
-                JPCardDivider()
-                mapsButton(coords)
             }
         }
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // v2 の板 OfflineSpot: メモと位置の札（surface-1・角 14）。「地図アプリで開く」は札の下に出す
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+        if let coords = stop.coords {
+            mapsButton(coords)
+        }
     }
 
     private func coordsRow(_ coords: Photo.Coords) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("座標", "Coordinates"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
                 Text(OfflineTripText.coordinates(coords))
-                    .font(JPFont.mono(14))
+                    .font(JPFont.mono(15, relativeTo: .subheadline))
                     .foregroundStyle(WebTheme.text)
             }
             .accessibilityElement(children: .combine)
@@ -446,11 +452,14 @@ struct OfflineSpotView: View {
                 copied = true
                 UIAccessibility.post(notification: .announcement, argument: L("座標を写しました", "Coordinates copied"))
             } label: {
+                // 板 OfflineSpot: 32 の線の小ボタン（当たりは 44）
                 Label(copied ? L("写しました", "Copied") : L("写す", "Copy"),
                       systemImage: copied ? "checkmark" : "doc.on.doc")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
-                    .padding(.horizontal, 12)
+                    .font(JPFont.caption.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .padding(.horizontal, JPSpace.s)
+                    .frame(minHeight: 32)
+                    .overlay(Capsule().strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
                     .frame(minHeight: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
             }
@@ -458,37 +467,32 @@ struct OfflineSpotView: View {
             .accessibilityLabel(L("座標を写す", "Copy coordinates"))
         }
         .padding(.leading, 14)
-        .padding(.trailing, 6)
-        .frame(minHeight: 52)
+        .padding(.trailing, 10)
+        .frame(minHeight: JPHeight.row)
     }
 
     /// 地図アプリで開く。**圏外でも押せるまま**（owner 2026-10-09: 地図アプリが端末に地図を持っていれば開ける）。
     /// 圏外のときだけ「電波が無いと開けないことがあります」を添える
     private func mapsButton(_ coords: Photo.Coords) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 6) {
             Button {
                 // 名前で探し直さない（圏外では探せない）。丸めた座標に名前を付けて渡す
                 SpotDirections.rounded(name: stop.name, coords: coords).openInMaps()
             } label: {
+                // 写真のある画面の主ボタン＝白（v2 の板 OfflineSpot・`JPPillStyle.main(onPhoto: true)`）
                 Label(L("地図アプリで開く", "Open in Maps"), systemImage: "map")
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                    .contentShape(Capsule())
+                    .jpPillButton(.main(onPhoto: true))
             }
             .buttonStyle(.plain)
             .accessibilityHint(connectivity.isOffline ? OfflineTripText.mapsNote : "")
             if connectivity.isOffline {
                 Text(OfflineTripText.mapsNote)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.top, JPSpace.xxs)
     }
 }
 
@@ -523,15 +527,15 @@ struct OfflineSampleViewer: View {
                     Spacer(minLength: 0)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(sample.title)
-                            .font(.footnote.weight(.semibold))
+                            .font(JPFont.footnote.weight(.semibold))
                             .foregroundStyle(WebTheme.text)
                         Text(sample.credit)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.muted2)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text2)
                         if samples.count > 1 {
                             Text("\(i + 1) / \(samples.count)")
-                                .font(JPFont.mono(12))
-                                .foregroundStyle(WebTheme.faint)
+                                .font(JPFont.meta)
+                                .foregroundStyle(WebTheme.text3)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
