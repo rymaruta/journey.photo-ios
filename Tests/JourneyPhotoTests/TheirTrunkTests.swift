@@ -100,9 +100,16 @@ final class TheirTrunkTests: XCTestCase {
 
     /// 自分の口（`GET /user/trunk`）の見せる設定とわたしの乗車券。古いサーバーは見せる・乗車券なし
     func testStateReadsShowTrunkAndTicket() throws {
+        // いまの本番の形（`showTrunk`・`ticket` の欄が無い）: 対応していない・見せていない・乗車券なし
         let on = try decode(TrunkState.self, #"{"pocket":[],"stuck":[]}"#)
-        XCTAssertTrue(on.showTrunk)
+        XCTAssertFalse(on.supportsSharing)
+        XCTAssertFalse(on.showTrunk)
+        XCTAssertFalse(on.sharedWithOthers)
         XCTAssertNil(on.ticket)
+        let shared = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":true,"ticket":null}"#)
+        XCTAssertTrue(shared.supportsSharing)
+        XCTAssertTrue(shared.sharedWithOthers)
+        XCTAssertTrue(shared.copy(coins: 1).supportsSharing, "書き込みの写しで対応の印が落ちる")
         let off = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":false,"ticket":{"photoId":"p1","note":"x"}}"#)
         XCTAssertFalse(off.showTrunk)
         XCTAssertEqual(off.ticket?.photoId, "p1")
@@ -489,7 +496,7 @@ final class TheirTrunkTests: XCTestCase {
     @MainActor
     func testSyncRemembersRefusalAndRemoves() async {
         let defaults = UserDefaults(suiteName: "TheirTrunkTests.\(UUID().uuidString)")!
-        let sync = TrunkTicketSync(defaults: defaults, currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true })
         StubProtocol.respond(status: 409, body: #"{"error":"公開している自分の写真を選んでください","code":"ticketNotPublic"}"#)
         let first = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
         XCTAssertNotNil(first, "断りを本人に知らせない")
@@ -542,9 +549,9 @@ final class TheirTrunkTests: XCTestCase {
     func testRefusalReasonSurvivesRelaunch() async {
         let defaults = suite()
         StubProtocol.respond(status: 409, body: Self.notPublic)
-        _ = await TrunkTicketSync(defaults: defaults, currentUser: { "me" }).sync(userId: "me", settings: optedIn(), service: service(),
+        _ = await TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true }).sync(userId: "me", settings: optedIn(), service: service(),
                                                            available: true, preview: false)
-        let relaunched = TrunkTicketSync(defaults: defaults, currentUser: { "me" })
+        let relaunched = TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true })
         let reason = relaunched.refusalReason("me", settings: optedIn())
         XCTAssertNotNil(reason, "起動し直すと断りの訳が消える")
         let detail = TrunkPrivacyText.ticketDetail(optedIn(), refusal: reason)
@@ -561,16 +568,16 @@ final class TheirTrunkTests: XCTestCase {
     @MainActor
     func testNotPublicIsRetriedOnOpenAndOnChange() async {
         let defaults = suite()
-        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults, currentUser: { "me" }), entry: TrunkEntryStore())
+        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true }), entry: TrunkEntryStore())
         StubProtocol.respond(path: "/user/trunk/settings", status: 409, body: Self.notPublic)
-        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[]}"#)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
         let puts = { StubProtocol.requests.filter { $0.hasPrefix("PUT") }.count }
         await model.load(userId: "me", service: service(), pass: optedIn())
         XCTAssertEqual(puts(), 1)
         await model.load(userId: "me", service: service(), pass: optedIn())
         XCTAssertEqual(puts(), 2, "写真を公開にしても二度と送らない")
         // 設定の変化の後ろ（開いたとき以外）では、同じ中身を送り直さない
-        let sync = TrunkTicketSync(defaults: defaults, currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true })
         _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
         XCTAssertEqual(puts(), 2, "設定が変わるたびに同じ中身を送る")
         // 切り替えを外して入れ直すと送る
@@ -594,7 +601,7 @@ final class TheirTrunkTests: XCTestCase {
     /// 2回目の見直し B: 一時的な断り（429 など）・5xx・圏外は覚えず、次の機会に送り直す
     @MainActor
     func testTransientFailuresAreNotRemembered() async {
-        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, serverSupports: { _ in true })
         for (status, body) in [(429, #"{"error":"少し待ってください","code":"tooMany"}"#), (429, #"{"error":"x"}"#),
                                (500, #"{"error":"x"}"#)] {
             StubProtocol.respond(status: status, body: body)
@@ -618,7 +625,7 @@ final class TheirTrunkTests: XCTestCase {
         let slow = TrunkService(api: api)
         StubProtocol.respondInOrder([(200, #"{"pocket":[],"stuck":[],"ticket":{"photoId":"p-1"}}"#),
                                      (200, #"{"pocket":[],"stuck":[]}"#)])
-        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, serverSupports: { _ in true })
         let first = Task { await sync.sync(userId: "me", settings: optedIn(), service: slow, available: true, preview: false) }
         await gate.untilWaiting(1)
         XCTAssertTrue(sync.isSending)
@@ -681,7 +688,7 @@ final class TheirTrunkTests: XCTestCase {
         let entry = TrunkEntryStore()
         let off = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":false}"#)
         _ = try await entry.read(userId: "me") { off }
-        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: suite(), currentUser: { "me" }), entry: entry)
+        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: suite(), currentUser: { "me" }, serverSupports: { _ in true }), entry: entry)
         StubProtocol.respond(path: "/user/trunk/settings", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
         await model.load(userId: "me", service: service(), pass: PassSettings())
         XCTAssertEqual(StubProtocol.requestCount, 0, "店に中身があるのに読み足す／見せない設定なのに人の口を読む")
@@ -695,7 +702,7 @@ final class TheirTrunkTests: XCTestCase {
     @MainActor
     func testSyncDropsRequestsForAnotherUser() async {
         var current: String? = "someone-else"
-        let sync = TrunkTicketSync(defaults: suite(), currentUser: { current })
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { current }, serverSupports: { _ in true })
         StubProtocol.respond(status: 200, body: #"{"pocket":[],"stuck":[],"ticket":{"photoId":"p-1"}}"#)
         _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
         XCTAssertEqual(StubProtocol.requestCount, 0, "前の人の乗車券を次の人のトランクに置く")
@@ -710,7 +717,7 @@ final class TheirTrunkTests: XCTestCase {
     /// 3回目の見直し 4: 設定の行が出ている間は、断りの訳は行だけ（知らせの帯は出さない）
     @MainActor
     func testToastIsSkippedWhileTheRowShowsTheReason() async throws {
-        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, serverSupports: { _ in true })
         XCTAssertTrue(sync.shouldToast)
         sync.setInline("row", shown: true)
         XCTAssertFalse(sync.shouldToast, "行と帯に同じ訳が2つ出る")
@@ -724,7 +731,7 @@ final class TheirTrunkTests: XCTestCase {
     /// 4回目の見直し 2: 行が出た合図が2回来ても、消えた合図1回で帯が出る（数で数えない）
     @MainActor
     func testInlineRowIsATruthNotACount() async {
-        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" })
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, serverSupports: { _ in true })
         sync.setInline("settings.ticketInTrunk", shown: true)
         sync.setInline("settings.ticketInTrunk", shown: true)
         XCTAssertFalse(sync.shouldToast)
@@ -777,13 +784,85 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertEqual(entry.state(for: "me")?.showTrunk, false)
     }
 
+    // MARK: 人のトランクの口がまだ本番に無いとき（1.1.15 を先に出す・2026-10-18）
+
+    /// いまの本番の `GET /user/trunk` の形（photo-gallery の origin/main の `view()`。`showTrunk`・`ticket` が無い）
+    private static let productionState = #"""
+    {"model":"leather","effectiveModel":"leather","pocket":[],"stuck":[],"limit":30,"isPro":false,
+     "rerolls":{"left":0,"month":"2026-10"},"receiveLabels":true,"coins":2,"parts":[],"fragments":0,
+     "equipped":{"handle":null,"corner":null,"lock":null,"lining":null,"tag":null,"charm":null,"key":null,"pins":[],"patches":[]},
+     "posts":3}
+    """#
+
+    /// 道の無い人の口（API Gateway の 404 `{"message":"Not Found"}`）では、プロフィールの段を出さない
+    @MainActor
+    func testProfileHidesTrunkOnProductionNotFound() async {
+        StubProtocol.respond(status: 404, body: #"{"message":"Not Found"}"#)
+        let model = TheirTrunkModel(preview: false)
+        await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
+        XCTAssertEqual(model.phase, .hidden)
+        XCTAssertFalse(model.showsOnProfile(blocked: false), "本番の 404 で段を出す")
+        if case .failed = model.phase { XCTFail("本番の 404 を失敗と言う") }
+    }
+
+    /// 設定: 本番の形の応答では節を出さず、PUT も人の口も送らない。見せる設定の切り替えも送らない
+    @MainActor
+    func testSettingsStayQuietOnProduction() async {
+        let entry = TrunkEntryStore()
+        // 揃えの側の守り（`serverSupports`）を外しても、設定は自分で揃えを呼ばない（守りを2重に見る）
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, entry: entry, serverSupports: { _ in true })
+        let model = TrunkPrivacyModel(preview: nil, sync: sync, entry: entry)
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: Self.productionState)
+        await model.load(userId: "me", service: service(), pass: optedIn())
+        XCTAssertNotNil(model.state)
+        XCTAssertFalse(model.supported, "本番の形なのに節を出す")
+        await model.setShowTrunk(false, service: service())
+        await model.setShowTrunk(true, service: service())
+        XCTAssertEqual(StubProtocol.requests, ["GET /user/trunk"], "本番に無い口・受けない欄を送る")
+        XCTAssertNil(model.seen)
+        let settings = (try? source("Features/Settings/SettingsView.swift")) ?? ""
+        XCTAssertTrue(settings.contains("trunkAvailability.isAvailable && trunkPrivacy.supported"), "節の出し分けが対応の印を見ていない")
+    }
+
+    /// 乗車券の揃え（起動の配線から呼ばれる）も、入口の店の中身が本番の形なら送らない。分からない（未読）間も送らない
+    @MainActor
+    func testTicketSyncWaitsForServerSupport() async throws {
+        let entry = TrunkEntryStore()
+        let sync = TrunkTicketSync(defaults: suite(), currentUser: { "me" }, entry: entry)
+        StubProtocol.respond(status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":true,"ticket":{"photoId":"p-1"}}"#)
+        _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
+        XCTAssertEqual(StubProtocol.requestCount, 0, "サーバーが対応しているか分からないのに送る")
+        let production = try decode(TrunkState.self, Self.productionState)
+        _ = try await entry.read(userId: "me") { production }
+        let reason = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
+        XCTAssertEqual(StubProtocol.requestCount, 0, "本番に乗車券を送る（400 になる）")
+        XCTAssertNil(reason, "送っていないのに断りを知らせる")
+        XCTAssertNil(sync.refusal("me"), "送っていないのに断りを覚える")
+        // サーバーが対応したら（応答に欄が出たら）自動で送る
+        let supported = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
+        _ = try await entry.read(userId: "me") { supported }
+        _ = await sync.sync(userId: "me", settings: optedIn(), service: service(), available: true, preview: false)
+        XCTAssertEqual(StubProtocol.requests, ["PUT /user/trunk/settings"])
+    }
+
+    /// 自分のページ: 本番の形の応答なら段を出さず、人の口も読まない
+    @MainActor
+    func testOwnProfileOnProductionShowsNothing() async {
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: Self.productionState)
+        StubProtocol.respond(path: "/users/me/trunk", status: 404, body: #"{"message":"Not Found"}"#)
+        let model = TheirTrunkModel(preview: false, entry: TrunkEntryStore())
+        await model.load(userId: "me", service: service(), signedIn: true, offline: false, isSelf: true)
+        XCTAssertEqual(model.phase, .hidden)
+        XCTAssertEqual(StubProtocol.requests, ["GET /user/trunk"], "本番に無い人の口を読む")
+    }
+
     /// 2回目の見直し 4: 設定の見本は人と同じ口の中身を描く（読めないときだけ地名なしの形）
     @MainActor
     func testSeenPreviewUsesTheirShape() async throws {
         let defaults = suite()
         StubProtocol.respond(path: "/users/me/trunk", status: 200, body: Self.full)
-        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[]}"#)
-        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults, currentUser: { "me" }), entry: TrunkEntryStore())
+        StubProtocol.respond(path: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
+        let model = TrunkPrivacyModel(preview: nil, sync: TrunkTicketSync(defaults: defaults, currentUser: { "me" }, serverSupports: { _ in true }), entry: TrunkEntryStore())
         await model.load(userId: "me", service: service(), pass: PassSettings())
         let seen = try XCTUnwrap(model.seen, "人と同じ口を読んでいない")
         let state = try XCTUnwrap(model.state)

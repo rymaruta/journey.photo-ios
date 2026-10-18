@@ -87,11 +87,12 @@ final class TheirTrunkModel: ObservableObject {
             if isSelf {
                 // 自分の見せる設定は入口の店（`TrunkEntryStore`）が読めている中身を使い、**無いときだけ読む**
                 // （読むのも同じ店を通す＝`GET /user/trunk` を1本にまとめる）。端末には書かない
-                var shows = entry.state(for: userId)?.showTrunk
+                // サーバーが対応していない（`showTrunk` の欄が無い）応答なら、人には出ていないので段を出さない
+                var shows = entry.state(for: userId)?.sharedWithOthers
                 if shows == nil {
                     let own = try await entry.read(userId: userId, service: service)
                     guard mine == seq, self.userId == userId else { return }
-                    shows = own.showTrunk
+                    shows = own.sharedWithOthers
                 }
                 guard shows == true else {
                     trunk = nil

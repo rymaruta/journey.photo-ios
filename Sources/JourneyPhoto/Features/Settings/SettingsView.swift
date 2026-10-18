@@ -31,7 +31,8 @@ struct SettingsView: View {
     @StateObject private var trunkPrivacy = TrunkPrivacyModel()
 
     /// 「トランクを見せる」を出すか（口が読めたことがあり、いまの設定が読めたとき）
-    private var showsTrunkPrivacy: Bool { trunkAvailability.isAvailable && trunkPrivacy.state != nil }
+    /// サーバーが対応していない（`GET /user/trunk` に `showTrunk` の欄が無い）間は出さない（`TrunkState.supportsSharing`）
+    private var showsTrunkPrivacy: Bool { trunkAvailability.isAvailable && trunkPrivacy.supported }
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"

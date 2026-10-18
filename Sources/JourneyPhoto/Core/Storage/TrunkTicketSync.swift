@@ -51,10 +51,17 @@ final class TrunkTicketSync: ObservableObject {
     /// 置けた・外せた答えを入れる入口の店（設定を開いたときに古い中身で記憶を戻さないように）
     private let entry: TrunkEntryStore
 
-    init(defaults: UserDefaults = .standard, currentUser: (() -> String?)? = nil, entry: TrunkEntryStore? = nil) {
+    /// その人のサーバーが乗車券を受けるか（入口の店が読めた `GET /user/trunk` の応答に `showTrunk` の欄があるか）。
+    /// **分からない（まだ読めていない）・対応していない間は送らない**（いまの本番は settings に ticket を受けず 400 になる）
+    private let serverSupports: (String) -> Bool
+
+    init(defaults: UserDefaults = .standard, currentUser: (() -> String?)? = nil, entry: TrunkEntryStore? = nil,
+         serverSupports: ((String) -> Bool)? = nil) {
         self.defaults = defaults
         self.currentUser = currentUser ?? { PassStore.shared.userId }
-        self.entry = entry ?? .shared
+        let entry = entry ?? .shared
+        self.entry = entry
+        self.serverSupports = serverSupports ?? { entry.state(for: $0)?.supportsSharing == true }
     }
 
     /// 行が出た・消えた（同じ行の合図は何度来ても1つ）
@@ -154,6 +161,8 @@ final class TrunkTicketSync: ObservableObject {
         // 送る直前に、頼みの人がいまログインしている人か確かめる（待っている間にログアウト・人の切り替えがあったら、
         // 前の人の乗車券を次の人のトランクに置かない・外さない）。違えば送らずに捨てる
         guard action == .none || currentUser() == r.userId else { return nil }
+        // サーバーが対応していない（人のトランクの口がまだ無い）間は送らない。断りとしても覚えない
+        guard action == .none || serverSupports(r.userId) else { return nil }
         switch action {
         case .none:
             return nil

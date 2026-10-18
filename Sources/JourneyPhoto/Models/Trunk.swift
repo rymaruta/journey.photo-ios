@@ -306,15 +306,20 @@ struct TrunkState: Decodable, Equatable {
     let fragments: Int
     /// 付けている部品（持っているものだけ）
     let equipped: TrunkEquipped
-    /// ほかの人にトランクを見せるか（2026-10-18・人のトランク）。古いサーバーは項目が無い → 既定の true
+    /// ほかの人にトランクを見せるか（2026-10-18・人のトランク）。**欄の無い応答（人のトランクの口がまだ無いサーバー）は false**
+    /// ——見せる口が無いのに「見せています」と言わない
     let showTrunk: Bool
+    /// サーバーが人のトランク（見せる設定・わたしの乗車券）に対応しているか。**応答に `showTrunk` の欄があるか**で決める
+    /// （対応したサーバーはいつも返す。いまの本番は返さない）。対応していない間は、設定の節を出さず、PUT も送らない
+    let supportsSharing: Bool
     /// わたしの乗車券（人のトランクの中に出す1枚・サーバーに置いたもの）。置いていなければ nil
     let ticket: TrunkTicket?
 
     init(model: TrunkModel, effectiveModel: TrunkModel? = nil, pocket: [TrunkLabel], stuck: [TrunkLabel],
          limit: Int, isPro: Bool, rerollsLeft: Int, pendingReroll: TrunkPendingReroll? = nil,
          posts: Int?, receiveLabels: Bool, coins: Int = 0, parts: [String] = [], fragments: Int = 0,
-         equipped: TrunkEquipped = .none, showTrunk: Bool = true, ticket: TrunkTicket? = nil) {
+         equipped: TrunkEquipped = .none, showTrunk: Bool = true, ticket: TrunkTicket? = nil,
+         supportsSharing: Bool = true) {
         self.model = model
         self.effectiveModel = effectiveModel ?? model
         self.pocket = pocket
@@ -331,6 +336,7 @@ struct TrunkState: Decodable, Equatable {
         self.equipped = equipped
         self.showTrunk = showTrunk
         self.ticket = ticket
+        self.supportsSharing = supportsSharing
     }
 
     /// 同じ状態で一部だけ替えたもの（端末の中の移り変わり・ガチャの結果を足す）
@@ -346,7 +352,7 @@ struct TrunkState: Decodable, Equatable {
                    posts: posts == nil ? self.posts : posts!, receiveLabels: receiveLabels ?? self.receiveLabels,
                    coins: coins ?? self.coins, parts: parts ?? self.parts, fragments: fragments ?? self.fragments,
                    equipped: equipped ?? self.equipped, showTrunk: showTrunk ?? self.showTrunk,
-                   ticket: ticket == nil ? self.ticket : ticket!)
+                   ticket: ticket == nil ? self.ticket : ticket!, supportsSharing: supportsSharing)
     }
 
     /// 持っている部品（台帳の順ではなく、届いた新しい順）
@@ -409,10 +415,15 @@ struct TrunkState: Decodable, Equatable {
         fragments = max(0, LenientInt.read(c, .fragments) ?? 0)
         let rawEquipped = (try? c.decodeIfPresent(Lenient<TrunkEquipped>.self, forKey: .equipped))??.value ?? .none
         equipped = rawEquipped.sanitized(owned: Set(parts))
-        // 見せる設定とわたしの乗車券（2026-10-18）。**包みで読み、無ければ見せる・乗車券なし**
-        showTrunk = ((try? c.decodeIfPresent(Bool.self, forKey: .showTrunk)) ?? nil) ?? true
+        // 見せる設定とわたしの乗車券（2026-10-18）。**包みで読む**。欄が無ければ、サーバーが対応していない（見せない・乗車券なし）
+        let shows = (try? c.decodeIfPresent(Bool.self, forKey: .showTrunk)) ?? nil
+        supportsSharing = shows != nil
+        showTrunk = shows ?? false
         ticket = (try? c.decodeIfPresent(Lenient<TrunkTicket>.self, forKey: .ticket))??.value
     }
+
+    /// ほかの人に見えているか（サーバーが対応していて、見せる設定がオン）
+    var sharedWithOthers: Bool { supportsSharing && showTrunk }
 
     /// 書き込みの応答（`posts` が無い）に、前に読んだ投稿の数を引き継ぐ
     func keepingPosts(from previous: TrunkState?) -> TrunkState {

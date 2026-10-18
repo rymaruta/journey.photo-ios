@@ -38,6 +38,9 @@ final class TrunkPrivacyModel: ObservableObject {
 
     var showTrunk: Bool { state?.showTrunk ?? true }
 
+    /// 節を出すか（読めて、サーバーが人のトランクに対応しているとき）
+    var supported: Bool { state?.supportsSharing == true }
+
     /// 入っている人に合わせる。替わったら（ログアウトも）前の人の中身を消す
     func reset(for userId: String?) {
         guard self.userId != userId else { return }
@@ -60,6 +63,8 @@ final class TrunkPrivacyModel: ObservableObject {
         if let cached { read = cached } else { read = try? await entry.read(userId: userId, service: service) }
         guard let fresh = read, self.userId == userId else { return }
         state = fresh
+        // サーバーが対応していない間は、乗車券を揃えず・人の口も読まない（節ごと出さない・`supported`）
+        guard fresh.supportsSharing else { return }
         // 店の中身を入れた時刻で覚える（置けた・外せた記憶より古い中身なら、記憶を戻さない）
         sync.note(server: fresh.ticket, userId: userId, at: entry.changedAt(for: userId) ?? .distantPast)
         // 開いたとき: 写真が公開でない、で断られた1枚は1回だけ送り直す（本人があとで公開にしたかもしれない）
@@ -82,7 +87,7 @@ final class TrunkPrivacyModel: ObservableObject {
     }
 
     func setShowTrunk(_ on: Bool, service: TrunkService) async {
-        guard !busy, let current = state, current.showTrunk != on else { return }
+        guard !busy, let current = state, current.supportsSharing, current.showTrunk != on else { return }
         busy = true
         error = nil
         defer { busy = false }
