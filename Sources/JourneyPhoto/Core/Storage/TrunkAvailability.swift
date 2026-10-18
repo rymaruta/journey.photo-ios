@@ -39,11 +39,12 @@ final class TrunkAvailability: ObservableObject {
         isAvailable = remembered
         let checkedAt = defaults.object(forKey: Self.checkedKey(userId)) as? Date
         guard TrunkAvailabilityRule.needsCheck(remembered: remembered, checkedAt: checkedAt, now: now, force: force) else { return }
-        checkedThisLaunch.insert(userId)
         var failure: Error?
         // 読めた中身は入口の札の数にも入る（同じ `GET /user/trunk` を2回読まない・2026-10-18）
         do { _ = try await entry.read(userId: userId, service: service, now: now) } catch is CancellationError { return } catch { failure = error }
         guard self.userId == userId, let decided = TrunkAvailabilityRule.decide(failure) else { return }
+        // 答えが決まった（読めた・口が無い）ときだけ「確かめた」と覚える。取り消し・一時の失敗では覚えない
+        checkedThisLaunch.insert(userId)
         isAvailable = decided
         defaults.set(decided, forKey: Self.key(userId))
         defaults.set(now, forKey: Self.checkedKey(userId))

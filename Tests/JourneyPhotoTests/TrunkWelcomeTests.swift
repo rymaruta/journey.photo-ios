@@ -304,6 +304,16 @@ final class TrunkWelcomeTests: XCTestCase {
         XCTAssertTrue(availability.checkedThisLaunch.contains("u1"), "確かめたことを覚えていない（もう1本読む）")
         XCTAssertFalse(availability.checkedThisLaunch.contains("u2"))
         XCTAssertEqual(ScriptedProtocol.calls.count, 1)
+        // 一時の失敗（500）・取り消しでは「確かめた」と残さない（はじめての硬貨の側がもう一度確かめられる）
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 500, body: "")]
+        await availability.refresh(userId: "u3", service: TrunkService(api: api), preview: false)
+        XCTAssertFalse(availability.checkedThisLaunch.contains("u3"), "失敗した読み込みを「確かめた」と覚えた")
+        let cancelled = Task { @MainActor in
+            await availability.refresh(userId: "u4", service: TrunkService(api: api), preview: false)
+        }
+        cancelled.cancel()
+        await cancelled.value
+        XCTAssertFalse(availability.checkedThisLaunch.contains("u4"), "取り消した読み込みを「確かめた」と覚えた")
     }
 
     // MARK: 硬貨の数の読み直し
