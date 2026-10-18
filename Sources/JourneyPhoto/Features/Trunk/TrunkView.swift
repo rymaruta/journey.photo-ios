@@ -40,7 +40,7 @@ struct TrunkView: View {
             .fullScreenCover(isPresented: $showPaywall, onDismiss: {
                 // 買えたかもしれない: Pro かどうか・上限・回数を読み直す
                 Task { await model.refreshAfterPaywall(offline: connectivity.isOffline) }
-            }) { PaywallView() }
+            }) { PaywallView(origin: .trunk) }
             .fullScreenCover(isPresented: $showStick) { TrunkStickView(model: model, ownerName: ownerName) }
             // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }

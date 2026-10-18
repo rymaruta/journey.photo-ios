@@ -15,6 +15,8 @@ enum ProIcon: String, CaseIterable {
     case card
     /// 名前の横のバッジ（リボンのメダル）
     case medal
+    /// 旅のトランク（取っ手と2本の革帯の鞄・2026-10-18）
+    case trunk
 
     /// 24 の升目の線を `side` の大きさに
     @MainActor
@@ -73,6 +75,21 @@ enum ProIcon: String, CaseIterable {
                 path.move(to: p(8.5, 3))
                 path.addLine(to: p(12, 8))
                 path.addLine(to: p(15.5, 3))
+            case .trunk:
+                // rect x3 y7.5 18×12.5 角 2.5 ・ M9.5 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v2 ・
+                // M8 7.5v12.5 ・ M16 7.5v12.5（2026-10-18・ほかの絵と同じ 24 の升目・線だけ）
+                path.addRoundedRect(in: CGRect(x: 3 * k, y: 7.5 * k, width: 18 * k, height: 12.5 * k),
+                                    cornerSize: CGSize(width: 2.5 * k, height: 2.5 * k))
+                path.move(to: p(9.5, 7.5))
+                path.addLine(to: p(9.5, 5.5))
+                path.addArc(center: p(11, 5.5), radius: 1.5 * k, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+                path.addLine(to: p(13, 4))
+                path.addArc(center: p(13, 5.5), radius: 1.5 * k, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+                path.addLine(to: p(14.5, 7.5))
+                path.move(to: p(8, 7.5))
+                path.addLine(to: p(8, 20))
+                path.move(to: p(16, 7.5))
+                path.addLine(to: p(16, 20))
             }
         }
     }

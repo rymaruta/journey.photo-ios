@@ -2,9 +2,13 @@ import SwiftUI
 
 /// Pro の案内（板 63・2026-10-09）。全画面で開き、右上の「閉じる」で戻る。
 ///
-/// 入口: 設定の「Journey Photo Pro」（Pro でないとき）・名前の横の画面の「PRO 限定」。
+/// 入口: 設定の「Journey Photo Pro」（Pro でないとき）・名前の横の画面の「PRO 限定」・旅のトランクの Pro の口。
 ///
-/// 板のとおり: 上に撮影地の写真（朝焼け）と黒への溶け、眉ラベル・明朝の見出し、利点（2026-10-17 から3つ・`ProBenefit`）、
+/// **どこから開いたか（`PaywallOrigin`・2026-10-18 判断）**: 旅のトランクの口（作り直す・特別なトランク・
+/// 手持ちの上限）から開いたときは、トランクの利点をいちばん上に出す。押した物の答えが最初に見えるように。
+/// 並びを変えるだけで、文言・見た目・ほかの利点は同じ（案内を長くしない）。
+///
+/// 板のとおり: 上に撮影地の写真（朝焼け）と黒への溶け、眉ラベル・明朝の見出し、利点（2026-10-18 から5つ・`ProBenefit`）、
 /// 1年ごと（選んである・「2か月ぶんお得」）と月ごとの札、白い主ボタン（写真のある画面）、注記。
 ///
 /// **板と変えたところ（報告済み）**
@@ -25,6 +29,9 @@ struct PaywallView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+
+    /// どこから開いたか（利点の並びだけを変える・2026-10-18）
+    var origin: PaywallOrigin = .general
 
     /// 選んでいるプラン（板: 1年ごとが選んである）
     @State private var plan: ProPlan = .yearly
@@ -108,7 +115,7 @@ struct PaywallView: View {
                     .accessibilityAddTraits(.isHeader)
             }
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                ForEach(ProBenefit.all) { benefit in
+                ForEach(ProBenefit.ordered(for: origin)) { benefit in
                     benefitRow(benefit)
                 }
             }
@@ -143,6 +150,7 @@ struct PaywallView: View {
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("paywall.benefit.\(benefit.id)")
     }
 
     // MARK: - プラン
@@ -331,6 +339,11 @@ struct PaywallView: View {
 /// 2026-10-17 判断（owner）: **「作例を重ねて撮る」（構図を重ねて撮るを含む）は全員無料にしたので、利点から外した。**
 /// 板 63 は4つだが、残りは3つ（光と天気の知らせ・電波なしで使える旅・Pro マークと Pro 限定の章）。
 /// 2026-10-17: 特別な乗車券（すれちがいの券面を選べる）を足して4つ。
+/// 2026-10-18 判断: 旅のトランクを足して5つ（特別な乗車券の次＝ふだんはいちばん下。トランクから開いたときは上）。
+/// 中身はサーバー（photo-gallery `api-user/src/trunk.ts`）で確かめた: Pro の型6つ（`PRO_MODELS`）・
+/// 作り直しは Pro だけ月3回で繰り越しなし（`REROLLS_PER_MONTH`）・手持ちの上限 無料 30／Pro 150
+/// （`POCKET_LIMIT_FREE`・`POCKET_LIMIT_PRO`）。**硬貨・カプセル・部品は Pro と関係ない（買えない・Pro でも増えない）
+/// ので書かない。** 「必ず」「確定」「捨てる」は言わない（トランクの説明の決まり・テストで見張る）
 ///
 /// 第3段階の機能が2つ入っている（光と天気の知らせ・電波なしで使える旅）。**どちらもできている。**
 /// 2026-10-17 判断（確かめた）: 光と天気の知らせは、アプリ側＝一覧 `LightForecastView`
@@ -366,7 +379,49 @@ struct ProBenefit: Identifiable, Equatable {
                        title: L("特別な乗車券", "Special Pass tickets"),
                        body: L("すれちがいの乗車券を、真鍮・漆・革などの券面で。相手の手元にもその券面で届く",
                                "Pick a brass, lacquer, leather or other design for your Pass ticket — it reaches others that way")),
+            trunk,
         ]
+    }
+
+    /// 旅のトランク（2026-10-18）。数はアプリの決まり（`TrunkModel.pro`・`TrunkState`）から読み、サーバーとずれないようにする
+    static var trunk: ProBenefit {
+        let models = TrunkModel.pro.count
+        let rerolls = trunkRerollsPerMonth
+        let pro = TrunkState.proLimit
+        let free = TrunkState.freeLimit
+        return ProBenefit(icon: .trunk,
+                          title: L("旅のトランクをもっと", "More from your Travel trunk"),
+                          body: L("特別なトランク \(models) 型。ラベルの図柄を月 \(rerolls) 回作り直せて、手持ちは \(pro) 枚まで（無料は \(free) 枚）",
+                                  "\(models) special trunks, redo a label\u{2019}s design \(rerolls) times a month, and keep up to \(pro) labels (\(free) on free)"))
+    }
+
+    /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）
+    static let trunkRerollsPerMonth = 3
+
+    /// 開いた口に合わせた並び。口に合う利点をいちばん上に、残りはふだんの順のまま（2026-10-18 判断）
+    static func ordered(for origin: PaywallOrigin) -> [ProBenefit] {
+        var list = all
+        guard let lead = origin.leadingBenefit,
+              let index = list.firstIndex(where: { $0.icon == lead }) else { return list }
+        list.insert(list.remove(at: index), at: 0)
+        return list
+    }
+}
+
+/// Pro の案内をどこから開いたか（2026-10-18 判断）。利点の並びだけに使う。
+/// 新しい口を足すときは、ここに1つ足して `leadingBenefit` を返す
+enum PaywallOrigin: Equatable {
+    /// 設定・名前の横・光の知らせなど（ふだんの並び）
+    case general
+    /// 旅のトランク（作り直す・特別なトランク・手持ちの上限）
+    case trunk
+
+    /// いちばん上に出す利点。nil ならふだんの並び
+    var leadingBenefit: ProIcon? {
+        switch self {
+        case .general: return nil
+        case .trunk: return .trunk
+        }
     }
 }
 
