@@ -228,6 +228,16 @@ struct BadgeShelfView: View {
                 }
                 .padding(.top, 6)
             }
+            // 2026-10-18（#296）: メダルは公開範囲を絞っていない公開の写真だけで数える（サーバーの
+            // `isMedalCountablePhoto`）。絞って上げた人が「数が合わない」と迷わないよう、自分の棚の下に一言
+            if isMine {
+                Text(BadgeShelfRules.countRuleNote)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, JPSpace.xxs)
+                    .accessibilityIdentifier("badges.countRule")
+            }
         }
     }
 
@@ -324,6 +334,10 @@ enum BadgeShelfRules {
 
     /// メダルの絵の一辺（板 v2 Shelf: 84。v1 は 72 の札の中）
     static let medalSide: CGFloat = 84
+
+    /// 自分の棚の下の一言（Web の `/user/badges` と同じ文）
+    static let countRuleNote = L("フォロワーだけ・親しい友達だけの写真と下書きは数えません。",
+                                 "Photos shared only with followers or close friends, and drafts, aren\u{2019}t counted.")
 
     /// 進み線の割合（0〜1）。全部が 0 なら 0（0 で割らない）
     static func progress(earned: Int, total: Int) -> CGFloat {

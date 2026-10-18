@@ -625,10 +625,10 @@ final class ProBadgesPublicTests: XCTestCase {
     /// Pro の鍵の判定はサーバー（`badgeKeys.ts` の `isProBadgeKey`）と同じ
     func testProBadgeKeys() {
         for key in ["supporter", "supporterYear", "proAutumn2026", "proWinter2031"] {
-            XCTAssertTrue(ProBadgesPublicRule.isProBadgeKey(key), key)
+            XCTAssertTrue(BadgeCatalog.isPro(key), key)
         }
         for key in ["first", "earlyUser", "prefectures", "proAutumn", "proSpring1999", ""] {
-            XCTAssertFalse(ProBadgesPublicRule.isProBadgeKey(key), key)
+            XCTAssertFalse(BadgeCatalog.isPro(key), key)
         }
     }
 
@@ -652,6 +652,13 @@ final class ProBadgesPublicTests: XCTestCase {
         XCTAssertEqual(try json(ProBadgesPublicRule.patch(show: false)) as NSDictionary, ["proBadgesHidden": true] as NSDictionary)
         XCTAssertEqual(try json(ProBadgesPublicRule.patch(show: true)) as NSDictionary, ["proBadgesHidden": false] as NSDictionary)
         XCTAssertNil(try json(ProfilePatch())["proBadgesHidden"])
+    }
+
+    /// 自分の棚の下の一言（絞った写真と下書きは数えない・Web と同じ文）
+    func testShelfCountRuleNote() {
+        XCTAssertEqual(BadgeShelfRules.countRuleNote,
+                       L("フォロワーだけ・親しい友達だけの写真と下書きは数えません。",
+                         "Photos shared only with followers or close friends, and drafts, aren\u{2019}t counted."))
     }
 
     /// 文言は板（43 設定）のとおり

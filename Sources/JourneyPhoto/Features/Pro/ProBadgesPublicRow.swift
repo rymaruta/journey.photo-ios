@@ -73,18 +73,13 @@ enum ProBadgesPublicRule {
     static let detail = L("オフにすると、Pro のメダル・サポーターの番号と続けた月数を他の人に見せません（いま Pro かどうかは乗車券の券面で分かります）",
                           "When off, other people won\u{2019}t see your Pro medals, supporter number or months supported (your pass face still shows whether you\u{2019}re Pro now).")
 
-    /// Pro のメダルの鍵か（サポーター章・続けた年・季節の章）。サーバーの `badgeKeys.ts` の `isProBadgeKey` と同じ規則
-    static func isProBadgeKey(_ key: String) -> Bool {
-        key == "supporter" || key == "supporterYear" || ProChapters.parse(key) != nil
-    }
-
-    /// 行を出すか:
+    /// 行を出すか（Pro のメダルの鍵かは `BadgeCatalog.isPro`。サーバーの `badgeKeys.ts` の `isProBadgeKey` と同じ規則）:
     /// - **サポーターの番号か Pro のメダルを持っている人だけ**（やめた人も。番号とメダルは残るので）
     /// - **自分のプロフィールに `proBadgesHidden` が無い（古いサーバー）ときは出さない**——古いサーバーは知らない
     ///   項目を黙って捨てるので、出すと押しても効かない入切になる（`passFace` の有無で分けたのと同じ考え方）
     static func showsRow(_ profile: UserProfile) -> Bool {
         guard profile.proBadgesHiddenFlag != nil else { return false }
-        return profile.supporterInfo != nil || profile.earnedBadges.byKey.keys.contains(where: isProBadgeKey)
+        return profile.supporterInfo != nil || profile.earnedBadges.byKey.keys.contains(where: BadgeCatalog.isPro)
     }
 
     /// 送る部分更新（`show` が真＝出す＝`proBadgesHidden: false`）
