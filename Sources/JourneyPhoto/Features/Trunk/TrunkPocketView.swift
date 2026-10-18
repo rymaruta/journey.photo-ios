@@ -42,7 +42,7 @@ struct TrunkPocketView: View {
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 買えたかもしれない: 上限（150 枚）と作り直しを読み直す
             Task { await model.refreshAfterPaywall() }
-        }) { PaywallView() }
+        }) { PaywallView(origin: .trunk) }
         // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }
 
