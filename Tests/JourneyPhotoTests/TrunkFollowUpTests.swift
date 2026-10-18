@@ -61,7 +61,7 @@ final class TrunkFollowUpTests: XCTestCase {
     func testEntryCheckIsSpacedOut() async {
         let defaults = freshDefaults()
         let service = TrunkService(api: api())
-        let availability = TrunkAvailability(defaults: defaults)
+        let availability = TrunkAvailability(defaults: defaults, entry: TrunkEntryStore())
         let t0 = Date(timeIntervalSince1970: 3_000_000)
         ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[]}"#)]
         await availability.refresh(userId: "u1", service: service, now: t0, preview: false)

@@ -53,6 +53,7 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @State private var trunkForeground = TrunkForegroundGate()
     @Environment(\.scenePhase) private var scenePhase
     /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
@@ -109,9 +110,11 @@ struct MyPageView: View {
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
         .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
-        // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）
+        // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）。
+        // 2026-10-18: **裏から戻ったときだけ**（通知センター・Face ID からの戻りでは読まない・`TrunkForegroundGate`）。
+        // 読めた中身は入口の札の数にも入る（`TrunkEntryStore.read`・1回で両方）
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if trunkForeground.shouldRecheck(isBackground: phase == .background, isActive: phase == .active) {
                 Task { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk, force: true) }
             }
         }
@@ -326,6 +329,10 @@ struct MyPageView: View {
                     if model.profile != nil {
                         stats
                         travelRecord
+                        // 旅のトランクの入口（2026-10-18）。読み込み・状態・見た目は部品の側（`TrunkProfileChip`）
+                        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
+                            TrunkProfileChip(ownerName: model.profile?.name)
+                        }
                     }
                 }
                 if let profile = model.profile {
@@ -968,6 +975,8 @@ struct MyPageView: View {
         JPCard {
             // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく。
             // **口が読めたことのある人にだけ出す**（サーバーが出ていない間は隠す・`TrunkAvailability`）
+            // 2026-10-18 判断: 入口はマイページの上の札（`TrunkProfileChip`）と設定にも出したが、**この行は残す**。
+            // 旅の道具（アルバム・旅行プラン・すれちがい帳）と同じ並びで探す人がいる。画面写真の試験の道もここ
             if trunkAvailability.isAvailable {
                 NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
                     JPRowLabel(title: L("旅のトランク", "Travel trunk"), systemImage: "suitcase",

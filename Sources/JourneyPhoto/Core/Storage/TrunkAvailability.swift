@@ -15,9 +15,12 @@ final class TrunkAvailability: ObservableObject {
 
     private let defaults: UserDefaults
     private var userId: String?
+    /// 読み込みを通す先（2026-10-18: マイページの札の数と1本にまとめる・`TrunkEntryStore.read`）
+    private let entry: TrunkEntryStore
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, entry: TrunkEntryStore? = nil) {
         self.defaults = defaults
+        self.entry = entry ?? .shared
     }
 
     private static func key(_ userId: String) -> String { "trunk.available.\(userId)" }
@@ -34,7 +37,8 @@ final class TrunkAvailability: ObservableObject {
         let checkedAt = defaults.object(forKey: Self.checkedKey(userId)) as? Date
         guard TrunkAvailabilityRule.needsCheck(remembered: remembered, checkedAt: checkedAt, now: now, force: force) else { return }
         var failure: Error?
-        do { _ = try await service.state() } catch is CancellationError { return } catch { failure = error }
+        // 読めた中身は入口の札の数にも入る（同じ `GET /user/trunk` を2回読まない・2026-10-18）
+        do { _ = try await entry.read(userId: userId, service: service, now: now) } catch is CancellationError { return } catch { failure = error }
         guard self.userId == userId, let decided = TrunkAvailabilityRule.decide(failure) else { return }
         isAvailable = decided
         defaults.set(decided, forKey: Self.key(userId))

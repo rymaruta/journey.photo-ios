@@ -2060,6 +2060,46 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札
+    /// （硬貨の枚数・貼っていないラベルの真鍮の点）と、設定の「旅のトランク」の行。見本（`-JPPreviewTrunk`）で撮る。
+    /// **見本では入口が必ず出るので、出なければ落とす**（commit 66d7f872 の方針）。44pt 未満・読み上げに硬貨が無いときも落とす
+    func testCapturesTrunkEntry() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let card = app.buttons["mypage.trunk"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return XCTFail("マイページの上に旅のトランクの札が無い") }
+        // タブを切り替えずに見える（カバーの高い人・小さい画面では少し送る）
+        scrollTo(card, in: app)
+        XCTAssertTrue(card.isHittable, "マイページの上の札に届かない")
+        XCTAssertGreaterThanOrEqual(card.frame.height, 44, "旅のトランクの札が 44pt 未満")
+        let spoken = (card.value as? String) ?? ""
+        XCTAssertTrue(spoken.contains("硬貨 3枚"), "読み上げに硬貨の枚数が無い: \(spoken)")
+        XCTAssertTrue(spoken.contains("貼っていないラベル"), "読み上げに貼っていないラベルの有無が無い: \(spoken)")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90a-マイページ（旅のトランクの札）")
+        // 押すとトランクへ
+        card.tap()
+        guard app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15) else {
+            return XCTFail("札を押してもトランクが開かない")
+        }
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
+        // 設定の行
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+        let row = app.buttons["settings.trunk"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に旅のトランクの行が無い") }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return XCTFail("設定の旅のトランクの行に届かない") }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "設定の旅のトランクの行が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "90b-設定（旅のトランク）")
+    }
+
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
     /// 型 → 特別なトランク。出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
     func testCapturesTrunk() {
