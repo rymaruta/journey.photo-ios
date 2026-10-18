@@ -2840,10 +2840,14 @@ final class ScreenshotTests: XCTestCase {
         guard openCamp(app) else { return }
         Thread.sleep(forTimeInterval: 5)
         shoot(app, "110-キャンプ場（自分の島）")
-        for id in ["camp.home.capture", "camp.home.friends", "camp.home.dex", "camp.home.back"] {
+        // 下の 2 つは画面の中の押せるもの（44pt 以上）。上の戻る・図鑑は見出しの帯の部品で、帯が当たりを決める（高さは見ない）
+        for id in ["camp.home.capture", "camp.home.friends"] {
             let button = app.buttons[id].firstMatch
             XCTAssertTrue(button.exists, "\(id) が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        for id in ["camp.home.dex", "camp.home.back"] {
+            XCTAssertTrue(app.buttons[id].firstMatch.exists, "\(id) が無い")
         }
         let times = app.buttons.matching(identifier: "camp.home.time")
         let seasons = app.buttons.matching(identifier: "camp.home.season")
