@@ -68,9 +68,13 @@ Xcode の **Product → Archive**（スキームの Archive は Release ＝本�
       - **GitHub Actions（`ios-testflight.yml`）で上げるなら何もしなくてよい。**
         表に出る版（`MARKETING_VERSION`）の最後の数字は毎回自動で +1
         （1.0.0 → 1.0.1 …・`Tools/next-marketing-version.sh`）、ビルド番号は
-        TestFlight の最新 +1。出した版は `testflight/<版>` のタグで覚える
+        **その版の中で 1 から数える**（その版の TestFlight の最新 +1・無ければ 1）。
+        TestFlight には「1.1.15 (1)」の形で出る（2026-10-18 owner の判断）。
+        出した版は `testflight/<版>` のタグで覚える
       - **手元の Xcode から上げるときだけ**、`bash Tools/bump-build.sh 1.0.1` の
-        ように版とビルド番号を自分で上げる。同じ番号は受け付けられない
+        ように版とビルド番号を自分で上げる（版を変えたらビルド番号 1・同じ版で
+        もう一度なら +1）。同じ版の中で同じ番号は受け付けられない
+      - Apple の決まりは「同じ版の中でビルド番号が重ならず上がっていく」こと（iOS は別の版なら同じ番号を使い直してよい。Apple の TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認。今の CFBundleVersion の説明にはこの決まりは書かれていない）
       - 真ん中・先頭の数字（1.1.0・2.0.0）を上げるのは、大きく変わる版のときに
         人が決める：`bash Tools/bump-build.sh 1.1.0` でコミットしてから流す
 - [ ] アイコンが入っている（`Assets.xcassets/AppIcon`）
@@ -87,7 +91,7 @@ Organizer → **Distribute App → App Store Connect → Upload**。
 
 **手順は `docs/TESTFLIGHT.md`。** 加入・App Store Connect でのアプリ作成・
 Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-build.sh` で上げる
-（同じ番号は受け付けられない）。
+（同じ版の中で同じ番号は受け付けられない。版を変えたら 1 から）。
 
 **Actions（`ios-testflight.yml`）では、シミュレータのテストを既定で回さない**（2026-10-09 owner のルール）。
 同じテストは PR の検証の「Xcode のビルドとテスト（シミュレータ）」で回っていて、それで足りる。

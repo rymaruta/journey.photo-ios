@@ -401,13 +401,28 @@ jobs:
             exit 1
           fi
           echo "アプリの Apple ID: $APP_APPLE_ID"
-          # **TestFlight にある最大の番号 + 1**（上げ忘れではねられる事故をなくす）
-          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
-          bash Tools/set-build-number.sh $(( LATEST + 1 ))
-          # **表に出る版も毎回上げる**（0.2.0 → 0.2.1 …・owner の依頼 2026-09-25）。
-          # どこまで出したかは `testflight/<版>` のタグで覚える（下の「版の印を付ける」）
+          # **表に出る版を先に決める**（0.2.0 → 0.2.1 …・owner の依頼 2026-09-25）。
+          # どこまで出したかは `testflight/<版>` のタグで覚える（下の「版の印を付ける」）。
+          # ビルド番号はこの版で絞って数えるので、版が先
           MARKETING="$(bash Tools/next-marketing-version.sh)"
           echo "MARKETING=$MARKETING" >> "$GITHUB_ENV"
+          # **ビルド番号は版ごとに 1 から数える**（2026-10-18 owner の判断:
+          # TestFlight の表示を「1.1.14 (124)」ではなく「1.1.15 (1)」の形に）。
+          # この版の TestFlight にある最大 + 1。この版のビルドがまだ無ければ 1。
+          # - 絞る引数 `--pre-release-version` は codemagic-cli-tools 0.70.0 の
+          #   `--help` と `latest_build_number_actions.py`（App Store Connect の
+          #   preReleaseVersions を `filter[version]` で引く）で確認した（2026-10-18）
+          # - 見つからないとき CLI は何も出さない（`Did not find latest build` を
+          #   ログに出して None を返す）。失敗・空・数字でないものは 0 として扱う
+          # - Apple の決まり: iOS のビルド番号は「同じ版（release train）の中で重ならず、
+          #   上がっていく」ことが要り、別の版なら同じ番号を使い直してよい
+          #   （TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認）。
+          #   版は毎回上がるので 1 から数え直せる
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" \
+                     --pre-release-version "$MARKETING" || true)
+          LATEST="$(printf '%s' "$LATEST" | tr -d '[:space:]')"
+          case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
+          bash Tools/set-build-number.sh $(( LATEST + 1 ))
           echo "表に出る版: ${MARKETING}（ビルド番号 $(( LATEST + 1 ))）"
           # ビルド番号と版は project.yml に書くので、プロジェクトを作り直す
           xcodegen generate

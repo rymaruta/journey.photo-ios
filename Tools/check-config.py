@@ -403,6 +403,55 @@ if testflight_yml.exists():
     if "testflight/" not in flow:
         fail("ios-testflight.yml が出した版の印（testflight/<版> のタグ）を付けていません")
 
+    # **ビルド番号は表に出る版ごとに 1 から数える**（2026-10-18 owner の判断:
+    # TestFlight の表示を「1.1.15 (1)」の形に）。版で絞らずに引くと全版通しの番号に戻り、
+    # 版を決める前に引くと前の版で絞ってしまう
+    number_step = re.search(r"- name: ビルド番号を決める\n(.*?)(?=\n      - name: )", flow, re.S)
+    number_text = number_step.group(1) if number_step else ""
+    marketing_at = number_text.find("Tools/next-marketing-version.sh")
+    latest_at = number_text.find("get-latest-testflight-build-number")
+    if latest_at == -1 or not re.search(
+            r'get-latest-testflight-build-number "\$APP_APPLE_ID" \\\n\s+--pre-release-version "\$MARKETING"',
+            number_text):
+        fail("ios-testflight.yml の「ビルド番号を決める」が、その回の版（--pre-release-version \"$MARKETING\"）で絞って引いていません")
+    if marketing_at == -1 or latest_at == -1 or marketing_at > latest_at:
+        fail("ios-testflight.yml の「ビルド番号を決める」が、表に出る版を決める前にビルド番号を引いています")
+
+# 手元用の `bump-build.sh` も同じ考え（版を変えたら 1・同じ版なら +1）。
+# 写しの一時ディレクトリで流して確かめる（本物の project.yml は触らない）
+def _bump_build_cases():
+    import shutil
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        tools = Path(tmp, "Tools")
+        tools.mkdir()
+        for name in ("bump-build.sh", "set-build-number.sh"):
+            shutil.copy(ROOT / "Tools" / name, tools / name)
+        # 最後に呼ぶ設定の検査は、ここでは空にする（この検査の中から自分を呼ばない）
+        (tools / "check-config.py").write_text("", encoding="utf-8")
+        (Path(tmp) / "project.yml").write_text(
+            '    settings:\n        MARKETING_VERSION: "1.1.14"\n        CURRENT_PROJECT_VERSION: "124"\n',
+            encoding="utf-8")
+
+        def bump(*args):
+            run = subprocess.run(["bash", str(tools / "bump-build.sh"), *args], capture_output=True, text=True)
+            text = (Path(tmp) / "project.yml").read_text(encoding="utf-8")
+            version = re.search(r'MARKETING_VERSION: "([0-9.]+)"', text)
+            build = re.search(r'CURRENT_PROJECT_VERSION: "([0-9]+)"', text)
+            return run.returncode, version and version.group(1), build and build.group(1)
+
+        return [
+            ("版を変えると 1", bump("1.1.15"), (0, "1.1.15", "1")),
+            ("同じ版をもう一度渡すと +1", bump("1.1.15"), (0, "1.1.15", "2")),
+            ("版を渡さないと +1", bump(), (0, "1.1.15", "3")),
+            ("次の版でまた 1", bump("1.1.16"), (0, "1.1.16", "1")),
+        ]
+
+for label, got, want in _bump_build_cases():
+    if got != want:
+        fail(f"Tools/bump-build.sh: {label}になりません（版・ビルド番号）: 得たもの {got}・期待 {want}")
+
 # ---- 枝の確認の絞り（`screens`）と「Mac でテスト済み」の数え方 -------------------
 # 🔴 **絞った回を「テスト済み」と数えると、全部の UI テストが一度も回らずに main に入る**
 # （2026-10-17）。数えるのは ios-testflight.yml の印の段だけで、その段は絞らない回にしか

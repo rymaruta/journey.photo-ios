@@ -77,9 +77,12 @@ open JourneyPhoto.xcodeproj
 4. 終わると Organizer が開く → **Distribute App**
    → **App Store Connect** → **Upload** → そのまま進む
 
-> ⚠️ **ビルド番号は毎回上げる。** 同じ番号は受け付けられない。
-> `project.yml` の `CURRENT_PROJECT_VERSION`（と `CFBundleVersion`）を
-> 1 → 2 → 3 と増やして `xcodegen generate`。
+> ⚠️ **ビルド番号は表に出る版ごとに 1 から数える**（2026-10-18 owner の判断:
+> TestFlight の表示を「1.1.15 (1)」の形に）。同じ版の中で同じ番号は受け付けられない。
+> GitHub Actions ではその版の TestFlight の最新 +1（無ければ 1）を自動で付ける。
+> 手で上げるときは `bash Tools/bump-build.sh <版>`（版を変えたら 1・同じ版なら +1）の
+> あと `xcodegen generate`。
+> Apple の決まりは「同じ版の中でビルド番号が重ならず上がっていく」こと（iOS は別の版なら同じ番号を使い直してよい。Apple の TN2420 "Version Numbers and Build Numbers"・アーカイブの文書で確認。今の CFBundleVersion の説明にはこの決まりは書かれていない）。
 > 表に出るバージョン（`MARKETING_VERSION`）は、**GitHub Actions で上げるときは
 > 毎回自動で最後の数字が1つ上がる**（0.2.0 → 0.2.1 …・`Tools/next-marketing-version.sh`。
 > 出した版は `testflight/<版>` のタグで覚える）。大きく変わる版で真ん中の数字を
@@ -135,7 +138,7 @@ App Store Connect → **配信** タブ →「審査用に提出」。
 |---|---|
 | Archive が灰色で押せない | 機種が **Any iOS Device** になっていない |
 | `No profiles for 'com.…' were found` | Team を有料チームにしていない／その Bundle ID を Identifiers に登録していない |
-| `The bundle version must be higher than…` | ビルド番号を上げていない（`CURRENT_PROJECT_VERSION`） |
+| `The bundle version must be higher than…` | 同じ版の中でビルド番号を上げていない（`CURRENT_PROJECT_VERSION`）。手元の番号が TestFlight のその版の最新より低いときは `bash Tools/set-build-number.sh <最新+1>` |
 | `Missing Info.plist value CFBundleIconName` | アイコンが読めていない。`Assets.xcassets/AppIcon` に 1024 の PNG が在るか（`python3 Tools/check-config.py`） |
 | `Invalid Bundle. ... alpha channel` | アイコンに透明が含まれている。`NODE_PATH=../photo-gallery/node_modules node Tools/make-brand-assets.cjs` で作り直す（透明を持たない形で書く）。`Tools/check-config.py` が手元で先に落とす |
 | 処理中のまま1時間以上 | 稀にある。もう一度ビルド番号を上げて上げ直す |
