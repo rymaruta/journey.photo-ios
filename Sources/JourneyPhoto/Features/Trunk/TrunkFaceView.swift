@@ -54,23 +54,8 @@ struct TrunkFaceView: View {
 
     // MARK: 縁の擦れ（革・布・木）
 
-    @ViewBuilder
     private func edgeWear(_ look: TrunkLook, _ size: (w: Double, h: Double)) -> some View {
-        if let wear = TrunkFaces.edgeWear(model, stage: look.stage) {
-            let st = look.stage
-            ZStack(alignment: .topLeading) {
-                // 内側の明るい縁（`inset 0 0 0 (2+4st)px`）と、内へにじむ光（`inset 0 0 (14+18st)px`）
-                RoundedRectangle(cornerRadius: TrunkFaces.faceCorner)
-                    .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 226, b: 186, a: 0.10 * st)), lineWidth: wear.width)
-                RoundedRectangle(cornerRadius: TrunkFaces.faceCorner)
-                    .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 222, b: 180, a: wear.alpha)), lineWidth: wear.blur / 2)
-                    .blur(radius: wear.blur / 4)
-                TrunkStripes(angle: 118, period: 61, bands: [(23, 23.6, TrunkRGBA(r: 255, g: 235, b: 205, a: 0.12 * st))])
-            }
-            .frame(width: size.w, height: size.h)
-            .clipShape(RoundedRectangle(cornerRadius: TrunkFaces.faceCorner))
-            .allowsHitTesting(false)
-        }
+        TrunkEdgeWear(look: look, w: size.w, h: size.h, corner: TrunkFaces.faceCorner)
     }
 
     // MARK: 絵（漆の波・星図の星・背面の金蒔絵と星座）

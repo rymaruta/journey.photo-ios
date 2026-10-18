@@ -290,10 +290,11 @@ enum TrunkFaces {
         [.leather, .sleeper, .starchart, .canvas, .steamer].contains(model)
     }
 
-    /// 縁の擦れの強さ（内側の光の幅とぼかし・濃さ）。古び方 0 なら無し
-    static func edgeWear(_ model: TrunkModel, stage st: Double) -> (width: Double, blur: Double, alpha: Double)? {
+    /// 縁の擦れの強さ（内側の光の幅とぼかし・濃さ）。古び方 0 なら無し（板 Trunk の `edgeWear`）。
+    /// 正面（胴 360×268）は `inset (2+5st)px`・`(18+26st)px`、回したときの面は `(2+4st)px`・`(14+18st)px`
+    static func edgeWear(_ model: TrunkModel, stage st: Double, front: Bool = false) -> (width: Double, blur: Double, alpha: Double)? {
         guard softEdges(model), st > 0 else { return nil }
-        return (2 + 4 * st, 14 + 18 * st, 0.16 * st)
+        return front ? (2 + 5 * st, 18 + 26 * st, 0.16 * st) : (2 + 4 * st, 14 + 18 * st, 0.16 * st)
     }
 
     /// 縁の革の太さ（正面より 2 細く・5 より細くしない）。縁の無い型は 0

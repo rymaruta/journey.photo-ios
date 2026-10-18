@@ -106,6 +106,8 @@ struct TrunkBoxView: View {
     @ViewBuilder
     private func surfaceLayers(_ look: TrunkLook) -> some View {
         TrunkSkin(look: look, w: Self.W, h: Self.H)
+        // 縁の擦れ（板 Trunk の `edgeWear`・回したときの面とそろえる・2026-10-18）。古びていなければ何も描かない
+        TrunkEdgeWear(look: look, w: Self.W, h: Self.H, corner: 16, front: true)
         if let art = look.art {
             TrunkArtCanvas(strokes: TrunkArtwork.strokes(art), viewBox: (Self.W, Self.H), fit: false)
                 .frame(width: Self.W, height: Self.H)
@@ -630,6 +632,44 @@ struct TrunkSkin: View {
         }
         .frame(width: w, height: h, alignment: .topLeading)
         .allowsHitTesting(false)
+    }
+}
+
+/// 縁の擦れ（革・布・木の型だけ・古び方 0 では描かない）。正面と回したときの面が同じ部品を使う。
+/// 板 Trunk の `edgeWear`: 内側の明るい縁と内へにじむ光・斜めの擦れ筋。正面はさらに角の擦れと横のしわ
+struct TrunkEdgeWear: View {
+    let look: TrunkLook
+    let w: Double
+    let h: Double
+    let corner: Double
+    /// 正面（胴）か。正面は縁が太く、角の擦れと横のしわが加わる
+    var front = false
+
+    var body: some View {
+        if let wear = TrunkFaces.edgeWear(look.model, stage: look.stage, front: front) {
+            let st = look.stage
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: corner)
+                    .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 226, b: 186, a: 0.10 * st)), lineWidth: wear.width)
+                RoundedRectangle(cornerRadius: corner)
+                    .strokeBorder(Color(trunk: TrunkRGBA(r: 255, g: 222, b: 180, a: wear.alpha)), lineWidth: wear.blur / 2)
+                    .blur(radius: wear.blur / 4)
+                if front {
+                    TrunkSpot(color: TrunkRGBA(r: 255, g: 232, b: 200, a: 0.22 * st), x: w * 0.12, y: h * 0.96, rx: 60, ry: 22)
+                    TrunkSpot(color: TrunkRGBA(r: 255, g: 232, b: 200, a: 0.20 * st), x: w * 0.88, y: h * 0.04, rx: 70, ry: 20)
+                    TrunkSpot(color: TrunkRGBA(r: 255, g: 232, b: 200, a: 0.18 * st), x: w * 0.5, y: h, rx: 44, ry: 16)
+                }
+                TrunkStripes(angle: 118, period: 61,
+                             bands: [(23, 23.6, TrunkRGBA(r: 255, g: 235, b: 205, a: (front ? 0.14 : 0.12) * st))])
+                if front {
+                    TrunkStripes(angle: 178, period: 83, bands: [(37, 38, TrunkRGBA(r: 30, g: 15, b: 5, a: 0.22 * st)),
+                                                                  (38, 39, TrunkRGBA(r: 255, g: 230, b: 200, a: 0.10 * st))])
+                }
+            }
+            .frame(width: w, height: h, alignment: .topLeading)
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .allowsHitTesting(false)
+        }
     }
 }
 

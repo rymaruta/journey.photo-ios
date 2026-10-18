@@ -165,6 +165,9 @@ public struct ToolbarPlacementShim {
     public static let tabBar = ToolbarPlacementShim()
 }
 
+/// 読み上げの「増やす・減らす」の向き（本物の `AccessibilityAdjustmentDirection`）
+public enum AccessibilityAdjustmentDirection { case increment, decrement }
+
 public struct AnyTransitionShim {
     public static let scale = AnyTransitionShim()
     public static let opacity = AnyTransitionShim()
@@ -420,6 +423,8 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 本物の `accessibilityAdjustableAction`（読み上げの「増やす・減らす」）
+    public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 名前を付けた座標を置く（iOS 17。指の位置をこの枠の座標で読む）
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）
