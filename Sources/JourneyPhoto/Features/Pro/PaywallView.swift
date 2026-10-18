@@ -383,7 +383,9 @@ struct ProBenefit: Identifiable, Equatable {
         ]
     }
 
-    /// 旅のトランク（2026-10-18）。数はアプリの決まり（`TrunkModel.pro`・`TrunkState`）から読み、サーバーとずれないようにする
+    /// 旅のトランク（2026-10-18）。数はアプリの決まり（`TrunkModel.pro`・`TrunkState`）から読み、サーバーとずれないようにする。
+    /// 2026-10-18 判断（見直し）: 説明は3つを「・」で並べた短い形にする。幅 375 の iPhone でも2行に収め、
+    /// プランの札と主ボタンを最初の画面から押し出さない（`ProPaywallStyle.benefitBodyMaxUnits` をテストで見張る）
     static var trunk: ProBenefit {
         let models = TrunkModel.pro.count
         let rerolls = trunkRerollsPerMonth
@@ -391,11 +393,14 @@ struct ProBenefit: Identifiable, Equatable {
         let free = TrunkState.freeLimit
         return ProBenefit(icon: .trunk,
                           title: L("旅のトランクをもっと", "More from your Travel trunk"),
-                          body: L("特別なトランク \(models) 型。ラベルの図柄を月 \(rerolls) 回作り直せて、手持ちは \(pro) 枚まで（無料は \(free) 枚）",
-                                  "\(models) special trunks, redo a label\u{2019}s design \(rerolls) times a month, and keep up to \(pro) labels (\(free) on free)"))
+                          body: L("特別なトランク \(models) 型・ラベルの図柄の作り直し 月 \(rerolls) 回・手持ち \(pro) 枚（無料は \(free) 枚）",
+                                  "\(models) special trunks · \(rerolls) label redesigns a month · hold \(pro) labels (\(free) free)"))
     }
 
-    /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）
+    /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）。
+    /// 2026-10-18 判断（見直し）: 同じ数がトランクの作り直しの画面（`TrunkRerollView` の「毎月 3 回」）と
+    /// `TrunkText` の断り（「来月また3回」）にも直に書かれている。トランクの画面は別の担当が作業中なので、
+    /// いまは触らずテストで一致を見張る（`PaywallTrunkBenefitTests`）。**数の元を1つにするのは、トランク担当と合わせて後で行う**
     static let trunkRerollsPerMonth = 3
 
     /// 開いた口に合わせた並び。口に合う利点をいちばん上に、残りはふだんの順のまま（2026-10-18 判断）
@@ -436,6 +441,17 @@ enum ProPaywallStyle {
     static let titleSize: Double = 28
     /// 利点の線の絵の大きさ（v2: 箱なしの 20）
     static let benefitIconSide: Double = 20
+    /// 利点の説明（13pt）の長さの上限（2026-10-18 判断）。全角 1・空白 0.3・ほかの半角 0.6 で数える（`benefitBodyUnits`）。
+    /// 幅 375 の iPhone では説明の幅が 303pt（左右 20・絵 20・間 12）＝1行に全角 23 字ほど。
+    /// 折り返しの余りを見て、2行に収まる 40 までにする
+    static let benefitBodyMaxUnits: Double = 40
+
+    /// 説明の長さの目安（全角 1・空白 0.3・ほかの半角 0.6）
+    static func benefitBodyUnits(_ text: String) -> Double {
+        text.unicodeScalars.reduce(0) { sum, c in
+            sum + (c == " " ? 0.3 : c.isASCII ? 0.6 : 1)
+        }
+    }
     /// 主ボタン: 写真のある画面なので白（CLAUDE.md の owner の好み）
     static let purchaseStyle = JPPillStyle.main(onPhoto: true)
     /// 写真が無いときの地（板: #34404d）

@@ -52,7 +52,7 @@ final class PaywallTrunkBenefitTests: XCTestCase {
         let trunk = ProBenefit.trunk
         XCTAssertEqual(trunk.icon, .trunk)
         XCTAssertEqual(trunk.title, "旅のトランクをもっと")
-        XCTAssertEqual(trunk.body, "特別なトランク 6 型。ラベルの図柄を月 3 回作り直せて、手持ちは 150 枚まで（無料は 30 枚）")
+        XCTAssertEqual(trunk.body, "特別なトランク 6 型・ラベルの図柄の作り直し 月 3 回・手持ち 150 枚（無料は 30 枚）")
         XCTAssertEqual(TrunkModel.pro.count, 6)
         XCTAssertEqual(ProBenefit.trunkRerollsPerMonth, 3)
         XCTAssertEqual(TrunkState.proLimit, 150)
@@ -73,6 +73,37 @@ final class PaywallTrunkBenefitTests: XCTestCase {
         let block = view[start.upperBound..<end.lowerBound].lowercased()
         for word in ["捨て", "必ず", "確定", "硬貨", "guarantee", "always", "discard", "throw away", "coin", "capsule"] {
             XCTAssertFalse(block.contains(word), "トランクの利点に「\(word)」")
+        }
+    }
+
+    /// 2026-10-18 判断（見直し）: 説明は幅 375 の iPhone でも2行に収まる長さ（プランの札を最初の画面から押し出さない）
+    func testBenefitBodiesFitTwoLinesOnSmallPhones() {
+        XCTAssertEqual(ProPaywallStyle.benefitBodyUnits("あ a"), 1.9, accuracy: 0.001)
+        for benefit in ProBenefit.all {
+            XCTAssertLessThanOrEqual(ProPaywallStyle.benefitBodyUnits(benefit.body), ProPaywallStyle.benefitBodyMaxUnits,
+                                     "説明が長い（小さい iPhone で3行になる）: \(benefit.title)")
+        }
+    }
+
+    /// 2026-10-18 判断（見直し）: 「月3回」はトランクの作り直しの画面と断りにも直に書かれている。
+    /// 数の元を1つにするのはトランク担当と合わせて後で行うので、それまでは文に出る回数が案内と同じことを見張る
+    func testRerollCountMatchesTrunkScreens() throws {
+        let n = ProBenefit.trunkRerollsPerMonth
+        let reroll = try source("Features/Trunk/TrunkRerollView.swift")
+        let text = try source("Core/Text/TrunkText.swift")
+        let checks: [(String, String, String)] = [
+            (reroll, #"毎月 (\d+) 回"#, "TrunkRerollView の「毎月 N 回」"),
+            (reroll, #"\((\d+) a month"#, "TrunkRerollView の「N a month」"),
+            (text, #"来月また(\d+)回"#, "TrunkText の「来月またN回」"),
+        ]
+        for (body, pattern, name) in checks {
+            let regex = try NSRegularExpression(pattern: pattern)
+            let matches = regex.matches(in: body, range: NSRange(body.startIndex..., in: body))
+            XCTAssertFalse(matches.isEmpty, "\(name) が見つからない（文が変わったらこのテストも直す）")
+            for match in matches {
+                let number = try XCTUnwrap(Range(match.range(at: 1), in: body).flatMap { Int(body[$0]) })
+                XCTAssertEqual(number, n, "\(name) が案内の月 \(n) 回と違う")
+            }
         }
     }
 
