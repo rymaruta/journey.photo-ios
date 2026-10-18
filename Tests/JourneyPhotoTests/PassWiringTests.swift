@@ -50,7 +50,8 @@ final class PassWiringTests: XCTestCase {
         let viewer = try source("Features/Pass/PassViewerView.swift")
         XCTAssertTrue(viewer.contains(".overlay(alignment: .top) { ToastOverlay() }"), "束の画面にトーストが出ない")
         XCTAssertTrue(viewer.contains("PassPhotoFullView(photo: photo)"), "写真を全面で見られない")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(!back)"), "裏を見ている間に表の写真が押せる")
+        XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(!back)"),
+                      "裏を見ている間に表の写真が押せる")
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("ReportSheet(photoId: target.photo.id, ownerId: nil, passNote: target.card.writtenText,"),
@@ -75,10 +76,15 @@ final class PassWiringTests: XCTestCase {
     /// きっぷ（案C）: 表は写真・眉・区間・破線・改札の穴、裏は帯・ご案内・4つの欄
     func testTicketShape() throws {
         let cards = try source("Features/Pass/PassCards.swift")
-        for part in ["PassTicketArrow()", "PassTicketDash()", "PassTicketPunch()", "PassTicket.eyebrow(face.kind)",
-                     "L(\"ご案内\", \"NOTICE\")", "L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")",
-                     "L(\"区間\", \"Distance\")", "L(\"回数\", \"Times\")", "PassTicketEdge(kind: face.kind, shine: shine)"] {
+        // 2026-10-17 マルス券: 表の改札の穴はやめ（破線は裏へ）、種類の名は「乗車券」の位置（`face.headline`）
+        for part in ["PassTicketArrow()", "PassTicketDash(shine: shine)", "PassTicketHead(text: face.headline)",
+                     "PassTicketHead(text: L(\"ご案内\", \"NOTICE\"))", "face.fields", "PassTicketEdge(kind: face.kind, corner: corner, shine: shine)"] {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
+        }
+        let ticket = try source("Core/Text/PassTicket.swift")
+        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Distance\")",
+                     "L(\"回数\", \"Times\")", "L(\"日付\", \"Date\")"] {
+            XCTAssertTrue(ticket.contains(part), "きっぷの欄に \(part) が無い")
         }
         XCTAssertTrue(try source("Features/Pass/PassBookView.swift").contains("PassTicketSlot(content: content)"))
     }
@@ -92,11 +98,16 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(edgeBody.contains(".padding(firstInset)"), "縁を内側に引いている（写真に真鍮がかかる）")
         XCTAssertFalse(edgeBody.contains(".shadow("), "「はじめて」の光を縁に付けている（写真に光が落ちる）")
         XCTAssertEqual(cards.components(separatedBy: ".background { PassTicketGlow(").count - 1, 3)
-        XCTAssertEqual(cards.components(separatedBy: ".dynamicTypeSize(...PassCardStyle.typeLimit)").count - 1, 3)
+        // 2026-10-17 判断: 表と裏は固定の字（文字を大きくする設定では変わらない・読み上げで全部読める）なので
+        // `.dynamicTypeSize` を付けない。小さなきっぷ（帳の札・ホームの束）もマルス券の縮小版にしたので同じく固定の字
+        XCTAssertFalse(cards.contains(".dynamicTypeSize("), "固定の字の札に効かない文字の大きさの上限が残っている")
+        let front = try XCTUnwrap(cards.range(of: "struct PassCardFront")).lowerBound
+        let full = try XCTUnwrap(cards.range(of: "struct PassPhotoFullView")).lowerBound
+        XCTAssertFalse(cards[front..<full].contains(".font(JPFont."),
+                       "きっぷ（表・裏・小さなきっぷ）に設定で大きくなる字が入った（固定の字の判断が崩れる・札からはみ出す）")
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertFalse(pick.contains("scaleEffect"), "見本を縮めて字が 12pt を割る")
-        let viewer = try source("Features/Pass/PassViewerView.swift")
-        XCTAssertTrue(viewer.contains(".allowsHitTesting(back)"))
+        XCTAssertTrue(try source("Features/Pass/PassSpinCard.swift").contains(".allowsHitTesting(back)"))
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("onReported: { pass.markNoteReported(target.id) })"), "\(path): 通報したひとことを伏せない")
@@ -109,7 +120,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(sheet.contains("report.replaceNotice"), "上書きされることを画面で言わない")
     }
 
-    /// 発・着: 名刺選びに区間の欄・見本にその場で出る・「…」に区間の字を伏せる・通報は書かれた字ぜんぶ
+    /// 発・着: 乗車券選びに区間の欄・見本にその場で出る・「…」に区間の字を伏せる・通報は書かれた字ぜんぶ
     func testTicketLabelsWiring() throws {
         let pick = try source("Features/Pass/PassCardPickView.swift")
         for part in ["routeSection", "PassTicket.previewOrigin(originChoice", "PassTicket.previewDestination(custom: destinationCustom",
@@ -134,11 +145,16 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("SpinMotion.yawDelta("), "メダルが同じ決め方を使っていない（写しになる）")
         XCTAssertTrue(medal.contains("SpinMotion.flipTarget(from:"))
         let viewer = try source("Features/Pass/PassViewerView.swift")
-        for part in ["PassSpinTicket(yaw: yaw", "PassSpinGesture.liveYaw(", "PassSpinGesture.classify(",
-                     "SpinMotion.snapTarget(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
-                     "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)",
+        for part in ["PassSpinTicket(yaw: yaw", "spin.liveYaw(", "PassSpinGesture.classify(",
+                     "SpinMotion.snapTarget(",
                      "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
             XCTAssertTrue(viewer.contains(part), part)
+        }
+        // 回す描き方・手つきは共有の部品（自分のカードの見本も使う・`PassOwnCardSpinTests`）
+        let spin = try source("Features/Pass/PassSpinCard.swift")
+        for part in ["PassSpinGesture.liveYaw(", ".rotation3DEffect(.radians(reduceMotion ? 0 : yaw)",
+                     "let shine: Double? = reduceMotion ? nil : SpinMotion.shine(yaw)"] {
+            XCTAssertTrue(spin.contains(part), part)
         }
     }
 
@@ -174,5 +190,37 @@ final class PassWiringTests: XCTestCase {
         let pick = try source("Features/Pass/PassCardPickView.swift")
         XCTAssertTrue(pick.contains("Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)"))
         XCTAssertFalse(pick.contains("String(value.prefix(PassExchange.noteLimit))"), "変換中に字数で切っている")
+    }
+
+    /// 呼び名は「わたしの乗車券」（2026-10-17 判断: owner が「名刺の一枚」から替えた）。
+    /// 画面に出る字（Sources の文字列リテラル＝`L("…", "…")` の中・InfoPlist.strings）に「名刺」を残さない。
+    /// 注記（`//`）の「旧: 名刺の一枚」は数えない。識別子・保存のキーは変えていない
+    func testNoOldCardNameOnScreen() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let literal = try NSRegularExpression(pattern: #""(?:[^"\\\n]|\\.)*""#)
+        var checked = 0
+        var found: [String] = []
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for url in files where url.pathExtension == "swift" || url.pathExtension == "strings" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            checked += 1
+            for (index, line) in text.components(separatedBy: "\n").enumerated() {
+                if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { continue }
+                let range = NSRange(line.startIndex..., in: line)
+                for match in literal.matches(in: line, range: range) {
+                    guard let r = Range(match.range, in: line), line[r].contains("名刺") else { continue }
+                    found.append("\(url.lastPathComponent):\(index + 1) \(line[r])")
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 100, "Sources を読めていない")
+        XCTAssertTrue(found.isEmpty, "画面の字に「名刺」が残っている（「乗車券」に）: \(found)")
+        let pick = try source("Features/Pass/PassCardPickView.swift")
+        XCTAssertTrue(pick.contains(#".navigationTitle(L("わたしの乗車券", "My ticket"))"#), "選ぶ画面の題が「わたしの乗車券」でない")
+        let settings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(settings.contains(#"Text(L("わたしの乗車券", "My ticket"))"#), "設定の行が「わたしの乗車券」でない")
     }
 }

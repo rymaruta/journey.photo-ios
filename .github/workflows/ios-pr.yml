@@ -110,7 +110,10 @@ jobs:
   #  - main へ入れたあとの木（PR のマージの木）が、PR の先頭のコミットの木と同じ
   #    （PR を作ってから main が動いていれば、試していない組み合わせなので回す）
   #  - PR の先頭のコミットで、TestFlight のワークフローが success で終わり、
-  #    その回の「テスト」の段が skipped ではなく success
+  #    その回の「全部のテストが通った（PR の検証が数える印）」の段が success
+  #    （2026-10-17: 枝の確認は UI テストを `screens` で絞れるようになった。絞った回は
+  #    この印が skipped なので数えない＝ここで全部を回す。印の無い前の作りの回は数えない
+  #    （その PR は Mac をもう一度回すだけ。数える名前を増やすほど穴の入り口が増える）
   #
   # Linux で API を2〜3回読むだけなので数秒。飛ばしたときも Xcode の段は「skipped」に
   # なり、必須のチェックにしていても通った扱いになる
@@ -147,8 +150,10 @@ jobs:
                       --jq '.workflow_runs[].id' 2>/dev/null || true)"
             reason="このコミットで Mac のテストが通った TestFlight の回が無い"
             for id in $runs; do
+              # 🔴 **段の名前は完全一致で見る**（前は「テスト」で始まる最初の段＝単体だけで
+              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える
               step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
-                        --jq '[.jobs[].steps[] | select(.name | startswith("テスト")) | .conclusion] | first // ""' 2>/dev/null || true)"
+                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | first // ""' 2>/dev/null || true)"
               if [ "$step" = "success" ]; then
                 skip=true
                 reason="TestFlight の run ${id} で同じコミットのテストが通っている"
@@ -202,16 +207,26 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
-      # **TestFlight と同じ鍵**で控えを共有する（どちらが先に回っても温まる）
+      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
+      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
+      - name: 控えの鍵を決める
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      # **読むだけ**（2026-10-17 判断）。PR の回の控えは `refs/pull/<番号>/merge` に区切られ、
+      # ほかの枝からは読めない。しかも1つ約7GB で、書くと置き場（10GB）から main の控えを
+      # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
+      # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
       - name: 依存の控えを戻す
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
+            ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
       - name: Xcode プロジェクトを作る
@@ -219,33 +234,30 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
-      # 書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
-      # ios-testflight.yml の「テスト」の段の注記と同じ
-      - name: テスト（単体＋UI）
+      # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
+      # 行かずに止まる。**ここは絞らない**——main に入る前に全部が回る場所（枝の確認の `screens` は
+      # ここには無い）。書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
+      # ios-testflight.yml の「組む」の段の注記
+      - name: 組む
         run: |
           set -euo pipefail
-          DEVICE="$(python3 Tools/pick-simulator.py)"
-          echo "シミュレータ: $DEVICE"
-          xcodebuild \
-            -project JourneyPhoto.xcodeproj \
-            -scheme JourneyPhoto \
-            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            -resultBundlePath build/Test.xcresult \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            test 2>&1 | tee build-xcodebuild.log | tail -n 300 || {
-              echo "::group::error: の行だけ"
-              grep -E "error:|failed|Failing tests" build-xcodebuild.log | sort -u | head -200 || true
-              echo "::endgroup::"
-              exit 1
-            }
+          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
+          XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
+
+      - name: 単体テスト
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
+
+      - name: UI テスト（起動・全タブ・画面の絵）
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult
 
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
       - name: 結果のまとめ
         if: ${{ always() }}
-        run: python3 Tools/xcresult-summary.py build/Test.xcresult >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          for r in build/Unit.xcresult build/Test.xcresult; do
+            [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
 
       # UI テストが撮った画面の絵（`ScreenshotTests`）。PR では枝に押さず、成果物に置く
       - name: 画面の絵を取り出す
@@ -264,6 +276,7 @@ jobs:
         with:
           name: xcode-test-results
           path: |
+            build/Unit.xcresult
             build/Test.xcresult
             build-xcodebuild.log
             build/shots

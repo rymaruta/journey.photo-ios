@@ -403,6 +403,119 @@ if testflight_yml.exists():
     if "testflight/" not in flow:
         fail("ios-testflight.yml が出した版の印（testflight/<版> のタグ）を付けていません")
 
+# ---- 枝の確認の絞り（`screens`）と「Mac でテスト済み」の数え方 -------------------
+# 🔴 **絞った回を「テスト済み」と数えると、全部の UI テストが一度も回らずに main に入る**
+# （2026-10-17）。数えるのは ios-testflight.yml の印の段だけで、その段は絞らない回にしか
+# 走らない。印の名前・条件・数える側のどれかが崩れたら、ここで止める
+MARK = "全部のテストが通った（PR の検証が数える印）"
+pr_yml = ROOT / ".github/workflows/ios-pr.yml"
+if testflight_yml.exists() and pr_yml.exists():
+    flow = testflight_yml.read_text(encoding="utf-8")
+    pr_flow = pr_yml.read_text(encoding="utf-8")
+    # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
+    # 単体・UI の段の結果も見る（`id` が消えると outcome は空になり、印が付かない＝安全側。下で id も見る）
+    MARK_IF = ("(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+               " && steps.unit.outcome == 'success' && steps.ui.outcome == 'success'")
+    mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
+    if not mark:
+        fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
+    elif mark.group(1).strip() != MARK_IF:
+        fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
+    # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
+    selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
+    if selects != [f'.name == "{MARK}"']:
+        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
+
+    # **落ちても先へ進む段を作らない。** 組む・単体・UI・印のどれかに `continue-on-error` が付くと、
+    # 落ちた回でも印まで進み「テスト済み」と数えられる
+    def step_block(text, name):
+        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", text, re.M | re.S)
+        return found.group(1) if found else None
+    for text, file, names in [
+        (flow, "ios-testflight.yml", ["組む（本物の SwiftUI で型検査される最初の機会）", "単体テスト", "UI テスト（画面の絵）", MARK]),
+        (pr_flow, "ios-pr.yml", ["組む", "単体テスト", "UI テスト（起動・全タブ・画面の絵）"]),
+    ]:
+        for name in names:
+            block = step_block(text, name)
+            if block is None:
+                fail(f"{file} に「{name}」の段がありません")
+            elif "continue-on-error" in block:
+                fail(f"{file} の「{name}」に continue-on-error があります（落ちても印まで進む）")
+    # 印が結果を見る段の `id`
+    for name, step_id in [("単体テスト", "unit"), ("UI テスト（画面の絵）", "ui")]:
+        block = step_block(flow, name) or ""
+        if not re.search(r"^        id: " + step_id + r"\n", block, re.M):
+            fail(f"ios-testflight.yml の「{name}」に id: {step_id} がありません（印が結果を見られない）")
+    # テストを流す道具が、落ちたときに 1 で終わること（0 で終わると段が緑になる）
+    runner = (ROOT / "Tools/xcode-test.sh").read_text(encoding="utf-8")
+    # **pipefail が無いと** `xcodebuild … | tee | tail` の終了は tail のもの＝いつも 0 になり、
+    # 下の `|| { exit 1 }` に来ない
+    if not re.search(r"^set -[a-z]*o pipefail\b", runner, re.M):
+        fail("Tools/xcode-test.sh に set -euo pipefail（pipefail）がありません（xcodebuild の失敗が tail に隠れる）")
+    if not re.search(r'\| tail -n \d+ \|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
+        fail("Tools/xcode-test.sh が xcodebuild の失敗で exit 1 しません")
+    # 上げる回・storeShots の回は screens を捨てて全部にする
+    scope = step_block(flow, "どこまで流すかを決める") or ""
+    if not re.search(r'if \[ "\$\{SUBMIT:-\}" = "true" \] \|\| \[ "\$\{STORE_SHOTS:-\}" = "true" \]; then\n\s*SCREENS=""\n\s*fi', scope):
+        fail("ios-testflight.yml の「どこまで流すかを決める」が、上げる回・storeShots の回で screens を捨てていません")
+    if re.search(r'startswith\("テスト"\)', pr_flow):
+        fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
+    for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):
+        fail(f"ios-testflight.yml の段「{name}」が「テスト」で始まります（古い数え方に拾われる）")
+    # main の回の「控えを温める」は、署名用に書き換えたプロジェクトを元に戻してから組む
+    warm = step_block(flow, "控えを温める（main の回だけ・シミュレータ向けに組む）") or ""
+    warm_order = [warm.find("git checkout -- project.yml"), warm.find("xcodegen generate"),
+                  warm.find("Tools/xcode-test.sh build")]
+    if -1 in warm_order or warm_order != sorted(warm_order):
+        fail("ios-testflight.yml の「控えを温める」が、project.yml を戻して xcodegen し直してから組んでいません")
+
+    import subprocess
+    import tempfile
+    # 画面の絵の書き出し: 元の拡張子のまま写し、録画・拡張子なしは置かない
+    # （`export-screenshots.sh` の中の Python をそのまま取り出して、偽の添付で流す）
+    exporter = (ROOT / "Tools/export-screenshots.sh").read_text(encoding="utf-8")
+    copy_py = re.search(r"<<'PY'\n(.*?)\nPY\n", exporter, re.S)
+    if not copy_py:
+        fail("Tools/export-screenshots.sh の添付を写す Python が読めません")
+    else:
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp, "src"), Path(tmp, "out")
+            src.mkdir(); out.mkdir()
+            manifest = []
+            for exported, name in [("a.png", "10-ホーム_0_X.png"), ("b.txt", "note_0_Y.txt"),
+                                   ("c.jpg", "pic"), ("d.mp4", "Screen Recording.mp4"), ("e", "UI Snapshot")]:
+                (src / exported).write_bytes(b"x")
+                manifest.append({"exportedFileName": exported, "suggestedHumanReadableName": name})
+            (src / "manifest.json").write_text(json.dumps([{"attachments": manifest}]), encoding="utf-8")
+            subprocess.run([sys.executable, "-I", "-c", copy_py.group(1), str(src), str(out)],
+                           capture_output=True, text=True)
+            got = sorted(f.name for f in out.iterdir())
+            if got != ["10-ホーム_0_X.png", "note_0_Y.txt", "pic.jpg"]:
+                fail(f"export-screenshots.sh の写し方が変わっています（元の拡張子のまま・録画は置かない）: {got}")
+
+    picker = ROOT / "Tools/pick-ui-tests.py"
+    # 全部（空）のときは UI テストのファイルを読まない（上げる回がファイルの書き方に左右されない）
+    nowhere = subprocess.run([sys.executable, str(picker), ""], capture_output=True, text=True,
+                             env={**os.environ, "JP_UI_TESTS_DIR": "/nonexistent-ui-tests"})
+    if nowhere.returncode != 0 or nowhere.stdout.split() != ["-only-testing:JourneyPhotoUITests"]:
+        fail("pick-ui-tests.py が空（全部）でも UI テストのファイルを読んでいます")
+    def picked(screens):
+        run = subprocess.run([sys.executable, str(picker), screens], capture_output=True, text=True)
+        return run.returncode, run.stdout.split()
+    code, out = picked("")
+    if code != 0 or out != ["-only-testing:JourneyPhotoUITests"]:
+        fail(f"pick-ui-tests.py の空（全部）が全部になりません: {code} {out}")
+    code, out = picked("なし")
+    if code != 0 or out != ["-only-testing:JourneyPhotoUITests/SmokeTests"]:
+        fail(f"pick-ui-tests.py の「なし」が起動の見張りだけになりません: {code} {out}")
+    code, out = picked("01-同意画面")
+    if code != 0 or "-only-testing:JourneyPhotoUITests/ScreenshotTests/testCapturesEveryScreen" not in out \
+            or "-only-testing:JourneyPhotoUITests/SmokeTests" not in out:
+        fail(f"pick-ui-tests.py が絵の名前（01-同意画面）から撮るテストを選べません: {code} {out}")
+    code, _ = picked("どの絵にも無い語qqq")
+    if code != 2:
+        fail("pick-ui-tests.py が当たらない語で止まりません（打ち間違いで UI テスト0件のまま緑になる）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

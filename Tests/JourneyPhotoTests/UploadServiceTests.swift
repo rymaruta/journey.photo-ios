@@ -51,14 +51,17 @@ final class UploadServiceTests: XCTestCase {
         ScriptedProtocol.script = [
             .init(match: "/upload/presigned-url", status: 200, body: presignBody),
             .init(match: "/put", status: 200, body: ""),
-            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","photoId":"p1","kind":"place","place":{"name":"パリ"},"seed":3,"at":"2026-10-17T00:00:00Z"},"labelSkipped":null}"#),
         ]
         let presigned = try await service().stage(
             data: Data(repeating: 0xFF, count: 16),
             fileName: "photo.jpg", fileType: "image/jpeg"
         )
-        let photo = try await service().save(PhotoDraft(), presigned: presigned)
-        XCTAssertEqual(photo?.id, "p1")
+        let saved = try await service().save(PhotoDraft(), presigned: presigned)
+        XCTAssertEqual(saved.photo?.id, "p1")
+        // 旅のトランク（2026-10-17）: 保存の応答のラベルを受け取る
+        XCTAssertEqual(saved.label?.place.name, "パリ")
+        XCTAssertNil(saved.labelSkipped)
         XCTAssertEqual(ScriptedProtocol.calls.map(\.path),
                        ["/upload/presigned-url", "/put", "/upload/save"])
         let put = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/put" })
@@ -140,6 +143,84 @@ final class UploadServiceTests: XCTestCase {
         model.tagsText = ""
         model.applyInitialTag()  // カテゴリの選択画面から戻った
         XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
+    }
+
+    /// 旅のトランク（2026-10-17）: 全部上がった投稿で届いたラベルは、届いた画面の待ち（`TrunkArrivals`）へ。
+    /// 手持ちがいっぱいで届かなかった回は「手持ちへ案内する一言」の合図だけ
+    @MainActor
+    func testDealtLabelIsHandedToTheArrivalScreen() async {
+        // nil は届いた回、それ以外は届かなかった理由（"mystery" は知らない値＝黙る）
+        for skipped in [nil, "full", "storage", "mystery"] as [String?] {
+            ScriptedProtocol.reset()
+            _ = TrunkArrivals.shared.consume()
+            _ = TrunkArrivals.shared.consumeNotice()
+            let save = skipped.map { #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":null,"labelSkipped":"\#($0)"}"# }
+                ?? #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","kind":"season","place":{"name":"京都"},"season":"spring","seed":5,"at":"2026-10-17T00:00:00Z"}}"#
+            ScriptedProtocol.script = [
+                .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+                .init(match: "/put", status: 200, body: ""),
+                .init(match: "/upload/save", status: 200, body: save),
+            ]
+            let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                tokenProvider: StubTokenProvider(token: "t"), session: session)
+            let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                        photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+            var item = PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+                exif: nil, coords: nil, takenOn: nil))
+            item.title = "哲学の道の朝"
+            model.items = [item]
+
+            await model.submit()
+
+            XCTAssertTrue(model.didPostAll)
+            switch skipped {
+            case nil:
+                let batch = TrunkArrivals.shared.consume()
+                XCTAssertEqual(batch?.first.label.place.name, "京都")
+                XCTAssertEqual(batch?.first.label.photoId, "p1", "photoId が無いラベルは id を使う")
+                XCTAssertEqual(batch?.first.photoTitle, "哲学の道の朝")
+                XCTAssertNil(TrunkArrivals.shared.consumeNotice())
+            case "full":
+                XCTAssertNil(TrunkArrivals.shared.consume(), "届いていないのに届いた画面を出す")
+                XCTAssertEqual(TrunkArrivals.shared.consumeNotice(), .full, "いっぱいの一言の合図が無い")
+            case "storage":
+                XCTAssertNil(TrunkArrivals.shared.consume())
+                XCTAssertEqual(TrunkArrivals.shared.consumeNotice(), .storage, "容量の一言の合図が無い")
+            default:
+                XCTAssertNil(TrunkArrivals.shared.consume())
+                XCTAssertNil(TrunkArrivals.shared.consumeNotice(), "知らない理由で一言を出した")
+            }
+        }
+    }
+
+    /// 旅のトランク（2026-10-17 の読み直し）: **一部だけ上がった回でも**、配られたラベルは届いた画面の待ちへ
+    /// （全部上がった分かれ道の内側にしか無かった）
+    @MainActor
+    func testDealtLabelIsHandedOverEvenWhenSomePhotosFail() async {
+        ScriptedProtocol.reset()
+        _ = TrunkArrivals.shared.consume()
+        _ = TrunkArrivals.shared.consumeNotice()
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200,
+                  body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"},"label":{"id":"p1","kind":"place","place":{"name":"京都"},"seed":5,"at":"2026-10-17T00:00:00Z"}}"#,
+                  once: true),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"処理に失敗しました"}"#),
+        ]
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.items = (0..<2).map { _ in PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil)) }
+
+        await model.submit()
+
+        XCTAssertFalse(model.didPostAll, "前提: 1枚は落ちている")
+        XCTAssertEqual(TrunkArrivals.shared.consume()?.first.label.id, "p1", "一部だけ上がった回に届いたラベルを捨てた")
     }
 
     /// 束の印の頭（2026-10-02 判断）: 旅の写真の流れから来た投稿は必ず `trip-` で始まり、
@@ -667,12 +748,39 @@ final class ScriptedProtocol: URLProtocol {
         var body: Data? = nil
     }
 
-    nonisolated(unsafe) static var script: [Step] = []
-    nonisolated(unsafe) static var calls: [Call] = []
+    /// 🔴 **控えは錠を掛けて読み書きする**（2026-10-18）。`startLoading` は URL の読み込みのスレッドで走るので、
+    /// 試験の `reset()`・`script =`（主スレッド）と同時に配列を書くと壊れうる（Mac の run 502 で単体テストの途中に
+    /// 落ちた。その候補）。外から見た形（`script`・`calls` の読み書き）は変えない
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var storedScript: [Step] = []
+    nonisolated(unsafe) private static var storedCalls: [Call] = []
+
+    static var script: [Step] {
+        get { lock.withLock { storedScript } }
+        set { lock.withLock { storedScript = newValue } }
+    }
+
+    static var calls: [Call] {
+        get { lock.withLock { storedCalls } }
+        set { lock.withLock { storedCalls = newValue } }
+    }
 
     static func reset() {
-        script = []
-        calls = []
+        lock.withLock {
+            storedScript = []
+            storedCalls = []
+        }
+    }
+
+    /// 呼ばれた記録を残し、当たる答えを1つ選ぶ（1回きりの答えは外す）。**ひとまとめに錠の中で**
+    private static func record(_ call: Call, path: String) -> Step? {
+        lock.withLock {
+            storedCalls.append(call)
+            guard let index = storedScript.firstIndex(where: { path.contains($0.match) }) else { return nil }
+            let step = storedScript[index]
+            if step.once { storedScript.remove(at: index) }
+            return step
+        }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -680,15 +788,12 @@ final class ScriptedProtocol: URLProtocol {
 
     override func startLoading() {
         let path = request.url?.path ?? ""
-        ScriptedProtocol.calls.append(.init(
+        let step = Self.record(.init(
             path: path,
             method: request.httpMethod ?? "",
             contentType: request.value(forHTTPHeaderField: "Content-Type"),
             body: request.httpBody ?? Self.read(request.httpBodyStream)
-        ))
-        let index = ScriptedProtocol.script.firstIndex { path.contains($0.match) }
-        let step = index.map { ScriptedProtocol.script[$0] }
-        if let index, step?.once == true { ScriptedProtocol.script.remove(at: index) }
+        ), path: path)
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: step?.status ?? 404,

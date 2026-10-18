@@ -191,7 +191,7 @@ struct PassBookView: View {
                     }
                 }
                 ForEach(0..<PassBook.emptySlots(for: list.count), id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: PassCardStyle.miniCorner)
                         .strokeBorder(Color.white.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         .aspectRatio(5.0 / 7.0, contentMode: .fit)
                         .accessibilityHidden(true)

@@ -6,7 +6,7 @@ import Foundation
 /// （写真の id・ひとこと・出身を出すか）と、時の単位の時刻と、取れたときだけの粗い場所。
 struct PassEncounter: Codable, Equatable, Identifiable {
     var id: String
-    /// 相手の名刺の一枚（公開写真の id）
+    /// 相手の乗車券（公開写真の id）
     var photoId: String
     var note: String
     var showsFrom: Bool
@@ -34,6 +34,9 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var destinationLabel: String? = nil
     /// 区間の字を伏せた（伏せたら自動の形に戻す・この端末だけ）
     var labelsHidden: Bool? = nil
+    /// 相手が選んだ券面の電波の番号（2026-10-17・版 3 の中身だけが持つ）。無ければマルス券。
+    /// **見せるのは相手が Pro だと確かめられたときだけ**（`PassTicketFaceStyle.shown`・`PassCardContent.faceStyle`）
+    var face: UInt8? = nil
 
     /// 見せるひとこと（伏せていれば空）
     /// 見せるひとこと（伏せていれば空）。**連絡先の形（URL・メール・電話番号）を含む字は出さない**
@@ -82,16 +85,19 @@ struct PassSettings: Codable, Equatable {
     var enabled = false
     /// 板の既定は「旅のあいだ」
     var mode: PassExchange.Mode = .traveling
-    /// 名刺の一枚（自分の公開写真の id）。選ぶまでは電波を出さない
+    /// 乗車券（自分の公開写真の id）。選ぶまでは電波を出さない
     var cardPhotoId: String?
     var note = ""
     /// どこから来た人か（居住地の都道府県）を載せる
     var showsFrom = true
-    /// 乗車券の「発」を自分で書いた字（nil なら自動: `showsFrom` なら居住地・でなければ「どこかから」）。
+    /// 乗車券の「発」を自分で書いた字（nil なら自動: `showsFrom` なら居住地・でなければ「どこか」）。
     /// **2026-10-16 判断**（owner「発・着を自分で決めたい」）。前の版の設定には無いので省略できる形
     var originLabel: String? = nil
     /// 乗車券の「着」を自分で書いた字（nil なら自動: すれちがった所）
     var destinationLabel: String? = nil
+    /// 選んだ券面の電波の番号（2026-10-17・nil はマルス券）。**Pro をやめても残す**（自分の見本はマルス券に戻し、
+    /// また Pro になれば選んだ券面に戻る・`PassTicketFaceStyle.own`）
+    var faceStyle: UInt8? = nil
 
     /// 「発」の選び方
     enum Origin: String, CaseIterable, Identifiable {
@@ -99,7 +105,7 @@ struct PassSettings: Codable, Equatable {
         case home
         /// 自分で書く
         case custom
-        /// 出さない（どこかから）
+        /// 出さない（どこか発）
         case hidden
         var id: String { rawValue }
     }

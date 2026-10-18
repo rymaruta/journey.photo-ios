@@ -218,6 +218,124 @@ enum ComposeControls {
         CompositionGuide.rotationParts(committedRotation).quarters % 2 == 1
     }
 
+    // MARK: - 開いたときの向き（2026-10-18 owner「縦空くのは嫌」・勝手に拡大はしない）
+
+    /// 縦横の差がこの割合より小さい作例は正方形とみなす（ほぼ正方形を回しても空きはほとんど減らず、
+    /// 回った絵に戸惑うだけ）
+    static let squareTolerance = 0.02
+
+    /// 参考写真（作例・ライブラリの写真）に合わせて、最初に回しておく角度（0 / 90 / 270・時計回りの度）。
+    ///
+    /// **2026-10-18 判断（owner 了承済み）**: 横長の作例を縦の枠（撮れる範囲 3:4）に重ねると上下が空く。
+    /// 拡大・切り取りはしない（写真は表示で回すだけ・`rotatedReference` が縦横を入れ替えた枠に収める）。
+    /// 代わりに**最初から 90° 回した向きで重ねる**。縦長・正方形・枠が横長なら 0°。
+    ///
+    /// **回す向き**: 画面上で写真の「上」が向く側に、端末の上を倒して持てば写真が正しく立つ。
+    /// - 既定は **90°（時計回り・写真の上が画面の右）**。端末を左へ倒して（反時計回り）横に持つ向き
+    ///   ＝ダイナミックアイランド（ホームボタンの機種はその反対側のホームボタン）が左、
+    ///   右上にカメラコントロール・音量ボタンが下。標準のカメラ App の横持ちの基本の向きで、
+    ///   カメラの撮像素子の素の向き（`UIDeviceOrientation.landscapeLeft`）とも合う
+    /// - いま端末を逆の横向き（上を右に倒した `heldQuarterTurns == 1`）で持っていれば **270°**
+    ///   （写真の上が画面の左）。縦持ち・逆さま・平置きのときは既定の 90°
+    /// - **左右反転（ライブラリの写真の `mirrored`）は角度を変えない**。反転は写真の中の左右だけを入れ替え
+    ///   （`rotatedReference` の中で回す前にかける）、上下は動かない——回した後も写真の上は同じ側にある
+    static func autoRotation(referenceWidth: Double, referenceHeight: Double, frameAspect: Double,
+                             heldQuarterTurns: Int, mirrored: Bool = false) -> Double {
+        guard referenceWidth.isFinite, referenceHeight.isFinite, frameAspect.isFinite,
+              referenceWidth > 0, referenceHeight > 0, frameAspect > 0 else { return 0 }
+        let aspect = referenceWidth / referenceHeight
+        // 枠が縦長で、作例がはっきり横長のときだけ回す
+        guard frameAspect < 1, aspect > 1 + squareTolerance else { return 0 }
+        _ = mirrored // 反転は上下を変えない（上の注記）。呼ぶ側が渡し忘れても同じ答え
+        return ((heldQuarterTurns % 4) + 4) % 4 == 1 ? 270 : 90
+    }
+
+    /// 回す角度を決め直すきっかけ
+    enum RotationTrigger: Equatable {
+        /// 画面を開いた
+        case opened
+        /// 重ねる参考写真が替わった（作例を送った・ライブラリから選んだ・「作例」と「写真ライブラリ」を切り替えた）
+        case referenceChanged
+        /// 構図をシートで選び直した
+        case compositionChosen
+        /// 持った向き（縦・横）が変わった
+        case heldTurned
+    }
+
+    /// きっかけごとの角度の決め直し。返すのは**累積の角度**（いまの角度からいちばん短く回る値）、
+    /// nil は「今のまま」。
+    ///
+    /// **2026-10-18 判断（人が回した角度と自動の兼ね合い）**:
+    /// - 参考写真があるとき（`auto` が nil でない）は、**開いたとき・参考写真が替わったとき・構図を選び直したときは
+    ///   自動の向き**。覚えた角度（`CompositionPreferences.rotation(for:)`）は前に重ねた別の写真のために
+    ///   選んだ向きなので、新しく重ねる写真には使わない（作例が変わったら自動に戻す）
+    /// - 人が回すボタン・ひねりで回した後（`manual`）は、その向きを尊重する——持った向きが変わっても
+    ///   自動で回し直さない。参考写真か構図が替わるまで保つ
+    /// - 参考写真が無いとき（作例なしの入口・ライブラリの写真を選ぶ前）は今まで通り: 開いたら覚えた角度、
+    ///   構図を選び直したら 0°（`CompositionPreferences.select` と同じ）
+    /// - 自動の向きは覚えない（覚えるのは人が回した角度だけ・`setRotation`）
+    /// - **縦持ち・逆さまに戻したとき（`held` が 0・2）は、横向き（90°・270°）をそのまま保つ**
+    ///   （2026-10-18 確かめ役の指摘）。270° で横に持ってから縦に戻すと、既定の 90° へ戻して作例が
+    ///   180° ひっくり返っていた。縦持ちではどちらの横向きでも同じだけ収まるので、動かさない
+    static func decidedRotation(_ trigger: RotationTrigger, current: Double, manual: Bool,
+                                auto: Double?, remembered: Double, held: Int = 0) -> Double? {
+        let target: Double?
+        switch trigger {
+        case .opened: target = auto ?? remembered
+        case .referenceChanged: target = auto
+        case .compositionChosen: target = auto ?? 0
+        case .heldTurned:
+            let sideways = CompositionGuide.normalizedRotation(current) == 90
+                || CompositionGuide.normalizedRotation(current) == 270
+            target = manual || (held % 2 == 0 && sideways) ? nil : auto
+        }
+        guard let target else { return nil }
+        // 開いたときは回る前の角度が無いので 0〜360 のまま（覚えた 270° を -90° にしない）
+        if trigger == .opened { return CompositionGuide.normalizedRotation(target) }
+        return nearestCumulative(to: target, from: current)
+    }
+
+    /// 開いてからこの秒数の内に持った向きで回し直すときは、動きを付けない（2026-10-18 確かめ役の指摘）。
+    /// 時計回りの横持ちで開くと、最初の傾きの値が届くまでは既定の 90° で描き、届いたら 270° へ回し直す——
+    /// 動きを付けると、開いた直後に作例が 180° 回って見えた。傾きは 10 回/秒で読む（`LevelMotion`）ので、
+    /// 最初の値は 1 秒より十分前に届く
+    static let openingSettle = 1.0
+
+    /// 持った向きで回し直すときに動きを付けるか（開いた直後は付けない）
+    static func animatesHeldTurn(secondsSinceAppear: Double) -> Bool {
+        guard secondsSinceAppear.isFinite else { return true }
+        return secondsSinceAppear >= openingSettle
+    }
+
+    /// 構図の線に渡す「持った向き」（`CompositionGuide.screenMarks` の `quarterTurns`）。
+    ///
+    /// **2026-10-18 判断（横持ちで線だけが回り、作例とずれる）**: 参考写真は画面に貼り付いた向き
+    /// （`rotation` だけ）で描くのに、線は持った向きのぶんも回していた。横長の作例を 90° 回して開き、
+    /// 端末を横にする——この直しのいちばんの使い方で、作例は正しく立つのに、黄金螺旋・対角・L字・
+    /// 比率の枠などの向きのある線が作例から 90° ずれた（三分割は形が同じなので目立たない）。
+    /// そこで**参考写真を重ねている間は、線も持った向きでは回さず作例と同じ向きにそろえる**（0 を返す）。
+    /// 作例を 90° 回して横に持てば、線は横の写真の向きでちょうど立つ（回した角度が持った向きを打ち消す）。
+    /// `referenceShown` には**隠しているかを含めない**（`hasReference`）——作例を一時的に隠しても、
+    /// 作例の向きに合わせた線の向きは保つ（隠すたびに線が 90° 回らない・2026-10-18 確かめ役の指摘）。
+    /// - 参考写真が無いとき（線だけ）は今まで通り、持った向きに合わせる（撮れる写真の向きの線）
+    /// - 水準器はいつも持った向き（傾きは重さの向きが基準・回しもしない）
+    static func linesQuarterTurns(held: Int, kind: CompositionKind?, referenceShown: Bool) -> Int {
+        if kind == .level { return held }
+        return referenceShown ? 0 : held
+    }
+
+    /// 0〜360 の角度 `target` を、累積の角度 `current` からいちばん短く回る累積の値にする
+    /// （90° から 270° へは +180°・0° へは 360° の倍数の近いほう）
+    static func nearestCumulative(to target: Double, from current: Double) -> Double {
+        guard target.isFinite else { return current.isFinite ? current : 0 }
+        guard current.isFinite else { return CompositionGuide.normalizedRotation(target) }
+        var delta = (CompositionGuide.normalizedRotation(target) - CompositionGuide.normalizedRotation(current))
+            .truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 }
+        if delta <= -180 { delta += 360 }
+        return current + delta
+    }
+
     // MARK: - シャッターの暗転
 
     /// 押した瞬間の暗転を見せておく長さ（秒）。黒を一度描かせてから戻す（同じ処理で戻すと描かれない）

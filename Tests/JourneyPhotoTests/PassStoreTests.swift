@@ -85,7 +85,7 @@ final class PassStoreTests: XCTestCase {
 
     func testOwnCardAndOffAreNotRecorded() async {
         let store = makeStore()
-        XCTAssertNil(store.record(payload("mine"), at: at(16, 10)), "自分の名刺を綴じた")
+        XCTAssertNil(store.record(payload("mine"), at: at(16, 10)), "自分の乗車券を綴じた")
         store.update { $0.enabled = false }
         XCTAssertNil(store.record(payload("p1"), at: at(16, 10)), "オフなのに綴じた")
         XCTAssertNil(store.payload, "オフなのに電波に載せる中身がある")
@@ -301,7 +301,7 @@ final class PassStoreTests: XCTestCase {
         store.update { $0.mode = .always }
         XCTAssertTrue(store.exchangeAllowed(isForeground: false, now: at(17, 10)))
         store.update { $0.cardPhotoId = nil }
-        XCTAssertFalse(store.exchangeAllowed(isForeground: true, now: at(17, 10)), "名刺が無いのに電波を出す")
+        XCTAssertFalse(store.exchangeAllowed(isForeground: true, now: at(17, 10)), "乗車券が無いのに電波を出す")
     }
 
     func testHomeLocation() async {

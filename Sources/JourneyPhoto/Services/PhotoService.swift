@@ -62,12 +62,16 @@ struct PhotoService {
     /// 写真の中身を書き換える。`PUT /photos/{id}`。
     ///
     /// **送った項目だけが変わる。** 何も送らないと 400「更新項目がありません」。
-    func update(photoId: String, patch: PhotoPatch) async throws {
-        try await api.authorizedVoid(
+    /// - Returns: 下書きを初めて公開した回に配られた旅のトランクのラベル（`label`・`labelSkipped`・2026-10-17）。
+    ///   それ以外の回・古いサーバーでは空
+    @discardableResult
+    func update(photoId: String, patch: PhotoPatch) async throws -> TrunkDealt {
+        let data = try await api.authorizedVoid(
             .put,
             "/photos/\(encoded(photoId))",
             body: patch
         )
+        return TrunkDealt.read(data)
     }
 
     /// 写真 `photoId` に付いている「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・認証）。
