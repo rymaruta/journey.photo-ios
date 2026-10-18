@@ -73,7 +73,7 @@ struct PassFacePhoto: View {
 }
 
 /// 特別な券面の入れ物: 傾き（`PassTiltMotion`）を**光が動く券面が出ている間だけ**読み、光の位置を決めて描く。
-/// 「視差効果を減らす」・背面では読まない（光は正面のまま）
+/// 「視差効果を減らす」・背面では読まない（光は正面のまま）。読むかどうかは裏と同じ `PassTiltHold`
 struct PassSpecialFace: View {
     let face: PassTicketFace
     var onPhotoTap: (() -> Void)?
@@ -81,15 +81,69 @@ struct PassSpecialFace: View {
     /// 表がいま見えているか（裏を見ている・全面の写真や Pro の案内が上にある間は false）
     var visible: Bool = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        PassTiltLight(visible: visible, shine: shine) { light in
+            PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
+        }
+        .modifier(PassTiltHold(style: face.style, visible: visible))
+    }
+}
+
+/// 光の位置を渡して描く。**見えている面だけ**傾き（`PassTiltMotion`）を見て描き直し、見えていない面（裏返して透明度
+/// 0 の面）は正面の光で止めて、傾きの知らせ（30 回/秒）で描き直さない（2026-10-18 の見直し）
+struct PassTiltLight<Content: View>: View {
+    let visible: Bool
+    let shine: Double?
+    let content: (PassFaceLight.Point) -> Content
+
+    init(visible: Bool, shine: Double?, @ViewBuilder content: @escaping (PassFaceLight.Point) -> Content) {
+        self.visible = visible
+        self.shine = shine
+        self.content = content
+    }
+
+    var body: some View {
+        if visible {
+            PassTiltReader(shine: shine, content: content)
+        } else {
+            content(.center)
+        }
+    }
+}
+
+/// 傾きを見る側（`PassTiltLight` の見えている面だけが置く）
+private struct PassTiltReader<Content: View>: View {
+    let shine: Double?
+    let content: (PassFaceLight.Point) -> Content
+
     @ObservedObject private var tilt = PassTiltMotion.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        content(PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion))
+    }
+}
+
+/// 傾きを読むかを決め、読む間だけ `PassTiltMotion` を握る（表の `PassSpecialFace`・裏の `PassSpecialBack` が使う）。
+/// 表と裏が同時に握っても、数えて持つ（`PassTiltMotion.hold`）ので、両方が離すまで止めない。
+///
+/// **離すのは少し遅らせる**（`releaseDelay`・2026-10-18 の見直し）。裏返すと、表が離すのと裏が握るのが同じ描き直しで
+/// 起き、離すのが先だと数が 0 になって止まり（`stop` で光が正面へ戻る）、すぐ握り直して光が正面から跳ねる。
+/// 握るのはすぐ・離すのは後なので、裏返す間も数は 0 にならない
+struct PassTiltHold: ViewModifier {
+    let style: PassTicketFaceStyle
+    /// その面がいま見えているか
+    let visible: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
     @State private var holding = false
 
-    var body: some View {
-        let light = PassFaceLight.resolved(tilt: tilt.light, shine: shine, reduceMotion: reduceMotion)
-        PassFaceBody(face: face, light: light, reduceMotion: reduceMotion, visible: visible, onPhotoTap: onPhotoTap)
+    func body(content: Content) -> some View {
+        content
             .onAppear {
                 appeared = true
                 updateHold()
@@ -101,18 +155,28 @@ struct PassSpecialFace: View {
             // 前面・「視差効果を減らす」・券面・見えているかが変わったら、読むかを決め直す
             .onChange(of: scenePhase) { _, _ in updateHold() }
             .onChange(of: reduceMotion) { _, _ in updateHold() }
-            .onChange(of: face.style) { _, _ in updateHold() }
+            .onChange(of: style) { _, _ in updateHold() }
             .onChange(of: visible) { _, _ in updateHold() }
     }
 
     /// 傾きを読むか（`PassFaceLight.readsTilt`）
     private func updateHold() {
         let wants = PassFaceLight.readsTilt(appeared: appeared, visible: visible, foreground: scenePhase == .active,
-                                            style: face.style, reduceMotion: reduceMotion)
+                                            style: style, reduceMotion: reduceMotion)
         guard wants != holding else { return }
         holding = wants
-        if wants { tilt.hold() } else { tilt.release() }
+        if wants {
+            PassTiltMotion.shared.hold()
+        } else {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: Self.releaseDelay)
+                PassTiltMotion.shared.release()
+            }
+        }
     }
+
+    /// 離すのを遅らせる長さ（裏返す 0.5 秒のばねの途中で、もう一方の面が握るのを待つ）
+    nonisolated static let releaseDelay: UInt64 = 600_000_000
 }
 
 /// 券面ごとに描き分ける（光の位置は渡されたものだけを使う）
@@ -356,6 +420,39 @@ enum PassFaceTextures {
         return (bright, faint)
     }()
 
+    /// 21 の裏の平目地（金粉の散らし・2026-10-18 owner がすやり霞を外した）。`PassHirame` の 140×64 の中で、
+    /// **右下の隅ほど濃く**撒く。明るい粒と淡い粒
+    static let hirame: (bright: Path, faint: Path) = {
+        var bright = Path(), faint = Path()
+        for dot in hirameDots {
+            let rect = CGRect(x: dot.x - dot.r, y: dot.y - dot.r, width: dot.r * 2, height: dot.r * 2)
+            if dot.bright { bright.addEllipse(in: rect) } else { faint.addEllipse(in: rect) }
+        }
+        return (bright, faint)
+    }()
+
+    /// 平目地の粒（中心・半径・明るいか）。決まった並びの乱数で、隅に近いほど置く見込みが高い（近さの3乗）
+    nonisolated static let hirameDots: [(x: Double, y: Double, r: Double, bright: Bool)] = {
+        var rng = Seeded(state: 5)
+        var dots: [(x: Double, y: Double, r: Double, bright: Bool)] = []
+        var tries = 0
+        let width = 140.0, height = 64.0
+        while dots.count < hirameCount, tries < 4000 {
+            tries += 1
+            let x = rng.next() * width, y = rng.next() * height
+            let near = x / width * 0.55 + y / height * 0.45
+            guard rng.next() <= near * near * near else { continue }
+            let r = 0.3 + rng.next() * 0.55
+            dots.append((x, y, r, rng.next() < 0.3))
+        }
+        return dots
+    }()
+
+    /// 平目地の粒の数
+    nonisolated static let hirameCount = 90
+    /// 右下の4分の1（70〜140 × 32〜64）にある粒の数（隅に寄っているかを測る）
+    nonisolated static var hirameCorner: Int { hirameDots.filter { $0.x >= 70 && $0.y >= 32 }.count }
+
     /// 26 革のしぼ（ずらした格子に小さな粒）。光の当たる側の明るい縁と、反対の陰。
     /// 左から当てた形と右から当てた形を作り、傾きで混ぜる（`PassFaceLight.leatherFromLeft`）
     struct Grain {
@@ -500,9 +597,11 @@ struct PassPaperMaterial: View {
     }
 }
 
-/// 21 黒漆（奥に朱の沈む艶・裾の金粉・傾けると走る鏡面の光）
+/// 21 黒漆（奥に朱の沈む艶・裾の金粉・傾けると走る鏡面の光）。裏（`PassUrushiBack`）は裾に一行の字があるので
+/// 金粉を敷かない（`dust: false`・金粉が字に掛かると #999 の比が 4.5 を割る）
 struct PassLacquerMaterial: View {
     let light: PassFaceLight.Point
+    var dust: Bool = true
 
     var body: some View {
         let glint = PassFaceLight.lacquerCenter(light)
@@ -512,7 +611,7 @@ struct PassLacquerMaterial: View {
                 Gradient.Stop(color: PassFaceColor.of(PassFacePalette.lacquerMid), location: 0.45),
                 Gradient.Stop(color: PassFaceColor.of(PassFacePalette.lacquerDeep), location: 1),
             ], center: UnitPoint(x: 0.3, y: 0.1), startRadius: 0, endRadius: 470)
-            PassGoldDust()
+            if dust { PassGoldDust() }
             // lacquerSheen: 鏡面に細く鋭く走る光（モック 34%×9% の楕円）と、広く淡い艶（70%×40%）
             Rectangle()
                 .fill(RadialGradient(stops: [
@@ -777,17 +876,23 @@ struct PassGreatCircleFace: View {
     }
 }
 
-/// 06 の経緯線（動かない層）
+/// 06 の経緯線（動かない層）。裏（`PassGreatCircleBack`）は同じ線を札の高さ（430）に引き伸ばし、薄く（10%）敷く。
+/// 伸ばすのは座標だけで、線の太さ（0.6）は変えない（`scaleEffect` で伸ばすと横の線だけ太る）
 struct PassGreatCircleGrid: View {
+    var height: Double = PassGreatCircle.size.height
+    var opacity: Double = 0.18
+
     var body: some View {
+        let scale = height / PassGreatCircle.size.height
         Path { p in
             for line in PassGreatCircle.parallels + PassGreatCircle.meridians {
-                p.move(to: CGPoint(x: line.from.0, y: line.from.1))
-                p.addQuadCurve(to: CGPoint(x: line.to.0, y: line.to.1), control: CGPoint(x: line.control.0, y: line.control.1))
+                p.move(to: CGPoint(x: line.from.0, y: line.from.1 * scale))
+                p.addQuadCurve(to: CGPoint(x: line.to.0, y: line.to.1 * scale),
+                               control: CGPoint(x: line.control.0, y: line.control.1 * scale))
             }
         }
-        .stroke(WebTheme.accent.opacity(0.18), lineWidth: 0.6)
-        .frame(width: 300, height: 120)
+        .stroke(WebTheme.accent.opacity(opacity), lineWidth: 0.6)
+        .frame(width: 300, height: CGFloat(height))
         .accessibilityHidden(true)
     }
 }

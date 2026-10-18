@@ -121,6 +121,78 @@ enum TrunkFaces {
     /// 持ち手に縫い目があるか（アルミ・漆は無し。正面と同じ）
     static func handleStitched(_ model: TrunkModel) -> Bool { model != .aluminum && model != .urushi }
 
+    // MARK: 吊るす物（立体・#305）
+
+    /// 立体の正面に吊るす物（ラベルの手荷物タグ・部品のタグ・チャーム・鍵）を描くとき、2D の絵（360×300）の y から
+    /// 引く量。2D ではタグの紐の上の端が y 2（胴の上の縁より上）なので、正面の絵では紐の上の端を胴の上の縁（0）に
+    /// そろえ、札・チャーム・鍵が胴の上の縁から下がって見えるようにする（2D のまま胴の座標にすると上の 30 が切れる）
+    static let frontHangLift: Double = TrunkLooks.tagStringTop
+
+    /// 立体の正面で、吊るす部品（タグ・チャーム・鍵）の吊るす点を置く高さ（胴の上の縁から）。
+    /// 2D では吊るす点が持ち手・付け根の高さ（y 6〜32）にあり、ラベルのタグと同じ量（2）だけ上げると部品が胴の上の縁から
+    /// 最大 30 下がって、南京錠のつるにかかった（#305 の見直し）。**部品は1つずつ、吊るす点を胴の上の縁のすぐ下へ上げる**
+    /// （上の面から紐が縁を越えて、そこから下がる形）
+    static let frontHangTop: Double = 3
+
+    /// 吊るす部品を立体の正面に描くとき、2D の絵の y から引く量（部品ごと）
+    static func frontLift(_ p: TrunkFittings.Placement) -> Double { p.hangY - frontHangTop }
+
+    /// 立体の正面の絵（胴 360×268）での、吊るす部品の描いた中身の外接の四角
+    static func frontFrame(_ p: TrunkFittings.Placement) -> TrunkRect {
+        let f = p.frame
+        return TrunkRect(x: f.x, y: f.y - frontLift(p), w: f.w, h: f.h)
+    }
+
+    /// 立体の正面の絵での、ラベルの手荷物タグの外接の四角
+    static func frontTagFrame(x: Double, rot: Double) -> TrunkRect {
+        let f = TrunkLooks.tagFrame(x: x, rot: rot)
+        return TrunkRect(x: f.x, y: f.y - frontHangLift, w: f.w, h: f.h)
+    }
+
+    /// 吊るす紐1本（上の面: 持ち手から正面の辺へ・正面: 上の縁から吊るす点へ）
+    struct HangCord: Equatable {
+        let fromX: Double
+        let fromY: Double
+        let toX: Double
+        let toY: Double
+        let width: Double
+        let color: TrunkRGBA
+    }
+
+    /// 上の面の紐の付け根（持ち手の付け根の金具の間・持ち手の帯の真ん中の高さ）。外にあるものは近い付け根から
+    static func cordRoot(_ x: Double) -> (x: Double, y: Double) {
+        let lo = handleClipCenters[0], hi = handleClipCenters[handleClipCenters.count - 1]
+        return (min(hi, max(lo, x)), 30)
+    }
+
+    /// 上の面に渡す紐（吊るす物ごとに1本・持ち手から正面の辺〔y = 厚み〕の吊るす点の真上へ）。
+    /// 立体では正面の絵（`TrunkBoxView` の `hangsOnFront`）が吊るした物を描き、ここで持ち手からつなぐ
+    static func topCords(tags: [TrunkLooks.Tag], fittings: TrunkFittings) -> [HangCord] {
+        var out: [HangCord] = []
+        for t in tags {
+            let x = t.x + TrunkLooks.tagStringInset + TrunkLooks.tagStringWidth / 2
+            let root = cordRoot(x)
+            out.append(HangCord(fromX: root.x, fromY: root.y, toX: x, toY: depth,
+                                width: TrunkLooks.tagStringWidth, color: TrunkLooks.tagStringColor))
+        }
+        for p in fittings.placements where !p.onBody {
+            guard let cord = TrunkFittings.cord(p) else { continue }
+            let root = cordRoot(p.hangX)
+            out.append(HangCord(fromX: root.x, fromY: root.y, toX: p.hangX, toY: depth, width: cord.width, color: cord.color))
+        }
+        return out
+    }
+
+    /// 正面の上の縁から、吊るした部品の吊るす点（`frontHangTop`）までの短い紐（ラベルのタグは自分の紐が縁から
+    /// 始まるので要らない）。座標は正面の絵（胴 360×268）
+    static func frontCords(fittings: TrunkFittings) -> [HangCord] {
+        fittings.placements.filter { !$0.onBody }.compactMap { p in
+            guard let cord = TrunkFittings.cord(p) else { return nil }
+            // 部品の紐・輪の上の端の少し下まで（つなぎ目を見せない）
+            return HangCord(fromX: p.hangX, fromY: 0, toX: p.hangX, toY: frontHangTop + 2, width: cord.width, color: cord.color)
+        }
+    }
+
     // MARK: 桟・帯・ベルト
 
     /// 面に描く桟・帯（横なら y・縦なら x）

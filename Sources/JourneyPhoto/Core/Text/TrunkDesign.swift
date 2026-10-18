@@ -608,6 +608,28 @@ enum TrunkLooks {
         TagSlot(x: 278, rot: 26, bg: TrunkRGBA(0xC7D8E2), fg: TrunkRGBA(0x13303F)),
     ]
 
+    /// 手荷物タグ1枚の大きさと吊るし方（板 Trunk: 紐 3×14 を上 2 から・札 50×68 を上 12 に・紐の上の端を中心に傾ける）
+    static let tagWidth: Double = 50
+    static let tagHeight: Double = 68
+    static let tagTop: Double = 12
+    static let tagStringTop: Double = 2
+    static let tagStringHeight: Double = 14
+    static let tagStringWidth: Double = 3
+    /// 紐の左の端（札の左から）
+    static let tagStringInset: Double = 22
+    /// 紐の色
+    static let tagStringColor = TrunkRGBA(0x2A2A2A)
+
+    /// 吊るした札と紐の外接の四角（360×300 の絵の座標）。吊るす部品と重ならないかの見張りに使う（#305）
+    static func tagFrame(x: Double, rot: Double) -> TrunkRect {
+        let px = x + tagWidth / 2, py = tagStringTop
+        let card = TrunkRect(x: x, y: tagTop, w: tagWidth, h: tagHeight).rotated(rot, aroundX: px, y: py)
+        let string = TrunkRect(x: x + tagStringInset, y: tagStringTop, w: tagStringWidth, h: tagStringHeight)
+            .rotated(rot, aroundX: x + tagStringInset + tagStringWidth / 2, y: tagStringTop)
+        let x0 = min(card.x, string.x), y0 = min(card.y, string.y)
+        return TrunkRect(x: x0, y: y0, w: max(card.maxX, string.maxX) - x0, h: max(card.maxY, string.maxY) - y0)
+    }
+
     /// タグの字の幅の目安（板のタグ 50pt に 9pt の太字で収まる量）。ローマ字・数字は 1、ほかの字（かな・漢字）は 2 と数える
     static let tagCodeBudget = 10
 

@@ -180,9 +180,11 @@ final class TrunkPartsTests: XCTestCase {
         let pin = placed[0]
         XCTAssertEqual(pin.x, 92)
         XCTAssertEqual(pin.y, 112)
-        // チャーム: `transform-origin: 50% 0` を残す（縮めた枠の左上は 96 × 0.4 × 0.5 だけ右へ）
+        // チャーム: `transform-origin: 50% 0` を残す（縮めた枠の左上は 96 × 0.4 × 0.5 だけ右へ）。
+        // 置き場は重ならない所（`TrunkFittings.Hang`・#305）
         let charm = placed.first { $0.part.kind == .charm }!
-        XCTAssertEqual(charm.x, 112 + 0.5 * 96 * 0.4, accuracy: 0.0001)
+        XCTAssertEqual(charm.x, TrunkFittings.Hang.charm.left + 0.5 * 96 * 0.4, accuracy: 0.0001)
+        XCTAssertEqual(charm.hangX, TrunkFittings.Hang.charm.left + 48, accuracy: 0.0001)
         XCTAssertTrue(TrunkFittings.none.isEmpty)
         XCTAssertNil(TrunkFittings(TrunkEquipped(lock: "handle.1")).lock, "場所の合わない部品を付けた")
         // 籐巻き（13）は持ち手の輪を潰さないよう 10 で止める

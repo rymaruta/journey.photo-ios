@@ -16,6 +16,9 @@ struct TrunkBoxView: View {
     var ownerName: String?
     /// 胴だけ（3D の箱の表に貼る絵・持ち手とタグを描かない）
     var bodyOnly = false
+    /// 胴だけの絵にも、吊るす物（ラベルの手荷物タグ・部品のタグ・チャーム・鍵）を胴の上の縁から下げて描く
+    /// （立体の正面・#305。前は回すと吊るす物が消えていた）。上の面の紐は `TrunkFaces.topCords`
+    var hangsOnFront = false
     /// 付けている部品（2026-10-17 次の版・モック PartsOnTrunk・Equip）
     var parts: TrunkEquipped = .none
     /// 画面の上だけで動かしている置き場（自分の手で貼る画面）
@@ -48,6 +51,20 @@ struct TrunkBoxView: View {
             if !bodyOnly {
                 tags(look)
                 hanging(fittings)
+            } else if hangsOnFront {
+                // 立体の正面: ラベルのタグは紐の上の端を胴の上の縁に（`TrunkFaces.frontHangLift`）、部品は吊るす点を
+                // 縁のすぐ下に（`TrunkFaces.frontLift`・錠前にかからない）
+                ZStack(alignment: .topLeading) {
+                    TrunkHangCords(cords: TrunkFaces.frontCords(fittings: fittings))
+                        .frame(width: Self.W, height: Self.H)
+                    tags(look)
+                        .offset(y: -TrunkFaces.frontHangLift)
+                    ForEach(Array(fittings.placements.filter { !$0.onBody }.enumerated()), id: \.offset) { _, p in
+                        placed(p, dy: -TrunkFaces.frontLift(p))
+                    }
+                }
+                .frame(width: Self.W, height: Self.H, alignment: .topLeading)
+                .allowsHitTesting(false)
             }
         }
         .frame(width: TrunkLooks.canvasWidth, height: bodyOnly ? Self.H : TrunkLooks.canvasHeight, alignment: .topLeading)
@@ -325,15 +342,21 @@ struct TrunkBoxView: View {
         let cs = look.corners.size
         return ZStack(alignment: .topLeading) {
             ForEach(TrunkCorner.allCases, id: \.self) { pos in
-                TrunkCornerCap(look: look, pos: pos, paint: fittings.cornerPaint, size: cs)
-                    .frame(width: cs, height: cs)
-                    .clipShape(pos.shape(round: look.corners.round))
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1)
-                            .clipShape(pos.shape(round: look.corners.round))
-                    }
-                    .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 1)
-                    .offset(x: pos.isLeading ? -1 : Self.W - cs + 1, y: pos.isTop ? -1 : Self.H - cs + 1)
+                if let part = fittings.cornerLook {
+                    // 付けた角金具は部品1点の絵と同じ L の字・透かし・鋲で（#305）
+                    TrunkMountedCorner(corner: part, pos: pos, size: cs)
+                        .offset(x: pos.isLeading ? -1 : Self.W - cs + 1, y: pos.isTop ? -1 : Self.H - cs + 1)
+                } else {
+                    TrunkCornerCap(look: look, pos: pos, paint: fittings.cornerPaint, size: cs)
+                        .frame(width: cs, height: cs)
+                        .clipShape(pos.shape(round: look.corners.round))
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1)
+                                .clipShape(pos.shape(round: look.corners.round))
+                        }
+                        .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 1)
+                        .offset(x: pos.isLeading ? -1 : Self.W - cs + 1, y: pos.isTop ? -1 : Self.H - cs + 1)
+                }
             }
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
@@ -356,7 +379,19 @@ struct TrunkBoxView: View {
         }
     }
 
+    @ViewBuilder
     private func lock(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
+        if let part = fittings.lock, let mount = fittings.lockMount(look) {
+            // 付けた錠前は部品1点の絵と同じ形で（南京錠・ダイヤル・双子・紋・#305）
+            TrunkPartView(part: part, size: mount.side)
+                .offset(x: mount.x, y: mount.y)
+        } else {
+            modelLock(look, fittings)
+        }
+    }
+
+    /// 型の錠前（部品を付けていないとき）
+    private func modelLock(_ look: TrunkLook, _ fittings: TrunkFittings) -> some View {
         let lk = look.lock
         return ZStack {
             lockFace(look, fittings, w: lk.width, h: lk.height)
@@ -467,14 +502,15 @@ struct TrunkBoxView: View {
         return ZStack(alignment: .topLeading) {
             ForEach(Array(list.indices), id: \.self) { i in
                 let t = list[i]
-                // 吊るす紐
-                Rectangle().fill(Color(trunk: TrunkRGBA(0x2A2A2A)))
-                    .frame(width: 3, height: 14)
+                // 吊るす紐（寸法は `TrunkLooks.tagFrame` と同じ数・吊るす部品と重ならないかの見張りが読む）
+                Rectangle().fill(Color(trunk: TrunkLooks.tagStringColor))
+                    .frame(width: TrunkLooks.tagStringWidth, height: TrunkLooks.tagStringHeight)
                     .rotationEffect(.degrees(t.rot), anchor: .top)
-                    .offset(x: t.x + 22, y: 2)
+                    .offset(x: t.x + TrunkLooks.tagStringInset, y: TrunkLooks.tagStringTop)
                 TrunkTagView(tag: t, stage: st)
-                    .rotationEffect(.degrees(t.rot), anchor: UnitPoint(x: 0.5, y: -10.0 / 68))
-                    .offset(x: t.x, y: 12)
+                    .rotationEffect(.degrees(t.rot),
+                                    anchor: UnitPoint(x: 0.5, y: (TrunkLooks.tagStringTop - TrunkLooks.tagTop) / TrunkLooks.tagHeight))
+                    .offset(x: t.x, y: TrunkLooks.tagTop)
             }
         }
     }
@@ -808,6 +844,25 @@ struct TrunkCornerCap: View {
     }
 }
 
+/// トランクの角に付けた角金具の部品（部品1点の絵と同じ L の字・彫り・透かし・鋲・`TrunkPartDrawing.corner(_:box:)`）。
+/// 左上の形を描き、ほかの角は左右・上下に返す。縮めても穴と鋲は潰さない（`mountedMinHole`・`mountedMinRivet`）
+struct TrunkMountedCorner: View {
+    let corner: TrunkPartLook.Corner
+    let pos: TrunkCorner
+    let size: Double
+
+    var body: some View {
+        let ops = TrunkPartDrawing.corner(corner, box: TrunkRect(x: 0, y: 0, w: size, h: size))
+        Canvas { ctx, _ in
+            TrunkPartRenderer.draw(ops, in: &ctx)
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(x: pos.isLeading ? 1 : -1, y: pos.isTop ? 1 : -1)
+        .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 1)
+        .allowsHitTesting(false)
+    }
+}
+
 /// 錠前と同じ金属の面（錠前・持ち手の付け根・蝶番。付けた錠前があればその金属・モックの `P.lock`）
 struct TrunkHardwareFace: View {
     let look: TrunkLook
@@ -864,7 +919,7 @@ private struct TrunkTagView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(fg)
-        .frame(width: 50, height: 68)
+        .frame(width: TrunkLooks.tagWidth, height: TrunkLooks.tagHeight)
         .background {
             ZStack {
                 Color(trunk: TrunkLooks.tagColor(tag.bg, stage: stage))

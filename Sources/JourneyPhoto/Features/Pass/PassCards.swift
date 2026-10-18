@@ -55,7 +55,7 @@ struct PassCardContent: Identifiable, Equatable {
                            noteHidden: card.noteHidden == true || card.noteHasContact,
                            issuer: PassTicket.issuer(name: name, prefecture: fromPrefecture),
                            section: PassTicket.sectionLabel(km), count: count,
-                           footnote: PassTicket.receivedFootnote)
+                           footnote: PassTicket.receivedFootnote, style: faceStyle)
     }
 
     /// 前の記録（ひとことを伏せた等）を新しい記録に差し替える
@@ -130,6 +130,17 @@ struct PassTicketBackFace: Equatable {
     let count: String
     /// 裾の一行（届いたカード＝`PassTicket.receivedFootnote`・見本＝`ownFootnote`）
     let footnote: String
+    /// 券面（2026-10-18・owner「裏面デザイン変わってなくて悲しいね」）。**表と同じ決め方**で決める——届いたカードは
+    /// `PassCardContent.faceStyle`（`PassTicketFaceStyle.shown`）、自分の見本は `PassTicketFaceStyle.own`。
+    /// 回す部品（`PassSpinTicket`）は、念のため表の券面で描き直す（`styled`）ので、表と裏が割れることはない
+    var style: PassTicketFaceStyle = .mars
+
+    /// 券面だけを替えた写し（`PassSpinTicket` が表の券面にそろえる）
+    func styled(_ style: PassTicketFaceStyle) -> PassTicketBackFace {
+        var copy = self
+        copy.style = style
+        return copy
+    }
 
     /// 発行・有効・区間・回数の4つの欄（`PassTicket.backFields`）
     var fields: [PassTicket.Field] { PassTicket.backFields(issuer: issuer, section: section, count: count) }
@@ -139,14 +150,15 @@ struct PassTicketBackFace: Equatable {
     /// - 発行の都道府県は「居住地から」を選んだときだけ（相手の端末でもそう読まれる・`PassStore.prefecture(for:)`）
     /// - 区間（km）と回数は会ってから決まるので「—」（表の番号・日付・区間・回数を「—」にするのと同じ扱い）
     static func preview(photoTitle: String?, note: String, name: String,
-                        origin: PassSettings.Origin, homePrefecture: String?) -> PassTicketBackFace {
+                        origin: PassSettings.Origin, homePrefecture: String?,
+                        style: PassTicketFaceStyle = .mars) -> PassTicketBackFace {
         let cleaned = PassExchange.cleanNote(note)
         return PassTicketBackFace(kind: .plain, number: nil, title: photoTitle ?? L("選んだ写真", "Your photo"),
                                   note: PassExchange.containsContact(cleaned) ? "" : cleaned, noteHidden: false,
                                   issuer: PassTicket.issuer(name: name, prefecture: origin == .home ? homePrefecture : nil),
                                   section: PassTicket.sectionLabel(nil),
                                   count: PassTicket.countLabel(.plain, meetingCount: nil),
-                                  footnote: PassTicket.ownFootnote)
+                                  footnote: PassTicket.ownFootnote, style: style)
     }
 }
 
@@ -221,6 +233,120 @@ enum PassCardStyle {
     static let noteSize: CGFloat = 15
     static let footnoteSize: CGFloat = 12
     static let footnoteTracking: CGFloat = 0.06
+
+    // MARK: 裏の欄の値の行数（2026-10-18）
+    //
+    // 「有効」の値（`PassTicket.validity`「ずっと（帳に綴じる）」）は 14pt で幅がおよそ 140 あり、欄（126）に1行では
+    // 入らず末尾が「…」で切れていた。**字は縮めず、この欄だけ2行まで許す**（日本語は折れ目を改行で決めてある）。行は上でそろえる（`HStack(alignment: .top)`）
+    // ので、隣の欄と格子は崩れず、増えた1行ぶんは作品名と欄の間の空き（Spacer）が受け持つ
+
+    /// 欄の値の行数の上限。「有効」だけ2行、ほかは1行（入らなければ末尾を「…」）
+    nonisolated static func backValueLines(_ field: PassTicket.Field) -> Int {
+        [PassTicket.validityJa, PassTicket.validityEn].contains(field.value) ? 2 : 1
+    }
+
+    /// 本文の字（SF・ヒラギノ角ゴ）の幅の見積もり: 和文は1字＝1em、欧文・数字・記号は `bodyLatinEm`
+    nonisolated static let bodyLatinEm = 0.56
+    nonisolated static func bodyEms(_ text: String) -> Double {
+        text.reduce(0) { $0 + ($1.isASCII ? bodyLatinEm : 1) }
+    }
+
+    /// 語の切れ目で折った行（見積もり）。改行（`\n`）はそこで折る。欧文は空白で区切った語を詰め、和文の
+    /// ひと続き（空白の無いまとまり）は1語として扱う。**1語が幅に入らなければ nil**（＝語の途中で折れる）
+    nonisolated static func wrappedLines(_ text: String, size: Double, width: Double) -> [String]? {
+        var lines: [String] = []
+        for paragraph in text.components(separatedBy: "\n") {
+            var line = ""
+            for word in paragraph.split(separator: " ").map(String.init) {
+                guard bodyEms(word) * size <= width else { return nil }
+                let joined = line.isEmpty ? word : line + " " + word
+                if bodyEms(joined) * size <= width {
+                    line = joined
+                } else {
+                    lines.append(line)
+                    line = word
+                }
+            }
+            lines.append(line)
+        }
+        return lines
+    }
+
+    /// 裏の欄1つの値に使える幅（券面ごと・いちばん狭い欄）。札 300 − 左右の内側 18 × 2 を2つに分け、
+    /// 罫で区切る券面は罫の右の字下げ、型押しの欄は箱の内側の余白を引く（`PassBackFields`）
+    nonisolated static func backValueWidth(_ style: PassTicketFaceStyle) -> Double {
+        let inner = 300 - Double(backPadding) * 2
+        let column = (inner - Double(backFieldGap)) / 2
+        switch style {
+        case .mars, .greatCircle, .urushi: return column
+        case .brassPlate, .foilHard: return column - Double(PassBackFields.ruleIndent)
+        case .leather: return column - Double(PassBackFields.debossPadding) * 2
+        }
+    }
+
+    // MARK: 裏の縦の配分（2026-10-18 の見直し・札 #306）
+    //
+    // 札は 430 で決まっていて、作品名（2行まで）・ひとこと（`PassExchange.noteLimit` 字＝2行）・注記（2行）・
+    // 「有効」（2行）・裾（2行）が**全部いちばん長いとき**でも、どれも「…」で切れずに収まるよう縦を配る。
+    // 見積もりの行の高さは字の大きさ × `minchoLineHeight`（明朝）・`bodyLineHeight`（本文）。
+    // **実機の字の高さでは測っていない**（Linux の見積もり）。画面写真で確かめる
+
+    /// 行の高さの見積もり（字の大きさに掛ける）
+    nonisolated static let minchoLineHeight = 1.4
+    nonisolated static let bodyLineHeight = 1.25
+
+    /// 裏の縦の寸法（券面ごと）。`PassBackLayout`・`PassBackFields` はこの値で描く（見積もりと描き方を1つにする）
+    struct BackMetrics: Equatable {
+        /// 帯を札の上から離す（26: ステッチの内側）
+        var bandTop: CGFloat = 0
+        /// 帯（44）の中で字を下げる（21: 覆輪の内側）
+        var bandInnerTop: CGFloat = 0
+        /// 帯の下の線の太さ（線が無ければ 0）
+        var rule: CGFloat = JPStroke.hairline
+        /// 本文の上の余白
+        var bodyTop: CGFloat = PassCardStyle.backTop
+        /// 本文の段の間
+        var spacing: CGFloat = PassCardStyle.backSpacing
+        /// 欄の上の余白（上の線から値まで）。型押しの欄は 0（箱の中の余白で取る）
+        var fieldTop: CGFloat = PassCardStyle.backFieldGap
+        /// 欄の箱の上下の余白（型押しの欄だけ）
+        var cellVertical: CGFloat = 0
+        /// 破線の太さ
+        var dash: CGFloat = 1
+    }
+
+    nonisolated static func backMetrics(_ style: PassTicketFaceStyle) -> BackMetrics {
+        switch style {
+        case .mars, .greatCircle:
+            return BackMetrics()
+        case .brassPlate:
+            return BackMetrics(rule: 2, bodyTop: backTop - 1)
+        case .foilHard:
+            return BackMetrics(rule: 2, bodyTop: backTop - 1)
+        case .urushi:
+            return BackMetrics(bandInnerTop: 4, rule: 1.5)
+        case .leather:
+            // 帯をステッチの内側へ 16 下げ、箱の上下 6 を足した分を、段の間（14 → 10）と本文の上（16 → 12）で返す
+            return BackMetrics(bandTop: 16, rule: 0, bodyTop: backTop - 4, spacing: 10, fieldTop: 0, cellVertical: 6,
+                               dash: 1.2)
+        }
+    }
+
+    /// いちばん長い中身のときの裏の高さの見積もり（430 以下なら、どれも切れずに収まる）
+    nonisolated static func worstBackHeight(_ style: PassTicketFaceStyle) -> Double {
+        let m = backMetrics(style)
+        let body = bodyLineHeight
+        let label = Double(backLabelSize) * body
+        let value = Double(backValueSize) * body
+        let title = 2 * Double(backTitleSize) * minchoLineHeight
+        let note = 2 * Double(noteSize) * body + 5 + Double(JPSpace.xxs) + 2 * label
+        let cell = 2 * Double(m.cellVertical) + label + 2
+        let fields = Double(m.fieldTop) + (cell + 2 * value) + Double(backFieldGap) + (cell + value)
+        let footnote = 2 * Double(footnoteSize) * body + 4
+        let gaps = 5 * Double(m.spacing)
+        return Double(m.bandTop) + Double(bandHeight) + Double(m.rule) + Double(m.bodyTop) + title + note + fields
+            + Double(m.dash) + footnote + gaps + Double(backPadding)
+    }
 
     /// 区間の地名（明朝 30）。長い地名は縮める——**明朝 13 まで**。
     ///
@@ -697,7 +823,11 @@ struct PassTicketHairline: View {
 
 /// きっぷの裏（**マルス券・2026-10-17 判断**・候補の板 `Plain.dc.html` の「裏」）: 上に高さ 44 の帯
 /// （案内の帯の地・下に真鍮の線）に「ご案内」と No.、作品名・ひとこと、発行／有効／区間／回数の4つの欄、
-/// 真鍮の破線、裾に由来の一行
+/// 真鍮の破線、裾に由来の一行。
+///
+/// **2026-10-18（札 #306）: 裏も券面で描き分ける**。マルス券はこのまま、特別な券面（Pro）は `PassSpecialBack`
+/// （板「すれちがい乗車券の裏面」https://claude.ai/artifact/BgPadmCAZRPVjoicuTWyJ7）。並び・寸法・字の大きさは
+/// どの券面も同じで、地・字の色・飾りだけを表の券面に合わせる。縁・後ろの光・影はマルス券と同じものを使う
 struct PassCardBack: View {
 
     let face: PassTicketBackFace
@@ -705,8 +835,27 @@ struct PassCardBack: View {
     var shine: Double? = nil
     /// 角の丸み（**表の券面の角に合わせる**・`PassCardFront.corner`・2026-10-17）
     var corner: CGFloat = PassCardStyle.deckCorner
+    /// 裏がいま見えているか（表を見ている・全面の写真や Pro の案内が上にある間は false）。特別な券面の光を止める
+    var visible: Bool = true
 
     var body: some View {
+        Group {
+            if face.style == .mars {
+                marsBack
+            } else {
+                PassSpecialBack(face: face, shine: shine, visible: visible)
+            }
+        }
+        .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: corner))
+        .background { PassTicketGlow(kind: face.kind, corner: corner) }
+        .overlay(PassTicketEdge(kind: face.kind, corner: corner, shine: shine))
+        .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// マルス券の裏（既定の券面）
+    private var marsBack: some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 PassTicketHead(text: L("ご案内", "NOTICE"))
@@ -759,11 +908,6 @@ struct PassCardBack: View {
         }
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
         .background(PassCardStyle.face)
-        .clipShape(RoundedRectangle(cornerRadius: corner))
-        .background { PassTicketGlow(kind: face.kind, corner: corner) }
-        .overlay(PassTicketEdge(kind: face.kind, corner: corner, shine: shine))
-        .shadow(color: Color.black.opacity(0.7), radius: 24, x: 0, y: 24)
-        .accessibilityElement(children: .combine)
     }
 
     /// 発行・有効・区間・回数の 2×2（上に白の細い線・`PassTicket.backFields`）
@@ -790,8 +934,10 @@ struct PassCardBack: View {
             Text(field.value)
                 .font(.system(size: PassCardStyle.backValueSize).monospacedDigit())
                 .foregroundStyle(WebTheme.text)
-                .lineLimit(1)
+                // 「有効」だけ2行まで（字は縮めない・`PassCardStyle.backValueLines`）
+                .lineLimit(PassCardStyle.backValueLines(field))
                 .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)

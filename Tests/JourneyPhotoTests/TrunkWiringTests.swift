@@ -25,6 +25,13 @@ final class TrunkWiringTests: XCTestCase {
     }
 
     /// 持っていない部品の影は白 10% 前後の一色の影絵（2026-10-17 owner。板の黒 35% は #121212 の札で見えない）。
+    /// 立体の正面の絵は、吊るす部品を部品ごとの高さ（`TrunkFaces.frontLift`）で上げる（#305 の見直し）。
+    /// 数式のテスト（`TrunkPartsFitTests`）は `TrunkFaces` だけを見るので、絵がそれを使っているかはここで見る
+    func testFrontFaceUsesPerPartLift() throws {
+        let box = try source("Features/Trunk/TrunkBoxView.swift")
+        XCTAssertTrue(box.contains("placed(p, dy: -TrunkFaces.frontLift(p))"), "立体の正面の吊るす部品が錠前にかかる高さで描かれる")
+    }
+
     /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
     func testMissingPartShadowIsFaintWhite() throws {
         XCTAssertGreaterThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.08)
@@ -123,8 +130,11 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
-        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        parts: parts, wrinkles: wrinkles))"),
-                      "回す画面の表に付けた部品とよれが出ない（2026-10-17 次の版）")
+        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles))"),
+                      "回す画面の表に付けた部品とよれ・吊るす物が出ない（2026-10-17 次の版・#305）")
+        // 箱は横に回してから画面の軸で傾ける（`eulerAngles` では「上と背面」で底が見えた・#305）
+        XCTAssertTrue(medal.contains("let q = SpinMotion.boxOrientation(yaw: Double(yaw), pitch: Double(pitch))"))
+        XCTAssertTrue(medal.contains("coin.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))"))
         XCTAssertTrue(spin.contains(".accessibilityAction(named: L(\"裏返す\", \"Turn over\"))"))
     }
 
@@ -350,7 +360,10 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(open.contains("kind: .secondary, height: 48"))
         // 画面写真（ふたを開けた・中身を手に取った・空のトランク・回した側面）
         let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
-        for name in ["100a-ふたを開けた", "100b-中身を手に取った（メダル）", "100e-空のトランク", "91a-回した側面", "91c-回した底（蝶番と足）"] {
+        for name in ["100a-ふたを開けた", "100b-中身を手に取った（メダル）", "100e-空のトランク", "91a-回した側面", "91c-回した底（蝶番と足）",
+                     // #305: 撮れていなかった部品の絵・カプセルの錠前以外・立体の吊るす部品
+                     "91d-回した正面（吊るす部品）", "98d-カプセルを開けた（チャーム）", "99c-部品箱（角金具）", "99d-部品箱（内張り）",
+                     "99e-部品箱（タグ）", "99f-部品箱（ワッペン）", "99g-部品箱（チャーム）", "99h-部品箱（鍵）"] {
             XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
         }
     }
@@ -360,8 +373,21 @@ final class TrunkWiringTests: XCTestCase {
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))"),
                       "裏がラベルの無い正面のまま（尾錠と錠前が背面に出る）")
-        for side in ["left", "right", "top", "bottom"] {
+        for side in ["left", "right", "bottom"] {
             XCTAssertTrue(spin.contains("render(TrunkFaceView(model: model, posts: posts, side: .\(side), parts: parts))"), side)
+        }
+        // 上の面は吊るすタグの紐も渡す（#305）
+        XCTAssertTrue(spin.contains("render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts,\n                                                      hangTags: TrunkLooks.tags(stuck: stuck, posts: posts)))"), "top")
+        // 型の名前と口を分けて書く（参照の検査が「試験から @MainActor の口を呼んでいる」と数えないように）
+        XCTAssertTrue(spin.contains("TrunkTextures" + ".box(model: model, posts: posts, parts: parts, stuck: stuck)"))
+        let faceSource = try source("Features/Trunk/TrunkFaceView.swift")
+        XCTAssertTrue(faceSource.contains("TrunkHangCords(cords: TrunkFaces.topCords(tags: hangTags, fittings: fittings))"))
+        let boxSource = try source("Features/Trunk/TrunkBoxView.swift")
+        XCTAssertTrue(boxSource.contains("TrunkHangCords(cords: TrunkFaces.frontCords(fittings: fittings))"))
+        // 付けた錠前・角金具は部品1点の絵と同じ形で（正面・回したときの面の両方・#305）
+        XCTAssertTrue(boxSource.contains("TrunkPartView(part: part, size: mount.side)"))
+        for src in [boxSource, faceSource] {
+            XCTAssertTrue(src.contains("TrunkMountedCorner(corner: part, pos: pos, size: cs)"), "角金具の形がトランクに出ない")
         }
         XCTAssertTrue(spin.contains("box: boxFaces, aim: aim)"))
         let medal = try source("Features/Profile/MedalViewerView.swift")

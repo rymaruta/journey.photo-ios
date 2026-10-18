@@ -105,4 +105,14 @@ final class ProfileDraftTests: XCTestCase {
         XCTAssertEqual(try keys(ProfileDraft.patch(from: loaded, to: edited)),
                        ["statusText", "themeColor", "instagram"])
     }
+
+    /// 🔴 **保存の答えは、押した人がまだその人のときだけ書く**（2026-10-17）。
+    /// 名前のあとにアイコンを上げるので、その間にアカウントが替わると次の人の絵になる
+    func testProfileSaveStaysWithThePersonWhoPressed() {
+        XCTAssertTrue(ProfileEditView.keepsSave(sender: "a", viewer: "a"))
+        XCTAssertFalse(ProfileEditView.keepsSave(sender: "a", viewer: "b"),
+                       "次の人のプロフィールに前の人の保存を書いた")
+        XCTAssertFalse(ProfileEditView.keepsSave(sender: "a", viewer: nil))
+        XCTAssertFalse(ProfileEditView.keepsSave(sender: nil, viewer: nil))
+    }
 }

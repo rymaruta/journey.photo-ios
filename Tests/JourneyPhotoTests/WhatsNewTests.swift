@@ -115,12 +115,19 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        XCTAssertEqual(releases.map(\.version), ["1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        XCTAssertEqual(releases.map(\.version), ["1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
+        // 1.1.16（2026-10-18・札 #305 #306）: トランクの部品の付き方・特別な券面の裏・呼び名「すれちがい乗車券」
+        let upcoming = try XCTUnwrap(releases.first)
+        XCTAssertEqual(upcoming.items.map(\.title.ja), ["トランクの部品がきれいに付く", "特別な券面は裏まで", "すれちがい乗車券"])
+        XCTAssertEqual(upcoming.items.map(\.symbol), ["suitcase", "sparkles", "ticket"])
+        XCTAssertEqual(upcoming.items.compactMap(\.destination), [.mypage])
+        XCTAssertEqual(upcoming.date, WhatsNew.Day(year: 2026, month: 10, day: 18))
+        XCTAssertTrue(upcoming.items[2].detail.ja.contains("設定の「すれちがい乗車券」"), "設定の場所を言っていない")
         // 1.1.15（2026-10-18）: トランクを回す面・ふたを開ける・人のトランク・見せる設定・自分の旅の手荷物タグ
-        let next = try XCTUnwrap(releases.first)
+        let next = releases[1]
         XCTAssertEqual(next.items.map(\.title.ja),
                        ["トランクを回すと裏も横も見える", "トランクを開けて中を見る", "人のトランクを見る",
                         "トランクを見せるか選べる", "手荷物タグに自分の旅"])
@@ -132,14 +139,14 @@ final class WhatsNewTests: XCTestCase {
         }
         // 1.1.14（2026-10-18）: 乗車券・Pro の券面・重ねて撮るが無料・旅のトランク・構図の作例写真・
         // 横長の作例の向き（#289）・撮影地の位置の切り替え（#290）・季節のスポットの日替わり・お知らせの履歴
-        let shipped = releases[1]
+        let shipped = releases[2]
         XCTAssertEqual(shipped.items.map(\.title.ja),
                        ["わたしの乗車券", "Pro の特別な券面", "重ねて撮るが無料に", "旅のトランク", "構図に作例写真",
                         "横長の作例は横向きに重ねる", "撮影地の位置を付けるか選べる", "季節の撮影スポットが日替わりに",
                         "お知らせの履歴"])
         XCTAssertEqual(shipped.items.compactMap(\.destination), [.map, .mypage, .map, .home])
         // 1.0.82: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
-        let latest = releases[2]
+        let latest = releases[3]
         XCTAssertEqual(latest.items.count, 4)
         XCTAssertEqual(latest.items.first?.title.ja, "Journey Photo Pro がはじまりました")
         XCTAssertNil(latest.items.first?.destination)
@@ -155,11 +162,11 @@ final class WhatsNewTests: XCTestCase {
                 .map(\.version), ["1.0.82"], "見た版 \(seen)")
         }
         // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
-        let medals = releases[3]
+        let medals = releases[4]
         XCTAssertEqual(medals.items.count, 4)
         XCTAssertEqual(medals.items.first?.title.ja, "初期ユーザー章を贈ります")
         XCTAssertEqual(medals.items.compactMap(\.destination), [.mypage, .mypage])
-        let previous = releases[4]
+        let previous = releases[5]
         XCTAssertEqual(previous.items.count, 8)
         XCTAssertEqual(previous.items.first?.title.ja, "撮影スポットに作例写真")
         XCTAssertEqual(previous.items.compactMap(\.destination), [.map, .search, .home, .mypage, .mypage])
@@ -243,42 +250,55 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.sections([], mode: .launch), [])
     }
 
-    /// 🔴 **1.1.15 の項目は、次に Actions で出す版（testflight/1.1.14 の次 = 1.1.15）で出る**（2026-10-18）。
-    /// 比べ方は数（`isNewer`）。1.1.14 を見た人には 1.1.15 の分だけ、1.1.13 以前を見た人には 1.1.14 と 1.1.15 をまとめて出す。
-    /// 1.1.15 を見た人・その次の版（項目の無い 1.1.16）では出さない
+    /// 🔴 **1.1.16 の項目は、次に Actions で出す版（testflight/1.1.15 の次 = 1.1.16）で出る**（2026-10-18・札 #306）。
+    /// 比べ方は数（`isNewer`）。1.1.15 を見た人には 1.1.16 の分だけ、1.1.14 を見た人には 1.1.15 と 1.1.16 をまとめて出す。
+    /// 1.1.16 を見た人・その次の版（項目の無い 1.1.17）では出さない
     func testNextReleaseShowsOnlyOnTheNextVersion() async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        // 1.1.14 を見た人: 1.1.15 の分だけ
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.14", current: "1.1.15", usedBefore: true)
+        XCTAssertEqual(releases.first?.version, "1.1.16")
+        XCTAssertEqual(releases.first?.items.count, 3)
+        XCTAssertEqual(releases[1].items.count, 5)
+        XCTAssertEqual(releases[2].items.count, 9)
+        // 1.1.15 を見た人: 1.1.16 の分だけ
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.15", current: "1.1.16", usedBefore: true)
+            .map(\.version), ["1.1.16"])
+        // 1.1.14 を見た人: 見ていない 1.1.15 と 1.1.16 をまとめて
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.14", current: "1.1.16", usedBefore: true)
+            .map(\.version), ["1.1.16", "1.1.15"])
+        // 1.1.13 以前（1.1.x）・1.0.x から飛んで来た人: 見ていない版の分をまとめて
+        for seen in ["1.1.9", "1.1.10", "1.1.13", "1.0.82"] {
+            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: seen, current: "1.1.16", usedBefore: true)
+                .map(\.version), ["1.1.16", "1.1.15", "1.1.14"], "見た版 \(seen)")
+        }
+        // 文字の比較なら "1.1.16" < "1.1.9" で出なかった（数で比べる）
+        XCTAssertTrue(WhatsNew.isNewer("1.1.16", than: "1.1.9"))
+        XCTAssertTrue(WhatsNew.isNewer("1.1.16", than: "1.1.15"))
+        // 2回目（同じ版）・その次の版では出さない
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.16", current: "1.1.16", usedBefore: true).isEmpty)
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.16", current: "1.1.17", usedBefore: true).isEmpty)
+        // 新しいインストールには出さない
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.16", usedBefore: false).isEmpty)
+
+        // 出した 1.1.15 の中身（1.1.15 までの項目）での出方は前のまま: 1.1.14 を見た人には 1.1.15 だけ
+        let bundledIn1115 = releases.filter { !WhatsNew.isNewer($0.version, than: "1.1.15") }
+        XCTAssertEqual(WhatsNew.pending(releases: bundledIn1115, seen: "1.1.14", current: "1.1.15", usedBefore: true)
             .map(\.version), ["1.1.15"])
-        // 1.1.13 以前（1.1.x）を見た人: 見ていない 1.1.14 と 1.1.15 をまとめて
         for seen in ["1.1.9", "1.1.10", "1.1.12", "1.1.13"] {
-            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: seen, current: "1.1.15", usedBefore: true)
+            XCTAssertEqual(WhatsNew.pending(releases: bundledIn1115, seen: seen, current: "1.1.15", usedBefore: true)
                 .map(\.version), ["1.1.15", "1.1.14"], "見た版 \(seen)")
         }
-        XCTAssertEqual(releases.first?.items.count, 5)
-        XCTAssertEqual(releases[1].items.count, 9)
-        // 文字の比較なら "1.1.15" < "1.1.9" で出なかった（数で比べる）
-        XCTAssertTrue(WhatsNew.isNewer("1.1.15", than: "1.1.9"))
-        XCTAssertTrue(WhatsNew.isNewer("1.1.15", than: "1.1.14"))
-        // 1.0.x から飛んで来た人には、見ていない版の分をまとめて
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.0.82", current: "1.1.15", usedBefore: true)
-            .map(\.version), ["1.1.15", "1.1.14"])
-        // 2回目（同じ版）・その次の版では出さない
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.15", current: "1.1.15", usedBefore: true).isEmpty)
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.15", current: "1.1.16", usedBefore: true).isEmpty)
-        // 新しいインストールには出さない
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.15", usedBefore: false).isEmpty)
-        // 版の決め方: project.yml の版より、出した印（testflight/1.1.14）の +1 が新しい（`next-marketing-version.sh`）
+        XCTAssertTrue(WhatsNew.pending(releases: bundledIn1115, seen: "1.1.15", current: "1.1.15", usedBefore: true).isEmpty)
+
+        // 版の決め方: project.yml の版より、出した印（testflight/1.1.15）の +1 が新しい（`next-marketing-version.sh`）
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
         let marketing = try XCTUnwrap(project.components(separatedBy: "\n")
             .first { $0.contains("MARKETING_VERSION:") }?
             .components(separatedBy: "\"").dropFirst().first)
-        XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.14"),
-                       "project.yml の版（\(marketing)）が 1.1.14 より新しい——次の版が 1.1.15 にならない。項目の版を見直す")
+        XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.15"),
+                       "project.yml の版（\(marketing)）が 1.1.15 より新しい——次の版が 1.1.16 にならない。項目の版を見直す")
     }
 
     // MARK: - 配線（Linux では描けないので文で確かめる）
@@ -317,6 +337,7 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let releases = WhatsNew.decode(try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json")))
         let dates = Dictionary(uniqueKeysWithValues: releases.map { ($0.version, $0.date) })
+        XCTAssertEqual(dates["1.1.16"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 18))
         XCTAssertEqual(dates["1.1.15"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 18))
         XCTAssertEqual(dates["1.1.14"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 18))
         XCTAssertEqual(dates["1.0.82"] ?? nil, WhatsNew.Day(year: 2026, month: 10, day: 10))

@@ -11,6 +11,8 @@ struct TrunkFaceView: View {
     let posts: Int
     let side: TrunkFaceSide
     var parts: TrunkEquipped = .none
+    /// 吊るしているラベルの手荷物タグ（上の面に持ち手からの紐を渡す・#305）
+    var hangTags: [TrunkLooks.Tag] = []
 
     private var look: TrunkLook { TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)) }
 
@@ -39,6 +41,11 @@ struct TrunkFaceView: View {
             Group {
                 bottomFittings(look, fittings)
                 rivets(look, size)
+                if side == .top {
+                    // 吊るす物の紐（持ち手の下から正面の辺へ・#305）。持ち手より下に描き、付け根を持ち手で隠す
+                    TrunkHangCords(cords: TrunkFaces.topCords(tags: hangTags, fittings: fittings))
+                        .frame(width: size.w, height: size.h)
+                }
                 handle(look, fittings)
                 corners(look, fittings, size)
                 mark(look)
@@ -318,14 +325,20 @@ struct TrunkFaceView: View {
         let round = look.corners.round
         return ZStack(alignment: .topLeading) {
             ForEach(TrunkCorner.allCases, id: \.self) { pos in
-                let shape = side == .back ? pos.shape(round: round) : pos.faceShape(round: round)
-                TrunkCornerCap(look: look, pos: pos, paint: fittings.cornerPaint, size: cs)
-                    .clipShape(shape)
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1).clipShape(shape)
-                    }
-                    .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 1)
-                    .offset(x: pos.isLeading ? -1 : size.w - cs + 1, y: pos.isTop ? -1 : size.h - cs + 1)
+                if let part = fittings.cornerLook {
+                    // 付けた角金具は、どの面でも部品1点の絵と同じ L の字（正面と同じ・#305）
+                    TrunkMountedCorner(corner: part, pos: pos, size: cs)
+                        .offset(x: pos.isLeading ? -1 : size.w - cs + 1, y: pos.isTop ? -1 : size.h - cs + 1)
+                } else {
+                    let shape = side == .back ? pos.shape(round: round) : pos.faceShape(round: round)
+                    TrunkCornerCap(look: look, pos: pos, paint: fittings.cornerPaint, size: cs)
+                        .clipShape(shape)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1).clipShape(shape)
+                        }
+                        .shadow(color: Color.black.opacity(0.6), radius: 1.5, x: 0, y: 1)
+                        .offset(x: pos.isLeading ? -1 : size.w - cs + 1, y: pos.isTop ? -1 : size.h - cs + 1)
+                }
             }
         }
         .frame(width: size.w, height: size.h, alignment: .topLeading)
@@ -384,5 +397,25 @@ struct TrunkFaceView: View {
         }
         .frame(width: size.w, height: size.h, alignment: .topLeading)
         .allowsHitTesting(false)
+    }
+}
+
+/// 吊るす紐（立体の上の面と正面・`TrunkFaces.topCords`・`frontCords`）。端は丸く、少し影を落とす
+struct TrunkHangCords: View {
+    let cords: [TrunkFaces.HangCord]
+
+    var body: some View {
+        Canvas { ctx, _ in
+            for c in cords {
+                var line = Path()
+                line.move(to: CGPoint(x: c.fromX, y: c.fromY))
+                line.addLine(to: CGPoint(x: c.toX, y: c.toY))
+                ctx.stroke(line, with: .color(Color.black.opacity(0.35)),
+                           style: StrokeStyle(lineWidth: c.width + 1, lineCap: .round))
+                ctx.stroke(line, with: .color(Color(trunk: c.color)), style: StrokeStyle(lineWidth: c.width, lineCap: .round))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

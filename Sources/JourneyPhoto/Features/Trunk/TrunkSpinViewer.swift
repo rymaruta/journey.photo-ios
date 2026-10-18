@@ -82,7 +82,7 @@ struct TrunkSpinViewer: View {
             // 待つ間に閉じられたら描かずに抜ける
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard !Task.isCancelled else { return }
-            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts)
+            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck)
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
         }
     }
@@ -153,16 +153,17 @@ enum TrunkTextures {
     /// 表（ラベルごとの胴）と芯の色。**背面は後から**（`box`）。表を先に出す
     static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?,
                      parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
+        // 吊るす物（タグ・チャーム・鍵）も正面に下げる（回しても消さない・#305）。上の面の紐は `box` が描く
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                                        parts: parts, wrinkles: wrinkles))
+                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))
         // 背面は描き終えるまで縁の色で（白い面を見せない）
         return MedalTextures.Faces(front: front, back: edge, edge: edge, edgeRepeat: 1)
     }
 
-    /// 左右・上・底と持ち手の絵（板 TrunkFaces・正面と同じ古び方と付けた部品）
-    static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none) -> SpinBoxFaces {
+    /// 左右・上・底と持ち手の絵（板 TrunkFaces・正面と同じ古び方と付けた部品）。`stuck` は吊るすタグの紐を上の面に渡すため
+    static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none, stuck: [TrunkLabel] = []) -> SpinBoxFaces {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
         let fittings = TrunkFittings(parts)
         // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
@@ -170,7 +171,8 @@ enum TrunkTextures {
         return SpinBoxFaces(back: back,
                             left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
                             right: render(TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
-                            top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts)),
+                            top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts,
+                                                      hangTags: TrunkLooks.tags(stuck: stuck, posts: posts))),
                             bottom: render(TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
                             handle: render(TrunkHandleSkin(look: look, fittings: fittings)),
                             clip: render(TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))
