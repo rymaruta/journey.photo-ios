@@ -50,7 +50,13 @@ final class TrunkCoinGeometryTests: XCTestCase {
             XCTAssertLessThan(g.ringInset * 2, size, "\(size)pt の内輪がつぶれる")
         }
         XCTAssertFalse(TrunkCoinGeometry(size: 16).showsLetters)
-        XCTAssertTrue(TrunkCoinGeometry(size: 26).showsLetters)
+        // 字は 7pt を下回らせない（CLAUDE.md の例外）: 数の行の 26pt では描かず、直径 41pt から描く
+        XCTAssertFalse(TrunkCoinGeometry(size: 26).showsLetters, "26pt の硬貨に 7pt 未満の刻印を描く")
+        XCTAssertFalse(TrunkCoinGeometry(size: 40.9).showsLetters)
+        XCTAssertTrue(TrunkCoinGeometry(size: 41).showsLetters)
+        for size in [41.0, 60, 88, 116] {
+            XCTAssertGreaterThanOrEqual(TrunkCoinGeometry(size: size).letterSize, 7, "\(size)pt の刻印が 7pt 未満")
+        }
         XCTAssertEqual(TrunkCoinGeometry(size: 14).shadowRadius, 0, "行の字と並ぶ小さな印に影を落とす")
     }
 

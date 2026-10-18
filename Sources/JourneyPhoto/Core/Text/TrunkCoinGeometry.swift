@@ -27,10 +27,15 @@ struct TrunkCoinGeometry: Equatable {
     var ringWidth: Double { max(0.75, size * 0.025) }
     /// 外の縁の暗い線（板の `inset 0 0 0 2px rgba(60,40,15,0.35)` を大きさに合わせる）
     var outlineWidth: Double { max(1, size * 0.02) }
-    /// 刻印「COIN」の字の大きさ（読み上げから外した飾り・CLAUDE.md の 7pt の例外と同じ扱い）
-    var letterSize: Double { size * 0.17 }
-    /// 刻印を描くか。**読めない大きさ（24pt 未満の印）では字だけ描かない**（縁・面・内輪の形は同じ）
-    var showsLetters: Bool { size >= 24 }
+    /// 刻印の字の下限（CLAUDE.md の例外: 硬貨の COIN の刻印は 7pt まで）
+    static let minLetterSize: Double = 7
+    /// 刻印を描く最小の直径（直径の 17% が 7pt に届く大きさ）
+    static let minLetteredSize: Double = 41
+    /// 刻印「COIN」の字の大きさ（読み上げから外した飾り）。直径の 17%・7pt を下回らない
+    var letterSize: Double { max(Self.minLetterSize, size * 0.17) }
+    /// 刻印を描くか。**字が 7pt に届かない大きさ（直径 41pt 未満・数の行の 26pt の印など）では字だけ描かない**
+    /// （縁・面・内輪の形は同じ）
+    var showsLetters: Bool { size >= Self.minLetteredSize }
     /// 縦の潰れ（cos）。正面は 1、倒すほど楕円になる
     var squash: Double { cos(tilt * .pi / 180) }
     /// 倒したときに下に見える厚みの帯（直径の 8% × sin）
