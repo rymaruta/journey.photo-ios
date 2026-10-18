@@ -94,8 +94,10 @@ struct TrunkModelCard: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 // モック: 360×300 を 0.389 倍（140×117）・ラベルは2枚
-                TrunkFigure(model: trunk, posts: state.posts ?? 0, stuck: Array(state.stuck.prefix(2)),
-                            ownerName: ownerName, width: 140)
+                // 絵のラベルは2枚に減らしても、手荷物タグは全部のラベルから（ほかの画面とタグを割らない）
+                let preview = TrunkLooks.modelsPreview(state.stuck, count: 2)
+                TrunkFigure(model: trunk, posts: state.posts ?? 0, stuck: preview.stuck,
+                            ownerName: ownerName, width: 140, tagsFrom: preview.tagsFrom)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(info.name)
@@ -207,8 +209,9 @@ struct TrunkProModelsView: View {
             if isPro { Task { await model.setModel(trunk) } } else { showPaywall = true }
         } label: {
             VStack(alignment: .leading, spacing: 16) {
-                TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: Array((state?.stuck ?? []).prefix(3)),
-                               ownerName: ownerName, maxWidth: 300)
+                let preview = TrunkLooks.modelsPreview(state?.stuck ?? [], count: 3)
+                TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
+                               ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom)
                     .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {

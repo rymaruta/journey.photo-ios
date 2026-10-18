@@ -276,7 +276,7 @@ final class TrunkWiringTests: XCTestCase {
             XCTAssertTrue(try source(path).contains("wrinkles: TrunkWrinkles(userId: auth.userId).strengths"), "\(path) によれが無い")
         }
         XCTAssertTrue(try source("Features/Trunk/TrunkStickView.swift").contains("wrinkles: wrinkles, pop: pop"))
-        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles)"),
+        XCTAssertTrue(try source("Features/Trunk/TrunkBoxView.swift").contains("parts: parts, wrinkles: wrinkles,\n                     tagsFrom: tagsFrom)"),
                       "TrunkFigure がよれを箱に渡していない")
     }
 

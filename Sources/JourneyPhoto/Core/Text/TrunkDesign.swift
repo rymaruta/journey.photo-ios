@@ -626,6 +626,14 @@ enum TrunkLooks {
         return out.trimmingCharacters(in: .whitespaces)
     }
 
+    /// タグを作るラベル（描くラベルを減らした画面でも、渡されていれば全部のラベルから）
+    static func tagSource(stuck: [TrunkLabel], tagsFrom: [TrunkLabel]?) -> [TrunkLabel] { tagsFrom ?? stuck }
+
+    /// 型を選ぶ画面の見本のトランク: 絵に描くのは新しいラベル `count` 枚（板 Models）、タグは全部のラベルから
+    static func modelsPreview(_ stuck: [TrunkLabel], count: Int) -> (stuck: [TrunkLabel], tagsFrom: [TrunkLabel]) {
+        (Array(stuck.prefix(count)), stuck)
+    }
+
     /// 吊るすタグ（貼ったラベルの**新しい順**に、違う撮影地を `TrunkAging.tagCount(posts:)` 枚まで）。
     /// - 地名の無いラベル（人のトランクで地名を伏せた・もともと無い）は使わない
     /// - 使える地名が足りなければ、足りない枚数ぶんタグを出さない（偽の行き先で埋めない）

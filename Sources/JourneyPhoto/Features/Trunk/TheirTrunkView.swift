@@ -82,6 +82,13 @@ final class TheirTrunkModel: ObservableObject {
             phase = .loaded
             return
         }
+        // サーバーが人のトランクに対応していないと分かっている間（いまの本番）は、人の口を読まない（道が無く必ず 404）。
+        // 分からない間（自分のトランクをまだ読んでいない）は今までどおり読む
+        if entry.knownSupportsSharing == false {
+            trunk = nil
+            phase = .hidden
+            return
+        }
         if trunk == nil { phase = .loading }
         do {
             if isSelf {

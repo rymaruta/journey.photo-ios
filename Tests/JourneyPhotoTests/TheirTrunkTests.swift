@@ -157,7 +157,7 @@ final class TheirTrunkTests: XCTestCase {
 
     @MainActor
     func testModelPhases() async {
-        let model = TheirTrunkModel(preview: false)
+        let model = TheirTrunkModel(preview: false, entry: TrunkEntryStore())
         StubProtocol.respond(status: 404, body: #"{"error":"x","code":"notFound"}"#)
         await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
         XCTAssertEqual(model.phase, .hidden)
@@ -798,7 +798,7 @@ final class TheirTrunkTests: XCTestCase {
     @MainActor
     func testProfileHidesTrunkOnProductionNotFound() async {
         StubProtocol.respond(status: 404, body: #"{"message":"Not Found"}"#)
-        let model = TheirTrunkModel(preview: false)
+        let model = TheirTrunkModel(preview: false, entry: TrunkEntryStore())
         await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
         XCTAssertEqual(model.phase, .hidden)
         XCTAssertFalse(model.showsOnProfile(blocked: false), "本番の 404 で段を出す")
@@ -845,6 +845,31 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests, ["PUT /user/trunk/settings"])
     }
 
+    /// 5回目の見直し 2: サーバーが対応していないと入口の店で分かっている間は、人のプロフィールで人の口を読まない
+    /// （本番では毎回 404 になっていた）。分からない間・対応しているときは今までどおり読む
+    @MainActor
+    func testTheirTrunkIsNotReadWhileUnsupported() async throws {
+        StubProtocol.respond(path: "/users/u-1/trunk", status: 200, body: Self.full)
+        let entry = TrunkEntryStore()
+        let model = TheirTrunkModel(preview: false, entry: entry)
+        // 分からない（未読）: 読む
+        await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
+        XCTAssertEqual(StubProtocol.requests, ["GET /users/u-1/trunk"])
+        XCTAssertTrue(model.showsOnProfile(blocked: false))
+        // 本番の形と分かった: 読まず、段も出さない
+        let production = try decode(TrunkState.self, Self.productionState)
+        _ = try await entry.read(userId: "me") { production }
+        await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
+        XCTAssertEqual(StubProtocol.requests, ["GET /users/u-1/trunk"], "本番で人のプロフィールを開くたびに 404 の口を読む")
+        XCTAssertFalse(model.showsOnProfile(blocked: false))
+        // 対応した: また読む
+        let supported = try decode(TrunkState.self, #"{"pocket":[],"stuck":[],"showTrunk":true}"#)
+        _ = try await entry.read(userId: "me") { supported }
+        await model.load(userId: "u-1", service: service(), signedIn: true, offline: false)
+        XCTAssertEqual(StubProtocol.requests.count, 2)
+        XCTAssertTrue(model.showsOnProfile(blocked: false))
+    }
+
     /// 自分のページ: 本番の形の応答なら段を出さず、人の口も読まない
     @MainActor
     func testOwnProfileOnProductionShowsNothing() async {
@@ -882,7 +907,7 @@ final class TheirTrunkTests: XCTestCase {
                             session: session, beforeRequest: { _ in await gate.wait() })
         let slow = TrunkService(api: api)
         StubProtocol.respond(status: 200, body: Self.full)
-        let model = TheirTrunkModel(preview: false)
+        let model = TheirTrunkModel(preview: false, entry: TrunkEntryStore())
         let first = Task { await model.load(userId: "u-1", service: slow, signedIn: true, offline: false) }
         await gate.untilWaiting(1)
         await model.load(userId: "u-1", service: slow, signedIn: false, offline: false)

@@ -124,6 +124,10 @@ final class TrunkEntryStore: ObservableObject {
         changedAt = now
     }
 
+    /// サーバーが人のトランクに対応しているか（入っている人の `GET /user/trunk` の応答に `showTrunk` の欄があったか）。
+    /// まだ読めていなければ nil（分からない）
+    var knownSupportsSharing: Bool? { state?.supportsSharing }
+
     /// その人の中身を最後に入れた時刻（人が替わっていれば nil）
     func changedAt(for userId: String) -> Date? {
         self.userId == userId ? changedAt : nil

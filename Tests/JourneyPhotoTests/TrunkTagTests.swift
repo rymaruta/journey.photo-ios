@@ -90,4 +90,26 @@ final class TrunkTagTests: XCTestCase {
             XCTFail("空の便が札の部品でない")
         }
     }
+
+    /// 5回目の見直し 1: 型を選ぶ画面は絵のラベルを減らすが、手荷物タグは本体と同じ（全部のラベルから）
+    func testModelsPreviewKeepsTheSameTags() throws {
+        let stuck = [label("a", "京都", latin: "Kyoto", at: "2026-04-03T09:00:00Z"),
+                     label("b", "京都", latin: "Kyoto", at: "2026-03-01T09:00:00Z"),
+                     label("c", "高屋神社", at: "2024-10-30T06:00:00Z"),
+                     label("d", "パリ", latin: "Paris", at: "2024-02-11T10:00:00Z")]
+        let main = TrunkLooks.tags(stuck: TrunkLooks.tagSource(stuck: stuck, tagsFrom: nil), posts: 120)
+        for count in [2, 3] {
+            let preview = TrunkLooks.modelsPreview(stuck, count: count)
+            XCTAssertEqual(preview.stuck.count, count, "絵に描くラベルの数が板と違う")
+            let tags = TrunkLooks.tags(stuck: TrunkLooks.tagSource(stuck: preview.stuck, tagsFrom: preview.tagsFrom), posts: 120)
+            XCTAssertEqual(tags, main, "型を選ぶ画面と本体でタグが割れる（\(count) 枚）")
+        }
+        XCTAssertEqual(main.count, 3)
+        // 型を選ぶ画面はこの形で渡している（ラベルを切って渡す所がほかに無い）
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        let models = try String(contentsOf: root.appendingPathComponent("Features/Trunk/TrunkModelsView.swift"), encoding: .utf8)
+        XCTAssertEqual(models.components(separatedBy: "tagsFrom: preview.tagsFrom").count - 1, 2)
+        XCTAssertFalse(models.contains("stuck.prefix("), "型を選ぶ画面がラベルを切って渡している")
+    }
 }
