@@ -243,4 +243,21 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
+    /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**
+    /// （`POST /user/trunk/welcome` を呼ばない）。入っている見本の利用者のときだけ。Release では必ず nil
+    static let trunkWelcomeKey = "JPPreviewTrunkWelcome"
+
+    static var trunkWelcomeAdded: Int? {
+        #if DEBUG
+        guard userId != nil, let raw = UserDefaults.standard.string(forKey: trunkWelcomeKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty else { return nil }
+        if ["yes", "true"].contains(raw) { return 10 }
+        guard let n = Int(raw), n > 0 else { return nil }
+        return min(10, n)
+        #else
+        return nil
+        #endif
+    }
 }

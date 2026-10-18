@@ -50,6 +50,15 @@ struct RootView: View {
     @State private var trunkBatch: TrunkArrivals.Batch?
     /// 評価のお願いが決めている最中（届いた画面はこれが終わるまで待つ・`PostModalGate`）
     @State private var reviewDeciding = false
+    /// 旅のトランクの「はじめての硬貨」（`TrunkWelcome`・2026-10-18）。出している案内
+    @ObservedObject private var trunkWelcome = TrunkWelcome.shared
+    @ObservedObject private var trunkAvailability = TrunkAvailability.shared
+    @State private var trunkWelcomeGrant: TrunkWelcome.Grant?
+    /// 画面写真の見本の案内を出したか（起動のあと1回だけ）
+    @State private var previewWelcomeDelivered = false
+    /// 起動のときの案内（新しくなったこと → 初期ユーザー章）を決め終えるまで true。
+    /// はじめての硬貨の案内はこれが終わってから出す（`PostModalGate.welcomeMayShow`）
+    @State private var launchNoticesDeciding = true
     #if canImport(StoreKit)
     @Environment(\.requestReview) private var requestReview
     #endif
@@ -310,7 +319,7 @@ struct RootView: View {
     /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
-        tabsWithTrunkArrival
+        tabsWithTrunkWelcome
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -319,6 +328,12 @@ struct RootView: View {
                     auth.noteProfileChanged()
                 }
             }
+    }
+
+    /// 贈り物を決めて、起動のときの案内を決め終える（はじめての硬貨の案内はこのあと・`PostModalGate.welcomeMayShow`）
+    private func decideFoundingGift() async {
+        await presentFoundingGiftIfNeeded()
+        launchNoticesDeciding = false
     }
 
     /// 初期ユーザー章を持っていて、まだ飾っていない人に贈り物の画面を出す（`FoundingGiftGate`）。
@@ -343,6 +358,67 @@ struct RootView: View {
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
             .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+    }
+
+    /// 届いた画面に、旅のトランクの「はじめての硬貨」の案内（2026-10-18 owner 承認）を足したもの。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithTrunkWelcome: some View {
+        tabsWithTrunkArrival
+            // 開いたとき（人が替わったときも）に一度だけ呼ぶ。入口の口が後から読めたら、そのときにも確かめる
+            .task(id: auth.userId) { await claimTrunkWelcome() }
+            .onChange(of: trunkAvailability.isAvailable) { _, available in
+                if available { Task { await claimTrunkWelcome() } }
+            }
+            .onChange(of: trunkWelcome.requests) { _, _ in offerTrunkWelcomeWhenIdle() }
+            // 待っていたものが終わったら、待ちきれずに残った案内を出し直す（起動の案内・届いた画面・通知の説明・評価）
+            .onChange(of: welcomeWaitKey) { _, _ in
+                if trunkWelcome.hasPending { offerTrunkWelcomeWhenIdle() }
+            }
+            .fullScreenCover(item: $trunkWelcomeGrant, onDismiss: {
+                // 案内の間に入った届いた束は、閉じてから出す（`PostModalGate.trunkMayShow`）
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { grant in TrunkWelcomeView(grant: grant) }
+            // 人が替わった（ログアウトを含む）: 前の人の案内を下ろす
+            .onChange(of: auth.userId) { _, userId in trunkWelcome.noteUser(userId) }
+    }
+
+    /// はじめての硬貨の案内が待っているもの（どれかが変わったら出せるか見直す）
+    private var welcomeWaitKey: [Bool] {
+        [launchNoticesDeciding, showWhatsNew, foundingGiftName != nil, trunkBatch != nil, showPushPrimer, reviewDeciding]
+    }
+
+    /// はじめての硬貨を呼ぶ（`TrunkWelcome.claim`: ログイン済み・トランクが使える・印が無い・この起動でまだ）。
+    /// 画面写真の見本（`-JPPreviewTrunkWelcome`）ではサーバーを呼ばずに案内だけ出す
+    private func claimTrunkWelcome() async {
+        if let added = PreviewSession.trunkWelcomeAdded {
+            guard !previewWelcomeDelivered else { return }
+            previewWelcomeDelivered = true
+            trunkWelcome.noteUser(auth.userId)
+            trunkWelcome.deliverPreview(.init(added: added, coins: 2 + added))
+            return
+        }
+        guard let userId = auth.userId, !trunkWelcome.isDone(userId) else { return }
+        // マイページの口の確かめ（`TrunkAvailability.refresh`）と同時に `GET /user/trunk` を2本出さないよう、少し待つ
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        if !trunkAvailability.isAvailable {
+            await trunkAvailability.refresh(userId: userId, service: environment.trunk)
+        }
+        guard !Task.isCancelled, auth.userId == userId else { return }
+        let service = environment.trunk
+        await trunkWelcome.claim(userId: userId, available: trunkAvailability.isAvailable) { try await service.welcome() }
+    }
+
+    /// **ほかの画面が閉じてから**はじめての硬貨の案内を出す（いちばん後ろ・`PostModalGate.welcomeMayShow`）。
+    /// 最長で約60秒待つ。待ちきれなければ案内は残し、待っていたものが閉じたら出し直す（硬貨はもう手持ちに在る）
+    private func offerTrunkWelcomeWhenIdle() {
+        Task { @MainActor in
+            let ready = await PostModalGate.wait(tries: 60, snapshot: postModalSnapshot,
+                                                 until: PostModalGate.welcomeMayShow,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            guard ready, trunkWelcomeGrant == nil, let grant = trunkWelcome.consume() else { return }
+            trunkWelcomeGrant = grant
+        }
     }
 
     /// 通知の説明に、旅のトランクの「ラベルが届きました」（モック LabelArrived・2026-10-17）を足したもの。
@@ -396,7 +472,9 @@ struct RootView: View {
     private func postModalSnapshot() -> PostModalSnapshot {
         PostModalSnapshot(modalPresenting: ModalProbe.isPresenting(), pushPrimerDeciding: pushPrimer.isDeciding,
                           pushPrimerShowing: showPushPrimer, reviewDeciding: reviewDeciding,
-                          trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil)
+                          trunkPending: trunkArrivals.blocksReview(), trunkShowing: trunkBatch != nil,
+                          launchNoticesDeciding: launchNoticesDeciding || showWhatsNew || foundingGiftName != nil,
+                          welcomeShowing: trunkWelcomeGrant != nil)
     }
 
     private func offerPreviewTrunkArrival() async {
@@ -494,17 +572,21 @@ struct RootView: View {
         .task {
             // 「新しくなったこと」が出ない回は、そのまま初期ユーザー章の贈り物を確かめる
             guard whatsNew.shouldPresent else {
-                await presentFoundingGiftIfNeeded()
+                await decideFoundingGift()
                 return
             }
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
+            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else {
+                // 出さなかった回も、起動の案内は決め終わり（はじめての硬貨の案内を待たせない）
+                launchNoticesDeciding = false
+                return
+            }
             whatsNewReleases = whatsNew.pending
             whatsNew.markSeen()
             showWhatsNew = true
         }
         // 「新しくなったこと」を閉じたら、続けて贈り物を確かめる（重ねて出さない）
-        .sheet(isPresented: $showWhatsNew, onDismiss: { Task { await presentFoundingGiftIfNeeded() } }) {
+        .sheet(isPresented: $showWhatsNew, onDismiss: { Task { await decideFoundingGift() } }) {
             WhatsNewView(releases: whatsNewReleases)
         }
     }

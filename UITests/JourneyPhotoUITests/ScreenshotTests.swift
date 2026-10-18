@@ -2189,6 +2189,49 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
     }
 
+    // MARK: - はじめての硬貨（2026-10-18 owner 承認）
+
+    /// **はじめての硬貨**（`-JPPreviewTrunkWelcome YES`・サーバーには何も送らない）。見本は必ず出るので、
+    /// **出ない・「カプセルを回す」「あとで」「閉じる」が無い・44pt 未満なら落とす**。
+    /// 「カプセルを回す」でカプセルの機械へ進み、戻って「あとで」で閉じる
+    func testCapturesTrunkWelcome() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "YES", "-JPPreviewTrunk", "YES"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96c-はじめての硬貨")
+        let later = app.buttons["trunk.welcome.later"].firstMatch
+        let close = app.buttons["trunk.welcome.close"].firstMatch
+        for (button, name) in [(turn, "カプセルを回す"), (later, "あとで"), (close, "閉じる")] {
+            XCTAssertTrue(button.exists, "「\(name)」が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.added"].firstMatch.exists, "「硬貨 +10 枚」が無い")
+        XCTAssertFalse(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "10 枚の回に上限の一言が出ている")
+        guard turn.isHittable else { return XCTFail("「カプセルを回す」を押せない") }
+        turn.tap()
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        XCTAssertTrue(insert.waitForExistence(timeout: 10), "「カプセルを回す」でカプセルの機械へ進まない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "96d-はじめての硬貨（カプセルの機械へ）")
+        goBack(app)
+        guard later.waitForExistence(timeout: 10), later.isHittable else { return XCTFail("機械から案内へ戻れない") }
+        later.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: turn)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+    }
+
+    /// **はじめての硬貨（上限に当たって 3 枚だけ）**: 実際の枚数と上限の一言
+    func testCapturesTrunkWelcomeCapped() {
+        let app = launchTrunk(["-JPPreviewTrunkWelcome", "3"])
+        let turn = app.buttons["trunk.welcome.turn"].firstMatch
+        guard turn.waitForExistence(timeout: 45) else { return XCTFail("はじめての硬貨の案内が出ない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96e-はじめての硬貨（上限に当たった）")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.welcome.capped"].firstMatch.exists, "上限の一言が無い")
+    }
+
     // MARK: - 旅のトランクの次の版（2026-10-17・自分の手で貼る・カプセルの機械・部品箱）
 
     /// トランクの画面の入口（`trunk.stick.open`・`trunk.partsBox`・`trunk.gacha.open`）を押す。押せたら true

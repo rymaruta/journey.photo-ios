@@ -29,10 +29,38 @@ final class TrunkViewModel: ObservableObject {
     private let preview: PreviewSession.TrunkPreview?
     private let previewPro: Bool
 
+    /// 硬貨が増えた知らせ（はじめての硬貨・`Notification.Name.trunkCoinsChanged`）の見張り
+    private var coinsObserver: NSObjectProtocol?
+    private let center: NotificationCenter
+
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
-         previewPro: Bool = PreviewSession.isPro) {
+         previewPro: Bool = PreviewSession.isPro,
+         center: NotificationCenter = .default) {
         self.preview = preview
         self.previewPro = previewPro
+        self.center = center
+        // 硬貨の数を見せている画面（トランク・カプセルの機械）は、はじめての硬貨が配られたら読み直す（2026-10-18）
+        coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
+            let coins = note.userInfo?["coins"] as? Int
+            Task { @MainActor in await self?.noteCoinsChanged(coins: coins) }
+        }
+    }
+
+    deinit {
+        if let coinsObserver { center.removeObserver(coinsObserver) }
+    }
+
+    /// サーバーで硬貨が増えた（はじめての硬貨）。**読めている画面だけ**読み直す（まだ読んでいない画面は開いたときに読む）。
+    /// 黙って読み直す——読めなかったら知らせの数（増えたあとの硬貨）だけを映し、失敗の一行は出さない（押していない人に
+    /// 「読み込めませんでした」を見せない）。見本ではサーバーを読まない
+    func noteCoinsChanged(coins: Int? = nil) async {
+        guard preview == nil, let service, state != nil else { return }
+        do {
+            let fresh = try await service.state()
+            state = fresh.keepingPosts(from: state)
+        } catch {
+            if let coins, let current = state { state = current.copy(coins: coins) }
+        }
     }
 
     func bind(_ service: TrunkService) {

@@ -86,7 +86,9 @@ final class FoundingGiftTests: XCTestCase {
         let source = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/App/RootView.swift"),
                                 encoding: .utf8)
         XCTAssertTrue(source.contains("tabsWithFoundingGift"))
-        XCTAssertTrue(source.contains("onDismiss: { Task { await presentFoundingGiftIfNeeded() } }"))
+        // 閉じたら贈り物を決める（決め終えたら、はじめての硬貨の案内の待ちを解く・`decideFoundingGift`・2026-10-18）
+        XCTAssertTrue(source.contains("onDismiss: { Task { await decideFoundingGift() } }"))
+        XCTAssertTrue(source.contains("await presentFoundingGiftIfNeeded()\n        launchNoticesDeciding = false"))
         XCTAssertTrue(source.contains("FoundingGiftGate().noteAccepted(userId: userId)"))
         XCTAssertTrue(source.contains("gate.noteShown(userId: userId)"))
         let view = try String(contentsOf: root.appendingPathComponent(
