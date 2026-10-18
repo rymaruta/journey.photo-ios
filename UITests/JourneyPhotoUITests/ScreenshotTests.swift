@@ -253,6 +253,8 @@ final class ScreenshotTests: XCTestCase {
     /// **作例を重ねて撮る**（2026-10-09・2026-10-17 から全員無料）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
     /// 開くのに鍵は要らない。起動の鍵（`-JPComposeGuidePreview`）は線を出すためだけ。シミュレータにカメラは無いので
     /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 2026-10-18: 鍵があるときは作例もその上に重ねる——横長の作例が開いたときから 90° 回って
+    /// 縦の枠に収まっているか（`ComposeControls.autoRotation`）を、この絵で見る。
     /// 入口・画面が出なければ撮らない（この試験の決まり）
     private func shootComposeGuide(_ app: XCUIApplication) {
         let entry = app.buttons["spot.official.composeGuide"].firstMatch
@@ -274,6 +276,7 @@ final class ScreenshotTests: XCTestCase {
         // 作例のサムネが読み込まれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13h-作例を重ねて撮る")
+        shootLandscapeSample(app)
         if close.exists, close.isHittable {
             close.tap()
         } else {
@@ -282,6 +285,29 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shootComposeGuideFromSecondSample(app)
+    }
+
+    /// **横長の作例が開いたときから 90° 回って縦の枠に収まる絵**（2026-10-18 owner「縦空くのは嫌」）。
+    /// 右下の「作例を切り替える」で送り、回すボタンの値が「90度」になった作例で撮る
+    /// （回す角度は作例の縦横から自動で決まる・`ComposeControls.autoRotation`）。
+    /// 横長の作例が無い・切り替えが押せないスポットでは撮らない（この試験の決まり）
+    private func shootLandscapeSample(_ app: XCUIApplication) {
+        let rotate = app.buttons["composeGuide.rotate"].firstMatch
+        let next = app.buttons["composeGuide.switch"].firstMatch
+        func turned() -> Bool {
+            guard rotate.exists, let value = rotate.value as? String else { return false }
+            return value.hasPrefix("90")
+        }
+        var switches = 0
+        while !turned(), switches < 6, next.exists, next.isHittable, next.isEnabled {
+            next.tap()
+            Thread.sleep(forTimeInterval: 1)
+            switches += 1
+        }
+        guard turned() else { return }
+        // 作例の写真が読み込まれるのを待つ（Commons の縮小版）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h3-作例を重ねて撮る（横長の作例を回して収める）")
     }
 
     /// **作例の帯の2枚目を押して、その作例から撮る画面を開く**（2026-10-10・owner の報告「作例の1枚目しか
