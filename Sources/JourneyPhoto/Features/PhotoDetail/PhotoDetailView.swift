@@ -2251,40 +2251,48 @@ private struct ExifRow: View {
 
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    /// 行と行の間。nil なら `spacing` と同じ。
+    /// 2026-10-17: 投稿・編集のタグとカテゴリの札は、当たり 44 の箱を隙間なく積むので 0（`FormChip`）
+    var lineSpacing: CGFloat?
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > width, x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: proposal.width ?? x, height: y + rowHeight)
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let placed = Self.arrange(sizes, width: proposal.width ?? .infinity,
+                                  spacing: spacing, lineSpacing: lineSpacing ?? spacing)
+        return CGSize(width: proposal.width ?? placed.size.width, height: placed.size.height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let placed = Self.arrange(sizes, width: bounds.width,
+                                  spacing: spacing, lineSpacing: lineSpacing ?? spacing)
+        for (index, subview) in subviews.enumerated() {
+            let origin = placed.origins[index]
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                          proposal: ProposedViewSize(sizes[index]))
+        }
+    }
+
+    /// 並べる位置（左上を 0 とする）と、全体の大きさ（幅は最も右の端まで）。画面を建てずに試せる形
+    static func arrange(_ sizes: [CGSize], width: CGFloat, spacing: CGFloat,
+                        lineSpacing: CGFloat) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
         var rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX {
-                x = bounds.minX
-                y += rowHeight + spacing
+        var widest: CGFloat = 0
+        for size in sizes {
+            if x + size.width > width, x > 0 {
+                x = 0
+                y += rowHeight + lineSpacing
                 rowHeight = 0
             }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            origins.append(CGPoint(x: x, y: y))
+            widest = max(widest, x + size.width)
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+        return (origins, CGSize(width: widest, height: y + rowHeight))
     }
 }
 

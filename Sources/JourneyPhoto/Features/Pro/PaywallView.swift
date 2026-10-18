@@ -2,9 +2,13 @@ import SwiftUI
 
 /// Pro の案内（板 63・2026-10-09）。全画面で開き、右上の「閉じる」で戻る。
 ///
-/// 入口: 設定の「Journey Photo Pro」（Pro でないとき）・名前の横の画面の「PRO 限定」。
+/// 入口: 設定の「Journey Photo Pro」（Pro でないとき）・名前の横の画面の「PRO 限定」・旅のトランクの Pro の口。
 ///
-/// 板のとおり: 上に撮影地の写真（朝焼け）と黒への溶け、眉ラベル・明朝の見出し、4つの利点、
+/// **どこから開いたか（`PaywallOrigin`・2026-10-18 判断）**: 旅のトランクの口（作り直す・特別なトランク・
+/// 手持ちの上限）から開いたときは、トランクの利点をいちばん上に出す。押した物の答えが最初に見えるように。
+/// 並びを変えるだけで、文言・見た目・ほかの利点は同じ（案内を長くしない）。
+///
+/// 板のとおり: 上に撮影地の写真（朝焼け）と黒への溶け、眉ラベル・明朝の見出し、利点（2026-10-18 から5つ・`ProBenefit`）、
 /// 1年ごと（選んである・「2か月ぶんお得」）と月ごとの札、白い主ボタン（写真のある画面）、注記。
 ///
 /// **板と変えたところ（報告済み）**
@@ -15,7 +19,7 @@ import SwiftUI
 /// - 値段は App Store の字（`Product.displayPrice`）。読めないときだけ板の値段
 ///
 /// **v2（2026-10-14・板 Paywall）**: 写真 300・溶け 160・本文は写真へ 40 だけ食い込む。眉ラベルは真鍮
-/// （溶けの下端＝ほぼ黒の上）。4つの利点は箱を外して真鍮の線の絵 20 だけ、題 15 semibold・説明 13 の text-2。
+/// （溶けの下端＝ほぼ黒の上）。利点は箱を外して真鍮の線の絵 20 だけ、題 15 semibold・説明 13 の text-2。
 /// プランの札は左寄せの縁 1（白 14%）、選んだ札は真鍮 2 の縁と真鍮のごく暗い地、値段は SF の等幅数字 20。
 /// 主ボタンは白（写真のある画面・`JPPillStyle.main(onPhoto: true)`）。閉じるはガラスの丸
 struct PaywallView: View {
@@ -25,6 +29,9 @@ struct PaywallView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+
+    /// どこから開いたか（利点の並びだけを変える・2026-10-18）
+    var origin: PaywallOrigin = .general
 
     /// 選んでいるプラン（板: 1年ごとが選んである）
     @State private var plan: ProPlan = .yearly
@@ -108,7 +115,7 @@ struct PaywallView: View {
                     .accessibilityAddTraits(.isHeader)
             }
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                ForEach(ProBenefit.all) { benefit in
+                ForEach(ProBenefit.ordered(for: origin)) { benefit in
                     benefitRow(benefit)
                 }
             }
@@ -143,6 +150,7 @@ struct PaywallView: View {
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("paywall.benefit.\(benefit.id)")
     }
 
     // MARK: - プラン
@@ -326,12 +334,24 @@ struct PaywallView: View {
     }
 }
 
-/// Pro の4つの利点（板 63 の文言そのまま）。
+/// Pro の利点（板 63 の文言そのまま）。
 ///
-/// 🔴 **第3段階の機能が3つ入っている**（作例を重ねて撮る・光と天気の知らせ・電波なしで使える旅）。
-/// 2026-10-09 時点で、作例を重ねて撮る・電波なしで使える旅はできた。光と天気の知らせはまだ。
-/// 板どおりに出しているが、機能ができる前に App Store へ出すと、無い機能を売ることになる
-/// （審査 2.3.1 / 3.1.2）。出す前に owner に確かめる（報告済み）
+/// 2026-10-17 判断（owner）: **「作例を重ねて撮る」（構図を重ねて撮るを含む）は全員無料にしたので、利点から外した。**
+/// 板 63 は4つだが、残りは3つ（光と天気の知らせ・電波なしで使える旅・Pro マークと Pro 限定の章）。
+/// 2026-10-17: 特別な乗車券（すれちがいの券面を選べる）を足して4つ。
+/// 2026-10-18 判断: 旅のトランクを足して5つ（特別な乗車券の次＝ふだんはいちばん下。トランクから開いたときは上）。
+/// 中身はサーバー（photo-gallery `api-user/src/trunk.ts`）で確かめた: Pro の型6つ（`PRO_MODELS`）・
+/// 作り直しは Pro だけ月3回で繰り越しなし（`REROLLS_PER_MONTH`）・手持ちの上限 無料 30／Pro 150
+/// （`POCKET_LIMIT_FREE`・`POCKET_LIMIT_PRO`）。**硬貨・カプセル・部品は Pro と関係ない（買えない・Pro でも増えない）
+/// ので書かない。** 「必ず」「確定」「捨てる」は言わない（トランクの説明の決まり・テストで見張る）
+///
+/// 第3段階の機能が2つ入っている（光と天気の知らせ・電波なしで使える旅）。**どちらもできている。**
+/// 2026-10-17 判断（確かめた）: 光と天気の知らせは、アプリ側＝一覧 `LightForecastView`
+/// （設定の Pro の節・前の晩のプッシュ `type: "light"` から開く）と入切 `LightAlertSettingsRows`、
+/// サーバー側＝`GET /user/light-forecast` と毎日 20:00（日本時間）の `sendLightAlerts`
+/// （photo-gallery `api-user/src/lightForecast.ts`・main に入っている）。
+/// 🔴 **本番の WeatherKit の鍵（SSM）が無いと、一覧は 503・知らせは送られない**——出す前に
+/// 本番で一覧が開けることを確かめる（無い機能を売らない・審査 2.3.1 / 3.1.2）
 struct ProBenefit: Identifiable, Equatable {
     let icon: ProIcon
     let title: String
@@ -341,12 +361,6 @@ struct ProBenefit: Identifiable, Equatable {
 
     static var all: [ProBenefit] {
         [
-            ProBenefit(icon: .overlay,
-                       title: L("作例を重ねて撮る", "Shoot over a reference"),
-                       // 2026-10-10 判断: 構図を重ねて撮る（投稿のシートの入口・作例なし）もこの特典に入るので、
-                       // 板 63 の文に最小の一言を足した（題は板のまま）
-                       body: L("名作の構図をカメラに重ねて、同じ場所から撮れる。三分割や黄金比の線も",
-                               "Overlay a classic composition on your camera and shoot from the same spot. Thirds, golden ratio and more, too")),
             ProBenefit(icon: .light,
                        title: L("光と天気の知らせ", "Light & weather alerts"),
                        body: L("行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に",
@@ -360,7 +374,59 @@ struct ProBenefit: Identifiable, Equatable {
                        title: L("Pro マークと Pro 限定の章", "Pro mark & Pro-only chapters"),
                        body: L("名前の横に Pro マーク。季節ごとに届く七宝の章と、道具を使い込んだ証の章",
                                "A Pro mark next to your name, enamel chapters every season, and chapters for using the tools")),
+            // 2026-10-17: すれちがいの「特別な乗車券」（券面を選べる・`PassTicketFaceStyle`）
+            ProBenefit(icon: .card,
+                       title: L("特別な乗車券", "Special Pass tickets"),
+                       body: L("すれちがいの乗車券を、真鍮・漆・革などの券面で。相手の手元にもその券面で届く",
+                               "Pick a brass, lacquer, leather or other design for your Pass ticket — it reaches others that way")),
+            trunk,
         ]
+    }
+
+    /// 旅のトランク（2026-10-18）。数はアプリの決まり（`TrunkModel.pro`・`TrunkState`）から読み、サーバーとずれないようにする。
+    /// 2026-10-18 判断（見直し）: 説明は3つを「・」で並べた短い形にする。幅 375 の iPhone でも2行に収め、
+    /// プランの札と主ボタンを最初の画面から押し出さない（`ProPaywallStyle.benefitBodyMaxUnits` をテストで見張る）
+    static var trunk: ProBenefit {
+        let models = TrunkModel.pro.count
+        let rerolls = trunkRerollsPerMonth
+        let pro = TrunkState.proLimit
+        let free = TrunkState.freeLimit
+        return ProBenefit(icon: .trunk,
+                          title: L("旅のトランクをもっと", "More from your Travel trunk"),
+                          body: L("特別なトランク \(models) 型・ラベルの図柄の作り直し 月 \(rerolls) 回・手持ち \(pro) 枚（無料は \(free) 枚）",
+                                  "\(models) special trunks · \(rerolls) label redesigns a month · hold \(pro) labels (\(free) free)"))
+    }
+
+    /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）。
+    /// 2026-10-18 判断（見直し）: 同じ数がトランクの作り直しの画面（`TrunkRerollView` の「毎月 3 回」）と
+    /// `TrunkText` の断り（「来月また3回」）にも直に書かれている。トランクの画面は別の担当が作業中なので、
+    /// いまは触らずテストで一致を見張る（`PaywallTrunkBenefitTests`）。**数の元を1つにするのは、トランク担当と合わせて後で行う**
+    static let trunkRerollsPerMonth = 3
+
+    /// 開いた口に合わせた並び。口に合う利点をいちばん上に、残りはふだんの順のまま（2026-10-18 判断）
+    static func ordered(for origin: PaywallOrigin) -> [ProBenefit] {
+        var list = all
+        guard let lead = origin.leadingBenefit,
+              let index = list.firstIndex(where: { $0.icon == lead }) else { return list }
+        list.insert(list.remove(at: index), at: 0)
+        return list
+    }
+}
+
+/// Pro の案内をどこから開いたか（2026-10-18 判断）。利点の並びだけに使う。
+/// 新しい口を足すときは、ここに1つ足して `leadingBenefit` を返す
+enum PaywallOrigin: Equatable {
+    /// 設定・名前の横・光の知らせなど（ふだんの並び）
+    case general
+    /// 旅のトランク（作り直す・特別なトランク・手持ちの上限）
+    case trunk
+
+    /// いちばん上に出す利点。nil ならふだんの並び
+    var leadingBenefit: ProIcon? {
+        switch self {
+        case .general: return nil
+        case .trunk: return .trunk
+        }
     }
 }
 
@@ -375,6 +441,17 @@ enum ProPaywallStyle {
     static let titleSize: Double = 28
     /// 利点の線の絵の大きさ（v2: 箱なしの 20）
     static let benefitIconSide: Double = 20
+    /// 利点の説明（13pt）の長さの上限（2026-10-18 判断）。全角 1・空白 0.3・ほかの半角 0.6 で数える（`benefitBodyUnits`）。
+    /// 幅 375 の iPhone では説明の幅が 303pt（左右 20・絵 20・間 12）＝1行に全角 23 字ほど。
+    /// 折り返しの余りを見て、2行に収まる 40 までにする
+    static let benefitBodyMaxUnits: Double = 40
+
+    /// 説明の長さの目安（全角 1・空白 0.3・ほかの半角 0.6）
+    static func benefitBodyUnits(_ text: String) -> Double {
+        text.unicodeScalars.reduce(0) { sum, c in
+            sum + (c == " " ? 0.3 : c.isASCII ? 0.6 : 1)
+        }
+    }
     /// 主ボタン: 写真のある画面なので白（CLAUDE.md の owner の好み）
     static let purchaseStyle = JPPillStyle.main(onPhoto: true)
     /// 写真が無いときの地（板: #34404d）

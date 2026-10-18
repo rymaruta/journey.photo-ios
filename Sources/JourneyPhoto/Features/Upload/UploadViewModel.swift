@@ -197,8 +197,11 @@ struct PendingPhoto: Identifiable {
     /// **候補から選んだ地名の座標（`pickedCoords`）は送る**——人が選んだ場所なので。
     /// 写真の座標は `PlaceCoordsRule` の (a)(b)(c) のときだけ（2026-10-07 判断）。
     /// `spots` は撮影スポットの索引（(c) を見る。無ければ空＝(c) は当たらない）
-    func coordsToSend(spots: [OfficialSpot]) -> Photo.Coords? {
+    func coordsToSend(spots: [OfficialSpot], attachesPhotoLocation: Bool = true) -> Photo.Coords? {
         if locationClearedByUser { return nil }
+        // 「撮影地の位置を付ける」がオフ（2026-10-18 判断・`UploadLocationPreference`）: 写真の位置は送らない。
+        // 本人が候補から選んだ場所の座標だけ（`chosenPlaceCoords`）
+        guard attachesPhotoLocation else { return chosenPlaceCoords }
         if let pickedCoords { return pickedCoords }
         if keepsPhotoCoords || PlaceCoordsRule.namesSpotNear(location, photo: prepared.coords, spots: spots) {
             return prepared.coords
@@ -211,6 +214,20 @@ struct PendingPhoto: Identifiable {
         !locationClearedByUser && pickedCoords == nil && prepared.coords != nil && !keepsPhotoCoords
     }
 
+    /// 「撮影地の位置を付ける」がオフのときに送る座標（2026-10-18 判断）。**本人が候補から選んだ場所の座標だけ。**
+    ///
+    /// - 地名の候補を選んだ: その地名の座標（サーバーで約1kmに丸め済み・写真の位置ではない）
+    /// - 撮影スポットの候補を選んだ: **スポットの座標**。選んだときは、写真がスポットの近くだと写真の座標が
+    ///   `pickedCoords` に入る（`PlaceSpotSuggestions.coordsAfterPicking`）ので、そのまま送ると写真の位置が出る
+    /// - 自動で入れた地名・手で書いた地名: 送らない（Web のオフと同じ——サーバーが地名からおおよその位置を引くのは今までどおり）
+    /// - 選んだ座標が写真の位置と同じで、どのスポットを選んだか分からない（下書きはスポットを残さない）: 送らない。
+    ///   写真の近くのスポットを選んだ回の写真の座標と見分けが付かないので、写真の位置を出さない側に倒す
+    var chosenPlaceCoords: Photo.Coords? {
+        guard let pickedCoords else { return nil }
+        if let pickedSpot { return pickedSpot.coords }
+        return pickedCoords == prepared.coords ? nil : pickedCoords
+    }
+
     /// スポットから開いた投稿で送る座標。**位置の無い写真は、スポットに紐付くあいだ
     /// スポットの座標を送る。**
     ///
@@ -221,10 +238,24 @@ struct PendingPhoto: Identifiable {
     /// 2026-10-07（`PlaceCoordsRule`）: **スポットに紐付くあいだ**（スポット名のまま・「高屋神社, 香川」と
     /// 県を足した）は、人が選んだスポットとして扱う——写真がスポットの 5km 以内なら写真の座標、
     /// 遠い・位置の無い写真はスポットの座標（`coordsForPickedSpot`）
-    func coordsToSend(spot: UploadSpotTarget?, spots: [OfficialSpot] = []) -> Photo.Coords? {
-        if let coords = coordsToSend(spots: spots) { return coords }
+    ///
+    /// 2026-10-18: 「撮影地の位置を付ける」がオフなら、写真の位置は使わない——スポットに紐付くあいだは
+    /// **スポットの座標**（写真が近くても写真の座標にしない）
+    func coordsToSend(spot: UploadSpotTarget?, spots: [OfficialSpot] = [],
+                      attachesPhotoLocation: Bool = true) -> Photo.Coords? {
+        if let coords = coordsToSend(spots: spots, attachesPhotoLocation: attachesPhotoLocation) { return coords }
         guard let spot, UploadSpotTarget.spotIdToSend(spot, for: self) != nil else { return nil }
-        return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: prepared.coords)
+        return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: attachesPhotoLocation ? prepared.coords : nil)
+    }
+
+    /// 「撮影地の位置を付ける」をオフにしたときに、写真の位置から自動で入れた撮影地を外す（2026-10-18 判断）。
+    /// **自動で入れた地名を一字も変えていないときだけ**（本人が直した・候補から選んだ・スポットの名前は残す）。
+    /// 外したのは本人の「空にした」操作ではないので、空にした印は立てない（オンに戻すと引き直せる）
+    mutating func dropAutomaticPlace() {
+        let now = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let auto = photoPlaceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !now.isEmpty, now == auto, pickedCoords == nil, pickedSpot == nil else { return }
+        restorePlace(location: "", photoPlaceName: nil, clearedByUser: false)
     }
 }
 
@@ -410,6 +441,82 @@ final class UploadViewModel: ObservableObject {
     @Published var shareToThreads = UserDefaults.standard.bool(forKey: ThreadsShare.defaultsKey) {
         didSet { UserDefaults.standard.set(shareToThreads, forKey: ThreadsShare.defaultsKey) }
     }
+    /// 「撮影地の位置を付ける」（2026-10-18 判断・`UploadLocationPreference`）。投稿の全部の写真に効く（Web と同じ1つ）。
+    ///
+    /// - **オン**（既定・今までと同じ）: 写真の位置から撮影地を引いて入れ、写真の座標（約1kmに丸めた値）を送る
+    /// - **オフ**: 写真の座標を送らない。撮影地も写真の位置から引かない——サーバーに座標を問い合わせない
+    ///   （問い合わせる座標は端末で約1kmに丸めてあるが、オフは「写真の位置を使わない」なので問い合わせ自体をしない。
+    ///   引いた地名は公開されるので、端末の中で引いて入れるのもしない。Web のオフと同じ）。
+    ///   本人が候補から選んだ場所の座標だけ送る（`PendingPhoto.chosenPlaceCoords`）
+    ///
+    /// 画面から変えるのは `setAttachesLocation`（人ごとに覚えて、並んでいる写真にも当てる）
+    @Published private(set) var attachesLocation = UploadLocationPreference.defaultValue
+    /// 選んだ値の置き場（試験は差し替える）
+    var locationPreference = UploadLocationPreference()
+    /// 選んだ値の持ち主（ログインしている人）。画面が `auth.userId` を入れる（`useLocationOwner`）
+    private(set) var locationOwner: String?
+    /// この画面で持ち主が一度でも決まったか（最初に決まったときだけ、待たせていた地名を引き始める）
+    private var hadLocationOwner = false
+    /// 持ち主を決めて、その人の値を読む。**人が替わったら前の人の値を使わない**（覚えが無ければオン）。
+    /// 同じ人のままなら何もしない（画面は開くたび・戻るたびに呼ぶ）。
+    ///
+    /// 🔴 **ログアウト・期限切れ（`userId` が nil）では値を替えない**（2026-10-18 の見直し）。以前は既定のオンに
+    /// 戻し、オフにしていた人の並べた写真の座標で地名を問い合わせていた。nil の間は書かない（画面の中だけの値）。
+    /// **持ち主が替わって値を当てても、地名は問い合わせない**——問い合わせるのは、本人が切り替えを押したときと
+    /// 写真を足したときだけ（`setAttachesLocation`・`append`）。オフに替わったときは問い合わせを止め、自動の地名を外す。
+    ///
+    /// 🔴 **持ち主が決まるまで（ログインの確かめ中で nil）は地名を引かない**（`startPlaceLookup`・2026-10-18 の再見直し）。
+    /// その人の値が分からないうちに、オフの人の写真の座標を送らないため。**この画面で最初に持ち主が決まったときだけ**、
+    /// その人がオンなら待たせていた写真を引き始める（人が替わったときは引かない——上の決まり）
+    func useLocationOwner(_ userId: String?) {
+        let id = (userId?.isEmpty ?? true) ? nil : userId
+        guard id != locationOwner else { return }
+        locationOwner = id
+        guard let id else { return }
+        let first = !hadLocationOwner
+        hadLocationOwner = true
+        applyAttachesLocation(locationPreference.attachesLocation(userId: id), looksUpPlaces: false)
+        if first, attachesLocation {
+            for item in items { startPlaceLookup(for: item) }
+        }
+    }
+
+    /// 画面の切り替えから。持ち主の値として覚え、並んでいる写真にも当てる
+    func setAttachesLocation(_ attaches: Bool) {
+        locationPreference.set(attaches, userId: locationOwner)
+        applyAttachesLocation(attaches, looksUpPlaces: true)
+    }
+
+    /// 値を替えて、並んでいる写真に当てる。
+    /// - オフにした: 引いている最中の地名の問い合わせを止め、自動で入れた地名を外す（`dropAutomaticPlace`）
+    /// - オンにした: `looksUpPlaces` のとき（本人が押した）だけ、撮影地が空の写真の地名を引き直す（`append` と同じ条件）
+    private func applyAttachesLocation(_ attaches: Bool, looksUpPlaces: Bool) {
+        let changed = attaches != attachesLocation
+        attachesLocation = attaches
+        guard changed else { return }
+        if attaches {
+            guard looksUpPlaces else { return }
+            for item in items { startPlaceLookup(for: item) }
+        } else {
+            placeTasks.values.forEach { $0.cancel() }
+            placeTasks = [:]
+            for index in items.indices { items[index].dropAutomaticPlace() }
+        }
+    }
+
+    /// 写真の位置から撮影地を引き始める（**待たない**——待つと、引き終わるまで投稿ボタンが押せない）。
+    /// 「撮影地の位置を付ける」がオフ・持ち主がまだ決まっていない・位置の無い写真・本人が空にした・もう入っている・
+    /// 引いている最中なら引かない
+    private func startPlaceLookup(for item: PendingPhoto) {
+        guard attachesLocation, locationOwner != nil, let coords = item.prepared.coords, placeTasks[item.id] == nil,
+              !item.locationClearedByUser,
+              item.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let id = item.id
+        placeTasks[id] = Task { [weak self] in
+            await self?.fillPlaceName(for: id, lat: coords.lat, lng: coords.lng)
+        }
+    }
+
     /// 共有の画面に渡すもの。**全部上がった回だけ**、`didPostAll` より先に立てる
     /// （画面は立っていれば閉じる代わりに共有の画面を出し、それを閉じてから閉じる）
     @Published var threadsBundle: ThreadsShare.Bundle?
@@ -431,7 +538,8 @@ final class UploadViewModel: ObservableObject {
     private let photoService: PhotoService
     private let discovery: DiscoveryService
     /// 引いている最中の地名の問い合わせ。写真を選び直したら捨てる
-    private var placeTasks: [UUID: Task<Void, Never>] = [:]
+    /// 試験が「止めたか」を見るので読むだけ外に出す
+    private(set) var placeTasks: [UUID: Task<Void, Never>] = [:]
     /// 途中でやめた。**残りを上げ始めない**
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
@@ -837,6 +945,9 @@ final class UploadViewModel: ObservableObject {
             photo.restorePlace(location: saved.location, photoPlaceName: saved.photoPlaceName,
                                clearedByUser: saved.locationClearedByUser)
             photo.pickedCoords = saved.pickedCoords
+            // 「撮影地の位置を付ける」がオフなら、写真の位置から自動で入れた地名は戻さない（2026-10-18・
+            // オンのときに保存した下書き。オフにしたときと同じ扱い）
+            if !attachesLocation { photo.dropAutomaticPlace() }
             if let key = saved.key {
                 switch slot {
                 case .saved: draftKeys[photo.id] = key
@@ -957,7 +1068,8 @@ final class UploadViewModel: ObservableObject {
     /// 遅れて届いた地名が**打っている最中に割り込む**のを止める。
     func fillPlaceName(for photoId: UUID, lat: Double, lng: Double) async {
         // 引く前に一度（打ってあるなら、そもそも引かない）
-        guard let start = items.firstIndex(where: { $0.id == photoId }),
+        // 「撮影地の位置を付ける」がオフなら問い合わせない（2026-10-18・`attachesLocation`）
+        guard attachesLocation, let start = items.firstIndex(where: { $0.id == photoId }),
               PlaceFill.value(current: items[start].location, found: "-") != nil else { return }
         let found = await withTaskGroup(of: String?.self) { group -> String? in
             group.addTask { [discovery] in try? await discovery.placeName(lat: lat, lng: lng) }
@@ -969,7 +1081,8 @@ final class UploadViewModel: ObservableObject {
             group.cancelAll()
             return first
         }
-        guard !Task.isCancelled else { return }
+        // 待っている間にオフにしたら入れない（オフにした時点で止めているが、届いた答えも捨てる）
+        guard !Task.isCancelled, attachesLocation else { return }
         // **待っている間に打ち始めていたら、入れない。** 書きかけを奪わない。
         // 並びが変わっていることもあるので、番号ではなく id で引き直す
         guard let index = items.firstIndex(where: { $0.id == photoId }),
@@ -1345,12 +1458,8 @@ final class UploadViewModel: ObservableObject {
         }
         items.append(photo)
         // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
-        // **待たない**——待つと、引き終わるまで投稿ボタンが押せない
-        guard let coords = prepared.coords else { return }
-        let id = photo.id
-        placeTasks[id] = Task { [weak self] in
-            await self?.fillPlaceName(for: id, lat: coords.lat, lng: coords.lng)
-        }
+        // 「撮影地の位置を付ける」がオフなら引かない（2026-10-18・`startPlaceLookup`）
+        startPlaceLookup(for: photo)
     }
 
     /// 上げるのをやめる。**いま上げている1枚は最後まで通す**
@@ -1395,6 +1504,12 @@ final class UploadViewModel: ObservableObject {
         var shareSkipped = 0
         /// 元の写真が付かなかった（`UploadOutcome.inspiredDropped`）。投稿は成功なので失敗に数えない
         var inspiredDropped = false
+        /// 旅のトランクのラベル（2026-10-17）。届いた順と、手持ちがいっぱいで届かなかったか
+        var dealtLabels: [(label: TrunkLabel, title: String)] = []
+        /// 届かなかった理由の一言（手持ちがいっぱい・トランクの容量）。ほかの理由は黙る
+        var labelNotice: TrunkArrivals.Notice?
+        /// 届いた硬貨の数（公開の投稿1件で1枚・2026-10-17 次の版）
+        var dealtCoins = 0
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -1407,7 +1522,7 @@ final class UploadViewModel: ObservableObject {
         // 撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule` の (c)）を見る索引。要る写真があって
         // まだ無いときだけ、少しだけ待って読む（控えがあればすぐ返る）
         spotIndexForSubmit = await PlaceCoordsRule.index(current: spotIndexForSubmit,
-                                                         needed: items.contains(where: \.needsSpotIndex),
+                                                         needed: attachesLocation && items.contains(where: \.needsSpotIndex),
                                                          fetch: fetchSpotIndex)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
@@ -1424,6 +1539,9 @@ final class UploadViewModel: ObservableObject {
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
                 if outcome.inspiredDropped { inspiredDropped = true }
+                if let label = outcome.label { dealtLabels.append((label, outcome.title)) }
+                if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
+                dealtCoins += outcome.coin
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -1449,6 +1567,12 @@ final class UploadViewModel: ObservableObject {
                                 ?? L("投稿できませんでした", "Couldn't post"))
             }
         }
+
+        // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す（`RootView` が待つ）。
+        // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
+        // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
+        TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
+                                     notice: labelNotice, coins: dealtCoins)
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
@@ -1539,7 +1663,9 @@ final class UploadViewModel: ObservableObject {
         draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
-        draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit)
+        // 「撮影地の位置を付ける」がオフなら写真の位置は送らない（2026-10-18・`attachesLocation`）
+        draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit,
+                                         attachesPhotoLocation: attachesLocation)
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
         // **読み込み中の地の色。** Web は前から送っていて、アプリだけ
@@ -1562,6 +1688,13 @@ final class UploadViewModel: ObservableObject {
         var shareSkipped = false
         /// 元の写真を送ったのに付かなかった（非公開・削除・ブロック。投稿は成功・`InspiredBy.wasDropped`）
         var inspiredDropped = false
+        /// 旅のトランクのラベル（保存の応答の `label`・2026-10-17）と、配られなかった理由
+        var label: TrunkLabel?
+        var labelSkipped: TrunkLabelSkip?
+        /// 配られた硬貨（0 か 1・2026-10-17 次の版）
+        var coin = 0
+        /// 送った題（届いた画面の「「…」を投稿したお礼です」）
+        var title = ""
     }
 
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
@@ -1604,8 +1737,13 @@ final class UploadViewModel: ObservableObject {
         draft.dominantColor = placedColor
         let photo: Photo?
         var outcome = UploadOutcome()
+        outcome.title = draft.title
         do {
-            photo = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
+            let saved = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
+            photo = saved.photo
+            outcome.label = saved.label
+            outcome.labelSkipped = saved.labelSkipped
+            outcome.coin = saved.coin
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }

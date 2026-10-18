@@ -2,7 +2,63 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.14",
+      "date": "2026-10-18",
+      "items": [
+        {
+          "symbol": "ticket",
+          "title": { "ja": "わたしの乗車券", "en": "My ticket" },
+          "detail": { "ja": "旅先ですれちがった人の手元に、マルス券の形の一枚が届きます。自分の券も指で回して裏まで見られます。設定の「すれちがい」から。", "en": "People you pass on your travels receive your ticket, styled like a classic railway ticket. Turn your own with a finger to see the back. Find it in Settings → Pass." }
+        },
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "Pro の特別な券面", "en": "Special ticket designs with Pro" },
+          "detail": { "ja": "真鍮の金属板・大圏航路・箔押しの硬券・漆と蒔絵・型押しの革から選べます。", "en": "Choose from brass plate, great circle, foil-stamped, urushi lacquer and embossed leather." }
+        },
+        {
+          "symbol": "camera.viewfinder",
+          "title": { "ja": "重ねて撮るが無料に", "en": "Overlay shooting is now free" },
+          "detail": { "ja": "作例や構図の線をカメラに重ねて撮る機能を、誰でも無料で使えます。", "en": "Anyone can now overlay a sample photo or composition lines on the camera, free." },
+          "destination": "map"
+        },
+        {
+          "symbol": "suitcase",
+          "title": { "ja": "旅のトランク", "en": "Travel trunk" },
+          "detail": { "ja": "公開の投稿1件ごとに、旅のラベルと硬貨が届きます（どちらも1日3枚まで）。硬貨1枚でカプセルの機械を回すと、トランクの部品が出ます（持っている部品ならかけらに）。入口はマイページの上と設定です。", "en": "Each public post brings a travel label and a coin (up to three a day). Spend a coin at the capsule machine to get a trunk part (a fragment if you already have it). Find it at the top of My Page and in Settings." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "photo.on.rectangle",
+          "title": { "ja": "構図に作例写真", "en": "Example photos for compositions" },
+          "detail": { "ja": "構図を選ぶシートと構図一覧で、各構図の右に作例写真が出ます。どんな場面で使う構図か、撮る前に分かります。", "en": "The composition sheet and the composition guide now show an example photo beside each composition, so you know when to use it before you shoot." }
+        },
+        {
+          "symbol": "rotate.right",
+          "title": { "ja": "横長の作例は横向きに重ねる", "en": "Landscape samples overlay sideways" },
+          "detail": { "ja": "構図を重ねて撮るとき、横長の作例ははじめから横向きに回して重ねます。縦の画面で上下が空きません。", "en": "When you shoot over a sample, landscape samples are rotated sideways from the start, so no space is left above and below on a portrait screen." },
+          "destination": "map"
+        },
+        {
+          "symbol": "location",
+          "title": { "ja": "撮影地の位置を付けるか選べる", "en": "Choose whether to attach your location" },
+          "detail": { "ja": "投稿とストーリーに「撮影地の位置を付ける」の切り替えができました。付けるときは約1kmに丸めて保存し、オフにすると写真の位置情報は送りません。", "en": "Posts and stories now have an \"Attach location\" switch. When on, the location is rounded to about 1 km; when off, the photo's location isn't sent." }
+        },
+        {
+          "symbol": "calendar",
+          "title": { "ja": "季節の撮影スポットが日替わりに", "en": "Seasonal spots change daily" },
+          "detail": { "ja": "ホームの今の季節の撮影スポットが、毎日違う組み合わせで並びます。", "en": "The seasonal photo spots on Home now show a different selection every day." },
+          "destination": "home"
+        },
+        {
+          "symbol": "clock.arrow.circlepath",
+          "title": { "ja": "お知らせの履歴", "en": "Update history" },
+          "detail": { "ja": "設定の「新しくなったこと」から、前の版のお知らせも日付つきで見られます。", "en": "Open \"What's New\" in Settings to see earlier updates with their dates." }
+        }
+      ]
+    },
+    {
       "version": "1.0.82",
+      "date": "2026-10-10",
       "items": [
         {
           "symbol": "sparkles",
@@ -30,6 +86,7 @@
     },
     {
       "version": "1.0.73",
+      "date": "2026-10-09",
       "items": [
         {
           "symbol": "seal",
@@ -57,6 +114,7 @@
     },
     {
       "version": "1.0.67",
+      "date": "2026-10-04",
       "items": [
         {
           "symbol": "photo.on.rectangle.angled",

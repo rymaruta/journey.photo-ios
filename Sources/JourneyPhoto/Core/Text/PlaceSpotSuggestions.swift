@@ -66,10 +66,30 @@ enum PlaceSpotSuggestions {
     }
 
     /// 近い順（同じ距離は slug 順・毎回同じ並び）
-    private static func byDistance(_ spots: [OfficialSpot], from here: Photo.Coords) -> [(spot: OfficialSpot, km: Double)] {
-        spots
-            .compactMap { spot in spot.coords.map { (spot, TravelDistance.kilometers(from: here, to: $0)) } }
-            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.slug < $1.0.slug }
-            .map { (spot: $0.0, km: $0.1) }
+    ///
+    /// 2026-10-18: 1つの式に `compactMap`・`sorted`・`map` と名前の無い組を連ねていたら、型検査に 125 秒かかった
+    /// （Linux の模型で計測・Mac では「型検査が時間内に終わらない」で落ちる候補）。段に分けて型を書いてある
+    private static func byDistance(_ spots: [OfficialSpot], from here: Photo.Coords) -> [SpotDistance] {
+        var measured: [SpotDistance] = []
+        measured.reserveCapacity(spots.count)
+        for spot in spots {
+            guard let coords = spot.coords else { continue }
+            let km: Double = TravelDistance.kilometers(from: here, to: coords)
+            measured.append(SpotDistance(spot: spot, km: km))
+        }
+        measured.sort(by: SpotDistance.isCloser)
+        return measured
+    }
+
+    /// 場所とそこまでの距離（km）
+    private struct SpotDistance {
+        let spot: OfficialSpot
+        let km: Double
+
+        /// 近い方が先。同じ距離は slug 順
+        static func isCloser(_ a: SpotDistance, _ b: SpotDistance) -> Bool {
+            if a.km != b.km { return a.km < b.km }
+            return a.spot.slug < b.spot.slug
+        }
     }
 }

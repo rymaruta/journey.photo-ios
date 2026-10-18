@@ -40,12 +40,32 @@ if not manifest.exists():
     print("::warning::manifest.json がありません")
     raise SystemExit(0)
 
+# 🔴 **置くのは自分で撮った絵（.png/.jpg）と注記（.txt）だけ**（2026-10-17）。
+# Xcode は UI テストが落ちると画面の録画（.mp4）と UI の木・合成した操作（拡張子なし）を
+# 自分で添付する。run 465 はその録画（162MB）をこの枝に押そうとして、GitHub の1ファイル
+# 100MB の上限で**押すこと自体が断られ、絵が1枚も置けなかった**。録画は「落ちたときに
+# 読むもの」の成果物（Test.xcresult の中・7日）に元から入っているので、ここでは足さない
+# （成果物の容量も増やさない）
+KEEP = (".png", ".jpg", ".jpeg", ".txt")
+skipped = []
 for test in json.loads(manifest.read_text()):
     for a in test.get("attachments", []):
-        name = a.get("suggestedHumanReadableName") or a.get("exportedFileName")
-        f = src / a["exportedFileName"]
-        if f.exists():
-            shutil.copy(f, out / f"{name}.png")
+        exported = a["exportedFileName"]
+        name = a.get("suggestedHumanReadableName") or exported
+        f = src / exported
+        if not f.exists():
+            continue
+        if not exported.lower().endswith(KEEP):
+            if exported.lower().endswith((".mp4", ".mov")):
+                skipped.append(name)
+            continue
+        # **元の拡張子のまま写す**（2026-10-17）。前は何でも `{name}.png` にしていて、注記（.txt）が
+        # 偽の .png として枝に並んでいた。名前に拡張子が付いて来る（`…_0_<UUID>.png`）ので重ねない
+        ext = pathlib.Path(exported).suffix.lower()
+        base = name[: -len(ext)] if name.lower().endswith(ext) else name
+        shutil.copy(f, out / f"{base}{ext}")
+if skipped:
+    print(f"録画 {len(skipped)} 本はこの枝に置きません（成果物 build-logs の Test.xcresult の中にあります）: " + " / ".join(skipped[:5]))
 PY
 
 count=$(ls "$OUT"/*.png 2>/dev/null | wc -l | tr -d ' ')
@@ -124,8 +144,15 @@ done
 # （手元で読める）。ここが見るのは**手はあるのに絵が出なかった**回。
 #
 # **落とさない**（この台本の約束）。出すのは警告と、まとめへの1行。
+# **絞った回（`screens`・NARROWED=true）は数えない**（2026-10-17）。撮らない画面があって当たり前で、
+# 名指しが並ぶと本当に消えた回と見分けられない。全部の回だけ数える
 python3 - "$OUT" <<'SHOTS'
-import pathlib, sys, unicodedata
+import os, pathlib, sys, unicodedata
+
+if os.environ.get("NARROWED") == "true":
+    pathlib.Path("/tmp/shots-report.md").write_text(
+        "絞った回（screens）なので、撮れなかった画面は数えていない。この枝には絞った分の絵だけがある\n")
+    raise SystemExit(0)
 
 # 🔴 **macOS のファイル名は NFD で返る。** 「マップ」の「プ」は
 # 「フ」＋濁点の2文字になっていて、台本に書いた NFC の「プ」とは
