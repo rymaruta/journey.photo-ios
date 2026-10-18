@@ -163,19 +163,28 @@ final class TrunkEntryTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// マイページの上（数の並びと旅の実績のすぐ下・タブより上）に札。設定にも行。どちらも同じ出し分け
+    /// マイページの上（数の並びと旅の実績のすぐ下・タブより上）に札。設定にも行。どちらも同じ出し分け。
+    /// **札は1つの部品（`TrunkProfileChip`）に閉じ、マイページは出し分けと置く1行だけ**（あとで絵に差し替える）
     func testEntriesAreWired() async throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        let header = try XCTUnwrap(page.range(of: "                        travelRecord\n                        trunkEntryCard"),
+        let header = try XCTUnwrap(page.range(of: "                        travelRecord\n"
+            + "                        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {\n"
+            + "                            TrunkProfileChip(ownerName: model.profile?.name)\n"),
                                    "札が見出しの数の並びのすぐ下に無い")
         let tabs = try XCTUnwrap(page.range(of: "tabPicker\n"))
         XCTAssertLessThan(header.lowerBound, tabs.lowerBound, "札がタブより下にある")
-        XCTAssertTrue(page.contains(#".accessibilityIdentifier("mypage.trunk")"#))
-        XCTAssertTrue(page.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))
-        XCTAssertTrue(page.contains("trunkEntry.markStale()"), "トランクから戻っても数を読み直さない")
-        XCTAssertTrue(page.contains("await refreshTrunkEntry(force: true)"), "前面に戻ったときに数を読み直さない")
+        // マイページは札の中身（読み込み・状態・見た目）を持たない
+        XCTAssertFalse(page.contains("TrunkEntryStore.shared.summary"))
+        XCTAssertFalse(page.contains("entry.refresh("), "マイページが札の数を読んでいる（部品の側に置く）")
+        XCTAssertFalse(page.contains("mypage.trunk"))
+        let chip = try source("Features/Profile/TrunkProfileChip.swift")
+        XCTAssertTrue(chip.contains(#".accessibilityIdentifier("mypage.trunk")"#))
+        XCTAssertTrue(chip.contains(".onDisappear { entry.markStale() }"), "トランクから戻っても数を読み直さない")
+        XCTAssertTrue(chip.contains("if phase == .active { Task { await refresh(force: true) } }"), "前面に戻ったときに数を読み直さない")
+        XCTAssertTrue(chip.contains(".onChange(of: tabRouter.postSheetsClosed)"), "投稿を閉じても数を読み直さない")
         // 真鍮は点だけ（黒地の札の上）。硬貨の数は白
-        XCTAssertTrue(page.contains(".fill(WebTheme.accent)\n                                .frame(width: 8, height: 8)"))
+        XCTAssertTrue(chip.contains(".fill(WebTheme.accent)\n                        .frame(width: 8, height: 8)"))
+        XCTAssertTrue(chip.contains("Text(TrunkEntryText.coins(summary.coins))\n                        .font(JPFont.mono(15, relativeTo: .subheadline))\n                        .foregroundStyle(WebTheme.text)"))
         let settings = try source("Features/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("passSection\n                    trunkSection\n                    privacySection"))
         XCTAssertTrue(settings.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))

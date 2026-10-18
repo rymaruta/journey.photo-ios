@@ -53,8 +53,6 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
-    /// 旅のトランクの入口の札の数（硬貨・貼っていないラベル・2026-10-18）
-    @ObservedObject private var trunkEntry = TrunkEntryStore.shared
     @Environment(\.scenePhase) private var scenePhase
     /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
@@ -110,23 +108,12 @@ struct MyPageView: View {
         }
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
-        .task(id: auth.userId) {
-            await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
-            // 入口の札の数は、口が在ると分かってから読む（読むかは `TrunkEntryRule.needsRead`）
-            await refreshTrunkEntry()
-        }
+        .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
         // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                Task {
-                    await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk, force: true)
-                    await refreshTrunkEntry(force: true)
-                }
+                Task { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk, force: true) }
             }
-        }
-        // 口が在ると分かった（初めて読めた）ら、札の数も読む
-        .onChange(of: trunkAvailability.isAvailable) { _, available in
-            if available { Task { await refreshTrunkEntry() } }
         }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
@@ -159,9 +146,6 @@ struct MyPageView: View {
             // 上げた写真は読み直しを待たずに先に並べる（索引が遅れて返らないことがある・`PostedPhotos`）
             model.showPosted(tabRouter.lastPosted, for: auth.userId)
             Task { await model.load(for: auth.userId) }
-            // 公開の投稿で硬貨とラベルが届く。札の数を読み直す
-            trunkEntry.markStale()
-            Task { await refreshTrunkEntry() }
         }
         .onAppear {
             switch front.appear() {
@@ -175,8 +159,6 @@ struct MyPageView: View {
                     try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
                     guard !Task.isCancelled, front.confirm() else { return }
                     landOnScreen(reload: true)
-                    // トランクの画面から戻った回だけ読み直す（`markStale`。ほかの画面から戻っても読まない）
-                    Task { await refreshTrunkEntry() }
                 }
             }
         }
@@ -259,11 +241,6 @@ struct MyPageView: View {
 
     private func refreshSavedIds() {
         savedIds = savedPhotos.ids
-    }
-
-    private func refreshTrunkEntry(force: Bool = false) async {
-        await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
-                                 service: environment.trunk, force: force)
     }
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
@@ -349,7 +326,10 @@ struct MyPageView: View {
                     if model.profile != nil {
                         stats
                         travelRecord
-                        trunkEntryCard
+                        // 旅のトランクの入口（2026-10-18）。読み込み・状態・見た目は部品の側（`TrunkProfileChip`）
+                        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
+                            TrunkProfileChip(ownerName: model.profile?.name)
+                        }
                     }
                 }
                 if let profile = model.profile {
@@ -982,68 +962,6 @@ struct MyPageView: View {
         }
     }
 
-    /// 旅のトランクの入口の札（2026-10-18 owner「入口がわかりずらい」）。見出しと数の並びのすぐ下に、
-    /// タブを切り替えなくても見える所に置く。
-    ///
-    /// - 出すのは口が読めたことのある人だけ（`TrunkEntryRule.shows`・旅の記録の行と同じ条件）
-    /// - 右に硬貨の枚数（**白**。数は合図ではない・件数バッジではない）と、手持ちに貼っていないラベルが
-    ///   あるときの**真鍮の点**（未読の点と同じ 8pt・黒地の札の上）。数を読めていない間は名前と矢印だけ
-    /// - 札は設定・旅の記録の行と同じ地（`WebTheme.card`・白 8% の縁・角 14）。高さは 54（押せる 44 以上）
-    @ViewBuilder
-    private var trunkEntryCard: some View {
-        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
-            NavigationLink {
-                TrunkView(ownerName: model.profile?.name)
-                    // 戻ったら数を読み直す（画面の中で硬貨を使う・ラベルを貼る）
-                    .onDisappear { trunkEntry.markStale() }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "suitcase")
-                        .font(.system(size: 17))
-                        .foregroundStyle(WebTheme.muted2)
-                        .frame(width: 24)
-                        .accessibilityHidden(true)
-                    Text(TrunkEntryText.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let summary = trunkEntry.summary {
-                        HStack(spacing: 6) {
-                            TrunkCoinMark(size: 16)
-                            Text(TrunkEntryText.coins(summary.coins))
-                                .font(JPFont.mono(15, relativeTo: .subheadline))
-                                .foregroundStyle(WebTheme.text)
-                                .lineLimit(1)
-                        }
-                        if summary.hasUnstuck {
-                            Circle()
-                                .fill(WebTheme.accent)
-                                .frame(width: 8, height: 8)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.35))
-                        .accessibilityHidden(true)
-                }
-                .padding(.horizontal, 14)
-                .frame(minHeight: 54)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
-            .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(TrunkEntryText.title)
-            .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("mypage.trunk")
-            .padding(.horizontal, ProfileV2.gutter)
-        }
-    }
-
     /// 旅の記録の下の、共同アルバムと旅行プランの入口（2026-10-07）。
     ///
     /// **入口がメニューと設定の奥にしか無かった。** 板 05c に寄せたときにマイページの
@@ -1054,7 +972,7 @@ struct MyPageView: View {
         JPCard {
             // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく。
             // **口が読めたことのある人にだけ出す**（サーバーが出ていない間は隠す・`TrunkAvailability`）
-            // 2026-10-18 判断: 入口はマイページの上の札（`trunkEntryCard`）と設定にも出したが、**この行は残す**。
+            // 2026-10-18 判断: 入口はマイページの上の札（`TrunkProfileChip`）と設定にも出したが、**この行は残す**。
             // 旅の道具（アルバム・旅行プラン・すれちがい帳）と同じ並びで探す人がいる。画面写真の試験の道もここ
             if trunkAvailability.isAvailable {
                 NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
@@ -1064,7 +982,7 @@ struct MyPageView: View {
                 }
                 .buttonStyle(JPRowButtonStyle())
                 // 戻ったら上の札の数を読み直す（画面の中で硬貨を使う・ラベルを貼る）
-                .simultaneousGesture(TapGesture().onEnded { trunkEntry.markStale() })
+                .simultaneousGesture(TapGesture().onEnded { TrunkEntryStore.shared.markStale() })
                 .accessibilityIdentifier("trips.trunk")
                 JPCardDivider()
             }
