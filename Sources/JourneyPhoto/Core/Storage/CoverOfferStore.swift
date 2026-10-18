@@ -87,7 +87,9 @@ final class CoverOfferStore: ObservableObject {
     /// 初めての投稿の差し出しを決め終えた。出すなら中身を渡す（出さない回は nil）。
     /// **確かめた時点で「初めて」の印を立てる**——2枚目からは初めてではないので、出さなかった回も聞き直さない
     func finishFirstPost(userId: String?, offer: Offer?, checked: Bool) {
-        defer { isDeciding = false }
+        // 下ろすのは同じ人の決め終わりだけ（前の人の決め終わりで今の人の「決めている途中」を下ろさない。
+        // 人が替わったときは `noteUser` が下ろしてある）
+        defer { if userId == owner { isDeciding = false } }
         guard let userId else { return }
         if checked { defaults.set(true, forKey: Self.firstKey(userId)) }
         // 決める間に人が替わった回は、いまの人に出さない

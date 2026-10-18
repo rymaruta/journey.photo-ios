@@ -55,9 +55,15 @@ enum ProfileImageFromPhoto {
         request.timeoutInterval = 15
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return nil }
-        if (200..<300).contains(http.statusCode) { return true }
-        // 無いキーは 403（一覧の権限を持たない配り方）か 404
-        if http.statusCode == 403 || http.statusCode == 404 { return false }
+        // 無いキーは 404（CDN が S3 の 403 を 404 のページに振り替える）。403 などそれ以外は「分からない」——
+        // 額縁や「硬貨 3 枚」の約束を、確かめられない答えで決めない（Web の `coverIsMissing` と同じ扱い・2026-10-18 見直し）
+        return existence(status: http.statusCode)
+    }
+
+    /// HEAD の答えの読み方: 2xx は在る・404 は無い・ほかは分からない（nil）
+    static func existence(status: Int) -> Bool? {
+        if (200..<300).contains(status) { return true }
+        if status == 404 { return false }
         return nil
     }
 

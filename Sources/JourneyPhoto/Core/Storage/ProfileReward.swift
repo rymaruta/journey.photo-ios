@@ -52,19 +52,31 @@ final class ProfileReward: ObservableObject {
     private var triedThisLaunch: Set<String> = []
     /// 頼み直すまでの待ち（試験は差し替える）
     private let retryWait: () async -> Void
+    /// 今の時刻（試験は差し替える）
+    private let now: () -> Date
 
     /// CDN が 404 を覚える約10秒より少し長く
     nonisolated static let retryDelay: TimeInterval = 12
 
     init(defaults: UserDefaults = .standard, center: NotificationCenter = .default,
-         retryWait: @escaping () async -> Void = { try? await Task.sleep(nanoseconds: UInt64(ProfileReward.retryDelay * 1_000_000_000)) }) {
+         retryWait: @escaping () async -> Void = { try? await Task.sleep(nanoseconds: UInt64(ProfileReward.retryDelay * 1_000_000_000)) },
+         now: @escaping () -> Date = Date.init) {
         self.defaults = defaults
         self.center = center
         self.retryWait = retryWait
+        self.now = now
     }
 
     nonisolated static func existingKey(_ userId: String) -> String { "profile.reward.existing.\(userId)" }
     nonisolated static func pendingKey(_ userId: String) -> String { "profile.reward.pending.\(userId)" }
+    /// 起動のときに最後に確かめた日（端末の日付・`yyyy-MM-dd`）
+    nonisolated static func checkedDayKey(_ userId: String) -> String { "profile.reward.checkedDay.\(userId)" }
+
+    /// 端末の日付（`yyyy-MM-dd`）
+    nonisolated static func day(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     var hasPending: Bool { pending != nil }
 
@@ -84,6 +96,8 @@ final class ProfileReward: ObservableObject {
             // 置いた直後で CDN がまだ「無い」と答えた: 少しおいて1回だけ頼み直す
             if result.added == 0, result.rewarded == false {
                 await retryWait()
+                // 待つ間に人が替わった回は頼み直さない（前の人の口を今の人の鍵で叩かない）
+                guard owner == userId else { break }
                 let again = try? await call(kind)
                 if let again { result = again }
             }
@@ -96,10 +110,15 @@ final class ProfileReward: ObservableObject {
         return deliver(kinds: got, added: added, coins: coins, userId: userId, existing: false)
     }
 
-    /// 起動のときに呼んでよいか（入っている・トランクが使える・その人でまだ答えをもらっていない・この起動でまだ）
+    /// 起動のときに呼んでよいか（入っている・トランクが使える・その人でまだ答えをもらっていない・この起動でまだ・
+    /// **その人で今日まだ確かめていない**）。
+    ///
+    /// 2026-10-18 見直し: まだ設定していない人は `rewarded` が true にならないので、起動のたびに2本呼ぶと
+    /// （Lambda 2・強い読み6・CDN の HEAD 2）費用が増える。確かめ直しは uid ごとに1日1回まで
     func shouldClaimExisting(userId: String?, available: Bool) -> Bool {
         guard let userId, !userId.isEmpty, available else { return false }
         return !defaults.bool(forKey: Self.existingKey(userId)) && !triedThisLaunch.contains(userId)
+            && defaults.string(forKey: Self.checkedDayKey(userId)) != Self.day(now())
     }
 
     /// 起動のとき（すでに設定済みの人に1回）。**2つとも答えをもらえたら**以後呼ばない印を残す
@@ -113,6 +132,7 @@ final class ProfileReward: ObservableObject {
         var added = 0
         var coins: Int?
         var settled = 0
+        var answered = 0
         for kind in Kind.allCases {
             let result: TrunkWelcomeResult
             do {
@@ -123,6 +143,7 @@ final class ProfileReward: ObservableObject {
             } catch {
                 continue
             }
+            answered += 1
             if result.rewarded == true { settled += 1 }
             coins = result.coins
             if result.added > 0 {
@@ -133,6 +154,8 @@ final class ProfileReward: ObservableObject {
         // 2つともお礼の印が立った（rewarded）ときだけ以後呼ばない。まだ設定していない・読めなかった種類があれば、
         // 次に開いたときに確かめ直す（もらった方はサーバーに印があるので二度は来ない）
         if settled == Kind.allCases.count { defaults.set(true, forKey: Self.existingKey(userId)) }
+        // 2つとも答えをもらえた日を残す（今日はもう確かめ直さない）。読めなかった（圏外・古いサーバー）回は残さない
+        if answered == Kind.allCases.count { defaults.set(Self.day(now()), forKey: Self.checkedDayKey(userId)) }
         return deliver(kinds: got, added: added, coins: coins, userId: userId, existing: true)
     }
 
@@ -213,5 +236,6 @@ final class ProfileReward: ObservableObject {
     nonisolated static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: existingKey(userId))
         defaults.removeObject(forKey: pendingKey(userId))
+        defaults.removeObject(forKey: checkedDayKey(userId))
     }
 }

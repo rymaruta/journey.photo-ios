@@ -150,6 +150,19 @@ final class ProfileCoverPickTests: XCTestCase {
         XCTAssertTrue(PostModalGate.pushPrimerWaitIsOver(s))
     }
 
+    /// 前の人の決め終わりで、今の人の「決めている途中」を下ろさない（2026-10-18 再見直し）
+    func testPreviousUsersFinishDoesNotClearCurrentDeciding() async {
+        let store = offers()
+        store.notePosted(userId: "u1", photoIds: ["p1"])
+        store.noteUser("u2")
+        store.notePosted(userId: "u2", photoIds: ["p2"])
+        XCTAssertTrue(store.isDeciding)
+        store.finishFirstPost(userId: "u1", offer: nil, checked: false)
+        XCTAssertTrue(store.isDeciding, "前の人の決め終わりで今の人の途中を下ろした")
+        store.finishFirstPost(userId: "u2", offer: nil, checked: false)
+        XCTAssertFalse(store.isDeciding)
+    }
+
     func testCoverFrameOnlyWhenConfirmedMissing() async {
         XCTAssertTrue(CoverFrameRule.shows(exists: false))
         XCTAssertFalse(CoverFrameRule.shows(exists: nil), "分からない（圏外）のに額縁を出す")
@@ -176,8 +189,11 @@ final class ProfileCoverPickTests: XCTestCase {
 
     // MARK: お礼（ProfileReward）
 
+    private var today = Date(timeIntervalSince1970: 1_792_300_000)
+
     private func reward(retry: @escaping () async -> Void = {}) -> ProfileReward {
-        ProfileReward(defaults: defaults, center: center, retryWait: retry)
+        let day = today
+        return ProfileReward(defaults: defaults, center: center, retryWait: retry, now: { day })
     }
 
     func testClaimNotifiesOnlyWhenCoinsWereAdded() async {
@@ -222,12 +238,41 @@ final class ProfileCoverPickTests: XCTestCase {
         _ = await r.claimExisting(userId: "u1", available: true) { kind in
             TrunkWelcomeResult(granted: kind == .avatar, added: kind == .avatar ? 3 : 0, coins: 3, rewarded: kind == .avatar)
         }
+        XCTAssertFalse(reward().shouldClaimExisting(userId: "u1", available: true), "同じ日に何度も確かめ直す（費用が増える）")
+        today = today.addingTimeInterval(86_400)
         XCTAssertTrue(reward().shouldClaimExisting(userId: "u1", available: true), "カバーがまだなのに以後呼ばない印を立てた")
         let next = reward()
         _ = await next.claimExisting(userId: "u1", available: true) { _ in
             TrunkWelcomeResult(granted: false, added: 0, coins: 3, rewarded: true)
         }
+        today = today.addingTimeInterval(86_400)
         XCTAssertFalse(reward().shouldClaimExisting(userId: "u1", available: true), "2つともお礼が済んだのにまだ呼ぶ")
+    }
+
+    /// 待つ間に人が替わった: 頼み直さない（2026-10-18 再見直し）
+    func testRetryIsSkippedWhenUserChangedWhileWaiting() async {
+        var r: ProfileReward!
+        r = reward(retry: { r.noteUser("u2") })
+        var calls = 0
+        let got = await r.claim([.cover], userId: "u1", available: true) { _ in
+            calls += 1
+            return TrunkWelcomeResult(granted: false, added: 0, coins: 2, rewarded: false)
+        }
+        XCTAssertNil(got)
+        XCTAssertEqual(calls, 1, "人が替わったのに前の人の分を頼み直した")
+    }
+
+    /// 起動のときに読めなかった（圏外）回は、その日のうちにまた確かめてよい
+    func testExistingCheckFailureDoesNotUseUpTheDay() async {
+        _ = await reward().claimExisting(userId: "u1", available: true) { _ in throw Boom() }
+        XCTAssertTrue(reward().shouldClaimExisting(userId: "u1", available: true))
+    }
+
+    func testHeadStatusReading() async {
+        XCTAssertEqual(ProfileImageFromPhoto.existence(status: 200), true)
+        XCTAssertEqual(ProfileImageFromPhoto.existence(status: 404), false)
+        XCTAssertNil(ProfileImageFromPhoto.existence(status: 403), "403 を「無い」と読んだ（分からない扱い）")
+        XCTAssertNil(ProfileImageFromPhoto.existence(status: 500))
     }
 
     /// 置いた直後は CDN がまだ「無い」と答えることがある: 足せず印も無ければ、待って1回だけ頼み直す
@@ -279,7 +324,7 @@ final class ProfileCoverPickTests: XCTestCase {
             return TrunkWelcomeResult(granted: false, added: 0, coins: 2)
         }
         XCTAssertFalse(r.shouldClaimExisting(userId: "u1", available: true), "同じ起動で二度呼ぶ")
-        XCTAssertTrue(reward().shouldClaimExisting(userId: "u1", available: true), "読めなかった回に印を残した")
+        XCTAssertTrue(reward().shouldClaimExisting(userId: "u1", available: true), "読めなかった回に印を残した（日付も含む）")
     }
 
     func testNoticeWaitsForEditorAndSkipsLaunchWithWelcome() async {
