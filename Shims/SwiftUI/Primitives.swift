@@ -330,6 +330,20 @@ public protocol Animatable {
 public func withAnimation<Result>(_ animation: Animation? = .default, _ body: () throws -> Result) rethrows -> Result {
     try body()
 }
+/// 動きが終わったとみなす決め方（本物の `AnimationCompletionCriteria`・iOS 17）
+public struct AnimationCompletionCriteria {
+    public static let logicallyComplete = AnimationCompletionCriteria()
+    public static let removed = AnimationCompletionCriteria()
+}
+/// 本物の `withAnimation(_:completionCriteria:_:completion:)`（iOS 17）。模型は中身と終わりを続けて呼ぶ
+@discardableResult
+public func withAnimation<Result>(_ animation: Animation? = .default,
+                                  completionCriteria: AnimationCompletionCriteria = .logicallyComplete,
+                                  _ body: () throws -> Result, completion: @escaping () -> Void) rethrows -> Result {
+    let result = try body()
+    completion()
+    return result
+}
 public struct Transaction {
     public var animation: Animation?
     public init() {}

@@ -19,6 +19,9 @@ struct UserProfileView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = UserProfileViewModel()
+    /// この人の旅のトランク（板 ProfileTrunk・2026-10-18）。見せていない（404）・読めないときは段ごと出さない
+    @StateObject private var trunk = TheirTrunkModel()
+    @EnvironmentObject private var connectivity: Connectivity
     @State private var showBlockConfirm = false
     @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
@@ -105,6 +108,7 @@ struct UserProfileView: View {
             if isOnScreen {
                 dropped = hidden.snapshot
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+                Task { await loadTrunk() }
             } else {
                 reloadOnAppear = true
             }
@@ -115,6 +119,13 @@ struct UserProfileView: View {
         .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
+        // トランクは写真の一覧と別に読む（遅くても見出し・格子を待たせない）
+        .task(id: "trunk|\(userId)|\(auth.userId ?? "")") { await loadTrunk() }
+    }
+
+    private func loadTrunk() async {
+        await trunk.load(userId: userId, service: environment.trunk, signedIn: auth.userId != nil,
+                         offline: connectivity.isOffline, isSelf: userId == auth.userId)
     }
 
     /// 前面確定後: 写しを当て、ブロック解除後の読み直しがあれば走らせる
@@ -124,6 +135,7 @@ struct UserProfileView: View {
         if reloadOnAppear {
             reloadOnAppear = false
             Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            Task { await loadTrunk() }
         }
     }
 
@@ -139,6 +151,8 @@ struct UserProfileView: View {
                     }
                     if model.profile != nil {
                         counts
+                        // 旅のトランク（板 ProfileTrunk: 数のすぐ下・訪れた場所の上）
+                        theirTrunk
                         // 旅の記録と旅の一冊（2026-10-16 owner「他人のプロフィールでも旅の記録を」）。
                         // 板 UserProfile F33 の並び: 数 → 旅 → ハイライト。旅の記録はマイページと同じく数のすぐ下
                         travelRecord
@@ -191,6 +205,24 @@ struct UserProfileView: View {
     /// 🔴 ブロック・通報した写真を落とした一覧。以前は読み込んだまま描いていて、
     /// 詳細でブロックして戻っても、その人の写真の格子と地図が押せた（審査 1.2）
     private var shownPhotos: [Photo] { dropped.visible(model.photos) }
+
+    /// 旅のトランクの段（板 ProfileTrunk）。**読めて中身があるときだけ**出す——見せていない（404）・
+    /// 読み込み中・失敗・ブロックの関係では、空の枠も灰色の空き地も置かない
+    @ViewBuilder
+    private var theirTrunk: some View {
+        if trunk.showsOnProfile(blocked: isBlocked), let shown = trunk.trunk {
+            NavigationLink {
+                TheirTrunkView(userId: userId, ownerName: model.shownName, handle: model.profile?.username,
+                               homeLocation: model.profile?.homeLocation, profile: model.profile, photos: shownPhotos,
+                               photosReady: model.photoCount != .pending, model: trunk)
+            } label: {
+                TheirTrunkCard(trunk: shown, ownerName: model.shownName)
+            }
+            .buttonStyle(TrunkPressStyle())
+            .padding(.horizontal, ProfileV2.gutter)
+            .accessibilityIdentifier("profile.trunk")
+        }
+    }
 
     /// 旅の記録（マイページと同じ `TravelRecordSection`）。**この人の公開写真だけ**から作り、
     /// ブロックの関係なら出さない（`ProfileTravelRecord.othersPhotos`・2026-10-16 判断）。

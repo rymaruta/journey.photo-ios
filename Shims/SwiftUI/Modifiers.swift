@@ -165,10 +165,16 @@ public struct ToolbarPlacementShim {
     public static let tabBar = ToolbarPlacementShim()
 }
 
+/// 読み上げの「増やす・減らす」の向き（本物の `AccessibilityAdjustmentDirection`）
+public enum AccessibilityAdjustmentDirection { case increment, decrement }
+
 public struct AnyTransitionShim {
     public static let scale = AnyTransitionShim()
     public static let opacity = AnyTransitionShim()
     public static func move(edge: Edge) -> AnyTransitionShim { AnyTransitionShim() }
+    /// 本物の `AnyTransition.scale(scale:anchor:)`・`offset(x:y:)`（2026-10-18 旅のトランクの中身を持ち上げる）
+    public static func scale(scale: Double, anchor: UnitPoint = .center) -> AnyTransitionShim { AnyTransitionShim() }
+    public static func offset(x: Double = 0, y: Double = 0) -> AnyTransitionShim { AnyTransitionShim() }
     public func combined(with other: AnyTransitionShim) -> AnyTransitionShim { self }
 }
 
@@ -287,6 +293,8 @@ extension View {
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// ぼかし（本物の `blur(radius:opaque:)`・2026-10-18 旅のトランクの中身）
+    public func blur(radius: Double, opaque: Bool = false) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -415,6 +423,8 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 本物の `accessibilityAdjustableAction`（読み上げの「増やす・減らす」）
+    public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 名前を付けた座標を置く（iOS 17。指の位置をこの枠の座標で読む）
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）

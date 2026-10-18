@@ -147,6 +147,33 @@ enum TrunkArtwork {
                       line(2.4, round: true)),
                     circle(60, 2, 2, .ac), circle(78, 9, 2, .ac), circle(82, 24, 2, .ac), circle(38, 24, 2, .ac), circle(42, 9, 2, .ac),
                     S("M0 48 L0 42 C30 40 90 40 120 42 L120 48 Z", .fg)]
+        case .postmark:
+            // 消印（二重の輪・真ん中の星・右へ流れる波の消し線）
+            return [circle(30, 24, 18, .fg, line(2.5)), circle(30, 24, 13, .fg, line(1.2)),
+                    S("M30 16 L32 21 L37 21 L33 24 L35 30 L30 26 L25 30 L27 24 L23 21 L28 21 Z", .ac),
+                    S("M54 14 C64 10 74 18 84 14 C94 10 104 18 116 14 M54 24 C64 20 74 28 84 24 C94 20 104 28 116 24 M54 34 C64 30 74 38 84 34 C94 30 104 38 116 34",
+                      .fg, line(2.4, round: true))]
+        case .branch:
+            // 四季の枝（どの季節とも言わない芽と葉）
+            return [S("M8 42 C34 36 70 30 112 12", .fg, line(3, round: true)),
+                    S("M36 35 C32 26 38 19 45 21 C46 28 42 33 36 35 Z", .ac),
+                    S("M56 31 C60 40 68 42 72 37 C68 31 62 29 56 31 Z", .fg),
+                    S("M78 25 C74 16 80 9 87 11 C88 18 84 23 78 25 Z", .ac),
+                    S("M96 19 C100 28 108 30 112 25 C108 19 102 17 96 19 Z", .fg),
+                    circle(113, 12, 3, .ac)]
+        case .dial:
+            // 文字盤（目盛りと針・時刻は指さない真上の形）
+            return [circle(60, 24, 20, .fg, line(3)),
+                    S("M60 6 V10 M60 38 V42 M42 24 H46 M74 24 H78", .fg, line(2.4, round: true)),
+                    S("M60 24 V13 M60 24 L69 29", .ac, line(3, round: true)),
+                    circle(60, 24, 2.5, .ac), circle(20, 30, 3, .ac), circle(100, 18, 3, .ac),
+                    rect(0, 46, 120, 2, .fg)]
+        case .rosette:
+            // 記章（垂れの付いた丸に星）
+            return [S("M52 28 L44 47 L52 43 L56 48 L60 30 Z M68 28 L76 47 L68 43 L64 48 L60 30 Z", .ac),
+                    circle(60, 20, 16, .fg), circle(60, 20, 12, .bg, line(1.5)),
+                    S("M60 11 L63 17 L69 18 L64 22 L66 28 L60 25 L54 28 L56 22 L51 18 L57 17 Z", .ac),
+                    circle(28, 24, 2, .fg), circle(92, 24, 2, .fg)]
         }
     }
 
@@ -195,4 +222,24 @@ enum TrunkArtwork {
         }
     }
 
+    /// 背面の絵（板 Trunk の `face="back"`・2026-10-18）。金蒔絵は波と散らしの点だけ（丸紋は正面だけ）、
+    /// 星図は正面の続きの星座。羅針盤は背面に描かない
+    static func backStrokes(_ art: TrunkArt) -> [TrunkArtStroke] {
+        switch art {
+        case .makie:
+            // 正面の金蒔絵から丸紋（最後の2筆）を外したもの
+            return Array(strokes(.makie).dropLast(2))
+        case .compass:
+            return []
+        case .stars:
+            let lineInk = TrunkArtStroke.Ink.fixed(TrunkRGBA(0xC9A66B))
+            let lines = ["M52 40 L118 70 L170 36 L236 64 L300 32",
+                         "M118 70 L104 128 L182 150 L240 120 L236 64",
+                         "M182 150 L196 214 L262 228 L312 196"].map { S($0, lineInk, line(0.9), opacity: 0.85) }
+            let stars: [(Double, Double, Double)] = [(52, 40, 2), (118, 70, 2.6), (170, 36, 1.8), (236, 64, 2.2), (300, 32, 3),
+                                                     (104, 128, 2.2), (182, 150, 2), (240, 120, 2.6), (196, 214, 2),
+                                                     (262, 228, 2.8), (312, 196, 2)]
+            return lines + stars.map { circle($0.0, $0.1, $0.2, .fixed(TrunkRGBA(0xE3C98F))) }
+        }
+    }
 }

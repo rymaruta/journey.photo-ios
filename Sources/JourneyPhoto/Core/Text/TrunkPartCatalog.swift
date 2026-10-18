@@ -605,7 +605,7 @@ enum TrunkPartCatalog {
                                                             string: TrunkRGBA(string))))
             }
             return [
-                t("空の便", 0, .paper, .solid(TrunkRGBA(0xEFE6D2)), 0x1E2A44, "HND→HEL", "空の便"),
+                t("空の便", 0, .paper, .solid(TrunkRGBA(0xEFE6D2)), 0x1E2A44, "BY AIR", "空の便"),
                 t("船旅", 0, .paper, .solid(TrunkRGBA(0xC7D8E2)), 0x13303F, "SEA ROUTE", "船旅"),
                 t("夜行列車", 1, .paper, .solid(TrunkRGBA(0x2A1414)), 0xE7C77A, "NIGHT TRAIN", "夜行"),
                 t("一等船室", 1, .ticket, .solid(TrunkRGBA(0xF2E6CC)), 0x8C2F2B, "FIRST CLASS", "一等"),

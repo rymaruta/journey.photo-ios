@@ -31,6 +31,9 @@ final class TrunkEntryStore: ObservableObject {
 
     private var userId: String?
     private var readAt: Date?
+    /// 中身を最後に入れた時刻（読めた・書き込みの応答を入れた）。乗車券の記憶が、この中身より新しいかを比べる
+    /// （`TrunkTicketSync.note(server:userId:at:)`）
+    private var changedAt: Date?
     private var failedAt: Date?
     private var stale = false
     /// 「中身が変わった」の印の世代（`markStale` のたびに進む）。読み始めたときの世代のままなら、読み終えたときに印を下ろす
@@ -86,6 +89,7 @@ final class TrunkEntryStore: ObservableObject {
         summary = nil
         state = nil
         readAt = nil
+        changedAt = nil
         failedAt = nil
         stale = false
     }
@@ -118,6 +122,7 @@ final class TrunkEntryStore: ObservableObject {
                 summary = TrunkEntrySummary(state)
                 self.state = state
                 readAt = now
+                changedAt = now
                 failedAt = nil
                 if staleGeneration == generation { stale = false }
             }
@@ -127,6 +132,34 @@ final class TrunkEntryStore: ObservableObject {
             if self.userId == userId, !TrunkEntryRule.isCancellation(error) { failedAt = now }
             throw error
         }
+    }
+
+    /// 読めている、その人の中身（人が替わっていれば nil）。自分のページの「トランクを見せる」を読み足さずに見る
+    /// （`TheirTrunkModel`・人のトランク 2026-10-18）
+    func state(for userId: String) -> TrunkState? {
+        self.userId == userId ? state : nil
+    }
+
+    /// 書き込みの応答（見せる設定を替えた・`TrunkPrivacyModel`）を中身に入れる。人が替わっていれば入れない。
+    /// 書き込みの応答には `posts` が無いので、前に読んだ数を引き継ぐ
+    func apply(_ written: TrunkState, userId: String, now: Date = Date()) {
+        guard self.userId == userId else { return }
+        // 🔴 これより前に始まった読み込みの答え（書く前の中身）を、あとから入れない（番号を進める・2026-10-18 4回目の見直し）
+        nextToken += 1
+        appliedToken = nextToken
+        let next = written.keepingPosts(from: state)
+        summary = TrunkEntrySummary(next)
+        state = next
+        changedAt = now
+    }
+
+    /// サーバーが人のトランクに対応しているか（入っている人の `GET /user/trunk` の応答に `showTrunk` の欄があったか）。
+    /// まだ読めていなければ nil（分からない）
+    var knownSupportsSharing: Bool? { state?.supportsSharing }
+
+    /// その人の中身を最後に入れた時刻（人が替わっていれば nil）
+    func changedAt(for userId: String) -> Date? {
+        self.userId == userId ? changedAt : nil
     }
 
     /// 入口の数を（要るときだけ）読む。`available` は `TrunkAvailability.isAvailable`（口が無い間は読まない）

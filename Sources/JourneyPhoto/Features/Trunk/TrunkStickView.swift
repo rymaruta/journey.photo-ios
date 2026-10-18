@@ -235,7 +235,7 @@ struct TrunkStickView: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: s.effectiveModel,
                                                                      labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                     tags: TrunkAging.tagCount(posts: s.posts ?? 0),
+                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: s.posts ?? 0).count,
                                                                      equipped: s.equipped))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityIdentifier("trunk.stick.trunk")

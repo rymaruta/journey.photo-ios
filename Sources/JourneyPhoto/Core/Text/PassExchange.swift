@@ -80,6 +80,10 @@ enum PassExchange {
     /// 連絡先の形（URL・メール・電話番号・ID）を含むか（`ContactText`・2026-10-16 owner の決定）
     static func containsContact(_ text: String) -> Bool { ContactText.contains(text) }
 
+    /// 人に渡してよい字（連絡先の形を含むなら空）。電波の中身（`PassStore.payload`）・トランクに置く乗車券
+    /// （`TrunkTicket.mine`）・人の乗車券を描くとき（`TheirTrunkText.ticketRoute`）が同じここを通る
+    static func shareable(_ text: String) -> String { containsContact(text) ? "" : text }
+
     /// 連絡先の形を書いたときの訳
     static var contactProblem: String {
         L("URL・メール・電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
