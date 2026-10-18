@@ -119,13 +119,13 @@ final class WhatsNewTests: XCTestCase {
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
-        // 1.1.16（2026-10-18・札 #306）: 特別な券面の裏・呼び名「すれちがい乗車券」
+        // 1.1.16（2026-10-18・札 #305 #306）: トランクの部品の付き方・特別な券面の裏・呼び名「すれちがい乗車券」
         let upcoming = try XCTUnwrap(releases.first)
-        XCTAssertEqual(upcoming.items.map(\.title.ja), ["特別な券面は裏まで", "すれちがい乗車券"])
-        XCTAssertEqual(upcoming.items.map(\.symbol), ["sparkles", "ticket"])
-        XCTAssertEqual(upcoming.items.compactMap(\.destination), [])
+        XCTAssertEqual(upcoming.items.map(\.title.ja), ["トランクの部品がきれいに付く", "特別な券面は裏まで", "すれちがい乗車券"])
+        XCTAssertEqual(upcoming.items.map(\.symbol), ["suitcase", "sparkles", "ticket"])
+        XCTAssertEqual(upcoming.items.compactMap(\.destination), [.mypage])
         XCTAssertEqual(upcoming.date, WhatsNew.Day(year: 2026, month: 10, day: 18))
-        XCTAssertTrue(upcoming.items[1].detail.ja.contains("設定の「すれちがい乗車券」"), "設定の場所を言っていない")
+        XCTAssertTrue(upcoming.items[2].detail.ja.contains("設定の「すれちがい乗車券」"), "設定の場所を言っていない")
         // 1.1.15（2026-10-18）: トランクを回す面・ふたを開ける・人のトランク・見せる設定・自分の旅の手荷物タグ
         let next = releases[1]
         XCTAssertEqual(next.items.map(\.title.ja),
@@ -259,7 +259,7 @@ final class WhatsNewTests: XCTestCase {
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
         XCTAssertEqual(releases.first?.version, "1.1.16")
-        XCTAssertEqual(releases.first?.items.count, 2)
+        XCTAssertEqual(releases.first?.items.count, 3)
         XCTAssertEqual(releases[1].items.count, 5)
         XCTAssertEqual(releases[2].items.count, 9)
         // 1.1.15 を見た人: 1.1.16 の分だけ
