@@ -35,6 +35,21 @@ final class UploadLocationToggleTests: XCTestCase {
         return m
     }
 
+    /// 地名の問い合わせを「飛んでいる途中」で止められるモデル（`Gate`・`PathGates`）
+    private func gatedModel(gate: Gate) -> UploadViewModel {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ScriptedProtocol.self]
+        let session = URLSession(configuration: config)
+        let gates = PathGates(["/geocode/reverse": gate])
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session,
+                            beforeRequest: { request in await gates.wait(for: request) })
+        let m = UploadViewModel(uploads: UploadService(api: api, session: session), albums: AlbumService(api: api),
+                                photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        m.locationPreference = UploadLocationPreference(defaults: defaults())
+        return m
+    }
+
     private func prepared(_ byte: UInt8 = 1, coords: Photo.Coords?) -> ImagePreparer.Prepared {
         ImagePreparer.Prepared(data: Data(repeating: byte, count: 16), fileName: "photo\(byte).jpg",
                                contentType: "image/jpeg", exif: nil, coords: coords, takenOn: nil)
@@ -209,12 +224,104 @@ final class UploadLocationToggleTests: XCTestCase {
         m.useLocationOwner("a")
         XCTAssertFalse(m.attachesLocation, "次の人の操作で前の人の値が変わった")
 
-        // ログアウト（持ち主が分からない）は既定のオン。書かない
+        // 🔴 ログアウト・期限切れ（持ち主が分からない）では値を替えない（a のオフのまま・オンに戻さない）。
+        // nil の間の操作は書かない
         m.useLocationOwner(nil)
-        XCTAssertTrue(m.attachesLocation)
-        m.setAttachesLocation(false)
+        XCTAssertFalse(m.attachesLocation, "ログアウトで既定のオンに戻した")
+        m.setAttachesLocation(true)
         XCTAssertNil(store.object(forKey: "journey-photo-upload-attach-location"), "持ち主の無い値を書いた")
-        XCTAssertFalse(UploadLocationPreference(defaults: store).attachesLocation(userId: "a"))
+        XCTAssertFalse(UploadLocationPreference(defaults: store).attachesLocation(userId: "a"),
+                       "持ち主の無い操作が前の人の値を変えた")
+    }
+
+    /// 🔴 **写真を並べたあとで持ち主が nil・別の人に替わっても、地名を問い合わせない**（2026-10-18 の見直し）。
+    /// 以前はログアウトで既定のオンに戻り、オフにしていた人の写真の座標で `/geocode/reverse` を呼んでいた
+    func testOwnerChangeAfterPhotosDoesNotAskForPlaceNames() async {
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [.init(match: "/geocode/reverse", status: 200, body: #"{"place":"高松市"}"#)]
+        let m = model()
+        m.useLocationOwner("a")
+        m.setAttachesLocation(false)
+        m.append(prepared(1, coords: photoCoords))
+        m.append(prepared(2, coords: photoCoords))
+
+        m.useLocationOwner(nil)                 // ログアウト・期限切れ
+        XCTAssertFalse(m.attachesLocation)
+        m.useLocationOwner("b")                 // 別の人（覚えが無い＝オン）
+        XCTAssertTrue(m.attachesLocation, "前提: 次の人の値（オン）を読んだ")
+        XCTAssertTrue(m.placeTasks.isEmpty, "人が替わっただけで地名を引き始めた")
+        for _ in 0..<20 { await Task.yield() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path.contains("/geocode/reverse") },
+                       "人が替わっただけで並べた写真の座標を送った")
+        XCTAssertEqual(m.items.map(\.location), ["", ""])
+
+        // 本人が押してオンにしたときは引く（今までと同じ道）
+        m.setAttachesLocation(false)
+        m.setAttachesLocation(true)
+        XCTAssertEqual(m.placeTasks.count, 2, "本人が押してオンにしたのに引かない")
+    }
+
+    /// 🔴 オフにしたら、引いている最中の問い合わせを取り消す
+    func testTurningOffCancelsLookupsInFlight() async {
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [.init(match: "/geocode/reverse", status: 200, body: #"{"place":"高松市"}"#)]
+        let gate = Gate()
+        let m = gatedModel(gate: gate)
+        m.useLocationOwner("a")
+        m.append(prepared(coords: photoCoords))
+        let task = m.placeTasks[m.items[0].id]
+        XCTAssertNotNil(task, "前提: オンで並べたら引き始める")
+        await gate.untilWaiting()
+        m.setAttachesLocation(false)
+        XCTAssertTrue(task?.isCancelled ?? false, "オフにしたのに問い合わせを止めない")
+        await gate.open()
+        await task?.value
+        XCTAssertEqual(m.items[0].location, "")
+    }
+
+    /// 🔴 問い合わせの最中にオフにしたら、届いた地名を入れない
+    func testAnswerArrivingAfterTurningOffIsDropped() async {
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [.init(match: "/geocode/reverse", status: 200, body: #"{"place":"高松市"}"#)]
+        let gate = Gate()
+        let m = gatedModel(gate: gate)
+        m.useLocationOwner("a")
+        m.items = [PendingPhoto(prepared: prepared(coords: photoCoords))]
+        // 画面の仕事（`placeTasks`）ではなく直に引く——取り消しではなく、届いた答えの見張りを見る
+        let lookup = Task { await m.fillPlaceName(for: m.items[0].id, lat: 34.28, lng: 133.8) }
+        await gate.untilWaiting()
+        m.setAttachesLocation(false)
+        await gate.open()
+        await lookup.value
+        XCTAssertEqual(m.items[0].location, "", "オフにしたあとに届いた地名を入れた（公開される）")
+    }
+
+    /// 🔴 オフのまま下書きを開き直すと、写真の位置から自動で入れた地名は戻さない（オンのときに保存した下書き）
+    func testRestoringADraftWhileOffDropsTheAutomaticPlace() async throws {
+        let store = defaults()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = model(defaults: store)
+        first.drafts = UploadDraftStore(defaults: store, directory: directory)
+        first.draftOwner = "a"
+        first.makeDraftThumbnail = { _ in nil }
+        first.useLocationOwner("a")
+        var typed = autoFilled()
+        typed.location = "瀬戸内"
+        first.items = [autoFilled(), typed]
+        XCTAssertTrue(first.saveDraft(), "前提: 下書きに書けた")
+
+        let next = model(defaults: store)
+        next.drafts = UploadDraftStore(defaults: store, directory: directory)
+        next.draftOwner = "a"
+        next.makeDraftThumbnail = { _ in nil }
+        next.useLocationOwner("a")
+        next.setAttachesLocation(false)
+        let restored = await next.restoreDraft()
+        XCTAssertTrue(restored)
+        XCTAssertEqual(next.items.map(\.location), ["", "瀬戸内"],
+                       "オフなのに自動の地名を戻した・本人が直した地名まで消した")
     }
 
     /// 同じ人で呼び直しても、画面の中で選んだ値を戻さない（画面は戻るたびに持ち主を入れ直す）

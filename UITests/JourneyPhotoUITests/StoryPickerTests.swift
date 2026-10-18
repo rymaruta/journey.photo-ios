@@ -257,6 +257,25 @@ final class StoryPickerTests: XCTestCase {
 
     func testPickOnePhotoEnablesShare() {
         pickOnPickStage(count: 1, tag: "90-ストーリー1枚")
+        captureAudienceSheet(tag: "90-ストーリー1枚")
+    }
+
+    /// 「誰に見せる？」のシートの「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え）。
+    /// 出なければ撮らずに抜ける（この試験の決まり）。切り替えは押さない（値は人ごとに端末に残る）
+    private func captureAudienceSheet(tag: String) {
+        let app = XCUIApplication()
+        let audience = app.buttons["見せる相手: フォロワー"].firstMatch
+        guard audience.waitForExistence(timeout: 5), audience.isHittable else { return }
+        audience.tap()
+        let toggle = app.switches["story.attachLocation"].firstMatch
+        guard toggle.waitForExistence(timeout: 5) else {
+            shoot(app, "\(tag)-7-誰に見せる（切り替えが出ない）")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "\(tag)-7-誰に見せる（撮影地の位置を付ける）")
+        let done = app.buttons["決める"].firstMatch
+        if done.exists, done.isHittable { done.tap() }
     }
 
     func testPickThreePhotosEnablesShare() {

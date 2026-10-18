@@ -136,6 +136,42 @@ final class StorySpotSuggestionTests: XCTestCase {
 
     /// 🔴 作る画面のつなぎ（画面は Linux で描けないので、ソースに呼び出しが残っていることを見る）。
     /// 候補は**押したときだけ**撮影地に入り、送る座標は候補の決まりを通す
+    // MARK: - 「撮影地の位置を付ける」がオフ（2026-10-18）
+
+    /// 🔴 オフなら写真の座標は送らない。撮影スポットの名前ならスポットの座標（見る画面で結ばれる）。それ以外は送らない
+    func testOffSendsSpotCoordsOnlyAndNeverPhotoCoords() {
+        let shrine = spot("takaya", name: "高屋神社", lat: 34.14, lng: 133.65)
+        let spots = [shrine]
+        var place = StorySpotSuggestion.Place()
+        place.location = "高屋神社"
+        XCTAssertEqual(place.coordsToSend([takaya, nil], spots: spots), [takaya, nil], "オンは今までどおり写真の座標")
+        let off = place.coordsToSend([takaya, nil], spots: spots, attachesPhotoLocation: false)
+        XCTAssertEqual(off, [shrine.coords, shrine.coords], "オフで写真の座標を送った・スポットの座標にしない")
+        XCTAssertEqual(StorySpotLink.spot(location: place.location, coords: off[0], in: spots)?.slug, "takaya",
+                       "送った座標で見る画面がスポットへ結べない")
+
+        place.location = "うちの近所"
+        XCTAssertEqual(place.coordsToSend([takaya], spots: spots, attachesPhotoLocation: false), [nil])
+        place.location = ""
+        XCTAssertEqual(place.coordsToSend([takaya], spots: spots, attachesPhotoLocation: false), [nil])
+    }
+
+    /// 同じ名前のスポットが離れて2つあれば、どちらか分からないので送らない
+    func testOffWithAmbiguousSpotNameSendsNothing() {
+        let a = spot("a", name: "白糸の滝", lat: 35.31, lng: 138.59)
+        let b = spot("b", name: "白糸の滝", lat: 36.36, lng: 138.58)
+        XCTAssertNil(StorySpotSuggestion.Place.spotNamed("白糸の滝", in: [a, b]))
+        XCTAssertEqual(StorySpotSuggestion.Place.spotNamed("白糸の滝", in: [a])?.slug, "a")
+    }
+
+    /// オフでも撮影地があれば索引を待つ（写真の位置が無くてもスポットの名前かを見るため）
+    func testOffWaitsForIndexWhenPlaceIsSet() {
+        var place = StorySpotSuggestion.Place()
+        place.location = "高屋神社"
+        XCTAssertFalse(place.needsSpotIndex([nil], spots: []), "オンは写真の位置が無ければ待たない（今までどおり）")
+        XCTAssertTrue(place.needsSpotIndex([nil], spots: [], attachesPhotoLocation: false))
+    }
+
     func testComposerWiring() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -144,11 +180,16 @@ final class StorySpotSuggestionTests: XCTestCase {
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
             .joined(separator: "\n")
-        XCTAssertTrue(composer.contains("let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex)\n"),
+        // 2026-10-18: 「撮影地の位置を付ける」の値も渡す（`attachesPhotoLocation:`）
+        XCTAssertTrue(composer.contains("let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex,\n"
+                                        + "                                        attachesPhotoLocation: attachesLocation)\n"),
                       "撮影地の決まりを通さずに座標を送っている")
-        XCTAssertTrue(composer.contains("if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {"),
+        XCTAssertTrue(composer.contains("if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex,\n"
+                                        + "                                                     attachesPhotoLocation: attachesLocation) {"),
                       "索引が無いまま決めている")
-        XCTAssertTrue(composer.contains("place.resolve(coords: shots.map(\\.prepared.coords), spots: spotIndex)"))
+        // 候補はオフなら写真の位置を使わない（`suggestionCoords` はオフで空）
+        XCTAssertTrue(composer.contains("place.resolve(coords: suggestionCoords, spots: spotIndex)"))
+        XCTAssertTrue(composer.contains("attachesLocation ? shots.map(\\.prepared.coords) : []"))
         XCTAssertTrue(composer.contains("} else if let spot = place.chip {"))
         XCTAssertTrue(composer.contains("place.pick()"))
         XCTAssertNil(composer.range(of: #"location = [^\n]*(spot|suggestion|chip)"#, options: .regularExpression),

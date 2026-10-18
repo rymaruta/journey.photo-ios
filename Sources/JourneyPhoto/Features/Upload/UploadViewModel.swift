@@ -455,33 +455,36 @@ final class UploadViewModel: ObservableObject {
     var locationPreference = UploadLocationPreference()
     /// 選んだ値の持ち主（ログインしている人）。画面が `auth.userId` を入れる（`useLocationOwner`）
     private(set) var locationOwner: String?
-    /// 持ち主を一度でも決めたか（同じ人で呼び直されたときに、画面の中で選んだ値を戻さない）
-    private var choseLocationOwner = false
-
     /// 持ち主を決めて、その人の値を読む。**人が替わったら前の人の値を使わない**（覚えが無ければオン）。
-    /// 同じ人のままなら何もしない（画面は開くたび・戻るたびに呼ぶ）
+    /// 同じ人のままなら何もしない（画面は開くたび・戻るたびに呼ぶ）。
+    ///
+    /// 🔴 **ログアウト・期限切れ（`userId` が nil）では値を替えない**（2026-10-18 の見直し）。以前は既定のオンに
+    /// 戻し、オフにしていた人の並べた写真の座標で地名を問い合わせていた。nil の間は書かない（画面の中だけの値）。
+    /// **持ち主が替わって値を当てても、地名は問い合わせない**——問い合わせるのは、本人が切り替えを押したときと
+    /// 写真を足したときだけ（`setAttachesLocation`・`append`）。オフに替わったときは問い合わせを止め、自動の地名を外す
     func useLocationOwner(_ userId: String?) {
         let id = (userId?.isEmpty ?? true) ? nil : userId
-        guard !choseLocationOwner || id != locationOwner else { return }
-        choseLocationOwner = true
+        guard id != locationOwner else { return }
         locationOwner = id
-        applyAttachesLocation(locationPreference.attachesLocation(userId: id))
+        guard let id else { return }
+        applyAttachesLocation(locationPreference.attachesLocation(userId: id), looksUpPlaces: false)
     }
 
     /// 画面の切り替えから。持ち主の値として覚え、並んでいる写真にも当てる
     func setAttachesLocation(_ attaches: Bool) {
         locationPreference.set(attaches, userId: locationOwner)
-        applyAttachesLocation(attaches)
+        applyAttachesLocation(attaches, looksUpPlaces: true)
     }
 
     /// 値を替えて、並んでいる写真に当てる。
     /// - オフにした: 引いている最中の地名の問い合わせを止め、自動で入れた地名を外す（`dropAutomaticPlace`）
-    /// - オンにした: 撮影地が空の写真の地名を引き直す（`append` と同じ条件）
-    private func applyAttachesLocation(_ attaches: Bool) {
+    /// - オンにした: `looksUpPlaces` のとき（本人が押した）だけ、撮影地が空の写真の地名を引き直す（`append` と同じ条件）
+    private func applyAttachesLocation(_ attaches: Bool, looksUpPlaces: Bool) {
         let changed = attaches != attachesLocation
         attachesLocation = attaches
         guard changed else { return }
         if attaches {
+            guard looksUpPlaces else { return }
             for item in items { startPlaceLookup(for: item) }
         } else {
             placeTasks.values.forEach { $0.cancel() }
@@ -523,7 +526,8 @@ final class UploadViewModel: ObservableObject {
     private let photoService: PhotoService
     private let discovery: DiscoveryService
     /// 引いている最中の地名の問い合わせ。写真を選び直したら捨てる
-    private var placeTasks: [UUID: Task<Void, Never>] = [:]
+    /// 試験が「止めたか」を見るので読むだけ外に出す
+    private(set) var placeTasks: [UUID: Task<Void, Never>] = [:]
     /// 途中でやめた。**残りを上げ始めない**
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
