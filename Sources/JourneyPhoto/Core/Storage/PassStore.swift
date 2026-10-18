@@ -30,6 +30,10 @@ final class PassStore: ObservableObject {
 
     private(set) var userId: String?
 
+    /// 設定が変わったあとに呼ぶ（人の ID・変わったあとの設定）。旅のトランクに入れた乗車券を揃える
+    /// （`TrunkTicketSync`・起動のときに `JourneyPhotoApp` が付ける）。**ログインしていないときは呼ばない**
+    var onSettingsChanged: ((String, PassSettings) -> Void)?
+
     /// 今日は家から離れているか（「旅のあいだ」・前面で位置が取れたときに覚える）
     private var away: (day: String, value: Bool)?
     /// 自分の居住地（プロフィールの自由入力・読めたときに覚える）。**背景の起動でも**家からの距離を
@@ -138,6 +142,7 @@ final class PassStore: ObservableObject {
         settings = next
         if !next.enabled { PassBundleNotifier.cancelAll() }
         save()
+        if let userId { onSettingsChanged?(userId, next) }
     }
 
     /// 電波に載せる中身。**オンで、乗車券を選んであるときだけ**

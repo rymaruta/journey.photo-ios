@@ -34,7 +34,11 @@ final class TrunkAvailability: ObservableObject {
         let checkedAt = defaults.object(forKey: Self.checkedKey(userId)) as? Date
         guard TrunkAvailabilityRule.needsCheck(remembered: remembered, checkedAt: checkedAt, now: now, force: force) else { return }
         var failure: Error?
-        do { _ = try await service.state() } catch is CancellationError { return } catch { failure = error }
+        do {
+            let state = try await service.state()
+            // 自分の見せる設定も控える（自分のページを人の画面で開いたときに読み足さない・`TrunkOwnSettings`）
+            TrunkOwnSettings.note(showTrunk: state.showTrunk, userId: userId, defaults: defaults)
+        } catch is CancellationError { return } catch { failure = error }
         guard self.userId == userId, let decided = TrunkAvailabilityRule.decide(failure) else { return }
         isAvailable = decided
         defaults.set(decided, forKey: Self.key(userId))

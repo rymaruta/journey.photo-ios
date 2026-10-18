@@ -123,6 +123,24 @@ enum TheirTrunkText {
         }
     }
 
+    /// 設定の見本に描くトランク
+    struct SeenFigure: Equatable {
+        let model: TrunkModel
+        let posts: Int
+        let stuck: [TrunkLabel]
+        let parts: TrunkEquipped
+    }
+
+    /// 人と同じ口（`GET /users/<自分>/trunk`）で読めたら、その中身（どのラベルに地名が出るかも本当の見え方）。
+    /// 読めなければ自分の口の中身を、地名を出さない形にして描く
+    static func seenFigure(seen: TheirTrunk?, own: TrunkState) -> SeenFigure {
+        if let seen {
+            return SeenFigure(model: seen.model, posts: seen.agingPosts, stuck: seen.stuck, parts: seen.equipped)
+        }
+        return SeenFigure(model: own.effectiveModel, posts: own.posts ?? 0, stuck: asSeenByOthers(own.stuck),
+                          parts: own.equipped)
+    }
+
     // MARK: プロフィールの段（板 ProfileTrunk）
 
     static var cardEyebrow: String { L("旅のトランク", "Travel trunk") }
