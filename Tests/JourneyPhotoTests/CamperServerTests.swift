@@ -365,6 +365,28 @@ final class CamperServerTests: XCTestCase {
                        CamperCatalog.categoryCount(.wheel, owned: owned, serverOpen: false).have + 1)
     }
 
+    /// 画面写真の見本の鍵（`-JPPreviewCamper`・`-JPPreviewCamperVisit`）は Debug だけ・見本の利用者だけ。Release では必ず効かない。
+    /// 見本の友達の車の行はマイページの見本の起動のときだけで、本物の入口（フォローしている人の頁だけ）は変えない
+    func testPreviewKeysAreDebugOnly() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let read = { (path: String) in try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8) }
+        XCTAssertFalse(PreviewSession.camperSample, "テストでは見本が効いていない")
+        XCTAssertFalse(PreviewSession.camperVisitSample, "テストでは見本が効いていない")
+        let preview = try read("Sources/JourneyPhoto/Core/Auth/PreviewSession.swift")
+        for (key, name) in [("camperKey", "JPPreviewCamper"), ("camperVisitKey", "JPPreviewCamperVisit")] {
+            XCTAssertTrue(preview.contains("static let \(key) = \"\(name)\""), key)
+            let start = try XCTUnwrap(preview.range(of: "return UserDefaults.standard.bool(forKey: \(key))"))
+            let after = preview[start.upperBound...].prefix(80)
+            XCTAssertTrue(after.contains("#else\n        return false\n        #endif"), "\(key) が Release でも効く")
+            let before = preview[..<start.lowerBound].suffix(80)
+            XCTAssertTrue(before.contains("#if DEBUG\n        guard userId != nil else { return false }"), "\(key) が見本の利用者以外でも効く")
+        }
+        let myPage = try read("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
+        XCTAssertTrue(myPage.contains("if PreviewSession.camperVisitSample {\n                    NavigationLink {\n                        CamperVisitView(userId: CamperServerSample.friendId"))
+        let shots = try read("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
+        XCTAssertTrue(shots.contains(#"openTripsRow(app, "trips.camperVisitSample")"#))
+    }
+
     /// 友達の車の見せ方: 相手の要サーバーの部品を分類ごとに付け、オーニングの部品があれば広げる
     func testVisitingLoadout() async {
         let l = CamperLoadout.visiting(["roof_cargo.canoe", "awning.rust_stripe", "wheel.brass_spoke"])

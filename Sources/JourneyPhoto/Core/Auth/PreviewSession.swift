@@ -295,6 +295,24 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
+    /// `-JPPreviewCamperVisit YES`。
+    ///
+    /// 人のプロフィールの本物の入口（フォローしている人の頁だけ）は、ホームの写真の並びとフォローの関係次第で見本の
+    /// 起動では出ないことがあり、画面写真（95i・95j）が撮れなかった。**本物の入口の条件は変えない**——ここは見本の友達
+    /// （`CamperServerSample.friendId`）の車へ入る別の行を、見本の起動のときだけ足す。中身は見本で、サーバーには何も送らない。
+    /// 入っている見本の利用者のときだけ。Release では必ず false
+    static let camperVisitKey = "JPPreviewCamperVisit"
+
+    static var camperVisitSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: camperVisitKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
     /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**
     /// （`POST /user/trunk/welcome` を呼ばない）。入っている見本の利用者のときだけ。Release では必ず nil

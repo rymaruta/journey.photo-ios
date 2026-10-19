@@ -41,7 +41,7 @@ struct CamperVisitView: View {
 
     private var service: CamperVisitModel.Calls {
         let camper = environment.camper
-        let preview = PreviewSession.camperSample
+        let preview = PreviewSession.camperSample || PreviewSession.camperVisitSample
         return CamperVisitModel.Calls(
             visit: { id in preview ? CamperServerSample.visit(userId: id) : try await camper.visit(id) },
             gift: { id in preview ? CamperGiftResult(given: true, part: "mirror.brass_oval") : try await camper.gift(id) },

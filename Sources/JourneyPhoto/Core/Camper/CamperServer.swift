@@ -195,6 +195,10 @@ enum CamperServerSample {
         recounted: true,
         added: ["sticker_edge.signed", "grille.honeycomb", "solar.folding_suitcase"])
 
+    /// 見本の友達（`-JPPreviewCamperVisit` の行の行き先）
+    static let friendId = "sample-friend"
+    static let friendName = "mio"
+
     /// 友達の車（訪ねた回が今日はじめて数えられた）
     static func visit(userId: String) -> CamperVisitState {
         CamperVisitState(userId: userId, launched: true,

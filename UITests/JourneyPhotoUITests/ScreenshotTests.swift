@@ -2243,6 +2243,12 @@ final class ScreenshotTests: XCTestCase {
 
     /// マイページ → 旅の記録のタブ → 「写真で作るキャンピングカー」の行。開けたら true
     private func openCamper(_ app: XCUIApplication) -> Bool {
+        guard openTripsRow(app, "trips.camper") else { return false }
+        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true
+    private func openTripsRow(_ app: XCUIApplication, _ id: String) -> Bool {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
         tabBar.buttons.element(boundBy: 4).tap()
@@ -2256,12 +2262,12 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
-        let row = app.buttons["trips.camper"].firstMatch
+        let row = app.buttons[id].firstMatch
         guard row.waitForExistence(timeout: 15) else { return false }
         scrollTo(row, in: app)
         guard row.isHittable else { return false }
         row.tap()
-        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+        return true
     }
 
     /// 立体の車を組み終えるまで待つ（読み上げの値に「camper-ready 段 時刻」が出る・見本の起動のときだけ）
@@ -2345,59 +2351,13 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "95h-キャンピングカー（要サーバーの部品）")
     }
 
-    /// **友達の車を訪ねる**（2026-10-19・`-JPPreviewCamper`・板 CamperVisit。サーバーには何も送らない見本）:
-    /// ホームの写真 → 作者のプロフィールの「とおまわり号を訪ねる」→ 友達の車 → 部品を贈る。作者の行が出ない
-    /// （写真の並び次第）なら撮らずに抜ける。**プロフィールが出たのに行が無ければ落とす**。押せる所は 44pt 以上
+    /// **友達の車を訪ねる**（2026-10-19・板 CamperVisit）: 見本（`-JPPreviewCamperVisit`・Debug のみ。サーバーには何も送らない）の
+    /// マイページの行から見本の友達の車へ直接入り、95i・95j を**必ず撮る**（出なければ落とす）。本物の入口（人のプロフィールの
+    /// 「とおまわり号を訪ねる」・フォローしている人の頁だけ）はホームの写真の並びとフォローの関係次第なので、ここでは通らない。
+    /// 押せる所は 44pt 以上
     func testCapturesCamperVisit() {
-        let app = XCUIApplication()
-        app.launchArguments += ["-legal.consent.version", "0"]
-        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
-        // 人のページの見出し（公開プロフィール）は本番から読む（人のトランクの撮り方と同じ）
-        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
-        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
-        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
-        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        app.launchArguments += ["-JPPreviewCamper", "YES"]
-        app.launch()
-        let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
-        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
-
-        let firstPhoto = app.buttons["feed.photo"].firstMatch
-        var pushes = 0
-        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
-            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-            from.press(forDuration: 0.05, thenDragTo: to)
-            pushes += 1
-        }
-        guard firstPhoto.exists, firstPhoto.isHittable else { return }
-        firstPhoto.tap()
-        let toAuthor = app.buttons["photo.author"].firstMatch
-        var authorPushes = 0
-        while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, authorPushes < 3 {
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 1)
-            authorPushes += 1
-        }
-        guard toAuthor.exists, toAuthor.isHittable else { return }
-        toAuthor.tap()
-        guard app.buttons["profile.count.followers"].firstMatch.waitForExistence(timeout: 15) else { return }
-        // 見本の利用者自身の写真なら自分の頁になる（自分の頁には行を出さない決まり）。人の頁だけに出る
-        // 「この人の操作」が無ければ撮らずに抜ける
-        guard app.buttons["この人の操作"].firstMatch.waitForExistence(timeout: 5) else { return }
-
-        // 行は数の札の下（トランクの段の下）。画面の外なら送って探す
-        let row = app.buttons["profile.camper"].firstMatch
-        var rowPushes = 0
-        while !row.waitForExistence(timeout: 3), rowPushes < 4 {
-            app.swipeUp()
-            rowPushes += 1
-        }
-        guard row.exists else { return XCTFail("人のプロフィールに「とおまわり号を訪ねる」の行が無い") }
-        scrollTo(row, in: app)
-        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「とおまわり号を訪ねる」の行が 44pt 未満")
-        row.tap()
+        let app = launchTrunk(["-JPPreviewCamperVisit", "YES"])
+        XCTAssertTrue(openTripsRow(app, "trips.camperVisitSample"), "マイページに見本の友達の車の行が無い")
 
         let gift = app.buttons["camper.visit.gift"].firstMatch
         guard gift.waitForExistence(timeout: 15) else { return XCTFail("友達の車の画面が開かない") }
