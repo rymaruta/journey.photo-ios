@@ -628,38 +628,45 @@ struct CamperArrivalView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Spacer(minLength: 0)
-            ZStack {
-                // 光の輪（板: 24 秒で 1 回転。「視差効果を減らす」では止める）
-                TimelineView(.animation(paused: reduceMotion)) { context in
-                    let t = context.date.timeIntervalSinceReferenceDate
-                    Circle()
-                        .fill(AngularGradient(colors: [WebTheme.accent.opacity(0.35), Color.clear, WebTheme.accent.opacity(0.25), Color.clear,
-                                                       WebTheme.accent.opacity(0.35)], center: .center,
-                                              startAngle: .degrees(0), endAngle: .degrees(360)))
-                        .frame(width: 220, height: 220)
-                        .rotationEffect(.degrees(reduceMotion ? 0 : (t.truncatingRemainder(dividingBy: 24)) / 24 * 360))
+            // 部品の絵と説明は送れる枠に入れる（3 個届いた回に縦が足りず、下のボタンが押しつぶされて「あとで」の当たりが
+            // 18pt になった・2026-10-19 Mac run 561）。下の2つのボタンはいつも決まった高さ
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 16) {
+                    ZStack {
+                        // 光の輪（板: 24 秒で 1 回転。「視差効果を減らす」では止める）
+                        TimelineView(.animation(paused: reduceMotion)) { context in
+                            let t = context.date.timeIntervalSinceReferenceDate
+                            Circle()
+                                .fill(AngularGradient(colors: [WebTheme.accent.opacity(0.35), Color.clear, WebTheme.accent.opacity(0.25), Color.clear,
+                                                               WebTheme.accent.opacity(0.35)], center: .center,
+                                                      startAngle: .degrees(0), endAngle: .degrees(360)))
+                                .frame(width: 220, height: 220)
+                                .rotationEffect(.degrees(reduceMotion ? 0 : (t.truncatingRemainder(dividingBy: 24)) / 24 * 360))
+                        }
+                        Image(systemName: part.category.symbol)
+                            .font(.system(size: 64, weight: .light))
+                            .foregroundStyle(WebTheme.foreground)
+                    }
+                    .accessibilityHidden(true)
+                    VStack(spacing: 12) {
+                        Text(parts.count > 1 ? L("部品が \(parts.count) 個届いた", "\(parts.count) parts arrived") : L("部品が届いた", "A part arrived"))
+                            .jpEyebrow().foregroundStyle(WebTheme.accent)
+                        Text(part.name).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
+                        CamperRarityDots(rarity: part.rarity)
+                        Text(CamperText.because(part, giver: giver(part.id))).font(.subheadline).foregroundStyle(WebTheme.text)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("camper.arrival.because")
+                        Text(part.look).font(.footnote).foregroundStyle(WebTheme.muted2).multilineTextAlignment(.center)
+                        Text(L("\(part.category.name) · 部品 \(collected) / \(total)", "\(part.category.name) · \(collected) of \(total) parts"))
+                            .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                        if parts.count > 1 { others }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: geo.size.height)
                 }
-                Image(systemName: part.category.symbol)
-                    .font(.system(size: 64, weight: .light))
-                    .foregroundStyle(WebTheme.foreground)
             }
-            .accessibilityHidden(true)
-            VStack(spacing: 12) {
-                Text(parts.count > 1 ? L("部品が \(parts.count) 個届いた", "\(parts.count) parts arrived") : L("部品が届いた", "A part arrived"))
-                    .jpEyebrow().foregroundStyle(WebTheme.accent)
-                Text(part.name).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
-                CamperRarityDots(rarity: part.rarity)
-                Text(CamperText.because(part, giver: giver(part.id))).font(.subheadline).foregroundStyle(WebTheme.text)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("camper.arrival.because")
-                Text(part.look).font(.footnote).foregroundStyle(WebTheme.muted2).multilineTextAlignment(.center)
-                Text(L("\(part.category.name) · 部品 \(collected) / \(total)", "\(part.category.name) · \(collected) of \(total) parts"))
-                    .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
-                    .foregroundStyle(WebTheme.faint)
-            }
-            if parts.count > 1 { others }
-            Spacer(minLength: 0)
             Button { onEquip(part) } label: {
                 Text(L("いま車に付ける", "Put it on now"))
                     .font(.system(size: 16, weight: .semibold))
@@ -668,14 +675,19 @@ struct CamperArrivalView: View {
                     .background(WebTheme.accentFill, in: Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("camper.arrival.equip")
             Button(action: onClose) {
                 Text(L("あとで", "Later"))
                     .font(.system(size: 15))
                     .foregroundStyle(WebTheme.text)
                     .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                    // 当たりは字だけでなく 44pt の帯全体（2026-10-19 Mac run 561: 当たりが 18pt だった）
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("camper.arrival.close")
         }
         .padding(.horizontal, 24)

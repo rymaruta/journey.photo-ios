@@ -24,13 +24,22 @@ struct CamperVisitView: View {
     @State private var readyMarker = ""
 
     var body: some View {
+        // 並びは自分の車の画面と同じ: 見出し → 立体の車（スクロールの外・決まった大きさ）→ 下だけ送る。
+        // 2026-10-19 Mac run 561: 車をスクロールの中に置いていた 95i で、描き終わる前の灰色のざらざらが写っていた
         GeometryReader { geo in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    content(width: geo.size.width)
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                if case .loaded(let state) = model.phase {
+                    scene(state, width: geo.size.width)
+                        .padding(.top, 8)
                 }
-                .padding(.bottom, 32)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        content
+                    }
+                    .padding(.top, 16)
+                    .padding(.bottom, 32)
+                }
             }
         }
         .background { backdrop }
@@ -85,7 +94,7 @@ struct CamperVisitView: View {
     // MARK: 本体
 
     @ViewBuilder
-    private func content(width: CGFloat) -> some View {
+    private var content: some View {
         switch model.phase {
         case .idle, .loading:
             VStack(spacing: JPSpace.s) {
@@ -117,7 +126,6 @@ struct CamperVisitView: View {
             }
         case .loaded(let state):
             VStack(alignment: .leading, spacing: 16) {
-                scene(state, width: width)
                 tiles(state)
                 actions
             }
@@ -130,6 +138,15 @@ struct CamperVisitView: View {
             readyMarker = $0
         }
         .frame(width: width, height: min(350, max(220, width * 0.9)))
+        // 描き終わるまでは画面の地と同じ黒で覆う（描く前の灰色のざらざらを見せない）。描き終わりの合図は `onReady`
+        .overlay {
+            if !readyMarker.hasPrefix("camper-ready") {
+                Color.black
+                    .overlay { ProgressView() }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .contentShape(Rectangle())
         .gesture(rotate)
         .onTapGesture(count: 2) {
@@ -195,15 +212,23 @@ struct CamperVisitView: View {
             HStack(spacing: 8) {
                 // 写真の無い画面の主ボタン: 真鍮の塗りに墨の字（CLAUDE.md の owner の好み）
                 Button { Task { await model.gift(calls: service, ownerName: ownerName) } } label: {
-                    Label(model.gifted ? L("贈りました", "Given") : CamperText.giveLabel, systemImage: "gift")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                        .background(WebTheme.accentFill, in: Capsule())
-                        .opacity(model.gifted || !model.canAct ? 0.5 : 1)
+                    if model.gifted {
+                        // 済んだ形（2026-10-19 Mac run 561: 真鍮を薄くした地に墨の字では読めなかった）: 縁だけ・白の字・チェックの印
+                        Label(L("贈りました", "Given"), systemImage: "checkmark")
+                            .jpOutlineButton(.regular, fullWidth: true)
+                            .frame(minHeight: 50)
+                    } else {
+                        Label(CamperText.giveLabel, systemImage: "gift")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(WebTheme.accentText)
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .background(WebTheme.accentFill, in: Capsule())
+                            .opacity(model.canAct ? 1 : 0.5)
+                    }
                 }
                 .buttonStyle(.plain)
                 .disabled(model.gifted || !model.canAct)
+                .accessibilityValue(model.gifted ? L("済み。この友達にはもう贈れません", "Done. You can\u{2019}t give this friend another gift") : "")
                 .accessibilityIdentifier("camper.visit.gift")
                 Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
                     // 線のボタン（板 Components の `.bo`・`jpOutlineButton` を通す）

@@ -2272,8 +2272,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// 立体の車を組み終えるまで待つ（読み上げの値に「camper-ready 段 時刻」が出る・見本の起動のときだけ）
     @discardableResult
-    private func waitCamper(_ app: XCUIApplication, _ marker: String) -> Bool {
-        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
+    private func waitCamper(_ app: XCUIApplication, _ marker: String, scene id: String = "camper.scene") -> Bool {
+        let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
         let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40) == .completed
         // 組んだ形が次のコマで描かれ、向きの動き（0.6 秒）が止まるまで
@@ -2361,10 +2361,8 @@ final class ScreenshotTests: XCTestCase {
 
         let gift = app.buttons["camper.visit.gift"].firstMatch
         guard gift.waitForExistence(timeout: 15) else { return XCTFail("友達の車の画面が開かない") }
-        let scene = app.descendants(matching: .any)["camper.visit.scene"].firstMatch
-        let ready = NSPredicate(format: "value CONTAINS %@", "camper-ready")
-        _ = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40)
-        Thread.sleep(forTimeInterval: 2)
+        // 描き終わり（読み上げの値に「camper-ready」）まで待ってから撮る（自分の車の `waitCamper` と同じ）
+        guard waitCamper(app, "camper-ready", scene: "camper.visit.scene") else { return XCTFail("友達の車を組み終えない") }
         XCTAssertTrue(app.descendants(matching: .any)["camper.visit.counted"].firstMatch.exists, "訪ねた記録の一行が無い")
         shoot(app, "95i-友達の車を訪ねる")
         for id in ["camper.visit.gift", "camper.visit.firewood"] {

@@ -422,6 +422,12 @@ final class CamperServerTests: XCTestCase {
         let visit = try read("Sources/JourneyPhoto/Features/Camper/CamperVisitView.swift")
         XCTAssertTrue(visit.contains("message.kind == .refused ? WebTheme.danger : WebTheme.text"))
         XCTAssertFalse(visit.contains("CamperStyle.brassLight"))
+        // 描き終わるまで黒で覆う・贈った後は縁だけの済んだ形（2026-10-19 Mac run 561）
+        XCTAssertTrue(visit.contains(#"if !readyMarker.hasPrefix("camper-ready") {"#))
+        XCTAssertTrue(visit.contains(#"Label(L("贈りました", "Given"), systemImage: "checkmark")"#))
+        XCTAssertTrue(visit.contains(".jpOutlineButton(.regular, fullWidth: true)\n                            .frame(minHeight: 50)"))
+        // 届いた画面の「あとで」は 44pt の帯全体が当たり、ボタンは押しつぶされない
+        XCTAssertTrue(garage.contains(".frame(minHeight: WebTheme.minTapTarget)\n            .fixedSize(horizontal: false, vertical: true)\n            .accessibilityIdentifier(\"camper.arrival.close\")"))
         XCTAssertFalse(visit.contains("minimumScaleFactor"), "字を縮めて 12pt を割る")
         XCTAssertFalse(visit.contains(#"?? L("まだ", "Not yet")"#))
         let upload = try read("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
