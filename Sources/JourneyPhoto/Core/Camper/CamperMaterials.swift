@@ -5,6 +5,8 @@ enum CamperMaterial: Hashable, Sendable {
     case paint, cap, deep, roof, under, well, reveal
     case pinstripe, pinstripeDark
     case glass, lens, lensAmber, red, amber, lamp
+    /// 灯りの奥の反射板（メッキのお椀）と、消えている電球
+    case reflector, bulbOff
     case chrome, chromeDark, brass, alu, black, steel, chassis, rubber, tread, whitewall
     case wood, woodDark, fabric, fabricDark, cushion, curtain, inner, ceiling, floorIn, dash, seat, stone, mat
     case solar, solarFrame, snow, jerry, tank
@@ -28,10 +30,6 @@ enum CamperMaterial: Hashable, Sendable {
     indirect case byNight(CamperMaterial)
     /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
     case glowPool
-    /// 前照灯の前の地面の光の帯（板 pools の beam: #fff1cf 0.55→0）
-    case beamPool
-    /// 尾灯の後ろの地面の赤い溜まり（板 pools の red: #ff6a5a 0.8→0・不透明度 0.4）
-    case redPool
     /// 焚き火・ランタンの足元の溜まり（外の火は室内灯より赤い）
     case firePool
     /// 炎（形のある舌。下が白に近い黄、上へ橙・赤へ透ける。足し合わせる光）
@@ -76,10 +74,8 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case glow
     /// 灯りのレンズの明暗（真ん中の芯・反射板の輪 2・縁へ暗く）
     case lampFace
-    /// 尾灯のプリズムの筋（縦の筋・縁へ暗く）
-    case tailFace
-    /// 前照灯の光の帯（前へ広がりながら消える）
-    case beam
+    /// 尾灯・方向指示のレンズの裏のプリズムの粒（四角い角錐の並び。光の向きで面ごとに明暗が出る）
+    case prism
     /// 炎の色（下は白に近い黄、上へ橙・赤、先は透ける）
     case flame
     /// 窓越しの室内の明かり（真ん中が明るく縁へ落ちる・両側のカーテンのひだ・下半分に家具の影の帯）
@@ -120,24 +116,31 @@ enum CamperMaterials {
             // （昼は板どおり 0.62）。映り込み（clearCoat）は残す
             return CamperMaterialSpec(color: night ? 0x2A2016 : 0x10161C, roughness: 0.04, clearCoat: night ? 1 : 0,
                                       clearCoatRoughness: 0.03, opacity: night ? 0.22 : 0.62, doubleSided: true)
-        // 灯りのレンズ（2026-10-19 作り直し）。光る面に明暗の絵（真ん中の芯・反射板の輪・縁へ暗く）を貼り、白い丸にしない。
-        // 色: 前照灯は白に近い（5000K 前後）・車幅灯と方向指示は琥珀・尾灯は赤。emission は 1 まで（HDR で飛ばさない）
+        // 灯りのレンズ（2026-10-19 作り直し・2 回目）。owner「テールランプとかの灯りが不自然すぎる」:
+        // 2026-10-19 判断: キャンプ場に停めて人が中にいる場面なので、前照灯・尾灯・方向指示・車幅灯は**夜も消えている**
+        // （emission 無し）。夜に見えるのは、周りの灯り（焚き火・窓・ランタン・入口の灯り・月）がレンズに映る艶だけ。
+        // 光らないレンズを白い平らな円盤に見せないため、レンズは**透ける硝子**（色の透け・低い粗さ・clearCoat）で、
+        // 奥の反射板（`.reflector`）と電球が透けて見える。テールは濃い赤・方向指示は橙・前照灯は透明
         case .lens:
-            return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.04, clearCoat: 1, clearCoatRoughness: 0.03, opacity: night ? 1 : 0.85,
-                                      emission: night ? 0xFFF4E5 : nil, emissionIntensity: night ? 1.0 : 0,
-                                      emissionTexture: night ? .lampFace : nil)
+            // 前照灯・後退灯の透明の硝子（ほぼ透明。奥のメッキの反射板が見え、表に周りが映る）
+            return CamperMaterialSpec(color: 0xEEF3F6, roughness: 0.02, clearCoat: 1, clearCoatRoughness: 0.02, opacity: 0.22)
         case .lensAmber:
-            return CamperMaterialSpec(color: 0xE8B44A, roughness: 0.04, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.9,
-                                      emission: night ? 0xFFB45A : nil, emissionIntensity: night ? 0.9 : 0,
-                                      emissionTexture: night ? .lampFace : nil)
+            // 補助灯の黄色の硝子（半ば透け、奥の反射板が見える）
+            return CamperMaterialSpec(color: 0xE0A63A, roughness: 0.03, clearCoat: 1, clearCoatRoughness: 0.02, opacity: 0.5)
         case .red:
-            return CamperMaterialSpec(color: night ? 0x7A1612 : 0x8E1D1A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFF3B2E : nil, emissionIntensity: night ? 0.95 : 0,
-                                      emissionTexture: night ? .tailFace : nil)
+            // 尾灯の濃い赤の透け。表のプリズムの粒（`.prism`）で光の当たり方にむらが出る（一色の赤い板にしない）
+            return CamperMaterialSpec(color: 0x7A0F0C, roughness: 0.06, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.84,
+                                      texture: .prism)
         case .amber:
-            return CamperMaterialSpec(color: night ? 0x8A5418 : 0xC9772A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFFA640 : nil, emissionIntensity: night ? 0.8 : 0,
-                                      emissionTexture: night ? .lampFace : nil)
+            // 方向指示・車幅灯の橙の透け（同じプリズムの粒）
+            return CamperMaterialSpec(color: 0xC8641A, roughness: 0.06, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.84,
+                                      texture: .prism)
+        case .reflector:
+            // レンズの奥の反射板（磨いたメッキ・凹んだお椀）。周りの空と灯りを映す
+            return CamperMaterialSpec(color: 0xD9DCDF, metalness: 1, roughness: 0.08)
+        case .bulbOff:
+            // 消えている電球（すりガラス）。真っ白にしない
+            return CamperMaterialSpec(color: 0xCFCAC0, roughness: 0.3, clearCoat: 0.8, clearCoatRoughness: 0.05)
         case .lamp:
             // 電球（室内 2700K 前後）。小さいので強すぎると光の粒が散る（run 529）。芯が明るく縁へ落ちる
             return CamperMaterialSpec(color: 0xFFD890, roughness: 0.3, emission: night ? 0xFFC27A : nil,
@@ -194,8 +197,6 @@ enum CamperMaterials {
         case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)
         // 地面の溜まり（足す光）。色の明るさがそのまま足す強さ。板 pools の色と不透明度に寄せる
         case .glowPool: return CamperMaterialSpec(color: 0x5E3E22, texture: .glow, additive: true)
-        case .beamPool: return CamperMaterialSpec(color: 0x6E6A5E, texture: .beam, additive: true)
-        case .redPool: return CamperMaterialSpec(color: 0x4A1410, texture: .glow, additive: true)
         case .firePool: return CamperMaterialSpec(color: 0x6A2A10, texture: .glow, additive: true)
         // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
         case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)

@@ -50,6 +50,25 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
     }
 
+    /// 夜に停めている車: 前照灯・尾灯の光は場面に無い。点くのは入口の灯り（外の組・下向きの spot・減衰あり）と
+    /// 室内・外の火だけ（2026-10-19 owner「テールランプとかの灯りが不自然すぎる」）
+    func testParkedNightHasNoDrivingLights() async throws {
+        let scene = CamperScene()
+        scene.installNow(CamperConfig(stage: .camper, mood: .night))
+        let ls = lights(scene)
+        XCTAssertFalse(ls.contains { $0.name.hasPrefix("headlight") || $0.name.hasPrefix("taillight") }, "停めた車の走る灯りが点いている")
+        let porch = try XCTUnwrap(ls.first { $0.name == "porch" }?.light, "入口の灯りが無い")
+        XCTAssertEqual(porch.categoryBitMask, CamperScene.outsideMask)
+        XCTAssertEqual(porch.type, .spot)
+        XCTAssertFalse(porch.castsShadow)
+        XCTAssertGreaterThan(porch.attenuationEndDistance, 0, "減衰が無い")
+        XCTAssertLessThanOrEqual(porch.attenuationEndDistance, 1.6)
+        XCTAssertNil(node(scene, "glow.beam"))
+        XCTAssertNil(node(scene, "glow.tail"))
+        XCTAssertNotNil(node(scene, "glow.step"))
+        XCTAssertLessThanOrEqual(ls.count + 2, 8, "月と環境光を足して 8 まで")
+    }
+
     /// 昼・夜・雪の切り替えは組み直さない（同じ形のまま、灯り・その時刻の部品・にじみだけが替わる）
     func testMoodSwitchKeepsTheModel() async throws {
         let scene = CamperScene()
