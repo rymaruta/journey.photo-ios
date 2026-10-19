@@ -307,8 +307,9 @@ final class CamperRoomScene {
         defer { lampSpecs = specs }
         if studio {
             // 図鑑の寄り: 灯りの無い家具も夜に見えるよう、近くに暖色の灯りを 1 つ
-            specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, position: CV3(layout.size.x * 0.3, 60, layout.size.z * 0.8),
-                                         color: CamperRoomMaterials.lightColor(style.light), intensity: 3, range: 140, moods: [.night]))
+            // 家具の斜め前上に置いた電球ほどの灯り（届く距離 50・まわりは暗い）
+            specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, position: CV3(layout.size.x * 0.5 + 14, 44, 30),
+                                         color: CamperRoomMaterials.lightColor(style.light), intensity: 4, range: 50, moods: [.night]))
         }
         // 灯りの並びが同じなら作り直さない（指で動かしている間に毎回作り直さない）
         guard specs != lampSpecs || lampNodes.isEmpty && !specs.isEmpty else { return }
@@ -372,17 +373,18 @@ final class CamperRoomScene {
         let night = m == .night
         palette.setMood(m)
         scene.lightingEnvironment.contents = palette.image(key: "env.\(m.rawValue)") { CamperTextures.environment(m) }
-        scene.lightingEnvironment.intensity = CGFloat(night ? 0.12 : (studio ? 1.25 : 1.1))
+        // 夜の値は外の車の夜にそろえる（周りの光・露出）。環境光はごく弱く
+        scene.lightingEnvironment.intensity = CGFloat(night ? 0.06 : (studio ? 1.25 : 1.1))
         // 昼の太陽は奥の壁の窓の側（z の負）から、少し後ろから差し込む。夜の月は同じ側から青く弱く
         let from = night ? CV3(-0.3, 0.75, -0.6) : CV3(-0.25, 0.62, -0.75)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        sunNode.light?.intensity = CGFloat(night ? 90 : 1500)
+        sunNode.light?.intensity = CGFloat(night ? 60 : 1500)
         sunNode.light?.color = night ? CamperScene.color(0x9FB4DC) : CamperScene.color(0xFFF1DC)
         sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: 1)
-        ambientNode.light?.intensity = CGFloat(night ? 20 : 90)
+        ambientNode.light?.intensity = CGFloat(night ? 6 : 90)
         ambientNode.light?.color = night ? CamperScene.color(0x6A6F80) : CamperScene.color(0xFFF6EA)
-        cameraNode.camera?.exposureOffset = CGFloat(night ? (studio ? -0.8 : -0.5) : 0.15)
+        cameraNode.camera?.exposureOffset = CGFloat(night ? -0.15 : 0.15)
         cameraNode.camera?.bloomIntensity = 0
         for n in lampNodes { n.isHidden = !night }
     }

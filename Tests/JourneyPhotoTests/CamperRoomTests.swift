@@ -400,14 +400,34 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertTrue(names.contains(n), n)
         }
         XCTAssertEqual(bp.items.count, 16)
-        XCTAssertLessThanOrEqual(bp.lights.count, CamperRoomBuilder.maxLamps + 1)
+        XCTAssertLessThanOrEqual(bp.lights.count, CamperRoomBuilder.maxLamps)
         for l in bp.lights {
             XCTAssertTrue(l.inside, l.name)
             XCTAssertEqual(l.moods, [.night], l.name)
         }
-        XCTAssertEqual(bp.lights.filter(\.castsShadow).count, 1)
+        // 部屋全体を照らす天井の灯りは置かない（Mac run 575: 夜が昼より明るかった）
+        XCTAssertTrue(bp.lights.allSatisfy { $0.kind == .omni })
         // 灯りの家具の灯りがある（床の灯り・壁の灯り・電球の紐・ストーブ）
         XCTAssertGreaterThanOrEqual(bp.lights.filter { $0.name.hasPrefix("interior.lamp.") }.count, 4)
+    }
+
+    /// 夜の光の合計の上限（外の車の夜と同じ考え方）: どんなに灯りの家具を並べても、強さの和と届く距離は上限に収まる。
+    /// 上限を超えると、部屋全体が黄白に光って昼より明るく見えた（Mac run 568〜575）
+    func testNightLightBudget() {
+        var doc = CamperRoomDocument(room: .car)
+        let lit = CamperRoomCatalog.all.filter { $0.lit && $0.built }
+        for (i, f) in lit.enumerated() {
+            switch f.placement {
+            case .floor: doc.upsert(.floor("l\(i)", f.id, x: (i * 3) % 16, z: 6))
+            case .wall: doc.upsert(.wall("l\(i)", f.id, .back, c: 8 + i % 8, row: 1))
+            case .ceiling: doc.upsert(.ceiling("l\(i)", f.id, x: (i * 6) % 12, z: 4))
+            }
+        }
+        let bp = CamperRoomBuilder.build(camper, doc: doc)
+        XCTAssertGreaterThanOrEqual(bp.lights.count, 4)
+        XCTAssertLessThanOrEqual(bp.lights.count, CamperRoomBuilder.maxLamps)
+        XCTAssertLessThanOrEqual(bp.lights.reduce(0) { $0 + $1.intensity }, CamperRoomBuilder.nightBudget.intensity + 0.001)
+        for l in bp.lights { XCTAssertLessThanOrEqual(l.range, CamperRoomBuilder.nightBudget.range, l.name) }
     }
 
     /// 家具の小さな絵は形が写る（真ん中に色・まわりは透明）。影絵は黒と灰の縁
@@ -480,7 +500,11 @@ final class CamperRoomSceneTests: XCTestCase {
         let night = scene.lightingSnapshot
         XCTAssertEqual(night.lampsShown, night.lamps)
         XCTAssertEqual(night.bloom, 0)
-        XCTAssertLessThan(night.sun, 200)
+        XCTAssertLessThan(night.sun, 100)
+        // 夜の値は外の車の夜にそろえる（露出 −0.15・周りの光は外より弱く・環境光はごく弱く）
+        XCTAssertEqual(night.environment, 0.06, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(night.ambient, 10)
+        XCTAssertEqual(Double(scene.cameraNode.camera?.exposureOffset ?? 0), -0.15, accuracy: 0.001)
         scene.setMood(.day)
         XCTAssertEqual(scene.lightingSnapshot.lampsShown, 0)
         XCTAssertTrue(scene.marker().contains("camper-room-ready car day"))

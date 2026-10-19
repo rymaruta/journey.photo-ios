@@ -56,15 +56,16 @@ enum CamperRoomFurnitureModels {
 
     /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色。
     /// 2026-10-19（Mac run 568）: 部屋は小さい（灯りから家具まで 0.3〜0.9）ので、外の車の室内灯（520）の強さでは
-    /// 夜の部屋が白く飛んだ。run 572 でもまだ飛んだので、さらに 4 分の 1（はじめの 25 分の 1 ほど）
+    /// 夜の部屋が白く飛んだ。run 575 でも部屋全体が黄白に光ったので、届く距離を 30〜40（75〜100 cm）に縮めて
+    /// 灯りのまわりだけの溜まりにし、強さもさらに下げた（`CamperRoomBuilder.nightBudget` が合計の上限）
     static func lamp(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         switch id {
-        case "heater.wood_stove": return (CV3(0, 10, 9), 8, 46)
-        case "heater.kerosene": return (CV3(0, 9, 0), 7, 40)
-        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 18, 90)
-        case "floor_lamp.tripod": return (CV3(0, 48, 0), 16, 90)
-        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 13, 80)
-        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 12, 80)
+        case "heater.wood_stove": return (CV3(0, 10, 9), 3, 28)
+        case "heater.kerosene": return (CV3(0, 9, 0), 3, 26)
+        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 6, 42)
+        case "floor_lamp.tripod": return (CV3(0, 48, 0), 6, 42)
+        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 4, 34)
+        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 4, 38)
         default: return moreLamp(id)
         }
     }

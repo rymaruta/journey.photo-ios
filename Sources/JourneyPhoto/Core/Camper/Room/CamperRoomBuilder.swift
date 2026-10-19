@@ -43,8 +43,10 @@ enum CamperRoomBuilder {
     static let cutHeight = 9.0
     /// 壁の 3 層（内の板・断熱・外板）
     static let layers: [(depth: Double, inner: Double)] = [(1, 0), (1.8, 1), (1.2, 2.8)]
-    /// 夜の灯りの数の上限（月・周りの光・天井の灯りと合わせて SceneKit の 1 つの物に効く 8 を超えない）
+    /// 夜の灯りの数の上限（月・周りの光と合わせて SceneKit の 1 つの物に効く 8 を超えない）
     static let maxLamps = 5
+    /// 夜の灯りの合計の上限（強さの和・届く距離の上限）。これを超えると部屋全体が白く飛ぶ（Mac run 568〜575）
+    static let nightBudget = (intensity: 24.0, range: 46.0)
 
     static func build(_ layout: CamperRoomLayout, doc: CamperRoomDocument, paint: UInt32 = 0x5B6168) -> CamperRoomBlueprint {
         var bp = CamperRoomBlueprint(layout: layout)
@@ -321,11 +323,16 @@ enum CamperRoomBuilder {
                                        intensity: lamp.intensity, range: lamp.range, moods: [.night])
             lamps.append((spec, (p - center).length))
         }
-        var out = lamps.sorted { $0.1 < $1.1 }.prefix(maxLamps).map(\.0)
-        // 天井の柔らかい灯り（部屋全体を下から包む・影あり。板の「室内の灯り」）
-        out.append(CamperLightSpec(name: "interior.ceiling", kind: .spot, position: CV3(layout.size.x / 2, CamperRoomLayout.ceiling - 2, layout.size.z / 2),
-                                   direction: CV3(0, -1, 0), color: color, intensity: 10, range: 160, spotInner: 60, spotOuter: 150,
-                                   castsShadow: true, moods: [.night]))
+        // 2026-10-19（Mac run 575）: 天井の広い spot は部屋全体を照らし、夜が昼より明るく見えた。外して、灯りの家具の
+        // まわりの溜まりだけにする（夜の部屋は暗く、遠い壁と隅は黒に沈む）
+        var out = Array(lamps.sorted { $0.1 < $1.1 }.prefix(maxLamps).map(\.0))
+        // 灯りが多いときは、合計が上限に収まるよう全体を弱める
+        let total = out.reduce(0) { $0 + $1.intensity }
+        if total > nightBudget.intensity {
+            let k = nightBudget.intensity / total
+            for i in out.indices { out[i].intensity *= k }
+        }
+        for i in out.indices { out[i].range = min(out[i].range, nightBudget.range) }
         return out
     }
 }
