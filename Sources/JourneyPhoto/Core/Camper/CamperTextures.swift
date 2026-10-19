@@ -41,7 +41,7 @@ enum CamperTextures {
     }
 
     /// 決まった乱れ（同じ絵になる）
-    private struct Noise {
+    struct Noise {
         var seed: UInt64
         mutating func next() -> Double {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
@@ -62,6 +62,10 @@ enum CamperTextures {
         case .beam: return beam()
         case .flame: return flame()
         case .roomGlow: return roomGlow()
+        case .planks, .chevron, .herringbone, .checkerTiles, .cork, .boards, .birchPly, .darkBoards, .wallpaperStripe,
+             .leather, .linenSlub, .knit, .rush, .wicker, .rope, .ovalRings, .runnerWeave, .enamelChip, .castIron, .foliage,
+             .clockDial, .windowDay, .windowNight, .matBoard, .photoPlaceholder, .wornWood:
+            return CamperRoomTextures.make(kind)
         }
     }
 

@@ -40,12 +40,8 @@ final class CamperScene {
     private var doorPivot: SCNNode?
     private var doorGlowNode: SCNNode?
     private var buildTask: Task<Void, Never>?
-    private var textureCache: [String: CGImage] = [:]
-    /// 下ごしらえの貼り絵（`CamperScenePlan.bitmaps`）
-    private var planBitmaps: [String: CamperBitmap] = [:]
-    /// 材質（同じ材質は 1 つ。時刻を替えたら値を入れ直す）
-    private var materials: [CamperMaterial: SCNMaterial] = [:]
-    private var paint: UInt32 = 0x5B6168
+    /// 材質と貼り絵（同じ材質は 1 つ。時刻を替えたら値を入れ直す・とおまわり号の中と共に使う）
+    private let palette = CamperScenePalette()
     private(set) var currentMood: CamperMood = .day
     /// その時刻だけ見せる部品の組と灯り
     private var moodNodes: [(SCNNode, Set<CamperMood>)] = []
@@ -116,7 +112,7 @@ final class CamperScene {
     // MARK: 時刻・天気
 
     private func applyMood(_ mood: CamperMood) {
-        let env = image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
+        let env = palette.image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
         scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
@@ -161,7 +157,7 @@ final class CamperScene {
     func setMood(_ mood: CamperMood) {
         currentMood = mood
         applyMood(mood)
-        for (m, scn) in materials { configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood)) }
+        palette.setMood(mood)
         for (node, moods) in moodNodes { node.isHidden = !moods.contains(mood) }
         // その時刻でない灯りはノードごと隠す（強さ 0 で残すと、影ありの spot が昼にも影の絵を描き、光の数にも数えられる）
         for (node, moods) in moodLights { node.isHidden = !(moods.map { $0.contains(mood) } ?? true) }
@@ -204,10 +200,8 @@ final class CamperScene {
 
     private func install(_ plan: CamperScenePlan, config: CamperConfig) {
         let bp = plan.blueprint
-        planBitmaps = plan.bitmaps
-        paint = config.loadout.paint
+        palette.reset(bitmaps: plan.bitmaps, paint: config.loadout.paint, mood: config.mood)
         currentMood = config.mood
-        materials = [:]
         moodNodes = []
         moodLights = []
         builtKey = config.buildKey
@@ -226,7 +220,9 @@ final class CamperScene {
         isFlickering = false
         for prepared in plan.nodes {
             let spec = prepared.spec
-            guard let geometry = makeGeometry(prepared) else { continue }
+            guard let geometry = prepared.mesh.flatMap({ palette.geometry($0) }) ?? palette.geometry(spec.shape, material: spec.material, unit: s) else {
+                continue
+            }
             let node = SCNNode(geometry: geometry)
             node.name = spec.name
             node.orientation = SCNQuaternion(Float(spec.orientation.x), Float(spec.orientation.y), Float(spec.orientation.z),
@@ -345,7 +341,7 @@ final class CamperScene {
         let plane = SCNPlane(width: CGFloat(len), height: CGFloat((bp.halfWidth * 2 + 12) * s))
         let shade = SCNMaterial()
         shade.lightingModel = .constant
-        shade.diffuse.contents = image(key: "contact") { CamperTextures.contactShadow().premultiplied() }
+        shade.diffuse.contents = palette.image(key: "contact") { CamperTextures.contactShadow().premultiplied() }
         shade.transparencyMode = .aOne
         shade.blendMode = .alpha
         shade.writesToDepthBuffer = false
@@ -405,129 +401,6 @@ final class CamperScene {
         buildTask = nil
     }
 
-    // MARK: 形と素材
-
-    /// 材質（同じ材質は 1 つを使い回す。時刻を替えたら値だけ入れ直す・`setMood`）
-    private func material(_ m: CamperMaterial) -> SCNMaterial {
-        if let hit = materials[m] { return hit }
-        let made = SCNMaterial()
-        configure(made, CamperMaterials.spec(m, paint: paint, mood: currentMood))
-        materials[m] = made
-        return made
-    }
-
-    private func makeGeometry(_ prepared: CamperPreparedNode) -> SCNGeometry? {
-        let s = Self.unit
-        let spec = prepared.spec
-        if let m = prepared.mesh {
-            guard m.vertexCount > 0, !m.groups.isEmpty else { return nil }
-            func source(_ values: [Float], _ semantic: SCNGeometrySource.Semantic, _ components: Int) -> SCNGeometrySource {
-                let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
-                return SCNGeometrySource(data: data, semantic: semantic, vectorCount: values.count / components,
-                                         usesFloatComponents: true, componentsPerVector: components,
-                                         bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
-                                         dataStride: MemoryLayout<Float>.size * components)
-            }
-            let sources = [source(m.positions, .vertex, 3), source(m.normals, .normal, 3), source(m.uvs, .texcoord, 2)]
-            let elements = m.groups.map { SCNGeometryElement(indices: $0.indices, primitiveType: .triangles) }
-            let g = SCNGeometry(sources: sources, elements: elements)
-            g.materials = m.groups.map { material($0.material) }
-            return g
-        }
-        switch spec.shape {
-        case .mesh:
-            return nil
-        case let .box(size, chamfer):
-            let b = SCNBox(width: CGFloat(size.x * s), height: CGFloat(size.y * s), length: CGFloat(size.z * s),
-                           chamferRadius: CGFloat(chamfer * s))
-            b.chamferSegmentCount = chamfer > 0.8 ? 3 : 1
-            b.materials = [material(spec.material)]
-            return b
-        case let .cylinder(radius, height, segments):
-            let c = SCNCylinder(radius: CGFloat(radius * s), height: CGFloat(height * s))
-            c.radialSegmentCount = max(3, segments)
-            c.materials = [material(spec.material)]
-            return c
-        case let .torus(ring, pipe):
-            let t = SCNTorus(ringRadius: CGFloat(ring * s), pipeRadius: CGFloat(pipe * s))
-            t.ringSegmentCount = 32
-            t.pipeSegmentCount = 10
-            t.materials = [material(spec.material)]
-            return t
-        case .sphere(let radius):
-            let sp = SCNSphere(radius: CGFloat(radius * s))
-            sp.segmentCount = 18
-            sp.materials = [material(spec.material)]
-            return sp
-        case let .text(string, _, depth):
-            let t = SCNText(string: string, extrusionDepth: CGFloat(depth * 10))
-            t.font = UIFont.systemFont(ofSize: 10, weight: .bold)
-            t.flatness = 0.2
-            t.materials = [material(spec.material)]
-            return t
-        }
-    }
-
-    /// 材質に値を入れる（作る時と、時刻を替えた時。前の時刻の値が残らないよう、全部入れ直す）
-    private func configure(_ m: SCNMaterial, _ spec: CamperMaterialSpec) {
-        m.diffuse.contents = Self.color(spec.color)
-        m.metalness.contents = 0.0
-        m.roughness.contents = 1.0
-        m.clearCoat.contents = 0.0
-        m.clearCoatRoughness.contents = 0.0
-        m.emission.contents = Self.color(0x000000)
-        m.emission.intensity = 0
-        m.transparency = 1
-        m.transparencyMode = .aOne
-        m.blendMode = .alpha
-        m.writesToDepthBuffer = true
-        m.isDoubleSided = spec.doubleSided
-        func texture(_ kind: CamperTextureKind) -> CGImage? {
-            image(key: CamperScenePlan.textureKey(kind, spec.color)) { CamperTextures.make(kind).tinted(spec.color) }
-        }
-        if spec.additive {
-            // 下の色に光を足す（黒は何も足さない）。奥行きは書かず、灯りの溜まりどうしが重なっても欠けない
-            m.lightingModel = .constant
-            if let kind = spec.texture { m.diffuse.contents = texture(kind) }
-            m.blendMode = .add
-            m.writesToDepthBuffer = false
-            m.isDoubleSided = true
-            return
-        }
-        if spec.unlit {
-            m.lightingModel = .constant
-            return
-        }
-        m.lightingModel = .physicallyBased
-        if let kind = spec.texture {
-            m.diffuse.contents = texture(kind)
-            m.diffuse.wrapS = .repeat
-            m.diffuse.wrapT = .repeat
-            m.diffuse.mipFilter = .linear
-        }
-        m.metalness.contents = spec.metalness
-        m.roughness.contents = spec.roughness
-        if spec.clearCoat > 0 {
-            m.clearCoat.contents = spec.clearCoat
-            m.clearCoatRoughness.contents = spec.clearCoatRoughness
-        }
-        if spec.opacity < 1 {
-            m.transparency = CGFloat(spec.opacity)
-            m.transparencyMode = .dualLayer
-        }
-        if let e = spec.emission, spec.emissionIntensity > 0 {
-            // 光る面に明暗の絵（反射板の輪・プリズムの筋・織り目）があれば、光の色を掛けて貼る（一色の平らな光にしない）
-            if let kind = spec.emissionTexture {
-                m.emission.contents = image(key: "emit." + CamperScenePlan.textureKey(kind, e)) { CamperTextures.make(kind).tinted(e) }
-                m.emission.wrapS = .repeat
-                m.emission.wrapT = .repeat
-            } else {
-                m.emission.contents = Self.color(e)
-            }
-            m.emission.intensity = CGFloat(spec.emissionIntensity)
-        }
-    }
-
     // MARK: 炎のゆらぎ
 
     /// 揺らしてよいか（「視差効果を減らす」では止める）
@@ -574,19 +447,6 @@ final class CamperScene {
         }
     }
 
-    /// 貼り絵（下ごしらえで作った画素があればそれを、無ければその場で作る）
-    private func image(key: String, make: () -> CamperBitmap) -> CGImage? {
-        if let hit = textureCache[key] { return hit }
-        let bitmap = planBitmaps[key] ?? make()
-        guard let provider = CGDataProvider(data: Data(bitmap.rgba) as CFData),
-              let made = CGImage(width: bitmap.width, height: bitmap.height, bitsPerComponent: 8, bitsPerPixel: 32,
-                                 bytesPerRow: bitmap.width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                                 provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) else { return nil }
-        textureCache[key] = made
-        return made
-    }
-
     /// 灯りの組をまとめた形の下の全部に付ける（まとめた結果が子を持つ場合にも効くように）
     static func mask(_ node: SCNNode, _ bits: Int) {
         node.categoryBitMask = bits
@@ -595,10 +455,7 @@ final class CamperScene {
 
     static func vector(_ v: CV3) -> SCNVector3 { SCNVector3(Float(v.x), Float(v.y), Float(v.z)) }
 
-    static func color(_ hex: UInt32, alpha: Double = 1) -> UIColor {
-        UIColor(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255,
-                alpha: alpha)
-    }
+    static func color(_ hex: UInt32, alpha: Double = 1) -> UIColor { CamperScenePalette.color(hex, alpha: alpha) }
 }
 
 #endif
