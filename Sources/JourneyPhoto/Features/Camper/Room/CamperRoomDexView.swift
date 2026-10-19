@@ -108,7 +108,7 @@ struct CamperRoomDexView: View {
                 CamperProgressBar(fraction: available.isEmpty ? 0 : Double(have) / Double(available.count)).frame(maxWidth: 80)
             }
             .accessibilityElement(children: .combine)
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                 ForEach(items) { f in card(f) }
             }
         }

@@ -13,26 +13,34 @@ final class CamperRoomTests: XCTestCase {
 
     // MARK: 図鑑
 
-    /// 板の家具図鑑どおり 16 分類・64 個（1 分類 4 つ・床 7・壁 5・天井 4）、id は重ならず「分類.部品」。最初から 17 個、要サーバー 10 個
+    /// 板の家具図鑑どおり 16 分類・64 個（1 分類 4 つ・床 7・壁 5・天井 4）、id は重ならず「分類.部品」。最初から 17 個、要サーバー 10 個。
+    /// 形の組み合わせ（`CamperRoomVariety`）を足すと、あつまれどうぶつの森の家具 2,076 を超える。色違いでは数えない
     func testCatalogMatchesTheBoard() {
-        let all = CamperRoomCatalog.all
-        XCTAssertEqual(all.count, 64)
-        XCTAssertEqual(Set(all.map(\.id)).count, 64)
+        let board = CamperRoomCatalog.board
+        XCTAssertEqual(board.count, 64)
+        XCTAssertEqual(Set(board.map(\.id)).count, 64)
         XCTAssertEqual(CamperRoomCategory.allCases.count, 16)
-        for c in CamperRoomCategory.allCases { XCTAssertEqual(CamperRoomCatalog.items(c).count, 4, c.rawValue) }
-        XCTAssertEqual(CamperRoomCatalog.items(.floor).count, 28)
-        XCTAssertEqual(CamperRoomCatalog.items(.wall).count, 20)
-        XCTAssertEqual(CamperRoomCatalog.items(.ceiling).count, 16)
-        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 17)
-        let server = all.filter { if case .base(.server) = $0.unlock { return true } else { return false } }
+        for c in CamperRoomCategory.allCases { XCTAssertEqual(board.filter { $0.category == c }.count, 4, c.rawValue) }
+        XCTAssertEqual(board.filter { $0.placement == .floor }.count, 28)
+        XCTAssertEqual(board.filter { $0.placement == .wall }.count, 20)
+        XCTAssertEqual(board.filter { $0.placement == .ceiling }.count, 16)
+        XCTAssertEqual(board.filter { $0.unlock.isStarter }.count, 17)
+        let server = board.filter { if case .base(.server) = $0.unlock { return true } else { return false } }
         XCTAssertEqual(Set(server.map(\.id)), ["bed.daybed", "seating.bench_storage", "heater.tile_hearth", "floor_lamp.paper_column",
                                                "wall_shelf.floating_corner", "poster.postcard_grid", "poster.tapestry", "string_ceiling.bunting",
                                                "plant_hanger.hanging_basket", "plant_hanger.glass_terrarium"])
         // 珍しさ（板: いつもの 17・ときどき 20・めずらしい 19・とても珍しい 8）
-        XCTAssertEqual(all.filter { $0.rarity == .common }.count, 17)
-        XCTAssertEqual(all.filter { $0.rarity == .occasional }.count, 20)
-        XCTAssertEqual(all.filter { $0.rarity == .rare }.count, 19)
-        XCTAssertEqual(all.filter { $0.rarity == .veryRare }.count, 8)
+        XCTAssertEqual(board.filter { $0.rarity == .common }.count, 17)
+        XCTAssertEqual(board.filter { $0.rarity == .occasional }.count, 20)
+        XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 19)
+        XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 8)
+        let all = CamperRoomCatalog.all
+        XCTAssertGreaterThan(all.count, CamperRoomVariety.animalCrossingCount)
+        XCTAssertEqual(Set(all.map(\.id)).count, all.count)
+        XCTAssertEqual(Set(CamperRoomVariety.pieces.map(\.signature)).count, CamperRoomVariety.pieces.count)
+        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 17, "最初から持っているのは板の 17 個のまま")
+        XCTAssertEqual(Set(all.map(\.nameJa)).count, all.count)
+        XCTAssertEqual(Set(all.map(\.nameEn)).count, all.count)
         for f in all {
             XCTAssertFalse(f.nameJa.isEmpty, f.id)
             XCTAssertFalse(f.nameEn.isEmpty, f.id)
@@ -52,7 +60,7 @@ final class CamperRoomTests: XCTestCase {
         let count = CamperRoomCatalog.dexCount(owned)
         XCTAssertEqual(count.have, 17)
         XCTAssertEqual(count.total, CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.count)
-        XCTAssertEqual(CamperRoomCatalog.soonCount, 64 - count.total)
+        XCTAssertEqual(CamperRoomCatalog.soonCount, CamperRoomCatalog.board.filter { !$0.isAvailable }.count)
         XCTAssertGreaterThanOrEqual(count.total, 25)
     }
 
@@ -111,9 +119,10 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
-    /// 第1段で集められる家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床が足りなくならない）
+    /// 板の、第1段で集められる家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床が足りなくならない）。
+    /// 形の組み合わせで増やした図鑑は部屋に全部並べるものではない（上限の中から選ぶ）
     func testCollectedFurnitureFits() {
-        let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
+        let pieces = CamperRoomCatalog.board.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
             let area: (CamperRoomFurniture) -> Int = { $0.placement == .floor && !$0.isRug ? $0.width * $0.depth : 0 }
             return area(a) > area(b)
         }
@@ -368,6 +377,7 @@ final class CamperRoomTests: XCTestCase {
     /// 作り込んだ家具の形: 向きは長さ 1・数は有限、三角形は多すぎない（1 つ 3 万まで）、置くマスに収まる。
     /// 「箱を並べただけ」にしない目安として、どの家具も 2 種類以上の素材と 300 以上の三角形を持つ
     func testFurnitureMeshesAreSoundAndDetailed() throws {
+        var shapes = Set<String>()
         for f in CamperRoomCatalog.all where f.built {
             let m = try XCTUnwrap(CamperRoomFurnitureModels.mesh(f.id), f.id)
             XCTAssertGreaterThan(m.triangleCount, 200, f.id)
@@ -395,7 +405,11 @@ final class CamperRoomTests: XCTestCase {
                 XCTAssertLessThanOrEqual(ys.max()!, 0.05, f.id)
                 XCTAssertGreaterThanOrEqual(ys.min()!, -f.height - 1, f.id)
             }
+            let sum = m.positions.reduce(0.0) { $0 + $1.x + $1.y * 3 + $1.z * 7 }
+            shapes.insert("\(m.triangleCount)|\(Int((sum * 10).rounded()))")
         }
+        // 色を変えただけが同じ輪郭に潰れていない（あつ森の家具の数より、別の形が多い）
+        XCTAssertGreaterThan(shapes.count, CamperRoomVariety.animalCrossingCount - 500)
     }
 
     /// 夜の光の決まり: どの素材も光る面の emission は 1 まで。窓の外の景色は光を受けない
@@ -437,7 +451,8 @@ final class CamperRoomTests: XCTestCase {
     /// 上限を超えると、部屋全体が黄白に光って昼より明るく見えた（Mac run 568〜575）
     func testNightLightBudget() {
         var doc = CamperRoomDocument(room: .car)
-        let lit = CamperRoomCatalog.all.filter { $0.lit && $0.built }
+        // 灯りの家具は図鑑に何百もある。上限の試験は、上限を超える少数を置けば足りる
+        let lit = Array(CamperRoomCatalog.all.filter { $0.lit && $0.built }.prefix(12))
         for (i, f) in lit.enumerated() {
             switch f.placement {
             case .floor: doc.upsert(.floor("l\(i)", f.id, x: (i * 3) % 16, z: 6))
