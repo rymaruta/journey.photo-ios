@@ -392,7 +392,11 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(spin.contains("box: boxFaces, aim: aim)"))
         let medal = try source("Features/Profile/MedalViewerView.swift")
         XCTAssertTrue(medal.contains("buildBox(aspect: aspect, depthRatio: depth, cornerRatio: corner)"))
-        XCTAssertTrue(medal.contains("shape.materials = [handleCap, handleCap, handleSide]"), "持ち手が1色のまま")
+        XCTAssertTrue(medal.contains("caps.materials = [handleCap]"), "持ち手の前後に絵が貼られない")
+        XCTAssertTrue(medal.contains("walls.materials = [handleSide]"), "持ち手の壁が1色でない")
+        XCTAssertTrue(medal.contains("TrunkHandleMesh.make(depth: depthPoints, stitched: stitched)"))
+        XCTAssertFalse(medal.contains("outer.append(inner.reversing())"), "持ち手の穴が崩れて蓋の粒が乗る")
+        XCTAssertFalse(medal.contains("chamferRadius: 2 * unit"), "付け根の金具が面取りで絵を潰す")
         // 向きのボタン: 着いたら止める・裏返すと寄せを外す・最初は板の -34°
         XCTAssertTrue(medal.contains("aimHeld = true\n                velocity = 0"), "向きに着いても止まらない")
         XCTAssertTrue(medal.contains("} else if aimHeld {\n            return"))
