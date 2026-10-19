@@ -119,11 +119,11 @@ final class WhatsNewTests: XCTestCase {
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
-        // 1.1.18（2026-10-19）: 写真で作るキャンプ場・写真で作るキャンピングカー（1.1.17 で入ったが知らせが無かった）
+        // 1.1.18（2026-10-19）: 写真で作るキャンプ場・写真で作るキャンピングカー・アイコンとカバー（後の2つは 1.1.17 で入ったが知らせが無かった）
         let camp = try XCTUnwrap(releases.first)
-        XCTAssertEqual(camp.items.map(\.title.ja), ["写真で作るキャンプ場", "写真で作るキャンピングカー"])
-        XCTAssertEqual(camp.items.map(\.symbol), ["tent", "bus"])
-        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage, .mypage])
+        XCTAssertEqual(camp.items.map(\.title.ja), ["写真で作るキャンプ場", "写真で作るキャンピングカー", "アイコンとカバーを選びやすく"])
+        XCTAssertEqual(camp.items.map(\.symbol), ["tent", "bus", "person.crop.circle"])
+        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage, .mypage, .mypage])
         XCTAssertEqual(camp.date, WhatsNew.Day(year: 2026, month: 10, day: 19))
         XCTAssertTrue(camp.items[1].detail.ja.contains("とおまわり号"), "キャンピングカーの名前を言っていない")
         // 1.1.16（2026-10-18・札 #305 #306）: トランクの部品の付き方・特別な券面の裏・呼び名「すれちがい乗車券」
@@ -258,7 +258,7 @@ final class WhatsNewTests: XCTestCase {
     }
 
     /// 🔴 **1.1.18 の項目は、次に Actions で出す版（testflight/1.1.17 の次 = 1.1.18）で出る**（2026-10-19）。
-    /// 1.1.17（キャンピングカー・アイコンとカバー）には項目が無かったので、キャンピングカーも 1.1.18 で知らせる。
+    /// 1.1.17（キャンピングカー・アイコンとカバー）には項目が無かったので、その2つも 1.1.18 で知らせる。
     /// 比べ方は数（`isNewer`）。1.1.17・1.1.16 を見た人には 1.1.18 の分だけ、1.1.15 を見た人には 1.1.16 とまとめて出す。
     /// 1.1.18 を見た人・その次の版（項目の無い 1.1.19）では出さない
     func testNextReleaseShowsOnlyOnTheNextVersion() async throws {
@@ -267,7 +267,7 @@ final class WhatsNewTests: XCTestCase {
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
         XCTAssertEqual(releases.first?.version, "1.1.18")
-        XCTAssertEqual(releases.first?.items.count, 2)
+        XCTAssertEqual(releases.first?.items.count, 3)
         XCTAssertEqual(releases[1].items.count, 3)
         XCTAssertEqual(releases[2].items.count, 5)
         // 1.1.17・1.1.16 を見た人: 1.1.18 の分だけ
