@@ -368,7 +368,9 @@ final class CamperWiringTests: XCTestCase {
 
     /// SceneKit: 板の指定（physicallyBased・clearCoat・SCNFloor の映り込み・太陽の落ち影・まとめて描く）
     func testSceneKitFollowsTheBoard() throws {
+        // 素材を SceneKit に写す所は `CamperScenePalette` に切り出した（2026-10-19・とおまわり号の中と共に使う）
         let scene = try source("Sources/JourneyPhoto/Features/Camper/CamperScene.swift")
+            + source("Sources/JourneyPhoto/Features/Camper/CamperScenePalette.swift")
         for needle in [".physicallyBased", "clearCoat.contents", "SCNFloor()", "castsShadow = true", "flattenedClone()",
                        "reflectivity", "lightingEnvironment", "CamperScenePlan.make(next)", "Task.detached"] {
             XCTAssertTrue(scene.contains(needle), needle)

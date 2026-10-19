@@ -42,6 +42,8 @@ enum CamperMaterial: Hashable, Sendable {
     case windowGlow
     /// 窓から漏れる光のにじみ（ガラスの外の、窓より一回り大きい面。縁が透ける丸いグラデーション・足す光 0.3 ほど）
     case windowHalo
+    /// とおまわり号の中の家具と部屋の素材（2026-10-19・`CamperRoomMaterials`）
+    case room(CamperRoomMaterial)
 }
 
 /// 素材の値（SceneKit の physicallyBased にそのまま渡す）。板の付箋「素材の値（実装用）」の推奨値
@@ -84,6 +86,11 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case flame
     /// 窓越しの室内の明かり（真ん中が明るく縁へ落ちる・両側のカーテンのひだ・下半分に家具の影の帯）
     case roomGlow
+    // とおまわり号の中（2026-10-19・`CamperRoomTextures`）
+    case planks, chevron, herringbone, checkerTiles, cork
+    case boards, birchPly, darkBoards, wallpaperStripe
+    case leather, linenSlub, knit, rush, wicker, rope, ovalRings, runnerWeave, enamelChip, castIron, foliage
+    case clockDial, windowDay, windowNight, matBoard, photoPlaceholder, wornWood, mapPrint
 }
 
 enum CamperMaterials {
@@ -206,6 +213,7 @@ enum CamperMaterials {
         case .lanternGlass:
             return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
                                       doubleSided: true)
+        case .room(let r): return CamperRoomMaterials.spec(r, mood: mood)
         }
     }
 

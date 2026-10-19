@@ -167,6 +167,18 @@ struct CamperGarageView: View {
 
     // MARK: 立体の車
 
+    /// とおまわり号の中へ入った（2026-10-19・`CamperRoomView`）
+    @State private var insideRoom = false
+
+    /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）
+    private func goInside() {
+        if !doorOpen { toggleDoor() }
+        Task { @MainActor in
+            if !reduceMotion { try? await Task.sleep(nanoseconds: 650_000_000) }
+            insideRoom = true
+        }
+    }
+
     private func stageView(width: CGFloat, height: CGFloat) -> some View {
         CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion) { marker in
             readyMarker = marker
@@ -186,6 +198,11 @@ struct CamperGarageView: View {
         .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -45) }
         .accessibilityIdentifier("camper.scene")
         .overlay(alignment: .bottomTrailing) { sceneButtons }
+        .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
+        .navigationDestination(isPresented: $insideRoom) {
+            CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, stage: actualStage, stats: stats,
+                           paint: config.loadout.paint, initialMood: mood)
+        }
         .overlay(alignment: .top) {
             if previewStage != nil && previewStage != actualStage || previewPart != nil {
                 Text(previewPart != nil ? L("まだ持っていない部品 · 見本", "Not yet collected · preview") : L("まだ先 · 見本", "Not yet · preview"))
