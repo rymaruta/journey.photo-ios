@@ -2335,11 +2335,22 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
         guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
         // 分類のボタンを押すと、その部品へ寄る（`CamperFraming.focus`）。下の欄を送ってから押すので、寄りは押した後に決まる
+        // 分類の行は横に並び、画面の外に隠れる（Mac run 563: 前照灯が右の外にあり押せなかった）。縦に送ってから、
+        // 行のうち見えているボタンの上で左へ少しずつ引いて探す
         func aim(_ ids: [String]) -> Bool {
             for id in ids {
                 let b = app.buttons[id].firstMatch
                 guard b.waitForExistence(timeout: 5) else { return false }
                 scrollTo(b, in: app)
+                var drags = 0
+                while !b.isHittable, drags < 8 {
+                    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'camper.category.'"))
+                    guard let visible = (0..<row.count).map({ row.element(boundBy: $0) }).first(where: { $0.isHittable }) else { break }
+                    let start = visible.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                    start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
+                    Thread.sleep(forTimeInterval: 1)
+                    drags += 1
+                }
                 guard b.isHittable else { return false }
                 b.tap()
             }

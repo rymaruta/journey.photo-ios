@@ -354,6 +354,10 @@ struct CamperBuilder {
 
     /// 扉の口（板 CamperSpec の扉 x33.5〜56.5・y−46.5〜30.5。バンは窓の小さい扉を x−10〜16 に）
     var doorHole: [CV2] { van ? rr(-10, -50, 26, 80, 2) : rr(33.5, -46.5, 23, 77, 2) }
+    /// 入口の灯りの上限（2026-10-19 Mac run 563 の 95b で車体が白く飛んだ値の手前）: 強さ・届く距離・円錐（外の角）と、
+    /// 縁のぼかし（外の角と内の角の差）の下限
+    static let porchLimits = (intensity: 120.0, range: 130.0, spotOuter: 90.0, penumbra: 40.0)
+
     /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
     var porchX: Double { 45 }
     var porchY: Double { 113.5 }
@@ -1415,11 +1419,15 @@ struct CamperBuilder {
         // 中にいる場面で、走る時の灯りが点いているのがいちばん不自然。ごく暗い車幅灯も点けない（日本の実車でも停めて
         // 過ごす時は消す・灯りの数を増やさない）。点くのは停めていても点くもの——室内灯・窓・入口の灯り・足元の灯りだけ。
         if !van {
-            // 入口の灯り（扉の上の壁の灯り）: 光る面だけでなく、下向きの spot（減衰あり・影なし）で扉・ステップ・
-            // 地面を照らす。色は室内と同じ 2700K。外の部品だけを照らす組（灯りの数は 1 つ）
-            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, position: CV3(porchX, porchY - 3, BW + 4),
-                                              direction: CV3(0, -1, 0.42).normalized, color: warm, intensity: 420, range: 150,
-                                              spotInner: 50, spotOuter: 115))
+            // 入口の灯り（扉の上の壁の灯り）: 光る面だけでなく、下向きの spot（減衰あり・影なし）で扉の周りと足元を
+            // ほんのり照らす。色は室内と同じ 2700K。外の部品だけを照らす組（灯りの数は 1 つ）
+            // 2026-10-19（Mac run 563 の 95b）: 420・距離 150・円錐 115° では車体の横に大きな白い円錐が当たり、塗装が白く
+            // 飛んだ。実物の入口灯は扉の周りと足元がほんのり明るくなる程度——強さを 1/5 に、円錐を狭く、内と外の角の差
+            // （ぼかし）を大きくし、壁から少し離して真下寄りに向ける（壁には浅い角度でしか当たらない）。
+            // 上限は `CamperBuilder.porchLimits`（試験で守る）
+            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, position: CV3(porchX, porchY - 3, BW + 7),
+                                              direction: CV3(0, -1, 0.25).normalized, color: warm, intensity: 85, range: 125,
+                                              spotInner: 20, spotOuter: 80))
             // 足元の灯り（ステップの下）は灯りを足さず、地面の小さな溜まり（足す光）だけ。入口の灯りの光と重なる
             add("glow.step", .mesh(glowQuad(width: 30, depth: 22)), .glowPool, at: CV3(45, 0.5, BW + 12), group: .glow)
         }

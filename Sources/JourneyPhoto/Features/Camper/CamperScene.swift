@@ -121,13 +121,12 @@ final class CamperScene {
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
         scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
-        // 板の光の向き（画面基準）: 昼 (−0.18, −0.72, 0.62)・夜の月 (0.45, −0.6, 0.55)。板は下が +y
-        let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
-        let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
+        // 太陽・月の向きと強さ（`CamperMaterials.sun`）。画面に対して決まっている（車は回る台の上）
+        let sun = CamperMaterials.sun(mood)
+        let q = CQuat.rotation(from: CV3(0, 0, -1), to: -sun.from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        // 夜の月は車体の形が読める強さ（縁に青白いリムが乗る程度・run 538 で車が影絵になった）
-        sunNode.light?.intensity = CGFloat(mood == .night ? 260 : (mood == .snow ? 1000 : 1200))
-        sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
+        sunNode.light?.intensity = CGFloat(sun.intensity)
+        sunNode.light?.color = Self.color(sun.color)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
             : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)

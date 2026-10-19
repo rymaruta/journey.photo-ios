@@ -210,6 +210,20 @@ enum CamperMaterials {
         }
     }
 
+    /// 太陽・月（平行光）の来る向き（画面基準・上が +Y・手前が +Z）と強さと色。
+    ///
+    /// 2026-10-19 判断（Mac run 563 の 95k）: 夜の月は前は (0.45, 0.6, 0.55)・260 で、手前（カメラの側）から当たっていた。
+    /// 車は回る台の上なので、後ろへ回すと後ろの壁が月を真正面から受け、夜なのに一面まっ白に見えた。月は上と少し奥
+    /// から当て（手前を向く面には当たらない・屋根と縁に青白い光が乗るだけ）、強さも下げる。手前の面は焚き火・窓・
+    /// 入口の灯りと、弱い環境光で読ませる
+    static func sun(_ mood: CamperMood) -> (from: CV3, intensity: Double, color: UInt32) {
+        switch mood {
+        case .night: return (CV3(0.3, 0.85, -0.3), 150, 0x9FB4DC)
+        case .snow: return (CV3(-0.18, 0.72, 0.62), 1000, 0xFFF4E2)
+        case .day: return (CV3(-0.18, 0.72, 0.62), 1200, 0xFFF4E2)
+        }
+    }
+
     /// 周りの空（映り込みの元・板の env の色: 空の上・地平線・地面の手前・地面の奥）
     static func sky(_ mood: CamperMood) -> (top: UInt32, horizon: UInt32, groundNear: UInt32, groundFar: UInt32) {
         switch mood {

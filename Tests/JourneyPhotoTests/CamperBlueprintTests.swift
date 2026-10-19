@@ -680,6 +680,26 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertGreaterThan(Int(p.pixel(4, 1).r) - Int(p.pixel(4, 6).r), 60)
     }
 
+    /// 夜の外の明るさの上限（Mac run 563）: 車体の外を照らす灯り（入口・焚き火・ランタン・電球の列）の強さの合計と、
+    /// 月。月は手前（カメラの側）から当てない——車を回すと、こちらを向いた面（95k の後ろの壁）が真正面から受けて白く飛んだ
+    func testNightOutsideBrightnessStaysLow() {
+        for key in ["brass_lantern", "string_lights", "paper_lantern", "oil_lamp"] {
+            var l = CamperLoadout.standard
+            l.picks[CamperCategory.outdoorLight.rawValue] = key
+            for stage in CamperStage.allCases {
+                let outside = build(stage, mood: .night, loadout: l).lights.filter { !$0.inside }
+                XCTAssertLessThanOrEqual(outside.map(\.intensity).reduce(0, +), 450, "\(stage) \(key): 夜の外の灯りの合計が強い")
+            }
+        }
+        let moon = CamperMaterials.sun(.night)
+        XCTAssertLessThanOrEqual(moon.intensity, 160, "月が強い")
+        XCTAssertLessThanOrEqual(moon.from.z, 0, "月が手前から当たり、こちらを向いた面が白く飛ぶ")
+        XCTAssertGreaterThan(moon.from.y, 0.7, "月は上から（屋根と縁に乗る）")
+        let blue = CamperTextures.rgb(moon.color)
+        XCTAssertGreaterThan(blue.2, blue.0, "月は青白い")
+        XCTAssertEqual(CamperMaterials.sun(.day).intensity, 1200)
+    }
+
     /// 入口の灯り: 扉の上の壁の灯り（光る面）と、下向きの spot（減衰あり・影なし・2700K）が地面と扉の前を照らす。
     /// 外の部品だけを照らす組。バンには無い
     func testPorchLightFallsOnTheGround() {
@@ -692,9 +712,14 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertFalse(porch.castsShadow, "影の計算を増やさない")
             XCTAssertLessThan(porch.direction.y, -0.8, "下を向く")
             XCTAssertGreaterThan(porch.direction.z, 0, "車の外へ")
-            XCTAssertLessThanOrEqual(porch.range, 160, "減衰して遠くまで届かない")
+            // 明るさの上限（Mac run 563 の 95b: 420・150・115° で車体の横が白く飛んだ）
+            let lim = CamperBuilder.porchLimits
+            XCTAssertLessThanOrEqual(porch.intensity, lim.intensity, "入口の灯りが強すぎる（車体が白く飛ぶ）")
+            XCTAssertLessThanOrEqual(porch.range, lim.range, "入口の灯りが遠くまで届く")
+            XCTAssertLessThanOrEqual(porch.spotOuter, lim.spotOuter, "入口の灯りの円錐が広すぎる")
+            XCTAssertGreaterThanOrEqual(porch.spotOuter - porch.spotInner, lim.penumbra, "円錐の縁が硬い")
+            XCTAssertGreaterThan(porch.range, porch.position.y, "足元（地面）まで届かない")
             XCTAssertGreaterThan(porch.position.y, builder.doorHole.map { 62 - $0.y }.max() ?? 0, "扉の口の上")
-            XCTAssertLessThan(porch.intensity, 1250 / 2, "室内の灯りより弱い")
             XCTAssertEqual(count(b, "ext.porchLamp"), 1)
             XCTAssertEqual(count(b, "ext.stepLamp"), 1)
         }
