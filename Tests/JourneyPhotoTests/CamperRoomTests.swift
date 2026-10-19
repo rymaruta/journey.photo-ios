@@ -96,8 +96,8 @@ final class CamperRoomTests: XCTestCase {
 
     /// 最初の並びは、どの段の部屋でも決まりに合っていて、思った数がそろう
     func testStarterDocumentsAreValid() {
-        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 12, 12),
-                                                    (.car, .camper, 16, 18, 14), (.trailer, .trailer, 7, 24, 16)] {
+        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 18, 16),
+                                                    (.car, .camper, 16, 22, 18), (.trailer, .trailer, 7, 26, 20)] {
             let l = CamperRoomLayout.make(kind, stage: stage)
             XCTAssertEqual(l.width, width, "\(stage)")
             XCTAssertEqual(l.depth, depth, "\(stage)")
@@ -108,6 +108,27 @@ final class CamperRoomTests: XCTestCase {
                 others.remove(item.u)
                 XCTAssertTrue(CamperRoomRules.check(item, in: others, layout: l).ok, "\(kind) \(stage) \(item.k)")
             }
+        }
+    }
+
+    /// 第1段で集められる家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床が足りなくならない）
+    func testCollectedFurnitureFits() {
+        let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
+            let area: (CamperRoomFurniture) -> Int = { $0.placement == .floor && !$0.isRug ? $0.width * $0.depth : 0 }
+            return area(a) > area(b)
+        }
+        for (kind, stage) in [(CamperRoomKind.car, CamperStage.van), (.car, .camper), (.trailer, .trailer)] {
+            let layout = CamperRoomLayout.make(kind, stage: stage)
+            var doc = CamperRoomDocument(room: kind)
+            var missed: [String] = []
+            for f in pieces {
+                if let item = CamperRoomRules.firstFit(f, uid: doc.nextUid(), in: doc, layout: layout) {
+                    doc.upsert(item)
+                } else {
+                    missed.append(f.id)
+                }
+            }
+            XCTAssertEqual(missed, [], "\(stage)")
         }
     }
 
@@ -123,11 +144,11 @@ final class CamperRoomTests: XCTestCase {
         doc.upsert(.floor("r", "room_rug.runner", x: 0, z: 4))
         XCTAssertEqual(CamperRoomRules.check(.floor("r2", "room_rug.oval_hooked", x: 2, z: 3), in: doc, layout: camper).reason, .overlap)
         // 台所・扉の前・はみ出し（扉の前は奥行きが変わっても、扉の壁から 3 マス）
-        XCTAssertEqual(CamperRoomRules.check(.floor("k", "storage.trunk", x: 13, z: 1), in: doc, layout: camper).reason, .kitchen)
-        XCTAssertEqual(CamperRoomRules.check(.floor("d", "storage.trunk", x: 15, z: camper.depth - 2), in: doc, layout: camper).reason, .doorway)
-        XCTAssertEqual(CamperRoomRules.check(.floor("o", "storage.trunk", x: 17, z: 0), in: doc, layout: camper).reason, .outside)
+        XCTAssertEqual(CamperRoomRules.check(.floor("k", "storage.trunk", x: camper.kitchen.x + 1, z: 1), in: doc, layout: camper).reason, .kitchen)
+        XCTAssertEqual(CamperRoomRules.check(.floor("d", "storage.trunk", x: camper.door.lowerBound, z: camper.depth - 2), in: doc, layout: camper).reason, .doorway)
+        XCTAssertEqual(CamperRoomRules.check(.floor("o", "storage.trunk", x: camper.width - 1, z: 0), in: doc, layout: camper).reason, .outside)
         // 敷物は扉の前にも敷ける
-        XCTAssertTrue(CamperRoomRules.check(.floor("m", "room_rug.runner", x: 12, z: camper.depth - 2), in: doc, layout: camper).ok)
+        XCTAssertTrue(CamperRoomRules.check(.floor("m", "room_rug.runner", x: camper.door.lowerBound - 3, z: camper.depth - 2), in: doc, layout: camper).ok)
     }
 
     /// 扉から奥（後ろの壁の列）まで通れない置き方はできない
@@ -156,7 +177,7 @@ final class CamperRoomTests: XCTestCase {
         // 背の高い家具（引き出し 50）は壁に付けると腰と目の段をふさぐ
         XCTAssertEqual(CamperRoomRules.check(.floor("t", "storage.tall_drawers", x: 8, z: 0), in: doc, layout: camper).reason, .wallBlocked)
         // 台所（高さ 36）は奥の壁の腰の段をふさぐ
-        XCTAssertEqual(CamperRoomRules.check(.wall("k", "clock.station", .back, c: 13, row: 0), in: doc, layout: camper).reason, .wallBlocked)
+        XCTAssertEqual(CamperRoomRules.check(.wall("k", "clock.station", .back, c: camper.kitchen.x, row: 0), in: doc, layout: camper).reason, .wallBlocked)
         // 天井: 背の高い家具（ストーブ 88）の真上には吊れない
         doc.upsert(.floor("s", "heater.wood_stove", x: 10, z: 0))
         XCTAssertEqual(CamperRoomRules.check(.ceiling("m", "mobile.wooden_birds", x: 10, z: 1), in: doc, layout: camper).reason, .tallFurniture)
@@ -165,11 +186,11 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(CamperRoomRules.check(.wall("p", "poster.tall_print", .left, c: 0, row: 2), in: doc, layout: camper).reason, .outside)
     }
 
-    /// 置ける数の上限（バン 床 20）と、写真の上限（バン 6）
+    /// 写真の上限を超える額は置けない
     func testLimits() {
         let van = CamperRoomLayout.make(.car, stage: .van)
         var doc = CamperRoomDocument(room: .car)
-        for i in 0..<6 { doc.upsert(.wall("f\(i)", "photo_frame.square", i < 3 ? .back : .left, c: 0, row: i % 3)) }
+        for i in 0..<van.photoLimit { doc.upsert(.wall("f\(i)", "photo_frame.square", .back, c: 0, row: 0)) }
         XCTAssertEqual(CamperRoomRules.check(.wall("x", "photo_frame.oval", .back, c: 10, row: 1), in: doc, layout: van).reason, .limit)
     }
 
