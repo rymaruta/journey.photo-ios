@@ -46,7 +46,7 @@ enum CamperRoomBuilder {
     /// 夜の灯りの数の上限（月・周りの光と合わせて SceneKit の 1 つの物に効く 8 を超えない）
     static let maxLamps = 5
     /// 夜の灯りの合計の上限（強さの和・届く距離の上限）。これを超えると部屋全体が白く飛ぶ（Mac run 568〜575）
-    static let nightBudget = (intensity: 24.0, range: 46.0)
+    static let nightBudget = (intensity: 2.8, range: 90.0)
 
     static func build(_ layout: CamperRoomLayout, doc: CamperRoomDocument, paint: UInt32 = 0x5B6168) -> CamperRoomBlueprint {
         var bp = CamperRoomBlueprint(layout: layout)

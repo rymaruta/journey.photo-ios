@@ -43,11 +43,11 @@ extension CamperRoomFurnitureModels {
     /// 2 の組の灯り
     static func moreLamp(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         switch id {
-        case "heater.pot_belly": return (CV3(0, 12, 8), 3, 28)
-        case "floor_lamp.arc": return (CV3(0, 72, 15), 6, 44)
-        case "wall_lamp.swing_arm": return (CV3(0, 12, 12), 4, 34)
-        case "wall_lamp.candle_sconce": return (CV3(0, 16, 5), 1.5, 22)
-        case "string_ceiling.fairy_net": return (CV3(0, -14, 0), 3.5, 36)
+        case "heater.pot_belly": return (CV3(0, 12, 8), 0.35, 55)
+        case "floor_lamp.arc": return (CV3(0, 72, 15), 0.7, 85)
+        case "wall_lamp.swing_arm": return (CV3(0, 12, 12), 0.45, 70)
+        case "wall_lamp.candle_sconce": return (CV3(0, 16, 5), 0.18, 45)
+        case "string_ceiling.fairy_net": return (CV3(0, -14, 0), 0.4, 70)
         default: return nil
         }
     }

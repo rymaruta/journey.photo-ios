@@ -309,7 +309,7 @@ final class CamperRoomScene {
             // 図鑑の寄り: 灯りの無い家具も夜に見えるよう、近くに暖色の灯りを 1 つ
             // 家具の斜め前上に置いた電球ほどの灯り（届く距離 50・まわりは暗い）
             specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, position: CV3(layout.size.x * 0.5 + 14, 44, 30),
-                                         color: CamperRoomMaterials.lightColor(style.light), intensity: 4, range: 50, moods: [.night]))
+                                         color: CamperRoomMaterials.lightColor(style.light), intensity: 0.5, range: 90, moods: [.night]))
         }
         // 灯りの並びが同じなら作り直さない（指で動かしている間に毎回作り直さない）
         guard specs != lampSpecs || lampNodes.isEmpty && !specs.isEmpty else { return }
@@ -382,7 +382,7 @@ final class CamperRoomScene {
         sunNode.light?.intensity = CGFloat(night ? 60 : 1500)
         sunNode.light?.color = night ? CamperScene.color(0x9FB4DC) : CamperScene.color(0xFFF1DC)
         sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: 1)
-        ambientNode.light?.intensity = CGFloat(night ? 6 : 90)
+        ambientNode.light?.intensity = CGFloat(night ? 10 : 90)
         ambientNode.light?.color = night ? CamperScene.color(0x6A6F80) : CamperScene.color(0xFFF6EA)
         cameraNode.camera?.exposureOffset = CGFloat(night ? -0.15 : 0.15)
         cameraNode.camera?.bloomIntensity = 0
