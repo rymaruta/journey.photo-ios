@@ -3150,5 +3150,189 @@ final class ScreenshotTests: XCTestCase {
             app.terminate()
         }
     }
-}
 
+    // MARK: - 写真で作るキャンプ場（2026-10-18・板「写真で作るキャンプ場」版 25）
+
+    /// マイページ → 旅の記録 → 「キャンプ場」の行（旅のトランクの下）。開けたら true
+    private func openCamp(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        var pushes = 0
+        while !tripsTab.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard tripsTab.isHittable else { return false }
+        tripsTab.tap()
+        let row = app.buttons["trips.camp"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return false }
+        var rowPushes = 0
+        let bottom = app.windows.firstMatch.frame.maxY - 100
+        while row.exists, row.frame.maxY > bottom || !row.isHittable, rowPushes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            rowPushes += 1
+        }
+        guard row.isHittable else { return false }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "マイページのキャンプ場の行が 44pt 未満")
+        row.tap()
+        return app.descendants(matching: .any)["camp.home"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// **キャンプ場**（見本 `-JPPreviewCamp`: 切り絵 2 つを立てたテント場）: 自分の島 → 夜・冬 → 回す → 部品図鑑 →
+    /// 部品の札 → 撮る → 切り出す → 置く → 立てた島 → 育ち。出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
+    func testCapturesCamp() {
+        let app = launchTrunk(["-JPPreviewCamp", "YES"])
+        guard openCamp(app) else { return }
+        Thread.sleep(forTimeInterval: 5)
+        shoot(app, "110-キャンプ場（自分の島）")
+        // 下の 2 つは画面の中の押せるもの（44pt 以上）。上の戻る・図鑑は見出しの帯の部品で、帯が当たりを決める（高さは見ない）
+        for id in ["camp.home.capture", "camp.home.friends"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        for id in ["camp.home.dex", "camp.home.back"] {
+            XCTAssertTrue(app.buttons[id].firstMatch.exists, "\(id) が無い")
+        }
+        let times = app.buttons.matching(identifier: "camp.home.time")
+        let seasons = app.buttons.matching(identifier: "camp.home.season")
+        XCTAssertEqual(times.count, 4, "時刻の札が 4 つでない")
+        XCTAssertEqual(seasons.count, 4, "季節の札が 4 つでない")
+        if times.count == 4 {
+            XCTAssertGreaterThanOrEqual(times.element(boundBy: 0).frame.height, 44, "時刻の札が 44pt 未満")
+            times.element(boundBy: 3).tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "110a-キャンプ場（夜）")
+            times.element(boundBy: 2).tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        if seasons.count == 4 {
+            seasons.element(boundBy: 3).tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "110b-キャンプ場（冬）")
+            seasons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "110c-キャンプ場（春）")
+            seasons.element(boundBy: 1).tap()
+        }
+        let island = app.descendants(matching: .any)["camp.home.island"].firstMatch
+        if island.exists {
+            island.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: island.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.62)))
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "110d-キャンプ場（指で回した）")
+        }
+
+        // 部品図鑑
+        let dex = app.buttons["camp.home.dex"].firstMatch
+        if dex.isHittable {
+            dex.tap()
+            if app.descendants(matching: .any)["camp.dex"].firstMatch.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "111-キャンプ場の部品図鑑")
+                let soon = app.buttons["camp.dex.part.soon"].firstMatch
+                XCTAssertTrue(soon.exists, "寝る所に「近日」の部品（tent.bell ほか）が無い")
+                let fire = app.buttons["camp.dex.tab.fire"].firstMatch
+                if fire.exists {
+                    XCTAssertGreaterThanOrEqual(fire.frame.height, 44, "置き場所のタブが 44pt 未満")
+                    fire.tap()
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "111a-キャンプ場の部品図鑑（火と料理）")
+                }
+                let owned = app.buttons["camp.dex.part.owned"].firstMatch
+                if owned.exists, owned.isHittable {
+                    owned.tap()
+                    if app.descendants(matching: .any)["camp.dex.detail"].firstMatch.waitForExistence(timeout: 5) {
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "111b-キャンプ場の部品（持っている）")
+                        app.buttons["camp.dex.detail.close"].firstMatch.tap()
+                        Thread.sleep(forTimeInterval: 1)
+                    }
+                }
+                let missing = app.buttons["camp.dex.part.missing"].firstMatch
+                if missing.exists, missing.isHittable {
+                    missing.tap()
+                    if app.descendants(matching: .any)["camp.dex.detail"].firstMatch.waitForExistence(timeout: 5) {
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "111c-キャンプ場の部品（まだ・影絵）")
+                        app.buttons["camp.dex.detail.close"].firstMatch.tap()
+                        Thread.sleep(forTimeInterval: 1)
+                    }
+                }
+                app.buttons["camp.dex.back"].firstMatch.tap()
+                Thread.sleep(forTimeInterval: 2)
+            }
+        }
+
+        // 撮って加える（シミュレータにカメラは無いので、見本の写真で撮る）
+        let capture = app.buttons["camp.home.capture"].firstMatch
+        guard capture.waitForExistence(timeout: 5), capture.isHittable else { return }
+        capture.tap()
+        let shutter = app.buttons["camp.capture.shutter"].firstMatch
+        guard shutter.waitForExistence(timeout: 10) else { return XCTFail("撮る画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "112-キャンプ場（1 撮る）")
+        XCTAssertGreaterThanOrEqual(shutter.frame.height, 44, "シャッターが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(app.buttons["camp.capture.close"].firstMatch.frame.height, 44, "閉じるが 44pt 未満")
+        shutter.tap()
+        let toPlace = app.buttons["camp.capture.toPlace"].firstMatch
+        guard toPlace.waitForExistence(timeout: 40) else { return XCTFail("撮っても切り出す手順に進まない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "112a-キャンプ場（2 切り出す）")
+        XCTAssertGreaterThanOrEqual(toPlace.frame.height, 50, "「島に立てる」が 50pt 未満")
+        toPlace.tap()
+        let place = app.buttons["camp.capture.place"].firstMatch
+        guard place.waitForExistence(timeout: 15) else { return XCTFail("「島に立てる」で置く手順に進まない") }
+        Thread.sleep(forTimeInterval: 5)
+        shoot(app, "112b-キャンプ場（3 置く）")
+        let spot = app.buttons.matching(identifier: "camp.capture.spot1").firstMatch
+        if spot.exists {
+            XCTAssertGreaterThanOrEqual(spot.frame.height, 44, "置く場所の札が 44pt 未満")
+            spot.tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "112c-キャンプ場（3 置く・小道のそば）")
+        }
+        place.tap()
+        guard app.descendants(matching: .any)["camp.home"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("「ここに立てる」で島に戻らない")
+        }
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "112d-キャンプ場（立てた）")
+
+        // 育ち
+        let header = app.buttons["camp.home.header"].firstMatch
+        if header.exists, header.isHittable {
+            header.tap()
+            if app.descendants(matching: .any)["camp.grow"].firstMatch.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "113-キャンプ場が育つ")
+                let camp = app.buttons["camp.grow.stage.camp"].firstMatch
+                if camp.exists, camp.isHittable {
+                    camp.tap()
+                    Thread.sleep(forTimeInterval: 3)
+                    shoot(app, "113a-キャンプ場が育つ（キャンプ場）")
+                }
+            }
+        }
+    }
+
+    /// **キャンプ場の 12 の向き**（板 CampViews「どこから見てもホンモノ」）。Debug の起動の鍵 `-JPPreviewCampViews` で、
+    /// ホームの「次の向き」を押すたびに板の 12 の図（向き・寄り・時刻・季節・育ち）を順に出して撮る
+    func testCapturesCampViews() {
+        let app = launchTrunk(["-JPPreviewCampViews", "YES"])
+        guard openCamp(app) else { return }
+        let next = app.buttons["camp.views.next"].firstMatch
+        guard next.waitForExistence(timeout: 10) else { return XCTFail("見本の鍵なのに「次の向き」が無い") }
+        Thread.sleep(forTimeInterval: 4)
+        for n in 1...12 {
+            next.tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, String(format: "114v%02d-キャンプ場（12 の向き）", n))
+        }
+    }
+}
