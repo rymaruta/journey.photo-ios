@@ -81,7 +81,10 @@ struct CamperRoomView: View {
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
         .onChange(of: room) { _, _ in openRoom() }
-        .onChange(of: photos.count) { _, _ in recount() }
+        .onChange(of: photos.count) { _, _ in
+            recount()
+            fillFramesIfNeeded()
+        }
         .task(id: photoIds) { photoImages.load(photoIds, from: photos) }
         .sheet(isPresented: $showDex) {
             CamperRoomDexView(owned: owned, stats: stats, roomStats: roomStats, paint: paint, initialMood: mood) { showDex = false }
@@ -111,8 +114,9 @@ struct CamperRoomView: View {
         let l = layout
         let doc = CamperRoomPreview.reset ? CamperRoomRules.starterDocument(l) : store.load(l)
         var e = CamperRoomEditor(doc: doc, layout: l)
-        e.fillEmptyFrames(photos.filter { $0.published != false }.map(\.id))
+        e.fillEmptyFrames(hangablePhotoIds)
         editor = e
+        if e.doc != doc { save() }
         selected = nil
         drag = nil
         camera = CamperRoomCamera.overview(l)
@@ -400,7 +404,7 @@ struct CamperRoomView: View {
 
     private func tap(_ item: CamperRoomItem?) {
         if mode == .photos {
-            if let item, (item.furniture?.photoSlots ?? 0) > 0 { framePick = item.u }
+            if let item, (item.furniture?.photoSlots ?? 0) > 0 { look(at: item) }
             return
         }
         guard mode != .style else { return }
@@ -567,9 +571,13 @@ struct CamperRoomView: View {
         selected = nil
         animateCamera = true
         if m == .photos {
-            camera = CamperRoomCamera.wall(layout)
-            framePick = editor?.doc.all.first(where: { ($0.furniture?.photoSlots ?? 0) > 0 })?.u
-            photoPick = nil
+            if let frame = editor?.doc.all.first(where: { ($0.furniture?.photoSlots ?? 0) > 0 }) {
+                look(at: frame)
+            } else {
+                camera = CamperRoomCamera.wall(layout)
+                framePick = nil
+                photoPick = nil
+            }
         } else {
             camera = CamperRoomCamera.overview(layout)
         }
@@ -739,6 +747,33 @@ struct CamperRoomView: View {
 
     private var frames: [CamperRoomItem] { (editor?.doc.all ?? []).filter { ($0.furniture?.photoSlots ?? 0) > 0 } }
 
+    /// 飾れる自分の写真（下書き以外・新しい順）。60 枚で切ると、それより古い投稿が額に入らない
+    private var hangablePhotos: [Photo] {
+        photos.filter { $0.published != false }
+            .sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
+    }
+
+    private var hangablePhotoIds: [String] { hangablePhotos.map(\.id) }
+
+    /// 空の額に、届いた写真を入れる（写真の一覧が部屋より後に届く）
+    private func fillFramesIfNeeded() {
+        guard var e = editor else { return }
+        let before = e.doc
+        e.fillEmptyFrames(hangablePhotoIds)
+        guard e.doc != before else { return }
+        editor = e
+        save()
+        if let id = framePick, photoPick == nil, let item = e.doc.item(id) { photoPick = item.p }
+    }
+
+    /// その額の前に寄る。入っている写真があれば、下の一覧でも選んでおく
+    private func look(at item: CamperRoomItem) {
+        framePick = item.u
+        photoPick = item.p
+        animateCamera = true
+        camera = CamperRoomCamera.framing(item, layout: layout)
+    }
+
     private var photosPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             if frames.isEmpty {
@@ -755,7 +790,7 @@ struct CamperRoomView: View {
                     HStack(spacing: 8) {
                         ForEach(Array(frames.enumerated()), id: \.element.u) { i, f in
                             let on = f.u == framePick
-                            Button { framePick = f.u } label: {
+                            Button { look(at: f) } label: {
                                 Text("\(f.furniture?.name ?? "") \(i + 1)")
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(on ? Color.black : WebTheme.text)
@@ -772,10 +807,10 @@ struct CamperRoomView: View {
                         }
                     }
                 }
-                let mine = photos.filter { $0.published != false }
+                let mine = hangablePhotos
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
-                        ForEach(mine.prefix(60), id: \.id) { p in
+                        ForEach(mine, id: \.id) { p in
                             let on = p.id == photoPick
                             Button { photoPick = p.id } label: {
                                 AsyncImage(url: p.gridImageURL) { phase in
@@ -804,6 +839,7 @@ struct CamperRoomView: View {
                         }
                     }
                 }
+                .frame(maxHeight: .infinity)
                 if mine.isEmpty {
                     Text(L("投稿した写真がまだありません", "You haven\u{2019}t posted any photos yet"))
                         .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
@@ -813,6 +849,7 @@ struct CamperRoomView: View {
                     e.setPhoto(frame, photoId: photo)
                     editor = e
                     save()
+                    if let updated = e.doc.item(frame) { look(at: updated) }
                 }
                 .disabled(framePick == nil || photoPick == nil)
                 .opacity(framePick == nil || photoPick == nil ? 0.5 : 1)

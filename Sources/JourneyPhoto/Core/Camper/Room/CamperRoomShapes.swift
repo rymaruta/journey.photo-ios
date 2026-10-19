@@ -69,7 +69,7 @@ enum CamperRoomShapes {
         parts.append(K.placed(CamperMeshKit.extrude(K.roundedRect(photo.x + 1.2, photo.y + 1.2, r: 0.3, steps: 2), holes: [matHole], depth: 0.25,
                                                     front: R(.mat), side: R(.mat), bevel: 0.2), at: c + CV3(0, 0, depth - 0.45)))
         parts.append(K.placed(K.panel(width: photo.x, height: photo.y, CamperRoomFurnitureModels.photoMaterial(0)), at: c + CV3(0, 0, depth - 0.66)))
-        parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.glass)), at: c + CV3(0, 0, depth - 0.25)))
+        parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.25)))
         // 壁に付く背板（隙間から壁が透けない）
         parts.append(K.placed(K.panel(width: outer.x - 0.4, height: outer.y - 0.4, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.05)))
         return K.merge(parts)

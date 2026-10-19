@@ -46,8 +46,8 @@ enum CamperRoomMaterial: Hashable, Sendable {
     /// 陶器（色）・素焼き
     case ceramic(UInt32)
     case terracotta
-    /// 透明の硝子・乳白の硝子（夜は灯る）
-    case glass, milkGlass
+    /// 透明の硝子・額の表の薄い硝子・乳白の硝子（夜は灯る）
+    case glass, frameGlass, milkGlass
     /// 灯りの笠の布（色。夜は内からの光が透ける）
     case shade(UInt32)
     /// 電球（夜は灯る）
@@ -154,6 +154,11 @@ enum CamperRoomMaterials {
             return CamperMaterialSpec(color: night ? 0x0A0C10 : 0xDDE6EA, roughness: night ? 0.12 : 0.04,
                                       clearCoat: night ? 0.35 : 1, clearCoatRoughness: night ? 0.2 : 0.02,
                                       opacity: night ? 0.55 : 0.25, doubleSided: true)
+        case .frameGlass:
+            // 額の表。窓の硝子を使うと、夜は暗い膜・昼は白い板になって、飾った写真が見えない（2026-10-19 owner）。
+            // 両面の硝子として描くと膜になって奥の印画が消えるので、薄い膜のまま奥行きは書かない
+            return CamperMaterialSpec(color: 0xF7F4EE, roughness: 0.4, clearCoat: 0.12, clearCoatRoughness: 0.5,
+                                      opacity: 0.08, doubleSided: true, glassShell: false)
         case .milkGlass:
             return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.25, clearCoat: 0.6, opacity: night ? 1 : 0.92,
                                       emission: night ? 0xFFD2A0 : nil, emissionIntensity: night ? 0.8 : 0,
