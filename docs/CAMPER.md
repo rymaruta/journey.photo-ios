@@ -89,6 +89,31 @@
     外の火は室内灯より赤い。
   - HDR: 光る面の emission は 1 まで。実機の拡張の明るさ（EDR）は使わない。
 
+## 第2段（2026-10-19・枝 claude/camper-phase2-app）— 要サーバーの部品をサーバーとつなぐ
+
+サーバーは photo-gallery `api-user/src/camper.ts`・`trunk.ts`（本番で 2026-10-19T04:00Z＝`CAMPER_LAUNCH.at` に配り始めた）。
+形はコードが正（`origin/develop` d9faf3f3 と `origin/main` で読んだ）。
+
+- 口（`Services/CamperService.swift`・形は `Models/Camper.swift`。どれも包みで読む）:
+  `GET /user/camper`（自分の車）・`GET /users/{uid}/camper`（友達の車・訪ねた記録は友達×日で1回）・
+  `POST /users/{uid}/camper/gift`・`POST /users/{uid}/camper/firewood`。写真の保存と写真の編集の応答の `camper.added`。
+  断りの印（self・notFriend・blocked・newAccount・noPost・notFound・tombstone・already・notLaunched・storage・deleted・daily）は
+  `CamperText.refusal` が日本語／英語の一言にする。
+- 自分の車（`CamperGarageView`・`CamperServerModel`）: 持っている＝端末で数えた部品 ∪ サーバーの `parts`。
+  **分母は「サーバーで読める部品」で決まる**: 読めて `launched: true` の間は 98＋33＝**131**（キャンプ場の焚き火
+  `fire_pit.stone_ring` だけ「近日」・図鑑 132 · 近日 1）。`launched: false`・通信の失敗・断りは端末の数え方のまま（98）。
+- 進み具合の棒: 記録で決まる 20 個（旅の数・贈り物・訪ねた・薪・同じ日の旅）はサーバーの `progress` の数。写真で決まる
+  13 個（スポット・行事・祭り・天気）は「届いた／まだ」だけ（`CamperServerRule`。表はサーバーの写しで、試験が図鑑と突き合わせる）。
+- 旅の数の条件は「旅を公開で N 回投稿」（設計案 3.4）。
+- 届いた画面（`CamperArrivalView`）: 一度に 3 個まで（板の付箋）。サーバーのこの回に届いた分・写真の保存で届いた分
+  （`CamperStore.inbox`・`camper.inbox.<uid>`・退会で消す）を先に、残りは珍しい順。見せなかった分は次に開いたときに。
+  贈り物で届いた部品は「〜から贈られました」。はじめて開いたときは今までどおり全部に印を付ける。
+- 友達の車（`CamperVisitView`・板 CamperVisit）: 人のプロフィールの「とおまわり号を訪ねる」（フォローしている人の頁だけ）。
+  訪ねた記録が数えられた回は控えめな一行。訪ねて・薪で**自分に**届いた部品は自分の控えに入れ、自分の車の画面の「届いた」で見せる。
+  「部品を贈る」（真鍮の塗り・墨の字）と「焚き火に薪をくべる」（縁だけ）。2026-10-19 判断: 飾りのサーバー保存は別の札なので、
+  車の絵は相手が集めた要サーバーの部品を付けた姿（`CamperLoadout.visiting`）・段はキャンピングカー・夜。ランタンを掛ける操作はまだ無い。
+- 見本（`-JPPreviewCamper YES`・Debug のみ）: サーバーには何も送らず `CamperServerSample` を使う（画面写真 95g〜95j）。
+
 ## 確かめていないこと
 
 - 本物の Xcode でのビルドと見た目（Linux では SceneKit の模型 `Shims/SceneKitShim` に向けて型検査しただけ）。
@@ -96,3 +121,4 @@
 - 床の shader modifier（`_surface.position` と `scn_frame.inverseViewTransform`）は Metal で書いたが、本物の
   SceneKit で組めるかと、太陽の影が床に落ちるかは Mac の絵で確かめる。
 - 山・海辺・湖・植物・街は撮影地と題・タグの言葉で、森・晴れは写真の代表色で、満月は日付から数える。精度は試していない。
+- 第2段: 本番の口に本物のログインでつないだ答え（形はサーバーのコードと試験で合わせただけ）。友達の車の画面と届いた画面の見た目は Mac の絵で見る。

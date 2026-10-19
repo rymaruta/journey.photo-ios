@@ -2243,6 +2243,12 @@ final class ScreenshotTests: XCTestCase {
 
     /// マイページ → 旅の記録のタブ → 「写真で作るキャンピングカー」の行。開けたら true
     private func openCamper(_ app: XCUIApplication) -> Bool {
+        guard openTripsRow(app, "trips.camper") else { return false }
+        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true
+    private func openTripsRow(_ app: XCUIApplication, _ id: String) -> Bool {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
         tabBar.buttons.element(boundBy: 4).tap()
@@ -2256,18 +2262,18 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
-        let row = app.buttons["trips.camper"].firstMatch
+        let row = app.buttons[id].firstMatch
         guard row.waitForExistence(timeout: 15) else { return false }
         scrollTo(row, in: app)
         guard row.isHittable else { return false }
         row.tap()
-        return app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15)
+        return true
     }
 
     /// 立体の車を組み終えるまで待つ（読み上げの値に「camper-ready 段 時刻」が出る・見本の起動のときだけ）
     @discardableResult
-    private func waitCamper(_ app: XCUIApplication, _ marker: String) -> Bool {
-        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
+    private func waitCamper(_ app: XCUIApplication, _ marker: String, scene id: String = "camper.scene") -> Bool {
+        let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
         let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40) == .completed
         // 組んだ形が次のコマで描かれ、向きの動き（0.6 秒）が止まるまで
@@ -2315,6 +2321,61 @@ final class ScreenshotTests: XCTestCase {
             waitCamper(app, "camper-ready \(id)")
             shoot(app, name)
         }
+    }
+
+    /// **とおまわり号の第2段**（2026-10-19・`-JPPreviewCamper`。サーバーには何も送らない見本）: 要サーバーの部品が
+    /// 届いた画面（一度に 3 個まで・贈り物の名前）と、分母 131 の車の画面。開けなければ撮らずに抜ける。
+    /// **届いた画面が出たのに押せる所が 44pt 未満なら落とす**。車の画面で分母が 131 でなければ落とす
+    func testCapturesCamperServer() {
+        let app = launchTrunk(["-JPPreviewCamper", "YES", "-JPPreviewCamperArrival", "YES"])
+        guard openCamper(app) else { return }
+        // 届いた画面は「いま車に付ける」のボタンで見分ける（画面の親に識別子を付けると子のボタンの識別子を覆う）
+        let arrival = app.buttons["camper.arrival.equip"].firstMatch
+        if arrival.waitForExistence(timeout: 15) {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "95g-キャンピングカー（部品が届いた）")
+            for id in ["camper.arrival.equip", "camper.arrival.close"] {
+                let b = app.buttons[id].firstMatch
+                XCTAssertTrue(b.exists, "\(id) が無い")
+                if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
+            }
+            let others = app.buttons.matching(identifier: "camper.arrival.part")
+            for i in 0..<others.count {
+                XCTAssertGreaterThanOrEqual(others.element(boundBy: i).frame.height, 44, "一緒に届いた部品の札が 44pt 未満")
+            }
+            app.buttons["camper.arrival.close"].firstMatch.tap()
+        }
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        let count = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/ 131")).firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 10), "サーバーが読めたのに分母が 131 でない")
+        shoot(app, "95h-キャンピングカー（要サーバーの部品）")
+    }
+
+    /// **友達の車を訪ねる**（2026-10-19・板 CamperVisit）: 見本（`-JPPreviewCamperVisit`・Debug のみ。サーバーには何も送らない）の
+    /// マイページの行から見本の友達の車へ直接入り、95i・95j を**必ず撮る**（出なければ落とす）。本物の入口（人のプロフィールの
+    /// 「とおまわり号を訪ねる」・フォローしている人の頁だけ）はホームの写真の並びとフォローの関係次第なので、ここでは通らない。
+    /// 押せる所は 44pt 以上
+    func testCapturesCamperVisit() {
+        let app = launchTrunk(["-JPPreviewCamperVisit", "YES"])
+        XCTAssertTrue(openTripsRow(app, "trips.camperVisitSample"), "マイページに見本の友達の車の行が無い")
+
+        let gift = app.buttons["camper.visit.gift"].firstMatch
+        guard gift.waitForExistence(timeout: 15) else { return XCTFail("友達の車の画面が開かない") }
+        // 描き終わり（読み上げの値に「camper-ready」）まで待ってから撮る（自分の車の `waitCamper` と同じ）
+        guard waitCamper(app, "camper-ready", scene: "camper.visit.scene") else { return XCTFail("友達の車を組み終えない") }
+        XCTAssertTrue(app.descendants(matching: .any)["camper.visit.counted"].firstMatch.exists, "訪ねた記録の一行が無い")
+        shoot(app, "95i-友達の車を訪ねる")
+        for id in ["camper.visit.gift", "camper.visit.firewood"] {
+            let b = app.buttons[id].firstMatch
+            XCTAssertTrue(b.exists, "\(id) が無い")
+            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
+        }
+        scrollTo(gift, in: app)
+        gift.tap()
+        let message = app.descendants(matching: .any)["camper.visit.message"].firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 10), "贈った結果の一行が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "95j-友達の車（部品を贈った）")
     }
 
     /// 押したい行が画面に収まるまで送る

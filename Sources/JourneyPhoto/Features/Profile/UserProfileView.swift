@@ -153,6 +153,8 @@ struct UserProfileView: View {
                         counts
                         // 旅のトランク（板 ProfileTrunk: 数のすぐ下・訪れた場所の上）
                         theirTrunk
+                        // とおまわり号を訪ねる（2026-10-19 第2段・板 CamperVisit）。互いのフォローはサーバーが見る
+                        camperVisit
                         // 旅の記録と旅の一冊（2026-10-16 owner「他人のプロフィールでも旅の記録を」）。
                         // 板 UserProfile F33 の並び: 数 → 旅 → ハイライト。旅の記録はマイページと同じく数のすぐ下
                         travelRecord
@@ -221,6 +223,27 @@ struct UserProfileView: View {
             .buttonStyle(TrunkPressStyle())
             .padding(.horizontal, ProfileV2.gutter)
             .accessibilityIdentifier("profile.trunk")
+        }
+    }
+
+    /// 友達の車を訪ねる行（2026-10-19 第2段）。**フォローしている人の頁だけ**に出す（訪ねる・贈る・薪は互いの
+    /// フォローの友達だけ。相手がフォローし返していないときはサーバーの断り `notFriend` を行き先の画面で言う）。
+    /// ログインしていない・自分・ブロックの関係では出さない（`canAct`）
+    @ViewBuilder
+    private var camperVisit: some View {
+        if canAct, model.isFollowing || PreviewSession.camperSample {
+            // 札の形はマイページの「写真で作るキャンピングカー」の行と同じ（`JPCard` の中の `JPRowLabel`）
+            JPCard {
+                NavigationLink {
+                    CamperVisitView(userId: userId, ownerName: model.shownName)
+                } label: {
+                    JPRowLabel(title: L("とおまわり号を訪ねる", "Visit their Detour"), systemImage: "bus",
+                               detail: L("部品を贈る・焚き火に薪をくべる", "Give a part or add wood to their fire"))
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("profile.camper")
+            }
+            .padding(.horizontal, ProfileV2.gutter)
         }
     }
 
