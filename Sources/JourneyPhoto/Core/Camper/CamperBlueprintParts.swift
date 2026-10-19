@@ -778,10 +778,11 @@ extension CamperBuilder {
             }
         }
         // 燠（薪の下の赤い熱・平たく）と、形のある炎の舌 3 つ（高さ・傾きを変える。夜はゆっくり小さく揺れる）
-        add("fire.ember", .sphere(radius: 2.6), .ember, at: emberAt, category: fc, scale: CV3(1, 0.45, 1))
-        flameTongue("fire.flame", at: emberAt + CV3(0, 0.6, 0), height: 12, radius: 2.6, category: fc)
-        flameTongue("fire.flame", at: emberAt + CV3(1.6, 0.4, 1.0), height: 8.5, radius: 1.9, lean: CV3(0.18, 1, 0.1), category: fc)
-        flameTongue("fire.flame", at: emberAt + CV3(-1.4, 0.4, -1.2), height: 7, radius: 1.6, lean: CV3(-0.15, 1, -0.12), category: fc)
+        // 2026-10-19（Mac run 547）: 夜の画面写真で形が読めなかったので、舌を大きく（板の単位で高さ 18・幅 7 ほど。実物の 45 cm）
+        add("fire.ember", .sphere(radius: 3.4), .ember, at: emberAt, category: fc, scale: CV3(1, 0.4, 1))
+        flameTongue("fire.flame", at: emberAt + CV3(0, 0.6, 0), height: 18, radius: 3.6, category: fc)
+        flameTongue("fire.flame", at: emberAt + CV3(2.2, 0.4, 1.4), height: 12.5, radius: 2.6, lean: CV3(0.2, 1, 0.12), category: fc)
+        flameTongue("fire.flame", at: emberAt + CV3(-2, 0.4, -1.6), height: 10, radius: 2.2, lean: CV3(-0.18, 1, -0.14), category: fc)
         // 2026-10-18（run 530）: 700・90 では白く飛んだ。2026-10-19: 光の溜まりが硬い円に見えた（owner）ので、光は弱く広くし、
         // 足元の明るさは裾のなめらかな溜まり（足す光）で出す。外の火は室内灯より赤い
         only([.night]) {

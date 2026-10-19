@@ -397,7 +397,9 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertGreaterThan(glass.clearCoat, 0)
         let curtain = CamperMaterials.spec(.curtain, paint: 0, mood: .night)
         XCTAssertEqual(curtain.emissionTexture, .weave)
-        XCTAssertLessThan(curtain.emissionIntensity, 0.3)
+        // 布を透ける弱い光（窓が灯って見える強さ・1 より十分小さい）
+        XCTAssertGreaterThanOrEqual(curtain.emissionIntensity, 0.3)
+        XCTAssertLessThanOrEqual(curtain.emissionIntensity, 0.6)
         let b = build(mood: .night)
         func materials(_ name: String) -> [CamperMaterial] {
             b.nodes.filter { $0.name == name }.flatMap { n -> [CamperMaterial] in

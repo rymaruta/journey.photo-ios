@@ -151,8 +151,10 @@ enum CamperMaterials {
         case .cushion: return CamperMaterialSpec(color: 0xB7A58A, roughness: 0.9, texture: .weave)
         case .curtain:
             // 夜は室内の灯りを受けて柔らかく光る布（透ける光は織り目の絵で、むらのある弱い光にする）
+            // 2026-10-19（Mac run 547）: 外から見えるのはカーテンの裏（灯りに背を向けた面）なので、照らされても暗かった。
+            // 布を透ける光をこの弱い光で出す（0.16 では窓が暗いまま。むらは織り目の絵）
             return CamperMaterialSpec(color: night ? 0xF2CC92 : 0xD8CCB4, roughness: 0.95, emission: night ? 0xFFB46B : nil,
-                                      emissionIntensity: night ? 0.16 : 0, emissionTexture: night ? .weave : nil,
+                                      emissionIntensity: night ? 0.45 : 0, emissionTexture: night ? .weave : nil,
                                       texture: .weave, doubleSided: true)
         case .inner: return CamperMaterialSpec(color: 0xC9BFAE, roughness: 0.8)
         case .ceiling: return CamperMaterialSpec(color: 0xE8E0D0, roughness: 0.85)
@@ -178,7 +180,7 @@ enum CamperMaterials {
         case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .woodGrain)
         case .ember:
             // 燠（薪の下の赤い熱）。炎は別の形（`.flame`）
-            return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF5A1E, emissionIntensity: night ? 0.7 : 0.45,
+            return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF5A1E, emissionIntensity: night ? 0.9 : 0.45,
                                       emissionTexture: .lampFace)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)

@@ -110,6 +110,31 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertFalse(scene.isFlickering)
         XCTAssertEqual(changes, [true, false, true, false])
     }
+
+    /// 夜に替えると、太陽（月）・周りの光・露出・環境光が夜の値になる。昼に戻せば昼の値（組み直さない切り替えの道）。
+    /// 2026-10-19（Mac run 547）: 95b が昼の絵のまま写った。前からある試験は灯り・にじみ・雪の部品しか見ておらず、
+    /// 太陽や露出を見ていなかった。また画面に絵が出る速さ（SCNView の描き直し）は Linux の模型では見えない——
+    /// 原因は描き方の設定の切り替え（`CamperSceneView`）で、ここでは値が夜に替わることだけを守る
+    func testNightLightingValues() async throws {
+        let scene = CamperScene()
+        let day = CamperConfig(stage: .camper, mood: .day)
+        scene.installNow(day)
+        let d = scene.lightingSnapshot
+        XCTAssertEqual(d.sun, 1200, accuracy: 0.5)
+        XCTAssertEqual(d.environment, 1.35, accuracy: 0.001)
+        XCTAssertEqual(d.exposure, 0, accuracy: 0.001)
+        var night = day
+        night.mood = .night
+        scene.show(night)
+        let n = scene.lightingSnapshot
+        XCTAssertEqual(n.sun, 260, accuracy: 0.5, "月の強さになっていない")
+        XCTAssertEqual(n.environment, 0.14, accuracy: 0.001, "周りの光が昼のまま")
+        XCTAssertEqual(n.exposure, -0.15, accuracy: 0.001, "露出が昼のまま")
+        XCTAssertEqual(n.ambient, 60, accuracy: 0.5)
+        scene.show(day)
+        XCTAssertEqual(scene.lightingSnapshot.sun, 1200, accuracy: 0.5)
+        XCTAssertEqual(scene.lightingSnapshot.environment, 1.35, accuracy: 0.001)
+    }
 }
 
 #endif

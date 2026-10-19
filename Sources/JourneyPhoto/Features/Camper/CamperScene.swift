@@ -152,6 +152,12 @@ final class CamperScene {
     }
 
     /// 昼・夜・雪を切り替える（組み直さない。光・材質の値・その時刻だけの部品と灯りの見せる／隠すだけ）
+    /// 試験用: いまの太陽・周りの光・露出（夜に替えた後の値を確かめる）
+    var lightingSnapshot: (sun: Double, environment: Double, exposure: Double, ambient: Double) {
+        (Double(sunNode.light?.intensity ?? 0), Double(scene.lightingEnvironment.intensity),
+         Double(cameraNode.camera?.exposureOffset ?? 0), Double(ambientNode.light?.intensity ?? 0))
+    }
+
     func setMood(_ mood: CamperMood) {
         currentMood = mood
         applyMood(mood)

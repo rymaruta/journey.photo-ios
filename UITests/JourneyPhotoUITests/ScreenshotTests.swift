@@ -2295,6 +2295,8 @@ final class ScreenshotTests: XCTestCase {
         // 夜
         app.buttons["camper.mood.night"].firstMatch.tap()
         waitCamper(app, "night")
+        // 夜の光の切り替えが絵に出るまで（95a と同じく少し待つ。合図は値が替わった時で、描き直しの後ではない）
+        Thread.sleep(forTimeInterval: 1)
         shoot(app, "95b-写真で作るキャンピングカー（夜）")
         // 夜に扉を開けた所（室内の灯りと、扉の口から地面へこぼれる灯り）
         app.buttons["camper.door"].firstMatch.tap()

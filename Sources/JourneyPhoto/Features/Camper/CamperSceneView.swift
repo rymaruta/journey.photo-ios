@@ -33,11 +33,9 @@ struct CamperSceneView: UIViewRepresentable {
         #endif
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
-        // 炎が揺れている間だけ描き続ける（毎秒 30 で足りる。止まっている間は動いた時だけ描く）
-        context.coordinator.onFlickerChange = { [weak view] on in
-            view?.rendersContinuously = on
-            view?.preferredFramesPerSecond = on ? 30 : 60
-        }
+        // 炎の揺らぎ（SCNAction）は「動いている」ので、rendersContinuously が false のままでも描き直される。
+        // 2026-10-19（Mac run 547）: 揺らし始めた時に rendersContinuously と毎秒の枚数を切り替えていたら、夜に替えた直後の
+        // 数枚が描き直されず、昼の絵のまま止まって見えた（画面写真 95b）。描き方の設定は切り替えない
         context.coordinator.onReady = { marker in
             // 画面の更新の外で知らせる
             DispatchQueue.main.async { onReady(marker) }

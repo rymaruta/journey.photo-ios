@@ -1303,14 +1303,16 @@ struct CamperBuilder {
             // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
             // 円錐は広く（全体 156°）: 窓の高さの内壁とカーテンまで届き、窓越しに照らされた室内が透けて見える。
             // 真ん中が明るく窓の縁へ落ちるので、窓の明るさにむらが出る（一色の板にしない・2026-10-19）
-            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 900.0), ("interior.front", CV3(6, roofTop - 12, -10), 560)] {
+            // 2026-10-19（Mac run 547）: 窓の高さの内壁は円錐の縁（真下から 50〜73°）で暗かった。内側の円錐を広げて
+            // 窓の高さまで明るさを保ち、強さも上げる（扉の口の中は前の灯りから離れているので飛ばない）
+            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 1250.0), ("interior.front", CV3(6, roofTop - 12, -10), 720)] {
                 out.lights.append(CamperLightSpec(name: name, kind: .spot, position: p, direction: CV3(0, -1, 0), color: warm,
-                                                  intensity: k, range: 120, spotInner: 70, spotOuter: 156, castsShadow: true))
+                                                  intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
             }
         } else {
             out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, position: CV3(-40, roofTop - 12, 0),
-                                              direction: CV3(0, -1, 0), color: warm, intensity: 900, range: 120,
-                                              spotInner: 70, spotOuter: 156, castsShadow: true))
+                                              direction: CV3(0, -1, 0), color: warm, intensity: 1250, range: 130,
+                                              spotInner: 120, spotOuter: 158, castsShadow: true))
         }
         // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
         for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
