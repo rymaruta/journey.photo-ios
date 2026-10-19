@@ -39,6 +39,8 @@ enum CamperGroup: Sendable, Equatable {
     case glow
     /// 夜、開けた扉の口から地面へこぼれる灯り（扉を開けた時だけ見える）
     case doorGlow
+    /// 炎（まとめない・影を落とさない。ゆっくり小さく揺らす）
+    case flame
 }
 
 /// 部品1つ
@@ -71,6 +73,9 @@ struct CamperNodeSpec: Sendable {
     /// 扉の組は外（開けると扉の板は外に立つ）
     func splitForInteriorLight() -> (inside: CamperNodeSpec?, outside: CamperNodeSpec?) {
         guard group == .body else { return (nil, self) }
+        // 運転席と、その上の寝台は室内の灯りの外（運転席に灯りは無い。2026-10-19 Mac run 547: フロントガラスの上の辺に、
+        // 照らされた寝台の縁が橙の細い筋に見えた）
+        if name.hasPrefix("interior."), position.x >= 66 || (position.x >= 30 && position.y >= 108) { return (nil, self) }
         if name.hasPrefix("interior.") { return (self, nil) }
         guard case .mesh(let m) = shape else { return (nil, self) }
         let parts = m.split(Self.isInteriorMaterial)
@@ -254,6 +259,25 @@ struct CamperBuilder {
         let mesh = CamperMeshKit.lathe(profile.map { CV2($0.0, $0.1) }, segments: segments, faceted: faceted, start: start,
                                        material: material, capStart: capStart, capEnd: capEnd)
         add(name, .mesh(mesh), material(0), at: origin, CQuat.yTo(axis), group: group, category: category)
+    }
+
+    /// 光るレンズ（旋盤の形に、真ん中から外へ 0〜1 の貼り絵の位置を付ける。光る面の明暗の絵が真ん中に合う）
+    mutating func lensLathe(_ name: String, _ origin: CV3, axis: CV3, _ profile: [(Double, Double)], segments: Int,
+                            capStart: CamperMaterial? = nil, category: CamperCategory? = nil, material: CamperMaterial) {
+        var mesh = CamperMeshKit.lathe(profile.map { CV2($0.0, $0.1) }, segments: segments, material: { _ in material },
+                                       capStart: capStart)
+        let r = max(0.01, profile.map(\.0).max() ?? 1)
+        mesh.uvs = mesh.positions.map { CV2(0.5 + $0.x / (2 * r), 0.5 + $0.z / (2 * r)) }
+        add(name, .mesh(mesh), material, at: origin, CQuat.yTo(axis), category: category)
+    }
+
+    /// 炎の舌（根元から上へ膨らんで細る旋盤の形）。貼り絵の位置は横が 0〜1・縦が根元 1 → 先 0（`CamperTextures.flame`）
+    mutating func flameTongue(_ name: String, at base: CV3, height h: Double, radius r: Double, lean: CV3 = CV3(0, 1, 0),
+                              category: CamperCategory?) {
+        let profile: [(Double, Double)] = [(0.01, 0), (0.75, 0.08), (1, 0.25), (0.82, 0.5), (0.45, 0.78), (0.01, 1)]
+        var mesh = CamperMeshKit.lathe(profile.map { CV2($0.0 * r, $0.1 * h) }, segments: 12, material: { _ in .flame })
+        mesh.uvs = mesh.positions.map { CV2(0.5 + $0.x / (2 * r), 1 - min(1, max(0, $0.y / h))) }
+        add(name, .mesh(mesh), .flame, at: base, CQuat.yTo(lean), group: .flame, category: category)
     }
 
     mutating func mesh(_ name: String, _ m: CamperMesh, group: CamperGroup = .body, category: CamperCategory? = nil) {
@@ -793,8 +817,8 @@ struct CamperBuilder {
                     let c = B(FX - 0.5, 14, s * 37 + dz)
                     lathe("light.bezel", c, axis: CV3(1, 0, 0), [(4.2, 0), (4.4, 1.2), (3.6, 2)], segments: 18, capStart: .chrome,
                           category: lc) { _ in .chrome }
-                    lathe("light.lens", c + CV3(1.4, 0, 0), axis: CV3(1, 0, 0), [(3.6, 0), (2.8, 0.9), (0.01, 1.4)], segments: 18,
-                          category: lc) { _ in .lens }
+                    lensLathe("light.lens", c + CV3(1.4, 0, 0), axis: CV3(1, 0, 0), [(3.6, 0), (2.8, 0.9), (0.01, 1.4)], segments: 18,
+                              category: lc, material: .lens)
                 }
             case "square":
                 rbox("light.bezel", B(FX, 14, s * 37), CV3(2.4, 10, 14), 1.4, .chrome, category: lc)
@@ -808,14 +832,14 @@ struct CamperBuilder {
                     add("light.reflectorRing", .torus(ring: r, pipe: 0.18), .chromeDark, at: B(FX + 0.8, 14, s * 37),
                         CQuat.yTo(CV3(1, 0, 0)), category: lc)
                 }
-                lathe("light.lens", B(FX + 0.6, 14, s * 37), axis: CV3(1, 0, 0), [(5.6, 0), (4.4, 1.2), (0.01, 1.8)], segments: 20,
-                      category: lc) { _ in .lens }
+                lensLathe("light.lens", B(FX + 0.6, 14, s * 37), axis: CV3(1, 0, 0), [(5.6, 0), (4.4, 1.2), (0.01, 1.8)], segments: 20,
+                          category: lc, material: .lens)
             }
             if config.loadout.key(.headlight) == "rally_brass" {
                 lathe("light.rally", B(FX + 5, 26, s * 18), axis: CV3(1, 0, 0), [(4.2, 0), (4.6, 1.6), (3.8, 2.4)], segments: 18,
                       capStart: .brass, category: lc) { _ in .brass }
-                lathe("light.rallyLens", B(FX + 6.8, 26, s * 18), axis: CV3(1, 0, 0), [(3.8, 0), (2.6, 0.9), (0.01, 1.3)],
-                      segments: 18, category: lc) { _ in .lensAmber }
+                lensLathe("light.rallyLens", B(FX + 6.8, 26, s * 18), axis: CV3(1, 0, 0), [(3.8, 0), (2.6, 0.9), (0.01, 1.3)],
+                          segments: 18, category: lc, material: .lensAmber)
                 rod("light.rallyStem", B(FX + 4, 29.5, s * 18), B(FX + 4, 31, s * 18), 0.6, .black, category: lc)
             }
             rbox("front.indicator", B(FX + 0.4, 23, s * 37), CV3(2, 3, 9), 0.8, .amber)
@@ -1259,12 +1283,23 @@ struct CamperBuilder {
 
     // MARK: 夜の灯り（板の付箋「灯りと光の強さ」）
 
-    /// 地面に寝かせた四角（上向き・貼り絵は 0〜1 に一度だけ）。灯りの溜まりに使う
-    func glowQuad(width w: Double, depth d: Double) -> CamperMesh {
+    /// 地面に寝かせた四角（上向き・貼り絵は 0〜1 に一度だけ。u が X・v が Z）。灯りの溜まりに使う
+    func glowQuad(width w: Double, depth d: Double, material: CamperMaterial = .glowPool) -> CamperMesh {
         var m = CamperMesh()
         let up = CV3(0, 1, 0)
-        m.quad(CV3(-w / 2, 0, -d / 2), CV3(w / 2, 0, -d / 2), CV3(w / 2, 0, d / 2), CV3(-w / 2, 0, d / 2), up, up, up, up, .glowPool)
+        m.quad(CV3(-w / 2, 0, -d / 2), CV3(w / 2, 0, -d / 2), CV3(w / 2, 0, d / 2), CV3(-w / 2, 0, d / 2), up, up, up, up, material)
         m.uvs = m.positions.map { CV2($0.x / w + 0.5, $0.z / d + 0.5) }
+        return m
+    }
+
+    /// 窓の奥の明かりの面（窓の形の外接の四角・外を向く・貼り絵は 0〜1・v=0 が上）
+    func windowGlowPanel(x0: Double, x1: Double, y0: Double, y1: Double, facing s: Double,
+                         material: CamperMaterial = .windowGlow) -> CamperMesh {
+        var m = CamperMesh()
+        let n = CV3(0, 0, s)
+        let a = CV3(x0, y0, 0), b = CV3(x1, y0, 0), c = CV3(x1, y1, 0), d = CV3(x0, y1, 0)
+        m.quad(a, b, c, d, n, n, n, n, material)
+        m.uvs = m.positions.map { CV2(($0.x - x0) / max(0.01, x1 - x0), 1 - ($0.y - y0) / max(0.01, y1 - y0)) }
         return m
     }
 
@@ -1273,20 +1308,25 @@ struct CamperBuilder {
     }
 
     private mutating func nightLightsBody() {
-        let warm: UInt32 = 0xFFB260
+        // 室内灯は 2700K 前後（2026-10-19 owner「夜の発光の仕方ひどい」で作り直し・橙一色にしない）
+        let warm: UInt32 = 0xFFB46B
         // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
         if !van {
             // 室内の灯りは天井から下へ向けた spot で、影を落とす（2026-10-18 Mac の絵 run 533）。
             // omni は影を落とさず上にも光るので、灯りの組を分けた後も屋根の棒・オーニングの箱・縁に橙の筋が残った。
             // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
-            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 900.0), ("interior.front", CV3(6, roofTop - 12, -10), 520)] {
+            // 円錐は広く（全体 156°）: 窓の高さの内壁とカーテンまで届き、窓越しに照らされた室内が透けて見える。
+            // 真ん中が明るく窓の縁へ落ちるので、窓の明るさにむらが出る（一色の板にしない・2026-10-19）
+            // 2026-10-19（Mac run 547）: 窓の高さの内壁は円錐の縁（真下から 50〜73°）で暗かった。内側の円錐を広げて
+            // 窓の高さまで明るさを保ち、強さも上げる（扉の口の中は前の灯りから離れているので飛ばない）
+            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 1250.0), ("interior.front", CV3(6, roofTop - 12, -10), 720)] {
                 out.lights.append(CamperLightSpec(name: name, kind: .spot, position: p, direction: CV3(0, -1, 0), color: warm,
-                                                  intensity: k, range: 110, spotInner: 50, spotOuter: 120, castsShadow: true))
+                                                  intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
             }
         } else {
             out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, position: CV3(-40, roofTop - 12, 0),
-                                              direction: CV3(0, -1, 0), color: warm, intensity: 900, range: 110,
-                                              spotInner: 50, spotOuter: 120, castsShadow: true))
+                                              direction: CV3(0, -1, 0), color: warm, intensity: 1250, range: 130,
+                                              spotInner: 120, spotOuter: 158, castsShadow: true))
         }
         // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
         for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
@@ -1297,16 +1337,38 @@ struct CamperBuilder {
                     .glowPool, at: CV3((lo + hi) / 2, 0.4, side * (BW + 30)), group: .glow)
             }
         }
+        // 窓の奥の室内の明かり（2026-10-19 Mac run 547 の後: 光の当て方だけでは窓が外からほぼ真っ黒）。カーテンのすぐ内側に、
+        // むらのある弱い光の面を置き、ガラス 0.38 越しに「灯った窓」に見せる。面は外を向く片面（中から見ると見えない）
+        for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
+            for (k, w) in windows.enumerated() {
+                let xs = w.map(\.x), ys = w.map(\.y)
+                guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { continue }
+                add("interior.windowGlow.\(side > 0 ? "near" : "far").\(k)",
+                    .mesh(windowGlowPanel(x0: x0, x1: x1, y0: y0, y1: y1, facing: side)), .windowGlow,
+                    at: CV3(0, 0, side * (BW - wall - 3)))
+                // 窓から漏れる光のにじみ（ガラスの外に、窓より一回り大きい丸いグラデーション。黒い四角が出ないよう足す光 0.3）
+                let mx = (x1 - x0) * 0.3, my = (y1 - y0) * 0.45
+                add("glow.halo.\(side > 0 ? "near" : "far").\(k)",
+                    .mesh(windowGlowPanel(x0: x0 - mx, x1: x1 + mx, y0: y0 - my, y1: y1 + my, facing: side, material: .windowHalo)),
+                    .windowHalo, at: CV3(0, 0, side * (BW + 1.6)), group: .glow)
+            }
+        }
         let dx = doorHole.map(\.x)
         // 扉の前の溜まりは口の幅ほど（run 532: 大きく明るすぎて口のまわりが白く飛んだ）
         add("glow.door", .mesh(glowQuad(width: 40, depth: 56)), .glowPool,
             at: CV3(((dx.min() ?? 33.5) + (dx.max() ?? 56.5)) / 2, 0.5, BW + 26), group: .doorGlow)
+        // 前照灯は白に近い（板 #fff1cf）。地面の光の帯は足す光で柔らかく（板 pools の beam: 前 4〜200・幅 ±40→±110）
         for s in [-1.0, 1.0] {
             out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, position: B(front + 3, 14, s * 37),
-                                              direction: CV3(1, -0.08, 0), color: 0xFFF1CF, intensity: 1800, range: 220))
+                                              direction: CV3(1, -0.08, 0), color: 0xFFF4E5, intensity: 900, range: 220,
+                                              spotInner: 14, spotOuter: 48))
         }
+        add("glow.beam", .mesh(glowQuad(width: 216, depth: 220, material: .beamPool)), .beamPool,
+            at: CV3(front + 4 + 108, 0.45, 0), group: .glow)
         out.lights.append(CamperLightSpec(name: "taillight", kind: .omni, position: B(rear - 6, 14, 0), color: 0xFF3B30,
-                                          intensity: 160, range: 46))
+                                          intensity: 120, range: 46))
+        // 尾灯の後ろの赤い溜まり（板: 楕円 30×46・#ff6a5a 0.8→0・不透明度 0.4）
+        add("glow.tail", .mesh(glowQuad(width: 60, depth: 92, material: .redPool)), .redPool, at: CV3(rear - 30, 0.45, 0), group: .glow)
     }
 }
 

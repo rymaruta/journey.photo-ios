@@ -52,6 +52,15 @@ final class CamperScene {
     private var moodLights: [(SCNNode, Set<CamperMood>?)] = []
     /// いま組んである形の鍵（時刻を除いた設定）
     private var builtKey: CamperConfig?
+    /// 炎の舌と、揺らす灯り（焚き火・ランタン）。夜だけ、ゆっくり小さく揺らす（「視差効果を減らす」では止める）
+    private var flameNodes: [SCNNode] = []
+    private var flickerLights: [(SCNNode, Double)] = []
+    /// 揺らしてよいか（`CamperSceneView` が「視差効果を減らす」を渡す）
+    private(set) var flickerAllowed = true
+    /// いま揺らしているか（揺らしている間だけ SCNView を回し続ける）
+    private(set) var isFlickering = false
+    /// 揺らし始めた・止めた（SCNView の描き続けるかを切り替える）
+    var onFlickerChange: ((Bool) -> Void)?
 
     private(set) var config: CamperConfig?
     private(set) var blueprint: CamperBlueprint?
@@ -143,6 +152,12 @@ final class CamperScene {
     }
 
     /// 昼・夜・雪を切り替える（組み直さない。光・材質の値・その時刻だけの部品と灯りの見せる／隠すだけ）
+    /// 試験用: いまの太陽・周りの光・露出（夜に替えた後の値を確かめる）
+    var lightingSnapshot: (sun: Double, environment: Double, exposure: Double, ambient: Double) {
+        (Double(sunNode.light?.intensity ?? 0), Double(scene.lightingEnvironment.intensity),
+         Double(cameraNode.camera?.exposureOffset ?? 0), Double(ambientNode.light?.intensity ?? 0))
+    }
+
     func setMood(_ mood: CamperMood) {
         currentMood = mood
         applyMood(mood)
@@ -150,6 +165,7 @@ final class CamperScene {
         for (node, moods) in moodNodes { node.isHidden = !moods.contains(mood) }
         // その時刻でない灯りはノードごと隠す（強さ 0 で残すと、影ありの spot が昼にも影の絵を描き、光の数にも数えられる）
         for (node, moods) in moodLights { node.isHidden = !(moods.map { $0.contains(mood) } ?? true) }
+        updateFlicker()
     }
 
     // MARK: 組み立て
@@ -204,6 +220,10 @@ final class CamperScene {
         // 地面の灯りの溜まり（まとめず・影を落とさない）。扉の口の溜まりは扉を開けた時だけ見せる
         let glow = SCNNode()
         let doorGlow = SCNNode()
+        let flames = SCNNode()
+        flameNodes = []
+        flickerLights = []
+        isFlickering = false
         for prepared in plan.nodes {
             let spec = prepared.spec
             guard let geometry = makeGeometry(prepared) else { continue }
@@ -224,6 +244,13 @@ final class CamperScene {
             if spec.group == .door {
                 node.position = Self.vector((spec.position - bp.doorHinge) * s)
                 door.addChildNode(node)
+            } else if spec.group == .flame {
+                // 炎はまとめず、1 つずつ揺らす。影は落とさず、床と硝子の後に足す
+                node.position = Self.vector(spec.position * s)
+                node.castsShadow = false
+                node.renderingOrder = 11
+                flames.addChildNode(node)
+                flameNodes.append(node)
             } else if spec.group == .glow || spec.group == .doorGlow {
                 node.position = Self.vector(spec.position * s)
                 node.castsShadow = false
@@ -271,6 +298,8 @@ final class CamperScene {
         doorGlow.opacity = doorOpen ? 1 : 0
         car.addChildNode(glow)
         car.addChildNode(doorGlow)
+        flames.castsShadow = false
+        car.addChildNode(flames)
         // 地面の灯りの溜まりは夜だけ
         moodNodes.append((glow, [.night]))
         moodNodes.append((doorGlow, [.night]))
@@ -309,6 +338,7 @@ final class CamperScene {
             }
             car.addChildNode(n)
             moodLights.append((n, light.moods))
+            if light.name == "campfire" || light.name == "lantern" { flickerLights.append((n, light.intensity)) }
         }
         // 車体の下の暗がり（板: 楕円・ぼかし・0.75）。床から少し浮かせる
         let len = (bp.length.upperBound - bp.length.lowerBound + 8) * s
@@ -486,8 +516,61 @@ final class CamperScene {
             m.transparencyMode = .dualLayer
         }
         if let e = spec.emission, spec.emissionIntensity > 0 {
-            m.emission.contents = Self.color(e)
+            // 光る面に明暗の絵（反射板の輪・プリズムの筋・織り目）があれば、光の色を掛けて貼る（一色の平らな光にしない）
+            if let kind = spec.emissionTexture {
+                m.emission.contents = image(key: "emit." + CamperScenePlan.textureKey(kind, e)) { CamperTextures.make(kind).tinted(e) }
+                m.emission.wrapS = .repeat
+                m.emission.wrapT = .repeat
+            } else {
+                m.emission.contents = Self.color(e)
+            }
             m.emission.intensity = CGFloat(spec.emissionIntensity)
+        }
+    }
+
+    // MARK: 炎のゆらぎ
+
+    /// 揺らしてよいか（「視差効果を減らす」では止める）
+    func setFlicker(allowed: Bool) {
+        guard allowed != flickerAllowed else { return }
+        flickerAllowed = allowed
+        updateFlicker()
+    }
+
+    /// 夜だけ、炎の形と焚き火・ランタンの光をゆっくり小さく揺らす（2026-10-19 owner「発光の仕方ひどい」: 硬い円の光）
+    private func updateFlicker() {
+        let on = flickerAllowed && currentMood == .night && !(flameNodes.isEmpty && flickerLights.isEmpty)
+        if on != isFlickering {
+            isFlickering = on
+            onFlickerChange?(on)
+        }
+        for (i, node) in flameNodes.enumerated() {
+            node.removeAction(forKey: "flicker")
+            if on { node.runAction(.repeatForever(Self.flameAction(phase: Double(i) * 1.3, base: node.scale)), forKey: "flicker") }
+        }
+        for (i, (node, intensity)) in flickerLights.enumerated() {
+            node.removeAction(forKey: "flicker")
+            node.light?.intensity = CGFloat(intensity)
+            if on { node.runAction(.repeatForever(Self.lightAction(phase: Double(i) * 2.1, intensity: intensity)), forKey: "flicker") }
+        }
+    }
+
+    /// 揺らぎの強さ（0.9〜1.1 ほど・周期 0.7〜1.9 秒の重ね合わせ。ゆっくり小さく）
+    nonisolated static func flickerAmount(_ t: Double) -> Double {
+        1 + 0.06 * sin(t * 2 * .pi / 1.9) + 0.03 * sin(t * 2 * .pi / 0.73 + 0.5) + 0.015 * sin(t * 2 * .pi / 0.31 + 1.7)
+    }
+
+    nonisolated private static func flameAction(phase: Double, base: SCNVector3) -> SCNAction {
+        SCNAction.customAction(duration: 6) { node, elapsed in
+            let k = flickerAmount(Double(elapsed) + phase)
+            // 縦に伸び縮みし、横は少しだけ逆に（体積がおおよそ変わらない）
+            node.scale = SCNVector3(base.x * Float(1 / k.squareRoot()), base.y * Float(k), base.z * Float(1 / k.squareRoot()))
+        }
+    }
+
+    nonisolated private static func lightAction(phase: Double, intensity: Double) -> SCNAction {
+        SCNAction.customAction(duration: 6) { node, elapsed in
+            node.light?.intensity = CGFloat(intensity * flickerAmount(Double(elapsed) + phase))
         }
     }
 

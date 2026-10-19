@@ -422,4 +422,13 @@ final class CamperWiringTests: XCTestCase {
         XCTAssertTrue(view.contains("Text(CamperText.partsTitle)"))
         XCTAssertFalse(view.contains("ひかり号"))
     }
+
+    /// SCNView の描き方の設定は、炎の揺らぎで切り替えない（切り替えた直後の数枚が描き直されず、夜に替えても昼の絵が
+    /// 残った・Mac run 547 の 95b）。止まっている間は動いた時だけ描き、揺らぎ（SCNAction）は動きとして描き直される
+    func testSceneViewKeepsRenderingSettings() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Camper/CamperSceneView.swift")
+        XCTAssertEqual(view.components(separatedBy: "rendersContinuously =").count - 1, 1, "描き続けるかを途中で切り替えている")
+        XCTAssertTrue(view.contains("view.rendersContinuously = false"))
+        XCTAssertEqual(view.components(separatedBy: "preferredFramesPerSecond =").count - 1, 1)
+    }
 }

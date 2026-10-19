@@ -225,6 +225,10 @@ open class SCNNode {
     open var isHidden = false
     // 試験で組み上げた場面をたどれるよう、子と親は本当に覚える
     public private(set) var childNodes: [SCNNode] = []
+    /// 試験で確かめられるよう、走らせている動きの鍵を覚える
+    public private(set) var actionKeys: [String] = []
+    open func runAction(_ action: SCNAction, forKey key: String?) { if let key, !actionKeys.contains(key) { actionKeys.append(key) } }
+    open func removeAction(forKey key: String) { actionKeys.removeAll { $0 == key } }
     public private(set) weak var parent: SCNNode?
     open func addChildNode(_ child: SCNNode) {
         child.removeFromParentNode()
@@ -281,4 +285,10 @@ extension CGImage {
                              shouldInterpolate: Bool, intent: CGColorRenderingIntent) {
         self.init()
     }
+}
+
+open class SCNAction {
+    public init() {}
+    open class func customAction(duration seconds: Double, action block: @escaping (SCNNode, CGFloat) -> Void) -> SCNAction { SCNAction() }
+    open class func repeatForever(_ action: SCNAction) -> SCNAction { SCNAction() }
 }
