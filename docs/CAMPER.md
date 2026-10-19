@@ -25,6 +25,30 @@
   - 塗装の映り込み: 周りの光の絵にくっきりした地平線と縁のはっきりした光の箱を置き、周りの光を強め太陽を少し弱めた
     （clearCoat 1・clearCoatRoughness 0.08 は板どおり）。
 
+## とおまわり号の中（2026-10-19・枝 claude/camper-room）— 端末だけの第1段
+
+板「中に入る」（CamperRoom・CamperRoomViews・CamperRoomMain・CamperRoomFlow・CamperFurniture）。サーバーは変えない。
+
+- 入口: 外の車の画面の「中に入る」（扉が開いて口へ寄ってから室内へ）。室内は `Features/Camper/Room/CamperRoomView`。
+- 見せ方: 斜め上から見下ろす箱庭（`CamperRoomCamera`・板は横 −34° だが、掛けられる「後ろの壁」が見える前の側からの 34° を
+  初めの向きにした）。手前の端の壁と扉の壁は高さ 9 で切り、3 層（内の板・断熱・外板）の断面が見える。
+- 部屋の広さは車の本当の室内（1 マス = 10 ≈ 25 cm）: バン 12×8、キャンピングカー 18×9、トレーラーつきは車の部屋と
+  24×10 のトレーラーの部屋。台所・扉の前 3×3・窓は動かせない（`CamperRoomLayout`）。
+- 置く決まり（`CamperRoomRules`）: 床は 2 層（敷物は家具の下に敷ける）・扉から後ろの壁まで 1 マスの道・壁の物は
+  窓の上と、床の家具の高さがかかる段に掛けられない・天井は背の高い家具（50 超）の真上に吊れない・上限（板の数）。
+- 家具図鑑 64 点（`CamperRoomCatalog`）。**owner「アーティファクトの家具はホンモノ感が足りない」「数より質」**: 形を実物に寄せて
+  作り込んだ 53 点（最初からの 17 点を含む・要サーバーでない全部）だけ届き、要サーバーの 10 点と、キャンプ場が要る掛けたランタンは「近日」で数（分母）から外す。
+  形は `CamperRoomFurnitureModels`（面取り・ふくらみ・縫い目・布のたわみ・置物）、素材は `CamperRoomMaterials`・`CamperRoomTextures`。
+- 写真に写った物（寺・和室・料理・市場・雪・星空・教会・本）は、山・海と同じく撮影地・題・タグの言葉で数える（画像分類はしない）。
+- 保存: 人ごとにこの端末（`CamperRoomStore`・`camper.room.<userId>.<部屋>`・板の保存の形）。退会で消す。
+- 光: 昼は奥の窓の側からの太陽（影あり）と空の光、夜は灯りの家具の暖色の omni（5 つまで・届く 90 まで・強さの和 2.8 まで）だけで、灯りのまわりの溜まりにする（天井の灯りは置かない・Mac run 575）。
+  bloom なし・emission 1 まで・室内の灯りは室内の組（categoryBitMask 2）だけ。素材を SceneKit に写す所は外の車と共に使う
+  （`CamperScenePalette`）。
+- 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）。
+  見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift` は Debug だけ。
+- 手元で形を見る: `CAMPER_ROOM_DUMP=<dir> swift test --filter CamperRoomRenderDump`（家具と部屋を小さな絵に書き出す）。
+- やらないこと（第2段）: 友達が室内を訪ねる・招く・メモを置く（サーバーと一緒に）。
+
 ## 第2段（作らない・設計メモ）
 
 ### 写真からステッカーと積み荷を作る
