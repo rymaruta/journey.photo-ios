@@ -149,7 +149,11 @@ enum CamperRoomMaterials {
         case .ceramic(let c): return CamperMaterialSpec(color: c, roughness: 0.3, clearCoat: 0.7, clearCoatRoughness: 0.15)
         case .terracotta: return CamperMaterialSpec(color: 0xA8573A, roughness: 0.9, texture: .castIron)
         case .glass:
-            return CamperMaterialSpec(color: 0xDDE6EA, roughness: 0.04, clearCoat: 1, clearCoatRoughness: 0.02, opacity: 0.25, doubleSided: true)
+            // 昼は薄い硝子で外の景色が見える。夜は暗い硝子（外の車の運転席ガラスと同じ考え方）——
+            // 明るい色のまま clearCoat を残すと、窓が白い板に見えて夜が壊れる（2026-10-19 owner）
+            return CamperMaterialSpec(color: night ? 0x0A0C10 : 0xDDE6EA, roughness: night ? 0.12 : 0.04,
+                                      clearCoat: night ? 0.35 : 1, clearCoatRoughness: night ? 0.2 : 0.02,
+                                      opacity: night ? 0.55 : 0.25, doubleSided: true)
         case .milkGlass:
             return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.25, clearCoat: 0.6, opacity: night ? 1 : 0.92,
                                       emission: night ? 0xFFD2A0 : nil, emissionIntensity: night ? 0.8 : 0,

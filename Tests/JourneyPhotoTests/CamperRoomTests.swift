@@ -439,6 +439,13 @@ final class CamperRoomTests: XCTestCase {
         }
         XCTAssertTrue(CamperMaterials.spec(.room(.windowView), paint: 0, mood: .night).unlit)
         XCTAssertEqual(CamperMaterials.spec(.room(.windowView), paint: 0, mood: .night).texture, .windowNight)
+        // 夜の窓の硝子は暗い（明るい硝子のままだと窓が白い板になる・2026-10-19 owner）
+        let dayGlass = CamperMaterials.spec(.room(.glass), paint: 0, mood: .day)
+        let nightGlass = CamperMaterials.spec(.room(.glass), paint: 0, mood: .night)
+        XCTAssertNotEqual(dayGlass.color, nightGlass.color)
+        XCTAssertLessThan(nightGlass.color, 0x202020)
+        XCTAssertGreaterThan(nightGlass.opacity, dayGlass.opacity)
+        XCTAssertLessThan(nightGlass.clearCoat, dayGlass.clearCoat)
     }
 
     /// 部屋の組み立て: 壁は 3 層・窓・台所・扉の口・端の壁の高い／低いの組がそろい、夜の灯りは室内の名前で上限まで
@@ -551,13 +558,21 @@ final class CamperRoomSceneTests: XCTestCase {
         let night = scene.lightingSnapshot
         XCTAssertEqual(night.lampsShown, night.lamps)
         XCTAssertEqual(night.bloom, 0)
-        XCTAssertLessThan(night.sun, 100)
-        // 夜の値は外の車の夜にそろえる（露出 −0.15・周りの光は外より弱く・環境光はごく弱く）
+        // 夜の指向光は消す（残すと窓から昼の光が差し込む・2026-10-19 owner）
+        XCTAssertEqual(night.sun, 0, accuracy: 0.5)
+        XCTAssertFalse(sun.light?.castsShadow == true)
+        // 夜の値は外の車の夜にそろえる（露出 −0.15・周りの光は外より弱く）。環境光は灯りの外が真っ黒にならない程度
         XCTAssertEqual(night.environment, 0.06, accuracy: 0.001)
-        XCTAssertLessThanOrEqual(night.ambient, 10)
+        XCTAssertGreaterThan(night.ambient, 0)
+        XCTAssertLessThanOrEqual(night.ambient, 30)
         XCTAssertEqual(Double(scene.cameraNode.camera?.exposureOffset ?? 0), -0.15, accuracy: 0.001)
+        // 灯りの落ち方はなだらか（芯の白い丸を避ける）
+        for n in lamps {
+            XCTAssertEqual(Double(n.light?.attenuationFalloffExponent ?? 0), 1.2, accuracy: 0.01)
+        }
         scene.setMood(.day)
         XCTAssertEqual(scene.lightingSnapshot.lampsShown, 0)
+        XCTAssertTrue(sun.light?.castsShadow == true)
         XCTAssertTrue(scene.marker().contains("camper-room-ready car day"))
     }
 
