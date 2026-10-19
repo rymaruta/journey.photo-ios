@@ -3,152 +3,167 @@ import XCTest
 
 /// トランクのラベルをはがす・貼り替える（2026-10-19 の直し・owner「取って付け替えたときに、空洞のところが空洞に
 /// なっていない」）。置き場なしのラベルは並びの番号でおまかせの置き場が決まるので、1枚はがすとほかがずれて、
-/// はがした所にほかのラベルが入り、別の所が空いていた。描く元の値（`TrunkPlacement.layout`）で確かめる
+/// はがした所にほかのラベルが入り、別の所が空いていた。
+///
+/// 直し方（確かめ役の見直しのあと）: はがすときに、ずれるラベルの**おまかせの置き場の番号**（`slot`）を添えて
+/// サーバーが同じ1回で覚える。描く元の値（`TrunkPlacement.layout`）で確かめる
 final class TrunkSwapTests: XCTestCase {
 
-    private func label(_ id: String, pos: TrunkPos? = nil) -> TrunkLabel {
+    private func label(_ id: String, pos: TrunkPos? = nil, slot: Int? = nil) -> TrunkLabel {
         TrunkLabel(id: id, photoId: id, kind: .place, place: .init(name: id, latin: nil, country: nil), seed: 1,
-                   at: "2026-01-01T00:00:00Z", pos: pos)
+                   at: "2026-01-01T00:00:00Z", pos: pos, slot: slot)
     }
 
+    /// 描いている枠（位置・大きさ・傾き。**大きさも比べる**＝置き場の枠のまま描く）
     private struct Spot: Equatable {
-        let cx: Double, cy: Double, rot: Double
+        let x: Double, y: Double, w: Double, h: Double, rot: Double
     }
 
-    /// 描いている所（真ん中と傾き。置き場を与えたラベルは大きさが形の比に変わるので、真ん中で比べる）
     private func spots(_ stuck: [TrunkLabel]) -> [String: Spot] {
         var out: [String: Spot] = [:]
-        for p in TrunkPlacement.layout(stuck, stage: 0) {
-            out[p.label.id] = Spot(cx: ((p.x + p.w / 2) * 10).rounded() / 10, cy: ((p.y + p.h / 2) * 10).rounded() / 10,
-                                   rot: p.rot)
-        }
+        for p in TrunkPlacement.layout(stuck, stage: 0) { out[p.label.id] = Spot(x: p.x, y: p.y, w: p.w, h: p.h, rot: p.rot) }
         return out
     }
 
-    /// 置き場を与えたあとの貼ったラベル（サーバーと同じ: 置き場を書き、はがした1枚を除く）
-    private func applying(_ pins: [(id: String, pos: TrunkPos)], to stuck: [TrunkLabel], removing id: String) -> [TrunkLabel] {
-        let byId = Dictionary(uniqueKeysWithValues: pins.map { ($0.id, $0.pos) })
-        return stuck.filter { $0.id != id }.map { l in byId[l.id].map { l.withPos($0) } ?? l }
+    /// 番号を添えたあとの貼ったラベル（サーバーと同じ: 置き場の無いラベルに番号を書き、はがした1枚を除く）
+    private func applying(_ slots: [String: Int], to stuck: [TrunkLabel], removing id: String) -> [TrunkLabel] {
+        stuck.filter { $0.id != id }.map { l in l.pos == nil ? (slots[l.id].map { l.withSlot($0) } ?? l) : l }
     }
 
-    /// - Parameter newcomers: はがした所に入ってよい（前は描いていなかった）ラベルがあるか（窓の外の古いラベル）
+    /// 描いていたラベルは同じ枠のまま・はがした所は空く（`newcomers`: 窓の外の古いラベルは空いた所に出てよい）
     private func assertStayed(_ before: [String: Spot], _ after: [String: Spot], except removed: String,
                               newcomers: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
         for (id, spot) in before where id != removed {
-            guard let now = after[id] else { XCTFail("\(id) が描かれなくなった", file: file, line: line); continue }
-            XCTAssertEqual(now.cx, spot.cx, accuracy: 0.5, "\(id) が横にずれた", file: file, line: line)
-            XCTAssertEqual(now.cy, spot.cy, accuracy: 0.5, "\(id) が縦にずれた", file: file, line: line)
-            XCTAssertEqual(now.rot, spot.rot, accuracy: 0.05, "\(id) の傾きが変わった", file: file, line: line)
+            XCTAssertEqual(after[id], spot, "\(id) がずれた・大きさが変わった", file: file, line: line)
         }
-        // はがした所は空く（ほかのラベルの真ん中が来ない）
         if let hole = before[removed] {
-            let filled = after.filter { abs($0.value.cx - hole.cx) < 6 && abs($0.value.cy - hole.cy) < 6 }
-            for id in filled.keys where !newcomers || before[id] != nil {
+            for (id, s) in after where s == hole && (!newcomers || before[id] != nil) {
                 XCTFail("はがした所に \(id) が入った（空洞にならない）", file: file, line: line)
             }
         }
+        // 2枚が同じ枠に重ならない
+        let frames = after.values.map { "\($0.x)/\($0.y)" }
+        XCTAssertEqual(Set(frames).count, frames.count, "2枚が同じ置き場に重なった", file: file, line: line)
     }
 
     // MARK: 描く元の値
 
-    /// 前の不具合の形: 置き場を与えずに真ん中の1枚をはがすと、新しいラベルがはがした所へずれる
-    func testPeelingWithoutPinsShiftsTheNewer() {
+    /// 前の不具合の形: 番号を添えずに真ん中の1枚をはがすと、新しいラベルがはがした所へずれる
+    func testPeelingWithoutSlotsShiftsTheNewer() {
         let stuck = ["a", "b", "c", "d"].map { label($0) }
-        let before = spots(stuck)
-        let after = spots(stuck.filter { $0.id != "c" })
-        XCTAssertEqual(after["b"], before["c"], "前提: 置き場なしのラベルは並びの番号で置き場が決まる")
+        XCTAssertEqual(spots(stuck.filter { $0.id != "c" })["b"], spots(stuck)["c"], "前提: 並びの番号で置き場が決まる")
     }
 
-    /// 🔴 置き場なし4枚の真ん中をはがす: ほかは1点も動かず、はがした所が空く
+    /// 🔴 置き場なし4枚の真ん中をはがす: ずれる2枚にだけ番号を添え、ほかは1点も動かず（大きさもそのまま）、はがした所が空く
     func testPeelingAMiddleLooseLabelLeavesAHole() {
         let stuck = ["a", "b", "c", "d"].map { label($0) }
-        let pins = TrunkPlacement.pinsBeforeUnstick(stuck, removing: "c")
-        XCTAssertEqual(Set(pins.map(\.id)), ["a", "b"], "ずれる2枚（はがした1枚より新しい）にだけ置き場を与える")
-        assertStayed(spots(stuck), spots(applying(pins, to: stuck, removing: "c")), except: "c")
+        let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: "c")
+        XCTAssertEqual(Set(slots.keys), ["a", "b"])
+        let next = applying(slots, to: stuck, removing: "c")
+        XCTAssertTrue(next.allSatisfy { $0.pos == nil }, "置き場なしのラベルに置き場を与えた")
+        assertStayed(spots(stuck), spots(next), except: "c")
     }
 
     /// 🔴 いちばん古い1枚をはがす（見本の9枚）: 全部の番号がずれる形。ほかは動かない
     func testPeelingTheOldestOfTheSample() {
         let stuck = TrunkSample.stuck
         let oldest = stuck.last!.id
-        let pins = TrunkPlacement.pinsBeforeUnstick(stuck, removing: oldest)
-        assertStayed(spots(stuck), spots(applying(pins, to: stuck, removing: oldest)), except: oldest)
+        let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: oldest)
+        assertStayed(spots(stuck), spots(applying(slots, to: stuck, removing: oldest)), except: oldest)
     }
 
     /// 🔴 置き場つきの古い1枚をはがす: 置き場なしの新しいラベルの番号がずれる形（`olderPlaced` が減る）
     func testPeelingAnOlderPlacedLabelKeepsTheLooseOnes() {
-        // 置き場つきが間にある並びと、いちばん古い並び（窓のいちばん古い n3 より古い）
-        let stuck = [label("n1"), label("n2"), label("old", pos: TrunkPos(x: 0.5, y: 0.9, rot: 0)), label("n3")]
-        let stuck2 = [label("n1"), label("n2"), label("n3"), label("old", pos: TrunkPos(x: 0.5, y: 0.9, rot: 0))]
-        for s in [stuck, stuck2] {
-            let pins = TrunkPlacement.pinsBeforeUnstick(s, removing: "old")
-            assertStayed(spots(s), spots(applying(pins, to: s, removing: "old")), except: "old")
+        let p = TrunkPos(x: 0.5, y: 0.9, rot: 0)
+        for s in [[label("n1"), label("n2"), label("old", pos: p), label("n3")],
+                  [label("n1"), label("n2"), label("n3"), label("old", pos: p)]] {
+            let slots = TrunkPlacement.slotsBeforeUnstick(s, removing: "old")
+            assertStayed(spots(s), spots(applying(slots, to: s, removing: "old")), except: "old")
         }
     }
 
-    /// いちばん新しい1枚・置き場つきの1枚をはがしても、ほかがずれないなら何も送らない（書き込みを増やさない）
-    func testNoPinsWhenNothingMoves() {
+    /// いちばん新しい1枚・置き場つきの1枚をはがしても、ほかがずれないなら番号を添えない（本文を送らない）
+    func testNoSlotsWhenNothingMoves() {
         let stuck = ["a", "b", "c"].map { label($0) }
-        XCTAssertTrue(TrunkPlacement.pinsBeforeUnstick(stuck, removing: "a").isEmpty)
+        XCTAssertTrue(TrunkPlacement.slotsBeforeUnstick(stuck, removing: "a").isEmpty)
         let placed = [label("p", pos: TrunkPos(x: 0.3, y: 0.3, rot: 0))] + stuck
-        XCTAssertTrue(TrunkPlacement.pinsBeforeUnstick(placed, removing: "p").isEmpty)
-        XCTAssertTrue(TrunkPlacement.pinsBeforeUnstick(stuck, removing: "zz").isEmpty, "貼っていないラベルで置き場を送った")
+        XCTAssertTrue(TrunkPlacement.slotsBeforeUnstick(placed, removing: "p").isEmpty)
+        XCTAssertTrue(TrunkPlacement.slotsBeforeUnstick(stuck, removing: "zz").isEmpty, "貼っていないラベルで番号を送った")
     }
 
-    /// 置き場なしが 11 枚を越える（窓の外に古いラベルがある）: 窓の中の1枚をはがしても、描いていたラベルは動かない。
-    /// 前は窓の外で描いていなかった古いラベルが出てくることはある（置き場を与えたラベルが窓の席を空けるため）が、
-    /// **出てきても、描いていたラベルの下**（古いものが下）に描く。空いた所には出てよい（前の版の「新しい 11 枚」と同じ）
-    func testPeelingWithMoreThanElevenLooseLabels() {
+    /// 🔴 置き場なしが 14 枚（窓の外に古い3枚）: 窓の中のどれをはがしても、描いていたラベルは同じ枠のまま。
+    /// 窓の外から出てくる古いラベルは**空いた所だけ**に出る（番号つきのラベルの上に重ねない）。描くのは 11 枚まで
+    func testPeelingWithFourteenLooseLabels() {
         let stuck = (0..<14).map { label("l\($0)") }
         let before = spots(stuck)
-        for removing in ["l0", "l5", "l10"] {
-            let pins = TrunkPlacement.pinsBeforeUnstick(stuck, removing: removing)
-            let next = applying(pins, to: stuck, removing: removing)
-            assertStayed(before, spots(next), except: removing, newcomers: true)
-            let order = TrunkPlacement.layout(next, stage: 0).map(\.label.id)
-            for newcomer in order where before[newcomer] == nil {
-                for old in before.keys where old != removing {
-                    XCTAssertLessThan(order.firstIndex(of: newcomer)!, order.firstIndex(of: old)!,
-                                      "窓の外から出てきた \(newcomer) が \(old) の上に描かれた")
-                }
+        XCTAssertEqual(before.count, 11)
+        for removing in ["l0", "l3", "l5", "l9", "l10"] {
+            let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: removing)
+            let after = spots(applying(slots, to: stuck, removing: removing))
+            assertStayed(before, after, except: removing, newcomers: true)
+            XCTAssertLessThanOrEqual(after.count, 11, "\(removing): 置き場より多く描いた")
+            for (id, s) in after where before[id] == nil {
+                XCTAssertEqual(s, before[removing], "\(removing): 窓の外の \(id) が空いた所以外に出た")
             }
         }
     }
 
-    /// 画面の上だけで動かしている1枚（保存待ち）は、その置き場で描いているので置き場を与えない
-    func testOverriddenLabelIsNotPinned() {
+    /// 番号つきのラベルを続けてはがす（2回目の番号は1回目で書いた番号を土台にする）: ずれない・重ならない
+    func testRepeatedPeelsOnSlottedLabels() {
+        var stuck = (0..<8).map { label("l\($0)") }
+        let first = spots(stuck)
+        var removed: [String] = []
+        for id in ["l6", "l2", "l4"] {
+            let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: id)
+            stuck = applying(slots, to: stuck, removing: id)
+            removed.append(id)
+            let now = spots(stuck)
+            for (k, s) in first where !removed.contains(k) { XCTAssertEqual(now[k], s, "\(id) をはがしたら \(k) がずれた") }
+        }
+    }
+
+    /// 画面の上だけで動かしている1枚（保存待ち）は、その置き場で描いているので番号を添えない
+    func testOverriddenLabelGetsNoSlot() {
         let stuck = ["a", "b", "c"].map { label($0) }
-        let pins = TrunkPlacement.pinsBeforeUnstick(stuck, removing: "c", overrides: ["a": TrunkPos(x: 0.1, y: 0.1, rot: 0)])
-        XCTAssertEqual(pins.map(\.id), ["b"])
+        let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: "c", overrides: ["a": TrunkPos(x: 0.1, y: 0.1, rot: 0)])
+        XCTAssertEqual(Array(slots.keys), ["b"])
+    }
+
+    /// 番号の読み方: 置き場があれば番号は捨てる・範囲の外は読まない・番号の無いトランクは前の版と同じ並び
+    func testSlotDecodingAndLegacyLayout() throws {
+        let json = #"[{"id":"a","seed":1,"place":{"name":"x"},"slot":4},{"id":"b","seed":1,"place":{"name":"x"},"slot":4,"pos":{"x":0.5,"y":0.5,"rot":0}},{"id":"c","seed":1,"place":{"name":"x"},"slot":11},{"id":"d","seed":1,"place":{"name":"x"},"slot":"z"}]"#
+        let labels = try JSONDecoder().decode([TrunkLabel].self, from: Data(json.utf8))
+        XCTAssertEqual(labels.map(\.slot), [4, nil, nil, nil])
+        XCTAssertNil(label("x", slot: 3).withPos(TrunkPos(x: 0.5, y: 0.5, rot: 0)).slot, "置き場を与えても番号が残った")
+        let legacy = (0..<14).map { label("l\($0)") }
+        XCTAssertEqual(TrunkPlacement.layout(legacy, stage: 0.6), TrunkSlots.place(legacy, stage: 0.6))
     }
 
     // MARK: 置き場なしで貼る
 
-    /// 🔴 手で貼ったラベルが乗っている置き場に、置き場なしで貼らない（重ねて隠さない）
+    /// 🔴 手で貼ったラベルが乗っている置き場に、置き場なしで貼らない（重ねて隠さない）。空いた所の番号を添える
     func testLooseStickDoesNotCoverAHandPlacedLabel() {
         let loose = [label("o1"), label("o2")]
-        // おまかせで並べた（空いている置き場に置き場つきで貼った）9 枚
         let arranged = TrunkPlacement.autoArrange(pocket: (0..<9).map { label("p\($0)") }, stuck: loose)
         let stuck = arranged.reversed().map { label($0.id, pos: $0.pos) } + loose
         let new = label("new")
-        // 前の不具合の形: 置き場なしで貼ると、手で貼った1枚の上に重なる
-        let naive = spots([new] + stuck)
-        XCTAssertTrue(stuck.contains { $0.pos != nil && spots(stuck)[$0.id].map { abs($0.cx - naive["new"]!.cx) < 6 } == true },
-                      "前提: 置き場なしの番号の置き場は、手で貼ったラベルが使っている")
-        // 全部埋まっていれば置き場なしのまま（今までどおり）
-        XCTAssertNil(TrunkPlacement.stickPos(for: new, stuck: stuck))
-        // 1か所空いていれば、そこに貼る
+        // 全部埋まっていれば番号なし（今までどおり）
+        XCTAssertNil(TrunkPlacement.stickSlot(for: new, stuck: stuck))
+        // 1か所（p0 の所）空いていれば、そこの番号
         let withHole = stuck.filter { $0.id != "p0" }
-        let pos = TrunkPlacement.stickPos(for: new, stuck: withHole)
-        XCTAssertEqual(pos, TrunkPlacement.autoArrange(pocket: [new], stuck: withHole).first?.pos)
-        XCTAssertNotNil(pos)
-        // 置き場のないトランクは前の版と同じ（置き場なしで貼る）
-        XCTAssertNil(TrunkPlacement.stickPos(for: new, stuck: loose))
+        let slot = TrunkPlacement.stickSlot(for: new, stuck: withHole)
+        XCTAssertNotNil(slot)
+        let s = spots([new.withSlot(slot)] + withHole)["new"]!
+        let p0 = arranged.first { $0.id == "p0" }!.pos
+        XCTAssertEqual(s.x + s.w / 2, TrunkPlacement.point(p0).x, accuracy: 0.5)
+        XCTAssertEqual(s.y + s.h / 2, TrunkPlacement.point(p0).y, accuracy: 0.5)
+        // 置き場のないトランクは前の版と同じ（番号なし）
+        XCTAssertNil(TrunkPlacement.stickSlot(for: new, stuck: loose))
     }
 
-    // MARK: 見本で通しで（はがす → 手持ちから貼り直す）
+    // MARK: 見本で通しで（はがす → 手持ちから貼り直す → 「ひとつ戻す」の形で戻す）
 
-    /// 🔴 見本の9枚の真ん中をはがす → ほかは動かず、はがした所が空く → 手持ちの「貼る」で貼り直すと元の所に戻る
+    /// 🔴 見本の9枚の真ん中をはがす → ほかは動かず、はがした所が空く → 手持ちの「貼る」で貼り直すと元の所（元の枠）に戻る
     @MainActor
     func testPeelAndRestickInThePreview() async {
         let model = TrunkViewModel(preview: .sample, previewPro: true)
@@ -156,29 +171,33 @@ final class TrunkSwapTests: XCTestCase {
         let stuck = model.state!.stuck
         let target = stuck[4].id
         let before = spots(stuck)
-        let ok = await model.unstick(target)
-        XCTAssertTrue(ok)
+        do { let ok = await model.unstick(target); XCTAssertTrue(ok) }
         XCTAssertEqual(model.state?.pocket.first?.id, target)
+        XCTAssertTrue(model.state!.stuck.allSatisfy { $0.pos == nil }, "置き場なしのラベルに置き場を与えた")
         assertStayed(before, spots(model.state!.stuck), except: target)
-        // 空いた所は、おまかせで並べるの空きとして見える
-        let hole = before[target]!
-        let free = TrunkPlacement.autoArrange(pocket: [label("x")], stuck: model.state!.stuck).first!.pos
-        let c = TrunkPlacement.point(free)
-        XCTAssertEqual(c.x, hole.cx, accuracy: 0.5, "空いた所が空きとして扱われない")
-        XCTAssertEqual(c.y, hole.cy, accuracy: 0.5)
-        // 手持ちから貼り直す（置き場なしの「貼る」）: 手で置き場を与えた1枚の上に重ねず、空いた所に戻る
-        let restuck = await model.stick(target)
-        XCTAssertTrue(restuck)
-        let again = spots(model.state!.stuck)
-        XCTAssertEqual(again[target]?.cx ?? -1, hole.cx, accuracy: 0.5, "貼り直した1枚が元の所に戻らない")
-        XCTAssertEqual(again[target]?.cy ?? -1, hole.cy, accuracy: 0.5)
-        for (id, spot) in before where id != target {
-            XCTAssertEqual(again[id]?.cx ?? -1, spot.cx, accuracy: 0.5, "\(id) がずれた")
-            XCTAssertEqual(again[id]?.cy ?? -1, spot.cy, accuracy: 0.5, "\(id) がずれた")
-        }
+        do { let ok = await model.stick(target); XCTAssertTrue(ok) }
+        XCTAssertEqual(spots(model.state!.stuck), before, "貼り直すと元の並びに戻らない")
+        XCTAssertNil(model.state!.stuck.first { $0.id == target }?.pos, "置き場なしのラベルを置き場つきで貼り直した")
     }
 
-    /// 🔴 続けて貼り替える（2枚はがす → 2枚貼る）: 重なりも空きの取り違えも起きない
+    /// 🔴 「ひとつ戻す」の形: 置き場なしだったラベルは、置き場なしのまま描いていた番号で戻る
+    @MainActor
+    func testUndoPeelKeepsALooseLabelLoose() async {
+        let model = TrunkViewModel(preview: .sample, previewPro: true)
+        await model.load(offline: false)
+        let before = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        let target = model.state!.stuck[2].id
+        let slot = TrunkPlacement.slotIndex(before.first { $0.id == target }!)
+        XCTAssertNotNil(slot)
+        do { let ok = await model.unstick(target); XCTAssertTrue(ok) }
+        do { let ok = await model.stick(target, slot: slot!); XCTAssertTrue(ok) }
+        let back = model.state!.stuck.first { $0.id == target }!
+        XCTAssertNil(back.pos)
+        XCTAssertEqual(back.slot, slot)
+        XCTAssertEqual(spots(model.state!.stuck), spots(before.map(\.label).reversed()), "戻したのに並びが変わった")
+    }
+
+    /// 🔴 続けて貼り替える（2枚はがす → 2枚貼る）: 重なりも空きの取り違えも起きない。元の9か所をそのまま使う
     @MainActor
     func testRepeatedSwapsKeepEveryLabelApart() async {
         let model = TrunkViewModel(preview: .sample, previewPro: true)
@@ -191,17 +210,15 @@ final class TrunkSwapTests: XCTestCase {
         _ = await model.stick(a)
         let now = spots(model.state!.stuck)
         XCTAssertEqual(Set(now.keys), Set(first.keys))
-        let centers = now.values.map { "\(Int($0.cx.rounded()))/\(Int($0.cy.rounded()))" }
-        XCTAssertEqual(Set(centers).count, centers.count, "2枚が同じ所に重なった")
-        // 元の9か所をそのまま使う（並びは入れ替わってもよい）
-        let was = Set(first.values.map { "\(Int($0.cx.rounded()))/\(Int($0.cy.rounded()))" })
-        XCTAssertEqual(Set(centers), was, "空いているはずの所が埋まらず、別の所に貼った")
+        let frames = now.values.map { "\($0.x)/\($0.y)" }
+        XCTAssertEqual(Set(frames).count, frames.count, "2枚が同じ所に重なった")
+        XCTAssertEqual(Set(now.values.map { "\($0.x)/\($0.y)/\($0.w)" }), Set(first.values.map { "\($0.x)/\($0.y)/\($0.w)" }),
+                       "空いているはずの所が埋まらず、別の所・別の大きさで貼った")
     }
 
     // MARK: 描く側の見分け方（id）
 
-    /// 🔴 描くラベルはラベルの id で見分ける。はがした直後・貼り替えた直後も、同じ id は同じラベル・同じ所で、
-    /// 何番目かで見分けたときのように別のラベルの描き物を使い回さない
+    /// 🔴 描くラベルはラベルの id で見分ける。はがした直後・貼り替えた直後も、同じ id は同じラベル・同じ所
     @MainActor
     func testDrawnLabelsAreIdentifiedByLabelId() async {
         let model = TrunkViewModel(preview: .sample, previewPro: true)
@@ -216,17 +233,14 @@ final class TrunkSwapTests: XCTestCase {
             XCTAssertEqual(Set(drawn.map(\.id)).count, drawn.count, "描く識別子が重なった")
             XCTAssertTrue(drawn.allSatisfy { $0.id == $0.label.id }, "識別子がラベルの id でない")
         }
-        // 前提: 何番目かで見分けると、はがした直後に同じ番目へ別のラベルが入る（前のラベルの描き物を使い回す）
-        let sameIndexOtherLabel = zip(before, peeled).contains { $0.label.id != $1.label.id }
-        XCTAssertTrue(sameIndexOtherLabel, "前提: はがすと番目とラベルの組が変わる")
-        // id で見分ければ、はがした1枚の描き物は消え、残りは同じラベル・同じ所
+        // 前提: 何番目かで見分けると、はがした直後に同じ番目へ別のラベルが入る
+        XCTAssertTrue(zip(before, peeled).contains { $0.label.id != $1.label.id }, "前提: はがすと番目とラベルの組が変わる")
         XCTAssertNil(peeled.first { $0.id == target }, "はがした1枚が描かれている")
         let old = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
         for p in peeled {
             guard let o = old[p.id] else { return XCTFail("\(p.id) は前に無かった") }
             XCTAssertEqual(p.label.seed, o.label.seed)
-            XCTAssertEqual(p.x + p.w / 2, o.x + o.w / 2, accuracy: 0.5, "\(p.id) がずれた")
-            XCTAssertEqual(p.y + p.h / 2, o.y + o.h / 2, accuracy: 0.5, "\(p.id) がずれた")
+            XCTAssertEqual(Spot(x: p.x, y: p.y, w: p.w, h: p.h, rot: p.rot), Spot(x: o.x, y: o.y, w: o.w, h: o.h, rot: o.rot))
         }
         XCTAssertNotNil(restuck.first { $0.id == target }, "貼り直した1枚が描かれない")
     }
@@ -236,7 +250,6 @@ final class TrunkSwapTests: XCTestCase {
         let newer = label("a", pos: TrunkPos(x: 0.2, y: 0.2, rot: 0))
         let drawn = TrunkPlacement.layout([newer, label("b"), label("a")], stage: 0)
         XCTAssertEqual(drawn.map(\.id).sorted(), ["a", "b"])
-        let a = drawn.first { $0.id == "a" }!
-        XCTAssertEqual(a.label.pos, newer.pos, "古い方の a を描いた")
+        XCTAssertEqual(drawn.first { $0.id == "a" }?.label.pos, newer.pos, "古い方の a を描いた")
     }
 }

@@ -131,7 +131,7 @@ final class TrunkPlaceCommitter: ObservableObject {
         pending = TrunkPendingPlaces()
     }
 
-    /// 1枚の溜まった置き場を送らない（はがす前・2026-10-19）。待っている頼みも取り下げる。ほかのラベルの分は残す
+    /// 1枚の溜まった置き場を送らない（**はがせたあと**・2026-10-19）。待っている頼みも取り下げる。ほかのラベルの分は残す
     func discard(_ id: String) {
         tasks.removeValue(forKey: id)?.cancel()
         completions[id] = nil

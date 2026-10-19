@@ -182,15 +182,21 @@ final class TrunkViewModel: ObservableObject {
         await load(offline: offline)
     }
 
-    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面）。**入るおまかせの置き場に手で貼ったラベルが乗っていれば、
-    /// 空いている置き場に貼る**（重ねて隠さない・`TrunkPlacement.stickPos`・2026-10-19 の直し）
+    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面）。**入るおまかせの置き場にほかのラベルが乗っていれば、
+    /// 空いているおまかせの置き場の番号を添えて貼る**（重ねて隠さない・`TrunkPlacement.stickSlot`・2026-10-19 の直し）
     @discardableResult
     func stick(_ id: String) async -> Bool {
         if let state, let label = state.pocket.first(where: { $0.id == id }),
-           let pos = TrunkPlacement.stickPos(for: label, stuck: state.stuck) {
-            return await stick(id, at: pos)
+           let slot = TrunkPlacement.stickSlot(for: label, stuck: state.stuck) {
+            return await stick(id, slot: slot)
         }
         return await write({ TrunkLocal.stick($0, id: id) }, { try await $0.stick(id) })
+    }
+
+    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（「ひとつ戻す」で元の所へ戻す・2026-10-19）
+    @discardableResult
+    func stick(_ id: String, slot: Int) async -> Bool {
+        await write({ TrunkLocal.stick($0, id: id, slot: slot) }, { try await $0.stick(id, slot: slot) })
     }
 
     @discardableResult
@@ -273,6 +279,11 @@ final class TrunkViewModel: ObservableObject {
         let ticket = placeTickets.issue(id)
         guard await waitUntilIdle() else { return .busy }
         guard placeTickets.isLatest(id, ticket) else { return .superseded }
+        // 待つ間にはがした1枚は送らない（送ると「まだ貼っていない」と断られて一言が出る・2026-10-19）。
+        // はがしたラベルは置き場を持たないので、断られたのと同じに数えて保存待ちから下ろす
+        if let state, !state.stuck.contains(where: { $0.id == id }), state.pocket.contains(where: { $0.id == id }) {
+            return .refused
+        }
         if await place(id, at: pos) { return .saved }
         if actionError == nil { return .busy }
         return lastWriteRefused ? .refused : .failed
@@ -291,9 +302,10 @@ final class TrunkViewModel: ObservableObject {
 
     /// はがして手持ちに戻す（手持ちが上限なら一言）。
     ///
-    /// **はがす前に、ずれてしまう置き場なしのラベルへ、いま描いている所を置き場として保存する**
-    /// （`TrunkPlacement.pins`・2026-10-19 の直し: はがした所にほかのラベルが入り、別の所が空いていた）。
-    /// 置き場を送れなければ、はがさない（描いている所と保存の食い違いを残さない）。
+    /// **ずれてしまう置き場なしのラベルに、いま描いているおまかせの置き場の番号を添えて、1回で送る**
+    /// （`TrunkPlacement.slotsBeforeUnstick`・2026-10-19 の直し: はがした所にほかのラベルが入り、別の所が空いていた）。
+    /// サーバーがはがすのと同じ1回の書き込みで覚えるので、途中で止まって半分だけ書かれることも、応答の間に
+    /// 並びがちらつくことも無い（画面は応答を1回映すだけ）。
     /// - Parameter overrides: 画面の上だけで動かしている置き場（自分の手で貼る画面の、保存を待っている分）
     @discardableResult
     func unstick(_ id: String, overrides: [String: TrunkPos] = [:]) async -> Bool {
@@ -301,13 +313,8 @@ final class TrunkViewModel: ObservableObject {
             actionError = TrunkText.unstickFull
             return false
         }
-        // 手持ちがいっぱいならサーバーが断る（置き場だけ保存して、はがせない、をしない）
-        if let state, state.pocket.count < state.limit {
-            for pin in TrunkPlacement.pinsBeforeUnstick(state.stuck, removing: id, overrides: overrides) {
-                guard await place(pin.id, at: pin.pos) else { return false }
-            }
-        }
-        return await write({ TrunkLocal.unstick($0, id: id) }, { try await $0.unstick(id) },
+        let slots = state.map { TrunkPlacement.slotsBeforeUnstick($0.stuck, removing: id, overrides: overrides) } ?? [:]
+        return await write({ TrunkLocal.unstick($0, id: id, slots: slots) }, { try await $0.unstick(id, slots: slots) },
                            refusal: { $0.code == "full" ? TrunkText.unstickFull : nil })
     }
 
