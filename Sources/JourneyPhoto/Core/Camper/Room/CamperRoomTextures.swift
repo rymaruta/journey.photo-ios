@@ -36,6 +36,7 @@ enum CamperRoomTextures {
         case .matBoard: return matBoard()
         case .photoPlaceholder: return photoPlaceholder()
         case .wornWood: return wornWood()
+        case .mapPrint: return mapPrint()
         default: return CamperTextures.make(.weave)
         }
     }
@@ -479,6 +480,39 @@ enum CamperRoomTextures {
                 var c: RGB = (0.5 + 0.2 * v, 0.55 + 0.18 * v, 0.6 + 0.12 * v)
                 if v > 0.55 + 0.15 * abs(sin(u * 5)) { c = (0.32, 0.36, 0.38) }
                 b.set(x, y, c)
+            }
+        }
+        return b
+    }
+
+    /// 旅の地図（生成りの紙・海岸線と等高線のような細い線・赤い点線の道と点）。色の付いた絵（0〜1）
+    static func mapPrint() -> CamperBitmap {
+        var b = CamperBitmap(width: 192, height: 128)
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let u = Double(x) / 192, v = Double(y) / 128
+                let land = fbm(u * 3, v * 2, period: 3, seed: 141)
+                var c: RGB = land > 0.5 ? (0.93, 0.9, 0.82) : (0.78, 0.86, 0.88)
+                if abs(land - 0.5) < 0.008 { c = (0.35, 0.4, 0.42) }
+                if land > 0.5, abs((land * 14).truncatingRemainder(dividingBy: 1) - 0.5) < 0.04 { c = (0.84, 0.8, 0.7) }
+                b.set(x, y, c)
+            }
+        }
+        // 赤い点線の道と、撮った所の点
+        var n = CamperTextures.Noise(seed: 143)
+        var p = (40.0, 90.0)
+        var dots: [(Double, Double)] = [p]
+        for k in 0..<160 {
+            p = (p.0 + 0.8 + n.next() * 0.3, p.1 + sin(Double(k) / 14) * 0.9 - 0.25)
+            if k % 4 < 2, Int(p.0) < 192, Int(p.1) >= 0, Int(p.1) < 128 { b.set(Int(p.0), Int(p.1), (0.75, 0.16, 0.12)) }
+            if k % 40 == 39 { dots.append(p) }
+        }
+        for d in dots {
+            for dy in -2...2 {
+                for dx in -2...2 where dx * dx + dy * dy <= 4 {
+                    let x = Int(d.0) + dx, y = Int(d.1) + dy
+                    if x >= 0, x < 192, y >= 0, y < 128 { b.set(x, y, (0.72, 0.14, 0.1)) }
+                }
             }
         }
         return b

@@ -33,7 +33,7 @@ struct CamperRoomView: View {
     @State private var selected: String?
     @State private var drag: CamperRoomItem?
     @State private var dragCheck: CamperRoomCheck?
-    @State private var gesture: GestureState?
+    @State private var gesture: PointerState?
     @State private var pinchStart: CamperRoomCamera?
     @State private var trayTab: CamperRoomPlacement = .floor
     @State private var styleTab: StyleTab = .wall
@@ -47,7 +47,7 @@ struct CamperRoomView: View {
     @State private var loaded = false
 
     /// 指の動き（始めた所・持ち上げた家具・回し始めのカメラ）
-    struct GestureState {
+    struct PointerState {
         var start: CGPoint
         var began = Date()
         var item: CamperRoomItem?
@@ -307,7 +307,7 @@ struct CamperRoomView: View {
                 if gesture == nil {
                     let ray = camera.ray(value.startLocation, viewport: viewport, layout: layout)
                     let hit = mode == .style ? nil : CamperRoomPick.item(at: ray, in: editor.doc)
-                    gesture = GestureState(start: value.startLocation, item: hit, camera: camera)
+                    gesture = PointerState(start: value.startLocation, item: hit, camera: camera)
                     if let hit { scheduleLift(hit.u) }
                 }
                 guard var g = gesture else { return }

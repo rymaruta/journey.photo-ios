@@ -49,7 +49,7 @@ enum CamperRoomFurnitureModels {
         case "mobile.wooden_birds": m = woodenBirds()
         case "plant_hanger.macrame": m = macrame()
         case "roof_hatch.square_vent": m = squareVent()
-        default: m = nil
+        default: m = moreMesh(id)
         }
         return m
     }
@@ -63,7 +63,7 @@ enum CamperRoomFurnitureModels {
         case "floor_lamp.tripod": return (CV3(0, 48, 0), 380, 90)
         case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 300, 80)
         case "string_ceiling.globe_string": return (CV3(0, -9, 0), 260, 80)
-        default: return nil
+        default: return moreLamp(id)
         }
     }
 

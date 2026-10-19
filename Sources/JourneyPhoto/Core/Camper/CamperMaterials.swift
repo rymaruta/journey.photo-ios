@@ -90,7 +90,7 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case planks, chevron, herringbone, checkerTiles, cork
     case boards, birchPly, darkBoards, wallpaperStripe
     case leather, linenSlub, knit, rush, wicker, rope, ovalRings, runnerWeave, enamelChip, castIron, foliage
-    case clockDial, windowDay, windowNight, matBoard, photoPlaceholder, wornWood
+    case clockDial, windowDay, windowNight, matBoard, photoPlaceholder, wornWood, mapPrint
 }
 
 enum CamperMaterials {

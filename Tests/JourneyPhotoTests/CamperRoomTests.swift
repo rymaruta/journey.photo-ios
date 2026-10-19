@@ -457,6 +457,10 @@ final class CamperRoomSceneTests: XCTestCase {
             if n.light?.castsShadow == true { XCTAssertEqual(n.light?.shadowMode, .forward) }
         }
         XCTAssertEqual(scene.lightingSnapshot.bloom, 0)
+        // 太陽の影は forward（deferred は天井の下の部屋全部を影の色で塗る）
+        let sun = try XCTUnwrap(all(scene.scene.rootNode).first { $0.light?.type == .directional })
+        XCTAssertEqual(sun.light?.shadowMode, .forward)
+        XCTAssertTrue(sun.light?.castsShadow == true)
         scene.setMood(.night)
         let night = scene.lightingSnapshot
         XCTAssertEqual(night.lampsShown, night.lamps)

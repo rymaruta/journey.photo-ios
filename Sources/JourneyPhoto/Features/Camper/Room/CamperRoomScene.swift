@@ -38,6 +38,8 @@ final class CamperRoomScene {
     private var furniture: [String: CamperPreparedMesh] = [:]
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
+    /// 持ち上げている家具（接地の影を広げている）
+    private var liftedUid: String?
     private(set) var layout: CamperRoomLayout?
     private(set) var doc: CamperRoomDocument?
     private var builtKey: String?
@@ -69,7 +71,9 @@ final class CamperRoomScene {
         let sun = SCNLight()
         sun.type = .directional
         sun.castsShadow = true
-        sun.shadowMode = .deferred
+        // forward（その光だけを減らす）。deferred は影の所の画面の色そのものを暗くするので、天井の下の部屋全部が
+        // 影の色で塗られる（外の車の run 538 と同じ）。天井と壁にさえぎられ、窓の形の光だけが床に落ちる
+        sun.shadowMode = .forward
         sun.shadowRadius = 6
         sun.shadowSampleCount = 16
         sun.shadowMapSize = CGSize(width: 2048, height: 2048)
@@ -341,7 +345,7 @@ final class CamperRoomScene {
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
         sunNode.light?.intensity = CGFloat(night ? 90 : 1500)
         sunNode.light?.color = night ? CamperScene.color(0x9FB4DC) : CamperScene.color(0xFFF1DC)
-        sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: night ? 0.2 : 0.62)
+        sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: 1)
         ambientNode.light?.intensity = CGFloat(night ? 35 : 90)
         ambientNode.light?.color = night ? CamperScene.color(0x6A6F80) : CamperScene.color(0xFFF6EA)
         cameraNode.camera?.exposureOffset = CGFloat(night ? -0.1 : 0.15)
@@ -412,7 +416,13 @@ final class CamperRoomScene {
     /// 持ち上げて動かしている家具（`item` は動かした先・`check` は置けるか）。nil で終わり
     func setDrag(_ item: CamperRoomItem?, check: CamperRoomCheck?) {
         overlayNode.childNodes.filter { $0.name == "drag" }.forEach { $0.removeFromParentNode() }
-        for (_, entry) in itemNodes { entry.node.opacity = 1 }
+        // 前に持ち上げていた家具の接地の影を元に戻す
+        if let prev = liftedUid, prev != item?.u, let entry = itemNodes[prev],
+           let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
+            contact.scale = SCNVector3(1, 1, 1)
+            if entry.item.placement == .floor { contact.position = SCNVector3(0, 0.0015, 0) }
+        }
+        liftedUid = item?.u
         guard let item, let placed = CamperRoomBuilder.place(item), let entry = itemNodes[item.u] else { return }
         // 持ち上げ: 7 浮かせ、接地の影を広げて薄く（板の付箋「長押しで 7 浮かせ、影を広げる」）
         SCNTransaction.begin()

@@ -64,7 +64,7 @@ enum CamperTextures {
         case .roomGlow: return roomGlow()
         case .planks, .chevron, .herringbone, .checkerTiles, .cork, .boards, .birchPly, .darkBoards, .wallpaperStripe,
              .leather, .linenSlub, .knit, .rush, .wicker, .rope, .ovalRings, .runnerWeave, .enamelChip, .castIron, .foliage,
-             .clockDial, .windowDay, .windowNight, .matBoard, .photoPlaceholder, .wornWood:
+             .clockDial, .windowDay, .windowNight, .matBoard, .photoPlaceholder, .wornWood, .mapPrint:
             return CamperRoomTextures.make(kind)
         }
     }

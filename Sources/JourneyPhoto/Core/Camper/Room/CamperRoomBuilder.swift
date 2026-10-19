@@ -316,7 +316,7 @@ enum CamperRoomBuilder {
             let q = CQuat.axisAngle(CV3(0, 1, 0), it.yaw)
             let p = it.position + q.rotate(lamp.position)
             // 火（ストーブ）は灯りの色でなく炎の色
-            let fire = it.furnitureId.hasPrefix("heater.")
+            let fire = it.furnitureId.hasPrefix("heater.") || it.furnitureId == "wall_lamp.candle_sconce"
             let spec = CamperLightSpec(name: "interior.lamp.\(it.uid)", kind: .omni, position: p, color: fire ? 0xFF8A3C : color,
                                        intensity: lamp.intensity, range: lamp.range, moods: [.night])
             lamps.append((spec, (p - center).length))

@@ -183,6 +183,32 @@ enum CamperRoomShapes {
         return mesh
     }
 
+    /// 折り鶴（胴の菱・左右の羽・首と頭・尾。紙の面は両面）。頭は +X
+    static func crane(_ m: CamperMaterial) -> CamperMesh {
+        var mesh = CamperMesh()
+        func tri(_ a: CV3, _ b: CV3, _ c: CV3) {
+            let n = (b - a).cross(c - a)
+            mesh.tri(a, b, c, normal: n.y >= 0 ? n : -n, m)
+        }
+        let front = CV3(1.6, 0, 0), back = CV3(-1.6, 0, 0), top = CV3(0, 1.1, 0), bottom = CV3(0, -0.5, 0)
+        // 胴（ふくらんだ菱を 4 面で）
+        tri(front, top, CV3(0, 0.2, 0.7)); tri(back, top, CV3(0, 0.2, 0.7))
+        tri(front, top, CV3(0, 0.2, -0.7)); tri(back, top, CV3(0, 0.2, -0.7))
+        tri(front, bottom, CV3(0, 0.2, 0.7)); tri(back, bottom, CV3(0, 0.2, 0.7))
+        // 羽（上へ反る）
+        for s in [-1.0, 1.0] {
+            tri(CV3(1.0, 0.6, 0), CV3(-1.0, 0.6, 0), CV3(-0.4, 2.2, s * 3.6))
+            tri(CV3(-1.0, 0.6, 0), CV3(-0.4, 2.2, s * 3.6), CV3(-1.8, 1.6, s * 3.0))
+        }
+        // 首と頭（前へ立ち上がって先が折れる）・尾（後ろへ立ち上がる）
+        tri(front, CV3(1.2, 0.3, 0.12), CV3(3.0, 2.4, 0))
+        tri(front, CV3(1.2, 0.3, -0.12), CV3(3.0, 2.4, 0))
+        tri(CV3(3.0, 2.4, 0.08), CV3(3.0, 2.4, -0.08), CV3(3.7, 1.9, 0))
+        tri(back, CV3(-1.2, 0.3, 0.12), CV3(-3.2, 2.2, 0))
+        tri(back, CV3(-1.2, 0.3, -0.12), CV3(-3.2, 2.2, 0))
+        return mesh
+    }
+
     /// マグ（胴・内側・縁・取っ手・中のコーヒー）
     static func mug(at p: CV3, body: CamperMaterial, rim: CamperMaterial, yaw: Double) -> CamperMesh {
         var parts: [CamperMesh] = []

@@ -80,6 +80,12 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case trim, windowRubber
     /// 窓の外の景色（昼・夜で絵が替わる。光を受けない）
     case windowView
+    /// 色紙（折り鶴・紙の玉。薄く、両面）
+    case paperColor(UInt32)
+    /// 色硝子（色硝子の天窓・小瓶。透ける）
+    case tintedGlass(UInt32)
+    /// 旅の地図の印刷（紙に道と点）
+    case mapPrint
     /// まだ持っていない家具の影絵
     case silhouette
 }
@@ -192,6 +198,10 @@ enum CamperRoomMaterials {
         case .windowView:
             // 光を受けない景色（窓の外）。夜は夜の絵
             return CamperMaterialSpec(color: 0xFFFFFF, texture: night ? .windowNight : .windowDay, unlit: true)
+        case .paperColor(let c): return CamperMaterialSpec(color: c, roughness: 0.85, texture: .linenSlub, doubleSided: true)
+        case .tintedGlass(let c):
+            return CamperMaterialSpec(color: c, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.55, doubleSided: true)
+        case .mapPrint: return CamperMaterialSpec(color: 0xFFFFFF, roughness: 0.8, texture: .mapPrint)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }
