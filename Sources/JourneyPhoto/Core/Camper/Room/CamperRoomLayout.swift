@@ -3,8 +3,9 @@ import Foundation
 // とおまわり号の中の部屋の広さ・動かせない物・置く決まり（2026-10-19・板「CamperRoom」と付箋「マス目と寸法」「置く決まり」）。
 //
 // 長さ（x・後ろから運転席の仕切り）も幅（z・奥の壁から扉の壁）も、車の実寸より広い箱庭。
-// 実寸（バン 12×8、キャンピングカー 18×9）だと寝台が 8×4 で、集めた家具が床に並ばない
-// （2026-10-19 owner「中もっと広く」「家具を集めても置けない」）。1 マス = 10 ≈ 25 cm。天井は 88 のまま。
+// 実寸だと寝台が 8×4 で、集めた家具が床に並ばない（2026-10-19 owner「中もっと広く」
+// 「家具を集めても置けない」「大きくしても全然 OK」）。図鑑の家具が一度に置ける広さにした。
+// 1 マス = 10 ≈ 25 cm。天井は 88 のまま。
 // 部屋の座標は左奥が原点: x は後ろ（0）から運転席の仕切りへ、z は奥の壁（0）から扉の壁へ、y は床から上。
 // 素の Swift なので Linux でも試験できる。
 
@@ -98,24 +99,25 @@ struct CamperRoomLayout: Equatable, Sendable {
     /// 壁の横のマスの数
     func columns(_ wall: CamperRoomWall) -> Int { wall == .back ? width : depth }
 
-    /// 集められる家具（床 24・壁 16・天井 13）が、台所と扉の前と通り道を残したまま全部置ける広さ。
-    /// バン 18×16、キャンピングカー 22×18、トレーラー 26×20。上限はそれより少し大きい
-    /// （床 40/48/60、壁 48/60/72、天井 20/24/32、写真 24/36/48）。
+    /// 図鑑の家具（床・壁・天井）が、台所と扉の前と通り道を残したまま一度に置ける広さ。
+    /// バン 500×340、キャンピングカー 540×360、トレーラー 580×400。
+    /// 上限は床 1300/1400/1500、壁 700/760/820、天井 450/500/560、写真 180/220/260。
+    /// 台所と扉は広がった側（運転席の仕切り）に寄せ、すでに置いてある家具のマスはそのまま残る。
     static func make(_ kind: CamperRoomKind, stage: CamperStage) -> CamperRoomLayout {
         switch (kind, stage) {
         case (.car, .van):
-            return CamperRoomLayout(kind: .car, width: 18, depth: 16, door: 15...17, kitchen: CamperRoomRect(x: 12, z: 0, w: 6, d: 3),
+            return CamperRoomLayout(kind: .car, width: 500, depth: 340, door: 497...499, kitchen: CamperRoomRect(x: 494, z: 0, w: 6, d: 3),
                                     windows: [CamperRoomWindow(wall: .back, from: 2, to: 5), CamperRoomWindow(wall: .left, from: 4, to: 9)],
-                                    floorLimit: 40, wallLimit: 48, ceilingLimit: 20, photoLimit: 24)
+                                    floorLimit: 1300, wallLimit: 700, ceilingLimit: 450, photoLimit: 180)
         case (.car, _):
-            return CamperRoomLayout(kind: .car, width: 22, depth: 18, door: 19...21, kitchen: CamperRoomRect(x: 16, z: 0, w: 6, d: 3),
+            return CamperRoomLayout(kind: .car, width: 540, depth: 360, door: 537...539, kitchen: CamperRoomRect(x: 534, z: 0, w: 6, d: 3),
                                     windows: [CamperRoomWindow(wall: .back, from: 3, to: 6), CamperRoomWindow(wall: .left, from: 4, to: 10)],
-                                    floorLimit: 48, wallLimit: 60, ceilingLimit: 24, photoLimit: 36)
+                                    floorLimit: 1400, wallLimit: 760, ceilingLimit: 500, photoLimit: 220)
         case (.trailer, _):
-            return CamperRoomLayout(kind: .trailer, width: 26, depth: 20, door: 23...25, kitchen: CamperRoomRect(x: 20, z: 0, w: 6, d: 3),
+            return CamperRoomLayout(kind: .trailer, width: 580, depth: 400, door: 577...579, kitchen: CamperRoomRect(x: 574, z: 0, w: 6, d: 3),
                                     windows: [CamperRoomWindow(wall: .back, from: 4, to: 7), CamperRoomWindow(wall: .back, from: 14, to: 17),
                                               CamperRoomWindow(wall: .left, from: 5, to: 12)],
-                                    floorLimit: 60, wallLimit: 72, ceilingLimit: 32, photoLimit: 48)
+                                    floorLimit: 1500, wallLimit: 820, ceilingLimit: 560, photoLimit: 260)
         }
     }
 }
@@ -346,18 +348,45 @@ enum CamperRoomRules {
 
     /// 扉の前から、後ろの壁の列（x = 0）まで通れるか（上下左右に 1 マスずつ）
     static func pathRemains(solid: Set<CamperRoomCell>, layout: CamperRoomLayout) -> Bool {
-        func free(_ c: CamperRoomCell) -> Bool {
-            (0..<layout.width).contains(c.x) && (0..<layout.depth).contains(c.z) && !solid.contains(c)
-                && !layout.kitchen.contains(c.x, c.z)
+        func blocked(_ x: Int, _ z: Int) -> Bool {
+            solid.contains(CamperRoomCell(x: x, z: z)) || layout.kitchen.contains(x, z)
         }
-        var queue = layout.doorClearance.cells.filter(free)
-        var seen = Set(queue)
-        while let c = queue.popLast() {
-            if c.x == 0 { return true }
-            for n in [CamperRoomCell(x: c.x - 1, z: c.z), CamperRoomCell(x: c.x + 1, z: c.z),
-                      CamperRoomCell(x: c.x, z: c.z - 1), CamperRoomCell(x: c.x, z: c.z + 1)] where free(n) && !seen.contains(n) {
-                seen.insert(n)
-                queue.append(n)
+        // 扉の前の列が、そのまま x = 0 まで空いていれば通れる（広い部屋で毎回全体を探さない）
+        let mouth = layout.doorClearance
+        for z in mouth.z..<(mouth.z + mouth.d) {
+            var clear = true
+            for x in 0...layout.door.lowerBound where blocked(x, z) {
+                clear = false
+                break
+            }
+            if clear { return true }
+        }
+        let w = layout.width, d = layout.depth
+        var grid = [UInt8](repeating: 0, count: w * d)
+        for c in solid where (0..<w).contains(c.x) && (0..<d).contains(c.z) { grid[c.x * d + c.z] = 1 }
+        let k = layout.kitchen
+        for x in k.x..<(k.x + k.w) where (0..<w).contains(x) {
+            for z in k.z..<(k.z + k.d) where (0..<d).contains(z) { grid[x * d + z] = 1 }
+        }
+        var queue: [Int] = []
+        var seen = [UInt8](repeating: 0, count: w * d)
+        for c in mouth.cells where (0..<w).contains(c.x) && (0..<d).contains(c.z) && grid[c.x * d + c.z] == 0 {
+            let i = c.x * d + c.z
+            if seen[i] == 0 { seen[i] = 1; queue.append(i) }
+        }
+        var head = 0
+        while head < queue.count {
+            let i = queue[head]
+            head += 1
+            let x = i / d, z = i % d
+            if x == 0 { return true }
+            for (nx, nz) in [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)] {
+                guard nx >= 0, nz >= 0, nx < w, nz < d else { continue }
+                let n = nx * d + nz
+                if grid[n] == 0, seen[n] == 0 {
+                    seen[n] = 1
+                    queue.append(n)
+                }
             }
         }
         return false
@@ -408,13 +437,55 @@ enum CamperRoomRules {
         return .fine
     }
 
-    /// 新しく置く場所を探す（壁際から。床は回さない向きを先に）。置ける所が無ければ nil
+    /// 新しく置く場所を探す（壁際から。床は回さない向きを先に）。置ける所が無ければ nil。
+    /// 広い部屋でも、埋まっているマスは飛ばしてから決まりを確かめる
     static func firstFit(_ f: CamperRoomFurniture, uid: String, in doc: CamperRoomDocument, layout: CamperRoomLayout) -> CamperRoomItem? {
         switch f.placement {
         case .floor, .ceiling:
+            let depth = layout.depth
+            var blocked = [Bool](repeating: false, count: layout.width * depth)
+            func mark(_ rect: CamperRoomRect) {
+                let x0 = max(0, rect.x), x1 = min(layout.width, rect.x + rect.w)
+                let z0 = max(0, rect.z), z1 = min(depth, rect.z + rect.d)
+                for x in x0..<x1 {
+                    let row = x * depth
+                    for z in z0..<z1 { blocked[row + z] = true }
+                }
+            }
+            if f.placement == .floor {
+                mark(layout.kitchen)
+                if !f.isRug { mark(layout.doorClearance) }
+                for o in doc.items {
+                    guard let of = o.furniture, of.placement == .floor, of.isRug == f.isRug, let rect = o.rect else { continue }
+                    mark(rect)
+                }
+                // 背の高い家具は、すでに吊ってある天井の物の真下を最初から飛ばす
+                if f.height > CamperRoomLayout.tallForCeiling {
+                    for o in doc.ceil { if let rect = o.rect { mark(rect) } }
+                }
+            } else {
+                for o in doc.ceil { if let rect = o.rect { mark(rect) } }
+                for o in doc.items {
+                    guard let of = o.furniture, of.placement == .floor, of.height > CamperRoomLayout.tallForCeiling,
+                          let rect = o.rect else { continue }
+                    mark(rect)
+                }
+            }
+            func occupied(_ x: Int, _ z: Int, _ w: Int, _ d: Int) -> Bool {
+                for cx in x..<(x + w) {
+                    let row = cx * depth
+                    for cz in z..<(z + d) where blocked[row + cz] { return true }
+                }
+                return false
+            }
             for r in [0, 1] {
-                for z in 0..<layout.depth {
-                    for x in 0..<layout.width {
+                let w = r % 2 == 1 ? f.depth : f.width
+                let d = r % 2 == 1 ? f.width : f.depth
+                if w > layout.width || d > depth { continue }
+                for z in 0...(depth - d) {
+                    for x in 0...(layout.width - w) {
+                        if blocked[x * depth + z] { continue }
+                        if occupied(x, z, w, d) { continue }
                         let item = f.placement == .floor ? CamperRoomItem.floor(uid, f.id, x: x, z: z, r: r)
                             : CamperRoomItem.ceiling(uid, f.id, x: x, z: z, r: r)
                         if check(item, in: doc, layout: layout).ok { return item }
@@ -422,11 +493,57 @@ enum CamperRoomRules {
                 }
             }
         case .wall:
+            let spans = doc.all.compactMap(\.wallSpan)
+            var rowBlocked: [CamperRoomWall: [[Bool]]] = [:]
             for wall in CamperRoomWall.allCases {
+                rowBlocked[wall] = Array(repeating: Array(repeating: false, count: layout.columns(wall)), count: 3)
+            }
+            func cover(_ wall: CamperRoomWall, _ rect: CamperRoomRect, _ height: Double) {
+                let touches: Bool
+                let columns: Range<Int>
+                switch wall {
+                case .back:
+                    touches = rect.z == 0
+                    columns = rect.x..<(rect.x + rect.w)
+                case .left:
+                    touches = rect.x == 0
+                    columns = rect.z..<(rect.z + rect.d)
+                }
+                guard touches else { return }
+                for row in 0..<3 where height > CamperRoomLayout.rowBottoms[row] {
+                    for c in columns where rowBlocked[wall]![row].indices.contains(c) {
+                        rowBlocked[wall]![row][c] = true
+                    }
+                }
+            }
+            cover(.back, layout.kitchen, CamperRoomLayout.kitchenHeight)
+            for o in doc.items {
+                guard let of = o.furniture, of.placement == .floor, !of.isRug, let rect = o.rect else { continue }
+                cover(.back, rect, of.height)
+                cover(.left, rect, of.height)
+            }
+            for wall in CamperRoomWall.allCases {
+                let columns = layout.columns(wall)
                 for row in [1, 0, 2] {
-                    for c in 0..<layout.columns(wall) {
-                        let item = CamperRoomItem.wall(uid, f.id, wall, c: c, row: row)
-                        if check(item, in: doc, layout: layout).ok { return item }
+                    let rows = row..<(row + f.depth)
+                    if rows.upperBound > CamperRoomLayout.rowBottoms.count { continue }
+                    var c = 0
+                    while c + f.width <= columns {
+                        let cols = c..<(c + f.width)
+                        let floorHit = rows.contains { r in cols.contains { rowBlocked[wall]![r][$0] } }
+                        let busy = spans.contains { $0.wall == wall && $0.columns.overlaps(cols) && $0.rows.overlaps(rows) }
+                        let window = layout.windows.contains { win in
+                            guard win.wall == wall, cols.overlaps(win.from..<(win.to + 1)) else { return false }
+                            return rows.contains { r in
+                                let lo = CamperRoomLayout.rowBottoms[r], hi = lo + CamperRoomLayout.rowHeight
+                                return lo < win.top && hi > win.bottom
+                            }
+                        }
+                        if !busy, !window, !floorHit {
+                            let item = CamperRoomItem.wall(uid, f.id, wall, c: c, row: row)
+                            if check(item, in: doc, layout: layout).ok { return item }
+                        }
+                        c += 1
                     }
                 }
             }
@@ -439,7 +556,7 @@ enum CamperRoomRules {
         var doc = CamperRoomDocument(room: layout.kind)
         let wanted: [CamperRoomItem]
         switch (layout.kind, layout.width) {
-        case (.car, 18):
+        case (.car, 500):
             wanted = [
                 .floor("i1", "bed.platform", x: 0, z: 4),
                 .floor("i2", "heater.wood_stove", x: 0, z: 0),

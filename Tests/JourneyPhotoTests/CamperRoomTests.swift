@@ -104,8 +104,8 @@ final class CamperRoomTests: XCTestCase {
 
     /// 最初の並びは、どの段の部屋でも決まりに合っていて、思った数がそろう
     func testStarterDocumentsAreValid() {
-        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 18, 16),
-                                                    (.car, .camper, 16, 22, 18), (.trailer, .trailer, 7, 26, 20)] {
+        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 500, 340),
+                                                    (.car, .camper, 16, 540, 360), (.trailer, .trailer, 7, 580, 400)] {
             let l = CamperRoomLayout.make(kind, stage: stage)
             XCTAssertEqual(l.width, width, "\(stage)")
             XCTAssertEqual(l.depth, depth, "\(stage)")
@@ -119,10 +119,19 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
-    /// 板の、第1段で集められる家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床が足りなくならない）。
-    /// 形の組み合わせで増やした図鑑は部屋に全部並べるものではない（上限の中から選ぶ）
+    /// 図鑑の家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床も壁も天井も足りる）。
+    /// 天井は背の高い家具の前に置く（机の上には吊れる。寝台の上には吊れない）
     func testCollectedFurnitureFits() {
-        let pieces = CamperRoomCatalog.board.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
+        func rank(_ f: CamperRoomFurniture) -> Int {
+            switch f.placement {
+            case .ceiling: return 0
+            case .floor: return f.height > CamperRoomLayout.tallForCeiling ? 2 : 1
+            case .wall: return 3
+            }
+        }
+        let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
+            let ra = rank(a), rb = rank(b)
+            if ra != rb { return ra < rb }
             let area: (CamperRoomFurniture) -> Int = { $0.placement == .floor && !$0.isRug ? $0.width * $0.depth : 0 }
             return area(a) > area(b)
         }
@@ -137,7 +146,7 @@ final class CamperRoomTests: XCTestCase {
                     missed.append(f.id)
                 }
             }
-            XCTAssertEqual(missed, [], "\(stage)")
+            XCTAssertEqual(missed.count, 0, "\(stage) \(missed.prefix(8))")
         }
     }
 
@@ -163,15 +172,14 @@ final class CamperRoomTests: XCTestCase {
     /// 扉から奥（後ろの壁の列）まで通れない置き方はできない
     func testPathMustRemain() {
         var doc = CamperRoomDocument(room: .car)
-        // 扉の壁の 2 列手前まで、x = 4 と 5 を 1 マスずつふさぐ。最後の 2 列は開けておく
-        let last = camper.depth - 1
-        for z in 0..<(last - 1) {
-            doc.upsert(.floor("a\(z)", "floor_lamp.brass_stem", x: 4, z: z))
-            doc.upsert(.floor("b\(z)", "floor_lamp.brass_stem", x: 5, z: z))
+        // 扉のすぐ手前に、1 マスだけ開けた壁を立てる。その隙間から奥（x = 0）へ抜けられる
+        let cutX = camper.door.lowerBound - 1
+        let gapZ = 20
+        for z in 0..<camper.depth where z != gapZ {
+            doc.upsert(.floor("p\(z)", "floor_lamp.brass_stem", x: cutX, z: z))
         }
         XCTAssertTrue(CamperRoomRules.pathRemains(solid: Set(doc.items.compactMap(\.rect).flatMap(\.cells)), layout: camper))
-        // 石油ストーブ（2×2）で最後の 2 列をふさぐと、扉から奥へ通れない
-        let wall = CamperRoomRules.check(.floor("x", "heater.kerosene", x: 4, z: last - 1), in: doc, layout: camper)
+        let wall = CamperRoomRules.check(.floor("x", "floor_lamp.brass_stem", x: cutX, z: gapZ), in: doc, layout: camper)
         XCTAssertEqual(wall.reason, .blocksPath)
     }
 
@@ -356,13 +364,19 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(hung.row, 1)
     }
 
-    /// 回せる範囲（横 −90〜90・縦 25〜60・0.8〜1.8 倍）と、向きで切る端の壁が替わる
+    /// 回せる範囲（横 −90〜90・縦 25〜60・0.8〜28 倍）と、寄ったあとに部屋の中を見て回れること。向きで切る端の壁が替わる
     func testCameraClampAndCutaway() {
         var c = CamperRoomCamera.overview(camper).dragged(dx: -2000, dy: 2000)
         XCTAssertEqual(c.yaw, 90)
         XCTAssertEqual(c.pitch, 60)
-        c = c.pinched(10)
-        XCTAssertEqual(c.zoom, 1.8)
+        c = c.pinched(100)
+        XCTAssertEqual(c.zoom, CamperRoomCamera.zoomRange.upperBound)
+        let panned = c.panned(dx: 80, dy: -30, layout: camper)
+        XCTAssertNotEqual(panned.target.x, c.target.x)
+        XCTAssertGreaterThanOrEqual(panned.target.x, 0)
+        XCTAssertLessThanOrEqual(panned.target.x, camper.size.x)
+        XCTAssertGreaterThanOrEqual(panned.target.z, 0)
+        XCTAssertLessThanOrEqual(panned.target.z, camper.size.z)
         XCTAssertTrue(CamperRoomScenePlan.visible("room.end.rear.full", camera: CamperRoomCamera.overview(camper)))
         XCTAssertFalse(CamperRoomScenePlan.visible("room.end.front.full", camera: CamperRoomCamera.overview(camper)))
         var back = CamperRoomCamera.overview(camper)

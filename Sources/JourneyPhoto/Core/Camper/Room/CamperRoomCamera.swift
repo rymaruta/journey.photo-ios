@@ -2,7 +2,8 @@ import Foundation
 
 // 室内のカメラ（2026-10-19・付箋「室内の見せ方」）。
 //
-// 斜め上から見下ろす箱庭: 縦 −38°・横 −34°。回せる範囲は横 −90°〜90°（後ろの面は見せない）、縦 −60°〜−25°、二本指で 0.8〜1.8 倍。
+// 斜め上から見下ろす箱庭: 縦 −38°・横 −34°。回せる範囲は横 −90°〜90°（後ろの面は見せない）、縦 −60°〜−25°、二本指で 0.8〜28 倍。
+// 1.8 倍より寄ると、家具の無い所をなぞって部屋の中を見て回る（大きな部屋の端まで届く）。
 // 2026-10-19 判断: 部屋は回さず、カメラが部屋のまわりを回る（指の位置から床・壁のマスを読むのが、同じ式で済む）。
 // SceneKit の側は `eye` と `orientation` をそのまま入れる。指の位置から床・壁の点を読む（`ray`）のも同じ式なので、
 // 画面の絵と押した所がずれない。素の Swift なので試験できる。
@@ -24,7 +25,8 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     static let yawRange = -90.0...90.0
     static let pitchRange = 25.0...60.0
-    static let zoomRange = 0.8...1.8
+    /// 大きな部屋でも家具のそばまで寄れる（2026-10-19。部屋を画面いっぱいに見たままでは、端の家具が豆になる）
+    static let zoomRange = 0.8...28.0
     /// 縦の画角（度）
     static let fieldOfView = 34.0
 
@@ -106,6 +108,21 @@ struct CamperRoomCamera: Equatable, Sendable {
         var c = self
         c.zoom *= scale
         return c.clamped()
+    }
+
+    /// 寄った状態で、狙う点を床の上で動かす（指に部屋が付いてくる）。部屋の外へは出ない
+    func panned(dx: Double, dy: Double, layout: CamperRoomLayout) -> CamperRoomCamera {
+        var c = self
+        let y = yaw * .pi / 180
+        let lookX = -sin(y), lookZ = -cos(y)
+        let rightX = lookZ, rightZ = -lookX
+        let scale = distance(layout) / 500
+        c.target.x += (-dx * rightX + dy * lookX) * scale
+        c.target.z += (-dx * rightZ + dy * lookZ) * scale
+        let s = layout.size
+        c.target.x = min(max(0, c.target.x), s.x)
+        c.target.z = min(max(0, c.target.z), s.z)
+        return c
     }
 
     /// カメラの側の端の壁（後ろ x = 0 か、前 x = 幅）。手前の壁は高さ 9 で切る（どちらを切るかは向きで自動）。

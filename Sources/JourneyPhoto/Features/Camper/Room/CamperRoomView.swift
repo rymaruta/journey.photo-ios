@@ -3,7 +3,7 @@ import UIKit
 
 /// とおまわり号の中（2026-10-19・板 CamperRoomMain・CamperRoomFlow・CamperRoomViews）。
 ///
-/// 上に斜め上から見下ろす箱庭の部屋（指一本で回す・二本指で寄る）、下に 4 つの道具（置く・模様替え・写真・図鑑）。
+/// 上に斜め上から見下ろす箱庭の部屋（指一本で回す・寄ってから指一本で中を見る・二本指で寄る）、下に 4 つの道具（置く・模様替え・写真・図鑑）。
 /// 右上で昼と夜。家具は長押しで持ち上げ、マス目に吸い付かせて動かす（白は置ける・赤はぶつかる）。二本指でひねると
 /// 90° 回る。「しまう」で持ち物へ。「元に戻す」は 1 手ずつ。配置は人ごとにこの端末へ覚える（`CamperRoomStore`）。
 ///
@@ -311,7 +311,8 @@ struct CamperRoomView: View {
     // MARK: 指の動き
 
     /// 一本指: 家具を押すと選ぶ。長押し（0.35 秒）で持ち上げ、そのまま動かすとマス目に吸い付く。
-    /// 選んでいる家具は押してすぐ動かせる。家具の無い所をなぞると部屋が回る
+    /// 選んでいる家具は押してすぐ動かせる。家具の無い所をなぞると部屋が回る。
+    /// 1.8 倍より寄っているときは、同じなぞりで部屋の中を見て回る（大きな部屋の端まで届く）
     private var pointer: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -341,7 +342,11 @@ struct CamperRoomView: View {
                     dragCheck = editor.preview(candidate)
                 } else if g.rotating {
                     animateCamera = false
-                    camera = g.camera.dragged(dx: dx, dy: dy)
+                    if g.camera.zoom > 1.8 {
+                        camera = g.camera.panned(dx: dx, dy: dy, layout: layout)
+                    } else {
+                        camera = g.camera.dragged(dx: dx, dy: dy)
+                    }
                 }
                 gesture = g
             }
