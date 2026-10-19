@@ -3530,6 +3530,8 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertTrue(b.exists, "\(id) が無い")
             if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
         }
+        // 「元に戻す」が主ボタンに押しつぶされない（run 568 で幅 0 になった）
+        XCTAssertGreaterThanOrEqual(app.buttons["camper.room.undo"].firstMatch.frame.width, 88, "「元に戻す」の幅が狭い")
         let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.")).firstMatch
         if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 44, "棚の家具が 44pt 未満") }
     }

@@ -41,7 +41,6 @@ struct CamperRoomDexView: View {
             CamperRoomCloseUpView(furniture: f, have: owned.contains(f.id), stats: stats, roomStats: roomStats, paint: paint,
                                   initialMood: initialMood) { detail = nil }
         }
-        .accessibilityIdentifier("camper.room.dex")
     }
 
     private var header: some View {

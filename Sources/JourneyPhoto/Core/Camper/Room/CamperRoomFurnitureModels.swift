@@ -54,15 +54,17 @@ enum CamperRoomFurnitureModels {
         return m
     }
 
-    /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色
+    /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色。
+    /// 2026-10-19（Mac run 568）: 部屋は小さい（灯りから家具まで 0.3〜0.9）ので、外の車の室内灯（520）の強さでは
+    /// 夜の部屋が白く飛んだ。6 分の 1 ほどに下げた
     static func lamp(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         switch id {
-        case "heater.wood_stove": return (CV3(0, 10, 9), 140, 46)
-        case "heater.kerosene": return (CV3(0, 9, 0), 120, 40)
-        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 420, 90)
-        case "floor_lamp.tripod": return (CV3(0, 48, 0), 380, 90)
-        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 300, 80)
-        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 260, 80)
+        case "heater.wood_stove": return (CV3(0, 10, 9), 30, 46)
+        case "heater.kerosene": return (CV3(0, 9, 0), 26, 40)
+        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 70, 90)
+        case "floor_lamp.tripod": return (CV3(0, 48, 0), 64, 90)
+        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 50, 80)
+        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 44, 80)
         default: return moreLamp(id)
         }
     }

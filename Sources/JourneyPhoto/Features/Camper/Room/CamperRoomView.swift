@@ -77,6 +77,8 @@ struct CamperRoomView: View {
         .background { Color.black.ignoresSafeArea() }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // 部屋の中はタブを隠す（下の道具の段がタブに掛からない・Mac run 568）
+        .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
         .onChange(of: room) { _, _ in openRoom() }
         .onChange(of: photos.count) { _, _ in recount() }
@@ -623,9 +625,9 @@ struct CamperRoomView: View {
                 .buttonStyle(.plain)
                 .disabled(editor?.canUndo != true)
                 .accessibilityIdentifier("camper.room.undo")
+                // 「元に戻す」と「できた」を半分ずつ（主ボタンが全幅を取って「元に戻す」が消えた・Mac run 568）
                 primaryButton(L("できた", "Done"), id: "camper.room.done", fill: true) { goHome() }
                     .frame(maxWidth: .infinity)
-                    .layoutPriority(1)
             }
         }
     }

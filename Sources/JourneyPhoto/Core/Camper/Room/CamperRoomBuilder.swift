@@ -324,7 +324,7 @@ enum CamperRoomBuilder {
         var out = lamps.sorted { $0.1 < $1.1 }.prefix(maxLamps).map(\.0)
         // 天井の柔らかい灯り（部屋全体を下から包む・影あり。板の「室内の灯り」）
         out.append(CamperLightSpec(name: "interior.ceiling", kind: .spot, position: CV3(layout.size.x / 2, CamperRoomLayout.ceiling - 2, layout.size.z / 2),
-                                   direction: CV3(0, -1, 0), color: color, intensity: 240, range: 160, spotInner: 60, spotOuter: 150,
+                                   direction: CV3(0, -1, 0), color: color, intensity: 40, range: 160, spotInner: 60, spotOuter: 150,
                                    castsShadow: true, moods: [.night]))
         return out
     }
