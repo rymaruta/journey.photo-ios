@@ -395,7 +395,9 @@ final class CamperBlueprintTests: XCTestCase {
         // 表に映り込みが乗る。光るのは室内の灯りに照らされた布（織り目の絵の弱い光）
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
         XCTAssertNil(glass.emission)
-        XCTAssertEqual(glass.opacity, 0.38, accuracy: 0.001)
+        // 夜は 0.22（奥の明かりを見せる・Mac night3）。昼は板どおり 0.62
+        XCTAssertEqual(glass.opacity, 0.22, accuracy: 0.001)
+        XCTAssertEqual(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).opacity, 0.62, accuracy: 0.001)
         XCTAssertLessThan(glass.roughness, 0.1)
         XCTAssertGreaterThan(glass.clearCoat, 0)
         let curtain = CamperMaterials.spec(.curtain, paint: 0, mood: .night)
@@ -555,11 +557,26 @@ final class CamperBlueprintTests: XCTestCase {
         let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
         XCTAssertTrue(spec.additive)
         let c = CamperTextures.rgb(spec.color)
-        XCTAssertTrue((0.5...0.7).contains(max(c.0, c.1, c.2)), "強さ 0.5〜0.7")
+        XCTAssertTrue((0.9...1.0).contains(max(c.0, c.1, c.2)), "強さ 0.95〜1.0")
+        // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど
+        let nb = build(mood: .night)
+        let halos = nb.nodes.filter { $0.name.hasPrefix("glow.halo") }
+        let nbuilder = CamperBuilder(config: CamperConfig(stage: .camper))
+        XCTAssertEqual(halos.count, nbuilder.windowsNear.count + nbuilder.windowsFar.count)
+        for h in halos {
+            XCTAssertGreaterThan(abs(h.position.z), nbuilder.BW, "ガラスの外")
+            XCTAssertEqual(h.group, .glow)
+        }
+        let halo = CamperTextures.rgb(CamperMaterials.spec(.windowHalo, paint: 0, mood: .night).color)
+        XCTAssertTrue((0.2...0.35).contains(max(halo.0, halo.1, halo.2)))
         let g = CamperTextures.roomGlow()
         let center = Int(g.pixel(32, 18).r), lower = Int(g.pixel(32, 40).r), edge = Int(g.pixel(0, 18).r)
         XCTAssertGreaterThan(center, 200)
-        XCTAssertLessThan(lower, center / 2 + 10, "家具の影の帯が無い")
+        XCTAssertLessThan(lower, center * 3 / 4, "家具の影の帯が無い")
+        // 明るいところ（真ん中の 7 割以上）が窓の半分以上
+        var bright = 0
+        for y in 0..<g.height { for x in 0..<g.width where Int(g.pixel(x, y).r) >= center * 7 / 10 { bright += 1 } }
+        XCTAssertGreaterThanOrEqual(Double(bright) / Double(g.width * g.height), 0.5, "明るいところが狭い")
         XCTAssertLessThan(edge, 30, "縁が黒へ落ちない（板に見える）")
         // カーテンのひだ（両側に明暗の筋）
         let folds = (2..<13).map { Int(g.pixel($0, 18).r) }

@@ -250,8 +250,9 @@ enum CamperTextures {
         for y in 0..<b.height {
             for x in 0..<b.width {
                 let u = (Double(x) + 0.5) / Double(b.width), v = (Double(y) + 0.5) / Double(b.height)
-                let dx = (u - 0.5) / 0.6, dy = (v - 0.38) / 0.55
-                var c = 0.3 + 0.7 * exp(-(dx * dx + dy * dy) * 1.6)
+                // 明るいところを窓の半分以上に広げる（2026-10-19 Mac night3: 真ん中だけ明るくて暗い四角に見えた）
+                let dx = (u - 0.5) / 0.75, dy = (v - 0.4) / 0.7
+                var c = 0.55 + 0.45 * exp(-(dx * dx + dy * dy) * 1.2)
                 // カーテン（両側 22%）: ひだの明暗。布を透ける光は少し明るい
                 let side = min(u, 1 - u)
                 if side < 0.22 {
@@ -259,11 +260,11 @@ enum CamperTextures {
                     c = c * (1 - smooth(0.17, 0.22, side)) * fold * 1.1 + c * smooth(0.17, 0.22, side)
                 }
                 // 家具の影（下 40% を暗く・机の天板の線は少し明るく）
-                let shade = smooth(0.58, 0.66, v)
-                c *= 1 - 0.55 * shade
+                let shade = smooth(0.66, 0.76, v)
+                c *= 1 - 0.45 * shade
                 if abs(v - 0.62) < 0.015, side >= 0.22 { c *= 1.25 }
                 // 縁は黒へ（窓の枠の内側の影）
-                let edge = smooth(0.0, 0.08, min(u, 1 - u)) * smooth(0.0, 0.1, min(v, 1 - v))
+                let edge = smooth(0.0, 0.06, min(u, 1 - u)) * smooth(0.0, 0.08, min(v, 1 - v))
                 c = min(1, c * edge)
                 b.set(x, y, (c, c, c))
             }

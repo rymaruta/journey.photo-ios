@@ -1293,11 +1293,12 @@ struct CamperBuilder {
     }
 
     /// 窓の奥の明かりの面（窓の形の外接の四角・外を向く・貼り絵は 0〜1・v=0 が上）
-    func windowGlowPanel(x0: Double, x1: Double, y0: Double, y1: Double, facing s: Double) -> CamperMesh {
+    func windowGlowPanel(x0: Double, x1: Double, y0: Double, y1: Double, facing s: Double,
+                         material: CamperMaterial = .windowGlow) -> CamperMesh {
         var m = CamperMesh()
         let n = CV3(0, 0, s)
         let a = CV3(x0, y0, 0), b = CV3(x1, y0, 0), c = CV3(x1, y1, 0), d = CV3(x0, y1, 0)
-        m.quad(a, b, c, d, n, n, n, n, .windowGlow)
+        m.quad(a, b, c, d, n, n, n, n, material)
         m.uvs = m.positions.map { CV2(($0.x - x0) / max(0.01, x1 - x0), 1 - ($0.y - y0) / max(0.01, y1 - y0)) }
         return m
     }
@@ -1345,6 +1346,11 @@ struct CamperBuilder {
                 add("interior.windowGlow.\(side > 0 ? "near" : "far").\(k)",
                     .mesh(windowGlowPanel(x0: x0, x1: x1, y0: y0, y1: y1, facing: side)), .windowGlow,
                     at: CV3(0, 0, side * (BW - wall - 3)))
+                // 窓から漏れる光のにじみ（ガラスの外に、窓より一回り大きい丸いグラデーション。黒い四角が出ないよう足す光 0.3）
+                let mx = (x1 - x0) * 0.3, my = (y1 - y0) * 0.45
+                add("glow.halo.\(side > 0 ? "near" : "far").\(k)",
+                    .mesh(windowGlowPanel(x0: x0 - mx, x1: x1 + mx, y0: y0 - my, y1: y1 + my, facing: side, material: .windowHalo)),
+                    .windowHalo, at: CV3(0, 0, side * (BW + 1.6)), group: .glow)
             }
         }
         let dx = doorHole.map(\.x)
