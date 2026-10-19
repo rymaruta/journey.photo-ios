@@ -56,15 +56,15 @@ enum CamperRoomFurnitureModels {
 
     /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色。
     /// 2026-10-19（Mac run 568）: 部屋は小さい（灯りから家具まで 0.3〜0.9）ので、外の車の室内灯（520）の強さでは
-    /// 夜の部屋が白く飛んだ。6 分の 1 ほどに下げた
+    /// 夜の部屋が白く飛んだ。run 572 でもまだ飛んだので、さらに 4 分の 1（はじめの 25 分の 1 ほど）
     static func lamp(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         switch id {
-        case "heater.wood_stove": return (CV3(0, 10, 9), 30, 46)
-        case "heater.kerosene": return (CV3(0, 9, 0), 26, 40)
-        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 70, 90)
-        case "floor_lamp.tripod": return (CV3(0, 48, 0), 64, 90)
-        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 50, 80)
-        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 44, 80)
+        case "heater.wood_stove": return (CV3(0, 10, 9), 8, 46)
+        case "heater.kerosene": return (CV3(0, 9, 0), 7, 40)
+        case "floor_lamp.brass_stem": return (CV3(0, 47, 0), 18, 90)
+        case "floor_lamp.tripod": return (CV3(0, 48, 0), 16, 90)
+        case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 13, 80)
+        case "string_ceiling.globe_string": return (CV3(0, -9, 0), 12, 80)
         default: return moreLamp(id)
         }
     }
@@ -137,10 +137,10 @@ enum CamperRoomFurnitureModels {
     static func floorCushion() -> CamperMesh {
         let velvet = R(.velvet(0x7A3B2E))
         // 縁から真ん中へゆるく盛り上がる（綴じの窪みは真ん中の釦で見せる。旋盤の面は外へ向くよう、上り坂だけで作る）
-        var profile: [CV2] = [CV2(0, 4.4)]
+        var profile: [CV2] = [CV2(0, 5.2)]
         for k in 1...14 {
             let t = Double(k) / 14
-            profile.append(CV2(t * 9, 1.4 + 3.0 * pow(max(0, 1 - t * t), 0.4)))
+            profile.append(CV2(t * 9, 1.6 + 3.6 * pow(max(0, 1 - t * t), 0.5)))
         }
         profile.append(CV2(9.3, 1.3))
         profile.append(CV2(9.0, 0.4))
@@ -148,7 +148,7 @@ enum CamperRoomFurnitureModels {
         profile.append(CV2(0, 0))
         // 旋盤の断面は下の真ん中から外へ・上へ・上の真ん中へ（向きが外を向く）
         var parts = [K.lathe(Array(profile.reversed()), segments: 36, velvet, capStart: false, capEnd: false)]
-        parts.append(K.placed(K.scaled(K.sphere(radius: 0.7, segments: 10, velvet), CV3(1, 0.55, 1)), at: CV3(0, 4.35, 0)))
+        parts.append(K.placed(K.scaled(K.sphere(radius: 0.7, segments: 10, velvet), CV3(1, 0.55, 1)), at: CV3(0, 5.1, 0)))
         // 縁の縫い目
         parts.append(K.tube(K.arc(center: .zero, radius: 9.25, from: 0, to: 2 * .pi, steps: 40).map { CV3($0.x, 1.35, $0.y) },
                             radius: 0.22, sides: 5, closed: true, R(.velvet(0x5E2A20))))
@@ -156,9 +156,13 @@ enum CamperRoomFurnitureModels {
         for k in 0..<4 {
             let a = Double(k) * .pi / 2 + .pi / 4
             let p = CV3(cos(a) * 9.2, 1.3, sin(a) * 9.2), out = CV3(cos(a), 0, sin(a))
-            parts.append(K.tube([p, p + out * 1.4 + CV3(0, -0.6, 0)], radius: 0.35, sides: 6, R(.canvas(0xC9A15A))))
-            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.5, 0.3), CV2(0.7, 1.6), CV2(0, 1.9)], segments: 8, R(.canvas(0xC9A15A))),
-                                  at: p + out * 1.6 + CV3(0, -1.3, 0)))
+            // 房: 縁から垂れる細い糸束（床に寝る）
+            parts.append(K.tube([p, p + out * 0.5 + CV3(0, -0.6, 0), p + out * 1.0 + CV3(0, -1.15, 0)], radius: 0.16, sides: 5, R(.canvas(0xC9A15A))))
+            for k2 in 0..<5 {
+                let spread = CV3(-out.z, 0, out.x) * (Double(k2) - 2) * 0.18
+                parts.append(K.tube([p + out * 1.0 + CV3(0, -1.15, 0), p + out * 1.6 + spread + CV3(0, -1.2, 0)], radius: 0.09, sides: 4,
+                                    R(.canvas(0xC9A15A))))
+            }
         }
         return K.merge(parts)
     }

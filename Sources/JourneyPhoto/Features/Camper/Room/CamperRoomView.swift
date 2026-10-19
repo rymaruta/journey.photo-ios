@@ -110,7 +110,9 @@ struct CamperRoomView: View {
     private func openRoom() {
         let l = layout
         let doc = CamperRoomPreview.reset ? CamperRoomRules.starterDocument(l) : store.load(l)
-        editor = CamperRoomEditor(doc: doc, layout: l)
+        var e = CamperRoomEditor(doc: doc, layout: l)
+        e.fillEmptyFrames(photos.filter { $0.published != false }.map(\.id))
+        editor = e
         selected = nil
         drag = nil
         camera = CamperRoomCamera.overview(l)

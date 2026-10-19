@@ -229,6 +229,21 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertNil(e.doc.item(frame.u)?.p)
     }
 
+    /// 初めて入った部屋の空の額には、自分の写真を新しい順に入れる（同じ写真は 2 度入れない・元に戻すの手に数えない）
+    func testFillEmptyFrames() {
+        var doc = CamperRoomRules.starterDocument(camper)
+        let frames = doc.all.filter { ($0.furniture?.photoSlots ?? 0) > 0 }
+        XCTAssertEqual(frames.count, 2)
+        var first = frames[0]
+        first.p = "B"
+        doc.upsert(first)
+        var e = CamperRoomEditor(doc: doc, layout: camper)
+        e.fillEmptyFrames(["A", "B", "C"])
+        XCTAssertEqual(e.doc.item(frames[0].u)?.p, "B")
+        XCTAssertEqual(e.doc.item(frames[1].u)?.p, "A")
+        XCTAssertFalse(e.canUndo)
+    }
+
     /// 持っていない家具は見せない（保存する文書からは消さない）
     func testShownHidesUnownedButKeepsSaved() {
         var doc = CamperRoomRules.starterDocument(camper)

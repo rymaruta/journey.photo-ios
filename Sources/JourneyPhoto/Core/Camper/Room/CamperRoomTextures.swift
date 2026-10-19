@@ -73,12 +73,14 @@ enum CamperRoomTextures {
     private static func gray(_ v: Double) -> RGB { (v, v, v) }
 
     /// 木目の明るさ（u は木の長さの向き・v は幅の向き。0〜1 の繰り返し）
+    /// 2026-10-19（Mac run 572）: 年輪を大きく曲げると、壁の板が渦を巻いた絵に見えた。木目は長さの向きにまっすぐ流し、
+    /// 曲がりはゆるく小さく、細い筋（導管）を長く引く
     static func grain(_ u: Double, _ v: Double, seed: UInt64, rings: Double = 9) -> Double {
-        let warp = fbm(u * 3, v * 2, period: 3, seed: seed) * 2.2
+        let warp = fbm(u * 1.5, v * 1.2, period: 3, seed: seed) * 0.35 + 0.08 * sin(u * .pi * 2 + Double(seed % 7))
         let ring = sin((v * rings + warp) * .pi * 2)
-        let fine = fbm(u * 24, v * 6, period: 24, seed: seed &+ 5)
-        let late = pow(max(0, ring), 6) * 0.22
-        return 0.86 + 0.1 * fine - late + 0.04 * ring
+        let streak = fbm(u * 2, v * 48, period: 48, seed: seed &+ 5)
+        let late = pow(max(0, ring), 10) * 0.12
+        return 0.88 + 0.08 * streak - late + 0.03 * ring
     }
 
     // MARK: 床
@@ -100,7 +102,7 @@ enum CamperRoomTextures {
                 let tone = tones[(row * 2 + ((seg % 2) + 2) % 2) % tones.count]
                 var g = grain(u, fv * 0.35 + Double(row) * 0.21, seed: UInt64(row * 13 + 3)) * tone
                 // 継ぎ目（長い辺と短い辺）と、角のわずかな面取りの陰
-                if fv < 0.035 || fv > 0.965 { g *= 0.45 } else if fv < 0.07 || fv > 0.93 { g *= 0.88 }
+                if fv < 0.02 || fv > 0.98 { g *= 0.62 } else if fv < 0.05 || fv > 0.95 { g *= 0.92 }
                 if u < 0.008 || u > 0.992 { g *= 0.5 }
                 b.set(x, y, gray(min(1, g)))
             }
@@ -195,7 +197,7 @@ enum CamperRoomTextures {
                 let k = knots[i]
                 let dk = hypot((fu - k.0) * 3, (v - k.1) * 8)
                 if dk < 0.5 { g *= 0.78 + 0.22 * dk / 0.5 }
-                if fu < 0.03 || fu > 0.97 { g *= 0.42 } else if fu < 0.06 { g *= 0.85 }
+                if fu < 0.015 || fu > 0.985 { g *= 0.55 } else if fu < 0.04 { g *= 0.9 }
                 b.set(x, y, gray(min(1, g)))
             }
         }

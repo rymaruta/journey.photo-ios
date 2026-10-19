@@ -115,6 +115,18 @@ struct CamperRoomEditor: Equatable, Sendable {
         commit(next)
     }
 
+    /// 写真の入っていない額に、自分の写真を新しい順に入れる（初めて入った部屋が空の額ばかりにならない）。
+    /// 元に戻すの手には数えない（開いた時の下ごしらえ）
+    mutating func fillEmptyFrames(_ photoIds: [String]) {
+        var queue = photoIds.filter { id in !doc.all.contains { $0.p == id } }
+        for item in doc.all where (item.furniture?.photoSlots ?? 0) > 0 && item.p == nil {
+            guard !queue.isEmpty else { break }
+            var filled = item
+            filled.p = queue.removeFirst()
+            doc.upsert(filled)
+        }
+    }
+
     mutating func setStyle(_ style: CamperRoomStyle) {
         var next = doc
         next.style = style

@@ -29,7 +29,12 @@ enum CamperRoomStudio {
         guard let b = CamperRoomPick.bounds(it) else { return CamperRoomCamera.overview(layout) }
         var center = (b.min + b.max) * 0.5
         let size = b.max - b.min
-        let span = max(size.x, size.y, size.z, 18)
+        // 背の高い物（煙突・床の灯り）は、全体より手の届く高さの本体に寄る（Mac run 572: ストーブが遠く小さかった）
+        var span = max(size.x, size.y, size.z, 18)
+        if f.placement == .floor, size.y > 45 {
+            span = max(size.x, size.z, 40)
+            center = CV3(center.x, min(center.y, 24), center.z)
+        }
         if f.placement == .wall { center = center + CV3(0, 0, 6) }
         return CamperRoomCamera(yaw: 28, pitch: f.placement == .ceiling ? 12 : 22, zoom: 1, target: center, baseDistanceOverride: span * 2.3 + 24)
     }
