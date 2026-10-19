@@ -197,4 +197,46 @@ final class TrunkSwapTests: XCTestCase {
         let was = Set(first.values.map { "\(Int($0.cx.rounded()))/\(Int($0.cy.rounded()))" })
         XCTAssertEqual(Set(centers), was, "空いているはずの所が埋まらず、別の所に貼った")
     }
+
+    // MARK: 描く側の見分け方（id）
+
+    /// 🔴 描くラベルはラベルの id で見分ける。はがした直後・貼り替えた直後も、同じ id は同じラベル・同じ所で、
+    /// 何番目かで見分けたときのように別のラベルの描き物を使い回さない
+    @MainActor
+    func testDrawnLabelsAreIdentifiedByLabelId() async {
+        let model = TrunkViewModel(preview: .sample, previewPro: true)
+        await model.load(offline: false)
+        let target = model.state!.stuck[4].id
+        let before = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        _ = await model.unstick(target)
+        let peeled = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        _ = await model.stick(target)
+        let restuck = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        for drawn in [before, peeled, restuck] {
+            XCTAssertEqual(Set(drawn.map(\.id)).count, drawn.count, "描く識別子が重なった")
+            XCTAssertTrue(drawn.allSatisfy { $0.id == $0.label.id }, "識別子がラベルの id でない")
+        }
+        // 前提: 何番目かで見分けると、はがした直後に同じ番目へ別のラベルが入る（前のラベルの描き物を使い回す）
+        let sameIndexOtherLabel = zip(before, peeled).contains { $0.label.id != $1.label.id }
+        XCTAssertTrue(sameIndexOtherLabel, "前提: はがすと番目とラベルの組が変わる")
+        // id で見分ければ、はがした1枚の描き物は消え、残りは同じラベル・同じ所
+        XCTAssertNil(peeled.first { $0.id == target }, "はがした1枚が描かれている")
+        let old = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
+        for p in peeled {
+            guard let o = old[p.id] else { return XCTFail("\(p.id) は前に無かった") }
+            XCTAssertEqual(p.label.seed, o.label.seed)
+            XCTAssertEqual(p.x + p.w / 2, o.x + o.w / 2, accuracy: 0.5, "\(p.id) がずれた")
+            XCTAssertEqual(p.y + p.h / 2, o.y + o.h / 2, accuracy: 0.5, "\(p.id) がずれた")
+        }
+        XCTAssertNotNil(restuck.first { $0.id == target }, "貼り直した1枚が描かれない")
+    }
+
+    /// 🔴 並びに同じ id が重なっても（応答の重なり・待っている1枚）、描くのは1枚（新しい方）
+    func testDuplicateIdsAreDrawnOnce() {
+        let newer = label("a", pos: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        let drawn = TrunkPlacement.layout([newer, label("b"), label("a")], stage: 0)
+        XCTAssertEqual(drawn.map(\.id).sorted(), ["a", "b"])
+        let a = drawn.first { $0.id == "a" }!
+        XCTAssertEqual(a.label.pos, newer.pos, "古い方の a を描いた")
+    }
 }

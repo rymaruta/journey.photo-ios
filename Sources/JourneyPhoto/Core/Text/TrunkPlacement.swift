@@ -76,8 +76,13 @@ enum TrunkPlacement {
     ///   - 手で貼った新しいラベルは窓の席を取らない（前の版のラベルが胴から消えない）
     ///   番号が 11 か所を越えたとき（置き場つきが間に多く挟まった）は、空いている置き場を `order` の順に使う
     /// - `overrides`: 画面の上だけで動かしている置き場（離した直後・回している最中。サーバーの応答を待たずに出す）
+    ///
+    /// **同じ id のラベルは1枚だけ描く**（新しい方）。描く側はラベルの id で見分ける（`TrunkSlots.Placed.id`）ので、
+    /// 並びに同じ id が重なると、はがした・貼り替えた直後に前のラベルの絵が残る（2026-10-19 の直し）
     static func layout(_ stuckNewestFirst: [TrunkLabel], stage st: Double,
                        overrides: [String: TrunkPos] = [:]) -> [TrunkSlots.Placed] {
+        var seenIds = Set<String>()
+        let stuckNewestFirst = stuckNewestFirst.filter { seenIds.insert($0.id).inserted }
         var drawn: [(index: Int, x: Double, y: Double, w: Double, h: Double, rot: Double, label: TrunkLabel)] = []
         let loose = stuckNewestFirst.indices.filter { overrides[stuckNewestFirst[$0].id] == nil && stuckNewestFirst[$0].pos == nil }
         let window = Array(loose.prefix(TrunkSlots.capacity))
@@ -243,6 +248,14 @@ enum TrunkPlacement {
         }
         return out
     }
+}
+
+// MARK: - 描く側の見分け方
+
+/// 描くラベルは**ラベルの id で見分ける**（2026-10-19 の直し）。前は並びの何番目か（`ForEach(indices)`）で見分けていて、
+/// 1枚はがす・貼り替えると、同じ番目の描き物に別のラベルが入り、前のラベルの絵や動きが残って見えることがあった
+extension TrunkSlots.Placed: Identifiable {
+    var id: String { label.id }
 }
 
 // MARK: - 自分の手で貼る画面の組み

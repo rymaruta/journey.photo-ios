@@ -195,8 +195,8 @@ struct TrunkBoxView: View {
     private var labels: some View {
         let placed = TrunkPlacement.layout(stuck, stage: stage, overrides: overrides)
         return ZStack(alignment: .topLeading) {
-            ForEach(Array(placed.indices), id: \.self) { i in
-                let p = placed[i]
+            // ラベルの id で見分ける（何番目かで見分けると、はがした直後に前のラベルが残る・`TrunkSlots.Placed.id`）
+            ForEach(placed) { p in
                 if p.label.id != hidden {
                     TrunkLabelView(label: p.label, w: p.w, h: p.h, age: p.age, rot: p.rot,
                                    wrinkle: wrinkles[p.label.id] ?? 0)
