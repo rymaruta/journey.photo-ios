@@ -453,7 +453,7 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertTrue(chip.contains("Text(TrunkEntryText.coins(summary.coins))\n                        .font(JPFont.mono(15, relativeTo: .subheadline))\n                        .foregroundStyle(WebTheme.text)"))
         let settings = try source("Features/Settings/SettingsView.swift")
         // 2026-10-18: 「旅の道具」の札の先頭の1行（並びは `SettingsOutlineTests`）
-        XCTAssertTrue(settings.contains("            trunkRow\n            camperRow\n            JPCardDivider()\n            passRow"))
+        XCTAssertTrue(settings.contains("                trunkRow\n                camperRow\n                JPCardDivider()\n                campRow\n            }"))
         XCTAssertTrue(settings.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))
         XCTAssertTrue(settings.contains(#".accessibilityIdentifier("settings.trunk")"#))
         XCTAssertFalse(settings.contains(".accessibilityElement(children: .ignore)\n                .accessibilityLabel(TrunkEntryText.title)"))

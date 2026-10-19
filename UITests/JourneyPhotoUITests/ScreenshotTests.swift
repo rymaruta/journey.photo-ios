@@ -2389,7 +2389,7 @@ final class ScreenshotTests: XCTestCase {
         guard camper.waitForExistence(timeout: 5) else { return XCTFail("設定にキャンピングカーの行が無い") }
         scrollTo(camper, in: app)
         XCTAssertTrue(camper.isHittable, "設定のキャンピングカーの行に届かない")
-        for id in ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook", "settings.albums",
+        for id in ["settings.trunk", "settings.camper", "settings.camp", "settings.pass", "settings.passBook", "settings.albums",
                    "settings.plans"] {
             let row = app.buttons[id].firstMatch
             XCTAssertTrue(row.exists, "旅の道具に \(id) が無い")

@@ -66,7 +66,7 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertEqual(SettingsOutline.Part.allCases.last, .danger)
         XCTAssertNil(SettingsOutline.Part.danger.title, "危ない操作の札に眉ラベルを付けている")
         XCTAssertEqual(SettingsOutline.Part.tripTools.items,
-                       ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
+                       ["settings.trunk", "settings.camper", "settings.camp", "settings.pass", "settings.passBook",
                         "settings.albums", "settings.plans"])
         XCTAssertEqual(SettingsOutline.Part.danger.items, ["settings.logout", "settings.deleteAccount"])
         // 目印は重ならない
@@ -74,11 +74,12 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertEqual(Set(all).count, all.count, "同じ目印が2か所にある")
     }
 
-    /// いちばん上は一目で見渡せる長さ: 節は 8 つまで・どの節も 6 行まで（長いものは下の画面へ）
+    /// いちばん上は一目で見渡せる長さ: 節は 8 つまで・どの節も 6 行まで（長いものは下の画面へ）。
+    /// 旅の道具だけ 7 行まで（2026-10-18 判断: キャンプ場が入った。owner の「入口は設定の中に」を優先し、道具は下の画面に隠さない）
     func testTopLevelStaysShort() {
         XCTAssertLessThanOrEqual(SettingsOutline.Part.allCases.count, 8)
         for part in SettingsOutline.Part.allCases {
-            XCTAssertLessThanOrEqual(part.items.count, 6, "\(part) の節が長い")
+            XCTAssertLessThanOrEqual(part.items.count, part == .tripTools ? 7 : 6, "\(part) の節が長い")
         }
         // 長かった2つ（トランクの見本・控え）は下の画面
         XCTAssertEqual(SettingsOutline.subpages["settings.trunkPrivacy"],
@@ -148,7 +149,7 @@ final class SettingsOutlineTests: XCTestCase {
         for destination in ["PassSettingsView()", "TrunkView(ownerName:", "BlockedUsersView()", "CloseFriendsView()",
                             "FavoritesView()", "AlbumsView()", "CompositionCatalogView()", "ChangePasswordView()",
                             "LegalLinksView()", "DeleteAccountView(profile: myProfile)", "SettingsTrunkPrivacyPage(",
-                            "SettingsStoragePage()", "CamperGarageLoader(", "PassBookView()", "TripPlansView()",
+                            "SettingsStoragePage()", "CamperGarageLoader(", "CampHomeView(ownerName: myProfile?.name)", "PassBookView()", "TripPlansView()",
                             "showWhatsNew = true", "Link(destination: contact)", "auth.startSigningOut {"] {
             XCTAssertTrue(view.contains(destination), "設定から「\(destination)」へ行けない")
         }
@@ -174,7 +175,7 @@ final class SettingsOutlineTests: XCTestCase {
                        "deleteSection"], in: list, "設定の節の順")
         // 節の中の行の順
         let tools = slice(view, from: "private var tripToolsSection: some View {", to: "private var passRow")
-        assertInOrder(["SettingsOutline.Part.tripTools.title", "trunkRow", "camperRow", "passRow",
+        assertInOrder(["SettingsOutline.Part.tripTools.title", "trunkRow", "camperRow", "campRow", "passRow",
                        id("settings.passBook"), id("settings.albums"), id("settings.plans")], in: tools, "旅の道具の順")
         let privacy = slice(view, from: "private var privacySection: some View {", to: "private var photosSection")
         assertInOrder(["SettingsOutline.Part.privacy.title", id("settings.blocked"), id("settings.closeFriends"),
@@ -231,9 +232,29 @@ final class SettingsOutlineTests: XCTestCase {
         assertInOrder(["CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,",
                        "photosLoaded: model.hasLoadedPhotos)", id("trips.camper")], in: card, "マイページのキャンピングカー")
         XCTAssertFalse(card.contains("CamperGarageLoader("), "マイページで写真を二重に読む")
-        for name in ["trips.trunk", "trips.albums", "trips.plans", "trips.passBook"] {
+        for name in ["trips.trunk", "trips.camp", "trips.albums", "trips.plans", "trips.passBook"] {
             XCTAssertTrue(card.contains(id(name)), "マイページの「\(name)」の行が消えた")
         }
+    }
+
+    /// キャンプ場: キャンピングカーの下。題・説明はマイページの行と同じ文言。中身は端末の中だけなので、
+    /// マイページと同じ形（`CampHomeView(ownerName:)`）で開く
+    func testCampEntryWiring() throws {
+        let view = try source("Features/Settings/SettingsView.swift")
+        let row = slice(view, from: "private var campRow: some View {", to: "private var trunkRow")
+        assertInOrder(["NavigationLink { CampHomeView(ownerName: myProfile?.name) } label: {",
+                       "L(\"キャンプ場\", \"Campsite\")", "L(\"撮った森や空を切り絵にして、浮かぶ島に立てる\"",
+                       id("settings.camp")], in: row, "キャンプ場の行")
+        XCTAssertFalse(row.contains("systemImage:"), "設定の行に絵を出している")
+        let page = try source("Features/Profile/MyPageView.swift")
+        let card = slice(page, from: "private var tripToolsCard: some View {", to: "nonisolated static func wishlistPool")
+        for words in ["L(\"キャンプ場\", \"Campsite\")",
+                      "L(\"撮った森や空を切り絵にして、浮かぶ島に立てる\",\n                                     \"Turn the woods and skies you shoot into paper cutouts on a floating island\")"] {
+            XCTAssertTrue(card.contains(words), "マイページのキャンプ場の行と文言がずれた: \(words)")
+            XCTAssertTrue(row.contains(words.replacingOccurrences(of: "\n                                     ", with: "\n                                 ")),
+                          "設定のキャンプ場の行と文言がずれた: \(words)")
+        }
+        assertInOrder(["CampHomeView(ownerName: model.profile?.name)", id("trips.camp")], in: card, "マイページのキャンプ場")
     }
 
     /// 読み終えるまで止めておける読み方（`CamperPhotoLoader.load` に渡す）
