@@ -1019,6 +1019,20 @@ struct MyPageView: View {
                 .accessibilityIdentifier("trips.trunk")
                 JPCardDivider()
             }
+            // 写真で作るキャンピングカー（2026-10-18・札 #307）。旅のトランクと同じ並びに置く（板に入口の指定が無いので、
+            // トランクの行と同じ形の行を1つ足す）。数は自分の投稿からこの端末で数える（サーバーには聞かない）
+            NavigationLink {
+                // 数えるのは行き先の中（マイページを描き直すたびに数えない・下書きは数えない）
+                CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,
+                                 photosLoaded: model.hasLoadedPhotos)
+            } label: {
+                JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"), systemImage: "bus",
+                           detail: L("旅を重ねるほど育つ車。撮るほど部品が集まる",
+                                     "A camper that grows with your trips and collects parts as you shoot"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.camper")
+            JPCardDivider()
             // 写真で作るキャンプ場（2026-10-18・板「写真で作るキャンプ場」）。撮った写真を切り絵にして浮かぶ島に立てる。
             // 端末の中だけで動くので、トランクと違ってサーバーの口を待たずに出す
             NavigationLink { CampHomeView(ownerName: model.profile?.name) } label: {

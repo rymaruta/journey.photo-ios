@@ -2,6 +2,24 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.18",
+      "date": "2026-10-19",
+      "items": [
+        {
+          "symbol": "tent",
+          "title": { "ja": "写真で作るキャンプ場", "en": "Photo campsite" },
+          "detail": { "ja": "撮った森や空や山を切り絵にして、浮かぶ島のキャンプ場に立てます。朝・昼・夕・夜と季節で姿が変わり、撮るほど道具が図鑑に集まります。マイページの旅の記録から。", "en": "Turn the woods, skies and mountains you shoot into paper cutouts on a floating campsite island. It changes with the time of day and the season, and gear gathers in the guide as you shoot. Find it under Trips on My Page." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "bus",
+          "title": { "ja": "写真で作るキャンピングカー", "en": "Photo camper" },
+          "detail": { "ja": "旅を重ねるほど育つ車「とおまわり号」。撮るほど部品が集まります。マイページの旅の記録から。", "en": "Detour, a camper that grows with your trips. Shoot more to collect parts. Find it under Trips on My Page." },
+          "destination": "mypage"
+        }
+      ]
+    },
+    {
       "version": "1.1.16",
       "date": "2026-10-18",
       "items": [
