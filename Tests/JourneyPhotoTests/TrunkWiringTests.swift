@@ -126,8 +126,8 @@ final class TrunkWiringTests: XCTestCase {
     /// 手に取って回す: メダルと同じ仕組みに箱の形を足し、表に胴の絵を貼る
     func testSpinUsesTheMedalViewer() throws {
         let medal = try source("Features/Profile/MedalViewerView.swift")
-        XCTAssertTrue(medal.contains("case box(aspect: Double, depth: Double, corner: Double, handle: SpinRGB)"))
-        XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle)"))
+        XCTAssertTrue(medal.contains("case box(aspect: Double, depth: Double, corner: Double, handle: SpinRGB, stitched: Bool)"))
+        XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle, stitched: stitched)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
         XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles))"),
