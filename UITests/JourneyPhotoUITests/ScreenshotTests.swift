@@ -2720,6 +2720,40 @@ final class ScreenshotTests: XCTestCase {
         done.tap()
     }
 
+    /// **貼り替えた後のトランク**（2026-10-19 の直し・owner「取って付け替えたときに、空洞のところが空洞になっていない」）:
+    /// 見本（`-JPPreviewTrunk`・Debug のみ）の置き場なし9枚の真ん中（並びの5番目＝おまかせの置き場 0）を選んで
+    /// はがす → はがした所が空いたまま（ほかはずれない）→ 手持ちから同じ所へ運んで貼り直す。見本は必ず出るので、
+    /// 出なければ落とす（必ず撮る）
+    func testCapturesTrunkStickSwap() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.stick.open") else { return XCTFail("「ラベルを貼る」の入口が無い") }
+        let done = app.buttons["trunk.stick.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("貼る画面が開かない") }
+        let trunk = app.descendants(matching: .any)["trunk.stick.trunk"].firstMatch
+        guard trunk.waitForExistence(timeout: 5) else { return XCTFail("トランクが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97d-ラベルを貼る（貼り替える前）")
+        // おまかせの置き場 0（胴の 150,120 から 108×72）の真ん中。絵は 360×300 で、胴は上から 32
+        let hole = trunk.coordinate(withNormalizedOffset: CGVector(dx: 204.0 / 360, dy: (32 + 156.0) / 300))
+        hole.tap()
+        Thread.sleep(forTimeInterval: 1)
+        let peel = app.buttons["trunk.stick.peel"].firstMatch
+        guard peel.isHittable else { return XCTFail("「はがして手持ちに戻す」が押せない") }
+        peel.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97e-ラベルを貼る（はがした所が空いた）")
+        // はがした1枚は手持ちのいちばん上。持ち上げは指の 18pt 上に出るので、その分下へ運ぶ
+        let cell = app.buttons.matching(identifier: "trunk.stick.tray").firstMatch
+        guard cell.waitForExistence(timeout: 5) else { return XCTFail("手持ちの札が無い") }
+        let from = cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.3, thenDragTo: hole.withOffset(CGVector(dx: 0, dy: 18)))
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97f-ラベルを貼る（貼り替えた後のトランク）")
+        XCTAssertTrue(app.buttons["trunk.stick.undo"].firstMatch.isEnabled, "貼り替えたのに「ひとつ戻す」が押せない")
+        done.tap()
+    }
+
     /// **カプセルの機械**: 硬貨を入れる → ハンドルを4回押して1周 → カプセルを開ける → 中身と確率
     func testCapturesTrunkGacha() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])

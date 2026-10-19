@@ -337,4 +337,37 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         places.sendLeftovers()
         XCTAssertEqual(told, [.saved], "送れていた1枚のよれを閉じたときに落とした")
     }
+
+    /// 🔴 はがす前の1枚の取り消し（2026-10-19）: その1枚の置き場は送らず、ほかのラベルの分は残す
+    @MainActor
+    func testDiscardOneKeepsTheOthers() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.5, y: 0.5, rot: 8))
+        places.note("b", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0.05)
+        places.discard("a")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertFalse(SlowTrunkProtocol.puts.contains { $0.path.contains("/labels/a/") }, "はがす1枚の置き場を送った")
+        XCTAssertNil(places.pending["a"])
+        XCTAssertNotNil(places.pending["b"], "ほかのラベルの保存待ちまで消した")
+    }
+
+    /// 🔴 サーバーの口で: 置き場なし a・b・c の真ん中 b をはがすと、先にずれる a の置き場を保存してから、はがす
+    @MainActor
+    func testUnstickSavesWhereTheShiftedLabelIs() async {
+        let model = await makeModel()
+        SlowTrunkProtocol.delay = 0
+        let before = TrunkPlacement.layout(model.state!.stuck, stage: 0).first { $0.label.id == "a" }!
+        let ok = await model.unstick("b")
+        XCTAssertTrue(ok)
+        let puts = SlowTrunkProtocol.puts.filter { $0.path.hasSuffix("/place") }
+        XCTAssertEqual(puts.map(\.path), ["/user/trunk/labels/a/place"], "ずれる a の置き場を保存していない")
+        let raw = puts.first.flatMap { try? JSONSerialization.jsonObject(with: $0.body ?? Data()) as? [String: Any] }
+        let json = raw?.compactMapValues { $0 as? Double }
+        XCTAssertEqual(json?["x"] ?? -1, (before.x + before.w / 2) / TrunkLooks.bodyWidth, accuracy: 0.001)
+        XCTAssertEqual(json?["y"] ?? -1, (before.y + before.h / 2) / TrunkLooks.bodyHeight, accuracy: 0.001)
+        XCTAssertEqual(json?["rot"] ?? -99, before.rot, accuracy: 0.05)
+    }
 }

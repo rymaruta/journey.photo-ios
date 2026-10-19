@@ -182,9 +182,15 @@ final class TrunkViewModel: ObservableObject {
         await load(offline: offline)
     }
 
+    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面）。**入るおまかせの置き場に手で貼ったラベルが乗っていれば、
+    /// 空いている置き場に貼る**（重ねて隠さない・`TrunkPlacement.stickPos`・2026-10-19 の直し）
     @discardableResult
     func stick(_ id: String) async -> Bool {
-        await write({ TrunkLocal.stick($0, id: id) }, { try await $0.stick(id) })
+        if let state, let label = state.pocket.first(where: { $0.id == id }),
+           let pos = TrunkPlacement.stickPos(for: label, stuck: state.stuck) {
+            return await stick(id, at: pos)
+        }
+        return await write({ TrunkLocal.stick($0, id: id) }, { try await $0.stick(id) })
     }
 
     @discardableResult
@@ -283,12 +289,23 @@ final class TrunkViewModel: ObservableObject {
         return await stick(id, at: pos)
     }
 
-    /// はがして手持ちに戻す（手持ちが上限なら一言）
+    /// はがして手持ちに戻す（手持ちが上限なら一言）。
+    ///
+    /// **はがす前に、ずれてしまう置き場なしのラベルへ、いま描いている所を置き場として保存する**
+    /// （`TrunkPlacement.pins`・2026-10-19 の直し: はがした所にほかのラベルが入り、別の所が空いていた）。
+    /// 置き場を送れなければ、はがさない（描いている所と保存の食い違いを残さない）。
+    /// - Parameter overrides: 画面の上だけで動かしている置き場（自分の手で貼る画面の、保存を待っている分）
     @discardableResult
-    func unstick(_ id: String) async -> Bool {
+    func unstick(_ id: String, overrides: [String: TrunkPos] = [:]) async -> Bool {
         if let state, state.pocket.count >= state.limit, preview != nil {
             actionError = TrunkText.unstickFull
             return false
+        }
+        // 手持ちがいっぱいならサーバーが断る（置き場だけ保存して、はがせない、をしない）
+        if let state, state.pocket.count < state.limit {
+            for pin in TrunkPlacement.pinsBeforeUnstick(state.stuck, removing: id, overrides: overrides) {
+                guard await place(pin.id, at: pin.pos) else { return false }
+            }
         }
         return await write({ TrunkLocal.unstick($0, id: id) }, { try await $0.unstick(id) },
                            refusal: { $0.code == "full" ? TrunkText.unstickFull : nil })

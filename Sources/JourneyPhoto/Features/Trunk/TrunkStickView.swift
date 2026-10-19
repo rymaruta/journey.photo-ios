@@ -594,8 +594,12 @@ struct TrunkStickView: View {
 
     private func unstickTarget() async {
         guard let target else { return }
-        let pos = target.pos
-        if await model.unstick(target.id) {
+        // 戻すときは、はがす前に描いていた所へ貼り直す（置き場なしのラベルも、おまかせの置き場の所に・2026-10-19 の直し。
+        // 前は置き場なしで貼り直し、いちばん新しい番号の置き場＝別の所に入っていた）
+        let pos = currentPos(target.id)
+        // 保存を待っている置き場（回した・動かした直後）は送らない。はがしたあとに送ると「まだ貼っていない」と断られる
+        places.discard(target.id)
+        if await model.unstick(target.id, overrides: overrides) {
             steps.append(.unstuck(target.id, pos: pos))
             selectedId = nil
         }
@@ -607,7 +611,8 @@ struct TrunkStickView: View {
         let ok: Bool
         switch last {
         case .stuck(let id):
-            ok = await model.unstick(id)
+            places.discard(id)
+            ok = await model.unstick(id, overrides: overrides)
             if ok, selectedId == id { selectedId = nil }
         case let .moved(id, from):
             ok = await model.place(id, at: from)
