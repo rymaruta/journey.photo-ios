@@ -730,3 +730,93 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertNil(CamperMaterials.spec(lamp?.material ?? .black, paint: 0, mood: .day).emission)
     }
 }
+
+extension CamperBlueprintTests {
+    /// 網の三角形の巻き（表の向き）が、点の向き（法線）と合っている（Mac run 565 の 95k: 後ろの壁の写し方が回転なのに
+    /// 巻きを逆にしていて、外の塗装の面が裏として消え、奥の内張り（室内の組・室内灯 1250 が当たる）が外から見えて、
+    /// 夜に後ろの壁が一面まっ白になった）。逆を向く三角形は 1% まで
+    func testMeshWindingMatchesNormals() {
+        var l = CamperLoadout.standard
+        l.awningOpen = true
+        for stage in CamperStage.allCases {
+            for n in CamperBuilder.build(CamperConfig(stage: stage, mood: .night, loadout: l), allMoods: true).nodes {
+                guard case .mesh(let m) = n.shape else { continue }
+                var bad = 0, total = 0
+                for g in m.groups {
+                    var i = 0
+                    while i + 2 < g.indices.count {
+                        let a = Int(g.indices[i]), b = Int(g.indices[i + 1]), c = Int(g.indices[i + 2])
+                        let face = (m.positions[b] - m.positions[a]).cross(m.positions[c] - m.positions[a])
+                        if face.length > 1e-9 {
+                            total += 1
+                            if face.dot(m.normals[a] + m.normals[b] + m.normals[c]) < 0 { bad += 1 }
+                        }
+                        i += 3
+                    }
+                }
+                XCTAssertLessThanOrEqual(Double(bad), Double(total) * 0.01, "\(stage) \(n.name): 裏返った三角形 \(bad)/\(total)")
+            }
+        }
+    }
+}
+
+extension CamperBlueprintTests {
+    /// 夜に外の面を照らせるのは外の組の光だけ: 室内の組（室内灯が当たる）に入る後ろの壁の網は、車の内側を向く面だけ。
+    /// 外の組の外板は夜に光らない（Mac run 565 の 95k）
+    func testInteriorLightNeverReachesTheOuterSkin() {
+        for stage in CamperStage.allCases {
+            let b = CamperBuilder.build(CamperConfig(stage: stage, mood: .night), allMoods: true)
+            for n in b.nodes where n.name.hasPrefix("body.") {
+                let split = n.splitForInteriorLight()
+                if n.name == "body.rearWall", let inside = split.inside, case .mesh(let m) = inside.shape {
+                    // 後ろの壁の内張りは +X（車の中）を向き、巻きも内向き（外から見ると裏で消える）
+                    // 分けた網は点の並びを共有するので、束が使う点だけを見る
+                    let used = Set(m.groups.flatMap { $0.indices.map(Int.init) })
+                    XCTAssertFalse(used.isEmpty)
+                    XCTAssertEqual(used.filter { m.normals[$0].x < -0.5 }.count, 0, "\(stage): 後ろの壁の内張りが外を向いている")
+                    var outward = 0
+                    for g in m.groups {
+                        var i = 0
+                        while i + 2 < g.indices.count {
+                            let p = m.positions
+                            let face = (p[Int(g.indices[i + 1])] - p[Int(g.indices[i])]).cross(p[Int(g.indices[i + 2])] - p[Int(g.indices[i])])
+                            if face.x < -1e-9 { outward += 1 }
+                            i += 3
+                        }
+                    }
+                    XCTAssertEqual(outward, 0, "\(stage): 後ろの壁の内張りの表が外を向き、外から室内灯に照らされて見える")
+                }
+                if let outside = split.outside, case .mesh(let m) = outside.shape {
+                    for mat in m.materials {
+                        XCTAssertNil(CamperMaterials.spec(mat, paint: 0, mood: .night).emission, "\(stage) \(n.name) \(mat) が夜に光る")
+                    }
+                }
+            }
+            for l in b.lights where l.inside { XCTAssertTrue(l.name.hasPrefix("interior."), l.name) }
+        }
+    }
+
+    /// 尾灯はキャブコンの後ろの角の縦長で、目立つ大きさ（Mac run 565 の 95m で小さすぎた）: レンズ全体の高さ 20 以上
+    /// （≒ 42 cm）・幅 8 以上・赤 > 橙 > 透明・角の寄り
+    func testTailLampsAreFullSize() {
+        for stage in CamperStage.allCases {
+            let b = build(stage)
+            let bw = CamperBuilder(config: CamperConfig(stage: stage)).BW
+            func box(_ name: String) -> (CV3, CV3)? {
+                b.nodes.first { $0.name == name && $0.position.z > 0 }.flatMap { n in
+                    if case .box(let s, _) = n.shape { return (n.position, s) }
+                    return nil
+                }
+            }
+            guard let red = box("rear.taillight"), let amber = box("rear.turnLens"), let clear = box("rear.reverseLens") else {
+                return XCTFail("\(stage): 尾灯のレンズが無い")
+            }
+            let topY = red.0.y + red.1.y / 2, bottomY = clear.0.y - clear.1.y / 2
+            XCTAssertGreaterThanOrEqual(topY - bottomY, 20, "\(stage): 尾灯が小さい")
+            XCTAssertGreaterThanOrEqual(red.1.z, 8, "\(stage): 尾灯が細い")
+            XCTAssertGreaterThan(red.1.y, amber.1.y)
+            XCTAssertGreaterThan(amber.1.y, clear.1.y)
+            XCTAssertGreaterThan(red.0.z - red.1.z / 2, bw * 0.75, "\(stage): 角に寄っていない")
+        }
+    }
+}

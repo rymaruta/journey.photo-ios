@@ -521,7 +521,10 @@ struct CamperBuilder {
                                       back: .inner, reveal: .reveal)
         let x0 = rear
         // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）
-        let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) }, mirror: true)
+        // 2026-10-19（Mac run 565 の 95k）: この写しは鏡ではなく回転（行列式 +1）なので巻きは逆にしない。前は
+        // `mirror: true` で巻きが全部裏返り、外の塗装の面が裏として消え、奥の内張り（室内の組・室内灯が当たる）が
+        // 外から見えて、夜に後ろの壁が一面まっ白・昼も帯の無い薄い色になっていた（試験 testMeshWindingMatchesNormals）
+        let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
         mesh("body.rearWall", placed)
         windowTrim(window, plane: .rear(x0), name: "rear.window")
     }
@@ -640,7 +643,8 @@ struct CamperBuilder {
                 // 表は外（+Z か -Z）。`depth` は表からの深さ（正で外へ出る）
                 return s > 0 ? m.translated(CV3(0, 0, face + depth)) : m.mirroredZ().translated(CV3(0, 0, -(abs(face) + depth)))
             case .rear(let x):
-                return m.mapped({ CV3(x - depth - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) }, mirror: true)
+                // 回転の写し（鏡ではない）なので巻きは逆にしない（2026-10-19・後ろの壁と同じ）
+                return m.mapped({ CV3(x - depth - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
             }
         }
         var all = place(seal, depth: 0.55)
@@ -900,15 +904,21 @@ struct CamperBuilder {
     /// 尾灯の組（2026-10-19）: 縦長の一体の灯り。上から赤（尾灯・制動灯）・橙（方向指示）・透明（後退灯）。
     /// 黒いゴムの台・奥の反射板・メッキの枠と仕切り・厚み 1.4 のレンズ（赤と橙は裏のプリズムの粒）
     mutating func tailLamp(_ BX: Double, z: Double) {
-        rbox("rear.lampGasket", B(BX - 0.5, 14, z), CV3(1.0, 18, 8.4), 0.3, .black)
-        rbox("rear.lampReflector", B(BX - 1.2, 14, z), CV3(0.4, 16.4, 7), 0.1, .reflector)
-        for y in [5.4, 22.6] { rbox("rear.lampFrame", B(BX - 1.9, y, z), CV3(1.8, 0.8, 8.4), 0.3, .chrome) }
-        for dz in [-3.8, 3.8] { rbox("rear.lampFrame", B(BX - 1.9, 14, z + dz), CV3(1.8, 18, 0.8), 0.3, .chrome) }
-        for y in [14.7, 19.1] { rbox("rear.lampDivider", B(BX - 1.8, y, z), CV3(1.6, 0.3, 7), 0.1, .chrome) }
-        rbox("rear.taillight", B(BX - 2.0, 10.3, z), CV3(1.4, 8.4, 7), 0.5, .red)
-        rbox("rear.turnLens", B(BX - 2.0, 16.9, z), CV3(1.4, 4.0, 7), 0.5, .amber)
-        rbox("rear.reverseLens", B(BX - 2.0, 20.6, z), CV3(1.4, 2.6, 7), 0.5, .lens)
-        add("rear.reverseBulb", .sphere(radius: 0.9), .bulbOff, at: B(BX - 1.5, 20.6, z))
+        // 2026-10-19（Mac run 565 の 95m: 小さくてほとんど見えない）: キャブコンの尾灯は後ろの角の縦長で目立つ大きさ。
+        // 車幅 100 ≒ 2.1 m なので 1 単位 ≒ 2.1 cm。レンズ 9 × 23（≒ 19 × 48 cm）を、角の寄り・バンパーのすぐ上に
+        let w = 9.0, top = -1.0, red = 12.0, amber = 6.4, clear = 4.0, gap = 0.3
+        let bottom = top + red + amber + clear + gap * 2
+        let mid = (top + bottom) / 2, h = bottom - top
+        rbox("rear.lampGasket", B(BX - 0.5, mid, z), CV3(1.0, h + 2, w + 1.6), 0.3, .black)
+        rbox("rear.lampReflector", B(BX - 1.2, mid, z), CV3(0.4, h, w), 0.1, .reflector)
+        for y in [top - 0.5, bottom + 0.5] { rbox("rear.lampFrame", B(BX - 1.9, y, z), CV3(1.8, 1.0, w + 1.6), 0.3, .chrome) }
+        for dz in [-(w / 2 + 0.4), w / 2 + 0.4] { rbox("rear.lampFrame", B(BX - 1.9, mid, z + dz), CV3(1.8, h + 2, 0.8), 0.3, .chrome) }
+        let y1 = top + red, y2 = y1 + gap + amber
+        for y in [y1 + gap / 2, y2 + gap / 2] { rbox("rear.lampDivider", B(BX - 1.8, y, z), CV3(1.6, gap, w), 0.1, .chrome) }
+        rbox("rear.taillight", B(BX - 2.0, top + red / 2, z), CV3(1.4, red, w), 0.5, .red)
+        rbox("rear.turnLens", B(BX - 2.0, y1 + gap + amber / 2, z), CV3(1.4, amber, w), 0.5, .amber)
+        rbox("rear.reverseLens", B(BX - 2.0, y2 + gap + clear / 2, z), CV3(1.4, clear, w), 0.5, .lens)
+        add("rear.reverseBulb", .sphere(radius: 1.1), .bulbOff, at: B(BX - 1.5, y2 + gap + clear / 2, z))
     }
 
     /// ナンバー（板 24×6・厚み 0.8 に、立体の文字）
@@ -927,7 +937,7 @@ struct CamperBuilder {
         let BX = rear
         rbox("rear.bumper", B(BX - 2.6, 33, 0), CV3(6, 6, BW * 2), 2.4, .black)
         for s in [-1.0, 1.0] {
-            tailLamp(BX, z: s * (BW - 6))
+            tailLamp(BX, z: s * (BW - 6.5))
         }
         plate(at: B(BX - 5.5, 31.5, 0), facing: CV3(-1, 0, 0), name: "rear.plate")
         // 排気管の先
