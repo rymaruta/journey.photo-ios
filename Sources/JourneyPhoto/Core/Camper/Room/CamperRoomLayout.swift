@@ -2,7 +2,9 @@ import Foundation
 
 // とおまわり号の中の部屋の広さ・動かせない物・置く決まり（2026-10-19・板「CamperRoom」と付箋「マス目と寸法」「置く決まり」）。
 //
-// 部屋は車の本当の室内（外の組み立て図の x −118〜62・内壁 z ±47・床から天井 88）と同じ寸法。1 マス = 10（板の単位）≈ 25 cm。
+// 長さ（x・後ろから運転席の仕切り）は車の本当の室内（外の組み立て図の x −118〜62）と同じ。
+// 幅（z・奥の壁から扉の壁）は、実寸（内壁 z ±47 ≈ 9 マス）だと通路になるので、箱庭として広げてある
+// （2026-10-19 owner「中もっと広く」）。1 マス = 10（板の単位）≈ 25 cm。天井は 88 のまま。
 // 部屋の座標は左奥が原点: x は後ろ（0）から運転席の仕切りへ、z は奥の壁（0）から扉の壁へ、y は床から上。
 // 素の Swift なので Linux でも試験できる。
 
@@ -96,22 +98,23 @@ struct CamperRoomLayout: Equatable, Sendable {
     /// 壁の横のマスの数
     func columns(_ wall: CamperRoomWall) -> Int { wall == .back ? width : depth }
 
-    /// 段と板の決まり（バン 12×8・キャンピングカー 18×9・トレーラー 24×10。上限は バン 20/12/6・写真 6、
-    /// キャンピングカー 40/24/12・12、トレーラー 60/32/16・24）
+    /// 長さは板の車の室内（バン 12・キャンピングカー 18・トレーラー 24）。幅は実寸より広い
+    /// （バン 12・キャンピングカー 14・トレーラー 16。2026-10-19 に 8 / 9 / 10 から広げた）。
+    /// 上限は バン 20/12/6・写真 6、キャンピングカー 40/24/12・12、トレーラー 60/32/16・24
     static func make(_ kind: CamperRoomKind, stage: CamperStage) -> CamperRoomLayout {
         switch (kind, stage) {
         case (.car, .van):
-            return CamperRoomLayout(kind: .car, width: 12, depth: 8, door: 9...11, kitchen: CamperRoomRect(x: 6, z: 0, w: 6, d: 3),
-                                    windows: [CamperRoomWindow(wall: .back, from: 2, to: 5), CamperRoomWindow(wall: .left, from: 3, to: 4)],
+            return CamperRoomLayout(kind: .car, width: 12, depth: 12, door: 9...11, kitchen: CamperRoomRect(x: 6, z: 0, w: 6, d: 3),
+                                    windows: [CamperRoomWindow(wall: .back, from: 2, to: 5), CamperRoomWindow(wall: .left, from: 3, to: 7)],
                                     floorLimit: 20, wallLimit: 12, ceilingLimit: 6, photoLimit: 6)
         case (.car, _):
-            return CamperRoomLayout(kind: .car, width: 18, depth: 9, door: 15...17, kitchen: CamperRoomRect(x: 12, z: 0, w: 6, d: 3),
-                                    windows: [CamperRoomWindow(wall: .back, from: 3, to: 6), CamperRoomWindow(wall: .left, from: 3, to: 5)],
+            return CamperRoomLayout(kind: .car, width: 18, depth: 14, door: 15...17, kitchen: CamperRoomRect(x: 12, z: 0, w: 6, d: 3),
+                                    windows: [CamperRoomWindow(wall: .back, from: 3, to: 6), CamperRoomWindow(wall: .left, from: 3, to: 9)],
                                     floorLimit: 40, wallLimit: 24, ceilingLimit: 12, photoLimit: 12)
         case (.trailer, _):
-            return CamperRoomLayout(kind: .trailer, width: 24, depth: 10, door: 10...12, kitchen: CamperRoomRect(x: 18, z: 0, w: 6, d: 3),
+            return CamperRoomLayout(kind: .trailer, width: 24, depth: 16, door: 10...12, kitchen: CamperRoomRect(x: 18, z: 0, w: 6, d: 3),
                                     windows: [CamperRoomWindow(wall: .back, from: 4, to: 7), CamperRoomWindow(wall: .back, from: 13, to: 16),
-                                              CamperRoomWindow(wall: .left, from: 4, to: 5)],
+                                              CamperRoomWindow(wall: .left, from: 4, to: 10)],
                                     floorLimit: 60, wallLimit: 32, ceilingLimit: 16, photoLimit: 24)
         }
     }
@@ -444,7 +447,7 @@ enum CamperRoomRules {
                 .floor("i4", "room_rug.runner", x: 4, z: 3),
                 .wall("i5", "photo_frame.landscape", .back, c: 7, row: 1),
                 .wall("i6", "wall_lamp.glass_sconce", .back, c: 6, row: 1),
-                .wall("i7", "clock.station", .left, c: 6, row: 1),
+                .wall("i7", "clock.station", .left, c: 10, row: 1),
                 .ceiling("i8", "string_ceiling.globe_string", x: 3, z: 4),
                 .ceiling("i9", "plant_hanger.macrame", x: 9, z: 4),
             ]
@@ -460,7 +463,7 @@ enum CamperRoomRules {
                 .wall("i8", "photo_frame.landscape", .back, c: 7, row: 1),
                 .wall("i9", "photo_frame.square", .left, c: 1, row: 1),
                 .wall("i10", "clock.station", .back, c: 13, row: 1),
-                .wall("i11", "wall_lamp.glass_sconce", .left, c: 6, row: 1),
+                .wall("i11", "wall_lamp.glass_sconce", .left, c: 12, row: 1),
                 .wall("i12", "wall_shelf.plank_brackets", .back, c: 14, row: 2),
                 .ceiling("i13", "string_ceiling.globe_string", x: 5, z: 4),
                 .ceiling("i14", "mobile.wooden_birds", x: 2, z: 6),
@@ -474,7 +477,7 @@ enum CamperRoomRules {
                 .floor("i3", "heater.wood_stove", x: 14, z: 0),
                 .floor("i4", "room_rug.runner", x: 9, z: 5),
                 .wall("i5", "photo_frame.landscape", .back, c: 10, row: 1),
-                .wall("i6", "wall_lamp.glass_sconce", .left, c: 7, row: 1),
+                .wall("i6", "wall_lamp.glass_sconce", .left, c: 13, row: 1),
                 .ceiling("i7", "string_ceiling.globe_string", x: 8, z: 4),
             ]
         }

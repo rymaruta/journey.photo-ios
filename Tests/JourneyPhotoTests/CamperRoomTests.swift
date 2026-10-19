@@ -96,8 +96,11 @@ final class CamperRoomTests: XCTestCase {
 
     /// 最初の並びは、どの段の部屋でも決まりに合っていて、思った数がそろう
     func testStarterDocumentsAreValid() {
-        for (kind, stage, count) in [(CamperRoomKind.car, CamperStage.van, 9), (.car, .camper, 16), (.trailer, .trailer, 7)] {
+        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 12, 12),
+                                                    (.car, .camper, 16, 18, 14), (.trailer, .trailer, 7, 24, 16)] {
             let l = CamperRoomLayout.make(kind, stage: stage)
+            XCTAssertEqual(l.width, width, "\(stage)")
+            XCTAssertEqual(l.depth, depth, "\(stage)")
             let doc = CamperRoomRules.starterDocument(l)
             XCTAssertEqual(doc.all.count, count, "\(kind) \(stage)")
             for item in doc.all {
@@ -119,29 +122,27 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertTrue(CamperRoomRules.check(.floor("r", "room_rug.runner", x: 0, z: 4), in: doc, layout: camper).ok)
         doc.upsert(.floor("r", "room_rug.runner", x: 0, z: 4))
         XCTAssertEqual(CamperRoomRules.check(.floor("r2", "room_rug.oval_hooked", x: 2, z: 3), in: doc, layout: camper).reason, .overlap)
-        // 台所・扉の前・はみ出し
+        // 台所・扉の前・はみ出し（扉の前は奥行きが変わっても、扉の壁から 3 マス）
         XCTAssertEqual(CamperRoomRules.check(.floor("k", "storage.trunk", x: 13, z: 1), in: doc, layout: camper).reason, .kitchen)
-        XCTAssertEqual(CamperRoomRules.check(.floor("d", "storage.trunk", x: 15, z: 7), in: doc, layout: camper).reason, .doorway)
+        XCTAssertEqual(CamperRoomRules.check(.floor("d", "storage.trunk", x: 15, z: camper.depth - 2), in: doc, layout: camper).reason, .doorway)
         XCTAssertEqual(CamperRoomRules.check(.floor("o", "storage.trunk", x: 17, z: 0), in: doc, layout: camper).reason, .outside)
         // 敷物は扉の前にも敷ける
-        XCTAssertTrue(CamperRoomRules.check(.floor("m", "room_rug.runner", x: 12, z: 7), in: doc, layout: camper).ok)
+        XCTAssertTrue(CamperRoomRules.check(.floor("m", "room_rug.runner", x: 12, z: camper.depth - 2), in: doc, layout: camper).ok)
     }
 
     /// 扉から奥（後ろの壁の列）まで通れない置き方はできない
     func testPathMustRemain() {
         var doc = CamperRoomDocument(room: .car)
-        // 奥行き 9 マスのうち 8 マスを x = 4..5 の列でふさぐ（2×2 を 4 つ）
-        for (i, z) in [0, 2, 4, 6].enumerated() { doc.upsert(.floor("w\(i)", "storage.tall_drawers", x: 4, z: z)) }
-        // 最後の 1 マス（z = 8）をふさぐと通れない（寝台 r=1 は 4×8）
-        let wall = CamperRoomRules.check(.floor("x", "heater.kerosene", x: 4, z: 7), in: doc, layout: camper)
-        XCTAssertNotEqual(wall.reason, nil)
-        var blocker = doc
-        blocker.upsert(.floor("p", "seating.floor_cushion", x: 6, z: 8 - 1))
+        // 扉の壁の 2 列手前まで、x = 4 と 5 を 1 マスずつふさぐ。最後の 2 列は開けておく
+        let last = camper.depth - 1
+        for z in 0..<(last - 1) {
+            doc.upsert(.floor("a\(z)", "floor_lamp.brass_stem", x: 4, z: z))
+            doc.upsert(.floor("b\(z)", "floor_lamp.brass_stem", x: 5, z: z))
+        }
         XCTAssertTrue(CamperRoomRules.pathRemains(solid: Set(doc.items.compactMap(\.rect).flatMap(\.cells)), layout: camper))
-        var solid = Set(doc.items.compactMap(\.rect).flatMap(\.cells))
-        solid.insert(CamperRoomCell(x: 4, z: 8))
-        solid.insert(CamperRoomCell(x: 5, z: 8))
-        XCTAssertFalse(CamperRoomRules.pathRemains(solid: solid, layout: camper))
+        // 石油ストーブ（2×2）で最後の 2 列をふさぐと、扉から奥へ通れない
+        let wall = CamperRoomRules.check(.floor("x", "heater.kerosene", x: 4, z: last - 1), in: doc, layout: camper)
+        XCTAssertEqual(wall.reason, .blocksPath)
     }
 
     func testWallAndCeilingRules() {
@@ -293,7 +294,7 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertEqual(hit.z, p.z, accuracy: 0.01)
         }
         // 部屋の真ん中は画面の内に写る
-        let mid = try XCTUnwrap(cam.project(CV3(90, 18, 49), viewport: viewport, layout: camper))
+        let mid = try XCTUnwrap(cam.project(CV3(camper.size.x / 2, 18, camper.size.z / 2), viewport: viewport, layout: camper))
         XCTAssertGreaterThan(mid.x, 0)
         XCTAssertLessThan(mid.x, 390)
         XCTAssertGreaterThan(mid.y, 0)
