@@ -108,6 +108,56 @@ final class TrunkSwapTests: XCTestCase {
         }
     }
 
+    /// 🔴 番号つきの置き場が 11 か所すべて埋まっているところへ貼る: 貼った1枚は必ず描く（2026-10-17 判断
+    /// 「貼ったばかりのラベルが見えないのは困る」）。いちばん古い番号つきの1枚が置き場を譲って描かれない
+    func testNewLabelIsDrawnWhenEverySlotIsTaken() {
+        let slotted = (0..<11).map { label("s\($0)", slot: $0) }
+        let stuck = [label("new")] + slotted
+        let drawn = spots(stuck)
+        XCTAssertNotNil(drawn["new"], "貼ったばかりの1枚が描かれない")
+        XCTAssertEqual(drawn.count, 11)
+        XCTAssertNil(drawn["s10"], "いちばん古い番号つきの1枚が譲っていない")
+        XCTAssertEqual(drawn["new"], spots([label("x", slot: 10)])["x"], "譲ってもらった置き場に描いていない")
+        // 新しい2枚なら、古い2枚が譲る
+        let two = spots([label("n1"), label("n2")] + slotted)
+        XCTAssertNotNil(two["n1"])
+        XCTAssertNotNil(two["n2"])
+        XCTAssertNil(two["s10"])
+        XCTAssertNil(two["s9"])
+        // 番号つきより古いラベルには譲らない（新しい 11 枚を出す）
+        XCTAssertNil(spots(slotted + [label("old")])["old"])
+    }
+
+    /// 🔴 置き場なし 14 枚でいちばん新しい l0 をはがしてから1枚貼る: 新しい1枚が空いた所に入る（窓の外の古いラベルではなく）
+    func testFourteenPeelThenStickPutsTheNewLabelInTheHole() {
+        let stuck = (0..<14).map { label("l\($0)") }
+        let before = spots(stuck)
+        let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: "l0")
+        let peeled = applying(slots, to: stuck, removing: "l0")
+        // はがした直後: 空いた所には窓の外のうち、いちばん新しい l11
+        let afterPeel = spots(peeled)
+        XCTAssertEqual(afterPeel["l11"], before["l0"])
+        // 貼る（置き場なし・番号は stickSlot に従う）
+        let new = label("new")
+        let slot = TrunkPlacement.stickSlot(for: new, stuck: peeled)
+        let after = spots([new.withSlot(slot)] + peeled)
+        XCTAssertNotNil(after["new"], "貼ったばかりの1枚が描かれない")
+        XCTAssertEqual(after["new"], before["l0"], "新しい1枚がはがした所に入らない")
+        for (id, s) in before where id != "l0" { XCTAssertEqual(after[id], s, "\(id) がずれた") }
+        XCTAssertLessThanOrEqual(after.count, 11)
+    }
+
+    /// 🔴 同じ番号が2枚に付いていたら（古い画面・別の端末）: 新しい方を番号の所に、古い方は空いた所へ。重ならない
+    func testDuplicateSlotsDoNotOverlap() {
+        let stuck = [label("a", slot: 3), label("b"), label("c", slot: 3)]
+        let drawn = spots(stuck)
+        XCTAssertEqual(drawn["a"], spots([label("x", slot: 3)])["x"], "新しい方が番号の所にいない")
+        XCTAssertNotNil(drawn["c"])
+        XCTAssertNotEqual(drawn["c"], drawn["a"], "同じ番号の2枚が重なった")
+        let frames = drawn.values.map { "\($0.x)/\($0.y)" }
+        XCTAssertEqual(Set(frames).count, frames.count)
+    }
+
     /// 番号つきのラベルを続けてはがす（2回目の番号は1回目で書いた番号を土台にする）: ずれない・重ならない
     func testRepeatedPeelsOnSlottedLabels() {
         var stuck = (0..<8).map { label("l\($0)") }
