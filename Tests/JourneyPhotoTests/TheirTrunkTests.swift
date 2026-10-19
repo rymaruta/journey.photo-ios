@@ -989,7 +989,9 @@ final class TheirTrunkTests: XCTestCase {
                       "人のトランクに「写真を投稿する」の空の案内が出る")
         XCTAssertTrue(open.contains("SupporterCardViewer(face: theirs.cardFace)"))
         let settings = try source("Features/Settings/SettingsView.swift")
-        XCTAssertTrue(settings.contains("TrunkShowRow(model: trunkPrivacy, service: environment.trunk)"))
+        // 2026-10-18: 入切は設定の下の画面（`SettingsTrunkPrivacyPage`）へ。設定が読んだ同じ model を渡す
+        XCTAssertTrue(settings.contains("SettingsTrunkPrivacyPage(model: trunkPrivacy, profile: myProfile, userId: auth.userId)"))
+        XCTAssertTrue(settings.contains("TrunkShowRow(model: model, service: environment.trunk)"))
         XCTAssertTrue(settings.contains("trunkPrivacy.reset(for: auth.userId)"), "人が替わっても前の設定が残る")
         // 乗車券は本人の操作なしに送らない: 送るのは揃えの1か所だけ
         let pick = try source("Features/Pass/PassCardPickView.swift")

@@ -146,6 +146,19 @@ struct SettingsView: View {
     /// **v2（2026-10-14・板 Settings）**: 節の見出しを真鍮の眉ラベルに（`SettingsGroup`）、節の間を
     /// 物差しの「節と節の間」（`JPSpace.section`）に、行の絵を外した（Pro の行の Pro マークだけ残す）。
     /// アカウントの削除は名前ごと危険の色（`WebTheme.danger`）
+    ///
+    /// **2026-10-18 判断（owner「設定の項目多くなってるのでわかりやすいように整理して」「キャンピングカーなどの入口は
+    /// 基本的に設定の中に入れたい」）**: 使う目的ごとの少ない節に並べ直した。並びの決まりは `SettingsOutline`（テストで見張る）。
+    /// 1. Pro（板 43 のとおりいちばん上・`ProSettingsSection` はそのまま）
+    /// 2. 旅の道具（旅のトランク・写真で作るキャンピングカー・すれちがい乗車券・すれちがい帳・共同アルバム・旅行プラン）
+    ///    ——マイページの「旅の記録」の札（`tripToolsCard`）と同じ道具を、同じ順で置く。マイページの行も残す
+    /// 3. お知らせ（プッシュ通知の入切）
+    /// 4. 公開範囲とプライバシー（ブロックした人・親しい友達・トランクを見せる）。**長い「トランクを見せる」の見本は
+    ///    下の画面へ**（`SettingsTrunkPrivacyPage`）——いちばん上の画面の半分を占めていた
+    /// 5. 写真と撮影（いいねした写真・構図一覧・データとストレージ）。写真の控えは下の画面へ（`SettingsStoragePage`）
+    /// 6. ヘルプと規約（新しくなったこと・利用規約・問い合わせ。未ログインでも出す＝審査 1.2 の連絡先）
+    /// 7. アカウント（パスワードを変える）→ 最後に危ない操作（ログアウト・アカウントの削除）を別々の札で。
+    ///    どちらも名前ごと危険の色（`WebTheme.danger`）。**同じ札に並べない**（押し間違い・確認なしで効くログアウト）
     private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
@@ -157,19 +170,16 @@ struct SettingsView: View {
                 if auth.userId != nil {
                     // 板 43 の並び: Pro がいちばん上
                     ProSettingsSection(profile: myProfile)
+                    tripToolsSection
                     notificationsSection
-                    passSection
-                    trunkSection
                     privacySection
-                    if showsTrunkPrivacy {
-                        TrunkPrivacyPreview(model: trunkPrivacy, profile: myProfile, userId: auth.userId)
-                    }
                 }
-                compositionSection
-                storageSection
-                accountSection
+                photosSection
+                helpSection
                 if auth.userId != nil {
+                    accountSection
                     logoutSection
+                    deleteSection
                 }
                 // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」。
                 // 接続先は**いつも出す**（本番かどうかを見分けるため）
@@ -189,6 +199,8 @@ struct SettingsView: View {
             .disabled(isSigningOut)
         }
         .webScreen()
+        // 下の画面（データとストレージ）で控えを空にして戻ったら、行の値を読み直す
+        .onAppear { cacheSize = Self.formattedCacheSize() }
         // 戻るボタンの文言（子の画面の「< 設定」）のために題は持つが、
         // **バーの中央には出さない**（板は左寄せの大見出しだけ）
         .navigationTitle(L("設定", "Settings"))
@@ -211,12 +223,13 @@ struct SettingsView: View {
     }
 
     private var notificationsSection: some View {
-        section(L("お知らせ", "Activity")) {
+        section(SettingsOutline.Part.notifications.title) {
             JPToggleRow(title: L("プッシュ通知を受け取る", "Push notifications"),
                         detail: L("いいね・コメント・フォロー・ストーリーへの返信を、アプリを開いていなくても受け取れます。",
                                   "Get likes, comments, follows and story replies even when the app is closed."),
                         isOn: pushBinding)
                 .disabled(isApplying)
+                .accessibilityIdentifier("settings.push")
             if showDeniedHint {
                 // **端末の許可は取り消せない。** 断られたあとは設定アプリへ
                 // 行ってもらうしかない——黙って戻るだけだと「押しても何も
@@ -233,43 +246,89 @@ struct SettingsView: View {
         }
     }
 
-    /// すれちがい（板 PassSettings の戻り先が設定・2026-10-16）。お知らせとプライバシーの間
-    /// （近くの人とカードを交換する＝届くものと、見せるものの両方に関わる）
-    private var passSection: some View {
-        section(PassTicket.featureName) {
-            NavigationLink { PassSettingsView() } label: {
-                // 題に「乗車券」が入るので、説明は短く（2026-10-18・呼び名を「すれちがい乗車券」にそろえた）
-                JPRowLabel(title: PassTicket.featureName,
-                           detail: L("旅先で近くにいた人と、乗車券のカードを交換する",
-                                     "Swap ticket cards with people you pass on your travels"),
-                           value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
+    /// 旅の道具（2026-10-18 判断）。マイページの「旅の記録」の札（`MyPageView.tripToolsCard`）と同じ道具・同じ順。
+    /// 行の形はどれも「NavigationLink＋JPRowLabel（絵なし）」。値は持つものだけ（トランクの硬貨・すれちがいの入切）
+    private var tripToolsSection: some View {
+        section(SettingsOutline.Part.tripTools.title) {
+            trunkRow
+            camperRow
+            JPCardDivider()
+            passRow
+            JPCardDivider()
+            NavigationLink { PassBookView() } label: {
+                JPRowLabel(title: L("すれちがい帳", "Pass book"),
+                           detail: L("旅先ですれちがった人から届いたカード",
+                                     "Cards from people you passed on your travels"))
             }
             .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("settings.pass")
+            .accessibilityIdentifier("settings.passBook")
+            JPCardDivider()
+            // 共同アルバムは「プライバシー」の札から移した（旅の仲間と写真を集める道具）
+            NavigationLink { AlbumsView() } label: {
+                JPRowLabel(title: Labels.Navigation.albums,
+                           detail: L("招待リンクで、旅の仲間と写真を集める",
+                                     "Collect photos with your travel companions via an invite link"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.albums")
+            JPCardDivider()
+            NavigationLink { TripPlansView() } label: {
+                JPRowLabel(title: L("旅行プラン", "Trip plans"),
+                           detail: L("行きたい場所を、回る順に並べる",
+                                     "Put the places you want to visit in order"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.plans")
         }
     }
 
-    /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。すれちがいと同じ形の、機能ごとの節に1行。
-    /// 置き場はすれちがいの下（どちらも旅先・投稿で届くもの）。**口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。
+    /// すれちがい乗車券（板 PassSettings の戻り先が設定・2026-10-16）。2026-10-18 から「旅の道具」の札の中の1行
+    private var passRow: some View {
+        NavigationLink { PassSettingsView() } label: {
+            // 題に「乗車券」が入るので、説明は短く（2026-10-18・呼び名を「すれちがい乗車券」にそろえた）
+            JPRowLabel(title: PassTicket.featureName,
+                       detail: L("旅先で近くにいた人と、乗車券のカードを交換する",
+                                 "Swap ticket cards with people you pass on your travels"),
+                       value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .accessibilityIdentifier("settings.pass")
+    }
+
+    /// 写真で作るキャンピングカー「とおまわり号」（2026-10-18 owner「基本的に設定の中に入れたい」）。
+    /// マイページの行と同じ題・説明。**設定は自分の写真を持たない**ので、行き先が自分で読む（`CamperGarageLoader`・
+    /// 読めるまでは「届いた」の判定と保存をしない）。マイページからは今までどおり読んだ写真を渡す（二重に読まない）
+    private var camperRow: some View {
+        NavigationLink {
+            CamperGarageLoader(ownerName: myProfile?.name, userId: auth.userId)
+        } label: {
+            JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"),
+                       detail: L("\(CamperText.carName) · 旅を重ねるほど育つ車。撮るほど部品が集まる",
+                                 "\(CamperText.carName) · A camper that grows with your trips and collects parts as you shoot"))
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .accessibilityIdentifier("settings.camper")
+    }
+
+    /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。2026-10-18 から「旅の道具」の札の先頭の1行。
+    /// **口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。出さないときは下の線も出さない。
     /// 右の値は硬貨の枚数（読めていれば・ほかの行の値と同じ等幅の字）。読み上げは硬貨と貼っていないラベルの有無
     @ViewBuilder
-    private var trunkSection: some View {
+    private var trunkRow: some View {
         if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
-            section(TrunkEntryText.title) {
-                NavigationLink {
-                    TrunkView(ownerName: myProfile?.name)
-                        .onDisappear { trunkEntry.markStale() }
-                } label: {
-                    JPRowLabel(title: TrunkEntryText.title, detail: TrunkEntryText.detail,
-                               value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
-                }
-                .buttonStyle(JPRowButtonStyle())
-                // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
-                .accessibilityLabel(TrunkEntryText.title)
-                .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
-                .accessibilityHint(TrunkEntryText.detail)
-                .accessibilityIdentifier("settings.trunk")
+            NavigationLink {
+                TrunkView(ownerName: myProfile?.name)
+                    .onDisappear { trunkEntry.markStale() }
+            } label: {
+                JPRowLabel(title: TrunkEntryText.title, detail: TrunkEntryText.detail,
+                           value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
             }
+            .buttonStyle(JPRowButtonStyle())
+            // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
+            .accessibilityLabel(TrunkEntryText.title)
+            .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
+            .accessibilityHint(TrunkEntryText.detail)
+            .accessibilityIdentifier("settings.trunk")
             // トランクから戻ったら数を読み直す（`markStale` のときだけ読む・2026-10-18 見直し）
             .onAppear {
                 Task {
@@ -277,6 +336,7 @@ struct SettingsView: View {
                                              service: environment.trunk)
                 }
             }
+            JPCardDivider()
         }
     }
 
@@ -290,88 +350,73 @@ struct SettingsView: View {
             .padding(.vertical, JPSpace.s)
     }
 
-    // 親しい友達・お気に入り・共同アルバムの入口をここにも置く
-    // ——マイページの横並びだけだと見つからなかった
+    /// 公開範囲とプライバシー（2026-10-18 判断: 人に見せるもの・見せない人だけを集める）。
+    /// 共同アルバムは「旅の道具」へ、いいねした写真は「写真と撮影」へ移した。
+    /// 「トランクを見せる」は入切と長い見本を下の画面（`SettingsTrunkPrivacyPage`）へ。行の値はいまの入切
     private var privacySection: some View {
-        section(L("プライバシー", "Privacy")) {
+        section(SettingsOutline.Part.privacy.title) {
             NavigationLink { BlockedUsersView() } label: {
                 JPRowLabel(title: L("ブロックした人", "Blocked people"))
             }
             .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.blocked")
             JPCardDivider()
             NavigationLink { CloseFriendsView() } label: {
                 JPRowLabel(title: L("親しい友達", "Close friends"))
             }
             .buttonStyle(JPRowButtonStyle())
-            JPCardDivider()
+            .accessibilityIdentifier("settings.closeFriends")
             // 板 TrunkPrivacy: 親しい友達の下（人に見せるかの切り替え）
             if showsTrunkPrivacy {
-                TrunkShowRow(model: trunkPrivacy, service: environment.trunk)
                 JPCardDivider()
+                NavigationLink {
+                    SettingsTrunkPrivacyPage(model: trunkPrivacy, profile: myProfile, userId: auth.userId)
+                } label: {
+                    JPRowLabel(title: L("トランクを見せる", "Show my trunk"),
+                               detail: L("ほかの人から見たトランクの見本と、乗車券を入れるか",
+                                         "How others see your trunk, and whether your ticket goes in"),
+                               value: SettingsOutline.onOff(trunkPrivacy.showTrunk))
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("settings.trunkPrivacy")
             }
-            // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
-            // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
-            NavigationLink { FavoritesView() } label: {
-                JPRowLabel(title: Labels.Navigation.favorites)
-            }
-            .buttonStyle(JPRowButtonStyle())
-            JPCardDivider()
-            NavigationLink { AlbumsView() } label: {
-                JPRowLabel(title: Labels.Navigation.albums)
-            }
-            .buttonStyle(JPRowButtonStyle())
         }
     }
 
-    private var compositionSection: some View {
-        section(L("撮影ガイド", "Shooting guide")) {
+    /// 写真と撮影（2026-10-18 判断）。いいねした写真（プライバシーの札から移した）・構図一覧・データとストレージ。
+    /// 構図一覧と控えは未ログインでも出す（今までどおり）
+    private var photosSection: some View {
+        section(SettingsOutline.Part.photos.title) {
+            if auth.userId != nil {
+                // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
+                // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
+                NavigationLink { FavoritesView() } label: {
+                    JPRowLabel(title: Labels.Navigation.favorites)
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("settings.favorites")
+                JPCardDivider()
+            }
             NavigationLink { CompositionCatalogView() } label: {
                 JPRowLabel(title: L("構図一覧", "Composition guide"),
                            detail: L("構図の説明と作例の配置図を見る", "Explore compositions and illustrated examples"))
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.compositionCatalog")
-        }
-    }
-
-    // **データとストレージ**（モック12）。写真の控えは端末に溜まる
-    private var storageSection: some View {
-        section(L("データとストレージ", "Data & storage")) {
-            JPRowLabel(title: L("写真の控え", "Cached photos"),
-                       detail: L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
-                                 "Photos you have seen are kept on this device. Clearing frees space."),
-                       value: cacheSize, chevron: false)
-                // 読み上げは「写真の控え、12 MB」を先に（長い説明は後ろのヒントへ）
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("写真の控え", "Cached photos"))
-                .accessibilityValue(cacheSize)
-                .accessibilityHint(L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
-                                     "Photos you have seen are kept on this device. Clearing frees space."))
             JPCardDivider()
-            Button {
-                // **消すのは画像の控えだけ。** ログインの情報や
-                // 保存した写真の印（`FavoritesStore`）は消さない
-                URLCache.shared.removeAllCachedResponses()
-                cacheSize = Self.formattedCacheSize()
-            } label: {
-                // 板 v2: 押すとその場で効く行は真鍮の字（黒地の札の上の手がかり）
-                SettingsActionLabel(title: L("控えを空にする", "Clear cache"), color: WebTheme.accent)
+            // **データとストレージ**（モック12）は下の画面へ。行の値は控えの大きさ（見えないものは消せない）
+            NavigationLink { SettingsStoragePage() } label: {
+                JPRowLabel(title: SettingsOutline.storageTitle,
+                           detail: L("写真の控え", "Cached photos"), value: cacheSize)
             }
             .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.storage")
         }
     }
 
-    // **規約・問い合わせは未ログインでも出す**（審査 1.2 の連絡先）。
-    // 見出しの「アカウント」はログインしているときだけ
-    private var accountSection: some View {
-        section(auth.userId != nil ? L("アカウント", "Account") : nil) {
-            if auth.userId != nil {
-                NavigationLink { ChangePasswordView() } label: {
-                    JPRowLabel(title: L("パスワードを変える", "Change password"))
-                }
-                .buttonStyle(JPRowButtonStyle())
-                JPCardDivider()
-            }
+    // **規約・問い合わせは未ログインでも出す**（審査 1.2 の連絡先）
+    private var helpSection: some View {
+        section(SettingsOutline.Part.help.title) {
             // 「新しくなったこと」はいつでも開き直せる（未ログインでも出す）
             Button { showWhatsNew = true } label: {
                 JPRowLabel(title: L("新しくなったこと", "What's new"))
@@ -383,30 +428,33 @@ struct SettingsView: View {
                 JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"))
             }
             .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.legal")
             if let contact = LegalConsent.contactURL {
                 JPCardDivider()
                 Link(destination: contact) {
                     JPRowLabel(title: L("問い合わせ", "Contact"))
                 }
                 .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("settings.contact")
             }
-            if auth.userId != nil {
-                JPCardDivider()
-                // 板 v2: 名前ごと危険の色（#F0565A）・行き先があるので矢印あり（v1 はアイコンだけ赤・矢印なし）
-                // Pro かどうか（定期購入の知らせ）を渡す。読めていなければ nil のまま＝知らせを出す
-                NavigationLink { DeleteAccountView(profile: myProfile) } label: {
-                    SettingsActionLabel(title: L("アカウントの削除", "Delete account"), color: WebTheme.danger,
-                                        chevron: true)
-                }
-                .buttonStyle(JPRowButtonStyle())
+        }
+    }
+
+    private var accountSection: some View {
+        section(SettingsOutline.Part.account.title) {
+            NavigationLink { ChangePasswordView() } label: {
+                JPRowLabel(title: L("パスワードを変える", "Change password"))
             }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.password")
         }
     }
 
     // **ログアウトは板に無いが残す。** 板ではメニュー（01d）にあり、
     // アプリもメニューに置いた（2026-09-26）。設定から抜けられる口も
     // 残しておく（ここを探す人がいる）。
-    // 確認なしで効くので、**削除と同じ札に並べない**（押し間違い）
+    // 確認なしで効くので、**削除と同じ札に並べない**（押し間違い）。
+    // 2026-10-18 判断: 危ない操作は最後にまとめ、名前を危険の色（`WebTheme.danger`）に。色だけでなく名前が「ログアウト」と言う
     private var logoutSection: some View {
         section(nil) {
             Button {
@@ -415,14 +463,173 @@ struct SettingsView: View {
                 // 外せないまま次にこの端末を使う人へ前の人あての通知が飛ぶ
                 auth.startSigningOut { await push.signingOut() }
             } label: {
-                JPRowLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
-                           chevron: false)
+                SettingsActionLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
+                                    color: WebTheme.danger)
                     .overlay(alignment: .trailing) {
                         if isSigningOut { ProgressView().padding(.trailing, 14) }
                     }
             }
             .buttonStyle(JPRowButtonStyle())
             .disabled(isSigningOut)
+            .accessibilityIdentifier("settings.logout")
+        }
+    }
+
+    /// アカウントの削除（いちばん下・ログアウトとは別の札）
+    private var deleteSection: some View {
+        section(nil) {
+            // 板 v2: 名前ごと危険の色（#F0565A）・行き先があるので矢印あり（v1 はアイコンだけ赤・矢印なし）
+            // Pro かどうか（定期購入の知らせ）を渡す。読めていなければ nil のまま＝知らせを出す
+            NavigationLink { DeleteAccountView(profile: myProfile) } label: {
+                SettingsActionLabel(title: L("アカウントの削除", "Delete account"), color: WebTheme.danger,
+                                        chevron: true)
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.deleteAccount")
+        }
+    }
+}
+
+/// 設定のいちばん上の並び（2026-10-18 判断・owner「わかりやすいように整理して」）。
+/// 画面（`SettingsView.list`）とテストが同じ並びを見る。`items` は行の目印（`accessibilityIdentifier`）で、
+/// 出し分けのある行（サポーター証・トランクなど）も含めた**全部**。下の画面へ移した行は `subpages` に
+enum SettingsOutline {
+
+    enum Part: String, CaseIterable {
+        case pro, tripTools, notifications, privacy, photos, help, account, danger
+
+        /// 眉ラベル（危ない操作の札は見出しなし）
+        var title: String? {
+            switch self {
+            case .pro: return "Pro"
+            case .tripTools: return L("旅の道具", "Travel tools")
+            case .notifications: return L("お知らせ", "Activity")
+            case .privacy: return L("公開範囲とプライバシー", "Sharing & privacy")
+            case .photos: return L("写真と撮影", "Photos & shooting")
+            case .help: return L("ヘルプと規約", "Help & terms")
+            case .account: return L("アカウント", "Account")
+            case .danger: return nil
+            }
+        }
+
+        /// 節の中の行（上からの順）。ログインしていないときに出るのは `photos` の構図・控えと `help` だけ
+        var items: [String] {
+            switch self {
+            case .pro:
+                return ["settings.pro", "settings.supporterCard", "settings.nameSide", "settings.offlineTrips",
+                        "settings.lightForecast", "settings.lightAlert"]
+            case .tripTools:
+                return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
+                        "settings.albums", "settings.plans"]
+            case .notifications: return ["settings.push"]
+            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy"]
+            case .photos: return ["settings.favorites", "settings.compositionCatalog", "settings.storage"]
+            case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
+            case .account: return ["settings.password"]
+            case .danger: return ["settings.logout", "settings.deleteAccount"]
+            }
+        }
+    }
+
+    /// 下の画面へ移した行（行の目印 → その画面の中の目印）
+    static let subpages: [String: [String]] = [
+        "settings.trunkPrivacy": ["settings.showTrunk", "settings.ticketInTrunk", "settings.showTrunk.preview"],
+        "settings.storage": ["settings.cache", "settings.clearCache"],
+    ]
+
+    static var storageTitle: String { L("データとストレージ", "Data & storage") }
+
+    /// 行の右の入切の値（色だけで状態を言わない・文字で言う）
+    static func onOff(_ on: Bool) -> String { on ? L("オン", "On") : L("オフ", "Off") }
+}
+
+/// 設定の下の画面の入れ物（2026-10-18）。設定と同じ形: 左寄せの明朝の大見出し・節の間 32・黒地。
+/// 戻るは左上の矢印（板: 題だけの画面にも左上の矢印）
+struct SettingsPage<Content: View>: View {
+
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
+                Text(title)
+                    .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
+                    .foregroundStyle(WebTheme.text)
+                    .padding(.horizontal, JPSpace.xxs)
+                    .accessibilityAddTraits(.isHeader)
+                content
+            }
+            .padding(.horizontal, JPSpace.gutter)
+            .padding(.top, JPSpace.xxs)
+            .padding(.bottom, JPSpace.emptyTop)
+        }
+        .webScreen()
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+        }
+    }
+}
+
+/// 「トランクを見せる」の画面（2026-10-18・設定のいちばん上から移した）。入切の2行と、ほかの人から見た姿の見本。
+/// 中身は今までと同じ部品（`TrunkShowRow`・`TrunkPrivacyPreview`）。設定が読んだ同じ model を使う（読み直さない）
+struct SettingsTrunkPrivacyPage: View {
+    @ObservedObject var model: TrunkPrivacyModel
+    let profile: UserProfile?
+    let userId: String?
+
+    @EnvironmentObject private var environment: AppEnvironment
+
+    var body: some View {
+        SettingsPage(L("トランクを見せる", "Show my trunk")) {
+            SettingsGroup(nil) {
+                TrunkShowRow(model: model, service: environment.trunk)
+            }
+            TrunkPrivacyPreview(model: model, profile: profile, userId: userId)
+        }
+    }
+}
+
+/// データとストレージ（モック12・2026-10-18 に下の画面へ）。写真の控えは端末に溜まる
+struct SettingsStoragePage: View {
+
+    /// 端末に溜まっている画像の控え。**見えないものは消せない**ので数を出す
+    @State private var cacheSize: String = SettingsView.formattedCacheSize()
+
+    var body: some View {
+        SettingsPage(SettingsOutline.storageTitle) {
+            SettingsGroup(nil) {
+                JPRowLabel(title: L("写真の控え", "Cached photos"),
+                           detail: L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
+                                     "Photos you have seen are kept on this device. Clearing frees space."),
+                           value: cacheSize, chevron: false)
+                    // 読み上げは「写真の控え、12 MB」を先に（長い説明は後ろのヒントへ）
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(L("写真の控え", "Cached photos"))
+                    .accessibilityValue(cacheSize)
+                    .accessibilityHint(L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
+                                         "Photos you have seen are kept on this device. Clearing frees space."))
+                    .accessibilityIdentifier("settings.cache")
+                JPCardDivider()
+                Button {
+                    // **消すのは画像の控えだけ。** ログインの情報や
+                    // 保存した写真の印（`FavoritesStore`）は消さない
+                    URLCache.shared.removeAllCachedResponses()
+                    cacheSize = SettingsView.formattedCacheSize()
+                } label: {
+                    // 板 v2: 押すとその場で効く行は真鍮の字（黒地の札の上の手がかり）
+                    SettingsActionLabel(title: L("控えを空にする", "Clear cache"), color: WebTheme.accent)
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("settings.clearCache")
+            }
         }
     }
 }
