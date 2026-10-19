@@ -2323,7 +2323,8 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesCamperServer() {
         let app = launchTrunk(["-JPPreviewCamper", "YES", "-JPPreviewCamperArrival", "YES"])
         guard openCamper(app) else { return }
-        let arrival = app.descendants(matching: .any)["camper.arrival"].firstMatch
+        // 届いた画面は「いま車に付ける」のボタンで見分ける（画面の親に識別子を付けると子のボタンの識別子を覆う）
+        let arrival = app.buttons["camper.arrival.equip"].firstMatch
         if arrival.waitForExistence(timeout: 15) {
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "95g-キャンピングカー（部品が届いた）")
@@ -2381,11 +2382,19 @@ final class ScreenshotTests: XCTestCase {
         }
         guard toAuthor.exists, toAuthor.isHittable else { return }
         toAuthor.tap()
-        // 見本の利用者自身の写真なら人の頁にならない（自分の頁には行を出さない）
         guard app.buttons["profile.count.followers"].firstMatch.waitForExistence(timeout: 15) else { return }
+        // 見本の利用者自身の写真なら自分の頁になる（自分の頁には行を出さない決まり）。人の頁だけに出る
+        // 「この人の操作」が無ければ撮らずに抜ける
+        guard app.buttons["この人の操作"].firstMatch.waitForExistence(timeout: 5) else { return }
 
+        // 行は数の札の下（トランクの段の下）。画面の外なら送って探す
         let row = app.buttons["profile.camper"].firstMatch
-        guard row.waitForExistence(timeout: 15) else { return XCTFail("人のプロフィールに「とおまわり号を訪ねる」の行が無い") }
+        var rowPushes = 0
+        while !row.waitForExistence(timeout: 3), rowPushes < 4 {
+            app.swipeUp()
+            rowPushes += 1
+        }
+        guard row.exists else { return XCTFail("人のプロフィールに「とおまわり号を訪ねる」の行が無い") }
         scrollTo(row, in: app)
         XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「とおまわり号を訪ねる」の行が 44pt 未満")
         row.tap()

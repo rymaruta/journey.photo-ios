@@ -682,7 +682,6 @@ struct CamperArrivalView: View {
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { Color.black.ignoresSafeArea() }
-        .accessibilityIdentifier("camper.arrival")
     }
 
     /// 一緒に届いた部品の札（選んでいる札は真鍮の縁とチェックの形・黒地の上）

@@ -389,6 +389,9 @@ final class CamperServerTests: XCTestCase {
         let env = try read("Sources/JourneyPhoto/App/AppEnvironment.swift")
         XCTAssertTrue(env.contains("self.camper = CamperService(api: api)"))
         XCTAssertTrue(garage.contains("CamperCatalog.categoryCount(c, owned: owned, serverOpen: serverOpen)"))
+        // 届いた画面の親に識別子を付けない（子のボタン camper.arrival.equip / close の識別子を覆い、Mac の UI テストで見つからなかった）
+        XCTAssertFalse(garage.contains(#".accessibilityIdentifier("camper.arrival")"#))
+        XCTAssertTrue(garage.contains(#".accessibilityIdentifier("camper.arrival.equip")"#))
         // 写真の編集: 控えの持ち主は送る前に決まる値（await の後の auth.userId を使わない）
         let edit = try read("Sources/JourneyPhoto/Features/Profile/EditPhotoView.swift")
         XCTAssertTrue(edit.contains("CamperStore.receive(dealt.camperAdded, userId: photo.userId ?? owner)"))
