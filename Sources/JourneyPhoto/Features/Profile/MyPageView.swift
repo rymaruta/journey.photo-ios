@@ -1033,6 +1033,16 @@ struct MyPageView: View {
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("trips.camper")
             JPCardDivider()
+            // 写真で作るキャンプ場（2026-10-18・板「写真で作るキャンプ場」）。撮った写真を切り絵にして浮かぶ島に立てる。
+            // 端末の中だけで動くので、トランクと違ってサーバーの口を待たずに出す
+            NavigationLink { CampHomeView(ownerName: model.profile?.name) } label: {
+                JPRowLabel(title: L("キャンプ場", "Campsite"), systemImage: "tent",
+                           detail: L("撮った森や空を切り絵にして、浮かぶ島に立てる",
+                                     "Turn the woods and skies you shoot into paper cutouts on a floating island"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.camp")
+            JPCardDivider()
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",
