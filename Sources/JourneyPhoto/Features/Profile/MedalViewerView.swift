@@ -137,8 +137,9 @@ enum SpinShape: Equatable {
     case coin
     /// 横 ÷ 縦（サポーター証は 342:216）
     case card(aspect: Double)
-    /// 旅のトランク。横 ÷ 縦（胴は 360:268）・厚み ÷ 横・角の丸み ÷ 横・持ち手の色（0〜1 の RGB）
-    case box(aspect: Double, depth: Double, corner: Double, handle: SpinRGB)
+    /// 旅のトランク。横 ÷ 縦（胴は 360:268）・厚み ÷ 横・角の丸み ÷ 横・持ち手の色（0〜1 の RGB）。
+    /// `stitched` は縫い目（アルミ・漆は無し）
+    case box(aspect: Double, depth: Double, corner: Double, handle: SpinRGB, stitched: Bool)
 }
 
 /// 3D の部品の色（SwiftUI・UIKit を読まない形で渡す）
@@ -285,6 +286,7 @@ final class MedalCoinCoordinator: NSObject {
     private let bottom = SCNMaterial()
     private let handleCap = SCNMaterial()
     private let handleSide = SCNMaterial()
+    private let stitchMaterial = SCNMaterial()
     private let clipMaterial = SCNMaterial()
     private(set) var hasBoxFaces = false
     /// 最後に受けた向きの合図
@@ -372,10 +374,10 @@ final class MedalCoinCoordinator: NSObject {
         switch shape {
         case .coin: buildCoin()
         case .card(let aspect): buildCard(aspect: aspect)
-        case let .box(aspect, depth, corner, handle):
+        case let .box(aspect, depth, corner, handle, stitched):
             // 旅のトランク: 6つの面に絵を貼った箱（表＝胴の絵・裏＝背面・左右・上・底＝板 TrunkFaces）に、上の持ち手
             buildBox(aspect: aspect, depthRatio: depth, cornerRatio: corner)
-            addHandle(aspect: aspect, depth: depth, color: handle)
+            addHandle(aspect: aspect, depth: depth, color: handle, stitched: stitched)
         }
         addLightsAndCamera()
         if case .box = shape { brightenForBox() }
@@ -492,11 +494,19 @@ final class MedalCoinCoordinator: NSObject {
             material.emission.intensity = 0.45
         }
         if let handle = faces.handle {
+            // 前後の面だけ。壁（handleSide）へ蓋や持ち手の絵を貼ると、粒がアーチに伸びる
             handleCap.diffuse.contents = handle
             handleCap.diffuse.wrapS = .clamp
             handleCap.diffuse.wrapT = .clamp
         }
-        if let clip = faces.clip { clipMaterial.diffuse.contents = clip }
+        if let clip = faces.clip {
+            clipMaterial.diffuse.contents = clip
+            clipMaterial.diffuse.wrapS = .clamp
+            clipMaterial.diffuse.wrapT = .clamp
+            // 箱の面と同じく、絵そのものを少し光らせて金属の模様が沈まないようにする
+            clipMaterial.emission.contents = clip
+            clipMaterial.emission.intensity = 0.45
+        }
         hasBoxFaces = faces.left != nil
     }
 
@@ -516,25 +526,18 @@ final class MedalCoinCoordinator: NSObject {
         }
     }
 
-    /// トランクの持ち手（上の角が丸い U の字を、胴の上に立てる・2026-10-17）
-    private func addHandle(aspect: Double, depth: Double, color: SpinRGB) {
+    /// トランクの持ち手（上の角が丸い U の字を、胴の上に立てる・2026-10-17）。
+    /// 形は `TrunkHandleMesh`（2026-10-19・穴の押し出しをやめた）
+    private func addHandle(aspect: Double, depth: Double, color: SpinRGB, stitched: Bool) {
         let width: CGFloat = 2.2
         let height = width / CGFloat(max(0.1, aspect))
         // 胴の 360pt に対して 幅 100・高さ 36・太さ 10（2D の絵と同じ割合）
         let unit = width / 360
-        let outer = UIBezierPath(roundedRect: CGRect(x: -50 * unit, y: 0, width: 100 * unit, height: 36 * unit),
-                                 byRoundingCorners: [.bottomLeft, .bottomRight],
-                                 cornerRadii: CGSize(width: 22 * unit, height: 22 * unit))
-        let inner = UIBezierPath(roundedRect: CGRect(x: -40 * unit, y: 0, width: 80 * unit, height: 26 * unit),
-                                 byRoundingCorners: [.bottomLeft, .bottomRight],
-                                 cornerRadii: CGSize(width: 12 * unit, height: 12 * unit))
-        outer.append(inner.reversing())
-        outer.usesEvenOddFillRule = true
-        outer.flatness = 0.002
-        let thickness = width * CGFloat(depth) * 0.25
-        let shape = SCNShape(path: outer, extrusionDepth: thickness)
+        // 前後の厚みは、前の押し出しと同じ（厚みの比 × 0.25 × 胴の幅）
+        let depthPoints = depth * 0.25 * TrunkLooks.bodyWidth
+        let mesh = TrunkHandleMesh.make(depth: depthPoints, stitched: stitched)
         // 持ち手は正面と同じ塗りの立体（2026-10-18）: 前と後ろの面に持ち手の絵（塗り・縫い目）、
-        // 押し出しの側面は同じ色の暗い方。絵が届く前は1色
+        // 壁は同じ色の暗い方。絵が届く前は1色。壁には絵を貼らない
         let base = UIColor(red: CGFloat(color.r), green: CGFloat(color.g), blue: CGFloat(color.b), alpha: 1)
         for material in [handleCap, handleSide] {
             material.lightingModel = .blinn
@@ -542,26 +545,54 @@ final class MedalCoinCoordinator: NSObject {
             material.diffuse.contents = base
         }
         handleSide.multiply.contents = UIColor(white: 0.72, alpha: 1)
-        shape.materials = [handleCap, handleCap, handleSide]
-        let node = SCNNode(geometry: shape)
-        // SceneKit の形は上が +y（UIKit の「下」の角＝maxY が上になる）。U の字の開いた側（y=0）を
-        // 胴の上の縁に合わせ、2D の絵と同じく 6pt ぶん埋める。前後は上の面の持ち手の場所（正面から 56・
-        // 真ん中から奥へ 13）に立てる（板 TrunkSpin の `translateZ(-13px)`）
+        stitchMaterial.lightingModel = .lambert
+        stitchMaterial.specular.contents = UIColor(white: 0, alpha: 1)
+        stitchMaterial.diffuse.contents = UIColor(red: 1, green: 235 / 255, blue: 200 / 255, alpha: 1)
+        stitchMaterial.locksAmbientWithDiffuse = true
+        let node = SCNNode()
+        let caps = handleGeometry(mesh.caps, mesh.capIndices, unit: unit)
+        caps.materials = [handleCap]
+        node.addChildNode(SCNNode(geometry: caps))
+        let walls = handleGeometry(mesh.walls, mesh.wallIndices, unit: unit)
+        walls.materials = [handleSide]
+        node.addChildNode(SCNNode(geometry: walls))
+        if !mesh.stitchIndices.isEmpty {
+            let stitch = handleGeometry(mesh.stitch, mesh.stitchIndices, unit: unit)
+            stitch.materials = [stitchMaterial]
+            node.addChildNode(SCNNode(geometry: stitch))
+        }
+        // U の字の開いた側（y=0）を胴の上の縁に合わせ、2D の絵と同じく 6pt ぶん埋める。前後は上の面の
+        // 持ち手の場所（正面から 56・真ん中から奥へ 13）に立てる（板 TrunkSpin の `translateZ(-13px)`）
         let behind = -13 * Float(unit)
         node.position = SCNVector3(0, Float(height / 2 - 6 * unit), behind)
         coin.addChildNode(node)
-        // 付け根の金具（錠前と同じ金属・20×14 を持ち手より少し厚く）
-        clipMaterial.lightingModel = .blinn
-        clipMaterial.specular.contents = UIColor(white: 0.5, alpha: 1)
+        // 付け根の金具（錠前と同じ金属・20×14 を持ち手より少し厚く）。面取りの箱は絵が潰れる
+        clipMaterial.lightingModel = .lambert
+        clipMaterial.specular.contents = UIColor(white: 0, alpha: 1)
+        clipMaterial.locksAmbientWithDiffuse = true
         clipMaterial.diffuse.contents = UIColor(red: 0.79, green: 0.65, blue: 0.42, alpha: 1)
+        let clipMesh = TrunkHandleMesh.clip(depth: depthPoints + 4)
+        let clipGeometry = handleGeometry(clipMesh.vertices, clipMesh.indices, unit: unit)
+        clipGeometry.materials = [clipMaterial]
         // 付け根は正面の絵・上の面の絵と同じ真ん中（`TrunkFaces.handleClipCenters`・胴の真ん中から ±50）
         for x in TrunkFaces.handleClipCenters.map({ $0 - TrunkLooks.bodyWidth / 2 }) {
-            let clip = SCNBox(width: 20 * unit, height: 14 * unit, length: thickness + 4 * unit, chamferRadius: 2 * unit)
-            clip.materials = [clipMaterial]
-            let clipNode = SCNNode(geometry: clip)
+            let clipNode = SCNNode(geometry: clipGeometry)
             clipNode.position = SCNVector3(Float(x * Double(unit)), Float(height / 2 - 1 * unit), behind)
             coin.addChildNode(clipNode)
         }
+    }
+
+    /// 持ち手の網を SceneKit の形にする（点を箱の単位へ）
+    private func handleGeometry(_ vertices: [TrunkHandleMesh.Vertex], _ indices: [Int], unit: CGFloat) -> SCNGeometry {
+        let positions = vertices.map {
+            SCNVector3(Float($0.x * Double(unit)), Float($0.y * Double(unit)), Float($0.z * Double(unit)))
+        }
+        let normals = vertices.map { SCNVector3(Float($0.nx), Float($0.ny), Float($0.nz)) }
+        let uvs = vertices.map { CGPoint(x: $0.u, y: $0.v) }
+        let sources = [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals),
+                       SCNGeometrySource(textureCoordinates: uvs)]
+        let element = SCNGeometryElement(indices: indices.map { Int32($0) }, primitiveType: .triangles)
+        return SCNGeometry(sources: sources, elements: [element])
     }
 
     private func buildCoin() {

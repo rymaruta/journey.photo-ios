@@ -138,7 +138,8 @@ enum TrunkTextures {
         return .box(aspect: TrunkLooks.bodyWidth / TrunkLooks.bodyHeight,
                     // 2026-10-17 判断（run 466 の見比べ）: 厚みは横の 0.24（0.34 では箱が細く暗く、正面の絵が見えにくい）
                     depth: 0.24, corner: 16 / TrunkLooks.bodyWidth,
-                    handle: SpinRGB(r: handle.r / 255, g: handle.g / 255, b: handle.b / 255))
+                    handle: SpinRGB(r: handle.r / 255, g: handle.g / 255, b: handle.b / 255),
+                    stitched: TrunkFaces.handleStitched(model))
     }
 
     /// 描き終えた印（「faces-ready front=12ms all=85ms」）
