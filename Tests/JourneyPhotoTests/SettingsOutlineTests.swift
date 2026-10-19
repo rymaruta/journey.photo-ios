@@ -90,6 +90,41 @@ final class SettingsOutlineTests: XCTestCase {
     func testOnOffIsSpelledOut() {
         XCTAssertFalse(SettingsOutline.onOff(true).isEmpty)
         XCTAssertNotEqual(SettingsOutline.onOff(true), SettingsOutline.onOff(false))
+        XCTAssertEqual(SettingsOutline.onOff(true), L("オン", "On"))
+        XCTAssertEqual(SettingsOutline.onOff(false), L("オフ", "Off"))
+    }
+
+    /// 「トランクを見せる」の行の値はいまの入切（設定が読んだ同じ model）。下の画面には同じ model を渡す
+    func testTrunkPrivacyRowShowsTheCurrentValue() throws {
+        let view = try source("Features/Settings/SettingsView.swift")
+        let privacy = slice(view, from: "private var privacySection: some View {", to: "private var photosSection")
+        assertInOrder(["SettingsTrunkPrivacyPage(model: trunkPrivacy, profile: myProfile, userId: auth.userId)",
+                       "value: SettingsOutline.onOff(trunkPrivacy.showTrunk))", id("settings.trunkPrivacy")],
+                      in: privacy, "トランクを見せるの行")
+        // 設定が持つ model は1つ（下の画面で作り直さない）
+        let page = slice(view, from: "struct SettingsTrunkPrivacyPage: View {", to: "struct SettingsStoragePage")
+        XCTAssertTrue(page.contains("@ObservedObject var model: TrunkPrivacyModel"))
+        XCTAssertFalse(page.contains("TrunkPrivacyModel()"), "下の画面が別の model を作る")
+    }
+
+    /// 下の画面（データとストレージ）で控えを空にして戻ったら、いちばん上の行の値を読み直す
+    func testCacheSizeIsReadAgainOnReturn() throws {
+        let view = try source("Features/Settings/SettingsView.swift")
+        let list = slice(view, from: "private var list: some View {", to: "private func section<")
+        XCTAssertTrue(list.contains(".onAppear { cacheSize = Self.formattedCacheSize() }"),
+                      "下の画面から戻っても控えの大きさが古いまま")
+        let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
+        XCTAssertTrue(photos.contains("detail: L(\"写真の控え\", \"Cached photos\"), value: cacheSize)"))
+    }
+
+    /// いいねした写真はログインしているときだけ（未ログインには出さない）。構図一覧・データとストレージはいつも
+    func testFavoritesOnlyWhenSignedIn() throws {
+        let view = try source("Features/Settings/SettingsView.swift")
+        let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
+        assertInOrder(["if auth.userId != nil {", "FavoritesView()", id("settings.favorites"), "JPCardDivider()",
+                       "}\n            NavigationLink { CompositionCatalogView() }"], in: photos, "いいねした写真の出し分け")
+        let gated = slice(photos, from: "if auth.userId != nil {", to: "NavigationLink { CompositionCatalogView() }")
+        XCTAssertFalse(gated.contains("SettingsStoragePage"), "データとストレージを未ログインで隠している")
     }
 
     // MARK: - 消えていない（作り）
@@ -180,10 +215,16 @@ final class SettingsOutlineTests: XCTestCase {
                       in: row, "キャンピングカーの行")
         XCTAssertFalse(row.contains("systemImage:"), "設定の行に絵を出している")
         let loader = try source("Features/Camper/CamperGarageLoader.swift")
-        assertInOrder(["CamperGarageView(ownerName: ownerName, userId: userId, photos: photos,",
-                       "photosLoaded: CamperLoaderRule.isLoaded(loadedFor: loadedFor, userId: userId))",
-                       "ProfileImageFromPhoto.myPhotos(environment: environment)", "photos = fresh",
-                       "loadedFor = userId"], in: loader, "設定からのキャンピングカー")
+        // 車の画面は読めたときだけ。読み込み中・失敗は数の行を出さない
+        let body = slice(loader, from: "switch loader.phase {", to: "private func load()")
+        assertInOrder(["case .loaded:",
+                       "CamperGarageView(ownerName: ownerName, userId: userId, photos: loader.photos, photosLoaded: true)",
+                       "case .loading:", "ProgressView()", "L(\"写真を読み込んでいます…\"",
+                       "\"camper.loading\"", "case .failed:", "ErrorBanner(", "Task { await load() }",
+                       "\"camper.loadFailed\""], in: body, "設定からのキャンピングカー")
+        XCTAssertEqual(body.components(separatedBy: "CamperGarageView(").count - 1, 1, "読めていないのに車の画面を出す")
+        XCTAssertTrue(loader.contains(".task(id: userId) { await load() }"))
+        XCTAssertTrue(loader.contains("ProfileImageFromPhoto.myPhotos(environment: environment)"))
         // マイページの「旅の記録」の行はそのまま（読み終えた写真を渡す）
         let page = try source("Features/Profile/MyPageView.swift")
         let card = slice(page, from: "private var tripToolsCard: some View {", to: "nonisolated static func wishlistPool")
@@ -195,22 +236,112 @@ final class SettingsOutlineTests: XCTestCase {
         }
     }
 
-    /// 読めるまでは「読めた」にしない（「届いた」の判定・保存の守り）。人が替わったら読み直すまで false
-    func testCamperLoaderRule() {
-        XCTAssertFalse(CamperLoaderRule.isLoaded(loadedFor: nil, userId: "me"), "読む前に読めたことにしている")
-        XCTAssertTrue(CamperLoaderRule.isLoaded(loadedFor: "me", userId: "me"))
-        XCTAssertFalse(CamperLoaderRule.isLoaded(loadedFor: "me", userId: "other"), "前の人の写真で数える")
-        XCTAssertFalse(CamperLoaderRule.isLoaded(loadedFor: nil, userId: nil))
+    /// 読み終えるまで止めておける読み方（`CamperPhotoLoader.load` に渡す）
+    @MainActor
+    private final class Gate {
+        var calls = 0
+        /// 待っている読み（二本目が出ても止まったままにしない＝全部まとめて返す）
+        private var waiting: [CheckedContinuation<[Photo]?, Never>] = []
+        func fetch() async -> [Photo]? {
+            calls += 1
+            return await withCheckedContinuation { waiting.append($0) }
+        }
+        func open(_ photos: [Photo]?) {
+            let all = waiting
+            waiting = []
+            all.forEach { $0.resume(returning: photos) }
+        }
+        /// 読み始めるまで待つ（上限つき）
+        func untilCalled(_ n: Int) async {
+            var tries = 0
+            while calls < n, tries < 1000 {
+                await Task.yield()
+                tries += 1
+            }
+        }
+    }
+
+    /// 読めるまでは「読み込み中」。読めたら切り替え、もう読まない（画面に戻るたびに読み直さない）
+    @MainActor
+    func testCamperLoaderLoadsOnce() async {
+        let loader = CamperPhotoLoader()
+        XCTAssertEqual(loader.phase, .loading, "読む前に車の画面を出す")
+        var calls = 0
+        await loader.load(userId: "me") { calls += 1; return [] }
+        XCTAssertEqual(loader.phase, .loaded)
+        XCTAssertEqual(loader.loadedFor, "me")
+        await loader.load(userId: "me") { calls += 1; return [] }
+        XCTAssertEqual(calls, 1, "読めたのにもう一度読む")
+        // 人が替わったら読み直す
+        await loader.load(userId: "other") { calls += 1; return nil }
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(loader.phase, .failed)
+        XCTAssertNil(loader.loadedFor, "前の人の写真で数える")
+    }
+
+    /// 読めなければ「もう一度」の状態。もう一度で読めたら切り替える。入っていなければ読まない
+    @MainActor
+    func testCamperLoaderFailureThenRetry() async {
+        let loader = CamperPhotoLoader()
+        await loader.load(userId: "me") { nil }
+        XCTAssertEqual(loader.phase, .failed)
+        XCTAssertTrue(loader.photos.isEmpty)
+        await loader.load(userId: "me") { [] }
+        XCTAssertEqual(loader.phase, .loaded)
+        let signedOut = CamperPhotoLoader()
+        var called = false
+        await signedOut.load(userId: nil) { called = true; return [] }
+        XCTAssertFalse(called)
+        XCTAssertEqual(signedOut.phase, .failed)
+    }
+
+    /// 読んでいる最中にもう一度呼ばれても、二本目を出さない
+    @MainActor
+    func testCamperLoaderDoesNotReadTwiceInFlight() async {
+        let loader = CamperPhotoLoader()
+        let gate = Gate()
+        let first = Task { await loader.load(userId: "me") { await gate.fetch() } }
+        await gate.untilCalled(1)
+        XCTAssertEqual(gate.calls, 1)
+        let second = Task { await loader.load(userId: "me") { await gate.fetch() } }
+        await gate.untilCalled(2)
+        XCTAssertEqual(gate.calls, 1, "読んでいる最中に二本目を出した")
+        gate.open([])
+        await first.value
+        gate.open([])
+        await second.value
+        XCTAssertEqual(loader.phase, .loaded)
+    }
+
+    /// 取り消された（画面を離れた）読み込みの結果は入れない。次に開いたら読み直す
+    @MainActor
+    func testCamperLoaderIgnoresCancelledRead() async {
+        let loader = CamperPhotoLoader()
+        let gate = Gate()
+        let first = Task { await loader.load(userId: "me") { await gate.fetch() } }
+        await gate.untilCalled(1)
+        first.cancel()
+        gate.open([])
+        await first.value
+        XCTAssertEqual(loader.phase, .loading, "取り消した読み込みの結果を入れた")
+        XCTAssertNil(loader.loadedFor)
+        var calls = 0
+        await loader.load(userId: "me") { calls += 1; return [] }
+        XCTAssertEqual(calls, 1, "取り消しのあとに読み直さない")
+        XCTAssertEqual(loader.phase, .loaded)
     }
 
     // MARK: - 危ない操作
 
-    /// ログアウトとアカウントの削除は最後に、別々の札で、名前ごと危険の色
+    /// ログアウトとアカウントの削除は最後に、別々の札で。危険の色は削除だけ（板: danger は削除・通報・エラー文）。
+    /// ログアウトは白い行（メニューと同じく控えめ）
     func testDangerRowsAreLastAndApart() throws {
         let view = try source("Features/Settings/SettingsView.swift")
         let logout = slice(view, from: "private var logoutSection: some View {", to: "private var deleteSection")
-        assertInOrder(["section(nil) {", "auth.startSigningOut {", "SettingsActionLabel(", "color: WebTheme.danger)",
+        assertInOrder(["section(nil) {", "auth.startSigningOut {", "JPRowLabel(title: isSigningOut", "chevron: false)",
                        id("settings.logout")], in: logout, "ログアウト")
+        XCTAssertFalse(logout.contains("WebTheme.danger"), "ログアウトを危険の色にしている")
+        XCTAssertFalse(logout.contains("SettingsActionLabel("), "ログアウトが色の行になっている")
         XCTAssertFalse(logout.contains("DeleteAccountView"), "ログアウトと削除が同じ札にある")
         let delete = slice(view, from: "private var deleteSection: some View {", to: "enum SettingsOutline")
         assertInOrder(["section(nil) {", "DeleteAccountView(profile: myProfile)", "color: WebTheme.danger",

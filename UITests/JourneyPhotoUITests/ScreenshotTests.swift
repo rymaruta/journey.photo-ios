@@ -2382,7 +2382,7 @@ final class ScreenshotTests: XCTestCase {
         let trunk = app.buttons["settings.trunk"].firstMatch
         guard trunk.waitForExistence(timeout: 10) else { return XCTFail("設定の旅の道具に旅のトランクの行が無い") }
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "97-設定（いちばん上）")
+        shoot(app, "102-設定（いちばん上）")
 
         // 旅の道具: キャンピングカーの行まで送って撮り、押すと車の画面が開く
         let camper = app.buttons["settings.camper"].firstMatch
@@ -2396,7 +2396,7 @@ final class ScreenshotTests: XCTestCase {
             if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }
         }
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "97a-設定（旅の道具）")
+        shoot(app, "102a-設定（旅の道具）")
         if camper.isHittable {
             camper.tap()
             XCTAssertTrue(app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15),
@@ -2419,40 +2419,44 @@ final class ScreenshotTests: XCTestCase {
             if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }
         }
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "97b-設定（ヘルプと危ない操作）")
+        shoot(app, "102b-設定（ヘルプと危ない操作）")
 
-        // 下の画面: データとストレージ
+        // 下の画面: データとストレージ。**押せないときは黙って飛ばさず落とす**
         let storage = app.buttons["settings.storage"].firstMatch
-        if storage.exists {
-            if !storage.isHittable { app.swipeDown(); Thread.sleep(forTimeInterval: 1) }
-            if storage.isHittable {
-                storage.tap()
-                let clear = app.buttons["settings.clearCache"].firstMatch
-                XCTAssertTrue(clear.waitForExistence(timeout: 5), "データとストレージに「控えを空にする」が無い")
-                Thread.sleep(forTimeInterval: 1)
-                shoot(app, "97c-設定（データとストレージ）")
-                goBack(app)
-                Thread.sleep(forTimeInterval: 1)
-            }
+        guard storage.waitForExistence(timeout: 5) else { return XCTFail("設定にデータとストレージの行が無い") }
+        var down = 0
+        while !storage.isHittable, down < 6 {
+            app.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+            down += 1
         }
+        guard storage.isHittable else { return XCTFail("データとストレージの行に届かない") }
+        storage.tap()
+        let clear = app.buttons["settings.clearCache"].firstMatch
+        guard clear.waitForExistence(timeout: 5) else { return XCTFail("データとストレージに「控えを空にする」が無い") }
+        XCTAssertGreaterThanOrEqual(clear.frame.height, 44, "「控えを空にする」が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102c-設定（データとストレージ）")
+        goBack(app)
+        Thread.sleep(forTimeInterval: 1)
 
-        // 下の画面: トランクを見せる（サーバーが対応している見本のときだけ出る）
+        // 下の画面: トランクを見せる。見本（`-JPPreviewTrunk`）はサーバーが対応している形なので必ず出る——出なければ落とす
         let show = app.buttons["settings.trunkPrivacy"].firstMatch
-        if show.waitForExistence(timeout: 3) {
-            var up = 0
-            while !show.isHittable, up < 6 {
-                app.swipeDown()
-                Thread.sleep(forTimeInterval: 1)
-                up += 1
-            }
-            guard show.isHittable else { return }
-            show.tap()
-            if app.descendants(matching: .any)["settings.showTrunk"].firstMatch.waitForExistence(timeout: 5) {
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "97d-設定（トランクを見せる）")
-            }
-            goBack(app)
+        guard show.waitForExistence(timeout: 5) else { return XCTFail("設定に「トランクを見せる」の行が無い") }
+        var up = 0
+        while !show.isHittable, up < 6 {
+            app.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+            up += 1
         }
+        guard show.isHittable else { return XCTFail("「トランクを見せる」の行に届かない") }
+        show.tap()
+        guard app.descendants(matching: .any)["settings.showTrunk"].firstMatch.waitForExistence(timeout: 5) else {
+            return XCTFail("「トランクを見せる」の画面に入切が無い")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "102d-設定（トランクを見せる）")
+        goBack(app)
     }
 
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →

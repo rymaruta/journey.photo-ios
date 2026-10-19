@@ -151,14 +151,16 @@ struct SettingsView: View {
     /// 基本的に設定の中に入れたい」）**: 使う目的ごとの少ない節に並べ直した。並びの決まりは `SettingsOutline`（テストで見張る）。
     /// 1. Pro（板 43 のとおりいちばん上・`ProSettingsSection` はそのまま）
     /// 2. 旅の道具（旅のトランク・写真で作るキャンピングカー・すれちがい乗車券・すれちがい帳・共同アルバム・旅行プラン）
-    ///    ——マイページの「旅の記録」の札（`tripToolsCard`）と同じ道具を、同じ順で置く。マイページの行も残す
+    ///    ——マイページの「旅の記録」の札（`tripToolsCard`）の道具に、すれちがい乗車券の設定を足したもの。並びは設定の順
+    ///    （すれちがいの2つを続ける。マイページはトランク・車・アルバム・プラン・すれちがい帳の順）。マイページの行も残す
     /// 3. お知らせ（プッシュ通知の入切）
     /// 4. 公開範囲とプライバシー（ブロックした人・親しい友達・トランクを見せる）。**長い「トランクを見せる」の見本は
     ///    下の画面へ**（`SettingsTrunkPrivacyPage`）——いちばん上の画面の半分を占めていた
     /// 5. 写真と撮影（いいねした写真・構図一覧・データとストレージ）。写真の控えは下の画面へ（`SettingsStoragePage`）
     /// 6. ヘルプと規約（新しくなったこと・利用規約・問い合わせ。未ログインでも出す＝審査 1.2 の連絡先）
-    /// 7. アカウント（パスワードを変える）→ 最後に危ない操作（ログアウト・アカウントの削除）を別々の札で。
-    ///    どちらも名前ごと危険の色（`WebTheme.danger`）。**同じ札に並べない**（押し間違い・確認なしで効くログアウト）
+    /// 7. アカウント（パスワードを変える）→ 最後にログアウトとアカウントの削除を別々の札で。
+    ///    **同じ札に並べない**（押し間違い・確認なしで効くログアウト）。危険の色は削除だけ（板: danger は削除・通報・エラー文）。
+    ///    ログアウトは白い行のまま（メニューの `SiteMenuPlainRow(isQuiet:)` と同じく控えめ）
     private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
@@ -246,7 +248,8 @@ struct SettingsView: View {
         }
     }
 
-    /// 旅の道具（2026-10-18 判断）。マイページの「旅の記録」の札（`MyPageView.tripToolsCard`）と同じ道具・同じ順。
+    /// 旅の道具（2026-10-18 判断）。マイページの「旅の記録」の札（`MyPageView.tripToolsCard`）の道具＋すれちがい乗車券の設定。
+    /// 並びはすれちがいの2つを続けた設定の順（マイページとは同じでない）。
     /// 行の形はどれも「NavigationLink＋JPRowLabel（絵なし）」。値は持つものだけ（トランクの硬貨・すれちがいの入切）
     private var tripToolsSection: some View {
         section(SettingsOutline.Part.tripTools.title) {
@@ -296,8 +299,8 @@ struct SettingsView: View {
     }
 
     /// 写真で作るキャンピングカー「とおまわり号」（2026-10-18 owner「基本的に設定の中に入れたい」）。
-    /// マイページの行と同じ題・説明。**設定は自分の写真を持たない**ので、行き先が自分で読む（`CamperGarageLoader`・
-    /// 読めるまでは「届いた」の判定と保存をしない）。マイページからは今までどおり読んだ写真を渡す（二重に読まない）
+    /// 題はマイページの行と同じ。説明は頭に車の名前を足した。**設定は自分の写真を持たない**ので、行き先が自分で読む
+    /// （`CamperGarageLoader`・読めるまでは車の画面を出さず、「届いた」の判定と保存もしない）。マイページからは今までどおり読んだ写真を渡す（二重に読まない）
     private var camperRow: some View {
         NavigationLink {
             CamperGarageLoader(ownerName: myProfile?.name, userId: auth.userId)
@@ -454,7 +457,8 @@ struct SettingsView: View {
     // アプリもメニューに置いた（2026-09-26）。設定から抜けられる口も
     // 残しておく（ここを探す人がいる）。
     // 確認なしで効くので、**削除と同じ札に並べない**（押し間違い）。
-    // 2026-10-18 判断: 危ない操作は最後にまとめ、名前を危険の色（`WebTheme.danger`）に。色だけでなく名前が「ログアウト」と言う
+    // 2026-10-18 判断: 最後（削除の上）に置く。色は白い行のまま——板の danger は削除・通報・エラー文だけで、
+    // メニューでもログアウトは控えめな行（`SiteMenuPlainRow(isQuiet: true)`）
     private var logoutSection: some View {
         section(nil) {
             Button {
@@ -463,8 +467,8 @@ struct SettingsView: View {
                 // 外せないまま次にこの端末を使う人へ前の人あての通知が飛ぶ
                 auth.startSigningOut { await push.signingOut() }
             } label: {
-                SettingsActionLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
-                                    color: WebTheme.danger)
+                JPRowLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
+                           chevron: false)
                     .overlay(alignment: .trailing) {
                         if isSigningOut { ProgressView().padding(.trailing, 14) }
                     }
