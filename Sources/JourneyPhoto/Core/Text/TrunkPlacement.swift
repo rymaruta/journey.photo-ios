@@ -241,24 +241,29 @@ enum TrunkPlacement {
         a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h && a.rot == b.rot
     }
 
-    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面の「トランクに貼る」）ときに添える、おまかせの置き場の番号。
+    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面の「トランクに貼る」）ときに書く、おまかせの置き場の番号。
     ///
-    /// 置き場なしのラベルが入るおまかせの置き場に、**ほかのラベル（手で貼ったもの）がもう乗っていたら**、
-    /// そのまま貼ると重なって下のラベルが隠れる（2026-10-19 の直し）。そのときだけ、空いている置き場の番号を返す。
-    /// nil なら今までどおり番号なしで貼る（番号の無いトランクは前の版と同じ並び）。空きが無ければ nil
-    static func stickSlot(for label: TrunkLabel, stuck stuckNewestFirst: [TrunkLabel]) -> Int? {
+    /// 2026-10-19 判断（確かめ役の見直し 3回目）: **貼るたびに番号を決めて書く**。番号の無いラベルは並びの何番目かで
+    /// 置き場が決まり、あとから貼ったりはがしたりすると動いてしまうため。
+    /// - 空いている（どのラベルも乗っていない）おまかせの置き場があれば、`order` の順でいちばん先の空き
+    ///   （番号の無いトランクでは、並びの何番目かで入る所と同じ＝見た目は前の版と同じ）
+    /// - 空きが無ければ、描いている置き場なしのラベルのうち**いちばん古い1枚の置き場**。そのラベルが番号を持っていれば
+    ///   `take`（サーバーが同じ1回の更新で古いラベルの番号を消して移す。古いラベルは並びの外になり描かない）
+    /// - nil: 置き場が全部、手で貼ったラベルの下（今までどおり番号なしで貼る）
+    static func stickPlan(for label: TrunkLabel, stuck stuckNewestFirst: [TrunkLabel]) -> (slot: Int, take: Bool)? {
         let others = stuckNewestFirst.filter { $0.id != label.id }
-        let next = layout([label.withSlot(nil)] + others, stage: 0)
-        let mine = next.first { $0.label.id == label.id }
-        let covered = mine.map { m in
-            next.contains { p in p.label.id != label.id && covers(p, x: m.x, y: m.y, w: m.w, h: m.h) }
-        } ?? true
-        guard covered else { return nil }
         let placed = layout(others, stage: 0)
-        return TrunkSlots.order.first { index in
+        if let free = TrunkSlots.order.first(where: { index in
             let slot = TrunkSlots.slots[index]
             return !placed.contains { covers($0, x: slot.x, y: slot.y, w: slot.w, h: slot.h) }
+        }) {
+            return (free, false)
         }
+        let order = Dictionary(uniqueKeysWithValues: others.enumerated().map { ($1.id, $0) })
+        let oldest = placed.filter { $0.label.pos == nil && slotIndex($0) != nil }
+            .max { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }
+        guard let oldest, let index = slotIndex(oldest) else { return nil }
+        return (index, oldest.label.slot == index)
     }
 
     /// 動かしたラベルのよれ（0〜1）。**動かした回数が増えるほど少し強く**（2026-10-17 判断: 3回で止める）

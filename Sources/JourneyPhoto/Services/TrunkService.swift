@@ -111,17 +111,21 @@ struct TrunkService {
         }
     }
 
-    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（「ひとつ戻す」で元の所へ・重なる所を避ける・2026-10-19）。
-    /// 番号を知らない古いサーバーは番号なしで貼る
-    func stick(_ id: String, slot: Int) async throws -> TrunkState {
+    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（貼るたびに番号を決める・「ひとつ戻す」で元の所へ・2026-10-19）。
+    /// `take`: その番号を持つ古いラベルから、同じ1回の更新で番号を移す（置き場が全部埋まっているとき）。
+    /// 番号を知らない古いサーバーは番号なしで貼る（並びの何番目かで置く・壊れない）
+    func stick(_ id: String, slot: Int, take: Bool = false) async throws -> TrunkState {
         try await refusing {
             try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/stick",
-                                     body: SlotBody(slot: slot), as: TrunkState.self)
+                                     body: SlotBody(slot: slot, take: take ? true : nil), as: TrunkState.self)
         }
     }
 
     private struct UnstickBody: Encodable { let slots: [String: Int] }
-    private struct SlotBody: Encodable { let slot: Int }
+    private struct SlotBody: Encodable {
+        let slot: Int
+        let take: Bool?
+    }
 
     /// カプセルの機械を回す（硬貨1枚）。応答は状態を丸ごと返さない（`TrunkGachaResult.applied`）
     func gacha() async throws -> TrunkGachaResult {

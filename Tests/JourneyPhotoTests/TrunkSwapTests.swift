@@ -128,22 +128,19 @@ final class TrunkSwapTests: XCTestCase {
         XCTAssertNil(spots(slotted + [label("old")])["old"])
     }
 
-    /// 🔴 置き場なし 14 枚でいちばん新しい l0 をはがしてから1枚貼る: 新しい1枚が空いた所に入る（窓の外の古いラベルではなく）
-    func testFourteenPeelThenStickPutsTheNewLabelInTheHole() {
-        let stuck = (0..<14).map { label("l\($0)") }
-        let before = spots(stuck)
-        let slots = TrunkPlacement.slotsBeforeUnstick(stuck, removing: "l0")
-        let peeled = applying(slots, to: stuck, removing: "l0")
-        // はがした直後: 空いた所には窓の外のうち、いちばん新しい l11
-        let afterPeel = spots(peeled)
-        XCTAssertEqual(afterPeel["l11"], before["l0"])
-        // 貼る（置き場なし・番号は stickSlot に従う）
-        let new = label("new")
-        let slot = TrunkPlacement.stickSlot(for: new, stuck: peeled)
-        let after = spots([new.withSlot(slot)] + peeled)
+    /// 🔴 置き場なし 14 枚でいちばん新しい l0 をはがしてから1枚貼る: 新しい1枚が描かれ、描いていたラベルは動かない
+    func testFourteenPeelThenStickDrawsTheNewLabel() {
+        var state = self.state(stuck: (0..<14).map { label("l\($0)") }, pocket: [label("new")])
+        let before = spots(state.stuck)
+        state = peel(state, "l0")
+        // はがした直後: 空いた所には窓の外のうち、いちばん新しい l11（前の版の「新しい 11 枚」）
+        XCTAssertEqual(spots(state.stuck)["l11"], before["l0"])
+        let shown = spots(state.stuck)
+        state = stickLoose(state, "new")
+        let after = spots(state.stuck)
         XCTAssertNotNil(after["new"], "貼ったばかりの1枚が描かれない")
-        XCTAssertEqual(after["new"], before["l0"], "新しい1枚がはがした所に入らない")
-        for (id, s) in before where id != "l0" { XCTAssertEqual(after[id], s, "\(id) がずれた") }
+        XCTAssertNotNil(state.stuck.first { $0.id == "new" }?.slot, "貼った1枚に番号を書いていない")
+        for (id, s) in shown where after[id] != nil { XCTAssertEqual(after[id], s, "\(id) がずれた") }
         XCTAssertLessThanOrEqual(after.count, 11)
     }
 
@@ -191,24 +188,105 @@ final class TrunkSwapTests: XCTestCase {
 
     // MARK: 置き場なしで貼る
 
-    /// 🔴 手で貼ったラベルが乗っている置き場に、置き場なしで貼らない（重ねて隠さない）。空いた所の番号を添える
+    /// 🔴 手で貼ったラベルが乗っている置き場に、置き場なしで貼らない（重ねて隠さない）。空いた所の番号を書く
     func testLooseStickDoesNotCoverAHandPlacedLabel() {
         let loose = [label("o1"), label("o2")]
         let arranged = TrunkPlacement.autoArrange(pocket: (0..<9).map { label("p\($0)") }, stuck: loose)
         let stuck = arranged.reversed().map { label($0.id, pos: $0.pos) } + loose
         let new = label("new")
-        // 全部埋まっていれば番号なし（今までどおり）
-        XCTAssertNil(TrunkPlacement.stickSlot(for: new, stuck: stuck))
-        // 1か所（p0 の所）空いていれば、そこの番号
+        // 1か所（p0 の所）空いていれば、そこの番号（移さない）
         let withHole = stuck.filter { $0.id != "p0" }
-        let slot = TrunkPlacement.stickSlot(for: new, stuck: withHole)
-        XCTAssertNotNil(slot)
-        let s = spots([new.withSlot(slot)] + withHole)["new"]!
+        let plan = TrunkPlacement.stickPlan(for: new, stuck: withHole)
+        XCTAssertEqual(plan?.take, false)
+        let s = spots([new.withSlot(plan?.slot)] + withHole)["new"]!
         let p0 = arranged.first { $0.id == "p0" }!.pos
         XCTAssertEqual(s.x + s.w / 2, TrunkPlacement.point(p0).x, accuracy: 0.5)
         XCTAssertEqual(s.y + s.h / 2, TrunkPlacement.point(p0).y, accuracy: 0.5)
-        // 置き場のないトランクは前の版と同じ（番号なし）
-        XCTAssertNil(TrunkPlacement.stickSlot(for: new, stuck: loose))
+        // 全部埋まっていれば、いちばん古い置き場なしの1枚（o2・番号なし）の所。番号を持っていないので移さない
+        let full = TrunkPlacement.stickPlan(for: new, stuck: stuck)
+        XCTAssertEqual(full?.take, false)
+        XCTAssertEqual(full.flatMap { spots([label("x", slot: $0.slot)])["x"] }, spots(stuck)["o2"])
+    }
+
+    /// 🔴 番号の無いトランク（前の版）に置き場なしで貼る: 書く番号の所は、並びの何番目かで入る所と同じ（見た目は前の版のまま）
+    func testStickPlanMatchesTheLegacySlot() {
+        for n in 0..<11 {
+            let stuck = (0..<n).map { label("l\($0)") }
+            let new = label("new")
+            let plan = TrunkPlacement.stickPlan(for: new, stuck: stuck)
+            XCTAssertEqual(plan?.take, false)
+            XCTAssertEqual(spots([new.withSlot(plan?.slot)] + stuck), spots([new] + stuck), "\(n) 枚のトランクで並びが変わった")
+        }
+    }
+
+    // MARK: 番号を移す（確かめ役の手順）
+
+    private func state(stuck: [TrunkLabel], pocket: [TrunkLabel]) -> TrunkState {
+        TrunkState(model: .leather, pocket: pocket, stuck: stuck, limit: 150, isPro: true, rerollsLeft: 0, posts: 0,
+                   receiveLabels: true)
+    }
+
+    /// 画面と同じ手順で貼る（`TrunkViewModel.stick` の決め方 → サーバーと同じ決まりの `TrunkLocal`）
+    private func stickLoose(_ s: TrunkState, _ id: String) -> TrunkState {
+        let label = s.pocket.first { $0.id == id }!
+        guard let plan = TrunkPlacement.stickPlan(for: label, stuck: s.stuck) else { return TrunkLocal.stick(s, id: id) }
+        return TrunkLocal.stick(s, id: id, slot: plan.slot, take: plan.take)
+    }
+
+    private func peel(_ s: TrunkState, _ id: String) -> TrunkState {
+        TrunkLocal.unstick(s, id: id, slots: TrunkPlacement.slotsBeforeUnstick(s.stuck, removing: id))
+    }
+
+    /// 🔴 番号つき 11 枚 → new を貼る（いちばん古い s10 から番号を移す）→ s5 をはがす:
+    /// 「譲ったのに番号を持ったまま」が残らず、new も残りも動かない。はがした所に入るのは、前は描いていなかった s10 だけ
+    func testTakeThenPeelKeepsEverythingInPlace() {
+        var state = self.state(stuck: (0..<11).map { label("s\($0)", slot: $0) }, pocket: [label("new")])
+        state = stickLoose(state, "new")
+        XCTAssertEqual(state.stuck.first { $0.id == "new" }?.slot, 10, "いちばん古い s10 の番号を移していない")
+        XCTAssertNil(state.stuck.first { $0.id == "s10" }?.slot, "譲った s10 が番号を持ったまま")
+        let shown = spots(state.stuck)
+        XCTAssertNil(shown["s10"])
+        XCTAssertEqual(shown.count, 11)
+        // s5 をはがす: 番号の無いラベルにだけ番号を添える（番号つきは要らない）
+        let slots = TrunkPlacement.slotsBeforeUnstick(state.stuck, removing: "s5")
+        XCTAssertTrue(slots.keys.allSatisfy { id in state.stuck.first { $0.id == id }?.slot == nil }, "番号つきのラベルに番号を添えた")
+        XCTAssertNil(slots["new"])
+        state = peel(state, "s5")
+        let after = spots(state.stuck)
+        for (id, s) in shown where id != "s5" { XCTAssertEqual(after[id], s, "\(id) が動いた") }
+        for (id, s) in after where s == shown["s5"] {
+            XCTAssertEqual(id, "s10", "はがした所に、描いていた \(id) がずれ込んだ")
+        }
+    }
+
+    /// 🔴 埋まったトランクに続けて貼る: 前に貼った new は動かない（番号を書いてあるので）
+    func testRepeatedSticksIntoAFullTrunkDoNotMoveTheEarlierOne() {
+        var state = self.state(stuck: (0..<11).map { label("s\($0)", slot: $0) }, pocket: [label("n2"), label("n1"), label("n3")])
+        state = stickLoose(state, "n1")
+        let first = spots(state.stuck)["n1"]
+        state = stickLoose(state, "n2")
+        XCTAssertEqual(spots(state.stuck)["n1"], first, "続けて貼ったら前の n1 が動いた")
+        state = stickLoose(state, "n3")
+        let now = spots(state.stuck)
+        XCTAssertEqual(now["n1"], first)
+        XCTAssertNotNil(now["n2"])
+        XCTAssertNotNil(now["n3"])
+        XCTAssertEqual(now.count, 11)
+        let frames = now.values.map { "\($0.x)/\($0.y)" }
+        XCTAssertEqual(Set(frames).count, frames.count, "2枚が同じ所に重なった")
+        // 番号が2枚に付いていない
+        let numbers = state.stuck.compactMap(\.slot)
+        XCTAssertEqual(Set(numbers).count, numbers.count)
+    }
+
+    /// 番号を知らない古いサーバー（本文を読まない）と組んでも壊れない: 番号なしで貼られても、新しい1枚は描かれる
+    func testOldServerIgnoringSlotsStillDrawsTheNewLabel() {
+        var state = self.state(stuck: (0..<11).map { label("s\($0)", slot: $0) }, pocket: [label("new")])
+        state = TrunkLocal.stick(state, id: "new")
+        XCTAssertNotNil(spots(state.stuck)["new"])
+        // 古いアプリ（番号を読まない）が描く並び: 番号を無視しても、前の版の並び（新しい 11 枚）
+        let oldApp = state.stuck.map { $0.withSlot(nil) }
+        XCTAssertEqual(TrunkPlacement.layout(oldApp, stage: 0), TrunkSlots.place(oldApp, stage: 0))
     }
 
     // MARK: 見本で通しで（はがす → 手持ちから貼り直す → 「ひとつ戻す」の形で戻す）

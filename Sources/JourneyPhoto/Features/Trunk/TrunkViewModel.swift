@@ -182,21 +182,23 @@ final class TrunkViewModel: ObservableObject {
         await load(offline: offline)
     }
 
-    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面）。**入るおまかせの置き場にほかのラベルが乗っていれば、
-    /// 空いているおまかせの置き場の番号を添えて貼る**（重ねて隠さない・`TrunkPlacement.stickSlot`・2026-10-19 の直し）
+    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面）。**貼るたびにおまかせの置き場の番号を決めて書く**
+    /// （`TrunkPlacement.stickPlan`・2026-10-19 の直し: 空きがあれば空き、無ければいちばん古い1枚の所を移してもらう。
+    /// あとから貼る・はがすで、前に貼ったラベルが動かない）
     @discardableResult
     func stick(_ id: String) async -> Bool {
         if let state, let label = state.pocket.first(where: { $0.id == id }),
-           let slot = TrunkPlacement.stickSlot(for: label, stuck: state.stuck) {
-            return await stick(id, slot: slot)
+           let plan = TrunkPlacement.stickPlan(for: label, stuck: state.stuck) {
+            return await stick(id, slot: plan.slot, take: plan.take)
         }
         return await write({ TrunkLocal.stick($0, id: id) }, { try await $0.stick(id) })
     }
 
-    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（「ひとつ戻す」で元の所へ戻す・2026-10-19）
+    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（「ひとつ戻す」で元の所へ戻す・2026-10-19）。
+    /// `take` はその番号を持つ古いラベルから移す（置き場が全部埋まっているとき）
     @discardableResult
-    func stick(_ id: String, slot: Int) async -> Bool {
-        await write({ TrunkLocal.stick($0, id: id, slot: slot) }, { try await $0.stick(id, slot: slot) })
+    func stick(_ id: String, slot: Int, take: Bool = false) async -> Bool {
+        await write({ TrunkLocal.stick($0, id: id, slot: slot, take: take) }, { try await $0.stick(id, slot: slot, take: take) })
     }
 
     @discardableResult

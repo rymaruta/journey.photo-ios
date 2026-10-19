@@ -286,11 +286,15 @@ enum TrunkText {
 /// サーバーと同じ決まりで、トランクの状態を手元で動かす（Debug の見本だけが使う。本番はサーバーの応答を映す）
 enum TrunkLocal {
 
-    /// 貼る。置き場があればそれ（番号は付けない）、無ければ添えたおまかせの置き場の番号（サーバーの `stickMutation`）
-    static func stick(_ s: TrunkState, id: String, pos: TrunkPos? = nil, slot: Int? = nil) -> TrunkState {
+    /// 貼る（サーバーの `stickMutation` と同じ決まり）。置き場があればそれ（番号は付けない）。無ければ添えた番号で、
+    /// その番号をもうほかのラベルが持っていれば書かない——`take` のときだけ、古いラベルの番号を消して移す
+    static func stick(_ s: TrunkState, id: String, pos: TrunkPos? = nil, slot: Int? = nil, take: Bool = false) -> TrunkState {
         guard let label = s.pocket.first(where: { $0.id == id }) else { return s }
-        let stuck = pos.map { label.withPos(TrunkPlacement.clamp($0)) } ?? label.withSlot(slot)
-        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [stuck] + s.stuck,
+        let owner = pos == nil ? slot.flatMap { n in s.stuck.first { $0.pos == nil && $0.slot == n } } : nil
+        let write = pos == nil && slot != nil && (owner == nil || take)
+        let stuck = pos.map { label.withPos(TrunkPlacement.clamp($0)) } ?? label.withSlot(write ? slot : nil)
+        let rest = write && owner != nil ? s.stuck.map { $0.id == owner?.id ? $0.withSlot(nil) : $0 } : s.stuck
+        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [stuck] + rest,
                       pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
     }
 
