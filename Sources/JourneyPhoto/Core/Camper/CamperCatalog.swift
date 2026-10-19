@@ -390,9 +390,14 @@ enum CamperUnlock: Equatable, Sendable {
     }
 
     /// 入手のしかた（一行）
-    var how: String {
+    var how: String { how(serverOpen: false) }
+
+    /// 入手のしかた。要サーバーの部品は、サーバーの口が読めて配り始めている間（`serverOpen`）だけ「届きます」と言う
+    /// （2026-10-19 第2段）。キャンプ場の焚き火（`.later`）はいつも「近日」
+    func how(serverOpen: Bool) -> String {
         switch self {
         case .starter: return L("最初から", "From the start")
+        case .server where serverOpen: return L("\(condition)と届きます", "Arrives with: \(condition)")
         case .server, .later: return L("近日。\(condition)と届くようになります", "Coming soon: \(condition)")
         default: return L("\(condition)で届きます", "Arrives with: \(condition)")
         }
@@ -440,7 +445,7 @@ enum CamperCatalog {
         p(.wheel, "chrome_dish", "クロームの皿", "Chrome dish", "鏡の皿・ナット 6・真鍮のキャップ", "Mirror dish, six nuts and a brass cap", .common, .starter),
         p(.wheel, "steel_black", "黒い鉄ホイール", "Black steel wheel", "黒い鉄に丸い穴 6", "Black steel with six round holes", .occasional, .posts(30)),
         p(.wheel, "whitewall", "白い帯のタイヤ", "Whitewall tyre", "側面に白い帯", "A white band on the sidewall", .occasional, .prefectures(5)),
-        p(.wheel, "brass_spoke", "真鍮のスポーク", "Brass spokes", "細い真鍮のスポーク 16 本", "Sixteen thin brass spokes", .veryRare, .server("旅を 20 回投稿", "Post 20 trips")),
+        p(.wheel, "brass_spoke", "真鍮のスポーク", "Brass spokes", "細い真鍮のスポーク 16 本", "Sixteen thin brass spokes", .veryRare, .server("旅を公開で 20 回投稿", "Post 20 public trips")),
         // ホイールキャップ（hubcap）
         p(.hubcap, "dome_chrome", "丸いクローム", "Chrome dome", "半球の鏡", "A half-sphere mirror", .common, .starter),
         p(.hubcap, "flat_brass", "平らな真鍮", "Flat brass", "放射の筋の真鍮", "Brass with radiating lines", .occasional, .samePlace(3)),
@@ -459,7 +464,7 @@ enum CamperCatalog {
         // グリル（grille）
         p(.grille, "bars_chrome", "横の桟", "Chrome bars", "クロームの桟 5 本", "Five chrome bars", .common, .starter),
         p(.grille, "vertical_slats", "縦の桟", "Vertical slats", "細い縦の桟 10 本", "Ten thin vertical slats", .occasional, .posts(60)),
-        p(.grille, "honeycomb", "蜂の巣", "Honeycomb", "六角の網", "Hexagon mesh", .rare, .server("旅を 5 回投稿", "Post 5 trips")),
+        p(.grille, "honeycomb", "蜂の巣", "Honeycomb", "六角の網", "Hexagon mesh", .rare, .server("旅を公開で 5 回投稿", "Post 5 public trips")),
         p(.grille, "mesh_brass", "真鍮の網", "Brass mesh", "斜めに編んだ真鍮", "Diagonally woven brass", .veryRare, .months(12)),
         // バンパー（bumper）
         p(.bumper, "chrome_blade", "クロームの刃", "Chrome blade", "細く長い鏡の棒", "A long thin mirror bar", .common, .starter),
@@ -474,7 +479,7 @@ enum CamperCatalog {
         // 泥よけ（mudflap）
         p(.mudflap, "rubber_plain", "黒いゴム", "Plain rubber", "無地の黒い板", "A plain black flap", .common, .starter),
         p(.mudflap, "logo_brass", "真鍮の印", "Brass badge", "丸い真鍮の印つき", "With a round brass badge", .occasional, .posts(50)),
-        p(.mudflap, "checker", "市松", "Checker", "白黒の市松", "Black and white checks", .rare, .server("旅を 3 回投稿", "Post 3 trips")),
+        p(.mudflap, "checker", "市松", "Checker", "白黒の市松", "Black and white checks", .rare, .server("旅を公開で 3 回投稿", "Post 3 public trips")),
         p(.mudflap, "long_rally", "長いラリー", "Long rally", "長く垂れて赤い帯", "Long flaps with a red band", .rare, .seaAndMountain(1)),
         // 取っ手（handle）
         p(.handle, "chrome_bar", "クロームの棒", "Chrome bar", "棒と留め具 2", "A bar with two mounts", .common, .starter),
@@ -494,12 +499,12 @@ enum CamperCatalog {
         // 自転車の台（bike_rack）
         p(.bikeRack, "rear_two", "後ろに 2 台", "Two at the back", "後ろの台に自転車 2", "Two bikes on a rear rack", .occasional, .server("自転車道で撮る", "Shoot on a cycling road")),
         p(.bikeRack, "roof_one", "屋根に 1 台", "One on the roof", "屋根の台に大きめの 1 台", "One larger bike on the roof", .occasional, .posts(100)),
-        p(.bikeRack, "folding_bike", "折りたたみ自転車", "Folding bike", "小さな真鍮色の自転車", "A small brass-coloured bike", .rare, .server("旅を 8 回投稿", "Post 8 trips")),
+        p(.bikeRack, "folding_bike", "折りたたみ自転車", "Folding bike", "小さな真鍮色の自転車", "A small brass-coloured bike", .rare, .server("旅を公開で 8 回投稿", "Post 8 public trips")),
         p(.bikeRack, "cargo_basket", "荷かご", "Cargo basket", "鉄のかごに木箱と布の袋", "A steel basket with a crate and a bag", .common, .starter),
         // スペアタイヤのカバー（spare_cover）
         p(.spareCover, "canvas_brass_ring", "帆布と真鍮の輪", "Canvas and brass ring", "帆布に真鍮の輪と写真", "Canvas with a brass ring and a photo", .common, .starter),
         p(.spareCover, "leather", "革", "Leather", "革に縫い目と真鍮の留め", "Stitched leather with a brass clasp", .occasional, .posts(60)),
-        p(.spareCover, "hardshell", "硬い殻", "Hard shell", "鏡の殻と黒い中心", "A mirror shell with a black centre", .rare, .server("旅を 6 回投稿", "Post 6 trips")),
+        p(.spareCover, "hardshell", "硬い殻", "Hard shell", "鏡の殻と黒い中心", "A mirror shell with a black centre", .rare, .server("旅を公開で 6 回投稿", "Post 6 public trips")),
         p(.spareCover, "map_print", "地図柄", "Map print", "自分の旅の道が描かれる", "Printed with the roads of your trips", .veryRare, .prefectures(15)),
         // 屋根の積み荷（roof_cargo）
         p(.roofCargo, "crate_mat", "木箱とマット", "Crate and mat", "木目の箱と縫い目のマット", "A wooden crate and a stitched mat", .common, .starter),
@@ -508,13 +513,13 @@ enum CamperCatalog {
         p(.roofCargo, "surfboard", "サーフボード", "Surfboard", "白い板に青い線", "A white board with a blue stripe", .rare, .sea(15)),
         // ルーフテント（roof_tent）
         p(.roofTent, "clamshell", "貝殻", "Clamshell", "斜めに開く硬い殻", "A hard shell that opens at an angle", .occasional, .posts(120)),
-        p(.roofTent, "popup_canvas", "帆布の箱", "Pop-up canvas", "窓 3 つの帆布の箱", "A canvas box with three windows", .occasional, .server("旅を 4 回投稿", "Post 4 trips")),
+        p(.roofTent, "popup_canvas", "帆布の箱", "Pop-up canvas", "窓 3 つの帆布の箱", "A canvas box with three windows", .occasional, .server("旅を公開で 4 回投稿", "Post 4 public trips")),
         p(.roofTent, "triangle_hardtop", "三角の硬い屋根", "Triangle hardtop", "塗装の三角と窓", "A painted triangle with a window", .rare, .mountain(1)),
         p(.roofTent, "wing", "翼のタープ", "Wing tarp", "片側に張る翼の布", "A wing of cloth on one side", .veryRare, .server("友達と同じ日に旅をする", "Travel on the same day as a friend")),
         // ソーラーパネル（solar）
         p(.solar, "flat_one", "一枚", "Single panel", "8×2 の電池板", "An 8 by 2 cell panel", .common, .starter),
         p(.solar, "twin", "二枚", "Twin panels", "二枚を並べる", "Two panels side by side", .occasional, .sky(30)),
-        p(.solar, "folding_suitcase", "折りたたみ", "Folding case", "鞄のように開く板", "Panels that open like a suitcase", .rare, .server("旅を 5 回投稿", "Post 5 trips")),
+        p(.solar, "folding_suitcase", "折りたたみ", "Folding case", "鞄のように開く板", "Panels that open like a suitcase", .rare, .server("旅を公開で 5 回投稿", "Post 5 public trips")),
         p(.solar, "flexible_curve", "曲がる板", "Flexible panel", "屋根の丸みに沿う", "Follows the curve of the roof", .rare, .early(5)),
         // アンテナ（antenna）
         p(.antenna, "whip", "細い竿", "Whip", "しなる細い竿", "A thin, springy rod", .common, .starter),
@@ -523,7 +528,7 @@ enum CamperCatalog {
         p(.antenna, "ham_long", "長い無線の竿", "Long radio mast", "横棒 5 の長い竿", "A tall mast with five cross bars", .veryRare, .server("友達 10 人と旅を交わす", "Swap trips with 10 friends")),
         // 旗とペナント（flag）
         p(.flag, "pennant_triangle", "三角のペナント", "Triangle pennant", "赤茶の三角に白い線", "A russet triangle with a white line", .common, .starter),
-        p(.flag, "swallowtail", "燕尾の旗", "Swallowtail flag", "先が割れた藍の旗", "An indigo flag with a split tip", .occasional, .server("旅を 2 回投稿", "Post 2 trips")),
+        p(.flag, "swallowtail", "燕尾の旗", "Swallowtail flag", "先が割れた藍の旗", "An indigo flag with a split tip", .occasional, .server("旅を公開で 2 回投稿", "Post 2 public trips")),
         p(.flag, "prayer_line", "連なる旗", "Flag line", "色の旗を紐に 6 枚", "Six coloured flags on a string", .rare, .server("旅先で 5 つの祭りの写真", "Photos of 5 festivals on your trips")),
         p(.flag, "windsock", "吹き流し", "Windsock", "橙と白の筒", "An orange and white tube", .occasional, .server("風の強い日に撮る", "Shoot on a windy day")),
         // 椅子（chair）
@@ -534,7 +539,7 @@ enum CamperCatalog {
         // 机（table）
         p(.table, "folding_alu", "アルミの折りたたみ", "Folding aluminium", "細い脚の銀の机", "A silver table on thin legs", .common, .starter),
         p(.table, "rolltop", "巻ける天板", "Roll-top", "木の板を巻いて運ぶ", "Wooden slats that roll up", .occasional, .posts(70)),
-        p(.table, "wooden_crate_table", "木箱の机", "Crate table", "木箱を伏せて天板を載せる", "A crate upside down with a top", .rare, .server("旅を 6 回投稿", "Post 6 trips")),
+        p(.table, "wooden_crate_table", "木箱の机", "Crate table", "木箱を伏せて天板を載せる", "A crate upside down with a top", .rare, .server("旅を公開で 6 回投稿", "Post 6 public trips")),
         p(.table, "camp_cube", "箱の机", "Camp cube", "保冷箱を兼ねる箱", "A box that doubles as a cooler", .occasional, .lake(5)),
         // 焚き火台（fire_pit）
         p(.firePit, "steel_bowl", "鉄の鉢", "Steel bowl", "黒い鉢と 2 本脚", "A black bowl on two legs", .common, .starter),
@@ -560,7 +565,7 @@ enum CamperCatalog {
         p(.cushion, "square_plain", "四角", "Square", "生成りの四角", "A plain square in natural cloth", .common, .starter),
         p(.cushion, "bolster_round", "円筒", "Bolster", "緑の筒に真鍮の帯", "A green roll with brass bands", .occasional, .posts(30)),
         p(.cushion, "knitted", "編み目", "Knitted", "縄編みの橙", "Orange cable knit", .rare, .winter(15)),
-        p(.cushion, "tasseled", "房飾り", "Tasselled", "藍に金の房 4", "Indigo with four gold tassels", .rare, .server("旅を 4 回投稿", "Post 4 trips")),
+        p(.cushion, "tasseled", "房飾り", "Tasselled", "藍に金の房 4", "Indigo with four gold tassels", .rare, .server("旅を公開で 4 回投稿", "Post 4 public trips")),
         // 吊りランプ（hanging_lamp）
         p(.hangingLamp, "brass_dome", "真鍮の笠", "Brass dome", "半球の真鍮", "A half-sphere of brass", .common, .starter),
         p(.hangingLamp, "enamel_cone", "ホーローの円錐", "Enamel cone", "緑のホーローに白い縁", "Green enamel with a white rim", .occasional, .posts(50)),
@@ -579,13 +584,13 @@ enum CamperCatalog {
         // 本棚（bookshelf）
         p(.bookshelf, "small_shelf", "小さな棚", "Small shelf", "二段に本 17 冊", "Seventeen books on two shelves", .common, .starter),
         p(.bookshelf, "wall_rack", "壁の棚板", "Wall rack", "壁に二枚の板と小物", "Two boards and small things", .occasional, .posts(80)),
-        p(.bookshelf, "crate_stack", "木箱の棚", "Crate shelf", "木箱 3 つを積む", "Three crates stacked", .rare, .server("旅を 7 回投稿", "Post 7 trips")),
+        p(.bookshelf, "crate_stack", "木箱の棚", "Crate shelf", "木箱 3 つを積む", "Three crates stacked", .rare, .server("旅を公開で 7 回投稿", "Post 7 public trips")),
         p(.bookshelf, "map_drawer", "地図の引き出し", "Map drawer", "真鍮の取っ手 4 と地図", "Four brass pulls and maps", .veryRare, .prefectures(20)),
         // 壁の木（wall_wood）
         p(.wallWood, "pine_boards", "松の板", "Pine boards", "縦張りの明るい板と節", "Light vertical boards with knots", .common, .starter),
         p(.wallWood, "plywood_birch", "樺の合板", "Birch plywood", "細かい木目の白い板", "Pale board with a fine grain", .occasional, .posts(50)),
         p(.wallWood, "dark_walnut", "胡桃の横張り", "Walnut boards", "濃い横張り", "Dark horizontal boards", .rare, .forest(20)),
-        p(.wallWood, "herringbone", "ヘリンボーン", "Herringbone", "矢筈に組む", "Laid in a herringbone", .veryRare, .server("旅を 12 回投稿", "Post 12 trips")),
+        p(.wallWood, "herringbone", "ヘリンボーン", "Herringbone", "矢筈に組む", "Laid in a herringbone", .veryRare, .server("旅を公開で 12 回投稿", "Post 12 public trips")),
         // 床（floor）
         p(.floor, "oak_planks", "ナラの板", "Oak planks", "長い板の床", "Long plank floor", .common, .starter),
         p(.floor, "cork", "コルク", "Cork", "粒の見える柔らかい床", "A soft floor with a fine grain", .occasional, .posts(40)),
@@ -687,7 +692,7 @@ struct CamperStore {
     static func key(_ userId: String) -> String { "camper.loadout.\(userId)" }
     static func seenKey(_ userId: String) -> String { "camper.seen.\(userId)" }
 
-    private let defaults: UserDefaults
+    let defaults: UserDefaults
     let userId: String?
 
     init(userId: String?, defaults: UserDefaults = .standard) {
@@ -719,24 +724,37 @@ struct CamperStore {
 
     /// 画面を開いた時の「届いた」。**写真を一度でも読めた時だけ**判定して印を付ける（読む前は数が 0 で、
     /// 前の印を消すと次に読めた時に同じ部品がもう一度「届いた」になる）。印は前の印との和集合で残す
-    func openArrivals(owned: Set<String>, photosLoaded: Bool) -> [CamperPart] {
+    ///
+    /// 2026-10-19 判断（第2段・板の付箋「同じ写真で一度に届くのは 3 個まで」）: 一度に見せるのは `limit` 個まで。
+    /// 見せなかった分は印を付けず、次に開いたときに見せる。**はじめて開いた（印がまだ無い）ときは今までどおり全部に
+    /// 印を付ける**（端末で前から持っていた部品を何度にも分けて「届いた」にしない）。先に見せる部品（`first`・
+    /// サーバーのこの回に届いた分・写真の保存で届いた分）は珍しさより前に並べる
+    func openArrivals(owned: Set<String>, photosLoaded: Bool, first: [String] = [], limit: Int = .max) -> [CamperPart] {
         guard photosLoaded else { return [] }
         let previous = seen
-        let fresh = Self.arrivals(owned: owned, seen: previous)
-        markSeen(owned.union(previous ?? []))
-        return fresh
+        let fresh = Self.arrivals(owned: owned, seen: previous, first: first)
+        let shown = Array(fresh.prefix(max(0, limit)))
+        if previous == nil {
+            markSeen(owned)
+        } else {
+            markSeen((previous ?? []).union(owned.subtracting(fresh.map(\.id))).union(shown.map(\.id)))
+        }
+        return shown
     }
 
-    /// 新しく届いた部品（最初から持っているものは数えない）。珍しい順・一覧の順
-    static func arrivals(owned: Set<String>, seen: Set<String>?) -> [CamperPart] {
+    /// 新しく届いた部品（最初から持っているものは数えない）。`first` に在るものを先に（その並びで）、残りは珍しい順・一覧の順
+    static func arrivals(owned: Set<String>, seen: Set<String>?, first: [String] = []) -> [CamperPart] {
         let fresh = owned.subtracting(seen ?? [])
-        return CamperCatalog.all.filter { fresh.contains($0.id) && $0.unlock != .starter }
+        let rest = CamperCatalog.all.filter { fresh.contains($0.id) && $0.unlock != .starter && !first.contains($0.id) }
             .sorted { $0.rarity > $1.rarity }
+        let lead = first.compactMap { id in fresh.contains(id) ? CamperCatalog.part(id) : nil }.filter { $0.unlock != .starter }
+        return lead + rest
     }
 
     static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: key(userId))
         defaults.removeObject(forKey: seenKey(userId))
+        defaults.removeObject(forKey: inboxKey(userId))
     }
 }
 
@@ -1014,8 +1032,8 @@ enum CamperText {
     }
 
     /// 図鑑の数の注記（分母は第1段で集められる数。図鑑そのものは 132・「近日」はまだ数えない）
-    static func dexNote() -> String {
-        let soon = CamperCatalog.dex.count - CamperCatalog.available.count
+    static func dexNote(serverOpen: Bool = false) -> String {
+        let soon = CamperCatalog.dex.count - CamperCatalog.collectable(serverOpen: serverOpen).count
         return L("図鑑 \(CamperCatalog.dex.count) · 近日 \(soon)", "Dex \(CamperCatalog.dex.count) · \(soon) soon")
     }
 
@@ -1044,8 +1062,17 @@ enum CamperText {
     }
 
     /// 部品の札の読み上げ
-    static func partLabel(_ p: CamperPart, owned: Bool, stats: CamperStats) -> String {
+    static func partLabel(_ p: CamperPart, owned: Bool, stats: CamperStats, server: CamperServerParts = .closed) -> String {
         if owned { return L("\(p.name)。\(p.rarity.name)", "\(p.name), \(p.rarity.name)") }
+        if server.open, p.unlock.isServer {
+            // 要サーバーの部品（2026-10-19 第2段）。記録で決まる部品だけ数を言う（写真で決まる部品は「まだ」だけ）
+            guard let pr = CamperServerRule.progress(p.id, server.progress) else {
+                return L("まだ持っていない部品。\(p.name)。\(p.unlock.how(serverOpen: true))",
+                         "Not yet collected: \(p.name). \(p.unlock.how(serverOpen: true))")
+            }
+            return L("まだ持っていない部品。\(p.name)。\(p.unlock.how(serverOpen: true))。いま \(pr.have) / \(pr.need)",
+                     "Not yet collected: \(p.name). \(p.unlock.how(serverOpen: true)). \(pr.have) of \(pr.need)")
+        }
         guard p.unlock.isAvailable else {
             return L("近日。\(p.name)。\(p.unlock.condition)", "Coming soon: \(p.name). \(p.unlock.condition)")
         }

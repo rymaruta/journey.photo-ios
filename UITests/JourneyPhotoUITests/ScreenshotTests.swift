@@ -2317,6 +2317,100 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **とおまわり号の第2段**（2026-10-19・`-JPPreviewCamper`。サーバーには何も送らない見本）: 要サーバーの部品が
+    /// 届いた画面（一度に 3 個まで・贈り物の名前）と、分母 131 の車の画面。開けなければ撮らずに抜ける。
+    /// **届いた画面が出たのに押せる所が 44pt 未満なら落とす**。車の画面で分母が 131 でなければ落とす
+    func testCapturesCamperServer() {
+        let app = launchTrunk(["-JPPreviewCamper", "YES", "-JPPreviewCamperArrival", "YES"])
+        guard openCamper(app) else { return }
+        let arrival = app.descendants(matching: .any)["camper.arrival"].firstMatch
+        if arrival.waitForExistence(timeout: 15) {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "95g-キャンピングカー（部品が届いた）")
+            for id in ["camper.arrival.equip", "camper.arrival.close"] {
+                let b = app.buttons[id].firstMatch
+                XCTAssertTrue(b.exists, "\(id) が無い")
+                if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
+            }
+            let others = app.buttons.matching(identifier: "camper.arrival.part")
+            for i in 0..<others.count {
+                XCTAssertGreaterThanOrEqual(others.element(boundBy: i).frame.height, 44, "一緒に届いた部品の札が 44pt 未満")
+            }
+            app.buttons["camper.arrival.close"].firstMatch.tap()
+        }
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        let count = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/ 131")).firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 10), "サーバーが読めたのに分母が 131 でない")
+        shoot(app, "95h-キャンピングカー（要サーバーの部品）")
+    }
+
+    /// **友達の車を訪ねる**（2026-10-19・`-JPPreviewCamper`・板 CamperVisit。サーバーには何も送らない見本）:
+    /// ホームの写真 → 作者のプロフィールの「とおまわり号を訪ねる」→ 友達の車 → 部品を贈る。作者の行が出ない
+    /// （写真の並び次第）なら撮らずに抜ける。**プロフィールが出たのに行が無ければ落とす**。押せる所は 44pt 以上
+    func testCapturesCamperVisit() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        // 人のページの見出し（公開プロフィール）は本番から読む（人のトランクの撮り方と同じ）
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewCamper", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
+
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        guard firstPhoto.exists, firstPhoto.isHittable else { return }
+        firstPhoto.tap()
+        let toAuthor = app.buttons["photo.author"].firstMatch
+        var authorPushes = 0
+        while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, authorPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            authorPushes += 1
+        }
+        guard toAuthor.exists, toAuthor.isHittable else { return }
+        toAuthor.tap()
+        // 見本の利用者自身の写真なら人の頁にならない（自分の頁には行を出さない）
+        guard app.buttons["profile.count.followers"].firstMatch.waitForExistence(timeout: 15) else { return }
+
+        let row = app.buttons["profile.camper"].firstMatch
+        guard row.waitForExistence(timeout: 15) else { return XCTFail("人のプロフィールに「とおまわり号を訪ねる」の行が無い") }
+        scrollTo(row, in: app)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「とおまわり号を訪ねる」の行が 44pt 未満")
+        row.tap()
+
+        let gift = app.buttons["camper.visit.gift"].firstMatch
+        guard gift.waitForExistence(timeout: 15) else { return XCTFail("友達の車の画面が開かない") }
+        let scene = app.descendants(matching: .any)["camper.visit.scene"].firstMatch
+        let ready = NSPredicate(format: "value CONTAINS %@", "camper-ready")
+        _ = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40)
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(app.descendants(matching: .any)["camper.visit.counted"].firstMatch.exists, "訪ねた記録の一行が無い")
+        shoot(app, "95i-友達の車を訪ねる")
+        for id in ["camper.visit.gift", "camper.visit.firewood"] {
+            let b = app.buttons[id].firstMatch
+            XCTAssertTrue(b.exists, "\(id) が無い")
+            if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
+        }
+        scrollTo(gift, in: app)
+        gift.tap()
+        let message = app.descendants(matching: .any)["camper.visit.message"].firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 10), "贈った結果の一行が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "95j-友達の車（部品を贈った）")
+    }
+
     /// 押したい行が画面に収まるまで送る
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         let bottom = app.windows.firstMatch.frame.maxY - 60
