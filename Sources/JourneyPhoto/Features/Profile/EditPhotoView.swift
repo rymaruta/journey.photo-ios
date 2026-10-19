@@ -702,8 +702,9 @@ struct EditPhotoView: View {
             if patch.published == true {
                 TrunkArrivals.shared.deliver(dealt, photoTitle: title.trimmingCharacters(in: .whitespacesAndNewlines))
             }
-            // とおまわり号（2026-10-19 第2段）: 写真の編集の応答で届いた部品（`camper.added`）を本人の控えに入れる
-            CamperStore.receive(dealt.camperAdded, userId: auth.userId ?? photo.userId)
+            // とおまわり号（2026-10-19 第2段）: 写真の編集の応答で届いた部品（`camper.added`）を本人の控えに入れる。
+            // 控えの持ち主は写真の持ち主か、**送る前に取った** `owner`（待っている間に人が替わっても別の人の控えに入れない）
+            CamperStore.receive(dealt.camperAdded, userId: photo.userId ?? owner)
             // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
             // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
             // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。

@@ -123,6 +123,13 @@ extension CamperCatalog {
         return (pool.filter { owned.contains($0.id) }.count, pool.count)
     }
 
+    /// 分類の札の「持っている / 全部」。**どちらも分母と同じ集まりで数える**（サーバーが読めない間に控えの
+    /// 要サーバーの部品だけを持っていると「3 / 2」になっていた・2026-10-19 見直し）
+    static func categoryCount(_ c: CamperCategory, owned: Set<String>, serverOpen: Bool) -> (have: Int, total: Int) {
+        let pool = parts(c).filter { $0.unlock.isAvailable || (serverOpen && $0.unlock.isServer) }
+        return (pool.filter { owned.contains($0.id) }.count, pool.count)
+    }
+
     /// 持っている部品（端末で数えたもの＋サーバーの部品）
     static func owned(_ stats: CamperStats, server: CamperServerParts) -> Set<String> {
         owned(stats).union(server.ownedIds.filter { part($0)?.unlock.isServer == true })

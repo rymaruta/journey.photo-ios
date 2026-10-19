@@ -97,13 +97,24 @@ struct CamperVisitView: View {
             .frame(maxWidth: .infinity, minHeight: 320)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("camper.visit.loading")
-        case .failed(let message):
-            ErrorBanner(message: message) { Task { await model.reload(userId: userId, signedIn: auth.userId != nil, calls: service,
-                                                                      store: CamperStore(userId: auth.userId)) } }
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, minHeight: 320)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("camper.visit.failed")
+        case .failed(let message, let retry):
+            if retry {
+                ErrorBanner(message: message) { Task { await model.reload(userId: userId, signedIn: auth.userId != nil, calls: service,
+                                                                          store: CamperStore(userId: auth.userId)) } }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 320)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("camper.visit.failed")
+            } else {
+                // 断り（友達でない・見つからない・退会など）は押し直しても変わらないので「もう一度」を出さない
+                Text(message)
+                    .font(.system(size: 14))
+                    .foregroundStyle(WebTheme.text)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 320)
+                    .accessibilityIdentifier("camper.visit.refused")
+            }
         case .loaded(let state):
             VStack(alignment: .leading, spacing: 16) {
                 scene(state, width: width)
@@ -146,16 +157,21 @@ struct CamperVisitView: View {
     private func tiles(_ state: CamperVisitState) -> some View {
         HStack(spacing: 10) {
             tile(L("集めた部品（要サーバー）", "Server parts"), CamperText.visitParts(state.parts.count))
-            tile(L("焚き火の薪", "Firewood"), model.woodCount.map { L("あなたは \($0) 回", "You: \($0)") } ?? L("まだ", "Not yet"))
+            // 薪の数は訪ねる口が返さない。くべて分かるまで札を出さない（「まだ」と言い切らない・2026-10-19 見直し）
+            if let wood = model.woodCount {
+                tile(L("焚き火の薪", "Firewood"), L("あなたは \(wood) 回", "You: \(wood)"))
+            }
         }
         .padding(.horizontal, 16)
     }
 
     private func tile(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint).lineLimit(1).minimumScaleFactor(0.8)
-            Text(value).font(.system(size: 14, weight: .semibold)).foregroundStyle(WebTheme.foreground).lineLimit(1)
-                .minimumScaleFactor(0.8)
+            // 12pt を守る（縮めない。収まらなければ2行に）。数は等幅数字
+            Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(value).font(JPFont.number(14, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -169,9 +185,10 @@ struct CamperVisitView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let message = model.message {
-                Label(message.text, systemImage: message.isError ? "exclamationmark.circle" : "checkmark.circle")
+                // 成功・案内は白（合図の真鍮にしない）、断りは危険の色（2026-10-19 見直し）
+                Label(message.text, systemImage: message.kind.symbol)
                     .font(.system(size: 13))
-                    .foregroundStyle(message.isError ? WebTheme.text : CamperStyle.brassLight)
+                    .foregroundStyle(message.kind == .refused ? WebTheme.danger : WebTheme.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camper.visit.message")
             }
@@ -183,21 +200,20 @@ struct CamperVisitView: View {
                         .foregroundStyle(WebTheme.accentText)
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .background(WebTheme.accentFill, in: Capsule())
-                        .opacity(model.gifted || model.busy ? 0.5 : 1)
+                        .opacity(model.gifted || !model.canAct ? 0.5 : 1)
                 }
                 .buttonStyle(.plain)
-                .disabled(model.gifted || model.busy)
+                .disabled(model.gifted || !model.canAct)
                 .accessibilityIdentifier("camper.visit.gift")
                 Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
                     // 線のボタン（板 Components の `.bo`・`jpOutlineButton` を通す）
                     Label(CamperText.firewoodLabel, systemImage: "flame")
-                        .minimumScaleFactor(0.8)
                         .jpOutlineButton(.regular, fullWidth: true)
                         .frame(minHeight: 50)
-                        .opacity(model.busy ? 0.5 : 1)
+                        .opacity(model.canAct ? 1 : 0.5)
                 }
                 .buttonStyle(.plain)
-                .disabled(model.busy)
+                .disabled(!model.canAct)
                 .accessibilityIdentifier("camper.visit.firewood")
             }
             Text(L("贈れるのは一人に一度・1日1回。薪は同じ友達に1日1回くべられます。",
@@ -229,12 +245,37 @@ final class CamperVisitModel: ObservableObject {
     enum Phase: Equatable {
         case idle, loading
         case loaded(CamperVisitState)
-        case failed(String)
+        /// `retry` は押し直して変わりうるか（通信の失敗）。断り（4xx）は false
+        case failed(String, retry: Bool)
     }
 
     struct Message: Equatable {
+        enum Kind: Equatable {
+            /// 済んだ（贈った・くべた）
+            case done
+            /// 断り
+            case refused
+            /// 案内（まだ始まっていない）
+            case info
+
+            var symbol: String {
+                switch self {
+                case .done: return "checkmark.circle"
+                case .refused: return "exclamationmark.circle"
+                case .info: return "clock"
+                }
+            }
+        }
+
         let text: String
-        let isError: Bool
+        let kind: Kind
+        var isError: Bool { kind == .refused }
+    }
+
+    /// 贈る・薪を押せるか（読めて、配り始めていて、送っている最中でない）
+    var canAct: Bool {
+        guard case .loaded(let state) = phase else { return false }
+        return state.launched && !busy
     }
 
     @Published private(set) var phase: Phase = .idle
@@ -270,7 +311,7 @@ final class CamperVisitModel: ObservableObject {
         seq += 1
         let mine = seq
         guard signedIn else {
-            phase = .failed(Labels.Common.signInRequired)
+            phase = .failed(Labels.Common.signInRequired, retry: false)
             return
         }
         phase = .loading
@@ -280,7 +321,7 @@ final class CamperVisitModel: ObservableObject {
             phase = .loaded(state)
             if !state.launched {
                 visitNotice = nil
-                message = Message(text: CamperText.refusal(code: "notLaunched", status: 409, fallback: ""), isError: true)
+                message = Message(text: CamperText.refusal(code: "notLaunched", status: 409, fallback: ""), kind: .info)
                 return
             }
             // 訪ねて自分に届いた部品は、自分の車の画面の「届いた」で見せる
@@ -288,26 +329,26 @@ final class CamperVisitModel: ObservableObject {
             visitNotice = state.visit.counted || !state.visit.added.isEmpty ? CamperText.visitCounted(added: state.visit.added.count) : nil
         } catch {
             guard mine == seq, self.userId == userId else { return }
-            phase = .failed(CamperText.failure(error))
+            phase = .failed(CamperText.failure(error), retry: !(error is CamperService.Refused))
         }
     }
 
     func gift(calls: Calls, ownerName: String?) async {
-        guard let userId, !busy, !gifted else { return }
+        guard let userId, canAct, !gifted else { return }
         busy = true
         defer { busy = false }
         do {
             let result = try await calls.gift(userId)
             gifted = result.given
-            message = Message(text: CamperText.gifted(part: result.part.flatMap(CamperCatalog.part), to: ownerName), isError: false)
+            message = Message(text: CamperText.gifted(part: result.part.flatMap(CamperCatalog.part), to: ownerName), kind: .done)
         } catch {
             if let refused = error as? CamperService.Refused, refused.code == "already" { gifted = true }
-            message = Message(text: CamperText.failure(error), isError: true)
+            message = Message(text: CamperText.failure(error), kind: .refused)
         }
     }
 
     func firewood(calls: Calls, store: CamperStore) async {
-        guard let userId, !busy else { return }
+        guard let userId, canAct else { return }
         busy = true
         defer { busy = false }
         do {
@@ -319,9 +360,9 @@ final class CamperVisitModel: ObservableObject {
                 store.receive([id])
                 text += L("。あなたの車に「\(part.name)」が届きました", ". \(part.name) arrived for your camper")
             }
-            message = Message(text: text, isError: false)
+            message = Message(text: text, kind: .done)
         } catch {
-            message = Message(text: CamperText.failure(error), isError: true)
+            message = Message(text: CamperText.failure(error), kind: .refused)
         }
     }
 }

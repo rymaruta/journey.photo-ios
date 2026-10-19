@@ -302,7 +302,14 @@ final class CamperServerTests: XCTestCase {
         await refused.load(userId: "u-ken", signedIn: true, calls: calls(visit: { _ in
             throw CamperService.Refused(status: 403, message: "x", code: "notFriend")
         }), store: store)
-        XCTAssertEqual(refused.phase, .failed(CamperText.refusal(code: "notFriend", status: 403, fallback: "")))
+        XCTAssertEqual(refused.phase, .failed(CamperText.refusal(code: "notFriend", status: 403, fallback: ""), retry: false),
+                       "断りは押し直しても変わらないので「もう一度」を出さない")
+        // 通信の失敗は「もう一度」を出す
+        struct Down: Error {}
+        let down = CamperVisitModel()
+        await down.load(userId: "u-ken", signedIn: true, calls: calls(visit: { _ in throw Down() }), store: store)
+        guard case .failed(_, let retry) = down.phase else { return XCTFail("失敗にならない") }
+        XCTAssertTrue(retry)
     }
 
     /// 贈る: 届いた部品は相手の名前で言う。もう贈ってあった（already）はボタンを止める
@@ -313,7 +320,7 @@ final class CamperServerTests: XCTestCase {
         await model.load(userId: "u-mio", signedIn: true, calls: calls(), store: store)
         await model.gift(calls: calls(gift: { _ in .init(given: true, part: "mirror.brass_oval") }), ownerName: "mio")
         XCTAssertTrue(model.gifted)
-        XCTAssertEqual(model.message, .init(text: CamperText.gifted(part: CamperCatalog.part("mirror.brass_oval"), to: "mio"), isError: false))
+        XCTAssertEqual(model.message, .init(text: CamperText.gifted(part: CamperCatalog.part("mirror.brass_oval"), to: "mio"), kind: .done))
 
         let second = CamperVisitModel()
         await second.load(userId: "u-mio", signedIn: true, calls: calls(), store: store)
@@ -325,6 +332,37 @@ final class CamperServerTests: XCTestCase {
         XCTAssertEqual(second.woodCount, 10)
         XCTAssertTrue(store.inbox.contains("fire_pit.tripod_kettle"), "10 回で自分に届いた部品は自分の控えへ")
         XCTAssertTrue(second.message?.text.contains(CamperCatalog.part("fire_pit.tripod_kettle")!.name) == true)
+    }
+
+    /// 配り始めていない（launched: false）間は贈る・薪を押せず、「まだ始まっていません」を案内（断りの色にしない）
+    func testNotLaunchedBlocksActions() async {
+        let store = CamperStore(userId: "me", defaults: defaults())
+        let model = CamperVisitModel()
+        await model.load(userId: "u-mio", signedIn: true, calls: calls(visit: { id in
+            CamperVisitState(userId: id, launched: false, parts: [])
+        }), store: store)
+        XCTAssertFalse(model.canAct)
+        XCTAssertEqual(model.message, .init(text: CamperText.refusal(code: "notLaunched", status: 409, fallback: ""), kind: .info))
+        var sent = 0
+        await model.gift(calls: calls(gift: { _ in sent += 1; return .init(given: true) }), ownerName: nil)
+        await model.firewood(calls: calls(firewood: { _ in sent += 1; return .init(added: true, count: 1) }), store: store)
+        XCTAssertEqual(sent, 0, "始まっていないのに送った")
+        XCTAssertNil(model.woodCount, "くべる前は薪の数を言わない")
+    }
+
+    /// 分類の札の数は分母と同じ集まりで数える（読めない間に控えの要サーバー部品があっても「3 / 2」にしない）
+    func testCategoryCountUsesTheSamePool() async {
+        let closed = CamperServerParts(state: nil, inbox: ["wheel.brass_spoke"])
+        let owned = CamperCatalog.owned(CamperStats(), server: closed)
+        XCTAssertTrue(owned.contains("wheel.brass_spoke"))
+        for c in CamperCategory.allCases {
+            let closedCount = CamperCatalog.categoryCount(c, owned: owned, serverOpen: false)
+            XCTAssertLessThanOrEqual(closedCount.have, closedCount.total, c.rawValue)
+            let openCount = CamperCatalog.categoryCount(c, owned: owned, serverOpen: true)
+            XCTAssertLessThanOrEqual(openCount.have, openCount.total, c.rawValue)
+        }
+        XCTAssertEqual(CamperCatalog.categoryCount(.wheel, owned: owned, serverOpen: true).have,
+                       CamperCatalog.categoryCount(.wheel, owned: owned, serverOpen: false).have + 1)
     }
 
     /// 友達の車の見せ方: 相手の要サーバーの部品を分類ごとに付け、オーニングの部品があれば広げる
@@ -350,6 +388,17 @@ final class CamperServerTests: XCTestCase {
         XCTAssertTrue(garage.contains("guard photosLoaded, server.settled, !arrivalChecked"))
         let env = try read("Sources/JourneyPhoto/App/AppEnvironment.swift")
         XCTAssertTrue(env.contains("self.camper = CamperService(api: api)"))
+        XCTAssertTrue(garage.contains("CamperCatalog.categoryCount(c, owned: owned, serverOpen: serverOpen)"))
+        // 写真の編集: 控えの持ち主は送る前に決まる値（await の後の auth.userId を使わない）
+        let edit = try read("Sources/JourneyPhoto/Features/Profile/EditPhotoView.swift")
+        XCTAssertTrue(edit.contains("CamperStore.receive(dealt.camperAdded, userId: photo.userId ?? owner)"))
+        XCTAssertFalse(edit.contains("CamperStore.receive(dealt.camperAdded, userId: auth.userId"))
+        // 友達の車: 成功は白・断りは危険の色。札は縮めない（12pt を守る）
+        let visit = try read("Sources/JourneyPhoto/Features/Camper/CamperVisitView.swift")
+        XCTAssertTrue(visit.contains("message.kind == .refused ? WebTheme.danger : WebTheme.text"))
+        XCTAssertFalse(visit.contains("CamperStyle.brassLight"))
+        XCTAssertFalse(visit.contains("minimumScaleFactor"), "字を縮めて 12pt を割る")
+        XCTAssertFalse(visit.contains(#"?? L("まだ", "Not yet")"#))
         let upload = try read("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
         XCTAssertTrue(upload.contains("CamperStore.receive(camperAdded, userId: savedPhotoOwner ?? draftOwner)"))
     }

@@ -406,8 +406,7 @@ struct CamperGarageView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(CamperCategory.allCases.filter { $0.group == group }, id: \.self) { c in
-                        let have = CamperCatalog.parts(c).filter { owned.contains($0.id) }.count
-                        let total = CamperCatalog.parts(c).filter { $0.unlock.isAvailable || (serverOpen && $0.unlock.isServer) }.count
+                        let (have, total) = CamperCatalog.categoryCount(c, owned: owned, serverOpen: serverOpen)
                         Button { pickCategory(c) } label: {
                             HStack(spacing: 6) {
                                 // 選んでいる分類は色だけでなく印の形でも示す（#312 の見直し）
