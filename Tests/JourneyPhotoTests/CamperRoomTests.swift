@@ -296,11 +296,11 @@ final class CamperRoomTests: XCTestCase {
         let screen = try XCTUnwrap(cam.project(top, viewport: viewport, layout: camper))
         let picked = CamperRoomPick.item(at: cam.ray(screen, viewport: viewport, layout: camper), in: doc)
         XCTAssertEqual(picked?.u, trunk.u)
-        // 床の (65, 0, 75) を指すと、3×2 の鞄の左奥は (5, 7)
-        let target = try XCTUnwrap(cam.project(CV3(65, 0, 75), viewport: viewport, layout: camper))
+        // 床の (66, 0, 72) を指すと、3×2 の鞄の左奥は (5, 6)（マスの境目ちょうどを指さない: 0.5 の丸めは端末で揺れる）
+        let target = try XCTUnwrap(cam.project(CV3(66, 0, 72), viewport: viewport, layout: camper))
         let moved = CamperRoomPick.moved(trunk, ray: cam.ray(target, viewport: viewport, layout: camper), layout: camper)
         XCTAssertEqual(moved.x, 5)
-        XCTAssertEqual(moved.z, 7)
+        XCTAssertEqual(moved.z, 6)
         // 壁の物は指の先の壁と段へ
         let frame = try XCTUnwrap(doc.items.first { $0.k == "photo_frame.landscape" })
         let onWall = try XCTUnwrap(cam.project(CV3(120, 50, 0), viewport: viewport, layout: camper))
