@@ -57,6 +57,10 @@ enum CamperTextures {
         case .solarCells: return solarCells()
         case .brushed: return brushed()
         case .glow: return glow()
+        case .lampFace: return lampFace()
+        case .tailFace: return tailFace()
+        case .beam: return beam()
+        case .flame: return flame()
         }
     }
 
@@ -164,15 +168,88 @@ enum CamperTextures {
         return b
     }
 
-    /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない
+    /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない。
+    /// 2026-10-19: 硬い円に見えた（owner）ので、ガウスの裾で縁まで 0 になめらかに落とす（縁の 1 画素で切れない）
     static func glow() -> CamperBitmap {
         var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
                 let dx = (Double(x) - 31.5) / 31.5, dy = (Double(y) - 31.5) / 31.5
-                let r = (dx * dx + dy * dy).squareRoot()
-                let v = r >= 1 ? 0 : pow(1 - r, 2.2)
+                let r2 = dx * dx + dy * dy
+                // exp(−4r²) の裾を、縁（r=1）でちょうど 0 になるよう引いて伸ばす
+                let edge = exp(-4.0)
+                let v = r2 >= 1 ? 0 : max(0, (exp(-4 * r2) - edge) / (1 - edge))
                 b.set(x, y, (v, v, v))
+            }
+        }
+        return b
+    }
+
+    /// 灯りのレンズの明暗（64×64・白〜灰）。真ん中の芯（いちばん明るい）、反射板の輪 2 本（板 r2.2・r4.2 ／ レンズ 5.6）、
+    /// 輪の間は少し暗く、縁へ暗く落ちる。箱のレンズ（角形・方向指示）にも面ごとに 1 枚ずつ貼られる
+    static func lampFace() -> CamperBitmap {
+        var b = CamperBitmap(width: 64, height: 64)
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let dx = (Double(x) - 31.5) / 31.5, dy = (Double(y) - 31.5) / 31.5
+                let r = min(1, (dx * dx + dy * dy).squareRoot())
+                let core = exp(-pow(r / 0.2, 2))
+                let ring1 = exp(-pow((r - 0.39) / 0.05, 2)) * 0.55
+                let ring2 = exp(-pow((r - 0.75) / 0.05, 2)) * 0.4
+                let body = 0.42 * (1 - r * r)
+                let v = min(1, 0.12 + body + core * 0.6 + ring1 + ring2)
+                b.set(x, y, (v, v, v))
+            }
+        }
+        return b
+    }
+
+    /// 尾灯のプリズムの筋（32×64・白〜灰）。縦の筋 6 本と、上下の縁へ暗く
+    static func tailFace() -> CamperBitmap {
+        var b = CamperBitmap(width: 32, height: 64)
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let u = Double(x) / Double(b.width - 1), v = Double(y) / Double(b.height - 1)
+                let rib = 0.72 + 0.28 * abs(sin(u * .pi * 6))
+                let ends = 1 - pow(abs(v - 0.5) * 2, 3) * 0.55
+                let sides = 1 - pow(abs(u - 0.5) * 2, 4) * 0.4
+                let c = rib * ends * sides
+                b.set(x, y, (c, c, c))
+            }
+        }
+        return b
+    }
+
+    /// 前照灯の光の帯（64×64・白〜黒）。u が前（0 が車の側）、v が横。前へ行くほど横に広がり、弱く消える
+    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）
+    static func beam() -> CamperBitmap {
+        var b = CamperBitmap(width: 64, height: 64)
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let u = Double(x) / Double(b.width - 1)
+                let v = (Double(y) - 31.5) / 31.5
+                let half = (40 + 70 * u) / 110
+                let lateral = exp(-pow(v / half, 2) * 2.2) * (abs(v) < 1 ? 1 : 0)
+                let along = pow(1 - u, 1.6) * min(1, u * 12)
+                let c = lateral * along
+                b.set(x, y, (c, c, c))
+            }
+        }
+        return b
+    }
+
+    /// 炎の色（32×64・色つき）。v=0 が根元（白に近い黄）、上へ橙・赤、先（v=1）は黒＝足しても何も出ない。
+    /// 横は真ん中が明るく、縁へ落ちる
+    static func flame() -> CamperBitmap {
+        var b = CamperBitmap(width: 32, height: 64)
+        let base = rgb(0xFFF1C2), mid = rgb(0xFF9A3C), tip = rgb(0xB8341A)
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let v = 1 - Double(y) / Double(b.height - 1)
+                let u = abs(Double(x) / Double(b.width - 1) - 0.5) * 2
+                let c = v < 0.4 ? lerp(base, mid, v / 0.4) : lerp(mid, tip, (v - 0.4) / 0.6)
+                let k = pow(1 - v, 0.8) * (1 - u * u * 0.7)
+                b.set(x, y, (c.0 * k, c.1 * k, c.2 * k))
             }
         }
         return b

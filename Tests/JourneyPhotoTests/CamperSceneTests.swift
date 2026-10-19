@@ -86,6 +86,30 @@ final class CamperSceneTests: XCTestCase {
         scene.show(snow)
         XCTAssertTrue(snowGroups.contains { !$0.isHidden })
     }
+
+    /// 夜だけ炎と焚き火・ランタンの光が揺れる。昼は止まり、「視差効果を減らす」でも止まる
+    func testFlickerOnlyAtNight() async throws {
+        let scene = CamperScene()
+        var l = CamperLoadout.standard
+        l.picks[CamperCategory.outdoorLight.rawValue] = "brass_lantern"
+        var changes: [Bool] = []
+        scene.onFlickerChange = { changes.append($0) }
+        scene.installNow(CamperConfig(stage: .camper, mood: .night, loadout: l))
+        XCTAssertTrue(scene.isFlickering)
+        let flames = all(scene.scene.rootNode).filter { ($0.name ?? "").hasSuffix("Flame") || $0.name == "fire.flame" }
+        XCTAssertGreaterThanOrEqual(flames.count, 4)
+        #if canImport(SceneKitShim) && !canImport(SceneKit)
+        XCTAssertTrue(flames.allSatisfy { $0.actionKeys.contains("flicker") })
+        #endif
+        scene.setFlicker(allowed: false)
+        XCTAssertFalse(scene.isFlickering)
+        scene.setFlicker(allowed: true)
+        var day = CamperConfig(stage: .camper, mood: .night, loadout: l)
+        day.mood = .day
+        scene.show(day)
+        XCTAssertFalse(scene.isFlickering)
+        XCTAssertEqual(changes, [true, false, true, false])
+    }
 }
 
 #endif

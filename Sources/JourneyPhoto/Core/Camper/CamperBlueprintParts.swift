@@ -777,12 +777,18 @@ extension CamperBuilder {
                 rod("fire.log", c + CV3(cos(t) * 8, 9, sin(t) * 8), c + CV3(-cos(t) * 8, 10, -sin(t) * 8), 1.6, .woodDark, segments: 8, category: fc)
             }
         }
-        add("fire.ember", .sphere(radius: 3.2), .ember, at: emberAt, category: fc, scale: CV3(1, 0.7, 1))
-        // 2026-10-18（Mac の絵 run 530）: 700・90 では焚き火のまわりが白く飛び、画面の左が真っ白なにじみになった。
-        // 夜の主役は窓と扉の口の灯りなので、焚き火は足元を赤く照らすだけにする
+        // 燠（薪の下の赤い熱・平たく）と、形のある炎の舌 3 つ（高さ・傾きを変える。夜はゆっくり小さく揺れる）
+        add("fire.ember", .sphere(radius: 2.6), .ember, at: emberAt, category: fc, scale: CV3(1, 0.45, 1))
+        flameTongue("fire.flame", at: emberAt + CV3(0, 0.6, 0), height: 12, radius: 2.6, category: fc)
+        flameTongue("fire.flame", at: emberAt + CV3(1.6, 0.4, 1.0), height: 8.5, radius: 1.9, lean: CV3(0.18, 1, 0.1), category: fc)
+        flameTongue("fire.flame", at: emberAt + CV3(-1.4, 0.4, -1.2), height: 7, radius: 1.6, lean: CV3(-0.15, 1, -0.12), category: fc)
+        // 2026-10-18（run 530）: 700・90 では白く飛んだ。2026-10-19: 光の溜まりが硬い円に見えた（owner）ので、光は弱く広くし、
+        // 足元の明るさは裾のなめらかな溜まり（足す光）で出す。外の火は室内灯より赤い
         only([.night]) {
-            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xFF8A3C,
-                                                 intensity: 200, range: 26))
+            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 14, 0), color: 0xFF8A42,
+                                                 intensity: 130, range: 42))
+            $0.add("glow.fire", .mesh($0.glowQuad(width: 96, depth: 96, material: .firePool)), .firePool,
+                   at: CV3(emberAt.x, 0.5, emberAt.z), group: .glow)
         }
     }
 
@@ -819,7 +825,7 @@ extension CamperBuilder {
                   category: oc) { _ in .brass }
             lathe("light.oilChimney", c + CV3(0, 4.6, 0), axis: CV3(0, 1, 0), [(1.4, 0), (2.6, 2.6), (2.2, 5.4), (1.4, 8)], segments: 16,
                   category: oc) { _ in .glass }
-            add("light.oilFlame", .sphere(radius: 0.8), .lamp, at: c + CV3(0, 6.6, 0), category: oc, scale: CV3(1, 1.6, 1))
+            flameTongue("light.oilFlame", at: c + CV3(0, 5.4, 0), height: 3.2, radius: 0.7, category: oc)
         default:
             let c = CV3(-96, 0, z + 14)
             rod("light.stand", c, c + CV3(0, 44, 0), 0.6, .black, category: oc)
@@ -828,12 +834,19 @@ extension CamperBuilder {
             let l = c + CV3(8, 33, 0)
             lathe("light.lanternTop", l + CV3(0, 9.6, 0), axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 1.4), (0.01, 1.6)], segments: 12,
                   category: oc) { _ in .brass }
-            lathe("light.lanternGlass", l + CV3(0, 2.4, 0), axis: CV3(0, 1, 0), [(3, 0), (3.2, 3.6), (3, 7.2)], segments: 12,
-                  capStart: .lamp, capEnd: .lamp, category: oc) { _ in .lamp }
+            // 硝子は透明の円筒で、中に小さな炎（硝子一面を光らせない・2026-10-19）
+            lathe("light.lanternGlass", l + CV3(0, 2.4, 0), axis: CV3(0, 1, 0), [(3, 0), (3.2, 3.6), (3, 7.2)], segments: 16,
+                  category: oc) { _ in .lanternGlass }
+            lathe("light.lanternWick", l + CV3(0, 2.4, 0), axis: CV3(0, 1, 0), [(0.9, 0), (0.9, 1.2), (0.01, 1.4)], segments: 10,
+                  capStart: .brass, category: oc) { _ in .brass }
+            flameTongue("light.lanternFlame", at: l + CV3(0, 3.8, 0), height: 3.8, radius: 0.9, category: oc)
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
             only([.night]) {
-                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFFBE6E,
-                                                     intensity: 120, range: 24))
+                // ランタンは室内灯より赤み（板 255,190,110 より赤く）。足元は裾のなめらかな溜まり
+                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xFF9A4A,
+                                                     intensity: 90, range: 34))
+                $0.add("glow.lantern", .mesh($0.glowQuad(width: 64, depth: 64, material: .firePool)), .firePool,
+                       at: CV3(c.x + 8, 0.5, c.z), group: .glow)
             }
         }
     }

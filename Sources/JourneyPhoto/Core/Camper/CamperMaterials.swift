@@ -28,6 +28,16 @@ enum CamperMaterial: Hashable, Sendable {
     indirect case byNight(CamperMaterial)
     /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
     case glowPool
+    /// 前照灯の前の地面の光の帯（板 pools の beam: #fff1cf 0.55→0）
+    case beamPool
+    /// 尾灯の後ろの地面の赤い溜まり（板 pools の red: #ff6a5a 0.8→0・不透明度 0.4）
+    case redPool
+    /// 焚き火・ランタンの足元の溜まり（外の火は室内灯より赤い）
+    case firePool
+    /// 炎（形のある舌。下が白に近い黄、上へ橙・赤へ透ける。足し合わせる光）
+    case flame
+    /// ランタンの硝子（透明の円筒。中の炎が透ける）
+    case lanternGlass
 }
 
 /// 素材の値（SceneKit の physicallyBased にそのまま渡す）。板の付箋「素材の値（実装用）」の推奨値
@@ -42,6 +52,8 @@ struct CamperMaterialSpec: Equatable, Sendable {
     /// 自ら光る色と強さ（夜の灯り）
     var emission: UInt32?
     var emissionIntensity = 0.0
+    /// 光る面の明暗の絵（反射板の輪・プリズムの筋・布の織り目）。一色の平らな光にしない（2026-10-19 owner「発光の仕方ひどい」）
+    var emissionTexture: CamperTextureKind?
     var texture: CamperTextureKind?
     var doubleSided = false
     /// 光を受けない一色（影絵）
@@ -56,8 +68,16 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case weave
     case solarCells
     case brushed
-    /// 真ん中が明るく外へ消える丸（灯りの溜まり）
+    /// 真ん中が明るく外へ消える丸（灯りの溜まり・ガウスでなめらかに）
     case glow
+    /// 灯りのレンズの明暗（真ん中の芯・反射板の輪 2・縁へ暗く）
+    case lampFace
+    /// 尾灯のプリズムの筋（縦の筋・縁へ暗く）
+    case tailFace
+    /// 前照灯の光の帯（前へ広がりながら消える）
+    case beam
+    /// 炎の色（下は白に近い黄、上へ橙・赤、先は透ける）
+    case flame
 }
 
 enum CamperMaterials {
@@ -87,25 +107,33 @@ enum CamperMaterials {
             return CamperMaterialSpec(color: night ? 0x0A0C10 : 0x10161C, roughness: 0.05, opacity: night ? 0.7 : 0.62,
                                       doubleSided: true)
         case .glassLit:
-            // 住む所の窓。夜は室内の灯りでほのかに光る（窓が夜の主役。2026-10-18 run 529 のあと）
-            return CamperMaterialSpec(color: night ? 0x3A2A18 : 0x10161C, roughness: 0.05, opacity: night ? 0.62 : 0.62,
-                                      emission: night ? 0xFFB866 : nil, emissionIntensity: night ? 0.7 : 0, doubleSided: true)
+            // 住む所の窓（2026-10-19 作り直し・owner「夜の発光の仕方ひどい」）。ガラスは**光らない**——一色の emission で塗ると
+            // オレンジの平らな板になった。夜は板どおり薄い（不透明度 0.38）暗い硝子で、室内の灯りに照らされた
+            // カーテン・内壁・家具が透けて見え、表には外の映り込み（月・地平線）が乗る
+            return CamperMaterialSpec(color: night ? 0x2A2016 : 0x10161C, roughness: 0.04, clearCoat: night ? 1 : 0,
+                                      clearCoatRoughness: 0.03, opacity: night ? 0.38 : 0.62, doubleSided: true)
+        // 灯りのレンズ（2026-10-19 作り直し）。光る面に明暗の絵（真ん中の芯・反射板の輪・縁へ暗く）を貼り、白い丸にしない。
+        // 色: 前照灯は白に近い（5000K 前後）・車幅灯と方向指示は琥珀・尾灯は赤。emission は 1 まで（HDR で飛ばさない）
         case .lens:
-            return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.05, opacity: night ? 1 : 0.85,
-                                      emission: night ? 0xFFF6E0 : nil, emissionIntensity: night ? 1.0 : 0)
+            return CamperMaterialSpec(color: 0xDFE6EC, roughness: 0.04, clearCoat: 1, clearCoatRoughness: 0.03, opacity: night ? 1 : 0.85,
+                                      emission: night ? 0xFFF4E5 : nil, emissionIntensity: night ? 1.0 : 0,
+                                      emissionTexture: night ? .lampFace : nil)
         case .lensAmber:
-            return CamperMaterialSpec(color: 0xE8B44A, roughness: 0.05, opacity: 0.9,
-                                      emission: night ? 0xFFD27A : nil, emissionIntensity: night ? 1.0 : 0)
+            return CamperMaterialSpec(color: 0xE8B44A, roughness: 0.04, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.9,
+                                      emission: night ? 0xFFB45A : nil, emissionIntensity: night ? 0.9 : 0,
+                                      emissionTexture: night ? .lampFace : nil)
         case .red:
-            return CamperMaterialSpec(color: night ? 0xFF4A3C : 0x8E1D1A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFF4A3C : nil, emissionIntensity: night ? 1.0 : 0)
+            return CamperMaterialSpec(color: night ? 0x7A1612 : 0x8E1D1A, roughness: 0.1, clearCoat: 1,
+                                      emission: night ? 0xFF3B2E : nil, emissionIntensity: night ? 0.95 : 0,
+                                      emissionTexture: night ? .tailFace : nil)
         case .amber:
-            return CamperMaterialSpec(color: night ? 0xFFB347 : 0xC9772A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFFB347 : nil, emissionIntensity: night ? 0.9 : 0)
+            return CamperMaterialSpec(color: night ? 0x8A5418 : 0xC9772A, roughness: 0.1, clearCoat: 1,
+                                      emission: night ? 0xFFA640 : nil, emissionIntensity: night ? 0.8 : 0,
+                                      emissionTexture: night ? .lampFace : nil)
         case .lamp:
-            // 電球は小さいので、強すぎると光の粒が散って見える（run 529 の夜）。窓の灯りより少し上まで
-            return CamperMaterialSpec(color: 0xFFD890, roughness: 0.3, emission: night ? 0xFFD890 : nil,
-                                      emissionIntensity: night ? 1.0 : 0)
+            // 電球（室内 2700K 前後）。小さいので強すぎると光の粒が散る（run 529）。芯が明るく縁へ落ちる
+            return CamperMaterialSpec(color: 0xFFD890, roughness: 0.3, emission: night ? 0xFFC27A : nil,
+                                      emissionIntensity: night ? 0.95 : 0, emissionTexture: night ? .lampFace : nil)
         case .chrome: return CamperMaterialSpec(color: 0xC9CCD0, metalness: 1, roughness: 0.12)
         case .chromeDark: return CamperMaterialSpec(color: 0x8D9196, metalness: 1, roughness: 0.18)
         case .brass: return CamperMaterialSpec(color: 0xC9A66B, metalness: 1, roughness: 0.3)
@@ -122,8 +150,10 @@ enum CamperMaterials {
         case .fabricDark: return CamperMaterialSpec(color: 0x4A5639, roughness: 0.95, texture: .weave)
         case .cushion: return CamperMaterialSpec(color: 0xB7A58A, roughness: 0.9, texture: .weave)
         case .curtain:
-            return CamperMaterialSpec(color: night ? 0xF2CC92 : 0xD8CCB4, roughness: 0.95, emission: night ? 0xF2CC92 : nil,
-                                      emissionIntensity: night ? 0.35 : 0, texture: .weave, doubleSided: true)
+            // 夜は室内の灯りを受けて柔らかく光る布（透ける光は織り目の絵で、むらのある弱い光にする）
+            return CamperMaterialSpec(color: night ? 0xF2CC92 : 0xD8CCB4, roughness: 0.95, emission: night ? 0xFFB46B : nil,
+                                      emissionIntensity: night ? 0.16 : 0, emissionTexture: night ? .weave : nil,
+                                      texture: .weave, doubleSided: true)
         case .inner: return CamperMaterialSpec(color: 0xC9BFAE, roughness: 0.8)
         case .ceiling: return CamperMaterialSpec(color: 0xE8E0D0, roughness: 0.85)
         case .floorIn: return CamperMaterialSpec(color: 0x7A5A3C, roughness: 0.6, texture: .woodGrain)
@@ -147,10 +177,21 @@ enum CamperMaterials {
         case .tint(let c): return CamperMaterialSpec(color: c, roughness: 0.5, clearCoat: 0.3)
         case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .woodGrain)
         case .ember:
-            return CamperMaterialSpec(color: 0xFF7A2E, roughness: 0.8, emission: 0xFF8A3C, emissionIntensity: night ? 1.0 : 0.6)
+            // 燠（薪の下の赤い熱）。炎は別の形（`.flame`）
+            return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF5A1E, emissionIntensity: night ? 0.7 : 0.45,
+                                      emissionTexture: .lampFace)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)
-        case .glowPool: return CamperMaterialSpec(color: 0x6E4826, texture: .glow, additive: true)
+        // 地面の溜まり（足す光）。色の明るさがそのまま足す強さ。板 pools の色と不透明度に寄せる
+        case .glowPool: return CamperMaterialSpec(color: 0x5E3E22, texture: .glow, additive: true)
+        case .beamPool: return CamperMaterialSpec(color: 0x6E6A5E, texture: .beam, additive: true)
+        case .redPool: return CamperMaterialSpec(color: 0x4A1410, texture: .glow, additive: true)
+        case .firePool: return CamperMaterialSpec(color: 0x6A2A10, texture: .glow, additive: true)
+        // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
+        case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)
+        case .lanternGlass:
+            return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
+                                      doubleSided: true)
         }
     }
 
