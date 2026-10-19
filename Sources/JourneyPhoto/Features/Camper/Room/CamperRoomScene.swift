@@ -292,9 +292,13 @@ final class CamperRoomScene {
             let m = SCNMaterial()
             palette.configure(m, CamperMaterials.spec(group.material, paint: paint, mood: mood))
             if index < it.photos.count, let image = photoImages[it.photos[index]] {
+                // 印画は光を受けない。夜の壁は暗く、窓と同じ硝子だと白い板になって、飾った写真が消える
+                m.lightingModel = .constant
                 m.diffuse.contents = image
                 m.diffuse.wrapS = .clamp
                 m.diffuse.wrapT = .clamp
+                m.emission.contents = CamperScene.color(0x000000)
+                m.emission.intensity = 0
             }
             mats[i] = m
         }

@@ -145,7 +145,13 @@ final class CamperScenePalette {
         }
         if spec.opacity < 1 {
             m.transparency = CGFloat(spec.opacity)
-            m.transparencyMode = .dualLayer
+            if spec.glassShell {
+                m.transparencyMode = .dualLayer
+            } else {
+                // 額の表。両面の硝子にすると膜になって、奥の写真が見えない
+                m.transparencyMode = .aOne
+                m.writesToDepthBuffer = false
+            }
         }
         if let e = spec.emission, spec.emissionIntensity > 0 {
             // 光る面に明暗の絵（反射板の輪・プリズムの筋・織り目）があれば、光の色を掛けて貼る（一色の平らな光にしない）

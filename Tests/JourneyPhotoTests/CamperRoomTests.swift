@@ -427,7 +427,7 @@ final class CamperRoomTests: XCTestCase {
     }
 
     /// 夜の光の決まり: どの素材も光る面の emission は 1 まで。窓の外の景色は光を受けない
-    func testEmissionCapAndUnlitView() {
+    func testEmissionCapAndUnlitView() throws {
         var mats: Set<CamperMaterial> = []
         for f in CamperRoomCatalog.all where f.built { CamperRoomFurnitureModels.mesh(f.id)?.materials.forEach { mats.insert($0) } }
         let bp = CamperRoomBuilder.build(camper, doc: CamperRoomRules.starterDocument(camper))
@@ -446,6 +446,44 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertLessThan(nightGlass.color, 0x202020)
         XCTAssertGreaterThan(nightGlass.opacity, dayGlass.opacity)
         XCTAssertLessThan(nightGlass.clearCoat, dayGlass.clearCoat)
+        // 額の表は窓の硝子ではない。窓の硝子だと夜は暗い膜・昼は白い板になって、飾った写真が消える（2026-10-19 owner）
+        let dayFrame = CamperMaterials.spec(.room(.frameGlass), paint: 0, mood: .day)
+        let nightFrame = CamperMaterials.spec(.room(.frameGlass), paint: 0, mood: .night)
+        XCTAssertEqual(dayFrame.color, nightFrame.color)
+        XCTAssertEqual(dayFrame.opacity, nightFrame.opacity, accuracy: 0.001)
+        XCTAssertLessThan(nightFrame.opacity, 0.2)
+        XCTAssertFalse(nightFrame.glassShell)
+        XCTAssertGreaterThan(nightFrame.color, 0xC0C0C0)
+        XCTAssertNotEqual(nightFrame.color, nightGlass.color)
+        XCTAssertLessThan(nightFrame.opacity, nightGlass.opacity)
+        for id in ["photo_frame.landscape", "photo_frame.square", "photo_frame.triptych"] {
+            let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
+            XCTAssertTrue(mesh.materials.contains(.room(.frameGlass)), id)
+            XCTAssertTrue(mesh.materials.contains(.room(.photo("slot0"))), id)
+            XCTAssertFalse(mesh.materials.contains(.room(.glass)), id)
+        }
+    }
+
+    /// 写真を飾るときは、部屋の真ん中ではなく選んだ額の前に寄る
+    func testPhotoFramingLooksAtTheFrame() throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        let doc = CamperRoomRules.starterDocument(layout)
+        let back = try XCTUnwrap(doc.all.first { $0.k == "photo_frame.landscape" })
+        let placed = try XCTUnwrap(CamperRoomBuilder.place(back))
+        let cam = CamperRoomCamera.framing(back, layout: layout)
+        XCTAssertEqual(cam.target.x, placed.position.x, accuracy: 1)
+        XCTAssertGreaterThan(cam.zoom, 1)
+        XCTAssertLessThanOrEqual(cam.zoom, CamperRoomCamera.zoomRange.upperBound)
+        let viewport = CGSize(width: 390, height: 440)
+        let onScreen = try XCTUnwrap(cam.project(placed.position, viewport: viewport, layout: layout))
+        XCTAssertEqual(onScreen.x, viewport.width / 2, accuracy: 90)
+        XCTAssertEqual(onScreen.y, viewport.height / 2, accuracy: 120)
+        let side = try XCTUnwrap(doc.all.first { $0.k == "photo_frame.square" })
+        let sidePlaced = try XCTUnwrap(CamperRoomBuilder.place(side))
+        let sideCam = CamperRoomCamera.framing(side, layout: layout)
+        XCTAssertEqual(sideCam.target.z, sidePlaced.position.z, accuracy: 1)
+        XCTAssertGreaterThan(sideCam.yaw, 45)
+        XCTAssertNotNil(sideCam.project(sidePlaced.position, viewport: viewport, layout: layout))
     }
 
     /// 部屋の組み立て: 壁は 3 層・窓・台所・扉の口・端の壁の高い／低いの組がそろい、夜の灯りは室内の名前で上限まで
