@@ -371,7 +371,10 @@ final class CamperBlueprintTests: XCTestCase {
                 for mat in m.materials { XCTAssertFalse(CamperNodeSpec.isInteriorMaterial(mat), "\(o.name) \(mat)") }
                 m.materials.forEach { outsideMaterials.insert("\($0)") }
             }
-            if n.name.hasPrefix("interior.") { XCTAssertNil(o, n.name) }
+            let cab = n.position.x >= 66 || (n.position.x >= 30 && n.position.y >= 108)
+            if n.name.hasPrefix("interior."), !cab { XCTAssertNil(o, n.name) }
+            // 運転席と寝台は室内の灯りの外（フロントガラスの上に橙の筋が出た・run 547）
+            if n.name.hasPrefix("interior."), cab { XCTAssertNil(i, n.name) }
             if n.group == .door { XCTAssertNil(i, n.name) }
         }
         XCTAssertTrue(insideMaterials.contains { $0.hasPrefix("wallWood") } && insideMaterials.contains("ceiling")
@@ -529,5 +532,37 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertGreaterThan(center, 230)
         XCTAssertLessThan(edge, 90)
         XCTAssertGreaterThan(ring, between, "反射板の輪が見えない")
+    }
+
+    /// 夜の住む所の窓: カーテンのすぐ内側に、むらのある弱い光の面（外を向く・ガラスの奥）。昼は無い。
+    /// 絵は真ん中が明るく、下半分（家具の影）が暗く、縁は黒へ落ちる（板に見せない・Mac run 547 の後）
+    func testWindowGlowPanels() {
+        for stage in CamperStage.allCases {
+            let b = build(stage, mood: .night)
+            let builder = CamperBuilder(config: CamperConfig(stage: stage))
+            let panels = b.nodes.filter { $0.name.hasPrefix("interior.windowGlow") }
+            XCTAssertEqual(panels.count, builder.windowsNear.count + builder.windowsFar.count, "\(stage)")
+            for p in panels {
+                XCTAssertEqual(p.material, .windowGlow)
+                XCTAssertLessThan(abs(p.position.z), builder.BW - builder.wall, "\(stage): ガラスより奥")
+                XCTAssertGreaterThan(abs(p.position.z), builder.BW - builder.wall - 6, "\(stage): カーテンのすぐ内側")
+                guard case .mesh(let m) = p.shape else { return XCTFail(p.name) }
+                // 外を向く
+                XCTAssertTrue(m.normals.allSatisfy { $0.z * p.position.z > 0 }, p.name)
+            }
+            XCTAssertTrue(build(stage, mood: .day).nodes.allSatisfy { !$0.name.hasPrefix("interior.windowGlow") })
+        }
+        let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
+        XCTAssertTrue(spec.additive)
+        let c = CamperTextures.rgb(spec.color)
+        XCTAssertTrue((0.5...0.7).contains(max(c.0, c.1, c.2)), "強さ 0.5〜0.7")
+        let g = CamperTextures.roomGlow()
+        let center = Int(g.pixel(32, 18).r), lower = Int(g.pixel(32, 40).r), edge = Int(g.pixel(0, 18).r)
+        XCTAssertGreaterThan(center, 200)
+        XCTAssertLessThan(lower, center / 2 + 10, "家具の影の帯が無い")
+        XCTAssertLessThan(edge, 30, "縁が黒へ落ちない（板に見える）")
+        // カーテンのひだ（両側に明暗の筋）
+        let folds = (2..<13).map { Int(g.pixel($0, 18).r) }
+        XCTAssertGreaterThan((folds.max() ?? 0) - (folds.min() ?? 0), 25)
     }
 }

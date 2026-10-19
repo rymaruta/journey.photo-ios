@@ -38,6 +38,8 @@ enum CamperMaterial: Hashable, Sendable {
     case flame
     /// ランタンの硝子（透明の円筒。中の炎が透ける）
     case lanternGlass
+    /// 窓の奥の室内の明かり（カーテンのすぐ内側の面。むらのある 2700K の弱い光を足す。ガラス 0.38 越しに見える）
+    case windowGlow
 }
 
 /// 素材の値（SceneKit の physicallyBased にそのまま渡す）。板の付箋「素材の値（実装用）」の推奨値
@@ -78,6 +80,8 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case beam
     /// 炎の色（下は白に近い黄、上へ橙・赤、先は透ける）
     case flame
+    /// 窓越しの室内の明かり（真ん中が明るく縁へ落ちる・両側のカーテンのひだ・下半分に家具の影の帯）
+    case roomGlow
 }
 
 enum CamperMaterials {
@@ -191,6 +195,8 @@ enum CamperMaterials {
         case .firePool: return CamperMaterialSpec(color: 0x6A2A10, texture: .glow, additive: true)
         // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
         case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)
+        // 窓越しの室内の明かり（2700K・強さ 0.6 ほど＝色の明るさ）。足す光なので、縁が黒く落ちる絵で板に見えない
+        case .windowGlow: return CamperMaterialSpec(color: 0x9A6D41, texture: .roomGlow, additive: true)
         case .lanternGlass:
             return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
                                       doubleSided: true)

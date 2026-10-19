@@ -61,6 +61,7 @@ enum CamperTextures {
         case .tailFace: return tailFace()
         case .beam: return beam()
         case .flame: return flame()
+        case .roomGlow: return roomGlow()
         }
     }
 
@@ -232,6 +233,38 @@ enum CamperTextures {
                 let lateral = exp(-pow(v / half, 2) * 2.2) * (abs(v) < 1 ? 1 : 0)
                 let along = pow(1 - u, 1.6) * min(1, u * 12)
                 let c = lateral * along
+                b.set(x, y, (c, c, c))
+            }
+        }
+        return b
+    }
+
+    /// 窓越しの室内の明かり（64×48・白〜黒。v=0 が上）。天井の灯りの下（真ん中の上寄り）が明るく縁へ落ち、両側に
+    /// カーテンのひだ（縦の明暗）、下半分に家具（長椅子・机）の影の暗い帯、縁は黒へなめらかに落ちる（四角い板に見せない）
+    static func roomGlow() -> CamperBitmap {
+        var b = CamperBitmap(width: 64, height: 48)
+        func smooth(_ e0: Double, _ e1: Double, _ x: Double) -> Double {
+            let t = min(1, max(0, (x - e0) / (e1 - e0)))
+            return t * t * (3 - 2 * t)
+        }
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let u = (Double(x) + 0.5) / Double(b.width), v = (Double(y) + 0.5) / Double(b.height)
+                let dx = (u - 0.5) / 0.6, dy = (v - 0.38) / 0.55
+                var c = 0.3 + 0.7 * exp(-(dx * dx + dy * dy) * 1.6)
+                // カーテン（両側 22%）: ひだの明暗。布を透ける光は少し明るい
+                let side = min(u, 1 - u)
+                if side < 0.22 {
+                    let fold = 0.6 + 0.4 * abs(sin(u * .pi * 18))
+                    c = c * (1 - smooth(0.17, 0.22, side)) * fold * 1.1 + c * smooth(0.17, 0.22, side)
+                }
+                // 家具の影（下 40% を暗く・机の天板の線は少し明るく）
+                let shade = smooth(0.58, 0.66, v)
+                c *= 1 - 0.55 * shade
+                if abs(v - 0.62) < 0.015, side >= 0.22 { c *= 1.25 }
+                // 縁は黒へ（窓の枠の内側の影）
+                let edge = smooth(0.0, 0.08, min(u, 1 - u)) * smooth(0.0, 0.1, min(v, 1 - v))
+                c = min(1, c * edge)
                 b.set(x, y, (c, c, c))
             }
         }

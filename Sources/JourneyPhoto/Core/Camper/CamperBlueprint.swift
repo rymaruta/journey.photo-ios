@@ -73,6 +73,9 @@ struct CamperNodeSpec: Sendable {
     /// 扉の組は外（開けると扉の板は外に立つ）
     func splitForInteriorLight() -> (inside: CamperNodeSpec?, outside: CamperNodeSpec?) {
         guard group == .body else { return (nil, self) }
+        // 運転席と、その上の寝台は室内の灯りの外（運転席に灯りは無い。2026-10-19 Mac run 547: フロントガラスの上の辺に、
+        // 照らされた寝台の縁が橙の細い筋に見えた）
+        if name.hasPrefix("interior."), position.x >= 66 || (position.x >= 30 && position.y >= 108) { return (nil, self) }
         if name.hasPrefix("interior.") { return (self, nil) }
         guard case .mesh(let m) = shape else { return (nil, self) }
         let parts = m.split(Self.isInteriorMaterial)
@@ -1289,6 +1292,16 @@ struct CamperBuilder {
         return m
     }
 
+    /// 窓の奥の明かりの面（窓の形の外接の四角・外を向く・貼り絵は 0〜1・v=0 が上）
+    func windowGlowPanel(x0: Double, x1: Double, y0: Double, y1: Double, facing s: Double) -> CamperMesh {
+        var m = CamperMesh()
+        let n = CV3(0, 0, s)
+        let a = CV3(x0, y0, 0), b = CV3(x1, y0, 0), c = CV3(x1, y1, 0), d = CV3(x0, y1, 0)
+        m.quad(a, b, c, d, n, n, n, n, .windowGlow)
+        m.uvs = m.positions.map { CV2(($0.x - x0) / max(0.01, x1 - x0), 1 - ($0.y - y0) / max(0.01, y1 - y0)) }
+        return m
+    }
+
     mutating func nightLights() {
         only([.night]) { $0.nightLightsBody() }
     }
@@ -1321,6 +1334,17 @@ struct CamperBuilder {
                 guard let lo = xs.min(), let hi = xs.max() else { continue }
                 add("glow.window.\(side > 0 ? "near" : "far").\(k)", .mesh(glowQuad(width: (hi - lo) * 1.6 + 24, depth: 58)),
                     .glowPool, at: CV3((lo + hi) / 2, 0.4, side * (BW + 30)), group: .glow)
+            }
+        }
+        // 窓の奥の室内の明かり（2026-10-19 Mac run 547 の後: 光の当て方だけでは窓が外からほぼ真っ黒）。カーテンのすぐ内側に、
+        // むらのある弱い光の面を置き、ガラス 0.38 越しに「灯った窓」に見せる。面は外を向く片面（中から見ると見えない）
+        for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
+            for (k, w) in windows.enumerated() {
+                let xs = w.map(\.x), ys = w.map(\.y)
+                guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { continue }
+                add("interior.windowGlow.\(side > 0 ? "near" : "far").\(k)",
+                    .mesh(windowGlowPanel(x0: x0, x1: x1, y0: y0, y1: y1, facing: side)), .windowGlow,
+                    at: CV3(0, 0, side * (BW - wall - 3)))
             }
         }
         let dx = doorHole.map(\.x)
