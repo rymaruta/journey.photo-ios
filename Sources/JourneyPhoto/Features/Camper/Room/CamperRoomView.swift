@@ -58,8 +58,9 @@ struct CamperRoomView: View {
 
     private var layout: CamperRoomLayout { CamperRoomLayout.make(room, stage: stage) }
     private var store: CamperRoomStore { CamperRoomStore(userId: userId) }
-    private var roomStats: CamperRoomStats { CamperRoomCounting.count(photos) }
-    private var owned: Set<String> { CamperRoomCatalog.owned(stats, roomStats) }
+    /// 数えた値と持っている家具（写真の言葉を読むので重い。描き直しのたびに数えず、写真が替わった時だけ）
+    @State private var roomStats = CamperRoomStats()
+    @State private var owned: Set<String> = []
     private var partsOwned: Set<String> { CamperCatalog.owned(stats) }
     private var shownDoc: CamperRoomDocument { editor?.shown(owned: owned) ?? CamperRoomRules.starterDocument(layout) }
 
@@ -78,6 +79,7 @@ struct CamperRoomView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: load)
         .onChange(of: room) { _, _ in openRoom() }
+        .onChange(of: photos.count) { _, _ in recount() }
         .task(id: photoIds) { photoImages.load(photoIds, from: photos) }
         .sheet(isPresented: $showDex) {
             CamperRoomDexView(owned: owned, stats: stats, roomStats: roomStats, paint: paint, initialMood: mood) { showDex = false }
@@ -93,8 +95,14 @@ struct CamperRoomView: View {
         guard !loaded else { return }
         loaded = true
         mood = initialMood == .night ? .night : .day
+        recount()
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
+    }
+
+    private func recount() {
+        roomStats = CamperRoomCounting.count(photos)
+        owned = CamperRoomCatalog.owned(stats, roomStats)
     }
 
     private func openRoom() {
@@ -877,10 +885,22 @@ struct CamperRoomSwatch: View {
     let spec: CamperMaterialSpec
     let have: Bool
 
+    /// 作った見本の絵（貼り絵を描くのは重いので、描き直しのたびに作らない）
+    @MainActor private static var cache: [String: UIImage] = [:]
+
+    @MainActor private static func image(_ kind: CamperTextureKind, _ color: UInt32) -> UIImage? {
+        let key = CamperScenePlan.textureKey(kind, color)
+        if let hit = cache[key] { return hit }
+        guard let cg = CamperScenePalette.cgImage(CamperTextures.make(kind).tinted(color)) else { return nil }
+        let made = UIImage(cgImage: cg)
+        cache[key] = made
+        return made
+    }
+
     var body: some View {
         Group {
-            if have, let kind = spec.texture, let cg = CamperScenePalette.cgImage(CamperTextures.make(kind).tinted(spec.color)) {
-                Image(uiImage: UIImage(cgImage: cg)).resizable().scaledToFill()
+            if have, let kind = spec.texture, let image = Self.image(kind, spec.color) {
+                Image(uiImage: image).resizable().scaledToFill()
             } else {
                 CamperStyle.color(have ? spec.color : 0x1A1A1A)
             }

@@ -38,8 +38,12 @@ final class CamperRoomScene {
     private var furniture: [String: CamperPreparedMesh] = [:]
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
-    /// 持ち上げている家具（接地の影を広げている）
-    private var liftedUid: String?
+    /// 選んでいる家具（3 浮かせる）・持ち上げて動かしている家具（動かした先）と置けるか
+    private var selectedUid: String?
+    private var dragItem: CamperRoomItem?
+    private var dragCheck: CamperRoomCheck?
+    /// いま点けている灯りの並び（同じなら作り直さない）
+    private var lampSpecs: [CamperLightSpec] = []
     private(set) var layout: CamperRoomLayout?
     private(set) var doc: CamperRoomDocument?
     private var builtKey: String?
@@ -112,6 +116,7 @@ final class CamperRoomScene {
             guard !Task.isCancelled, let self else { return }
             self.install(plan, key: key)
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
+            self.reapplyDrag()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             self.onReady?(self.marker(ms: ms))
         }
@@ -138,6 +143,9 @@ final class CamperRoomScene {
         itemsNode.childNodes.forEach { $0.removeFromParentNode() }
         itemNodes = [:]
         shellGroups = []
+        // 灯りは部屋の節の子なので一緒に外れる。並びの控えも消す（作り直させる）
+        lampNodes = []
+        lampSpecs = []
         // 部屋は見せ方の組（いつも・手前の端の壁の高い／低い）ごとにまとめる（描く回数を抑える）
         var groups: [String: SCNNode] = [:]
         for (name, mesh) in plan.shell {
@@ -181,7 +189,7 @@ final class CamperRoomScene {
                 if entry.item != it {
                     SCNTransaction.begin()
                     SCNTransaction.animationDuration = 0.12
-                    transform(entry.node, it)
+                    transform(entry.node, displayed(it))
                     SCNTransaction.commit()
                     if entry.item.photos != it.photos { applyPhotos(entry.node, it) }
                     itemNodes[it.uid] = (entry.node, it)
@@ -192,8 +200,31 @@ final class CamperRoomScene {
             guard let node = makeItemNode(it) else { continue }
             itemsNode.addChildNode(node)
             itemNodes[it.uid] = (node, it)
+            transform(node, displayed(it))
         }
         rebuildLamps(placed, layout: layout, style: doc.style)
+    }
+
+    /// 組み直した後に、持ち上げている家具とマス目の色を描き直す
+    private func reapplyDrag() {
+        let d = dragItem, c = dragCheck
+        dragItem = nil
+        dragCheck = nil
+        setDrag(d, check: c)
+    }
+
+    /// 見せる場所（持ち上げている家具は動かした先で 7 浮かせ、選んでいる床の家具は 3 浮かせる）
+    private func displayed(_ it: CamperRoomPlacedItem) -> CamperRoomPlacedItem {
+        if let d = dragItem, d.u == it.uid, var lifted = CamperRoomBuilder.place(d) {
+            if lifted.placement == .floor { lifted.position = lifted.position + CV3(0, 7, 0) }
+            if lifted.placement == .wall { lifted.position = lifted.position + (lifted.yaw == 0 ? CV3(0, 0, 3) : CV3(3, 0, 0)) }
+            return lifted
+        }
+        var out = it
+        if it.uid == selectedUid, it.placement == .floor, !(CamperRoomCatalog.furniture(it.furnitureId)?.isRug ?? false) {
+            out.position = out.position + CV3(0, 3, 0)
+        }
+        return out
     }
 
     private func transform(_ node: SCNNode, _ it: CamperRoomPlacedItem) {
@@ -272,14 +303,17 @@ final class CamperRoomScene {
     // MARK: 灯り
 
     private func rebuildLamps(_ items: [CamperRoomPlacedItem], layout: CamperRoomLayout, style: CamperRoomStyle) {
-        lampNodes.forEach { $0.removeFromParentNode() }
-        lampNodes = []
         var specs = CamperRoomBuilder.lights(items, style: style, layout: layout)
+        defer { lampSpecs = specs }
         if studio {
             // 図鑑の寄り: 灯りの無い家具も夜に見えるよう、近くに暖色の灯りを 1 つ
             specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, position: CV3(layout.size.x * 0.3, 60, layout.size.z * 0.8),
                                          color: CamperRoomMaterials.lightColor(style.light), intensity: 520, range: 140, moods: [.night]))
         }
+        // 灯りの並びが同じなら作り直さない（指で動かしている間に毎回作り直さない）
+        guard specs != lampSpecs || lampNodes.isEmpty && !specs.isEmpty else { return }
+        lampNodes.forEach { $0.removeFromParentNode() }
+        lampNodes = []
         for spec in specs {
             let l = SCNLight()
             l.type = spec.kind == .spot ? .spot : .omni
@@ -415,22 +449,27 @@ final class CamperRoomScene {
 
     /// 持ち上げて動かしている家具（`item` は動かした先・`check` は置けるか）。nil で終わり
     func setDrag(_ item: CamperRoomItem?, check: CamperRoomCheck?) {
+        guard item != dragItem || check != dragCheck else { return }
+        let previous = dragItem
+        dragItem = item
+        dragCheck = check
         overlayNode.childNodes.filter { $0.name == "drag" }.forEach { $0.removeFromParentNode() }
-        // 前に持ち上げていた家具の接地の影を元に戻す
-        if let prev = liftedUid, prev != item?.u, let entry = itemNodes[prev],
-           let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
-            contact.scale = SCNVector3(1, 1, 1)
-            if entry.item.placement == .floor { contact.position = SCNVector3(0, 0.0015, 0) }
-        }
-        liftedUid = item?.u
-        guard let item, let placed = CamperRoomBuilder.place(item), let entry = itemNodes[item.u] else { return }
-        // 持ち上げ: 7 浮かせ、接地の影を広げて薄く（板の付箋「長押しで 7 浮かせ、影を広げる」）
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0.12
-        var lifted = placed
-        if placed.placement == .floor { lifted.position = placed.position + CV3(0, 7, 0) }
-        if placed.placement == .wall { lifted.position = placed.position + (placed.yaw == 0 ? CV3(0, 0, 3) : CV3(3, 0, 0)) }
-        transform(entry.node, lifted)
+        // 前に持ち上げていた家具を元の場所へ・接地の影を元に
+        if let prev = previous?.u, prev != item?.u, let entry = itemNodes[prev] {
+            transform(entry.node, displayed(entry.item))
+            if let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
+                contact.scale = SCNVector3(1, 1, 1)
+                if entry.item.placement == .floor { contact.position = SCNVector3(0, 0.0015, 0) }
+            }
+        }
+        guard let item, let placed = CamperRoomBuilder.place(item), let entry = itemNodes[item.u] else {
+            SCNTransaction.commit()
+            return
+        }
+        // 持ち上げ: 7 浮かせ、接地の影を広げて薄く（板の付箋「長押しで 7 浮かせ、影を広げる」）
+        transform(entry.node, displayed(entry.item))
         if let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
             contact.scale = SCNVector3(1.35, 1.35, 1.35)
             if placed.placement == .floor { contact.position = SCNVector3(0, Float(-7 * Self.unit + 0.0015), 0) }
@@ -476,14 +515,13 @@ final class CamperRoomScene {
 
     /// 選んでいる家具（少し浮かせて見せる: 板の付箋「軽く押す: 選ぶ（3 浮いて…）」）
     func setSelected(_ uid: String?) {
+        guard uid != selectedUid else { return }
+        let previous = selectedUid
+        selectedUid = uid
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0.12
-        for (id, entry) in itemNodes {
-            var it = entry.item
-            if id == uid, it.placement == .floor, !(CamperRoomCatalog.furniture(it.furnitureId)?.isRug ?? false) {
-                it.position = it.position + CV3(0, 3, 0)
-            }
-            transform(entry.node, it)
+        for id in [previous, uid].compactMap({ $0 }) {
+            if let entry = itemNodes[id] { transform(entry.node, displayed(entry.item)) }
         }
         SCNTransaction.commit()
     }

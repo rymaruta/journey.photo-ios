@@ -470,6 +470,24 @@ final class CamperRoomSceneTests: XCTestCase {
         XCTAssertEqual(scene.lightingSnapshot.lampsShown, 0)
         XCTAssertTrue(scene.marker().contains("camper-room-ready car day"))
     }
+
+    /// 持ち上げて動かしている間は、足元のマスを白（置ける）か赤（ぶつかる）で出し、終われば消す
+    func testDragOverlay() async throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        let doc = CamperRoomRules.starterDocument(layout)
+        let scene = CamperRoomScene()
+        scene.installNow(layout: layout, doc: doc, paint: 0x5B6168)
+        var trunk = try XCTUnwrap(doc.items.first { $0.k == "storage.trunk" })
+        trunk.x = 0
+        trunk.z = 0
+        let check = CamperRoomRules.check(trunk, in: doc, layout: layout)
+        XCTAssertFalse(check.ok)
+        scene.setDrag(trunk, check: check)
+        let cells = all(scene.scene.rootNode).filter { $0.name == "drag" }
+        XCTAssertEqual(cells.count, 6)
+        scene.setDrag(nil, check: nil)
+        XCTAssertTrue(all(scene.scene.rootNode).filter { $0.name == "drag" }.isEmpty)
+    }
 }
 
 #endif
