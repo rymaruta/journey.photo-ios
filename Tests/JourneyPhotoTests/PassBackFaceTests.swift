@@ -300,7 +300,8 @@ final class PassBackFaceTests: XCTestCase {
         XCTAssertEqual(found, [], "古い呼び名が残っている")
         // 設定の行・画面の題・オンにする説明の眉ラベルは同じ呼び名
         let settings = try source("Features/Settings/SettingsView.swift")
-        XCTAssertTrue(settings.contains("section(PassTicket.featureName)"))
+        // 2026-10-18: 節の見出しは「旅の道具」になった（行の題は同じ呼び名）
+        XCTAssertTrue(settings.contains("NavigationLink { PassSettingsView() } label: {"))
         XCTAssertTrue(settings.contains("JPRowLabel(title: PassTicket.featureName,"))
         let pass = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertEqual(pass.components(separatedBy: "PassTicket.featureName").count - 1, 3)
