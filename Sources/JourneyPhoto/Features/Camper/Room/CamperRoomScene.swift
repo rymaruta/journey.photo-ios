@@ -11,10 +11,11 @@ import SceneKitShim
 // 光（owner「室内のランプ・窓からの光を家具に正しく当てる」）:
 // - 昼: 太陽は奥の壁の窓の側から差し込む（影あり）。天井と壁が光をさえぎるので、床と家具には窓の形の光が落ちる。
 //   部屋全体は周りの光（空の絵）で柔らかく。隅と家具の足元は画面の陰（SSAO）と、家具ごとの接地の影で締める
-// - 夜: 月は窓から青く弱く。灯りの家具（床の灯り・壁の灯り・電球の紐・ストーブの火）に暖色の小さな omni、
-//   天井から部屋全体を包む広い spot（影あり・forward）。布と木に柔らかく回る
+// - 夜: 指向の月は消す（残すと窓から昼の光が差し込み、白い板と硬い影になる・2026-10-19 owner）。
+//   灯りの家具（床の灯り・壁の灯り・電球の紐・ストーブの火）の暖色 omni だけで、まわりの溜まりにする。
+//   窓の硝子は暗い色にし、外の景色は光を受けない夜の絵（windowNight）
 // - 夜の光の決まり（docs/CAMPER.md）: にじみ（bloom）は使わない・光る面の emission は 1 まで・室内の灯りは室内の組
-//   （categoryBitMask = 2）だけを照らす。窓の外の景色は光を受けない絵
+//   （categoryBitMask = 2）だけを照らす。天井の広い spot は置かない（Mac run 575）
 
 #if canImport(SceneKit) || canImport(SceneKitShim)
 
@@ -322,7 +323,8 @@ final class CamperRoomScene {
             l.intensity = CGFloat(spec.intensity)
             l.attenuationStartDistance = 0
             l.attenuationEndDistance = CGFloat(spec.range * Self.unit)
-            l.attenuationFalloffExponent = 2
+            // 2 だと芯が白く飛び、縁が急に真っ暗になる（Mac run 576・実機の硬い丸）。1.2 でなだらかな溜まりに
+            l.attenuationFalloffExponent = 1.2
             // 室内の灯りは室内の組だけ
             l.categoryBitMask = CamperScene.insideMask
             if spec.kind == .spot {
@@ -375,15 +377,18 @@ final class CamperRoomScene {
         scene.lightingEnvironment.contents = palette.image(key: "env.\(m.rawValue)") { CamperTextures.environment(m) }
         // 夜の値は外の車の夜にそろえる（周りの光・露出）。環境光はごく弱く
         scene.lightingEnvironment.intensity = CGFloat(night ? 0.06 : (studio ? 1.25 : 1.1))
-        // 昼の太陽は奥の壁の窓の側（z の負）から、少し後ろから差し込む。夜の月は同じ側から青く弱く
-        let from = night ? CV3(-0.3, 0.75, -0.6) : CV3(-0.25, 0.62, -0.75)
+        // 昼の太陽は奥の壁の窓の側（z の負）から、少し後ろから差し込む。
+        // 夜の指向光は消す（強度を残すと窓から昼の光が差し込み、硝子が白い板・硬い影になる・2026-10-19 owner）
+        let from = CV3(-0.25, 0.62, -0.75)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        sunNode.light?.intensity = CGFloat(night ? 60 : 1500)
-        sunNode.light?.color = night ? CamperScene.color(0x9FB4DC) : CamperScene.color(0xFFF1DC)
+        sunNode.light?.intensity = CGFloat(night ? 0 : 1500)
+        sunNode.light?.color = CamperScene.color(0xFFF1DC)
+        sunNode.light?.castsShadow = !night
         sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: 1)
-        ambientNode.light?.intensity = CGFloat(night ? 10 : 90)
-        ambientNode.light?.color = night ? CamperScene.color(0x6A6F80) : CamperScene.color(0xFFF6EA)
+        // 夜は灯りの溜まりの外が完全な黒にならないよう、ごく弱い環境光（暖色寄り）
+        ambientNode.light?.intensity = CGFloat(night ? 18 : 90)
+        ambientNode.light?.color = night ? CamperScene.color(0x4A3A28) : CamperScene.color(0xFFF6EA)
         cameraNode.camera?.exposureOffset = CGFloat(night ? -0.15 : 0.15)
         cameraNode.camera?.bloomIntensity = 0
         for n in lampNodes { n.isHidden = !night }

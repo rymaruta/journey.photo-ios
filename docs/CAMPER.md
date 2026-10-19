@@ -42,8 +42,8 @@
 - 写真に写った物（寺・和室・料理・市場・雪・星空・教会・本）は、山・海と同じく撮影地・題・タグの言葉で数える（画像分類はしない）。
 - 保存: 人ごとにこの端末（`CamperRoomStore`・`camper.room.<userId>.<部屋>`・板の保存の形）。退会で消す。
 - 光: 昼は奥の窓の側からの太陽（影あり）と空の光、夜は灯りの家具の暖色の omni（5 つまで・届く 90 まで・強さの和 2.8 まで）だけで、灯りのまわりの溜まりにする（天井の灯りは置かない・Mac run 575）。
-  bloom なし・emission 1 まで・室内の灯りは室内の組（categoryBitMask 2）だけ。素材を SceneKit に写す所は外の車と共に使う
-  （`CamperScenePalette`）。
+  夜の指向の月は消す（残すと窓から昼の光が差し込む・2026-10-19 owner）。窓の硝子は夜だけ暗い色。bloom なし・emission 1 まで・
+  室内の灯りは室内の組（categoryBitMask 2）だけ。素材を SceneKit に写す所は外の車と共に使う（`CamperScenePalette`）。
 - 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）。
   見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift` は Debug だけ。
 - 手元で形を見る: `CAMPER_ROOM_DUMP=<dir> swift test --filter CamperRoomRenderDump`（家具と部屋を小さな絵に書き出す）。
