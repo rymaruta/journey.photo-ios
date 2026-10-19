@@ -5,7 +5,7 @@ import Foundation
 /// モックのラベルとトランクの絵は SVG で描いてある。**手で写し替えると数字を取り違える**ので、
 /// 文字のまま持ち、ここで読む。画面は並びをそのまま `Path` に移すだけ。
 ///
-/// 読むのはモックが使う命令だけ: `M L H V C Q A Z`（**大文字＝絶対座標**）と、相対の弧 `a`（部品の絵）。
+/// 読むのは `M L H V C S Q T A Z`（大文字＝絶対座標・小文字＝相対座標。小文字はキャンプ場の部品の絵・2026-10-18）。
 /// 弧（`A`）は SVG の決まり（端点から中心への変換・半径が足りなければ広げる）で
 /// 90° 以下の3次の曲線に分ける。
 enum SVGPath {
@@ -41,44 +41,69 @@ enum SVGPath {
             return Point(x: x, y: y)
         }
 
+        // 直前の曲線の制御点（S・T の映し返し）
+        var lastCubic: Point?
+        var lastQuad: Point?
         while i < tokens.count {
             if case .command(let c) = tokens[i] {
                 command = c
                 i += 1
-                if c == "Z" {
+                if c == "Z" || c == "z" {
                     out.append(.close)
                     current = start
+                    lastCubic = nil
+                    lastQuad = nil
                     continue
                 }
             }
-            switch command {
+            // 小文字は相対座標（今の点からの差）。キャンプ場の部品の絵（板 CampDex・2026-10-18）が使う
+            let relative = command.isLowercase && command != "a"
+            func at(_ p: Point) -> Point { relative ? Point(x: current.x + p.x, y: current.y + p.y) : p }
+            let upper = Character(command.uppercased())
+            var cubic: Point?
+            var quad: Point?
+            switch command == "a" ? "a" : upper {
             case "M":
-                guard let p = point() else { return out }
+                guard let p = point().map(at) else { return out }
                 out.append(.move(p))
                 current = p
                 start = p
                 // 続く座標は直線（SVG の決まり）
-                command = "L"
+                command = relative ? "l" : "L"
             case "L":
-                guard let p = point() else { return out }
+                guard let p = point().map(at) else { return out }
                 out.append(.line(p))
                 current = p
             case "H":
                 guard let x = number() else { return out }
-                current = Point(x: x, y: current.y)
+                current = Point(x: relative ? current.x + x : x, y: current.y)
                 out.append(.line(current))
             case "V":
                 guard let y = number() else { return out }
-                current = Point(x: current.x, y: y)
+                current = Point(x: current.x, y: relative ? current.y + y : y)
                 out.append(.line(current))
             case "C":
-                guard let c1 = point(), let c2 = point(), let p = point() else { return out }
+                guard let c1 = point().map(at), let c2 = point().map(at), let p = point().map(at) else { return out }
                 out.append(.cubic(c1: c1, c2: c2, to: p))
                 current = p
+                cubic = c2
+            case "S":
+                guard let c2 = point().map(at), let p = point().map(at) else { return out }
+                let c1 = lastCubic.map { Point(x: 2 * current.x - $0.x, y: 2 * current.y - $0.y) } ?? current
+                out.append(.cubic(c1: c1, c2: c2, to: p))
+                current = p
+                cubic = c2
             case "Q":
-                guard let c = point(), let p = point() else { return out }
+                guard let c = point().map(at), let p = point().map(at) else { return out }
                 out.append(.quad(c: c, to: p))
                 current = p
+                quad = c
+            case "T":
+                guard let p = point().map(at) else { return out }
+                let c = lastQuad.map { Point(x: 2 * current.x - $0.x, y: 2 * current.y - $0.y) } ?? current
+                out.append(.quad(c: c, to: p))
+                current = p
+                quad = c
             case "A":
                 guard let rx = number(), let ry = number(), let rotation = number(),
                       let large = number(), let sweep = number(), let p = point() else { return out }
@@ -94,9 +119,11 @@ enum SVGPath {
                            largeArc: large != 0, sweep: sweep != 0)
                 current = p
             default:
-                // 知らない命令（小文字の相対座標など）はそこで止める（描けるところまで）
+                // 知らない命令はそこで止める（描けるところまで）
                 return out
             }
+            lastCubic = cubic
+            lastQuad = quad
         }
         return out
     }
