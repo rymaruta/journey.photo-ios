@@ -2,27 +2,46 @@ import Foundation
 
 // とおまわり号の中の部屋の広さ・動かせない物・置く決まり（2026-10-19・板「CamperRoom」と付箋「マス目と寸法」「置く決まり」）。
 //
-// 長さ（x・後ろから運転席の仕切り）も幅（z・奥の壁から扉の壁）も、車の実寸より広い箱庭。
-// 実寸だと寝台が 8×4 で、集めた家具が床に並ばない（2026-10-19 owner「中もっと広く」
-// 「家具を集めても置けない」「大きくしても全然 OK」）。図鑑の家具が一度に置ける広さにした。
-// 1 マス = 10 ≈ 25 cm。天井は 88 のまま。
+// 1 マス = 10 ≈ 25 cm。天井は 88。床のマスは、その部屋の外の箱を 10 で割った数（`CamperVolumes`）。
+// 車の部屋は殻と同じ（バン 12×8、キャンピングカー 18×9）。あつ森の家は 6 部屋なので、どの段も 7 部屋。
 // 部屋の座標は左奥が原点: x は後ろ（0）から運転席の仕切りへ、z は奥の壁（0）から扉の壁へ、y は床から上。
 // 素の Swift なので Linux でも試験できる。
 
-/// 部屋（車の部屋と、トレーラーつきの 2 つ目の部屋）
+/// 部屋。車の部屋とトレーラーは殻が外の箱。ほかは外に足した箱
 enum CamperRoomKind: String, CaseIterable, Codable, Sendable {
     case car
+    case sideRear
+    case sideFront
+    case porch
+    case locker
+    case loft
+    case bunk
     case trailer
 
     var name: String {
         switch self {
         case .car: return L("車の部屋", "Camper room")
-        case .trailer: return L("トレーラーの部屋", "Trailer room")
+        case .sideRear: return L("後ろの張り出し", "Rear slide-out")
+        case .sideFront: return L("前の張り出し", "Front slide-out")
+        case .porch: return L("軒先", "Porch")
+        case .locker: return L("荷物室", "Locker")
+        case .loft: return L("ロフト", "Loft")
+        case .bunk: return L("運転席の上", "Over the cab")
+        case .trailer: return L("トレーラー", "Trailer")
         }
     }
 
-    /// その段で入れる部屋（トレーラーの部屋はトレーラーつきから）
-    static func rooms(_ stage: CamperStage) -> [CamperRoomKind] { stage == .trailer ? [.car, .trailer] : [.car] }
+    /// その段で入れる部屋。どの段も 7（あつ森の家の 6 より多い）。
+    /// 荷物室はトレーラーの胴と重なるので、トレーラーつきではトレーラーの部屋に入れ替える
+    static func rooms(_ stage: CamperStage) -> [CamperRoomKind] {
+        var list: [CamperRoomKind] = [.car, .sideRear, .sideFront, .porch]
+        if stage == .trailer {
+            list += [.loft, .bunk, .trailer]
+        } else {
+            list += [.locker, .loft, .bunk]
+        }
+        return list
+    }
 }
 
 /// 壁の物を掛けられる壁（奥の壁と後ろの壁。扉の壁と運転席の仕切りは使わない）。保存の値は板の `w`（back / left）
@@ -77,6 +96,8 @@ struct CamperRoomLayout: Equatable, Sendable {
     var wallLimit: Int
     var ceilingLimit: Int
     var photoLimit: Int
+    /// 天井の高さ（板の単位）。地面の部屋は 88。屋根の上の部屋は外の箱と同じ
+    var ceilingHeight = Self.ceiling
     /// 図鑑の寄りの小さな部屋（台所と扉の口を作らない）
     var isStudio = false
 
@@ -99,26 +120,48 @@ struct CamperRoomLayout: Equatable, Sendable {
     /// 壁の横のマスの数
     func columns(_ wall: CamperRoomWall) -> Int { wall == .back ? width : depth }
 
-    /// 図鑑の家具（床・壁・天井）が、台所と扉の前と通り道を残したまま一度に置ける広さ。
-    /// バン 500×340、キャンピングカー 540×360、トレーラー 580×400。
-    /// 上限は床 1300/1400/1500、壁 700/760/820、天井 450/500/560、写真 180/220/260。
-    /// 台所と扉は広がった側（運転席の仕切り）に寄せ、すでに置いてある家具のマスはそのまま残る。
+    /// 床のマスは外の箱÷10。車の部屋は殻（バン 12×8・ほか 18×9）、トレーラーは殻の内側 11×7。
+    /// 張り出しの扉は運転席側の端（寝台 8 マスが扉の前と左右で重ならないようにする）。台所は車の部屋だけ。
     static func make(_ kind: CamperRoomKind, stage: CamperStage) -> CamperRoomLayout {
-        switch (kind, stage) {
-        case (.car, .van):
-            return CamperRoomLayout(kind: .car, width: 500, depth: 340, door: 497...499, kitchen: CamperRoomRect(x: 494, z: 0, w: 6, d: 3),
-                                    windows: [CamperRoomWindow(wall: .back, from: 2, to: 5), CamperRoomWindow(wall: .left, from: 4, to: 9)],
-                                    floorLimit: 1300, wallLimit: 700, ceilingLimit: 450, photoLimit: 180)
-        case (.car, _):
-            return CamperRoomLayout(kind: .car, width: 540, depth: 360, door: 537...539, kitchen: CamperRoomRect(x: 534, z: 0, w: 6, d: 3),
-                                    windows: [CamperRoomWindow(wall: .back, from: 3, to: 6), CamperRoomWindow(wall: .left, from: 4, to: 10)],
-                                    floorLimit: 1400, wallLimit: 760, ceilingLimit: 500, photoLimit: 220)
-        case (.trailer, _):
-            return CamperRoomLayout(kind: .trailer, width: 580, depth: 400, door: 577...579, kitchen: CamperRoomRect(x: 574, z: 0, w: 6, d: 3),
-                                    windows: [CamperRoomWindow(wall: .back, from: 4, to: 7), CamperRoomWindow(wall: .back, from: 14, to: 17),
-                                              CamperRoomWindow(wall: .left, from: 5, to: 12)],
-                                    floorLimit: 1500, wallLimit: 820, ceilingLimit: 560, photoLimit: 260)
+        switch kind {
+        case .car:
+            if stage == .van {
+                return CamperRoomLayout(kind: .car, width: 12, depth: 8, door: 9...11, kitchen: CamperRoomRect(x: 6, z: 0, w: 6, d: 3),
+                                        windows: [CamperRoomWindow(wall: .back, from: 2, to: 5), CamperRoomWindow(wall: .left, from: 3, to: 4)],
+                                        floorLimit: 20, wallLimit: 12, ceilingLimit: 6, photoLimit: 6)
+            }
+            return CamperRoomLayout(kind: .car, width: 18, depth: 9, door: 15...17, kitchen: CamperRoomRect(x: 12, z: 0, w: 6, d: 3),
+                                    windows: [CamperRoomWindow(wall: .back, from: 3, to: 6), CamperRoomWindow(wall: .left, from: 3, to: 5)],
+                                    floorLimit: 40, wallLimit: 24, ceilingLimit: 12, photoLimit: 12)
+        case .trailer:
+            return wing(.trailer, width: Int(CamperVolumes.trailerLength / CamperVolumes.cell),
+                        depth: Int(CamperVolumes.trailerWidth / CamperVolumes.cell))
+        case .sideRear, .sideFront, .porch, .locker, .loft, .bunk:
+            let box = CamperVolumes.boxes(stage == .trailer && kind == .locker ? .camper : stage)[kind]
+                ?? CamperVolumes.boxes(.camper)[kind]
+            let width = Int(((box?.length ?? CamperVolumes.cell) / CamperVolumes.cell).rounded())
+            let depth = Int(((box?.width ?? CamperVolumes.cell) / CamperVolumes.cell).rounded())
+            return wing(kind, width: width, depth: depth, height: box?.height ?? CamperVolumes.groundHeight)
         }
+    }
+
+    /// 張り出し（台所なし・扉は端・窓は奥の壁に 1 つ）。上限はマスの数で、1 つ置く前には止まらない。
+    /// 天井は外の箱の高さ。低い部屋の窓は天井の下に収める
+    private static func wing(_ kind: CamperRoomKind, width: Int, depth: Int, height: Double = CamperRoomLayout.ceiling) -> CamperRoomLayout {
+        let doorStart = max(0, width - 3)
+        let windowTo = min(4, max(1, width - 4))
+        var window = CamperRoomWindow(wall: .back, from: 1, to: windowTo)
+        if height < Self.ceiling {
+            window.bottom = 16
+            window.top = height - 8
+        }
+        var layout = CamperRoomLayout(kind: kind, width: width, depth: depth, door: doorStart...(doorStart + 2),
+                                      kitchen: CamperRoomRect(x: 0, z: 0, w: 0, d: 0),
+                                      windows: width >= 6 ? [window] : [],
+                                      floorLimit: width * depth, wallLimit: (width + depth) * 4,
+                                      ceilingLimit: width * depth, photoLimit: width * depth)
+        layout.ceilingHeight = height
+        return layout
     }
 }
 
@@ -229,7 +272,7 @@ struct CamperRoomDocument: Codable, Equatable, Sendable {
 /// 置けるか（置けなければ、ぶつかったマス・理由）
 struct CamperRoomCheck: Equatable, Sendable {
     enum Reason: Equatable, Sendable {
-        case outside, overlap, kitchen, doorway, blocksPath, window, tallFurniture, limit, wallBlocked
+        case outside, overlap, kitchen, doorway, blocksPath, window, tallFurniture, limit, wallBlocked, tooTall
     }
     var reason: Reason?
     /// 赤で知らせるマス（床・天井）
@@ -242,6 +285,7 @@ struct CamperRoomCheck: Equatable, Sendable {
         switch reason {
         case nil: return L("置けます", "It fits")
         case .outside: return L("部屋からはみ出します", "It doesn\u{2019}t fit in the room")
+        case .tooTall: return L("天井より高いです", "Taller than the ceiling")
         case .overlap: return L("ほかの家具とぶつかります", "It overlaps another piece")
         case .kitchen: return L("台所とぶつかります", "It runs into the kitchen")
         case .doorway: return L("扉の前は空けておきます", "Keep the doorway clear")
@@ -291,6 +335,9 @@ enum CamperRoomRules {
     private static func checkFloor(_ item: CamperRoomItem, _ f: CamperRoomFurniture, others: [CamperRoomItem],
                                    layout: CamperRoomLayout) -> CamperRoomCheck {
         guard let rect = item.rect else { return CamperRoomCheck(reason: .outside) }
+        if !f.isRug, f.height > layout.ceilingHeight {
+            return CamperRoomCheck(reason: .tooTall)
+        }
         guard inside(rect, layout) else {
             return CamperRoomCheck(reason: .outside, blocked: Set(rect.cells.filter { !(0..<layout.width).contains($0.x) || !(0..<layout.depth).contains($0.z) }))
         }
@@ -399,6 +446,8 @@ enum CamperRoomRules {
               span.rows.lowerBound >= 0, span.rows.upperBound <= CamperRoomLayout.rowBottoms.count else {
             return CamperRoomCheck(reason: .outside)
         }
+        let aboveCeiling = span.rows.contains { CamperRoomLayout.rowBottoms[$0] + CamperRoomLayout.rowHeight > layout.ceilingHeight }
+        if aboveCeiling { return CamperRoomCheck(reason: .tooTall) }
         for o in others {
             guard let s = o.wallSpan, s.wall == span.wall else { continue }
             if s.columns.overlaps(span.columns), s.rows.overlaps(span.rows) { return CamperRoomCheck(reason: .overlap) }
@@ -422,6 +471,7 @@ enum CamperRoomRules {
 
     private static func checkCeiling(_ item: CamperRoomItem, others: [CamperRoomItem], layout: CamperRoomLayout) -> CamperRoomCheck {
         guard let rect = item.rect else { return CamperRoomCheck(reason: .outside) }
+        if let f = item.furniture, f.height > layout.ceilingHeight { return CamperRoomCheck(reason: .tooTall) }
         guard inside(rect, layout) else { return CamperRoomCheck(reason: .outside) }
         let hit = others.filter { $0.furniture?.placement == .ceiling }.compactMap(\.rect).filter { $0.intersects(rect) }
         if !hit.isEmpty {
@@ -555,8 +605,8 @@ enum CamperRoomRules {
     static func starterDocument(_ layout: CamperRoomLayout) -> CamperRoomDocument {
         var doc = CamperRoomDocument(room: layout.kind)
         let wanted: [CamperRoomItem]
-        switch (layout.kind, layout.width) {
-        case (.car, 500):
+        switch layout.kind {
+        case .car where layout.width <= 12:
             wanted = [
                 .floor("i1", "bed.platform", x: 0, z: 4),
                 .floor("i2", "heater.wood_stove", x: 0, z: 0),
@@ -564,11 +614,11 @@ enum CamperRoomRules {
                 .floor("i4", "room_rug.runner", x: 4, z: 3),
                 .wall("i5", "photo_frame.landscape", .back, c: 7, row: 1),
                 .wall("i6", "wall_lamp.glass_sconce", .back, c: 6, row: 1),
-                .wall("i7", "clock.station", .left, c: 10, row: 1),
+                .wall("i7", "clock.station", .left, c: 6, row: 1),
                 .ceiling("i8", "string_ceiling.globe_string", x: 3, z: 4),
                 .ceiling("i9", "plant_hanger.macrame", x: 9, z: 4),
             ]
-        case (.car, _):
+        case .car:
             wanted = [
                 .floor("i1", "bed.platform", x: 0, z: 0, r: 1),
                 .floor("i2", "table.dinette_post", x: 6, z: 0),
@@ -580,23 +630,22 @@ enum CamperRoomRules {
                 .wall("i8", "photo_frame.landscape", .back, c: 7, row: 1),
                 .wall("i9", "photo_frame.square", .left, c: 1, row: 1),
                 .wall("i10", "clock.station", .back, c: 13, row: 1),
-                .wall("i11", "wall_lamp.glass_sconce", .left, c: 12, row: 1),
+                .wall("i11", "wall_lamp.glass_sconce", .left, c: 6, row: 1),
                 .wall("i12", "wall_shelf.plank_brackets", .back, c: 14, row: 2),
                 .ceiling("i13", "string_ceiling.globe_string", x: 5, z: 4),
                 .ceiling("i14", "mobile.wooden_birds", x: 2, z: 6),
                 .ceiling("i15", "plant_hanger.macrame", x: 12, z: 6),
                 .ceiling("i16", "roof_hatch.square_vent", x: 7, z: 1),
             ]
-        case (.trailer, _):
+        case .trailer:
             wanted = [
                 .floor("i1", "bed.platform", x: 0, z: 0),
-                .floor("i2", "table.dinette_post", x: 9, z: 0),
-                .floor("i3", "heater.wood_stove", x: 14, z: 0),
-                .floor("i4", "room_rug.runner", x: 9, z: 5),
-                .wall("i5", "photo_frame.landscape", .back, c: 10, row: 1),
-                .wall("i6", "wall_lamp.glass_sconce", .left, c: 13, row: 1),
-                .ceiling("i7", "string_ceiling.globe_string", x: 8, z: 4),
+                .floor("i2", "room_rug.runner", x: 0, z: 5),
+                .wall("i3", "photo_frame.landscape", .back, c: 9, row: 1),
+                .ceiling("i4", "mobile.wooden_birds", x: 8, z: 1),
             ]
+        case .sideRear, .sideFront, .porch, .locker, .loft, .bunk:
+            wanted = []
         }
         for item in wanted where check(item, in: doc, layout: layout).ok { doc.upsert(item) }
         return doc

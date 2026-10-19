@@ -102,10 +102,10 @@ final class CamperRoomTests: XCTestCase {
 
     // MARK: 置く決まり
 
-    /// 最初の並びは、どの段の部屋でも決まりに合っていて、思った数がそろう
+    /// 最初の並びは、殻の部屋で決まりに合っていて、思った数がそろう
     func testStarterDocumentsAreValid() {
-        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 500, 340),
-                                                    (.car, .camper, 16, 540, 360), (.trailer, .trailer, 7, 580, 400)] {
+        for (kind, stage, count, width, depth) in [(CamperRoomKind.car, CamperStage.van, 9, 12, 8),
+                                                    (.car, .camper, 16, 18, 9), (.trailer, .trailer, 4, 11, 7)] {
             let l = CamperRoomLayout.make(kind, stage: stage)
             XCTAssertEqual(l.width, width, "\(stage)")
             XCTAssertEqual(l.depth, depth, "\(stage)")
@@ -119,32 +119,74 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
-    /// 図鑑の家具は、どの段の部屋でも一度に置ける（上限で先に止まらない・床も壁も天井も足りる）。
-    /// 天井は背の高い家具の前に置く（机の上には吊れる。寝台の上には吊れない）
-    func testCollectedFurnitureFits() {
-        func rank(_ f: CamperRoomFurniture) -> Int {
-            switch f.placement {
-            case .ceiling: return 0
-            case .floor: return f.height > CamperRoomLayout.tallForCeiling ? 2 : 1
-            case .wall: return 3
+    /// どの段も 7 部屋。床のマスは外の箱÷10。地面の箱の高さは天井 88。箱どうしは重ならない
+    func testRoomsMatchTheOutside() {
+        func overlaps(_ a: CamperVolumes.Box, _ b: CamperVolumes.Box) -> Bool {
+            let ax0 = min(a.x0, a.x1), ax1 = max(a.x0, a.x1)
+            let bx0 = min(b.x0, b.x1), bx1 = max(b.x0, b.x1)
+            let az0 = min(a.z0, a.z1), az1 = max(a.z0, a.z1)
+            let bz0 = min(b.z0, b.z1), bz1 = max(b.z0, b.z1)
+            return ax0 < bx1 && bx0 < ax1 && az0 < bz1 && bz0 < az1
+        }
+        for stage in CamperStage.allCases {
+            let rooms = CamperRoomKind.rooms(stage)
+            XCTAssertGreaterThanOrEqual(rooms.count, 7, "\(stage)")
+            XCTAssertEqual(Set(rooms).count, rooms.count, "\(stage)")
+            XCTAssertEqual(rooms.contains(.locker), stage != .trailer, "\(stage)")
+            XCTAssertEqual(rooms.contains(.trailer), stage == .trailer, "\(stage)")
+            let boxes = CamperVolumes.boxes(stage)
+            for kind in rooms {
+                let layout = CamperRoomLayout.make(kind, stage: stage)
+                if let box = boxes[kind] {
+                    XCTAssertEqual(Double(layout.width) * CamperVolumes.cell, box.length, accuracy: 0.01, "\(stage) \(kind)")
+                    XCTAssertEqual(Double(layout.depth) * CamperVolumes.cell, box.width, accuracy: 0.01, "\(stage) \(kind)")
+                    XCTAssertEqual(layout.ceilingHeight, box.height, accuracy: 0.01, "\(stage) \(kind)")
+                    if box.floorTop == CamperVolumes.groundFloorY {
+                        XCTAssertEqual(box.height, CamperVolumes.groundHeight, "\(kind)")
+                    } else {
+                        XCTAssertEqual(box.height, CamperVolumes.upperHeight, "\(kind)")
+                        XCTAssertGreaterThan(box.floorTop, CamperVolumes.roofTop(stage), "\(kind)")
+                    }
+                }
+                let doc = CamperRoomRules.starterDocument(layout)
+                for item in doc.all {
+                    var others = doc
+                    others.remove(item.u)
+                    XCTAssertTrue(CamperRoomRules.check(item, in: others, layout: layout).ok, "\(kind) \(stage) \(item.k)")
+                }
+            }
+            let ground = boxes.values.filter { $0.floorTop == CamperVolumes.groundFloorY }
+            let upper = boxes.values.filter { $0.floorTop != CamperVolumes.groundFloorY }
+            for pair in [Array(ground), Array(upper)] {
+                for i in 0..<pair.count {
+                    for j in (i + 1)..<pair.count {
+                        XCTAssertFalse(overlaps(pair[i], pair[j]), "\(stage)")
+                    }
+                }
             }
         }
-        let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.sorted { a, b in
-            let ra = rank(a), rb = rank(b)
-            if ra != rb { return ra < rb }
-            let area: (CamperRoomFurniture) -> Int = { $0.placement == .floor && !$0.isRug ? $0.width * $0.depth : 0 }
-            return area(a) > area(b)
-        }
-        for (kind, stage) in [(CamperRoomKind.car, CamperStage.van), (.car, .camper), (.trailer, .trailer)] {
-            let layout = CamperRoomLayout.make(kind, stage: stage)
-            var doc = CamperRoomDocument(room: kind)
+        let loft = CamperRoomLayout.make(.loft, stage: .camper)
+        XCTAssertEqual(loft.ceilingHeight, CamperVolumes.upperHeight, accuracy: 0.01)
+        XCTAssertEqual(CamperRoomRules.check(.floor("s", "heater.wood_stove", x: 0, z: 0), in: CamperRoomDocument(room: .loft), layout: loft).reason, .tooTall)
+        XCTAssertTrue(CamperRoomRules.check(.floor("s", "heater.wood_stove", x: 0, z: 0), in: CamperRoomDocument(room: .car), layout: camper).ok)
+        XCTAssertNil(CamperVolumes.boxes(.camper)[.car])
+        XCTAssertNil(CamperVolumes.boxes(.trailer)[.trailer])
+        XCTAssertEqual(CamperRoomLayout.make(.trailer, stage: .trailer).width, 11)
+        XCTAssertEqual(CamperRoomLayout.make(.trailer, stage: .trailer).depth, 7)
+    }
+
+    /// 図鑑の家具は、空の部屋のどれか 1 つには入る（全部を一部屋に並べると外の箱と矛盾する）。
+    func testCollectedFurnitureFits() {
+        let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }
+        for stage in CamperStage.allCases {
+            let rooms = CamperRoomKind.rooms(stage)
             var missed: [String] = []
             for f in pieces {
-                if let item = CamperRoomRules.firstFit(f, uid: doc.nextUid(), in: doc, layout: layout) {
-                    doc.upsert(item)
-                } else {
-                    missed.append(f.id)
+                let fits = rooms.contains { kind in
+                    let layout = CamperRoomLayout.make(kind, stage: stage)
+                    return CamperRoomRules.firstFit(f, uid: "t", in: CamperRoomDocument(room: kind), layout: layout) != nil
                 }
+                if !fits { missed.append(f.id) }
             }
             XCTAssertEqual(missed.count, 0, "\(stage) \(missed.prefix(8))")
         }
@@ -174,7 +216,7 @@ final class CamperRoomTests: XCTestCase {
         var doc = CamperRoomDocument(room: .car)
         // 扉のすぐ手前に、1 マスだけ開けた壁を立てる。その隙間から奥（x = 0）へ抜けられる
         let cutX = camper.door.lowerBound - 1
-        let gapZ = 20
+        let gapZ = camper.depth / 2
         for z in 0..<camper.depth where z != gapZ {
             doc.upsert(.floor("p\(z)", "floor_lamp.brass_stem", x: cutX, z: z))
         }

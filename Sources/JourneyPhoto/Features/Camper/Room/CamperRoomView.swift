@@ -203,25 +203,27 @@ struct CamperRoomView: View {
         }
     }
 
-    /// 車の部屋とトレーラーの部屋（トレーラーつきから）
+    /// 7 部屋。名前が横に並びきらないので、横に送れる
     private var roomTabs: some View {
-        HStack(spacing: 2) {
-            ForEach(CamperRoomKind.rooms(stage), id: \.self) { k in
-                Button { room = k } label: {
-                    Text(k.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .overlay(alignment: .bottom) { Rectangle().fill(k == room ? WebTheme.accent : Color.clear).frame(height: 2) }
-                        .contentShape(Rectangle())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach(CamperRoomKind.rooms(stage), id: \.self) { k in
+                    Button { room = k } label: {
+                        Text(k.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .overlay(alignment: .bottom) { Rectangle().fill(k == room ? WebTheme.accent : Color.clear).frame(height: 2) }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(k == room ? .isSelected : [])
+                    .accessibilityIdentifier("camper.room.room.\(k.rawValue)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(k == room ? .isSelected : [])
-                .accessibilityIdentifier("camper.room.room.\(k.rawValue)")
             }
+            .padding(.horizontal, 8)
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: 部屋の場面
@@ -276,7 +278,7 @@ struct CamperRoomView: View {
 
     /// 回す・しまうの札を出す所（家具の上の画面の点）
     private func actionPoint(_ uid: String) -> CGPoint? {
-        guard let item = editor?.doc.item(uid), let b = CamperRoomPick.bounds(item) else { return nil }
+        guard let item = editor?.doc.item(uid), let b = CamperRoomPick.bounds(item, ceiling: layout.ceilingHeight) else { return nil }
         let top = CV3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2)
         return camera.project(top, viewport: viewport, layout: layout)
     }
@@ -323,7 +325,7 @@ struct CamperRoomView: View {
                 guard let editor else { return }
                 if gesture == nil {
                     let ray = camera.ray(value.startLocation, viewport: viewport, layout: layout)
-                    let hit = mode == .style ? nil : CamperRoomPick.item(at: ray, in: editor.doc)
+                    let hit = mode == .style ? nil : CamperRoomPick.item(at: ray, in: editor.doc, ceiling: layout.ceilingHeight)
                     gesture = PointerState(start: value.startLocation, item: hit, camera: camera)
                     if let hit { scheduleLift(hit.u) }
                 }

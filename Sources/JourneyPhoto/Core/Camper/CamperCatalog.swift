@@ -44,10 +44,9 @@ enum CamperStage: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// 寄りの倍率（板の注記「3 段の寄りの倍率は 1.02 / 0.95 / 0.74」）
+    /// 板の注記の寄りの倍率。車庫の初めの向きは外寸から計算する（`CamperFraming.overview`）
     var zoom: Double {
         switch self {
-        // 初めの寄り。車（と外の置き物）が画面の横幅の 8 割前後（2026-10-18 Mac の絵 run 530: 0.95 では 5 割で小さかった）
         case .van: return 1.6
         case .camper: return 1.45
         case .trailer: return 1.05

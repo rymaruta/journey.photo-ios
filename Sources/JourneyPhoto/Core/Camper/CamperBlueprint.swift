@@ -410,9 +410,13 @@ struct CamperBuilder {
         b.campsite()
         b.wallSeams()
         if config.stage == .trailer { b.trailer() }
+        b.wings()
         b.nightLights()
         b.applyWallWood()
         b.applySilhouette()
+        let outline = CamperVolumes.bounds(config.stage)
+        b.out.length = outline.x
+        b.out.halfWidth = outline.halfWidth
         return b.out
     }
 
@@ -1381,10 +1385,16 @@ extension CV3 {
 
 enum CamperFraming {
 
-    /// 初めの向き（板の注記: 縦 −14°・横 −32°）
+    /// 初めの向き（横 −32°・見下ろし 14°）。寄りは外寸から、車が画面の横の 8 割弱に入る倍率
     static func overview(_ stage: CamperStage) -> CamperAngle {
-        let t = stage == .trailer ? CamperBuilder.B(-70, -16, 0) : CamperBuilder.B(0, -14, 0)
-        return CamperAngle(target: t, yaw: -32, elevation: 14, zoom: stage.zoom)
+        let outline = CamperVolumes.bounds(stage)
+        let midX = (outline.x.lowerBound + outline.x.upperBound) / 2
+        let yaw = -32.0
+        let rad = abs(yaw) * .pi / 180
+        let span = (outline.x.upperBound - outline.x.lowerBound) * cos(rad) + outline.halfWidth * 2 * sin(rad)
+        let k = 1.4 * 2 * distance(zoom: 1) * tan(fieldOfView / 2 * .pi / 180) * 100
+        let zoom = min(zoomRange.upperBound, max(zoomRange.lowerBound, 0.78 * k / max(span, 1)))
+        return CamperAngle(target: CV3(midX, 70, 0), yaw: yaw, elevation: 14, zoom: zoom)
     }
 
     /// 分類の部品の寄り（板 CamperDecorate・CamperCollection の part の向き）

@@ -78,8 +78,8 @@ enum CamperRoomBuilder {
         parts.append(node("room.floor", K.reUV(slab, scale: 40)))
         // 天井（下向きの面だけ・上からは裏で見えない）
         var ceiling = CamperMesh()
-        ceiling.positions = [CV3(0, CamperRoomLayout.ceiling, 0), CV3(s.x, CamperRoomLayout.ceiling, 0), CV3(s.x, CamperRoomLayout.ceiling, s.z),
-                             CV3(0, CamperRoomLayout.ceiling, s.z)]
+        ceiling.positions = [CV3(0, l.ceilingHeight, 0), CV3(s.x, l.ceilingHeight, 0), CV3(s.x, l.ceilingHeight, s.z),
+                             CV3(0, l.ceilingHeight, s.z)]
         ceiling.normals = Array(repeating: CV3(0, -1, 0), count: 4)
         ceiling.uvs = [CV2(0, 0), CV2(4, 0), CV2(4, 2), CV2(0, 2)]
         ceiling.groups = [(R(.wallFinish("plywood_birch")), [0, 1, 2, 0, 2, 3])]
@@ -116,7 +116,7 @@ enum CamperRoomBuilder {
     }
 
     static func walls(_ l: CamperRoomLayout, style: CamperRoomStyle, paint: UInt32) -> [CamperNodeSpec] {
-        let s = l.size, t = CamperRoomLayout.wallThickness, h = CamperRoomLayout.ceiling
+        let s = l.size, t = CamperRoomLayout.wallThickness, h = l.ceilingHeight
         var out: [CamperNodeSpec] = []
         // 奥の壁（z = 0・+Z 向き）
         let backHoles = l.windows.filter { $0.wall == .back }.map(windowHole)
@@ -284,14 +284,14 @@ enum CamperRoomBuilder {
 
     // MARK: 家具の置き場所
 
-    static func place(_ item: CamperRoomItem) -> CamperRoomPlacedItem? {
+    static func place(_ item: CamperRoomItem, ceiling: Double = CamperRoomLayout.ceiling) -> CamperRoomPlacedItem? {
         guard let f = item.furniture else { return nil }
         let cell = CamperRoomLayout.cell
         switch f.placement {
         case .floor, .ceiling:
             guard let r = item.rect else { return nil }
             let cx = (Double(r.x) + Double(r.w) / 2) * cell, cz = (Double(r.z) + Double(r.d) / 2) * cell
-            let y = f.placement == .floor ? 0 : CamperRoomLayout.ceiling
+            let y = f.placement == .floor ? 0 : ceiling
             return CamperRoomPlacedItem(uid: item.u, furnitureId: f.id, position: CV3(cx, y, cz), yaw: -Double(item.turns) * .pi / 2,
                                         photos: item.p.map { [$0] } ?? [], placement: f.placement,
                                         footprint: CV2(Double(r.w) * cell, Double(r.d) * cell))

@@ -44,7 +44,7 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     /// 選んだ額が見える向き。部屋の真ん中ではなく、その額の前に寄る
     static func framing(_ item: CamperRoomItem, layout: CamperRoomLayout) -> CamperRoomCamera {
-        guard let placed = CamperRoomBuilder.place(item) else { return wall(layout) }
+        guard let placed = CamperRoomBuilder.place(item, ceiling: layout.ceilingHeight) else { return wall(layout) }
         let p = placed.position
         let left = item.w == .left
         let yaw = left ? 72.0 : 6.0
@@ -186,7 +186,7 @@ enum CamperRoomPick {
     }
 
     /// 置いた家具の箱（部屋の座標）。壁の物は壁から厚みだけ出る
-    static func bounds(_ item: CamperRoomItem) -> (min: CV3, max: CV3)? {
+    static func bounds(_ item: CamperRoomItem, ceiling: Double = CamperRoomLayout.ceiling) -> (min: CV3, max: CV3)? {
         guard let f = item.furniture else { return nil }
         let cell = CamperRoomLayout.cell
         switch f.placement {
@@ -196,7 +196,7 @@ enum CamperRoomPick {
             return (CV3(Double(r.x) * cell, 0, Double(r.z) * cell), CV3(Double(r.x + r.w) * cell, h, Double(r.z + r.d) * cell))
         case .ceiling:
             guard let r = item.rect else { return nil }
-            let top = CamperRoomLayout.ceiling
+            let top = ceiling
             return (CV3(Double(r.x) * cell, top - f.height, Double(r.z) * cell), CV3(Double(r.x + r.w) * cell, top, Double(r.z + r.d) * cell))
         case .wall:
             guard let s = item.wallSpan else { return nil }
@@ -208,10 +208,10 @@ enum CamperRoomPick {
     }
 
     /// 指の下の家具（いちばん手前）
-    static func item(at ray: (origin: CV3, direction: CV3), in doc: CamperRoomDocument) -> CamperRoomItem? {
+    static func item(at ray: (origin: CV3, direction: CV3), in doc: CamperRoomDocument, ceiling: Double = CamperRoomLayout.ceiling) -> CamperRoomItem? {
         var best: (CamperRoomItem, Double)?
         for item in doc.all {
-            guard let b = bounds(item), let t = hitBox(ray, min: b.min, max: b.max) else { continue }
+            guard let b = bounds(item, ceiling: ceiling), let t = hitBox(ray, min: b.min, max: b.max) else { continue }
             if best == nil || t < best!.1 { best = (item, t) }
         }
         return best?.0
@@ -224,7 +224,7 @@ enum CamperRoomPick {
         var out = item
         switch f.placement {
         case .floor, .ceiling:
-            let y = f.placement == .floor ? 0 : CamperRoomLayout.ceiling - f.height
+            let y = f.placement == .floor ? 0 : layout.ceilingHeight - f.height
             guard let p = hitHorizontal(ray, y: y), let r = item.rect else { return item }
             out.x = Int((p.x / cell - Double(r.w) / 2).rounded())
             out.z = Int((p.z / cell - Double(r.d) / 2).rounded())
@@ -234,7 +234,7 @@ enum CamperRoomPick {
                 guard let p = hitWall(ray, w) else { return nil }
                 let along = w == .back ? p.x : p.z
                 let max = Double(layout.columns(w)) * cell
-                guard along >= -cell, along <= max + cell, p.y > 0, p.y < CamperRoomLayout.ceiling else { return nil }
+                guard along >= -cell, along <= max + cell, p.y > 0, p.y < layout.ceilingHeight else { return nil }
                 return (w, p, (p - ray.origin).length)
             }.sorted { $0.2 < $1.2 }
             guard let (w, p, _) = hits.first else { return item }
