@@ -571,7 +571,8 @@ final class CamperBlueprintTests: XCTestCase {
         let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
         XCTAssertTrue(spec.additive)
         let c = CamperTextures.rgb(spec.color)
-        XCTAssertTrue((0.9...1.0).contains(max(c.0, c.1, c.2)), "強さ 0.95〜1.0")
+        // 2026-10-20: 0.95〜1.0 は平らな黄の板に見えたので 0.7〜0.85 に抑える
+        XCTAssertTrue((0.7...0.85).contains(max(c.0, c.1, c.2)), "強さ 0.7〜0.85（平らな板にしない）")
         // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど
         let nb = build(mood: .night)
         let halos = nb.nodes.filter { $0.name.hasPrefix("glow.halo") }
@@ -582,7 +583,7 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertEqual(h.group, .glow)
         }
         let halo = CamperTextures.rgb(CamperMaterials.spec(.windowHalo, paint: 0, mood: .night).color)
-        XCTAssertTrue((0.2...0.35).contains(max(halo.0, halo.1, halo.2)))
+        XCTAssertTrue((0.15...0.35).contains(max(halo.0, halo.1, halo.2)))
         let g = CamperTextures.roomGlow()
         let center = Int(g.pixel(32, 18).r), lower = Int(g.pixel(32, 40).r), edge = Int(g.pixel(0, 18).r)
         XCTAssertGreaterThan(center, 200)

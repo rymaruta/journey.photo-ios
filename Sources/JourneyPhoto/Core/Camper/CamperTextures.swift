@@ -226,7 +226,8 @@ enum CamperTextures {
     }
 
     /// 前照灯の光の帯（64×64・白〜黒）。u が前（0 が車の側）、v が横。前へ行くほど横に広がり、弱く消える
-    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）
+    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）。
+    /// 2026-10-20: 横の落ちをなだらかに（2.2→1.4）、先端の切れを弱く（縁で急に 0 にしない）
     static func beam() -> CamperBitmap {
         var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
@@ -234,9 +235,9 @@ enum CamperTextures {
                 let u = Double(x) / Double(b.width - 1)
                 let v = (Double(y) - 31.5) / 31.5
                 let half = (40 + 70 * u) / 110
-                let lateral = exp(-pow(v / half, 2) * 2.2) * (abs(v) < 1 ? 1 : 0)
-                let along = pow(1 - u, 1.6) * min(1, u * 12)
-                let c = lateral * along
+                let lateral = exp(-pow(v / max(0.08, half), 2) * 1.4)
+                let along = pow(1 - u, 1.35) * min(1, u * 8)
+                let c = max(0, lateral * along)
                 b.set(x, y, (c, c, c))
             }
         }
