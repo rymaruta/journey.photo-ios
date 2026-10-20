@@ -306,7 +306,7 @@ extension CamperRoomFurnitureModels {
             var photo = K.panel(width: 9.8, height: 11.8, photoMaterial(0))
             photo.uvs = photo.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
             parts.append(K.placed(photo, at: c + CV3(0, 0, 0.6)))
-            parts.append(K.placed(K.panel(width: 9.9, height: 11.9, R(.glass)), at: c + CV3(0, 0, 0.9)))
+            parts.append(K.placed(K.panel(width: 9.9, height: 11.9, R(.frameGlass)), at: c + CV3(0, 0, 0.9)))
             parts.append(K.placed(K.panel(width: 11, height: 13, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.05)))
         }
         return K.merge(parts)

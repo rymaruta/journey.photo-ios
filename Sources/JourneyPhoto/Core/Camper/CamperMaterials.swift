@@ -62,6 +62,8 @@ struct CamperMaterialSpec: Equatable, Sendable {
     var emissionTexture: CamperTextureKind?
     var texture: CamperTextureKind?
     var doubleSided = false
+    /// 不透明度が 1 未満のとき、薄い硝子として両面を描き奥行きも書く。額の表は false（奥の写真を膜で隠さない）
+    var glassShell = true
     /// 光を受けない一色（影絵）
     var unlit = false
     /// 下の色に足し合わせる光（地面の灯りの溜まり）。光を受けず、影も奥行きも書かない
