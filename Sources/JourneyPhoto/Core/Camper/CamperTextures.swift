@@ -175,15 +175,16 @@ enum CamperTextures {
 
     /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない。
     /// 2026-10-19: 硬い円に見えた（owner）ので、ガウスの裾で縁まで 0 になめらかに落とす。
-    /// 2026-10-20: 裾を広げた版は尾灯の赤い球を大きくしたので、1.1.20 の exp(−4r²) に戻す
+    /// 2026-10-20: 裾を広げすぎると尾灯の赤い球が大きくなる。exp(−3.2r²) で縁だけ少し柔らかく（芯は色の暗さで抑える）
     static func glow() -> CamperBitmap {
         var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
                 let dx = (Double(x) - 31.5) / 31.5, dy = (Double(y) - 31.5) / 31.5
                 let r2 = dx * dx + dy * dy
-                let edge = exp(-4.0)
-                let v = r2 >= 1 ? 0 : max(0, (exp(-4 * r2) - edge) / (1 - edge))
+                let k = 3.2
+                let edge = exp(-k)
+                let v = r2 >= 1 ? 0 : max(0, (exp(-k * r2) - edge) / (1 - edge))
                 b.set(x, y, (v, v, v))
             }
         }
@@ -226,17 +227,18 @@ enum CamperTextures {
     }
 
     /// 前照灯の光の帯（64×64・白〜黒）。u が前（0 が車の側）、v が横。前へ行くほど横に広がり、弱く消える
-    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）
+    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）。
+    /// 2026-10-20: 硬い台形に見えたので横・縦ともさらになだらかに（芯も抑える）
     static func beam() -> CamperBitmap {
         var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
                 let u = Double(x) / Double(b.width - 1)
                 let v = (Double(y) - 31.5) / 31.5
-                let half = (40 + 70 * u) / 110
-                let lateral = exp(-pow(v / half, 2) * 2.2) * (abs(v) < 1 ? 1 : 0)
-                let along = pow(1 - u, 1.6) * min(1, u * 12)
-                let c = lateral * along
+                let half = (48 + 75 * u) / 110
+                let lateral = exp(-pow(v / max(0.1, half), 2) * 1.05)
+                let along = pow(1 - u, 1.15) * min(1, u * 5) * 0.85
+                let c = max(0, lateral * along)
                 b.set(x, y, (c, c, c))
             }
         }

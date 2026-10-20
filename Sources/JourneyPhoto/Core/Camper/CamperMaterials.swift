@@ -125,10 +125,10 @@ enum CamperMaterials {
             // 住む所の窓（2026-10-19 作り直し・owner「夜の発光の仕方ひどい」）。ガラスは**光らない**——一色の emission で塗ると
             // オレンジの平らな板になった。夜は板どおり薄い（不透明度 0.38）暗い硝子で、室内の灯りに照らされた
             // カーテン・内壁・家具が透けて見え、表には外の映り込み（月・地平線）が乗る
-            // 2026-10-19（Mac night3）: 0.38 では奥の明かりが暗い四角にしか見えなかった。夜だけ 0.22 に薄くする
-            // （昼は板どおり 0.62）。映り込み（clearCoat）は残す
+            // 2026-10-19（Mac night3）: 0.38 では奥の明かりが暗い四角にしか見えなかった。夜だけ薄くする
+            // （昼は板どおり 0.62）。2026-10-20: 0.22 だと windowGlow が平らな黄の板に見えた → 0.32 で硝子感を残す
             return CamperMaterialSpec(color: night ? 0x2A2016 : 0x10161C, roughness: 0.04, clearCoat: night ? 1 : 0,
-                                      clearCoatRoughness: 0.03, opacity: night ? 0.22 : 0.62, doubleSided: true)
+                                      clearCoatRoughness: 0.03, opacity: night ? 0.32 : 0.62, doubleSided: true)
         // 灯りのレンズ（2026-10-19 作り直し）。光る面に明暗の絵（真ん中の芯・反射板の輪・縁へ暗く）を貼り、白い丸にしない。
         // 色: 前照灯は白に近い（5000K 前後）・車幅灯と方向指示は琥珀・尾灯は赤。emission は 1 まで（HDR で飛ばさない）
         case .lens:
@@ -203,17 +203,18 @@ enum CamperMaterials {
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)
         // 地面の溜まり（足す光）。色の明るさがそのまま足す強さ。板 pools の色と不透明度に寄せる
-        case .glowPool: return CamperMaterialSpec(color: 0x5E3E22, texture: .glow, additive: true)
-        case .beamPool: return CamperMaterialSpec(color: 0x6E6A5E, texture: .beam, additive: true)
+        // 2026-10-20 owner「光の表現が酷い」: 溜まりが硬い円・帯に見えたので暗く・芯を抑える
+        case .glowPool: return CamperMaterialSpec(color: 0x2A1C10, texture: .glow, additive: true)
+        case .beamPool: return CamperMaterialSpec(color: 0x383630, texture: .beam, additive: true)
         // 尾灯の足元の赤い溜まり（暗め・omni 無しなのでこれだけが地面の赤）
-        case .redPool: return CamperMaterialSpec(color: 0x351008, texture: .glow, additive: true)
-        case .firePool: return CamperMaterialSpec(color: 0x6A2A10, texture: .glow, additive: true)
+        case .redPool: return CamperMaterialSpec(color: 0x220A06, texture: .glow, additive: true)
+        case .firePool: return CamperMaterialSpec(color: 0x3A1808, texture: .glow, additive: true)
         // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
         case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)
-        // 窓越しの室内の明かり（2700K・強さ 0.6 ほど＝色の明るさ）。足す光なので、縁が黒く落ちる絵で板に見えない
-        // 2026-10-19（Mac night3）: 0.6 では引いた全景で暗い四角に見えた。上限 1 の手前まで上げる
-        case .windowGlow: return CamperMaterialSpec(color: 0xF7AE68, texture: .roomGlow, additive: true)
-        case .windowHalo: return CamperMaterialSpec(color: 0x4D3620, texture: .glow, additive: true)
+        // 窓越しの室内の明かり（2700K）。足す光なので縁が黒く落ちる絵で板に見えない。
+        // 2026-10-20 実機・網描き: 明るい一色は平らな黄の板 → 0x9A6838 でむら（roomGlow）を残す
+        case .windowGlow: return CamperMaterialSpec(color: 0x9A6838, texture: .roomGlow, additive: true)
+        case .windowHalo: return CamperMaterialSpec(color: 0x2A1C10, texture: .glow, additive: true)
         case .lanternGlass:
             return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
                                       doubleSided: true)
