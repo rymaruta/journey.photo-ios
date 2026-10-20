@@ -175,6 +175,17 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(CamperRoomLayout.make(.trailer, stage: .trailer).depth, 7)
     }
 
+    /// 図鑑は名前か id で探せる。板の id は、形の組み合わせ「分類.x000」に埋もれない
+    func testDexSearchFindsTheBoardPiece() throws {
+        let stove = try XCTUnwrap(CamperRoomCatalog.furniture("heater.wood_stove"))
+        XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "heater.wood_stove"))
+        XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "薪"))
+        XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "  "))
+        let variety = CamperRoomCatalog.all.filter { $0.id.hasPrefix("heater.x") }
+        XCTAssertFalse(variety.contains { CamperRoomCatalog.matchesDexQuery($0, "heater.wood_stove") })
+        XCTAssertEqual(CamperRoomCatalog.all.filter { CamperRoomCatalog.matchesDexQuery($0, "photo_frame.landscape") }.map(\.id), ["photo_frame.landscape"])
+    }
+
     /// 図鑑の家具は、空の部屋のどれか 1 つには入る（全部を一部屋に並べると外の箱と矛盾する）。
     func testCollectedFurnitureFits() {
         let pieces = CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }

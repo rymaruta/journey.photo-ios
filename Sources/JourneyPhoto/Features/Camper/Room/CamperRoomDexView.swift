@@ -15,16 +15,26 @@ struct CamperRoomDexView: View {
     let onClose: () -> Void
 
     @State private var tab: CamperRoomPlacement = .floor
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
     @State private var detail: CamperRoomFurniture?
+
+    private var needle: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             tabs
+            searchField
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(CamperRoomCategory.allCases.filter { $0.placement == tab }, id: \.self) { c in
+                    ForEach(shownCategories, id: \.self) { c in
                         categoryRow(c)
+                    }
+                    if !needle.isEmpty, shownCategories.isEmpty {
+                        Text(L("その名前の家具はありません", "No furniture with that name"))
+                            .font(.system(size: 14))
+                            .foregroundStyle(WebTheme.text2)
                     }
                     Text(L("近日: 友達・旅の投稿・行事の暦・天気で届く家具と、形を作っている家具。数には入れていません。",
                            "Soon: pieces that arrive through friends, trips, festivals and weather, and pieces still being made. Not counted yet."))
@@ -97,8 +107,49 @@ struct CamperRoomDexView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
     }
 
+    /// 2,000 点を超えると、代表の家具が画面の外に出て押せない。名前か id で絞る
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(WebTheme.text3)
+            TextField(L("名前で探す", "Search by name"), text: $query)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .onSubmit { searchFocused = false }
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityIdentifier("camper.room.dex.search")
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("消す", "Clear"))
+                .accessibilityIdentifier("camper.room.dex.search.clear")
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, query.isEmpty ? 16 : 4)
+        .frame(minHeight: WebTheme.minTapTarget)
+    }
+
+    /// 探しているときは床・壁・天井をまたぐ。空のときは今のタブだけ
+    private var shownCategories: [CamperRoomCategory] {
+        CamperRoomCategory.allCases.filter { c in
+            (needle.isEmpty ? c.placement == tab : true) && !shownItems(c).isEmpty
+        }
+    }
+
+    private func shownItems(_ c: CamperRoomCategory) -> [CamperRoomFurniture] {
+        CamperRoomCatalog.items(c).filter { CamperRoomCatalog.matchesDexQuery($0, query) }
+    }
+
     private func categoryRow(_ c: CamperRoomCategory) -> some View {
-        let items = CamperRoomCatalog.items(c)
+        let items = shownItems(c)
         let available = items.filter(\.isAvailable)
         let have = available.filter { owned.contains($0.id) }.count
         return VStack(alignment: .leading, spacing: 8) {

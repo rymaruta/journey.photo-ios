@@ -410,6 +410,14 @@ enum CamperRoomCatalog {
 
     static func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { all.filter { $0.category == c } }
 
+    /// 図鑑の探し欄。空なら全部。名前か id にその文字が入るもの（色違いの軸は id が「分類.x000」なので、板の id とは混ざらない）
+    static func matchesDexQuery(_ f: CamperRoomFurniture, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return true }
+        if f.id.range(of: q, options: .caseInsensitive) != nil { return true }
+        return f.name.range(of: q, options: .caseInsensitive) != nil
+    }
+
     static func items(_ p: CamperRoomPlacement) -> [CamperRoomFurniture] { all.filter { $0.placement == p } }
 
     /// 第1段で集められる家具（図鑑の数の分母）

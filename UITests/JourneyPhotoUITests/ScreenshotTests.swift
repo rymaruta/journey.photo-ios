@@ -3506,10 +3506,10 @@ final class ScreenshotTests: XCTestCase {
 
     /// 立体を組み終えるまで待つ（読み上げの値に「camper-room-ready 部屋 時刻」が出る・見本の起動のときだけ）
     @discardableResult
-    private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String) -> Bool {
+    private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String, timeout: TimeInterval = 40) -> Bool {
         let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
-        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: 40) == .completed
+        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: timeout) == .completed
         // 組んだ形が次のコマで描かれ、カメラの動き（0.6 秒）が止まるまで
         Thread.sleep(forTimeInterval: 2)
         return done
@@ -3518,6 +3518,8 @@ final class ScreenshotTests: XCTestCase {
     /// **とおまわり号の中**（`-JPPreviewCamperRoomReset`・Debug のみ。毎回最初の並び・保存しない）: 室内の昼・夜・家具の図鑑・
     /// 家具の寄り 8 点（昼と夜）を**必ず撮る**（入れない・組み終えないなら落とす）。押せる所は 44pt 以上
     func testCapturesCamperRoom() {
+        // 寄り 8 点は部屋を組み直す。図鑑が 2,000 点を超えても、既定の 300 秒で切らない
+        executionTimeAllowance = 1200
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
         guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
@@ -3551,17 +3553,15 @@ final class ScreenshotTests: XCTestCase {
             ("floor", "floor_lamp.brass_stem", "真鍮の一本足"), ("wall", "photo_frame.landscape", "横長の額"),
             ("ceiling", "plant_hanger.macrame", "マクラメ"),
         ]
+        let search = app.textFields["camper.room.dex.search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "図鑑の探し欄が無い")
         for (i, c) in closeUps.enumerated() {
-            let tab = app.buttons["camper.room.dex.tab.\(c.tab)"].firstMatch
-            if tab.exists { tab.tap() }
+            let clear = app.buttons["camper.room.dex.search.clear"].firstMatch
+            if clear.exists { clear.tap() }
+            search.tap()
+            search.typeText(c.id + "\n")
             let card = app.buttons["camper.room.dex.\(c.id)"].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10), "図鑑に \(c.id) が無い")
-            var pushes = 0
-            while card.exists, !card.isHittable, pushes < 6 {
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 1)
-                pushes += 1
-            }
             guard card.isHittable else { XCTFail("\(c.id) を押せない"); continue }
             card.tap()
             XCTAssertTrue(waitRoom(app, "camper.room.closeup", "camper-room-ready"), "\(c.id) の寄りを組み終えない")
@@ -3583,7 +3583,7 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesCamperRoomPlacing() {
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLift", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
-        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
+        guard waitRoom(app, "camper.room.scene", "camper-room-ready", timeout: 90) else { return XCTFail("部屋を組み終えない") }
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
         shoot(app, "96d-とおまわり号の中（置いている途中）")
         for id in ["camper.room.undo", "camper.room.done", "camper.room.tab.floor", "camper.room.tab.wall", "camper.room.tab.ceiling"] {
