@@ -323,8 +323,8 @@ final class CamperRoomScene {
             l.intensity = CGFloat(spec.intensity)
             l.attenuationStartDistance = 0
             l.attenuationEndDistance = CGFloat(spec.range * Self.unit)
-            // 2 だと芯が白く飛び、縁が急に真っ暗になる（Mac run 576・実機の硬い丸）。1.2 でなだらかな溜まりに
-            l.attenuationFalloffExponent = 1.2
+            // 距離の二乗に近い落ち方（白い芯を避け、木と布になだらかに回る）
+            l.attenuationFalloffExponent = 1.0
             // 室内の灯りは室内の組だけ
             l.categoryBitMask = CamperScene.insideMask
             if spec.kind == .spot {
@@ -386,9 +386,9 @@ final class CamperRoomScene {
         sunNode.light?.color = CamperScene.color(0xFFF1DC)
         sunNode.light?.castsShadow = !night
         sunNode.light?.shadowColor = CamperScene.color(0x000000, alpha: 1)
-        // 夜は灯りの溜まりの外が完全な黒にならないよう、ごく弱い環境光（暖色寄り）
-        ambientNode.light?.intensity = CGFloat(night ? 18 : 90)
-        ambientNode.light?.color = night ? CamperScene.color(0x4A3A28) : CamperScene.color(0xFFF6EA)
+        // 夜は灯りの溜まりの外が完全な黒にならないよう、ごく弱い暖色の環境光（木の色がわずかに残る）
+        ambientNode.light?.intensity = CGFloat(night ? 24 : 90)
+        ambientNode.light?.color = night ? CamperScene.color(0x3A2E22) : CamperScene.color(0xFFF6EA)
         cameraNode.camera?.exposureOffset = CGFloat(night ? -0.15 : 0.15)
         cameraNode.camera?.bloomIntensity = 0
         for n in lampNodes { n.isHidden = !night }

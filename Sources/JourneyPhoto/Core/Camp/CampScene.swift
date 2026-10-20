@@ -371,13 +371,19 @@ enum CampSceneBuilder {
                 let dir = (b - a).normalized
                 tube(a, a + dir * 15, 2.2, .bark, .fire, caps: [.cutEnd, .char])
             }
-            scene.flame = (CampVec3(fx, -2, fz), night ? 30 : (dusk ? 26 : 20), night ? 1 : (dusk ? 0.95 : 0.85))
+            scene.flame = (CampVec3(fx, -2, fz), night ? 28 : (dusk ? 26 : 20), night ? 0.88 : (dusk ? 0.95 : 0.85))
             if night || dusk { scene.sparks = CampVec3(fx, -16, fz) }
             if !night { scene.smoke = (CampVec3(fx, -26, fz), morning || o.time == .day ? 0.8 : 0.5) }
-            scene.glows.append((CampVec3(fx, -8, fz), night ? 60 : (dusk ? 34 : 18), night ? 0.95 : 0.6))
+            // 炎の板の光は抑えめ（加算で白く飛ばさない）
+            scene.glows.append((CampVec3(fx, -8, fz), night ? 48 : (dusk ? 34 : 18), night ? 0.7 : 0.6))
             let light = CampLighting.of(time: o.time, season: o.season)
+            // 夜は芯（短く暖か）＋広がり（長く弱い）の2つ。昼夕は1つ
             scene.lights.append(CampPointLight(position: fire, color: CampLighting.fireColor,
                                                intensity: light.fireIntensity, range: light.fireRange))
+            if night {
+                scene.lights.append(CampPointLight(position: fire + CampVec3(0, -4, 0), color: CampLighting.fireFillColor,
+                                                   intensity: CampLighting.fireFillIntensity, range: CampLighting.fireFillRange))
+            }
         }
 
         // ---------- 針葉樹（5 段の裾がぎざぎざに垂れる・裏も閉じる・根元の太い幹） ----------
@@ -665,10 +671,9 @@ enum CampSceneBuilder {
             box(tp(cx, -5.4, -hl + 6), CampVec3(9, 2.4, 6), 1, .pillow, .tentInside, 30, 0, nil, false, false)
         }
         guard night else { return ([], []) }
-        // 天井の灯り（内壁を照らす）と、扉の前にこぼれる光
-        // 夜のテント内灯: 1.2→0.4（外の白い板にならないよう弱く・届く距離は少し伸ばしてなだらかに）
-        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xFFD08A, intensity: 0.4, range: 42)],
-                [(tp(0, -10, hl + 6), 26, 0.55), (tp(0, -ht + 10, -4), 16, 0.9)])
+        // 天井の灯り（内壁を照らす）と、扉の前にこぼれる光。外への漏れは弱く（橙の板に見えない）
+        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xFFC898, intensity: 0.36, range: 38)],
+                [(tp(0, -10, hl + 6), 22, 0.4), (tp(0, -ht + 10, -4), 14, 0.55)])
     }
 
     /// 切り絵の箱庭 1 つ（3 枚の紙・木の台と溝 3・真鍮の留め具 6）。`lift` は置く前の浮き（−9）

@@ -147,24 +147,26 @@ final class CampSceneTests: XCTestCase {
         XCTAssertLessThan((mid - center).length, (straight - center).length)
     }
 
-    /// 夜: 焚き火 0.85・テントの中の灯り。キャンプ場の夜はランタンも灯る。昼は焚き火 0.35
-    /// （2026-10-19: 焚き火 2.4 だと白い芯になり、月 diffuse 0.3 だと島全体が昼のように明るかった）
+    /// 夜: 焚き火は芯＋広がり・テントの中の灯り。キャンプ場の夜はランタンも灯る。昼は焚き火 0.35
     func testNightLights() {
         let night = scene(time: .night)
-        let fire = night.lights.first { $0.position == CampLighting.firePosition }
-        XCTAssertEqual(fire?.intensity, 0.85)
-        XCTAssertEqual(fire?.range, 50)
-        XCTAssertEqual(night.lights.count, 2, "焚き火とテントの中")
-        guard let tentLamp = night.lights.first(where: { $0.position != CampLighting.firePosition }) else {
+        let fires = night.lights.filter { $0.position.x == CampLighting.firePosition.x && $0.position.z == CampLighting.firePosition.z }
+        XCTAssertEqual(fires.count, 2, "夜の焚き火は芯と広がりの2つ")
+        XCTAssertEqual(fires.map(\.intensity).max()!, 0.52, accuracy: 0.001)
+        XCTAssertEqual(fires.map(\.range).min()!, 30, accuracy: 0.001)
+        XCTAssertEqual(fires.map(\.range).max()!, CampLighting.fireFillRange, accuracy: 0.001)
+        XCTAssertEqual(night.lights.count, 3, "焚き火2＋テントの中")
+        guard let tentLamp = night.lights.first(where: { $0.position.x != CampLighting.firePosition.x || $0.position.z != CampLighting.firePosition.z }) else {
             return XCTFail("テントの中の灯りが無い")
         }
-        XCTAssertEqual(tentLamp.intensity, 0.4, accuracy: 0.001)
+        XCTAssertEqual(tentLamp.intensity, 0.36, accuracy: 0.001)
         XCTAssertNotNil(night.sparks)
         XCTAssertNil(night.smoke, "夜は煙を出さない")
         let campNight = scene(.camp, time: .night)
         XCTAssertTrue(campNight.lights.contains { $0.position == CampLighting.lanternPosition })
-        XCTAssertEqual(CampLighting.lanternIntensity, 0.4, accuracy: 0.001)
+        XCTAssertEqual(CampLighting.lanternIntensity, 0.32, accuracy: 0.001)
         let day = scene(time: .day)
+        XCTAssertEqual(day.lights.filter { $0.position == CampLighting.firePosition }.count, 1)
         XCTAssertEqual(day.lights.first { $0.position == CampLighting.firePosition }?.intensity, 0.35)
         XCTAssertNil(day.sparks)
         XCTAssertEqual(day.flame?.height, 20)
@@ -289,15 +291,18 @@ final class CampSceneTests: XCTestCase {
         let night = CampLighting.of(time: .night, season: .summer)
         XCTAssertEqual(night.shadowOpacity, 0, "夜は落ち影を出さない")
         XCTAssertTrue(night.tentGlows)
-        XCTAssertEqual(night.diffuse, 0.05, accuracy: 1e-9, "月はごく弱く（島全体を昼にしない）")
-        XCTAssertEqual(night.fireIntensity, 0.85, accuracy: 1e-9)
-        XCTAssertEqual(night.fireGlow?.0, 60)
+        XCTAssertEqual(night.diffuse, 0.04, accuracy: 1e-9, "月は青白い縁光だけ")
+        XCTAssertEqual(night.fireIntensity, 0.52, accuracy: 1e-9, "焚き火の芯")
+        XCTAssertEqual(CampLighting.fireFillIntensity, 0.34, accuracy: 1e-9, "焚き火の広がり")
+        XCTAssertEqual(night.fireGlow?.0, 54)
         XCTAssertEqual(CampLighting.of(time: .evening, season: .summer).fireGlow?.0, 46)
         XCTAssertNil(noon.fireGlow)
         XCTAssertEqual(night.mist, 0x1A2638)
-        // テントの布は弱い光（平らな橙の板にしない）
-        XCTAssertEqual(CampMaterials.spec(.tentEnd, season: .summer, time: .night).emissionIntensity, 0.4, accuracy: 1e-9)
-        XCTAssertEqual(CampMaterials.spec(.fly, season: .summer, time: .night).emissionIntensity, 0.35, accuracy: 1e-9)
+        // テントは透光図つき（平らな橙の板にしない）
+        let tent = CampMaterials.spec(.tentEnd, season: .summer, time: .night)
+        XCTAssertEqual(tent.emissionTexture, .tentLit)
+        XCTAssertEqual(tent.emissionIntensity, 0.55, accuracy: 1e-9)
+        XCTAssertEqual(CampMaterials.spec(.fly, season: .summer, time: .night).emissionTexture, .tentLit)
         XCTAssertLessThanOrEqual(CampMaterials.spec(.glassLit, season: .summer, time: .night).emissionIntensity, 1)
     }
 

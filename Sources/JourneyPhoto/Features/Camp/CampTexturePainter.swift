@@ -42,6 +42,7 @@ enum CampTexturePainter {
         case .weave: return weave(base)
         case .fly: return fly(base)
         case .tentFront: return tentFront(base)
+        case .tentLit: return tentLit(base)
         case .bark: return bark(base)
         case .grain: return grain(base)
         case .map: return map(base)
@@ -187,6 +188,29 @@ enum CampTexturePainter {
             g.addLine(to: p(0, CampTentSpec.doorTop - 0.9))
             g.addLine(to: p(CampTentSpec.doorHalf + 0.8, 0))
             g.strokePath()
+        }
+    }
+
+    /// 夜のテントの透光図（白〜灰）。真ん中〜下が明るく、縁と棟は暗い——内灯が帆布を透けるむら
+    static func tentLit(_ base: UInt32) -> UIImage {
+        let unit = pixelsPerUnit
+        let w = 48 * unit, h = 38 * unit
+        return draw("tentLit-\(base)", CGSize(width: w, height: h)) { g, s in
+            // 暗い地（縁はほぼ光らない）
+            g.setFillColor(color(0x1A120C).cgColor)
+            g.fill(CGRect(origin: .zero, size: s))
+            // 内灯の芯（下寄り・少し左＝扉側を想定）
+            let colors = [color(base, 1).cgColor, color(base, 0.55).cgColor, color(0x000000, 0).cgColor] as CFArray
+            if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 1]) {
+                let c = CGPoint(x: s.width * 0.48, y: s.height * 0.62)
+                g.drawRadialGradient(grad, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width * 0.55, options: [])
+            }
+            // 棟へ落ちる帯（上を暗く）
+            let top = [color(0x000000, 0.55).cgColor, color(0x000000, 0).cgColor] as CFArray
+            if let g2 = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: top, locations: [0, 1]) {
+                g.drawLinearGradient(g2, start: .zero, end: CGPoint(x: 0, y: s.height * 0.45), options: [])
+            }
+            weaveLines(g, s, unit: unit, strength: 0.35)
         }
     }
 

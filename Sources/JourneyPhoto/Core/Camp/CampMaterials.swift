@@ -35,6 +35,8 @@ struct CampMaterialSpec: Equatable, Sendable {
     var opacity: Double = 1
     /// 貼り絵（`CampTexture`）
     var texture: CampTexture? = nil
+    /// 光る面だけの貼り絵（無いときは `texture`）。夜のテントはむらのある透光図を使う
+    var emissionTexture: CampTexture? = nil
     /// 塗り（clearCoat 0.5 の保冷箱の蓋など）
     var clearCoat: Double = 0
 }
@@ -51,6 +53,8 @@ enum CampTexture: Hashable, Sendable {
     case fly
     /// 扉のある妻壁（ファスナーの点線・縁の濃い線）
     case tentFront
+    /// 夜のテントの透光（内灯のむら・縁は暗い。拡散色には使わず光る面だけ）
+    case tentLit
     case bark
     case grain
     /// 机の上の地図（道の赤い点線・青い線）
@@ -76,16 +80,21 @@ enum CampMaterials {
         case .rock: return CampMaterialSpec(color: 0x6B665E, roughness: 0.85, texture: .rock)
         case .rockDark: return CampMaterialSpec(color: 0x4B4741, roughness: 0.85, texture: .rock)
         case .tentEnd:
-            // 夜は内の灯りが布を透ける弱い光（0.4）。一色の強い emission だと橙の平らな板になる
-            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .weave)
+            // 夜: 拡散は昼の帆布色のまま、光る面だけ tentLit（むらのある透光）。平らな橙にしない
+            return night
+                ? CampMaterialSpec(color: 0xD8C299, roughness: 0.92, emission: 0xFFD2A0, emissionIntensity: 0.55,
+                                   texture: .weave, emissionTexture: .tentLit)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .weave)
         case .tentEndFront:
-            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .tentFront)
+            return night
+                ? CampMaterialSpec(color: 0xD8C299, roughness: 0.92, emission: 0xFFD2A0, emissionIntensity: 0.6,
+                                   texture: .tentFront, emissionTexture: .tentLit)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .tentFront)
         case .fly:
             if night {
-                return CampMaterialSpec(color: 0x9C6A3E, roughness: 0.9, emission: 0xE8A45C, emissionIntensity: 0.35,
-                                        doubleSided: true, texture: .fly)
+                // フライは厚いので妻壁より弱く・棟へ暗い tentLit
+                return CampMaterialSpec(color: 0x9C6A3E, roughness: 0.92, emission: 0xE8A45C, emissionIntensity: 0.38,
+                                        doubleSided: true, texture: .fly, emissionTexture: .tentLit)
             }
             return CampMaterialSpec(color: winter ? 0xF2F5F8 : 0x9C6A3E, roughness: 0.9, doubleSided: true,
                                     texture: winter ? nil : .fly)
