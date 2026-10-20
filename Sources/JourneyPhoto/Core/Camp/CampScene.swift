@@ -666,7 +666,8 @@ enum CampSceneBuilder {
         }
         guard night else { return ([], []) }
         // 天井の灯り（内壁を照らす）と、扉の前にこぼれる光
-        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xFFD08A, intensity: 1.2, range: 30)],
+        // 夜のテント内灯: 1.2→0.4（外の白い板にならないよう弱く・届く距離は少し伸ばしてなだらかに）
+        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xFFD08A, intensity: 0.4, range: 42)],
                 [(tp(0, -10, hl + 6), 26, 0.55), (tp(0, -ht + 10, -4), 16, 0.9)])
     }
 
