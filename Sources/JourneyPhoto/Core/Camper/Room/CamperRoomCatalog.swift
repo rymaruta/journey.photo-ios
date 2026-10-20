@@ -8,7 +8,7 @@ import Foundation
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
 // - 板の 64 個と新しい分類は全部形を作り込んだ（`CamperRoomFurnitureModels`〜`Models5`）。
-// - 要サーバーの 10 個とキャンプ場が要る掛けたランタンは、形はあるが入手は「近日」のまま数（分母）から外す。
+// - 要サーバーの 10 個と、#339 で外したキャンプ場向けの掛けたランタンは、形はあるが入手は「近日」のまま数（分母）から外す。
 // - 2026-10-19 判断: 板の「写真に写った物（寺・和室・料理など。端末の画像分類）」は、外まわりの部品の山・海と同じく
 //   撮影地・題・タグの言葉で読む（`CamperRoomStats`）。画像分類の精度は試していない（板の「確かめていない」と同じ）。
 
@@ -382,7 +382,7 @@ enum CamperRoomCatalog {
         f(.wallLamp, "swing_arm", "腕の灯り", "Swing-arm lamp", "折れる腕に緑の笠", "A folding arm and a green shade",
           .occasional, .topic(.book, 5), 1, 1, 12, lit: true, built: true),
         f(.wallLamp, "lantern_hook", "掛けたランタン", "Hanging lantern", "鉄の鉤にランタン", "A lantern on an iron hook",
-          .occasional, .base(.later("キャンプ場の板でランタンを灯す", "Light a lantern at the campsite")), 1, 1, 9, lit: true, built: true),
+          .occasional, .base(.later("いまは集められない", "Not collectible for now")), 1, 1, 9, lit: true, built: true),
         f(.wallLamp, "candle_sconce", "燭台", "Candle sconce", "真鍮の受けに蝋燭", "A candle on a brass holder",
           .rare, .base(.early(3)), 1, 1, 6, lit: true, built: true),
         // 時計（clock）

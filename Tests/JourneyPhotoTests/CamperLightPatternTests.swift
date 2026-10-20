@@ -43,15 +43,4 @@ final class CamperLightPatternTests: XCTestCase {
         XCTAssertTrue(lights.allSatisfy { $0.pattern == .roomLamp })
     }
 
-    /// キャンプ場: 芯・広がり・テントで型が違う
-    func testCampLightPatterns() {
-        let night = CampSceneBuilder.build(CampSceneOptions(stage: .tent, time: .night))
-        let patterns = Set(night.lights.map(\.pattern))
-        XCTAssertTrue(patterns.contains(.fireKey))
-        XCTAssertTrue(patterns.contains(.fireFill))
-        XCTAssertTrue(patterns.contains(.tent))
-        let key = CampLightPattern.fireKey.attenuation(range: 30)
-        let fill = CampLightPattern.fireFill.attenuation(range: 80)
-        XCTAssertLessThan(key.end / 30, fill.end / 80 + 0.5)
-    }
 }

@@ -48,7 +48,7 @@ final class CamperServerTests: XCTestCase {
 
     // MARK: 決まり（サーバーの表の写し）
 
-    /// 要サーバーの 33 個は図鑑の `.server` と同じ（記録 20・写真 13）。キャンプ場の焚き火は入らない
+    /// 要サーバーの 33 個は図鑑の `.server` と同じ（記録 20・写真 13）。#339 で外したキャンプ場向けの焚き火は入らない
     func testRulesMatchTheCatalog() async {
         let server = Set(CamperCatalog.dex.filter(\.unlock.isServer).map(\.id))
         XCTAssertEqual(server.count, 33)
