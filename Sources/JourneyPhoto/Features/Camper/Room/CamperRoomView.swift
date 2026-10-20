@@ -608,32 +608,38 @@ struct CamperRoomView: View {
                 trayTab = CamperRoomPlacement(rawValue: raw) ?? .floor
             }
             let tray = editor?.tray(trayTab, owned: owned) ?? []
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if tray.isEmpty {
-                        Text(L("棚は空です。図鑑で集めると増えます", "Nothing left on the shelf. Collect more in the collection"))
-                            .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
-                            .frame(minHeight: 96)
-                    }
-                    ForEach(tray) { f in
-                        Button { place(f) } label: {
-                            VStack(spacing: 4) {
-                                CamperRoomThumb(furniture: f, silhouette: false).frame(width: 64, height: 60)
-                                Text(f.name).font(.system(size: 12)).foregroundStyle(WebTheme.text).lineLimit(2).multilineTextAlignment(.center)
-                                    .minimumScaleFactor(0.8)
+            // 横に送る一覧は家具が増えると探しにくい（2026-10-20 owner「5×5 みたいな一覧」）。5 列の升目で縦に送る
+            ScrollView {
+                if tray.isEmpty {
+                    Text(L("棚は空です。図鑑で集めると増えます", "Nothing left on the shelf. Collect more in the collection"))
+                        .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
+                        .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
+                        ForEach(tray) { f in
+                            Button { place(f) } label: {
+                                VStack(spacing: 3) {
+                                    CamperRoomThumb(furniture: f, silhouette: false)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 44)
+                                    Text(f.name).font(.system(size: 12)).foregroundStyle(WebTheme.text)
+                                        .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                                }
+                                .padding(.horizontal, 2)
+                                .padding(.vertical, 4)
+                                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                                .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                                .contentShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            .padding(4)
-                            .frame(width: 84, height: 96)
-                            .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("\(f.name)を置く", "Place \(f.name)"))
+                            .accessibilityIdentifier("camper.room.tray.\(f.id)")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(L("\(f.name)を置く", "Place \(f.name)"))
-                        .accessibilityIdentifier("camper.room.tray.\(f.id)")
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             Text(L("長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。",
                    "Press and hold to lift. White squares fit, red ones collide. Twist with two fingers to turn."))
                 .font(.system(size: 12))
