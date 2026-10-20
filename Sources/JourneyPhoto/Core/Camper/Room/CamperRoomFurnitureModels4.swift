@@ -35,14 +35,14 @@ extension CamperRoomFurnitureModels {
         case "camera.slr": return slrCamera()
         case "camera.instant": return instantCamera()
         case "camera.twin_lens": return twinLens()
-        default: return nil
+        default: return moreMesh5(id)
         }
     }
 
     static func moreLamp4(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         switch id {
         case "audio.travel_radio": return (CV3(0, 10, 4), 0.25, 45)
-        default: return nil
+        default: return moreLamp5(id)
         }
     }
 
