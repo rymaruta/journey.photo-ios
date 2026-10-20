@@ -566,33 +566,49 @@ enum CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 横長の額（黒い木の枠・白いマット・写真・表の硝子）。2 マス × 1 段の真ん中
+    /// 横長の額（黒い木の枠・白いマット・写真・表の硝子・吊り紐）。2 マス × 1 段の真ん中
     static func landscapeFrame() -> CamperMesh {
-        CamperRoomShapes.frame(outer: CV2(17, 12.4), photo: CV2(11.4, 7.6), depth: 1.4, rim: 1.1, at: CV3(0, 10, 0), frame: R(.painted(0x1C1B1A)))
-    }
-
-    /// 正方形の額（ナラの枠・マット・写真・吊り紐と釘）
-    static func squareFrame() -> CamperMesh {
-        var parts = [CamperRoomShapes.frame(outer: CV2(13, 13), photo: CV2(8.6, 8.6), depth: 1.6, rim: 1.3, at: CV3(0, 9, 0.2), frame: R(.wood(.oak)))]
-        parts.append(K.tube([CV3(-4.5, 15.2, 0.4), CV3(0, 18.6, 0.6), CV3(4.5, 15.2, 0.4)], radius: 0.1, sides: 4, R(.rope)))
-        parts.append(K.placed(K.disc(radius: 0.45, height: 0.6, bevel: 0.15, segments: 10, R(.brass)), at: CV3(0, 18.7, 0),
+        var parts = [CamperRoomShapes.frame(outer: CV2(17, 12.4), photo: CV2(11.4, 7.6), depth: 1.6, rim: 1.15, at: CV3(0, 10, 0),
+                                            frame: R(.painted(0x1C1B1A)))]
+        parts.append(K.tube([CV3(-5.5, 15.8, 0.5), CV3(0, 18.8, 0.7), CV3(5.5, 15.8, 0.5)], radius: 0.12, sides: 5, R(.rope)))
+        parts.append(K.placed(K.disc(radius: 0.4, height: 0.55, bevel: 0.12, segments: 12, R(.brass)), at: CV3(0, 18.9, 0.15),
                               rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
         return K.merge(parts)
     }
 
-    /// 楕円の額（真鍮の楕円の枠・写真・背板）
+    /// 正方形の額（ナラの枠・マット・写真・吊り紐と釘・側面の溝）
+    static func squareFrame() -> CamperMesh {
+        var parts = [CamperRoomShapes.frame(outer: CV2(13, 13), photo: CV2(8.6, 8.6), depth: 1.8, rim: 1.35, at: CV3(0, 9, 0.2), frame: R(.wood(.oak)))]
+        parts.append(K.tube([CV3(-4.5, 15.2, 0.5), CV3(0, 18.8, 0.7), CV3(4.5, 15.2, 0.5)], radius: 0.12, sides: 5, R(.rope)))
+        parts.append(K.placed(K.disc(radius: 0.45, height: 0.6, bevel: 0.15, segments: 12, R(.brass)), at: CV3(0, 18.9, 0.15),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        // 枠の側面の細い溝（木の厚み）
+        for s in [-1.0, 1.0] {
+            parts.append(K.block(CV3(0.25, 10.5, 0.35), at: CV3(s * 6.6, 9, 1.4), radius: 0.08, R(.wornWood(.oak))))
+        }
+        return K.merge(parts)
+    }
+
+    /// 楕円の額（真鍮の二重の縁・マット・写真・背板・吊り環）
     static func ovalFrame() -> CamperMesh {
         var parts: [CamperMesh] = []
         let c = CV3(0, 10, 0)
-        parts.append(K.placed(K.ellipsePanel(rx: 4.3, ry: 6.4, R(.wood(.walnut))), at: c + CV3(0, 0, 0.3)))
-        parts.append(K.placed(K.ellipsePanel(rx: 3.5, ry: 5.5, photoMaterial(0)), at: c + CV3(0, 0, 0.75)))
-        let ring = (0..<48).map { k -> CV3 in
-            let a = Double(k) / 48 * 2 * .pi
-            return c + CV3(cos(a) * 3.95, sin(a) * 5.95, 0.85)
+        parts.append(K.placed(K.ellipsePanel(rx: 4.6, ry: 6.8, R(.wood(.walnut))), at: c + CV3(0, 0, 0.25)))
+        parts.append(K.placed(K.ellipsePanel(rx: 4.0, ry: 6.0, R(.mat)), at: c + CV3(0, 0, 0.55)))
+        parts.append(K.placed(K.ellipsePanel(rx: 3.4, ry: 5.3, R(.paper)), at: c + CV3(0, 0, 0.7)))
+        parts.append(K.placed(K.ellipsePanel(rx: 3.35, ry: 5.25, photoMaterial(0)), at: c + CV3(0, 0, 0.82)))
+        parts.append(K.placed(K.ellipsePanel(rx: 4.15, ry: 6.15, R(.frameGlass)), at: c + CV3(0, 0, 1.05)))
+        let ring = (0..<56).map { k -> CV3 in
+            let a = Double(k) / 56 * 2 * .pi
+            return c + CV3(cos(a) * 4.05, sin(a) * 6.05, 1.15)
         }
-        parts.append(K.tube(ring, radius: 0.55, sides: 8, closed: true, R(.brass)))
-        parts.append(K.tube(ring.map { CV3($0.x * 1.1, c.y + ($0.y - c.y) * 1.07, 0.6) }, radius: 0.25, sides: 6, closed: true, R(.agedBrass)))
-        parts.append(K.placed(K.sphere(radius: 0.6, segments: 8, R(.brass)), at: c + CV3(0, 6.9, 0.8)))
+        parts.append(K.tube(ring, radius: 0.5, sides: 10, closed: true, R(.brass)))
+        parts.append(K.tube(ring.map { CV3(c.x + ($0.x - c.x) * 1.12, c.y + ($0.y - c.y) * 1.1, 0.55) },
+                            radius: 0.28, sides: 8, closed: true, R(.agedBrass)))
+        // 吊り環
+        parts.append(K.tube(K.arc(center: c + CV3(0, 7.2, 1.0), radius: 0.7, from: 0.2, to: .pi - 0.2, steps: 12)
+                                .map { CV3($0.x, $0.y, 1.0) }, radius: 0.12, sides: 6, R(.brass)))
+        parts.append(K.placed(K.sphere(radius: 0.35, segments: 8, R(.brass)), at: c + CV3(0, 6.5, 1.0)))
         return K.merge(parts)
     }
 

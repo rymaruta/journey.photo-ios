@@ -13,32 +13,32 @@ final class CamperRoomTests: XCTestCase {
 
     // MARK: 図鑑
 
-    /// 板の 16 分類・64 個に別種 5 分類・20 個を足す（1 分類 4 つ）。最初から 22 個、要サーバー 10 個。
+    /// 板の 16 分類・64 個に別種 10 分類・40 個を足す（1 分類 4 つ）。最初から 27 個、要サーバー 10 個。
     /// 形の組み合わせ（`CamperRoomVariety`）を足すと、あつまれどうぶつの森の家具 2,076 を超える。色違いでは数えない
     func testCatalogMatchesTheBoard() {
         let board = CamperRoomCatalog.board
-        XCTAssertEqual(board.count, 84)
-        XCTAssertEqual(Set(board.map(\.id)).count, 84)
-        XCTAssertEqual(CamperRoomCategory.allCases.count, 21)
+        XCTAssertEqual(board.count, 104)
+        XCTAssertEqual(Set(board.map(\.id)).count, 104)
+        XCTAssertEqual(CamperRoomCategory.allCases.count, 26)
         for c in CamperRoomCategory.allCases { XCTAssertEqual(board.filter { $0.category == c }.count, 4, c.rawValue) }
-        XCTAssertEqual(board.filter { $0.placement == .floor }.count, 40)
-        XCTAssertEqual(board.filter { $0.placement == .wall }.count, 28)
+        XCTAssertEqual(board.filter { $0.placement == .floor }.count, 56)
+        XCTAssertEqual(board.filter { $0.placement == .wall }.count, 32)
         XCTAssertEqual(board.filter { $0.placement == .ceiling }.count, 16)
-        XCTAssertEqual(board.filter { $0.unlock.isStarter }.count, 22)
+        XCTAssertEqual(board.filter { $0.unlock.isStarter }.count, 27)
         let server = board.filter { if case .base(.server) = $0.unlock { return true } else { return false } }
         XCTAssertEqual(Set(server.map(\.id)), ["bed.daybed", "seating.bench_storage", "heater.tile_hearth", "floor_lamp.paper_column",
                                                "wall_shelf.floating_corner", "poster.postcard_grid", "poster.tapestry", "string_ceiling.bunting",
                                                "plant_hanger.hanging_basket", "plant_hanger.glass_terrarium"])
         // 珍しさ（板の内訳＋別種）
-        XCTAssertEqual(board.filter { $0.rarity == .common }.count, 22)
-        XCTAssertEqual(board.filter { $0.rarity == .occasional }.count, 28)
-        XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 25)
-        XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 9)
+        XCTAssertEqual(board.filter { $0.rarity == .common }.count, 27)
+        XCTAssertEqual(board.filter { $0.rarity == .occasional }.count, 33)
+        XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 30)
+        XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 14)
         let all = CamperRoomCatalog.all
         XCTAssertGreaterThan(all.count, CamperRoomVariety.animalCrossingCount)
         XCTAssertEqual(Set(all.map(\.id)).count, all.count)
         XCTAssertEqual(Set(CamperRoomVariety.pieces.map(\.signature)).count, CamperRoomVariety.pieces.count)
-        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 22)
+        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 27)
         XCTAssertEqual(Set(all.map(\.nameJa)).count, all.count)
         XCTAssertEqual(Set(all.map(\.nameEn)).count, all.count)
         for f in all {
@@ -56,9 +56,9 @@ final class CamperRoomTests: XCTestCase {
             if f.unlock.isStarter { XCTAssertTrue(f.built, f.id) }
         }
         let owned = CamperRoomCatalog.owned(CamperStats(), CamperRoomStats())
-        XCTAssertEqual(owned.count, 22)
+        XCTAssertEqual(owned.count, 27)
         let count = CamperRoomCatalog.dexCount(owned)
-        XCTAssertEqual(count.have, 22)
+        XCTAssertEqual(count.have, 27)
         XCTAssertEqual(count.total, CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.count)
         XCTAssertEqual(CamperRoomCatalog.soonCount, CamperRoomCatalog.board.filter { !$0.isAvailable }.count)
         XCTAssertGreaterThanOrEqual(count.total, 25)
@@ -581,6 +581,33 @@ final class CamperRoomTests: XCTestCase {
             }
             XCTAssertFalse(photos.isEmpty, id)
             XCTAssertTrue(photos.allSatisfy { !$0.indices.isEmpty }, id)
+        }
+    }
+
+    /// 写真の面はマットより手前・硝子より奥（マットの厚みに沈むと飾っても見えない）
+    func testPhotoPanelSitsBetweenMatAndGlass() throws {
+        for id in ["photo_frame.landscape", "photo_frame.square"] {
+            let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
+            func zs(_ match: (CamperMaterial) -> Bool) -> [Double] {
+                var out: [Double] = []
+                for g in mesh.groups where match(g.material) {
+                    for i in g.indices {
+                        let idx = Int(i)
+                        guard idx < mesh.positions.count else { continue }
+                        out.append(mesh.positions[idx].z)
+                    }
+                }
+                return out
+            }
+            let photoZ = zs { if case .room(.photo) = $0 { return true }; return false }
+            let glassZ = zs { $0 == .room(.frameGlass) }
+            let matZ = zs { $0 == .room(.mat) }
+            XCTAssertFalse(photoZ.isEmpty, id)
+            XCTAssertFalse(glassZ.isEmpty, id)
+            XCTAssertFalse(matZ.isEmpty, id)
+            // 写真の真ん中は、マット地の後ろ側より手前、硝子より奥
+            XCTAssertGreaterThan(photoZ.max()!, matZ.min()! + 0.05, id)
+            XCTAssertLessThan(photoZ.max()!, glassZ.min()!, id)
         }
     }
 
