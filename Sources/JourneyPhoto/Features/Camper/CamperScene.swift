@@ -306,10 +306,12 @@ final class CamperScene {
             l.type = light.kind == .spot ? .spot : .omni
             l.color = Self.color(light.color)
             l.intensity = CGFloat(light.intensity)
-            // 白い芯を避け、地面の溜まりをなだらかに（キャンプ場・室内と同じ考え方・2026-10-20）
-            l.attenuationStartDistance = CGFloat(light.range * s * 0.16)
-            l.attenuationEndDistance = CGFloat(light.range * s * 1.2)
-            l.attenuationFalloffExponent = 1.2
+            // 焚き火・ランタンだけなだらか（開始距離あり）。尾灯・前照灯・室内は急に落とす
+            // （尾灯をなだらかにすると後ろが真っ赤な白い球になる・2026-10-20 owner 実機）
+            let softPool = light.name == "campfire" || light.name == "lantern" || light.name == "string"
+            l.attenuationStartDistance = softPool ? CGFloat(light.range * s * 0.16) : 0
+            l.attenuationEndDistance = CGFloat(light.range * s * (softPool ? 1.2 : 1.0))
+            l.attenuationFalloffExponent = softPool ? 1.2 : 2.0
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
             if light.kind == .spot {

@@ -1363,10 +1363,11 @@ struct CamperBuilder {
         }
         add("glow.beam", .mesh(glowQuad(width: 216, depth: 220, material: .beamPool)), .beamPool,
             at: CV3(front + 4 + 108, 0.45, 0), group: .glow)
-        out.lights.append(CamperLightSpec(name: "taillight", kind: .omni, position: B(rear - 6, 14, 0), color: 0xFF3B30,
-                                          intensity: 120, range: 46))
-        // 尾灯の後ろの赤い溜まり（板: 楕円 30×46・#ff6a5a 0.8→0・不透明度 0.4）
-        add("glow.tail", .mesh(glowQuad(width: 60, depth: 92, material: .redPool)), .redPool, at: CV3(rear - 30, 0.45, 0), group: .glow)
+        // 尾灯の omni は豆ほど（2026-10-20 owner 実機: 120・46 だと後ろが真っ赤な白い球に飛んだ）
+        out.lights.append(CamperLightSpec(name: "taillight", kind: .omni, position: B(rear - 6, 14, 0), color: 0xC02820,
+                                          intensity: 28, range: 22))
+        // 尾灯の後ろの赤い溜まり（足元だけ・板の楕円より小さく）
+        add("glow.tail", .mesh(glowQuad(width: 34, depth: 48, material: .redPool)), .redPool, at: CV3(rear - 22, 0.45, 0), group: .glow)
     }
 }
 

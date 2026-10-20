@@ -321,7 +321,22 @@ final class CamperBlueprintTests: XCTestCase {
                 XCTAssertLessThanOrEqual(o.range, 72, o.name)
             }
         }
+        // 尾灯（2026-10-20 owner 実機: 強すぎて後ろが真っ赤な白い球になった）
+        let tail = build(mood: .night).lights.first { $0.name == "taillight" }
+        XCTAssertNotNil(tail)
+        XCTAssertLessThanOrEqual(tail?.intensity ?? 999, 40)
+        XCTAssertLessThanOrEqual(tail?.range ?? 999, 28)
+        XCTAssertLessThanOrEqual(CamperMaterials.spec(.red, paint: 0, mood: .night).emissionIntensity, 0.6)
         XCTAssertLessThanOrEqual(CamperMaterials.spec(.ember, paint: 0, mood: .night).emissionIntensity, 1.0)
+        let pool = build(mood: .night).nodes.first { $0.name == "glow.tail" }
+        XCTAssertNotNil(pool)
+        if case .mesh(let m) = pool?.shape {
+            let xs = m.positions.map(\.x), zs = m.positions.map(\.z)
+            XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), 40)
+            XCTAssertLessThanOrEqual((zs.max() ?? 0) - (zs.min() ?? 0), 52)
+        } else {
+            XCTFail("尾灯の溜まりが網でない")
+        }
     }
 
     /// 扉の口から見えるもの: 台所（天板・やかん）と吊りランプが口の正面にある
