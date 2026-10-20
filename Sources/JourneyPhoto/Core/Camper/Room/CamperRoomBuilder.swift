@@ -162,8 +162,10 @@ enum CamperRoomBuilder {
                                 closed: true, R(.windowRubber)))
             parts.append(K.placed(K.panel(width: width - 1, height: hgt - 1, R(.glass)), at: CV3(cx, cy, -2.2)))
             parts.append(K.block(CV3(width + 6, 1.4, 4), at: CV3(cx, w.bottom - 1.4, 1.4), radius: 0.5, R(.trim)))
-            // 外の景色（光を受けない絵・壁の後ろ 14）。上の端は壁の上から見えない高さまで
-            parts.append(K.placed(K.panel(width: width * 1.9, height: 60, R(.windowView)), at: CV3(cx, 44, -14)))
+            // 外の景色（光を受けない絵・壁の後ろ）。窓穴を少しだけ覆う大きさにする。
+            // かつて横 1.9 倍・高さ 60・y=44・z=−14 だったが、後ろの壁向けに回すと部屋の外の虚空に
+            // 巨大な青い板が浮いて見えた（2026-10-20 #324「変な写真枠」）
+            parts.append(K.placed(K.panel(width: width * 1.2, height: hgt * 1.25, R(.windowView)), at: CV3(cx, cy, -8)))
             // カーテンの棒と金具・左右に寄せたひだの布
             let rodY = w.top + 5
             parts.append(K.tube([CV3(x0 - 8, rodY, 3.2), CV3(x0 + width + 8, rodY, 3.2)], radius: 0.4, sides: 8, R(.agedBrass)))
