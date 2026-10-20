@@ -352,38 +352,79 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 腕の灯り（真鍮の座・折れる腕 2 つと継ぎ目・緑の琺瑯の笠・電球）
+    /// 腕の灯り（ビス付きの座・継ぎ目の輪・琺瑯の笠・縁リング・引き鎖）
     static func swingArm() -> CamperMesh {
         var parts: [CamperMesh] = []
+        let brass = R(.brass), enamel = R(.enamel(0x2F5A3C))
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        parts.append(K.placed(K.disc(radius: 2.2, height: 0.7, bevel: 0.25, segments: 18, R(.brass)), at: CV3(0, 9, 0), rotation: toWall))
+        parts.append(K.placed(K.disc(radius: 2.4, height: 0.75, bevel: 0.25, segments: 20, brass), at: CV3(0, 9, 0.05), rotation: toWall))
+        for k in 0..<4 {
+            let a = Double(k) / 4 * 2 * .pi + .pi / 4
+            parts.append(K.placed(K.sphere(radius: 0.22, segments: 6, R(.agedBrass)),
+                                  at: CV3(cos(a) * 1.7, 9 + sin(a) * 1.7, 0.55)))
+        }
         let j1 = CV3(2.5, 9.6, 5.5), j2 = CV3(-1, 12.6, 10)
-        parts.append(K.tube([CV3(0, 9, 0.7), j1], radius: 0.4, sides: 8, R(.brass)))
-        parts.append(K.tube([j1, j2], radius: 0.4, sides: 8, R(.brass)))
-        for j in [j1, j2] { parts.append(K.placed(K.sphere(radius: 0.75, segments: 10, R(.brass)), at: j)) }
-        // 笠（下前を向く円錐・外は緑の琺瑯、内は白）。断面は上の細い所から下へ広がる
+        parts.append(K.tube([CV3(0, 9, 0.75), j1], radius: 0.4, sides: 8, brass))
+        parts.append(K.tube([j1, j2], radius: 0.4, sides: 8, brass))
+        for j in [j1, j2] {
+            parts.append(K.placed(K.sphere(radius: 0.75, segments: 10, brass), at: j))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.65, 0.35), CV2(0, 0.35)], segments: 10, R(.agedBrass)), at: j))
+        }
         let q = CQuat.rotation(from: CV3(0, -1, 0), to: CV3(0.1, -1, 0.45))
         let outer: [CV2] = [CV2(0.9, 0), CV2(1.5, -0.8), CV2(3.0, -3.0), CV2(3.6, -4.4)]
         let top = j2 + CV3(0, 1.0, 0.6)
-        parts.append(K.placed(K.lathe(outer, segments: 24, R(.enamel(0x2F5A3C)), capStart: false, capEnd: false), at: top, rotation: q))
-        parts.append(K.placed(K.inverted(K.lathe(outer.map { CV2($0.x - 0.15, $0.y - 0.1) }, segments: 24, R(.painted(0xF2EEE6)), capStart: false,
-                                                 capEnd: false)), at: top, rotation: q))
-        parts.append(K.placed(K.disc(radius: 0.95, height: 0.6, bevel: 0.2, segments: 12, R(.enamel(0x2F5A3C))), at: top, rotation: q))
+        parts.append(K.placed(K.lathe(outer, segments: 24, enamel, capStart: false, capEnd: false), at: top, rotation: q))
+        parts.append(K.placed(K.inverted(K.lathe(outer.map { CV2($0.x - 0.15, $0.y - 0.1) }, segments: 24, R(.painted(0xF2EEE6)),
+                                                 capStart: false, capEnd: false)), at: top, rotation: q))
+        parts.append(K.placed(K.disc(radius: 0.95, height: 0.6, bevel: 0.2, segments: 12, enamel), at: top, rotation: q))
+        // 笠の縁リング
+        parts.append(K.tube((0..<20).map { k -> CV3 in
+            let a = Double(k) / 20 * 2 * .pi
+            return top + q.rotate(CV3(cos(a) * 3.55, -4.35, sin(a) * 3.55))
+        }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
         parts.append(K.placed(K.sphere(radius: 1.0, segments: 10, R(.bulb)), at: top + q.rotate(CV3(0, -2.0, 0))))
+        // 引き鎖
+        let chainTop = top + q.rotate(CV3(1.2, -0.4, 0))
+        for i in 0..<5 {
+            parts.append(K.placed(K.sphere(radius: 0.22, segments: 6, brass), at: chainTop + CV3(0, -Double(i) * 0.55, 0.15 * Double(i))))
+        }
         return K.merge(parts)
     }
 
-    /// 燭台（真鍮の座と腕・受け皿・蝋燭と炎）
+    /// 燭台（飾り座・S 字の腕・受け皿・垂れた蝋・炎・薄い硝子筒）
     static func candleSconce() -> CamperMesh {
         var parts: [CamperMesh] = []
+        let brass = R(.agedBrass)
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.8, 0), CV2(2.2, 0.4), CV2(1.6, 0.9), CV2(0, 0.9)], segments: 18, R(.agedBrass)),
-                              at: CV3(0, 8, 0), rotation: toWall))
-        parts.append(K.tube([CV3(0, 8, 0.8), CV3(0, 7.2, 3), CV3(0, 8.2, 4.8), CV3(0, 9.6, 5)], radius: 0.35, sides: 8, R(.agedBrass)))
-        parts.append(K.placed(K.vessel(outer: [CV2(0, 0), CV2(1.6, 0), CV2(2.6, 0.7)], inner: [CV2(0, 0.3), CV2(1.4, 0.3), CV2(2.4, 0.7)], segments: 20,
-                                       R(.agedBrass)), at: CV3(0, 9.6, 5)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1, 0), CV2(1, 5.6), CV2(0.8, 5.9), CV2(0, 5.9)], segments: 16, R(.paper)), at: CV3(0, 9.9, 5)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.38, 0.5), CV2(0.3, 1.1), CV2(0, 1.6)], segments: 10, R(.fire)), at: CV3(0, 15.9, 5)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.0, 0), CV2(2.4, 0.35), CV2(2.1, 0.7), CV2(1.7, 1.0), CV2(0, 1.0)],
+                                      segments: 20, brass), at: CV3(0, 8, 0.05), rotation: toWall))
+        for k in 0..<4 {
+            let a = Double(k) / 4 * 2 * .pi + .pi / 4
+            parts.append(K.placed(K.sphere(radius: 0.2, segments: 6, brass),
+                                  at: CV3(cos(a) * 1.6, 8 + sin(a) * 1.6, 0.7)))
+        }
+        // S 字の腕と葉の飾り
+        parts.append(K.tube([CV3(0, 8, 0.9), CV3(0, 7.0, 2.4), CV3(0, 7.6, 3.8), CV3(0, 8.8, 4.8), CV3(0, 9.8, 5.1)],
+                            radius: 0.32, sides: 8, brass))
+        for (p, s) in [(CV3(0, 7.6, 3.8), 0.45), (CV3(0, 8.8, 4.8), 0.4)] as [(CV3, Double)] {
+            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 8, brass), CV3(s * 1.6, s * 0.35, s)), at: p + CV3(0.7, 0, 0)))
+            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 8, brass), CV3(s * 1.6, s * 0.35, s)), at: p + CV3(-0.7, 0, 0)))
+        }
+        parts.append(K.placed(K.vessel(outer: [CV2(0, 0), CV2(1.7, 0), CV2(2.8, 0.75)],
+                                       inner: [CV2(0, 0.3), CV2(1.5, 0.3), CV2(2.55, 0.75)], segments: 22, brass),
+                              at: CV3(0, 9.8, 5.1)))
+        // 蝋燭と垂れ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.05, 0), CV2(1.05, 5.8), CV2(0.85, 6.1), CV2(0, 6.1)], segments: 16, R(.paper)),
+                              at: CV3(0, 10.2, 5.1)))
+        for (dx, h) in [(0.7, 2.2), (-0.55, 1.6), (0.35, 3.0)] as [(Double, Double)] {
+            parts.append(K.tube([CV3(dx, 10.3, 5.1 + 0.9), CV3(dx * 1.1, 10.3 + h * 0.3, 5.1 + 1.0), CV3(dx * 0.9, 10.3 + h, 5.1 + 0.7)],
+                                radius: 0.12, sides: 5, R(.paper)))
+        }
+        // 薄い硝子の筒
+        parts.append(K.placed(K.lathe([CV2(1.6, 0), CV2(1.7, 0.3), CV2(1.7, 5.5), CV2(1.55, 5.8)], segments: 18, R(.glass),
+                                      capStart: false, capEnd: false), at: CV3(0, 10.4, 5.1)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.4, 0.55), CV2(0.32, 1.2), CV2(0, 1.7)], segments: 10, R(.fire)),
+                              at: CV3(0, 16.3, 5.1)))
         return K.merge(parts)
     }
 
@@ -412,18 +453,38 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 光の時計（真鍮の光 16 本・真ん中の文字盤）
+    /// 光の時計（先の細い真鍮の光・縁・文字盤の刻み・針）
     static func sunburstClock() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let c = CV3(0, 10, 0.8)
-        parts.append(K.placed(K.disc(radius: 3.4, height: 1, bevel: 0.3, segments: 28, R(.brass)), at: c, rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
-        parts.append(K.placed(K.ellipsePanel(rx: 2.9, ry: 2.9, R(.dial)), at: c + CV3(0, 0, 1.05)))
+        let c = CV3(0, 10, 0.9)
+        let brass = R(.brass), toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
+        parts.append(K.placed(K.disc(radius: 3.5, height: 1.1, bevel: 0.3, segments: 30, brass), at: c, rotation: toWall))
+        parts.append(K.placed(K.disc(radius: 3.15, height: 0.35, bevel: 0.1, segments: 28, R(.agedBrass)),
+                              at: c + CV3(0, 0, 0.85), rotation: toWall))
+        parts.append(K.placed(K.ellipsePanel(rx: 2.95, ry: 2.95, R(.dial)), at: c + CV3(0, 0, 1.15)))
+        // 時の刻み
+        for k in 0..<12 {
+            let a = Double(k) / 12 * 2 * .pi
+            parts.append(K.block(CV3(0.28, 0.7, 0.15), at: CV3(c.x + cos(a) * 2.45, c.y + sin(a) * 2.45, c.z + 1.25), radius: 0.05,
+                                 R(.painted(0x141414))))
+        }
+        // 針
+        parts.append(K.placed(K.roundedBox(CV3(0.35, 2.0, 0.12), radius: 0.05, segments: 1, R(.painted(0x141414))),
+                              at: c + CV3(0.15, 0.9, 1.35), rotation: CQuat.axisAngle(CV3(0, 0, 1), -0.4)))
+        parts.append(K.placed(K.roundedBox(CV3(0.28, 2.8, 0.1), radius: 0.04, segments: 1, R(.painted(0x141414))),
+                              at: c + CV3(-0.55, 1.1, 1.42), rotation: CQuat.axisAngle(CV3(0, 0, 1), 0.9)))
+        parts.append(K.placed(K.disc(radius: 0.35, height: 0.25, bevel: 0.08, segments: 10, brass),
+                              at: c + CV3(0, 0, 1.5), rotation: toWall))
+        // 先の細い光（長短交互・壁マス幅に収める）
         for k in 0..<16 {
             let a = Double(k) / 16 * 2 * .pi
-            let len = k % 2 == 0 ? 6.3 : 4.6
+            let len = k % 2 == 0 ? 5.6 : 3.9
             let dir = CV3(cos(a), sin(a), 0)
-            parts.append(K.tube([c + dir * 3.4, c + dir * (3.4 + len)], radius: 0.28, sides: 6, R(.brass)))
-            parts.append(K.placed(K.sphere(radius: 0.5, segments: 8, R(.brass)), at: c + dir * (3.4 + len)))
+            let root = c + dir * 3.45 + CV3(0, 0, 0.2)
+            let tip = c + dir * (3.45 + len) + CV3(0, 0, 0.2)
+            parts.append(K.tube([root, root + dir * len * 0.55, tip], radius: k % 2 == 0 ? 0.28 : 0.2, sides: 6, brass))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.4, 0), CV2(0.22, 0.6), CV2(0, 0.6)], segments: 8, brass),
+                                  at: tip, rotation: CQuat.rotation(from: CV3(0, 1, 0), to: dir)))
         }
         return K.merge(parts)
     }

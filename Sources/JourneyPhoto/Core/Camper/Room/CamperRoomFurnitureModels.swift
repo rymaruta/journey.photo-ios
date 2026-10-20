@@ -676,25 +676,42 @@ enum CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 駅の時計（黒い鉄の縁・白い文字盤・針 3・表の硝子）
+    /// 駅の時計（厚い鉄縁・時の刻み・針 3・表の硝子・上の吊り環）
     static func stationClock() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let c = CV3(0, 10, 0)
+        let c = CV3(0, 10, 0.1)
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        parts.append(K.placed(K.vessel(outer: [CV2(0, 0), CV2(4.6, 0), CV2(4.8, 0.4), CV2(4.8, 2.2), CV2(4.5, 2.6)],
-                                       inner: [CV2(0, 0.6), CV2(4.0, 0.6), CV2(4.0, 2.6)], segments: 40, R(.castIron)), at: c, rotation: toWall))
-        parts.append(K.placed(K.ellipsePanel(rx: 4.0, ry: 4.0, R(.dial)), at: c + CV3(0, 0, 0.62)))
+        let iron = R(.castIron)
+        parts.append(K.placed(K.vessel(outer: [CV2(0, 0), CV2(4.7, 0), CV2(5.0, 0.45), CV2(5.0, 2.4), CV2(4.6, 2.8)],
+                                       inner: [CV2(0, 0.55), CV2(4.1, 0.55), CV2(4.1, 2.8)], segments: 40, iron), at: c, rotation: toWall))
+        parts.append(K.tube(K.arc(center: c + CV3(0, 0, 2.5), radius: 4.85, from: 0, to: 2 * .pi, steps: 36)
+                                .map { CV3($0.x, $0.y, 2.5) }, radius: 0.18, sides: 5, closed: true, R(.agedBrass)))
+        parts.append(K.placed(K.ellipsePanel(rx: 4.05, ry: 4.05, R(.dial)), at: c + CV3(0, 0, 0.7)))
+        // 時の太い刻みと分の細い刻み
+        for k in 0..<12 {
+            let a = Double(k) / 12 * 2 * .pi
+            parts.append(K.block(CV3(0.35, 0.85, 0.18), at: CV3(c.x + cos(a) * 3.35, c.y + sin(a) * 3.35, c.z + 0.85), radius: 0.06,
+                                 R(.painted(0x141414))))
+        }
+        for k in 0..<60 where k % 5 != 0 {
+            let a = Double(k) / 60 * 2 * .pi
+            parts.append(K.block(CV3(0.12, 0.35, 0.1), at: CV3(c.x + cos(a) * 3.55, c.y + sin(a) * 3.55, c.z + 0.82), radius: 0.03,
+                                 R(.painted(0x3A3A3C))))
+        }
         let hands: [(Double, Double, Double, CamperMaterial)] = [(-0.9, 2.4, 0.42, R(.painted(0x141414))), (0.55, 3.4, 0.3, R(.painted(0x141414))),
                                                                  (2.3, 3.6, 0.1, R(.painted(0xB0291F)))]
         for (i, (angle, len, w, m)) in hands.enumerated() {
             let q = CQuat.axisAngle(CV3(0, 0, 1), angle)
-            parts.append(K.placed(K.roundedBox(CV3(w, len, 0.12), radius: 0.04, segments: 1, m), at: c + q.rotate(CV3(0, len / 2 - 0.5, 0)) + CV3(0, 0, 0.75 + Double(i) * 0.08),
-                                  rotation: q))
+            parts.append(K.placed(K.roundedBox(CV3(w, len, 0.12), radius: 0.04, segments: 1, m),
+                                  at: c + q.rotate(CV3(0, len / 2 - 0.5, 0)) + CV3(0, 0, 0.9 + Double(i) * 0.08), rotation: q))
         }
-        parts.append(K.placed(K.disc(radius: 0.4, height: 0.3, bevel: 0.1, segments: 10, R(.painted(0x141414))), at: c + CV3(0, 0, 0.9),
-                              rotation: toWall))
-        parts.append(K.placed(K.lathe([CV2(0, 0.3), CV2(2.4, 0.25), CV2(4.0, 0)], segments: 32, R(.glass), capStart: false, capEnd: false),
-                              at: c + CV3(0, 0, 1.4), rotation: toWall))
+        parts.append(K.placed(K.disc(radius: 0.45, height: 0.35, bevel: 0.1, segments: 12, R(.painted(0x141414))),
+                              at: c + CV3(0, 0, 1.05), rotation: toWall))
+        parts.append(K.placed(K.lathe([CV2(0, 0.3), CV2(2.4, 0.25), CV2(4.05, 0)], segments: 32, R(.glass), capStart: false, capEnd: false),
+                              at: c + CV3(0, 0, 1.55), rotation: toWall))
+        // 上の吊り環
+        parts.append(K.tube(K.arc(center: c + CV3(0, 5.4, 1.4), radius: 0.65, from: 0.15, to: .pi - 0.15, steps: 10)
+                                .map { CV3($0.x, $0.y, 1.4) }, radius: 0.14, sides: 5, R(.agedBrass)))
         return K.merge(parts)
     }
 
@@ -723,13 +740,22 @@ enum CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 木の鳥（天井の糸・樺の横木・木の鳥 3 羽が高さを変えて）
+    /// 木の鳥（天井の鉤・樺の横木の旋盤端・木玉・高さの違う鳥 3）
     static func woodenBirds() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.tube([CV3(0, 0, 0), CV3(0, -12, 0)], radius: 0.06, sides: 3, R(.paper)))
-        parts.append(K.tube([CV3(-6, -12, 0), CV3(6, -12, 0)], radius: 0.28, sides: 6, R(.wood(.birch))))
+        let birch = R(.wood(.birch))
+        parts.append(K.tube(K.arc(center: CV3(0, -0.8, 0), radius: 0.7, from: 0, to: 2 * .pi, steps: 12)
+                                .map { CV3($0.x, $0.y, 0) }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
+        parts.append(K.tube([CV3(0, -1.5, 0), CV3(0, -11.5, 0)], radius: 0.08, sides: 4, R(.paper)))
+        // 横木（両端を少し膨らませた）
+        parts.append(K.tube([CV3(-7, -12, 0), CV3(7, -12, 0)], radius: 0.32, sides: 8, birch))
+        for x in [-7.0, 7.0] {
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.55, 0), CV2(0.6, 0.4), CV2(0.4, 0.9), CV2(0, 0.9)], segments: 10, birch),
+                                  at: CV3(x, -12, 0), rotation: CQuat.axisAngle(CV3(0, 0, 1), x > 0 ? .pi / 2 : -.pi / 2)))
+        }
         for (x, drop, yaw, wood) in [(-5.6, 7.0, 0.4, CamperRoomWood.walnut), (0, 11.5, -0.9, .birch), (5.6, 6.0, 2.2, .teak)] {
-            parts.append(K.tube([CV3(x, -12, 0), CV3(x, -12 - drop, 0)], radius: 0.05, sides: 3, R(.paper)))
+            parts.append(K.tube([CV3(x, -12, 0), CV3(x, -12 - drop * 0.45, 0), CV3(x, -12 - drop, 0)], radius: 0.06, sides: 4, R(.paper)))
+            parts.append(K.placed(K.sphere(radius: 0.4, segments: 8, R(.wood(.cedar))), at: CV3(x, -12 - drop * 0.4, 0)))
             parts.append(K.placed(CamperRoomShapes.bird(R(.wood(wood))), at: CV3(x, -12 - drop - 1.2, 0), yaw: yaw))
         }
         return K.merge(parts)
