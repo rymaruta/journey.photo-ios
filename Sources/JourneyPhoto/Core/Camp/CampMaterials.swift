@@ -25,6 +25,8 @@ struct CampMaterialSpec: Equatable, Sendable {
     var metalness: Double = 0
     /// 内から光る色（夜のテントの布・ランタンの硝子）。nil なら光らない
     var emission: UInt32? = nil
+    /// 光る面の強さ（1 まで。夜のテントを平らな橙の板にしない・2026-10-19 owner）
+    var emissionIntensity: Double = 0
     /// 光の当たり方で塗らない（テントの中は板の色そのまま）
     var unlit: Bool = false
     /// 両面を描く（フライ・扉布・椅子の布・草）
@@ -74,17 +76,21 @@ enum CampMaterials {
         case .rock: return CampMaterialSpec(color: 0x6B665E, roughness: 0.85, texture: .rock)
         case .rockDark: return CampMaterialSpec(color: 0x4B4741, roughness: 0.85, texture: .rock)
         case .tentEnd:
-            return night ? CampMaterialSpec(color: 0xFFD696, roughness: 0.9, emission: 0xFFD696, texture: .weave)
+            // 夜は内の灯りが布を透ける弱い光（0.4）。一色の強い emission だと橙の平らな板になる
+            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .weave)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .weave)
         case .tentEndFront:
-            return night ? CampMaterialSpec(color: 0xFFD696, roughness: 0.9, emission: 0xFFD696, texture: .tentFront)
+            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .tentFront)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .tentFront)
         case .fly:
-            if night { return CampMaterialSpec(color: 0xE8A45C, roughness: 0.9, emission: 0xE8A45C, doubleSided: true, texture: .fly) }
+            if night {
+                return CampMaterialSpec(color: 0x9C6A3E, roughness: 0.9, emission: 0xE8A45C, emissionIntensity: 0.35,
+                                        doubleSided: true, texture: .fly)
+            }
             return CampMaterialSpec(color: winter ? 0xF2F5F8 : 0x9C6A3E, roughness: 0.9, doubleSided: true,
                                     texture: winter ? nil : .fly)
         case .flap:
-            return CampMaterialSpec(color: night ? 0xE9A75C : 0xC9B083, roughness: 0.9, doubleSided: true, texture: .weave)
+            return CampMaterialSpec(color: 0xC9B083, roughness: 0.9, doubleSided: true, texture: .weave)
         case .innerBack: return inside(night ? 0xF7D397 : 0x5A5345, night)
         case .innerSideA: return inside(night ? 0xEFBF78 : 0x4A4438, night)
         case .innerSideB: return inside(night ? 0xE3A862 : 0x3C372D, night)
@@ -101,7 +107,9 @@ enum CampMaterials {
         case .brass: return CampMaterialSpec(color: 0xC9A66B, roughness: 0.3, metalness: 1)
         case .chrome: return CampMaterialSpec(color: 0xC9CCD0, roughness: 0.12, metalness: 1)
         case .rubber: return CampMaterialSpec(color: 0x1B1C1F, roughness: 0.8)
-        case .rope: return CampMaterialSpec(color: night ? 0xFFDCAA : 0xF5F0E4, roughness: 0.9, emission: night ? 0x6A4A2A : nil)
+        case .rope:
+            return CampMaterialSpec(color: 0xF5F0E4, roughness: 0.9,
+                                    emission: night ? 0x6A4A2A : nil, emissionIntensity: night ? 0.25 : 0)
         case .woodDark: return CampMaterialSpec(color: 0x6E4A2B, roughness: 0.75, texture: .grain)
         case .wood: return CampMaterialSpec(color: 0x9A6A3E, roughness: 0.75, texture: .grain)
         case .bark: return CampMaterialSpec(color: 0x5A3B24, roughness: 0.9, texture: .bark)
@@ -120,7 +128,7 @@ enum CampMaterials {
         case .enamelRim: return CampMaterialSpec(color: 0x2F4F74, roughness: 0.3)
         case .paperMap: return CampMaterialSpec(color: 0xEFE6CF, roughness: 0.95, texture: .map)
         case .glassLit:
-            return night ? CampMaterialSpec(color: 0xFFD890, roughness: 0.2, emission: 0xFFD890)
+            return night ? CampMaterialSpec(color: 0xFFD890, roughness: 0.2, emission: 0xFFD890, emissionIntensity: 0.9)
                 : CampMaterialSpec(color: 0xE9E4D6, roughness: 0.1, opacity: 0.85)
         case .water: return CampMaterialSpec(color: night ? 0x0E1A2C : 0x2C4A5A, roughness: 0.05, opacity: 0.92)
         case .reed: return CampMaterialSpec(color: autumn && !spring ? 0x9A7A3A : 0x4A6A30, roughness: 0.9, doubleSided: true)
@@ -135,7 +143,9 @@ enum CampMaterials {
     }
 
     private static func inside(_ color: UInt32, _ night: Bool) -> CampMaterialSpec {
-        CampMaterialSpec(color: color, roughness: 1, emission: night ? color : nil, unlit: true, doubleSided: true)
+        // unlit なので emission の強さは SceneKit では 0（色は diffuse に載る）。値だけ揃えておく
+        CampMaterialSpec(color: color, roughness: 1, emission: night ? color : nil, emissionIntensity: night ? 0.5 : 0,
+                         unlit: true, doubleSided: true)
     }
 
     /// 芝の色（付箋: 夏 #4f7233・春 #6e8f45・秋 #8a7a3a・冬 #e9eef3）

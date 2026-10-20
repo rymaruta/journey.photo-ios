@@ -412,7 +412,8 @@ final class CampSceneCoordinator: NSObject {
             ambient.color = UIColor.white
         }
         scene.lightingEnvironment.contents = CampTexturePainter.environment(o.time, season: o.season)
-        scene.lightingEnvironment.intensity = o.time == .night ? 0.25 : 0.7
+        // 夜の周りの光は弱く（0.25→0.12）。強いと島全体が均一に明るく、焚き火の溜まりが消える
+        scene.lightingEnvironment.intensity = o.time == .night ? 0.12 : 0.7
         if animated { SCNTransaction.commit() }
     }
 
@@ -440,7 +441,7 @@ final class CampSceneCoordinator: NSObject {
             m.clearCoat.contents = NSNumber(value: spec.clearCoat)
         }
         if let e = spec.emission {
-            // 夜の布は内から光る（絵の織り目も光の中に残す）
+            // 夜の布は内から光る（絵の織り目も光の中に残す）。強さは 1 まで（平らな橙の板にしない）
             if let texture = spec.texture, case .cutout = texture {
                 m.emission.contents = CampTexturePainter.color(e)
             } else if let texture = spec.texture,
@@ -449,9 +450,10 @@ final class CampSceneCoordinator: NSObject {
             } else {
                 m.emission.contents = CampTexturePainter.color(e)
             }
-            m.emission.intensity = spec.unlit ? 0 : 0.85
+            m.emission.intensity = spec.unlit ? 0 : CGFloat(min(1, max(0, spec.emissionIntensity)))
         } else {
             m.emission.contents = UIColor.black
+            m.emission.intensity = 0
         }
         m.isDoubleSided = spec.doubleSided
         m.transparency = CGFloat(spec.opacity)
@@ -471,7 +473,8 @@ final class CampSceneCoordinator: NSObject {
             light.intensity = CGFloat(l.intensity * 700)
             light.attenuationStartDistance = 0
             light.attenuationEndDistance = CGFloat(l.range * 2.2)
-            light.attenuationFalloffExponent = 2
+            // 2 だと芯が白く飛び、縁が急に真っ暗になる。1.2 でなだらかな溜まりに（とおまわり号の中と同じ）
+            light.attenuationFalloffExponent = 1.2
             let node = SCNNode()
             node.light = light
             node.position = Self.vector(CampOrbit.toScene(l.position))
