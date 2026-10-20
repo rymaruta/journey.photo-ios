@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 #if canImport(SceneKit)
 import SceneKit
 #elseif canImport(SceneKitShim)
@@ -605,7 +606,12 @@ final class CamperRoomTests: XCTestCase {
 
     /// 写真の面はマットより手前・硝子より奥（マットの厚みに沈むと飾っても見えない）
     func testPhotoPanelSitsBetweenMatAndGlass() throws {
-        for id in ["photo_frame.landscape", "photo_frame.square"] {
+        var ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval"]
+        // variety の額も穴付きの共通額に寄せたので、同じ奥行きの決まりを守る
+        if let variety = CamperRoomCatalog.all.first(where: { $0.id.hasPrefix("photo_frame.x") }) {
+            ids.append(variety.id)
+        }
+        for id in ids {
             let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
             func zs(_ match: (CamperMaterial) -> Bool) -> [Double] {
                 var out: [Double] = []
@@ -628,6 +634,15 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertGreaterThan(photoZ.max()!, matZ.min()! + 0.05, id)
             XCTAssertLessThan(photoZ.max()!, glassZ.min()!, id)
         }
+    }
+
+    /// 飾る → place の photos に載る（文書だけ直って場面に渡らない再発を防ぐ）
+    func testSetPhotoFlowsIntoPlacedItemPhotos() throws {
+        var e = CamperRoomEditor(doc: CamperRoomRules.starterDocument(camper), layout: camper)
+        let frame = try XCTUnwrap(e.doc.items.first { $0.k == "photo_frame.landscape" })
+        e.setPhoto(frame.u, photoId: "hang-me")
+        let placed = try XCTUnwrap(CamperRoomBuilder.place(try XCTUnwrap(e.doc.item(frame.u))))
+        XCTAssertEqual(placed.photos, ["hang-me"])
     }
 
     /// 外景色の板は窓穴より少し大きいだけ。巨大な板だと箱庭の外に青い「変な写真枠」が浮く（#324）
@@ -817,6 +832,53 @@ final class CamperRoomSceneTests: XCTestCase {
         XCTAssertEqual(cells.count, 6)
         scene.setDrag(nil, check: nil)
         XCTAssertTrue(all(scene.scene.rootNode).filter { $0.name == "drag" }.isEmpty)
+    }
+
+    /// 額に写真 id と絵を渡すと、印画の材質の diffuse に絵が入る（飾っても載らない再発を防ぐ）
+    func testHangPhotoReplacesDiffuseContents() async throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        var doc = CamperRoomRules.starterDocument(layout)
+        let frame = try XCTUnwrap(doc.items.first { $0.k == "photo_frame.landscape" })
+        var e = CamperRoomEditor(doc: doc, layout: layout)
+        e.setPhoto(frame.u, photoId: "hang-photo-1")
+        doc = e.doc
+        let scene = CamperRoomScene()
+        scene.installNow(layout: layout, doc: doc, paint: 0x5B6168)
+        let image = UIImage()
+        scene.setPhotoImages(["hang-photo-1": image])
+        let holder = try XCTUnwrap(all(scene.scene.rootNode).first { $0.name == "item.\(frame.u)" })
+        let body = try XCTUnwrap(holder.childNodes.first { $0.name == "body" })
+        let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh("photo_frame.landscape"))
+        let prepared = CamperPreparedMesh(mesh, unit: CamperRoomScene.unit)
+        var found = false
+        for (i, group) in prepared.groups.enumerated() {
+            guard case .room(.photo) = group.material, i < (body.geometry?.materials.count ?? 0) else { continue }
+            let contents = body.geometry?.materials[i].diffuse.contents
+            // Linux の UIImage.cgImage は nil なので UIImage そのものが入る（iOS では CGImage になることもある）
+            XCTAssertNotNil(contents, "印画の材質が空")
+            XCTAssertFalse(contents is UIColor, "印画が色のまま（絵が載っていない）: \(String(describing: contents))")
+            found = true
+        }
+        XCTAssertTrue(found, "写真の材質が無い")
+    }
+
+    /// 写真を飾る場面では、切った壁の向きでも選んだ左壁の額を消さない
+    func testPhotosModeKeepsFocusedLeftFrameVisible() async throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        let doc = CamperRoomRules.starterDocument(layout)
+        let left = try XCTUnwrap(doc.all.first { $0.k == "photo_frame.square" && $0.w == .left })
+        let scene = CamperRoomScene()
+        scene.installNow(layout: layout, doc: doc, paint: 0x5B6168)
+        var cam = CamperRoomCamera.overview(layout)
+        cam.yaw = -20
+        cam = cam.clamped()
+        XCTAssertFalse(cam.cutsFrontEnd)
+        scene.setCamera(cam, animated: false)
+        let holder = try XCTUnwrap(all(scene.scene.rootNode).first { $0.name == "item.\(left.u)" })
+        // 飾る場面の前は、切った後ろ壁の物は隠れる
+        XCTAssertTrue(holder.isHidden)
+        scene.setPhotosMode(true, focus: left.u, preview: "p1")
+        XCTAssertFalse(holder.isHidden, "選んだ額まで消えて飾った写真が見えない")
     }
 }
 

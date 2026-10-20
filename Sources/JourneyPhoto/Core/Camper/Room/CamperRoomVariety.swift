@@ -1037,30 +1037,29 @@ private func shelf(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
 }
 
 private func frame(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
-    let (opening, moulding, mat, _) = piece.axes
+    // 無穴の直方体に写真を重ねると、段枠・桟が印画を覆って「飾っても載らない」に見える。
+    // 共通の額（穴付きマット・写真・硝子）に寄せ、飾りは印画の外だけに足す（2026-10-20）
+    let (opening, moulding, _, _) = piece.axes
     let hx = varietyHalf(piece.furniture.width)
     let wood = varietyWood(moulding), brass = varietyMetal(moulding)
     let tall = opening == 2 || opening == 4
     let fw = opening == 1 || opening == 5 ? hx * 1.3 : hx * 1.7
     let fh = tall ? 15.0 : 11.0
-    var parts: [CamperMesh] = []
     let mould = moulding == 3 ? brass : wood
-    parts.append(varietyBox(CV3(fw, fh, moulding == 4 ? 0.7 : 1.3), CV3(0, 2, 0.3), mould))
-    if moulding == 1 {
-        parts.append(varietyBox(CV3(fw - 1.2, fh - 1.2, 0.5), CV3(0, 2.4, 0.9), varietyWood(moulding + 1)))
-    }
+    let depth = moulding == 4 ? 1.25 : 1.6
+    let rim = moulding == 1 ? 1.45 : 1.15
+    let photo = CV2(max(4.5, fw - rim * 2 - 2.2), max(4.5, fh - rim * 2 - 2.2))
+    let center = CV3(0, max(8, fh * 0.55 + 1.2), 0)
+    var parts = [CamperRoomShapes.frame(outer: CV2(fw, fh), photo: photo, depth: depth, rim: rim, at: center, frame: mould)]
     if opening == 4 {
-        parts.append(varietyBox(CV3(fw * 0.6, 3, 0.8), CV3(0, 2 + fh - 1.2, 0.5), mould))
+        // 上縁の飾り（印画の上の外枠側）
+        parts.append(varietyBox(CV3(fw * 0.55, 1.4, 0.55), CV3(0, center.y + fh / 2 - 0.9, depth + 0.4), mould))
     } else if opening == 5 {
-        parts.append(varietyBox(CV3(0.5, fh - 3, 0.5), CV3(0, 3.2, 1.2), mould))
+        // 外枠の脇の細い飾り（印画の真ん中は跨がない）
+        parts.append(varietyBox(CV3(0.45, fh - 4, 0.45), CV3(fw / 2 - 0.4, center.y, depth + 0.35), mould))
     } else if opening == 3 {
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: min(fw, fh) * 0.28, height: 0.4, bevel: 0.1, segments: 8, .room(.paper)),
-                                       at: CV3(0, fh * 0.45, 1.3)))
-    }
-    let photo = CamperMaterial.room(.photo("slot0"))
-    parts.append(varietyBox(CV3(fw - 3, fh - 4, 0.35), CV3(0, 3.2, 1.15), photo))
-    if mat > 0 {
-        parts.append(varietyBox(CV3(fw - (mat == 3 ? 2.2 : 3.4), fh - (mat == 1 ? 3 : 4.4), 0.3), CV3(0, 3, 1), .room(.mat)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.55, height: 0.35, bevel: 0.1, segments: 8, brass),
+                                       at: CV3(0, center.y + fh / 2 - 0.6, depth + 0.5)))
     }
     return varietyMerge(parts)
 }

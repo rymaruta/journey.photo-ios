@@ -131,7 +131,10 @@ final class CamperRoomScene {
             self.install(plan, key: key)
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
             self.reapplyDrag()
+            // 組み直しのあいだに届いた印画を載せる（setPhotoImages が空の itemNodes に当たって取りこぼす）
+            self.reapplyAllPhotos()
             self.applyPhotosModeVisibility()
+            self.applyCutaway()
             self.updateFocusRing()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             self.onReady?(self.marker(ms: ms))
@@ -144,6 +147,8 @@ final class CamperRoomScene {
         self.doc = doc
         install(CamperRoomScenePlan.make(layout, doc: doc, paint: paint), key: "now")
         syncItems(layout: layout, doc: doc)
+        reapplyAllPhotos()
+        applyCutaway()
     }
 
     /// 組み終えた合図（画面写真の試験が待つ）
@@ -315,6 +320,8 @@ final class CamperRoomScene {
         previewPhotoId = preview
         guard changed || !itemNodes.isEmpty else { return }
         applyPhotosModeVisibility()
+        // 選んだ額を切った壁の規則から外す（写真を飾る場面に入った直後）
+        applyCutaway()
         for (_, entry) in itemNodes where !entry.item.photos.isEmpty || entry.item.uid == focus {
             applyPhotos(entry.node, entry.item)
         }
@@ -327,6 +334,12 @@ final class CamperRoomScene {
             // 換気窓が額のように見えて「変な写真枠」に見えた（2026-10-20 #326）
             entry.node.isHidden = photosMode
         }
+    }
+
+    /// 持っている印画を全部の額に載せ直す（組み直し直後・画像が後から届いたとき）
+    private func reapplyAllPhotos() {
+        for (_, entry) in itemNodes { applyPhotos(entry.node, entry.item) }
+        kickRender()
     }
 
     private func updateFocusRing() {
@@ -396,6 +409,11 @@ final class CamperRoomScene {
                 m.diffuse.wrapS = .clamp
                 m.diffuse.wrapT = .clamp
                 m.diffuse.mipFilter = .linear
+                // configure が付けた clearCoat / metalness が残ると印画が白い膜に見える
+                m.clearCoat.contents = 0.0
+                m.clearCoatRoughness.contents = 0.0
+                m.metalness.contents = 0.0
+                m.roughness.contents = 1.0
                 m.emission.contents = CamperScene.color(0x000000)
                 m.emission.intensity = 0
                 m.transparency = 1
@@ -531,7 +549,12 @@ final class CamperRoomScene {
         if let layout { setCamera(c, animated: false, layout: layout) }
         for (node, key) in shellGroups { node.isHidden = !CamperRoomScenePlan.visible(key, camera: c) }
         for (_, entry) in itemNodes where entry.item.placement == .wall {
-            // 後ろの壁が手前に来て切られた時は、その壁の物も見せない
+            // 写真を飾る場面の選んだ額は、切った壁の向きでも消さない（飾ったのに額ごと消えて「載らない」に見える）
+            if photosMode, entry.item.uid == focusFrameUid {
+                entry.node.isHidden = false
+                continue
+            }
+            // 後ろの壁（x = 0）が手前に来て切られた時は、その壁の物も見せない
             entry.node.isHidden = entry.item.yaw != 0 && !c.cutsFrontEnd
         }
         // 写真を飾る場面では天井の換気窓を隠す（切ったあとも戻さない）

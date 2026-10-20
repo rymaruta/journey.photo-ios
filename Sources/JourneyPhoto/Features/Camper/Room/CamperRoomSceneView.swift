@@ -86,16 +86,27 @@ struct CamperRoomSceneView: UIViewRepresentable {
 final class CamperRoomPhotoImages: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
     private var inFlight = Set<String>()
+    /// 一度失敗した id（読み直しの間隔を空ける。同じ失敗を毎フレーム繰り返さない）
+    private var failedAt: [String: Date] = [:]
 
     /// 額に入れる／選ぶ写真を読む（飾る画面では一覧の分も先に読む。読めた・読んでいる最中のものは読まない）
-    func load(_ ids: [String], from photos: [Photo]) {
-        for id in Set(ids) where images[id] == nil && !inFlight.contains(id) {
+    func load(_ ids: [String], from photos: [Photo], force: Bool = false) {
+        let now = Date()
+        for id in Set(ids) {
+            if images[id] != nil { continue }
+            if inFlight.contains(id) { continue }
+            if !force, let at = failedAt[id], now.timeIntervalSince(at) < 2 { continue }
             guard let url = photos.first(where: { $0.id == id })?.gridImageURL else { continue }
             inFlight.insert(id)
             Task {
                 let data = try? await ProfileImageFromPhoto.download(url)
                 inFlight.remove(id)
-                if let data, let image = UIImage(data: data) { images[id] = image }
+                if let data, let image = UIImage(data: data) {
+                    failedAt[id] = nil
+                    images[id] = image
+                } else {
+                    failedAt[id] = Date()
+                }
             }
         }
     }
