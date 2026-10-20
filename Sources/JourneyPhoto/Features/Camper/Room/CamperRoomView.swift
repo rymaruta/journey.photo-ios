@@ -45,6 +45,10 @@ struct CamperRoomView: View {
     @State private var notice: String?
     @State private var lifted = 0
     @State private var loaded = false
+    /// 置く棚の縦の割合（下の段÷箱庭と棚の合計。指で上下に伸ばせる・端末に覚える・2026-10-20 owner）
+    @State private var editPanelFraction = CamperRoomPanelSplit.load()
+    @State private var resizeDragStart: Double?
+    @State private var splitHeight: CGFloat = 520
 
     /// 指の動き（始めた所・持ち上げた家具・回し始めのカメラ）
     struct PointerState {
@@ -66,12 +70,32 @@ struct CamperRoomView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let sceneHeight = min(460, max(300, geo.size.height * 0.56))
             VStack(spacing: 0) {
                 header
                 if CamperRoomKind.rooms(stage).count > 1 { roomTabs }
-                sceneArea(width: geo.size.width, height: sceneHeight)
-                panel
+                if mode == .edit {
+                    // 置く棚の縦幅を指で変えられる（2026-10-20 owner「Cursor の窓のように広く狭く」）
+                    GeometryReader { split in
+                        let total = max(split.size.height, 1)
+                        let frac = CamperRoomPanelSplit.clamped(editPanelFraction)
+                        let handle: CGFloat = 22
+                        let panelH = min(total - 160 - handle, max(210, total * frac))
+                        let sceneH = max(160, total - panelH - handle)
+                        VStack(spacing: 0) {
+                            sceneArea(width: geo.size.width, height: sceneH)
+                            panelResizeHandle(totalHeight: total)
+                            panel
+                                .frame(height: panelH, alignment: .top)
+                                .clipped()
+                        }
+                        .onAppear { splitHeight = total }
+                        .onChange(of: split.size.height) { _, h in splitHeight = h }
+                    }
+                } else {
+                    let sceneHeight = min(460, max(300, geo.size.height * 0.56))
+                    sceneArea(width: geo.size.width, height: sceneHeight)
+                    panel
+                }
             }
         }
         .background { Color.black.ignoresSafeArea() }
@@ -94,6 +118,45 @@ struct CamperRoomView: View {
             CamperRoomDexView(owned: owned, stats: stats, roomStats: roomStats, paint: paint, initialMood: mood) { showDex = false }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: lifted)
+    }
+
+    /// 箱庭と置く棚の境（上下にドラッグで棚の縦幅を変える）
+    private func panelResizeHandle(totalHeight: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.white.opacity(0.32))
+            .frame(width: 40, height: 4)
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if resizeDragStart == nil { resizeDragStart = editPanelFraction }
+                        let delta = -Double(value.translation.height) / Double(max(totalHeight, 1))
+                        setEditPanelFraction((resizeDragStart ?? CamperRoomPanelSplit.defaultFraction) + delta)
+                    }
+                    .onEnded { _ in resizeDragStart = nil }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(L("棚の高さを変える", "Resize the shelf"))
+            .accessibilityHint(L("上下に払うと、棚の高さが変わります", "Swipe up or down to change the shelf height"))
+            .accessibilityValue(L("\(Int((CamperRoomPanelSplit.clamped(editPanelFraction) * 100).rounded()))パーセント",
+                                  "\(Int((CamperRoomPanelSplit.clamped(editPanelFraction) * 100).rounded())) percent"))
+            .accessibilityAdjustableAction { direction in
+                let step = 0.06
+                switch direction {
+                case .increment: setEditPanelFraction(editPanelFraction + step)
+                case .decrement: setEditPanelFraction(editPanelFraction - step)
+                @unknown default: break
+                }
+            }
+            .accessibilityIdentifier("camper.room.panelResize")
+    }
+
+    private func setEditPanelFraction(_ value: Double) {
+        let next = CamperRoomPanelSplit.clamped(value)
+        editPanelFraction = next
+        CamperRoomPanelSplit.save(next)
     }
 
     private var photoIds: [String] { (editor?.doc.all ?? []).compactMap(\.p) }
@@ -608,29 +671,30 @@ struct CamperRoomView: View {
                 trayTab = CamperRoomPlacement(rawValue: raw) ?? .floor
             }
             let tray = editor?.tray(trayTab, owned: owned) ?? []
-            // 横に送る一覧は家具が増えると探しにくい（2026-10-20 owner「5×5 みたいな一覧」）。5 列の升目で縦に送る
+            // 横に送る一覧は家具が増えると探しにくい（2026-10-20 owner「5×5 みたいな一覧」）。5 列の升目で縦に送る。
+            // 升の絵は 44pt だと縦が潰れるので、枠を大きく取る（2026-10-20 owner「枠が狭い・縦幅がなさすぎる」）
             ScrollView {
                 if tray.isEmpty {
                     Text(L("棚は空です。図鑑で集めると増えます", "Nothing left on the shelf. Collect more in the collection"))
                         .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
-                        .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+                        .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
                         ForEach(tray) { f in
                             Button { place(f) } label: {
-                                VStack(spacing: 3) {
+                                VStack(spacing: 4) {
                                     CamperRoomThumb(furniture: f, silhouette: false)
                                         .frame(maxWidth: .infinity)
-                                        .frame(height: 44)
+                                        .frame(height: 72)
                                     Text(f.name).font(.system(size: 12)).foregroundStyle(WebTheme.text)
                                         .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
                                 }
-                                .padding(.horizontal, 2)
-                                .padding(.vertical, 4)
-                                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                                .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 12))
-                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                                .contentShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, minHeight: 108)
+                                .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 14))
+                                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                                .contentShape(RoundedRectangle(cornerRadius: 14))
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(L("\(f.name)を置く", "Place \(f.name)"))
@@ -640,12 +704,11 @@ struct CamperRoomView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            Text(L("長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。",
-                   "Press and hold to lift. White squares fit, red ones collide. Twist with two fingers to turn."))
+            Text(L("長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。棚の上の線を上下に動かすと高さが変わる。",
+                   "Press and hold to lift. White squares fit, red ones collide. Twist with two fingers to turn. Drag the bar above the shelf to resize it."))
                 .font(.system(size: 12))
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
             HStack(spacing: 8) {
                 Button(action: undo) {
                     Text(L("元に戻す", "Undo"))
@@ -658,8 +721,9 @@ struct CamperRoomView: View {
                 .buttonStyle(.plain)
                 .disabled(editor?.canUndo != true)
                 .accessibilityIdentifier("camper.room.undo")
-                // 「元に戻す」と「できた」を半分ずつ（主ボタンが全幅を取って「元に戻す」が消えた・Mac run 568）
-                primaryButton(L("できた", "Done"), id: "camper.room.done", fill: true) { goHome() }
+                // 「元に戻す」と主ボタンを半分ずつ（主ボタンが全幅を取って「元に戻す」が消えた・Mac run 568）
+                // 「できた」は作業の終わりの言い方としておかしいので「閉じる」（2026-10-20 owner）
+                primaryButton(L("閉じる", "Close"), id: "camper.room.done", fill: true) { goHome() }
                     .frame(maxWidth: .infinity)
             }
         }
@@ -980,5 +1044,27 @@ struct CamperRoomSwatch: View {
         .frame(width: 64, height: 64)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityHidden(true)
+    }
+}
+
+/// 置く棚の縦幅（箱庭と棚の境をドラッグしたときの割合）。小さくしすぎ・大きくしすぎを防ぐ
+enum CamperRoomPanelSplit {
+    static let minFraction = 0.34
+    static let maxFraction = 0.70
+    /// 升の絵が潰れない程度の初めの高さ（2026-10-20）
+    static let defaultFraction = 0.50
+    private static let defaultsKey = "camper.room.editPanelFraction"
+
+    static func clamped(_ value: Double) -> Double {
+        min(maxFraction, max(minFraction, value))
+    }
+
+    static func load() -> Double {
+        let stored = UserDefaults.standard.object(forKey: defaultsKey) as? Double
+        return clamped(stored ?? defaultFraction)
+    }
+
+    static func save(_ value: Double) {
+        UserDefaults.standard.set(clamped(value), forKey: defaultsKey)
     }
 }
