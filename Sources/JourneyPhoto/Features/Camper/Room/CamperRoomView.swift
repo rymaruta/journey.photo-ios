@@ -902,6 +902,7 @@ struct CamperRoomView: View {
                             Button {
                                 photoPick = p.id
                                 // 選んだ瞬間に額へ見本を載せる（「この額に飾る」の前に結果が見える）
+                                photoImages.load([p.id], from: photos, force: photoImages.images[p.id] == nil)
                                 if let id = framePick, let frame = editor?.doc.item(id) {
                                     animateCamera = true
                                     camera = CamperRoomCamera.framing(frame, layout: layout)
@@ -943,6 +944,8 @@ struct CamperRoomView: View {
                     e.setPhoto(frame, photoId: photo)
                     editor = e
                     save()
+                    // 飾った直後に印画が無いと「反映されない」に見えるので、失敗していても読み直す
+                    photoImages.load([photo], from: photos, force: true)
                     if let updated = e.doc.item(frame) { look(at: updated) }
                     flash(L("この額に飾りました", "Hung on this frame"))
                 }
