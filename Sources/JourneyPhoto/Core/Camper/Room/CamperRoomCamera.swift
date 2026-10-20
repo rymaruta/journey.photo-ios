@@ -2,7 +2,8 @@ import Foundation
 
 // 室内のカメラ（2026-10-19・付箋「室内の見せ方」）。
 //
-// 斜め上から見下ろす箱庭: 縦 −38°・横 −34°。回せる範囲は横 −90°〜90°（後ろの面は見せない）、縦 −60°〜−25°、二本指で 0.8〜1.8 倍。
+// 斜め上から見下ろす箱庭: 縦 −38°・横 −34°。回せる範囲は横 −90°〜90°（後ろの面は見せない）、縦 −60°〜−25°、二本指で 0.8〜28 倍。
+// 1.8 倍より寄ると、家具の無い所をなぞって部屋の中を見て回る（大きな部屋の端まで届く）。
 // 2026-10-19 判断: 部屋は回さず、カメラが部屋のまわりを回る（指の位置から床・壁のマスを読むのが、同じ式で済む）。
 // SceneKit の側は `eye` と `orientation` をそのまま入れる。指の位置から床・壁の点を読む（`ray`）のも同じ式なので、
 // 画面の絵と押した所がずれない。素の Swift なので試験できる。
@@ -24,7 +25,8 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     static let yawRange = -90.0...90.0
     static let pitchRange = 25.0...60.0
-    static let zoomRange = 0.8...1.8
+    /// 大きな部屋でも家具のそばまで寄れる（2026-10-19。部屋を画面いっぱいに見たままでは、端の家具が豆になる）
+    static let zoomRange = 0.8...28.0
     /// 縦の画角（度）
     static let fieldOfView = 34.0
 
@@ -42,7 +44,7 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     /// 選んだ額が見える向き。部屋の真ん中ではなく、その額の前に寄る
     static func framing(_ item: CamperRoomItem, layout: CamperRoomLayout) -> CamperRoomCamera {
-        guard let placed = CamperRoomBuilder.place(item) else { return wall(layout) }
+        guard let placed = CamperRoomBuilder.place(item, ceiling: layout.ceilingHeight) else { return wall(layout) }
         let p = placed.position
         let left = item.w == .left
         let yaw = left ? 72.0 : 6.0
@@ -120,6 +122,21 @@ struct CamperRoomCamera: Equatable, Sendable {
         return c.clamped()
     }
 
+    /// 寄った状態で、狙う点を床の上で動かす（指に部屋が付いてくる）。部屋の外へは出ない
+    func panned(dx: Double, dy: Double, layout: CamperRoomLayout) -> CamperRoomCamera {
+        var c = self
+        let y = yaw * .pi / 180
+        let lookX = -sin(y), lookZ = -cos(y)
+        let rightX = lookZ, rightZ = -lookX
+        let scale = distance(layout) / 500
+        c.target.x += (-dx * rightX + dy * lookX) * scale
+        c.target.z += (-dx * rightZ + dy * lookZ) * scale
+        let s = layout.size
+        c.target.x = min(max(0, c.target.x), s.x)
+        c.target.z = min(max(0, c.target.z), s.z)
+        return c
+    }
+
     /// カメラの側の端の壁（後ろ x = 0 か、前 x = 幅）。手前の壁は高さ 9 で切る（どちらを切るかは向きで自動）。
     /// 正の向きではカメラが前の側にいるので、前の仕切りを切る
     var cutsFrontEnd: Bool { yaw >= 0 }
@@ -169,7 +186,7 @@ enum CamperRoomPick {
     }
 
     /// 置いた家具の箱（部屋の座標）。壁の物は壁から厚みだけ出る
-    static func bounds(_ item: CamperRoomItem) -> (min: CV3, max: CV3)? {
+    static func bounds(_ item: CamperRoomItem, ceiling: Double = CamperRoomLayout.ceiling) -> (min: CV3, max: CV3)? {
         guard let f = item.furniture else { return nil }
         let cell = CamperRoomLayout.cell
         switch f.placement {
@@ -179,7 +196,7 @@ enum CamperRoomPick {
             return (CV3(Double(r.x) * cell, 0, Double(r.z) * cell), CV3(Double(r.x + r.w) * cell, h, Double(r.z + r.d) * cell))
         case .ceiling:
             guard let r = item.rect else { return nil }
-            let top = CamperRoomLayout.ceiling
+            let top = ceiling
             return (CV3(Double(r.x) * cell, top - f.height, Double(r.z) * cell), CV3(Double(r.x + r.w) * cell, top, Double(r.z + r.d) * cell))
         case .wall:
             guard let s = item.wallSpan else { return nil }
@@ -191,10 +208,10 @@ enum CamperRoomPick {
     }
 
     /// 指の下の家具（いちばん手前）
-    static func item(at ray: (origin: CV3, direction: CV3), in doc: CamperRoomDocument) -> CamperRoomItem? {
+    static func item(at ray: (origin: CV3, direction: CV3), in doc: CamperRoomDocument, ceiling: Double = CamperRoomLayout.ceiling) -> CamperRoomItem? {
         var best: (CamperRoomItem, Double)?
         for item in doc.all {
-            guard let b = bounds(item), let t = hitBox(ray, min: b.min, max: b.max) else { continue }
+            guard let b = bounds(item, ceiling: ceiling), let t = hitBox(ray, min: b.min, max: b.max) else { continue }
             if best == nil || t < best!.1 { best = (item, t) }
         }
         return best?.0
@@ -207,7 +224,7 @@ enum CamperRoomPick {
         var out = item
         switch f.placement {
         case .floor, .ceiling:
-            let y = f.placement == .floor ? 0 : CamperRoomLayout.ceiling - f.height
+            let y = f.placement == .floor ? 0 : layout.ceilingHeight - f.height
             guard let p = hitHorizontal(ray, y: y), let r = item.rect else { return item }
             out.x = Int((p.x / cell - Double(r.w) / 2).rounded())
             out.z = Int((p.z / cell - Double(r.d) / 2).rounded())
@@ -217,7 +234,7 @@ enum CamperRoomPick {
                 guard let p = hitWall(ray, w) else { return nil }
                 let along = w == .back ? p.x : p.z
                 let max = Double(layout.columns(w)) * cell
-                guard along >= -cell, along <= max + cell, p.y > 0, p.y < CamperRoomLayout.ceiling else { return nil }
+                guard along >= -cell, along <= max + cell, p.y > 0, p.y < layout.ceilingHeight else { return nil }
                 return (w, p, (p - ray.origin).length)
             }.sorted { $0.2 < $1.2 }
             guard let (w, p, _) = hits.first else { return item }

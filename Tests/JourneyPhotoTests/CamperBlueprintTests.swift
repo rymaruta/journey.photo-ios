@@ -223,15 +223,36 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")
     }
 
-    /// 寸法（板の図面: 全長 242・車幅 100・全高 134・ホイールベース 158・タイヤ半径 22）
+    /// 寸法（板の図面: 殻の全長 242・車幅 100・全高 134・ホイールベース 158・タイヤ半径 22）。
+    /// 外形は足した部屋の箱まで含む
     func testDimensions() {
         let b = build()
-        XCTAssertEqual(b.length.upperBound - b.length.lowerBound, 242, accuracy: 0.01)
-        XCTAssertEqual(b.halfWidth * 2, 100)
+        let outline = CamperVolumes.bounds(.camper)
+        XCTAssertEqual(b.length.lowerBound, outline.x.lowerBound, accuracy: 0.01)
+        XCTAssertEqual(b.length.upperBound, outline.x.upperBound, accuracy: 0.01)
+        XCTAssertEqual(b.halfWidth, outline.halfWidth, accuracy: 0.01)
         let builder = CamperBuilder(config: CamperConfig(stage: .camper))
+        XCTAssertEqual(builder.front - builder.rear, 242, accuracy: 0.01)
+        XCTAssertEqual(builder.BW * 2, 100, accuracy: 0.01)
         XCTAssertEqual(builder.roofTop, 134)
         XCTAssertEqual(builder.wheels[1] - builder.wheels[0], 158)
         XCTAssertEqual(builder.wheelR, 22)
+    }
+
+    /// 足した部屋は外に箱がある。荷物室はトレーラーつきでは出さない
+    func testWingsMatchTheRooms() {
+        for stage in CamperStage.allCases {
+            let b = build(stage)
+            let outline = CamperVolumes.bounds(stage)
+            XCTAssertEqual(b.length.lowerBound, outline.x.lowerBound, accuracy: 0.01, "\(stage)")
+            XCTAssertEqual(b.length.upperBound, outline.x.upperBound, accuracy: 0.01, "\(stage)")
+            XCTAssertEqual(b.halfWidth, outline.halfWidth, accuracy: 0.01, "\(stage)")
+            for kind in CamperVolumes.boxes(stage).keys {
+                XCTAssertTrue(b.nodes.contains { $0.name == "wing.\(kind.rawValue).floor" }, "\(stage) \(kind)")
+                XCTAssertTrue(b.nodes.contains { $0.name == "wing.\(kind.rawValue).roof" }, "\(stage) \(kind)")
+            }
+            XCTAssertEqual(b.nodes.contains { $0.name == "wing.locker.floor" }, stage != .trailer, "\(stage)")
+        }
     }
 
     /// 夜は窓と扉の口から地面へ灯りがこぼれる（光の溜まり。光の数は増やさない）。昼は無い

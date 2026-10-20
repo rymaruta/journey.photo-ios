@@ -2,7 +2,8 @@ import Foundation
 
 // とおまわり号の中の家具図鑑（2026-10-19・板「家具図鑑」CamperFurniture が正）。
 //
-// 16 分類・64 個（床 7・壁 5・天井 4 分類。1 分類に 4 つ、どれも形がちがう）。id は「分類.部品」で、アプリの中では
+// 板の 16 分類・64 個（床 7・壁 5・天井 4 分類。1 分類に 4 つ、どれも形がちがう）に、
+// 形の組み合わせで作る家具（`CamperRoomVariety`。あつ森の 2,076 を超える）を足す。id は「分類.部品」で、アプリの中では
 // 前に `camper.room.` を付ける（外まわりの `table` と名前がぶつからない）。名前・説明・珍しさ・入手の条件は板のまま。
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
@@ -252,7 +253,8 @@ enum CamperRoomCatalog {
 
     /// 64 個（板の並び）。大きさ・高さは板の付箋「マス目と寸法」（寝台 8×4・座卓 4×4・ストーブ 2×2・床の灯り 1×1・
     /// ラグ 6×4・椅子 3×3・本棚 3×1・物入れ 3×2、高さ 寝台 22・座卓 30・ストーブ 88・床の灯り 56）。板に無いものは実物の寸法から
-    static let all: [CamperRoomFurniture] = [
+    /// 板の 64 個。増やした家具は `all` にだけ足す（板の id は変えない）
+    static let board: [CamperRoomFurniture] = [
         // 寝台（bed）
         f(.bed, "platform", "木の寝台", "Wooden platform bed", "低い木枠に布団と枕 2", "A low timber frame, a futon and two pillows",
           .common, starter, 8, 4, 22, built: true),
@@ -399,9 +401,22 @@ enum CamperRoomCatalog {
           .rare, .topic(.church, 1), 2, 2, 4, built: true),
     ]
 
-    static func furniture(_ id: String) -> CamperRoomFurniture? { all.first { $0.id == id } }
+    /// 板の 64 個と、形の組み合わせで増やした家具
+    static let all: [CamperRoomFurniture] = board + CamperRoomVariety.furniture
+
+    private static let byId: [String: CamperRoomFurniture] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+
+    static func furniture(_ id: String) -> CamperRoomFurniture? { byId[id] }
 
     static func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { all.filter { $0.category == c } }
+
+    /// 図鑑の探し欄。空なら全部。名前か id にその文字が入るもの（色違いの軸は id が「分類.x000」なので、板の id とは混ざらない）
+    static func matchesDexQuery(_ f: CamperRoomFurniture, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return true }
+        if f.id.range(of: q, options: .caseInsensitive) != nil { return true }
+        return f.name.range(of: q, options: .caseInsensitive) != nil
+    }
 
     static func items(_ p: CamperRoomPlacement) -> [CamperRoomFurniture] { all.filter { $0.placement == p } }
 

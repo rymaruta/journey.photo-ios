@@ -3,7 +3,7 @@ import UIKit
 
 /// とおまわり号の中（2026-10-19・板 CamperRoomMain・CamperRoomFlow・CamperRoomViews）。
 ///
-/// 上に斜め上から見下ろす箱庭の部屋（指一本で回す・二本指で寄る）、下に 4 つの道具（置く・模様替え・写真・図鑑）。
+/// 上に斜め上から見下ろす箱庭の部屋（指一本で回す・寄ってから指一本で中を見る・二本指で寄る）、下に 4 つの道具（置く・模様替え・写真・図鑑）。
 /// 右上で昼と夜。家具は長押しで持ち上げ、マス目に吸い付かせて動かす（白は置ける・赤はぶつかる）。二本指でひねると
 /// 90° 回る。「しまう」で持ち物へ。「元に戻す」は 1 手ずつ。配置は人ごとにこの端末へ覚える（`CamperRoomStore`）。
 ///
@@ -203,25 +203,27 @@ struct CamperRoomView: View {
         }
     }
 
-    /// 車の部屋とトレーラーの部屋（トレーラーつきから）
+    /// 7 部屋。名前が横に並びきらないので、横に送れる
     private var roomTabs: some View {
-        HStack(spacing: 2) {
-            ForEach(CamperRoomKind.rooms(stage), id: \.self) { k in
-                Button { room = k } label: {
-                    Text(k.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .overlay(alignment: .bottom) { Rectangle().fill(k == room ? WebTheme.accent : Color.clear).frame(height: 2) }
-                        .contentShape(Rectangle())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach(CamperRoomKind.rooms(stage), id: \.self) { k in
+                    Button { room = k } label: {
+                        Text(k.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .overlay(alignment: .bottom) { Rectangle().fill(k == room ? WebTheme.accent : Color.clear).frame(height: 2) }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(k == room ? .isSelected : [])
+                    .accessibilityIdentifier("camper.room.room.\(k.rawValue)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(k == room ? .isSelected : [])
-                .accessibilityIdentifier("camper.room.room.\(k.rawValue)")
             }
+            .padding(.horizontal, 8)
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: 部屋の場面
@@ -276,7 +278,7 @@ struct CamperRoomView: View {
 
     /// 回す・しまうの札を出す所（家具の上の画面の点）
     private func actionPoint(_ uid: String) -> CGPoint? {
-        guard let item = editor?.doc.item(uid), let b = CamperRoomPick.bounds(item) else { return nil }
+        guard let item = editor?.doc.item(uid), let b = CamperRoomPick.bounds(item, ceiling: layout.ceilingHeight) else { return nil }
         let top = CV3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2)
         return camera.project(top, viewport: viewport, layout: layout)
     }
@@ -315,14 +317,15 @@ struct CamperRoomView: View {
     // MARK: 指の動き
 
     /// 一本指: 家具を押すと選ぶ。長押し（0.35 秒）で持ち上げ、そのまま動かすとマス目に吸い付く。
-    /// 選んでいる家具は押してすぐ動かせる。家具の無い所をなぞると部屋が回る
+    /// 選んでいる家具は押してすぐ動かせる。家具の無い所をなぞると部屋が回る。
+    /// 1.8 倍より寄っているときは、同じなぞりで部屋の中を見て回る（大きな部屋の端まで届く）
     private var pointer: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard let editor else { return }
                 if gesture == nil {
                     let ray = camera.ray(value.startLocation, viewport: viewport, layout: layout)
-                    let hit = mode == .style ? nil : CamperRoomPick.item(at: ray, in: editor.doc)
+                    let hit = mode == .style ? nil : CamperRoomPick.item(at: ray, in: editor.doc, ceiling: layout.ceilingHeight)
                     gesture = PointerState(start: value.startLocation, item: hit, camera: camera)
                     if let hit { scheduleLift(hit.u) }
                 }
@@ -345,7 +348,11 @@ struct CamperRoomView: View {
                     dragCheck = editor.preview(candidate)
                 } else if g.rotating {
                     animateCamera = false
-                    camera = g.camera.dragged(dx: dx, dy: dy)
+                    if g.camera.zoom > 1.8 {
+                        camera = g.camera.panned(dx: dx, dy: dy, layout: layout)
+                    } else {
+                        camera = g.camera.dragged(dx: dx, dy: dy)
+                    }
                 }
                 gesture = g
             }

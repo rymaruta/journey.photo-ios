@@ -179,7 +179,7 @@ final class CamperRoomScene {
 
     /// 家具を文書に合わせる（増えた物は作り、消えた物は外し、動いた物は場所だけ替える）
     private func syncItems(layout: CamperRoomLayout, doc: CamperRoomDocument) {
-        let placed = doc.all.compactMap(CamperRoomBuilder.place)
+        let placed = doc.all.compactMap { CamperRoomBuilder.place($0, ceiling: layout.ceilingHeight) }
         let keep = Set(placed.map(\.uid))
         for (uid, entry) in itemNodes where !keep.contains(uid) {
             entry.node.removeFromParentNode()
@@ -216,7 +216,7 @@ final class CamperRoomScene {
 
     /// 見せる場所（持ち上げている家具は動かした先で 7 浮かせ、選んでいる床の家具は 3 浮かせる）
     private func displayed(_ it: CamperRoomPlacedItem) -> CamperRoomPlacedItem {
-        if let d = dragItem, d.u == it.uid, var lifted = CamperRoomBuilder.place(d) {
+        if let d = dragItem, d.u == it.uid, var lifted = CamperRoomBuilder.place(d, ceiling: layout?.ceilingHeight ?? CamperRoomLayout.ceiling) {
             if lifted.placement == .floor { lifted.position = lifted.position + CV3(0, 7, 0) }
             if lifted.placement == .wall { lifted.position = lifted.position + (lifted.yaw == 0 ? CV3(0, 0, 3) : CV3(3, 0, 0)) }
             return lifted
@@ -474,7 +474,7 @@ final class CamperRoomScene {
                 if entry.item.placement == .floor { contact.position = SCNVector3(0, 0.0015, 0) }
             }
         }
-        guard let item, let placed = CamperRoomBuilder.place(item), let entry = itemNodes[item.u] else {
+        guard let item, let placed = CamperRoomBuilder.place(item, ceiling: layout?.ceilingHeight ?? CamperRoomLayout.ceiling), let entry = itemNodes[item.u] else {
             SCNTransaction.commit()
             return
         }
@@ -492,7 +492,7 @@ final class CamperRoomScene {
         if let r = item.rect {
             for c in r.cells {
                 let red = !ok && (blocked.isEmpty || blocked.contains(c))
-                overlayNode.addChildNode(cellNode(center: CV3((Double(c.x) + 0.5) * cell, placed.placement == .floor ? 0.3 : CamperRoomLayout.ceiling - 0.3,
+                overlayNode.addChildNode(cellNode(center: CV3((Double(c.x) + 0.5) * cell, placed.placement == .floor ? 0.3 : (layout?.ceilingHeight ?? CamperRoomLayout.ceiling) - 0.3,
                                                               (Double(c.z) + 0.5) * cell), red: red, horizontal: true))
             }
         } else if let s = item.wallSpan {
