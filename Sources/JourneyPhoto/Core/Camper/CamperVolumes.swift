@@ -100,31 +100,3 @@ enum CamperVolumes {
     }
 }
 
-extension CamperBuilder {
-
-    /// 足した部屋の殻（床・屋根・壁 4・窓）。車の部屋とトレーラーは、すでに描いた殻を使う
-    mutating func wings() {
-        let rt = roofTop
-        for (kind, box) in CamperVolumes.boxes(stage) {
-            let x0 = min(box.x0, box.x1), x1 = max(box.x0, box.x1)
-            let z0 = min(box.z0, box.z1), z1 = max(box.z0, box.z1)
-            let len = x1 - x0, wid = z1 - z0
-            let cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
-            let name = "wing.\(kind.rawValue)"
-            rbox("\(name).floor", CV3(cx, box.floorTop - 2, cz), CV3(len, 4, wid), 1.2, .wood)
-            rbox("\(name).roof", CV3(cx, box.floorTop + box.height + 2, cz), CV3(len, 4, wid), 1.2, .roof)
-            let hy = box.floorTop + box.height / 2
-            rbox("\(name).wall.rear", CV3(x0, hy, cz), CV3(3, box.height, wid), 0.8, .alu)
-            rbox("\(name).wall.front", CV3(x1, hy, cz), CV3(3, box.height, wid), 0.8, .alu)
-            rbox("\(name).wall.near", CV3(cx, hy, z1), CV3(len, box.height, 3), 0.8, .alu)
-            rbox("\(name).wall.far", CV3(cx, hy, z0), CV3(len, box.height, 3), 0.8, .alu)
-            let outerZ = abs(z0) >= abs(z1) ? z0 : z1
-            rbox("\(name).window", CV3(cx, box.floorTop + box.height * 0.55, outerZ), CV3(28, 18, 1.2), 0.6, .glass)
-            if box.floorTop - rt > 12 {
-                for (px, pz) in [(x0 + 6, z0 + 6), (x0 + 6, z1 - 6), (x1 - 6, z0 + 6), (x1 - 6, z1 - 6)] {
-                    rod("\(name).post", CV3(px, rt, pz), CV3(px, box.floorTop - 4, pz), 1.3, .alu, segments: 8)
-                }
-            }
-        }
-    }
-}
