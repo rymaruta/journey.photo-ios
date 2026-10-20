@@ -36,7 +36,7 @@ extension CamperRoomFurnitureModels {
         case "roof_hatch.round_hatch": return roundHatch()
         case "roof_hatch.star_window": return starWindow()
         case "roof_hatch.stained_glass": return stainedGlass()
-        default: return nil
+        default: return moreMesh3(id)
         }
     }
 
@@ -48,7 +48,7 @@ extension CamperRoomFurnitureModels {
         case "wall_lamp.swing_arm": return (CV3(0, 12, 12), 0.45, 70)
         case "wall_lamp.candle_sconce": return (CV3(0, 16, 5), 0.18, 45)
         case "string_ceiling.fairy_net": return (CV3(0, -14, 0), 0.4, 70)
-        default: return nil
+        default: return moreLamp3(id)
         }
     }
 

@@ -7,9 +7,8 @@ import Foundation
 // 前に `camper.room.` を付ける（外まわりの `table` と名前がぶつからない）。名前・説明・珍しさ・入手の条件は板のまま。
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
-// - 要サーバー（旅の投稿の数・友達・行事の暦・天気）の 10 個は「近日」と出して数（分母）から外す（板どおり）。
-// - 2026-10-19 判断（owner「アーティファクトの家具はホンモノ感が足りない」「数より質」）: 形を高い質で作り込んだ家具
-//   （`built`）から出す。残りは図鑑に名前と入手の条件だけ載せ、「近日」として数から外す。作り込んだら `built` を足す。
+// - 板の 64 個は全部形を作り込んだ（2026-10-20 owner「全部作り込んで」。`CamperRoomFurnitureModels`〜`Models3`）。
+// - 要サーバーの 10 個とキャンプ場が要る掛けたランタンは、形はあるが入手は「近日」のまま数（分母）から外す。
 // - 2026-10-19 判断: 板の「写真に写った物（寺・和室・料理など。端末の画像分類）」は、外まわりの部品の山・海と同じく
 //   撮影地・題・タグの言葉で読む（`CamperRoomStats`）。画像分類の精度は試していない（板の「確かめていない」と同じ）。
 
@@ -263,7 +262,7 @@ enum CamperRoomCatalog {
         f(.bed, "futon", "畳む布団", "Folding futon", "床に敷いて畳める", "Laid on the floor, folds away",
           .occasional, posts(40), 8, 4, 8, built: true),
         f(.bed, "daybed", "デイベッド", "Daybed", "両端に縦格子の枠", "Spindle frames at both ends",
-          .veryRare, server("友達が 10 回泊まりに来る", "Friends stay over 10 times"), 8, 3, 36),
+          .veryRare, server("友達が 10 回泊まりに来る", "Friends stay over 10 times"), 8, 3, 36, built: true),
         // 椅子（seating）
         f(.seating, "floor_cushion", "座布団", "Floor cushion", "房の付いた丸い座布団", "A round cushion with tassels",
           .common, starter, 2, 2, 6, built: true),
@@ -272,7 +271,7 @@ enum CamperRoomCatalog {
         f(.seating, "beanbag", "ビーズの袋", "Beanbag", "形の決まらない袋", "A bag that takes any shape",
           .occasional, posts(30), 3, 3, 25, built: true),
         f(.seating, "bench_storage", "物入れの長椅子", "Storage bench", "座面の下が物入れ", "Storage under the seat",
-          .occasional, server("旅を 3 回投稿", "Post 3 trips"), 5, 2, 18),
+          .occasional, server("旅を 3 回投稿", "Post 3 trips"), 5, 2, 18, built: true),
         // 机（table）
         f(.table, "dinette_post", "一本脚の座卓", "Pedestal dinette table", "床から一本の柱", "A single post from the floor",
           .common, starter, 4, 3, 30, built: true),
@@ -299,7 +298,7 @@ enum CamperRoomCatalog {
         f(.heater, "kerosene", "石油ストーブ", "Kerosene heater", "赤い胴と網", "A red body and a guard",
           .occasional, .topic(.snow, 10), 2, 2, 25, lit: true, built: true),
         f(.heater, "tile_hearth", "タイルの暖炉", "Tiled hearth", "市松のタイルとアーチ", "Checkered tiles and an arch",
-          .veryRare, server("友達の焚き火に 10 回薪をくべる", "Add wood to friends' fires 10 times"), 3, 2, 88, lit: true),
+          .veryRare, server("友達の焚き火に 10 回薪をくべる", "Add wood to friends' fires 10 times"), 3, 2, 88, lit: true, built: true),
         // 部屋の敷物（room_rug）
         f(.roomRug, "runner", "細長い敷物", "Runner", "通路に敷く細い一枚", "A narrow rug for the aisle",
           .common, starter, 6, 2, 0, built: true),
@@ -317,7 +316,7 @@ enum CamperRoomCatalog {
         f(.floorLamp, "arc", "弧の灯り", "Arc lamp", "大きく弧を描く腕", "A long arching arm",
           .rare, posts(100), 2, 2, 80, lit: true, built: true),
         f(.floorLamp, "paper_column", "和紙の柱", "Paper column lamp", "和紙の四角い筒", "A square washi column",
-          .rare, server("夏祭りの写真", "A summer-festival photo"), 1, 1, 56, lit: true),
+          .rare, server("夏祭りの写真", "A summer-festival photo"), 1, 1, 56, lit: true, built: true),
         // 壁の棚（wall_shelf）
         f(.wallShelf, "plank_brackets", "板と金具", "Plank and brackets", "一枚板を鉄の金具 2 で", "One plank on two iron brackets",
           .common, starter, 3, 1, 9, built: true),
@@ -326,7 +325,7 @@ enum CamperRoomCatalog {
         f(.wallShelf, "spice_rack", "小瓶の棚", "Spice rack", "3 段に小瓶 18", "Eighteen jars on three rails",
           .rare, .topic(.food, 10), 2, 1, 5, built: true),
         f(.wallShelf, "floating_corner", "角の棚", "Corner shelf", "壁の角に三角の板 2", "Two triangular boards in a corner",
-          .occasional, server("旅を 4 回投稿", "Post 4 trips"), 1, 1, 9),
+          .occasional, server("旅を 4 回投稿", "Post 4 trips"), 1, 1, 9, built: true),
         // 写真の額（photo_frame）
         f(.photoFrame, "landscape", "横長の額", "Landscape frame", "黒い枠に白いマット", "A black frame with a white mat",
           .common, starter, 2, 1, 1.4, photos: 1, built: true),
@@ -342,16 +341,16 @@ enum CamperRoomCatalog {
         f(.poster, "map_poster", "旅の地図", "Trip map", "自分の旅の道と点", "Your own routes and pins",
           .rare, .base(.prefectures(10)), 3, 2, 0.3, built: true),
         f(.poster, "postcard_grid", "絵はがきの列", "Postcard row", "6 枚をテープで", "Six postcards taped up",
-          .occasional, server("友達から絵はがきが 6 枚届く", "Receive 6 postcards from friends"), 3, 1, 0.3),
+          .occasional, server("友達から絵はがきが 6 枚届く", "Receive 6 postcards from friends"), 3, 1, 0.3, built: true),
         f(.poster, "tapestry", "タペストリー", "Tapestry", "布を棒に掛けて裾がぎざぎざ", "Cloth on a rod with a zigzag hem",
-          .rare, server("旅を 8 回投稿", "Post 8 trips"), 3, 2, 1),
+          .rare, server("旅を 8 回投稿", "Post 8 trips"), 3, 2, 1, built: true),
         // 壁の灯り（wall_lamp）
         f(.wallLamp, "glass_sconce", "硝子の壁灯", "Glass sconce", "乳白の笠と真鍮の座", "A milk-glass shade on a brass plate",
           .common, starter, 1, 1, 7, lit: true, built: true),
         f(.wallLamp, "swing_arm", "腕の灯り", "Swing-arm lamp", "折れる腕に緑の笠", "A folding arm and a green shade",
           .occasional, .topic(.book, 5), 1, 1, 12, lit: true, built: true),
         f(.wallLamp, "lantern_hook", "掛けたランタン", "Hanging lantern", "鉄の鉤にランタン", "A lantern on an iron hook",
-          .occasional, .base(.later("キャンプ場の板でランタンを灯す", "Light a lantern at the campsite")), 1, 1, 9, lit: true),
+          .occasional, .base(.later("キャンプ場の板でランタンを灯す", "Light a lantern at the campsite")), 1, 1, 9, lit: true, built: true),
         f(.wallLamp, "candle_sconce", "燭台", "Candle sconce", "真鍮の受けに蝋燭", "A candle on a brass holder",
           .rare, .base(.early(3)), 1, 1, 6, lit: true, built: true),
         // 時計（clock）
@@ -371,7 +370,7 @@ enum CamperRoomCatalog {
         f(.stringCeiling, "paper_garland", "紙の玉", "Paper garland", "色の丸 12", "Twelve paper circles",
           .occasional, .spring(20), 6, 1, 14, built: true),
         f(.stringCeiling, "bunting", "小さな旗", "Bunting", "三角の旗 9", "Nine triangular flags",
-          .occasional, server("旅を 2 回投稿", "Post 2 trips"), 6, 1, 14),
+          .occasional, server("旅を 2 回投稿", "Post 2 trips"), 6, 1, 14, built: true),
         // モビール（mobile）
         f(.mobile, "paper_cranes", "折り鶴", "Paper cranes", "鶴 3 羽が揺れる", "Three cranes that sway",
           .occasional, posts(30), 1, 1, 30, built: true),
@@ -385,11 +384,11 @@ enum CamperRoomCatalog {
         f(.plantHanger, "macrame", "マクラメ", "Macramé hanger", "結んだ紐に鉢", "A pot in knotted cord",
           .common, starter, 1, 1, 38, built: true),
         f(.plantHanger, "hanging_basket", "吊り籠", "Hanging basket", "籠から垂れるつる", "Vines trailing from a basket",
-          .occasional, server("雨の写真 5 枚", "5 rainy-day photos"), 1, 1, 34),
+          .occasional, server("雨の写真 5 枚", "5 rainy-day photos"), 1, 1, 34, built: true),
         f(.plantHanger, "air_ring", "真鍮の輪", "Brass air ring", "輪に絡む葉 10", "Ten leaves wound round a ring",
           .rare, .base(.plants(15)), 1, 1, 30, built: true),
         f(.plantHanger, "glass_terrarium", "硝子の球", "Glass terrarium", "中に小さな山", "A tiny mountain inside",
-          .veryRare, server("友達から贈られる", "A gift from a friend"), 1, 1, 30),
+          .veryRare, server("友達から贈られる", "A gift from a friend"), 1, 1, 30, built: true),
         // 天窓（roof_hatch）
         f(.roofHatch, "square_vent", "四角い換気窓", "Square roof vent", "枠と取っ手", "A frame and a handle",
           .common, starter, 2, 2, 4, built: true),
