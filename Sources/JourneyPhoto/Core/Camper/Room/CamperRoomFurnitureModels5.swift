@@ -128,21 +128,29 @@ extension CamperRoomFurnitureModels {
 
     // MARK: 旅の荷物
 
-    /// 開いたトランク（下箱・立てた蓋・中の服）。奥行きは 3 マス
+    /// 開いたトランク（下箱の角金・立てた蓋・内張り・ヒンジ・留め・中の服）
     static func openSuitcase() -> CamperMesh {
         var parts: [CamperMesh] = []
         let leather = R(.leather(0x5E3A24)), dark = R(.leather(0x3E2618)), brass = R(.brass)
-        parts.append(K.block(CV3(24, 7, 14), at: CV3(0, 0, 1), radius: 0.5, leather))
-        parts.append(K.block(CV3(22, 0.6, 12), at: CV3(0, 6.2, 1), radius: 0.15, dark))
-        // 立てた蓋（後ろへ開く・マス内）
-        parts.append(K.placed(K.block(CV3(24, 7, 1.2), at: .zero, radius: 0.5, leather),
-                              at: CV3(0, 9.5, -6.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
-        parts.append(K.placed(K.block(CV3(22, 5.5, 0.5), at: .zero, radius: 0.2, dark),
-                              at: CV3(0, 10, -5.9), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
-        for x in [-7.0, 7.0] {
-            parts.append(K.block(CV3(2.0, 0.6, 1.2), at: CV3(x, 6.8, -5.8), radius: 0.15, brass))
+        parts.append(K.block(CV3(24, 7, 14), at: CV3(0, 0, 1), radius: 0.55, leather))
+        parts.append(K.block(CV3(22, 0.55, 12), at: CV3(0, 6.15, 1), radius: 0.15, dark))
+        // 角金
+        for x in [-11.2, 11.2] {
+            for z in [-5.2, 7.2] {
+                parts.append(K.block(CV3(1.6, 1.8, 1.6), at: CV3(x, 0.2, z), radius: 0.35, brass))
+            }
         }
-        parts.append(K.block(CV3(3.2, 1.2, 1.0), at: CV3(0, 3.5, 7.8), radius: 0.2, brass))
+        // 立てた蓋
+        parts.append(K.placed(K.block(CV3(24, 7, 1.3), at: .zero, radius: 0.55, leather),
+                              at: CV3(0, 9.6, -6.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
+        parts.append(K.placed(K.block(CV3(21.5, 5.2, 0.45), at: .zero, radius: 0.2, dark),
+                              at: CV3(0, 10.1, -5.85), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
+        for x in [-7.0, 7.0] {
+            parts.append(K.block(CV3(2.2, 0.7, 1.3), at: CV3(x, 6.9, -5.8), radius: 0.15, brass))
+        }
+        parts.append(K.block(CV3(3.4, 1.3, 1.1), at: CV3(0, 3.5, 7.9), radius: 0.2, brass))
+        parts.append(K.placed(K.disc(radius: 0.45, height: 0.35, bevel: 0.1, segments: 10, R(.iron)), at: CV3(0, 4.4, 8.3),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
         parts.append(K.placed(K.roundedBox(CV3(18, 2.2, 9), radius: 0.7, segments: 2, puff: 0.35, R(.cotton(0xE8E1D2))),
                               at: CV3(0, 8.0, 1)))
         parts.append(K.placed(K.roundedBox(CV3(7, 2.0, 3.5), radius: 0.5, segments: 2, puff: 0.25, R(.knit(0x2F4F74))),
@@ -288,32 +296,38 @@ extension CamperRoomFurnitureModels {
 
     // MARK: 洗う物（壁）
 
-    /// タオル掛け（棒・金具・掛かった布）。壁の後ろ（z &lt; 0）に出さない
+    /// タオル掛け（壁金具・クロムの棒・掛かったタオル）
     static func towelBar() -> CamperMesh {
         var parts: [CamperMesh] = []
-        for x in [-12.0, 12.0] {
-            parts.append(K.block(CV3(1.6, 1.6, 2.5), at: CV3(x, 10, 1.25), radius: 0.3, R(.chrome)))
-            parts.append(K.tube([CV3(x, 10, 1.5), CV3(x, 10, 3.8)], radius: 0.35, sides: 8, R(.chrome)))
+        for x in [-8.0, 8.0] {
+            parts.append(K.block(CV3(1.6, 1.6, 2.6), at: CV3(x, 10, 1.3), radius: 0.3, R(.chrome)))
+            parts.append(K.placed(K.disc(radius: 0.85, height: 0.35, bevel: 0.1, segments: 12, R(.chrome)),
+                                  at: CV3(x, 10, 0.15), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
         }
-        parts.append(K.tube([CV3(-12, 10, 3.8), CV3(12, 10, 3.8)], radius: 0.4, sides: 10, R(.chrome)))
-        parts.append(K.placed(K.roundedBox(CV3(18, 14, 1.2), radius: 0.3, segments: 2, puff: 0.15, R(.cotton(0xE8E1D2))),
-                              at: CV3(0, 3, 4.5)))
-        parts.append(K.placed(K.roundedBox(CV3(16, 2, 1.0), radius: 0.25, segments: 2, puff: 0.2, R(.cotton(0xC9A66B))),
-                              at: CV3(0, 9.5, 4.8)))
+        parts.append(K.tube([CV3(-8, 10, 2.5), CV3(8, 10, 2.5)], radius: 0.4, sides: 10, R(.chrome)))
+        parts.append(K.placed(K.drape(width: 12, height: 14, folds: 3, depth: 0.2, flare: 0.4, R(.cotton(0xE8E2D4))),
+                              at: CV3(0, 3.2, 3.2), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.15)))
+        parts.append(K.placed(K.drape(width: 9, height: 11, folds: 2, depth: 0.18, flare: 0.3, R(.cotton(0xA8B8C2))),
+                              at: CV3(2.5, 4.0, 3.6), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.2)))
         return K.merge(parts)
     }
 
-    /// 石けん棚（小さな棚・石けん・小皿）
+    /// 石鹸置き（木の棚・縁・石鹸と小さな瓶）
     static func soapNiche() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.block(CV3(9, 1.2, 5), at: CV3(0, 4, 2.5), radius: 0.25, R(.wood(.teak))))
-        for x in [-4.0, 4.0] {
-            parts.append(K.tube([CV3(x, 4.5, 0.4), CV3(x, 4.5, 4.5)], radius: 0.25, sides: 6, R(.iron)))
+        let teak = R(.wood(.teak))
+        parts.append(K.block(CV3(10, 1.3, 5.2), at: CV3(0, 4, 2.6), radius: 0.28, teak))
+        parts.append(K.block(CV3(10.2, 0.45, 0.55), at: CV3(0, 4.7, 5.0), radius: 0.1, R(.wornWood(.teak))))
+        for x in [-4.7, 4.7] {
+            parts.append(K.block(CV3(0.5, 0.45, 5.0), at: CV3(x, 4.7, 2.6), radius: 0.1, teak))
+            parts.append(K.tube([CV3(x, 4.2, 0.3), CV3(x, 4.2, 2.0)], radius: 0.18, sides: 5, R(.brass)))
         }
-        parts.append(K.placed(K.roundedBox(CV3(5, 0.5, 3.2), radius: 0.2, segments: 2, puff: 0.1, R(.ceramic(0xF5F0E6))),
-                              at: CV3(0, 5.5, 2.8)))
-        parts.append(K.placed(K.roundedBox(CV3(3.5, 1.8, 2.2), radius: 0.4, segments: 2, puff: 0.25, R(.painted(0xE8E2D4))),
-                              at: CV3(0, 6.2, 2.8)))
+        parts.append(K.placed(K.roundedBox(CV3(3.2, 1.4, 2.2), radius: 0.45, segments: 2, puff: 0.2, R(.ceramic(0xF2EEE6))),
+                              at: CV3(-2.2, 5.5, 3.2)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.2, 2.8), CV2(0.7, 3.2), CV2(0, 3.2)], segments: 12,
+                                      R(.glass)), at: CV3(2.4, 5.3, 3.0)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.95, 0), CV2(0.95, 1.8), CV2(0, 1.8)], segments: 10,
+                                      R(.linen(0xD9CDB4))), at: CV3(2.4, 5.4, 3.0)))
         return K.merge(parts)
     }
 
