@@ -43,6 +43,11 @@ final class CamperRoomScene {
     private var selectedUid: String?
     private var dragItem: CamperRoomItem?
     private var dragCheck: CamperRoomCheck?
+    /// 写真を飾る場面: 天井を隠す・選んだ額を光らせる・まだ保存していない見本の写真
+    private var photosMode = false
+    private var focusFrameUid: String?
+    private var previewPhotoId: String?
+    private let focusNode = SCNNode()
     /// いま点けている灯りの並び（同じなら作り直さない）
     private var lampSpecs: [CamperLightSpec] = []
     private(set) var layout: CamperRoomLayout?
@@ -55,6 +60,8 @@ final class CamperRoomScene {
     var onReady: ((String) -> Void)?
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
+    /// 材質を替えたあとに再描画させる（`rendersContinuously = false` だと取りこぼすことがある）
+    private weak var scnView: SCNView?
 
     init() {
         let cam = SCNCamera()
@@ -93,7 +100,13 @@ final class CamperRoomScene {
         scene.rootNode.addChildNode(ambientNode)
         gridNode.isHidden = true
         overlayNode.addChildNode(gridNode)
+        focusNode.name = "photo.focus"
+        focusNode.isHidden = true
+        overlayNode.addChildNode(focusNode)
     }
+
+    /// SCNView を覚える（写真の材質を替えたあと、止まっている描画を起こす）
+    func attach(_ view: SCNView) { scnView = view }
 
     // MARK: 組み立て
 
@@ -118,6 +131,8 @@ final class CamperRoomScene {
             self.install(plan, key: key)
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
             self.reapplyDrag()
+            self.applyPhotosModeVisibility()
+            self.updateFocusRing()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             self.onReady?(self.marker(ms: ms))
         }
@@ -238,6 +253,15 @@ final class CamperRoomScene {
             furniture[it.furnitureId] = CamperPreparedMesh(m, unit: Self.unit)
         }
         guard let mesh = furniture[it.furnitureId], let geometry = palette.geometry(mesh) else { return nil }
+        // 写真の材質は額ごとに専用にする（共有だと片方の印画がもう片方にも乗る／差し替えが効かない）
+        if geometry.materials.count == mesh.groups.count {
+            geometry.materials = zip(geometry.materials, mesh.groups).map { mat, group in
+                guard case .room(.photo) = group.material else { return mat }
+                let fresh = SCNMaterial()
+                palette.configure(fresh, CamperMaterials.spec(group.material, paint: paint, mood: mood))
+                return fresh
+            }
+        }
         let holder = SCNNode()
         holder.name = "item.\(it.uid)"
         let body = SCNNode(geometry: geometry)
@@ -279,30 +303,115 @@ final class CamperRoomScene {
     /// 額に入れる写真（投稿の写真の id → 絵）。読めたものから入れる
     func setPhotoImages(_ images: [String: UIImage]) {
         photoImages = images
-        for (_, entry) in itemNodes where !entry.item.photos.isEmpty { applyPhotos(entry.node, entry.item) }
+        for (_, entry) in itemNodes { applyPhotos(entry.node, entry.item) }
+        kickRender()
+    }
+
+    /// 写真を飾る場面の見せ方（天井の換気窓などを隠し、選んだ額の前に縁を出す・見本の写真を載せる）
+    func setPhotosMode(_ on: Bool, focus: String?, preview: String?) {
+        let changed = on != photosMode || focus != focusFrameUid || preview != previewPhotoId
+        photosMode = on
+        focusFrameUid = focus
+        previewPhotoId = preview
+        guard changed || !itemNodes.isEmpty else { return }
+        applyPhotosModeVisibility()
+        for (_, entry) in itemNodes where !entry.item.photos.isEmpty || entry.item.uid == focus {
+            applyPhotos(entry.node, entry.item)
+        }
+        updateFocusRing()
+        kickRender()
+    }
+
+    private func applyPhotosModeVisibility() {
+        for (_, entry) in itemNodes where entry.item.placement == .ceiling {
+            // 換気窓が額のように見えて「変な写真枠」に見えた（2026-10-20 #326）
+            entry.node.isHidden = photosMode
+        }
+    }
+
+    private func updateFocusRing() {
+        focusNode.childNodes.forEach { $0.removeFromParentNode() }
+        guard photosMode, let uid = focusFrameUid, let entry = itemNodes[uid] else {
+            focusNode.isHidden = true
+            return
+        }
+        let it = entry.item
+        let w = max(it.footprint.x, 12) * Self.unit
+        let h = max(it.footprint.y, 12) * Self.unit
+        // 真鍮の縁（選んでいる額の合図。写真のある画面でも黒地ではないので額の前の印として真鍮）
+        let brassPlane = SCNPlane(width: CGFloat(w + 0.03), height: CGFloat(h + 0.03))
+        let brass = SCNMaterial()
+        brass.lightingModel = .constant
+        brass.diffuse.contents = CamperScene.color(0xC9A66B, alpha: 0.9)
+        brass.isDoubleSided = true
+        brass.writesToDepthBuffer = false
+        brassPlane.materials = [brass]
+        let ring = SCNNode(geometry: brassPlane)
+        // 中を透かす（少し小さい透明の板で深度を書かない）
+        let hole = SCNPlane(width: CGFloat(w - 0.01), height: CGFloat(h - 0.01))
+        let clear = SCNMaterial()
+        clear.lightingModel = .constant
+        clear.diffuse.contents = UIColor.clear
+        clear.writesToDepthBuffer = false
+        hole.materials = [clear]
+        let inner = SCNNode(geometry: hole)
+        inner.position = SCNVector3(0, 0, 0.0006)
+        ring.addChildNode(inner)
+        focusNode.addChildNode(ring)
+        var pos = it.position * Self.unit
+        pos.y += (it.footprint.y / 2) * Self.unit
+        let lift = 2.2 * Self.unit
+        if it.yaw == 0 {
+            pos.z += lift
+            focusNode.eulerAngles = SCNVector3(0, 0, 0)
+        } else {
+            pos.x += lift
+            focusNode.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
+        }
+        focusNode.position = CamperScene.vector(pos)
+        focusNode.renderingOrder = 30
+        focusNode.isHidden = false
     }
 
     private func applyPhotos(_ holder: SCNNode, _ it: CamperRoomPlacedItem) {
         guard let body = holder.childNodes.first(where: { $0.name == "body" }), let g = body.geometry,
               let mesh = furniture[it.furnitureId] else { return }
+        let photos: [String]
+        if photosMode, it.uid == focusFrameUid, let preview = previewPhotoId {
+            photos = [preview]
+        } else {
+            photos = it.photos
+        }
         var mats = g.materials
         for (i, group) in mesh.groups.enumerated() where i < mats.count {
             guard case .room(.photo(let slot)) = group.material else { continue }
             let index = Int(slot.dropFirst(4)) ?? 0
-            let m = SCNMaterial()
+            let m = mats[i]
             palette.configure(m, CamperMaterials.spec(group.material, paint: paint, mood: mood))
-            if index < it.photos.count, let image = photoImages[it.photos[index]] {
+            if index < photos.count, let image = photoImages[photos[index]] {
                 // 印画は光を受けない。夜の壁は暗く、窓と同じ硝子だと白い板になって、飾った写真が消える
                 m.lightingModel = .constant
-                m.diffuse.contents = image
+                // UIImage のまま渡すと端末によって黒い面になることがあるので CGImage にする
+                m.diffuse.contents = image.cgImage ?? image
                 m.diffuse.wrapS = .clamp
                 m.diffuse.wrapT = .clamp
+                m.diffuse.mipFilter = .linear
                 m.emission.contents = CamperScene.color(0x000000)
                 m.emission.intensity = 0
+                m.transparency = 1
+                m.writesToDepthBuffer = true
             }
             mats[i] = m
         }
         g.materials = mats
+    }
+
+    private func kickRender() {
+        // 止まっている SCNView（rendersContinuously = false）に、材質の差し替えを気づかせる
+        guard let view = scnView else { return }
+        view.rendersContinuously = true
+        view.scene = scene
+        DispatchQueue.main.async { [weak self] in self?.scnView?.rendersContinuously = false }
     }
 
     // MARK: 灯り
@@ -425,6 +534,9 @@ final class CamperRoomScene {
             // 後ろの壁が手前に来て切られた時は、その壁の物も見せない
             entry.node.isHidden = entry.item.yaw != 0 && !c.cutsFrontEnd
         }
+        // 写真を飾る場面では天井の換気窓を隠す（切ったあとも戻さない）
+        applyPhotosModeVisibility()
+        if photosMode { updateFocusRing() }
     }
 
     private func setCamera(_ c: CamperRoomCamera, animated: Bool, layout: CamperRoomLayout) {

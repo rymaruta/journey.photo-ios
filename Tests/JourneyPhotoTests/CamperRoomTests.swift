@@ -525,10 +525,14 @@ final class CamperRoomTests: XCTestCase {
         let placed = try XCTUnwrap(CamperRoomBuilder.place(back))
         let cam = CamperRoomCamera.framing(back, layout: layout)
         XCTAssertEqual(cam.target.x, placed.position.x, accuracy: 1)
+        // 額の真ん中を狙う（天井の換気窓が主役にならないよう見下ろしは浅く）
+        XCTAssertEqual(cam.target.y, placed.position.y + placed.footprint.y / 2, accuracy: 1)
+        XCTAssertEqual(cam.pitch, CamperRoomCamera.pitchRange.lowerBound, accuracy: 0.01)
         XCTAssertGreaterThan(cam.zoom, 1)
         XCTAssertLessThanOrEqual(cam.zoom, CamperRoomCamera.zoomRange.upperBound)
         let viewport = CGSize(width: 390, height: 440)
-        let onScreen = try XCTUnwrap(cam.project(placed.position, viewport: viewport, layout: layout))
+        let mid = CV3(placed.position.x, cam.target.y, placed.position.z)
+        let onScreen = try XCTUnwrap(cam.project(mid, viewport: viewport, layout: layout))
         XCTAssertEqual(onScreen.x, viewport.width / 2, accuracy: 90)
         XCTAssertEqual(onScreen.y, viewport.height / 2, accuracy: 120)
         let side = try XCTUnwrap(doc.all.first { $0.k == "photo_frame.square" })
@@ -537,6 +541,19 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(sideCam.target.z, sidePlaced.position.z, accuracy: 1)
         XCTAssertGreaterThan(sideCam.yaw, 45)
         XCTAssertNotNil(sideCam.project(sidePlaced.position, viewport: viewport, layout: layout))
+    }
+
+    /// 額の網には写真の面がある（材質の差し替え先が空だと、飾っても黒い穴のまま）
+    func testPhotoFramesHavePhotoSlotsInMesh() throws {
+        for id in ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych", "poster.tall_print"] {
+            let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
+            let photos = mesh.groups.filter {
+                if case .room(.photo) = $0.material { return true }
+                return false
+            }
+            XCTAssertFalse(photos.isEmpty, id)
+            XCTAssertTrue(photos.allSatisfy { !$0.indices.isEmpty }, id)
+        }
     }
 
     /// 外景色の板は窓穴より少し大きいだけ。巨大な板だと箱庭の外に青い「変な写真枠」が浮く（#324）
