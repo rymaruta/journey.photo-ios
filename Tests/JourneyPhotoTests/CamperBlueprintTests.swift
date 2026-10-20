@@ -316,7 +316,7 @@ final class CamperBlueprintTests: XCTestCase {
             l.picks[cat.rawValue] = key
             let lights = build(mood: .night, loadout: l).lights
             let interior = lights.filter { $0.name.hasPrefix("interior.") }.map(\.intensity).max() ?? 0
-            for o in lights where ["campfire", "lantern", "string"].contains(o.name) {
+            for o in lights where o.name == "campfire" || o.name.hasPrefix("campfire.") || o.name == "lantern" || o.name == "string" {
                 XCTAssertLessThanOrEqual(o.intensity, interior / 4, "\(o.name) が室内の灯りに迫る")
                 XCTAssertLessThanOrEqual(o.range, 72, o.name)
             }
@@ -453,9 +453,9 @@ final class CamperBlueprintTests: XCTestCase {
         let fire = try? XCTUnwrap(rgb("campfire"))
         let head = try? XCTUnwrap(rgb("headlight"))
         guard let inside, let lantern, let fire, let head else { return XCTFail("灯りが無い") }
-        // 2700K ≒ (255, 180, 107)
-        XCTAssertEqual(inside.1, 180.0 / 255, accuracy: 0.03)
-        XCTAssertEqual(inside.2, 107.0 / 255, accuracy: 0.05)
+        // 2700K 寄りの琥珀（白飛びしない・2026-10-20）≒ (232, 160, 96)
+        XCTAssertEqual(inside.1, 160.0 / 255, accuracy: 0.03)
+        XCTAssertEqual(inside.2, 96.0 / 255, accuracy: 0.05)
         // 外の火は室内灯より赤い（緑と青が少ない）
         XCTAssertLessThan(lantern.1, inside.1)
         XCTAssertLessThan(fire.1, inside.1)

@@ -155,18 +155,18 @@ enum CamperRoomMaterials {
                                       clearCoat: night ? 0.35 : 1, clearCoatRoughness: night ? 0.2 : 0.02,
                                       opacity: night ? 0.55 : 0.25, doubleSided: true)
         case .milkGlass:
-            // 夜の乳白硝子は抑えめ（0.8→0.5）。白く飛ぶと天井の板が昼の蛍光灯に見える
-            return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.25, clearCoat: 0.6, opacity: night ? 1 : 0.92,
-                                      emission: night ? 0xFFD2A0 : nil, emissionIntensity: night ? 0.5 : 0,
+            // 夜の乳白硝子は抑えめ（0.5→0.28）。白く飛ぶと天井の板が昼の蛍光灯に見える
+            return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.28, clearCoat: 0.45, opacity: night ? 1 : 0.92,
+                                      emission: night ? 0xE8C090 : nil, emissionIntensity: night ? 0.28 : 0,
                                       emissionTexture: night ? .lampFace : nil)
         case .shade(let c):
-            // 布の笠: 夜は内の電球の光が布を透ける（織り目のむら）
-            return CamperMaterialSpec(color: c, roughness: 0.9, emission: night ? CamperMaterials.mix(c, 0xFFC27A, 0.55) : nil,
-                                      emissionIntensity: night ? 0.42 : 0, emissionTexture: night ? .linenSlub : nil,
+            // 布の笠: 夜は内の電球の光が布を透ける（織り目のむら）。面全体を飛ばさない
+            return CamperMaterialSpec(color: c, roughness: 0.9, emission: night ? CamperMaterials.mix(c, 0xE8A868, 0.4) : nil,
+                                      emissionIntensity: night ? 0.26 : 0, emissionTexture: night ? .linenSlub : nil,
                                       texture: .linenSlub, doubleSided: true)
         case .bulb:
-            return CamperMaterialSpec(color: 0xF6EBD6, roughness: 0.15, clearCoat: 1, opacity: night ? 1 : 0.7,
-                                      emission: night ? 0xFFC27A : nil, emissionIntensity: night ? 0.7 : 0,
+            return CamperMaterialSpec(color: 0xF6EBD6, roughness: 0.18, clearCoat: 0.8, opacity: night ? 1 : 0.7,
+                                      emission: night ? 0xE8B070 : nil, emissionIntensity: night ? 0.42 : 0,
                                       emissionTexture: night ? .lampFace : nil)
         case .fire:
             return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF7A2E, emissionIntensity: night ? 1.0 : 0.6,

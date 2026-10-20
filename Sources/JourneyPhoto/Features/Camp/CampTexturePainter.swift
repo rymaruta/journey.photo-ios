@@ -197,20 +197,32 @@ enum CampTexturePainter {
         let w = 48 * unit, h = 38 * unit
         return draw("tentLit-\(base)", CGSize(width: w, height: h)) { g, s in
             // 暗い地（縁はほぼ光らない）
-            g.setFillColor(color(0x1A120C).cgColor)
+            g.setFillColor(color(0x100C08).cgColor)
             g.fill(CGRect(origin: .zero, size: s))
-            // 内灯の芯（下寄り・少し左＝扉側を想定）
-            let colors = [color(base, 1).cgColor, color(base, 0.55).cgColor, color(0x000000, 0).cgColor] as CFArray
-            if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 1]) {
-                let c = CGPoint(x: s.width * 0.48, y: s.height * 0.62)
-                g.drawRadialGradient(grad, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width * 0.55, options: [])
+            // 内灯の芯（下寄り・少し左＝扉側）。芯は抑えめにして平らな橙板に見えないようにする
+            let colors = [color(base, 0.72).cgColor, color(base, 0.38).cgColor, color(0x000000, 0).cgColor] as CFArray
+            if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.4, 1]) {
+                let c = CGPoint(x: s.width * 0.46, y: s.height * 0.64)
+                g.drawRadialGradient(grad, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width * 0.58, options: [])
+            }
+            // 第二の弱い芯（むら）。対称な丸光にしない
+            let soft = [color(base, 0.28).cgColor, color(0x000000, 0).cgColor] as CFArray
+            if let g3 = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: soft, locations: [0, 1]) {
+                let c2 = CGPoint(x: s.width * 0.62, y: s.height * 0.48)
+                g.drawRadialGradient(g3, startCenter: c2, startRadius: 0, endCenter: c2, endRadius: s.width * 0.32, options: [])
             }
             // 棟へ落ちる帯（上を暗く）
-            let top = [color(0x000000, 0.55).cgColor, color(0x000000, 0).cgColor] as CFArray
+            let top = [color(0x000000, 0.72).cgColor, color(0x000000, 0).cgColor] as CFArray
             if let g2 = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: top, locations: [0, 1]) {
-                g.drawLinearGradient(g2, start: .zero, end: CGPoint(x: 0, y: s.height * 0.45), options: [])
+                g.drawLinearGradient(g2, start: .zero, end: CGPoint(x: 0, y: s.height * 0.5), options: [])
             }
-            weaveLines(g, s, unit: unit, strength: 0.35)
+            // 左右の縁も少し落とす（帆布の厚み）
+            let side = [color(0x000000, 0.45).cgColor, color(0x000000, 0).cgColor] as CFArray
+            if let gs = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: side, locations: [0, 1]) {
+                g.drawLinearGradient(gs, start: .zero, end: CGPoint(x: s.width * 0.22, y: 0), options: [])
+                g.drawLinearGradient(gs, start: CGPoint(x: s.width, y: 0), end: CGPoint(x: s.width * 0.78, y: 0), options: [])
+            }
+            weaveLines(g, s, unit: unit, strength: 0.42)
         }
     }
 
@@ -320,11 +332,11 @@ enum CampTexturePainter {
 
     // MARK: - 光と輪
 
-    /// 柔らかく光る輪（板の `warm`: #ffe0a0 .95 → #ffab55 .45（30%）→ #ff8a30 0）
+    /// 柔らかく光る輪（夜の芝の溜まり用。芯を抑え、縁へ長く落とす・2026-10-20）
     static func warmGlow() -> UIImage {
         draw("warm", CGSize(width: 128, height: 128), opaque: false) { g, s in
-            let colors = [color(0xFFE0A0, 0.95).cgColor, color(0xFFAB55, 0.45).cgColor, color(0xFF8A30, 0).cgColor] as CFArray
-            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.3, 1])
+            let colors = [color(0xE8C080, 0.62).cgColor, color(0xC87840, 0.28).cgColor, color(0x8A4820, 0).cgColor] as CFArray
+            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.38, 1])
             else { return }
             let c = CGPoint(x: s.width / 2, y: s.height / 2)
             g.drawRadialGradient(grad, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width / 2, options: [])

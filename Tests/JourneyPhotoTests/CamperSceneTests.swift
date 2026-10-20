@@ -127,10 +127,10 @@ final class CamperSceneTests: XCTestCase {
         night.mood = .night
         scene.show(night)
         let n = scene.lightingSnapshot
-        XCTAssertEqual(n.sun, 260, accuracy: 0.5, "月の強さになっていない")
-        XCTAssertEqual(n.environment, 0.14, accuracy: 0.001, "周りの光が昼のまま")
+        XCTAssertEqual(n.sun, 180, accuracy: 0.5, "月の強さになっていない")
+        XCTAssertEqual(n.environment, 0.1, accuracy: 0.001, "周りの光が昼のまま")
         XCTAssertEqual(n.exposure, -0.15, accuracy: 0.001, "露出が昼のまま")
-        XCTAssertEqual(n.ambient, 60, accuracy: 0.5)
+        XCTAssertEqual(n.ambient, 48, accuracy: 0.5)
         scene.show(day)
         XCTAssertEqual(scene.lightingSnapshot.sun, 1200, accuracy: 0.5)
         XCTAssertEqual(scene.lightingSnapshot.environment, 1.35, accuracy: 0.001)

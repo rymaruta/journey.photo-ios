@@ -115,18 +115,19 @@ final class CamperScene {
         let env = palette.image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
-        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
+        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.1 : (mood == .snow ? 1.45 : 1.35))
         // 板の光の向き（画面基準）: 昼 (−0.18, −0.72, 0.62)・夜の月 (0.45, −0.6, 0.55)。板は下が +y
         let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        // 夜の月は車体の形が読める強さ（縁に青白いリムが乗る程度・run 538 で車が影絵になった）
-        sunNode.light?.intensity = CGFloat(mood == .night ? 260 : (mood == .snow ? 1000 : 1200))
-        sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
+        // 夜の月は縁の青白いリムだけ（強すぎると昼の差し込みに見える・2026-10-20）
+        sunNode.light?.intensity = CGFloat(mood == .night ? 180 : (mood == .snow ? 1000 : 1200))
+        sunNode.light?.color = mood == .night ? Self.color(0x8AA0CC) : Self.color(0xFFF4E2)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
-            : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
-        ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
+            : Self.color(0x000000, alpha: mood == .night ? 0.12 : 0.5)
+        ambientNode.light?.intensity = CGFloat(mood == .night ? 48 : 0)
+        ambientNode.light?.color = mood == .night ? Self.color(0x3A4868) : Self.color(0xFFFFFF)
         // 夜はにじみ（bloom）を使わない（2026-10-18 Mac の絵 run 533）。艶の強い面に近くの灯りが当たると HDR の値が
         // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
@@ -305,9 +306,10 @@ final class CamperScene {
             l.type = light.kind == .spot ? .spot : .omni
             l.color = Self.color(light.color)
             l.intensity = CGFloat(light.intensity)
-            l.attenuationStartDistance = 0
-            l.attenuationEndDistance = CGFloat(light.range * s)
-            l.attenuationFalloffExponent = 2
+            // 白い芯を避け、地面の溜まりをなだらかに（キャンプ場・室内と同じ考え方・2026-10-20）
+            l.attenuationStartDistance = CGFloat(light.range * s * 0.16)
+            l.attenuationEndDistance = CGFloat(light.range * s * 1.2)
+            l.attenuationFalloffExponent = 1.2
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
             if light.kind == .spot {

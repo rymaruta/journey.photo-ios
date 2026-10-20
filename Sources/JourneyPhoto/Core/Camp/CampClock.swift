@@ -159,17 +159,17 @@ struct CampLighting: Equatable, Sendable {
 
     /// 焚き火の位置（板の付箋: (38, −6, 34)）
     static let firePosition = CampVec3(38, -6, 34)
-    /// 焚き火の芯の色（鮮やかすぎる橙は避け、少し落とす・2026-10-20 owner「自然になるまで」）
-    static let fireColor: UInt32 = 0xE89850
+    /// 焚き火の芯の色（琥珀寄り・白飛びしない・2026-10-20 owner「自然になるまで」）
+    static let fireColor: UInt32 = 0xD88840
     /// 夜の焚き火の広がり（芯より弱い・遠い。芝と椅子を包む柔らかい溜まり）
-    static let fireFillColor: UInt32 = 0xC87840
-    static let fireFillIntensity = 0.34
-    static let fireFillRange = 72.0
-    /// ランタン（キャンプ場・夜）: (−88, −46, 10）。暖色を抑え、届く距離を広げてなだらかに
+    static let fireFillColor: UInt32 = 0xA86830
+    static let fireFillIntensity = 0.26
+    static let fireFillRange = 84.0
+    /// ランタン（キャンプ場・夜）: (−88, −46, 10）。豆電球ほど・届く距離は広げてなだらかに
     static let lanternPosition = CampVec3(-88, -46, 10)
-    static let lanternColor: UInt32 = 0xE8A868
-    static let lanternIntensity = 0.32
-    static let lanternRange = 62.0
+    static let lanternColor: UInt32 = 0xD49858
+    static let lanternIntensity = 0.2
+    static let lanternRange = 68.0
 
     static func of(time: CampTime, season: CampSeason) -> CampLighting {
         let winter = season == .winter
@@ -187,9 +187,9 @@ struct CampLighting: Equatable, Sendable {
             sun = CampVec3(0.8, -0.3, -0.52); ambient = 0.30; diffuse = 0.62; shadow = 0x3A2440; tint = [92, 38, 0]
             sky = [0x253150, 0xB4694A, 0xEAA868]; core = 0xFFE2B0; halo = 0xFF9A50
         case .night:
-            // 月は青白い縁光だけ（木立の輪郭が読める程度）。暖色の主役は焚き火とテント
-            sun = CampVec3(0.36, -0.8, -0.46); ambient = 0.11; diffuse = 0.04; shadow = 0x08122A; tint = [-40, -20, 30]
-            sky = [0x03060D, 0x0B1424, 0x16223A]; core = 0xE9EEF8; halo = 0x9FB4D8
+            // 月は青白い縁光（木立と島の輪郭が読める）。主役は焚き火とテントの暖色
+            sun = CampVec3(0.36, -0.8, -0.46); ambient = 0.14; diffuse = 0.055; shadow = 0x08122A; tint = [-48, -24, 36]
+            sky = [0x02050C, 0x0A1322, 0x142038]; core = 0xE4EAF4; halo = 0x8FA8CC
         }
         // 冬は空が白み、環境光 +0.14、影は青み（夜は除く）
         if winter && !night {
@@ -198,11 +198,11 @@ struct CampLighting: Equatable, Sendable {
             shadow = 0x3A5068
             tint = [0, 0, 0]
         }
-        let mist: UInt32 = night ? 0x1A2638 : (time == .evening ? 0xF0B07A : 0xF4F1EA)
-        // 夜の焚き火は「芯」（近く）と「広がり」の2つに分ける（単一の強い omni だと白い芯になる）
-        let fireIntensity = night ? 0.52 : (time == .evening ? 0.9 : 0.35)
-        let fireRange = night ? 30.0 : 34.0
-        let glow: (Double, Double)? = night ? (54, 46) : (time == .evening ? (46, 40) : nil)
+        let mist: UInt32 = night ? 0x152030 : (time == .evening ? 0xF0B07A : 0xF4F1EA)
+        // 夜の焚き火は「芯」（近く・琥珀）と「広がり」の2つ。芯を強くしすぎると芝が白く飛ぶ
+        let fireIntensity = night ? 0.38 : (time == .evening ? 0.9 : 0.35)
+        let fireRange = night ? 34.0 : 34.0
+        let glow: (Double, Double)? = night ? (66, 56) : (time == .evening ? (46, 40) : nil)
         return CampLighting(sun: sun.normalized, ambient: ambient, diffuse: diffuse, shadow: shadow,
                             shadowOpacity: night ? 0 : (winter ? 0.32 : 0.42), sunTint: tint, sky: sky,
                             sunCore: core, sunHalo: halo, mist: mist, fireIntensity: fireIntensity,

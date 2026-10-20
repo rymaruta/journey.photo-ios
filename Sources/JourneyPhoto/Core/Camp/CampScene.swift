@@ -371,17 +371,18 @@ enum CampSceneBuilder {
                 let dir = (b - a).normalized
                 tube(a, a + dir * 15, 2.2, .bark, .fire, caps: [.cutEnd, .char])
             }
-            scene.flame = (CampVec3(fx, -2, fz), night ? 28 : (dusk ? 26 : 20), night ? 0.88 : (dusk ? 0.95 : 0.85))
+            scene.flame = (CampVec3(fx, -2, fz), night ? 26 : (dusk ? 26 : 20), night ? 0.78 : (dusk ? 0.95 : 0.85))
             if night || dusk { scene.sparks = CampVec3(fx, -16, fz) }
             if !night { scene.smoke = (CampVec3(fx, -26, fz), morning || o.time == .day ? 0.8 : 0.5) }
             // 炎の板の光は抑えめ（加算で白く飛ばさない）
-            scene.glows.append((CampVec3(fx, -8, fz), night ? 48 : (dusk ? 34 : 18), night ? 0.7 : 0.6))
+            scene.glows.append((CampVec3(fx, -8, fz), night ? 40 : (dusk ? 34 : 18), night ? 0.45 : 0.6))
             let light = CampLighting.of(time: o.time, season: o.season)
-            // 夜は芯（短く暖か）＋広がり（長く弱い）の2つ。昼夕は1つ
+            // 夜は芯（短く琥珀）＋広がり（長く弱い）の2つ。昼夕は1つ
             scene.lights.append(CampPointLight(position: fire, color: CampLighting.fireColor,
                                                intensity: light.fireIntensity, range: light.fireRange))
             if night {
-                scene.lights.append(CampPointLight(position: fire + CampVec3(0, -4, 0), color: CampLighting.fireFillColor,
+                // 広がりは少し地面寄り（芝に溜まり、炎の芯と重なって白く飛ばない）
+                scene.lights.append(CampPointLight(position: fire + CampVec3(0, -6, 0), color: CampLighting.fireFillColor,
                                                    intensity: CampLighting.fireFillIntensity, range: CampLighting.fireFillRange))
             }
         }
@@ -672,8 +673,8 @@ enum CampSceneBuilder {
         }
         guard night else { return ([], []) }
         // 天井の灯り（内壁を照らす）と、扉の前にこぼれる光。外への漏れは弱く（橙の板に見えない）
-        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xFFC898, intensity: 0.36, range: 38)],
-                [(tp(0, -10, hl + 6), 22, 0.4), (tp(0, -ht + 10, -4), 14, 0.55)])
+        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xE8B080, intensity: 0.24, range: 42)],
+                [(tp(0, -10, hl + 6), 26, 0.28), (tp(0, -ht + 10, -4), 16, 0.38)])
     }
 
     /// 切り絵の箱庭 1 つ（3 枚の紙・木の台と溝 3・真鍮の留め具 6）。`lift` は置く前の浮き（−9）

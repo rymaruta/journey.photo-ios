@@ -404,7 +404,7 @@ final class CampSceneCoordinator: NSObject {
             sun.intensity = CGFloat(light.diffuse * 1500)
             if night {
                 // 青白い月（縁にだけ乗る）。白の拡散だと島全体が灰になる
-                sun.color = UIColor(red: 0.55, green: 0.62, blue: 0.88, alpha: 1)
+                sun.color = UIColor(red: 0.48, green: 0.56, blue: 0.82, alpha: 1)
             } else {
                 let tint = light.sunTint
                 sun.color = UIColor(red: min(1, 1 + CGFloat(tint[0]) / 400), green: min(1, 0.97 + CGFloat(tint[1]) / 400),
@@ -414,13 +414,13 @@ final class CampSceneCoordinator: NSObject {
             sun.shadowColor = CampTexturePainter.color(light.shadow, CGFloat(light.shadowOpacity))
         }
         if let ambient = ambientNode.light {
-            // 夜の環境光は冷たい青灰（焚き火の暖色と対比）。白だと影が消える
-            ambient.intensity = CGFloat(light.ambient * (night ? 720 : 900))
-            ambient.color = night ? UIColor(red: 0.32, green: 0.38, blue: 0.52, alpha: 1) : UIColor.white
+            // 夜の環境光は冷たい青灰（焚き火の暖色と対比）。輪郭が消えない程度に残す
+            ambient.intensity = CGFloat(light.ambient * (night ? 680 : 900))
+            ambient.color = night ? UIColor(red: 0.28, green: 0.34, blue: 0.48, alpha: 1) : UIColor.white
         }
         scene.lightingEnvironment.contents = CampTexturePainter.environment(o.time, season: o.season)
         // 夜の周りの光はごく弱く。強いと色温度の対比が消える
-        scene.lightingEnvironment.intensity = night ? 0.08 : 0.7
+        scene.lightingEnvironment.intensity = night ? 0.06 : 0.7
         if animated { SCNTransaction.commit() }
     }
 
@@ -481,10 +481,11 @@ final class CampSceneCoordinator: NSObject {
             light.type = .omni
             light.color = CampTexturePainter.color(l.color)
             light.intensity = CGFloat(l.intensity * 700)
-            light.attenuationStartDistance = 0
-            light.attenuationEndDistance = CGFloat(l.range * 2.2)
-            // 1.0 で距離の二乗に近い落ち方（白い芯を避け、芝へなだらかに）
-            light.attenuationFalloffExponent = 1.0
+            // 芯の直前まで減衰しない帯を少し置き、点光源の白い芯を避ける
+            light.attenuationStartDistance = CGFloat(l.range * 0.18)
+            light.attenuationEndDistance = CGFloat(l.range * 2.4)
+            // 1.15 で距離の二乗に近い落ち方（芝へなだらかに・硬い輪にしない）
+            light.attenuationFalloffExponent = 1.15
             // 夜の焚き火の広がりは影を落とさない（芯だけが形を読む）
             light.castsShadow = false
             let node = SCNNode()
@@ -505,7 +506,7 @@ final class CampSceneCoordinator: NSObject {
         if let ring = light.fireGlow, built.flame != nil,
            let node = Self.groundDecal(built.topOutline, center: CampLighting.firePosition, rx: ring.0, rz: ring.1,
                                        image: CampTexturePainter.warmGlow(), additive: true,
-                                       opacity: o.time == .night ? 0.5 : 0.4) {
+                                       opacity: o.time == .night ? 0.32 : 0.4) {
             effects.addChildNode(node)
         }
         if let s = built.placeShadow,
