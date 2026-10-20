@@ -4,9 +4,9 @@ import Foundation
 // 2026-10-19T04:00Z に配り始めた）。
 //
 // - 持っているか: `GET /user/camper` の `parts`（サーバーが正）を、端末で数えた部品に足す。
-// - 分母: **サーバーの口が読めて `launched: true` の間だけ** 98 → 131（要サーバー 33 を足す。キャンプ場の焚き火
-//   `fire_pit.stone_ring` は `.later` のまま「近日」）。読めない・始まっていない・通信が落ちた間は今までどおり 98
-//   （端末の数え方に戻す）。`TrunkAvailability` と同じ「読めたら出す」。
+// - 分母: **サーバーの口が読めて `launched: true` の間だけ** 98 → 131（要サーバー 33 を足す。#339 で外した
+//   キャンプ場向けの `fire_pit.stone_ring` は `.later` のまま「近日」）。読めない・始まっていない・通信が落ちた間は
+//   今までどおり 98（端末の数え方に戻す）。`TrunkAvailability` と同じ「読めたら出す」。
 // - 進み具合の棒: 記録で決まる 20 個だけ（旅の数・贈り物・訪ねた・薪・同じ日の旅。数はサーバーの `progress`）。
 //   写真で決まる 13 個（スポット・行事・祭り・天気）は「届いた／まだ」だけ（設計案 3.4: 端末で数えると数がずれる）。
 
@@ -112,7 +112,7 @@ struct CamperServerParts: Equatable, Sendable {
 
 extension CamperCatalog {
 
-    /// 図鑑の分母に入る部品。サーバーが読める間は要サーバーの 33 個も入る（131）。キャンプ場の焚き火は入れない
+    /// 図鑑の分母に入る部品。サーバーが読める間は要サーバーの 33 個も入る（131）。`.later` の焚き火は入れない
     static func collectable(serverOpen: Bool) -> [CamperPart] {
         dex.filter { $0.unlock.isAvailable || (serverOpen && $0.unlock.isServer) }
     }

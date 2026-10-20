@@ -300,7 +300,7 @@ enum CamperUnlock: Equatable, Sendable {
     case seaAndMountain(Int)
     /// 要サーバー（旅の投稿の数・友達・スポットの種類・行事の暦・天気）。第1段では届かない。条件の文（日本語・英語）
     case server(String, String)
-    /// 端末で決まるが、まだアプリに無いもの（キャンプ場など）。第1段では届かない。条件の文（日本語・英語）
+    /// 端末で決まるが、いまは集められないもの（#339 でキャンプ場を外した焚き火など）。条件の文（日本語・英語）
     case later(String, String)
 
     /// 第1段で届くか（要サーバー・まだ無いものは「近日」）
@@ -392,7 +392,7 @@ enum CamperUnlock: Equatable, Sendable {
     var how: String { how(serverOpen: false) }
 
     /// 入手のしかた。要サーバーの部品は、サーバーの口が読めて配り始めている間（`serverOpen`）だけ「届きます」と言う
-    /// （2026-10-19 第2段）。キャンプ場の焚き火（`.later`）はいつも「近日」
+    /// （2026-10-19 第2段）。`.later`（#339 で外したキャンプ場向けの焚き火など）はいつも「近日」
     func how(serverOpen: Bool) -> String {
         switch self {
         case .starter: return L("最初から", "From the start")
@@ -542,7 +542,7 @@ enum CamperCatalog {
         p(.table, "camp_cube", "箱の机", "Camp cube", "保冷箱を兼ねる箱", "A box that doubles as a cooler", .occasional, .lake(5)),
         // 焚き火台（fire_pit）
         p(.firePit, "steel_bowl", "鉄の鉢", "Steel bowl", "黒い鉢と 2 本脚", "A black bowl on two legs", .common, .starter),
-        p(.firePit, "stone_ring", "石の輪", "Stone ring", "石 9 つと三本の薪", "Nine stones and three logs", .occasional, .later("キャンプ場で焚き火をする", "Light a fire at a campsite")),
+        p(.firePit, "stone_ring", "石の輪", "Stone ring", "石 9 つと三本の薪", "Nine stones and three logs", .occasional, .later("いまは集められない", "Not collectible for now")),
         p(.firePit, "brazier", "火鉢", "Brazier", "穴の空いた鏡の鉢", "A mirror bowl with holes", .rare, .winterNight(5)),
         p(.firePit, "tripod_kettle", "三脚とやかん", "Tripod and kettle", "三脚から吊るす鉄の鍋", "An iron pot hung from a tripod", .veryRare, .server("友達の焚き火に薪をくべる 10 回", "Add wood to a friend's fire 10 times")),
         // 外の灯り（outdoor_light）

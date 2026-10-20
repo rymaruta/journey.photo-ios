@@ -5,7 +5,7 @@ import Foundation
 /// モックのラベルとトランクの絵は SVG で描いてある。**手で写し替えると数字を取り違える**ので、
 /// 文字のまま持ち、ここで読む。画面は並びをそのまま `Path` に移すだけ。
 ///
-/// 読むのは `M L H V C S Q T A Z`（大文字＝絶対座標・小文字＝相対座標。小文字はキャンプ場の部品の絵・2026-10-18）。
+/// 読むのは `M L H V C S Q T A Z`（大文字＝絶対座標・小文字＝相対座標。小文字は相対座標の SVG 用・2026-10-18）。
 /// 弧（`A`）は SVG の決まり（端点から中心への変換・半径が足りなければ広げる）で
 /// 90° 以下の3次の曲線に分ける。
 enum SVGPath {
@@ -56,7 +56,7 @@ enum SVGPath {
                     continue
                 }
             }
-            // 小文字は相対座標（今の点からの差）。キャンプ場の部品の絵（板 CampDex・2026-10-18）が使う
+            // 小文字は相対座標（今の点からの差）
             let relative = command.isLowercase && command != "a"
             func at(_ p: Point) -> Point { relative ? Point(x: current.x + p.x, y: current.y + p.y) : p }
             let upper = Character(command.uppercased())

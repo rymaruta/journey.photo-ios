@@ -119,13 +119,13 @@ final class WhatsNewTests: XCTestCase {
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
-        // 1.1.18（2026-10-19）: 写真で作るキャンプ場・写真で作るキャンピングカー・アイコンとカバー（後の2つは 1.1.17 で入ったが知らせが無かった）
+        // 1.1.18（2026-10-19）: 写真で作るキャンピングカー・アイコンとカバー（キャンプ場の知らせは #339 で外した）
         let camp = try XCTUnwrap(releases.first)
-        XCTAssertEqual(camp.items.map(\.title.ja), ["写真で作るキャンプ場", "写真で作るキャンピングカー", "アイコンとカバーを選びやすく"])
-        XCTAssertEqual(camp.items.map(\.symbol), ["tent", "bus", "person.crop.circle"])
-        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage, .mypage, .mypage])
+        XCTAssertEqual(camp.items.map(\.title.ja), ["写真で作るキャンピングカー", "アイコンとカバーを選びやすく"])
+        XCTAssertEqual(camp.items.map(\.symbol), ["bus", "person.crop.circle"])
+        XCTAssertEqual(camp.items.compactMap(\.destination), [.mypage, .mypage])
         XCTAssertEqual(camp.date, WhatsNew.Day(year: 2026, month: 10, day: 19))
-        XCTAssertTrue(camp.items[1].detail.ja.contains("とおまわり号"), "キャンピングカーの名前を言っていない")
+        XCTAssertTrue(camp.items[0].detail.ja.contains("とおまわり号"), "キャンピングカーの名前を言っていない")
         // 1.1.16（2026-10-18・札 #305 #306）: トランクの部品の付き方・特別な券面の裏・呼び名「すれちがい乗車券」
         let upcoming = releases[1]
         XCTAssertEqual(upcoming.items.map(\.title.ja), ["トランクの部品がきれいに付く", "特別な券面は裏まで", "すれちがい乗車券"])
