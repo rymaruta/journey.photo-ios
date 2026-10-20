@@ -293,21 +293,35 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 三枚続きの額（細い黒い枠 3・1 枚の写真を 3 つに分けて一つの景色に）
+    /// 三枚続きの額（細い黒い枠 3・マット・1 枚の写真を 3 つに分けて一つの景色に・蝶番）
     static func triptych() -> CamperMesh {
         var parts: [CamperMesh] = []
         for i in 0..<3 {
             let x = -12.6 + Double(i) * 12.6
             let c = CV3(x, 10, 0)
-            let ring = K.roundedRect(11.6, 13.6, r: 0.4, steps: 2)
-            let hole = CamperPolygon.cw(K.roundedRect(9.8, 11.8, r: 0.2, steps: 2))
-            parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: 1.2, front: R(.painted(0x1C1B1A)), side: R(.painted(0x1C1B1A)),
-                                                        bevel: 0.25), at: c + CV3(0, 0, 1.2)))
-            var photo = K.panel(width: 9.8, height: 11.8, photoMaterial(0))
-            photo.uvs = photo.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
-            parts.append(K.placed(photo, at: c + CV3(0, 0, 0.6)))
-            parts.append(K.placed(K.panel(width: 9.9, height: 11.9, R(.frameGlass)), at: c + CV3(0, 0, 0.9)))
-            parts.append(K.placed(K.panel(width: 11, height: 13, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.05)))
+            // 共通の額は slot0 を1枚置くので、ここでは枠・マット・硝子だけ自前で組み、写真は UV 分割の1面だけ
+            let depth = 1.35, rim = 1.0
+            let outer = CV2(11.6, 13.6), photo = CV2(8.4, 10.2)
+            let inner = CV2(outer.x - rim * 2, outer.y - rim * 2)
+            let ring = K.roundedRect(outer.x, outer.y, r: 0.45, steps: 3)
+            let hole = CamperPolygon.cw(K.roundedRect(inner.x, inner.y, r: 0.3, steps: 2))
+            parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: depth, front: R(.painted(0x1C1B1A)),
+                                                        side: R(.painted(0x1C1B1A)), bevel: 0.3), at: c + CV3(0, 0, depth)))
+            parts.append(K.placed(K.panel(width: outer.x - 0.4, height: outer.y - 0.4, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.06)))
+            parts.append(K.placed(K.panel(width: inner.x + 0.15, height: inner.y + 0.15, R(.mat)), at: c + CV3(0, 0, depth - 0.78)))
+            var panel = K.panel(width: photo.x, height: photo.y, photoMaterial(0))
+            panel.uvs = panel.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
+            parts.append(K.placed(panel, at: c + CV3(0, 0, depth - 0.52)))
+            let matOuter = K.roundedRect(photo.x + 1.4, photo.y + 1.4, r: 0.3, steps: 2)
+            let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.15, photo.y + 0.15, r: 0.15, steps: 2))
+            parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.2, front: R(.mat), side: R(.paper), bevel: 0.1),
+                                  at: c + CV3(0, 0, depth - 0.38)))
+            parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
+        }
+        for x in [-6.3, 6.3] {
+            for y in [6.0, 14.0] {
+                parts.append(K.block(CV3(1.2, 1.6, 0.7), at: CV3(x, y, 1.6), radius: 0.15, R(.brass)))
+            }
         }
         return K.merge(parts)
     }
@@ -537,15 +551,25 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 星の天窓（枠と、夜は星が映る硝子）
+    /// 星の天窓（厚い枠・内縁の真鍮・十字の桟・夜は星が映る硝子）
     static func starWindow() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let ring = K.roundedRect(19, 19, r: 2)
-        let hole = K.roundedRect(14, 14, r: 1.4)
-        parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: 2.4, front: R(.wood(.walnut)), side: R(.wood(.walnut)), bevel: 0.4),
-                              at: CV3(0, -2.4, 0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
-        parts.append(K.placed(K.panel(width: 14.2, height: 14.2, R(.windowView)), at: CV3(0, -0.2, 0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
-        parts.append(K.placed(K.panel(width: 14.2, height: 14.2, R(.glass)), at: CV3(0, -1.2, 0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        let toDown = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
+        let ring = K.roundedRect(19, 19, r: 2.2, steps: 4)
+        let hole = K.roundedRect(13.6, 13.6, r: 1.2, steps: 3)
+        parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: 2.8, front: R(.wood(.walnut)), side: R(.wornWood(.walnut)), bevel: 0.5),
+                              at: CV3(0, -2.8, 0), rotation: toDown))
+        // 内縁の真鍮の縁
+        parts.append(K.tube(K.roundedRect(13.8, 13.8, r: 1.2).map { CV3($0.x, -0.35, $0.y) }, radius: 0.28, sides: 6, closed: true, R(.brass)))
+        // 十字の桟
+        parts.append(K.placed(K.block(CV3(13.2, 0.7, 0.55), at: .zero, radius: 0.15, R(.wood(.walnut))), at: CV3(0, -0.9, 0), rotation: toDown))
+        parts.append(K.placed(K.block(CV3(0.7, 13.2, 0.55), at: .zero, radius: 0.15, R(.wood(.walnut))), at: CV3(0, -0.9, 0), rotation: toDown))
+        parts.append(K.placed(K.panel(width: 13.4, height: 13.4, R(.windowView)), at: CV3(0, -0.15, 0), rotation: toDown))
+        parts.append(K.placed(K.panel(width: 13.4, height: 13.4, R(.glass)), at: CV3(0, -1.35, 0), rotation: toDown))
+        // 四隅の留め
+        for (x, z) in [(-8.2, -8.2), (8.2, -8.2), (-8.2, 8.2), (8.2, 8.2)] {
+            parts.append(K.placed(K.sphere(radius: 0.45, segments: 8, R(.brass)), at: CV3(x, -0.5, z)))
+        }
         return K.merge(parts)
     }
 
