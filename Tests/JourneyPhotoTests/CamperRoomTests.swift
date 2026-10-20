@@ -479,6 +479,34 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertGreaterThan(shapes.count, CamperRoomVariety.animalCrossingCount - 500)
     }
 
+    /// 張り出しなど台所なしの部屋でも、部屋の殻を組んで落ちない（#331: `1..<0` の目地ループ）
+    func testWingRoomsBuildWithoutKitchen() {
+        for stage in CamperStage.allCases {
+            for kind in CamperRoomKind.rooms(stage) {
+                let layout = CamperRoomLayout.make(kind, stage: stage)
+                let doc = CamperRoomRules.starterDocument(layout)
+                let bp = CamperRoomBuilder.build(layout, doc: doc)
+                XCTAssertEqual(bp.layout.kind, kind, "\(stage) \(kind)")
+                XCTAssertFalse(bp.shell.isEmpty, "\(stage) \(kind)")
+                let hasKitchen = bp.shell.contains { $0.name == "room.kitchen" }
+                if kind == .car {
+                    XCTAssertTrue(hasKitchen, "\(stage) \(kind)")
+                    XCTAssertGreaterThan(layout.kitchen.w, 0)
+                    XCTAssertGreaterThan(layout.kitchen.d, 0)
+                } else {
+                    XCTAssertFalse(hasKitchen, "\(stage) \(kind)")
+                    XCTAssertEqual(layout.kitchen.w, 0, "\(stage) \(kind)")
+                    XCTAssertEqual(layout.kitchen.d, 0, "\(stage) \(kind)")
+                }
+                XCTAssertTrue(bp.shell.contains { $0.name == "room.doorway" }, "\(stage) \(kind)")
+            }
+        }
+        // 空の台所だけ渡しても落ちず、部品は出さない
+        var emptyKitchen = CamperRoomLayout.make(.sideRear, stage: .camper)
+        emptyKitchen.kitchen = CamperRoomRect(x: 0, z: 0, w: 0, d: 0)
+        XCTAssertTrue(CamperRoomBuilder.kitchen(emptyKitchen).isEmpty)
+    }
+
     /// 夜の光の決まり: どの素材も光る面の emission は 1 まで。窓の外の景色は光を受けない
     func testEmissionCapAndUnlitView() throws {
         var mats: Set<CamperMaterial> = []

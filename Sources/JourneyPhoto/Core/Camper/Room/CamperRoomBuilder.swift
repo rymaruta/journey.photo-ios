@@ -55,7 +55,11 @@ enum CamperRoomBuilder {
         bp.shell += walls(layout, style: style, paint: paint)
         bp.shell += windows(layout, style: style)
         if !layout.isStudio {
-            bp.shell += kitchen(layout)
+            // 張り出しなどは台所のマスが 0×0（`wing`）。そのままだと `kitchen` が
+            // `1..<Int(w/8)` → `1..<0` で落ちる（#331）
+            if layout.kitchen.w > 0, layout.kitchen.d > 0 {
+                bp.shell += kitchen(layout)
+            }
             bp.shell += doorway(layout)
         }
         bp.items = doc.all.compactMap { place($0) }
@@ -198,6 +202,8 @@ enum CamperRoomBuilder {
     static func kitchen(_ l: CamperRoomLayout) -> [CamperNodeSpec] {
         let cell = CamperRoomLayout.cell
         let k = l.kitchen
+        // 張り出しなどは台所なし（0×0）。負の箱や `1..<0` の目地ループで落ちないよう組まない
+        guard k.w > 0, k.d > 0 else { return [] }
         let x0 = Double(k.x) * cell, w = Double(k.w) * cell, d = Double(k.d) * cell
         let cx = x0 + w / 2
         let top = CamperRoomLayout.kitchenHeight
@@ -256,9 +262,12 @@ enum CamperRoomBuilder {
         for k in 1..<4 {
             parts.append(K.block(CV3(w, 0.25, 0.2), at: CV3(cx, top + 2.4 + Double(k) * 4, 0.3), radius: 0.05, R(.painted(0xB8B2A6))))
         }
-        for k in 1..<Int(w / 8) {
-            let off = (k % 2 == 0) ? 0.0 : 4
-            parts.append(K.block(CV3(0.2, 16, 0.2), at: CV3(x0 + Double(k) * 8 - off, top + 2.4, 0.3), radius: 0.05, R(.painted(0xB8B2A6))))
+        // w が小さいと Int(w/8) が 0 になり `1..<0` で落ちるので、目地は幅があるときだけ
+        if Int(w / 8) > 1 {
+            for k in 1..<Int(w / 8) {
+                let off = (k % 2 == 0) ? 0.0 : 4
+                parts.append(K.block(CV3(0.2, 16, 0.2), at: CV3(x0 + Double(k) * 8 - off, top + 2.4, 0.3), radius: 0.05, R(.painted(0xB8B2A6))))
+            }
         }
         // まな板と瓶
         parts.append(K.placed(K.roundedBox(CV3(9, 0.8, 6.4), radius: 0.4, segments: 2, R(.wornWood(.oak))), at: CV3(sinkX + 12, top + 2.8, d / 2 + 2),
