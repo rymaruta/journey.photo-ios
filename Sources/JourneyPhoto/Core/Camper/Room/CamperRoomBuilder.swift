@@ -319,8 +319,8 @@ enum CamperRoomBuilder {
             let p = it.position + q.rotate(lamp.position)
             // 火（ストーブ）は灯りの色でなく炎の色
             let fire = it.furnitureId.hasPrefix("heater.") || it.furnitureId == "wall_lamp.candle_sconce"
-            let spec = CamperLightSpec(name: "interior.lamp.\(it.uid)", kind: .omni, position: p, color: fire ? 0xFF8A3C : color,
-                                       intensity: lamp.intensity, range: lamp.range, moods: [.night])
+            let spec = CamperLightSpec(name: "interior.lamp.\(it.uid)", kind: .omni, pattern: .roomLamp, position: p,
+                                       color: fire ? 0xFF8A3C : color, intensity: lamp.intensity, range: lamp.range, moods: [.night])
             lamps.append((spec, (p - center).length))
         }
         // 2026-10-19（Mac run 575）: 天井の広い spot は部屋全体を照らし、夜が昼より明るく見えた。外して、灯りの家具の

@@ -399,21 +399,28 @@ final class CampSceneCoordinator: NSObject {
         let l = CampOrbit.toScene(light.sun)
         sunNode.position = SCNVector3(Float(l.x * 300), Float(l.y * 300), Float(l.z * 300))
         sunNode.look(at: SCNVector3(0, 0, 0))
+        let night = o.time == .night
         if let sun = sunNode.light {
             sun.intensity = CGFloat(light.diffuse * 1500)
-            let tint = light.sunTint
-            sun.color = UIColor(red: min(1, 1 + CGFloat(tint[0]) / 400), green: min(1, 0.97 + CGFloat(tint[1]) / 400),
-                                blue: min(1, 0.92 + CGFloat(tint[2]) / 400), alpha: 1)
+            if night {
+                // 青白い月（縁にだけ乗る）。白の拡散だと島全体が灰になる
+                sun.color = UIColor(red: 0.48, green: 0.56, blue: 0.82, alpha: 1)
+            } else {
+                let tint = light.sunTint
+                sun.color = UIColor(red: min(1, 1 + CGFloat(tint[0]) / 400), green: min(1, 0.97 + CGFloat(tint[1]) / 400),
+                                    blue: min(1, 0.92 + CGFloat(tint[2]) / 400), alpha: 1)
+            }
             sun.castsShadow = light.shadowOpacity > 0
             sun.shadowColor = CampTexturePainter.color(light.shadow, CGFloat(light.shadowOpacity))
         }
         if let ambient = ambientNode.light {
-            ambient.intensity = CGFloat(light.ambient * 900)
-            ambient.color = UIColor.white
+            // 夜の環境光は冷たい青灰（焚き火の暖色と対比）。輪郭が消えない程度に残す
+            ambient.intensity = CGFloat(light.ambient * (night ? 680 : 900))
+            ambient.color = night ? UIColor(red: 0.28, green: 0.34, blue: 0.48, alpha: 1) : UIColor.white
         }
         scene.lightingEnvironment.contents = CampTexturePainter.environment(o.time, season: o.season)
-        // 夜の周りの光は弱く（0.25→0.12）。強いと島全体が均一に明るく、焚き火の溜まりが消える
-        scene.lightingEnvironment.intensity = o.time == .night ? 0.12 : 0.7
+        // 夜の周りの光はごく弱く。強いと色温度の対比が消える
+        scene.lightingEnvironment.intensity = night ? 0.06 : 0.7
         if animated { SCNTransaction.commit() }
     }
 
@@ -441,12 +448,15 @@ final class CampSceneCoordinator: NSObject {
             m.clearCoat.contents = NSNumber(value: spec.clearCoat)
         }
         if let e = spec.emission {
-            // 夜の布は内から光る（絵の織り目も光の中に残す）。強さは 1 まで（平らな橙の板にしない）
-            if let texture = spec.texture, case .cutout = texture {
+            // 光る面は emissionTexture（夜のテントの透光図）があればそれ、無ければ texture
+            let emitKind = spec.emissionTexture ?? spec.texture
+            if let texture = emitKind, case .cutout = texture {
                 m.emission.contents = CampTexturePainter.color(e)
-            } else if let texture = spec.texture,
+            } else if let texture = emitKind,
                       let image = CampTexturePainter.image(texture, color: e, images: images) {
                 m.emission.contents = image
+                m.emission.wrapS = .clamp
+                m.emission.wrapT = .clamp
             } else {
                 m.emission.contents = CampTexturePainter.color(e)
             }
@@ -471,10 +481,12 @@ final class CampSceneCoordinator: NSObject {
             light.type = .omni
             light.color = CampTexturePainter.color(l.color)
             light.intensity = CGFloat(l.intensity * 700)
-            light.attenuationStartDistance = 0
-            light.attenuationEndDistance = CGFloat(l.range * 2.2)
-            // 2 だと芯が白く飛び、縁が急に真っ暗になる。1.2 でなだらかな溜まりに（とおまわり号の中と同じ）
-            light.attenuationFalloffExponent = 1.2
+            // 型ごとに減衰を分ける（芯・広がり・ランタン・テント）
+            let a = l.pattern.attenuation(range: l.range)
+            light.attenuationStartDistance = CGFloat(a.start)
+            light.attenuationEndDistance = CGFloat(a.end)
+            light.attenuationFalloffExponent = CGFloat(a.falloff)
+            light.castsShadow = false
             let node = SCNNode()
             node.light = light
             node.position = Self.vector(CampOrbit.toScene(l.position))
@@ -493,7 +505,7 @@ final class CampSceneCoordinator: NSObject {
         if let ring = light.fireGlow, built.flame != nil,
            let node = Self.groundDecal(built.topOutline, center: CampLighting.firePosition, rx: ring.0, rz: ring.1,
                                        image: CampTexturePainter.warmGlow(), additive: true,
-                                       opacity: o.time == .night ? 0.7 : 0.4) {
+                                       opacity: o.time == .night ? 0.32 : 0.4) {
             effects.addChildNode(node)
         }
         if let s = built.placeShadow,
