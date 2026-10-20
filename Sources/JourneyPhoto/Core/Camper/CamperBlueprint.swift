@@ -1402,9 +1402,10 @@ extension CV3 {
 
 enum CamperFraming {
 
-    /// 初めの向き（横 −32°・見下ろし 14°）。寄りは殻の外寸から、車が画面の横の 8 割弱に入る倍率
+    /// 初めの向き（横 −32°・見下ろし 14°）。寄りは殻の外寸から、車が画面の横の 9 割弱に入る倍率
     static func overview(_ stage: CamperStage) -> CamperAngle {
-        // 翼の箱は外観に出さないので、寄りも殻だけ（2026-10-20）
+        // 翼の箱は外観に出さないので、寄りも殻だけ（2026-10-20）。
+        // 殻だけだと小さく見えるので寄りを 0.78→0.88（owner「車をもう少し大きく」）
         let shell = CamperVolumes.shellX(stage)
         let half = CamperVolumes.bodyHalfWidth(stage)
         let midX = (shell.lowerBound + shell.upperBound) / 2
@@ -1412,7 +1413,7 @@ enum CamperFraming {
         let rad = abs(yaw) * .pi / 180
         let span = (shell.upperBound - shell.lowerBound) * cos(rad) + half * 2 * sin(rad)
         let k = 1.4 * 2 * distance(zoom: 1) * tan(fieldOfView / 2 * .pi / 180) * 100
-        let zoom = min(zoomRange.upperBound, max(zoomRange.lowerBound, 0.78 * k / max(span, 1)))
+        let zoom = min(zoomRange.upperBound, max(zoomRange.lowerBound, 0.88 * k / max(span, 1)))
         return CamperAngle(target: CV3(midX, 70, 0), yaw: yaw, elevation: 14, zoom: zoom)
     }
 
