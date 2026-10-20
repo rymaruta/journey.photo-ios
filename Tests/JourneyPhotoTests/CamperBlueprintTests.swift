@@ -223,14 +223,13 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")
     }
 
-    /// 寸法（板の図面: 殻の全長 242・車幅 100・全高 134・ホイールベース 158・タイヤ半径 22）。
-    /// 外形は足した部屋の箱まで含む
+    /// 寸法（板の図面: 殻の全長 242・車幅 100・全高 134・ホイールベース 158・タイヤ半径 22）
     func testDimensions() {
         let b = build()
-        let outline = CamperVolumes.bounds(.camper)
-        XCTAssertEqual(b.length.lowerBound, outline.x.lowerBound, accuracy: 0.01)
-        XCTAssertEqual(b.length.upperBound, outline.x.upperBound, accuracy: 0.01)
-        XCTAssertEqual(b.halfWidth, outline.halfWidth, accuracy: 0.01)
+        // 外観の寸法は殻（翼で広げない・2026-10-20）
+        XCTAssertEqual(b.length.lowerBound, -122, accuracy: 0.01)
+        XCTAssertEqual(b.length.upperBound, 120, accuracy: 0.01)
+        XCTAssertEqual(b.halfWidth, 50, accuracy: 0.01)
         let builder = CamperBuilder(config: CamperConfig(stage: .camper))
         XCTAssertEqual(builder.front - builder.rear, 242, accuracy: 0.01)
         XCTAssertEqual(builder.BW * 2, 100, accuracy: 0.01)
@@ -239,19 +238,21 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertEqual(builder.wheelR, 22)
     }
 
-    /// 足した部屋は外に箱がある。荷物室はトレーラーつきでは出さない
-    func testWingsMatchTheRooms() {
+    /// 足した部屋のマスは残すが、外観に翼の箱は出さない（2026-10-20）
+    func testWingsStayOffTheExterior() {
         for stage in CamperStage.allCases {
             let b = build(stage)
-            let outline = CamperVolumes.bounds(stage)
-            XCTAssertEqual(b.length.lowerBound, outline.x.lowerBound, accuracy: 0.01, "\(stage)")
-            XCTAssertEqual(b.length.upperBound, outline.x.upperBound, accuracy: 0.01, "\(stage)")
-            XCTAssertEqual(b.halfWidth, outline.halfWidth, accuracy: 0.01, "\(stage)")
-            for kind in CamperVolumes.boxes(stage).keys {
-                XCTAssertTrue(b.nodes.contains { $0.name == "wing.\(kind.rawValue).floor" }, "\(stage) \(kind)")
-                XCTAssertTrue(b.nodes.contains { $0.name == "wing.\(kind.rawValue).roof" }, "\(stage) \(kind)")
-            }
-            XCTAssertEqual(b.nodes.contains { $0.name == "wing.locker.floor" }, stage != .trailer, "\(stage)")
+            // 殻の寸法（翼で広げない）
+            let rear = CamperVolumes.bodyRear(stage)
+            let front = CamperVolumes.bodyFront(stage)
+            let shellBack = stage == .trailer ? -264.0 : rear
+            XCTAssertEqual(b.length.lowerBound, shellBack, accuracy: 0.01, "\(stage)")
+            XCTAssertEqual(b.length.upperBound, front, accuracy: 0.01, "\(stage)")
+            XCTAssertEqual(b.halfWidth, CamperVolumes.bodyHalfWidth(stage), accuracy: 0.01, "\(stage)")
+            XCTAssertFalse(b.nodes.contains { $0.name.hasPrefix("wing.") }, "\(stage): 外観に翼がある")
+            // 部屋の箱の定義自体は残る（室内のマス用）
+            XCTAssertFalse(CamperVolumes.boxes(stage).isEmpty, "\(stage)")
+            XCTAssertEqual(CamperVolumes.boxes(stage)[.locker] != nil, stage != .trailer, "\(stage)")
         }
     }
 
