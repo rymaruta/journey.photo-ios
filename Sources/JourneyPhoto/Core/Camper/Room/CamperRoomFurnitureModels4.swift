@@ -298,35 +298,53 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 三面鏡（中央と折れる翼）。1 段（高さ ≤ 21）
+    /// 三面鏡（中央と折れる翼・蝶番・台）。1 段（高さ ≤ 21）
     static func triFoldMirror() -> CamperMesh {
         var parts: [CamperMesh] = []
         func panel(at x: Double, yaw: Double, w: Double) {
-            let c = CV3(x, 10, 1.2)
+            // 翼を回しても壁の後ろ（z &lt; 0）に出ないよう、付け根を少し前へ
+            let c = CV3(x, 10, 1.6)
             let q = CQuat.axisAngle(CV3(0, 1, 0), yaw)
-            let ring = K.roundedRect(w, 16, r: 0.35, steps: 2)
-            let hole = CamperPolygon.cw(K.roundedRect(w - 1.8, 14, r: 0.2, steps: 2))
-            let frame = CamperMeshKit.extrude(ring, holes: [hole], depth: 0.9, front: R(.wood(.walnut)), side: R(.wood(.walnut)), bevel: 0.2)
-            parts.append(K.placed(frame, at: c + q.rotate(CV3(0, 0, 0.9)), rotation: q))
-            parts.append(K.placed(K.panel(width: w - 1.8, height: 14, R(.chrome)), at: c + q.rotate(CV3(0, 0, 0.4)), rotation: q))
+            let ring = K.roundedRect(w, 16, r: 0.4, steps: 3)
+            let hole = CamperPolygon.cw(K.roundedRect(w - 2.0, 13.6, r: 0.25, steps: 2))
+            let frame = CamperMeshKit.extrude(ring, holes: [hole], depth: 1.1, front: R(.wood(.walnut)), side: R(.wornWood(.walnut)), bevel: 0.28)
+            parts.append(K.placed(frame, at: c + q.rotate(CV3(0, 0, 1.1)), rotation: q))
+            parts.append(K.placed(K.panel(width: w - 2.0, height: 13.6, R(.chrome)), at: c + q.rotate(CV3(0, 0, 0.45)), rotation: q))
+            parts.append(K.placed(K.panel(width: w - 1.2, height: 14.5, R(.painted(0x2A2420))), at: c + q.rotate(CV3(0, 0, 0.15)), rotation: q))
+            let bezel = K.roundedRect(w - 1.7, 14.2, r: 0.3)
+            parts.append(K.tube(bezel.map { c + q.rotate(CV3($0.x, $0.y, 0.95)) }, radius: 0.1, sides: 4, closed: true, R(.brass)))
         }
         panel(at: 0, yaw: 0, w: 9)
-        panel(at: -8.2, yaw: 0.35, w: 7)
-        panel(at: 8.2, yaw: -0.35, w: 7)
+        panel(at: -8.4, yaw: 0.28, w: 7)
+        panel(at: 8.4, yaw: -0.28, w: 7)
+        for x in [-4.4, 4.4] {
+            for y in [5.5, 14.5] {
+                parts.append(K.block(CV3(1.4, 1.8, 0.8), at: CV3(x, y, 2.2), radius: 0.15, R(.brass)))
+            }
+        }
+        parts.append(K.block(CV3(22, 1.4, 4.5), at: CV3(0, 1.2, 2.6), radius: 0.3, R(.wood(.walnut))))
         return K.merge(parts)
     }
 
-    /// ひげ剃り鏡（伸びる腕）
+    /// ひげ剃り鏡（伸びる腕・継ぎ目・両面の丸い鏡）
     static func shavingMirror() -> CamperMesh {
         var parts: [CamperMesh] = []
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        parts.append(K.placed(K.disc(radius: 1.8, height: 0.5, bevel: 0.15, segments: 14, R(.brass)), at: CV3(0, 12, 0), rotation: toWall))
-        let j1 = CV3(0, 12, 4), j2 = CV3(3, 14, 8)
-        parts.append(K.tube([CV3(0, 12, 0.5), j1], radius: 0.35, sides: 6, R(.brass)))
-        parts.append(K.tube([j1, j2], radius: 0.35, sides: 6, R(.brass)))
-        for j in [j1, j2] { parts.append(K.placed(K.sphere(radius: 0.55, segments: 8, R(.brass)), at: j)) }
-        parts.append(K.placed(K.disc(radius: 3.4, height: 0.7, bevel: 0.2, segments: 24, R(.brass)), at: j2 + CV3(0, 0, 1.2), rotation: toWall))
-        parts.append(K.placed(K.ellipsePanel(rx: 2.8, ry: 2.8, R(.chrome)), at: j2 + CV3(0, 0, 1.6)))
+        parts.append(K.placed(K.disc(radius: 2.0, height: 0.6, bevel: 0.18, segments: 18, R(.brass)), at: CV3(0, 12, 0), rotation: toWall))
+        parts.append(K.placed(K.disc(radius: 1.2, height: 0.35, bevel: 0.1, segments: 14, R(.agedBrass)), at: CV3(0, 12, 0.55), rotation: toWall))
+        let j1 = CV3(0, 12, 4.2), j2 = CV3(3.2, 14.2, 8.5)
+        parts.append(K.tube([CV3(0, 12, 0.6), j1], radius: 0.38, sides: 8, R(.brass)))
+        parts.append(K.tube([j1, j2], radius: 0.38, sides: 8, R(.brass)))
+        for j in [j1, j2] {
+            parts.append(K.placed(K.sphere(radius: 0.65, segments: 10, R(.brass)), at: j))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.65, 0.35), CV2(0, 0.35)], segments: 10, R(.chrome)), at: j))
+        }
+        parts.append(K.placed(K.disc(radius: 3.6, height: 0.8, bevel: 0.25, segments: 28, R(.brass)), at: j2 + CV3(0, 0, 1.3), rotation: toWall))
+        parts.append(K.placed(K.ellipsePanel(rx: 2.9, ry: 2.9, R(.chrome)), at: j2 + CV3(0, 0, 1.75)))
+        // 裏側の少し膨らんだ鏡（両面）
+        parts.append(K.placed(K.ellipsePanel(rx: 2.7, ry: 2.7, R(.chrome)), at: j2 + CV3(0, 0, 0.95)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.45, 0), CV2(0.4, 1.4), CV2(0, 1.4)], segments: 10, R(.brass)),
+                              at: j2 + CV3(0, 3.5, 1.3), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
         return K.merge(parts)
     }
 
