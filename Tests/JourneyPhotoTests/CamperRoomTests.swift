@@ -13,32 +13,32 @@ final class CamperRoomTests: XCTestCase {
 
     // MARK: 図鑑
 
-    /// 板の 16 分類・64 個に別種 5 分類・20 個を足す（1 分類 4 つ）。最初から 22 個、要サーバー 10 個。
+    /// 板の 16 分類・64 個に別種 6 分類・24 個を足す（1 分類 4 つ）。最初から 23 個、要サーバー 10 個。
     /// 形の組み合わせ（`CamperRoomVariety`）を足すと、あつまれどうぶつの森の家具 2,076 を超える。色違いでは数えない
     func testCatalogMatchesTheBoard() {
         let board = CamperRoomCatalog.board
-        XCTAssertEqual(board.count, 84)
-        XCTAssertEqual(Set(board.map(\.id)).count, 84)
-        XCTAssertEqual(CamperRoomCategory.allCases.count, 21)
+        XCTAssertEqual(board.count, 88)
+        XCTAssertEqual(Set(board.map(\.id)).count, 88)
+        XCTAssertEqual(CamperRoomCategory.allCases.count, 22)
         for c in CamperRoomCategory.allCases { XCTAssertEqual(board.filter { $0.category == c }.count, 4, c.rawValue) }
-        XCTAssertEqual(board.filter { $0.placement == .floor }.count, 40)
+        XCTAssertEqual(board.filter { $0.placement == .floor }.count, 44)
         XCTAssertEqual(board.filter { $0.placement == .wall }.count, 28)
         XCTAssertEqual(board.filter { $0.placement == .ceiling }.count, 16)
-        XCTAssertEqual(board.filter { $0.unlock.isStarter }.count, 22)
+        XCTAssertEqual(board.filter { $0.unlock.isStarter }.count, 23)
         let server = board.filter { if case .base(.server) = $0.unlock { return true } else { return false } }
         XCTAssertEqual(Set(server.map(\.id)), ["bed.daybed", "seating.bench_storage", "heater.tile_hearth", "floor_lamp.paper_column",
                                                "wall_shelf.floating_corner", "poster.postcard_grid", "poster.tapestry", "string_ceiling.bunting",
                                                "plant_hanger.hanging_basket", "plant_hanger.glass_terrarium"])
         // 珍しさ（板の内訳＋別種）
-        XCTAssertEqual(board.filter { $0.rarity == .common }.count, 22)
-        XCTAssertEqual(board.filter { $0.rarity == .occasional }.count, 28)
-        XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 25)
-        XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 9)
+        XCTAssertEqual(board.filter { $0.rarity == .common }.count, 23)
+        XCTAssertEqual(board.filter { $0.rarity == .occasional }.count, 29)
+        XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 26)
+        XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 10)
         let all = CamperRoomCatalog.all
         XCTAssertGreaterThan(all.count, CamperRoomVariety.animalCrossingCount)
         XCTAssertEqual(Set(all.map(\.id)).count, all.count)
         XCTAssertEqual(Set(CamperRoomVariety.pieces.map(\.signature)).count, CamperRoomVariety.pieces.count)
-        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 22)
+        XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 23)
         XCTAssertEqual(Set(all.map(\.nameJa)).count, all.count)
         XCTAssertEqual(Set(all.map(\.nameEn)).count, all.count)
         for f in all {
@@ -56,9 +56,9 @@ final class CamperRoomTests: XCTestCase {
             if f.unlock.isStarter { XCTAssertTrue(f.built, f.id) }
         }
         let owned = CamperRoomCatalog.owned(CamperStats(), CamperRoomStats())
-        XCTAssertEqual(owned.count, 22)
+        XCTAssertEqual(owned.count, 23)
         let count = CamperRoomCatalog.dexCount(owned)
-        XCTAssertEqual(count.have, 22)
+        XCTAssertEqual(count.have, 23)
         XCTAssertEqual(count.total, CamperRoomCatalog.all.filter { $0.built && $0.unlock.isAvailable }.count)
         XCTAssertEqual(CamperRoomCatalog.soonCount, CamperRoomCatalog.board.filter { !$0.isAvailable }.count)
         XCTAssertGreaterThanOrEqual(count.total, 25)

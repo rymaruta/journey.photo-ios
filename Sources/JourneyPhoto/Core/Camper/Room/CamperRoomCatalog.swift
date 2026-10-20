@@ -2,8 +2,9 @@ import Foundation
 
 // とおまわり号の中の家具図鑑（2026-10-19・板「家具図鑑」CamperFurniture が正）。
 //
-// 板の 16 分類・64 個に、旅の車らしい別種の分類（音・台所道具・便利・鏡・趣味）を足す（2026-10-20 owner
-// 「椅子などの既存の種類増えただけにしか見えなかったので色んなの作りたい」）。1 分類に 4 つ、どれも形がちがう。
+// 板の 16 分類・64 個に、旅の車らしい別種の分類（音・台所道具・便利・鏡・趣味・カメラ）を足す
+// （2026-10-20 owner「椅子などの既存の種類増えただけにしか見えなかったので色んなの作りたい」・
+// 「カメラ棚あるならカメラも」）。1 分類に 4 つ、どれも形がちがう。
 // 形の組み合わせ（`CamperRoomVariety`。あつ森の 2,076 を超える）は板の 16 分類にだけ足す。id は「分類.部品」。
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
@@ -34,7 +35,7 @@ enum CamperRoomPlacement: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// 家具の分類（板の 16 ＋ 旅の車向けの別種 5）
+/// 家具の分類（板の 16 ＋ 旅の車向けの別種 6）
 enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
     // 床（板）
     case bed, seating, table, storage, heater
@@ -44,6 +45,7 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
     case audio
     case kitchenGear = "kitchen_gear"
     case utility
+    case camera
     // 壁（板）
     case wallShelf = "wall_shelf"
     case photoFrame = "photo_frame"
@@ -61,7 +63,7 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
 
     var placement: CamperRoomPlacement {
         switch self {
-        case .bed, .seating, .table, .storage, .heater, .roomRug, .floorLamp, .audio, .kitchenGear, .utility: return .floor
+        case .bed, .seating, .table, .storage, .heater, .roomRug, .floorLamp, .audio, .kitchenGear, .utility, .camera: return .floor
         case .wallShelf, .photoFrame, .poster, .wallLamp, .clock, .mirror, .hobby: return .wall
         case .stringCeiling, .mobile, .plantHanger, .roofHatch: return .ceiling
         }
@@ -79,6 +81,7 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
         case .audio: return L("音", "Audio")
         case .kitchenGear: return L("台所道具", "Kitchen gear")
         case .utility: return L("便利な物", "Utilities")
+        case .camera: return L("カメラ", "Cameras")
         case .wallShelf: return L("壁の棚", "Wall shelves")
         case .photoFrame: return L("写真の額", "Photo frames")
         case .poster: return L("壁に貼る物", "Posters")
@@ -106,13 +109,14 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
         case .audio: return "music.note"
         case .kitchenGear: return "fork.knife"
         case .utility: return "hanger"
+        case .camera: return "camera"
         case .wallShelf: return "books.vertical"
         case .photoFrame: return "photo.on.rectangle"
         case .poster: return "doc.richtext"
         case .wallLamp: return "lightbulb"
         case .clock: return "clock"
         case .mirror: return "rectangle.portrait"
-        case .hobby: return "camera"
+        case .hobby: return "paintpalette"
         case .stringCeiling: return "sparkles"
         case .mobile: return "bird"
         case .plantHanger: return "leaf"
@@ -267,7 +271,7 @@ enum CamperRoomCatalog {
     private static func posts(_ n: Int) -> CamperRoomUnlock { .base(.posts(n)) }
     private static func server(_ ja: String, _ en: String) -> CamperRoomUnlock { .base(.server(ja, en)) }
 
-    /// 板の 64 個 ＋ 別種 20 個（音・台所道具・便利・鏡・趣味。各 4）。大きさ・高さは板の付箋と実物の寸法から。
+    /// 板の 64 個 ＋ 別種 24 個（音・台所道具・便利・鏡・趣味・カメラ。各 4）。大きさ・高さは板の付箋と実物の寸法から。
     /// 組み合わせで増やした家具は `all` にだけ足す（板の id は変えない）
     static let board: [CamperRoomFurniture] = [
         // 寝台（bed）
@@ -461,6 +465,15 @@ enum CamperRoomCatalog {
           .rare, .base(.winter(15)), 2, 2, 8, built: true),
         f(.hobby, "easel", "画架", "Easel", "三脚にキャンバス", "A canvas on a tripod easel",
           .veryRare, .topic(.church, 2), 2, 2, 10, built: true),
+        // カメラ（camera）— 棚があるなら本体も（2026-10-20 owner）
+        f(.camera, "rangefinder", "レンジファインダー", "Rangefinder", "銀色の天板と短いレンズ", "A silver top plate and a short lens",
+          .common, starter, 2, 1, 12, built: true),
+        f(.camera, "slr", "一眼レフ", "SLR", "五角の頭と長いレンズ", "A pentaprism and a long lens",
+          .occasional, posts(50), 2, 2, 16, built: true),
+        f(.camera, "instant", "インスタントカメラ", "Instant camera", "蛇腹と出す口", "Bellows and an eject slot",
+          .rare, .spring(10), 2, 2, 18, built: true),
+        f(.camera, "twin_lens", "二眼レフ", "Twin-lens reflex", "上下のレンズと開くフード", "Two lenses and a pop-up hood",
+          .veryRare, .topic(.starry, 8), 2, 2, 20, built: true),
     ]
 
     /// 板と別種の家具、形の組み合わせで増やした家具

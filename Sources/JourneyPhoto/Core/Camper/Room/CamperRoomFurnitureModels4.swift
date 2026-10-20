@@ -1,7 +1,7 @@
 import Foundation
 
 // 家具の形・4 の組（2026-10-20）。椅子・机の脚違いではなく、用途そのものが違う分類
-// （音・台所道具・便利・鏡・趣味）を一点ずつ作り込む。owner「色んなの作りたい」。
+// （音・台所道具・便利・鏡・趣味・カメラ）を一点ずつ作り込む。owner「色んなの作りたい」・「カメラ棚あるならカメラも」。
 
 private typealias K = CamperRoomMeshKit
 private func R(_ m: CamperRoomMaterial) -> CamperMaterial { .room(m) }
@@ -31,6 +31,10 @@ extension CamperRoomFurnitureModels {
         case "hobby.rod_rack": return rodRack()
         case "hobby.ski_mount": return skiMount()
         case "hobby.easel": return wallEasel()
+        case "camera.rangefinder": return rangefinder()
+        case "camera.slr": return slrCamera()
+        case "camera.instant": return instantCamera()
+        case "camera.twin_lens": return twinLens()
         default: return nil
         }
     }
@@ -390,6 +394,105 @@ extension CamperRoomFurnitureModels {
         parts.append(K.block(CV3(11, 14, 0.7), at: CV3(0, 22, 5.5), radius: 0.2, R(.wood(.birch))))
         parts.append(K.placed(K.panel(width: 10, height: 12.5, R(.canvas(0xF2EEE4))), at: CV3(0, 22.5, 5.95)))
         parts.append(K.placed(K.panel(width: 7, height: 5, R(.painted(0x6E8FA3))), at: CV3(0, 23, 6.05)))
+        return K.merge(parts)
+    }
+
+    // MARK: カメラ（床に置く・棚の飾りではなく本体）
+
+    /// レンジファインダー（平たい天板・測距窓・短いレンズ）
+    static func rangefinder() -> CamperMesh {
+        var parts: [CamperMesh] = []
+        let body = R(.painted(0x1A1A1C)), chrome = R(.chrome), leather = R(.leather(0x3E2A1C))
+        parts.append(K.block(CV3(14, 7.5, 7), at: CV3(0, 0, 0), radius: 0.55, body))
+        parts.append(K.block(CV3(13.6, 0.7, 6.6), at: CV3(0, 7.5, 0), radius: 0.2, chrome))
+        // 測距窓とファインダー窓
+        parts.append(K.block(CV3(2.4, 1.6, 0.5), at: CV3(-4.2, 5.2, 3.4), radius: 0.15, chrome))
+        parts.append(K.block(CV3(1.8, 1.4, 0.5), at: CV3(4.5, 5.4, 3.4), radius: 0.15, chrome))
+        parts.append(K.block(CV3(12, 4.5, 0.35), at: CV3(0, 1.2, 3.45), radius: 0.15, leather))
+        // 巻き上げレバーとレリーズ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.0, 1.4), CV2(0, 1.4)], segments: 12, chrome), at: CV3(5.2, 8.2, -1.2)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.55, 0), CV2(0.5, 1.8), CV2(0, 1.8)], segments: 10, chrome), at: CV3(-3.5, 8.2, -0.8)))
+        // 短いレンズ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.2, 0), CV2(2.4, 1.2), CV2(2.1, 3.8), CV2(1.8, 4.2), CV2(0, 4.2)], segments: 18, chrome),
+                              at: CV3(0, 3.6, 3.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        parts.append(K.placed(K.disc(radius: 1.6, height: 0.35, bevel: 0.1, segments: 16, R(.painted(0x0A0A0A))), at: CV3(0, 3.6, 7.6),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        return K.merge(parts)
+    }
+
+    /// 一眼レフ（五角プリズム・グリップ・フード付きの長いレンズ）
+    static func slrCamera() -> CamperMesh {
+        var parts: [CamperMesh] = []
+        let body = R(.painted(0x141416)), grip = R(.leather(0x2A2A2C)), chrome = R(.chrome)
+        parts.append(K.block(CV3(15, 8, 9), at: CV3(0, 0, 0), radius: 0.5, body))
+        // 五角の頭
+        parts.append(K.block(CV3(7.5, 4.5, 6), at: CV3(-1.5, 8, -0.5), radius: 0.4, body))
+        parts.append(K.block(CV3(5.5, 1.2, 4.5), at: CV3(-1.5, 12.5, -0.5), radius: 0.25, body))
+        parts.append(K.block(CV3(3.2, 1.6, 0.45), at: CV3(-1.5, 10.2, 2.6), radius: 0.15, chrome))
+        // グリップ
+        parts.append(K.block(CV3(3.8, 7.2, 8.2), at: CV3(5.8, 0.4, 0), radius: 0.7, grip))
+        for y in [2.0, 4.0, 6.0] {
+            parts.append(K.block(CV3(0.35, 0.35, 7.5), at: CV3(7.6, y, 0), radius: 0.1, R(.iron)))
+        }
+        // モードダイヤルとシャッター
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.3, 0), CV2(1.2, 1.1), CV2(0, 1.1)], segments: 14, chrome), at: CV3(4.5, 8.2, -2.5)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.6, 0), CV2(0.55, 1.6), CV2(0, 1.6)], segments: 10, chrome), at: CV3(2.2, 8.2, -2.8)))
+        // 長いレンズとフード
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.6, 0), CV2(2.8, 1.5), CV2(2.6, 8), CV2(2.4, 10), CV2(0, 10)], segments: 20, chrome),
+                              at: CV3(-1.5, 4.2, 4.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(3.4, 0), CV2(3.6, 0.6), CV2(3.2, 2.8), CV2(2.8, 3.2), CV2(0, 3.2)],
+                                      segments: 18, R(.painted(0x0E0E10)), capStart: false),
+                              at: CV3(-1.5, 4.2, 14.2), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        return K.merge(parts)
+    }
+
+    /// インスタントカメラ（箱型・蛇腹・出す口）
+    static func instantCamera() -> CamperMesh {
+        var parts: [CamperMesh] = []
+        let shell = R(.painted(0xE8E2D6)), accent = R(.painted(0xC9A66B)), dark = R(.painted(0x2A2A2C))
+        parts.append(K.block(CV3(14, 16, 10), at: CV3(0, 0, 0), radius: 0.6, shell))
+        parts.append(K.block(CV3(12.5, 1.2, 8.5), at: CV3(0, 16, 0), radius: 0.25, accent))
+        // 前面の黒い枠とレンズ
+        parts.append(K.block(CV3(10, 8, 0.5), at: CV3(0, 5, 5.1), radius: 0.2, dark))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.4, 0), CV2(2.5, 1.8), CV2(2.0, 2.2), CV2(0, 2.2)], segments: 16, R(.chrome)),
+                              at: CV3(0, 9, 5.2), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        // 蛇腹（段々のひだ）
+        for i in 0..<5 {
+            let z = 5.4 + Double(i) * 0.55
+            let s = 1.0 - Double(i) * 0.08
+            parts.append(K.block(CV3(8 * s, 6.5 * s, 0.35), at: CV3(0, 8.5, z), radius: 0.1, R(.leather(0x1E1E20))))
+        }
+        // 出す口（下の前）
+        parts.append(K.block(CV3(11, 1.8, 2.2), at: CV3(0, 0.8, 4.5), radius: 0.25, dark))
+        parts.append(K.block(CV3(9.5, 0.35, 1.6), at: CV3(0, 1.4, 5.2), radius: 0.1, R(.canvas(0xF5F0E6))))
+        // ファインダーとレリーズ
+        parts.append(K.block(CV3(3.5, 2.2, 2.5), at: CV3(0, 14.5, -2.5), radius: 0.3, dark))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.65, 1.4), CV2(0, 1.4)], segments: 10, R(.chrome)), at: CV3(5.5, 16.5, -2)))
+        return K.merge(parts)
+    }
+
+    /// 二眼レフ（上下レンズ・開く腰レベルフード）
+    static func twinLens() -> CamperMesh {
+        var parts: [CamperMesh] = []
+        let body = R(.painted(0x1C1C1E)), leather = R(.leather(0x4A3424)), chrome = R(.chrome)
+        parts.append(K.block(CV3(12, 14, 12), at: CV3(0, 0, 0), radius: 0.55, body))
+        parts.append(K.block(CV3(11, 10, 0.4), at: CV3(0, 2, 6.1), radius: 0.15, leather))
+        // 上下のレンズ（撮影・ファインダー）
+        for (y, r) in [(4.5, 2.6), (10.0, 2.4)] as [(Double, Double)] {
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(r, 0), CV2(r + 0.15, 0.8), CV2(r - 0.1, 2.2), CV2(0, 2.2)], segments: 18, chrome),
+                                  at: CV3(0, y, 6.0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+            parts.append(K.placed(K.disc(radius: r - 0.5, height: 0.3, bevel: 0.08, segments: 14, R(.painted(0x0A0A0A))),
+                                  at: CV3(0, y, 8.1), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        }
+        // 開いた腰レベルフード（4 枚）
+        parts.append(K.block(CV3(9.5, 0.45, 9.5), at: CV3(0, 14, 0), radius: 0.15, body))
+        for (dx, dz, yaw) in [(0.0, 5.2, 0.0), (0.0, -5.2, .pi), (5.2, 0.0, .pi / 2), (-5.2, 0.0, -.pi / 2)] as [(Double, Double, Double)] {
+            parts.append(K.placed(K.panel(width: 9.2, height: 5.5, body), at: CV3(dx, 16.8, dz),
+                                  rotation: CQuat.axisAngle(CV3(0, 1, 0), yaw) * CQuat.axisAngle(CV3(1, 0, 0), -0.55)))
+        }
+        // 巻き上げノブ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.4, 0), CV2(1.5, 0.8), CV2(1.2, 2.5), CV2(0, 2.5)], segments: 14, chrome),
+                              at: CV3(6.2, 8, 0), rotation: CQuat.axisAngle(CV3(0, 0, 1), .pi / 2)))
         return K.merge(parts)
     }
 }
