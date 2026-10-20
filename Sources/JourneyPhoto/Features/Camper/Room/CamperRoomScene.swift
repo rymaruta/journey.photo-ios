@@ -309,7 +309,8 @@ final class CamperRoomScene {
         if studio {
             // 図鑑の寄り: 灯りの無い家具も夜に見えるよう、近くに暖色の灯りを 1 つ
             // 家具の斜め前上に置いた電球ほどの灯り（届く距離 50・まわりは暗い）
-            specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, position: CV3(layout.size.x * 0.5 + 14, 44, 30),
+            specs.append(CamperLightSpec(name: "interior.studio", kind: .omni, pattern: .roomLamp,
+                                         position: CV3(layout.size.x * 0.5 + 14, 44, 30),
                                          color: CamperRoomMaterials.lightColor(style.light), intensity: 0.5, range: 90, moods: [.night]))
         }
         // 灯りの並びが同じなら作り直さない（指で動かしている間に毎回作り直さない）
@@ -321,10 +322,8 @@ final class CamperRoomScene {
             l.type = spec.kind == .spot ? .spot : .omni
             l.color = CamperScene.color(spec.color)
             l.intensity = CGFloat(spec.intensity)
-            // 点光源の白い芯を避け、木と布になだらかに回る
-            l.attenuationStartDistance = CGFloat(spec.range * Self.unit * 0.14)
-            l.attenuationEndDistance = CGFloat(spec.range * Self.unit * 1.15)
-            l.attenuationFalloffExponent = 1.2
+            // 型どおり（部屋の家具灯はなだらか・`CamperLightPattern.roomLamp`）
+            spec.applyAttenuation(to: l, unit: Self.unit)
             // 室内の灯りは室内の組だけ
             l.categoryBitMask = CamperScene.insideMask
             if spec.kind == .spot {

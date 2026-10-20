@@ -481,12 +481,11 @@ final class CampSceneCoordinator: NSObject {
             light.type = .omni
             light.color = CampTexturePainter.color(l.color)
             light.intensity = CGFloat(l.intensity * 700)
-            // 芯の直前まで減衰しない帯を少し置き、点光源の白い芯を避ける
-            light.attenuationStartDistance = CGFloat(l.range * 0.18)
-            light.attenuationEndDistance = CGFloat(l.range * 2.4)
-            // 1.15 で距離の二乗に近い落ち方（芝へなだらかに・硬い輪にしない）
-            light.attenuationFalloffExponent = 1.15
-            // 夜の焚き火の広がりは影を落とさない（芯だけが形を読む）
+            // 型ごとに減衰を分ける（芯・広がり・ランタン・テント）
+            let a = l.pattern.attenuation(range: l.range)
+            light.attenuationStartDistance = CGFloat(a.start)
+            light.attenuationEndDistance = CGFloat(a.end)
+            light.attenuationFalloffExponent = CGFloat(a.falloff)
             light.castsShadow = false
             let node = SCNNode()
             node.light = light

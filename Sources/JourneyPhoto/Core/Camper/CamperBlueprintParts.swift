@@ -783,12 +783,12 @@ extension CamperBuilder {
         flameTongue("fire.flame", at: emberAt + CV3(0, 0.6, 0), height: 18, radius: 3.6, category: fc)
         flameTongue("fire.flame", at: emberAt + CV3(2.2, 0.4, 1.4), height: 12.5, radius: 2.6, lean: CV3(0.2, 1, 0.12), category: fc)
         flameTongue("fire.flame", at: emberAt + CV3(-2, 0.4, -1.6), height: 10, radius: 2.2, lean: CV3(-0.18, 1, -0.14), category: fc)
-        // 2026-10-18（run 530）: 700・90 では白く飛んだ。2026-10-19: 硬い円。2026-10-20: 琥珀・弱く広く
-        // （SceneKit は物あたり光 8 までなので広がり灯は足さず、減衰と溜まり絵でなだらかに）
+        // 2026-10-18（run 530）: 700・90 では白く飛んだ。2026-10-19: 光は弱く広く、足元は溜まり絵。
+        // 減衰は SceneKit 側で二乗のまま（なだらか減衰は尾灯を壊した・2026-10-20）
         only([.night]) {
-            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, position: emberAt + CV3(0, 10, 0), color: 0xE07838,
-                                                 intensity: 100, range: 52))
-            $0.add("glow.fire", .mesh($0.glowQuad(width: 110, depth: 110, material: .firePool)), .firePool,
+            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, pattern: .hearth, position: emberAt + CV3(0, 14, 0),
+                                                 color: 0xFF8A42, intensity: 130, range: 42))
+            $0.add("glow.fire", .mesh($0.glowQuad(width: 96, depth: 96, material: .firePool)), .firePool,
                    at: CV3(emberAt.x, 0.5, emberAt.z), group: .glow)
         }
     }
@@ -810,8 +810,8 @@ extension CamperBuilder {
                 prev = p
             }
             only([.night]) {
-                $0.out.lights.append(CamperLightSpec(name: "string", kind: .omni, position: CV3(-40, 60, z + 44), color: 0xFFD27A,
-                                                     intensity: 200, range: 70))
+                $0.out.lights.append(CamperLightSpec(name: "string", kind: .omni, pattern: .lantern, position: CV3(-40, 60, z + 44),
+                                                     color: 0xFFD27A, intensity: 200, range: 70))
             }
         case "paper_lantern":
             let c = CV3(-96, 0, z + 14)
@@ -844,9 +844,9 @@ extension CamperBuilder {
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
             only([.night]) {
                 // ランタンは室内灯より赤み（板 255,190,110 より赤く）。足元は裾のなめらかな溜まり
-                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, position: l + CV3(0, 6, 0), color: 0xD88840,
-                                                     intensity: 70, range: 40))
-                $0.add("glow.lantern", .mesh($0.glowQuad(width: 72, depth: 72, material: .firePool)), .firePool,
+                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, pattern: .lantern, position: l + CV3(0, 6, 0),
+                                                     color: 0xFF9A4A, intensity: 90, range: 34))
+                $0.add("glow.lantern", .mesh($0.glowQuad(width: 64, depth: 64, material: .firePool)), .firePool,
                        at: CV3(c.x + 8, 0.5, c.z), group: .glow)
             }
         }

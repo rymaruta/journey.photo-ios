@@ -217,8 +217,9 @@ final class CamperBlueprintTests: XCTestCase {
                 XCTAssertLessThan(l.spotOuter / 2, 80, "円錐が上を向かない")
             }
         }
-        // 室内 2・前照灯 2・尾灯 1・焚き火 1・外のランタン 1
-        XCTAssertEqual(lights.count, 7)
+        // 室内 2・前照灯 2・焚き火 1・外のランタン 1（尾灯 omni は置かない・2026-10-20）
+        XCTAssertEqual(lights.count, 6)
+        XCTAssertNil(lights.first { $0.name == "taillight" })
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")
     }
 
@@ -321,19 +322,17 @@ final class CamperBlueprintTests: XCTestCase {
                 XCTAssertLessThanOrEqual(o.range, 72, o.name)
             }
         }
-        // 尾灯（2026-10-20 owner 実機: 強すぎて後ろが真っ赤な白い球になった）
-        let tail = build(mood: .night).lights.first { $0.name == "taillight" }
-        XCTAssertNotNil(tail)
-        XCTAssertLessThanOrEqual(tail?.intensity ?? 999, 40)
-        XCTAssertLessThanOrEqual(tail?.range ?? 999, 28)
-        XCTAssertLessThanOrEqual(CamperMaterials.spec(.red, paint: 0, mood: .night).emissionIntensity, 0.6)
+        // 尾灯は空間の omni を置かない（1.1.21 で後ろが真っ赤な白い球・owner）。面の emission と足元の溜まりだけ
+        let night = build(mood: .night)
+        XCTAssertNil(night.lights.first { $0.name == "taillight" }, "尾灯の omni を置かない")
+        XCTAssertLessThanOrEqual(CamperMaterials.spec(.red, paint: 0, mood: .night).emissionIntensity, 0.7)
         XCTAssertLessThanOrEqual(CamperMaterials.spec(.ember, paint: 0, mood: .night).emissionIntensity, 1.0)
-        let pool = build(mood: .night).nodes.first { $0.name == "glow.tail" }
+        let pool = night.nodes.first { $0.name == "glow.tail" }
         XCTAssertNotNil(pool)
         if case .mesh(let m) = pool?.shape {
             let xs = m.positions.map(\.x), zs = m.positions.map(\.z)
-            XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), 40)
-            XCTAssertLessThanOrEqual((zs.max() ?? 0) - (zs.min() ?? 0), 52)
+            XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), 32)
+            XCTAssertLessThanOrEqual((zs.max() ?? 0) - (zs.min() ?? 0), 48)
         } else {
             XCTFail("尾灯の溜まりが網でない")
         }
@@ -468,9 +467,9 @@ final class CamperBlueprintTests: XCTestCase {
         let fire = try? XCTUnwrap(rgb("campfire"))
         let head = try? XCTUnwrap(rgb("headlight"))
         guard let inside, let lantern, let fire, let head else { return XCTFail("灯りが無い") }
-        // 2700K 寄りの琥珀（白飛びしない・2026-10-20）≒ (232, 160, 96)
-        XCTAssertEqual(inside.1, 160.0 / 255, accuracy: 0.03)
-        XCTAssertEqual(inside.2, 96.0 / 255, accuracy: 0.05)
+        // 2700K ≒ (255, 180, 107)
+        XCTAssertEqual(inside.1, 180.0 / 255, accuracy: 0.03)
+        XCTAssertEqual(inside.2, 107.0 / 255, accuracy: 0.05)
         // 外の火は室内灯より赤い（緑と青が少ない）
         XCTAssertLessThan(lantern.1, inside.1)
         XCTAssertLessThan(fire.1, inside.1)

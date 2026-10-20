@@ -103,11 +103,13 @@ struct CamperNodeSpec: Sendable {
     }
 }
 
-/// 灯り（夜）
+/// 灯り（夜）。減衰の当て方は `pattern` で分ける（`CamperLightPattern`）
 struct CamperLightSpec: Sendable, Equatable {
     enum Kind: Sendable { case omni, spot }
     var name: String
     var kind: Kind
+    /// 用途（天井・前照灯・焚き火・ランタン・部屋の家具）。尾灯はここに置かない
+    var pattern: CamperLightPattern
     var position: CV3
     /// spot の向き（板の単位の向き）
     var direction = CV3(0, -1, 0)
@@ -125,7 +127,25 @@ struct CamperLightSpec: Sendable, Equatable {
     var moods: Set<CamperMood>?
 
     /// 室内の灯り（室内の部品だけを照らす。壁の外の縁・扉・屋根の棒に光の筋を乗せない）
-    var inside: Bool { name.hasPrefix("interior.") }
+    var inside: Bool { name.hasPrefix("interior.") || pattern == .ceiling || pattern == .roomLamp }
+
+    init(name: String, kind: Kind, pattern: CamperLightPattern, position: CV3, direction: CV3 = CV3(0, -1, 0),
+         color: UInt32, intensity: Double, range: Double, group: CamperGroup = .body,
+         spotInner: Double = 20, spotOuter: Double = 45, castsShadow: Bool = false, moods: Set<CamperMood>? = nil) {
+        self.name = name
+        self.kind = kind
+        self.pattern = pattern
+        self.position = position
+        self.direction = direction
+        self.color = color
+        self.intensity = intensity
+        self.range = range
+        self.group = group
+        self.spotInner = spotInner
+        self.spotOuter = spotOuter
+        self.castsShadow = castsShadow
+        self.moods = moods
+    }
 }
 
 /// 見る向き（カメラの寄り）
@@ -1308,23 +1328,22 @@ struct CamperBuilder {
     }
 
     private mutating func nightLightsBody() {
-        // 室内灯は 2700K 前後（琥珀寄り・白飛びしない・2026-10-20）
-        let warm: UInt32 = 0xE8A060
+        // 室内灯は 2700K 前後（2026-10-19 owner「夜の発光の仕方ひどい」で作り直し・橙一色にしない）
+        let warm: UInt32 = 0xFFB46B
         // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
         if !van {
             // 室内の灯りは天井から下へ向けた spot で、影を落とす（2026-10-18 Mac の絵 run 533）。
             // omni は影を落とさず上にも光るので、灯りの組を分けた後も屋根の棒・オーニングの箱・縁に橙の筋が残った。
             // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
             // 円錐は広く（全体 156°）: 窓の高さの内壁とカーテンまで届き、窓越しに照らされた室内が透けて見える。
-            // 2026-10-20: 強さを少し落とし、扉の口と窓の白飛びをさらに抑える
-            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 980.0), ("interior.front", CV3(6, roofTop - 12, -10), 560)] {
-                out.lights.append(CamperLightSpec(name: name, kind: .spot, position: p, direction: CV3(0, -1, 0), color: warm,
-                                                  intensity: k, range: 130, spotInner: 110, spotOuter: 158, castsShadow: true))
+            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 1250.0), ("interior.front", CV3(6, roofTop - 12, -10), 720)] {
+                out.lights.append(CamperLightSpec(name: name, kind: .spot, pattern: .ceiling, position: p, direction: CV3(0, -1, 0),
+                                                  color: warm, intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
             }
         } else {
-            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, position: CV3(-40, roofTop - 12, 0),
-                                              direction: CV3(0, -1, 0), color: warm, intensity: 980, range: 130,
-                                              spotInner: 110, spotOuter: 158, castsShadow: true))
+            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, pattern: .ceiling, position: CV3(-40, roofTop - 12, 0),
+                                              direction: CV3(0, -1, 0), color: warm, intensity: 1250, range: 130,
+                                              spotInner: 120, spotOuter: 158, castsShadow: true))
         }
         // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
         for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
@@ -1357,17 +1376,14 @@ struct CamperBuilder {
             at: CV3(((dx.min() ?? 33.5) + (dx.max() ?? 56.5)) / 2, 0.5, BW + 26), group: .doorGlow)
         // 前照灯は白に近い（板 #fff1cf）。地面の光の帯は足す光で柔らかく（板 pools の beam: 前 4〜200・幅 ±40→±110）
         for s in [-1.0, 1.0] {
-            out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, position: B(front + 3, 14, s * 37),
+            out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, pattern: .beam, position: B(front + 3, 14, s * 37),
                                               direction: CV3(1, -0.08, 0), color: 0xFFF4E5, intensity: 900, range: 220,
                                               spotInner: 14, spotOuter: 48))
         }
         add("glow.beam", .mesh(glowQuad(width: 216, depth: 220, material: .beamPool)), .beamPool,
             at: CV3(front + 4 + 108, 0.45, 0), group: .glow)
-        // 尾灯の omni は豆ほど（2026-10-20 owner 実機: 120・46 だと後ろが真っ赤な白い球に飛んだ）
-        out.lights.append(CamperLightSpec(name: "taillight", kind: .omni, position: B(rear - 6, 14, 0), color: 0xC02820,
-                                          intensity: 28, range: 22))
-        // 尾灯の後ろの赤い溜まり（足元だけ・板の楕円より小さく）
-        add("glow.tail", .mesh(glowQuad(width: 34, depth: 48, material: .redPool)), .redPool, at: CV3(rear - 22, 0.45, 0), group: .glow)
+        // 尾灯は CamperLightPattern に載せない（`.markerRed` の溜まり絵＋レンズ emission だけ）
+        add("glow.tail", .mesh(glowQuad(width: 30, depth: 46, material: .redPool)), .redPool, at: CV3(rear - 24, 0.45, 0), group: .glow)
     }
 }
 

@@ -41,12 +41,45 @@ struct CampPiece: Equatable, Sendable {
     var layer: Int? = nil
 }
 
+/// キャンプ場の灯りの型（車と同じく用途で分ける・2026-10-20）
+enum CampLightPattern: String, CaseIterable, Sendable, Equatable {
+    /// 焚き火の芯: 短く暖か
+    case fireKey
+    /// 焚き火の広がり: 長く弱い
+    case fireFill
+    /// ランタン
+    case lantern
+    /// テントの中の灯り
+    case tent
+
+    /// SceneKit の減衰（キャンプ座標の range）
+    func attenuation(range: Double) -> (start: Double, end: Double, falloff: Double) {
+        switch self {
+        case .fireKey:
+            return (range * 0.12, range * 2.0, 1.3)
+        case .fireFill:
+            return (range * 0.2, range * 2.4, 1.15)
+        case .lantern, .tent:
+            return (range * 0.15, range * 2.2, 1.2)
+        }
+    }
+}
+
 /// 光る点（焚き火・ランタン・テントの中の灯り）
 struct CampPointLight: Equatable, Sendable {
     var position: CampVec3
     var color: UInt32
     var intensity: Double
     var range: Double
+    var pattern: CampLightPattern
+
+    init(position: CampVec3, color: UInt32, intensity: Double, range: Double, pattern: CampLightPattern) {
+        self.position = position
+        self.color = color
+        self.intensity = intensity
+        self.range = range
+        self.pattern = pattern
+    }
 }
 
 /// 立てた切り絵（撮った写真を 3 枚に切ったもの）
@@ -379,11 +412,12 @@ enum CampSceneBuilder {
             let light = CampLighting.of(time: o.time, season: o.season)
             // 夜は芯（短く琥珀）＋広がり（長く弱い）の2つ。昼夕は1つ
             scene.lights.append(CampPointLight(position: fire, color: CampLighting.fireColor,
-                                               intensity: light.fireIntensity, range: light.fireRange))
+                                               intensity: light.fireIntensity, range: light.fireRange, pattern: .fireKey))
             if night {
                 // 広がりは少し地面寄り（芝に溜まり、炎の芯と重なって白く飛ばない）
                 scene.lights.append(CampPointLight(position: fire + CampVec3(0, -6, 0), color: CampLighting.fireFillColor,
-                                                   intensity: CampLighting.fireFillIntensity, range: CampLighting.fireFillRange))
+                                                   intensity: CampLighting.fireFillIntensity, range: CampLighting.fireFillRange,
+                                                   pattern: .fireFill))
             }
         }
 
@@ -520,7 +554,8 @@ enum CampSceneBuilder {
                 if night {
                     scene.glows.append((CampVec3(lx + 8, -38, lz), 22, 0.9))
                     scene.lights.append(CampPointLight(position: CampLighting.lanternPosition, color: CampLighting.lanternColor,
-                                                       intensity: CampLighting.lanternIntensity, range: CampLighting.lanternRange))
+                                                       intensity: CampLighting.lanternIntensity, range: CampLighting.lanternRange,
+                                                       pattern: .lantern))
                 }
                 // 薪の山（6 本）
                 for k in 0..<6 {
@@ -673,7 +708,7 @@ enum CampSceneBuilder {
         }
         guard night else { return ([], []) }
         // 天井の灯り（内壁を照らす）と、扉の前にこぼれる光。外への漏れは弱く（橙の板に見えない）
-        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xE8B080, intensity: 0.24, range: 42)],
+        return ([CampPointLight(position: tp(0, -ht + 10, -4), color: 0xE8B080, intensity: 0.24, range: 42, pattern: .tent)],
                 [(tp(0, -10, hl + 6), 26, 0.28), (tp(0, -ht + 10, -4), 16, 0.38)])
     }
 
