@@ -85,7 +85,11 @@ struct CamperRoomView: View {
             recount()
             fillFramesIfNeeded()
         }
-        .task(id: photoIds) { photoImages.load(photoIds, from: photos) }
+        .task(id: photoLoadKey) {
+            // 飾る画面では一覧の写真も先に読む（押してから待つと「載らない」ように見える・#326）
+            let ids = mode == .photos ? hangablePhotoIds + photoIds : photoIds
+            photoImages.load(ids, from: photos)
+        }
         .sheet(isPresented: $showDex) {
             CamperRoomDexView(owned: owned, stats: stats, roomStats: roomStats, paint: paint, initialMood: mood) { showDex = false }
         }
@@ -93,6 +97,10 @@ struct CamperRoomView: View {
     }
 
     private var photoIds: [String] { (editor?.doc.all ?? []).compactMap(\.p) }
+    /// 写真の先読みをやり直す鍵（飾る画面に入った・額の写真が変わった・一覧の件数が変わった）
+    private var photoLoadKey: String {
+        "\(mode.rawValue)|\(photos.count)|\(photoIds.sorted().joined(separator: ","))"
+    }
 
     // MARK: 開く・覚える
 
@@ -229,7 +237,9 @@ struct CamperRoomView: View {
     private func sceneArea(width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
-                                editing: mode == .edit, selected: selected, drag: drag, dragCheck: dragCheck, photoImages: photoImages.images) { marker in
+                                editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
+                                previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
+                                photoImages: photoImages.images) { marker in
                 readyMarker = marker
             }
             .frame(width: width, height: height)
@@ -812,7 +822,14 @@ struct CamperRoomView: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
                         ForEach(mine, id: \.id) { p in
                             let on = p.id == photoPick
-                            Button { photoPick = p.id } label: {
+                            Button {
+                                photoPick = p.id
+                                // 選んだ瞬間に額へ見本を載せる（「この額に飾る」の前に結果が見える）
+                                if let id = framePick, let frame = editor?.doc.item(id) {
+                                    animateCamera = true
+                                    camera = CamperRoomCamera.framing(frame, layout: layout)
+                                }
+                            } label: {
                                 AsyncImage(url: p.gridImageURL) { phase in
                                     switch phase {
                                     case .success(let image): image.resizable().scaledToFill()
@@ -850,6 +867,7 @@ struct CamperRoomView: View {
                     editor = e
                     save()
                     if let updated = e.doc.item(frame) { look(at: updated) }
+                    flash(L("この額に飾りました", "Hung on this frame"))
                 }
                 .disabled(framePick == nil || photoPick == nil)
                 .opacity(framePick == nil || photoPick == nil ? 0.5 : 1)

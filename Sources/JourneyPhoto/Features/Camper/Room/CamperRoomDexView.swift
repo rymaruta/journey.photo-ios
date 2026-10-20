@@ -188,7 +188,8 @@ struct CamperRoomCloseUpView: View {
             if furniture.built {
                 ZStack(alignment: .bottomTrailing) {
                     CamperRoomSceneView(layout: studio.layout, doc: studio.doc, paint: paint, mood: mood, camera: camera, animateCamera: false,
-                                        editing: false, selected: nil, drag: nil, dragCheck: nil, photoImages: [:], studio: true) { readyMarker = $0 }
+                                        editing: false, photosMode: false, focusFrame: nil, previewPhotoId: nil, selected: nil, drag: nil,
+                                        dragCheck: nil, photoImages: [:], studio: true) { readyMarker = $0 }
                         .frame(height: 340)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .gesture(DragGesture(minimumDistance: 2).onChanged { v in

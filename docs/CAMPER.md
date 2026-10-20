@@ -45,6 +45,8 @@
   夜の指向の月は消す（残すと窓から昼の光が差し込む・2026-10-19 owner）。窓の硝子は夜だけ暗い色。額の表は窓とは別の薄い硝子で、飾った写真は光を受けない印画にする（窓の硝子だと夜は膜・昼は白い板になって写真が消える）。bloom なし・emission 1 まで・
   室内の灯りは室内の組（categoryBitMask 2）だけ。素材を SceneKit に写す所は外の車と共に使う（`CamperScenePalette`）。
   窓の外景色の板は窓穴を少し覆う大きさだけ（横 1.2 倍・高さ 1.25 倍・壁の後ろ 8）。巨大な板（高さ 60）だと、後ろの壁向けに回したとき箱庭の外に青い板が浮いて見えた（2026-10-20 #324）。
+  写真を飾る場面では天井の家具（換気窓など）を隠し、選んだ額の前に真鍮の縁を出し、選んだ写真は保存前でも額に見本を載せる（2026-10-20 #326）。
+  飾る画面に入ったら一覧の写真も先に読む。印画の材質は額ごとに専用にし、CGImage で渡す。
 - 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）。
   見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift` は Debug だけ。
 - 手元で形を見る: `CAMPER_ROOM_DUMP=<dir> swift test --filter CamperRoomRenderDump`（家具と部屋を小さな絵に書き出す）。

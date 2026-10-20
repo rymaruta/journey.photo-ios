@@ -46,10 +46,15 @@ struct CamperRoomCamera: Equatable, Sendable {
         let p = placed.position
         let left = item.w == .left
         let yaw = left ? 72.0 : 6.0
-        let target = left ? CV3(min(layout.size.x * 0.45, p.x + 36), p.y, p.z) : CV3(p.x, p.y, min(28, layout.size.z * 0.35))
-        // 額（およそ 20）が読める距離。広い部屋でも部屋全体を映さない
-        let zoom = min(zoomRange.upperBound, max(1.55, baseDistance(layout) / 110))
-        return CamperRoomCamera(yaw: yaw, pitch: 28, zoom: zoom, target: target).clamped()
+        // 額の真ん中（段の下 + 半分）を狙う。天井の換気窓が画面の主役にならないよう、見下ろしを浅くする
+        let midY = p.y + (placed.footprint.y / 2)
+        let target = left
+            ? CV3(min(layout.size.x * 0.45, p.x + 36), midY, p.z)
+            : CV3(p.x, midY, min(22, layout.size.z * 0.28))
+        // 額（およそ 20）が読める距離。広い部屋でも部屋全体を映さない。
+        // pitch は範囲の下限（25）——それ以上見下ろすと天井の換気窓が画面に入る
+        let zoom = min(zoomRange.upperBound, max(1.65, baseDistance(layout) / 100))
+        return CamperRoomCamera(yaw: yaw, pitch: pitchRange.lowerBound, zoom: zoom, target: target).clamped()
     }
 
     /// 部屋の広さから決める、倍率 1 の距離（部屋の対角が画面に収まる）

@@ -20,6 +20,11 @@ struct CamperRoomSceneView: UIViewRepresentable {
     let camera: CamperRoomCamera
     let animateCamera: Bool
     let editing: Bool
+    /// 写真を飾る場面（天井の換気窓などを隠し、選んだ額を光らせる）
+    let photosMode: Bool
+    /// 選んでいる額（写真を飾る場面の強調）と、まだ保存していない見本の写真 id
+    let focusFrame: String?
+    let previewPhotoId: String?
     let selected: String?
     /// 持ち上げて動かしている家具（動かした先）と、置けるか
     let drag: CamperRoomItem?
@@ -44,6 +49,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         #endif
         let c = context.coordinator
         c.studio = studio
+        c.attach(view)
         view.scene = c.scene
         view.pointOfView = c.cameraNode
         c.onReady = { marker in DispatchQueue.main.async { onReady(marker) } }
@@ -51,16 +57,19 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.setMood(mood)
         c.show(layout: layout, doc: doc, paint: paint)
         c.setPhotoImages(photoImages)
+        c.setPhotosMode(photosMode, focus: focusFrame, preview: previewPhotoId)
         c.setEditing(editing)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
         let c = context.coordinator
+        c.attach(view)
         c.show(layout: layout, doc: doc, paint: paint)
         c.setMood(mood)
         c.setCamera(camera, animated: animateCamera)
         c.setPhotoImages(photoImages)
+        c.setPhotosMode(photosMode, focus: focusFrame, preview: previewPhotoId)
         c.setEditing(editing)
         c.setSelected(drag == nil ? selected : nil)
         c.setDrag(drag, check: dragCheck)
@@ -78,7 +87,7 @@ final class CamperRoomPhotoImages: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
     private var inFlight = Set<String>()
 
-    /// 額に入っている写真を読む（読めた・読んでいる最中のものは読まない）
+    /// 額に入れる／選ぶ写真を読む（飾る画面では一覧の分も先に読む。読めた・読んでいる最中のものは読まない）
     func load(_ ids: [String], from photos: [Photo]) {
         for id in Set(ids) where images[id] == nil && !inFlight.contains(id) {
             guard let url = photos.first(where: { $0.id == id })?.gridImageURL else { continue }
