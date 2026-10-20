@@ -539,6 +539,49 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertNotNil(sideCam.project(sidePlaced.position, viewport: viewport, layout: layout))
     }
 
+    /// 外景色の板は窓穴より少し大きいだけ。巨大な板だと箱庭の外に青い「変な写真枠」が浮く（#324）
+    func testWindowExteriorViewFitsTheHole() throws {
+        let bp = CamperRoomBuilder.build(camper, doc: CamperRoomRules.starterDocument(camper))
+        var found = 0
+        for n in bp.shell where n.name.contains("window") {
+            guard case .mesh(let mesh) = n.shape else { continue }
+            var pts: [CV3] = []
+            for group in mesh.groups {
+                guard case .room(.windowView) = group.material else { continue }
+                for i in group.indices {
+                    let idx = Int(i)
+                    guard idx < mesh.positions.count else { continue }
+                    pts.append(mesh.positions[idx])
+                }
+            }
+            guard !pts.isEmpty else { continue }
+            found += 1
+            let xs = pts.map(\.x), ys = pts.map(\.y), zs = pts.map(\.z)
+            let spans = [xs.max()! - xs.min()!, ys.max()! - ys.min()!, zs.max()! - zs.min()!].sorted()
+            // 薄い板の長い 2 辺が窓穴（およそ 26×32）の近傍。昔の高さ 60・横 1.9 倍を戻さない
+            XCTAssertLessThan(spans[2], 45, n.name)
+            XCTAssertLessThan(spans[1], 45, n.name)
+            XCTAssertLessThan(spans[0], 1, n.name)
+        }
+        XCTAssertGreaterThanOrEqual(found, 2)
+    }
+
+    /// 後ろの壁の額は部屋の内（x≥0）に収まる。外に出ると虚空に写真面が浮く
+    func testLeftWallFramesStayInsideTheRoom() throws {
+        let doc = CamperRoomRules.starterDocument(camper)
+        let frames = doc.all.filter { ($0.furniture?.photoSlots ?? 0) > 0 && $0.w == .left }
+        XCTAssertFalse(frames.isEmpty)
+        for item in frames {
+            let placed = try XCTUnwrap(CamperRoomBuilder.place(item), item.k)
+            XCTAssertEqual(placed.yaw, .pi / 2, accuracy: 0.001, item.k)
+            let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(item.k), item.k)
+            let q = CQuat.axisAngle(CV3(0, 1, 0), placed.yaw)
+            let world = mesh.positions.map { placed.position + q.rotate($0) }
+            let minX = try XCTUnwrap(world.map(\.x).min())
+            XCTAssertGreaterThanOrEqual(minX, -0.05, item.k)
+        }
+    }
+
     /// 部屋の組み立て: 壁は 3 層・窓・台所・扉の口・端の壁の高い／低いの組がそろい、夜の灯りは室内の名前で上限まで
     func testRoomBlueprint() {
         let bp = CamperRoomBuilder.build(camper, doc: CamperRoomRules.starterDocument(camper))
