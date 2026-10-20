@@ -115,17 +115,31 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 壁の折り畳み机（壁の桟・倒した天板・折れる腕 2・カップ）
+    /// 壁の折り畳み机（壁の桟とヒンジ・倒した天板の木口・折れる腕 2・カップ）
     static func foldDownTable() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.block(CV3(38, 4, 2), at: CV3(0, 27, -9), radius: 0.4, R(.wood(.birch))))
-        parts.append(K.block(CV3(38, 1.8, 17), at: CV3(0, 28.4, -1.5), radius: 0.6, R(.wornWood(.birch))))
-        for x in [-14.0, 14.0] {
-            parts.append(K.tube([CV3(x, 14, -9.4), CV3(x, 21, -3), CV3(x, 28.2, 4)], radius: 0.5, sides: 8, R(.chrome)))
-            parts.append(K.placed(K.sphere(radius: 0.8, segments: 8, R(.chrome)), at: CV3(x, 21, -3)))
-            parts.append(K.block(CV3(2, 4, 0.6), at: CV3(x, 12, -9.6), radius: 0.2, R(.chrome)))
+        let birch = R(.wood(.birch)), worn = R(.wornWood(.birch)), chrome = R(.chrome)
+        // 壁の桟（ヒンジ穴の金具つき）
+        parts.append(K.block(CV3(38, 4.2, 2.2), at: CV3(0, 27, -9), radius: 0.4, birch))
+        for x in [-16.0, -5.0, 5.0, 16.0] {
+            parts.append(K.block(CV3(1.8, 1.4, 0.7), at: CV3(x, 28.2, -7.9), radius: 0.15, chrome))
         }
-        parts.append(CamperRoomShapes.mug(at: CV3(6, 29.3, 0), body: R(.ceramic(0xC9B79A)), rim: R(.ceramic(0xB09A78)), yaw: 1.2))
+        // 天板（上面・木口の縁）
+        parts.append(K.block(CV3(37.2, 1.5, 16.4), at: CV3(0, 28.5, -1.4), radius: 0.45, worn))
+        parts.append(K.block(CV3(37.6, 0.45, 0.55), at: CV3(0, 28.2, 6.7), radius: 0.12, birch))
+        parts.append(K.block(CV3(37.6, 0.45, 0.55), at: CV3(0, 28.2, -9.4), radius: 0.12, birch))
+        for x in [-18.2, 18.2] {
+            parts.append(K.block(CV3(0.5, 0.45, 16.2), at: CV3(x, 28.2, -1.4), radius: 0.1, birch))
+        }
+        // 折れる腕（継ぎ目の球・壁金具）
+        for x in [-14.0, 14.0] {
+            parts.append(K.block(CV3(2.2, 4.2, 0.7), at: CV3(x, 12, -9.6), radius: 0.2, chrome))
+            parts.append(K.tube([CV3(x, 14, -9.4), CV3(x, 21, -3), CV3(x, 28.2, 4)], radius: 0.48, sides: 8, chrome))
+            parts.append(K.placed(K.sphere(radius: 0.85, segments: 10, chrome), at: CV3(x, 21, -3)))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.65, 0.4), CV2(0, 0.4)], segments: 10, R(.agedBrass)),
+                                  at: CV3(x, 21, -3)))
+        }
+        parts.append(CamperRoomShapes.mug(at: CV3(6, 29.4, 0), body: R(.ceramic(0xC9B79A)), rim: R(.ceramic(0xB09A78)), yaw: 1.2))
         return K.merge(parts)
     }
 
@@ -414,18 +428,33 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// めくる時計（黒い箱・数字の板 2 枚・真ん中の切れ目・台の脚）
+    /// めくる時計（黒い箱・脚・数字の板 2 枚のヒンジ・切れ目・小さなネジ）。壁面より後ろへ出さない
     static func flipClock() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.block(CV3(9, 5.6, 3.6), at: CV3(0, 7, 1.8), radius: 0.8, R(.painted(0x222326))))
-        for x in [-2.1, 2.1] {
-            parts.append(K.block(CV3(3.6, 4.2, 0.4), at: CV3(x, 7.7, 3.6), radius: 0.3, R(.painted(0xEDE8DE))))
-            parts.append(K.block(CV3(3.6, 0.15, 0.2), at: CV3(x, 9.73, 4.0), radius: 0.03, R(.painted(0x222326))))
+        let body = R(.painted(0x222326)), card = R(.painted(0xEDE8DE)), ink = R(.painted(0x1A1A1A))
+        // 台脚（箱の奥行きの半分が壁を突き抜けないよう、中心を前へ）
+        for x in [-3.6, 3.6] {
+            parts.append(K.block(CV3(1.4, 1.2, 3.0), at: CV3(x, 5.8, 1.7), radius: 0.25, R(.iron)))
         }
-        // 数字（「1」と「2」を細い棒で）
-        parts.append(K.block(CV3(0.4, 3, 0.1), at: CV3(-2.1, 8.3, 4.05), radius: 0.05, R(.painted(0x1A1A1A))))
-        for (dx, dy, w, h) in [(0.0, 3.0, 1.6, 0.35), (0.7, 2.0, 0.35, 1.3), (0.0, 1.5, 1.6, 0.35), (-0.7, 0.6, 0.35, 1.3), (0.0, 0.0, 1.6, 0.35)] {
-            parts.append(K.block(CV3(w, h, 0.1), at: CV3(2.1 + dx, 8.3 + dy - h / 2, 4.05), radius: 0.05, R(.painted(0x1A1A1A))))
+        parts.append(K.block(CV3(9.4, 5.8, 3.6), at: CV3(0, 7.0, 2.0), radius: 0.7, body))
+        // 前面の縁
+        parts.append(K.block(CV3(9.0, 0.35, 0.35), at: CV3(0, 12.6, 3.85), radius: 0.08, R(.chrome)))
+        parts.append(K.block(CV3(9.0, 0.35, 0.35), at: CV3(0, 7.2, 3.85), radius: 0.08, R(.chrome)))
+        for x in [-2.15, 2.15] {
+            // 上下のフリップ板
+            parts.append(K.block(CV3(3.7, 2.05, 0.45), at: CV3(x, 10.0, 3.8), radius: 0.2, card))
+            parts.append(K.block(CV3(3.7, 2.05, 0.45), at: CV3(x, 7.85, 3.8), radius: 0.2, card))
+            // ヒンジの軸
+            parts.append(K.tube([CV3(x - 1.7, 9.9, 4.05), CV3(x + 1.7, 9.9, 4.05)], radius: 0.12, sides: 6, R(.chrome)))
+            parts.append(K.block(CV3(3.7, 0.12, 0.25), at: CV3(x, 9.9, 4.1), radius: 0.03, body))
+        }
+        // 「1」「2」
+        parts.append(K.block(CV3(0.4, 2.8, 0.12), at: CV3(-2.15, 8.9, 4.2), radius: 0.05, ink))
+        for (dx, dy, w, h) in [(0.0, 2.6, 1.5, 0.32), (0.65, 1.7, 0.32, 1.2), (0.0, 1.2, 1.5, 0.32), (-0.65, 0.4, 0.32, 1.2), (0.0, -0.1, 1.5, 0.32)] {
+            parts.append(K.block(CV3(w, h, 0.12), at: CV3(2.15 + dx, 8.6 + dy, 4.2), radius: 0.04, ink))
+        }
+        for x in [-4.2, 4.2] {
+            parts.append(K.placed(K.sphere(radius: 0.22, segments: 6, R(.chrome)), at: CV3(x, 9.9, 3.85)))
         }
         return K.merge(parts)
     }
@@ -449,7 +478,7 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 紙の玉（紐に色紙の丸 12 枚）
+    /// 紙の玉（紐に立体の紙の球・ひだと色）
     static func paperGarland() -> CamperMesh {
         var parts: [CamperMesh] = []
         let cord = (0...24).map { k -> CV3 in
@@ -461,9 +490,18 @@ extension CamperRoomFurnitureModels {
         for k in 0..<12 {
             let t = (Double(k) + 0.5) / 12
             let p = CV3(-29 + 58 * t, -1.5 - 6 * sin(t * .pi), 0)
-            let r = 1.6 + Double(k % 3) * 0.3
-            parts.append(K.placed(K.ellipsePanel(rx: r, ry: r, steps: 24, R(.paperColor(colors[k % colors.count]))), at: p + CV3(0, -r - 0.3, 0),
-                                  rotation: CQuat.axisAngle(CV3(0, 1, 0), Double(k) * 0.7)))
+            let r = 1.5 + Double(k % 3) * 0.25
+            let c = R(.paperColor(colors[k % colors.count]))
+            // ひだのある球（緯度帯の薄いリング）。原点に置かず玉の位置へ
+            let center = p + CV3(0, -r - 0.2, 0)
+            parts.append(K.placed(K.sphere(radius: r * 0.85, segments: 12, c), at: center))
+            for band in 0..<4 {
+                let y = -r * 0.55 + Double(band) * (r * 0.35)
+                let rr = r * (0.95 - abs(Double(band) - 1.5) * 0.08)
+                parts.append(K.tube(K.arc(center: .zero, radius: rr, from: 0, to: 2 * .pi, steps: 16)
+                                        .map { center + CV3($0.x, y, $0.y) }, radius: 0.08, sides: 4, closed: true, c))
+            }
+            parts.append(K.placed(K.sphere(radius: 0.25, segments: 6, R(.rope)), at: p + CV3(0, -0.15, 0)))
         }
         return K.merge(parts)
     }
@@ -539,15 +577,22 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 丸い天窓（白い枠・磨いた縁の輪・丸い硝子の覆い）
+    /// 丸い天窓（厚い枠・内縁の真鍮・丸い硝子の覆い・留めネジ）
     static func roundHatch() -> CamperMesh {
         var parts: [CamperMesh] = []
         let down = CQuat.axisAngle(CV3(1, 0, 0), .pi)
-        parts.append(K.placed(K.disc(radius: 9.4, height: 2.2, bevel: 0.5, segments: 36, R(.painted(0xE9E6DF))), at: .zero, rotation: down))
-        parts.append(K.tube(K.arc(center: .zero, radius: 7.6, from: 0, to: 2 * .pi, steps: 36).map { CV3($0.x, -2.3, $0.y) }, radius: 0.5, sides: 8,
+        parts.append(K.placed(K.disc(radius: 9.6, height: 2.4, bevel: 0.55, segments: 40, R(.painted(0xE9E6DF))), at: .zero, rotation: down))
+        parts.append(K.placed(K.disc(radius: 7.8, height: 0.6, bevel: 0.2, segments: 36, R(.painted(0xDAD6CC))), at: CV3(0, -0.3, 0), rotation: down))
+        parts.append(K.tube(K.arc(center: .zero, radius: 7.7, from: 0, to: 2 * .pi, steps: 40).map { CV3($0.x, -2.35, $0.y) }, radius: 0.42, sides: 8,
+                            closed: true, R(.brass)))
+        parts.append(K.tube(K.arc(center: .zero, radius: 8.8, from: 0, to: 2 * .pi, steps: 40).map { CV3($0.x, -0.4, $0.y) }, radius: 0.22, sides: 6,
                             closed: true, R(.chrome)))
-        parts.append(K.placed(K.lathe([CV2(0, -0.6), CV2(5, -0.9), CV2(7.2, -1.8)], segments: 32, R(.glass), capStart: false, capEnd: false),
-                              at: CV3(0, -0.6, 0)))
+        parts.append(K.placed(K.lathe([CV2(0, -0.5), CV2(4.8, -0.7), CV2(7.0, -1.6), CV2(7.3, -2.0)], segments: 36, R(.glass),
+                                      capStart: false, capEnd: false), at: CV3(0, -0.5, 0)))
+        for k in 0..<8 {
+            let a = Double(k) / 8 * 2 * .pi
+            parts.append(K.placed(K.sphere(radius: 0.35, segments: 8, R(.brass)), at: CV3(cos(a) * 8.9, -0.55, sin(a) * 8.9)))
+        }
         return K.merge(parts)
     }
 
