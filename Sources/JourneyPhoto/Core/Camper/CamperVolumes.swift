@@ -45,35 +45,42 @@ enum CamperVolumes {
         return back...bodyFront(stage)
     }
 
-    /// その段で外に足す箱。車の部屋とトレーラーの部屋は含まない
+    /// その段で外に足す箱。車の部屋とトレーラーの部屋は含まない。
+    /// 殻の絵は伸ばさない。住む所の箱だけを大きくし、床のマスも同じだけ増やす。
     static func boxes(_ stage: CamperStage) -> [CamperRoomKind: Box] {
         let bw = bodyHalfWidth(stage)
         let rt = roofTop(stage)
         let rear = bodyRear(stage)
+        // バンは殻が短いので、張り出しは一回り小さくする
+        let sideLen = stage == .van ? 160.0 : 180.0
+        let sideDepth = stage == .van ? 90.0 : 110.0
         let sideNear = -(bw + 6)
-        let sideFar = sideNear - 60
+        let sideFar = sideNear - sideDepth
         let porchNear = bw + 16
+        let porchDepth = stage == .van ? 60.0 : 100.0
+        // キャンピングカーの軒先はオーニングの布（x 32 まで）より前から。バンにオーニングは無い
+        let porchX0 = stage == .van ? 16.0 : 40.0
         var out: [CamperRoomKind: Box] = [
-            // 後ろの張り出し 120×60（扉の反対側）
-            .sideRear: Box(x0: -116, x1: 4, z0: sideNear, z1: sideFar, floorTop: groundFloorY, height: groundHeight),
-            // 前の張り出し 120×60（同じ側・前後は重ねない）
-            .sideFront: Box(x0: 16, x1: 136, z0: sideNear, z1: sideFar, floorTop: groundFloorY, height: groundHeight),
-            // 軒先 120×30（扉の側。オーニングの前で、キャンプの敷物とは左右がずれる）
-            .porch: Box(x0: 40, x1: 160, z0: porchNear, z1: porchNear + 30, floorTop: groundFloorY, height: groundHeight),
+            // 後ろの張り出し（扉の反対側。キャンピングカー 18×11、バン 16×9）
+            .sideRear: Box(x0: 10 - sideLen, x1: 10, z0: sideNear, z1: sideFar, floorTop: groundFloorY, height: groundHeight),
+            // 前の張り出し（同じ側。前後は 16 空ける）
+            .sideFront: Box(x0: 26, x1: 26 + sideLen, z0: sideNear, z1: sideFar, floorTop: groundFloorY, height: groundHeight),
+            // 軒先（扉の側。キャンプの敷物とは左右がずれる。キャンピングカー 14×10、バン 14×6）
+            .porch: Box(x0: porchX0, x1: porchX0 + 140, z0: porchNear, z1: porchNear + porchDepth, floorTop: groundFloorY, height: groundHeight),
         ]
         if stage != .trailer {
-            // 荷物室 100×70（後ろの自転車の台のさらに後ろ）
+            // 荷物室 12×7（自転車の台のさらに後ろ。トレーラーの胴とは出さない）
             let lockFront = rear - 40
-            out[.locker] = Box(x0: lockFront - 100, x1: lockFront, z0: -35, z1: 35, floorTop: groundFloorY, height: groundHeight)
+            out[.locker] = Box(x0: lockFront - 120, x1: lockFront, z0: -35, z1: 35, floorTop: groundFloorY, height: groundHeight)
         }
         if stage == .van {
-            // 積み荷の上をまたぐロフトと、運転席の上
-            out[.loft] = Box(x0: -96, x1: -16, z0: -35, z1: 35, floorTop: rt + 28, height: upperHeight)
-            out[.bunk] = Box(x0: 42, x1: 122, z0: -35, z1: 35, floorTop: rt + 8, height: upperHeight)
+            // 積み荷より高いロフト 12×7 と、アンテナより前の運転席の上 9×7
+            out[.loft] = Box(x0: -110, x1: 10, z0: -35, z1: 35, floorTop: rt + 28, height: upperHeight)
+            out[.bunk] = Box(x0: 48, x1: 138, z0: -35, z1: 35, floorTop: rt + 8, height: upperHeight)
         } else {
-            // 太陽電池の上のロフトと、荷台より前の運転席の上（積み荷の上に脚で載せる）
-            out[.loft] = Box(x0: -118, x1: -38, z0: -35, z1: 35, floorTop: rt + 8, height: upperHeight)
-            out[.bunk] = Box(x0: 50, x1: 130, z0: -35, z1: 35, floorTop: rt + 34, height: upperHeight)
+            // 太陽電池の上のロフト 12×7。運転席の上 12×7 は荷台の先（x 70）から、アンテナの外
+            out[.loft] = Box(x0: -160, x1: -40, z0: -35, z1: 35, floorTop: rt + 8, height: upperHeight)
+            out[.bunk] = Box(x0: 70, x1: 190, z0: -35, z1: 35, floorTop: rt + 8, height: upperHeight)
         }
         return out
     }
