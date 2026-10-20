@@ -533,8 +533,10 @@ struct CamperBuilder {
                                       bands: bands, coarse: coarse, side: { [coarse] _, y in CamperMeshKit.material(at: y, in: coarse) },
                                       back: .inner, reveal: .reveal)
         let x0 = rear
-        // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）
-        let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) }, mirror: true)
+        // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）。
+        // この写しの行列式は +1（向きを保つ）なので mirror しない。mirror: true だと巻きだけが逆になり、
+        // 外から内張りの面が見えて室内灯で後部が真っ白に飛んだ（2026-10-20 owner・実機）
+        let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
         mesh("body.rearWall", placed)
         windowTrim(window, plane: .rear(x0), name: "rear.window")
     }
@@ -653,7 +655,8 @@ struct CamperBuilder {
                 // 表は外（+Z か -Z）。`depth` は表からの深さ（正で外へ出る）
                 return s > 0 ? m.translated(CV3(0, 0, face + depth)) : m.mirroredZ().translated(CV3(0, 0, -(abs(face) + depth)))
             case .rear(let x):
-                return m.mapped({ CV3(x - depth - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) }, mirror: true)
+                // 後壁と同じ写し（行列式 +1）。mirror すると巻きが法線と食い違う
+                return m.mapped({ CV3(x - depth - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
             }
         }
         var all = place(seal, depth: 0.55)
@@ -1374,14 +1377,15 @@ struct CamperBuilder {
         // 扉の前の溜まりは口の幅ほど（run 532: 大きく明るすぎて口のまわりが白く飛んだ）
         add("glow.door", .mesh(glowQuad(width: 40, depth: 56)), .glowPool,
             at: CV3(((dx.min() ?? 33.5) + (dx.max() ?? 56.5)) / 2, 0.5, BW + 26), group: .doorGlow)
-        // 前照灯は白に近い（板 #fff1cf）。地面の光の帯は足す光で柔らかく（板 pools の beam: 前 4〜200・幅 ±40→±110）
+        // 前照灯は白に近い（板 #fff1cf）。円錐は広げて芯を弱く、地面の帯は足す光で柔らかく
+        // （2026-10-20 owner: 硬い白い円錐に見えた → 強さ 900→520・外角 48→62）
         for s in [-1.0, 1.0] {
             out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, pattern: .beam, position: B(front + 3, 14, s * 37),
-                                              direction: CV3(1, -0.08, 0), color: 0xFFF4E5, intensity: 900, range: 220,
-                                              spotInner: 14, spotOuter: 48))
+                                              direction: CV3(1, -0.12, 0), color: 0xFFF4E5, intensity: 520, range: 200,
+                                              spotInner: 18, spotOuter: 62))
         }
-        add("glow.beam", .mesh(glowQuad(width: 216, depth: 220, material: .beamPool)), .beamPool,
-            at: CV3(front + 4 + 108, 0.45, 0), group: .glow)
+        add("glow.beam", .mesh(glowQuad(width: 200, depth: 200, material: .beamPool)), .beamPool,
+            at: CV3(front + 4 + 100, 0.45, 0), group: .glow)
         // 尾灯は CamperLightPattern に載せない（`.markerRed` の溜まり絵＋レンズ emission だけ）
         add("glow.tail", .mesh(glowQuad(width: 30, depth: 46, material: .redPool)), .redPool, at: CV3(rear - 24, 0.45, 0), group: .glow)
     }
