@@ -2,12 +2,12 @@ import Foundation
 
 // とおまわり号の中の家具図鑑（2026-10-19・板「家具図鑑」CamperFurniture が正）。
 //
-// 板の 16 分類・64 個（床 7・壁 5・天井 4 分類。1 分類に 4 つ、どれも形がちがう）に、
-// 形の組み合わせで作る家具（`CamperRoomVariety`。あつ森の 2,076 を超える）を足す。id は「分類.部品」で、アプリの中では
-// 前に `camper.room.` を付ける（外まわりの `table` と名前がぶつからない）。名前・説明・珍しさ・入手の条件は板のまま。
+// 板の 16 分類・64 個に、旅の車らしい別種の分類（音・台所道具・便利・鏡・趣味）を足す（2026-10-20 owner
+// 「椅子などの既存の種類増えただけにしか見えなかったので色んなの作りたい」）。1 分類に 4 つ、どれも形がちがう。
+// 形の組み合わせ（`CamperRoomVariety`。あつ森の 2,076 を超える）は板の 16 分類にだけ足す。id は「分類.部品」。
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
-// - 板の 64 個は全部形を作り込んだ（2026-10-20 owner「全部作り込んで」。`CamperRoomFurnitureModels`〜`Models3`）。
+// - 板の 64 個と新しい分類は全部形を作り込んだ（`CamperRoomFurnitureModels`〜`Models4`）。
 // - 要サーバーの 10 個とキャンプ場が要る掛けたランタンは、形はあるが入手は「近日」のまま数（分母）から外す。
 // - 2026-10-19 判断: 板の「写真に写った物（寺・和室・料理など。端末の画像分類）」は、外まわりの部品の山・海と同じく
 //   撮影地・題・タグの言葉で読む（`CamperRoomStats`）。画像分類の精度は試していない（板の「確かめていない」と同じ）。
@@ -34,19 +34,26 @@ enum CamperRoomPlacement: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// 家具の分類（板の 16 分類）
+/// 家具の分類（板の 16 ＋ 旅の車向けの別種 5）
 enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
-    // 床
+    // 床（板）
     case bed, seating, table, storage, heater
     case roomRug = "room_rug"
     case floorLamp = "floor_lamp"
-    // 壁
+    // 床（別種・2026-10-20）
+    case audio
+    case kitchenGear = "kitchen_gear"
+    case utility
+    // 壁（板）
     case wallShelf = "wall_shelf"
     case photoFrame = "photo_frame"
     case poster
     case wallLamp = "wall_lamp"
     case clock
-    // 天井
+    // 壁（別種）
+    case mirror
+    case hobby
+    // 天井（板）
     case stringCeiling = "string_ceiling"
     case mobile
     case plantHanger = "plant_hanger"
@@ -54,8 +61,8 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
 
     var placement: CamperRoomPlacement {
         switch self {
-        case .bed, .seating, .table, .storage, .heater, .roomRug, .floorLamp: return .floor
-        case .wallShelf, .photoFrame, .poster, .wallLamp, .clock: return .wall
+        case .bed, .seating, .table, .storage, .heater, .roomRug, .floorLamp, .audio, .kitchenGear, .utility: return .floor
+        case .wallShelf, .photoFrame, .poster, .wallLamp, .clock, .mirror, .hobby: return .wall
         case .stringCeiling, .mobile, .plantHanger, .roofHatch: return .ceiling
         }
     }
@@ -69,11 +76,16 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
         case .heater: return L("暖める物", "Heaters")
         case .roomRug: return L("部屋の敷物", "Rugs")
         case .floorLamp: return L("床の灯り", "Floor lamps")
+        case .audio: return L("音", "Audio")
+        case .kitchenGear: return L("台所道具", "Kitchen gear")
+        case .utility: return L("便利な物", "Utilities")
         case .wallShelf: return L("壁の棚", "Wall shelves")
         case .photoFrame: return L("写真の額", "Photo frames")
         case .poster: return L("壁に貼る物", "Posters")
         case .wallLamp: return L("壁の灯り", "Wall lamps")
         case .clock: return L("時計", "Clocks")
+        case .mirror: return L("鏡", "Mirrors")
+        case .hobby: return L("趣味の道具", "Hobby gear")
         case .stringCeiling: return L("天井の飾り", "Ceiling strings")
         case .mobile: return L("モビール", "Mobiles")
         case .plantHanger: return L("吊るす植物", "Hanging plants")
@@ -91,11 +103,16 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
         case .heater: return "flame"
         case .roomRug: return "square.dashed"
         case .floorLamp: return "lamp.floor"
+        case .audio: return "music.note"
+        case .kitchenGear: return "fork.knife"
+        case .utility: return "hanger"
         case .wallShelf: return "books.vertical"
         case .photoFrame: return "photo.on.rectangle"
         case .poster: return "doc.richtext"
         case .wallLamp: return "lightbulb"
         case .clock: return "clock"
+        case .mirror: return "rectangle.portrait"
+        case .hobby: return "camera"
         case .stringCeiling: return "sparkles"
         case .mobile: return "bird"
         case .plantHanger: return "leaf"
@@ -250,9 +267,8 @@ enum CamperRoomCatalog {
     private static func posts(_ n: Int) -> CamperRoomUnlock { .base(.posts(n)) }
     private static func server(_ ja: String, _ en: String) -> CamperRoomUnlock { .base(.server(ja, en)) }
 
-    /// 64 個（板の並び）。大きさ・高さは板の付箋「マス目と寸法」（寝台 8×4・座卓 4×4・ストーブ 2×2・床の灯り 1×1・
-    /// ラグ 6×4・椅子 3×3・本棚 3×1・物入れ 3×2、高さ 寝台 22・座卓 30・ストーブ 88・床の灯り 56）。板に無いものは実物の寸法から
-    /// 板の 64 個。増やした家具は `all` にだけ足す（板の id は変えない）
+    /// 板の 64 個 ＋ 別種 20 個（音・台所道具・便利・鏡・趣味。各 4）。大きさ・高さは板の付箋と実物の寸法から。
+    /// 組み合わせで増やした家具は `all` にだけ足す（板の id は変えない）
     static let board: [CamperRoomFurniture] = [
         // 寝台（bed）
         f(.bed, "platform", "木の寝台", "Wooden platform bed", "低い木枠に布団と枕 2", "A low timber frame, a futon and two pillows",
@@ -398,9 +414,56 @@ enum CamperRoomCatalog {
           .veryRare, .topic(.starry, 20), 2, 2, 4, built: true),
         f(.roofHatch, "stained_glass", "色硝子", "Stained glass", "8 色の扇", "A fan of eight colours",
           .rare, .topic(.church, 1), 2, 2, 4, built: true),
+
+        // —— 別種（2026-10-20）: 椅子の脚違いではなく、用途そのものが違うもの ——
+        // 音（audio）
+        f(.audio, "phonograph", "蓄音機", "Phonograph", "ラッパと回る盤", "A horn and a spinning disc",
+          .common, starter, 3, 2, 42, built: true),
+        f(.audio, "travel_radio", "旅のラジオ", "Travel radio", "革の帯と丸いダイヤル", "A leather strap and a round dial",
+          .occasional, .base(.night(8)), 2, 1, 18, lit: true, built: true),
+        f(.audio, "guitar_stand", "ギタースタンド", "Guitar stand", "木の胴と立て掛ける脚", "A wooden body on a resting stand",
+          .occasional, posts(45), 2, 2, 70, built: true),
+        f(.audio, "cabinet_speaker", "棚のスピーカー", "Cabinet speaker", "布の面と木の箱", "A cloth face on a timber box",
+          .rare, .base(.city(12)), 2, 2, 36, built: true),
+        // 台所道具（kitchen_gear）
+        f(.kitchenGear, "drip_stand", "ドリップスタンド", "Drip stand", "真鍮の腕にガラスの器", "A brass arm and a glass carafe",
+          .common, starter, 2, 2, 34, built: true),
+        f(.kitchenGear, "board_cart", "まな板台", "Board cart", "厚い板と下の引き出し", "A thick board over a drawer",
+          .occasional, .topic(.food, 8), 3, 2, 28, built: true),
+        f(.kitchenGear, "dish_rack", "食器の棚", "Dish rack", "斜めの桟に皿 6", "Six plates on slanted rails",
+          .occasional, posts(55), 3, 2, 32, built: true),
+        f(.kitchenGear, "wine_rack", "ワインラック", "Wine rack", "斜めの穴に瓶 6", "Six bottles in angled holes",
+          .rare, .base(.prefectures(8)), 2, 2, 40, built: true),
+        // 便利な物（utility）
+        f(.utility, "coat_tree", "コート掛け", "Coat tree", "枝の先にフック 6", "Six hooks on branching arms",
+          .common, starter, 2, 2, 72, built: true),
+        f(.utility, "umbrella_stand", "傘立て", "Umbrella stand", "陶器の筒に傘 2", "Two umbrellas in a ceramic tube",
+          .occasional, posts(25), 1, 1, 28, built: true),
+        f(.utility, "step_stool", "踏み台", "Step stool", "2 段と取っ手", "Two steps and a handle",
+          .occasional, posts(35), 2, 2, 22, built: true),
+        f(.utility, "laundry_hamper", "洗濯かご", "Laundry hamper", "籐の籠に蓋", "A wicker basket with a lid",
+          .rare, .base(.samePlace(4)), 2, 2, 30, built: true),
+        // 鏡（mirror）
+        f(.mirror, "full_length", "姿見", "Full-length mirror", "細い木枠の縦長", "A tall slim timber frame",
+          .common, starter, 2, 2, 1.2, built: true),
+        f(.mirror, "round_brass", "丸い真鍮鏡", "Round brass mirror", "真鍮の輪に丸い面", "A round face in a brass ring",
+          .occasional, .base(.early(5)), 1, 1, 1.2, built: true),
+        f(.mirror, "tri_fold", "三面鏡", "Tri-fold mirror", "折れる翼 2 枚", "Two folding side wings",
+          .rare, posts(90), 3, 1, 1.4, built: true),
+        f(.mirror, "shaving", "ひげ剃り鏡", "Shaving mirror", "伸びる腕に丸い鏡", "A round mirror on an extending arm",
+          .rare, .base(.winter(10)), 1, 1, 1.2, built: true),
+        // 趣味の道具（hobby）
+        f(.hobby, "camera_shelf", "カメラ棚", "Camera shelf", "ボディとレンズが並ぶ", "Bodies and lenses in a row",
+          .common, starter, 3, 1, 8, built: true),
+        f(.hobby, "rod_rack", "釣竿掛け", "Rod rack", "竿 3 本を横に", "Three rods across the wall",
+          .occasional, .base(.sea(10)), 3, 1, 6, built: true),
+        f(.hobby, "ski_mount", "スキー板", "Ski mount", "板 2 枚とストック", "Two skis and poles",
+          .rare, .base(.winter(15)), 2, 2, 8, built: true),
+        f(.hobby, "easel", "画架", "Easel", "三脚にキャンバス", "A canvas on a tripod easel",
+          .veryRare, .topic(.church, 2), 2, 2, 10, built: true),
     ]
 
-    /// 板の 64 個と、形の組み合わせで増やした家具
+    /// 板と別種の家具、形の組み合わせで増やした家具
     static let all: [CamperRoomFurniture] = board + CamperRoomVariety.furniture
 
     private static let byId: [String: CamperRoomFurniture] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
@@ -422,7 +485,7 @@ enum CamperRoomCatalog {
     /// 第1段で集められる家具（図鑑の数の分母）
     static var available: [CamperRoomFurniture] { all.filter(\.isAvailable) }
 
-    /// 持っている家具（最初からの 17 と、条件を満たして形のできたもの）
+    /// 持っている家具（最初からの分と、条件を満たして形のできたもの）
     static func owned(_ s: CamperStats, _ r: CamperRoomStats) -> Set<String> {
         Set(all.filter { $0.isAvailable && $0.unlock.isMet(s, r) }.map(\.id))
     }
