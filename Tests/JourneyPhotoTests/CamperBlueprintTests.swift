@@ -409,8 +409,8 @@ final class CamperBlueprintTests: XCTestCase {
         // 表に映り込みが乗る。光るのは室内の灯りに照らされた布（織り目の絵の弱い光）
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
         XCTAssertNil(glass.emission)
-        // 夜は 0.22（奥の明かりを見せる・Mac night3）。昼は板どおり 0.62
-        XCTAssertEqual(glass.opacity, 0.22, accuracy: 0.001)
+        // 夜は 0.32（奥の明かりを見せつつ硝子感を残す・2026-10-20）。昼は板どおり 0.62
+        XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001)
         XCTAssertEqual(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).opacity, 0.62, accuracy: 0.001)
         XCTAssertLessThan(glass.roughness, 0.1)
         XCTAssertGreaterThan(glass.clearCoat, 0)
@@ -571,8 +571,10 @@ final class CamperBlueprintTests: XCTestCase {
         let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
         XCTAssertTrue(spec.additive)
         let c = CamperTextures.rgb(spec.color)
-        // 2026-10-20: 0.95〜1.0 は平らな黄の板に見えたので 0.7〜0.85 に抑える
-        XCTAssertTrue((0.7...0.85).contains(max(c.0, c.1, c.2)), "強さ 0.7〜0.85（平らな板にしない）")
+        // 2026-10-20: 平らな黄の板に見えたので 0.55〜0.7 に抑える
+        XCTAssertTrue((0.55...0.7).contains(max(c.0, c.1, c.2)), "強さ 0.55〜0.7（平らな板にしない）")
+        let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
+        XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001, "硝子が薄すぎると glow が板に見える")
         // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど
         let nb = build(mood: .night)
         let halos = nb.nodes.filter { $0.name.hasPrefix("glow.halo") }

@@ -83,6 +83,24 @@ enum CamperRoomRaster {
                         guard w0 >= -1e-6, w1 >= -1e-6, w2 >= -1e-6 else { continue }
                         let z = w0 * a.z + w1 * b.z + w2 * c.z
                         let i = py * o.width + px
+                        var col = base
+                        if let tex {
+                            let uv = mesh.uvs[ia] * w0 + mesh.uvs[ib] * w1 + mesh.uvs[ic] * w2
+                            let tx = ((Int(floor(uv.x * Double(tex.width))) % tex.width) + tex.width) % tex.width
+                            let ty = ((Int(floor(uv.y * Double(tex.height))) % tex.height) + tex.height) % tex.height
+                            let p = tex.pixel(tx, ty)
+                            col = (col.0 * Double(p.r) / 255, col.1 * Double(p.g) / 255, col.2 * Double(p.b) / 255)
+                        }
+                        if spec.additive {
+                            // 足す光（地面の溜まり・窓のにじみ）。奥行きを書かず・照明も受けない（SceneKit .constant+.add）
+                            let add = max(col.0, max(col.1, col.2))
+                            guard add > 0.004 else { continue }
+                            rgba[i * 4] = min(1, rgba[i * 4] + col.0)
+                            rgba[i * 4 + 1] = min(1, rgba[i * 4 + 1] + col.1)
+                            rgba[i * 4 + 2] = min(1, rgba[i * 4 + 2] + col.2)
+                            rgba[i * 4 + 3] = max(rgba[i * 4 + 3], min(1, add))
+                            continue
+                        }
                         guard z < depth[i] else { continue }
                         depth[i] = z
                         if o.silhouette {
@@ -92,14 +110,6 @@ enum CamperRoomRaster {
                         var n = (viewNormals[ia] * w0 + viewNormals[ib] * w1 + viewNormals[ic] * w2).normalized
                         if n.z < 0, spec.doubleSided { n = -n }
                         let diffuse = max(0, n.dot(viewLight))
-                        var col = base
-                        if let tex {
-                            let uv = mesh.uvs[ia] * w0 + mesh.uvs[ib] * w1 + mesh.uvs[ic] * w2
-                            let tx = ((Int(floor(uv.x * Double(tex.width))) % tex.width) + tex.width) % tex.width
-                            let ty = ((Int(floor(uv.y * Double(tex.height))) % tex.height) + tex.height) % tex.height
-                            let p = tex.pixel(tx, ty)
-                            col = (col.0 * Double(p.r) / 255, col.1 * Double(p.g) / 255, col.2 * Double(p.b) / 255)
-                        }
                         let metal = spec.metalness
                         let ambient = 0.32 + 0.12 * max(0, n.y)
                         var lit = ambient + 0.75 * diffuse * (1 - metal * 0.5)

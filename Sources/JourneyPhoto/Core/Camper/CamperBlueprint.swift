@@ -1384,8 +1384,8 @@ struct CamperBuilder {
                                               direction: CV3(1, -0.12, 0), color: 0xFFF4E5, intensity: 520, range: 200,
                                               spotInner: 18, spotOuter: 62))
         }
-        add("glow.beam", .mesh(glowQuad(width: 200, depth: 200, material: .beamPool)), .beamPool,
-            at: CV3(front + 4 + 100, 0.45, 0), group: .glow)
+        add("glow.beam", .mesh(glowQuad(width: 240, depth: 240, material: .beamPool)), .beamPool,
+            at: CV3(front + 4 + 120, 0.45, 0), group: .glow)
         // 尾灯は CamperLightPattern に載せない（`.markerRed` の溜まり絵＋レンズ emission だけ）
         add("glow.tail", .mesh(glowQuad(width: 30, depth: 46, material: .redPool)), .redPool, at: CV3(rear - 24, 0.45, 0), group: .glow)
     }
