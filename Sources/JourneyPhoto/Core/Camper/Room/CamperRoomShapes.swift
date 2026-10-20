@@ -57,7 +57,8 @@ enum CamperRoomShapes {
     }
 
     /// 額（枠・白いマットと内の切り口・写真・表の硝子・角の金具）。`at` は額の真ん中（壁の面の上）。表は +Z
-    /// 2026-10-20: 一段の押し出しだけだと枠が板に見えるので、外縁の面取り・マットの段・角の留めを足す
+    /// 奥行きの順（壁→手前）: 背板 → マット地 → 台紙 → **写真** → マット縁（穴） → 硝子 → 外枠 → 外縁。
+    /// 写真がマットの押し出しの厚みに沈むと印画が隠れるので、写真はマット縁より手前・硝子より奥に置く（2026-10-20）
     static func frame(outer: CV2, photo: CV2, depth: Double, rim: Double, at c: CV3, frame m: CamperMaterial) -> CamperMesh {
         var parts: [CamperMesh] = []
         let inner = CV2(outer.x - rim * 2, outer.y - rim * 2)
@@ -69,18 +70,20 @@ enum CamperRoomShapes {
         let lipHole = CamperPolygon.cw(K.roundedRect(outer.x - 0.15, outer.y - 0.15, r: 0.5, steps: 3))
         parts.append(K.placed(CamperMeshKit.extrude(lip, holes: [lipHole], depth: 0.35, front: m, side: R(.wornWood(.darkOak)), bevel: 0.2),
                               at: c + CV3(0, 0, depth + 0.35)))
-        // 枠の内の段（写真を押さえる細い縁）とマット
-        parts.append(K.placed(K.panel(width: inner.x + 0.25, height: inner.y + 0.25, R(.mat)), at: c + CV3(0, 0, depth - 0.72)))
-        let matOuter = K.roundedRect(photo.x + 1.4, photo.y + 1.4, r: 0.35, steps: 3)
-        let matHole = CamperPolygon.cw(K.roundedRect(photo.x, photo.y, r: 0.2, steps: 2))
-        parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.35, front: R(.mat), side: R(.paper), bevel: 0.15),
-                              at: c + CV3(0, 0, depth - 0.42)))
-        // 写真の下の薄い台紙（印画の厚み）
-        parts.append(K.placed(K.panel(width: photo.x + 0.15, height: photo.y + 0.15, R(.paper)), at: c + CV3(0, 0, depth - 0.72)))
-        parts.append(K.placed(K.panel(width: photo.x, height: photo.y, CamperRoomFurnitureModels.photoMaterial(0)), at: c + CV3(0, 0, depth - 0.62)))
-        parts.append(K.placed(K.panel(width: inner.x + 0.15, height: inner.y + 0.15, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
-        // 壁に付く背板（隙間から壁が透けない）
+        // 壁に付く背板
         parts.append(K.placed(K.panel(width: outer.x - 0.35, height: outer.y - 0.35, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.06)))
+        // マット地（写真の後ろ。穴なし）
+        parts.append(K.placed(K.panel(width: inner.x + 0.2, height: inner.y + 0.2, R(.mat)), at: c + CV3(0, 0, depth - 0.78)))
+        // 台紙 → 写真（マット縁より手前）
+        parts.append(K.placed(K.panel(width: photo.x + 0.12, height: photo.y + 0.12, R(.paper)), at: c + CV3(0, 0, depth - 0.58)))
+        parts.append(K.placed(K.panel(width: photo.x, height: photo.y, CamperRoomFurnitureModels.photoMaterial(0)), at: c + CV3(0, 0, depth - 0.52)))
+        // マット縁（穴は写真より少し大きく。押し出しの表は写真より手前、裏は写真より奥にしない）
+        let matOuter = K.roundedRect(photo.x + 1.5, photo.y + 1.5, r: 0.35, steps: 3)
+        let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.15, photo.y + 0.15, r: 0.2, steps: 2))
+        parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.22, front: R(.mat), side: R(.paper), bevel: 0.12),
+                              at: c + CV3(0, 0, depth - 0.38)))
+        // 表の硝子（印画の手前・薄い膜）
+        parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
         // 四隅の留め金（真鍮）
         let cx = outer.x / 2 - 0.9, cy = outer.y / 2 - 0.9
         for (dx, dy) in [(-cx, cy), (cx, cy), (-cx, -cy), (cx, -cy)] {

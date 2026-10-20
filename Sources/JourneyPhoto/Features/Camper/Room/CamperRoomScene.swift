@@ -338,26 +338,26 @@ final class CamperRoomScene {
         let it = entry.item
         let w = max(it.footprint.x, 12) * Self.unit
         let h = max(it.footprint.y, 12) * Self.unit
-        // 真鍮の縁（選んでいる額の合図。写真のある画面でも黒地ではないので額の前の印として真鍮）
-        let brassPlane = SCNPlane(width: CGFloat(w + 0.03), height: CGFloat(h + 0.03))
+        // 真鍮の縁だけ（選んでいる額の合図）。全面の板に透明の穴を重ねても奥は透けないので、
+        // 四辺の細い板で枠だけ描く——全面だと飾った写真が真鍮に隠れて見えなかった（2026-10-20 owner）
         let brass = SCNMaterial()
         brass.lightingModel = .constant
-        brass.diffuse.contents = CamperScene.color(0xC9A66B, alpha: 0.9)
+        brass.diffuse.contents = CamperScene.color(0xC9A66B, alpha: 0.95)
         brass.isDoubleSided = true
         brass.writesToDepthBuffer = false
-        brassPlane.materials = [brass]
-        let ring = SCNNode(geometry: brassPlane)
-        // 中を透かす（少し小さい透明の板で深度を書かない）
-        let hole = SCNPlane(width: CGFloat(w - 0.01), height: CGFloat(h - 0.01))
-        let clear = SCNMaterial()
-        clear.lightingModel = .constant
-        clear.diffuse.contents = UIColor.clear
-        clear.writesToDepthBuffer = false
-        hole.materials = [clear]
-        let inner = SCNNode(geometry: hole)
-        inner.position = SCNVector3(0, 0, 0.0006)
-        ring.addChildNode(inner)
-        focusNode.addChildNode(ring)
+        let rimW = 1.4 * Self.unit
+        let outerW = w + 2 * rimW
+        func strip(width: CGFloat, height: CGFloat, x: Float, y: Float) {
+            let plane = SCNPlane(width: width, height: height)
+            plane.materials = [brass]
+            let n = SCNNode(geometry: plane)
+            n.position = SCNVector3(x, y, 0)
+            focusNode.addChildNode(n)
+        }
+        strip(width: CGFloat(outerW), height: CGFloat(rimW), x: 0, y: Float(h / 2 + rimW / 2))
+        strip(width: CGFloat(outerW), height: CGFloat(rimW), x: 0, y: Float(-(h / 2 + rimW / 2)))
+        strip(width: CGFloat(rimW), height: CGFloat(h), x: Float(w / 2 + rimW / 2), y: 0)
+        strip(width: CGFloat(rimW), height: CGFloat(h), x: Float(-(w / 2 + rimW / 2)), y: 0)
         var pos = it.position * Self.unit
         pos.y += (it.footprint.y / 2) * Self.unit
         let lift = 2.2 * Self.unit

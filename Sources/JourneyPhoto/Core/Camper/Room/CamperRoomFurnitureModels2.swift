@@ -299,14 +299,25 @@ extension CamperRoomFurnitureModels {
         for i in 0..<3 {
             let x = -12.6 + Double(i) * 12.6
             let c = CV3(x, 10, 0)
-            parts.append(CamperRoomShapes.frame(outer: CV2(11.6, 13.6), photo: CV2(8.4, 10.2), depth: 1.35, rim: 1.0, at: c,
-                                                frame: R(.painted(0x1C1B1A))))
-            // 写真の UV だけ差し替え（共通の額ヘルパーは slot0 のまま置くので、上に重ねる）
-            var photo = K.panel(width: 8.4, height: 10.2, photoMaterial(0))
-            photo.uvs = photo.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
-            parts.append(K.placed(photo, at: c + CV3(0, 0, 0.78)))
+            // 共通の額は slot0 を1枚置くので、ここでは枠・マット・硝子だけ自前で組み、写真は UV 分割の1面だけ
+            let depth = 1.35, rim = 1.0
+            let outer = CV2(11.6, 13.6), photo = CV2(8.4, 10.2)
+            let inner = CV2(outer.x - rim * 2, outer.y - rim * 2)
+            let ring = K.roundedRect(outer.x, outer.y, r: 0.45, steps: 3)
+            let hole = CamperPolygon.cw(K.roundedRect(inner.x, inner.y, r: 0.3, steps: 2))
+            parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: depth, front: R(.painted(0x1C1B1A)),
+                                                        side: R(.painted(0x1C1B1A)), bevel: 0.3), at: c + CV3(0, 0, depth)))
+            parts.append(K.placed(K.panel(width: outer.x - 0.4, height: outer.y - 0.4, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.06)))
+            parts.append(K.placed(K.panel(width: inner.x + 0.15, height: inner.y + 0.15, R(.mat)), at: c + CV3(0, 0, depth - 0.78)))
+            var panel = K.panel(width: photo.x, height: photo.y, photoMaterial(0))
+            panel.uvs = panel.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
+            parts.append(K.placed(panel, at: c + CV3(0, 0, depth - 0.52)))
+            let matOuter = K.roundedRect(photo.x + 1.4, photo.y + 1.4, r: 0.3, steps: 2)
+            let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.15, photo.y + 0.15, r: 0.15, steps: 2))
+            parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.2, front: R(.mat), side: R(.paper), bevel: 0.1),
+                                  at: c + CV3(0, 0, depth - 0.38)))
+            parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
         }
-        // パネル間の蝶番
         for x in [-6.3, 6.3] {
             for y in [6.0, 14.0] {
                 parts.append(K.block(CV3(1.2, 1.6, 0.7), at: CV3(x, y, 1.6), radius: 0.15, R(.brass)))

@@ -584,6 +584,33 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
+    /// 写真の面はマットより手前・硝子より奥（マットの厚みに沈むと飾っても見えない）
+    func testPhotoPanelSitsBetweenMatAndGlass() throws {
+        for id in ["photo_frame.landscape", "photo_frame.square"] {
+            let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
+            func zs(_ match: (CamperMaterial) -> Bool) -> [Double] {
+                var out: [Double] = []
+                for g in mesh.groups where match(g.material) {
+                    for i in g.indices {
+                        let idx = Int(i)
+                        guard idx < mesh.positions.count else { continue }
+                        out.append(mesh.positions[idx].z)
+                    }
+                }
+                return out
+            }
+            let photoZ = zs { if case .room(.photo) = $0 { return true }; return false }
+            let glassZ = zs { $0 == .room(.frameGlass) }
+            let matZ = zs { $0 == .room(.mat) }
+            XCTAssertFalse(photoZ.isEmpty, id)
+            XCTAssertFalse(glassZ.isEmpty, id)
+            XCTAssertFalse(matZ.isEmpty, id)
+            // 写真の真ん中は、マット地の後ろ側より手前、硝子より奥
+            XCTAssertGreaterThan(photoZ.max()!, matZ.min()! + 0.05, id)
+            XCTAssertLessThan(photoZ.max()!, glassZ.min()!, id)
+        }
+    }
+
     /// 外景色の板は窓穴より少し大きいだけ。巨大な板だと箱庭の外に青い「変な写真枠」が浮く（#324）
     func testWindowExteriorViewFitsTheHole() throws {
         let bp = CamperRoomBuilder.build(camper, doc: CamperRoomRules.starterDocument(camper))
