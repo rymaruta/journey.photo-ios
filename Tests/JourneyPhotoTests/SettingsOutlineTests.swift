@@ -235,10 +235,10 @@ final class SettingsOutlineTests: XCTestCase {
         for name in ["trips.trunk", "trips.albums", "trips.plans", "trips.passBook"] {
             XCTAssertTrue(card.contains(id(name)), "マイページの「\(name)」の行が消えた")
         }
-        // キャンプ場は #339 で外した
-        XCTAssertFalse(card.contains("trips.camp"), "マイページにキャンプ場の行が残っている")
+        // キャンプ場は #339 で外した（`trips.camper` に `trips.camp` が含まれるので識別子は引用ごと見る）
+        XCTAssertFalse(card.contains(#""trips.camp""#), "マイページにキャンプ場の行が残っている")
         XCTAssertFalse(card.contains("CampHomeView"), "マイページにキャンプ場の行き先が残っている")
-        XCTAssertFalse(view.contains("settings.camp"), "設定にキャンプ場の行が残っている")
+        XCTAssertFalse(view.contains(#""settings.camp""#), "設定にキャンプ場の行が残っている")
         XCTAssertFalse(view.contains("CampHomeView"), "設定にキャンプ場の行き先が残っている")
     }
 

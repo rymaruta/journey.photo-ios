@@ -527,7 +527,7 @@ enum SettingsOutline {
                 return ["settings.pro", "settings.supporterCard", "settings.nameSide", "settings.offlineTrips",
                         "settings.lightForecast", "settings.lightAlert"]
             case .tripTools:
-                // キャンプ場（settings.camp）は #339 で外した
+                // キャンプ場の行は #339 で外した
                 return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
                         "settings.albums", "settings.plans"]
             case .notifications: return ["settings.push"]

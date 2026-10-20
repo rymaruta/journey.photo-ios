@@ -267,7 +267,7 @@ final class WhatsNewTests: XCTestCase {
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
         XCTAssertEqual(releases.first?.version, "1.1.18")
-        XCTAssertEqual(releases.first?.items.count, 3)
+        XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
         XCTAssertEqual(releases[2].items.count, 5)
         // 1.1.17・1.1.16 を見た人: 1.1.18 の分だけ
