@@ -22,7 +22,7 @@ extension CamperRoomFurnitureModels {
         case "string_ceiling.bunting": return bunting()
         case "plant_hanger.hanging_basket": return hangingBasket()
         case "plant_hanger.glass_terrarium": return glassTerrarium()
-        default: return nil
+        default: return moreMesh4(id)
         }
     }
 
@@ -32,7 +32,7 @@ extension CamperRoomFurnitureModels {
         case "heater.tile_hearth": return (CV3(0, 14, 6), 0.4, 60)
         case "floor_lamp.paper_column": return (CV3(0, 28, 0), 0.55, 75)
         case "wall_lamp.lantern_hook": return (CV3(0, 6, 5), 0.4, 55)
-        default: return nil
+        default: return moreLamp4(id)
         }
     }
 

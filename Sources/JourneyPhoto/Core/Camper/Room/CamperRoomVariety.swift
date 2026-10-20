@@ -72,6 +72,9 @@ enum CamperRoomVariety {
         case .mobile: raw = mobile(piece)
         case .plantHanger: raw = plant(piece)
         case .roofHatch: raw = hatch(piece)
+        // 別種の分類は組み合わせでは増やさない（一点ものの作り込みだけ）
+        case .audio, .kitchenGear, .utility, .mirror, .hobby:
+            raw = varietyBox(CV3(8, 8, 8), .zero, .room(.wood(.oak)))
         }
         // 軸ごとに位置の違う真鍮の留め。同じ大枠でも輪郭がずれ、色を変えただけでは同じ形にならない
         return varietyFit(varietyMerge([raw, varietyMark(piece)]), piece.furniture)
