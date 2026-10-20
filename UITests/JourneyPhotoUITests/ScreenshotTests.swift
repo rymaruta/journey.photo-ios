@@ -3394,7 +3394,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **置いている途中**（`-JPPreviewCamperRoomLift`・Debug のみ）: 旅の鞄を持ち上げて寝台の上へ動かした途中
-    /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「できた」は 44pt 以上
+    /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「閉じる」は 44pt 以上。升の枠は縦 96pt 以上
     func testCapturesCamperRoomPlacing() {
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLift", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
@@ -3408,7 +3408,11 @@ final class ScreenshotTests: XCTestCase {
         }
         // 「元に戻す」が主ボタンに押しつぶされない（run 568 で幅 0 になった）
         XCTAssertGreaterThanOrEqual(app.buttons["camper.room.undo"].firstMatch.frame.width, 88, "「元に戻す」の幅が狭い")
+        let done = app.buttons["camper.room.done"].firstMatch
+        XCTAssertTrue(done.label.contains("閉じる"), "置くのを終える主ボタンは「閉じる」（今は「\(done.label)」）")
+        let resize = app.descendants(matching: .any)["camper.room.panelResize"].firstMatch
+        XCTAssertTrue(resize.exists, "棚の高さを変える境が無い")
         let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.")).firstMatch
-        if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 44, "棚の家具が 44pt 未満") }
+        if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
     }
 }

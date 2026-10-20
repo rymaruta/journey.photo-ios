@@ -257,6 +257,25 @@ final class CamperRoomTests: XCTestCase {
     }
 
     /// 写真の上限を超える額は置けない
+    /// 置く棚の縦幅の割合は小さくしすぎ・大きくしすぎない（ドラッグで変える境）。端末の控えにも丸めて覚える
+    func testEditPanelFractionIsClamped() {
+        XCTAssertEqual(CamperRoomPanelSplit.clamped(0.1), CamperRoomPanelSplit.minFraction)
+        XCTAssertEqual(CamperRoomPanelSplit.clamped(0.9), CamperRoomPanelSplit.maxFraction)
+        XCTAssertEqual(CamperRoomPanelSplit.clamped(0.5), 0.5)
+        XCTAssertGreaterThan(CamperRoomPanelSplit.defaultFraction, CamperRoomPanelSplit.minFraction)
+        XCTAssertLessThan(CamperRoomPanelSplit.defaultFraction, CamperRoomPanelSplit.maxFraction)
+        let key = "camper.room.editPanelFraction"
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        CamperRoomPanelSplit.save(0.12)
+        XCTAssertEqual(CamperRoomPanelSplit.load(), CamperRoomPanelSplit.minFraction)
+        CamperRoomPanelSplit.save(0.55)
+        XCTAssertEqual(CamperRoomPanelSplit.load(), 0.55)
+    }
+
     func testLimits() {
         let van = CamperRoomLayout.make(.car, stage: .van)
         var doc = CamperRoomDocument(room: .car)
