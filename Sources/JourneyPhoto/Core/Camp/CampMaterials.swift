@@ -35,6 +35,8 @@ struct CampMaterialSpec: Equatable, Sendable {
     var opacity: Double = 1
     /// 貼り絵（`CampTexture`）
     var texture: CampTexture? = nil
+    /// 光る面だけの貼り絵（無いときは `texture`）。夜のテントはむらのある透光図を使う
+    var emissionTexture: CampTexture? = nil
     /// 塗り（clearCoat 0.5 の保冷箱の蓋など）
     var clearCoat: Double = 0
 }
@@ -51,6 +53,8 @@ enum CampTexture: Hashable, Sendable {
     case fly
     /// 扉のある妻壁（ファスナーの点線・縁の濃い線）
     case tentFront
+    /// 夜のテントの透光（内灯のむら・縁は暗い。拡散色には使わず光る面だけ）
+    case tentLit
     case bark
     case grain
     /// 机の上の地図（道の赤い点線・青い線）
@@ -76,30 +80,36 @@ enum CampMaterials {
         case .rock: return CampMaterialSpec(color: 0x6B665E, roughness: 0.85, texture: .rock)
         case .rockDark: return CampMaterialSpec(color: 0x4B4741, roughness: 0.85, texture: .rock)
         case .tentEnd:
-            // 夜は内の灯りが布を透ける弱い光（0.4）。一色の強い emission だと橙の平らな板になる
-            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .weave)
+            // 夜: 拡散は昼の帆布色のまま、光る面だけ tentLit（むらのある透光）。平らな橙にしない
+            return night
+                ? CampMaterialSpec(color: 0xD8C299, roughness: 0.92, emission: 0xE8B878, emissionIntensity: 0.38,
+                                   texture: .weave, emissionTexture: .tentLit)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .weave)
         case .tentEndFront:
-            return night ? CampMaterialSpec(color: 0xD8C299, roughness: 0.9, emission: 0xFFD696, emissionIntensity: 0.4, texture: .tentFront)
+            return night
+                ? CampMaterialSpec(color: 0xD8C299, roughness: 0.92, emission: 0xE8B878, emissionIntensity: 0.42,
+                                   texture: .tentFront, emissionTexture: .tentLit)
                 : CampMaterialSpec(color: 0xD8C299, roughness: 0.9, texture: .tentFront)
         case .fly:
             if night {
-                return CampMaterialSpec(color: 0x9C6A3E, roughness: 0.9, emission: 0xE8A45C, emissionIntensity: 0.35,
-                                        doubleSided: true, texture: .fly)
+                // フライは厚いので妻壁より弱く・棟へ暗い tentLit
+                return CampMaterialSpec(color: 0x9C6A3E, roughness: 0.92, emission: 0xC88848, emissionIntensity: 0.24,
+                                        doubleSided: true, texture: .fly, emissionTexture: .tentLit)
             }
             return CampMaterialSpec(color: winter ? 0xF2F5F8 : 0x9C6A3E, roughness: 0.9, doubleSided: true,
                                     texture: winter ? nil : .fly)
         case .flap:
             return CampMaterialSpec(color: 0xC9B083, roughness: 0.9, doubleSided: true, texture: .weave)
-        case .innerBack: return inside(night ? 0xF7D397 : 0x5A5345, night)
-        case .innerSideA: return inside(night ? 0xEFBF78 : 0x4A4438, night)
-        case .innerSideB: return inside(night ? 0xE3A862 : 0x3C372D, night)
-        case .innerFloor: return inside(night ? 0x5A4A2C : 0x2E3A2E, night)
-        case .bag1: return inside(night ? 0x9A4A30 : 0x6E2F20, night)
-        case .bag1Top: return inside(night ? 0xB9603C : 0x8A3D2A, night)
-        case .bag2: return inside(night ? 0x3F5F84 : 0x26405E, night)
-        case .bag2Top: return inside(night ? 0x577AA2 : 0x33567C, night)
-        case .pillow: return inside(night ? 0xFFF0D6 : 0xD8D0BF, night)
+        // 夜の内幕は扉から覗くときだけ見える。橙に飛ばさず、灯りに照らされた帆布色に寄せる
+        case .innerBack: return inside(night ? 0xC9A070 : 0x5A5345, night)
+        case .innerSideA: return inside(night ? 0xB89058 : 0x4A4438, night)
+        case .innerSideB: return inside(night ? 0xA87848 : 0x3C372D, night)
+        case .innerFloor: return inside(night ? 0x3A3220 : 0x2E3A2E, night)
+        case .bag1: return inside(night ? 0x7A3A28 : 0x6E2F20, night)
+        case .bag1Top: return inside(night ? 0x8A4830 : 0x8A3D2A, night)
+        case .bag2: return inside(night ? 0x2E4A68 : 0x26405E, night)
+        case .bag2Top: return inside(night ? 0x3E5A7A : 0x33567C, night)
+        case .pillow: return inside(night ? 0xE8D8B8 : 0xD8D0BF, night)
         case .quilt1: return inside(mix(night ? 0xB9603C : 0x8A3D2A, 0x000000, 0.28), night)
         case .quilt2: return inside(mix(night ? 0x577AA2 : 0x33567C, 0x000000, 0.28), night)
         case .groundSheet: return CampMaterialSpec(color: 0x2F3D30, roughness: 0.6)
@@ -128,7 +138,8 @@ enum CampMaterials {
         case .enamelRim: return CampMaterialSpec(color: 0x2F4F74, roughness: 0.3)
         case .paperMap: return CampMaterialSpec(color: 0xEFE6CF, roughness: 0.95, texture: .map)
         case .glassLit:
-            return night ? CampMaterialSpec(color: 0xFFD890, roughness: 0.2, emission: 0xFFD890, emissionIntensity: 0.9)
+            // ランタンの硝子: 芯だけ明るく、面全体を白く飛ばさない
+            return night ? CampMaterialSpec(color: 0xE8C080, roughness: 0.25, emission: 0xE8B070, emissionIntensity: 0.52)
                 : CampMaterialSpec(color: 0xE9E4D6, roughness: 0.1, opacity: 0.85)
         case .water: return CampMaterialSpec(color: night ? 0x0E1A2C : 0x2C4A5A, roughness: 0.05, opacity: 0.92)
         case .reed: return CampMaterialSpec(color: autumn && !spring ? 0x9A7A3A : 0x4A6A30, roughness: 0.9, doubleSided: true)

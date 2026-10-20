@@ -120,7 +120,7 @@ final class CamperScene {
         let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        // 夜の月は車体の形が読める強さ（縁に青白いリムが乗る程度・run 538 で車が影絵になった）
+        // 夜の月は車体の形が読める強さ（縁に青白いリム・run 538）。1.1.21 で弱めすぎない
         sunNode.light?.intensity = CGFloat(mood == .night ? 260 : (mood == .snow ? 1000 : 1200))
         sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
@@ -305,9 +305,8 @@ final class CamperScene {
             l.type = light.kind == .spot ? .spot : .omni
             l.color = Self.color(light.color)
             l.intensity = CGFloat(light.intensity)
-            l.attenuationStartDistance = 0
-            l.attenuationEndDistance = CGFloat(light.range * s)
-            l.attenuationFalloffExponent = 2
+            // 型ごとに減衰を分ける（全部なだらかにすると尾灯が壊れる・2026-10-20）
+            light.applyAttenuation(to: l, unit: s)
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
             if light.kind == .spot {
@@ -334,7 +333,7 @@ final class CamperScene {
             }
             car.addChildNode(n)
             moodLights.append((n, light.moods))
-            if light.name == "campfire" || light.name == "lantern" { flickerLights.append((n, light.intensity)) }
+            if light.pattern.flickers { flickerLights.append((n, light.intensity)) }
         }
         // 車体の下の暗がり（板: 楕円・ぼかし・0.75）。床から少し浮かせる
         let len = (bp.length.upperBound - bp.length.lowerBound + 8) * s

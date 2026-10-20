@@ -140,8 +140,9 @@ enum CamperMaterials {
                                       emission: night ? 0xFFB45A : nil, emissionIntensity: night ? 0.9 : 0,
                                       emissionTexture: night ? .lampFace : nil)
         case .red:
-            return CamperMaterialSpec(color: night ? 0x7A1612 : 0x8E1D1A, roughness: 0.1, clearCoat: 1,
-                                      emission: night ? 0xFF3B2E : nil, emissionIntensity: night ? 0.95 : 0,
+            // 尾灯の面だけが光る（空間の omni は置かない・2026-10-20）。芯を飛ばさない強さ
+            return CamperMaterialSpec(color: night ? 0x7A1612 : 0x8E1D1A, roughness: 0.12, clearCoat: 1,
+                                      emission: night ? 0xD03028 : nil, emissionIntensity: night ? 0.62 : 0,
                                       emissionTexture: night ? .tailFace : nil)
         case .amber:
             return CamperMaterialSpec(color: night ? 0x8A5418 : 0xC9772A, roughness: 0.1, clearCoat: 1,
@@ -204,7 +205,8 @@ enum CamperMaterials {
         // 地面の溜まり（足す光）。色の明るさがそのまま足す強さ。板 pools の色と不透明度に寄せる
         case .glowPool: return CamperMaterialSpec(color: 0x5E3E22, texture: .glow, additive: true)
         case .beamPool: return CamperMaterialSpec(color: 0x6E6A5E, texture: .beam, additive: true)
-        case .redPool: return CamperMaterialSpec(color: 0x4A1410, texture: .glow, additive: true)
+        // 尾灯の足元の赤い溜まり（暗め・omni 無しなのでこれだけが地面の赤）
+        case .redPool: return CamperMaterialSpec(color: 0x351008, texture: .glow, additive: true)
         case .firePool: return CamperMaterialSpec(color: 0x6A2A10, texture: .glow, additive: true)
         // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
         case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)

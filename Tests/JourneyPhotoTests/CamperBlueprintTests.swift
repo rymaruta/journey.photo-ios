@@ -217,8 +217,9 @@ final class CamperBlueprintTests: XCTestCase {
                 XCTAssertLessThan(l.spotOuter / 2, 80, "円錐が上を向かない")
             }
         }
-        // 室内 2・前照灯 2・尾灯 1・焚き火 1・外のランタン 1
-        XCTAssertEqual(lights.count, 7)
+        // 室内 2・前照灯 2・焚き火 1・外のランタン 1（尾灯 omni は置かない・2026-10-20）
+        XCTAssertEqual(lights.count, 6)
+        XCTAssertNil(lights.first { $0.name == "taillight" })
         XCTAssertLessThanOrEqual(lights.count + 1, 8, "SceneKit の1つの物に効く光は 8 まで（月を足して）")
     }
 
@@ -316,12 +317,25 @@ final class CamperBlueprintTests: XCTestCase {
             l.picks[cat.rawValue] = key
             let lights = build(mood: .night, loadout: l).lights
             let interior = lights.filter { $0.name.hasPrefix("interior.") }.map(\.intensity).max() ?? 0
-            for o in lights where ["campfire", "lantern", "string"].contains(o.name) {
+            for o in lights where o.name == "campfire" || o.name.hasPrefix("campfire.") || o.name == "lantern" || o.name == "string" {
                 XCTAssertLessThanOrEqual(o.intensity, interior / 4, "\(o.name) が室内の灯りに迫る")
                 XCTAssertLessThanOrEqual(o.range, 72, o.name)
             }
         }
+        // 尾灯は空間の omni を置かない（1.1.21 で後ろが真っ赤な白い球・owner）。面の emission と足元の溜まりだけ
+        let night = build(mood: .night)
+        XCTAssertNil(night.lights.first { $0.name == "taillight" }, "尾灯の omni を置かない")
+        XCTAssertLessThanOrEqual(CamperMaterials.spec(.red, paint: 0, mood: .night).emissionIntensity, 0.7)
         XCTAssertLessThanOrEqual(CamperMaterials.spec(.ember, paint: 0, mood: .night).emissionIntensity, 1.0)
+        let pool = night.nodes.first { $0.name == "glow.tail" }
+        XCTAssertNotNil(pool)
+        if case .mesh(let m) = pool?.shape {
+            let xs = m.positions.map(\.x), zs = m.positions.map(\.z)
+            XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), 32)
+            XCTAssertLessThanOrEqual((zs.max() ?? 0) - (zs.min() ?? 0), 48)
+        } else {
+            XCTFail("尾灯の溜まりが網でない")
+        }
     }
 
     /// 扉の口から見えるもの: 台所（天板・やかん）と吊りランプが口の正面にある

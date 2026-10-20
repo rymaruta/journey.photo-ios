@@ -550,12 +550,12 @@ final class CamperRoomSceneTests: XCTestCase {
         XCTAssertFalse(sun.light?.castsShadow == true)
         // 夜の値は外の車の夜にそろえる（露出 −0.15・周りの光は外より弱く）。環境光は灯りの外が真っ黒にならない程度
         XCTAssertEqual(night.environment, 0.06, accuracy: 0.001)
-        XCTAssertGreaterThan(night.ambient, 0)
-        XCTAssertLessThanOrEqual(night.ambient, 30)
+        XCTAssertEqual(night.ambient, 38, accuracy: 0.5)
         XCTAssertEqual(Double(scene.cameraNode.camera?.exposureOffset ?? 0), -0.15, accuracy: 0.001)
-        // 灯りの落ち方はなだらか（芯の白い丸を避ける）
+        // 灯りの落ち方はなだらか（芯の白い丸を避ける・2026-10-20）
         for n in lamps {
             XCTAssertEqual(Double(n.light?.attenuationFalloffExponent ?? 0), 1.2, accuracy: 0.01)
+            XCTAssertGreaterThan(Double(n.light?.attenuationStartDistance ?? 0), 0)
         }
         scene.setMood(.day)
         XCTAssertEqual(scene.lightingSnapshot.lampsShown, 0)
