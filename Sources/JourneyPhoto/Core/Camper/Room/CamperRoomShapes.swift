@@ -57,37 +57,42 @@ enum CamperRoomShapes {
     }
 
     /// 額（枠・白いマットと内の切り口・写真・表の硝子・角の金具）。`at` は額の真ん中（壁の面の上）。表は +Z
-    /// 奥行きの順（壁→手前）: 背板 → マット地 → 台紙 → **写真** → マット縁（穴） → 硝子 → 外枠 → 外縁。
-    /// 写真がマットの押し出しの厚みに沈むと印画が隠れるので、写真はマット縁より手前・硝子より奥に置く（2026-10-20）
+    /// 奥行きの順（壁→手前）: 背板 → マット地 → 台紙 → マット縁（穴） → **写真** → 硝子 → 外枠（薄い） → 外縁。
+    /// 外枠を `depth` 丸ごと押し出すと深いトンネルになり、斜めから見ると木の壁が印画を覆う。
+    /// 外枠は手前の細いモールディングだけにし、印画はマット縁の表より手前・硝子より奥（2026-10-21）
     static func frame(outer: CV2, photo: CV2, depth: Double, rim: Double, at c: CV3, frame m: CamperMaterial) -> CamperMesh {
         var parts: [CamperMesh] = []
         let inner = CV2(outer.x - rim * 2, outer.y - rim * 2)
+        // 手前の細い外枠（深い押し出しにしない）
+        let mould = min(0.55, max(0.35, depth * 0.32))
         let ring = K.roundedRect(outer.x, outer.y, r: 0.55, steps: 4)
         let hole = CamperPolygon.cw(K.roundedRect(inner.x, inner.y, r: 0.35, steps: 3))
-        parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: depth, front: m, side: m, bevel: 0.45), at: c + CV3(0, 0, depth)))
+        parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: mould, front: m, side: m, bevel: 0.28),
+                              at: c + CV3(0, 0, depth)))
         // 外縁の細い面取り（枠の厚みを読む）
         let lip = K.roundedRect(outer.x + 0.35, outer.y + 0.35, r: 0.6, steps: 4)
         let lipHole = CamperPolygon.cw(K.roundedRect(outer.x - 0.15, outer.y - 0.15, r: 0.5, steps: 3))
-        parts.append(K.placed(CamperMeshKit.extrude(lip, holes: [lipHole], depth: 0.35, front: m, side: R(.wornWood(.darkOak)), bevel: 0.2),
-                              at: c + CV3(0, 0, depth + 0.35)))
+        parts.append(K.placed(CamperMeshKit.extrude(lip, holes: [lipHole], depth: 0.28, front: m, side: R(.wornWood(.darkOak)), bevel: 0.16),
+                              at: c + CV3(0, 0, depth + 0.28)))
         // 壁に付く背板
         parts.append(K.placed(K.panel(width: outer.x - 0.35, height: outer.y - 0.35, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.06)))
         // マット地（写真の後ろ。穴なし）
-        parts.append(K.placed(K.panel(width: inner.x + 0.2, height: inner.y + 0.2, R(.mat)), at: c + CV3(0, 0, depth - 0.78)))
-        // 台紙 → 写真（マット縁より手前）
-        parts.append(K.placed(K.panel(width: photo.x + 0.12, height: photo.y + 0.12, R(.paper)), at: c + CV3(0, 0, depth - 0.58)))
-        parts.append(K.placed(K.panel(width: photo.x, height: photo.y, CamperRoomFurnitureModels.photoMaterial(0)), at: c + CV3(0, 0, depth - 0.52)))
-        // マット縁（穴は写真より少し大きく。押し出しの表は写真より手前、裏は写真より奥にしない）
+        parts.append(K.placed(K.panel(width: inner.x + 0.2, height: inner.y + 0.2, R(.mat)), at: c + CV3(0, 0, depth - 0.85)))
+        // 台紙
+        parts.append(K.placed(K.panel(width: photo.x + 0.12, height: photo.y + 0.12, R(.paper)), at: c + CV3(0, 0, depth - 0.62)))
+        // マット縁（薄い穴あき。表は写真より奥）
         let matOuter = K.roundedRect(photo.x + 1.5, photo.y + 1.5, r: 0.35, steps: 3)
-        let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.15, photo.y + 0.15, r: 0.2, steps: 2))
-        parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.22, front: R(.mat), side: R(.paper), bevel: 0.12),
-                              at: c + CV3(0, 0, depth - 0.38)))
+        let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.2, photo.y + 0.2, r: 0.2, steps: 2))
+        parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.08, front: R(.mat), side: R(.paper), bevel: 0.06),
+                              at: c + CV3(0, 0, depth - 0.48)))
+        // 写真（マット縁の表より手前・硝子より奥）
+        parts.append(K.placed(K.panel(width: photo.x, height: photo.y, CamperRoomFurnitureModels.photoMaterial(0)), at: c + CV3(0, 0, depth - 0.36)))
         // 表の硝子（印画の手前・薄い膜）
         parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
         // 四隅の留め金（真鍮）
         let cx = outer.x / 2 - 0.9, cy = outer.y / 2 - 0.9
         for (dx, dy) in [(-cx, cy), (cx, cy), (-cx, -cy), (cx, -cy)] {
-            parts.append(K.block(CV3(1.1, 1.1, 0.35), at: c + CV3(dx, dy, depth + 0.15), radius: 0.15, R(.brass)))
+            parts.append(K.block(CV3(1.1, 1.1, 0.35), at: c + CV3(dx, dy, depth + 0.12), radius: 0.15, R(.brass)))
         }
         return K.merge(parts)
     }

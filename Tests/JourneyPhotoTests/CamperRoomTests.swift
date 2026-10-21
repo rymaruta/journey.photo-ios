@@ -606,7 +606,7 @@ final class CamperRoomTests: XCTestCase {
 
     /// 写真の面はマットより手前・硝子より奥（マットの厚みに沈むと飾っても見えない）
     func testPhotoPanelSitsBetweenMatAndGlass() throws {
-        var ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval"]
+        var ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych"]
         // variety の額も穴付きの共通額に寄せたので、同じ奥行きの決まりを守る
         if let variety = CamperRoomCatalog.all.first(where: { $0.id.hasPrefix("photo_frame.x") }) {
             ids.append(variety.id)
@@ -630,10 +630,22 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertFalse(photoZ.isEmpty, id)
             XCTAssertFalse(glassZ.isEmpty, id)
             XCTAssertFalse(matZ.isEmpty, id)
-            // 写真の真ん中は、マット地の後ろ側より手前、硝子より奥
-            XCTAssertGreaterThan(photoZ.max()!, matZ.min()! + 0.05, id)
+            // 写真はマット縁の表（mat の最大 Z）より手前。厚みのトンネル内に沈むと斜めから欠ける
+            XCTAssertGreaterThan(photoZ.min()!, matZ.max()! - 0.02, id)
             XCTAssertLessThan(photoZ.max()!, glassZ.min()!, id)
         }
+    }
+
+    /// 縦長の写真を横長の額に載せるときは左右を切る（全面伸ばしにしない）
+    func testPhotoFitCenterCropsWiderImage() {
+        let fit = CamperRoomPhotoFit.uvFit(imageAspect: 1.5, panelAspect: 1.0)
+        XCTAssertEqual(fit.scaleX, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(fit.scaleY, 1, accuracy: 1e-9)
+        XCTAssertEqual(fit.offsetX, (1 - 1 / 1.5) / 2, accuracy: 1e-9)
+        XCTAssertEqual(fit.offsetY, 0, accuracy: 1e-9)
+        let tall = CamperRoomPhotoFit.uvFit(imageAspect: 0.75, panelAspect: 1.5)
+        XCTAssertEqual(tall.scaleX, 1, accuracy: 1e-9)
+        XCTAssertGreaterThan(tall.scaleY, 1)
     }
 
     /// 飾る → place の photos に載る（文書だけ直って場面に渡らない再発を防ぐ）

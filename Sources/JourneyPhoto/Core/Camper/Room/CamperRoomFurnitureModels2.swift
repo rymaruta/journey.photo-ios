@@ -317,19 +317,22 @@ extension CamperRoomFurnitureModels {
             let depth = 1.35, rim = 1.0
             let outer = CV2(11.6, 13.6), photo = CV2(8.4, 10.2)
             let inner = CV2(outer.x - rim * 2, outer.y - rim * 2)
+            // 外枠は薄いモールディングだけ（深いトンネルにしない・共通額と同じ）
+            let mould = min(0.5, max(0.32, depth * 0.32))
             let ring = K.roundedRect(outer.x, outer.y, r: 0.45, steps: 3)
             let hole = CamperPolygon.cw(K.roundedRect(inner.x, inner.y, r: 0.3, steps: 2))
-            parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: depth, front: R(.painted(0x1C1B1A)),
-                                                        side: R(.painted(0x1C1B1A)), bevel: 0.3), at: c + CV3(0, 0, depth)))
+            parts.append(K.placed(CamperMeshKit.extrude(ring, holes: [hole], depth: mould, front: R(.painted(0x1C1B1A)),
+                                                        side: R(.painted(0x1C1B1A)), bevel: 0.22), at: c + CV3(0, 0, depth)))
             parts.append(K.placed(K.panel(width: outer.x - 0.4, height: outer.y - 0.4, R(.painted(0x3A3430))), at: c + CV3(0, 0, 0.06)))
-            parts.append(K.placed(K.panel(width: inner.x + 0.15, height: inner.y + 0.15, R(.mat)), at: c + CV3(0, 0, depth - 0.78)))
+            parts.append(K.placed(K.panel(width: inner.x + 0.15, height: inner.y + 0.15, R(.mat)), at: c + CV3(0, 0, depth - 0.85)))
+            parts.append(K.placed(K.panel(width: photo.x + 0.1, height: photo.y + 0.1, R(.paper)), at: c + CV3(0, 0, depth - 0.62)))
+            let matOuter = K.roundedRect(photo.x + 1.4, photo.y + 1.4, r: 0.3, steps: 2)
+            let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.2, photo.y + 0.2, r: 0.15, steps: 2))
+            parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.08, front: R(.mat), side: R(.paper), bevel: 0.06),
+                                  at: c + CV3(0, 0, depth - 0.48)))
             var panel = K.panel(width: photo.x, height: photo.y, photoMaterial(0))
             panel.uvs = panel.uvs.map { CV2((Double(i) + $0.x) / 3, $0.y) }
-            parts.append(K.placed(panel, at: c + CV3(0, 0, depth - 0.52)))
-            let matOuter = K.roundedRect(photo.x + 1.4, photo.y + 1.4, r: 0.3, steps: 2)
-            let matHole = CamperPolygon.cw(K.roundedRect(photo.x + 0.15, photo.y + 0.15, r: 0.15, steps: 2))
-            parts.append(K.placed(CamperMeshKit.extrude(matOuter, holes: [matHole], depth: 0.2, front: R(.mat), side: R(.paper), bevel: 0.1),
-                                  at: c + CV3(0, 0, depth - 0.38)))
+            parts.append(K.placed(panel, at: c + CV3(0, 0, depth - 0.36)))
             parts.append(K.placed(K.panel(width: inner.x + 0.1, height: inner.y + 0.1, R(.frameGlass)), at: c + CV3(0, 0, depth - 0.22)))
         }
         for x in [-6.3, 6.3] {

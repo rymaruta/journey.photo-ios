@@ -409,6 +409,13 @@ final class CamperRoomScene {
                 m.diffuse.wrapS = .clamp
                 m.diffuse.wrapT = .clamp
                 m.diffuse.mipFilter = .linear
+                // パネル全面に伸ばさず中央で切る（縦長の写真を横長の額に載せても潰れない）
+                let imgW = max(1, image.size.width), imgH = max(1, image.size.height)
+                let panelA = CamperRoomPhotoFit.panelAspect(flatPositions: mesh.positions, indices: group.indices)
+                let fit = CamperRoomPhotoFit.uvFit(imageAspect: imgW / imgH, panelAspect: panelA)
+                let scale = SCNMatrix4MakeScale(Float(fit.scaleX), Float(fit.scaleY), 1)
+                let shift = SCNMatrix4MakeTranslation(Float(fit.offsetX), Float(fit.offsetY), 0)
+                m.diffuse.contentsTransform = SCNMatrix4Mult(scale, shift)
                 // configure が付けた clearCoat / metalness が残ると印画が白い膜に見える
                 m.clearCoat.contents = 0.0
                 m.clearCoatRoughness.contents = 0.0
