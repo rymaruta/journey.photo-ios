@@ -69,28 +69,58 @@ extension CamperRoomFurnitureModels {
     }
 
     /// ギタースタンド（木の胴を立て掛ける脚と支え）
+    /// ギタースタンド（鉄脚・受け・8 の字の胴・サウンドホール・ブリッジ・フレット・糸・ヘッド）
     static func guitarStand() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let oak = R(.wood(.oak))
-        // スタンド脚
+        let oak = R(.wood(.oak)), dark = R(.wood(.darkOak)), iron = R(.iron)
+        let tilt = CQuat.axisAngle(CV3(1, 0, 0), -0.22)
+        // スタンド（A 字脚・底の横棒・首の受け）
         for s in [-1.0, 1.0] {
-            parts.append(K.tube([CV3(s * 6, 0.4, 5), CV3(s * 2, 28, -1), CV3(s * 1.2, 48, -2)], radius: 0.55, sides: 7, R(.iron)))
+            parts.append(K.tube([CV3(s * 7.0, 0.4, 5.5), CV3(s * 2.2, 26, -0.5), CV3(s * 1.4, 50, -1.8)],
+                                radius: 0.5, sides: 8, iron))
+            parts.append(K.tube([CV3(s * 7.0, 0.4, 5.5), CV3(s * 6.5, 0.4, -4.5)], radius: 0.42, sides: 7, iron))
         }
-        parts.append(K.tube([CV3(-6, 0.4, 5), CV3(6, 0.4, 5)], radius: 0.45, sides: 6, R(.iron)))
-        parts.append(K.tube([CV3(-1.5, 48, -2), CV3(1.5, 48, -2)], radius: 0.4, sides: 6, R(.iron)))
-        // ギター胴（寄せ木のような平たいラテ）
-        let body = K.lathe([CV2(0, 0), CV2(5.5, 1), CV2(7.2, 8), CV2(6.8, 16), CV2(5.0, 22), CV2(3.2, 26), CV2(2.4, 28), CV2(0, 28)],
-                           segments: 28, oak)
-        parts.append(K.placed(K.scaled(body, CV3(1, 1, 0.45)), at: CV3(0, 18, 1.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.25)))
-        parts.append(K.placed(K.disc(radius: 2.2, height: 0.4, bevel: 0.1, segments: 16, R(.wood(.darkOak))), at: CV3(0, 30, 2.8),
-                              rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.25)))
-        // ネックとヘッド
-        parts.append(K.placed(K.block(CV3(2.2, 28, 1.4), at: .zero, radius: 0.3, oak), at: CV3(0, 48, 3.5),
-                              rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.2)))
-        parts.append(K.placed(K.block(CV3(4.5, 5, 1.6), at: .zero, radius: 0.4, R(.wornWood(.oak))), at: CV3(0, 64, 4.2),
-                              rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.15)))
-        for x in [-1.4, -0.45, 0.45, 1.4] {
-            parts.append(K.placed(K.sphere(radius: 0.35, segments: 6, R(.brass)), at: CV3(x, 65.5, 5.0)))
+        parts.append(K.tube([CV3(-7.0, 0.4, 5.5), CV3(7.0, 0.4, 5.5)], radius: 0.4, sides: 7, iron))
+        parts.append(K.tube([CV3(-5.5, 0.4, -3.5), CV3(5.5, 0.4, -3.5)], radius: 0.35, sides: 6, iron))
+        // 胴の受け（ゴム）
+        parts.append(K.tube([CV3(-4.5, 20, 2.2), CV3(4.5, 20, 2.2)], radius: 0.55, sides: 8, R(.knit(0x2A2A2C))))
+        parts.append(K.tube([CV3(-1.8, 50, -1.8), CV3(1.8, 50, -1.8)], radius: 0.45, sides: 7, iron))
+        parts.append(K.tube(K.arc(center: CV3(0, 50, -1.0), radius: 2.2, from: .pi * 0.2, to: .pi * 0.8, steps: 10)
+                                .map { CV3($0.x, $0.y, -1.0) }, radius: 0.35, sides: 6, R(.knit(0x2A2A2C))))
+        // 8 の字に近い胴（下ぶくれ＋上ぶくれ）
+        let body = K.lathe([CV2(0, 0), CV2(4.2, 0.6), CV2(7.4, 5), CV2(7.8, 10), CV2(6.6, 14),
+                            CV2(5.2, 17), CV2(6.4, 21), CV2(6.0, 25), CV2(3.6, 28), CV2(2.2, 29.5), CV2(0, 29.5)],
+                           segments: 32, oak)
+        parts.append(K.placed(K.scaled(body, CV3(1, 1, 0.42)), at: CV3(0, 16.5, 1.8), rotation: tilt))
+        // サウンドホールとロゼッタ
+        parts.append(K.placed(K.disc(radius: 2.35, height: 0.35, bevel: 0.1, segments: 20, dark), at: CV3(0, 31.5, 3.1),
+                              rotation: tilt))
+        parts.append(K.tube(K.arc(center: CV3(0, 31.5, 3.2), radius: 2.5, from: 0, to: 2 * .pi, steps: 24),
+                            radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
+        // ブリッジとサドル
+        parts.append(K.placed(K.block(CV3(5.2, 0.7, 1.2), at: .zero, radius: 0.15, dark), at: CV3(0, 24.5, 3.4), rotation: tilt))
+        parts.append(K.placed(K.block(CV3(4.6, 0.25, 0.35), at: .zero, radius: 0.05, R(.ceramic(0xE8E2D4))),
+                              at: CV3(0, 24.9, 3.7), rotation: tilt))
+        // ネック・フレット・ヘッド・糸巻き
+        parts.append(K.placed(K.block(CV3(2.0, 30, 1.3), at: .zero, radius: 0.28, oak), at: CV3(0, 47, 3.8),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.18)))
+        for i in 0..<12 {
+            let y = 36.0 + Double(i) * 2.2
+            parts.append(K.placed(K.block(CV3(1.9, 0.12, 0.2), at: .zero, radius: 0.03, R(.chrome)),
+                                  at: CV3(0, y, 4.35), rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.18)))
+        }
+        parts.append(K.placed(K.block(CV3(4.8, 5.5, 1.5), at: .zero, radius: 0.4, R(.wornWood(.oak))), at: CV3(0, 64.5, 4.5),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.12)))
+        for x in [-1.5, -0.5, 0.5, 1.5] {
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.35, 0), CV2(0.4, 0.8), CV2(0.25, 1.2), CV2(0, 1.2)],
+                                          segments: 8, R(.brass)), at: CV3(x, 66.2, 5.2),
+                                  rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        }
+        // 糸 6
+        for i in 0..<6 {
+            let x = -1.25 + Double(i) * 0.5
+            parts.append(K.tube([CV3(x, 25.0, 3.75), CV3(x * 0.4, 48, 4.5), CV3(x, 65.5, 5.1)],
+                                radius: 0.04, sides: 3, R(.chrome)))
         }
         return K.merge(parts)
     }
@@ -572,24 +602,38 @@ extension CamperRoomFurnitureModels {
     }
 
     /// ひげ剃り鏡（伸びる腕・継ぎ目・両面の丸い鏡）
+    /// ひげ剃り鏡（壁座・ビス・伸びる腕 2・球関節・両面の丸い鏡・つまみ）
     static func shavingMirror() -> CamperMesh {
         var parts: [CamperMesh] = []
+        let brass = R(.brass), chrome = R(.chrome)
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        parts.append(K.placed(K.disc(radius: 2.0, height: 0.6, bevel: 0.18, segments: 18, R(.brass)), at: CV3(0, 12, 0), rotation: toWall))
-        parts.append(K.placed(K.disc(radius: 1.2, height: 0.35, bevel: 0.1, segments: 14, R(.agedBrass)), at: CV3(0, 12, 0.55), rotation: toWall))
-        let j1 = CV3(0, 12, 4.2), j2 = CV3(3.2, 14.2, 8.5)
-        parts.append(K.tube([CV3(0, 12, 0.6), j1], radius: 0.38, sides: 8, R(.brass)))
-        parts.append(K.tube([j1, j2], radius: 0.38, sides: 8, R(.brass)))
-        for j in [j1, j2] {
-            parts.append(K.placed(K.sphere(radius: 0.65, segments: 10, R(.brass)), at: j))
-            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.65, 0.35), CV2(0, 0.35)], segments: 10, R(.chrome)), at: j))
+        parts.append(K.placed(K.disc(radius: 2.2, height: 0.65, bevel: 0.2, segments: 22, brass), at: CV3(0, 11.5, 0), rotation: toWall))
+        parts.append(K.placed(K.disc(radius: 1.35, height: 0.4, bevel: 0.12, segments: 16, R(.agedBrass)),
+                              at: CV3(0, 11.5, 0.6), rotation: toWall))
+        for (dx, dy) in [(-1.1, 1.1), (1.1, 1.1), (-1.1, -1.1), (1.1, -1.1)] {
+            parts.append(K.placed(K.sphere(radius: 0.18, segments: 6, R(.agedBrass)), at: CV3(dx, 11.5 + dy, 0.5)))
         }
-        parts.append(K.placed(K.disc(radius: 3.6, height: 0.8, bevel: 0.25, segments: 28, R(.brass)), at: j2 + CV3(0, 0, 1.3), rotation: toWall))
-        parts.append(K.placed(K.ellipsePanel(rx: 2.9, ry: 2.9, R(.chrome)), at: j2 + CV3(0, 0, 1.75)))
-        // 裏側の少し膨らんだ鏡（両面）
-        parts.append(K.placed(K.ellipsePanel(rx: 2.7, ry: 2.7, R(.chrome)), at: j2 + CV3(0, 0, 0.95)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.45, 0), CV2(0.4, 1.4), CV2(0, 1.4)], segments: 10, R(.brass)),
-                              at: j2 + CV3(0, 3.5, 1.3), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        let j1 = CV3(0, 11.5, 4.0), j2 = CV3(3.0, 13.8, 7.8)
+        parts.append(K.tube([CV3(0, 11.5, 0.7), j1], radius: 0.4, sides: 10, brass))
+        parts.append(K.tube([j1, j2], radius: 0.38, sides: 10, brass))
+        for j in [j1, j2] {
+            parts.append(K.placed(K.sphere(radius: 0.7, segments: 12, brass), at: j))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.75, 0), CV2(0.7, 0.4), CV2(0, 0.4)], segments: 12, chrome), at: j))
+        }
+        // 鏡枠（表の縁・裏の縁）
+        let mirrorAt = j2 + CV3(0, 0, 1.4)
+        parts.append(K.placed(K.disc(radius: 3.8, height: 0.85, bevel: 0.28, segments: 32, brass), at: mirrorAt, rotation: toWall))
+        parts.append(K.tube(K.arc(center: mirrorAt, radius: 3.55, from: 0, to: 2 * .pi, steps: 28)
+                                .map { CV3($0.x, $0.y, mirrorAt.z + 0.2) }, radius: 0.14, sides: 5, closed: true, R(.agedBrass)))
+        parts.append(K.placed(K.ellipsePanel(rx: 3.05, ry: 3.05, chrome), at: mirrorAt + CV3(0, 0, 0.5)))
+        parts.append(K.placed(K.ellipsePanel(rx: 2.85, ry: 2.85, chrome), at: mirrorAt + CV3(0, 0, -0.45)))
+        // 拡大側の印（細い輪）
+        parts.append(K.tube(K.arc(center: mirrorAt + CV3(0, 0, -0.4), radius: 2.5, from: 0, to: 2 * .pi, steps: 22)
+                                .map { CV3($0.x, $0.y, mirrorAt.z - 0.4) }, radius: 0.08, sides: 4, closed: true, R(.agedBrass)))
+        // 上のつまみ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.5, 0), CV2(0.45, 1.6), CV2(0.7, 1.9), CV2(0, 1.9)],
+                                      segments: 12, brass), at: mirrorAt + CV3(0, 3.7, 0),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
         return K.merge(parts)
     }
 

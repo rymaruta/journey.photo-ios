@@ -60,25 +60,53 @@ extension CamperRoomFurnitureModels {
     }
 
     /// サボテン（縦の畝・小さな棘・素焼き鉢）。1×1 マスに収める
+    /// サボテン（釉の鉢・縁・土・縦の畝・腕 3・棘・頂の花）
     static func cactus() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(3.2, 0), CV2(3.6, 1.2), CV2(3.6, 6), CV2(3.2, 7), CV2(0, 7)],
-                                      segments: 18, R(.terracotta)), at: .zero))
-        parts.append(K.placed(K.disc(radius: 2.9, height: 0.3, bevel: 0.08, segments: 14, R(.soil)), at: CV3(0, 6.5, 0)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.8, 0), CV2(2.0, 3), CV2(1.9, 18), CV2(1.5, 22), CV2(0, 22)],
-                                      segments: 16, R(.painted(0x4A7A45))), at: CV3(0, 7, 0)))
-        // 短い腕（マス内）
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.2, 0), CV2(1.3, 5), CV2(1.0, 6), CV2(0, 6)],
-                                      segments: 12, R(.painted(0x4A7A45))), at: CV3(1.6, 14, 0),
-                              rotation: CQuat.axisAngle(CV3(0, 0, 1), -0.85)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.2, 4), CV2(0.9, 5), CV2(0, 5)],
-                                      segments: 12, R(.painted(0x4A7A45))), at: CV3(-1.4, 17, 0.3),
-                              rotation: CQuat.axisAngle(CV3(0, 0, 1), 0.95)))
-        for k in 0..<18 {
-            let a = Double(k) / 18 * 2 * .pi
-            let y = 9.0 + Double(k % 6) * 2.2
-            parts.append(K.placed(K.sphere(radius: 0.15, segments: 5, R(.painted(0xE8E2D4))),
-                                  at: CV3(cos(a) * 1.95, y, sin(a) * 1.95)))
+        let green = R(.painted(0x4A7A45)), pale = R(.painted(0x5E8A58)), clay = R(.terracotta)
+        // 鉢（高台・胴・縁の折り返し）と土
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.4, 0), CV2(2.6, 0.5), CV2(2.2, 1.2), CV2(0, 1.2)],
+                                      segments: 22, clay), at: .zero))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(3.4, 0), CV2(4.0, 1.4), CV2(4.1, 5.2), CV2(3.6, 6.4),
+                                       CV2(3.9, 6.9), CV2(3.5, 7.4), CV2(0, 7.4)],
+                                      segments: 26, clay), at: CV3(0, 1.0, 0)))
+        parts.append(K.tube(K.arc(center: .zero, radius: 3.75, from: 0, to: 2 * .pi, steps: 28)
+                                .map { CV3($0.x, 7.9, $0.y) }, radius: 0.18, sides: 5, closed: true, R(.ceramic(0xB8925E))))
+        parts.append(K.placed(K.disc(radius: 3.2, height: 0.45, bevel: 0.12, segments: 20, R(.soil)), at: CV3(0, 7.5, 0)))
+        // 主幹（畝の縦筋）と腕
+        func column(at p: CV3, h: Double, r: Double, segs: Int = 18) {
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(r * 0.92, 0), CV2(r, h * 0.12), CV2(r * 0.98, h * 0.85),
+                                           CV2(r * 0.7, h), CV2(0, h)], segments: segs, green), at: p))
+            for k in 0..<8 {
+                let a = Double(k) / 8 * 2 * .pi
+                parts.append(K.tube([p + CV3(cos(a) * r * 0.88, 0.4, sin(a) * r * 0.88),
+                                     p + CV3(cos(a) * r * 0.92, h * 0.9, sin(a) * r * 0.92)],
+                                    radius: 0.12, sides: 4, pale))
+            }
+        }
+        column(at: CV3(0, 7.8, 0), h: 24, r: 2.05)
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.35, 0), CV2(1.45, 5.5), CV2(1.1, 7.2), CV2(0, 7.2)],
+                                      segments: 14, green), at: CV3(1.85, 16.5, 0.2),
+                              rotation: CQuat.axisAngle(CV3(0, 0, 1), -0.95)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.2, 0), CV2(1.3, 4.8), CV2(0.95, 6.2), CV2(0, 6.2)],
+                                      segments: 14, green), at: CV3(-1.7, 20.0, 0.4),
+                              rotation: CQuat.axisAngle(CV3(0, 0, 1), 1.05)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.05, 0), CV2(1.1, 3.6), CV2(0.8, 4.6), CV2(0, 4.6)],
+                                      segments: 12, green), at: CV3(0.4, 24.5, -1.5),
+                              rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.55)))
+        // 棘（白い点）と頂の小さな花
+        for k in 0..<48 {
+            let a = Double(k) / 48 * 2 * .pi
+            let y = 9.5 + Double(k % 10) * 2.15
+            let rr = 2.15 + Double(k % 3) * 0.05
+            parts.append(K.placed(K.sphere(radius: 0.12, segments: 5, R(.painted(0xE8E2D4))),
+                                  at: CV3(cos(a) * rr, y, sin(a) * rr)))
+        }
+        parts.append(K.placed(K.sphere(radius: 0.55, segments: 10, R(.painted(0xC9584A))), at: CV3(0, 32.4, 0)))
+        for k in 0..<5 {
+            let a = Double(k) / 5 * 2 * .pi
+            parts.append(K.placed(K.scaled(K.sphere(radius: 0.35, segments: 8, R(.painted(0xE8A0A8))), CV3(1.2, 0.45, 0.7)),
+                                  at: CV3(cos(a) * 0.55, 32.7, sin(a) * 0.55)))
         }
         return K.merge(parts)
     }
@@ -196,23 +224,42 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 帽子箱（丸い蓋・リボン・中の麦わら）
+    /// 帽子箱（紙の胴・蓋の縁・リボンの結び・札・麦わらのつば）
     static func hatBox() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let paper = R(.painted(0xE8E0D0)), ribbon = R(.painted(0xC9584A))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(8, 0), CV2(8.2, 1), CV2(8.2, 12), CV2(8.0, 13), CV2(0, 13)],
-                                      segments: 28, paper), at: .zero))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(8.6, 0), CV2(8.8, 0.8), CV2(8.6, 2.2), CV2(0, 2.2)],
-                                      segments: 28, paper), at: CV3(0, 13, 0)))
-        let band = K.arc(center: .zero, radius: 8.15, from: 0, to: 2 * .pi, steps: 32).map { CV3($0.x, 7, $0.y) }
-        parts.append(K.tube(band, radius: 0.35, sides: 6, closed: true, ribbon))
-        parts.append(K.block(CV3(3.5, 0.5, 6), at: CV3(8.8, 7, 0), radius: 0.15, ribbon))
-        parts.append(K.block(CV3(3.5, 0.5, 6), at: CV3(-8.8, 7, 0), radius: 0.15, ribbon))
-        // 中の帽子のつば（蓋の下に少し見える想定で上に）
-        parts.append(K.placed(K.disc(radius: 6.5, height: 0.4, bevel: 0.1, segments: 20, R(.canvas(0xD9C27A))),
-                              at: CV3(0, 14.5, 0)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(3.2, 0), CV2(3.4, 2.5), CV2(0, 2.5)], segments: 16, R(.canvas(0xD9C27A))),
-                              at: CV3(0, 14.7, 0)))
+        let paper = R(.painted(0xE8E0D0)), ribbon = R(.painted(0xC9584A)), straw = R(.canvas(0xD9C27A))
+        // 胴（底の面取り・縦の継ぎ）
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(7.6, 0), CV2(8.15, 0.8), CV2(8.25, 11.2), CV2(8.0, 12.4), CV2(0, 12.4)],
+                                      segments: 32, paper), at: .zero))
+        for k in 0..<6 {
+            let a = Double(k) / 6 * 2 * .pi
+            parts.append(K.tube([CV3(cos(a) * 8.2, 1.2, sin(a) * 8.2), CV3(cos(a) * 8.2, 11.5, sin(a) * 8.2)],
+                                radius: 0.06, sides: 4, R(.painted(0xD8D0C0))))
+        }
+        // 蓋（縁がはみ出す・つまみ）
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(8.7, 0), CV2(8.95, 0.55), CV2(8.8, 2.0), CV2(7.6, 2.5), CV2(0, 2.5)],
+                                      segments: 32, paper), at: CV3(0, 12.3, 0)))
+        parts.append(K.placed(K.disc(radius: 1.1, height: 0.55, bevel: 0.15, segments: 14, R(.painted(0xD4C8B0))),
+                              at: CV3(0, 14.85, 0)))
+        // リボン帯と結び
+        parts.append(K.tube(K.arc(center: .zero, radius: 8.2, from: 0, to: 2 * .pi, steps: 36)
+                                .map { CV3($0.x, 6.8, $0.y) }, radius: 0.42, sides: 7, closed: true, ribbon))
+        parts.append(K.placed(K.roundedBox(CV3(2.8, 1.6, 1.1), radius: 0.35, segments: 2, puff: 0.2, ribbon),
+                              at: CV3(8.4, 6.8, 0)))
+        for s in [-1.0, 1.0] {
+            parts.append(K.placed(K.roundedBox(CV3(3.6, 0.55, 2.4), radius: 0.2, segments: 1, puff: 0.15, ribbon),
+                                  at: CV3(9.6, 6.8 + s * 1.1, s * 0.9),
+                                  rotation: CQuat.axisAngle(CV3(0, 0, 1), s * 0.35)))
+        }
+        // 紙の札
+        parts.append(K.placed(K.panel(width: 3.6, height: 2.0, R(.paper)), at: CV3(0, 9.5, 8.35)))
+        parts.append(K.block(CV3(2.4, 0.25, 0.12), at: CV3(0, 9.7, 8.45), radius: 0.05, R(.painted(0x5E3A24))))
+        // 麦わら帽子（つば・クラウン・帯）
+        parts.append(K.placed(K.disc(radius: 7.0, height: 0.45, bevel: 0.12, segments: 28, straw), at: CV3(0, 15.0, 0)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(3.4, 0), CV2(3.7, 1.2), CV2(3.5, 3.4), CV2(2.8, 4.0), CV2(0, 4.0)],
+                                      segments: 22, straw), at: CV3(0, 15.2, 0)))
+        parts.append(K.tube(K.arc(center: .zero, radius: 3.55, from: 0, to: 2 * .pi, steps: 24)
+                                .map { CV3($0.x, 16.4, $0.y) }, radius: 0.2, sides: 5, closed: true, ribbon))
         return K.merge(parts)
     }
 
@@ -324,51 +371,83 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 果物鉢（高台つき陶器・縁の釉・りんご・オレンジ・バナナ・葉）
+    /// 果物鉢（高台つき陶器・内側の釉・りんご 2・オレンジ・バナナ・ぶどう）
     static func fruitBowl() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let china = R(.ceramic(0xE8E2D6)), glaze = R(.ceramic(0xC9A66B))
-        // 高台と深い鉢
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.2, 0), CV2(2.4, 0.4), CV2(2.0, 1.4), CV2(0, 1.4)], segments: 18, china), at: .zero))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.8, 0), CV2(5.8, 1.6), CV2(7.6, 5.2), CV2(7.4, 7.2), CV2(6.6, 7.8), CV2(0, 7.8)],
-                                      segments: 28, china, capStart: true, capEnd: false), at: CV3(0, 1.4, 0)))
-        parts.append(K.tube(K.arc(center: .zero, radius: 6.9, from: 0, to: 2 * .pi, steps: 28).map { CV3($0.x, 8.9, $0.y) },
-                            radius: 0.22, sides: 5, closed: true, glaze))
-        // りんご 2（茎つき）
-        for (p, c) in [(CV3(-1.5, 10.2, 1.2), 0xC9584A as UInt32), (CV3(2.8, 10.0, 0.8), 0xA8322A)] {
-            parts.append(K.placed(K.sphere(radius: 2.15, segments: 14, R(.painted(c))), at: p))
-            parts.append(K.tube([p + CV3(0, 2.0, 0), p + CV3(0.15, 2.9, 0)], radius: 0.1, sides: 4, R(.wood(.darkOak))))
-            parts.append(CamperRoomShapes.leaf(at: p + CV3(0.5, 2.7, 0.2), toward: CV3(1, 0.3, 0.2), size: 1.1))
+        let china = R(.ceramic(0xE8E2D6)), glaze = R(.ceramic(0xC9A66B)), inner = R(.ceramic(0xF2E8D4))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.4, 0), CV2(2.6, 0.45), CV2(2.1, 1.6), CV2(0, 1.6)],
+                                      segments: 22, china), at: .zero))
+        parts.append(K.placed(K.vessel(outer: [CV2(0, 0), CV2(3.0, 0), CV2(6.0, 1.8), CV2(7.8, 5.4), CV2(7.5, 7.4),
+                                               CV2(6.6, 8.1), CV2(0, 8.1)],
+                                       inner: [CV2(0, 0.5), CV2(2.6, 0.5), CV2(5.4, 2.0), CV2(7.0, 5.2), CV2(6.8, 7.0),
+                                               CV2(0, 7.0)],
+                                       segments: 30, china, innerMaterial: inner), at: CV3(0, 1.5, 0)))
+        parts.append(K.tube(K.arc(center: .zero, radius: 7.0, from: 0, to: 2 * .pi, steps: 32)
+                                .map { CV3($0.x, 9.4, $0.y) }, radius: 0.28, sides: 6, closed: true, glaze))
+        // りんご 2
+        for (p, c) in [(CV3(-1.6, 10.6, 1.4), 0xC9584A as UInt32), (CV3(2.6, 10.4, 1.0), 0xA8322A)] {
+            parts.append(K.placed(K.scaled(K.sphere(radius: 2.1, segments: 16, R(.painted(c))), CV3(1.05, 0.92, 1.0)), at: p))
+            parts.append(K.tube([p + CV3(0, 1.85, 0), p + CV3(0.2, 2.85, 0)], radius: 0.1, sides: 4, R(.wood(.darkOak))))
+            parts.append(CamperRoomShapes.leaf(at: p + CV3(0.55, 2.65, 0.15), toward: CV3(1, 0.25, 0.15), size: 1.15))
         }
-        // オレンジ
-        parts.append(K.placed(K.sphere(radius: 1.85, segments: 14, R(.painted(0xD9A441))), at: CV3(-2.5, 9.8, -2.2)))
-        parts.append(K.placed(K.sphere(radius: 0.25, segments: 6, R(.painted(0x5E3A24))), at: CV3(-2.5, 11.5, -2.2)))
-        // バナナ（曲がった筒）
-        let banana = (0...8).map { k -> CV3 in
-            let t = Double(k) / 8
-            return CV3(3.5 + t * 0.2, 9.2 + sin(t * .pi) * 1.4, -1.5 + t * 3.5)
+        // オレンジ（筋の印）
+        let orange = CV3(-2.4, 10.2, -2.3)
+        parts.append(K.placed(K.sphere(radius: 1.9, segments: 16, R(.painted(0xD9A441))), at: orange))
+        for k in 0..<6 {
+            let a = Double(k) / 6 * 2 * .pi
+            parts.append(K.tube([orange + CV3(cos(a) * 0.3, 1.7, sin(a) * 0.3),
+                                 orange + CV3(cos(a) * 1.7, 0.2, sin(a) * 1.7)],
+                                radius: 0.05, sides: 3, R(.painted(0xC48A28))))
         }
-        parts.append(K.tube(banana, radius: 0.7, sides: 8, R(.painted(0xE8D44A))))
-        parts.append(K.placed(K.sphere(radius: 0.35, segments: 6, R(.painted(0x5E3A24))), at: banana[0]))
-        parts.append(CamperRoomShapes.leaf(at: CV3(0.5, 12.5, -0.5), toward: CV3(0.5, 0.8, -0.3), size: 1.6))
+        parts.append(K.placed(K.sphere(radius: 0.22, segments: 6, R(.painted(0x5E3A24))), at: orange + CV3(0, 1.85, 0)))
+        // バナナ 2 本
+        for (ox, oz, sx) in [(3.2, -1.4, 0.15), (4.0, 0.4, -0.2)] as [(Double, Double, Double)] {
+            let banana = (0...10).map { k -> CV3 in
+                let t = Double(k) / 10
+                return CV3(ox + t * sx, 9.4 + sin(t * .pi) * 1.55, oz + t * 3.3)
+            }
+            parts.append(K.tube(banana, radius: 0.65, sides: 9, R(.painted(0xE8D44A))))
+            parts.append(K.placed(K.sphere(radius: 0.32, segments: 6, R(.painted(0x5E3A24))), at: banana[0]))
+        }
+        // ぶどう（粒の房）
+        let grapeRoot = CV3(0.8, 11.2, -2.0)
+        for k in 0..<14 {
+            let row = k / 4, col = k % 4
+            parts.append(K.placed(K.sphere(radius: 0.55, segments: 8, R(.painted(0x6A4A8C))),
+                                  at: grapeRoot + CV3(Double(col) * 0.7 - 1.0, -Double(row) * 0.65, Double(row) * 0.15)))
+        }
+        parts.append(CamperRoomShapes.leaf(at: CV3(0.2, 12.8, -0.4), toward: CV3(0.4, 0.7, -0.2), size: 1.7))
         return K.merge(parts)
     }
 
     // MARK: 洗う物（壁）
 
-    /// タオル掛け（壁金具・クロムの棒・掛かったタオル）
+    /// タオル掛け（壁座・ビス・クロムの棒・端の飾り・掛かったタオル 2）
     static func towelBar() -> CamperMesh {
         var parts: [CamperMesh] = []
-        for x in [-8.0, 8.0] {
-            parts.append(K.block(CV3(1.6, 1.6, 2.6), at: CV3(x, 10, 1.3), radius: 0.3, R(.chrome)))
-            parts.append(K.placed(K.disc(radius: 0.85, height: 0.35, bevel: 0.1, segments: 12, R(.chrome)),
-                                  at: CV3(x, 10, 0.15), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        let chrome = R(.chrome), toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
+        for x in [-9.0, 9.0] {
+            parts.append(K.placed(K.disc(radius: 1.15, height: 0.4, bevel: 0.12, segments: 16, chrome),
+                                  at: CV3(x, 12, 0.15), rotation: toWall))
+            for (dx, dy) in [(-0.55, 0.55), (0.55, 0.55), (-0.55, -0.55), (0.55, -0.55)] {
+                parts.append(K.placed(K.sphere(radius: 0.14, segments: 6, R(.agedBrass)), at: CV3(x + dx, 12 + dy, 0.4)))
+            }
+            parts.append(K.block(CV3(1.5, 1.5, 2.8), at: CV3(x, 12, 1.5), radius: 0.35, chrome))
+            parts.append(K.placed(K.sphere(radius: 0.55, segments: 10, chrome), at: CV3(x, 12, 2.9)))
         }
-        parts.append(K.tube([CV3(-8, 10, 2.5), CV3(8, 10, 2.5)], radius: 0.4, sides: 10, R(.chrome)))
-        parts.append(K.placed(K.drape(width: 12, height: 14, folds: 3, depth: 0.2, flare: 0.4, R(.cotton(0xE8E2D4))),
-                              at: CV3(0, 3.2, 3.2), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.15)))
-        parts.append(K.placed(K.drape(width: 9, height: 11, folds: 2, depth: 0.18, flare: 0.3, R(.cotton(0xA8B8C2))),
-                              at: CV3(2.5, 4.0, 3.6), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.2)))
+        parts.append(K.tube([CV3(-9, 12, 2.9), CV3(9, 12, 2.9)], radius: 0.42, sides: 12, chrome))
+        // 端の細い飾り輪
+        for x in [-9.0, 9.0] {
+            parts.append(K.tube(K.arc(center: CV3(x, 12, 2.9), radius: 0.85, from: 0, to: 2 * .pi, steps: 14)
+                                    .map { CV3($0.x, $0.y, 2.9) }, radius: 0.1, sides: 5, closed: true, R(.agedBrass)))
+        }
+        // タオル（裾の縫い目つき）
+        parts.append(K.placed(K.drape(width: 13, height: 15, folds: 4, depth: 0.22, flare: 0.45, R(.cotton(0xE8E2D4))),
+                              at: CV3(-0.5, 4.0, 3.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.12)))
+        parts.append(K.tube([CV3(-6.5, 4.2, 3.7), CV3(5.5, 4.2, 3.7)], radius: 0.08, sides: 4, R(.cotton(0xD8D0C4))))
+        parts.append(K.placed(K.drape(width: 9.5, height: 12, folds: 3, depth: 0.2, flare: 0.35, R(.cotton(0xA8B8C2))),
+                              at: CV3(2.8, 5.0, 3.9), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.18)))
+        parts.append(K.tube([CV3(-1.5, 5.2, 4.1), CV3(7.0, 5.2, 4.1)], radius: 0.07, sides: 4, R(.cotton(0x8A9AA4))))
         return K.merge(parts)
     }
 
