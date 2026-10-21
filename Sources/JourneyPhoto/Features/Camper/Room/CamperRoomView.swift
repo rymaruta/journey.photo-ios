@@ -13,6 +13,8 @@ struct CamperRoomView: View {
     let ownerName: String?
     let userId: String?
     let photos: [Photo]
+    /// 自分の写真を読み終えたか（読む前は新しい家具の印を決めない）
+    let photosLoaded: Bool
     let stage: CamperStage
     let stats: CamperStats
     let paint: UInt32
@@ -129,6 +131,7 @@ struct CamperRoomView: View {
             recount()
             fillFramesIfNeeded()
         }
+        .onChange(of: photosLoaded) { _, _ in recount() }
         .task(id: photoLoadKey) {
             // 飾る画面では一覧の写真も先に読む（押してから待つと「載らない」ように見える・#326）
             let ids = mode == .photos ? hangablePhotoIds + photoIds : photoIds
@@ -212,7 +215,7 @@ struct CamperRoomView: View {
         if CamperRoomPreview.coach {
             news = Set(owned.filter { $0.hasPrefix("bed.") }.sorted().prefix(1) + owned.sorted().prefix(2))
         } else {
-            news = CamperRoomPreview.reset ? [] : seenStore.news(owned: owned)
+            news = CamperRoomPreview.reset ? [] : seenStore.news(owned: owned, photosLoaded: photosLoaded)
         }
     }
 
@@ -994,9 +997,11 @@ struct CamperRoomView: View {
     // MARK: 置く
 
     private var editPanel: some View {
-        let cats = editor?.trayCategories(trayTab, owned: owned) ?? []
+        // 棚の絞り込みは 1 回だけ（分類チップごとに全部の家具を絞り直さない・2026-10-21 見直し）
+        let shelf = CamperRoomShelf(editor?.tray(trayTab, owned: owned) ?? [], news: news)
+        let cats = shelf.categories
         let cat = cats.contains(trayCategory) ? trayCategory : (cats.first ?? .bed)
-        let tray = editor?.tray(cat, owned: owned) ?? []
+        let tray = shelf.items(cat)
         return VStack(alignment: .leading, spacing: 10) {
             tabs(CamperRoomPlacement.allCases.map { ($0.rawValue, $0.name) }, selected: trayTab.rawValue, label: L("置く場所", "Where")) { raw in
                 let next = CamperRoomPlacement(rawValue: raw) ?? .floor
@@ -1008,7 +1013,7 @@ struct CamperRoomView: View {
             if !cats.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(cats, id: \.self) { c in trayChip(c, on: c == cat) }
+                        ForEach(cats, id: \.self) { c in trayChip(c, on: c == cat, fresh: shelf.fresh.contains(c)) }
                     }
                     .padding(.vertical, 2)
                 }
@@ -1066,8 +1071,7 @@ struct CamperRoomView: View {
     }
 
     /// 置く棚の分類チップ（選んだチップは真鍮の塗りに墨の字。新しい家具がある分類は点）
-    private func trayChip(_ c: CamperRoomCategory, on: Bool) -> some View {
-        let fresh = (editor?.tray(c, owned: owned) ?? []).contains { news.contains($0.id) }
+    private func trayChip(_ c: CamperRoomCategory, on: Bool, fresh: Bool) -> some View {
         let label: String = fresh ? L("\(c.name)、新しい家具あり", "\(c.name), has new pieces") : c.name
         let ink: Color = on ? WebTheme.accentText : WebTheme.text
         let fill: Color = on ? WebTheme.accentFill : CamperStyle.color(0x1C1C1C)

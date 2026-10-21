@@ -189,6 +189,23 @@ struct CamperRoomEditor: Equatable, Sendable {
     }
 }
 
+/// 置く棚を 1 回絞った結果（分類・分類ごとの家具・新しい家具がある分類）。2026-10-21 見直し: チップごとに
+/// `tray(_:owned:)` を呼ぶと、1,000 点を超える家具の絞り込みが描き直しのたびに十数回走った
+struct CamperRoomShelf {
+    let categories: [CamperRoomCategory]
+    let fresh: Set<CamperRoomCategory>
+    private let byCategory: [CamperRoomCategory: [CamperRoomFurniture]]
+
+    init(_ tray: [CamperRoomFurniture], news: Set<String>) {
+        let grouped = Dictionary(grouping: tray, by: \.category)
+        byCategory = grouped
+        categories = CamperRoomCategory.allCases.filter { grouped[$0] != nil }
+        fresh = Set(tray.filter { news.contains($0.id) }.map(\.category))
+    }
+
+    func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { byCategory[c] ?? [] }
+}
+
 // MARK: - 保存（人ごとにこの端末へ・退会で消す）
 
 /// 部屋の配置を人ごとにこの端末へ覚える（2026-10-19 判断: 第1段は端末だけ。外まわりの `CamperStore` と同じ人ごとの鍵）。

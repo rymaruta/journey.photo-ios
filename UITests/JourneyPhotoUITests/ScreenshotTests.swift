@@ -3435,7 +3435,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **家具の接写の一覧**（`-JPPreviewCamperRoomContact`・Debug のみ・2026-10-21）: 板と別種の家具全部を本物の SceneKit で
-    /// 図鑑の寄りと同じ小部屋に描き、8 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
+    /// 図鑑の寄りと同じ小部屋に描き、4 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
     func testCapturesCamperRoomContactSheet() {
         executionTimeAllowance = 1500
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomContact", "YES"])

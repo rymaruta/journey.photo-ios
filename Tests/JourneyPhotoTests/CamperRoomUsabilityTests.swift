@@ -34,6 +34,19 @@ final class CamperRoomUsabilityTests: XCTestCase {
         XCTAssertTrue(e.undo())
     }
 
+    /// 棚は 1 回だけ絞り、分類・分類ごとの家具・新しい家具のある分類が、分類ごとに絞ったときと同じ
+    func testShelfMatchesPerCategoryTray() throws {
+        var e = CamperRoomEditor(doc: CamperRoomRules.starterDocument(camper), layout: camper)
+        let trunk = try XCTUnwrap(e.doc.items.first { $0.k == "storage.trunk" })
+        e.stow(trunk.u)
+        for p in CamperRoomPlacement.allCases {
+            let shelf = CamperRoomShelf(e.tray(p, owned: owned), news: ["storage.trunk"])
+            XCTAssertEqual(shelf.categories, e.trayCategories(p, owned: owned), p.rawValue)
+            for c in shelf.categories { XCTAssertEqual(shelf.items(c), e.tray(c, owned: owned), c.rawValue) }
+            XCTAssertEqual(shelf.fresh, p == .floor ? [.storage] : [], p.rawValue)
+        }
+    }
+
     // MARK: 押して置く
 
     /// 選んだ所に置ける。ぶつかる所は理由つきで断り、文書は変えない。持っていない家具・違う家具の場所は断る
@@ -192,13 +205,19 @@ final class CamperRoomSeenTests: XCTestCase {
         let d = defaults()
         let store = CamperRoomSeenStore(userId: "u1", defaults: d)
         XCTAssertNil(store.load())
-        XCTAssertEqual(store.news(owned: ["a", "b"]), [])
+        // 写真を読み終える前は印を決めず、控えも書かない（最初からの家具だけを見たにしない）
+        XCTAssertEqual(store.news(owned: ["a"], photosLoaded: false), [])
+        XCTAssertNil(store.load())
+        XCTAssertEqual(store.news(owned: ["a", "b"], photosLoaded: true), [])
         XCTAssertEqual(store.load(), ["a", "b"])
-        XCTAssertEqual(store.news(owned: ["a", "b", "c"]), ["c"])
+        XCTAssertEqual(store.news(owned: ["a", "b", "c"], photosLoaded: true), ["c"])
+        // 読み直しの途中（まだ読めていない）でも、覚えた控えは消えない
+        XCTAssertEqual(store.news(owned: ["a"], photosLoaded: false), [])
+        XCTAssertEqual(store.load(), ["a", "b"])
         store.markSeen(["c"])
-        XCTAssertEqual(store.news(owned: ["a", "b", "c"]), [])
+        XCTAssertEqual(store.news(owned: ["a", "b", "c"], photosLoaded: true), [])
         // 人ごと
-        XCTAssertEqual(CamperRoomSeenStore(userId: "u2", defaults: d).news(owned: ["z"]), [])
+        XCTAssertEqual(CamperRoomSeenStore(userId: "u2", defaults: d).news(owned: ["z"], photosLoaded: true), [])
         // 名前の無い人は覚えない
         XCTAssertNil(CamperRoomSeenStore(userId: nil, defaults: d).load())
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

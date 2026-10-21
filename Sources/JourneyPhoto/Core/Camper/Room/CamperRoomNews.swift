@@ -30,8 +30,11 @@ struct CamperRoomSeenStore {
         defaults.set(seen.sorted(), forKey: Self.key(userId))
     }
 
-    /// 新しい家具（持っているのに見ていない）。初めての時は今の持ち物を全部見たにして、空を返す
-    func news(owned: Set<String>) -> Set<String> {
+    /// 新しい家具（持っているのに見ていない）。初めての時は今の持ち物を全部見たにして、空を返す。
+    /// 写真を読み終える前は空を返し、控えを読みも書きもしない（2026-10-21 見直し: 読む前の初回に最初の 27 点だけを
+    /// 見たにすると、写真が届いたとき前から持っていた家具が全部「新しい」と出た。車庫の `openArrivals` と同じ考え）
+    func news(owned: Set<String>, photosLoaded: Bool) -> Set<String> {
+        guard photosLoaded else { return [] }
         guard let seen = load() else {
             save(owned)
             return []
