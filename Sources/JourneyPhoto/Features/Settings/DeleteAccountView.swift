@@ -251,7 +251,7 @@ struct DeleteAccountView: View {
             let account = environment.account
             if appleRevoke != .revoked {
                 appleRevoke = await AppleSignInRevoke.beforeDeletion(
-                    idToken: try? await AuthGateway.idToken(),
+                    idToken: await AppleSignInRevoke.freshIdToken(),
                     authorize: { try await AppleIDAuthorizer.authorizationCode() },
                     revoke: { try await account.revokeAppleSignIn(authorizationCode: $0) }
                 )

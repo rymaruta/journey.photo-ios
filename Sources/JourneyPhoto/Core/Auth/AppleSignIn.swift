@@ -203,8 +203,17 @@ enum AppleSignInRevoke {
         case skipped
     }
 
+    /// 判定に使う ID トークン。**Cognito から取り直したもの**を先に使う（2026-10-21 の見直し）——
+    /// 手元の控えは、Apple とつないだ（`custom:apple_sub` が書かれた）前のトークンのことがある。
+    /// 取り直せない（圏外）回だけ手元の控え
+    static func freshIdToken() async -> String? {
+        let fresh = try? await AuthGateway.refreshedIdToken()
+        if let fresh { return fresh }
+        return try? await AuthGateway.idToken()
+    }
+
     /// - Parameters:
-    ///   - idToken: いまの ID トークン
+    ///   - idToken: いまの ID トークン（`freshIdToken`）
     ///   - authorize: Apple のシートを出して認可コードを返す
     ///   - revoke: サーバーに認可コードを渡す（`AccountService.revokeAppleSignIn`）
     static func beforeDeletion(idToken: String?,
