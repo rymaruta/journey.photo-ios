@@ -1021,28 +1021,33 @@ struct MyPageView: View {
             }
             // 写真で作るキャンピングカー（2026-10-18・札 #307）。旅のトランクと同じ並びに置く（板に入口の指定が無いので、
             // トランクの行と同じ形の行を1つ足す）。数は自分の投稿からこの端末で数える（サーバーには聞かない）
-            NavigationLink {
-                // 数えるのは行き先の中（マイページを描き直すたびに数えない・下書きは数えない）
-                CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,
-                                 photosLoaded: model.hasLoadedPhotos)
-            } label: {
-                JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"), systemImage: "bus",
-                           detail: L("旅を重ねるほど育つ車。撮るほど部品が集まる",
-                                     "A camper that grows with your trips and collects parts as you shoot"))
+            // 束ねる（`ViewBuilder` の子の数の上限 10 を超えないように・見本の行を足した 2026-10-19）
+            Group {
+                NavigationLink {
+                    // 数えるのは行き先の中（マイページを描き直すたびに数えない・下書きは数えない）
+                    CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,
+                                     photosLoaded: model.hasLoadedPhotos)
+                } label: {
+                    JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"), systemImage: "bus",
+                               detail: L("旅を重ねるほど育つ車。撮るほど部品が集まる",
+                                         "A camper that grows with your trips and collects parts as you shoot"))
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("trips.camper")
+                JPCardDivider()
+                // 画面写真の見本だけ（`-JPPreviewCamperVisit`・Debug のみ・Release では出ない）: 見本の友達の車へ直接入る
+                if PreviewSession.camperVisitSample {
+                    NavigationLink {
+                        CamperVisitView(userId: CamperServerSample.friendId, ownerName: CamperServerSample.friendName)
+                    } label: {
+                        JPRowLabel(title: L("見本の友達の車", "Sample friend\u{2019}s camper"), systemImage: "bus")
+                    }
+                    .buttonStyle(JPRowButtonStyle())
+                    .accessibilityIdentifier("trips.camperVisitSample")
+                    JPCardDivider()
+                }
             }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.camper")
-            JPCardDivider()
-            // 写真で作るキャンプ場（2026-10-18・板「写真で作るキャンプ場」）。撮った写真を切り絵にして浮かぶ島に立てる。
-            // 端末の中だけで動くので、トランクと違ってサーバーの口を待たずに出す
-            NavigationLink { CampHomeView(ownerName: model.profile?.name) } label: {
-                JPRowLabel(title: L("キャンプ場", "Campsite"), systemImage: "tent",
-                           detail: L("撮った森や空を切り絵にして、浮かぶ島に立てる",
-                                     "Turn the woods and skies you shoot into paper cutouts on a floating island"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.camp")
-            JPCardDivider()
+            // 写真で作るキャンプ場は #339（2026-10-20）で外した。キャンピングカーは残す
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",

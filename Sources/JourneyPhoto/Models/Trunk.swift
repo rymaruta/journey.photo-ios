@@ -452,14 +452,19 @@ struct TrunkDealt: Decodable, Equatable {
     let labelSkipped: TrunkLabelSkip?
     /// 配った硬貨（0 か 1・2026-10-17 次の版）。**手持ちがいっぱい・受け取らない設定でも配られる**
     let coin: Int
+    /// とおまわり号（2026-10-19 第2段）: この投稿で新しく届いた部品の id（応答の `camper.added`）。
+    /// 届かなかった回・古いサーバーは空。図鑑に無い id は落とす
+    let camperAdded: [String]
 
-    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil, coin: Int = 0) {
+    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil, coin: Int = 0, camperAdded: [String] = []) {
         self.label = label
         self.labelSkipped = labelSkipped
         self.coin = coin
+        self.camperAdded = camperAdded
     }
 
-    private enum CodingKeys: String, CodingKey { case label, labelSkipped, coin }
+    private enum CodingKeys: String, CodingKey { case label, labelSkipped, coin, camper }
+    private struct CamperBox: Decodable { let added: [Lenient<String>]? }
 
     init(from decoder: Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
@@ -468,9 +473,11 @@ struct TrunkDealt: Decodable, Equatable {
         }
         // 硬貨は 0 か 1 だけ読む（知らない値・負の数・大きい数は 0）
         let coin = LenientInt.read(c, .coin) ?? 0
+        let camper: CamperBox? = (try? c.decodeIfPresent(CamperBox.self, forKey: .camper)) ?? nil
         self.init(label: (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value,
                   labelSkipped: ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init),
-                  coin: coin == 1 ? 1 : 0)
+                  coin: coin == 1 ? 1 : 0,
+                  camperAdded: CamperServerState.knownIds((camper?.added ?? []).compactMap(\.value)))
     }
 
     /// 応答の本文から読む（読めなければ空）

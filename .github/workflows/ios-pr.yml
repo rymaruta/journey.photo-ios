@@ -182,8 +182,9 @@ jobs:
     if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
-    # （ios-testflight.yml の run #8）。控えが当たれば短い
-    timeout-minutes: 90
+    # （ios-testflight.yml の run #8）。控えが当たれば短い。
+    # 画面の試験だけで 75 分まで伸び、90 分だと成功の直後に切れる（2026-10-20・#321）
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
