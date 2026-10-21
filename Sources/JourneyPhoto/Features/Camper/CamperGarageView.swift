@@ -170,17 +170,25 @@ struct CamperGarageView: View {
     /// とおまわり号の中へ入った（2026-10-19・`CamperRoomView`）
     @State private var insideRoom = false
 
-    /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）
+    /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）。
+    /// 2026-10-21: 扉が開き切る少し前から口の真正面へ寄り（`CamperFraming.enter`）、灯った部屋が画面に広がってから
+    /// 切り替える。見本の起動では `-JPPreviewCamperEnterSlow` で全体をゆっくりにできる（途中の光を画面写真で見る）
     private func goInside() {
+        let slow = PreviewSession.camperEnterSlow
         if !doorOpen { toggleDoor() }
         Task { @MainActor in
-            if !reduceMotion { try? await Task.sleep(nanoseconds: 650_000_000) }
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: UInt64(0.45 * slow * 1_000_000_000))
+                aim(CamperFraming.enter(stage))
+                try? await Task.sleep(nanoseconds: UInt64(0.6 * slow * 1_000_000_000))
+            }
             insideRoom = true
         }
     }
 
     private func stageView(width: CGFloat, height: CGFloat) -> some View {
-        CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion) { marker in
+        CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion,
+                        timeScale: PreviewSession.camperEnterSlow) { marker in
             readyMarker = marker
         }
         .frame(width: width, height: height)
@@ -262,7 +270,7 @@ struct CamperGarageView: View {
         // 開けたら扉の口から室内へ寄る。閉じたら初めの向きへ戻す（寄ったまま夜や段を見ない）
         if doorOpen {
             aim(CamperFraming.door(stage))
-        } else if angle == CamperFraming.door(stage) {
+        } else if angle == CamperFraming.door(stage) || angle == CamperFraming.enter(stage) {
             aim(CamperFraming.overview(stage))
         }
     }

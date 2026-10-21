@@ -59,6 +59,9 @@ final class CamperScene {
     /// 揺らし始めた・止めた（SCNView の描き続けるかを切り替える）
     var onFlickerChange: ((Bool) -> Void)?
 
+    /// 動きの長さの倍率（見本の起動で「中に入る」をゆっくり撮るとき・`PreviewSession.camperEnterSlow`）
+    var timeScale = 1.0
+
     private(set) var config: CamperConfig?
     private(set) var blueprint: CamperBlueprint?
     private var angle: CamperAngle?
@@ -220,7 +223,10 @@ final class CamperScene {
         isFlickering = false
         for prepared in plan.nodes {
             let spec = prepared.spec
-            guard let geometry = prepared.mesh.flatMap({ palette.geometry($0) }) ?? palette.geometry(spec.shape, material: spec.material, unit: s) else {
+            // 殻の中の部品は、空の光を遮る別の材質（`CamperScenePalette.material(_:inside:)`）
+            let isInside = prepared.inside
+            guard let geometry = prepared.mesh.flatMap({ palette.geometry($0, inside: isInside) })
+                    ?? palette.geometry(spec.shape, material: spec.material, unit: s, inside: isInside) else {
                 continue
             }
             let node = SCNNode(geometry: geometry)
@@ -372,7 +378,7 @@ final class CamperScene {
         let t = a.target * s
         let rotated = CV3(t.x * cos(yaw) + t.z * sin(yaw), t.y, -t.x * sin(yaw) + t.z * cos(yaw))
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = animated ? 0.6 : 0
+        SCNTransaction.animationDuration = animated ? 0.6 * timeScale : 0
         // 板の注記: 指を離すと 0.6 秒 cubic-bezier(.2,.75,.25,1) で止まる
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
         turntable.eulerAngles = SCNVector3(0, Float(yaw), 0)
@@ -388,7 +394,7 @@ final class CamperScene {
         doorOpen = open
         guard let pivot = doorPivot, let bp = blueprint else { return }
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = animated ? (open ? 0.6 : 0.4) : 0
+        SCNTransaction.animationDuration = animated ? (open ? 0.6 : 0.4) * timeScale : 0
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(controlPoints: 0.0, 0.0, 0.2, 1)
         pivot.eulerAngles = SCNVector3(0, Float(open ? bp.doorOpenAngle : 0), 0)
         doorGlowNode?.opacity = open ? 1 : 0

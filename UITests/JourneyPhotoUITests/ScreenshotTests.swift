@@ -2488,6 +2488,52 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **外から中に入るときの光**（2026-10-21 owner「中に入るボタン押した時に扉開くけど中の光で眩しすぎてほんとにダメ」
+    /// 「外から中に入る時の光もほんとにダメ」）: 夜と昼に「中に入る」を押し、扉が開く途中・開いた所・口へ寄っている途中・
+    /// 部屋に切り替わる直前と直後を**必ず撮る**（開けない・入れないなら落とす）。動きは見本の起動で 6 倍ゆっくり
+    /// （`-JPPreviewCamperEnterSlow 6`: 扉 3.6 秒・寄り 2.7 秒から 3.6 秒・切り替え 6.3 秒）
+    func testCapturesCamperEntering() {
+        executionTimeAllowance = 600
+        let app = launchTrunk(["-JPPreviewCamperEnterSlow", "6", "-JPPreviewCamperRoomReset", "YES"])
+        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        for (mood, label) in [("night", "夜"), ("day", "昼")] {
+            let moodButton = app.buttons["camper.mood.\(mood)"].firstMatch
+            guard moodButton.waitForExistence(timeout: 5) else { return XCTFail("\(label)のボタンが無い") }
+            if !moodButton.isHittable { scrollTo(moodButton, in: app) }
+            moodButton.tap()
+            waitCamper(app, mood)
+            Thread.sleep(forTimeInterval: 1)
+            let enter = app.buttons["camper.room.enter"].firstMatch
+            guard enter.waitForExistence(timeout: 5), enter.isHittable else { return XCTFail("「中に入る」が押せない（\(label)）") }
+            let start = Date()
+            enter.tap()
+            // 押してからの秒で撮る（撮るのに 0.3〜0.6 秒かかるので、少し前に合わせる）
+            func shoot(at seconds: Double, _ name: String) {
+                let wait = seconds - Date().timeIntervalSince(start)
+                if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+                self.shoot(app, name)
+            }
+            let n = mood == "night" ? "p" : "q"
+            shoot(at: 0.9, "95\(n)1-キャンピングカー（\(label)・中に入る・扉が開く途中）")
+            shoot(at: 2.5, "95\(n)2-キャンピングカー（\(label)・中に入る・扉が開いた）")
+            shoot(at: 4.3, "95\(n)3-キャンピングカー（\(label)・中に入る・口へ寄る途中）")
+            shoot(at: 5.8, "95\(n)4-キャンピングカー（\(label)・中に入る・切り替わる直前）")
+            let room = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+            guard room.waitForExistence(timeout: 15) else { return XCTFail("部屋に切り替わらない（\(label)）") }
+            Thread.sleep(forTimeInterval: 0.8)
+            self.shoot(app, "95\(n)5-キャンピングカー（\(label)・中に入る・部屋に切り替わった直後）")
+            // 外へ戻り、扉を閉じて（初めの向きへ戻る）次の時刻へ
+            let back = app.buttons["camper.room.back"].firstMatch
+            guard back.waitForExistence(timeout: 10) else { return XCTFail("部屋から外へ戻れない") }
+            back.tap()
+            let door = app.buttons["camper.door"].firstMatch
+            guard door.waitForExistence(timeout: 10) else { return XCTFail("外の車に戻らない") }
+            door.tap()
+            Thread.sleep(forTimeInterval: 4)
+        }
+    }
+
     /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札
     /// （硬貨の枚数・貼っていないラベルの真鍮の点）と、設定の「旅のトランク」の行。見本（`-JPPreviewTrunk`）で撮る。
     /// **見本では入口が必ず出るので、出なければ落とす**（commit 66d7f872 の方針）。44pt 未満・読み上げに硬貨が無いときも落とす

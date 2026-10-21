@@ -27,7 +27,7 @@ final class CamperLightPatternTests: XCTestCase {
         var load = CamperLoadout.standard
         load.picks[CamperCategory.outdoorLight.rawValue] = "brass_lantern"
         let lights = CamperBuilder.build(CamperConfig(stage: .camper, mood: .night, loadout: load)).lights
-        XCTAssertEqual(lights.first { $0.name == "interior.rear" }?.pattern, .ceiling)
+        XCTAssertEqual(lights.first { $0.name == "interior.rear" }?.pattern, .roomLamp)
         // 停めた車の前照灯は点けない（2026-10-19 claude/camper-lamps）。入口の灯りは porch
         XCTAssertNil(lights.first { $0.name == "headlight" })
         XCTAssertEqual(lights.first { $0.name == "porch" }?.pattern, .porch)

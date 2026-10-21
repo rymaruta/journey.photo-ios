@@ -13,6 +13,8 @@ struct CamperSceneView: UIViewRepresentable {
     let animateAngle: Bool
     let doorOpen: Bool
     let reduceMotion: Bool
+    /// 動きの長さの倍率（見本の起動で「中に入る」をゆっくり撮るときだけ 1 より大きい）
+    var timeScale = 1.0
     var onReady: (String) -> Void = { _ in }
 
     func makeCoordinator() -> CamperScene { CamperScene() }
@@ -40,6 +42,7 @@ struct CamperSceneView: UIViewRepresentable {
             // 画面の更新の外で知らせる
             DispatchQueue.main.async { onReady(marker) }
         }
+        context.coordinator.timeScale = timeScale
         context.coordinator.setAngle(angle, animated: false)
         context.coordinator.setDoor(open: doorOpen, animated: false)
         context.coordinator.setFlicker(allowed: !reduceMotion)

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 #if canImport(SceneKit)
 import SceneKit
 #elseif canImport(SceneKitShim)
@@ -26,8 +27,7 @@ final class CamperSceneTests: XCTestCase {
         }
     }
 
-    /// 室内の灯りは室内の組だけを照らし、影は forward（deferred は円錐の外の画面を黒く塗った・run 538）。
-    /// 外の灯りは外の組だけ。まとめた形にも組が付く
+    /// 室内の灯りは室内の組だけを照らす（影の絵は要らない omni・2026-10-21）。外の灯りは外の組だけ。まとめた形にも組が付く
     func testLightGroupsAndInteriorShadows() async throws {
         let scene = CamperScene()
         scene.installNow(CamperConfig(stage: .camper, mood: .night))
@@ -36,9 +36,10 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertEqual(interior.count, 2)
         for (name, l) in interior {
             XCTAssertEqual(l.categoryBitMask, CamperScene.insideMask, name)
-            XCTAssertTrue(l.castsShadow, name)
-            XCTAssertEqual(l.shadowMode, .forward, name)
+            XCTAssertEqual(l.type, .omni, name)
+            XCTAssertFalse(l.castsShadow, name)
             XCTAssertGreaterThan(l.intensity, 0, name)
+            XCTAssertLessThanOrEqual(l.intensity, 1.2, name)
         }
         let outside = ls.filter { !$0.name.hasPrefix("interior.") }
         XCTAssertFalse(outside.isEmpty)
@@ -48,6 +49,30 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.door")).categoryBitMask, CamperScene.outsideMask)
         // 夜はにじみなし
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
+    }
+
+    /// 殻の中の材質は空の光を遮る（2026-10-21 owner「中の光で眩しすぎる」: 周りの光は壁と屋根で遮られず、昼に開けた口の奥が
+    /// 外より明るかった）。室内の組の材質だけ `ambientOcclusion` が付き、外の組には付かない。外と室内で材質を分けても、
+    /// 時刻を替えれば両方の値が替わる
+    func testInteriorMaterialsBlockSkyLight() async throws {
+        let scene = CamperScene()
+        scene.installNow(CamperConfig(stage: .camper, mood: .day))
+        func materials(_ name: String) throws -> [SCNMaterial] {
+            all(try XCTUnwrap(node(scene, name))).compactMap(\.geometry).flatMap(\.materials)
+        }
+        func blocks(_ m: SCNMaterial) -> Bool { m.ambientOcclusion.contents is UIColor }
+        let inside = try materials("camper.inside").filter { $0.lightingModel == .physicallyBased }
+        let outside = try materials("camper.outside")
+        XCTAssertFalse(inside.isEmpty)
+        XCTAssertTrue(inside.allSatisfy(blocks), "室内の材質に空の光の遮りが無い")
+        XCTAssertFalse(outside.contains(where: blocks), "外の塗装まで空の光を遮っている")
+        XCTAssertFalse(inside.contains { m in outside.contains { $0 === m } }, "室内と外で同じ材質を使っている")
+        var night = CamperConfig(stage: .camper, mood: .day)
+        night.mood = .night
+        scene.show(night)
+        XCTAssertTrue(inside.allSatisfy(blocks), "夜に替えたら遮りが消えた")
+        XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.night), CamperMaterials.interiorSkyOcclusion(.day))
+        XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.day), 0.5, "昼の口の奥が外と同じ明るさ")
     }
 
     /// 夜に停めている車: 前照灯・尾灯の光は場面に無い。点くのは入口の灯り（外の組・下向きの spot・減衰あり）と

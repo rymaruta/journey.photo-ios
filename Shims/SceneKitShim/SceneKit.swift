@@ -83,6 +83,7 @@ open class SCNMaterial {
     public let normal = SCNMaterialProperty()
     public let specular = SCNMaterialProperty()
     public let multiply = SCNMaterialProperty()
+    public let ambientOcclusion = SCNMaterialProperty()
     open var transparency: CGFloat = 1
     open var transparencyMode: SCNTransparencyMode = .aOne
     open var blendMode: SCNBlendMode = .alpha

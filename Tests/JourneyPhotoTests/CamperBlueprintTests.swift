@@ -206,17 +206,24 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertTrue(build(mood: .day).lights.isEmpty)
         let lights = build(mood: .night).lights
         XCTAssertEqual(lights.filter { $0.name == "porch" && $0.kind == .spot }.count, 1)
-        // 室内の灯りは天井から下向きの spot で影を落とす（omni だと屋根の棒・縁に光の筋が乗った・run 533）
+        // 室内の灯りは、とおまわり号の中の家具灯と同じ型・同じ桁（2026-10-21 owner「中の光で眩しすぎる」: 前の天井の
+        // spot 1250・720 は口の奥を白く飛ばした）。室内の組だけを照らす omni なので影の絵は要らない。
+        // 合計は部屋の夜の上限の中（中に入って部屋に切り替わっても明るさがそろう）
         for stage in CamperStage.allCases {
             let b = build(stage, mood: .night)
             let roof = CamperBuilder(config: CamperConfig(stage: stage)).roofTop
-            for l in b.lights where l.inside {
-                XCTAssertEqual(l.kind, .spot, l.name)
-                XCTAssertTrue(l.castsShadow, l.name)
-                XCTAssertLessThan(l.direction.y, -0.99, l.name)
+            let inside = b.lights.filter(\.inside)
+            XCTAssertFalse(inside.isEmpty, "\(stage): 室内の灯りが無い")
+            for l in inside {
+                XCTAssertEqual(l.kind, .omni, l.name)
+                XCTAssertEqual(l.pattern, .roomLamp, l.name)
+                XCTAssertFalse(l.castsShadow, l.name)
                 XCTAssertLessThan(l.position.y, roof - 8, "\(stage) \(l.name): 天井より下")
-                XCTAssertLessThan(l.spotOuter / 2, 80, "円錐が上を向かない")
+                XCTAssertGreaterThan(l.intensity, 0, l.name)
+                XCTAssertLessThanOrEqual(l.intensity, 1.2, "\(stage) \(l.name): 室内の灯りが強い（口の奥が白く飛ぶ）")
             }
+            XCTAssertLessThanOrEqual(inside.map(\.intensity).reduce(0, +), CamperRoomBuilder.nightBudget.intensity,
+                                     "\(stage): 室内の灯りの合計が、とおまわり号の中の夜の上限を超える")
         }
         // 室内 2・入口 1・焚き火 1・外のランタン 1
         XCTAssertEqual(lights.count, 5)
@@ -333,16 +340,15 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoatRoughness, 0.08)
     }
 
-    /// 夜の主役は窓と扉の口の灯り。焚き火・ランタン・電飾は弱く、近くだけ（run 530: 左 3 分の 1 が白く飛んだ）
+    /// 夜の灯りの桁は、とおまわり号の中の家具灯（0.3〜0.7）とそろえる（2026-10-21 判断: 前の焚き火 60・ランタン 45・
+    /// 電球の列 90 は点の灯りの桁の取り違えで、灯りのすぐ下が白く飛んだ）。どの灯りも 2 まで、届く距離は 1.6 m まで
     func testNightOutdoorLightsStayModest() {
         var l = CamperLoadout.standard
         for (cat, key) in [(CamperCategory.outdoorLight, "string_lights"), (.outdoorLight, "brass_lantern")] {
             l.picks[cat.rawValue] = key
-            let lights = build(mood: .night, loadout: l).lights
-            let interior = lights.filter { $0.name.hasPrefix("interior.") }.map(\.intensity).max() ?? 0
-            for o in lights where o.name == "campfire" || o.name.hasPrefix("campfire.") || o.name == "lantern" || o.name == "string" {
-                XCTAssertLessThanOrEqual(o.intensity, interior / 4, "\(o.name) が室内の灯りに迫る")
-                XCTAssertLessThanOrEqual(o.range, 72, o.name)
+            for light in build(mood: .night, loadout: l).lights {
+                XCTAssertLessThanOrEqual(light.intensity, 2, "\(light.name) の桁が大きい（灯りの下が白く飛ぶ）")
+                XCTAssertLessThanOrEqual(light.range, 160, light.name)
             }
         }
         // 尾灯は空間の omni を置かない（1.1.21 で後ろが真っ赤な白い球・owner）。2026-10-19（claude/camper-lamps）: 停めた
@@ -479,17 +485,17 @@ final class CamperBlueprintTests: XCTestCase {
         let fire = try? XCTUnwrap(rgb("campfire"))
         let porch = try? XCTUnwrap(rgb("porch"))
         guard let inside, let lantern, let fire, let porch else { return XCTFail("灯りが無い") }
-        // 2700K ≒ (255, 180, 107)
-        XCTAssertEqual(inside.1, 180.0 / 255, accuracy: 0.03)
-        XCTAssertEqual(inside.2, 107.0 / 255, accuracy: 0.05)
+        // 室内の灯りは、とおまわり号の中の灯り（模様替えの「暖かい白」）と同じ色（中に入っても色温度がそろう・2026-10-21）
+        let room = CamperTextures.rgb(CamperRoomMaterials.lightColor("warm"))
+        XCTAssertEqual(inside.0, room.0, accuracy: 0.001)
+        XCTAssertEqual(inside.1, room.1, accuracy: 0.001)
+        XCTAssertEqual(inside.2, room.2, accuracy: 0.001)
         // 外の火は室内灯より赤い（緑と青が少ない）
         XCTAssertLessThan(lantern.1, inside.1)
         XCTAssertLessThan(fire.1, inside.1)
         // 入口の灯りも 2700K（室内と同じ暖色）
         XCTAssertEqual(porch.1, 180.0 / 255, accuracy: 0.03)
         XCTAssertEqual(porch.2, 107.0 / 255, accuracy: 0.05)
-        // 室内の灯りは窓の高さまで届く広い円錐
-        for l in lights where l.inside { XCTAssertGreaterThanOrEqual(l.spotOuter, 150, l.name) }
     }
 
     /// 地面の溜まり: 前照灯の前の光の帯（板の beam）・尾灯の赤・焚き火とランタンの足元。どれも夜だけ・裾がなめらか

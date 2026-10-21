@@ -257,6 +257,16 @@ enum CamperMaterials {
         }
     }
 
+    /// 殻の中（外から扉の口・窓越しに見える室内）に届く空の光の割合（0〜1・2026-10-21 判断）。
+    /// 周りの光は壁と屋根で遮られないので、そのままだと昼に開けた口の奥が外の塗装より明るい（owner「眩しすぎる」）。
+    /// 実物の車の中は、口と窓から入る分だけ——昼は外の半分弱、夜は灯りが主役なので空の光はほぼ届かない
+    static func interiorSkyOcclusion(_ mood: CamperMood) -> Double {
+        switch mood {
+        case .night: return 0.12
+        case .day, .snow: return 0.4
+        }
+    }
+
     /// 灯りの当たらない面のおよその明るさ（0〜1・素材の色 × 一様な明るさ）。環境光は 1000 で 1、周りの光は空の平均の色
     static func unlitFaceLevel(_ m: CamperMaterial, paint: UInt32, mood: CamperMood) -> Double {
         let c = CamperTextures.rgb(spec(m, paint: paint, mood: mood).color)
