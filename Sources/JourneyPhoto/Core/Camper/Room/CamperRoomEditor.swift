@@ -41,6 +41,17 @@ struct CamperRoomEditor: Equatable, Sendable {
         }
     }
 
+    /// 棚を分類で絞る（床一括だと探しにくい・2026-10-21）
+    func tray(_ category: CamperRoomCategory, owned: Set<String>) -> [CamperRoomFurniture] {
+        tray(category.placement, owned: owned).filter { $0.category == category }
+    }
+
+    /// その置き場所で、棚にまだ残っている分類（空の分類は出さない）
+    func trayCategories(_ placement: CamperRoomPlacement, owned: Set<String>) -> [CamperRoomCategory] {
+        let have = Set(tray(placement, owned: owned).map(\.category))
+        return CamperRoomCategory.allCases.filter { $0.placement == placement && have.contains($0) }
+    }
+
     /// 置いた数（床・壁・天井・写真）
     var counts: (floor: Int, wall: Int, ceiling: Int, photos: Int) {
         let fs = doc.all.compactMap(\.furniture)
