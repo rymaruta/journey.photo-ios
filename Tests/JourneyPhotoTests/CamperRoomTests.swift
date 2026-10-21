@@ -588,6 +588,11 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertTrue(parts.rest.materials.contains(.room(.soil)))
         XCTAssertTrue(CamperRoomMaterials.drawnAfterOpaque(.room(.clearGlass)))
         XCTAssertFalse(CamperRoomMaterials.drawnAfterOpaque(.room(.frameGlass)), "額の硝子は印画と同じ節（写真の差し替えが束の番号で探す）")
+        // 部屋の下ごしらえ（`CamperRoomScenePlan`）も接写と同じく分ける（部屋に置いた硝子の球も後に描く）
+        let prepared = try XCTUnwrap(CamperRoomScenePlan.prepareFurniture("plant_hanger.glass_terrarium"))
+        XCTAssertFalse(prepared.body.groups.contains { $0.material == .room(.globeGlass) })
+        XCTAssertEqual(prepared.glass?.groups.contains { $0.material == .room(.globeGlass) }, true)
+        XCTAssertNil(try XCTUnwrap(CamperRoomScenePlan.prepareFurniture("bed.platform")).glass)
     }
 
     /// 寝かせた輪（`ringXZ`）は中心の高さに水平に乗る（`arc` を寝かせると高さが奥行きに移る・2026-10-21）

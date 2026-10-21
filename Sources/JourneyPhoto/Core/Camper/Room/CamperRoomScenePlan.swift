@@ -8,8 +8,10 @@ struct CamperRoomScenePlan: Sendable {
     var blueprint: CamperRoomBlueprint
     /// 部屋の網（名前つき）
     var shell: [(name: String, mesh: CamperPreparedMesh)]
-    /// 家具の網（図鑑の id ごと）
+    /// 家具の網（図鑑の id ごと）。透明の硝子（`CamperRoomMaterials.drawnAfterOpaque`）は除いて `furnitureGlass` に分ける
     var furniture: [String: CamperPreparedMesh]
+    /// 家具の透明の硝子（不透明の組の後に描く別の節）
+    var furnitureGlass: [String: CamperPreparedMesh]
     var bitmaps: [String: CamperBitmap]
 
     static let unit = 0.01
@@ -26,11 +28,13 @@ struct CamperRoomScenePlan: Sendable {
             shell.append((n.name, p))
         }
         var furniture: [String: CamperPreparedMesh] = [:]
+        var furnitureGlass: [String: CamperPreparedMesh] = [:]
         for id in Set(bp.items.map(\.furnitureId) + extra) {
-            guard let m = CamperRoomFurnitureModels.mesh(id) else { continue }
-            let p = CamperPreparedMesh(m, unit: unit)
-            p.groups.forEach { used.insert($0.material) }
-            furniture[id] = p
+            guard let parts = prepareFurniture(id) else { continue }
+            parts.body.groups.forEach { used.insert($0.material) }
+            parts.glass?.groups.forEach { used.insert($0.material) }
+            furniture[id] = parts.body
+            furnitureGlass[id] = parts.glass
         }
         var bitmaps: [String: CamperBitmap] = [:]
         for mood in [CamperMood.day, .night] {
@@ -49,7 +53,15 @@ struct CamperRoomScenePlan: Sendable {
         }
         bitmaps["contact"] = CamperTextures.contactShadow().premultiplied()
         bitmaps["room.grid"] = gridBitmap()
-        return CamperRoomScenePlan(blueprint: bp, shell: shell, furniture: furniture, bitmaps: bitmaps)
+        return CamperRoomScenePlan(blueprint: bp, shell: shell, furniture: furniture, furnitureGlass: furnitureGlass, bitmaps: bitmaps)
+    }
+
+    /// 家具 1 種類の網を、不透明の組と透明の硝子に分けて写す（硝子が無ければ `glass` は nil）
+    static func prepareFurniture(_ id: String) -> (body: CamperPreparedMesh, glass: CamperPreparedMesh?)? {
+        guard let m = CamperRoomFurnitureModels.mesh(id) else { return nil }
+        let parts = m.split(CamperRoomMaterials.drawnAfterOpaque)
+        let glass = parts.matched.groups.isEmpty ? nil : CamperPreparedMesh(parts.matched, unit: unit)
+        return (CamperPreparedMesh(parts.rest, unit: unit), glass)
     }
 
     /// 向きによって見せる壁（手前の端の壁は低い方、奥の端の壁は高い方。窓もその壁と一緒）

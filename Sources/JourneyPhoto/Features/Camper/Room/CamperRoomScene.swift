@@ -169,6 +169,7 @@ final class CamperRoomScene {
         builtKey = key
         palette.reset(bitmaps: plan.bitmaps, paint: paint, mood: mood)
         furniture = plan.furniture
+        furnitureGlass = plan.furnitureGlass
         roomNode.childNodes.forEach { $0.removeFromParentNode() }
         itemsNode.childNodes.forEach { $0.removeFromParentNode() }
         itemNodes = [:]
@@ -263,10 +264,9 @@ final class CamperRoomScene {
     }
 
     private func makeItemNode(_ it: CamperRoomPlacedItem) -> SCNNode? {
-        if furniture[it.furnitureId] == nil, let m = CamperRoomFurnitureModels.mesh(it.furnitureId) {
-            let parts = m.split(CamperRoomMaterials.drawnAfterOpaque)
-            furniture[it.furnitureId] = CamperPreparedMesh(parts.rest, unit: Self.unit)
-            if !parts.matched.groups.isEmpty { furnitureGlass[it.furnitureId] = CamperPreparedMesh(parts.matched, unit: Self.unit) }
+        if furniture[it.furnitureId] == nil, let parts = CamperRoomScenePlan.prepareFurniture(it.furnitureId) {
+            furniture[it.furnitureId] = parts.body
+            furnitureGlass[it.furnitureId] = parts.glass
         }
         guard let mesh = furniture[it.furnitureId], let geometry = palette.geometry(mesh) else { return nil }
         // 写真の材質は額ごとに専用にする（共有だと片方の印画がもう片方にも乗る／差し替えが効かない）
