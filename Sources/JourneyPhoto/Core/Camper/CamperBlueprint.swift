@@ -376,7 +376,12 @@ struct CamperBuilder {
     var doorHole: [CV2] { van ? rr(-10, -50, 26, 80, 2) : rr(33.5, -46.5, 23, 77, 2) }
     /// 入口の灯りの上限（2026-10-19 Mac run 563 の 95b で車体が白く飛んだ値の手前）: 強さ・届く距離・円錐（外の角）と、
     /// 縁のぼかし（外の角と内の角の差）の下限
-    static let porchLimits = (intensity: 120.0, range: 130.0, spotOuter: 90.0, penumbra: 40.0)
+    static let porchLimits = (intensity: 40.0, range: 130.0, spotOuter: 45.0, penumbra: 25.0)
+
+    /// 夜の外の灯りと溜まりの上限（2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」）: 焚き火・ランタン・電球の列の強さ、
+    /// 地面の溜まりの大きさ（板の単位の幅）と色の明るさ（0〜1）、窓の明かりの色の明るさ、カーテンの光の強さ
+    static let nightLimits = (fire: 70.0, lantern: 50.0, string: 100.0, poolSize: 52.0, poolLevel: 0.13,
+                              windowLevel: 0.42, curtain: 0.32)
 
     /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
     /// バンはスライドドアの口の上（口の上の端 Y 112・窓の後ろの端 x −16 より前）。2026-10-21: バンは前照灯が消え、
@@ -1459,9 +1464,12 @@ struct CamperBuilder {
             // 飛んだ。実物の入口灯は扉の周りと足元がほんのり明るくなる程度——強さを 1/5 に、円錐を狭く、内と外の角の差
             // （ぼかし）を大きくし、壁から少し離して真下寄りに向ける（壁には浅い角度でしか当たらない）。
             // 上限は `CamperBuilder.porchLimits`（試験で守る）
-            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 7),
-                                              direction: CV3(0, -1, 0.25).normalized, color: warm, intensity: 85, range: 125,
-                                              spotInner: 20, spotOuter: 80))
+            // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」（95b・95n: 車体の横に縦長の明るい筋）: 強さを 85 → 35、
+            // 円錐を 80° → 40° に狭め、少し外へ傾けて、車体の壁にはほとんど当てない（円錐の縁が壁に届くのは地面の近くだけ）。
+            // 足元とステップがほんのり分かる程度
+            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 9),
+                                              direction: CV3(0, -1, 0.27).normalized, color: warm, intensity: 35, range: 125,
+                                              spotInner: 10, spotOuter: 40))
         }
         if !van {
             // 足元の灯り（ステップの下）は灯りを足さず、地面の小さな溜まり（足す光）だけ。入口の灯りの光と重なる
