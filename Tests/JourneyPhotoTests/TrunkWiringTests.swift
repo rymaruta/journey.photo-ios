@@ -38,7 +38,8 @@ final class TrunkWiringTests: XCTestCase {
     func testPartsBoxLeadsWithCollectedCount() throws {
         let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
         let start = try XCTUnwrap(box.range(of: "private func stats("))
-        let end = try XCTUnwrap(box.range(of: "// MARK: 種類のタブ"))
+        // `source` は注記の行を落とすので、終わりの目印は次の関数の頭
+        let end = try XCTUnwrap(box.range(of: "private func tabs("))
         let stats = String(box[start.lowerBound..<end.lowerBound])
         XCTAssertTrue(stats.contains("JPFont.number(28"), "集めた部品の数が主役の大きさでない")
         XCTAssertEqual(stats.components(separatedBy: "JPFont.number(").count - 1, 3, "数え札の数字の数が変わった")
