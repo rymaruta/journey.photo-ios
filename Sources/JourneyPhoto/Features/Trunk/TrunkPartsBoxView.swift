@@ -89,60 +89,42 @@ struct TrunkPartsBoxView: View {
         }
     }
 
-    // MARK: 数え札（集めた部品・硬貨・かけら）
+    // MARK: 数え札（集めた部品が主役・硬貨は脇）
 
+    /// 2026-10-21 判断（全画面の点検 99）: 前は「集めた部品・硬貨・かけら」を同じ大きさの札3つで並べていて、
+    /// どれが大事か読めなかった。**主役は「集めた部品 26 / 108」の1つ**（大きな数字）、硬貨は同じ札の右に小さく。
+    /// かけらは交換の札（下）へ移した——かけらを使うのはそこだけ
     private func stats(_ state: TrunkState) -> some View {
         let c = TrunkPartsBoxText.collected(state.ownedParts)
-        return HStack(spacing: 8) {
+        return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("集めた部品", "Collected"))
                     .font(JPFont.footnote)
                     .foregroundStyle(TrunkStyle.muted)
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("\(c.owned)")
-                        .font(JPFont.number(20, weight: .semibold, relativeTo: .title3))
-                        .foregroundStyle(WebTheme.text)
+                        .font(JPFont.number(28, weight: .semibold, relativeTo: .title2))
+                        .foregroundStyle(WebTheme.foreground)
                     Text(" / \(c.total)")
-                        .font(JPFont.mono(13))
+                        .font(JPFont.number(15, weight: .regular, relativeTo: .subheadline))
                         .foregroundStyle(TrunkStyle.faint)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L("硬貨", "Coins"))
-                    .font(JPFont.footnote)
+            .accessibilityIdentifier("trunk.parts.collected")
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                TrunkCoinMark(size: 14)
+                Text(L("硬貨 \(state.coins)", "\(state.coins) coins"))
+                    .font(JPFont.number(13, weight: .regular, relativeTo: .footnote))
                     .foregroundStyle(TrunkStyle.muted)
-                HStack(spacing: 6) {
-                    TrunkCoinMark(size: 16)
-                    Text("\(state.coins)")
-                        .font(JPFont.number(20, weight: .semibold, relativeTo: .title3))
-                        .foregroundStyle(WebTheme.text)
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L("かけら", "Fragments"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(TrunkStyle.muted)
-                HStack(spacing: 4) {
-                    ForEach(0..<TrunkPartsBoxText.fragmentsPerExchange, id: \.self) { i in
-                        TrunkFragmentMark(filled: i < TrunkPartsBoxText.filledFragments(state.fragments))
-                    }
-                }
-                .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(state.fragments))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 20)
     }
 
@@ -248,6 +230,16 @@ struct TrunkPartsBoxView: View {
                 Text(L("かけら5つで1つ交換", "Five fragments for one part"))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.text)
+                // かけらの印は使う場所（交換の札）に置く（2026-10-21・上の数え札から移した）
+                HStack(spacing: 4) {
+                    ForEach(0..<TrunkPartsBoxText.fragmentsPerExchange, id: \.self) { i in
+                        TrunkFragmentMark(filled: i < TrunkPartsBoxText.filledFragments(state.fragments))
+                    }
+                }
+                .padding(.vertical, 2)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(state.fragments))
+                .accessibilityIdentifier("trunk.parts.fragments")
                 Text(TrunkGachaText.exchangeNote(fragments: state.fragments, selected: exchangeTarget))
                     .font(JPFont.footnote)
                     .foregroundStyle(TrunkStyle.faint)
