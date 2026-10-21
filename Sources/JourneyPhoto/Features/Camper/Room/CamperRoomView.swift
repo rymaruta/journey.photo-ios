@@ -42,6 +42,8 @@ struct CamperRoomView: View {
     @State private var framePick: String?
     @State private var photoPick: String?
     @State private var showDex = false
+    /// 見本の起動だけ: 全家具の接写の一覧（`CamperRoomPreview.contact`）
+    @State private var showContact = false
     @State private var readyMarker = ""
     @State private var viewport = CGSize(width: 390, height: 440)
     @State private var notice: String?
@@ -119,6 +121,9 @@ struct CamperRoomView: View {
         .sheet(isPresented: $showDex) {
             CamperRoomDexView(owned: owned, stats: stats, roomStats: roomStats, paint: paint, initialMood: mood) { showDex = false }
         }
+        .fullScreenCover(isPresented: $showContact) {
+            CamperRoomContactSheet(paint: paint) { showContact = false }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: lifted)
     }
 
@@ -176,6 +181,7 @@ struct CamperRoomView: View {
         recount()
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
+        if CamperRoomPreview.contact { showContact = true }
     }
 
     private func recount() {

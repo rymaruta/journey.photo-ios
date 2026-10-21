@@ -151,6 +151,13 @@ final class CamperRoomScene {
         applyCutaway()
     }
 
+    /// 見本用: 組んだ部屋（`installNow`）のまま、家具だけを入れ替える（家具の接写の一覧・2026-10-21。部屋の殻は組み直さない）
+    func replaceItemsNow(_ doc: CamperRoomDocument) {
+        guard let layout else { return }
+        self.doc = doc
+        syncItems(layout: layout, doc: doc)
+    }
+
     /// 組み終えた合図（画面写真の試験が待つ）
     func marker(ms: Int = 0) -> String {
         "camper-room-ready \(layout?.kind.rawValue ?? "") \(mood.rawValue) items=\(itemNodes.count) ms=\(ms)"

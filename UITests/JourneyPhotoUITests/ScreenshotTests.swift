@@ -3393,6 +3393,32 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["camper.room.dex.close"].firstMatch.tap()
     }
 
+    /// **家具の接写の一覧**（`-JPPreviewCamperRoomContact`・Debug のみ・2026-10-21）: 板と別種の家具全部を本物の SceneKit で
+    /// 図鑑の寄りと同じ小部屋に描き、8 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
+    func testCapturesCamperRoomContactSheet() {
+        executionTimeAllowance = 1500
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomContact", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "接写の一覧が出ない")
+        let next = app.buttons["camper.room.contact.next"].firstMatch
+        let prev = app.buttons["camper.room.contact.prev"].firstMatch
+        for (mood, moodName) in [("day", "昼"), ("night", "夜")] {
+            var page = 1
+            while page <= 30 {
+                let ready = waitRoom(app, "camper.room.contact", "contact-ready \(mood) \(page)/", timeout: 90)
+                XCTAssertTrue(ready, "接写の一覧の \(moodName) \(page) 頁を描き終えない")
+                shoot(app, String(format: "96e-家具の接写（%@・%02d）", moodName, page))
+                guard next.exists, next.isEnabled else { break }
+                next.tap()
+                page += 1
+            }
+            // 頁を初めに戻して、昼と夜を替える
+            while prev.exists, prev.isEnabled { prev.tap() }
+            if mood == "day" { app.buttons["camper.room.contact.mood"].firstMatch.tap() }
+        }
+    }
+
     /// **置いている途中**（`-JPPreviewCamperRoomLift`・Debug のみ）: 旅の鞄を持ち上げて寝台の上へ動かした途中
     /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「閉じる」は 44pt 以上。升の枠は縦 96pt 以上
     func testCapturesCamperRoomPlacing() {
