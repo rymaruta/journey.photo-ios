@@ -819,6 +819,9 @@ struct StoryComposerView: View {
     /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // 🔴 **案内の字は白・薄い帯の上に**（2026-10-21・全画面の点検 run 609 の 90・91）。既定の灰の案内は
+            // 赤い花や滝の白の上で溶けて読めなかった。写真の上は白だけ（CLAUDE.md）なので、字は白 90% に
+            // 影を付け、まだ何も書いていない間だけ黒の薄い帯（`captionHintScrim`）を敷く
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
                 get: { caption },
                 // サーバーが 200字で切る（`stories.ts`）。**改行は入れない**（見る画面は1段落）
@@ -827,12 +830,24 @@ struct StoryComposerView: View {
                 set: { caption = PostLimits.limited(old: caption,
                                                     new: $0.replacingOccurrences(of: "\n", with: " "),
                                                     limit: PostLimits.storyCaption) }
-            ), axis: .vertical)
+            ), prompt: Text(L("ひとことを書く", "Write a caption"))
+                .foregroundStyle(Color.white.opacity(Self.captionHintOpacity)),
+               axis: .vertical)
                 .focused($captionFocused)
                 .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
                 .jpPhotoTextShadow()
+                .background(alignment: .leading) {
+                    if caption.isEmpty {
+                        RoundedRectangle(cornerRadius: JPRadius.s)
+                            .fill(Color.black.opacity(Self.captionHintScrim))
+                            .padding(.horizontal, -10)
+                            .padding(.vertical, -4)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
             if !place.location.isEmpty {
                 photoChip(symbol: "mappin", text: place.location)
             } else if let spot = place.chip {
@@ -885,6 +900,10 @@ struct StoryComposerView: View {
 
     /// ひとことの大きさ（見る画面の `captionBlock` と同じ 30）・札の高さと地（v2 の板）
     static let captionSize: Double = 30
+    /// 「ひとことを書く」の案内の字の白さ（写真の上は白だけ。灰の既定は写真に溶けた・2026-10-21）
+    static let captionHintOpacity: Double = 0.9
+    /// 何も書いていない間だけ案内の下に敷く黒の薄い帯（写真を隠しすぎない薄さ）
+    static let captionHintScrim: Double = 0.35
     static let chipHeight: CGFloat = 30
     static let chipFill = 0.45
 

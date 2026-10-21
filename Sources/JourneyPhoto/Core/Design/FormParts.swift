@@ -29,21 +29,40 @@ struct JPField<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.muted2)
-                // 読み上げは欄の名前で言う（見出しと二重に読まない）
-                .accessibilityHidden(true)
+            JPFieldTitle(title)
             content
                 .font(.subheadline)
                 .accessibilityLabel(title)
-                .padding(.horizontal, 14)
-                .padding(.vertical, multiline ? 12 : 0)
-                .frame(maxWidth: .infinity, minHeight: multiline ? 88 : 48,
-                       alignment: multiline ? .topLeading : .leading)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
+                .jpFieldBox(multiline: multiline)
         }
+    }
+}
+
+extension View {
+    /// 入力欄の枠（`JPField` の中身と同じ形: 地 白 6%・縁・角 12・高さ 48）。
+    /// **欄の名前の見出しを別に置く画面**（投稿の「撮影地」は候補の行が欄の下に続く）でも同じ枠を使う
+    /// （2026-10-21・撮影地の欄だけ枠が無く、押せる欄に見えなかった・全画面の点検 run 609）
+    func jpFieldBox(multiline: Bool = false) -> some View {
+        self
+            .padding(.horizontal, 14)
+            .padding(.vertical, multiline ? 12 : 0)
+            .frame(maxWidth: .infinity, minHeight: multiline ? 88 : 48,
+                   alignment: multiline ? .topLeading : .leading)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
+    }
+}
+
+/// 欄の名前（`JPField` の見出しと同じ字・色）。見出しと欄を別々に置く画面が使う
+struct JPFieldTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(WebTheme.muted2)
+            // 読み上げは欄の名前で言う（見出しと二重に読まない）
+            .accessibilityHidden(true)
     }
 }
 

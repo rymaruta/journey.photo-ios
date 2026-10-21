@@ -202,8 +202,14 @@ struct TripBookView: View {
         HStack(alignment: .top, spacing: JPSpace.xs) {
             statCell("\(book.photos.count)", unit: nil, label: L("枚", "Photos"))
             statCell("\(TripBook.placeCount(of: book.photos))", unit: nil, label: L("撮影地", "Places"))
-            statCell(TripBook.distanceText(distance), unit: distance == nil ? nil : "km",
-                     label: L("移動（直線）", "Distance (straight)"))
+            // 「0 km」「—」だけの欄は出さない（`TripBook.showsDistance`・2026-10-21）
+            if TripBook.showsDistance(distance) {
+                statCell(TripBook.distanceText(distance), unit: "km",
+                         label: L("移動（直線）", "Distance (straight)"))
+            } else {
+                // 列の幅は3等分のまま（枚・撮影地の位置を動かさない）
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0).accessibilityHidden(true)
+            }
         }
         // 3つを1つの要素に（読み上げは「12 枚、3 撮影地、…」と続けて読む）。
         // スクリーンショットの `31-旅の足取り` がルート図の無い旅で代わりに探す

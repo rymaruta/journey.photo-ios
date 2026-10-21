@@ -205,9 +205,12 @@ enum HomeSpotShelf {
 
     /// 段の注記。**作例の撮影者はこのアプリの利用者ではない**と添える（docs/spot-samples-commons.md）。
     /// 2026-10-04 判断: 作例の出どころが Commons 以外（Flickr・環境省・県の観光連盟など）にも増えたので、
-    /// 出どころの名前は書かず、各写真の下の出典の行に任せる（札ごとに本文を読むので段では決まらない）
+    /// 出どころの名前は書かず、各写真の下の出典の行に任せる（札ごとに本文を読むので段では決まらない）。
+    /// 2026-10-21 判断: 「撮影者はこのアプリの利用者ではありません」は突き放して読めた（run 609 の 10）ので、
+    /// 「アプリの外の撮影者の作品」と、同じ事実を角の立たない言い方にした。出典の行はそのまま。
+    /// 英語は "borrowed" を使わない（撮影者に直接許しをもらったように読めるため・確かめ役の見直し）
     static var note: String {
-        L("写真は各撮影スポットの作例で、出典は写真の下にあります。撮影者はこのアプリの利用者ではありません。",
-          "Photos are examples for each spot, with sources below each photo. The photographers are not members of this app.")
+        L("写真は各撮影スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。",
+          "Example photos for each spot by photographers outside the app. Credits below each photo.")
     }
 }
