@@ -427,6 +427,9 @@ extension View {
     public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 名前を付けた座標を置く（iOS 17。指の位置をこの枠の座標で読む）
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
+    /// 大きさ・位置の変化を値で受ける（本物と同じ・iOS 16 から使える）
+    public func onGeometryChange<T: Equatable>(for type: T.Type, of transform: @escaping (GeometryProxy) -> T,
+                                               action: @escaping (T) -> Void) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）
     public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T) -> Self { self }
     /// 鳴らすかを古い値・新しい値で決める（本物と同じ・iOS 17）
@@ -490,6 +493,8 @@ public struct RotateGesture: Gesture {
 /// 名前を付けた座標（iOS 17 の `.named(_:)`）
 public struct NamedCoordinateSpace {
     public static func named(_ name: String) -> NamedCoordinateSpace { NamedCoordinateSpace() }
+    /// いちばん近い ScrollView の座標（本物と同じ・iOS 17）
+    public static var scrollView: NamedCoordinateSpace { NamedCoordinateSpace() }
 }
 
 /// 端末の振動（iOS 17 の `sensoryFeedback`）

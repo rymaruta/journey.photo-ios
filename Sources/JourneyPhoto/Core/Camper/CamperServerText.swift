@@ -68,6 +68,16 @@ extension CamperText {
             : L("訪ねた記録を残しました", "Visit recorded")
     }
 
+    /// 友達の車の札の名前「mio が集めた部品」（2026-10-21・全画面の点検 run 609）。
+    /// 前は「集めた部品（要サーバー）」と開発の言葉が画面に出ていた。名前が無ければ「友達が集めた部品」
+    static func visitPartsTitle(owner: String?) -> String {
+        let name = owner?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty, name != Labels.Common.unnamedUser, name != "ユーザー", name != "User" else {
+            return L("友達が集めた部品", "Parts your friend collected")
+        }
+        return L("\(name) が集めた部品", "Parts \(name) collected")
+    }
+
     /// 友達の車の部品の数（0 個は「なし」。相手がトランクを見せない設定でもサーバーは空で返すので、区別しない）
     static func visitParts(_ n: Int) -> String {
         n > 0 ? L("\(n) 個", "\(n)") : L("なし", "None")

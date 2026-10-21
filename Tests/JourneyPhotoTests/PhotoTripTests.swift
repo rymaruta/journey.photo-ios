@@ -346,7 +346,7 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertLessThan(pick.lowerBound, set.lowerBound, "紐付けを location より後に入れると、書き換えと読まれて外れる")
         XCTAssertTrue(field.contains("!UploadSpotTarget.keepsPicked(pickedSpot.wrappedValue, typed: value)"))
         let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
-        XCTAssertTrue(upload.contains("pickedSpot: $item.pickedSpot)"))
+        XCTAssertTrue(upload.contains("pickedSpot: $item.pickedSpot, boxed: true)"))
         let model = try source("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift")
         XCTAssertTrue(model.contains("draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)"))
         // 写真の編集は撮影スポットの候補を出さない（座標の食い違い・`PlaceSearchField.offersSpots` の注記）

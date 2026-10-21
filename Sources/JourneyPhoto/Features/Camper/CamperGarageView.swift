@@ -324,22 +324,19 @@ struct CamperGarageView: View {
 
     private var statsRow: some View {
         HStack(spacing: 8) {
-            statTile(L("集めた部品", "Parts"), "\(dex.have) / \(dex.total)", note: CamperText.dexNote(serverOpen: serverOpen))
+            // 一目で見る数は「集めた / 集められる」だけ。図鑑の総数・近日は部品の一覧の終わりへ（2026-10-21）
+            statTile(L("集めた部品", "Parts"), "\(PassExchange.grouped(dex.have)) / \(PassExchange.grouped(dex.total))")
             statTile(L("写真", "Photos"), "\(stats.posts)")
             // 数えるのは公開した写真の旅（マイページの旅の棚は非公開も入るので、数が違う人がいる・#312 の見直し）
             statTile(L("公開した旅", "Public trips"), "\(stats.books)")
         }
     }
 
-    private func statTile(_ label: String, _ value: String, note: String? = nil) -> some View {
+    private func statTile(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint)
             Text(value).font(JPFont.number(17, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
                 .lineLimit(1).minimumScaleFactor(0.7)
-            if let note {
-                Text(note).font(JPFont.number(12, weight: .regular, relativeTo: .caption)).foregroundStyle(WebTheme.faint)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -390,13 +387,9 @@ struct CamperGarageView: View {
 
     private var collection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(CamperText.partsTitle).jpEyebrow().foregroundStyle(WebTheme.accent)
-                Spacer()
-                Text("\(dex.have) / \(dex.total) · \(CamperText.dexNote(serverOpen: serverOpen))")
-                    .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
-                    .foregroundStyle(WebTheme.text)
-            }
+            // 数は上の「集めた部品」の札に1つだけ（2026-10-21・同じ数を2か所に並べない）。
+            // 図鑑の総数・近日は一覧の終わりの注記（`dexFootnote`）
+            Text(CamperText.partsTitle).jpEyebrow().foregroundStyle(WebTheme.accent)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(CamperGroupKind.allCases, id: \.self) { g in
@@ -449,6 +442,11 @@ struct CamperGarageView: View {
             if let previewPart {
                 howToGet(previewPart)
             }
+            Text(CamperText.dexFootnote(serverOpen: serverOpen))
+                .font(.system(size: 12))
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("camper.dex.footnote")
         }
     }
 

@@ -48,8 +48,8 @@ struct FavoritesView: View {
         ScrollView {
             header
             if screen.shown.partial {
-                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't reach the server — showing what's on this device")) {
+                ErrorBanner(message: L("いいねを読み込めませんでした。この端末に覚えているぶんだけ出しています",
+                                       "Couldn't load your likes — showing what's on this device")) {
                     Task { await load(force: true) }
                 }
             }

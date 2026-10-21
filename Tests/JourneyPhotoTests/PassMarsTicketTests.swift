@@ -153,7 +153,7 @@ final class PassMarsTicketTests: XCTestCase {
         let back = String(cards[start.lowerBound..<end.lowerBound])
         for part in [".frame(height: PassCardStyle.bandHeight)", ".background(WebTheme.accentSoft)",
                      "PassTicketRule(opacity: PassCardStyle.bandRuleOpacity, shine: shine)",
-                     "let fields = face.fields", "PassTicketDash(shine: shine)", "Text(face.footnote)"] {
+                     "let fields = PassTicket.shown(face.fields)", "PassTicketDash(shine: shine)", "Text(face.footnote)"] {
             XCTAssertTrue(back.contains(part), "裏に \(part) が無い")
         }
         XCTAssertEqual(PassCardStyle.bandHeight, 44)
@@ -190,7 +190,7 @@ final class PassMarsTicketTests: XCTestCase {
         let front = String(cards[start.lowerBound..<end.lowerBound])
         for part in ["PassTicketRule(opacity: PassCardStyle.photoRuleOpacity, shine: shine)",
                      "PassTicketHead(text: face.headline)", "if let via = face.via",
-                     "ForEach(Array(face.fields.enumerated())", "Text(PassTicket.frontValidity)",
+                     "ForEach(Array(PassTicket.shown(face.fields).enumerated())", "Text(PassTicket.frontValidity)",
                      "PassTicketEdge(kind: face.kind, corner: corner, shine: shine)",
                      "PassTicketGlow(kind: face.kind, corner: corner)"] {
             XCTAssertTrue(front.contains(part), "表に \(part) が無い")

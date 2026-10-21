@@ -667,7 +667,10 @@ struct PassCardFront: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                fieldGrid
+                // 値のある欄が1つも無い（自分のカードの見本など）なら、細い線だけの空の段を置かない
+                if !PassTicket.shown(face.fields).isEmpty {
+                    fieldGrid
+                }
                 Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
                     Text(face.name)
@@ -742,10 +745,11 @@ struct PassCardFront: View {
             .truncationMode(.tail)
     }
 
-    /// 日付・区間・回数の3つの欄（上下に白の細い線・値が無い欄は「—」・`PassTicket.frontFields`）
+    /// 日付・区間・回数の3つの欄（上下に白の細い線・`PassTicket.frontFields`）。
+    /// 値が無い欄は出さない（`PassTicket.shown`・2026-10-21。前は「—」を出していた）
     private var fieldGrid: some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(Array(face.fields.enumerated()), id: \.offset) { _, field in
+            ForEach(Array(PassTicket.shown(face.fields).enumerated()), id: \.offset) { _, field in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(field.label)
                         .font(.system(size: PassCardStyle.fieldLabelSize))
@@ -910,9 +914,9 @@ struct PassCardBack: View {
         .background(PassCardStyle.face)
     }
 
-    /// 発行・有効・区間・回数の 2×2（上に白の細い線・`PassTicket.backFields`）
+    /// 発行・有効・区間・回数の 2×2（上に白の細い線・`PassTicket.backFields`）。値が無い欄は詰める（`PassTicket.shown`）
     private var fieldGrid: some View {
-        let fields = face.fields
+        let fields = PassTicket.shown(face.fields)
         return VStack(alignment: .leading, spacing: PassCardStyle.backFieldGap) {
             ForEach(Array(stride(from: 0, to: fields.count, by: 2)), id: \.self) { row in
                 HStack(alignment: .top, spacing: PassCardStyle.backFieldGap) {

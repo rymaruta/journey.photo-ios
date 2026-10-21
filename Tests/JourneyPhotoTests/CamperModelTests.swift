@@ -407,11 +407,34 @@ final class CamperWiringTests: XCTestCase {
         }
     }
 
-    /// 図鑑は 132（塗装は別）。分母は第1段で集められる数で、残りは「近日」と書いて見せる
+    /// 図鑑は 132（塗装は別）。分母は第1段で集められる数で、残りは「近日」と書いて見せる——
+    /// **図鑑の終わりの注記だけに**（2026-10-21・一目で見る数は「集めた N / M」の1つ）
     func testDexNoteShows132() {
         let soon = 132 - CamperCatalog.available.count
-        XCTAssertEqual(CamperText.dexNote(), L("図鑑 132 · 近日 \(soon)", "Dex 132 · \(soon) soon"))
         XCTAssertEqual(soon, 34)
+        XCTAssertEqual(CamperText.dexFootnote(),
+                       L("図鑑は全 132 個。「近日」の 34 個は、届き始めるまで数に入れていません。",
+                         "The dex has 132 parts. The 34 marked \u{201C}Soon\u{201D} aren\u{2019}t counted until they start arriving."))
+    }
+
+    /// 🔴 全画面の点検（2026-10-21・95・96b）: 「45/98 · 図鑑 132 · 近日 34」「860/2183 · 図鑑 2194 · 近日 11」と
+    /// 数が3つ並んで読めなかった。**一目で見る数は「集めた N / M」の1つ**、図鑑の総数・近日は図鑑の終わりの注記へ
+    func testGlanceShowsOneCount() throws {
+        XCTAssertEqual(CamperText.collectedLine(have: 45, total: 98), L("集めた 45 / 98", "Collected 45 / 98"))
+        XCTAssertEqual(CamperText.collectedLine(have: 860, total: 2183), L("集めた 860 / 2,183", "Collected 860 / 2,183"))
+        XCTAssertEqual(CamperText.roomDexFootnote(all: 2194, soon: 0), L("図鑑は全 2,194 点。", "2,194 pieces in all."))
+        XCTAssertTrue(CamperText.roomDexFootnote(all: 2194, soon: 11).contains(L("「近日」の 11 点", "The 11 marked")))
+
+        // 車の画面: 数の札にも部品の一覧の見出しにも、図鑑の総数・近日を並べない
+        let garage = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
+        XCTAssertFalse(garage.contains("dexNote"), "車の画面の数の札に図鑑・近日が戻っている")
+        XCTAssertFalse(garage.contains("\\(dex.have) / \\(dex.total) ·"), "部品の一覧の見出しに数が3つ並んでいる")
+        XCTAssertTrue(garage.contains("CamperText.dexFootnote(serverOpen: serverOpen)"), "図鑑の総数・近日の注記が一覧の終わりに無い")
+        // 家具の図鑑: 見出しの数は「集めた N / M」だけ。総数・近日は終わりの注記
+        let dex = try source("Sources/JourneyPhoto/Features/Camper/Room/CamperRoomDexView.swift")
+        XCTAssertTrue(dex.contains("Text(CamperText.collectedLine(have: count.have, total: count.total))"))
+        XCTAssertFalse(dex.contains("· 図鑑 \\("), "家具の図鑑の見出しに数が3つ並んでいる")
+        XCTAssertTrue(dex.contains("CamperText.roomDexFootnote(all: CamperRoomCatalog.all.count, soon: CamperRoomCatalog.soonCount)"))
     }
 
     /// 車の名前は「とおまわり号」（英語 Detour・owner の決定）。見出しと部品の一覧に出て、眉ラベルの形は変えない

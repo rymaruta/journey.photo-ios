@@ -363,6 +363,9 @@ enum LightForecastText {
         wishlist.isEmpty ? .noWishes : .noSpots
     }
 
+    /// 空のときの一手（地図の撮影スポットへ。そこで「行きたい」を押すと、ここに光が並ぶ）
+    static var findSpotsAction: String { L("撮影スポットを探す", "Find photo spots") }
+
     static func emptyTitle(_ empty: Empty) -> String {
         switch empty {
         case .noWishes: return L("行きたい場所がまだありません", "No places on your wishlist yet")

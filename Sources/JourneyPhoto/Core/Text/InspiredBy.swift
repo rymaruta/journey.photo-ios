@@ -289,6 +289,9 @@ enum InspiredBy {
         case saved
         /// 行きたい場所の写真（写真の詳細の「行きたい」から入れた場所を含む）
         case wishlist
+        /// みんなの公開写真（2026-10-21・run 609 の 45b・45c）。保存も行きたいも無い人は、前は棚が空で
+        /// 押せる次の一手が無かった。いま書いている撮影地の写真を先に並べる
+        case everyone
 
         var id: String { rawValue }
 
@@ -296,6 +299,25 @@ enum InspiredBy {
             switch self {
             case .saved: return L("保存した写真", "Saved")
             case .wishlist: return L("行きたい場所", "Want to go")
+            case .everyone: return L("みんなの写真", "Everyone")
+            }
+        }
+
+        /// 棚が空のときの一手。**ほかの棚へ移る**（保存・行きたいが空なら、みんなの写真へ）。
+        /// みんなの写真が空なら一手は無い（公開写真が1枚も読めていない＝読み込みの失敗の文が出る）
+        var emptyNextShelf: Shelf? {
+            switch self {
+            case .saved, .wishlist: return .everyone
+            case .everyone: return nil
+            }
+        }
+
+        /// 空の棚の一手の字（「みんなの写真から選ぶ」）
+        var chooseLabel: String {
+            switch self {
+            case .saved: return L("保存した写真から選ぶ", "Choose from saved photos")
+            case .wishlist: return L("行きたい場所から選ぶ", "Choose from places you want to go")
+            case .everyone: return L("みんなの写真から選ぶ", "Choose from everyone\u{2019}s photos")
             }
         }
 
@@ -307,6 +329,8 @@ enum InspiredBy {
             case .wishlist:
                 return L("行きたい場所の写真はまだありません。写真の詳細の「行きたい」で場所を入れると、ここに並びます",
                          "No photos from places you want to go yet. Tap “Want to go” on a photo to add its place.")
+            case .everyone:
+                return L("付けられる公開写真がまだありません", "No public photos to attach yet.")
             }
         }
     }
@@ -352,5 +376,20 @@ enum InspiredBy {
             if !here.isEmpty && place == here { first.append(photo) } else { matched.append(photo) }
         }
         return Array((first + matched).prefix(shelfLimit))
+    }
+
+    /// みんなの写真（公開一覧）。**自分の写真は除く**（自分の写真を見て撮ったとは言わない）。
+    /// いま書いている撮影地と同じ場所の写真を先に、そのあとは新しい順（`wishCandidates` と同じ並べ方）
+    static func everyoneCandidates(feed: [Photo]?, viewerId: String?, currentLocation: String? = nil) -> [Photo] {
+        guard let feed else { return [] }
+        let here = LocationSlug.make(currentLocation)
+        var seen = Set<String>()
+        var first: [Photo] = []
+        var rest: [Photo] = []
+        for photo in GallerySort.new.apply(feed) where canAttach(photo) && seen.insert(photo.id).inserted {
+            if let viewerId, (photo.userId ?? photo.uploadedBy) == viewerId { continue }
+            if !here.isEmpty && LocationSlug.make(photo.location) == here { first.append(photo) } else { rest.append(photo) }
+        }
+        return Array((first + rest).prefix(shelfLimit))
     }
 }

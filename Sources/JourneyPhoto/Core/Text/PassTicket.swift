@@ -108,6 +108,13 @@ enum PassTicket {
                 Field(label: countTitle, value: filled(count))]
     }
 
+    /// **描く欄**: 値の無い欄（「—」だけ）は出さない（2026-10-21 判断・run 609 の 81・86 で「区間 —」が
+    /// 作りかけに見えた）。`frontFields`・`backFields` は欄を抜かないまま（番号で欄を引く券面がある・
+    /// `PassFaces.fieldValue`）、マルス券の格子だけがこれを通して描く
+    static func shown(_ fields: [Field]) -> [Field] {
+        fields.filter { $0.value != blank }
+    }
+
     /// 裏の4つの欄（発行・有効・区間・回数）
     static func backFields(issuer: String, section: String, count: String) -> [Field] {
         [Field(label: L("発行", "Issued by"), value: issuer),

@@ -18,6 +18,9 @@ struct SearchView: View {
     /// 引き下げ・「もう一度試す」の読み直しの最中
     @State private var isReloading = false
     @State private var query = ""
+    /// 探す口に焦点があるか。**探すの札の上で見出しの「探す」を押したら、ここに字を打てるようにする**
+    /// （2026-10-21・見出しの3つをどのタブにも置いたので、探すの札では押しても何も起きなかった）
+    @FocusState private var fieldFocused: Bool
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
     @State private var isOnScreen = false
@@ -65,11 +68,20 @@ struct SearchView: View {
                             discoverySection(section)
                         }
                     } else {
+                        // 🔴 **0件の文と「地図で撮影地を探す」はチップのすぐ下に**（2026-10-21・run 609 の 11b）。
+                        // 結果の場所（絞り込みの段の下）に出すと、打っている間はキーボードの裏に隠れて
+                        // 「何も起きない」に見えた。0件の間は季節・時間帯のチップも畳む（選んでいれば外せるよう残す）
+                        let zeroHit = zeroHitOnTop
+                        if zeroHit {
+                            emptyPhotoResults
+                        }
                         // 探し始めたら絞り込みを出す。**板 11（発見の顔）には無い**ので、
                         // 発見の間は置かない
                         // 人を探しているときは写真の絞り込みを出さない（効かない札を置かない）
                         if model.scope.showsPhotos {
-                            shootingTimeChips
+                            if Self.showsTimeChips(zeroHit: zeroHit, timeFilterEmpty: model.timeFilter.isEmpty) {
+                                shootingTimeChips
+                            }
                             categoryChips
                         }
                         // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
@@ -109,6 +121,11 @@ struct SearchView: View {
         }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
+        }
+        // 見出しの「探す」: **この札が前に出ているときだけ**探す口に焦点を当てる。ほかの札（ホーム・マップ）から
+        // 押した回は札を移るだけ（移った途端にキーボードを出さない・`isOnScreen` はまだ false）
+        .onChange(of: tabRouter.searchRequests) { _, _ in
+            if isOnScreen { fieldFocused = true }
         }
         // 索引は語が入ったときに取る（取れなければ節を出さないだけ・写真の検索はそのまま）
         // **語が変わるたびに見直す**（取れていなければ取り直す・取れたら何もしない。
@@ -211,6 +228,7 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
             TextField(model.scope.prompt, text: $query)
+                .focused($fieldFocused)
                 .textFieldStyle(.plain)
                 // 板の 16（`.callout`）
                 .font(.callout)
@@ -939,8 +957,39 @@ struct SearchView: View {
         return place.isEmpty ? head : "\(head)・\(place)"
     }
 
+    /// 0件の文を絞り込みの上（チップのすぐ下）に出すか（`zeroHitOnTop(...)`）
+    private var zeroHitOnTop: Bool {
+        Self.zeroHitOnTop(discovering: isDiscovering, showsPhotos: model.scope.showsPhotos,
+                          hasLoaded: model.hasLoaded, photosEmpty: model.shown.isEmpty,
+                          spotsEmpty: spotHits.isEmpty,
+                          usersEmpty: !model.scope.showsPeople || dropped.users(model.users).isEmpty,
+                          loadFailed: model.loadFailed && model.everything.isEmpty)
+    }
+
+    /// **0件の文と地図への出口を、絞り込みの上に出すか**（2026-10-21 判断・run 609 の 11b）。
+    /// 写真も撮影スポットも人も0件で、読み終えていて、読み込みの失敗ではないとき。
+    /// 失敗は「引き下げて読み直せます」を結果の場所に出したまま（0件と言わない）
+    nonisolated static func zeroHitOnTop(discovering: Bool, showsPhotos: Bool, hasLoaded: Bool,
+                                         photosEmpty: Bool, spotsEmpty: Bool, usersEmpty: Bool,
+                                         loadFailed: Bool) -> Bool {
+        !discovering && showsPhotos && hasLoaded && photosEmpty && spotsEmpty && usersEmpty && !loadFailed
+    }
+
+    /// 季節・時間帯のチップを出すか。**0件の間は畳む**（チップの列が0件の文をキーボードの裏へ押し下げていた）。
+    /// ただし季節・時間帯を選んでいる間は残す（外す手立てを消さない）
+    nonisolated static func showsTimeChips(zeroHit: Bool, timeFilterEmpty: Bool) -> Bool {
+        !zeroHit || !timeFilterEmpty
+    }
+
     @ViewBuilder
     private var photoResults: some View {
+        if !zeroHitOnTop {
+            photoResultsBody
+        }
+    }
+
+    @ViewBuilder
+    private var photoResultsBody: some View {
         // **件数と並び替えは結果の上**（提案の絵）
         HStack {
             // 撮影スポットの節が上に出るので、ここは「写真」と名乗る（スポットまで0件に読ませない）
@@ -981,6 +1030,14 @@ struct SearchView: View {
             // v2（Components 06）: 回る印ではなく格子の形の灰の骨格
             JPLoadingState(kind: .grid)
         } else if model.shown.isEmpty {
+            emptyPhotoResults
+        } else {
+            SearchGrid(photos: model.shown)
+        }
+    }
+
+    /// 写真が0件・読み込めなかったときの文と一手
+    private var emptyPhotoResults: some View {
             // **「読み込めなかった」と「見つからなかった」を分ける。**
             // 0件なら検索語を捨てさせず、地図で同じ目的を続けられる出口を出す。
             VStack(spacing: 12) {
@@ -1011,9 +1068,6 @@ struct SearchView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.vertical, 24)
-        } else {
-            SearchGrid(photos: model.shown)
-        }
     }
 }
 

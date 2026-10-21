@@ -24,37 +24,87 @@ enum DiscoverySections {
 
     /// 写真の多い撮影地。**同数なら名前順**（毎回同じ並びにする）。
     ///
-    /// **ゆるく畳まない。** 「パリ」と「パリ, フランス」は別の札として出す
-    /// ——集約ページ側（`PhotoQuery.photos(_, in: .location)`）は
-    /// ゆるく一致させるので、どちらを押しても同じ写真が出る。
-    /// ここで畳むと、どちらの綴りを見せるかを決める根拠が無い。
+    /// 🔴 2026-10-21 判断（全画面の点検 11-探す）: **市・名所の細かさの名前でまとめる**（`spotName`）。
+    /// 以前は撮影地の文字列そのままで分けていて（「ゆるく畳まない」）、本番の写真では
+    /// 「フランス」（国名だけ・5枚）と「フランス ヴェルサイユ」（2枚）が並び、
+    /// **「フランス」の札が2枚**に見えた。「パリ」と「パリ, フランス」も別の札だった。
+    ///  - 国名・郵便番号の欠片は落とす（「パリ, フランス」→「パリ」・「フランス ヴェルサイユ」→「ヴェルサイユ」・
+    ///    「ヴェルサイユ, Versailles, …, 78000, フランス」→「ヴェルサイユ」）
+    ///  - **国名しか無い撮影地は出さない**（国は「撮影地」として広すぎ、近くの地名で補うと当て推量になる）
+    ///  - 同じ名前（空白・大小を無視）は1枚の札にまとめる
     static func popularSpots(in photos: [Photo], limit: Int = 6) -> [Spot] {
-        var byPlace: [String: [Photo]] = [:]
+        var byPlace: [String: (name: String, list: [Photo])] = [:]
         for photo in photos {
-            let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !place.isEmpty else { continue }
-            byPlace[place, default: []].append(photo)
+            guard let name = spotName(photo.location) else { continue }
+            let key = LocationMatch.normalized(name)
+            byPlace[key, default: (name: name, list: [])].list.append(photo)
         }
-        return byPlace
-            .compactMap { place, list -> Spot? in
+        return byPlace.values
+            .compactMap { group -> Spot? in
+                let place = group.name
+                let list = group.list
                 guard let cover = GallerySort.popular.apply(list).first else { return nil }
                 // 🔴 **数えるのは行き先と同じ関数で。** 完全一致で数えていたので、
                 // 札に「2枚の写真」と書いて開くと3枚出ていた（run 55 の実機の絵）。
                 // Web は同じ食い違いを `collectEntries` で直してある——
                 // 「見出しの（N枚）と実際に並ぶ枚数が食い違う」と名指しで書いてある
                 //
-                // **表紙はここを変えない。** 表紙の元（`list`）は撮影地の文字列で
+                // **表紙はここを変えない。** 表紙の元（`list`）は札の名前で
                 // 分けた束なので**互いに重ならない**＝2枚の札が同じ表紙になることは
                 // 無い。run 56 の絵を見て「フランス」と「フランス ヴェルサイユ」が
                 // 同じ絵に見えたので重複よけを書いたが、**変異を当てたら1件も
                 // 落ちなかった**——よく見ると別の写真（柱頭と列柱）で、
                 // 直す対象が最初から無かった。消した
                 let counted = PhotoQuery.photos(photos, in: .location(place)).count
+                // 1字の名前は行き先の突き合わせ（`photoIsIn`）が当てない。0枚の札は出さない
+                guard counted > 0 else { return nil }
                 return Spot(id: place, count: counted, cover: cover)
             }
             .sorted { $0.count != $1.count ? $0.count > $1.count : $0.id < $1.id }
             .prefix(limit)
             .map { $0 }
+    }
+
+    /// 人気の撮影地の札の名前（市・名所の細かさ）。**国名しか無ければ nil**（2026-10-21 判断）。
+    ///
+    ///     「パリ, フランス」→「パリ」          「フランス ヴェルサイユ」→「ヴェルサイユ」
+    ///     「蔵王キツネ村, …, 白石市, 宮城県, 989-0733, 日本」→「蔵王キツネ村」
+    ///     「宮城県, 白石市, 蔵王キツネ村」（大きい順に打った）→「蔵王キツネ村」
+    ///     「フランス」「France」「日本」→ nil
+    ///
+    /// 名前は**元の撮影地の中にそのまま在る語**だけ——行き先（`PhotoQuery` の `.location`）が
+    /// 同じ写真を拾えるように、作った名前・訳した名前にはしない
+    static func spotName(_ raw: String?) -> String? {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.components(separatedBy: CharacterSet(charactersIn: ",，、"))
+            .map { stripCountry($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { !$0.isEmpty && !LocationMatch.isPostalOrNumber($0) }
+        guard let first = parts.first, let last = parts.last else { return nil }
+        // 大きい順に打った撮影地（先頭が県・市・最後が県ではない）は、いちばん細かい最後の欠片。
+        // 場所の検索の答え（小さい順・最後が県）の「蔵王キツネ村」は先頭が「村」で終わるが、名前なので先頭
+        if parts.count >= 2, LocationMatch.isAdministrative(first), !RegionList.prefectures.contains(last) {
+            return last
+        }
+        return first
+    }
+
+    /// 欠片から国名を落とす。欠片そのものが国名なら空、空白で区切った頭か尾の国名
+    /// （「フランス ヴェルサイユ」「Kyoto Japan」）は外す。語の途中の国名（「フランス・メトロポリテーヌ」）は触らない。
+    /// 英語の国名は**尾だけ**見る（頭で外すと「Turkey Hill」のような地名が欠ける）
+    private static func stripCountry(_ part: String) -> String {
+        var text = part
+        let table = VisitedCountries.table
+        if table.contains(where: { text == $0.ja || text.caseInsensitiveCompare($0.en) == .orderedSame }) { return "" }
+        for entry in table where text.hasPrefix(entry.ja + " ") || text.hasPrefix(entry.ja + "　") {
+            text = String(text.dropFirst(entry.ja.count + 1)).trimmingCharacters(in: .whitespaces)
+        }
+        for name in table.flatMap({ [$0.ja, $0.en] }) {
+            let lower = text.lowercased()
+            if lower.hasSuffix(" " + name) || lower.hasSuffix("　" + name) {
+                text = String(text.dropLast(name.count + 1)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return text
     }
 
     /// 季節のおすすめ。**いまの季節のタグ**を先に出す。

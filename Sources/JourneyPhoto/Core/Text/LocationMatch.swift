@@ -244,7 +244,7 @@ extension LocationMatch {
     }
 
     /// 郵便番号・番地（数字と「-」「〒」と空白だけの欠片）
-    private static func isPostalOrNumber(_ part: String) -> Bool {
+    static func isPostalOrNumber(_ part: String) -> Bool {
         let allowed = CharacterSet(charactersIn: "0123456789-−〒 ")
         return part.unicodeScalars.contains { CharacterSet.decimalDigits.contains($0) }
             && part.unicodeScalars.allSatisfy { allowed.contains($0) }
@@ -252,7 +252,7 @@ extension LocationMatch {
 
     /// 行政区分の欠片か（都道府県・市区町村郡で終わる和文・英文の県・国の日本）。
     /// 先頭がこれなら、人が大きい順に打った文字とみなして縮めない
-    private static func isAdministrative(_ part: String) -> Bool {
+    static func isAdministrative(_ part: String) -> Bool {
         if RegionList.prefectures.contains(part) || isEnglishPrefecture(part) || isJapan(part) { return true }
         guard hasJapaneseScript(part), let tail = part.last else { return false }
         return "都道府県市区町村郡".contains(tail)
