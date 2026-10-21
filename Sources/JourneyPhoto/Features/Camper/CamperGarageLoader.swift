@@ -88,3 +88,55 @@ final class CamperPhotoLoader: ObservableObject {
         phase = .loaded
     }
 }
+
+/// 自分の車の要サーバーの部品（`GET /user/camper`・2026-10-19 第2段）を読む（`SwiftUI` を読まない部分・テストで見る）。
+///
+/// - 読めて `launched: true` なら、サーバーの部品を数に入れ、分母を 131 にする（`CamperServerParts.open`）
+/// - `launched: false`・通信の失敗・断り（退会など）は、端末の数え方のまま（分母 98・「近日」）。画面は止めない
+/// - 写真の保存で届いた部品（`CamperStore.inbox`）は、読めなくても持っている扱い
+/// - 今の人の答えを読めたら、画面に戻るたびには読まない（数え直しはサーバーが1日1回に絞る）
+/// - 人が替わったら、前の人の答えを捨ててから読む。取り消された読み込みの結果は入れない
+@MainActor
+final class CamperServerModel: ObservableObject {
+
+    enum Phase: Equatable { case idle, loading, loaded, failed }
+
+    @Published private(set) var parts = CamperServerParts.closed
+    @Published private(set) var phase: Phase = .idle
+    private(set) var loadedFor: String?
+    private var inFlight: String?
+
+    /// 読み終えた（読めた・読めなかった）か。「届いた」の判定はここまで待つ（後から届いた部品を次回に回さない）
+    var settled: Bool { phase == .loaded || phase == .failed }
+
+    func load(userId: String?, store: CamperStore, fetch: () async throws -> CamperServerState) async {
+        guard let userId else {
+            parts = .closed
+            phase = .failed
+            return
+        }
+        if phase == .loaded, loadedFor == userId { return }
+        guard inFlight != userId else { return }
+        if loadedFor != userId {
+            parts = CamperServerParts(state: nil, inbox: store.inbox)
+            loadedFor = nil
+        }
+        inFlight = userId
+        phase = .loading
+        let result: CamperServerState?
+        do { result = try await fetch() } catch { result = nil }
+        inFlight = nil
+        guard !Task.isCancelled else { return }
+        parts = CamperServerParts(state: result, inbox: store.inbox)
+        if result != nil { loadedFor = userId }
+        phase = result != nil ? .loaded : .failed
+    }
+
+    /// 届いた画面で見せた部品を、写真の保存の控えから外す
+    func noteShown(store: CamperStore) {
+        let seen = store.seen ?? []
+        let left = store.inbox.filter { !seen.contains($0) }
+        store.clearInbox()
+        if !left.isEmpty { store.receive(left) }
+    }
+}

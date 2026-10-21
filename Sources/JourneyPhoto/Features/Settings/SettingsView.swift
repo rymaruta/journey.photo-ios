@@ -150,9 +150,10 @@ struct SettingsView: View {
     /// **2026-10-18 判断（owner「設定の項目多くなってるのでわかりやすいように整理して」「キャンピングカーなどの入口は
     /// 基本的に設定の中に入れたい」）**: 使う目的ごとの少ない節に並べ直した。並びの決まりは `SettingsOutline`（テストで見張る）。
     /// 1. Pro（板 43 のとおりいちばん上・`ProSettingsSection` はそのまま）
-    /// 2. 旅の道具（旅のトランク・写真で作るキャンピングカー・キャンプ場・すれちがい乗車券・すれちがい帳・共同アルバム・旅行プラン）
+    /// 2. 旅の道具（旅のトランク・写真で作るキャンピングカー・すれちがい乗車券・すれちがい帳・共同アルバム・旅行プラン）
     ///    ——マイページの「旅の記録」の札（`tripToolsCard`）の道具に、すれちがい乗車券の設定を足したもの。並びは設定の順
-    ///    （すれちがいの2つを続ける。マイページはトランク・車・キャンプ場・アルバム・プラン・すれちがい帳の順）。マイページの行も残す
+    ///    （すれちがいの2つを続ける。マイページはトランク・車・アルバム・プラン・すれちがい帳の順）。マイページの行も残す
+    ///    キャンプ場は #339（2026-10-20）で外した
     /// 3. お知らせ（プッシュ通知の入切）
     /// 4. 公開範囲とプライバシー（ブロックした人・親しい友達・トランクを見せる）。**長い「トランクを見せる」の見本は
     ///    下の画面へ**（`SettingsTrunkPrivacyPage`）——いちばん上の画面の半分を占めていた
@@ -253,12 +254,10 @@ struct SettingsView: View {
     /// 行の形はどれも「NavigationLink＋JPRowLabel（絵なし）」。値は持つものだけ（トランクの硬貨・すれちがいの入切）
     private var tripToolsSection: some View {
         section(SettingsOutline.Part.tripTools.title) {
-            // ViewBuilder の子は10まで。写真で育つ3つ（トランク・車・キャンプ場）を1つに包む
+            // ViewBuilder の子は10まで。写真で育つ2つ（トランク・車）を1つに包む
             Group {
                 trunkRow
                 camperRow
-                JPCardDivider()
-                campRow
             }
             JPCardDivider()
             passRow
@@ -316,18 +315,6 @@ struct SettingsView: View {
         }
         .buttonStyle(JPRowButtonStyle())
         .accessibilityIdentifier("settings.camper")
-    }
-
-    /// 写真で作るキャンプ場（2026-10-18・#314）。キャンピングカーの下。題・説明はマイページの「旅の記録」の行と同じ。
-    /// 中身は端末の中だけ（`CampStore`）なので、設定から開いても読むものは無い——マイページと同じ形で開く
-    private var campRow: some View {
-        NavigationLink { CampHomeView(ownerName: myProfile?.name) } label: {
-            JPRowLabel(title: L("キャンプ場", "Campsite"),
-                       detail: L("撮った森や空を切り絵にして、浮かぶ島に立てる",
-                                 "Turn the woods and skies you shoot into paper cutouts on a floating island"))
-        }
-        .buttonStyle(JPRowButtonStyle())
-        .accessibilityIdentifier("settings.camp")
     }
 
     /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。2026-10-18 から「旅の道具」の札の先頭の1行。
@@ -540,7 +527,8 @@ enum SettingsOutline {
                 return ["settings.pro", "settings.supporterCard", "settings.nameSide", "settings.offlineTrips",
                         "settings.lightForecast", "settings.lightAlert"]
             case .tripTools:
-                return ["settings.trunk", "settings.camper", "settings.camp", "settings.pass", "settings.passBook",
+                // キャンプ場の行は #339 で外した
+                return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
                         "settings.albums", "settings.plans"]
             case .notifications: return ["settings.push"]
             case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy"]

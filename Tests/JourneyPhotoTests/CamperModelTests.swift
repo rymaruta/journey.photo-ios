@@ -22,7 +22,7 @@ final class CamperModelTests: XCTestCase {
     }
 
     /// 図鑑（板 CamperDex）: 33 分類 × 4 つ = 132 個・id は「分類.部品」（英小文字と _）・珍しさ 32/41/40/19・
-    /// 端末だけ 99（うち 1 つはキャンプ場が出来てから）／要サーバー 33・いつものは最初から（ルーフテントだけ空き）
+    /// 端末だけ 99（うち 1 つは #339 で外したキャンプ場向けの焚き火で近日）／要サーバー 33・いつものは最初から（ルーフテントだけ空き）
     func testDexMatchesTheBoard() {
         let dexCats = CamperCategory.allCases.filter(\.inDex)
         XCTAssertEqual(dexCats.count, 33)
@@ -36,7 +36,7 @@ final class CamperModelTests: XCTestCase {
         XCTAssertEqual([count(.common), count(.occasional), count(.rare), count(.veryRare)], [32, 41, 40, 19])
         let server = CamperCatalog.dex.filter { if case .server = $0.unlock { return true }; return false }
         XCTAssertEqual(server.count, 33)
-        XCTAssertEqual(CamperCatalog.available.count, 98, "端末だけ 99 のうち、キャンプ場の焚き火はキャンプ場ができてから")
+        XCTAssertEqual(CamperCatalog.available.count, 98, "端末だけ 99 のうち、キャンプ場向けの焚き火は近日のまま")
         XCTAssertEqual(CamperCatalog.dex.filter { $0.unlock == .starter }.count, 32)
         XCTAssertTrue(CamperCatalog.parts(.roofTent).allSatisfy { $0.unlock != .starter })
         // 図鑑の付箋の対応表
@@ -368,7 +368,9 @@ final class CamperWiringTests: XCTestCase {
 
     /// SceneKit: 板の指定（physicallyBased・clearCoat・SCNFloor の映り込み・太陽の落ち影・まとめて描く）
     func testSceneKitFollowsTheBoard() throws {
+        // 素材を SceneKit に写す所は `CamperScenePalette` に切り出した（2026-10-19・とおまわり号の中と共に使う）
         let scene = try source("Sources/JourneyPhoto/Features/Camper/CamperScene.swift")
+            + source("Sources/JourneyPhoto/Features/Camper/CamperScenePalette.swift")
         for needle in [".physicallyBased", "clearCoat.contents", "SCNFloor()", "castsShadow = true", "flattenedClone()",
                        "reflectivity", "lightingEnvironment", "CamperScenePlan.make(next)", "Task.detached"] {
             XCTAssertTrue(scene.contains(needle), needle)

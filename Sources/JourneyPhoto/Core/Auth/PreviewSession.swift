@@ -279,6 +279,40 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、とおまわり号の要サーバーの部品の見本を出す（Debug のみ・2026-10-19 第2段）。`-JPPreviewCamper YES`。
+    ///
+    /// 鍵を持たない見本の入り方では `GET /user/camper`・`GET /users/{uid}/camper` が読めないので、分母 131・届いた画面・
+    /// 友達の車の絵が撮れない。**サーバーには何も送らない**——自分の車は `CamperServerSample.mine`、友達の車は
+    /// `CamperServerSample.visit`、贈る・薪は見本の答え。入っている見本の利用者のときだけ。Release では必ず false
+    static let camperKey = "JPPreviewCamper"
+
+    static var camperSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: camperKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
+    /// `-JPPreviewCamperVisit YES`。
+    ///
+    /// 人のプロフィールの本物の入口（フォローしている人の頁だけ）は、ホームの写真の並びとフォローの関係次第で見本の
+    /// 起動では出ないことがあり、画面写真（95i・95j）が撮れなかった。**本物の入口の条件は変えない**——ここは見本の友達
+    /// （`CamperServerSample.friendId`）の車へ入る別の行を、見本の起動のときだけ足す。中身は見本で、サーバーには何も送らない。
+    /// 入っている見本の利用者のときだけ。Release では必ず false
+    static let camperVisitKey = "JPPreviewCamperVisit"
+
+    static var camperVisitSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: camperVisitKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
     /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**
     /// （`POST /user/trunk/welcome` を呼ばない）。入っている見本の利用者のときだけ。Release では必ず nil

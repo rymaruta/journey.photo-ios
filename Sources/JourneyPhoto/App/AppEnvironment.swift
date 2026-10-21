@@ -41,6 +41,8 @@ final class AppEnvironment: ObservableObject {
     let purchases: PurchaseService
     /// 旅のトランク（`/user/trunk`・本人だけ・2026-10-17）
     let trunk: TrunkService
+    /// とおまわり号の要サーバーの部品（`/user/camper`・`/users/{uid}/camper…`・2026-10-19 段2）
+    let camper: CamperService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -77,5 +79,6 @@ final class AppEnvironment: ObservableObject {
         self.publicFeed = PublicFeedService(api: api)
         self.purchases = PurchaseService(api: api)
         self.trunk = TrunkService(api: api)
+        self.camper = CamperService(api: api)
     }
 }

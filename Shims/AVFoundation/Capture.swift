@@ -120,7 +120,7 @@ open class AVCaptureSession: NSObject {
     open func commitConfiguration() {}
     open func canAddInput(_ input: AVCaptureInput) -> Bool { false }
     open func addInput(_ input: AVCaptureInput) {}
-    /// 入力を外す（キャンプ場のカメラの前後の切り替え・2026-10-18）
+    /// 入力を外す（カメラの前後の切り替え）
     open func removeInput(_ input: AVCaptureInput) {}
     open func canAddOutput(_ output: AVCaptureOutput) -> Bool { false }
     open func addOutput(_ output: AVCaptureOutput) {}

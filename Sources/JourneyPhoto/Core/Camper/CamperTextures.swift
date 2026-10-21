@@ -41,7 +41,7 @@ enum CamperTextures {
     }
 
     /// 決まった乱れ（同じ絵になる）
-    private struct Noise {
+    struct Noise {
         var seed: UInt64
         mutating func next() -> Double {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
@@ -61,6 +61,10 @@ enum CamperTextures {
         case .prism: return prism()
         case .flame: return flame()
         case .roomGlow: return roomGlow()
+        case .planks, .chevron, .herringbone, .checkerTiles, .cork, .boards, .birchPly, .darkBoards, .wallpaperStripe,
+             .leather, .linenSlub, .knit, .rush, .wicker, .rope, .ovalRings, .runnerWeave, .enamelChip, .castIron, .foliage,
+             .clockDial, .windowDay, .windowNight, .matBoard, .photoPlaceholder, .wornWood, .mapPrint:
+            return CamperRoomTextures.make(kind)
         }
     }
 
@@ -169,16 +173,17 @@ enum CamperTextures {
     }
 
     /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない。
-    /// 2026-10-19: 硬い円に見えた（owner）ので、ガウスの裾で縁まで 0 になめらかに落とす（縁の 1 画素で切れない）
+    /// 2026-10-19: 硬い円に見えた（owner）ので、ガウスの裾で縁まで 0 になめらかに落とす。
+    /// 2026-10-20: 裾を広げすぎると尾灯の赤い球が大きくなる。exp(−3.2r²) で縁だけ少し柔らかく（芯は色の暗さで抑える）
     static func glow() -> CamperBitmap {
         var b = CamperBitmap(width: 64, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
                 let dx = (Double(x) - 31.5) / 31.5, dy = (Double(y) - 31.5) / 31.5
                 let r2 = dx * dx + dy * dy
-                // exp(−4r²) の裾を、縁（r=1）でちょうど 0 になるよう引いて伸ばす
-                let edge = exp(-4.0)
-                let v = r2 >= 1 ? 0 : max(0, (exp(-4 * r2) - edge) / (1 - edge))
+                let k = 3.2
+                let edge = exp(-k)
+                let v = r2 >= 1 ? 0 : max(0, (exp(-k * r2) - edge) / (1 - edge))
                 b.set(x, y, (v, v, v))
             }
         }

@@ -103,11 +103,13 @@ struct CamperNodeSpec: Sendable {
     }
 }
 
-/// 灯り（夜）
+/// 灯り（夜）。減衰の当て方は `pattern` で分ける（`CamperLightPattern`）
 struct CamperLightSpec: Sendable, Equatable {
     enum Kind: Sendable { case omni, spot }
     var name: String
     var kind: Kind
+    /// 用途（天井・前照灯・焚き火・ランタン・部屋の家具）。尾灯はここに置かない
+    var pattern: CamperLightPattern
     var position: CV3
     /// spot の向き（板の単位の向き）
     var direction = CV3(0, -1, 0)
@@ -125,7 +127,25 @@ struct CamperLightSpec: Sendable, Equatable {
     var moods: Set<CamperMood>?
 
     /// 室内の灯り（室内の部品だけを照らす。壁の外の縁・扉・屋根の棒に光の筋を乗せない）
-    var inside: Bool { name.hasPrefix("interior.") }
+    var inside: Bool { name.hasPrefix("interior.") || pattern == .ceiling || pattern == .roomLamp }
+
+    init(name: String, kind: Kind, pattern: CamperLightPattern, position: CV3, direction: CV3 = CV3(0, -1, 0),
+         color: UInt32, intensity: Double, range: Double, group: CamperGroup = .body,
+         spotInner: Double = 20, spotOuter: Double = 45, castsShadow: Bool = false, moods: Set<CamperMood>? = nil) {
+        self.name = name
+        self.kind = kind
+        self.pattern = pattern
+        self.position = position
+        self.direction = direction
+        self.color = color
+        self.intensity = intensity
+        self.range = range
+        self.group = group
+        self.spotInner = spotInner
+        self.spotOuter = spotOuter
+        self.castsShadow = castsShadow
+        self.moods = moods
+    }
 }
 
 /// 見る向き（カメラの寄り）
@@ -417,6 +437,8 @@ struct CamperBuilder {
         b.campsite()
         b.wallSeams()
         if config.stage == .trailer { b.trailer() }
+        // 外観に翼の箱（alu の直方体）を出さない（2026-10-20 owner「見た目が酷すぎる」）。
+        // 部屋のマス計算は `CamperVolumes.boxes` のまま。殻の寸法で寄りと接地の影を決める
         b.nightLights()
         b.applyWallWood()
         b.applySilhouette()
@@ -520,10 +542,10 @@ struct CamperBuilder {
                                       bands: bands, coarse: coarse, side: { [coarse] _, y in CamperMeshKit.material(at: y, in: coarse) },
                                       back: .inner, reveal: .reveal)
         let x0 = rear
-        // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）
-        // 2026-10-19（Mac run 565 の 95k）: この写しは鏡ではなく回転（行列式 +1）なので巻きは逆にしない。前は
-        // `mirror: true` で巻きが全部裏返り、外の塗装の面が裏として消え、奥の内張り（室内の組・室内灯が当たる）が
-        // 外から見えて、夜に後ろの壁が一面まっ白・昼も帯の無い薄い色になっていた（試験 testMeshWindingMatchesNormals）
+        // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）。
+        // この写しの行列式は +1（向きを保つ）なので mirror しない。mirror: true だと巻きだけが逆になり、
+        // 外から内張りの面が見えて室内灯で後部が真っ白に飛んだ（2026-10-20 owner・実機）
+        // 2026-10-19 にこちらの枝（Mac run 565 の 95k）でも同じ直し。試験 testMeshWindingMatchesNormals
         let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
         mesh("body.rearWall", placed)
         windowTrim(window, plane: .rear(x0), name: "rear.window")
@@ -643,7 +665,7 @@ struct CamperBuilder {
                 // 表は外（+Z か -Z）。`depth` は表からの深さ（正で外へ出る）
                 return s > 0 ? m.translated(CV3(0, 0, face + depth)) : m.mirroredZ().translated(CV3(0, 0, -(abs(face) + depth)))
             case .rear(let x):
-                // 回転の写し（鏡ではない）なので巻きは逆にしない（2026-10-19・後ろの壁と同じ）
+                // 後壁と同じ写し（行列式 +1）。mirror すると巻きが法線と食い違う
                 return m.mapped({ CV3(x - depth - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
             }
         }
@@ -1383,15 +1405,12 @@ struct CamperBuilder {
             // omni は影を落とさず上にも光るので、灯りの組を分けた後も屋根の棒・オーニングの箱・縁に橙の筋が残った。
             // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
             // 円錐は広く（全体 156°）: 窓の高さの内壁とカーテンまで届き、窓越しに照らされた室内が透けて見える。
-            // 真ん中が明るく窓の縁へ落ちるので、窓の明るさにむらが出る（一色の板にしない・2026-10-19）
-            // 2026-10-19（Mac run 547）: 窓の高さの内壁は円錐の縁（真下から 50〜73°）で暗かった。内側の円錐を広げて
-            // 窓の高さまで明るさを保ち、強さも上げる（扉の口の中は前の灯りから離れているので飛ばない）
             for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 1250.0), ("interior.front", CV3(6, roofTop - 12, -10), 720)] {
-                out.lights.append(CamperLightSpec(name: name, kind: .spot, position: p, direction: CV3(0, -1, 0), color: warm,
-                                                  intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
+                out.lights.append(CamperLightSpec(name: name, kind: .spot, pattern: .ceiling, position: p, direction: CV3(0, -1, 0),
+                                                  color: warm, intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
             }
         } else {
-            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, position: CV3(-40, roofTop - 12, 0),
+            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, pattern: .ceiling, position: CV3(-40, roofTop - 12, 0),
                                               direction: CV3(0, -1, 0), color: warm, intensity: 1250, range: 130,
                                               spotInner: 120, spotOuter: 158, castsShadow: true))
         }
@@ -1435,7 +1454,7 @@ struct CamperBuilder {
             // 飛んだ。実物の入口灯は扉の周りと足元がほんのり明るくなる程度——強さを 1/5 に、円錐を狭く、内と外の角の差
             // （ぼかし）を大きくし、壁から少し離して真下寄りに向ける（壁には浅い角度でしか当たらない）。
             // 上限は `CamperBuilder.porchLimits`（試験で守る）
-            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, position: CV3(porchX, porchY - 3, BW + 7),
+            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 7),
                                               direction: CV3(0, -1, 0.25).normalized, color: warm, intensity: 85, range: 125,
                                               spotInner: 20, spotOuter: 80))
             // 足元の灯り（ステップの下）は灯りを足さず、地面の小さな溜まり（足す光）だけ。入口の灯りの光と重なる
@@ -1453,10 +1472,19 @@ extension CV3 {
 
 enum CamperFraming {
 
-    /// 初めの向き（板の注記: 縦 −14°・横 −32°）
+    /// 初めの向き（横 −32°・見下ろし 14°）。寄りは殻の外寸から、車が画面の横の 9 割弱に入る倍率
     static func overview(_ stage: CamperStage) -> CamperAngle {
-        let t = stage == .trailer ? CamperBuilder.B(-70, -16, 0) : CamperBuilder.B(0, -14, 0)
-        return CamperAngle(target: t, yaw: -32, elevation: 14, zoom: stage.zoom)
+        // 翼の箱は外観に出さないので、寄りも殻だけ（2026-10-20）。
+        // 殻だけだと小さく見えるので寄りを 0.78→0.88（owner「車をもう少し大きく」）
+        let shell = CamperVolumes.shellX(stage)
+        let half = CamperVolumes.bodyHalfWidth(stage)
+        let midX = (shell.lowerBound + shell.upperBound) / 2
+        let yaw = -32.0
+        let rad = abs(yaw) * .pi / 180
+        let span = (shell.upperBound - shell.lowerBound) * cos(rad) + half * 2 * sin(rad)
+        let k = 1.4 * 2 * distance(zoom: 1) * tan(fieldOfView / 2 * .pi / 180) * 100
+        let zoom = min(zoomRange.upperBound, max(zoomRange.lowerBound, 0.88 * k / max(span, 1)))
+        return CamperAngle(target: CV3(midX, 70, 0), yaw: yaw, elevation: 14, zoom: zoom)
     }
 
     /// 分類の部品の寄り（板 CamperDecorate・CamperCollection の part の向き）
