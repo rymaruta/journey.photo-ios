@@ -90,6 +90,8 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case mirror
     /// 部屋の中の物の硝子（瓶・器・戸・球）。窓の硝子は夜に外の暗さで黒く曇らせるが、物の硝子は夜も透ける（2026-10-21）
     case clearGlass
+    /// 中に物を入れた透明の球（硝子の球の吊り鉢・2026-10-21）。拡散の色を持たない片面の膜で、縁と映りだけ光る
+    case globeGlass
     /// まだ持っていない家具の影絵
     case silhouette
 }
@@ -229,6 +231,13 @@ enum CamperRoomMaterials {
             // 奥行きは書かず照りの層も無しで、鋭い映りだけで硝子に見せる
             return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, opacity: night ? 0.16 : 0.12, doubleSided: true,
                                       glassShell: false)
+        case .globeGlass:
+            // 2026-10-21（Mac run 625 の 96e・15）: `.clearGlass` のままだと、昼は灰色の膜越しに色の無い中身・奥の木目が透けず、
+            // 夜は灯りの当たった不透明な玉のように上がクリーム色・下が黒い三日月になった（灯りの照りの点まで出る）。
+            // 硝子の面の灰色（0x8C969A）が灯りで明るく照らされ、その明るさが透明度ほどには薄まらず、中身と奥の壁の上に足されている。
+            // 両面だと膜が 2 枚重なる。拡散の色をほぼ黒にして（足される明るさが無い）、片面だけにする。
+            // 光るのは鋭い映りが縁で強まる所（フレネル）だけ。他の家具の `.clearGlass`（燭台・ポット・瓶・戸棚）は変えない
+            return CamperMaterialSpec(color: 0x060809, roughness: 0.02, opacity: night ? 0.1 : 0.08, glassShell: false)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }

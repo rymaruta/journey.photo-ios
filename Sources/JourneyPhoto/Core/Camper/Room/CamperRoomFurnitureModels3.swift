@@ -422,7 +422,7 @@ extension CamperRoomFurnitureModels {
             parts.append(K.tube([CV3(0, -10.2, 0), CV3(cos(a) * 4.0, -16.2, sin(a) * 4.0)], radius: 0.14, sides: 5, R(.brass)))
         }
         let ball = CV3(0, -20.2, 0)
-        parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.clearGlass)), at: ball))
+        parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.globeGlass)), at: ball))
         // 赤道の真鍮帯
         parts.append(K.tube(K.ringXZ(center: ball, radius: 7.35, steps: 36), radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
         // 地形

@@ -19,6 +19,13 @@ enum CamperRoomFurnitureModels {
 
     /// 家具の形（形を作り込んだ家具だけ。まだのものは nil）
     static func mesh(_ id: String) -> CamperMesh? {
+        // 面積ゼロの三角形は描かれず当たりにもならないので、渡す前に念のため落とす（2026-10-21）。
+        // 形そのものは潰れた三角形を作らないこと（試験 `testEveryFurnitureMeshHoldsTogether` は落とす前の `rawMesh` で数える）
+        rawMesh(id).map(CamperRoomMeshKit.droppingDegenerate)
+    }
+
+    /// 家具の形を、面積ゼロの三角形を落とす前のまま返す（試験で形の崩れに気づくため）
+    static func rawMesh(_ id: String) -> CamperMesh? {
         let m: CamperMesh?
         switch id {
         case "bed.platform": m = platformBed()
@@ -51,8 +58,7 @@ enum CamperRoomFurnitureModels {
         case "roof_hatch.square_vent": m = squareVent()
         default: m = moreMesh(id) ?? moreMesh3(id) ?? CamperRoomVariety.mesh(id)
         }
-        // 面積ゼロの三角形（葉の切れ込みの先などで潰れた所）は描かれず当たりにもならないので、渡す前に落とす（2026-10-21）
-        return m.map(CamperRoomMeshKit.droppingDegenerate)
+        return m
     }
 
     /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色。

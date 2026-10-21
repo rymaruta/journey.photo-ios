@@ -520,7 +520,8 @@ final class CamperRoomTests: XCTestCase {
         let margin = 15.0, cell = CamperRoomLayout.cell
         var broken: [String] = []
         for f in CamperRoomCatalog.all where f.built {
-            let m = try XCTUnwrap(CamperRoomFurnitureModels.mesh(f.id), f.id)
+            // 落とす前の網で数える（`mesh` は面積ゼロを落として渡すので、形の崩れを見逃す）
+            let m = try XCTUnwrap(CamperRoomFurnitureModels.rawMesh(f.id), f.id)
             let n = m.positions.count
             guard m.normals.count == n, m.uvs.count == n else { broken.append("\(f.id) 点・向き・貼り絵の数が違う"); continue }
             if m.uvs.contains(where: { !($0.x.isFinite && $0.y.isFinite) }) { broken.append("\(f.id) 貼り絵の位置が有限でない") }
@@ -570,7 +571,18 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertLessThan(s.opacity, 0.3)
             XCTAssertFalse(s.glassShell, "硝子の殻だと手前の面が奥行きを書いて中身を隠す")
             XCTAssertEqual(s.clearCoat, 0, "照りの層の映りは透明度で薄まらず、面全体が膜になる")
+            // 硝子の球（run 625: 昼は灰色の膜・夜は灯りに照らされた不透明な玉に見えた）。拡散の色はほぼ黒・片面・奥行きを書かない
+            let globe = CamperMaterials.spec(.room(.globeGlass), paint: 0, mood: mood)
+            XCTAssertLessThan(globe.opacity, 0.15)
+            XCTAssertFalse(globe.glassShell)
+            XCTAssertFalse(globe.doubleSided, "両面だと膜が 2 枚重なる")
+            XCTAssertEqual(globe.clearCoat, 0)
+            XCTAssertLessThan(globe.roughness, 0.1)
+            for shift in [16, 8, 0] { XCTAssertLessThan((globe.color >> UInt32(shift)) & 0xFF, 0x18, "拡散の色が灯りで照らされ膜になる") }
         }
+        let terrarium = CamperRoomFurnitureModels.mesh("plant_hanger.glass_terrarium")
+        XCTAssertEqual(terrarium?.materials.contains(.room(.globeGlass)), true)
+        XCTAssertEqual(terrarium?.materials.contains(.room(.clearGlass)), false)
     }
 
     /// 寝かせた輪（`ringXZ`）は中心の高さに水平に乗る（`arc` を寝かせると高さが奥行きに移る・2026-10-21）

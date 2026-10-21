@@ -73,7 +73,11 @@ enum CamperRoomMeshKit {
             var i = 0
             while i + 2 < g.indices.count {
                 let a = m.positions[Int(g.indices[i])], b = m.positions[Int(g.indices[i + 1])], c = m.positions[Int(g.indices[i + 2])]
-                if (b - a).cross(c - a).length >= epsilon { kept += [g.indices[i], g.indices[i + 1], g.indices[i + 2]] }
+                if (b - a).cross(c - a).length >= epsilon {
+                    kept.append(g.indices[i])
+                    kept.append(g.indices[i + 1])
+                    kept.append(g.indices[i + 2])
+                }
                 i += 3
             }
             return (g.material, kept)

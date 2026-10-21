@@ -152,8 +152,17 @@ enum CamperRoomShapes {
             for i in 0..<nu {
                 let outer = j == 0 || j == nv - 1 || j == 1 || j == nv - 2
                 if cut.contains(i), outer, !(j == 2 || j == nv - 3) { continue }
-                faces.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i],
-                           normal(i, j), normal(i + 1, j), normal(i + 1, j + 1), normal(i, j + 1), m)
+                let a = grid[j][i], b = grid[j][i + 1], c = grid[j + 1][i + 1], d = grid[j + 1][i]
+                let na = normal(i, j), nb = normal(i + 1, j), nc = normal(i + 1, j + 1), nd = normal(i, j + 1)
+                // 葉の先（幅 0）と、耳の無い葉の付け根では、縁の 2 点が 1 点に潰れる。四角にすると面積ゼロの三角形が出来るので
+                // （2026-10-21: モンステラの葉の先 30）、潰れた辺の側は三角 1 枚にする
+                if (c - b).length < 1e-6 {
+                    faces.tri(a, c, d, na, nc, nd, m)
+                } else if (d - a).length < 1e-6 {
+                    faces.tri(a, b, c, na, nb, nc, m)
+                } else {
+                    faces.quad(a, b, c, d, na, nb, nc, nd, m)
+                }
             }
         }
         faces.uvs = faces.positions.map { CV2($0.x / max(L, 1e-6), 0.5 + $0.z / max(W, 1e-6)) }
