@@ -801,8 +801,10 @@ enum CamperRoomFurnitureModels {
         }
         parts.append(K.placed(K.disc(radius: 0.45, height: 0.35, bevel: 0.1, segments: 12, R(.painted(0x141414))),
                               at: c + CV3(0, 0, 1.05), rotation: toWall))
-        parts.append(K.placed(K.lathe([CV2(0, 0.3), CV2(2.4, 0.25), CV2(4.05, 0)], segments: 32, R(.frameGlass), capStart: false, capEnd: false),
-                              at: c + CV3(0, 0, 1.55), rotation: toWall))
+        // 表の硝子の丸い膨らみは外した（2026-10-21・Mac run 605/607: 硝子が白い板に描かれ、文字盤・刻み・針がすべて隠れた）。
+        // 縁の内に細い真鍮の押さえ輪だけを残す
+        parts.append(K.tube(K.arc(center: c + CV3(0, 0, 1.6), radius: 4.1, from: 0, to: 2 * .pi, steps: 36)
+                                .map { CV3($0.x, $0.y, 1.6) }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
         // 上の吊り環
         parts.append(K.tube(K.arc(center: c + CV3(0, 5.4, 1.4), radius: 0.65, from: 0.15, to: .pi - 0.15, steps: 10)
                                 .map { CV3($0.x, $0.y, 1.4) }, radius: 0.14, sides: 5, R(.agedBrass)))

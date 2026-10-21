@@ -3411,6 +3411,10 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
         // 壁の額は何枚でも掛けられ、どの部屋にも置ける所がある（床の大きな寝台は置ける所が無いことがある・run 605）
         app.buttons["camper.room.tab.wall"].firstMatch.tap()
+        // 棚は分類ごと（壁の最初は「壁の棚」）。額の分類に切り替える
+        let frameChip = app.buttons["camper.room.tray.cat.photo_frame"].firstMatch
+        XCTAssertTrue(frameChip.waitForExistence(timeout: 5), "壁の棚に額の分類が無い")
+        if frameChip.exists, frameChip.isHittable { frameChip.tap() }
         let trayItems = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.photo_frame."))
         let first = trayItems.firstMatch
         guard first.waitForExistence(timeout: 5) else { return XCTFail("棚に家具が無い") }
