@@ -9,6 +9,7 @@ struct LabelArrivedView: View {
     let batch: TrunkArrivals.Batch
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -127,11 +128,15 @@ struct LabelArrivedView: View {
     }
 
     /// どんな図柄か（真鍮の字の札）
-    /// 横に入らない大きさ（文字の大きさの設定）では札を縦に積む（2026-10-21）
+    /// アクセシビリティの大きさでは札を縦に積む（2026-10-21）。既定の大きさは前と同じ横並び（字は少し縮む）——
+    /// `ViewThatFits` にすると、既定の大きさでも名前の長い札で縦に回ってしまう
     private var chips: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { chipItems }
-            VStack(alignment: .leading, spacing: 8) { chipItems }
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { chipItems }
+            } else {
+                HStack(spacing: 8) { chipItems }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)

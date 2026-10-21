@@ -81,23 +81,55 @@ final class CamperPassTrunkDynamicTypeTests: XCTestCase {
         }
     }
 
-    /// 横に並べた札・ボタンは、アクセシビリティの大きさで縦に積む（切り替えが消えていないこと）
+    /// 部品（`marker` で始まるメンバー）の本体だけを切り出す。字下げ 4 の閉じ括弧（`\n    }\n`）まで
+    private static func member(_ marker: String, in source: String) -> String? {
+        guard let start = source.range(of: marker) else { return nil }
+        let rest = source[start.lowerBound...]
+        guard let end = rest.range(of: "\n    }\n") else { return String(rest) }
+        return String(rest[..<end.upperBound])
+    }
+
+    /// 横に並べた札・ボタンは、アクセシビリティの大きさで縦に積む。**その部品の中で**、横並びと縦積みの両方があり、
+    /// 切り替えの条件があることを見る（HStack だけに戻すと落ちる）
     func testRowsStackAtAccessibilitySizes() throws {
-        let expectations: [(file: String, needle: String)] = [
-            ("Camper/CamperGarageView.swift", "typeSize.isAccessibilitySize"),
-            ("Camper/CamperVisitView.swift", "typeSize.isAccessibilitySize"),
-            ("Pass/PassViewerView.swift", "ViewThatFits"),
-            ("Pass/PassSpinCard.swift", "ViewThatFits"),
-            ("Pro/SupporterCardView.swift", "ViewThatFits"),
-            ("Trunk/LabelArrivedView.swift", "ViewThatFits"),
-            ("Trunk/TrunkPocketView.swift", "ViewThatFits"),
-            ("Trunk/TrunkSpinViewer.swift", "typeSize.isAccessibilitySize"),
-            ("Trunk/TrunkView.swift", "typeSize.isAccessibilitySize"),
-            ("Trunk/TrunkParts.swift", "typeSize.isAccessibilitySize"),
+        let expectations: [(file: String, member: String, needles: [String])] = [
+            ("Camper/CamperGarageView.swift", "private var statsRow: some View {",
+             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { statTiles }", "HStack(spacing: 8) { statTiles }"]),
+            ("Camper/CamperGarageView.swift", "private var stagesRow: some View {",
+             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { stageButtons }", "HStack(spacing: 8) { stageButtons }"]),
+            ("Camper/CamperGarageView.swift", "private var partsGrid: some View {",
+             ["count: typeSize.isAccessibilitySize ? 2 : 3"]),
+            ("Camper/CamperVisitView.swift", "private func tiles(_ state: CamperVisitState) -> some View {",
+             ["typeSize.isAccessibilitySize", "VStack(spacing: 10) { tileItems(state) }"]),
+            ("Camper/CamperVisitView.swift", "private var actions: some View {",
+             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { actionButtons }"]),
+            ("Trunk/TrunkPocketView.swift", "private func actionBar(_ state: TrunkState) -> some View {",
+             ["ViewThatFits(in: .horizontal)", "HStack(spacing: 8) { actionButtons(state, selected: selected) }",
+              "VStack(spacing: 8) { actionButtons(state, selected: selected) }"]),
+            ("Trunk/TrunkPocketView.swift", "private func header(_ state: TrunkState) -> some View {",
+             ["ViewThatFits(in: .horizontal)", "VStack(alignment: .leading, spacing: 4) {"]),
+            ("Trunk/LabelArrivedView.swift", "private var chips: some View {",
+             ["typeSize.isAccessibilitySize", "VStack(alignment: .leading, spacing: 8) { chipItems }",
+              "HStack(spacing: 8) { chipItems }"]),
+            ("Trunk/TrunkSpinViewer.swift", "private var viewButtons: some View {",
+             ["count: typeSize.isAccessibilitySize ? 2 : 4"]),
+            ("Trunk/TrunkView.swift", "private func statCell(", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
+            ("Trunk/TrunkParts.swift", "struct TrunkButtonFace: View {", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
+            ("Pass/PassViewerView.swift", "private func actions(_ content: PassCardContent) -> some View {",
+             ["ViewThatFits(in: .horizontal)", "VStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }"]),
+            ("Pass/PassSpinCard.swift", "struct PassSpinCard: View {", ["ViewThatFits(in: .horizontal)", "flipButton"]),
+            ("Pro/SupporterCardView.swift", "private func yearsSection(width: Double) -> some View {",
+             ["ViewThatFits(in: .horizontal)", "monthCount(month)"]),
         ]
-        for (file, needle) in expectations {
+        for (file, marker, needles) in expectations {
             let source = try String(contentsOf: Self.features.appendingPathComponent(file), encoding: .utf8)
-            XCTAssertTrue(source.contains(needle), "\(file) に大きい字の並びの切り替え（\(needle)）が無い")
+            guard let body = Self.member(marker, in: source) else {
+                XCTFail("\(file) に \(marker) が無い")
+                continue
+            }
+            for needle in needles {
+                XCTAssertTrue(body.contains(needle), "\(file) の \(marker) に大きい字の並びの切り替え（\(needle)）が無い")
+            }
         }
     }
 

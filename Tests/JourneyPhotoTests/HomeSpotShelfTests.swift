@@ -357,7 +357,10 @@ final class HomeSpotShelfTests: XCTestCase {
     func testEyebrowNamesTheSeason() {
         XCTAssertEqual(HomeSpotShelf.eyebrow("autumn"), "THIS SEASON · 秋")
         XCTAssertEqual(HomeSpotShelf.eyebrow("???"), "THIS SEASON")
-        XCTAssertTrue(HomeSpotShelf.note.contains("利用者ではありません"), "作例の撮影者は利用者ではないと添える")
+        // 作例の撮影者は利用者ではないと添える。2026-10-21 から角の立たない言い方（「アプリの外の撮影者」）
+        XCTAssertTrue(HomeSpotShelf.note.contains("アプリの外の撮影者"), "作例の撮影者は利用者ではないと添える")
+        XCTAssertTrue(HomeSpotShelf.note.contains("出典は写真の下"), "出典の在りかを消した")
+        XCTAssertFalse(HomeSpotShelf.note.contains("利用者ではありません"), "突き放す言い方に戻った")
         XCTAssertFalse(HomeSpotShelf.note.contains("Wikimedia Commons"), "出どころは Commons だけではない（2026-10-04）")
     }
 

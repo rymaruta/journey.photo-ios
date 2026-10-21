@@ -195,7 +195,8 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertEqual(Labels.Brand.tagline, "写真から、次の旅が始まる。")
         let gate = try source("Features/Legal/LegalGateView.swift")
         let signIn = try source("Features/Auth/SignInView.swift")
-        XCTAssertTrue(gate.contains("Text(Labels.Brand.tagline)"))
+        // 同意の画面は同じ一言を「写真から、／次の旅が始まる。」の改行で出す（2026-10-21・`taglineLines`）
+        XCTAssertTrue(gate.contains("Text(Labels.Brand.taglineLines)"))
         XCTAssertTrue(signIn.contains("Text(Labels.Brand.tagline)"))
         XCTAssertFalse(gate.contains("次に撮りたい場所が、見つかる。"))
         XCTAssertFalse(signIn.contains("旅の写真を、一冊の記録に。"))

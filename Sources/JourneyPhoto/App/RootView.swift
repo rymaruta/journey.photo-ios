@@ -22,6 +22,8 @@ struct RootView: View {
     /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
     @State private var showPostCamera = false
     @State private var selection: Tab = .home
+    /// 地図の札の積み重ねの番号。上げると地図の札が根から作り直される（詳細を積んだ所から語を持って地図へ送るとき）
+    @State private var mapStackId = 0
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
@@ -817,7 +819,12 @@ struct RootView: View {
         // メニュー自身の行は先に閉じている）。札を切り替えるのは `tabs` の側
         .onChange(of: tabRouter.myPageRequests) { _, _ in showMenu = false }
         .onChange(of: tabRouter.searchRequests) { _, _ in showMenu = false }
-        .onChange(of: tabRouter.mapRequests) { _, _ in showMenu = false }
+        // お知らせのシートも下ろす（2026-10-21: お知らせ → 光と天気の知らせの空の「撮影スポットを探す」から
+        // 地図へ移ると、シートが上に残って地図が見えない）
+        .onChange(of: tabRouter.mapRequests) { _, _ in
+            showMenu = false
+            showNotifications = false
+        }
         // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
         // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
         // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
@@ -1100,6 +1107,8 @@ struct RootView: View {
                              onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
             }
+            // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
+            .id(mapStackId)
             .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
             .tag(Tab.map)
@@ -1196,12 +1205,19 @@ struct RootView: View {
         .onChange(of: tabRouter.myPageRequests) { _, _ in
             selection = .mypage
         }
-        // 見出しの「探す」（ホームだけ）→ 探すの札へ
+        // 見出しの「探す」→ 探すの札へ（探すの札の上で押したら、探す口に字を打てるようにする・`SearchView`）
         .onChange(of: tabRouter.searchRequests) { _, _ in
             selection = .search
         }
         // メニューの「撮影地マップ」→ マップの札へ
         .onChange(of: tabRouter.mapRequests) { _, _ in
+            // 地図の札の中で詳細を積んだ所から語を持って来た回は、積み重ねを根まで戻す
+            // （根の `onAppear` が預けた語を受け取る・`TabRouter.resetsMapStack`）
+            if TabRouter.resetsMapStack(hasQuery: tabRouter.pendingMapQuery != nil,
+                                        mapSelected: selection == .map,
+                                        rootOnScreen: tabRouter.mapRootOnScreen) {
+                mapStackId += 1
+            }
             selection = .map
         }
         .onChange(of: tabRouter.menuRequests) { _, _ in

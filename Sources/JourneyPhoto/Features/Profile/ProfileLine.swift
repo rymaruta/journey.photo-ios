@@ -78,22 +78,25 @@ enum ProfileLine {
 
     /// 人のページの数の並び。**フォロワー・フォロー中も写真と同じ決まり**——
     /// 読み込み中は札ごと出さず、取れなければ「—」。0 と言うのは読めたときだけ
-    /// （以前は読み込み中・失敗のあいだ「0」と出ていた。マイページの `statValue` と同じ）
+    /// （以前は読み込み中・失敗のあいだ「0」と出ていた。マイページの `statValue` と同じ）。
+    ///
+    /// **並びと名前はマイページと同じ「投稿・フォロワー・フォロー中」**（2026-10-21 判断・run 609 の 14 と 21）。
+    /// 前は人のページだけ「フォロワー・フォロー中・写真」で、同じ部品なのに順も名前も違って見えた
     static func counts(followers: PhotoCount, following: PhotoCount, photos: PhotoCount) -> [Count] {
         var items: [Count] = []
-        if let value = statValue(followers) {
-            let n = followers.loadedValue
-            items.append(Count(kind: .followers, value: value,
-                               label: L("フォロワー", n == 1 ? "follower" : "followers")))
-        }
-        if let value = statValue(following) {
-            items.append(Count(kind: .following, value: value,
-                               label: L("フォロー中", "following")))
-        }
         if let value = statValue(photos) {
             let n = photos.loadedValue
             items.append(Count(kind: .photos, value: value,
-                               label: L("写真", n == 1 ? "photo" : "photos")))
+                               label: L("投稿", n == 1 ? "Post" : "Posts")))
+        }
+        if let value = statValue(followers) {
+            let n = followers.loadedValue
+            items.append(Count(kind: .followers, value: value,
+                               label: L("フォロワー", n == 1 ? "Follower" : "Followers")))
+        }
+        if let value = statValue(following) {
+            items.append(Count(kind: .following, value: value,
+                               label: L("フォロー中", "Following")))
         }
         return items
     }

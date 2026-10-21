@@ -15,7 +15,7 @@ final class TabRouter: ObservableObject {
 
     func openMyPage() { myPageRequests += 1 }
 
-    /// 見出しの「探す」（ホームだけ・板 01c）とメニューの「撮影地マップ」から
+    /// 見出しの「探す」（どのタブにも・2026-10-21）とメニューの「撮影地マップ」から
     @Published private(set) var searchRequests = 0
     @Published private(set) var mapRequests = 0
     /// 見出しの「メニュー（≡）」（板 01d）。**シートは `RootView` が出す**
@@ -49,6 +49,15 @@ final class TabRouter: ObservableObject {
         return pendingMapQuery
     }
     func openMenu() { menuRequests += 1 }
+
+    /// **地図の札の積み重ねを根まで戻すか**（2026-10-21・確かめ役の指摘）。
+    /// 地図の札の中で詳細を積んだ所（人のページ → トランク）から「京都を地図で見る」を押すと、
+    /// 語は根に戻るまで預かるだけ（`takePendingMapQuery`）で、地図の札はもう選ばれているので何も起きなかった。
+    /// **語を持って地図へ送る回で、地図の札が前に出ていて根が隠れているときだけ**戻す
+    /// （語なしの回・根が出ている回・別の札から来た回は今までどおり）
+    nonisolated static func resetsMapStack(hasQuery: Bool, mapSelected: Bool, rootOnScreen: Bool) -> Bool {
+        hasQuery && mapSelected && !rootOnScreen
+    }
 
     /// **空の画面の「次の一手」から、投稿の流れを開く**（2026-10-16 判断・行き止まりの直し）。
     /// マイページの投稿0枚 →「写真を投稿」、旅の記録0件 →「旅の写真からまとめて」。

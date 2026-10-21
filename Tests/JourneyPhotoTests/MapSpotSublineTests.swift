@@ -15,9 +15,18 @@ final class MapSpotSublineTests: XCTestCase {
     }
 
     func testAfterLoadSaysCount() throws {
-        let photos = L("写真 0枚", "0 photos")
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 0), loaded: true),
+        let photos = L("写真 3枚", "3 photos")
+        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 3), loaded: true),
                        "\(NearbyPhotos.label(km: 0.8)) · \(photos)")
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true), photos)
+        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 3), loaded: true), photos)
+    }
+
+    /// 🔴 読み終えて0枚なら「写真 0枚」と言わず、最初の1枚への誘い（2026-10-21・run 609 の 13d）
+    func testZeroSaysInviteInsteadOfCount() throws {
+        let invite = SpotScreen.firstPhotoInvite
+        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 0), loaded: true),
+                       "\(NearbyPhotos.label(km: 0.8)) · \(invite)")
+        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true), invite)
+        XCTAssertFalse(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true).contains("0枚"))
     }
 }

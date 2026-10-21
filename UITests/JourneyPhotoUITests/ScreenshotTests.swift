@@ -71,11 +71,11 @@ final class ScreenshotTests: XCTestCase {
     /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
     /// 見比べられるように、上のバーだけを切り出す。3つの押せる範囲（frame）も文で残す
     /// （帯の高さは絵より数字の方が比べやすい）。出なければ撮らない
-    private func shootHeaderBand(_ app: XCUIApplication) {
+    private func shootHeaderBand(_ app: XCUIApplication, tab: String = "10e-ホーム") {
         let bar = app.navigationBars.firstMatch
         guard bar.exists else { return }
         let shot = XCTAttachment(screenshot: bar.screenshot())
-        shot.name = "10e-ホーム（右上の見出しの帯・寄り）"
+        shot.name = "\(tab)（右上の見出しの帯・寄り）"
         shot.lifetime = .keepAlways
         add(shot)
         let ids = ["header.search", "header.notifications", "header.menu"]
@@ -84,7 +84,7 @@ final class ScreenshotTests: XCTestCase {
             return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
         }
         let note = XCTAttachment(string: (["バー: \(bar.frame)"] + lines).joined(separator: "\n"))
-        note.name = "10e-ホーム（見出しの寸法）"
+        note.name = "\(tab)（見出しの寸法）"
         note.lifetime = .keepAlways
         add(note)
     }
@@ -587,7 +587,8 @@ final class ScreenshotTests: XCTestCase {
             // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
             // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
             // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
-            if name == "ホーム" { shootHeaderBand(app) }
+            // 見出しの帯はどのタブも同じ中身（2026-10-21）。探す・マップも寸法を残して見比べる
+            if name == "ホーム" || name == "探す" || name == "マップ" { shootHeaderBand(app, tab: "1\(index)e-\(name)") }
             if name == "ホーム" {
                 let latest = app.buttons["新着"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
@@ -1707,8 +1708,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(card.label.contains("発、") && card.label.contains("着"),
                       "見本の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
         XCTAssertTrue(card.label.contains("乗車券"), "見本の表に「乗車券」が無い（\(card.label)）")
-        // 見本の日付・区間・回数は空（「—」）。読み上げは「ダッシュ」でなく「なし」（2026-10-17）
-        XCTAssertTrue(card.label.contains("日付 なし"), "空の欄が「なし」と読めない（\(card.label)）")
+        // 見本の日付・区間・回数は空。**空の欄は出さない**（2026-10-21・前は「—」を出し、読み上げは「なし」）
+        XCTAssertFalse(card.label.contains("日付 なし"), "空の欄を出している（\(card.label)）")
         XCTAssertFalse(card.label.contains("—"), "空の欄の「—」をそのまま読ませている（\(card.label)）")
         shoot(app, "85-自分のカード（表・東京→フランス）")
         let flip = app.buttons["pass.pick.flip"].firstMatch
@@ -3693,6 +3694,99 @@ final class ScreenshotTests: XCTestCase {
             guard button.exists else { continue }
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
             XCTAssertTrue(button.isHittable, "\(id) を押せない")
+        }
+        // 3つは縦に積まれる（横並びに戻すと上端がそろって落ちる）
+        let ys = ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"].map { app.buttons[$0].firstMatch.frame.minY }
+        XCTAssertTrue(ys[0] < ys[1] && ys[1] < ys[2], "大きい文字なのに手持ちのボタンが縦に積まれていない（上端 \(ys)）")
+    }
+
+    /// **すれちがいの束（大きい文字）**: 束の画面は送らないので字の伸びを xxxLarge で止めている（`PassViewerView.typeLimit`）。
+    /// 文字をアクセシビリティの XL にしても、下のボタン（ありがとう・帳に入れる）と × が画面の中で押せるか。
+    /// 「ありがとう」を押した後（「ありがとうを返しました」・見本の束ではサーバーに送らない）も見る。
+    /// 札が出なければ撮らずに抜ける。**出たのにボタンが画面の外・44pt 未満・押せなければ落とす**
+    func testCapturesPassViewerLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launchArguments += Self.largeText
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let open = app.buttons["pass.home.open"].firstMatch
+        guard open.waitForExistence(timeout: 45) else { return }
+        scrollTo(open, in: app)
+        guard open.isHittable else { return }
+        open.tap()
+        let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+        guard card.waitForExistence(timeout: 10) else { return XCTFail("札を押しても束が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "81x-大きい文字（すれちがいの束）")
+        let window = app.windows.firstMatch.frame
+        func checkButtons(_ when: String) {
+            for (id, name) in [("pass.viewer.close", "閉じる"), ("pass.viewer.thanks", "ありがとう"), ("pass.viewer.file", "帳に入れる")] {
+                let b = app.buttons[id].firstMatch
+                XCTAssertTrue(b.exists, "\(when)「\(name)」が無い")
+                guard b.exists else { continue }
+                XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(when)「\(name)」が 44pt 未満")
+                XCTAssertTrue(window.contains(b.frame), "\(when)「\(name)」が画面の外（\(b.frame)）")
+                XCTAssertTrue(b.isHittable, "\(when)「\(name)」を押せない")
+            }
+        }
+        checkButtons("大きい文字で")
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        guard thanks.isHittable else { return }
+        thanks.tap()
+        let sent = app.buttons["pass.viewer.thanks"].firstMatch
+        let done = NSPredicate(format: "label CONTAINS %@", "返しました")
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: done, evaluatedWith: sent)], timeout: 5), .completed,
+                       "「ありがとう」を押しても「ありがとうを返しました」にならない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "81y-大きい文字（すれちがいの束・ありがとうを返した）")
+        checkButtons("ありがとうの後に")
+    }
+
+    /// サポーター証（マイページ → 設定 → サポーター証）まで進める。行が無い（サポーターでない・読めない）なら false
+    private func openSupporterCard(_ app: XCUIApplication) -> Bool {
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return false }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return false }
+        gear.tap()
+        let row = app.buttons["settings.supporterCard"].firstMatch
+        guard row.waitForExistence(timeout: 15) else { return false }
+        scrollTo(row, in: app)
+        guard row.isHittable else { return false }
+        row.tap()
+        return app.buttons["supporter.card"].firstMatch.waitForExistence(timeout: 10)
+    }
+
+    /// **サポーター証**（既定の文字と、大きい文字）: 見本の利用者がサポーターのときだけ。行が無ければ撮らずに抜ける
+    func testCapturesSupporterCard() {
+        for (extra, name) in [([String](), "88-サポーター証"), (Self.largeText, "88x-大きい文字（サポーター証）")] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += extra
+            app.launch()
+            guard openSupporterCard(app) else { return }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, name + "（下）")
+            app.terminate()
         }
     }
 

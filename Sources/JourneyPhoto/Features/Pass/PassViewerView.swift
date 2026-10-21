@@ -360,6 +360,9 @@ struct PassViewerView: View {
         // 押した人。失敗の戻しは、この人の控えにだけ書く
         let owner = favorites.owner
         favorites.set(content.photo.id, favorite: true)
+        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「ありがとうを返しました」）を
+        // 画面写真で見るため、端末の中だけで済ませる（2026-10-21）
+        if PreviewSession.passSample { return }
         do {
             _ = try await environment.social.like(photoId: content.photo.id)
         } catch {

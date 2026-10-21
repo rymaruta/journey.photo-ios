@@ -27,6 +27,8 @@ struct UserProfileView: View {
     @State private var tab: ProfileTab = .posts
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
+    /// 中身が時計の下に入ったか（`ScrolledUnderClock`）
+    @State private var scrolledUnderClock = false
     @EnvironmentObject private var hidden: ModerationStore
     /// 格子と地図から落とす「見せない」の写し。**前面が確定したときだけ取る**
     /// ——見ている最中／スワイプ途中に絞ると、押した元が消えて詳細が閉じる
@@ -64,7 +66,8 @@ struct UserProfileView: View {
                 // バーの地を透かしているので、敷かないと上へ送った写真が時計・戻る・
                 // 「…」の真下を流れて読めない。iOS 17〜25 は丸に地が無く、明るい
                 // カバーの上でも矢印が沈む
-                TopBarScrim(topInset: geo.safeAreaInsets.top)
+                TopBarScrim(topInset: geo.safeAreaInsets.top, covered: scrolledUnderClock)
+                    .animation(.easeOut(duration: 0.2), value: scrolledUnderClock)
             }
         }
         .webScreen()
@@ -176,6 +179,10 @@ struct UserProfileView: View {
 
                 photoArea
             }
+            // 中身が時計の下に入ったかを見る（入ったときだけ時計の下を黒で塗る・`TopBarScrim.covered`）
+            .onGeometryChange(for: Bool.self) { proxy in
+                ScrolledUnderClock.covered(contentMinY: proxy.frame(in: .scrollView).minY)
+            } action: { scrolledUnderClock = $0 }
         }
     }
 

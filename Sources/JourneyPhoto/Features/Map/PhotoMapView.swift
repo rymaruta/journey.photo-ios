@@ -1651,11 +1651,14 @@ struct PhotoMapView: View {
 
     /// 「約0.8km · 写真 3枚」。距離は**丸めた座標から測るので「約」を付ける**
     /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない。
-    /// 写真を読み込む前は枚数を省く（「写真 0枚」と言わない）
+    /// 写真を読み込む前は枚数を省く（「写真 0枚」と言わない）。
+    /// 読み終えて0枚なら、数の代わりに最初の1枚への誘い（`SpotScreen.firstPhotoInvite`・2026-10-21・run 609 の 13d）
     nonisolated static func spotSubline(_ row: OfficialSpotList.Row, loaded: Bool) -> String {
         let distance = row.km.map { NearbyPhotos.label(km: $0) }
         guard loaded else { return distance ?? "" }
-        let photos = L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
+        let photos = row.photoCount == 0
+            ? SpotScreen.firstPhotoInvite
+            : L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
         guard let distance else { return photos }
         return "\(distance) · \(photos)"
     }

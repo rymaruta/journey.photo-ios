@@ -995,7 +995,8 @@ struct OfficialSpotView: View {
                 // **空を隠さない。** 紐づいた写真が無いことをそのまま言う。
                 // v2 の板 SpotDetail の「写真0枚」: 破線の札に明朝 18 の見出し・13 の text-2・投稿のボタン
                 VStack(spacing: JPSpace.xs) {
-                    Text(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
+                    // 0 は数として出さない（2026-10-21・「（0）」と出ていた）。下の文とボタンが最初の1枚へ誘う
+                    Text(L("この撮影スポットの写真", "Photos here"))
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .multilineTextAlignment(.center)
@@ -1049,6 +1050,12 @@ struct OfficialSpotView: View {
         linked.isEmpty && !postedHere && photosKnown
     }
 
+    /// 「投稿」のボタンの字。**0枚のときは「最初の1枚を投稿」**（`SpotScreen.firstPhotoInvite` と同じ向き・2026-10-21）
+    nonisolated static func postLabel(hasLinked: Bool) -> String {
+        hasLinked ? L("この撮影スポットの写真を投稿", "Post a photo of this spot")
+                  : L("最初の1枚を投稿", "Post the first photo")
+    }
+
     /// 写真0枚の札の破線の白の濃さ（板 `1px dashed rgba(255,255,255,.2)`）
     nonisolated static let emptyDashOpacity = 0.2
 
@@ -1059,7 +1066,7 @@ struct OfficialSpotView: View {
         Button {
             showUpload = true
         } label: {
-            Label(L("この撮影スポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
+            Label(Self.postLabel(hasLinked: !linked.isEmpty), systemImage: "camera")
                 .jpPillButton(Self.postButtonStyle(hasCover: shown.photo != nil,
                                                    hasLinked: !linked.isEmpty, postedHere: postedHere))
         }

@@ -1030,10 +1030,31 @@ enum CamperText {
         return L("\(name)の車 · \(stage.name)", "\(name)\u{2019}s camper · \(stage.name)")
     }
 
-    /// 図鑑の数の注記（分母は第1段で集められる数。図鑑そのものは 132・「近日」はまだ数えない）
-    static func dexNote(serverOpen: Bool = false) -> String {
-        let soon = CamperCatalog.dex.count - CamperCatalog.collectable(serverOpen: serverOpen).count
-        return L("図鑑 \(CamperCatalog.dex.count) · 近日 \(soon)", "Dex \(CamperCatalog.dex.count) · \(soon) soon")
+    /// 一目で見る数「集めた 45 / 98」（2026-10-21 判断・全画面の点検 95・96b）。
+    ///
+    /// 🔴 前は「45 / 98 · 図鑑 132 · 近日 34」と3つの数を1行に並べていて、どれが自分の数か読めなかった。
+    /// **一目で見る数は1つ**（集めた / 集められる）。図鑑の総数と「近日」の数は、図鑑の終わりの注記
+    /// （`dexFootnote`・`roomDexFootnote`）へ移した。桁は「,」で区切る（家具は 2,000 を超える）
+    static func collectedLine(have: Int, total: Int) -> String {
+        let h = PassExchange.grouped(have), t = PassExchange.grouped(total)
+        return L("集めた \(h) / \(t)", "Collected \(h) / \(t)")
+    }
+
+    /// 車の部品の図鑑の終わりの注記（分母は第1段で集められる数。図鑑そのものは 132・「近日」はまだ数えない）
+    static func dexFootnote(serverOpen: Bool = false) -> String {
+        let all = CamperCatalog.dex.count
+        let soon = all - CamperCatalog.collectable(serverOpen: serverOpen).count
+        guard soon > 0 else { return L("図鑑は全 \(all) 個。", "The dex has \(all) parts.") }
+        return L("図鑑は全 \(all) 個。「近日」の \(soon) 個は、届き始めるまで数に入れていません。",
+                 "The dex has \(all) parts. The \(soon) marked \u{201C}Soon\u{201D} aren\u{2019}t counted until they start arriving.")
+    }
+
+    /// 家具の図鑑の終わりの注記（図鑑の総数と「近日」の数はここだけに出す・2026-10-21）
+    static func roomDexFootnote(all: Int, soon: Int) -> String {
+        let a = PassExchange.grouped(all)
+        guard soon > 0 else { return L("図鑑は全 \(a) 点。", "\(a) pieces in all.") }
+        return L("図鑑は全 \(a) 点。「近日」の \(soon) 点（友達・旅の投稿・行事の暦・天気で届く家具と、形を作っている家具）は数に入れていません。",
+                 "\(a) pieces in all. The \(soon) marked \u{201C}Soon\u{201D} (arriving through friends, trips, festivals and weather, or still being made) aren\u{2019}t counted yet.")
     }
 
     static func accessibilityLabel(stage: CamperStage, mood: CamperMood, loadout: CamperLoadout, doorOpen: Bool,

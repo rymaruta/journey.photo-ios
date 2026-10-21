@@ -186,7 +186,8 @@ struct CamperVisitView: View {
 
     @ViewBuilder
     private func tileItems(_ state: CamperVisitState) -> some View {
-        tile(L("集めた部品（要サーバー）", "Server parts"), CamperText.visitParts(state.parts.count))
+        // 札の名前は利用者の言葉で（前は「集めた部品（要サーバー）」と開発の言葉が出ていた・2026-10-21）
+        tile(CamperText.visitPartsTitle(owner: ownerName), CamperText.visitParts(state.parts.count))
         // 薪の数は訪ねる口が返さない。くべて分かるまで札を出さない（「まだ」と言い切らない・2026-10-19 見直し）
         if let wood = model.woodCount {
             tile(L("焚き火の薪", "Firewood"), L("あなたは \(wood) 回", "You: \(wood)"))

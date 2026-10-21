@@ -12,12 +12,12 @@ import SwiftUI
 struct LegalGateView: View {
 
     @EnvironmentObject private var consent: LegalConsent
-    @EnvironmentObject private var hidden: ModerationStore
 
-    /// 上に敷く写真。**同梱しない・同意の前に通信しない**——前に取れた
-    /// 公開一覧の控え（`PhotoSnapshotStore`）の先頭を借りる。控えが無ければ
-    /// （初めての起動）黒のまま。
-    @State private var hero: Photo?
+    /// 上に敷く写真。**アプリに同梱した作例写真から選ぶ**（`LegalGateLayout.heroAsset`・2026-10-21 判断）。
+    /// 前は公開一覧の控え（`PhotoSnapshotStore`）の先頭を借りていて、スーパーの袋入りのぶどうが
+    /// いちばん大きく出た（run 609 の 01）。新しく入れた直後（控えが空）は黒のままだった。
+    /// 同梱の写真なら、同意の前に通信せず、初めての起動でも必ず出る
+    private let heroAsset = LegalGateLayout.heroAsset()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -42,14 +42,15 @@ struct LegalGateView: View {
                 }
                 .ignoresSafeArea(edges: .top)
             }
-        }.safeAreaInset(edge: .bottom) { agreeButton }.onAppear { pickHero() }
+        }.safeAreaInset(edge: .bottom) { agreeButton }
     }
 
     private var heroImage: some View {
         Color.clear.frame(height: LegalGateLayout.heroHeight).overlay {
-            if let hero { AsyncImage(url: hero.gridImageURL, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-                if case .success(let image) = phase { image.resizable().aspectRatio(contentMode: .fill).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: hero.gridAlignment) }
-            }}
+            // 作例写真（CC0・表記の要らない実写真・`Tools/composition-examples/photo-sources.json`）。
+            // 出典の表記の決まりは「構図の作例」と同じで、CC0 なので札は要らない
+            Image(heroAsset).resizable().aspectRatio(contentMode: .fill)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }.clipped()
         // 板 v2: 上 30% の暗がり（時刻の帯とロゴを読ませる）→ 透明 → 下端の黒（98%）
         .overlay {
@@ -65,7 +66,9 @@ struct LegalGateView: View {
         VStack(alignment: .leading, spacing: 8) {
             // 眉ラベルは**白**（写真の上に重なる・CLAUDE.md「白のまま: 規約の眉ラベル」）
             Text("JOURNEY PHOTO").jpEyebrow().foregroundStyle(Color.white.opacity(0.9)).accessibilityHidden(true)
-            Text(Labels.Brand.tagline)
+            // 改行は「写真から、／次の旅が始まる。」に固定（2026-10-21・run 609 の 01 で「次の旅／が始まる。」と
+            // 語の途中で折れていた）。字は一言（`Labels.Brand.tagline`）と同じ
+            Text(Labels.Brand.taglineLines)
                 .font(JPFont.display(32, relativeTo: .largeTitle)).foregroundStyle(WebTheme.text).accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
             Text(L("写真から旅が始まり、旅がまた写真になる。", "Let a photo start the journey — and the journey become your next photo."))
                 .font(.subheadline).foregroundStyle(WebTheme.muted2).fixedSize(horizontal: false, vertical: true)
@@ -101,8 +104,6 @@ struct LegalGateView: View {
     private var links: some View { HStack(spacing: 20) { Link(destination: LegalConsent.termsURL) { Text(L("利用規約", "Terms of Use")).underline().frame(minHeight: 44).contentShape(Rectangle()) }; Link(destination: LegalConsent.privacyURL) { Text(L("プライバシーポリシー", "Privacy Policy")).underline().frame(minHeight: 44).contentShape(Rectangle()) } }.font(JPFont.body).foregroundStyle(WebTheme.accent) }
 
     private var agreeButton: some View { Button { consent.accept() } label: { Text(L("同意してJourney Photoをはじめる", "Agree and start Journey Photo")).jpPillButton(LegalGateLayout.agreeStyle) }.buttonStyle(.plain).accessibilityIdentifier("legal.agree").jpBottomBar() }
-
-    private func pickHero() { guard hero == nil, let photos = PhotoSnapshotStore().load() else { return }; hero = photos.first { photo in photo.gridImageURL != nil && !hidden.reportedPhotoIds.contains(photo.id) && !((photo.userId ?? photo.uploadedBy).map { hidden.blockedUserIds.contains($0) } ?? false) } }
 }
 
 /// 同意の画面の決まり（v2 の板 LegalGate・2026-10-14）。テストで見張る
@@ -115,4 +116,17 @@ enum LegalGateLayout {
     static let logoToHeading: CGFloat = 140
     /// 主ボタン: 写真のある画面なので白（CLAUDE.md）
     static let agreeStyle = JPPillStyle.main(onPhoto: true)
+
+    /// 上に敷く写真の候補（2026-10-21 判断）。アプリに同梱した構図の作例写真（すべて CC0 の実写真・
+    /// 出典は `Tools/composition-examples/photo-sources.json`）のうち、横長の帯（300pt）に切っても旅の写真に
+    /// 見えるもの: 新倉山浅間公園の忠霊塔と富士山・山あいの湖・防波堤の灯台と夕空・アタカマの塩湖。
+    /// 八坂の塔（人の後ろ姿が大きく写る）は、いちばん大きな写真には使わない（確かめ役の見直し）
+    static let heroAssets = ["composition-ai-rootRectangle", "composition-ai-ratio16x9", "composition-ai-thirds",
+                             "composition-ai-phiGrid"]
+
+    /// 開くたびに1枚（日ごとに替わる。同じ日は同じ写真・試験で決められるように日を渡せる）
+    static func heroAsset(day: Date = Date(), calendar: Calendar = .current) -> String {
+        let ordinal = calendar.ordinality(of: .day, in: .era, for: day) ?? 0
+        return heroAssets[((ordinal % heroAssets.count) + heroAssets.count) % heroAssets.count]
+    }
 }
