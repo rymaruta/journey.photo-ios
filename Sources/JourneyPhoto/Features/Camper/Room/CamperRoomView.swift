@@ -382,26 +382,34 @@ struct CamperRoomView: View {
 
     /// 外から入った時の覆い: 寄った口の絵を、部屋が組み上がる（camper-room-ready）まで重ね、なだらかに消す。
     /// 確かめ役 2026-10-21: 部屋を組む約 1 秒、暗い暖色の地だけが出た（95p5・95q5）
+    /// PR #364 の検証（Mac が重い回）で、4 秒の打ち切りで覆いが先に消え、部屋が描かれる前の暗い地が写った。覆いは
+    /// 「部屋が画面に載って描いたコマ」（`onDrawn`）でだけ消す。打ち切りは 20 秒（それでも描かれない時だけ）。
+    /// 写した絵が無い時も、暗い地ではなく灯った口の色の暖かい地で覆う
     @ViewBuilder
     private func entryCover(width: CGFloat, height: CGFloat) -> some View {
-        if let entryImage {
-            Image(uiImage: entryImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipped()
-                .opacity(entryCovered ? 1 : 0)
-                .allowsHitTesting(false)
-                // 見本の起動だけ、画面写真の試験が覆いの有無を確かめられるよう読み上げの木に残す
-                .accessibilityHidden(PreviewSession.userId == nil)
-                .accessibilityIdentifier("camper.room.entryCover")
-                .onAppear {
-                    // 描いた合図が来なくても、いつまでも覆わない（4 秒で消す）
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 4_000_000_000)
-                        if entryCovered { uncoverEntry() }
-                    }
+        if entry != nil {
+            Group {
+                if let entryImage {
+                    Image(uiImage: entryImage).resizable().scaledToFill()
+                } else {
+                    // 灯った口の奥の色（暖かい木の壁・暗い外の縁）
+                    RadialGradient(colors: [CamperStyle.color(0x8A6440), CamperStyle.color(0x3A2A1C), CamperStyle.color(0x161A22)],
+                                   center: .center, startRadius: 0, endRadius: max(width, height) * 0.7)
                 }
+            }
+            .frame(width: width, height: height)
+            .clipped()
+            .opacity(entryCovered ? 1 : 0)
+            .allowsHitTesting(false)
+            // 見本の起動だけ、画面写真の試験が覆いの有無を確かめられるよう読み上げの木に残す
+            .accessibilityHidden(PreviewSession.userId == nil)
+            .accessibilityIdentifier("camper.room.entryCover")
+            .onAppear {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    if entryCovered { uncoverEntry() }
+                }
+            }
         }
     }
 

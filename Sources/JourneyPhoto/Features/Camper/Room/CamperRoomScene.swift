@@ -440,6 +440,15 @@ final class CamperRoomScene {
         g.materials = mats
     }
 
+    /// 部屋を組み上げ、SCNView が画面に大きさを持って載っているか（外から入る時の覆いを消してよいか・2026-10-21）
+    var isShowingRoom: Bool {
+        guard builtKey != nil, let view = scnView, view.window != nil else { return false }
+        return view.bounds.width > 1 && view.bounds.height > 1
+    }
+
+    /// 止まっている SCNView に次のコマを描かせる
+    func requestRender() { kickRender() }
+
     private func kickRender() {
         // 止まっている SCNView（rendersContinuously = false）に、材質の差し替えを気づかせる
         guard let view = scnView else { return }

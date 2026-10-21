@@ -15,6 +15,8 @@ open class UIView {
     /// 本物は `layerClass` の型で作られる。模型は作るだけ
     open var layer: CALayer { CALayer() }
     open var bounds: CGRect = .zero
+    /// 載っている窓（本物は読み取りだけ）
+    open var window: UIWindow? { nil }
     open var backgroundColor: UIColor?
     /// 指を受けるか（本物の既定は true）
     open var isUserInteractionEnabled: Bool = true
