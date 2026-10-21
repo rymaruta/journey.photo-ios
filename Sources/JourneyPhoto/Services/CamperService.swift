@@ -32,7 +32,9 @@ struct CamperService {
         do {
             return try await APIClient.$errorBodySink.withValue(errorBody) { try await call() }
         } catch let APIError.server(status, message) where (400..<500).contains(status) && status != 401 {
-            throw Refused(status: status, message: message, code: APIClient.errorCode(from: errorBody.data))
+            // 断りの印の無い回に出す本文は、英語の画面では日本語を出さない（空なら `refusal` が状態の数で選ぶ・2026-10-21 判断）
+            throw Refused(status: status, message: APIError.displayableServerText(message) ?? "",
+                          code: APIClient.errorCode(from: errorBody.data))
         }
     }
 

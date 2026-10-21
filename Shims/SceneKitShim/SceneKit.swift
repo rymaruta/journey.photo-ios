@@ -259,6 +259,14 @@ open class SCNView: UIView {
     open var rendersContinuously = false
 }
 
+/// 画面の外で描いて絵にする（本物は `init(device: MTLDevice?, options:)`。家具の接写の一覧・2026-10-21）
+open class SCNRenderer {
+    public init(device: Any?, options: [AnyHashable: Any]?) {}
+    open var scene: SCNScene?
+    open var pointOfView: SCNNode?
+    open func snapshot(atTime time: Double, with size: CGSize, antialiasingMode: SCNAntialiasingMode) -> UIImage { UIImage() }
+}
+
 open class SCNTransaction {
     public static func begin() {}
     public static func commit() {}

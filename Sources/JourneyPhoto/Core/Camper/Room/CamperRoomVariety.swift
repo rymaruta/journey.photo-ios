@@ -86,6 +86,12 @@ enum CamperRoomVariety {
 
 private func makePieces() -> [CamperRoomVariety.Piece] {
     var out: [CamperRoomVariety.Piece] = []
+    // 板の名前とぶつからないようにする（`CamperRoomCatalog.all` の一意さ）
+    var usedJa = Set(CamperRoomCatalog.board.map(\.nameJa))
+    var usedEn = Set(CamperRoomCatalog.board.map(\.nameEn))
+    /// 同じ「先頭の軸＋分類」の通し番号（2 件目から数字を足して短く一意にする）
+    var serial: [String: Int] = [:]
+
     func emit(_ category: CamperRoomCategory, _ lists: [[VarietyWord]], _ limit: Int,
               _ size: ([VarietyWord]) -> (w: Int, d: Int, h: Double, lit: Bool, photos: Int),
               _ suffix: VarietyWord) {
@@ -99,9 +105,26 @@ private func makePieces() -> [CamperRoomVariety.Piece] {
                         combo.count > 1 ? lists[1].firstIndex { $0.ja == combo[1].ja } ?? 0 : 0,
                         combo.count > 2 ? lists[2].firstIndex { $0.ja == combo[2].ja } ?? 0 : 0,
                         combo.count > 3 ? lists[3].firstIndex { $0.ja == combo[3].ja } ?? 0 : 0)
+            // 棚の升に入る短い名前。軸の全部は look に残す（2026-10-21 owner「名前が長い」）
+            let head = combo.first ?? suffix
+            let baseJa = "\(head.ja)の\(suffix.ja)"
+            let baseEn = "\(suffix.en), \(head.en)"
+            let n = (serial[baseJa] ?? 0) + 1
+            serial[baseJa] = n
+            var nameJa = n == 1 ? baseJa : "\(baseJa)\(n)"
+            var nameEn = n == 1 ? baseEn : "\(baseEn) \(n)"
+            // 板や他分類とぶつかったら番号を進める
+            while usedJa.contains(nameJa) || usedEn.contains(nameEn) {
+                let m = (serial[baseJa] ?? n) + 1
+                serial[baseJa] = m
+                nameJa = "\(baseJa)\(m)"
+                nameEn = "\(baseEn) \(m)"
+            }
+            usedJa.insert(nameJa)
+            usedEn.insert(nameEn)
             let furniture = CamperRoomFurniture(
                 category: category, key: key,
-                nameJa: "\(lookJa)の\(suffix.ja)", nameEn: "\(suffix.en), \(lookEn)",
+                nameJa: nameJa, nameEn: nameEn,
                 lookJa: lookJa, lookEn: lookEn,
                 rarity: varietyRarity(out.count), unlock: varietyUnlock(out.count),
                 width: metrics.w, depth: metrics.d, height: metrics.h,
@@ -126,16 +149,17 @@ private func makePieces() -> [CamperRoomVariety.Piece] {
         let runner = combo[0].ja == "細長い"
         return (runner ? 6 : 4, runner ? 2 : 4, 3, false, 0)
     }, VarietyWord(ja: "敷物", en: "Rug"))
-    emit(.floorLamp, [lampStems, lampShades, lampFeet], 160, { _ in (2, 2, 84, true, 0) }, VarietyWord(ja: "床の灯り", en: "Floor lamp"))
-    emit(.wallShelf, [shelfBoards, shelfBrackets, shelfLoads], 140, { _ in (3, 1, 8, false, 0) }, VarietyWord(ja: "壁の棚", en: "Wall shelf"))
+    // 分類名は短い「灯り」。床／壁の違いは図鑑の段と look で分かる
+    emit(.floorLamp, [lampStems, lampShades, lampFeet], 160, { _ in (2, 2, 84, true, 0) }, VarietyWord(ja: "灯り", en: "Lamp"))
+    emit(.wallShelf, [shelfBoards, shelfBrackets, shelfLoads], 140, { _ in (3, 1, 8, false, 0) }, VarietyWord(ja: "棚", en: "Shelf"))
     emit(.photoFrame, [frameOpenings, frameMouldings, frameMats], 120, { _ in (2, 1, 4, false, 1) }, VarietyWord(ja: "額", en: "Frame"))
-    emit(.poster, [posterSheets, posterHangers, posterBorders], 100, { _ in (2, 2, 6, false, 0) }, VarietyWord(ja: "壁の絵", en: "Poster"))
-    emit(.wallLamp, [sconceArms, sconceShades, sconcePlates], 120, { _ in (1, 1, 8, true, 0) }, VarietyWord(ja: "壁の灯り", en: "Wall lamp"))
+    emit(.poster, [posterSheets, posterHangers, posterBorders], 100, { _ in (2, 2, 6, false, 0) }, VarietyWord(ja: "絵", en: "Poster"))
+    emit(.wallLamp, [sconceArms, sconceShades, sconcePlates], 120, { _ in (1, 1, 8, true, 0) }, VarietyWord(ja: "灯り", en: "Sconce"))
     emit(.clock, [clockCases, clockFaces, clockPendulums], 100, { combo in
         let tall = combo[2].ja != "振り子なし"
         return (tall ? 1 : 2, tall ? 2 : 1, 6, false, 0)
     }, VarietyWord(ja: "時計", en: "Clock"))
-    emit(.stringCeiling, [stringWires, stringBulbs, stringDrops], 100, { _ in (4, 1, 22, true, 0) }, VarietyWord(ja: "天井の紐", en: "Ceiling string"))
+    emit(.stringCeiling, [stringWires, stringBulbs, stringDrops], 100, { _ in (4, 1, 22, true, 0) }, VarietyWord(ja: "紐", en: "String"))
     emit(.mobile, [mobileArms, mobileCharms, mobileHooks], 100, { _ in (2, 1, 34, false, 0) }, VarietyWord(ja: "モビール", en: "Mobile"))
     emit(.plantHanger, [plantCords, plantPots, plantLeaves], 90, { _ in (1, 1, 40, false, 0) }, VarietyWord(ja: "吊り鉢", en: "Hanging plant"))
     emit(.roofHatch, [hatchRims, hatchPanes, hatchLevers], 80, { _ in (2, 2, 8, false, 0) }, VarietyWord(ja: "天窓", en: "Roof hatch"))
@@ -721,7 +745,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         parts.append(varietyBox(CV3(hx * 2 - 2, 1.8, hz * 2 - 3), CV3(0, topY, 0), .room(.ceramic(0xD9D3C7))))
     case 5:
         parts.append(varietyBox(CV3(hx * 2 - 3, 1.2, hz * 2 - 4), CV3(0, topY, 0), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 6, 0.5, hz * 2 - 7), CV3(0, topY + 1.2, 0), .room(.glass)))
+        parts.append(varietyBox(CV3(hx * 2 - 6, 0.5, hz * 2 - 7), CV3(0, topY + 1.2, 0), .room(.clearGlass)))
     default:
         parts.append(varietyBox(CV3(hx * 2 - 2, 1.7, hz * 2 - 3), CV3(0, topY, 0), oak))
     }
@@ -794,7 +818,7 @@ private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
             parts.append(varietyBox(CV3(hx * 2 - 4, 1.2, hz - 2), CV3(0, y, 0), oak))
         }
     case 4:
-        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.5), CV3(0, doorY, hz - 0.4), .room(.glass)))
+        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.5), CV3(0, doorY, hz - 0.4), .room(.clearGlass)))
         parts.append(varietyBox(CV3(1.2, doorH, 1.2), CV3(-hx + 1.4, doorY, hz - 1), oak))
     case 5:
         for x in stride(from: -hx + 2, through: hx - 2, by: 1.6) {
@@ -1022,7 +1046,7 @@ private func shelf(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     case 2:
         for x in stride(from: -hx + 3, through: hx - 3, by: 2.2) {
-            parts.append(varietyBox(CV3(1.1, 3.2, 1.1), CV3(x, 8.4, 1.4), .room(.glass)))
+            parts.append(varietyBox(CV3(1.1, 3.2, 1.1), CV3(x, 8.4, 1.4), .room(.clearGlass)))
         }
     case 3:
         parts.append(varietyBox(CV3(3.2, 2.6, 3.2), CV3(0, 8.4, 1.5), .room(.terracotta)))
@@ -1284,7 +1308,7 @@ private func mobile(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         case 3:
             parts.append(varietyBox(CV3(1.2, 2.2, 0.3), CV3(x, y, 0), .room(.leaf)))
         case 4:
-            parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.8, height: 0.5, bevel: 0.15, segments: 8, .room(.glass)), at: CV3(x, y, 0)))
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.8, height: 0.5, bevel: 0.15, segments: 8, .room(.clearGlass)), at: CV3(x, y, 0)))
         default:
             parts.append(varietyBox(CV3(1.8, 1.1, 0.4), CV3(x, y, 0), varietyWood(charm)))
             parts.append(varietyBox(CV3(0.8, 0.7, 0.5), CV3(x + 0.8, y + 0.4, 0), varietyWood(charm)))
@@ -1324,7 +1348,7 @@ private func plant(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 1:
         parts.append(varietyBox(CV3(4.2, 3.2, 4.2), CV3(0, potY, 0), .room(.wicker)))
     case 2:
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 2.2, height: 3.4, bevel: 0.5, segments: 8, .room(.glass)), at: CV3(0, potY, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 2.2, height: 3.4, bevel: 0.5, segments: 8, .room(.clearGlass)), at: CV3(0, potY, 0)))
     case 3:
         parts.append(varietyBox(CV3(3.6, 3.4, 3.6), CV3(0, potY, 0), .room(.enamel(0xD7E2DC))))
     case 4:
@@ -1355,10 +1379,10 @@ private func hatch(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     switch rim {
     case 1:
         parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx - 0.4, height: 1.6, bevel: 0.25, segments: 8, wood), at: CV3(0, -1.6, 0)))
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx * 0.62, height: 0.5, bevel: 0.1, segments: 8, .room(.glass)), at: CV3(0, -0.8, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx * 0.62, height: 0.5, bevel: 0.1, segments: 8, .room(.clearGlass)), at: CV3(0, -0.8, 0)))
     case 2:
         parts.append(varietyBox(CV3(hx * 1.5, 1.8, hx * 1.5), CV3(0, -1.8, 0), wood))
-        parts.append(varietyBox(CV3(hx, 0.4, hx), CV3(0, -0.6, 0), .room(.glass)))
+        parts.append(varietyBox(CV3(hx, 0.4, hx), CV3(0, -0.6, 0), .room(.clearGlass)))
     case 3:
         parts.append(varietyBox(CV3(hx * 2 - 1, 2.4, hx * 2 - 1), CV3(0, -2.4, 0), wood))
     case 4:

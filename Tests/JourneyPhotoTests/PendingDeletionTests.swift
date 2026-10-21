@@ -17,7 +17,7 @@ final class PendingDeletionTests: XCTestCase {
         config.protocolClasses = [StubProtocol.self]
         StubProtocol.reset()
         return ProfileService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
-                                             tokenProvider: StubTokenProvider(token: "t"),
+                                             tokenProvider: GoneAnnouncingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "t")),
                                              session: URLSession(configuration: config)))
     }
 
@@ -67,7 +67,9 @@ final class PendingDeletionTests: XCTestCase {
 
     /// 410 以外（通信できない・404・500）では立てない
     func testOtherFailuresDoNotRaisePendingDeletion() async {
-        XCTAssertTrue(ProfileService.meansAccountDeleted(APIError.server(status: 410, message: "")))
+        XCTAssertTrue(ProfileService.meansAccountDeleted(APIError.server(status: 410, message: "このアカウントは削除されています")))
+        // 本文の違う 410（招待リンクの期限切れ・`invite.ts`）は退会ではない
+        XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 410, message: "この招待リンクは取り消されています")))
         XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 404, message: "")))
         XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 500, message: "")))
         XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.unreachable))
@@ -79,7 +81,7 @@ final class PendingDeletionTests: XCTestCase {
             isSignedIn: { false }, currentUserId: { "" }, currentUsername: { "" },
             isSessionExpired: { false }, signOut: { .signedOut }, deleteUser: {},
             latch: .forTesting()))
-        auth.noteDeletionPending()
+        auth.noteDeletionPending(userId: "u1")
         XCTAssertFalse(auth.deletionPending)
     }
 
@@ -90,7 +92,7 @@ final class PendingDeletionTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let likes = FavoritesStore(defaults: defaults); likes.use(userId: "u1"); likes.set("p", favorite: true)
 
-        auth.noteDeletionPending()
+        auth.noteDeletionPending(userId: "u1")
         var released = 0
         var order: [String] = []
         await auth.finishPendingDeletion(deleteServerData: { order.append("server") },
@@ -115,7 +117,7 @@ final class PendingDeletionTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let likes = FavoritesStore(defaults: defaults); likes.use(userId: "u1"); likes.set("p", favorite: true)
 
-        auth.noteDeletionPending()
+        auth.noteDeletionPending(userId: "u1")
         await auth.finishPendingDeletion(deleteServerData: {}, releaseDevice: {}, localDefaults: defaults)
 
         XCTAssertTrue(auth.deletionPending, "消せなかったのに「途中」を下ろした（もう一度押せない）")
@@ -131,7 +133,7 @@ final class PendingDeletionTests: XCTestCase {
     func testServerFailureStopsBeforeCognito() async {
         let calls = Calls()
         let auth = await signedIn(calls)
-        auth.noteDeletionPending()
+        auth.noteDeletionPending(userId: "u1")
         var released = 0
         await auth.finishPendingDeletion(deleteServerData: { throw APIError.unreachable },
                                          releaseDevice: { released += 1 })
@@ -146,10 +148,17 @@ final class PendingDeletionTests: XCTestCase {
     func testDoubleTapStartsOnlyOnce() async {
         let calls = Calls()
         let auth = await signedIn(calls)
-        auth.noteDeletionPending()
+        auth.noteDeletionPending(userId: "u1")
         auth.startFinishingDeletion(deleteServerData: {}, releaseDevice: {})
         auth.startFinishingDeletion(deleteServerData: {}, releaseDevice: {})
         await waitUntil { !auth.isFinishingDeletion }
         XCTAssertEqual(calls.deleteUser, 1)
     }
+}
+
+/// 410 を本番と同じ知らせ方（`CognitoTokenProvider.accountGone`）に回す提供者
+struct GoneAnnouncingTokenProvider: TokenProviding {
+    let token: String
+    func idToken() async throws -> String? { token }
+    func accountGone(idToken: String) async { await CognitoTokenProvider().accountGone(idToken: idToken) }
 }

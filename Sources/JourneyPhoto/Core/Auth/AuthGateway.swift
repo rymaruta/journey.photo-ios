@@ -131,6 +131,16 @@ enum AuthGateway {
     /// ——画面の口が一斉に 401 になっても、Cognito に頼むのは1回（`TokenRefresher`）
     static let refresher = TokenRefresher { try await forcedIdToken() }
 
+    /// 退会済みの 410 を受けた（`CognitoTokenProvider.accountGone`）。`AuthStore` が受ける
+    @MainActor
+    static func announceAccountGone(userId: String) {
+        NotificationCenter.default.post(name: .accountDeletionPending, object: nil,
+                                        userInfo: [accountGoneUserIdKey: userId])
+    }
+
+    /// `accountDeletionPending` の知らせに添える、410 を受けた鍵の人（`sub`）
+    static let accountGoneUserIdKey = "userId"
+
     static func refreshedIdToken() async throws -> String? {
         guard isConfigured else { return nil }
         return try await refresher.refresh()
@@ -348,6 +358,13 @@ struct CognitoTokenProvider: TokenProviding {
     func sessionExpired() async {
         await AuthGateway.announceSessionExpired()
     }
+
+    /// 退会済みの 410。送った鍵の人（`sub`）を添えて知らせる。読めない鍵は知らせない
+    /// （誰のことか分からないまま、いまの人を退会の扱いにしない）
+    func accountGone(idToken: String) async {
+        guard let userId = IdTokenClaims.subject(fromJWT: idToken) else { return }
+        await AuthGateway.announceAccountGone(userId: userId)
+    }
 }
 
 /// ログアウトの結果（`AuthGateway.signOut`）
@@ -412,7 +429,8 @@ struct SignOutLatch: @unchecked Sendable {  // UserDefaults は複数のスレ�
 extension Notification.Name {
     /// ログインの期限が切れた（`AuthGateway.idToken`）。`AuthStore` が受けてログアウトに倒す
     static let authSessionExpired = Notification.Name("jp.authSessionExpired")
-    /// 自分のプロフィールが 410（退会の途中で止まったアカウント・`ProfileService.myProfile`）。
+    /// 退会済みの 410（退会の途中で止まったアカウント）。**どの口でも**（`APIClient.attempt`）。
+    /// `userInfo` に 410 を受けた鍵の人（`AuthGateway.accountGoneUserIdKey`）。
     /// `AuthStore` が受けて、退会の残り（Cognito の削除・端末の控え）を済ませる
     static let accountDeletionPending = Notification.Name("jp.accountDeletionPending")
 }

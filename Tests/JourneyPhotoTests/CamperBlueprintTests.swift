@@ -587,7 +587,8 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertTrue(spec.additive)
         let c = CamperTextures.rgb(spec.color)
         // 2026-10-20: 平らな黄の板に見えたので 0.55〜0.7 に抑える
-        XCTAssertTrue((0.55...0.7).contains(max(c.0, c.1, c.2)), "強さ 0.55〜0.7（平らな板にしない）")
+        // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: もう一段暗く 0.3〜0.42（灯っていると分かる下限は残す）
+        XCTAssertTrue((0.3...0.42).contains(max(c.0, c.1, c.2)), "強さ 0.3〜0.42（平らな板にしない・強すぎない）")
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
         XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001, "硝子が薄すぎると glow が板に見える")
         // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど
@@ -600,7 +601,8 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertEqual(h.group, .glow)
         }
         let halo = CamperTextures.rgb(CamperMaterials.spec(.windowHalo, paint: 0, mood: .night).color)
-        XCTAssertTrue((0.15...0.35).contains(max(halo.0, halo.1, halo.2)))
+        // 2026-10-21 owner「強すぎる」: 窓と一緒にもう一段暗く（0.15〜0.35 → 0.06〜0.2）
+        XCTAssertTrue((0.06...0.2).contains(max(halo.0, halo.1, halo.2)))
         let g = CamperTextures.roomGlow()
         let center = Int(g.pixel(32, 18).r), lower = Int(g.pixel(32, 40).r), edge = Int(g.pixel(0, 18).r)
         XCTAssertGreaterThan(center, 200)
@@ -879,6 +881,62 @@ extension CamperBlueprintTests {
             let t = deg * .pi / 180
             let n = CV3(cos(t), 0, sin(t))
             XCTAssertLessThanOrEqual(max(0, n.dot(from)), 0.46, "\(deg)° の面に月が強く当たる")
+        }
+    }
+}
+
+extension CamperBlueprintTests {
+    /// 夜の灯りは控えめ（2026-10-21 owner「キャンピングカーの夜の光り方が強すぎて不自然すぎる」）: 焚き火・ランタン・
+    /// 電球の列の強さ、地面の溜まりの大きさと明るさ、窓の明かり・カーテンの光の上限（`CamperBuilder.nightLimits`）
+    func testNightLightsStayGentle() {
+        let lim = CamperBuilder.nightLimits
+        for key in ["brass_lantern", "string_lights", "paper_lantern", "oil_lamp"] {
+            var l = CamperLoadout.standard
+            l.picks[CamperCategory.outdoorLight.rawValue] = key
+            for stage in CamperStage.allCases {
+                let b = build(stage, mood: .night, loadout: l)
+                for light in b.lights {
+                    switch light.name {
+                    case "campfire": XCTAssertLessThanOrEqual(light.intensity, lim.fire, "焚き火が強い")
+                    case "lantern": XCTAssertLessThanOrEqual(light.intensity, lim.lantern, "ランタンが強い")
+                    case "string": XCTAssertLessThanOrEqual(light.intensity, lim.string, "電球の列が強い")
+                    default: break
+                    }
+                }
+                for n in b.nodes where n.group == .glow || n.group == .doorGlow {
+                    guard case .mesh(let m) = n.shape, n.name.hasPrefix("glow.fire") || n.name.hasPrefix("glow.lantern")
+                            || n.name.hasPrefix("glow.step") || n.name.hasPrefix("glow.window") || n.name == "glow.door" else { continue }
+                    let xs = m.positions.map(\.x), zs = m.positions.map(\.z)
+                    if n.name.hasPrefix("glow.fire") || n.name.hasPrefix("glow.lantern") || n.name.hasPrefix("glow.step") {
+                        XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), lim.poolSize, "\(n.name) の溜まりが大きい")
+                        XCTAssertLessThanOrEqual((zs.max() ?? 0) - (zs.min() ?? 0), lim.poolSize, "\(n.name) の溜まりが大きい")
+                    }
+                    let c = CamperTextures.rgb(CamperMaterials.spec(n.material, paint: 0, mood: .night).color)
+                    XCTAssertLessThanOrEqual(max(c.0, c.1, c.2), lim.poolLevel, "\(n.name) の溜まりが明るい")
+                }
+            }
+        }
+        let w = CamperTextures.rgb(CamperMaterials.spec(.windowGlow, paint: 0, mood: .night).color)
+        XCTAssertLessThanOrEqual(max(w.0, w.1, w.2), lim.windowLevel, "窓の明かりが明るい")
+        XCTAssertGreaterThan(w.0, w.2 * 2, "窓の明かりは暖色")
+        XCTAssertLessThanOrEqual(CamperMaterials.spec(.curtain, paint: 0, mood: .night).emissionIntensity, lim.curtain)
+    }
+
+    /// 入口の灯りの円錐は車体の壁にほとんど当たらない（95b・95n の縦長の光の筋）: 灯りの下の壁（地面から 30 より上）は、
+    /// どの高さでも円錐の外
+    func testPorchConeMissesTheWall() {
+        for stage in CamperStage.allCases {
+            let b = build(stage, mood: .night)
+            let builder = CamperBuilder(config: CamperConfig(stage: stage))
+            guard let porch = b.lights.first(where: { $0.name == "porch" }) else { return XCTFail("\(stage): 入口の灯りが無い") }
+            let axis = porch.direction.normalized
+            var y = 30.0
+            while y < porch.position.y - 2 {
+                let toWall = (CV3(porch.position.x, y, builder.BW) - porch.position).normalized
+                let angle = acos(max(-1, min(1, axis.dot(toWall)))) * 180 / .pi
+                XCTAssertGreaterThan(angle, porch.spotOuter / 2, "\(stage): 高さ \(y) の壁に入口の灯りが当たる")
+                y += 10
+            }
         }
     }
 }

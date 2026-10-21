@@ -785,10 +785,12 @@ extension CamperBuilder {
         flameTongue("fire.flame", at: emberAt + CV3(-2, 0.4, -1.6), height: 10, radius: 2.2, lean: CV3(-0.18, 1, -0.14), category: fc)
         // 2026-10-18（run 530）: 700・90 では白く飛んだ。2026-10-19: 光は弱く広く、足元は溜まり絵。
         // 減衰は SceneKit 側で二乗のまま（なだらか減衰は尾灯を壊した・2026-10-20）
+        // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: 地面が黄色く飛んだ。光も溜まりも約半分に
+        // （上限は `CamperBuilder.nightLimits`）
         only([.night]) {
             $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, pattern: .hearth, position: emberAt + CV3(0, 14, 0),
-                                                 color: 0xFF8A42, intensity: 130, range: 42))
-            $0.add("glow.fire", .mesh($0.glowQuad(width: 96, depth: 96, material: .firePool)), .firePool,
+                                                 color: 0xFF8A42, intensity: 60, range: 36))
+            $0.add("glow.fire", .mesh($0.glowQuad(width: 50, depth: 50, material: .firePool)), .firePool,
                    at: CV3(emberAt.x, 0.5, emberAt.z), group: .glow)
         }
     }
@@ -811,7 +813,7 @@ extension CamperBuilder {
             }
             only([.night]) {
                 $0.out.lights.append(CamperLightSpec(name: "string", kind: .omni, pattern: .lantern, position: CV3(-40, 60, z + 44),
-                                                     color: 0xFFD27A, intensity: 200, range: 70))
+                                                     color: 0xFFD27A, intensity: 90, range: 60))
             }
         case "paper_lantern":
             let c = CV3(-96, 0, z + 14)
@@ -845,8 +847,8 @@ extension CamperBuilder {
             only([.night]) {
                 // ランタンは室内灯より赤み（板 255,190,110 より赤く）。足元は裾のなめらかな溜まり
                 $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, pattern: .lantern, position: l + CV3(0, 6, 0),
-                                                     color: 0xFF9A4A, intensity: 90, range: 34))
-                $0.add("glow.lantern", .mesh($0.glowQuad(width: 64, depth: 64, material: .firePool)), .firePool,
+                                                     color: 0xFF9A4A, intensity: 45, range: 30))
+                $0.add("glow.lantern", .mesh($0.glowQuad(width: 32, depth: 32, material: .firePool)), .firePool,
                        at: CV3(c.x + 8, 0.5, c.z), group: .glow)
             }
         }

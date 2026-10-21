@@ -298,6 +298,24 @@ struct CamperRoomCheck: Equatable, Sendable {
     }
 }
 
+/// 押して置くときの「置ける所」（2026-10-21）。床・天井はマス、壁は（壁・横のマス・段）
+struct CamperRoomWallCell: Hashable, Sendable {
+    var wall: CamperRoomWall
+    var column: Int
+    var row: Int
+}
+
+struct CamperRoomFitArea: Equatable, Sendable {
+    var cells: Set<CamperRoomCell> = []
+    var wall: Set<CamperRoomWallCell> = []
+    /// 天井の家具（マスを天井に出す）
+    var ceiling = false
+    var isEmpty: Bool { cells.isEmpty && wall.isEmpty }
+}
+
+/// 押して置くで「置けない」を理由つきで返す（`Result` の失敗に使う）
+extension CamperRoomCheck: Error {}
+
 enum CamperRoomRules {
 
     /// `item` を `doc` に置けるか（同じ `u` の物は自分なので数えない）
@@ -485,6 +503,37 @@ enum CamperRoomRules {
             return CamperRoomCheck(reason: .tallFurniture, blocked: Set(rect.cells.filter { c in tall.contains { $0.contains(c.x, c.z) } }))
         }
         return .fine
+    }
+
+    /// 置ける所（その家具を回さない向きで置けるすべての場所が占めるマスを合わせたもの）。押して置くときに薄く光らせる
+    static func fitArea(_ f: CamperRoomFurniture, in doc: CamperRoomDocument, layout: CamperRoomLayout) -> CamperRoomFitArea {
+        var area = CamperRoomFitArea()
+        area.ceiling = f.placement == .ceiling
+        let uid = "fit"
+        switch f.placement {
+        case .floor, .ceiling:
+            guard f.width <= layout.width, f.depth <= layout.depth else { return area }
+            for z in 0...(layout.depth - f.depth) {
+                for x in 0...(layout.width - f.width) {
+                    let item = f.placement == .floor ? CamperRoomItem.floor(uid, f.id, x: x, z: z) : CamperRoomItem.ceiling(uid, f.id, x: x, z: z)
+                    guard let rect = item.rect, check(item, in: doc, layout: layout).ok else { continue }
+                    area.cells.formUnion(rect.cells)
+                }
+            }
+        case .wall:
+            for wall in CamperRoomWall.allCases {
+                let cols = layout.columns(wall)
+                guard f.width <= cols, f.depth <= CamperRoomLayout.rowBottoms.count else { continue }
+                for row in 0...(CamperRoomLayout.rowBottoms.count - f.depth) {
+                    for c in 0...(cols - f.width) {
+                        let item = CamperRoomItem.wall(uid, f.id, wall, c: c, row: row)
+                        guard let span = item.wallSpan, check(item, in: doc, layout: layout).ok else { continue }
+                        for cc in span.columns { for rr in span.rows { area.wall.insert(CamperRoomWallCell(wall: wall, column: cc, row: rr)) } }
+                    }
+                }
+            }
+        }
+        return area
     }
 
     /// 新しく置く場所を探す（壁際から。床は回さない向きを先に）。置ける所が無ければ nil。

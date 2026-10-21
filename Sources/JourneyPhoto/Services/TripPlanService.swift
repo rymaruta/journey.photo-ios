@@ -57,7 +57,8 @@ struct TripPlanService {
         do {
             return try await call()
         } catch let APIError.server(status, message) where status == 403 && !message.isEmpty {
-            throw Refused(message: message)
+            // 英語の画面では日本語の本文を出さない（`APIError.description`・2026-10-21 判断）
+            throw Refused(message: APIError.server(status: status, message: message).errorDescription ?? message)
         }
     }
 
