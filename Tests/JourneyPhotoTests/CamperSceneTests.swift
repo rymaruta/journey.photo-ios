@@ -57,18 +57,20 @@ final class CamperSceneTests: XCTestCase {
     func testInteriorMaterialsBlockSkyLight() async throws {
         let scene = CamperScene()
         scene.installNow(CamperConfig(stage: .camper, mood: .day))
-        func materials(_ name: String) throws -> [SCNMaterial] {
-            all(try XCTUnwrap(node(scene, name))).compactMap(\.geometry).flatMap(\.materials)
-        }
         // 本物の SceneKit は ambientOcclusion に初めから白が入っているので、中身ではなく殻の中の材質の印で見分ける
         // （Mac run 624 で、外の材質の初めの白を「遮っている」と数えて落ちた）
         func blocks(_ m: SCNMaterial) -> Bool { m.name == CamperScenePalette.insideName && m.ambientOcclusion.contents is UIColor }
-        let inside = try materials("camper.inside").filter { $0.lightingModel == .physicallyBased }
-        let outside = try materials("camper.outside")
+        let inside = scene.paletteMaterials.inside.filter { $0.lightingModel == .physicallyBased }
+        let outside = scene.paletteMaterials.outside
         XCTAssertFalse(inside.isEmpty)
         XCTAssertTrue(inside.allSatisfy(blocks), "室内の材質に空の光の遮りが無い")
         XCTAssertFalse(outside.contains(where: blocks), "外の塗装まで空の光を遮っている")
         XCTAssertFalse(inside.contains { m in outside.contains { $0 === m } }, "室内と外で同じ材質を使っている")
+        #if canImport(SceneKitShim) && !canImport(SceneKit)
+        // 組んだ形にも付いている（模型だけ: 本物の flattenedClone は形をまとめ直すので、ノードからは材質をたどらない・Mac run 626）
+        let shell = all(try XCTUnwrap(node(scene, "camper.inside"))).compactMap(\.geometry).flatMap(\.materials)
+        XCTAssertTrue(shell.filter { $0.lightingModel == .physicallyBased }.allSatisfy(blocks))
+        #endif
         var night = CamperConfig(stage: .camper, mood: .day)
         night.mood = .night
         scene.show(night)

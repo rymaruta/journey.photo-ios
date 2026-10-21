@@ -239,6 +239,11 @@ final class CamperScene {
         floorNode.isHidden = night
     }
 
+    /// 試験用: 作った材質（殻の中の組・外の組）
+    var paletteMaterials: (inside: [SCNMaterial], outside: [SCNMaterial]) {
+        (Array(palette.insideMaterials.values), Array(palette.materials.values))
+    }
+
     /// 昼・夜・雪を切り替える（組み直さない。光・材質の値・その時刻だけの部品と灯りの見せる／隠すだけ）
     /// 試験用: いまの太陽・周りの光・露出（夜に替えた後の値を確かめる）
     var lightingSnapshot: (sun: Double, environment: Double, exposure: Double, ambient: Double) {
