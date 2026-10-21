@@ -1450,7 +1450,9 @@ struct CamperBuilder {
                 guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { continue }
                 add("interior.windowGlow.\(side > 0 ? "near" : "far").\(k)",
                     .mesh(windowGlowPanel(x0: x0, x1: x1, y0: y0, y1: y1, facing: side)), .windowGlow,
-                    at: CV3(0, 0, side * (BW - wall - 3)))
+                    // 2026-10-21（Mac run 627・630）: 壁の内側（BW − 7）では、外から窓が真っ黒のままだった（奥の何かに隠れる見立て・
+                    // 確かめていない）。硝子のすぐ内側（硝子の奥の面 BW − 2.6 の 0.3 奥）に置く——硝子の他に前を遮るものが無い
+                    at: CV3(0, 0, side * (BW - 2.9)))
                 // 窓から漏れる光のにじみ（ガラスの外に、窓より一回り大きい丸いグラデーション。黒い四角が出ないよう足す光 0.3）
                 let mx = (x1 - x0) * 0.3, my = (y1 - y0) * 0.45
                 add("glow.halo.\(side > 0 ? "near" : "far").\(k)",

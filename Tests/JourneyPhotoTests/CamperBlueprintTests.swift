@@ -581,8 +581,9 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertEqual(panels.count, builder.windowsNear.count + builder.windowsFar.count, "\(stage)")
             for p in panels {
                 XCTAssertEqual(p.material, .windowGlow)
-                XCTAssertLessThan(abs(p.position.z), builder.BW - builder.wall, "\(stage): ガラスより奥")
-                XCTAssertGreaterThan(abs(p.position.z), builder.BW - builder.wall - 6, "\(stage): カーテンのすぐ内側")
+                // 硝子（表から 2.2〜2.6 奥）のすぐ内側（Mac run 630: 壁の内側では外から見えなかった）
+                XCTAssertLessThan(abs(p.position.z), builder.BW - 2.6, "\(stage): ガラスより奥")
+                XCTAssertGreaterThan(abs(p.position.z), builder.BW - builder.wall, "\(stage): 硝子のすぐ内側")
                 guard case .mesh(let m) = p.shape else { return XCTFail(p.name) }
                 // 外を向く
                 XCTAssertTrue(m.normals.allSatisfy { $0.z * p.position.z > 0 }, p.name)
