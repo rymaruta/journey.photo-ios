@@ -224,6 +224,34 @@ enum CamperMaterials {
         }
     }
 
+    /// どの面にも一様に当たる明るさ（周りの光 `lightingEnvironment` の強さと、環境光 ambient の強さ）。
+    ///
+    /// 2026-10-21 判断（Mac run 577 の 95k「夜の後ろの壁がクリーム色のまま明るい」）: 画面写真の輝度を測ると、後ろの
+    /// クリーム色の面は 57（昼の 95m は 236〜253）で、95b の横のクリーム色の面（50〜80）とほぼ同じだった——後ろだけに
+    /// 当たる光は無い（外の灯りは届かず・月は当たらない向き・形の向きの食い違いも 0 件）。どの面も、この一様な明るさ
+    /// （環境光 60・周りの光 0.14）で白に近いクリーム色が持ち上がり、暗い地の上で後ろの大きな面が目立っていた。
+    /// 灯りの当たらない面がほぼ暗くなるよう、夜は半分ほどに下げる（手前の面は焚き火・窓・入口の灯りで読ませる）
+    static func fill(_ mood: CamperMood) -> (environment: Double, ambient: Double) {
+        switch mood {
+        case .night: return (0.07, 25)
+        case .snow: return (1.45, 0)
+        case .day: return (1.35, 0)
+        }
+    }
+
+    /// 灯りの当たらない面のおよその明るさ（0〜1・素材の色 × 一様な明るさ）。環境光は 1000 で 1、周りの光は空の平均の色
+    static func unlitFaceLevel(_ m: CamperMaterial, paint: UInt32, mood: CamperMood) -> Double {
+        let c = CamperTextures.rgb(spec(m, paint: paint, mood: mood).color)
+        let albedo = 0.2126 * c.0 + 0.7152 * c.1 + 0.0722 * c.2
+        let s = sky(mood)
+        let skyAvg = [s.top, s.horizon, s.groundNear, s.groundFar].map { v -> Double in
+            let k = CamperTextures.rgb(v)
+            return 0.2126 * k.0 + 0.7152 * k.1 + 0.0722 * k.2
+        }.reduce(0, +) / 4
+        let f = fill(mood)
+        return albedo * (f.ambient / 1000 + f.environment * skyAvg)
+    }
+
     /// 周りの空（映り込みの元・板の env の色: 空の上・地平線・地面の手前・地面の奥）
     static func sky(_ mood: CamperMood) -> (top: UInt32, horizon: UInt32, groundNear: UInt32, groundFar: UInt32) {
         switch mood {

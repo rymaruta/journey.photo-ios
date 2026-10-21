@@ -820,3 +820,24 @@ extension CamperBlueprintTests {
         }
     }
 }
+
+extension CamperBlueprintTests {
+    /// 夜、灯りの当たらない外板（後ろの壁など）はほぼ暗い（Mac run 577 の 95k: 白に近いクリーム色が一様な明るさで
+    /// 持ち上がり、後ろの面が明るく見えた）。昼の 1/10 より暗く、どの向きでも同じ（一様な明るさは向きに依らない）。
+    /// 月は上から（どの向きの立った面にも強さの 0.46 を超えて当たらない・仰角 63° 以上）
+    func testUnlitOuterSkinIsDarkAtNight() {
+        for m: CamperMaterial in [.cap, .paint, .deep, .roof] {
+            let night = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .night)
+            let day = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .day)
+            XCTAssertLessThanOrEqual(night, 0.035, "\(m): 夜に灯りの当たらない面が明るい")
+            XCTAssertLessThan(night, day / 10, "\(m)")
+        }
+        let moon = CamperMaterials.sun(.night)
+        let from = moon.from.normalized
+        for deg in stride(from: 0.0, to: 360, by: 15) {
+            let t = deg * .pi / 180
+            let n = CV3(cos(t), 0, sin(t))
+            XCTAssertLessThanOrEqual(max(0, n.dot(from)), 0.46, "\(deg)° の面に月が強く当たる")
+        }
+    }
+}

@@ -120,7 +120,7 @@ final class CamperScene {
         let env = image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
-        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
+        scene.lightingEnvironment.intensity = CGFloat(CamperMaterials.fill(mood).environment)
         // 太陽・月の向きと強さ（`CamperMaterials.sun`）。画面に対して決まっている（車は回る台の上）
         let sun = CamperMaterials.sun(mood)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -sun.from)
@@ -130,7 +130,7 @@ final class CamperScene {
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
             : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
-        ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
+        ambientNode.light?.intensity = CGFloat(CamperMaterials.fill(mood).ambient)
         // 夜はにじみ（bloom）を使わない（2026-10-18 Mac の絵 run 533）。艶の強い面に近くの灯りが当たると HDR の値が
         // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
