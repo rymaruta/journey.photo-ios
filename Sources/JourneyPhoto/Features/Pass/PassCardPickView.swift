@@ -20,6 +20,9 @@ struct PassCardPickView: View {
 
     @State private var photos: [Photo] = []
     @State private var isLoading = true
+    /// 公開一覧を読めなかった（2026-10-21）。0枚とは分けて出し、読み直せるようにする
+    @State private var loadFailed = false
+    @State private var isRetrying = false
     @State private var selected: String?
     @State private var note = ""
     /// 乗車券の区間（2026-10-16 判断・owner「発・着を自分で決めたい」）
@@ -140,60 +143,85 @@ struct PassCardPickView: View {
                 publicHasPassFace = shown.map { $0.passFaceFlag != nil }
             }
         }
-        let all = (try? await environment.gallery.fetchPhotos()) ?? []
-        photos = all.filter { ($0.userId ?? $0.uploadedBy) == me && PassExchange.isPublicCard($0) }
-        // 前に選んだ写真が公開一覧から消えていたら（非公開にした・消した）選び直してもらう
-        if let selected, !photos.contains(where: { $0.id == selected }) { self.selected = nil }
-        if selected == nil { selected = photos.first?.id }
+        await loadPhotos(me: me)
+    }
+
+    /// 公開一覧から選べる写真を読む。**読めなかった回は0枚と言わず、選んだ写真も外さない**（`PassCardLoad.pick`）
+    private func loadPhotos(me: String) async {
+        let fetched = try? await environment.gallery.fetchPhotos()
+        let outcome = PassCardLoad.pick(fetched: fetched, me: me, selected: selected, current: photos)
+        photos = outcome.photos
+        selected = outcome.selected
+        loadFailed = outcome.failed
+    }
+
+    /// 「もう一度試す」。読み直している間は押せない
+    private func retryPhotos() async {
+        guard !isRetrying, let me = auth.userId else { return }
+        isRetrying = true
+        defer { isRetrying = false }
+        await loadPhotos(me: me)
     }
 
     @ViewBuilder
     private var grid: some View {
         if isLoading {
             JPLoadingState(kind: .grid)
+        } else if loadFailed {
+            // 🔴 **読めなかったのを「公開している写真がありません」と言わない**（2026-10-21）。
+            // 前に選んだ写真はそのまま（保存しても乗車券は変わらない）。読めた分があれば下に並べる
+            ErrorBanner(message: L("写真を読み込めませんでした。つながる所で、もう一度お試しください。",
+                                   "Couldn\u{2019}t load your photos. Try again when you\u{2019}re online."),
+                        isBusy: isRetrying) { Task { await retryPhotos() } }
+                .accessibilityIdentifier("pass.pick.loadFailed")
+            if !photos.isEmpty { photoGrid }
         } else if photos.isEmpty {
             EmptyState(title: L("全体に公開している写真がありません", "No public photos yet"),
                        message: L("乗車券にできるのは、全体に公開している写真だけです。投稿してからもう一度開いてください。",
                                   "Only photos shared with everyone can go on your ticket. Post one, then come back."))
         } else {
-            LazyVGrid(columns: Self.columns, spacing: 3) {
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    let on = photo.id == selected
-                    Button { selected = photo.id } label: {
-                        Color.clear
-                            .aspectRatio(4.0 / 5.0, contentMode: .fit)
-                            .overlay { RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment) }
-                            .clipped()
-                            .overlay {
-                                if on {
-                                    // 写真の上の真鍮は読めないので、**内側に黒の縁**を足して写真から切り離す
-                                    // （2026-10-16 の読み直し・件数バッジの黒い縁と同じ考え方）
-                                    ZStack {
-                                        Rectangle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.emphasis)
-                                        Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)
-                                            .padding(JPStroke.emphasis)
-                                    }
+            photoGrid
+        }
+    }
+
+    private var photoGrid: some View {
+        LazyVGrid(columns: Self.columns, spacing: 3) {
+            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                let on = photo.id == selected
+                Button { selected = photo.id } label: {
+                    Color.clear
+                        .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                        .overlay { RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment) }
+                        .clipped()
+                        .overlay {
+                            if on {
+                                // 写真の上の真鍮は読めないので、**内側に黒の縁**を足して写真から切り離す
+                                // （2026-10-16 の読み直し・件数バッジの黒い縁と同じ考え方）
+                                ZStack {
+                                    Rectangle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.emphasis)
+                                    Rectangle().strokeBorder(Color.black, lineWidth: JPStroke.hairline)
+                                        .padding(JPStroke.emphasis)
                                 }
                             }
-                            .overlay(alignment: .topTrailing) {
-                                if on {
-                                    // 選んだ印（真鍮の丸に墨のチェック・黒 2 の縁）。写真の上だが黒い縁で地から切り離す
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(WebTheme.accentText)
-                                        .frame(width: 22, height: 22)
-                                        .background(WebTheme.accent, in: Circle())
-                                        .overlay(Circle().strokeBorder(Color.black, lineWidth: JPStroke.emphasis))
-                                        .padding(6)
-                                        .accessibilityHidden(true)
-                                }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if on {
+                                // 選んだ印（真鍮の丸に墨のチェック・黒 2 の縁）。写真の上だが黒い縁で地から切り離す
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(WebTheme.accentText)
+                                    .frame(width: 22, height: 22)
+                                    .background(WebTheme.accent, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.black, lineWidth: JPStroke.emphasis))
+                                    .padding(6)
+                                    .accessibilityHidden(true)
                             }
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("写真 \(index + 1) · \(photo.displayTitle)", "Photo \(index + 1) · \(photo.displayTitle)"))
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                        }
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("写真 \(index + 1) · \(photo.displayTitle)", "Photo \(index + 1) · \(photo.displayTitle)"))
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
     }
@@ -444,5 +472,33 @@ struct PassCardPickView: View {
         // トランクに入れる乗車券（本人が選んだときだけ）は、すれちがいの画面が設定の変化を見て揃える
         // （`PassSettingsView` の `TrunkTicketSync`）
         dismiss()
+    }
+}
+
+/// 乗車券の写真の読み方（2026-10-21）。**読めなかった回と0枚の回を分ける**——前は読めないと空の一覧になり、
+/// 「公開している写真がありません」と出て、前に選んだ写真まで外れていた（保存すると乗車券が変わった）
+enum PassCardLoad {
+    struct Pick {
+        var photos: [Photo]
+        var selected: String?
+        var failed: Bool
+    }
+
+    /// 選ぶ画面。`fetched` が nil（読めなかった）なら、並びも選んだ写真もそのまま
+    static func pick(fetched: [Photo]?, me: String, selected: String?, current: [Photo]) -> Pick {
+        guard let fetched else { return Pick(photos: current, selected: selected, failed: true) }
+        let photos = fetched.filter { ($0.userId ?? $0.uploadedBy) == me && PassExchange.isPublicCard($0) }
+        var chosen = selected
+        // 前に選んだ写真が公開一覧から消えていたら（非公開にした・消した）選び直してもらう
+        if let id = chosen, !photos.contains(where: { $0.id == id }) { chosen = nil }
+        if chosen == nil { chosen = photos.first?.id }
+        return Pick(photos: photos, selected: chosen, failed: false)
+    }
+
+    /// 設定の行の写真。読めなかったら**前の写真を保つ**（同じ写真を指しているときだけ）
+    static func cardPhoto(id: String?, fetched: [Photo]?, previous: Photo?) -> (photo: Photo?, failed: Bool) {
+        guard let id else { return (nil, false) }
+        guard let fetched else { return (previous?.id == id ? previous : nil, true) }
+        return (fetched.first { $0.id == id }, false)
     }
 }

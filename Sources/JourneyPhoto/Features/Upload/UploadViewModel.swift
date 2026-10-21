@@ -93,6 +93,19 @@ enum StripThumb {
               CGImageSourceGetCount(source) > 0 else { return nil }
         return ImagePreparer.downsampledImage(source: source, maxPixelSize: maxPixelSize)
     }
+
+    /// 縮めた絵を UIImage にする口（`make` の包み）。投稿の帯の `makeStripThumb` の初期値
+    static let makeImage: @Sendable (Data) -> UIImage? = { data in
+        make(from: data).map { UIImage(cgImage: $0) }
+    }
+
+    /// 帯の絵を**画面の処理の外で**作る（`source` を選び、`make` で縮める）。
+    /// 投稿の帯と、ストーリー作成の下の並び（2026-10-21）が使う。読めなければ nil
+    static func image(for prepared: ImagePreparer.Prepared,
+                      make: @escaping @Sendable (Data) -> UIImage? = makeImage) async -> UIImage? {
+        let data = source(for: prepared)
+        return await Task.detached(priority: .userInitiated) { make(data) }.value
+    }
 }
 
 /// 投稿を待っている1枚。
@@ -609,9 +622,7 @@ final class UploadViewModel: ObservableObject {
 
     /// 帯のサムネ（無編集の絵）を作る口（`StripThumb.make`）。**画面の処理の外から呼ばれる。**
     /// 受け取るのは `StripThumb.source` が選んだデータ。試験でだけ差し替える
-    var makeStripThumb: @Sendable (Data) -> UIImage? = { data in
-        StripThumb.make(from: data).map { UIImage(cgImage: $0) }
-    }
+    var makeStripThumb: @Sendable (Data) -> UIImage? = StripThumb.makeImage
 
     /// 撮影スポットの索引を読む口（`UploadView` が `AppEnvironment.spots` を入れる）。試験・既定は読まない
     var fetchSpotIndex: @Sendable () async -> [OfficialSpot]? = { nil }
@@ -1895,10 +1906,9 @@ final class UploadViewModel: ObservableObject {
     /// 帯のサムネを作って入れる（2026-10-03）。以前は 1920px の本体をそのまま `UIImage(data:)` にして
     /// 画面の処理の上で持っていた（10枚で 1 枚 約 15MB の画素 × 10。帯は 96×120pt）
     private func startStripThumb(for photoId: UUID, prepared: ImagePreparer.Prepared) {
-        let source = StripThumb.source(for: prepared)
         let make = makeStripThumb
         Task { [weak self] in
-            let image = await Task.detached(priority: .userInitiated) { make(source) }.value
+            let image = await StripThumb.image(for: prepared, make: make)
             guard let self, let image,
                   let i = self.items.firstIndex(where: { $0.id == photoId }) else { return }
             self.items[i].preview = Image(uiImage: image)

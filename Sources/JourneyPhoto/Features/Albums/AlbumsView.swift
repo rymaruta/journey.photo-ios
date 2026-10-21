@@ -147,6 +147,9 @@ struct AlbumsView: View {
                        message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
                                   "Create an album and send the invite link — your companions' photos gather here."),
                        actionTitle: L("アルバムを作る", "New album")) { showCreate = true }
+                // 作っている間は押せない（`create` は黙って断るので、押せる形にしない・2026-10-21）
+                .disabled(model.isCreating)
+                .opacity(model.isCreating ? 0.5 : 1)
                 .profileListRow()
         } else if model.albums.isEmpty && model.isLoading {
             JPLoadingState(kind: .rows)
@@ -185,6 +188,9 @@ struct AlbumsView: View {
                 .jpPillButton(.main(onPhoto: false))
         }
         .buttonStyle(.plain)
+        // 作っている間は押せない（`create` は黙って断るので、押せる形にしない・2026-10-21）
+        .disabled(model.isCreating)
+        .opacity(model.isCreating ? 0.5 : 1)
         .accessibilityIdentifier("albums.create")
     }
 
@@ -477,10 +483,18 @@ struct AlbumsView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button(L("アルバムを作る", "New album")) { showCreate = true }
+                    // 作っている間は次を作らせない（二度押しで同じアルバムが2つできた）
+                    .disabled(model.isCreating)
                 Button(L("招待リンクから参加", "Join with a link")) { showJoin = true }
             } label: {
-                Image(systemName: "plus")
-                    .accessibilityLabel(L("アルバムの操作", "Album actions"))
+                // 送っている間を見せる（アラートが閉じた後、届くまで何も起きないように見えた）
+                if model.isCreating {
+                    ProgressView()
+                        .accessibilityLabel(L("アルバムを作っています", "Creating the album"))
+                } else {
+                    Image(systemName: "plus")
+                        .accessibilityLabel(L("アルバムの操作", "Album actions"))
+                }
             }
         }
     }
@@ -497,6 +511,7 @@ struct AlbumsView: View {
     private var createAlertButtons: some View {
         TextField(L("名前", "Name"), text: $newTitle)
         Button(L("作る", "Create")) {
+            guard !model.isCreating else { return }
             let title = newTitle
             newTitle = ""
             Task { await model.create(title: title, environment: environment) }
@@ -517,6 +532,9 @@ final class AlbumsViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
     /// 招待リンクを作る・取り消すのを送っているアルバム
     @Published private(set) var inviteWorking: Set<String> = []
+    /// アルバムを作るのを送っている間（2026-10-21）。**二度押しで同じ名前のアルバムを2つ作らない**
+    /// （`createInvite` の `inviteWorking` と同じ形）。画面は「アルバムを作る」を止めて輪を出す
+    @Published private(set) var isCreating = false
     /// 招待リンクの操作が通った知らせ（その行に出し、しばらくすると消える）
     @Published private(set) var inviteDone: InviteDone?
     private var inviteDoneTask: Task<Void, Never>?
@@ -594,9 +612,12 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     func create(title: String, environment: AppEnvironment) async {
+        guard !isCreating else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         // **黙って戻らない。** 空のまま「作る」を押すと、アラートが閉じて何も起きなかった
         guard !trimmed.isEmpty else { return flash(Self.nameRequired) }
+        isCreating = true
+        defer { isCreating = false }
         let myEra = era
         do {
             let album = try await environment.albums.create(title: trimmed)
