@@ -10,7 +10,13 @@ import Foundation
 /// アプリで同じものを作ると「設定が2か所にある」状態になる。
 /// iOS は設定アプリで言語を選べるので、そちらに従う。
 func L(_ ja: String, _ en: String) -> String {
-    Locale.preferredAppLanguage == "en" ? en : ja
+    L(ja, en, language: Locale.preferredAppLanguage)
+}
+
+/// 言語を渡して選ぶ形。**試験が英語の画面を作るため**（いまアプリは日本語で固定・
+/// `Locale.preferredAppLanguage`）。画面のコードは上の `L(_:_:)` を使う
+func L(_ ja: String, _ en: String, language: String) -> String {
+    language == "en" ? en : ja
 }
 
 /// 語をまたいで使う共通の文字。**Web の `labels.ts` から写したもの**

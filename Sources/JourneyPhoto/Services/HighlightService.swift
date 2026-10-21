@@ -138,9 +138,10 @@ struct HighlightService {
     /// 403 も本文を出す——ここの 403 は上限で、`APIError` の汎用の
     /// 「権限がありません」ではない。401・通信の失敗は `APIError` の文に任せる
     static func failureMessage(for error: Error, fallback: String) -> String {
+        // 英語の画面では日本語の本文を出さない（`APIError.displayableServerText`・2026-10-21 判断）
         if case .server(let status, let message)? = error as? APIError,
-           status != 401, !message.isEmpty {
-            return message
+           status != 401, let text = APIError.displayableServerText(message) {
+            return text
         }
         return (error as? LocalizedError)?.errorDescription ?? fallback
     }

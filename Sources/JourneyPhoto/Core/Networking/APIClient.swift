@@ -26,6 +26,11 @@ protocol TokenProviding: Sendable {
 
     /// 取り直しても通らなかった（またはそもそも取り直せなかった）。ログアウトに倒す
     func sessionExpired() async
+
+    /// サーバーが「この人は退会済み」（410・`APIError.isAccountGone`）と答えた。
+    /// `idToken` は**その要求に付けた**鍵——退会の途中の扱い（`AuthStore.noteDeletionPending`）は、
+    /// 鍵の人がいまログイン中の人と同じときだけ入る（人が替わったあとに届いた古い 410 を除く）
+    func accountGone(idToken: String) async
 }
 
 extension TokenProviding {
@@ -33,6 +38,7 @@ extension TokenProviding {
     /// 呼び手に返る（取り直しを見る試験だけが自分で持つ）
     func refreshedIdToken() async throws -> String? { nil }
     func sessionExpired() async {}
+    func accountGone(idToken: String) async {}
 }
 
 /// api-user を叩く薄いクライアント。
@@ -192,15 +198,27 @@ actor APIClient {
         return before == after
     }
 
-    /// 鍵を付けて1回送る（失敗も値で返す——上の注記）
+    /// 鍵を付けて1回送る（失敗も値で返す——上の注記）。
+    ///
+    /// 🔴 **退会済み（410）は、どの口でもここで1回だけ知らせる（2026-10-21 判断）。**
+    /// サーバーは 10/18 から退会した人の書く口を 410 で塞ぐ（`liveCaller.ts`）が、アプリが
+    /// 「退会の途中」に入るのは自分のプロフィールの読み込みだけで、投稿・コメント・いいねでは
+    /// 日本語の断り文が出るだけだった。鍵を付けて送るのはここだけなので、ここで拾う。
+    /// 401 の送り直しの2本目もここを通る（知らせるのは 410 を受けた1本ぶんだけ）。
+    /// 付けた鍵を渡す——**いまの人ではなく、送った人**で確かめる（`TokenProviding.accountGone`）
     private func attempt(_ request: URLRequest, bearer token: String) async -> Result<Data, Error> {
         var request = request
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let result: Result<Data, Error>
         do {
-            return .success(try await perform(request))
+            result = .success(try await perform(request))
         } catch {
-            return .failure(error)
+            result = .failure(error)
         }
+        if case .failure(let error) = result, (error as? APIError)?.isAccountGone == true {
+            await tokenProvider.accountGone(idToken: token)
+        }
+        return result
     }
 
     private func perform(_ request: URLRequest) async throws -> Data {

@@ -22,8 +22,9 @@ struct ProfileService {
     /// 🔴 **410 は「退会の途中で止まったアカウント」。** サーバーはデータを消して墓石を
     /// 置いた人に 410 を返す（`userProfile.ts` の `getMyProfile`）。退会の画面で Cognito の
     /// 削除だけが落ちたまま閉じると、その人はログインできるのに何も使えない状態で残っていた
-    /// （覚えていたのは退会の画面の `@State` だけ）。知らせを出し、`AuthStore` が
-    /// 「退会の手続きが途中です」を出して残りを済ませる（`finishPendingDeletion`）
+    /// （覚えていたのは退会の画面の `@State` だけ）。知らせは**ここでは出さない**——
+    /// どの口の 410 も `APIClient.attempt` が1か所で出す（2026-10-21 判断・二重に出さない）。
+    /// `AuthStore` が「退会の手続きが途中です」を出して残りを済ませる（`finishPendingDeletion`）
     func myProfile() async throws -> UserProfile {
         #if DEBUG
         // 鍵を持たない入り方（`PreviewSession`・UI テスト）では、鍵の要る口の代わりに公開プロフィール。
@@ -32,28 +33,12 @@ struct ProfileService {
             return try await publicProfile(userId: previewId)
         }
         #endif
-        // `catch … where` の中で await しない（`AuthGateway.idToken` の注記）
-        let result: Result<UserProfile, Error>
-        do {
-            result = .success(try await api.authorized(.get, "/user/profile", as: UserProfile.self))
-        } catch {
-            result = .failure(error)
-        }
-        if case .failure(let error) = result, Self.meansAccountDeleted(error) {
-            await Self.announceDeletionPending()
-        }
-        return try result.get()
+        return try await api.authorized(.get, "/user/profile", as: UserProfile.self)
     }
 
-    /// 自分のプロフィールの取得で、アカウントがもう消されている（410）
+    /// アカウントがもう消されている（退会済みの 410・`APIError.isAccountGone`）
     static func meansAccountDeleted(_ error: Error) -> Bool {
-        if case .server(status: 410, _)? = error as? APIError { return true }
-        return false
-    }
-
-    @MainActor
-    private static func announceDeletionPending() {
-        NotificationCenter.default.post(name: .accountDeletionPending, object: nil)
+        (error as? APIError)?.isAccountGone == true
     }
 
     /// 他人のプロフィール（認証不要）。
@@ -145,7 +130,7 @@ struct ProfileService {
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
-                                  message: "画像のアップロードに失敗しました")
+                                  message: L("画像のアップロードに失敗しました", "Image upload failed"))
         }
     }
 }

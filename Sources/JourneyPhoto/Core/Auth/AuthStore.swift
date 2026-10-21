@@ -89,14 +89,23 @@ final class AuthStore: ObservableObject {
         }
         deletionObserver = NotificationCenter.default.addObserver(
             forName: .accountDeletionPending, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.noteDeletionPending() }
+        ) { [weak self] note in
+            // 鍵の人の添えられていない知らせは受けない（誰の 410 か分からない）
+            guard let gone = note.userInfo?[AuthGateway.accountGoneUserIdKey] as? String else { return }
+            Task { @MainActor in self?.noteDeletionPending(userId: gone) }
         }
     }
 
-    /// 自分のプロフィールが 410 だった（`ProfileService.myProfile`）。ログイン中だけ立てる
-    func noteDeletionPending() {
-        guard userId != nil else { return }
+    /// どこかの口が退会済み（410）だった（`APIClient.attempt`）。
+    ///
+    /// 🔴 **410 を受けた鍵の人が、いまログイン中の人と同じときだけ立てる（2026-10-21 判断）。**
+    /// 前の人の要求の 410 が、ログアウトして別の人が入ったあとに届くことがある——
+    /// 人を見ずに立てると、**生きている別の人**に「退会の手続きが途中です」が出て、
+    /// 「完了する」でその人のアカウントを消してしまう。未ログインでも立てない。
+    /// もう立っている・済ませている最中は何もしない（画面の口が一斉に 410 になっても1回）
+    func noteDeletionPending(userId gone: String) {
+        guard let current = userId, current == gone else { return }
+        guard !deletionPending, !isFinishingDeletion else { return }
         deletionPending = true
     }
 
