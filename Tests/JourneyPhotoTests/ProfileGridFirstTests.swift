@@ -45,4 +45,22 @@ final class ProfileGridFirstTests: XCTestCase {
         XCTAssertEqual(ProfileBgmCard.playSide, 28)
         XCTAssertEqual(ProfileBgmCard.playSide + ProfileBgmCard.tapSlack * 2, WebTheme.minTapTarget)
     }
+
+    /// 🔴 押せる範囲は**範囲の形だけ**広げる（負の余白で張り出さない）。字を大きくして行が伸びたとき、
+    /// 張り出した分が上下の行に重なる（2026-10-21・確かめ役の見直し）
+    func testTapAreasGrowWithoutNegativePadding() throws {
+        let bgm = try source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
+        XCTAssertFalse(bgm.contains("padding(.vertical, -"), "BGM の行が負の余白で張り出している")
+        XCTAssertTrue(bgm.contains(".contentShape(Rectangle().inset(by: -Self.tapSlack))"))
+        let record = try source("Sources/JourneyPhoto/Features/Profile/TravelRecordView.swift")
+        let toggle = try XCTUnwrap(record.range(of: "private func routeToggle("))
+        let end = try XCTUnwrap(record.range(of: "toggleTapSlack: CGFloat", range: toggle.upperBound..<record.endIndex))
+        let body = String(record[toggle.upperBound..<end.lowerBound])
+        XCTAssertFalse(body.contains("padding(.vertical, -"), "「線を見る」が負の余白で張り出している")
+        XCTAssertTrue(body.contains(".contentShape(Rectangle().inset(by: -Self.toggleTapSlack))"))
+        // 線そのものが読み上げに乗らないので、開け閉めも読ませない
+        // （矢印の絵にも同じ修飾があるので、ボタンに付いていることを目印の直前で見る）
+        XCTAssertTrue(body.contains(".accessibilityHidden(true)\n        .accessibilityIdentifier(\"profile.travelRecord.routeToggle\")"),
+                      "「線を見る」が読み上げに出ている")
+    }
 }

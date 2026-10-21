@@ -394,6 +394,8 @@ public struct Rectangle: View, Shape {
     public init() {}
     public func fill<S: ShapeStyle>(_ style: S) -> Rectangle { self }
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { self }
+    /// 内側へ縮める（負の値で外へ広げる・押せる範囲を見た目より広げるのに使う。本物は `InsettableShape`）
+    public func inset(by amount: CGFloat) -> Rectangle { self }
     public var body: Never { fatalError() }
 }
 

@@ -83,7 +83,7 @@ struct TravelRecordView: View {
     }
 
     /// 線の開け閉め（眉ラベルの右・「線を見る ⌄」「畳む ⌃」）。見た目は「すべて見る ›」（`MoreLink`）と同じ
-    /// text-2 の 13pt。押せる高さは 44pt、並びの上では字の高さのまま（上下に張り出す）
+    /// text-2 の 13pt。押せる高さは 44pt、並びの上では字の高さのまま（押せる範囲の形だけ広げる）
     private func routeToggle(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: JPSpace.xxs) {
@@ -96,17 +96,19 @@ struct TravelRecordView: View {
             .foregroundStyle(WebTheme.text2)
             .lineLimit(1)
             .fixedSize()
-            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget, alignment: .trailing)
-            .contentShape(Rectangle())
-            .padding(.vertical, -Self.toggleTapSlack)
+            .frame(minWidth: WebTheme.minTapTarget, alignment: .trailing)
+            // 押せる範囲の形だけを 44pt へ広げる（並びの高さは字のまま）。負の余白で張り出すと、
+            // 字を大きくしたとき下の数字の行に重なる（2026-10-21 判断・確かめ役の見直し）
+            .contentShape(Rectangle().inset(by: -Self.toggleTapSlack))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(routeShown ? L("写真をつないだ線を畳む", "Hide the route between photos")
-                                       : L("写真をつないだ線を見る", "Show the route between photos"))
+        // **読み上げには出さない。** 線そのものが読み上げに乗らない（数字と数え方の説明が同じ中身を
+        // 読む）ので、開け閉めだけ読ませても何も変わらない（2026-10-21 判断）
+        .accessibilityHidden(true)
         .accessibilityIdentifier("profile.travelRecord.routeToggle")
     }
 
-    /// 開け閉めの字（13pt・行の高さ約 18）を 44pt にする上下の張り出し
+    /// 開け閉めの字（13pt・行の高さ約 18）を 44pt にする、押せる範囲の広げ幅（上下左右）
     nonisolated static let toggleTapSlack: CGFloat = 13
 
     // MARK: - 数字

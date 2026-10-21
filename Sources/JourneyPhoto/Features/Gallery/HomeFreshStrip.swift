@@ -10,10 +10,11 @@ import SwiftUI
 ///   明朝の題は置かない——段の背を低くして、下の札も最初の画面に残す
 /// - 写真は角丸の縦長（4:5）を横に流す。写真の上には字を置かない（題の帯も切る・小さいので読めない）
 /// - 写真の下に作者の名前（12pt・text-2）。写真の上ではないので黒地の字
-/// - 押すと写真の詳細（前後は段の並び）
+/// - 段には投稿（束）の表紙を出す。押すと写真の詳細で、**前後は同じ投稿の写真**
+///   （ホームの一覧 `HomeMosaic` と同じ形）。2枚以上の投稿は右上に複数枚の印
 struct HomeFreshStrip: View {
 
-    let photos: [Photo]
+    let groups: [PhotoGroups.Group]
     /// 「すべて見る」（呼ぶ側が「新着」に切り替えて、下の一覧へ送る）
     let onSeeAll: () -> Void
 
@@ -34,11 +35,11 @@ struct HomeFreshStrip: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: WebTheme.gridSpacing) {
-                    ForEach(photos) { photo in
+                    ForEach(groups) { group in
                         NavigationLink {
-                            PhotoDetailView(photo: photo, context: photos)
+                            PhotoDetailView(photo: group.cover, context: group.photos)
                         } label: {
-                            tile(photo)
+                            tile(group)
                         }
                         .buttonStyle(.plain)
                     }
@@ -50,10 +51,11 @@ struct HomeFreshStrip: View {
         .accessibilityIdentifier("home.fresh")
     }
 
-    private func tile(_ photo: Photo) -> some View {
+    private func tile(_ group: PhotoGroups.Group) -> some View {
+        let photo = group.cover
         let byline = HomeFreshPhotos.byline(photo)
         return VStack(alignment: .leading, spacing: JPSpace.xxs) {
-            PhotoTile(photo: photo, aspect: Self.tileAspect, showsCaption: false)
+            PhotoTile(photo: photo, aspect: Self.tileAspect, isMultiple: group.isMultiple, showsCaption: false)
             if let byline {
                 Text(byline)
                     .font(JPFont.caption)
@@ -65,6 +67,8 @@ struct HomeFreshStrip: View {
         .frame(width: Self.tileWidth, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([photo.accessibilityText, byline].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityLabel([photo.accessibilityText, byline,
+                             group.isMultiple ? L("\(group.count)枚の投稿", group.count == 1 ? "1 photo" : "\(group.count) photos") : nil]
+            .compactMap { $0 }.joined(separator: " · "))
     }
 }

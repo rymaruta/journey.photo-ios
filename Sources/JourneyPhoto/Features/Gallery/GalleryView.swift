@@ -424,10 +424,11 @@ struct GalleryView: View {
                 // **みんなの新しい写真**（2026-10-21・全画面の点検）。最初の画面が出典付きの作例だけで、
                 // 利用者の写真が1枚も無かった。上の札と作例の棚より上に、フォロー中の人→新着の順で
                 // 1段だけ流す（`HomeFreshPhotos`）。ブロック・通報は表と同じ写しで落とす。0件なら出さない。
-                // 「すべて見る」は下のフィードを「新着」にして、そこまで送る
-                let fresh = model.freshPhotos(viewerId: auth.userId, visible: { dropped.visible($0) })
+                // 「すべて見る」は下のフィードを「新着」にして、そこまで送る。
+                // 中身は描くたびに作らない（モデルが全件・人・フォロー・写しの変わった回だけ作る）
+                let fresh = model.freshGroups(viewerId: auth.userId, hiding: dropped)
                 if !fresh.isEmpty {
-                    HomeFreshStrip(photos: fresh) {
+                    HomeFreshStrip(groups: fresh) {
                         model.select(feed: .latest, viewerId: auth.userId)
                         withAnimation(.easeOut(duration: 0.3)) {
                             proxy.scrollTo(Self.feedPickerID, anchor: .top)

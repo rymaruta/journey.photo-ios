@@ -7,7 +7,7 @@ import SwiftUI
 /// 合わせて自分の写真が最初の画面の一番下まで押し下げられていた（板 v2 MyPage の札からの変更）。
 /// いま: 左に再生の丸（見た目 28・白 8% の地・白の印）→「♪ 曲名 · アーティスト」（13pt・text-2）
 /// →「試聴」（12pt・text-3）。**行ぜんぶが再生の切り替え**で、押せる高さは 44pt
-/// （並びの上では見た目の高さのまま・上下に張り出す）。
+/// （並びの上では見た目の高さのまま・押せる範囲の形だけ広げる）。
 ///
 /// 2026-10-14 判断（v2）の「再生の丸は白 8% の地」はそのまま（白の塗りは主ボタン1つに取っておく）。
 ///
@@ -52,9 +52,10 @@ struct ProfileBgmCard: View {
                     .fixedSize()
                 Spacer(minLength: 0)
             }
-            .frame(minHeight: WebTheme.minTapTarget)
-            .contentShape(Rectangle())
-            .padding(.vertical, -Self.tapSlack)
+            // 押せる範囲だけを上下に広げる（並びの高さは見た目の 28 のまま）。
+            // 2026-10-21 判断（確かめ役の見直し）: 負の余白で張り出すと、字を大きくして行が伸びたとき
+            // 上下の行に重なる。範囲の形だけを広げれば、並びは字の大きさに合わせて伸びる
+            .contentShape(Rectangle().inset(by: -Self.tapSlack))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
