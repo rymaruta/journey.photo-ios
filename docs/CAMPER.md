@@ -82,8 +82,24 @@
   飾っても載らない再発（2026-10-20）: 組み直し後に印画を載せ直す・選んだ額は切った壁でも消さない・印画の clearCoat を外す・
   variety の額は無穴の直方体ではなく共通の穴付き額にする・飾る直前に印画を読み直す。
   綺麗に載らない（2026-10-21）: 印画をマット縁の表より手前へ（厚みのトンネルに沈まない）。縦横比は中央切り取り（aspect-fill）。
-- 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）。
-  見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift` は Debug だけ。
+- 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）、
+  `testCapturesCamperRoomContactSheet`（96e 板と別種の 104 点を本物の SceneKit で 4 点ずつ・昼と夜の 52 枚。並びの所だけを撮る）、
+  `testCapturesCamperRoomGuide`（96f 初めての手引き・96g 押して置く）。
+  見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift`・`-JPPreviewCamperRoomContact`・`-JPPreviewCamperRoomCoach` は Debug だけ。
+  家具の出来はソフトラスタではなく 96e で見る（2026-10-21・素材の映り・光・接地の影はソフトラスタに出ない）。
+- 使いやすさ（2026-10-21・owner「もっとこうした方がユーザー使いやすい」）:
+  - 押して置く: 棚の家具を押すと置ける所が薄い白で光り、部屋の中で押した所に置く。同じ家具をもう一度押すと今までどおり空いた所へ。
+    読み上げのときは押してすぐ空いた所へ（部屋のマスを指で探せない）。
+  - 元に戻すに加えて「やり直す」。マスに吸い付くたびに軽い触覚、置けたら成功の触覚。
+  - 二度押しで寄る（2.4 倍）・もう一度で戻る。回した・寄った後は右上に「向きを戻す」。持ち上げた家具を画面の端へ運ぶと、寄っているときだけカメラが少し追う。
+  - 初めて入った時だけ 3 行の手引き（端末に 1 回・`camper.room.coach.v1`）。
+  - 新しく届いた家具: 棚・分類チップ・図鑑の枠に真鍮の点、「置く」に件数バッジ。置くか寄りで見たら消える（`camper.room.seen.<userId>`・退会で消す）。
+    初めて開いた時は今の持ち物を全部見たにする（最初からの 27 点に印が並ばない）。図鑑に「影の家具を押すと、手に入れ方が出ます」。
+  - 読み上げ: 部屋の場面で「次の家具を選ぶ・左へ・右へ・奥へ・手前へ・回す・しまう」。
+  - 下の「外へ出る」は左上の「外へ」と同じなので外した（板 CamperRoomFlow も左上だけ）。
+- 素材（2026-10-21・Mac run 596 の本物の絵で見て）: 鏡はクロームの板（周りの光の絵だけを映して真鍮の円盤・黒い板に見えた）から
+  映る部屋の絵に硝子の照りの `.mirror` へ。部屋の中の物の硝子（瓶・器・戸・球）は窓の硝子（夜は外の暗さで黒く曇る）から、夜も透ける `.clearGlass` へ。
+  葉はつぶした球から、脈で折れて先の反る薄い刃（`CamperRoomShapes.blade`）へ。
 - 手元で形を見る: `CAMPER_ROOM_DUMP=<dir> swift test --filter CamperRoomRenderDump`（家具と部屋を小さな絵に書き出す）。
 - やらないこと（第2段）: 友達が室内を訪ねる・招く・メモを置く（サーバーと一緒に）。
 
