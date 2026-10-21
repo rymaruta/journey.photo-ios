@@ -342,37 +342,10 @@ struct CamperRoomView: View {
 
     private func sceneArea(width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
-                                editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
-                                previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
-                                photoImages: photoImages.images, hints: mode == .edit ? hints : nil) { marker in
-                readyMarker = marker
-            }
-            .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            .gesture(pointer)
-            .simultaneousGesture(pinch)
-            .simultaneousGesture(twist)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(sceneLabel)
-            .accessibilityAddTraits(.isImage)
-            .accessibilityValue(PreviewSession.userId != nil ? readyMarker : "")
-            .accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 30) }
-            .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -30) }
-            // 読み上げでも家具を選ぶ・動かす・回す・しまうができる（2026-10-21）
-            .accessibilityAction(named: L("次の家具を選ぶ", "Select the next piece")) { selectNext(1) }
-            .accessibilityAction(named: L("前の家具を選ぶ", "Select the previous piece")) { selectNext(-1) }
-            .accessibilityAction(named: L("選んだ家具を左へ", "Move the piece left")) { nudge(-1, 0) }
-            .accessibilityAction(named: L("選んだ家具を右へ", "Move the piece right")) { nudge(1, 0) }
-            .accessibilityAction(named: L("選んだ家具を奥へ（壁の物は上へ）", "Move the piece back (up on a wall)")) { nudge(0, -1) }
-            .accessibilityAction(named: L("選んだ家具を手前へ（壁の物は下へ）", "Move the piece forward (down on a wall)")) { nudge(0, 1) }
-            .accessibilityAction(named: L("選んだ家具を回す", "Turn the piece")) { if selected == nil { announce(Self.pickFirst) } else { rotateSelected() } }
-            .accessibilityAction(named: L("選んだ家具をしまう", "Put the piece away")) {
-                if let selected { stow(selected); announce(L("しまいました", "Put away")) } else { announce(Self.pickFirst) }
-            }
-            .accessibilityIdentifier("camper.room.scene")
-            .onAppear { viewport = CGSize(width: width, height: height) }
-            .onChange(of: width) { _, w in viewport.width = w }
+            sceneActions(sceneView(width: width, height: height))
+                .accessibilityIdentifier("camper.room.scene")
+                .onAppear { viewport = CGSize(width: width, height: height) }
+                .onChange(of: width) { _, w in viewport.width = w }
             if let selected, drag == nil, mode == .edit || mode == .home, let point = actionPoint(selected) {
                 itemActions(selected)
                     .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, 30), height - 30))
@@ -394,6 +367,58 @@ struct CamperRoomView: View {
         .frame(width: width, height: height)
         .background(RadialGradient(colors: [CamperStyle.color(mood == .night ? 0x1C1206 : 0x1D1B14), Color.black],
                                    center: UnitPoint(x: 0.5, y: 0.45), startRadius: 0, endRadius: 420))
+    }
+
+    /// 箱庭そのもの（2026-10-21: 1 つの式に修飾が多すぎて、Xcode の型検査が時間切れになった・Mac run 597。分けた）
+    private func sceneView(width: CGFloat, height: CGFloat) -> some View {
+        CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
+                            editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
+                            previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
+                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil) { marker in
+            readyMarker = marker
+        }
+        .frame(width: width, height: height)
+        .contentShape(Rectangle())
+        .gesture(pointer)
+        .simultaneousGesture(pinch)
+        .simultaneousGesture(twist)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(sceneLabel)
+        .accessibilityAddTraits(.isImage)
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker : "")
+    }
+
+    /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする
+    private func sceneActions<V: View>(_ v: V) -> some View {
+        itemVoiceActions(
+            v.accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 30) }
+                .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -30) }
+                // 読み上げでも家具を選ぶ・動かす・回す・しまうができる（2026-10-21）
+                .accessibilityAction(named: L("次の家具を選ぶ", "Select the next piece")) { selectNext(1) }
+                .accessibilityAction(named: L("前の家具を選ぶ", "Select the previous piece")) { selectNext(-1) }
+        )
+    }
+
+    /// 読み上げで、選んだ家具を動かす・回す・しまう
+    private func itemVoiceActions<V: View>(_ v: V) -> some View {
+        let back = L("選んだ家具を奥へ（壁の物は上へ）", "Move the piece back (up on a wall)")
+        let front = L("選んだ家具を手前へ（壁の物は下へ）", "Move the piece forward (down on a wall)")
+        return v.accessibilityAction(named: L("選んだ家具を左へ", "Move the piece left")) { nudge(-1, 0) }
+            .accessibilityAction(named: L("選んだ家具を右へ", "Move the piece right")) { nudge(1, 0) }
+            .accessibilityAction(named: back) { nudge(0, -1) }
+            .accessibilityAction(named: front) { nudge(0, 1) }
+            .accessibilityAction(named: L("選んだ家具を回す", "Turn the piece")) { voiceRotate() }
+            .accessibilityAction(named: L("選んだ家具をしまう", "Put the piece away")) { voiceStow() }
+    }
+
+    private func voiceRotate() {
+        if selected == nil { announce(Self.pickFirst) } else { rotateSelected() }
+    }
+
+    private func voiceStow() {
+        guard let selected else { return announce(Self.pickFirst) }
+        stow(selected)
+        announce(L("しまいました", "Put away"))
     }
 
     private var sceneLabel: String {
@@ -426,40 +451,45 @@ struct CamperRoomView: View {
         }
         // 押して置く: 何を置こうとしているか・やめる
         if let armed, mode == .edit {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L("\(armed.name)を置く所を押す", "Tap where \(armed.name) goes"))
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.white)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                    Text(L("白いマスに置けます · 棚でもう一度押すと空いた所へ", "White squares fit · tap it again on the shelf to drop it anywhere"))
-                        .font(.system(size: 12)).foregroundStyle(WebTheme.text2)
-                        .lineLimit(2).minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 0)
-                Button(action: disarm) {
-                    Text(L("やめる", "Cancel"))
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("camper.room.armed.cancel")
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 4)
-            .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
-            .frame(width: width - 24)
-            .position(x: width / 2, y: height - 38)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("camper.room.armed")
+            armedBanner(armed, width: width)
+                .position(x: width / 2, y: height - 38)
         }
         if showCoach, mode == .home {
             coachCard
                 .frame(width: min(width - 32, 340))
                 .position(x: width / 2, y: height / 2)
         }
+    }
+
+    /// 押して置く途中の札（何を置くか・やめる）
+    private func armedBanner(_ armed: CamperRoomFurniture, width: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("\(armed.name)を置く所を押す", "Tap where \(armed.name) goes"))
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.white)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(L("白いマスに置けます · 棚でもう一度押すと空いた所へ", "White squares fit · tap it again on the shelf to drop it anywhere"))
+                    .font(.system(size: 12)).foregroundStyle(WebTheme.text2)
+                    .lineLimit(2).minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Button(action: disarm) {
+                Text(L("やめる", "Cancel"))
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(WebTheme.accent)
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("camper.room.armed.cancel")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+        .frame(width: width - 24)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("camper.room.armed")
     }
 
     /// 初めての人への手引き（3 行・端末に 1 回。写真の無い所なので主ボタンは真鍮の塗りに墨の字）
@@ -976,30 +1006,7 @@ struct CamperRoomView: View {
             if !cats.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(cats, id: \.self) { c in
-                            let on = c == cat
-                            let fresh = (editor?.tray(c, owned: owned) ?? []).contains { news.contains($0.id) }
-                            Button {
-                                trayCategory = c
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(c.name)
-                                    // 新しい家具がある分類（未読の点の真鍮。選んだチップの塗りの上は墨）
-                                    if fresh { Circle().fill(on ? WebTheme.accentText : WebTheme.accent).frame(width: 7, height: 7) }
-                                }
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(on ? WebTheme.accentText : WebTheme.text)
-                                    .padding(.horizontal, 12)
-                                    .frame(minHeight: WebTheme.minTapTarget)
-                                    .background(on ? WebTheme.accentFill : CamperStyle.color(0x1C1C1C), in: Capsule())
-                                    .overlay(Capsule().strokeBorder(on ? Color.clear : Color.white.opacity(0.14), lineWidth: 1))
-                                    .contentShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(on ? .isSelected : [])
-                            .accessibilityLabel(fresh ? L("\(c.name)、新しい家具あり", "\(c.name), has new pieces") : c.name)
-                            .accessibilityIdentifier("camper.room.tray.cat.\(c.rawValue)")
-                        }
+                        ForEach(cats, id: \.self) { c in trayChip(c, on: c == cat) }
                     }
                     .padding(.vertical, 2)
                 }
@@ -1014,36 +1021,7 @@ struct CamperRoomView: View {
                         .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
-                        ForEach(tray) { f in
-                            let on = armed?.id == f.id
-                            let fresh = news.contains(f.id)
-                            Button { trayTap(f) } label: {
-                                VStack(spacing: 4) {
-                                    CamperRoomThumb(furniture: f, silhouette: false)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(height: 72)
-                                    Text(f.name).font(.system(size: 12)).foregroundStyle(on ? WebTheme.accent : WebTheme.text)
-                                        .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, minHeight: 108)
-                                .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 14))
-                                // 押して置く途中の家具は真鍮の縁 2pt（黒地の上・選んだ札と同じ）
-                                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(on ? WebTheme.accent : Color.white.opacity(0.12),
-                                                                                        lineWidth: on ? 2 : 1))
-                                .overlay(alignment: .topTrailing) {
-                                    if fresh { Circle().fill(WebTheme.accent).frame(width: 8, height: 8).padding(7) }
-                                }
-                                .contentShape(RoundedRectangle(cornerRadius: 14))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel((fresh ? L("新しい家具、", "New, ") : "") + L("\(f.name)を置く", "Place \(f.name)"))
-                            .accessibilityHint(voiceOver ? L("空いている所に置きます", "Puts it in a free spot")
-                                               : L("押してから、部屋の中の置きたい所を押します", "Then tap where it goes in the room"))
-                            .accessibilityAddTraits(on ? .isSelected : [])
-                            .accessibilityIdentifier("camper.room.tray.\(f.id)")
-                        }
+                        ForEach(tray) { f in trayCard(f) }
                     }
                 }
             }
@@ -1083,6 +1061,70 @@ struct CamperRoomView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    /// 置く棚の分類チップ（選んだチップは真鍮の塗りに墨の字。新しい家具がある分類は点）
+    private func trayChip(_ c: CamperRoomCategory, on: Bool) -> some View {
+        let fresh = (editor?.tray(c, owned: owned) ?? []).contains { news.contains($0.id) }
+        let label: String = fresh ? L("\(c.name)、新しい家具あり", "\(c.name), has new pieces") : c.name
+        let ink: Color = on ? WebTheme.accentText : WebTheme.text
+        let fill: Color = on ? WebTheme.accentFill : CamperStyle.color(0x1C1C1C)
+        let edge: Color = on ? Color.clear : Color.white.opacity(0.14)
+        let dot: Color = on ? WebTheme.accentText : WebTheme.accent
+        return Button {
+            trayCategory = c
+        } label: {
+            HStack(spacing: 5) {
+                Text(c.name)
+                // 新しい家具がある分類（未読の点の真鍮。選んだチップの塗りの上は墨）
+                if fresh { Circle().fill(dot).frame(width: 7, height: 7) }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(ink)
+            .padding(.horizontal, 12)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .background(fill, in: Capsule())
+            .overlay(Capsule().strokeBorder(edge, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("camper.room.tray.cat.\(c.rawValue)")
+    }
+
+    /// 棚の家具の枠（押して置く途中は真鍮の縁・新しい家具は真鍮の点）
+    private func trayCard(_ f: CamperRoomFurniture) -> some View {
+        let on = armed?.id == f.id
+        let fresh = news.contains(f.id)
+        let label: String = (fresh ? L("新しい家具、", "New, ") : "") + L("\(f.name)を置く", "Place \(f.name)")
+        let hint: String = voiceOver ? L("空いている所に置きます", "Puts it in a free spot")
+            : L("押してから、部屋の中の置きたい所を押します", "Then tap where it goes in the room")
+        let edge: Color = on ? WebTheme.accent : Color.white.opacity(0.12)
+        return Button { trayTap(f) } label: {
+            VStack(spacing: 4) {
+                CamperRoomThumb(furniture: f, silhouette: false)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 72)
+                Text(f.name).font(.system(size: 12)).foregroundStyle(on ? WebTheme.accent : WebTheme.text)
+                    .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 108)
+            .background(CamperStyle.color(0x141414), in: RoundedRectangle(cornerRadius: 14))
+            // 押して置く途中の家具は真鍮の縁 2pt（黒地の上・選んだ札と同じ）
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(edge, lineWidth: on ? 2 : 1))
+            .overlay(alignment: .topTrailing) {
+                if fresh { Circle().fill(WebTheme.accent).frame(width: 8, height: 8).padding(7) }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityHint(hint)
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("camper.room.tray.\(f.id)")
     }
 
     // MARK: 模様替え
