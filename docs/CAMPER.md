@@ -76,6 +76,7 @@
   飾る画面に入ったら一覧の写真も先に読む。印画の材質は額ごとに専用にし、CGImage で渡す。
   飾っても載らない再発（2026-10-20）: 組み直し後に印画を載せ直す・選んだ額は切った壁でも消さない・印画の clearCoat を外す・
   variety の額は無穴の直方体ではなく共通の穴付き額にする・飾る直前に印画を読み直す。
+  綺麗に載らない（2026-10-21）: 印画をマット縁の表より手前へ（厚みのトンネルに沈まない）。縦横比は中央切り取り（aspect-fill）。
 - 画面写真: `testCapturesCamperRoom`（96 昼・96a 夜・96b 図鑑・96c 家具の寄り 8 点の昼と夜）、`testCapturesCamperRoomPlacing`（96d 置いている途中）。
   見本の起動 `-JPPreviewCamperRoomReset`・`-JPPreviewCamperRoomLift` は Debug だけ。
 - 手元で形を見る: `CAMPER_ROOM_DUMP=<dir> swift test --filter CamperRoomRenderDump`（家具と部屋を小さな絵に書き出す）。

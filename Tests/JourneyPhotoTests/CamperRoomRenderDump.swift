@@ -60,4 +60,36 @@ final class CamperRoomRenderDump: XCTestCase {
             }
         }
     }
+
+    /// 印画を朱色にして額を描く（飾った写真がマットに沈まず見えるかを手元で確かめる）
+    func testDumpHungPhotoFrames() throws {
+        guard let dir = ProcessInfo.processInfo.environment["CAMPER_ROOM_DUMP"], !dir.isEmpty else { return }
+        let size = Int(ProcessInfo.processInfo.environment["CAMPER_ROOM_DUMP_SIZE"] ?? "") ?? 480
+        let ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych"]
+        for id in ids {
+            guard let raw = CamperRoomFurnitureModels.mesh(id) else { continue }
+            // 硝子はソフトラスタだと奥行きを書いて印画を消すので外し、印画を朱色の無地にする
+            var mesh = CamperMesh()
+            mesh.positions = raw.positions
+            mesh.normals = raw.normals
+            mesh.uvs = raw.uvs
+            mesh.groups = raw.groups.compactMap { g in
+                if g.material == .room(.frameGlass) { return nil }
+                if case .room(.photo) = g.material { return (.room(.painted(0xD94A3D)), g.indices) }
+                return g
+            }
+            var o = CamperRoomRaster.Options()
+            o.width = size
+            o.height = size
+            o.background = 0x181818
+            o.pitch = 12
+            o.yaw = 28
+            let b = CamperRoomRaster.render(mesh, o)
+            var data = Data()
+            withUnsafeBytes(of: UInt32(b.width).littleEndian) { data.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(b.height).littleEndian) { data.append(contentsOf: $0) }
+            data.append(contentsOf: b.rgba)
+            try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("hung.\(id).rgba"))
+        }
+    }
 }
