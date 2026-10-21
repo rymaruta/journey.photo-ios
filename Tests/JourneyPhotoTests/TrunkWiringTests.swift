@@ -101,6 +101,20 @@ final class TrunkWiringTests: XCTestCase {
                       "見本の届いた画面を出す直前に印を取っていない（閉じるとまた出る）")
     }
 
+    /// 🔴 画面写真の試験でトランクへ行く道（2026-10-21）: マイページの見出しが後から読み込まれてタブの列が動くので、
+    /// 「旅の記録」は位置が止まってから押し、選ばれたかを確かめて押し直す（`testCapturesTrunkOpen` の空振り）
+    func testScreenshotsSelectTheTripsTabRobustly() throws {
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        guard let start = shots.range(of: "private func openTrunk(_ app: XCUIApplication) -> Bool {"),
+              let end = shots.range(of: "\n    }\n", range: start.upperBound..<shots.endIndex) else {
+            return XCTFail("openTrunk が無い")
+        }
+        let body = String(shots[start.upperBound..<end.lowerBound])
+        XCTAssertTrue(body.contains("guard selectTripsTab(app) else { return false }"), "旅の記録のタブを選んだか確かめずに進む")
+        XCTAssertFalse(body.contains("tripsTab.tap()"), "旅の記録のタブを1回押すだけに戻った")
+        XCTAssertTrue(shots.contains(#"NSPredicate(format: "selected == true")"#), "選ばれたかを確かめていない")
+    }
+
     /// 窓口は `TrunkService` 1つで、`AppEnvironment` が組む
     func testServiceIsWired() throws {
         let env = try source("App/AppEnvironment.swift")

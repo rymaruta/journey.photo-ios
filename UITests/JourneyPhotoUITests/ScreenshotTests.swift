@@ -2215,16 +2215,7 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
         tabBar.buttons.element(boundBy: 4).tap()
-        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        guard tripsTab.waitForExistence(timeout: 15) else { return false }
-        var pushes = 0
-        while !tripsTab.isHittable, pushes < 4 {
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 1)
-            pushes += 1
-        }
-        guard tripsTab.isHittable else { return false }
-        tripsTab.tap()
+        guard selectTripsTab(app) else { return false }
         let row = app.buttons["trips.trunk"].firstMatch
         guard row.waitForExistence(timeout: 10) else { return false }
         var rowPushes = 0
@@ -2237,6 +2228,40 @@ final class ScreenshotTests: XCTestCase {
         guard row.isHittable else { return false }
         row.tap()
         return app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// マイページの「旅の記録」のタブを選ぶ。選べたら true。
+    ///
+    /// 2026-10-21（PR #354 の Mac・録画で確認）: マイページは開いた直後に見出し（カバー・名前・数）が後から読み込まれて
+    /// 下へ伸び、タブの列が 150pt ほど動く。動いている最中に押すと空振りし、「旅の記録」が選ばれないまま
+    /// 「旅のトランク」の行を待って落ちていた（`testCapturesTrunkOpen` の「旅のトランクを開けない」）。
+    /// **位置が止まってから押し、選ばれたかを確かめ、選ばれなければ押し直す**（3回まで）
+    private func selectTripsTab(_ app: XCUIApplication) -> Bool {
+        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        for _ in 0..<3 {
+            // 位置が 1 秒止まるまで待つ（見出しの読み込みで動く間は押さない・最長 10 秒）
+            var last = tripsTab.frame
+            for _ in 0..<10 {
+                Thread.sleep(forTimeInterval: 1)
+                let now = tripsTab.frame
+                if now == last { break }
+                last = now
+            }
+            var pushes = 0
+            while !tripsTab.isHittable, pushes < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard tripsTab.isHittable else { return false }
+            tripsTab.tap()
+            let selected = NSPredicate(format: "selected == true")
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: selected, object: tripsTab)], timeout: 3) == .completed {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - 写真で作るキャンピングカー（2026-10-18・札 #307）
