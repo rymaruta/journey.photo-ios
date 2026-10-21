@@ -47,6 +47,11 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertFalse(f.nameEn.isEmpty, f.id)
             XCTAssertNotEqual(f.nameJa, f.nameEn, f.id)
         }
+        // 組み合わせ家具の名前は棚の升に入る短さ（軸の全部は look に残す・2026-10-21）
+        for f in all where f.key.hasPrefix("x") {
+            XCTAssertLessThanOrEqual(f.nameJa.count, 12, "\(f.id) \(f.nameJa)")
+            XCTAssertTrue(f.lookJa.contains("・") || f.lookJa.count >= f.nameJa.count, f.id)
+        }
     }
 
     /// 最初から持っている家具は全部、形を作り込んである（初めて入った部屋に「近日」が並ばない）。形のある家具だけが届き、
@@ -293,11 +298,18 @@ final class CamperRoomTests: XCTestCase {
         // 棚: 置いた家具は出ない（額は何枚でも出る）
         XCTAssertFalse(e.tray(.floor, owned: owned).contains { $0.id == "bed.platform" })
         XCTAssertTrue(e.tray(.wall, owned: owned).contains { $0.id == "photo_frame.landscape" })
+        // 分類で絞ると床一括にならない（壁の額は額の棚だけ）
+        XCTAssertTrue(e.trayCategories(.wall, owned: owned).contains(.photoFrame))
+        XCTAssertTrue(e.tray(.photoFrame, owned: owned).contains { $0.id == "photo_frame.landscape" })
+        XCTAssertFalse(e.tray(.clock, owned: owned).contains { $0.id == "photo_frame.landscape" })
         // しまうと棚に戻る
         let trunk = try XCTUnwrap(e.doc.items.first { $0.k == "storage.trunk" })
         e.stow(trunk.u)
         XCTAssertNil(e.doc.item(trunk.u))
         XCTAssertTrue(e.tray(.floor, owned: owned).contains { $0.id == "storage.trunk" })
+        XCTAssertTrue(e.trayCategories(.floor, owned: owned).contains(.storage))
+        XCTAssertTrue(e.tray(.storage, owned: owned).contains { $0.id == "storage.trunk" })
+        XCTAssertFalse(e.tray(.bed, owned: owned).contains { $0.id == "storage.trunk" })
         // 棚から置く（置ける所を探す）
         let f = try XCTUnwrap(CamperRoomCatalog.furniture("storage.trunk"))
         let uid = try XCTUnwrap(e.place(f, owned: owned))

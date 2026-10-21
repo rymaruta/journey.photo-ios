@@ -36,6 +36,8 @@ struct CamperRoomView: View {
     @State private var gesture: PointerState?
     @State private var pinchStart: CamperRoomCamera?
     @State private var trayTab: CamperRoomPlacement = .floor
+    /// 置く棚の分類（床一括にしない・2026-10-21）
+    @State private var trayCategory: CamperRoomCategory = .bed
     @State private var styleTab: StyleTab = .wall
     @State private var framePick: String?
     @State private var photoPick: String?
@@ -666,11 +668,42 @@ struct CamperRoomView: View {
     // MARK: 置く
 
     private var editPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let cats = editor?.trayCategories(trayTab, owned: owned) ?? []
+        let cat = cats.contains(trayCategory) ? trayCategory : (cats.first ?? .bed)
+        let tray = editor?.tray(cat, owned: owned) ?? []
+        return VStack(alignment: .leading, spacing: 10) {
             tabs(CamperRoomPlacement.allCases.map { ($0.rawValue, $0.name) }, selected: trayTab.rawValue, label: L("置く場所", "Where")) { raw in
-                trayTab = CamperRoomPlacement(rawValue: raw) ?? .floor
+                let next = CamperRoomPlacement(rawValue: raw) ?? .floor
+                trayTab = next
+                if let first = editor?.trayCategories(next, owned: owned).first { trayCategory = first }
             }
-            let tray = editor?.tray(trayTab, owned: owned) ?? []
+            // 分類チップ（床の家具を一括りにしない・2026-10-21）
+            if !cats.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(cats, id: \.self) { c in
+                            let on = c == cat
+                            Button {
+                                trayCategory = c
+                            } label: {
+                                Text(c.name)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(on ? WebTheme.accentText : WebTheme.text)
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: WebTheme.minTapTarget)
+                                    .background(on ? WebTheme.accentFill : CamperStyle.color(0x1C1C1C), in: Capsule())
+                                    .overlay(Capsule().strokeBorder(on ? Color.clear : Color.white.opacity(0.14), lineWidth: 1))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(on ? .isSelected : [])
+                            .accessibilityIdentifier("camper.room.tray.cat.\(c.rawValue)")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .accessibilityLabel(L("家具の種類", "Furniture kind"))
+            }
             // 横に送る一覧は家具が増えると探しにくい（2026-10-20 owner「5×5 みたいな一覧」）。5 列の升目で縦に送る。
             // 升の絵は 44pt だと縦が潰れるので、枠を大きく取る（2026-10-20 owner「枠が狭い・縦幅がなさすぎる」）
             ScrollView {
@@ -869,6 +902,7 @@ struct CamperRoomView: View {
                 Spacer(minLength: 0)
                 primaryButton(L("額を掛ける", "Hang a frame"), id: "camper.room.addFrame", fill: false) {
                     trayTab = .wall
+                    trayCategory = .photoFrame
                     enter(.edit)
                 }
             } else {
