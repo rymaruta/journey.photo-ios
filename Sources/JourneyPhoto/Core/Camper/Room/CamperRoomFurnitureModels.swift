@@ -658,10 +658,10 @@ enum CamperRoomFurnitureModels {
         }
         parts.append(K.placed(K.roundedBox(CV3(1.3, 7, 5.4), radius: 0.2, segments: 1, R(.painted(0xA8572E))), at: CV3(-5.4, 12.2, 3.6),
                               rotation: CQuat.axisAngle(CV3(0, 0, 1), -0.32)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.6, 0), CV2(1.7, 4), CV2(1.2, 4.6), CV2(1.2, 5.2), CV2(0, 5.2)], segments: 16, R(.glass)),
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.6, 0), CV2(1.7, 4), CV2(1.2, 4.6), CV2(1.2, 5.2), CV2(0, 5.2)], segments: 16, R(.clearGlass)),
                               at: CV3(2, 8.8, 3.6)))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.3, 0), CV2(1.3, 3), CV2(0, 3)], segments: 12, R(.linen(0xC9A15A))), at: CV3(2, 8.8, 3.6)))
-        parts.append(CamperRoomShapes.pottedPlant(at: CV3(9, 8.8, 4.2), potRadius: 2, height: 3, leaves: 6, spread: 3.0))
+        parts.append(CamperRoomShapes.pottedPlant(at: CV3(9, 8.8, 4.6), potRadius: 2, height: 3, leaves: 6, spread: 3.0))
         return K.merge(parts)
     }
 
@@ -796,7 +796,7 @@ enum CamperRoomFurnitureModels {
         }
         parts.append(K.placed(K.disc(radius: 0.45, height: 0.35, bevel: 0.1, segments: 12, R(.painted(0x141414))),
                               at: c + CV3(0, 0, 1.05), rotation: toWall))
-        parts.append(K.placed(K.lathe([CV2(0, 0.3), CV2(2.4, 0.25), CV2(4.05, 0)], segments: 32, R(.glass), capStart: false, capEnd: false),
+        parts.append(K.placed(K.lathe([CV2(0, 0.3), CV2(2.4, 0.25), CV2(4.05, 0)], segments: 32, R(.frameGlass), capStart: false, capEnd: false),
                               at: c + CV3(0, 0, 1.55), rotation: toWall))
         // 上の吊り環
         parts.append(K.tube(K.arc(center: c + CV3(0, 5.4, 1.4), radius: 0.65, from: 0.15, to: .pi - 0.15, steps: 10)

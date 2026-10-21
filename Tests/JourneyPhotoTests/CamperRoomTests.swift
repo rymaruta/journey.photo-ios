@@ -786,6 +786,10 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertNotNil(CamperRoomBuilder.place(s.doc.all[0]), f.id)
             let cam = CamperRoomStudio.camera(f)
             XCTAssertTrue(cam.eye(s.layout).y > 0, f.id)
+            // 天井の物は天井より下から見上げる（上からだと天井の板が裏向きで消え、宙に浮いた板に見えた・2026-10-21）
+            if f.placement == .ceiling { XCTAssertLessThan(cam.eye(s.layout).y, s.layout.ceilingHeight, f.id) }
+            // 床の灯りは笠の高さを狙う（柱と台だけにならない）
+            if f.category == .floorLamp { XCTAssertGreaterThan(cam.target.y, f.height * 0.4, f.id) }
         }
     }
 }

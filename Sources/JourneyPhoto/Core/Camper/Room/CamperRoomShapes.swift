@@ -114,13 +114,68 @@ enum CamperRoomShapes {
         return K.merge(parts)
     }
 
-    /// 葉 1 枚（細長い楕円の薄い面を `toward` の向きへ、少し反らせて）
-    static func leaf(at p: CV3, toward dir: CV3, size: Double) -> CamperMesh {
-        let shape = K.scaled(K.sphere(radius: 1, segments: 10, R(.leaf)), CV3(size, size * 0.12, size * 0.5))
+    /// 葉の刃（2026-10-21・Mac の接写で、つぶした球の葉が「緑の豆」に見えた）。付け根が原点で +X へ伸びる薄い面。
+    /// 幅は付け根と先で細く、中の脈で V に折れ（`fold`）、先へ向かって下へ反る（`droop`）。`heart` は付け根の両側の耳（モンステラ）、
+    /// `slits` は縁から脈へ向かう切れ込みの数（片側）。材質は両面（`.leaf`）
+    static func blade(length L: Double, width W: Double, fold: Double = 0.22, droop: Double = 0.18, heart: Double = 0,
+                      slits: Int = 0, _ m: CamperMaterial = .room(.leaf)) -> CamperMesh {
+        var mesh = CamperMesh()
+        let nu = slits > 0 ? max(18, slits * 4 + 4) : 10, nv = 6
+        func half(_ u: Double) -> Double {
+            let body = pow(sin(.pi * min(1, max(0, u))), 0.75)
+            return W / 2 * (heart > 0 ? max(body, heart * pow(1 - u, 2) * 0.9) : body)
+        }
+        func point(_ i: Int, _ j: Int) -> CV3 {
+            let u = Double(i) / Double(nu), v = Double(j) / Double(nv) * 2 - 1
+            let w = half(u)
+            // 耳: 付け根の縁は少し後ろへ回り込む
+            let back = heart * L * 0.14 * abs(v) * pow(1 - u, 3)
+            return CV3(u * L - back, fold * abs(v) * w - droop * L * u * u, v * w)
+        }
+        let grid = (0...nv).map { j in (0...nu).map { i in point(i, j) } }
+        func normal(_ i: Int, _ j: Int) -> CV3 {
+            let a = grid[j][min(nu, i + 1)] - grid[j][max(0, i - 1)]
+            let b = grid[min(nv, j + 1)][i] - grid[max(0, j - 1)][i]
+            let n = b.cross(a)
+            return n.length > 1e-9 ? n.normalized : CV3(0, 1, 0)
+        }
+        // 切れ込み: 決まった段で、脈から外の縁まで抜く（脈のまわり 1 列は残す）
+        var cut = Set<Int>()
+        if slits > 0 {
+            for k in 0..<slits {
+                let u = 0.22 + 0.62 * Double(k) / Double(max(1, slits - 1))
+                cut.insert(Int((u * Double(nu)).rounded()))
+            }
+        }
+        var faces = CamperMesh()
+        for j in 0..<nv {
+            for i in 0..<nu {
+                let outer = j == 0 || j == nv - 1 || j == 1 || j == nv - 2
+                if cut.contains(i), outer, !(j == 2 || j == nv - 3) { continue }
+                faces.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i],
+                           normal(i, j), normal(i + 1, j), normal(i + 1, j + 1), normal(i, j + 1), m)
+            }
+        }
+        faces.uvs = faces.positions.map { CV2($0.x / max(L, 1e-6), 0.5 + $0.z / max(W, 1e-6)) }
+        mesh.append(faces)
+        return mesh
+    }
+
+    /// 刃の葉を、付け根 `p` から `dir` の向きへ置く（ねじり `roll` で面を傾ける）
+    static func blade(at p: CV3, toward dir: CV3, roll: Double = 0, _ b: CamperMesh) -> CamperMesh {
         let flat = CV3(dir.x, 0, dir.z).length > 1e-6 ? CV3(dir.x, 0, dir.z).normalized : CV3(1, 0, 0)
         let yaw = atan2(-flat.z, flat.x)
-        let tilt = CQuat.axisAngle(CV3(0, 0, 1), atan2(dir.y, CV3(dir.x, 0, dir.z).length) * 0.6)
-        return K.placed(shape, at: p + flat * (size * 0.6), rotation: CQuat.axisAngle(CV3(0, 1, 0), yaw) * tilt)
+        let pitch = atan2(dir.y, CV3(dir.x, 0, dir.z).length)
+        let q = CQuat.axisAngle(CV3(0, 1, 0), yaw) * CQuat.axisAngle(CV3(0, 0, 1), pitch) * CQuat.axisAngle(CV3(1, 0, 0), roll)
+        return K.placed(b, at: p, rotation: q)
+    }
+
+    /// 葉 1 枚（細長い楕円の薄い面を `toward` の向きへ、少し反らせて）
+    static func leaf(at p: CV3, toward dir: CV3, size: Double) -> CamperMesh {
+        // 2026-10-21: つぶした球（緑の豆）から、脈で折れて先の反る薄い刃へ。長さ・幅は前の楕円と同じ
+        let flat = CV3(dir.x, 0, dir.z).length > 1e-6 ? CV3(dir.x, 0, dir.z).normalized : CV3(1, 0, 0)
+        let tilted = CV3(flat.x, dir.y * 0.6, flat.z)
+        return blade(at: p - flat * (size * 0.4), toward: tilted, blade(length: size * 2, width: size, fold: 0.28, droop: 0.12))
     }
 
     /// 鉢から垂れるつる（葉が左右に互い違い）

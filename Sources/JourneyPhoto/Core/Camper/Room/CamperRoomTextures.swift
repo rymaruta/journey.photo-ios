@@ -37,6 +37,8 @@ enum CamperRoomTextures {
         case .photoPlaceholder: return photoPlaceholder()
         case .wornWood: return wornWood()
         case .mapPrint: return mapPrint()
+        case .mirrorDay: return mirrorView(night: false)
+        case .mirrorNight: return mirrorView(night: true)
         default: return CamperTextures.make(.weave)
         }
     }
@@ -515,6 +517,44 @@ enum CamperRoomTextures {
                     let x = Int(d.0) + dx, y = Int(d.1) + dy
                     if x >= 0, x < 192, y >= 0, y < 128 { b.set(x, y, (0.72, 0.14, 0.1)) }
                 }
+            }
+        }
+        return b
+    }
+
+    /// 鏡に映る部屋（2026-10-21・Mac run 596: クロームの板は周りの光の絵だけを映して、真鍮の円盤・黒い板に見えた）。
+    /// 昼: ぼけた縦の板壁・左上の窓の明るさ・床の暗がり・斜めの照りの帯。夜: 暗い部屋に灯りの丸いにじみ。色の付いた絵（0〜1）
+    static func mirrorView(night: Bool) -> CamperBitmap {
+        var b = CamperBitmap(width: 128, height: 128)
+        for y in 0..<b.height {
+            let v = Double(y) / Double(b.height)
+            for x in 0..<b.width {
+                let u = Double(x) / Double(b.width)
+                // 板壁（ぼけた縦の継ぎ目）
+                let seam = 0.5 + 0.5 * cos(u * 2 * .pi * 3.2)
+                let wood = 0.82 + 0.1 * seam + 0.05 * fbm(u * 4, v * 1.5, period: 4, seed: 151)
+                var c: RGB = night ? (0.16 * wood, 0.11 * wood, 0.07 * wood) : (0.74 * wood, 0.6 * wood, 0.44 * wood)
+                // 床の暗がり（下 3 割）
+                if v > 0.72 {
+                    let t = min(1, (v - 0.72) / 0.1)
+                    let floor: RGB = night ? (0.08, 0.05, 0.03) : (0.42, 0.3, 0.2)
+                    c = (c.0 + (floor.0 - c.0) * t, c.1 + (floor.1 - c.1) * t, c.2 + (floor.2 - c.2) * t)
+                }
+                if night {
+                    // 灯りのにじみ（右上・暖色）
+                    let d = ((u - 0.68) * (u - 0.68) + (v - 0.3) * (v - 0.3)).squareRoot()
+                    let g = exp(-d * d / 0.03) * 0.55
+                    c = (c.0 + g * 0.95, c.1 + g * 0.68, c.2 + g * 0.38)
+                } else {
+                    // 窓（左上・空の青白さ・縁はぼける）
+                    let wx = max(0, 1 - max(0, abs(u - 0.26) - 0.13) / 0.05), wy = max(0, 1 - max(0, abs(v - 0.3) - 0.14) / 0.05)
+                    let w = wx * wy
+                    c = (c.0 + (0.86 - c.0) * w, c.1 + (0.9 - c.1) * w, c.2 + (0.94 - c.2) * w)
+                }
+                // 斜めの照り（硝子の表の映り）
+                let streak = exp(-pow((u + v * 0.6 - 0.95) / 0.09, 2)) * (night ? 0.08 : 0.16)
+                c = (min(1, c.0 + streak), min(1, c.1 + streak), min(1, c.2 + streak))
+                b.set(x, y, c)
             }
         }
         return b

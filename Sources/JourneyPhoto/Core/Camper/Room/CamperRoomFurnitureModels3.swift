@@ -211,7 +211,7 @@ extension CamperRoomFurnitureModels {
         parts.append(K.block(CV3(0.95, 3.0, 2.3), at: CV3(-0.25, 14.15, 2.3), radius: 0.15, R(.painted(0x2F4F74))))
         parts.append(K.block(CV3(0.85, 2.6, 2.1), at: CV3(0.9, 14.15, 2.1), radius: 0.12, R(.painted(0xD9CDB4))))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.75, 2.2), CV2(0.45, 2.6), CV2(0, 2.6)],
-                                      segments: 12, R(.glass)), at: CV3(1.6, 6.15, 2.0)))
+                                      segments: 12, R(.clearGlass)), at: CV3(1.6, 6.15, 2.0)))
         return K.merge(parts)
     }
 
@@ -422,7 +422,7 @@ extension CamperRoomFurnitureModels {
             parts.append(K.tube([CV3(0, -10.2, 0), CV3(cos(a) * 4.0, -16.2, sin(a) * 4.0)], radius: 0.14, sides: 5, R(.brass)))
         }
         let ball = CV3(0, -20.2, 0)
-        parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.glass)), at: ball))
+        parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.clearGlass)), at: ball))
         // 赤道の真鍮帯
         parts.append(K.tube(K.arc(center: ball, radius: 7.35, from: 0, to: 2 * .pi, steps: 36)
                                 .map { CV3($0.x, ball.y, $0.y) }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))

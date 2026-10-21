@@ -86,6 +86,10 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case tintedGlass(UInt32)
     /// 旅の地図の印刷（紙に道と点）
     case mapPrint
+    /// 鏡（2026-10-21）: クロームの板だと周りの光の絵だけを映して真鍮の円盤・黒い板に見えた。映る部屋の絵に硝子の照り
+    case mirror
+    /// 部屋の中の物の硝子（瓶・器・戸・球）。窓の硝子は夜に外の暗さで黒く曇らせるが、物の硝子は夜も透ける（2026-10-21）
+    case clearGlass
     /// まだ持っていない家具の影絵
     case silhouette
 }
@@ -212,6 +216,12 @@ enum CamperRoomMaterials {
         case .tintedGlass(let c):
             return CamperMaterialSpec(color: c, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.55, doubleSided: true)
         case .mapPrint: return CamperMaterialSpec(color: 0xFFFFFF, roughness: 0.8, texture: .mapPrint)
+        case .mirror:
+            return CamperMaterialSpec(color: 0xFFFFFF, roughness: 0.18, clearCoat: 1, clearCoatRoughness: 0.03,
+                                      texture: night ? .mirrorNight : .mirrorDay)
+        case .clearGlass:
+            return CamperMaterialSpec(color: night ? 0xC8D0D4 : 0xE6EEF0, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.02,
+                                      opacity: night ? 0.3 : 0.24, doubleSided: true)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }

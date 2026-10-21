@@ -35,7 +35,14 @@ enum CamperRoomStudio {
             span = max(size.x, size.z, 40)
             center = CV3(center.x, min(center.y, 24), center.z)
         }
+        // 床の灯りは笠と腕が主役（2026-10-21・Mac run 596: 弧の灯りの腕と笠が枠の上に切れて、柱と台だけに見えた）
+        if f.category == .floorLamp {
+            span = max(size.x, size.z, size.y * 0.72)
+            center = CV3(center.x, size.y * 0.55, center.z)
+        }
         if f.placement == .wall { center = center + CV3(0, 0, 6) }
-        return CamperRoomCamera(yaw: 28, pitch: f.placement == .ceiling ? 12 : 22, zoom: 1, target: center, baseDistanceOverride: span * 2.3 + 24)
+        // 天井の物は下から少し見上げる（上から見下ろすと天井の板が裏向きで消え、換気窓が宙に浮いた板に見えた・run 596）
+        let pitch = f.placement == .ceiling ? -10.0 : 22
+        return CamperRoomCamera(yaw: 28, pitch: pitch, zoom: 1, target: center, baseDistanceOverride: span * 2.3 + 24)
     }
 }

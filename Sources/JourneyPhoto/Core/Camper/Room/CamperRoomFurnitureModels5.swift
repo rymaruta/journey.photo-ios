@@ -38,23 +38,53 @@ extension CamperRoomFurnitureModels {
 
     // MARK: 鉢植え
 
-    /// モンステラ（テラコッタ鉢・太い茎・切れ込み葉）。2×2 マスに収める
+    /// モンステラ（2026-10-21 作り直し・Mac の接写で葉がつぶした球の「緑の豆」だった）。
+    /// 釉の鉢（高台・胴・縁の折り返し）と受け皿・土と木のチップ、根元から立つ 7 本の葉柄、
+    /// 付け根に耳のあるハート形で、縁から脈へ切れ込み（窓）のある大きな葉。若い巻いた葉 1・気根 2。2×2 マスに収める
     static func monstera() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.2, 0), CV2(4.8, 2), CV2(5.0, 9), CV2(4.6, 10), CV2(0, 10)],
-                                      segments: 22, R(.terracotta)), at: .zero))
-        parts.append(K.placed(K.disc(radius: 4.2, height: 0.35, bevel: 0.1, segments: 18, R(.soil)), at: CV3(0, 9.2, 0)))
-        parts.append(K.tube([CV3(0, 9.5, 0), CV3(0, 26, 0), CV3(0.8, 34, 0.4)], radius: 0.5, sides: 7, R(.leaf)))
-        for (i, a) in [0.2, 1.2, 2.2, 3.2, 4.2, 5.2].enumerated() {
-            let y = 16.0 + Double(i) * 2.8
-            let tip = CV3(cos(a) * 5.2, y + 1.5, sin(a) * 5.2)
-            parts.append(K.tube([CV3(0, y - 1.5, 0), CV3(tip.x * 0.5, y, tip.z * 0.5), tip], radius: 0.16, sides: 5, R(.leaf)))
-            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 12, R(.leaf)), CV3(3.6, 0.3, 2.6)),
-                                  at: tip + CV3(cos(a) * 1.2, 0.3, sin(a) * 1.2)))
-            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 8, R(.leaf)), CV3(1.6, 0.22, 1.2)),
-                                  at: tip + CV3(cos(a + 0.5) * 2.6, -0.15, sin(a + 0.5) * 2.6)))
-            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 8, R(.leaf)), CV3(1.5, 0.22, 1.1)),
-                                  at: tip + CV3(cos(a - 0.5) * 2.4, 0.2, sin(a - 0.5) * 2.4)))
+        let glaze = R(.ceramic(0xE7E0D2)), stem = R(.painted(0x5C7F43))
+        // 受け皿・鉢（釉）・縁の折り返し・土・木のチップ
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(5.6, 0), CV2(6.1, 0.5), CV2(6.0, 1.0), CV2(0, 1.0)], segments: 28, glaze), at: .zero))
+        parts.append(K.placed(K.vessel(outer: [CV2(3.6, 0), CV2(4.6, 0.8), CV2(5.3, 6), CV2(5.5, 10.2), CV2(5.8, 10.6), CV2(5.8, 11.4)],
+                                       inner: [CV2(3.4, 1.5), CV2(4.8, 6), CV2(5.0, 11.4)], segments: 28, glaze), at: CV3(0, 1, 0)))
+        parts.append(K.placed(K.disc(radius: 4.9, height: 0.4, bevel: 0.1, segments: 24, R(.soil)), at: CV3(0, 11.0, 0)))
+        for k in 0..<9 {
+            let a = Double(k) * 2.4, r = 1.2 + Double(k % 4) * 0.8
+            parts.append(K.block(CV3(0.9, 0.25, 0.6), at: CV3(cos(a) * r, 11.35, sin(a) * r), radius: 0.1, R(.wood(.pine))))
+        }
+        // 葉: 角度・高さ・大きさ（大きな葉ほど外へ倒れる）
+        let leaves: [(a: Double, h: Double, out: Double, len: Double, slits: Int)] = [
+            (0.3, 35, 4.5, 11, 4), (1.25, 38, 3.8, 12.5, 5), (2.2, 36, 5.0, 10, 3), (3.15, 41, 3.0, 13, 5),
+            (4.05, 35.5, 4.8, 11.5, 4), (5.0, 38.5, 4.2, 12, 4), (5.75, 35, 5.5, 8.5, 2),
+        ]
+        for (i, l) in leaves.enumerated() {
+            let dir = CV3(cos(l.a), 0, sin(l.a))
+            let base = CV3(dir.x * 0.6, 11.2, dir.z * 0.6)
+            let top = CV3(dir.x * l.out, l.h, dir.z * l.out)
+            // 葉柄（根元は太く、葉の付け根で少し折れる）
+            parts.append(K.tube([base, base + CV3(0, (l.h - 11) * 0.45, 0) + dir * (l.out * 0.25), top - dir * 0.6 + CV3(0, -0.8, 0), top],
+                                radius: 0.32, sides: 7, stem))
+            let blade = CamperRoomShapes.blade(length: l.len, width: l.len * 0.82, fold: 0.12, droop: 0.22, heart: 0.9,
+                                               slits: l.slits, R(.leaf))
+            // 中の脈（明るい筋）
+            let rib = K.tube((0...6).map { k -> CV3 in
+                let u = Double(k) / 6
+                return CV3(u * l.len * 0.9, 0.05 - 0.22 * l.len * u * u, 0)
+            }, radius: 0.12, sides: 4, R(.painted(0x7FA35E)))
+            let leaf = K.merge([blade, rib])
+            let tilt = -0.12 - Double(i % 3) * 0.08
+            parts.append(CamperRoomShapes.blade(at: top, toward: CV3(dir.x, tilt, dir.z), roll: Double(i % 2 == 0 ? 1 : -1) * 0.18, leaf))
+        }
+        // 若い巻いた葉（細い円錐）
+        parts.append(K.tube([CV3(0, 11.2, 0), CV3(0.4, 30, -0.3), CV3(0.6, 38, -0.4)], radius: 0.28, sides: 6, stem))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.55, 0.5), CV2(0.5, 4.5), CV2(0, 6.5)], segments: 10, R(.painted(0x8DB86A))),
+                              at: CV3(0.6, 38, -0.4)))
+        // 気根（茶色の細い根が鉢の縁へ垂れる）
+        for (a, h) in [(2.6, 19.0), (4.6, 17.0)] {
+            let o = CV3(cos(a), 0, sin(a))
+            parts.append(K.tube([CV3(o.x * 1.2, h, o.z * 1.2), CV3(o.x * 3.4, h - 3, o.z * 3.4), CV3(o.x * 5.0, 12.5, o.z * 5.0)],
+                                radius: 0.16, sides: 5, R(.wornWood(.walnut))))
         }
         return K.merge(parts)
     }
@@ -111,24 +141,65 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 盆栽（浅い鉢・曲がった幹・小さな葉群）
+    /// 盆栽（2026-10-21 作り直し・Mac run 596: 緑の球 3 つが棒に刺さったように見えた）。
+    /// 長方形の浅い釉の鉢（縁の返し・雲足 4）・苔と小石、根張りから太く細る曲の幹（皮の筋）、
+    /// 枝ごとに平たい葉の段（小さな刃の葉を重ねた棚）。黒松の模様木
     static func bonsai() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(7.5, 0), CV2(8.2, 1.2), CV2(7.8, 3.5), CV2(7.0, 4), CV2(0, 4)],
-                                      segments: 24, R(.ceramic(0x2A2A2C))), at: .zero))
-        parts.append(K.placed(K.disc(radius: 6.8, height: 0.3, bevel: 0.08, segments: 18, R(.soil)), at: CV3(0, 3.5, 0)))
-        // 曲がった幹
-        parts.append(K.tube([CV3(0, 3.8, 0), CV3(-1.5, 10, 0.5), CV3(2, 16, -0.5), CV3(0.5, 22, 0.8)],
-                            radius: 0.7, sides: 8, R(.wornWood(.darkOak))))
-        parts.append(K.tube([CV3(0.5, 18, 0.5), CV3(5, 20, 1.5), CV3(7, 21.5, 2)], radius: 0.35, sides: 6, R(.wornWood(.darkOak))))
-        parts.append(K.tube([CV3(0.5, 18, 0.5), CV3(-4, 21, -1), CV3(-6, 22.5, -1.5)], radius: 0.3, sides: 6, R(.wornWood(.darkOak))))
-        for (c, r) in [(CV3(0.5, 23.5, 0.8), 4.5), (CV3(7.2, 22.5, 2), 3.2), (CV3(-6.2, 23.5, -1.5), 3.0)] as [(CV3, Double)] {
-            for k in 0..<10 {
-                let a = Double(k) / 10 * 2 * .pi
-                parts.append(CamperRoomShapes.leaf(at: c + CV3(cos(a) * r * 0.5, Double(k % 3) * 0.4, sin(a) * r * 0.5),
-                                                   toward: CV3(cos(a), 0.4, sin(a)), size: 1.6))
+        let glaze = R(.ceramic(0x3B4A52)), bark = R(.wornWood(.darkOak)), moss = R(.painted(0x5C7A3A))
+        // 鉢（角を丸めた浅い箱・縁の返し）と雲足
+        parts.append(K.block(CV3(17, 3.6, 11), at: CV3(0, 0.9, 0), radius: 0.8, glaze))
+        parts.append(K.tube(K.roundedRect(17.6, 11.6, r: 1.0).map { CV3($0.x, 4.45, $0.y) }, radius: 0.32, sides: 6, closed: true, glaze))
+        for (x, z) in [(-6.8, -3.8), (6.8, -3.8), (-6.8, 3.8), (6.8, 3.8)] {
+            parts.append(K.block(CV3(2.2, 1.0, 1.6), at: CV3(x, 0, z), radius: 0.35, glaze))
+        }
+        // 土・苔の丘・小石
+        parts.append(K.block(CV3(15.8, 0.4, 9.8), at: CV3(0, 4.2, 0), radius: 0.2, R(.soil)))
+        parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 16, moss), CV3(6.5, 0.9, 4.2)), at: CV3(-1.0, 4.6, 0)))
+        for (x, z, r) in [(4.8, 2.6, 0.9), (5.9, 1.5, 0.6), (-5.6, -2.8, 0.7)] {
+            parts.append(K.placed(K.scaled(K.sphere(radius: r, segments: 10, R(.painted(0x8A867C))), CV3(1, 0.7, 1)), at: CV3(x, 4.7, z)))
+        }
+        // 根張り（地を這う根 4）
+        for (dx, dz) in [(-2.4, 0.6), (2.0, -0.4), (0.3, 1.9), (-0.5, -1.8)] {
+            parts.append(K.tube([CV3(0, 5.6, 0), CV3(dx * 0.6, 5.0, dz * 0.6), CV3(dx, 4.7, dz)], radius: 0.45, sides: 6, bark))
+        }
+        // 幹（太く始まり細る・左右に振れる）
+        let trunk: [CV3] = [CV3(0, 4.8, 0), CV3(-1.4, 8.5, 0.4), CV3(0.6, 11.8, -0.3), CV3(2.6, 14.0, 0.5), CV3(1.2, 17.2, 0.2),
+                            CV3(-0.6, 19.6, -0.4), CV3(0.4, 22.0, 0.2)]
+        let radii = [1.5, 1.25, 1.05, 0.9, 0.72, 0.55, 0.4]
+        for k in 0..<(trunk.count - 1) {
+            parts.append(K.tube([trunk[k], trunk[k + 1]], radius: (radii[k] + radii[k + 1]) / 2, sides: 9, bark))
+            parts.append(K.placed(K.sphere(radius: radii[k + 1] * 1.02, segments: 9, bark), at: trunk[k + 1]))
+        }
+        // 皮の筋（幹に沿う細い溝）
+        for a in [0.4, 2.2, 4.1] {
+            let off = CV3(cos(a), 0, sin(a))
+            parts.append(K.tube(trunk.enumerated().map { $0.element + off * (radii[$0.offset] * 0.98) }, radius: 0.08, sides: 3,
+                                R(.wood(.walnut))))
+        }
+        // 枝と葉の段: 枝の先に、平たい楕円の棚を小さな刃の葉で作る（上が明るく下が暗い緑）
+        let pads: [(from: Int, tip: CV3, rx: Double, rz: Double)] = [
+            (2, CV3(-6.2, 12.6, 1.2), 4.0, 3.0), (3, CV3(6.4, 15.0, -0.8), 3.8, 2.8), (4, CV3(-5.4, 17.8, -1.6), 3.4, 2.5),
+            (5, CV3(4.6, 20.2, 1.0), 3.0, 2.3), (6, CV3(0.2, 23.6, 0.2), 3.2, 2.6),
+        ]
+        let needle = CamperRoomShapes.blade(length: 1.5, width: 0.5, fold: 0.2, droop: 0.08, R(.leaf))
+        let dark = CamperRoomShapes.blade(length: 1.4, width: 0.5, fold: 0.2, droop: 0.1, R(.painted(0x2F4A26)))
+        for (i, pad) in pads.enumerated() {
+            let from = trunk[pad.from]
+            let mid = (from + pad.tip) * 0.5 + CV3(0, -0.8, 0)
+            parts.append(K.tube([from, mid, pad.tip], radius: max(0.18, radii[pad.from] * 0.45), sides: 6, bark))
+            // 下の暗い段（厚み）と、上の明るい葉
+            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 12, R(.painted(0x26401F))), CV3(pad.rx * 0.9, 0.55, pad.rz * 0.9)),
+                                  at: pad.tip + CV3(0, 0.2, 0)))
+            let count = Int(pad.rx * pad.rz * 2.4)
+            for k in 0..<count {
+                let t = Double(k) / Double(count)
+                let a = t * 2 * .pi * 7.3 + Double(i)
+                let r = (0.25 + 0.75 * ((t * 13).truncatingRemainder(dividingBy: 1)))
+                let at = pad.tip + CV3(cos(a) * pad.rx * r, 0.55 + 0.25 * sin(a * 3), sin(a) * pad.rz * r)
+                let dir = CV3(cos(a + 0.6), 0.35, sin(a + 0.6))
+                parts.append(CamperRoomShapes.blade(at: at, toward: dir, roll: 0.3, k % 4 == 0 ? dark : needle))
             }
-            parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 10, R(.leaf)), CV3(r * 0.7, r * 0.35, r * 0.7)), at: c))
         }
         return K.merge(parts)
     }
@@ -464,7 +535,7 @@ extension CamperRoomFurnitureModels {
         parts.append(K.placed(K.roundedBox(CV3(3.2, 1.4, 2.2), radius: 0.45, segments: 2, puff: 0.2, R(.ceramic(0xF2EEE6))),
                               at: CV3(-2.2, 5.5, 3.2)))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.2, 2.8), CV2(0.7, 3.2), CV2(0, 3.2)], segments: 12,
-                                      R(.glass)), at: CV3(2.4, 5.3, 3.0)))
+                                      R(.clearGlass)), at: CV3(2.4, 5.3, 3.0)))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.95, 0), CV2(0.95, 1.8), CV2(0, 1.8)], segments: 10,
                                       R(.linen(0xD9CDB4))), at: CV3(2.4, 5.4, 3.0)))
         return K.merge(parts)

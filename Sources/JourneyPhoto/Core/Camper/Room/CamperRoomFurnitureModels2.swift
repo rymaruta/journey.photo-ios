@@ -183,7 +183,7 @@ extension CamperRoomFurnitureModels {
             parts.append(K.placed(CamperMeshKit.extrude(frame, holes: [hole], depth: 1, front: teak, side: teak, bevel: 0.25), at: CV3(x, 49, 8.6)))
             parts.append(K.block(CV3(10.4, 0.6, 0.6), at: CV3(x, 48.7, 8.2), radius: 0.15, teak))
             parts.append(K.block(CV3(0.6, 33.6, 0.6), at: CV3(x, 32.2, 8.2), radius: 0.15, teak))
-            parts.append(K.placed(K.panel(width: 10.4, height: 33.6, R(.glass)), at: CV3(x, 49, 8.0)))
+            parts.append(K.placed(K.panel(width: 10.4, height: 33.6, R(.clearGlass)), at: CV3(x, 49, 8.0)))
         }
         return K.merge(parts)
     }
@@ -326,7 +326,7 @@ extension CamperRoomFurnitureModels {
             for k in 0..<6 {
                 let x = -7.5 + Double(k) * 3
                 let at = CV3(x, y + 0.7, 2.2)
-                parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.15, 2.8), CV2(0.7, 3.3), CV2(0, 3.3)], segments: 12, R(.glass)), at: at))
+                parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.1, 0), CV2(1.15, 2.8), CV2(0.7, 3.3), CV2(0, 3.3)], segments: 12, R(.clearGlass)), at: at))
                 parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.95, 0), CV2(0.95, 2.2), CV2(0, 2.2)], segments: 10,
                                               R(.linen(colors[(row * 6 + k) % colors.count]))), at: at + CV3(0, 0.1, 0)))
                 parts.append(K.placed(K.disc(radius: 0.75, height: 0.7, bevel: 0.2, segments: 10, R(.wood(.cedar))), at: at + CV3(0, 3.2, 0)))
@@ -467,7 +467,7 @@ extension CamperRoomFurnitureModels {
                                 radius: 0.12, sides: 5, R(.paper)))
         }
         // 薄い硝子の筒
-        parts.append(K.placed(K.lathe([CV2(1.6, 0), CV2(1.7, 0.3), CV2(1.7, 5.5), CV2(1.55, 5.8)], segments: 18, R(.glass),
+        parts.append(K.placed(K.lathe([CV2(1.6, 0), CV2(1.7, 0.3), CV2(1.7, 5.5), CV2(1.55, 5.8)], segments: 18, R(.clearGlass),
                                       capStart: false, capEnd: false), at: CV3(0, 10.4, 5.1)))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.4, 0.55), CV2(0.32, 1.2), CV2(0, 1.7)], segments: 10, R(.fire)),
                               at: CV3(0, 16.3, 5.1)))

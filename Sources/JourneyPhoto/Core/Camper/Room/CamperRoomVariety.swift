@@ -745,7 +745,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         parts.append(varietyBox(CV3(hx * 2 - 2, 1.8, hz * 2 - 3), CV3(0, topY, 0), .room(.ceramic(0xD9D3C7))))
     case 5:
         parts.append(varietyBox(CV3(hx * 2 - 3, 1.2, hz * 2 - 4), CV3(0, topY, 0), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 6, 0.5, hz * 2 - 7), CV3(0, topY + 1.2, 0), .room(.glass)))
+        parts.append(varietyBox(CV3(hx * 2 - 6, 0.5, hz * 2 - 7), CV3(0, topY + 1.2, 0), .room(.clearGlass)))
     default:
         parts.append(varietyBox(CV3(hx * 2 - 2, 1.7, hz * 2 - 3), CV3(0, topY, 0), oak))
     }
@@ -818,7 +818,7 @@ private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
             parts.append(varietyBox(CV3(hx * 2 - 4, 1.2, hz - 2), CV3(0, y, 0), oak))
         }
     case 4:
-        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.5), CV3(0, doorY, hz - 0.4), .room(.glass)))
+        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.5), CV3(0, doorY, hz - 0.4), .room(.clearGlass)))
         parts.append(varietyBox(CV3(1.2, doorH, 1.2), CV3(-hx + 1.4, doorY, hz - 1), oak))
     case 5:
         for x in stride(from: -hx + 2, through: hx - 2, by: 1.6) {
@@ -1046,7 +1046,7 @@ private func shelf(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     case 2:
         for x in stride(from: -hx + 3, through: hx - 3, by: 2.2) {
-            parts.append(varietyBox(CV3(1.1, 3.2, 1.1), CV3(x, 8.4, 1.4), .room(.glass)))
+            parts.append(varietyBox(CV3(1.1, 3.2, 1.1), CV3(x, 8.4, 1.4), .room(.clearGlass)))
         }
     case 3:
         parts.append(varietyBox(CV3(3.2, 2.6, 3.2), CV3(0, 8.4, 1.5), .room(.terracotta)))
@@ -1308,7 +1308,7 @@ private func mobile(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         case 3:
             parts.append(varietyBox(CV3(1.2, 2.2, 0.3), CV3(x, y, 0), .room(.leaf)))
         case 4:
-            parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.8, height: 0.5, bevel: 0.15, segments: 8, .room(.glass)), at: CV3(x, y, 0)))
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.8, height: 0.5, bevel: 0.15, segments: 8, .room(.clearGlass)), at: CV3(x, y, 0)))
         default:
             parts.append(varietyBox(CV3(1.8, 1.1, 0.4), CV3(x, y, 0), varietyWood(charm)))
             parts.append(varietyBox(CV3(0.8, 0.7, 0.5), CV3(x + 0.8, y + 0.4, 0), varietyWood(charm)))
@@ -1348,7 +1348,7 @@ private func plant(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 1:
         parts.append(varietyBox(CV3(4.2, 3.2, 4.2), CV3(0, potY, 0), .room(.wicker)))
     case 2:
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 2.2, height: 3.4, bevel: 0.5, segments: 8, .room(.glass)), at: CV3(0, potY, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 2.2, height: 3.4, bevel: 0.5, segments: 8, .room(.clearGlass)), at: CV3(0, potY, 0)))
     case 3:
         parts.append(varietyBox(CV3(3.6, 3.4, 3.6), CV3(0, potY, 0), .room(.enamel(0xD7E2DC))))
     case 4:
@@ -1379,10 +1379,10 @@ private func hatch(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     switch rim {
     case 1:
         parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx - 0.4, height: 1.6, bevel: 0.25, segments: 8, wood), at: CV3(0, -1.6, 0)))
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx * 0.62, height: 0.5, bevel: 0.1, segments: 8, .room(.glass)), at: CV3(0, -0.8, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: hx * 0.62, height: 0.5, bevel: 0.1, segments: 8, .room(.clearGlass)), at: CV3(0, -0.8, 0)))
     case 2:
         parts.append(varietyBox(CV3(hx * 1.5, 1.8, hx * 1.5), CV3(0, -1.8, 0), wood))
-        parts.append(varietyBox(CV3(hx, 0.4, hx), CV3(0, -0.6, 0), .room(.glass)))
+        parts.append(varietyBox(CV3(hx, 0.4, hx), CV3(0, -0.6, 0), .room(.clearGlass)))
     case 3:
         parts.append(varietyBox(CV3(hx * 2 - 1, 2.4, hx * 2 - 1), CV3(0, -2.4, 0), wood))
     case 4:

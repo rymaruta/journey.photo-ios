@@ -93,6 +93,8 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case boards, birchPly, darkBoards, wallpaperStripe
     case leather, linenSlub, knit, rush, wicker, rope, ovalRings, runnerWeave, enamelChip, castIron, foliage
     case clockDial, windowDay, windowNight, matBoard, photoPlaceholder, wornWood, mapPrint
+    /// 鏡に映る部屋（昼: 板壁と窓の明るさ・斜めの照り。夜: 暗い部屋と灯りのにじみ）・2026-10-21
+    case mirrorDay, mirrorNight
 }
 
 enum CamperMaterials {
