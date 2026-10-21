@@ -424,8 +424,7 @@ extension CamperRoomFurnitureModels {
         let ball = CV3(0, -20.2, 0)
         parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.clearGlass)), at: ball))
         // 赤道の真鍮帯
-        parts.append(K.tube(K.arc(center: ball, radius: 7.35, from: 0, to: 2 * .pi, steps: 36)
-                                .map { CV3($0.x, ball.y, $0.y) }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
+        parts.append(K.tube(K.ringXZ(center: ball, radius: 7.35, steps: 36), radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
         // 地形
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.8, 0), CV2(3.6, 1.4), CV2(2.0, 3.2), CV2(0.8, 4.6), CV2(0, 5.0)],
                                       segments: 24, R(.soil)), at: ball + CV3(0, -5.4, 0)))

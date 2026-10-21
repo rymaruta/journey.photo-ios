@@ -223,8 +223,12 @@ enum CamperRoomMaterials {
                                       texture: night ? .mirrorNight : .mirrorDay)
         case .clearGlass:
             // 透明の硝子は拡散の色をほとんど持たない（白い拡散だと run 605 で硝子の球・瓶が白い陶器に見えた）。映りの照りで硝子に見せる
-            return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, clearCoat: 0.6, clearCoatRoughness: 0.02,
-                                      opacity: night ? 0.16 : 0.12, doubleSided: true)
+            // 2026-10-21（owner「家具ぶっ壊れてる」・Mac run 622 の 96e）: 硝子の球の吊り鉢が中の地形も植物も見えない灰色の玉
+            // （夜は半分黒い玉）に描かれた。既定の「硝子の殻」（両面・奥行きを書く）だと、手前の面が奥行きを書いて中身を隠し、
+            // 照りの層（clearCoat）の映りは透明度で薄まらないので面全体が膜になる。額の硝子（`.frameGlass`）と同じく、
+            // 奥行きは書かず照りの層も無しで、鋭い映りだけで硝子に見せる
+            return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, opacity: night ? 0.16 : 0.12, doubleSided: true,
+                                      glassShell: false)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }

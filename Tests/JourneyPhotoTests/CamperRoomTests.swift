@@ -511,6 +511,78 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertGreaterThan(shapes.count, CamperRoomVariety.animalCrossingCount - 500)
     }
 
+    /// 全家具の網の健全さ（2026-10-21 owner「家具ぶっ壊れてる」）: 番号は点の数の中・点と向きと貼り絵の数がそろう・
+    /// 面積ゼロの三角形が無い・巻きと向きが逆の三角形が無い・数は有限、そして**どの高さの部品も置く枠から 15 を超えて
+    /// はみ出さない**（弧の灯りの笠は寝台の上へ 13 ほど張り出す作りなので、上限は 15）。前の試験は床から 30 までしか
+    /// 枠を見ず、寝かせた輪の高さが奥行きに移って 20〜70 も離れて浮いた部品（弧の灯りの笠の輪・コート掛けの帽子の帯・
+    /// 硝子球の吊り鉢の帯）を通していた
+    func testEveryFurnitureMeshHoldsTogether() throws {
+        let margin = 15.0, cell = CamperRoomLayout.cell
+        var broken: [String] = []
+        for f in CamperRoomCatalog.all where f.built {
+            let m = try XCTUnwrap(CamperRoomFurnitureModels.mesh(f.id), f.id)
+            let n = m.positions.count
+            guard m.normals.count == n, m.uvs.count == n else { broken.append("\(f.id) 点・向き・貼り絵の数が違う"); continue }
+            if m.uvs.contains(where: { !($0.x.isFinite && $0.y.isFinite) }) { broken.append("\(f.id) 貼り絵の位置が有限でない") }
+            var degenerate = 0, flipped = 0, outside = 0
+            for g in m.groups {
+                XCTAssertEqual(g.indices.count % 3, 0, f.id)
+                var i = 0
+                while i + 2 < g.indices.count {
+                    let ia = Int(g.indices[i]), ib = Int(g.indices[i + 1]), ic = Int(g.indices[i + 2])
+                    i += 3
+                    guard [ia, ib, ic].allSatisfy({ (0..<n).contains($0) }) else { outside += 1; continue }
+                    let face = (m.positions[ib] - m.positions[ia]).cross(m.positions[ic] - m.positions[ia])
+                    if face.length < 1e-9 { degenerate += 1; continue }
+                    if face.dot(m.normals[ia] + m.normals[ib] + m.normals[ic]) < 0 { flipped += 1 }
+                }
+            }
+            if outside > 0 { broken.append("\(f.id) 点の数を超える番号 \(outside)") }
+            if degenerate > 0 { broken.append("\(f.id) 面積ゼロの三角形 \(degenerate)") }
+            if flipped > 0 { broken.append("\(f.id) 巻きと向きが逆 \(flipped)") }
+            let halfW = Double(f.width) * cell / 2 + margin, halfD = Double(f.depth) * cell / 2 + margin
+            let far = m.positions.filter { p in
+                switch f.placement {
+                case .floor, .ceiling: return abs(p.x) > halfW || abs(p.z) > halfD
+                case .wall: return abs(p.x) > halfW || p.z < -0.05 || p.z > 2 * cell
+                }
+            }
+            if let p = far.first { broken.append("\(f.id) 枠から離れた部品 \(far.count) 点（例 \(p)）") }
+        }
+        XCTAssertEqual(broken, [], broken.joined(separator: "\n"))
+    }
+
+    /// タオル掛けのタオルは棒に掛かる（布の上の辺が棒の高さ 12 に届く・2026-10-21 Mac run 622 で棒の 7 下に浮いていた）
+    func testTowelHangsFromTheBar() throws {
+        let m = try XCTUnwrap(CamperRoomFurnitureModels.mesh("wash.towel_bar"))
+        // 布 2 枚（白と青灰）。縫い目の色は布の上の辺の少し下なので数えない
+        for color: UInt32 in [0xE8E2D4, 0xA8B8C2] {
+            let g = try XCTUnwrap(m.groups.first { $0.material == .room(.cotton(color)) }, String(color, radix: 16))
+            let top = g.indices.map { m.positions[Int($0)].y }.max() ?? 0
+            XCTAssertGreaterThanOrEqual(top, 11.5, "布 \(String(color, radix: 16)) の上の辺が棒（y 12）に届かない")
+        }
+    }
+
+    /// 透明の硝子（硝子の球・瓶）は奥行きを書かず、照りの層も持たない（中身が見える・2026-10-21 Mac run 622 で灰色の玉に見えた）
+    func testClearGlassShowsWhatIsInside() {
+        for mood in [CamperMood.day, .night] {
+            let s = CamperMaterials.spec(.room(.clearGlass), paint: 0, mood: mood)
+            XCTAssertLessThan(s.opacity, 0.3)
+            XCTAssertFalse(s.glassShell, "硝子の殻だと手前の面が奥行きを書いて中身を隠す")
+            XCTAssertEqual(s.clearCoat, 0, "照りの層の映りは透明度で薄まらず、面全体が膜になる")
+        }
+    }
+
+    /// 寝かせた輪（`ringXZ`）は中心の高さに水平に乗る（`arc` を寝かせると高さが奥行きに移る・2026-10-21）
+    func testFlatRingStaysAroundItsCenter() {
+        let c = CV3(3, 66.4, -2)
+        let ring = CamperRoomMeshKit.ringXZ(center: c, radius: 2, steps: 16)
+        for p in ring {
+            XCTAssertEqual(p.y, c.y, accuracy: 1e-9)
+            XCTAssertEqual(CV3(p.x - c.x, 0, p.z - c.z).length, 2, accuracy: 1e-9)
+        }
+    }
+
     /// 張り出しなど台所なしの部屋でも、部屋の殻を組んで落ちない（#331: `1..<0` の目地ループ）
     func testWingRoomsBuildWithoutKitchen() {
         for stage in CamperStage.allCases {

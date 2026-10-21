@@ -568,13 +568,22 @@ extension CamperRoomFurnitureModels {
             parts.append(K.tube(K.arc(center: CV3(x, 12, 2.9), radius: 0.85, from: 0, to: 2 * .pi, steps: 14)
                                     .map { CV3($0.x, $0.y, 2.9) }, radius: 0.1, sides: 5, closed: true, R(.agedBrass)))
         }
-        // タオル（裾の縫い目つき）
-        parts.append(K.placed(K.drape(width: 13, height: 15, folds: 4, depth: 0.22, flare: 0.45, R(.cotton(0xE8E2D4))),
-                              at: CV3(-0.5, 4.0, 3.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.12)))
-        parts.append(K.tube([CV3(-6.5, 4.2, 3.7), CV3(5.5, 4.2, 3.7)], radius: 0.08, sides: 4, R(.cotton(0xD8D0C4))))
-        parts.append(K.placed(K.drape(width: 9.5, height: 12, folds: 3, depth: 0.2, flare: 0.35, R(.cotton(0xA8B8C2))),
-                              at: CV3(2.8, 5.0, 3.9), rotation: CQuat.axisAngle(CV3(1, 0, 0), 0.18)))
-        parts.append(K.tube([CV3(-1.5, 5.2, 4.1), CV3(7.0, 5.2, 4.1)], radius: 0.07, sides: 4, R(.cotton(0x8A9AA4))))
+        // タオル（掛けた所の縫い目つき）。布の上の辺（`drape` の y = 0）を棒の高さ 12 に掛ける。
+        // 2026-10-21（owner「家具ぶっ壊れてる」・Mac run 622 の 96e）: 上の辺が y 4〜5 にあり、棒から 7 下で宙に浮いていた。
+        // 縫い目は布と同じ置き方で、布の上の辺のすぐ下に
+        let towels: [(at: CV3, tilt: Double, width: Double, height: Double, folds: Int, depth: Double, flare: Double, color: UInt32,
+                      seam: UInt32)] = [
+            (CV3(-0.5, 12.3, 3.5), 0.12, 13, 15, 4, 0.22, 0.45, 0xE8E2D4, 0xD8D0C4),
+            (CV3(2.8, 12.2, 3.95), 0.18, 9.5, 12, 3, 0.2, 0.35, 0xA8B8C2, 0x8A9AA4),
+        ]
+        for t in towels {
+            let q = CQuat.axisAngle(CV3(1, 0, 0), t.tilt)
+            parts.append(K.placed(K.drape(width: t.width, height: t.height, folds: t.folds, depth: t.depth, flare: t.flare,
+                                          R(.cotton(t.color))), at: t.at, rotation: q))
+            let half = t.width * 0.48
+            parts.append(K.placed(K.tube([CV3(-half, -1.2, t.depth + 0.05), CV3(half, -1.2, t.depth + 0.05)], radius: 0.08, sides: 4,
+                                         R(.cotton(t.seam))), at: t.at, rotation: q))
+        }
         return K.merge(parts)
     }
 

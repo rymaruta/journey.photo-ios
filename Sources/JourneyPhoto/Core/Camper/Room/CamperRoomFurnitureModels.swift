@@ -51,7 +51,8 @@ enum CamperRoomFurnitureModels {
         case "roof_hatch.square_vent": m = squareVent()
         default: m = moreMesh(id) ?? moreMesh3(id) ?? CamperRoomVariety.mesh(id)
         }
-        return m
+        // 面積ゼロの三角形（葉の切れ込みの先などで潰れた所）は描かれず当たりにもならないので、渡す前に落とす（2026-10-21）
+        return m.map(CamperRoomMeshKit.droppingDegenerate)
     }
 
     /// 夜に灯る所（家具の原点からの位置・板の単位）と、光の強さの目安。灯りの色は部屋の模様替えの色。
