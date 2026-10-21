@@ -3642,8 +3642,10 @@ final class ScreenshotTests: XCTestCase {
         let bottom = window.frame.maxY - 120
         var pushes = 0
         while element.exists, element.frame.maxY > bottom, pushes < 12 {
+            // ゆっくり引いて、離す前に止める（勢いが残ると目当てを越えて上の車の下へ隠れる・Mac run 647）
             window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: from))
-                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: to)))
+                .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: to)),
+                       withVelocity: .slow, thenHoldForDuration: 0.4)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
