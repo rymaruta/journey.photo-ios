@@ -10,15 +10,16 @@ import SceneKitShim
 // 家具の接写の一覧（2026-10-21・**見本の起動 `-JPPreviewCamperRoomContact` だけ**。Debug のみ）。
 //
 // 板と別種の家具（`CamperRoomCatalog.board`）を、図鑑の寄りと同じ小部屋・同じ素材と光で 1 つずつ本物の SceneKit に描き、
-// 8 点ずつの頁に並べる。ソフトラスタ（`CamperRoomRaster`）では素材の映り・光・接地の影が見えないので、
+// 4 点ずつの頁に並べる。ソフトラスタ（`CamperRoomRaster`）では素材の映り・光・接地の影が見えないので、
 // 全家具の出来を Mac の画面写真（`testCapturesCamperRoomContactSheet`）で一度に見るためのもの。
 //
 // 2026-10-21 判断: 画面の SCNView を 8 つ並べず、画面の外の `SCNRenderer` 1 つで順に描いて絵にする（部屋の殻は 1 回だけ組み、
-// 家具だけ入れ替える）。頁を開くたびにその頁の 8 点だけ描く。
+// 家具だけ入れ替える）。頁を開くたびにその頁の 4 点だけ描く。
+// 2026-10-21（run 596）: 8 点だと画面写真（長辺 700px）で 1 点が 150px ほどになり素材が読めない。4 点にし、並びの所だけを撮る。
 
-/// 1 頁の数（2 列 × 4 段）
+/// 1 頁の数（2 列 × 2 段）
 enum CamperRoomContactPages {
-    static let perPage = 8
+    static let perPage = 4
     static var items: [CamperRoomFurniture] { CamperRoomCatalog.board }
     static var count: Int { max(1, (items.count + perPage - 1) / perPage) }
 
@@ -65,7 +66,10 @@ final class CamperRoomContactRenderer {
             scene.replaceItemsNow(studio.doc)
         }
         scene.setMood(mood)
-        scene.setCamera(CamperRoomStudio.camera(f), animated: false)
+        // 図鑑の寄りより一段寄る（小さな枠いっぱいに家具を見せる）
+        var camera = CamperRoomStudio.camera(f)
+        camera.zoom = 1.35
+        scene.setCamera(camera, animated: false)
         return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
     }
 }
@@ -85,7 +89,7 @@ struct CamperRoomContactSheet: View {
     @State private var renderer: CamperRoomContactRenderer?
     #endif
 
-    private static let cell = CGSize(width: 180, height: 150)
+    private static let cell = CGSize(width: 184, height: 184)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -133,6 +137,8 @@ struct CamperRoomContactSheet: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("camper.room.contact.grid")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
@@ -157,7 +163,7 @@ struct CamperRoomContactSheet: View {
         draw()
     }
 
-    /// その頁の 8 点を描く（1 点ずつ間を空けて、画面が固まらないように）
+    /// その頁の 4 点を描く（1 点ずつ間を空けて、画面が固まらないように）
     private func draw() {
         marker = ""
         #if canImport(SceneKit) || canImport(SceneKitShim)
@@ -167,7 +173,7 @@ struct CamperRoomContactSheet: View {
         Task { @MainActor in
             for f in CamperRoomContactPages.page(want) {
                 guard want == page, m == mood else { return }
-                images[f.id] = r.render(f, mood: m, size: CGSize(width: Self.cell.width * 2, height: Self.cell.height * 2))
+                images[f.id] = r.render(f, mood: m, size: CGSize(width: Self.cell.width * 3, height: Self.cell.height * 3))
                 await Task.yield()
             }
             if want == page, m == mood { marker = CamperRoomContactPages.marker(mood: m, page: want) }

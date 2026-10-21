@@ -164,13 +164,13 @@ final class CamperRoomUsabilityTests: XCTestCase {
 
     // MARK: 接写の一覧
 
-    /// 板と別種の 104 点を 8 点ずつ、漏れも重なりもなく頁に分ける
+    /// 板と別種の 104 点を 4 点ずつ、漏れも重なりもなく頁に分ける
     func testContactSheetPagesCoverTheBoard() {
-        XCTAssertEqual(CamperRoomContactPages.count, 13)
+        XCTAssertEqual(CamperRoomContactPages.count, 26)
         let ids = (0..<CamperRoomContactPages.count).flatMap { CamperRoomContactPages.page($0).map(\.id) }
         XCTAssertEqual(ids, CamperRoomCatalog.board.map(\.id))
         XCTAssertTrue(CamperRoomContactPages.page(99).isEmpty)
-        XCTAssertEqual(CamperRoomContactPages.marker(mood: .night, page: 2), "contact-ready night 3/13")
+        XCTAssertEqual(CamperRoomContactPages.marker(mood: .night, page: 2), "contact-ready night 3/26")
     }
 }
 

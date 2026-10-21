@@ -3441,10 +3441,15 @@ final class ScreenshotTests: XCTestCase {
         let prev = app.buttons["camper.room.contact.prev"].firstMatch
         for (mood, moodName) in [("day", "昼"), ("night", "夜")] {
             var page = 1
-            while page <= 30 {
+            while page <= 40 {
                 let ready = waitRoom(app, "camper.room.contact", "contact-ready \(mood) \(page)/", timeout: 90)
                 XCTAssertTrue(ready, "接写の一覧の \(moodName) \(page) 頁を描き終えない")
-                shoot(app, String(format: "96e-家具の接写（%@・%02d）", moodName, page))
+                // 並びの所だけを撮る（画面全体だと長辺 700px に縮んで 1 点が小さい）
+                let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
+                let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
+                shot.name = String(format: "96e-家具の接写（%@・%02d）", moodName, page)
+                shot.lifetime = .keepAlways
+                add(shot)
                 guard next.exists, next.isEnabled else { break }
                 next.tap()
                 page += 1
