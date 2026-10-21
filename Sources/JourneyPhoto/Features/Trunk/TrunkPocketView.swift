@@ -79,25 +79,41 @@ struct TrunkPocketView: View {
         }
     }
 
+    private var pocketEyebrow: some View {
+        Text(L("まだ貼っていないラベル", "Not stuck yet"))
+            .jpEyebrow()
+            .foregroundStyle(WebTheme.accent)
+    }
+
+    private func pocketCount(_ state: TrunkState) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(String(state.pocket.count))
+                .font(JPFont.number(22, weight: .semibold, relativeTo: .title2))
+                .foregroundStyle(WebTheme.text)
+            Text(L(" / \(state.limit) 枚", " / \(state.limit)"))
+                .font(JPFont.mono(15, relativeTo: .subheadline))
+                .foregroundStyle(TrunkStyle.muted)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(state.limit) 枚のうち \(state.pocket.count) 枚",
+                              "\(state.pocket.count) of \(state.limit)"))
+    }
+
     /// 上の札（数・棒・説明・Pro の案内）
     private func header(_ state: TrunkState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(L("まだ貼っていないラベル", "Not stuck yet"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                Spacer()
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(String(state.pocket.count))
-                        .font(JPFont.number(22, weight: .semibold, relativeTo: .title2))
-                        .foregroundStyle(WebTheme.text)
-                    Text(L(" / \(state.limit) 枚", " / \(state.limit)"))
-                        .font(JPFont.mono(15, relativeTo: .subheadline))
-                        .foregroundStyle(TrunkStyle.muted)
+            // 横に入らない大きさ（文字の大きさの設定）では数を眉ラベルの下へ回す（2026-10-21・Mac run 628 で
+            // 「まだ貼っていないラ…」と切れた）
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    pocketEyebrow
+                    Spacer()
+                    pocketCount(state)
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("\(state.limit) 枚のうち \(state.pocket.count) 枚",
-                                      "\(state.pocket.count) of \(state.limit)"))
+                VStack(alignment: .leading, spacing: 4) {
+                    pocketEyebrow
+                    pocketCount(state)
+                }
             }
             TrunkPocketBar(count: state.pocket.count, limit: state.limit)
                 .padding(.top, 10)

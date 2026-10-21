@@ -92,6 +92,7 @@ final class CamperPassTrunkDynamicTypeTests: XCTestCase {
             ("Trunk/LabelArrivedView.swift", "ViewThatFits"),
             ("Trunk/TrunkPocketView.swift", "ViewThatFits"),
             ("Trunk/TrunkSpinViewer.swift", "typeSize.isAccessibilitySize"),
+            ("Trunk/TrunkView.swift", "typeSize.isAccessibilitySize"),
             ("Trunk/TrunkParts.swift", "typeSize.isAccessibilitySize"),
         ]
         for (file, needle) in expectations {

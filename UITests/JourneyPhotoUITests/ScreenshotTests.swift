@@ -3633,6 +3633,20 @@ final class ScreenshotTests: XCTestCase {
     /// 文字の大きさの設定をアクセシビリティの XL にして起動する鍵（シミュレータの設定を変えずに、このアプリだけ）
     private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
 
+    /// 決まった所（画面の割合 `x`・`from` → `to`）から指で上へ送り、`element` が下の帯（タブ）より上で押せるまで（6回まで）。
+    /// `swipeUp` は画面の真ん中から払うので、真ん中に回す物（立体の車・きっぷ）がある画面では送れない
+    private func dragUp(_ app: XCUIApplication, until element: XCUIElement, x: CGFloat = 0.5, from: CGFloat, to: CGFloat) {
+        let window = app.windows.firstMatch
+        let bottom = window.frame.maxY - 120
+        var pushes = 0
+        while element.exists, element.frame.maxY > bottom || !element.isHittable, pushes < 6 {
+            window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: from))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: to)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+    }
+
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
     func testCapturesCamperLargeText() {
@@ -3642,8 +3656,9 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "95x-大きい文字（キャンピングカー）")
         let stage = app.buttons["camper.stage.van"].firstMatch
         guard stage.exists else { return XCTFail("段のボタンが無い") }
-        scrollTo(stage, in: app)
-        Thread.sleep(forTimeInterval: 1)
+        // 送るのは下の札の所から（上半分は立体の車で、払うと車が回る・Mac run 628 で `swipeUp` が車を回した）
+        dragUp(app, until: stage, from: 0.85, to: 0.6)
+        XCTAssertTrue(stage.isHittable, "大きい文字で段のボタンまで送れない")
         shoot(app, "95y-大きい文字（キャンピングカー・数と段）")
         let width = app.windows.firstMatch.frame.width
         for id in ["camper.stage.van", "camper.stage.camper", "camper.stage.trailer"] {
@@ -3689,10 +3704,10 @@ final class ScreenshotTests: XCTestCase {
         let flip = app.buttons["pass.pick.flip"].firstMatch
         XCTAssertTrue(flip.exists, "「裏を見る」が無い")
         XCTAssertGreaterThanOrEqual(flip.frame.height, 44, "「裏を見る」が 44pt 未満")
-        scrollTo(flip, in: app)
+        // 送るのはきっぷの横の余白から（画面の真ん中はきっぷで、指を置くと回す側が受ける・Mac run 628 で
+        // `swipeUp` では一度も送れなかった）
+        dragUp(app, until: flip, x: 0.04, from: 0.75, to: 0.45)
+        shoot(app, "85y-大きい文字（自分のカード・裏を見る）")
         XCTAssertTrue(flip.isHittable, "大きい文字で「裏を見る」を押せない")
-        app.swipeUp()
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "85y-大きい文字（自分のカード・券面を選ぶ欄）")
     }
 }
