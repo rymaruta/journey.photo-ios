@@ -72,6 +72,8 @@ final class CamperNightStageTests: XCTestCase {
         let mesh = CamperNightScenery.treeMesh(trees, material: .tint(0))
         let ridge = CamperNightScenery.ridgeMesh(material: .tint(0))
         XCTAssertLessThan(mesh.triangleCount + ridge.triangleCount, 6000, "遠景の三角形が多い")
+        // いちばん下の段の裾は地面まで（幹と水平な縁が四角い建物に見えた・Mac run 627）
+        XCTAssertLessThanOrEqual(mesh.positions.map(\.y).min() ?? 1, 0)
         // 稜線は地面の内（一辺 140 m の半分より内）
         let r = ridge.positions.map { ($0.x * $0.x + $0.z * $0.z).squareRoot() }.max() ?? 0
         XCTAssertLessThan(r / 100, CamperMaterials.NightStage.groundSize / 2)

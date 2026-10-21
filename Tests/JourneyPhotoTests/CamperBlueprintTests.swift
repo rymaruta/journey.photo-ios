@@ -590,11 +590,13 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertTrue(build(stage, mood: .day).nodes.allSatisfy { !$0.name.hasPrefix("interior.windowGlow") })
         }
         let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
-        XCTAssertTrue(spec.additive)
+        // 2026-10-21（Mac run 627）: 足す光の面は奥行きを書く硝子の後ろで描かれず、窓が真っ黒だった。光を受けない不透明の面に
+        XCTAssertFalse(spec.additive, "足す光の面は硝子の後ろで消える")
+        XCTAssertTrue(spec.unlit)
+        XCTAssertEqual(spec.texture, .roomGlow, "一色の平らな板にしない")
         let c = CamperTextures.rgb(spec.color)
-        // 2026-10-20: 平らな黄の板に見えたので 0.55〜0.7 に抑える
-        // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: もう一段暗く 0.3〜0.42（灯っていると分かる下限は残す）
-        XCTAssertTrue((0.3...0.42).contains(max(c.0, c.1, c.2)), "強さ 0.3〜0.42（平らな板にしない・強すぎない）")
+        // 硝子 0.32 越しに 7 割ほどが見える。灯っていると分かり、白く飛ばない
+        XCTAssertTrue((0.55...0.75).contains(max(c.0, c.1, c.2)), "強さ 0.55〜0.75")
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
         XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001, "硝子が薄すぎると glow が板に見える")
         // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど

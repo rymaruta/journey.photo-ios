@@ -219,7 +219,11 @@ enum CamperMaterials {
         // 窓越しの室内の明かり（2700K）。足す光なので縁が黒く落ちる絵で板に見えない。
         // 2026-10-20 実機・網描き: 明るい一色は平らな黄の板 → 0x9A6838 でむら（roomGlow）を残す
         // 2026-10-21 owner「強すぎる」: もう一段暗く。カーテン越しの暖色が「灯っている」と分かる程度
-        case .windowGlow: return CamperMaterialSpec(color: 0x684628, texture: .roomGlow, additive: true)
+        // 2026-10-21 判断（Mac run 627）: 足す光の面は、奥行きを書く硝子（dualLayer）の後ろで描かれず、窓が真っ黒だった——
+        // 前の「オレンジの平たい箱」は、この面ではなく天井の spot 1250 に照らされたカーテンだった。光を受けない不透明の面に
+        // 替える（硝子の前に描かれ、硝子 0.32 越しに透ける）。絵（roomGlow）の真ん中の明るさ、両側のカーテンのひだ、
+        // 下の家具の影、黒へ落ちる縁で、カーテン越しに灯った部屋に見せる
+        case .windowGlow: return CamperMaterialSpec(color: 0xB88250, texture: .roomGlow, unlit: true)
         case .windowHalo: return CamperMaterialSpec(color: 0x150E08, texture: .glow, additive: true)
         case .lanternGlass:
             return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
@@ -298,11 +302,10 @@ enum CamperMaterials {
         static let shadowRadius = 7.0
         static let shadowMapSize = 2048.0
         static let shadowExtent = 4.6
-        /// カメラ: 露出・周辺の落ち（写真のレンズの周辺光量）・彩度（夜の目は色が淡い）
+        /// カメラの露出。写真のレンズの周辺の落ち（四隅の暗さ・0〜1）は画面の側で重ねる（`CamperStageEdges`。
+        /// SceneKit の後処理の段は使わない・Mac run 627）
         static let exposure = 0.0
-        static let vignettePower = 0.7
-        static let vignetteIntensity = 0.85
-        static let saturation = 0.86
+        static let vignette = 0.5
     }
 
     /// 色を線形の明るさに（sRGB の 0〜255 → 0〜1 の光の量。Metal の shader の色に渡す）

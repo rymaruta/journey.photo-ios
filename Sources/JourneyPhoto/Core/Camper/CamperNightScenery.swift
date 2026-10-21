@@ -31,46 +31,46 @@ enum CamperNightScenery {
                 out.append(Tree(base: CV3(px, 0, pz), height: h, radius: h * (0.2 + 0.07 * n.next())))
             }
         }
-        // 奥の林（手前の列はまばら・奥ほど密に）
-        add(x: -1500...1500, z: -1300 ... -800, count: 14, tall: 380...620)
-        add(x: -2200...2200, z: -2200 ... -1300, count: 30, tall: 450...820)
+        // 奥の林（手前の列はまばら・奥ほど密に。重なって一続きの林の影に見える数）
+        add(x: -1500...1500, z: -1300 ... -800, count: 16, tall: 380...620)
+        add(x: -2200...2200, z: -2200 ... -1300, count: 36, tall: 450...820)
         // 両脇の遠く（引いて見たときの左右の端）
         add(x: -2600 ... -1300, z: -800...700, count: 10, tall: 420...760)
         add(x: 1300...2600, z: -800...700, count: 10, tall: 420...760)
         return out
     }
 
-    /// 針葉樹の網（段になった円錐 4 つ・7 角）。光を受けない一色で描くので、面の向きは外向きに付けるだけ
+    /// 針葉樹の網（段 6 つ・9 角）。光を受けない一色で描くので、面の向きは外向きに付けるだけ。
+    /// 2026-10-21（Mac run 627 の 95l）: 段の下の縁が水平な輪と細い幹だと、画面の上の端で切れた木の下半分が四角い建物の
+    /// 並びに見えた。いちばん下の段の裾を地面まで下ろし（幹は見せない）、どの段の縁もぎざぎざに垂らす（枝先）
     static func treeMesh(_ trees: [Tree], material: CamperMaterial) -> CamperMesh {
         var m = CamperMesh()
-        let sides = 7
-        for t in trees {
-            // 幹の根元を少し見せる（下の 12%）
-            let trunkTop = t.height * 0.12
-            let tiers = 4
+        let sides = 9
+        let tiers = 6
+        for (index, t) in trees.enumerated() {
             for i in 0..<tiers {
                 let f = Double(i) / Double(tiers)
-                let y0 = trunkTop + (t.height - trunkTop) * f * 0.78
-                let apex = trunkTop + (t.height - trunkTop) * min(1, f * 0.78 + 0.42)
-                let r = t.radius * (1 - f * 0.62)
+                // 段の裾（いちばん下は地面の少し下）と先（上の段ほど細く、重なる）
+                let y0 = i == 0 ? -10 : t.height * f * 0.86
+                let apex = t.height * min(1, f * 0.86 + 0.3)
+                let r = t.radius * (1.05 - f * 0.78)
                 let top = t.base + CV3(0, apex, 0)
+                let twist = Double(i) * 0.7 + Double(index) * 1.3
+                var rim: [CV3] = []
                 for k in 0..<sides {
-                    let a0 = Double(k) / Double(sides) * 2 * .pi + Double(i) * 0.4
-                    let a1 = Double(k + 1) / Double(sides) * 2 * .pi + Double(i) * 0.4
-                    let p0 = t.base + CV3(cos(a0) * r, y0, sin(a0) * r)
-                    let p1 = t.base + CV3(cos(a1) * r, y0, sin(a1) * r)
-                    let nrm = CV3(cos((a0 + a1) / 2), 0.4, sin((a0 + a1) / 2))
+                    let a = Double(k) / Double(sides) * 2 * .pi + twist
+                    // 枝先は外へ出て垂れ、間は内へ上がる
+                    let out = k % 2 == 0
+                    let rr = r * (out ? 1 : 0.7)
+                    let yy = y0 + (out ? -t.height * 0.025 : t.height * 0.03)
+                    rim.append(t.base + CV3(cos(a) * rr, max(-10, yy), sin(a) * rr))
+                }
+                for k in 0..<sides {
+                    let p0 = rim[k], p1 = rim[(k + 1) % sides]
+                    let mid = (p0 + p1) * 0.5 - t.base
+                    let nrm = CV3(mid.x, t.radius * 0.5, mid.z).normalized
                     m.tri(p0, p1, top, nrm, nrm, nrm, material)
                 }
-            }
-            // 幹（細い四角柱）
-            let w = t.radius * 0.08
-            let b = t.base
-            for (dx, dz) in [(w, 0.0), (0, w), (-w, 0), (0, -w)] {
-                let side = CV3(-dz, 0, dx).normalized
-                let n0 = CV3(dx, 0, dz).normalized
-                m.quad(b + CV3(dx, 0, dz) - side * w, b + CV3(dx, 0, dz) + side * w,
-                       b + CV3(dx, trunkTop + 20, dz) + side * w, b + CV3(dx, trunkTop + 20, dz) - side * w, n0, n0, n0, n0, material)
             }
         }
         return m

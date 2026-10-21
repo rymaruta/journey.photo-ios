@@ -602,13 +602,25 @@ struct CamperStageEdges: View {
     let color: Color
 
     var body: some View {
+        ZStack {
+            // 写真のレンズの周辺の落ち（四隅を少し暗く・`CamperMaterials.NightStage.vignette`）
+            GeometryReader { geo in
+                RadialGradient(colors: [Color.black.opacity(0), Color.black.opacity(CamperMaterials.NightStage.vignette)],
+                               center: .center, startRadius: min(geo.size.width, geo.size.height) * 0.35,
+                               endRadius: max(geo.size.width, geo.size.height) * 0.75)
+            }
+            edges
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var edges: some View {
         VStack(spacing: 0) {
             LinearGradient(colors: [color, color.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 40)
             Spacer(minLength: 0)
             LinearGradient(colors: [color.opacity(0), color], startPoint: .top, endPoint: .bottom).frame(height: 28)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 

@@ -98,7 +98,6 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertEqual(ground.lightingModel, .physicallyBased, "地面が月の影と灯りを受けない")
         XCTAssertTrue(ground.shaderModifiers?[.fragment]?.contains("jpHaze") == true, "地面の果てが霞に溶けない")
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
-        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.vignettingPower)), CamperMaterials.NightStage.vignettePower, accuracy: 0.001)
         // 下から見る
         scene.setAngle(CamperFraming.under, animated: false)
         XCTAssertTrue(stage.isHidden, "下から見ると地面の裏に林が浮く")
@@ -108,6 +107,7 @@ final class CamperSceneTests: XCTestCase {
         scene.show(day)
         XCTAssertTrue(stage.isHidden)
         XCTAssertNil(scene.scene.background.contents)
+        // 色の後処理の段（周辺の落ち・彩度）は使わない（Mac run 627 の 95: 昼の初めの絵が灰色のむらで埋まった）
         XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.vignettingPower)), 0, accuracy: 0.001)
         XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.saturation)), 1, accuracy: 0.001)
     }

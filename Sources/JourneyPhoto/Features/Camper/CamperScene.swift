@@ -132,8 +132,13 @@ final class CamperScene {
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
         scene.lightingEnvironment.intensity = CGFloat(CamperMaterials.fill(mood).environment)
-        // 画面の後ろ: 夜は空（地平線の霞へ）。昼と雪は透明のまま（画面の地の丸いグラデーションが見える・前と同じ）
-        scene.background.contents = night ? palette.image(key: "sky.night") { CamperTextures.nightSky() } : nil
+        // 画面の後ろ: 夜は空（地平線の霞へ）。昼と雪は透明のまま（画面の地の丸いグラデーションが見える・前と同じ）。
+        // 一度も夜にしていなければ触らない（昼の初めの絵を前と同じ道で描く）
+        if night {
+            scene.background.contents = palette.image(key: "sky.night") { CamperTextures.nightSky() }
+        } else if scene.background.contents != nil {
+            scene.background.contents = nil
+        }
         // 太陽・月の向きと強さ（`CamperMaterials.sun`）。画面に対して決まっている（車は回る台の上）
         let sun = CamperMaterials.sun(mood)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -sun.from)
@@ -165,10 +170,8 @@ final class CamperScene {
         cameraNode.camera?.bloomIntensity = CGFloat(night ? 0 : 0.2)
         cameraNode.camera?.exposureOffset = CGFloat(night ? st.exposure : 0)
         cameraNode.camera?.bloomThreshold = CGFloat(night ? 1.3 : 0.85)
-        // 夜は写真のレンズの周辺の落ちと、少し淡い色（夜の目）。昼と雪は前のまま（周辺の落ち無し・彩度 1）
-        cameraNode.camera?.vignettingPower = CGFloat(night ? st.vignettePower : 0)
-        cameraNode.camera?.vignettingIntensity = CGFloat(night ? st.vignetteIntensity : 1)
-        cameraNode.camera?.saturation = CGFloat(night ? st.saturation : 1)
+        // 2026-10-21（Mac run 627 の 95）: カメラの周辺の落ち・彩度（色の後処理の段）を入れたら、昼の初めの絵が灰色のむらで
+        // 埋まった（見立て: 後処理の段の絵が描き直される前に写った）。後処理は使わず、周辺の落ちは画面の側（`CamperStageEdges`）で
 
         // 床: 昼と雪は暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）。夜は芝の地面に替える
         let f = CamperMaterials.floor(mood)
@@ -450,6 +453,16 @@ final class CamperScene {
         contact.position = SCNVector3(Float((bp.length.lowerBound + bp.length.upperBound) / 2 * s), 0.002, 0)
         contact.castsShadow = false
         car.addChildNode(contact)
+        // 夜はもう一回り広い暗がりを重ねる（2026-10-21・Mac run 627: 芝の地面の上で車が少し浮いて見えた。月は上と奥から
+        // なので、車の下の影はほとんど車に隠れる）。車の下と、まわりの地面がなだらかに暗い
+        let wide = SCNNode(geometry: plane)
+        wide.eulerAngles = contact.eulerAngles
+        wide.position = SCNVector3(contact.position.x, 0.003, 0)
+        wide.scale = SCNVector3(1.35, 1.7, 1)
+        wide.castsShadow = false
+        wide.name = "contact.night"
+        car.addChildNode(wide)
+        moodNodes.append((wide, [.night]))
 
         carNode?.removeFromParentNode()
         turntable.addChildNode(car)

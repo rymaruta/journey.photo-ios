@@ -382,8 +382,9 @@ struct CamperBuilder {
     /// 地面の溜まりの大きさ（板の単位の幅）と色の明るさ（0〜1）、窓の明かりの色の明るさ、カーテンの光の強さ
     /// 2026-10-21 判断（owner「光の感じまじで残念」）: 強さの桁を、とおまわり号の中の家具灯（0.3〜0.7・`CamperRoomBuilder`）に
     /// そろえた。前の 60・45・90 は点の灯りの桁を取り違えていて、灯りのすぐ下が白く飛び、外は届かなかった
+    /// 窓の明かりは光を受けない不透明の面（硝子 0.32 越し）になったので、上限を 0.42 → 0.75（2026-10-21・Mac run 627）
     static let nightLimits = (fire: 2.0, lantern: 0.8, string: 1.0, poolSize: 52.0, poolLevel: 0.13,
-                              windowLevel: 0.42, curtain: 0.32)
+                              windowLevel: 0.75, curtain: 0.32)
 
     /// 室内の灯り（外から覗く殻の中・2026-10-21）: 後ろ・前の強さと届く距離。合計はとおまわり号の中の夜の上限
     /// （`CamperRoomBuilder.nightBudget`）の中に収める（試験で守る）
@@ -1558,13 +1559,14 @@ enum CamperFraming {
         // （車が画面の上寄りになり、ボタンの帯に掛からない）
         return CamperAngle(target: CamperBuilder.B(cx - 6, 4, 16), yaw: -24, elevation: 9, zoom: 2.1)
     }
-    /// 中に入る直前（2026-10-21・owner「外から中に入る時の光もほんとにダメ」）: 扉の口の真正面に寄り、口が画面の縦の
-    /// 8 割ほどを占める。灯った部屋が画面に広がってから部屋の画面へ切り替わる（急に別の明るさの絵へ飛ばない）
+    /// 中に入る直前（2026-10-21・owner「外から中に入る時の光もほんとにダメ」）: 扉の口の真正面に寄り、口が画面の
+    /// 縦のほとんどを占める。灯った部屋が画面に広がってから部屋の画面へ切り替わる（急に別の明るさの絵へ飛ばない）
     static func enter(_ stage: CamperStage) -> CamperAngle {
         let cx = stage == .van ? 3.0 : 45.0
         // 口の真ん中（世界の y 70・バンは 66）、壁の面（z = 車幅の半分）
         let bw = stage == .van ? 48.0 : 50.0
-        return CamperAngle(target: CV3(cx, stage == .van ? 66 : 70, bw), yaw: -8, elevation: 5, zoom: 4.0)
+        // 2026-10-21（Mac run 627 の 95p4）: 4.0 では口が画面の縦の 3 分の 1 ほどだった。5.5 で口が画面いっぱいに近づく
+        return CamperAngle(target: CV3(cx, stage == .van ? 66 : 70, bw), yaw: -8, elevation: 5, zoom: 5.5)
     }
     /// 下から（板の under: t[0,24,0] rx46 ry−28）
     static let under = CamperAngle(target: CamperBuilder.B(0, 24, 0), yaw: -28, elevation: -46, zoom: 1.0)
