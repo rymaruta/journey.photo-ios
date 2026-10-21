@@ -232,20 +232,53 @@ extension CamperRoomFurnitureModels {
     static func tapestry() -> CamperMesh {
         var parts: [CamperMesh] = []
         let cloth = R(.canvas(0x8A6A4A))
-        // 棒（横）・吊りひも・釘。布の中心 y=22。横幅は 3 マス（≤ 31）
-        parts.append(K.block(CV3(28, 1.0, 1.0), at: CV3(0, 35.5, 0.7), radius: 0.35, R(.wood(.walnut))))
-        for x in [-11.0, 11.0] {
-            parts.append(K.tube([CV3(x, 36.2, 0.7), CV3(x, 38.0, 0.75), CV3(0, 39.0, 0.8)], radius: 0.12, sides: 4, R(.rope)))
+        let field = R(.canvas(0xC9A66B))
+        let dark = R(.canvas(0x5C4030))
+        // 棒（節のある丸棒）・吊りひも・釘
+        parts.append(K.tube((0...16).map { i -> CV3 in
+            let t = Double(i) / 16
+            return CV3(-14 + 28 * t, 35.5, 0.7 + 0.12 * sin(t * .pi * 3))
+        }, radius: 0.55, sides: 10, R(.wood(.walnut))))
+        for x in [-12.0, 12.0] {
+            parts.append(K.placed(K.disc(radius: 0.7, height: 0.4, bevel: 0.12, segments: 10, R(.brass)),
+                                  at: CV3(x, 35.5, 0.7), rotation: CQuat.axisAngle(CV3(0, 0, 1), .pi / 2)))
+            parts.append(K.tube([CV3(x, 36.1, 0.7), CV3(x * 0.35, 38.2, 0.8), CV3(0, 39.2, 0.85)],
+                                radius: 0.14, sides: 5, R(.rope)))
         }
-        parts.append(K.placed(K.disc(radius: 0.4, height: 0.45, bevel: 0.12, segments: 10, R(.brass)), at: CV3(0, 39.1, 0.55),
-                              rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
-        parts.append(K.placed(K.panel(width: 24, height: 24, cloth), at: CV3(0, 22.5, 0.55)))
-        parts.append(K.placed(K.panel(width: 18, height: 12, R(.canvas(0xC9A66B))), at: CV3(0, 24, 0.62)))
-        for k in 0..<8 {
-            let x = -10.5 + Double(k) * 3.0
-            let tri: [CV2] = [CV2(-1.3, 0), CV2(1.3, 0), CV2(0, -2.6)]
-            parts.append(K.placed(CamperMeshKit.extrude(tri, depth: 0.2, front: cloth, side: cloth, bevel: 0.04),
-                                  at: CV3(x, 10.6, 0.7)))
+        parts.append(K.placed(K.disc(radius: 0.55, height: 0.5, bevel: 0.15, segments: 12, R(.brass)),
+                              at: CV3(0, 39.3, 0.55), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        // 布の地・縁取り・中央の文様（幾何を押し出し）
+        parts.append(K.placed(K.panel(width: 24, height: 24, cloth), at: CV3(0, 22.5, 0.5)))
+        parts.append(K.placed(CamperMeshKit.extrude(K.roundedRect(22, 22, r: 0.3), holes: [K.roundedRect(18.5, 18.5, r: 0.2)],
+                                                    depth: 0.25, front: dark, side: dark, bevel: 0.06),
+                              at: CV3(0, 22.5, 0.7)))
+        parts.append(K.placed(K.panel(width: 17, height: 11, field), at: CV3(0, 24.5, 0.72)))
+        for row in 0..<3 {
+            for col in 0..<5 {
+                let x = -6.5 + Double(col) * 3.25
+                let y = 21.5 + Double(row) * 2.6
+                let diamond: [CV2] = [CV2(0, 1.05), CV2(0.95, 0), CV2(0, -1.05), CV2(-0.95, 0)]
+                // 浮かせた文様（穴に見えないよう地より手前・色を分ける）
+                parts.append(K.placed(CamperMeshKit.extrude(diamond, depth: 0.28, front: R(.canvas(0x6B4423)),
+                                                            side: R(.canvas(0x4A3220)), bevel: 0.05),
+                                      at: CV3(x, y, 0.9)))
+            }
+        }
+        // 横の縫い目
+        for y in [12.5, 32.5] as [Double] {
+            parts.append(K.tube([CV3(-11.5, y, 0.75), CV3(11.5, y, 0.75)], radius: 0.1, sides: 4, R(.rope)))
+        }
+        // 裾のぎざぎざ（厚みと房）
+        for k in 0..<9 {
+            let x = -12.0 + Double(k) * 3.0
+            let tri: [CV2] = [CV2(-1.4, 0), CV2(1.4, 0), CV2(0, -3.0)]
+            parts.append(K.placed(CamperMeshKit.extrude(tri, depth: 0.35, front: cloth, side: dark, bevel: 0.06),
+                                  at: CV3(x, 10.5, 0.7)))
+            for f in 0..<3 {
+                parts.append(K.tube([CV3(x - 0.6 + Double(f) * 0.6, 10.5 - 2.8, 0.7),
+                                     CV3(x - 0.6 + Double(f) * 0.6, 8.2 - Double(f % 2) * 0.4, 0.75)],
+                                    radius: 0.08, sides: 4, R(.rope)))
+            }
         }
         return K.merge(parts)
     }
@@ -280,22 +313,37 @@ extension CamperRoomFurnitureModels {
 
     // MARK: 天井
 
-    /// 小さな旗（紐に三角の旗 9）
+    /// 小さな旗（太い紐・両端の輪・厚みのある三角旗 9・縫い代と小さな房）
     static func bunting() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let cord = (0...24).map { k -> CV3 in
-            let t = Double(k) / 24
-            return CV3(-29 + 58 * t, -1.5 - 5 * sin(t * .pi), 0)
+        let cord = (0...32).map { k -> CV3 in
+            let t = Double(k) / 32
+            return CV3(-29 + 58 * t, -1.5 - 5.2 * sin(t * .pi), 0.2 * sin(t * .pi * 2))
         }
-        parts.append(K.tube(cord, radius: 0.14, sides: 4, R(.rope)))
+        parts.append(K.tube(cord, radius: 0.22, sides: 6, R(.rope)))
+        // 両端の輪は天井より上へ出さない（y ≤ 0）
+        for x in [-29.0, 29.0] {
+            parts.append(K.tube(K.arc(center: CV3(x, -1.3, 0), radius: 1.0, from: 0, to: 2 * .pi, steps: 14)
+                                    .map { CV3($0.x, $0.y, 0) }, radius: 0.16, sides: 5, closed: true, R(.brass)))
+        }
         let colors: [UInt32] = [0xC9584A, 0xD9A441, 0x2F6A8C, 0xEDE8DE, 0x5E8A4A, 0xB5653F, 0x6A4A8C, 0x3E8A8A, 0xD9C27A]
         for k in 0..<9 {
             let t = (Double(k) + 0.5) / 9
-            let p = CV3(-29 + 58 * t, -1.5 - 5 * sin(t * .pi), 0)
-            let tri: [CV2] = [CV2(-2.2, 0), CV2(2.2, 0), CV2(0, -5.5)]
-            parts.append(K.placed(CamperMeshKit.extrude(tri, depth: 0.2, front: R(.paperColor(colors[k])), side: R(.paperColor(colors[k])),
-                                                        bevel: 0.05), at: p + CV3(0, -0.2, 0)))
-            parts.append(K.tube([p + CV3(-2.0, 0, 0), p + CV3(2.0, 0, 0)], radius: 0.1, sides: 4, R(.rope)))
+            let p = CV3(-29 + 58 * t, -1.5 - 5.2 * sin(t * .pi), 0)
+            let c = R(.paperColor(colors[k]))
+            // 少しひらいた三角（表と裏で色の向き）
+            let tri: [CV2] = [CV2(-2.4, 0.15), CV2(2.4, 0.15), CV2(0.15, -5.8), CV2(-0.15, -5.8)]
+            parts.append(K.placed(CamperMeshKit.extrude(tri, depth: 0.45, front: c, side: R(.paperColor(colors[(k + 3) % 9])),
+                                                        bevel: 0.08), at: p + CV3(0, -0.15, 0)))
+            // 上縁の縫い代
+            parts.append(K.tube([p + CV3(-2.3, 0.05, 0.2), p + CV3(2.3, 0.05, 0.2)], radius: 0.14, sides: 5, R(.rope)))
+            parts.append(K.placed(K.sphere(radius: 0.28, segments: 8, R(.wood(.cedar))), at: p + CV3(0, 0.1, 0.15)))
+            // 先端の小さな房
+            for f in 0..<3 {
+                let a = Double(f) / 3 * 2 * .pi
+                parts.append(K.tube([p + CV3(0, -5.7, 0), p + CV3(cos(a) * 0.35, -7.0, sin(a) * 0.35)],
+                                    radius: 0.07, sides: 3, c))
+            }
         }
         return K.merge(parts)
     }
