@@ -31,6 +31,10 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published private(set) var reloadingComments: Set<String> = []
     @Published var draftComment = ""
     @Published var errorMessage: String?
+    /// コメントを送れなかった知らせ。**入力欄のすぐ上に出す**（`errorMessage` は操作の段に出るので、
+    /// 欄から遠く、送れなかったことに気づかれなかった）。書いた文は残す（下で消さない）。
+    /// 2026-10-21 判断: 送り直す・打ち直す・隣へ送るときに消す（古い失敗を新しい文の上に残さない）
+    @Published var commentPostError: String?
     @Published private(set) var isPosting = false
     /// 消している途中のコメント（二度押しで2回送ると、2回目が「見つかりません」を出す）
     @Published private(set) var deletingCommentIds: Set<String> = []
@@ -129,6 +133,7 @@ final class PhotoDetailViewModel: ObservableObject {
             commentsUnavailable = false
             draftComment = ""
             errorMessage = nil
+            commentPostError = nil
         } else if !likesFromServer, let initialLikes {
             // 🔴 **開いた1枚でも、サーバーの数を得るまでは渡された数に合わせる。**
             // ホームで♥を押して 5→6 になっても、init は一覧の 5 で始まるので、
@@ -321,6 +326,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         errorMessage = nil
+        commentPostError = nil
         guard isSignedIn else {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
@@ -352,8 +358,15 @@ final class PhotoDetailViewModel: ObservableObject {
             }
         } catch {
             // **送った先の1枚でも失敗は出す。** 書きかけは送ったときに `show` が
-            // 消しているので、黙ると「入った」と思われたまま文も残らない
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
+            // 消しているので、黙ると「入った」と思われたまま文も残らない。
+            // **隣へ送った後の失敗は、その1枚の欄に出さない**（いま見ている1枚の欄の上に出ると、
+            // そこに書いた文が送れなかったと読まれる）——そのときだけ操作の段の知らせに出す
+            let message = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
+            if id == photoId {
+                commentPostError = message
+            } else {
+                errorMessage = message
+            }
         }
     }
 

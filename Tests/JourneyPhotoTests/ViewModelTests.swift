@@ -762,6 +762,31 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 0, "空の名前を送っている")
     }
 
+    /// 🔴 **アルバムを作るのを二度押ししても、1つしか作らない**（2026-10-21・`createInvite` と同じ守り）。
+    /// 送っている間は `isCreating` が立ち、画面は「アルバムを作る」を止めて輪を出す
+    func testAlbumCreateTwiceSendsOnce() async {
+        prepare()
+        // 1回目だけ止める（守りが外れて2回目が通信しに来ても、止めずに通して落とす・固まらせない）
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /albums": gate])))
+        StubProtocol.respond(path: "/albums", status: 200, body: #"{"album":{"id":"a1","title":"冬"}}"#)
+        let model = AlbumsViewModel()
+        let first = Task { await model.create(title: "冬", environment: env) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.isCreating, "送っている間の印が立っていない")
+        await model.create(title: "冬", environment: env)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("POST ") }.count, 1, "二度押しで2つ作っている")
+        XCTAssertFalse(model.isCreating)
+        XCTAssertEqual(model.albums.map(\.id), ["a1"])
+    }
+
     /// 🔴 **押した人が替わったら、フォローの答えを書かない。** 圏外寸前でフォローを押し、
     /// 答えが返る前にログアウトして別の人で入り直すと、前の人の「フォロー中」と
     /// 数が次の人の画面に残っていた（押すと、フォローしていない相手を外す確認が出た）
@@ -2060,6 +2085,28 @@ final class ViewModelTests: XCTestCase {
         await model.postComment()
         XCTAssertEqual(model.comments.map(\.id), ["c1"], "同じコメントが2つ出ている")
         XCTAssertEqual(model.commentCount, 1)
+    }
+
+    /// 🔴 **送れなかったコメントは、入力欄の知らせに出し、書いた文は残す**（2026-10-21）。
+    /// 操作の段の `errorMessage` に出していたので、欄から遠く、黙って失敗したように見えた
+    func testFailedCommentShowsNearComposerAndKeepsDraft() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.postComment()
+
+        XCTAssertNotNil(model.commentPostError, "送れなかったことを欄の近くに出していない")
+        XCTAssertNil(model.errorMessage, "操作の段（欄から遠い所）に出している")
+        XCTAssertEqual(model.draftComment, "きれい", "送れなかったのに書いた文を消している")
+
+        // 送り直して通ったら、古い失敗は消える
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+        XCTAssertNil(model.commentPostError)
+        XCTAssertEqual(model.draftComment, "")
     }
 
     /// 空のコメントは送らない。
