@@ -92,7 +92,7 @@ final class SmokeTests: XCTestCase {
     }
 
     /// **見出しの絵は、絵の外でも 44pt の高さの中なら押せること**（2026-10-14 絵を小さくしたとき）。
-    /// 箱は幅 24・高さ 44。絵の中心から 19pt 下（17pt の絵の端から約 10pt 外）を押して開くか見る。
+    /// 当たりは 44×44（2026-10-21・絵の箱は幅 24 のまま）。絵の中心から 19pt 下（17pt の絵の端から約 10pt 外）を押して開くか見る。
     /// 🔴 run 432: 箱を 28 角にして外へ当たりを広げた作りでは、ここを押しても開かなかった。
     /// 横（隣の絵との間）を押したときの結果は、決まりにせず記録だけ残す（システム次第のため）
     func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
@@ -110,13 +110,17 @@ final class SmokeTests: XCTestCase {
         let close = app.buttons["notifications.close"]
         let center = bell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
 
-        // 横: 箱の右の端から 5pt 外（隣のメニューとの間）。記録だけ
-        center.withOffset(CGVector(dx: bell.frame.width / 2 + 5, dy: 0)).tap()
-        let sideOpened = close.waitForExistence(timeout: 5)
-        let note = XCTAttachment(string: "箱: \(bell.frame) / 横に 5pt 外を押して開いたか: \(sideOpened)")
+        // 横: 2026-10-21 から当たりは幅も 44（`appHeaderHitArea`・隣のメニューと隙間なく並ぶ）。
+        // 前は箱の右 5pt 外（隙間）を押して記録していたが、いまはそこがメニューの当たりなので、
+        // **箱の内側、絵の中心から 19pt 横**（17pt の絵の端から約 10pt 外）を押して開くことを確かめる
+        XCTAssertGreaterThanOrEqual(bell.frame.width, 44, "当たりの幅が 44 に足りない")
+        center.withOffset(CGVector(dx: 19, dy: 0)).tap()
+        let sideOpened = close.waitForExistence(timeout: 15)
+        let note = XCTAttachment(string: "箱: \(bell.frame) / 絵の中心から横に 19pt を押して開いたか: \(sideOpened)")
         note.name = "見出しの絵の横の当たり"
         note.lifetime = .keepAlways
         add(note)
+        XCTAssertTrue(sideOpened, "絵の外（44pt の幅の中）を押してもお知らせが開かない")
         if sideOpened {
             close.tap()
             XCTAssertTrue(close.waitForNonExistence(timeout: 10), "お知らせが閉じない")
