@@ -267,6 +267,7 @@ open class SCNView: UIView {
     open var antialiasingMode: SCNAntialiasingMode = .multisampling4X
     open var preferredFramesPerSecond = 60
     open var rendersContinuously = false
+    open func snapshot() -> UIImage { UIImage() }
 }
 
 /// 画面の外で描いて絵にする（本物は `init(device: MTLDevice?, options:)`。家具の接写の一覧・2026-10-21）

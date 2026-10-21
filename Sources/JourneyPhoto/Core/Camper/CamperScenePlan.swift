@@ -39,8 +39,17 @@ struct CamperScenePlan: Sendable {
     var nodes: [CamperPreparedNode]
     /// 貼り絵（鍵 → 画素）。素材の貼り絵は全部の時刻の色の分（`textureKey`）、周りの光は "env.<時刻>"、接地の暗がりは "contact"
     var bitmaps: [String: CamperBitmap]
+    /// 夜の外の遠景の網（林・山の稜線。2026-10-21・画面の処理の外で作る）
+    var nightScenery: (trees: CamperPreparedMesh, ridge: CamperPreparedMesh)
 
     static let unit = 0.01
+
+    /// 夜の外の遠景の網（林・山の稜線）。材質は場面の側で光を受けない霞の材質に替える
+    static func nightScenery() -> (trees: CamperPreparedMesh, ridge: CamperPreparedMesh) {
+        let st = CamperMaterials.NightStage.self
+        return (CamperPreparedMesh(CamperNightScenery.treeMesh(CamperNightScenery.trees(), material: .tint(st.treeColor)), unit: unit),
+                CamperPreparedMesh(CamperNightScenery.ridgeMesh(material: .tint(st.ridgeColor)), unit: unit))
+    }
 
     static func textureKey(_ kind: CamperTextureKind, _ color: UInt32) -> String { "\(kind.rawValue).\(color)" }
 
@@ -77,7 +86,11 @@ struct CamperScenePlan: Sendable {
             bitmaps["env.\(mood.rawValue)"] = CamperTextures.environment(mood)
         }
         bitmaps["contact"] = CamperTextures.contactShadow().premultiplied()
-        return CamperScenePlan(blueprint: bp, nodes: nodes, bitmaps: bitmaps)
+        // 夜の外の空・空の光・地面（2026-10-21）。夜に替えた時に画面の処理の中で作らない
+        bitmaps["sky.night"] = CamperTextures.nightSky()
+        bitmaps["env.night.outdoor"] = CamperTextures.nightEnvironment()
+        bitmaps["ground.night"] = CamperTextures.groundNight().tinted(CamperMaterials.NightStage.ground)
+        return CamperScenePlan(blueprint: bp, nodes: nodes, bitmaps: bitmaps, nightScenery: nightScenery())
     }
 }
 

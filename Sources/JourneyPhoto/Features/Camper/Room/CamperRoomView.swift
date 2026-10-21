@@ -19,6 +19,9 @@ struct CamperRoomView: View {
     let stats: CamperStats
     let paint: UInt32
     let initialMood: CamperMood
+    /// 外から入った時の、寄った口の絵（部屋が組み上がるまで覆い、組み上がったらなだらかに消す・2026-10-21）
+    var entryImage: UIImage? = nil
+    @State private var entryCovered = true
 
     enum Mode: String { case home, edit, style, photos }
     enum StyleTab: String, CaseIterable { case wall, floor, curtain, light }
@@ -356,6 +359,7 @@ struct CamperRoomView: View {
                     .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, 30), height - 30))
             }
             sceneOverlays(width: width, height: height)
+            entryCover(width: width, height: height)
             if let notice {
                 Text(notice)
                     .jpSystemFont(13, weight: .semibold)
@@ -372,6 +376,29 @@ struct CamperRoomView: View {
         .frame(width: width, height: height)
         .background(RadialGradient(colors: [CamperStyle.color(mood == .night ? 0x1C1206 : 0x1D1B14), Color.black],
                                    center: UnitPoint(x: 0.5, y: 0.45), startRadius: 0, endRadius: 420))
+    }
+
+    /// 外から入った時の覆い: 寄った口の絵を、部屋が組み上がる（camper-room-ready）まで重ね、なだらかに消す。
+    /// 確かめ役 2026-10-21: 部屋を組む約 1 秒、暗い暖色の地だけが出た（95p5・95q5）
+    @ViewBuilder
+    private func entryCover(width: CGFloat, height: CGFloat) -> some View {
+        if let entryImage {
+            Image(uiImage: entryImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipped()
+                .opacity(entryCovered ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .onChange(of: readyMarker) { _, marker in
+                    guard entryCovered, marker.hasPrefix("camper-room-ready") else { return }
+                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
+                }
+                .onAppear {
+                    if readyMarker.hasPrefix("camper-room-ready") { entryCovered = false }
+                }
+        }
     }
 
     /// 箱庭そのもの（2026-10-21: 1 つの式に修飾が多すぎて、Xcode の型検査が時間切れになった・Mac run 597。分けた）

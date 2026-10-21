@@ -1,5 +1,6 @@
 import XCTest
 import CoreLocation
+import UIKit
 
 /// 各画面を撮る。
 ///
@@ -2487,6 +2488,38 @@ final class ScreenshotTests: XCTestCase {
             guard waitCamper(app, "camper-ready \(id) night") else { return XCTFail("\(id) の夜を組み終えない") }
             shoot(app, name)
         }
+        // 雪（2026-10-21: 夜の作り直しで共に使う部品を変えたので、雪の見た目が変わっていないかを見る）
+        let snow = app.buttons["camper.mood.snow"].firstMatch
+        pulls = 0
+        while !(snow.exists && snow.isHittable), pulls < 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            Thread.sleep(forTimeInterval: 1)
+            pulls += 1
+        }
+        guard snow.isHittable else { return XCTFail("雪のボタンに戻れない") }
+        snow.tap()
+        waitCamper(app, "snow")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "95r-キャンピングカー（トレーラーつき・雪）")
+    }
+
+    /// 画面写真の縦の帯（0〜1）の平均の明るさ（0〜255・16×16 に縮めて測る）。暗い画面を見分ける
+    static func meanBrightness(_ image: UIImage, band: ClosedRange<Double>) -> Double {
+        guard let cg = image.cgImage else { return 0 }
+        let h = Double(cg.height)
+        let rect = CGRect(x: 0, y: h * band.lowerBound, width: Double(cg.width), height: h * (band.upperBound - band.lowerBound))
+        guard let part = cg.cropping(to: rect) else { return 0 }
+        let side = 16
+        var px = [UInt8](repeating: 0, count: side * side * 4)
+        guard let ctx = CGContext(data: &px, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
+        ctx.draw(part, in: CGRect(x: 0, y: 0, width: side, height: side))
+        var sum = 0.0
+        for i in stride(from: 0, to: px.count, by: 4) {
+            sum += 0.2126 * Double(px[i]) + 0.7152 * Double(px[i + 1]) + 0.0722 * Double(px[i + 2])
+        }
+        return sum / Double(side * side)
     }
 
     /// **外から中に入るときの光**（2026-10-21 owner「中に入るボタン押した時に扉開くけど中の光で眩しすぎてほんとにダメ」
@@ -2522,14 +2555,23 @@ final class ScreenshotTests: XCTestCase {
             shoot(at: 5.8, "95\(n)4-キャンピングカー（\(label)・中に入る・切り替わる直前）")
             let room = app.descendants(matching: .any)["camper.room.scene"].firstMatch
             guard room.waitForExistence(timeout: 15) else { return XCTFail("部屋に切り替わらない（\(label)）") }
-            Thread.sleep(forTimeInterval: 0.8)
+            // 切り替わった直後: 部屋が組み上がるまで、寄った口の絵が覆う（暗い画面にしない・確かめ役 2026-10-21）
+            let first = app.screenshot()
             self.shoot(app, "95\(n)5-キャンピングカー（\(label)・中に入る・部屋に切り替わった直後）")
+            XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20, "部屋に切り替わった直後が暗い画面（\(label)）")
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
+            let settled = app.screenshot()
+            self.shoot(app, "95\(n)6-キャンピングカー（\(label)・中に入る・部屋が組み上がった）")
+            XCTAssertGreaterThan(Self.meanBrightness(settled.image, band: 0.2...0.55), 20, "部屋が組み上がっても暗い画面（\(label)）")
             // 外へ戻り、扉を閉じて（初めの向きへ戻る）次の時刻へ
             let back = app.buttons["camper.room.back"].firstMatch
             guard back.waitForExistence(timeout: 10) else { return XCTFail("部屋から外へ戻れない") }
             back.tap()
             let door = app.buttons["camper.door"].firstMatch
             guard door.waitForExistence(timeout: 10) else { return XCTFail("外の車に戻らない") }
+            // 戻ったら口の真正面の寄りではなく、扉の口を斜めに見る向き（確かめ役 2026-10-21）
+            Thread.sleep(forTimeInterval: 4)
+            self.shoot(app, "95\(n)7-キャンピングカー（\(label)・部屋から戻った）")
             door.tap()
             Thread.sleep(forTimeInterval: 4)
         }

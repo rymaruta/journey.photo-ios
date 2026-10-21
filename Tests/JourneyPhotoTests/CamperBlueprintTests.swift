@@ -221,6 +221,7 @@ final class CamperBlueprintTests: XCTestCase {
                 XCTAssertLessThan(l.position.y, roof - 8, "\(stage) \(l.name): 天井より下")
                 XCTAssertGreaterThan(l.intensity, 0, l.name)
                 XCTAssertLessThanOrEqual(l.intensity, 1.2, "\(stage) \(l.name): 室内の灯りが強い（口の奥が白く飛ぶ）")
+                XCTAssertLessThanOrEqual(l.range, CamperRoomBuilder.nightBudget.range, "\(stage) \(l.name): 部屋の灯りより遠くまで届く")
             }
             XCTAssertLessThanOrEqual(inside.map(\.intensity).reduce(0, +), CamperRoomBuilder.nightBudget.intensity,
                                      "\(stage): 室内の灯りの合計が、とおまわり号の中の夜の上限を超える")
@@ -461,7 +462,9 @@ final class CamperBlueprintTests: XCTestCase {
         }
         XCTAssertFalse(materials("cabDoor.window").contains(.glassLit))
         XCTAssertTrue(materials("window").contains(.glassLit))
-        XCTAssertTrue(materials("door.window").contains(.glassLit))
+        // 入口の扉の窓は別の材質（開けて横を向いたら消す・2026-10-21）
+        XCTAssertTrue(materials("door.window").contains(.glassDoor))
+        XCTAssertEqual(CamperMaterials.spec(.glassDoor, paint: 0, mood: .night), CamperMaterials.spec(.glassLit, paint: 0, mood: .night))
     }
 
     /// 夜に光る面は emission 1 まで（にじみ無しで読め、HDR の値が大きくならない・run 533 の黒い四角）。住む所の窓は灯る

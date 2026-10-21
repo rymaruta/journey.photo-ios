@@ -43,7 +43,15 @@ final class CamperSceneTests: XCTestCase {
         }
         let outside = ls.filter { !$0.name.hasPrefix("interior.") }
         XCTAssertFalse(outside.isEmpty)
-        for (name, l) in outside { XCTAssertEqual(l.categoryBitMask, CamperScene.outsideMask, name) }
+        // 外の火（焚き火・ランタン・電球の列）は置き物と地面の組だけ。車体（camper.outside）は照らさない
+        // （確かめ役 2026-10-21: 塗装に火の照り返しが小さな橙の点で映った）。入口の灯りは外の組
+        for (name, l) in outside {
+            let fire = name == "campfire" || name == "lantern" || name == "string"
+            XCTAssertEqual(l.categoryBitMask, fire ? CamperScene.propsMask : CamperScene.outsideMask, name)
+        }
+        XCTAssertTrue(outside.contains { $0.name == "campfire" })
+        XCTAssertEqual(try XCTUnwrap(node(scene, "camper.outside")).categoryBitMask & CamperScene.propsMask, 0, "車体が火に照らされる")
+        XCTAssertNotEqual(try XCTUnwrap(node(scene, "camper.props")).categoryBitMask & CamperScene.propsMask, 0, "置き物が火に照らされない")
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.outside")).categoryBitMask, CamperScene.outsideMask)
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.inside")).categoryBitMask, CamperScene.insideMask)
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.door")).categoryBitMask, CamperScene.outsideMask)
@@ -75,8 +83,33 @@ final class CamperSceneTests: XCTestCase {
         night.mood = .night
         scene.show(night)
         XCTAssertTrue(inside.allSatisfy(blocks), "夜に替えたら遮りが消えた")
+        // 値まで見る: 時刻に合った割合が入っている
+        for m in inside { XCTAssertEqual(try XCTUnwrap(scene.paletteOcclusion(m)), CamperMaterials.interiorSkyOcclusion(.night), accuracy: 0.001) }
+        scene.show(CamperConfig(stage: .camper, mood: .day))
+        for m in inside { XCTAssertEqual(try XCTUnwrap(scene.paletteOcclusion(m)), CamperMaterials.interiorSkyOcclusion(.day), accuracy: 0.001) }
         XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.night), CamperMaterials.interiorSkyOcclusion(.day))
         XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.day), 0.5, "昼の口の奥が外と同じ明るさ")
+    }
+
+    /// 入口の扉の窓は夜に灯り、扉を開けて横を向いたら消える（2026-10-21 確かめ役）
+    func testDoorWindowGoesDarkWhenOpen() async throws {
+        let scene = CamperScene()
+        scene.installNow(CamperConfig(stage: .camper, mood: .night))
+        let glass = try XCTUnwrap(scene.paletteMaterial(.glassDoor), "扉の窓の材質が無い")
+        XCTAssertGreaterThan(glass.emission.intensity, 0, "閉じた扉の窓が灯らない")
+        scene.setDoor(open: true, animated: false)
+        XCTAssertEqual(glass.emission.intensity, 0, "開けた扉の窓が灯ったまま")
+        scene.setDoor(open: false, animated: false)
+        XCTAssertGreaterThan(glass.emission.intensity, 0)
+        // 開けたまま時刻を替えても灯らない
+        scene.setDoor(open: true, animated: false)
+        var day = CamperConfig(stage: .camper, mood: .night)
+        day.mood = .day
+        scene.show(day)
+        var night = day
+        night.mood = .night
+        scene.show(night)
+        XCTAssertEqual(glass.emission.intensity, 0)
     }
 
     /// 夜の外の場面（2026-10-21・owner「夜のキャンピングカーの外」: 黒い空間に車が浮いていた）: 夜は空・芝の地面・林と山の

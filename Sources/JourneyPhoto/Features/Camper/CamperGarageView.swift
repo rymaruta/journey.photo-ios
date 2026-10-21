@@ -169,6 +169,9 @@ struct CamperGarageView: View {
 
     /// とおまわり号の中へ入った（2026-10-19・`CamperRoomView`）
     @State private var insideRoom = false
+    /// 中に入る直前の口の絵（部屋が組み上がるまでの覆い）
+    @State private var snapshot = CamperSceneSnapshot()
+    @State private var entryImage: UIImage?
 
     /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）。
     /// 2026-10-21: 扉が開き切る少し前から口の真正面へ寄り（`CamperFraming.enter`）、灯った部屋が画面に広がってから
@@ -182,13 +185,15 @@ struct CamperGarageView: View {
                 aim(CamperFraming.enter(stage))
                 try? await Task.sleep(nanoseconds: UInt64(0.6 * slow * 1_000_000_000))
             }
+            // 寄った口の絵を写し、部屋が組み上がるまでの覆いにする（暗い画面を出さない）
+            entryImage = snapshot.image()
             insideRoom = true
         }
     }
 
     private func stageView(width: CGFloat, height: CGFloat) -> some View {
         CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion,
-                        timeScale: PreviewSession.camperEnterSlow) { marker in
+                        timeScale: PreviewSession.camperEnterSlow, snapshot: snapshot) { marker in
             readyMarker = marker
         }
         .frame(width: width, height: height)
@@ -211,7 +216,13 @@ struct CamperGarageView: View {
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
             CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, photosLoaded: photosLoaded, stage: actualStage, stats: stats,
-                           paint: config.loadout.paint, initialMood: mood)
+                           paint: config.loadout.paint, initialMood: mood, entryImage: entryImage)
+        }
+        // 部屋から戻ったら、口の真正面の寄りから扉の口を斜めに見る向きへ戻す（確かめ役 2026-10-21: 口に寄ったままだった）
+        .onChange(of: insideRoom) { _, inside in
+            guard !inside else { return }
+            entryImage = nil
+            if doorOpen { aim(CamperFraming.door(stage)) }
         }
         .overlay(alignment: .top) {
             if previewStage != nil && previewStage != actualStage || previewPart != nil {

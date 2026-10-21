@@ -147,6 +147,8 @@ struct CamperVisitView: View {
                     .accessibilityHidden(true)
             }
         }
+        // 夜の空と地面の上下の端を画面の地へ溶かす（自分の車の夜と同じ・2026-10-21）
+        .overlay { CamperStageEdges(color: CamperStyle.color(CamperMaterials.backdrop(.night))) }
         .contentShape(Rectangle())
         .gesture(rotate)
         .onTapGesture(count: 2) {

@@ -107,4 +107,16 @@ final class CamperNightStageTests: XCTestCase {
         let side = luminance((cap.0 * horizon.0, cap.1 * horizon.1, cap.2 * horizon.2)) * st.environment * 0.5
         XCTAssertGreaterThan(side, 0.01, "横の面が真っ黒")
     }
+
+    /// 夜の空・空の光・地面の絵と、林と山の網は下ごしらえ（画面の処理の外）で作る（確かめ役 2026-10-21）
+    func testNightAssetsArePreparedOffTheMainThread() {
+        let plan = CamperScenePlan.make(CamperConfig(stage: .camper, mood: .day))
+        for key in ["sky.night", "env.night.outdoor", "ground.night"] { XCTAssertNotNil(plan.bitmaps[key], key) }
+        XCTAssertGreaterThan(plan.nightScenery.trees.vertexCount, 0)
+        XCTAssertGreaterThan(plan.nightScenery.ridge.vertexCount, 0)
+        // 三角形の数（docs/CAMPER.md の性能の記録と合わせる）
+        let tris = plan.nightScenery.trees.groups.reduce(0) { $0 + $1.indices.count / 3 }
+            + plan.nightScenery.ridge.groups.reduce(0) { $0 + $1.indices.count / 3 }
+        XCTAssertLessThan(tris, 4200)
+    }
 }

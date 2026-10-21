@@ -26,6 +26,8 @@ enum CamperMaterial: Hashable, Sendable {
     case silhouette
     /// 住む所の窓のガラス（夜は室内の灯りでほのかに光る）。運転席のガラスは `.glass`（灯りが無いので暗い）
     case glassLit
+    /// 入口の扉の窓（夜は住む所の窓と同じに灯る。扉を開けて横を向いたら消す・`CamperScenePalette.setDoorWindowLit`）
+    case glassDoor
     /// 夜は灯り（`.lamp`）、昼と雪は `base`（電球・提灯・ランプの笠）。時刻で組み直さず、材質の値だけ替えるため
     indirect case byNight(CamperMaterial)
     /// 夜、窓と扉の口から地面へこぼれる灯り（足し合わせる光の溜まり・影を落とさない）
@@ -122,6 +124,7 @@ enum CamperMaterials {
             // 運転席・鏡・瓶のガラス。夜も光らない（run 532: フロントガラスが内から光る板に見えた）
             return CamperMaterialSpec(color: night ? 0x0A0C10 : 0x10161C, roughness: 0.05, opacity: night ? 0.7 : 0.62,
                                       doubleSided: true)
+        case .glassDoor: return spec(.glassLit, paint: paint, mood: mood)
         case .glassLit:
             // 住む所の窓（2026-10-19 作り直し・owner「夜の発光の仕方ひどい」）。ガラスは**光らない**——一色の emission で塗ると
             // オレンジの平らな板になった。夜は板どおり薄い（不透明度 0.38）暗い硝子で、室内の灯りに照らされた
@@ -208,7 +211,9 @@ enum CamperMaterials {
         case .foil: return CamperMaterialSpec(color: 0xD9B877, metalness: 1, roughness: 0.18)
         case .holo: return CamperMaterialSpec(color: 0xC8B8F0, metalness: 1, roughness: 0.12, clearCoat: 1, clearCoatRoughness: 0.05)
         case .tint(let c): return CamperMaterialSpec(color: c, roughness: 0.5, clearCoat: 0.3)
-        case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .woodGrain)
+        // 2026-10-21 確かめ役（中に入る寄りの絵 95p4）: 短い波の木目（woodGrain）が扉の内張りと奥の壁で波線・ジグザグに見えた。
+        // 部屋の家具と同じ、長く流れる木目（furnitureGrain・横に流れ、年輪はゆるく曲がる）
+        case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .furnitureGrain)
         case .ember:
             // 燠（薪の下の赤い熱）。炎は別の形（`.flame`）
             return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF5A1E, emissionIntensity: night ? 0.9 : 0.45,

@@ -387,8 +387,8 @@ struct CamperBuilder {
                               windowLevel: 0.75, curtain: 0.32)
 
     /// 室内の灯り（外から覗く殻の中・2026-10-21）: 後ろ・前の強さと届く距離。合計はとおまわり号の中の夜の上限
-    /// （`CamperRoomBuilder.nightBudget`）の中に収める（試験で守る）
-    static let interiorLights = (rear: 0.9, front: 0.55, range: 100.0)
+    /// （`CamperRoomBuilder.nightBudget`）の中に収める。届く距離も部屋の上限（90）まで（試験で守る）
+    static let interiorLights = (rear: 0.9, front: 0.55, range: 90.0)
 
     /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
     /// バンはスライドドアの口の上（口の上の端 Y 112・窓の後ろの端 x −16 より前）。2026-10-21: バンは前照灯が消え、
@@ -665,11 +665,11 @@ struct CamperBuilder {
     /// 窓のゴムの縁（幅 1.5）・クロームの細い枠（外へ 1.4・幅 0.45）・ガラス（表から 2.2 奥・厚み 0.4）
     /// 窓の縁（ゴム・クローム）とガラス。`lit` は住む所の窓（夜に室内の灯りで光る）
     mutating func windowTrim(_ w: [CV2], plane: Plane, name: String, group: CamperGroup = .body, surface: Double? = nil,
-                             category: CamperCategory? = nil, lit: Bool = true) {
+                             category: CamperCategory? = nil, lit: Bool = true, doorGlass: Bool = false) {
         let seal = CamperMeshKit.extrude(CamperPolygon.offset(w, by: 1.5), holes: [w], depth: 0.9, front: .rubber, side: .rubber)
         let chrome = CamperMeshKit.extrude(CamperPolygon.offset(w, by: 1.85), holes: [CamperPolygon.offset(w, by: 1.4)],
                                            depth: 1.0, front: .chrome, side: .chrome)
-        let pane: CamperMaterial = lit ? .glassLit : .glass
+        let pane: CamperMaterial = lit ? (doorGlass ? .glassDoor : .glassLit) : .glass
         var glass = CamperMeshKit.extrude(w, depth: 0.4, front: pane, side: pane, back: pane)
         if lit {
             // 住む所の窓の硝子は、夜にカーテン越しの明かり（roomGlow）を光らせる。絵が窓 1 枚にちょうど 1 回載るよう、
@@ -705,7 +705,7 @@ struct CamperBuilder {
         let slab = CamperMeshKit.slab(outline: panel, holes: [doorWindow], thickness: 2.4, bevel: 0.8, holeBevel: 0.4,
                                       bands: bands, coarse: coarse, back: .inner, reveal: .reveal)
         mesh("door.panel", slab.translated(CV3(0, 0, BW)), group: .door)
-        windowTrim(doorWindow, plane: .side(BW), name: "door.window", group: .door)
+        windowTrim(doorWindow, plane: .side(BW), name: "door.window", group: .door, doorGlass: true)
         let hx = out.doorHinge.x
         let span = (doorHole.map(\.x).max() ?? 56.5) - hx
         let handleX = hx + span * 0.85

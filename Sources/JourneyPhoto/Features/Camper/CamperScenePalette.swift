@@ -21,6 +21,8 @@ final class CamperScenePalette {
     private(set) var materials: [CamperMaterial: SCNMaterial] = [:]
     /// 殻の中（室内の組）の材質。外と同じ値に、空の光の遮り（`CamperMaterials.interiorSkyOcclusion`）を足した別の 1 つ
     private(set) var insideMaterials: [CamperMaterial: SCNMaterial] = [:]
+    /// 試験用: 殻の中の材質に入れた空の光の割合（本物の UIColor の値は模型では読めないので控える）
+    private(set) var insideOcclusion: [ObjectIdentifier: Double] = [:]
     private(set) var paint: UInt32 = 0x5B6168
     private(set) var mood: CamperMood = .day
 
@@ -38,6 +40,13 @@ final class CamperScenePalette {
         self.mood = mood
         for (m, scn) in materials { configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood)) }
         for (m, scn) in insideMaterials { configureInside(scn, m) }
+    }
+
+    /// 入口の扉の窓の明かり（2026-10-21 確かめ役: 開いて横を向いた扉の窓が灯ったまま浮いて見えた）。開けたら消す
+    func setDoorWindowLit(_ lit: Bool) {
+        guard let m = materials[.glassDoor] else { return }
+        let spec = CamperMaterials.spec(.glassDoor, paint: paint, mood: mood)
+        m.emission.intensity = CGFloat(lit ? min(1, spec.emissionIntensity) : 0)
     }
 
     /// 材質（同じ材質は 1 つ）。`inside` は外の車の殻の中（室内の組）——空の光を遮る別の 1 つ
@@ -63,6 +72,7 @@ final class CamperScenePalette {
         configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood))
         let k = CamperMaterials.interiorSkyOcclusion(mood)
         scn.ambientOcclusion.contents = UIColor(white: CGFloat(k), alpha: 1)
+        insideOcclusion[ObjectIdentifier(scn)] = k
         scn.name = Self.insideName
     }
 

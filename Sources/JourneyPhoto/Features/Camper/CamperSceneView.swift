@@ -15,6 +15,8 @@ struct CamperSceneView: UIViewRepresentable {
     let reduceMotion: Bool
     /// 動きの長さの倍率（見本の起動で「中に入る」をゆっくり撮るときだけ 1 より大きい）
     var timeScale = 1.0
+    /// いまの絵を写し取る口（中に入る時、部屋が組み上がるまでの覆いに使う）
+    var snapshot: CamperSceneSnapshot?
     var onReady: (String) -> Void = { _ in }
 
     func makeCoordinator() -> CamperScene { CamperScene() }
@@ -33,6 +35,7 @@ struct CamperSceneView: UIViewRepresentable {
             metal.wantsExtendedDynamicRangeContent = false
         }
         #endif
+        snapshot?.view = view
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
         // 炎の揺らぎ（SCNAction）は「動いている」ので、rendersContinuously が false のままでも描き直される。
@@ -60,5 +63,17 @@ struct CamperSceneView: UIViewRepresentable {
 
     static func dismantleUIView(_ view: SCNView, coordinator: CamperScene) {
         coordinator.cancel()
+    }
+}
+
+/// 車の絵を写し取る（2026-10-21 確かめ役: 「中に入る」の最後に、部屋が組み上がるまで暗い画面が 1 秒ほど出た。
+/// 寄った口の絵を部屋の画面の覆いに使い、組み上がったらなだらかに消す）
+@MainActor
+final class CamperSceneSnapshot {
+    weak var view: SCNView?
+
+    func image() -> UIImage? {
+        guard let view, view.bounds.width > 0 else { return nil }
+        return view.snapshot()
     }
 }
