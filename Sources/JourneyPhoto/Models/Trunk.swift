@@ -48,10 +48,13 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
     let foil: Bool
     /// 自分の手で貼った置き場（貼ったラベルだけ・2026-10-17 次の版）。無ければおまかせの置き場（`TrunkSlots`）
     let pos: TrunkPos?
+    /// おまかせの置き場の番号（`TrunkSlots.slots` の番号・置き場 `pos` の無い貼ったラベルだけ・2026-10-19）。
+    /// はがすときに、ずれるラベルへサーバーが同じ1回で書く（`TrunkPlacement.slotsBeforeUnstick`）。無ければ並びの何番目かで置く
+    let slot: Int?
 
     init(id: String, photoId: String, kind: Kind, place: Place, season: Season? = nil,
          timeslot: Timeslot? = nil, milestone: Milestone? = nil, seed: Int, at: String, foil: Bool = false,
-         pos: TrunkPos? = nil) {
+         pos: TrunkPos? = nil, slot: Int? = nil) {
         self.id = id
         self.photoId = photoId
         self.kind = kind
@@ -63,22 +66,29 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         self.at = at
         self.foil = foil
         self.pos = pos
+        self.slot = pos == nil ? slot : nil
     }
 
     /// 同じラベルで種だけ替えたもの（作り直しの候補を描く）
     func withSeed(_ seed: Int) -> TrunkLabel {
         TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
-                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos)
+                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos, slot: slot)
     }
 
-    /// 同じラベルで置き場だけ替えたもの（nil ならおまかせの置き場）
+    /// 同じラベルで置き場だけ替えたもの（nil ならおまかせの置き場）。**おまかせの置き場の番号は消す**（サーバーと同じ）
     func withPos(_ pos: TrunkPos?) -> TrunkLabel {
         TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
                    milestone: milestone, seed: seed, at: at, foil: foil, pos: pos)
     }
 
+    /// 置き場なしで、おまかせの置き場の番号だけ替えたもの（nil なら並びの何番目かで置く）
+    func withSlot(_ slot: Int?) -> TrunkLabel {
+        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
+                   milestone: milestone, seed: seed, at: at, foil: foil, pos: nil, slot: slot)
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case id, photoId, kind, place, season, timeslot, milestone, seed, at, foil, pos
+        case id, photoId, kind, place, season, timeslot, milestone, seed, at, foil, pos, slot
     }
     private enum PlaceKeys: String, CodingKey { case name, latin, country }
 
@@ -113,6 +123,9 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         foil = ((try? c.decodeIfPresent(Bool.self, forKey: .foil)) ?? nil) ?? false
         // 置き場は包みで読む（無い・形が違う・範囲の外ならおまかせ）
         pos = (try? c.decodeIfPresent(Lenient<TrunkPos>.self, forKey: .pos))??.value
+        // 番号は置き場の無いラベルだけ・範囲の内だけ読む（違えば並びの何番目かで置く）
+        let slotValue = LenientInt.read(c, .slot)
+        slot = pos == nil ? slotValue.flatMap { (0..<TrunkSlots.capacity).contains($0) ? $0 : nil } : nil
     }
 
     /// 配った日（日本時間の暦ではなく、`at` の頭の年月日をそのまま読む）。読めなければ nil

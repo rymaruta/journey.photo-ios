@@ -9,6 +9,8 @@ final class SlowTrunkProtocol: URLProtocol {
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var body = ""
     nonisolated(unsafe) static var puts: [(path: String, body: Data?)] = []
+    /// POST の道と本文（はがす・貼る）
+    nonisolated(unsafe) static var posts: [(path: String, body: Data?)] = []
     nonisolated(unsafe) static var delay: TimeInterval = 0.2
     /// この字を含む道だけ 500 にする
     nonisolated(unsafe) static var failPath: String?
@@ -18,6 +20,7 @@ final class SlowTrunkProtocol: URLProtocol {
         status = 200
         body = ""
         puts = []
+        posts = []
         delay = 0.2
     }
 
@@ -28,6 +31,7 @@ final class SlowTrunkProtocol: URLProtocol {
         let method = request.httpMethod ?? ""
         let path = request.url?.path ?? ""
         if method == "PUT" { Self.puts.append((path, request.httpBody ?? Self.read(request.httpBodyStream))) }
+        if method == "POST" { Self.posts.append((path, request.httpBody ?? Self.read(request.httpBodyStream))) }
         let wait = method == "GET" ? 0 : Self.delay
         let status = method == "GET" ? 200 : (Self.failPath.map { path.contains($0) } == true ? 500 : Self.status)
         DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
@@ -336,5 +340,89 @@ final class TrunkPlaceCommitterTests: XCTestCase {
         // そのまま閉じた: 送れていた1枚のよれは、閉じたあとの知らせで覚える
         places.sendLeftovers()
         XCTAssertEqual(told, [.saved], "送れていた1枚のよれを閉じたときに落とした")
+    }
+
+    /// 🔴 はがす前の1枚の取り消し（2026-10-19）: その1枚の置き場は送らず、ほかのラベルの分は残す
+    @MainActor
+    func testDiscardOneKeepsTheOthers() async throws {
+        let model = await makeModel()
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        places.note("a", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.5, y: 0.5, rot: 8))
+        places.note("b", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 0))
+        places.schedule("a", delay: 0.05)
+        places.discard("a")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertFalse(SlowTrunkProtocol.puts.contains { $0.path.contains("/labels/a/") }, "はがす1枚の置き場を送った")
+        XCTAssertNil(places.pending["a"])
+        XCTAssertNotNil(places.pending["b"], "ほかのラベルの保存待ちまで消した")
+    }
+
+    /// 🔴 サーバーの口で: 置き場なし a・b・c の真ん中 b をはがすと、**1回の POST** に、ずれる a の番号を添える
+    /// （置き直しの PUT を送らない・途中で止まって半分だけ書かれる形が無い）。送っている間、画面の並びは変わらない
+    @MainActor
+    func testUnstickSendsSlotsInOneRequest() async throws {
+        let model = await makeModel()
+        let before = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        let aSlot = TrunkPlacement.slotIndex(before.first { $0.id == "a" }!)!
+        // 応答: サーバーが番号を書いた形
+        let label = { (id: String, slot: Int?) in
+            #"{"id":"\#(id)","kind":"place","place":{"name":"京都"},"seed":1,"at":"2026-10-17T00:00:00Z"\#(slot.map { ",\"slot\":\($0)" } ?? "")}"#
+        }
+        SlowTrunkProtocol.body = #"{"pocket":[\#(label("b", nil))],"stuck":[\#(label("a", aSlot)),\#(label("c", nil))]}"#
+        let task = Task { await model.unstick("b") }
+        while !model.busy { await Task.yield() }
+        // 送っている最中: 並びは前のまま（ちらつかない）
+        XCTAssertEqual(TrunkPlacement.layout(model.state!.stuck, stage: 0), before)
+        let ok = await task.value
+        XCTAssertTrue(ok)
+        XCTAssertTrue(SlowTrunkProtocol.puts.isEmpty, "はがすのに置き直しの PUT を送った")
+        XCTAssertEqual(SlowTrunkProtocol.posts.map(\.path), ["/user/trunk/labels/b/unstick"])
+        let raw = SlowTrunkProtocol.posts.first.flatMap { try? JSONSerialization.jsonObject(with: $0.body ?? Data()) as? [String: Any] }
+        let slots = (raw?["slots"] as? [String: Any])?.compactMapValues { ($0 as? NSNumber)?.intValue }
+        XCTAssertEqual(slots, ["a": aSlot])
+        // 応答を映した後: a・c は前と同じ枠（はがした所が空く）
+        let after = TrunkPlacement.layout(model.state!.stuck, stage: 0)
+        for id in ["a", "c"] {
+            let x = before.first { $0.id == id }!, y = after.first { $0.id == id }!
+            XCTAssertEqual([x.x, x.y, x.w, x.h, x.rot], [y.x, y.y, y.w, y.h, y.rot], "\(id) がずれた")
+        }
+    }
+
+    /// 🔴 何もずれない（いちばん新しい1枚をはがす）なら本文を送らない（古いサーバーと同じ要求）
+    @MainActor
+    func testUnstickWithoutShiftSendsNoBody() async {
+        let model = await makeModel()
+        SlowTrunkProtocol.delay = 0
+        _ = await model.unstick("a")
+        XCTAssertEqual(SlowTrunkProtocol.posts.count, 1)
+        XCTAssertTrue((SlowTrunkProtocol.posts.first?.body ?? Data()).isEmpty, "ずれないのに本文を送った")
+    }
+
+    /// 🔴 はがすのに失敗したら、回した・動かした保存待ちは残る（はがせてから取り下げる・画面の決まり）。
+    /// はがせたあとに送り残しが来ても、もう貼っていない1枚は送らない
+    @MainActor
+    func testPendingPlaceSurvivesAFailedPeelAndIsDroppedAfterPeel() async throws {
+        let model = await makeModel()
+        SlowTrunkProtocol.delay = 0
+        let places = TrunkPlaceCommitter()
+        places.bind(model)
+        places.note("b", from: TrunkPos(x: 0.5, y: 0.5, rot: 0), to: TrunkPos(x: 0.2, y: 0.2, rot: 8))
+        SlowTrunkProtocol.status = 500
+        let failed = await model.unstick("b", overrides: places.overrides)
+        XCTAssertFalse(failed)
+        XCTAssertNotNil(places.pending["b"], "はがせなかったのに保存待ちを捨てた")
+        // はがせた（応答は b が手持ちに移った形）
+        SlowTrunkProtocol.status = 200
+        let one = { (id: String) in #"{"id":"\#(id)","kind":"place","place":{"name":"京都"},"seed":1,"at":"2026-10-17T00:00:00Z"}"# }
+        SlowTrunkProtocol.body = #"{"pocket":[\#(one("b"))],"stuck":[\#(one("a")),\#(one("c"))]}"#
+        let ok = await model.unstick("b", overrides: places.overrides)
+        XCTAssertTrue(ok)
+        // 取り下げ損ねた送り残し（閉じたときの送信）が来ても、PUT を送らない
+        let outcome = await places.commit("b")
+        XCTAssertEqual(outcome, .refused)
+        XCTAssertNil(model.actionError, "はがした1枚の置き場を送って断りの一言を出した")
+        XCTAssertTrue(SlowTrunkProtocol.puts.isEmpty, "はがした1枚の置き場を送った")
+        XCTAssertNil(places.pending["b"])
     }
 }

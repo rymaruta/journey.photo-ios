@@ -308,8 +308,8 @@ struct TheirTrunkView: View {
                                                                  tags: TrunkLooks.tags(stuck: trunk.stuck, posts: trunk.agingPosts).count,
                                                                  equipped: trunk.equipped))
                 .accessibilityAddTraits(.isImage)
-            ForEach(Array(placed.indices), id: \.self) { i in
-                let p = placed[i]
+            // ラベルの id で見分ける（押せる所と読み上げが、読み直しで別のラベルに入れ替わらない・`TrunkSlots.Placed.id`）
+            ForEach(placed) { p in
                 let f = TheirTrunkText.hitFrame(p, scale: k)
                 let on = p.label.id == selectedId
                 Button { select(p.label.id) } label: {
