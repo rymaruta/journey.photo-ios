@@ -2389,6 +2389,80 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **とおまわり号の灯り**（2026-10-19 owner「テールランプとかの灯りが不自然すぎる」）: 夜の後ろ斜め（尾灯が見える・
+    /// 分類「横・後ろ」の寄り）と、夜の前の寄り（分類「前照灯」の寄り）、昼の後ろ斜め。**必ず撮る**（開けなければ落とす）
+    func testCapturesCamperLamps() {
+        let app = launchTrunk([])
+        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        // 分類のボタンを押すと、その部品へ寄る（`CamperFraming.focus`）。下の欄を送ってから押すので、寄りは押した後に決まる
+        // 分類の行は横に並び、画面の外に隠れる（Mac run 563: 前照灯が右の外にあり押せなかった）。縦に送ってから、
+        // 行のうち見えているボタンの上で左へ少しずつ引いて探す
+        func aim(_ ids: [String]) -> Bool {
+            for id in ids {
+                let b = app.buttons[id].firstMatch
+                guard b.waitForExistence(timeout: 5) else { return false }
+                scrollTo(b, in: app)
+                var drags = 0
+                while !b.isHittable, drags < 8 {
+                    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'camper.category.'"))
+                    guard let visible = (0..<row.count).map({ row.element(boundBy: $0) }).first(where: { $0.isHittable }) else { break }
+                    let start = visible.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                    start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
+                    Thread.sleep(forTimeInterval: 1)
+                    drags += 1
+                }
+                guard b.isHittable else { return false }
+                b.tap()
+            }
+            Thread.sleep(forTimeInterval: 2)
+            return true
+        }
+        let night = app.buttons["camper.mood.night"].firstMatch
+        guard night.waitForExistence(timeout: 5) else { return XCTFail("夜のボタンが無い") }
+        night.tap()
+        waitCamper(app, "night")
+        guard aim(["camper.group.side"]) else { return XCTFail("横・後ろの分類が押せない") }
+        shoot(app, "95k-キャンピングカー（夜・後ろ斜め・尾灯）")
+        guard aim(["camper.group.ext", "camper.category.headlight"]) else { return XCTFail("前照灯の分類が押せない") }
+        shoot(app, "95l-キャンピングカー（夜・前の寄り）")
+        // 下の欄を上へ戻す（車の絵の上で引くと向きが回るので、画面の下の方で引く）
+        let day = app.buttons["camper.mood.day"].firstMatch
+        var pulls = 0
+        while !(day.exists && day.isHittable), pulls < 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            Thread.sleep(forTimeInterval: 1)
+            pulls += 1
+        }
+        guard day.isHittable else { return XCTFail("昼のボタンに戻れない") }
+        day.tap()
+        waitCamper(app, "day")
+        guard aim(["camper.group.side"]) else { return XCTFail("横・後ろの分類が押せない（昼）") }
+        shoot(app, "95m-キャンピングカー（昼・後ろ斜め・尾灯）")
+        // バン（段 1）とトレーラーつきの夜（2026-10-21: 前照灯を消したので、外の置き物が無いと車体が沈まないかを見る）。
+        // 段のボタンは見本の段で、押すと初めの向きへ戻る
+        pulls = 0
+        while !(night.exists && night.isHittable), pulls < 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            Thread.sleep(forTimeInterval: 1)
+            pulls += 1
+        }
+        guard night.isHittable else { return XCTFail("夜のボタンに戻れない") }
+        night.tap()
+        waitCamper(app, "night")
+        for (id, name) in [("van", "95n-キャンピングカー（バン・夜）"), ("trailer", "95o-キャンピングカー（トレーラーつき・夜）")] {
+            let b = app.buttons["camper.stage.\(id)"].firstMatch
+            guard b.waitForExistence(timeout: 5) else { return XCTFail("\(id) の段のボタンが無い") }
+            scrollTo(b, in: app)
+            guard b.isHittable else { return XCTFail("\(id) の段のボタンが押せない") }
+            b.tap()
+            guard waitCamper(app, "camper-ready \(id) night") else { return XCTFail("\(id) の夜を組み終えない") }
+            shoot(app, name)
+        }
+    }
+
     /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札
     /// （硬貨の枚数・貼っていないラベルの真鍮の点）と、設定の「旅のトランク」の行。見本（`-JPPreviewTrunk`）で撮る。
     /// **見本では入口が必ず出るので、出なければ落とす**（commit 66d7f872 の方針）。44pt 未満・読み上げに硬貨が無いときも落とす

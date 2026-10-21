@@ -58,8 +58,7 @@ enum CamperTextures {
         case .brushed: return brushed()
         case .glow: return glow()
         case .lampFace: return lampFace()
-        case .tailFace: return tailFace()
-        case .beam: return beam()
+        case .prism: return prism()
         case .flame: return flame()
         case .roomGlow: return roomGlow()
         case .planks, .chevron, .herringbone, .checkerTiles, .cork, .boards, .birchPly, .darkBoards, .wallpaperStripe,
@@ -210,36 +209,25 @@ enum CamperTextures {
         return b
     }
 
-    /// 尾灯のプリズムの筋（32×64・白〜灰）。縦の筋 6 本と、上下の縁へ暗く
-    static func tailFace() -> CamperBitmap {
+    /// 尾灯・方向指示のレンズの裏のプリズムの粒（32×64・白〜灰。8 画素の升に四角い角錐: 上の面が明るく下が暗い・
+    /// 升の境に細い溝）。表の色に掛ける貼り絵で、光らないレンズにも粒の明暗が出る（2026-10-19）
+    static func prism() -> CamperBitmap {
         var b = CamperBitmap(width: 32, height: 64)
         for y in 0..<b.height {
             for x in 0..<b.width {
-                let u = Double(x) / Double(b.width - 1), v = Double(y) / Double(b.height - 1)
-                let rib = 0.72 + 0.28 * abs(sin(u * .pi * 6))
-                let ends = 1 - pow(abs(v - 0.5) * 2, 3) * 0.55
-                let sides = 1 - pow(abs(u - 0.5) * 2, 4) * 0.4
-                let c = rib * ends * sides
-                b.set(x, y, (c, c, c))
-            }
-        }
-        return b
-    }
-
-    /// 前照灯の光の帯（64×64・白〜黒）。u が前（0 が車の側）、v が横。前へ行くほど横に広がり、弱く消える
-    /// （板 pools の beam: 幅 ±40 から ±110 へ・#fff1cf 0.55 → 0）。
-    /// 2026-10-20: 硬い台形に見えたので横・縦ともさらになだらかに（芯も抑える）
-    static func beam() -> CamperBitmap {
-        var b = CamperBitmap(width: 64, height: 64)
-        for y in 0..<b.height {
-            for x in 0..<b.width {
-                let u = Double(x) / Double(b.width - 1)
-                let v = (Double(y) - 31.5) / 31.5
-                let half = (48 + 75 * u) / 110
-                let lateral = exp(-pow(v / max(0.1, half), 2) * 1.05)
-                let along = pow(1 - u, 1.15) * min(1, u * 5) * 0.85
-                let c = max(0, lateral * along)
-                b.set(x, y, (c, c, c))
+                let fx = Double(x % 8) / 7, fy = Double(y % 8) / 7
+                let d = min(fx, 1 - fx, fy, 1 - fy)
+                let face: Double
+                if d < 0.07 {
+                    face = 0.5
+                } else if fy <= min(fx, 1 - fx) {
+                    face = 1.0
+                } else if 1 - fy <= min(fx, 1 - fx) {
+                    face = 0.6
+                } else {
+                    face = fx < 0.5 ? 0.86 : 0.7
+                }
+                b.set(x, y, (face, face, face))
             }
         }
         return b

@@ -108,7 +108,7 @@ struct CamperLightSpec: Sendable, Equatable {
     enum Kind: Sendable { case omni, spot }
     var name: String
     var kind: Kind
-    /// 用途（天井・前照灯・焚き火・ランタン・部屋の家具）。尾灯はここに置かない
+    /// 用途（天井・入口・焚き火・ランタン・部屋の家具）。停めた車なので前照灯・尾灯の光は置かない（2026-10-19）
     var pattern: CamperLightPattern
     var position: CV3
     /// spot の向き（板の単位の向き）
@@ -374,6 +374,15 @@ struct CamperBuilder {
 
     /// 扉の口（板 CamperSpec の扉 x33.5〜56.5・y−46.5〜30.5。バンは窓の小さい扉を x−10〜16 に）
     var doorHole: [CV2] { van ? rr(-10, -50, 26, 80, 2) : rr(33.5, -46.5, 23, 77, 2) }
+    /// 入口の灯りの上限（2026-10-19 Mac run 563 の 95b で車体が白く飛んだ値の手前）: 強さ・届く距離・円錐（外の角）と、
+    /// 縁のぼかし（外の角と内の角の差）の下限
+    static let porchLimits = (intensity: 120.0, range: 130.0, spotOuter: 90.0, penumbra: 40.0)
+
+    /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
+    /// バンはスライドドアの口の上（口の上の端 Y 112・窓の後ろの端 x −16 より前）。2026-10-21: バンは前照灯が消え、
+    /// 外の置き物が無いと夜に車体が影絵のように沈むので、実車にもある扉の上の小さな灯りを付ける
+    var porchX: Double { van ? 3 : 45 }
+    var porchY: Double { van ? 115.5 : 113.5 }
     var doorWindow: [CV2] { van ? rr(-6, -48, 14, 14, 3) : rr(37, -42, 14, 15, 3) }
 
     /// 運転席の扉の口: 外形を 4 内へ寄せた形を、扉の前後と床の高さで切る（板の継ぎ目は外形からはみ出す所がある）
@@ -538,6 +547,7 @@ struct CamperBuilder {
         // (u, y, w) → (X = x0 - w, Y = y, Z = u)。w=0 が外の面（-X を向く）。
         // この写しの行列式は +1（向きを保つ）なので mirror しない。mirror: true だと巻きだけが逆になり、
         // 外から内張りの面が見えて室内灯で後部が真っ白に飛んだ（2026-10-20 owner・実機）
+        // 2026-10-19 にこちらの枝（Mac run 565 の 95k）でも同じ直し。試験 testMeshWindingMatchesNormals
         let placed = slab.mapped({ CV3(x0 - $0.z, $0.y, $0.x) }, normal: { CV3(-$0.z, $0.y, $0.x) })
         mesh("body.rearWall", placed)
         windowTrim(window, plane: .rear(x0), name: "rear.window")
@@ -790,6 +800,11 @@ struct CamperBuilder {
 
     mutating func exterior() {
         let nearZ = BW
+        // 入口の灯り（扉の上の壁の灯り。メッキの台・乳白の覆い。夜は覆いが光り、下へ spot を落とす・`nightLightsBody`）。
+        // バンはスライドドアの上に、同じ形を少し小さく（2026-10-21）
+        let pk = van ? 0.8 : 1.0
+        rbox("ext.porchLampBase", CV3(porchX, porchY, BW + 0.4), CV3(11 * pk, 5.4 * pk, 0.8), 0.4, .chrome)
+        rbox("ext.porchLamp", CV3(porchX, porchY - 0.3, BW + 1.6), CV3(9 * pk, 4 * pk, 1.8), 0.8, .byNight(.tint(0xEDE6D6)))
         if !van {
             // ステップ（溝 5）
             rbox("ext.step", B(45, 39, BW + 5), CV3(22, 2.2, 10), 0.8, .alu)
@@ -798,6 +813,9 @@ struct CamperBuilder {
             }
             rod("ext.stepBracket", CV3(36, 22, BW), CV3(36, 23, BW + 9), 0.6, .black)
             rod("ext.stepBracket", CV3(54, 22, BW), CV3(54, 23, BW + 9), 0.6, .black)
+            // 足元の灯り（ステップの踏み板の縁の細い灯り・夜は 2700K でほのかに光る）と、入口の灯り（扉の上の壁の灯り。
+            // メッキの台・乳白の覆い。夜は覆いが光り、下へ spot を落とす・`nightLightsBody`）。2026-10-19
+            rbox("ext.stepLamp", CV3(45, 62 - 39, BW + 10.1), CV3(12, 0.8, 0.4), 0.15, .byNight(.tint(0xE9E3D6)))
             // つかみ棒と留め具
             lathe("ext.grab", B(60, 0, BW + 3.5), axis: CV3(0, 1, 0), [(1, 0), (1, 24)], segments: 10, capStart: .chrome,
                   capEnd: .chrome) { _ in .chrome }
@@ -815,8 +833,11 @@ struct CamperBuilder {
         // ミラー（両側・分類の部品）・方向指示（前後の横）
         mirrors()
         for s in [1.0, -1.0] {
-            rbox("ext.markerFront", B(116, 22, s * (BW - 1)), CV3(3, 3, 3), 0.6, .amber)
-            rbox("ext.markerRear", B(rear + 1, 24, s * (BW - 1)), CV3(3, 3, 3), 0.6, .amber)
+            // 横の車幅灯（メッキの台に橙のレンズ・2026-10-19 実車の形に）
+            for (name, x, y) in [("ext.markerFront", 116.0, 22.0), ("ext.markerRear", rear + 2, 24)] {
+                rbox(name + "Base", B(x, y, s * (BW + 0.3)), CV3(4.4, 3.4, 0.8), 0.3, .chrome)
+                rbox(name, B(x, y, s * (BW + 1.1)), CV3(3.6, 2.6, 1.0), 0.4, .amber)
+            }
         }
         // 屋根のつなぎ目（13 単位ごと・浅い溝の細い棒）
         let zr = BW - wall
@@ -835,39 +856,30 @@ struct CamperBuilder {
         lathe("front.emblem", B(FX + 2.2, 15.5, 0), axis: CV3(1, 0, 0), [(2.6, 0), (2.6, 0.6), (0.01, 0.9)], segments: 16,
               capStart: .brass) { _ in .brass }
         let lc = CamperCategory.headlight
+        // 2026-10-19 作り直し（owner「テールランプとかの灯りが不自然すぎる」）: 灯りは実車の作り——縁の枠・奥のメッキの
+        // 反射板（凹んだお椀）・電球・表の厚みのある硝子。前照灯の硝子は透明で、中の反射板と電球が透けて見える
         for s in [-1.0, 1.0] {
             switch config.loadout.key(.headlight) {
             case "twin_round":
                 for dz in [-5.2, 5.2] {
-                    let c = B(FX - 0.5, 14, s * 37 + dz)
-                    lathe("light.bezel", c, axis: CV3(1, 0, 0), [(4.2, 0), (4.4, 1.2), (3.6, 2)], segments: 18, capStart: .chrome,
-                          category: lc) { _ in .chrome }
-                    lensLathe("light.lens", c + CV3(1.4, 0, 0), axis: CV3(1, 0, 0), [(3.6, 0), (2.8, 0.9), (0.01, 1.4)], segments: 18,
-                              category: lc, material: .lens)
+                    roundLamp(B(FX - 0.5, 14, s * 37 + dz), r: 4.2, bezel: .chrome, lens: .lens, bezelName: "light.bezel",
+                              lensName: "light.lens", category: lc)
                 }
             case "square":
-                rbox("light.bezel", B(FX, 14, s * 37), CV3(2.4, 10, 14), 1.4, .chrome, category: lc)
-                rbox("light.lens", B(FX + 1.3, 14, s * 37), CV3(0.8, 8, 11.2), 0.3, .lens, category: lc)
-                rbox("light.reflector", B(FX + 0.9, 14, s * 37), CV3(0.4, 6, 9), 0.2, .chromeDark, category: lc)
+                squareLamp(FX, z: s * 37, category: lc)
             default:
-                lathe("light.bezel", B(FX - 1, 14, s * 37), axis: CV3(1, 0, 0), [(6.4, 0), (6.6, 1.2), (5.6, 2)], segments: 20,
-                      capStart: .chrome, category: lc) { _ in .chrome }
-                // 反射板の輪 2（レンズの奥）とレンズ（厚みのある凸）
-                for r in [2.2, 4.2] {
-                    add("light.reflectorRing", .torus(ring: r, pipe: 0.18), .chromeDark, at: B(FX + 0.8, 14, s * 37),
-                        CQuat.yTo(CV3(1, 0, 0)), category: lc)
-                }
-                lensLathe("light.lens", B(FX + 0.6, 14, s * 37), axis: CV3(1, 0, 0), [(5.6, 0), (4.4, 1.2), (0.01, 1.8)], segments: 20,
-                          category: lc, material: .lens)
+                roundLamp(B(FX - 0.5, 14, s * 37), r: 6.4, bezel: .chrome, lens: .lens, bezelName: "light.bezel",
+                          lensName: "light.lens", category: lc)
             }
             if config.loadout.key(.headlight) == "rally_brass" {
-                lathe("light.rally", B(FX + 5, 26, s * 18), axis: CV3(1, 0, 0), [(4.2, 0), (4.6, 1.6), (3.8, 2.4)], segments: 18,
-                      capStart: .brass, category: lc) { _ in .brass }
-                lensLathe("light.rallyLens", B(FX + 6.8, 26, s * 18), axis: CV3(1, 0, 0), [(3.8, 0), (2.6, 0.9), (0.01, 1.3)],
-                          segments: 18, category: lc, material: .lensAmber)
+                roundLamp(B(FX + 4.6, 26, s * 18), r: 4.2, bezel: .brass, lens: .lensAmber, bezelName: "light.rally",
+                          lensName: "light.rallyLens", category: lc)
                 rod("light.rallyStem", B(FX + 4, 29.5, s * 18), B(FX + 4, 31, s * 18), 0.6, .black, category: lc)
             }
-            rbox("front.indicator", B(FX + 0.4, 23, s * 37), CV3(2, 3, 9), 0.8, .amber)
+            // 方向指示（メッキの縁・奥の反射板・橙のプリズムのレンズ）
+            rbox("front.indicatorBezel", B(FX + 0.5, 23, s * 37), CV3(1.2, 3.8, 9.8), 0.5, .chrome)
+            rbox("front.indicatorReflector", B(FX + 1.15, 23, s * 37), CV3(0.2, 3, 9), 0.1, .reflector)
+            rbox("front.indicator", B(FX + 1.7, 23, s * 37), CV3(1.2, 3.0, 9.0), 0.5, .amber)
         }
         frontBumper(FX)
         plate(at: B(FX + 6.6, 32, 0), facing: CV3(1, 0, 0), name: "front.plate")
@@ -876,6 +888,64 @@ struct CamperBuilder {
             rod("front.wiper", a, b, 0.5, .black)
             rod("front.wiperArm", a, a + CV3(-2, 2, 0), 0.6, .black)
         }
+    }
+
+    /// 丸い灯り 1 つ（2026-10-19）。`o` は車体の面（後ろの縁）、軸は +X、`r` は縁の外の半径。
+    /// 縁（メッキの輪）→ 奥のお椀の反射板（内向きの面・磨いたメッキ）→ 根元の黒い穴と電球・電球の前の小さな笠 →
+    /// 表の厚みのある凸の硝子。硝子は透けるので、昼も夜も中の反射板が見える（白い平らな円盤にしない）
+    mutating func roundLamp(_ o: CV3, r: Double, bezel: CamperMaterial, lens: CamperMaterial, bezelName: String,
+                            lensName: String, category: CamperCategory?) {
+        let x = CV3(1, 0, 0)
+        lathe(bezelName, o, axis: x, [(0.95 * r, 0), (r, 0.12 * r), (1.02 * r, 0.34 * r), (0.9 * r, 0.46 * r)], segments: 20,
+              capStart: bezel, category: category) { _ in bezel }
+        // 反射板は外向きの旋盤を裏返した凹み（覗くと内側の面が見える）。縁は枠の口（0.9r）に合わせる
+        let bowl = CamperMeshKit.lathe([CV2(0.13 * r, 0), CV2(0.36 * r, 0.07 * r), CV2(0.56 * r, 0.17 * r),
+                                        CV2(0.74 * r, 0.28 * r), CV2(0.9 * r, 0.4 * r)],
+                                       segments: 20, material: { _ in .reflector }).flipped()
+        add("light.reflector", .mesh(bowl), .reflector, at: o + x * (0.06 * r), CQuat.yTo(x), category: category)
+        add("light.socket", .cylinder(radius: 0.15 * r, height: 0.04 * r, segments: 12), .black, at: o + x * (0.07 * r),
+            CQuat.yTo(x), category: category)
+        add("light.headBulb", .sphere(radius: 0.11 * r), .bulbOff, at: o + x * (0.2 * r), category: category)
+        add("light.bulbShield", .cylinder(radius: 0.12 * r, height: 0.03 * r, segments: 12), .chrome, at: o + x * (0.34 * r),
+            CQuat.yTo(x), category: category)
+        lensLathe(lensName, o + x * (0.46 * r), axis: x, [(0.9 * r, 0), (0.72 * r, 0.13 * r), (0.01, 0.2 * r)], segments: 20,
+                  category: category, material: lens)
+    }
+
+    /// 角形の前照灯（2026-10-19）: 黒い台・奥の反射板・電球と笠・メッキの枠 4 本・表の透明の硝子（厚み 0.8）
+    mutating func squareLamp(_ FX: Double, z: Double, category: CamperCategory?) {
+        rbox("light.housing", B(FX + 0.2, 14, z), CV3(1.2, 10, 14), 0.4, .black, category: category)
+        rbox("light.reflector", B(FX + 1.0, 14, z), CV3(0.3, 8, 12), 0.1, .reflector, category: category)
+        add("light.headBulb", .sphere(radius: 0.8), .bulbOff, at: B(FX + 1.8, 14, z), category: category)
+        add("light.bulbShield", .cylinder(radius: 0.9, height: 0.2, segments: 12), .chrome, at: B(FX + 2.5, 14, z),
+            CQuat.yTo(CV3(1, 0, 0)), category: category)
+        for dy in [-4.5, 4.5] {
+            rbox("light.bezel", B(FX + 2.0, 14 + dy, z), CV3(2.8, 1.0, 14), 0.4, .chrome, category: category)
+        }
+        for dz in [-6.5, 6.5] {
+            rbox("light.bezel", B(FX + 2.0, 14, z + dz), CV3(2.8, 10, 1.0), 0.4, .chrome, category: category)
+        }
+        rbox("light.lens", B(FX + 3.0, 14, z), CV3(0.8, 8, 12), 0.3, .lens, category: category)
+    }
+
+    /// 尾灯の組（2026-10-19）: 縦長の一体の灯り。上から赤（尾灯・制動灯）・橙（方向指示）・透明（後退灯）。
+    /// 黒いゴムの台・奥の反射板・メッキの枠と仕切り・厚み 1.4 のレンズ（赤と橙は裏のプリズムの粒）
+    mutating func tailLamp(_ BX: Double, z: Double) {
+        // 2026-10-19（Mac run 565 の 95m: 小さくてほとんど見えない）: キャブコンの尾灯は後ろの角の縦長で目立つ大きさ。
+        // 車幅 100 ≒ 2.1 m なので 1 単位 ≒ 2.1 cm。レンズ 9 × 23（≒ 19 × 48 cm）を、角の寄り・バンパーのすぐ上に
+        let w = 9.0, top = -1.0, red = 12.0, amber = 6.4, clear = 4.0, gap = 0.3
+        let bottom = top + red + amber + clear + gap * 2
+        let mid = (top + bottom) / 2, h = bottom - top
+        rbox("rear.lampGasket", B(BX - 0.5, mid, z), CV3(1.0, h + 2, w + 1.6), 0.3, .black)
+        rbox("rear.lampReflector", B(BX - 1.2, mid, z), CV3(0.4, h, w), 0.1, .reflector)
+        for y in [top - 0.5, bottom + 0.5] { rbox("rear.lampFrame", B(BX - 1.9, y, z), CV3(1.8, 1.0, w + 1.6), 0.3, .chrome) }
+        for dz in [-(w / 2 + 0.4), w / 2 + 0.4] { rbox("rear.lampFrame", B(BX - 1.9, mid, z + dz), CV3(1.8, h + 2, 0.8), 0.3, .chrome) }
+        let y1 = top + red, y2 = y1 + gap + amber
+        for y in [y1 + gap / 2, y2 + gap / 2] { rbox("rear.lampDivider", B(BX - 1.8, y, z), CV3(1.6, gap, w), 0.1, .chrome) }
+        rbox("rear.taillight", B(BX - 2.0, top + red / 2, z), CV3(1.4, red, w), 0.5, .red)
+        rbox("rear.turnLens", B(BX - 2.0, y1 + gap + amber / 2, z), CV3(1.4, amber, w), 0.5, .amber)
+        rbox("rear.reverseLens", B(BX - 2.0, y2 + gap + clear / 2, z), CV3(1.4, clear, w), 0.5, .lens)
+        add("rear.reverseBulb", .sphere(radius: 1.1), .bulbOff, at: B(BX - 1.5, y2 + gap + clear / 2, z))
     }
 
     /// ナンバー（板 24×6・厚み 0.8 に、立体の文字）
@@ -894,8 +964,7 @@ struct CamperBuilder {
         let BX = rear
         rbox("rear.bumper", B(BX - 2.6, 33, 0), CV3(6, 6, BW * 2), 2.4, .black)
         for s in [-1.0, 1.0] {
-            rbox("rear.taillight", B(BX - 0.6, 14, s * (BW - 6)), CV3(2.2, 16, 7), 1.2, .red)
-            rbox("rear.taillightRib", B(BX - 1.8, 14, s * (BW - 6)), CV3(0.4, 12, 0.6), 0.1, .chrome)
+            tailLamp(BX, z: s * (BW - 6.5))
         }
         plate(at: B(BX - 5.5, 31.5, 0), facing: CV3(-1, 0, 0), name: "rear.plate")
         // 排気管の先
@@ -1379,17 +1448,25 @@ struct CamperBuilder {
         // 扉の前の溜まりは口の幅ほど（run 532: 大きく明るすぎて口のまわりが白く飛んだ）
         add("glow.door", .mesh(glowQuad(width: 40, depth: 56)), .glowPool,
             at: CV3(((dx.min() ?? 33.5) + (dx.max() ?? 56.5)) / 2, 0.5, BW + 26), group: .doorGlow)
-        // 前照灯は白に近い（板 #fff1cf）。円錐は広げて芯を弱く、地面の帯は足す光で柔らかく
-        // （2026-10-20 owner: 硬い白い円錐に見えた → 強さ 900→520・外角 48→62）
-        for s in [-1.0, 1.0] {
-            out.lights.append(CamperLightSpec(name: "headlight", kind: .spot, pattern: .beam, position: B(front + 3, 14, s * 37),
-                                              direction: CV3(1, -0.12, 0), color: 0xFFF4E5, intensity: 520, range: 200,
-                                              spotInner: 18, spotOuter: 62))
+        // 2026-10-19 判断（owner「テールランプとかの灯りが不自然すぎる」）: 停めている車の前照灯・尾灯・制動灯・方向指示・
+        // 車幅灯は**消す**（前は前照灯の spot と地面の光の帯、尾灯の omni と赤い溜まりがあった）。キャンプ場に停めて人が
+        // 中にいる場面で、走る時の灯りが点いているのがいちばん不自然。ごく暗い車幅灯も点けない（日本の実車でも停めて
+        // 過ごす時は消す・灯りの数を増やさない）。点くのは停めていても点くもの——室内灯・窓・入口の灯り・足元の灯りだけ。
+        do {
+            // 入口の灯り（扉の上の壁の灯り・バンはスライドドアの上）: 光る面だけでなく、下向きの spot（減衰あり・影なし）で扉の周りと足元を
+            // ほんのり照らす。色は室内と同じ 2700K。外の部品だけを照らす組（灯りの数は 1 つ）
+            // 2026-10-19（Mac run 563 の 95b）: 420・距離 150・円錐 115° では車体の横に大きな白い円錐が当たり、塗装が白く
+            // 飛んだ。実物の入口灯は扉の周りと足元がほんのり明るくなる程度——強さを 1/5 に、円錐を狭く、内と外の角の差
+            // （ぼかし）を大きくし、壁から少し離して真下寄りに向ける（壁には浅い角度でしか当たらない）。
+            // 上限は `CamperBuilder.porchLimits`（試験で守る）
+            out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 7),
+                                              direction: CV3(0, -1, 0.25).normalized, color: warm, intensity: 85, range: 125,
+                                              spotInner: 20, spotOuter: 80))
         }
-        add("glow.beam", .mesh(glowQuad(width: 240, depth: 240, material: .beamPool)), .beamPool,
-            at: CV3(front + 4 + 120, 0.45, 0), group: .glow)
-        // 尾灯は CamperLightPattern に載せない（`.markerRed` の溜まり絵＋レンズ emission だけ）
-        add("glow.tail", .mesh(glowQuad(width: 30, depth: 46, material: .redPool)), .redPool, at: CV3(rear - 24, 0.45, 0), group: .glow)
+        if !van {
+            // 足元の灯り（ステップの下）は灯りを足さず、地面の小さな溜まり（足す光）だけ。入口の灯りの光と重なる
+            add("glow.step", .mesh(glowQuad(width: 30, depth: 22)), .glowPool, at: CV3(45, 0.5, BW + 12), group: .glow)
+        }
     }
 }
 

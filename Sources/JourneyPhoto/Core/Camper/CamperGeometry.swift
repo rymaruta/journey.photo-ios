@@ -545,6 +545,9 @@ struct CamperMesh: Sendable {
 
     func translated(_ t: CV3) -> CamperMesh { mapped({ $0 + t }, normal: { $0 }) }
 
+    /// 表と裏を返す（向きと巻きを逆に）。旋盤の形は外向きなので、内側を見せるお椀（灯りの反射板）に使う
+    func flipped() -> CamperMesh { mapped({ $0 }, normal: { $0 * -1 }, mirror: true) }
+
     /// 向こう側（-Z）へ鏡に映す
     func mirroredZ() -> CamperMesh {
         mapped({ CV3($0.x, $0.y, -$0.z) }, normal: { CV3($0.x, $0.y, -$0.z) }, mirror: true)
