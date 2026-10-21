@@ -71,9 +71,19 @@ struct CamperSceneView: UIViewRepresentable {
 @MainActor
 final class CamperSceneSnapshot {
     weak var view: SCNView?
+    /// 最後に写した絵（部屋の画面が開いた時に読む。画面の状態を通さず、同じ入れ物を渡す——Mac run 642 で、
+    /// 夜の 1 回目は状態を通した絵が部屋の画面に届かず、暗い画面が出た）
+    private(set) var last: UIImage?
 
-    func image() -> UIImage? {
-        guard let view, view.bounds.width > 0 else { return nil }
-        return view.snapshot()
+    @discardableResult
+    func capture() -> UIImage? {
+        guard let view, view.bounds.width > 0 else {
+            last = nil
+            return nil
+        }
+        last = view.snapshot()
+        return last
     }
+
+    func clear() { last = nil }
 }

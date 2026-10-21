@@ -498,6 +498,11 @@ final class CamperScene {
         doorGlowNode = doorGlow
         blueprint = bp
         setMood(config.mood)
+        // 組み上がった後の絵を必ず描き直させる（2026-10-21 Mac run 627・633・642 の 95: 昼の初めの絵が、組む前の灰色の
+        // むらのまま残る回があった）。カメラの置き場所を入れ直すと、止まっている SCNView も次のコマを描く
+        let p = cameraNode.position
+        cameraNode.position = SCNVector3(p.x, p.y, p.z + 0.0001)
+        cameraNode.position = p
     }
 
     // MARK: 向き・扉

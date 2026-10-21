@@ -20,7 +20,8 @@ struct CamperRoomView: View {
     let paint: UInt32
     let initialMood: CamperMood
     /// 外から入った時の、寄った口の絵（部屋が組み上がるまで覆い、組み上がったらなだらかに消す・2026-10-21）
-    var entryImage: UIImage? = nil
+    var entry: CamperSceneSnapshot? = nil
+    @State private var entryImage: UIImage?
     @State private var entryCovered = true
 
     enum Mode: String { case home, edit, style, photos }
@@ -203,6 +204,7 @@ struct CamperRoomView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
+        entryImage = entry?.last
         mood = initialMood == .night ? .night : .day
         recount()
         openRoom()

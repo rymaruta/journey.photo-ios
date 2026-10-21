@@ -172,7 +172,6 @@ struct CamperGarageView: View {
     @State private var insideRoom = false
     /// 中に入る直前の口の絵（部屋が組み上がるまでの覆い）
     @State private var snapshot = CamperSceneSnapshot()
-    @State private var entryImage: UIImage?
 
     /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）。
     /// 2026-10-21: 扉が開き切る少し前から口の真正面へ寄り（`CamperFraming.enter`）、灯った部屋が画面に広がってから
@@ -187,7 +186,7 @@ struct CamperGarageView: View {
                 try? await Task.sleep(nanoseconds: UInt64(0.6 * slow * 1_000_000_000))
             }
             // 寄った口の絵を写し、部屋が組み上がるまでの覆いにする（暗い画面を出さない）
-            entryImage = snapshot.image()
+            snapshot.capture()
             insideRoom = true
         }
     }
@@ -211,18 +210,24 @@ struct CamperGarageView: View {
         .accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 45) }
         .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -45) }
         .accessibilityIdentifier("camper.scene")
+        // 組み上がるまでは画面の地と同じ黒で覆う（描く前の灰色のざらざらを見せない・友達の車の画面と同じ・2026-10-21）
+        .overlay {
+            if !readyMarker.hasPrefix("camper-ready") {
+                Color.black.allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
         // 夜は場面に空と地面がある（2026-10-21）ので、上下の端を画面の地へなだらかに溶かす（四角い板の縁を出さない）
         .overlay { if mood == .night { CamperStageEdges(color: CamperStyle.color(CamperMaterials.backdrop(.night))) } }
         .overlay(alignment: .bottomTrailing) { sceneButtons }
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
             CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, photosLoaded: photosLoaded, stage: actualStage, stats: stats,
-                           paint: config.loadout.paint, initialMood: mood, entryImage: entryImage)
+                           paint: config.loadout.paint, initialMood: mood, entry: snapshot)
         }
         // 部屋から戻ったら、口の真正面の寄りから扉の口を斜めに見る向きへ戻す（確かめ役 2026-10-21: 口に寄ったままだった）
         .onChange(of: insideRoom) { _, inside in
             guard !inside else { return }
-            entryImage = nil
+            snapshot.clear()
             if doorOpen { aim(CamperFraming.door(stage)) }
         }
         .overlay(alignment: .top) {

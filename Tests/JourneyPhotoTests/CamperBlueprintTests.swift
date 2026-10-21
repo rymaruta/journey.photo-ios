@@ -951,6 +951,23 @@ extension CamperBlueprintTests {
         XCTAssertLessThanOrEqual(CamperMaterials.spec(.curtain, paint: 0, mood: .night).emissionIntensity, lim.curtain)
     }
 
+    /// 外の火（焚き火・ランタン）の光は車体の横の面まで届かない（確かめ役 2026-10-21・Mac run 642: 塗装に照り返しの
+    /// 橙の点）。減衰の終わり（SceneKit の単位の前の板の単位）が、光の元から車体の横の面までの距離より短い
+    func testOutdoorFireStopsBeforeTheBody() {
+        for key in ["brass_lantern", "string_lights", "paper_lantern", "oil_lamp"] {
+            var l = CamperLoadout.standard
+            l.picks[CamperCategory.outdoorLight.rawValue] = key
+            for stage in CamperStage.allCases {
+                let bw = CamperBuilder(config: CamperConfig(stage: stage)).BW
+                for light in build(stage, mood: .night, loadout: l).lights where light.name == "campfire" || light.name == "lantern" {
+                    let end = Double(light.pattern.attenuation(range: light.range, unit: 1).end)
+                    XCTAssertLessThan(end, abs(light.position.z) - bw, "\(stage) \(key) \(light.name): 車体の横の面まで届く")
+                    XCTAssertGreaterThan(end, 40, "\(stage) \(light.name): 足元の溜まりも照らさない")
+                }
+            }
+        }
+    }
+
     /// 入口の灯りの円錐は車体の壁にほとんど当たらない（95b・95n の縦長の光の筋）: 灯りの下の壁（地面から 30 より上）は、
     /// どの高さでも円錐の外
     func testPorchConeMissesTheWall() {
