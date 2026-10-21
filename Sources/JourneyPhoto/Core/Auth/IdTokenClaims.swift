@@ -19,6 +19,13 @@ enum IdTokenClaims {
         return sub
     }
 
+    /// `custom:apple_sub`（Apple でサインインとつながった人だけが持つ・2026-10-21）。読めなければ nil。
+    /// **退会のときに Apple の取り消しを出すか**だけに使う（`AppleSignInRevoke`）——判断はサーバーもする
+    static func appleSubject(fromJWT token: String) -> String? {
+        guard let sub = payload(of: token)?["custom:apple_sub"] as? String, !sub.isEmpty else { return nil }
+        return sub
+    }
+
     private static func payload(of token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }

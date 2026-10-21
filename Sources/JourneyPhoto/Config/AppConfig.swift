@@ -87,6 +87,22 @@ enum AppConfig {
         return requireURL("JPApiBaseURL").appendingPathComponent("photos")
     }
 
+    /// 管理 API（photo-gallery の `api/`）の根。Apple でサインインの入口（`POST /auth/apple`）が
+    /// ここにある（`AppleSignInService`）。末尾にスラッシュは付けない
+    static var apiBaseURL: URL { requireURL("JPApiBaseURL") }
+
+    /// Apple でサインインのボタンを出すか（xcconfig の `JP_APPLE_SIGNIN`・2026-10-21）。
+    ///
+    /// **既定は出さない。** サーバー（`/auth/apple` とカスタム認証のトリガー）と Apple の設定
+    /// （App ID の Capability・鍵）が揃う前にボタンだけ出ると、押しても入れない。揃った環境から
+    /// `YES` にする（staging → 本番の順・計画の「段取り」）。**キーが無いのは「出さない」**
+    /// （必須の値ではないので落とさない）
+    static var appleSignInEnabled: Bool {
+        let raw = testOverrides?["JPAppleSignIn"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "JPAppleSignIn") as? String) ?? ""
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "YES"
+    }
+
     /// 静的サイトの根。公開写真の一覧 JSON をここから取る。
     static var siteBaseURL: URL { requireURL("JPSiteBaseURL") }
 

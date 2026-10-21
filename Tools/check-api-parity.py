@@ -68,9 +68,12 @@ def normalize(path: str) -> str:
     return path.rstrip("/") or "/"
 
 
-def server_endpoints(root: Path):
-    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。"""
-    text = (root / "api-user" / "serverless.yml").read_text(encoding="utf-8")
+def server_endpoints(root: Path, service: str = "api-user"):
+    """`<service>/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。"""
+    path = root / service / "serverless.yml"
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
     endpoints = {}
     # httpApi の各項目は path → method → （あれば）authorizer の順で並ぶ
     pattern = re.compile(
@@ -90,11 +93,19 @@ CALL = re.compile(
 )
 
 
-def app_calls(root: Path):
+# **管理 API（photo-gallery の `api/`）を向くサービス**の目印（2026-10-21・Apple でサインインの入口
+# `/auth/apple` が api の側にある）。この目印を持つファイルの口は `api/serverless.yml` と突き合わせる
+# ——api-user と混ぜると、api-user に無い口を「在る」と読む・その逆が起きる
+MANAGEMENT_API = "AppConfig.apiBaseURL"
+
+
+def app_calls(root: Path, service: str = "api-user"):
     """サービス層が叩いている (メソッド, パス, 認証付きか) を拾う。"""
     calls = {}
     for file in (root / "Sources" / "JourneyPhoto" / "Services").glob("*.swift"):
         text = file.read_text(encoding="utf-8")
+        if (MANAGEMENT_API in text) != (service == "api"):
+            continue
         for m in CALL.finditer(text):
             key = (m.group("method").upper(), normalize(m.group("path")))
             calls[key] = (m.group("kind") != "anonymous", file.name)
@@ -215,12 +226,14 @@ def main() -> int:
     calls = app_calls(HERE)
 
     problems = []
-    for (method, path), (authed, where) in sorted(calls.items()):
-        if (method, path) not in server:
-            problems.append(f"{where}: {method} {path} はサーバーにありません（404 になります）")
-            continue
-        if server[(method, path)] and not authed:
-            problems.append(f"{where}: {method} {path} は認証が要るのに未認証で叩いています（401 になります）")
+    for service, srv, cls in (("api-user", server, calls),
+                              ("api", server_endpoints(root, "api"), app_calls(HERE, "api"))):
+        for (method, path), (authed, where) in sorted(cls.items()):
+            if (method, path) not in srv:
+                problems.append(f"{where}: {method} {path} は {service} にありません（404 になります）")
+                continue
+            if srv[(method, path)] and not authed:
+                problems.append(f"{where}: {method} {path} は認証が要るのに未認証で叩いています（401 になります）")
 
     problems += notification_kind_problems(root)
     problems += choice_problems(root)

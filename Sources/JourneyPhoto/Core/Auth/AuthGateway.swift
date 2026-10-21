@@ -246,6 +246,33 @@ enum AuthGateway {
         return try outcome(of: result.nextStep, isSignedIn: result.isSignedIn)
     }
 
+    /// Apple でサインイン（2026-10-21）。サーバー（`/auth/apple`）が返したユーザー名で
+    /// **Cognito のカスタム認証（SRP なし）**を始め、Apple の ID トークンと nonce を答えにする。
+    /// 答えを確かめるのはサーバーのトリガー（photo-gallery の `api/src/appleChallenge.ts`）
+    ///
+    /// - Returns: 完了したら true
+    /// - Throws: 答えを断られた（問いがもう一度来た）→ `AppleSignInError.rejected`
+    @discardableResult
+    static func signInWithApple(username: String, proof: AppleProof) async throws -> Bool {
+        try requireConfigured()
+        let options = AuthSignInRequest.Options(
+            pluginOptions: AWSAuthSignInOptions(authFlowType: .customWithoutSRP)
+        )
+        let first = try await Amplify.Auth.signIn(username: username, options: options)
+        guard case .confirmSignInWithCustomChallenge = first.nextStep else {
+            // 問いが出ない＝トリガーが付いていない・クライアントがカスタム認証を許していない
+            return try outcome(of: first.nextStep, isSignedIn: first.isSignedIn)
+        }
+        let answered = try await Amplify.Auth.confirmSignIn(challengeResponse: proof.challengeAnswer)
+        return try appleOutcome(of: answered.nextStep, isSignedIn: answered.isSignedIn)
+    }
+
+    /// 答えたあとの段。**もう一度問いが来たら「断られた」**（Define は外れたら問いを出し直す）
+    static func appleOutcome(of step: AuthSignInStep, isSignedIn: Bool) throws -> Bool {
+        if case .confirmSignInWithCustomChallenge = step { throw AppleSignInError.rejected }
+        return try outcome(of: step, isSignedIn: isSignedIn)
+    }
+
     /// ログインの答えの次の段から、結果を決める。
     ///
     /// 🔴 **続きの段を黙って捨てない。** `.confirmSignUp` しか見ていなかったので、管理者が

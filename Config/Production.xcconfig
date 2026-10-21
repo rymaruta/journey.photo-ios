@@ -18,3 +18,8 @@ JP_API_BASE_URL = https:/$()/ionr4ik01e.execute-api.ap-northeast-1.amazonaws.com
 JP_COGNITO_REGION = ap-northeast-1
 JP_COGNITO_USER_POOL_ID = ap-northeast-1_ZbuhDQsWz
 JP_COGNITO_CLIENT_ID = 21cs4cd8dkttmg3snloj72u8mu
+
+// Apple でサインイン（2026-10-21）。**サーバー（/auth/apple・カスタム認証のトリガー）と Apple の設定
+// （App ID の Capability・鍵）が揃うまで NO**。揃ったら YES（staging → 本番の順）。
+// 手順は photo-gallery の計画（apple-signin-plan.md）の「段取り」
+JP_APPLE_SIGNIN = NO

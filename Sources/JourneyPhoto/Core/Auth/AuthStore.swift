@@ -268,32 +268,8 @@ final class AuthStore: ObservableObject {
     }
 
     func signIn(email: String, password: String) async {
-        // 🔴 **「本当にログアウトしたか分からない」まま入り直すときは、先に Amplify の
-        // 中の古いログインを外す。** この状態では `AuthGateway.signOut()` を呼んで
-        // いないので Amplify はログイン中のままで、`signIn` は「既にログイン中」
-        // （invalidState）で断り、アプリを強制終了するまで誰もログインできなかった
-        // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
-        // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
-            // 前のログアウトで端末の中のログインを消せなかった回（`SignOutLatch`）も同じ
-            if self.isSignedOutUncertain || self.gateway.latch.isSet {
-                _ = await self.gateway.signOut()
-            }
-            // **invalidState を「前のログインが残っている」と読むのはログインの時だけ。**
-            // ほかの操作（登録・パスワード変更など）の invalidState は別の理由なので、
-            // `AuthFailure` では読み替えない（前と同じ汎用の文のまま）
-            do {
-                _ = try await self.gateway.signIn(email, password)
-            } catch let error as AuthError {
-                if case .invalidState = error { throw SignInIncomplete.leftoverSession }
-                throw error
-            }
-            let id = try await self.gateway.currentUserId()
-            self.isSignedOutUncertain = false
-            self.signedOutByExpiry = false
-            self.gateway.latch.clear()
-            self.state = .signedIn(userId: id)
-            await refreshAdmin()
+            try await self.completeSignIn { _ = try await self.gateway.signIn(email, password) }
         }
         // 🔴 **ログインでは「アカウントが無い」と「違います」を同じ文にする**（Web の signIn と
         // 同じ）。分けると、アカウントの有無をログイン画面で確かめられる。種類（`lastFailure`）
@@ -301,6 +277,53 @@ final class AuthStore: ObservableObject {
         if lastFailure == .userNotFound {
             errorMessage = AuthMessage.text(for: .notAuthorized)
         }
+    }
+
+    /// Apple でサインイン（2026-10-21・`AppleSignIn.swift`）。メールのログインと**同じ後始末**を通す
+    /// （前のログインの外し・invalidState の読み替え・印を外す・管理者の読み直し）。
+    ///
+    /// - Returns: サーバーの答え（新しく作ったか・つないだか）。失敗したら nil（文は `errorMessage`）
+    func signInWithApple(_ proof: AppleProof) async -> AppleAccountLink? {
+        var link: AppleAccountLink?
+        await run {
+            try await self.completeSignIn { link = try await self.gateway.signInWithApple(proof) }
+        }
+        // **「メールアドレスかパスワードが違います」を出さない。** カスタム認証を断られると Cognito は
+        // NotAuthorized（3回外れた・つながっていない利用者）で返す。Apple の画面には合わない
+        if lastFailure == .notAuthorized || lastFailure == .userNotFound || lastFailure == .signInIncomplete {
+            lastFailure = .appleFailed
+            errorMessage = AuthMessage.text(for: .appleFailed)
+        }
+        return link
+    }
+
+    /// ログインの本体（メールでも Apple でも）。`run` の中から呼ぶ
+    private func completeSignIn(_ attempt: () async throws -> Void) async throws {
+        // 🔴 **「本当にログアウトしたか分からない」まま入り直すときは、先に Amplify の
+        // 中の古いログインを外す。** この状態では `AuthGateway.signOut()` を呼んで
+        // いないので Amplify はログイン中のままで、`signIn` は「既にログイン中」
+        // （invalidState）で断り、アプリを強制終了するまで誰もログインできなかった
+        // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
+        // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
+        // 前のログアウトで端末の中のログインを消せなかった回（`SignOutLatch`）も同じ
+        if isSignedOutUncertain || gateway.latch.isSet {
+            _ = await gateway.signOut()
+        }
+        // **invalidState を「前のログインが残っている」と読むのはログインの時だけ。**
+        // ほかの操作（登録・パスワード変更など）の invalidState は別の理由なので、
+        // `AuthFailure` では読み替えない（前と同じ汎用の文のまま）
+        do {
+            try await attempt()
+        } catch let error as AuthError {
+            if case .invalidState = error { throw SignInIncomplete.leftoverSession }
+            throw error
+        }
+        let id = try await gateway.currentUserId()
+        isSignedOutUncertain = false
+        signedOutByExpiry = false
+        gateway.latch.clear()
+        state = .signedIn(userId: id)
+        await refreshAdmin()
     }
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
@@ -499,6 +522,13 @@ final class AuthStore: ObservableObject {
         } catch let incomplete as SignInIncomplete {
             lastFailure = incomplete.failure
             errorMessage = AuthMessage.text(for: lastFailure)
+        } catch let apple as AppleSignInError {
+            lastFailure = apple.failure
+            errorMessage = AuthMessage.text(for: lastFailure)
+        } catch APIError.unreachable {
+            // Apple でサインインの入口（`/auth/apple`）が届かなかった
+            lastFailure = .network
+            errorMessage = AuthMessage.text(for: .network)
         } catch let error as AuthError {
             // **文言だけでなく、種類も残す。** 画面は「未確認だから確認へ送る」
             // のような分岐をしたい——文言で判定すると、言い回しを直すたびに
@@ -527,6 +557,12 @@ struct AuthStoreGateway: Sendable {
     var latch: SignOutLatch = SignOutLatch()
     var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
         try await AuthGateway.signIn(email: email, password: password)
+    }
+    /// Apple でサインイン: 入口（`/auth/apple`）でユーザー名を受け取り、カスタム認証で入る
+    var signInWithApple: @Sendable (_ proof: AppleProof) async throws -> AppleAccountLink = { proof in
+        let link = try await AppleSignInService().link(proof)
+        try await AuthGateway.signInWithApple(username: link.username, proof: proof)
+        return link
     }
 
     static let live = AuthStoreGateway(
@@ -578,6 +614,12 @@ enum AuthFailure: Equatable {
     case passwordResetRequired
     /// アプリで続けられないログインの段（新しいパスワードの設定・多要素認証など）
     case signInIncomplete
+    /// Apple でサインインを、そのメールのアカウントにつなげない（別の Apple ID とつながっている等・409）
+    case appleConflict
+    /// Apple でサインインが通らなかった（Apple の確認・Cognito のカスタム認証）
+    case appleFailed
+    /// Apple でサインインのサーバーの準備ができていない（503）
+    case appleUnavailable
     /// 端末に前のログインが残っていて、ログインを断られた（ログインの操作での Amplify の
     /// `invalidState`・`SignInIncomplete.leftoverSession`）。**前のログインを渡さない**
     /// （`SignOutLatch` の「2026-10-02 判断」）
@@ -666,6 +708,15 @@ enum AuthMessage {
         case .alreadySignedIn:
             return L("前のログインがこの端末から消せていません。アプリを終了して開き直してから、もう一度ログインしてください",
                      "A previous sign-in couldn't be cleared from this device. Quit and reopen the app, then sign in again.")
+        case .appleConflict:
+            return L("このメールアドレスのアカウントには、Apple でサインインをつなげません。メールアドレスとパスワードでログインしてください",
+                     "Sign in with Apple can't be linked to the account for this email. Please sign in with your email and password.")
+        case .appleFailed:
+            return L("Apple でサインインできませんでした。もう一度お試しください",
+                     "Sign in with Apple didn't work. Please try again.")
+        case .appleUnavailable:
+            return L("Apple でサインインは準備中です。メールアドレスで登録・ログインしてください",
+                     "Sign in with Apple isn't available yet. Please use your email.")
         case .none, .other:
             return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
         }

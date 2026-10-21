@@ -34,6 +34,8 @@ struct DeleteAccountView: View {
     /// サーバーのデータは消えたが、Cognito の利用者がまだ残っているか。
     /// 押し直したときは Cognito だけをやり直す（データの削除は済んでいる）
     @State private var dataDeleted = false
+    /// Apple でサインインの取り消しの結果（Apple の人だけ・`AppleSignInRevoke`）
+    @State private var appleRevoke: AppleSignInRevoke.Outcome?
 
     var body: some View {
         Form {
@@ -242,6 +244,18 @@ struct DeleteAccountView: View {
         let userId = auth.userId
         let username = try? await AuthGateway.currentUsername()
         if !dataDeleted {
+            // 🔴 **Apple でサインインの人は、先に Apple の許可を取り消す**（審査 5.1.1(v)・2026-10-21）。
+            // 退会のあとでは認証が通らず、サーバーの取り消しの口を呼べない。**落ちても退会は続ける**
+            // （`AppleSignInRevoke` の判断）——済ませられなかったら、退会のあとに設定から外す道を言う
+            // 前の回（サーバーの退会だけ落ちた）に取り消し済みなら、シートを出し直さない
+            let account = environment.account
+            if appleRevoke != .revoked {
+                appleRevoke = await AppleSignInRevoke.beforeDeletion(
+                    idToken: try? await AuthGateway.idToken(),
+                    authorize: { try await AppleIDAuthorizer.authorizationCode() },
+                    revoke: { try await account.revokeAppleSignIn(authorizationCode: $0) }
+                )
+            }
             do {
                 try await environment.account.deleteAccount()
                 dataDeleted = true
@@ -264,6 +278,9 @@ struct DeleteAccountView: View {
             // 編集した写真の控え（端末に書かない・`PhotoEditLedger`）も捨てる。
             // ログアウトでも捨てるが、退会はそれを待たずに
             environment.gallery.edits.clear()
+            // Apple の取り消しを済ませられなかった回は、ログインの画面に「設定から外せます」を残す
+            // （退会の後半が前の文を消すので、そのあとに置く）
+            if appleRevoke == .skipped { auth.errorMessage = AppleSignInText.revokeSkipped }
             dismiss()
         } catch {
             errorMessage = L("写真とプロフィールは削除されました。アカウント自体の削除だけが残っています。もう一度「アカウントを削除する」を押してください",

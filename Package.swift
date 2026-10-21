@@ -58,6 +58,8 @@ let package = Package(
         .target(name: "CoreImage", dependencies: ["ImageIO"], path: "Shims/CoreImage"),
         .target(name: "UniformTypeIdentifiers", path: "Shims/UniformTypeIdentifiers"),
         .target(name: "Amplify", path: "Shims/Amplify"),
+        // Apple でサインイン（`AppleSignIn.swift`・`SignInWithAppleButton`・2026-10-21）
+        .target(name: "AuthenticationServices", dependencies: ["SwiftUI", "UIKit"], path: "Shims/AuthenticationServices"),
         .target(name: "AWSCognitoAuthPlugin", dependencies: ["Amplify"], path: "Shims/AWSCognitoAuthPlugin"),
         .target(name: "AWSPluginsCore", dependencies: ["Amplify"], path: "Shims/AWSPluginsCore"),
 
@@ -72,6 +74,7 @@ let package = Package(
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
                 "StoreKit", "QuartzCore", "SceneKitShim", "Network", "CoreMotion", "CoreBluetooth", "AudioToolbox", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "AuthenticationServices",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

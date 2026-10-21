@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 /// ログイン・新規登録・パスワードの再設定。1画面で切り替える。
 ///
@@ -33,6 +34,8 @@ struct SignInView: View {
     @State private var offerVerification = false
     /// 上に敷く写真のタイル（板 41 の 3×3）。取れなければ地の色のまま
     @State private var tiles: [Photo] = []
+    /// Apple のシートに渡した nonce の生の値（シートの答えと一緒にサーバーへ送る）
+    @State private var appleNonce = ""
 
     enum Mode {
         case signIn
@@ -276,6 +279,65 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+
+            if AppConfig.appleSignInEnabled {
+                appleSection
+            }
+        }
+    }
+
+    // MARK: - Apple でサインイン（2026-10-21）
+
+    /// 「または」の区切りと、Apple の決まりのボタン（`SignInWithAppleButton`）。
+    ///
+    /// **2026-10-21 判断: 白の型（`.white`）・主ボタンと同じ高さのカプセル。** 黒い地に黒の型は
+    /// Apple の HIG が禁じている（見えない）。形（角の丸み）と高さは HIG が変えてよいとしている所だけ
+    /// 変え、ロゴと文言は Apple のまま（板の色の決まりの外——Apple の部品はそのまま使う）。
+    /// 置き場はメールの2つのボタンの下（HIG: ほかのログインと同じ大きさ以上）。
+    /// ログインと登録で文言だけ替える（「Apple でサインイン」／「Apple で登録」）
+    private var appleSection: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: JPSpace.m) {
+                Rectangle().fill(WebTheme.line).frame(height: 1)
+                Text(AppleSignInText.divider)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                Rectangle().fill(WebTheme.line).frame(height: 1)
+            }
+            .accessibilityHidden(true)
+            SignInWithAppleButton(mode == .signUp ? .signUp : .signIn) { request in
+                let nonce = AppleNonce.make()
+                appleNonce = nonce
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = AppleNonce.sha256Hex(nonce)
+            } onCompletion: { result in
+                Task { await finishAppleSignIn(result) }
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: JPHeight.primaryButton)
+            .clipShape(Capsule())
+            // 送信中は押させない（メールのログインと二重に走らせない）
+            .disabled(auth.isWorking)
+            .opacity(auth.isWorking ? 0.4 : 1)
+            .accessibilityIdentifier("signin.apple")
+        }
+        .padding(.top, JPSpace.s)
+    }
+
+    private func finishAppleSignIn(_ result: Result<ASAuthorization, Error>) async {
+        clearMessages()
+        switch AppleProof.read(result, nonce: appleNonce) {
+        case .canceled:
+            return
+        case .failed:
+            auth.errorMessage = AuthMessage.text(for: .appleFailed)
+        case .proof(let proof):
+            guard let link = await auth.signInWithApple(proof) else { return }
+            // 新しく作ったアカウントには、Apple から受け取った名前を入れる（初回だけ届く）。
+            // 入れないと、しばらく ID の頭8文字で呼ばれる（`applyDisplayName` の注記）
+            // 登録の画面で表示名を打っていれば、そちらを先に使う
+            let typed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if link.created { await applyDisplayName(typed.isEmpty ? proof.displayName : typed) }
         }
     }
 

@@ -18,6 +18,8 @@ open class UIWindowScene: UIScene {
     public var windows: [UIWindow] { [] }
 }
 open class UIWindow {
+    /// 本物と同じく外から作れる（Apple のシートの置き場が見つからないときの控え・2026-10-21）
+    public init() {}
     public var isKeyWindow: Bool { false }
     public var rootViewController: UIViewController?
 }

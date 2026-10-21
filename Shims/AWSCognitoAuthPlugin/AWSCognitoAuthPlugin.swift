@@ -6,6 +6,24 @@ public struct AWSCognitoAuthPlugin: Plugin {
     public init() {}
 }
 
+/// 本物の `AuthFlowType`（`AmplifyPlugins/Auth/Sources/AWSCognitoAuthPlugin/Models/AuthFlowType.swift`）。
+/// 使うのは SRP（ふだん）と、SRP なしのカスタム認証（Apple でサインイン・2026-10-21）
+public enum AuthFlowType {
+    case userSRP
+    case customWithSRP
+    case customWithoutSRP
+    case userPassword
+}
+
+/// 本物の `AWSAuthSignInOptions`（`AuthSignInRequest.Options(pluginOptions:)` に入れる）
+public struct AWSAuthSignInOptions {
+    public let authFlowType: AuthFlowType?
+    public init(validationData: [String: String]? = nil, metadata: [String: String]? = nil,
+                authFlowType: AuthFlowType? = nil) {
+        self.authFlowType = authFlowType
+    }
+}
+
 /// 本物の `AWSCognitoAuthError`
 /// （`AmplifyPlugins/Auth/Sources/AWSCognitoAuthPlugin/Models/Errors/`）。
 /// **綴りは lowerCamel**——JS SDK の `UserNotConfirmedException` とは違う。

@@ -25,8 +25,23 @@ struct AccountService {
         try await api.authorizedVoid(.delete, "/user/account", timeout: Self.deleteTimeout)
     }
 
+    /// 退会の直前に Apple でサインインの許可を取り消す（`POST /user/apple/revoke`・審査 5.1.1(v)・2026-10-21）。
+    /// 認可コードは Apple のシートで取り直したもの（`AppleIDAuthorizer`）。サーバーが Apple の
+    /// `/auth/token` で交換し `/auth/revoke` で取り消す。**落ちても退会は続ける**（`AppleSignInRevoke`）
+    func revokeAppleSignIn(authorizationCode: String) async throws {
+        try await api.authorizedVoid(.post, "/user/apple/revoke", body: AppleRevokeBody(authorizationCode: authorizationCode),
+                                     timeout: Self.revokeTimeout)
+    }
+
+    /// サーバーは Apple へ2往復（打ち切り8秒ずつ・関数の上限20秒）
+    static let revokeTimeout: TimeInterval = 25
+
     /// 🔴 **一律の20秒では足りない。** サーバーは写真の多い人で最長およそ23秒
     /// （`serverless.yml` の timeout 29）掛かり、20秒で切ると「失敗」と出たのに
     /// データは消えている、になる。Web も同じ理由で 35秒（`context.tsx`）
     static let deleteTimeout: TimeInterval = 35
+}
+
+private struct AppleRevokeBody: Encodable {
+    let authorizationCode: String
 }
