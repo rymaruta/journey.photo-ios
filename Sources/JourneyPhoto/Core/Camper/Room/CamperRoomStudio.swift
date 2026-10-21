@@ -42,7 +42,8 @@ enum CamperRoomStudio {
         }
         if f.placement == .wall { center = center + CV3(0, 0, 6) }
         // 天井の物は下から少し見上げる（上から見下ろすと天井の板が裏向きで消え、換気窓が宙に浮いた板に見えた・run 596）
-        let pitch = f.placement == .ceiling ? -10.0 : 22
+        // 天窓は真下寄りから（浅いと縁の厚みしか見えず、硝子と空が見えない・run 605）
+        let pitch = f.category == .roofHatch ? -42.0 : (f.placement == .ceiling ? -10.0 : 22)
         return CamperRoomCamera(yaw: 28, pitch: pitch, zoom: 1, target: center, baseDistanceOverride: span * 2.3 + 24)
     }
 }

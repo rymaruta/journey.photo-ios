@@ -569,6 +569,9 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertGreaterThan(nightFrame.color, 0xC0C0C0)
         XCTAssertNotEqual(nightFrame.color, nightGlass.color)
         XCTAssertLessThan(nightFrame.opacity, nightGlass.opacity)
+        // 映りがぼけると面全体に白い膜が掛かる（run 605: 写真・文字盤が白い板に見えた）
+        XCTAssertLessThan(dayFrame.roughness, 0.1)
+        XCTAssertEqual(dayFrame.clearCoat, 0)
         for id in ["photo_frame.landscape", "photo_frame.square", "photo_frame.triptych"] {
             let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
             XCTAssertTrue(mesh.materials.contains(.room(.frameGlass)), id)

@@ -449,9 +449,13 @@ extension CamperRoomFurnitureModels {
         let tiers: [(y: Double, r: Double)] = [(1.0, 7.4), (12.5, 6.0), (23.0, 4.4)]
         for t in tiers {
             // 皿（高台・薄い底・立ち上がる縁）
-            let plate: [CV2] = [CV2(0, 0), CV2(t.r * 0.42, 0), CV2(t.r * 0.45, 0.35), CV2(t.r * 0.8, 0.4), CV2(t.r * 0.97, 0.95),
-                                CV2(t.r, 1.15), CV2(t.r * 0.95, 1.15), CV2(t.r * 0.78, 0.7), CV2(0, 0.62)]
-            parts.append(K.placed(K.lathe(plate, segments: 36, china), at: CV3(0, t.y - 1.0, 0)))
+            // 下の面と縁（外向き）と、上の面（皿の内・上向き）を分けて回す。1 本の断面で内へ戻すと上の面が下向きになり、
+            // 上から見えなかった（run 605: 金の縁だけが宙に浮いた）
+            let under: [CV2] = [CV2(0, 0), CV2(t.r * 0.42, 0), CV2(t.r * 0.45, 0.35), CV2(t.r * 0.8, 0.4), CV2(t.r * 0.97, 0.95),
+                                CV2(t.r, 1.15)]
+            let top: [CV2] = [CV2(0, 0.62), CV2(t.r * 0.78, 0.7), CV2(t.r * 0.95, 1.15), CV2(t.r, 1.15)]
+            parts.append(K.placed(K.lathe(under, segments: 36, china, capEnd: false), at: CV3(0, t.y - 1.0, 0)))
+            parts.append(K.placed(K.inverted(K.lathe(top, segments: 36, china, capStart: false, capEnd: false)), at: CV3(0, t.y - 1.0, 0)))
             parts.append(K.tube(K.arc(center: .zero, radius: t.r * 0.985, from: 0, to: 2 * .pi, steps: 40).map { CV3($0.x, t.y + 0.16, $0.y) },
                                 radius: 0.1, sides: 4, closed: true, gold))
         }

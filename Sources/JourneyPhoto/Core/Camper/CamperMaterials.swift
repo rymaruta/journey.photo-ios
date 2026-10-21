@@ -95,6 +95,9 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case clockDial, windowDay, windowNight, matBoard, photoPlaceholder, wornWood, mapPrint
     /// 鏡に映る部屋（昼: 板壁と窓の明るさ・斜めの照り。夜: 暗い部屋と灯りのにじみ）・2026-10-21
     case mirrorDay, mirrorNight
+    /// 家具の木目（2026-10-21・Mac run 605: 外まわりの `woodGrain` は短い波の繰り返しで、家具の板が波板・ジグザグに見えた）。
+    /// 長く流れる筋・年輪のゆらぎ・導管の細かい点
+    case furnitureGrain
 }
 
 enum CamperMaterials {

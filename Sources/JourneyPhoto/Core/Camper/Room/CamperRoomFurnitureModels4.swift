@@ -391,7 +391,7 @@ extension CamperRoomFurnitureModels {
                                               segments: 16, pine, capStart: false), at: CV3(x, y, 1.5), rotation: tilt))
                 // 瓶本体・着色の中身・首・箔・コルク
                 parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.05, 0), CV2(2.2, 1.5), CV2(1.95, 9.5), CV2(1.1, 11.5),
-                                               CV2(0.95, 13.5), CV2(1.35, 14.2), CV2(0, 14.2)], segments: 16, R(.clearGlass)),
+                                               CV2(0.95, 13.5), CV2(1.35, 14.2), CV2(0, 14.2)], segments: 16, R(.tintedGlass(0x24402A))),
                                       at: CV3(x, y, 2.0), rotation: tilt))
                 parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.7, 0), CV2(1.7, 7.2), CV2(0, 7.2)], segments: 12,
                                               R(.tintedGlass(colors[row * 2 + col]))),
@@ -625,8 +625,9 @@ extension CamperRoomFurnitureModels {
         // 裏板と厚い枠
         parts.append(K.placed(K.disc(radius: 5.0, height: 0.55, bevel: 0.15, segments: 36, R(.painted(0x2A2420))),
                               at: c, rotation: toWall))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.9, 0), CV2(5.15, 0.35), CV2(5.0, 1.1), CV2(4.55, 1.35), CV2(4.2, 1.35), CV2(0, 1.35)],
-                                      segments: 36, brass, capStart: false), at: c, rotation: toWall))
+        // 枠は輪だけ（2026-10-21・run 605: 断面を真ん中まで閉じていて、鏡の面が真鍮の蓋に隠れた）。内の縁は鏡面へ落ちる
+        parts.append(K.placed(K.lathe([CV2(4.05, 0.85), CV2(4.9, 0), CV2(5.15, 0.35), CV2(5.0, 1.1), CV2(4.55, 1.35), CV2(4.2, 1.35),
+                                       CV2(4.05, 0.85)], segments: 36, brass, capStart: false, capEnd: false), at: c, rotation: toWall))
         // 鏡面と内側の細い縁
         parts.append(K.placed(K.ellipsePanel(rx: 4.05, ry: 4.05, R(.mirror)), at: c + CV3(0, 0, 0.85)))
         parts.append(K.tube(K.arc(center: c + CV3(0, 0, 0.95), radius: 4.25, from: 0, to: 2 * .pi, steps: 36)
@@ -698,8 +699,9 @@ extension CamperRoomFurnitureModels {
         parts.append(K.placed(K.disc(radius: 3.8, height: 0.85, bevel: 0.28, segments: 32, brass), at: mirrorAt, rotation: toWall))
         parts.append(K.tube(K.arc(center: mirrorAt, radius: 3.55, from: 0, to: 2 * .pi, steps: 28)
                                 .map { CV3($0.x, $0.y, mirrorAt.z + 0.2) }, radius: 0.14, sides: 5, closed: true, R(.agedBrass)))
-        parts.append(K.placed(K.ellipsePanel(rx: 3.05, ry: 3.05, R(.mirror)), at: mirrorAt + CV3(0, 0, 0.5)))
-        parts.append(K.placed(K.ellipsePanel(rx: 2.85, ry: 2.85, chrome), at: mirrorAt + CV3(0, 0, -0.45)))
+        // 鏡面は枠の円盤（厚み 0.85）の表と裏の外に出す（run 605: 円盤の中に埋もれて真鍮の円盤に見えた）
+        parts.append(K.placed(K.ellipsePanel(rx: 3.05, ry: 3.05, R(.mirror)), at: mirrorAt + CV3(0, 0, 0.9)))
+        parts.append(K.placed(K.inverted(K.ellipsePanel(rx: 2.85, ry: 2.85, R(.mirror))), at: mirrorAt + CV3(0, 0, -0.05)))
         // 拡大側の印（細い輪）
         parts.append(K.tube(K.arc(center: mirrorAt + CV3(0, 0, -0.4), radius: 2.5, from: 0, to: 2 * .pi, steps: 22)
                                 .map { CV3($0.x, $0.y, mirrorAt.z - 0.4) }, radius: 0.08, sides: 4, closed: true, R(.agedBrass)))

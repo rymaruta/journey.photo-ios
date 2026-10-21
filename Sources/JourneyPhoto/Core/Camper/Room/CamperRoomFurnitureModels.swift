@@ -139,31 +139,36 @@ enum CamperRoomFurnitureModels {
     /// 座布団（盛り上がり・綴じ釦・パイピング・房 6）
     static func floorCushion() -> CamperMesh {
         let velvet = R(.velvet(0x7A3B2E)), dark = R(.velvet(0x5E2A20)), gold = R(.canvas(0xC9A15A))
-        var profile: [CV2] = [CV2(0, 5.4)]
-        for k in 1...16 {
-            let t = Double(k) / 16
-            profile.append(CV2(t * 9.1, 1.55 + 3.85 * pow(max(0, 1 - t * t), 0.5)))
+        // 2026-10-21（Mac run 605）: 盛り上がりが高く裾が内へ切れ込んでいて、床から浮いた円盤に見えた。
+        // 綿の詰まった平たい丸（真ん中 4.2・縁 2.6）で、裾は床まで丸く落ちて接する
+        var profile: [CV2] = [CV2(0, 4.2)]
+        for k in 1...14 {
+            let t = Double(k) / 14
+            profile.append(CV2(t * 8.6, 2.7 + 1.5 * pow(max(0, 1 - t * t), 0.6)))
         }
-        profile.append(CV2(9.4, 1.25))
-        profile.append(CV2(9.1, 0.35))
-        profile.append(CV2(7.6, 0))
+        profile.append(CV2(9.2, 2.2))
+        profile.append(CV2(9.5, 1.3))
+        profile.append(CV2(9.4, 0.45))
+        profile.append(CV2(9.0, 0))
         profile.append(CV2(0, 0))
         var parts = [K.lathe(Array(profile.reversed()), segments: 40, velvet, capStart: false, capEnd: false)]
         // 綴じの釦と放射の縫い目
-        parts.append(K.placed(K.scaled(K.sphere(radius: 0.75, segments: 12, dark), CV3(1, 0.5, 1)), at: CV3(0, 5.25, 0)))
-        parts.append(K.placed(K.disc(radius: 0.45, height: 0.2, bevel: 0.06, segments: 10, R(.brass)), at: CV3(0, 5.55, 0)))
+        parts.append(K.placed(K.scaled(K.sphere(radius: 0.75, segments: 12, dark), CV3(1, 0.5, 1)), at: CV3(0, 4.05, 0)))
+        parts.append(K.placed(K.disc(radius: 0.45, height: 0.2, bevel: 0.06, segments: 10, R(.brass)), at: CV3(0, 4.35, 0)))
         for k in 0..<8 {
             let a = Double(k) / 8 * 2 * .pi
-            parts.append(K.tube([CV3(cos(a) * 0.8, 5.1, sin(a) * 0.8), CV3(cos(a) * 7.5, 2.0, sin(a) * 7.5)],
-                                radius: 0.06, sides: 4, dark))
+            parts.append(K.tube((0...4).map { i -> CV3 in
+                let r = 0.8 + 6.7 * Double(i) / 4, t = r / 8.6
+                return CV3(cos(a) * r, 2.7 + 1.5 * pow(max(0, 1 - t * t), 0.6) + 0.02, sin(a) * r)
+            }, radius: 0.06, sides: 4, dark))
         }
         // 縁のパイピング
         parts.append(K.tube(K.arc(center: .zero, radius: 9.35, from: 0, to: 2 * .pi, steps: 44)
-                                .map { CV3($0.x, 1.3, $0.y) }, radius: 0.26, sides: 6, closed: true, dark))
+                                .map { CV3($0.x, 1.9, $0.y) }, radius: 0.26, sides: 6, closed: true, dark))
         // 房 6（マス内に収める）
         for k in 0..<6 {
             let a = Double(k) / 6 * 2 * .pi + .pi / 6
-            let p = CV3(cos(a) * 9.0, 1.25, sin(a) * 9.0), out = CV3(cos(a), 0, sin(a))
+            let p = CV3(cos(a) * 9.45, 1.25, sin(a) * 9.45), out = CV3(cos(a), 0, sin(a))
             parts.append(K.placed(K.sphere(radius: 0.32, segments: 8, gold), at: p))
             parts.append(K.tube([p, p + out * 0.4 + CV3(0, -0.5, 0), p + out * 0.85 + CV3(0, -1.05, 0)],
                                 radius: 0.14, sides: 5, gold))

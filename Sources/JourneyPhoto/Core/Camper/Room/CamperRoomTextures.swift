@@ -39,6 +39,7 @@ enum CamperRoomTextures {
         case .mapPrint: return mapPrint()
         case .mirrorDay: return mirrorView(night: false)
         case .mirrorNight: return mirrorView(night: true)
+        case .furnitureGrain: return furnitureGrain()
         default: return CamperTextures.make(.weave)
         }
     }
@@ -555,6 +556,33 @@ enum CamperRoomTextures {
                 let streak = exp(-pow((u + v * 0.6 - 0.95) / 0.09, 2)) * (night ? 0.08 : 0.16)
                 c = (min(1, c.0 + streak), min(1, c.1 + streak), min(1, c.2 + streak))
                 b.set(x, y, c)
+            }
+        }
+        return b
+    }
+
+    /// 家具の木目（横が木の長さ・256×128）。年輪はゆるく波打って長く流れ、ところどころ杢が寄る。導管の細かい暗い点。
+    /// 明るさの幅は 0.8〜1.0（素材の色を掛けたとき、模様が色より目立たない）
+    static func furnitureGrain() -> CamperBitmap {
+        var b = CamperBitmap(width: 256, height: 128)
+        var n = CamperTextures.Noise(seed: 163)
+        var pore = Set<Int>()
+        for _ in 0..<420 {
+            let px = Int(n.next() * 256), py = Int(n.next() * 128), len = 2 + Int(n.next() * 5)
+            for dx in 0..<len { pore.insert(py * 256 + (px + dx) % 256) }
+        }
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let u = Double(x) / 256, v = Double(y) / 128
+                // 年輪: v の向きに 7 本ほど。u に沿ってゆるく曲がる（短い波にしない）
+                // どれも 1 枚の幅・高さで周期が閉じる（貼り絵を繰り返しても継ぎ目が出ない）
+                let warp = fbm(u * 2, v * 2, period: 2, seed: 167) * 0.9 + 0.25 * sin(u * .pi * 2 + 0.7)
+                let ring = sin((v * 7 + warp) * .pi * 2)
+                let late = pow(max(0, ring), 6) * 0.1
+                let streak = 0.6 * fbm(v * 32, 0.5, period: 32, seed: 171) + 0.4 * fbm(u * 4, v * 4, period: 4, seed: 173)
+                var g = 0.9 + 0.06 * streak - late + 0.02 * ring
+                if pore.contains(y * 256 + x) { g *= 0.9 }
+                b.set(x, y, gray(min(1, max(0.76, g))))
             }
         }
         return b

@@ -3409,8 +3409,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertFalse(done.waitForExistence(timeout: 2), "手引きが閉じない")
         app.buttons["camper.room.tool.place"].firstMatch.tap()
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
-        let trayItems = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
-                                                         "camper.room.tray.", "camper.room.tray.cat."))
+        // 壁の額は何枚でも掛けられ、どの部屋にも置ける所がある（床の大きな寝台は置ける所が無いことがある・run 605）
+        app.buttons["camper.room.tab.wall"].firstMatch.tap()
+        let trayItems = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.photo_frame."))
         let first = trayItems.firstMatch
         guard first.waitForExistence(timeout: 5) else { return XCTFail("棚に家具が無い") }
         Thread.sleep(forTimeInterval: 2)
@@ -3480,7 +3481,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(done.label.contains("閉じる"), "置くのを終える主ボタンは「閉じる」（今は「\(done.label)」）")
         let resize = app.descendants(matching: .any)["camper.room.panelResize"].firstMatch
         XCTAssertTrue(resize.exists, "棚の高さを変える境が無い")
-        let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.")).firstMatch
+        // 分類チップ（`camper.room.tray.cat.*`）は除く（チップは 44pt・run 605 でチップを家具の枠と取り違えた）
+        let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
+                                                    "camper.room.tray.", "camper.room.tray.cat.")).firstMatch
         if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
     }
 }
