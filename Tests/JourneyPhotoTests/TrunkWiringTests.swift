@@ -85,6 +85,22 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(rootView.contains("guard PostModalGate.reviewMayAsk(postModalSnapshot())"), "評価のお願いが順番の決まりを通っていない")
     }
 
+    /// 🔴 画面写真の見本の届いた画面は、起動から1回だけ出す（2026-10-21）。全画面を閉じると下の画面が現れ直して
+    /// `.task` が走り直し、閉じた1秒後にまた出ていた（`testCapturesTrunkArrived` の「『手持ちに入れておく』で閉じない」）
+    @MainActor
+    func testPreviewArrivalIsOfferedOnce() async throws {
+        let arrivals = TrunkArrivals()
+        XCTAssertFalse(arrivals.previewOffered)
+        XCTAssertTrue(arrivals.claimPreviewOffer())
+        XCTAssertFalse(arrivals.claimPreviewOffer(), "2回目も出してよいと答えた")
+        XCTAssertTrue(arrivals.previewOffered)
+        let rootView = try source("App/RootView.swift")
+        XCTAssertTrue(rootView.contains("guard PreviewSession.opensTrunkArrived, !trunkArrivals.previewOffered else { return }"),
+                      "見本を出したあとも .task の走り直しで待ち始める")
+        XCTAssertTrue(rootView.contains(", trunkArrivals.claimPreviewOffer() else { return }"),
+                      "見本の届いた画面を出す直前に印を取っていない（閉じるとまた出る）")
+    }
+
     /// 窓口は `TrunkService` 1つで、`AppEnvironment` が組む
     func testServiceIsWired() throws {
         let env = try source("App/AppEnvironment.swift")

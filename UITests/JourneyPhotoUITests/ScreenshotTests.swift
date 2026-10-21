@@ -2680,6 +2680,9 @@ final class ScreenshotTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: stick)], timeout: 5)
         XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
+        // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertFalse(stick.exists, "「手持ちに入れておく」で閉じたあと、届いた画面がまた出た")
     }
 
     // MARK: - はじめての硬貨（2026-10-18 owner 承認）
