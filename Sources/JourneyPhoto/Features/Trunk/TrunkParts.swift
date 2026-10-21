@@ -102,7 +102,7 @@ struct TrunkMenuRow: View {
             }
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(JPFont.footnote.weight(.semibold))
                     .foregroundStyle(TrunkStyle.muted)
                     .accessibilityHidden(true)
             }
@@ -120,14 +120,21 @@ struct TrunkButtonFace: View {
     let title: String
     var kind: Kind = .main
     var height: Double = 52
+    /// 字の大きさ（既定の文字サイズのとき）。いちばん近い文字の種類（15 → subheadline・17 → body）で出し、
+    /// 文字の大きさの設定に付いてくる（2026-10-21 判断: `JPFont.numberStyle` の選び方を使い回す）
     var size: Double = 17
+
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Text(title)
-            .font(.system(size: size, weight: .semibold))
+            .font(Font.system(JPFont.numberStyle(size: size, relativeTo: .body), weight: .semibold))
             .foregroundStyle(kind == .main ? WebTheme.accentText : (kind == .danger ? WebTheme.danger : WebTheme.text))
-            .lineLimit(1)
+            // アクセシビリティの大きさでは折り返す（1行のままでは「はがして手持ちに戻す」が切れる）
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            .multilineTextAlignment(.center)
             .minimumScaleFactor(0.8)
+            .padding(.horizontal, typeSize.isAccessibilitySize ? 8 : 0)
             .frame(maxWidth: .infinity, minHeight: height)
             .background(kind == .main ? WebTheme.accentFill : TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))

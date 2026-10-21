@@ -17,6 +17,7 @@ struct PassCardPickView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var store: StoreService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var photos: [Photo] = []
     @State private var isLoading = true
@@ -362,10 +363,10 @@ struct PassCardPickView: View {
                 // 黒い地の上の合図なので真鍮・12pt
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(JPFont.caption.weight(.medium))
                         .accessibilityHidden(true)
                     Text(notice)
-                        .font(.system(size: 12))
+                        .font(JPFont.caption)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(WebTheme.accent)
@@ -433,10 +434,12 @@ struct PassCardPickView: View {
                         }
                     }
                 Text(style.name)
-                    .font(.system(size: 12))
+                    .font(JPFont.caption)
                     .foregroundStyle(on ? WebTheme.text : WebTheme.text2)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    // 幅は見本の幅で決まっているので、アクセシビリティの大きさでは行を増やす（2026-10-21）
+                    .lineLimit(typeSize.isAccessibilitySize ? 5 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(width: PassFaceSwatch.size.width + 12)
             }
             .contentShape(Rectangle())

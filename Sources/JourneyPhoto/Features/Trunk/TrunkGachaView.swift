@@ -361,7 +361,8 @@ struct TrunkGachaView: View {
                         TrunkButtonFace(title: TrunkGachaText.insertTitle(coins: coins))
                     } else {
                         Text(TrunkGachaText.insertTitle(coins: coins))
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.body.weight(.semibold))
+                            .multilineTextAlignment(.center)
                             .foregroundStyle(TrunkStyle.faint)
                             .frame(maxWidth: .infinity, minHeight: 52)
                             .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
@@ -375,7 +376,7 @@ struct TrunkGachaView: View {
                     Text(L("ハンドルを右へまわす", "Turn the handle right"))
                     Text("· \(crank.percent)%").font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                 }
-                .font(.system(size: 15, weight: .semibold))
+                .font(JPFont.bodyEmphasis)
                 .foregroundStyle(WebTheme.accent)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: 1))

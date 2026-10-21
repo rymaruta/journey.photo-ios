@@ -20,6 +20,7 @@ struct TrunkSpinViewer: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var textures: MedalTextures.Faces?
     @State private var boxFaces: SpinBoxFaces?
     @State private var flips = 0
@@ -88,14 +89,16 @@ struct TrunkSpinViewer: View {
     }
 
     /// 向きのボタン（板 TrunkSpin: 4つ並び・高さ 44・#1A1A1A・13pt）
+    /// アクセシビリティの大きさでは 2 列 2 段（4 つ並びでは向きの名前が切れる・2026-10-21）
     private var viewButtons: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 2 : 4),
+                  spacing: 8) {
             ForEach(Array(TrunkFaces.views.enumerated()), id: \.offset) { i, view in
                 Button {
                     aim = SpinAim(id: (aim?.id ?? 0) + 1, yaw: view.yaw, pitch: view.pitch)
                 } label: {
                     Text(view.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)

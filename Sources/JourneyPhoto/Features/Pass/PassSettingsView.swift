@@ -199,7 +199,7 @@ struct PassSettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .font(JPFont.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.35))
                 .accessibilityHidden(true)
         }
