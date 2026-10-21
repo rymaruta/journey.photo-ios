@@ -34,6 +34,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// 押して置くときの置ける所（薄い白のマス）
     var hints: CamperRoomFitArea?
     var onReady: (String) -> Void = { _ in }
+    /// 組み上がった後の最初のコマを描いた（外から入る時の覆いを消す合図・2026-10-21）
+    var onDrawn: () -> Void = {}
 
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
 
@@ -54,7 +56,15 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.attach(view)
         view.scene = c.scene
         view.pointOfView = c.cameraNode
-        c.onReady = { marker in DispatchQueue.main.async { onReady(marker) } }
+        // 組み上がった後の最初のコマを知らせる（Mac run 646: 組み上がった合図から実際に描くまで、シミュレーターでは数秒かかった）
+        let watcher = CamperFirstFrame()
+        watcher.onDrawn = { DispatchQueue.main.async { onDrawn() } }
+        c.firstFrame = watcher
+        view.delegate = watcher
+        c.onReady = { marker in
+            watcher.arm()
+            DispatchQueue.main.async { onReady(marker) }
+        }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
         c.show(layout: layout, doc: doc, paint: paint)
@@ -114,3 +124,26 @@ final class CamperRoomPhotoImages: ObservableObject {
         }
     }
 }
+
+#if canImport(SceneKit) || canImport(SceneKitShim)
+/// 組み上がった後の最初のコマを描いたら 1 回だけ知らせる（描くのは SceneKit の描画の糸）
+final class CamperFirstFrame: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var armed = false
+    var onDrawn: (@Sendable () -> Void)?
+
+    func arm() {
+        lock.lock()
+        armed = true
+        lock.unlock()
+    }
+
+    func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        lock.lock()
+        let fire = armed
+        armed = false
+        lock.unlock()
+        if fire { onDrawn?() }
+    }
+}
+#endif

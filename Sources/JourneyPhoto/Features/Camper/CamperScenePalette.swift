@@ -176,6 +176,7 @@ final class CamperScenePalette {
             m.diffuse.wrapS = .repeat
             m.diffuse.wrapT = .repeat
             m.diffuse.mipFilter = .linear
+            m.diffuse.contentsTransform = spec.textureVertical ? SCNMatrix4MakeRotation(Float.pi / 2, 0, 0, 1) : SCNMatrix4Identity
         }
         m.metalness.contents = spec.metalness
         m.roughness.contents = spec.roughness

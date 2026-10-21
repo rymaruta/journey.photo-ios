@@ -119,4 +119,13 @@ final class CamperNightStageTests: XCTestCase {
             + plan.nightScenery.ridge.groups.reduce(0) { $0 + $1.indices.count / 3 }
         XCTAssertLessThan(tris, 4200)
     }
+
+    /// 扉の内張りと奥の壁の木目は、家具と同じ長く流れる木目を、板壁の縦の継ぎ目にそろえて縦に（確かめ役 2026-10-21:
+    /// 短い波の木目が波線・ジグザグに見えた）
+    func testWallWoodGrainRunsAlongThePlanks() {
+        let w = CamperMaterials.spec(.wallWood(0xD9B98A), paint: 0, mood: .night)
+        XCTAssertEqual(w.texture, .furnitureGrain)
+        XCTAssertTrue(w.textureVertical)
+        XCTAssertFalse(CamperMaterials.spec(.wood, paint: 0, mood: .night).textureVertical)
+    }
 }

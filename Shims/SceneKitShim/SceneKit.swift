@@ -41,6 +41,8 @@ public struct SCNMatrix4 {
     public init() {}
 }
 
+public let SCNMatrix4Identity = SCNMatrix4()
+public func SCNMatrix4MakeRotation(_ angle: Float, _ x: Float, _ y: Float, _ z: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4MakeScale(_ sx: Float, _ sy: Float, _ sz: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4MakeTranslation(_ tx: Float, _ ty: Float, _ tz: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4Mult(_ a: SCNMatrix4, _ b: SCNMatrix4) -> SCNMatrix4 { SCNMatrix4() }
@@ -259,7 +261,14 @@ open class SCNScene {
     public let background = SCNMaterialProperty()
 }
 
-open class SCNView: UIView {
+public protocol SCNSceneRenderer: AnyObject {}
+/// 本物は @objc の任意の手続き。模型は描いた後の 1 つだけ
+public protocol SCNSceneRendererDelegate: AnyObject {
+    func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval)
+}
+
+open class SCNView: UIView, SCNSceneRenderer {
+    open weak var delegate: (any SCNSceneRendererDelegate)?
     public override init(frame: CGRect) { super.init(frame: frame) }
     public init(frame: CGRect, options: [String: Any]?) { super.init(frame: frame) }
     open var scene: SCNScene?

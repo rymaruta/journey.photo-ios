@@ -395,14 +395,21 @@ struct CamperRoomView: View {
                 // 見本の起動だけ、画面写真の試験が覆いの有無を確かめられるよう読み上げの木に残す
                 .accessibilityHidden(PreviewSession.userId == nil)
                 .accessibilityIdentifier("camper.room.entryCover")
-                .onChange(of: readyMarker) { _, marker in
-                    guard entryCovered, marker.hasPrefix("camper-room-ready") else { return }
-                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
-                }
                 .onAppear {
-                    if readyMarker.hasPrefix("camper-room-ready") { entryCovered = false }
+                    // 描いた合図が来なくても、いつまでも覆わない（4 秒で消す）
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        if entryCovered { uncoverEntry() }
+                    }
                 }
         }
+    }
+
+    /// 覆いを消す。組み上がった後の最初のコマを描いてから（`CamperRoomSceneView.onDrawn`・Mac run 646: 夜の 1 回目は
+    /// 組み上がった合図の直後に消すと、部屋がまだ描かれていない暗い地が数秒見えた）
+    private func uncoverEntry() {
+        guard entryCovered else { return }
+        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
     }
 
     /// 箱庭そのもの（2026-10-21: 1 つの式に修飾が多すぎて、Xcode の型検査が時間切れになった・Mac run 597。分けた）
@@ -410,9 +417,9 @@ struct CamperRoomView: View {
         CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
                             editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
-                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil) { marker in
+                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil, onReady: { marker in
             readyMarker = marker
-        }
+        }, onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)

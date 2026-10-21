@@ -61,6 +61,8 @@ struct CamperMaterialSpec: Equatable, Sendable {
     /// 光る面の明暗の絵（反射板の輪・プリズムの筋・布の織り目）。一色の平らな光にしない（2026-10-19 owner「発光の仕方ひどい」）
     var emissionTexture: CamperTextureKind?
     var texture: CamperTextureKind?
+    /// 貼り絵を 90° 回す（木目を縦に流す・板壁の縦の継ぎ目にそろえる）
+    var textureVertical = false
     var doubleSided = false
     /// 不透明度が 1 未満のとき、薄い硝子として両面を描き奥行きも書く。額の表は false（奥の写真を膜で隠さない）
     var glassShell = true
@@ -213,7 +215,11 @@ enum CamperMaterials {
         case .tint(let c): return CamperMaterialSpec(color: c, roughness: 0.5, clearCoat: 0.3)
         // 2026-10-21 確かめ役（中に入る寄りの絵 95p4）: 短い波の木目（woodGrain）が扉の内張りと奥の壁で波線・ジグザグに見えた。
         // 部屋の家具と同じ、長く流れる木目（furnitureGrain・横に流れ、年輪はゆるく曲がる）
-        case .wallWood(let c): return CamperMaterialSpec(color: c, roughness: 0.7, texture: .furnitureGrain)
+        // 板壁は縦の継ぎ目なので、木目も縦に流す（Mac run 644 の 95p4: 横の年輪が波線に見えた）
+        case .wallWood(let c):
+            var w = CamperMaterialSpec(color: c, roughness: 0.7, texture: .furnitureGrain)
+            w.textureVertical = true
+            return w
         case .ember:
             // 燠（薪の下の赤い熱）。炎は別の形（`.flame`）
             return CamperMaterialSpec(color: 0x5A1A0A, roughness: 0.8, emission: 0xFF5A1E, emissionIntensity: night ? 0.9 : 0.45,
