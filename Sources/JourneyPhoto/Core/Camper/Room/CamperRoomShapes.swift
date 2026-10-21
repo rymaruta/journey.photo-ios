@@ -170,6 +170,15 @@ enum CamperRoomShapes {
         return K.placed(b, at: p, rotation: q)
     }
 
+    /// 皿（2026-10-21）: 高台・下の面・縁の立ち上がりと、上の面（見込み）を別に回す。1 本の断面で真ん中へ戻すと、
+    /// 旋盤の向きの決まりで上の面が下を向き、上から見えない（run 605: 食器の棚・ケーキ台の皿が縁だけになった）。下の面が y = 0
+    static func plate(radius r: Double, height h: Double = 1.05, _ m: CamperMaterial) -> CamperMesh {
+        let under = [CV2(0, 0), CV2(r * 0.45, 0), CV2(r * 0.5, h * 0.2), CV2(r * 0.85, h * 0.35), CV2(r, h * 0.9), CV2(r * 0.98, h)]
+        let top = [CV2(0, h * 0.45), CV2(r * 0.72, h * 0.5), CV2(r * 0.9, h * 0.85), CV2(r * 0.98, h)]
+        return K.merge([K.lathe(under, segments: 24, m, capEnd: false),
+                        K.inverted(K.lathe(top, segments: 24, m, capStart: false, capEnd: false))])
+    }
+
     /// 葉 1 枚（細長い楕円の薄い面を `toward` の向きへ、少し反らせて）
     static func leaf(at p: CV3, toward dir: CV3, size: Double) -> CamperMesh {
         // 2026-10-21: つぶした球（緑の豆）から、脈で折れて先の反る薄い刃へ。長さ・幅は前の楕円と同じ

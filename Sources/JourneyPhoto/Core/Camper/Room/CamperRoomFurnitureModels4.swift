@@ -344,12 +344,12 @@ extension CamperRoomFurnitureModels {
                 let x = -10.5 + Double(k) * 3.5
                 parts.append(K.tube([CV3(x, y + 0.7, -5.5), CV3(x, y + 5.2, 5.0)], radius: 0.22, sides: 6, worn))
             }
-            // 斜めに立てた皿
+            // 桟に立てた皿（見込みを前へ向けて立てる・2026-10-21: 上の面が下向きで消え、縁だけの灰の板に見えた）
             for k in 0..<5 {
                 let x = -9.0 + Double(k) * 4.5
-                let plate = K.lathe([CV2(0, 0), CV2(2.8, 0.15), CV2(3.3, 0.45), CV2(3.1, 0.85), CV2(2.4, 1.05), CV2(0, 1.05)],
-                                    segments: 20, R(.ceramic(ceramics[(row + k) % 4])))
-                parts.append(K.placed(plate, at: CV3(x, y + 1.4, 1.2), rotation: CQuat.axisAngle(CV3(1, 0, 0), -0.62)))
+                let plate = CamperRoomShapes.plate(radius: 3.2, R(.ceramic(ceramics[(row + k) % 4])))
+                let stand = CQuat.axisAngle(CV3(0, 1, 0), .pi / 2) * CQuat.axisAngle(CV3(0, 0, 1), 1.3)
+                parts.append(K.placed(plate, at: CV3(x, y + 3.6, 0.6), rotation: stand))
             }
         }
         // 下段のボウルとカップ
