@@ -3633,13 +3633,14 @@ final class ScreenshotTests: XCTestCase {
     /// 文字の大きさの設定をアクセシビリティの XL にして起動する鍵（シミュレータの設定を変えずに、このアプリだけ）
     private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
 
-    /// 決まった所（画面の割合 `x`・`from` → `to`）から指で上へ送り、`element` が下の帯（タブ）より上で押せるまで（6回まで）。
+    /// 決まった所（画面の割合 `x`・`from` → `to`）から指で上へ送り、`element` の下端が下の帯（タブ）より上に来たら止める
+    /// （12回まで）。送り過ぎると上の立体の車の下へ隠れるので、押せるかでは続けない（Mac run 631）。
     /// `swipeUp` は画面の真ん中から払うので、真ん中に回す物（立体の車・きっぷ）がある画面では送れない
     private func dragUp(_ app: XCUIApplication, until element: XCUIElement, x: CGFloat = 0.5, from: CGFloat, to: CGFloat) {
         let window = app.windows.firstMatch
         let bottom = window.frame.maxY - 120
         var pushes = 0
-        while element.exists, element.frame.maxY > bottom || !element.isHittable, pushes < 6 {
+        while element.exists, element.frame.maxY > bottom, pushes < 12 {
             window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: from))
                 .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: x, dy: to)))
             Thread.sleep(forTimeInterval: 1)
@@ -3657,7 +3658,7 @@ final class ScreenshotTests: XCTestCase {
         let stage = app.buttons["camper.stage.van"].firstMatch
         guard stage.exists else { return XCTFail("段のボタンが無い") }
         // 送るのは下の札の所から（上半分は立体の車で、払うと車が回る・Mac run 628 で `swipeUp` が車を回した）
-        dragUp(app, until: stage, from: 0.85, to: 0.6)
+        dragUp(app, until: stage, from: 0.85, to: 0.76)
         XCTAssertTrue(stage.isHittable, "大きい文字で段のボタンまで送れない")
         shoot(app, "95y-大きい文字（キャンピングカー・数と段）")
         let width = app.windows.firstMatch.frame.width
