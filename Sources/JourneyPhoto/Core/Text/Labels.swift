@@ -22,6 +22,9 @@ enum Labels {
     /// だったのを、この1本にそろえた。**App Store の文言（docs）は別に人が直す**
     enum Brand {
         static var tagline: String { L("写真から、次の旅が始まる。", "Your next journey starts with a photo.") }
+        /// 一言を大きな見出しで出すときの改行（「写真から、／次の旅が始まる。」・2026-10-21）。
+        /// 字は `tagline` と同じ（改行を抜くと同じ文になる・試験で縛る）
+        static var taglineLines: String { L("写真から、\n次の旅が始まる。", "Your next journey\nstarts with a photo.") }
     }
 
     enum Navigation {

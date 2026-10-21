@@ -313,7 +313,7 @@ struct MyPageView: View {
                     .ignoresSafeArea(edges: hasCover ? .top : [])
                 // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
                 // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
-                TopBarScrim(topInset: geo.safeAreaInsets.top)
+                TopBarScrim(topInset: geo.safeAreaInsets.top, solid: true)
             }
         }
     }

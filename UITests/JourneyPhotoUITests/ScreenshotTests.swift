@@ -71,11 +71,11 @@ final class ScreenshotTests: XCTestCase {
     /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
     /// 見比べられるように、上のバーだけを切り出す。3つの押せる範囲（frame）も文で残す
     /// （帯の高さは絵より数字の方が比べやすい）。出なければ撮らない
-    private func shootHeaderBand(_ app: XCUIApplication) {
+    private func shootHeaderBand(_ app: XCUIApplication, tab: String = "10e-ホーム") {
         let bar = app.navigationBars.firstMatch
         guard bar.exists else { return }
         let shot = XCTAttachment(screenshot: bar.screenshot())
-        shot.name = "10e-ホーム（右上の見出しの帯・寄り）"
+        shot.name = "\(tab)（右上の見出しの帯・寄り）"
         shot.lifetime = .keepAlways
         add(shot)
         let ids = ["header.search", "header.notifications", "header.menu"]
@@ -84,7 +84,7 @@ final class ScreenshotTests: XCTestCase {
             return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
         }
         let note = XCTAttachment(string: (["バー: \(bar.frame)"] + lines).joined(separator: "\n"))
-        note.name = "10e-ホーム（見出しの寸法）"
+        note.name = "\(tab)（見出しの寸法）"
         note.lifetime = .keepAlways
         add(note)
     }
@@ -587,7 +587,8 @@ final class ScreenshotTests: XCTestCase {
             // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
             // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
             // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
-            if name == "ホーム" { shootHeaderBand(app) }
+            // 見出しの帯はどのタブも同じ中身（2026-10-21）。探す・マップも寸法を残して見比べる
+            if name == "ホーム" || name == "探す" || name == "マップ" { shootHeaderBand(app, tab: "1\(index)e-\(name)") }
             if name == "ホーム" {
                 let latest = app.buttons["新着"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
@@ -1706,8 +1707,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(card.label.contains("発、") && card.label.contains("着"),
                       "見本の区間が「〇〇発、〇〇着」と読めない（\(card.label)）")
         XCTAssertTrue(card.label.contains("乗車券"), "見本の表に「乗車券」が無い（\(card.label)）")
-        // 見本の日付・区間・回数は空（「—」）。読み上げは「ダッシュ」でなく「なし」（2026-10-17）
-        XCTAssertTrue(card.label.contains("日付 なし"), "空の欄が「なし」と読めない（\(card.label)）")
+        // 見本の日付・区間・回数は空。**空の欄は出さない**（2026-10-21・前は「—」を出し、読み上げは「なし」）
+        XCTAssertFalse(card.label.contains("日付 なし"), "空の欄を出している（\(card.label)）")
         XCTAssertFalse(card.label.contains("—"), "空の欄の「—」をそのまま読ませている（\(card.label)）")
         shoot(app, "85-自分のカード（表・東京→フランス）")
         let flip = app.buttons["pass.pick.flip"].firstMatch

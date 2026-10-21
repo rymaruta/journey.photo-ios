@@ -15,7 +15,7 @@ final class TabRouter: ObservableObject {
 
     func openMyPage() { myPageRequests += 1 }
 
-    /// 見出しの「探す」（ホームだけ・板 01c）とメニューの「撮影地マップ」から
+    /// 見出しの「探す」（どのタブにも・2026-10-21）とメニューの「撮影地マップ」から
     @Published private(set) var searchRequests = 0
     @Published private(set) var mapRequests = 0
     /// 見出しの「メニュー（≡）」（板 01d）。**シートは `RootView` が出す**

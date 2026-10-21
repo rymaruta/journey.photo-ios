@@ -240,8 +240,11 @@ enum TrunkText {
         }
     }
 
-    /// 眉ラベル（モック Main の「MY TRUNK · 革の旅行鞄」）
-    static func eyebrow(_ model: TrunkModel) -> String { "MY TRUNK · \(info(model).name)" }
+    /// 眉ラベル（モック Main の「MY TRUNK · 革の旅行鞄」）。
+    /// **人のトランクでは「TRUNK · 型」**（2026-10-21・run 609 の 101c: 人のトランクの中なのに「MY TRUNK」と出ていた）
+    static func eyebrow(_ model: TrunkModel, theirs: Bool = false) -> String {
+        "\(theirs ? "TRUNK" : "MY TRUNK") · \(info(model).name)"
+    }
 
     /// トランクの読み上げ（モック Trunk の `ariaLabel`）。付けている部品があれば名前を添える
     static func accessibilityLabel(model: TrunkModel, labels: Int, tags: Int, equipped: TrunkEquipped = .none) -> String {

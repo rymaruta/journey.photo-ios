@@ -67,6 +67,14 @@ extension TripBook {
         return TravelDistance.formatted(kilometers)
     }
 
+    /// 旅の一冊の数の段に「移動（直線）」を出すか（2026-10-21 判断・run 609 の 30）。
+    /// **数えられない（「—」）と、丸めて 0 km の旅は出さない**——「0 km」「—」だけの欄は作りかけに見えた。
+    /// 同じ場所で撮った旅は本当に 0 km だが、0 は実績にならない（マイページの旅の記録と同じ決まり）
+    static func showsDistance(_ kilometers: Double?) -> Bool {
+        guard let kilometers else { return false }
+        return TravelDistance.formatted(kilometers) != "0"
+    }
+
     // MARK: - 日ごとの段
 
     struct Day: Equatable {

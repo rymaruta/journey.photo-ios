@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 投稿の「この写真を見て撮影」で、元の写真を選ぶ（2026-10-14・`InspiredBy`）。
 ///
-/// **端末の控えから選ぶ。新しいサーバーの口は使わない。** 選べるのは2つの棚:
+/// **端末の控えから選ぶ。新しいサーバーの口は使わない。** 選べるのは3つの棚（みんなの写真は 2026-10-21 から）:
 ///
 /// - **保存した写真**（しおり・`SavedPhotosStore`）——「あとで行きたい」と思った写真をしおりで残す人が多い
 /// - **行きたい場所**（`WishlistStore`）——写真の詳細の「行きたい」で入れた場所の公開写真。
@@ -105,6 +105,8 @@ struct InspiredPickerView: View {
         case .wishlist:
             return InspiredBy.wishCandidates(keys: wishlist.spotIds, feed: feed, index: spotIndex,
                                              currentLocation: currentLocation)
+        case .everyone:
+            return InspiredBy.everyoneCandidates(feed: feed, viewerId: auth.userId, currentLocation: currentLocation)
         }
     }
 
@@ -113,15 +115,27 @@ struct InspiredPickerView: View {
         if pools == nil {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
         } else if candidates.isEmpty {
-            Text(pools?.feed == nil
-                 ? L("写真を読み込めませんでした。通信の状態を確かめてください",
-                     "Couldn't load photos. Check your connection.")
-                 : shelf.emptyMessage)
-                .font(.footnote)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity)
+            VStack(spacing: JPSpace.s) {
+                Text(pools?.feed == nil
+                     ? L("写真を読み込めませんでした。通信の状態を確かめてください",
+                         "Couldn't load photos. Check your connection.")
+                     : shelf.emptyMessage)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.text3)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                // 押せる次の一手（2026-10-21・run 609 の 45b・45c: 説明だけで行き止まりだった）。
+                // 写真の無い画面の主ボタン＝真鍮の塗りに墨。読めなかった回は出さない（移っても空）
+                if pools?.feed != nil, let next = shelf.emptyNextShelf {
+                    Button { shelf = next } label: {
+                        Text(next.chooseLabel).jpPillButton(.main(onPhoto: false))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("inspiredPicker.emptyNext")
+                }
+            }
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity)
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(candidates) { photo in

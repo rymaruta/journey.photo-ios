@@ -321,7 +321,13 @@ struct LightForecastView: View {
     private func emptyView(_ empty: LightForecastText.Empty) -> some View {
         VStack(spacing: 0) {
             stateIcon("sun.horizon")
-            EmptyState(title: LightForecastText.emptyTitle(empty), message: LightForecastText.emptyBody(empty))
+            // 押せる次の一手を置く（2026-10-21・run 609 の 84b: 説明だけで行き止まりだった）。
+            // 写真の無い画面の主ボタン＝真鍮の塗りに墨（`EmptyState` の一手）
+            EmptyState(title: LightForecastText.emptyTitle(empty), message: LightForecastText.emptyBody(empty),
+                       actionTitle: LightForecastText.findSpotsAction,
+                       actionIdentifier: "lightForecast.findSpots") {
+                TabRouter.shared.openMap()
+            }
         }
         .padding(.top, JPSpace.section)
     }

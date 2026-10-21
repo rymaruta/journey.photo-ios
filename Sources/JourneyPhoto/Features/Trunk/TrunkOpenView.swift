@@ -189,7 +189,7 @@ struct TrunkOpenView: View {
             let overflows = TrunkLid.overflows(width: width, height: room)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                    Text(TrunkText.eyebrow(model))
+                    Text(TrunkText.eyebrow(model, theirs: theirs != nil))
                         .font(JPFont.eyebrow)
                         .tracking(11 * 0.12)
                         .foregroundStyle(WebTheme.accent)
@@ -560,7 +560,7 @@ struct TrunkOpenView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    Text(TrunkText.eyebrow(model))
+                    Text(TrunkText.eyebrow(model, theirs: theirs != nil))
                         .font(JPFont.eyebrow)
                         .tracking(11 * 0.12)
                         .foregroundStyle(WebTheme.accent)

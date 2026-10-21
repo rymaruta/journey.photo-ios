@@ -198,6 +198,8 @@ public struct Form: View {
 public struct TextField: View {
     public init(_ title: String, text: Binding<String>) {}
     public init(_ title: String, text: Binding<String>, axis: Axis) {}
+    /// 案内の字を自分で組む版（本物にもある・iOS 16）。写真の上の案内を白で出すのに使う
+    public init(_ title: String, text: Binding<String>, prompt: Text?, axis: Axis) {}
     public var body: Never { fatalError("模型") }
 }
 public struct SecureField: View {

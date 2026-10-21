@@ -80,10 +80,10 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        // 見出しはどの画面も同じ（ロゴ・お知らせ・メニュー。ホームだけ「探す」も・`AppHeaderItems`）。
+        // 見出しはどの画面も同じ（ロゴ・探す・お知らせ・メニュー・`AppHeaderItems`）。
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
-        .toolbar { AppHeaderItems(unread: unread, showsSearch: true, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない

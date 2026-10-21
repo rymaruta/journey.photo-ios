@@ -55,16 +55,22 @@ enum TheirTrunkText {
 
     /// 見出しの下の一行。写真を引けるラベルは「[表示名]さんが京都で撮った写真 · 3 枚」（数は読めてから）、
     /// 地名の無いラベルは「[表示名]さんの旅のラベル」（地名が無い訳は言わない）
+    /// 0 枚は数を出さない（2026-10-21・run 609 の 101a で「· 0 枚」と出ていた）
     static func sheetSubtitle(place: String?, owner name: String?, count: Int?) -> String {
         let who = owner(name)
         guard let place else { return L("\(who)さんの旅のラベル", "A travel label from \(who)") }
-        guard let count else { return L("\(who)さんが\(place)で撮った写真", "Photos \(who) took in \(place)") }
+        guard let count, count > 0 else { return L("\(who)さんが\(place)で撮った写真", "Photos \(who) took in \(place)") }
         return L("\(who)さんが\(place)で撮った写真 · \(count) 枚", "Photos \(who) took in \(place) · \(count)")
     }
 
     /// その土地の写真が一覧に無いとき（読み終えて0枚）
     static var noPhotos: String {
         L("この土地の写真は、いまは一覧にありません。", "No photos from this place in the list right now.")
+    }
+
+    /// 0枚のラベルの一手: 地図でその土地を開く（2026-10-21・run 609 の 101a: 押しても行き止まりだった）
+    static func mapAction(place: String) -> String {
+        L("\(place)を地図で見る", "See \(place) on the map")
     }
 
     /// シートの下の注記（板どおり）

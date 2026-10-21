@@ -816,7 +816,12 @@ struct RootView: View {
         // メニュー自身の行は先に閉じている）。札を切り替えるのは `tabs` の側
         .onChange(of: tabRouter.myPageRequests) { _, _ in showMenu = false }
         .onChange(of: tabRouter.searchRequests) { _, _ in showMenu = false }
-        .onChange(of: tabRouter.mapRequests) { _, _ in showMenu = false }
+        // お知らせのシートも下ろす（2026-10-21: お知らせ → 光と天気の知らせの空の「撮影スポットを探す」から
+        // 地図へ移ると、シートが上に残って地図が見えない）
+        .onChange(of: tabRouter.mapRequests) { _, _ in
+            showMenu = false
+            showNotifications = false
+        }
         // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
         // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
         // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
@@ -1195,7 +1200,7 @@ struct RootView: View {
         .onChange(of: tabRouter.myPageRequests) { _, _ in
             selection = .mypage
         }
-        // 見出しの「探す」（ホームだけ）→ 探すの札へ
+        // 見出しの「探す」→ 探すの札へ（探すの札の上で押したら、探す口に字を打てるようにする・`SearchView`）
         .onChange(of: tabRouter.searchRequests) { _, _ in
             selection = .search
         }

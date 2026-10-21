@@ -459,10 +459,20 @@ struct TheirTrunkView: View {
             }
             .accessibilityHidden(true)
         } else if matched.isEmpty {
-            Text(TheirTrunkText.noPhotos)
-                .font(.footnote)
-                .foregroundStyle(TrunkStyle.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(TheirTrunkText.noPhotos)
+                    .font(.footnote)
+                    .foregroundStyle(TrunkStyle.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // 行き止まりにしない: その土地を地図で開く（地図の絞りに地名を渡す・`TabRouter.openMap`）。
+                // 写真の無い札の主ボタン＝真鍮の塗りに墨（CLAUDE.md の owner の好み）
+                Button { TabRouter.shared.openMap(query: place) } label: {
+                    Label(TheirTrunkText.mapAction(place: place), systemImage: "map")
+                        .jpPillButton(.main(onPhoto: false), height: WebTheme.minTapTarget)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("trunk.their.map")
+            }
         } else {
             LazyVGrid(columns: Self.columns, spacing: 4) {
                 ForEach(Array(matched.prefix(3).enumerated()), id: \.element.id) { i, photo in

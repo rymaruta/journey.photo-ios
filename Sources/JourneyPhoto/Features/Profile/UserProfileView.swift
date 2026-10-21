@@ -64,7 +64,7 @@ struct UserProfileView: View {
                 // バーの地を透かしているので、敷かないと上へ送った写真が時計・戻る・
                 // 「…」の真下を流れて読めない。iOS 17〜25 は丸に地が無く、明るい
                 // カバーの上でも矢印が沈む
-                TopBarScrim(topInset: geo.safeAreaInsets.top)
+                TopBarScrim(topInset: geo.safeAreaInsets.top, solid: true)
             }
         }
         .webScreen()

@@ -877,10 +877,11 @@ struct UploadView: View {
                 // 2026-10-03 判断: **撮影地を題・説明より先に**（いちばん多い道は 写真 → 撮影地 → 投稿。
                 // 題と説明は任意）。撮影地は写真の位置から自動で入る（`fillPlaceName`）
                 VStack(alignment: .leading, spacing: 6) {
-                    JPSectionTitle(L("撮影地", "Place"))
+                    // 見出しと枠はタイトル・説明と同じ形（`JPFieldTitle`・`jpFieldBox`・2026-10-21）
+                    JPFieldTitle(L("撮影地", "Place"))
                     PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
                                      near: item.prepared.coords, offersSpots: true,
-                                     pickedSpot: $item.pickedSpot)
+                                     pickedSpot: $item.pickedSpot, boxed: true)
                     // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
                     if UploadDetails.showsSampleNote(location: item.location, published: model.published,
                                                      audience: model.audience) {
