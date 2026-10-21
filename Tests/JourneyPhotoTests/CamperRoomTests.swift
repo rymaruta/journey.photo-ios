@@ -565,7 +565,7 @@ final class CamperRoomTests: XCTestCase {
     }
 
     /// 透明の硝子（硝子の球・瓶）は奥行きを書かず、照りの層も持たない（中身が見える・2026-10-21 Mac run 622 で灰色の玉に見えた）
-    func testClearGlassShowsWhatIsInside() {
+    func testClearGlassShowsWhatIsInside() throws {
         for mood in [CamperMood.day, .night] {
             let s = CamperMaterials.spec(.room(.clearGlass), paint: 0, mood: mood)
             XCTAssertLessThan(s.opacity, 0.3)
@@ -583,6 +583,12 @@ final class CamperRoomTests: XCTestCase {
         let terrarium = CamperRoomFurnitureModels.mesh("plant_hanger.glass_terrarium")
         XCTAssertEqual(terrarium?.materials.contains(.room(.globeGlass)), true)
         XCTAssertEqual(terrarium?.materials.contains(.room(.clearGlass)), false)
+        // 透明の硝子は家具の網から分けて、不透明の組の後に描く（混ぜたままだと壁・中身より先に描かれて玉に見えた・run 632）
+        let parts = try XCTUnwrap(terrarium).split(CamperRoomMaterials.drawnAfterOpaque)
+        XCTAssertEqual(parts.matched.materials, [.room(.globeGlass)])
+        XCTAssertTrue(parts.rest.materials.contains(.room(.soil)))
+        XCTAssertTrue(CamperRoomMaterials.drawnAfterOpaque(.room(.clearGlass)))
+        XCTAssertFalse(CamperRoomMaterials.drawnAfterOpaque(.room(.frameGlass)), "額の硝子は印画と同じ節（写真の差し替えが束の番号で探す）")
     }
 
     /// 寝かせた輪（`ringXZ`）は中心の高さに水平に乗る（`arc` を寝かせると高さが奥行きに移る・2026-10-21）

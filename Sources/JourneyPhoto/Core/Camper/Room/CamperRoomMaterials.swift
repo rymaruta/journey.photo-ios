@@ -98,6 +98,13 @@ enum CamperRoomMaterial: Hashable, Sendable {
 
 enum CamperRoomMaterials {
 
+    /// 家具の網から分けて、壁・中身を描いた後に重ねる透明の硝子（硝子の球・瓶・ポット・戸棚の戸）。
+    /// 2026-10-21（Mac run 625・632）: 家具 1 つの網の中に混ぜたままだと、硝子が壁や中身より先に描かれ、昼は灰色、
+    /// 夜は灯りに照らされた不透明な玉（拡散の色を黒にすると黒い玉）に見えた。外の車の硝子・炎（`CamperScene`）と同じく後に足す
+    static func drawnAfterOpaque(_ m: CamperMaterial) -> Bool {
+        m == .room(.clearGlass) || m == .room(.globeGlass)
+    }
+
     /// カーテンの色（板 CamperRoomMain: 麻・藍・森の緑・赤茶）
     static let curtainColors: [(key: String, ja: String, en: String, color: UInt32)] = [
         ("linen", "麻", "Linen", 0xD9CCB2), ("indigo", "藍", "Indigo", 0x2F4F74),
@@ -234,8 +241,8 @@ enum CamperRoomMaterials {
         case .globeGlass:
             // 2026-10-21（Mac run 625 の 96e・15）: `.clearGlass` のままだと、昼は灰色の膜越しに色の無い中身・奥の木目が透けず、
             // 夜は灯りの当たった不透明な玉のように上がクリーム色・下が黒い三日月になった（灯りの照りの点まで出る）。
-            // 硝子の面の灰色（0x8C969A）が灯りで明るく照らされ、その明るさが透明度ほどには薄まらず、中身と奥の壁の上に足されている。
-            // 両面だと膜が 2 枚重なる。拡散の色をほぼ黒にして（足される明るさが無い）、片面だけにする。
+            // 拡散の色をほぼ黒にしただけの run 632 では黒い玉になった——硝子が家具の網の中で壁・中身より先に描かれていたのが元
+            // （`drawnAfterOpaque` で別の節にして後に描く）。そのうえで、灯りに照らされて膜にならないよう拡散の色はほぼ黒・片面。
             // 光るのは鋭い映りが縁で強まる所（フレネル）だけ。他の家具の `.clearGlass`（燭台・ポット・瓶・戸棚）は変えない
             return CamperMaterialSpec(color: 0x060809, roughness: 0.02, opacity: night ? 0.1 : 0.08, glassShell: false)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)

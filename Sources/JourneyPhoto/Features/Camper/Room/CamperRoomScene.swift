@@ -37,6 +37,8 @@ final class CamperRoomScene {
     private var lampNodes: [SCNNode] = []
     private var itemNodes: [String: (node: SCNNode, item: CamperRoomPlacedItem)] = [:]
     private var furniture: [String: CamperPreparedMesh] = [:]
+    /// 家具の透明の硝子（`CamperRoomMaterials.drawnAfterOpaque`）。不透明の部分（`furniture`）の後に描く
+    private var furnitureGlass: [String: CamperPreparedMesh] = [:]
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
     /// 選んでいる家具（3 浮かせる）・持ち上げて動かしている家具（動かした先）と置けるか
@@ -262,7 +264,9 @@ final class CamperRoomScene {
 
     private func makeItemNode(_ it: CamperRoomPlacedItem) -> SCNNode? {
         if furniture[it.furnitureId] == nil, let m = CamperRoomFurnitureModels.mesh(it.furnitureId) {
-            furniture[it.furnitureId] = CamperPreparedMesh(m, unit: Self.unit)
+            let parts = m.split(CamperRoomMaterials.drawnAfterOpaque)
+            furniture[it.furnitureId] = CamperPreparedMesh(parts.rest, unit: Self.unit)
+            if !parts.matched.groups.isEmpty { furnitureGlass[it.furnitureId] = CamperPreparedMesh(parts.matched, unit: Self.unit) }
         }
         guard let mesh = furniture[it.furnitureId], let geometry = palette.geometry(mesh) else { return nil }
         // 写真の材質は額ごとに専用にする（共有だと片方の印画がもう片方にも乗る／差し替えが効かない）
@@ -279,6 +283,14 @@ final class CamperRoomScene {
         let body = SCNNode(geometry: geometry)
         body.name = "body"
         holder.addChildNode(body)
+        // 透明の硝子は別の節にして、壁・床・中身（不透明の組）と接地の影の後に描く。影は落とさない
+        if let glassMesh = furnitureGlass[it.furnitureId], let glassGeometry = palette.geometry(glassMesh) {
+            let glass = SCNNode(geometry: glassGeometry)
+            glass.name = "glass"
+            glass.castsShadow = false
+            glass.renderingOrder = 12
+            holder.addChildNode(glass)
+        }
         // 接地の影（床の物は足元に、壁の物は壁に。敷物には付けない）
         let f = CamperRoomCatalog.furniture(it.furnitureId)
         if f?.isRug == false, it.placement != .ceiling {
