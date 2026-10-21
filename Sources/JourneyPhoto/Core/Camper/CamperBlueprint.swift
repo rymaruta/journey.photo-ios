@@ -670,7 +670,15 @@ struct CamperBuilder {
         let chrome = CamperMeshKit.extrude(CamperPolygon.offset(w, by: 1.85), holes: [CamperPolygon.offset(w, by: 1.4)],
                                            depth: 1.0, front: .chrome, side: .chrome)
         let pane: CamperMaterial = lit ? .glassLit : .glass
-        let glass = CamperMeshKit.extrude(w, depth: 0.4, front: pane, side: pane, back: pane)
+        var glass = CamperMeshKit.extrude(w, depth: 0.4, front: pane, side: pane, back: pane)
+        if lit {
+            // 住む所の窓の硝子は、夜にカーテン越しの明かり（roomGlow）を光らせる。絵が窓 1 枚にちょうど 1 回載るよう、
+            // 貼り絵の位置を窓の外接の四角の 0〜1 にする（v=0 が上）
+            let xs = w.map(\.x), ys = w.map(\.y)
+            if let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() {
+                glass.uvs = glass.positions.map { CV2(($0.x - x0) / max(0.01, x1 - x0), 1 - ($0.y - y0) / max(0.01, y1 - y0)) }
+            }
+        }
         func place(_ m: CamperMesh, depth: Double) -> CamperMesh {
             switch plane {
             case .side(let z):

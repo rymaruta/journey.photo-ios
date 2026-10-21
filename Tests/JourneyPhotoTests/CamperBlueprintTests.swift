@@ -427,10 +427,21 @@ final class CamperBlueprintTests: XCTestCase {
     /// 運転席のガラスは夜も光らない。住む所の窓だけがほのかに光る
     func testOnlyLivingWindowsGlowAtNight() {
         XCTAssertNil(CamperMaterials.spec(.glass, paint: 0, mood: .night).emission)
-        // 2026-10-19 作り直し: 窓のガラスは光らない（一色の板になった）。薄い暗い硝子（板 0.38）で、照らされた室内が透け、
-        // 表に映り込みが乗る。光るのは室内の灯りに照らされた布（織り目の絵の弱い光）
+        // 2026-10-19: 一色の emission の窓は平らな板になった。2026-10-21（Mac run 627・630・633）: 硝子の奥の明かりの面が
+        // 外から見えず窓が暗い一色だったので、硝子にカーテン越しの明かりの絵（roomGlow・一色ではない）を光らせる。昼は光らない
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
-        XCTAssertNil(glass.emission)
+        XCTAssertEqual(glass.emissionTexture, .roomGlow, "一色の平らな光にしない")
+        XCTAssertNotNil(glass.emission)
+        XCTAssertNil(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).emission)
+        let lightColor = CamperTextures.rgb(CamperMaterials.windowLightColor)
+        XCTAssertGreaterThan(lightColor.0, lightColor.2 * 2, "窓の明かりは暖色")
+        // 窓の硝子の貼り絵の位置は窓ごとに 0〜1（絵が 1 回だけ載る）
+        for n in build(mood: .night).nodes where n.name == "window" {
+            guard case .mesh(let m) = n.shape else { continue }
+            for (i, uv) in m.uvs.enumerated() where m.groups.contains(where: { $0.material == .glassLit && $0.indices.contains(Int32(i)) }) {
+                XCTAssertTrue((-0.01...1.01).contains(uv.x) && (-0.01...1.01).contains(uv.y), "\(uv)")
+            }
+        }
         // 夜は 0.32（奥の明かりを見せつつ硝子感を残す・2026-10-20）。昼は板どおり 0.62
         XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001)
         XCTAssertEqual(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).opacity, 0.62, accuracy: 0.001)
@@ -657,7 +668,8 @@ final class CamperBlueprintTests: XCTestCase {
         for n in lamps {
             let ms: [CamperMaterial]
             if case .mesh(let m) = n.shape { ms = m.materials } else { ms = [n.material] }
-            for m in ms {
+            // 後ろの住む所の窓の硝子（glassLit）は灯った部屋の窓なので除く（2026-10-21・窓の明かりを硝子に）
+            for m in ms where m != .glassLit {
                 XCTAssertNil(CamperMaterials.spec(m, paint: 0, mood: .night).emission, "\(n.name) が夜に光る")
             }
         }

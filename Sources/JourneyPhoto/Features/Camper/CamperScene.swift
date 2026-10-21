@@ -238,8 +238,11 @@ final class CamperScene {
     /// 夜の地面と遠景は夜だけ。下から見る向きでは隠す（地面の裏から林が浮いて見える）。昼と雪の床は夜に隠す
     private func updateStageVisibility() {
         let night = currentMood == .night
-        nightStageNode.isHidden = !night || elevation < 0
-        floorNode.isHidden = night
+        // 値が替わる時だけ入れる（2026-10-21 Mac run 627・633 の 95: 組み上がる前の空の場面で描き直しが起き、昼の初めの絵が
+        // 灰色のむら（車の無い場面の画面の陰 SSAO と見立てた）のまま残った。組む前は場面に触らない）
+        let stageHidden = !night || elevation < 0
+        if nightStageNode.isHidden != stageHidden { nightStageNode.isHidden = stageHidden }
+        if floorNode.isHidden != night { floorNode.isHidden = night }
     }
 
     /// 試験用: 作った材質（殻の中の組・外の組）

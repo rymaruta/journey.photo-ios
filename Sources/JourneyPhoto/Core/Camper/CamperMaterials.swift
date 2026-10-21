@@ -128,8 +128,14 @@ enum CamperMaterials {
             // カーテン・内壁・家具が透けて見え、表には外の映り込み（月・地平線）が乗る
             // 2026-10-19（Mac night3）: 0.38 では奥の明かりが暗い四角にしか見えなかった。夜だけ薄くする
             // （昼は板どおり 0.62）。2026-10-20: 0.22 だと windowGlow が平らな黄の板に見えた → 0.32 で硝子感を残す
+            // 2026-10-21 判断（Mac run 627・630・633）: 硝子の奥に置いた明かりの面（足す光・不透明・硝子のすぐ内側のどれも）が
+            // 外から見えず、窓は暗い茶の一色だった（硝子の奥が描かれない見立て・確かめていない）。夜は硝子そのものに、
+            // カーテン越しの明かりの絵（roomGlow: 真ん中が明るく、両側のひだ・下の家具の影・黒へ落ちる縁）を光らせる。
+            // 一色ではないので平らな板にならず、表には外の映り込み（clearCoat）が乗る。貼り絵の位置は窓ごとに 0〜1
             return CamperMaterialSpec(color: night ? 0x2A2016 : 0x10161C, roughness: 0.04, clearCoat: night ? 1 : 0,
-                                      clearCoatRoughness: 0.03, opacity: night ? 0.32 : 0.62, doubleSided: true)
+                                      clearCoatRoughness: 0.03, opacity: night ? 0.32 : 0.62,
+                                      emission: night ? Self.windowLightColor : nil, emissionIntensity: night ? 0.9 : 0,
+                                      emissionTexture: night ? .roomGlow : nil, doubleSided: true)
         // 灯りのレンズ（2026-10-19 作り直し・2 回目）。owner「テールランプとかの灯りが不自然すぎる」:
         // 2026-10-19 判断: キャンプ場に停めて人が中にいる場面なので、前照灯・尾灯・方向指示・車幅灯は**夜も消えている**
         // （emission 無し）。夜に見えるのは、周りの灯り（焚き火・窓・ランタン・入口の灯り・月）がレンズに映る艶だけ。
@@ -314,6 +320,9 @@ enum CamperMaterials {
         let c = CamperTextures.rgb(hex)
         return (f(c.0), f(c.1), f(c.2))
     }
+
+    /// 夜の窓の明かりの色（カーテン越しの 2700K・硝子の光る絵に掛ける）
+    static let windowLightColor: UInt32 = 0xB88250
 
     /// 殻の中（外から扉の口・窓越しに見える室内）に届く空の光の割合（0〜1・2026-10-21 判断）。
     /// 周りの光は壁と屋根で遮られないので、そのままだと昼に開けた口の奥が外の塗装より明るい（owner「眩しすぎる」）。
