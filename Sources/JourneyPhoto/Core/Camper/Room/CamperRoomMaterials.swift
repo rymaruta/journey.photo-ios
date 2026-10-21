@@ -175,7 +175,9 @@ enum CamperRoomMaterials {
             // 両面の硝子として描くと膜になって奥の印画が消えるので、薄い膜のまま奥行きは書かない
             // 2026-10-21（Mac run 605）: 粗さ 0.4 だと、透かしても周りの光の映りがぼけて面全体に白い膜が掛かり、
             // 額の中の写真・駅の時計の文字盤が白い板に見えた（物理の映りは透明度で薄まらない）。映りは鋭く、照りの層は無し
-            return CamperMaterialSpec(color: 0xF7F4EE, roughness: 0.04, opacity: 0.08, doubleSided: true, glassShell: false)
+            // 2026-10-21（owner の実機: 写真を飾っても額の中が真っ白）: 物理の光の透明は SceneKit では効かず（硝子の球と同じ・
+            // run 625〜636）、明るい硝子の板が印画の手前を不透明に覆っていた。光を受けない「足す光」のごく暗い膜にする
+            return CamperMaterialSpec(color: 0x0E0F10, roughness: 1, additive: true)
         case .milkGlass:
             // 夜の乳白硝子は抑えめ（0.5→0.28）。白く飛ぶと天井の板が昼の蛍光灯に見える
             return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.28, clearCoat: 0.45, opacity: night ? 1 : 0.92,

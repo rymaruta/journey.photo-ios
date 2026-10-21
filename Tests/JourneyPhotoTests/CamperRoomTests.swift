@@ -605,6 +605,134 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
+    /// 部屋の殻の健全さ（2026-10-21 owner の実機: 手前の低い壁の下がちらつき、右手前の角に隙間・黒い欠け・縦の明るい線、
+    /// 切った壁の天端が台所の天板の斑点）。どの部屋・どちらの向きでも、カメラから見える面どうしが同じ平面で重ならない
+    /// （ちらつき）、切った壁の天端と扉の側の角は木口の板（`.trim`）が覆う
+    func testRoomShellHasNoFlickerAndCleanCuts() throws {
+        struct Tri { var a: CV3, b: CV3, c: CV3, n: CV3, node: String, material: CamperMaterial }
+        for stage in CamperStage.allCases {
+            for kind in CamperRoomKind.rooms(stage) {
+                let layout = CamperRoomLayout.make(kind, stage: stage)
+                let bp = CamperRoomBuilder.build(layout, doc: CamperRoomRules.starterDocument(layout))
+                let s = layout.size
+                for yaw in [34.0, -34.0] {
+                    let cam = CamperRoomCamera(yaw: yaw, pitch: 38, zoom: 1, target: CV3(s.x / 2, 18, s.z / 2 + 4))
+                    let eye = cam.eye(layout)
+                    var tris: [Tri] = []
+                    for n in bp.shell where n.name != "room.kitchen" && CamperRoomScenePlan.visible(n.name, camera: cam) {
+                        guard case .mesh(let m) = n.shape else { continue }
+                        for g in m.groups {
+                            var i = 0
+                            while i + 2 < g.indices.count {
+                                let a = m.positions[Int(g.indices[i])], b = m.positions[Int(g.indices[i + 1])], c = m.positions[Int(g.indices[i + 2])]
+                                i += 3
+                                let f = (b - a).cross(c - a)
+                                guard f.length > 1e-6 else { continue }
+                                let nrm = f.normalized
+                                let mid = (a + b + c) * (1.0 / 3)
+                                // カメラに背を向けた面は見えない
+                                guard nrm.dot(eye - mid) > 0 else { continue }
+                                tris.append(Tri(a: a, b: b, c: c, n: nrm, node: n.name, material: g.material))
+                            }
+                        }
+                    }
+                    // 同じ平面（向き・位置）ごとに分けて、違う節の三角どうしが重なるかを見る
+                    var buckets: [String: [Int]] = [:]
+                    for (k, t) in tris.enumerated() {
+                        let d = t.n.dot(t.a)
+                        let key = "\(Int((t.n.x * 200).rounded())),\(Int((t.n.y * 200).rounded())),\(Int((t.n.z * 200).rounded())),\(Int((d * 20).rounded()))"
+                        buckets[key, default: []].append(k)
+                    }
+                    var flicker: [String] = []
+                    for (_, ks) in buckets where ks.count > 1 {
+                        for x in 0..<ks.count {
+                            for y in (x + 1)..<ks.count {
+                                let p = tris[ks[x]], q = tris[ks[y]]
+                                guard p.node != q.node, Self.trianglesOverlap(p.a, p.b, p.c, q.a, q.b, q.c, normal: p.n) else { continue }
+                                flicker.append("\(p.node) と \(q.node)（\((p.a + p.b + p.c) * (1.0 / 3))・向き \(p.n)）")
+                                if flicker.count > 3 { break }
+                            }
+                            if flicker.count > 3 { break }
+                        }
+                        if flicker.count > 3 { break }
+                    }
+                    XCTAssertEqual(flicker, [], "\(stage) \(kind) 向き \(yaw): 同じ平面で重なる面（ちらつく）")
+                    // 切った壁の天端と扉の側の角: 真上から見て一番上の上向きの面が木口の板
+                    if layout.isStudio { continue }
+                    let cut = CamperRoomBuilder.cutHeight
+                    let t = CamperRoomLayout.wallThickness
+                    let cell = CamperRoomLayout.cell
+                    let d0 = Double(layout.door.lowerBound) * cell, d1 = Double(layout.door.upperBound + 1) * cell
+                    // 扉の壁の切れ端の真ん中・扉の側の角（切った端の壁の側）・切った端の壁の真ん中
+                    var probes = [d0 > 4 ? CV2(d0 / 2, s.z + t / 2) : CV2((d1 + s.x) / 2, s.z + t / 2)]
+                    probes.append(cam.cutsFrontEnd ? CV2(s.x + t / 2, s.z + t / 2) : CV2(-t / 2, s.z + t / 2))
+                    probes.append(cam.cutsFrontEnd ? CV2(s.x + t / 2, s.z / 2) : CV2(-t / 2, s.z / 2))
+                    for pr in probes {
+                        var best: (y: Double, m: CamperMaterial)?
+                        for t in tris where t.n.y > 0.99 {
+                            guard Self.pointInTriangleXZ(pr, t.a, t.b, t.c) else { continue }
+                            let y = (t.a.y + t.b.y + t.c.y) / 3
+                            if y < cut + 3, best == nil || y > best!.y { best = (y, t.material) }
+                        }
+                        let top = try XCTUnwrap(best, "\(stage) \(kind) 向き \(yaw): \(pr) の上に面が無い（隙間）")
+                        XCTAssertEqual(top.m, .room(.trim), "\(stage) \(kind) 向き \(yaw): \(pr) の天端が木口の板でない")
+                        XCTAssertGreaterThanOrEqual(top.y, cut, "\(stage) \(kind) 向き \(yaw): \(pr) の天端が切った高さより下")
+                    }
+                }
+            }
+        }
+    }
+
+    /// カーテンは窓台より手前に掛かる（2026-10-21 owner: 窓台の両端が布を突き抜けて裾に 2 つの穴、留め紐の弧が笑った口に見えた）
+    func testCurtainHangsInFrontOfTheSill() throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        let bp = CamperRoomBuilder.build(layout, doc: CamperRoomRules.starterDocument(layout))
+        let node = try XCTUnwrap(bp.shell.first { $0.name.hasPrefix("room.window") })
+        guard case .mesh(let m) = node.shape else { return XCTFail("窓が網でない") }
+        let w = try XCTUnwrap(layout.windows.first { $0.wall == .back })
+        var clothZ = Double.infinity, sillZ = -Double.infinity
+        for g in m.groups {
+            for i in g.indices {
+                let p = m.positions[Int(i)]
+                if case .room(.curtain) = g.material { clothZ = min(clothZ, p.z) }
+                if g.material == .room(.trim), p.y < w.bottom + 0.01, p.y > w.bottom - 1.5 { sillZ = max(sillZ, p.z) }
+            }
+        }
+        XCTAssertGreaterThan(clothZ, sillZ + 0.2, "カーテンの布が窓台を突き抜ける")
+    }
+
+    /// 同じ平面の 2 つの三角が、縁を少し内へ寄せても重なるか（分離軸）
+    static func trianglesOverlap(_ a0: CV3, _ a1: CV3, _ a2: CV3, _ b0: CV3, _ b1: CV3, _ b2: CV3, normal n: CV3) -> Bool {
+        let u = (abs(n.x) < 0.9 ? CV3(1, 0, 0) : CV3(0, 1, 0)).cross(n).normalized
+        let v = n.cross(u)
+        func flat(_ p: CV3) -> CV2 { CV2(p.dot(u), p.dot(v)) }
+        func shrink(_ ps: [CV2]) -> [CV2] {
+            let c = CV2((ps[0].x + ps[1].x + ps[2].x) / 3, (ps[0].y + ps[1].y + ps[2].y) / 3)
+            return ps.map { p in
+                let d = CV2(p.x - c.x, p.y - c.y), l = max(1e-9, (d.x * d.x + d.y * d.y).squareRoot())
+                let k = max(0, l - 0.05) / l
+                return CV2(c.x + d.x * k, c.y + d.y * k)
+            }
+        }
+        let p = shrink([flat(a0), flat(a1), flat(a2)]), q = shrink([flat(b0), flat(b1), flat(b2)])
+        for poly in [p, q] {
+            for i in 0..<3 {
+                let e = CV2(poly[(i + 1) % 3].x - poly[i].x, poly[(i + 1) % 3].y - poly[i].y)
+                let axis = CV2(-e.y, e.x)
+                let pa = p.map { $0.x * axis.x + $0.y * axis.y }, qa = q.map { $0.x * axis.x + $0.y * axis.y }
+                if pa.max()! <= qa.min()! || qa.max()! <= pa.min()! { return false }
+            }
+        }
+        return true
+    }
+
+    static func pointInTriangleXZ(_ p: CV2, _ a: CV3, _ b: CV3, _ c: CV3) -> Bool {
+        func side(_ p1: CV2, _ p2: CV3, _ p3: CV3) -> Double { (p1.x - p3.x) * (p2.z - p3.z) - (p2.x - p3.x) * (p1.y - p3.z) }
+        let d1 = side(p, a, b), d2 = side(p, b, c), d3 = side(p, c, a)
+        let neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0
+        return !(neg && pos)
+    }
+
     /// 張り出しなど台所なしの部屋でも、部屋の殻を組んで落ちない（#331: `1..<0` の目地ループ）
     func testWingRoomsBuildWithoutKitchen() {
         for stage in CamperStage.allCases {
@@ -657,15 +785,12 @@ final class CamperRoomTests: XCTestCase {
         let dayFrame = CamperMaterials.spec(.room(.frameGlass), paint: 0, mood: .day)
         let nightFrame = CamperMaterials.spec(.room(.frameGlass), paint: 0, mood: .night)
         XCTAssertEqual(dayFrame.color, nightFrame.color)
-        XCTAssertEqual(dayFrame.opacity, nightFrame.opacity, accuracy: 0.001)
-        XCTAssertLessThan(nightFrame.opacity, 0.2)
-        XCTAssertFalse(nightFrame.glassShell)
-        XCTAssertGreaterThan(nightFrame.color, 0xC0C0C0)
+        // 2026-10-21（owner の実機: 飾った写真が真っ白）: 物理の光の透明は効かず、明るい硝子の板が印画を覆った。
+        // 光を受けない足す光のごく暗い膜（印画を隠さない）
+        XCTAssertTrue(nightFrame.additive)
+        XCTAssertTrue(dayFrame.additive)
+        for shift in [16, 8, 0] { XCTAssertLessThan((dayFrame.color >> UInt32(shift)) & 0xFF, 0x20, "足す光が強いと印画に白い膜") }
         XCTAssertNotEqual(nightFrame.color, nightGlass.color)
-        XCTAssertLessThan(nightFrame.opacity, nightGlass.opacity)
-        // 映りがぼけると面全体に白い膜が掛かる（run 605: 写真・文字盤が白い板に見えた）
-        XCTAssertLessThan(dayFrame.roughness, 0.1)
-        XCTAssertEqual(dayFrame.clearCoat, 0)
         for id in ["photo_frame.landscape", "photo_frame.square", "photo_frame.triptych"] {
             let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
             XCTAssertTrue(mesh.materials.contains(.room(.frameGlass)), id)

@@ -76,8 +76,9 @@ enum CamperRoomBuilder {
     static func floor(_ l: CamperRoomLayout, style: CamperRoomStyle) -> [CamperNodeSpec] {
         let s = l.size, t = CamperRoomLayout.wallThickness
         var parts: [CamperNodeSpec] = []
-        // 床板（厚み 3・壁の下まで）。貼り絵は 40 単位（1 m）で 1 回
-        var slab = K.roundedBox(CV3(s.x + t * 2, 3, s.z + t * 2), radius: 0.3, segments: 1, material: { $0.y > 0.5 ? R(.floorFinish(style.floor)) : R(.skin(0x26282C)) })
+        // 床板（厚み 3・壁の下まで）。貼り絵は 40 単位（1 m）で 1 回。
+        // 側面は壁の外の面より 0.1 内に引く（同じ面に重なると、手前の低い壁の下の外板がちらついた・2026-10-21 owner）
+        var slab = K.roundedBox(CV3(s.x + t * 2 - 0.2, 3, s.z + t * 2 - 0.2), radius: 0.3, segments: 1, material: { $0.y > 0.5 ? R(.floorFinish(style.floor)) : R(.skin(0x26282C)) })
         slab = K.placed(slab, at: CV3(s.x / 2, -1.5, s.z / 2))
         parts.append(node("room.floor", K.reUV(slab, scale: 40)))
         // 天井（下向きの面だけ・上からは裏で見えない）
@@ -89,7 +90,8 @@ enum CamperRoomBuilder {
         ceiling.groups = [(R(.wallFinish("plywood_birch")), [0, 1, 2, 0, 2, 3])]
         parts.append(node("room.ceiling", ceiling))
         // 幅木（奥の壁・後ろの壁・前の仕切り。扉の壁は低く切るので付けない）
-        parts.append(node("room.baseboard.back", K.block(CV3(s.x, 3.2, 0.9), at: CV3(s.x / 2, 0, 0.45), radius: 0.2, R(.trim))))
+        // 奥の幅木は両端の幅木の間だけ（角で重なると天端がちらつく）
+        parts.append(node("room.baseboard.back", K.block(CV3(s.x - 1.8, 3.2, 0.9), at: CV3(s.x / 2, 0, 0.45), radius: 0.2, R(.trim))))
         parts.append(node("room.end.rear.full.baseboard", K.block(CV3(0.9, 3.2, s.z), at: CV3(0.45, 0, s.z / 2), radius: 0.2, R(.trim))))
         parts.append(node("room.end.front.full.baseboard", K.block(CV3(0.9, 3.2, s.z), at: CV3(s.x - 0.45, 0, s.z / 2), radius: 0.2, R(.trim))))
         return parts
@@ -113,6 +115,13 @@ enum CamperRoomBuilder {
         return K.merge(parts)
     }
 
+    /// 切った壁の天端の木口（3 層の断面を 1 枚の板で覆う）。外形の横 `from`〜`to`・高さ `top` の上に載せる。
+    /// 断熱の層の天端が台所の天板と同じ斑点の貼り絵で、石の板に見えた（2026-10-21 owner）
+    static func cutCap(from a: Double, to b: Double, top: Double) -> CamperMesh {
+        let t = CamperRoomLayout.wallThickness
+        return K.block(CV3(b - a, 0.6, t + 0.3), at: CV3((a + b) / 2, top, -t / 2), radius: 0.12, R(.trim))
+    }
+
     static func windowHole(_ w: CamperRoomWindow) -> [CV2] {
         let cell = CamperRoomLayout.cell
         return CamperPolygon.roundedRect(x: Double(w.from) * cell + 2, y: w.bottom, w: Double(w.to - w.from + 1) * cell - 4, h: w.top - w.bottom, r: 4,
@@ -126,24 +135,30 @@ enum CamperRoomBuilder {
         let backHoles = l.windows.filter { $0.wall == .back }.map(windowHole)
         let back = wallLayers(outline: [CV2(-t, -3), CV2(s.x + t, -3), CV2(s.x + t, h), CV2(-t, h)], holes: backHoles, style: style, paint: paint)
         out.append(node("room.wall.back", back))
+        // 角の柱は 1 枚の壁だけの物にする（2 枚が同じ所に重なると外の面・天端が同じ平面でちらつく・2026-10-21 owner）:
+        // 奥の角は奥の壁、扉の側の角は両端の壁。両端の壁は z = 0 から扉の壁の外の面まで
         // 後ろの壁（x = 0・+X 向き）。横は z（壁の面の上で -z）
         let leftHoles = l.windows.filter { $0.wall == .left }.map { w in windowHole(w).map { CV2(-$0.x, $0.y) } }
         for (name, height, holes) in [("room.end.rear.full", h, leftHoles), ("room.end.rear.low", cutHeight, [])] {
-            let m = wallLayers(outline: [CV2(-(s.z + t), -3), CV2(t, -3), CV2(t, height), CV2(-(s.z + t), height)], holes: holes, style: style, paint: paint)
+            var m = wallLayers(outline: [CV2(-(s.z + t), -3), CV2(0, -3), CV2(0, height), CV2(-(s.z + t), height)], holes: holes, style: style, paint: paint)
+            if height < h { m = K.merge([m, cutCap(from: -(s.z + t), to: 0, top: height)]) }
             out.append(node(name, K.placed(m, at: .zero, yaw: .pi / 2)))
         }
         // 前の仕切り（x = 幅・-X 向き。運転席との境）
         for (name, height) in [("room.end.front.full", h), ("room.end.front.low", cutHeight)] {
-            let m = wallLayers(outline: [CV2(-t, -3), CV2(s.z + t, -3), CV2(s.z + t, height), CV2(-t, height)], holes: [], style: style, paint: paint)
+            var m = wallLayers(outline: [CV2(0, -3), CV2(s.z + t, -3), CV2(s.z + t, height), CV2(0, height)], holes: [], style: style, paint: paint)
+            if height < h { m = K.merge([m, cutCap(from: 0, to: s.z + t, top: height)]) }
             out.append(node(name, K.placed(m, at: CV3(s.x, 0, 0), yaw: -.pi / 2)))
         }
-        // 扉の壁（z = 奥行き・-Z 向き）は、いつも高さ 9 で切る。扉の口は切れ目
+        // 扉の壁（z = 奥行き・-Z 向き）は、いつも高さ 9 で切る。扉の口は切れ目。
+        // 角（x < 0・x > 幅）は両端の壁の物にする。扉の壁も角まで伸ばすと、角の柱の所で 2 枚の壁の外の面・天端が同じ所に
+        // 重なり、隙間・黒い欠け・縦の明るい線が出た（2026-10-21 owner）。部屋の殻だけの見本（studio）は両端の壁が無いので角まで
         let cell = CamperRoomLayout.cell
         let d0 = Double(l.door.lowerBound) * cell, d1 = Double(l.door.upperBound + 1) * cell
-        let pieces = l.isStudio ? [(-t, s.x + t)] : [(-t, d0), (d1, s.x + t)]
+        let pieces: [(Double, Double)] = l.isStudio ? [(-t, s.x + t)] : [(0, d0), (d1, s.x)]
         for (a, b) in pieces where b > a {
             let m = wallLayers(outline: [CV2(-b, -3), CV2(-a, -3), CV2(-a, cutHeight), CV2(-b, cutHeight)], holes: [], style: style, paint: paint)
-            out.append(node("room.wall.door", K.placed(m, at: CV3(0, 0, s.z), yaw: .pi)))
+            out.append(node("room.wall.door", K.placed(K.merge([m, cutCap(from: -b, to: -a, top: cutHeight)]), at: CV3(0, 0, s.z), yaw: .pi)))
         }
         return out
     }
@@ -160,22 +175,27 @@ enum CamperRoomBuilder {
             var parts: [CamperMesh] = []
             // 木の枠（内の面から少し出る）・黒いゴム・硝子（表から 2.2 奥）・窓台
             let ring = CamperPolygon.offset(CamperPolygon.ccw(hole), by: 1.6)
-            parts.append(CamperMeshKit.extrude(ring, holes: [CamperPolygon.cw(hole)], depth: 1.4, front: R(.trim), side: R(.trim), bevel: 0.35)
+            // 枠の内の面は壁の穴の面より 0.08 内へ（同じ面に重なるとちらつく）
+            parts.append(CamperMeshKit.extrude(ring, holes: [CamperPolygon.cw(CamperPolygon.offset(CamperPolygon.ccw(hole), by: -0.08))], depth: 1.4,
+                                               front: R(.trim), side: R(.trim), bevel: 0.35)
                 .translated(CV3(0, 0, 1.2)))
             parts.append(K.tube(CamperPolygon.offset(CamperPolygon.ccw(hole), by: -0.5).map { CV3($0.x, $0.y, -2.0) }, radius: 0.55, sides: 6,
                                 closed: true, R(.windowRubber)))
             parts.append(K.placed(K.panel(width: width - 1, height: hgt - 1, R(.glass)), at: CV3(cx, cy, -2.2)))
-            parts.append(K.block(CV3(width + 6, 1.4, 4), at: CV3(cx, w.bottom - 1.4, 1.4), radius: 0.5, R(.trim)))
+            // 窓台は壁の表（z 0）より手前だけ（穴の下の面と同じ高さで重なるとちらつく）
+            parts.append(K.block(CV3(width + 6, 1.4, 3.6), at: CV3(cx, w.bottom - 1.4, 1.9), radius: 0.5, R(.trim)))
             // 外の景色（光を受けない絵・壁の後ろ）。窓穴を少しだけ覆う大きさにする。
             // かつて横 1.9 倍・高さ 60・y=44・z=−14 だったが、後ろの壁向けに回すと部屋の外の虚空に
             // 巨大な青い板が浮いて見えた（2026-10-20 #324「変な写真枠」）
             parts.append(K.placed(K.panel(width: width * 1.2, height: hgt * 1.25, R(.windowView)), at: CV3(cx, cy, -8)))
             // カーテンの棒と金具・左右に寄せたひだの布
-            let rodY = w.top + 5
-            parts.append(K.tube([CV3(x0 - 8, rodY, 3.2), CV3(x0 + width + 8, rodY, 3.2)], radius: 0.4, sides: 8, R(.agedBrass)))
+            // 2026-10-21 owner: 布が窓台より奥に掛かり、窓台の両端が布を突き抜けて裾に 2 つの穴、その上の留め紐の弧が
+            // 笑った口に見えた。棒と布を窓台の表（z 3.4）より手前に出し、留め紐は布を巻く輪にする
+            let rodY = w.top + 5, rodZ = 5.6, clothZ = 5.2
+            parts.append(K.tube([CV3(x0 - 8, rodY, rodZ), CV3(x0 + width + 8, rodY, rodZ)], radius: 0.4, sides: 8, R(.agedBrass)))
             for x in [x0 - 9, x0 + width + 9] {
-                parts.append(K.placed(K.sphere(radius: 0.8, segments: 10, R(.agedBrass)), at: CV3(x, rodY, 3.2)))
-                parts.append(K.tube([CV3(x + (x < cx ? 1.5 : -1.5), rodY, 3.2), CV3(x + (x < cx ? 1.5 : -1.5), rodY, 0.2)], radius: 0.3, sides: 6,
+                parts.append(K.placed(K.sphere(radius: 0.8, segments: 10, R(.agedBrass)), at: CV3(x, rodY, rodZ)))
+                parts.append(K.tube([CV3(x + (x < cx ? 1.5 : -1.5), rodY, rodZ), CV3(x + (x < cx ? 1.5 : -1.5), rodY, 0.2)], radius: 0.3, sides: 6,
                                     R(.agedBrass)))
             }
             let color = CamperRoomMaterials.curtainColor(style.curtain)
@@ -183,11 +203,14 @@ enum CamperRoomBuilder {
                 let panelW = 9.0
                 let px = side < 0 ? x0 - 2 + panelW / 2 - 4 : x0 + width + 2 - panelW / 2 + 4
                 parts.append(K.placed(K.drape(width: panelW, height: rodY - w.bottom + 4, folds: 3, depth: 1.1, flare: 0.3, R(.curtain(color))),
-                                      at: CV3(px, rodY - 0.6, 3.0)))
-                // 留め紐（裾の上で布をまとめる）
-                parts.append(K.tube(K.arc(center: CV3(px, w.bottom + 8, 3.6), radius: 3.4, from: .pi * 1.05, to: .pi * 1.95, steps: 8)
-                    .map { CV3($0.x, w.bottom + 8 + ($0.y - (w.bottom + 8)) * 0.3, 3.6 + abs($0.y - (w.bottom + 8)) * 0.2) },
-                                    radius: 0.3, sides: 5, R(.rope)))
+                                      at: CV3(px, rodY - 0.6, clothZ)))
+                // 留め紐（裾の上で布を巻く平たい輪。布の幅と襞の深さを包む）
+                let tieY = w.bottom + 8
+                let tie = (0..<16).map { k -> CV3 in
+                    let a = Double(k) / 16 * 2 * .pi
+                    return CV3(px + cos(a) * 4.0, tieY, clothZ + sin(a) * 1.9)
+                }
+                parts.append(K.tube(tie, radius: 0.3, sides: 5, closed: true, R(.rope)))
             }
             var mesh = K.merge(parts)
             // 後ろの壁の窓は向きを回す
@@ -284,9 +307,10 @@ enum CamperRoomBuilder {
         let cell = CamperRoomLayout.cell, s = l.size
         let d0 = Double(l.door.lowerBound) * cell, d1 = Double(l.door.upperBound + 1) * cell
         var parts: [CamperMesh] = []
-        // 敷居（アルミの縞板）と、扉の枠の柱（切った高さまで）
-        parts.append(K.block(CV3(d1 - d0, 1, 5), at: CV3((d0 + d1) / 2, 0, s.z + 1.5), radius: 0.3, R(.chrome)))
-        for x in [d0 + 1, d1 - 1] { parts.append(K.block(CV3(2, cutHeight, 5), at: CV3(x, 0, s.z + 1.5), radius: 0.3, R(.trim))) }
+        // 敷居（木の板・床から少しだけ上がる）と、扉の枠の柱（切った高さまで・天端は壁の木口と揃える）。
+        // 明るいクロムの板だと床・壁から浮いて見えた（2026-10-21 owner）
+        parts.append(K.block(CV3(d1 - d0 - 4, 0.6, 4.6), at: CV3((d0 + d1) / 2, 0, s.z + 1.7), radius: 0.2, R(.wornWood(.darkOak))))
+        for x in [d0 + 1, d1 - 1] { parts.append(K.block(CV3(2, cutHeight + 0.6, 5), at: CV3(x, 0, s.z + 1.5), radius: 0.3, R(.trim))) }
         // 玄関のマット（扉の内・#7a3a2a）
         parts.append(K.rug(K.roundedRect(20, 11, r: 1).map { CV2($0.x + (d0 + d1) / 2, $0.y + s.z - 7) }, thickness: 0.7, top: R(.cotton(0x7A3A2A)),
                            edge: R(.cotton(0x5E2C20))))
