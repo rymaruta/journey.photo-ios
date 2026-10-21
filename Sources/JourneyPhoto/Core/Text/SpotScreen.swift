@@ -131,17 +131,24 @@ enum SpotScreen {
 
     /// 「[都道府県] · [市区町村] · N枚の写真」。地域が無ければ枚数だけ
     /// （N は `Photo.spotId` で紐づいた公開写真を数えた値）
-    /// `photoCount` が nil なら枚数を言わない（写真の一覧を持たない画面から開いたとき。0 と言うと事実と違う）
+    /// `photoCount` が nil なら枚数を言わない（写真の一覧を持たない画面から開いたとき。0 と言うと事実と違う）。
+    /// **0 枚なら数を出さず、最初の1枚への誘い**（`firstPhotoInvite`・2026-10-21・run 609 の 13e・70 で
+    /// 「0枚の写真」と出ていた。0 は実績にならず、空っぽの場所に読ませる）
     static func subtitle(region: String?, photoCount: Int?) -> String {
         var parts: [String] = []
         if let region = region?.trimmingCharacters(in: .whitespaces), !region.isEmpty {
             parts.append(region)
         }
         if let photoCount {
-            parts.append(L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
+            parts.append(photoCount == 0
+                         ? firstPhotoInvite
+                         : L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
         }
         return parts.joined(separator: " · ")
     }
+
+    /// 写真がまだ0枚の撮影スポットに添える誘い（数の代わり）。地図の一覧の行・スポットの見出しで同じ言葉
+    static var firstPhotoInvite: String { L("最初の1枚はあなたから", "Be the first to post here") }
 
     /// `OfficialSpotView` の `photosKnown` に渡す値。**写真の一覧が取れなかった回だけ false**
     /// ——取れなかったのに空を渡すと「この場所の写真（0）まだありません」と言っていた

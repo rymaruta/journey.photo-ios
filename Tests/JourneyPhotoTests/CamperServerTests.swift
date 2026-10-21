@@ -69,8 +69,8 @@ final class CamperServerTests: XCTestCase {
         XCTAssertEqual(CamperCatalog.dexCount([], serverOpen: true).total, 131)
         XCTAssertEqual(CamperCatalog.dexCount([], serverOpen: false).total, 98)
         XCTAssertEqual(CamperCatalog.dexCount([]).total, 98)
-        XCTAssertEqual(CamperText.dexNote(serverOpen: true), L("図鑑 132 · 近日 1", "Dex 132 · 1 soon"))
-        XCTAssertEqual(CamperText.dexNote(serverOpen: false), L("図鑑 132 · 近日 34", "Dex 132 · 34 soon"))
+        XCTAssertTrue(CamperText.dexFootnote(serverOpen: true).contains(L("「近日」の 1 個", "The 1 marked")))
+        XCTAssertTrue(CamperText.dexFootnote(serverOpen: false).contains(L("「近日」の 34 個", "The 34 marked")))
 
         let state = try decode(CamperServerState.self, mineJSON)
         let open = CamperServerParts(state: state)

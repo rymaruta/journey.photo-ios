@@ -122,8 +122,60 @@ final class DiscoverySectionsTests: XCTestCase {
                            PhotoQuery.photos(photos, in: .location(spot.id)).count,
                            "「\(spot.id)」の札の枚数が、開いた先と違う")
         }
-        // 「パリ」は自分＋「パリ, フランス」の2枚、「パリ, フランス」は自分だけ
+        // 「パリ」と「パリ, フランス」は1枚の札「パリ」にまとめる（2026-10-21）。2枚
         XCTAssertEqual(spots.first { $0.id == "パリ" }?.count, 2)
-        XCTAssertEqual(spots.first { $0.id == "パリ, フランス" }?.count, 1)
+        XCTAssertNil(spots.first { $0.id == "パリ, フランス" })
+    }
+
+    /// 🔴 全画面の点検（2026-10-21・11-探す）: 本番の写真の撮影地そのままで、
+    /// 「フランス」（国名だけ）と「フランス ヴェルサイユ」の札が並び、**「フランス」が2枚**に見えた。
+    /// 市・名所の名前でまとめ、国名だけの撮影地は出さない
+    func testPopularSpotsGroupByCityAndSkipCountryOnly() throws {
+        // 2026-10-21 の本番の `/photos` にあった撮影地（フランスの分）
+        let photos = [
+            try photo("stone", place: "フランス", likes: 9),
+            try photo("v1", place: "フランス ヴェルサイユ"),
+            try photo("v2", place: "フランス ヴェルサイユ"),
+            try photo("v3", place: "ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス"),
+            try photo("p1", place: "パリ"),
+            try photo("p2", place: "パリ, フランス"),
+            try photo("g", place: "オペラ・ガルニエ（パリ）"),
+        ]
+        let spots = DiscoverySections.popularSpots(in: photos)
+        let names = spots.map { LocationMatch.display($0.id) }
+        // 国名だけの札は無い・同じ名前の札は2枚にならない
+        XCTAssertFalse(names.contains { DiscoverySections.spotName($0) == nil }, "\(names)")
+        XCTAssertFalse(names.contains { $0.hasPrefix("フランス") }, "\(names)")
+        XCTAssertEqual(Set(names).count, names.count, "\(names)")
+        XCTAssertEqual(spots.first { $0.id == "ヴェルサイユ" }?.count, 3)
+        // 「パリ」の行き先はオペラ・ガルニエ（パリ）も拾う（数は行き先と同じ）
+        XCTAssertEqual(spots.first { $0.id == "パリ" }?.count, 3)
+        // 国名だけの写真は、どの札の表紙にもならない（いいねが最多でも）
+        XCTAssertFalse(spots.contains { $0.cover.id == "stone" })
+        for spot in spots {
+            XCTAssertEqual(spot.count, PhotoQuery.photos(photos, in: .location(spot.id)).count)
+        }
+    }
+
+    /// 札の名前（市・名所の細かさ）。国名・郵便番号を落とし、元の撮影地に在る語だけを使う
+    func testSpotNameKeepsCityOrLandmark() {
+        XCTAssertEqual(DiscoverySections.spotName("パリ, フランス"), "パリ")
+        XCTAssertEqual(DiscoverySections.spotName("フランス ヴェルサイユ"), "ヴェルサイユ")
+        XCTAssertEqual(DiscoverySections.spotName("板橋区, 日本"), "板橋区")
+        XCTAssertEqual(DiscoverySections.spotName("蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"),
+                       "蔵王キツネ村")
+        XCTAssertEqual(DiscoverySections.spotName("宮城県, 白石市, 蔵王キツネ村"), "蔵王キツネ村")
+        XCTAssertEqual(DiscoverySections.spotName("東京都, 渋谷区"), "渋谷区")
+        XCTAssertEqual(DiscoverySections.spotName("白川村, 岐阜県"), "白川村")
+        XCTAssertEqual(DiscoverySections.spotName("Louvre, Paris, France"), "Louvre")
+        XCTAssertEqual(DiscoverySections.spotName("Kyoto Japan"), "Kyoto")
+        XCTAssertEqual(DiscoverySections.spotName("Turkey Hill"), "Turkey Hill")
+        XCTAssertEqual(DiscoverySections.spotName("オペラ・ガルニエ（パリ）"), "オペラ・ガルニエ（パリ）")
+        XCTAssertEqual(DiscoverySections.spotName("山中湖"), "山中湖")
+        XCTAssertNil(DiscoverySections.spotName("フランス"))
+        XCTAssertNil(DiscoverySections.spotName("France"))
+        XCTAssertNil(DiscoverySections.spotName("日本"))
+        XCTAssertNil(DiscoverySections.spotName("  "))
+        XCTAssertNil(DiscoverySections.spotName(nil))
     }
 }

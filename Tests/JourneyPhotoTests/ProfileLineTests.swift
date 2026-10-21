@@ -28,12 +28,13 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: nil)?.spoken, "@yuki")
     }
 
-    /// 人のページの数（板 31）: フォロワー・フォロー中・写真の順で、数が先
+    /// 人のページの数: **マイページと同じ「投稿・フォロワー・フォロー中」**の順と名前で、数が先
+    /// （2026-10-21・前は「フォロワー・フォロー中・写真」で、自分のページと食い違っていた）
     func testCountsOrderAndValues() {
         let counts = ProfileLine.counts(followers: .loaded(12), following: .loaded(3), photos: .loaded(0))
-        XCTAssertEqual(counts.map(\.kind), [.followers, .following, .photos])
-        XCTAssertEqual(counts.map(\.value), ["12", "3", "0"])
-        XCTAssertEqual(counts.map(\.label), ["フォロワー", "フォロー中", "写真"])
+        XCTAssertEqual(counts.map(\.kind), [.photos, .followers, .following])
+        XCTAssertEqual(counts.map(\.value), ["0", "12", "3"])
+        XCTAssertEqual(counts.map(\.label), ["投稿", "フォロワー", "フォロー中"])
     }
 
     /// **読み終える前と失敗したときに「0」と言わない**（フォロワー・フォロー中・写真）

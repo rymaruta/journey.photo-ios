@@ -23,6 +23,9 @@ struct PlaceSearchField: View {
     /// 台帳の撮影スポットの候補を選んだときのスポット（投稿画面だけ・2026-10-14）。保存で `spotId` を付ける。
     /// **選んだ名前から書き換えたら外す**（`UploadSpotTarget.keepsPicked`）。nil の画面（写真の編集）は持たない
     var pickedSpot: Binding<UploadSpotTarget?>? = nil
+    /// 欄に枠を付けるか（投稿画面）。**タイトル・説明と同じ枠**（`jpFieldBox`）にして、押せる欄だと分かるようにする
+    /// （2026-10-21・撮影地の欄だけ枠が無く、地の上の灰の字に見えた・run 609 の 42・43）。写真の編集は Form の行なので付けない
+    var boxed = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @State private var suggestions: [DiscoveryService.Place] = []
@@ -49,7 +52,7 @@ struct PlaceSearchField: View {
 
     var body: some View {
         Group {
-            TextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
+            placeField
                 .focused($focused)
                 .onChange(of: location) { _, value in schedule(value) }
                 .onChange(of: focused) { _, isFocused in
@@ -121,6 +124,20 @@ struct PlaceSearchField: View {
             if isSearching {
                 Text(L("探しています…", "Searching…")).font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// 撮影地を打つ欄。投稿画面（`boxed`）はタイトル・説明と同じ枠に入れる
+    @ViewBuilder
+    private var placeField: some View {
+        let field = TextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
+        if boxed {
+            field
+                .font(.subheadline)
+                .accessibilityLabel(L("撮影地", "Place"))
+                .jpFieldBox()
+        } else {
+            field
         }
     }
 

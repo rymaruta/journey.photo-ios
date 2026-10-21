@@ -39,8 +39,8 @@ struct CamperRoomDexView: View {
                             .jpSystemFont(14)
                             .foregroundStyle(WebTheme.text2)
                     }
-                    Text(L("近日: 友達・旅の投稿・行事の暦・天気で届く家具と、形を作っている家具。数には入れていません。",
-                           "Soon: pieces that arrive through friends, trips, festivals and weather, and pieces still being made. Not counted yet."))
+                    // 図鑑の総数・近日の数はここだけ（見出しの数は「集めた N / M」の1つ・2026-10-21）
+                    Text(CamperText.roomDexFootnote(all: CamperRoomCatalog.all.count, soon: CamperRoomCatalog.soonCount))
                         .jpSystemFont(12)
                         .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -65,10 +65,10 @@ struct CamperRoomDexView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("家具を集める", "Collect furniture")).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Text(L("\(CamperText.carName)の家具", "\(CamperText.carName) furniture")).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
-                Text(L("\(count.have) / \(count.total) · 図鑑 \(CamperRoomCatalog.all.count) · 近日 \(CamperRoomCatalog.soonCount)",
-                       "\(count.have) / \(count.total) · \(CamperRoomCatalog.all.count) in all · \(CamperRoomCatalog.soonCount) soon"))
-                    .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
-                    .foregroundStyle(WebTheme.text)
+                // 一目で見る数は1つ（2026-10-21・前は「860 / 2183 · 図鑑 2194 · 近日 11」）
+                Text(CamperText.collectedLine(have: count.have, total: count.total))
+                    .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
+                    .foregroundStyle(WebTheme.foreground)
                     .accessibilityIdentifier("camper.room.dex.count")
                 // 手に入れ方は影の家具の寄りに出る（2026-10-21・「？？？」だけでは集め方が分からなかった）
                 Text(L("影の家具を押すと、手に入れ方が出ます", "Tap a shadow to see how to get it"))

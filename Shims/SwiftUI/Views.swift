@@ -198,6 +198,8 @@ public struct Form: View {
 public struct TextField: View {
     public init(_ title: String, text: Binding<String>) {}
     public init(_ title: String, text: Binding<String>, axis: Axis) {}
+    /// 案内の字を自分で組む版（本物にもある・iOS 16）。写真の上の案内を白で出すのに使う
+    public init(_ title: String, text: Binding<String>, prompt: Text?, axis: Axis) {}
     public var body: Never { fatalError("模型") }
 }
 public struct SecureField: View {
@@ -392,6 +394,8 @@ public struct Rectangle: View, Shape {
     public init() {}
     public func fill<S: ShapeStyle>(_ style: S) -> Rectangle { self }
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { self }
+    /// 内側へ縮める（負の値で外へ広げる・押せる範囲を見た目より広げるのに使う。本物は `InsettableShape`）
+    public func inset(by amount: CGFloat) -> Rectangle { self }
     public var body: Never { fatalError() }
 }
 
@@ -400,6 +404,8 @@ public struct GeometryProxy {
     public var size: CGSize { CGSize(width: 0, height: 0) }
     /// 本物と同じ（安全域の幅）
     public var safeAreaInsets: EdgeInsets { EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0) }
+    /// 名前の付いた座標での枠（本物と同じ・`.scrollView` は iOS 17）
+    public func frame(in space: NamedCoordinateSpace) -> CGRect { .zero }
 }
 
 public struct GeometryReader<Content: View>: View {

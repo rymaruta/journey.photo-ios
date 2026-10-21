@@ -95,7 +95,9 @@ final class SpotScreenTests: XCTestCase {
     func testSubtitleJoinsRegionAndCount() {
         XCTAssertEqual(SpotScreen.subtitle(region: "香川県 · 観音寺市", photoCount: 3),
                        L("香川県 · 観音寺市 · 3枚の写真", "香川県 · 観音寺市 · 3 photos"))
-        XCTAssertEqual(SpotScreen.subtitle(region: nil, photoCount: 0), L("0枚の写真", "0 photos"))
+        // 0 枚は数を出さず、最初の1枚への誘い（2026-10-21）
+        XCTAssertEqual(SpotScreen.subtitle(region: nil, photoCount: 0), SpotScreen.firstPhotoInvite)
+        XCTAssertEqual(SpotScreen.subtitle(region: "香川県", photoCount: 0), "香川県 · \(SpotScreen.firstPhotoInvite)")
         XCTAssertEqual(SpotScreen.subtitle(region: "  ", photoCount: 1), L("1枚の写真", "1 photo"))
         // 写真の一覧を持たない画面から開いたときは枚数を言わない（0 と言うと事実と違う）
         XCTAssertEqual(SpotScreen.subtitle(region: "香川県 · 観音寺市", photoCount: nil), "香川県 · 観音寺市")

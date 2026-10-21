@@ -71,6 +71,8 @@ struct MyPageView: View {
     @State private var showPreviewPaywall = false
     /// 明朝 26 の名前の行の高さの見込み（文字サイズの設定で伸びる）
     @ScaledMetric(relativeTo: .title) private var nameLineHeight: CGFloat = 36
+    /// 中身が時計の下に入ったか（`ScrolledUnderClock`）
+    @State private var scrolledUnderClock = false
 
     /// 板 v2 MyPage: 3列・隙間 2pt・縦長 4:5・角なし（`ProfileV2`）
     private let columns = ProfileV2.gridItems
@@ -313,7 +315,8 @@ struct MyPageView: View {
                     .ignoresSafeArea(edges: hasCover ? .top : [])
                 // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
                 // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
-                TopBarScrim(topInset: geo.safeAreaInsets.top)
+                TopBarScrim(topInset: geo.safeAreaInsets.top, covered: scrolledUnderClock)
+                    .animation(.easeOut(duration: 0.2), value: scrolledUnderClock)
             }
         }
     }
@@ -368,7 +371,7 @@ struct MyPageView: View {
                     }
                 }
                 if let profile = model.profile {
-                    bgmCard(profile)
+                    // BGM は見出しの中の1行へ移した（`header`・2026-10-21 判断）
                     profileSetupNotice(profile)
                 }
                 // **「投稿する」とストーリーの行は置かない**（整理案 05c）。
@@ -386,6 +389,10 @@ struct MyPageView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(tabSwipe)
             }
+            // 中身が時計の下に入ったかを見る（入ったときだけ時計の下を黒で塗る・`TopBarScrim.covered`）
+            .onGeometryChange(for: Bool.self) { proxy in
+                ScrolledUnderClock.covered(contentMinY: proxy.frame(in: .scrollView).minY)
+            } action: { scrolledUnderClock = $0 }
         }
         .refreshable { await reloadAll() }
     }
@@ -454,6 +461,9 @@ struct MyPageView: View {
                 }
                 aboutLines(profile)
             }
+            // BGM はひとことの下の1行（2026-10-21・全画面の点検）。以前は数の下の札で、
+            // 旅の記録の線と合わせて写真の格子を最初の画面の一番下まで押し下げていた
+            bgmLine(profile)
         }
         .padding(.horizontal, ProfileV2.gutter)
         // カバーがあればアイコンを下端に重ねる（板 v2: 196pt の帯に 88pt の丸を 44pt）。
@@ -599,12 +609,12 @@ struct MyPageView: View {
     /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
     /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
     ///
-    /// 見た目は `ProfileBgmCard`（再生器の見張りを札の中に閉じる）
+    /// 見た目は `ProfileBgmCard`（再生器の見張りを行の中に閉じる）。**見出しの中の1行**
+    /// （2026-10-21 判断・左右の余白は見出しが持つ）
     @ViewBuilder
-    private func bgmCard(_ profile: UserProfile) -> some View {
+    private func bgmLine(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
             ProfileBgmCard(song: song)
-                .padding(.horizontal, ProfileV2.gutter)
         }
     }
 

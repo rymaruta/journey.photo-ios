@@ -232,8 +232,8 @@ final class StoreService: ObservableObject {
         if let refusal { return .refused(refusal) }
         if found {
             return .failed(lastMessage
-                           ?? L("購入をサーバーに届けられませんでした。時間をおいてもう一度お試しください。",
-                                "Couldn't send your purchase to our server. Please try again later."))
+                           ?? L("購入の確認を届けられませんでした。時間をおいてもう一度お試しください。",
+                                "Couldn't confirm your purchase. Please try again later."))
         }
         return .nothing
     }
