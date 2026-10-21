@@ -179,7 +179,7 @@ enum CamperMaterials {
             // 2026-10-19（Mac run 547）: 外から見えるのはカーテンの裏（灯りに背を向けた面）なので、照らされても暗かった。
             // 布を透ける光をこの弱い光で出す（0.16 では窓が暗いまま。むらは織り目の絵）
             return CamperMaterialSpec(color: night ? 0xF2CC92 : 0xD8CCB4, roughness: 0.95, emission: night ? 0xFFB46B : nil,
-                                      emissionIntensity: night ? 0.45 : 0, emissionTexture: night ? .weave : nil,
+                                      emissionIntensity: night ? 0.3 : 0, emissionTexture: night ? .weave : nil,
                                       texture: .weave, doubleSided: true)
         case .inner: return CamperMaterialSpec(color: 0xC9BFAE, roughness: 0.8)
         case .ceiling: return CamperMaterialSpec(color: 0xE8E0D0, roughness: 0.85)
@@ -211,14 +211,16 @@ enum CamperMaterials {
         case .byNight(let base): return spec(night ? .lamp : base, paint: paint, mood: mood)
         // 地面の溜まり（足す光）。色の明るさがそのまま足す強さ。板 pools の色と不透明度に寄せる
         // 2026-10-20 owner「光の表現が酷い」: 溜まりが硬い円・帯に見えたので暗く・芯を抑える
-        case .glowPool: return CamperMaterialSpec(color: 0x2A1C10, texture: .glow, additive: true)
-        case .firePool: return CamperMaterialSpec(color: 0x3A1808, texture: .glow, additive: true)
+        // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: もう半分ほど暗く（中心だけ暖かく、縁は絵でなだらかに 0）
+        case .glowPool: return CamperMaterialSpec(color: 0x1A110A, texture: .glow, additive: true)
+        case .firePool: return CamperMaterialSpec(color: 0x1E0C04, texture: .glow, additive: true)
         // 炎は貼り絵そのものの色（白で掛ける）。昼は薄く
         case .flame: return CamperMaterialSpec(color: night ? 0xE6E6E6 : 0x8C8C8C, texture: .flame, additive: true)
         // 窓越しの室内の明かり（2700K）。足す光なので縁が黒く落ちる絵で板に見えない。
         // 2026-10-20 実機・網描き: 明るい一色は平らな黄の板 → 0x9A6838 でむら（roomGlow）を残す
-        case .windowGlow: return CamperMaterialSpec(color: 0x9A6838, texture: .roomGlow, additive: true)
-        case .windowHalo: return CamperMaterialSpec(color: 0x2A1C10, texture: .glow, additive: true)
+        // 2026-10-21 owner「強すぎる」: もう一段暗く。カーテン越しの暖色が「灯っている」と分かる程度
+        case .windowGlow: return CamperMaterialSpec(color: 0x684628, texture: .roomGlow, additive: true)
+        case .windowHalo: return CamperMaterialSpec(color: 0x150E08, texture: .glow, additive: true)
         case .lanternGlass:
             return CamperMaterialSpec(color: 0xF1E3C4, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.22,
                                       doubleSided: true)
