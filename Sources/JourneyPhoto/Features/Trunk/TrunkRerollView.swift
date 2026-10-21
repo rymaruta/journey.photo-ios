@@ -11,6 +11,7 @@ struct TrunkRerollView: View {
     let labelId: String
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var toasts: ToastCenter
     /// 選んでいる種（nil は最初の候補）
     @State private var chosenSeed: Int?
@@ -138,8 +139,10 @@ struct TrunkRerollView: View {
                     .padding(.bottom, 6)
             }
             .frame(maxWidth: .infinity)
-            // 高さは下限だけ（文字を大きくした人の字が切れない・2026-10-21）
-            .frame(minHeight: 96)
+            // 既定の大きさは前と同じ 96 ちょうど。アクセシビリティの大きさだけ字に合わせて伸ばす（2026-10-21。
+            // 下限だけにすると中の Spacer が伸びて、既定の大きさでも札が縦に伸びた・Mac run 639）
+            .frame(minHeight: 96, maxHeight: typeSize.isAccessibilitySize ? nil : 96)
+            .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
             .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 12))
             .overlay {
                 if checked { RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.accent, lineWidth: 2) }
