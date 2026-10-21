@@ -95,7 +95,7 @@ struct CamperRoomContactSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 Button(action: onClose) {
-                    Text(L("閉じる", "Close")).font(.system(size: 15, weight: .semibold)).foregroundStyle(WebTheme.accent)
+                    Text(L("閉じる", "Close")).jpSystemFont(15, weight: .semibold).foregroundStyle(WebTheme.accent)
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                 }
                 .buttonStyle(.plain)
@@ -131,7 +131,7 @@ struct CamperRoomContactSheet: View {
                         .frame(height: Self.cell.height)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         Text("\(f.name) · \(f.id)")
-                            .font(.system(size: 12))
+                            .jpSystemFont(12)
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }
@@ -148,7 +148,7 @@ struct CamperRoomContactSheet: View {
 
     private func pager(_ symbol: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
+            Image(systemName: symbol).jpSystemFont(16, weight: .semibold)
                 .foregroundStyle(enabled ? WebTheme.foreground : WebTheme.faint)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
         }

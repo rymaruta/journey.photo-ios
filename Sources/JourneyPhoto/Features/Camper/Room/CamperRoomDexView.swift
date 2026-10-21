@@ -36,12 +36,12 @@ struct CamperRoomDexView: View {
                     }
                     if !needle.isEmpty, shownCategories.isEmpty {
                         Text(L("その名前の家具はありません", "No furniture with that name"))
-                            .font(.system(size: 14))
+                            .jpSystemFont(14)
                             .foregroundStyle(WebTheme.text2)
                     }
                     Text(L("近日: 友達・旅の投稿・行事の暦・天気で届く家具と、形を作っている家具。数には入れていません。",
                            "Soon: pieces that arrive through friends, trips, festivals and weather, and pieces still being made. Not counted yet."))
-                        .font(.system(size: 12))
+                        .jpSystemFont(12)
                         .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -72,13 +72,13 @@ struct CamperRoomDexView: View {
                     .accessibilityIdentifier("camper.room.dex.count")
                 // 手に入れ方は影の家具の寄りに出る（2026-10-21・「？？？」だけでは集め方が分からなかった）
                 Text(L("影の家具を押すと、手に入れ方が出ます", "Tap a shadow to see how to get it"))
-                    .font(.system(size: 12))
+                    .jpSystemFont(12)
                     .foregroundStyle(WebTheme.text2)
             }
             Spacer()
             Button(action: onClose) {
                 Text(L("閉じる", "Close"))
-                    .font(.system(size: 15, weight: .semibold))
+                    .jpSystemFont(15, weight: .semibold)
                     .foregroundStyle(WebTheme.accent)
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
@@ -97,7 +97,7 @@ struct CamperRoomDexView: View {
                 let items = CamperRoomCatalog.items(p).filter(\.isAvailable)
                 Button { tab = p } label: {
                     HStack(spacing: 4) {
-                        Text(p.name).font(.system(size: 14, weight: .semibold))
+                        Text(p.name).jpSystemFont(14, weight: .semibold)
                         Text("\(items.filter { owned.contains($0.id) }.count)/\(items.count)")
                             .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                     }
@@ -182,16 +182,16 @@ struct CamperRoomDexView: View {
                 if f.built {
                     CamperRoomThumb(furniture: f, silhouette: !have).frame(height: 54)
                 } else {
-                    Image(systemName: f.category.symbol).font(.system(size: 22)).foregroundStyle(WebTheme.faint).frame(height: 54)
+                    Image(systemName: f.category.symbol).jpSystemFont(22).foregroundStyle(WebTheme.faint).frame(height: 54)
                 }
                 Text(have ? f.name : L("？？？", "???"))
-                    .font(.system(size: 12))
+                    .jpSystemFont(12)
                     .foregroundStyle(have ? WebTheme.text : WebTheme.faint)
                     .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
                 if f.isAvailable {
                     CamperRarityDots(rarity: f.rarity)
                 } else {
-                    Text(L("近日", "Soon")).font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.accent)
+                    Text(L("近日", "Soon")).jpSystemFont(12, weight: .semibold).foregroundStyle(WebTheme.accent)
                 }
             }
             .padding(.vertical, 8)
@@ -243,7 +243,7 @@ struct CamperRoomCloseUpView: View {
                 Spacer()
                 Button(action: onClose) {
                     Text(L("閉じる", "Close"))
-                        .font(.system(size: 15, weight: .semibold))
+                        .jpSystemFont(15, weight: .semibold)
                         .foregroundStyle(WebTheme.accent)
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
@@ -268,7 +268,7 @@ struct CamperRoomCloseUpView: View {
                         .accessibilityIdentifier("camper.room.closeup")
                     Button { mood = mood == .night ? .day : .night } label: {
                         Image(systemName: mood == .night ? "sun.max" : "moon")
-                            .font(.system(size: 16, weight: .semibold))
+                            .jpSystemFont(16, weight: .semibold)
                             .foregroundStyle(Color.white)
                             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                             .jpGlass(in: Circle())
@@ -281,7 +281,7 @@ struct CamperRoomCloseUpView: View {
                 .overlay(alignment: .top) {
                     if !have {
                         Text(L("まだ持っていない家具 · 見本", "Not yet collected · preview"))
-                            .font(.system(size: 12, weight: .semibold))
+                            .jpSystemFont(12, weight: .semibold)
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -291,18 +291,18 @@ struct CamperRoomCloseUpView: View {
                 }
             } else {
                 Image(systemName: furniture.category.symbol)
-                    .font(.system(size: 56, weight: .light))
+                    .jpSystemFont(56, weight: .light)
                     .foregroundStyle(WebTheme.faint)
                     .frame(maxWidth: .infinity, minHeight: 200)
             }
             Text(furniture.name).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
             CamperRarityDots(rarity: furniture.rarity)
-            Text(furniture.look).font(.system(size: 15)).foregroundStyle(WebTheme.text)
+            Text(furniture.look).jpSystemFont(15).foregroundStyle(WebTheme.text)
             if furniture.isAvailable {
                 Text(have ? (furniture.unlock.isStarter ? L("最初から持っています", "You\u{2019}ve had it from the start")
                              : L("\(furniture.unlock.condition)で届きました", "Arrived for: \(furniture.unlock.condition)"))
                      : L("\(furniture.unlock.condition)で届きます", "Arrives with: \(furniture.unlock.condition)"))
-                    .font(.system(size: 13))
+                    .jpSystemFont(13)
                     .foregroundStyle(WebTheme.text2)
                 if !have {
                     let p = furniture.unlock.progress(stats, roomStats)
@@ -313,7 +313,7 @@ struct CamperRoomCloseUpView: View {
                 }
             } else {
                 Text(L("近日。\(furniture.unlock.condition)で届くようになります", "Coming soon: \(furniture.unlock.condition)"))
-                    .font(.system(size: 13))
+                    .jpSystemFont(13)
                     .foregroundStyle(WebTheme.text2)
             }
             Spacer(minLength: 0)

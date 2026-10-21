@@ -122,6 +122,8 @@ struct CamperRoomView: View {
         // 部屋の中はタブを隠す（下の道具の段がタブに掛からない・Mac run 568）
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
+        // 部屋を閉じたら家具の小さな絵の控えを捨てる（2026-10-21 点検: 控えが増え続けた）
+        .onDisappear { CamperRoomThumbs.shared.removeAll() }
         .onChange(of: room) { _, _ in openRoom() }
         .onChange(of: photos.count) { _, _ in
             recount()
@@ -260,8 +262,8 @@ struct CamperRoomView: View {
                 if mode == .home { dismiss() } else { goHome() }
             } label: {
                 HStack(spacing: 2) {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                    Text(mode == .home ? L("外へ", "Outside") : L("部屋", "Room")).font(.system(size: 15))
+                    Image(systemName: "chevron.left").jpSystemFont(17, weight: .semibold)
+                    Text(mode == .home ? L("外へ", "Outside") : L("部屋", "Room")).jpSystemFont(15)
                 }
                 .foregroundStyle(WebTheme.foreground)
                 .padding(.leading, 4)
@@ -284,7 +286,7 @@ struct CamperRoomView: View {
                 mood = mood == .night ? .day : .night
             } label: {
                 Image(systemName: mood == .night ? "sun.max" : "moon")
-                    .font(.system(size: 17, weight: .semibold))
+                    .jpSystemFont(17, weight: .semibold)
                     .foregroundStyle(WebTheme.foreground)
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                     .background(Color.white.opacity(0.08), in: Circle())
@@ -322,7 +324,7 @@ struct CamperRoomView: View {
                 ForEach(CamperRoomKind.rooms(stage), id: \.self) { k in
                     Button { room = k } label: {
                         Text(k.name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .jpSystemFont(14, weight: .semibold)
                             .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
                             .padding(.horizontal, 12)
                             .frame(minHeight: WebTheme.minTapTarget)
@@ -353,7 +355,7 @@ struct CamperRoomView: View {
             sceneOverlays(width: width, height: height)
             if let notice {
                 Text(notice)
-                    .font(.system(size: 13, weight: .semibold))
+                    .jpSystemFont(13, weight: .semibold)
                     .foregroundStyle(WebTheme.foreground)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -437,7 +439,7 @@ struct CamperRoomView: View {
         if mode != .photos, drag == nil, camera.differs(from: CamperRoomCamera.overview(layout)) {
             Button(action: resetCamera) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 15, weight: .semibold))
+                    .jpSystemFont(15, weight: .semibold)
                     .foregroundStyle(Color.white)
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                     .background(Color.black.opacity(0.62), in: Circle())
@@ -466,16 +468,16 @@ struct CamperRoomView: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("\(armed.name)を置く所を押す", "Tap where \(armed.name) goes"))
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.white)
+                    .jpSystemFont(13, weight: .semibold).foregroundStyle(Color.white)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Text(L("白いマスに置けます · 棚でもう一度押すと空いた所へ", "White squares fit · tap it again on the shelf to drop it anywhere"))
-                    .font(.system(size: 12)).foregroundStyle(WebTheme.text2)
+                    .jpSystemFont(12).foregroundStyle(WebTheme.text2)
                     .lineLimit(2).minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
             Button(action: disarm) {
                 Text(L("やめる", "Cancel"))
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(WebTheme.accent)
+                    .jpSystemFont(13, weight: .semibold).foregroundStyle(WebTheme.accent)
                     .padding(.horizontal, 10)
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
@@ -499,11 +501,11 @@ struct CamperRoomView: View {
             ForEach(Self.coachLines, id: \.symbol) { line in
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: line.symbol)
-                        .font(.system(size: 18, weight: .semibold))
+                        .jpSystemFont(18, weight: .semibold)
                         .foregroundStyle(WebTheme.accent)
                         .frame(width: 26)
                         .accessibilityHidden(true)
-                    Text(line.text).font(.system(size: 14)).foregroundStyle(WebTheme.foreground)
+                    Text(line.text).jpSystemFont(14).foregroundStyle(WebTheme.foreground)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -512,7 +514,7 @@ struct CamperRoomView: View {
                 if !CamperRoomPreview.coach { CamperRoomCoach.done() }
             } label: {
                 Text(L("わかった", "Got it"))
-                    .font(.system(size: 15, weight: .semibold))
+                    .jpSystemFont(15, weight: .semibold)
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                     .background(WebTheme.accentFill, in: RoundedRectangle(cornerRadius: 12))
@@ -568,8 +570,8 @@ struct CamperRoomView: View {
     private func floatingButton(_ title: String, symbol: String, id: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
-                Text(title).font(.system(size: 13, weight: .semibold))
+                Image(systemName: symbol).jpSystemFont(13, weight: .semibold)
+                Text(title).jpSystemFont(13, weight: .semibold)
             }
             .foregroundStyle(Color.white)
             .padding(.horizontal, 12)
@@ -943,7 +945,7 @@ struct CamperRoomView: View {
             }
             Text(L("家具を長押しで持ち上げる。指一本で部屋を回し、二本指か二度押しで寄る。夜にすると灯りが付く。",
                    "Press and hold a piece to lift it. Drag to turn the room; pinch or double-tap to zoom. Lights come on at night."))
-                .font(.system(size: 13))
+                .jpSystemFont(13)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             // 2026-10-21 判断: 下の「外へ出る」は左上の「外へ」と同じ操作なので外した（板 CamperRoomFlow も左上の「外へ」だけ）
@@ -954,8 +956,8 @@ struct CamperRoomView: View {
     private func tool(_ title: String, symbol: String, id: String, badge: Int = 0, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 20))
-                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                Image(systemName: symbol).jpSystemFont(20)
+                Text(title).jpSystemFont(12, weight: .semibold).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(WebTheme.foreground)
             .frame(maxWidth: .infinity, minHeight: 76)
@@ -1017,7 +1019,7 @@ struct CamperRoomView: View {
             ScrollView {
                 if tray.isEmpty {
                     Text(L("棚は空です。図鑑で集めると増えます", "Nothing left on the shelf. Collect more in the collection"))
-                        .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
+                        .jpSystemFont(13).foregroundStyle(WebTheme.text2)
                         .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
@@ -1028,13 +1030,13 @@ struct CamperRoomView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             Text(L("棚の家具を押して、置きたい所を押す。部屋の家具は長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。",
                    "Tap a piece, then tap where it goes. Press and hold a piece in the room to lift it. White fits, red collides. Twist to turn."))
-                .font(.system(size: 12))
+                .jpSystemFont(12)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button(action: undo) {
                     Text(L("元に戻す", "Undo"))
-                        .font(.system(size: 15, weight: .semibold))
+                        .jpSystemFont(15, weight: .semibold)
                         .foregroundStyle(editor?.canUndo == true ? WebTheme.foreground : WebTheme.faint)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
@@ -1046,7 +1048,7 @@ struct CamperRoomView: View {
                 // やり直す（戻しすぎた手を取り戻す・2026-10-21）
                 Button(action: redo) {
                     Text(L("やり直す", "Redo"))
-                        .font(.system(size: 15, weight: .semibold))
+                        .jpSystemFont(15, weight: .semibold)
                         .foregroundStyle(editor?.canRedo == true ? WebTheme.foreground : WebTheme.faint)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
@@ -1079,7 +1081,7 @@ struct CamperRoomView: View {
                 // 新しい家具がある分類（未読の点の真鍮。選んだチップの塗りの上は墨）
                 if fresh { Circle().fill(dot).frame(width: 7, height: 7) }
             }
-            .font(.system(size: 13, weight: .semibold))
+            .jpSystemFont(13, weight: .semibold)
             .foregroundStyle(ink)
             .padding(.horizontal, 12)
             .frame(minHeight: WebTheme.minTapTarget)
@@ -1106,7 +1108,7 @@ struct CamperRoomView: View {
                 CamperRoomThumb(furniture: f, silhouette: false)
                     .frame(maxWidth: .infinity)
                     .frame(height: 72)
-                Text(f.name).font(.system(size: 12)).foregroundStyle(on ? WebTheme.accent : WebTheme.text)
+                Text(f.name).jpSystemFont(12).foregroundStyle(on ? WebTheme.accent : WebTheme.text)
                     .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
             }
             .padding(.horizontal, 4)
@@ -1158,7 +1160,7 @@ struct CamperRoomView: View {
                                                                                         style: StrokeStyle(lineWidth: on ? 2 : 1, dash: o.have ? [] : [4, 3])))
                                 .overlay(alignment: .topTrailing) { if on { CamperSelectedMark() } }
                             Text(o.have ? o.name : (o.soon ? L("近日", "Soon") : L("まだ", "Not yet")))
-                                .font(.system(size: 12))
+                                .jpSystemFont(12)
                                 .foregroundStyle(on ? WebTheme.accent : (o.have ? WebTheme.text : WebTheme.faint))
                                 .lineLimit(1).minimumScaleFactor(0.8)
                         }
@@ -1173,7 +1175,7 @@ struct CamperRoomView: View {
             }
             Text(L("選ぶとすぐ部屋に映る。灯りの色は夜に見える。持っていない柄は外まわりの図鑑で集める。",
                    "Changes show right away. Light colours show at night. Collect more patterns in the parts collection."))
-                .font(.system(size: 12))
+                .jpSystemFont(12)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -1263,7 +1265,7 @@ struct CamperRoomView: View {
         VStack(alignment: .leading, spacing: 10) {
             if frames.isEmpty {
                 Text(L("まだ額がありません。「置く」の壁の棚から額を掛けてください。", "No frames yet. Hang one from the wall shelf in Arrange."))
-                    .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
+                    .jpSystemFont(13).foregroundStyle(WebTheme.text2)
                 Spacer(minLength: 0)
                 primaryButton(L("額を掛ける", "Hang a frame"), id: "camper.room.addFrame", fill: false) {
                     trayTab = .wall
@@ -1278,7 +1280,7 @@ struct CamperRoomView: View {
                             let on = f.u == framePick
                             Button { look(at: f) } label: {
                                 Text("\(f.furniture?.name ?? "") \(i + 1)")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .jpSystemFont(13, weight: .semibold)
                                     .foregroundStyle(on ? Color.black : WebTheme.text)
                                     .padding(.horizontal, 14)
                                     .frame(height: 36)
@@ -1320,7 +1322,7 @@ struct CamperRoomView: View {
                                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(on ? Color.white : Color.clear, lineWidth: 3))
                                 .overlay(alignment: .topTrailing) {
                                     if on {
-                                        Image(systemName: "checkmark.circle.fill").font(.system(size: 18))
+                                        Image(systemName: "checkmark.circle.fill").jpSystemFont(18)
                                             .foregroundStyle(Color.black, Color.white).padding(4)
                                     }
                                 }
@@ -1336,7 +1338,7 @@ struct CamperRoomView: View {
                 .frame(maxHeight: .infinity)
                 if mine.isEmpty {
                     Text(L("投稿した写真がまだありません", "You haven\u{2019}t posted any photos yet"))
-                        .font(.system(size: 13)).foregroundStyle(WebTheme.text2)
+                        .jpSystemFont(13).foregroundStyle(WebTheme.text2)
                 }
                 primaryButton(L("この額に飾る", "Hang it here"), id: "camper.room.hang", fill: false) {
                     guard let frame = framePick, let photo = photoPick, var e = editor else { return }
@@ -1363,7 +1365,7 @@ struct CamperRoomView: View {
                 let on = item.0 == selected
                 Button { pick(item.0) } label: {
                     Text(item.1)
-                        .font(.system(size: 14, weight: .semibold))
+                        .jpSystemFont(14, weight: .semibold)
                         .foregroundStyle(on ? WebTheme.accent : WebTheme.muted2)
                         .padding(.horizontal, 12)
                         .frame(minHeight: WebTheme.minTapTarget)
@@ -1385,7 +1387,7 @@ struct CamperRoomView: View {
     private func primaryButton(_ title: String, id: String, fill brass: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
+                .jpSystemFont(16, weight: .semibold)
                 .foregroundStyle(brass ? WebTheme.accentText : Color.black)
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .background(brass ? WebTheme.accentFill : Color.white, in: RoundedRectangle(cornerRadius: 14))
@@ -1403,8 +1405,8 @@ struct CamperRoomEntrance: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "door.left.hand.open").font(.system(size: 15, weight: .semibold))
-                Text(L("中に入る", "Step inside")).font(.system(size: 15, weight: .semibold))
+                Image(systemName: "door.left.hand.open").jpSystemFont(15, weight: .semibold)
+                Text(L("中に入る", "Step inside")).jpSystemFont(15, weight: .semibold)
             }
             .foregroundStyle(WebTheme.accentText)
             .padding(.horizontal, 16)
