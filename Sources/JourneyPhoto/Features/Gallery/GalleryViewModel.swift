@@ -557,7 +557,9 @@ final class GalleryViewModel: ObservableObject {
     }
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
-    private var all: [Photo] = []
+    private var all: [Photo] = [] { didSet { allRevision &+= 1 } }
+    /// `all` を書き換えた回数（「みんなの新しい写真」の控えを作り直す合図・`freshGroups`）
+    private var allRevision = 0
 
     /// 割れた画像の URL が、この画面に出している写真のものか（署名つき画像の取り直し・`SignedImageExpiry`）
     func showsImage(_ url: URL) -> Bool {
@@ -568,6 +570,31 @@ final class GalleryViewModel: ObservableObject {
     /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）。
     /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }
+
+    /// ホームの「みんなの新しい写真」の段（`HomeFreshPhotos`・2026-10-21）。元は今日のテーマと同じ全件。
+    ///
+    /// - **フォロー一覧は今の人のものだけ使う**（人が替わった直後に前の人のフォロー先を先頭へ出さない）
+    /// - ブロック・通報は `hidden`（画面の写し）で**数を切る前に**落とす
+    /// - 2026-10-21 判断（確かめ役の見直し）: **描くたびに作らない。** ホームの `LazyVStack` は
+    ///   状態が変わるたびに描き直すので、全件を並べ替え・束ねるのは、全件・人・フォロー一覧・写しの
+    ///   どれかが変わったときだけにする（控えは `@Published` にしない——作り直しで描き直しを呼ばない）
+    func freshGroups(viewerId: String?, hiding hidden: ModerationSnapshot) -> [PhotoGroups.Group] {
+        let following = viewerId != nil && followingOwner == viewerId ? followingIds : []
+        let key = FreshKey(allRevision: allRevision, viewerId: viewerId, following: following, hidden: hidden)
+        if let cached = freshCache, cached.key == key { return cached.groups }
+        let groups = HomeFreshPhotos.groups(hidden.visible(all), viewerId: viewerId, followingIds: following)
+        freshCache = (key, groups)
+        return groups
+    }
+
+    private struct FreshKey: Equatable {
+        let allRevision: Int
+        let viewerId: String?
+        let following: Set<String>
+        let hidden: ModerationSnapshot
+    }
+
+    private var freshCache: (key: FreshKey, groups: [PhotoGroups.Group])?
 
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///

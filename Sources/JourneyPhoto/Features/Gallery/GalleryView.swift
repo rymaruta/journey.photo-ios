@@ -395,6 +395,8 @@ struct GalleryView: View {
             // 説明が並ぶと、開いた瞬間に読むものが増える。
             // 文言は `HomeFeed.note` に残してある
         }
+        // 「みんなの新しい写真」の「すべて見る」で送る先
+        .id(Self.feedPickerID)
     }
 
     /// 字のタブの間（板 Main の gap 22。4 の倍数に寄せて 24——`JPSpace.xl`）
@@ -419,6 +421,20 @@ struct GalleryView: View {
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
+                // **みんなの新しい写真**（2026-10-21・全画面の点検）。最初の画面が出典付きの作例だけで、
+                // 利用者の写真が1枚も無かった。上の札と作例の棚より上に、フォロー中の人→新着の順で
+                // 1段だけ流す（`HomeFreshPhotos`）。ブロック・通報は表と同じ写しで落とす。0件なら出さない。
+                // 「すべて見る」は下のフィードを「新着」にして、そこまで送る。
+                // 中身は描くたびに作らない（モデルが全件・人・フォロー・写しの変わった回だけ作る）
+                let fresh = model.freshGroups(viewerId: auth.userId, hiding: dropped)
+                if !fresh.isEmpty {
+                    HomeFreshStrip(groups: fresh) {
+                        model.select(feed: .latest, viewerId: auth.userId)
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo(Self.feedPickerID, anchor: .top)
+                        }
+                    }
+                }
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
@@ -473,6 +489,8 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+    /// 「みんなの新しい写真」の「すべて見る」で送る先（フィードの切り替え）
+    private static let feedPickerID = "home-feed-picker"
 
     /// 「新着」の続き（`GET /feed`・2026-10-03）。**下まで送ったら次のページを読む**。
     ///

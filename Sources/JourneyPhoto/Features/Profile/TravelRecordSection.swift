@@ -14,6 +14,15 @@ struct TravelRecordSection: View {
 
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
+    /// 写真をつないだ線を開いているか。**初めは畳む**（`routeStartsFolded`）
+    @State private var routeOpen = !Self.routeStartsFolded
+
+    /// 🔴 **写真をつないだ線は初めは畳む**（2026-10-21 判断・全画面の点検）。線（高さ 100）が数の下に
+    /// いつも開いていて、BGM・ハイライトと合わせて写真の格子が最初の画面の一番下にしか出なかった。
+    /// 眉ラベルと数字（距離・国）はそのまま見せ、線は眉ラベルの右の「線を見る」で開く（開くと一度だけ引く）。
+    /// マイページと人のページで同じ（同じ部品）。開いたかは覚えない——開いたままだと、次に来たとき
+    /// また格子が下がる
+    nonisolated static let routeStartsFolded = true
 
     var body: some View {
         TravelRecordView(kilometers: summary.kilometers,
@@ -21,7 +30,11 @@ struct TravelRecordSection: View {
                          coordinates: summary.coordinates,
                          firstYear: summary.firstYear,
                          onDistanceTap: { showDistanceNote = true },
-                         onCountriesTap: { showCountriesNote = true })
+                         onCountriesTap: { showCountriesNote = true },
+                         routeShown: routeOpen,
+                         onRouteToggle: {
+                             withAnimation(.easeOut(duration: 0.25)) { routeOpen.toggle() }
+                         })
         .padding(.horizontal, ProfileV2.gutter)
         .padding(.top, JPSpace.xs)
         .alert(L("訪れた国・地域", "Countries and regions"),
