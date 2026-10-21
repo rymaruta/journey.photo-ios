@@ -184,22 +184,34 @@ extension CamperRoomFurnitureModels {
     // MARK: 壁
 
     /// 角の棚（壁の角に三角の板 2・真鍮の受け・小さな鉢と本）
+    /// 角の棚（三角板 2・縁の面取り・真鍮支え・鉢・本・小さな瓶）
     static func floatingCorner() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let oak = R(.wood(.oak))
+        let oak = R(.wood(.oak)), worn = R(.wornWood(.oak)), brass = R(.brass)
         // 1 マス × 1 段。壁面（z≈0）から外へ三角。xs は ±5 以内
-        for (y, size) in [(5.5, 8.0), (13.5, 6.5)] {
-            // 横断面（x–z）の三角を薄い押し出しにして水平の棚にする
-            let tri: [CV2] = [CV2(-size / 2, 0.2), CV2(size / 2, 0.2), CV2(0, size * 0.85)]
-            let shelf = CamperMeshKit.extrude(tri, depth: 0.7, front: oak, side: R(.wornWood(.oak)), bevel: 0.15)
-            // extrude は XY・厚み Z → X まわり +90° で z=輪郭の y（壁から外へ）、厚みは −Y。y を棚の高さへ上げる
-            parts.append(K.placed(shelf, at: CV3(0, y + 0.7, 0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
-            parts.append(K.tube([CV3(-size / 2 + 0.7, y - 0.35, 0.4), CV3(-size / 2 + 0.7, y - 0.35, size * 0.5)], radius: 0.16, sides: 5, R(.brass)))
-            parts.append(K.tube([CV3(size / 2 - 0.7, y - 0.35, 0.4), CV3(size / 2 - 0.7, y - 0.35, size * 0.5)], radius: 0.16, sides: 5, R(.brass)))
+        for (y, size) in [(5.2, 8.4), (13.2, 6.8)] {
+            let tri: [CV2] = [CV2(-size / 2, 0.15), CV2(size / 2, 0.15), CV2(0, size * 0.88)]
+            let shelf = CamperMeshKit.extrude(tri, depth: 0.95, front: oak, side: worn, bevel: 0.2)
+            parts.append(K.placed(shelf, at: CV3(0, y + 0.95, 0), rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+            // 前縁の細い帯
+            parts.append(K.tube([CV3(-size / 2 + 0.4, y + 0.95, size * 0.12),
+                                 CV3(0, y + 0.95, size * 0.82),
+                                 CV3(size / 2 - 0.4, y + 0.95, size * 0.12)],
+                                radius: 0.1, sides: 4, worn))
+            for s in [-1.0, 1.0] {
+                parts.append(K.tube([CV3(s * (size / 2 - 0.6), y - 0.2, 0.35),
+                                     CV3(s * (size / 2 - 0.6), y - 0.2, size * 0.55)],
+                                    radius: 0.18, sides: 6, brass))
+                parts.append(K.placed(K.sphere(radius: 0.28, segments: 8, brass),
+                                      at: CV3(s * (size / 2 - 0.6), y - 0.2, 0.35)))
+            }
         }
-        parts.append(CamperRoomShapes.pottedPlant(at: CV3(0, 6.2, 2.8), potRadius: 1.0, height: 1.6, leaves: 4, spread: 1.4))
-        parts.append(K.block(CV3(1.1, 3.2, 2.4), at: CV3(-1.4, 14.2, 2.2), radius: 0.15, R(.painted(0x5E3A2A))))
-        parts.append(K.block(CV3(0.9, 2.8, 2.2), at: CV3(-0.2, 14.2, 2.2), radius: 0.15, R(.painted(0x2F4F74))))
+        parts.append(CamperRoomShapes.pottedPlant(at: CV3(0.2, 6.15, 3.0), potRadius: 1.15, height: 1.8, leaves: 5, spread: 1.55))
+        parts.append(K.block(CV3(1.15, 3.4, 2.5), at: CV3(-1.5, 14.15, 2.3), radius: 0.15, R(.painted(0x5E3A2A))))
+        parts.append(K.block(CV3(0.95, 3.0, 2.3), at: CV3(-0.25, 14.15, 2.3), radius: 0.15, R(.painted(0x2F4F74))))
+        parts.append(K.block(CV3(0.85, 2.6, 2.1), at: CV3(0.9, 14.15, 2.1), radius: 0.12, R(.painted(0xD9CDB4))))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.7, 0), CV2(0.75, 2.2), CV2(0.45, 2.6), CV2(0, 2.6)],
+                                      segments: 12, R(.glass)), at: CV3(1.6, 6.15, 2.0)))
         return K.merge(parts)
     }
 
@@ -283,31 +295,55 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 掛けたランタン（鉄の鉤・黒いランタン・硝子の面・中の炎）
+    /// 掛けたランタン（壁座・鉤・鎖・屋根・硝子枠・換気穴・炎）
     static func lanternHook() -> CamperMesh {
         var parts: [CamperMesh] = []
-        let iron = R(.iron)
+        let iron = R(.iron), cast = R(.castIron)
         let toWall = CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)
-        // 壁の座と鉤
-        parts.append(K.placed(K.disc(radius: 1.6, height: 0.5, bevel: 0.15, segments: 14, iron), at: CV3(0, 16, 0), rotation: toWall))
-        parts.append(K.tube([CV3(0, 16, 0.4), CV3(0, 16, 3.2), CV3(0, 14.5, 4.5), CV3(0, 12.5, 4.8)], radius: 0.28, sides: 8, iron))
-        parts.append(K.tube(K.arc(center: CV3(0, 11.2, 4.8), radius: 1.4, from: .pi * 0.15, to: .pi * 0.85, steps: 10).map { CV3($0.x, $0.y, 4.8) },
-                            radius: 0.22, sides: 6, iron))
-        // ランタン本体
-        let base = CV3(0, 4.5, 4.8)
-        parts.append(K.placed(K.block(CV3(5.2, 1.2, 5.2), at: .zero, radius: 0.3, iron), at: base))
-        parts.append(K.placed(K.block(CV3(4.6, 7.5, 4.6), at: CV3(0, 1.2, 0), radius: 0.25, R(.castIron)), at: base))
-        parts.append(K.placed(K.block(CV3(5.4, 1.0, 5.4), at: CV3(0, 8.6, 0), radius: 0.3, iron), at: base))
-        // 硝子 4 面と中の炎
+        parts.append(K.placed(K.disc(radius: 1.8, height: 0.55, bevel: 0.18, segments: 18, iron), at: CV3(0, 17.5, 0), rotation: toWall))
+        for (dx, dy) in [(-0.9, 0.9), (0.9, 0.9), (-0.9, -0.9), (0.9, -0.9)] {
+            parts.append(K.placed(K.sphere(radius: 0.16, segments: 6, R(.agedBrass)), at: CV3(dx, 17.5 + dy, 0.45)))
+        }
+        parts.append(K.tube([CV3(0, 17.5, 0.45), CV3(0, 17.5, 3.4), CV3(0, 15.8, 4.8), CV3(0, 13.8, 5.1)],
+                            radius: 0.3, sides: 9, iron))
+        parts.append(K.tube(K.arc(center: CV3(0, 12.4, 5.1), radius: 1.5, from: .pi * 0.12, to: .pi * 0.88, steps: 12)
+                                .map { CV3($0.x, $0.y, 5.1) }, radius: 0.24, sides: 7, iron))
+        // 短い鎖
+        for i in 0..<3 {
+            parts.append(K.placed(K.tube(K.arc(center: .zero, radius: 0.45, from: 0, to: 2 * .pi, steps: 10),
+                                         radius: 0.08, sides: 5, closed: true, R(.agedBrass)),
+                                  at: CV3(0, 12.0 - Double(i) * 0.7, 5.1),
+                                  rotation: CQuat.axisAngle(CV3(0, 0, 1), Double(i) * 0.5)))
+        }
+        let base = CV3(0, 3.8, 5.1)
+        parts.append(K.placed(K.block(CV3(5.4, 1.3, 5.4), at: .zero, radius: 0.35, iron), at: base))
+        parts.append(K.placed(K.block(CV3(4.7, 7.8, 4.7), at: CV3(0, 1.3, 0), radius: 0.28, cast), at: base))
+        // ピラミッド屋根
+        let roof = CamperRoomShapes.extrudeAlongX([CV2(-3.2, 0), CV2(3.2, 0), CV2(0, 2.4)], length: 5.6, inset: 0.2, iron)
+        parts.append(K.placed(K.placed(roof, at: .zero, yaw: .pi / 2), at: base + CV3(0, 9.2, 0)))
+        parts.append(K.placed(K.sphere(radius: 0.4, segments: 8, R(.agedBrass)), at: base + CV3(0, 14.4, 0)))
+        // 換気穴
+        for k in 0..<6 {
+            let a = Double(k) / 6 * 2 * .pi
+            parts.append(K.placed(K.disc(radius: 0.22, height: 0.15, bevel: 0.05, segments: 8, R(.painted(0x0A0A0A))),
+                                  at: base + CV3(cos(a) * 1.8, 9.6, sin(a) * 1.8),
+                                  rotation: CQuat.axisAngle(CV3(1, 0, 0), .pi / 2)))
+        }
+        // 角柱と硝子
+        for (nx, nz) in [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)] {
+            parts.append(K.tube([base + CV3(nx * 2.15, 1.3, nz * 2.15), base + CV3(nx * 2.15, 9.0, nz * 2.15)],
+                                radius: 0.18, sides: 5, iron))
+        }
         for (nx, nz) in [(0.0, 1.0), (0.0, -1.0), (1.0, 0.0), (-1.0, 0.0)] {
             let q = abs(nx) > 0.5 ? CQuat.axisAngle(CV3(0, 1, 0), .pi / 2) : .identity
-            parts.append(K.placed(K.panel(width: 3.6, height: 6.2, R(.mica)), at: base + CV3(nx * 2.35, 4.8, nz * 2.35), rotation: q))
+            parts.append(K.placed(K.panel(width: 3.5, height: 6.4, R(.mica)),
+                                  at: base + CV3(nx * 2.4, 5.0, nz * 2.4), rotation: q))
         }
-        parts.append(K.placed(K.panel(width: 3.0, height: 4.5, R(.fire)), at: base + CV3(0, 4.5, 2.0)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.5, 0.6), CV2(0.35, 1.6), CV2(0, 2.2)], segments: 10, R(.fire)), at: base + CV3(0, 2.4, 0)))
-        // 持ち手の輪
-        parts.append(K.tube(K.arc(center: base + CV3(0, 10.2, 0), radius: 1.5, from: 0.2, to: .pi - 0.2, steps: 12).map { CV3($0.x, $0.y, base.z) },
-                            radius: 0.2, sides: 5, R(.agedBrass)))
+        parts.append(K.placed(K.panel(width: 2.8, height: 4.2, R(.fire)), at: base + CV3(0, 4.6, 2.05)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.55, 0.5), CV2(0.4, 1.8), CV2(0, 2.5)], segments: 12, R(.fire)),
+                              at: base + CV3(0, 2.2, 0)))
+        parts.append(K.tube(K.arc(center: base + CV3(0, 11.8, 0), radius: 1.55, from: 0.15, to: .pi - 0.15, steps: 14)
+                                .map { CV3($0.x, $0.y, base.z) }, radius: 0.2, sides: 6, R(.agedBrass)))
         return K.merge(parts)
     }
 
@@ -372,32 +408,46 @@ extension CamperRoomFurnitureModels {
         return K.merge(parts)
     }
 
-    /// 硝子の球（真鍮の輪・透明の球・中の小さな山と木）
+    /// 硝子の球（真鍮の吊り・二重の輪・透明の球・山・木・石・小さな池）
     static func glassTerrarium() -> CamperMesh {
         var parts: [CamperMesh] = []
-        parts.append(K.tube([CV3(0, 0, 0), CV3(0, -8, 0)], radius: 0.08, sides: 3, R(.paper)))
-        parts.append(K.tube(K.arc(center: CV3(0, -10, 0), radius: 2.2, from: 0, to: 2 * .pi, steps: 20), radius: 0.25, sides: 6, closed: true,
-                            R(.brass)))
+        parts.append(K.tube([CV3(0, 0, 0), CV3(0, -4, 0), CV3(0, -8.5, 0)], radius: 0.12, sides: 5, R(.rope)))
+        parts.append(K.placed(K.sphere(radius: 0.45, segments: 10, R(.brass)), at: CV3(0, -4, 0)))
+        parts.append(K.tube(K.arc(center: CV3(0, -10.2, 0), radius: 2.4, from: 0, to: 2 * .pi, steps: 24),
+                            radius: 0.28, sides: 8, closed: true, R(.brass)))
+        parts.append(K.tube(K.arc(center: CV3(0, -10.2, 0), radius: 1.5, from: 0, to: 2 * .pi, steps: 18),
+                            radius: 0.14, sides: 6, closed: true, R(.agedBrass)))
         for k in 0..<3 {
             let a = Double(k) / 3 * 2 * .pi
-            parts.append(K.tube([CV3(0, -10, 0), CV3(cos(a) * 3.8, -16, sin(a) * 3.8)], radius: 0.12, sides: 4, R(.brass)))
+            parts.append(K.tube([CV3(0, -10.2, 0), CV3(cos(a) * 4.0, -16.2, sin(a) * 4.0)], radius: 0.14, sides: 5, R(.brass)))
         }
-        let ball = CV3(0, -20, 0)
-        parts.append(K.placed(K.sphere(radius: 7.2, segments: 28, R(.glass)), at: ball))
-        // 中の地形
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.5, 0), CV2(3.2, 1.6), CV2(1.5, 3.4), CV2(0, 4.2)], segments: 20, R(.soil)),
-                              at: ball + CV3(0, -5.2, 0)))
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.2, 0), CV2(1.4, 2.2), CV2(0, 3.6)], segments: 14, R(.ceramic(0x8A8A82))),
-                              at: ball + CV3(1.2, -3.6, -0.8)))
-        for k in 0..<5 {
-            let a = Double(k) / 5 * 2 * .pi + 0.4
-            let p = ball + CV3(cos(a) * 2.4, -2.5, sin(a) * 2.4)
-            parts.append(K.tube([p, p + CV3(0, 2.8 + Double(k % 2), 0)], radius: 0.15, sides: 5, R(.wood(.pine))))
-            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.4, 0), CV2(0.2, 3.2), CV2(0, 3.2)], segments: 10, R(.leaf)),
-                                  at: p + CV3(0, 2.2, 0)))
+        let ball = CV3(0, -20.2, 0)
+        parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.glass)), at: ball))
+        // 赤道の真鍮帯
+        parts.append(K.tube(K.arc(center: ball, radius: 7.35, from: 0, to: 2 * .pi, steps: 36)
+                                .map { CV3($0.x, ball.y, $0.y) }, radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
+        // 地形
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.8, 0), CV2(3.6, 1.4), CV2(2.0, 3.2), CV2(0.8, 4.6), CV2(0, 5.0)],
+                                      segments: 24, R(.soil)), at: ball + CV3(0, -5.4, 0)))
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.4, 0), CV2(1.6, 2.0), CV2(0.6, 3.4), CV2(0, 3.8)],
+                                      segments: 16, R(.ceramic(0x8A8A82))), at: ball + CV3(1.4, -3.4, -1.0)))
+        // 小さな池
+        parts.append(K.placed(K.disc(radius: 1.6, height: 0.25, bevel: 0.08, segments: 16, R(.tintedGlass(0x6E9FB0))),
+                              at: ball + CV3(-2.0, -4.9, 1.6)))
+        for k in 0..<6 {
+            let a = Double(k) / 6 * 2 * .pi + 0.3
+            let p = ball + CV3(cos(a) * 2.6, -2.6, sin(a) * 2.6)
+            parts.append(K.tube([p, p + CV3(0, 3.0 + Double(k % 2) * 0.8, 0)], radius: 0.16, sides: 6, R(.wood(.pine))))
+            parts.append(K.placed(K.lathe([CV2(0, 0), CV2(1.5, 0), CV2(0.9, 1.6), CV2(0.2, 3.4), CV2(0, 3.4)],
+                                          segments: 12, R(.leaf)), at: p + CV3(0, 2.4, 0)))
         }
-        parts.append(CamperRoomShapes.leaf(at: ball + CV3(-2, -1, 1.5), toward: CV3(-0.5, 0.2, 0.3), size: 1.4))
-        parts.append(CamperRoomShapes.leaf(at: ball + CV3(2.2, -0.8, -1), toward: CV3(0.6, 0.1, -0.4), size: 1.2))
+        // 石
+        for (dx, dz, r) in [(-1.5, -2.0, 0.7), (2.2, 1.0, 0.55), (0.5, 2.4, 0.45)] as [(Double, Double, Double)] {
+            parts.append(K.placed(K.scaled(K.sphere(radius: r, segments: 10, R(.ceramic(0x9A9688))), CV3(1.2, 0.7, 1.0)),
+                                  at: ball + CV3(dx, -4.6, dz)))
+        }
+        parts.append(CamperRoomShapes.leaf(at: ball + CV3(-2.2, -0.8, 1.6), toward: CV3(-0.5, 0.25, 0.3), size: 1.5))
+        parts.append(CamperRoomShapes.leaf(at: ball + CV3(2.4, -0.6, -1.2), toward: CV3(0.6, 0.15, -0.4), size: 1.3))
         return K.merge(parts)
     }
 }
