@@ -12,7 +12,8 @@ import SceneKitShim
 // 旅のトランク・メダルを回す画面（`MedalViewerView`）と同じく、SwiftUI に `SCNView` を置く。形は素の Swift の
 // 組み立て図（`CamperBuilder`）が作り、ここはそれを `SCNNode` に写すだけ。素材は physicallyBased
 // （塗装は clearCoat・クロームは metalness 1）、周りの空を映り込みの元に、床は `SCNFloor` の映り込みと太陽の落ち影、
-// 車体の下に接地の暗がり。夜は室内の灯り（omni）・前照灯（spot）・尾灯、窓とレンズは emission。iOS 標準だけで無料。
+// 車体の下に接地の暗がり。夜は室内の灯り（下向きの spot）・入口の灯り（spot）・外の火、窓と電球は emission。
+// 停めている車なので前照灯・尾灯は点けない（2026-10-19。レンズは透ける硝子で、周りの灯りを映すだけ）。iOS 標準だけで無料。
 //
 // 性能（2026-10-18 判断）: 組み立て図は画面の処理の外で作る。止まっている部品は材質ごとに1つの形へまとめ
 // （`flattenedClone`）、描く回数を材質の数（70 前後）に抑える。貼り絵は 256 px まで。画面は動いた時だけ描き直す。
@@ -25,7 +26,7 @@ final class CamperScene {
 
     /// 板の単位 → SceneKit の単位（車体の長さ 242 → 2.42）
     static let unit = 0.01
-    /// 灯りの組: 外（太陽・前照灯・焚き火が照らす）と室内（室内の灯りだけが照らす。太陽と周りの光はどちらも照らす）
+    /// 灯りの組: 外（月・入口の灯り・焚き火・ランタンが照らす）と室内（室内の灯りだけが照らす。太陽・月と周りの光はどちらも照らす）
     static let outsideMask = 1
     static let insideMask = 2
 
@@ -115,18 +116,17 @@ final class CamperScene {
         let env = palette.image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
-        scene.lightingEnvironment.intensity = CGFloat(mood == .night ? 0.14 : (mood == .snow ? 1.45 : 1.35))
-        // 板の光の向き（画面基準）: 昼 (−0.18, −0.72, 0.62)・夜の月 (0.45, −0.6, 0.55)。板は下が +y
-        let from = mood == .night ? CV3(0.45, 0.6, 0.55) : CV3(-0.18, 0.72, 0.62)
-        let q = CQuat.rotation(from: CV3(0, 0, -1), to: -from)
+        scene.lightingEnvironment.intensity = CGFloat(CamperMaterials.fill(mood).environment)
+        // 太陽・月の向きと強さ（`CamperMaterials.sun`）。画面に対して決まっている（車は回る台の上）
+        let sun = CamperMaterials.sun(mood)
+        let q = CQuat.rotation(from: CV3(0, 0, -1), to: -sun.from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
-        // 夜の月は車体の形が読める強さ（縁に青白いリム・run 538）。1.1.21 で弱めすぎない
-        sunNode.light?.intensity = CGFloat(mood == .night ? 260 : (mood == .snow ? 1000 : 1200))
-        sunNode.light?.color = mood == .night ? Self.color(0x9FB4DC) : Self.color(0xFFF4E2)
+        sunNode.light?.intensity = CGFloat(sun.intensity)
+        sunNode.light?.color = Self.color(sun.color)
         // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
             : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
-        ambientNode.light?.intensity = CGFloat(mood == .night ? 60 : 0)
+        ambientNode.light?.intensity = CGFloat(CamperMaterials.fill(mood).ambient)
         // 夜はにじみ（bloom）を使わない（2026-10-18 Mac の絵 run 533）。艶の強い面に近くの灯りが当たると HDR の値が
         // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
         cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
@@ -305,7 +305,7 @@ final class CamperScene {
             l.type = light.kind == .spot ? .spot : .omni
             l.color = Self.color(light.color)
             l.intensity = CGFloat(light.intensity)
-            // 型ごとに減衰を分ける（全部なだらかにすると尾灯が壊れる・2026-10-20）
+            // 型ごとに減衰を分ける（`CamperLightPattern`。天井・入口・ランタンは急に、部屋の家具と焚き火はなだらかに）
             light.applyAttenuation(to: l, unit: s)
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
