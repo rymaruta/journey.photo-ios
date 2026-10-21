@@ -283,7 +283,7 @@ struct TrunkView: View {
                             .font(JPFont.mono(15, relativeTo: .subheadline))
                             .foregroundStyle(TrunkStyle.muted)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(JPFont.footnote.weight(.semibold))
                             .foregroundStyle(TrunkStyle.muted)
                             .accessibilityHidden(true)
                     }

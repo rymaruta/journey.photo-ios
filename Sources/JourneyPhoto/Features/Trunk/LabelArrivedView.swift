@@ -127,42 +127,49 @@ struct LabelArrivedView: View {
     }
 
     /// どんな図柄か（真鍮の字の札）
+    /// 横に入らない大きさ（文字の大きさの設定）では札を縦に積む（2026-10-21）
     private var chips: some View {
-        let items = TrunkArrivalText.chips(label)
-        return HStack(spacing: 8) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(spacing: 6) {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 13, weight: .semibold))
-                        .accessibilityHidden(true)
-                    Text(item.text)
-                        .font(JPFont.footnote.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
-                .foregroundStyle(WebTheme.accent)
-                .padding(.horizontal, 12)
-                .frame(height: 32)
-                .background(TrunkStyle.chip, in: Capsule())
-            }
-            // 一緒に届いた硬貨（公開の投稿1件で1枚・2026-10-17 次の版）
-            if batch.coins > 0 {
-                HStack(spacing: 6) {
-                    TrunkCoinMark(size: 14)
-                    Text(TrunkText.coinChip(batch.coins))
-                        .font(JPFont.footnote.weight(.semibold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(WebTheme.accent)
-                .padding(.horizontal, 12)
-                .frame(height: 32)
-                .background(TrunkStyle.chip, in: Capsule())
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("trunk.arrived.coin")
-            }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { chipItems }
+            VStack(alignment: .leading, spacing: 8) { chipItems }
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var chipItems: some View {
+        let items = TrunkArrivalText.chips(label)
+        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            HStack(spacing: 6) {
+                Image(systemName: item.symbol)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text(item.text)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(TrunkStyle.chip, in: Capsule())
+        }
+        // 一緒に届いた硬貨（公開の投稿1件で1枚・2026-10-17 次の版）
+        if batch.coins > 0 {
+            HStack(spacing: 6) {
+                TrunkCoinMark(size: 14)
+                Text(TrunkText.coinChip(batch.coins))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(TrunkStyle.chip, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("trunk.arrived.coin")
+        }
     }
 
     /// 手持ちの棒（読めたときだけ）
@@ -218,7 +225,7 @@ struct LabelArrivedView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "dice")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .accessibilityHidden(true)
                     Text(L("図柄を作り直す", "Redo the design"))
                         .font(.subheadline)

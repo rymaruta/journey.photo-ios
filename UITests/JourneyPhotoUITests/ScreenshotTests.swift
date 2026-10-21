@@ -1547,7 +1547,7 @@ final class ScreenshotTests: XCTestCase {
     /// 横に回しても裏にならなければ落とす**
     /// わたしの乗車券（マイページ → 設定 → すれちがい → わたしの乗車券）まで進めて、回る見本を返す。
     /// 画面まで行けなければ nil（撮らずに抜ける）。`pro` は見本の利用者を Pro の姿にする（`-JPPreviewPro`）
-    private func openPassPick(pro: Bool = false) -> (XCUIApplication, XCUIElement)? {
+    private func openPassPick(pro: Bool = false, extra: [String] = []) -> (XCUIApplication, XCUIElement)? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1557,6 +1557,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPass", "YES"]
         if pro { app.launchArguments += ["-JPPreviewPro", "YES"] }
+        app.launchArguments += extra
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -3625,5 +3626,73 @@ final class ScreenshotTests: XCTestCase {
         let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
                                                     "camper.room.tray.", "camper.room.tray.cat.")).firstMatch
         if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
+    }
+
+    // MARK: - 大きい文字（Dynamic Type・2026-10-21）
+
+    /// 文字の大きさの設定をアクセシビリティの XL にして起動する鍵（シミュレータの設定を変えずに、このアプリだけ）
+    private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+
+    /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
+    /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
+    func testCapturesCamperLargeText() {
+        let app = launchTrunk(Self.largeText)
+        guard openCamper(app) else { return }
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        shoot(app, "95x-大きい文字（キャンピングカー）")
+        let stage = app.buttons["camper.stage.van"].firstMatch
+        guard stage.exists else { return XCTFail("段のボタンが無い") }
+        scrollTo(stage, in: app)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "95y-大きい文字（キャンピングカー・数と段）")
+        let width = app.windows.firstMatch.frame.width
+        for id in ["camper.stage.van", "camper.stage.camper", "camper.stage.trailer"] {
+            let b = app.buttons[id].firstMatch
+            XCTAssertTrue(b.exists, "\(id) が無い")
+            guard b.exists else { continue }
+            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
+            XCTAssertGreaterThan(b.frame.width, width / 2, "大きい文字なのに段が横に並んだまま（\(id) の幅 \(b.frame.width)）")
+        }
+    }
+
+    /// **旅のトランク（大きい文字）**: 上と、手持ちのラベルの下のボタン（貼る・作り直す・削除）。開けなければ撮らずに抜ける。
+    /// **出たのにボタンが 44pt 未満・押せなければ落とす**
+    func testCapturesTrunkLargeText() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"] + Self.largeText)
+        guard openTrunk(app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90x-大きい文字（旅のトランク）")
+        let pocketRow = app.buttons["trunk.pocket"].firstMatch
+        scrollTo(pocketRow, in: app)
+        guard pocketRow.isHittable else { return }
+        pocketRow.tap()
+        let cell = app.buttons["trunk.pocket.cell"].firstMatch
+        guard cell.waitForExistence(timeout: 10) else { return }
+        cell.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "92x-大きい文字（手持ちのラベル）")
+        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            guard button.exists else { continue }
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
+            XCTAssertTrue(button.isHittable, "\(id) を押せない")
+        }
+    }
+
+    /// **わたしの乗車券（大きい文字）**: きっぷ（決まった大きさ）の下の「裏を見る」が手がかりの下へ回り、押せるか。
+    /// 開けなければ撮らずに抜ける。**出たのに「裏を見る」が 44pt 未満・押せなければ落とす**
+    func testCapturesPassOwnCardLargeText() {
+        guard let (app, _) = openPassPick(extra: Self.largeText) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "85x-大きい文字（自分のカード）")
+        let flip = app.buttons["pass.pick.flip"].firstMatch
+        XCTAssertTrue(flip.exists, "「裏を見る」が無い")
+        XCTAssertGreaterThanOrEqual(flip.frame.height, 44, "「裏を見る」が 44pt 未満")
+        scrollTo(flip, in: app)
+        XCTAssertTrue(flip.isHittable, "大きい文字で「裏を見る」を押せない")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "85y-大きい文字（自分のカード・券面を選ぶ欄）")
     }
 }

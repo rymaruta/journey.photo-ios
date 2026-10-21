@@ -155,7 +155,7 @@ struct TheirTrunkCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
+                .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(Color.white.opacity(0.35))
         }
         .padding(.leading, 6)

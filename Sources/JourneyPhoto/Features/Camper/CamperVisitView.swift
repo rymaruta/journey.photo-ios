@@ -17,6 +17,8 @@ struct CamperVisitView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 文字の大きさの設定。アクセシビリティの大きさでは横に並べた札・ボタンを縦に積む（2026-10-21 判断）
+    @Environment(\.dynamicTypeSize) private var typeSize
     @StateObject private var model = CamperVisitModel()
     @State private var angle = CamperFraming.overview(.camper)
     @State private var animateAngle = false
@@ -75,12 +77,12 @@ struct CamperVisitView: View {
                 .foregroundStyle(WebTheme.foreground)
                 .lineLimit(1)
             Text(CamperText.visitCaption(owner: ownerName))
-                .font(.system(size: 12))
+                .font(JPFont.caption)
                 .foregroundStyle(WebTheme.muted2)
             if let notice = model.visitNotice {
                 // 訪ねた記録は控えめに（色は淡い字・形は小さな印。合図の真鍮は使わない）
                 Label(notice, systemImage: "checkmark.circle")
-                    .font(.system(size: 12))
+                    .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text2)
                     .padding(.top, 4)
                     .accessibilityIdentifier("camper.visit.counted")
@@ -117,7 +119,7 @@ struct CamperVisitView: View {
             } else {
                 // 断り（友達でない・見つからない・退会など）は押し直しても変わらないので「もう一度」を出さない
                 Text(message)
-                    .font(.system(size: 14))
+                    .jpSystemFont(14, relativeTo: .subheadline)
                     .foregroundStyle(WebTheme.text)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
@@ -172,20 +174,29 @@ struct CamperVisitView: View {
     }
 
     private func tiles(_ state: CamperVisitState) -> some View {
-        HStack(spacing: 10) {
-            tile(L("集めた部品（要サーバー）", "Server parts"), CamperText.visitParts(state.parts.count))
-            // 薪の数は訪ねる口が返さない。くべて分かるまで札を出さない（「まだ」と言い切らない・2026-10-19 見直し）
-            if let wood = model.woodCount {
-                tile(L("焚き火の薪", "Firewood"), L("あなたは \(wood) 回", "You: \(wood)"))
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 10) { tileItems(state) }
+            } else {
+                HStack(spacing: 10) { tileItems(state) }
             }
         }
         .padding(.horizontal, 16)
     }
 
+    @ViewBuilder
+    private func tileItems(_ state: CamperVisitState) -> some View {
+        tile(L("集めた部品（要サーバー）", "Server parts"), CamperText.visitParts(state.parts.count))
+        // 薪の数は訪ねる口が返さない。くべて分かるまで札を出さない（「まだ」と言い切らない・2026-10-19 見直し）
+        if let wood = model.woodCount {
+            tile(L("焚き火の薪", "Firewood"), L("あなたは \(wood) 回", "You: \(wood)"))
+        }
+    }
+
     private func tile(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             // 12pt を守る（縮めない。収まらなければ2行に）。数は等幅数字
-            Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint).lineLimit(2)
+            Text(label).font(JPFont.caption).foregroundStyle(WebTheme.faint).lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Text(value).font(JPFont.number(14, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
                 .lineLimit(2)
@@ -204,49 +215,60 @@ struct CamperVisitView: View {
             if let message = model.message {
                 // 成功・案内は白（合図の真鍮にしない）、断りは危険の色（2026-10-19 見直し）
                 Label(message.text, systemImage: message.kind.symbol)
-                    .font(.system(size: 13))
+                    .font(JPFont.footnote)
                     .foregroundStyle(message.kind == .refused ? WebTheme.danger : WebTheme.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camper.visit.message")
             }
-            HStack(spacing: 8) {
-                // 写真の無い画面の主ボタン: 真鍮の塗りに墨の字（CLAUDE.md の owner の好み）
-                Button { Task { await model.gift(calls: service, ownerName: ownerName) } } label: {
-                    if model.gifted {
-                        // 済んだ形（2026-10-19 Mac run 561: 真鍮を薄くした地に墨の字では読めなかった）: 縁だけ・白の字・チェックの印
-                        Label(L("贈りました", "Given"), systemImage: "checkmark")
-                            .jpOutlineButton(.regular, fullWidth: true)
-                            .frame(minHeight: 50)
-                    } else {
-                        Label(CamperText.giveLabel, systemImage: "gift")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(WebTheme.accentText)
-                            .frame(maxWidth: .infinity, minHeight: 50)
-                            .background(WebTheme.accentFill, in: Capsule())
-                            .opacity(model.canAct ? 1 : 0.5)
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(model.gifted || !model.canAct)
-                .accessibilityValue(model.gifted ? L("済み。この友達にはもう贈れません", "Done. You can\u{2019}t give this friend another gift") : "")
-                .accessibilityIdentifier("camper.visit.gift")
-                Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
-                    // 線のボタン（板 Components の `.bo`・`jpOutlineButton` を通す）
-                    Label(CamperText.firewoodLabel, systemImage: "flame")
-                        .jpOutlineButton(.regular, fullWidth: true)
-                        .frame(minHeight: 50)
-                        .opacity(model.canAct ? 1 : 0.5)
-                }
-                .buttonStyle(.plain)
-                .disabled(!model.canAct)
-                .accessibilityIdentifier("camper.visit.firewood")
+            // アクセシビリティの大きさでは2つのボタンを縦に積む（横 2 つでは「焚き火に薪をくべる」が切れる・2026-10-21）
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 8) { actionButtons }
+            } else {
+                HStack(spacing: 8) { actionButtons }
             }
             Text(L("贈れるのは一人に一度・1日1回。薪は同じ友達に1日1回くべられます。",
                    "One gift per friend, one a day. You can add wood to the same friend\u{2019}s fire once a day."))
-                .font(.system(size: 12))
+                .font(JPFont.caption)
                 .foregroundStyle(WebTheme.faint)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        // 写真の無い画面の主ボタン: 真鍮の塗りに墨の字（CLAUDE.md の owner の好み）
+        Button { Task { await model.gift(calls: service, ownerName: ownerName) } } label: {
+            if model.gifted {
+                // 済んだ形（2026-10-19 Mac run 561: 真鍮を薄くした地に墨の字では読めなかった）: 縁だけ・白の字・チェックの印
+                Label(L("贈りました", "Given"), systemImage: "checkmark")
+                    .jpOutlineButton(.regular, fullWidth: true)
+                    .frame(minHeight: 50)
+            } else {
+                Label(CamperText.giveLabel, systemImage: "gift")
+                    .font(.callout.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .foregroundStyle(WebTheme.accentText)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(WebTheme.accentFill, in: Capsule())
+                    .opacity(model.canAct ? 1 : 0.5)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(model.gifted || !model.canAct)
+        .accessibilityValue(model.gifted ? L("済み。この友達にはもう贈れません", "Done. You can\u{2019}t give this friend another gift") : "")
+        .accessibilityIdentifier("camper.visit.gift")
+        Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
+            // 線のボタン（板 Components の `.bo`・`jpOutlineButton` を通す）
+            Label(CamperText.firewoodLabel, systemImage: "flame")
+                .jpOutlineButton(.regular, fullWidth: true)
+                .frame(minHeight: 50)
+                .opacity(model.canAct ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canAct)
+        .accessibilityIdentifier("camper.visit.firewood")
     }
 
     private var backdrop: some View {

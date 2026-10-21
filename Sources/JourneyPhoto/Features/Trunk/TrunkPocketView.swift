@@ -162,6 +162,51 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.cell")
     }
 
+    /// 下の帯のボタン（貼る・作り直す・削除）
+    @ViewBuilder
+    private func actionButtons(_ state: TrunkState, selected: TrunkLabel?) -> some View {
+        Button {
+            guard let selected else { return }
+            Task {
+                if await model.stick(selected.id) {
+                    selectedId = nil
+                    toasts.show(L("トランクに貼りました", "Stuck on your trunk"))
+                }
+            }
+        } label: {
+            TrunkButtonFace(title: L("貼る", "Stick"), size: 15)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("trunk.pocket.stick")
+        Button {
+            guard let selected else { return }
+            if state.isPro { rerollTarget = selected } else { showPaywall = true }
+        } label: {
+            HStack(spacing: 6) {
+                Text(L("作り直す", "Redo"))
+                    .font(JPFont.bodyEmphasis)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                TrunkProTag()
+            }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("作り直す（Pro）", "Redo (Pro)"))
+        .accessibilityIdentifier("trunk.pocket.reroll")
+        Button {
+            guard selected != nil else { return }
+            confirmDelete = true
+        } label: {
+            TrunkButtonFace(title: Labels.Common.delete, kind: .danger, size: 15)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("trunk.pocket.delete")
+    }
+
     /// 下の帯（選んでいるラベル・貼る・作り直す・削除）
     private func actionBar(_ state: TrunkState) -> some View {
         let selected = state.pocket.first { $0.id == selectedId }
@@ -171,47 +216,10 @@ struct TrunkPocketView: View {
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.muted)
                 .lineLimit(1)
-            HStack(spacing: 8) {
-                Button {
-                    guard let selected else { return }
-                    Task {
-                        if await model.stick(selected.id) {
-                            selectedId = nil
-                            toasts.show(L("トランクに貼りました", "Stuck on your trunk"))
-                        }
-                    }
-                } label: {
-                    TrunkButtonFace(title: L("貼る", "Stick"), size: 15)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("trunk.pocket.stick")
-                Button {
-                    guard let selected else { return }
-                    if state.isPro { rerollTarget = selected } else { showPaywall = true }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(L("作り直す", "Redo"))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(WebTheme.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                        TrunkProTag()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
-                    .contentShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("作り直す（Pro）", "Redo (Pro)"))
-                .accessibilityIdentifier("trunk.pocket.reroll")
-                Button {
-                    guard selected != nil else { return }
-                    confirmDelete = true
-                } label: {
-                    TrunkButtonFace(title: Labels.Common.delete, kind: .danger, size: 15)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("trunk.pocket.delete")
+            // 横に入らない大きさ（文字の大きさの設定）では3つのボタンを縦に積む（2026-10-21・横 3 つでは「作り直す」が切れる）
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { actionButtons(state, selected: selected) }
+                VStack(spacing: 8) { actionButtons(state, selected: selected) }
             }
             .disabled(selected == nil || model.busy)
             .opacity(selected == nil ? 0.4 : 1)

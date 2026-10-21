@@ -149,30 +149,46 @@ struct PassSpinCard: View {
                                              : L("押すと裏返します", "Tap to flip the card"))
                 .accessibilityAction { flip() }
                 .accessibilityIdentifier("pass.pick.card")
-            HStack(spacing: JPSpace.xs) {
-                Text(reduceMotion ? L("押すと裏返る", "Tap to flip") : L("指を置いて回す · 押すと裏返る", "Hold and turn · Tap to flip"))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
-                // 回さずに裏を読む口（黒地の上の手がかり＝真鍮・CLAUDE.md の owner の好み）
-                Button(action: flip) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 12, weight: .medium))
-                            .accessibilityHidden(true)
-                        Text(showsBack ? L("表を見る", "See the front") : L("裏を見る", "See the back"))
-                    }
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+            // 横に入らない大きさ（文字の大きさの設定）では「裏を見る」を手がかりの下へ回す（2026-10-21）
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: JPSpace.xs) {
+                    flipHint
+                    Spacer(minLength: 0)
+                    flipButton
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("pass.pick.flip")
+                VStack(alignment: .leading, spacing: 0) {
+                    flipHint
+                    flipButton
+                }
             }
             .frame(width: PassCardStyle.deckSize.width)
         }
+    }
+
+    private var flipHint: some View {
+        Text(reduceMotion ? L("押すと裏返る", "Tap to flip") : L("指を置いて回す · 押すと裏返る", "Hold and turn · Tap to flip"))
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityHidden(true)
+    }
+
+    /// 回さずに裏を読む口（黒地の上の手がかり＝真鍮・CLAUDE.md の owner の好み）
+    private var flipButton: some View {
+        Button(action: flip) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(JPFont.caption.weight(.medium))
+                    .accessibilityHidden(true)
+                Text(showsBack ? L("表を見る", "See the front") : L("裏を見る", "See the back"))
+            }
+            .font(JPFont.footnote)
+            .foregroundStyle(WebTheme.accent)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("pass.pick.flip")
     }
 
     /// 押して裏返す（「裏を見る」・読み上げも）。「視差効果を減らす」では動かさずに替える

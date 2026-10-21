@@ -133,12 +133,13 @@ struct TrunkRerollView: View {
                     .padding(.top, 6)
                 Spacer(minLength: 0)
                 Text(caption)
-                    .font(.system(size: 12, weight: checked ? .bold : .regular))
+                    .font(JPFont.caption.weight(checked ? .bold : .regular))
                     .foregroundStyle(checked ? WebTheme.accent : TrunkStyle.faint)
                     .padding(.bottom, 6)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 96)
+            // 高さは下限だけ（文字を大きくした人の字が切れない・2026-10-21）
+            .frame(minHeight: 96)
             .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 12))
             .overlay {
                 if checked { RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.accent, lineWidth: 2) }
