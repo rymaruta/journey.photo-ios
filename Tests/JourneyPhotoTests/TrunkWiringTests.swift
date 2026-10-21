@@ -32,6 +32,22 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(box.contains("placed(p, dy: -TrunkFaces.frontLift(p))"), "立体の正面の吊るす部品が錠前にかかる高さで描かれる")
     }
 
+    /// 🔴 全画面の点検（2026-10-21・99-部品箱）: 「集めた部品・硬貨・かけら」が同じ大きさの札3つで並び、
+    /// どれが大事か読めなかった。**主役は集めた部品の数1つ**（大きな数字）、硬貨は脇に小さく、
+    /// かけらの印は交換の札へ
+    func testPartsBoxLeadsWithCollectedCount() throws {
+        let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
+        let start = try XCTUnwrap(box.range(of: "private func stats("))
+        let end = try XCTUnwrap(box.range(of: "// MARK: 種類のタブ"))
+        let stats = String(box[start.lowerBound..<end.lowerBound])
+        XCTAssertTrue(stats.contains("JPFont.number(28"), "集めた部品の数が主役の大きさでない")
+        XCTAssertEqual(stats.components(separatedBy: "JPFont.number(").count - 1, 3, "数え札の数字の数が変わった")
+        XCTAssertFalse(stats.contains("TrunkFragmentMark"), "かけらが上の数え札に戻っている")
+        XCTAssertEqual(stats.components(separatedBy: ".background(TrunkStyle.cell").count - 1, 1, "数え札が1枚でない")
+        let exchange = try XCTUnwrap(box.range(of: "private func exchangeCard("))
+        XCTAssertTrue(box[exchange.lowerBound...].contains("TrunkFragmentMark(filled:"), "交換の札にかけらの印が無い")
+    }
+
     /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
     func testMissingPartShadowIsFaintWhite() throws {
         XCTAssertGreaterThanOrEqual(TrunkPartsBoxText.missingShadowOpacity, 0.08)
