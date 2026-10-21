@@ -17,6 +17,8 @@ struct CamperGarageView: View {
     let photosLoaded: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 文字の大きさの設定。アクセシビリティの大きさでは横に並べた札を縦に積む（2026-10-21 判断）
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var environment: AppEnvironment
     /// 要サーバーの部品（`GET /user/camper`）。読めない間は何も足さない
     @StateObject private var server = CamperServerModel()
@@ -206,7 +208,7 @@ struct CamperGarageView: View {
         .overlay(alignment: .top) {
             if previewStage != nil && previewStage != actualStage || previewPart != nil {
                 Text(previewPart != nil ? L("まだ持っていない部品 · 見本", "Not yet collected · preview") : L("まだ先 · 見本", "Not yet · preview"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(JPFont.caption.weight(.semibold))
                     .foregroundStyle(WebTheme.accent)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -305,7 +307,7 @@ struct CamperGarageView: View {
             ForEach(CamperMood.allCases, id: \.self) { m in
                 Button { mood = m } label: {
                     Text(m.name)
-                        .font(.system(size: 14, weight: m == mood ? .semibold : .regular))
+                        .jpSystemFont(14, weight: m == mood ? .semibold : .regular, relativeTo: .subheadline)
                         .foregroundStyle(m == mood ? CamperStyle.brassLight : WebTheme.text)
                         .frame(minWidth: 60, minHeight: WebTheme.minTapTarget)
                         .padding(.horizontal, 8)
@@ -322,19 +324,28 @@ struct CamperGarageView: View {
         .accessibilityLabel(L("時刻と天気", "Time and weather"))
     }
 
+    /// 3 つの数の札。アクセシビリティの大きさでは縦に積む（横 3 つでは見出しが 1 字ずつ折れ、数が縮んで読めない・2026-10-21）
+    @ViewBuilder
     private var statsRow: some View {
-        HStack(spacing: 8) {
-            // 一目で見る数は「集めた / 集められる」だけ。図鑑の総数・近日は部品の一覧の終わりへ（2026-10-21）
-            statTile(L("集めた部品", "Parts"), "\(PassExchange.grouped(dex.have)) / \(PassExchange.grouped(dex.total))")
-            statTile(L("写真", "Photos"), "\(stats.posts)")
-            // 数えるのは公開した写真の旅（マイページの旅の棚は非公開も入るので、数が違う人がいる・#312 の見直し）
-            statTile(L("公開した旅", "Public trips"), "\(stats.books)")
+        if typeSize.isAccessibilitySize {
+            VStack(spacing: 8) { statTiles }
+        } else {
+            HStack(spacing: 8) { statTiles }
         }
+    }
+
+    @ViewBuilder
+    private var statTiles: some View {
+        // 一目で見る数は「集めた / 集められる」だけ。図鑑の総数・近日は部品の一覧の終わりへ（2026-10-21）
+        statTile(L("集めた部品", "Parts"), "\(PassExchange.grouped(dex.have)) / \(PassExchange.grouped(dex.total))")
+        statTile(L("写真", "Photos"), "\(stats.posts)")
+        // 数えるのは公開した写真の旅（マイページの旅の棚は非公開も入るので、数が違う人がいる・#312 の見直し）
+        statTile(L("公開した旅", "Public trips"), "\(stats.books)")
     }
 
     private func statTile(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 12)).foregroundStyle(WebTheme.faint)
+            Text(label).font(JPFont.caption).foregroundStyle(WebTheme.faint)
             Text(value).font(JPFont.number(17, weight: .semibold, relativeTo: .body)).foregroundStyle(WebTheme.foreground)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
@@ -348,38 +359,45 @@ struct CamperGarageView: View {
     private var stagesRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("車が育つ", "Your camper grows")).jpEyebrow().foregroundStyle(WebTheme.accent)
-            HStack(spacing: 8) {
-                ForEach(CamperStage.allCases, id: \.self) { s in
-                    let reached = s.requiredBooks <= stats.books
-                    let on = s == stage
-                    Button {
-                        previewStage = s == actualStage ? nil : s
-                        doorOpen = false
-                        aim(CamperFraming.overview(s))
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text(s.name)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(s == actualStage ? CamperStyle.brassLight : (reached ? WebTheme.text : WebTheme.muted2))
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                            Text(s == actualStage ? L("いま", "Now")
-                                 : (reached ? L("通ってきた", "Passed") : L("あと \(s.requiredBooks - stats.books) 冊", "\(s.requiredBooks - stats.books) more trips")))
-                                .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
-                                .foregroundStyle(s == actualStage ? WebTheme.accent : WebTheme.faint)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(s == actualStage ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(on ? WebTheme.accent : (reached ? WebTheme.hairline : WebTheme.line),
-                                          style: StrokeStyle(lineWidth: 1, dash: reached || on ? [] : [4, 3])))
-                        .contentShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                    .accessibilityHint(reached ? "" : L("まだ先の段を見本で見ます", "Preview a stage you haven't reached"))
-                    .accessibilityIdentifier("camper.stage.\(s.rawValue)")
-                }
+            // アクセシビリティの大きさでは段を縦に積む（横 3 つでは「キャンピングカー」が切れる・2026-10-21）
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 8) { stageButtons }
+            } else {
+                HStack(spacing: 8) { stageButtons }
             }
+        }
+    }
+
+    private var stageButtons: some View {
+        ForEach(CamperStage.allCases, id: \.self) { s in
+            let reached = s.requiredBooks <= stats.books
+            let on = s == stage
+            Button {
+                previewStage = s == actualStage ? nil : s
+                doorOpen = false
+                aim(CamperFraming.overview(s))
+            } label: {
+                VStack(spacing: 2) {
+                    Text(s.name)
+                        .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(s == actualStage ? CamperStyle.brassLight : (reached ? WebTheme.text : WebTheme.muted2))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(s == actualStage ? L("いま", "Now")
+                         : (reached ? L("通ってきた", "Passed") : L("あと \(s.requiredBooks - stats.books) 冊", "\(s.requiredBooks - stats.books) more trips")))
+                        .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                        .foregroundStyle(s == actualStage ? WebTheme.accent : WebTheme.faint)
+                }
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(s == actualStage ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(on ? WebTheme.accent : (reached ? WebTheme.hairline : WebTheme.line),
+                                  style: StrokeStyle(lineWidth: 1, dash: reached || on ? [] : [4, 3])))
+                .contentShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(on ? .isSelected : [])
+            .accessibilityHint(reached ? "" : L("まだ先の段を見本で見ます", "Preview a stage you haven't reached"))
+            .accessibilityIdentifier("camper.stage.\(s.rawValue)")
         }
     }
 
@@ -398,7 +416,7 @@ struct CamperGarageView: View {
                             if let first = CamperCategory.allCases.first(where: { $0.group == g }) { pickCategory(first) }
                         } label: {
                             Text(g.name)
-                                .font(.system(size: 14, weight: .semibold))
+                                .jpSystemFont(14, weight: .semibold, relativeTo: .subheadline)
                                 .foregroundStyle(g == group ? CamperStyle.brassLight : WebTheme.muted2)
                                 .padding(.horizontal, 10)
                                 .frame(minHeight: WebTheme.minTapTarget)
@@ -420,8 +438,8 @@ struct CamperGarageView: View {
                         Button { pickCategory(c) } label: {
                             HStack(spacing: 6) {
                                 // 選んでいる分類は色だけでなく印の形でも示す（#312 の見直し）
-                                Image(systemName: c == category ? "checkmark" : c.symbol).font(.system(size: 13, weight: c == category ? .bold : .regular))
-                                Text(c.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                Image(systemName: c == category ? "checkmark" : c.symbol).font(JPFont.footnote.weight(c == category ? .bold : .regular))
+                                Text(c.name).font(JPFont.footnote.weight(.semibold)).lineLimit(1)
                                 Text("\(have)/\(total)").font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                                     .foregroundStyle(WebTheme.faint)
                             }
@@ -443,7 +461,7 @@ struct CamperGarageView: View {
                 howToGet(previewPart)
             }
             Text(CamperText.dexFootnote(serverOpen: serverOpen))
-                .font(.system(size: 12))
+                .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("camper.dex.footnote")
@@ -460,7 +478,8 @@ struct CamperGarageView: View {
 
     private var partsGrid: some View {
         let parts = CamperCatalog.parts(category)
-        let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+        // アクセシビリティの大きさでは 2 列（3 列では部品の名前が 1 字ずつ折れる・2026-10-21）
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 2 : 3)
         return LazyVGrid(columns: columns, spacing: 8) {
             if category.optional {
                 let on = worn.key(category) == CamperLoadout.none && previewPart == nil
@@ -470,7 +489,7 @@ struct CamperGarageView: View {
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: "nosign").font(.system(size: 22)).foregroundStyle(WebTheme.muted2)
-                        Text(L("付けない", "None")).font(.system(size: 12)).foregroundStyle(WebTheme.text)
+                        Text(L("付けない", "None")).font(JPFont.caption).foregroundStyle(WebTheme.text)
                     }
                     .frame(maxWidth: .infinity, minHeight: 92)
                     .background(on ? WebTheme.accentSoft : WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
@@ -511,10 +530,10 @@ struct CamperGarageView: View {
                 }
                 .frame(height: 30)
                 Text(have ? part.name : L("？？？", "???"))
-                    .font(.system(size: 12))
+                    .font(JPFont.caption)
                     .foregroundStyle(have ? WebTheme.text : WebTheme.faint)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .lineLimit(typeSize.isAccessibilitySize ? 4 : 2)
                     .minimumScaleFactor(0.85)
                 CamperRarityDots(rarity: part.rarity)
                 if !have {
@@ -530,7 +549,7 @@ struct CamperGarageView: View {
                     } else {
                         // 要サーバー（第1段では届かない）。数の分母にも入れない
                         Text(L("近日", "Soon"))
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(JPFont.caption.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)
                             .accessibilityHidden(true)
                     }
@@ -557,8 +576,8 @@ struct CamperGarageView: View {
         let p = part.unlock.progress(stats)
         return VStack(alignment: .leading, spacing: 6) {
             Text(part.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
-            Text(part.look).font(.system(size: 13)).foregroundStyle(WebTheme.muted2)
-            Text(part.unlock.how(serverOpen: serverOpen)).font(.system(size: 13)).foregroundStyle(WebTheme.text)
+            Text(part.look).font(JPFont.footnote).foregroundStyle(WebTheme.muted2)
+            Text(part.unlock.how(serverOpen: serverOpen)).font(JPFont.footnote).foregroundStyle(WebTheme.text)
             if part.unlock.isAvailable {
                 HStack(spacing: 8) {
                     CamperProgressBar(fraction: part.unlock.fraction(stats))
@@ -684,8 +703,9 @@ struct CamperArrivalView: View {
             }
             Button { onEquip(part) } label: {
                 Text(L("いま車に付ける", "Put it on now"))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(WebTheme.accentText)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .background(WebTheme.accentFill, in: Capsule())
             }
@@ -694,7 +714,7 @@ struct CamperArrivalView: View {
             .accessibilityIdentifier("camper.arrival.equip")
             Button(action: onClose) {
                 Text(L("あとで", "Later"))
-                    .font(.system(size: 15))
+                    .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
                     .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                     // 当たりは字だけでなく 44pt の帯全体（2026-10-19 Mac run 561: 当たりが 18pt だった）
@@ -714,7 +734,7 @@ struct CamperArrivalView: View {
     /// 一緒に届いた部品の札（選んでいる札は真鍮の縁とチェックの形・黒地の上）
     private var others: some View {
         VStack(spacing: 8) {
-            Text(CamperText.alsoArrived(parts.count - 1)).font(.system(size: 12)).foregroundStyle(WebTheme.faint)
+            Text(CamperText.alsoArrived(parts.count - 1)).font(JPFont.caption).foregroundStyle(WebTheme.faint)
             // 名前の長い部品が並んでも画面の外にはみ出さない（横に送る）
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -722,8 +742,8 @@ struct CamperArrivalView: View {
                         let on = p.id == part.id
                         Button { selected = i } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: on ? "checkmark" : p.category.symbol).font(.system(size: 13, weight: on ? .bold : .regular))
-                                Text(p.name).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                                Image(systemName: on ? "checkmark" : p.category.symbol).font(JPFont.footnote.weight(on ? .bold : .regular))
+                                Text(p.name).font(JPFont.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                             }
                             .foregroundStyle(on ? CamperStyle.brassLight : WebTheme.text)
                             .padding(.horizontal, 12)

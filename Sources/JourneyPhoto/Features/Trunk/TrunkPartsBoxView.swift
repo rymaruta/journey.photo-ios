@@ -248,7 +248,7 @@ struct TrunkPartsBoxView: View {
             Spacer(minLength: 0)
             Button { confirmExchange = true } label: {
                 Text(L("交換する", "Exchange"))
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(JPFont.bodyEmphasis)
                     .foregroundStyle(can && exchangeTarget != nil ? WebTheme.accentText : WebTheme.outline)
                     .padding(.horizontal, 14)
                     .frame(minHeight: WebTheme.minTapTarget)

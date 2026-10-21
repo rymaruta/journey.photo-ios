@@ -122,22 +122,17 @@ struct SupporterCardView: View {
         let side = min(SupporterCardScreen.yearMedalSide, (width - 16) / 3)
         let month = String(SupporterText.monthOrdinal(supporter?.months ?? 0))
         return VStack(alignment: .leading, spacing: JPSpace.s) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(L("続けた年のメダル", "Years of support"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: JPSpace.xs)
-                // 板 v2: 数だけ白の等幅 semibold、単位は text-2（13）
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(L("", "Month ")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
-                    Text(month)
-                        .font(JPFont.number(JPTypeScale.footnote, weight: .semibold, relativeTo: .footnote))
-                        .foregroundStyle(WebTheme.text)
-                    Text(L(" か月目", "")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+            // 横に入らない大きさ（文字の大きさの設定）では「12 か月目」を眉ラベルの下へ回す（2026-10-21）
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    yearsEyebrow
+                    Spacer(minLength: JPSpace.xs)
+                    monthCount(month)
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("\(month) か月目", "Month \(month)"))
+                VStack(alignment: .leading, spacing: JPSpace.xs) {
+                    yearsEyebrow
+                    monthCount(month)
+                }
             }
             HStack(alignment: .top) {
                 ForEach(1...SupporterText.yearThresholds.count, id: \.self) { year in
@@ -146,6 +141,26 @@ struct SupporterCardView: View {
                 }
             }
         }
+    }
+
+    private var yearsEyebrow: some View {
+        Text(L("続けた年のメダル", "Years of support"))
+            .jpEyebrow()
+            .foregroundStyle(WebTheme.accent)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// 板 v2: 数だけ白の等幅 semibold、単位は text-2（13）
+    private func monthCount(_ month: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(L("", "Month ")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+            Text(month)
+                .font(JPFont.number(JPTypeScale.footnote, weight: .semibold, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.text)
+            Text(L(" か月目", "")).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(month) か月目", "Month \(month)"))
     }
 
     private func yearMedal(_ year: Int, side: Double) -> some View {
@@ -171,6 +186,10 @@ struct SupporterCardView: View {
                 Text(SupporterText.yearLabel(year))
                     .font(JPFont.footnote)
                     .foregroundStyle(reached ? WebTheme.text : WebTheme.text3)
+                    // 幅はメダルの幅まで（文字を大きくした人でも3つが横に収まる。収まらなければ折り返す・2026-10-21）
+                    .multilineTextAlignment(.center)
+                    .frame(width: side)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .contentShape(Rectangle())
         }

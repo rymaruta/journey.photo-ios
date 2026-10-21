@@ -9,6 +9,8 @@ struct TrunkView: View {
     /// 名札に刻む名前（寝台列車・飛行艇の型）
     var ownerName: String?
 
+    /// 文字の大きさの設定（アクセシビリティの大きさでは数え札・ラベルの名前を折り返す・2026-10-21）
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var toasts: ToastCenter
@@ -182,7 +184,9 @@ struct TrunkView: View {
             Text(caption)
                 .font(.caption)
                 .foregroundStyle(TrunkStyle.muted)
-                .lineLimit(1)
+                // アクセシビリティの大きさでは折り返す（1行では「貼ったラ…」と切れた・2026-10-21 Mac run 628）
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
@@ -226,7 +230,8 @@ struct TrunkView: View {
                         Text(TrunkLabelDesign.caption(label))
                             .font(.caption)
                             .foregroundStyle(TrunkStyle.muted)
-                            .lineLimit(1)
+                            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                            .multilineTextAlignment(.center)
                             .minimumScaleFactor(0.8)
                     }
                     .frame(maxWidth: .infinity)
@@ -283,7 +288,7 @@ struct TrunkView: View {
                             .font(JPFont.mono(15, relativeTo: .subheadline))
                             .foregroundStyle(TrunkStyle.muted)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(JPFont.footnote.weight(.semibold))
                             .foregroundStyle(TrunkStyle.muted)
                             .accessibilityHidden(true)
                     }

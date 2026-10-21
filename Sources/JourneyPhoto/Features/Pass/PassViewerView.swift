@@ -54,6 +54,9 @@ struct PassViewerView: View {
     /// 払って次へ進む距離
     nonisolated static let swipeDistance: CGFloat = 90
 
+    /// 字の伸びの上限（送らない画面なので、ボタンが画面の外へ出ない大きさまで）
+    nonisolated static let typeLimit: DynamicTypeSize = .xxxLarge
+
     /// いま見せる並び: 外した・通報した写真・ブロックした人のカードを落とす
     private var shown: [PassCardContent] {
         let hiding = hidden.snapshot
@@ -117,6 +120,10 @@ struct PassViewerView: View {
             }
         }
         .preferredColorScheme(.dark)
+        // 2026-10-21 判断: この画面は送らない（きっぷは決まった大きさ・`PassCardStyle` の字組の注記）。文字を
+        // アクセシビリティの大きさにすると、見出し・手がかり・下のボタンが画面の外へ押し出されて押せなくなるので、
+        // 字の伸びを xxxLarge で止める（ストーリーの飾りの `StoryViewerView.chromeTypeLimit` と同じ考え）
+        .dynamicTypeSize(...Self.typeLimit)
         .onAppear {
             guard !didStart else { return }
             didStart = true
@@ -298,35 +305,12 @@ struct PassViewerView: View {
     private func actions(_ content: PassCardContent) -> some View {
         let thanked = favorites.contains(content.photo.id)
         return VStack(spacing: JPSpace.xs) {
-        HStack(spacing: JPSpace.xs) {
-            Button { Task { await thank(content) } } label: {
-                HStack(spacing: JPSpace.xs) {
-                    // ハートは白（2026-10-16 判断: 板は真鍮だが、「ありがとう」はいいねそのもの。
-                    // CLAUDE.md の owner の好み「いいねのハートは白（同じ操作の色を割らない）」を取った）
-                    Image(systemName: thanked ? "heart.fill" : "heart")
-                        .font(.system(size: 17))
-                        .foregroundStyle(WebTheme.foreground)
-                        .accessibilityHidden(true)
-                    Text(thanked ? L("ありがとうを返しました", "Thanks sent") : L("ありがとう", "Thank you"))
-                }
-                .jpOutlineButton(fullWidth: true)
+            // 横に入らない大きさ（文字の大きさの設定）では2つのボタンを縦に積む（2026-10-21・線のボタンの字は1行なので、
+            // 横 2 つのままでは「ありがとうを返しました」が切れる）
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
+                VStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
             }
-            .buttonStyle(.plain)
-            .disabled(thanked || thanking)
-            .accessibilityHint(L("この写真にいいねを送ります", "Sends a like to this photo"))
-            .accessibilityIdentifier("pass.viewer.thanks")
-            if mode == .bundle {
-                Button {
-                    pass.markOpened(cards.map(\.id))
-                    onFile()
-                    dismiss()
-                } label: {
-                    Text(L("帳に入れる", "Add to the book")).jpOutlineButton(fullWidth: true)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("pass.viewer.file")
-            }
-        }
             // 「ありがとう」は名前つきのいいね（相手のお知らせにこちらの名前が出る）。押す前に言う
             Text(PassPrivacyText.thanksNotice)
                 .font(JPFont.caption)
@@ -337,6 +321,37 @@ struct PassViewerView: View {
         .padding(.bottom, JPSpace.m)
     }
 
+    @ViewBuilder
+    private func actionButtons(_ content: PassCardContent, thanked: Bool) -> some View {
+        Button { Task { await thank(content) } } label: {
+            HStack(spacing: JPSpace.xs) {
+                // ハートは白（2026-10-16 判断: 板は真鍮だが、「ありがとう」はいいねそのもの。
+                // CLAUDE.md の owner の好み「いいねのハートは白（同じ操作の色を割らない）」を取った）
+                Image(systemName: thanked ? "heart.fill" : "heart")
+                    .font(.body)
+                    .foregroundStyle(WebTheme.foreground)
+                    .accessibilityHidden(true)
+                Text(thanked ? L("ありがとうを返しました", "Thanks sent") : L("ありがとう", "Thank you"))
+            }
+            .jpOutlineButton(fullWidth: true)
+        }
+        .buttonStyle(.plain)
+        .disabled(thanked || thanking)
+        .accessibilityHint(L("この写真にいいねを送ります", "Sends a like to this photo"))
+        .accessibilityIdentifier("pass.viewer.thanks")
+        if mode == .bundle {
+            Button {
+                pass.markOpened(cards.map(\.id))
+                onFile()
+                dismiss()
+            } label: {
+                Text(L("帳に入れる", "Add to the book")).jpOutlineButton(fullWidth: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("pass.viewer.file")
+        }
+    }
+
     private func thank(_ content: PassCardContent) async {
         guard !thanking, !favorites.contains(content.photo.id) else { return }
         thanking = true
@@ -345,6 +360,9 @@ struct PassViewerView: View {
         // 押した人。失敗の戻しは、この人の控えにだけ書く
         let owner = favorites.owner
         favorites.set(content.photo.id, favorite: true)
+        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「ありがとうを返しました」）を
+        // 画面写真で見るため、端末の中だけで済ませる（2026-10-21）
+        if PreviewSession.passSample { return }
         do {
             _ = try await environment.social.like(photoId: content.photo.id)
         } catch {

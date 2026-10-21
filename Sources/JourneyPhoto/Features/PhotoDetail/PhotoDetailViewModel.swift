@@ -29,8 +29,16 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 1つの枠にすると、別の1枚の読み直しで上書きされて守りが外れる（集合で持つ）
     var isReloadingComments: Bool { reloadingComments.contains(photoId) }
     @Published private(set) var reloadingComments: Set<String> = []
-    @Published var draftComment = ""
+    /// 打ち直したら、送れなかった知らせ（`commentPostError`）を消す——古い失敗を新しい文の上に残さない
+    @Published var draftComment = "" {
+        didSet { if draftComment != oldValue { commentPostError = nil } }
+    }
     @Published var errorMessage: String?
+    /// コメントを送れなかった知らせ。**入力欄のすぐ上に出す**（`errorMessage` は操作の段に出るので、
+    /// 欄から遠く、送れなかったことに気づかれなかった）。書いた文は残す（下で消さない）。
+    /// 2026-10-21 判断: 送り直す・打ち直す（`draftComment`）・隣へ送る（`show`）・人が替わる（`setUser`）ときに消す
+    /// （古い失敗を新しい文の上に残さない）
+    @Published var commentPostError: String?
     @Published private(set) var isPosting = false
     /// 消している途中のコメント（二度押しで2回送ると、2回目が「見つかりません」を出す）
     @Published private(set) var deletingCommentIds: Set<String> = []
@@ -101,7 +109,11 @@ final class PhotoDetailViewModel: ObservableObject {
 
     func setUser(_ userId: String?) {
         // 人が替わったら、前の人で確かめたハートを信じない
-        if userId != self.userId { likedConfirmedAt = nil }
+        if userId != self.userId {
+            likedConfirmedAt = nil
+            // 前の人の「送れなかった」を次の人の欄に出さない（2026-10-21）
+            commentPostError = nil
+        }
         self.userId = userId
         isSignedIn = userId != nil
     }
@@ -129,6 +141,7 @@ final class PhotoDetailViewModel: ObservableObject {
             commentsUnavailable = false
             draftComment = ""
             errorMessage = nil
+            commentPostError = nil
         } else if !likesFromServer, let initialLikes {
             // 🔴 **開いた1枚でも、サーバーの数を得るまでは渡された数に合わせる。**
             // ホームで♥を押して 5→6 になっても、init は一覧の 5 で始まるので、
@@ -314,6 +327,30 @@ final class PhotoDetailViewModel: ObservableObject {
         }
     }
 
+    /// 削除を送っている写真（2026-10-21）。**二度押しで2回送らない**——2回目は「見つかりません」で
+    /// 失敗の文を出し、消せた1枚の画面に「削除できませんでした」が残っていた。写真ごとに持つ（隣へ送っても守る）
+    @Published private(set) var deletingPhotoIds: Set<String> = []
+
+    enum DeleteOutcome {
+        /// 同じ写真を消している最中なので送らなかった
+        case refused
+        case deleted
+        case failed(Error)
+    }
+
+    /// 自分の写真を消す（送るのは `photos.delete`）。**同じ写真を送っている間は送らずに断る**
+    func deletePhoto(_ id: String, photos: PhotoService) async -> DeleteOutcome {
+        guard !deletingPhotoIds.contains(id) else { return .refused }
+        deletingPhotoIds.insert(id)
+        defer { deletingPhotoIds.remove(id) }
+        do {
+            try await photos.delete(photoId: id)
+            return .deleted
+        } catch {
+            return .failed(error)
+        }
+    }
+
     func postComment() async {
         // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）。
         // 先頭で断る——下で知らせを消す前に（二度目の押下で別の失敗の知らせを消さない）
@@ -321,6 +358,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         errorMessage = nil
+        commentPostError = nil
         guard isSignedIn else {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
@@ -352,8 +390,15 @@ final class PhotoDetailViewModel: ObservableObject {
             }
         } catch {
             // **送った先の1枚でも失敗は出す。** 書きかけは送ったときに `show` が
-            // 消しているので、黙ると「入った」と思われたまま文も残らない
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
+            // 消しているので、黙ると「入った」と思われたまま文も残らない。
+            // **隣へ送った後の失敗は、その1枚の欄に出さない**（いま見ている1枚の欄の上に出ると、
+            // そこに書いた文が送れなかったと読まれる）——そのときだけ操作の段の知らせに出す
+            let message = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
+            if id == photoId {
+                commentPostError = message
+            } else {
+                errorMessage = message
+            }
         }
     }
 

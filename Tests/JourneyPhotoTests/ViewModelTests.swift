@@ -762,6 +762,31 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 0, "空の名前を送っている")
     }
 
+    /// 🔴 **アルバムを作るのを二度押ししても、1つしか作らない**（2026-10-21・`createInvite` と同じ守り）。
+    /// 送っている間は `isCreating` が立ち、画面は「アルバムを作る」を止めて輪を出す
+    func testAlbumCreateTwiceSendsOnce() async {
+        prepare()
+        // 1回目だけ止める（守りが外れて2回目が通信しに来ても、止めずに通して落とす・固まらせない）
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /albums": gate])))
+        StubProtocol.respond(path: "/albums", status: 200, body: #"{"album":{"id":"a1","title":"冬"}}"#)
+        let model = AlbumsViewModel()
+        let first = Task { await model.create(title: "冬", environment: env) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.isCreating, "送っている間の印が立っていない")
+        await model.create(title: "冬", environment: env)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("POST ") }.count, 1, "二度押しで2つ作っている")
+        XCTAssertFalse(model.isCreating)
+        XCTAssertEqual(model.albums.map(\.id), ["a1"])
+    }
+
     /// 🔴 **押した人が替わったら、フォローの答えを書かない。** 圏外寸前でフォローを押し、
     /// 答えが返る前にログアウトして別の人で入り直すと、前の人の「フォロー中」と
     /// 数が次の人の画面に残っていた（押すと、フォローしていない相手を外す確認が出た）
@@ -2062,6 +2087,89 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.commentCount, 1)
     }
 
+    /// 🔴 **送れなかったコメントは、入力欄の知らせに出し、書いた文は残す**（2026-10-21）。
+    /// 操作の段の `errorMessage` に出していたので、欄から遠く、黙って失敗したように見えた
+    func testFailedCommentShowsNearComposerAndKeepsDraft() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.postComment()
+
+        XCTAssertNotNil(model.commentPostError, "送れなかったことを欄の近くに出していない")
+        XCTAssertNil(model.errorMessage, "操作の段（欄から遠い所）に出している")
+        XCTAssertEqual(model.draftComment, "きれい", "送れなかったのに書いた文を消している")
+
+        // 送り直して通ったら、古い失敗は消える
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+        XCTAssertNil(model.commentPostError)
+        XCTAssertEqual(model.draftComment, "")
+    }
+
+    /// **打ち直したら・人が替わったら、送れなかった知らせを消す**（古い失敗を新しい文や次の人の欄に残さない）
+    func testCommentPostErrorClearsOnEditAndUserChange() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.postComment()
+        XCTAssertNotNil(model.commentPostError)
+
+        model.draftComment = "きれい！"
+        XCTAssertNil(model.commentPostError, "打ち直したのに古い失敗が残っている")
+
+        await model.postComment()
+        XCTAssertNotNil(model.commentPostError)
+        model.setUser("someone-else")
+        XCTAssertNil(model.commentPostError, "前の人の失敗を次の人の欄に出している")
+    }
+
+    /// **隣へ送った後に失敗したら、その1枚の欄ではなく操作の段に出す**（いま見ている1枚に書いた文が
+    /// 送れなかったと読まれない）
+    func testCommentFailureAfterMovingAwayGoesToActionRow() async {
+        prepare()
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["POST /photos/p1/comments": gate]))))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let posting = Task { await model.postComment() }
+        await gate.untilWaiting()
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        await gate.open()
+        await posting.value
+
+        XCTAssertNil(model.commentPostError, "隣の1枚の欄に前の1枚の失敗を出している")
+        XCTAssertNotNil(model.errorMessage, "送れなかったことを黙っている")
+    }
+
+    /// 🔴 **自分の写真の削除を二度押ししても、1回しか送らない**（2026-10-21）。
+    /// 2回目は「見つかりません」になり、消せた1枚の画面に失敗の文が残っていた
+    func testPhotoDeleteTwiceSendsOnce() async {
+        prepare()
+        // 1回目だけ止める（守りが外れて2回目が通信しに来ても、止めずに通して落とす・固まらせない）
+        let gate = Gate(holds: 1)
+        let photos = PhotoService(api: api(gates: PathGates(["DELETE /photos/p1": gate])))
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        StubProtocol.respond(status: 200, body: "{}")
+        let first = Task { await model.deletePhoto("p1", photos: photos) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.deletingPhotoIds.contains("p1"))
+        let second = await model.deletePhoto("p1", photos: photos)
+        await gate.open()
+        let firstOutcome = await first.value
+
+        guard case .refused = second else { return XCTFail("二度押しを断っていない") }
+        guard case .deleted = firstOutcome else { return XCTFail("1回目が消せていない") }
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("DELETE ") }.count, 1, "二度押しで2回送っている")
+        XCTAssertTrue(model.deletingPhotoIds.isEmpty)
+    }
+
     /// 空のコメントは送らない。
     func testEmptyCommentIsNotSent() async {
         prepare()
@@ -2320,4 +2428,46 @@ final class PeopleSearchQueryTests: XCTestCase {
         XCTAssertFalse(model.peopleQueryTooShort, "探せる語になったのに短いと言い続けた")
     }
 
+}
+
+// MARK: - ホームの「みんなの新しい写真」（2026-10-21・確かめ役の見直し）
+
+extension ViewModelTests {
+
+    /// 新しい順の写真（`bad0`〜 はそれぞれ別のブロックした人 `blocked0`〜（1人2つまでの決まりに掛からない）・`rep` は通報した写真・`ok` が一番古い）の photos.json
+    private func freshBody(blockedCount: Int) -> String {
+        var rows = (0..<blockedCount).map { i in
+            #"{"id":"bad\#(i)","src":"https://x/bad\#(i).jpg","createdAt":"2026-09-\#(String(format: "%02d", i + 1))T00:00:00Z","userId":"blocked\#(i)"}"#
+        }
+        rows.append(#"{"id":"rep","src":"https://x/rep.jpg","createdAt":"2026-08-01T00:00:00Z","userId":"x"}"#)
+        rows.append(#"{"id":"ok","src":"https://x/ok.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"a"}"#)
+        return "[" + rows.joined(separator: ",") + "]"
+    }
+
+    /// 🔴 ブロックした人・通報した写真は、**12に切る前に**落とす（段が空にならない）
+    func testFreshGroupsDropHiddenBeforeTheLimit() async {
+        let model = GalleryViewModel(gallery: gallery(freshBody(blockedCount: HomeFreshPhotos.limit)))
+        await model.load()
+        let open = model.freshGroups(viewerId: nil, hiding: ModerationSnapshot())
+        XCTAssertEqual(open.count, HomeFreshPhotos.limit, "前提: 絞らなければ12で切れている")
+        XCTAssertFalse(open.map(\.cover.id).contains("ok"), "前提: 一番古い写真は12の外")
+        let blocked = Set((0..<HomeFreshPhotos.limit).map { "blocked\($0)" })
+        let hidden = ModerationSnapshot(blocked: blocked, reported: ["rep"])
+        XCTAssertEqual(model.freshGroups(viewerId: nil, hiding: hidden).map(\.cover.id), ["ok"],
+                       "ブロック・通報を12に切った後で落としている（か、落としていない）")
+    }
+
+    /// 🔴 A さんのフォロー一覧が入ったまま B さんで呼んでも、A さんのフォロー先を先頭に出さない
+    func testFreshGroupsUseOnlyTheCurrentViewersFollowing() async {
+        let model = GalleryViewModel(gallery: gallery("""
+        [{"id":"new","src":"https://x/n.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"x"},
+         {"id":"friend","src":"https://x/f.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"f"}]
+        """))
+        await model.load()
+        model.use(viewerId: "A", following: ["f"])
+        XCTAssertEqual(model.freshGroups(viewerId: "A", hiding: ModerationSnapshot()).map(\.cover.id),
+                       ["friend", "new"], "前提: A さんにはフォロー先が先")
+        XCTAssertEqual(model.freshGroups(viewerId: "B", hiding: ModerationSnapshot()).map(\.cover.id),
+                       ["new", "friend"], "前の人のフォロー一覧で並べた")
+    }
 }

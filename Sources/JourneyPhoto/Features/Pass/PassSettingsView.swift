@@ -23,6 +23,8 @@ struct PassSettingsView: View {
     @State private var showPick = false
     /// 乗車券の写真（公開一覧から引いた自分の写真）
     @State private var cardPhoto: Photo?
+    /// 乗車券の写真を読めなかった（2026-10-21）。写真は前の値を保ち、行で読めなかったと言う
+    @State private var cardLoadFailed = false
     @State private var isTurningOnPush = false
 
     var body: some View {
@@ -62,6 +64,8 @@ struct PassSettingsView: View {
         }
         .navigationDestination(isPresented: $showPick) { PassCardPickView() }
         .task(id: pass.settings.cardPhotoId) { await loadCard() }
+        // 読めなかった回は、選ぶ画面などから戻ったときに読み直す（2026-10-21）
+        .onAppear { if cardLoadFailed { Task { await loadCard() } } }
         .task {
             if push.permission == .unknown { await push.refreshAuthorization() }
             let profile = try? await environment.profiles.myProfile()
@@ -70,9 +74,11 @@ struct PassSettingsView: View {
     }
 
     private func loadCard() async {
-        guard let id = pass.settings.cardPhotoId else { cardPhoto = nil; return }
-        let all = (try? await environment.gallery.fetchPhotos()) ?? []
-        cardPhoto = all.first { $0.id == id }
+        let id = pass.settings.cardPhotoId
+        let fetched: [Photo]? = id == nil ? [] : try? await environment.gallery.fetchPhotos()
+        let outcome = PassCardLoad.cardPhoto(id: id, fetched: fetched, previous: cardPhoto)
+        cardPhoto = outcome.photo
+        cardLoadFailed = outcome.failed
     }
 
     /// 「すれちがう」の入切。オンは説明を挟む・オフはその場で止める
@@ -184,10 +190,16 @@ struct PassSettingsView: View {
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .lineLimit(2)
+                if cardLoadFailed {
+                    Text(L("写真を読み込めませんでした", "Couldn\u{2019}t load the photo"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.danger)
+                        .accessibilityIdentifier("pass.settings.cardLoadFailed")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .font(JPFont.footnote.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.35))
                 .accessibilityHidden(true)
         }

@@ -52,7 +52,7 @@ struct TrunkModelsView: View {
                                 .foregroundStyle(TrunkStyle.muted)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(JPFont.footnote.weight(.semibold))
                                 .foregroundStyle(TrunkStyle.muted)
                                 .accessibilityHidden(true)
                         }
@@ -116,7 +116,7 @@ struct TrunkModelCard: View {
                     if selected {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(JPFont.footnote.weight(.bold))
                                 .accessibilityHidden(true)
                             Text(L("使っている型", "In use"))
                                 .font(JPFont.footnote.weight(.semibold))
@@ -239,7 +239,7 @@ struct TrunkProModelsView: View {
                     .padding(.top, 12)
                     HStack(spacing: 6) {
                         if selected {
-                            Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).accessibilityHidden(true)
+                            Image(systemName: "checkmark").font(JPFont.footnote.weight(.bold)).accessibilityHidden(true)
                             Text(L("使っている型", "In use"))
                         } else {
                             Text(isPro ? L("この型にする", "Use this style") : L("Pro で使う", "Use with Pro"))
