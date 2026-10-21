@@ -569,6 +569,14 @@ final class GalleryViewModel: ObservableObject {
     /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }
 
+    /// ホームの「みんなの新しい写真」の段（`HomeFreshPhotos`・2026-10-21）。元は今日のテーマと同じ全件。
+    /// **フォロー一覧は今の人のものだけ使う**（人が替わった直後に前の人のフォロー先を先頭へ出さない）。
+    /// ブロック・通報は `visible` で**数を切る前に**落とす
+    func freshPhotos(viewerId: String?, visible: ([Photo]) -> [Photo]) -> [Photo] {
+        let following = viewerId != nil && followingOwner == viewerId ? followingIds : []
+        return HomeFreshPhotos.photos(visible(all), viewerId: viewerId, followingIds: following)
+    }
+
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///
     /// 公開一覧（静的 JSON）ではなく**API から読む**——投稿したばかりの

@@ -26,6 +26,10 @@ struct TravelRecordView: View {
     let firstYear: Int?
     let onDistanceTap: () -> Void
     let onCountriesTap: () -> Void
+    /// 写真をつないだ線を出すか（畳んだ状態は `TravelRecordSection` が持つ・2026-10-21）
+    var routeShown: Bool = true
+    /// 線の開け閉め。nil なら開け閉めの印を出さない（いつも `routeShown` のまま）
+    var onRouteToggle: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 線を引いた割合（0〜1）。画面に出たときに1度だけ伸ばす
@@ -44,13 +48,16 @@ struct TravelRecordView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            eyebrow
+            HStack(spacing: JPSpace.s) {
+                eyebrow
+                if shape != nil, let onRouteToggle { routeToggle(onRouteToggle) }
+            }
             HStack(alignment: .top, spacing: 12) {
                 if kilometers > 0 { distanceBlock }
                 Spacer(minLength: 0)
                 if !countries.isEmpty { countriesBlock }
             }
-            if let shape {
+            if routeShown, let shape {
                 Button(action: onDistanceTap) {
                     route(shape)
                         .frame(height: Self.routeHeight)
@@ -74,6 +81,33 @@ struct TravelRecordView: View {
                       spoken: L("旅の記録", "Travel log"),
                       trailing: firstYear.map { L("\(String($0)) 年から", "Since \(String($0))") })
     }
+
+    /// 線の開け閉め（眉ラベルの右・「線を見る ⌄」「畳む ⌃」）。見た目は「すべて見る ›」（`MoreLink`）と同じ
+    /// text-2 の 13pt。押せる高さは 44pt、並びの上では字の高さのまま（上下に張り出す）
+    private func routeToggle(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: JPSpace.xxs) {
+                Text(routeShown ? L("畳む", "Hide") : L("線を見る", "Show route"))
+                Image(systemName: routeShown ? "chevron.up" : "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .font(JPFont.footnote)
+            .foregroundStyle(WebTheme.text2)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget, alignment: .trailing)
+            .contentShape(Rectangle())
+            .padding(.vertical, -Self.toggleTapSlack)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(routeShown ? L("写真をつないだ線を畳む", "Hide the route between photos")
+                                       : L("写真をつないだ線を見る", "Show the route between photos"))
+        .accessibilityIdentifier("profile.travelRecord.routeToggle")
+    }
+
+    /// 開け閉めの字（13pt・行の高さ約 18）を 44pt にする上下の張り出し
+    nonisolated static let toggleTapSlack: CGFloat = 13
 
     // MARK: - 数字
 
