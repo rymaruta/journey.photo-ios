@@ -52,6 +52,24 @@ final class APIErrorLanguageTests: XCTestCase {
                        "ログインの有効期限が切れました。ログインし直してください")
     }
 
+    /// 🔴 **本文の無い失敗の日本語の文（2026-10-21 に意図して変えた）。** 以前は 403 以外どれも
+    /// 「サーバーエラー（404）」だった。API Gateway の門前払い（429 の絞り・5xx）などで本文が無い回に
+    /// 何が起きたか分かる文にした。黙って戻ったり変わったりしないよう、文そのものを守る
+    func testJapaneseTextWithoutServerBody() {
+        func ja(_ status: Int) -> String { APIError.server(status: status, message: "").description(language: "ja") }
+        XCTAssertEqual(ja(400), "送った内容を受け付けられませんでした。確かめてもう一度お試しください")
+        XCTAssertEqual(ja(404), "見つかりませんでした。削除されたか、見られなくなった可能性があります")
+        XCTAssertEqual(ja(409), "ほかの変更とぶつかりました。読み直してからもう一度お試しください")
+        XCTAssertEqual(ja(410), "もう使えなくなっています")
+        XCTAssertEqual(ja(413), "大きすぎて送れませんでした")
+        XCTAssertEqual(ja(429), "回数の上限に達しました。しばらくしてからもう一度お試しください")
+        XCTAssertEqual(ja(500), "サーバーで問題が起きました（500）。少し待ってからもう一度お試しください")
+        XCTAssertEqual(ja(503), "サーバーで問題が起きました（503）。少し待ってからもう一度お試しください")
+        XCTAssertEqual(ja(418), "サーバーエラー（418）", "知らない状態は今までどおり")
+        XCTAssertEqual(ja(403), "この操作をする権限がありません。登録直後にこの状態になった場合は、お手数ですがお問い合わせください（ログインし直しても直りません）",
+                       "本文の無い 403 は今までどおり")
+    }
+
     /// アプリが `L()` で作った英語の文（`UploadService` など）は、英語の画面でそのまま出す
     func testAppMadeEnglishTextPassesThrough() {
         XCTAssertEqual(APIError.server(status: 400, message: "File is too large (50 MB max)").description(language: "en"),

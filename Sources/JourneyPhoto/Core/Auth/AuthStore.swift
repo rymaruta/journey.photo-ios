@@ -105,8 +105,22 @@ final class AuthStore: ObservableObject {
     /// もう立っている・済ませている最中は何もしない（画面の口が一斉に 410 になっても1回）
     func noteDeletionPending(userId gone: String) {
         guard let current = userId, current == gone else { return }
-        guard !deletionPending, !isFinishingDeletion else { return }
+        guard !deletionPending, !isFinishingDeletion, !isDeletingFromScreen else { return }
         deletionPending = true
+    }
+
+    /// 退会の画面（`DeleteAccountView`）が退会を走らせてから閉じるまでか。
+    ///
+    /// 🔴 **2026-10-21 判断: この間は 410 の知らせを受けない。** 退会の画面はサーバーのデータを
+    /// 消したあと Cognito を消す。Cognito だけ落ちると、画面は自分で「もう一度押してください」を
+    /// 出して押し直しを待つ——その間に別の口が 410 を受けて「退会の手続きが途中です」も立つと、
+    /// 画面とアラートの両方に「完了する」が出る。画面が閉じたあとの 410 は今までどおり受ける
+    /// （画面を閉じて残ったアカウントは、次の 410 でアラートが拾う）
+    private(set) var isDeletingFromScreen = false
+
+    /// 退会の画面が退会を始めた（`true`）・閉じた（`false`）
+    func setDeletingFromScreen(_ active: Bool) {
+        isDeletingFromScreen = active
     }
 
     /// 「退会の手続きが途中です」の「完了する」。**門は押したその場で閉じる**

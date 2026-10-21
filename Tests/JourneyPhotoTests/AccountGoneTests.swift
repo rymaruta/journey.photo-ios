@@ -135,6 +135,44 @@ final class AccountGoneTests: XCTestCase {
         XCTAssertTrue(auth.deletionPending)
     }
 
+    // MARK: - 退会の画面が動いている間
+
+    /// 退会の画面が退会を走らせている間（Cognito だけ落ちて押し直しを待つ間も）は、410 で
+    /// 「退会の手続きが途中です」を立てない——画面とアラートの両方に「完了する」が出る。
+    /// 画面を閉じたあとの 410 は今までどおり受ける
+    func testGoneWhileDeleteScreenIsActiveIsIgnored() async {
+        let auth = await signedIn(as: me)
+        auth.setDeletingFromScreen(true)
+        StubProtocol.respond(status: 410, body: goneBody)
+        _ = try? await ProfileService(api: api(sub: me)).myProfile()
+        _ = try? await SocialService(api: api(sub: me)).like(photoId: "p1")
+        await settle()
+        XCTAssertFalse(auth.deletionPending, "退会の画面の最中に「退会の手続きが途中です」も立った")
+        auth.noteDeletionPending(userId: me)
+        XCTAssertFalse(auth.deletionPending)
+
+        // 画面を閉じた → 次の 410 で拾う
+        auth.setDeletingFromScreen(false)
+        _ = try? await ProfileService(api: api(sub: me)).myProfile()
+        await waitUntil { auth.deletionPending }
+    }
+
+    /// 退会の画面は、押したその場で印を立て、閉じたら下ろす
+    func testDeleteScreenHoldsAndReleasesTheNotice() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Settings/DeleteAccountView.swift"),
+                              encoding: .utf8)
+            .components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        guard let hold = view.range(of: "auth.setDeletingFromScreen(true)"),
+              let start = view.range(of: "Task { await deleteAccount() }") else {
+            return XCTFail("退会を始めるときに 410 の知らせを止めていない")
+        }
+        XCTAssertLessThan(hold.lowerBound, start.lowerBound, "退会を走らせる前に止める（押したその場で）")
+        XCTAssertTrue(view.contains(".onDisappear { auth.setDeletingFromScreen(false) }"), "閉じても知らせを止めたまま")
+    }
+
     /// 招待リンクの期限切れも 410（`invite.ts`）。**退会の扱いにしない**——「完了する」で
     /// 生きている人のアカウントを消すことになる
     func testInviteGoneDoesNotRaisePendingDeletion() async {
