@@ -76,34 +76,66 @@ enum TrunkPlacement {
     ///   - 手で貼った新しいラベルは窓の席を取らない（前の版のラベルが胴から消えない）
     ///   番号が 11 か所を越えたとき（置き場つきが間に多く挟まった）は、空いている置き場を `order` の順に使う
     /// - `overrides`: 画面の上だけで動かしている置き場（離した直後・回している最中。サーバーの応答を待たずに出す）
+    /// - おまかせの置き場の番号（`slot`）を持つ置き場なしのラベル: その番号の置き場に、その枠の大きさで（2026-10-19）。
+    ///   番号の数え方では置き場つきと同じに数える（ほかの番号を変えない）。番号の無いラベルの置き場が番号つきの
+    ///   ラベルの置き場と重なったら、空いている置き場へ回す（空きが無ければ描かない＝前の版の「新しい 11 枚」の外と同じ）
+    ///
+    /// **同じ id のラベルは1枚だけ描く**（新しい方）。描く側はラベルの id で見分ける（`TrunkSlots.Placed.id`）ので、
+    /// 並びに同じ id が重なると、はがした・貼り替えた直後に前のラベルの絵が残る（2026-10-19 の直し）
     static func layout(_ stuckNewestFirst: [TrunkLabel], stage st: Double,
                        overrides: [String: TrunkPos] = [:]) -> [TrunkSlots.Placed] {
+        var seenIds = Set<String>()
+        let stuckNewestFirst = stuckNewestFirst.filter { seenIds.insert($0.id).inserted }
         var drawn: [(index: Int, x: Double, y: Double, w: Double, h: Double, rot: Double, label: TrunkLabel)] = []
-        let loose = stuckNewestFirst.indices.filter { overrides[stuckNewestFirst[$0].id] == nil && stuckNewestFirst[$0].pos == nil }
+        let unplaced = stuckNewestFirst.indices.filter { overrides[stuckNewestFirst[$0].id] == nil && stuckNewestFirst[$0].pos == nil }
+        // 番号つき（はがしたときに覚えた置き場）。**同じ番号が2枚に付いていたら、新しい方だけ番号で描き、
+        // 古い方は番号なしとして扱う**（空いた置き場へ回る・2026-10-19 の見直し。古い画面・別の端末から重なりうる）
+        var slotted: [Int: Int] = [:]
+        var claimed = Set<Int>()
+        for i in unplaced {
+            if let n = stuckNewestFirst[i].slot, TrunkSlots.slots.indices.contains(n), claimed.insert(n).inserted { slotted[i] = n }
+        }
+        let loose = unplaced.filter { slotted[$0] == nil }
         let window = Array(loose.prefix(TrunkSlots.capacity))
+        var slotOf: [Int: Int] = [:]
+        /// 番号つきで描かない（新しいラベルに置き場を譲った）もの
+        var yielded = Set<Int>()
         if let start = window.last {
-            // 窓のいちばん古い1枚より前（古い）にある置き場つきのラベルの数
+            // 窓のいちばん古い1枚より前（古い）にある置き場つき・番号つきのラベルの数
             let olderPlaced = stuckNewestFirst.indices.filter { $0 > start && !loose.contains($0) }.count
-            var used = Set<Int>()
+            var used = Set(slotted.values)
             var overflow: [Int] = []
-            var slotOf: [Int: Int] = [:]
             for i in window {
                 let k = (start - i) + olderPlaced
-                if k < TrunkSlots.capacity {
+                if k < TrunkSlots.capacity, !used.contains(TrunkSlots.order[k]) {
                     slotOf[i] = TrunkSlots.order[k]
                     used.insert(TrunkSlots.order[k])
                 } else {
                     overflow.append(i)
                 }
             }
-            // 番号のはみ出た分は、空いている置き場へ古いものから
-            var free = TrunkSlots.order.filter { !used.contains($0) }.makeIterator()
-            for i in overflow.reversed() { slotOf[i] = free.next() }
-            for i in window {
-                guard let index = slotOf[i] else { continue }
-                let slot = TrunkSlots.slots[index]
-                drawn.append((i, slot.x, slot.y, slot.w, slot.h, slot.rot, stuckNewestFirst[i]))
+            // 番号のはみ出た分は、空いている置き場へ。**空きが足りなければ新しいものを残す**（2026-10-19 の見直し・
+            // 「貼ったばかりのラベルが見えないのは困る」2026-10-17 判断）。置き場の割り振りは今までどおり古いものから
+            // （空きが足りるトランクの見た目は変えない）
+            let free = TrunkSlots.order.filter { !used.contains($0) }
+            let kept = Array(overflow.prefix(free.count))
+            for (i, index) in zip(kept.reversed(), free) { slotOf[i] = index }
+            // それでも置き場の無い新しいラベルは、自分より古い番号つきのラベルの置き場を、いちばん古いものから譲ってもらう
+            // （譲ったラベルは描かない＝前の版の「新しい 11 枚」の外と同じ。番号はサーバーに残り、空けば戻る）
+            for i in overflow.dropFirst(free.count) {
+                guard let victim = slotted.keys.filter({ $0 > i && !yielded.contains($0) }).max() else { continue }
+                yielded.insert(victim)
+                slotOf[i] = slotted[victim]
             }
+        }
+        for (i, index) in slotted where !yielded.contains(i) {
+            let slot = TrunkSlots.slots[index]
+            drawn.append((i, slot.x, slot.y, slot.w, slot.h, slot.rot, stuckNewestFirst[i]))
+        }
+        for i in window {
+            guard let index = slotOf[i] else { continue }
+            let slot = TrunkSlots.slots[index]
+            drawn.append((i, slot.x, slot.y, slot.w, slot.h, slot.rot, stuckNewestFirst[i]))
         }
         var placedCount = 0
         for (i, label) in stuckNewestFirst.enumerated() {
@@ -144,15 +176,94 @@ enum TrunkPlacement {
         var free: [TrunkSlots.Slot] = []
         for index in TrunkSlots.order {
             let slot = TrunkSlots.slots[index]
-            let taken = placed.contains { p in
-                let cx = p.x + p.w / 2, cy = p.y + p.h / 2
-                return cx >= slot.x - 6 && cx <= slot.x + slot.w + 6 && cy >= slot.y - 6 && cy <= slot.y + slot.h + 6
-            }
+            let taken = placed.contains { covers($0, x: slot.x, y: slot.y, w: slot.w, h: slot.h) }
             if !taken { free.append(slot) }
         }
         return zip(pocket, free).map { label, slot in
             (label.id, pos(x: slot.x + slot.w / 2, y: slot.y + slot.h / 2, rot: slot.rot))
         }
+    }
+
+    /// 置いたラベルの真ん中が、枠（少し広げる）の中にあるか（その枠は埋まっている）
+    private static func covers(_ p: TrunkSlots.Placed, x: Double, y: Double, w: Double, h: Double) -> Bool {
+        let cx = p.x + p.w / 2, cy = p.y + p.h / 2
+        return cx >= x - 6 && cx <= x + w + 6 && cy >= y - 6 && cy <= y + h + 6
+    }
+
+    // MARK: はがす・貼るときに、ほかのラベルを動かさない（2026-10-19 の直し）
+
+    /// 置き場の無いラベルは「並びの何番目か」でおまかせの置き場が決まる（`layout`）。そのため**1枚をはがすと、
+    /// ほかの置き場なしのラベルが1つずつずれ**、はがした所にほかのラベルが入って、別の所が空く
+    /// （owner「空洞のところが空洞になっていない」・2026-10-19）。
+    ///
+    /// 2026-10-19 判断（確かめ役の見直しのあと）: はがすときに、**ずれてしまうラベルにだけ、いま描いている
+    /// おまかせの置き場の番号**を添え、サーバーが**はがすのと同じ1回の書き込み**で覚える（`unstick` の本文 `slots`）。
+    /// 置き場（`pos`）ではなく番号なので、枠の大きさは変わらず、ラベルは置き場なしのまま（おまかせで並べる・戻すがそのまま効く）。
+    /// サーバーの並びにはラベルごとの変わらない値（貼った時刻・並び番号）が無く、書かずに穴を残す計算は作れなかった。
+    ///
+    /// - Returns: ラベルの id → おまかせの置き場の番号（`TrunkSlots.slots` の番号）。添えると、描いていたラベルは同じ所に残る
+    static func slots(from before: [TrunkLabel], to after: [TrunkLabel],
+                      overrides: [String: TrunkPos] = [:]) -> [String: Int] {
+        var was: [String: TrunkSlots.Placed] = [:]
+        for p in layout(before, stage: 0, overrides: overrides) { was[p.label.id] = p }
+        var pinned: [String: Int] = [:]
+        // 1枚に番号を添えると窓（新しい 11 枚）に古い1枚が入り、番号がずれることがある。ずれが無くなるまで繰り返す
+        for _ in 0...TrunkSlots.capacity {
+            let next = after.map { l in pinned[l.id].map { l.withSlot($0) } ?? l }
+            var drawn: [String: TrunkSlots.Placed] = [:]
+            for p in layout(next, stage: 0, overrides: overrides) { drawn[p.label.id] = p }
+            var added = false
+            for label in after where label.pos == nil && label.slot == nil && overrides[label.id] == nil && pinned[label.id] == nil {
+                guard let old = was[label.id], let index = slotIndex(old) else { continue }
+                if let cur = drawn[label.id], sameSpot(cur, old) { continue }
+                pinned[label.id] = index
+                added = true
+            }
+            if !added { break }
+        }
+        return pinned
+    }
+
+    /// はがす前に添える番号（`slots` の、1枚はがす形）
+    static func slotsBeforeUnstick(_ stuckNewestFirst: [TrunkLabel], removing id: String,
+                                   overrides: [String: TrunkPos] = [:]) -> [String: Int] {
+        guard stuckNewestFirst.contains(where: { $0.id == id }) else { return [:] }
+        return slots(from: stuckNewestFirst, to: stuckNewestFirst.filter { $0.id != id }, overrides: overrides)
+    }
+
+    /// 描いている所が、どのおまかせの置き場か（置き場なしのラベルだけ。置き場つきは nil）
+    static func slotIndex(_ p: TrunkSlots.Placed) -> Int? {
+        guard p.label.pos == nil else { return nil }
+        return TrunkSlots.slots.firstIndex { $0.x == p.x && $0.y == p.y && $0.w == p.w && $0.h == p.h && $0.rot == p.rot }
+    }
+
+    private static func sameSpot(_ a: TrunkSlots.Placed, _ b: TrunkSlots.Placed) -> Bool {
+        a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h && a.rot == b.rot
+    }
+
+    /// 置き場なしで貼る（手持ちの「貼る」・届いた画面の「トランクに貼る」）ときに書く、おまかせの置き場の番号。
+    ///
+    /// 2026-10-19 判断（確かめ役の見直し 3回目）: **貼るたびに番号を決めて書く**。番号の無いラベルは並びの何番目かで
+    /// 置き場が決まり、あとから貼ったりはがしたりすると動いてしまうため。
+    /// - 空いている（どのラベルも乗っていない）おまかせの置き場があれば、`order` の順でいちばん先の空き
+    ///   （番号の無いトランクでは、並びの何番目かで入る所と同じ＝見た目は前の版と同じ）
+    /// - 空きが無ければ、描いている置き場なしのラベルのうち**いちばん古い1枚の置き場**。そのラベルが番号を持っていれば
+    ///   `take`（サーバーが同じ1回の更新で古いラベルの番号を消して移す。古いラベルは並びの外になり描かない）
+    /// - nil: 置き場が全部、手で貼ったラベルの下（今までどおり番号なしで貼る）
+    static func stickPlan(for label: TrunkLabel, stuck stuckNewestFirst: [TrunkLabel]) -> (slot: Int, take: Bool)? {
+        let others = stuckNewestFirst.filter { $0.id != label.id }
+        let placed = layout(others, stage: 0)
+        if let free = TrunkSlots.order.first(where: { index in
+            let slot = TrunkSlots.slots[index]
+            return !placed.contains { covers($0, x: slot.x, y: slot.y, w: slot.w, h: slot.h) }
+        }) {
+            return (free, false)
+        }
+        let order = Dictionary(uniqueKeysWithValues: others.enumerated().map { ($1.id, $0) })
+        let oldest = placed.filter { $0.label.pos == nil && slotIndex($0) != nil }
+            .max { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }
+        guard let oldest, let index = slotIndex(oldest) else { return nil }
+        return (index, oldest.label.slot == index)
     }
 
     /// 動かしたラベルのよれ（0〜1）。**動かした回数が増えるほど少し強く**（2026-10-17 判断: 3回で止める）
@@ -180,6 +291,14 @@ enum TrunkPlacement {
         }
         return out
     }
+}
+
+// MARK: - 描く側の見分け方
+
+/// 描くラベルは**ラベルの id で見分ける**（2026-10-19 の直し）。前は並びの何番目か（`ForEach(indices)`）で見分けていて、
+/// 1枚はがす・貼り替えると、同じ番目の描き物に別のラベルが入り、前のラベルの絵や動きが残って見えることがあった
+extension TrunkSlots.Placed: Identifiable {
+    var id: String { label.id }
 }
 
 // MARK: - 自分の手で貼る画面の組み

@@ -2216,16 +2216,7 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
         tabBar.buttons.element(boundBy: 4).tap()
-        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        guard tripsTab.waitForExistence(timeout: 15) else { return false }
-        var pushes = 0
-        while !tripsTab.isHittable, pushes < 4 {
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 1)
-            pushes += 1
-        }
-        guard tripsTab.isHittable else { return false }
-        tripsTab.tap()
+        guard selectTripsTab(app) else { return false }
         let row = app.buttons["trips.trunk"].firstMatch
         guard row.waitForExistence(timeout: 10) else { return false }
         var rowPushes = 0
@@ -2238,6 +2229,40 @@ final class ScreenshotTests: XCTestCase {
         guard row.isHittable else { return false }
         row.tap()
         return app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// マイページの「旅の記録」のタブを選ぶ。選べたら true。
+    ///
+    /// 2026-10-21（PR #354 の Mac・録画で確認）: マイページは開いた直後に見出し（カバー・名前・数）が後から読み込まれて
+    /// 下へ伸び、タブの列が 150pt ほど動く。動いている最中に押すと空振りし、「旅の記録」が選ばれないまま
+    /// 「旅のトランク」の行を待って落ちていた（`testCapturesTrunkOpen` の「旅のトランクを開けない」）。
+    /// **位置が止まってから押し、選ばれたかを確かめ、選ばれなければ押し直す**（3回まで）
+    private func selectTripsTab(_ app: XCUIApplication) -> Bool {
+        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        for _ in 0..<3 {
+            // 位置が 1 秒止まるまで待つ（見出しの読み込みで動く間は押さない・最長 10 秒）
+            var last = tripsTab.frame
+            for _ in 0..<10 {
+                Thread.sleep(forTimeInterval: 1)
+                let now = tripsTab.frame
+                if now == last { break }
+                last = now
+            }
+            var pushes = 0
+            while !tripsTab.isHittable, pushes < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard tripsTab.isHittable else { return false }
+            tripsTab.tap()
+            let selected = NSPredicate(format: "selected == true")
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: selected, object: tripsTab)], timeout: 3) == .completed {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - 写真で作るキャンピングカー（2026-10-18・札 #307）
@@ -2755,6 +2780,9 @@ final class ScreenshotTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: stick)], timeout: 5)
         XCTAssertEqual(closed, .completed, "「手持ちに入れておく」で閉じない")
+        // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertFalse(stick.exists, "「手持ちに入れておく」で閉じたあと、届いた画面がまた出た")
     }
 
     // MARK: - はじめての硬貨（2026-10-18 owner 承認）
@@ -2853,6 +2881,40 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "97c-ラベルを貼る（おまかせで並べた）")
         }
+        done.tap()
+    }
+
+    /// **貼り替えた後のトランク**（2026-10-19 の直し・owner「取って付け替えたときに、空洞のところが空洞になっていない」）:
+    /// 見本（`-JPPreviewTrunk`・Debug のみ）の置き場なし9枚の真ん中（並びの5番目＝おまかせの置き場 0）を選んで
+    /// はがす → はがした所が空いたまま（ほかはずれない）→ 手持ちから同じ所へ運んで貼り直す。見本は必ず出るので、
+    /// 出なければ落とす（必ず撮る）
+    func testCapturesTrunkStickSwap() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.stick.open") else { return XCTFail("「ラベルを貼る」の入口が無い") }
+        let done = app.buttons["trunk.stick.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("貼る画面が開かない") }
+        let trunk = app.descendants(matching: .any)["trunk.stick.trunk"].firstMatch
+        guard trunk.waitForExistence(timeout: 5) else { return XCTFail("トランクが無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97d-ラベルを貼る（貼り替える前）")
+        // おまかせの置き場 0（胴の 150,120 から 108×72）の真ん中。絵は 360×300 で、胴は上から 32
+        let hole = trunk.coordinate(withNormalizedOffset: CGVector(dx: 204.0 / 360, dy: (32 + 156.0) / 300))
+        hole.tap()
+        Thread.sleep(forTimeInterval: 1)
+        let peel = app.buttons["trunk.stick.peel"].firstMatch
+        guard peel.isHittable else { return XCTFail("「はがして手持ちに戻す」が押せない") }
+        peel.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97e-ラベルを貼る（はがした所が空いた）")
+        // はがした1枚は手持ちのいちばん上。持ち上げは指の 18pt 上に出るので、その分下へ運ぶ
+        let cell = app.buttons.matching(identifier: "trunk.stick.tray").firstMatch
+        guard cell.waitForExistence(timeout: 5) else { return XCTFail("手持ちの札が無い") }
+        let from = cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.3, thenDragTo: hole.withOffset(CGVector(dx: 0, dy: 18)))
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "97f-ラベルを貼る（貼り替えた後のトランク）")
+        XCTAssertTrue(app.buttons["trunk.stick.undo"].firstMatch.isEnabled, "貼り替えたのに「ひとつ戻す」が押せない")
         done.tap()
     }
 

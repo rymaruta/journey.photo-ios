@@ -730,14 +730,15 @@ struct RootView: View {
                           extrasShowing: rewardGrant != nil || coverOffer != nil)
     }
 
+    /// 起動から1回だけ（閉じると下の画面が現れ直して `.task` が走り直す・`TrunkArrivals.claimPreviewOffer`）
     private func offerPreviewTrunkArrival() async {
-        guard PreviewSession.opensTrunkArrived else { return }
+        guard PreviewSession.opensTrunkArrived, !trunkArrivals.previewOffered else { return }
         for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             if Task.isCancelled { return }
             if !ModalProbe.isPresenting() { break }
         }
-        guard !ModalProbe.isPresenting() else { return }
+        guard !ModalProbe.isPresenting(), trunkArrivals.claimPreviewOffer() else { return }
         trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")], coins: 1)
     }
 

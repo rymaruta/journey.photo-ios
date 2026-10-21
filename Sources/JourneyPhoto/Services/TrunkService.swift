@@ -98,11 +98,35 @@ struct TrunkService {
         }
     }
 
-    /// はがして手持ちに戻す（手持ちが上限なら 409 `full`）
-    func unstick(_ id: String) async throws -> TrunkState {
+    /// はがして手持ちに戻す（手持ちが上限なら 409 `full`）。
+    ///
+    /// `slots`: ずれてしまうラベルのおまかせの置き場の番号（`TrunkPlacement.slotsBeforeUnstick`）。サーバーが
+    /// **はがすのと同じ1回の書き込み**で覚える（2026-10-19）。空なら本文を送らない（今までと同じ要求）。
+    /// 番号を知らない古いサーバーは本文を読まずにはがす（並びがずれるだけで、壊れない）
+    func unstick(_ id: String, slots: [String: Int] = [:]) async throws -> TrunkState {
         try await refusing {
-            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/unstick", as: TrunkState.self)
+            if slots.isEmpty {
+                return try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/unstick", as: TrunkState.self)
+            }
+            return try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/unstick",
+                                            body: UnstickBody(slots: slots), as: TrunkState.self)
         }
+    }
+
+    /// 置き場なしで、おまかせの置き場の番号を添えて貼る（貼るたびに番号を決める・「ひとつ戻す」で元の所へ・2026-10-19）。
+    /// `take`: その番号を持つ古いラベルから、同じ1回の更新で番号を移す（置き場が全部埋まっているとき）。
+    /// 番号を知らない古いサーバーは番号なしで貼る（並びの何番目かで置く・壊れない）
+    func stick(_ id: String, slot: Int, take: Bool = false) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/stick",
+                                     body: SlotBody(slot: slot, take: take ? true : nil), as: TrunkState.self)
+        }
+    }
+
+    private struct UnstickBody: Encodable { let slots: [String: Int] }
+    private struct SlotBody: Encodable {
+        let slot: Int
+        let take: Bool?
     }
 
     /// カプセルの機械を回す（硬貨1枚）。応答は状態を丸ごと返さない（`TrunkGachaResult.applied`）

@@ -85,6 +85,36 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(rootView.contains("guard PostModalGate.reviewMayAsk(postModalSnapshot())"), "評価のお願いが順番の決まりを通っていない")
     }
 
+    /// 🔴 画面写真の見本の届いた画面は、起動から1回だけ出す（2026-10-21）。全画面を閉じると下の画面が現れ直して
+    /// `.task` が走り直し、閉じた1秒後にまた出ていた（`testCapturesTrunkArrived` の「『手持ちに入れておく』で閉じない」）
+    @MainActor
+    func testPreviewArrivalIsOfferedOnce() async throws {
+        let arrivals = TrunkArrivals()
+        XCTAssertFalse(arrivals.previewOffered)
+        XCTAssertTrue(arrivals.claimPreviewOffer())
+        XCTAssertFalse(arrivals.claimPreviewOffer(), "2回目も出してよいと答えた")
+        XCTAssertTrue(arrivals.previewOffered)
+        let rootView = try source("App/RootView.swift")
+        XCTAssertTrue(rootView.contains("guard PreviewSession.opensTrunkArrived, !trunkArrivals.previewOffered else { return }"),
+                      "見本を出したあとも .task の走り直しで待ち始める")
+        XCTAssertTrue(rootView.contains(", trunkArrivals.claimPreviewOffer() else { return }"),
+                      "見本の届いた画面を出す直前に印を取っていない（閉じるとまた出る）")
+    }
+
+    /// 🔴 画面写真の試験でトランクへ行く道（2026-10-21）: マイページの見出しが後から読み込まれてタブの列が動くので、
+    /// 「旅の記録」は位置が止まってから押し、選ばれたかを確かめて押し直す（`testCapturesTrunkOpen` の空振り）
+    func testScreenshotsSelectTheTripsTabRobustly() throws {
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        guard let start = shots.range(of: "private func openTrunk(_ app: XCUIApplication) -> Bool {"),
+              let end = shots.range(of: "\n    }\n", range: start.upperBound..<shots.endIndex) else {
+            return XCTFail("openTrunk が無い")
+        }
+        let body = String(shots[start.upperBound..<end.lowerBound])
+        XCTAssertTrue(body.contains("guard selectTripsTab(app) else { return false }"), "旅の記録のタブを選んだか確かめずに進む")
+        XCTAssertFalse(body.contains("tripsTab.tap()"), "旅の記録のタブを1回押すだけに戻った")
+        XCTAssertTrue(shots.contains(#"NSPredicate(format: "selected == true")"#), "選ばれたかを確かめていない")
+    }
+
     /// 窓口は `TrunkService` 1つで、`AppEnvironment` が組む
     func testServiceIsWired() throws {
         let env = try source("App/AppEnvironment.swift")

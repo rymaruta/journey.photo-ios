@@ -289,9 +289,15 @@ enum TrunkText {
 /// サーバーと同じ決まりで、トランクの状態を手元で動かす（Debug の見本だけが使う。本番はサーバーの応答を映す）
 enum TrunkLocal {
 
-    static func stick(_ s: TrunkState, id: String, pos: TrunkPos? = nil) -> TrunkState {
+    /// 貼る（サーバーの `stickMutation` と同じ決まり）。置き場があればそれ（番号は付けない）。無ければ添えた番号で、
+    /// その番号をもうほかのラベルが持っていれば書かない——`take` のときだけ、古いラベルの番号を消して移す
+    static func stick(_ s: TrunkState, id: String, pos: TrunkPos? = nil, slot: Int? = nil, take: Bool = false) -> TrunkState {
         guard let label = s.pocket.first(where: { $0.id == id }) else { return s }
-        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [label.withPos(pos.map(TrunkPlacement.clamp))] + s.stuck,
+        let owner = pos == nil ? slot.flatMap { n in s.stuck.first { $0.pos == nil && $0.slot == n } } : nil
+        let write = pos == nil && slot != nil && (owner == nil || take)
+        let stuck = pos.map { label.withPos(TrunkPlacement.clamp($0)) } ?? label.withSlot(write ? slot : nil)
+        let rest = write && owner != nil ? s.stuck.map { $0.id == owner?.id ? $0.withSlot(nil) : $0 } : s.stuck
+        return s.copy(pocket: s.pocket.filter { $0.id != id }, stuck: [stuck] + rest,
                       pendingReroll: s.pendingReroll?.labelId == id ? .some(nil) : nil)
     }
 
@@ -300,10 +306,14 @@ enum TrunkLocal {
         return s.copy(stuck: s.stuck.map { $0.id == id ? $0.withPos(TrunkPlacement.clamp(pos)) : $0 })
     }
 
-    /// はがす（手持ちのいちばん上へ・置き場は消す）。手持ちが上限なら変えない（サーバーは 409 `full`）
-    static func unstick(_ s: TrunkState, id: String) -> TrunkState {
+    /// はがす（手持ちのいちばん上へ・置き場と番号は消す）。手持ちが上限なら変えない（サーバーは 409 `full`）。
+    /// `slots` はずれるラベルに添える番号（置き場の無いラベルだけに書く・サーバーの `unstickMutation`）
+    static func unstick(_ s: TrunkState, id: String, slots: [String: Int] = [:]) -> TrunkState {
         guard let label = s.stuck.first(where: { $0.id == id }), s.pocket.count < s.limit else { return s }
-        return s.copy(pocket: [label.withPos(nil)] + s.pocket, stuck: s.stuck.filter { $0.id != id })
+        let rest = s.stuck.filter { $0.id != id }.map { l in
+            l.pos == nil ? (slots[l.id].map { l.withSlot($0) } ?? l) : l
+        }
+        return s.copy(pocket: [label.withPos(nil)] + s.pocket, stuck: rest)
     }
 
     static func remove(_ s: TrunkState, id: String) -> TrunkState {

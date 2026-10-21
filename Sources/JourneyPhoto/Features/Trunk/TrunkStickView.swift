@@ -31,7 +31,8 @@ struct TrunkStickView: View {
     private enum Step: Equatable {
         case stuck(String)
         case moved(String, from: TrunkPos)
-        case unstuck(String, pos: TrunkPos?)
+        /// はがした（置き場つきなら置き場、置き場なしならおまかせの置き場の番号で戻す）
+        case unstuck(String, pos: TrunkPos?, slot: Int?)
     }
 
     @State private var carry: Carry?
@@ -594,9 +595,14 @@ struct TrunkStickView: View {
 
     private func unstickTarget() async {
         guard let target else { return }
-        let pos = target.pos
-        if await model.unstick(target.id) {
-            steps.append(.unstuck(target.id, pos: pos))
+        // 戻すときは、はがす前に描いていた所へ貼り直す（2026-10-19 の直し）。置き場つき（保存待ちを含む）は置き場で、
+        // 置き場なしは**置き場なしのまま**、描いていたおまかせの置き場の番号で（前は番号なしで、別の所に入っていた）
+        let pos = overrides[target.id] ?? target.pos
+        let slot = pos == nil ? placedRect(target.id).flatMap(TrunkPlacement.slotIndex) : nil
+        if await model.unstick(target.id, overrides: overrides) {
+            // 保存待ちの置き場は、はがせてから取り下げる（失敗したら残して送る・はがしたあとは送らない）
+            places.discard(target.id)
+            steps.append(.unstuck(target.id, pos: pos, slot: slot))
             selectedId = nil
         }
     }
@@ -607,12 +613,19 @@ struct TrunkStickView: View {
         let ok: Bool
         switch last {
         case .stuck(let id):
-            ok = await model.unstick(id)
+            ok = await model.unstick(id, overrides: overrides)
+            if ok { places.discard(id) }
             if ok, selectedId == id { selectedId = nil }
         case let .moved(id, from):
             ok = await model.place(id, at: from)
-        case let .unstuck(id, pos):
-            if let pos { ok = await model.stick(id, at: pos) } else { ok = await model.stick(id) }
+        case let .unstuck(id, pos, slot):
+            if let pos {
+                ok = await model.stick(id, at: pos)
+            } else if let slot {
+                ok = await model.stick(id, slot: slot)
+            } else {
+                ok = await model.stick(id)
+            }
         }
         if ok { steps.removeLast() }
     }

@@ -11,6 +11,20 @@ final class TrunkArrivals: ObservableObject {
 
     static let shared = TrunkArrivals()
 
+    /// 画面写真の見本（`-JPPreviewTrunkArrived`）の届いた画面を、**起動から1回だけ**出すための印（2026-10-21）。
+    ///
+    /// `RootView` は `.task` で見本を出す。全画面の届いた画面を閉じると、下の画面がもう一度現れて `.task` が
+    /// 走り直し、1秒後にまた届いた画面を出していた（「手持ちに入れておく」で閉じたのに、また出ている＝
+    /// 画面写真の試験 `testCapturesTrunkArrived` が待ちの間に閉じたのを見逃すと落ちる）。出す直前に1回だけ取る
+    private(set) var previewOffered = false
+
+    /// 見本の届いた画面を出してよいか（まだ出していなければ true を返し、出したことにする）
+    func claimPreviewOffer() -> Bool {
+        guard !previewOffered else { return false }
+        previewOffered = true
+        return true
+    }
+
     struct Arrival: Equatable {
         let label: TrunkLabel
         /// 投稿した写真の題（空なら「写真」と言う）
