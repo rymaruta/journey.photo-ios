@@ -172,6 +172,103 @@ enum CamperTextures {
         return b
     }
 
+    // MARK: 夜の外の場面（2026-10-21・owner「光の感じまじで残念」「夜のキャンピングカーの外だね」）
+
+    /// 夜の空（正距円筒・256×128・画面の後ろに見える空）。天頂の深い紺から、地平線の霞んだ青灰へ。地平線の少し上に
+    /// 遠い町の明かりの薄い暖色の帯。地平線より下は霞の色（`CamperMaterials.NightStage.haze`。地面の果てがここへ溶ける）。
+    /// 星は置かない（この大きさでは 1 画素が 1.4° になり、画角 23° の画面でぼけた点になる）
+    static func nightSky() -> CamperBitmap {
+        let st = CamperMaterials.NightStage.self
+        var b = CamperBitmap(width: 256, height: 128)
+        let zen = rgb(st.zenith), mid = rgb(st.skyMid), hor = rgb(st.haze), glow = rgb(st.townGlow)
+        for y in 0..<b.height {
+            let v = (Double(y) + 0.5) / Double(b.height)
+            for x in 0..<b.width {
+                var c: (Double, Double, Double)
+                if v < 0.5 {
+                    // 仰角 0（v=0.5）〜90°（v=0）。空の明るさは地平線の近くで速く落ちる
+                    let up = (0.5 - v) / 0.5
+                    c = up > 0.25 ? lerp(mid, zen, pow((up - 0.25) / 0.75, 0.8)) : lerp(hor, mid, pow(up / 0.25, 0.7))
+                    // 町の明かり（地平線の上 6° まで・方位の 3 分の 1 ほど）
+                    let u = (Double(x) + 0.5) / Double(b.width)
+                    let band = exp(-pow((u - 0.62) / 0.16, 2)) * max(0, 1 - up / 0.07)
+                    c = lerp(c, glow, band * 0.55)
+                } else {
+                    c = hor
+                }
+                b.set(x, y, c)
+            }
+        }
+        return b
+    }
+
+    /// 夜の外の周りの光（正距円筒・256×128・映り込みと空の光）。画面に見える空（`nightSky`）より明るい——
+    /// 写真の長い露出で、月と空の光が車体の面と輪郭をやわらかく読ませる分。上が明るく（月の側はもう少し）、地平線は霞、
+    /// 地面は暗い芝。地平線はなだらかに（塗装に映る線が硬くならない）
+    static func nightEnvironment() -> CamperBitmap {
+        let st = CamperMaterials.NightStage.self
+        var b = CamperBitmap(width: 256, height: 128)
+        let top = rgb(st.envTop), hor = rgb(st.envHorizon), ground = rgb(st.envGround), glow = rgb(st.townGlow)
+        for y in 0..<b.height {
+            let v = (Double(y) + 0.5) / Double(b.height)
+            for x in 0..<b.width {
+                let u = (Double(x) + 0.5) / Double(b.width)
+                var c: (Double, Double, Double)
+                if v < 0.5 {
+                    c = lerp(hor, top, pow((0.5 - v) / 0.5, 0.6))
+                    // 月の側（上の右奥）が少し明るい大きな丸。小さな点にしない（塗装に細い光の筋がちらつく・run 532）
+                    let dx = (u - 0.38) / 0.18, dy = (v - 0.16) / 0.16
+                    let moon = exp(-(dx * dx + dy * dy)) * 0.22
+                    c = (min(1, c.0 + moon * 0.8), min(1, c.1 + moon * 0.88), min(1, c.2 + moon))
+                    let band = exp(-pow((u - 0.62) / 0.16, 2)) * max(0, 1 - (0.5 - v) / 0.05)
+                    c = lerp(c, glow, band * 0.4)
+                } else {
+                    // 地平線の下は 6 画素でなだらかに暗い芝へ
+                    c = lerp(hor, ground, min(1, (v - 0.5) * Double(b.height) / 6))
+                }
+                b.set(x, y, c)
+            }
+        }
+        return b
+    }
+
+    /// 夜の地面（256×256・繰り返す・白〜灰の明るさ×少しの色。色は `NightStage.ground` を掛ける）。短い芝の粒、
+    /// 踏まれた土の斑（なだらかな大きな丸）、小石の点。繰り返しの継ぎ目が出ないよう、全部を周期の内で作る
+    static func groundNight() -> CamperBitmap {
+        var b = CamperBitmap(width: 256, height: 256)
+        var n = Noise(seed: 41)
+        let w = Double(b.width)
+        // 土の斑: 周期の内の正弦の重ね合わせ（継ぎ目なし）
+        let waves = (0..<5).map { _ in (kx: Double(Int(n.next() * 3) + 1), ky: Double(Int(n.next() * 3) + 1), ph: n.next() * 6.28) }
+        var grain = [Double](repeating: 0, count: b.width * b.height)
+        for i in grain.indices { grain[i] = n.next() }
+        // 小石（明るい点 2〜3 画素）
+        var pebbles = Set<Int>()
+        for _ in 0..<260 {
+            let px = Int(n.next() * w), py = Int(n.next() * w)
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1)] { pebbles.insert(((py + dy) % b.height) * b.width + (px + dx) % b.width) }
+        }
+        for y in 0..<b.height {
+            for x in 0..<b.width {
+                let fx = Double(x) / w * 2 * .pi, fy = Double(y) / w * 2 * .pi
+                var patch = 0.0
+                for wv in waves { patch += sin(fx * wv.kx + fy * wv.ky + wv.ph) }
+                let dirt = max(0, min(1, (patch / 5 + 0.15) * 2.2))
+                // 芝の粒（隣と混ぜて柔らかく）
+                let i = y * b.width + x
+                let g = (grain[i] * 2 + grain[(y * b.width + (x + 1) % b.width)] + grain[((y + 1) % b.height) * b.width + x]) / 4
+                let grass = 0.62 + 0.5 * g
+                let soil = 0.78 + 0.25 * g
+                var v = grass * (1 - dirt) + soil * dirt
+                if pebbles.contains(i) { v = min(1, v + 0.35) }
+                // 芝は少し緑、土は少し茶（明るさの絵に色の揺れを足す）
+                let c = (v * (0.92 + 0.12 * dirt), v * (1.02 - 0.06 * dirt), v * (0.9 - 0.08 * dirt))
+                b.set(x, y, (min(1, c.0), min(1, c.1), min(1, c.2)))
+            }
+        }
+        return b
+    }
+
     /// 灯りの溜まり（真ん中が明るく、外へなだらかに消える丸・64×64・白〜黒）。足し合わせる光なので黒は何も足さない。
     /// 2026-10-19: 硬い円に見えた（owner）ので、ガウスの裾で縁まで 0 になめらかに落とす。
     /// 2026-10-20: 裾を広げすぎると尾灯の赤い球が大きくなる。exp(−3.2r²) で縁だけ少し柔らかく（芯は色の暗さで抑える）

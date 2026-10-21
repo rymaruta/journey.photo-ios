@@ -236,7 +236,9 @@ enum CamperMaterials {
     /// 入口の灯りと、弱い環境光で読ませる
     static func sun(_ mood: CamperMood) -> (from: CV3, intensity: Double, color: UInt32) {
         switch mood {
-        case .night: return (CV3(0.3, 0.85, -0.3), 150, 0x9FB4DC)
+        // 2026-10-21 作り直し（owner「光の感じまじで残念」）: 月を夜の主な光にする（屋根・上を向く面・縁に青白い光、
+        // やわらかい影を地面へ）。向きは前と同じ上と少し奥（手前の面を真正面から白くしない・run 563）
+        case .night: return (CV3(0.3, 0.85, -0.3), NightStage.moon, 0xA8BCE4)
         case .snow: return (CV3(-0.18, 0.72, 0.62), 1000, 0xFFF4E2)
         case .day: return (CV3(-0.18, 0.72, 0.62), 1200, 0xFFF4E2)
         }
@@ -251,10 +253,63 @@ enum CamperMaterials {
     /// 灯りの当たらない面がほぼ暗くなるよう、夜は半分ほどに下げる（手前の面は焚き火・窓・入口の灯りで読ませる）
     static func fill(_ mood: CamperMood) -> (environment: Double, ambient: Double) {
         switch mood {
-        case .night: return (0.07, 25)
+        // 2026-10-21 作り直し: 一様な環境光（どの面も同じ明るさ＝のっぺりした灰色の元）をやめ、空の光（周りの光・
+        // `NightStage.environment`）で面の向きに応じた明暗を出す（上を向く面は空で明るく、下を向く面は暗い芝で暗い）
+        case .night: return (NightStage.environment, 0)
         case .snow: return (1.45, 0)
         case .day: return (1.35, 0)
         }
+    }
+
+    /// 夜の外の場面の値（2026-10-21・owner「夜のキャンピングカーの外」「黒い空間に車が浮いている」）。
+    ///
+    /// 2026-10-21 判断: 前の夜は、空の光 0.07・環境光 25・月 150 で、床は暗い一色が車から離れると透け、画面の黒い地に
+    /// 溶けていた——車は一様に暗い灰色で、地面も空も遠景も無かった。数値の上げ下げを重ねても「残念」のまま。
+    /// 夜のキャンプ場で撮った良い写真の作りに替える:
+    /// - 空: 天頂の深い紺から地平線の霞へ（`CamperTextures.nightSky`）。地面の果ては霞の色に溶ける
+    /// - 地面: 芝と土の地面（`groundNight`）が月のやわらかい影を受け、焚き火・ランタン・窓の灯りが落ちる
+    /// - 遠景: 車の奥の針葉樹の影と、遠い山の稜線（`CamperNightScenery`）。霞で奥ほど淡い
+    /// - 光: 月（主な光・やわらかい影）と空の光（面の向きの明暗・塗装と硝子への映り込み）。一様な環境光は使わない
+    enum NightStage {
+        /// 見える空: 天頂・中ほど・地平線の霞（地面の果ての色）・遠い町の明かり
+        static let zenith: UInt32 = 0x060A16
+        static let skyMid: UInt32 = 0x0F1A33
+        static let haze: UInt32 = 0x2C364C
+        static let townGlow: UInt32 = 0x4A4038
+        /// 周りの光の絵: 上・地平線・地面（見える空より明るい。長い露出の分）
+        static let envTop: UInt32 = 0x2A3A62
+        static let envHorizon: UInt32 = 0x4A5672
+        static let envGround: UInt32 = 0x16191A
+        /// 周りの光の強さ・月の強さ（平行光）
+        static let environment = 1.5
+        static let moon = 520.0
+        /// 林の影・遠い山の色（光を受けない一色。霞を足す前）
+        static let treeColor: UInt32 = 0x0B1018
+        static let ridgeColor: UInt32 = 0x121A28
+        /// 地面の色（芝と土の絵に掛ける）・粗さ・繰り返し（1 枚が何 m か）
+        static let ground: UInt32 = 0x4C5644
+        static let groundTile = 2.2
+        /// 地面の広さ（一辺 m）。霞が始まる・霞に溶けきる距離（車の真ん中から m）
+        static let groundSize = 140.0
+        static let hazeStart = 6.0
+        static let hazeEnd = 46.0
+        /// 月の影: 濃さ・ぼかし・影の絵の大きさ・影を作る範囲（車の真ん中から ±m）
+        static let shadowAlpha = 0.62
+        static let shadowRadius = 7.0
+        static let shadowMapSize = 2048.0
+        static let shadowExtent = 4.6
+        /// カメラ: 露出・周辺の落ち（写真のレンズの周辺光量）・彩度（夜の目は色が淡い）
+        static let exposure = 0.0
+        static let vignettePower = 0.7
+        static let vignetteIntensity = 0.85
+        static let saturation = 0.86
+    }
+
+    /// 色を線形の明るさに（sRGB の 0〜255 → 0〜1 の光の量。Metal の shader の色に渡す）
+    static func linear(_ hex: UInt32) -> (Double, Double, Double) {
+        func f(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        let c = CamperTextures.rgb(hex)
+        return (f(c.0), f(c.1), f(c.2))
     }
 
     /// 殻の中（外から扉の口・窓越しに見える室内）に届く空の光の割合（0〜1・2026-10-21 判断）。
@@ -267,17 +322,22 @@ enum CamperMaterials {
         }
     }
 
-    /// 灯りの当たらない面のおよその明るさ（0〜1・素材の色 × 一様な明るさ）。環境光は 1000 で 1、周りの光は空の平均の色
+    /// 灯りの当たらない立った面（車体の横・後ろの壁）のおよその明るさ（線形の光の量・素材の色 × 空の光と環境光）。
+    /// 立った面は上半分に空（天頂と地平線）、下半分に地面を見る。環境光は 1000 で 1。
+    /// 2026-10-21: 夜の外は空の絵が `NightStage` の色（長い露出の空）に替わったので、その色で見積もる
     static func unlitFaceLevel(_ m: CamperMaterial, paint: UInt32, mood: CamperMood) -> Double {
-        let c = CamperTextures.rgb(spec(m, paint: paint, mood: mood).color)
-        let albedo = 0.2126 * c.0 + 0.7152 * c.1 + 0.0722 * c.2
-        let s = sky(mood)
-        let skyAvg = [s.top, s.horizon, s.groundNear, s.groundFar].map { v -> Double in
-            let k = CamperTextures.rgb(v)
-            return 0.2126 * k.0 + 0.7152 * k.1 + 0.0722 * k.2
-        }.reduce(0, +) / 4
+        func lum(_ c: (Double, Double, Double)) -> Double { 0.2126 * c.0 + 0.7152 * c.1 + 0.0722 * c.2 }
+        let albedo = lum(linear(spec(m, paint: paint, mood: mood).color))
+        let (top, horizon, ground): (UInt32, UInt32, UInt32)
+        if mood == .night {
+            (top, horizon, ground) = (NightStage.envTop, NightStage.envHorizon, NightStage.envGround)
+        } else {
+            let s = sky(mood)
+            (top, horizon, ground) = (s.top, s.horizon, s.groundNear)
+        }
+        let seen = 0.2 * lum(linear(top)) + 0.3 * lum(linear(horizon)) + 0.5 * lum(linear(ground))
         let f = fill(mood)
-        return albedo * (f.ambient / 1000 + f.environment * skyAvg)
+        return albedo * (f.ambient / 1000 + f.environment * seen)
     }
 
     /// 周りの空（映り込みの元・板の env の色: 空の上・地平線・地面の手前・地面の奥）
@@ -334,6 +394,26 @@ struct CamperFloor: Equatable, Sendable {
         float4 jpWorld = scn_frame.inverseViewTransform * float4(_surface.position, 1.0);
         float jpFade = 1.0 - smoothstep(\(fadeStart), \(fadeEnd), length(jpWorld.xz));
         _output.color *= jpFade;
+        """
+    }
+}
+
+/// 夜の外の霞（2026-10-21）: 地面と遠景の色を、車の真ん中からの距離と高さで地平線の霞の色へ寄せる（Metal の fragment の
+/// shader modifier）。場面の霧（`SCNScene.fog`）はカメラからの距離で掛かり、寄ると車まで霞むので使わない。
+/// `_output.color` は線形の光の量なので、霞の色も線形に直して渡す
+enum CamperNightHaze {
+    /// - start / end: 車の真ん中から m。ここで霞み始め、ここで霞の色になる
+    /// - mist: 根元の靄（地面から 2.5 m までの霞の強さ）・floor: いつも足す霞（遠い山は 0.55 ほど）
+    static func shader(start: Double, end: Double, mist: Double, floor: Double) -> String {
+        let h = CamperMaterials.linear(CamperMaterials.NightStage.haze)
+        func f(_ v: Double) -> String { String(format: "%.5f", v) }
+        return """
+        #pragma body
+        float4 jpWorld = scn_frame.inverseViewTransform * float4(_surface.position, 1.0);
+        float jpHaze = smoothstep(\(f(start)), \(f(end)), length(jpWorld.xz));
+        jpHaze = max(jpHaze, (1.0 - smoothstep(0.0, 2.5, jpWorld.y)) * \(f(mist)));
+        jpHaze = clamp(jpHaze + \(f(floor)), 0.0, 1.0);
+        _output.color.rgb = mix(_output.color.rgb, float3(\(f(h.0)), \(f(h.1)), \(f(h.2))), jpHaze);
         """
     }
 }

@@ -60,7 +60,9 @@ final class CamperSceneTests: XCTestCase {
         func materials(_ name: String) throws -> [SCNMaterial] {
             all(try XCTUnwrap(node(scene, name))).compactMap(\.geometry).flatMap(\.materials)
         }
-        func blocks(_ m: SCNMaterial) -> Bool { m.ambientOcclusion.contents is UIColor }
+        // 本物の SceneKit は ambientOcclusion に初めから白が入っているので、中身ではなく殻の中の材質の印で見分ける
+        // （Mac run 624 で、外の材質の初めの白を「遮っている」と数えて落ちた）
+        func blocks(_ m: SCNMaterial) -> Bool { m.name == CamperScenePalette.insideName && m.ambientOcclusion.contents is UIColor }
         let inside = try materials("camper.inside").filter { $0.lightingModel == .physicallyBased }
         let outside = try materials("camper.outside")
         XCTAssertFalse(inside.isEmpty)
@@ -73,6 +75,39 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertTrue(inside.allSatisfy(blocks), "夜に替えたら遮りが消えた")
         XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.night), CamperMaterials.interiorSkyOcclusion(.day))
         XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.day), 0.5, "昼の口の奥が外と同じ明るさ")
+    }
+
+    /// 夜の外の場面（2026-10-21・owner「夜のキャンピングカーの外」: 黒い空間に車が浮いていた）: 夜は空・芝の地面・林と山の
+    /// 遠景がある。昼と雪は前のまま（空なし・床は SCNFloor・遠景なし）。下から見る向きでは地面と遠景を隠す
+    func testNightStageOnlyAtNight() async throws {
+        let scene = CamperScene()
+        let day = CamperConfig(stage: .camper, mood: .day)
+        scene.installNow(day)
+        XCTAssertNil(scene.scene.background.contents, "昼に夜の空が出ている")
+        XCTAssertNil(node(scene, "night.ground"), "昼に夜の地面を作っている")
+        var night = day
+        night.mood = .night
+        scene.show(night)
+        XCTAssertNotNil(scene.scene.background.contents, "夜の空が無い")
+        let stage = try XCTUnwrap(node(scene, "night.stage"))
+        XCTAssertFalse(stage.isHidden)
+        for name in ["night.ground", "night.trees", "night.ridge"] { XCTAssertNotNil(node(scene, name), name) }
+        let ground = try XCTUnwrap(node(scene, "night.ground")?.geometry?.materials.first)
+        XCTAssertEqual(ground.lightingModel, .physicallyBased, "地面が月の影と灯りを受けない")
+        XCTAssertTrue(ground.shaderModifiers?[.fragment]?.contains("jpHaze") == true, "地面の果てが霞に溶けない")
+        XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.vignettingPower)), CamperMaterials.NightStage.vignettePower, accuracy: 0.001)
+        // 下から見る
+        scene.setAngle(CamperFraming.under, animated: false)
+        XCTAssertTrue(stage.isHidden, "下から見ると地面の裏に林が浮く")
+        scene.setAngle(CamperFraming.overview(.camper), animated: false)
+        XCTAssertFalse(stage.isHidden)
+        // 昼に戻すと前のまま
+        scene.show(day)
+        XCTAssertTrue(stage.isHidden)
+        XCTAssertNil(scene.scene.background.contents)
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.vignettingPower)), 0, accuracy: 0.001)
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.saturation)), 1, accuracy: 0.001)
     }
 
     /// 夜に停めている車: 前照灯・尾灯の光は場面に無い。点くのは入口の灯り（外の組・下向きの spot・減衰あり）と
@@ -171,10 +206,12 @@ final class CamperSceneTests: XCTestCase {
         night.mood = .night
         scene.show(night)
         let n = scene.lightingSnapshot
-        XCTAssertEqual(n.sun, 150, accuracy: 0.5, "月の強さになっていない")
-        XCTAssertEqual(n.environment, 0.07, accuracy: 0.001, "周りの光が昼のまま")
-        XCTAssertEqual(n.exposure, -0.15, accuracy: 0.001, "露出が昼のまま")
-        XCTAssertEqual(n.ambient, 25, accuracy: 0.5)
+        let st = CamperMaterials.NightStage.self
+        XCTAssertEqual(n.sun, st.moon, accuracy: 0.5, "月の強さになっていない")
+        XCTAssertEqual(n.environment, st.environment, accuracy: 0.001, "周りの光が昼のまま")
+        XCTAssertEqual(n.exposure, st.exposure, accuracy: 0.001, "露出が昼のまま")
+        // 夜は一様な環境光を使わない（のっぺりした灰色の元・2026-10-21）
+        XCTAssertEqual(n.ambient, 0, accuracy: 0.5)
         scene.show(day)
         XCTAssertEqual(scene.lightingSnapshot.sun, 1200, accuracy: 0.5)
         XCTAssertEqual(scene.lightingSnapshot.environment, 1.35, accuracy: 0.001)

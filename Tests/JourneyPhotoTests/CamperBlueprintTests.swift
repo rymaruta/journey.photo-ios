@@ -728,11 +728,13 @@ final class CamperBlueprintTests: XCTestCase {
             l.picks[CamperCategory.outdoorLight.rawValue] = key
             for stage in CamperStage.allCases {
                 let outside = build(stage, mood: .night, loadout: l).lights.filter { !$0.inside }
-                XCTAssertLessThanOrEqual(outside.map(\.intensity).reduce(0, +), 450, "\(stage) \(key): 夜の外の灯りの合計が強い")
+                // 2026-10-21: 点の灯りの桁を部屋の家具灯にそろえた（前の上限 450 は取り違えた桁）
+                XCTAssertLessThanOrEqual(outside.map(\.intensity).reduce(0, +), 4, "\(stage) \(key): 夜の外の灯りの合計が強い")
             }
         }
         let moon = CamperMaterials.sun(.night)
-        XCTAssertLessThanOrEqual(moon.intensity, 160, "月が強い")
+        // 2026-10-21: 月を夜の主な光に（150 → 520）。白飛びしないことは `CamperNightStageTests.testNightLightBalanceDoesNotBlowOut`
+        XCTAssertLessThanOrEqual(moon.intensity, 700, "月が強い")
         XCTAssertLessThanOrEqual(moon.from.z, 0, "月が手前から当たり、こちらを向いた面が白く飛ぶ")
         XCTAssertGreaterThan(moon.from.y, 0.7, "月は上から（屋根と縁に乗る）")
         let blue = CamperTextures.rgb(moon.color)
@@ -871,15 +873,18 @@ extension CamperBlueprintTests {
 }
 
 extension CamperBlueprintTests {
-    /// 夜、灯りの当たらない外板（後ろの壁など）はほぼ暗い（Mac run 577 の 95k: 白に近いクリーム色が一様な明るさで
-    /// 持ち上がり、後ろの面が明るく見えた）。昼の 1/10 より暗く、どの向きでも同じ（一様な明るさは向きに依らない）。
+    /// 夜、灯りの当たらない外板（後ろの壁など）は暗いが、読める（2026-10-21 作り直し）。前（Mac run 577 の 95k）は
+    /// 一様な環境光でクリーム色が持ち上がり、後ろの面が明るく見えた → 一様な環境光は 0 にし、空の光（面の向きで明暗）だけ。
+    /// 立った面は昼の 1/4 より暗く（夜の写真）、1/40 より明るい（黒い板にしない・owner「のっぺり」「浮いている」）。
     /// 月は上から（どの向きの立った面にも強さの 0.46 を超えて当たらない・仰角 63° 以上）
     func testUnlitOuterSkinIsDarkAtNight() {
+        XCTAssertEqual(CamperMaterials.fill(.night).ambient, 0, "夜に一様な環境光がある")
         for m: CamperMaterial in [.cap, .paint, .deep, .roof] {
             let night = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .night)
             let day = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .day)
-            XCTAssertLessThanOrEqual(night, 0.035, "\(m): 夜に灯りの当たらない面が明るい")
-            XCTAssertLessThan(night, day / 10, "\(m)")
+            XCTAssertLessThan(night, day / 4, "\(m): 夜に灯りの当たらない面が明るい")
+            XCTAssertGreaterThan(night, day / 40, "\(m): 夜に灯りの当たらない面が真っ黒")
+            XCTAssertLessThanOrEqual(night, 0.08, "\(m)")
         }
         let moon = CamperMaterials.sun(.night)
         let from = moon.from.normalized

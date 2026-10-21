@@ -74,6 +74,7 @@ open class SCNMaterial {
     }
     public init() {}
     open var lightingModel: LightingModel = .blinn
+    open var name: String?
     public let diffuse = SCNMaterialProperty()
     public let metalness = SCNMaterialProperty()
     public let roughness = SCNMaterialProperty()
@@ -191,6 +192,9 @@ open class SCNLight {
     open var categoryBitMask = -1
     open var spotInnerAngle: CGFloat = 0
     open var spotOuterAngle: CGFloat = 45
+    open var orthographicScale: CGFloat = 1
+    open var zNear: CGFloat = 1
+    open var zFar: CGFloat = 100
 }
 
 open class SCNCamera {
@@ -205,6 +209,11 @@ open class SCNCamera {
     open var bloomThreshold: CGFloat = 1
     open var bloomBlurRadius: CGFloat = 4
     open var screenSpaceAmbientOcclusionIntensity: CGFloat = 0
+    open var vignettingPower: CGFloat = 0
+    open var vignettingIntensity: CGFloat = 1
+    open var saturation: CGFloat = 1
+    open var whitePoint: CGFloat = 1
+    open var contrast: CGFloat = 0
 }
 
 open class SCNNode {

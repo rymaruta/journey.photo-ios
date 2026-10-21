@@ -205,6 +205,8 @@ struct CamperGarageView: View {
         .accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 45) }
         .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -45) }
         .accessibilityIdentifier("camper.scene")
+        // 夜は場面に空と地面がある（2026-10-21）ので、上下の端を画面の地へなだらかに溶かす（四角い板の縁を出さない）
+        .overlay { if mood == .night { CamperStageEdges(color: CamperStyle.color(CamperMaterials.backdrop(.night))) } }
         .overlay(alignment: .bottomTrailing) { sceneButtons }
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
@@ -592,6 +594,21 @@ struct CamperGarageView: View {
         RadialGradient(colors: [CamperStyle.color(CamperMaterials.backdrop(mood)), Color.black],
                        center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 520)
             .ignoresSafeArea()
+    }
+}
+
+/// 場面の上下の端を画面の地へ溶かす帯（夜の空と地面のある場面・2026-10-21）。指は通す・読み上げない
+struct CamperStageEdges: View {
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [color, color.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 40)
+            Spacer(minLength: 0)
+            LinearGradient(colors: [color.opacity(0), color], startPoint: .top, endPoint: .bottom).frame(height: 28)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

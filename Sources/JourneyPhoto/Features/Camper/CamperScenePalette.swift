@@ -63,7 +63,11 @@ final class CamperScenePalette {
         configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood))
         let k = CamperMaterials.interiorSkyOcclusion(mood)
         scn.ambientOcclusion.contents = UIColor(white: CGFloat(k), alpha: 1)
+        scn.name = Self.insideName
     }
+
+    /// 殻の中の材質の名前（試験が外の材質と見分ける。本物の SceneKit の ambientOcclusion は初めから白が入っている）
+    static let insideName = "camper.inside"
 
     /// 網の並びから形を作る（材質は束ごと）
     func geometry(_ m: CamperPreparedMesh, inside: Bool = false) -> SCNGeometry? {
