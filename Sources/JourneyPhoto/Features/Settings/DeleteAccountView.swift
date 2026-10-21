@@ -126,6 +126,8 @@ struct DeleteAccountView: View {
         // 消している最中は戻らせない（戻って開き直すと、2本目の退会が走る。`ProfileEditView` と同じ）
         .navigationBarBackButtonHidden(isWorking)
         .interactiveDismissDisabled(isWorking)
+        // 画面を閉じたら 410 の知らせを受け直す（残ったアカウントはアラートが拾う）
+        .onDisappear { auth.setDeletingFromScreen(false) }
     }
 
     private var canDelete: Bool {
@@ -142,6 +144,8 @@ struct DeleteAccountView: View {
             // （`SettingsView.pushBinding` の「門は同期で閉じる」と同じ）
             guard canDelete else { return }
             isWorking = true
+            // 閉じるまで 410 の知らせを受けない（`AuthStore.isDeletingFromScreen`。押したその場で立てる）
+            auth.setDeletingFromScreen(true)
             Task { await deleteAccount() }
         } label: {
             Group {

@@ -60,7 +60,9 @@ struct TrunkService {
         do {
             return try await APIClient.$errorBodySink.withValue(errorBody) { try await call() }
         } catch let APIError.server(status, message) where (400..<500).contains(status) && status != 401 {
-            throw Refused(message: message.isEmpty ? Labels.Common.loadFailed : message,
+            // 英語の画面では日本語の本文を出さない（状態の数の文に替える・`APIError.description`・2026-10-21 判断）
+            throw Refused(message: message.isEmpty ? Labels.Common.loadFailed
+                                                   : (APIError.server(status: status, message: message).errorDescription ?? message),
                           code: APIClient.errorCode(from: errorBody.data) ?? (status == 403 ? "proOnly" : nil))
         }
     }

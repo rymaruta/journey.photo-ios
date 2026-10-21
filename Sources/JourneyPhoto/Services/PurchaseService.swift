@@ -31,7 +31,9 @@ struct PurchaseService {
                 // 理由も終えるかもサーバーの `code` で見る（403 別のアカウント・ファミリー共有／
                 // 409 ほかのアカウント）。同じ `code` を両方に渡す
                 let code = APIClient.errorCode(from: errorBody.data)
-                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status, code: code), message: message,
+                // 英語の画面では日本語の本文を出さない（nil なら画面が自分の文を出す・2026-10-21 判断）
+                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status, code: code),
+                                               message: APIError.displayableServerText(message),
                                                refusal: PurchaseDelivery.refusal(statusCode: status, code: code))
             }
             // 圏外・ログインしていない・応答が読めない → あとでやり直す
