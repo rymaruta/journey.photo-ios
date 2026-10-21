@@ -1404,6 +1404,7 @@ struct StoryComposerView: View {
             }
             let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data))
             shots.append(shot)
+            startThumb(for: shot)
             // 足したらそれを編集する（選んだ直後に文字を置ける）。
             // **打っている間も移らない**（打つ先は `typingShotId` で引くが、見えている写真と打っている
             // 写真が違うと、完了した後に別の写真が出て驚く）
@@ -1483,11 +1484,23 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 下の並びの小さな絵を画面の処理の外で作って入れる（投稿の帯と同じ `StripThumb`）。
+    /// 並べ替え・消したあとでも id で引くので、別の写真に入らない
+    private func startThumb(for shot: StoryShot) {
+        let id = shot.id
+        let prepared = shot.prepared
+        Task {
+            guard let image = await StripThumb.image(for: prepared),
+                  let i = shots.firstIndex(where: { $0.id == id }) else { return }
+            shots[i].thumb = Image(uiImage: image)
+        }
+    }
+
     private func thumb(_ shot: StoryShot, index: Int) -> some View {
         let isCurrent = index == current
         return Group {
-            if let preview = shot.preview {
-                Color.clear.overlay { preview.resizable().aspectRatio(contentMode: .fill) }
+            if let thumb = shot.thumb {
+                Color.clear.overlay { thumb.resizable().aspectRatio(contentMode: .fill) }
             } else {
                 Color.gray.opacity(0.3)
             }
@@ -1710,6 +1723,7 @@ struct StoryComposerView: View {
                              overlays: item.shot.overlays, framing: item.shot.framing ?? .identity,
                              vote: item.shot.vote)
         }
+        shots.forEach(startThumb(for:))
         current = 0
         // 古い下書き（字で数えていた頃）は 200 単位を超えていることがある。欄は超えたぶんを
         // 減らす変更しか受けないので、読み込むときに一度だけ収める
@@ -1866,6 +1880,9 @@ struct StoryShot: Identifiable {
     let id = UUID()
     var prepared: ImagePreparer.Prepared
     var preview: Image?
+    /// 下の並びの小さな絵（長い辺 360px・`StripThumb`）。2026-10-21 判断: 並びは 44×56pt なので、
+    /// 1920px の `preview` を並べると枚数ぶん原寸の画素を持っていた。届くまでは地の色
+    var thumb: Image?
     /// 写真の大きさ。**焼き込みと同じ `UIImage(data:)` から採る**ので、
     /// 編集画面の文字は投稿される画像と同じ基準で置かれる
     var imageSize: CGSize?

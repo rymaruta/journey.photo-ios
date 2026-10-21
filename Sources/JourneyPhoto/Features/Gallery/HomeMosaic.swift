@@ -91,8 +91,17 @@ struct HomeFeedTile: View {
                 Color.clear
                     .aspectRatio(large ? 16.0 / 9.0 : 1, contentMode: .fit)
                     .overlay {
-                        RemoteImage(url: large ? photo.detailImageURL : photo.gridImageURL,
-                                    alignment: photo.gridAlignment)
+                        if large {
+                            // 2026-10-21 判断: 大きい枠は**枠の大きさ×画面の倍率まで縮めて**読む（`DownsampledRemoteImage`）。
+                            // `RemoteImage`（`AsyncImage`）は 1920px の元を縮めずに展開し、ホームを流すと段ごとに
+                            // 約 11MB を抱えた。敷き方は `.fill` で、写真の縦横比から「枠を覆う大きさ」を出すので、
+                            // 縦長の写真でもぼやけない（縦横比が無い写真は上限で読む）
+                            DownsampledRemoteImage(url: photo.detailImageURL, contentMode: .fill,
+                                                   aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                   alignment: photo.gridAlignment)
+                        } else {
+                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                        }
                     }
                     .overlay(alignment: .bottomLeading) { caption }
                     .overlay(alignment: .topTrailing) {

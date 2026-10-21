@@ -166,7 +166,8 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertEqual(detail.components(separatedBy: "PhotoDetailRules.appliesHere(photoId:").count - 1, 3,
                        "削除の失敗か、ブロックの成功か失敗が隣の写真に残る")
         // 削除の成功で閉じるかは、写真だけで決める（人を見ると、消した1枚の画面に残る）
-        let deleteBody = try XCTUnwrap(detail.range(of: "try await environment.photos.delete(photoId: photoId)"))
+        // 送るのは模型の `deletePhoto`（二度押しの守り・2026-10-21）。成功の枝（`case .deleted:`）から見る
+        let deleteBody = try XCTUnwrap(detail.range(of: "case .deleted:"))
         let close = try XCTUnwrap(detail.range(of: "dismiss()", range: deleteBody.upperBound..<detail.endIndex))
         let success = String(detail[deleteBody.upperBound..<close.lowerBound])
         XCTAssertTrue(success.contains("guard PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) else { return }"),

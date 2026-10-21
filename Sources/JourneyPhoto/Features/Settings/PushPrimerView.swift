@@ -92,7 +92,8 @@ struct PushPrimerView: View {
         .scrollContentBackground(.hidden)
         .background(WebTheme.sheet, ignoresSafeAreaEdges: .all)
         .presentationBackground(WebTheme.sheet)
-        .task { isPro = (try? await environment.profiles.myProfile())?.isPro ?? false }
+        // 読めなかった回は**分かっている値のまま**（`PushPrimerPoint.resolvedPro`・2026-10-21）
+        .task { isPro = PushPrimerPoint.resolvedPro(loaded: (try? await environment.profiles.myProfile())?.isPro, known: isPro) }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
@@ -132,6 +133,13 @@ struct PushPrimerPoint: Identifiable, Equatable {
     let systemImage: String
     let text: String
     var id: String { systemImage }
+
+    /// 項目を決める Pro か。**プロフィールを読めなかった回は false に倒さず、分かっている値を使う**
+    /// （2026-10-21 判断）。まだ何も分からなければ `known` は初期値の false＝Pro 向けでない文のまま。
+    /// 前は読めないたびに false にしていたので、一度 Pro と分かった後の読み直しの失敗で項目が消えた
+    static func resolvedPro(loaded: Bool?, known: Bool) -> Bool {
+        loaded ?? known
+    }
 
     static func shown(isPro: Bool) -> [PushPrimerPoint] {
         var points = [
