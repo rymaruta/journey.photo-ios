@@ -119,9 +119,10 @@ enum LegalGateLayout {
 
     /// 上に敷く写真の候補（2026-10-21 判断）。アプリに同梱した構図の作例写真（すべて CC0 の実写真・
     /// 出典は `Tools/composition-examples/photo-sources.json`）のうち、横長の帯（300pt）に切っても旅の写真に
-    /// 見えるもの: 新倉山浅間公園の忠霊塔と富士山・山あいの湖・防波堤の灯台と夕空・アタカマの塩湖・八坂の塔
+    /// 見えるもの: 新倉山浅間公園の忠霊塔と富士山・山あいの湖・防波堤の灯台と夕空・アタカマの塩湖。
+    /// 八坂の塔（人の後ろ姿が大きく写る）は、いちばん大きな写真には使わない（確かめ役の見直し）
     static let heroAssets = ["composition-ai-rootRectangle", "composition-ai-ratio16x9", "composition-ai-thirds",
-                             "composition-ai-phiGrid", "composition-ai-ratio4x5"]
+                             "composition-ai-phiGrid"]
 
     /// 開くたびに1枚（日ごとに替わる。同じ日は同じ写真・試験で決められるように日を渡せる）
     static func heroAsset(day: Date = Date(), calendar: Calendar = .current) -> String {

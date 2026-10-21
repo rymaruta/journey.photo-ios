@@ -31,9 +31,10 @@ final class UXAuditFixesATests: XCTestCase {
     }
 
     private func photo(_ id: String, user: String = "u1", location: String? = nil,
-                       createdAt: String = "2026-10-01T00:00:00Z") throws -> Photo {
+                       createdAt: String = "2026-10-01T00:00:00Z", extra: String = "") throws -> Photo {
         var json = "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"\(user)\",\"createdAt\":\"\(createdAt)\""
         if let location { json += ",\"location\":\"\(location)\"" }
+        json += extra
         return try JSONDecoder.api.decode(Photo.self, from: Data((json + "}").utf8))
     }
 
@@ -181,7 +182,9 @@ final class UXAuditFixesATests: XCTestCase {
     // MARK: - 6. 同意画面の写真と見出し
 
     func testLegalGateUsesBundledExamplePhotos() async throws {
-        XCTAssertGreaterThanOrEqual(LegalGateLayout.heroAssets.count, 3)
+        XCTAssertEqual(LegalGateLayout.heroAssets.count, 4)
+        // 人の後ろ姿が大きく写る八坂の塔は、いちばん大きな写真には使わない
+        XCTAssertFalse(LegalGateLayout.heroAssets.contains("composition-ai-ratio4x5"))
         // 同梱の構図の作例写真（CC0・表記の要らない実写真）から選ぶ
         let sources = try String(contentsOf: URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -241,6 +244,10 @@ final class UXAuditFixesATests: XCTestCase {
     func testHomeShelfCreditIsGentleButStillSaysSource() async {
         XCTAssertFalse(HomeSpotShelf.note.contains("利用者ではありません"))
         XCTAssertTrue(HomeSpotShelf.note.contains("出典"))
+        // 英語は直接許しをもらったように読める "borrowed" を使わない
+        let english = try? source("Core/Text/HomeSpotShelf.swift")
+        XCTAssertTrue(english?.contains("Credits below each photo.") ?? false)
+        XCTAssertFalse(english?.contains("borrowed") ?? true)
     }
 
     // MARK: - 8. 空の画面の次の一手
@@ -262,7 +269,10 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertEqual(InspiredBy.Shelf.saved.emptyNextShelf, .everyone)
         XCTAssertEqual(InspiredBy.Shelf.wishlist.emptyNextShelf, .everyone)
         XCTAssertNil(InspiredBy.Shelf.everyone.emptyNextShelf)
-        XCTAssertEqual(InspiredBy.Shelf.everyone.chooseLabel, L("みんなの写真から選ぶ", "Choose from Everyone"))
+        XCTAssertEqual(InspiredBy.Shelf.everyone.chooseLabel, L("みんなの写真から選ぶ", "Choose from everyone\u{2019}s photos"))
+        // 英語は試験の言語では選ばれないので、元の字で確かめる
+        XCTAssertTrue(try source("Core/Text/InspiredBy.swift").contains("\"Choose from everyone\\u{2019}s photos\""),
+                      "英語の字が「Choose from Everyone」に戻った")
         let picker = try source("Features/Upload/InspiredPickerView.swift")
         XCTAssertTrue(picker.contains("if pools?.feed != nil, let next = shelf.emptyNextShelf"))
         XCTAssertTrue(picker.contains("Text(next.chooseLabel).jpPillButton(.main(onPhoto: false))"),
@@ -279,6 +289,26 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertEqual(InspiredBy.everyoneCandidates(feed: nil, viewerId: nil), [])
     }
 
+    /// 🔴 みんなの写真に、**公開していない写真・フォロワー限定の写真を出さない**（付けてもサーバーが黙って捨てる）。
+    /// ブロック・通報した人の写真は、棚に渡す前に `hidden.visible` で落とす
+    func testEveryoneCandidatesShowOnlyPublicPhotosAndPassTheBlockFilter() async throws {
+        let feed = [try photo("open", user: "u2"),
+                    try photo("draft", user: "u3", extra: ",\"published\":false"),
+                    try photo("followers", user: "u4", extra: ",\"audience\":\"followers\""),
+                    try photo("everyone", user: "u5", extra: ",\"audience\":\"everyone\"")]
+        let ids = InspiredBy.everyoneCandidates(feed: feed, viewerId: "me").map(\.id)
+        XCTAssertTrue(ids.contains("open"))
+        XCTAssertTrue(ids.contains("everyone"))
+        XCTAssertFalse(ids.contains("draft"), "公開していない写真を出した")
+        XCTAssertFalse(ids.contains("followers"), "フォロワー限定の写真を出した")
+        let picker = try source("Features/Upload/InspiredPickerView.swift")
+        let candidates = slice(picker, from: "private var candidates: [Photo] {", to: "@ViewBuilder")
+        XCTAssertTrue(candidates.contains("let feed = pools.feed.map { hidden.visible($0) }"),
+                      "ブロック・通報した人の写真を落とさずに棚へ渡している")
+        XCTAssertTrue(candidates.contains("InspiredBy.everyoneCandidates(feed: feed,"),
+                      "みんなの写真が絞った束（feed）を使っていない")
+    }
+
     /// 人のトランクの0枚のラベル: 「· 0 枚」と言わず、地図でその土地を開く一手を出す
     func testTheirTrunkZeroLabelLeadsToTheMap() async throws {
         XCTAssertFalse(TheirTrunkText.sheetSubtitle(place: "京都", owner: "丸田", count: 0).contains("0"))
@@ -287,6 +317,23 @@ final class UXAuditFixesATests: XCTestCase {
         let empty = slice(view, from: "} else if matched.isEmpty {", to: "} else {")
         XCTAssertTrue(empty.contains("TabRouter.shared.openMap(query: place)"), "0枚のラベルが行き止まり")
         XCTAssertTrue(empty.contains(".jpPillButton(.main(onPhoto: false)"))
+    }
+
+    /// 地図の札の中で詳細を積んだ所から「〇〇を地図で見る」を押したら、積み重ねを根まで戻して語を渡す
+    /// （根に戻るまで語を預かるだけで、何も起きなかった・確かめ役の見直し）
+    func testMapLinkFromInsideTheMapTabReturnsToTheRoot() async throws {
+        XCTAssertTrue(TabRouter.resetsMapStack(hasQuery: true, mapSelected: true, rootOnScreen: false))
+        XCTAssertFalse(TabRouter.resetsMapStack(hasQuery: false, mapSelected: true, rootOnScreen: false),
+                       "語の無い回（メニューの撮影地マップ）まで地図を作り直す")
+        XCTAssertFalse(TabRouter.resetsMapStack(hasQuery: true, mapSelected: true, rootOnScreen: true),
+                       "根が出ているのに作り直す（地図の状態が消える）")
+        XCTAssertFalse(TabRouter.resetsMapStack(hasQuery: true, mapSelected: false, rootOnScreen: false))
+        let root = try source("App/RootView.swift")
+        let hook = slice(root, from: "if TabRouter.resetsMapStack(hasQuery: tabRouter.pendingMapQuery != nil,", to: "selection = .map")
+        XCTAssertTrue(hook.contains("mapSelected: selection == .map"), "地図の札へ移す前の札で見ていない")
+        XCTAssertTrue(hook.contains("mapStackId += 1"))
+        let stack = slice(root, from: "PhotoMapView(unread: unread,", to: ".tabItem")
+        XCTAssertTrue(stack.contains(".id(mapStackId)"), "地図の札の積み重ねを作り直す口が無い")
     }
 
     // MARK: - 9. 自分と人のページの数
@@ -315,17 +362,27 @@ final class UXAuditFixesATests: XCTestCase {
 
     // MARK: - 12. 時計の下・作りかけの欄
 
-    func testProfilePagesPaintBlackUnderTheClock() async throws {
-        let solid = TopBarScrim.stops(topInset: 62, solid: true)
-        XCTAssertEqual(solid.first?.opacity, 1)
-        // 時計の帯の下端まで黒 100%
+    /// 時計の下: 開いたままはいつものぼかし（カバー写真の上の端を隠さない）。
+    /// **下へ送って中身が時計の下に入ったときだけ**黒 100% の帯にする
+    func testProfilePagesPaintBlackOnlyWhenScrolledUnderTheClock() async throws {
+        let covered = TopBarScrim.stops(topInset: 62, covered: true)
+        XCTAssertEqual(covered.first?.opacity, 1)
         let bandEnd = 62 / (62 + TopBarScrim.fade)
-        XCTAssertTrue(solid.contains { abs($0.location - bandEnd) < 0.001 && $0.opacity == 1 })
-        XCTAssertEqual(solid.last?.opacity, 0)
-        // 写真の詳細はこれまでどおりのぼかし
-        XCTAssertEqual(TopBarScrim.stops(topInset: 62, solid: false).first?.opacity, 0.7)
+        XCTAssertTrue(covered.contains { abs($0.location - bandEnd) < 0.001 && $0.opacity == 1 })
+        XCTAssertEqual(covered.last?.opacity, 0)
+        let resting = TopBarScrim.stops(topInset: 62, covered: false)
+        XCTAssertEqual(resting.first?.opacity, 0.7, "開いたままでも黒で塗っている（カバーの上の端が隠れる）")
+        XCTAssertEqual(resting.last?.opacity, 0)
+        XCTAssertFalse(ScrolledUnderClock.covered(contentMinY: 0))
+        XCTAssertFalse(ScrolledUnderClock.covered(contentMinY: -4), "少し触れただけで塗り替える")
+        XCTAssertTrue(ScrolledUnderClock.covered(contentMinY: -40))
+        XCTAssertFalse(ScrolledUnderClock.covered(contentMinY: 30), "引き下げで塗る")
         for file in ["Features/Profile/MyPageView.swift", "Features/Profile/UserProfileView.swift"] {
-            XCTAssertTrue(try source(file).contains("TopBarScrim(topInset: geo.safeAreaInsets.top, solid: true)"), file)
+            let text = try source(file)
+            XCTAssertTrue(text.contains("TopBarScrim(topInset: geo.safeAreaInsets.top, covered: scrolledUnderClock)"), file)
+            XCTAssertTrue(text.contains("ScrolledUnderClock.covered(contentMinY: proxy.frame(in: .scrollView).minY)"),
+                          "\(file): 送った量を見ていない")
+            XCTAssertFalse(text.contains("covered: true"), "\(file): いつも黒で塗っている")
         }
     }
 

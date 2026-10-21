@@ -313,7 +313,13 @@ enum InspiredBy {
         }
 
         /// 空の棚の一手の字（「みんなの写真から選ぶ」）
-        var chooseLabel: String { L("\(label)から選ぶ", "Choose from \(label)") }
+        var chooseLabel: String {
+            switch self {
+            case .saved: return L("保存した写真から選ぶ", "Choose from saved photos")
+            case .wishlist: return L("行きたい場所から選ぶ", "Choose from places you want to go")
+            case .everyone: return L("みんなの写真から選ぶ", "Choose from everyone\u{2019}s photos")
+            }
+        }
 
         var emptyMessage: String {
             switch self {

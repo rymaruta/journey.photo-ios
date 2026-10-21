@@ -22,6 +22,8 @@ struct RootView: View {
     /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
     @State private var showPostCamera = false
     @State private var selection: Tab = .home
+    /// 地図の札の積み重ねの番号。上げると地図の札が根から作り直される（詳細を積んだ所から語を持って地図へ送るとき）
+    @State private var mapStackId = 0
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
@@ -1104,6 +1106,8 @@ struct RootView: View {
                              onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
             }
+            // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
+            .id(mapStackId)
             .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
             .tag(Tab.map)
@@ -1206,6 +1210,13 @@ struct RootView: View {
         }
         // メニューの「撮影地マップ」→ マップの札へ
         .onChange(of: tabRouter.mapRequests) { _, _ in
+            // 地図の札の中で詳細を積んだ所から語を持って来た回は、積み重ねを根まで戻す
+            // （根の `onAppear` が預けた語を受け取る・`TabRouter.resetsMapStack`）
+            if TabRouter.resetsMapStack(hasQuery: tabRouter.pendingMapQuery != nil,
+                                        mapSelected: selection == .map,
+                                        rootOnScreen: tabRouter.mapRootOnScreen) {
+                mapStackId += 1
+            }
             selection = .map
         }
         .onChange(of: tabRouter.menuRequests) { _, _ in
