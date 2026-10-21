@@ -5,14 +5,17 @@ import Foundation
 /// - `-JPPreviewCamperRoomLift YES`: 置く場面で、家具を 1 つ持ち上げてぶつかる所に動かした途中（白と赤のマス）を見せる
 /// - `-JPPreviewCamperRoomContact YES`: 部屋に入ったら、板と別種の家具全部を本物の SceneKit で描いた「接写の一覧」を出す
 ///   （2026-10-21・ソフトラスタではなく本物の絵で全家具の出来を見るため）
+/// - `-JPPreviewCamperRoomCoach YES`: 初めての人への手引きと、新しい家具の印を出す（覚えずに毎回）
 enum CamperRoomPreview {
     static let resetKey = "JPPreviewCamperRoomReset"
     static let liftKey = "JPPreviewCamperRoomLift"
     static let contactKey = "JPPreviewCamperRoomContact"
+    static let coachKey = "JPPreviewCamperRoomCoach"
 
     static var reset: Bool { flag(resetKey) }
     static var lift: Bool { flag(liftKey) }
     static var contact: Bool { flag(contactKey) }
+    static var coach: Bool { flag(coachKey) }
 
     private static func flag(_ key: String) -> Bool {
         #if DEBUG

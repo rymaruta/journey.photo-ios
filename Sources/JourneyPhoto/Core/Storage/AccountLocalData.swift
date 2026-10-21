@@ -70,6 +70,7 @@ enum AccountLocalData {
         CamperStore.removeData(for: userId, defaults: defaults)
         // とおまわり号の中の家具の配置（2026-10-19）
         CamperRoomStore.removeData(for: userId, defaults: defaults)
+        CamperRoomSeenStore.removeData(for: userId, defaults: defaults)
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
         TripBookCard.removeAll()
         if let username, !username.isEmpty {

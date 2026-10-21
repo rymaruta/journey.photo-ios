@@ -31,6 +31,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     let dragCheck: CamperRoomCheck?
     let photoImages: [String: UIImage]
     var studio = false
+    /// 押して置くときの置ける所（薄い白のマス）
+    var hints: CamperRoomFitArea?
     var onReady: (String) -> Void = { _ in }
 
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
@@ -73,6 +75,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.setEditing(editing)
         c.setSelected(drag == nil ? selected : nil)
         c.setDrag(drag, check: dragCheck)
+        c.setHints(hints)
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: CamperRoomScene) {

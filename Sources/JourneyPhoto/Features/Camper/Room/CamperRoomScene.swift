@@ -623,15 +623,18 @@ final class CamperRoomScene {
                 if entry.item.placement == .floor { contact.position = SCNVector3(0, 0.0015, 0) }
             }
         }
-        guard let item, let placed = CamperRoomBuilder.place(item, ceiling: layout?.ceilingHeight ?? CamperRoomLayout.ceiling), let entry = itemNodes[item.u] else {
+        guard let item, let placed = CamperRoomBuilder.place(item, ceiling: layout?.ceilingHeight ?? CamperRoomLayout.ceiling) else {
             SCNTransaction.commit()
             return
         }
-        // 持ち上げ: 7 浮かせ、接地の影を広げて薄く（板の付箋「長押しで 7 浮かせ、影を広げる」）
-        transform(entry.node, displayed(entry.item))
-        if let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
-            contact.scale = SCNVector3(1.35, 1.35, 1.35)
-            if placed.placement == .floor { contact.position = SCNVector3(0, Float(-7 * Self.unit + 0.0015), 0) }
+        // 持ち上げ: 7 浮かせ、接地の影を広げて薄く（板の付箋「長押しで 7 浮かせ、影を広げる」）。
+        // 棚から押して置く途中の家具（まだ部屋に無い）は、マスの白と赤だけを出す（2026-10-21）
+        if let entry = itemNodes[item.u] {
+            transform(entry.node, displayed(entry.item))
+            if let contact = entry.node.childNodes.first(where: { $0.name == "contact" }) {
+                contact.scale = SCNVector3(1.35, 1.35, 1.35)
+                if placed.placement == .floor { contact.position = SCNVector3(0, Float(-7 * Self.unit + 0.0015), 0) }
+            }
         }
         SCNTransaction.commit()
         // 白（置ける）と赤（ぶつかる #F0565A）のマス
@@ -653,6 +656,52 @@ final class CamperRoomScene {
             overlayNode.addChildNode(n)
         }
     }
+
+    /// 押して置くときの「置ける所」（薄い白のマス・2026-10-21）。nil で消す
+    func setHints(_ area: CamperRoomFitArea?) {
+        guard area != hintArea else { return }
+        hintArea = area
+        overlayNode.childNodes.filter { $0.name == "hint" }.forEach { $0.removeFromParentNode() }
+        guard let area, let layout else { return }
+        let cell = CamperRoomLayout.cell
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.diffuse.contents = CamperScene.color(0xFFFFFF, alpha: 0.16)
+        m.writesToDepthBuffer = false
+        m.isDoubleSided = true
+        let holder = SCNNode()
+        holder.name = "hint"
+        holder.renderingOrder = 19
+        holder.castsShadow = false
+        for c in area.cells {
+            let y = area.ceiling ? layout.ceilingHeight - 0.4 : 0.25
+            let plane = SCNPlane(width: CGFloat(8.6 * Self.unit), height: CGFloat(8.6 * Self.unit))
+            plane.materials = [m]
+            let n = SCNNode(geometry: plane)
+            n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+            n.position = CamperScene.vector(CV3((Double(c.x) + 0.5) * cell, y, (Double(c.z) + 0.5) * cell) * Self.unit)
+            holder.addChildNode(n)
+        }
+        for w in area.wall {
+            let lo = CamperRoomLayout.rowBottoms[w.row]
+            let along = (Double(w.column) + 0.5) * cell
+            let center = w.wall == .back ? CV3(along, lo + CamperRoomLayout.rowHeight / 2, 0.35) : CV3(0.35, lo + CamperRoomLayout.rowHeight / 2, along)
+            let plane = SCNPlane(width: CGFloat((cell - 1.4) * Self.unit), height: CGFloat((CamperRoomLayout.rowHeight - 1.4) * Self.unit))
+            plane.materials = [m]
+            let n = SCNNode(geometry: plane)
+            if w.wall == .left { n.eulerAngles = SCNVector3(0, Float.pi / 2, 0) }
+            n.position = CamperScene.vector(center * Self.unit)
+            holder.addChildNode(n)
+        }
+        let flat = holder.flattenedClone()
+        flat.name = "hint"
+        flat.renderingOrder = 19
+        flat.castsShadow = false
+        overlayNode.addChildNode(flat)
+        kickRender()
+    }
+
+    private var hintArea: CamperRoomFitArea?
 
     private func cellNode(center: CV3, red: Bool, horizontal: Bool, size: CV2 = CV2(9, 9)) -> SCNNode {
         let plane = SCNPlane(width: CGFloat(size.x * Self.unit), height: CGFloat(size.y * Self.unit))

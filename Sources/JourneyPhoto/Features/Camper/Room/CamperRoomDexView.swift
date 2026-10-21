@@ -12,6 +12,9 @@ struct CamperRoomDexView: View {
     let roomStats: CamperRoomStats
     let paint: UInt32
     let initialMood: CamperMood
+    /// 新しく届いた家具（真鍮の点・2026-10-21）と、寄りで見たら呼ぶ（見たにする）
+    var news: Set<String> = []
+    var onSeen: (String) -> Void = { _ in }
     let onClose: () -> Void
 
     @State private var tab: CamperRoomPlacement = .floor
@@ -47,6 +50,9 @@ struct CamperRoomDexView: View {
             }
         }
         .background { Color.black.ignoresSafeArea() }
+        .onChange(of: detail?.id) { _, id in
+            if let id { onSeen(id) }
+        }
         .sheet(item: $detail) { f in
             CamperRoomCloseUpView(furniture: f, have: owned.contains(f.id), stats: stats, roomStats: roomStats, paint: paint,
                                   initialMood: initialMood) { detail = nil }
@@ -64,6 +70,10 @@ struct CamperRoomDexView: View {
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityIdentifier("camper.room.dex.count")
+                // 手に入れ方は影の家具の寄りに出る（2026-10-21・「？？？」だけでは集め方が分からなかった）
+                Text(L("影の家具を押すと、手に入れ方が出ます", "Tap a shadow to see how to get it"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(WebTheme.text2)
             }
             Spacer()
             Button(action: onClose) {
@@ -190,6 +200,10 @@ struct CamperRoomDexView: View {
             .background(WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(have ? WebTheme.hairline : WebTheme.line,
                                                                     style: StrokeStyle(lineWidth: 1, dash: have ? [] : [3, 3])))
+            // 新しく届いた家具（未読の点と同じ真鍮 8pt）
+            .overlay(alignment: .topTrailing) {
+                if have, news.contains(f.id) { Circle().fill(WebTheme.accent).frame(width: 8, height: 8).padding(7) }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -198,7 +212,8 @@ struct CamperRoomDexView: View {
     }
 
     private func label(_ f: CamperRoomFurniture, have: Bool) -> String {
-        let name = have ? f.name : L("まだ持っていない\(f.category.name)", "A \(f.category.name) not collected yet")
+        let fresh = have && news.contains(f.id) ? L("新しい家具、", "New, ") : ""
+        let name = fresh + (have ? f.name : L("まだ持っていない\(f.category.name)", "A \(f.category.name) not collected yet"))
         let how = f.isAvailable ? f.unlock.condition : L("近日", "Coming soon")
         return "\(name)、\(f.rarity.name)、\(how)"
     }
