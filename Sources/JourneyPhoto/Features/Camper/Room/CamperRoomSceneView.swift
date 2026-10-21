@@ -34,6 +34,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// 押して置くときの置ける所（薄い白のマス）
     var hints: CamperRoomFitArea?
     var onReady: (String) -> Void = { _ in }
+    /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）。nil なら測らない
+    var onProbe: ((String) -> Void)?
 
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
 
@@ -55,6 +57,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         view.scene = c.scene
         view.pointOfView = c.cameraNode
         c.onReady = { marker in DispatchQueue.main.async { onReady(marker) } }
+        if let onProbe { c.onProbe = { probe in DispatchQueue.main.async { onProbe(probe) } } }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
         c.show(layout: layout, doc: doc, paint: paint)
@@ -88,6 +91,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
 @MainActor
 final class CamperRoomPhotoImages: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
+    /// 読めなかった写真（飾る画面に「読み込めませんでした」を出す。読めたら消える）
+    @Published private(set) var failed = Set<String>()
     private var inFlight = Set<String>()
     /// 一度失敗した id（読み直しの間隔を空ける。同じ失敗を毎フレーム繰り返さない）
     private var failedAt: [String: Date] = [:]
@@ -99,16 +104,22 @@ final class CamperRoomPhotoImages: ObservableObject {
             if images[id] != nil { continue }
             if inFlight.contains(id) { continue }
             if !force, let at = failedAt[id], now.timeIntervalSince(at) < 2 { continue }
-            guard let url = photos.first(where: { $0.id == id })?.gridImageURL else { continue }
+            guard let url = photos.first(where: { $0.id == id })?.gridImageURL else {
+                // 一覧に無い写真（消した・まだ届いていない）。黙って白い額にしない
+                failed.insert(id)
+                continue
+            }
             inFlight.insert(id)
             Task {
                 let data = try? await ProfileImageFromPhoto.download(url)
                 inFlight.remove(id)
                 if let data, let image = UIImage(data: data) {
                     failedAt[id] = nil
+                    failed.remove(id)
                     images[id] = image
                 } else {
                     failedAt[id] = Date()
+                    failed.insert(id)
                 }
             }
         }
