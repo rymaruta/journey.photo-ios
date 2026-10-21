@@ -43,6 +43,7 @@ final class QuietFailuresTests: XCTestCase {
         let composer = slice(view, from: "private var composer: some View {", to: "TextField(L(\"コメントを書く\"")
         XCTAssertTrue(composer.contains("model.commentPostError"), "入力欄の近くに送れなかったことを出していない")
         XCTAssertTrue(composer.contains("WebTheme.danger"), "失敗の色は danger")
+        XCTAssertTrue(composer.contains(".font(JPFont.footnote)"), "失敗の字は JPFont の 13pt")
     }
 
     // MARK: - 2. ストーリー作成の下の並び
@@ -146,15 +147,29 @@ final class QuietFailuresTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(pixels, 1560)
     }
 
-    // MARK: - 7. 自分の写真の削除
+    // MARK: - 7. 自分の写真の削除（動きは `ViewModelTests.testPhotoDeleteTwiceSendsOnce`）
 
-    func testPhotoDeleteRefusesSecondPress() throws {
+    func testPhotoDeleteGoesThroughTheGuard() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        let delete = slice(view, from: "private func deletePhoto() async {", to: "do {")
-        XCTAssertTrue(delete.contains("guard !deletingPhotoIds.contains(photoId) else { return }"),
-                      "二度押しで2回送っている")
-        XCTAssertTrue(delete.contains("defer { deletingPhotoIds.remove(photoId) }"))
-        XCTAssertTrue(view.contains(".disabled(deletingPhotoIds.contains(current.id))"))
+        let delete = slice(view, from: "private func deletePhoto() async {", to: "case .failed(let error):")
+        XCTAssertTrue(delete.contains("model.deletePhoto(photoId, photos: environment.photos)"),
+                      "守りを通さずに送っている")
+        XCTAssertFalse(delete.contains("environment.photos.delete("))
+        XCTAssertTrue(view.contains(".disabled(model.deletingPhotoIds.contains(current.id))"))
+    }
+
+    // MARK: - 6. アルバム作成のボタン
+
+    /// 作っている間は**どの「アルバムを作る」も押せない**（`create` は黙って断るので）
+    func testAlbumCreateButtonsDisableWhileCreating() throws {
+        let view = try source("Features/Albums/AlbumsView.swift")
+        let button = slice(view, from: "private var createButton: some View {", to: "private var joinCard: some View {")
+        XCTAssertTrue(button.contains(".disabled(model.isCreating)"), "主ボタンが送信中も押せる")
+        let empty = slice(view, from: "EmptyState(title: L(\"まだアルバムがありません\"", to: ".profileListRow()")
+        XCTAssertTrue(empty.contains(".disabled(model.isCreating)"), "空の状態のボタンが送信中も押せる")
+        let menu = slice(view, from: "Button(L(\"アルバムを作る\", \"New album\")) { showCreate = true }",
+                         to: "Button(L(\"招待リンクから参加\"")
+        XCTAssertTrue(menu.contains(".disabled(model.isCreating)"))
     }
 
     // MARK: - 8. 通知の案内画面

@@ -147,6 +147,9 @@ struct AlbumsView: View {
                        message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
                                   "Create an album and send the invite link — your companions' photos gather here."),
                        actionTitle: L("アルバムを作る", "New album")) { showCreate = true }
+                // 作っている間は押せない（`create` は黙って断るので、押せる形にしない・2026-10-21）
+                .disabled(model.isCreating)
+                .opacity(model.isCreating ? 0.5 : 1)
                 .profileListRow()
         } else if model.albums.isEmpty && model.isLoading {
             JPLoadingState(kind: .rows)
@@ -185,6 +188,9 @@ struct AlbumsView: View {
                 .jpPillButton(.main(onPhoto: false))
         }
         .buttonStyle(.plain)
+        // 作っている間は押せない（`create` は黙って断るので、押せる形にしない・2026-10-21）
+        .disabled(model.isCreating)
+        .opacity(model.isCreating ? 0.5 : 1)
         .accessibilityIdentifier("albums.create")
     }
 

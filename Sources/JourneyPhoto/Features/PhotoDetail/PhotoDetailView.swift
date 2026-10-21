@@ -33,9 +33,6 @@ struct PhotoDetailView: View {
     /// コメント通報の作者（`onDismiss` 時点では `commentReporting` が nil になっている）
     @State private var commentReportAuthorId: String?
     @State private var showDeleteConfirm = false
-    /// 削除を送っている写真（2026-10-21）。**二度押しで2回送らない**——2回目は「見つかりません」で
-    /// 失敗の文を出し、消せた1枚の画面に「削除できませんでした」が残っていた。写真ごとに持つ（隣へ送っても守る）
-    @State private var deletingPhotoIds: Set<String> = []
     /// 「この人をブロック」の確認（`blockConfirmation(presenting:)`）。**押した時点の相手を控える**
     /// ——確認を出している間に写真を送って持ち主が替わっても、押した人をブロックする
     @State private var ownerPendingBlock: String?
@@ -1150,7 +1147,7 @@ struct PhotoDetailView: View {
                     Label(Labels.Common.delete, systemImage: "trash")
                 }
                 // 消している間はもう一度押させない（`deletePhoto` も先頭で断る）
-                .disabled(deletingPhotoIds.contains(current.id))
+                .disabled(model.deletingPhotoIds.contains(current.id))
             } else {
                 // **通報とブロックは1タップで届くところに置く**（審査で見られる）
                 Button {
@@ -1506,7 +1503,7 @@ struct PhotoDetailView: View {
                 } icon: {
                     Image(systemName: "exclamationmark.circle")
                 }
-                .font(.footnote)
+                .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.danger)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
@@ -2048,16 +2045,16 @@ struct PhotoDetailView: View {
 
     private func deletePhoto() async {
         let photoId = current.id
-        // 二度押しは先頭で断る——下で知らせを消す前に（`postComment` と同じ順）
-        guard !deletingPhotoIds.contains(photoId) else { return }
-        deletingPhotoIds.insert(photoId)
-        defer { deletingPhotoIds.remove(photoId) }
+        // 二度押しは先頭で断る——下で知らせを消す前に（`postComment` と同じ順・`PhotoDetailViewModel.deletePhoto`）
+        guard !model.deletingPhotoIds.contains(photoId) else { return }
         clearNotices()
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
         let sender = auth.userId
-        do {
-            try await environment.photos.delete(photoId: photoId)
+        switch await model.deletePhoto(photoId, photos: environment.photos) {
+        case .refused:
+            return
+        case .deleted:
             // 🔴 **公開一覧からも落とす。** 一覧は建て直しまで古い静的 JSON で、
             // 控えも残るので、消した写真がホーム・探す・地図に出続け、押すと
             // いいね・保存・コメントが 404 になっていた（`ModerationStore.goneMarks`）
@@ -2070,7 +2067,7 @@ struct PhotoDetailView: View {
             // 人が替わっても消した1枚を見ていれば、もう無い写真の画面に残さない（`closesAfterDelete`）
             guard PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) else { return }
             dismiss()
-        } catch {
+        case .failed(let error):
             guard PhotoDetailRules.appliesHere(photoId: photoId, currentId: current.id,
                                                sender: sender, viewer: auth.userId) else { return }
             actionError = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")

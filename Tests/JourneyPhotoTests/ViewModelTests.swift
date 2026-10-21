@@ -2109,6 +2109,67 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.draftComment, "")
     }
 
+    /// **打ち直したら・人が替わったら、送れなかった知らせを消す**（古い失敗を新しい文や次の人の欄に残さない）
+    func testCommentPostErrorClearsOnEditAndUserChange() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.postComment()
+        XCTAssertNotNil(model.commentPostError)
+
+        model.draftComment = "きれい！"
+        XCTAssertNil(model.commentPostError, "打ち直したのに古い失敗が残っている")
+
+        await model.postComment()
+        XCTAssertNotNil(model.commentPostError)
+        model.setUser("someone-else")
+        XCTAssertNil(model.commentPostError, "前の人の失敗を次の人の欄に出している")
+    }
+
+    /// **隣へ送った後に失敗したら、その1枚の欄ではなく操作の段に出す**（いま見ている1枚に書いた文が
+    /// 送れなかったと読まれない）
+    func testCommentFailureAfterMovingAwayGoesToActionRow() async {
+        prepare()
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["POST /photos/p1/comments": gate]))))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let posting = Task { await model.postComment() }
+        await gate.untilWaiting()
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        await gate.open()
+        await posting.value
+
+        XCTAssertNil(model.commentPostError, "隣の1枚の欄に前の1枚の失敗を出している")
+        XCTAssertNotNil(model.errorMessage, "送れなかったことを黙っている")
+    }
+
+    /// 🔴 **自分の写真の削除を二度押ししても、1回しか送らない**（2026-10-21）。
+    /// 2回目は「見つかりません」になり、消せた1枚の画面に失敗の文が残っていた
+    func testPhotoDeleteTwiceSendsOnce() async {
+        prepare()
+        // 1回目だけ止める（守りが外れて2回目が通信しに来ても、止めずに通して落とす・固まらせない）
+        let gate = Gate(holds: 1)
+        let photos = PhotoService(api: api(gates: PathGates(["DELETE /photos/p1": gate])))
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        StubProtocol.respond(status: 200, body: "{}")
+        let first = Task { await model.deletePhoto("p1", photos: photos) }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.deletingPhotoIds.contains("p1"))
+        let second = await model.deletePhoto("p1", photos: photos)
+        await gate.open()
+        let firstOutcome = await first.value
+
+        guard case .refused = second else { return XCTFail("二度押しを断っていない") }
+        guard case .deleted = firstOutcome else { return XCTFail("1回目が消せていない") }
+        XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("DELETE ") }.count, 1, "二度押しで2回送っている")
+        XCTAssertTrue(model.deletingPhotoIds.isEmpty)
+    }
+
     /// 空のコメントは送らない。
     func testEmptyCommentIsNotSent() async {
         prepare()
