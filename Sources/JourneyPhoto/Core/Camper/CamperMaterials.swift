@@ -76,7 +76,7 @@ enum CamperTextureKind: String, Sendable, CaseIterable {
     case brushed
     /// 真ん中が明るく外へ消える丸（灯りの溜まり・ガウスでなめらかに）
     case glow
-    /// 灯りのレンズの明暗（真ん中の芯・反射板の輪 2・縁へ暗く）
+    /// 点いた電球・燠・入口の灯りの覆いの光る面の明暗（真ん中の芯・輪 2・縁へ暗く。一色の平らな光にしない）
     case lampFace
     /// 尾灯・方向指示のレンズの裏のプリズムの粒（四角い角錐の並び。光の向きで面ごとに明暗が出る）
     case prism

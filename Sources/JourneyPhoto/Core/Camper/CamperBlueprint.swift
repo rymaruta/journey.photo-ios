@@ -108,7 +108,7 @@ struct CamperLightSpec: Sendable, Equatable {
     enum Kind: Sendable { case omni, spot }
     var name: String
     var kind: Kind
-    /// 用途（天井・前照灯・焚き火・ランタン・部屋の家具）。尾灯はここに置かない
+    /// 用途（天井・入口・焚き火・ランタン・部屋の家具）。停めた車なので前照灯・尾灯の光は置かない（2026-10-19）
     var pattern: CamperLightPattern
     var position: CV3
     /// spot の向き（板の単位の向き）
@@ -379,8 +379,10 @@ struct CamperBuilder {
     static let porchLimits = (intensity: 120.0, range: 130.0, spotOuter: 90.0, penumbra: 40.0)
 
     /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
-    var porchX: Double { 45 }
-    var porchY: Double { 113.5 }
+    /// バンはスライドドアの口の上（口の上の端 Y 112・窓の後ろの端 x −16 より前）。2026-10-21: バンは前照灯が消え、
+    /// 外の置き物が無いと夜に車体が影絵のように沈むので、実車にもある扉の上の小さな灯りを付ける
+    var porchX: Double { van ? 3 : 45 }
+    var porchY: Double { van ? 115.5 : 113.5 }
     var doorWindow: [CV2] { van ? rr(-6, -48, 14, 14, 3) : rr(37, -42, 14, 15, 3) }
 
     /// 運転席の扉の口: 外形を 4 内へ寄せた形を、扉の前後と床の高さで切る（板の継ぎ目は外形からはみ出す所がある）
@@ -798,6 +800,11 @@ struct CamperBuilder {
 
     mutating func exterior() {
         let nearZ = BW
+        // 入口の灯り（扉の上の壁の灯り。メッキの台・乳白の覆い。夜は覆いが光り、下へ spot を落とす・`nightLightsBody`）。
+        // バンはスライドドアの上に、同じ形を少し小さく（2026-10-21）
+        let pk = van ? 0.8 : 1.0
+        rbox("ext.porchLampBase", CV3(porchX, porchY, BW + 0.4), CV3(11 * pk, 5.4 * pk, 0.8), 0.4, .chrome)
+        rbox("ext.porchLamp", CV3(porchX, porchY - 0.3, BW + 1.6), CV3(9 * pk, 4 * pk, 1.8), 0.8, .byNight(.tint(0xEDE6D6)))
         if !van {
             // ステップ（溝 5）
             rbox("ext.step", B(45, 39, BW + 5), CV3(22, 2.2, 10), 0.8, .alu)
@@ -809,8 +816,6 @@ struct CamperBuilder {
             // 足元の灯り（ステップの踏み板の縁の細い灯り・夜は 2700K でほのかに光る）と、入口の灯り（扉の上の壁の灯り。
             // メッキの台・乳白の覆い。夜は覆いが光り、下へ spot を落とす・`nightLightsBody`）。2026-10-19
             rbox("ext.stepLamp", CV3(45, 62 - 39, BW + 10.1), CV3(12, 0.8, 0.4), 0.15, .byNight(.tint(0xE9E3D6)))
-            rbox("ext.porchLampBase", CV3(porchX, porchY, BW + 0.4), CV3(11, 5.4, 0.8), 0.4, .chrome)
-            rbox("ext.porchLamp", CV3(porchX, porchY - 0.3, BW + 1.6), CV3(9, 4, 1.8), 0.8, .byNight(.tint(0xEDE6D6)))
             // つかみ棒と留め具
             lathe("ext.grab", B(60, 0, BW + 3.5), axis: CV3(0, 1, 0), [(1, 0), (1, 24)], segments: 10, capStart: .chrome,
                   capEnd: .chrome) { _ in .chrome }
@@ -1447,8 +1452,8 @@ struct CamperBuilder {
         // 車幅灯は**消す**（前は前照灯の spot と地面の光の帯、尾灯の omni と赤い溜まりがあった）。キャンプ場に停めて人が
         // 中にいる場面で、走る時の灯りが点いているのがいちばん不自然。ごく暗い車幅灯も点けない（日本の実車でも停めて
         // 過ごす時は消す・灯りの数を増やさない）。点くのは停めていても点くもの——室内灯・窓・入口の灯り・足元の灯りだけ。
-        if !van {
-            // 入口の灯り（扉の上の壁の灯り）: 光る面だけでなく、下向きの spot（減衰あり・影なし）で扉の周りと足元を
+        do {
+            // 入口の灯り（扉の上の壁の灯り・バンはスライドドアの上）: 光る面だけでなく、下向きの spot（減衰あり・影なし）で扉の周りと足元を
             // ほんのり照らす。色は室内と同じ 2700K。外の部品だけを照らす組（灯りの数は 1 つ）
             // 2026-10-19（Mac run 563 の 95b）: 420・距離 150・円錐 115° では車体の横に大きな白い円錐が当たり、塗装が白く
             // 飛んだ。実物の入口灯は扉の周りと足元がほんのり明るくなる程度——強さを 1/5 に、円錐を狭く、内と外の角の差
@@ -1457,6 +1462,8 @@ struct CamperBuilder {
             out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 7),
                                               direction: CV3(0, -1, 0.25).normalized, color: warm, intensity: 85, range: 125,
                                               spotInner: 20, spotOuter: 80))
+        }
+        if !van {
             // 足元の灯り（ステップの下）は灯りを足さず、地面の小さな溜まり（足す光）だけ。入口の灯りの光と重なる
             add("glow.step", .mesh(glowQuad(width: 30, depth: 22)), .glowPool, at: CV3(45, 0.5, BW + 12), group: .glow)
         }

@@ -456,7 +456,7 @@ enum CamperCatalog {
         p(.tireTread, "mud_block", "泥のブロック", "Mud blocks", "大きな角ブロック", "Big square blocks", .rare, .server("雨の日に撮る", "Shoot on a rainy day")),
         p(.tireTread, "snow_sipe", "雪の切れ込み", "Snow sipes", "細いジグザグの切れ込み", "Fine zigzag cuts", .occasional, .winter(20)),
         // 前照灯（headlight）
-        p(.headlight, "round", "丸い前照灯", "Round headlights", "クロームの縁と反射板の輪", "Chrome rims and reflector rings", .common, .starter),
+        p(.headlight, "round", "丸い前照灯", "Round headlights", "クロームの縁と、奥にお椀形の反射板", "Chrome rims over bowl-shaped reflectors", .common, .starter),
         p(.headlight, "square", "角形", "Square", "四角い縁と平らなレンズ", "Square rims and flat lenses", .occasional, .night(10)),
         p(.headlight, "twin_round", "二灯", "Twin round", "小さな丸を二つ並べる", "Two small rounds side by side", .occasional, .places(3)),
         p(.headlight, "rally_brass", "真鍮のラリーランプ", "Brass rally lamps", "真鍮の丸灯 2 と横の棒", "Two brass lamps on a bar", .rare, .early(3)),

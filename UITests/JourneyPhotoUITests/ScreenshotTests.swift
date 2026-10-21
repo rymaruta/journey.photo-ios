@@ -2440,6 +2440,27 @@ final class ScreenshotTests: XCTestCase {
         waitCamper(app, "day")
         guard aim(["camper.group.side"]) else { return XCTFail("横・後ろの分類が押せない（昼）") }
         shoot(app, "95m-キャンピングカー（昼・後ろ斜め・尾灯）")
+        // バン（段 1）とトレーラーつきの夜（2026-10-21: 前照灯を消したので、外の置き物が無いと車体が沈まないかを見る）。
+        // 段のボタンは見本の段で、押すと初めの向きへ戻る
+        pulls = 0
+        while !(night.exists && night.isHittable), pulls < 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            Thread.sleep(forTimeInterval: 1)
+            pulls += 1
+        }
+        guard night.isHittable else { return XCTFail("夜のボタンに戻れない") }
+        night.tap()
+        waitCamper(app, "night")
+        for (id, name) in [("van", "95n-キャンピングカー（バン・夜）"), ("trailer", "95o-キャンピングカー（トレーラーつき・夜）")] {
+            let b = app.buttons["camper.stage.\(id)"].firstMatch
+            guard b.waitForExistence(timeout: 5) else { return XCTFail("\(id) の段のボタンが無い") }
+            scrollTo(b, in: app)
+            guard b.isHittable else { return XCTFail("\(id) の段のボタンが押せない") }
+            b.tap()
+            guard waitCamper(app, "camper-ready \(id) night") else { return XCTFail("\(id) の夜を組み終えない") }
+            shoot(app, name)
+        }
     }
 
     /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札

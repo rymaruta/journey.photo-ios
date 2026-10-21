@@ -755,7 +755,16 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertEqual(count(b, "ext.porchLamp"), 1)
             XCTAssertEqual(count(b, "ext.stepLamp"), 1)
         }
-        XCTAssertNil(build(.van, mood: .night).lights.first { $0.name == "porch" })
+        // バンはスライドドアの上（2026-10-21: 前照灯が消え、外の置き物が無いと夜に車体が沈む）。足元の灯りは無い
+        let van = build(.van, mood: .night)
+        let vb = CamperBuilder(config: CamperConfig(stage: .van))
+        let vp = van.lights.first { $0.name == "porch" }
+        XCTAssertNotNil(vp, "バンに入口の灯りが無い")
+        let door = vb.doorHole.map(\.x)
+        XCTAssertTrue((door.min() ?? 0)...(door.max() ?? 0) ~= (vp?.position.x ?? -999), "スライドドアの上にない")
+        XCTAssertGreaterThan(vp?.position.y ?? 0, vb.doorHole.map { 62 - $0.y }.max() ?? 0, "口の上")
+        XCTAssertEqual(count(van, "ext.porchLamp"), 1)
+        XCTAssertEqual(count(van, "ext.stepLamp"), 0)
         // 光る面は夜だけ光る電球の材質
         let lamp = build(mood: .night).nodes.first { $0.name == "ext.porchLamp" }
         XCTAssertNotNil(CamperMaterials.spec(lamp?.material ?? .black, paint: 0, mood: .night).emission)

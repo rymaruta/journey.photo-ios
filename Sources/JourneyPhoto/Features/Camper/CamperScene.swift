@@ -26,7 +26,7 @@ final class CamperScene {
 
     /// 板の単位 → SceneKit の単位（車体の長さ 242 → 2.42）
     static let unit = 0.01
-    /// 灯りの組: 外（太陽・前照灯・焚き火が照らす）と室内（室内の灯りだけが照らす。太陽と周りの光はどちらも照らす）
+    /// 灯りの組: 外（月・入口の灯り・焚き火・ランタンが照らす）と室内（室内の灯りだけが照らす。太陽・月と周りの光はどちらも照らす）
     static let outsideMask = 1
     static let insideMask = 2
 
@@ -305,7 +305,7 @@ final class CamperScene {
             l.type = light.kind == .spot ? .spot : .omni
             l.color = Self.color(light.color)
             l.intensity = CGFloat(light.intensity)
-            // 型ごとに減衰を分ける（全部なだらかにすると尾灯が壊れる・2026-10-20）
+            // 型ごとに減衰を分ける（`CamperLightPattern`。天井・入口・ランタンは急に、部屋の家具と焚き火はなだらかに）
             light.applyAttenuation(to: l, unit: s)
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
             l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
