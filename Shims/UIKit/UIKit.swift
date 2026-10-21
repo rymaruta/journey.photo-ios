@@ -45,6 +45,8 @@ open class UIApplication {
     public static let shared = UIApplication()
     /// このアプリの設定画面を開く URL（本物と同じ名前）
     public static let openSettingsURLString = "app-settings:"
+    /// メモリが足りなくなった知らせ（本物と同じ名前・家具の小さな絵の控えを捨てる）
+    public static let didReceiveMemoryWarningNotification = Notification.Name("UIApplicationDidReceiveMemoryWarningNotification")
     /// このアプリの「通知」の設定を開く URL（本物と同じ名前・iOS 16 から）
     public static let openNotificationSettingsURLString = "app-settings:notifications"
     public func registerForRemoteNotifications() {}

@@ -3414,11 +3414,13 @@ final class ScreenshotTests: XCTestCase {
         guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
         shoot(app, "96-とおまわり号の中（昼）")
         for id in ["camper.room.back", "camper.room.night", "camper.room.tool.place", "camper.room.tool.style", "camper.room.tool.photos",
-                   "camper.room.tool.dex", "camper.room.out"] {
+                   "camper.room.tool.dex"] {
             let b = app.buttons[id].firstMatch
             XCTAssertTrue(b.exists, "\(id) が無い")
             if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
         }
+        // 「外へ」と「外へ出る」は同じ操作なので 1 つ（左上の「外へ」）にまとめた（2026-10-21）
+        XCTAssertFalse(app.buttons["camper.room.out"].firstMatch.exists, "下の「外へ出る」が左上の「外へ」と重なっている")
         app.buttons["camper.room.night"].firstMatch.tap()
         XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
         Thread.sleep(forTimeInterval: 1)
@@ -3467,6 +3469,76 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["camper.room.dex.close"].firstMatch.tap()
     }
 
+    /// **初めての手引きと押して置く**（`-JPPreviewCamperRoomCoach`・Debug のみ・2026-10-21）: 部屋に初めて入った時の 3 行の手引き、
+    /// 「置く」の新しい家具の件数・棚の真鍮の点、棚の家具を押して置ける所が光った所を**必ず撮る**。押せる所は 44pt 以上
+    func testCapturesCamperRoomGuide() {
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomCoach", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
+        let done = app.buttons["camper.room.coach.done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "初めての手引きが出ない")
+        shoot(app, "96f-とおまわり号の中（初めての手引き）")
+        XCTAssertGreaterThanOrEqual(done.frame.height, 44, "手引きの「わかった」が 44pt 未満")
+        done.tap()
+        XCTAssertFalse(done.waitForExistence(timeout: 2), "手引きが閉じない")
+        app.buttons["camper.room.tool.place"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
+        // 壁の額は何枚でも掛けられ、どの部屋にも置ける所がある（床の大きな寝台は置ける所が無いことがある・run 605）
+        app.buttons["camper.room.tab.wall"].firstMatch.tap()
+        // 棚は分類ごと（壁の最初は「壁の棚」）。額の分類に切り替える
+        let frameChip = app.buttons["camper.room.tray.cat.photo_frame"].firstMatch
+        XCTAssertTrue(frameChip.waitForExistence(timeout: 5), "壁の棚に額の分類が無い")
+        if frameChip.exists, frameChip.isHittable { frameChip.tap() }
+        let trayItems = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.photo_frame."))
+        let first = trayItems.firstMatch
+        guard first.waitForExistence(timeout: 5) else { return XCTFail("棚に家具が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        first.tap()
+        let banner = app.descendants(matching: .any)["camper.room.armed"].firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "棚の家具を押しても「置く所を押す」が出ない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96g-とおまわり号の中（押して置く・置ける所）")
+        let cancel = app.buttons["camper.room.armed.cancel"].firstMatch
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44, "「やめる」が 44pt 未満")
+        // 同じ家具をもう一度押すと空いた所へ置く（今までの置き方）
+        first.tap()
+        XCTAssertFalse(banner.waitForExistence(timeout: 2), "もう一度押しても置かれない")
+        XCTAssertTrue(app.buttons["camper.room.undo"].firstMatch.isEnabled, "置いたのに元に戻せない")
+        app.buttons["camper.room.undo"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["camper.room.redo"].firstMatch.isEnabled, "元に戻したのにやり直せない")
+    }
+
+    /// **家具の接写の一覧**（`-JPPreviewCamperRoomContact`・Debug のみ・2026-10-21）: 板と別種の家具全部を本物の SceneKit で
+    /// 図鑑の寄りと同じ小部屋に描き、4 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
+    func testCapturesCamperRoomContactSheet() {
+        executionTimeAllowance = 1500
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomContact", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "接写の一覧が出ない")
+        let next = app.buttons["camper.room.contact.next"].firstMatch
+        let prev = app.buttons["camper.room.contact.prev"].firstMatch
+        for (mood, moodName) in [("day", "昼"), ("night", "夜")] {
+            var page = 1
+            while page <= 40 {
+                let ready = waitRoom(app, "camper.room.contact", "contact-ready \(mood) \(page)/", timeout: 90)
+                XCTAssertTrue(ready, "接写の一覧の \(moodName) \(page) 頁を描き終えない")
+                // 並びの所だけを撮る（画面全体だと長辺 700px に縮んで 1 点が小さい）
+                let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
+                let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
+                shot.name = String(format: "96e-家具の接写（%@・%02d）", moodName, page)
+                shot.lifetime = .keepAlways
+                add(shot)
+                guard next.exists, next.isEnabled else { break }
+                next.tap()
+                page += 1
+            }
+            // 頁を初めに戻して、昼と夜を替える
+            while prev.exists, prev.isEnabled { prev.tap() }
+            if mood == "day" { app.buttons["camper.room.contact.mood"].firstMatch.tap() }
+        }
+    }
+
     /// **置いている途中**（`-JPPreviewCamperRoomLift`・Debug のみ）: 旅の鞄を持ち上げて寝台の上へ動かした途中
     /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「閉じる」は 44pt 以上。升の枠は縦 96pt 以上
     func testCapturesCamperRoomPlacing() {
@@ -3475,7 +3547,8 @@ final class ScreenshotTests: XCTestCase {
         guard waitRoom(app, "camper.room.scene", "camper-room-ready", timeout: 90) else { return XCTFail("部屋を組み終えない") }
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
         shoot(app, "96d-とおまわり号の中（置いている途中）")
-        for id in ["camper.room.undo", "camper.room.done", "camper.room.tab.floor", "camper.room.tab.wall", "camper.room.tab.ceiling"] {
+        for id in ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor", "camper.room.tab.wall",
+                   "camper.room.tab.ceiling"] {
             let b = app.buttons[id].firstMatch
             XCTAssertTrue(b.exists, "\(id) が無い")
             if b.exists { XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満") }
@@ -3486,7 +3559,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(done.label.contains("閉じる"), "置くのを終える主ボタンは「閉じる」（今は「\(done.label)」）")
         let resize = app.descendants(matching: .any)["camper.room.panelResize"].firstMatch
         XCTAssertTrue(resize.exists, "棚の高さを変える境が無い")
-        let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.tray.")).firstMatch
+        // 分類チップ（`camper.room.tray.cat.*`）は除く（チップは 44pt・run 605 でチップを家具の枠と取り違えた）
+        let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
+                                                    "camper.room.tray.", "camper.room.tray.cat.")).firstMatch
         if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
     }
 }

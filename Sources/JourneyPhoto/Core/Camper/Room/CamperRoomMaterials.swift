@@ -86,6 +86,10 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case tintedGlass(UInt32)
     /// 旅の地図の印刷（紙に道と点）
     case mapPrint
+    /// 鏡（2026-10-21）: クロームの板だと周りの光の絵だけを映して真鍮の円盤・黒い板に見えた。映る部屋の絵に硝子の照り
+    case mirror
+    /// 部屋の中の物の硝子（瓶・器・戸・球）。窓の硝子は夜に外の暗さで黒く曇らせるが、物の硝子は夜も透ける（2026-10-21）
+    case clearGlass
     /// まだ持っていない家具の影絵
     case silhouette
 }
@@ -129,7 +133,8 @@ enum CamperRoomMaterials {
     static func spec(_ m: CamperRoomMaterial, mood: CamperMood) -> CamperMaterialSpec {
         let night = mood == .night
         switch m {
-        case .wood(let w): return CamperMaterialSpec(color: w.color, roughness: 0.62, clearCoat: 0.25, clearCoatRoughness: 0.4, texture: .woodGrain)
+        case .wood(let w):
+            return CamperMaterialSpec(color: w.color, roughness: 0.62, clearCoat: 0.25, clearCoatRoughness: 0.4, texture: .furnitureGrain)
         case .wornWood(let w):
             return CamperMaterialSpec(color: CamperMaterials.mix(w.color, 0xFFFFFF, 0.08), roughness: 0.48, clearCoat: 0.4, clearCoatRoughness: 0.3,
                                       texture: .wornWood)
@@ -157,8 +162,9 @@ enum CamperRoomMaterials {
         case .frameGlass:
             // 額の表。窓の硝子を使うと、夜は暗い膜・昼は白い板になって、飾った写真が見えない（2026-10-19 owner）。
             // 両面の硝子として描くと膜になって奥の印画が消えるので、薄い膜のまま奥行きは書かない
-            return CamperMaterialSpec(color: 0xF7F4EE, roughness: 0.4, clearCoat: 0.12, clearCoatRoughness: 0.5,
-                                      opacity: 0.08, doubleSided: true, glassShell: false)
+            // 2026-10-21（Mac run 605）: 粗さ 0.4 だと、透かしても周りの光の映りがぼけて面全体に白い膜が掛かり、
+            // 額の中の写真・駅の時計の文字盤が白い板に見えた（物理の映りは透明度で薄まらない）。映りは鋭く、照りの層は無し
+            return CamperMaterialSpec(color: 0xF7F4EE, roughness: 0.04, opacity: 0.08, doubleSided: true, glassShell: false)
         case .milkGlass:
             // 夜の乳白硝子は抑えめ（0.5→0.28）。白く飛ぶと天井の板が昼の蛍光灯に見える
             return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.28, clearCoat: 0.45, opacity: night ? 1 : 0.92,
@@ -199,11 +205,11 @@ enum CamperRoomMaterials {
                                       emissionIntensity: night ? 0 : 0.12, emissionTexture: night ? nil : .linenSlub,
                                       texture: .linenSlub, doubleSided: true)
         case .countertop: return CamperMaterialSpec(color: 0xD9D2C4, roughness: 0.28, clearCoat: 0.6, clearCoatRoughness: 0.15, texture: .cork)
-        case .cabinet(let c): return CamperMaterialSpec(color: c, roughness: 0.6, clearCoat: 0.3, texture: .woodGrain)
+        case .cabinet(let c): return CamperMaterialSpec(color: c, roughness: 0.6, clearCoat: 0.3, texture: .furnitureGrain)
         case .sinkSteel: return CamperMaterialSpec(color: 0xB9BDC2, metalness: 1, roughness: 0.3, texture: .brushed)
         case .skin(let c): return CamperMaterialSpec(color: c, roughness: 0.35, clearCoat: 1, clearCoatRoughness: 0.08)
         case .insulation: return CamperMaterialSpec(color: 0xD8C69A, roughness: 1, texture: .cork)
-        case .trim: return CamperMaterialSpec(color: CamperRoomWood.oak.color, roughness: 0.55, clearCoat: 0.3, texture: .woodGrain)
+        case .trim: return CamperMaterialSpec(color: CamperRoomWood.oak.color, roughness: 0.55, clearCoat: 0.3, texture: .furnitureGrain)
         case .windowRubber: return CamperMaterialSpec(color: 0x18181A, roughness: 0.8)
         case .windowView:
             // 光を受けない景色（窓の外）。夜は夜の絵
@@ -212,6 +218,13 @@ enum CamperRoomMaterials {
         case .tintedGlass(let c):
             return CamperMaterialSpec(color: c, roughness: 0.05, clearCoat: 1, clearCoatRoughness: 0.03, opacity: 0.55, doubleSided: true)
         case .mapPrint: return CamperMaterialSpec(color: 0xFFFFFF, roughness: 0.8, texture: .mapPrint)
+        case .mirror:
+            return CamperMaterialSpec(color: 0xFFFFFF, roughness: 0.18, clearCoat: 1, clearCoatRoughness: 0.03,
+                                      texture: night ? .mirrorNight : .mirrorDay)
+        case .clearGlass:
+            // 透明の硝子は拡散の色をほとんど持たない（白い拡散だと run 605 で硝子の球・瓶が白い陶器に見えた）。映りの照りで硝子に見せる
+            return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, clearCoat: 0.6, clearCoatRoughness: 0.02,
+                                      opacity: night ? 0.16 : 0.12, doubleSided: true)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }

@@ -142,6 +142,38 @@ struct CamperRoomCamera: Equatable, Sendable {
         return c
     }
 
+    /// 二度押し（2026-10-21）: 離れていれば押した床の点へ 2.4 倍で寄り、寄っていれば初めの向きへ戻る
+    func doubleTapped(floor point: CV3?, layout: CamperRoomLayout) -> CamperRoomCamera {
+        if zoom >= Self.doubleTapZoom * 0.75 { return Self.overview(layout) }
+        var c = self
+        c.zoom = Self.doubleTapZoom
+        if let p = point {
+            let s = layout.size
+            c.target = CV3(min(max(0, p.x), s.x), 18, min(max(0, p.z), s.z))
+        }
+        return c.clamped()
+    }
+
+    static let doubleTapZoom = 2.4
+
+    /// 初めの向きから動いているか（「向きを戻す」を出す）
+    func differs(from other: CamperRoomCamera) -> Bool {
+        abs(yaw - other.yaw) > 2 || abs(pitch - other.pitch) > 2 || abs(zoom - other.zoom) > 0.06 || (target - other.target).length > 3
+    }
+
+    /// 持ち上げた家具を画面の端（帯 `band` pt の中）へ運んだら、カメラが少しだけその向きへ追う（2026-10-21）。
+    /// 端でなければ nil。寄っていない（部屋が全部見えている）ときは追わない
+    func following(_ point: CGPoint, viewport: CGSize, layout: CamperRoomLayout, band: Double = 44) -> CamperRoomCamera? {
+        guard zoom > 1.25 else { return nil }
+        let x = Double(point.x), y = Double(point.y), w = Double(viewport.width), h = Double(viewport.height)
+        func push(_ d: Double) -> Double { max(0, min(1, (band - d) / band)) }
+        // 左の端では部屋を右へ送る（指を右へなぞったのと同じ）。上の端（奥）では部屋を手前へ
+        let dx = (push(x) - push(w - x)) * 7
+        let dy = (push(y) - push(h - y)) * 7
+        guard abs(dx) > 0.01 || abs(dy) > 0.01 else { return nil }
+        return panned(dx: dx, dy: dy, layout: layout)
+    }
+
     /// カメラの側の端の壁（後ろ x = 0 か、前 x = 幅）。手前の壁は高さ 9 で切る（どちらを切るかは向きで自動）。
     /// 正の向きではカメラが前の側にいるので、前の仕切りを切る
     var cutsFrontEnd: Bool { yaw >= 0 }
@@ -220,6 +252,27 @@ enum CamperRoomPick {
             if best == nil || t < best!.1 { best = (item, t) }
         }
         return best?.0
+    }
+
+    /// 押して置く（2026-10-21）: 棚の家具を、押した所に置くとしたらどこか（床・天井は押した所のマス、壁は先に当たる壁の段）。
+    /// 押した所が部屋の面に当たらなければ nil
+    static func spot(for f: CamperRoomFurniture, ray: (origin: CV3, direction: CV3), layout: CamperRoomLayout) -> CamperRoomItem? {
+        let template: CamperRoomItem
+        switch f.placement {
+        case .floor:
+            let y = 0.0
+            guard let p = hitHorizontal(ray, y: y), p.x >= -5, p.z >= -5, p.x <= layout.size.x + 5, p.z <= layout.size.z + 5 else { return nil }
+            template = .floor("new", f.id, x: 0, z: 0)
+        case .ceiling:
+            guard let p = hitHorizontal(ray, y: layout.ceilingHeight - f.height), p.x >= -5, p.z >= -5,
+                  p.x <= layout.size.x + 5, p.z <= layout.size.z + 5 else { return nil }
+            template = .ceiling("new", f.id, x: 0, z: 0)
+        case .wall:
+            template = .wall("new", f.id, .back, c: -999, row: 0)
+        }
+        let out = moved(template, ray: ray, layout: layout)
+        if f.placement == .wall, out.c == -999 { return nil }
+        return out
     }
 
     /// 動かしている家具の新しい場所（指の下のマス。家具の真ん中が指の下に来るように）

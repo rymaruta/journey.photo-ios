@@ -1,13 +1,16 @@
 import Foundation
 
-// 家具を置く・動かす・回す・しまう・元に戻す（2026-10-19・板 CamperRoomMain の「置く」と付箋「指の操作と動き」）。
+// 家具を置く・動かす・回す・しまう・元に戻す・やり直す（2026-10-19・板 CamperRoomMain の「置く」と付箋「指の操作と動き」）。
 // 置けない動きは決めない（ぶつかったまま指を離すと元の場所へ戻る）。「元に戻す」は 1 手ずつ。素の Swift なので試験できる。
+// 2026-10-21: 「やり直す」（戻しすぎた手を取り戻す）と、選んだマスに置く（押して置く）を足した。
 
 struct CamperRoomEditor: Equatable, Sendable {
     private(set) var doc: CamperRoomDocument
     let layout: CamperRoomLayout
     /// 元に戻すための前の文書（新しいものが後ろ・30 手まで）
     private(set) var history: [CamperRoomDocument] = []
+    /// やり直すための文書（元に戻した手。新しい手を打つと消える）
+    private(set) var future: [CamperRoomDocument] = []
     static let historyLimit = 30
 
     init(doc: CamperRoomDocument, layout: CamperRoomLayout) {
@@ -16,18 +19,31 @@ struct CamperRoomEditor: Equatable, Sendable {
     }
 
     var canUndo: Bool { !history.isEmpty }
+    var canRedo: Bool { !future.isEmpty }
 
     private mutating func commit(_ next: CamperRoomDocument) {
         guard next != doc else { return }
         history.append(doc)
         if history.count > Self.historyLimit { history.removeFirst(history.count - Self.historyLimit) }
+        future = []
         doc = next
     }
 
     @discardableResult
     mutating func undo() -> Bool {
         guard let prev = history.popLast() else { return false }
+        future.append(doc)
         doc = prev
+        return true
+    }
+
+    /// 元に戻した手をもう一度（新しい手を打った後は無い）
+    @discardableResult
+    mutating func redo() -> Bool {
+        guard let next = future.popLast() else { return false }
+        history.append(doc)
+        if history.count > Self.historyLimit { history.removeFirst(history.count - Self.historyLimit) }
+        doc = next
         return true
     }
 
@@ -39,6 +55,17 @@ struct CamperRoomEditor: Equatable, Sendable {
         return CamperRoomCatalog.items(placement).filter { f in
             owned.contains(f.id) && (f.reusable || !placed.contains(f.id))
         }
+    }
+
+    /// 棚を分類で絞る（床一括だと探しにくい・2026-10-21）
+    func tray(_ category: CamperRoomCategory, owned: Set<String>) -> [CamperRoomFurniture] {
+        tray(category.placement, owned: owned).filter { $0.category == category }
+    }
+
+    /// その置き場所で、棚にまだ残っている分類（空の分類は出さない）
+    func trayCategories(_ placement: CamperRoomPlacement, owned: Set<String>) -> [CamperRoomCategory] {
+        let have = Set(tray(placement, owned: owned).map(\.category))
+        return CamperRoomCategory.allCases.filter { $0.placement == placement && have.contains($0) }
     }
 
     /// 置いた数（床・壁・天井・写真）
@@ -61,6 +88,26 @@ struct CamperRoomEditor: Equatable, Sendable {
         commit(next)
         return uid
     }
+
+    /// 棚の家具を、選んだ場所に置く（押して置く・2026-10-21）。`at` は置きたい場所（u は何でもよい・新しい名前を付ける）。
+    /// 置けたら名前、置けなければ理由
+    mutating func place(_ f: CamperRoomFurniture, at spot: CamperRoomItem, owned: Set<String>) -> Result<String, CamperRoomCheck> {
+        guard owned.contains(f.id), tray(f.placement, owned: owned).contains(f), spot.k == f.id else {
+            return .failure(CamperRoomCheck(reason: .outside))
+        }
+        var item = spot
+        item.u = doc.nextUid()
+        if f.isRug { item.l = 0 }
+        let check = preview(item)
+        guard check.ok else { return .failure(check) }
+        var next = doc
+        next.upsert(item)
+        commit(next)
+        return .success(item.u)
+    }
+
+    /// 置ける所（押して置くとき、部屋の中で薄く光らせる）
+    func fitArea(_ f: CamperRoomFurniture) -> CamperRoomFitArea { CamperRoomRules.fitArea(f, in: doc, layout: layout) }
 
     /// 置いてみる（動かしている間の白・赤。文書は変えない）
     func preview(_ item: CamperRoomItem) -> CamperRoomCheck { CamperRoomRules.check(item, in: doc, layout: layout) }
@@ -140,6 +187,23 @@ struct CamperRoomEditor: Equatable, Sendable {
         out.ceil.removeAll { !owned.contains($0.k) }
         return out
     }
+}
+
+/// 置く棚を 1 回絞った結果（分類・分類ごとの家具・新しい家具がある分類）。2026-10-21 見直し: チップごとに
+/// `tray(_:owned:)` を呼ぶと、1,000 点を超える家具の絞り込みが描き直しのたびに十数回走った
+struct CamperRoomShelf {
+    let categories: [CamperRoomCategory]
+    let fresh: Set<CamperRoomCategory>
+    private let byCategory: [CamperRoomCategory: [CamperRoomFurniture]]
+
+    init(_ tray: [CamperRoomFurniture], news: Set<String>) {
+        let grouped = Dictionary(grouping: tray, by: \.category)
+        byCategory = grouped
+        categories = CamperRoomCategory.allCases.filter { grouped[$0] != nil }
+        fresh = Set(tray.filter { news.contains($0.id) }.map(\.category))
+    }
+
+    func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { byCategory[c] ?? [] }
 }
 
 // MARK: - 保存（人ごとにこの端末へ・退会で消す）

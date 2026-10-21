@@ -200,7 +200,7 @@ struct CamperGarageView: View {
         .overlay(alignment: .bottomTrailing) { sceneButtons }
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
-            CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, stage: actualStage, stats: stats,
+            CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, photosLoaded: photosLoaded, stage: actualStage, stats: stats,
                            paint: config.loadout.paint, initialMood: mood)
         }
         .overlay(alignment: .top) {
