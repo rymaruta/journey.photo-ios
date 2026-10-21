@@ -170,6 +170,22 @@ enum CamperRoomShapes {
         return mesh
     }
 
+    /// 球の面に沿った細い帯（緯度・経度の範囲・ラジアン。緯度は赤道 0・上が正）。外向き
+    static func sphereBand(center c: CV3, radius r: Double, latitudes lat: ClosedRange<Double>,
+                           longitudes lon: ClosedRange<Double>, steps: Int = 10, _ m: CamperMaterial) -> CamperMesh {
+        var mesh = CamperMesh()
+        func point(_ a: Double, _ b: Double) -> CV3 { CV3(cos(a) * cos(b), sin(a), -cos(a) * sin(b)) }
+        for k in 0..<steps {
+            let b0 = lon.lowerBound + (lon.upperBound - lon.lowerBound) * Double(k) / Double(steps)
+            let b1 = lon.lowerBound + (lon.upperBound - lon.lowerBound) * Double(k + 1) / Double(steps)
+            let n00 = point(lat.lowerBound, b0), n01 = point(lat.lowerBound, b1)
+            let n11 = point(lat.upperBound, b1), n10 = point(lat.upperBound, b0)
+            mesh.quad(c + n00 * r, c + n01 * r, c + n11 * r, c + n10 * r, n00, n01, n11, n10, m)
+        }
+        mesh.uvs = mesh.positions.map { _ in CV2(0.5, 0.5) }
+        return mesh
+    }
+
     /// 刃の葉を、付け根 `p` から `dir` の向きへ置く（ねじり `roll` で面を傾ける）
     static func blade(at p: CV3, toward dir: CV3, roll: Double = 0, _ b: CamperMesh) -> CamperMesh {
         let flat = CV3(dir.x, 0, dir.z).length > 1e-6 ? CV3(dir.x, 0, dir.z).normalized : CV3(1, 0, 0)

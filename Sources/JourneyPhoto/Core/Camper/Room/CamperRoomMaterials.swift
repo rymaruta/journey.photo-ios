@@ -90,8 +90,10 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case mirror
     /// 部屋の中の物の硝子（瓶・器・戸・球）。窓の硝子は夜に外の暗さで黒く曇らせるが、物の硝子は夜も透ける（2026-10-21）
     case clearGlass
-    /// 中に物を入れた透明の球（硝子の球の吊り鉢・2026-10-21）。拡散の色を持たない片面の膜で、縁と映りだけ光る
+    /// 中に物を入れた透明の球（硝子の球の吊り鉢・2026-10-21）。光を受けない足す光で、中身と奥の壁を隠さない
     case globeGlass
+    /// 硝子の球の映りの筋（窓の明かりが映った細い弧・足す光）
+    case globeGlint
     /// まだ持っていない家具の影絵
     case silhouette
 }
@@ -102,7 +104,7 @@ enum CamperRoomMaterials {
     /// 2026-10-21（Mac run 625・632）: 家具 1 つの網の中に混ぜたままだと、硝子が壁や中身より先に描かれ、昼は灰色、
     /// 夜は灯りに照らされた不透明な玉（拡散の色を黒にすると黒い玉）に見えた。外の車の硝子・炎（`CamperScene`）と同じく後に足す
     static func drawnAfterOpaque(_ m: CamperMaterial) -> Bool {
-        m == .room(.clearGlass) || m == .room(.globeGlass)
+        m == .room(.clearGlass) || m == .room(.globeGlass) || m == .room(.globeGlint)
     }
 
     /// カーテンの色（板 CamperRoomMain: 麻・藍・森の緑・赤茶）
@@ -239,12 +241,13 @@ enum CamperRoomMaterials {
             return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, opacity: night ? 0.16 : 0.12, doubleSided: true,
                                       glassShell: false)
         case .globeGlass:
-            // 2026-10-21（Mac run 625 の 96e・15）: `.clearGlass` のままだと、昼は灰色の膜越しに色の無い中身・奥の木目が透けず、
-            // 夜は灯りの当たった不透明な玉のように上がクリーム色・下が黒い三日月になった（灯りの照りの点まで出る）。
-            // 拡散の色をほぼ黒にしただけの run 632 では黒い玉になった——硝子が家具の網の中で壁・中身より先に描かれていたのが元
-            // （`drawnAfterOpaque` で別の節にして後に描く）。そのうえで、灯りに照らされて膜にならないよう拡散の色はほぼ黒・片面。
-            // 光るのは鋭い映りが縁で強まる所（フレネル）だけ。他の家具の `.clearGlass`（燭台・ポット・瓶・戸棚）は変えない
-            return CamperMaterialSpec(color: 0x060809, roughness: 0.02, opacity: night ? 0.1 : 0.08, glassShell: false)
+            // 2026-10-21: 物理の光の透明（`opacity`）では、どの値でも球が不透明な玉に描かれた（Mac run 625: 灰色の玉・夜はクリーム色に
+            // 黒い三日月、run 632: 拡散を黒にすると黒い玉、run 636: 壁・中身の後に描いても黒い玉＝順番ではない）。平らな戸の硝子は透けるのに、
+            // 丸く閉じた硝子だけ奥が消える——SceneKit の物理の光は透明度で映りを薄めず、球では映りが面全体に出る。
+            // 球は光を受けない「足す光」にする（灯りの溜まり・炎と同じ。下の色を隠さず、少し明るくするだけ）。映りは別の筋（`.globeGlint`）
+            return CamperMaterialSpec(color: night ? 0x0B0C0D : 0x15191C, roughness: 1, additive: true)
+        case .globeGlint:
+            return CamperMaterialSpec(color: night ? 0x3A3228 : 0x6A757C, roughness: 1, additive: true)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }

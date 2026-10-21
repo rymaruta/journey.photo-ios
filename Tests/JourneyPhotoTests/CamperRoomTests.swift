@@ -571,21 +571,20 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertLessThan(s.opacity, 0.3)
             XCTAssertFalse(s.glassShell, "硝子の殻だと手前の面が奥行きを書いて中身を隠す")
             XCTAssertEqual(s.clearCoat, 0, "照りの層の映りは透明度で薄まらず、面全体が膜になる")
-            // 硝子の球（run 625: 昼は灰色の膜・夜は灯りに照らされた不透明な玉に見えた）。拡散の色はほぼ黒・片面・奥行きを書かない
+            // 硝子の球（run 625・632・636: 物理の光の透明では不透明な玉に描かれた）。光を受けない足す光で、下の色を隠さない
+            for m in [CamperRoomMaterial.globeGlass, .globeGlint] {
+                let globe = CamperMaterials.spec(.room(m), paint: 0, mood: mood)
+                XCTAssertTrue(globe.additive, "\(m)")
+            }
             let globe = CamperMaterials.spec(.room(.globeGlass), paint: 0, mood: mood)
-            XCTAssertLessThan(globe.opacity, 0.15)
-            XCTAssertFalse(globe.glassShell)
-            XCTAssertFalse(globe.doubleSided, "両面だと膜が 2 枚重なる")
-            XCTAssertEqual(globe.clearCoat, 0)
-            XCTAssertLessThan(globe.roughness, 0.1)
-            for shift in [16, 8, 0] { XCTAssertLessThan((globe.color >> UInt32(shift)) & 0xFF, 0x18, "拡散の色が灯りで照らされ膜になる") }
+            for shift in [16, 8, 0] { XCTAssertLessThan((globe.color >> UInt32(shift)) & 0xFF, 0x20, "足す光が強いと白い膜になる") }
         }
         let terrarium = CamperRoomFurnitureModels.mesh("plant_hanger.glass_terrarium")
         XCTAssertEqual(terrarium?.materials.contains(.room(.globeGlass)), true)
         XCTAssertEqual(terrarium?.materials.contains(.room(.clearGlass)), false)
         // 透明の硝子は家具の網から分けて、不透明の組の後に描く（混ぜたままだと壁・中身より先に描かれて玉に見えた・run 632）
         let parts = try XCTUnwrap(terrarium).split(CamperRoomMaterials.drawnAfterOpaque)
-        XCTAssertEqual(parts.matched.materials, [.room(.globeGlass)])
+        XCTAssertEqual(Set(parts.matched.materials), [.room(.globeGlass), .room(.globeGlint)])
         XCTAssertTrue(parts.rest.materials.contains(.room(.soil)))
         XCTAssertTrue(CamperRoomMaterials.drawnAfterOpaque(.room(.clearGlass)))
         XCTAssertFalse(CamperRoomMaterials.drawnAfterOpaque(.room(.frameGlass)), "額の硝子は印画と同じ節（写真の差し替えが束の番号で探す）")

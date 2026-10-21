@@ -423,6 +423,11 @@ extension CamperRoomFurnitureModels {
         }
         let ball = CV3(0, -20.2, 0)
         parts.append(K.placed(K.sphere(radius: 7.4, segments: 32, R(.globeGlass)), at: ball))
+        // 映りの筋（上の斜めに細い弧 2 本・向かい合わせ。どちらから見ても 1 本は見える）
+        for side in [0.0, Double.pi] {
+            parts.append(CamperRoomShapes.sphereBand(center: ball, radius: 7.46, latitudes: 0.55...0.72,
+                                                     longitudes: (side + 2.0)...(side + 2.9), R(.globeGlint)))
+        }
         // 赤道の真鍮帯
         parts.append(K.tube(K.ringXZ(center: ball, radius: 7.35, steps: 36), radius: 0.12, sides: 5, closed: true, R(.agedBrass)))
         // 地形
