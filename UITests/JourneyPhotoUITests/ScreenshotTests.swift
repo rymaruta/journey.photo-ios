@@ -2556,9 +2556,12 @@ final class ScreenshotTests: XCTestCase {
             let room = app.descendants(matching: .any)["camper.room.scene"].firstMatch
             guard room.waitForExistence(timeout: 15) else { return XCTFail("部屋に切り替わらない（\(label)）") }
             // 切り替わった直後: 部屋が組み上がるまで、寄った口の絵が覆う（暗い画面にしない・確かめ役 2026-10-21）
+            let cover = app.descendants(matching: .any)["camper.room.entryCover"].firstMatch
+            let covered = cover.exists
             let first = app.screenshot()
             self.shoot(app, "95\(n)5-キャンピングカー（\(label)・中に入る・部屋に切り替わった直後）")
-            XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20, "部屋に切り替わった直後が暗い画面（\(label)）")
+            XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20,
+                                 "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")）")
             XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
             let settled = app.screenshot()
             self.shoot(app, "95\(n)6-キャンピングカー（\(label)・中に入る・部屋が組み上がった）")

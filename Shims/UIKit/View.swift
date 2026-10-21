@@ -19,6 +19,9 @@ open class UIView {
     /// 指を受けるか（本物の既定は true）
     open var isUserInteractionEnabled: Bool = true
     open func layoutSubviews() {}
+    /// 画面に出ている層を描く（本物と同じ形）
+    @discardableResult
+    open func drawHierarchy(in rect: CGRect, afterScreenUpdates afterUpdates: Bool) -> Bool { false }
     /// 部品に足す働き（音量ボタンで撮る `AVCaptureEventInteraction` など・本物と同じ形）
     open func addInteraction(_ interaction: UIInteraction) {}
     open func removeInteraction(_ interaction: UIInteraction) {}

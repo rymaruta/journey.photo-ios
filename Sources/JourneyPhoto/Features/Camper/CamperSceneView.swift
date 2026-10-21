@@ -3,6 +3,7 @@ import UIKit
 #if canImport(SceneKit)
 import SceneKit
 #elseif canImport(SceneKitShim)
+import ImageIO
 import SceneKitShim
 #endif
 
@@ -81,8 +82,32 @@ final class CamperSceneSnapshot {
             last = nil
             return nil
         }
-        last = view.snapshot()
+        // 2026-10-21（Mac run 642・644）: 夜は SCNView の snapshot() が空の絵を返し、部屋の画面に何も重ならなかった（昼は写った）。
+        // 写った絵がほぼ透明か真っ黒なら、画面に出ている層をそのまま写す（drawHierarchy）
+        let shot = view.snapshot()
+        if Self.looksEmpty(shot) {
+            let renderer = UIGraphicsImageRenderer(size: view.bounds.size)
+            let drawn = renderer.image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: false) }
+            last = Self.looksEmpty(drawn) ? nil : drawn
+        } else {
+            last = shot
+        }
         return last
+    }
+
+    /// 絵がほぼ透明か真っ黒か（8×8 に縮めて、不透明さと明るさの平均を見る）
+    static func looksEmpty(_ image: UIImage) -> Bool {
+        guard let cg = image.cgImage else { return true }
+        var px = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        guard let ctx = CGContext(data: &px, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return true }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        var alpha = 0.0, light = 0.0
+        for i in stride(from: 0, to: px.count, by: 4) {
+            alpha += Double(px[i + 3])
+            light += Double(px[i]) + Double(px[i + 1]) + Double(px[i + 2])
+        }
+        return alpha / 64 < 128 || light / (64 * 3) < 4
     }
 
     func clear() { last = nil }

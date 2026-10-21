@@ -392,7 +392,9 @@ struct CamperRoomView: View {
                 .clipped()
                 .opacity(entryCovered ? 1 : 0)
                 .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                // 見本の起動だけ、画面写真の試験が覆いの有無を確かめられるよう読み上げの木に残す
+                .accessibilityHidden(PreviewSession.userId == nil)
+                .accessibilityIdentifier("camper.room.entryCover")
                 .onChange(of: readyMarker) { _, marker in
                     guard entryCovered, marker.hasPrefix("camper-room-ready") else { return }
                     withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
