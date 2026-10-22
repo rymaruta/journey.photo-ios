@@ -115,35 +115,29 @@ struct CamperRoomView: View {
             VStack(spacing: 0) {
                 header
                 if CamperRoomKind.rooms(stage).count > 1 { roomTabs }
-                if mode == .edit {
-                    // 置く棚の縦幅を指で変えられる（2026-10-20 owner「Cursor の窓のように広く狭く」）
-                    GeometryReader { split in
-                        let total = max(split.size.height, 1)
-                        let frac = CamperRoomPanelSplit.clamped(editPanelFraction)
-                        let handle: CGFloat = 22
-                        let panelH = min(total - 160 - handle, max(210, total * frac))
-                        let sceneH = max(160, total - panelH - handle)
-                        VStack(spacing: 0) {
-                            sceneArea(width: geo.size.width, height: sceneH)
-                            panelResizeHandle(totalHeight: total)
+                // 部屋の絵は場面を替えても同じ 1 つ（2026-10-22: 置くの場面だけ別の枝に組んでいたので、「置く」を押すたびに
+                // 立体を作り直し、組み上がるまで部屋が消えていた・Mac run 666）。高さだけを場面ごとに分ける
+                GeometryReader { split in
+                    let total = max(Double(split.size.height), 1)
+                    let need = Double(panelNeed[mode] ?? 260)
+                    let fit = mode == .edit ? editSplit(total: total)
+                        : CamperRoomSheetFit.split(total: total, need: need, photos: mode == .photos)
+                    VStack(spacing: 0) {
+                        sceneArea(width: geo.size.width, height: CGFloat(fit.scene))
+                        if mode == .edit {
+                            // 置く棚の縦幅を指で変えられる（2026-10-20 owner「Cursor の窓のように広く狭く」）
+                            panelResizeHandle(totalHeight: CGFloat(total))
                             panel
-                                .frame(height: panelH, alignment: .top)
+                                .frame(height: CGFloat(fit.panel), alignment: .top)
                                 .clipped()
-                        }
-                        .onAppear { splitHeight = total }
-                        .onChange(of: split.size.height) { _, h in splitHeight = h }
-                    }
-                } else {
-                    // 下の板は中身が要るだけの高さ、部屋の絵は残り全部（2026-10-22 owner の実機: 板が中身より低く、
-                    // 見本の名前が説明と重なり、部屋の絵が上へ押し出されて切れた）。大きい文字では板を送る
-                    GeometryReader { split in
-                        let need = Double(panelNeed[mode] ?? 260)
-                        let fit = CamperRoomSheetFit.split(total: Double(split.size.height), need: need, photos: mode == .photos)
-                        VStack(spacing: 0) {
-                            sceneArea(width: geo.size.width, height: CGFloat(fit.scene))
+                        } else {
+                            // 下の板は中身が要るだけの高さ、部屋の絵は残り全部（2026-10-22 owner の実機: 板が中身より低く、
+                            // 見本の名前が説明と重なり、部屋の絵が上へ押し出されて切れた）。大きい文字では板を送る
                             fittedPanel(height: CGFloat(fit.panel), scrolls: CamperRoomSheetFit.scrolls(need: need, panel: fit.panel))
                         }
                     }
+                    .onAppear { splitHeight = CGFloat(total) }
+                    .onChange(of: split.size.height) { _, h in splitHeight = h }
                 }
             }
         }
@@ -177,6 +171,14 @@ struct CamperRoomView: View {
         // マスに吸い付くたびに軽く・置けたら成功の触覚（2026-10-21）
         .sensoryFeedback(.selection, trigger: snapTick)
         .sensoryFeedback(.success, trigger: placedTick)
+    }
+
+    /// 置くの場面の (部屋の絵, 棚) の高さ（境のつまみ 22 を除く。棚は指で決めた割合・部屋の絵は 160 以上）
+    private func editSplit(total: Double) -> (scene: Double, panel: Double) {
+        let handle = 22.0
+        let frac = CamperRoomPanelSplit.clamped(editPanelFraction)
+        let panel = min(total - 160 - handle, max(210, total * frac))
+        return (max(160, total - panel - handle), panel)
     }
 
     /// 箱庭と置く棚の境（上下にドラッグで棚の縦幅を変える）
