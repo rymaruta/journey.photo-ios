@@ -4037,11 +4037,11 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, mineShown ? "60a-ストーリーの輪（自分の＋）" : "60a-ストーリーの輪（自分の輪が出ない）")
 
-        // 写真の詳細の作者の顔
-        let recommended = app.buttons["おすすめ"].firstMatch
-        if recommended.waitForExistence(timeout: 5), recommended.isHittable { recommended.tap() }
-        let photo = app.buttons["feed.photo"].firstMatch
-        guard photo.waitForExistence(timeout: 30), photo.isHittable else {
+        // 写真の詳細の作者の顔。**ホームの「NEW」の1枚目から開く**（見本のストーリーは同じ新着の作者に付けてある・
+        // `PreviewBackend.previewStories`。おすすめの格子は画面の下で、run 693 では見つからなかった）
+        let fresh = app.descendants(matching: .any)["home.fresh"].firstMatch
+        let photo = fresh.buttons.matching(NSPredicate(format: "identifier != %@", "home.fresh.all")).firstMatch
+        guard fresh.waitForExistence(timeout: 30), photo.waitForExistence(timeout: 10), photo.isHittable else {
             shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
             return
         }
