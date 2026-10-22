@@ -69,6 +69,29 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable, "\(what) まで送っても押せない")
     }
 
+    /// 欄を押し、**その欄に**キーボードの焦点が来てから打つ。来なければ押し直す（最長 `timeout` 秒）。
+    ///
+    /// 2026-10-22 判断: PR の検証で、題を打った直後に撮影地の欄を押しても焦点が移らず、
+    /// `typeText` が「Neither element nor any descendant has keyboard focus」で落ちた
+    /// （鍵盤が出てくる途中で画面がずれ、押した所が欄から外れる）。2つ目の欄では
+    /// 「鍵盤が出ている」は焦点の手がかりにならないので、欄そのものの `hasKeyboardFocus` を見る。
+    /// 非公開の属性なので**在るときだけ**読む（無い名前を KVC で読むと ObjC の例外で落ちる・
+    /// `ScreenshotTests.waitForKeyboardFocus` と同じ扱い）。読めない環境では今までどおり押してすぐ打つ
+    private func enter(_ text: String, into field: XCUIElement, _ what: String, timeout: TimeInterval = 8) {
+        let readable = field.responds(to: NSSelectorFromString("hasKeyboardFocus"))
+        func focused() -> Bool { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }
+        field.tap()
+        if readable {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !focused(), Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.5)
+                if !focused(), field.isHittable { field.tap() }
+            }
+            XCTAssertTrue(focused(), "\(what) を押しても焦点が来ない")
+        }
+        field.typeText(text)
+    }
+
     /// `element` が `predicate` を満たすまで待つ
     private func wait(_ element: XCUIElement, _ predicate: String, _ args: [Any] = [], timeout: TimeInterval = 15) -> Bool {
         let p = NSPredicate(format: predicate, argumentArray: args)
@@ -139,8 +162,7 @@ final class CriticalFlowTests: XCTestCase {
         let text = "CF\(Int(Date().timeIntervalSince1970) % 1_000_000)"
         let field = app.descendants(matching: .any).matching(identifier: "photo.commentField").firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "コメントの欄が無い（ログイン中なのに）")
-        field.tap()
-        field.typeText(text)
+        enter(text, into: field, "コメントの欄")
         let send = app.buttons["photo.commentSend"].firstMatch
         XCTAssertTrue(wait(send, "enabled == true", timeout: 5), "書いたのに送信が押せない")
         send.tap()
@@ -176,12 +198,10 @@ final class CriticalFlowTests: XCTestCase {
         let title = "JP\(Int(Date().timeIntervalSince1970) % 1_000_000)"
         let titleField = app.textFields["upload.title"].firstMatch
         reveal(titleField, in: app, "題の欄")
-        titleField.tap()
-        titleField.typeText(title)
+        enter(title, into: titleField, "題の欄")
         let place = app.textFields["upload.place"].firstMatch
         reveal(place, in: app, "撮影地の欄")
-        place.tap()
-        place.typeText("Kagawa")
+        enter("Kagawa", into: place, "撮影地の欄")
 
         let submit = app.buttons["upload.submit"].firstMatch
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
@@ -226,12 +246,10 @@ final class CriticalFlowTests: XCTestCase {
 
         let email = app.textFields["signin.email"].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
-        email.tap()
-        email.typeText(Self.previewEmail)
+        enter(Self.previewEmail, into: email, "メールアドレスの欄")
         let password = app.secureTextFields["signin.password"].firstMatch
         XCTAssertTrue(password.waitForExistence(timeout: 5), "パスワードの欄が無い")
-        password.tap()
-        password.typeText(Self.previewPassword)
+        enter(Self.previewPassword, into: password, "パスワードの欄")
         let submit = app.buttons["signin.submit"].firstMatch
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 5), "入れてもログインが押せない")
         submit.tap()
