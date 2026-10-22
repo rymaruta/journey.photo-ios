@@ -7,7 +7,7 @@ import Metal
 import SceneKitShim
 #endif
 
-// 家具の接写の一覧（2026-10-21・**見本の起動 `-JPPreviewCamperRoomContact` だけ**。Debug のみ）。
+// 家具の接写の一覧（2026-10-21・**見本の起動 `-JPPreviewCamperRoomContact`・`Frames`・`Legs` だけ**。Debug のみ）。
 //
 // 板と別種の家具（`CamperRoomCatalog.board`）を、図鑑の寄りと同じ小部屋・同じ素材と光で 1 つずつ本物の SceneKit に描き、
 // 4 点ずつの頁に並べる。ソフトラスタ（`CamperRoomRaster`）では素材の映り・光・接地の影が見えないので、
@@ -17,16 +17,42 @@ import SceneKitShim
 // 家具だけ入れ替える）。頁を開くたびにその頁の 4 点だけ描く。
 // 2026-10-21（run 596）: 8 点だと画面写真（長辺 700px）で 1 点が 150px ほどになり素材が読めない。4 点にし、並びの所だけを撮る。
 
-/// 1 頁の数（2 列 × 2 段）
+/// 1 頁の数（2 列 × 2 段）。頁の種類は `CamperRoomContactKind`（板の家具・額・脚。2026-10-22 に 1 つの enum にまとめた）
 enum CamperRoomContactPages {
     static let perPage = 4
 
-    /// 1 枚の絵（家具と、額なら入れる写真の向き）
+    /// 1 枚の絵（家具と、額なら入れる写真の向き、脚の接写なら向き）
     struct Entry: Identifiable {
         var furniture: CamperRoomFurniture
         /// 額に入れる写真（nil は家具だけ）。"wide"・"tall"
         var photo: String?
-        var id: String { furniture.id + (photo.map { "." + $0 } ?? "") }
+        /// 脚の接写の向き（`CamperRoomLegs.views` の番号。nil は図鑑の寄りの向き）
+        var view: Int? = nil
+        var id: String { furniture.id + (photo.map { "." + $0 } ?? "") + (view.map { "#\($0)" } ?? "") }
+    }
+
+    /// 脚の接写に並べる家具（`CamperRoomLegs.sheet`・1 頁に 1 つを 4 方向）
+    static let legItems: [CamperRoomFurniture] = CamperRoomLegs.sheet
+
+    static func entries(_ kind: CamperRoomContactKind) -> [Entry] {
+        switch kind {
+        case .board: return entries(frames: false)
+        case .frames: return entries(frames: true)
+        case .legs: return legItems.flatMap { f in CamperRoomLegs.views.indices.map { Entry(furniture: f, photo: nil, view: $0) } }
+        }
+    }
+
+    static func count(_ kind: CamperRoomContactKind) -> Int { max(1, (entries(kind).count + perPage - 1) / perPage) }
+
+    static func page(_ index: Int, _ kind: CamperRoomContactKind) -> [Entry] {
+        let all = entries(kind)
+        let lo = min(all.count, max(0, index) * perPage)
+        return Array(all[lo..<min(all.count, lo + perPage)])
+    }
+
+    /// 画面写真の試験が待つ合図（脚の接写は昼だけなので `legs-ready`）
+    static func marker(mood: CamperMood, page: Int, _ kind: CamperRoomContactKind) -> String {
+        kind == .legs ? "legs-ready \(page + 1)/\(count(kind))" : "contact-ready \(mood.rawValue) \(page + 1)/\(count(kind))"
     }
 
     /// 写真を入れられる額（印画の材質を持つ家具・2026-10-22）
@@ -78,7 +104,8 @@ final class CamperRoomContactRenderer {
     /// 写真の外を読んだ量の最大（額の頁の試験用・`CamperRoomScene.photoUVOverflow`）
     var photoUVOverflow: Double { scene.photoUVOverflow }
 
-    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize, photoId: String? = nil, images: [String: UIImage] = [:]) -> UIImage {
+    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize, photoId: String? = nil, images: [String: UIImage] = [:],
+                view: Int? = nil) -> UIImage {
         var studio = CamperRoomStudio.make(f)
         if let photoId {
             // 額に写真を入れる（飾った時と同じ印画の材質の差し替え）
@@ -97,6 +124,14 @@ final class CamperRoomContactRenderer {
         // 図鑑の寄りより一段寄る（小さな枠いっぱいに家具を見せる）
         var camera = CamperRoomStudio.camera(f)
         camera.zoom = 1.35
+        // 脚の接写は向きを替えて 4 方向から（2026-10-22）。「下から」は狙いを床の近くへ下げ、脚の付け根と足先を覗く
+        // （Mac run 673: 狙いが家具の真ん中のままだと正面と同じ絵・run 677: 3° では床の板の縁しか写らない）
+        if let view {
+            let v = CamperRoomLegs.views[view]
+            camera.yaw = v.yaw
+            camera.pitch = v.scenePitch
+            if v.low { camera.target = CV3(camera.target.x, 4, camera.target.z) }
+        }
         scene.setCamera(camera, animated: false)
         return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
     }
@@ -107,8 +142,10 @@ final class CamperRoomContactRenderer {
 /// 接写の一覧の画面（頁送り・昼と夜）
 struct CamperRoomContactSheet: View {
     let paint: UInt32
+    /// 頁の種類（板の家具・額・脚）
+    var kind: CamperRoomContactKind = .board
     /// 額の頁（写真を入れられる全部の額に、横長・縦長の写真を入れる）
-    var frames = false
+    private var frames: Bool { kind == .frames }
     /// 額に入れる写真の候補（自分の投稿。本物の URL から、飾る時と同じ読み込みで読む）
     var photos: [Photo] = []
     let onClose: () -> Void
@@ -138,7 +175,7 @@ struct CamperRoomContactSheet: View {
                 .accessibilityIdentifier("camper.room.contact.close")
                 Spacer()
                 // 読み上げの値に描き終えた合図（画面写真の試験が待つ。部屋の場面の `camper-room-ready` と同じ仕組み）
-                Text("\(mood == .night ? L("夜", "Night") : L("昼", "Day")) \(page + 1) / \(CamperRoomContactPages.count(frames: frames))")
+                Text("\(mood == .night ? L("夜", "Night") : L("昼", "Day")) \(page + 1) / \(CamperRoomContactPages.count(kind))")
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityElement(children: .ignore)
@@ -147,7 +184,7 @@ struct CamperRoomContactSheet: View {
                     .accessibilityIdentifier("camper.room.contact")
                 Spacer()
                 pager("chevron.left", id: "camper.room.contact.prev", enabled: page > 0) { go(page - 1) }
-                pager("chevron.right", id: "camper.room.contact.next", enabled: page + 1 < CamperRoomContactPages.count(frames: frames)) { go(page + 1) }
+                pager("chevron.right", id: "camper.room.contact.next", enabled: page + 1 < CamperRoomContactPages.count(kind)) { go(page + 1) }
                 pager(mood == .night ? "sun.max" : "moon", id: "camper.room.contact.mood", enabled: true) {
                     mood = mood == .night ? .day : .night
                     images = [:]
@@ -155,7 +192,7 @@ struct CamperRoomContactSheet: View {
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-                ForEach(CamperRoomContactPages.page(page, frames: frames)) { e in
+                ForEach(CamperRoomContactPages.page(page, kind)) { e in
                     let f = e.furniture
                     VStack(spacing: 2) {
                         Group {
@@ -167,7 +204,7 @@ struct CamperRoomContactSheet: View {
                         }
                         .frame(height: Self.cell.height)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text("\(f.name) · \(f.id)\(e.photo.map { $0 == "wide" ? L("・横長の写真", " · wide photo") : L("・縦長の写真", " · tall photo") } ?? "")")
+                        Text("\(e.view.map { CamperRoomLegs.views[$0].name + " · " } ?? "")\(f.name) · \(f.id)\(e.photo.map { $0 == "wide" ? L("・横長の写真", " · wide photo") : L("・縦長の写真", " · tall photo") } ?? "")")
                             .jpSystemFont(12)
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(1).minimumScaleFactor(0.7)
@@ -218,7 +255,7 @@ struct CamperRoomContactSheet: View {
     }
 
     private func go(_ next: Int) {
-        page = max(0, min(CamperRoomContactPages.count(frames: frames) - 1, next))
+        page = max(0, min(CamperRoomContactPages.count(kind) - 1, next))
         images = [:]
         draw()
     }
@@ -233,16 +270,16 @@ struct CamperRoomContactSheet: View {
         let shots = photoImages.images, chosen = picks
         Task { @MainActor in
             var overflow = 0.0
-            for e in CamperRoomContactPages.page(want, frames: frames) {
+            for e in CamperRoomContactPages.page(want, kind) {
                 guard want == page, m == mood else { return }
                 let photoId = e.photo.flatMap { chosen[$0] }
                 images[e.id] = r.render(e.furniture, mood: m, size: CGSize(width: Self.cell.width * 3, height: Self.cell.height * 3),
-                                       photoId: photoId, images: shots)
+                                       photoId: photoId, images: shots, view: e.view)
                 overflow = max(overflow, r.photoUVOverflow)
                 await Task.yield()
             }
             guard want == page, m == mood else { return }
-            var done = CamperRoomContactPages.marker(mood: m, page: want, frames: frames)
+            var done = CamperRoomContactPages.marker(mood: m, page: want, kind)
             if frames {
                 // 額の頁: 入れた写真（id と縦横比）と、印画が写真の外を読んだ量（0 でなければ筋に崩れる）
                 let aspect = { (id: String?) in id.flatMap { shots[$0] }.map { String(format: "%.2f", $0.size.width / max(1, $0.size.height)) } ?? "-" }

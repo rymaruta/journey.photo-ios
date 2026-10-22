@@ -173,7 +173,7 @@ struct CamperRoomView: View {
                               onSeen: { markSeen($0) }) { showDex = false }
         }
         .fullScreenCover(isPresented: $showContact) {
-            CamperRoomContactSheet(paint: paint, frames: CamperRoomPreview.frames, photos: hangablePhotos) { showContact = false }
+            CamperRoomContactSheet(paint: paint, kind: CamperRoomPreview.contactKind ?? .board, photos: hangablePhotos) { showContact = false }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: lifted)
         // マスに吸い付くたびに軽く・置けたら成功の触覚（2026-10-21）
@@ -244,8 +244,9 @@ struct CamperRoomView: View {
         recount()
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
-        // 見本の旗が重なっても決まった動き: 接写の一覧は額の頁が勝ち（`CamperRoomPreview.frames`）、家具を選ぶのは持ち上げの見本でない時だけ
-        if CamperRoomPreview.contact || CamperRoomPreview.frames { showContact = true }
+        // 見本の旗が重なっても決まった動き: 接写の一覧の種類は `contactKind` が1つに決める（脚 → 額 → 板）、
+        // 家具を選ぶのは持ち上げの見本でない時だけ
+        if CamperRoomPreview.contactKind != nil { showContact = true }
         if CamperRoomPreview.select, !CamperRoomPreview.lift { selected = editor?.doc.items.first { $0.k == "storage.trunk" }?.u }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
     }

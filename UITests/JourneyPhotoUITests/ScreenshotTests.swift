@@ -2622,7 +2622,16 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20,
                                  "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")）")
             XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
-            let settled = app.screenshot()
+            // 組み上がった合図は SceneKit に載せた時点で、描くのはその後（`CamperRoomSceneView.onDrawn`）。
+            // 部屋が描かれて明るくなるまで最長 30 秒待って撮る。2026-10-22 PR #369 の検証（run 39773377293）: 込んだ Mac で、部屋の
+            // 画面が出るまで 11 秒・アプリの応答が 16 秒止まり、覆いの 20 秒の待ちが切れた直後の、まだ描かれていない暗い地を
+            // 合図の直後に撮っていた（部屋の家具の網は main と同じ・`CamperRoomScenePlan.make` の三角形 82,130 で同じ）
+            var settled = app.screenshot()
+            let drawnBy = Date().addingTimeInterval(30)
+            while Self.meanBrightness(settled.image, band: 0.2...0.55) <= 20, Date() < drawnBy {
+                Thread.sleep(forTimeInterval: 1)
+                settled = app.screenshot()
+            }
             self.shoot(app, "95\(n)6-キャンピングカー（\(label)・中に入る・部屋が組み上がった）")
             XCTAssertGreaterThan(Self.meanBrightness(settled.image, band: 0.2...0.55), 20, "部屋が組み上がっても暗い画面（\(label)）")
             // 外へ戻り、扉を閉じて（初めの向きへ戻る）次の時刻へ
@@ -3841,9 +3850,35 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **家具の脚の接写**（`-JPPreviewCamperRoomLegs`・Debug のみ・2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）:
+    /// 脚のある家具を 1 頁に 1 つ、正面・斜め・横・低い所の 4 方向から本物の SceneKit で描き、昼の全頁を**必ず撮る**
+    /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）。
+    /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED。全部を回す PR の検証・TestFlight では飛ばす・約5分）
+    func testCapturesCamperFurnitureLegs() {
+        executionTimeAllowance = 1500
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLegs", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "脚の接写の一覧が出ない")
+        let next = app.buttons["camper.room.contact.next"].firstMatch
+        var page = 1
+        while page <= 80 {
+            XCTAssertTrue(waitRoom(app, "camper.room.contact", "legs-ready \(page)/", timeout: 90), "脚の接写の \(page) 頁を描き終えない")
+            let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
+            let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
+            shot.name = String(format: "96f-家具の脚（%02d）", page)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.exists, next.isEnabled else { break }
+            next.tap()
+            page += 1
+        }
+    }
+
     /// **額の頁**（`-JPPreviewCamperRoomFrames`・2026-10-22 owner の実機: 楕円の額で写真が縦の筋に崩れた）: 写真を入れられる
     /// 全部の額に、自分の本物の写真（横長・縦長の 1 枚ずつ。飾る時と同じ読み込み）を入れた接写を昼に**必ず撮る**。
     /// どの頁でも印画が写真の外を読まないこと（`uvOut=0.00`）、横長と縦長の写真が選べたことを確かめる
+    /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED・約6〜7分。印画の UV は単体テストが毎回見る）
     func testCapturesCamperRoomFrameSheet() {
         executionTimeAllowance = 3000
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomFrames", "YES"])
