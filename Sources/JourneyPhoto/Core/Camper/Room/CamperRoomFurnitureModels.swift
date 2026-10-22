@@ -481,7 +481,8 @@ enum CamperRoomFurnitureModels {
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.6, 0), CV2(3, 1), CV2(2.6, 2.6), CV2(1.2, 3.4), CV2(1.2, 3.8), CV2(0, 3.8)], segments: 22,
                                       kettle), at: k0))
         parts.append(K.tube([k0 + CV3(2.4, 1.2, 0), k0 + CV3(3.8, 2.4, 0), k0 + CV3(4.4, 3.4, 0)], radius: 0.4, sides: 6, kettle))
-        parts.append(K.tube(K.arc(center: k0 + CV3(0, 3.8, 0), radius: 2, from: 0.2, to: .pi - 0.2, steps: 8).map { CV3($0.x, $0.y, k0.z) },
+        // つる（肩の高さから掛ける。2026-10-22: 前は蓋の上 1.5 cm の宙に浮いていた）
+        parts.append(K.tube(K.arc(center: k0 + CV3(0, 2.4, 0), radius: 2.5, from: 0, to: .pi, steps: 10).map { CV3($0.x, $0.y, k0.z) },
                             radius: 0.2, sides: 5, R(.iron)))
         return K.merge(parts)
     }
@@ -614,6 +615,8 @@ enum CamperRoomFurnitureModels {
             parts.append(K.tube([foot, foot * 0.45 + apex * 0.55, apex], radius: 0.58, sides: 9, walnut))
             // 足の真鍮キャップと途中の継ぎ輪
             parts.append(K.tube([foot, foot + (apex - foot).normalized * 1.6], radius: 0.72, sides: 9, brass))
+            // 床に着く革の当て（2026-10-22: 斜めの脚の先の丸い断面だけでは床から 1 cm 浮いて、灯り全体が宙に立っていた）
+            parts.append(K.placed(K.disc(radius: 1.0, height: 0.5, bevel: 0.15, segments: 12, R(.leather(0x2A2522))), at: CV3(foot.x, 0, foot.z)))
             let mid = foot * 0.5 + apex * 0.5
             parts.append(K.placed(K.disc(radius: 0.85, height: 0.4, bevel: 0.12, segments: 12, R(.agedBrass)), at: mid))
         }

@@ -18,6 +18,11 @@
   補助の関数の分も含む）に、大文字小文字を問わず含まれるものを選ぶ。
   **起動の見張り（`SmokeTests`・2分弱）はいつも足す**（落ちずに描けるかは毎回見る）
 - どれにも当たらない語があれば、候補を出して止める（打ち間違いで0件のまま緑にしない）
+
+**名指しした回だけ流す UI テスト**（`ONLY_WHEN_NAMED`・2026-10-22）: 家具の脚の接写（49 頁・約5分）・額の頁（60 頁あまり・約6〜7分）のように、
+直している間だけ見る絵は、全部を回す回（空・`all`・PR の検証・TestFlight）では流さない。
+`Tools/xcode-test.sh ui` が、一覧に名前が無ければ `-skip-testing:` を足す
+（`python3 Tools/pick-ui-tests.py --only-when-named` で名前を出す）
 """
 import os
 import pathlib
@@ -30,6 +35,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI_DIR = pathlib.Path(os.environ.get("JP_UI_TESTS_DIR") or (ROOT / "UITests" / "JourneyPhotoUITests"))
 TARGET = "JourneyPhotoUITests"
 ALWAYS = "SmokeTests"
+# 名指しした回だけ流す（全部を回す回では飛ばす）。「Class/testName」
+# 2026-10-22: 額の頁（写真を入れられる額 120 点あまり × 横長・縦長 = 60 頁あまり・1 頁 6 秒ほどで約 6〜7 分）も同じ扱い。
+# 印画が写真の外を読まないことは単体テスト（`testEveryPhotoPanelHasPlanarUVs`・`testPhotoFitCropsInsideThePhotoAndKeepsAspect`）が毎回見る
+ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)
@@ -101,6 +110,9 @@ def pick(screens, tests):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
+        print("\n".join(ONLY_WHEN_NAMED))
+        return 0
     screens = sys.argv[1] if len(sys.argv) > 1 else ""
     # **全部のときはファイルを読まない**（2026-10-17）。上げる回（submit=true）はいつも全部で、
     # UI テストのファイルの書き方に左右される理由が無い

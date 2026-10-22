@@ -102,8 +102,11 @@ final class CamperRoomThumbs {
         return made
     }
 
-    /// 全部捨てる（メモリの警告・部屋を閉じたとき）
-    func removeAll() { cache.removeAll() }
+    /// 全部捨てる（メモリの警告・部屋を閉じたとき）。絵のもとの網の控え（組み合わせの家具）も一緒に
+    func removeAll() {
+        cache.removeAll()
+        CamperRoomVariety.removeAllMeshes()
+    }
 
     var cachedCount: Int { cache.count }
 

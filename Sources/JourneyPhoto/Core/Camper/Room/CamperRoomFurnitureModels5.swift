@@ -212,12 +212,17 @@ extension CamperRoomFurnitureModels {
         parts.append(K.block(CV3(24, 1.2, 12), at: CV3(0, 7.2, 0), radius: 0.2, R(.soil)))
         for x in [-12.5, 12.5] { parts.append(K.block(CV3(1.2, 9, 14), at: CV3(x, 0, 0), radius: 0.25, oak)) }
         for z in [-6.5, 6.5] { parts.append(K.block(CV3(26, 9, 1.2), at: CV3(0, 0, z), radius: 0.25, oak)) }
+        // 縁の笠木（板の上端を覆う。2026-10-22: 前は板の木口がむき出しで終わっていた）
+        for z in [-6.6, 6.6] { parts.append(K.block(CV3(27, 0.7, 1.8), at: CV3(0, 9, z), radius: 0.2, R(.wood(.darkOak)))) }
+        for x in [-12.6, 12.6] { parts.append(K.block(CV3(1.8, 0.7, 11.4), at: CV3(x, 9, 0), radius: 0.2, R(.wood(.darkOak)))) }
         let greens: [UInt32] = [0x5E8A4A, 0x4A7A45, 0x6E9A5A]
         for (i, x) in [(-8.0), (0.0), (8.0)].enumerated() {
             parts.append(K.tube([CV3(x, 8, 0), CV3(x, 16, 0)], radius: 0.2, sides: 5, R(.leaf)))
             for k in 0..<8 {
                 let a = Double(k) / 8 * 2 * .pi + Double(i) * 0.3
                 let tip = CV3(x + cos(a) * 3.5, 12 + Double(k % 3), sin(a) * 3.5)
+                // 葉柄（茎から葉へ。2026-10-22: 前は葉が茎から 8 cm 離れて宙に浮いていた）
+                parts.append(K.tube([CV3(x, tip.y - 1.6, 0), tip], radius: 0.12, sides: 4, R(.leaf)))
                 parts.append(CamperRoomShapes.leaf(at: tip, toward: CV3(cos(a), 0.6, sin(a)), size: 1.8))
                 parts.append(K.placed(K.scaled(K.sphere(radius: 1, segments: 8, R(.painted(greens[i]))), CV3(1.4, 0.2, 0.9)), at: tip))
             }
@@ -239,11 +244,11 @@ extension CamperRoomFurnitureModels {
                 parts.append(K.block(CV3(1.6, 1.8, 1.6), at: CV3(x, 0.2, z), radius: 0.35, brass))
             }
         }
-        // 立てた蓋
+        // 立てた蓋（下箱の後ろの上の縁で蝶番に掛かる。2026-10-22: 前は蝶番が箱の上 6 cm の宙にあり、蓋が浮いていた）
         parts.append(K.placed(K.block(CV3(24, 7, 1.3), at: .zero, radius: 0.55, leather),
-                              at: CV3(0, 9.6, -6.5), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
+                              at: CV3(0, 6.6, -5.6), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
         parts.append(K.placed(K.block(CV3(21.5, 5.2, 0.45), at: .zero, radius: 0.2, dark),
-                              at: CV3(0, 10.1, -5.85), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
+                              at: CV3(0, 7.4, -4.95), rotation: CQuat.axisAngle(CV3(1, 0, 0), -1.05)))
         for x in [-7.0, 7.0] {
             parts.append(K.block(CV3(2.2, 0.7, 1.3), at: CV3(x, 6.9, -5.8), radius: 0.15, brass))
         }
@@ -460,7 +465,8 @@ extension CamperRoomFurnitureModels {
                                 radius: 0.1, sides: 4, closed: true, gold))
         }
         // 軸（段の間の真鍮の柱・継ぎの玉）と上の輪の取っ手
-        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.38, 0), CV2(0.38, 26), CV2(0, 26)], segments: 12, gold), at: CV3(0, 0, 0)))
+        // 軸は上の輪の取っ手の下まで通す（2026-10-22: 前は軸の上端と輪の間が 7 mm 空いていた）
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.38, 0), CV2(0.38, 26.7), CV2(0, 26.7)], segments: 12, gold), at: CV3(0, 0, 0)))
         for y in [0.6, 12.1, 22.6] { parts.append(K.placed(K.sphere(radius: 0.7, segments: 12, gold), at: CV3(0, y + 0.3, 0))) }
         parts.append(K.tube(K.arc(center: .zero, radius: 1.5, from: 0, to: 2 * .pi, steps: 20).map { CV3($0.x, 28.0 + $0.y, 0) },
                             radius: 0.22, sides: 6, closed: true, gold))
@@ -543,7 +549,8 @@ extension CamperRoomFurnitureModels {
             parts.append(K.placed(K.sphere(radius: 0.55, segments: 8, R(.painted(0x6A4A8C))),
                                   at: grapeRoot + CV3(Double(col) * 0.7 - 1.0, -Double(row) * 0.65, Double(row) * 0.15)))
         }
-        parts.append(CamperRoomShapes.leaf(at: CV3(0.2, 12.8, -0.4), toward: CV3(0.4, 0.7, -0.2), size: 1.7))
+        // 房の付け根の葉（2026-10-22: 前は房の 2.5 cm 上の宙に浮いていた）
+        parts.append(CamperRoomShapes.leaf(at: grapeRoot + CV3(-0.2, 0.45, 0.3), toward: CV3(0.4, 0.7, -0.2), size: 1.7))
         return K.merge(parts)
     }
 

@@ -73,7 +73,10 @@ extension CamperRoomFurnitureModels {
         // 上の柵（扉の側）とはしご
         parts.append(K.block(CV3(50, 2, 2), at: CV3(-12, 62, 18.8), radius: 0.5, oak))
         for x in [-36.0, 12.0] { parts.append(K.block(CV3(2, 10, 2), at: CV3(x, 52, 18.8), radius: 0.4, oak)) }
-        for x in [22.0, 32.0] { parts.append(K.block(CV3(2.2, 66, 2.6), at: CV3(x, 0, 20.4), radius: 0.5, worn)) }
+        // はしごの縦木は上の段の柵の高さで握り棒につなぐ（2026-10-22: 前は縦木の上が空中で終わっていた）
+        for x in [22.0, 32.0] { parts.append(K.block(CV3(2.2, 60, 2.6), at: CV3(x, 0, 20.4), radius: 0.5, worn)) }
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.9, 0), CV2(0.9, 12.4), CV2(0, 12.4)], segments: 12, oak),
+                              at: CV3(33.2, 60.9, 20.4), rotation: CQuat.axisAngle(CV3(0, 0, 1), .pi / 2)))
         for k in 0..<5 {
             parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.8, 0), CV2(0.8, 10), CV2(0, 10)], segments: 10, worn),
                                   at: CV3(32, 10 + Double(k) * 11, 20.4), rotation: CQuat.axisAngle(CV3(0, 0, 1), .pi / 2)))
