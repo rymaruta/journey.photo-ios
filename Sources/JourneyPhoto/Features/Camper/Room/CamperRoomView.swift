@@ -60,6 +60,8 @@ struct CamperRoomView: View {
     @State private var autoNight = false
     /// 下の板の中身が要る高さ（場面ごとに測る）。板はこの高さだけ取り、部屋の絵は残り全部（2026-10-22）
     @State private var panelNeed: [Mode: CGFloat] = [:]
+    /// 部屋の絵の高さが最後に変わった時（入った時の覆いを消すのを、大きさが落ち着くまで待つ）
+    @State private var sceneResizedAt = Date.distantPast
     @State private var framePick: String?
     @State private var photoPick: String?
     @State private var showDex = false
@@ -392,7 +394,10 @@ struct CamperRoomView: View {
                 .onAppear { refit { viewport = CGSize(width: width, height: height) } }
                 .onChange(of: width) { _, w in refit { viewport.width = w } }
                 // 板の高さが変わると絵の高さも変わる。初めの向きのままなら、新しい縦横に合わせ直す（2026-10-22）
-                .onChange(of: height) { _, h in refit { viewport.height = h } }
+                .onChange(of: height) { _, h in
+                    sceneResizedAt = Date()
+                    refit { viewport.height = h }
+                }
             if let selected, drag == nil, mode == .edit || mode == .home, let point = actionPoint(selected) {
                 // 右上の「向きを戻す」（44pt・上端 12）が出ている時は、その下まで下げて重ねない（2026-10-22）
                 let top: CGFloat = showsResetView ? 86 : 30
@@ -459,6 +464,20 @@ struct CamperRoomView: View {
         withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
     }
 
+    /// 描いた知らせ（`onDrawn`）から覆いを消すまで: 下の板の高さを測り終え、部屋の絵の大きさが 0.5 秒動かなくなってから
+    /// （2026-10-22 Mac run 684: 板の高さを中身から決めるようにした後、昼に入った直後に覆いが消えて暗い画面が写った。
+    /// 絵の大きさが変わった直後の描き直しのコマを「描いた」と数えた見立て）。3 秒で打ち切って消す
+    private func uncoverWhenSettled() {
+        Task { @MainActor in
+            for _ in 0..<30 {
+                let measured = mode == .edit || mode == .photos || panelNeed[mode] != nil
+                if measured, Date().timeIntervalSince(sceneResizedAt) > 0.5 { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            uncoverEntry()
+        }
+    }
+
     /// 箱庭そのもの（2026-10-21: 1 つの式に修飾が多すぎて、Xcode の型検査が時間切れになった・Mac run 597。分けた）
     private func sceneView(width: CGFloat, height: CGFloat) -> some View {
         CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
@@ -467,7 +486,7 @@ struct CamperRoomView: View {
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil,
                             onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil,
                             onReady: { marker in readyMarker = marker },
-                            onDrawn: { uncoverEntry() })
+                            onDrawn: { uncoverWhenSettled() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)
