@@ -3774,7 +3774,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **家具の脚の接写**（`-JPPreviewCamperRoomLegs`・Debug のみ・2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）:
     /// 脚のある家具を 1 頁に 1 つ、正面・斜め・横・低い所の 4 方向から本物の SceneKit で描き、昼の全頁を**必ず撮る**
-    /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）
+    /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）。
+    /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED。全部を回す PR の検証・TestFlight では飛ばす・約5分）
     func testCapturesCamperFurnitureLegs() {
         executionTimeAllowance = 1500
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLegs", "YES"])

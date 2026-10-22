@@ -33,22 +33,49 @@ enum CamperRoomVariety {
 
     private static let byId: [String: Piece] = Dictionary(uniqueKeysWithValues: pieces.map { ($0.furniture.id, $0) })
     private static let gate = NSLock()
-    private static var memo: [String: CamperMesh] = [:]
+    /// 作った網の控え（2026-10-22 確かめ役「memo を捨てないので図鑑を最後まで見ると 1〜2GB 近く」）。
+    /// 実測（試験 `CamperVarietyMeshSizeTests`）: 組み合わせ 2,076 点の三角形は main で 197 万（全部控えると約 400MB）、
+    /// 脚を作り直した後で 428 万（約 870MB）。家具の小さな絵の控え（`CamperThumbCache`）と同じ、使った順の古い物から
+    /// 捨てる上限つきの控えにする。上限 48MB は寝台（いちばん重い 1 万 600 枚・約 2MB）でも 20 点ほど残る大きさ
+    static let memoCostLimit = 48 * 1024 * 1024
+    /// 三角形 1 枚の記憶（点 3 つ × 位置・向き 24 バイトずつ・貼り絵 16 バイト ＋ 番号 3 つ × 4 バイト）
+    static let bytesPerTriangle = 3 * (24 + 24 + 16) + 3 * 4
+    private static var memo = CamperThumbCache<CamperMesh>(costLimit: memoCostLimit)
 
     static func mesh(_ id: String) -> CamperMesh? {
         gate.lock()
-        if let hit = memo[id] { gate.unlock(); return hit }
+        if let hit = memo.value(id) { gate.unlock(); return hit }
         gate.unlock()
         guard let piece = byId[id] else { return nil }
         let built = build(piece)
         gate.lock()
-        memo[id] = built
+        memo.insert(built, key: id, cost: built.triangleCount * bytesPerTriangle)
         gate.unlock()
         return built
     }
 
+    /// 控えている網の記憶（バイト）
+    static var memoCost: Int {
+        gate.lock()
+        defer { gate.unlock() }
+        return memo.totalCost
+    }
+
+    /// 控えを全部捨てる（部屋を閉じたとき・メモリの警告。家具の小さな絵の控えと一緒に）
+    static func removeAllMeshes() {
+        gate.lock()
+        memo.removeAll()
+        gate.unlock()
+    }
+
     static func lamp(_ id: String) -> (position: CV3, intensity: Double, range: Double)? {
         guard let piece = byId[id], piece.furniture.lit else { return nil }
+        // 2026-10-22（確かめ役）: 前は床の物を高さの 0.72 に固定していて、作り直した電球・火の窓とずれた。形と同じ式で
+        switch piece.furniture.category {
+        case .floorLamp: return (varietyLampHead(stem: piece.axes.0, foot: piece.axes.2) + varietyBulbAboveHead, 0.4, 70)
+        case .heater: return (varietyHeaterFire(body: piece.axes.0, feet: piece.axes.2, hx: varietyHalf(piece.furniture.width)), 0.4, 60)
+        default: break
+        }
         switch piece.furniture.placement {
         case .floor: return (CV3(0, max(8, piece.furniture.height * 0.72), 0), 0.4, 70)
         case .wall: return (CV3(0, 8, 3.5), 0.35, 60)
@@ -56,7 +83,7 @@ enum CamperRoomVariety {
         }
     }
 
-    private static func build(_ piece: Piece) -> CamperMesh {
+    static func build(_ piece: Piece) -> CamperMesh {
         let raw: CamperMesh
         switch piece.furniture.category {
         case .bed: raw = bed(piece)
@@ -558,11 +585,11 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     // 框（柱の間の横の板と端の板）・框の内の受け木・簀の子
     func rails(inset: Double = 0) {
         for z in [-W / 2 + 1.2 + inset, W / 2 - 1.2 - inset] {
-            parts.append(VarietyKit.block(CV3(L - 5.2 - inset * 2, railTop - railLow, 2.4), at: CV3(0, railLow, z), radius: 0.5, segments: 2, oak))
+            parts.append(VarietyKit.block(CV3(L - 5.2 - inset * 2, railTop - railLow, 2.4), at: CV3(0, railLow, z), radius: 0.5, segments: 1, oak))
             parts.append(varietyBox(CV3(L - 6 - inset * 2, 0.8, 0.8), CV3(0, deck - 1.6, z + (z < 0 ? 1.6 : -1.6)), dark))
         }
         for x in [-L / 2 + 1.2 + inset, L / 2 - 1.2 - inset] {
-            parts.append(VarietyKit.block(CV3(2.4, railTop - railLow, W - 5.2 - inset * 2), at: CV3(x, railLow, 0), radius: 0.5, segments: 2, oak))
+            parts.append(VarietyKit.block(CV3(2.4, railTop - railLow, W - 5.2 - inset * 2), at: CV3(x, railLow, 0), radius: 0.5, segments: 1, oak))
         }
         let n = 11
         let span = L - 6 - inset * 2
@@ -573,7 +600,7 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     }
     // 柱（四隅。頭の玉）
     func post(_ x: Double, _ z: Double, from y0: Double, to y1: Double, size: Double = 2.8) {
-        parts.append(VarietyKit.block(CV3(size, y1 - y0, size), at: CV3(x, y0, z), radius: 0.45, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(size, y1 - y0, size), at: CV3(x, y0, z), radius: 0.45, segments: 1, oak))
         parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(size * 0.42, 0), CV2(size * 0.5, 0.5), CV2(size * 0.32, 1.0),
                                                          CV2(size * 0.42, 1.6), CV2(0, 2.1)], segments: 14, dark), at: CV3(x, y1, z)))
     }
@@ -587,7 +614,7 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         base = 2.2
         rails()
         for z in [-pz, pz] {
-            parts.append(VarietyKit.block(CV3(L - 5.6, 2.2, 2.6), at: CV3(0, 0, z), radius: 0.7, segments: 2, oak))
+            parts.append(VarietyKit.block(CV3(L - 5.6, 2.2, 2.6), at: CV3(0, 0, z), radius: 0.7, segments: 1, oak))
             for s in [-1.0, 1.0] {
                 let c = CV3(s * (L / 2 - 2.8), 1.9, z)
                 let curl = (0...10).map { k -> CV3 in
@@ -601,7 +628,7 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 3:
         // 舟形（引っ込めた台輪の上に、角を大きく丸めた胴。胴の上が床板）
         parts.append(varietyBox(CV3(L - 6, 1.2, W - 6), .zero, dark))
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, deck - 1.2, W - 2.6), radius: 2.4, segments: 3, sidePuff: 0.4, oak),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, deck - 1.2, W - 2.6), radius: 2.4, segments: 2, sidePuff: 0.4, oak),
                                        at: CV3(0, 1.2 + (deck - 1.2) / 2, 0)))
         parts.append(VarietyKit.tube(VarietyKit.roundedRect(L - 2.2, W - 2.2, r: 2.6).map { CV3($0.x, deck - 2.5, $0.y) }, radius: 0.3,
                                      sides: 6, closed: true, brass))
@@ -625,7 +652,7 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         for z in [-W / 2 + 1.2, W / 2 - 1.2] { parts.append(varietyBox(CV3(2.4, railLow, 2.4), CV3(0, 0, z), oak)) }
         for z in [-pz, pz] { parts.append(varietyBox(CV3(L - 5.2, 1.6, 1.8), CV3(0, postTop - 1.6, z), oak)) }
         for x in [-px, px] { parts.append(varietyBox(CV3(1.8, 1.6, W - 5.2), CV3(x, postTop - 1.6, 0), oak)) }
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, 0.5, W - 2.6), radius: 0.2, segments: 2, puff: 0.6, linen),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, 0.5, W - 2.6), radius: 0.2, segments: 1, puff: 0.6, linen),
                                        at: CV3(0, postTop + 0.25, 0)))
         for z in [-pz, pz] {
             parts.append(VarietyKit.placed(VarietyKit.drape(width: L - 6, height: 6, folds: 7, depth: 0.5, flare: 0.08, linen),
@@ -633,14 +660,15 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     case 6:
         // 入れ子の枠（短い脚 6 の上に外の框、その内に一段高い内の框）
-        for x in [-px, 0, px] { for z in [-pz, pz] { parts.append(varietyBox(CV3(2.6, 3, 2.6), CV3(x, 0, z), dark)) } }
-        for z in [-pz, pz] { parts.append(VarietyKit.block(CV3(L - 1.4, 2.6, 2.6), at: CV3(0, 3, z), radius: 0.5, segments: 2, oak)) }
-        for x in [-px, px] { parts.append(VarietyKit.block(CV3(2.6, 2.6, W - 5.2), at: CV3(x, 3, 0), radius: 0.5, segments: 2, oak)) }
-        parts.append(VarietyKit.block(CV3(L - 6, deck - 5.6, W - 6), at: CV3(0, 5.6, 0), radius: 0.6, segments: 2, varietyWood(frame + 1)))
+        // 脚は外の框の下に収める（2026-10-22 確かめ役の見張り: 前は框の外へ 1.75 cm 出ていた）
+        for x in [-px + 0.7, 0, px - 0.7] { for z in [-pz + 0.7, pz - 0.7] { parts.append(varietyBox(CV3(2.6, 3, 2.6), CV3(x, 0, z), dark)) } }
+        for z in [-pz, pz] { parts.append(VarietyKit.block(CV3(L - 1.4, 2.6, 2.6), at: CV3(0, 3, z), radius: 0.5, segments: 1, oak)) }
+        for x in [-px, px] { parts.append(VarietyKit.block(CV3(2.6, 2.6, W - 5.2), at: CV3(x, 3, 0), radius: 0.5, segments: 1, oak)) }
+        parts.append(VarietyKit.block(CV3(L - 6, deck - 5.6, W - 6), at: CV3(0, 5.6, 0), radius: 0.6, segments: 1, varietyWood(frame + 1)))
     case 7:
         // 船長の框（台輪の上に引き出し 3 の箱・真鍮のつまみ）
         parts.append(varietyBox(CV3(L - 2.6, 0.8, W - 2.6), .zero, dark))
-        parts.append(VarietyKit.block(CV3(L - 1.4, deck - 0.8, W - 1.4), at: CV3(0, 0.8, 0), radius: 0.5, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(L - 1.4, deck - 0.8, W - 1.4), at: CV3(0, 0.8, 0), radius: 0.5, segments: 1, oak))
         for k in 0..<3 {
             let x = -L / 3 + Double(k) * L / 3
             let at = CV3(x, 2, W / 2 - 0.5)
@@ -673,9 +701,9 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
                                        at: CV3(headX, panelLow, 0), yaw: .pi / 2))
     case 3:
         // 翼（板と、前へ開く両脇の袖）
-        parts.append(VarietyKit.block(CV3(1.8, headTop - 1 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(1.8, headTop - 1 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 1, oak))
         for s in [-1.0, 1.0] {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(6, 12, 1.4), radius: 0.5, segments: 2, linen),
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(6, 12, 1.4), radius: 0.5, segments: 1, linen),
                                            at: CV3(headX + 3.2, headTop - 8, s * (pz - 0.4)), yaw: s * 0.35))
         }
     case 5:
@@ -689,8 +717,8 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     default:
         // 平らな頭板・低い枕元（一枚板・上の縁に笠木）
-        parts.append(VarietyKit.block(CV3(1.8, headTop - 1.2 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 2, oak))
-        parts.append(VarietyKit.block(CV3(2.6, 1.2, span + 1), at: CV3(headX, headTop - 1.2, 0), radius: 0.5, segments: 2, dark))
+        parts.append(VarietyKit.block(CV3(1.8, headTop - 1.2 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 1, oak))
+        parts.append(VarietyKit.block(CV3(2.6, 1.2, span + 1), at: CV3(headX, headTop - 1.2, 0), radius: 0.5, segments: 1, dark))
     }
     // 足の柱と足板
     let footX = px
@@ -698,16 +726,16 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     switch foot {
     case 1:
         // 巻き足（板の上に丸く巻いた笠木）
-        parts.append(VarietyKit.block(CV3(1.6, footTop - 1.4 - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(1.6, footTop - 1.4 - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 1, oak))
         parts.append(VarietyKit.tube([CV3(footX + 0.3, footTop - 1.2, -span / 2 - 0.6), CV3(footX + 0.3, footTop - 1.2, span / 2 + 0.6)],
                                      radius: 1.3, sides: 14, dark))
     case 2:
         // 高い足板
-        parts.append(VarietyKit.block(CV3(1.8, footTop - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(1.8, footTop - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 1, oak))
     case 3:
         // 箱足（足元の物入れの箱・真鍮の留め）
         let bx = footX - 4.4
-        parts.append(VarietyKit.block(CV3(6.2, railTop + 3 - base, span), at: CV3(bx, base, 0), radius: 0.5, segments: 2, varietyWood(frame + 1)))
+        parts.append(VarietyKit.block(CV3(6.2, railTop + 3 - base, span), at: CV3(bx, base, 0), radius: 0.5, segments: 1, varietyWood(frame + 1)))
         parts.append(VarietyKit.block(CV3(1.6, 1.2, 0.5), at: CV3(bx - 3.2, railTop, 0), radius: 0.15, segments: 1, brass))
     default:
         break
@@ -715,14 +743,14 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     // 敷き布団（縁の縫い目）と寝具
     let mx = L - (foot == 3 ? 14 : 6), mxc = foot == 3 ? -4.0 : 0
     let mw = W - 5, top = deck + 6
-    parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx, 6, mw), radius: 1.8, segments: 3, puff: 0.4, .room(.cotton(0xE8E1D2))),
+    parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx, 6, mw), radius: 1.8, segments: 2, puff: 0.4, .room(.cotton(0xE8E1D2))),
                                    at: CV3(mxc, deck + 3, 0)))
     parts.append(VarietyKit.tube(VarietyKit.roundedRect(mx + 0.3, mw + 0.3, r: 2.2).map { CV3($0.x + mxc, deck + 4.8, $0.y) }, radius: 0.3,
                                  sides: 6, closed: true, .room(.cotton(0xCFC6B4))))
     let pillow = CamperMaterial.room(.linen(0xF1EDE4))
     func pillows(_ zs: [Double]) {
         for (k, z) in zs.enumerated() {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(10, 3.4, 14), radius: 1.6, segments: 3, puff: 1.1, sidePuff: 0.4, pillow),
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(10, 3.4, 14), radius: 1.6, segments: 2, puff: 1.1, sidePuff: 0.4, pillow),
                                            at: CV3(-L / 2 + 9, top + 1.7, z), yaw: k == 0 ? 0.05 : -0.07))
         }
     }
@@ -730,34 +758,34 @@ private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 1:
         // 三つ折り（足の側に畳んだ掛け布団 3 層）
         for k in 0..<3 {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(16 - Double(k), 2.4, mw - 0.6 - Double(k) * 0.6), radius: 1.1, segments: 3,
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(16 - Double(k), 2.4, mw - 0.6 - Double(k) * 0.6), radius: 1.1, segments: 2,
                                                                  puff: 0.4, linen), at: CV3(mxc + mx / 2 - 10, top + 1.2 + Double(k) * 2.2, 0)))
         }
         pillows([0])
     case 2:
         // 枕二つと掛け布団
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.6, mw + 2), radius: 1.2, segments: 3, puff: 0.8, sidePuff: 0.5, linen),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.6, mw + 2), radius: 1.2, segments: 2, puff: 0.8, sidePuff: 0.5, linen),
                                        at: CV3(mxc + mx * 0.17, top + 1.3, 0)))
         pillows([-mw / 4, mw / 4])
     case 3:
         // 足元の毛布（編み物を畳んで横へ垂らす）
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(11, 1.6, mw + 3), radius: 0.7, segments: 2, puff: 0.3, sidePuff: 0.3,
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(11, 1.6, mw + 3), radius: 0.7, segments: 1, puff: 0.3, sidePuff: 0.3,
                                                              .room(.knit(0xB5653F))), at: CV3(mxc + mx / 2 - 8, top + 0.8, 0)))
         parts.append(VarietyKit.placed(VarietyKit.drape(width: 11, height: 4, folds: 2, depth: 0.4, flare: 0.1, .room(.knit(0xB5653F))),
                                        at: CV3(mxc + mx / 2 - 8, top + 1.4, mw / 2 + 1.5)))
         pillows([0])
     case 4:
         // 片方だけ（掛け布団を半分めくる）
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 2.4, mw / 2 + 1.5), radius: 1.1, segments: 3, puff: 0.7, linen),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 2.4, mw / 2 + 1.5), radius: 1.1, segments: 2, puff: 0.7, linen),
                                        at: CV3(mxc + mx * 0.18, top + 1.2, mw / 4 + 0.5)))
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 1.4, 4), radius: 0.6, segments: 2, puff: 0.3, linen),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 1.4, 4), radius: 0.6, segments: 1, puff: 0.3, linen),
                                        at: CV3(mxc + mx * 0.18, top + 3.1, -0.5)))
         pillows([-mw / 4, mw / 4])
     default:
         // 折り返し（掛け布団と頭の側の白い折り返し）
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.8, mw + 2.4), radius: 1.3, segments: 3, puff: 0.8, sidePuff: 0.6, linen),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.8, mw + 2.4), radius: 1.3, segments: 2, puff: 0.8, sidePuff: 0.6, linen),
                                        at: CV3(mxc + mx * 0.17, top + 1.4, 0)))
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(4.4, 3.2, mw + 2.5), radius: 1.5, segments: 3, puff: 0.4, .room(.linen(0xEDE8DE))),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(4.4, 3.2, mw + 2.5), radius: 1.5, segments: 2, puff: 0.4, .room(.linen(0xEDE8DE))),
                                        at: CV3(mxc - mx * 0.15, top + 1.6, 0)))
         pillows([0])
     }
@@ -794,7 +822,7 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         if round {
             let r = lx * 2.squareRoot()
             parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(r - thick / 2, 0), CV2(r + thick / 2, 0), CV2(r + thick / 2, height),
-                                                             CV2(r - thick / 2, height), CV2(r - thick / 2, 0)], segments: 32, wood,
+                                                             CV2(r - thick / 2, height), CV2(r - thick / 2, 0)], segments: 24, wood,
                                                             capStart: false, capEnd: false),
                                            at: CV3(0, under - height, 0)))
             return
@@ -804,7 +832,7 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     }
     // 脚先のフェルト（床を傷めない黒い当て）
     func glide(_ x: Double, _ z: Double) {
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.72, height: 0.2, bevel: 0.08, segments: 12, .room(.leather(0x2A2522))),
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: 0.72, height: 0.2, bevel: 0.08, segments: 8, .room(.leather(0x2A2522))),
                                        at: CV3(x, 0, z)))
     }
     switch base {
@@ -886,7 +914,7 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     default:
         // まっすぐ脚（3.5 cm 角・角を落とす・脚先にフェルト）・幕板・H の貫
         for (x, z) in corners {
-            parts.append(VarietyKit.block(CV3(1.5, under - 0.2, 1.5), at: CV3(x, 0.2, z), radius: 0.3, segments: 2, wood))
+            parts.append(VarietyKit.block(CV3(1.5, under - 0.2, 1.5), at: CV3(x, 0.2, z), radius: 0.3, segments: 1, wood))
             glide(x, z)
         }
         aprons(2.6, thick: 0.9)
@@ -897,10 +925,10 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let seatY = seatTop - seatT
     switch top {
     case 1:
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rim, height: seatT, bevel: 0.45, segments: 32, wood), at: CV3(0, seatY, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rim, height: seatT, bevel: 0.45, segments: 24, wood), at: CV3(0, seatY, 0)))
     case 2:
         // 鞍座（厚い一枚板の縁を大きく落とす）
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(w, seatT, d), radius: 0.8, segments: 3, puff: 0.25, wood),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(w, seatT, d), radius: 0.8, segments: 2, puff: 0.25, wood),
                                        at: CV3(0, seatY + seatT / 2, 0)))
     case 3:
         // 編み座（木の框に い草を編む）
@@ -910,7 +938,7 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 4:
         // 厚い座（板の上にふくらんだ座布団）
         parts.append(varietyBox(CV3(w, seatT, d), CV3(0, seatY, 0), wood))
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(w - 0.6, 2.8, d - 0.6), radius: 1.1, segments: 3, puff: 0.7, sidePuff: 0.3,
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(w - 0.6, 2.8, d - 0.6), radius: 1.1, segments: 2, puff: 0.7, sidePuff: 0.3,
                                                              cloth), at: CV3(0, seatTop + 1.4, 0)))
     case 5:
         // すのこ座（前後に 5 枚の板・板の間は 1.2 cm・下に受け桟）
@@ -932,37 +960,37 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let postX = lx
     func posts(_ height: Double) {
         for x in [-postX, postX] {
-            parts.append(VarietyKit.block(CV3(1.3, height, 1.3), at: CV3(x, seatTop, postZ), radius: 0.3, segments: 2, wood))
+            parts.append(VarietyKit.block(CV3(1.3, height, 1.3), at: CV3(x, seatTop, postZ), radius: 0.3, segments: 1, wood))
         }
     }
     let span = postX * 2
     switch back {
     case 1:
         posts(backTop - seatTop)
-        parts.append(VarietyKit.block(CV3(span + 1.3, 3.2, 0.9), at: CV3(0, backTop - 3.2, postZ), radius: 0.35, segments: 2, wood))
+        parts.append(VarietyKit.block(CV3(span + 1.3, 3.2, 0.9), at: CV3(0, backTop - 3.2, postZ), radius: 0.35, segments: 1, wood))
     case 2:
         posts(backTop - seatTop)
         for k in 0..<3 {
-            parts.append(VarietyKit.block(CV3(span, 1.7, 0.7), at: CV3(0, backTop - 2 - Double(k) * 4, postZ), radius: 0.25, segments: 2, wood))
+            parts.append(VarietyKit.block(CV3(span, 1.7, 0.7), at: CV3(0, backTop - 2 - Double(k) * 4, postZ), radius: 0.25, segments: 1, wood))
         }
     case 3:
         posts(backTop - seatTop)
-        parts.append(VarietyKit.block(CV3(span, 9, 0.8), at: CV3(0, backTop - 9.5, postZ), radius: 0.3, segments: 2, wood))
+        parts.append(VarietyKit.block(CV3(span, 9, 0.8), at: CV3(0, backTop - 9.5, postZ), radius: 0.3, segments: 1, wood))
         parts.append(varietyBox(CV3(span, 1.2, 0.8), CV3(0, seatTop + 2, postZ), wood))
     case 4:
         // 翼背（布張りの背と両脇の耳）
         let bz = round ? postZ : -d / 2 + 1.4
         let bw = round ? span + 2 : w - 0.4
-        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(bw, backTop - seatTop, 2.6), radius: 1, segments: 3, sidePuff: 0.4, cloth),
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(bw, backTop - seatTop, 2.6), radius: 1, segments: 2, sidePuff: 0.4, cloth),
                                        at: CV3(0, (seatTop + backTop) / 2, bz)))
         for s in [-1.0, 1.0] {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(1.8, 8, 5), radius: 0.8, segments: 3, sidePuff: 0.3, cloth),
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(1.8, 8, 5), radius: 0.8, segments: 2, sidePuff: 0.3, cloth),
                                            at: CV3(s * (bw / 2 - 0.7), backTop - 4.5, bz + 3.2)))
         }
     case 5:
         // スピンドル（上下の笠木と細い丸棒 5）
         posts(backTop - seatTop)
-        parts.append(VarietyKit.block(CV3(span + 1.3, 2.4, 1.0), at: CV3(0, backTop - 2.4, postZ), radius: 0.4, segments: 2, wood))
+        parts.append(VarietyKit.block(CV3(span + 1.3, 2.4, 1.0), at: CV3(0, backTop - 2.4, postZ), radius: 0.4, segments: 1, wood))
         parts.append(varietyBox(CV3(span, 1.2, 0.9), CV3(0, seatTop + 2, postZ), wood))
         for k in 1...5 {
             let x = -postX + span * Double(k) / 6
@@ -986,10 +1014,10 @@ private func seating(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     if arms > 0 {
         let armY = seatTop + (arms == 2 ? 7 : 5.5)
         for x in [-postX, postX] {
-            parts.append(VarietyKit.block(CV3(1.1, armY - seatTop, 1.1), at: CV3(x, seatTop, d / 2 - 1.6), radius: 0.3, segments: 2, wood))
-            parts.append(VarietyKit.block(CV3(1.6, 1.0, d - 1.6), at: CV3(x, armY, 0.2), radius: 0.4, segments: 2, arms == 2 ? metal : wood))
+            parts.append(VarietyKit.block(CV3(1.1, armY - seatTop, 1.1), at: CV3(x, seatTop, d / 2 - 1.6), radius: 0.3, segments: 1, wood))
+            parts.append(VarietyKit.block(CV3(1.6, 1.0, d - 1.6), at: CV3(x, armY, 0.2), radius: 0.4, segments: 1, arms == 2 ? metal : wood))
             if back == 0 || back == 4 {
-                parts.append(VarietyKit.block(CV3(1.1, armY - seatTop, 1.1), at: CV3(x, seatTop, postZ), radius: 0.3, segments: 2, wood))
+                parts.append(VarietyKit.block(CV3(1.1, armY - seatTop, 1.1), at: CV3(x, seatTop, postZ), radius: 0.3, segments: 1, wood))
             }
         }
     }
@@ -1014,7 +1042,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     switch top {
     case 1:
         under = topTop - 1.6
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rim, height: 1.6, bevel: 0.5, segments: 40, wood), at: CV3(0, under, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rim, height: 1.6, bevel: 0.5, segments: 28, wood), at: CV3(0, under, 0)))
         fw = rim * 2; fd = rim * 2
     case 2:
         // ドロップリーフ（真ん中の固定の板・右の板は持ち上げて引き出しの腕で受け、左の板は蝶番で下に垂れる）
@@ -1043,7 +1071,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 4:
         // 石の天板（厚い石を木の枠に載せる）
         under = topTop - 2.6
-        parts.append(VarietyKit.block(CV3(w, 1.8, d), at: CV3(0, under + 0.8, 0), radius: 0.35, segments: 2, .room(.ceramic(0xD9D3C7))))
+        parts.append(VarietyKit.block(CV3(w, 1.8, d), at: CV3(0, under + 0.8, 0), radius: 0.35, segments: 1, .room(.ceramic(0xD9D3C7))))
         parts.append(varietyBox(CV3(w - 2, 0.8, d - 2), CV3(0, under, 0), wood))
     case 5:
         // ガラス天板（幅の広い木の枠の溝に板硝子）
@@ -1053,7 +1081,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         for x in [-w / 2 + rail / 2, w / 2 - rail / 2] { parts.append(varietyBox(CV3(rail, 1.4, d - rail * 2), CV3(x, under, 0), wood)) }
         parts.append(varietyBox(CV3(w - 1.2, 0.5, d - 1.2), CV3(0, under + 1.4, 0), .room(.clearGlass)))
     default:
-        parts.append(VarietyKit.block(CV3(w, 1.8, d), at: CV3(0, under, 0), radius: 0.45, segments: 2, wood))
+        parts.append(VarietyKit.block(CV3(w, 1.8, d), at: CV3(0, under, 0), radius: 0.45, segments: 1, wood))
     }
     // 脚の芯（4 本は固定の部分の縁から 2.2 内。丸い天板は斜めに寄せて円の内へ）
     let lx: Double, lz: Double
@@ -1077,7 +1105,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         let h = apron == 3 ? 4.2 : 3.0, t = 1.0
         if let r = ring {
             parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(r - t / 2, 0), CV2(r + t / 2, 0), CV2(r + t / 2, h), CV2(r - t / 2, h),
-                                                             CV2(r - t / 2, 0)], segments: 40, legWood, capStart: false, capEnd: false),
+                                                             CV2(r - t / 2, 0)], segments: 28, legWood, capStart: false, capEnd: false),
                                            at: CV3(0, under - h, 0)))
             if apron == 3 { drawer(CV3(0, under - h + 0.6, r + t / 2), width: r * 0.8, height: h - 1.2) }
             if apron == 4 { for a in [0.25, 0.75, 1.25, 1.75] { peg(CV3(cos(a * .pi) * (r + t / 2), under - h / 2, sin(a * .pi) * (r + t / 2))) } }
@@ -1101,9 +1129,9 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         // 中央の柱（十字の脚・挽いた柱・天板の下の十字の受け木）
         let foot = min(fw, fd) * 0.42
         for yaw in [0.0, .pi / 2] {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(foot * 2, 2.2, 2.6), radius: 0.7, segments: 2, legWood),
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(foot * 2, 2.2, 2.6), radius: 0.7, segments: 1, legWood),
                                            at: CV3(0, 1.1, 0), yaw: yaw + .pi / 4))
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(min(fw, fd) * 0.62, 0.9, 2.2), radius: 0.3, segments: 2, legWood),
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(min(fw, fd) * 0.62, 0.9, 2.2), radius: 0.3, segments: 1, legWood),
                                            at: CV3(0, under - 0.45, 0), yaw: yaw))
         }
         let h = under - 0.9 - 2.2
@@ -1116,22 +1144,22 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         let px = round ? rim * 0.55 : fw / 2 - 3.5
         let zh = round ? (rim * rim - px * px).squareRoot() - 1.5 : fd / 2 - 1.5
         for x in [-px, px] {
-            parts.append(VarietyKit.block(CV3(2.6, 2.2, zh * 2), at: CV3(x, 0, 0), radius: 0.6, segments: 2, legWood))
-            parts.append(VarietyKit.block(CV3(1.8, under - 1.6 - 2.2, zh), at: CV3(x, 2.2, 0), radius: 0.3, segments: 2, legWood))
-            parts.append(VarietyKit.block(CV3(2.4, 1.6, zh * 2 - 1), at: CV3(x, under - 1.6, 0), radius: 0.4, segments: 2, legWood))
+            parts.append(VarietyKit.block(CV3(2.6, 2.2, zh * 2), at: CV3(x, 0, 0), radius: 0.6, segments: 1, legWood))
+            parts.append(VarietyKit.block(CV3(1.8, under - 1.6 - 2.2, zh), at: CV3(x, 2.2, 0), radius: 0.3, segments: 1, legWood))
+            parts.append(VarietyKit.block(CV3(2.4, 1.6, zh * 2 - 1), at: CV3(x, under - 1.6, 0), radius: 0.4, segments: 1, legWood))
             parts.append(varietyBox(CV3(0.7, 2.8, 0.9), CV3(x + (x < 0 ? -1.7 : 1.7), 8.6, 0), varietyWood(top + 3)))
         }
-        parts.append(VarietyKit.block(CV3(px * 2 + 3.4, 2.0, 1.6), at: CV3(0, 9, 0), radius: 0.3, segments: 2, legWood))
+        parts.append(VarietyKit.block(CV3(px * 2 + 3.4, 2.0, 1.6), at: CV3(0, 9, 0), radius: 0.3, segments: 1, legWood))
         apronFrame(px - 1.2, zh - 0.8, ring: nil)
     case 3:
         // X 脚（床の足木の上に鉄の丸管を相欠きで X に・天板の下の受け・真ん中の貫）
         let px = round ? rim * 0.55 : fw / 2 - 3.5
         let zh = round ? (rim * rim - px * px).squareRoot() - 1.8 : fd / 2 - 1.8
         for x in [-px, px] {
-            parts.append(VarietyKit.block(CV3(1.8, 1.0, zh * 2 + 1.6), at: CV3(x, 0, 0), radius: 0.3, segments: 2, metal))
+            parts.append(VarietyKit.block(CV3(1.8, 1.0, zh * 2 + 1.6), at: CV3(x, 0, 0), radius: 0.3, segments: 1, metal))
             parts.append(VarietyKit.tube([CV3(x, 1.0, -zh), CV3(x, under - 1.4, zh)], radius: 0.75, sides: 10, metal))
             parts.append(VarietyKit.tube([CV3(x, 1.0, zh), CV3(x, under - 1.4, -zh)], radius: 0.75, sides: 10, metal))
-            parts.append(VarietyKit.block(CV3(1.8, 1.4, zh * 2 + 1.6), at: CV3(x, under - 1.4, 0), radius: 0.3, segments: 2, metal))
+            parts.append(VarietyKit.block(CV3(1.8, 1.4, zh * 2 + 1.6), at: CV3(x, under - 1.4, 0), radius: 0.3, segments: 1, metal))
         }
         parts.append(VarietyKit.tube([CV3(-px, (under - 0.65) / 2, 0), CV3(px, (under - 0.65) / 2, 0)], radius: 0.55, sides: 10, metal))
         apronFrame(px - 1.2, zh, ring: nil)
@@ -1139,7 +1167,7 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         // 引き出し台（台輪の上の箱・前に引き出し 3 段・真鍮のつまみ）
         let bw = round ? rim * 1.3 : fw - 3, bd = round ? rim * 1.3 : fd - 3
         parts.append(varietyBox(CV3(bw - 1.4, 1.2, bd - 1.4), .zero, legWood))
-        parts.append(VarietyKit.block(CV3(bw, under - 1.2, bd), at: CV3(0, 1.2, 0), radius: 0.4, segments: 2, legWood))
+        parts.append(VarietyKit.block(CV3(bw, under - 1.2, bd), at: CV3(0, 1.2, 0), radius: 0.4, segments: 1, legWood))
         let rowsN = apron == 3 ? 4 : 3
         let rowH = (under - 1.2 - 1.6) / Double(rowsN)
         for k in 0..<rowsN { drawer(CV3(0, 2.0 + Double(k) * rowH, bd / 2), width: bw - 2, height: rowH - 0.5) }
@@ -1159,12 +1187,12 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         if apron > 0 {
             apronFrame(rho, rho, ring: rho)
         } else {
-            parts.append(VarietyKit.placed(VarietyKit.disc(radius: rho + 1.4, height: 0.9, bevel: 0.25, segments: 30, legWood), at: CV3(0, under - 0.9, 0)))
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: rho + 1.4, height: 0.9, bevel: 0.25, segments: 24, legWood), at: CV3(0, under - 0.9, 0)))
         }
     default:
         // 四本脚（5 cm 角・角を落とす）
         for (x, z) in [(-lx, -lz), (lx, -lz), (-lx, lz), (lx, lz)] {
-            parts.append(VarietyKit.block(CV3(2.0, under, 2.0), at: CV3(x, 0, z), radius: 0.35, segments: 2, legWood))
+            parts.append(VarietyKit.block(CV3(2.0, under, 2.0), at: CV3(x, 0, z), radius: 0.35, segments: 1, legWood))
         }
         apronFrame(lx, lz, ring: round ? lx * 2.squareRoot() : nil)
     }
@@ -1290,14 +1318,14 @@ private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let t = 0.8
     if round {
         // 丸い胴（前だけ平らな面を出して戸・引き出しを付ける）
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr, height: bodyH, bevel: 0.4, segments: 32, oak), at: CV3(0, lift, 0)))
-        parts.append(VarietyKit.block(CV3(rr * 1.2, bodyH - 0.8, rr * 0.92), at: CV3(0, lift + 0.4, rr * 0.46), radius: 0.4, segments: 2, oak))
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr + 0.5, height: 0.9, bevel: 0.3, segments: 32, trim), at: CV3(0, top, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr, height: bodyH, bevel: 0.4, segments: 24, oak), at: CV3(0, lift, 0)))
+        parts.append(VarietyKit.block(CV3(rr * 1.2, bodyH - 0.8, rr * 0.92), at: CV3(0, lift + 0.4, rr * 0.46), radius: 0.4, segments: 1, oak))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr + 0.5, height: 0.9, bevel: 0.3, segments: 24, trim), at: CV3(0, top, 0)))
     } else if open {
         parts.append(varietyBox(CV3(bw, t, bd), CV3(0, lift, 0), oak))
         for x in [-bw / 2 + t / 2, bw / 2 - t / 2] { parts.append(varietyBox(CV3(t, bodyH - t, bd), CV3(x, lift + t, 0), oak)) }
         parts.append(varietyBox(CV3(bw - t * 2, bodyH - t, 0.6), CV3(0, lift + t, -bd / 2 + 0.3), trim))
-        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 1, oak))
         // 中の棚板と、本・器
         let shelves = max(1, Int(bodyH / 11))
         for k in 1...shelves {
@@ -1324,12 +1352,12 @@ private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
             for k in 0..<3 {
                 let inset = Double(k) * 0.6
                 parts.append(VarietyKit.block(CV3(bw - inset, bodyH / 3, bd), at: CV3(0, lift + Double(k) * bodyH / 3, 0), radius: 0.35,
-                                              segments: 2, oak))
+                                              segments: 1, oak))
             }
         } else {
-            parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, lift, 0), radius: 0.4, segments: 2, oak))
+            parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, lift, 0), radius: 0.4, segments: 1, oak))
         }
-        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 2, body == 3 ? trim : oak))
+        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 1, body == 3 ? trim : oak))
         if body == 3 {
             // 低い櫃（上の四隅に真鍮の角金具）
             for x in [-bw / 2 + 0.7, bw / 2 - 0.7] {
@@ -1384,7 +1412,7 @@ private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         for s in [-1.0, 1.0] {
             let cx = s * fw / 4
             parts.append(VarietyKit.block(CV3(fw / 2 - 0.2, doorH, 0.6), at: CV3(cx, doorY, zf + 0.2), radius: 0.15, segments: 1, varietyWood(body + 2)))
-            parts.append(VarietyKit.block(CV3(fw / 2 - 2.4, doorH - 2.4, 0.3), at: CV3(cx, doorY + 1.2, zf + 0.6), radius: 0.3, segments: 2, oak))
+            parts.append(VarietyKit.block(CV3(fw / 2 - 2.4, doorH - 2.4, 0.3), at: CV3(cx, doorY + 1.2, zf + 0.6), radius: 0.3, segments: 1, oak))
             parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 0.45, segments: 10, metal), at: CV3(s * 1.2, doorY + doorH / 2, zf + 1.0)))
         }
     }
@@ -1418,7 +1446,7 @@ private func heater(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         if round {
             parts.append(VarietyKit.placed(VarietyKit.disc(radius: r - 0.8, height: foot, bevel: 0.3, segments: 28, cast), at: .zero))
         } else {
-            parts.append(VarietyKit.block(CV3(bw - 1.6, foot, bd - 1.6), at: .zero, radius: 0.3, segments: 2, cast))
+            parts.append(VarietyKit.block(CV3(bw - 1.6, foot, bd - 1.6), at: .zero, radius: 0.3, segments: 1, cast))
         }
     case 2:
         // 猫足（四隅の玉を掴む足 4）
@@ -1431,7 +1459,7 @@ private func heater(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     default:
         // 床の炉台（石の板。胴より広く、前へ張り出す）
-        parts.append(VarietyKit.block(CV3(hx * 2 - 0.6, foot, hx * 2 - 0.6), at: .zero, radius: 0.3, segments: 2, .room(.ceramic(0xC4B49A))))
+        parts.append(VarietyKit.block(CV3(hx * 2 - 0.6, foot, hx * 2 - 0.6), at: .zero, radius: 0.3, segments: 1, .room(.ceramic(0xC4B49A))))
     }
     // 胴
     let bodyH = 16 + Double(body) * 3
@@ -1455,13 +1483,13 @@ private func heater(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         frontZ = r
     case 3:
         // 暖炉の口（煉瓦色の箱と、上の棚板）
-        parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, foot, 0), radius: 0.4, segments: 2, .room(.ceramic(0xB4664A))))
-        parts.append(VarietyKit.block(CV3(bw + 1.2, 1.2, bd + 0.8), at: CV3(0, top, 0.2), radius: 0.3, segments: 2, .room(.wood(.darkOak))))
+        parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, foot, 0), radius: 0.4, segments: 1, .room(.ceramic(0xB4664A))))
+        parts.append(VarietyKit.block(CV3(bw + 1.2, 1.2, bd + 0.8), at: CV3(0, top, 0.2), radius: 0.3, segments: 1, .room(.wood(.darkOak))))
         frontZ = bd / 2
     default:
         // 箱ストーブ（鋳物の箱・上の鉄板）
-        parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, foot, 0), radius: 0.5, segments: 2, cast))
-        parts.append(VarietyKit.block(CV3(bw + 0.8, 0.8, bd + 0.8), at: CV3(0, top, 0), radius: 0.25, segments: 2, iron))
+        parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, foot, 0), radius: 0.5, segments: 1, cast))
+        parts.append(VarietyKit.block(CV3(bw + 0.8, 0.8, bd + 0.8), at: CV3(0, top, 0), radius: 0.25, segments: 1, iron))
         frontZ = bd / 2
     }
     // 火の窓（前の面に枠と雲母、その奥に火）
@@ -1558,16 +1586,46 @@ private func rug(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
 // 積んだだけで、弧の柱の笠と電球が柱から離れて浮き、三本の足は柱に届かず、和紙の柱は笠と柱が別の所に立っていた。
 // いまは台（丸・四角・三本足・石・十字の足）の上面（`base`）に柱が立ち、柱の頭（`head`）に受け口と電球、
 // 笠は受け口から出した細い腕で吊る（板の三脚の灯りと同じ作り）
+/// 床の灯りの台の上面（足の形ごと）。形と光の位置（`CamperRoomVariety.lamp`）が同じ式を使う
+private func varietyLampBase(_ foot: Int) -> Double {
+    switch foot {
+    case 1: return 1.6
+    case 2: return 4.4
+    case 3: return 2.4
+    default: return 2.0
+    }
+}
+
+/// 床の灯りの柱の頭（受け口の下の面）。弧の柱は前へ張り出して先で下を向く
+private func varietyLampHead(stem: Int, foot: Int) -> CV3 {
+    let base = varietyLampBase(foot), stemH = 38 + Double(stem % 3) * 5
+    guard stem == 2 else { return CV3(0, base + stemH, 0) }
+    let rise = base + stemH * 0.72, a = Double.pi * 0.75
+    return CV3(0, rise + sin(a) * 6, 6 - cos(a) * 6) + CV3(0, -0.4, 0.4)
+}
+
+/// 電球の芯は受け口の下の面から 3.6 上
+private let varietyBulbAboveHead = CV3(0, 3.6, 0)
+
+/// 暖炉の火の窓の真ん中（前の面の少し前）。形と光の位置が同じ式を使う
+private func varietyHeaterFire(body: Int, feet: Int, hx: Double) -> CV3 {
+    let foot = feet == 3 ? 1.2 : 3.0, bodyH = 16 + Double(body) * 3
+    let r = hx - 1.4, bd = hx * 2 - 3
+    let frontZ = body == 1 ? r * 0.97 : (body == 2 || body == 4 ? r : bd / 2)
+    let winH = bodyH * (body == 3 ? 0.5 : 0.36), winY = foot + (body == 3 ? 1.6 : bodyH * 0.3)
+    // 暖炉の口は炉の奥の下に薪の火（窓の下 45%）
+    return CV3(0, body == 3 ? winY + 0.3 + winH * 0.225 : winY + winH / 2, frontZ + 0.2)
+}
+
 private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let (stem, shade, foot, _) = piece.axes
     let oak = varietyWood(stem), metal = varietyMetal(foot + stem), shadeM = CamperMaterial.room(.shade(0xF3E6C8))
     var parts: [CamperMesh] = []
     // 台
-    let base: Double
+    let base = varietyLampBase(foot)
     switch foot {
     case 1:
-        parts.append(VarietyKit.block(CV3(8, 1.6, 8), at: .zero, radius: 0.5, segments: 2, oak))
-        base = 1.6
+        parts.append(VarietyKit.block(CV3(8, 1.6, 8), at: .zero, radius: 0.5, segments: 1, oak))
     case 2:
         // 三本の足（外へ開く短い脚と革の当て・真ん中の受け）
         for k in 0..<3 {
@@ -1579,26 +1637,22 @@ private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
         parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(1.2, 0), CV2(1.3, 0.6), CV2(1.0, 1.4), CV2(0, 1.4)], segments: 14, metal),
                                        at: CV3(0, 3.0, 0)))
-        base = 4.4
     case 3:
-        parts.append(VarietyKit.block(CV3(7, 2.4, 7), at: .zero, radius: 0.8, segments: 3, .room(.ceramic(0xB7B1A6))))
-        base = 2.4
+        parts.append(VarietyKit.block(CV3(7, 2.4, 7), at: .zero, radius: 0.8, segments: 2, .room(.ceramic(0xB7B1A6))))
     case 4:
         // 十字の足（床の 2 本の桟と真ん中の座）
         for yaw in [0.0, .pi / 2] {
-            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(10, 1.2, 1.6), radius: 0.4, segments: 2, metal), at: CV3(0, 0.6, 0), yaw: yaw + .pi / 4))
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(10, 1.2, 1.6), radius: 0.4, segments: 1, metal), at: CV3(0, 0.6, 0), yaw: yaw + .pi / 4))
         }
         parts.append(VarietyKit.placed(VarietyKit.disc(radius: 1.6, height: 1.0, bevel: 0.3, segments: 16, metal), at: CV3(0, 1.0, 0)))
-        base = 2.0
     default:
         // 丸い台（縁を落とした鉄の円盤と、柱の受けの盛り上がり）
         parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(4.2, 0), CV2(4.3, 0.5), CV2(3.9, 1.1), CV2(1.6, 1.5), CV2(1.0, 2.0),
                                                          CV2(0, 2.0)], segments: 28, metal), at: .zero))
-        base = 2.0
     }
     // 柱（頭の位置 `head` を決める。弧の柱は前へ張り出す）
     let stemH = 38 + Double(stem % 3) * 5
-    var head = CV3(0, base + stemH, 0)
+    let head = varietyLampHead(stem: stem, foot: foot)
     switch stem {
     case 1:
         // 節（下と上の管を真ん中の玉の継ぎ手でつなぐ）
@@ -1617,7 +1671,6 @@ private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
             path.append(CV3(0, rise + sin(a) * 6, 6 - cos(a) * 6))
         }
         parts.append(VarietyKit.tube(path, radius: 0.55, sides: 10, metal))
-        head = path.last! + CV3(0, -0.4, 0.4)
     case 3:
         // 三脚（台の縁から柱の頭へ集まる 3 本の木の棒と、頭の継ぎ輪）
         for k in 0..<3 {
@@ -1651,7 +1704,7 @@ private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     // 受け口と電球（頭の上）
     parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(0.85, 0), CV2(0.85, 2.0), CV2(0.6, 2.4), CV2(0, 2.4)], segments: 14, .room(.brass)),
                                    at: head))
-    let bulb = head + CV3(0, 3.6, 0)
+    let bulb = head + varietyBulbAboveHead
     parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 1.5, segments: 14, .room(.bulb)), at: bulb))
     // 笠と、受け口から笠の縁へ出す細い腕
     func arms(_ rimY: Double, _ r: Double) {
@@ -1661,9 +1714,9 @@ private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
         }
     }
     func ring(_ lo: Double, _ hi: Double, _ r0: Double, _ r1: Double) {
-        parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(r0, 0), CV2(r1, hi - lo)], segments: 32, shadeM, capStart: false, capEnd: false),
+        parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(r0, 0), CV2(r1, hi - lo)], segments: 24, shadeM, capStart: false, capEnd: false),
                                        at: CV3(head.x, lo, head.z)))
-        parts.append(VarietyKit.placed(VarietyKit.inverted(VarietyKit.lathe([CV2(r0 - 0.2, 0), CV2(r1 - 0.2, hi - lo)], segments: 32, shadeM,
+        parts.append(VarietyKit.placed(VarietyKit.inverted(VarietyKit.lathe([CV2(r0 - 0.2, 0), CV2(r1 - 0.2, hi - lo)], segments: 24, shadeM,
                                                                             capStart: false, capEnd: false)), at: CV3(head.x, lo, head.z)))
         for (y, r) in [(lo, r0), (hi, r1)] {
             parts.append(VarietyKit.tube(VarietyKit.ringXZ(center: CV3(head.x, y, head.z), radius: r - 0.1, steps: 32), radius: 0.18, sides: 5,
@@ -1695,9 +1748,9 @@ private func floorLamp(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     case 5:
         // 傘（浅い円錐の布と、頂の飾り）
         let lo = bulb.y + 0.6
-        parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(8, 0), CV2(1.0, 3.2)], segments: 32, clothSafe(shade + stem), capStart: false, capEnd: false),
+        parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(8, 0), CV2(1.0, 3.2)], segments: 24, clothSafe(shade + stem), capStart: false, capEnd: false),
                                        at: CV3(head.x, lo, head.z)))
-        parts.append(VarietyKit.placed(VarietyKit.inverted(VarietyKit.lathe([CV2(7.9, -0.15), CV2(0.9, 3.05)], segments: 32, clothSafe(shade + stem),
+        parts.append(VarietyKit.placed(VarietyKit.inverted(VarietyKit.lathe([CV2(7.9, -0.15), CV2(0.9, 3.05)], segments: 24, clothSafe(shade + stem),
                                                                             capStart: false, capEnd: false)), at: CV3(head.x, lo, head.z)))
         parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 0.6, segments: 10, .room(.brass)), at: CV3(head.x, lo + 3.4, head.z)))
         parts.append(VarietyKit.tube([head + CV3(0, 2.2, 0), CV3(head.x, lo + 3.2, head.z)], radius: 0.18, sides: 6, .room(.brass)))

@@ -59,6 +59,9 @@ enum CamperRoomLegs {
         var triangles: Int
         /// 上端（いちばん高い点のまわり 0.3 の点の真ん中）。斜めの脚は外枠の真ん中ではなく、ここが上の物に届くかを見る
         var top: CV3 = .zero
+        /// 上端の断面の広がり（いちばん高い点のまわり 0.3 の点の外枠の xz）
+        var topLo: CV3 = .zero
+        var topHi: CV3 = .zero
 
         var size: CV3 { hi - lo }
         var center: CV3 { (lo + hi) * 0.5 }
@@ -151,14 +154,19 @@ enum CamperRoomLegs {
         }
         // 上端（いちばん高い点のまわり 0.3 の点の真ん中）
         var sum = [CV3](repeating: .zero, count: lo.count), cnt = [Double](repeating: 0, count: lo.count)
+        var tlo = hi, thi = lo
         for i in 0..<n where used[i] {
             let k = slot[find(i)], p = m.positions[i]
-            if p.y >= hi[k].y - 0.3 { sum[k] = sum[k] + p; cnt[k] += 1 }
+            if p.y >= hi[k].y - 0.3 {
+                sum[k] = sum[k] + p; cnt[k] += 1
+                tlo[k] = CV3(min(tlo[k].x, p.x), 0, min(tlo[k].z, p.z))
+                thi[k] = CV3(max(thi[k].x, p.x), 0, max(thi[k].z, p.z))
+            }
         }
         var out: [Part] = []
         out.reserveCapacity(lo.count)
         for k in lo.indices {
-            out.append(Part(lo: lo[k], hi: hi[k], triangles: tris[k], top: sum[k] * (1 / max(1, cnt[k]))))
+            out.append(Part(lo: lo[k], hi: hi[k], triangles: tris[k], top: sum[k] * (1 / max(1, cnt[k])), topLo: tlo[k], topHi: thi[k]))
         }
         return out.sorted { ($0.lo.y, $0.lo.x, $0.lo.z) < ($1.lo.y, $1.lo.x, $1.lo.z) }
     }
@@ -170,16 +178,16 @@ enum CamperRoomLegs {
     }
 
     /// 脚の番号（床に着いた細長い部品のうち、胴の横に沿って上る帯・縫い目・板を除く。
-    /// 2026-10-22 判断: 旅のラジオの前の縫い目の輪が床すれすれまで下りていて「細すぎる脚」と読んだ。脚は上端で何かを受ける物）
+    /// 2026-10-22 判断: 旅のラジオの前の縫い目の輪が床すれすれまで下りていて「細すぎる脚」と読んだ。脚は胴の外で上端に何かを受ける物。旅の鞄の角金も同じ）
     static func legs(_ ps: [Part]) -> [Int] {
         ps.indices.filter { i in
             let leg = ps[i]
             guard leg.isLeg else { return false }
             let top = CV3(leg.top.x, leg.hi.y, leg.top.z)
             let above = ps.indices.filter { j in j != i && ps[j].contains(top, slack: touch) && ps[j].hi.y > leg.hi.y - touch }
-            let sitsOn = above.contains { ps[$0].lo.y >= leg.hi.y - 1.5 }
+            // 床から脚より高くまである胴の外枠の中にある物（旅の鞄の角金・胴の帯）は、胴の飾り
             let alongside = above.contains { ps[$0].lo.y <= leg.lo.y + touch && ps[$0].hi.y >= leg.hi.y }
-            return sitsOn || !alongside
+            return !alongside
         }
     }
 
@@ -233,18 +241,18 @@ enum CamperRoomLegs {
                 }
                 continue
             }
-            // 脚の上端が座・天板の外へはみ出さない（脚の上半分より上にあり、脚の上端より上へ伸びる部品の外枠と比べる。
-            // 框に差し込んだ脚も見る。外へ開く脚の足先は見ない＝灯りの三本足・ウィンザーの開き脚）
-            let over = ps.indices.filter { j in j != i && ps[j].lo.y >= leg.center.y && ps[j].hi.y > leg.hi.y + touch }
-            if !over.isEmpty {
-                let minX = over.map { ps[$0].lo.x }.min()!, maxX = over.map { ps[$0].hi.x }.max()!
-                let minZ = over.map { ps[$0].lo.z }.min()!, maxZ = over.map { ps[$0].hi.z }.max()!
-                let r = min(leg.size.x, leg.size.z) / 2
-                let out_ = max(0, minX - (leg.top.x - r), leg.top.x + r - maxX, minZ - (leg.top.z - r), leg.top.z + r - maxZ)
+            // 脚の上端が、それを受ける部品（下面が上端のすぐ上 1.5 以内にあり、上端を外枠に含む物＝座・天板・框・受け木）の
+            // 外へはみ出さない。外へ開く脚の足先は見ない（灯りの三本足・ウィンザーの開き脚）。
+            // 2026-10-22（確かめ役）: 前は上にある部品全部の外枠と比べていて、背・笠など脚と関係ない物で甘くなっていた
+            let hosts = above.filter { ps[$0].lo.y >= leg.hi.y - 1.5 }
+            if !hosts.isEmpty {
+                let minX = hosts.map { ps[$0].lo.x }.min()!, maxX = hosts.map { ps[$0].hi.x }.max()!
+                let minZ = hosts.map { ps[$0].lo.z }.min()!, maxZ = hosts.map { ps[$0].hi.z }.max()!
+                let out_ = max(0, minX - leg.topLo.x, leg.topHi.x - maxX, minZ - leg.topLo.z, leg.topHi.z - maxZ)
                 if out_ > 0.6 { out.append("脚が座・天板の外へ \(fmt(out_))（\(where_(leg))）") }
             }
             // 長さをそろえるのは、上端で下面を受ける物ごと（胴の横を上る帯・框に差し込んだ柱は比べない）
-            for j in above where ps[j].lo.y >= leg.hi.y - 1.5 { carried[j, default: []].append(i) }
+            for j in hosts { carried[j, default: []].append(i) }
         }
         var uneven = Set<String>()
         for (_, legs) in carried where legs.count >= 2 {

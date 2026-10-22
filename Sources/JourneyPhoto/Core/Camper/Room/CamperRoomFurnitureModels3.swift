@@ -60,7 +60,8 @@ extension CamperRoomFurnitureModels {
                 parts.append(K.block(CV3(1.1, 22, 1.1), at: CV3(x - side * 0.2, 12, z), radius: 0.25, oak))
             }
             parts.append(K.block(CV3(2.6, 1.4, 26), at: CV3(x, 33.5, 0), radius: 0.35, oak))
-            parts.append(K.block(CV3(2.6, 1.2, 26), at: CV3(x, 11.2, 0), radius: 0.3, oak))
+            // 格子の下の桟は脚の上まで伸ばして脚を受ける（2026-10-22: 前は脚が桟の端から 4 cm 出ていた）
+            parts.append(K.block(CV3(2.6, 1.2, 29.6), at: CV3(x, 11.2, 0), radius: 0.3, oak))
         }
         // 布団・背のクッション・枕・毛布
         parts.append(K.placed(K.roundedBox(CV3(68, 5, 24), radius: 2, segments: 3, puff: 0.55, R(.cotton(0xE8E1D2))), at: CV3(0, 13.2, 0)))
