@@ -89,7 +89,7 @@ final class PhotoTripTests: XCTestCase {
     func testWhenLineFallsBackToSeasonsAndOtherwiseShowsNothing() throws {
         let noCoords = try spot(#"{"spotId":"sp_000000000001","slug":"x","name":"X","stage":"published","seasons":["winter","autumn","bogus"]}"#)
         XCTAssertEqual(PhotoTrip.whenLine(spot: noCoords, now: Date()),
-                       L("撮りどき 秋・冬", "Best in Autumn, Winter"), "季節は巡りの順・知らない季節は落とす")
+                       L("おすすめの季節 秋・冬", "Best in Autumn, Winter"), "季節は巡りの順・知らない季節は落とす")
         let bare = try spot(#"{"spotId":"sp_000000000002","slug":"y","name":"Y","stage":"review"}"#)
         XCTAssertNil(PhotoTrip.whenLine(spot: bare, now: Date()), "分からないときは行ごと出さない（作り話をしない）")
         XCTAssertTrue(PhotoTrip.offersDirections(.spot(try takaya)))
@@ -214,7 +214,7 @@ final class PhotoTripTests: XCTestCase {
         let midwinter = Date(timeIntervalSince1970: 1_797_854_400)   // 2026-12-21 12:00 UTC
         for now in [midsummer, midwinter] {
             XCTAssertNil(PhotoTrip.nextGolden(spot: svalbard, now: now, deviceZone: utc))
-            XCTAssertEqual(PhotoTrip.whenLine(spot: svalbard, now: now, deviceZone: utc), L("撮りどき 夏", "Best in Summer"))
+            XCTAssertEqual(PhotoTrip.whenLine(spot: svalbard, now: now, deviceZone: utc), L("おすすめの季節 夏", "Best in Summer"))
         }
     }
 

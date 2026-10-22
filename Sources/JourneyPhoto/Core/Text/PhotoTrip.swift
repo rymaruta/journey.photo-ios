@@ -176,7 +176,7 @@ enum PhotoTrip {
     ///
     /// 1. 座標と時刻帯が引ければ、**次のゴールデンアワー**（今日の朝・夕、無ければ明日の朝・夕のうち、
     ///    まだ終わっていない最初のもの）。時刻はその土地の時計
-    /// 2. 引けなければ、索引の「季節の案内がある季節」（撮りどきの季節）
+    /// 2. 引けなければ、索引の「季節の案内がある季節」（おすすめの季節）
     /// 3. どちらも無ければ nil（行ごと出さない・作り話をしない）
     static func whenLine(spot: OfficialSpot, now: Date, deviceZone: TimeZone = .current) -> String? {
         if let golden = nextGolden(spot: spot, now: now, deviceZone: deviceZone) { return golden }
@@ -222,12 +222,12 @@ enum PhotoTrip {
                  "Next golden hour \(day) \(text)\(local)")
     }
 
-    /// 撮りどきの季節（例「撮りどき 春・秋」）。索引の種類だけ（文は詳細）。知らない季節は落とす
+    /// おすすめの季節（例「おすすめの季節 春・秋」）。2026-10-22 判断: owner の好みで「撮りどき」は画面の文に使わない。索引の種類だけ（文は詳細）。知らない季節は落とす
     static func seasonLine(_ spot: OfficialSpot) -> String? {
         let kinds = Set(spot.seasonKinds?.value ?? spot.seasonalGuide?.value.map(\.season) ?? [])
         let labels = SpotBodyText.seasonOrder.filter(kinds.contains).compactMap(SpotBodyText.seasonLabel)
         guard !labels.isEmpty else { return nil }
-        return L("撮りどき \(labels.joined(separator: "・"))", "Best in \(labels.joined(separator: ", "))")
+        return L("おすすめの季節 \(labels.joined(separator: "・"))", "Best in \(labels.joined(separator: ", "))")
     }
 
     /// 「経路」を出すか（座標のある台帳のスポットだけ。撮影地の文字列は場所が確かでない）
