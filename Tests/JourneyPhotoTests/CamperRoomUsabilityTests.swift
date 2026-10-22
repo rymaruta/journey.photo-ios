@@ -179,11 +179,20 @@ final class CamperRoomUsabilityTests: XCTestCase {
 
     /// 板と別種の 104 点を 4 点ずつ、漏れも重なりもなく頁に分ける
     func testContactSheetPagesCoverTheBoard() {
-        XCTAssertEqual(CamperRoomContactPages.count, 26)
-        let ids = (0..<CamperRoomContactPages.count).flatMap { CamperRoomContactPages.page($0).map(\.id) }
+        XCTAssertEqual(CamperRoomContactPages.count(frames: false), 26)
+        let ids = (0..<CamperRoomContactPages.count(frames: false)).flatMap { CamperRoomContactPages.page($0, frames: false).map(\.furniture.id) }
         XCTAssertEqual(ids, CamperRoomCatalog.board.map(\.id))
-        XCTAssertTrue(CamperRoomContactPages.page(99).isEmpty)
-        XCTAssertEqual(CamperRoomContactPages.marker(mood: .night, page: 2), "contact-ready night 3/26")
+        XCTAssertTrue(CamperRoomContactPages.page(99, frames: false).isEmpty)
+        XCTAssertEqual(CamperRoomContactPages.marker(mood: .night, page: 2, frames: false), "contact-ready night 3/26")
+    }
+
+    /// 額の頁: 写真を入れられる全部の額を、横長と縦長の写真で 1 回ずつ（2026-10-22 楕円の額で写真が筋に崩れた）
+    func testFrameSheetCoversEveryPhotoFrameTwice() {
+        let frames = CamperRoomContactPages.photoFrames
+        XCTAssertGreaterThan(frames.count, 10)
+        XCTAssertTrue(frames.contains { $0.id == "photo_frame.oval" })
+        let entries = (0..<CamperRoomContactPages.count(frames: true)).flatMap { CamperRoomContactPages.page($0, frames: true) }
+        XCTAssertEqual(entries.map(\.id), frames.flatMap { [$0.id + ".wide", $0.id + ".tall"] })
     }
 }
 

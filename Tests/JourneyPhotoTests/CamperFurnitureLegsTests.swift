@@ -92,7 +92,9 @@ final class CamperFurnitureLegsTests: XCTestCase {
         })
         XCTAssertEqual(shown, shapes)
         XCTAssertEqual(CamperRoomLegs.views.map(\.name), ["正面", "斜め", "横", "下から"])
-        XCTAssertEqual(CamperRoomLegPages.marker(page: 0), "legs-ready 1/\(ids.count)")
+        XCTAssertEqual(CamperRoomContactPages.marker(mood: .day, page: 0, .legs), "legs-ready 1/\(ids.count)")
+        XCTAssertEqual(CamperRoomContactPages.count(.legs), ids.count)
+        XCTAssertEqual(Set(CamperRoomContactPages.page(0, .legs).map(\.furniture.id)).count, 1, "1 頁に 1 つの家具")
     }
 
     /// 手元で一覧を書き出す（`CAMPER_LEGS_REPORT=<file>` を渡した時だけ）

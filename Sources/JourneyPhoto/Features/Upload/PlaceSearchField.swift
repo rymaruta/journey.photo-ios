@@ -135,6 +135,8 @@ struct PlaceSearchField: View {
             field
                 .font(.subheadline)
                 .accessibilityLabel(L("撮影地", "Place"))
+                // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
+                .accessibilityIdentifier("upload.place")
                 .jpFieldBox()
         } else {
             field

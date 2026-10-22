@@ -64,6 +64,9 @@ struct CamperRoomView: View {
     /// 二度押しを見分ける（前に押した時刻と場所）
     @State private var lastTap: (at: Date, point: CGPoint)?
     @State private var readyMarker = ""
+    /// 額の中身（読み上げの値の後ろに ` framed=<保存した id>,… preview=<選んだだけの id>,…` で足す・見本の起動のときだけ）。
+    /// UI テストが「飾った写真が額に入ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
+    @State private var framedMarker = ""
     /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）
     @State private var photoProbe = ""
     @State private var viewport = CGSize(width: 390, height: 440)
@@ -148,7 +151,7 @@ struct CamperRoomView: View {
                               onSeen: { markSeen($0) }) { showDex = false }
         }
         .fullScreenCover(isPresented: $showContact) {
-            CamperRoomContactSheet(paint: paint, legs: CamperRoomPreview.legs) { showContact = false }
+            CamperRoomContactSheet(paint: paint, kind: CamperRoomPreview.contactKind ?? .board, photos: hangablePhotos) { showContact = false }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: lifted)
         // マスに吸い付くたびに軽く・置けたら成功の触覚（2026-10-21）
@@ -211,7 +214,7 @@ struct CamperRoomView: View {
         recount()
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
-        if CamperRoomPreview.contact || CamperRoomPreview.legs { showContact = true }
+        if CamperRoomPreview.contactKind != nil { showContact = true }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
     }
 
@@ -430,6 +433,10 @@ struct CamperRoomView: View {
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil,
                             onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil,
                             onReady: { marker in readyMarker = marker },
+                            onFramed: { framed, previewed in
+                                framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
+                                    + " preview=" + previewed.values.sorted().joined(separator: ",")
+                            },
                             onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
@@ -439,7 +446,7 @@ struct CamperRoomView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAddTraits(.isImage)
-        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe : "")
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker : "")
     }
 
     /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする
@@ -1383,6 +1390,8 @@ struct CamperRoomView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(p.accessibilityText)
+                            // 見本の起動のときだけ写真の id を値に出す（UI テストが額に写ったかと突き合わせる・2026-10-22）
+                            .accessibilityValue(PreviewSession.userId != nil ? p.id : "")
                             .accessibilityAddTraits(on ? .isSelected : [])
                             .accessibilityIdentifier("camper.room.photo")
                         }
