@@ -50,20 +50,23 @@ final class AppEnvironment: ObservableObject {
     /// - Parameter spots: 撮影スポットの索引の出どころ。同じ理由で開けてある
     /// - Parameter trips: 旅行プランの口。同じ理由で開けてある（一覧の状態の試験）
     /// - Parameter api: API の口。同じ理由で開けてある（人のページの読み込みの試験）
-    init(tokenProvider: TokenProviding = CognitoTokenProvider(),
+    /// UI テストの見本の通信（`-JPPreviewLocalBackend`・Debug のみ・2026-10-22）のときだけ、鍵と URLSession を
+    /// 端末の中の答え手（`PreviewBackend`）に向ける。ふだんは `PreviewBackend` が nil を返し、今までどおり
+    init(tokenProvider: TokenProviding = PreviewBackend.tokenProvider ?? CognitoTokenProvider(),
          gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL),
          spots: OfficialSpotService = OfficialSpotService(),
          quiz: DailyQuizService = DailyQuizService(),
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
-        let api = api ?? APIClient(tokenProvider: tokenProvider)
+        let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session)
         self.api = api
         self.gallery = gallery
         self.spots = spots
         self.quiz = quiz
         self.photos = PhotoService(api: api)
         self.profiles = ProfileService(api: api)
-        self.uploads = UploadService(api: api)
+        // 見本の通信では本体も端末の中の答え手へ（`UploadService.app`・ふだんは背景の転送）
+        self.uploads = UploadService.app(api: api)
         self.social = SocialService(api: api)
         self.saves = SaveService(api: api)
         self.savedSpots = SavedSpotService(api: api)

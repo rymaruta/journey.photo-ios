@@ -60,6 +60,12 @@ final class CamperRoomScene {
     private var paint: UInt32 = 0x5B6168
     /// 組み終えたら呼ぶ（読み上げの値・画面写真の試験が待つ）
     var onReady: ((String) -> Void)?
+    /// 額に**保存した中身**（`it.photos` の1枚目）の印画があるもの（額の uid → 写真 id）と、選んだだけでまだ保存していない
+    /// 見本の写真（`previewPhotoId`）が載っている額。UI テストが「飾った写真が額に入ったか」を読む（`CriticalFlowTests`・2026-10-22）。
+    /// 🔴 2つを分ける（確かめ役の指摘）: 見本は選んだ瞬間に額へ載るので、まとめると「この額に飾る」を押さなくても緑になる
+    private(set) var framedPhotos: [String: String] = [:]
+    private(set) var previewedPhotos: [String: String] = [:]
+    var onFramed: ((_ framed: [String: String], _ previewed: [String: String]) -> Void)?
     /// 見本の起動の試験用: 額の印画の様子（`photoProbe`）が変わったら呼ぶ。nil なら測らない
     var onProbe: ((String) -> Void)?
     /// 額ごとの、絵（読めた写真）が入った印画の数
@@ -422,6 +428,8 @@ final class CamperRoomScene {
             photos = it.photos
         }
         var mats = g.materials
+        var firstShown: String?
+        let previewing = photos != it.photos
         var shown = 0
         for (i, group) in mesh.groups.enumerated() where i < mats.count {
             guard case .room(.photo(let slot)) = group.material else { continue }
@@ -429,6 +437,7 @@ final class CamperRoomScene {
             let m = mats[i]
             palette.configure(m, CamperMaterials.spec(group.material, paint: paint, mood: mood))
             if index < photos.count, let image = photoImages[photos[index]] {
+                if index == 0 { firstShown = photos[0] }
                 // 印画は光を受けない。夜の壁は暗く、窓と同じ硝子だと白い板になって、飾った写真が消える
                 m.lightingModel = .constant
                 // UIImage のまま渡すと端末によって黒い面になることがあるので CGImage にする
@@ -457,6 +466,13 @@ final class CamperRoomScene {
             mats[i] = m
         }
         g.materials = mats
+        let saved = it.photos.first.flatMap { photoImages[$0] != nil ? $0 : nil }
+        let previewed = previewing ? firstShown : nil
+        if framedPhotos[it.uid] != saved || previewedPhotos[it.uid] != previewed {
+            framedPhotos[it.uid] = saved
+            previewedPhotos[it.uid] = previewed
+            onFramed?(framedPhotos, previewedPhotos)
+        }
         shownPhotos[it.uid] = shown
         scheduleProbe()
     }

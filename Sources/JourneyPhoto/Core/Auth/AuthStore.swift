@@ -79,7 +79,8 @@ final class AuthStore: ObservableObject {
     /// `AsyncImage` はどちらも `URLCache.shared` を使う（試験で差し替える）
     var responseCache: URLCache = .shared
 
-    init(gateway: AuthStoreGateway = .live) {
+    /// UI テストの見本の通信（`-JPPreviewLocalBackend`）のときだけ見本の認証（`PreviewBackend.authGateway`・Debug のみ）
+    init(gateway: AuthStoreGateway = PreviewBackend.authGateway ?? .live) {
         self.gateway = gateway
         // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
         expiryObserver = NotificationCenter.default.addObserver(

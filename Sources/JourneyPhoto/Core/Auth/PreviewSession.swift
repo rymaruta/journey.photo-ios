@@ -380,6 +380,26 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、鍵の要る口を**端末の中の見本の通信**（`PreviewBackend`）に答えさせる（Debug のみ・2026-10-22）。
+    /// `-JPPreviewLocalBackend YES`。
+    ///
+    /// 鍵を持たない入り方では、いいね・保存・コメント・投稿が 401 の手前（鍵が無い）で止まり、
+    /// 「押せる・結果が画面に出る」を UI テストで確かめられなかった。CI は資格情報を持たないので、
+    /// staging の試験用の利用者でも入れない（2026-10-22 判断: 端末の中で完結させる）。
+    /// **サーバーには何も書かない**——鍵の要る口はすべて端末の中で答え、読むだけの公開の口
+    /// （一覧・いいね数）はこれまでどおり本物を読む。ログアウト → ログインも見本の認証
+    /// （`PreviewBackend.authGateway`）で回る。入っている見本の利用者のときだけ。Release では必ず false
+    static let localBackendKey = "JPPreviewLocalBackend"
+
+    static var localBackend: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: localBackendKey)
+        #else
+        return false
+        #endif
+    }
+
     /// マイページでカバーが無いことにする（額縁・板 52 を撮る。見本の利用者がカバーを持っていても）
     static let noCoverKey = "JPPreviewNoCover"
 
