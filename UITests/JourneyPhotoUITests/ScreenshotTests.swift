@@ -4072,6 +4072,19 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, mineShown ? "60a-ストーリーの輪（自分の＋）" : "60a-ストーリーの輪（自分の輪が出ない）")
 
+        // マイページの顔（見本の利用者はカバーがある。カバーの上の輪のすき間に写真が透けないか）
+        let tabs = app.tabBars.firstMatch
+        let myPage = tabs.buttons.element(boundBy: 4)
+        if myPage.exists {
+            myPage.tap()
+            let myRing = app.buttons["story.avatar.ring"].firstMatch
+            let myShown = myRing.waitForExistence(timeout: 15)
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, myShown ? "60f-ストーリーの輪（マイページの顔・カバーの上）" : "60f-ストーリーの輪（マイページの顔に輪が無い）")
+            tabs.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+
         // 写真の詳細の作者の顔。**ホームの「NEW」の1枚目から開く**（見本のストーリーは同じ新着の作者に付けてある・
         // `PreviewBackend.previewStories`。おすすめの格子は画面の下で、run 693 では見つからなかった）
         let fresh = app.descendants(matching: .any)["home.fresh"].firstMatch
