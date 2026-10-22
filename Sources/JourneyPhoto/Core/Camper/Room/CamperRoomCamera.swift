@@ -25,8 +25,9 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     static let yawRange = -90.0...90.0
     static let pitchRange = 25.0...60.0
-    /// 大きな部屋でも家具のそばまで寄れる（2026-10-19。部屋を画面いっぱいに見たままでは、端の家具が豆になる）
-    static let zoomRange = 0.8...28.0
+    /// 大きな部屋でも家具のそばまで寄れる（2026-10-19。部屋を画面いっぱいに見たままでは、端の家具が豆になる）。
+    /// 下は 0.6（2026-10-22: 縦に長い絵では、部屋の横幅が収まる初めの向き `overview(_:viewport:)` が 0.8 より引く）
+    static let zoomRange = 0.6...28.0
     /// 縦の画角（度）
     static let fieldOfView = 34.0
 
@@ -162,8 +163,9 @@ struct CamperRoomCamera: Equatable, Sendable {
     }
 
     /// 二度押し（2026-10-21）: 離れていれば押した床の点へ 2.4 倍で寄り、寄っていれば初めの向きへ戻る
-    func doubleTapped(floor point: CV3?, layout: CamperRoomLayout) -> CamperRoomCamera {
-        if zoom >= Self.doubleTapZoom * 0.75 { return Self.overview(layout) }
+    /// `home` は戻る先の初めの向き（絵の縦横に合わせた向き・`overview(_:viewport:)`）。nil なら `overview(_:)`
+    func doubleTapped(floor point: CV3?, layout: CamperRoomLayout, home: CamperRoomCamera? = nil) -> CamperRoomCamera {
+        if zoom >= Self.doubleTapZoom * 0.75 { return home ?? Self.overview(layout) }
         var c = self
         c.zoom = Self.doubleTapZoom
         if let p = point {

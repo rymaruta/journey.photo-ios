@@ -21,15 +21,18 @@ struct CamperRoomView: View {
     let initialMood: CamperMood
     /// 外から入った時の、寄った口の絵（部屋が組み上がるまで覆い、組み上がったらなだらかに消す・2026-10-21）
     var entry: CamperSceneSnapshot? = nil
+    /// 持っていない柄の「外まわりの図鑑で見る」（部屋を出て、外の車の図鑑のその分類を開く・2026-10-22）。nil なら出さない
+    var onCollect: ((_ partId: String) -> Void)? = nil
     @State private var entryImage: UIImage?
     @State private var entryCovered = true
 
     enum Mode: String { case home, edit, style, photos }
-    enum StyleTab: String, CaseIterable { case wall, floor, curtain, light }
+    typealias StyleTab = CamperRoomStyleTab
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.dynamicTypeSize) private var typeSize
     @StateObject private var photoImages = CamperRoomPhotoImages()
     @State private var room: CamperRoomKind = .car
     @State private var editor: CamperRoomEditor?
@@ -46,6 +49,14 @@ struct CamperRoomView: View {
     /// 置く棚の分類（床一括にしない・2026-10-21）
     @State private var trayCategory: CamperRoomCategory = .bed
     @State private var styleTab: StyleTab = .wall
+    /// 模様替えに入った時の柄（変えたかどうか・「元に戻す」）
+    @State private var styleEntry: CamperRoomStyle?
+    /// 持っていない柄を部屋で試している見本（保存しない・2026-10-22）
+    @State private var trial: CamperRoomStyleChoice?
+    /// 灯りの札の間だけ夜にした（札を離れたら昼に戻す）
+    @State private var autoNight = false
+    /// 下の板の中身が要る高さ（場面ごとに測る）。板はこの高さだけ取り、部屋の絵は残り全部（2026-10-22）
+    @State private var panelNeed: [Mode: CGFloat] = [:]
     @State private var framePick: String?
     @State private var photoPick: String?
     @State private var showDex = false
@@ -92,7 +103,12 @@ struct CamperRoomView: View {
     @State private var roomStats = CamperRoomStats()
     @State private var owned: Set<String> = []
     private var partsOwned: Set<String> { CamperCatalog.owned(stats) }
-    private var shownDoc: CamperRoomDocument { editor?.shown(owned: owned) ?? CamperRoomRules.starterDocument(layout) }
+    private var shownDoc: CamperRoomDocument {
+        var doc = editor?.shown(owned: owned) ?? CamperRoomRules.starterDocument(layout)
+        // 持っていない柄の見本は、映すだけで覚えない
+        if mode == .style, let trial { doc.style = CamperRoomStyleBoard.with(doc.style, styleTab, key: trial.key) }
+        return doc
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -118,9 +134,16 @@ struct CamperRoomView: View {
                         .onChange(of: split.size.height) { _, h in splitHeight = h }
                     }
                 } else {
-                    let sceneHeight = min(460, max(300, geo.size.height * 0.56))
-                    sceneArea(width: geo.size.width, height: sceneHeight)
-                    panel
+                    // 下の板は中身が要るだけの高さ、部屋の絵は残り全部（2026-10-22 owner の実機: 板が中身より低く、
+                    // 見本の名前が説明と重なり、部屋の絵が上へ押し出されて切れた）。大きい文字では板を送る
+                    GeometryReader { split in
+                        let need = Double(panelNeed[mode] ?? 260)
+                        let fit = CamperRoomSheetFit.split(total: Double(split.size.height), need: need, photos: mode == .photos)
+                        VStack(spacing: 0) {
+                            sceneArea(width: geo.size.width, height: CGFloat(fit.scene))
+                            fittedPanel(height: CGFloat(fit.panel), scrolls: CamperRoomSheetFit.scrolls(need: need, panel: fit.panel))
+                        }
+                    }
                 }
             }
         }
@@ -244,7 +267,7 @@ struct CamperRoomView: View {
         selected = nil
         drag = nil
         disarm()
-        camera = CamperRoomPreview.cameraPreset.flatMap { CamperRoomCamera.preview($0, layout: l) } ?? CamperRoomCamera.overview(l)
+        camera = CamperRoomPreview.cameraPreset.flatMap { CamperRoomCamera.preview($0, layout: l) } ?? CamperRoomCamera.overview(l, viewport: viewport)
     }
 
     private func save() {
@@ -295,6 +318,7 @@ struct CamperRoomView: View {
             .accessibilityAddTraits(.isHeader)
             Button {
                 mood = mood == .night ? .day : .night
+                autoNight = false
             } label: {
                 Image(systemName: mood == .night ? "sun.max" : "moon")
                     .jpSystemFont(17, weight: .semibold)
@@ -357,11 +381,15 @@ struct CamperRoomView: View {
         ZStack(alignment: .topLeading) {
             sceneActions(sceneView(width: width, height: height))
                 .accessibilityIdentifier("camper.room.scene")
-                .onAppear { viewport = CGSize(width: width, height: height) }
-                .onChange(of: width) { _, w in viewport.width = w }
+                .onAppear { refit { viewport = CGSize(width: width, height: height) } }
+                .onChange(of: width) { _, w in refit { viewport.width = w } }
+                // 板の高さが変わると絵の高さも変わる。初めの向きのままなら、新しい縦横に合わせ直す（2026-10-22）
+                .onChange(of: height) { _, h in refit { viewport.height = h } }
             if let selected, drag == nil, mode == .edit || mode == .home, let point = actionPoint(selected) {
+                // 右上の「向きを戻す」（44pt・上端 12）が出ている時は、その下まで下げて重ねない（2026-10-22）
+                let top: CGFloat = showsResetView ? 86 : 30
                 itemActions(selected)
-                    .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, 30), height - 30))
+                    .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, top), height - 30))
             }
             sceneOverlays(width: width, height: height)
             entryCover(width: width, height: height)
@@ -489,7 +517,7 @@ struct CamperRoomView: View {
     @ViewBuilder
     private func sceneOverlays(width: CGFloat, height: CGFloat) -> some View {
         // 向きを初めに戻す（回した・寄った後。写真を飾る場面は額へ寄るので出さない）
-        if mode != .photos, drag == nil, camera.differs(from: CamperRoomCamera.overview(layout)) {
+        if showsResetView {
             Button(action: resetCamera) {
                 Image(systemName: "arrow.counterclockwise")
                     .jpSystemFont(15, weight: .semibold)
@@ -509,11 +537,27 @@ struct CamperRoomView: View {
             armedBanner(armed, width: width)
                 .position(x: width / 2, y: height - 38)
         }
+        if mode == .style, trial != nil {
+            Text(L("見本 · まだ持っていない柄", "Preview · not collected yet"))
+                .jpSystemFont(12, weight: .semibold, relativeTo: .caption)
+                .foregroundStyle(WebTheme.accent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.82), in: Capsule())
+                .position(x: width / 2, y: 22)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         if showCoach, mode == .home {
             coachCard
                 .frame(width: min(width - 32, 340))
                 .position(x: width / 2, y: height / 2)
         }
+    }
+
+    /// 向きを初めに戻すボタンを出すか（回した・寄った後。写真を飾る場面は額へ寄るので出さない）
+    private var showsResetView: Bool {
+        mode != .photos && drag == nil && camera.differs(from: overviewCamera)
     }
 
     /// 押して置く途中の札（何を置くか・やめる）
@@ -595,9 +639,19 @@ struct CamperRoomView: View {
         UIAccessibility.post(notification: .announcement, argument: text)
     }
 
+    /// 絵の縦横に合わせた初めの向き（`CamperRoomCamera.overview(_:viewport:)`・2026-10-22）
+    private var overviewCamera: CamperRoomCamera { CamperRoomCamera.overview(layout, viewport: viewport) }
+
+    /// 絵の大きさを変える。初めの向きのままだったら、新しい大きさに合わせ直す（人が回した・寄った向きは変えない）
+    private func refit(_ change: () -> Void) {
+        let atHome = !camera.differs(from: overviewCamera) || !camera.differs(from: CamperRoomCamera.overview(layout))
+        change()
+        if atHome, mode != .photos, CamperRoomPreview.cameraPreset == nil { camera = overviewCamera }
+    }
+
     private func resetCamera() {
         animateCamera = true
-        camera = CamperRoomCamera.overview(layout)
+        camera = overviewCamera
     }
 
     /// 回す・しまうの札を出す所（家具の上の画面の点）
@@ -725,7 +779,7 @@ struct CamperRoomView: View {
     private func doubleTap(at point: CGPoint) {
         let ray = camera.ray(point, viewport: viewport, layout: layout)
         animateCamera = true
-        camera = camera.doubleTapped(floor: CamperRoomPick.hitHorizontal(ray, y: 0), layout: layout)
+        camera = camera.doubleTapped(floor: CamperRoomPick.hitHorizontal(ray, y: 0), layout: layout, home: overviewCamera)
         lastTap = nil
     }
 
@@ -852,9 +906,9 @@ struct CamperRoomView: View {
         armed = f
         hints = area
         // 壁の物は壁が見える向きへ、床・天井の物は部屋全体へ
-        if f.placement == .wall, camera.differs(from: CamperRoomCamera.overview(layout)) {
+        if f.placement == .wall, camera.differs(from: overviewCamera) {
             animateCamera = true
-            camera = CamperRoomCamera.overview(layout)
+            camera = overviewCamera
         }
     }
 
@@ -953,13 +1007,16 @@ struct CamperRoomView: View {
         selected = nil
         drag = nil
         disarm()
+        trial = nil
+        styleEntry = nil
+        lightTabNight()
         animateCamera = true
-        camera = CamperRoomCamera.overview(layout)
+        camera = overviewCamera
     }
 
     // MARK: 下の段
 
-    private var panel: some View {
+    private var panelContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             switch mode {
             case .home: homePanel
@@ -971,8 +1028,37 @@ struct CamperRoomView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.black)
+    }
+
+    /// 決まった高さに収める板（置く・写真を飾る。中で一覧を送る）
+    private var panel: some View {
+        panelContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.black)
+    }
+
+    /// 家・模様替えの板: 中身が要る高さを測り、その高さだけ取る（`CamperRoomSheetFit`）。収まらない時（大きい文字）だけ送れる。
+    /// 写真を飾る板は一覧を中で送るので、決まった割合
+    @ViewBuilder
+    private func fittedPanel(height: CGFloat, scrolls: Bool) -> some View {
+        if mode == .photos {
+            panel.frame(height: height)
+        } else {
+            let measuring = mode
+            ScrollView(.vertical, showsIndicators: scrolls) {
+                panelContent
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { h in
+                        if abs((panelNeed[measuring] ?? 0) - h) > 0.5 { panelNeed[measuring] = h }
+                    }
+            }
+            .scrollDisabled(!scrolls)
+            .frame(height: height)
+            .background(Color.black)
+            .accessibilityIdentifier("camper.room.panel")
+        }
     }
 
     private var countsLine: some View {
@@ -982,15 +1068,18 @@ struct CamperRoomView: View {
                       "Floor \(c.floor)/\(l.floorLimit) · Wall \(c.wall)/\(l.wallLimit) · Ceiling \(c.ceiling)/\(l.ceilingLimit) · Photos \(c.photos)/\(l.photoLimit)"))
             .font(JPFont.number(13, weight: .regular, relativeTo: .footnote))
             .foregroundStyle(WebTheme.text2)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            // 大きい文字では縮めず折り返す（等幅の数字の塊は切らない・板 06）
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.75)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("camper.room.counts")
     }
 
     private var homePanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             countsLine
-            HStack(spacing: 8) {
+            // 大きい文字では 4 つを 2×2 に（横 4 つでは名前が縮んで読めない・板 06）
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 8) {
                 tool(L("置く", "Arrange"), symbol: "square.on.square.dashed", id: "place", badge: news.count) { enter(.edit) }
                 tool(L("模様替え", "Restyle"), symbol: "paintbrush", id: "style") { enter(.style) }
                 tool(L("写真", "Photos"), symbol: "photo.on.rectangle", id: "photos") { enter(.photos) }
@@ -1003,7 +1092,6 @@ struct CamperRoomView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("camper.room.hint")
             // 2026-10-21 判断: 下の「外へ出る」は左上の「外へ」と同じ操作なので外した（板 CamperRoomFlow も左上の「外へ」だけ）
-            Spacer(minLength: 0)
         }
     }
 
@@ -1011,9 +1099,12 @@ struct CamperRoomView: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: symbol).jpSystemFont(20)
-                Text(title).jpSystemFont(12, weight: .semibold).lineLimit(1).minimumScaleFactor(0.8)
+                // 縮めない（12pt が下限）。入らなければ 2 行に
+                Text(title).jpSystemFont(12, weight: .semibold).lineLimit(2).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(WebTheme.foreground)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 76)
             .background(WebTheme.card, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
@@ -1032,6 +1123,11 @@ struct CamperRoomView: View {
         mode = m
         selected = nil
         animateCamera = true
+        trial = nil
+        if m == .style {
+            styleEntry = editor?.doc.style
+            lightTabNight()
+        }
         if m == .photos {
             if let frame = editor?.doc.all.first(where: { ($0.furniture?.photoSlots ?? 0) > 0 }) {
                 look(at: frame)
@@ -1041,7 +1137,7 @@ struct CamperRoomView: View {
                 photoPick = nil
             }
         } else {
-            camera = CamperRoomCamera.overview(layout)
+            camera = overviewCamera
         }
     }
 
@@ -1078,17 +1174,16 @@ struct CamperRoomView: View {
                         .jpSystemFont(13).foregroundStyle(WebTheme.text2)
                         .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                    // 大きい文字では 3 列（5 列では名前が 1 字ずつ折れる・2026-10-22）
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 3 : 5), spacing: 8) {
                         ForEach(tray) { f in trayCard(f) }
                     }
                 }
+                // 大きい文字では説明を棚と一緒に送る（決まった高さの板で、説明が棚を押しつぶした）
+                if typeSize.isAccessibilitySize { editHint.padding(.top, 10) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            Text(L("棚の家具を押して、置きたい所を押す。部屋の家具は長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。",
-                   "Tap a piece, then tap where it goes. Press and hold a piece in the room to lift it. White fits, red collides. Twist to turn."))
-                .jpSystemFont(12)
-                .foregroundStyle(WebTheme.text2)
-                .fixedSize(horizontal: false, vertical: true)
+            if !typeSize.isAccessibilitySize { editHint }
             HStack(spacing: 8) {
                 Button(action: undo) {
                     Text(L("元に戻す", "Undo"))
@@ -1119,6 +1214,15 @@ struct CamperRoomView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private var editHint: some View {
+        Text(L("棚の家具を押して、置きたい所を押す。部屋の家具は長押しで持ち上げる。白いマスは置ける、赤はぶつかる。二本指で 90 度回す。",
+               "Tap a piece, then tap where it goes. Press and hold a piece in the room to lift it. White fits, red collides. Twist to turn."))
+            .jpSystemFont(12)
+            .foregroundStyle(WebTheme.text2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("camper.room.editHint")
     }
 
     /// 置く棚の分類チップ（選んだチップは真鍮の塗りに墨の字。新しい家具がある分類は点）
@@ -1186,104 +1290,229 @@ struct CamperRoomView: View {
 
     // MARK: 模様替え
 
+    /// 模様替え（2026-10-22 作り直し・owner の実機 1.1.37「操作感も悪い」）。
+    /// - 見本は 4 列（大きい文字は 2 列）の升目。札の高さは中身から決め、名前が下の説明に重ならない
+    /// - 持っていない柄も本当の柄を暗く見せ、鍵と「いま / 要る数」（近日は砂時計と「近日」）。押すと部屋で試せる（見本・覚えない）
+    /// - 押すとすぐ部屋に映って覚える。変えていなければ下は「閉じる」（線だけ）、変えたら「元に戻す」と「これにする」
+    /// - 灯りの札の間は夜にして見せる（灯りの色は昼には見えない）
     private var stylePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            tabs(StyleTab.allCases.map { ($0.rawValue, styleTabName($0)) }, selected: styleTab.rawValue, label: L("模様替えするもの", "What to change")) { raw in
-                styleTab = StyleTab(rawValue: raw) ?? .wall
+        let choices = CamperRoomStyleBoard.choices(styleTab, partsOwned: partsOwned, stats: stats)
+        let now = editor?.doc.style ?? CamperRoomStyle()
+        let current = CamperRoomStyleBoard.key(now, styleTab)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: typeSize.isAccessibilitySize ? 2 : 4)
+        return VStack(alignment: .leading, spacing: 12) {
+            tabs(StyleTab.allCases.map { ($0.rawValue, $0.name) }, selected: styleTab.rawValue, label: L("模様替えするもの", "What to change")) { raw in
+                pickStyleTab(StyleTab(rawValue: raw) ?? .wall)
             }
-            let options = styleOptions(styleTab)
-            HStack(spacing: 10) {
-                ForEach(options, id: \.key) { o in
-                    let on = o.key == currentStyle(styleTab)
-                    Button {
-                        guard o.have, var e = editor else { return }
-                        var s = e.doc.style
-                        switch styleTab {
-                        case .wall: s.wall = o.key
-                        case .floor: s.floor = o.key
-                        case .curtain: s.curtain = o.key
-                        case .light: s.light = o.key
-                        }
-                        e.setStyle(s)
-                        editor = e
-                        save()
-                    } label: {
-                        VStack(spacing: 6) {
-                            CamperRoomSwatch(spec: o.spec, have: o.have)
-                                .frame(width: 64, height: 64)
-                                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(on ? WebTheme.accent : Color.white.opacity(0.16),
-                                                                                        style: StrokeStyle(lineWidth: on ? 2 : 1, dash: o.have ? [] : [4, 3])))
-                                .overlay(alignment: .topTrailing) { if on { CamperSelectedMark() } }
-                            Text(o.have ? o.name : (o.soon ? L("近日", "Soon") : L("まだ", "Not yet")))
-                                .jpSystemFont(12)
-                                .foregroundStyle(on ? WebTheme.accent : (o.have ? WebTheme.text : WebTheme.faint))
-                                .lineLimit(1).minimumScaleFactor(0.8)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(o.name + (o.have ? "" : L("（まだ持っていません）", " (not collected yet)")))
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                    .accessibilityIdentifier("camper.room.style.\(o.key)")
+            LazyVGrid(columns: columns, alignment: .center, spacing: 10) {
+                ForEach(choices, id: \.key) { c in
+                    styleCell(c, on: c.key == current, trying: trial?.key == c.key)
                 }
             }
-            Text(L("選ぶとすぐ部屋に映る。灯りの色は夜に見える。持っていない柄は外まわりの図鑑で集める。",
-                   "Changes show right away. Light colours show at night. Collect more patterns in the parts collection."))
+            if let trial { trialCard(trial) }
+            Text(CamperRoomStyleBoard.note(styleTab, hasLocked: choices.contains { !$0.owned }))
                 .jpSystemFont(12)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("camper.room.styleNote")
-            Spacer(minLength: 0)
-            primaryButton(L("これにする", "Use this"), id: "camper.room.styleDone", fill: true) { goHome() }
+            styleFooter(now)
         }
     }
 
-    private func styleTabName(_ t: StyleTab) -> String {
-        switch t {
-        case .wall: return L("壁紙", "Walls")
-        case .floor: return L("床", "Floor")
-        case .curtain: return L("カーテン", "Curtains")
-        case .light: return L("灯り", "Light")
-        }
-    }
-
-    private func currentStyle(_ t: StyleTab) -> String {
-        let s = editor?.doc.style ?? CamperRoomStyle()
-        switch t {
-        case .wall: return s.wall
-        case .floor: return s.floor
-        case .curtain: return s.curtain
-        case .light: return s.light
-        }
-    }
-
-    struct StyleOption {
-        var key: String
-        var name: String
-        var spec: CamperMaterialSpec
-        var have: Bool
-        var soon = false
-    }
-
-    /// 壁と床は外まわりの図鑑の「室内」の部品（持っている物だけ選べる）、カーテンと灯りは色
-    private func styleOptions(_ t: StyleTab) -> [StyleOption] {
-        switch t {
-        case .wall, .floor:
-            let cat: CamperCategory = t == .wall ? .wallWood : .floor
-            return CamperCatalog.parts(cat).map { p in
-                StyleOption(key: p.key, name: p.name, spec: t == .wall ? CamperRoomMaterials.wallSpec(p.key) : CamperRoomMaterials.floorSpec(p.key),
-                            have: partsOwned.contains(p.id), soon: !p.unlock.isAvailable)
+    /// 見本の札 1 つ（選んでいる柄は真鍮の縁 2pt とチェック・黒地の上。試している見本は白の縁 2pt）
+    private func styleCell(_ c: CamperRoomStyleChoice, on: Bool, trying: Bool) -> some View {
+        let edge: Color = on ? WebTheme.accent : (trying ? Color.white.opacity(0.85) : Color.white.opacity(0.16))
+        return Button { pickStyle(c) } label: {
+            VStack(spacing: 6) {
+                CamperRoomSwatch(spec: styleSpec(c.key), have: true)
+                    .overlay { if !c.owned { lockedVeil(c) } }
+                    .overlay(RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(edge, style: StrokeStyle(lineWidth: on || trying ? 2 : 1, dash: c.owned || trying ? [] : [4, 3])))
+                    .overlay(alignment: .topTrailing) { if on { CamperSelectedMark() } }
+                Text(c.name)
+                    .jpSystemFont(12, weight: on ? .semibold : .regular, relativeTo: .caption)
+                    .foregroundStyle(on ? WebTheme.accent : (c.owned ? WebTheme.text : WebTheme.muted2))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let progress = c.progressText {
+                    Text(progress)
+                        .font(JPFont.number(12, weight: .semibold, relativeTo: .caption))
+                        .foregroundStyle(c.state == .soon ? WebTheme.faint : WebTheme.accent)
+                        .lineLimit(1)
+                }
             }
-        case .curtain:
-            return CamperRoomMaterials.curtainColors.map {
-                StyleOption(key: $0.key, name: L($0.ja, $0.en), spec: CamperMaterialSpec(color: $0.color, texture: .linenSlub), have: true)
+            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .top)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(styleLabel(c))
+        .accessibilityHint(c.owned ? "" : (trying ? L("もう一度押すと見本をやめます", "Tap again to stop the preview")
+                                                  : L("押すと部屋で見本を試せます", "Tap to try it in the room")))
+        .accessibilityAddTraits(on || trying ? .isSelected : [])
+        .accessibilityIdentifier("camper.room.style.\(c.key)")
+    }
+
+    /// 持っていない柄の覆い（柄を暗くして鍵・近日は砂時計）。色だけで「持っていない」を言わない
+    private func lockedVeil(_ c: CamperRoomStyleChoice) -> some View {
+        ZStack {
+            Color.black.opacity(0.55)
+            Image(systemName: c.state == .soon ? "hourglass" : "lock.fill")
+                .jpSystemFont(16, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.92))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .accessibilityHidden(true)
+    }
+
+    private func styleLabel(_ c: CamperRoomStyleChoice) -> String {
+        let how = c.partId.flatMap { CamperCatalog.part($0) }?.unlock.how ?? ""
+        switch c.state {
+        case .owned: return c.name
+        case .locked(let have, let need):
+            return L("\(c.name)。まだ持っていません。\(how)。いま \(min(have, need)) / \(need)",
+                     "\(c.name). Not collected yet. \(how). \(min(have, need)) of \(need)")
+        case .soon: return L("\(c.name)。近日。\(how)", "\(c.name). Coming soon. \(how)")
+        }
+    }
+
+    private func styleSpec(_ key: String) -> CamperMaterialSpec {
+        switch styleTab {
+        case .wall: return CamperRoomMaterials.wallSpec(key)
+        case .floor: return CamperRoomMaterials.floorSpec(key)
+        case .curtain: return CamperMaterialSpec(color: CamperRoomMaterials.curtainColor(key), texture: .linenSlub)
+        case .light: return CamperMaterialSpec(color: CamperRoomMaterials.lightColor(key), texture: .glow)
+        }
+    }
+
+    /// 試している見本の札（どうすれば届くか・進み具合・外まわりの図鑑へ）
+    private func trialCard(_ c: CamperRoomStyleChoice) -> some View {
+        let part = c.partId.flatMap { CamperCatalog.part($0) }
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(L("見本 · まだ持っていない柄", "Preview · not collected yet")).jpEyebrow().foregroundStyle(WebTheme.accent)
+            Text(c.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+            if let part {
+                Text(part.unlock.how).font(JPFont.footnote).foregroundStyle(WebTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        case .light:
-            return CamperRoomMaterials.lightColors.map {
-                StyleOption(key: $0.key, name: L($0.ja, $0.en), spec: CamperMaterialSpec(color: $0.color, texture: .glow), have: true)
+            if case .locked(let have, let need) = c.state {
+                HStack(spacing: 8) {
+                    CamperProgressBar(fraction: c.fraction)
+                    Text("\(min(have, need)) / \(need)")
+                        .font(JPFont.number(12, weight: .semibold, relativeTo: .caption))
+                        .foregroundStyle(WebTheme.accent)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("いま \(min(have, need)) / \(need)", "\(min(have, need)) of \(need)"))
+            }
+            HStack(spacing: 4) {
+                Button {
+                    trial = nil
+                } label: {
+                    Text(L("見本をやめる", "Stop preview"))
+                        .jpSystemFont(14, weight: .semibold)
+                        .foregroundStyle(WebTheme.foreground)
+                        .padding(.trailing, 8)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("camper.room.styleTrialEnd")
+                Spacer(minLength: 0)
+                // 外まわりの図鑑へ（黒地の上の手がかりなので真鍮）
+                if let onCollect, let partId = c.partId {
+                    Button {
+                        onCollect(partId)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(L("外まわりの図鑑で見る", "See it in the parts collection"))
+                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                        }
+                        .jpSystemFont(14, weight: .semibold)
+                        .foregroundStyle(WebTheme.accent)
+                        .multilineTextAlignment(.trailing)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget, alignment: .trailing)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("camper.room.styleCollect")
+                }
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("camper.room.styleTrial")
+    }
+
+    /// 下のボタン（`CamperRoomStyleBoard.footer`）。大きい文字では縦に積む
+    @ViewBuilder
+    private func styleFooter(_ now: CamperRoomStyle) -> some View {
+        switch CamperRoomStyleBoard.footer(entry: styleEntry, now: now) {
+        case .close:
+            secondaryButton(L("閉じる", "Close"), id: "camper.room.styleDone") { goHome() }
+        case .revertOrKeep:
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 8) { styleFooterButtons }
+            } else {
+                HStack(spacing: 8) { styleFooterButtons }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var styleFooterButtons: some View {
+        secondaryButton(L("元に戻す", "Revert"), id: "camper.room.styleRevert") { revertStyle() }
+        primaryButton(L("これにする", "Use this"), id: "camper.room.styleDone", fill: true) { goHome() }
+    }
+
+    private func pickStyleTab(_ t: StyleTab) {
+        trial = nil
+        styleTab = t
+        lightTabNight()
+    }
+
+    /// 灯りの札の間だけ夜にする（昼に灯りの色を選んでも見えない）。札を離れたら昼に戻す
+    private func lightTabNight() {
+        if mode == .style, styleTab == .light, mood == .day {
+            mood = .night
+            autoNight = true
+            announce(L("灯りの色が見えるよう夜にしました", "Turned to night so you can see the light"))
+        } else if autoNight, mode != .style || styleTab != .light {
+            mood = .day
+            autoNight = false
+        }
+    }
+
+    /// 柄を選ぶ。持っている柄はすぐ部屋に映して覚える。持っていない柄は部屋で試すだけ（もう一度押すとやめる）
+    private func pickStyle(_ c: CamperRoomStyleChoice) {
+        guard c.owned else {
+            trial = trial?.key == c.key ? nil : c
+            announce(trial == nil ? L("見本をやめました", "Stopped the preview")
+                                  : L("\(c.name)を見本で映しています", "Previewing \(c.name)"))
+            return
+        }
+        trial = nil
+        guard var e = editor else { return }
+        let next = CamperRoomStyleBoard.with(e.doc.style, styleTab, key: c.key)
+        guard next != e.doc.style else { return }
+        e.setStyle(next)
+        editor = e
+        save()
+    }
+
+    /// 模様替えに入った時の柄へ戻す
+    private func revertStyle() {
+        trial = nil
+        guard let entry = styleEntry, var e = editor, e.doc.style != entry else { return }
+        e.setStyle(entry)
+        editor = e
+        save()
     }
 
     // MARK: 写真を飾る
@@ -1408,7 +1637,11 @@ struct CamperRoomView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("camper.room.photo.retry")
                 }
-                primaryButton(L("この額に飾る", "Hang it here"), id: "camper.room.hang", fill: false) {
+                // 選んだ写真がもうこの額に入っている時は押せない（何も変わらないのに主ボタンが光らない・2026-10-22 owner）
+                let hung = photoPick != nil && framePick.flatMap { editor?.doc.item($0)?.p } == photoPick
+                let idle = framePick == nil || photoPick == nil || hung
+                primaryButton(hung ? L("この写真を飾っています", "This photo is up") : L("この額に飾る", "Hang it here"),
+                              id: "camper.room.hang", fill: false) {
                     guard let frame = framePick, let photo = photoPick, var e = editor else { return }
                     e.setPhoto(frame, photoId: photo)
                     editor = e
@@ -1418,8 +1651,8 @@ struct CamperRoomView: View {
                     if let updated = e.doc.item(frame) { look(at: updated) }
                     flash(L("この額に飾りました", "Hung on this frame"))
                 }
-                .disabled(framePick == nil || photoPick == nil)
-                .opacity(framePick == nil || photoPick == nil ? 0.5 : 1)
+                .disabled(idle)
+                .opacity(idle ? 0.5 : 1)
             }
         }
     }
@@ -1428,6 +1661,17 @@ struct CamperRoomView: View {
 
     /// 置く場所・模様替えの札（選んでいる札は真鍮の字と下線・黒地の上）
     private func tabs(_ items: [(String, String)], selected: String, label: String, pick: @escaping (String) -> Void) -> some View {
+        // 大きい文字で横に並びきらない時は横に送る（名前を縮めない・2026-10-22）
+        ViewThatFits(in: .horizontal) {
+            tabRow(items, selected: selected, pick: pick)
+            ScrollView(.horizontal, showsIndicators: false) { tabRow(items, selected: selected, pick: pick) }
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+
+    private func tabRow(_ items: [(String, String)], selected: String, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: 2) {
             ForEach(items, id: \.0) { item in
                 let on = item.0 == selected
@@ -1435,8 +1679,10 @@ struct CamperRoomView: View {
                     Text(item.1)
                         .jpSystemFont(14, weight: .semibold)
                         .foregroundStyle(on ? WebTheme.accent : WebTheme.muted2)
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 12)
-                        .frame(minHeight: WebTheme.minTapTarget)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                         .overlay(alignment: .bottom) { Rectangle().fill(on ? WebTheme.accent : Color.clear).frame(height: 2) }
                         .contentShape(Rectangle())
                 }
@@ -1446,9 +1692,22 @@ struct CamperRoomView: View {
             }
             Spacer(minLength: 0)
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(label)
+    }
+
+    /// 副ボタン（線だけ・白の字）。変えていない時の「閉じる」・「元に戻す」
+    private func secondaryButton(_ title: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .jpSystemFont(16, weight: .semibold)
+                .foregroundStyle(WebTheme.foreground)
+                .multilineTextAlignment(.center)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.24), lineWidth: 1))
+                .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 
     /// 主ボタン（写真の無い画面は真鍮の塗りに墨の字・写真の並ぶ画面は白）
@@ -1457,6 +1716,8 @@ struct CamperRoomView: View {
             Text(title)
                 .jpSystemFont(16, weight: .semibold)
                 .foregroundStyle(brass ? WebTheme.accentText : Color.black)
+                .multilineTextAlignment(.center)
+                .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .background(brass ? WebTheme.accentFill : Color.white, in: RoundedRectangle(cornerRadius: 14))
                 .contentShape(RoundedRectangle(cornerRadius: 14))

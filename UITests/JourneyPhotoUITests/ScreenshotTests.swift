@@ -3864,6 +3864,7 @@ final class ScreenshotTests: XCTestCase {
         for (tab, name) in [("wall", "壁紙"), ("floor", "床"), ("curtain", "カーテン"), ("light", "灯り")] {
             let t = app.buttons["camper.room.tab.\(tab)"].firstMatch
             guard t.exists else { XCTFail("模様替えの「\(name)」の札が無い\(tag)"); continue }
+            revealInPanel(app, t)
             t.tap()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "96l-部屋の下の板（模様替え・\(name)\(tag)）")
@@ -3884,10 +3885,50 @@ final class ScreenshotTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(s.frame.height, 84, "\(label): 見本 \(s.identifier) の枠が低い（名前がはみ出す・\(s.frame.height)pt）")
                 if note.exists { XCTAssertLessThanOrEqual(s.frame.maxY, note.frame.minY + 0.5, "\(label): 見本 \(s.identifier) が説明と重なる") }
             }
-            checkRoomPicture(app, label)
+            // 灯りの札は夜にして見せる（暗いので画素の明るさでは部屋の枠を測れない）
+            if tab != "light" { checkRoomPicture(app, label) }
         }
         // 何も変えていない時に「これにする」を光らせない（2026-10-22 owner）
         XCTAssertFalse(done.label.contains("これにする"), "模様替えで何も変えていないのに「これにする」（今は「\(done.label)」）")
+        // 持っていない柄は鍵の札。押すと部屋で見本を試せ、どうすれば届くかと外まわりの図鑑への道が出る
+        let wallTab = app.buttons["camper.room.tab.wall"].firstMatch
+        revealInPanel(app, wallTab)
+        wallTab.tap()
+        let locked = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "camper.room.style.", "まだ持っていません")).firstMatch
+        if locked.waitForExistence(timeout: 3) {
+            revealInPanel(app, locked)
+            locked.tap()
+            let card = app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 3), "持っていない柄を押しても見本の札が出ない\(tag)")
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "96l-部屋の下の板（模様替え・持っていない柄を試す\(tag)）")
+            checkRoomPanel(app, "模様替え・見本\(tag)", ids: ["camper.room.styleTrialEnd", "camper.room.styleCollect", "camper.room.styleDone"])
+            let end = app.buttons["camper.room.styleTrialEnd"].firstMatch
+            revealInPanel(app, end)
+            end.tap()
+            XCTAssertFalse(card.waitForExistence(timeout: 2), "「見本をやめる」で見本の札が消えない\(tag)")
+        } else {
+            XCTFail("壁紙に持っていない柄の札（鍵）が無い\(tag)")
+        }
+        // 持っている柄に変えたら「元に戻す」と「これにする」。戻したら「閉じる」
+        let curtainTab = app.buttons["camper.room.tab.curtain"].firstMatch
+        revealInPanel(app, curtainTab)
+        curtainTab.tap()
+        let indigo = app.buttons["camper.room.style.indigo"].firstMatch
+        revealInPanel(app, indigo)
+        indigo.tap()
+        let revert = app.buttons["camper.room.styleRevert"].firstMatch
+        XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない\(tag)")
+        XCTAssertTrue(done.label.contains("これにする"), "柄を変えたのに主ボタンが「これにする」でない（今は「\(done.label)」）")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "96l-部屋の下の板（模様替え・変えた後\(tag)）")
+        checkRoomPanel(app, "模様替え・変えた後\(tag)", ids: ["camper.room.styleRevert", "camper.room.styleDone"])
+        revealInPanel(app, revert)
+        revert.tap()
+        XCTAssertFalse(revert.waitForExistence(timeout: 2), "「元に戻す」で戻らない\(tag)")
+        XCTAssertFalse(done.label.contains("これにする"), "戻したのに「これにする」のまま\(tag)")
+        revealInPanel(app, done)
         done.tap()
         XCTAssertTrue(app.buttons["camper.room.tool.photos"].firstMatch.waitForExistence(timeout: 5), "模様替えを閉じられない\(tag)")
 
@@ -3936,15 +3977,23 @@ final class ScreenshotTests: XCTestCase {
     private func checkRoomPanel(_ app: XCUIApplication, _ label: String, ids: [String], groups: [String] = []) {
         let window = app.windows.firstMatch.frame
         let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        var boxes: [(String, CGRect)] = []
-        var lines: [String] = ["窓 \(window)", "部屋の絵 \(scene.exists ? "\(scene.frame)" : "無し")"]
+        // 大きい文字では板を送る。1 つずつ見える所まで送って、見えて押せるか・44pt かを見る（切れて届かないなら落とす）
         for id in ids {
             let e = app.descendants(matching: .any)[id].firstMatch
             XCTAssertTrue(e.exists, "\(label): \(id) が無い")
             guard e.exists else { continue }
+            revealInPanel(app, e)
+            XCTAssertTrue(e.isHittable, "\(label): \(id) が見えない・届かない（板の外へ切れる・\(e.frame)）")
+            if e.elementType == .button { checkTarget(e, id, label) }
+        }
+        // いま見えている物どうしで、画面の外・部屋の絵に掛かる・重なるを見る
+        var boxes: [(String, CGRect)] = []
+        var lines: [String] = ["窓 \(window)", "部屋の絵 \(scene.exists ? "\(scene.frame)" : "無し")"]
+        for id in ids {
+            let e = app.descendants(matching: .any)[id].firstMatch
+            guard e.exists, e.isHittable else { continue }
             boxes.append((id, e.frame))
             lines.append("\(id) \(e.frame)")
-            if e.elementType == .button { checkTarget(e, id, label) }
         }
         for prefix in groups {
             let q = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
@@ -3968,6 +4017,21 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         assertNoOverlap(boxes, label)
+    }
+
+    /// 下の板を送って `element` を見える所へ出す（送れない板・もう見えている時は何もしない）。板の左の縁を引く（部屋の絵は回さない）
+    private func revealInPanel(_ app: XCUIApplication, _ element: XCUIElement) {
+        let window = app.windows.firstMatch
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        var pushes = 0
+        while element.exists, !element.isHittable, pushes < 6 {
+            let above = scene.exists && element.frame.maxY <= scene.frame.maxY
+            let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.74 : 0.94))
+            let to = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.9 : 0.78))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+            Thread.sleep(forTimeInterval: 0.6)
+            pushes += 1
+        }
     }
 
     private func checkTarget(_ e: XCUIElement, _ id: String, _ label: String) {
