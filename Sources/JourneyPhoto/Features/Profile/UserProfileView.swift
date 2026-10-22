@@ -474,7 +474,11 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment, follow: true) }
+                Task {
+                    await model.toggleFollow(userId: userId, environment: environment, follow: true)
+                    // フォローで見えるストーリーが変わる。顔の輪の控えを読み直す
+                    await StoryRingDirectory.shared.refresh(environment: environment, auth: auth)
+                }
             }
         } label: {
             ProfileFollowButtonLabel(isFollowing: model.isFollowing)
@@ -486,7 +490,12 @@ struct UserProfileView: View {
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             // **向きは押した時点で決める。** 確認が出ている間に読み込みが「もう外れていた」を
             // 書いても、「外す」を選んだのに follow を送らない
-            Task { await model.toggleFollow(userId: userId, environment: environment, follow: false) }
+            Task {
+                await model.toggleFollow(userId: userId, environment: environment, follow: false)
+                // 外したら見えなくなるストーリーがある。顔の輪の控えを読み直す（読めなければ前の控えのまま・
+                // 失敗の控えで圏外のたびには読まない・`StoryRingDirectory`）
+                await StoryRingDirectory.shared.refresh(environment: environment, auth: auth)
+            }
         }
     }
 }

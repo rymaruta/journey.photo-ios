@@ -199,6 +199,9 @@ enum StoryReel {
     /// これだけ下へ引いて離したら閉じる（勢いでも閉じる）
     static let closeDistance: Double = 120
 
+    /// 縦の払いを離したとき、縮みを戻す動き（`settle`）が要るか。**下へ引いていたときだけ**
+    static func needsSettle(dy: Double) -> Bool { dy > 0 }
+
     static func closes(dy: Double, predictedDY: Double) -> Bool {
         max(dy, predictedDY) >= closeDistance
     }

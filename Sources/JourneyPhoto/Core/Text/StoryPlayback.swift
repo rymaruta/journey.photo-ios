@@ -335,17 +335,9 @@ enum StoryPlayback {
         return hasPreviousGroup ? .previousGroup : .restart
     }
 
-    /// 押した場所が左（前へ）か右（次へ）か
-    enum TapSide: Equatable { case left, right }
-
     /// 左の当たりの幅（画面の幅に対する割合）。**左は細く・右は広く**（Instagram と同じ 1/3）
     /// ——進むほうが多いので、真ん中あたりを押したら次へ（2026-10-22 判断。以前は半々）
     static let leftTapFraction: CGFloat = 1.0 / 3.0
-
-    static func tapSide(x: CGFloat, width: CGFloat) -> TapSide {
-        guard width > 0 else { return .right }
-        return x < width * leftTapFraction ? .left : .right
-    }
 
     /// 頭から見直したときの終わりの控え（`pendingEnd`）と受け取った印（`endedIds`）。
     ///
@@ -427,6 +419,8 @@ enum StoryPlayback {
         case reply
         /// 自分の投稿の「見た人」の一覧（足元の反応の札と同じ）
         case insights
+        /// ♡ の長押しの並びが開いていた。**閉じるだけ**（並びが ♡ の上に残ったまま返信欄が開かない）
+        case closeReactions
         /// 何もしない
         case none
     }
@@ -434,7 +428,9 @@ enum StoryPlayback {
     /// 上へ払ったとき。**人の投稿は返信欄、自分の投稿は見た人の一覧**（Instagram と同じ）。
     /// 返信を受けない投稿・期限切れの自分の投稿（見た人の記録が無い）・ハイライトの中
     /// （足元に返信欄も見た人の札も無い）は何もしない——足元に無い物を払いで開かない
-    static func swipeUpAction(isMine: Bool, acceptsReplies: Bool, expired: Bool, inHighlight: Bool) -> SwipeUp {
+    static func swipeUpAction(isMine: Bool, acceptsReplies: Bool, expired: Bool, inHighlight: Bool,
+                              reactionsOpen: Bool = false) -> SwipeUp {
+        if reactionsOpen { return .closeReactions }
         guard !inHighlight else { return .none }
         if isMine { return expired ? .none : .insights }
         return acceptsReplies ? .reply : .none
@@ -512,9 +508,14 @@ enum StoryPlayback {
     /// たびに読まない（通信を増やしすぎない）。ストーリーは 24 時間もつので 1 分の遅れは困らない
     static let ringFreshness: TimeInterval = 60
 
-    /// 顔の輪の控えを読み直すか。**読んだことが無い・見ている人が替わった・古い**とき
-    static func needsRingRefresh(fetchedAt: Date?, sameViewer: Bool, now: Date = Date(),
-                                 maxAge: TimeInterval = ringFreshness) -> Bool {
+    /// 読めなかったあと、これだけは読み直さない（圏外で顔を開くたびに読みに行かない）
+    static let ringRetryAfterFailure: TimeInterval = 15
+
+    /// 顔の輪の控えを読み直すか。**読んだことが無い・見ている人が替わった・古い**とき。
+    /// ただし**その人の分を読めなかったばかり**（`failedAt` から `ringRetryAfterFailure` 以内）なら読まない
+    static func needsRingRefresh(fetchedAt: Date?, sameViewer: Bool, failedAt: Date? = nil,
+                                 now: Date = Date(), maxAge: TimeInterval = ringFreshness) -> Bool {
+        if let failedAt, now >= failedAt, now.timeIntervalSince(failedAt) < ringRetryAfterFailure { return false }
         guard let fetchedAt, sameViewer else { return true }
         return now.timeIntervalSince(fetchedAt) >= maxAge || now < fetchedAt
     }

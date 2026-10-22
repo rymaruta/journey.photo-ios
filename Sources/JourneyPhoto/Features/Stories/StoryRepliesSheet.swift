@@ -141,7 +141,9 @@ struct StoryRepliesSheet: View {
         HStack(alignment: .top, spacing: JPSpace.s) {
             if let uid = item.profileUserId {
                 NavigationLink {
+                    // 閲覧画面の中から開いたページ。顔の輪を出さない（閲覧画面を二重に重ねない・`StoryAvatar`）
                     UserProfileView(userId: uid)
+                        .environment(\.insideStoryViewer, true)
                 } label: {
                     // 顔は 36pt、押せるのは 44pt 四方。外へ広げて同じだけ詰めるので、並びは変わらない
                     avatar(uid)

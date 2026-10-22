@@ -68,10 +68,6 @@ final class StoryInstaTests: XCTestCase {
     /// 当たりは**左 1/3・右 2/3**（真ん中を押したら次へ）
     func testLeftTapZoneIsNarrow() throws {
         XCTAssertEqual(StoryPlayback.leftTapFraction, 1.0 / 3.0, accuracy: 0.0001)
-        XCTAssertEqual(StoryPlayback.tapSide(x: 100, width: 390), .left)
-        XCTAssertEqual(StoryPlayback.tapSide(x: 160, width: 390), .right, "真ん中より左でも 1/3 を過ぎたら次へ")
-        XCTAssertEqual(StoryPlayback.tapSide(x: 195, width: 390), .right)
-        XCTAssertEqual(StoryPlayback.tapSide(x: 10, width: 0), .right, "幅が分からないときは進む側")
         // 画面は左の当たりの幅をこの割合で決める
         let viewer = try source("Features/Stories/StoryViewerView.swift")
         XCTAssertTrue(viewer.contains(".frame(width: geo.size.width * StoryPlayback.leftTapFraction)"))
@@ -119,13 +115,13 @@ final class StoryInstaTests: XCTestCase {
         XCTAssertLessThan(begin.lowerBound, send.lowerBound, "返事を待ってから塗っている")
         XCTAssertLessThan(pop.lowerBound, send.lowerBound, "返事を待ってから弾ませている")
         XCTAssertTrue(body.contains("sentReactions.rollback(emoji, on: story.id)"), "失敗しても塗ったまま")
-        XCTAssertTrue(body.contains("onReactionFailed?(story.id, emoji)"), "並びの印を戻していない")
+        XCTAssertTrue(body.contains("onReactionFailed(story.id, emoji)"), "並びの印を戻していない")
         // 弾みと振動（iOS 17 の `sensoryFeedback`）
         XCTAssertTrue(viewer.contains(".sensoryFeedback(.impact(weight: .light), trigger: heartPops)"))
         XCTAssertTrue(viewer.contains(".scaleEffect(heartPopped ? StoryViewerMetrics.heartPopScale : 1)"))
         // 並び（人を回して戻っても塗りを忘れない・失敗したら外す）
         let reel = try source("Features/Stories/StoryReelView.swift")
-        XCTAssertTrue(reel.contains("onReactionFailed: { sentReactions.rollback($1, on: $0) }"))
+        XCTAssertTrue(reel.contains("sentReactions.rollback(emoji, on: storyId)"))
     }
 
     // MARK: - 4. 反応の絵文字・上へ払う
@@ -143,6 +139,15 @@ final class StoryInstaTests: XCTestCase {
                                                    inHighlight: false), .none, "期限切れは見た人の記録が無い")
         XCTAssertEqual(StoryPlayback.swipeUpAction(isMine: false, acceptsReplies: true, expired: false,
                                                    inHighlight: true), .none, "ハイライトには返信欄が無い")
+        // ♡ の長押しの並びが開いていたら、閉じるだけ（返信欄も見た人の一覧も開かない）
+        XCTAssertEqual(StoryPlayback.swipeUpAction(isMine: false, acceptsReplies: true, expired: false,
+                                                   inHighlight: false, reactionsOpen: true), .closeReactions)
+        XCTAssertEqual(StoryPlayback.swipeUpAction(isMine: true, acceptsReplies: true, expired: false,
+                                                   inHighlight: false, reactionsOpen: true), .closeReactions)
+        // 上へ払って離したときは、並びの縮みを戻す動き（時計を止める）を走らせない
+        XCTAssertFalse(StoryReel.needsSettle(dy: -120))
+        XCTAssertFalse(StoryReel.needsSettle(dy: 0))
+        XCTAssertTrue(StoryReel.needsSettle(dy: 40))
     }
 
     /// 🔴 上への払いは**並びの中でも閲覧画面が受ける**（外の並びは上を受けないので、
@@ -153,6 +158,8 @@ final class StoryInstaTests: XCTestCase {
         let outside = try XCTUnwrap(viewer.range(of: "guard !swipesHandledOutside else { return }\n                    switch swipe {"))
         XCTAssertLessThan(up.lowerBound, outside.lowerBound)
         let body = member("private func swipeUp() {", in: viewer)
+        XCTAssertTrue(body.contains("reactionsOpen: showReactions"), "反応の並びが開いているかを渡していない")
+        XCTAssertTrue(body.contains("case .closeReactions: showReactions = false"))
         XCTAssertTrue(body.contains("case .reply: replyFocused = true"))
         XCTAssertTrue(body.contains("case .insights: showInsights = true"))
         // 外の並びは上を受けない（閲覧画面と取り合わない）
@@ -213,6 +220,94 @@ final class StoryInstaTests: XCTestCase {
                       "前の人の一覧を使った")
         XCTAssertTrue(StoryPlayback.needsRingRefresh(fetchedAt: now.addingTimeInterval(120), sameViewer: true, now: now),
                       "時計が戻ったら読み直す")
+        // 読めなかったばかりなら読まない（圏外で顔を開くたびに読みに行かない）。少し経てば読む
+        XCTAssertFalse(StoryPlayback.needsRingRefresh(fetchedAt: nil, sameViewer: false,
+                                                      failedAt: now.addingTimeInterval(-5), now: now))
+        XCTAssertTrue(StoryPlayback.needsRingRefresh(fetchedAt: nil, sameViewer: false,
+                                                     failedAt: now.addingTimeInterval(-20), now: now))
+    }
+
+    // MARK: - 顔の輪の控え（`StoryRingDirectory`）の振る舞い
+
+    /// 🔴 **読んでいる間にアカウントを切り替えたら、前の人の一覧を新しい人の控えに入れない**。
+    /// 控えの持ち主と違う人には空を返す
+    @MainActor
+    func testDirectoryDoesNotHandOverAnotherViewersList() async {
+        let directory = StoryRingDirectory()
+        let a = [story("a1", user: "x")]
+        XCTAssertTrue(directory.publish(a, loadedFor: "me-A", current: "me-A"))
+        XCTAssertEqual(directory.stories(for: "me-A").map(\.id), ["a1"])
+        XCTAssertTrue(directory.stories(for: "me-B").isEmpty, "別の人に前の人の控えを見せた")
+        XCTAssertTrue(directory.stories(for: nil).isEmpty)
+        // A で読み始め、返る前に B へ切り替わった → 入れない（B の控えにならない）
+        XCTAssertFalse(directory.publish([story("late", user: "y")], loadedFor: "me-A", current: "me-B"))
+        XCTAssertTrue(directory.stories(for: "me-B").isEmpty, "前の人の一覧が新しい人の控えに入った")
+        XCTAssertEqual(directory.stories(for: "me-A").map(\.id), ["a1"], "前の控えを書き換えた")
+        XCTAssertFalse(directory.publish(a, loadedFor: nil, current: nil), "ログインしていない人の控えを作った")
+    }
+
+    /// 同じ人の読み込みは**1つにまとめる**（顔が並ぶ画面で同時に何度も読まない）。答えは今の人のときだけ入る
+    @MainActor
+    func testDirectoryCoalescesConcurrentLoads() async {
+        let directory = StoryRingDirectory()
+        let counter = Counter()
+        let made = [story("s1", user: "x")]
+        let fetch: () async throws -> [Story] = {
+            await counter.bump()
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            return made
+        }
+        async let first: Void = directory.refresh(viewerId: "me", current: { "me" }, fetch: fetch)
+        async let second: Void = directory.refresh(viewerId: "me", current: { "me" }, fetch: fetch)
+        _ = await (first, second)
+        let afterTwo = await counter.value
+        XCTAssertEqual(afterTwo, 1, "同時の読み込みを2回送った")
+        XCTAssertEqual(directory.stories(for: "me").map(\.id), ["s1"])
+        // 古くなければ読み直さない
+        await directory.refreshIfStale(viewerId: "me", current: { "me" }, fetch: fetch)
+        let afterStale = await counter.value
+        XCTAssertEqual(afterStale, 1, "読んだばかりの控えを読み直した")
+        // 読んでいる間に人が替わった → 入れない
+        let other = StoryRingDirectory()
+        await other.refresh(viewerId: "me-A", current: { "me-B" }, fetch: fetch)
+        XCTAssertTrue(other.stories(for: "me-A").isEmpty)
+        XCTAssertTrue(other.stories(for: "me-B").isEmpty)
+    }
+
+    /// 読めなかったら前の控えを残し、**しばらくは読み直さない**。消した1本は控えから外す
+    @MainActor
+    func testDirectoryFailureAndRemove() async {
+        let directory = StoryRingDirectory()
+        directory.publish([story("s1", user: "x"), story("s2", user: "x")], loadedFor: "me", current: "me",
+                          now: Date().addingTimeInterval(-120))
+        let counter = Counter()
+        let failing: () async throws -> [Story] = {
+            await counter.bump()
+            throw URLError(.notConnectedToInternet)
+        }
+        await directory.refreshIfStale(viewerId: "me", current: { "me" }, fetch: failing)
+        let once = await counter.value
+        XCTAssertEqual(once, 1)
+        XCTAssertEqual(directory.stories(for: "me").count, 2, "読めなかった回に控えを消した")
+        await directory.refreshIfStale(viewerId: "me", current: { "me" }, fetch: failing)
+        let twice = await counter.value
+        XCTAssertEqual(twice, 1, "読めなかった直後にまた読みに行った（圏外のたびに読む）")
+        directory.remove(id: "s1")
+        XCTAssertEqual(directory.stories(for: "me").map(\.id), ["s2"])
+        // 消した1本は、あとから届いた一覧にあっても戻さない
+        directory.publish([story("s1", user: "x")], loadedFor: "me", current: "me")
+        XCTAssertTrue(directory.stories(for: "me").isEmpty)
+    }
+
+    /// ホームの読み込みは、**読み始めた人**で控えに渡す（待つ前に人を決める）
+    func testHomePublishesWithTheViewerItStartedWith() throws {
+        let row = try source("Features/Stories/StoriesRow.swift")
+        let reload = member("private func reload() async {", in: row)
+        let viewer = try XCTUnwrap(reload.range(of: "let viewer = auth.userId"))
+        let load = try XCTUnwrap(reload.range(of: "await model.load("))
+        XCTAssertLessThan(viewer.lowerBound, load.lowerBound, "待ってから人を決めている")
+        XCTAssertTrue(reload.contains("publish(applied, loadedFor: viewer, current: auth.userId)"))
+        XCTAssertFalse(row.contains("lastFetched"), "最後に取れた一覧（誰のものか分からない）をまだ渡している")
     }
 
     /// 人のページ・自分のページ・写真の作者の顔が輪を出す部品を使う
@@ -227,9 +322,51 @@ final class StoryInstaTests: XCTestCase {
         let avatar = try source("Features/Stories/StoryAvatar.swift")
         XCTAssertTrue(avatar.contains("environment.stories.list()"))
         XCTAssertTrue(avatar.contains("StoryReelView(groups: [group], startGroup: 0"))
-        // ホームが読んだ一覧を渡す（同じ一覧をもう一度読まない）
-        XCTAssertTrue(try source("Features/Stories/StoriesRow.swift")
-            .contains("StoryRingDirectory.shared.publish(fetched, viewerId: auth.userId)"))
+    }
+
+    /// 🔴 **輪の下に黒の丸を敷く**（カバー写真の上ですき間から写真が透け、真鍮が写真に接していた）
+    func testRingSitsOnBlack() throws {
+        let ring = try source("Features/Stories/StoryRing.swift")
+        let body = member("var body: some View {", in: ring)
+        let black = try XCTUnwrap(body.range(of: ".fill(Self.gapFill)"), "輪の下に黒を敷いていない")
+        let stroke = try XCTUnwrap(body.range(of: ".stroke(Self.style(unseen: unseen)"))
+        XCTAssertLessThan(black.lowerBound, stroke.lowerBound, "黒の丸が輪の線より上に重なる")
+        XCTAssertTrue(ring.contains("static var gapFill: Color { WebTheme.background }"))
+    }
+
+    /// 閲覧画面の中から開いた人のページでは顔の輪を出さない（閲覧画面を二重に重ねない）
+    func testNoRingInsideTheViewer() throws {
+        let avatar = try source("Features/Stories/StoryAvatar.swift")
+        XCTAssertTrue(avatar.contains("guard auth.userId != nil, !insideStoryViewer else { return nil }"))
+        XCTAssertFalse(InsideStoryViewerKey.defaultValue, "ふだんの画面で輪が出なくなる")
+        for path in ["Features/Stories/StoryViewerView.swift", "Features/Stories/StoryInsightsView.swift",
+                     "Features/Stories/StoryRepliesSheet.swift"] {
+            XCTAssertTrue(try source(path).contains(".environment(\\.insideStoryViewer, true)"), path)
+        }
+    }
+
+    /// 並びが覚えた反応が変わったら（あとから届いた失敗の取り消し）、作り直した閲覧画面も写し直す。
+    /// 失敗の知らせは並びが出す
+    func testReactionFailureReachesARebuiltViewer() throws {
+        let viewer = try source("Features/Stories/StoryViewerView.swift")
+        XCTAssertTrue(viewer.contains(".onChange(of: providedReactions) { _, now in sentReactions = now }"))
+        let reel = try source("Features/Stories/StoryReelView.swift")
+        XCTAssertTrue(reel.contains("toasts.show(StoryPlayback.reactionFailedMessage(emoji), kind: .failure)"))
+        // 並びの覚え（値）: 先に塗った印を失敗で並びが外すと値が変わる（＝閲覧画面が写し直す合図になる）
+        var reelState = StoryPlayback.SentReactions()
+        XCTAssertTrue(reelState.begin("❤️", on: "s1"))
+        let rebuiltBeforeFailure = reelState
+        reelState.rollback("❤️", on: "s1")
+        XCTAssertNotEqual(rebuiltBeforeFailure, reelState)
+        XCTAssertNil(reelState.emoji(on: "s1"))
+    }
+
+    /// 写真の作者の顔は輪の有無で幅を変えない（44 にそろえる）
+    func testAuthorFaceWidthIsStable() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"))
+        let avatar = try source("Features/Stories/StoryAvatar.swift")
+        XCTAssertTrue(avatar.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"))
     }
 
     /// 顔の大きさのまま輪を描き、写真を内側へ縮める。64 ならホームの輪と同じ寸法
@@ -308,4 +445,10 @@ final class StoryInstaTests: XCTestCase {
                                                publicLikes: { _ in nil })
         XCTAssertEqual(react.status, 200)
     }
+}
+
+/// 呼ばれた回数（読み込みをまとめたかを数える）
+private actor Counter {
+    private(set) var value = 0
+    func bump() { value += 1 }
 }

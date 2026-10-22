@@ -950,7 +950,9 @@ struct PhotoDetailView: View {
                             .frame(width: Self.authorAvatarSize, height: Self.authorAvatarSize)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-                            .frame(minHeight: WebTheme.minTapTarget)
+                            // **輪のあるときと同じ 44 の幅**（`StoryAvatar` の輪は 44 四方）。輪の有無で名前が
+                            // 4pt ずれていた（2026-10-22 の確かめ）
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

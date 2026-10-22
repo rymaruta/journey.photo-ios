@@ -400,13 +400,16 @@ struct StoriesRow: View {
     }
 
     private func reload() async {
-        await model.load(environment: environment, viewerId: auth.userId,
-                         blockedUserIds: hidden.blockedUserIds,
-                         reportedPhotoIds: hidden.reportedPhotoIds)
+        // 🔴 **読む人は待つ前に決める**（読んでいる間にアカウントを切り替えると、前の人の一覧を
+        // 新しい人の控えに入れていた・2026-10-22 の確かめ）
+        let viewer = auth.userId
+        let applied = await model.load(environment: environment, viewerId: viewer,
+                                       blockedUserIds: hidden.blockedUserIds,
+                                       reportedPhotoIds: hidden.reportedPhotoIds)
         // 顔の輪（人のページ・写真の作者・`StoryAvatar`）にも同じ一覧を渡す（もう一度読まない）。
-        // 取れた回だけ（取れなかった回の残りものを新しいとして渡さない）
-        if let fetched = model.lastFetched {
-            StoryRingDirectory.shared.publish(fetched, viewerId: auth.userId)
+        // **この回で実際に入れた一覧だけ**、**読み始めた人と今の人が同じときだけ**（`publish` が見る）
+        if let applied {
+            StoryRingDirectory.shared.publish(applied, loadedFor: viewer, current: auth.userId)
         }
         prefetchFirstVideo()
     }
@@ -495,10 +498,6 @@ final class StoriesViewModel: ObservableObject {
 
     private var deletedIds: Set<String> = []
 
-    /// いちばん最近の回で**取れた**一覧そのもの（取れなかった回は nil）。顔の輪の控えへ渡す
-    /// （`StoryRingDirectory.publish`。ブロック・通報は控えを読む側が絞る）
-    private(set) var lastFetched: [Story]?
-
     /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
     private var loadedFor: String?
 
@@ -514,8 +513,11 @@ final class StoriesViewModel: ObservableObject {
     private var latestBlocked: Set<String> = []
     private var latestReported: Set<String> = []
 
+    /// - Returns: **この回で取れて、実際に一覧へ入れたサーバーの一覧**（顔の輪の控えへ渡す・
+    ///   `StoryRingDirectory.publish`）。取れなかった・古い回で捨てた・別の人の鍵だった回は nil
+    @discardableResult
     func load(environment: AppEnvironment, viewerId: String?, blockedUserIds: Set<String> = [],
-              reportedPhotoIds: Set<String> = []) async {
+              reportedPhotoIds: Set<String> = []) async -> [Story]? {
         loadSeq += 1
         let seq = loadSeq
         defer { settled = true }
@@ -527,11 +529,11 @@ final class StoriesViewModel: ObservableObject {
         let fetched = try? await environment.stories.list()
         if fetched != nil {
             // 別の人の鍵で取った一覧は使わない・もっと新しい一覧が入っていたら使わない
-            guard latestViewer == .some(viewerId), seq > appliedSeq else { return }
+            guard latestViewer == .some(viewerId), seq > appliedSeq else { return nil }
             appliedSeq = seq
         } else {
             // 取れなかった回は、いちばん新しい回のときだけ扱う（古い失敗で消さない）
-            guard seq == loadSeq else { return }
+            guard seq == loadSeq else { return nil }
         }
         stories = StoryPlayback.afterLoad(fetched: fetched, previous: stories,
                                           sameViewer: loadedFor == viewerId,
@@ -542,6 +544,6 @@ final class StoriesViewModel: ObservableObject {
             loadedFor = viewerId
             loaded = true
         }
-        lastFetched = fetched
+        return fetched
     }
 }

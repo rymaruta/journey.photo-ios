@@ -160,6 +160,20 @@ public struct EnvironmentValues {
     public var dynamicTypeSize: DynamicTypeSize { .large }
 }
 
+/// 自分で足す環境の値の鍵（本物と同じ形）
+public protocol EnvironmentKey {
+    associatedtype Value
+    static var defaultValue: Value { get }
+}
+
+extension EnvironmentValues {
+    /// 自分で足した値（模型は既定の値を返すだけ）
+    public subscript<K: EnvironmentKey>(key: K.Type) -> K.Value {
+        get { K.defaultValue }
+        set {}
+    }
+}
+
 public struct DismissAction {
     public func callAsFunction() {}
 }

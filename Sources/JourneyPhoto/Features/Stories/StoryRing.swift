@@ -30,6 +30,11 @@ struct StoryRing<Content: View>: View {
 
     var body: some View {
         ZStack {
+            // 🔴 **輪の下に黒の丸を敷く**（2026-10-22 の確かめ）。カバー写真の上に重なる顔（人のページ・
+            // マイページ）では、線と写真の間のすき間・本数の切れ目から写真が透け、真鍮が写真に接していた
+            // （真鍮は黒地の上だけ・CLAUDE.md）。ホームの列は黒地なので見た目は変わらない
+            Circle()
+                .fill(Self.gapFill)
             ForEach(Array(StoryPlayback.ringSegments(count: count, gap: StoryRingMetrics.segmentGapFraction(diameter: diameter))
                 .enumerated()), id: \.offset) { _, seg in
                 Circle()
@@ -48,6 +53,9 @@ struct StoryRing<Content: View>: View {
         }
         .frame(width: diameter, height: diameter)
     }
+
+    /// 輪の下に敷く黒（線と写真の間のすき間・切れ目の地）
+    @MainActor static var gapFill: Color { WebTheme.background }
 
     /// 輪の塗り。**未見は金属の光、見たものは白 22%**
     @MainActor static func style(unseen: Bool) -> AnyShapeStyle {

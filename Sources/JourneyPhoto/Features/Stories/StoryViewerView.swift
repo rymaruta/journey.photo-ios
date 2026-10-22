@@ -195,6 +195,9 @@ struct StoryViewerView: View {
     /// 先に塗った反応を送れなかった（ストーリー id・絵文字）。**並びの印も外す**（`onReacted` は
     /// 2026-10-22 から返事を待たずに呼ぶ）
     let onReactionFailed: ((String, String) -> Void)?
+    /// 外（並び）が覚えている反応。**変わったら写し直す**——返事を待つ間に人を回して戻ると、作り直した
+    /// 閲覧画面は塗った写しを持ち、あとで届いた失敗（並びの `rollback`）を知らずに塗ったままだった
+    let providedReactions: StoryPlayback.SentReactions
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -225,6 +228,7 @@ struct StoryViewerView: View {
         self.onReacted = onReacted
         self.onReactionFailed = onReactionFailed
         _sentReactions = State(initialValue: sentReactions)
+        self.providedReactions = sentReactions
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -314,6 +318,9 @@ struct StoryViewerView: View {
         // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
         .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
+        .onChange(of: providedReactions) { _, now in sentReactions = now }
+        // 閲覧画面の中から開くページ（名前・見た人・返信から）では顔の輪を出さない（`StoryAvatar`）
+        .environment(\.insideStoryViewer, true)
         // 反応を押した手応え（iOS 17 の `sensoryFeedback`）と ♡ の弾み（`sendReaction` が `heartPops` を進める）。
         // **画面の側に付ける**——返信欄の絵文字の列から送ったときは ♡ が送信の丸に替わっていて見えない
         .sensoryFeedback(.impact(weight: .light), trigger: heartPops)
@@ -552,6 +559,8 @@ struct StoryViewerView: View {
                             ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                         }
                 }
+                // 閲覧画面の中から開いたページ。**顔の輪を出さない**（押すと閲覧画面が二重に重なる・`StoryAvatar`）
+                .environment(\.insideStoryViewer, true)
             }
         }
         // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
@@ -1112,12 +1121,13 @@ struct StoryViewerView: View {
         }
     }
 
-    /// 上へ払った（`StoryPlayback.swipeUpAction`）。反応の並びが開いていたら閉じるだけ
+    /// 上へ払った（`StoryPlayback.swipeUpAction`。反応の並びが開いていたら閉じるだけ）
     private func swipeUp() {
         guard let story = current else { return }
-        if showReactions { showReactions = false; return }
         switch StoryPlayback.swipeUpAction(isMine: isMine(story), acceptsReplies: story.acceptsReplies,
-                                           expired: isExpired(story), inHighlight: highlight != nil) {
+                                           expired: isExpired(story), inHighlight: highlight != nil,
+                                           reactionsOpen: showReactions) {
+        case .closeReactions: showReactions = false
         case .reply: replyFocused = true
         case .insights: showInsights = true
         case .none: break
@@ -2211,8 +2221,12 @@ struct StoryViewerView: View {
             }
         } catch {
             sentReactions.rollback(emoji, on: story.id)
-            onReactionFailed?(story.id, emoji)
-            message = StoryPlayback.reactionFailedMessage(emoji)
+            if let onReactionFailed {
+                // **知らせは並びが出す**（この閲覧画面は人を回すと消えているかもしれない）
+                onReactionFailed(story.id, emoji)
+            } else {
+                message = StoryPlayback.reactionFailedMessage(emoji)
+            }
         }
     }
 
