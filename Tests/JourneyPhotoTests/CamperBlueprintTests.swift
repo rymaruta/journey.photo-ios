@@ -206,17 +206,25 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertTrue(build(mood: .day).lights.isEmpty)
         let lights = build(mood: .night).lights
         XCTAssertEqual(lights.filter { $0.name == "porch" && $0.kind == .spot }.count, 1)
-        // 室内の灯りは天井から下向きの spot で影を落とす（omni だと屋根の棒・縁に光の筋が乗った・run 533）
+        // 室内の灯りは、とおまわり号の中の家具灯と同じ型・同じ桁（2026-10-21 owner「中の光で眩しすぎる」: 前の天井の
+        // spot 1250・720 は口の奥を白く飛ばした）。室内の組だけを照らす omni なので影の絵は要らない。
+        // 合計は部屋の夜の上限の中（中に入って部屋に切り替わっても明るさがそろう）
         for stage in CamperStage.allCases {
             let b = build(stage, mood: .night)
             let roof = CamperBuilder(config: CamperConfig(stage: stage)).roofTop
-            for l in b.lights where l.inside {
-                XCTAssertEqual(l.kind, .spot, l.name)
-                XCTAssertTrue(l.castsShadow, l.name)
-                XCTAssertLessThan(l.direction.y, -0.99, l.name)
+            let inside = b.lights.filter(\.inside)
+            XCTAssertFalse(inside.isEmpty, "\(stage): 室内の灯りが無い")
+            for l in inside {
+                XCTAssertEqual(l.kind, .omni, l.name)
+                XCTAssertEqual(l.pattern, .roomLamp, l.name)
+                XCTAssertFalse(l.castsShadow, l.name)
                 XCTAssertLessThan(l.position.y, roof - 8, "\(stage) \(l.name): 天井より下")
-                XCTAssertLessThan(l.spotOuter / 2, 80, "円錐が上を向かない")
+                XCTAssertGreaterThan(l.intensity, 0, l.name)
+                XCTAssertLessThanOrEqual(l.intensity, 1.2, "\(stage) \(l.name): 室内の灯りが強い（口の奥が白く飛ぶ）")
+                XCTAssertLessThanOrEqual(l.range, CamperRoomBuilder.nightBudget.range, "\(stage) \(l.name): 部屋の灯りより遠くまで届く")
             }
+            XCTAssertLessThanOrEqual(inside.map(\.intensity).reduce(0, +), CamperRoomBuilder.nightBudget.intensity,
+                                     "\(stage): 室内の灯りの合計が、とおまわり号の中の夜の上限を超える")
         }
         // 室内 2・入口 1・焚き火 1・外のランタン 1
         XCTAssertEqual(lights.count, 5)
@@ -333,16 +341,15 @@ final class CamperBlueprintTests: XCTestCase {
         XCTAssertEqual(CamperMaterials.spec(.paint, paint: 0x5B6168, mood: .day).clearCoatRoughness, 0.08)
     }
 
-    /// 夜の主役は窓と扉の口の灯り。焚き火・ランタン・電飾は弱く、近くだけ（run 530: 左 3 分の 1 が白く飛んだ）
+    /// 夜の灯りの桁は、とおまわり号の中の家具灯（0.3〜0.7）とそろえる（2026-10-21 判断: 前の焚き火 60・ランタン 45・
+    /// 電球の列 90 は点の灯りの桁の取り違えで、灯りのすぐ下が白く飛んだ）。どの灯りも 2 まで、届く距離は 1.6 m まで
     func testNightOutdoorLightsStayModest() {
         var l = CamperLoadout.standard
         for (cat, key) in [(CamperCategory.outdoorLight, "string_lights"), (.outdoorLight, "brass_lantern")] {
             l.picks[cat.rawValue] = key
-            let lights = build(mood: .night, loadout: l).lights
-            let interior = lights.filter { $0.name.hasPrefix("interior.") }.map(\.intensity).max() ?? 0
-            for o in lights where o.name == "campfire" || o.name.hasPrefix("campfire.") || o.name == "lantern" || o.name == "string" {
-                XCTAssertLessThanOrEqual(o.intensity, interior / 4, "\(o.name) が室内の灯りに迫る")
-                XCTAssertLessThanOrEqual(o.range, 72, o.name)
+            for light in build(mood: .night, loadout: l).lights {
+                XCTAssertLessThanOrEqual(light.intensity, 2, "\(light.name) の桁が大きい（灯りの下が白く飛ぶ）")
+                XCTAssertLessThanOrEqual(light.range, 160, light.name)
             }
         }
         // 尾灯は空間の omni を置かない（1.1.21 で後ろが真っ赤な白い球・owner）。2026-10-19（claude/camper-lamps）: 停めた
@@ -421,10 +428,21 @@ final class CamperBlueprintTests: XCTestCase {
     /// 運転席のガラスは夜も光らない。住む所の窓だけがほのかに光る
     func testOnlyLivingWindowsGlowAtNight() {
         XCTAssertNil(CamperMaterials.spec(.glass, paint: 0, mood: .night).emission)
-        // 2026-10-19 作り直し: 窓のガラスは光らない（一色の板になった）。薄い暗い硝子（板 0.38）で、照らされた室内が透け、
-        // 表に映り込みが乗る。光るのは室内の灯りに照らされた布（織り目の絵の弱い光）
+        // 2026-10-19: 一色の emission の窓は平らな板になった。2026-10-21（Mac run 627・630・633）: 硝子の奥の明かりの面が
+        // 外から見えず窓が暗い一色だったので、硝子にカーテン越しの明かりの絵（roomGlow・一色ではない）を光らせる。昼は光らない
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
-        XCTAssertNil(glass.emission)
+        XCTAssertEqual(glass.emissionTexture, .roomGlow, "一色の平らな光にしない")
+        XCTAssertNotNil(glass.emission)
+        XCTAssertNil(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).emission)
+        let lightColor = CamperTextures.rgb(CamperMaterials.windowLightColor)
+        XCTAssertGreaterThan(lightColor.0, lightColor.2 * 2, "窓の明かりは暖色")
+        // 窓の硝子の貼り絵の位置は窓ごとに 0〜1（絵が 1 回だけ載る）
+        for n in build(mood: .night).nodes where n.name == "window" {
+            guard case .mesh(let m) = n.shape else { continue }
+            for (i, uv) in m.uvs.enumerated() where m.groups.contains(where: { $0.material == .glassLit && $0.indices.contains(Int32(i)) }) {
+                XCTAssertTrue((-0.01...1.01).contains(uv.x) && (-0.01...1.01).contains(uv.y), "\(uv)")
+            }
+        }
         // 夜は 0.32（奥の明かりを見せつつ硝子感を残す・2026-10-20）。昼は板どおり 0.62
         XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001)
         XCTAssertEqual(CamperMaterials.spec(.glassLit, paint: 0, mood: .day).opacity, 0.62, accuracy: 0.001)
@@ -444,7 +462,9 @@ final class CamperBlueprintTests: XCTestCase {
         }
         XCTAssertFalse(materials("cabDoor.window").contains(.glassLit))
         XCTAssertTrue(materials("window").contains(.glassLit))
-        XCTAssertTrue(materials("door.window").contains(.glassLit))
+        // 入口の扉の窓は別の材質（開けて横を向いたら消す・2026-10-21）
+        XCTAssertTrue(materials("door.window").contains(.glassDoor))
+        XCTAssertEqual(CamperMaterials.spec(.glassDoor, paint: 0, mood: .night), CamperMaterials.spec(.glassLit, paint: 0, mood: .night))
     }
 
     /// 夜に光る面は emission 1 まで（にじみ無しで読め、HDR の値が大きくならない・run 533 の黒い四角）。住む所の窓は灯る
@@ -479,17 +499,17 @@ final class CamperBlueprintTests: XCTestCase {
         let fire = try? XCTUnwrap(rgb("campfire"))
         let porch = try? XCTUnwrap(rgb("porch"))
         guard let inside, let lantern, let fire, let porch else { return XCTFail("灯りが無い") }
-        // 2700K ≒ (255, 180, 107)
-        XCTAssertEqual(inside.1, 180.0 / 255, accuracy: 0.03)
-        XCTAssertEqual(inside.2, 107.0 / 255, accuracy: 0.05)
+        // 室内の灯りは、とおまわり号の中の灯り（模様替えの「暖かい白」）と同じ色（中に入っても色温度がそろう・2026-10-21）
+        let room = CamperTextures.rgb(CamperRoomMaterials.lightColor("warm"))
+        XCTAssertEqual(inside.0, room.0, accuracy: 0.001)
+        XCTAssertEqual(inside.1, room.1, accuracy: 0.001)
+        XCTAssertEqual(inside.2, room.2, accuracy: 0.001)
         // 外の火は室内灯より赤い（緑と青が少ない）
         XCTAssertLessThan(lantern.1, inside.1)
         XCTAssertLessThan(fire.1, inside.1)
         // 入口の灯りも 2700K（室内と同じ暖色）
         XCTAssertEqual(porch.1, 180.0 / 255, accuracy: 0.03)
         XCTAssertEqual(porch.2, 107.0 / 255, accuracy: 0.05)
-        // 室内の灯りは窓の高さまで届く広い円錐
-        for l in lights where l.inside { XCTAssertGreaterThanOrEqual(l.spotOuter, 150, l.name) }
     }
 
     /// 地面の溜まり: 前照灯の前の光の帯（板の beam）・尾灯の赤・焚き火とランタンの足元。どれも夜だけ・裾がなめらか
@@ -575,8 +595,9 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertEqual(panels.count, builder.windowsNear.count + builder.windowsFar.count, "\(stage)")
             for p in panels {
                 XCTAssertEqual(p.material, .windowGlow)
-                XCTAssertLessThan(abs(p.position.z), builder.BW - builder.wall, "\(stage): ガラスより奥")
-                XCTAssertGreaterThan(abs(p.position.z), builder.BW - builder.wall - 6, "\(stage): カーテンのすぐ内側")
+                // 硝子（表から 2.2〜2.6 奥）のすぐ内側（Mac run 630: 壁の内側では外から見えなかった）
+                XCTAssertLessThan(abs(p.position.z), builder.BW - 2.6, "\(stage): ガラスより奥")
+                XCTAssertGreaterThan(abs(p.position.z), builder.BW - builder.wall, "\(stage): 硝子のすぐ内側")
                 guard case .mesh(let m) = p.shape else { return XCTFail(p.name) }
                 // 外を向く
                 XCTAssertTrue(m.normals.allSatisfy { $0.z * p.position.z > 0 }, p.name)
@@ -584,11 +605,13 @@ final class CamperBlueprintTests: XCTestCase {
             XCTAssertTrue(build(stage, mood: .day).nodes.allSatisfy { !$0.name.hasPrefix("interior.windowGlow") })
         }
         let spec = CamperMaterials.spec(.windowGlow, paint: 0, mood: .night)
-        XCTAssertTrue(spec.additive)
+        // 2026-10-21（Mac run 627）: 足す光の面は奥行きを書く硝子の後ろで描かれず、窓が真っ黒だった。光を受けない不透明の面に
+        XCTAssertFalse(spec.additive, "足す光の面は硝子の後ろで消える")
+        XCTAssertTrue(spec.unlit)
+        XCTAssertEqual(spec.texture, .roomGlow, "一色の平らな板にしない")
         let c = CamperTextures.rgb(spec.color)
-        // 2026-10-20: 平らな黄の板に見えたので 0.55〜0.7 に抑える
-        // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: もう一段暗く 0.3〜0.42（灯っていると分かる下限は残す）
-        XCTAssertTrue((0.3...0.42).contains(max(c.0, c.1, c.2)), "強さ 0.3〜0.42（平らな板にしない・強すぎない）")
+        // 硝子 0.32 越しに 7 割ほどが見える。灯っていると分かり、白く飛ばない
+        XCTAssertTrue((0.55...0.75).contains(max(c.0, c.1, c.2)), "強さ 0.55〜0.75")
         let glass = CamperMaterials.spec(.glassLit, paint: 0, mood: .night)
         XCTAssertEqual(glass.opacity, 0.32, accuracy: 0.001, "硝子が薄すぎると glow が板に見える")
         // 窓から漏れる光のにじみ: 窓ごとに 1 枚・ガラスの外・窓より一回り大きい・足す光 0.3 ほど
@@ -648,7 +671,8 @@ final class CamperBlueprintTests: XCTestCase {
         for n in lamps {
             let ms: [CamperMaterial]
             if case .mesh(let m) = n.shape { ms = m.materials } else { ms = [n.material] }
-            for m in ms {
+            // 後ろの住む所の窓の硝子（glassLit）は灯った部屋の窓なので除く（2026-10-21・窓の明かりを硝子に）
+            for m in ms where m != .glassLit {
                 XCTAssertNil(CamperMaterials.spec(m, paint: 0, mood: .night).emission, "\(n.name) が夜に光る")
             }
         }
@@ -722,11 +746,13 @@ final class CamperBlueprintTests: XCTestCase {
             l.picks[CamperCategory.outdoorLight.rawValue] = key
             for stage in CamperStage.allCases {
                 let outside = build(stage, mood: .night, loadout: l).lights.filter { !$0.inside }
-                XCTAssertLessThanOrEqual(outside.map(\.intensity).reduce(0, +), 450, "\(stage) \(key): 夜の外の灯りの合計が強い")
+                // 2026-10-21: 点の灯りの桁を部屋の家具灯にそろえた（前の上限 450 は取り違えた桁）
+                XCTAssertLessThanOrEqual(outside.map(\.intensity).reduce(0, +), 4, "\(stage) \(key): 夜の外の灯りの合計が強い")
             }
         }
         let moon = CamperMaterials.sun(.night)
-        XCTAssertLessThanOrEqual(moon.intensity, 160, "月が強い")
+        // 2026-10-21: 月を夜の主な光に（150 → 520）。白飛びしないことは `CamperNightStageTests.testNightLightBalanceDoesNotBlowOut`
+        XCTAssertLessThanOrEqual(moon.intensity, 700, "月が強い")
         XCTAssertLessThanOrEqual(moon.from.z, 0, "月が手前から当たり、こちらを向いた面が白く飛ぶ")
         XCTAssertGreaterThan(moon.from.y, 0.7, "月は上から（屋根と縁に乗る）")
         let blue = CamperTextures.rgb(moon.color)
@@ -865,15 +891,18 @@ extension CamperBlueprintTests {
 }
 
 extension CamperBlueprintTests {
-    /// 夜、灯りの当たらない外板（後ろの壁など）はほぼ暗い（Mac run 577 の 95k: 白に近いクリーム色が一様な明るさで
-    /// 持ち上がり、後ろの面が明るく見えた）。昼の 1/10 より暗く、どの向きでも同じ（一様な明るさは向きに依らない）。
+    /// 夜、灯りの当たらない外板（後ろの壁など）は暗いが、読める（2026-10-21 作り直し）。前（Mac run 577 の 95k）は
+    /// 一様な環境光でクリーム色が持ち上がり、後ろの面が明るく見えた → 一様な環境光は 0 にし、空の光（面の向きで明暗）だけ。
+    /// 立った面は昼の 1/4 より暗く（夜の写真）、1/40 より明るい（黒い板にしない・owner「のっぺり」「浮いている」）。
     /// 月は上から（どの向きの立った面にも強さの 0.46 を超えて当たらない・仰角 63° 以上）
     func testUnlitOuterSkinIsDarkAtNight() {
+        XCTAssertEqual(CamperMaterials.fill(.night).ambient, 0, "夜に一様な環境光がある")
         for m: CamperMaterial in [.cap, .paint, .deep, .roof] {
             let night = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .night)
             let day = CamperMaterials.unlitFaceLevel(m, paint: CamperLoadout.standard.paint, mood: .day)
-            XCTAssertLessThanOrEqual(night, 0.035, "\(m): 夜に灯りの当たらない面が明るい")
-            XCTAssertLessThan(night, day / 10, "\(m)")
+            XCTAssertLessThan(night, day / 4, "\(m): 夜に灯りの当たらない面が明るい")
+            XCTAssertGreaterThan(night, day / 40, "\(m): 夜に灯りの当たらない面が真っ黒")
+            XCTAssertLessThanOrEqual(night, 0.08, "\(m)")
         }
         let moon = CamperMaterials.sun(.night)
         let from = moon.from.normalized
@@ -920,6 +949,23 @@ extension CamperBlueprintTests {
         XCTAssertLessThanOrEqual(max(w.0, w.1, w.2), lim.windowLevel, "窓の明かりが明るい")
         XCTAssertGreaterThan(w.0, w.2 * 2, "窓の明かりは暖色")
         XCTAssertLessThanOrEqual(CamperMaterials.spec(.curtain, paint: 0, mood: .night).emissionIntensity, lim.curtain)
+    }
+
+    /// 外の火（焚き火・ランタン）の光は車体の横の面まで届かない（確かめ役 2026-10-21・Mac run 642: 塗装に照り返しの
+    /// 橙の点）。減衰の終わり（SceneKit の単位の前の板の単位）が、光の元から車体の横の面までの距離より短い
+    func testOutdoorFireStopsBeforeTheBody() {
+        for key in ["brass_lantern", "string_lights", "paper_lantern", "oil_lamp"] {
+            var l = CamperLoadout.standard
+            l.picks[CamperCategory.outdoorLight.rawValue] = key
+            for stage in CamperStage.allCases {
+                let bw = CamperBuilder(config: CamperConfig(stage: stage)).BW
+                for light in build(stage, mood: .night, loadout: l).lights where light.name == "campfire" || light.name == "lantern" {
+                    let end = Double(light.pattern.attenuation(range: light.range, unit: 1).end)
+                    XCTAssertLessThan(end, abs(light.position.z) - bw, "\(stage) \(key) \(light.name): 車体の横の面まで届く")
+                    XCTAssertGreaterThan(end, 40, "\(stage) \(light.name): 足元の溜まりも照らさない")
+                }
+            }
+        }
     }
 
     /// 入口の灯りの円錐は車体の壁にほとんど当たらない（95b・95n の縦長の光の筋）: 灯りの下の壁（地面から 30 より上）は、

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 写真で作るキャンピングカー（板「写真で作るキャンピングカー」の 1 自分のキャンピングカー・5 車が育つ・6 部品のコレクション）。
 ///
@@ -171,18 +172,30 @@ struct CamperGarageView: View {
 
     /// とおまわり号の中へ入った（2026-10-19・`CamperRoomView`）
     @State private var insideRoom = false
+    /// 中に入る直前の口の絵（部屋が組み上がるまでの覆い）
+    @State private var snapshot = CamperSceneSnapshot()
 
-    /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）
+    /// 中に入る（扉が開いて口へ寄ってから、室内の画面へ。「視差効果を減らす」ではすぐ）。
+    /// 2026-10-21: 扉が開き切る少し前から口の真正面へ寄り（`CamperFraming.enter`）、灯った部屋が画面に広がってから
+    /// 切り替える。見本の起動では `-JPPreviewCamperEnterSlow` で全体をゆっくりにできる（途中の光を画面写真で見る）
     private func goInside() {
+        let slow = PreviewSession.camperEnterSlow
         if !doorOpen { toggleDoor() }
         Task { @MainActor in
-            if !reduceMotion { try? await Task.sleep(nanoseconds: 650_000_000) }
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: UInt64(0.45 * slow * 1_000_000_000))
+                aim(CamperFraming.enter(stage))
+                try? await Task.sleep(nanoseconds: UInt64(0.6 * slow * 1_000_000_000))
+            }
+            // 寄った口の絵を写し、部屋が組み上がるまでの覆いにする（暗い画面を出さない）
+            snapshot.capture()
             insideRoom = true
         }
     }
 
     private func stageView(width: CGFloat, height: CGFloat) -> some View {
-        CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion) { marker in
+        CamperSceneView(config: config, angle: angle, animateAngle: animateAngle, doorOpen: doorOpen, reduceMotion: reduceMotion,
+                        timeScale: PreviewSession.camperEnterSlow, snapshot: snapshot) { marker in
             readyMarker = marker
         }
         .frame(width: width, height: height)
@@ -199,11 +212,25 @@ struct CamperGarageView: View {
         .accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 45) }
         .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -45) }
         .accessibilityIdentifier("camper.scene")
+        // 組み上がるまでは画面の地と同じ黒で覆う（描く前の灰色のざらざらを見せない・友達の車の画面と同じ・2026-10-21）
+        .overlay {
+            if !readyMarker.hasPrefix("camper-ready") {
+                Color.black.allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        // 夜は場面に空と地面がある（2026-10-21）ので、上下の端を画面の地へなだらかに溶かす（四角い板の縁を出さない）
+        .overlay { if mood == .night { CamperStageEdges(color: CamperStyle.color(CamperMaterials.backdrop(.night))) } }
         .overlay(alignment: .bottomTrailing) { sceneButtons }
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
             CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, photosLoaded: photosLoaded, stage: actualStage, stats: stats,
-                           paint: config.loadout.paint, initialMood: mood)
+                           paint: config.loadout.paint, initialMood: mood, entry: snapshot)
+        }
+        // 部屋から戻ったら、口の真正面の寄りから扉の口を斜めに見る向きへ戻す（確かめ役 2026-10-21: 口に寄ったままだった）
+        .onChange(of: insideRoom) { _, inside in
+            guard !inside else { return }
+            snapshot.clear()
+            if doorOpen { aim(CamperFraming.door(stage)) }
         }
         .overlay(alignment: .top) {
             if previewStage != nil && previewStage != actualStage || previewPart != nil {
@@ -264,7 +291,7 @@ struct CamperGarageView: View {
         // 開けたら扉の口から室内へ寄る。閉じたら初めの向きへ戻す（寄ったまま夜や段を見ない）
         if doorOpen {
             aim(CamperFraming.door(stage))
-        } else if angle == CamperFraming.door(stage) {
+        } else if angle == CamperFraming.door(stage) || angle == CamperFraming.enter(stage) {
             aim(CamperFraming.overview(stage))
         }
     }
@@ -601,6 +628,33 @@ struct CamperGarageView: View {
         RadialGradient(colors: [CamperStyle.color(CamperMaterials.backdrop(mood)), Color.black],
                        center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 520)
             .ignoresSafeArea()
+    }
+}
+
+/// 場面の上下の端を画面の地へ溶かす帯（夜の空と地面のある場面・2026-10-21）。指は通す・読み上げない
+struct CamperStageEdges: View {
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            // 写真のレンズの周辺の落ち（四隅を少し暗く・`CamperMaterials.NightStage.vignette`）
+            GeometryReader { geo in
+                RadialGradient(colors: [Color.black.opacity(0), Color.black.opacity(CamperMaterials.NightStage.vignette)],
+                               center: .center, startRadius: min(geo.size.width, geo.size.height) * 0.35,
+                               endRadius: max(geo.size.width, geo.size.height) * 0.75)
+            }
+            edges
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var edges: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [color, color.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 40)
+            Spacer(minLength: 0)
+            LinearGradient(colors: [color.opacity(0), color], startPoint: .top, endPoint: .bottom).frame(height: 28)
+        }
     }
 }
 

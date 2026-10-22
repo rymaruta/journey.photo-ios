@@ -38,6 +38,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// こちらに渡り、図鑑の寄りが「組み終えた」を出さなくなった・Mac run 654）
     var onProbe: ((String) -> Void)?
     var onReady: (String) -> Void = { _ in }
+    /// 組み上がった後の最初のコマを描いた（外から入る時の覆いを消す合図・2026-10-21）
+    var onDrawn: () -> Void = {}
 
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
 
@@ -58,7 +60,31 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.attach(view)
         view.scene = c.scene
         view.pointOfView = c.cameraNode
-        c.onReady = { marker in DispatchQueue.main.async { onReady(marker) } }
+        // 組み上がった後の最初のコマを知らせる（Mac run 646: 組み上がった合図から実際に描くまで、シミュレーターでは数秒かかった）
+        let watcher = CamperFirstFrame()
+        // PR #364 の検証（Mac が重い回）: 描いた知らせの時点で、SCNView がまだ画面に大きさを持っていない・部屋が組み上がって
+        // いないことがあった見立て。組み上がり、画面に載った後のコマを 2 枚描いてから知らせる。まだなら次のコマを待つ
+        var drawnAfterShown = 0
+        watcher.onDrawn = { [weak c] in
+            DispatchQueue.main.async {
+                guard let c else { return }
+                if c.isShowingRoom {
+                    drawnAfterShown += 1
+                    if drawnAfterShown >= 2 {
+                        onDrawn()
+                        return
+                    }
+                }
+                watcher.arm()
+                c.requestRender()
+            }
+        }
+        c.firstFrame = watcher
+        view.delegate = watcher
+        c.onReady = { marker in
+            watcher.arm()
+            DispatchQueue.main.async { onReady(marker) }
+        }
         if let onProbe { c.onProbe = { probe in DispatchQueue.main.async { onProbe(probe) } } }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
@@ -127,3 +153,26 @@ final class CamperRoomPhotoImages: ObservableObject {
         }
     }
 }
+
+#if canImport(SceneKit) || canImport(SceneKitShim)
+/// 組み上がった後の最初のコマを描いたら 1 回だけ知らせる（描くのは SceneKit の描画の糸）
+final class CamperFirstFrame: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var armed = false
+    var onDrawn: (@Sendable () -> Void)?
+
+    func arm() {
+        lock.lock()
+        armed = true
+        lock.unlock()
+    }
+
+    func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        lock.lock()
+        let fire = armed
+        armed = false
+        lock.unlock()
+        if fire { onDrawn?() }
+    }
+}
+#endif

@@ -787,12 +787,25 @@ extension CamperBuilder {
         // 減衰は SceneKit 側で二乗のまま（なだらか減衰は尾灯を壊した・2026-10-20）
         // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」: 地面が黄色く飛んだ。光も溜まりも約半分に
         // （上限は `CamperBuilder.nightLimits`）
+        // 2026-10-21 判断（owner「光の感じまじで残念」）: 60 は点の灯りの桁の取り違え（部屋の家具灯は 0.3〜0.7 で足りる）。
+        // 灯りのすぐ下の地面と椅子が白く飛び、車体には届かなかった。強さを部屋の桁に、光の元を炎の上（28）へ上げ、
+        // 届く距離を 1.5 m ほどに広げる——足元が飛ばず、車体の横と地面になだらかに暖色が落ちる
         only([.night]) {
-            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, pattern: .hearth, position: emberAt + CV3(0, 14, 0),
-                                                 color: 0xFF8A42, intensity: 60, range: 36))
+            $0.out.lights.append(CamperLightSpec(name: "campfire", kind: .omni, pattern: .hearth, position: emberAt + CV3(0, 28, 0),
+                                                 color: 0xFF8A42, intensity: 1.5, range: Self.fireReach(from: emberAt + CV3(0, 28, 0), bodyHalfWidth: $0.BW)))
             $0.add("glow.fire", .mesh($0.glowQuad(width: 50, depth: 50, material: .firePool)), .firePool,
                    at: CV3(emberAt.x, 0.5, emberAt.z), group: .glow)
         }
+    }
+
+    /// 外の火の届く距離（2026-10-21 確かめ役・Mac run 642）: 車体の横の塗装に、焚き火の照り返しが小さな橙の点と
+    /// 暖色のにじみで映った。光を受ける組（`CamperScene.propsMask`）を分けても点が残ったので、減衰の終わりを車体の横の面の
+    /// 手前で止める（光の元から車体の横の面までの距離の 9 割まで・地面と小物にはなだらかに届く）。上限 140
+    static func fireReach(from p: CV3, bodyHalfWidth bw: Double, pattern: CamperLightPattern = .hearth) -> Double {
+        let toBody = max(20, abs(p.z) - bw)
+        // SceneKit の減衰の終わりは型ごとに range の倍率が違う（焚き火 1.1・ランタン 1.0）
+        let k = pattern.attenuation(range: 1, unit: 1).end
+        return min(140, toBody * 0.9 / Double(k))
     }
 
     mutating func outdoorLight(z: Double) {
@@ -813,7 +826,7 @@ extension CamperBuilder {
             }
             only([.night]) {
                 $0.out.lights.append(CamperLightSpec(name: "string", kind: .omni, pattern: .lantern, position: CV3(-40, 60, z + 44),
-                                                     color: 0xFFD27A, intensity: 90, range: 60))
+                                                     color: 0xFFD27A, intensity: 0.7, range: 110))
             }
         case "paper_lantern":
             let c = CV3(-96, 0, z + 14)
@@ -846,8 +859,10 @@ extension CamperBuilder {
             lathe("light.lanternBase", l, axis: CV3(0, 1, 0), [(3.8, 0), (3.8, 2.4)], segments: 12, capStart: .brass, category: oc) { _ in .brass }
             only([.night]) {
                 // ランタンは室内灯より赤み（板 255,190,110 より赤く）。足元は裾のなめらかな溜まり
-                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, pattern: .lantern, position: l + CV3(0, 6, 0),
-                                                     color: 0xFF9A4A, intensity: 45, range: 30))
+                // 2026-10-21: 45 → 0.45（桁の取り違え・焚き火の注記）。硝子の少し上から、台と地面へ
+                $0.out.lights.append(CamperLightSpec(name: "lantern", kind: .omni, pattern: .lantern, position: l + CV3(0, 12, 0),
+                                                     color: 0xFF9A4A, intensity: 0.45,
+                                                     range: Self.fireReach(from: l + CV3(0, 12, 0), bodyHalfWidth: $0.BW, pattern: .lantern)))
                 $0.add("glow.lantern", .mesh($0.glowQuad(width: 32, depth: 32, material: .firePool)), .firePool,
                        at: CV3(c.x + 8, 0.5, c.z), group: .glow)
             }

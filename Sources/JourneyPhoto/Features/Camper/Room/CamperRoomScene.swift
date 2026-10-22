@@ -67,6 +67,8 @@ final class CamperRoomScene {
     private var probeToken = 0
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
+    /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
+    var firstFrame: AnyObject?
     /// 材質を替えたあとに再描画させる（`rendersContinuously = false` だと取りこぼすことがある）
     private weak var scnView: SCNView?
 
@@ -514,6 +516,15 @@ final class CamperRoomScene {
         let r = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
         return r.intersects(view.bounds) ? r.intersection(view.bounds) : nil
     }
+
+    /// 部屋を組み上げ、SCNView が画面に大きさを持って載っているか（外から入る時の覆いを消してよいか・2026-10-21）
+    var isShowingRoom: Bool {
+        guard builtKey != nil, let view = scnView, view.window != nil else { return false }
+        return view.bounds.width > 1 && view.bounds.height > 1
+    }
+
+    /// 止まっている SCNView に次のコマを描かせる
+    func requestRender() { kickRender() }
 
     private func kickRender() {
         // 止まっている SCNView（rendersContinuously = false）に、材質の差し替えを気づかせる

@@ -295,6 +295,21 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、とおまわり号の「中に入る」の動き（扉が開く → 口へ寄る → 部屋へ）をゆっくりにする倍率（Debug のみ・2026-10-21）。
+    /// `-JPPreviewCamperEnterSlow 6`。途中の光（扉が開いた瞬間・寄っている途中・切り替わる直前）を画面写真で確かめるため。
+    /// 入っている見本の利用者のときだけ。Release では必ず 1
+    static let camperEnterSlowKey = "JPPreviewCamperEnterSlow"
+
+    static var camperEnterSlow: Double {
+        #if DEBUG
+        guard userId != nil else { return 1 }
+        let k = UserDefaults.standard.double(forKey: camperEnterSlowKey)
+        return k > 1 ? min(k, 20) : 1
+        #else
+        return 1
+        #endif
+    }
+
     /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
     /// `-JPPreviewCamperVisit YES`。
     ///
