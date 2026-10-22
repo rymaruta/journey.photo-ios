@@ -2339,7 +2339,7 @@ final class ScreenshotTests: XCTestCase {
         // 行の上の旅の棚・端末の一冊・旅のトランクの行は、読み終えた順に後から出て行を押し下げる（2026-10-22 run 672・684:
         // 5 回送っても行に届かなかった）。行が画面の下の帯より上で、0.5 秒動かなくなるまで送る（10 回まで）
         let bottom = app.windows.firstMatch.frame.maxY - 100
-        var pushes = 0
+        pushes = 0
         while pushes < 10 {
             let before = row.frame
             Thread.sleep(forTimeInterval: 0.5)
