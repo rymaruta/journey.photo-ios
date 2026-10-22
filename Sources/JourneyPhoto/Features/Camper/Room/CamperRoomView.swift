@@ -1416,7 +1416,8 @@ struct CamperRoomView: View {
                 }
                 primaryButton(L("この額に飾る", "Hang it here"), id: "camper.room.hang", fill: false) {
                     guard let frame = framePick, let photo = photoPick, var e = editor else { return }
-                    e.setPhoto(frame, photoId: photo)
+                    // 一時: わざと壊す（試験が落ちるかを見るだけ・すぐ戻す）
+                    _ = frame
                     editor = e
                     save()
                     // 飾った直後に印画が無いと「反映されない」に見えるので、失敗していても読み直す
