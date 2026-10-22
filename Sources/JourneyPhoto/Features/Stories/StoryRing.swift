@@ -15,17 +15,23 @@ struct StoryRing<Content: View>: View {
     /// 本数（切れ目の数）。1以下は切れ目なし
     let count: Int
     let unseen: Bool
+    /// 外径。ホームの輪は 64（板）。**プロフィールの顔・写真の作者の顔は、その顔の大きさのまま**
+    /// 輪を描き、写真を内側へ縮める（2026-10-22・顔の周りの並びを動かさない）
+    let diameter: CGFloat
     let content: Content
 
-    init(count: Int, unseen: Bool, @ViewBuilder content: () -> Content) {
+    init(count: Int, unseen: Bool, diameter: CGFloat = StoryRingMetrics.size,
+         @ViewBuilder content: () -> Content) {
         self.count = count
         self.unseen = unseen
+        self.diameter = diameter
         self.content = content()
     }
 
     var body: some View {
         ZStack {
-            ForEach(Array(StoryPlayback.ringSegments(count: count).enumerated()), id: \.offset) { _, seg in
+            ForEach(Array(StoryPlayback.ringSegments(count: count, gap: StoryRingMetrics.segmentGapFraction(diameter: diameter))
+                .enumerated()), id: \.offset) { _, seg in
                 Circle()
                     .trim(from: seg.start, to: seg.end)
                     // 🔴 **端は丸めない**（`.butt`）。丸めると端が線の太さの半分ずつ切れ目へはみ出し、
@@ -36,10 +42,11 @@ struct StoryRing<Content: View>: View {
                     .padding(StoryRingMetrics.stroke / 2)
             }
             content
-                .frame(width: StoryRingMetrics.photo, height: StoryRingMetrics.photo)
+                .frame(width: StoryRingMetrics.photo(diameter: diameter),
+                       height: StoryRingMetrics.photo(diameter: diameter))
                 .clipShape(Circle())
         }
-        .frame(width: StoryRingMetrics.size, height: StoryRingMetrics.size)
+        .frame(width: diameter, height: diameter)
     }
 
     /// 輪の塗り。**未見は金属の光、見たものは白 22%**
@@ -89,4 +96,15 @@ enum StoryRingMetrics {
     static let segmentGap: CGFloat = 4
     /// 線の中心の円周（板の r=31 → 2π×31 ≈ 194.8）。切れ目の割合はこれで割る（`StoryPlayback.ringSegments`）
     static let strokeCircumference: Double = 2 * Double.pi * Double(size - stroke) / 2
+
+    /// 外径 `diameter` の輪の中の写真の直径（線とすき間を両側から引く）。64 なら `photo`（54）
+    static func photo(diameter: CGFloat) -> CGFloat {
+        max(0, diameter - 2 * (stroke + gap))
+    }
+
+    /// 本数の切れ目（4pt）を円周の割合に。**外径ごとに測り直す**（小さい輪で切れ目が太らない）
+    static func segmentGapFraction(diameter: CGFloat) -> Double {
+        let circumference = Double.pi * Double(max(diameter - stroke, 1))
+        return Double(segmentGap) / circumference
+    }
 }

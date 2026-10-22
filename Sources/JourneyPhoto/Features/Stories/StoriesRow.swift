@@ -26,6 +26,8 @@ struct StoriesRow: View {
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @State private var showUploadFailure = false
+    /// 輪の列の幅（見えている輪の数を出す・`StoryPlayback.visibleRingCount`）
+    @State private var rowWidth: CGFloat = 0
 
     var body: some View {
         // 🔴 **入れ物は中身が空にならない形にする**（2026-10-16 判断）。前は `Group` の中を `if` だけにして
@@ -77,6 +79,14 @@ struct StoriesRow: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 2)
                     .padding(.bottom, 8)
+                }
+                // 見えている輪の数を知るための幅（先読みを画面に見えている人までにする）
+                .background {
+                    GeometryReader { g in
+                        Color.clear
+                            .onAppear { rowWidth = g.size.width }
+                            .onChange(of: g.size.width) { _, w in rowWidth = w }
+                    }
                 }
             } else {
                 Self.loadingAnchor
@@ -141,12 +151,14 @@ struct StoriesRow: View {
 
     // MARK: - 輪
 
-    /// 自分の輪。**ストーリーがあれば真鍮の輪だけ、無ければ自分の顔に白 22% の輪と「＋」**。
-    /// どちらも名前は「あなた」（板 27・v2 StoryRings「いつもの並び」「自分のストーリーが無いとき」）
+    /// 自分の輪。**ストーリーがあれば真鍮の輪と右下の「＋」、無ければ自分の顔に白 22% の輪と「＋」**。
+    /// どちらも名前は「あなた」（板 StoryRings「いつもの並び」「自分のストーリーが無いとき」）
     ///
-    /// 2026-10-16 判断: ストーリーがあるときは「＋」を出さない（板 v2 の「いつもの並び」の「あなた」は輪だけ）。
-    /// 2本目は下の札の「投稿」から足せる。輪の右下に小さな「＋」を重ねていたときは、自分の輪を開く
-    /// つもりで投稿画面が開くことがあった
+    /// 2026-10-22 判断（owner「インスタみたいに」・板 StoryRings の「いつもの並び」も「あなた」に「＋」）:
+    /// ストーリーがあるときも**右下の「＋」で2本目を足せる**。2026-10-16 に外した理由（輪を開くつもりで
+    /// 投稿画面が開いた）は、輪全体を1つのボタンにして「＋」も同じ的にしていたため。今は
+    /// **「＋」だけを別のボタン**（見た目 22・当たり 44 を丸の中心に置く）にし、輪の残りは開く。
+    /// 「＋」の当たりは輪の右下の 1/4 ほどに留まる（Instagram と同じ配分）
     @ViewBuilder
     private func mineRing(_ mine: Story?) -> some View {
         if let mine {
@@ -159,6 +171,23 @@ struct StoriesRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("あなたのストーリー", "Your story"))
+            // 読み上げでは「＋」を別の要素にせず、輪の操作として選べるようにする
+            .accessibilityAction(named: L("ストーリーを追加", "Add to your story")) { showComposer = true }
+            .overlay(alignment: .topLeading) {
+                Button {
+                    showComposer = true
+                } label: {
+                    plusBadge
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // 丸の中心を、輪が無いときの「＋」と同じ所（輪の右下・外へ 2pt）に置く
+                .offset(x: Self.plusCenter - WebTheme.minTapTarget / 2,
+                        y: Self.plusCenter - WebTheme.minTapTarget / 2)
+                .accessibilityHidden(true)
+                .accessibilityIdentifier("stories.mine.add")
+            }
         } else {
             // **自分の入口を先頭に置く。** ストーリーが1本も無いときに
             // 行ごと消すと、投稿する場所が無くなる
@@ -179,6 +208,12 @@ struct StoriesRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
         }
+    }
+
+    /// 輪の上の「＋」の丸の中心（輪の左上から・縦横とも）。輪の右下に揃え、外へ 2pt 出す
+    /// （輪が無いときの `.overlay(alignment: .bottomTrailing) { plusBadge.offset(x: 2, y: 2) }` と同じ所）
+    nonisolated static var plusCenter: CGFloat {
+        StoryRingMetrics.size - (StoryRingMetrics.plusSize / 2 + StoryRingMetrics.gap) + 2
     }
 
     /// 自分の顔（無ければ人の印）
@@ -368,6 +403,31 @@ struct StoriesRow: View {
         await model.load(environment: environment, viewerId: auth.userId,
                          blockedUserIds: hidden.blockedUserIds,
                          reportedPhotoIds: hidden.reportedPhotoIds)
+        // 顔の輪（人のページ・写真の作者・`StoryAvatar`）にも同じ一覧を渡す（もう一度読まない）。
+        // 取れた回だけ（取れなかった回の残りものを新しいとして渡さない）
+        if let fetched = model.lastFetched {
+            StoryRingDirectory.shared.publish(fetched, viewerId: auth.userId)
+        }
+        prefetchFirstVideo()
+    }
+
+    /// **見えている輪の1本目を先に読む**（2026-10-22・`StoryPlayback.ringPrefetchVideo`）。
+    /// 写真は輪のサムネが同じ URL を読んでいるので重ねない。動画は輪に記号しか出さないので、
+    /// 見えている中で最初の1本だけ再生器を作っておく（数秒だけ読む・1つしか持たない）
+    private func prefetchFirstVideo() {
+        guard opened == nil else { return }
+        let ordered = StoryPlayback.orderedRings(
+            StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) }),
+            me: auth.userId,
+            isUnseen: { seen.hasUnseen(model.siblings(of: $0)) })
+        let openers = [ordered.mine].compactMap { $0 } + ordered.others
+        // 幅がまだ分からない（初めの1回）ときは、いちばん狭い iPhone の幅で数える
+        let count = StoryPlayback.visibleRingCount(width: rowWidth > 0 ? rowWidth : 320,
+                                                   ringSize: StoryRingMetrics.size,
+                                                   spacing: StoryRingMetrics.spacing)
+        if let url = StoryPlayback.ringPrefetchVideo(openers: openers, visibleCount: count) {
+            StoryVideoPreloader.shared.preload(url)
+        }
     }
 
     /// 押した輪から開く。**輪の並び（自分 → 未読 → 既読）の順に人ごとの束を写し**、
@@ -435,6 +495,10 @@ final class StoriesViewModel: ObservableObject {
 
     private var deletedIds: Set<String> = []
 
+    /// いちばん最近の回で**取れた**一覧そのもの（取れなかった回は nil）。顔の輪の控えへ渡す
+    /// （`StoryRingDirectory.publish`。ブロック・通報は控えを読む側が絞る）
+    private(set) var lastFetched: [Story]?
+
     /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
     private var loadedFor: String?
 
@@ -478,5 +542,6 @@ final class StoriesViewModel: ObservableObject {
             loadedFor = viewerId
             loaded = true
         }
+        lastFetched = fetched
     }
 }

@@ -38,6 +38,8 @@ struct StoryViewerView: View {
     /// （時計の写しの中で固まらないように）。動いている間はひとりでに次へ送らない
     /// （`StoryPlayback.autoAdvances`）
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnv
+    /// 「動きを減らす」。入っていたら ♡ を弾ませない（`popHeart`）
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var voiceOverOn = false
     /// メニューの行の絵の幅。**文字の大きさに付いてくる**（固定の 22 だと大きい文字で
     /// 絵が枠からはみ出し、行の字とずれた）
@@ -51,9 +53,6 @@ struct StoryViewerView: View {
     /// 写真の時計（`StoryPlayback.Clock`）。**書き換わるのは動く／止まるの切り替えと、
     /// 1本を頭から始めたときだけ**——バーは `TimelineView` が描画ごとに読む
     @State private var clock = StoryPlayback.Clock()
-    /// いまの1本を見せ始めた時刻（頭から見直したときも）。**左タップの判断に使う**
-    /// ——動画と読み込み中の写真は時計が回らない（`StoryPlayback.leftTapElapsed`）
-    @State private var shownAt = Date()
     @State private var pressing = false
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
@@ -136,6 +135,8 @@ struct StoryViewerView: View {
     /// 送った反応（`StoryPlayback.SentReactions`）。**同じ1本に二度送らない**。
     /// 人から人への並びでは `StoryReelView` が覚えて渡す（人を回して戻っても忘れない）
     @State private var sentReactions: StoryPlayback.SentReactions
+    /// ♡ を押した回数（弾む動きと振動の合図・`sendReaction`）
+    @State private var heartPops = 0
 
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
@@ -191,6 +192,9 @@ struct StoryViewerView: View {
     /// 反応を送れた1本を外へ知らせる（ストーリー id・絵文字）。`onVoted` と同じく、
     /// **人を行き来して閲覧画面が作り直されても送った印を消さない**ため（`StoryReelView` が `sentReactions` で戻す）
     let onReacted: ((String, String) -> Void)?
+    /// 先に塗った反応を送れなかった（ストーリー id・絵文字）。**並びの印も外す**（`onReacted` は
+    /// 2026-10-22 から返事を待たずに呼ぶ）
+    let onReactionFailed: ((String, String) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -206,6 +210,7 @@ struct StoryViewerView: View {
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
          sentReactions: StoryPlayback.SentReactions = StoryPlayback.SentReactions(),
          onReacted: ((String, String) -> Void)? = nil,
+         onReactionFailed: ((String, String) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -218,6 +223,7 @@ struct StoryViewerView: View {
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
         self.onReacted = onReacted
+        self.onReactionFailed = onReactionFailed
         _sentReactions = State(initialValue: sentReactions)
         self.stories = stories
         self.onDeleted = onDeleted
@@ -308,6 +314,10 @@ struct StoryViewerView: View {
         // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
         .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
+        // 反応を押した手応え（iOS 17 の `sensoryFeedback`）と ♡ の弾み（`sendReaction` が `heartPops` を進める）。
+        // **画面の側に付ける**——返信欄の絵文字の列から送ったときは ♡ が送信の丸に替わっていて見えない
+        .sensoryFeedback(.impact(weight: .light), trigger: heartPops)
+        .onChange(of: heartPops) { _, _ in popHeart() }
         // 返信欄・メニュー・シート・確認を開いたら反応の並びを閉じる（♡ が隠れたまま並びだけ
         // 残り、止まったまま進まなかった）
         .onChange(of: StoryPlayback.closesReactionPicker(
@@ -1032,33 +1042,36 @@ struct StoryViewerView: View {
 
     // MARK: - 指の操作
 
-    /// 左半分は前へ（始まってすぐ）か最初から、右半分は次へ。
+    /// 左 1/3 は前へ、右 2/3 は次へ（`StoryPlayback.leftTapFraction`・2026-10-22 判断。以前は半々）。
     /// **押している間は止まる**（離すと再開）。
     private var tapZones: some View {
-        HStack(spacing: 0) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
-                    // （送ると `go(to:)` が返信の書きかけを消す。`StoryPlayback.tapGuard`）
-                    if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused,
-                                                            showReactions: showReactions) {
-                        apply(guarded)
-                    } else {
-                        leftTap()
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: geo.size.width * StoryPlayback.leftTapFraction)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
+                        // （送ると `go(to:)` が返信の書きかけを消す。`StoryPlayback.tapGuard`）
+                        if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused,
+                                                                showReactions: showReactions) {
+                            apply(guarded)
+                        } else {
+                            leftTap()
+                        }
                     }
-                }
-                .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
-                    pressing = pressedNow
-                    if !pressedNow { longHeld = false }
-                })
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { forward() }
-                .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
-                    pressing = pressedNow
-                    if !pressedNow { longHeld = false }
-                })
+                    .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
+                        pressing = pressedNow
+                        if !pressedNow { longHeld = false }
+                    })
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { forward() }
+                    .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
+                        pressing = pressedNow
+                        if !pressedNow { longHeld = false }
+                    })
+            }
         }
         // **払っても動く。** 他のアプリのストーリーは全部そうなので、
         // タップしか効かないと「反応しない」と受け取られる。
@@ -1070,13 +1083,16 @@ struct StoryViewerView: View {
                     // 返信を打っている間の払いはキーボードを閉じるだけ（押したときと同じ・書きかけを消さない）。
                     // **払いを外が受け持つときも閉じる**——外は入力中の払いで動かない（`onTypingChange`）
                     if replyFocused { replyFocused = false; return }
+                    let swipe = StoryPlayback.swipe(dx: value.translation.width, dy: value.translation.height)
+                    // **上へ払うと返信欄・自分の投稿なら見た人の一覧**（2026-10-22）。外の並び
+                    // （`StoryReelView`）は上への払いを受けないので、並びの中でもここで受ける
+                    if swipe == .up { swipeUp(); return }
                     guard !swipesHandledOutside else { return }
-                    switch StoryPlayback.swipe(
-                        dx: value.translation.width, dy: value.translation.height) {
+                    switch swipe {
                     case .next: if !isSending { advance() }
                     case .back: leftTap()
                     case .close: dismiss()
-                    case .ignore: break
+                    case .up, .ignore: break
                     }
                 }
         )
@@ -1093,6 +1109,18 @@ struct StoryViewerView: View {
         .accessibilityAction(named: L("前へ", "Previous")) { voiceOverBack() }
         .accessibilityAction(named: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
             paused.toggle()
+        }
+    }
+
+    /// 上へ払った（`StoryPlayback.swipeUpAction`）。反応の並びが開いていたら閉じるだけ
+    private func swipeUp() {
+        guard let story = current else { return }
+        if showReactions { showReactions = false; return }
+        switch StoryPlayback.swipeUpAction(isMine: isMine(story), acceptsReplies: story.acceptsReplies,
+                                           expired: isExpired(story), inHighlight: highlight != nil) {
+        case .reply: replyFocused = true
+        case .insights: showInsights = true
+        case .none: break
         }
     }
 
@@ -1147,17 +1175,12 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        let now = Date()
-        let elapsed = StoryPlayback.leftTapElapsed(clock: clock.elapsed(at: now),
-                                                   sinceShown: now.timeIntervalSince(shownAt),
-                                                   isVideo: current?.isVideo ?? false,
-                                                   mediaReady: mediaReady)
-        switch StoryPlayback.leftTap(index: index, elapsed: elapsed,
-                                     hasPreviousGroup: onGroupBack != nil) {
+        // **いつも1つ前へ**（経過を見ない・2026-10-22 判断。`StoryPlayback.leftTap`）
+        switch StoryPlayback.leftTap(index: index, hasPreviousGroup: onGroupBack != nil) {
         case .previousGroup:
             onGroupBack?()
         case .restart:
-            restartCurrent(at: now)
+            restartCurrent()
         case .previous(let target):
             go(to: target)
         }
@@ -1167,7 +1190,6 @@ struct StoryViewerView: View {
     private func restartCurrent(at now: Date = Date()) {
         // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
         clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
-        shownAt = now
         // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
         // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
         (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
@@ -1224,7 +1246,6 @@ struct StoryViewerView: View {
         videoProgress = nil
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
-        shownAt = Date()
         pendingEnd = nil
         endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
@@ -1738,6 +1759,9 @@ struct StoryViewerView: View {
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
             VStack(alignment: .leading, spacing: 10) {
                 if replyFocused {
+                    // **反応の6つを入力欄の上に並べる**（2026-10-22・Instagram と同じ）。♡ の長押しの
+                    // 並びは知られていなかった。押すとキーボードを閉じて送る（書きかけは消さない）
+                    replyReactionRow(for: story)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(StoryPlayback.quickReplies.indices, id: \.self) { i in
@@ -1808,11 +1832,13 @@ struct StoryViewerView: View {
                         // 別々の手振りにして、どちらか片方だけが効くようにする
                         // **送る前から真鍮の線、送れたら真鍮の塗り**（足元は写真の外の黒地・CLAUDE.md の
                         // 「ストーリーの反応のハートは真鍮」・v2 StoryViewer）。送ったかは塗りの形でも分かる
+                        // **押した瞬間に塗る**（返事を待たない・`sendReaction`）。弾ませて震わせる
                         let reacted = sentReactions.emoji(on: story.id) != nil
                         Image(systemName: reacted ? "heart.fill" : "heart")
                             // 板 26
                             .jpSystemFont(StoryViewerMetrics.heartSize, relativeTo: .title2)
                             .foregroundStyle(Self.heartColor)
+                            .scaleEffect(heartPopped ? StoryViewerMetrics.heartPopScale : 1)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
                             .contentShape(Rectangle())
@@ -1861,6 +1887,19 @@ struct StoryViewerView: View {
             // 1本ごとに伸び縮みする）。**高さを決めて置く**——`Color.clear` は
             // 与えられた高さを全部取るので、決めないと写真と半分ずつ分け合う
             Color.clear.frame(height: Self.footerHeight)
+        }
+    }
+
+    /// ♡ を大きくしている最中（弾む動きの山）
+    @State private var heartPopped = false
+
+    /// ♡ を弾ませる（大きく → ばねで戻す）。**「動きを減らす」なら弾ませない**（塗りと振動だけ）
+    private func popHeart() {
+        guard !reduceMotion else { return }
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) { heartPopped = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(160))
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { heartPopped = false }
         }
     }
 
@@ -2099,6 +2138,29 @@ struct StoryViewerView: View {
         }
     }
 
+    /// 返信欄に入っている間、入力欄の上に出す反応の6つ（`StoryService.reactions`）。
+    /// 写真の上の暗幕（55%）に直に置く——**色は付けない**（絵文字そのもの・写真の上は白だけ）。
+    /// 1つ 44pt の的を横いっぱいに均等に並べる
+    private func replyReactionRow(for story: Story) -> some View {
+        HStack(spacing: 0) {
+            ForEach(StoryService.reactions, id: \.self) { emoji in
+                Button {
+                    replyFocused = false
+                    Task { await sendReaction(emoji, to: story) }
+                } label: {
+                    Text(emoji)
+                        .font(.title)
+                        .dynamicTypeSize(...Self.chromeTypeLimit)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(StoryPlayback.reactionName(emoji))
+            }
+        }
+        .accessibilityIdentifier("story.reply.reactions")
+    }
+
     /// ♡ の長押しで出す6つの反応。**選んだら送って閉じる**。写真を押すと送らずに閉じる
     private func reactionPicker(for story: Story) -> some View {
         HStack(spacing: 4) {
@@ -2126,21 +2188,29 @@ struct StoryViewerView: View {
     /// 定型の反応を送る。
     ///
     /// その1本にもう送っていたら**送らない**（`StoryPlayback.SentReactions`・サーバーは重ねて消さない）
+    ///
+    /// 🔴 **返事を待たずに先に塗る**（2026-10-22 判断・Instagram と同じ）。押した瞬間に ♡ を塗り、
+    /// 弾ませて端末を震わせる（`heartPops`）。**送っている間も再生を止めない**——反応は
+    /// `isSending` を立てない（立てると時計が止まり、前後へも送れなくなる）。送れなかったら
+    /// 塗りを戻し、控えめに知らせる（`StoryPlayback.reactionFailedMessage`）。
+    /// 並び（`StoryReelView`）にも先に知らせ、失敗したら取り消す——返事を待つ間に人を回して
+    /// 戻っても、作り直した閲覧画面が塗りを忘れて2回目を送らないように
     private func sendReaction(_ emoji: String, to story: Story) async {
-        guard !isSending else { return }
-        guard sentReactions.shouldSend(on: story.id) else {
+        guard sentReactions.begin(emoji, on: story.id) else {
             message = StoryPlayback.reactionAlreadySentMessage(sentReactions.emoji(on: story.id) ?? emoji)
             return
         }
-        isSending = true
-        defer { isSending = false }
+        heartPops += 1
+        onReacted?(story.id, emoji)
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
-            sentReactions.record(emoji, on: story.id)
-            onReacted?(story.id, emoji)
-            message = StoryPlayback.reactionSentMessage(emoji)
+            if StoryPlayback.announcesReactionSent(emoji) {
+                message = StoryPlayback.reactionSentMessage(emoji)
+            }
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
+            sentReactions.rollback(emoji, on: story.id)
+            onReactionFailed?(story.id, emoji)
+            message = StoryPlayback.reactionFailedMessage(emoji)
         }
     }
 

@@ -138,11 +138,9 @@ final class StoryReelTests: XCTestCase {
 
     /// 束の先頭で始まってすぐ左を押したら、前の人がいれば前の人へ
     func testLeftTapAtGroupStartGoesToPreviousPerson() {
-        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3, hasPreviousGroup: true), .previousGroup)
-        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3, hasPreviousGroup: false), .restart)
-        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 1.2, hasPreviousGroup: true), .restart,
-                       "見始めて時間が経っていれば、今のを最初から")
-        XCTAssertEqual(StoryPlayback.leftTap(index: 2, elapsed: 0.3, hasPreviousGroup: true), .previous(1))
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, hasPreviousGroup: true), .previousGroup)
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, hasPreviousGroup: false), .restart)
+        XCTAssertEqual(StoryPlayback.leftTap(index: 2, hasPreviousGroup: true), .previous(1))
     }
 
     /// **「動きを減らす」なら立方体に回さない**——同じ場所に重ね、払った分だけ濃さを

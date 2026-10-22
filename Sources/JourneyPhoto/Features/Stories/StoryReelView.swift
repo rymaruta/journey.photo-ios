@@ -242,7 +242,9 @@ struct StoryReelView: View {
             voteStates: voteStates,
             onVoted: { voteStates[$0] = $1 },
             sentReactions: sentReactions,
+            // 2026-10-22: 閲覧画面は**送る前に**知らせ（先に塗る）、送れなかったら取り消す
             onReacted: { sentReactions.record($1, on: $0) },
+            onReactionFailed: { sentReactions.rollback($1, on: $0) },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }

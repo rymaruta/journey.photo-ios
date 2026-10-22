@@ -934,17 +934,33 @@ struct PhotoDetailView: View {
     private var authorRow: some View {
         if let ownerId {
             HStack(spacing: 10) {
-                NavigationLink {
-                    UserProfileView(userId: ownerId)
-                } label: {
-                    HStack(spacing: 10) {
-                        RemoteImage(url: UserProfile.profileAssetURL(
-                            userId: ownerId, suffix: nil, cacheBust: nil),
-                                    placeholderSymbol: "person.crop.circle.fill")
+                // **作者にストーリーがあれば顔に輪を描き、押すとその人のストーリーから**
+                // （2026-10-22・`StoryAvatar`）。輪の無い人の顔は今までどおりプロフィールへ。
+                // 顔と名前を別のボタンに分けた（輪を押してプロフィールへ行かないように）
+                StoryAvatar(userId: ownerId,
+                            name: AuthorName.shown(profile: model.owner, photoDisplayName: shown.displayName),
+                            diameter: Self.authorAvatarSize) {
+                    authorFace(ownerId)
+                } plain: {
+                    NavigationLink {
+                        UserProfileView(userId: ownerId)
+                    } label: {
+                        authorFace(ownerId)
                             // v2 の板: 40pt（押せる高さは行の 44pt）
                             .frame(width: Self.authorAvatarSize, height: Self.authorAvatarSize)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // 名前のリンクと同じ行き先なので、読み上げは名前の方だけ
+                    .accessibilityHidden(true)
+                }
+                NavigationLink {
+                    UserProfileView(userId: ownerId)
+                } label: {
+                    HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
                                 Text(AuthorName.shown(profile: model.owner, photoDisplayName: shown.displayName))
@@ -985,6 +1001,12 @@ struct PhotoDetailView: View {
                 }
             }
         }
+    }
+
+    /// 作者の顔の写真だけ（枠と丸めは呼ぶ側・`StoryAvatar`）
+    private func authorFace(_ ownerId: String) -> some View {
+        RemoteImage(url: UserProfile.profileAssetURL(userId: ownerId, suffix: nil, cacheBust: nil),
+                    placeholderSymbol: "person.crop.circle.fill")
     }
 
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {

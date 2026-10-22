@@ -218,24 +218,10 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "v1", currentId: "v1", frozen: false), .advance)
     }
 
-    func testLeftTapRestartsUnlessJustStarted() {
-        XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: 1.2), .restart)
-        XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: 0.3), .previous(0))
-        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3), .restart, "先頭より前は無い")
-    }
-
-    /// 🔴 動画と読み込み中の写真は時計が回らない。**見せ始めてからの実時間で決める**
-    /// ——時計（いつも0）を渡すと、動画を3秒見てから左を押しても前の1本へ飛んでいた
-    func testLeftTapElapsedUsesWallTimeForVideoAndLoadingPhoto() {
-        let video = StoryPlayback.leftTapElapsed(clock: 0, sinceShown: 3, isVideo: true, mediaReady: true)
-        XCTAssertEqual(video, 3)
-        XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: video), .restart, "動画を見てしばらく経ったら頭から")
-        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: video, hasPreviousGroup: true), .restart,
-                       "動画を見てしばらく経ったら前の人へ飛ばない")
-        XCTAssertEqual(StoryPlayback.leftTapElapsed(clock: 0, sinceShown: 2, isVideo: false, mediaReady: false), 2,
-                       "読み込み中の写真も実時間")
-        XCTAssertEqual(StoryPlayback.leftTapElapsed(clock: 0.3, sinceShown: 5, isVideo: false, mediaReady: true), 0.3,
-                       "出ている写真は今までどおり時計（止めていた間は数えない）")
+    /// 2026-10-22: 左タップは**いつも1つ前へ**（経過を見ない）。前が無いときだけ頭から
+    func testLeftTapAlwaysGoesBack() {
+        XCTAssertEqual(StoryPlayback.leftTap(index: 1), .previous(0))
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0), .restart, "先頭より前は無い")
     }
 
     // MARK: - 兄弟
@@ -415,9 +401,8 @@ final class StoryPlaybackTests: XCTestCase {
                                                 voiceOver: false), .advance)
     }
 
-    /// **読み上げの「前へ」は経過を見ない**（左タップは 0.8 秒で頭に戻るので前へ戻れなかった）
+    /// **読み上げの「前へ」は経過を見ない**（2026-10-22 から左タップも同じ）
     func testVoiceOverPreviousIgnoresElapsed() {
-        XCTAssertEqual(StoryPlayback.leftTap(index: 2, elapsed: 5), .restart, "下ごしらえ: 左タップは頭へ")
         XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 2, hasPreviousGroup: false), .previous(1))
         XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 0, hasPreviousGroup: true), .previousGroup)
         XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 0, hasPreviousGroup: false), .restart)
@@ -500,10 +485,11 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: 120), .close)
     }
 
-    /// 🔴 **上への払いは何もしない。** モックに無いし、他のアプリでは
-    /// 「詳細を開く」に割り当てられている——同じ動きで違うことが起きる方が悪い
-    func testSwipeUpDoesNothing() {
-        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: -120), .ignore)
+    /// 2026-10-22: **上へ払うと返信欄**（Instagram と同じ）。短い上への払いは指の揺れ
+    func testSwipeUpOpensReply() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: -120), .up)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: -20), .ignore)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 100, dy: -100), .ignore, "斜めは何もしない")
     }
 
     /// **短い払いは指の揺れ。** 押しただけで送られない

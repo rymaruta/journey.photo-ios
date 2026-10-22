@@ -173,6 +173,8 @@ enum PreviewBackend {
     /// 1本の要求に答える。`publicLikes` は押す前の公開のいいね数（本物を読む・読めなければ nil）
     static func reply(method: String, route parts: [String], body: Data?, userId: String?, now: Date = Date(),
                       store: Store = PreviewBackend.store,
+                      stories: Bool = false,
+                      publicFeed: () async -> [[String: Any]] = { [] },
                       publicLikes: (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
         let uid = userId ?? "preview"
@@ -273,9 +275,60 @@ enum PreviewBackend {
         case ("DELETE", let p) where p == ["upload", "discard"]:
             return .json([:])
 
+        // ストーリー（`-JPPreviewStories` のときだけ・2026-10-22）。一覧は公開の新着の作者から作る（`previewStories`）。
+        // 見た・反応・返信は受けたことにするだけ（何も書かない）
+        case ("GET", let p) where stories && p == ["stories"]:
+            return .json(previewStories(feed: await publicFeed(), me: uid, now: now))
+        case ("POST", let p) where stories && p.count == 3 && p[0] == "stories" && (p[2] == "view" || p[2] == "replies"):
+            return .json([:])
+        case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "viewers":
+            return .json(["viewers": [Any]()])
+        case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "replies":
+            return .json(["items": [Any]()])
+
         default:
             return .unsupported
         }
+    }
+
+    /// 見本のストーリーの一覧（`GET /stories` の形）。**公開の新着の作者ごとに1本**（先頭の人は2本・輪の切れ目を
+    /// 見せる）と、自分にも1本。写真は公開の写真の `src` をそのまま使う（新しく画像を置かない）。
+    /// 作者の顔の輪・人のページの輪を UI テストで撮るため——どの写真を開いても、その作者に輪が出る
+    static func previewStories(feed: [[String: Any]], me: String, now: Date) -> [[String: Any]] {
+        let iso = ISO8601DateFormatter()
+        let created = iso.string(from: now.addingTimeInterval(-3600))
+        let expires = iso.string(from: now.addingTimeInterval(23 * 3600))
+        var seen = Set<String>()
+        var out: [[String: Any]] = []
+        func story(_ id: String, src: String, user: String, name: Any?) -> [String: Any] {
+            var row: [String: Any] = ["id": id, "src": src, "userId": user, "createdAt": created, "expiresAt": expires]
+            if let name = name as? String, !name.isEmpty { row["displayName"] = name }
+            return row
+        }
+        for photo in feed {
+            guard let src = photo["src"] as? String,
+                  let user = (photo["userId"] as? String) ?? (photo["uploadedBy"] as? String),
+                  user != me, seen.insert(user).inserted, seen.count <= 8 else { continue }
+            out.append(story("preview-story-\(seen.count)", src: src, user: user, name: photo["displayName"]))
+            if seen.count == 1 {
+                out.append(story("preview-story-\(seen.count)b", src: src, user: user, name: photo["displayName"]))
+            }
+        }
+        if let src = feed.first?["src"] as? String {
+            out.insert(story("preview-story-me", src: src, user: me, name: nil), at: 0)
+        }
+        return out
+    }
+
+    /// 公開の新着（鍵なしで読む・見本の答え手を通さない）。読めなければ空（ストーリーが並ばないだけ）
+    static func readPublicFeed() async -> [[String: Any]] {
+        var parts = URLComponents(url: AppConfig.userAPIBaseURL.appendingPathComponent("feed"), resolvingAgainstBaseURL: false)
+        parts?.queryItems = [URLQueryItem(name: "limit", value: "30")]
+        guard let url = parts?.url,
+              let (data, response) = try? await plainSession.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        return object["items"] as? [[String: Any]] ?? []
     }
 
     /// 押す前の公開のいいね数。1回だけ本物を読んで覚える（読めなければ nil・数を出さない）
@@ -346,6 +399,8 @@ final class PreviewBackendProtocol: URLProtocol {
                 method: request.httpMethod ?? "GET",
                 route: PreviewBackend.route(url, basePath: AppConfig.userAPIBaseURL.path),
                 body: body, userId: PreviewSession.userId,
+                stories: PreviewSession.stories,
+                publicFeed: { await PreviewBackend.readPublicFeed() },
                 publicLikes: { await PreviewBackend.readPublicLikes($0) })
             home.perform { self?.deliver(reply, url: url) }
         }

@@ -471,11 +471,18 @@ struct MyPageView: View {
         .padding(.top, bandShown ? -ProfileCover.avatarOverlap : 0)
     }
 
+    /// 自分の顔。**ストーリーがあれば輪を描き、押すと自分のストーリーから**（2026-10-22・`StoryAvatar`）
     private func avatar(_ profile: UserProfile, side: CGFloat) -> some View {
-        RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
-            .frame(width: side, height: side)
-            .background(WebTheme.card)
-            .clipShape(Circle())
+        StoryAvatar(userId: profile.userId, name: L("あなた", "You"), diameter: side) {
+            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+                .background(WebTheme.card)
+        } plain: {
+            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+                .frame(width: side, height: side)
+                .background(WebTheme.card)
+                .clipShape(Circle())
+        }
+        .frame(width: side, height: side)
     }
 
     @ViewBuilder

@@ -4009,4 +4009,78 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "85y-大きい文字（自分のカード・裏を見る）")
         XCTAssertTrue(flip.isHittable, "大きい文字で「裏を見る」を押せない")
     }
+
+    /// **ストーリーを顔から開く・返信欄の絵文字の列**（2026-10-22・「インスタみたいに」第1弾）。
+    ///
+    /// 見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewStories` を足すと、`GET /stories` を端末の中で答える
+    /// （公開の新着の作者ごとに1本・自分にも1本。写真は公開の写真をそのまま使う・`PreviewBackend.previewStories`）。
+    /// ホームの輪（自分の輪の「＋」）→ 写真の詳細の作者の顔の輪 → 人のページの顔の輪 → 輪を押して開く →
+    /// 返信欄に入って入力欄の上の絵文字の列、の順に撮る。**出なければ撮らずに抜ける**
+    func testCapturesStoryRingsOnFaces() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+
+        // ホームの輪（自分にストーリーがあっても右下の「＋」）
+        let mineAdd = app.descendants(matching: .any)["stories.mine.add"].firstMatch
+        if mineAdd.waitForExistence(timeout: 20) {
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "60a-ストーリーの輪（自分の＋）")
+        }
+
+        // 写真の詳細の作者の顔
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 5), recommended.isHittable { recommended.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        guard photo.waitForExistence(timeout: 30), photo.isHittable else { return }
+        photo.tap()
+        let author = app.buttons["photo.author"].firstMatch
+        var pushes = 0
+        while author.waitForExistence(timeout: 5), !author.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard author.waitForExistence(timeout: 5), author.isHittable else { return }
+        let detailRing = app.buttons["story.avatar.ring"].firstMatch
+        if detailRing.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "60b-ストーリーの輪（写真の作者の顔）")
+            XCTAssertGreaterThanOrEqual(detailRing.frame.height, 44, "作者の顔の輪が 44pt 未満")
+        }
+
+        // 人のページの顔
+        author.tap()
+        Thread.sleep(forTimeInterval: 4)
+        // 積んだ下の写真の詳細にも同じ名前の輪が残っているので、**押せる方**を選ぶ
+        let rings = app.buttons.matching(identifier: "story.avatar.ring")
+        guard let profileRing = (0..<rings.count).map({ rings.element(boundBy: $0) }).first(where: { $0.isHittable })
+        else { return }
+        shoot(app, "60c-ストーリーの輪（人のページの顔）")
+
+        // 輪を押すとその人のストーリーから開く → 返信欄に入ると入力欄の上に絵文字の列
+        profileRing.tap()
+        let reply = app.textFields.firstMatch
+        guard reply.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "60d-ストーリー（顔から開いた）")
+        reply.tap()
+        let row = app.descendants(matching: .any)["story.reply.reactions"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "60e-ストーリーの返信欄（絵文字の列）")
+        let heart = app.buttons["いいね"].firstMatch
+        if heart.exists {
+            XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "絵文字の列の的が 44pt 未満")
+        }
+    }
 }

@@ -400,6 +400,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の通信（`localBackend`）で、ストーリーの一覧を端末の中で答える（`PreviewBackend.previewStories`・
+    /// 2026-10-22・顔の輪と返信欄を UI テストで撮る）。Release では必ず false
+    static let storiesKey = "JPPreviewStories"
+
+    static var stories: Bool {
+        #if DEBUG
+        guard localBackend else { return false }
+        return UserDefaults.standard.bool(forKey: storiesKey)
+        #else
+        return false
+        #endif
+    }
+
     /// マイページでカバーが無いことにする（額縁・板 52 を撮る。見本の利用者がカバーを持っていても）
     static let noCoverKey = "JPPreviewNoCover"
 
