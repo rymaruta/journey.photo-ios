@@ -64,8 +64,8 @@ struct CamperRoomView: View {
     /// 二度押しを見分ける（前に押した時刻と場所）
     @State private var lastTap: (at: Date, point: CGPoint)?
     @State private var readyMarker = ""
-    /// 額に写っている写真（読み上げの値の後ろに ` framed=<id>,<id>` で足す・見本の起動のときだけ）。
-    /// UI テストが「飾った写真が額に写ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
+    /// 額の中身（読み上げの値の後ろに ` framed=<保存した id>,… preview=<選んだだけの id>,…` で足す・見本の起動のときだけ）。
+    /// UI テストが「飾った写真が額に入ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
     @State private var framedMarker = ""
     @State private var viewport = CGSize(width: 390, height: 440)
     @State private var notice: String?
@@ -430,8 +430,9 @@ struct CamperRoomView: View {
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil, onReady: { marker in
             readyMarker = marker
-        }, onFramed: { framed in
+        }, onFramed: { framed, previewed in
             framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
+                + " preview=" + previewed.values.sorted().joined(separator: ",")
         }, onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())

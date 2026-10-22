@@ -86,8 +86,8 @@ struct UploadView: View {
         // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
         _model = StateObject(wrappedValue: {
             let model = UploadViewModel(
-                // 見本の通信（UI テスト）では本体も端末の中の答え手へ（`PreviewBackend.session`・ふだんは nil）
-                uploads: UploadService(api: api, session: PreviewBackend.session),
+                // 見本の通信（UI テスト）では本体も端末の中の答え手へ（`UploadService.app`・ふだんは背景の転送）
+                uploads: UploadService.app(api: api),
                 albums: AlbumService(api: api),
                 photos: PhotoService(api: api),
                 discovery: DiscoveryService(api: api)

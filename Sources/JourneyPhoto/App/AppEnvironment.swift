@@ -65,8 +65,8 @@ final class AppEnvironment: ObservableObject {
         self.quiz = quiz
         self.photos = PhotoService(api: api)
         self.profiles = ProfileService(api: api)
-        // 見本の通信では本体も同じ答え手へ（背景の転送は答え手を通らない）
-        self.uploads = UploadService(api: api, session: PreviewBackend.session)
+        // 見本の通信では本体も端末の中の答え手へ（`UploadService.app`・ふだんは背景の転送）
+        self.uploads = UploadService.app(api: api)
         self.social = SocialService(api: api)
         self.saves = SaveService(api: api)
         self.savedSpots = SavedSpotService(api: api)

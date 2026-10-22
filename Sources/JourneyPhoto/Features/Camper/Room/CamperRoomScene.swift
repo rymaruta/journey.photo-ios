@@ -58,10 +58,12 @@ final class CamperRoomScene {
     private var paint: UInt32 = 0x5B6168
     /// 組み終えたら呼ぶ（読み上げの値・画面写真の試験が待つ）
     var onReady: ((String) -> Void)?
-    /// いま額に**印画が載っている**写真（額の uid → 1枚目の写真 id）。UI テストが「飾った写真が額に写ったか」を
-    /// 読む（`CriticalFlowTests`・2026-10-22）。載せ替えるたびに `onFramed` で知らせる
+    /// 額に**保存した中身**（`it.photos` の1枚目）の印画があるもの（額の uid → 写真 id）と、選んだだけでまだ保存していない
+    /// 見本の写真（`previewPhotoId`）が載っている額。UI テストが「飾った写真が額に入ったか」を読む（`CriticalFlowTests`・2026-10-22）。
+    /// 🔴 2つを分ける（確かめ役の指摘）: 見本は選んだ瞬間に額へ載るので、まとめると「この額に飾る」を押さなくても緑になる
     private(set) var framedPhotos: [String: String] = [:]
-    var onFramed: (([String: String]) -> Void)?
+    private(set) var previewedPhotos: [String: String] = [:]
+    var onFramed: ((_ framed: [String: String], _ previewed: [String: String]) -> Void)?
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
@@ -410,6 +412,7 @@ final class CamperRoomScene {
         }
         var mats = g.materials
         var shown: String?
+        let previewing = photos != it.photos
         for (i, group) in mesh.groups.enumerated() where i < mats.count {
             guard case .room(.photo(let slot)) = group.material else { continue }
             let index = Int(slot.dropFirst(4)) ?? 0
@@ -444,9 +447,12 @@ final class CamperRoomScene {
             mats[i] = m
         }
         g.materials = mats
-        if framedPhotos[it.uid] != shown {
-            framedPhotos[it.uid] = shown
-            onFramed?(framedPhotos)
+        let saved = it.photos.first.flatMap { photoImages[$0] != nil ? $0 : nil }
+        let previewed = previewing ? shown : nil
+        if framedPhotos[it.uid] != saved || previewedPhotos[it.uid] != previewed {
+            framedPhotos[it.uid] = saved
+            previewedPhotos[it.uid] = previewed
+            onFramed?(framedPhotos, previewedPhotos)
         }
     }
 

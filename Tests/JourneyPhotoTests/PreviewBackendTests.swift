@@ -25,6 +25,45 @@ final class PreviewBackendTests: XCTestCase {
         XCTAssertNil(PreviewBackend.authGateway)
     }
 
+    /// 見本の通信は**見本の利用者で入っているときだけ**（`PreviewSession.localBackend` の `guard userId != nil`）。
+    /// 引数だけが残った起動で、本物のログインの人の鍵の要る口を端末の中の答え手に向けない
+    func testLocalBackendNeedsThePreviewUser() {
+        let d = UserDefaults.standard
+        let user = d.object(forKey: PreviewSession.defaultsKey)
+        let flag = d.object(forKey: PreviewSession.localBackendKey)
+        defer {
+            d.set(user, forKey: PreviewSession.defaultsKey)
+            d.set(flag, forKey: PreviewSession.localBackendKey)
+        }
+        d.set(true, forKey: PreviewSession.localBackendKey)
+        d.removeObject(forKey: PreviewSession.defaultsKey)
+        XCTAssertFalse(PreviewSession.localBackend, "見本の利用者が居ないのに見本の通信になる")
+        XCTAssertNil(PreviewBackend.tokenProvider)
+        XCTAssertNil(PreviewBackend.authGateway)
+        XCTAssertNil(PreviewBackend.transfer)
+        d.set("preview-user", forKey: PreviewSession.defaultsKey)
+        XCTAssertTrue(PreviewSession.localBackend)
+        XCTAssertNotNil(PreviewBackend.tokenProvider)
+        XCTAssertNotNil(PreviewBackend.authGateway)
+        d.set(false, forKey: PreviewSession.localBackendKey)
+        XCTAssertFalse(PreviewSession.localBackend, "引数が無ければ見本の利用者でも本物の口")
+    }
+
+    /// 投稿の本体は答え手へ直に渡る。**空の本体は断る**（写真の中身が届いていないのに投稿が通ったように見せない）
+    func testTransferRefusesAnEmptyBodyAndKeepsTheRest() async throws {
+        let transfer = PreviewBackend.PreviewTransfer()
+        let key = "uploads/u/\(UUID().uuidString).jpg"
+        var request = URLRequest(url: URL(string: "https://\(PreviewBackend.host)/put/\(key)")!)
+        request.httpMethod = "PUT"
+        let empty = try await transfer.upload(request, body: Data(), key: key)
+        XCTAssertEqual((empty as? HTTPURLResponse)?.statusCode, 400)
+        let ok = try await transfer.upload(request, body: Data([9, 8, 7]), key: key)
+        XCTAssertEqual((ok as? HTTPURLResponse)?.statusCode, 200)
+        let img = await PreviewBackend.reply(method: "GET", route: [PreviewBackend.host, "img"] + key.split(separator: "/").map(String.init),
+                                             body: nil, userId: uid, publicLikes: { _ in nil })
+        XCTAssertEqual(img.body, Data([9, 8, 7]))
+    }
+
     func testHandlesOnlyThePreviewTokenAndHost() {
         var signed = URLRequest(url: URL(string: "https://api.example.com/photos/p1/like")!)
         signed.setValue("Bearer \(PreviewBackend.token)", forHTTPHeaderField: "Authorization")

@@ -160,6 +160,12 @@ final class CriticalFlowTests: XCTestCase {
     /// 見本の1枚を選んだ投稿画面で、題と撮影地を打って投稿 → 画面が閉じ、マイページの格子にその題の1枚が並ぶ
     func testPostPhotoAppearsOnMyPage() {
         let app = launch(["-JPPreviewUploadSample", "YES"])
+        // 🔴 マイページを**出したまま**「投稿」を押す（2026-10-22 確かめ役の指摘）。投稿はシートで、閉じたとき出ている
+        // マイページが上がった写真を先に並べる（`MyPageView` の `postSheetsClosed` → `showPosted`・`justPosted`）。
+        // 後から開くと公開の一覧の読み直しの順番次第になり、並ぶ所が決まらない
+        tab(app, 4)
+        XCTAssertTrue(app.descendants(matching: .any)["mypage.nameLine"].firstMatch.waitForExistence(timeout: 20),
+                      "ログイン中のマイページが出ない")
         tab(app, 2)
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
         XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
@@ -184,7 +190,7 @@ final class CriticalFlowTests: XCTestCase {
         // 上がると投稿画面が閉じる（`didPostAll`）
         XCTAssertTrue(thumb.waitForNonExistence(timeout: 60), "投稿しても画面が閉じない（上がっていない）")
 
-        tab(app, 4)
+        // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
         let posted = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'mypage.photo' AND label CONTAINS %@", title)).firstMatch
         XCTAssertTrue(posted.waitForExistence(timeout: 20), "投稿した「\(title)」がマイページに並ばない")
@@ -265,10 +271,10 @@ final class CriticalFlowTests: XCTestCase {
                        "最初の並びの部屋に額が無い")
         let photos = app.buttons.matching(identifier: "camper.room.photo")
         XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 30), "飾れる写真が出ない")
-        // 額に印画が載るまで待つ（写真は本物の公開写真を読む）
-        XCTAssertTrue(wait(scene, "value CONTAINS 'framed='", timeout: 30), "額に写真が載らない")
+        // 額に保存した中身の印画が載るまで待つ（写真は本物の公開写真を読む）
+        XCTAssertTrue(waitUntil(20) { !self.marker(scene, "framed").isEmpty }, "額に写真が載らない（今は \(scene.value ?? "")）")
         Thread.sleep(forTimeInterval: 3)
-        let framedBefore = framed(scene)
+        let framedBefore = marker(scene, "framed")
 
         // 額に入っていない1枚
         let candidates = photos.allElementsBoundByIndex.prefix(12)
@@ -281,20 +287,40 @@ final class CriticalFlowTests: XCTestCase {
         let photoId = pick.value as? String ?? ""
         pick.tap()
         XCTAssertTrue(wait(pick, "selected == true", timeout: 5), "写真を押しても選ばれない")
+        // 選んだだけでは見本（preview）として載り、保存した中身（framed）にはまだ無い
+        XCTAssertTrue(waitUntil(15) { self.marker(scene, "preview").contains(photoId) },
+                      "選んだ写真 \(photoId) が見本として額に載らない（今は \(scene.value ?? "")）")
+        XCTAssertFalse(marker(scene, "framed").contains(photoId), "「この額に飾る」を押す前に保存した中身に入っている")
         let hang = app.buttons["camper.room.hang"].firstMatch
         XCTAssertTrue(wait(hang, "enabled == true", timeout: 5), "「この額に飾る」が押せない")
         hang.tap()
+        XCTAssertTrue(waitUntil(15) { self.marker(scene, "framed").contains(photoId) },
+                      "飾った写真 \(photoId) が額の中身に入らない（今は \(scene.value ?? "")）")
 
-        // 部屋に戻る（見本の写真ではなく、飾った中身で額を描き直す）
+        // 部屋に戻っても（見本ではなく保存した中身で描き直す）額に写っている
         app.buttons["camper.room.back"].firstMatch.tap()
-        XCTAssertTrue(wait(scene, "value CONTAINS %@", [photoId], timeout: 20),
-                      "飾った写真 \(photoId) が額に写らない（今は \(framed(scene))）")
+        XCTAssertTrue(waitUntil(20) {
+            self.marker(scene, "framed").contains(photoId) && self.marker(scene, "preview").isEmpty
+        }, "部屋に戻ると飾った写真 \(photoId) が額に無い（今は \(scene.value ?? "")）")
     }
 
-    /// 部屋の読み上げの値から、額に写っている写真の id を読む（` framed=a,b`・`CamperRoomView.framedMarker`）
-    private func framed(_ scene: XCUIElement) -> [String] {
+    /// 部屋の読み上げの値から、額の中身の id を読む（` framed=a,b preview=c`・`CamperRoomView.framedMarker`）。
+    /// `framed` は保存した中身、`preview` は選んだだけの見本
+    private func marker(_ scene: XCUIElement, _ name: String) -> [String] {
         let value = scene.value as? String ?? ""
-        guard let range = value.range(of: " framed=") else { return [] }
-        return value[range.upperBound...].split(separator: ",").map(String.init)
+        guard let start = value.range(of: " \(name)=") else { return [] }
+        let rest = value[start.upperBound...]
+        let end = rest.firstIndex(of: " ") ?? rest.endIndex
+        return rest[..<end].split(separator: ",").map(String.init)
+    }
+
+    /// 条件が満たされるまで待つ（最長 `timeout` 秒）
+    private func waitUntil(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return condition()
     }
 }

@@ -20,8 +20,10 @@ import FoundationNetworking
 /// - 知らない口は 503 で断る（401 にしない——401 は「取り直し → ログアウト」に倒れる）
 /// - ログアウト → ログインは見本の認証（`authGateway`）。Amplify には触らない
 ///
-/// Release では `PreviewSession.localBackend` が必ず false なので、ここは何も差し替えない
+/// 🔴 **Release には中身を入れない**（2026-10-22 確かめ役の指摘）。見本のメール・パスワード・答え手は `#if DEBUG` の内側だけで、
+/// Release の `PreviewBackend` は下の「何も差し替えない」口（どれも nil）だけを持つ
 enum PreviewBackend {
+#if DEBUG
 
     /// 見本の鍵（JWT ではない）。これを付けた要求だけに答える
     static let token = "preview-local-backend"
@@ -36,8 +38,24 @@ enum PreviewBackend {
     /// API に付ける鍵の出どころ。見本の通信が入っていなければ nil（本物の Cognito）
     static var tokenProvider: TokenProviding? { isOn ? PreviewToken() : nil }
 
-    /// API と投稿の本体が使う URLSession。見本の通信が入っていなければ nil（今までどおり）
+    /// API が使う URLSession。見本の通信が入っていなければ nil（今までどおり）
     static var session: URLSession? { isOn ? sharedSession : nil }
+
+    /// 投稿の本体（S3 への PUT）を運ぶ口。見本の通信が入っていなければ nil（背景の転送）。
+    /// 2026-10-22 判断: `URLProtocol` は upload タスクの本文を受け取れない作りがあり、本体が届いたかを確かめられない。
+    /// 本体は答え手へ**直に渡す**（空なら 400 で断る——空の写真で投稿が通ったように見せない）
+    static var transfer: PhotoTransfer? { isOn ? PreviewTransfer() : nil }
+
+    struct PreviewTransfer: PhotoTransfer {
+        func upload(_ request: URLRequest, body: Data, key: String) async throws -> URLResponse {
+            guard let url = request.url else { throw APIError.unreachable }
+            let reply = await PreviewBackend.reply(method: request.httpMethod ?? "PUT", route: PreviewBackend.route(url, basePath: ""),
+                                                   body: body, userId: PreviewSession.userId, publicLikes: { _ in nil })
+            guard let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
+                                                 headerFields: nil) else { throw APIError.unreachable }
+            return response
+        }
+    }
 
     /// 1本だけ作る。作るときに `URLSession.shared` にも答え手を足す（投稿した写真の画像を一覧が読む）
     private static let sharedSession: URLSession = {
@@ -165,7 +183,9 @@ enum PreviewBackend {
             let key = parts.dropFirst(2).joined(separator: "/")
             switch (method, parts.dropFirst().first) {
             case ("PUT", "put"?):
-                store.with { $0.setBlob(key, body ?? Data()) }
+                // 本体が届いていない（空）なら断る——投稿の試験が「写真の中身が答え手に届いたか」を見る
+                guard let body, !body.isEmpty else { return .json(["error": "本体が空です"], status: 400) }
+                store.with { $0.setBlob(key, body) }
                 return Reply(status: 200, body: Data())
             case ("GET", "img"?):
                 guard let data = store.with({ $0.blob(key) }), !data.isEmpty else { return Reply(status: 404, body: Data()) }
@@ -293,20 +313,33 @@ enum PreviewBackend {
         }
         return data
     }
+#else
+    // Release: 何も差し替えない（見本の答え手・見本の認証・見本のメールとパスワードの中身は入れない）
+    static var tokenProvider: TokenProviding? { nil }
+    static var session: URLSession? { nil }
+    static var transfer: PhotoTransfer? { nil }
+    static var authGateway: AuthStoreGateway? { nil }
+#endif
 }
 
+#if DEBUG
 /// 見本の通信の答え手（`PreviewBackend`）。見本の鍵・見本の置き場の要求だけを引き受ける
 final class PreviewBackendProtocol: URLProtocol {
 
     private var work: Task<Void, Never>?
+    /// 止められた（`stopLoading`）。読み書きは `startLoading` を受けたスレッドだけ
+    private var stopped = false
 
     override class func canInit(with request: URLRequest) -> Bool { PreviewBackend.handles(request) }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
+    /// 🔴 **`client` は `startLoading` を受けたスレッドからだけ呼ぶ**（2026-10-22 確かめ役の指摘・`URLProtocol` の決まり）。
+    /// 答えを作るのは `Task`（公開のいいね数を読みに行く）なので、できた答えはそのスレッドの run loop へ戻して返す
     override func startLoading() {
         let request = self.request
         let body = PreviewBackend.body(of: request)
+        let home = HomeLoop.current()
         work = Task { [weak self] in
             guard let url = request.url else { return }
             let reply = await PreviewBackend.reply(
@@ -314,19 +347,40 @@ final class PreviewBackendProtocol: URLProtocol {
                 route: PreviewBackend.route(url, basePath: AppConfig.userAPIBaseURL.path),
                 body: body, userId: PreviewSession.userId,
                 publicLikes: { await PreviewBackend.readPublicLikes($0) })
-            guard let self, !Task.isCancelled,
-                  let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
-                                                 headerFields: ["Content-Type": reply.contentType]) else { return }
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: reply.body)
-            self.client?.urlProtocolDidFinishLoading(self)
+            home.perform { self?.deliver(reply, url: url) }
         }
     }
 
+    private func deliver(_ reply: PreviewBackend.Reply, url: URL) {
+        guard !stopped, let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
+                                                       headerFields: ["Content-Type": reply.contentType]) else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: reply.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
     override func stopLoading() {
+        stopped = true
         work?.cancel()
     }
+
+    /// `startLoading` を受けたスレッドの run loop。そこへ仕事を戻す
+    private struct HomeLoop: @unchecked Sendable {
+        #if canImport(Darwin)
+        let loop: CFRunLoop
+        static func current() -> HomeLoop { HomeLoop(loop: CFRunLoopGetCurrent()) }
+        func perform(_ block: @escaping () -> Void) {
+            CFRunLoopPerformBlock(loop, CFRunLoopMode.commonModes.rawValue, block)
+            CFRunLoopWakeUp(loop)
+        }
+        #else
+        // Linux の試験はこの答え手を URLSession に通さない（`reply` を直に呼ぶ）。形だけ持つ
+        static func current() -> HomeLoop { HomeLoop() }
+        func perform(_ block: @escaping () -> Void) { block() }
+        #endif
+    }
 }
+#endif
 
 extension APIClient {
     /// アプリの API の口（Cognito の鍵）。`AppEnvironment` を受け取れない所（画面の init・通知）が使う。
@@ -334,5 +388,12 @@ extension APIClient {
     /// （2026-10-22 判断: 写真の詳細・投稿・マイページ・通知が各自 `CognitoTokenProvider` で作っていたので、1か所に寄せた）
     static func app() -> APIClient {
         APIClient(tokenProvider: PreviewBackend.tokenProvider ?? CognitoTokenProvider(), session: PreviewBackend.session)
+    }
+}
+
+extension UploadService {
+    /// アプリの投稿の口（本体は背景の転送）。UI テストの見本の通信のときだけ、本体を端末の中の答え手へ直に渡す
+    static func app(api: APIClient) -> UploadService {
+        PreviewBackend.transfer.map { UploadService(api: api, transfer: $0) } ?? UploadService(api: api)
     }
 }

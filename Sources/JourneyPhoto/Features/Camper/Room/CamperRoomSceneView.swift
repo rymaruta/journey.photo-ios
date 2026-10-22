@@ -34,8 +34,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// 押して置くときの置ける所（薄い白のマス）
     var hints: CamperRoomFitArea?
     var onReady: (String) -> Void = { _ in }
-    /// 額に印画が載っている写真が替わった（額の uid → 写真 id・UI テストの読み上げの値に出す・2026-10-22）
-    var onFramed: ([String: String]) -> Void = { _ in }
+    /// 額の中身が替わった（保存した中身・選んだだけの見本。額の uid → 写真 id・UI テストの読み上げの値に出す・2026-10-22）
+    var onFramed: (_ framed: [String: String], _ previewed: [String: String]) -> Void = { _, _ in }
     /// 組み上がった後の最初のコマを描いた（外から入る時の覆いを消す合図・2026-10-21）
     var onDrawn: () -> Void = {}
 
@@ -83,8 +83,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
             watcher.arm()
             DispatchQueue.main.async { onReady(marker) }
         }
-        c.onFramed = { framed in
-            DispatchQueue.main.async { onFramed(framed) }
+        c.onFramed = { framed, previewed in
+            DispatchQueue.main.async { onFramed(framed, previewed) }
         }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
