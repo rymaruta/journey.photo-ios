@@ -3626,6 +3626,20 @@ final class ScreenshotTests: XCTestCase {
 
     /// 立体を組み終えるまで待つ（読み上げの値に「camper-room-ready 部屋 時刻」が出る・見本の起動のときだけ）
     @discardableResult
+    /// 接写の一覧の頁を 1 つ進める。押した後、いまの頁の合図（`from`）が消える（次の頁を描き始める）のを確かめ、
+    /// 消えなければ 2 回まで押し直す。2026-10-23 PR #371 の検証（run 39843960624）: 込んだ Mac で 16 → 17 頁の押しが
+    /// 届かず（アプリの応答が 1 回 2 秒以上止まっていた）、試験の数える頁がアプリより 1 つ先へずれ、17〜27 頁を全部
+    /// 「描き終えない」と落ちていた（アプリは 17〜26 頁を描いていた）
+    private func turnContactPage(_ app: XCUIApplication, _ next: XCUIElement, from marker: String) {
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        let moved = NSPredicate(format: "NOT (value CONTAINS %@)", marker)
+        for attempt in 1...3 {
+            next.tap()
+            if XCTWaiter().wait(for: [expectation(for: moved, evaluatedWith: sheet)], timeout: 10) == .completed { return }
+            print("UINOTE 接写の頁: 進むを押しても「\(marker)」のまま（\(attempt) 回目）")
+        }
+    }
+
     private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String, timeout: TimeInterval = 40) -> Bool {
         let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
@@ -3841,7 +3855,7 @@ final class ScreenshotTests: XCTestCase {
                 shot.lifetime = .keepAlways
                 add(shot)
                 guard next.exists, next.isEnabled else { break }
-                next.tap()
+                turnContactPage(app, next, from: "contact-ready \(mood) \(page)/")
                 page += 1
             }
             // 頁を初めに戻して、昼と夜を替える
@@ -3870,7 +3884,7 @@ final class ScreenshotTests: XCTestCase {
             shot.lifetime = .keepAlways
             add(shot)
             guard next.exists, next.isEnabled else { break }
-            next.tap()
+            turnContactPage(app, next, from: "legs-ready \(page)/")
             page += 1
         }
     }
@@ -3902,7 +3916,7 @@ final class ScreenshotTests: XCTestCase {
             shot.lifetime = .keepAlways
             add(shot)
             guard next.exists, next.isEnabled else { break }
-            next.tap()
+            turnContactPage(app, next, from: "contact-ready day \(page)/")
             page += 1
         }
     }

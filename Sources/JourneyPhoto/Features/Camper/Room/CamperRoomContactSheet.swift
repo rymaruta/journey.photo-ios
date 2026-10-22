@@ -248,6 +248,9 @@ struct CamperRoomContactSheet: View {
             Image(systemName: symbol).jpSystemFont(16, weight: .semibold)
                 .foregroundStyle(enabled ? WebTheme.foreground : WebTheme.faint)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                // 44pt の枠全体を押せるように（2026-10-23 PR #371 の検証: 読み上げの枠が矢印の形 8×14pt だけで、
+                // 込んだ Mac で 16 → 17 頁の押しが届かなかった見立て）
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
