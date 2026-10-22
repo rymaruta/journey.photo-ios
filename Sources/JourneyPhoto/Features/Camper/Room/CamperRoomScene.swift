@@ -65,6 +65,8 @@ final class CamperRoomScene {
     /// 額ごとの、絵（読めた写真）が入った印画の数
     private var shownPhotos: [String: Int] = [:]
     private var probeToken = 0
+    /// 印画の貼り絵の位置が写真の外（0〜1 の外）へはみ出した量の最大（試験用。0 でなければ端の画素が伸びて筋になる）
+    var photoUVOverflow = 0.0
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
@@ -443,6 +445,7 @@ final class CamperRoomScene {
                 let scale = SCNMatrix4MakeScale(Float(fit.scaleX), Float(fit.scaleY), 1)
                 let shift = SCNMatrix4MakeTranslation(Float(fit.offsetX), Float(fit.offsetY), 0)
                 m.diffuse.contentsTransform = SCNMatrix4Mult(scale, shift)
+                photoUVOverflow = max(photoUVOverflow, Self.uvOverflow(mesh, group.indices, fit))
                 // configure が付けた clearCoat / metalness が残ると印画が白い膜に見える
                 m.clearCoat.contents = 0.0
                 m.clearCoatRoughness.contents = 0.0
@@ -459,6 +462,22 @@ final class CamperRoomScene {
         g.materials = mats
         shownPhotos[it.uid] = shown
         scheduleProbe()
+    }
+
+    /// はみ出す量の字（負の 0 を "-0.00" にしない・Mac run 668）
+    static func overflowText(_ x: Double) -> String { String(format: "%.2f", x > 0 ? x : 0) }
+
+    /// 印画の貼り絵の位置に `fit` を掛けたとき、0〜1 からはみ出す量
+    static func uvOverflow(_ mesh: CamperPreparedMesh, _ indices: [Int32],
+                           _ fit: (scaleX: Double, scaleY: Double, offsetX: Double, offsetY: Double)) -> Double {
+        var worst = 0.0
+        for i in indices {
+            let k = Int(i) * 2
+            guard k + 1 < mesh.uvs.count else { continue }
+            let u = Double(mesh.uvs[k]) * fit.scaleX + fit.offsetX, v = Double(mesh.uvs[k + 1]) * fit.scaleY + fit.offsetY
+            worst = max(worst, -u, u - 1, -v, v - 1)
+        }
+        return worst
     }
 
     /// 印画の様子を少し後に測る（カメラの動き 0.6 秒が止まってから・続けて呼ばれたら最後の 1 回だけ）
@@ -479,7 +498,7 @@ final class CamperRoomScene {
             furniture[entry.item.furnitureId]?.groups.contains { if case .room(.photo) = $0.material { return true } else { return false } } ?? false
         }
         let shown = frames.filter { (shownPhotos[$0.item.uid] ?? 0) > 0 }
-        var out = "photos=\(shown.count)/\(frames.count)"
+        var out = "photos=\(shown.count)/\(frames.count) uvOut=\(Self.overflowText(photoUVOverflow))"
         let pick = focusFrameUid.flatMap { itemNodes[$0] } ?? shown.sorted { $0.item.uid < $1.item.uid }.first
         if let pick, let rect = photoRect(pick.node, pick.item) {
             out += " rect=\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))"
