@@ -212,6 +212,7 @@ struct CamperRoomView: View {
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
         if CamperRoomPreview.contact { showContact = true }
+        if CamperRoomPreview.select { selected = editor?.doc.items.first { $0.k == "storage.trunk" }?.u }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
     }
 
@@ -1000,6 +1001,7 @@ struct CamperRoomView: View {
                 .jpSystemFont(13)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("camper.room.hint")
             // 2026-10-21 判断: 下の「外へ出る」は左上の「外へ」と同じ操作なので外した（板 CamperRoomFlow も左上の「外へ」だけ）
             Spacer(minLength: 0)
         }
@@ -1231,6 +1233,7 @@ struct CamperRoomView: View {
                 .jpSystemFont(12)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("camper.room.styleNote")
             Spacer(minLength: 0)
             primaryButton(L("これにする", "Use this"), id: "camper.room.styleDone", fill: true) { goHome() }
         }

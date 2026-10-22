@@ -25,11 +25,14 @@ enum CamperRoomPreview {
     static let liftKey = "JPPreviewCamperRoomLift"
     static let contactKey = "JPPreviewCamperRoomContact"
     static let coachKey = "JPPreviewCamperRoomCoach"
+    /// 部屋に入ったら家具を 1 つ選んでおく（「回す・しまう」の札を撮る・2026-10-22）
+    static let selectKey = "JPPreviewCamperRoomSelect"
 
     static var reset: Bool { flag(resetKey) }
     static var lift: Bool { flag(liftKey) }
     static var contact: Bool { flag(contactKey) }
     static var coach: Bool { flag(coachKey) }
+    static var select: Bool { flag(selectKey) }
 
     private static func flag(_ key: String) -> Bool {
         #if DEBUG
