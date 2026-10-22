@@ -80,7 +80,16 @@ case "$mode" in
             done < "$2"
         fi
         # 一覧が無ければ UI テストを全部
-        extra="$extra ${only:--only-testing:JourneyPhotoUITests}"
+        only="${only:--only-testing:JourneyPhotoUITests}"
+        # 名指しした回だけ流す UI テスト（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED）は、一覧に名前が無ければ飛ばす。
+        # 2026-10-22: 家具の脚の接写（約5分）が PR の検証・TestFlight の全部の回を延ばさないように
+        for named in $(python3 Tools/pick-ui-tests.py --only-when-named); do
+            case " $only " in
+                *"/$named "*) ;;
+                *) only="$only -skip-testing:JourneyPhotoUITests/$named" ;;
+            esac
+        done
+        extra="$extra $only"
         ;;
     *)
         echo "使い方: xcode-test.sh build | unit <xcresult> | ui <xcresult> [<一覧>]" >&2

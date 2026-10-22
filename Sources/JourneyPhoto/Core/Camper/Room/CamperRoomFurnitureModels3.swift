@@ -42,8 +42,8 @@ extension CamperRoomFurnitureModels {
     static func daybed() -> CamperMesh {
         let oak = R(.wood(.oak)), dark = R(.wornWood(.darkOak))
         var parts: [CamperMesh] = []
-        // 脚と框（8×3 マス・高さ 36）
-        for (x, z) in [(-38.0, -13.5), (38.0, -13.5), (-38.0, 13.5), (38.0, 13.5)] {
+        // 脚と框（8×3 マス・高さ 36）。2026-10-22: 脚は両端の格子の真下に（前は格子と框の外へ 2 cm はみ出した）
+        for (x, z) in [(-37.5, -12.9), (37.5, -12.9), (-37.5, 12.9), (37.5, 12.9)] {
             parts.append(K.block(CV3(3.2, 12, 3.2), at: CV3(x, 0, z), radius: 0.55, oak))
         }
         for z in [-13.8, 13.8] { parts.append(K.block(CV3(74, 5.5, 2.2), at: CV3(0, 6.5, z), radius: 0.55, oak)) }
@@ -60,7 +60,8 @@ extension CamperRoomFurnitureModels {
                 parts.append(K.block(CV3(1.1, 22, 1.1), at: CV3(x - side * 0.2, 12, z), radius: 0.25, oak))
             }
             parts.append(K.block(CV3(2.6, 1.4, 26), at: CV3(x, 33.5, 0), radius: 0.35, oak))
-            parts.append(K.block(CV3(2.6, 1.2, 26), at: CV3(x, 11.2, 0), radius: 0.3, oak))
+            // 格子の下の桟は脚の上まで伸ばして脚を受ける（2026-10-22: 前は脚が桟の端から 4 cm 出ていた）
+            parts.append(K.block(CV3(2.6, 1.2, 29.6), at: CV3(x, 11.2, 0), radius: 0.3, oak))
         }
         // 布団・背のクッション・枕・毛布
         parts.append(K.placed(K.roundedBox(CV3(68, 5, 24), radius: 2, segments: 3, puff: 0.55, R(.cotton(0xE8E1D2))), at: CV3(0, 13.2, 0)))
@@ -150,7 +151,8 @@ extension CamperRoomFurnitureModels {
                                      light ? cream : soot))
             }
         }
-        parts.append(K.block(CV3(12, 1.4, 9), at: CV3(0, 86.2, -1.5), radius: 0.3, R(.castIron)))
+        // 煙突の笠（煙突の上端 85.4 に載せる。2026-10-22: 前は 2 cm 浮いていた）
+        parts.append(K.block(CV3(12, 1.4, 9), at: CV3(0, 85.4, -1.5), radius: 0.3, R(.castIron)))
         return K.merge(parts)
     }
 
@@ -176,6 +178,10 @@ extension CamperRoomFurnitureModels {
             parts.append(K.placed(K.panel(width: 5.6, height: 47.6, R(.paper)), at: c + CV3(nx * 0.08, 0, nz * 0.08), rotation: q))
         }
         parts.append(K.placed(K.sphere(radius: 2.2, segments: 14, R(.bulb)), at: CV3(0, 28, 0)))
+        // 電球は上の蓋から下げた受け口と紐で吊る（2026-10-22: 前は筒の真ん中の宙に浮いていた）
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.9, 0), CV2(0.9, 1.8), CV2(0.5, 2.2), CV2(0, 2.2)], segments: 12, R(.brass)),
+                              at: CV3(0, 29.6, 0)))
+        parts.append(K.tube([CV3(0, 31.6, 0), CV3(0, 51.8, 0)], radius: 0.2, sides: 6, R(.iron)))
         parts.append(K.block(CV3(8.2, 1.4, 8.2), at: CV3(0, 51.6, 0), radius: 0.35, cedar))
         parts.append(K.placed(K.disc(radius: 1.2, height: 0.6, bevel: 0.2, segments: 12, R(.brass)), at: CV3(0, 53.0, 0)))
         return K.merge(parts)

@@ -446,10 +446,10 @@ extension CamperRoomFurnitureModels {
                               at: CV3(-4.5, 49.5, -2.2), yaw: -0.3))
         parts.append(K.placed(K.drape(width: 7, height: 13, folds: 2, depth: 0.25, flare: 0.3, R(.velvet(0x5E3A24))),
                               at: CV3(-4.5, 36.5, -2.6), yaw: -0.25))
-        // 帽子
+        // 帽子（柱の頭 65.5 に載せる。2026-10-22: 前は柱の上 7 mm の宙に浮いていた）
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.2, 0), CV2(4.4, 0.55), CV2(2.3, 0.75), CV2(2.1, 3.6), CV2(0, 3.6)],
-                                      segments: 20, R(.knit(0x3A3A3C))), at: CV3(0, 65.8, 0)))
-        parts.append(K.tube(K.ringXZ(center: CV3(0, 66.4, 0), radius: 2.15, steps: 20), radius: 0.18, sides: 5, closed: true,
+                                      segments: 20, R(.knit(0x3A3A3C))), at: CV3(0, 65.5, 0)))
+        parts.append(K.tube(K.ringXZ(center: CV3(0, 66.1, 0), radius: 2.15, steps: 20), radius: 0.18, sides: 5, closed: true,
                             R(.knit(0xC9A66B))))
         return K.merge(parts)
     }
@@ -522,8 +522,8 @@ extension CamperRoomFurnitureModels {
     static func stepStool() -> CamperMesh {
         var parts: [CamperMesh] = []
         let pine = R(.wood(.pine)), worn = R(.wornWood(.pine)), iron = R(.iron)
-        // 下段の側板と脚
-        for x in [-8.2, 8.2] {
+        // 下段の側板と脚（側板の外の面は踏板の端にそろえる。2026-10-22: 前は踏板の外へ 1.6 cm はみ出していた）
+        for x in [-7.55, 7.55] {
             parts.append(K.block(CV3(1.4, 8.0, 11.5), at: CV3(x, 0, 0), radius: 0.3, pine))
             parts.append(K.placed(K.leg(bottom: 0.7, top: 0.9, height: 1.2, pine), at: CV3(x, 0, -4.5)))
             parts.append(K.placed(K.leg(bottom: 0.7, top: 0.9, height: 1.2, pine), at: CV3(x, 0, 4.5)))
@@ -1048,14 +1048,15 @@ extension CamperRoomFurnitureModels {
             let t = Double(i) / 7
             let z = 4.7 + t * 4.2
             let s = 1.0 - t * 0.42
-            parts.append(K.block(CV3(8.4 * s, 6.8 * s, 0.32), at: CV3(0, 8.6, z), radius: 0.1, bellows))
+            // ひだはレンズの芯（y 8.6）を真ん中に（`block` は下の面が `at`。前はひだが 8 cm 上にずれ、角の補強革が宙に浮いた）
+            parts.append(K.block(CV3(8.4 * s, 6.8 * s, 0.42), at: CV3(0, 8.6 - 3.4 * s, z), radius: 0.1, bellows))
             // 角の補強革
             for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
                 parts.append(K.block(CV3(0.55, 0.55, 0.28), at: CV3(sx * 3.8 * s, 8.6 + sy * 3.0 * s, z), radius: 0.12, R(.leather(0x3E2A1C))))
             }
         }
         // レンズボード・シャッター筐体・レンズ
-        parts.append(K.block(CV3(5.6, 5.6, 0.7), at: CV3(0, 8.6, 9.0), radius: 0.25, dark))
+        parts.append(K.block(CV3(5.6, 5.6, 0.7), at: CV3(0, 5.8, 9.0), radius: 0.25, dark))
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(2.35, 0), CV2(2.5, 0.6), CV2(2.2, 1.5), CV2(1.85, 1.9), CV2(0, 1.9)],
                                       segments: 20, chrome), at: CV3(0, 8.6, 9.35), rotation: toFront))
         parts.append(K.placed(K.disc(radius: 1.45, height: 0.28, bevel: 0.08, segments: 18, R(.painted(0x0A0A0A))),
@@ -1075,7 +1076,8 @@ extension CamperRoomFurnitureModels {
         for x in [-6.6, 6.6] {
             parts.append(K.block(CV3(0.45, 10.0, 0.45), at: CV3(x, 3.5, -0.4), radius: 0.12, accent))
         }
-        return K.merge(parts)
+        // 2026-10-22: 本体の箱の下が床から 7 mm 浮き、蛇腹のひだの間が空いて前が宙に浮いていた。ひだを厚くし、全体を床へ下ろす
+        return K.placed(K.merge(parts), at: CV3(0, -0.3, 0))
     }
 
     /// 二眼レフ（撮影／ファインダーの二眼・腰レベルフード・ピントノブ・巻き上げクランク）
