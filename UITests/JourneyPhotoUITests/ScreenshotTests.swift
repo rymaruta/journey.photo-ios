@@ -2207,10 +2207,43 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += extra
+        let launched = Date()
         app.launch()
-        let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        agreeToTerms(app, since: launched)
         return app
+    }
+
+    /// 規約の同意を押し、**同意の画面が消えるまで**確かめる（2026-10-22 run 686: 部屋の試験で、落ちた時の画面の木が
+    /// 同意の画面のままだった。30 秒で出なかった・押しても消えなかった、のどちらでも黙って先へ進み、20 秒後に
+    /// 「キャンピングカーの画面が開かない」と別の所で落ちていた）。何秒で出て何回押したかを注記に残す
+    private func agreeToTerms(_ app: XCUIApplication, since launched: Date = Date(), timeout: TimeInterval = 60) {
+        let agree = app.buttons["legal.agree"]
+        guard agree.waitForExistence(timeout: timeout) else {
+            note(app, "規約の同意", "起動から \(Int(Date().timeIntervalSince(launched))) 秒で同意の画面が出ない")
+            return
+        }
+        let shown = Date().timeIntervalSince(launched)
+        var taps = 0
+        while agree.exists, taps < 3 {
+            if agree.isHittable { agree.tap() } else { agree.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            taps += 1
+            let gone = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: agree)], timeout: 5)
+            if gone == .completed { break }
+        }
+        if agree.exists || taps > 1 || shown > 20 {
+            note(app, "規約の同意", "同意の画面が出るまで \(String(format: "%.1f", shown)) 秒・押した回数 \(taps)・まだ出ている \(agree.exists)")
+        }
+        XCTAssertFalse(agree.exists, "規約の同意を押しても同意の画面が消えない（押した回数 \(taps)）")
+    }
+
+    /// 道をたどれなかった時の手がかり（画面の絵と画面の木）を残す
+    private func note(_ app: XCUIApplication, _ title: String, _ text: String) {
+        print("UINOTE \(title): \(text)")
+        let line = XCTAttachment(string: text + "\n\n" + app.debugDescription)
+        line.name = "注記（\(title)）"
+        line.lifetime = .keepAlways
+        add(line)
+        shoot(app, "注記（\(title)）の画面")
     }
 
     /// マイページ → 旅の記録のタブ → 「旅のトランク」の行。開けたら true
@@ -2277,8 +2310,16 @@ final class ScreenshotTests: XCTestCase {
 
     /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true
     private func openTripsRow(_ app: XCUIApplication, _ id: String) -> Bool {
+        // 同意の画面がまだ（また）出ていたら、ここで押して記録する（run 686 は同意の画面のまま 20 秒待って落ちた）
+        if app.buttons["legal.agree"].exists {
+            note(app, "規約の同意", "旅の記録を開く時に同意の画面が出ている")
+            agreeToTerms(app, timeout: 5)
+        }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else {
+            note(app, "旅の記録の行 \(id)", "下の札（タブ）が出ない")
+            return false
+        }
         tabBar.buttons.element(boundBy: 4).tap()
         let tripsTab = app.buttons["profile.tab.trips"].firstMatch
         guard tripsTab.waitForExistence(timeout: 15) else { return false }
@@ -2291,9 +2332,26 @@ final class ScreenshotTests: XCTestCase {
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
         let row = app.buttons[id].firstMatch
-        guard row.waitForExistence(timeout: 15) else { return false }
-        scrollTo(row, in: app)
-        guard row.isHittable else { return false }
+        guard row.waitForExistence(timeout: 15) else {
+            note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
+            return false
+        }
+        // 行の上の旅の棚・端末の一冊・旅のトランクの行は、読み終えた順に後から出て行を押し下げる（2026-10-22 run 672・684:
+        // 5 回送っても行に届かなかった）。行が画面の下の帯より上で、0.5 秒動かなくなるまで送る（10 回まで）
+        let bottom = app.windows.firstMatch.frame.maxY - 100
+        pushes = 0
+        while pushes < 10 {
+            let before = row.frame
+            Thread.sleep(forTimeInterval: 0.5)
+            if row.exists, row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
+            if row.frame.minY <= 80 { app.swipeDown() } else if row.frame.maxY >= bottom || !row.isHittable { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.8)
+            pushes += 1
+        }
+        guard row.isHittable else {
+            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.frame)）")
+            return false
+        }
         row.tap()
         return true
     }
@@ -2581,7 +2639,16 @@ final class ScreenshotTests: XCTestCase {
             guard back.waitForExistence(timeout: 10) else { return XCTFail("部屋から外へ戻れない") }
             back.tap()
             let door = app.buttons["camper.door"].firstMatch
-            guard door.waitForExistence(timeout: 10) else { return XCTFail("外の車に戻らない") }
+            // main の run（39739874666）で 10 秒待っても外の車に戻らなかった。押しが届かなかった時は 1 回だけ押し直し、
+            // それでも戻らなければ画面の木を残して落とす
+            if !door.waitForExistence(timeout: 10), back.exists {
+                note(app, "外へ戻る", "「外へ」を押して 10 秒たっても外の車に戻らない。押し直す")
+                back.tap()
+            }
+            guard door.waitForExistence(timeout: 10) else {
+                note(app, "外へ戻る", "外の車に戻らない")
+                return XCTFail("外の車に戻らない")
+            }
             // 戻ったら口の真正面の寄りではなく、扉の口を斜めに見る向き（確かめ役 2026-10-21）
             Thread.sleep(forTimeInterval: 4)
             self.shoot(app, "95\(n)7-キャンピングカー（\(label)・部屋から戻った）")
@@ -3864,6 +3931,349 @@ final class ScreenshotTests: XCTestCase {
         let tray = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@)",
                                                     "camper.room.tray.", "camper.room.tray.cat.")).firstMatch
         if tray.exists { XCTAssertGreaterThanOrEqual(tray.frame.height, 96, "棚の家具の枠が縦に狭い") }
+    }
+
+    // MARK: - 部屋の下の板（2026-10-22 owner の実機 1.1.37「操作感も悪い」）
+
+    /// **部屋の下の板を全部**（家・置く・模様替えの 4 札・写真・図鑑・家具を持ち上げる・回す）を、既定の文字と大きい文字で撮り、
+    /// **重なる・切れる・押せる範囲が小さい**を要素の枠で、**部屋の絵が上へ押し出されて切れる**を画素で確かめる。
+    /// owner の実機で、模様替えの見本の名前が下の説明と重なり、札がタブの下線にかぶり、部屋の絵の上が切れていた
+    func testCapturesCamperRoomPanels() {
+        executionTimeAllowance = 1500
+        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
+            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"] + extra)
+            XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない\(tag)")
+            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない\(tag)"); continue }
+            tourRoomPanels(app, tag: tag)
+            app.terminate()
+        }
+        // 家具を持ち上げた途中（置く場面）
+        let lift = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLift", "YES"])
+        XCTAssertTrue(openCamperRoom(lift), "とおまわり号の中に入れない（持ち上げ）")
+        if waitRoom(lift, "camper.room.scene", "camper-room-ready", timeout: 90) {
+            shoot(lift, "96p-部屋の下の板（家具を持ち上げた途中）")
+            checkRoomPanel(lift, "持ち上げ", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
+                                                    "camper.room.tab.wall", "camper.room.tab.ceiling"],
+                           groups: ["camper.room.tray.cat.@camper.room.trayCats"])
+        } else {
+            XCTFail("部屋を組み終えない（持ち上げ）")
+        }
+        lift.terminate()
+        // 家具を選んだ時の「回す・しまう」（`-JPPreviewCamperRoomSelect`）
+        let select = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomSelect", "YES"])
+        XCTAssertTrue(openCamperRoom(select), "とおまわり号の中に入れない（選ぶ）")
+        guard waitRoom(select, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない（選ぶ）") }
+        let rotate = select.buttons["camper.room.rotate"].firstMatch
+        XCTAssertTrue(rotate.waitForExistence(timeout: 5), "家具を選んでも「回す」が出ない")
+        shoot(select, "96q-部屋の下の板（家具を選んだ・回す・しまう）")
+        let scene = select.descendants(matching: .any)["camper.room.scene"].firstMatch.frame
+        var floating: [(String, CGRect)] = []
+        for id in ["camper.room.rotate", "camper.room.stow", "camper.room.resetView"] {
+            let b = select.buttons[id].firstMatch
+            guard b.exists else { continue }
+            floating.append((id, b.frame))
+            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
+            XCTAssertGreaterThanOrEqual(b.frame.width, 44, "\(id) の幅が 44pt 未満")
+            XCTAssertTrue(scene.insetBy(dx: -1, dy: -1).contains(b.frame), "\(id) が部屋の絵の外へはみ出す（\(b.frame) / \(scene)）")
+        }
+        assertNoOverlap(floating, "回す・しまう")
+        if rotate.exists, rotate.isHittable {
+            rotate.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(select, "96r-部屋の下の板（回した後）")
+            XCTAssertTrue(select.buttons["camper.room.rotate"].firstMatch.exists, "回したら「回す」が消えた（続けて回せない）")
+        }
+    }
+
+    /// 家 → 模様替え（4 札）→ 写真 → 置く → 図鑑 の順に撮って確かめる
+    private func tourRoomPanels(_ app: XCUIApplication, tag: String) {
+        shoot(app, "96k-部屋の下の板（家\(tag)）")
+        checkRoomPanel(app, "家\(tag)", ids: ["camper.room.counts", "camper.room.tool.place", "camper.room.tool.style",
+                                               "camper.room.tool.photos", "camper.room.tool.dex", "camper.room.hint"])
+        checkRoomPicture(app, "家\(tag)")
+
+        // 模様替え
+        app.buttons["camper.room.tool.style"].firstMatch.tap()
+        let done = app.buttons["camper.room.styleDone"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "模様替えにならない\(tag)")
+        for (tab, name) in [("wall", "壁紙"), ("floor", "床"), ("curtain", "カーテン"), ("light", "灯り")] {
+            let t = app.buttons["camper.room.tab.\(tab)"].firstMatch
+            guard t.exists else { XCTFail("模様替えの「\(name)」の札が無い\(tag)"); continue }
+            revealInPanel(app, t)
+            t.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "96l-部屋の下の板（模様替え・\(name)\(tag)）")
+            let label = "模様替え・\(name)\(tag)"
+            checkRoomPanel(app, label, ids: ["camper.room.tab.wall", "camper.room.tab.floor", "camper.room.tab.curtain",
+                                             "camper.room.tab.light", "camper.room.styleDone"],
+                           groups: ["camper.room.style."])
+            // 見本の札は、タブの下線より下・説明より上（owner の実機で札が下線にかぶり、名前が説明と重なった）
+            let tabBottom = app.buttons["camper.room.tab.\(tab)"].firstMatch.frame.maxY
+            let swatches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.style."))
+            XCTAssertGreaterThan(swatches.count, 1, "\(label): 見本が 1 つ以下")
+            let note = app.staticTexts["camper.room.styleNote"].firstMatch
+            for i in 0..<min(swatches.count, 8) {
+                let s = swatches.element(boundBy: i)
+                guard s.exists, s.isHittable else { continue }
+                XCTAssertGreaterThanOrEqual(s.frame.minY, tabBottom - 0.5, "\(label): 見本 \(s.identifier) がタブの下線にかぶる")
+                // 見本の四角（64）と名前の行が札の枠に収まっている（枠が潰れると名前が下へはみ出して重なる）
+                XCTAssertGreaterThanOrEqual(s.frame.height, 84, "\(label): 見本 \(s.identifier) の枠が低い（名前がはみ出す・\(s.frame.height)pt）")
+                if note.exists { XCTAssertLessThanOrEqual(s.frame.maxY, note.frame.minY + 0.5, "\(label): 見本 \(s.identifier) が説明と重なる") }
+            }
+            // 灯りの札は夜にして見せる（暗いので画素の明るさでは部屋の枠を測れない）
+            if tab != "light" { checkRoomPicture(app, label) }
+        }
+        // 何も変えていない時に「これにする」を光らせない（2026-10-22 owner）
+        XCTAssertFalse(done.label.contains("これにする"), "模様替えで何も変えていないのに「これにする」（今は「\(done.label)」）")
+        // 持っていない柄は鍵の札。押すと部屋で見本を試せ、どうすれば届くかと外まわりの図鑑への道が出る
+        let wallTab = app.buttons["camper.room.tab.wall"].firstMatch
+        revealInPanel(app, wallTab)
+        wallTab.tap()
+        let locked = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "camper.room.style.", "まだ持っていません")).firstMatch
+        if locked.waitForExistence(timeout: 3) {
+            revealInPanel(app, locked)
+            locked.tap()
+            let card = app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 3), "持っていない柄を押しても見本の札が出ない\(tag)")
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "96l-部屋の下の板（模様替え・持っていない柄を試す\(tag)）")
+            checkRoomPanel(app, "模様替え・見本\(tag)", ids: ["camper.room.styleTrialEnd", "camper.room.styleCollect", "camper.room.styleDone"])
+            let end = app.buttons["camper.room.styleTrialEnd"].firstMatch
+            revealInPanel(app, end)
+            end.tap()
+            XCTAssertFalse(card.waitForExistence(timeout: 2), "「見本をやめる」で見本の札が消えない\(tag)")
+        } else {
+            XCTFail("壁紙に持っていない柄の札（鍵）が無い\(tag)")
+        }
+        // 持っている柄に変えたら「元に戻す」と「これにする」。戻したら「閉じる」
+        let curtainTab = app.buttons["camper.room.tab.curtain"].firstMatch
+        revealInPanel(app, curtainTab)
+        curtainTab.tap()
+        let indigo = app.buttons["camper.room.style.indigo"].firstMatch
+        revealInPanel(app, indigo)
+        indigo.tap()
+        let revert = app.buttons["camper.room.styleRevert"].firstMatch
+        XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない\(tag)")
+        XCTAssertTrue(done.label.contains("これにする"), "柄を変えたのに主ボタンが「これにする」でない（今は「\(done.label)」）")
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "96l-部屋の下の板（模様替え・変えた後\(tag)）")
+        checkRoomPanel(app, "模様替え・変えた後\(tag)", ids: ["camper.room.styleRevert", "camper.room.styleDone"])
+        revealInPanel(app, revert)
+        revert.tap()
+        XCTAssertFalse(revert.waitForExistence(timeout: 2), "「元に戻す」で戻らない\(tag)")
+        XCTAssertFalse(done.label.contains("これにする"), "戻したのに「これにする」のまま\(tag)")
+        // 部屋のタブを替えたら、前の部屋の柄・見本を持ち越さない（確かめ役 2026-10-22: 部屋 B で何も触らないのに
+        // 「これにする／元に戻す」が光り、「元に戻す」で部屋 A の柄が B に書かれた）
+        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.room."))
+        if rooms.count > 1, rooms.element(boundBy: 1).isHittable {
+            revealInPanel(app, indigo)
+            indigo.tap()
+            XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない（部屋を替える前）\(tag)")
+            // 大きい文字では横に送る部屋のタブが、画面に見えていても XCUI が「押せない」と言うことがある（run 679）。
+            // 札の真ん中の点を押す
+            rooms.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            waitRoom(app, "camper.room.scene", "camper-room-ready")
+            XCTAssertTrue(rooms.element(boundBy: 1).isSelected, "部屋のタブを押しても部屋が替わらない\(tag)")
+            XCTAssertFalse(revert.exists, "部屋を替えたのに「元に戻す」が残る\(tag)")
+            XCTAssertFalse(done.label.contains("これにする"), "部屋を替えて何も触らないのに「これにする」（今は「\(done.label)」）\(tag)")
+            XCTAssertFalse(app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch.exists, "前の部屋の見本が残る\(tag)")
+            shoot(app, "96l-部屋の下の板（模様替え・部屋を替えた後\(tag)）")
+            rooms.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            waitRoom(app, "camper.room.scene", "camper-room-ready")
+        } else {
+            XCTFail("部屋のタブが 2 つ以上無い・押せない\(tag)")
+        }
+        revealInPanel(app, done)
+        done.tap()
+        XCTAssertTrue(app.buttons["camper.room.tool.photos"].firstMatch.waitForExistence(timeout: 5), "模様替えを閉じられない\(tag)")
+
+        // 写真を飾る
+        app.buttons["camper.room.tool.photos"].firstMatch.tap()
+        if app.buttons["camper.room.frame"].firstMatch.waitForExistence(timeout: 10) {
+            _ = app.buttons["camper.room.photo"].firstMatch.waitForExistence(timeout: 20)
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "96m-部屋の下の板（写真\(tag)）")
+            checkRoomPanel(app, "写真\(tag)", ids: ["camper.room.hang"],
+                           groups: ["camper.room.frame@camper.room.frames", "camper.room.photo@camper.room.photoGrid"])
+        } else {
+            XCTFail("飾る額の一覧が出ない\(tag)")
+        }
+        app.buttons["camper.room.back"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["camper.room.tool.place"].firstMatch.waitForExistence(timeout: 5), "写真から部屋に戻れない\(tag)")
+
+        // 置く
+        app.buttons["camper.room.tool.place"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない\(tag)")
+        // 押した直後から部屋が描かれている（置くの場面だけ立体を作り直し、組み上がるまで部屋が消えていた・run 666）
+        Thread.sleep(forTimeInterval: 0.3)
+        assertRoomDrawn(app, "置くを押した直後\(tag)")
+        Thread.sleep(forTimeInterval: 1.7)
+        shoot(app, "96n-部屋の下の板（置く\(tag)）")
+        checkRoomPanel(app, "置く\(tag)", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
+                                                 "camper.room.tab.wall", "camper.room.tab.ceiling"],
+                       groups: ["camper.room.tray.cat.@camper.room.trayCats", "camper.room.tray.@camper.room.trayGrid"])
+        checkRoomPicture(app, "置く\(tag)")
+        app.buttons["camper.room.done"].firstMatch.tap()
+
+        // 図鑑
+        let dex = app.buttons["camper.room.tool.dex"].firstMatch
+        XCTAssertTrue(dex.waitForExistence(timeout: 5), "置くから部屋に戻れない\(tag)")
+        dex.tap()
+        let close = app.buttons["camper.room.dex.close"].firstMatch
+        if close.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "96o-部屋の下の板（図鑑\(tag)）")
+            XCTAssertGreaterThanOrEqual(close.frame.height, 44, "図鑑の「閉じる」が 44pt 未満\(tag)")
+            XCTAssertTrue(close.isHittable, "図鑑の「閉じる」を押せない\(tag)")
+            // 置き場所のタブの数が 1 字ずつ折れない（大きい文字で「474/1,19」「2」と折れた・run 666）
+            var tabBoxes: [(String, CGRect)] = []
+            for p in ["floor", "wall", "ceiling"] {
+                let t = app.buttons["camper.room.dex.tab.\(p)"].firstMatch
+                guard t.exists, t.isHittable else { continue }
+                tabBoxes.append((p, t.frame))
+                XCTAssertGreaterThanOrEqual(t.frame.height, 44, "図鑑のタブ \(p) が 44pt 未満\(tag)")
+                XCTAssertLessThan(t.frame.height, 90, "図鑑のタブ \(p) の字が折れて縦に伸びた（\(t.frame.height)pt）\(tag)")
+            }
+            XCTAssertFalse(tabBoxes.isEmpty, "図鑑の置き場所のタブが見えない\(tag)")
+            assertNoOverlap(tabBoxes, "図鑑のタブ\(tag)")
+            close.tap()
+        } else {
+            XCTFail("家具の図鑑が開かない\(tag)")
+        }
+    }
+
+    /// 下の板の要素が、画面の中・部屋の絵の下にあり、押せる物は 44pt 以上で、互いに重ならない。
+    /// `groups` は識別子の頭で集める（いま押せる物だけ）。「頭@入れ物の識別子」なら、送る一覧（入れ物）の中に丸ごと見えている物だけ
+    /// （一覧の端で切れて見えている升は、入れ物が切っているので重なり・はみ出しに数えない）
+    private func checkRoomPanel(_ app: XCUIApplication, _ label: String, ids: [String], groups: [String] = []) {
+        let window = app.windows.firstMatch.frame
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        // 大きい文字では板を送る。1 つずつ見える所まで送って、見えて押せるか・44pt かを見る（切れて届かないなら落とす）
+        for id in ids {
+            let e = app.descendants(matching: .any)[id].firstMatch
+            XCTAssertTrue(e.exists, "\(label): \(id) が無い")
+            guard e.exists else { continue }
+            revealInPanel(app, e)
+            XCTAssertTrue(e.isHittable, "\(label): \(id) が見えない・届かない（板の外へ切れる・\(e.frame)）")
+            if e.elementType == .button { checkTarget(e, id, label) }
+        }
+        // いま見えている物どうしで、画面の外・部屋の絵に掛かる・重なるを見る
+        var boxes: [(String, CGRect)] = []
+        var lines: [String] = ["窓 \(window)", "部屋の絵 \(scene.exists ? "\(scene.frame)" : "無し")"]
+        for id in ids {
+            let e = app.descendants(matching: .any)[id].firstMatch
+            guard e.exists, e.isHittable else { continue }
+            boxes.append((id, e.frame))
+            lines.append("\(id) \(e.frame)")
+        }
+        for group in groups {
+            let parts = group.split(separator: "@").map(String.init)
+            let prefix = parts[0]
+            let box = parts.count > 1 ? app.descendants(matching: .any)[parts[1]].firstMatch : nil
+            if let box { XCTAssertTrue(box.exists, "\(label): 一覧 \(parts[1]) が無い") }
+            let q = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
+            for i in 0..<min(q.count, 16) {
+                let e = q.element(boundBy: i)
+                guard e.exists, e.isHittable else { continue }
+                if let box, box.exists, !box.frame.insetBy(dx: -1, dy: -1).contains(e.frame) { continue }
+                let id = "\(e.identifier)#\(i)"
+                boxes.append((id, e.frame))
+                lines.append("\(id) \(e.frame)")
+                checkTarget(e, id, label)
+            }
+        }
+        let note = XCTAttachment(string: lines.joined(separator: "\n"))
+        note.name = "96-部屋の下の板の枠（\(label)）"
+        note.lifetime = .keepAlways
+        add(note)
+        for (id, f) in boxes {
+            XCTAssertTrue(window.insetBy(dx: -0.5, dy: -0.5).contains(f), "\(label): \(id) が画面の外へ切れる（\(f)）")
+            if scene.exists {
+                XCTAssertGreaterThanOrEqual(f.minY, scene.frame.maxY - 0.5, "\(label): \(id) が部屋の絵に掛かる（\(f) / \(scene.frame)）")
+            }
+        }
+        assertNoOverlap(boxes, label)
+    }
+
+    /// 下の板を送って `element` を見える所へ出す（送れない板・もう見えている時は何もしない）。板の左の縁を引く（部屋の絵は回さない）
+    private func revealInPanel(_ app: XCUIApplication, _ element: XCUIElement) {
+        let window = app.windows.firstMatch
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        var pushes = 0
+        // 少しでも見えていると押せる扱いになる。丸ごと画面に入るまで送る（大きい文字で下端が切れた・run 672）
+        while element.exists, !(element.isHittable && window.frame.contains(element.frame)), pushes < 6 {
+            let above = scene.exists && element.frame.minY < scene.frame.maxY
+            let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.74 : 0.94))
+            let to = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.9 : 0.78))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+            Thread.sleep(forTimeInterval: 0.6)
+            pushes += 1
+        }
+    }
+
+    private func checkTarget(_ e: XCUIElement, _ id: String, _ label: String) {
+        // 端数（43.99999）は 44 と見る
+        XCTAssertGreaterThanOrEqual(e.frame.height, 43.9, "\(label): \(id) の高さが 44pt 未満（\(e.frame.height)）")
+        XCTAssertGreaterThanOrEqual(e.frame.width, 43.9, "\(label): \(id) の幅が 44pt 未満（\(e.frame.width)）")
+    }
+
+    /// 枠どうしが重ならない（片方がもう片方を丸ごと含むのは、札の中の印なので除く）
+    private func assertNoOverlap(_ boxes: [(String, CGRect)], _ label: String) {
+        for i in boxes.indices {
+            for j in boxes.indices where j > i {
+                let a = boxes[i].1, b = boxes[j].1
+                let x = a.intersection(b)
+                guard !x.isNull, x.width > 1, x.height > 1, !a.contains(b), !b.contains(a) else { continue }
+                XCTFail("\(label): \(boxes[i].0) と \(boxes[j].0) が重なる（\(a) / \(b)）")
+            }
+        }
+    }
+
+    /// 部屋の絵（箱庭）が十分な高さで、上下どちらにも切れず、上下の空きが釣り合っている（画素で見る）。
+    /// owner の実機（2026-10-22）で、絵が上へ押し出されて切れ、下に大きな黒い空きがあった
+    private func checkRoomPicture(_ app: XCUIApplication, _ label: String) {
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        guard scene.exists else { return XCTFail("\(label): 部屋の絵が無い") }
+        XCTAssertGreaterThanOrEqual(scene.frame.height, 220, "\(label): 部屋の絵が低い（\(scene.frame.height)pt）")
+        guard let rows = Self.litRows(scene.screenshot().image) else { return XCTFail("\(label): 部屋の絵を読めない") }
+        guard let top = rows.firstIndex(where: { $0 }), let bottom = rows.lastIndex(where: { $0 }) else {
+            return XCTFail("\(label): 部屋が描かれていない（明るい画素が無い）")
+        }
+        let n = Double(rows.count)
+        let above = Double(top) / n, below = Double(rows.count - 1 - bottom) / n
+        print("CAMPERROOM \(label) 絵 \(scene.frame) 上の空き \(above) 下の空き \(below)")
+        XCTAssertGreaterThan(above, 0.005, "\(label): 部屋の絵の上が切れている")
+        XCTAssertGreaterThan(below, 0.005, "\(label): 部屋の絵の下が切れている")
+        XCTAssertLessThan(abs(above - below), 0.3, "\(label): 部屋が上か下へ寄っている（上の空き \(above)・下の空き \(below)）")
+    }
+
+    /// 部屋の絵に部屋が描かれている（明るい行が絵の 1 割以上）。組み直しの途中の暗い地だけなら落とす
+    private func assertRoomDrawn(_ app: XCUIApplication, _ label: String) {
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        guard scene.exists, let rows = Self.litRows(scene.screenshot().image) else { return XCTFail("\(label): 部屋の絵を読めない") }
+        let lit = rows.filter { $0 }.count
+        XCTAssertGreaterThan(Double(lit), Double(rows.count) * 0.1, "\(label): 部屋が描かれていない（明るい行 \(lit) / \(rows.count)）")
+    }
+
+    /// 行ごとに「部屋が写っているか」（明るさ 60 を超える画素が幅の 3% 以上）。暗い地（0x1D1B14 から黒）は数えない
+    private static func litRows(_ image: UIImage) -> [Bool]? {
+        guard let cg = image.cgImage else { return nil }
+        let w = cg.width, h = cg.height
+        guard w > 8, h > 8 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return (0..<h).map { y in
+            var lit = 0
+            for x in stride(from: 0, to: w, by: 2) {
+                let k = (y * w + x) * 4
+                let l = 0.299 * Double(bytes[k]) + 0.587 * Double(bytes[k + 1]) + 0.114 * Double(bytes[k + 2])
+                if l > 60 { lit += 1 }
+            }
+            return Double(lit) > Double(w / 2) * 0.03
+        }
     }
 
     // MARK: - 大きい文字（Dynamic Type・2026-10-21）

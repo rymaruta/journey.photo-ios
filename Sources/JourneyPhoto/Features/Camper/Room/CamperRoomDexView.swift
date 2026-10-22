@@ -90,7 +90,16 @@ struct CamperRoomDexView: View {
         .padding(.top, 16)
     }
 
+    /// 大きい文字で 3 つが並びきらない時は横に送る（数が「474/1,19」「2」と 1 字ずつ折れた・Mac run 666・2026-10-22）
     private var tabs: some View {
+        ViewThatFits(in: .horizontal) {
+            tabRow
+            ScrollView(.horizontal, showsIndicators: false) { tabRow }
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
+    }
+
+    private var tabRow: some View {
         HStack(spacing: 2) {
             ForEach(CamperRoomPlacement.allCases, id: \.self) { p in
                 let on = p == tab
@@ -101,6 +110,8 @@ struct CamperRoomDexView: View {
                         Text("\(items.filter { owned.contains($0.id) }.count)/\(items.count)")
                             .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                     }
+                    .lineLimit(1)
+                    .fixedSize()
                     .foregroundStyle(on ? WebTheme.accent : WebTheme.muted2)
                     .padding(.horizontal, 12)
                     .frame(minHeight: WebTheme.minTapTarget)
@@ -114,7 +125,6 @@ struct CamperRoomDexView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
     }
 
     /// 2,000 点を超えると、代表の家具が画面の外に出て押せない。名前か id で絞る

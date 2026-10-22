@@ -38,6 +38,8 @@ enum CamperRoomPreview {
     static let liftKey = "JPPreviewCamperRoomLift"
     static let contactKey = "JPPreviewCamperRoomContact"
     static let coachKey = "JPPreviewCamperRoomCoach"
+    /// 部屋に入ったら家具を 1 つ選んでおく（「回す・しまう」の札を撮る・2026-10-22）。持ち上げ（`lift`）と両方立てたら持ち上げが勝つ
+    static let selectKey = "JPPreviewCamperRoomSelect"
     static let legsKey = "JPPreviewCamperRoomLegs"
     /// 写真を入れられる全部の額に、本物の写真（横長・縦長）を入れた接写の一覧（2026-10-22・楕円の額で写真が筋に崩れた）
     static let framesKey = "JPPreviewCamperRoomFrames"
@@ -56,6 +58,7 @@ enum CamperRoomPreview {
     static var lift: Bool { flag(liftKey) }
     static var contact: Bool { flag(contactKey) }
     static var coach: Bool { flag(coachKey) }
+    static var select: Bool { flag(selectKey) }
     static var legs: Bool { flag(legsKey) }
 
     private static func flag(_ key: String) -> Bool {
