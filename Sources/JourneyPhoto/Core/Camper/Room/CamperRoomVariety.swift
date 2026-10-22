@@ -40,7 +40,23 @@ enum CamperRoomVariety {
     static let memoCostLimit = 48 * 1024 * 1024
     /// 三角形 1 枚の記憶（点 3 つ × 位置・向き 24 バイトずつ・貼り絵 16 バイト ＋ 番号 3 つ × 4 バイト）
     static let bytesPerTriangle = 3 * (24 + 24 + 16) + 3 * 4
-    private static var memo = CamperThumbCache<CamperMesh>(costLimit: memoCostLimit)
+    /// 2026-10-22（Mac run 683）: 試験は全部の家具の網を何度もなめる（形の健全さ・光・図鑑の部品…）。上限つきだと毎回
+    /// 2,000 点を作り直し、1 本が XCTest の 1 分の枠を超えた。試験の時だけ控えを全部残す（上限の働きは
+    /// `testMeshMemoStaysBounded` が `resetMemo(limit:)` で上限を戻して確かめる）
+    static var defaultMemoLimit: Int {
+        let info = ProcessInfo.processInfo
+        let testing = info.environment["XCTestConfigurationFilePath"] != nil || info.arguments.first?.contains(".xctest") == true
+            || NSClassFromString("XCTestCase") != nil
+        return testing ? Int.max / 4 : memoCostLimit
+    }
+    private static var memo = CamperThumbCache<CamperMesh>(costLimit: defaultMemoLimit)
+
+    /// 控えを空にして上限を替える（試験で上限の働きを確かめる）
+    static func resetMemo(limit: Int) {
+        gate.lock()
+        memo = CamperThumbCache<CamperMesh>(costLimit: limit)
+        gate.unlock()
+    }
 
     static func mesh(_ id: String) -> CamperMesh? {
         gate.lock()

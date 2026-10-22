@@ -15,10 +15,14 @@ final class CamperVarietyMeshSizeTests: XCTestCase {
 
     /// 網の控えは上限を超えない（図鑑を最後まで見ても 48MB まで）。古い物から捨て、捨てた物は作り直せる
     func testMeshMemoStaysBounded() throws {
-        CamperRoomVariety.removeAllMeshes()
+        // 試験の時は控えを全部残す（他の試験が網を何度もなめるため）。ここでは端末と同じ上限に戻して確かめる
+        XCTAssertGreaterThan(CamperRoomVariety.defaultMemoLimit, CamperRoomVariety.memoCostLimit)
+        CamperRoomVariety.resetMemo(limit: CamperRoomVariety.memoCostLimit)
+        defer { CamperRoomVariety.resetMemo(limit: CamperRoomVariety.defaultMemoLimit) }
         XCTAssertEqual(CamperRoomVariety.memoCost, 0)
         let ids = CamperRoomVariety.pieces.map(\.furniture.id)
-        for id in ids { _ = CamperRoomVariety.mesh(id) }
+        // 手分けして作る（1 本ずつでは Mac で 34 秒・試験の 1 分の枠に近い）
+        DispatchQueue.concurrentPerform(iterations: ids.count) { k in _ = CamperRoomVariety.mesh(ids[k]) }
         XCTAssertGreaterThan(CamperRoomVariety.memoCost, CamperRoomVariety.memoCostLimit / 2, "控えが効いていない")
         XCTAssertLessThanOrEqual(CamperRoomVariety.memoCost, CamperRoomVariety.memoCostLimit)
         // 最初の家具はもう捨てられているが、同じ形に作り直せる
