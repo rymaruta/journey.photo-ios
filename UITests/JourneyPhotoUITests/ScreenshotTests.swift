@@ -2207,10 +2207,43 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += extra
+        let launched = Date()
         app.launch()
-        let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        agreeToTerms(app, since: launched)
         return app
+    }
+
+    /// 規約の同意を押し、**同意の画面が消えるまで**確かめる（2026-10-22 run 686: 部屋の試験で、落ちた時の画面の木が
+    /// 同意の画面のままだった。30 秒で出なかった・押しても消えなかった、のどちらでも黙って先へ進み、20 秒後に
+    /// 「キャンピングカーの画面が開かない」と別の所で落ちていた）。何秒で出て何回押したかを注記に残す
+    private func agreeToTerms(_ app: XCUIApplication, since launched: Date = Date(), timeout: TimeInterval = 60) {
+        let agree = app.buttons["legal.agree"]
+        guard agree.waitForExistence(timeout: timeout) else {
+            note(app, "規約の同意", "起動から \(Int(Date().timeIntervalSince(launched))) 秒で同意の画面が出ない")
+            return
+        }
+        let shown = Date().timeIntervalSince(launched)
+        var taps = 0
+        while agree.exists, taps < 3 {
+            if agree.isHittable { agree.tap() } else { agree.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            taps += 1
+            let gone = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: agree)], timeout: 5)
+            if gone == .completed { break }
+        }
+        if agree.exists || taps > 1 || shown > 20 {
+            note(app, "規約の同意", "同意の画面が出るまで \(String(format: "%.1f", shown)) 秒・押した回数 \(taps)・まだ出ている \(agree.exists)")
+        }
+        XCTAssertFalse(agree.exists, "規約の同意を押しても同意の画面が消えない（押した回数 \(taps)）")
+    }
+
+    /// 道をたどれなかった時の手がかり（画面の絵と画面の木）を残す
+    private func note(_ app: XCUIApplication, _ title: String, _ text: String) {
+        print("UINOTE \(title): \(text)")
+        let line = XCTAttachment(string: text + "\n\n" + app.debugDescription)
+        line.name = "注記（\(title)）"
+        line.lifetime = .keepAlways
+        add(line)
+        shoot(app, "注記（\(title)）の画面")
     }
 
     /// マイページ → 旅の記録のタブ → 「旅のトランク」の行。開けたら true
@@ -2277,8 +2310,16 @@ final class ScreenshotTests: XCTestCase {
 
     /// マイページ → 旅の記録のタブ → 行 `id` を押す。押せたら true
     private func openTripsRow(_ app: XCUIApplication, _ id: String) -> Bool {
+        // 同意の画面がまだ（また）出ていたら、ここで押して記録する（run 686 は同意の画面のまま 20 秒待って落ちた）
+        if app.buttons["legal.agree"].exists {
+            note(app, "規約の同意", "旅の記録を開く時に同意の画面が出ている")
+            agreeToTerms(app, timeout: 5)
+        }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else {
+            note(app, "旅の記録の行 \(id)", "下の札（タブ）が出ない")
+            return false
+        }
         tabBar.buttons.element(boundBy: 4).tap()
         let tripsTab = app.buttons["profile.tab.trips"].firstMatch
         guard tripsTab.waitForExistence(timeout: 15) else { return false }
@@ -2291,9 +2332,26 @@ final class ScreenshotTests: XCTestCase {
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
         let row = app.buttons[id].firstMatch
-        guard row.waitForExistence(timeout: 15) else { return false }
-        scrollTo(row, in: app)
-        guard row.isHittable else { return false }
+        guard row.waitForExistence(timeout: 15) else {
+            note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
+            return false
+        }
+        // 行の上の旅の棚・端末の一冊・旅のトランクの行は、読み終えた順に後から出て行を押し下げる（2026-10-22 run 672・684:
+        // 5 回送っても行に届かなかった）。行が画面の下の帯より上で、0.5 秒動かなくなるまで送る（10 回まで）
+        let bottom = app.windows.firstMatch.frame.maxY - 100
+        var pushes = 0
+        while pushes < 10 {
+            let before = row.frame
+            Thread.sleep(forTimeInterval: 0.5)
+            if row.exists, row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
+            if row.frame.minY <= 80 { app.swipeDown() } else if row.frame.maxY >= bottom || !row.isHittable { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.8)
+            pushes += 1
+        }
+        guard row.isHittable else {
+            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.frame)）")
+            return false
+        }
         row.tap()
         return true
     }
@@ -2572,7 +2630,16 @@ final class ScreenshotTests: XCTestCase {
             guard back.waitForExistence(timeout: 10) else { return XCTFail("部屋から外へ戻れない") }
             back.tap()
             let door = app.buttons["camper.door"].firstMatch
-            guard door.waitForExistence(timeout: 10) else { return XCTFail("外の車に戻らない") }
+            // main の run（39739874666）で 10 秒待っても外の車に戻らなかった。押しが届かなかった時は 1 回だけ押し直し、
+            // それでも戻らなければ画面の木を残して落とす
+            if !door.waitForExistence(timeout: 10), back.exists {
+                note(app, "外へ戻る", "「外へ」を押して 10 秒たっても外の車に戻らない。押し直す")
+                back.tap()
+            }
+            guard door.waitForExistence(timeout: 10) else {
+                note(app, "外へ戻る", "外の車に戻らない")
+                return XCTFail("外の車に戻らない")
+            }
             // 戻ったら口の真正面の寄りではなく、扉の口を斜めに見る向き（確かめ役 2026-10-21）
             Thread.sleep(forTimeInterval: 4)
             self.shoot(app, "95\(n)7-キャンピングカー（\(label)・部屋から戻った）")
