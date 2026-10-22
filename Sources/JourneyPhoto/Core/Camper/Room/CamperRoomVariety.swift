@@ -26,7 +26,7 @@ enum CamperRoomVariety {
     }
 
     /// 脚と組み立てを 1 つずつ作り直した分類（2026-10-22。床の留めを足さない）
-    static let craftedLegs: Set<CamperRoomCategory> = [.seating, .table]
+    static let craftedLegs: Set<CamperRoomCategory> = [.seating, .table, .bed, .storage]
 
     static let pieces: [Piece] = makePieces()
     static var furniture: [CamperRoomFurniture] { pieces.map(\.furniture) }
@@ -81,7 +81,7 @@ enum CamperRoomVariety {
             raw = varietyBox(CV3(8, 8, 8), .zero, .room(.wood(.oak)))
         }
         // 軸ごとに位置の違う真鍮の留め。同じ大枠でも輪郭がずれ、色を変えただけでは同じ形にならない。
-        // 2026-10-22 判断: 脚を作り直した分類（椅子・机）は軸ごとに輪郭が違うので留めを足さない（床の真ん中に釘が転がって見えた）
+        // 2026-10-22 判断: 脚を作り直した分類（椅子・机・寝台・棚）は軸ごとに輪郭が違うので留めを足さない（床の真ん中に釘が転がって見えた）
         if CamperRoomVariety.craftedLegs.contains(piece.furniture.category) { return varietyFit(raw, piece.furniture) }
         return varietyFit(varietyMerge([raw, varietyMark(piece)]), piece.furniture)
     }
@@ -531,82 +531,236 @@ private func varietyFit(_ mesh: CamperMesh, _ f: CamperRoomFurniture) -> CamperM
     return m
 }
 
+// 2026-10-22 判断（owner の実機「家具によって足が壊れてたりする」）: 寝台を枠の形ごとに作り直した。前は高い柱・天蓋柱の
+// 寝台で布団が柱の間の宙に浮き（床板も框も無い）、そり桟・パレットは布団が 7 浮き、入れ子の枠は床から浮いていた。
+// いまは 1.9 × 0.9 m・床板の上面 9〜11（22〜28 cm）で、四隅の柱（頭は高く・足は低く・頭に飾りの玉）が床に立ち、
+// 框（横の板）が柱の間に入って床板の簀の子を受け、敷き布団はその上に載る。そり桟・パレットは柱がその上に立つ
 private func bed(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let (frame, head, foot, cover) = piece.axes
     let hx = varietyHalf(piece.furniture.width), hz = varietyHalf(piece.furniture.depth)
-    let oak = varietyWood(frame), linen = varietyCloth(cover), brass = varietyMetal(foot)
+    // 掛け布団の色は頭と足の形でも変える（寝具の軸は数の上限で使われず、全部同じ色になっていた）
+    let oak = varietyWood(frame), dark = varietyWood(frame + 3), linen = varietyCloth(cover + head + foot * 2), brass = varietyMetal(foot)
     var parts: [CamperMesh] = []
-    let post = 6 + Double(frame) * 5
+    let L = hx * 2 - 1, W = hz * 2 - 1
+    let px = L / 2 - 1.3, pz = W / 2 - 1.3
+    // 床板の上面と、柱の立つ高さ（そり桟・パレットは床ではなくその上）
+    let deck: Double
+    var base = 0.0
     switch frame {
-    case 1, 5:
-        for (x, z) in [(-hx + 2, -hz + 2), (hx - 2, -hz + 2), (-hx + 2, hz - 2), (hx - 2, hz - 2)] {
-            parts.append(varietyBox(CV3(2.8, post, 2.8), CV3(x, 0, z), oak))
+    case 1, 2, 5, 7: deck = 11
+    case 4: deck = 9.2
+    default: deck = 9
+    }
+    let railTop = deck + 1.5, railLow = deck - 4.5
+    let headTop = head == 4 ? deck + 13 : (frame == 1 ? 40.0 : 33.0)
+    let footTop = foot == 2 ? deck + 13 : (foot == 1 ? deck + 7 : railTop)
+    let postTop = frame == 5 ? 62.0 : 0
+    // 框（柱の間の横の板と端の板）・框の内の受け木・簀の子
+    func rails(inset: Double = 0) {
+        for z in [-W / 2 + 1.2 + inset, W / 2 - 1.2 - inset] {
+            parts.append(VarietyKit.block(CV3(L - 5.2 - inset * 2, railTop - railLow, 2.4), at: CV3(0, railLow, z), radius: 0.5, segments: 2, oak))
+            parts.append(varietyBox(CV3(L - 6 - inset * 2, 0.8, 0.8), CV3(0, deck - 1.6, z + (z < 0 ? 1.6 : -1.6)), dark))
         }
-        if frame == 5 {
-            parts.append(varietyBox(CV3(hx * 2 - 6, 1.6, 1.6), CV3(0, post - 1, -hz + 2), oak))
-            parts.append(varietyBox(CV3(hx * 2 - 6, 1.6, 1.6), CV3(0, post - 1, hz - 2), oak))
+        for x in [-L / 2 + 1.2 + inset, L / 2 - 1.2 - inset] {
+            parts.append(VarietyKit.block(CV3(2.4, railTop - railLow, W - 5.2 - inset * 2), at: CV3(x, railLow, 0), radius: 0.5, segments: 2, oak))
         }
+        let n = 11
+        let span = L - 6 - inset * 2
+        for k in 0..<n {
+            let x = -span / 2 + span * (Double(k) + 0.5) / Double(n)
+            parts.append(varietyBox(CV3(span / Double(n) - 1.4, 0.8, W - 4.8 - inset * 2), CV3(x, deck - 0.8, 0), varietyWood(frame + 2)))
+        }
+    }
+    // 柱（四隅。頭の玉）
+    func post(_ x: Double, _ z: Double, from y0: Double, to y1: Double, size: Double = 2.8) {
+        parts.append(VarietyKit.block(CV3(size, y1 - y0, size), at: CV3(x, y0, z), radius: 0.45, segments: 2, oak))
+        parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(size * 0.42, 0), CV2(size * 0.5, 0.5), CV2(size * 0.32, 1.0),
+                                                         CV2(size * 0.42, 1.6), CV2(0, 2.1)], segments: 14, dark), at: CV3(x, y1, z)))
+    }
+    switch frame {
+    case 1:
+        // 高い柱（頭の柱 40・足の柱も框より高く）・框・真ん中の脚
+        rails()
+        for z in [-W / 2 + 1.2, W / 2 - 1.2] { parts.append(varietyBox(CV3(2.4, railLow, 2.4), CV3(0, 0, z), oak)) }
     case 2:
-        parts.append(varietyBox(CV3(hx * 2 - 2, 2.4, 2), CV3(0, 0, -hz + 1.4), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 2, 2.4, 2), CV3(0, 0, hz - 1.4), oak))
+        // そり桟（床の桟は両端で丸く巻き上がる・桟の上に柱と中の束）
+        base = 2.2
+        rails()
+        for z in [-pz, pz] {
+            parts.append(VarietyKit.block(CV3(L - 5.6, 2.2, 2.6), at: CV3(0, 0, z), radius: 0.7, segments: 2, oak))
+            for s in [-1.0, 1.0] {
+                let c = CV3(s * (L / 2 - 2.8), 1.9, z)
+                let curl = (0...10).map { k -> CV3 in
+                    let a = -Double.pi / 2 + Double(k) / 10 * Double.pi * 1.25
+                    return c + CV3(s * cos(a) * 1.8, sin(a) * 1.8, 0)
+                }
+                parts.append(VarietyKit.tube(curl, radius: 1.0, sides: 10, oak))
+            }
+            parts.append(varietyBox(CV3(2.4, railLow - base, 2.4), CV3(0, base, z), oak))
+        }
     case 3:
-        parts.append(varietyBox(CV3(hx * 2 - 4, 7, hz * 2 - 6), CV3(0, 0, 0), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 8, 2, hz * 2 - 10), CV3(0, 7, 0), brass))
+        // 舟形（引っ込めた台輪の上に、角を大きく丸めた胴。胴の上が床板）
+        parts.append(varietyBox(CV3(L - 6, 1.2, W - 6), .zero, dark))
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, deck - 1.2, W - 2.6), radius: 2.4, segments: 3, sidePuff: 0.4, oak),
+                                       at: CV3(0, 1.2 + (deck - 1.2) / 2, 0)))
+        parts.append(VarietyKit.tube(VarietyKit.roundedRect(L - 2.2, W - 2.2, r: 2.6).map { CV3($0.x, deck - 2.5, $0.y) }, radius: 0.3,
+                                     sides: 6, closed: true, brass))
     case 4:
-        for x in [-hx + 6, 0, hx - 6] {
-            parts.append(varietyBox(CV3(8, 3.2, hz * 2 - 4), CV3(x, 0, 0), oak))
+        // パレット（2 枚重ね。下の板・ブロック 9・上の板 7）
+        base = deck
+        for level in 0..<2 {
+            let y0 = Double(level) * 4.6
+            for z in [-W / 2 + 2, 0, W / 2 - 2] { parts.append(varietyBox(CV3(L - 1, 0.8, 3.6), CV3(0, y0, z), oak)) }
+            for x in [-L / 2 + 2.5, 0, L / 2 - 2.5] {
+                for z in [-W / 2 + 2, 0, W / 2 - 2] { parts.append(varietyBox(CV3(3.4, 3.0, 3.4), CV3(x, y0 + 0.8, z), dark)) }
+            }
+            for k in 0..<9 {
+                let x = -L / 2 + 2 + (L - 4) * Double(k) / 8
+                parts.append(varietyBox(CV3(3.8, 0.8, W - 1), CV3(x, y0 + 3.8, 0), oak))
+            }
+        }
+    case 5:
+        // 天蓋柱（四隅の柱 62・上の枠・麻の天蓋）
+        rails()
+        for z in [-W / 2 + 1.2, W / 2 - 1.2] { parts.append(varietyBox(CV3(2.4, railLow, 2.4), CV3(0, 0, z), oak)) }
+        for z in [-pz, pz] { parts.append(varietyBox(CV3(L - 5.2, 1.6, 1.8), CV3(0, postTop - 1.6, z), oak)) }
+        for x in [-px, px] { parts.append(varietyBox(CV3(1.8, 1.6, W - 5.2), CV3(x, postTop - 1.6, 0), oak)) }
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(L - 2.6, 0.5, W - 2.6), radius: 0.2, segments: 2, puff: 0.6, linen),
+                                       at: CV3(0, postTop + 0.25, 0)))
+        for z in [-pz, pz] {
+            parts.append(VarietyKit.placed(VarietyKit.drape(width: L - 6, height: 6, folds: 7, depth: 0.5, flare: 0.08, linen),
+                                           at: CV3(0, postTop, z + (z < 0 ? -1 : 1)), yaw: z < 0 ? .pi : 0))
         }
     case 6:
-        parts.append(varietyBox(CV3(hx * 2 - 3, 3, 2.2), CV3(0, 2, -hz + 2), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 8, 3, 2.2), CV3(0, 5, -hz + 5), oak))
-        parts.append(varietyBox(CV3(hx * 2 - 3, 3, 2.2), CV3(0, 2.4, hz - 2), oak))
-    default:
-        for (x, z) in [(-hx + 3, -hz + 3), (hx - 3, -hz + 3), (-hx + 3, hz - 3), (hx - 3, hz - 3)] {
-            parts.append(varietyBox(CV3(3, 5, 3), CV3(x, 0, z), oak))
+        // 入れ子の枠（短い脚 6 の上に外の框、その内に一段高い内の框）
+        for x in [-px, 0, px] { for z in [-pz, pz] { parts.append(varietyBox(CV3(2.6, 3, 2.6), CV3(x, 0, z), dark)) } }
+        for z in [-pz, pz] { parts.append(VarietyKit.block(CV3(L - 1.4, 2.6, 2.6), at: CV3(0, 3, z), radius: 0.5, segments: 2, oak)) }
+        for x in [-px, px] { parts.append(VarietyKit.block(CV3(2.6, 2.6, W - 5.2), at: CV3(x, 3, 0), radius: 0.5, segments: 2, oak)) }
+        parts.append(VarietyKit.block(CV3(L - 6, deck - 5.6, W - 6), at: CV3(0, 5.6, 0), radius: 0.6, segments: 2, varietyWood(frame + 1)))
+    case 7:
+        // 船長の框（台輪の上に引き出し 3 の箱・真鍮のつまみ）
+        parts.append(varietyBox(CV3(L - 2.6, 0.8, W - 2.6), .zero, dark))
+        parts.append(VarietyKit.block(CV3(L - 1.4, deck - 0.8, W - 1.4), at: CV3(0, 0.8, 0), radius: 0.5, segments: 2, oak))
+        for k in 0..<3 {
+            let x = -L / 3 + Double(k) * L / 3
+            let at = CV3(x, 2, W / 2 - 0.5)
+            parts.append(VarietyKit.block(CV3(L / 3 - 2, deck - 4, 0.6), at: at, radius: 0.2, segments: 1, varietyWood(frame + 1)))
+            parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 0.55, segments: 10, brass), at: at + CV3(0, (deck - 4) / 2, 0.7)))
         }
-        parts.append(varietyBox(CV3(hx * 2 - 8, 2.2, hz * 2 - 8), CV3(0, 5, 0), oak))
+    default:
+        // 低い台（框・真ん中の脚）
+        rails()
+        for z in [-W / 2 + 1.2, W / 2 - 1.2] { parts.append(varietyBox(CV3(2.4, railLow, 2.4), CV3(0, 0, z), oak)) }
     }
-    parts.append(varietyBox(CV3(hx * 2 - 10, 4.2, hz * 2 - 8), CV3(0, 9, 0), linen))
-    let headH = 8 + Double(head) * 3.2
+    // 頭の柱と頭板（柱は床か、そり桟・パレットの上に立つ）
+    let headX = -px
+    let tallPosts = frame == 5
+    for z in [-pz, pz] { post(headX, z, from: base, to: tallPosts ? postTop : headTop) }
+    let span = W - 5.2
+    let panelLow = max(railTop - 1, base + 4)
     switch head {
     case 1:
-        for z in stride(from: -hz + 4, through: hz - 4, by: max(4, hz / 2)) {
-            parts.append(varietyBox(CV3(1.6, headH, 1.6), CV3(-hx + 2, 8, z), oak))
+        // 縦桟（上下の笠木の間に 7 本）
+        parts.append(varietyBox(CV3(2.2, 2.2, span), CV3(headX, headTop - 3.4, 0), oak))
+        parts.append(varietyBox(CV3(2.2, 2, span), CV3(headX, panelLow, 0), oak))
+        for k in 1...7 {
+            let z = -span / 2 + span * Double(k) / 8
+            parts.append(VarietyKit.block(CV3(1.2, headTop - 3.4 - panelLow - 2, 1.2), at: CV3(headX, panelLow + 2, z), radius: 0.25, segments: 1, oak))
         }
     case 2:
-        parts.append(varietyBox(CV3(2.2, headH, hz * 2 - 6), CV3(-hx + 2, 8, 0), oak))
-        parts.append(varietyBox(CV3(2.4, 2.2, hz - 2), CV3(-hx + 1.2, 8 + headH - 1, 0), brass))
+        // アーチ（上の縁が弓なりの板）
+        parts.append(VarietyKit.placed(varietyArchedApron(span, height: headTop - 6 - panelLow, rise: 0, crown: 4, thick: 1.8, oak),
+                                       at: CV3(headX, panelLow, 0), yaw: .pi / 2))
     case 3:
-        parts.append(varietyBox(CV3(2, headH, hz * 2 - 8), CV3(-hx + 2.4, 8, 0), oak))
-        parts.append(varietyBox(CV3(3.2, headH * 0.7, 2), CV3(-hx + 1, 8, -hz + 3), oak))
-        parts.append(varietyBox(CV3(3.2, headH * 0.7, 2), CV3(-hx + 1, 8, hz - 3), oak))
-    case 4:
-        parts.append(varietyBox(CV3(2, headH * 0.45, hz * 2 - 6), CV3(-hx + 2, 8, 0), oak))
+        // 翼（板と、前へ開く両脇の袖）
+        parts.append(VarietyKit.block(CV3(1.8, headTop - 1 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        for s in [-1.0, 1.0] {
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(6, 12, 1.4), radius: 0.5, segments: 2, linen),
+                                           at: CV3(headX + 3.2, headTop - 8, s * (pz - 0.4)), yaw: s * 0.35))
+        }
     case 5:
-        parts.append(varietyBox(CV3(1.4, headH, 1.4), CV3(-hx + 2, 8, -hz + 4), oak))
-        parts.append(varietyBox(CV3(1.4, headH, 1.4), CV3(-hx + 2, 8, hz - 4), oak))
-        parts.append(varietyBox(CV3(1.2, 1.2, hz * 2 - 8), CV3(-hx + 2, 12, 0), oak))
-        parts.append(varietyBox(CV3(1.2, 1.2, hz * 2 - 8), CV3(-hx + 2, 8 + headH * 0.6, 0), oak))
+        // 格子の頭（枠の中に縦 2・横 3 の格子）
+        parts.append(varietyBox(CV3(2, 2, span), CV3(headX, headTop - 3, 0), oak))
+        parts.append(varietyBox(CV3(2, 2, span), CV3(headX, panelLow, 0), oak))
+        for z in [-span / 6, span / 6] { parts.append(varietyBox(CV3(1.2, headTop - 3 - panelLow - 2, 1.2), CV3(headX, panelLow + 2, z), oak)) }
+        for k in 1...3 {
+            let y = panelLow + 2 + (headTop - 5 - panelLow) * Double(k) / 4
+            parts.append(varietyBox(CV3(1.2, 1.2, span), CV3(headX, y - 0.6, 0), oak))
+        }
     default:
-        parts.append(varietyBox(CV3(2.4, headH, hz * 2 - 5), CV3(-hx + 2, 8, 0), oak))
+        // 平らな頭板・低い枕元（一枚板・上の縁に笠木）
+        parts.append(VarietyKit.block(CV3(1.8, headTop - 1.2 - panelLow, span), at: CV3(headX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.block(CV3(2.6, 1.2, span + 1), at: CV3(headX, headTop - 1.2, 0), radius: 0.5, segments: 2, dark))
     }
-    let footH = foot == 2 ? 16.0 : (foot == 3 ? 8.0 : 4.0)
-    parts.append(varietyBox(CV3(foot == 1 ? 3.2 : 2.2, footH, hz * 2 - 6), CV3(hx - 2, 8, 0), foot == 1 ? brass : oak))
+    // 足の柱と足板
+    let footX = px
+    for z in [-pz, pz] { post(footX, z, from: base, to: tallPosts ? postTop : footTop) }
+    switch foot {
+    case 1:
+        // 巻き足（板の上に丸く巻いた笠木）
+        parts.append(VarietyKit.block(CV3(1.6, footTop - 1.4 - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.tube([CV3(footX + 0.3, footTop - 1.2, -span / 2 - 0.6), CV3(footX + 0.3, footTop - 1.2, span / 2 + 0.6)],
+                                     radius: 1.3, sides: 14, dark))
+    case 2:
+        // 高い足板
+        parts.append(VarietyKit.block(CV3(1.8, footTop - panelLow, span), at: CV3(footX, panelLow, 0), radius: 0.4, segments: 2, oak))
+    case 3:
+        // 箱足（足元の物入れの箱・真鍮の留め）
+        let bx = footX - 4.4
+        parts.append(VarietyKit.block(CV3(6.2, railTop + 3 - base, span), at: CV3(bx, base, 0), radius: 0.5, segments: 2, varietyWood(frame + 1)))
+        parts.append(VarietyKit.block(CV3(1.6, 1.2, 0.5), at: CV3(bx - 3.2, railTop, 0), radius: 0.15, segments: 1, brass))
+    default:
+        break
+    }
+    // 敷き布団（縁の縫い目）と寝具
+    let mx = L - (foot == 3 ? 14 : 6), mxc = foot == 3 ? -4.0 : 0
+    let mw = W - 5, top = deck + 6
+    parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx, 6, mw), radius: 1.8, segments: 3, puff: 0.4, .room(.cotton(0xE8E1D2))),
+                                   at: CV3(mxc, deck + 3, 0)))
+    parts.append(VarietyKit.tube(VarietyKit.roundedRect(mx + 0.3, mw + 0.3, r: 2.2).map { CV3($0.x + mxc, deck + 4.8, $0.y) }, radius: 0.3,
+                                 sides: 6, closed: true, .room(.cotton(0xCFC6B4))))
+    let pillow = CamperMaterial.room(.linen(0xF1EDE4))
+    func pillows(_ zs: [Double]) {
+        for (k, z) in zs.enumerated() {
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(10, 3.4, 14), radius: 1.6, segments: 3, puff: 1.1, sidePuff: 0.4, pillow),
+                                           at: CV3(-L / 2 + 9, top + 1.7, z), yaw: k == 0 ? 0.05 : -0.07))
+        }
+    }
     switch cover {
     case 1:
-        parts.append(varietyBox(CV3(14, 2.2, hz * 2 - 8), CV3(hx * 0.2, 13.2, 0), linen))
-        parts.append(varietyBox(CV3(8, 2.4, hz * 2 - 8), CV3(hx * 0.45, 15, 0), linen))
+        // 三つ折り（足の側に畳んだ掛け布団 3 層）
+        for k in 0..<3 {
+            parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(16 - Double(k), 2.4, mw - 0.6 - Double(k) * 0.6), radius: 1.1, segments: 3,
+                                                                 puff: 0.4, linen), at: CV3(mxc + mx / 2 - 10, top + 1.2 + Double(k) * 2.2, 0)))
+        }
+        pillows([0])
     case 2:
-        parts.append(varietyBox(CV3(11, 3, 7), CV3(-hx + 14, 14, -5), linen))
-        parts.append(varietyBox(CV3(11, 3, 7), CV3(-hx + 14, 14, 5), varietyCloth(cover + 1)))
+        // 枕二つと掛け布団
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.6, mw + 2), radius: 1.2, segments: 3, puff: 0.8, sidePuff: 0.5, linen),
+                                       at: CV3(mxc + mx * 0.17, top + 1.3, 0)))
+        pillows([-mw / 4, mw / 4])
     case 3:
-        parts.append(varietyBox(CV3(16, 1.6, hz * 2 - 4), CV3(hx - 12, 14.2, 0), varietyCloth(cover + 2)))
+        // 足元の毛布（編み物を畳んで横へ垂らす）
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(11, 1.6, mw + 3), radius: 0.7, segments: 2, puff: 0.3, sidePuff: 0.3,
+                                                             .room(.knit(0xB5653F))), at: CV3(mxc + mx / 2 - 8, top + 0.8, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.drape(width: 11, height: 4, folds: 2, depth: 0.4, flare: 0.1, .room(.knit(0xB5653F))),
+                                       at: CV3(mxc + mx / 2 - 8, top + 1.4, mw / 2 + 1.5)))
+        pillows([0])
     case 4:
-        parts.append(varietyBox(CV3(hx, 2, hz * 2 - 7), CV3(hx * 0.35, 13.4, 1.5), linen))
+        // 片方だけ（掛け布団を半分めくる）
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 2.4, mw / 2 + 1.5), radius: 1.1, segments: 3, puff: 0.7, linen),
+                                       at: CV3(mxc + mx * 0.18, top + 1.2, mw / 4 + 0.5)))
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.6, 1.4, 4), radius: 0.6, segments: 2, puff: 0.3, linen),
+                                       at: CV3(mxc + mx * 0.18, top + 3.1, -0.5)))
+        pillows([-mw / 4, mw / 4])
     default:
-        parts.append(varietyBox(CV3(10, 2.6, hz * 2 - 7), CV3(-hx * 0.15, 13.6, 0), varietyCloth(cover + 3)))
+        // 折り返し（掛け布団と頭の側の白い折り返し）
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(mx * 0.62, 2.8, mw + 2.4), radius: 1.3, segments: 3, puff: 0.8, sidePuff: 0.6, linen),
+                                       at: CV3(mxc + mx * 0.17, top + 1.4, 0)))
+        parts.append(VarietyKit.placed(VarietyKit.roundedBox(CV3(4.4, 3.2, mw + 2.5), radius: 1.5, segments: 3, puff: 0.4, .room(.linen(0xEDE8DE))),
+                                       at: CV3(mxc - mx * 0.15, top + 1.6, 0)))
+        pillows([0])
     }
-    parts.append(varietyBox(CV3(1.4, 1.4, 1.4), CV3(hx - 5, 14, hz - 4), brass))
     return varietyMerge(parts)
 }
 
@@ -1019,25 +1173,28 @@ private func table(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     return varietyMerge(parts)
 }
 
-/// 弓形の幕板（長さ `length` は x・下の縁が真ん中で `rise` 上がる・厚み `thick` は z・下の端が y = 0）
-private func varietyArchedApron(_ length: Double, height: Double, rise: Double, thick: Double, _ m: CamperMaterial) -> CamperMesh {
+/// 弓形の板（長さ `length` は x・厚み `thick` は z・下の端が y = 0）。下の縁が真ん中で `rise` 上がる（幕板）か、
+/// 上の縁が真ん中で `crown` 上がる（寝台の頭板）
+private func varietyArchedApron(_ length: Double, height: Double, rise: Double, crown: Double = 0, thick: Double,
+                                _ m: CamperMaterial) -> CamperMesh {
     var mesh = CamperMesh()
     let n = 16
-    func bottom(_ x: Double) -> Double {
+    func bow(_ x: Double) -> Double {
         let u = 2 * x / length
-        return rise * max(0, 1 - u * u)
+        return max(0, 1 - u * u)
     }
-    let up = CV3(0, 1, 0)
     for k in 0..<n {
         let x0 = -length / 2 + length * Double(k) / Double(n), x1 = -length / 2 + length * Double(k + 1) / Double(n)
-        let b0 = bottom(x0), b1 = bottom(x1)
+        let b0 = rise * bow(x0), b1 = rise * bow(x1)
+        let t0 = height + crown * bow(x0), t1 = height + crown * bow(x1)
         for s in [1.0, -1.0] {
             let nn = CV3(0, 0, s), z = s * thick / 2
-            mesh.quad(CV3(x0, b0, z), CV3(x1, b1, z), CV3(x1, height, z), CV3(x0, height, z), nn, nn, nn, nn, m)
+            mesh.quad(CV3(x0, b0, z), CV3(x1, b1, z), CV3(x1, t1, z), CV3(x0, t0, z), nn, nn, nn, nn, m)
         }
         let nb = CV3(b1 - b0, -(x1 - x0), 0).normalized
         mesh.quad(CV3(x0, b0, -thick / 2), CV3(x1, b1, -thick / 2), CV3(x1, b1, thick / 2), CV3(x0, b0, thick / 2), nb, nb, nb, nb, m)
-        mesh.quad(CV3(x0, height, -thick / 2), CV3(x1, height, -thick / 2), CV3(x1, height, thick / 2), CV3(x0, height, thick / 2), up, up, up, up, m)
+        let nt = CV3(-(t1 - t0), x1 - x0, 0).normalized
+        mesh.quad(CV3(x0, t0, -thick / 2), CV3(x1, t1, -thick / 2), CV3(x1, t1, thick / 2), CV3(x0, t0, thick / 2), nt, nt, nt, nt, m)
     }
     for s in [1.0, -1.0] {
         let nn = CV3(s, 0, 0), x = s * length / 2
@@ -1046,71 +1203,190 @@ private func varietyArchedApron(_ length: Double, height: Double, rise: Double, 
     return mesh
 }
 
+// 2026-10-22 判断（owner の実機「家具によって足が壊れてたりする」）: 棚を脚の形ごとに作り直した。前はキャスターの棚に
+// 車輪が無く胴が床から 1 cm 浮き、括れ脚は対角の 2 本だけで胴の 3 cm 下で終わり、台輪は胴に 4 cm 届かなかった。
+// いまは胴の下面（`lift`）に、台輪・細い脚（真鍮の沓）・括れ脚（隅の L の板 4）・キャスター（取付け板・金具・車輪）・
+// 床置き（裾の幅木）・駒脚（挽いた玉 4）のどれかが必ず届く。胴は箱・三段・縦長・低い櫃・格子・丸、前は戸・引き戸・
+// 引き出し・開いた棚（中に本）・硝子戸（中に器）・すだれ
 private func storage(_ piece: CamperRoomVariety.Piece) -> CamperMesh {
     let (body, front, legs, _) = piece.axes
     let hx = varietyHalf(piece.furniture.width), hz = varietyHalf(piece.furniture.depth)
-    let oak = varietyWood(body), metal = varietyMetal(front)
+    let oak = varietyWood(body), trim = varietyWood(body + 3), metal = varietyMetal(front)
     var parts: [CamperMesh] = []
-    let lift = legs == 4 ? 0.4 : 4.0
+    let round = body == 5
+    let bw = hx * 2 - 1.5, bd = hz * 2 - 1.5
+    let rr = min(bw, bd) / 2
+    let bodyH: Double
+    switch body {
+    case 1: bodyH = 30
+    case 2: bodyH = 44
+    case 3: bodyH = 16
+    case 4: bodyH = 26
+    default: bodyH = 24
+    }
+    let lift: Double
+    switch legs {
+    case 1: lift = 6
+    case 2: lift = 3
+    case 3: lift = 3.2
+    case 4: lift = 0
+    case 5: lift = 2.2
+    default: lift = 2.4
+    }
+    // 脚の芯（胴の隅から 1.4 内。丸い胴は斜めに）
+    let corner: [(Double, Double)] = round
+        ? [(-rr * 0.6, -rr * 0.6), (rr * 0.6, -rr * 0.6), (-rr * 0.6, rr * 0.6), (rr * 0.6, rr * 0.6)]
+        : [(-bw / 2 + 1.4, -bd / 2 + 1.4), (bw / 2 - 1.4, -bd / 2 + 1.4), (-bw / 2 + 1.4, bd / 2 - 1.4), (bw / 2 - 1.4, bd / 2 - 1.4)]
     switch legs {
     case 1:
-        for (x, z) in [(-hx + 1.4, -hz + 1.4), (hx - 1.4, -hz + 1.4), (-hx + 1.4, hz - 1.4), (hx - 1.4, hz - 1.4)] {
-            parts.append(varietyBox(CV3(1.2, lift, 1.2), CV3(x, 0, z), oak))
+        for (x, z) in corner {
+            parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(0.5, 0), CV2(0.56, 0.4), CV2(0.78, lift - 0.6), CV2(0.85, lift),
+                                                             CV2(0, lift)], segments: 12, trim), at: CV3(x, 0, z)))
+            parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(0.56, 0), CV2(0.62, 0.1), CV2(0.62, 0.8), CV2(0, 0.8)],
+                                                             segments: 12, metal), at: CV3(x, 0, z)))
         }
     case 2:
-        parts.append(varietyBox(CV3(hx * 2 - 2, 2.2, hz * 2 - 2), CV3(0, 0, 0), oak))
-        parts.append(varietyBox(CV3(hx * 1.2, lift - 2, hz * 1.2), CV3(0, 2.2, 0), oak))
-    case 3:
-        for (x, z) in [(-hx + 1.6, -hz + 1.6), (hx - 1.6, hz - 1.6)] {
-            parts.append(varietyBox(CV3(1.6, 1.2, 1.6), CV3(x, 0, z), metal))
-            parts.append(varietyBox(CV3(2.2, 1.6, 1.1), CV3(x, 1.2, z), metal))
-        }
-    case 5:
-        for (x, z) in [(-hx + 1.5, -hz + 1.5), (hx - 1.5, -hz + 1.5), (-hx + 1.5, hz - 1.5), (hx - 1.5, hz - 1.5)] {
-            parts.append(varietyBox(CV3(2.2, lift, 2.2), CV3(x, 0, z), oak))
-        }
-    case 0:
-        parts.append(varietyBox(CV3(hx * 2 - 1, 2.4, hz * 2 - 1), CV3(0, 0, 0), oak))
-    default:
-        break
-    }
-    let bodyH = 18 + Double(body) * 6
-    if body == 5 {
-        parts.append(VarietyKit.placed(VarietyKit.disc(radius: min(hx, hz) - 1, height: bodyH, bevel: 0.4, segments: 8, oak),
-                                       at: CV3(0, lift, 0)))
-    } else if body == 1 {
-        for k in 0..<3 {
-            parts.append(varietyBox(CV3(hx * 2 - 2, bodyH / 3 - 1, hz * 2 - 2), CV3(0, lift + Double(k) * bodyH / 3, 0),
-                                    k == 1 ? varietyWood(body + 1) : oak))
-        }
-    } else {
-        parts.append(varietyBox(CV3(hx * 2 - 1.5, bodyH, hz * 2 - 1.5), CV3(0, lift, 0), oak))
-    }
-    let doorY = lift + 4
-    let doorH = min(bodyH - 6, 28)
-    switch front {
-    case 1:
-        parts.append(varietyBox(CV3(hx - 1, doorH, 0.8), CV3(-hx * 0.45, doorY, hz - 0.6), oak))
-        parts.append(varietyBox(CV3(hx - 1, doorH, 0.8), CV3(hx * 0.45, doorY, hz - 0.6), oak))
-    case 2:
-        for k in 0..<3 {
-            parts.append(varietyBox(CV3(hx * 2 - 3, doorH / 3 - 0.8, 0.9), CV3(0, doorY + Double(k) * doorH / 3, hz - 0.5), oak))
-            parts.append(varietyBox(CV3(1.4, 0.6, 0.6), CV3(hx * 0.3, doorY + Double(k) * doorH / 3 + 1, hz), metal))
+        // 括れ脚（隅に L 字に組んだ 2 枚の板。外の面は下で括れる）
+        for (x, z) in corner {
+            let sx = x < 0 ? -1.0 : 1.0, sz = z < 0 ? -1.0 : 1.0
+            let cx = round ? x : sx * (bw / 2 - 1.6), cz = round ? z : sz * (bd / 2 - 1.6)
+            parts.append(VarietyKit.placed(varietyArchedApron(3.2, height: lift, rise: 1.0, thick: 0.9, trim),
+                                           at: CV3(cx, 0, cz + sz * 1.15)))
+            parts.append(VarietyKit.placed(varietyArchedApron(3.2, height: lift, rise: 1.0, thick: 0.9, trim),
+                                           at: CV3(cx + sx * 1.15, 0, cz), yaw: .pi / 2))
         }
     case 3:
-        for y in [doorY, doorY + doorH * 0.45] {
-            parts.append(varietyBox(CV3(hx * 2 - 4, 1.2, hz - 2), CV3(0, y, 0), oak))
+        // キャスター（取付け板・鉄の金具・ゴムの車輪）
+        for (x, z) in corner {
+            parts.append(varietyBox(CV3(2.4, 0.3, 2.4), CV3(x, lift - 0.3, z), .room(.iron)))
+            parts.append(varietyBox(CV3(1.4, 1.7, 1.2), CV3(x, 1.2, z), .room(.iron)))
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: 1.25, height: 0.8, bevel: 0.25, segments: 16, .room(.leather(0x1E1E1E))),
+                                           at: CV3(x + 0.4, 1.25, z), rotation: CQuat.axisAngle(CV3(0, 0, 1), .pi / 2)))
         }
     case 4:
-        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.5), CV3(0, doorY, hz - 0.4), .room(.clearGlass)))
-        parts.append(varietyBox(CV3(1.2, doorH, 1.2), CV3(-hx + 1.4, doorY, hz - 1), oak))
+        // 床置き（裾に一回り大きい幅木）
+        if round {
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr + 0.3, height: 1.2, bevel: 0.2, segments: 28, trim), at: .zero))
+        } else {
+            parts.append(varietyBox(CV3(bw + 0.6, 1.2, bd + 0.6), .zero, trim))
+        }
     case 5:
-        for x in stride(from: -hx + 2, through: hx - 2, by: 1.6) {
-            parts.append(varietyBox(CV3(0.35, doorH, 0.35), CV3(x, doorY, hz - 0.8), varietyWood(front)))
+        // 駒脚（挽いた玉の足 4）
+        for (x, z) in corner {
+            parts.append(VarietyKit.placed(VarietyKit.lathe([CV2(0, 0), CV2(0.9, 0), CV2(1.3, 0.6), CV2(1.25, 1.3), CV2(0.85, 1.8), CV2(1.0, lift),
+                                                             CV2(0, lift)], segments: 14, trim), at: CV3(x, 0, z)))
         }
     default:
-        parts.append(varietyBox(CV3(hx * 2 - 3, doorH, 0.8), CV3(0, doorY, hz - 0.5), oak))
-        parts.append(varietyBox(CV3(1.2, 0.7, 0.7), CV3(hx * 0.35, doorY + doorH * 0.5, hz), metal))
+        // 台輪（胴より引っ込めた台）
+        if round {
+            parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr - 0.8, height: lift, bevel: 0.2, segments: 28, trim), at: .zero))
+        } else {
+            parts.append(varietyBox(CV3(bw - 1.6, lift, bd - 1.6), .zero, trim))
+        }
+    }
+    // 胴（開いた棚・硝子戸・格子胴は中の見える箱。それ以外は詰まった箱）
+    let open = front == 3 || front == 4 || body == 4
+    let top = lift + bodyH
+    let t = 0.8
+    if round {
+        // 丸い胴（前だけ平らな面を出して戸・引き出しを付ける）
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr, height: bodyH, bevel: 0.4, segments: 32, oak), at: CV3(0, lift, 0)))
+        parts.append(VarietyKit.block(CV3(rr * 1.2, bodyH - 0.8, rr * 0.92), at: CV3(0, lift + 0.4, rr * 0.46), radius: 0.4, segments: 2, oak))
+        parts.append(VarietyKit.placed(VarietyKit.disc(radius: rr + 0.5, height: 0.9, bevel: 0.3, segments: 32, trim), at: CV3(0, top, 0)))
+    } else if open {
+        parts.append(varietyBox(CV3(bw, t, bd), CV3(0, lift, 0), oak))
+        for x in [-bw / 2 + t / 2, bw / 2 - t / 2] { parts.append(varietyBox(CV3(t, bodyH - t, bd), CV3(x, lift + t, 0), oak)) }
+        parts.append(varietyBox(CV3(bw - t * 2, bodyH - t, 0.6), CV3(0, lift + t, -bd / 2 + 0.3), trim))
+        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 2, oak))
+        // 中の棚板と、本・器
+        let shelves = max(1, Int(bodyH / 11))
+        for k in 1...shelves {
+            let y = lift + t + (bodyH - t) * Double(k) / Double(shelves + 1)
+            parts.append(varietyBox(CV3(bw - t * 2, 0.6, bd - 1), CV3(0, y - 0.6, 0.2), oak))
+        }
+        for k in 0..<5 {
+            let x = -bw / 2 + 2.5 + Double(k) * 1.5
+            parts.append(varietyBox(CV3(1.2, 5 + Double(k % 3), bd * 0.55), CV3(x, lift + t, -1), .room(.painted([0x7A2E22, 0x2F4F74, 0xC9B79A, 0x4E6B4A, 0x8C6E5A][k]))))
+        }
+        parts.append(CamperRoomShapes.mug(at: CV3(bw / 4, lift + t, 0), body: .room(.ceramic(0xEFEAE2)), rim: .room(.ceramic(0xB09A78)), yaw: 0.4))
+        if body == 4 {
+            // 格子胴（両脇の格子）
+            for x in [-bw / 2 - 0.2, bw / 2 + 0.2] {
+                for k in 1...4 {
+                    let z = -bd / 2 + bd * Double(k) / 5
+                    parts.append(varietyBox(CV3(0.4, bodyH - 2, 0.5), CV3(x, lift + 1, z), trim))
+                }
+            }
+        }
+    } else {
+        if body == 1 {
+            // 三段（段ごとに少しずつ幅を詰める・段の継ぎ目。奥行きはそろえて前の戸が段から離れない）
+            for k in 0..<3 {
+                let inset = Double(k) * 0.6
+                parts.append(VarietyKit.block(CV3(bw - inset, bodyH / 3, bd), at: CV3(0, lift + Double(k) * bodyH / 3, 0), radius: 0.35,
+                                              segments: 2, oak))
+            }
+        } else {
+            parts.append(VarietyKit.block(CV3(bw, bodyH, bd), at: CV3(0, lift, 0), radius: 0.4, segments: 2, oak))
+        }
+        parts.append(VarietyKit.block(CV3(bw + 0.8, 1.0, bd + 0.6), at: CV3(0, top, 0.2), radius: 0.3, segments: 2, body == 3 ? trim : oak))
+        if body == 3 {
+            // 低い櫃（上の四隅に真鍮の角金具）
+            for x in [-bw / 2 + 0.7, bw / 2 - 0.7] {
+                for z in [-bd / 2 + 0.7, bd / 2 - 0.5] { parts.append(varietyBox(CV3(1.8, 1.8, 1.8), CV3(x, top - 1.2, z), metal)) }
+            }
+        }
+    }
+    // 前
+    let zf = round ? rr * 0.92 : bd / 2
+    let fw = round ? rr * 1.2 - 1 : bw - 2
+    let doorY = lift + (open && !round ? t + 0.3 : 1.2)
+    let doorH = bodyH - (open && !round ? t + 0.6 : 2.4)
+    switch front {
+    case 1:
+        // 引き戸（前後にずらした 2 枚・引き手の窪み）
+        for (k, s) in [-1.0, 1.0].enumerated() {
+            let z = zf + (k == 0 ? 0.25 : 0.7)
+            parts.append(VarietyKit.block(CV3(fw / 2 + 0.4, doorH, 0.45), at: CV3(s * fw / 4, doorY, z), radius: 0.12, segments: 1, varietyWood(body + 2)))
+            parts.append(varietyBox(CV3(0.5, 1.6, 0.2), CV3(s * (fw / 2 - 1.4), doorY + doorH / 2 - 0.8, z + 0.25), .room(.iron)))
+        }
+    case 2:
+        // 引き出し（段ごとの前板と真鍮の取っ手）
+        let n = bodyH > 30 ? 5 : (bodyH > 20 ? 3 : 2)
+        let h = doorH / Double(n)
+        for k in 0..<n {
+            let y = doorY + Double(k) * h
+            parts.append(VarietyKit.block(CV3(fw, h - 0.4, 0.5), at: CV3(0, y + 0.2, zf + 0.2), radius: 0.15, segments: 1, varietyWood(body + 2)))
+            parts.append(VarietyKit.tube([CV3(-1.6, y + h / 2, zf + 0.75), CV3(1.6, y + h / 2, zf + 0.75)], radius: 0.22, sides: 8, metal))
+        }
+    case 3:
+        break
+    case 4:
+        // 硝子戸（框の戸 2 枚に板硝子・つまみ）
+        for s in [-1.0, 1.0] {
+            let cx = s * fw / 4
+            for x in [cx - fw / 4 + 0.6, cx + fw / 4 - 0.6] { parts.append(varietyBox(CV3(1.2, doorH, 0.6), CV3(x, doorY, zf + 0.3), oak)) }
+            for y in [doorY, doorY + doorH - 1.2] { parts.append(varietyBox(CV3(fw / 2 - 2.4, 1.2, 0.6), CV3(cx, y, zf + 0.3), oak)) }
+            parts.append(varietyBox(CV3(fw / 2 - 2.4, doorH - 2.4, 0.2), CV3(cx, doorY + 1.2, zf + 0.3), .room(.clearGlass)))
+            parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 0.4, segments: 10, metal), at: CV3(s * 1.4, doorY + doorH / 2, zf + 0.9)))
+        }
+    case 5:
+        // すだれ（細い竹を縦に並べ、上の巻きと紐）
+        let n = Int(fw / 0.9)
+        for k in 0..<n {
+            let x = -fw / 2 + 0.45 + Double(k) * fw / Double(n)
+            parts.append(VarietyKit.tube([CV3(x, doorY, zf + 0.5), CV3(x, doorY + doorH - 1.2, zf + 0.5)], radius: 0.2, sides: 5, .room(.rush)))
+        }
+        parts.append(VarietyKit.tube([CV3(-fw / 2, doorY + doorH - 0.7, zf + 0.6), CV3(fw / 2, doorY + doorH - 0.7, zf + 0.6)],
+                                     radius: 0.6, sides: 10, .room(.rushEdge)))
+    default:
+        // 開き戸（鏡板の戸 2 枚・つまみ）
+        for s in [-1.0, 1.0] {
+            let cx = s * fw / 4
+            parts.append(VarietyKit.block(CV3(fw / 2 - 0.2, doorH, 0.6), at: CV3(cx, doorY, zf + 0.2), radius: 0.15, segments: 1, varietyWood(body + 2)))
+            parts.append(VarietyKit.block(CV3(fw / 2 - 2.4, doorH - 2.4, 0.3), at: CV3(cx, doorY + 1.2, zf + 0.6), radius: 0.3, segments: 2, oak))
+            parts.append(VarietyKit.placed(VarietyKit.sphere(radius: 0.45, segments: 10, metal), at: CV3(s * 1.2, doorY + doorH / 2, zf + 1.0)))
+        }
     }
     return varietyMerge(parts)
 }

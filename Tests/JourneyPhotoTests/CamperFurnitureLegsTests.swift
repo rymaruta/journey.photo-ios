@@ -40,13 +40,8 @@ final class CamperFurnitureLegsTests: XCTestCase {
 
     /// まだ作り直していない家具（2026-10-22。1 つ直すごとにここから外す。ここに無い床の家具は全部、組み立ての崩れが無いこと）
     static let pending: [String: String] = [
-        "bed.x": "組み合わせの寝台（枠の形 7 種）",
-        "storage.x": "組み合わせの棚（脚の形 6 種）",
         "heater.x": "組み合わせの暖炉（足の形 4 種）",
         "floor_lamp.x": "組み合わせの床の灯り（足の形）",
-        "bed.bunk": "二段寝台のはしごの上端",
-        "bed.daybed": "デイベッドの脚",
-        "storage.trunk": "旅の鞄の足",
         "utility.step_stool": "踏み台の脚",
         "plant_pot.herb_box": "ハーブ箱の脚と葉",
         "audio.travel_radio": "旅のラジオの革の帯",
@@ -79,14 +74,13 @@ final class CamperFurnitureLegsTests: XCTestCase {
         XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
     }
 
-    /// 椅子と机は全部、脚の形ごとに作り直した（組み合わせの椅子 220・机 180 が数に入っている）
-    func testSeatsAndTablesAreAllChecked() {
-        for cat in [CamperRoomCategory.seating, .table] {
+    /// 椅子・机・寝台・棚は全部、脚の形ごとに作り直した（組み合わせの椅子 220・机 180・寝台 160・棚 200 が数に入っている）
+    func testRebuiltCategoriesAreAllChecked() {
+        for (cat, count) in [(CamperRoomCategory.seating, 220), (.table, 180), (.bed, 160), (.storage, 200)] {
             XCTAssertNil(Self.pending["\(cat.rawValue).x"], "\(cat) がまだ作り直しの待ちにある")
             XCTAssertTrue(CamperRoomVariety.craftedLegs.contains(cat))
+            XCTAssertEqual(CamperRoomVariety.pieces.filter { $0.furniture.category == cat }.count, count)
         }
-        XCTAssertEqual(CamperRoomVariety.pieces.filter { $0.furniture.category == .seating }.count, 220)
-        XCTAssertEqual(CamperRoomVariety.pieces.filter { $0.furniture.category == .table }.count, 180)
     }
 
     /// 脚の接写の一覧は、脚のある板の家具全部と、組み合わせの「分類 × 脚の形」を 1 つずつ、重ならずに並べる

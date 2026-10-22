@@ -192,7 +192,8 @@ enum CamperRoomLegs {
                 let out_ = max(0, minX - leg.lo.x, leg.hi.x - maxX, minZ - leg.lo.z, leg.hi.z - maxZ)
                 if out_ > 0.6 { out.append("脚が座・天板の外へ \(fmt(out_))（\(where_(leg))）") }
             }
-            for j in above { carried[j, default: []].append(i) }
+            // 長さをそろえるのは、上端で下面を受ける物ごと（胴の横を上る帯・框に差し込んだ柱は比べない）
+            for j in above where ps[j].lo.y >= leg.hi.y - 1.5 { carried[j, default: []].append(i) }
         }
         var uneven = Set<String>()
         for (_, legs) in carried where legs.count >= 2 {

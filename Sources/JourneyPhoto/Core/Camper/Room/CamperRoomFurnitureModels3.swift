@@ -42,8 +42,8 @@ extension CamperRoomFurnitureModels {
     static func daybed() -> CamperMesh {
         let oak = R(.wood(.oak)), dark = R(.wornWood(.darkOak))
         var parts: [CamperMesh] = []
-        // 脚と框（8×3 マス・高さ 36）
-        for (x, z) in [(-38.0, -13.5), (38.0, -13.5), (-38.0, 13.5), (38.0, 13.5)] {
+        // 脚と框（8×3 マス・高さ 36）。2026-10-22: 脚は両端の格子の真下に（前は格子と框の外へ 2 cm はみ出した）
+        for (x, z) in [(-37.5, -12.9), (37.5, -12.9), (-37.5, 12.9), (37.5, 12.9)] {
             parts.append(K.block(CV3(3.2, 12, 3.2), at: CV3(x, 0, z), radius: 0.55, oak))
         }
         for z in [-13.8, 13.8] { parts.append(K.block(CV3(74, 5.5, 2.2), at: CV3(0, 6.5, z), radius: 0.55, oak)) }
