@@ -58,6 +58,10 @@ final class CamperRoomScene {
     private var paint: UInt32 = 0x5B6168
     /// 組み終えたら呼ぶ（読み上げの値・画面写真の試験が待つ）
     var onReady: ((String) -> Void)?
+    /// いま額に**印画が載っている**写真（額の uid → 1枚目の写真 id）。UI テストが「飾った写真が額に写ったか」を
+    /// 読む（`CriticalFlowTests`・2026-10-22）。載せ替えるたびに `onFramed` で知らせる
+    private(set) var framedPhotos: [String: String] = [:]
+    var onFramed: (([String: String]) -> Void)?
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
@@ -405,12 +409,14 @@ final class CamperRoomScene {
             photos = it.photos
         }
         var mats = g.materials
+        var shown: String?
         for (i, group) in mesh.groups.enumerated() where i < mats.count {
             guard case .room(.photo(let slot)) = group.material else { continue }
             let index = Int(slot.dropFirst(4)) ?? 0
             let m = mats[i]
             palette.configure(m, CamperMaterials.spec(group.material, paint: paint, mood: mood))
             if index < photos.count, let image = photoImages[photos[index]] {
+                if index == 0 { shown = photos[0] }
                 // 印画は光を受けない。夜の壁は暗く、窓と同じ硝子だと白い板になって、飾った写真が消える
                 m.lightingModel = .constant
                 // UIImage のまま渡すと端末によって黒い面になることがあるので CGImage にする
@@ -438,6 +444,10 @@ final class CamperRoomScene {
             mats[i] = m
         }
         g.materials = mats
+        if framedPhotos[it.uid] != shown {
+            framedPhotos[it.uid] = shown
+            onFramed?(framedPhotos)
+        }
     }
 
     /// 部屋を組み上げ、SCNView が画面に大きさを持って載っているか（外から入る時の覆いを消してよいか・2026-10-21）

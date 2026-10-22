@@ -205,10 +205,13 @@ struct SignInView: View {
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
+                    .accessibilityIdentifier("signin.email")
             }
             JPField(L("パスワード", "Password")) {
                 SecureField("", text: $password)
                     .textContentType(mode == .signUp ? .newPassword : .password)
+                    .accessibilityIdentifier("signin.password")
             }
             if mode == .signUp {
                 JPField(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
@@ -263,6 +266,7 @@ struct SignInView: View {
             .buttonStyle(.plain)
             .disabled(!canSubmit)
             .opacity(canSubmit ? 1 : 0.4)
+            .accessibilityIdentifier("signin.submit")
 
             // 2番手は枠線のカプセル（板）
             Button {

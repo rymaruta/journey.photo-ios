@@ -64,6 +64,9 @@ struct CamperRoomView: View {
     /// 二度押しを見分ける（前に押した時刻と場所）
     @State private var lastTap: (at: Date, point: CGPoint)?
     @State private var readyMarker = ""
+    /// 額に写っている写真（読み上げの値の後ろに ` framed=<id>,<id>` で足す・見本の起動のときだけ）。
+    /// UI テストが「飾った写真が額に写ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
+    @State private var framedMarker = ""
     @State private var viewport = CGSize(width: 390, height: 440)
     @State private var notice: String?
     @State private var lifted = 0
@@ -427,6 +430,8 @@ struct CamperRoomView: View {
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil, onReady: { marker in
             readyMarker = marker
+        }, onFramed: { framed in
+            framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
         }, onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
@@ -436,7 +441,7 @@ struct CamperRoomView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAddTraits(.isImage)
-        .accessibilityValue(PreviewSession.userId != nil ? readyMarker : "")
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + framedMarker : "")
     }
 
     /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする
@@ -1380,6 +1385,8 @@ struct CamperRoomView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(p.accessibilityText)
+                            // 見本の起動のときだけ写真の id を値に出す（UI テストが額に写ったかと突き合わせる・2026-10-22）
+                            .accessibilityValue(PreviewSession.userId != nil ? p.id : "")
                             .accessibilityAddTraits(on ? .isSelected : [])
                             .accessibilityIdentifier("camper.room.photo")
                         }

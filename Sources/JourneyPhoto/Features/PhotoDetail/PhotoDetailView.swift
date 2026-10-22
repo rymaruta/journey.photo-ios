@@ -155,7 +155,7 @@ struct PhotoDetailView: View {
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
             photoId: photo.id,
-            social: SocialService(api: APIClient(tokenProvider: CognitoTokenProvider())),
+            social: SocialService(api: .app()),
             initialLikes: photo.likes
         ))
     }
@@ -1361,6 +1361,8 @@ struct PhotoDetailView: View {
                 .accessibilityLabel(L("いいね", "Like"))
                 .accessibilityValue(model.likes.map { "\($0)" } ?? "")
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
+                // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
+                .accessibilityIdentifier("photo.like")
 
                 // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる。
@@ -1389,6 +1391,7 @@ struct PhotoDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("保存", "Save"))
                 .accessibilityAddTraits(savedPhotos.contains(current.id) ? .isSelected : [])
+                .accessibilityIdentifier("photo.save")
 
                 // **シェア**（配るのは画像ではなくページ）。個別ページが無い写真では
                 // 出さない——そのときは3つが両端揃えで並ぶ
@@ -1524,6 +1527,7 @@ struct PhotoDetailView: View {
                     // v2 の板: 入力欄の地（surface-2）と白 8% の縁
                     .background(WebTheme.sheet, in: Capsule())
                     .overlay(Capsule().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                    .accessibilityIdentifier("photo.commentField")
                 let canSend = !(model.isPosting || model.isReloadingComments
                                 // 空の判定は `postComment` と同じ（改行だけでも押せない）
                                 || model.draftComment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1543,6 +1547,7 @@ struct PhotoDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.send)
+                .accessibilityIdentifier("photo.commentSend")
                 // コメントを読み直している間も押せない（`postComment` は黙って断るので、押せる形にしない）
                 .disabled(!canSend)
             }

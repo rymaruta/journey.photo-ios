@@ -82,11 +82,12 @@ struct UploadView: View {
         self.startPrivate = startPrivate
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
-        let api = APIClient(tokenProvider: CognitoTokenProvider())
+        let api = APIClient.app()
         // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
         _model = StateObject(wrappedValue: {
             let model = UploadViewModel(
-                uploads: UploadService(api: api),
+                // 見本の通信（UI テスト）では本体も端末の中の答え手へ（`PreviewBackend.session`・ふだんは nil）
+                uploads: UploadService(api: api, session: PreviewBackend.session),
                 albums: AlbumService(api: api),
                 photos: PhotoService(api: api),
                 discovery: DiscoveryService(api: api)
@@ -568,6 +569,8 @@ struct UploadView: View {
                             : (model.items.count > 1
                                ? L("\(model.items.count) 枚を投稿する", "Post \(model.items.count) photos")
                                : L("投稿する", "Post"))))
+        // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
+        .accessibilityIdentifier("upload.submit")
     }
 
     /// 選んだ写真の帯（v2 の板: 84×104・角丸12、右上に外す丸、左上に番号、最後に「追加」）。
@@ -903,6 +906,8 @@ struct UploadView: View {
                 JPField(L("タイトル", "Title")) {
                     TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: $item.title)
+                        // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
+                        .accessibilityIdentifier("upload.title")
                         .onChange(of: item.title) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
                             if kept != value { item.title = kept }

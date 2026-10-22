@@ -149,7 +149,7 @@ final class PushCenter: ObservableObject {
     /// 返ってこず、Mac の試験が2時間止まった（2026-10-11）
     private let requestPermission: () async throws -> Bool
 
-    init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
+    init(service: @escaping () -> PushService = { PushService(api: .app()) },
          defaults: UserDefaults = .standard,
          releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() },
          readAuthorization: @escaping () async -> Bool = {
