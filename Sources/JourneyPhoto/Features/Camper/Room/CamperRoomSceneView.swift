@@ -33,9 +33,11 @@ struct CamperRoomSceneView: UIViewRepresentable {
     var studio = false
     /// 押して置くときの置ける所（薄い白のマス）
     var hints: CamperRoomFitArea?
-    var onReady: (String) -> Void = { _ in }
-    /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）。nil なら測らない
+    /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）。nil なら測らない。
+    /// **`onReady` より前に置く**（後ろに置くと、Swift 5 の後ろから合わせる規則で、末尾の閉包 `{ ready = $0 }` が
+    /// こちらに渡り、図鑑の寄りが「組み終えた」を出さなくなった・Mac run 654）
     var onProbe: ((String) -> Void)?
+    var onReady: (String) -> Void = { _ in }
 
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
 

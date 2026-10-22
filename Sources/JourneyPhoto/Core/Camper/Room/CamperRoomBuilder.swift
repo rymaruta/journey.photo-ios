@@ -122,6 +122,12 @@ enum CamperRoomBuilder {
         return K.block(CV3(b - a, 0.6, t + 0.3), at: CV3((a + b) / 2, top, -t / 2), radius: 0.12, R(.trim))
     }
 
+    /// 壁の切れた縦の端の木口（3 層の断面を覆う板）。外形の横 `x` の外側（`outward` の向き）に、高さ -3〜`top` で立てる
+    static func endBoard(at x: Double, outward: Double, top: Double) -> CamperMesh {
+        let t = CamperRoomLayout.wallThickness
+        return K.block(CV3(0.3, top + 3, t + 0.3), at: CV3(x + outward * 0.15, -3, -t / 2), radius: 0.1, R(.trim))
+    }
+
     static func windowHole(_ w: CamperRoomWindow) -> [CV2] {
         let cell = CamperRoomLayout.cell
         return CamperPolygon.roundedRect(x: Double(w.from) * cell + 2, y: w.bottom, w: Double(w.to - w.from + 1) * cell - 4, h: w.top - w.bottom, r: 4,
@@ -133,7 +139,9 @@ enum CamperRoomBuilder {
         var out: [CamperNodeSpec] = []
         // 奥の壁（z = 0・+Z 向き）
         let backHoles = l.windows.filter { $0.wall == .back }.map(windowHole)
-        let back = wallLayers(outline: [CV2(-t, -3), CV2(s.x + t, -3), CV2(s.x + t, h), CV2(-t, h)], holes: backHoles, style: style, paint: paint)
+        var back = wallLayers(outline: [CV2(-t, -3), CV2(s.x + t, -3), CV2(s.x + t, h), CV2(-t, h)], holes: backHoles, style: style, paint: paint)
+        // 両端（端の壁を低く切った向きで、断面が見える）
+        back = K.merge([back, endBoard(at: -t, outward: -1, top: h), endBoard(at: s.x + t, outward: 1, top: h)])
         out.append(node("room.wall.back", back))
         // 角の柱は 1 枚の壁だけの物にする（2 枚が同じ所に重なると外の面・天端が同じ平面でちらつく・2026-10-21 owner）:
         // 奥の角は奥の壁、扉の側の角は両端の壁。両端の壁は z = 0 から扉の壁の外の面まで
@@ -142,12 +150,15 @@ enum CamperRoomBuilder {
         for (name, height, holes) in [("room.end.rear.full", h, leftHoles), ("room.end.rear.low", cutHeight, [])] {
             var m = wallLayers(outline: [CV2(-(s.z + t), -3), CV2(0, -3), CV2(0, height), CV2(-(s.z + t), height)], holes: holes, style: style, paint: paint)
             if height < h { m = K.merge([m, cutCap(from: -(s.z + t), to: 0, top: height)]) }
+            // 扉の側の端（断熱の層の断面が見える）
+            m = K.merge([m, endBoard(at: -(s.z + t), outward: -1, top: height < h ? height + 0.6 : height)])
             out.append(node(name, K.placed(m, at: .zero, yaw: .pi / 2)))
         }
         // 前の仕切り（x = 幅・-X 向き。運転席との境）
         for (name, height) in [("room.end.front.full", h), ("room.end.front.low", cutHeight)] {
             var m = wallLayers(outline: [CV2(0, -3), CV2(s.z + t, -3), CV2(s.z + t, height), CV2(0, height)], holes: [], style: style, paint: paint)
             if height < h { m = K.merge([m, cutCap(from: 0, to: s.z + t, top: height)]) }
+            m = K.merge([m, endBoard(at: s.z + t, outward: 1, top: height < h ? height + 0.6 : height)])
             out.append(node(name, K.placed(m, at: CV3(s.x, 0, 0), yaw: -.pi / 2)))
         }
         // 扉の壁（z = 奥行き・-Z 向き）は、いつも高さ 9 で切る。扉の口は切れ目。

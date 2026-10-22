@@ -382,8 +382,8 @@ struct CamperRoomView: View {
                             editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil,
-                            onReady: { marker in readyMarker = marker },
-                            onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil)
+                            onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil,
+                            onReady: { marker in readyMarker = marker })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)

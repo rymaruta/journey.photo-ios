@@ -678,6 +678,16 @@ final class CamperRoomTests: XCTestCase {
                         XCTAssertEqual(top.m, .room(.trim), "\(stage) \(kind) 向き \(yaw): \(pr) の天端が木口の板でない")
                         XCTAssertGreaterThanOrEqual(top.y, cut, "\(stage) \(kind) 向き \(yaw): \(pr) の天端が切った高さより下")
                     }
+                    // 扉の側から見た、切った端の壁の縦の端（断熱の層の断面）も木口の板
+                    let endX = cam.cutsFrontEnd ? s.x + t / 2 : -t / 2
+                    var front: (z: Double, m: CamperMaterial)?
+                    for t in tris where t.n.z > 0.99 {
+                        let flat = { (p: CV3) in CV3(p.x, 0, p.y) }
+                        guard Self.pointInTriangleXZ(CV2(endX, cut / 2), flat(t.a), flat(t.b), flat(t.c)) else { continue }
+                        let z = (t.a.z + t.b.z + t.c.z) / 3
+                        if front == nil || z > front!.z { front = (z, t.material) }
+                    }
+                    XCTAssertEqual(front?.m, .room(.trim), "\(stage) \(kind) 向き \(yaw): 切った端の壁の縦の端が木口の板でない")
                 }
             }
         }
