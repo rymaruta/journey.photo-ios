@@ -3642,7 +3642,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(hang.waitForExistence(timeout: 5), "「この額に飾る」が無い")
         hang.tap()
         let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        let shown = NSPredicate(format: "value MATCHES %@", ".*photos=[1-9][0-9]*/[0-9]+ rect=[0-9]+,[0-9]+,[0-9]+,[0-9]+.*")
+        let shown = NSPredicate(format: "value MATCHES %@", ".*photos=[1-9][0-9]*/[0-9]+ uvOut=[0-9.]+ rect=[0-9]+,[0-9]+,[0-9]+,[0-9]+.*")
         let waited = XCTWaiter().wait(for: [expectation(for: shown, evaluatedWith: scene)], timeout: 45)
         let value = (scene.value as? String) ?? ""
         print("CAMPERPHOTO 値: \(value)")
@@ -3653,6 +3653,8 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1.5)
         shoot(app, "96h-額に写真を飾った")
+        // 写真の外を読まない（読むと端の画素が伸びて縦の筋になる・2026-10-22 楕円の額）
+        XCTAssertTrue(value.contains("uvOut=0.00"), "印画が写真の外を読む: \(value)")
         // 印画の四角（SCNView の点）の内側 6 割の画素が一色でないこと
         let numbers = value.components(separatedBy: "rect=").last?.split(separator: " ").first?.split(separator: ",").compactMap { Double($0) } ?? []
         guard numbers.count == 4 else { return XCTFail("印画の四角を読めない: \(value)") }
@@ -3769,6 +3771,37 @@ final class ScreenshotTests: XCTestCase {
             // 頁を初めに戻して、昼と夜を替える
             while prev.exists, prev.isEnabled { prev.tap() }
             if mood == "day" { app.buttons["camper.room.contact.mood"].firstMatch.tap() }
+        }
+    }
+
+    /// **額の頁**（`-JPPreviewCamperRoomFrames`・2026-10-22 owner の実機: 楕円の額で写真が縦の筋に崩れた）: 写真を入れられる
+    /// 全部の額に、自分の本物の写真（横長・縦長の 1 枚ずつ。飾る時と同じ読み込み）を入れた接写を昼に**必ず撮る**。
+    /// どの頁でも印画が写真の外を読まないこと（`uvOut=0.00`）、横長と縦長の写真が選べたことを確かめる
+    func testCapturesCamperRoomFrameSheet() {
+        executionTimeAllowance = 3000
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomFrames", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "額の頁が出ない")
+        let next = app.buttons["camper.room.contact.next"].firstMatch
+        var page = 1
+        while page <= 90 {
+            let ready = waitRoom(app, "camper.room.contact", "contact-ready day \(page)/", timeout: 90)
+            let value = (sheet.value as? String) ?? ""
+            print("CAMPERFRAMES \(page): \(value)")
+            XCTAssertTrue(ready, "額の頁 \(page) を描き終えない（\(value)）")
+            XCTAssertTrue(value.contains("uvOut=0.00"), "額の頁 \(page): 印画が写真の外を読む（端の画素が伸びて筋になる）: \(value)")
+            if page == 1 {
+                XCTAssertFalse(value.contains("wide=-") || value.contains("tall=-"), "写真が読めない: \(value)")
+            }
+            let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
+            let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
+            shot.name = String(format: "96k-写真を入れた額（%02d）", page)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.exists, next.isEnabled else { break }
+            next.tap()
+            page += 1
         }
     }
 

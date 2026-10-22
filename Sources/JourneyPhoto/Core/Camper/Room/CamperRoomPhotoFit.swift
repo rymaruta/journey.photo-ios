@@ -3,18 +3,23 @@ import Foundation
 /// 額の印画の縦横比合わせ（2026-10-21）。パネル全面に伸ばさず、中央で切り取る（aspect-fill）。
 enum CamperRoomPhotoFit {
 
-    /// UV の scale / offset（SceneKit の `contentsTransform` 用）。`imageAspect`・`panelAspect` は 幅/高さ。
+    /// 貼り絵の位置の scale / offset（SceneKit の `contentsTransform` 用・`u' = u × scale + offset`）。`imageAspect`・`panelAspect` は 幅/高さ。
+    /// パネルの 0〜1 を、写真の真ん中のパネルと同じ縦横比の範囲（0〜1 の内）に写す（aspect-fill・はみ出す側を切る）。
+    ///
+    /// 2026-10-22（owner の実機: 楕円の額で写真が縦の筋に崩れた）: 以前は切る向きの逆（scale > 1）を返していた。貼り絵の位置を
+    /// 1 より大きく伸ばすと、写真の外（0〜1 の外）を読み、端の画素が `clamp` で伸びて縦の筋になる。横長の額に横長の写真では
+    /// 比がほぼ同じで目立たず、縦長の楕円の額で崩れた
     static func uvFit(imageAspect: Double, panelAspect: Double) -> (scaleX: Double, scaleY: Double, offsetX: Double, offsetY: Double) {
         let ia = max(1e-6, imageAspect), pa = max(1e-6, panelAspect)
         if ia > pa {
-            // 画像の方が横長 → 高さいっぱいに合わせ、左右を切る
-            let sx = ia / pa
-            return (sx, 1, (1 - 1 / sx) / 2, 0)
+            // 写真の方が横長 → 高さいっぱい・横は真ん中の pa/ia だけ
+            let k = pa / ia
+            return (k, 1, (1 - k) / 2, 0)
         }
         if ia < pa {
-            // 画像の方が縦長 → 幅いっぱいに合わせ、上下を切る
-            let sy = pa / ia
-            return (1, sy, 0, (1 - 1 / sy) / 2)
+            // 写真の方が縦長 → 幅いっぱい・縦は真ん中の ia/pa だけ
+            let k = ia / pa
+            return (1, k, 0, (1 - k) / 2)
         }
         return (1, 1, 0, 0)
     }

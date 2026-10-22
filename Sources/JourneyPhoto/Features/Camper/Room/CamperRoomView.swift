@@ -151,7 +151,7 @@ struct CamperRoomView: View {
                               onSeen: { markSeen($0) }) { showDex = false }
         }
         .fullScreenCover(isPresented: $showContact) {
-            CamperRoomContactSheet(paint: paint) { showContact = false }
+            CamperRoomContactSheet(paint: paint, frames: CamperRoomPreview.frames, photos: hangablePhotos) { showContact = false }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: lifted)
         // マスに吸い付くたびに軽く・置けたら成功の触覚（2026-10-21）
@@ -214,7 +214,7 @@ struct CamperRoomView: View {
         recount()
         openRoom()
         if CamperRoomPreview.lift { showLiftPreview() }
-        if CamperRoomPreview.contact { showContact = true }
+        if CamperRoomPreview.contact || CamperRoomPreview.frames { showContact = true }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
     }
 

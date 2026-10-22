@@ -6,6 +6,7 @@ import Foundation
 /// - `-JPPreviewCamperRoomContact YES`: 部屋に入ったら、板と別種の家具全部を本物の SceneKit で描いた「接写の一覧」を出す
 ///   （2026-10-21・ソフトラスタではなく本物の絵で全家具の出来を見るため）
 /// - `-JPPreviewCamperRoomCoach YES`: 初めての人への手引きと、新しい家具の印を出す（覚えずに毎回）
+/// - `-JPPreviewCamperRoomFrames YES`: 写真を入れられる全部の額に、自分の写真（横長と縦長）を入れた接写の一覧を出す
 /// - `-JPPreviewCamperRoomCamera corner|curtain`: 部屋に入った時の向き（手前の右の角・窓の脇のカーテンへ寄る。2026-10-21
 ///   owner の実機の寄りの絵と同じ所を撮るため）
 enum CamperRoomPreview {
@@ -25,6 +26,9 @@ enum CamperRoomPreview {
     static let liftKey = "JPPreviewCamperRoomLift"
     static let contactKey = "JPPreviewCamperRoomContact"
     static let coachKey = "JPPreviewCamperRoomCoach"
+    /// 写真を入れられる全部の額に、本物の写真（横長・縦長）を入れた接写の一覧（2026-10-22・楕円の額で写真が筋に崩れた）
+    static let framesKey = "JPPreviewCamperRoomFrames"
+    static var frames: Bool { flag(framesKey) }
 
     static var reset: Bool { flag(resetKey) }
     static var lift: Bool { flag(liftKey) }

@@ -880,16 +880,58 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
-    /// 縦長の写真を横長の額に載せるときは左右を切る（全面伸ばしにしない）
-    func testPhotoFitCenterCropsWiderImage() {
-        let fit = CamperRoomPhotoFit.uvFit(imageAspect: 1.5, panelAspect: 1.0)
-        XCTAssertEqual(fit.scaleX, 1.5, accuracy: 1e-9)
-        XCTAssertEqual(fit.scaleY, 1, accuracy: 1e-9)
-        XCTAssertEqual(fit.offsetX, (1 - 1 / 1.5) / 2, accuracy: 1e-9)
-        XCTAssertEqual(fit.offsetY, 0, accuracy: 1e-9)
-        let tall = CamperRoomPhotoFit.uvFit(imageAspect: 0.75, panelAspect: 1.5)
-        XCTAssertEqual(tall.scaleX, 1, accuracy: 1e-9)
-        XCTAssertGreaterThan(tall.scaleY, 1)
+    /// 写真を入れられる全部の額の印画の貼り絵の位置は、パネルの面に平行な 2 軸（右・上）へ投影して外接箱で 0〜1 にしたもの
+    /// （u は右へ増え、v は下へ増える＝上下逆・鏡写しにしない）。2026-10-22 owner の実機: 楕円の額で写真が縦の筋に崩れた
+    func testEveryPhotoPanelHasPlanarUVs() throws {
+        var checked = 0
+        var broken: [String] = []
+        for f in CamperRoomCatalog.all where f.built {
+            guard let m = CamperRoomFurnitureModels.mesh(f.id) else { continue }
+            for g in m.groups {
+                guard case .room(.photo) = g.material, g.indices.count >= 3 else { continue }
+                // 三連の額は 1 枚の写真を 3 枚の板に分けて貼る（板の間の隙間の分だけ外接箱とずれる・それで正しい）
+                if f.id == "photo_frame.triptych" { continue }
+                checked += 1
+                let a = m.positions[Int(g.indices[0])], b = m.positions[Int(g.indices[1])], c = m.positions[Int(g.indices[2])]
+                var n = (b - a).cross(c - a).normalized
+                // 面の向き（どの三角でも同じ向きに揃える: 表の点の法線と同じ側）
+                if n.dot(m.normals[Int(g.indices[0])]) < 0 { n = n * -1 }
+                let up = abs(n.y) > 0.9 ? CV3(0, 0, -1) : CV3(0, 1, 0)
+                let uAxis = up.cross(n).normalized
+                let vAxis = n.cross(uAxis).normalized
+                let ids = Set(g.indices.map { Int($0) })
+                let us = ids.map { m.positions[$0].dot(uAxis) }, vs = ids.map { m.positions[$0].dot(vAxis) }
+                let u0 = us.min()!, u1 = us.max()!, v0 = vs.min()!, v1 = vs.max()!
+                var worst = 0.0
+                for i in ids {
+                    let p = m.positions[i]
+                    let eu = (p.dot(uAxis) - u0) / max(1e-9, u1 - u0)
+                    let ev = 1 - (p.dot(vAxis) - v0) / max(1e-9, v1 - v0)
+                    worst = max(worst, abs(m.uvs[i].x - eu), abs(m.uvs[i].y - ev))
+                }
+                if worst > 0.06 { broken.append("\(f.id) \(g.material) ずれ \(String(format: "%.2f", worst))") }
+            }
+        }
+        XCTAssertGreaterThan(checked, 10)
+        XCTAssertEqual(broken, [], broken.joined(separator: "\n"))
+    }
+
+    /// 写真の縦横比を保ったまま、額の面いっぱいに真ん中で切る（aspect-fill）。読む範囲は写真の中（0〜1）だけ。
+    /// 2026-10-22 owner の実機: 楕円の額で写真の外を読み、端の画素が伸びて縦の筋になった（scale > 1 を返していた）
+    func testPhotoFitCropsInsideThePhotoAndKeepsAspect() {
+        for (ia, pa) in [(1.5, 1.0), (1.5, 0.64), (0.75, 1.5), (0.66, 0.64), (1.0, 1.0), (1.78, 1.33), (0.56, 0.8)] as [(Double, Double)] {
+            let fit = CamperRoomPhotoFit.uvFit(imageAspect: ia, panelAspect: pa)
+            // パネルの 0〜1 が写る写真の範囲
+            let u0 = fit.offsetX, u1 = fit.scaleX + fit.offsetX, v0 = fit.offsetY, v1 = fit.scaleY + fit.offsetY
+            for x in [u0, u1, v0, v1] { XCTAssertTrue((-1e-9...(1 + 1e-9)).contains(x), "写真 \(ia)・額 \(pa): 写真の外を読む \(x)") }
+            // 少なくとも一方は写真いっぱい（余白を作らない）
+            XCTAssertTrue(abs(u1 - u0 - 1) < 1e-9 || abs(v1 - v0 - 1) < 1e-9, "写真 \(ia)・額 \(pa)")
+            // 読む範囲の縦横比（写真の画素で）が額と同じ＝伸びも潰れもしない
+            XCTAssertEqual((u1 - u0) * ia / (v1 - v0), pa, accuracy: 1e-9, "写真 \(ia)・額 \(pa)")
+            // 真ん中で切る
+            XCTAssertEqual((u0 + u1) / 2, 0.5, accuracy: 1e-9)
+            XCTAssertEqual((v0 + v1) / 2, 0.5, accuracy: 1e-9)
+        }
     }
 
     /// 飾る → place の photos に載る（文書だけ直って場面に渡らない再発を防ぐ）
