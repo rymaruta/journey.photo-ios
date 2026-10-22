@@ -3778,14 +3778,14 @@ final class ScreenshotTests: XCTestCase {
     /// 全部の額に、自分の本物の写真（横長・縦長の 1 枚ずつ。飾る時と同じ読み込み）を入れた接写を昼に**必ず撮る**。
     /// どの頁でも印画が写真の外を読まないこと（`uvOut=0.00`）、横長と縦長の写真が選べたことを確かめる
     func testCapturesCamperRoomFrameSheet() {
-        executionTimeAllowance = 1500
+        executionTimeAllowance = 3000
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomFrames", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
         let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 20), "額の頁が出ない")
         let next = app.buttons["camper.room.contact.next"].firstMatch
         var page = 1
-        while page <= 40 {
+        while page <= 90 {
             let ready = waitRoom(app, "camper.room.contact", "contact-ready day \(page)/", timeout: 90)
             let value = (sheet.value as? String) ?? ""
             print("CAMPERFRAMES \(page): \(value)")
