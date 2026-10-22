@@ -18,6 +18,11 @@
 # 「操作なしで消したい」2026-10-07）。消すのはその PR の枝1本だけで、守る枝と、
 # 併合のあとに足したコミットがある枝は消さない。
 #
+# **まだ main に入っていない枝も消せる**（2026-10-22 owner「いらないブランチ全部消す」）。
+# 既定では消さない。`stale_days`（N 日より前から止まっている枝）か `also`（名前を挙げた枝）を
+# 渡したときだけで、消す前に `archive/<枝>/<先頭7桁>` のタグを打つので中身は失われない
+# （戻し方は `Tools/cleanup-branches.sh` の頭）。守る枝と開いている PR の枝は、どちらでも消さない。
+#
 # 消した枝は GitHub の「Branches」の画面から、しばらくは戻せる（Restore）。
 # 一括の掃除（`cleanup`）は定期では回さない。
 name: 使い終わった枝の掃除
@@ -31,6 +36,14 @@ on:
         description: "印を付けると本当に消す（外したままなら一覧を出すだけ）"
         type: boolean
         default: false
+      stale_days:
+        description: "main に入っていなくても、先頭がこの日数より古い枝は控えのタグを打って消す（空なら消さない）"
+        type: string
+        default: ""
+      also:
+        description: "main に入っていなくても消す枝の名前（空白区切り・控えのタグを打ってから消す）"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -80,5 +93,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APPLY: ${{ inputs.apply }}
+          STALE_DAYS: ${{ inputs.stale_days }}
+          ALSO: ${{ inputs.also }}
           REPO: ${{ github.repository }}
         run: bash Tools/cleanup-branches.sh
