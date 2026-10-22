@@ -19,9 +19,11 @@ enum CamperRoomLegs {
     static let thinnest = 0.5
 
     /// 接写の 4 方向（正面・斜め・横・下から。度）。`scenePitch` は Mac の本物の絵（図鑑の小部屋）の見下ろし。
-    /// 小部屋には床があるので「下から」は床すれすれ（3°）から脚の間を覗く。手元の絵（`CamperRoomRaster`）は床が無く真下寄りから
-    static let views: [(name: String, yaw: Double, pitch: Double, scenePitch: Double)] = [
-        ("正面", 0, 6, 8), ("斜め", 34, 26, 26), ("横", 90, 6, 8), ("下から", 28, -24, 3),
+    /// 小部屋には床があるので「下から」は狙いを床の近く（`low`）へ下げ、浅い角度（12°）で脚の付け根と足先を覗く。
+    /// 手元の絵（`CamperRoomRaster`）は床が無く真下寄りから。
+    /// 2026-10-22（Mac run 677）: 狙いを下げて 3° にすると、目が小部屋の床の板の縁より下になり灰色の板しか写らなかった
+    static let views: [(name: String, yaw: Double, pitch: Double, scenePitch: Double, low: Bool)] = [
+        ("正面", 0, 6, 8, false), ("斜め", 34, 26, 26, false), ("横", 90, 6, 8, false), ("下から", 28, -24, 12, true),
     ]
 
     /// 脚の接写の一覧に並べる家具（Mac の `testCapturesCamperFurnitureLegs`）。板と別種の脚のある床の家具全部と、

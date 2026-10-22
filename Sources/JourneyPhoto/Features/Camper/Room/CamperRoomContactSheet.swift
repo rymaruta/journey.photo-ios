@@ -66,7 +66,7 @@ final class CamperRoomContactRenderer {
         renderer.pointOfView = scene.cameraNode
     }
 
-    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize, view: (yaw: Double, pitch: Double)? = nil) -> UIImage {
+    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize, view: (yaw: Double, pitch: Double, low: Bool)? = nil) -> UIImage {
         let studio = CamperRoomStudio.make(f)
         if !installed {
             scene.installNow(layout: studio.layout, doc: studio.doc, paint: paint)
@@ -82,8 +82,8 @@ final class CamperRoomContactRenderer {
         if let view {
             camera.yaw = view.yaw
             camera.pitch = view.pitch
-            // 床すれすれは狙いを床の近くへ下げ、座・天板の裏と脚の間を覗く（Mac run 673: 狙いが家具の真ん中のままだと正面と同じ絵）
-            if view.pitch < 5 { camera.target = CV3(camera.target.x, 2.5, camera.target.z) }
+            // 「下から」は狙いを床の近くへ下げ、脚の付け根と足先を覗く（Mac run 673: 狙いが家具の真ん中のままだと正面と同じ絵）
+            if view.low { camera.target = CV3(camera.target.x, 4, camera.target.z) }
         }
         scene.setCamera(camera, animated: false)
         return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
@@ -211,7 +211,7 @@ struct CamperRoomContactSheet: View {
         Task { @MainActor in
             for cell in cells {
                 guard want == page, m == mood else { return }
-                let view = cell.view.map { (yaw: CamperRoomLegs.views[$0].yaw, pitch: CamperRoomLegs.views[$0].scenePitch) }
+                let view = cell.view.map { (yaw: CamperRoomLegs.views[$0].yaw, pitch: CamperRoomLegs.views[$0].scenePitch, low: CamperRoomLegs.views[$0].low) }
                 images[cell.key] = r.render(cell.furniture, mood: m, size: CGSize(width: Self.cell.width * 3, height: Self.cell.height * 3), view: view)
                 await Task.yield()
             }
