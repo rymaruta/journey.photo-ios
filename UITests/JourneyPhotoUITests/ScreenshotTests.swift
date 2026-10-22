@@ -3935,13 +3935,16 @@ final class ScreenshotTests: XCTestCase {
             revealInPanel(app, indigo)
             indigo.tap()
             XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない（部屋を替える前）\(tag)")
-            rooms.element(boundBy: 1).tap()
+            // 大きい文字では横に送る部屋のタブが、画面に見えていても XCUI が「押せない」と言うことがある（run 679）。
+            // 札の真ん中の点を押す
+            rooms.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             waitRoom(app, "camper.room.scene", "camper-room-ready")
+            XCTAssertTrue(rooms.element(boundBy: 1).isSelected, "部屋のタブを押しても部屋が替わらない\(tag)")
             XCTAssertFalse(revert.exists, "部屋を替えたのに「元に戻す」が残る\(tag)")
             XCTAssertFalse(done.label.contains("これにする"), "部屋を替えて何も触らないのに「これにする」（今は「\(done.label)」）\(tag)")
             XCTAssertFalse(app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch.exists, "前の部屋の見本が残る\(tag)")
             shoot(app, "96l-部屋の下の板（模様替え・部屋を替えた後\(tag)）")
-            rooms.element(boundBy: 0).tap()
+            rooms.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             waitRoom(app, "camper.room.scene", "camper-room-ready")
         } else {
             XCTFail("部屋のタブが 2 つ以上無い・押せない\(tag)")
