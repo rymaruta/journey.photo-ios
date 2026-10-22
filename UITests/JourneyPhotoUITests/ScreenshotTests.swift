@@ -2564,7 +2564,16 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20,
                                  "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")）")
             XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
-            let settled = app.screenshot()
+            // 組み上がった合図は SceneKit に載せた時点で、描くのはその後（`CamperRoomSceneView.onDrawn`）。
+            // 部屋が描かれて明るくなるまで最長 30 秒待って撮る。2026-10-22 PR #369 の検証（run 39773377293）: 込んだ Mac で、部屋の
+            // 画面が出るまで 11 秒・アプリの応答が 16 秒止まり、覆いの 20 秒の待ちが切れた直後の、まだ描かれていない暗い地を
+            // 合図の直後に撮っていた（部屋の家具の網は main と同じ・`CamperRoomScenePlan.make` の三角形 82,130 で同じ）
+            var settled = app.screenshot()
+            let drawnBy = Date().addingTimeInterval(30)
+            while Self.meanBrightness(settled.image, band: 0.2...0.55) <= 20, Date() < drawnBy {
+                Thread.sleep(forTimeInterval: 1)
+                settled = app.screenshot()
+            }
             self.shoot(app, "95\(n)6-キャンピングカー（\(label)・中に入る・部屋が組み上がった）")
             XCTAssertGreaterThan(Self.meanBrightness(settled.image, band: 0.2...0.55), 20, "部屋が組み上がっても暗い画面（\(label)）")
             // 外へ戻り、扉を閉じて（初めの向きへ戻る）次の時刻へ
