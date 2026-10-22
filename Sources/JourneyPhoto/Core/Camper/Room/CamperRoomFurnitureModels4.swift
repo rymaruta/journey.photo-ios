@@ -449,8 +449,8 @@ extension CamperRoomFurnitureModels {
         // 帽子
         parts.append(K.placed(K.lathe([CV2(0, 0), CV2(4.2, 0), CV2(4.4, 0.55), CV2(2.3, 0.75), CV2(2.1, 3.6), CV2(0, 3.6)],
                                       segments: 20, R(.knit(0x3A3A3C))), at: CV3(0, 65.8, 0)))
-        parts.append(K.tube(K.arc(center: CV3(0, 66.4, 0), radius: 2.15, from: 0, to: 2 * .pi, steps: 20)
-                                .map { CV3($0.x, 66.4, $0.y) }, radius: 0.18, sides: 5, closed: true, R(.knit(0xC9A66B))))
+        parts.append(K.tube(K.ringXZ(center: CV3(0, 66.4, 0), radius: 2.15, steps: 20), radius: 0.18, sides: 5, closed: true,
+                            R(.knit(0xC9A66B))))
         return K.merge(parts)
     }
 

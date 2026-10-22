@@ -152,12 +152,37 @@ enum CamperRoomShapes {
             for i in 0..<nu {
                 let outer = j == 0 || j == nv - 1 || j == 1 || j == nv - 2
                 if cut.contains(i), outer, !(j == 2 || j == nv - 3) { continue }
-                faces.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i],
-                           normal(i, j), normal(i + 1, j), normal(i + 1, j + 1), normal(i, j + 1), m)
+                let a = grid[j][i], b = grid[j][i + 1], c = grid[j + 1][i + 1], d = grid[j + 1][i]
+                let na = normal(i, j), nb = normal(i + 1, j), nc = normal(i + 1, j + 1), nd = normal(i, j + 1)
+                // 葉の先（幅 0）と、耳の無い葉の付け根では、縁の 2 点が 1 点に潰れる。四角にすると面積ゼロの三角形が出来るので
+                // （2026-10-21: モンステラの葉の先 30）、潰れた辺の側は三角 1 枚にする
+                if (c - b).length < 1e-6 {
+                    faces.tri(a, c, d, na, nc, nd, m)
+                } else if (d - a).length < 1e-6 {
+                    faces.tri(a, b, c, na, nb, nc, m)
+                } else {
+                    faces.quad(a, b, c, d, na, nb, nc, nd, m)
+                }
             }
         }
         faces.uvs = faces.positions.map { CV2($0.x / max(L, 1e-6), 0.5 + $0.z / max(W, 1e-6)) }
         mesh.append(faces)
+        return mesh
+    }
+
+    /// 球の面に沿った細い帯（緯度・経度の範囲・ラジアン。緯度は赤道 0・上が正）。外向き
+    static func sphereBand(center c: CV3, radius r: Double, latitudes lat: ClosedRange<Double>,
+                           longitudes lon: ClosedRange<Double>, steps: Int = 10, _ m: CamperMaterial) -> CamperMesh {
+        var mesh = CamperMesh()
+        func point(_ a: Double, _ b: Double) -> CV3 { CV3(cos(a) * cos(b), sin(a), -cos(a) * sin(b)) }
+        for k in 0..<steps {
+            let b0 = lon.lowerBound + (lon.upperBound - lon.lowerBound) * Double(k) / Double(steps)
+            let b1 = lon.lowerBound + (lon.upperBound - lon.lowerBound) * Double(k + 1) / Double(steps)
+            let n00 = point(lat.lowerBound, b0), n01 = point(lat.lowerBound, b1)
+            let n11 = point(lat.upperBound, b1), n10 = point(lat.upperBound, b0)
+            mesh.quad(c + n00 * r, c + n01 * r, c + n11 * r, c + n10 * r, n00, n01, n11, n10, m)
+        }
+        mesh.uvs = mesh.positions.map { _ in CV2(0.5, 0.5) }
         return mesh
     }
 

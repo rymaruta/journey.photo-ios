@@ -3624,6 +3624,84 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["camper.room.dex.close"].firstMatch.tap()
     }
 
+    /// **額に写真を飾る**（2026-10-21 owner の実機: 写真を選んで飾ったのに額の中が真っ白）。見本の写真は staging の本物の URL から、
+    /// 本番と同じ読み込み（`CamperRoomPhotoImages`）で読む。読み上げの値の `photos=絵の入った印画/額 rect=…`（`CamperRoomScene.photoProbe`）
+    /// で絵が額に入ったことを、その四角の画素が一色でないことで「見える」ことを確かめる（白い硝子が印画を覆っても数だけは合う）
+    func testCapturesCamperRoomHangPhoto() throws {
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
+        app.buttons["camper.room.tool.photos"].firstMatch.tap()
+        let frame = app.buttons["camper.room.frame"].firstMatch
+        guard frame.waitForExistence(timeout: 10) else { return XCTFail("飾る額の一覧が出ない") }
+        frame.tap()
+        let photo = app.buttons["camper.room.photo"].firstMatch
+        guard photo.waitForExistence(timeout: 30) else { return XCTFail("飾る写真の一覧が出ない（見本の写真が無い）") }
+        photo.tap()
+        let hang = app.buttons["camper.room.hang"].firstMatch
+        XCTAssertTrue(hang.waitForExistence(timeout: 5), "「この額に飾る」が無い")
+        hang.tap()
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        let shown = NSPredicate(format: "value MATCHES %@", ".*photos=[1-9][0-9]*/[0-9]+ rect=[0-9]+,[0-9]+,[0-9]+,[0-9]+.*")
+        let waited = XCTWaiter().wait(for: [expectation(for: shown, evaluatedWith: scene)], timeout: 45)
+        let value = (scene.value as? String) ?? ""
+        print("CAMPERPHOTO 値: \(value)")
+        if app.buttons["camper.room.photo.retry"].firstMatch.exists { print("CAMPERPHOTO 読み込めませんでしたが出ている") }
+        guard waited == .completed else {
+            shoot(app, "96h-額に写真を飾った（入らない）")
+            return XCTFail("額に写真が入らない（読み上げの値: \(value)）")
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "96h-額に写真を飾った")
+        // 印画の四角（SCNView の点）の内側 6 割の画素が一色でないこと
+        let numbers = value.components(separatedBy: "rect=").last?.split(separator: " ").first?.split(separator: ",").compactMap { Double($0) } ?? []
+        guard numbers.count == 4 else { return XCTFail("印画の四角を読めない: \(value)") }
+        let rect = CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]).insetBy(dx: numbers[2] * 0.2, dy: numbers[3] * 0.2)
+        let shot = scene.screenshot()
+        let crop = XCTAttachment(screenshot: shot)
+        crop.name = "96h-額に写真を飾った（箱庭だけ）"
+        crop.lifetime = .keepAlways
+        add(crop)
+        let stats = try XCTUnwrap(Self.lumaStats(shot.image, in: rect), "印画の四角が箱庭の外: \(rect)")
+        print("CAMPERPHOTO 印画の四角 \(rect) 明るさの平均 \(stats.mean) ばらつき \(stats.deviation)")
+        XCTAssertGreaterThan(stats.deviation, 12, "額の中が一色（平均 \(Int(stats.mean))）。飾った写真が見えていない")
+    }
+
+    /// 絵の四角（点）の中の明るさの平均とばらつき（0〜255）
+    private static func lumaStats(_ image: UIImage, in rect: CGRect) -> (mean: Double, deviation: Double)? {
+        guard let cg = image.cgImage else { return nil }
+        let scale = image.scale
+        let px = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+            .intersection(CGRect(x: 0, y: 0, width: cg.width, height: cg.height)).integral
+        guard px.width >= 4, px.height >= 4, let part = cg.cropping(to: px) else { return nil }
+        let w = part.width, h = part.height
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(part, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var sum = 0.0, sq = 0.0
+        let n = Double(w * h)
+        for k in 0..<(w * h) {
+            let l = 0.299 * Double(bytes[k * 4]) + 0.587 * Double(bytes[k * 4 + 1]) + 0.114 * Double(bytes[k * 4 + 2])
+            sum += l
+            sq += l * l
+        }
+        let mean = sum / n
+        return (mean, max(0, sq / n - mean * mean).squareRoot())
+    }
+
+    /// **部屋の寄り**（`-JPPreviewCamperRoomCamera`・2026-10-21 owner の実機の寄りの絵と同じ所）: 手前の右の角（切った壁の天端・
+    /// 角の継ぎ目・敷居）と、窓の脇のカーテン（窓台・留め紐）を昼に撮る
+    func testCapturesCamperRoomCloseUps() {
+        for (preset, name) in [("corner", "96i-部屋の寄り（手前の右の角）"), ("curtain", "96j-部屋の寄り（窓の脇のカーテン）")] {
+            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomCamera", preset])
+            XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない（\(preset)）")
+            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない（\(preset)）"); continue }
+            shoot(app, name)
+            app.terminate()
+        }
+    }
+
     /// **初めての手引きと押して置く**（`-JPPreviewCamperRoomCoach`・Debug のみ・2026-10-21）: 部屋に初めて入った時の 3 行の手引き、
     /// 「置く」の新しい家具の件数・棚の真鍮の点、棚の家具を押して置ける所が光った所を**必ず撮る**。押せる所は 44pt 以上
     func testCapturesCamperRoomGuide() {

@@ -37,6 +37,8 @@ final class CamperRoomScene {
     private var lampNodes: [SCNNode] = []
     private var itemNodes: [String: (node: SCNNode, item: CamperRoomPlacedItem)] = [:]
     private var furniture: [String: CamperPreparedMesh] = [:]
+    /// 家具の透明の硝子（`CamperRoomMaterials.drawnAfterOpaque`）。不透明の部分（`furniture`）の後に描く
+    private var furnitureGlass: [String: CamperPreparedMesh] = [:]
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
     /// 選んでいる家具（3 浮かせる）・持ち上げて動かしている家具（動かした先）と置けるか
@@ -58,6 +60,11 @@ final class CamperRoomScene {
     private var paint: UInt32 = 0x5B6168
     /// 組み終えたら呼ぶ（読み上げの値・画面写真の試験が待つ）
     var onReady: ((String) -> Void)?
+    /// 見本の起動の試験用: 額の印画の様子（`photoProbe`）が変わったら呼ぶ。nil なら測らない
+    var onProbe: ((String) -> Void)?
+    /// 額ごとの、絵（読めた写真）が入った印画の数
+    private var shownPhotos: [String: Int] = [:]
+    private var probeToken = 0
     /// 家具を見せるだけの所（図鑑の寄り）。手前の壁を切らない向きでも、天井の灯りを強めに
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
@@ -169,6 +176,7 @@ final class CamperRoomScene {
         builtKey = key
         palette.reset(bitmaps: plan.bitmaps, paint: paint, mood: mood)
         furniture = plan.furniture
+        furnitureGlass = plan.furnitureGlass
         roomNode.childNodes.forEach { $0.removeFromParentNode() }
         itemsNode.childNodes.forEach { $0.removeFromParentNode() }
         itemNodes = [:]
@@ -263,8 +271,9 @@ final class CamperRoomScene {
     }
 
     private func makeItemNode(_ it: CamperRoomPlacedItem) -> SCNNode? {
-        if furniture[it.furnitureId] == nil, let m = CamperRoomFurnitureModels.mesh(it.furnitureId) {
-            furniture[it.furnitureId] = CamperPreparedMesh(m, unit: Self.unit)
+        if furniture[it.furnitureId] == nil, let parts = CamperRoomScenePlan.prepareFurniture(it.furnitureId) {
+            furniture[it.furnitureId] = parts.body
+            furnitureGlass[it.furnitureId] = parts.glass
         }
         guard let mesh = furniture[it.furnitureId], let geometry = palette.geometry(mesh) else { return nil }
         // 写真の材質は額ごとに専用にする（共有だと片方の印画がもう片方にも乗る／差し替えが効かない）
@@ -281,6 +290,14 @@ final class CamperRoomScene {
         let body = SCNNode(geometry: geometry)
         body.name = "body"
         holder.addChildNode(body)
+        // 透明の硝子は別の節にして、壁・床・中身（不透明の組）と接地の影の後に描く。影は落とさない
+        if let glassMesh = furnitureGlass[it.furnitureId], let glassGeometry = palette.geometry(glassMesh) {
+            let glass = SCNNode(geometry: glassGeometry)
+            glass.name = "glass"
+            glass.castsShadow = false
+            glass.renderingOrder = 12
+            holder.addChildNode(glass)
+        }
         // 接地の影（床の物は足元に、壁の物は壁に。敷物には付けない）
         let f = CamperRoomCatalog.furniture(it.furnitureId)
         if f?.isRug == false, it.placement != .ceiling {
@@ -405,6 +422,7 @@ final class CamperRoomScene {
             photos = it.photos
         }
         var mats = g.materials
+        var shown = 0
         for (i, group) in mesh.groups.enumerated() where i < mats.count {
             guard case .room(.photo(let slot)) = group.material else { continue }
             let index = Int(slot.dropFirst(4)) ?? 0
@@ -434,10 +452,69 @@ final class CamperRoomScene {
                 m.emission.intensity = 0
                 m.transparency = 1
                 m.writesToDepthBuffer = true
+                shown += 1
             }
             mats[i] = m
         }
         g.materials = mats
+        shownPhotos[it.uid] = shown
+        scheduleProbe()
+    }
+
+    /// 印画の様子を少し後に測る（カメラの動き 0.6 秒が止まってから・続けて呼ばれたら最後の 1 回だけ）
+    private func scheduleProbe() {
+        guard onProbe != nil else { return }
+        probeToken += 1
+        let token = probeToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            guard let self, token == self.probeToken else { return }
+            self.onProbe?(self.photoProbe())
+        }
+    }
+
+    /// 見本の起動の試験用: 「photos=絵の入った印画の数/額の数 rect=x,y,w,h」。rect は選んでいる額（無ければ絵の入った
+    /// 最初の額）の印画が画面に写る四角（SCNView の点）。画面写真の試験が、その四角が白一色でないことを画素で確かめる
+    func photoProbe() -> String {
+        let frames = itemNodes.values.filter { entry in
+            furniture[entry.item.furnitureId]?.groups.contains { if case .room(.photo) = $0.material { return true } else { return false } } ?? false
+        }
+        let shown = frames.filter { (shownPhotos[$0.item.uid] ?? 0) > 0 }
+        var out = "photos=\(shown.count)/\(frames.count)"
+        let pick = focusFrameUid.flatMap { itemNodes[$0] } ?? shown.sorted { $0.item.uid < $1.item.uid }.first
+        if let pick, let rect = photoRect(pick.node, pick.item) {
+            out += " rect=\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))"
+        }
+        return out
+    }
+
+    /// 額の 1 枚目の印画が画面に写る四角（隠れている・画面の外なら nil）
+    private func photoRect(_ holder: SCNNode, _ it: CamperRoomPlacedItem) -> CGRect? {
+        guard !holder.isHidden, let view = scnView, let body = holder.childNodes.first(where: { $0.name == "body" }),
+              let mesh = furniture[it.furnitureId],
+              let group = mesh.groups.first(where: { $0.material == CamperRoomFurnitureModels.photoMaterial(0) }) else { return nil }
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+        for i in group.indices {
+            let k = Int(i) * 3
+            let p = SIMD3<Float>(mesh.positions[k], mesh.positions[k + 1], mesh.positions[k + 2])
+            lo = pointwiseMin(lo, p)
+            hi = pointwiseMax(hi, p)
+        }
+        guard lo.x <= hi.x else { return nil }
+        var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude, maxX = -CGFloat.greatestFiniteMagnitude,
+            maxY = -CGFloat.greatestFiniteMagnitude
+        for x in [lo.x, hi.x] {
+            for y in [lo.y, hi.y] {
+                for z in [lo.z, hi.z] {
+                    let world = body.convertPosition(SCNVector3(x, y, z), to: nil)
+                    let p = view.projectPoint(world)
+                    guard p.z > 0, p.z < 1 else { return nil }
+                    minX = min(minX, CGFloat(p.x)); maxX = max(maxX, CGFloat(p.x))
+                    minY = min(minY, CGFloat(p.y)); maxY = max(maxY, CGFloat(p.y))
+                }
+            }
+        }
+        let r = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        return r.intersects(view.bounds) ? r.intersection(view.bounds) : nil
     }
 
     /// 部屋を組み上げ、SCNView が画面に大きさを持って載っているか（外から入る時の覆いを消してよいか・2026-10-21）
@@ -566,6 +643,7 @@ final class CamperRoomScene {
         cameraNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
         SCNTransaction.commit()
         if cutChanged { applyCutaway() }
+        scheduleProbe()
     }
 
     /// 向きに合わせて、手前の端の壁を低い方に替える（窓と壁の物もその壁と一緒に）

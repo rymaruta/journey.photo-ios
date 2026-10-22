@@ -63,6 +63,28 @@ enum CamperRoomMeshKit {
         return merge(parts)
     }
 
+    /// 面積ゼロ（辺の外積が `epsilon` 未満）の三角形を落とす。点は残す（番号を付け直さない）
+    static func droppingDegenerate(_ m: CamperMesh) -> CamperMesh {
+        let epsilon = 1e-9
+        var out = m
+        out.groups = m.groups.map { g in
+            var kept: [Int32] = []
+            kept.reserveCapacity(g.indices.count)
+            var i = 0
+            while i + 2 < g.indices.count {
+                let a = m.positions[Int(g.indices[i])], b = m.positions[Int(g.indices[i + 1])], c = m.positions[Int(g.indices[i + 2])]
+                if (b - a).cross(c - a).length >= epsilon {
+                    kept.append(g.indices[i])
+                    kept.append(g.indices[i + 1])
+                    kept.append(g.indices[i + 2])
+                }
+                i += 3
+            }
+            return (g.material, kept)
+        }.filter { !$0.indices.isEmpty }
+        return out
+    }
+
     /// 網をまとめる
     static func merge(_ parts: [CamperMesh]) -> CamperMesh {
         var out = CamperMesh()
@@ -223,6 +245,15 @@ enum CamperRoomMeshKit {
             let a = a0 + (a1 - a0) * Double(k) / Double(steps)
             return center + CV3(cos(a) * radius, sin(a) * radius, 0)
         }
+    }
+
+    /// 水平の輪の点（中心 `center` のまわり・XZ の面・高さは `center.y`）。笠の縁・帽子の帯・硝子球の帯に。
+    ///
+    /// 2026-10-21 判断（owner「家具ぶっ壊れてる」）: `arc(center:)` は XY の面の点なので、`.map { CV3($0.x, y, $0.y) }` で
+    /// 寝かせると中心の**高さ**が奥行き（Z）に移り、輪が家具から何十も離れて宙に浮いた（弧の灯り・コート掛け・硝子球の吊り鉢）。
+    /// 寝かせた輪はこれで作る
+    static func ringXZ(center: CV3, radius: Double, steps: Int = 24) -> [CV3] {
+        arc(center: .zero, radius: radius, from: 0, to: 2 * .pi, steps: steps).map { CV3(center.x + $0.x, center.y, center.z + $0.y) }
     }
 
     /// 旋盤（断面は 半径, 高さ）。外まわりの `CamperMeshKit.lathe` に材質を 1 つで

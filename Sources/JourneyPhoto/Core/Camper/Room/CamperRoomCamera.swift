@@ -42,6 +42,25 @@ struct CamperRoomCamera: Equatable, Sendable {
         return CamperRoomCamera(yaw: 6, pitch: 25, zoom: 1.55, target: CV3(s.x / 2, 46, 10))
     }
 
+    /// 見本の起動の寄り（`CamperRoomPreview.cameraPreset`）。corner: 扉の壁と前の仕切りの角（切った壁の天端・角・敷居）、
+    /// curtain: 奥の壁の最初の窓の右の脇（カーテン・留め紐・窓台）。知らない名前は nil
+    static func preview(_ name: String, layout: CamperRoomLayout) -> CamperRoomCamera? {
+        let s = layout.size
+        func at(_ target: CV3, yaw: Double, pitch: Double, distance: Double) -> CamperRoomCamera {
+            CamperRoomCamera(yaw: yaw, pitch: pitch, zoom: baseDistance(layout) / distance, target: target).clamped()
+        }
+        switch name {
+        case "corner":
+            return at(CV3(s.x - 14, 4, s.z - 8), yaw: 34, pitch: 38, distance: 70)
+        case "curtain":
+            guard let w = layout.windows.first(where: { $0.wall == .back }) else { return nil }
+            let x1 = Double(w.to + 1) * CamperRoomLayout.cell
+            return at(CV3(x1 + 2, (w.bottom + w.top) / 2 - 4, 8), yaw: 6, pitch: 25, distance: 75)
+        default:
+            return nil
+        }
+    }
+
     /// 選んだ額が見える向き。部屋の真ん中ではなく、その額の前に寄る
     static func framing(_ item: CamperRoomItem, layout: CamperRoomLayout) -> CamperRoomCamera {
         guard let placed = CamperRoomBuilder.place(item, ceiling: layout.ceilingHeight) else { return wall(layout) }

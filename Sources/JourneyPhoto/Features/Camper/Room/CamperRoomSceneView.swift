@@ -33,6 +33,10 @@ struct CamperRoomSceneView: UIViewRepresentable {
     var studio = false
     /// 押して置くときの置ける所（薄い白のマス）
     var hints: CamperRoomFitArea?
+    /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）。nil なら測らない。
+    /// **`onReady` より前に置く**（後ろに置くと、Swift 5 の後ろから合わせる規則で、末尾の閉包 `{ ready = $0 }` が
+    /// こちらに渡り、図鑑の寄りが「組み終えた」を出さなくなった・Mac run 654）
+    var onProbe: ((String) -> Void)?
     var onReady: (String) -> Void = { _ in }
     /// 組み上がった後の最初のコマを描いた（外から入る時の覆いを消す合図・2026-10-21）
     var onDrawn: () -> Void = {}
@@ -81,6 +85,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
             watcher.arm()
             DispatchQueue.main.async { onReady(marker) }
         }
+        if let onProbe { c.onProbe = { probe in DispatchQueue.main.async { onProbe(probe) } } }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
         c.show(layout: layout, doc: doc, paint: paint)
@@ -114,6 +119,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
 @MainActor
 final class CamperRoomPhotoImages: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
+    /// 読めなかった写真（飾る画面に「読み込めませんでした」を出す。読めたら消える）
+    @Published private(set) var failed = Set<String>()
     private var inFlight = Set<String>()
     /// 一度失敗した id（読み直しの間隔を空ける。同じ失敗を毎フレーム繰り返さない）
     private var failedAt: [String: Date] = [:]
@@ -125,16 +132,22 @@ final class CamperRoomPhotoImages: ObservableObject {
             if images[id] != nil { continue }
             if inFlight.contains(id) { continue }
             if !force, let at = failedAt[id], now.timeIntervalSince(at) < 2 { continue }
-            guard let url = photos.first(where: { $0.id == id })?.gridImageURL else { continue }
+            guard let url = photos.first(where: { $0.id == id })?.gridImageURL else {
+                // 一覧に無い写真（消した・まだ届いていない）。黙って白い額にしない
+                failed.insert(id)
+                continue
+            }
             inFlight.insert(id)
             Task {
                 let data = try? await ProfileImageFromPhoto.download(url)
                 inFlight.remove(id)
                 if let data, let image = UIImage(data: data) {
                     failedAt[id] = nil
+                    failed.remove(id)
                     images[id] = image
                 } else {
                     failedAt[id] = Date()
+                    failed.insert(id)
                 }
             }
         }
