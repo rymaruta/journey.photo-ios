@@ -1167,6 +1167,7 @@ struct CamperRoomView: View {
                     .padding(.vertical, 2)
                 }
                 .accessibilityLabel(L("家具の種類", "Furniture kind"))
+                .accessibilityIdentifier("camper.room.trayCats")
             }
             // 横に送る一覧は家具が増えると探しにくい（2026-10-20 owner「5×5 みたいな一覧」）。5 列の升目で縦に送る。
             // 升の絵は 44pt だと縦が潰れるので、枠を大きく取る（2026-10-20 owner「枠が狭い・縦幅がなさすぎる」）
@@ -1185,6 +1186,7 @@ struct CamperRoomView: View {
                 if typeSize.isAccessibilitySize { editHint.padding(.top, 10) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .accessibilityIdentifier("camper.room.trayGrid")
             if !typeSize.isAccessibilitySize { editHint }
             HStack(spacing: 8) {
                 Button(action: undo) {
@@ -1245,7 +1247,8 @@ struct CamperRoomView: View {
             .jpSystemFont(13, weight: .semibold)
             .foregroundStyle(ink)
             .padding(.horizontal, 12)
-            .frame(minHeight: WebTheme.minTapTarget)
+            // 1 字の分類（「机」）も幅 44pt（36pt だった・Mac run 672）
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
             .background(fill, in: Capsule())
             .overlay(Capsule().strokeBorder(edge, lineWidth: 1))
             .contentShape(Capsule())
@@ -1582,6 +1585,7 @@ struct CamperRoomView: View {
                         }
                     }
                 }
+                .accessibilityIdentifier("camper.room.frames")
                 let mine = hangablePhotos
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
@@ -1596,16 +1600,21 @@ struct CamperRoomView: View {
                                     camera = CamperRoomCamera.framing(frame, layout: layout)
                                 }
                             } label: {
-                                AsyncImage(url: p.gridImageURL) { phase in
-                                    switch phase {
-                                    case .success(let image): image.resizable().scaledToFill()
-                                    default: WebTheme.card
+                                // 升の大きさを先に決めてから写真を敷く（写真の元の縦横で枠が 100〜178pt に伸び、
+                                // 押せる範囲が隣の升と「この額に飾る」に重なっていた・Mac run 672・2026-10-22）
+                                Color.clear
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 68)
+                                    .overlay {
+                                        AsyncImage(url: p.gridImageURL) { phase in
+                                            switch phase {
+                                            case .success(let image): image.resizable().scaledToFill()
+                                            default: WebTheme.card
+                                            }
+                                        }
                                     }
-                                }
-                                .frame(height: 68)
-                                .frame(maxWidth: .infinity)
-                                .clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .contentShape(RoundedRectangle(cornerRadius: 6))
                                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(on ? Color.white : Color.clear, lineWidth: 3))
                                 .overlay(alignment: .topTrailing) {
                                     if on {
@@ -1623,6 +1632,7 @@ struct CamperRoomView: View {
                     }
                 }
                 .frame(maxHeight: .infinity)
+                .accessibilityIdentifier("camper.room.photoGrid")
                 if mine.isEmpty {
                     Text(L("投稿した写真がまだありません", "You haven\u{2019}t posted any photos yet"))
                         .jpSystemFont(13).foregroundStyle(WebTheme.text2)

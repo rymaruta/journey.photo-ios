@@ -3819,7 +3819,7 @@ final class ScreenshotTests: XCTestCase {
             shoot(lift, "96p-部屋の下の板（家具を持ち上げた途中）")
             checkRoomPanel(lift, "持ち上げ", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
                                                     "camper.room.tab.wall", "camper.room.tab.ceiling"],
-                           groups: ["camper.room.tray.cat."])
+                           groups: ["camper.room.tray.cat.@camper.room.trayCats"])
         } else {
             XCTFail("部屋を組み終えない（持ち上げ）")
         }
@@ -3938,7 +3938,8 @@ final class ScreenshotTests: XCTestCase {
             _ = app.buttons["camper.room.photo"].firstMatch.waitForExistence(timeout: 20)
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "96m-部屋の下の板（写真\(tag)）")
-            checkRoomPanel(app, "写真\(tag)", ids: ["camper.room.hang"], groups: ["camper.room.frame", "camper.room.photo"])
+            checkRoomPanel(app, "写真\(tag)", ids: ["camper.room.hang"],
+                           groups: ["camper.room.frame@camper.room.frames", "camper.room.photo@camper.room.photoGrid"])
         } else {
             XCTFail("飾る額の一覧が出ない\(tag)")
         }
@@ -3952,7 +3953,7 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "96n-部屋の下の板（置く\(tag)）")
         checkRoomPanel(app, "置く\(tag)", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
                                                  "camper.room.tab.wall", "camper.room.tab.ceiling"],
-                       groups: ["camper.room.tray."])
+                       groups: ["camper.room.tray.cat.@camper.room.trayCats", "camper.room.tray.@camper.room.trayGrid"])
         checkRoomPicture(app, "置く\(tag)")
         app.buttons["camper.room.done"].firstMatch.tap()
 
@@ -3984,7 +3985,8 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 下の板の要素が、画面の中・部屋の絵の下にあり、押せる物は 44pt 以上で、互いに重ならない。
-    /// `groups` は識別子の頭で集める（横・縦に送る一覧は、いま押せる物だけ）
+    /// `groups` は識別子の頭で集める（いま押せる物だけ）。「頭@入れ物の識別子」なら、送る一覧（入れ物）の中に丸ごと見えている物だけ
+    /// （一覧の端で切れて見えている升は、入れ物が切っているので重なり・はみ出しに数えない）
     private func checkRoomPanel(_ app: XCUIApplication, _ label: String, ids: [String], groups: [String] = []) {
         let window = app.windows.firstMatch.frame
         let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
@@ -4006,11 +4008,16 @@ final class ScreenshotTests: XCTestCase {
             boxes.append((id, e.frame))
             lines.append("\(id) \(e.frame)")
         }
-        for prefix in groups {
+        for group in groups {
+            let parts = group.split(separator: "@").map(String.init)
+            let prefix = parts[0]
+            let box = parts.count > 1 ? app.descendants(matching: .any)[parts[1]].firstMatch : nil
+            if let box { XCTAssertTrue(box.exists, "\(label): 一覧 \(parts[1]) が無い") }
             let q = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
             for i in 0..<min(q.count, 16) {
                 let e = q.element(boundBy: i)
                 guard e.exists, e.isHittable else { continue }
+                if let box, box.exists, !box.frame.insetBy(dx: -1, dy: -1).contains(e.frame) { continue }
                 let id = "\(e.identifier)#\(i)"
                 boxes.append((id, e.frame))
                 lines.append("\(id) \(e.frame)")
@@ -4035,8 +4042,9 @@ final class ScreenshotTests: XCTestCase {
         let window = app.windows.firstMatch
         let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
         var pushes = 0
-        while element.exists, !element.isHittable, pushes < 6 {
-            let above = scene.exists && element.frame.maxY <= scene.frame.maxY
+        // 少しでも見えていると押せる扱いになる。丸ごと画面に入るまで送る（大きい文字で下端が切れた・run 672）
+        while element.exists, !(element.isHittable && window.frame.contains(element.frame)), pushes < 6 {
+            let above = scene.exists && element.frame.minY < scene.frame.maxY
             let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.74 : 0.94))
             let to = window.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: above ? 0.9 : 0.78))
             from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
@@ -4046,8 +4054,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func checkTarget(_ e: XCUIElement, _ id: String, _ label: String) {
-        XCTAssertGreaterThanOrEqual(e.frame.height, 44, "\(label): \(id) の高さが 44pt 未満（\(e.frame.height)）")
-        XCTAssertGreaterThanOrEqual(e.frame.width, 44, "\(label): \(id) の幅が 44pt 未満（\(e.frame.width)）")
+        // 端数（43.99999）は 44 と見る
+        XCTAssertGreaterThanOrEqual(e.frame.height, 43.9, "\(label): \(id) の高さが 44pt 未満（\(e.frame.height)）")
+        XCTAssertGreaterThanOrEqual(e.frame.width, 43.9, "\(label): \(id) の幅が 44pt 未満（\(e.frame.width)）")
     }
 
     /// 枠どうしが重ならない（片方がもう片方を丸ごと含むのは、札の中の印なので除く）
