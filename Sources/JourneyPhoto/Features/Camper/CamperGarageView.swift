@@ -71,16 +71,22 @@ struct CamperGarageView: View {
             VStack(spacing: 0) {
                 header
                 stageView(width: geo.size.width, height: min(360, max(220, geo.size.width * 0.9), geo.size.height * 0.46))
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        moods
-                        statsRow
-                        stagesRow
-                        collection
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            moods
+                            statsRow
+                            stagesRow
+                            collection.id(Self.collectionAnchor)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 32)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 32)
+                    // 部屋の模様替えの「外まわりの図鑑で見る」から戻った時、図鑑の分類まで送る（2026-10-22）
+                    .onChange(of: collectTick) { _, _ in
+                        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.35)) { proxy.scrollTo(Self.collectionAnchor, anchor: .top) }
+                    }
                 }
             }
         }
@@ -172,6 +178,23 @@ struct CamperGarageView: View {
 
     /// とおまわり号の中へ入った（2026-10-19・`CamperRoomView`）
     @State private var insideRoom = false
+    /// 部屋から図鑑の分類を開いた回数（送る合図）
+    @State private var collectTick = 0
+    private static let collectionAnchor = "camper.collection"
+
+    /// 部屋の模様替えで持っていない柄の「外まわりの図鑑で見る」: 部屋を出て、その部品の分類を開き、
+    /// 持っていなければ影の見本と入手のしかたを出して、図鑑まで送る
+    private func openCollection(_ partId: String) {
+        guard let part = CamperCatalog.part(partId) else { return }
+        insideRoom = false
+        Task { @MainActor in
+            // 戻る動きと、口から扉を斜めに見る向きへ戻すのを待ってから、その部品へ寄る
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            pickCategory(part.category)
+            if !owned.contains(part.id) { previewPart = part }
+            collectTick += 1
+        }
+    }
     /// 中に入る直前の口の絵（部屋が組み上がるまでの覆い）
     @State private var snapshot = CamperSceneSnapshot()
 
@@ -224,7 +247,8 @@ struct CamperGarageView: View {
         .overlay(alignment: .bottomLeading) { CamperRoomEntrance(action: goInside).padding(12) }
         .navigationDestination(isPresented: $insideRoom) {
             CamperRoomView(ownerName: ownerName, userId: userId, photos: photos, photosLoaded: photosLoaded, stage: actualStage, stats: stats,
-                           paint: config.loadout.paint, initialMood: mood, entry: snapshot)
+                           paint: config.loadout.paint, initialMood: mood, entry: snapshot,
+                           onCollect: { openCollection($0) })
         }
         // 部屋から戻ったら、口の真正面の寄りから扉の口を斜めに見る向きへ戻す（確かめ役 2026-10-21: 口に寄ったままだった）
         .onChange(of: insideRoom) { _, inside in

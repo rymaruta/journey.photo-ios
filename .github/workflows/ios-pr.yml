@@ -184,7 +184,9 @@ jobs:
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い。
     # 画面の試験だけで 75 分まで伸び、90 分だと成功の直後に切れる（2026-10-20・#321）
-    timeout-minutes: 120
+    # 2026-10-22: 試験が増え、Mac が同時に3本走る日は画面の試験だけで 104 分を超え、120 分で
+    # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
+    timeout-minutes: 160
     steps:
       - uses: actions/checkout@v4
 

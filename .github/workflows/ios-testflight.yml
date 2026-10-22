@@ -74,7 +74,8 @@ jobs:
     # （run #8）。60分で切ると `actions/cache` の後片付けまで
     # 巻き添えで止まり、**次の回もまた冷たい状態から始まる**。
     # 一度でも最後まで通せば、以後は控えから戻って短くなる
-    timeout-minutes: 120
+    # 2026-10-22: 画面の試験が 104 分を超える日があり、120 分では打ち切られる（ios-pr.yml と同じ理由）
+    timeout-minutes: 160
 
     steps:
       - uses: actions/checkout@v4
