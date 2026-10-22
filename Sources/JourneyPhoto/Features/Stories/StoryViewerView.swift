@@ -2158,6 +2158,8 @@ struct StoryViewerView: View {
                 .accessibilityLabel(StoryPlayback.reactionName(emoji))
             }
         }
+        // 並びを1つの入れ物にして名前を付ける（UI テストが探す。中の6つはそれぞれ押せるまま）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("story.reply.reactions")
     }
 

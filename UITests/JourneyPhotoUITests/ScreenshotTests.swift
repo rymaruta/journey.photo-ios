@@ -4030,18 +4030,21 @@ final class ScreenshotTests: XCTestCase {
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
 
-        // ホームの輪（自分にストーリーがあっても右下の「＋」）
-        let mineAdd = app.descendants(matching: .any)["stories.mine.add"].firstMatch
-        if mineAdd.waitForExistence(timeout: 20) {
-            Thread.sleep(forTimeInterval: 3)
-            shoot(app, "60a-ストーリーの輪（自分の＋）")
-        }
+        // ホームの輪（自分にストーリーがあっても右下の「＋」）。**輪が出なくても撮る**（どこで止まったかを絵で残す）。
+        // 「＋」は読み上げでは輪の操作にしてある（要素として隠す）ので、自分の輪の名前で待つ
+        let mine = app.buttons["あなたのストーリー"].firstMatch
+        let mineShown = mine.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, mineShown ? "60a-ストーリーの輪（自分の＋）" : "60a-ストーリーの輪（自分の輪が出ない）")
 
         // 写真の詳細の作者の顔
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 5), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
-        guard photo.waitForExistence(timeout: 30), photo.isHittable else { return }
+        guard photo.waitForExistence(timeout: 30), photo.isHittable else {
+            shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
+            return
+        }
         photo.tap()
         let author = app.buttons["photo.author"].firstMatch
         var pushes = 0
@@ -4050,36 +4053,38 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        guard author.waitForExistence(timeout: 5), author.isHittable else { return }
         let detailRing = app.buttons["story.avatar.ring"].firstMatch
-        if detailRing.waitForExistence(timeout: 10) {
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "60b-ストーリーの輪（写真の作者の顔）")
+        let detailShown = detailRing.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, detailShown ? "60b-ストーリーの輪（写真の作者の顔）" : "60b-ストーリーの輪（作者の顔に輪が無い）")
+        if detailShown {
             XCTAssertGreaterThanOrEqual(detailRing.frame.height, 44, "作者の顔の輪が 44pt 未満")
         }
+        guard author.exists, author.isHittable else { return }
 
         // 人のページの顔
         author.tap()
         Thread.sleep(forTimeInterval: 4)
         // 積んだ下の写真の詳細にも同じ名前の輪が残っているので、**押せる方**を選ぶ
         let rings = app.buttons.matching(identifier: "story.avatar.ring")
-        guard let profileRing = (0..<rings.count).map({ rings.element(boundBy: $0) }).first(where: { $0.isHittable })
-        else { return }
-        shoot(app, "60c-ストーリーの輪（人のページの顔）")
+        let profileRing = (0..<rings.count).map({ rings.element(boundBy: $0) }).first(where: { $0.isHittable })
+        shoot(app, profileRing != nil ? "60c-ストーリーの輪（人のページの顔）" : "60c-ストーリーの輪（人のページの顔に輪が無い）")
+        guard let profileRing else { return }
 
         // 輪を押すとその人のストーリーから開く → 返信欄に入ると入力欄の上に絵文字の列
         profileRing.tap()
+        Thread.sleep(forTimeInterval: 3)
         let reply = app.textFields.firstMatch
-        guard reply.waitForExistence(timeout: 15) else { return }
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "60d-ストーリー（顔から開いた）")
+        let replyShown = reply.waitForExistence(timeout: 15)
+        shoot(app, replyShown ? "60d-ストーリー（顔から開いた）" : "60d-ストーリー（顔から開いた・返信欄が無い）")
+        guard replyShown, reply.isHittable else { return }
         reply.tap()
         let row = app.descendants(matching: .any)["story.reply.reactions"].firstMatch
-        guard row.waitForExistence(timeout: 10) else { return }
+        let rowShown = row.waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "60e-ストーリーの返信欄（絵文字の列）")
+        shoot(app, rowShown ? "60e-ストーリーの返信欄（絵文字の列）" : "60e-ストーリーの返信欄（絵文字の列が無い）")
         let heart = app.buttons["いいね"].firstMatch
-        if heart.exists {
+        if rowShown, heart.exists {
             XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "絵文字の列の的が 44pt 未満")
         }
     }
