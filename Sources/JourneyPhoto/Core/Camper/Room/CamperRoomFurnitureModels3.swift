@@ -150,7 +150,8 @@ extension CamperRoomFurnitureModels {
                                      light ? cream : soot))
             }
         }
-        parts.append(K.block(CV3(12, 1.4, 9), at: CV3(0, 86.2, -1.5), radius: 0.3, R(.castIron)))
+        // 煙突の笠（煙突の上端 85.4 に載せる。2026-10-22: 前は 2 cm 浮いていた）
+        parts.append(K.block(CV3(12, 1.4, 9), at: CV3(0, 85.4, -1.5), radius: 0.3, R(.castIron)))
         return K.merge(parts)
     }
 
@@ -176,6 +177,10 @@ extension CamperRoomFurnitureModels {
             parts.append(K.placed(K.panel(width: 5.6, height: 47.6, R(.paper)), at: c + CV3(nx * 0.08, 0, nz * 0.08), rotation: q))
         }
         parts.append(K.placed(K.sphere(radius: 2.2, segments: 14, R(.bulb)), at: CV3(0, 28, 0)))
+        // 電球は上の蓋から下げた受け口と紐で吊る（2026-10-22: 前は筒の真ん中の宙に浮いていた）
+        parts.append(K.placed(K.lathe([CV2(0, 0), CV2(0.9, 0), CV2(0.9, 1.8), CV2(0.5, 2.2), CV2(0, 2.2)], segments: 12, R(.brass)),
+                              at: CV3(0, 29.6, 0)))
+        parts.append(K.tube([CV3(0, 31.6, 0), CV3(0, 51.8, 0)], radius: 0.2, sides: 6, R(.iron)))
         parts.append(K.block(CV3(8.2, 1.4, 8.2), at: CV3(0, 51.6, 0), radius: 0.35, cedar))
         parts.append(K.placed(K.disc(radius: 1.2, height: 0.6, bevel: 0.2, segments: 12, R(.brass)), at: CV3(0, 53.0, 0)))
         return K.merge(parts)

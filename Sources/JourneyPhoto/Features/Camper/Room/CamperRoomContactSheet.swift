@@ -82,6 +82,8 @@ final class CamperRoomContactRenderer {
         if let view {
             camera.yaw = view.yaw
             camera.pitch = view.pitch
+            // 床すれすれは狙いを床の近くへ下げ、座・天板の裏と脚の間を覗く（Mac run 673: 狙いが家具の真ん中のままだと正面と同じ絵）
+            if view.pitch < 5 { camera.target = CV3(camera.target.x, 2.5, camera.target.z) }
         }
         scene.setCamera(camera, animated: false)
         return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)

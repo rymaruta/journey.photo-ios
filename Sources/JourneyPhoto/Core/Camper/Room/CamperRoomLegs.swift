@@ -55,6 +55,8 @@ enum CamperRoomLegs {
         var lo: CV3
         var hi: CV3
         var triangles: Int
+        /// 上端（いちばん高い点のまわり 0.3 の点の真ん中）。斜めの脚は外枠の真ん中ではなく、ここが上の物に届くかを見る
+        var top: CV3 = .zero
 
         var size: CV3 { hi - lo }
         var center: CV3 { (lo + hi) * 0.5 }
@@ -132,13 +134,35 @@ enum CamperRoomLegs {
                 boxes[r] = Part(lo: p, hi: p, triangles: tris[r] ?? 0)
             }
         }
+        var sums: [Int: (CV3, Double)] = [:]
+        for i in 0..<n where used[i] {
+            let r = find(i), p = m.positions[i]
+            guard let b = boxes[r], p.y >= b.hi.y - 0.3 else { continue }
+            let s = sums[r] ?? (.zero, 0)
+            sums[r] = (s.0 + p, s.1 + 1)
+        }
+        for (r, s) in sums { boxes[r]?.top = s.0 * (1 / s.1) }
         return boxes.values.sorted { ($0.lo.y, $0.lo.x, $0.lo.z) < ($1.lo.y, $1.lo.x, $1.lo.z) }
     }
 
     /// 床の家具で、脚（床に着いた細長い部品）を持つもの
     static func hasLegs(_ f: CamperRoomFurniture) -> Bool {
         guard f.placement == .floor, f.category != .roomRug, let m = CamperRoomFurnitureModels.rawMesh(f.id) else { return false }
-        return parts(m).contains(where: \.isLeg)
+        return !legs(parts(m)).isEmpty
+    }
+
+    /// 脚の番号（床に着いた細長い部品のうち、胴の横に沿って上る帯・縫い目・板を除く。
+    /// 2026-10-22 判断: 旅のラジオの前の縫い目の輪が床すれすれまで下りていて「細すぎる脚」と読んだ。脚は上端で何かを受ける物）
+    static func legs(_ ps: [Part]) -> [Int] {
+        ps.indices.filter { i in
+            let leg = ps[i]
+            guard leg.isLeg else { return false }
+            let top = CV3(leg.top.x, leg.hi.y, leg.top.z)
+            let above = ps.indices.filter { j in j != i && ps[j].contains(top, slack: touch) && ps[j].hi.y > leg.hi.y - touch }
+            let sitsOn = above.contains { ps[$0].lo.y >= leg.hi.y - 1.5 }
+            let alongside = above.contains { ps[$0].lo.y <= leg.lo.y + touch && ps[$0].hi.y >= leg.hi.y }
+            return sitsOn || !alongside
+        }
     }
 
     /// 脚のある家具の組み立ての崩れ（無ければ空）
@@ -161,10 +185,11 @@ enum CamperRoomLegs {
         }
         // 脚ごと
         var carried: [Int: [Int]] = [:]
-        for (i, leg) in ps.enumerated() where leg.isLeg {
+        for i in legs(ps) {
+            let leg = ps[i]
             let s = leg.size
             if min(s.x, s.z) < thinnest { out.append("細すぎる脚 \(fmt(min(s.x, s.z)))（\(where_(leg))）") }
-            let top = CV3(leg.center.x, leg.hi.y, leg.center.z)
+            let top = CV3(leg.top.x, leg.hi.y, leg.top.z)
             // 上端が届く物（脚より上へ伸びる物・脚の上端を外枠に含む）
             let above = ps.indices.filter { j in
                 j != i && ps[j].contains(top, slack: touch) && ps[j].hi.y > leg.hi.y - touch
@@ -184,12 +209,14 @@ enum CamperRoomLegs {
                 }
                 continue
             }
-            // 脚が座・天板の外へはみ出さない（脚の上半分より上にあり、脚の上端より上へ伸びる部品の外枠と比べる。框に差し込んだ脚も見る）
+            // 脚の上端が座・天板の外へはみ出さない（脚の上半分より上にあり、脚の上端より上へ伸びる部品の外枠と比べる。
+            // 框に差し込んだ脚も見る。外へ開く脚の足先は見ない＝灯りの三本足・ウィンザーの開き脚）
             let over = ps.indices.filter { j in j != i && ps[j].lo.y >= leg.center.y && ps[j].hi.y > leg.hi.y + touch }
             if !over.isEmpty {
                 let minX = over.map { ps[$0].lo.x }.min()!, maxX = over.map { ps[$0].hi.x }.max()!
                 let minZ = over.map { ps[$0].lo.z }.min()!, maxZ = over.map { ps[$0].hi.z }.max()!
-                let out_ = max(0, minX - leg.lo.x, leg.hi.x - maxX, minZ - leg.lo.z, leg.hi.z - maxZ)
+                let r = min(leg.size.x, leg.size.z) / 2
+                let out_ = max(0, minX - (leg.top.x - r), leg.top.x + r - maxX, minZ - (leg.top.z - r), leg.top.z + r - maxZ)
                 if out_ > 0.6 { out.append("脚が座・天板の外へ \(fmt(out_))（\(where_(leg))）") }
             }
             // 長さをそろえるのは、上端で下面を受ける物ごと（胴の横を上る帯・框に差し込んだ柱は比べない）

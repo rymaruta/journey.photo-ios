@@ -38,23 +38,9 @@ final class CamperFurnitureLegsTests: XCTestCase {
         XCTAssertEqual(CamperRoomLegs.parts(stool()).filter(\.isLeg).count, 4)
     }
 
-    /// まだ作り直していない家具（2026-10-22。1 つ直すごとにここから外す。ここに無い床の家具は全部、組み立ての崩れが無いこと）
-    static let pending: [String: String] = [
-        "heater.x": "組み合わせの暖炉（足の形 4 種）",
-        "floor_lamp.x": "組み合わせの床の灯り（足の形）",
-        "utility.step_stool": "踏み台の脚",
-        "plant_pot.herb_box": "ハーブ箱の脚と葉",
-        "audio.travel_radio": "旅のラジオの革の帯",
-        "camera.instant": "インスタントカメラの部品",
-        "travel_bag.open_suitcase": "開いたトランクの蓋",
-        "tea.cake_stand": "ケーキ台の段",
-        "tea.fruit_bowl": "果物鉢の果物",
-        "utility.coat_tree": "コート掛けの帽子",
-        "heater.kerosene": "石油ストーブの部品",
-        "heater.tile_hearth": "タイルの暖炉の煙突",
-        "floor_lamp.tripod": "三脚の灯りの脚",
-        "floor_lamp.paper_column": "和紙の柱の笠",
-    ]
+    /// まだ作り直していない家具（2026-10-22 に始めた待ちの一覧。1 つ直すごとに外し、いまは空。
+    /// 新しく足した床の家具も、ここに入れずに組み立ての崩れが無いこと）
+    static let pending: [String: String] = [:]
 
     /// 壁に留める床の家具（脚で立たない作り）
     static let wallHung: Set<String> = ["table.fold_down"]
@@ -74,9 +60,11 @@ final class CamperFurnitureLegsTests: XCTestCase {
         XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
     }
 
-    /// 椅子・机・寝台・棚は全部、脚の形ごとに作り直した（組み合わせの椅子 220・机 180・寝台 160・棚 200 が数に入っている）
+    /// 椅子・机・寝台・棚・暖炉・床の灯りは全部、脚の形ごとに作り直した（組み合わせの椅子 220・机 180・寝台 160・棚 200・
+    /// 暖炉 80・床の灯り 160 が数に入っている）
     func testRebuiltCategoriesAreAllChecked() {
-        for (cat, count) in [(CamperRoomCategory.seating, 220), (.table, 180), (.bed, 160), (.storage, 200)] {
+        XCTAssertTrue(Self.pending.isEmpty, "作り直しの待ちが残っている: \(Self.pending)")
+        for (cat, count) in [(CamperRoomCategory.seating, 220), (.table, 180), (.bed, 160), (.storage, 200), (.heater, 80), (.floorLamp, 160)] {
             XCTAssertNil(Self.pending["\(cat.rawValue).x"], "\(cat) がまだ作り直しの待ちにある")
             XCTAssertTrue(CamperRoomVariety.craftedLegs.contains(cat))
             XCTAssertEqual(CamperRoomVariety.pieces.filter { $0.furniture.category == cat }.count, count)
