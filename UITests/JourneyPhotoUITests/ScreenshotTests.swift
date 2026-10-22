@@ -3966,6 +3966,17 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, "96o-部屋の下の板（図鑑\(tag)）")
             XCTAssertGreaterThanOrEqual(close.frame.height, 44, "図鑑の「閉じる」が 44pt 未満\(tag)")
             XCTAssertTrue(close.isHittable, "図鑑の「閉じる」を押せない\(tag)")
+            // 置き場所のタブの数が 1 字ずつ折れない（大きい文字で「474/1,19」「2」と折れた・run 666）
+            var tabBoxes: [(String, CGRect)] = []
+            for p in ["floor", "wall", "ceiling"] {
+                let t = app.buttons["camper.room.dex.tab.\(p)"].firstMatch
+                guard t.exists, t.isHittable else { continue }
+                tabBoxes.append((p, t.frame))
+                XCTAssertGreaterThanOrEqual(t.frame.height, 44, "図鑑のタブ \(p) が 44pt 未満\(tag)")
+                XCTAssertLessThan(t.frame.height, 90, "図鑑のタブ \(p) の字が折れて縦に伸びた（\(t.frame.height)pt）\(tag)")
+            }
+            XCTAssertFalse(tabBoxes.isEmpty, "図鑑の置き場所のタブが見えない\(tag)")
+            assertNoOverlap(tabBoxes, "図鑑のタブ\(tag)")
             close.tap()
         } else {
             XCTFail("家具の図鑑が開かない\(tag)")
