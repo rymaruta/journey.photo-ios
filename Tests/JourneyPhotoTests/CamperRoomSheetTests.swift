@@ -130,7 +130,62 @@ final class CamperRoomSheetTests: XCTestCase {
         // 寄った所から二度押しで戻る先は、絵に合わせた向き
         let layout = CamperRoomLayout.make(.car, stage: .camper)
         let home = CamperRoomCamera.overview(layout, viewport: CGSize(width: 390, height: 430))
+        // 絵に合わせた初めの向きから二度押しすると、本当に寄る（初めの倍率が寄った扱いの線より下）
+        XCTAssertLessThan(home.zoom, CamperRoomCamera.doubleTapZoom * 0.75)
         let near = home.doubleTapped(floor: CV3(40, 0, 30), layout: layout, home: home)
+        XCTAssertNotEqual(near, home)
+        XCTAssertEqual(near.zoom, CamperRoomCamera.doubleTapZoom, accuracy: 0.001)
         XCTAssertEqual(near.doubleTapped(floor: nil, layout: layout, home: home), home)
+    }
+
+    // MARK: 模様替えの途中の状態
+
+    private func lockedBirch() throws -> CamperRoomStyleChoice {
+        try XCTUnwrap(CamperRoomStyleBoard.choices(.wall, partsOwned: CamperCatalog.owned(CamperStats()), stats: CamperStats())
+            .first { !$0.owned && $0.key == "plywood_birch" })
+    }
+
+    /// 見本は映すだけで覚えない。見本をやめると元の柄。見本だけでは「これにする」を光らせない
+    func testTrialIsShownButNotSaved() throws {
+        let layout = CamperRoomLayout.make(.car, stage: .camper)
+        let editor = CamperRoomEditor(doc: CamperRoomRules.starterDocument(layout), layout: layout)
+        let saved = editor.doc.style
+        var session = CamperRoomStyleSession()
+        session.begin(saved)
+        session.trial = try lockedBirch()
+        XCTAssertEqual(session.shown(saved, tab: .wall).wall, "plywood_birch", "見本が部屋に映らない")
+        XCTAssertEqual(editor.doc.style, saved, "見本で覚えた柄が変わった")
+        XCTAssertEqual(session.footer(now: editor.doc.style), .close, "見本だけで「これにする」が出る")
+        // 床の札では、壁の見本の鍵で床を書き換えない（札ごとに重ねる）
+        XCTAssertEqual(session.shown(saved, tab: .floor).wall, saved.wall)
+        session.trial = nil
+        XCTAssertEqual(session.shown(saved, tab: .wall), saved, "見本をやめても元に戻らない")
+    }
+
+    /// 部屋を替えたら、前の部屋の見本と入った時の柄を持ち越さない（確かめ役 2026-10-22: 部屋 B で何も触らないのに
+    /// 「これにする／元に戻す」が光り、「元に戻す」で部屋 A の柄が B に書かれた）
+    func testRoomChangeStartsTheStyleSessionOver() throws {
+        var a = CamperRoomStyle()
+        a.curtain = "indigo"
+        var b = CamperRoomStyle()
+        b.wall = "dark_walnut"
+        var session = CamperRoomStyleSession()
+        session.begin(CamperRoomStyle())
+        // 部屋 A で柄を変えた（変えた後なので「元に戻す・これにする」）
+        XCTAssertEqual(session.footer(now: a), .revertOrKeep)
+        session.trial = try lockedBirch()
+        // 部屋 B へ
+        session.roomChanged(to: b)
+        XCTAssertNil(session.trial, "前の部屋の見本が残る")
+        XCTAssertEqual(session.entry, b, "入った時の柄が前の部屋のまま")
+        XCTAssertEqual(session.footer(now: b), .close, "部屋 B で何も触らないのに「これにする」")
+        // 模様替えの外で部屋を替えても、模様替えは始まらない
+        var outside = CamperRoomStyleSession()
+        outside.roomChanged(to: b)
+        XCTAssertFalse(outside.active)
+        XCTAssertNil(outside.entry)
+        session.end()
+        XCTAssertFalse(session.active)
+        XCTAssertNil(session.trial)
     }
 }

@@ -49,10 +49,13 @@ struct CamperRoomView: View {
     /// 置く棚の分類（床一括にしない・2026-10-21）
     @State private var trayCategory: CamperRoomCategory = .bed
     @State private var styleTab: StyleTab = .wall
-    /// 模様替えに入った時の柄（変えたかどうか・「元に戻す」）
-    @State private var styleEntry: CamperRoomStyle?
+    /// 模様替えの途中の状態（入った時の柄・試している見本。`CamperRoomStyleSession`）
+    @State private var styleSession = CamperRoomStyleSession()
     /// 持っていない柄を部屋で試している見本（保存しない・2026-10-22）
-    @State private var trial: CamperRoomStyleChoice?
+    private var trial: CamperRoomStyleChoice? {
+        get { styleSession.trial }
+        nonmutating set { styleSession.trial = newValue }
+    }
     /// 灯りの札の間だけ夜にした（札を離れたら昼に戻す）
     @State private var autoNight = false
     /// 下の板の中身が要る高さ（場面ごとに測る）。板はこの高さだけ取り、部屋の絵は残り全部（2026-10-22）
@@ -106,7 +109,7 @@ struct CamperRoomView: View {
     private var shownDoc: CamperRoomDocument {
         var doc = editor?.shown(owned: owned) ?? CamperRoomRules.starterDocument(layout)
         // 持っていない柄の見本は、映すだけで覚えない
-        if mode == .style, let trial { doc.style = CamperRoomStyleBoard.with(doc.style, styleTab, key: trial.key) }
+        if mode == .style { doc.style = styleSession.shown(doc.style, tab: styleTab) }
         return doc
     }
 
@@ -265,6 +268,8 @@ struct CamperRoomView: View {
         var e = CamperRoomEditor(doc: doc, layout: l)
         e.fillEmptyFrames(hangablePhotoIds)
         editor = e
+        // 前の部屋の見本・入った時の柄を持ち越さない（2026-10-22 確かめ役）
+        styleSession.roomChanged(to: e.doc.style)
         if e.doc != doc { save() }
         selected = nil
         drag = nil
@@ -1009,8 +1014,7 @@ struct CamperRoomView: View {
         selected = nil
         drag = nil
         disarm()
-        trial = nil
-        styleEntry = nil
+        styleSession.end()
         lightTabNight()
         animateCamera = true
         camera = overviewCamera
@@ -1127,7 +1131,7 @@ struct CamperRoomView: View {
         animateCamera = true
         trial = nil
         if m == .style {
-            styleEntry = editor?.doc.style
+            styleSession.begin(editor?.doc.style ?? CamperRoomStyle())
             lightTabNight()
         }
         if m == .photos {
@@ -1353,8 +1357,8 @@ struct CamperRoomView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(styleLabel(c))
-        .accessibilityHint(c.owned ? "" : (trying ? L("もう一度押すと見本をやめます", "Tap again to stop the preview")
-                                                  : L("押すと部屋で見本を試せます", "Tap to try it in the room")))
+        .modifier(CamperRoomOptionalHint(hint: c.owned ? nil : (trying ? L("もう一度押すと見本をやめます", "Tap again to stop the preview")
+                                                                          : L("押すと部屋で見本を試せます", "Tap to try it in the room"))))
         .accessibilityAddTraits(on || trying ? .isSelected : [])
         .accessibilityIdentifier("camper.room.style.\(c.key)")
     }
@@ -1458,7 +1462,7 @@ struct CamperRoomView: View {
     /// 下のボタン（`CamperRoomStyleBoard.footer`）。大きい文字では縦に積む
     @ViewBuilder
     private func styleFooter(_ now: CamperRoomStyle) -> some View {
-        switch CamperRoomStyleBoard.footer(entry: styleEntry, now: now) {
+        switch styleSession.footer(now: now) {
         case .close:
             secondaryButton(L("閉じる", "Close"), id: "camper.room.styleDone") { goHome() }
         case .revertOrKeep:
@@ -1514,7 +1518,7 @@ struct CamperRoomView: View {
     /// 模様替えに入った時の柄へ戻す
     private func revertStyle() {
         trial = nil
-        guard let entry = styleEntry, var e = editor, e.doc.style != entry else { return }
+        guard let entry = styleSession.entry, var e = editor, e.doc.style != entry else { return }
         e.setStyle(entry)
         editor = e
         save()
@@ -1758,6 +1762,20 @@ struct CamperRoomEntrance: View {
         .buttonStyle(.plain)
         .accessibilityHint(L("家具を置いたり、写真を飾ったりできます", "Arrange furniture and hang your photos"))
         .accessibilityIdentifier("camper.room.enter")
+    }
+}
+
+/// 読み上げの手がかり（無い時は付けない。空の文字を渡すと空の手がかりが付く）
+struct CamperRoomOptionalHint: ViewModifier {
+    let hint: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let hint {
+            content.accessibilityHint(hint)
+        } else {
+            content
+        }
     }
 }
 

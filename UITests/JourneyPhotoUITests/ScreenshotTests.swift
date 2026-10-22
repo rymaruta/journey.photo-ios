@@ -3928,6 +3928,24 @@ final class ScreenshotTests: XCTestCase {
         revert.tap()
         XCTAssertFalse(revert.waitForExistence(timeout: 2), "「元に戻す」で戻らない\(tag)")
         XCTAssertFalse(done.label.contains("これにする"), "戻したのに「これにする」のまま\(tag)")
+        // 部屋のタブを替えたら、前の部屋の柄・見本を持ち越さない（確かめ役 2026-10-22: 部屋 B で何も触らないのに
+        // 「これにする／元に戻す」が光り、「元に戻す」で部屋 A の柄が B に書かれた）
+        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "camper.room.room."))
+        if rooms.count > 1, rooms.element(boundBy: 1).isHittable {
+            revealInPanel(app, indigo)
+            indigo.tap()
+            XCTAssertTrue(revert.waitForExistence(timeout: 3), "柄を変えても「元に戻す」が出ない（部屋を替える前）\(tag)")
+            rooms.element(boundBy: 1).tap()
+            waitRoom(app, "camper.room.scene", "camper-room-ready")
+            XCTAssertFalse(revert.exists, "部屋を替えたのに「元に戻す」が残る\(tag)")
+            XCTAssertFalse(done.label.contains("これにする"), "部屋を替えて何も触らないのに「これにする」（今は「\(done.label)」）\(tag)")
+            XCTAssertFalse(app.descendants(matching: .any)["camper.room.styleTrial"].firstMatch.exists, "前の部屋の見本が残る\(tag)")
+            shoot(app, "96l-部屋の下の板（模様替え・部屋を替えた後\(tag)）")
+            rooms.element(boundBy: 0).tap()
+            waitRoom(app, "camper.room.scene", "camper-room-ready")
+        } else {
+            XCTFail("部屋のタブが 2 つ以上無い・押せない\(tag)")
+        }
         revealInPanel(app, done)
         done.tap()
         XCTAssertTrue(app.buttons["camper.room.tool.photos"].firstMatch.waitForExistence(timeout: 5), "模様替えを閉じられない\(tag)")
@@ -3949,7 +3967,10 @@ final class ScreenshotTests: XCTestCase {
         // 置く
         app.buttons["camper.room.tool.place"].firstMatch.tap()
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない\(tag)")
-        Thread.sleep(forTimeInterval: 2)
+        // 押した直後から部屋が描かれている（置くの場面だけ立体を作り直し、組み上がるまで部屋が消えていた・run 666）
+        Thread.sleep(forTimeInterval: 0.3)
+        assertRoomDrawn(app, "置くを押した直後\(tag)")
+        Thread.sleep(forTimeInterval: 1.7)
         shoot(app, "96n-部屋の下の板（置く\(tag)）")
         checkRoomPanel(app, "置く\(tag)", ids: ["camper.room.undo", "camper.room.redo", "camper.room.done", "camper.room.tab.floor",
                                                  "camper.room.tab.wall", "camper.room.tab.ceiling"],
@@ -4087,6 +4108,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertGreaterThan(above, 0.005, "\(label): 部屋の絵の上が切れている")
         XCTAssertGreaterThan(below, 0.005, "\(label): 部屋の絵の下が切れている")
         XCTAssertLessThan(abs(above - below), 0.3, "\(label): 部屋が上か下へ寄っている（上の空き \(above)・下の空き \(below)）")
+    }
+
+    /// 部屋の絵に部屋が描かれている（明るい行が絵の 1 割以上）。組み直しの途中の暗い地だけなら落とす
+    private func assertRoomDrawn(_ app: XCUIApplication, _ label: String) {
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        guard scene.exists, let rows = Self.litRows(scene.screenshot().image) else { return XCTFail("\(label): 部屋の絵を読めない") }
+        let lit = rows.filter { $0 }.count
+        XCTAssertGreaterThan(Double(lit), Double(rows.count) * 0.1, "\(label): 部屋が描かれていない（明るい行 \(lit) / \(rows.count)）")
     }
 
     /// 行ごとに「部屋が写っているか」（明るさ 60 を超える画素が幅の 3% 以上）。暗い地（0x1D1B14 から黒）は数えない

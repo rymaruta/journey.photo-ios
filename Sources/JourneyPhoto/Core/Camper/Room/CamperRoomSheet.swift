@@ -124,6 +124,46 @@ enum CamperRoomStyleBoard {
     }
 }
 
+/// 模様替えの途中の状態（入った時の柄・試している見本）。画面から分けて試験する（2026-10-22 確かめ役）。
+/// 見本は映すだけで覚えない。部屋のタブを替えたら、前の部屋の柄と見本を持ち越さない
+/// （持ち越すと、新しい部屋で何も触らないのに「これにする／元に戻す」が光り、「元に戻す」で前の部屋の柄が新しい部屋に書かれた）
+struct CamperRoomStyleSession: Equatable {
+    /// 模様替えに入った時の柄（模様替えの外では nil）
+    private(set) var entry: CamperRoomStyle?
+    /// 持っていない柄を部屋で試している見本
+    var trial: CamperRoomStyleChoice?
+
+    var active: Bool { entry != nil }
+
+    /// 模様替えに入る
+    mutating func begin(_ style: CamperRoomStyle) {
+        entry = style
+        trial = nil
+    }
+
+    /// 模様替えを出る
+    mutating func end() {
+        entry = nil
+        trial = nil
+    }
+
+    /// 部屋を替えた。見本は捨て、模様替えの途中なら新しい部屋の柄から数え直す
+    mutating func roomChanged(to style: CamperRoomStyle) {
+        trial = nil
+        if entry != nil { entry = style }
+    }
+
+    /// 部屋に映す柄（覚えた柄 `saved` に見本を重ねる。`saved` は変えない）
+    func shown(_ saved: CamperRoomStyle, tab: CamperRoomStyleTab) -> CamperRoomStyle {
+        guard let trial else { return saved }
+        return CamperRoomStyleBoard.with(saved, tab, key: trial.key)
+    }
+
+    func footer(now: CamperRoomStyle) -> CamperRoomStyleBoard.Footer {
+        CamperRoomStyleBoard.footer(entry: entry, now: now)
+    }
+}
+
 /// 部屋の絵と下の板の高さの分け方（2026-10-22 owner の実機: 下の板が中身より低く、見本の名前が説明と重なり、
 /// 札がタブの下線にかぶり、部屋の絵が上へ押し出されて切れた）。
 /// 下の板は中身が要るだけの高さ（測った値）を取り、部屋の絵は残り全部。大きい文字で中身が伸びても、
