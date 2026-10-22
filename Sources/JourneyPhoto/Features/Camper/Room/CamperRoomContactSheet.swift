@@ -246,7 +246,7 @@ struct CamperRoomContactSheet: View {
             if frames {
                 // 額の頁: 入れた写真（id と縦横比）と、印画が写真の外を読んだ量（0 でなければ筋に崩れる）
                 let aspect = { (id: String?) in id.flatMap { shots[$0] }.map { String(format: "%.2f", $0.size.width / max(1, $0.size.height)) } ?? "-" }
-                done += " wide=\(aspect(chosen["wide"])) tall=\(aspect(chosen["tall"])) uvOut=\(String(format: "%.2f", overflow))"
+                done += " wide=\(aspect(chosen["wide"])) tall=\(aspect(chosen["tall"])) uvOut=\(CamperRoomScene.overflowText(overflow))"
             }
             marker = done
         }

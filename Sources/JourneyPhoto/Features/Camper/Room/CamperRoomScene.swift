@@ -464,6 +464,9 @@ final class CamperRoomScene {
         scheduleProbe()
     }
 
+    /// はみ出す量の字（負の 0 を "-0.00" にしない・Mac run 668）
+    static func overflowText(_ x: Double) -> String { String(format: "%.2f", x > 0 ? x : 0) }
+
     /// 印画の貼り絵の位置に `fit` を掛けたとき、0〜1 からはみ出す量
     static func uvOverflow(_ mesh: CamperPreparedMesh, _ indices: [Int32],
                            _ fit: (scaleX: Double, scaleY: Double, offsetX: Double, offsetY: Double)) -> Double {
@@ -495,7 +498,7 @@ final class CamperRoomScene {
             furniture[entry.item.furnitureId]?.groups.contains { if case .room(.photo) = $0.material { return true } else { return false } } ?? false
         }
         let shown = frames.filter { (shownPhotos[$0.item.uid] ?? 0) > 0 }
-        var out = "photos=\(shown.count)/\(frames.count) uvOut=\(String(format: "%.2f", photoUVOverflow))"
+        var out = "photos=\(shown.count)/\(frames.count) uvOut=\(Self.overflowText(photoUVOverflow))"
         let pick = focusFrameUid.flatMap { itemNodes[$0] } ?? shown.sorted { $0.item.uid < $1.item.uid }.first
         if let pick, let rect = photoRect(pick.node, pick.item) {
             out += " rect=\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))"
