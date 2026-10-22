@@ -48,15 +48,22 @@ final class CamperFurnitureLegsTests: XCTestCase {
     /// 床の家具の組み立て（2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）: 床から浮いた部品が無く、
     /// 脚（床に着いた細長い部品）は上端が座・天板・框に届き、座・天板の外へはみ出さず、同じ物を支える脚の長さがそろい、細すぎない
     func testFloorFurnitureStandsTogether() throws {
-        var broken: [String] = []
         let variety = Set(CamperRoomVariety.pieces.map(\.furniture.id))
-        for f in CamperRoomCatalog.all where f.placement == .floor && f.category != .roomRug && !Self.wallHung.contains(f.id) {
-            let key = variety.contains(f.id) ? "\(f.category.rawValue).x" : f.id
-            if Self.pending[key] != nil { continue }
-            let m = try XCTUnwrap(CamperRoomFurnitureModels.rawMesh(f.id), f.id)
-            let p = CamperRoomLegs.problems(m)
-            if !p.isEmpty { broken.append("\(f.id)（\(f.nameJa)）: \(p.joined(separator: " / "))") }
+        let targets = CamperRoomCatalog.all.filter { f in
+            guard f.placement == .floor, f.category != .roomRug, !Self.wallHung.contains(f.id) else { return false }
+            return Self.pending[variety.contains(f.id) ? "\(f.category.rawValue).x" : f.id] == nil
         }
+        // 1000 点を超えるので手分けして見る（Mac run 676: 1 本ずつでは試験の 1 分の枠を超えて止められた）
+        var results = [String?](repeating: nil, count: targets.count)
+        let gate = NSLock()
+        DispatchQueue.concurrentPerform(iterations: targets.count) { k in
+            let f = targets[k]
+            let p = CamperRoomFurnitureModels.rawMesh(f.id).map(CamperRoomLegs.problems) ?? ["形が無い"]
+            gate.lock()
+            if !p.isEmpty { results[k] = "\(f.id)（\(f.nameJa)）: \(p.joined(separator: " / "))" }
+            gate.unlock()
+        }
+        let broken = results.compactMap { $0 }
         XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
     }
 

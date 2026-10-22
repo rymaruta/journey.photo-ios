@@ -80,6 +80,7 @@ enum CamperRoomLegs {
 
     /// 網を部品に分ける（同じ位置の点をつなぐ）
     static func parts(_ m: CamperMesh) -> [Part] {
+        // 2026-10-22（Mac run 676）: 床の家具 1000 点を 1 分の試験の枠で見られるよう、辞書と構造体を避けて配列で数える
         let n = m.positions.count
         guard n > 0 else { return [] }
         var parent = Array(0..<n)
@@ -91,28 +92,51 @@ enum CamperRoomLegs {
             }
             return i
         }
-        func union(_ a: Int, _ b: Int) {
-            let ra = find(a), rb = find(b)
-            if ra != rb { parent[ra] = rb }
-        }
-        struct Key: Hashable { var x: Int64, y: Int64, z: Int64 }
-        var first: [Key: Int] = [:]
-        first.reserveCapacity(n)
-        for (i, p) in m.positions.enumerated() {
-            let k = Key(x: Int64((p.x * 1e4).rounded()), y: Int64((p.y * 1e4).rounded()), z: Int64((p.z * 1e4).rounded()))
-            if let j = first[k] { union(i, j) } else { first[k] = i }
+        // 同じ位置の点をつなぐ（位置を 0.001 で丸めて 1 つの整数に詰める）
+        var first = [Int: Int](minimumCapacity: n)
+        for i in 0..<n {
+            let p = m.positions[i]
+            let qx = Int((p.x * 1000).rounded()) & 0x1FFFFF, qy = Int((p.y * 1000).rounded()) & 0x1FFFFF
+            let qz = Int((p.z * 1000).rounded()) & 0x1FFFFF
+            let key = qx | (qy << 21) | (qz << 42)
+            if let j = first[key] {
+                let a = find(i), b = find(j)
+                if a != b { parent[a] = b }
+            } else {
+                first[key] = i
+            }
         }
         var used = [Bool](repeating: false, count: n)
-        var tris: [Int: Int] = [:]
         for g in m.groups {
             var i = 0
-            while i + 2 < g.indices.count {
-                let a = Int(g.indices[i]), b = Int(g.indices[i + 1]), c = Int(g.indices[i + 2])
+            let idx = g.indices
+            while i + 2 < idx.count {
+                let a = Int(idx[i]), b = Int(idx[i + 1]), c = Int(idx[i + 2])
                 i += 3
                 guard a < n, b < n, c < n else { continue }
-                union(a, b)
-                union(a, c)
+                let ra = find(a), rb = find(b)
+                if ra != rb { parent[ra] = rb }
+                let rc = find(c), rb2 = find(b)
+                if rc != rb2 { parent[rc] = rb2 }
                 used[a] = true; used[b] = true; used[c] = true
+            }
+        }
+        // 部品ごとの外枠
+        var slot = [Int](repeating: -1, count: n)
+        var lo: [CV3] = [], hi: [CV3] = [], tris: [Int] = []
+        for i in 0..<n where used[i] {
+            let r = find(i), p = m.positions[i]
+            if slot[r] < 0 {
+                slot[r] = lo.count
+                lo.append(p); hi.append(p); tris.append(0)
+            } else {
+                let k = slot[r]
+                if p.x < lo[k].x { lo[k].x = p.x }
+                if p.y < lo[k].y { lo[k].y = p.y }
+                if p.z < lo[k].z { lo[k].z = p.z }
+                if p.x > hi[k].x { hi[k].x = p.x }
+                if p.y > hi[k].y { hi[k].y = p.y }
+                if p.z > hi[k].z { hi[k].z = p.z }
             }
         }
         for g in m.groups {
@@ -120,29 +144,21 @@ enum CamperRoomLegs {
             while i + 2 < g.indices.count {
                 let a = Int(g.indices[i])
                 i += 3
-                if a < n { tris[find(a), default: 0] += 1 }
+                if a < n, used[a] { tris[slot[find(a)]] += 1 }
             }
         }
-        var boxes: [Int: Part] = [:]
+        // 上端（いちばん高い点のまわり 0.3 の点の真ん中）
+        var sum = [CV3](repeating: .zero, count: lo.count), cnt = [Double](repeating: 0, count: lo.count)
         for i in 0..<n where used[i] {
-            let r = find(i), p = m.positions[i]
-            if var b = boxes[r] {
-                b.lo = CV3(min(b.lo.x, p.x), min(b.lo.y, p.y), min(b.lo.z, p.z))
-                b.hi = CV3(max(b.hi.x, p.x), max(b.hi.y, p.y), max(b.hi.z, p.z))
-                boxes[r] = b
-            } else {
-                boxes[r] = Part(lo: p, hi: p, triangles: tris[r] ?? 0)
-            }
+            let k = slot[find(i)], p = m.positions[i]
+            if p.y >= hi[k].y - 0.3 { sum[k] = sum[k] + p; cnt[k] += 1 }
         }
-        var sums: [Int: (CV3, Double)] = [:]
-        for i in 0..<n where used[i] {
-            let r = find(i), p = m.positions[i]
-            guard let b = boxes[r], p.y >= b.hi.y - 0.3 else { continue }
-            let s = sums[r] ?? (.zero, 0)
-            sums[r] = (s.0 + p, s.1 + 1)
+        var out: [Part] = []
+        out.reserveCapacity(lo.count)
+        for k in lo.indices {
+            out.append(Part(lo: lo[k], hi: hi[k], triangles: tris[k], top: sum[k] * (1 / max(1, cnt[k]))))
         }
-        for (r, s) in sums { boxes[r]?.top = s.0 * (1 / s.1) }
-        return boxes.values.sorted { ($0.lo.y, $0.lo.x, $0.lo.z) < ($1.lo.y, $1.lo.x, $1.lo.z) }
+        return out.sorted { ($0.lo.y, $0.lo.x, $0.lo.z) < ($1.lo.y, $1.lo.x, $1.lo.z) }
     }
 
     /// 床の家具で、脚（床に着いた細長い部品）を持つもの
@@ -172,10 +188,16 @@ enum CamperRoomLegs {
         // 床から浮いた部品
         var reached = ps.map { $0.lo.y <= touch }
         var queue = ps.indices.filter { reached[$0] }
-        while let i = queue.popLast() {
-            for j in ps.indices where !reached[j] && ps[i].touches(ps[j]) {
+        var left = ps.indices.filter { !reached[$0] }
+        while let i = queue.popLast(), !left.isEmpty {
+            let a = ps[i]
+            left.removeAll { j in
+                let b = ps[j]
+                guard a.lo.x <= b.hi.x + touch, b.lo.x <= a.hi.x + touch, a.lo.y <= b.hi.y + touch, b.lo.y <= a.hi.y + touch,
+                      a.lo.z <= b.hi.z + touch, b.lo.z <= a.hi.z + touch else { return false }
                 reached[j] = true
                 queue.append(j)
+                return true
             }
         }
         let floating = ps.indices.filter { !reached[$0] }
