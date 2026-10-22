@@ -252,6 +252,15 @@ open class SCNNode {
         parent = nil
     }
     open func flattenedClone() -> Self { self }
+    /// 本物は親をたどって座標を写す。模型は位置を足すだけ（回り・大きさは見ない）
+    open func convertPosition(_ position: SCNVector3, to node: SCNNode?) -> SCNVector3 {
+        var p = position, n: SCNNode? = self
+        while let c = n, c !== node {
+            p = SCNVector3(p.x + c.position.x, p.y + c.position.y, p.z + c.position.z)
+            n = c.parent
+        }
+        return p
+    }
 }
 
 open class SCNScene {
@@ -276,6 +285,8 @@ open class SCNView: UIView, SCNSceneRenderer {
     open var antialiasingMode: SCNAntialiasingMode = .multisampling4X
     open var preferredFramesPerSecond = 60
     open var rendersContinuously = false
+    /// 模型は画面に写さない（z 0 を返す＝画面の外として扱われる）
+    open func projectPoint(_ point: SCNVector3) -> SCNVector3 { SCNVector3(0, 0, 0) }
     open func snapshot() -> UIImage { UIImage() }
 }
 

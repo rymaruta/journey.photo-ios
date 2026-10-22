@@ -6,7 +6,21 @@ import Foundation
 /// - `-JPPreviewCamperRoomContact YES`: 部屋に入ったら、板と別種の家具全部を本物の SceneKit で描いた「接写の一覧」を出す
 ///   （2026-10-21・ソフトラスタではなく本物の絵で全家具の出来を見るため）
 /// - `-JPPreviewCamperRoomCoach YES`: 初めての人への手引きと、新しい家具の印を出す（覚えずに毎回）
+/// - `-JPPreviewCamperRoomCamera corner|curtain`: 部屋に入った時の向き（手前の右の角・窓の脇のカーテンへ寄る。2026-10-21
+///   owner の実機の寄りの絵と同じ所を撮るため）
 enum CamperRoomPreview {
+    static let cameraKey = "JPPreviewCamperRoomCamera"
+
+    /// 部屋に入った時の寄り（見本の起動だけ）
+    static var cameraPreset: String? {
+        #if DEBUG
+        guard PreviewSession.userId != nil else { return nil }
+        return UserDefaults.standard.string(forKey: cameraKey)
+        #else
+        return nil
+        #endif
+    }
+
     static let resetKey = "JPPreviewCamperRoomReset"
     static let liftKey = "JPPreviewCamperRoomLift"
     static let contactKey = "JPPreviewCamperRoomContact"

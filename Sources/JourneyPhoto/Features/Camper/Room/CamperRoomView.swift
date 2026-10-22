@@ -67,6 +67,8 @@ struct CamperRoomView: View {
     /// 額の中身（読み上げの値の後ろに ` framed=<保存した id>,… preview=<選んだだけの id>,…` で足す・見本の起動のときだけ）。
     /// UI テストが「飾った写真が額に入ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
     @State private var framedMarker = ""
+    /// 見本の起動の試験用: 額の印画の様子（`CamperRoomScene.photoProbe`）
+    @State private var photoProbe = ""
     @State private var viewport = CGSize(width: 390, height: 440)
     @State private var notice: String?
     @State private var lifted = 0
@@ -244,7 +246,7 @@ struct CamperRoomView: View {
         selected = nil
         drag = nil
         disarm()
-        camera = CamperRoomCamera.overview(l)
+        camera = CamperRoomPreview.cameraPreset.flatMap { CamperRoomCamera.preview($0, layout: l) } ?? CamperRoomCamera.overview(l)
     }
 
     private func save() {
@@ -428,12 +430,14 @@ struct CamperRoomView: View {
         CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
                             editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
-                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil, onReady: { marker in
-            readyMarker = marker
-        }, onFramed: { framed, previewed in
-            framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
-                + " preview=" + previewed.values.sorted().joined(separator: ",")
-        }, onDrawn: { uncoverEntry() })
+                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil,
+                            onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil,
+                            onReady: { marker in readyMarker = marker },
+                            onFramed: { framed, previewed in
+                                framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
+                                    + " preview=" + previewed.values.sorted().joined(separator: ",")
+                            },
+                            onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)
@@ -442,7 +446,7 @@ struct CamperRoomView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAddTraits(.isImage)
-        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + framedMarker : "")
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker : "")
     }
 
     /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする
@@ -1397,6 +1401,18 @@ struct CamperRoomView: View {
                 if mine.isEmpty {
                     Text(L("投稿した写真がまだありません", "You haven\u{2019}t posted any photos yet"))
                         .jpSystemFont(13).foregroundStyle(WebTheme.text2)
+                }
+                // 選んだ写真を読めなかった時は、白い額のまま黙らない（2026-10-21 owner の実機で額が白いまま）
+                if let pick = photoPick, photoImages.failed.contains(pick) {
+                    Button {
+                        photoImages.load([pick], from: photos, force: true)
+                    } label: {
+                        Text(L("写真を読み込めませんでした。押してもう一度読む", "Couldn\u{2019}t load the photo. Tap to try again"))
+                            .jpSystemFont(13).foregroundStyle(WebTheme.danger)
+                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("camper.room.photo.retry")
                 }
                 primaryButton(L("この額に飾る", "Hang it here"), id: "camper.room.hang", fill: false) {
                     guard let frame = framePick, let photo = photoPick, var e = editor else { return }

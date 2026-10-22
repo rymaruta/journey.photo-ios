@@ -276,8 +276,8 @@ extension CamperRoomFurnitureModels {
         parts.append(K.placed(K.inverted(K.lathe([CV2(0.8, -0.15), CV2(1.8, -0.5), CV2(5.4, -4.1), CV2(7.2, -7.0)],
                                                  segments: 32, R(.painted(0xF2EEE6)), capStart: false, capEnd: false)),
                               at: tip + CV3(0, 1.8, 0)))
-        parts.append(K.tube(K.arc(center: tip + CV3(0, -5.0, 0), radius: 7.15, from: 0, to: 2 * .pi, steps: 28)
-                                .map { CV3($0.x, tip.y - 5.0, $0.y) }, radius: 0.15, sides: 5, closed: true, R(.agedBrass)))
+        parts.append(K.tube(K.ringXZ(center: tip + CV3(0, -5.0, 0), radius: 7.15, steps: 28), radius: 0.15, sides: 5, closed: true,
+                            R(.agedBrass)))
         parts.append(K.placed(K.sphere(radius: 1.85, segments: 16, R(.bulb)), at: tip + CV3(0, -2.6, 0)))
         // 台から垂れるコード（低い所はマス内に収める）
         parts.append(K.tube([CV3(0, 3.6, -4), CV3(2.2, 1.4, -2.5), CV3(3.8, 0.35, -0.5), CV3(4.2, 0.2, 1.5)],

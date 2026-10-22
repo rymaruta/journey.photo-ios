@@ -90,11 +90,22 @@ enum CamperRoomMaterial: Hashable, Sendable {
     case mirror
     /// 部屋の中の物の硝子（瓶・器・戸・球）。窓の硝子は夜に外の暗さで黒く曇らせるが、物の硝子は夜も透ける（2026-10-21）
     case clearGlass
+    /// 中に物を入れた透明の球（硝子の球の吊り鉢・2026-10-21）。光を受けない足す光で、中身と奥の壁を隠さない
+    case globeGlass
+    /// 硝子の球の映りの筋（窓の明かりが映った細い弧・足す光）
+    case globeGlint
     /// まだ持っていない家具の影絵
     case silhouette
 }
 
 enum CamperRoomMaterials {
+
+    /// 家具の網から分けて、壁・中身を描いた後に重ねる透明の硝子（硝子の球・瓶・ポット・戸棚の戸）。
+    /// 2026-10-21（Mac run 625・632）: 家具 1 つの網の中に混ぜたままだと、硝子が壁や中身より先に描かれ、昼は灰色、
+    /// 夜は灯りに照らされた不透明な玉（拡散の色を黒にすると黒い玉）に見えた。外の車の硝子・炎（`CamperScene`）と同じく後に足す
+    static func drawnAfterOpaque(_ m: CamperMaterial) -> Bool {
+        m == .room(.clearGlass) || m == .room(.globeGlass) || m == .room(.globeGlint)
+    }
 
     /// カーテンの色（板 CamperRoomMain: 麻・藍・森の緑・赤茶）
     static let curtainColors: [(key: String, ja: String, en: String, color: UInt32)] = [
@@ -164,7 +175,9 @@ enum CamperRoomMaterials {
             // 両面の硝子として描くと膜になって奥の印画が消えるので、薄い膜のまま奥行きは書かない
             // 2026-10-21（Mac run 605）: 粗さ 0.4 だと、透かしても周りの光の映りがぼけて面全体に白い膜が掛かり、
             // 額の中の写真・駅の時計の文字盤が白い板に見えた（物理の映りは透明度で薄まらない）。映りは鋭く、照りの層は無し
-            return CamperMaterialSpec(color: 0xF7F4EE, roughness: 0.04, opacity: 0.08, doubleSided: true, glassShell: false)
+            // 2026-10-21（owner の実機: 写真を飾っても額の中が真っ白）: 物理の光の透明は SceneKit では効かず（硝子の球と同じ・
+            // run 625〜636）、明るい硝子の板が印画の手前を不透明に覆っていた。光を受けない「足す光」のごく暗い膜にする
+            return CamperMaterialSpec(color: 0x0E0F10, roughness: 1, additive: true)
         case .milkGlass:
             // 夜の乳白硝子は抑えめ（0.5→0.28）。白く飛ぶと天井の板が昼の蛍光灯に見える
             return CamperMaterialSpec(color: 0xF2EEE6, roughness: 0.28, clearCoat: 0.45, opacity: night ? 1 : 0.92,
@@ -223,8 +236,20 @@ enum CamperRoomMaterials {
                                       texture: night ? .mirrorNight : .mirrorDay)
         case .clearGlass:
             // 透明の硝子は拡散の色をほとんど持たない（白い拡散だと run 605 で硝子の球・瓶が白い陶器に見えた）。映りの照りで硝子に見せる
-            return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, clearCoat: 0.6, clearCoatRoughness: 0.02,
-                                      opacity: night ? 0.16 : 0.12, doubleSided: true)
+            // 2026-10-21（owner「家具ぶっ壊れてる」・Mac run 622 の 96e）: 硝子の球の吊り鉢が中の地形も植物も見えない灰色の玉
+            // （夜は半分黒い玉）に描かれた。既定の「硝子の殻」（両面・奥行きを書く）だと、手前の面が奥行きを書いて中身を隠し、
+            // 照りの層（clearCoat）の映りは透明度で薄まらないので面全体が膜になる。額の硝子（`.frameGlass`）と同じく、
+            // 奥行きは書かず照りの層も無しで、鋭い映りだけで硝子に見せる
+            return CamperMaterialSpec(color: 0x8C969A, roughness: 0.03, opacity: night ? 0.16 : 0.12, doubleSided: true,
+                                      glassShell: false)
+        case .globeGlass:
+            // 2026-10-21: 物理の光の透明（`opacity`）では、どの値でも球が不透明な玉に描かれた（Mac run 625: 灰色の玉・夜はクリーム色に
+            // 黒い三日月、run 632: 拡散を黒にすると黒い玉、run 636: 壁・中身の後に描いても黒い玉＝順番ではない）。平らな戸の硝子は透けるのに、
+            // 丸く閉じた硝子だけ奥が消える——SceneKit の物理の光は透明度で映りを薄めず、球では映りが面全体に出る。
+            // 球は光を受けない「足す光」にする（灯りの溜まり・炎と同じ。下の色を隠さず、少し明るくするだけ）。映りは別の筋（`.globeGlint`）
+            return CamperMaterialSpec(color: night ? 0x0B0C0D : 0x15191C, roughness: 1, additive: true)
+        case .globeGlint:
+            return CamperMaterialSpec(color: night ? 0x3A3228 : 0x6A757C, roughness: 1, additive: true)
         case .silhouette: return CamperMaterialSpec(color: 0x050505, roughness: 1, unlit: true)
         }
     }
