@@ -3772,6 +3772,30 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **家具の脚の接写**（`-JPPreviewCamperRoomLegs`・Debug のみ・2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）:
+    /// 脚のある家具を 1 頁に 1 つ、正面・斜め・横・床すれすれの 4 方向から本物の SceneKit で描き、昼の全頁を**必ず撮る**
+    /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）
+    func testCapturesCamperFurnitureLegs() {
+        executionTimeAllowance = 1500
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLegs", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "脚の接写の一覧が出ない")
+        let next = app.buttons["camper.room.contact.next"].firstMatch
+        var page = 1
+        while page <= 80 {
+            XCTAssertTrue(waitRoom(app, "camper.room.contact", "legs-ready \(page)/", timeout: 90), "脚の接写の \(page) 頁を描き終えない")
+            let grid = app.descendants(matching: .any)["camper.room.contact.grid"].firstMatch
+            let shot = XCTAttachment(screenshot: grid.exists ? grid.screenshot() : app.screenshot())
+            shot.name = String(format: "96f-家具の脚（%02d）", page)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.exists, next.isEnabled else { break }
+            next.tap()
+            page += 1
+        }
+    }
+
     /// **置いている途中**（`-JPPreviewCamperRoomLift`・Debug のみ）: 旅の鞄を持ち上げて寝台の上へ動かした途中
     /// （マス目・赤いマス）を**必ず撮る**。「元に戻す」「閉じる」は 44pt 以上。升の枠は縦 96pt 以上
     func testCapturesCamperRoomPlacing() {

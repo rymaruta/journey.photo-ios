@@ -17,6 +17,15 @@ import SceneKitShim
 // 家具だけ入れ替える）。頁を開くたびにその頁の 4 点だけ描く。
 // 2026-10-21（run 596）: 8 点だと画面写真（長辺 700px）で 1 点が 150px ほどになり素材が読めない。4 点にし、並びの所だけを撮る。
 
+/// 脚の接写の一覧（2026-10-22・`-JPPreviewCamperRoomLegs`）: 脚のある家具 1 つを 1 頁に、4 方向（`CamperRoomLegs.views`）で並べる
+enum CamperRoomLegPages {
+    static let items: [CamperRoomFurniture] = CamperRoomLegs.sheet
+    static var count: Int { max(1, items.count) }
+
+    /// 画面写真の試験が待つ合図
+    static func marker(page: Int) -> String { "legs-ready \(page + 1)/\(count)" }
+}
+
 /// 1 頁の数（2 列 × 2 段）
 enum CamperRoomContactPages {
     static let perPage = 4
@@ -57,7 +66,7 @@ final class CamperRoomContactRenderer {
         renderer.pointOfView = scene.cameraNode
     }
 
-    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize) -> UIImage {
+    func render(_ f: CamperRoomFurniture, mood: CamperMood, size: CGSize, view: (yaw: Double, pitch: Double)? = nil) -> UIImage {
         let studio = CamperRoomStudio.make(f)
         if !installed {
             scene.installNow(layout: studio.layout, doc: studio.doc, paint: paint)
@@ -69,6 +78,11 @@ final class CamperRoomContactRenderer {
         // 図鑑の寄りより一段寄る（小さな枠いっぱいに家具を見せる）
         var camera = CamperRoomStudio.camera(f)
         camera.zoom = 1.35
+        // 脚の接写は向きを替えて 4 方向から（2026-10-22）
+        if let view {
+            camera.yaw = view.yaw
+            camera.pitch = view.pitch
+        }
         scene.setCamera(camera, animated: false)
         return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
     }
@@ -79,6 +93,8 @@ final class CamperRoomContactRenderer {
 /// 接写の一覧の画面（頁送り・昼と夜）
 struct CamperRoomContactSheet: View {
     let paint: UInt32
+    /// 脚の接写の一覧（1 頁に 1 つの家具を 4 方向で）
+    var legs = false
     let onClose: () -> Void
 
     @State private var page = 0
@@ -102,7 +118,7 @@ struct CamperRoomContactSheet: View {
                 .accessibilityIdentifier("camper.room.contact.close")
                 Spacer()
                 // 読み上げの値に描き終えた合図（画面写真の試験が待つ。部屋の場面の `camper-room-ready` と同じ仕組み）
-                Text("\(mood == .night ? L("夜", "Night") : L("昼", "Day")) \(page + 1) / \(CamperRoomContactPages.count)")
+                Text("\(mood == .night ? L("夜", "Night") : L("昼", "Day")) \(page + 1) / \(pageCount)")
                     .font(JPFont.number(13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
                     .accessibilityElement(children: .ignore)
@@ -111,7 +127,7 @@ struct CamperRoomContactSheet: View {
                     .accessibilityIdentifier("camper.room.contact")
                 Spacer()
                 pager("chevron.left", id: "camper.room.contact.prev", enabled: page > 0) { go(page - 1) }
-                pager("chevron.right", id: "camper.room.contact.next", enabled: page + 1 < CamperRoomContactPages.count) { go(page + 1) }
+                pager("chevron.right", id: "camper.room.contact.next", enabled: page + 1 < pageCount) { go(page + 1) }
                 pager(mood == .night ? "sun.max" : "moon", id: "camper.room.contact.mood", enabled: true) {
                     mood = mood == .night ? .day : .night
                     images = [:]
@@ -119,10 +135,11 @@ struct CamperRoomContactSheet: View {
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-                ForEach(CamperRoomContactPages.page(page), id: \.id) { f in
+                ForEach(cells, id: \.key) { cell in
+                    let f = cell.furniture
                     VStack(spacing: 2) {
                         Group {
-                            if let image = images[f.id] {
+                            if let image = images[cell.key] {
                                 Image(uiImage: image).resizable().scaledToFit()
                             } else {
                                 Color.white.opacity(0.04)
@@ -130,7 +147,7 @@ struct CamperRoomContactSheet: View {
                         }
                         .frame(height: Self.cell.height)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text("\(f.name) · \(f.id)")
+                        Text(cell.view.map { "\(CamperRoomLegs.views[$0].name) · \(f.name) · \(f.id)" } ?? "\(f.name) · \(f.id)")
                             .jpSystemFont(12)
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(1).minimumScaleFactor(0.7)
@@ -146,6 +163,25 @@ struct CamperRoomContactSheet: View {
         .onAppear(perform: draw)
     }
 
+    private var pageCount: Int { legs ? CamperRoomLegPages.count : CamperRoomContactPages.count }
+
+    /// その頁の枠（脚の接写は 1 つの家具の 4 方向）
+    private var cells: [Cell] {
+        if legs {
+            guard CamperRoomLegPages.items.indices.contains(page) else { return [] }
+            let f = CamperRoomLegPages.items[page]
+            return CamperRoomLegs.views.indices.map { Cell(key: "\(f.id)#\($0)", furniture: f, view: $0) }
+        }
+        return CamperRoomContactPages.page(page).map { Cell(key: $0.id, furniture: $0, view: nil) }
+    }
+
+    private struct Cell {
+        var key: String
+        var furniture: CamperRoomFurniture
+        /// 脚の接写の向き（`CamperRoomLegs.views` の番号）
+        var view: Int?
+    }
+
     private func pager(_ symbol: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).jpSystemFont(16, weight: .semibold)
@@ -158,7 +194,7 @@ struct CamperRoomContactSheet: View {
     }
 
     private func go(_ next: Int) {
-        page = max(0, min(CamperRoomContactPages.count - 1, next))
+        page = max(0, min(pageCount - 1, next))
         images = [:]
         draw()
     }
@@ -171,12 +207,15 @@ struct CamperRoomContactSheet: View {
         renderer = r
         let want = page, m = mood
         Task { @MainActor in
-            for f in CamperRoomContactPages.page(want) {
+            for cell in cells {
                 guard want == page, m == mood else { return }
-                images[f.id] = r.render(f, mood: m, size: CGSize(width: Self.cell.width * 3, height: Self.cell.height * 3))
+                let view = cell.view.map { (yaw: CamperRoomLegs.views[$0].yaw, pitch: CamperRoomLegs.views[$0].scenePitch) }
+                images[cell.key] = r.render(cell.furniture, mood: m, size: CGSize(width: Self.cell.width * 3, height: Self.cell.height * 3), view: view)
                 await Task.yield()
             }
-            if want == page, m == mood { marker = CamperRoomContactPages.marker(mood: m, page: want) }
+            if want == page, m == mood {
+                marker = legs ? CamperRoomLegPages.marker(page: want) : CamperRoomContactPages.marker(mood: m, page: want)
+            }
         }
         #endif
     }
