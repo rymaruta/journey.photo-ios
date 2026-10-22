@@ -41,6 +41,8 @@ public struct SCNMatrix4 {
     public init() {}
 }
 
+public let SCNMatrix4Identity = SCNMatrix4()
+public func SCNMatrix4MakeRotation(_ angle: Float, _ x: Float, _ y: Float, _ z: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4MakeScale(_ sx: Float, _ sy: Float, _ sz: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4MakeTranslation(_ tx: Float, _ ty: Float, _ tz: Float) -> SCNMatrix4 { SCNMatrix4() }
 public func SCNMatrix4Mult(_ a: SCNMatrix4, _ b: SCNMatrix4) -> SCNMatrix4 { SCNMatrix4() }
@@ -74,6 +76,7 @@ open class SCNMaterial {
     }
     public init() {}
     open var lightingModel: LightingModel = .blinn
+    open var name: String?
     public let diffuse = SCNMaterialProperty()
     public let metalness = SCNMaterialProperty()
     public let roughness = SCNMaterialProperty()
@@ -83,6 +86,7 @@ open class SCNMaterial {
     public let normal = SCNMaterialProperty()
     public let specular = SCNMaterialProperty()
     public let multiply = SCNMaterialProperty()
+    public let ambientOcclusion = SCNMaterialProperty()
     open var transparency: CGFloat = 1
     open var transparencyMode: SCNTransparencyMode = .aOne
     open var blendMode: SCNBlendMode = .alpha
@@ -190,6 +194,9 @@ open class SCNLight {
     open var categoryBitMask = -1
     open var spotInnerAngle: CGFloat = 0
     open var spotOuterAngle: CGFloat = 45
+    open var orthographicScale: CGFloat = 1
+    open var zNear: CGFloat = 1
+    open var zFar: CGFloat = 100
 }
 
 open class SCNCamera {
@@ -204,6 +211,11 @@ open class SCNCamera {
     open var bloomThreshold: CGFloat = 1
     open var bloomBlurRadius: CGFloat = 4
     open var screenSpaceAmbientOcclusionIntensity: CGFloat = 0
+    open var vignettingPower: CGFloat = 0
+    open var vignettingIntensity: CGFloat = 1
+    open var saturation: CGFloat = 1
+    open var whitePoint: CGFloat = 1
+    open var contrast: CGFloat = 0
 }
 
 open class SCNNode {
@@ -249,7 +261,14 @@ open class SCNScene {
     public let background = SCNMaterialProperty()
 }
 
-open class SCNView: UIView {
+public protocol SCNSceneRenderer: AnyObject {}
+/// 本物は @objc の任意の手続き。模型は描いた後の 1 つだけ
+public protocol SCNSceneRendererDelegate: AnyObject {
+    func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval)
+}
+
+open class SCNView: UIView, SCNSceneRenderer {
+    open weak var delegate: (any SCNSceneRendererDelegate)?
     public override init(frame: CGRect) { super.init(frame: frame) }
     public init(frame: CGRect, options: [String: Any]?) { super.init(frame: frame) }
     open var scene: SCNScene?
@@ -257,6 +276,7 @@ open class SCNView: UIView {
     open var antialiasingMode: SCNAntialiasingMode = .multisampling4X
     open var preferredFramesPerSecond = 60
     open var rendersContinuously = false
+    open func snapshot() -> UIImage { UIImage() }
 }
 
 /// 画面の外で描いて絵にする（本物は `init(device: MTLDevice?, options:)`。家具の接写の一覧・2026-10-21）

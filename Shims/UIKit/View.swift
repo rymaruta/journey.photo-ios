@@ -15,10 +15,15 @@ open class UIView {
     /// 本物は `layerClass` の型で作られる。模型は作るだけ
     open var layer: CALayer { CALayer() }
     open var bounds: CGRect = .zero
+    /// 載っている窓（本物は読み取りだけ）
+    open var window: UIWindow? { nil }
     open var backgroundColor: UIColor?
     /// 指を受けるか（本物の既定は true）
     open var isUserInteractionEnabled: Bool = true
     open func layoutSubviews() {}
+    /// 画面に出ている層を描く（本物と同じ形）
+    @discardableResult
+    open func drawHierarchy(in rect: CGRect, afterScreenUpdates afterUpdates: Bool) -> Bool { false }
     /// 部品に足す働き（音量ボタンで撮る `AVCaptureEventInteraction` など・本物と同じ形）
     open func addInteraction(_ interaction: UIInteraction) {}
     open func removeInteraction(_ interaction: UIInteraction) {}

@@ -19,6 +19,10 @@ final class CamperScenePalette {
     /// 下ごしらえの貼り絵（`CamperScenePlan.bitmaps` など）
     private var bitmaps: [String: CamperBitmap] = [:]
     private(set) var materials: [CamperMaterial: SCNMaterial] = [:]
+    /// 殻の中（室内の組）の材質。外と同じ値に、空の光の遮り（`CamperMaterials.interiorSkyOcclusion`）を足した別の 1 つ
+    private(set) var insideMaterials: [CamperMaterial: SCNMaterial] = [:]
+    /// 試験用: 殻の中の材質に入れた空の光の割合（本物の UIColor の値は模型では読めないので控える）
+    private(set) var insideOcclusion: [ObjectIdentifier: Double] = [:]
     private(set) var paint: UInt32 = 0x5B6168
     private(set) var mood: CamperMood = .day
 
@@ -28,16 +32,32 @@ final class CamperScenePalette {
         self.paint = paint
         self.mood = mood
         materials = [:]
+        insideMaterials = [:]
     }
 
     /// 時刻を替える（作った材質の値を全部入れ直す）
     func setMood(_ mood: CamperMood) {
         self.mood = mood
         for (m, scn) in materials { configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood)) }
+        for (m, scn) in insideMaterials { configureInside(scn, m) }
     }
 
-    /// 材質（同じ材質は 1 つ）
-    func material(_ m: CamperMaterial) -> SCNMaterial {
+    /// 入口の扉の窓の明かり（2026-10-21 確かめ役: 開いて横を向いた扉の窓が灯ったまま浮いて見えた）。開けたら消す
+    func setDoorWindowLit(_ lit: Bool) {
+        guard let m = materials[.glassDoor] else { return }
+        let spec = CamperMaterials.spec(.glassDoor, paint: paint, mood: mood)
+        m.emission.intensity = CGFloat(lit ? min(1, spec.emissionIntensity) : 0)
+    }
+
+    /// 材質（同じ材質は 1 つ）。`inside` は外の車の殻の中（室内の組）——空の光を遮る別の 1 つ
+    func material(_ m: CamperMaterial, inside: Bool = false) -> SCNMaterial {
+        if inside {
+            if let hit = insideMaterials[m] { return hit }
+            let made = SCNMaterial()
+            configureInside(made, m)
+            insideMaterials[m] = made
+            return made
+        }
         if let hit = materials[m] { return hit }
         let made = SCNMaterial()
         configure(made, CamperMaterials.spec(m, paint: paint, mood: mood))
@@ -45,8 +65,22 @@ final class CamperScenePalette {
         return made
     }
 
+    /// 殻の中の材質（2026-10-21 判断・owner「中の光で眩しすぎる」）。SceneKit の周りの光（`lightingEnvironment`）と環境光は
+    /// 壁と屋根で遮られず、殻の中まで外と同じ明るさで照らす——昼に扉を開けると、奥の内張りが外の塗装より明るく見えた。
+    /// 物理ベースの材質の `ambientOcclusion`（周りの光と環境光だけに掛かる。灯りには掛からない）で、口から入る空の光の分まで落とす
+    private func configureInside(_ scn: SCNMaterial, _ m: CamperMaterial) {
+        configure(scn, CamperMaterials.spec(m, paint: paint, mood: mood))
+        let k = CamperMaterials.interiorSkyOcclusion(mood)
+        scn.ambientOcclusion.contents = UIColor(white: CGFloat(k), alpha: 1)
+        insideOcclusion[ObjectIdentifier(scn)] = k
+        scn.name = Self.insideName
+    }
+
+    /// 殻の中の材質の名前（試験が外の材質と見分ける。本物の SceneKit の ambientOcclusion は初めから白が入っている）
+    static let insideName = "camper.inside"
+
     /// 網の並びから形を作る（材質は束ごと）
-    func geometry(_ m: CamperPreparedMesh) -> SCNGeometry? {
+    func geometry(_ m: CamperPreparedMesh, inside: Bool = false) -> SCNGeometry? {
         guard m.vertexCount > 0, !m.groups.isEmpty else { return nil }
         func source(_ values: [Float], _ semantic: SCNGeometrySource.Semantic, _ components: Int) -> SCNGeometrySource {
             let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
@@ -58,12 +92,18 @@ final class CamperScenePalette {
         let sources = [source(m.positions, .vertex, 3), source(m.normals, .normal, 3), source(m.uvs, .texcoord, 2)]
         let elements = m.groups.map { SCNGeometryElement(indices: $0.indices, primitiveType: .triangles) }
         let g = SCNGeometry(sources: sources, elements: elements)
-        g.materials = m.groups.map { material($0.material) }
+        g.materials = m.groups.map { material($0.material, inside: inside) }
         return g
     }
 
     /// 箱・円柱・輪・球・文字の形（`unit` は板の単位 → SceneKit の単位）
-    func geometry(_ shape: CamperShape, material m: CamperMaterial, unit s: Double) -> SCNGeometry? {
+    func geometry(_ shape: CamperShape, material key: CamperMaterial, unit s: Double, inside: Bool = false) -> SCNGeometry? {
+        let m = material(key, inside: inside)
+        return geometry(shape, scnMaterial: m, unit: s)
+    }
+
+    private func geometry(_ shape: CamperShape, scnMaterial: SCNMaterial, unit s: Double) -> SCNGeometry? {
+        let m = scnMaterial
         switch shape {
         case .mesh:
             return nil
@@ -71,29 +111,29 @@ final class CamperScenePalette {
             let b = SCNBox(width: CGFloat(size.x * s), height: CGFloat(size.y * s), length: CGFloat(size.z * s),
                            chamferRadius: CGFloat(chamfer * s))
             b.chamferSegmentCount = chamfer > 0.8 ? 3 : 1
-            b.materials = [material(m)]
+            b.materials = [m]
             return b
         case let .cylinder(radius, height, segments):
             let c = SCNCylinder(radius: CGFloat(radius * s), height: CGFloat(height * s))
             c.radialSegmentCount = max(3, segments)
-            c.materials = [material(m)]
+            c.materials = [m]
             return c
         case let .torus(ring, pipe):
             let t = SCNTorus(ringRadius: CGFloat(ring * s), pipeRadius: CGFloat(pipe * s))
             t.ringSegmentCount = 32
             t.pipeSegmentCount = 10
-            t.materials = [material(m)]
+            t.materials = [m]
             return t
         case .sphere(let radius):
             let sp = SCNSphere(radius: CGFloat(radius * s))
             sp.segmentCount = 18
-            sp.materials = [material(m)]
+            sp.materials = [m]
             return sp
         case let .text(string, _, depth):
             let t = SCNText(string: string, extrusionDepth: CGFloat(depth * 10))
             t.font = UIFont.systemFont(ofSize: 10, weight: .bold)
             t.flatness = 0.2
-            t.materials = [material(m)]
+            t.materials = [m]
             return t
         }
     }
@@ -136,6 +176,7 @@ final class CamperScenePalette {
             m.diffuse.wrapS = .repeat
             m.diffuse.wrapT = .repeat
             m.diffuse.mipFilter = .linear
+            m.diffuse.contentsTransform = spec.textureVertical ? SCNMatrix4MakeRotation(Float.pi / 2, 0, 0, 1) : SCNMatrix4Identity
         }
         m.metalness.contents = spec.metalness
         m.roughness.contents = spec.roughness

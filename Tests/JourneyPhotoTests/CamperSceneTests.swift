@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 #if canImport(SceneKit)
 import SceneKit
 #elseif canImport(SceneKitShim)
@@ -26,8 +27,7 @@ final class CamperSceneTests: XCTestCase {
         }
     }
 
-    /// 室内の灯りは室内の組だけを照らし、影は forward（deferred は円錐の外の画面を黒く塗った・run 538）。
-    /// 外の灯りは外の組だけ。まとめた形にも組が付く
+    /// 室内の灯りは室内の組だけを照らす（影の絵は要らない omni・2026-10-21）。外の灯りは外の組だけ。まとめた形にも組が付く
     func testLightGroupsAndInteriorShadows() async throws {
         let scene = CamperScene()
         scene.installNow(CamperConfig(stage: .camper, mood: .night))
@@ -36,18 +36,113 @@ final class CamperSceneTests: XCTestCase {
         XCTAssertEqual(interior.count, 2)
         for (name, l) in interior {
             XCTAssertEqual(l.categoryBitMask, CamperScene.insideMask, name)
-            XCTAssertTrue(l.castsShadow, name)
-            XCTAssertEqual(l.shadowMode, .forward, name)
+            XCTAssertEqual(l.type, .omni, name)
+            XCTAssertFalse(l.castsShadow, name)
             XCTAssertGreaterThan(l.intensity, 0, name)
+            XCTAssertLessThanOrEqual(l.intensity, 1.2, name)
         }
         let outside = ls.filter { !$0.name.hasPrefix("interior.") }
         XCTAssertFalse(outside.isEmpty)
-        for (name, l) in outside { XCTAssertEqual(l.categoryBitMask, CamperScene.outsideMask, name) }
+        // 外の火（焚き火・ランタン・電球の列）は置き物と地面の組だけ。車体（camper.outside）は照らさない
+        // （確かめ役 2026-10-21: 塗装に火の照り返しが小さな橙の点で映った）。入口の灯りは外の組
+        for (name, l) in outside {
+            let fire = name == "campfire" || name == "lantern" || name == "string"
+            XCTAssertEqual(l.categoryBitMask, fire ? CamperScene.propsMask : CamperScene.outsideMask, name)
+        }
+        XCTAssertTrue(outside.contains { $0.name == "campfire" })
+        XCTAssertEqual(try XCTUnwrap(node(scene, "camper.outside")).categoryBitMask & CamperScene.propsMask, 0, "車体が火に照らされる")
+        XCTAssertNotEqual(try XCTUnwrap(node(scene, "camper.props")).categoryBitMask & CamperScene.propsMask, 0, "置き物が火に照らされない")
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.outside")).categoryBitMask, CamperScene.outsideMask)
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.inside")).categoryBitMask, CamperScene.insideMask)
         XCTAssertEqual(try XCTUnwrap(node(scene, "camper.door")).categoryBitMask, CamperScene.outsideMask)
         // 夜はにじみなし
         XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
+    }
+
+    /// 殻の中の材質は空の光を遮る（2026-10-21 owner「中の光で眩しすぎる」: 周りの光は壁と屋根で遮られず、昼に開けた口の奥が
+    /// 外より明るかった）。室内の組の材質だけ `ambientOcclusion` が付き、外の組には付かない。外と室内で材質を分けても、
+    /// 時刻を替えれば両方の値が替わる
+    func testInteriorMaterialsBlockSkyLight() async throws {
+        let scene = CamperScene()
+        scene.installNow(CamperConfig(stage: .camper, mood: .day))
+        // 本物の SceneKit は ambientOcclusion に初めから白が入っているので、中身ではなく殻の中の材質の印で見分ける
+        // （Mac run 624 で、外の材質の初めの白を「遮っている」と数えて落ちた）
+        func blocks(_ m: SCNMaterial) -> Bool { m.name == CamperScenePalette.insideName && m.ambientOcclusion.contents is UIColor }
+        let inside = scene.paletteMaterials.inside.filter { $0.lightingModel == .physicallyBased }
+        let outside = scene.paletteMaterials.outside
+        XCTAssertFalse(inside.isEmpty)
+        XCTAssertTrue(inside.allSatisfy(blocks), "室内の材質に空の光の遮りが無い")
+        XCTAssertFalse(outside.contains(where: blocks), "外の塗装まで空の光を遮っている")
+        XCTAssertFalse(inside.contains { m in outside.contains { $0 === m } }, "室内と外で同じ材質を使っている")
+        #if canImport(SceneKitShim) && !canImport(SceneKit)
+        // 組んだ形にも付いている（模型だけ: 本物の flattenedClone は形をまとめ直すので、ノードからは材質をたどらない・Mac run 626）
+        let shell = all(try XCTUnwrap(node(scene, "camper.inside"))).compactMap(\.geometry).flatMap(\.materials)
+        XCTAssertTrue(shell.filter { $0.lightingModel == .physicallyBased }.allSatisfy(blocks))
+        #endif
+        var night = CamperConfig(stage: .camper, mood: .day)
+        night.mood = .night
+        scene.show(night)
+        XCTAssertTrue(inside.allSatisfy(blocks), "夜に替えたら遮りが消えた")
+        // 値まで見る: 時刻に合った割合が入っている
+        for m in inside { XCTAssertEqual(try XCTUnwrap(scene.paletteOcclusion(m)), CamperMaterials.interiorSkyOcclusion(.night), accuracy: 0.001) }
+        scene.show(CamperConfig(stage: .camper, mood: .day))
+        for m in inside { XCTAssertEqual(try XCTUnwrap(scene.paletteOcclusion(m)), CamperMaterials.interiorSkyOcclusion(.day), accuracy: 0.001) }
+        XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.night), CamperMaterials.interiorSkyOcclusion(.day))
+        XCTAssertLessThan(CamperMaterials.interiorSkyOcclusion(.day), 0.5, "昼の口の奥が外と同じ明るさ")
+    }
+
+    /// 入口の扉の窓は夜に灯り、扉を開けて横を向いたら消える（2026-10-21 確かめ役）
+    func testDoorWindowGoesDarkWhenOpen() async throws {
+        let scene = CamperScene()
+        scene.installNow(CamperConfig(stage: .camper, mood: .night))
+        let glass = try XCTUnwrap(scene.paletteMaterial(.glassDoor), "扉の窓の材質が無い")
+        XCTAssertGreaterThan(glass.emission.intensity, 0, "閉じた扉の窓が灯らない")
+        scene.setDoor(open: true, animated: false)
+        XCTAssertEqual(glass.emission.intensity, 0, "開けた扉の窓が灯ったまま")
+        scene.setDoor(open: false, animated: false)
+        XCTAssertGreaterThan(glass.emission.intensity, 0)
+        // 開けたまま時刻を替えても灯らない
+        scene.setDoor(open: true, animated: false)
+        var day = CamperConfig(stage: .camper, mood: .night)
+        day.mood = .day
+        scene.show(day)
+        var night = day
+        night.mood = .night
+        scene.show(night)
+        XCTAssertEqual(glass.emission.intensity, 0)
+    }
+
+    /// 夜の外の場面（2026-10-21・owner「夜のキャンピングカーの外」: 黒い空間に車が浮いていた）: 夜は空・芝の地面・林と山の
+    /// 遠景がある。昼と雪は前のまま（空なし・床は SCNFloor・遠景なし）。下から見る向きでは地面と遠景を隠す
+    func testNightStageOnlyAtNight() async throws {
+        let scene = CamperScene()
+        let day = CamperConfig(stage: .camper, mood: .day)
+        scene.installNow(day)
+        XCTAssertNil(scene.scene.background.contents, "昼に夜の空が出ている")
+        XCTAssertNil(node(scene, "night.ground"), "昼に夜の地面を作っている")
+        var night = day
+        night.mood = .night
+        scene.show(night)
+        XCTAssertNotNil(scene.scene.background.contents, "夜の空が無い")
+        let stage = try XCTUnwrap(node(scene, "night.stage"))
+        XCTAssertFalse(stage.isHidden)
+        for name in ["night.ground", "night.trees", "night.ridge"] { XCTAssertNotNil(node(scene, name), name) }
+        let ground = try XCTUnwrap(node(scene, "night.ground")?.geometry?.materials.first)
+        XCTAssertEqual(ground.lightingModel, .physicallyBased, "地面が月の影と灯りを受けない")
+        XCTAssertTrue(ground.shaderModifiers?[.fragment]?.contains("jpHaze") == true, "地面の果てが霞に溶けない")
+        XCTAssertEqual(scene.cameraNode.camera?.bloomIntensity, 0)
+        // 下から見る
+        scene.setAngle(CamperFraming.under, animated: false)
+        XCTAssertTrue(stage.isHidden, "下から見ると地面の裏に林が浮く")
+        scene.setAngle(CamperFraming.overview(.camper), animated: false)
+        XCTAssertFalse(stage.isHidden)
+        // 昼に戻すと前のまま
+        scene.show(day)
+        XCTAssertTrue(stage.isHidden)
+        XCTAssertNil(scene.scene.background.contents)
+        // 色の後処理の段（周辺の落ち・彩度）は使わない（Mac run 627 の 95: 昼の初めの絵が灰色のむらで埋まった）
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.vignettingPower)), 0, accuracy: 0.001)
+        XCTAssertEqual(Double(try XCTUnwrap(scene.cameraNode.camera?.saturation)), 1, accuracy: 0.001)
     }
 
     /// 夜に停めている車: 前照灯・尾灯の光は場面に無い。点くのは入口の灯り（外の組・下向きの spot・減衰あり）と
@@ -146,10 +241,12 @@ final class CamperSceneTests: XCTestCase {
         night.mood = .night
         scene.show(night)
         let n = scene.lightingSnapshot
-        XCTAssertEqual(n.sun, 150, accuracy: 0.5, "月の強さになっていない")
-        XCTAssertEqual(n.environment, 0.07, accuracy: 0.001, "周りの光が昼のまま")
-        XCTAssertEqual(n.exposure, -0.15, accuracy: 0.001, "露出が昼のまま")
-        XCTAssertEqual(n.ambient, 25, accuracy: 0.5)
+        let st = CamperMaterials.NightStage.self
+        XCTAssertEqual(n.sun, st.moon, accuracy: 0.5, "月の強さになっていない")
+        XCTAssertEqual(n.environment, st.environment, accuracy: 0.001, "周りの光が昼のまま")
+        XCTAssertEqual(n.exposure, st.exposure, accuracy: 0.001, "露出が昼のまま")
+        // 夜は一様な環境光を使わない（のっぺりした灰色の元・2026-10-21）
+        XCTAssertEqual(n.ambient, 0, accuracy: 0.5)
         scene.show(day)
         XCTAssertEqual(scene.lightingSnapshot.sun, 1200, accuracy: 0.5)
         XCTAssertEqual(scene.lightingSnapshot.environment, 1.35, accuracy: 0.001)

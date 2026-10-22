@@ -29,12 +29,25 @@ final class CamperScene {
     /// 灯りの組: 外（月・入口の灯り・焚き火・ランタンが照らす）と室内（室内の灯りだけが照らす。太陽・月と周りの光はどちらも照らす）
     static let outsideMask = 1
     static let insideMask = 2
+    /// 外の置き物（椅子・机・焚き火・外の灯り・敷物）と地面。焚き火・ランタン・電球の列はこの組だけを照らす
+    /// （2026-10-21 判断・確かめ役: 艶の強い塗装に火の照り返しが小さな橙の点で映り、宙に浮いた灯りに見えた。
+    /// 車体は月と空の光と入口の灯りで読ませ、火は地面と小物になだらかに落とす）
+    static let propsMask = 4
+    /// 外の置き物の分類
+    static let propCategories: Set<CamperCategory> = [.chair, .table, .firePit, .outdoorLight, .rug]
 
     let scene = SCNScene()
     let cameraNode = SCNNode()
     private let cameraRig = SCNNode()
     private let turntable = SCNNode()
     private let floorNode = SCNNode()
+    /// 夜の外の地面と遠景（2026-10-21・`CamperMaterials.NightStage`）。夜にはじめて替えた時に作る
+    private let nightStageNode = SCNNode()
+    private var nightStageBuilt = false
+    /// 下ごしらえで作った夜の遠景の網（`CamperScenePlan.nightScenery`）
+    private var nightScenery: (trees: CamperPreparedMesh, ridge: CamperPreparedMesh)?
+    /// いまの見下ろしの角度（下から見る向きでは地面と遠景を隠す）
+    private var elevation = 14.0
     private let sunNode = SCNNode()
     private let ambientNode = SCNNode()
     private var carNode: SCNNode?
@@ -58,6 +71,9 @@ final class CamperScene {
     private(set) var isFlickering = false
     /// 揺らし始めた・止めた（SCNView の描き続けるかを切り替える）
     var onFlickerChange: ((Bool) -> Void)?
+
+    /// 動きの長さの倍率（見本の起動で「中に入る」をゆっくり撮るとき・`PreviewSession.camperEnterSlow`）
+    var timeScale = 1.0
 
     private(set) var config: CamperConfig?
     private(set) var blueprint: CamperBlueprint?
@@ -92,6 +108,9 @@ final class CamperScene {
         floor.reflectionResolutionScaleFactor = 0.5
         floorNode.geometry = floor
         scene.rootNode.addChildNode(floorNode)
+        nightStageNode.name = "night.stage"
+        nightStageNode.isHidden = true
+        scene.rootNode.addChildNode(nightStageNode)
 
         // 太陽（影を落とす）と、ほんの少しの環境光
         let sun = SCNLight()
@@ -113,28 +132,56 @@ final class CamperScene {
     // MARK: 時刻・天気
 
     private func applyMood(_ mood: CamperMood) {
-        let env = palette.image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
+        let night = mood == .night
+        // 周りの光（映り込みと空の光）。夜の外は長い露出の写真の空（`nightEnvironment`）、昼と雪は写真のスタジオの空。
+        // とおまわり号の中の夜は前の暗い空（"env.night"）のまま——部屋の中の見た目を変えない
+        let env = night ? palette.image(key: "env.night.outdoor") { CamperTextures.nightEnvironment() }
+            : palette.image(key: "env.\(mood.rawValue)") { CamperTextures.environment(mood) }
         scene.lightingEnvironment.contents = env
         // 周りの光を強め、太陽を少し弱める（塗装の clearCoat に空と光の箱が映る。run 529 では映り込みが弱かった）
         scene.lightingEnvironment.intensity = CGFloat(CamperMaterials.fill(mood).environment)
+        // 画面の後ろ: 夜は空（地平線の霞へ）。昼と雪は透明のまま（画面の地の丸いグラデーションが見える・前と同じ）。
+        // 一度も夜にしていなければ触らない（昼の初めの絵を前と同じ道で描く）
+        if night {
+            scene.background.contents = palette.image(key: "sky.night") { CamperTextures.nightSky() }
+        } else if scene.background.contents != nil {
+            scene.background.contents = nil
+        }
         // 太陽・月の向きと強さ（`CamperMaterials.sun`）。画面に対して決まっている（車は回る台の上）
         let sun = CamperMaterials.sun(mood)
         let q = CQuat.rotation(from: CV3(0, 0, -1), to: -sun.from)
         sunNode.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
         sunNode.light?.intensity = CGFloat(sun.intensity)
         sunNode.light?.color = Self.color(sun.color)
-        // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35・夜は出さない
+        // 板: 影の色 #1a2230 0.5・雪は #3a5270 0.35。夜は月のやわらかい影（2026-10-21: 前は 0.15 でほぼ無かった）
+        let st = CamperMaterials.NightStage.self
         sunNode.light?.shadowColor = mood == .snow ? Self.color(0x3A5270, alpha: 0.35)
-            : Self.color(0x000000, alpha: mood == .night ? 0.15 : 0.5)
+            : Self.color(0x000000, alpha: night ? st.shadowAlpha : 0.5)
+        if night {
+            // 影を作る範囲を車のまわり（±4.6 m）に絞る。夜は 140 m の地面と遠景があるので、自動の範囲だと影の絵の
+            // 1 画素が粗くなる。光の向きの奥へ 12 m 下げた所から見る
+            let from = sun.from.normalized
+            sunNode.position = Self.vector(CV3(0, 0.6, 0) + from * 12)
+            sunNode.light?.automaticallyAdjustsShadowProjection = false
+            sunNode.light?.orthographicScale = CGFloat(st.shadowExtent)
+            sunNode.light?.zNear = 1
+            sunNode.light?.zFar = 30
+            sunNode.light?.shadowRadius = CGFloat(st.shadowRadius)
+        } else {
+            sunNode.position = SCNVector3(0, 0, 0)
+            sunNode.light?.automaticallyAdjustsShadowProjection = true
+            sunNode.light?.shadowRadius = 4
+        }
         ambientNode.light?.intensity = CGFloat(CamperMaterials.fill(mood).ambient)
         // 夜はにじみ（bloom）を使わない（2026-10-18 Mac の絵 run 533）。艶の強い面に近くの灯りが当たると HDR の値が
         // 半精度の上限を超え、にじみの縮小の段で黒い四角に広がった（見立て）。昼はにじむほどの光が無いので残す
-        cameraNode.camera?.bloomIntensity = CGFloat(mood == .night ? 0 : 0.2)
-        // 夜は露出を少し下げる（口の中・窓の灯りを白く飛ばさない）
-        cameraNode.camera?.exposureOffset = CGFloat(mood == .night ? -0.15 : 0)
-        cameraNode.camera?.bloomThreshold = CGFloat(mood == .night ? 1.3 : 0.85)
+        cameraNode.camera?.bloomIntensity = CGFloat(night ? 0 : 0.2)
+        cameraNode.camera?.exposureOffset = CGFloat(night ? st.exposure : 0)
+        cameraNode.camera?.bloomThreshold = CGFloat(night ? 1.3 : 0.85)
+        // 2026-10-21（Mac run 627 の 95）: カメラの周辺の落ち・彩度（色の後処理の段）を入れたら、昼の初めの絵が灰色のむらで
+        // 埋まった（見立て: 後処理の段の絵が描き直される前に写った）。後処理は使わず、周辺の落ちは画面の側（`CamperStageEdges`）で
 
-        // 床: 暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）
+        // 床: 昼と雪は暗い一色。透け具合は車からの距離で（絵は貼らない・`CamperFloor`）。夜は芝の地面に替える
         let f = CamperMaterials.floor(mood)
         let floorMaterial = SCNMaterial()
         floorMaterial.lightingModel = .physicallyBased
@@ -145,6 +192,74 @@ final class CamperScene {
         floorMaterial.shaderModifiers = [.fragment: f.shaderModifier]
         floorNode.geometry?.materials = [floorMaterial]
         (floorNode.geometry as? SCNFloor)?.reflectivity = CGFloat(f.reflectivity)
+        if night { buildNightStage() }
+        updateStageVisibility()
+    }
+
+    /// 夜の地面と遠景（`CamperMaterials.NightStage`・`CamperNightScenery`）。夜にはじめて替えた時に一度だけ作る
+    private func buildNightStage() {
+        guard !nightStageBuilt else { return }
+        nightStageBuilt = true
+        let st = CamperMaterials.NightStage.self
+        // 地面（芝と土・月の影と灯りの溜まりを受ける）。霞で果てが空の地平線の色に溶ける
+        let size = CGFloat(st.groundSize)
+        let plane = SCNPlane(width: size, height: size)
+        let ground = SCNMaterial()
+        ground.lightingModel = .physicallyBased
+        ground.diffuse.contents = palette.image(key: "ground.night") { CamperTextures.groundNight().tinted(st.ground) }
+        ground.diffuse.wrapS = .repeat
+        ground.diffuse.wrapT = .repeat
+        ground.diffuse.mipFilter = .linear
+        let tiles = Float(st.groundSize / st.groundTile)
+        ground.diffuse.contentsTransform = SCNMatrix4MakeScale(tiles, tiles, 1)
+        ground.roughness.contents = 0.95
+        ground.metalness.contents = 0.0
+        ground.shaderModifiers = [.fragment: CamperNightHaze.shader(start: st.hazeStart, end: st.hazeEnd, mist: 0, floor: 0)]
+        plane.materials = [ground]
+        let groundNode = SCNNode(geometry: plane)
+        groundNode.name = "night.ground"
+        groundNode.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+        groundNode.castsShadow = false
+        groundNode.categoryBitMask = Self.outsideMask | Self.propsMask
+        nightStageNode.addChildNode(groundNode)
+        // 遠景: 林の影（霞は距離と根元の靄）と、遠い山の稜線（ほぼ霞の色・空との境だけ読める）
+        // 網は下ごしらえ（画面の処理の外）で作ったもの。まだ無ければここで作る
+        let scenery = nightScenery ?? CamperScenePlan.nightScenery()
+        for (name, mesh, color, shader) in [
+            ("night.trees", scenery.trees, st.treeColor, CamperNightHaze.shader(start: st.hazeStart, end: st.hazeEnd, mist: 0.38, floor: 0.12)),
+            ("night.ridge", scenery.ridge, st.ridgeColor, CamperNightHaze.shader(start: 900, end: 1000, mist: 0, floor: 0.5)),
+        ] {
+            guard let g = palette.geometry(mesh) else { continue }
+            let m = SCNMaterial()
+            m.lightingModel = .constant
+            m.diffuse.contents = Self.color(color)
+            m.isDoubleSided = true
+            m.shaderModifiers = [.fragment: shader]
+            g.materials = g.materials.map { _ in m }
+            let node = SCNNode(geometry: g)
+            node.name = name
+            node.castsShadow = false
+            nightStageNode.addChildNode(node)
+        }
+    }
+
+    /// 夜の地面と遠景は夜だけ。下から見る向きでは隠す（地面の裏から林が浮いて見える）。昼と雪の床は夜に隠す
+    private func updateStageVisibility() {
+        let night = currentMood == .night
+        // 値が替わる時だけ入れる（2026-10-21 Mac run 627・633 の 95: 組み上がる前の空の場面で描き直しが起き、昼の初めの絵が
+        // 灰色のむら（車の無い場面の画面の陰 SSAO と見立てた）のまま残った。組む前は場面に触らない）
+        let stageHidden = !night || elevation < 0
+        if nightStageNode.isHidden != stageHidden { nightStageNode.isHidden = stageHidden }
+        if floorNode.isHidden != night { floorNode.isHidden = night }
+    }
+
+    /// 試験用: 殻の中の材質に入れた空の光の割合と、ある材質（外の組）
+    func paletteOcclusion(_ m: SCNMaterial) -> Double? { palette.insideOcclusion[ObjectIdentifier(m)] }
+    func paletteMaterial(_ m: CamperMaterial) -> SCNMaterial? { palette.materials[m] }
+
+    /// 試験用: 作った材質（殻の中の組・外の組）
+    var paletteMaterials: (inside: [SCNMaterial], outside: [SCNMaterial]) {
+        (Array(palette.insideMaterials.values), Array(palette.materials.values))
     }
 
     /// 昼・夜・雪を切り替える（組み直さない。光・材質の値・その時刻だけの部品と灯りの見せる／隠すだけ）
@@ -158,6 +273,7 @@ final class CamperScene {
         currentMood = mood
         applyMood(mood)
         palette.setMood(mood)
+        palette.setDoorWindowLit(!doorOpen)
         for (node, moods) in moodNodes { node.isHidden = !moods.contains(mood) }
         // その時刻でない灯りはノードごと隠す（強さ 0 で残すと、影ありの spot が昼にも影の絵を描き、光の数にも数えられる）
         for (node, moods) in moodLights { node.isHidden = !(moods.map { $0.contains(mood) } ?? true) }
@@ -201,12 +317,14 @@ final class CamperScene {
     private func install(_ plan: CamperScenePlan, config: CamperConfig) {
         let bp = plan.blueprint
         palette.reset(bitmaps: plan.bitmaps, paint: config.loadout.paint, mood: config.mood)
+        if nightScenery == nil { nightScenery = plan.nightScenery }
         currentMood = config.mood
         moodNodes = []
         moodLights = []
         builtKey = config.buildKey
         let s = Self.unit
         let body = SCNNode()
+        let props = SCNNode()
         let inside = SCNNode()
         let door = SCNNode()
         // その時刻だけの部品（雪・夜の電球など）。時刻と灯りの組ごとに別にまとめ、見せる・隠すで切り替える
@@ -220,7 +338,10 @@ final class CamperScene {
         isFlickering = false
         for prepared in plan.nodes {
             let spec = prepared.spec
-            guard let geometry = prepared.mesh.flatMap({ palette.geometry($0) }) ?? palette.geometry(spec.shape, material: spec.material, unit: s) else {
+            // 殻の中の部品は、空の光を遮る別の材質（`CamperScenePalette.material(_:inside:)`）
+            let isInside = prepared.inside
+            guard let geometry = prepared.mesh.flatMap({ palette.geometry($0, inside: isInside) })
+                    ?? palette.geometry(spec.shape, material: spec.material, unit: s, inside: isInside) else {
                 continue
             }
             let node = SCNNode(geometry: geometry)
@@ -261,7 +382,11 @@ final class CamperScene {
                 moodGroups[key] = (holder, moods, prepared.inside)
             } else {
                 node.position = Self.vector(spec.position * s)
-                (prepared.inside ? inside : body).addChildNode(node)
+                if !prepared.inside, let c = spec.category, Self.propCategories.contains(c) {
+                    props.addChildNode(node)
+                } else {
+                    (prepared.inside ? inside : body).addChildNode(node)
+                }
             }
         }
         let car = SCNNode()
@@ -270,6 +395,10 @@ final class CamperScene {
         bodyFlat.name = "camper.outside"
         Self.mask(bodyFlat, Self.outsideMask)
         car.addChildNode(bodyFlat)
+        let propsFlat = props.flattenedClone()
+        propsFlat.name = "camper.props"
+        Self.mask(propsFlat, Self.outsideMask | Self.propsMask)
+        car.addChildNode(propsFlat)
         let insideFlat = inside.flattenedClone()
         insideFlat.name = "camper.inside"
         Self.mask(insideFlat, Self.insideMask)
@@ -308,7 +437,8 @@ final class CamperScene {
             // 型ごとに減衰を分ける（`CamperLightPattern`。天井・入口・ランタンは急に、部屋の家具と焚き火はなだらかに）
             light.applyAttenuation(to: l, unit: s)
             // 室内の灯りは室内だけ、外の灯りは外だけ（影を落とさない omni が壁を抜けないように）
-            l.categoryBitMask = light.inside ? Self.insideMask : Self.outsideMask
+            // 外の火（焚き火・ランタン・電球の列）は置き物と地面だけ（`propsMask`）
+            l.categoryBitMask = light.inside ? Self.insideMask : (light.pattern.flickers || light.pattern == .lantern ? Self.propsMask : Self.outsideMask)
             if light.kind == .spot {
                 l.spotInnerAngle = CGFloat(light.spotInner)
                 l.spotOuterAngle = CGFloat(light.spotOuter)
@@ -350,6 +480,16 @@ final class CamperScene {
         contact.position = SCNVector3(Float((bp.length.lowerBound + bp.length.upperBound) / 2 * s), 0.002, 0)
         contact.castsShadow = false
         car.addChildNode(contact)
+        // 夜はもう一回り広い暗がりを重ねる（2026-10-21・Mac run 627: 芝の地面の上で車が少し浮いて見えた。月は上と奥から
+        // なので、車の下の影はほとんど車に隠れる）。車の下と、まわりの地面がなだらかに暗い
+        let wide = SCNNode(geometry: plane)
+        wide.eulerAngles = contact.eulerAngles
+        wide.position = SCNVector3(contact.position.x, 0.003, 0)
+        wide.scale = SCNVector3(1.35, 1.7, 1)
+        wide.castsShadow = false
+        wide.name = "contact.night"
+        car.addChildNode(wide)
+        moodNodes.append((wide, [.night]))
 
         carNode?.removeFromParentNode()
         turntable.addChildNode(car)
@@ -358,6 +498,11 @@ final class CamperScene {
         doorGlowNode = doorGlow
         blueprint = bp
         setMood(config.mood)
+        // 組み上がった後の絵を必ず描き直させる（2026-10-21 Mac run 627・633・642 の 95: 昼の初めの絵が、組む前の灰色の
+        // むらのまま残る回があった）。カメラの置き場所を入れ直すと、止まっている SCNView も次のコマを描く
+        let p = cameraNode.position
+        cameraNode.position = SCNVector3(p.x, p.y, p.z + 0.0001)
+        cameraNode.position = p
     }
 
     // MARK: 向き・扉
@@ -372,14 +517,16 @@ final class CamperScene {
         let t = a.target * s
         let rotated = CV3(t.x * cos(yaw) + t.z * sin(yaw), t.y, -t.x * sin(yaw) + t.z * cos(yaw))
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = animated ? 0.6 : 0
+        SCNTransaction.animationDuration = animated ? 0.6 * timeScale : 0
         // 板の注記: 指を離すと 0.6 秒 cubic-bezier(.2,.75,.25,1) で止まる
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
         turntable.eulerAngles = SCNVector3(0, Float(yaw), 0)
+        elevation = a.elevation
         cameraRig.position = Self.vector(rotated)
         cameraRig.eulerAngles = SCNVector3(Float(-a.elevation * .pi / 180), 0, 0)
         cameraNode.position = SCNVector3(0, 0, Float(CamperFraming.distance(zoom: a.zoom)))
         SCNTransaction.commit()
+        updateStageVisibility()
     }
 
     /// 扉を開け閉めする（板の注記: 開くは 0.6 秒 ease-out で 100°、閉じるは 0.4 秒）
@@ -388,10 +535,11 @@ final class CamperScene {
         doorOpen = open
         guard let pivot = doorPivot, let bp = blueprint else { return }
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = animated ? (open ? 0.6 : 0.4) : 0
+        SCNTransaction.animationDuration = animated ? (open ? 0.6 : 0.4) * timeScale : 0
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(controlPoints: 0.0, 0.0, 0.2, 1)
         pivot.eulerAngles = SCNVector3(0, Float(open ? bp.doorOpenAngle : 0), 0)
         doorGlowNode?.opacity = open ? 1 : 0
+        palette.setDoorWindowLit(!open)
         SCNTransaction.commit()
     }
 

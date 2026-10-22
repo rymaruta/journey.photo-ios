@@ -19,6 +19,10 @@ struct CamperRoomView: View {
     let stats: CamperStats
     let paint: UInt32
     let initialMood: CamperMood
+    /// 外から入った時の、寄った口の絵（部屋が組み上がるまで覆い、組み上がったらなだらかに消す・2026-10-21）
+    var entry: CamperSceneSnapshot? = nil
+    @State private var entryImage: UIImage?
+    @State private var entryCovered = true
 
     enum Mode: String { case home, edit, style, photos }
     enum StyleTab: String, CaseIterable { case wall, floor, curtain, light }
@@ -200,6 +204,7 @@ struct CamperRoomView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
+        entryImage = entry?.last
         mood = initialMood == .night ? .night : .day
         recount()
         openRoom()
@@ -356,6 +361,7 @@ struct CamperRoomView: View {
                     .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, 30), height - 30))
             }
             sceneOverlays(width: width, height: height)
+            entryCover(width: width, height: height)
             if let notice {
                 Text(notice)
                     .jpSystemFont(13, weight: .semibold)
@@ -374,14 +380,54 @@ struct CamperRoomView: View {
                                    center: UnitPoint(x: 0.5, y: 0.45), startRadius: 0, endRadius: 420))
     }
 
+    /// 外から入った時の覆い: 寄った口の絵を、部屋が組み上がる（camper-room-ready）まで重ね、なだらかに消す。
+    /// 確かめ役 2026-10-21: 部屋を組む約 1 秒、暗い暖色の地だけが出た（95p5・95q5）
+    /// PR #364 の検証（Mac が重い回）で、4 秒の打ち切りで覆いが先に消え、部屋が描かれる前の暗い地が写った。覆いは
+    /// 「部屋が画面に載って描いたコマ」（`onDrawn`）でだけ消す。打ち切りは 20 秒（それでも描かれない時だけ）。
+    /// 写した絵が無い時も、暗い地ではなく灯った口の色の暖かい地で覆う
+    @ViewBuilder
+    private func entryCover(width: CGFloat, height: CGFloat) -> some View {
+        if entry != nil {
+            Group {
+                if let entryImage {
+                    Image(uiImage: entryImage).resizable().scaledToFill()
+                } else {
+                    // 灯った口の奥の色（暖かい木の壁・暗い外の縁）
+                    RadialGradient(colors: [CamperStyle.color(0x8A6440), CamperStyle.color(0x3A2A1C), CamperStyle.color(0x161A22)],
+                                   center: .center, startRadius: 0, endRadius: max(width, height) * 0.7)
+                }
+            }
+            .frame(width: width, height: height)
+            .clipped()
+            .opacity(entryCovered ? 1 : 0)
+            .allowsHitTesting(false)
+            // 見本の起動だけ、画面写真の試験が覆いの有無を確かめられるよう読み上げの木に残す
+            .accessibilityHidden(PreviewSession.userId == nil)
+            .accessibilityIdentifier("camper.room.entryCover")
+            .onAppear {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    if entryCovered { uncoverEntry() }
+                }
+            }
+        }
+    }
+
+    /// 覆いを消す。組み上がった後の最初のコマを描いてから（`CamperRoomSceneView.onDrawn`・Mac run 646: 夜の 1 回目は
+    /// 組み上がった合図の直後に消すと、部屋がまだ描かれていない暗い地が数秒見えた）
+    private func uncoverEntry() {
+        guard entryCovered else { return }
+        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { entryCovered = false }
+    }
+
     /// 箱庭そのもの（2026-10-21: 1 つの式に修飾が多すぎて、Xcode の型検査が時間切れになった・Mac run 597。分けた）
     private func sceneView(width: CGFloat, height: CGFloat) -> some View {
         CamperRoomSceneView(layout: layout, doc: shownDoc, paint: paint, mood: mood, camera: camera, animateCamera: animateCamera && !reduceMotion,
                             editing: mode == .edit, photosMode: mode == .photos, focusFrame: mode == .photos ? framePick : nil,
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
-                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil) { marker in
+                            photoImages: photoImages.images, hints: mode == .edit ? hints : nil, onReady: { marker in
             readyMarker = marker
-        }
+        }, onDrawn: { uncoverEntry() })
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)

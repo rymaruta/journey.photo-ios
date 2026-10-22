@@ -376,12 +376,19 @@ struct CamperBuilder {
     var doorHole: [CV2] { van ? rr(-10, -50, 26, 80, 2) : rr(33.5, -46.5, 23, 77, 2) }
     /// 入口の灯りの上限（2026-10-19 Mac run 563 の 95b で車体が白く飛んだ値の手前）: 強さ・届く距離・円錐（外の角）と、
     /// 縁のぼかし（外の角と内の角の差）の下限
-    static let porchLimits = (intensity: 40.0, range: 130.0, spotOuter: 45.0, penumbra: 25.0)
+    static let porchLimits = (intensity: 1.2, range: 130.0, spotOuter: 45.0, penumbra: 25.0)
 
     /// 夜の外の灯りと溜まりの上限（2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」）: 焚き火・ランタン・電球の列の強さ、
     /// 地面の溜まりの大きさ（板の単位の幅）と色の明るさ（0〜1）、窓の明かりの色の明るさ、カーテンの光の強さ
-    static let nightLimits = (fire: 70.0, lantern: 50.0, string: 100.0, poolSize: 52.0, poolLevel: 0.13,
-                              windowLevel: 0.42, curtain: 0.32)
+    /// 2026-10-21 判断（owner「光の感じまじで残念」）: 強さの桁を、とおまわり号の中の家具灯（0.3〜0.7・`CamperRoomBuilder`）に
+    /// そろえた。前の 60・45・90 は点の灯りの桁を取り違えていて、灯りのすぐ下が白く飛び、外は届かなかった
+    /// 窓の明かりは光を受けない不透明の面（硝子 0.32 越し）になったので、上限を 0.42 → 0.75（2026-10-21・Mac run 627）
+    static let nightLimits = (fire: 2.0, lantern: 0.8, string: 1.0, poolSize: 52.0, poolLevel: 0.13,
+                              windowLevel: 0.75, curtain: 0.32)
+
+    /// 室内の灯り（外から覗く殻の中・2026-10-21）: 後ろ・前の強さと届く距離。合計はとおまわり号の中の夜の上限
+    /// （`CamperRoomBuilder.nightBudget`）の中に収める。届く距離も部屋の上限（90）まで（試験で守る）
+    static let interiorLights = (rear: 0.9, front: 0.55, range: 90.0)
 
     /// 入口の灯りの置き場所（扉の口の上・オーニングの箱の下）
     /// バンはスライドドアの口の上（口の上の端 Y 112・窓の後ろの端 x −16 より前）。2026-10-21: バンは前照灯が消え、
@@ -658,12 +665,20 @@ struct CamperBuilder {
     /// 窓のゴムの縁（幅 1.5）・クロームの細い枠（外へ 1.4・幅 0.45）・ガラス（表から 2.2 奥・厚み 0.4）
     /// 窓の縁（ゴム・クローム）とガラス。`lit` は住む所の窓（夜に室内の灯りで光る）
     mutating func windowTrim(_ w: [CV2], plane: Plane, name: String, group: CamperGroup = .body, surface: Double? = nil,
-                             category: CamperCategory? = nil, lit: Bool = true) {
+                             category: CamperCategory? = nil, lit: Bool = true, doorGlass: Bool = false) {
         let seal = CamperMeshKit.extrude(CamperPolygon.offset(w, by: 1.5), holes: [w], depth: 0.9, front: .rubber, side: .rubber)
         let chrome = CamperMeshKit.extrude(CamperPolygon.offset(w, by: 1.85), holes: [CamperPolygon.offset(w, by: 1.4)],
                                            depth: 1.0, front: .chrome, side: .chrome)
-        let pane: CamperMaterial = lit ? .glassLit : .glass
-        let glass = CamperMeshKit.extrude(w, depth: 0.4, front: pane, side: pane, back: pane)
+        let pane: CamperMaterial = lit ? (doorGlass ? .glassDoor : .glassLit) : .glass
+        var glass = CamperMeshKit.extrude(w, depth: 0.4, front: pane, side: pane, back: pane)
+        if lit {
+            // 住む所の窓の硝子は、夜にカーテン越しの明かり（roomGlow）を光らせる。絵が窓 1 枚にちょうど 1 回載るよう、
+            // 貼り絵の位置を窓の外接の四角の 0〜1 にする（v=0 が上）
+            let xs = w.map(\.x), ys = w.map(\.y)
+            if let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() {
+                glass.uvs = glass.positions.map { CV2(($0.x - x0) / max(0.01, x1 - x0), 1 - ($0.y - y0) / max(0.01, y1 - y0)) }
+            }
+        }
         func place(_ m: CamperMesh, depth: Double) -> CamperMesh {
             switch plane {
             case .side(let z):
@@ -690,7 +705,7 @@ struct CamperBuilder {
         let slab = CamperMeshKit.slab(outline: panel, holes: [doorWindow], thickness: 2.4, bevel: 0.8, holeBevel: 0.4,
                                       bands: bands, coarse: coarse, back: .inner, reveal: .reveal)
         mesh("door.panel", slab.translated(CV3(0, 0, BW)), group: .door)
-        windowTrim(doorWindow, plane: .side(BW), name: "door.window", group: .door)
+        windowTrim(doorWindow, plane: .side(BW), name: "door.window", group: .door, doorGlass: true)
         let hx = out.doorHinge.x
         let span = (doorHole.map(\.x).max() ?? 56.5) - hx
         let handleX = hx + span * 0.85
@@ -1409,20 +1424,22 @@ struct CamperBuilder {
     private mutating func nightLightsBody() {
         // 室内灯は 2700K 前後（2026-10-19 owner「夜の発光の仕方ひどい」で作り直し・橙一色にしない）
         let warm: UInt32 = 0xFFB46B
-        // 室内の灯りが夜の主役（2026-10-18 Mac の絵 run 529: 灯りが弱く、端の小さな光の点ばかり目立った）
+        // 室内の灯り（2026-10-21 作り直し・owner「中に入るボタン押した時に扉開くけど中の光で眩しすぎてほんとにダメだね」）。
+        // 2026-10-21 判断: 前は天井の下向き spot（1250・720・影あり）だった。SceneKit の点の灯りは距離で強く落ちる
+        // （ルーメンの目安）ので、殻の中（壁まで 0.3〜0.6）では桁が 3 つ大きく、扉を開けると口の奥が白い板に飛んだ
+        // （Mac の 95f）。とおまわり号の中（`CamperRoomBuilder.lights`）は 0.3〜0.7 で暖かく灯って見える——同じ部屋を
+        // 外から覗くのだから、**同じ型（`.roomLamp`）・同じ色・同じ桁**にする（中に入って部屋に切り替わっても、明るさと
+        // 色温度がそろう）。室内の組だけを照らす omni なので壁の外へ漏れず、影の絵（1024 の 2 枚）も要らない
+        let lamp = CamperRoomMaterials.lightColor("warm")
+        let k = Self.interiorLights
         if !van {
-            // 室内の灯りは天井から下へ向けた spot で、影を落とす（2026-10-18 Mac の絵 run 533）。
-            // omni は影を落とさず上にも光るので、灯りの組を分けた後も屋根の棒・オーニングの箱・縁に橙の筋が残った。
-            // 下向きの円錐なら屋根より上へは届かず、壁は影で光を止める。扉の口のすぐ内には置かない（口が白く飛んだ）
-            // 円錐は広く（全体 156°）: 窓の高さの内壁とカーテンまで届き、窓越しに照らされた室内が透けて見える。
-            for (name, p, k) in [("interior.rear", CV3(-80, roofTop - 12, 0), 1250.0), ("interior.front", CV3(6, roofTop - 12, -10), 720)] {
-                out.lights.append(CamperLightSpec(name: name, kind: .spot, pattern: .ceiling, position: p, direction: CV3(0, -1, 0),
-                                                  color: warm, intensity: k, range: 130, spotInner: 120, spotOuter: 158, castsShadow: true))
+            for (name, p, i) in [("interior.rear", CV3(-80, roofTop - 24, 0), k.rear), ("interior.front", CV3(6, roofTop - 24, -10), k.front)] {
+                out.lights.append(CamperLightSpec(name: name, kind: .omni, pattern: .roomLamp, position: p, color: lamp, intensity: i,
+                                                  range: k.range))
             }
         } else {
-            out.lights.append(CamperLightSpec(name: "interior.van", kind: .spot, pattern: .ceiling, position: CV3(-40, roofTop - 12, 0),
-                                              direction: CV3(0, -1, 0), color: warm, intensity: 1250, range: 130,
-                                              spotInner: 120, spotOuter: 158, castsShadow: true))
+            out.lights.append(CamperLightSpec(name: "interior.van", kind: .omni, pattern: .roomLamp, position: CV3(-40, roofTop - 22, 0),
+                                              color: lamp, intensity: k.rear, range: k.range))
         }
         // 窓と扉の口から地面へこぼれる灯り（光の溜まり。両側の窓の下と、開けた扉の前）
         for (side, windows) in [(1.0, windowsNear), (-1.0, windowsFar)] {
@@ -1441,7 +1458,9 @@ struct CamperBuilder {
                 guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { continue }
                 add("interior.windowGlow.\(side > 0 ? "near" : "far").\(k)",
                     .mesh(windowGlowPanel(x0: x0, x1: x1, y0: y0, y1: y1, facing: side)), .windowGlow,
-                    at: CV3(0, 0, side * (BW - wall - 3)))
+                    // 2026-10-21（Mac run 627・630）: 壁の内側（BW − 7）では、外から窓が真っ黒のままだった（奥の何かに隠れる見立て・
+                    // 確かめていない）。硝子のすぐ内側（硝子の奥の面 BW − 2.6 の 0.3 奥）に置く——硝子の他に前を遮るものが無い
+                    at: CV3(0, 0, side * (BW - 2.9)))
                 // 窓から漏れる光のにじみ（ガラスの外に、窓より一回り大きい丸いグラデーション。黒い四角が出ないよう足す光 0.3）
                 let mx = (x1 - x0) * 0.3, my = (y1 - y0) * 0.45
                 add("glow.halo.\(side > 0 ? "near" : "far").\(k)",
@@ -1467,8 +1486,9 @@ struct CamperBuilder {
             // 2026-10-21 owner「夜の光り方が強すぎて不自然すぎる」（95b・95n: 車体の横に縦長の明るい筋）: 強さを 85 → 35、
             // 円錐を 80° → 40° に狭め、少し外へ傾けて、車体の壁にはほとんど当てない（円錐の縁が壁に届くのは地面の近くだけ）。
             // 足元とステップがほんのり分かる程度
+            // 2026-10-21: 強さの桁を部屋の家具灯にそろえて 35 → 0.8（`nightLimits` の注記）
             out.lights.append(CamperLightSpec(name: "porch", kind: .spot, pattern: .porch, position: CV3(porchX, porchY - 3, BW + 9),
-                                              direction: CV3(0, -1, 0.27).normalized, color: warm, intensity: 35, range: 125,
+                                              direction: CV3(0, -1, 0.27).normalized, color: warm, intensity: 0.8, range: 125,
                                               spotInner: 10, spotOuter: 40))
         }
         if !van {
@@ -1548,6 +1568,15 @@ enum CamperFraming {
         // run 532: 2.5 ではフロントのバンパーが右下のボタンの帯に掛かった。寄りを 2.1 に戻し、狙いを少し後ろ・下へ
         // （車が画面の上寄りになり、ボタンの帯に掛からない）
         return CamperAngle(target: CamperBuilder.B(cx - 6, 4, 16), yaw: -24, elevation: 9, zoom: 2.1)
+    }
+    /// 中に入る直前（2026-10-21・owner「外から中に入る時の光もほんとにダメ」）: 扉の口の真正面に寄り、口が画面の
+    /// 縦のほとんどを占める。灯った部屋が画面に広がってから部屋の画面へ切り替わる（急に別の明るさの絵へ飛ばない）
+    static func enter(_ stage: CamperStage) -> CamperAngle {
+        let cx = stage == .van ? 3.0 : 45.0
+        // 口の真ん中（世界の y 70・バンは 66）、壁の面（z = 車幅の半分）
+        let bw = stage == .van ? 48.0 : 50.0
+        // 2026-10-21（Mac run 627 の 95p4）: 4.0 では口が画面の縦の 3 分の 1 ほどだった。5.5 で口が画面いっぱいに近づく
+        return CamperAngle(target: CV3(cx, stage == .van ? 66 : 70, bw), yaw: -8, elevation: 5, zoom: 5.5)
     }
     /// 下から（板の under: t[0,24,0] rx46 ry−28）
     static let under = CamperAngle(target: CamperBuilder.B(0, 24, 0), yaw: -28, elevation: -46, zoom: 1.0)
