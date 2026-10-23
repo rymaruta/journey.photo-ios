@@ -171,13 +171,18 @@ final class StoryV2RingsFixTests: XCTestCase {
 
     // MARK: - 38・42 自分の輪の「＋」
 
-    func testOwnRingHasNoPlusWhenThereIsAStory() throws {
+    /// 2026-10-22 判断で決まりを替えた（板 StoryRings「いつもの並び」の「あなた」にも「＋」）:
+    /// ストーリーがあるときも「＋」を出す。ただし**輪を開くボタンと「＋」のボタンは別**
+    /// （10-16 に外した理由＝輪全体が1つの的で、開くつもりで投稿画面が開いた、を起こさない）
+    func testOwnRingHasSeparatePlusWhenThereIsAStory() throws {
         let row = try source("Features/Stories/StoriesRow.swift")
         let mine = slice(row, from: "private func mineRing(", to: "private var myFace")
         let hasStory = slice(mine, from: "if let mine {", to: "} else {")
-        XCTAssertTrue(hasStory.contains("open(mine)"))
-        XCTAssertFalse(hasStory.contains("plusBadge"), "ストーリーがあるのに「＋」が出る")
-        XCTAssertFalse(hasStory.contains("showComposer"), "自分の輪に投稿の的が残っている")
+        assertInOrder(["Button {", "open(mine)", "} label: {", "ringItem(story: mine",
+                       ".overlay(alignment: .topLeading) {", "Button {", "showComposer = true", "} label: {",
+                       "plusBadge"], in: hasStory, "輪と「＋」のボタン")
+        let ringLabel = slice(hasStory, from: "} label: {", to: ".overlay(alignment: .topLeading)")
+        XCTAssertFalse(ringLabel.contains("plusBadge"), "「＋」が輪を開くボタンの中にある（同じ的になる）")
         // 無いときは今まで通り「＋」で投稿の入口
         let noStory = slice(row, from: "private func mineRing(", to: "private var myFace")
             .components(separatedBy: "} else {").dropFirst().joined()

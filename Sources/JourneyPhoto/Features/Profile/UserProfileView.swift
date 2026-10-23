@@ -351,14 +351,21 @@ struct UserProfileView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
-                RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
-                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
-                    .background(WebTheme.card)
-                    .clipShape(Circle())
-                    // **板どおり黒の 3pt の縁**（板 31）。本人が選んだ色の輪（`themeColor`）は
-                    // 出さない——マイページ（板 05c）と揃える（owner の判断・2026-09-26）。
-                    // 色はプロフィール編集で選べ、Web（`themeRingGradient`）には出る
-                    .coverCutout(true)
+                // **ストーリーがあれば顔に輪を描き、押すとその人のストーリーから**（2026-10-22・`StoryAvatar`）
+                StoryAvatar(userId: userId, name: model.shownName ?? "", diameter: ProfileCover.avatarSize) {
+                    RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
+                        .background(WebTheme.card)
+                } plain: {
+                    RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
+                        .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
+                        .background(WebTheme.card)
+                        .clipShape(Circle())
+                }
+                .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
+                // **板どおり黒の 3pt の縁**（板 31）。本人が選んだ色の輪（`themeColor`）は
+                // 出さない——マイページ（板 05c）と揃える（owner の判断・2026-09-26）。
+                // 色はプロフィール編集で選べ、Web（`themeRingGradient`）には出る
+                .coverCutout(true)
                 Spacer(minLength: 8)
                 if canAct {
                     followButton
@@ -467,7 +474,11 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment, follow: true) }
+                Task {
+                    await model.toggleFollow(userId: userId, environment: environment, follow: true)
+                    // フォローで見えるストーリーが変わる。顔の輪の控えを読み直す
+                    await StoryRingDirectory.shared.refresh(environment: environment, auth: auth)
+                }
             }
         } label: {
             ProfileFollowButtonLabel(isFollowing: model.isFollowing)
@@ -479,7 +490,12 @@ struct UserProfileView: View {
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             // **向きは押した時点で決める。** 確認が出ている間に読み込みが「もう外れていた」を
             // 書いても、「外す」を選んだのに follow を送らない
-            Task { await model.toggleFollow(userId: userId, environment: environment, follow: false) }
+            Task {
+                await model.toggleFollow(userId: userId, environment: environment, follow: false)
+                // 外したら見えなくなるストーリーがある。顔の輪の控えを読み直す（読めなければ前の控えのまま・
+                // 失敗の控えで圏外のたびには読まない・`StoryRingDirectory`）
+                await StoryRingDirectory.shared.refresh(environment: environment, auth: auth)
+            }
         }
     }
 }

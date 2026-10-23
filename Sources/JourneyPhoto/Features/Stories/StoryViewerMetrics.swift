@@ -117,6 +117,8 @@ enum StoryViewerMetrics {
     static let quickReplyFill = 0.14
     /// ♡（板 26）
     static let heartSize: CGFloat = 26
+    /// ♡ を押した瞬間に弾む大きさ（2026-10-22・押した手応え。ばねで 1 へ戻る）
+    static let heartPopScale: CGFloat = 1.3
     /// 自分のストーリーの足元の丸（板 46・地は surface-2・縁は白 12%）
     static let ownCircle: CGFloat = 46
     static let ownCircleBorder = 0.12

@@ -27,6 +27,7 @@ struct StoryReelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
 
     @State private var group: Int
     /// 指で動かしている間の値。**打ち切られても（通知センター・電話・背面）自動で
@@ -182,6 +183,9 @@ struct StoryReelView: View {
                         turn(StoryReel.release(dx: dx, predictedDX: value.predictedEndTranslation.width,
                                                width: width, hasNext: hasNext, hasPrevious: hasPrevious))
                     case .vertical:
+                        // 上へ戻して離した（下へ引いていない）なら戻す動きは要らない。戻すばねの間は時計を
+                        // 止めるので、要らない `settle` を走らせると上への払い（返信欄）のたびに止まっていた
+                        guard StoryReel.needsSettle(dy: dy) else { break }
                         settleY = max(0, dy)
                         if StoryReel.closes(dy: dy, predictedDY: value.predictedEndTranslation.height) {
                             dismiss()
@@ -242,7 +246,13 @@ struct StoryReelView: View {
             voteStates: voteStates,
             onVoted: { voteStates[$0] = $1 },
             sentReactions: sentReactions,
+            // 2026-10-22: 閲覧画面は**送る前に**知らせ（先に塗る）、送れなかったら取り消す
             onReacted: { sentReactions.record($1, on: $0) },
+            // 失敗の知らせは**並びが出す**（閲覧画面は人を回すと作り直され、知らせを出す先が無い）
+            onReactionFailed: { storyId, emoji in
+                sentReactions.rollback(emoji, on: storyId)
+                toasts.show(StoryPlayback.reactionFailedMessage(emoji), kind: .failure)
+            },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }

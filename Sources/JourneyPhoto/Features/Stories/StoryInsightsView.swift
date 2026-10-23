@@ -314,7 +314,9 @@ struct StoryInsightsView: View {
     private func viewerRow(_ viewer: StoryViewer) -> some View {
         HStack(spacing: 12) {
             NavigationLink {
+                // 閲覧画面の中から開いたページ。顔の輪を出さない（閲覧画面を二重に重ねない・`StoryAvatar`）
                 UserProfileView(userId: viewer.userId)
+                    .environment(\.insideStoryViewer, true)
             } label: {
                 HStack(spacing: JPSpace.s) {
                     RemoteImage(url: UserProfile.profileAssetURL(

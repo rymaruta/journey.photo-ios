@@ -70,7 +70,9 @@ final class StoryV2DesignTests: XCTestCase {
                        "AngularGradient(colors: [metal[2], metal[0], metal[1], metal[2]]",
                        "Color.white.opacity(StoryRingMetrics.seenOpacity)"], in: style, "輪の塗り")
         XCTAssertTrue(ring.contains(".stroke(Self.style(unseen: unseen)"), "輪の線が塗りの決まりを通っていない")
-        XCTAssertTrue(ring.contains("StoryPlayback.ringSegments(count: count)"), "本数の切れ目を描いていない")
+        // 切れ目は外径ごとに測り直す（顔の輪・2026-10-22）。64 なら以前と同じ割合
+        XCTAssertTrue(ring.contains("StoryPlayback.ringSegments(count: count, gap: StoryRingMetrics.segmentGapFraction(diameter: diameter))"),
+                      "本数の切れ目を描いていない")
     }
 
     /// ホームの輪の並びは共通の輪を使う（行の中に一色の輪を書き直さない）。名前は未読が白・既読が灰

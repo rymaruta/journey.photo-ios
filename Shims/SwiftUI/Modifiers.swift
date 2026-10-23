@@ -404,6 +404,8 @@ extension View {
     public func onDisappear(perform action: (() -> Void)? = nil) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func onChange<V: Equatable>(of value: V, _ action: @escaping (V, V) -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func environmentObject<T: ObservableObject>(_ object: T) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    /// 環境の値を下へ渡す（本物と同じ形）
+    public func environment<V>(_ keyPath: WritableKeyPath<EnvironmentValues, V>, _ value: V) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
 
     // 読み上げ
     public func accessibilityLabel(_ label: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }

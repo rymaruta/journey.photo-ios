@@ -307,16 +307,14 @@ enum StoryPlayback {
         return isSending ? .none : .advance
     }
 
-    /// 読み上げの「前へ」。**経過時間を見ずに1つ前へ**（束の先頭なら前の人、前の人も
-    /// いなければ頭から）。左タップ（`leftTap`）は 0.8 秒を過ぎると今の1本の頭へ戻るので、
-    /// 読み上げで名前を聞き終わる頃には前へ戻れなかった（2026-10-02 のレビュー）
+    /// 読み上げの「前へ」。左タップ（`leftTap`）と同じ行き先（1つ前へ・束の先頭なら前の人、
+    /// 前の人もいなければ頭から）。2026-10-22 から左タップも経過を見ないので、同じ答えになる
     static func voiceOverPrevious(index: Int, hasPreviousGroup: Bool) -> LeftTap {
-        if index > 0 { return .previous(index - 1) }
-        return hasPreviousGroup ? .previousGroup : .restart
+        leftTap(index: index, hasPreviousGroup: hasPreviousGroup)
     }
 
     enum LeftTap: Equatable {
-        /// 同じ1枚を最初から
+        /// 同じ1枚を最初から（最初の人の1本目で、前が無いときだけ）
         case restart
         /// 1つ前へ
         case previous(Int)
@@ -324,26 +322,22 @@ enum StoryPlayback {
         case previousGroup
     }
 
-    /// 始まってすぐの左タップだけ前へ戻る。**Web と同じ 0.8 秒の線。**
-    /// それを過ぎていたら「今のを最初から」——見返したい方が多い。
-    static let restartThreshold: TimeInterval = 0.8
-
-    /// - Parameter hasPreviousGroup: 前の人がいる（人から人への並びの中で、最初の人でない）。
-    ///   束の先頭で始まってすぐなら前の人へ戻る（Instagram と同じ）
-    static func leftTap(index: Int, elapsed: TimeInterval, hasPreviousGroup: Bool = false) -> LeftTap {
-        if elapsed > restartThreshold { return .restart }
-        if index == 0 { return hasPreviousGroup ? .previousGroup : .restart }
-        return .previous(index - 1)
+    /// 左タップの行き先。**いつも1つ前へ**（束の先頭なら前の人へ・Instagram と同じ）。
+    ///
+    /// 2026-10-22 判断（owner「インスタみたいに使いやすく」）: 以前は Web と同じく「0.8 秒を
+    /// 過ぎたら今の1本の頭へ」だったが、写真は数秒で読み終わるので、左を押しても前へ戻れず
+    /// 同じ1枚が頭からやり直すだけに見えた。頭から見直したいときは長押しで止めて見られる。
+    /// 前が無い（最初の人の1本目）ときだけ頭から
+    ///
+    /// - Parameter hasPreviousGroup: 前の人がいる（人から人への並びの中で、最初の人でない）
+    static func leftTap(index: Int, hasPreviousGroup: Bool = false) -> LeftTap {
+        if index > 0 { return .previous(index - 1) }
+        return hasPreviousGroup ? .previousGroup : .restart
     }
 
-    /// 左タップの判断（`leftTap`）に渡す経過。**動画と読み込み中の写真は、見せ始めてからの
-    /// 実時間**（Web の `goPrev` と同じ）。時計（`Clock`）は写真が出てからしか回らないので、
-    /// 動画ではいつも0になり、左を押すと頭から流れずに前の1本・前の人へ飛んでいた。
-    /// 出ている写真は今までどおり時計（止めていた間は数えない）
-    static func leftTapElapsed(clock: TimeInterval, sinceShown: TimeInterval,
-                               isVideo: Bool, mediaReady: Bool) -> TimeInterval {
-        isVideo || !mediaReady ? sinceShown : clock
-    }
+    /// 左の当たりの幅（画面の幅に対する割合）。**左は細く・右は広く**（Instagram と同じ 1/3）
+    /// ——進むほうが多いので、真ん中あたりを押したら次へ（2026-10-22 判断。以前は半々）
+    static let leftTapFraction: CGFloat = 1.0 / 3.0
 
     /// 頭から見直したときの終わりの控え（`pendingEnd`）と受け取った印（`endedIds`）。
     ///
@@ -386,6 +380,8 @@ enum StoryPlayback {
         case back
         /// 閉じる
         case close
+        /// 上へ払った（返信欄を開く・自分の投稿なら見た人の一覧・`swipeUpAction`）
+        case up
         /// 何もしない（短すぎる・斜め）
         case ignore
     }
@@ -404,17 +400,40 @@ enum StoryPlayback {
     ///   - dy: 縦の移動（下が正）
     static func swipe(dx: CGFloat, dy: CGFloat) -> Swipe {
         let ax = abs(dx), ay = abs(dy)
-        // **上への払いは何もしない。** モックには無いし、他のアプリでは
-        // 「詳細を開く」に割り当てられていることが多い——同じ動きで
-        // 違うことが起きる方が悪い
+        // **上へ払うと返信欄を開く**（2026-10-22 判断・Instagram と同じ。以前は何もしなかった）。
+        // 何が開くかは `swipeUpAction` が決める
         if ay > ax * swipeDominance {
-            return dy >= swipeThreshold ? .close : .ignore
+            if dy >= swipeThreshold { return .close }
+            return dy <= -swipeThreshold ? .up : .ignore
         }
         if ax > ay * swipeDominance, ax >= swipeThreshold {
             // **払った向きと進む向きを合わせる。** 左へ払う＝次（紙をめくる向き）
             return dx < 0 ? .next : .back
         }
         return .ignore
+    }
+
+    /// 上へ払ったときに開くもの
+    enum SwipeUp: Equatable {
+        /// 返信欄に入る（キーボードを出す）
+        case reply
+        /// 自分の投稿の「見た人」の一覧（足元の反応の札と同じ）
+        case insights
+        /// ♡ の長押しの並びが開いていた。**閉じるだけ**（並びが ♡ の上に残ったまま返信欄が開かない）
+        case closeReactions
+        /// 何もしない
+        case none
+    }
+
+    /// 上へ払ったとき。**人の投稿は返信欄、自分の投稿は見た人の一覧**（Instagram と同じ）。
+    /// 返信を受けない投稿・期限切れの自分の投稿（見た人の記録が無い）・ハイライトの中
+    /// （足元に返信欄も見た人の札も無い）は何もしない——足元に無い物を払いで開かない
+    static func swipeUpAction(isMine: Bool, acceptsReplies: Bool, expired: Bool, inHighlight: Bool,
+                              reactionsOpen: Bool = false) -> SwipeUp {
+        if reactionsOpen { return .closeReactions }
+        guard !inHighlight else { return .none }
+        if isMine { return expired ? .none : .insights }
+        return acceptsReplies ? .reply : .none
     }
 
     // MARK: - 兄弟
@@ -463,6 +482,61 @@ enum StoryPlayback {
             let oldestFirst = group.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
             return oldestFirst.first { !isSeen($0.id) } ?? oldestFirst.first
         }
+    }
+
+    /// 1人のストーリーの輪（プロフィールの顔・写真の作者の顔・2026-10-22）。
+    struct PersonRing: Equatable {
+        /// 開く束（輪を押すとここから。ホームの輪と同じく**まだ見ていない中で一番古い1本**から）
+        let group: StoryReel.Group
+        /// まだ見ていない1本がある（真鍮の輪）。全部見ていれば白 22% の輪
+        let unseen: Bool
+        /// 本数（輪の切れ目）
+        var count: Int { group.stories.count }
+    }
+
+    /// その人の輪。**`GET /stories` の一覧から選ぶだけ**（新しい口は作らない）。
+    /// ストーリーが無い人・`userId` が分からないときは nil（顔は今までどおり・輪を出さない）
+    static func personRing(userId: String?, in stories: [Story], isSeen: (String) -> Bool) -> PersonRing? {
+        guard let userId, !userId.isEmpty else { return nil }
+        guard let ring = rings(stories.filter { $0.userId == userId }, isSeen: isSeen).first else { return nil }
+        let group = siblings(of: ring, in: stories)
+        return PersonRing(group: StoryReel.Group(stories: group.stories, start: group.index),
+                          unseen: group.stories.contains { !isSeen($0.id) })
+    }
+
+    /// 顔の輪の控え（`StoryRingDirectory`）をこれより古ければ読み直す。人のページを行き来する
+    /// たびに読まない（通信を増やしすぎない）。ストーリーは 24 時間もつので 1 分の遅れは困らない
+    static let ringFreshness: TimeInterval = 60
+
+    /// 読めなかったあと、これだけは読み直さない（圏外で顔を開くたびに読みに行かない）
+    static let ringRetryAfterFailure: TimeInterval = 15
+
+    /// 顔の輪の控えを読み直すか。**読んだことが無い・見ている人が替わった・古い**とき。
+    /// ただし**その人の分を読めなかったばかり**（`failedAt` から `ringRetryAfterFailure` 以内）なら読まない
+    static func needsRingRefresh(fetchedAt: Date?, sameViewer: Bool, failedAt: Date? = nil,
+                                 now: Date = Date(), maxAge: TimeInterval = ringFreshness) -> Bool {
+        if let failedAt, now >= failedAt, now.timeIntervalSince(failedAt) < ringRetryAfterFailure { return false }
+        guard let fetchedAt, sameViewer else { return true }
+        return now.timeIntervalSince(fetchedAt) >= maxAge || now < fetchedAt
+    }
+
+    /// 輪を出してすぐ先に読む数。**画面に見えている輪だけ**（幅を輪1つ分＋間で割り、端の
+    /// 半分まで含める）。全員ぶん読むと、見ない人の写真で通信と記憶を食う
+    static func visibleRingCount(width: CGFloat, ringSize: CGFloat = 64, spacing: CGFloat = 14,
+                                 inset: CGFloat = 16) -> Int {
+        guard width > 0, ringSize + spacing > 0 else { return 0 }
+        let usable = max(0, width - inset)
+        return Int((usable / (ringSize + spacing)).rounded(.up))
+    }
+
+    /// ホームの輪の先読み（2026-10-22）。開く1本（輪に出している1本）のうち、見えている輪の分だけ。
+    ///
+    /// - **写真は輪のサムネが同じ URL を読む**（`StoryThumb` が `src` をそのまま `RemoteImage` に
+    ///   渡す・`URLCache.shared`）ので、ここでは重ねて読まない（同じ写真を2回落とさない）
+    /// - **動画は輪に記号しか出さない**ので、見えている中で最初の1本だけ再生器を作っておく
+    ///   （`StoryVideoPreloader` は1つしか持たない・先に読むのは数秒）
+    static func ringPrefetchVideo(openers: [Story], visibleCount: Int) -> URL? {
+        openers.prefix(max(0, visibleCount)).first { $0.isVideo && $0.imageURL != nil }?.imageURL
     }
 
     /// ホームの輪の並び（板 27「いつもの並び」）。**自分は先頭に別に取り出し、
@@ -790,6 +864,35 @@ enum StoryPlayback {
 
         /// 送れた（サーバーが受けた）ときだけ呼ぶ
         mutating func record(_ emoji: String, on storyId: String) { sent[storyId] = emoji }
+
+        /// **返事を待たずに先に塗る**（2026-10-22 判断・Instagram と同じ）。送る前に印を付け、
+        /// 付けられたら true（その1本にまだ送っていなかった）。返事を待つ間に2回目を押しても
+        /// 印があるので送らない（サーバーは重ねて消さないので、二重に送らない決まりはそのまま）
+        mutating func begin(_ emoji: String, on storyId: String) -> Bool {
+            guard shouldSend(on: storyId) else { return false }
+            sent[storyId] = emoji
+            return true
+        }
+
+        /// 送れなかった。**先に付けた印を外す**（♡ の塗りを戻し、もう一度押せるようにする）。
+        /// 外すのは `emoji` で付けた印のときだけ（別の絵文字の印は触らない）
+        mutating func rollback(_ emoji: String, on storyId: String) {
+            if sent[storyId] == emoji { sent[storyId] = nil }
+        }
+    }
+
+    /// 反応を送れなかったときの知らせ（先に塗った ♡ は戻す）。**控えめに・何が送れなかったかを言う**
+    /// ——送っている間に次の1本へ移っていても、どの操作の話か分かるように
+    static func reactionFailedMessage(_ emoji: String) -> String {
+        emoji == StoryService.reactions.first
+            ? L("いいねを送れませんでした", "Couldn't send your like")
+            : L("\(emoji) を送れませんでした", "Couldn't send \(emoji)")
+    }
+
+    /// 送れたときに知らせを出すか。**♡ は出さない**（押した瞬間に塗って弾むので、文字で
+    /// 重ねて言わない・Instagram と同じ）。並びや返信欄の絵文字は ♡ の形でしか見えないので知らせる
+    static func announcesReactionSent(_ emoji: String) -> Bool {
+        emoji != StoryService.reactions.first
     }
 
     /// もう送った1本で、もう一度反応しようとしたときの知らせ（黙って何もしないと壊れて見える）

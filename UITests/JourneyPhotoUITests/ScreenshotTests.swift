@@ -3626,6 +3626,20 @@ final class ScreenshotTests: XCTestCase {
 
     /// 立体を組み終えるまで待つ（読み上げの値に「camper-room-ready 部屋 時刻」が出る・見本の起動のときだけ）
     @discardableResult
+    /// 接写の一覧の頁を 1 つ進める。押した後、いまの頁の合図（`from`）が消える（次の頁を描き始める）のを確かめ、
+    /// 消えなければ 2 回まで押し直す。2026-10-23 PR #371 の検証（run 39843960624）: 込んだ Mac で 16 → 17 頁の押しが
+    /// 届かず（アプリの応答が 1 回 2 秒以上止まっていた）、試験の数える頁がアプリより 1 つ先へずれ、17〜27 頁を全部
+    /// 「描き終えない」と落ちていた（アプリは 17〜26 頁を描いていた）
+    private func turnContactPage(_ app: XCUIApplication, _ next: XCUIElement, from marker: String) {
+        let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
+        let moved = NSPredicate(format: "NOT (value CONTAINS %@)", marker)
+        for attempt in 1...3 {
+            next.tap()
+            if XCTWaiter().wait(for: [expectation(for: moved, evaluatedWith: sheet)], timeout: 10) == .completed { return }
+            print("UINOTE 接写の頁: 進むを押しても「\(marker)」のまま（\(attempt) 回目）")
+        }
+    }
+
     private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String, timeout: TimeInterval = 40) -> Bool {
         let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
@@ -3841,7 +3855,7 @@ final class ScreenshotTests: XCTestCase {
                 shot.lifetime = .keepAlways
                 add(shot)
                 guard next.exists, next.isEnabled else { break }
-                next.tap()
+                turnContactPage(app, next, from: "contact-ready \(mood) \(page)/")
                 page += 1
             }
             // 頁を初めに戻して、昼と夜を替える
@@ -3870,7 +3884,7 @@ final class ScreenshotTests: XCTestCase {
             shot.lifetime = .keepAlways
             add(shot)
             guard next.exists, next.isEnabled else { break }
-            next.tap()
+            turnContactPage(app, next, from: "legs-ready \(page)/")
             page += 1
         }
     }
@@ -3902,7 +3916,7 @@ final class ScreenshotTests: XCTestCase {
             shot.lifetime = .keepAlways
             add(shot)
             guard next.exists, next.isEnabled else { break }
-            next.tap()
+            turnContactPage(app, next, from: "contact-ready day \(page)/")
             page += 1
         }
     }
@@ -4453,5 +4467,97 @@ final class ScreenshotTests: XCTestCase {
         dragUp(app, until: flip, x: 0.04, from: 0.75, to: 0.45)
         shoot(app, "85y-大きい文字（自分のカード・裏を見る）")
         XCTAssertTrue(flip.isHittable, "大きい文字で「裏を見る」を押せない")
+    }
+
+    /// **ストーリーを顔から開く・返信欄の絵文字の列**（2026-10-22・「インスタみたいに」第1弾）。
+    ///
+    /// 見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewStories` を足すと、`GET /stories` を端末の中で答える
+    /// （公開の新着の作者ごとに1本・自分にも1本。写真は公開の写真をそのまま使う・`PreviewBackend.previewStories`）。
+    /// ホームの輪（自分の輪の「＋」）→ 写真の詳細の作者の顔の輪 → 人のページの顔の輪 → 輪を押して開く →
+    /// 返信欄に入って入力欄の上の絵文字の列、の順に撮る。**出なければ撮らずに抜ける**
+    func testCapturesStoryRingsOnFaces() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+
+        // ホームの輪（自分にストーリーがあっても右下の「＋」）。**輪が出なくても撮る**（どこで止まったかを絵で残す）。
+        // 「＋」は読み上げでは輪の操作にしてある（要素として隠す）ので、自分の輪の名前で待つ
+        let mine = app.buttons["あなたのストーリー"].firstMatch
+        let mineShown = mine.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, mineShown ? "60a-ストーリーの輪（自分の＋）" : "60a-ストーリーの輪（自分の輪が出ない）")
+
+        // マイページの顔（見本の利用者はカバーがある。カバーの上の輪のすき間に写真が透けないか）
+        let tabs = app.tabBars.firstMatch
+        let myPage = tabs.buttons.element(boundBy: 4)
+        if myPage.exists {
+            myPage.tap()
+            let myRing = app.buttons["story.avatar.ring"].firstMatch
+            let myShown = myRing.waitForExistence(timeout: 15)
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, myShown ? "60f-ストーリーの輪（マイページの顔・カバーの上）" : "60f-ストーリーの輪（マイページの顔に輪が無い）")
+            tabs.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+
+        // 写真の詳細の作者の顔。**ホームの「NEW」の1枚目から開く**（見本のストーリーは同じ新着の作者に付けてある・
+        // `PreviewBackend.previewStories`。おすすめの格子は画面の下で、run 693 では見つからなかった）
+        let fresh = app.descendants(matching: .any)["home.fresh"].firstMatch
+        let photo = fresh.buttons.matching(NSPredicate(format: "identifier != %@", "home.fresh.all")).firstMatch
+        guard fresh.waitForExistence(timeout: 30), photo.waitForExistence(timeout: 10), photo.isHittable else {
+            shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
+            return
+        }
+        photo.tap()
+        let author = app.buttons["photo.author"].firstMatch
+        var pushes = 0
+        while author.waitForExistence(timeout: 5), !author.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        let detailRing = app.buttons["story.avatar.ring"].firstMatch
+        let detailShown = detailRing.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, detailShown ? "60b-ストーリーの輪（写真の作者の顔）" : "60b-ストーリーの輪（作者の顔に輪が無い）")
+        if detailShown {
+            XCTAssertGreaterThanOrEqual(detailRing.frame.height, 44, "作者の顔の輪が 44pt 未満")
+        }
+        guard author.exists, author.isHittable else { return }
+
+        // 人のページの顔
+        author.tap()
+        Thread.sleep(forTimeInterval: 4)
+        // 積んだ下の写真の詳細にも同じ名前の輪が残っているので、**押せる方**を選ぶ
+        let rings = app.buttons.matching(identifier: "story.avatar.ring")
+        let profileRing = (0..<rings.count).map({ rings.element(boundBy: $0) }).first(where: { $0.isHittable })
+        shoot(app, profileRing != nil ? "60c-ストーリーの輪（人のページの顔）" : "60c-ストーリーの輪（人のページの顔に輪が無い）")
+        guard let profileRing else { return }
+
+        // 輪を押すとその人のストーリーから開く → 返信欄に入ると入力欄の上に絵文字の列
+        profileRing.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let reply = app.textFields.firstMatch
+        let replyShown = reply.waitForExistence(timeout: 15)
+        shoot(app, replyShown ? "60d-ストーリー（顔から開いた）" : "60d-ストーリー（顔から開いた・返信欄が無い）")
+        guard replyShown, reply.isHittable else { return }
+        reply.tap()
+        let row = app.descendants(matching: .any)["story.reply.reactions"].firstMatch
+        let rowShown = row.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, rowShown ? "60e-ストーリーの返信欄（絵文字の列）" : "60e-ストーリーの返信欄（絵文字の列が無い）")
+        let heart = app.buttons["いいね"].firstMatch
+        if rowShown, heart.exists {
+            XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "絵文字の列の的が 44pt 未満")
+        }
     }
 }
