@@ -538,6 +538,9 @@ extension View {
     /// スクロール（ページ式の TabView の送りも）を止める（本物と同じ・iOS 16+）
     public func scrollDisabled(_ disabled: Bool) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func simultaneousGesture<G: Gesture>(_ gesture: G, including mask: GestureMask) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// 同じ id の部品を、選び替えたとき形ごと移す（本物と同じ・プロフィールの札の下線）
+    public func matchedGeometryEffect<ID: Hashable>(id: ID, in namespace: Namespace.ID,
+                                                    isSource: Bool = true) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す
     /// （本物の SwiftUI と同じ形。押している間だけ止める、に使う）

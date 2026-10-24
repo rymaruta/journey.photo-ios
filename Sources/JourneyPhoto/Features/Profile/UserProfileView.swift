@@ -25,6 +25,8 @@ struct UserProfileView: View {
     @State private var showBlockConfirm = false
     @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
+    /// スクロールの見えている高さ。札の中身を少なくともこの高さにして、短い札へ替えても札の行を跳ばさない
+    @State private var viewportHeight: CGFloat = 0
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
     /// 中身が時計の下に入ったか（`ScrolledUnderClock`）
@@ -175,15 +177,28 @@ struct UserProfileView: View {
                 }
 
                 // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
+                // 札の行と中身は横に払っても切り替わる（マイページと同じ部品・2026-10-24 判断）。
+                // **地図の札の中身では払いを受けない**——地図を横に動かす操作とぶつかる（札の行では受ける）
                 ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
+                    .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab))
 
-                photoArea
+                photoBanners
+                ProfileTabPager(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
+                                minHeight: viewportHeight, swipeBlocked: [.map]) { page in
+                    VStack(alignment: .leading, spacing: JPSpace.m) {
+                        tabContent(page)
+                    }
+                }
             }
             // 中身が時計の下に入ったかを見る（入ったときだけ時計の下を黒で塗る・`TopBarScrim.covered`）
             .onGeometryChange(for: Bool.self) { proxy in
                 ScrolledUnderClock.covered(contentMinY: proxy.frame(in: .scrollView).minY)
             } action: { scrolledUnderClock = $0 }
         }
+        // 見えている高さ（札の中身の最低の高さ・`ProfileTabPager`）
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { viewportHeight = $0 }
     }
 
     @ToolbarContentBuilder
@@ -275,8 +290,9 @@ struct UserProfileView: View {
         }
     }
 
+    /// 札の上の知らせ（どの札でも同じ所に出す）
     @ViewBuilder
-    private var photoArea: some View {
+    private var photoBanners: some View {
         if let action = model.actionMessage {
             // **一覧の代わりではなく、一覧に添える**（マイページと同じ）
             Text(action)
@@ -284,6 +300,11 @@ struct UserProfileView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, ProfileV2.gutter)
         }
+    }
+
+    /// 札ごとの中身。**`tab` ではなく渡された札で分ける**——選んでいない札も持ち続ける（`ProfileTabPager`）
+    @ViewBuilder
+    private func tabContent(_ tab: ProfileTab) -> some View {
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }

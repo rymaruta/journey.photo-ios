@@ -311,7 +311,7 @@ struct MyPageView: View {
     private var content: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
-                scroll(topInset: geo.safeAreaInsets.top)
+                scroll(topInset: geo.safeAreaInsets.top, viewport: geo.size.height)
                     .ignoresSafeArea(edges: hasCover ? .top : [])
                 // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
                 // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
@@ -321,7 +321,7 @@ struct MyPageView: View {
         }
     }
 
-    private func scroll(topInset: CGFloat) -> some View {
+    private func scroll(topInset: CGFloat, viewport: CGFloat) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
@@ -384,10 +384,15 @@ struct MyPageView: View {
                 // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
                 VStack(alignment: .leading, spacing: 14) {
                     tabPicker
-                    photoArea
+                        .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))
+                    photoBanners
+                    // 一度開いた札の中身は持ち続け、高さは少なくとも画面1枚分（`ProfileTabPager`・2026-10-24 判断）
+                    ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab, minHeight: viewport) { page in
+                        VStack(alignment: .leading, spacing: 14) {
+                            tabContent(page)
+                        }
+                    }
                 }
-                .contentShape(Rectangle())
-                .simultaneousGesture(tabSwipe)
             }
             // 中身が時計の下に入ったかを見る（入ったときだけ時計の下を黒で塗る・`TopBarScrim.covered`）
             .onGeometryChange(for: Bool.self) { proxy in
@@ -971,19 +976,7 @@ struct MyPageView: View {
         ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab)
     }
 
-    /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
-    /// すると縦のスクロールと写真を押す操作を奪う。判定は `ProfileTab.swiped`
-    /// （はっきり横に動いたときだけ・端で回り込まない）
-    private var tabSwipe: some Gesture {
-        DragGesture(minimumDistance: 20)
-            .onEnded { value in
-                guard let next = ProfileTab.swiped(from: tab, in: ProfileTab.tabs(isMe: true),
-                                                   dx: Double(value.translation.width),
-                                                   dy: Double(value.translation.height))
-                else { return }
-                tab = next
-            }
-    }
+    // 横の払いは `ProfileTabSwipe`（札の行と中身の両方・人のページと同じ部品・2026-10-24）
 
     /// 旅の記録（旅の一冊の棚）。**自分の写真から**その場でまとめる（`TripBook.shelfTrips`）
     /// ——日付で束ねるのは公開写真だけ。1つの投稿にまとめた束は非公開でも一冊（自分だけの印付き）。
@@ -1114,8 +1107,9 @@ struct MyPageView: View {
         refreshSavedIds()
     }
 
+    /// 札の上の知らせ（どの札でも同じ所に出す）
     @ViewBuilder
-    private var photoArea: some View {
+    private var photoBanners: some View {
         // **読み直しの失敗は、格子の上に再試行つきで出す**（格子は残す）
         if let reloadError = model.reloadError {
             ErrorBanner(message: reloadError) { Task { await model.load(for: auth.userId) } }
@@ -1134,6 +1128,11 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, ProfileV2.gutter)
         }
+    }
+
+    /// 札ごとの中身。**`tab` ではなく渡された札で分ける**——選んでいない札も持ち続ける（`ProfileTabPager`）
+    @ViewBuilder
+    private func tabContent(_ tab: ProfileTab) -> some View {
         // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
         // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
         // 知らせ1枚に置き換わっていた。読み直しの失敗はモデルが上の

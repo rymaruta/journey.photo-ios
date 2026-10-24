@@ -17,6 +17,10 @@ struct ProfileTabBar: View {
     @Binding var selection: ProfileTab
     /// 名前の字の大きさ（`.subheadline` と同じだけ伸びる。既定 15）。縮める下限の計算に使う
     @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = 15
+    /// 下線を選んだ札へ滑らせる目印（2026-10-24 判断・owner「切り替えスムーズに」）。
+    /// 以前は札ごとに「選んでいれば真鍮・でなければ透明」で描き、切り替えで瞬時に入れ替わっていた
+    @Namespace private var underline
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -38,15 +42,22 @@ struct ProfileTabBar: View {
     private func tab(_ option: ProfileTab, fill: Bool) -> some View {
         let selected = selection == option
         return Button {
-            selection = option
+            // 滑らせる（「視差効果を減らす」のときは動かさない・`ProfileTabMotion`）
+            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                selection = option
+            }
         } label: {
             label(option, selected: selected)
                 .foregroundStyle(ProfileTabBar.color(selected: selected))
                 .frame(maxWidth: fill ? .infinity : nil, minHeight: WebTheme.minTapTarget)
                 .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(selected ? WebTheme.accent : Color.clear)
-                        .frame(height: JPStroke.emphasis)
+                    // 真鍮の下線は1本だけ。選んだ札へ形ごと移る（`matchedGeometryEffect`）
+                    if selected {
+                        Rectangle()
+                            .fill(WebTheme.accent)
+                            .frame(height: JPStroke.emphasis)
+                            .matchedGeometryEffect(id: "profile.tab.underline", in: underline)
+                    }
                 }
                 .contentShape(Rectangle())
         }

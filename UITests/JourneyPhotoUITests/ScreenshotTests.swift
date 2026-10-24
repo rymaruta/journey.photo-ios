@@ -3541,6 +3541,64 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **マイページの札を横に払って切り替える**（2026-10-24 owner「切り替えスムーズに」・`ProfileTabPager`）。
+    /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
+    /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす
+    func testSwipesMyPageTabs() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let posts = app.buttons["profile.tab.posts"].firstMatch
+        let trips = app.buttons["profile.tab.trips"].firstMatch
+        guard posts.waitForExistence(timeout: 10) else { return }
+        // 札の行が画面の下半分に来るまで送る（払うのは札の行の上）
+        var pushes = 0
+        while !posts.isHittable || posts.frame.minY > app.frame.height * 0.5, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard posts.isHittable else { return }
+        let rowY = posts.frame.minY
+        let hadPhoto = app.buttons["mypage.photo"].firstMatch.waitForExistence(timeout: 10)
+
+        // 札の行の高さで、画面の横幅の半分ほどを払う（小さな札1つの上の `swipeLeft` だと距離が足りないことがある）
+        func swipeRow(left: Bool) {
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let y = posts.frame.midY
+            let width = app.frame.width
+            let from = origin.withOffset(CGVector(dx: left ? width * 0.8 : width * 0.2, dy: y))
+            let to = origin.withOffset(CGVector(dx: left ? width * 0.2 : width * 0.8, dy: y))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        swipeRow(left: true)
+        XCTAssertTrue(trips.isSelected, "札の行を左へ払っても「旅の記録」に替わらない")
+        XCTAssertEqual(posts.frame.minY, rowY, accuracy: 2, "切り替えで札の行の位置が跳んだ")
+        shoot(app, "14n-マイページ（払って旅の記録へ）")
+
+        swipeRow(left: false)
+        XCTAssertTrue(posts.isSelected, "札の行を右へ払っても「投稿」に戻らない")
+        XCTAssertEqual(posts.frame.minY, rowY, accuracy: 2, "戻ったときに札の行の位置が跳んだ")
+        if hadPhoto {
+            // 作り直していなければ、待たずに格子がある
+            XCTAssertTrue(app.buttons["mypage.photo"].firstMatch.exists, "戻ったときに投稿の格子が消えている")
+        }
+        shoot(app, "14o-マイページ（払って投稿へ戻る）")
+    }
+
     /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**
     /// （板 52・50・50b・50c）。サーバーには何も送らない（保存は押さない）。出なければ撮らない（この試験の決まり）。
     /// 額縁・候補・「決める」が 44pt 未満なら落とす

@@ -35,11 +35,11 @@ final class MyPageTripToolsTests: XCTestCase {
     /// （アルバム・旅行プランは自分の写真の読み込みと無関係・2026-10-07）
     func testEntriesSurviveFirstLoadFailure() throws {
         let view = try source("Features/Profile/MyPageView.swift")
-        guard let area = view.range(of: "private var photoArea: some View {"),
+        guard let area = view.range(of: "private func tabContent(_ tab: ProfileTab) -> some View {"),
               let failure = view.range(of: "} else if let error = model.errorMessage {",
                                        range: area.upperBound..<view.endIndex),
               let next = view.range(of: "} else if tab == .trips {", range: failure.upperBound..<view.endIndex)
-        else { return XCTFail("photoArea の読み込み失敗の枝が見つからない") }
+        else { return XCTFail("tabContent の読み込み失敗の枝が見つからない") }
         let branch = view[failure.upperBound..<next.lowerBound]
         XCTAssertTrue(branch.contains("ErrorBanner"), "読み込み失敗の知らせが無い")
         XCTAssertTrue(branch.contains("if tab == .trips") && branch.contains("tripToolsCard"),
