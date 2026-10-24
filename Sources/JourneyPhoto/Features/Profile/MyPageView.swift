@@ -31,6 +31,12 @@ struct MyPageView: View {
     /// が読み直されても、控えた ID のぶんは引き当て直せるように
     @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
+    /// 札の中身の計算の控え（保持した札の分まで描き直しのたびに計算しない・2026-10-24）
+    @State private var tabMemo = MyPageTabMemo()
+    /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う
+    @State private var tabRowMinY: CGFloat = 0
+    @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
     /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
@@ -322,6 +328,10 @@ struct MyPageView: View {
     }
 
     private func scroll(topInset: CGFloat, viewport: CGFloat) -> some View {
+        // 見えている上端（カバーを時計の裏まで伸ばしたときは時計の下）と、スクロールの見えている高さ
+        let visibleTop = hasCover ? topInset : 0
+        let scrollHeight = viewport + visibleTop
+        return ScrollViewReader { reader in
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
@@ -385,9 +395,19 @@ struct MyPageView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     tabPicker
                         .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))
+                        .id(ProfileTabScroll.rowID)
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .scrollView)
+                        } action: { frame in
+                            tabRowMinY = frame.minY
+                            tabRowHeight = frame.height
+                        }
                     photoBanners
-                    // 一度開いた札の中身は持ち続け、高さは少なくとも画面1枚分（`ProfileTabPager`・2026-10-24 判断）
-                    ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab, minHeight: viewport) { page in
+                    // 一度開いた札の中身は持ち続ける（`ProfileTabPager`・2026-10-24 判断）。最低の高さは
+                    // 「見えている高さ − 札の行と間」——いちばん下まで送っても札の行が上端に残る
+                    ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
+                                    minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
+                                                                              rowHeight: tabRowHeight, spacing: 14)) { page in
                         VStack(alignment: .leading, spacing: 14) {
                             tabContent(page)
                         }
@@ -400,6 +420,16 @@ struct MyPageView: View {
             } action: { scrolledUnderClock = $0 }
         }
         .refreshable { await reloadAll() }
+        // 深く送ってから札を替えたら、新しい札は頭から（札の行を上端へ）。まだ送っていなければそのまま
+        .onChange(of: tab) { _, _ in
+            guard ProfileTabScroll.scrollsToRow(rowMinY: tabRowMinY, visibleTop: visibleTop) else { return }
+            let anchor = UnitPoint(x: 0.5, y: ProfileTabScroll.anchorY(visibleTop: visibleTop, viewport: scrollHeight,
+                                                                       rowHeight: tabRowHeight))
+            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                reader.scrollTo(ProfileTabScroll.rowID, anchor: anchor)
+            }
+        }
+        }
     }
 
     /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**（続けて押すと古い回が
@@ -655,8 +685,9 @@ struct MyPageView: View {
         // **先に公開一覧を絞ってから引き当てる**（`SavedPhotosView` と同じ順）。引き当ててから
         // 絞ると、公開一覧の古い写しが先に当たって落ち、自分の非公開の写し（新しい方）が
         // 使われずに、非公開にした自分の写真が保存から消えた
-        let publicPool = dropped.visible(feed)
-        let saved = LikedPhotos.resolve(savedIds, in: [publicPool, model.photos])
+        // 計算は控えから（入力が変わったときだけ計算し直す・`MyPageTabMemo`）
+        let publicPool = tabMemo.visibleFeed(feed, hidden: dropped)
+        let saved = tabMemo.savedPhotos(ids: savedIds, publicPool: publicPool, mine: model.photos)
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
@@ -716,14 +747,15 @@ struct MyPageView: View {
         // `feed` が絞られるのは取った時点だけで、その後のブロックも、同期の前に
         // 返った一覧も素通りして、行のサムネに出ていた
         // **自分の写真は落とさない**（`wishlistPool(own:feed:hidden:)`・main 側の決まり）
-        let unfiltered = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
-        let pool = Self.wishlistPool(own: model.photos, feed: feed, hidden: dropped)
-        let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
+        // 計算は控えから（入力が変わったときだけ計算し直す・`MyPageTabMemo`）
+        let unfiltered = tabMemo.unfilteredWishlistPool(own: model.photos, feed: feed)
+        let pool = tabMemo.wishlistPool(own: model.photos, feed: feed, hidden: dropped)
+        let wanted = tabMemo.wantedPlaces(keys: wishIds, pool: pool)
         // 「一部を読み込めませんでした」を数える側は**絞る前**で引く——ブロックした人の
         // 写真にしか無い撮影地は、読み込めていないのではなく見せないだけ
         // （公開一覧の失敗のときしか使わないので、そのときだけ導き直す）
         let reachable = feedFailed
-            ? ProfileSections.wantedPlaces(keys: wishIds, pool: unfiltered).count
+            ? tabMemo.unfilteredWantedPlaces(keys: wishIds, pool: unfiltered).count
             : wanted.count
         // 自分の写真の初回が取れていない回も「取れていない」（非公開の写真・一覧に
         // まだ載っていない投稿の撮影地は、公開一覧からは引けない）
@@ -985,9 +1017,10 @@ struct MyPageView: View {
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
-        let trips = TripBook.shelfTrips(from: model.photos)
+        // 計算は控えから（入力が変わったときだけ計算し直す・`MyPageTabMemo`）
+        let trips = tabMemo.shelfTrips(model.photos)
         // 端末の写真の一冊（2026-10-16・`DeviceTripSection`）。投稿済みの日がある旅は外す
-        let posted = LibraryTrips.postedShots(of: model.photos)
+        let posted = tabMemo.postedShots(model.photos)
         let hasDeviceBooks = !deviceTrips.books(posted: posted, isMine: true).isEmpty
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）。v2: 行の骨格
@@ -999,7 +1032,7 @@ struct MyPageView: View {
                 // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）。
                 // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
                 if !trips.isEmpty || !hasDeviceBooks {
-                    TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
+                    TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(tabMemo.visibleFeed(feed, hidden: dropped)))
                 }
                 DeviceTripSection(store: deviceTrips, posted: posted)
                 tripToolsCard

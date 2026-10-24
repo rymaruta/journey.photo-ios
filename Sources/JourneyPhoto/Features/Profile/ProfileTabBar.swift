@@ -51,12 +51,13 @@ struct ProfileTabBar: View {
                 .foregroundStyle(ProfileTabBar.color(selected: selected))
                 .frame(maxWidth: fill ? .infinity : nil, minHeight: WebTheme.minTapTarget)
                 .overlay(alignment: .bottom) {
-                    // 真鍮の下線は1本だけ。選んだ札へ形ごと移る（`matchedGeometryEffect`）
+                    // 真鍮の下線は1本だけ。選んだ札へ形ごと移る（`matchedGeometryEffect`）。
+                    // id に並びの別（`fill`）を足す——`ViewThatFits` の2案が同じ id を持つと、両方が元になる
                     if selected {
                         Rectangle()
                             .fill(WebTheme.accent)
                             .frame(height: JPStroke.emphasis)
-                            .matchedGeometryEffect(id: "profile.tab.underline", in: underline)
+                            .matchedGeometryEffect(id: "profile.tab.underline.\(fill)", in: underline)
                     }
                 }
                 .contentShape(Rectangle())

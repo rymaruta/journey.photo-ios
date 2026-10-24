@@ -1029,7 +1029,8 @@ struct ComposeGuideView: View {
     /// 作例の出典の1行（`OfficialSpotView.sampleCreditLink` と同じ書き方・当たりは 44pt 以上）
     private func credit(_ sample: SpotSample) -> some View {
         CreditLinksMenu(links: sample.creditLinks, accessibilityLabel: sample.credit) {
-            Text(sample.credit)
+            Text(sample.linkedCredit)
+                .tint(WebTheme.accent)
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 // **切り詰めない**（題・作者・ライセンス・出どころを必ず全部出す・`SpotSample` の注記）

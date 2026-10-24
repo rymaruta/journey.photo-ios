@@ -631,7 +631,8 @@ struct OfficialSpotView: View {
     /// （`CreditLink` の注記）。行き先が1つ（パブリックドメイン・CC0）ならそのまま開き、2つならメニューで選ぶ
     private func sampleCreditLink(_ sample: SpotSample, width: Double) -> some View {
         CreditLinksMenu(links: sample.creditLinks, accessibilityLabel: sample.credit) {
-            Text(sample.credit)
+            Text(sample.linkedCredit)
+                .tint(WebTheme.accent)
                 .font(.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1145,12 +1146,31 @@ struct CreditLinksMenu<Label: View>: View {
     var alignment: Alignment = .topLeading
     @ViewBuilder let label: () -> Label
 
-    // 2026-10-24 判断（owner「リンクにしなくていい」）: 出典の1行は押せないただの文字にする。
-    // 表示の条件（作者・ライセンス・出どころの名前）は文字のまま全部出す。リンク先（`links`）は持つだけで使わない
     var body: some View {
-        label()
-            .accessibilityElement(children: .ignore)
+        if links.count == 1, let only = links.first {
+            Link(destination: only.url) { tapArea }
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint(only.label)
+        } else if links.count > 1 {
+            Menu {
+                ForEach(links) { link in
+                    Link(link.label, destination: link.url)
+                }
+            } label: {
+                tapArea
+            }
             .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(L("開くページを選べます", "Choose a page to open"))
+        } else {
+            label()
+        }
+    }
+
+    private var tapArea: some View {
+        label()
+            .allowsHitTesting(false)
+            .frame(minWidth: CreditLink.tapHeight, minHeight: CreditLink.tapHeight, alignment: alignment)
+            .contentShape(Rectangle())
     }
 }
 
@@ -1158,7 +1178,8 @@ struct SpotImageCredit: View {
     let photo: SpotImage
 
     var body: some View {
-        Text(photo.credit)
+        Text(photo.linkedCredit)
+            .tint(WebTheme.accent)
     }
 }
 
