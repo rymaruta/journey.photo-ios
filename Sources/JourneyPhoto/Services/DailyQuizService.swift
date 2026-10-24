@@ -46,6 +46,11 @@ actor DailyQuizService {
             try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: urlFor(date))
         } catch {
+            // A cancelled request is not a connectivity failure; preserve cancellation
+            // so callers can stop without showing a retry/error state.
+            if error is CancellationError || Task.isCancelled {
+                throw CancellationError()
+            }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
