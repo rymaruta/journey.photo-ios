@@ -290,6 +290,14 @@
       "title": "00 画面構成の改善案",
       "is_interactive": true
     },
+    "PersonaLens.dc.html": {
+      "x": -470,
+      "y": -1000,
+      "w": 390,
+      "h": 844,
+      "title": "00b 利用者の目線",
+      "is_interactive": true
+    },
     "SiteMenu.dc.html": {
       "x": 0,
       "y": -1000,
@@ -362,10 +370,11 @@
       "kind": "title1",
       "maxW": 3210
     },
-    "ia_v2": "IA 改善案（2026-10-24）。元写し docs/design/ios-artifact から複製。下5タブは維持。旅の道具の正規入口を旅の記録に集約。投稿は主3＋副2。正の板は claude.ai/artifact/XN38zw2BHegEU7SuxgKrr6 — 採用後に本板へ取り込む。"
+    "ia_v2": "IA 改善案（2026-10-24）。元写し docs/design/ios-artifact から複製。下5タブは維持。旅の道具の正規入口を旅の記録に集約。投稿は主3＋副2。利用者目線は PersonaLens。正の板は claude.ai/artifact/XN38zw2BHegEU7SuxgKrr6 — 採用後に本板へ取り込む。"
   },
   "order": [
     "IAOverview.dc.html",
+    "PersonaLens.dc.html",
     "SiteMenu.dc.html",
     "Trips.dc.html",
     "PostSheet.dc.html",
