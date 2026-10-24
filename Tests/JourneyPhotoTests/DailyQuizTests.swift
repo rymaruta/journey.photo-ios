@@ -195,7 +195,7 @@ final class DailyQuizServiceTests: XCTestCase {
         } catch is CancellationError {
             // Expected.
         } catch {
-            XCTFail("キャンセルが通信エラーに変換された: \\(error)")
+            XCTFail("キャンセルが通信エラーに変換された: \(error)")
         }
         XCTAssertNil(StubProtocol.lastRequest, "キャンセル後に HTTP 要求が出た")
     }
