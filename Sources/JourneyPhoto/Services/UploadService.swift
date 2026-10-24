@@ -93,6 +93,11 @@ struct UploadService {
             try RequestCancellation.throwIfCancelled()
             response = try await transfer.upload(request, body: data, key: presigned.key)
         } catch {
+            // Cancellation is a control-flow signal, not a network failure.
+            // Preserve it so callers can stop quietly instead of showing an offline error.
+            if error is CancellationError || Task.isCancelled {
+                throw CancellationError()
+            }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
