@@ -64,6 +64,25 @@ GitHub → `journey.photo-ios` → **Settings** → **Secrets and variables** �
 
 ## 手順4: 流す
 
+### Cursor から（推奨・2026-10-24）
+
+Cursor Cloud Agent の連携トークンは GitHub の `workflow_dispatch` が **403**、
+`repository_dispatch` は通る。Skills の `/release`・`/mac-check` は次を使う:
+
+```bash
+bash Tools/cursor-dispatch-mac.sh testflight main          # TestFlight に上げる
+bash Tools/cursor-dispatch-mac.sh check <枝>               # 上げずに Mac で確かめる
+bash Tools/cursor-dispatch-mac.sh check <枝> --screens none  # 絵なし（見張りだけ）
+bash Tools/wait-mac-run.sh --run-id <上の run id>          # 終わるまで待つ
+```
+
+- `ios-testflight` / `ios-mac-check` が `ios-testflight.yml` の `repository_dispatch` に当たる
+- **出す前に owner の許可**（CLAUDE.md）。Agent は許可後にだけ `testflight` を流す
+- repository_dispatch の workflow ファイルは**既定ブランチ（main）**のものが使われる。
+  起動口の変更は main に入ってから効く
+
+### GitHub の画面から（従来）
+
 GitHub → **Actions** → **TestFlight** → **Run workflow** →
 ブランチ **`main`** → **Run**（作業は main にマージ済み）
 

@@ -71,7 +71,10 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
 同じ版のまま出さない——どのビルドに何が入っているか、owner が TestFlight の一覧で
 見分けられなくなる。
 
-- **出すのは GitHub Actions の `ios-testflight.yml`（`workflow_dispatch`）から。**
+- **出すのは GitHub Actions の `ios-testflight.yml` から。**
+  Cursor Cloud Agent からは `bash Tools/cursor-dispatch-mac.sh testflight`
+  （`repository_dispatch`・2026-10-24。連携トークンは `workflow_dispatch` が 403）。
+  GitHub の画面から手で流す従来の `workflow_dispatch` も残してある。
   この経路なら上げるのは自動:
   - 表に出る版の最後の数字が毎回 +1（1.0.0 → 1.0.1 → 1.0.2 …）。
     決めるのは `Tools/next-marketing-version.sh`、出した版は
