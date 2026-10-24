@@ -41,9 +41,11 @@ final class ProfileGridFirstTests: XCTestCase {
         let body = String(page[scroll.upperBound..<scrollEnd.lowerBound])
         XCTAssertFalse(body.contains("bgmCard("), "BGM の札が数の下に残っている")
         XCTAssertFalse(body.contains("bgmLine("), "BGM が見出しの外（格子の上）に出ている")
-        // 1行の見た目: 再生の丸 28・押せる高さ 44
-        XCTAssertEqual(ProfileBgmCard.playSide, 28)
-        XCTAssertEqual(ProfileBgmCard.playSide + ProfileBgmCard.tapSlack * 2, WebTheme.minTapTarget)
+        // 1行の見た目（2026-10-24 owner の要望でジャケットの行に）: ジャケット 48・再生の丸 44
+        // ＝行の高さが 44 を越えるので、押せる範囲を広げる必要が無い
+        XCTAssertEqual(ProfileBgmCard.artworkSide, 48)
+        XCTAssertEqual(ProfileBgmCard.playSide, WebTheme.minTapTarget)
+        XCTAssertGreaterThanOrEqual(ProfileBgmCard.artworkSide, WebTheme.minTapTarget)
     }
 
     /// 🔴 押せる範囲は**範囲の形だけ**広げる（負の余白で張り出さない）。字を大きくして行が伸びたとき、
@@ -51,7 +53,8 @@ final class ProfileGridFirstTests: XCTestCase {
     func testTapAreasGrowWithoutNegativePadding() throws {
         let bgm = try source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
         XCTAssertFalse(bgm.contains("padding(.vertical, -"), "BGM の行が負の余白で張り出している")
-        XCTAssertTrue(bgm.contains(".contentShape(Rectangle().inset(by: -Self.tapSlack))"))
+        XCTAssertTrue(bgm.contains(".frame(minHeight: Self.artworkSide)\n            .contentShape(Rectangle())"),
+                      "曲の行ぜんぶが押せる範囲になっていない")
         let record = try source("Sources/JourneyPhoto/Features/Profile/TravelRecordView.swift")
         let toggle = try XCTUnwrap(record.range(of: "private func routeToggle("))
         let end = try XCTUnwrap(record.range(of: "toggleTapSlack: CGFloat", range: toggle.upperBound..<record.endIndex))
