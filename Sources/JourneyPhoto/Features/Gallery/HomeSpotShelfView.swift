@@ -189,8 +189,7 @@ struct HomeSpotShelfView: View {
     /// **アクセシビリティ用の大きさでは上限を外す**——大きな字で3行だと作者の途中で切れうる
     private func credit(_ picture: HomeSpotShelf.Picture) -> some View {
         CreditLinksMenu(links: picture.creditLinks, accessibilityLabel: picture.credit) {
-            Text(picture.linkedCredit)
-                .tint(WebTheme.accent)
+            Text(picture.credit)
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
