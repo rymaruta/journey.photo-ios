@@ -400,25 +400,30 @@ actor PublicGalleryService {
             }
             switch outcome {
             case .notModified(let photos):
-                // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）
-                staticFromDevice = false
-                cached = photos
-                cachedAt = Date()
+                // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）。
+                // 先に始まった取得が force 取得の後から返っても、共有キャッシュを巻き戻さない。
+                if staticInFlight?.id == id {
+                    staticFromDevice = false
+                    cached = photos
+                    cachedAt = Date()
+                }
                 return photos
             case .fetched(let body, let reply):
                 (data, response) = (body, reply)
             }
         } catch {
-            // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = deviceStaticList() { return cached }
+            // **圏外なら前回のぶんを出す。** 古い要求の失敗で共有状態を変えない。
+            let fallback = staticInFlight?.id == id ? deviceStaticList() : snapshot.load()
+            if let fallback { return fallback }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
-            staticFromDevice = true
+            if staticInFlight?.id == id { staticFromDevice = true }
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = deviceStaticList() { return cached }
+            let fallback = staticInFlight?.id == id ? deviceStaticList() : snapshot.load()
+            if let fallback { return fallback }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
@@ -432,19 +437,24 @@ actor PublicGalleryService {
             // ログイン HTML など）を控えると、次から圏外でそれが出る。
             // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
             // しない**（写真が本当に0枚なら dropped も0なので控える）
-            if !photos.isEmpty || list.dropped == 0 {
-                snapshot.save(data, validator: HTTPValidator(response: http))
-            } else {
-                // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
-                // 今回とは違う控えを「変わっていない」として出す）
-                snapshot.validators.clear()
+            // 取得開始後に force の新しい要求が始まった場合、古い応答は呼び手に返してよいが、
+            // 端末の控え・ETag・共有キャッシュには書かない。さもないと新しい一覧を古い内容で巻き戻す。
+            if staticInFlight?.id == id {
+                if !photos.isEmpty || list.dropped == 0 {
+                    snapshot.save(data, validator: HTTPValidator(response: http))
+                } else {
+                    // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
+                    // 今回とは違う控えを「変わっていない」として出す）
+                    snapshot.validators.clear()
+                }
+                staticFromDevice = false
+                cached = photos
+                cachedAt = Date()
             }
-            staticFromDevice = false
-            cached = photos
-            cachedAt = Date()
             return photos
         } catch {
-            if let cached = deviceStaticList() { return cached }
+            let fallback = staticInFlight?.id == id ? deviceStaticList() : snapshot.load()
+            if let fallback { return fallback }
             throw APIError.decoding(String(describing: error))
         }
     }
