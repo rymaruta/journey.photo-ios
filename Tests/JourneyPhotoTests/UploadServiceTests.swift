@@ -845,3 +845,4 @@ final class ScriptedProtocol: URLProtocol {
         }
         return data
     }
+}
