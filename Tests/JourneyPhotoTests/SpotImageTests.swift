@@ -137,4 +137,19 @@ final class SpotImageTests: XCTestCase {
         XCTAssertEqual(SpotImage(url: url, author: "A", license: "CC0", pageUrl: page).creditLinks.map(\.url), [page])
         XCTAssertEqual(SpotImage(url: url, author: "A", license: "CC0", pageUrl: nil).creditLinks, [])
     }
+
+    /// 2026-10-24（owner「リンクにしなくていい」）: 写真の出典の1行は押せないただの文字。
+    /// 画面は `credit`（リンクの無い文字）を出し、`CreditLinksMenu` は Link も Menu も作らない
+    func testPhotoCreditIsPlainTextNotALink() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let official = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift"), encoding: .utf8)
+        let menu = try XCTUnwrap(official.components(separatedBy: "struct CreditLinksMenu").last?.components(separatedBy: "struct SpotImageCredit").first)
+        XCTAssertFalse(menu.contains("Link("), "出典の1行をリンクにしない")
+        XCTAssertFalse(menu.contains("Menu {"), "出典の1行からメニューを開かない")
+        for file in ["Features/Spots/OfficialSpotView.swift", "Features/Gallery/HomeSpotShelfView.swift", "Features/Spots/ComposeGuideView.swift"] {
+            let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + file), encoding: .utf8)
+            XCTAssertFalse(text.contains("Text(sample.linkedCredit)") || text.contains("Text(picture.linkedCredit)") || text.contains("Text(photo.linkedCredit)"),
+                           "\(file): 出典はリンク付きの文字（linkedCredit）で出さない")
+        }
+    }
 }
