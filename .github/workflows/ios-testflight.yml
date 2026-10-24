@@ -40,6 +40,13 @@ on:
         description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
         type: string
         default: ""
+  # 🔴 **Cursor Cloud Agent からの起動口**（2026-10-24）。Cursor の連携トークンは
+  # `workflow_dispatch` が 403、`repository_dispatch` は通る。Skills の `/release`・
+  # `/mac-check` は `Tools/cursor-dispatch-mac.sh` 経由でここを叩く。
+  # - `ios-testflight`: TestFlight に上げる（submit=true）。payload: ref / betaReview / tests
+  # - `ios-mac-check`: 上げずに Mac で確かめる（submit=false）。payload: ref / screens / tests / storeShots
+  repository_dispatch:
+    types: [ios-testflight, ios-mac-check]
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -48,8 +55,9 @@ on:
 # 止めはしない（`cancel-in-progress: false`）。上げない回（submit=false）は版を決めないので、
 # 回ごとの組にして待たせない。
 # GitHub の決まりで、待てるのは1本だけ——3本目を流すと、待っていた2本目は取り消される
+# repository_dispatch では `inputs.submit` が無いので、action 名で上げる回を見分ける
 concurrency:
-  group: testflight-${{ inputs.submit && 'upload' || github.run_id }}
+  group: testflight-${{ ((github.event_name == 'repository_dispatch' && github.event.action == 'ios-testflight') || (github.event_name == 'workflow_dispatch' && inputs.submit)) && 'upload' || github.run_id }}
   cancel-in-progress: false
 
 # **渡していない権限は漏らせない**（photo-gallery の IAM-3 と同じ方針）。
@@ -78,7 +86,66 @@ jobs:
     timeout-minutes: 160
 
     steps:
+      # workflow_dispatch と repository_dispatch（Cursor）の入力を同じ形にそろえる（2026-10-24）
+      - name: 入力をそろえる
+        id: in
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          WD_SUBMIT: ${{ inputs.submit }}
+          WD_BETA: ${{ inputs.betaReview }}
+          WD_STORE: ${{ inputs.storeShots }}
+          WD_TESTS: ${{ inputs.tests }}
+          WD_SCREENS: ${{ inputs.screens }}
+          RD_REF: ${{ github.event.client_payload.ref }}
+          RD_BETA: ${{ github.event.client_payload.betaReview }}
+          RD_STORE: ${{ github.event.client_payload.storeShots }}
+          RD_TESTS: ${{ github.event.client_payload.tests }}
+          RD_SCREENS: ${{ github.event.client_payload.screens }}
+        run: |
+          set -euo pipefail
+          bool() {
+            case "${1:-}" in true|True|TRUE|1|yes|YES) echo true ;; *) echo false ;; esac
+          }
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            case "$EVENT_ACTION" in
+              ios-testflight) submit=true ;;
+              ios-mac-check) submit=false ;;
+              *) echo "::error::未知の repository_dispatch action: ${EVENT_ACTION}"; exit 1 ;;
+            esac
+            beta=$(bool "${RD_BETA:-false}")
+            store=$(bool "${RD_STORE:-false}")
+            tests=$(bool "${RD_TESTS:-false}")
+            screens="${RD_SCREENS:-}"
+            ref="${RD_REF:-main}"
+          else
+            submit=$(bool "${WD_SUBMIT:-true}")
+            beta=$(bool "${WD_BETA:-false}")
+            store=$(bool "${WD_STORE:-false}")
+            tests=$(bool "${WD_TESTS:-false}")
+            screens="${WD_SCREENS:-}"
+            ref="${GITHUB_REF_NAME}"
+          fi
+          {
+            echo "submit=${submit}"
+            echo "betaReview=${beta}"
+            echo "storeShots=${store}"
+            echo "tests=${tests}"
+            echo "screens=${screens}"
+            echo "ref=${ref}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### 入力"
+            echo "- 起動: \`${EVENT_NAME}${EVENT_ACTION:+ / $EVENT_ACTION}\`"
+            echo "- ref: \`${ref}\`"
+            echo "- submit: \`${submit}\` / tests: \`${tests}\` / storeShots: \`${store}\` / betaReview: \`${beta}\`"
+            echo "- screens: \`${screens:-（空＝全部）}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v4
+        with:
+          # repository_dispatch は既定ブランチの workflow で動くので、確かめる枝は payload.ref で渡す
+          ref: ${{ steps.in.outputs.ref }}
 
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
@@ -86,9 +153,9 @@ jobs:
       - name: どこまで流すかを決める
         id: scope
         env:
-          SCREENS: ${{ inputs.screens }}
-          SUBMIT: ${{ inputs.submit }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
+          SCREENS: ${{ steps.in.outputs.screens }}
+          SUBMIT: ${{ steps.in.outputs.submit }}
+          STORE_SHOTS: ${{ steps.in.outputs.storeShots }}
         run: |
           set -euo pipefail
           if [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
@@ -135,7 +202,7 @@ jobs:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           CERT: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
-          SUBMIT: ${{ inputs.submit }}
+          SUBMIT: ${{ steps.in.outputs.submit }}
         run: |
           set -euo pipefail
           missing=""
@@ -200,7 +267,7 @@ jobs:
       # `sort -V` で並べれば足りる（実測の一覧で確認済み）。
       - name: Xcode を選ぶ（iOS 26 SDK が要る）
         env:
-          SUBMIT: ${{ inputs.submit }}
+          SUBMIT: ${{ steps.in.outputs.submit }}
         run: |
           # **`-e` を外す。** 調べものの段で、1つの失敗で死なせない
           set +e
@@ -313,7 +380,7 @@ jobs:
       # 前は「テスト」で始まる最初の段の成否を見ていた。名前を変えれば古い数え方は何も数えず
       # （＝飛ばさない側に倒れ）、新しい数え方は下の「全部のテストが通った」の印だけを数える
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        if: ${{ steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true' }}
         run: |
           set -euo pipefail
           # 3段で同じシミュレータを使う
@@ -342,14 +409,14 @@ jobs:
 
       - name: 単体テスト
         id: unit
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        if: ${{ steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true' }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
       # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
       - name: UI テスト（画面の絵）
         id: ui
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        if: ${{ steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true' }}
         run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
 
       # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
@@ -357,7 +424,7 @@ jobs:
       # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
       # `ios-pr.yml` の `tested` の job も合わせる
       - name: 全部のテストが通った（PR の検証が数える印）
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
+        if: ${{ (steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true') && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
@@ -451,12 +518,12 @@ jobs:
             --archive-flags="-skipPackagePluginValidation -skipMacroValidation"
 
       - name: TestFlight に上げる
-        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        if: ${{ steps.in.outputs.submit == 'true' && steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          BETA_REVIEW: ${{ inputs.betaReview }}
+          BETA_REVIEW: ${{ steps.in.outputs.betaReview }}
         run: |
           set -euo pipefail
           # **審査には自動で出さない**（出す前にスクリーンショットと説明文が要る）
@@ -489,7 +556,7 @@ jobs:
       # TestFlight には既に上がっている（次の回が同じ版を使うだけで、
       # ビルド番号は上がるので受け付けられる）
       - name: 版の印を付ける
-        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        if: ${{ steps.in.outputs.submit == 'true' && steps.secrets.outputs.signing == 'true' }}
         run: |
           set -uo pipefail
           # **押し損ねたらやり直す**（2026-10-07）。run 348 は GitHub が一時的に書き込みを
@@ -513,10 +580,10 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) }}
+        if: ${{ always() && (steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
+          STORE_SHOTS: ${{ steps.in.outputs.storeShots }}
           # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
@@ -562,7 +629,8 @@ jobs:
       # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）
       - name: 控えを温める（main の回だけ・シミュレータ向けに組む）
         id: warm
-        if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        # repository_dispatch では github.ref は常に既定ブランチ。確かめた枝は steps.in.outputs.ref
+        if: ${{ steps.archive.outcome == 'success' && steps.in.outputs.ref == 'main' }}
         continue-on-error: true
         timeout-minutes: 30
         # 🔴 **元のプロジェクトに戻してから組む**（2026-10-17 判断）。ここに来るまでに「ビルド番号を
@@ -577,7 +645,7 @@ jobs:
           XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
 
       - name: 控えを書く（main の回だけ）
-        if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ steps.warm.outcome == 'success' && steps.in.outputs.ref == 'main' }}
         uses: actions/cache/save@v4
         with:
           path: |

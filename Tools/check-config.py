@@ -463,13 +463,20 @@ if testflight_yml.exists() and pr_yml.exists():
     pr_flow = pr_yml.read_text(encoding="utf-8")
     # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
     # 単体・UI の段の結果も見る（`id` が消えると outcome は空になり、印が付かない＝安全側。下で id も見る）
-    MARK_IF = ("(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+    # 2026-10-24: Cursor の repository_dispatch と手起動を `steps.in.outputs.*` にそろえた
+    MARK_IF = ("(steps.in.outputs.tests == 'true' || steps.in.outputs.storeShots == 'true' || steps.in.outputs.submit != 'true')"
+               " && steps.scope.outputs.full == 'true'"
                " && steps.unit.outcome == 'success' && steps.ui.outcome == 'success'")
     mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if not mark:
         fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
     elif mark.group(1).strip() != MARK_IF:
         fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
+    # Cursor からの起動口（repository_dispatch）が消えていないか
+    if "repository_dispatch:" not in flow or "ios-testflight" not in flow or "ios-mac-check" not in flow:
+        fail("ios-testflight.yml に Cursor 用の repository_dispatch（ios-testflight / ios-mac-check）がありません")
+    if "id: in" not in flow or "入力をそろえる" not in flow:
+        fail("ios-testflight.yml に「入力をそろえる」（id: in）がありません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
     if selects != [f'.name == "{MARK}"']:
