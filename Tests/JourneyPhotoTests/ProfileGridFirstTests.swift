@@ -36,7 +36,7 @@ final class ProfileGridFirstTests: XCTestCase {
         let headerEnd = try XCTUnwrap(page.range(of: "private func avatar(", range: header.upperBound..<page.endIndex))
         XCTAssertTrue(page[header.upperBound..<headerEnd.lowerBound].contains("bgmLine(profile)"),
                       "BGM が見出しの中に無い")
-        let scroll = try XCTUnwrap(page.range(of: "private func scroll(topInset: CGFloat)"))
+        let scroll = try XCTUnwrap(page.range(of: "private func scroll(topInset: CGFloat"))
         let scrollEnd = try XCTUnwrap(page.range(of: "private func reloadAll()", range: scroll.upperBound..<page.endIndex))
         let body = String(page[scroll.upperBound..<scrollEnd.lowerBound])
         XCTAssertFalse(body.contains("bgmCard("), "BGM の札が数の下に残っている")
