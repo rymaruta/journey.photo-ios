@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=390">
+<link rel="stylesheet" href="common.css">
+<style>
+.bg{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;gap:2px;filter:brightness(.45)}
+.bg .c{background-size:cover;background-position:center}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;top:260px;
+  background:#0c0c0d;border-radius:22px 22px 0 0;
+  border-top:1px solid rgba(255,255,255,.12);
+  padding:10px 16px 40px;display:flex;flex-direction:column;gap:10px;
+}
+.handle{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:0 auto 6px}
+.head{display:flex;align-items:center;justify-content:space-between;min-height:40px}
+.head h1{font-size:22px}
+.x{width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.85}
+.opt{
+  display:flex;align-items:center;gap:12px;min-height:72px;padding:0 12px;
+  border-radius:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10)
+}
+.thumb{width:48px;height:48px;border-radius:10px;flex-shrink:0}
+.opt b{display:block;font-size:16px}
+.opt small{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:2px}
+.sec{margin-top:6px;font-size:11px;color:rgba(255,255,255,.4);letter-spacing:.04em}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ghost{
+  min-height:48px;border-radius:14px;border:1px solid rgba(255,255,255,.22);
+  display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:rgba(255,255,255,.85)
+}
+</style>
+</head><body>
+<div class="phone">
+  <div class="status"><span class="time">9:41</span><span class="icons">■■▮ ▮▮</span></div>
+  <div class="bg">
+    <div class="c" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=400&q=60')"></div>
+    <div class="c" style="background-image:url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=60')"></div>
+    <div class="c" style="background-image:url('https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&q=60')"></div>
+    <div class="c" style="background-image:url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=400&q=60')"></div>
+  </div>
+  <div class="sheet">
+    <div class="handle"></div>
+    <div class="head"><h1 class="serif">投稿する</h1><span class="x">✕</span></div>
+    <div class="opt">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=120&q=60')"></div>
+      <div style="flex:1"><b class="serif">写真を投稿</b><small>撮影地やタグを付けて残します</small></div>
+      <span style="opacity:.35">›</span>
+    </div>
+    <div class="opt">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=120&q=60')"></div>
+      <div style="flex:1"><b class="serif">ストーリーを投稿</b><small>24時間で消えます</small></div>
+      <span style="opacity:.35">›</span>
+    </div>
+    <div class="opt">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=120&q=60')"></div>
+      <div style="flex:1"><b class="serif">旅の写真からまとめて</b><small>撮影日と場所から旅を見つけます</small></div>
+      <span style="opacity:.35">›</span>
+    </div>
+    <div class="sec">写真のほかの撮り方</div>
+    <div class="pair">
+      <div class="ghost">📷 カメラで撮る</div>
+      <div class="ghost">構図を重ねて撮る</div>
+    </div>
+  </div>
+  <div class="home-bar"></div>
+</div>
+</body></html>

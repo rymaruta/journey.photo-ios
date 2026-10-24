@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=390">
+<link rel="stylesheet" href="common.css">
+<style>
+.banner{position:absolute;left:0;top:0;width:390px;height:160px}
+.banner::after{content:"";position:absolute;left:0;right:0;bottom:0;height:100px;background:linear-gradient(to top,#000,transparent)}
+.main{position:absolute;left:0;right:0;top:118px;bottom:84px;overflow:hidden;display:flex;flex-direction:column}
+.scroll{overflow:auto;flex:1;padding-bottom:8px}
+.avatar{width:78px;height:78px;border-radius:39px;box-shadow:0 0 0 3px #000;margin-right:auto}
+.row{display:flex;align-items:flex-end;justify-content:space-between;padding:0 20px}
+.edit{min-height:34px;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.28);font-size:12px;font-weight:600;display:flex;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 20px 0}
+.stats b{font-variant-numeric:tabular-nums;font-size:17px;display:block}
+.stats span{font-size:10px;color:rgba(255,255,255,.55)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 20px 0}
+.card{min-height:52px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px}
+.card small{font-size:10px;color:rgba(255,255,255,.55);display:block}
+.card strong{font-variant-numeric:tabular-nums;font-size:15px}
+.hl{padding:12px 20px 0;display:flex;justify-content:space-between;align-items:baseline}
+.hl span{font-size:12px;color:rgba(255,255,255,.55)}
+.hl a{font-size:12px;color:rgba(255,255,255,.7)}
+.circles{display:flex;gap:10px;padding:8px 20px 12px;overflow:hidden}
+.circle{width:62px;text-align:center}
+.circle .ring{width:58px;height:58px;border-radius:29px;border:1px solid rgba(255,255,255,.25);padding:3px;margin:0 auto 5px}
+.circle .ring>i{display:block;width:100%;height:100%;border-radius:26px}
+.circle .add{border-style:dashed;display:flex;align-items:center;justify-content:center;color:#fff}
+.circle label{font-size:10px;color:rgba(255,255,255,.7)}
+.tabs{display:flex;margin:0 16px;border-bottom:1px solid rgba(255,255,255,.12)}
+.tabs a{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:12px;color:rgba(255,255,255,.55)}
+.tabs a.on{color:#fff;font-weight:600;box-shadow:inset 0 -2px 0 #fff}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding-top:3px}
+.grid .cell{height:122px;position:relative}
+.badge{position:absolute;left:6px;top:6px;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.6);font-size:9px;font-weight:600}
+.pin{position:absolute;left:6px;top:6px;width:22px;height:22px;border-radius:11px;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:11px}
+</style>
+</head><body>
+<div class="phone">
+  <div class="status"><span class="time">9:41</span><span class="icons">■■▮ ▮▮</span></div>
+  <div class="banner img" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=70')"></div>
+  <div class="main">
+    <div class="scroll">
+      <div class="row">
+        <div class="avatar img" style="background-image:url('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=70')"></div>
+        <div style="display:flex;gap:8px;padding-bottom:4px">
+          <span class="edit">プロフィールを編集</span>
+        </div>
+      </div>
+      <div style="padding:10px 20px 0">
+        <div class="serif" style="font-size:24px">あかり</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:2px">@akari · 金沢</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.5">旅先の光を集めています</div>
+      </div>
+      <div class="stats">
+        <div><b>128</b><span>投稿</span></div>
+        <div><b>840</b><span>フォロワー</span></div>
+        <div><b>312</b><span>フォロー中</span></div>
+      </div>
+      <div class="cards">
+        <div class="card"><span style="color:#6badff">◎</span><div><small>訪れた国・地域</small><strong>12</strong></div></div>
+        <div class="card"><span class="accent">〜</span><div><small>写真をつないだ距離</small><strong>4,280 <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.65)">km</span></strong></div></div>
+      </div>
+      <div class="hl"><span>ストーリーハイライト</span><a>すべて見る →</a></div>
+      <div class="circles">
+        <div class="circle"><div class="ring add">＋</div><label>新規</label></div>
+        <div class="circle"><div class="ring"><i class="img" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=160&q=60')"></i></div><label>金沢</label></div>
+        <div class="circle"><div class="ring"><i class="img" style="background-image:url('https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=160&q=60')"></i></div><label>星</label></div>
+        <div class="circle"><div class="ring"><i class="img" style="background-image:url('https://images.unsplash.com/photo-1483728642387-6c3bdd6c93e5?w=160&q=60')"></i></div><label>冬</label></div>
+        <div class="circle"><div class="ring"><i class="img" style="background-image:url('https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=160&q=60')"></i></div><label>春</label></div>
+      </div>
+      <div class="tabs">
+        <a class="on">▦ 投稿</a>
+        <a>旅の記録</a>
+        <a>行きたい</a>
+        <a>保存</a>
+      </div>
+      <div class="grid">
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=300&q=70')"><span class="pin">📌</span></div>
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=300&q=70')"></div>
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=300&q=70')"><span class="badge">下書き</span></div>
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&q=70')"></div>
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=300&q=70')"></div>
+        <div class="cell img" style="background-image:url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=300&q=70')"></div>
+      </div>
+    </div>
+  </div>
+  <nav class="tabbar">
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11h14V9"/></svg>ホーム<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>探す<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg>投稿<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg>マップ<span class="dot"></span></div>
+    <div class="tab on"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>マイページ<span class="dot"></span></div>
+  </nav>
+  <div class="home-bar"></div>
+</div>
+</body></html>

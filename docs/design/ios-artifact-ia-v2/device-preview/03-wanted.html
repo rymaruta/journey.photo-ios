@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=390">
+<link rel="stylesheet" href="common.css">
+<style>
+.main{position:absolute;left:0;right:0;top:54px;bottom:84px;overflow:auto;padding:4px 16px 20px}
+.backrow{display:flex;align-items:center;gap:4px;min-height:44px}
+.backrow h1{font-size:24px}
+.sub{margin:0 0 14px 36px;font-size:12px;color:rgba(255,255,255,.55)}
+.bridge{
+  display:flex;align-items:center;gap:12px;min-height:56px;padding:0 14px;margin-bottom:16px;
+  border-radius:14px;background:rgba(201,166,107,.10);border:1px solid rgba(201,166,107,.35)
+}
+.bridge .icon{width:36px;height:36px;border-radius:10px;background:#161617;display:flex;align-items:center;justify-content:center;color:#C9A66B}
+.bridge b{display:block;font-size:15px}
+.bridge small{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:2px}
+.lbl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;padding:0 2px}
+.lbl .mono{font-size:11px;letter-spacing:.14em;color:#C9A66B;font-family:ui-monospace,Menlo,monospace}
+.lbl .n{font-size:12px;color:rgba(255,255,255,.55)}
+.item{
+  display:flex;gap:12px;align-items:center;min-height:72px;padding:10px 12px;margin-bottom:8px;
+  border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)
+}
+.thumb{width:56px;height:56px;border-radius:10px;flex-shrink:0}
+.item b{display:block;font-size:16px}
+.item small{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:3px}
+.heart{color:#C9A66B;font-size:18px}
+</style>
+</head><body>
+<div class="phone">
+  <div class="status"><span class="time">9:41</span><span class="icons">■■▮ ▮▮</span></div>
+  <div class="main">
+    <div class="backrow">
+      <span style="width:36px;font-size:22px;opacity:.9">‹</span>
+      <h1 class="serif">行きたい場所</h1>
+    </div>
+    <p class="sub">写真やスポットから旗を立てた場所</p>
+
+    <div class="bridge">
+      <div class="icon">▦</div>
+      <div style="flex:1"><b class="serif">旅行プランを開く</b><small>ここに並んだ場所を、回る順にまとめる</small></div>
+      <span style="color:rgba(255,255,255,.35)">›</span>
+    </div>
+
+    <div class="lbl"><span class="mono">WISHLIST</span><span class="n">2 件</span></div>
+    <div class="item">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=200&q=70')"></div>
+      <div style="flex:1"><b class="serif">兼六園</b><small>おすすめの季節 · 朝</small></div>
+      <span class="heart">♡</span>
+    </div>
+    <div class="item">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200&q=70')"></div>
+      <div style="flex:1"><b class="serif">白川郷</b><small>地図のピンから</small></div>
+      <span class="heart">♡</span>
+    </div>
+    <div class="item">
+      <div class="thumb img" style="background-image:url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=200&q=70')"></div>
+      <div style="flex:1"><b class="serif">上高地</b><small>おすすめの季節 · 秋</small></div>
+      <span class="heart">♡</span>
+    </div>
+  </div>
+  <nav class="tabbar">
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11h14V9"/></svg>ホーム<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>探す<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg>投稿<span class="dot"></span></div>
+    <div class="tab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg>マップ<span class="dot"></span></div>
+    <div class="tab on"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>マイページ<span class="dot"></span></div>
+  </nav>
+  <div class="home-bar"></div>
+</div>
+</body></html>
