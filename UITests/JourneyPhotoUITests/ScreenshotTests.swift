@@ -3563,13 +3563,18 @@ final class ScreenshotTests: XCTestCase {
         let posts = app.buttons["profile.tab.posts"].firstMatch
         let trips = app.buttons["profile.tab.trips"].firstMatch
         guard posts.waitForExistence(timeout: 10) else { return }
-        // 札の行が画面の下半分に来るまで送る（払うのは札の行の上）
-        var pushes = 0
-        while !posts.isHittable || posts.frame.minY > app.frame.height * 0.5, pushes < 3 {
-            app.swipeUp()
+        // 札の行を画面の上のほう（高さの 35%）まで、勢いを付けずに引き上げる。`swipeUp` は勢いで
+        // 札の行を画面の外まで飛ばすことがあり、run 702 はそれで何も撮らずに抜けた
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let height = app.frame.height
+        let lift = posts.frame.minY - height * 0.35
+        if lift > 0 {
+            let from = origin.withOffset(CGVector(dx: app.frame.width * 0.5, dy: height * 0.8))
+            let to = origin.withOffset(CGVector(dx: app.frame.width * 0.5, dy: height * 0.8 - lift))
+            from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.5)
             Thread.sleep(forTimeInterval: 1)
-            pushes += 1
         }
+        XCTAssertTrue(posts.isHittable, "札の行が見えるところまで送れない")
         guard posts.isHittable else { return }
         let rowY = posts.frame.minY
         let hadPhoto = app.buttons["mypage.photo"].firstMatch.waitForExistence(timeout: 10)
@@ -3597,6 +3602,24 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertTrue(app.buttons["mypage.photo"].firstMatch.exists, "戻ったときに投稿の格子が消えている")
         }
         shoot(app, "14o-マイページ（払って投稿へ戻る）")
+
+        // **深く送ってから替えたら、新しい札は頭から**（札の行が上端へ戻る・2026-10-24 確かめ役の見直し）。
+        // 格子の写真が無い回（読めなかった回）は深く送れないので見ない
+        guard hadPhoto else { return }
+        for _ in 0..<3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard !posts.isHittable || posts.frame.maxY < 0 else { return }
+        // 格子の上で横に払う（札の行は画面の外）
+        let gridY = height * 0.5
+        origin.withOffset(CGVector(dx: app.frame.width * 0.8, dy: gridY))
+            .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.2, dy: gridY)))
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(trips.isSelected, "格子の上を左へ払っても「旅の記録」に替わらない")
+        XCTAssertTrue(posts.isHittable && posts.frame.minY < height * 0.25,
+                      "深く送ってから替えても札の行が上端へ戻らない（minY \(posts.frame.minY)）")
+        shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
     }
 
     /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**
