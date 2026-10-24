@@ -374,10 +374,12 @@ final class PublicGalleryCoalescingTests: XCTestCase {
 
         // force の新しい応答を先に完了させる
         await second.open()
-        XCTAssertEqual(try await forced.value.map(\\.id), ["new"])
+        let forcedPhotos = try await forced.value
+        XCTAssertEqual(forcedPhotos.map(\.id), ["new"])
         // 古い要求が後から返る
         await first.open()
-        XCTAssertEqual(try await older.value.map(\\.id), ["old"])
+        let olderPhotos = try await older.value
+        XCTAssertEqual(olderPhotos.map(\.id), ["old"])
         // 次の通常読み込みは新しいキャッシュを返し、ネットワークも追加で叩かない
         let current = try await gallery.fetchPhotos()
         XCTAssertEqual(current.map(\\.id), ["new"])
