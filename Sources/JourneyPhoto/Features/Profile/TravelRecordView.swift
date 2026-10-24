@@ -168,6 +168,7 @@ struct TravelRecordView: View {
         .accessibilityLabel(L("訪れた国・地域 \(countries.count)、\(countries.joined(separator: "、"))",
                               "Countries and regions visited, \(countries.count): \(countries.joined(separator: ", "))"))
         .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
+        .accessibilityIdentifier("profile.travelRecord.countries")
     }
 
     // MARK: - 写真をつないだ線
