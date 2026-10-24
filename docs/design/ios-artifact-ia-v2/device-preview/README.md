@@ -2,7 +2,14 @@
 
 板（ia-v2）を実機に近い見た目で起こした HTML。写真は仮（Unsplash）。
 
-**据え置き:** `01-mypage.html` の距離・か国・地域は現行 `TravelRecordView` と同じ並び（大きな数字＋説明）。カード化しない。
+**据え置き（板・実装に合わせる）:**
+
+- 距離・か国・地域 = `TravelRecordView`（カード化しない）
+- BGM = ひとことの下の1行
+- 足元タブ = 浮きカプセル・選択は真鍮（`TabBarStyle`）
+- 内タブ = 名前だけ・真鍮字＋真鍮下線（`ProfileTabBar`）。白下線やアイコン付きにしない
+
+見た目を変える前に `DesignSystem.dc.html` と対象画面の板・上記の Swift を読む。
 
 **進め方:** 親の `../PHASE.md`。反映前に確定スクショを owner へ。
 
