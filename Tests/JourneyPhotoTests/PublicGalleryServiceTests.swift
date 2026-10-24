@@ -350,6 +350,40 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 2)
     }
 
+    /// 古い要求が force 更新のあとに返っても、端末の控えと共有キャッシュを巻き戻さない。
+    func testOlderFetchCannotOverwriteNewerForcedSnapshot() async throws {
+        let oldRows = #"[{"id":"old","src":"https://x/old.jpg"}]"#
+        let newRows = #"[{"id":"new","src":"https://x/new.jpg"}]"#
+        StubProtocol.respondInOrder([(status: 200, body: newRows), (status: 200, body: oldRows)])
+        let first = Gate(), second = Gate()
+        let order = Arrivals()
+        let gallery = PublicGalleryService(
+            url: url, session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+            beforeStaticRequest: {
+                switch await order.next() {
+                case 0: await first.wait()
+                case 1: await second.wait()
+                default: break
+                }
+            })
+        let older = Task { try await gallery.fetchPhotos() }
+        await first.untilWaiting(1)
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        await second.untilWaiting(1)
+
+        // force の新しい応答を先に完了させる
+        await second.open()
+        XCTAssertEqual(try await forced.value.map(\\.id), ["new"])
+        // 古い要求が後から返る
+        await first.open()
+        XCTAssertEqual(try await older.value.map(\\.id), ["old"])
+        // 次の通常読み込みは新しいキャッシュを返し、ネットワークも追加で叩かない
+        let current = try await gallery.fetchPhotos()
+        XCTAssertEqual(current.map(\\.id), ["new"])
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
     /// もう取り消された呼び手は、新しい取得を**始めない**（要求の手前の門にも着かない）
     @MainActor
     func testAlreadyCancelledCallerStartsNoFetch() async throws {
