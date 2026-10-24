@@ -18,48 +18,43 @@ a{color:rgba(255,255,255,0.95);text-decoration:none}
 <header style="position: absolute; left: 0; right: 0; top: 0; padding: 54px 16px 0; background: #000">
   <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">IA · v2 · LENS</span>
   <h1 style="margin: 6px 0 0; font-family: 'Shippori Mincho B1', serif; font-size: 24px; font-weight: 700">利用者の目線</h1>
-  <p style="margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.65)">写真・旅の一冊が中心なら使いやすい。遊び系の初見は少し探しにくくなる。</p>
+  <p style="margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.65)">△だったところを板で手当てし、どれも◎に寄せた版。</p>
 </header>
 <main style="position: absolute; left: 0; right: 0; top: 150px; bottom: 0; overflow: auto; padding: 0 16px 40px; display: flex; flex-direction: column; gap: 14px">
 
-  <section style="border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 14px; display: flex; flex-direction: column; gap: 10px">
-    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">◎ 向いている</div>
-    <div style="font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.72)">
-      <div><strong style="color:#fff">写真を残す人</strong> — 投稿シートが主3に絞られ、迷いにくい</div>
-      <div style="margin-top:6px"><strong style="color:#fff">旅を見返す人</strong> — 一冊が先・道具は下で、棚の主役がはっきりする</div>
-      <div style="margin-top:6px"><strong style="color:#fff">マップで探す人</strong> — 下タブが正規。メニューは「タブへ移る」案内だけ</div>
-      <div style="margin-top:6px"><strong style="color:#fff">ストーリーの人</strong> — ホームの輪＋投稿。入口を増やさない</div>
-      <div style="margin-top:6px"><strong style="color:#fff">保存・いいねだけ見る人</strong> — メニューに残る。マイページ「保存」とも揃う</div>
-    </div>
-  </section>
-
-  <section style="border-radius: 16px; background: rgba(240,86,90,0.08); border: 1px solid rgba(240,86,90,0.28); padding: 14px; display: flex; flex-direction: column; gap: 10px">
-    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">△ 弱くなる／手当てが要る</div>
-    <div style="font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.72)">
-      <div><strong style="color:#fff">キャンパー・トランク・すれちがい</strong> — 入口を1か所にしたぶん、初見の発見が遠い（マイ → 旅の記録 → 下までスクロール）。実装時はマイページ頭か旅タブ先頭に短い導線を残す</div>
-      <div style="margin-top:6px"><strong style="color:#fff">共同アルバムの仲間招待</strong> — メニューから消えると「どこ？」になりやすい。旅の道具の先頭のまま＋初回だけ案内</div>
-      <div style="margin-top:6px"><strong style="color:#fff">行きたい場所 ↔ 旅行プラン</strong> — 内タブと道具で分かれる。行きたい場所タブに「プランを開く」を1行足す</div>
-      <div style="margin-top:6px"><strong style="color:#fff">写真だけ見たい人（マイページ）</strong> — 今の板はハイライト＋TRIP BOOKS が内タブの上に常時ある。実装時は内タブより上を短くし、一冊の棚は「旅の記録」タブの中へ</div>
+  <section style="border-radius: 16px; background: rgba(201,166,107,0.10); border: 1px solid rgba(201,166,107,0.28); padding: 14px; display: flex; flex-direction: column; gap: 10px">
+    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">すべて ◎（手当て込み）</div>
+    <div style="font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.78)">
+      <div><strong style="color:#fff">写真を残す人</strong> — 投稿シート主3＋副2</div>
+      <div style="margin-top:7px"><strong style="color:#fff">旅を見返す人</strong> — 一冊の棚は旅の記録ページの主役</div>
+      <div style="margin-top:7px"><strong style="color:#fff">マップ／ストーリー</strong> — 下タブとホームの輪のまま</div>
+      <div style="margin-top:7px"><strong style="color:#fff">保存・いいね</strong> — メニュー＋マイの「保存」タブ</div>
+      <div style="margin-top:7px"><strong style="color:#fff">キャンパー・トランク・すれちがい</strong> — 旅の記録の<strong style="color:#fff">先頭チップ</strong>でスクロール前に届く（正規入口は1か所のまま）</div>
+      <div style="margin-top:7px"><strong style="color:#fff">共同アルバム</strong> — 道具チップの先頭＋一覧でも先頭</div>
+      <div style="margin-top:7px"><strong style="color:#fff">行きたい場所 ↔ プラン</strong> — 行きたい場所の先頭に「旅行プランを開く」</div>
+      <div style="margin-top:7px"><strong style="color:#fff">写真だけ見たい（マイ）</strong> — 上段の一冊棚を外し、内タブ直下で投稿グリッドへ</div>
     </div>
   </section>
 
   <section style="border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 14px; display: flex; flex-direction: column; gap: 8px">
-    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">手の届き方（タップ数の目安）</div>
-    <div style="font-size: 12px; line-height: 1.6; color: rgba(255,255,255,0.72)">
-      写真投稿 … 投稿タブ → 1タップ<br>
-      旅の一冊 … マイ → 旅の記録（または「すべて」）→ 1〜2<br>
-      マップ … 下タブ 1<br>
-      キャンパー … マイ → 旅の記録 → 道具 2〜3（以前のメニュー直下より遠い）
+    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">手の届き方（直し後）</div>
+    <div style="font-size: 12px; line-height: 1.65; color: rgba(255,255,255,0.72)">
+      写真投稿 … 投稿タブ → 1<br>
+      旅の一冊 … マイ → 旅の記録 → 1〜2<br>
+      キャンパー／トランク … マイ → 旅の記録 → 先頭チップ 2<br>
+      共同アルバム … 同上（チップ先頭）2<br>
+      旅行プラン … 行きたい場所 → 「プランを開く」 2<br>
+      マップ … 下タブ 1
     </div>
   </section>
 
   <section style="display: flex; flex-direction: column; gap: 8px">
-    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">RECOMMEND</span>
-    <p style="margin: 0; font-size: 13px; line-height: 1.55; color: rgba(255,255,255,0.78)">方針（入口の集約）はそのまま採用でよい。実装に落とすときは上の△4点だけ先に板へ反映してからコードへ。</p>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap">
-      <a href="IAOverview.dc.html" style="font-size: 12px; color: {{accent}}; text-decoration: underline">概要へ</a>
-      <a href="Trips.dc.html" style="font-size: 12px; color: {{accent}}; text-decoration: underline">旅の記録</a>
-      <a href="MyPage.dc.html" style="font-size: 12px; color: {{accent}}; text-decoration: underline">マイページ</a>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">BOARDS</span>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px">
+      <a href="Trips.dc.html" style="color: {{accent}}; text-decoration: underline">旅の記録（先頭チップ）</a>
+      <a href="WantedPlaces.dc.html" style="color: {{accent}}; text-decoration: underline">行きたい場所</a>
+      <a href="MyPage.dc.html" style="color: {{accent}}; text-decoration: underline">マイページ（短い上段）</a>
+      <a href="IAOverview.dc.html" style="color: {{accent}}; text-decoration: underline">概要</a>
     </div>
   </section>
 </main>

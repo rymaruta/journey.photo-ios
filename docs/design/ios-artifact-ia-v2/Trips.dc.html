@@ -23,6 +23,37 @@ button{font-family:inherit;cursor:pointer}
   <p style="margin: 0; font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.6)">同じころに撮った写真が、ひとつの旅にまとまります</p>
 </header>
 <main style="position: absolute; left: 0; right: 0; top: 128px; bottom: 84px; overflow: auto; box-sizing: border-box; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 20px">
+  <!-- 旅の道具の短い導線（初見でもスクロール前に見える） -->
+  <section aria-label="旅の道具（短い導線）" style="display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 0 2px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">TOOLS</span>
+      <span style="flex-grow: 1; height: 1px; background: rgba(255,255,255,0.12)"></span>
+      <span style="font-size: 11px; color: rgba(255,255,255,0.45)">すぐ開く</span>
+    </div>
+    <div style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px">
+      <a href="Albums.dc.html" style="flex: 0 0 auto; width: 68px; min-height: 72px; border-radius: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: rgba(255,255,255,0.9)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="14" height="14" rx="2"></rect><path d="M7 3h12a2 2 0 0 1 2 2v12"></path></svg>
+        <span style="font-size: 10px; text-align: center; line-height: 1.2">アルバム</span>
+      </a>
+      <a href="TripPlans.dc.html" style="flex: 0 0 auto; width: 68px; min-height: 72px; border-radius: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: rgba(255,255,255,0.9)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 11h18"></path></svg>
+        <span style="font-size: 10px; text-align: center; line-height: 1.2">プラン</span>
+      </a>
+      <a href="MyPage.dc.html" style="flex: 0 0 auto; width: 68px; min-height: 72px; border-radius: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: rgba(255,255,255,0.9)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="3" width="12" height="18" rx="2"></rect><path d="M9 7h6"></path></svg>
+        <span style="font-size: 10px; text-align: center; line-height: 1.2">すれちがい</span>
+      </a>
+      <a href="MyPage.dc.html" style="flex: 0 0 auto; width: 68px; min-height: 72px; border-radius: 14px; background: rgba(201,166,107,0.12); border: 1px solid rgba(201,166,107,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: {{accent}}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 8h12l1 12H5z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg>
+        <span style="font-size: 10px; text-align: center; line-height: 1.2">トランク</span>
+      </a>
+      <a href="MyPage.dc.html" style="flex: 0 0 auto; width: 68px; min-height: 72px; border-radius: 14px; background: rgba(201,166,107,0.12); border: 1px solid rgba(201,166,107,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: {{accent}}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12h16v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"></path><path d="M7 12V9a5 5 0 0 1 10 0v3"></path></svg>
+        <span style="font-size: 10px; text-align: center; line-height: 1.2">キャンパー</span>
+      </a>
+    </div>
+  </section>
+
   <!-- 一冊の棚（主役） -->
   <section aria-label="旅の一冊" style="display: flex; flex-direction: column; gap: 10px">
     <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px">

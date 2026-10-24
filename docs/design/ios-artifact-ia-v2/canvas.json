@@ -298,6 +298,14 @@
       "title": "00b 利用者の目線",
       "is_interactive": true
     },
+    "WantedPlaces.dc.html": {
+      "x": 470,
+      "y": -1000,
+      "w": 390,
+      "h": 844,
+      "title": "05b 行きたい場所（改善）",
+      "is_interactive": true
+    },
     "SiteMenu.dc.html": {
       "x": 0,
       "y": -1000,
@@ -377,6 +385,7 @@
     "PersonaLens.dc.html",
     "SiteMenu.dc.html",
     "Trips.dc.html",
+    "WantedPlaces.dc.html",
     "PostSheet.dc.html",
     "TripPlans.dc.html",
     "DesignSystem.dc.html",
