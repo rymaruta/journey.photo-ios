@@ -14,6 +14,12 @@
 .stats b{font-variant-numeric:tabular-nums;font-size:17px;display:block}
 .stats span{font-size:10px;color:rgba(255,255,255,.55)}
 /* 現行 TravelRecordView（2026-10-14 案 H1）を据え置き — カードにしない */
+/* 現行 ProfileBgmCard — ひとことの下の1行（札ではない） */
+.bgm{display:flex;align-items:center;gap:8px;padding:8px 20px 0;min-height:36px}
+.bgm .play{width:28px;height:28px;border-radius:14px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.bgm .note{font-size:12px;color:rgba(255,255,255,.45)}
+.bgm .title{font-size:13px;color:rgba(255,255,255,.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bgm .preview{font-size:12px;color:rgba(255,255,255,.45);flex-shrink:0}
 .travel{padding:14px 20px 0}
 .travel .eyebrow{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .travel .eyebrow .lab{font-size:11px;font-weight:600;letter-spacing:.14em;color:#C9A66B;white-space:nowrap}
@@ -60,6 +66,12 @@
         <div class="serif" style="font-size:24px">あかり</div>
         <div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:2px">@akari · 金沢</div>
         <div style="font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.5">旅先の光を集めています</div>
+      </div>
+      <div class="bgm" aria-label="BGM">
+        <span class="play">▶</span>
+        <span class="note">♪</span>
+        <span class="title">Midnight Drive · North Atlas</span>
+        <span class="preview">試聴</span>
       </div>
       <div class="stats">
         <div><b>38</b><span>投稿</span></div>
