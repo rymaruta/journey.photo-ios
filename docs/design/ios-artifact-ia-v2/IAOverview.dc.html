@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>画面構成の改善案</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&amp;family=IBM+Plex+Sans+JP:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000000;font-family:'IBM Plex Sans JP',-apple-system,sans-serif;color:rgba(255,255,255,0.95);-webkit-font-smoothing:antialiased}
+a{color:rgba(255,255,255,0.95);text-decoration:none}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #000000; color: rgba(255,255,255,0.95)">
+<header style="position: absolute; left: 0; right: 0; top: 0; padding: 54px 16px 0; background: #000">
+  <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">IA · v2</span>
+  <h1 style="margin: 6px 0 0; font-family: 'Shippori Mincho B1', serif; font-size: 26px; font-weight: 700">画面構成の改善案</h1>
+  <p style="margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.65)">下5タブは据え置き。旅の道具の入口だけ1か所に寄せる。</p>
+</header>
+<main style="position: absolute; left: 0; right: 0; top: 150px; bottom: 0; overflow: auto; padding: 0 16px 40px; display: flex; flex-direction: column; gap: 18px">
+  <section style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">TABS</span>
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px">
+      <a href="Main.dc.html" style="min-height: 64px; border-radius: 12px; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.85)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11h14V9"/></svg><span>ホーム</span></a>
+      <a href="Search.dc.html" style="min-height: 64px; border-radius: 12px; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.85)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>探す</span></a>
+      <a href="PostSheet.dc.html" style="min-height: 64px; border-radius: 12px; background: rgba(201,166,107,0.18); border: 1px solid rgba(201,166,107,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: {{accent}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg><span>投稿</span></a>
+      <a href="Map.dc.html" style="min-height: 64px; border-radius: 12px; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.85)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>マップ</span></a>
+      <a href="MyPage.dc.html" style="min-height: 64px; border-radius: 12px; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.85)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>マイ</span></a>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">CHANGE</span>
+    <div style="border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 14px; display: flex; flex-direction: column; gap: 12px">
+      <div>
+        <div style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">1. 旅の道具は「旅の記録」だけ</div>
+        <div style="margin-top: 4px; font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.65)">アルバム・プラン・すれちがい・トランク・キャンパーの正規入口を <a href="Trips.dc.html" style="color:{{accent}};text-decoration:underline">Trips</a> に集約。メニュー／設定からは削る。</div>
+      </div>
+      <div style="height: 1px; background: rgba(255,255,255,0.08)"></div>
+      <div>
+        <div style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">2. 一冊が先、道具は後</div>
+        <div style="margin-top: 4px; font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.65)">棚（TRIP BOOKS）を主役。TOOLS 節を下に分ける。</div>
+      </div>
+      <div style="height: 1px; background: rgba(255,255,255,0.08)"></div>
+      <div>
+        <div style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">3. 投稿は主3＋副2</div>
+        <div style="margin-top: 4px; font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.65)"><a href="PostSheet.dc.html" style="color:{{accent}};text-decoration:underline">写真 / ストーリー / 旅から</a>。カメラ・構図は「写真のほかの撮り方」。</div>
+      </div>
+      <div style="height: 1px; background: rgba(255,255,255,0.08)"></div>
+      <div>
+        <div style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">4. メニューは案内に戻す</div>
+        <div style="margin-top: 4px; font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.65)"><a href="SiteMenu.dc.html" style="color:{{accent}};text-decoration:underline">マップへ移る・いいね・保存・アカウント</a>。旅の道具は載せない。</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">KEEP</span>
+    <ul style="margin: 0; padding: 0 0 0 18px; font-size: 13px; line-height: 1.7; color: rgba(255,255,255,0.75)">
+      <li>下タブ 5（ホーム／探す／投稿／マップ／マイページ）</li>
+      <li>お知らせは見出しのベル（タブにしない）</li>
+      <li>ストーリーはホームの輪＋投稿シート</li>
+      <li>マイページ内タブ: 投稿／旅の記録／行きたい場所／保存</li>
+    </ul>
+  </section>
+
+  <p style="margin: 0; font-size: 11px; line-height: 1.55; color: rgba(255,255,255,0.4)">これは提案用の写し（ia-v2）。正の板は claude.ai アーティファクト。採用したら本板へ取り込み、アプリ実装に落とす。</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent": {"editor": "color", "default": "#C9A66B", "options": ["#C9A66B", "#F2A66B", "#FFFFFF"]}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#C9A66B' };
+}
+}
+</script>
+</body>
+</html>

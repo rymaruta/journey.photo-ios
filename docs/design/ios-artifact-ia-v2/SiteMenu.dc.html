@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>メニュー（改善）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000000;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;color:rgba(255,255,255,0.95);-webkit-font-smoothing:antialiased}
+a{color:rgba(255,255,255,0.95);text-decoration:none}a:hover{color:#ffffff}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #000000; color: rgba(255,255,255,0.95)">
+<header style="position: absolute; left: 0; right: 0; top: 0; height: 104px; box-sizing: border-box; padding: 54px 16px 0; display: flex; align-items: center; justify-content: space-between; background: #000000; z-index: 3">
+  <span style="display: inline-flex; align-items: center; gap: 8px">
+    <img src="/_blob/917f9d73bf5dd4a6aaec0b8e8a6d2d8f" alt="" style="width: 28px; height: 28px; display: block">
+    <span style="font-family: ui-serif, Georgia, serif; font-size: 22px; font-weight: 700; letter-spacing: -0.025em; color: #ffffff; white-space: nowrap">Journey Photo</span>
+  </span>
+  <a href="Main.dc.html" aria-label="メニューを閉じる" style="width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+  </a>
+</header>
+<nav aria-label="メニュー" style="position: absolute; left: 0; right: 0; top: 104px; bottom: 0; overflow: auto; background: #000000; border-top: 1px solid rgba(255,255,255,0.08); padding-bottom: 40px">
+  <h2 style="margin: 0; padding: 20px 16px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">見る</h2>
+  <!-- マップは下タブと同じ場所へ移す（積み重ねを二重にしない） -->
+  <a href="Map.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+    <span style="width: 40px; height: 40px; border-radius: 12px; background: #161617; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.85)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"></path><path d="M9 4v13.5M15 6.5V20"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Shippori Mincho B1', serif; font-size: 17px; font-weight: 700">撮影地マップ</span>
+      <span style="font-size: 12px; color: rgba(255,255,255,0.55)">下の「マップ」タブへ移ります</span>
+    </span>
+    <span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+  <a href="Favorites.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+    <span style="width: 40px; height: 40px; border-radius: 12px; background: #161617; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.85)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Shippori Mincho B1', serif; font-size: 17px; font-weight: 700">いいねした写真</span>
+      <span style="font-size: 12px; color: rgba(255,255,255,0.55)">ハートを押した写真 · 作者に届きます</span>
+    </span>
+    <span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+  <a href="Favorites.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+    <span style="width: 40px; height: 40px; border-radius: 12px; background: #161617; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.85)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h12v18l-6-4-6 4z"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Shippori Mincho B1', serif; font-size: 17px; font-weight: 700">保存した写真</span>
+      <span style="font-size: 12px; color: rgba(255,255,255,0.55)">しおりで保存 · 自分だけ</span>
+    </span>
+    <span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+
+  <p style="margin: 16px 16px 0; padding: 12px 14px; border-radius: 12px; background: rgba(201,166,107,0.08); border: 1px solid rgba(201,166,107,0.22); font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.72)">
+    共同アルバム・旅行プラン・トランクは、<strong style="color:#fff;font-weight:600">マイページ → 旅の記録</strong>の「旅の道具」にまとめています（入口を1か所に）。
+  </p>
+
+  <h2 style="margin: 0; padding: 24px 16px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">アカウント</h2>
+  <a href="MyPage.dc.html" style="display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px">
+    <span>マイページ</span><span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+  <a href="Settings.dc.html" style="display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px">
+    <span>設定</span><span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+  <a href="Settings.dc.html" style="display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px">
+    <span>管理<span style="display:block;font-size:11px;color:rgba(255,255,255,0.5)">管理者のときだけ</span></span><span style="color: rgba(255,255,255,0.3)">›</span>
+  </a>
+  <a href="SignIn.dc.html" style="display: flex; align-items: center; min-height: 52px; padding: 0 16px; margin-top: 8px; color: rgba(255,255,255,0.65); font-size: 15px">ログアウト</a>
+
+  <div style="padding: 28px 16px 0; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; gap: 16px">
+      <span style="font-size: 12px; color: {{accent}}; text-decoration: underline">利用規約</span>
+      <span style="font-size: 12px; color: {{accent}}; text-decoration: underline">プライバシーポリシー</span>
+    </div>
+    <span style="font-size: 11px; color: rgba(255,255,255,0.4)">Journey Photo · journey-photo.com</span>
+  </div>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent": {"editor": "color", "default": "#C9A66B", "options": ["#C9A66B", "#F2A66B", "#FFFFFF"]}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#C9A66B' };
+}
+}
+</script>
+</body>
+</html>
