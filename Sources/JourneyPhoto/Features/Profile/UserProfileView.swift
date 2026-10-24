@@ -25,6 +25,10 @@ struct UserProfileView: View {
     @State private var showBlockConfirm = false
     @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
+    /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う（2026-10-24）
+    @State private var tabRowMinY: CGFloat = 0
+    @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
     /// 中身が時計の下に入ったか（`ScrolledUnderClock`）
@@ -58,7 +62,7 @@ struct UserProfileView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
-                scroll
+                scroll(topInset: geo.safeAreaInsets.top, viewport: geo.size.height)
                     // カバーがあれば画面の上端から敷く（戻るの丸がカバーの上に乗る）。
                     // 無ければ帯も灰色の空き地も置かず、バーの下から始める
                     .ignoresSafeArea(edges: hasCover ? .top : [])
@@ -142,7 +146,11 @@ struct UserProfileView: View {
         }
     }
 
-    private var scroll: some View {
+    private func scroll(topInset: CGFloat, viewport: CGFloat) -> some View {
+        // 見えている上端（カバーを時計の裏まで伸ばしたときは時計の下）と、スクロールの見えている高さ
+        let visibleTop = hasCover ? topInset : 0
+        let scrollHeight = viewport + visibleTop
+        return ScrollViewReader { reader in
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 // 板: 見出し・数・ハイライトの間は 14pt 前後（v2 の物差しで 12）、その下の札と格子は 16pt
@@ -175,14 +183,43 @@ struct UserProfileView: View {
                 }
 
                 // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
+                // 札の行と中身は横に払っても切り替わる（マイページと同じ部品・2026-10-24 判断）。
+                // **地図の札の中身では払いを受けない**——地図を横に動かす操作とぶつかる（札の行では受ける）
                 ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
+                    .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab))
+                    .id(ProfileTabScroll.rowID)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .scrollView)
+                    } action: { frame in
+                        tabRowMinY = frame.minY
+                        tabRowHeight = frame.height
+                    }
 
-                photoArea
+                photoBanners
+                // 最低の高さは「見えている高さ − 札の行と間」（いちばん下まで送っても札の行が上端に残る）
+                ProfileTabPager(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
+                                minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
+                                                                          rowHeight: tabRowHeight, spacing: JPSpace.m),
+                                swipeBlocked: [.map]) { page in
+                    VStack(alignment: .leading, spacing: JPSpace.m) {
+                        tabContent(page)
+                    }
+                }
             }
             // 中身が時計の下に入ったかを見る（入ったときだけ時計の下を黒で塗る・`TopBarScrim.covered`）
             .onGeometryChange(for: Bool.self) { proxy in
                 ScrolledUnderClock.covered(contentMinY: proxy.frame(in: .scrollView).minY)
             } action: { scrolledUnderClock = $0 }
+        }
+        // 深く送ってから札を替えたら、新しい札は頭から（札の行を上端へ）。まだ送っていなければそのまま
+        .onChange(of: tab) { _, _ in
+            guard ProfileTabScroll.scrollsToRow(rowMinY: tabRowMinY, visibleTop: visibleTop) else { return }
+            let anchor = UnitPoint(x: 0.5, y: ProfileTabScroll.anchorY(visibleTop: visibleTop, viewport: scrollHeight,
+                                                                       rowHeight: tabRowHeight))
+            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                reader.scrollTo(ProfileTabScroll.rowID, anchor: anchor)
+            }
+        }
         }
     }
 
@@ -275,8 +312,9 @@ struct UserProfileView: View {
         }
     }
 
+    /// 札の上の知らせ（どの札でも同じ所に出す）
     @ViewBuilder
-    private var photoArea: some View {
+    private var photoBanners: some View {
         if let action = model.actionMessage {
             // **一覧の代わりではなく、一覧に添える**（マイページと同じ）
             Text(action)
@@ -284,6 +322,11 @@ struct UserProfileView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, ProfileV2.gutter)
         }
+    }
+
+    /// 札ごとの中身。**`tab` ではなく渡された札で分ける**——選んでいない札も持ち続ける（`ProfileTabPager`）
+    @ViewBuilder
+    private func tabContent(_ tab: ProfileTab) -> some View {
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }

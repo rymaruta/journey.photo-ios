@@ -128,8 +128,24 @@ final class TravelRouteTests: XCTestCase {
         let names = TravelRoute.countriesInOrder(photos)
         XCTAssertEqual(names.count, VisitedCountries.count(in: photos))
         XCTAssertEqual(names.first, VisitedCountries.country(in: "東京, 日本"))
-        XCTAssertEqual(TravelRoute.countriesLine(["日本", "台湾", "フランス"]), L("日本・台湾・フランス", "日本, 台湾, フランス"))
+        XCTAssertEqual(TravelRoute.countriesLine(["日本", "台湾", "フランス"]), "日本/台湾/フランス")
         XCTAssertTrue(TravelRoute.countriesLine(["a", "b", "c", "d", "e"]).hasSuffix(L(" ほか2", " +2")))
+    }
+
+    /// 🔴 国の並びの区切りは「/」（2026-10-24 owner の要望）。日本語・英語とも同じで、前後に空きを入れない。
+    /// 4つ以上は今までどおり3つまで＋「ほか N」
+    func testCountriesAreSeparatedBySlash() {
+        XCTAssertEqual(TravelRoute.countriesSeparator, "/")
+        XCTAssertEqual(TravelRoute.countriesLine(["フランス", "スペイン", "イギリス"]), "フランス/スペイン/イギリス")
+        XCTAssertEqual(TravelRoute.countriesLine(["France", "Spain", "UK"]), "France/Spain/UK")
+        XCTAssertEqual(TravelRoute.countriesLine(["日本"]), "日本")
+        XCTAssertEqual(TravelRoute.countriesLine([]), "")
+        XCTAssertEqual(TravelRoute.countriesLine(["フランス", "フィンランド", "日本", "台湾"]),
+                       "フランス/フィンランド/日本" + L(" ほか1", " +1"))
+        for line in [TravelRoute.countriesLine(["フランス", "フィンランド", "日本", "台湾", "韓国"])] {
+            XCTAssertFalse(line.contains("・"), "国の並びに「・」が残っている: \(line)")
+            XCTAssertFalse(line.contains(", "), "国の並びに「, 」が残っている: \(line)")
+        }
     }
 
     /// 一番古い写真の年

@@ -60,7 +60,9 @@ final class ProfileV2DesignTests: XCTestCase {
     func testProfileTabsSelectBrass() throws {
         let bar = try source("Features/Profile/ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んでいる札の字が真鍮でない")
-        XCTAssertTrue(bar.contains(".fill(selected ? WebTheme.accent : Color.clear)"), "下線が真鍮でない")
+        // 2026-10-24: 下線は選んだ札にだけ1本描き、選び替えで滑らせる（`matchedGeometryEffect`）
+        XCTAssertTrue(bar.contains("if selected {\n                        Rectangle()\n                            .fill(WebTheme.accent)"),
+                      "下線が真鍮でない")
         XCTAssertTrue(bar.contains(".frame(height: JPStroke.emphasis)"), "下線は 2pt")
         XCTAssertFalse(bar.contains("selected ? Color.white : WebTheme.faint"), "v1 の白い選択に戻っている")
         XCTAssertTrue(bar.contains("Rectangle().fill(WebTheme.hairline)"), "区切り線は v2 の白 8%")

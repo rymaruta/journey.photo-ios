@@ -176,9 +176,16 @@ enum TravelRoute {
     }
 
     /// 名前の並びを1行に。3つまで、あとは「ほか N」
+    ///
+    /// **2026-10-24 判断（owner の要望）: 区切りは「/」**（「フランス/スペイン/イギリス」）。
+    /// 「・」は「か国・地域」の「・」と並んで読みにくかった。英語も同じ「/」（「France/Spain/UK」）。
+    /// 前後に空きを入れない（3つで1行に収まる幅を今と変えない・はみ出したら行の末尾を省く）。
+    /// マイページと人のページは同じ部品（`TravelRecordSection` → `TravelRecordView`）なので、ここ1か所で両方が変わる
+    static let countriesSeparator = "/"
+
     static func countriesLine(_ names: [String], limit: Int = 3) -> String {
-        guard names.count > limit else { return names.joined(separator: L("・", ", ")) }
-        let shown = names.prefix(limit).joined(separator: L("・", ", "))
+        guard names.count > limit else { return names.joined(separator: countriesSeparator) }
+        let shown = names.prefix(limit).joined(separator: countriesSeparator)
         return shown + L(" ほか\(names.count - limit)", " +\(names.count - limit)")
     }
 
