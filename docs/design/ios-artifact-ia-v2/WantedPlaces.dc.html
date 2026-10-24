@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>行きたい場所（改善）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&amp;family=IBM+Plex+Sans+JP:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000000;font-family:'IBM Plex Sans JP',-apple-system,sans-serif;color:rgba(255,255,255,0.95);-webkit-font-smoothing:antialiased}
+a{color:rgba(255,255,255,0.95);text-decoration:none}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #000000; color: rgba(255,255,255,0.95)">
+<header style="position: absolute; left: 0; right: 0; top: 0; padding: 54px 16px 0; background: #000; z-index: 3">
+  <div style="display: flex; align-items: center; gap: 8px; min-height: 44px">
+    <a href="MyPage.dc.html" aria-label="戻る" style="width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 6 9 12l6 6"></path></svg>
+    </a>
+    <h1 style="margin: 0; font-family: 'Shippori Mincho B1', serif; font-size: 26px; font-weight: 700">行きたい場所</h1>
+  </div>
+  <p style="margin: 4px 0 0 44px; font-size: 12px; color: rgba(255,255,255,0.55)">写真やスポットから旗を立てた場所</p>
+</header>
+<main style="position: absolute; left: 0; right: 0; top: 130px; bottom: 84px; overflow: auto; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 14px">
+  <!-- プランへの橋（行きたい場所 ↔ 旅行プラン） -->
+  <a href="TripPlans.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 14px; border-radius: 14px; background: rgba(201,166,107,0.10); border: 1px solid rgba(201,166,107,0.32)">
+    <span style="width: 36px; height: 36px; border-radius: 10px; background: #161617; display: flex; align-items: center; justify-content: center; color: {{accent}}">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 11h18"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">旅行プランを開く</span>
+      <span style="font-size: 12px; color: rgba(255,255,255,0.55)">ここに並んだ場所を、回る順にまとめる</span>
+    </span>
+    <span style="color: rgba(255,255,255,0.35)">›</span>
+  </a>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">WISHLIST</span>
+      <span style="font-size: 12px; color: rgba(255,255,255,0.55)">00 件</span>
+    </div>
+    <a href="SpotDetail.dc.html" style="display: flex; gap: 12px; align-items: center; min-height: 72px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08)">
+      <span style="width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: #2f4d61; flex-shrink: 0; display: block">
+        <img src="/_blob/f4463c1225422465ad95dafc924babc7" alt="" style="width: 100%; height: 100%; object-fit: cover; display: block">
+      </span>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+        <span style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">[撮影スポット]</span>
+        <span style="font-size: 12px; color: rgba(255,255,255,0.55)">おすすめの季節 · 朝</span>
+      </span>
+      <span style="color: {{accent}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg></span>
+    </a>
+    <a href="SpotDetail.dc.html" style="display: flex; gap: 12px; align-items: center; min-height: 72px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08)">
+      <span style="width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: #55657a; flex-shrink: 0; display: block">
+        <img src="/_blob/69f4e339d5edf7e1e728476dda725a35" alt="" style="width: 100%; height: 100%; object-fit: cover; display: block">
+      </span>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+        <span style="font-family: 'Shippori Mincho B1', serif; font-size: 16px; font-weight: 700">[撮影地]</span>
+        <span style="font-size: 12px; color: rgba(255,255,255,0.55)">地図のピンから</span>
+      </span>
+      <span style="color: {{accent}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg></span>
+    </a>
+  </div>
+</main>
+<nav aria-label="タブ" style="position: absolute; left: 16px; right: 16px; bottom: 22px; height: 62px; box-sizing: border-box; padding: 4px; display: flex; border-radius: 31px; background: rgba(40,40,42,0.62); backdrop-filter: blur(22px) saturate(160%); border: 1px solid rgba(255,255,255,0.14); z-index: 4">
+  <a href="Main.dc.html" aria-label="ホーム" style="flex-grow: 1; min-height: 54px; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: rgba(255,255,255,0.62)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9v11h14V9"></path></svg><span style="font-size: 10px">ホーム</span></a>
+  <a href="Search.dc.html" aria-label="探す" style="flex-grow: 1; min-height: 54px; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: rgba(255,255,255,0.62)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size: 10px">探す</span></a>
+  <a href="PostSheet.dc.html" aria-label="投稿" style="flex-grow: 1; min-height: 54px; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: rgba(255,255,255,0.62)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="5"></rect><path d="M12 8v8M8 12h8"></path></svg><span style="font-size: 10px">投稿</span></a>
+  <a href="Map.dc.html" aria-label="マップ" style="flex-grow: 1; min-height: 54px; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: rgba(255,255,255,0.62)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"></path><path d="M9 4v13.5M15 6.5V20"></path></svg><span style="font-size: 10px">マップ</span></a>
+  <a href="MyPage.dc.html" aria-label="マイページ" style="flex-grow: 1; min-height: 54px; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #fff; background: rgba(255,255,255,0.16)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg><span style="font-size: 10px; font-weight: 600">マイページ</span></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent": {"editor": "color", "default": "#C9A66B", "options": ["#C9A66B", "#F2A66B", "#FFFFFF"]}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#C9A66B' };
+}
+}
+</script>
+</body>
+</html>
