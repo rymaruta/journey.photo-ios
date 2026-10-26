@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>利用者の目線</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&amp;family=IBM+Plex+Sans+JP:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000000;font-family:'IBM Plex Sans JP',-apple-system,sans-serif;color:rgba(255,255,255,0.95);-webkit-font-smoothing:antialiased}
+a{color:rgba(255,255,255,0.95);text-decoration:none}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #000000; color: rgba(255,255,255,0.95)">
+<header style="position: absolute; left: 0; right: 0; top: 0; padding: 54px 16px 0; background: #000">
+  <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: {{accent}}">IA · v2 · LENS</span>
+  <h1 style="margin: 6px 0 0; font-family: 'Shippori Mincho B1', serif; font-size: 24px; font-weight: 700">利用者の目線</h1>
+  <p style="margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.65)">△だったところを板で手当てし、どれも◎に寄せた版。</p>
+</header>
+<main style="position: absolute; left: 0; right: 0; top: 150px; bottom: 0; overflow: auto; padding: 0 16px 40px; display: flex; flex-direction: column; gap: 14px">
+
+  <section style="border-radius: 16px; background: rgba(201,166,107,0.10); border: 1px solid rgba(201,166,107,0.28); padding: 14px; display: flex; flex-direction: column; gap: 10px">
+    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">すべて ◎（手当て込み）</div>
+    <div style="font-size: 12px; line-height: 1.55; color: rgba(255,255,255,0.78)">
+      <div><strong style="color:#fff">写真を残す人</strong> — 投稿シート主3＋副2</div>
+      <div style="margin-top:7px"><strong style="color:#fff">旅を見返す人</strong> — 一冊の棚は旅の記録ページの主役</div>
+      <div style="margin-top:7px"><strong style="color:#fff">マップ／ストーリー</strong> — 下タブとホームの輪のまま</div>
+      <div style="margin-top:7px"><strong style="color:#fff">保存・いいね</strong> — メニュー＋マイの「保存」タブ</div>
+      <div style="margin-top:7px"><strong style="color:#fff">キャンパー・トランク・すれちがい</strong> — 旅の記録の<strong style="color:#fff">先頭チップ</strong>でスクロール前に届く（正規入口は1か所のまま）</div>
+      <div style="margin-top:7px"><strong style="color:#fff">共同アルバム</strong> — 道具チップの先頭＋一覧でも先頭</div>
+      <div style="margin-top:7px"><strong style="color:#fff">行きたい場所 ↔ プラン</strong> — 行きたい場所の先頭に「旅行プランを開く」</div>
+      <div style="margin-top:7px"><strong style="color:#fff">写真だけ見たい（マイ）</strong> — 上段の一冊棚を外し、内タブ直下で投稿グリッドへ</div>
+    </div>
+  </section>
+
+  <section style="border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 14px; display: flex; flex-direction: column; gap: 8px">
+    <div style="font-family: 'Shippori Mincho B1', serif; font-size: 15px; font-weight: 700">手の届き方（直し後）</div>
+    <div style="font-size: 12px; line-height: 1.65; color: rgba(255,255,255,0.72)">
+      写真投稿 … 投稿タブ → 1<br>
+      旅の一冊 … マイ → 旅の記録 → 1〜2<br>
+      キャンパー／トランク … マイ → 旅の記録 → 先頭チップ 2<br>
+      共同アルバム … 同上（チップ先頭）2<br>
+      旅行プラン … 行きたい場所 → 「プランを開く」 2<br>
+      マップ … 下タブ 1
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">BOARDS</span>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px">
+      <a href="Trips.dc.html" style="color: {{accent}}; text-decoration: underline">旅の記録（先頭チップ）</a>
+      <a href="WantedPlaces.dc.html" style="color: {{accent}}; text-decoration: underline">行きたい場所</a>
+      <a href="MyPage.dc.html" style="color: {{accent}}; text-decoration: underline">マイページ（短い上段）</a>
+      <a href="IAOverview.dc.html" style="color: {{accent}}; text-decoration: underline">概要</a>
+    </div>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent": {"editor": "color", "default": "#C9A66B", "options": ["#C9A66B", "#F2A66B", "#FFFFFF"]}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#C9A66B' };
+}
+}
+</script>
+</body>
+</html>
