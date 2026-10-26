@@ -61,7 +61,7 @@ if let artist = ProfileSongLine.artist(song) {
                     .symbolVariant(.fill)
                     .foregroundStyle(ProfileSongLine.brass)
                     .frame(width: Self.playSide, height: Self.playSide)
-                    .overlay(Circle().strokeBorder(ProfileSongLine.brass.opacity(0.65), lineWidth: JPStroke.hairline))
+                    .overlay(Circle().strokeBorder(ProfileSongLine.brass, lineWidth: JPStroke.hairline))
                     .accessibilityHidden(true)
             }
             .frame(minHeight: Self.artworkSide)
