@@ -411,16 +411,14 @@ final class TrunkEntryTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// マイページの上（数の並びと旅の実績のすぐ下・タブより上）に札。設定にも行。どちらも同じ出し分け。
-    /// **札は1つの部品（`TrunkProfileChip`）に閉じ、マイページは出し分けと置く1行だけ**（あとで絵に差し替える）
+    /// マイページ上の「旅のトランク」札は撤去済み。設定の入口は維持する。
+    /// マイページから札が復活していないことを確認する。
     func testEntriesAreWired() async throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        let header = try XCTUnwrap(page.range(of: "                        travelRecord\n"
-            + "                        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {\n"
-            + "                            TrunkProfileChip(ownerName: model.profile?.name)\n"),
-                                   "札が見出しの数の並びのすぐ下に無い")
-        let tabs = try XCTUnwrap(page.range(of: "tabPicker\n"))
-        XCTAssertLessThan(header.lowerBound, tabs.lowerBound, "札がタブより下にある")
+        XCTAssertFalse(page.contains("TrunkProfileChip(ownerName: model.profile?.name)"),
+                       "撤去した旅のトランク札がマイページに復活している")
+        let tabs = try XCTUnwrap(page.range(of: "tabPicker\\n"))
+        XCTAssertNotNil(tabs, "マイページのタブが見つからない")
         // マイページは札の中身（読み込み・状態・見た目）を持たない
         XCTAssertFalse(page.contains("TrunkEntryStore.shared.summary"))
         XCTAssertFalse(page.contains("entry.refresh("), "マイページが札の数を読んでいる（部品の側に置く）")
