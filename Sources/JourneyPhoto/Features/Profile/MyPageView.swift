@@ -374,10 +374,6 @@ struct MyPageView: View {
                     if model.profile != nil {
                         stats
                         travelRecord
-                        // 旅のトランクの入口（2026-10-18）。読み込み・状態・見た目は部品の側（`TrunkProfileChip`）
-                        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
-                            TrunkProfileChip(ownerName: model.profile?.name)
-                        }
                     }
                 }
                 if let profile = model.profile {
