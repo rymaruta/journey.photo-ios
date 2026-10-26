@@ -58,6 +58,7 @@ if let artist = ProfileSongLine.artist(song) {
                 Spacer(minLength: 0)
                 Image(systemName: ProfileSongLine.playSymbol(isPlaying: playing))
                     .font(.system(size: 16, weight: .semibold))
+                    .symbolVariant(.fill)
                     .foregroundStyle(ProfileSongLine.brass)
                     .frame(width: Self.playSide, height: Self.playSide)
                     .overlay(Circle().strokeBorder(ProfileSongLine.brass.opacity(0.65), lineWidth: JPStroke.hairline))
