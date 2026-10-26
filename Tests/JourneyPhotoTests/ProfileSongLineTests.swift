@@ -2,7 +2,7 @@ import XCTest
 @testable import JourneyPhoto
 
 /// マイページの曲の行（2026-10-24 owner の要望「アルバムのジャケット・曲名・歌手名・再生ボタン」）。
-/// ジャケットの出どころ・読めないときの代わり・再生の印・試聴の印を見張る
+/// ジャケットの出どころ・読めないときの代わり・再生の印・表示文言を見張る
 final class ProfileSongLineTests: XCTestCase {
 
     private func source(_ path: String) throws -> String {
@@ -43,12 +43,15 @@ final class ProfileSongLineTests: XCTestCase {
                       "再生の丸が再生の状態を見ていない")
     }
 
-    /// 2行目は歌手名（空なら出さない）。試聴の印は控えめに残す
+    /// 2行目は歌手名だけ。試聴の文字は表示しない
     func testArtistLineAndPreviewMark() {
         XCTAssertEqual(ProfileSongLine.artist(song(artwork: nil)), "米津玄師")
         XCTAssertNil(ProfileSongLine.artist(song(artist: nil, artwork: nil)))
         XCTAssertNil(ProfileSongLine.artist(song(artist: "  ", artwork: nil)))
-        XCTAssertEqual(ProfileSongLine.previewLabel, L("試聴", "Preview"))
+        let view = try? source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
+        XCTAssertFalse(view?.contains("ProfileSongLine.previewLabel") == true, "試聴ラベルを表示しない")
+        XCTAssertTrue(view?.contains("ProfileSongLine.brass") == true, "再生ボタンに真鍮色を使う")
+        XCTAssertTrue(view?.contains("green: 141.0 / 255.0") == true, "真鍮色の定義がある")
     }
 
     /// 押せる所は 44pt 以上・本文 12pt 以上（ジャケット 48・再生の丸 44）
