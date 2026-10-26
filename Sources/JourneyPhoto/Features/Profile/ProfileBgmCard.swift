@@ -10,12 +10,11 @@ import SwiftUI
 /// - ジャケットはサーバーが曲と一緒に返している `artwork`（iTunes Search の `artworkUrl100` を
 ///   300x300 に差し替えたもの・`api-user/src/musicSearch.ts`）。**新しい口・新しい費用は無い**
 /// - 読めない・入っていないときは ♪ の入った角丸の四角（`RemoteImage` の記号の代わり）
-/// - 「試聴」は**控えめに残す**: 鳴るのは30秒の試聴だけで、板（MyPage・SongPicker）も試聴であることを
-///   書いている。歌手名の後ろに「· 試聴」（12pt・text-3）。歌手名が長いときは歌手名から省く
+/// - 歌手名だけを表示し、「試聴」の文字は表示しない
 ///
 /// **2026-10-21 判断（全画面の点検）の「札にしない」はそのまま**: 地と縁の札にせず、見出しの中の1行。
 /// 行ぜんぶが再生の切り替え（押せる高さはジャケットの 48 で 44 を越える）。
-/// 2026-10-14 判断（v2）の「白の塗りは主ボタン1つに取っておく」もそのまま——再生の丸は白 12% の縁だけ。
+/// 再生ボタンは黒背景に合う落ち着いた真鍮色（塗りは増やさず、アイコンと縁だけ）。
 ///
 /// **再生器の見張りはこの行の中だけ。** 画面に持たせると、再生・一時停止の
 /// たびにマイページ全体（格子まで）が描き直される
@@ -48,27 +47,20 @@ struct ProfileBgmCard: View {
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    HStack(spacing: 0) {
-                        if let artist = ProfileSongLine.artist(song) {
-                            Text(artist)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Text(" · ")
-                                .fixedSize()
-                        }
-                        Text(ProfileSongLine.previewLabel)
+if let artist = ProfileSongLine.artist(song) {
+                        Text(artist)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
                             .lineLimit(1)
-                            .fixedSize()
+                            .truncationMode(.tail)
                     }
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: ProfileSongLine.playSymbol(isPlaying: playing))
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(ProfileSongLine.brass)
                     .frame(width: Self.playSide, height: Self.playSide)
-                    .overlay(Circle().strokeBorder(WebTheme.border, lineWidth: JPStroke.hairline))
+                    .overlay(Circle().strokeBorder(ProfileSongLine.brass.opacity(0.65), lineWidth: JPStroke.hairline))
                     .accessibilityHidden(true)
             }
             .frame(minHeight: Self.artworkSide)
@@ -89,8 +81,8 @@ enum ProfileSongLine {
     /// ジャケットが無い・読めないときの印（♪）
     static let fallbackSymbol = "music.note"
 
-    /// 試聴であることの印（歌手名の後ろに小さく）
-    static var previewLabel: String { L("試聴", "Preview") }
+    /// 再生ボタンの真鍮色（#B08D57）
+    static let brass = Color(red: 176.0 / 255.0, green: 141.0 / 255.0, blue: 87.0 / 255.0)
 
     /// ジャケットの URL。**https だけ**（サーバーも https の決まった配信元しか保存しない）。
     /// 空・壊れた値・http は nil ＝ ♪ の四角を出す
