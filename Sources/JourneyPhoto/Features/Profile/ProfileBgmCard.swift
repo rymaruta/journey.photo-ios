@@ -81,8 +81,9 @@ enum ProfileSongLine {
     /// ジャケットが無い・読めないときの印（♪）
     static let fallbackSymbol = "music.note"
 
-    /// 再生ボタンの真鍮色（#B08D57）
-    static let brass = Color(red: 176.0 / 255.0, green: 141.0 / 255.0, blue: 87.0 / 255.0)
+    /// デザインシステムの真鍮アクセント（BrandPalette.accent = #C9A66B）。
+    /// 黒地のアイコン・合図に使う既定色。独自の金色を増やさない。
+    static let brass = WebTheme.accent
 
     /// ジャケットの URL。**https だけ**（サーバーも https の決まった配信元しか保存しない）。
     /// 空・壊れた値・http は nil ＝ ♪ の四角を出す
