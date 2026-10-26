@@ -51,7 +51,7 @@ final class ProfileSongLineTests: XCTestCase {
         let view = try? source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
         XCTAssertFalse(view?.contains("ProfileSongLine.previewLabel") == true, "試聴ラベルを表示しない")
         XCTAssertTrue(view?.contains("ProfileSongLine.brass") == true, "再生ボタンに真鍮色を使う")
-        XCTAssertTrue(view?.contains("green: 141.0 / 255.0") == true, "真鍮色の定義がある")
+        XCTAssertTrue(view?.contains("static let brass = WebTheme.accent") == true, "既存デザインシステムの真鍮アクセントを使う")
     }
 
     /// 押せる所は 44pt 以上・本文 12pt 以上（ジャケット 48・再生の丸 44）
