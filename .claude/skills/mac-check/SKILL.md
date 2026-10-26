@@ -8,21 +8,23 @@ description: 枝を Mac の CI（本物の Xcode でビルド・テスト・画�
 この環境（Linux）では本物の Xcode でコンパイルできない。最初の本物の確認は
 `ios-testflight.yml` の `submit=false`（TestFlight には出さない）。
 
-## 流す
+## 流す（Cursor から完結・2026-10-24）
 
 ```bash
-gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
-  -f ref=<枝> -f 'inputs[submit]=false'
+bash Tools/cursor-dispatch-mac.sh check <枝>
+# 出力: <run id> ios-mac-check <枝> <sha7>
 ```
+
+Cursor の連携トークンは `workflow_dispatch` が 403 なので、`repository_dispatch`
+（`ios-mac-check`）を使う。古い `gh api …/workflows/…/dispatches` は使わない。
 
 ### 変えた画面の絵だけ撮る（`screens`・2026-10-17）
 
 全部を流すと1回 約70分（run 462: 組む12分・単体6分・UI 33分・Archive 11分）。枝の確認では
-**変えた画面の名前（撮る絵の名前の一部）かテスト名の一部**を `screens` に渡して絞る:
+**変えた画面の名前（撮る絵の名前の一部）かテスト名の一部**を渡して絞る:
 
 ```bash
-gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
-  -f ref=<枝> -f 'inputs[submit]=false' -f 'inputs[screens]=撮影スポット, すれちがい'
+bash Tools/cursor-dispatch-mac.sh check <枝> --screens '撮影スポット, すれちがい'
 ```
 
 - 区切りは `,` か `、`。何に当たるかは手元で `python3 Tools/pick-ui-tests.py "<screens>"` で先に見る
@@ -34,10 +36,11 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
   （同じコミットを `screens` 空で流して通っていれば、そちらを数えて飛ばす）。
   だから **PR をマージするのは、PR の検証の「Xcode のビルドとテスト」が緑（か、全部の回が
   済んでいて skipped）になってから**
-- 全部を見たいとき（画面を広く変えた・統合ブランチ）は `screens` を付けない
+- 全部を見たいとき（画面を広く変えた・統合ブランチ）は `--screens` を付けない
 
-待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
+待つのは `bash Tools/wait-mac-run.sh --run-id <run id>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。
+（repository_dispatch の head_sha は既定ブランチ側なので、sha 待ちは使わない）
 
 ## 緑なら
 
