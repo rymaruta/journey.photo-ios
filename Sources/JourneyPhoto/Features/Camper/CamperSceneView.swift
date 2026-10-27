@@ -109,7 +109,7 @@ final class CamperSceneSnapshot {
             alpha += Double(px[i + 3])
             light += Double(px[i]) + Double(px[i + 1]) + Double(px[i + 2])
         }
-        return alpha / 64 < 128 || light / (64 * 3) < 20
+        return alpha / 64 < 128 || light / (64 * 3) < 24
     }
 
     func clear() { last = nil }
