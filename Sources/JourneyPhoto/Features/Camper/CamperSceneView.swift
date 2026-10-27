@@ -95,7 +95,9 @@ final class CamperSceneSnapshot {
         return last
     }
 
-    /// 絵がほぼ透明か真っ黒か（8×8 に縮めて、不透明さと明るさの平均を見る）
+    /// 絵がほぼ透明・真っ黒、または入室時の覆いとして暗すぎる絵か（8×8 に縮めて不透明さと明るさの平均を見る）。
+    /// 夜の SCNView snapshot は「空ではないが画面を覆うには暗い」絵を返すことがある。
+    /// そのまま使うと部屋の最初のフレームが出るまで画面全体が黒く見えるため、暖色のフォールバックへ切り替える。
     static func looksEmpty(_ image: UIImage) -> Bool {
         guard let cg = image.cgImage else { return true }
         var px = [UInt8](repeating: 0, count: 8 * 8 * 4)
@@ -107,7 +109,7 @@ final class CamperSceneSnapshot {
             alpha += Double(px[i + 3])
             light += Double(px[i]) + Double(px[i + 1]) + Double(px[i + 2])
         }
-        return alpha / 64 < 128 || light / (64 * 3) < 4
+        return alpha / 64 < 128 || light / (64 * 3) < 20
     }
 
     func clear() { last = nil }
