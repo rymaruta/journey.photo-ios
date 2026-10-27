@@ -2331,7 +2331,9 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
-        let row = app.buttons[id].firstMatch
+        // SwiftUI の NavigationLink は iOS/Xcode の組み合わせによって buttons ではなく
+        // otherElements として公開されることがある。識別子を付けた行そのものを型に依存せず探す。
+        let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
         guard row.waitForExistence(timeout: 15) else {
             note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
             return false
