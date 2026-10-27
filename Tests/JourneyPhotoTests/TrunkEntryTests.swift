@@ -417,7 +417,7 @@ final class TrunkEntryTests: XCTestCase {
         let page = try source("Features/Profile/MyPageView.swift")
         XCTAssertFalse(page.contains("TrunkProfileChip(ownerName: model.profile?.name)"),
                        "撤去した旅のトランク札がマイページに復活している")
-        let tabs = try XCTUnwrap(page.range(of: "tabPicker\\n"))
+        let tabs = try XCTUnwrap(page.range(of: "tabPicker"))
         XCTAssertNotNil(tabs, "マイページのタブが見つからない")
         // マイページは札の中身（読み込み・状態・見た目）を持たない
         XCTAssertFalse(page.contains("TrunkEntryStore.shared.summary"))
