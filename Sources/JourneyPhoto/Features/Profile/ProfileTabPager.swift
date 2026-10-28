@@ -37,39 +37,86 @@ struct ProfileTabPager<Page: View>: View {
     /// **その札へ入る払いは受ける**（投稿の中身を左へ払えば地図へ移る）——止めるのは、その札を
     /// 選んでいる間の中身の上だけ（`ProfileTabSwipe.enabled`・2026-10-28 判断）
     var swipeBlocked: Set<ProfileTab> = []
+    /// 札の行が見えている上端からどれだけ上へ出ているか（深く送った回だけ正・`ProfileTabScroll.rowOverflow`）
+    var rowOverflow: CGFloat = 0
+    /// 画面を開いて手が空いたら先に作っておく札（人のページの地図——払いの途中に初めて作ると引っかかる）
+    var prebuilt: [ProfileTab] = []
     @ViewBuilder let page: (ProfileTab) -> Page
 
     @State private var pages = ProfileTabPages(initial: .posts)
-    /// 指に付いてきている横の量（払っている間だけ 0 以外・`ProfileTab.followOffset`）
-    @State private var drag: CGFloat = 0
+    /// 指に付いてきている横の量。**入れ物の `body` はこれに依存しない**（2026-10-28 確かめ役の見直し）——
+    /// `@State` に箱（参照）を置くだけで中を見張らないので、払っている間に毎フレーム全部の札の `page()` を
+    /// 作り直さない。読むのは中身をずらす小さな子（`ProfileTabDragOffset`）だけ
+    @State private var drag = ProfileTabDrag()
+    /// 選んでいない札を下へずらす量（払い始めに `rowOverflow` を写す）
+    @State private var lift: CGFloat = 0
 
     var body: some View {
-        ProfileTabPagerLayout(index: tabs.firstIndex(of: selection) ?? 0) {
-            ForEach(tabs) { option in
-                let shown = option == selection
-                Group {
-                    if pages.isBuilt(option) || shown {
-                        page(option)
-                    } else {
-                        Color.clear.frame(height: 0)
+        ProfileTabDragOffset(drag: drag, content:
+            ProfileTabPagerLayout(index: tabs.firstIndex(of: selection) ?? 0) {
+                ForEach(tabs) { option in
+                    let shown = option == selection
+                    Group {
+                        if pages.isBuilt(option) || shown {
+                            page(option)
+                        } else {
+                            Color.clear.frame(height: 0)
+                        }
                     }
+                    // **2026-10-28 判断（確かめ役: 深く送ってから払うと、入ってくる札が空に見えた）。**
+                    // 隣の札は札の行の真下から並ぶので、深く送った回はいま見えている高さより上に頭があった。
+                    // 払い始めに、選んでいない札を「札の行を上端へ送ったときの位置」まで下げて見せる
+                    // （Instagram と同じく、隣の札は頭から）。替えたら呼ぶ側が札の行を上端へ送り
+                    // （`ProfileTabScroll.scrollsToRow`）、同じ動きでこのずらしが 0 に戻るので、新しい札は跳ばない。
+                    // 払い始めに札の行を先に上端へ送る案は採らない——指の下の一覧が縦に飛ぶ
+                    .offset(y: shown ? 0 : lift)
+                    .allowsHitTesting(shown)
+                    .accessibilityHidden(!shown)
                 }
-                .allowsHitTesting(shown)
-                .accessibilityHidden(!shown)
             }
-        }
-        .offset(x: drag)
+        )
         .frame(minHeight: minHeight, alignment: .top)
         .clipped()
         .modifier(ProfileTabSwipe(tabs: tabs, selection: $selection,
-                                  enabled: !swipeBlocked.contains(selection), follow: $drag))
+                                  enabled: !swipeBlocked.contains(selection), follow: drag,
+                                  willShow: { next in
+                                      // 払っている間は毎フレーム呼ばれる。状態を書くのは変わるときだけ
+                                      if lift != rowOverflow { lift = rowOverflow }
+                                      // 隣の札は、まだ作っていなければ作る（指の後ろから空の札が出てこない）
+                                      if !pages.isBuilt(next) { pages.select(next) }
+                                  }))
         .onAppear { pages.select(selection) }
         .onChange(of: selection) { _, next in pages.select(next) }
-        // 払い始めたら、その向きの隣の札を作っておく（指の後ろから空の札が出てこない）
-        .onChange(of: drag) { _, offset in
-            guard let next = ProfileTab.neighbor(of: selection, in: tabs, towards: Double(offset)) else { return }
-            pages.select(next)
+        // 払いの途中で画面を離れたら、ずらしを残さない
+        .onDisappear { drag.offset = 0 }
+        .task {
+            // 開いてすぐは見えている札の読み込みを優先し、少し待ってから作る
+            guard !prebuilt.isEmpty else { return }
+            try? await Task.sleep(nanoseconds: ProfileTabPrebuild.delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            for tab in prebuilt where tabs.contains(tab) && !pages.isBuilt(tab) { pages.select(tab) }
         }
+    }
+}
+
+/// 画面を開いてから先に札を作るまでの待ち
+enum ProfileTabPrebuild {
+    static let delayNanoseconds: UInt64 = 1_200_000_000
+}
+
+/// 指に付いてくる横の量の箱。**見張るのは `ProfileTabDragOffset` だけ**（入れ物は持つだけ）
+final class ProfileTabDrag: ObservableObject {
+    @Published var offset: CGFloat = 0
+}
+
+/// 中身を横にずらす小さな子。払っている間に描き直すのはここだけ。**中身は親が作った値で受け取る**
+/// （作り方の関数で受けると、ここが描き直すたびに全部の札の `page()` を呼び直す）
+struct ProfileTabDragOffset<Content: View>: View {
+    @ObservedObject var drag: ProfileTabDrag
+    let content: Content
+
+    var body: some View {
+        content.offset(x: drag.offset)
     }
 }
 
@@ -156,7 +203,9 @@ struct ProfileTabSwipe: ViewModifier {
     /// false のときは中の操作（地図など）にだけ渡す
     var enabled: Bool = true
     /// 指に付いてくる横の量の書き込み先（中身を動かす `ProfileTabPager` だけが渡す）
-    var follow: Binding<CGFloat>? = nil
+    var follow: ProfileTabDrag? = nil
+    /// 動いている間、入ってくる隣の札を知らせる（作っておく・縦の位置をそろえる）
+    var willShow: ((ProfileTab) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -169,15 +218,16 @@ struct ProfileTabSwipe: ViewModifier {
                         ProfileTab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
                     },
                     onChange: { dx, width in
-                        follow?.wrappedValue = CGFloat(ProfileTab.followOffset(from: selection, in: tabs,
-                                                                               dx: dx, width: width))
+                        if let next = ProfileTab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
+                        follow?.offset = CGFloat(ProfileTab.followOffset(from: selection, in: tabs,
+                                                                         dx: dx, width: width))
                     },
                     onEnd: { dx, velocity, width in
                         let next = ProfileTab.settled(from: selection, in: tabs,
                                                       dx: dx, velocity: velocity, width: width)
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
-                            follow?.wrappedValue = 0
+                            follow?.offset = 0
                         }
                     })
             }
@@ -266,7 +316,11 @@ struct ProfileSwipePanHost: UIViewRepresentable {
             host = scroll
         }
 
+        /// 外す。**払いの途中なら「取り消し」として終える**（画面を離れたときにずらしを残さない）
         func detach() {
+            if pan.state == .began || pan.state == .changed {
+                handlers?.onEnd(0, 0, Double(probe?.bounds.width ?? 0))
+            }
             pan.view?.removeGestureRecognizer(pan)
             host = nil
         }
@@ -323,6 +377,12 @@ enum ProfileTabScroll {
     ///   - visibleTop: 見えている上端（カバーを時計の裏まで伸ばしたマイページは時計の下＝安全域の高さ。ほかは 0）
     static func scrollsToRow(rowMinY: CGFloat, visibleTop: CGFloat) -> Bool {
         rowMinY < visibleTop - 0.5
+    }
+
+    /// 札の行が見えている上端からどれだけ上へ出ているか（出ていなければ 0）。払っている間、選んでいない札を
+    /// これだけ下げると、札の行を上端へ送ったときの位置に頭が来る（`ProfileTabPager.lift`・2026-10-28）
+    static func rowOverflow(rowMinY: CGFloat, visibleTop: CGFloat) -> CGFloat {
+        scrollsToRow(rowMinY: rowMinY, visibleTop: visibleTop) ? visibleTop - rowMinY : 0
     }
 
     /// `scrollTo` の目印の縦の割合。札の行の上端を `visibleTop` に合わせる

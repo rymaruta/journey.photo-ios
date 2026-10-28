@@ -63,7 +63,7 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     // 実機で効かなかった本当の原因は判定の厳しさより、払いを SwiftUI の `DragGesture`（`simultaneousGesture`）で
     // 受けていたこと——縦の `ScrollView` の指の操作が先に始まると、払いが途中で取り消されて終わりの判定まで
     // 届かなかった（`ProfileTabSwipe` の注記）。いまは UIKit の指の操作で受け、ここは数の決まりだけを持つ:
-    // - 始める: 動き始めの向きが**縦より横**（45° より寝ている）で、その向きに隣の札があるとき。
+    // - 始める: 動き始めの横が**縦の `swipeStartRatio` 倍より大きい**（約 40° より寝ている）で、その向きに隣の札があるとき。
     //   始まったらその指の間は縦に送らない（向きの固定）ので、斜めの縦送りで一覧が突然消えることはない
     // - 動いている間: 中身が指に付いてくる（`followOffset`）。隣が無い向きへは動かさない
     // - 離したとき: 幅の `swipeCommitFraction` 以上動かしたか、同じ向きに `swipeFlingVelocity` 以上の
@@ -77,10 +77,10 @@ enum ProfileTab: String, CaseIterable, Identifiable {
         return tabs.indices.contains(next) ? tabs[next] : nil
     }
 
-    /// 横の払いを始めるか（動き始めの量で見る）。縦より横で、その向きに隣の札があるときだけ。
+    /// 横の払いを始めるか（動き始めの量で見る）。横が縦の `swipeStartRatio` 倍より大きく、その向きに隣の札があるときだけ。
     /// 隣が無い向き（いちばん左の札で右へ）は始めない——人のページの「戻る」の払いに渡す
     static func startsSwipe(from current: ProfileTab, in tabs: [ProfileTab], dx: Double, dy: Double) -> Bool {
-        abs(dx) > abs(dy) && neighbor(of: current, in: tabs, towards: dx) != nil
+        abs(dx) > abs(dy) * swipeStartRatio && neighbor(of: current, in: tabs, towards: dx) != nil
     }
 
     /// 動いている間、中身をどれだけ横へずらすか。指の量そのまま（画面の幅まで）。隣が無い向きへは 0
@@ -107,6 +107,12 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     /// 離したときにこれだけ動かしていれば替える（中身の幅に対する割合）
     static let swipeCommitFraction: Double = 0.3
-    /// 離したときにこの速さ（pt/秒）以上なら、短くても替える
-    static let swipeFlingVelocity: Double = 300
+    /// 払いを始める横と縦の比（2026-10-28 判断・確かめ役の見直し）。45°（1.0）だと、親指で斜めに流す縦送りの
+    /// 出だしが横に寄ったときに札の払いが始まり、縦に送れなくなる（始まったらその指の間は縦に送らない）。
+    /// 以前の 1.5 は厳しすぎて普通の払いが効かなかった。その間の 1.2（約 40°）
+    static let swipeStartRatio: Double = 1.2
+    /// 離したときにこの速さ（pt/秒）以上なら、短くても替える（2026-10-28 判断: 300 → 500）。
+    /// 300 では、少し横へ動かして戻しかけた指の揺れでも替わることがあった。ゆっくりでも幅の 3 割動かせば
+    /// 替わる（`swipeCommitFraction`）ので、勢いの決まりは「はっきり払った」ときだけでよい
+    static let swipeFlingVelocity: Double = 500
 }

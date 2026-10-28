@@ -403,7 +403,8 @@ struct MyPageView: View {
                     // 「見えている高さ − 札の行と間」——いちばん下まで送っても札の行が上端に残る
                     ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                     minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
-                                                                              rowHeight: tabRowHeight, spacing: 14)) { page in
+                                                                              rowHeight: tabRowHeight, spacing: 14),
+                                    rowOverflow: ProfileTabScroll.rowOverflow(rowMinY: tabRowMinY, visibleTop: visibleTop)) { page in
                         VStack(alignment: .leading, spacing: 14) {
                             tabContent(page)
                         }

@@ -58,11 +58,12 @@ final class ProfileTabTests: XCTestCase {
         XCTAssertEqual(ProfileTab.followOffset(from: .posts, in: mine, dx: 120, width: 390), 0, "隣の無い向きへ中身が動く")
     }
 
-    /// 🔴 始めるのは動き始めが縦より横のときだけ（2026-10-28: 以前の「縦の 1.5 倍」は厳しすぎた）。
+    /// 🔴 始めるのは動き始めの横が縦の 1.2 倍より大きいときだけ（2026-10-28: 以前の 1.5 倍は厳しすぎた）。
     /// 始まったらその指の間は縦に送らない（向きの固定・`ProfileTabSwipe`）
     func testSwipeStartsOnlyWhenMostlyHorizontal() {
         XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -12, dy: 3))
-        XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -10, dy: 8), "45° より寝た払いで始まらない")
+        XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -10, dy: 8), "約 40° より寝た払いで始まらない")
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -9, dy: 8), "斜めの縦送り（約 42°）で始まる")
         XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -8, dy: 8), "斜め 45° の縦送りで始まる")
         XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -3, dy: -12), "縦の送りで始まる")
     }
@@ -83,8 +84,13 @@ final class ProfileTabTests: XCTestCase {
         XCTAssertEqual(ProfileTab.settled(from: .trips, in: mine, dx: 40, velocity: 500, width: 390), .posts)
         // 短くてゆっくり → 戻る
         XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -100, velocity: -100, width: 390))
-        // 動かしてから逆へ払い戻した → 戻る
+        // 少し動かした指の揺れ（以前の 300pt/秒 なら替わっていた）→ 戻る
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -40, velocity: -400, width: 390))
+        // 動かしてから逆へ払い戻した → 戻る（替えない）。🔴 旅の記録なら逆向きにも隣（投稿）があるので、
+        // 逆向きの払いで反対側の札へ飛ばないこと（`settled` の向きの guard）
         XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -200, velocity: 900, width: 390))
+        XCTAssertNil(ProfileTab.settled(from: .trips, in: mine, dx: -200, velocity: 900, width: 390),
+                     "左へ動かしてから右へ払い戻したのに、反対側の札へ替わった")
         // 境目
         XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -390 * ProfileTab.swipeCommitFraction,
                                           velocity: 0, width: 390), .trips)

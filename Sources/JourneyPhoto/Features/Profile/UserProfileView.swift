@@ -201,7 +201,10 @@ struct UserProfileView: View {
                 ProfileTabPager(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
                                 minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
                                                                           rowHeight: tabRowHeight, spacing: JPSpace.m),
-                                swipeBlocked: [.map]) { page in
+                                swipeBlocked: [.map],
+                                rowOverflow: ProfileTabScroll.rowOverflow(rowMinY: tabRowMinY, visibleTop: visibleTop),
+                                // 地図は払いの途中に初めて作ると引っかかる。開いて少し待ってから先に作る（2026-10-28）
+                                prebuilt: [.map]) { page in
                     VStack(alignment: .leading, spacing: JPSpace.m) {
                         tabContent(page)
                     }
