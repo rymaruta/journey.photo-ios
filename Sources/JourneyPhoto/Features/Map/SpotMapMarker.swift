@@ -10,6 +10,10 @@ import SwiftUI
 /// 以前は灰色の丸（地 rgba(40,40,44,0.92)）で、緑の地図に沈んで見つけにくかった
 /// （owner の指摘）。**地図のピンは真鍮**（owner の好み・CLAUDE.md）。
 /// 押せる範囲（44pt）と読み上げ名は呼ぶ側のボタンが付ける（ここは絵だけ）
+///
+/// **影は付けない**（2026-10-28 判断・重さの直し・owner 承認）。板は影 14 / 55% だが、`.shadow` はピン1つごとに
+/// 画面の外で形をぼかす描き足しが要り、地図を動かすたびにピンの数だけ描き直す。見分けは縁（真鍮・白）で付く。
+/// みんなの写真のピン（`PhotoMapView.photoPinFrame`）も同じ
 struct SpotMapMarker: View {
 
     let photoURL: URL?
@@ -63,8 +67,6 @@ struct SpotMapMarker: View {
                 .background(WebTheme.accent)
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: JPStroke.ringGap))
-                // 板の影（14 / 55%）
-                .shadow(color: .black.opacity(0.55), radius: 7, y: 4)
                 .accessibilityHidden(true)
         } else {
             Image(systemName: "camera.fill")
@@ -73,7 +75,6 @@ struct SpotMapMarker: View {
                 .frame(width: Self.plainSize, height: Self.plainSize)
                 .background(WebTheme.accent, in: Circle())
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.92), lineWidth: JPStroke.emphasis))
-                .shadow(color: .black.opacity(0.55), radius: 6, y: 4)
                 .accessibilityHidden(true)
         }
     }

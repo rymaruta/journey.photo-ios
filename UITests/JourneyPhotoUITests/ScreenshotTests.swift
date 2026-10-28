@@ -2334,7 +2334,13 @@ final class ScreenshotTests: XCTestCase {
         // SwiftUI の NavigationLink は iOS/Xcode の組み合わせによって buttons ではなく
         // otherElements として公開されることがある。識別子を付けた行そのものを型に依存せず探す。
         let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
-        guard row.waitForExistence(timeout: 15) else {
+        // 🔴 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（PR #390 の検証 run 728・2026-10-28: 3 回目の起動で
+        // タブの中身が「読み込み中」のまま行が出なかった）。長めに待ち、出なければタブを押し直してもう一度待つ
+        if !row.waitForExistence(timeout: 30), tripsTab.exists, tripsTab.isHittable {
+            note(app, "旅の記録の行 \(id)", "30 秒待っても \(id) が出ない。タブを押し直す")
+            tripsTab.tap()
+        }
+        guard row.waitForExistence(timeout: 30) else {
             note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
             return false
         }
@@ -2343,15 +2349,28 @@ final class ScreenshotTests: XCTestCase {
         let bottom = app.windows.firstMatch.frame.maxY - 100
         pushes = 0
         while pushes < 10 {
+            // 🔴 送っている間に、行の上の札（旅の一冊など）が押されて別の画面へ移ることがある（PR #390 の検証 2026-10-28:
+            // 大きい文字で「山中湖の旅」の頁に移り、`row.frame` が「見つからない」で落ちた。10/27 run 40520085031 も同じ）。
+            // 行が消えて戻るボタンがあれば、戻ってから探し直す（消えたまま frame を読まない）
+            if !row.exists {
+                let back = app.navigationBars.buttons["BackButton"].firstMatch
+                guard back.exists else { break }
+                note(app, "旅の記録の行 \(id)", "送っている間に別の画面へ移った。戻って探し直す")
+                back.tap()
+                guard row.waitForExistence(timeout: 10) else { break }
+                pushes += 1
+                continue
+            }
             let before = row.frame
             Thread.sleep(forTimeInterval: 0.5)
-            if row.exists, row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
+            guard row.exists else { continue }
+            if row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
             if row.frame.minY <= 80 { app.swipeDown() } else if row.frame.maxY >= bottom || !row.isHittable { app.swipeUp() }
             Thread.sleep(forTimeInterval: 0.8)
             pushes += 1
         }
-        guard row.isHittable else {
-            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.frame)）")
+        guard row.exists, row.isHittable else {
+            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.exists ? "\(row.frame)" : "行が無い")）")
             return false
         }
         row.tap()

@@ -43,12 +43,16 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// 組み上がった後の最初のコマを描いた（外から入る時の覆いを消す合図・2026-10-21）
     var onDrawn: () -> Void = {}
 
+    /// 輪郭のなめらかさ（2026-10-28 判断・重さの直し・owner 承認）。4 倍から 2 倍へ。家具の縁が少し粗くなる。
+    /// 家具の接写の一覧（`CamperRoomContactSheet`）は画面の外で 1 回描くだけなので 4 倍のまま
+    static let antialiasing: SCNAntialiasingMode = .multisampling2X
+
     func makeCoordinator() -> CamperRoomScene { CamperRoomScene() }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.backgroundColor = .clear
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = Self.antialiasing
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = false
         #if canImport(SceneKit)
