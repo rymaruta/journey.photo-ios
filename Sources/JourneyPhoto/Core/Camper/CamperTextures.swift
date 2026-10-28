@@ -49,8 +49,34 @@ enum CamperTextures {
         }
     }
 
-    /// 素材の貼り絵（白〜灰の明るさの絵。色は素材の色を掛ける）
+    /// 素材の貼り絵（白〜灰の明るさの絵。色は素材の色を掛ける）。種類ごとに 1 回だけ描いて控える。
+    /// 2026-10-28 判断: 絵は種類だけで決まる（乱れも決まった種）のに、部屋を組むたび（`CamperRoomScenePlan.make`）・家具の小さな絵を
+    /// 1 枚描くたび（`CamperRoomRaster`）に描き直していた。Linux の Debug で部屋 1 回の下ごしらえ 8.2 秒のうち約 7 秒がこれ
+    /// （同じ種類を色違いで何度も描く）・小さな絵 1 枚 0.38 秒。控えは種類の数（約 40）× 256×256 まで（多くて 10MB ほど）。
+    /// 控えた絵が描き直した絵と画素まで同じことは `CamperTextureMemoTests` が守る
     static func make(_ kind: CamperTextureKind) -> CamperBitmap {
+        memoGate.lock()
+        if let hit = memo[kind] { memoGate.unlock(); return hit }
+        memoGate.unlock()
+        let made = generate(kind)
+        memoGate.lock()
+        memo[kind] = made
+        memoGate.unlock()
+        return made
+    }
+
+    private static let memoGate = NSLock()
+    private static var memo: [CamperTextureKind: CamperBitmap] = [:]
+
+    /// 控えにあるか（試験用）
+    static func isMemoized(_ kind: CamperTextureKind) -> Bool {
+        memoGate.lock()
+        defer { memoGate.unlock() }
+        return memo[kind] != nil
+    }
+
+    /// 貼り絵を描く（控えを通さない。試験で控えと見比べる）
+    static func generate(_ kind: CamperTextureKind) -> CamperBitmap {
         switch kind {
         case .woodGrain: return woodGrain()
         case .weave: return weave()
