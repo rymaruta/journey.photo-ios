@@ -3574,6 +3574,71 @@ final class ScreenshotTests: XCTestCase {
         app.terminate()
     }
 
+    /// **全体の再生器を指で動かす**（2026-10-28 owner「再生中の音楽自由に動かせるといいね」・`MiniPlayerPlacement`）。
+    /// マイページの BGM を鳴らしてホームへ移り、「いまの季節のスポット」の説明文の上に再生器が重なった所を1枚
+    /// （地が透けず、曲名・歌手名が読めること）。次に左上へ引いて離し、左の端へ寄った所を1枚撮る。
+    /// 曲の行・再生器・段が出なければ撮らない（この試験の決まり）。左の端へ寄らなければ落とす
+    func testCapturesMiniPlayerDrag() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
+        guard song.waitForExistence(timeout: 20) else { return }
+        song.tap()
+        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
+        guard bar.waitForExistence(timeout: 15) else { return }
+
+        // ホームの「いまの季節のスポット」の段まで送る（同じ短い引き・上限あり）
+        tabBar.buttons.element(boundBy: 0).tap()
+        let card = app.buttons["home.spotShelf.card"].firstMatch
+        guard card.waitForExistence(timeout: 20) else { return }
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var pushes = 0
+        while !card.isHittable, pushes < 3 {
+            low.press(forDuration: 0.05, thenDragTo: high)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        // 札の説明文が再生器の高さに来るよう、もう一引き（札の下端が再生器より上に抜けない範囲で）
+        if card.frame.maxY < bar.frame.minY {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard bar.exists else { return }
+        // 作例の写真とジャケットは通信で来るので少し待つ
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertLessThan(bar.frame.width, app.frame.width - 24, "全幅のまま（左右へ寄せられない）")
+        shoot(app, "10m-ホーム（再生器・説明文に重なった所）")
+
+        // 曲名の辺り（停止ボタンでない所）をつまんで左上へ引いて離す → 左の端へ寄る
+        let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+        let target = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.45))
+        start.press(forDuration: 0.2, thenDragTo: target)
+        Thread.sleep(forTimeInterval: 1.5)
+        guard bar.exists else {
+            XCTFail("引いただけで再生器が消えた")
+            return
+        }
+        XCTAssertEqual(bar.frame.minX, app.frame.minX + 12, accuracy: 3, "左の端へ寄っていない")
+        XCTAssertLessThan(bar.frame.midY, app.frame.height * 0.6, "離した高さに残っていない")
+        shoot(app, "10m-ホーム（再生器・左の端へ寄せた）")
+        app.terminate()
+    }
+
     /// **マイページの札を横に払って切り替える**（2026-10-24 owner「切り替えスムーズに」・`ProfileTabPager`）。
     /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
     /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす
