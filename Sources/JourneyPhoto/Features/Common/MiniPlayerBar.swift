@@ -72,7 +72,7 @@ struct MiniPlayerBar: View {
     /// - #395 より前の白 10%（`WebTheme.raised`）はぼかしが無く、下の説明文の字がそのまま見えて
     ///   曲名・歌手名と重なって読めなかった。ぼかし1枚で下の字を崩し、曲名・歌手名に薄い影を付けて読ませる
     /// - 軽くする: ぼかし（material）は1枚だけ（重ねるとスクロール中に毎フレームの計算が増える）。
-    ///   再生器の外の影は置いている間は付けない（引いている間だけ）。ガラスの下に影があると透け感も濁る
+    ///   再生器の外の影は置いている間は付けない（引いている間だけ・角丸の形にだけ）。ガラスの下に影があると透け感も濁る
     /// - 曲選びの中のバーは板 SongPicker どおり不透明の面（#17171a の段）のまま
     private func bar(_ song: Photo.Song) -> some View {
         HStack(spacing: 10) {
@@ -121,6 +121,15 @@ struct MiniPlayerBar: View {
                 .overlay(shape.strokeBorder(WebTheme.hairline, lineWidth: 1))
         } else {
             Color.clear.jpGlass(in: shape)
+                // 2026-10-28 判断（再生の重さの担当の手がかり）: #395 は `.shadow(radius: 14)` を再生器の中身ごとに
+                // 付けていて、スクロール中に影を描き直していた疑い。影は**角丸の形にだけ**、**引いている間だけ**付ける。
+                // 置いている間は影なし（ガラスの下に影があると透け感も濁る）
+                .background {
+                    if dragging {
+                        shape.fill(Color.black.opacity(0.5))
+                            .shadow(color: .black, radius: 18, x: 0, y: 10)
+                    }
+                }
         }
     }
 
@@ -163,11 +172,9 @@ struct MiniPlayerBar: View {
                 // 再生器全体を1つの入れ物にして道しるべを付ける（中の曲の札・停止ボタンは別々に読む）
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("mini.player")
-                // 持ち上げた感じ: 少し縮めて影を付ける（置いている間は影なし・`bar` の注記）。
+                // 持ち上げた感じ: 少し縮める（影は `ground` の角丸にだけ・引いている間だけ）。
                 // 「動きを減らす」なら縮めない
                 .scaleEffect(dragging && !reduceMotion ? Self.liftedScale : 1)
-                .shadow(color: .black.opacity(dragging ? 0.6 : 0), radius: dragging ? 18 : 0,
-                        x: 0, y: dragging ? 10 : 0)
                 // 普通に引けば動く（停止ボタンのタップは 12pt 動かないので引きにならず効く）
                 .gesture(dragGesture(container: container, size: size))
                 // 動き始めた瞬間に軽く震わせる（掴んだ合図）

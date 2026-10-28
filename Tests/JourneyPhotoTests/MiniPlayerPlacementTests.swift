@@ -170,8 +170,11 @@ final class MiniPlayerPlacementTests: XCTestCase {
         XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")
         XCTAssertTrue(bar.contains(".shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity)"),
                       "ガラスの上の曲名・歌手名に影が無い")
-        XCTAssertTrue(bar.contains(".shadow(color: .black.opacity(dragging ? 0.6 : 0), radius: dragging ? 18 : 0"),
-                      "置いている間も外の影がある（重い・透け感が濁る）")
+        // 外の影は角丸の形にだけ・引いている間だけ（中身ごとの影はスクロール中に描き直して重い）
+        XCTAssertFalse(bar.contains(".shadow(color: .black.opacity(dragging"), "再生器の中身ごとに影を付けている")
+        XCTAssertFalse(bar.contains("radius: dragging ? 22 : 14"), "置いている間も中身ごとの影がある（重い）")
+        XCTAssertTrue(bar.contains("if dragging {\n                        shape.fill(Color.black.opacity(0.5))\n                            .shadow("),
+                      "影が角丸の形にだけ・引いている間だけになっていない")
         XCTAssertTrue(bar.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "停止が 44pt でない")
         for text in ["L(\"再生中の曲\", \"Now playing\")", "L(\"ドラッグで移動\", \"Drag to move\")", "上へ移す", "下へ移す",
                      "左の端へ", "右の端へ", "joined(separator: L("] {
