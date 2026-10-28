@@ -102,21 +102,43 @@ final class PerfMeasureTests: XCTestCase {
     /// ホームの1枚目の写真の詳細から、カテゴリの札（「風景」など）を押して、カテゴリの集約の一覧（`PhotoGrid`）を開く。
     /// 探すの「すべて見る」は木に出てこなかった（run 717・721・722）ので、詳細のカテゴリの札から入る
     private func openCollection(_ app: XCUIApplication) {
-        openFirstFeedPhoto(app)
+        // 枚数の多いカテゴリを選ぶ（run 724・725 は「動物」で一覧が小さかった）。ホームの札を順に開いて札の名前を見る
         let names = ["写真", "イラスト", "デザイン", "自然", "風景", "建築", "街", "人物", "動物", "食べ物"]
-        let chip = app.buttons.matching(NSPredicate(format: "label IN %@", names)).firstMatch
-        var pushes = 0
-        while !(chip.exists && chip.isHittable), pushes < 6 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        let preferred = ["風景", "自然", "写真", "街", "建築"]
+        tab(app, 0)
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 5), recommended.isHittable { recommended.tap() }
+        XCTAssertTrue(app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 40), "ホームに写真が出ない")
+        var seen: [String] = []
+        for i in 0..<8 {
+            let photo = app.buttons.matching(identifier: "feed.photo").element(boundBy: i)
+            reveal(photo, in: app, "ホームの \(i + 1) 枚目")
+            photo.tap()
+            XCTAssertTrue(app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 20), "写真の詳細が開かない")
+            Thread.sleep(forTimeInterval: 1.5)
+            let chip = app.buttons.matching(NSPredicate(format: "label IN %@", names)).firstMatch
+            var pushes = 0
+            while !(chip.exists && chip.isHittable), pushes < 4 {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            if chip.exists && chip.isHittable {
+                seen.append(chip.label)
+                if preferred.contains(chip.label) || i == 7 {
+                    note("カテゴリ=\(chip.label)（見た札: \(seen.joined(separator: ",")))")
+                    chip.tap()
+                    XCTAssertTrue(app.buttons["photo.like"].firstMatch.waitForNonExistence(timeout: 15), "集約の一覧が開かない")
+                    Thread.sleep(forTimeInterval: 4)
+                    return
+                }
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            _ = app.buttons["photo.like"].firstMatch.waitForNonExistence(timeout: 10)
             Thread.sleep(forTimeInterval: 1)
-            pushes += 1
         }
-        XCTAssertTrue(chip.exists && chip.isHittable, "写真の詳細にカテゴリの札が無い")
-        note("カテゴリ=\(chip.label)")
-        chip.tap()
-        XCTAssertTrue(app.buttons["photo.like"].firstMatch.waitForNonExistence(timeout: 15), "集約の一覧が開かない")
-        Thread.sleep(forTimeInterval: 4)
+        XCTFail("枚数の多いカテゴリの札が見つからない（見た札: \(seen.joined(separator: ",")))")
     }
 
     /// ホームの1枚目を開く（並び＝ホームの一覧が、大きく見る画面のサムネイルの列になる）
@@ -234,7 +256,8 @@ final class PerfMeasureTests: XCTestCase {
             if !counted {
                 counted = true
                 let n = app.buttons.matching(NSPredicate(format: "label ENDSWITH '枚目'")).count
-                note("サムネイルの札（木に出ている数）=\(n)")
+                let pos = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '枚中'")).firstMatch
+                note("サムネイルの札（木に出ている数）=\(n) 位置=\(pos.exists ? pos.label : "?")")
             }
             XCTAssertTrue(close.waitForExistence(timeout: 5), "閉じるが無い")
             close.tap()
