@@ -168,6 +168,9 @@ struct ProfilePatch: Encodable {
     /// 認証済みの印を外すか（2026-10-10）。公式の人だけが送る。`false` で付け直す・`nil` は「触らない」。
     /// **資格（`verified`）そのものは送れない**（サーバーが受け取らない）
     var verifiedMarkOff: Bool?
+    /// 初期メンバーの印を付けるか（2026-10-28）。初期ユーザーのバッジを持つ人だけが送る。`true` 付ける・
+    /// `false` 外す・`nil` は「触らない」（既定に戻す `null` は画面から作らない）
+    var earlyMarkOn: Bool?
     /// 光と天気の知らせを受け取るか（Pro・2026-10-09）。**真偽だけ**（サーバーは文字の "false" を 400 で断る）。
     /// `nil` は「触らない」
     var lightAlert: Bool?

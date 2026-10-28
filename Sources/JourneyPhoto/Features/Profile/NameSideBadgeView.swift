@@ -57,6 +57,8 @@ struct NameSideBadgeView: View {
     @State private var style: ProMarkStyle? = .iris
     /// 公式の印を付けているか（公式の人だけ意味を持つ）
     @State private var verifiedOn = true
+    /// 初期メンバーの印の本人の設定（nil は決めていない＝既定。資格のある人だけ意味を持つ）
+    @State private var earlyOn: Bool?
     @State private var saving = false
     @State private var errorMessage: String?
     /// 長押しで手に取ったメダル
@@ -72,6 +74,7 @@ struct NameSideBadgeView: View {
         _selected = State(initialValue: NameSideChoice.initialSelection(profile))
         _style = State(initialValue: profile.chosenProMark)
         _verifiedOn = State(initialValue: !profile.verifiedMarkRemoved)
+        _earlyOn = State(initialValue: profile.earlyMarkChoice)
         _badges = State(initialValue: profile.earnedBadges)
     }
 
@@ -79,6 +82,17 @@ struct NameSideBadgeView: View {
     /// 公式の資格があるか（外していても true）
     private var isVerified: Bool { profile.verified == true }
     private var selectedBadge: EarnedBadge? { selected.flatMap { badges[$0] } }
+    /// 初期メンバーの印の資格（初期ユーザーのバッジ。`GET /user/badges` を読んだらそちらで見る）
+    private var isEarlyMember: Bool { badges["earlyUser"] != nil }
+    /// この設定なら初期メンバーの印が名前の横に出るか（下見・サーバーの `showsEarlyMark` と同じ規則）
+    private var earlyShown: Bool {
+        NameSideChoice.earlyShown(
+            qualified: isEarlyMember, choice: earlyOn,
+            verifiedShown: isVerified && verifiedOn,
+            proShown: profile.isPro && style != nil,
+            badgeShown: selectedBadge != nil
+                || NameSideChoice.keepsUnknownOwnedBadge(profile: profile, selected: selected))
+    }
 
     /// 板: 4列・隙間 2pt
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
@@ -102,6 +116,11 @@ struct NameSideBadgeView: View {
                     }
                     if isVerified {
                         verifiedPicker
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
+                    }
+                    if isEarlyMember {
+                        earlyPicker
                             .padding(.horizontal, 20)
                             .padding(.top, 12)
                     }
@@ -193,7 +212,7 @@ struct NameSideBadgeView: View {
                     // 明朝は 18pt を割らない（26 × 0.7 ≈ 18.2・JPFont の注記）
                     .minimumScaleFactor(0.7)
                 NameMarks(verified: isVerified && verifiedOn, proStyle: profile.isPro ? style : nil,
-                          badge: selectedBadge, nameSize: 26, relativeTo: .title, fit: .mincho)
+                          early: earlyShown, badge: selectedBadge, nameSize: 26, relativeTo: .title, fit: .mincho)
             }
             .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
             Text(selectedBadge.map { BadgeCatalog.fullName($0.key, tier: $0.tier) }
@@ -259,6 +278,38 @@ struct NameSideBadgeView: View {
     }
 
     /// 「外す」の札（バッジの「なし」と同じ点線の丸と斜線を小さく）
+    // MARK: - 初期メンバーの印
+
+    /// 初期ユーザーのバッジを持つ人だけ。付ける / 外す。**選ばれている札は本人が決めた値だけ**
+    /// （2026-10-28 Web のレビューの指摘と同じ判断: 出ているかで札を選ぶと、既定で出ている人の
+    /// 「付ける」が最初から選ばれていて、押しても決めたことにならない）。決めるまでは下の一行で今の状態を言う
+    private var earlyPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            markRow(title: L("初期メンバーの印", "Early member mark")) {
+                markOption(on: earlyOn == true, label: L("初期メンバーの印を付ける", "Show the early member mark"),
+                           identifier: "nameSide.early.on",
+                           action: { earlyOn = true }) {
+                    HStack(spacing: 6) {
+                        EarlyMemberMark(side: 18).accessibilityHidden(true)
+                        Text(L("付ける", "Show")).font(.caption)
+                    }
+                }
+                markOption(on: earlyOn == false, label: L("初期メンバーの印を外す", "Remove the early member mark"),
+                           identifier: "nameSide.early.off",
+                           action: { earlyOn = false }) {
+                    removeLabel
+                }
+            }
+            if earlyOn == nil {
+                Text(NameSideChoice.earlyAutoNote(shown: earlyShown))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("nameSide.early.auto")
+            }
+        }
+    }
+
     private var removeLabel: some View {
         HStack(spacing: 6) {
             NameSideNoneMark(side: 18)
@@ -534,7 +585,8 @@ struct NameSideBadgeView: View {
     private func save() async {
         guard !saving, refreshed else { return }
         guard let patch = NameSideChoice.patch(profile: profile, selected: selected, style: style,
-                                               verifiedOn: verifiedOn) else {
+                                               verifiedOn: verifiedOn,
+                                               earlyOn: isEarlyMember ? earlyOn : nil) else {
             dismiss()
             return
         }
@@ -592,6 +644,25 @@ enum NameSideChoice {
         }
     }
 
+    /// 初期メンバーの印がこの設定なら出るか（2026-10-28）。**サーバーの `showsEarlyMark` と同じ規則**:
+    /// 資格があり、本人が決めていればそれ、決めていなければ（既定）名前の横に公式の印・Pro マーク・
+    /// 選んだバッジのどれも出ていないとき。保存した後に出すのはサーバーの答え（`UserProfile.showsEarlyMark`）
+    static func earlyShown(qualified: Bool, choice: Bool?, verifiedShown: Bool, proShown: Bool,
+                           badgeShown: Bool) -> Bool {
+        guard qualified else { return false }
+        if let choice { return choice }
+        return !verifiedShown && !proShown && !badgeShown
+    }
+
+    /// 決めていない（既定の）ときの一行。いま付いているか・外れているかと、その理由
+    static func earlyAutoNote(shown: Bool) -> String {
+        shown
+            ? L("いまは自動で付いています（名前の横にほかの印が無いため）。決めておくこともできます。",
+                "Shown for now: nothing else is next to your name. Choose to keep it or remove it.")
+            : L("いまは自動で外れています（名前の横にほかの印があるため）。「付ける」で並べて出せます。",
+                "Hidden for now: something else is next to your name. Choose Show to add it.")
+    }
+
     /// 開いたときに選ばれているもの。**持っている鍵を選んでいるときだけ**（取り消された鍵は「なし」）
     static func initialSelection(_ profile: UserProfile) -> String? {
         guard let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) else { return nil }
@@ -603,8 +674,10 @@ enum NameSideChoice {
     /// - バッジ: 選んだ鍵、または「なし」（JSON の null）
     /// - Pro マークの形: Pro の人だけ。nil は外す（`"none"`）
     /// - 公式の印: 公式の人だけ（`verifiedMarkOff`）。`verifiedOn` が nil なら触らない
+    /// - 初期メンバーの印: 資格のある人だけが渡す（`earlyMarkOn`）。決めた値が開いたときと違えば送る。
+    ///   `earlyOn` が nil（決めていない）なら触らない
     static func patch(profile: UserProfile, selected: String?, style: ProMarkStyle?,
-                      verifiedOn: Bool? = nil) -> ProfilePatch? {
+                      verifiedOn: Bool? = nil, earlyOn: Bool? = nil) -> ProfilePatch? {
         var patch = ProfilePatch()
         var changed = false
         // 持っていない鍵を指していた人が「なし」のまま決めたら、その古い値も消す。
@@ -620,6 +693,10 @@ enum NameSideChoice {
         }
         if profile.verified == true, let verifiedOn, verifiedOn == profile.verifiedMarkRemoved {
             patch.verifiedMarkOff = !verifiedOn
+            changed = true
+        }
+        if let earlyOn, earlyOn != profile.earlyMarkChoice {
+            patch.earlyMarkOn = earlyOn
             changed = true
         }
         return changed ? patch : nil
