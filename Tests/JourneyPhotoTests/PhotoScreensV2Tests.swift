@@ -52,7 +52,7 @@ final class PhotoScreensV2Tests: XCTestCase {
     /// 写真の裾（撮影地・撮影スポットの行・ページの点）は白だけ。字は影つき
     func testPhotoFootIsWhiteOnly() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        for name in ["private var photoFoot", "private var pageDots", "private var placeRow",
+        for name in ["private func photoFoot", "private func pageDots", "private var placeRow",
                      "private var spotGuideRow", "private func placeLabel"] {
             assertWhiteOnly(member(name, in: view), name)
         }
@@ -62,7 +62,7 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertTrue(place.contains(".jpPhotoTextShadow()"))
         XCTAssertTrue(member("private var spotGuideRow", in: view).contains(".jpPhotoTextShadow()"))
         // 点は白と白 40%
-        XCTAssertTrue(member("private var pageDots", in: view)
+        XCTAssertTrue(member("private func pageDots", in: view)
             .contains("Color.white.opacity(index == page ? 1 : Self.inactiveDotOpacity)"))
         XCTAssertEqual(PhotoDetailView.inactiveDotOpacity, 0.4)
         // 写真の裾は黒 72% まで（題を重ねないので黒まで溶かさない）・写真は 520
@@ -70,23 +70,23 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertEqual(PhotoDetailView.heroFootShade.height, 150)
         XCTAssertEqual(PhotoDetailView.heroFootShade.opacity, 0.72)
         // 撮影地・撮影スポットの行は写真の裾に（題のかたまりには無い）
-        let image = member("private var imageButton", in: view)
+        let image = member("private func imageButton", in: view)
         XCTAssertTrue(image.contains("photoFoot"), "撮影地の行が写真の裾に無い")
-        let heading = member("private var heading", in: view)
+        let heading = member("private func heading", in: view)
         XCTAssertFalse(heading.contains("placeRow"), "撮影地の行が題のかたまりに残っている")
     }
 
     /// 題・日時は写真の下の黒地: 題は明朝 26（Title 1）、日時は不透明の text-3。影は付けない
     func testHeadingSitsOnBlack() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        let heading = member("private var heading", in: view)
+        let heading = member("private func heading", in: view)
         XCTAssertTrue(heading.contains(".font(JPFont.screenTitle)"))
         XCTAssertTrue(heading.contains(".foregroundStyle(WebTheme.text3)"))
         XCTAssertFalse(heading.contains("jpPhotoTextShadow"), "黒地の題に写真の上の影が残っている")
         XCTAssertFalse(heading.contains("WebTheme.faint"), "黒地の日時が写真の上の透過の灰のまま")
         // 題を写真に重ねる負の余白は無い（v2 は写真の下）
         XCTAssertFalse(view.contains("heroOverlap"))
-        XCTAssertTrue(view.contains("details(proxy)\n                                .padding(.top, JPSpace.l)"))
+        XCTAssertTrue(view.contains("details(proxy, hero: hero)\n                                .padding(.top, JPSpace.l)"))
         // 説明は本文 15 の text-2
         let paragraphs = member("private var paragraphs", in: view)
         XCTAssertTrue(paragraphs.contains(".font(JPFont.body)"))
