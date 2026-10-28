@@ -913,6 +913,39 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "applyHidden してもブロックした人の写真が残る")
     }
 
+    /// 2026-10-28: **`shown` は材料が同じ間は1回だけ作る**（画面は1回の描き直しで5〜6回読む）。
+    /// 語・並び・種類・カテゴリ・季節・一覧のどれかが替われば作り直し、結果は毎回作ったときと同じ
+    func testSearchShownBuiltOncePerInputChange() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ","category":"風景","createdAt":"2026-01-02T00:00:00Z","likes":1},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ","category":"食","createdAt":"2026-03-04T00:00:00Z","likes":5},
+         {"id":"c","src":"https://x/c.jpg","userId":"u1","location":"京都","category":"風景"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        await model.search("パリ", environment: env)
+
+        let start = model.shownBuilds
+        for _ in 0..<6 { XCTAssertEqual(model.shown.map(\.id), ["b", "a"]) }
+        XCTAssertEqual(model.shownBuilds - start, 1, "同じ材料で shown を作り直している")
+
+        model.select(sort: .old)
+        XCTAssertEqual(model.shown.map(\.id), ["a", "b"], "並びを替えても古い結果を出す")
+        model.select(sort: .popular)
+        XCTAssertEqual(model.shown.map(\.id), ["b", "a"])
+        model.select(category: "風景")
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "カテゴリを替えても古い結果を出す")
+        model.select(category: "風景")   // 押し直し＝外す
+        await model.search("京都", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["c"], "語を替えても古い結果を出す")
+        await model.search("", environment: env)
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["a", "b", "c"])
+        model.applyHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["a", "c"], "一覧が替わっても古い結果を出す")
+        XCTAssertEqual(model.shownBuilds - start, 7)
+    }
+
     /// **チップの数は、押したときに出る枚数。** 「すべて」はタグの語を撮影地にも
     /// 当てるので、タグの数（1）を出すと押して2枚出ていた
     func testTagChipCountMatchesWhatTappingShows() async {
