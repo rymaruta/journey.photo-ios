@@ -201,15 +201,18 @@ struct PhotoDetailView: View {
     // 型検査が現実的な時間で終わらなくなることがある
     // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
+        // 2026-10-28 判断: **上の束は描くたびに1回だけ作る**（`HeroLineup`）。写真・点・題の下の1行が
+        // それぞれ作り直していて、1回の描き直しで束の絞り込みと並べ替えが5回走っていた
+        let hero = heroLineup
         GeometryReader { geo in
             ZStack(alignment: .top) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            imageButton
+                            imageButton(hero)
                             // **v2（2026-10-14・板 PhotoDetail）: 題は写真の下の黒地に置く**（以前は写真の裾に
                             // 重ねていた）。写真の上に残すのは撮影地・撮影スポットの行だけ（`photoFoot`）
-                            details(proxy)
+                            details(proxy, hero: hero)
                                 .padding(.top, JPSpace.l)
                         }
                         .padding(.bottom, 32)
@@ -473,8 +476,8 @@ struct PhotoDetailView: View {
     /// 何枚目かは題の下の1行（「1/3枚」）が言うので、写真の上には数も点も置かない。
     /// 束は `groupId` が作る——行は1枚ずつのままなので、個別ページは変わらない
     @ViewBuilder
-    private var imageButton: some View {
-        let group = heroGroup
+    private func imageButton(_ hero: HeroLineup) -> some View {
+        let group = hero.photos
         ZStack(alignment: .bottom) {
             if group.count > 1 {
                 TabView(selection: heroPage) {
@@ -492,7 +495,7 @@ struct PhotoDetailView: View {
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: Self.heroFootShade.height)
                 .allowsHitTesting(false)
-            photoFoot
+            photoFoot(hero)
         }
         .frame(maxWidth: .infinity)
         .frame(height: Self.heroHeight)
@@ -501,9 +504,9 @@ struct PhotoDetailView: View {
 
     /// 写真の裾に乗るもの（v2 の板 PhotoDetail）: 束のページの点と、撮影地・撮影スポットの行。
     /// **写真の上なので白だけ**（点は白と白 40%・行は白の字に白 60% の下線と影）
-    private var photoFoot: some View {
+    private func photoFoot(_ hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            pageDots
+            pageDots(hero)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, JPSpace.xs)
             placeRow
@@ -521,10 +524,10 @@ struct PhotoDetailView: View {
     /// 束のページの点（v2 の板: 6pt・今の1枚は白、ほかは白 40%）。**1枚だけなら出さない**。
     /// 何枚目かは題の下の1行（「1/3枚」）が言うので、読み上げには出さない
     @ViewBuilder
-    private var pageDots: some View {
-        let group = heroGroup
+    private func pageDots(_ hero: HeroLineup) -> some View {
+        let group = hero.photos
         if group.count > 1 {
-            let page = heroPage.wrappedValue
+            let page = hero.index
             HStack(spacing: 6) {
                 ForEach(group.indices, id: \.self) { index in
                     Circle()
@@ -563,10 +566,13 @@ struct PhotoDetailView: View {
         .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
     }
 
+    /// 上の束と、いま見ている位置（`PhotoDetailRules.heroGroup` の返り値）
+    private typealias HeroLineup = (photos: [Photo], index: Int)
+
     /// 同じ投稿の束（1枚だけならこの1枚）。**大きく見る画面と同じく、ブロック・通報した
     /// 写真を落とす**（`PhotoDetailRules.heroGroup`・今の1枚は残す）
-    private var heroGroup: [Photo] {
-        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).photos
+    private var heroLineup: HeroLineup {
+        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits)
     }
 
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）。
@@ -574,11 +580,14 @@ struct PhotoDetailView: View {
     /// 🔴 **束の何枚目かは `current` から引く。** 別に番号を持つと、束から写真が
     /// 落ちたとき（ブロック・通報）に番号だけ古い並びのまま残り、上に出る写真と
     /// 題・いいね・削除の対象が食い違う。送ったら `current` をその1枚にする
+    ///
+    /// **読み書きはその時点の束で**（描いたときの束を閉じ込めない）。送った直後、描き直しの前に
+    /// `TabView` が読み直しても古い位置を返さない。束が2枚以上のときだけ `TabView` が読む
     private var heroPage: Binding<Int> {
         Binding(
-            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).index },
+            get: { heroLineup.index },
             set: { page in
-                let group = heroGroup
+                let group = heroLineup.photos
                 guard group.indices.contains(page) else { return }
                 current = group[page]
             }
@@ -586,11 +595,10 @@ struct PhotoDetailView: View {
     }
 
     /// 題の下の1行（板 02: 「2026.09.12 · 17:42 · 1/3枚」）
-    private var headline: String? {
-        let group = heroGroup
-        return PhotoMetaLine.headline(date: shown.date,
-                                      exifDateTime: shown.exif?.dateTimeOriginal,
-                                      position: heroPage.wrappedValue + 1, of: group.count)
+    private func headline(_ hero: HeroLineup) -> String? {
+        PhotoMetaLine.headline(date: shown.date,
+                               exifDateTime: shown.exif?.dateTimeOriginal,
+                               position: hero.index + 1, of: hero.photos.count)
     }
 
     /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
@@ -607,12 +615,12 @@ struct PhotoDetailView: View {
     ///     曲
     ///     この近くで撮られた写真 ／ 地図で見る
     ///     コメント（N）                      ← 下
-    private func details(_ proxy: ScrollViewProxy) -> some View {
+    private func details(_ proxy: ScrollViewProxy, hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             // **`Group` で束ねる。** `VStack` の中身は10個までで、
             // 印を足したところで溢れた（`extra argument in call`）
             Group {
-                heading
+                heading(hero)
                 chips
                 paragraphs
                 authorRow
@@ -641,7 +649,7 @@ struct PhotoDetailView: View {
 
     /// 題のかたまり（v2 の板 PhotoDetail）: 題 → 日時と枚数。**写真の下の黒地**なので影は付けず、
     /// 日時は黒地の灰（`text3`）。撮影地・撮影スポットの行は写真の裾（`photoFoot`）
-    private var heading: some View {
+    private func heading(_ hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             if !shown.displayTitle.isEmpty {
                 // **題は写真の次に来る主役。** 明朝 26pt（v2 の板・Title 1。文字サイズの設定で伸びる）
@@ -649,7 +657,7 @@ struct PhotoDetailView: View {
                     .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
             }
-            if let headline {
+            if let headline = headline(hero) {
                 // v2 の板: 13px・等幅の数字・text-3
                 Text(headline)
                     .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
@@ -1955,7 +1963,7 @@ struct PhotoDetailView: View {
 
     /// 近くの写真を、読み込み済みの公開写真から拾う（通信は一覧の控えだけ）。
     ///
-    /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
+    /// 見せない写真（ブロック・通報）は落とす。上の束（`heroLineup`）と同じ
     /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
     ///
     /// 🔴 **答えを入れるのは画面に出ている間だけ**（`NearbyShelf.land`）。裏にいる間は印だけ立て、
