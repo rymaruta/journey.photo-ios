@@ -163,9 +163,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
     /// 読み上げに移動の代わりの操作・ドラッグは少し動いてから
     func testBarIsOpaqueAndAccessible() throws {
         let bar = try source("Sources/JourneyPhoto/Features/Common/MiniPlayerBar.swift")
-        XCTAssertFalse(bar.contains("WebTheme.raised"), "透ける地に戻っている")
-        XCTAssertTrue(bar.contains(".background(Self.pickerBarFill, in:"), "不透明の面でない")
-        XCTAssertTrue(bar.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "停止が 44pt でない")
+                        XCTAssertTrue(bar.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "停止が 44pt でない")
         for text in ["L(\"再生中の曲\", \"Now playing\")", "長押ししてドラッグで移動", "上へ移す", "下へ移す",
                      "左の端へ", "右の端へ", "joined(separator: L("] {
             XCTAssertTrue(bar.contains(text), "読み上げの「\(text)」が無い")

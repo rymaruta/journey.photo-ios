@@ -97,7 +97,7 @@ struct MiniPlayerBar: View {
         // 曲選びの中のバーは v2 SongPicker の形（高さ 60・角 18・地 #1A1A1C・縁は白 8%）。
         // 全体のバーも同じ形・同じ地。縁だけ白 12%（写真の上に浮かぶので境目を見せる）
         .frame(minHeight: inSongPicker ? Self.pickerBarHeight : nil)
-        .background(Self.pickerBarFill, in: RoundedRectangle(cornerRadius: Self.pickerBarRadius))
+        .background(inSongPicker ? Self.pickerBarFill : WebTheme.raised, in: RoundedRectangle(cornerRadius: Self.pickerBarRadius))
         .overlay(RoundedRectangle(cornerRadius: Self.pickerBarRadius)
             .strokeBorder(inSongPicker ? WebTheme.hairline : WebTheme.border, lineWidth: 1))
     }
@@ -141,9 +141,7 @@ struct MiniPlayerBar: View {
                 .accessibilityIdentifier("mini.player")
                 // 持ち上げた感じ: 少し縮めて影を濃く。「動きを減らす」なら縮めない
                 .scaleEffect(dragging && !reduceMotion ? Self.liftedScale : 1)
-                .shadow(color: .black.opacity(dragging ? 0.7 : 0.5), radius: dragging ? 22 : 14,
-                        x: 0, y: dragging ? 14 : 8)
-                // 押さえてから引く（停止ボタンのタップは長押しにならないので効く）
+                                // 押さえてから引く（停止ボタンのタップは長押しにならないので効く）
                 .gesture(dragGesture(container: container, size: size))
                 // 持ち上げた瞬間に軽く震わせる（長押しが済んだ合図）
                 .sensoryFeedback(.impact(weight: .light), trigger: dragging) { old, new in !old && new }
