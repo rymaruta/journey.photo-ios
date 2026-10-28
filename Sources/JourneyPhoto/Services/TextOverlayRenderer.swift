@@ -23,8 +23,12 @@ enum TextOverlayRenderer {
     ///
     /// `framing` は写真の合わせ方（拡大・位置・回し・`PhotoFraming`）。**枠の大きさは元の
     /// 写真のまま**で、その中へ合わせたとおりに描き、届かない所は黒で埋める
+    ///
+    /// `song` は付けた曲とジャケット（2026-10-28）。**形のある曲の札は形で焼く**（`SongStickerPainter`・
+    /// 作る画面と同じ絵の止まった形）。無ければ曲の札も文字で焼く（前の版と同じ）
     static func burn(_ overlays: [TextOverlay], framing: PhotoFraming = .identity, into data: Data,
-                     quality: Double = ImagePreparer.jpegQuality) -> Data {
+                     quality: Double = ImagePreparer.jpegQuality,
+                     song: SongStickerPainter.Art? = nil) -> Data {
         let visible = overlays.filter { !$0.isEmpty }
         guard !visible.isEmpty || !framing.isIdentity, let image = UIImage(data: data) else { return data }
         let size = image.size
@@ -54,15 +58,27 @@ enum TextOverlayRenderer {
                 cg.restoreGState()
             }
             for overlay in visible {
-                draw(overlay, on: size, context: context.cgContext)
+                draw(overlay, on: size, context: context.cgContext, song: song)
             }
         }
     }
 
-    private static func draw(_ overlay: TextOverlay, on size: CGSize, context: CGContext) {
+    private static func draw(_ overlay: TextOverlay, on size: CGSize, context: CGContext,
+                             song: SongStickerPainter.Art?) {
         // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
         let fontSize = TextOverlay.fontSize(overlay.size, in: size)
+        // 形のある曲の札（2026-10-28）。中心へ移して回し、札の左上から描く（文字の札と同じ置き方）
+        if let layout = SongStickerPainter.layout(for: overlay, art: song, unit: fontSize) {
+            let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            context.saveGState()
+            defer { context.restoreGState() }
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: overlay.rotation)
+            SongStickerPainter.draw(layout, artwork: song?.artwork, in: context,
+                                    origin: CGPoint(x: -layout.size.width / 2, y: -layout.size.height / 2))
+            return
+        }
         let (attributes, edge) = attributes(for: overlay, fontSize: fontSize)
         // 場所と曲は印（📍 ♪）を頭に付けて焼く。最後の改行は落とす（`drawnText`）
         let text = overlay.drawnText as NSString

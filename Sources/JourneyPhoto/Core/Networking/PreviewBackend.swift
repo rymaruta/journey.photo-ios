@@ -309,7 +309,11 @@ enum PreviewBackend {
             guard let src = photo["src"] as? String,
                   let user = (photo["userId"] as? String) ?? (photo["uploadedBy"] as? String),
                   user != me, seen.insert(user).inserted, seen.count <= 8 else { continue }
-            out.append(story("preview-story-\(seen.count)", src: src, user: user, name: photo["displayName"]))
+            // 人のストーリーには曲と「札を焼き込んだ」印を付ける（名前の下の ♪ の行・長い曲名は流れる・2026-10-28）
+            var row = story("preview-story-\(seen.count)", src: src, user: user, name: photo["displayName"])
+            row["song"] = previewStorySong
+            row["songOnPhoto"] = true
+            out.append(row)
             if seen.count == 1 {
                 out.append(story("preview-story-\(seen.count)b", src: src, user: user, name: photo["displayName"]))
             }
@@ -319,6 +323,12 @@ enum PreviewBackend {
         }
         return out
     }
+
+    /// 見本のストーリーの曲（長い曲名・見る画面の名前の下の行が横に流れるのを撮る）。試聴は鳴らなくてよい
+    static let previewStorySong: [String: Any] = [
+        "title": "夜明けの港で聴くバラード（Long Version）", "artist": "Journey Photo Band",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/preview.m4a",
+    ]
 
     /// 公開の新着（鍵なしで読む・見本の答え手を通さない）。読めなければ空（ストーリーが並ばないだけ）
     static func readPublicFeed() async -> [[String: Any]] {
