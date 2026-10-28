@@ -941,9 +941,13 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["c"], "語を替えても古い結果を出す")
         await model.search("", environment: env)
         XCTAssertEqual(Set(model.shown.map(\.id)), ["a", "b", "c"])
+        model.select(scope: .people)
+        XCTAssertEqual(model.shown.map(\.id), [], "種類を替えても古い結果を出す")
+        model.select(scope: .all)
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["a", "b", "c"])
         model.applyHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         XCTAssertEqual(Set(model.shown.map(\.id)), ["a", "c"], "一覧が替わっても古い結果を出す")
-        XCTAssertEqual(model.shownBuilds - start, 7)
+        XCTAssertEqual(model.shownBuilds - start, 9)
     }
 
     /// **チップの数は、押したときに出る枚数。** 「すべて」はタグの語を撮影地にも
