@@ -56,9 +56,14 @@ enum CamperRoomContactPages {
     }
 
     /// 写真を入れられる額（印画の材質を持つ家具・2026-10-22）
-    static let photoFrames: [CamperRoomFurniture] = CamperRoomCatalog.all.filter { f in
-        f.built && (CamperRoomFurnitureModels.mesh(f.id)?.materials.contains { if case .room(.photo) = $0 { return true } else { return false } } ?? false)
-    }
+    /// 2026-10-28: 全家具の網を作って材質を見るので、手分けして作る（1 つずつでは Mac の試験の 1 分の枠を超えた・run 751）
+    static let photoFrames: [CamperRoomFurniture] = {
+        let built = CamperRoomCatalog.all.filter(\.built)
+        let hasPhoto = CamperRoomFurnitureModels.concurrentMap(built) { f in
+            CamperRoomFurnitureModels.mesh(f.id)?.materials.contains { if case .room(.photo) = $0 { return true } else { return false } } ?? false
+        }
+        return zip(built, hasPhoto).filter(\.1).map(\.0)
+    }()
 
     static func entries(frames: Bool) -> [Entry] {
         frames ? photoFrames.flatMap { [Entry(furniture: $0, photo: "wide"), Entry(furniture: $0, photo: "tall")] }

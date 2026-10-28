@@ -202,6 +202,17 @@ public final class CGContext {
     public func restoreGState() {}
     public func translateBy(x: Double, y: Double) {}
     public func rotate(by angle: Double) {}
+    /// 影（曲の札の焼き込み・本物と同じ）
+    public func setShadow(offset: CGSize, blur: Double, color: CGColor?) {}
+}
+
+/// 色（影の色に渡す）。本物は CoreGraphics が持つ
+public final class CGColor {
+    public init() {}
+}
+
+extension UIColor {
+    public var cgColor: CGColor { CGColor() }
 }
 
 public struct UIGraphicsImageRendererContext {
@@ -307,6 +318,10 @@ public final class UITraitCollection {
 /// 形を描く（丸い点）。本物と同じ名前
 public final class UIBezierPath {
     public init(ovalIn rect: CGRect) {}
+    /// 角の丸い四角（曲の札の地・ジャケット）
+    public init(roundedRect rect: CGRect, cornerRadius: Double) {}
+    /// この形で切り抜く（ジャケットを角丸・丸に描く）
+    public func addClip() {}
     public var lineWidth: Double = 1
     public func fill() {}
     public func stroke() {}

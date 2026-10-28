@@ -57,8 +57,10 @@ final class CamperRoomTests: XCTestCase {
     /// 最初から持っている家具は全部、形を作り込んである（初めて入った部屋に「近日」が並ばない）。形のある家具だけが届き、
     /// 形の無い家具は「近日」で数（分母）から外す
     func testBuiltFurnitureHasModelsAndOnlyBuiltCount() {
-        for f in CamperRoomCatalog.all {
-            XCTAssertEqual(CamperRoomFurnitureModels.mesh(f.id) != nil, f.built, f.id)
+        // 2026-10-28: 全家具の網を作るので手分けする（1 つずつでは Linux で 32 秒）
+        let hasMesh = CamperRoomFurnitureModels.concurrentMap(CamperRoomCatalog.all) { CamperRoomFurnitureModels.mesh($0.id) != nil }
+        for (f, has) in zip(CamperRoomCatalog.all, hasMesh) {
+            XCTAssertEqual(has, f.built, f.id)
             if f.unlock.isStarter { XCTAssertTrue(f.built, f.id) }
         }
         let owned = CamperRoomCatalog.owned(CamperStats(), CamperRoomStats())
@@ -475,39 +477,56 @@ final class CamperRoomTests: XCTestCase {
 
     /// 作り込んだ家具の形: 向きは長さ 1・数は有限、三角形は多すぎない（1 つ 3 万まで）、置くマスに収まる。
     /// 「箱を並べただけ」にしない目安として、どの家具も 2 種類以上の素材と 300 以上の三角形を持つ
+    /// 2026-10-28: 2,000 点を超える家具を 1 つずつ作り、点ごとに XCTAssert を呼ぶと（約 2,900 万回）Mac で 94 秒かかり、試験の
+    /// 1 分の枠を超えた（PR #397・run 751）。確かめる中身はそのまま、家具ごとに手分けして作って見て、外れを数えて最後にまとめて出す
     func testFurnitureMeshesAreSoundAndDetailed() throws {
-        var shapes = Set<String>()
-        for f in CamperRoomCatalog.all where f.built {
-            let m = try XCTUnwrap(CamperRoomFurnitureModels.mesh(f.id), f.id)
-            XCTAssertGreaterThan(m.triangleCount, 200, f.id)
-            XCTAssertLessThan(m.triangleCount, 30_000, f.id)
-            XCTAssertGreaterThanOrEqual(Set(m.materials).count, 2, f.id)
-            for n in m.normals { XCTAssertEqual(n.length, 1, accuracy: 0.01, f.id) }
-            for p in m.positions { XCTAssertTrue(p.x.isFinite && p.y.isFinite && p.z.isFinite, f.id) }
-            let ys = m.positions.map(\.y)
-            // 足元（床から 30 まで）はマスに収まる（灯りの笠など高い所は他の家具の上へ張り出してよい）
-            let low = m.positions.filter { f.placement != .floor || $0.y < 30 }
-            let xs = low.map(\.x), zs = low.map(\.z)
-            let cell = CamperRoomLayout.cell
+        let built = CamperRoomCatalog.all.filter(\.built)
+        let cell = CamperRoomLayout.cell
+        let checked = CamperRoomFurnitureModels.concurrentMap(built) { f -> (problems: [String], shape: String) in
+            guard let m = CamperRoomFurnitureModels.mesh(f.id) else { return (["\(f.id) 形が無い"], "") }
+            var problems: [String] = []
+            if !(m.triangleCount > 200) { problems.append("\(f.id) 三角形が少ない \(m.triangleCount)") }
+            if !(m.triangleCount < 30_000) { problems.append("\(f.id) 三角形が多すぎる \(m.triangleCount)") }
+            if Set(m.materials).count < 2 { problems.append("\(f.id) 素材が 1 種類") }
+            let badNormals = m.normals.reduce(0) { $0 + (abs($1.length - 1) <= 0.01 ? 0 : 1) }
+            if badNormals > 0 { problems.append("\(f.id) 長さ 1 でない向き \(badNormals)") }
+            // 1 回なめて、有限でない点・高さの幅・足元（床から 30 まで。灯りの笠など高い所は他の家具の上へ張り出してよい）の幅を取る
+            var notFinite = 0
+            var yMin = Double.infinity, yMax = -Double.infinity
+            var xMin = Double.infinity, xMax = -Double.infinity, zMin = Double.infinity, zMax = -Double.infinity
+            var sum = 0.0
+            for p in m.positions {
+                if !(p.x.isFinite && p.y.isFinite && p.z.isFinite) { notFinite += 1 }
+                yMin = min(yMin, p.y); yMax = max(yMax, p.y)
+                if f.placement != .floor || p.y < 30 {
+                    xMin = min(xMin, p.x); xMax = max(xMax, p.x); zMin = min(zMin, p.z); zMax = max(zMax, p.z)
+                }
+                sum += p.x + p.y * 3 + p.z * 7
+            }
+            if notFinite > 0 { problems.append("\(f.id) 有限でない点 \(notFinite)") }
+            func expect(_ ok: Bool, _ what: String) { if !ok { problems.append("\(f.id) \(what)") } }
+            expect(!m.positions.isEmpty && xMin <= xMax, "足元に点が無い")
             switch f.placement {
             case .floor:
-                XCTAssertLessThanOrEqual(xs.max()! - xs.min()!, Double(f.width) * cell + 2, f.id)
-                XCTAssertLessThanOrEqual(zs.max()! - zs.min()!, Double(f.depth) * cell + 2, f.id)
-                XCTAssertGreaterThanOrEqual(ys.min()!, -0.05, f.id)
+                expect(xMax - xMin <= Double(f.width) * cell + 2, "足元の幅 \(xMax - xMin)")
+                expect(zMax - zMin <= Double(f.depth) * cell + 2, "足元の奥行き \(zMax - zMin)")
+                expect(yMin >= -0.05, "床より下 \(yMin)")
                 // 高さは家具そのもの。上に載せた置物（マグ・鉢・やかん）の分だけ超えてよい
-                XCTAssertLessThanOrEqual(ys.max()!, max(f.height, 3) + 12, f.id)
+                expect(yMax <= max(f.height, 3) + 12, "高すぎる \(yMax)")
             case .wall:
-                XCTAssertLessThanOrEqual(xs.max()! - xs.min()!, Double(f.width) * cell + 1, f.id)
-                XCTAssertGreaterThanOrEqual(zs.min()!, -0.05, f.id)
-                XCTAssertLessThanOrEqual(ys.max()!, CamperRoomLayout.rowHeight * Double(f.depth) + 1, f.id)
+                expect(xMax - xMin <= Double(f.width) * cell + 1, "幅 \(xMax - xMin)")
+                expect(zMin >= -0.05, "壁にめり込む \(zMin)")
+                expect(yMax <= CamperRoomLayout.rowHeight * Double(f.depth) + 1, "高すぎる \(yMax)")
             case .ceiling:
-                XCTAssertLessThanOrEqual(ys.max()!, 0.05, f.id)
-                XCTAssertGreaterThanOrEqual(ys.min()!, -f.height - 1, f.id)
+                expect(yMax <= 0.05, "天井より上 \(yMax)")
+                expect(yMin >= -f.height - 1, "下がりすぎる \(yMin)")
             }
-            let sum = m.positions.reduce(0.0) { $0 + $1.x + $1.y * 3 + $1.z * 7 }
-            shapes.insert("\(m.triangleCount)|\(Int((sum * 10).rounded()))")
+            return (problems, "\(m.triangleCount)|\(Int((sum * 10).rounded()))")
         }
+        let broken = checked.flatMap(\.problems)
+        XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
         // 色を変えただけが同じ輪郭に潰れていない（あつ森の家具の数より、別の形が多い）
+        let shapes = Set(checked.map(\.shape))
         XCTAssertGreaterThan(shapes.count, CamperRoomVariety.animalCrossingCount - 500)
     }
 
@@ -518,16 +537,17 @@ final class CamperRoomTests: XCTestCase {
     /// 硝子球の吊り鉢の帯）を通していた
     func testEveryFurnitureMeshHoldsTogether() throws {
         let margin = 15.0, cell = CamperRoomLayout.cell
-        var broken: [String] = []
-        for f in CamperRoomCatalog.all where f.built {
+        // 2026-10-28: 家具ごとに手分けして見る（1 つずつでは Linux で 38 秒・Mac の試験の 1 分の枠に近い）
+        let found = CamperRoomFurnitureModels.concurrentMap(CamperRoomCatalog.all.filter(\.built)) { f -> [String] in
+            var broken: [String] = []
             // 落とす前の網で数える（`mesh` は面積ゼロを落として渡すので、形の崩れを見逃す）
-            let m = try XCTUnwrap(CamperRoomFurnitureModels.rawMesh(f.id), f.id)
+            guard let m = CamperRoomFurnitureModels.rawMesh(f.id) else { return ["\(f.id) 形が無い"] }
             let n = m.positions.count
-            guard m.normals.count == n, m.uvs.count == n else { broken.append("\(f.id) 点・向き・貼り絵の数が違う"); continue }
+            guard m.normals.count == n, m.uvs.count == n else { return ["\(f.id) 点・向き・貼り絵の数が違う"] }
             if m.uvs.contains(where: { !($0.x.isFinite && $0.y.isFinite) }) { broken.append("\(f.id) 貼り絵の位置が有限でない") }
             var degenerate = 0, flipped = 0, outside = 0
             for g in m.groups {
-                XCTAssertEqual(g.indices.count % 3, 0, f.id)
+                if g.indices.count % 3 != 0 { broken.append("\(f.id) 番号の数が 3 の倍数でない \(g.indices.count)") }
                 var i = 0
                 while i + 2 < g.indices.count {
                     let ia = Int(g.indices[i]), ib = Int(g.indices[i + 1]), ic = Int(g.indices[i + 2])
@@ -549,7 +569,9 @@ final class CamperRoomTests: XCTestCase {
                 }
             }
             if let p = far.first { broken.append("\(f.id) 枠から離れた部品 \(far.count) 点（例 \(p)）") }
+            return broken
         }
+        let broken = found.flatMap { $0 }
         XCTAssertEqual(broken, [], broken.joined(separator: "\n"))
     }
 
@@ -774,7 +796,9 @@ final class CamperRoomTests: XCTestCase {
     /// 夜の光の決まり: どの素材も光る面の emission は 1 まで。窓の外の景色は光を受けない
     func testEmissionCapAndUnlitView() throws {
         var mats: Set<CamperMaterial> = []
-        for f in CamperRoomCatalog.all where f.built { CamperRoomFurnitureModels.mesh(f.id)?.materials.forEach { mats.insert($0) } }
+        // 2026-10-28: 全家具の網を作るので手分けする
+        CamperRoomFurnitureModels.concurrentMap(CamperRoomCatalog.all.filter(\.built)) { CamperRoomFurnitureModels.mesh($0.id)?.materials ?? [] }
+            .forEach { $0.forEach { mats.insert($0) } }
         let bp = CamperRoomBuilder.build(camper, doc: CamperRoomRules.starterDocument(camper))
         for n in bp.shell { if case .mesh(let m) = n.shape { m.materials.forEach { mats.insert($0) } } }
         for m in mats {
@@ -883,10 +907,11 @@ final class CamperRoomTests: XCTestCase {
     /// 写真を入れられる全部の額の印画の貼り絵の位置は、パネルの面に平行な 2 軸（右・上）へ投影して外接箱で 0〜1 にしたもの
     /// （u は右へ増え、v は下へ増える＝上下逆・鏡写しにしない）。2026-10-22 owner の実機: 楕円の額で写真が縦の筋に崩れた
     func testEveryPhotoPanelHasPlanarUVs() throws {
-        var checked = 0
-        var broken: [String] = []
-        for f in CamperRoomCatalog.all where f.built {
-            guard let m = CamperRoomFurnitureModels.mesh(f.id) else { continue }
+        // 2026-10-28: 全家具の網を作るので、家具ごとに手分けして見る
+        let found = CamperRoomFurnitureModels.concurrentMap(CamperRoomCatalog.all.filter(\.built)) { f -> (checked: Int, broken: [String]) in
+            var checked = 0
+            var broken: [String] = []
+            guard let m = CamperRoomFurnitureModels.mesh(f.id) else { return (0, []) }
             for g in m.groups {
                 guard case .room(.photo) = g.material, g.indices.count >= 3 else { continue }
                 // 三連の額は 1 枚の写真を 3 枚の板に分けて貼る（板の間の隙間の分だけ外接箱とずれる・それで正しい）
@@ -911,7 +936,10 @@ final class CamperRoomTests: XCTestCase {
                 }
                 if worst > 0.06 { broken.append("\(f.id) \(g.material) ずれ \(String(format: "%.2f", worst))") }
             }
+            return (checked, broken)
         }
+        let checked = found.reduce(0) { $0 + $1.checked }
+        let broken = found.flatMap(\.broken)
         XCTAssertGreaterThan(checked, 10)
         XCTAssertEqual(broken, [], broken.joined(separator: "\n"))
     }

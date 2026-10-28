@@ -24,6 +24,22 @@ enum CamperRoomFurnitureModels {
         rawMesh(id).map(CamperRoomMeshKit.droppingDegenerate)
     }
 
+    /// 家具ごとの仕事を手分けして（コアの数だけ同時に）こなし、渡した順で返す。
+    /// 2026-10-28 判断: 2,000 点を超える家具の網を 1 つずつ作ると Linux で 31 秒かかり、全部の網をなめる試験（形の健全さ・
+    /// 額の一覧）が Mac の試験の 1 分の枠を超えた（PR #397・run 751）。形を作る関数は互いに触らず、組み合わせの家具の
+    /// 控えは `CamperRoomVariety.gate` で守るので、同時に作ってよい（`testFloorFurnitureStandsTogether` が先に同じ形で手分けしている）
+    static func concurrentMap<T>(_ items: [CamperRoomFurniture], _ work: (CamperRoomFurniture) -> T) -> [T] {
+        var out = [T?](repeating: nil, count: items.count)
+        let gate = NSLock()
+        DispatchQueue.concurrentPerform(iterations: items.count) { k in
+            let v = work(items[k])
+            gate.lock()
+            out[k] = v
+            gate.unlock()
+        }
+        return out.map { $0! }
+    }
+
     /// 家具の形を、面積ゼロの三角形を落とす前のまま返す（試験で形の崩れに気づくため）
     static func rawMesh(_ id: String) -> CamperMesh? {
         let m: CamperMesh?

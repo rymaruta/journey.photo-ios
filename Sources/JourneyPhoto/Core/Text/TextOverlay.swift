@@ -45,6 +45,19 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 複数行のときの揃え（owner の「ストーリーの自由度が低い」・2026-09-29）。
     /// 1行なら見た目は変わらない（札の中心は `x` / `y` のまま）
     var align: Align = .center
+    /// 曲の札の形（2026-10-28・押すたびに A→F と替わる・`SongStickerStyle`）。**nil は文字だけの札**
+    /// （前の版の下書き・自分で打った「曲」の札）。曲の札（`.song`）だけが持つ。下書きにだけ残し、
+    /// 投稿では画像に焼き込む（サーバーへ送る形は変わらない）
+    var songStyle: SongStickerStyle?
+    /// 形のある曲の札を**指で動かしたか**（2026-10-28 のレビュー）。動かしていない札は、押して形を替えたとき
+    /// 「ひとことを書く」の欄に重ならない所へ置き直す（`SongSticker.cycled`）。つまむ・曲を変えるだけでは立てない。
+    /// **nil は動かしていない扱い**（2026-10-28 判断）——形のある札はこの枝で初めて出る（出した版の下書きに
+    /// 形のある札は無い）ので、印の無い下書きの札は置いた直後のものに限られる
+    var songMoved: Bool?
+    /// 形のある曲の札の**切る前の望んだ大きさ**（2026-10-28 のレビュー）。押して形を替える・曲を変えるたびに
+    /// 比を掛けるのはこちら（形ごとの上限で切った `size` に掛けると、一周しても元に戻らない）。
+    /// nil なら `size` がそのまま望んだ大きさ。つまんだら消す（つまんだ大きさが望んだ大きさ）
+    var songWantedSize: Double?
 
     /// 行の揃え。**改行できる自由な文字だけ**が選べる（札は1行）
     enum Align: String, CaseIterable, Identifiable, Codable {
@@ -481,7 +494,8 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, x, y, size, style, kind, face, ink, rotation, customHex, align
+        case id, text, x, y, size, style, kind, face, ink, rotation, customHex, align, songStyle
+        case songMoved, songWantedSize
     }
 
     /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
@@ -504,6 +518,12 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         self.customHex = (try? c.decodeIfPresent(UInt32.self, forKey: .customHex)).map { $0 & 0xFFFFFF }
         // 揃えは後から足した項目（前の版の下書きは中央＝これまでの見た目）
         self.align = (try? c.decodeIfPresent(Align.self, forKey: .align)) ?? .center
+        // 曲の札の形も後から足した項目（前の版の下書きは文字だけの札＝これまでの見た目）。
+        // 曲の札でないものには持たせない
+        self.songStyle = kind == .song ? (try? c.decodeIfPresent(SongStickerStyle.self, forKey: .songStyle)) ?? nil : nil
+        self.songMoved = songStyle == nil ? nil : (try? c.decodeIfPresent(Bool.self, forKey: .songMoved)) ?? nil
+        self.songWantedSize = songStyle == nil ? nil
+            : ((try? c.decodeIfPresent(Double.self, forKey: .songWantedSize)) ?? nil).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     }
 
     /// 画面と画像に出す文字（印つき）。
@@ -541,8 +561,29 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     func scaled(by factor: Double) -> TextOverlay {
         guard factor.isFinite, factor > 0 else { return self }
         var next = self
-        next.size = Self.clampSize(size * factor)
+        next.size = clampedSize(size * factor)
+        // つまんだ大きさが望んだ大きさ（形を替えたときの比はここから掛ける）
+        next.songWantedSize = nil
         return next
+    }
+
+    /// 形のある曲の札の、切る前の望んだ大きさ（無ければいまの大きさ）
+    var wantedSize: Double { songWantedSize ?? size }
+
+    /// 形のある曲の札の大きさを、**望んだ大きさを覚えたまま**形の上限で切って決める
+    /// （`SongSticker.cycled` / `retext`）。切られなければ覚えない
+    mutating func resizeSongSticker(wanted: Double) {
+        guard wanted.isFinite, wanted > 0 else { return }
+        size = clampedSize(wanted)
+        songWantedSize = abs(size - wanted) < 1e-12 ? nil : wanted
+    }
+
+    /// この札の大きさの幅。**形のある曲の札は上限を小さくする**（2026-10-28 判断）——札は字より
+    /// 何倍も広く（ジャケット大は歌手の字の 10 倍）、文字の上限 0.2 まで広げると写真を覆う。
+    /// 上限は形ごと（`SongStickerStyle.maxSize(for:)`・札の幅が短い辺の約8割まで）
+    func clampedSize(_ value: Double) -> Double {
+        guard kind == .song, let songStyle else { return Self.clampSize(value) }
+        return min(max(value, SongStickerStyle.minSize), SongStickerStyle.maxSize(for: songStyle))
     }
 
     // MARK: - 編集画面と焼き込みで同じ形にする
@@ -618,6 +659,8 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         var moved = self
         moved.x = Self.clampPosition(x + translation.width / canvas.width)
         moved.y = Self.clampPosition(y + translation.height / canvas.height)
+        // 形のある曲の札は「動かした」の印を立てる（押して形を替えても置き直さない・`SongSticker.cycled`）
+        if kind == .song, songStyle != nil { moved.songMoved = true }
         return moved
     }
 

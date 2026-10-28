@@ -324,7 +324,9 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 票の状態（投票のあるストーリーにだけ付く）。**数は投稿者と入れた人にだけ返る**
     let vote: StoryVoteState?
     /// 曲の札を写真に焼き込んだ印（2026-09-30・owner「曲名が2か所に出てやだ」）。
-    /// 立っていれば見る画面の ♪ の行を出さない（札が写真の上に出ているので2度目になる）。
+    /// 2026-10-28 判断: **見る画面の ♪ の行はこの印に関わらず出す**（名前の下の1行・`songLineShown`）。
+    /// 札は形を選べる飾りになり（`SongStickerStyle`）、明朝の題字・小さな帯では歌手が切れる・
+    /// 札を外した人・Web の投稿では曲名がどこにも無い。印は送る形を変えないために読み書きだけ残す。
     /// **曲を鳴らすかどうかには使わない**（`songLine` は鳴らす判定にも使う）
     let songOnPhoto: Bool?
 
@@ -344,9 +346,9 @@ struct Story: Decodable, Identifiable, Equatable {
     var songLine: String? {
         song.flatMap(SongSticker.text(for:))
     }
-    /// 見る画面の左下に出す曲の行。**札を焼き込んだ1本では出さない**（`songOnPhoto`）
+    /// 見る画面の名前の下に出す曲の行。**札を焼き込んだ1本でも出す**（2026-10-28 判断・`songOnPhoto` の注記）
     var songLineShown: String? {
-        songOnPhoto == true ? nil : songLine
+        songLine
     }
     var isVideo: Bool { mediaType == "video" }
 

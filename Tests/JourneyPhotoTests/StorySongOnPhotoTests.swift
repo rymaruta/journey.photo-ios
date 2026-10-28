@@ -63,10 +63,12 @@ final class StorySongOnPhotoTests: XCTestCase {
         XCTAssertNil(try sentBody()["songOnPhoto"])
     }
 
-    /// 見る画面: 札を焼き込んだ1本は ♪ の行を出さない。**鳴らす判定（`songLine`）は残す**
-    func testViewerHidesTheLineButKeepsTheSong() throws {
+    /// 見る画面: 2026-10-28 判断で**札を焼き込んだ1本でも名前の下に ♪ の行を出す**（札は形を選べる飾りで、
+    /// 題字・小さな帯では歌手が切れる）。印（`songOnPhoto`）は読むだけ残す（送る形は変えない）
+    func testViewerShowsTheLineEvenWhenStickerIsBurned() throws {
         let burned = try story(#","songOnPhoto":true"#)
-        XCTAssertNil(burned.songLineShown)
+        XCTAssertEqual(burned.songOnPhoto, true)
+        XCTAssertEqual(burned.songLineShown, burned.songLine, "札を焼き込んだ1本で ♪ の行を消している")
         XCTAssertNotNil(burned.songLine, "曲まで消している（鳴らなくなる）")
         let plain = try story("")
         XCTAssertEqual(plain.songLineShown, plain.songLine)
@@ -90,7 +92,7 @@ final class StorySongOnPhotoTests: XCTestCase {
 
     /// いまの曲の札が文字どおり置いてあるときだけ立つ（空の札・前の曲の札・自分で打った「曲」の札では立たない）
     func testIsOnPhotoMatchesTheCurrentSongSticker() throws {
-        let sticker = try XCTUnwrap(SongSticker.make(for: song))
+        let sticker = try XCTUnwrap(SongSticker.make(for: song, style: nil))
         XCTAssertTrue(SongSticker.isOnPhoto([sticker], song: song))
         var emptied = sticker; emptied.text = ""
         XCTAssertFalse(SongSticker.isOnPhoto([emptied], song: song), "焼き込まれない空の札で立てている")

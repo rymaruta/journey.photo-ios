@@ -13,7 +13,7 @@ final class SongStickerTests: XCTestCase {
     /// 同じ文字の別の種類の札は当たらない。曲が無ければ当たらない
     func testIsSticker() {
         let now = song("海へ", "誰か")
-        let sticker = SongSticker.make(for: now)!
+        let sticker = SongSticker.make(for: now, style: nil)!
         XCTAssertTrue(SongSticker.isSticker(sticker, of: now))
         XCTAssertFalse(SongSticker.isSticker(sticker, of: nil))
         XCTAssertFalse(SongSticker.isSticker(sticker, of: song("山へ", "誰か")))
@@ -21,13 +21,13 @@ final class SongStickerTests: XCTestCase {
         XCTAssertFalse(SongSticker.isSticker(TextOverlay(text: "海へ · 誰か", kind: .text), of: now))
         // 上限で切って置いた長い曲名も当たる（置くときと同じ切り方）
         let long = song(String(repeating: "あ", count: TextOverlay.maxLength + 20))
-        XCTAssertTrue(SongSticker.isSticker(SongSticker.make(for: long)!, of: long))
+        XCTAssertTrue(SongSticker.isSticker(SongSticker.make(for: long, style: nil)!, of: long))
     }
 
     /// 曲名に改行があっても、置いた札は「付けた曲の札」と見なせる（帯と二重に出ない・消せば曲が外れる）
     func testStickerWithNewlineInTitleIsRecognized() {
         let now = song("海\nへ", "誰\nか")
-        let sticker = SongSticker.make(for: now)!
+        let sticker = SongSticker.make(for: now, style: nil)!
         XCTAssertFalse(sticker.text.contains("\n"))
         XCTAssertTrue(SongSticker.isSticker(sticker, of: now))
         XCTAssertTrue(SongSticker.isOnPhoto([sticker], song: now))
@@ -37,7 +37,7 @@ final class SongStickerTests: XCTestCase {
     /// 打ち直した札・自分で打った「曲」の札は「残っている」に数えない。札でない物を消しても外さない
     func testShouldDetach() {
         let now = song("海へ", "誰か")
-        let sticker = SongSticker.make(for: now)!
+        let sticker = SongSticker.make(for: now, style: nil)!
         XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true, remaining: [[], []], song: now))
         XCTAssertFalse(SongSticker.shouldDetach(removedSticker: true, remaining: [[], [sticker]], song: now))
         XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true,
@@ -48,16 +48,16 @@ final class SongStickerTests: XCTestCase {
 
     /// 札は「曲名 · アーティスト」の曲の札（動かせる `.song`）。題が空なら置かない
     func testMakeSticker() {
-        let sticker = SongSticker.make(for: song("海へ", "誰か"))
+        let sticker = SongSticker.make(for: song("海へ", "誰か"), style: nil)
         XCTAssertEqual(sticker?.text, "海へ · 誰か")
         XCTAssertEqual(sticker?.kind, .song)
-        XCTAssertEqual(SongSticker.make(for: song("海へ"))?.text, "海へ")
-        XCTAssertNil(SongSticker.make(for: song("  ")))
+        XCTAssertEqual(SongSticker.make(for: song("海へ"), style: nil)?.text, "海へ")
+        XCTAssertNil(SongSticker.make(for: song("  "), style: nil))
     }
 
     /// 曲を変えたら前の曲の札の文字を差し替える（位置は残す。大きさは文字の長さの比で変わる）
     func testChangeRetextsOldSticker() {
-        var sticker = SongSticker.make(for: song("海へ"))!
+        var sticker = SongSticker.make(for: song("海へ"), style: nil)!
         sticker.x = 0.2
         let other = TextOverlay(text: "こんにちは")
         let result = SongSticker.retext([other, sticker], from: song("海へ"), to: song("山へ", "誰か"))
@@ -68,7 +68,7 @@ final class SongStickerTests: XCTestCase {
 
     /// 曲を外したら前の曲の札だけ消す。打ち直した札・ほかの文字には触らない
     func testRemoveDeletesOnlyOldSticker() {
-        let sticker = SongSticker.make(for: song("海へ"))!
+        let sticker = SongSticker.make(for: song("海へ"), style: nil)!
         let edited = TextOverlay(text: "好きな曲", kind: .song)
         let result = SongSticker.retext([sticker, edited], from: song("海へ"), to: nil)
         XCTAssertTrue(result.found)
@@ -83,10 +83,10 @@ final class SongStickerTests: XCTestCase {
 
     /// 長い曲名は小さくして置く（焼き込みは1行。既定の大きさだと写真の幅を超える）
     func testLongTitleIsShrunkToFit() {
-        let short = SongSticker.make(for: song("海へ"))!
+        let short = SongSticker.make(for: song("海へ"), style: nil)!
         XCTAssertEqual(short.size, TextOverlay.defaultSize, "短い曲名は既定の大きさ")
 
-        let long = SongSticker.make(for: song("Bohemian Rhapsody", "Queen"))!
+        let long = SongSticker.make(for: song("Bohemian Rhapsody", "Queen"), style: nil)!
         XCTAssertLessThan(long.size, TextOverlay.defaultSize)
         XCTAssertGreaterThanOrEqual(long.size, TextOverlay.minSize)
         // 字の幅の目安（半角0.6・全角1）で、見えている幅に収まる
@@ -98,18 +98,18 @@ final class SongStickerTests: XCTestCase {
     func testViewerSongLineMatchesSticker() throws {
         let json = #"{"id":"s","src":"https://x.test/s.jpg","song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}}"#
         let story = try JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
-        XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"))?.text)
+        XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"), style: nil)?.text)
     }
 
     /// 曲を変えたら、置いたときの大きさの比で大きさを変える
     func testChangingSongScalesStickerByFittedSize() {
         func change(_ size: Double, _ from: String, _ to: String) -> Double {
-            var sticker = SongSticker.make(for: song(from))!
+            var sticker = SongSticker.make(for: song(from), style: nil)!
             sticker.size = size
             return SongSticker.retext([sticker], from: song(from), to: song(to)).overlays[0].size
         }
-        let fittedLemon = SongSticker.make(for: song("Lemon · 米津玄師"))!.size
-        let fittedLong = SongSticker.make(for: song("Bohemian Rhapsody · Queen"))!.size
+        let fittedLemon = SongSticker.make(for: song("Lemon · 米津玄師"), style: nil)!.size
+        let fittedLong = SongSticker.make(for: song("Bohemian Rhapsody · Queen"), style: nil)!.size
 
         // 手を付けていない札は、新しい曲名で置いたときと同じ大きさ
         XCTAssertEqual(change(TextOverlay.defaultSize, "海へ", "Lemon · 米津玄師"), fittedLemon, accuracy: 1e-9)
@@ -120,7 +120,7 @@ final class SongStickerTests: XCTestCase {
         // 自分で大きくした分は倍率として残り、行き来しても元に戻る
         let big = change(0.10, "海へ", "Lemon · 米津玄師")
         XCTAssertEqual(big, 0.10 * fittedLemon / TextOverlay.defaultSize, accuracy: 1e-9)
-        var sticker = SongSticker.make(for: song("Lemon · 米津玄師"))!
+        var sticker = SongSticker.make(for: song("Lemon · 米津玄師"), style: nil)!
         sticker.size = big
         let back = SongSticker.retext([sticker], from: song("Lemon · 米津玄師"), to: song("海へ")).overlays[0].size
         XCTAssertEqual(back, 0.10, accuracy: 1e-9, "戻したら元の大きさ")
