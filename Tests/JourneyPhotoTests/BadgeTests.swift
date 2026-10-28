@@ -290,6 +290,16 @@ final class BadgePatchTests: XCTestCase {
         XCTAssertTrue(shown(style: .iris, earlyOn: true))
         XCTAssertFalse(NameSideChoice.earlyShown(profile: p, badges: BadgeSet(), selected: nil, style: nil,
                                                  verifiedOn: false, earlyOn: true), "資格は渡したバッジで見る")
+
+        // 資格の無い印は、画面の既定値（公式の印「付ける」・Pro マークの形 iris）が入っていても出ていない
+        let plain = try profile(#"{"userId":"u2","pro":false,"badges":{"earlyUser":{"tier":1,"at":"\#(at)"}}}"#)
+        XCTAssertTrue(NameSideChoice.earlyShown(profile: plain, badges: plain.earnedBadges, selected: nil, style: .iris,
+                                                verifiedOn: true, earlyOn: nil), "公式でも Pro でもない人は既定で付く")
+
+        // 持っているがアプリの知らない鍵を飾っている人（選び直していない）は、バッジが出ている
+        let unknown = try profile(#"{"userId":"u3","displayBadge":"futureBadge","badges":{"earlyUser":{"tier":1,"at":"\#(at)"},"futureBadge":{"tier":1,"at":"\#(at)"}}}"#)
+        XCTAssertFalse(NameSideChoice.earlyShown(profile: unknown, badges: unknown.earnedBadges, selected: nil, style: nil,
+                                                 verifiedOn: false, earlyOn: nil), "サーバーの判定ではバッジが出ているので付かない")
     }
 
     /// 設定一覧の一行: 本人が外したときだけ「外しています」と言う

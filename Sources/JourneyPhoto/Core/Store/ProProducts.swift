@@ -387,7 +387,8 @@ enum ProStatusText {
 
     /// 設定の「名前の横のバッジと Pro マーク」の行の2行目（板 43: 「初期ユーザー · Pro マークは 絞り羽根」）。
     /// Pro でなければバッジだけ（Pro マークは Pro の間だけ出る）。外しているときは「Pro マークは外しています」、
-    /// 公式の印を外していれば「公式の印は外しています」も足す（2026-10-10）
+    /// 公式の印を外していれば「公式の印は外しています」も足す（2026-10-10）。初期メンバーの印は、本人が
+    /// 「外す」と決めたときだけ「初期メンバーの印は外しています」（既定で外れているのは言わない・2026-10-28）
     static func nameSideDetail(_ profile: UserProfile) -> String {
         let badge = profile.shownBadge.flatMap { BadgeCatalog.isKnown($0.key) ? BadgeCatalog.name($0.key) : nil }
             ?? L("バッジなし", "No badge")
