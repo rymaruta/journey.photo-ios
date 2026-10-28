@@ -122,7 +122,8 @@ final class MiniPlayerPlacementTests: XCTestCase {
 
     /// いちばん上でも、上の見出しとその下の1段（探すの入力欄など）にかぶらない
     func testTopLeavesHeaderAndFirstRow() {
-        XCTAssertGreaterThanOrEqual(MiniPlayerPlacement.topReserved, 52 + 44, "見出しの下の1段にかぶる")
+        // 探すの入力欄の下端は安全領域の上から 154pt（run 736 の実測）
+        XCTAssertGreaterThanOrEqual(MiniPlayerPlacement.topReserved, 154, "探すの入力欄にかぶる")
     }
 
     /// 読み上げの「上へ移す／下へ移す」は範囲の中で動く
