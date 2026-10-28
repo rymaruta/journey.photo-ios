@@ -1193,9 +1193,10 @@ struct RootView: View {
         // アプリは入口がマイページの中だけで、同じ分かりにくさがあった。
         // **投稿・ストーリーの画面はシートで全面に出る**ので、
         // Web のような「出さないページ」の判定は要らない
-        // 鳴っている間だけ、どの画面にも出る（Web の `MiniPlayer`）
+        // 鳴っている間だけ、どの画面にも出る（Web の `MiniPlayer`）。
+        // 置き場所は再生器が自分で決める（指で動かせる・タブバーの上は `MiniPlayerPlacement.bottomReserved`）
         .overlay(alignment: .bottom) {
-            MiniPlayerBar().padding(.bottom, 56)
+            MiniPlayerBar()
         }
         // 短い知らせ（Web の `Toast`）。ミニプレイヤーより上に出す
         .overlay(alignment: .bottom) {

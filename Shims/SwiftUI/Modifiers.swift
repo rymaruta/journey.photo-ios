@@ -513,6 +513,30 @@ public struct TapGesture: Gesture {
     public func onEnded(_ action: @escaping () -> Void) -> TapGesture { self }
 }
 
+/// 長押し（本物と同じ形）。`sequenced(before:)` で「長押ししてから引く」にする（再生器・2026-10-28）
+public struct LongPressGesture: Gesture {
+    public init(minimumDuration: Double = 0.5, maximumDistance: CGFloat = 10) {}
+    public func onEnded(_ action: @escaping (Bool) -> Void) -> LongPressGesture { self }
+    public func sequenced(before other: DragGesture) -> SequenceGesture<LongPressGesture, DragGesture> {
+        SequenceGesture()
+    }
+}
+
+/// 2つの操作を続けて行う（本物と同じ形）。模型は「長押し → 引く」だけを持つ
+public struct SequenceGesture<First: Gesture, Second: Gesture>: Gesture {}
+
+extension SequenceGesture where First == LongPressGesture, Second == DragGesture {
+    /// 本物と同じ: 1つ目の途中は `.first`、1つ目が済んだら `.second`（2つ目はまだ始まっていなければ nil）
+    public enum Value {
+        case first(Bool)
+        case second(Bool, DragGesture.Value?)
+    }
+    public func onChanged(_ action: @escaping (Value) -> Void) -> Self { self }
+    public func onEnded(_ action: @escaping (Value) -> Void) -> Self { self }
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Value, inout S, inout Transaction) -> Void) -> Self { self }
+}
+
 public struct TabViewStyleShim {
     public static let page = TabViewStyleShim()
     public static let automatic = TabViewStyleShim()
