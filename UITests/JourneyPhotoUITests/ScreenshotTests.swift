@@ -2343,15 +2343,28 @@ final class ScreenshotTests: XCTestCase {
         let bottom = app.windows.firstMatch.frame.maxY - 100
         pushes = 0
         while pushes < 10 {
+            // 🔴 送っている間に、行の上の札（旅の一冊など）が押されて別の画面へ移ることがある（PR #390 の検証 2026-10-28:
+            // 大きい文字で「山中湖の旅」の頁に移り、`row.frame` が「見つからない」で落ちた。10/27 run 40520085031 も同じ）。
+            // 行が消えて戻るボタンがあれば、戻ってから探し直す（消えたまま frame を読まない）
+            if !row.exists {
+                let back = app.navigationBars.buttons["BackButton"].firstMatch
+                guard back.exists else { break }
+                note(app, "旅の記録の行 \(id)", "送っている間に別の画面へ移った。戻って探し直す")
+                back.tap()
+                guard row.waitForExistence(timeout: 10) else { break }
+                pushes += 1
+                continue
+            }
             let before = row.frame
             Thread.sleep(forTimeInterval: 0.5)
-            if row.exists, row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
+            guard row.exists else { continue }
+            if row.isHittable, row.frame == before, row.frame.maxY < bottom, row.frame.minY > 80 { break }
             if row.frame.minY <= 80 { app.swipeDown() } else if row.frame.maxY >= bottom || !row.isHittable { app.swipeUp() }
             Thread.sleep(forTimeInterval: 0.8)
             pushes += 1
         }
-        guard row.isHittable else {
-            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.frame)）")
+        guard row.exists, row.isHittable else {
+            note(app, "旅の記録の行 \(id)", "\(pushes) 回送っても \(id) を押せない（\(row.exists ? "\(row.frame)" : "行が無い")）")
             return false
         }
         row.tap()
