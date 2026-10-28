@@ -2334,7 +2334,13 @@ final class ScreenshotTests: XCTestCase {
         // SwiftUI の NavigationLink は iOS/Xcode の組み合わせによって buttons ではなく
         // otherElements として公開されることがある。識別子を付けた行そのものを型に依存せず探す。
         let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
-        guard row.waitForExistence(timeout: 15) else {
+        // 🔴 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（PR #390 の検証 run 728・2026-10-28: 3 回目の起動で
+        // タブの中身が「読み込み中」のまま行が出なかった）。長めに待ち、出なければタブを押し直してもう一度待つ
+        if !row.waitForExistence(timeout: 30), tripsTab.exists, tripsTab.isHittable {
+            note(app, "旅の記録の行 \(id)", "30 秒待っても \(id) が出ない。タブを押し直す")
+            tripsTab.tap()
+        }
+        guard row.waitForExistence(timeout: 30) else {
             note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
             return false
         }
