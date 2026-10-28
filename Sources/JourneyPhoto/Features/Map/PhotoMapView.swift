@@ -681,7 +681,7 @@ struct PhotoMapView: View {
     }
 
     /// みんなの写真のピン（**v2 の板 Map の `.pin`**・2026-10-14）: 44 の角丸 12 の白い札に
-    /// 2 の余白で写真（角 10）・影 14 / 55%。撮影スポット（真鍮の丸）・Apple の名所（白い縁の丸）と
+    /// 2 の余白で写真（角 10）。板の影 14 / 55% は外した（2026-10-28）。撮影スポット（真鍮の丸）・Apple の名所（白い縁の丸）と
     /// **形で見分ける**（板 SpotPinOptions の「見分け方」）。v1 は縁の無い角 8 の写真だった
     nonisolated static let photoPinSize: CGFloat = 44
     nonisolated static let photoPinRadius: CGFloat = 12
@@ -697,7 +697,7 @@ struct PhotoMapView: View {
             .clipShape(RoundedRectangle(cornerRadius: photoPinRadius - photoPinInset))
             .padding(photoPinInset)
             .background(Color.white, in: RoundedRectangle(cornerRadius: photoPinRadius))
-            .shadow(color: .black.opacity(0.55), radius: 7, y: 4)
+            // 影は付けない（2026-10-28 判断・重さの直し・owner 承認。理由は `SpotMapMarker` の注記）。白い札の縁で地図から浮く
     }
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**

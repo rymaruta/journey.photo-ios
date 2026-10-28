@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// **大きく1枚 → 2枚 → 2枚 の繰り返し**（`EditorialLayout` と同じリズム）を、
 /// 端から端まで・隙間 4pt・角なしで組む。撮影地と撮った人は写真の上に重ね、
-/// いいねは右下のガラスの丸で押せる。
+/// いいねは右下の黒い丸で押せる。
 ///
 /// 以前は縦1列の札（作者・写真・題・説明・タグ・4つの操作）だった
 /// （提案の絵・2026-09-21）。owner の「ホームをアーティファクト通りに・
@@ -70,18 +70,11 @@ struct HomeFeedTile: View {
     var large = false
     var onReport: (Photo) -> Void = { _ in }
 
-    @EnvironmentObject private var favorites: FavoritesStore
+    /// **札そのものが見る store はログインだけ**（「…」を出すか・2026-10-28 判断・重さの直し）。
+    /// いいね（`FavoritesStore`・`LikeCountStore`）とブロック（`ModerationStore`）は、それを使う小さな部品
+    /// （`HomeTileLikeButton`・`HomeTileMoreMenu`）だけが見る。以前は札が全部を見ていたので、どこかで
+    /// ♥を1つ押すたびに、ホームに並ぶ札が全部描き直されていた
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var hidden: ModerationStore
-    @EnvironmentObject private var toasts: ToastCenter
-    /// 「…」のブロックの確認
-    @State private var showBlockConfirm = false
-    /// 未ログインで押した♥の「ログインする」とログイン画面（`SignInPrompt`・2026-10-11）
-    @State private var signInAsk: SignInRequest?
-    @State private var signInOpen: SignInRequest?
-    /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
-    @EnvironmentObject private var likeCounts: LikeCountStore
-    @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -125,10 +118,11 @@ struct HomeFeedTile: View {
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
             .accessibilityIdentifier("feed.photo")
 
-            likeButton
+            HomeTileLikeButton(photo: photo)
         }
-        .overlay(alignment: .topTrailing) { moreMenu }
-        .signInPrompt(ask: $signInAsk, open: $signInOpen)
+        .overlay(alignment: .topTrailing) {
+            if showsMore { HomeTileMoreMenu(photo: photo, ownerId: ownerId, onReport: onReport) }
+        }
     }
 
     /// **`userId` が無く `uploadedBy` だけの写真もある**（詳細の `ownerId` と同じ読み方）。
@@ -137,51 +131,6 @@ struct HomeFeedTile: View {
 
     /// 自分の写真には出さない（編集は詳細で）
     private var showsMore: Bool { ownerId == nil || ownerId != auth.userId }
-
-    /// 「…」（通報・ブロック）。中身は写真詳細の「…」と同じ。見た目はいいねと
-    /// 同じガラスの丸（32pt）で、押せる範囲は 44pt
-    @ViewBuilder
-    private var moreMenu: some View {
-        if showsMore {
-            Menu {
-                Button { onReport(photo) } label: {
-                    Label(L("通報する", "Report"), systemImage: "flag")
-                }
-                if ownerId != nil {
-                    Button(role: .destructive) { showBlockConfirm = true } label: {
-                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
-                    }
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.black.opacity(0.55), in: Circle())
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(6)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(L("この写真の操作", "More actions"))
-            // 確認は4か所で同じ部品（`blockConfirmation`・2026-10-11）
-            .blockConfirmation(isPresented: $showBlockConfirm) { Task { await block() } }
-        }
-    }
-
-    private func block() async {
-        guard let ownerId else { return }
-        // 押した人。次の人の画面に「ブロックしました」「ブロックできませんでした」を出さない
-        let sender = hidden.owner
-        do {
-            try await hidden.blockAndHide(ownerId, environment: environment)
-            guard sender != nil, hidden.owner == sender else { return }
-            toasts.show(L("ブロックしました", "Blocked"))
-        } catch {
-            guard sender != nil, hidden.owner == sender else { return }
-            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
-                        kind: .failure)
-        }
-    }
 
     private var byline: String {
         HomeTileText.byline(author: AuthorName.shown(profile: nil, photoDisplayName: photo.displayName),
@@ -242,7 +191,90 @@ struct HomeFeedTile: View {
         }
     }
 
-    /// いいね（板: 右下のガラスの丸・32pt・等幅の数）
+}
+
+/// ホームの札の「…」（通報・ブロック）。中身は写真詳細の「…」と同じ。見た目はいいねと
+/// 同じ黒い丸（32pt）で、押せる範囲は 44pt。
+///
+/// **ブロックの store を見るのはこの部品だけ**（2026-10-28 判断・重さの直し）。札（`HomeFeedTile`）が見ると、
+/// ブロックの帳が替わるたびにホームの札が全部描き直される
+struct HomeTileMoreMenu: View {
+    let photo: Photo
+    let ownerId: String?
+    var onReport: (Photo) -> Void = { _ in }
+
+    @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var environment: AppEnvironment
+    /// 「…」のブロックの確認
+    @State private var showBlockConfirm = false
+
+    var body: some View {
+        Menu {
+            Button { onReport(photo) } label: {
+                Label(L("通報する", "Report"), systemImage: "flag")
+            }
+            if ownerId != nil {
+                Button(role: .destructive) { showBlockConfirm = true } label: {
+                    Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 32, height: 32)
+                // 2026-10-28 判断（重さの直し・owner 承認）: ガラス（`.ultraThinMaterial`）は外し、黒 55% の丸だけ。
+                // 札ごとに背後の写真をぼかす層が1枚ずつ要り、流す時の重さの元になる。理由は `HomeTileLikeButton` と同じ
+                .background(Color.black.opacity(0.55), in: Circle())
+                .padding(6)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L("この写真の操作", "More actions"))
+        // 確認は4か所で同じ部品（`blockConfirmation`・2026-10-11）
+        .blockConfirmation(isPresented: $showBlockConfirm) { Task { await block() } }
+    }
+
+    private func block() async {
+        guard let ownerId else { return }
+        // 押した人。次の人の画面に「ブロックしました」「ブロックできませんでした」を出さない
+        let sender = hidden.owner
+        do {
+            try await hidden.blockAndHide(ownerId, environment: environment)
+            guard sender != nil, hidden.owner == sender else { return }
+            toasts.show(L("ブロックしました", "Blocked"))
+        } catch {
+            guard sender != nil, hidden.owner == sender else { return }
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
+                        kind: .failure)
+        }
+    }
+}
+
+/// ホームの札のいいね（右下の黒い丸）。
+///
+/// **いいねの store（`FavoritesStore`・`LikeCountStore`）を見るのはこの部品だけ**（2026-10-28 判断・重さの直し）。
+/// 札が見ていたころは、どこかで♥を1つ押す・数が1つ届くたびに、ホームに並ぶ札が全部（写真の読み直しの判定ごと）
+/// 描き直されていた。いまは押した札の丸だけが描き直される
+struct HomeTileLikeButton: View {
+    let photo: Photo
+
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var toasts: ToastCenter
+    /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
+    @EnvironmentObject private var likeCounts: LikeCountStore
+    @EnvironmentObject private var environment: AppEnvironment
+    /// 未ログインで押した♥の「ログインする」とログイン画面（`SignInPrompt`・2026-10-11）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
+
+    var body: some View {
+        likeButton
+            .signInPrompt(ask: $signInAsk, open: $signInOpen)
+    }
+
+    /// いいね（板: 右下の丸・32pt・等幅の数。ぼかしは外した・2026-10-28）
     private var likeButton: some View {
         Button {
             Task { await toggleLike() }
@@ -256,8 +288,10 @@ struct HomeFeedTile: View {
             .foregroundStyle(Color.white)
             .padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 32)
+            // 2026-10-28 判断（重さの直し・owner 承認）: 板はガラスの丸（黒 55% ＋ぼかし）だが、ぼかし
+            // （`.ultraThinMaterial`）は外した。ホームの札1枚に丸が2つ（いいね・「…」）あり、それぞれ背後の写真を
+            // 毎コマぼかし直すので、流す時の重さの元になる。黒 55% の地はそのまま——写真の上の白い字は同じ地で読める
             .background(Color.black.opacity(0.55), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
             // **押せる範囲は丸の外まで広げる**（見た目は 32pt のまま、押せる高さは
             // 44pt）。丸の縁の少し上を押すと、背後の写真が拾って詳細が開いていた
             .padding(6)
