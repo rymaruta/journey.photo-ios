@@ -294,14 +294,6 @@ open class SCNView: UIView, SCNSceneRenderer {
     /// 模型は画面に写さない（z 0 を返す＝画面の外として扱われる）
     open func projectPoint(_ point: SCNVector3) -> SCNVector3 { SCNVector3(0, 0, 0) }
     open func snapshot() -> UIImage { UIImage() }
-    /// 本物は描く前に形と材質を GPU に載せ、終わったら別の糸で知らせる。模型は渡された物を覚えてすぐ知らせる
-    public private(set) var prepared: [Any] = []
-    /// 試験用: false なら答えない（本物で答えが来ない時の、待つ上限で進む筋を確かめる）
-    public var answersPrepare = true
-    open func prepare(_ objects: [Any], completionHandler: ((Bool) -> Void)? = nil) {
-        prepared.append(contentsOf: objects)
-        if answersPrepare { completionHandler?(true) }
-    }
 }
 
 /// 画面の外で描いて絵にする（本物は `init(device: MTLDevice?, options:)`。家具の接写の一覧・2026-10-21）

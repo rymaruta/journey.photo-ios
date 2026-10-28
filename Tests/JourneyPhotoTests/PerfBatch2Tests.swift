@@ -9,7 +9,7 @@ import SceneKitShim
 
 /// 見た目が少し変わる重さの直し（2026-10-28・owner 承認）:
 /// ホームの札のガラスの丸を外し、札が見る store を絞る／地図のピンの影を外す／
-/// とおまわり号の中の形の使い回し・影・MSAA・`SCNView.prepare`
+/// とおまわり号の中の形の使い回し・影・MSAA（`SCNView.prepare` は外した・`testRoomDoesNotCallPrepare`）
 final class PerfBatch2Tests: XCTestCase {
 
     private func source(_ path: String) throws -> String {
@@ -77,6 +77,14 @@ final class PerfBatch2Tests: XCTestCase {
     }
 
     // MARK: - とおまわり号の中
+
+    /// 🔴 `SCNView.prepare` を呼ばない（2026-10-28・PR #390 の検証 run 738: 部屋へ入った直後にアプリが 15 秒あまり応答せず、
+    /// 同じ条件の main の run 739 は緑。シミュレーターで準備の間 SceneKit の鍵を握り、主スレッドが待たされたと見ている）
+    func testRoomDoesNotCallPrepare() throws {
+        let scene = try code("Features/Camper/Room/CamperRoomScene.swift")
+        XCTAssertFalse(scene.contains(".prepare("), "部屋の組み立てが SCNView.prepare を呼んでいる")
+        XCTAssertFalse(try code("Features/Camper/Room/CamperRoomSceneView.swift").contains(".prepare("))
+    }
 
     /// MSAA は 2 倍
     func testRoomAntialiasingIsTwoX() throws {
@@ -149,56 +157,20 @@ final class PerfBatch2RoomSceneTests: XCTestCase {
         XCTAssertGreaterThan(frames, 0, "見本に額が無い（額の写しを確かめられない）")
     }
 
-    /// 組んだ殻と家具の形は、場面に入れる前に `SCNView.prepare` に渡す
-    func testShowPreparesShellAndFurnitureBeforeInstall() async throws {
+    /// 同じ部屋を組んでいる途中にもう一度呼ばれても、組み直しを始め直さない（`if key == buildingKey { return }`・確かめ役）
+    func testShowDoesNotRestartForTheSameKey() async throws {
         let doc = CamperRoomRules.starterDocument(layout)
         let scene = CamperRoomScene()
-        let view = SCNView(frame: .zero)
-        scene.attach(view)
+        scene.attach(SCNView(frame: .zero))
         var markers: [String] = []
         scene.onReady = { markers.append($0) }
         scene.show(layout: layout, doc: doc, paint: 0x5B6168)
-        // 同じ鍵でもう一度呼んでも、組み直しを始め直さない
         scene.show(layout: layout, doc: doc, paint: 0x5B6168)
         for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
         XCTAssertEqual(markers.count, 1, "組み終えた合図が出ない／二度出た")
-        // 同じ鍵の 2 回目で組み直しを始め直さない（`if key == buildingKey { return }`・確かめ役）
         XCTAssertEqual(scene.buildsStarted, 1, "同じ鍵の組み直しを始め直した")
-        // 渡した物を覚えているのは模型（`SceneKitShim` の `SCNView.prepared`）だけ。本物の SceneKit では
-        // 組み終えた合図が 1 回出ること（prepare の答えを待っても止まらない）までを見る（Mac run 709 で判明）
-        #if !canImport(SceneKit)
-        let prepared = view.prepared.compactMap { $0 as? SCNNode }
-        XCTAssertFalse(prepared.isEmpty, "prepare に何も渡していない")
-        // 殻（見せ方の組）は prepare に渡したものがそのまま場面に入る
-        let shell = all(scene.scene.rootNode).filter { $0.name == "room.always" }
-        XCTAssertEqual(shell.count, 1)
-        XCTAssertTrue(prepared.contains { $0 === shell[0] }, "場面に入れた殻を prepare に渡していない")
-        // 家具の形も渡す（置いた家具は渡した形を使う）
-        let bed = try XCTUnwrap(doc.all.first { $0.k == "bed.platform" })
-        let bedGeometry = try XCTUnwrap(try body(scene, bed.u).geometry)
-        XCTAssertTrue(prepared.contains { $0.geometry === bedGeometry }, "家具の形を prepare に渡していない")
-        // 殻を渡したのは 1 回だけ（始め直していない）
-        XCTAssertEqual(view.prepared.filter { ($0 as? SCNNode)?.name == "room.always" }.count, 1)
-        #endif
-    }
-
-    #if !canImport(SceneKit)
-    /// prepare の答えが来なくても、待つ上限（`prepareTimeout`）で組み上げを進める（部屋が出ないままにしない）
-    func testShowFinishesWhenPrepareNeverAnswers() async throws {
-        let doc = CamperRoomRules.starterDocument(layout)
-        let scene = CamperRoomScene()
-        let view = SCNView(frame: .zero)
-        view.answersPrepare = false
-        scene.attach(view)
-        var markers: [String] = []
-        scene.onReady = { markers.append($0) }
-        scene.show(layout: layout, doc: doc, paint: 0x5B6168)
-        for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
-        XCTAssertEqual(markers.count, 1, "prepare が答えないと部屋が組み上がらない")
-        XCTAssertFalse(view.prepared.isEmpty)
         XCTAssertEqual(all(scene.scene.rootNode).filter { $0.name == "room.always" }.count, 1)
     }
-    #endif
 
     /// 組み直しの途中で取り消したら、次に同じ部屋を見せる時は組み直す（材質の控えが作り直し途中のまま
     /// 家具だけを合わせない・`cancel()` で `builtKey` を忘れる）

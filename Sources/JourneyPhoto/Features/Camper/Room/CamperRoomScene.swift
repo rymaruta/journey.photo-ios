@@ -22,7 +22,10 @@ import SceneKitShim
 //   ぼかしの数 8（以前 16）。影の縁が少し粗くなる
 // - 家具の形（SCNGeometry）は家具の種類ごとに 1 つ作って使い回す。額だけは材質（印画）を額ごとに持つので、頂点を共有する写し
 //   （`copy()`）にする。以前は置いた家具 1 つごとに頂点の並びを作り直していた
-// - 組んだ殻と家具の形は、場面に入れる前に `SCNView.prepare` で GPU に載せる（入った最初のコマで止まらないように）
+// - `SCNView.prepare`（場面に入れる前に GPU に載せる）は**使わない**。2026-10-28 に入れたが、PR #390 の検証で部屋へ入った直後に
+//   アプリが 15 秒あまり応答しなくなった（Mac run 738・XCTest の問い合わせが「Interrupted by waiter」。同じ条件の main の
+//   run 739 は緑）。シミュレーターは描く準備（シェーダーの組み立て）を CPU で一度にやり、その間 SceneKit の場面の鍵を握るので、
+//   主スレッドのカメラ・家具の更新が待たされたと見ている。描く側で少しずつ組む元のやり方に戻した（`testRoomDoesNotCallPrepare`）
 // - 輪郭のなめらかさ（MSAA）は 2 倍（`CamperRoomSceneView.antialiasing`・以前 4 倍）
 
 #if canImport(SceneKit) || canImport(SceneKitShim)
@@ -146,8 +149,6 @@ final class CamperRoomScene {
     nonisolated static let sunShadowSamples = 8
     /// 灯りの家具が影を落とすか（2026-10-28・落とさない。影を落とす光は昼の太陽だけ）
     nonisolated static let lampsCastShadows = false
-    /// `SCNView.prepare` の答えを待つ上限（秒）。来なくても組み上げは進める（部屋が出ないままにしない）
-    nonisolated static let prepareTimeout: TimeInterval = 3
 
     /// SCNView を覚える（写真の材質を替えたあと、止まっている描画を起こす）
     func attach(_ view: SCNView) { scnView = view }
@@ -177,12 +178,7 @@ final class CamperRoomScene {
                 CamperRoomScenePlan.make(layout, doc: doc, paint: paint, extra: extra)
             }.value
             guard !Task.isCancelled, let self else { return }
-            // 殻と家具の形を組んで、場面に入れる前に GPU に載せる（2026-10-28）
-            let shell = self.buildShell(plan)
-            let warm = self.warmFurniture(plan)
-            await self.prepareForDisplay(shell.map(\.0) + warm)
-            guard !Task.isCancelled else { return }
-            self.install(plan, key: key, shell: shell)
+            self.install(plan, key: key, shell: self.buildShell(plan))
             if self.buildingKey == key { self.buildingKey = nil }
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
             self.reapplyDrag()
@@ -244,16 +240,6 @@ final class CamperRoomScene {
         }
     }
 
-    /// 組み直しで使う家具の形を先に作る（`SCNView.prepare` に渡す節。場面には入れない）
-    private func warmFurniture(_ plan: CamperRoomScenePlan) -> [SCNNode] {
-        plan.furniture.keys.sorted().flatMap { id -> [SCNNode] in
-            guard let mesh = plan.furniture[id] else { return [] }
-            let body = sharedGeometry(id, mesh, glass: false).map { SCNNode(geometry: $0) }
-            let glass = plan.furnitureGlass[id].flatMap { sharedGeometry(id, $0, glass: true) }.map { SCNNode(geometry: $0) }
-            return [body, glass].compactMap { $0 }
-        }
-    }
-
     /// 家具の種類ごとの形（1 つ作って使い回す・2026-10-28）
     private func sharedGeometry(_ id: String, _ mesh: CamperPreparedMesh, glass: Bool) -> SCNGeometry? {
         if let hit = glass ? furnitureGlassGeometry[id] : furnitureGeometry[id] { return hit }
@@ -261,17 +247,6 @@ final class CamperRoomScene {
         geometryBuilds += 1
         if glass { furnitureGlassGeometry[id] = made } else { furnitureGeometry[id] = made }
         return made
-    }
-
-    /// 場面に入れる前に GPU に載せる（`SCNView.prepare`）。画面に載っていない（試験・見本）なら何もしない。
-    /// 答えが来なくても `prepareTimeout` で進める
-    private func prepareForDisplay(_ nodes: [SCNNode]) async {
-        guard let view = scnView, !nodes.isEmpty else { return }
-        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            let once = CamperResumeOnce(done)
-            view.prepare(nodes) { @Sendable _ in once.fire() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.prepareTimeout) { once.fire() }
-        }
     }
 
     private func install(_ plan: CamperRoomScenePlan, key: String, shell: [(SCNNode, String)]) {
@@ -954,22 +929,6 @@ final class CamperRoomScene {
         // 途中で止めた組み直しは材質を作り直し始めている（`buildShell` の `palette.reset`）。いま見えている部屋の鍵を
         // 忘れて、次に呼ばれたら組み直させる（材質の控えと部屋が食い違ったまま家具だけ合わせない・2026-10-28 確かめ役）
         builtKey = nil
-    }
-}
-
-/// 続きを 1 回だけ進める（`SCNView.prepare` の答えと、待つ上限のどちらか早い方）
-final class CamperResumeOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
-
-    init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
-
-    func fire() {
-        lock.lock()
-        let c = continuation
-        continuation = nil
-        lock.unlock()
-        c?.resume()
     }
 }
 
