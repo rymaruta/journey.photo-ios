@@ -22,7 +22,7 @@ struct CoverCropPosition: Equatable {
 ///
 /// - 枠は**画面の幅 × マイページの帯の高さ**（`CoverCropMath.frame`・`ProfileCover.height` を参照）。写真は枠を覆う大きさから始め、
 ///   ドラッグで位置・ピンチで拡大（1〜3倍・枠に空きが出ない範囲）
-/// - 枠には**マイページと同じ溶かし**を重ね、出来上がりの見え方をそのまま見せる。枠の外は黒 60% で沈める（板 50b のアイコンの丸と同じ）
+/// - 枠には**マイページと同じ溶かし**（`ProfileCoverFade`）を重ね、出来上がりの見え方をそのまま見せる。枠の外は黒 60% で沈める（板 50b のアイコンの丸と同じ）
 /// - 枠の縁は写真の上なので白。「完了」はヘッダーの文字の操作＝真鍮（黒地の上・板 50b の「決める」と同じ）、「キャンセル」は白
 /// - 決めたら編集の見本に入り、ほかの人に見えるのは右上の「保存」のあと（編集の約束どおり）
 struct CoverCropView: View {
@@ -112,7 +112,8 @@ struct CoverCropView: View {
                 VStack(spacing: 0) {
                     // 枠の外（上下）は沈める
                     Color.black.opacity(0.6).frame(height: Self.margin)
-                    coverFade
+                    // マイページの帯と同じ溶かし（`ProfileCover.band` と同じ部品）
+                    ProfileCoverFade()
                         .frame(height: frame.height)
                         .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.9)).frame(height: 1) }
                         .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.9)).frame(height: 1) }
@@ -134,16 +135,6 @@ struct CoverCropView: View {
             .accessibilityAction(named: L("拡大", "Zoom in")) { setZoom(frame, position.zoom + Self.zoomStep) }
             .accessibilityAction(named: L("縮小", "Zoom out")) { setZoom(frame, position.zoom - Self.zoomStep) }
             .accessibilityIdentifier("coverCrop.stage")
-    }
-
-    /// マイページの帯と同じ溶かし（上 25% の黒 → 40% で透明 → 下端で黒）。
-    /// 2026-10-28 判断: 多段の溶かし（`ProfileCoverFade`・枝 claude/cover-smooth-fade）がまだ main に無いので、
-    /// main の `ProfileCover.band` と同じ3段をここに置いた。**入ったら `ProfileCoverFade()` に差し替える**（ここ1か所）
-    private var coverFade: some View {
-        LinearGradient(stops: [.init(color: WebTheme.background.opacity(0.25), location: 0),
-                               .init(color: WebTheme.background.opacity(0), location: 0.4),
-                               .init(color: WebTheme.background, location: 1)],
-                       startPoint: .top, endPoint: .bottom)
     }
 
     private func drag(_ frame: CGSize) -> some Gesture {
