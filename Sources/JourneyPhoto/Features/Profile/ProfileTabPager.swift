@@ -469,8 +469,21 @@ final class MyPageTabMemo {
     let wanted = DerivedMemo<WantedKey, [DerivedSpot.Place]>()
     let unfilteredWanted = DerivedMemo<WantedKey, [DerivedSpot.Place]>()
     let saved = DerivedMemo<SavedKey, [Photo]>()
+    /// 旅の記録の数（見出しの下の節）。2026-10-28 判断: 描き直しのたびに数え直していた（古い順の並べ替え3回・
+    /// 国の名前の当てはめ）ので、写真が変わったときだけ数える
+    let travel = DerivedMemo<[Photo], ProfileTravelRecord.Summary>()
+    /// 投稿の格子の「複数枚」の印の写真（同じく写真が変わったときだけ）
+    let multiple = DerivedMemo<[Photo], Set<String>>()
 
     init() {}
+
+    func travelSummary(_ photos: [Photo]) -> ProfileTravelRecord.Summary {
+        travel.value(for: photos) { ProfileTravelRecord.Summary(photos: photos) }
+    }
+
+    func multiPhotoIds(_ photos: [Photo]) -> Set<String> {
+        multiple.value(for: photos) { PhotoGroups.multiPhotoIds(photos) }
+    }
 
     func shelfTrips(_ photos: [Photo]) -> [TripBook.Trip] {
         shelf.value(for: photos) { TripBook.shelfTrips(from: photos) }
@@ -512,6 +525,33 @@ final class MyPageTabMemo {
     func savedPhotos(ids: Set<String>, publicPool: [Photo], mine: [Photo]) -> [Photo] {
         saved.value(for: SavedKey(ids: ids, publicPool: publicPool, mine: mine)) {
             LikedPhotos.resolve(ids, in: [publicPool, mine])
+        }
+    }
+}
+
+/// 人のページの旅の記録・旅の棚の計算の控え（2026-10-28 判断・マイページの `MyPageTabMemo.travelSummary` と同じ理由）。
+/// 写真かブロックの関係が変わったときだけ数える
+final class OthersTravelMemo {
+
+    struct Key: Equatable {
+        let photos: [Photo]
+        let blocked: Bool
+    }
+
+    let summary = DerivedMemo<Key, ProfileTravelRecord.Summary>()
+    let shelf = DerivedMemo<Key, ProfileTravelRecord.OthersShelf>()
+
+    init() {}
+
+    func othersSummary(_ photos: [Photo], blocked: Bool) -> ProfileTravelRecord.Summary {
+        summary.value(for: Key(photos: photos, blocked: blocked)) {
+            ProfileTravelRecord.othersSummary(photos, blocked: blocked)
+        }
+    }
+
+    func othersShelf(_ photos: [Photo], blocked: Bool) -> ProfileTravelRecord.OthersShelf {
+        shelf.value(for: Key(photos: photos, blocked: blocked)) {
+            ProfileTravelRecord.othersShelf(photos, blocked: blocked)
         }
     }
 }

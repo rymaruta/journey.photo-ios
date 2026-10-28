@@ -69,8 +69,10 @@ struct MyPageView: View {
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     @State private var trunkForeground = TrunkForegroundGate()
     @Environment(\.scenePhase) private var scenePhase
-    /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）
-    @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
+    /// 端末の写真の一冊（旅の記録のタブ・2026-10-16）。**ここでは見張らない**（2026-10-28 判断）——
+    /// 見張るのは旅の記録の札の中の部品（`MyPageTripsShelf`）だけ。マイページ全体で見張ると、
+    /// 端末の写真を読み取っている間に画面ごと（投稿の格子まで）描き直していた
+    private var deviceTrips: DeviceTripShelfStore { .shared }
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
     /// 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`）。出したか・出ているか
@@ -635,7 +637,8 @@ struct MyPageView: View {
     /// **自分の写真すべて**から作る（今までどおり・人のページは公開写真だけ）
     @ViewBuilder
     private var travelRecord: some View {
-        let summary = ProfileTravelRecord.Summary(photos: model.photos)
+        // 計算は控えから（写真が変わったときだけ数える・`MyPageTabMemo`・2026-10-28）
+        let summary = tabMemo.travelSummary(model.photos)
         if !summary.isEmpty {
             TravelRecordSection(summary: summary, isMine: true)
         }
@@ -1019,22 +1022,15 @@ struct MyPageView: View {
         let trips = tabMemo.shelfTrips(model.photos)
         // 端末の写真の一冊（2026-10-16・`DeviceTripSection`）。投稿済みの日がある旅は外す
         let posted = tabMemo.postedShots(model.photos)
-        let hasDeviceBooks = !deviceTrips.books(posted: posted, isMine: true).isEmpty
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）。v2: 行の骨格
             JPLoadingState(kind: .rows)
                 .padding(.horizontal, ProfileV2.gutter)
         } else {
-            VStack(alignment: .leading, spacing: 20) {
-                // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
-                // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）。
-                // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
-                if !trips.isEmpty || !hasDeviceBooks {
-                    TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(tabMemo.visibleFeed(feed, hidden: dropped)))
-                }
-                DeviceTripSection(store: deviceTrips, posted: posted)
-                tripToolsCard
-            }
+            // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
+            MyPageTripsShelf(deviceTrips: deviceTrips, trips: trips, posted: posted,
+                             isPublic: LikedPhotos.fromPublicFeed(tabMemo.visibleFeed(feed, hidden: dropped)),
+                             tools: tripToolsCard)
         }
     }
 
@@ -1202,7 +1198,7 @@ struct MyPageView: View {
                 tabRouter.openPost(.photo)
             }
         } else {
-            let multiple = PhotoGroups.multiPhotoIds(model.photos)
+            let multiple = tabMemo.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
@@ -1275,6 +1271,29 @@ struct MyPageView: View {
                         .accessibilityHidden(true)
                 }
             }
+    }
+}
+
+/// 旅の記録の札の中身（投稿した一冊・端末の一冊・旅の道具）。**端末の一冊の店を見張るのはここだけ**
+/// （2026-10-28 判断・`MyPageView.deviceTrips` の注記）。端末の写真の読み取りで描き直すのはこの札の中だけ
+private struct MyPageTripsShelf<Tools: View>: View {
+    @ObservedObject var deviceTrips: DeviceTripShelfStore
+    let trips: [TripBook.Trip]
+    let posted: [LibraryTrips.PostedShot]
+    let isPublic: (Photo) -> Bool
+    let tools: Tools
+
+    var body: some View {
+        let hasDeviceBooks = !deviceTrips.books(posted: posted, isMine: true).isEmpty
+        VStack(alignment: .leading, spacing: 20) {
+            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）。
+            // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
+            if !trips.isEmpty || !hasDeviceBooks {
+                TripShelfList(trips: trips, isPublic: isPublic)
+            }
+            DeviceTripSection(store: deviceTrips, posted: posted)
+            tools
+        }
     }
 }
 

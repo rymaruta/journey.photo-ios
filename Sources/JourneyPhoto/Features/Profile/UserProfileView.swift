@@ -29,6 +29,8 @@ struct UserProfileView: View {
     /// 札の行の上端の控え（見張らない箱。送るたびに画面全体を作り直さない・`ProfileTabRowSpot`）
     @State private var tabRow = ProfileTabRowSpot()
     @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
+    /// 旅の記録・旅の棚の計算の控え（描き直しのたびに数え直さない・2026-10-28）
+    @State private var travelMemo = OthersTravelMemo()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
@@ -300,7 +302,7 @@ struct UserProfileView: View {
     /// 国も距離も無い人・読み込み中・取れなかった回は節ごと出さない（板 F33「灰色の空き地も置かない」）
     @ViewBuilder
     private var travelRecord: some View {
-        let summary = ProfileTravelRecord.othersSummary(shownPhotos, blocked: isBlocked)
+        let summary = travelMemo.othersSummary(shownPhotos, blocked: isBlocked)
         if !summary.isEmpty {
             TravelRecordSection(summary: summary, isMine: false)
         }
@@ -310,7 +312,7 @@ struct UserProfileView: View {
     /// 一冊も無ければ節ごと出さない
     @ViewBuilder
     private var tripsLine: some View {
-        let shelf = ProfileTravelRecord.othersShelf(shownPhotos, blocked: isBlocked)
+        let shelf = travelMemo.othersShelf(shownPhotos, blocked: isBlocked)
         if !shelf.trips.isEmpty {
             ProfileTripsLine(shelf: shelf)
         }

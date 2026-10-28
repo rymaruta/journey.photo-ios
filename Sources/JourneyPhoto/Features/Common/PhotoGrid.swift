@@ -220,17 +220,31 @@ struct PhotoTile: View {
 ///
 /// **写真そのものに `.aspectRatio(_, contentMode: .fill)` を掛けない。**
 /// 枠を決める側が居ないので、写真がセルからはみ出して隣に重なる。
+///
+/// 2026-10-28 判断（owner 実機「マイページの投稿を上下に送ると重い」）: 中身は**マスの大きさ×画面の倍率まで
+/// 縮めて**展開する（`DownsampledRemoteImage`）。`RemoteImage`（`AsyncImage`）は元の大きさで展開し
+/// （縮小版の無い古い写真は 1920px・1枚約 11MB）、マスが画面の外へ出るたびに絵を捨てて、戻ると展開し直していた。
+/// 縮めた絵は控え（`DownsampledRemoteImage.memory`）に残るので、戻っても取り直さない。
+/// 地の色・切り抜き（`gridAlignment`）・読み込み中の輪・失敗の記号・自動で1回の読み直し・期限切れの
+/// 署名の合図（`SignedImageExpiry.report`）・出るときの 0.15 秒の淡い出は今までと同じ
 struct PhotoFrame: View {
 
     let photo: Photo
     var aspect: CGFloat = 1
     var corner: CGFloat = 12
 
+    /// 縦横比の分からない写真は、この比（長い辺 ÷ 短い辺）までの形と見込んで読む（上限の 2048px で読まない）
+    static let assumedRatioLimit: CGFloat = 2
+
     var body: some View {
         Color.clear
             .aspectRatio(aspect, contentMode: .fit)
             .overlay {
-                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                       alignment: photo.gridAlignment,
+                                       assumedRatioLimit: Self.assumedRatioLimit,
+                                       appearAnimation: .easeOut(duration: 0.15))
             }
             .clipShape(RoundedRectangle(cornerRadius: corner))
             .contentShape(RoundedRectangle(cornerRadius: corner))

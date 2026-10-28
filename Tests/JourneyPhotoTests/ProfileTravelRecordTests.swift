@@ -143,8 +143,12 @@ final class ProfileTravelRecordTests: XCTestCase {
     /// 写真の一覧（`model.photos`）から直に作らない
     func testUserProfileWiresPublicOnlyRecord() throws {
         let user = try source("Features/Profile/UserProfileView.swift")
-        XCTAssertTrue(user.contains("ProfileTravelRecord.othersSummary(shownPhotos, blocked: isBlocked)"))
-        XCTAssertTrue(user.contains("ProfileTravelRecord.othersShelf(shownPhotos, blocked: isBlocked)"))
+        // 2026-10-28: 計算は控え（`OthersTravelMemo`）を通す。控えの中は同じ公開写真だけの口
+        XCTAssertTrue(user.contains("travelMemo.othersSummary(shownPhotos, blocked: isBlocked)"))
+        XCTAssertTrue(user.contains("travelMemo.othersShelf(shownPhotos, blocked: isBlocked)"))
+        let memo = try source("Features/Profile/ProfileTabPager.swift")
+        XCTAssertTrue(memo.contains("ProfileTravelRecord.othersSummary(photos, blocked: blocked)"))
+        XCTAssertTrue(memo.contains("ProfileTravelRecord.othersShelf(photos, blocked: blocked)"))
         XCTAssertTrue(user.contains("TravelRecordSection(summary: summary, isMine: false)"))
         XCTAssertTrue(user.contains("ProfileTripsLine(shelf: shelf)"))
         XCTAssertFalse(user.contains("TravelDistance.total(of: model.photos)"), "限定の写真まで数える")
@@ -161,7 +165,10 @@ final class ProfileTravelRecordTests: XCTestCase {
     /// マイページは同じ部品を、自分の写真すべてで使う（見た目と動きは変えない）
     func testMyPageUsesSameSectionWithAllOwnPhotos() throws {
         let mine = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(mine.contains("ProfileTravelRecord.Summary(photos: model.photos)"))
+        // 自分の写真すべて（`model.photos`）から。2026-10-28: 控え（`MyPageTabMemo.travelSummary`）を通す
+        XCTAssertTrue(mine.contains("tabMemo.travelSummary(model.photos)"))
+        let memo = try source("Features/Profile/ProfileTabPager.swift")
+        XCTAssertTrue(memo.contains("travel.value(for: photos) { ProfileTravelRecord.Summary(photos: photos) }"))
         XCTAssertTrue(mine.contains("TravelRecordSection(summary: summary, isMine: true)"))
         XCTAssertFalse(mine.contains("othersSummary"), "マイページが公開写真だけに絞られた")
         XCTAssertFalse(mine.contains("TravelRecordView("), "旅の記録の部品の写しを残している")

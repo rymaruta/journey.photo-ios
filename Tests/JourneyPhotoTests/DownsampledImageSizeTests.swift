@@ -144,6 +144,66 @@ final class DownsampledImageSizeTests: XCTestCase {
                        "撮影地の代表写真に元の画像をそのまま展開する部品が残っている")
     }
 
+    // MARK: - 格子の1枚（2026-10-28・マイページの送りの重さ）
+
+    /// 🔴 格子の1枚（`PhotoFrame`）はマスの大きさまで縮めて読む。3列の 4:5 のマス（約 130×162.5pt・3倍）
+    func testGridCellReadsAtTheCellSize() {
+        let cell = CGSize(width: 130, height: 162.5)
+        // 縦横比の分かる写真: 3:2 の横長は高さに合わせて 243.75pt 幅 → 731px → 768
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: cell, scale: 3, aspectRatio: 1.5), 768)
+        // 枠と同じ 4:5 → 長い辺は高さ 487.5px → 512
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: cell, scale: 3, aspectRatio: 0.8), 512)
+        // 縦横比の無い写真は 2:1 までと見込む（上限の 2048px で読まない）
+        let assumed = DownsampledImageSize.pixels(filling: cell, scale: 3, assumedRatioLimit: PhotoFrame.assumedRatioLimit)
+        XCTAssertEqual(assumed, 1024)
+        XCTAssertLessThan(assumed!, DownsampledImageSize.maximum)
+    }
+
+    /// 🔴 格子の1枚が縮めて読む部品を使う（元の大きさで展開する `RemoteImage` に戻さない）。
+    /// 地の色・切り抜き・自動の1回の読み直し・期限切れの署名の合図・淡い出は今までどおり
+    func testPhotoFrameUsesTheDownsampledImage() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Common/PhotoGrid.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "struct PhotoFrame: View {"))
+        let frame = String(source[start.lowerBound...])
+        XCTAssertTrue(frame.contains("DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,"), "格子の1枚が縮めて読んでいない")
+        XCTAssertTrue(frame.contains("alignment: photo.gridAlignment"), "切り抜きの位置が変わった")
+        XCTAssertTrue(frame.contains("assumedRatioLimit: Self.assumedRatioLimit"))
+        XCTAssertTrue(frame.contains("appearAnimation: .easeOut(duration: 0.15)"), "出るときの動きが RemoteImage と違う")
+        let plain = try NSRegularExpression(pattern: "(?<!Downsampled)RemoteImage\\(")
+        XCTAssertEqual(plain.numberOfMatches(in: frame, range: NSRange(frame.startIndex..., in: frame)), 0,
+                       "格子の1枚に元の大きさで展開する部品が残っている")
+        // 縮めて読む部品も、期限切れの署名の合図と自動の1回の読み直しを持つ
+        let image = try String(contentsOfFile: Self.sourcePath("Features/Common/DownsampledRemoteImage.swift"), encoding: .utf8)
+        XCTAssertTrue(image.contains("SignedImageExpiry.report(url)"))
+        XCTAssertTrue(image.contains("RemoteImageRetry.step(automaticDone: automaticRetries,"))
+        XCTAssertTrue(image.contains("WebTheme.surface"))
+        // 戻ったときは控えから（取りに行く前に出す・取りに行かない）
+        XCTAssertTrue(image.contains("if let image = image ?? url.flatMap({ Self.memory.entry(for: $0)?.image }) {"))
+        XCTAssertTrue(image.contains("if let cached = Self.memory.entry(for: url, atLeast: pixels) {"))
+        XCTAssertTrue(image.contains("Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)"))
+    }
+
+    /// 縮めた絵の控え: URL ごとにいちばん大きく読めた1枚。小さな絵を大きな求めに返さない
+    func testDecodedImageMemoryKeepsTheLargestPerURL() throws {
+        final class Box {}
+        let memory = DecodedImageMemory<Box>(costLimit: 1_000_000)
+        let url = try XCTUnwrap(URL(string: "https://x/a.jpg"))
+        XCTAssertNil(memory.entry(for: url))
+        let small = Box(), large = Box()
+        memory.store(small, pixels: 512, for: url, cost: 10)
+        XCTAssertTrue(memory.entry(for: url)?.image === small)
+        XCTAssertTrue(memory.entry(for: url, atLeast: 512)?.image === small)
+        XCTAssertNil(memory.entry(for: url, atLeast: 768), "小さな絵を大きな枠に返している")
+        memory.store(large, pixels: 1024, for: url, cost: 10)
+        XCTAssertTrue(memory.entry(for: url, atLeast: 768)?.image === large)
+        memory.store(small, pixels: 256, for: url, cost: 10)
+        XCTAssertTrue(memory.entry(for: url)?.image === large, "小さな絵で大きな控えを置き換えた")
+        XCTAssertEqual(memory.entry(for: url)?.pixels, 1024)
+        XCTAssertNil(memory.entry(for: try XCTUnwrap(URL(string: "https://x/b.jpg"))))
+        memory.removeAll()
+        XCTAssertNil(memory.entry(for: url))
+    }
+
     private static func sourcePath(_ relative: String) -> String {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

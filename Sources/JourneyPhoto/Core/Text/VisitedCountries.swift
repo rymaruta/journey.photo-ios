@@ -71,12 +71,16 @@ enum VisitedCountries {
     static func country(in text: String) -> String? {
         let folded = fold(text)
         guard !folded.isEmpty else { return nil }
-        let sorted = table.sorted { max($0.ja.count, $0.en.count) > max($1.ja.count, $1.en.count) }
-        for entry in sorted {
+        for entry in longestFirst {
             if folded.contains(entry.ja) || folded.contains(entry.en) { return entry.ja }
         }
         return nil
     }
+
+    /// 表を長い名前から並べたもの。**1度だけ並べる**（2026-10-28 判断: 以前は写真1枚ごとに 54 行を並べ直していた。
+    /// 並べ方は同じなので当たる国も同じ）
+    static let longestFirst: [(ja: String, en: String)] =
+        table.sorted { max($0.ja.count, $0.en.count) > max($1.ja.count, $1.en.count) }
 
     /// 数。**0 のときは画面に出さない**（0 の実績は励ましにならない）
     static func count(in photos: [Photo]) -> Int {
