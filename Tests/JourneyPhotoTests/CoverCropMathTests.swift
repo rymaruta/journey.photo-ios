@@ -5,12 +5,48 @@ import XCTest
 final class CoverCropMathTests: XCTestCase {
 
     /// 画面 390pt × 帯の高さ
-    private var frame: CGSize { CoverCropMath.frame(width: 390) }
+    private var frame: CGSize { CoverCropMath.frame(fitting: CGSize(width: 390, height: 2000)) }
 
     func testFrameUsesProfileCoverHeight() {
-        // 高さは定数を写さず、マイページの帯を参照する
-        XCTAssertEqual(frame.width, 390)
-        XCTAssertEqual(frame.height, ProfileCover.height)
+        // 高さは定数を写さず、マイページの帯を参照する（基準幅 390 の iPhone でちょうど帯の大きさ）
+        XCTAssertEqual(frame.width, 390, accuracy: 0.0001)
+        XCTAssertEqual(frame.height, ProfileCover.height, accuracy: 0.0001)
+    }
+
+    func testFrameKeepsTheSameRatioOnAnyScreen() {
+        let ratio = 390 / ProfileCover.height
+        // 幅の違う iPhone: 幅いっぱい・比は同じ
+        let wide = CoverCropMath.frame(fitting: CGSize(width: 440, height: 2000))
+        XCTAssertEqual(wide.width, 440, accuracy: 0.0001)
+        XCTAssertEqual(wide.width / wide.height, ratio, accuracy: 0.0001)
+        // iPad（横置き・高さが足りない）: 高さに収め、比は同じ
+        let pad = CoverCropMath.frame(fitting: CGSize(width: 1366, height: 600))
+        XCTAssertEqual(pad.height, 600, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(pad.width, 1366)
+        XCTAssertEqual(pad.width / pad.height, ratio, accuracy: 0.0001)
+        // iPad（縦置き）: 幅いっぱい
+        let tall = CoverCropMath.frame(fitting: CGSize(width: 1024, height: 1200))
+        XCTAssertEqual(tall.width, 1024, accuracy: 0.0001)
+        XCTAssertEqual(tall.width / tall.height, ratio, accuracy: 0.0001)
+    }
+
+    func testDrawingFillsTheLastRowAndColumn() {
+        // 16:9 の 4096×2304 を等倍で: 出来上がりの画素は丸めで比が少しずれる。縦横を同じ倍率で描くと
+        // 下端の 1 行が埋まらず半透明になった（確かめ役 2026-10-28）。縦横別の倍率で、四辺まで埋める
+        let image = CGSize(width: 4096, height: 2304)
+        let crop = FrameCropMath.cropRect(image: image, frame: frame, zoom: 1, offset: .zero, maxZoom: CoverCropMath.maxZoom)
+        let out = CoverCropMath.outputSize(crop: crop.size)
+        let drawn = CoverCropMath.drawRect(image: image, crop: crop, out: out)
+        // 範囲の左上が出来上がりの左上、右下が右下に来る
+        XCTAssertEqual(drawn.minX + crop.minX * out.width / crop.width, 0, accuracy: 0.0001)
+        XCTAssertEqual(drawn.minY + crop.minY * out.height / crop.height, 0, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(drawn.minX, 0.0001)
+        XCTAssertLessThanOrEqual(drawn.minY, 0.0001)
+        XCTAssertGreaterThanOrEqual(drawn.maxX, out.width - 0.0001, "右端の列が埋まらない")
+        XCTAssertGreaterThanOrEqual(drawn.maxY, out.height - 0.0001, "下端の行が埋まらない")
+        // 範囲の下端が、ちょうど出来上がりの下端に重なる
+        let cropBottom = drawn.minY + crop.maxY * drawn.height / image.height
+        XCTAssertEqual(cropBottom, out.height, accuracy: 0.0001)
     }
 
     func testFillSizeCoversTheFrame() {

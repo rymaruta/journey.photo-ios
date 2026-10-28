@@ -4,8 +4,10 @@ import UIKit
 /// カバーの位置を合わせる頼み（`fullScreenCover(item:)` に渡す）。開くたびに別の頼みにする
 struct CoverCropRequest: Identifiable {
     let id = UUID()
-    /// 切り抜きの元（`CoverCropMath.source`）
-    let image: UIImage
+    /// 選んだ写真のそのままの中身。**切り抜くとき（「完了」）だけ**読み直す（`CoverCropMath.render`）
+    let sourceData: Data
+    /// 画面に出す絵（長い辺 1500px・`CoverCropMath.display`）。合わせている間・選び直しのために持つのはこれだけ
+    let display: UIImage
     /// 候補（自分の投稿）から選んだときの写真の ID。端末から選んだら nil
     let photoId: String?
     /// 前に合わせた位置（選び直しのとき）。初めては真ん中・等倍
@@ -20,7 +22,8 @@ struct CoverCropPosition: Equatable {
 
 /// カバーの写真を選んだ直後に挟む「帯に映る範囲」を合わせる画面（owner 2026-10-28「ユーザが任意で調整できたらいいよね」）。
 ///
-/// - 枠は**画面の幅 × マイページの帯の高さ**（`CoverCropMath.frame`・`ProfileCover.height` を参照）。写真は枠を覆う大きさから始め、
+/// - 枠は**決まった比（基準幅 390 × `ProfileCover.height`）**で、画面に収まるいちばん大きい大きさ（`CoverCropMath.frame`）。
+///   iPhone では画面の幅いっぱい、iPad でも同じ比。写真は枠を覆う大きさから始め、
 ///   ドラッグで位置・ピンチで拡大（1〜3倍・枠に空きが出ない範囲）
 /// - 枠には**マイページと同じ溶かし**（`ProfileCoverFade`）を重ね、出来上がりの見え方をそのまま見せる。枠の外は黒 60% で沈める（板 50b のアイコンの丸と同じ）
 /// - 枠の縁は写真の上なので白。「完了」はヘッダーの文字の操作＝真鍮（黒地の上・板 50b の「決める」と同じ）、「キャンセル」は白
@@ -36,17 +39,23 @@ struct CoverCropView: View {
     @State private var offsetBase: CGSize = .zero
     @State private var failed = false
     @State private var started = false
+    /// 切り抜いている（「完了」を押せなくする・二度押しの門）
+    @State private var rendering = false
 
     /// 枠の上下に見せる、帯の外の写真の高さ（沈めて出す）
     nonisolated static let margin: CGFloat = 96
     /// 読み上げの操作で動かす量（pt）・倍率の刻み
     nonisolated static let step: CGFloat = 24
     nonisolated static let zoomStep: Double = 0.25
+    /// 帯の下の案内の文字と余白に取っておく高さ
+    nonisolated static let captionRoom: CGFloat = 80
 
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                let frame = CoverCropMath.frame(width: geo.size.width)
+                // 枠の上下の沈め・案内の文字のぶんを除いた高さに収める
+                let frame = CoverCropMath.frame(fitting: CGSize(width: geo.size.width,
+                                                                height: geo.size.height - Self.margin * 2 - Self.captionRoom))
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     stage(frame)
@@ -69,13 +78,21 @@ struct CoverCropView: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(L("キャンセル", "Cancel")) { dismiss() }
                             .foregroundStyle(WebTheme.foreground)
+                            // 切り抜いている間は閉じない（閉じたあとに決めた絵が入ってしまう）
+                            .disabled(rendering)
                             .accessibilityIdentifier("coverCrop.cancel")
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(L("完了", "Done")) { decide(frame) }
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(WebTheme.accent)
-                            .accessibilityIdentifier("coverCrop.done")
+                        if rendering {
+                            ProgressView()
+                                .accessibilityLabel(L("切り抜いています", "Cropping"))
+                                .accessibilityIdentifier("coverCrop.rendering")
+                        } else {
+                            Button(L("完了", "Done")) { Task { await decide(frame) } }
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(WebTheme.accent)
+                                .accessibilityIdentifier("coverCrop.done")
+                        }
                     }
                 }
             }
@@ -97,7 +114,7 @@ struct CoverCropView: View {
     // MARK: 帯
 
     private func stage(_ frame: CGSize) -> some View {
-        let image = request.image
+        let image = request.display
         let base = FrameCropMath.fillSize(image: image.size, frame: frame)
         // 写真・沈め・溶かしは重ね（overlay）に置く——枠より大きい写真を並びに置くと、行の幅が画面より広くなる
         return WebTheme.card
@@ -143,7 +160,7 @@ struct CoverCropView: View {
                 position.offset = FrameCropMath.clamp(
                     offset: CGSize(width: offsetBase.width + value.translation.width,
                                    height: offsetBase.height + value.translation.height),
-                    zoom: position.zoom, image: request.image.size, frame: frame)
+                    zoom: position.zoom, image: request.display.size, frame: frame)
             }
             .onEnded { _ in offsetBase = position.offset }
     }
@@ -153,7 +170,7 @@ struct CoverCropView: View {
             .onChanged { value in
                 position.zoom = FrameCropMath.clampZoom(zoomBase * value.magnification, maxZoom: CoverCropMath.maxZoom)
                 position.offset = FrameCropMath.clamp(offset: position.offset, zoom: position.zoom,
-                                                      image: request.image.size, frame: frame)
+                                                      image: request.display.size, frame: frame)
             }
             .onEnded { _ in
                 zoomBase = position.zoom
@@ -164,26 +181,33 @@ struct CoverCropView: View {
     private func nudge(_ frame: CGSize, dx: CGFloat = 0, dy: CGFloat = 0) {
         position.offset = FrameCropMath.clamp(offset: CGSize(width: position.offset.width + dx,
                                                              height: position.offset.height + dy),
-                                              zoom: position.zoom, image: request.image.size, frame: frame)
+                                              zoom: position.zoom, image: request.display.size, frame: frame)
         offsetBase = position.offset
     }
 
     private func setZoom(_ frame: CGSize, _ zoom: Double) {
         position.zoom = FrameCropMath.clampZoom(zoom, maxZoom: CoverCropMath.maxZoom)
         position.offset = FrameCropMath.clamp(offset: position.offset, zoom: position.zoom,
-                                              image: request.image.size, frame: frame)
+                                              image: request.display.size, frame: frame)
         zoomBase = position.zoom
         offsetBase = position.offset
     }
 
     // MARK: 決める
 
-    private func decide(_ frame: CGSize) {
+    private func decide(_ frame: CGSize) async {
+        guard !rendering else { return }
+        rendering = true
+        failed = false
+        defer { rendering = false }
+        let data = request.sourceData, at = position
         do {
-            let data = try CoverCropMath.render(request.image, frame: frame,
-                                                zoom: position.zoom, offset: position.offset)
-            guard let preview = UIImage(data: data) else { throw ImagePreparer.PrepareError.unreadable }
-            onDone(data, preview, position)
+            // 4096px の読み直しと焼き直しは重いので、画面の処理の外で
+            let jpeg = try await Task.detached(priority: .userInitiated) {
+                try CoverCropMath.render(data, frame: frame, zoom: at.zoom, offset: at.offset)
+            }.value
+            guard let preview = UIImage(data: jpeg) else { throw ImagePreparer.PrepareError.unreadable }
+            onDone(jpeg, preview, at)
             dismiss()
         } catch {
             failed = true

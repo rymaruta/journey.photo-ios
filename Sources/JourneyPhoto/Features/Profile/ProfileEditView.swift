@@ -67,7 +67,8 @@ struct ProfileEditView: View {
     @State private var coverCrop: CoverCropRequest?
     /// この編集の間に選んだカバーの元と、合わせた位置（「位置を調整」で選び直さずに合わせ直すため）。
     /// 2026-10-28 判断: **元の写真はサーバーにも端末にも残さない**（上げるのは切り抜いた絵だけ）。
-    /// だから開き直したあとの「位置を調整」は、写真を選び直す流れになる
+    /// だから開き直したあとの「位置を調整」は、写真を選び直す流れになる。
+    /// 持つのは元の中身（圧縮のまま）と画面用の 1500px の絵だけ。**新しい写真を読む前に手放す**（2つ同時に持たない）
     @State private var coverSource: CoverCropRequest?
     /// いまカバーが置かれているか（HEAD・分からなければ nil）。「位置を調整」を出すかに使う
     @State private var hasRemoteCover: Bool?
@@ -741,13 +742,14 @@ struct ProfileEditView: View {
         preparingImage = .cover
         message = L("カバーを準備しています…", "Preparing cover…")
         defer { preparingImage = nil }
+        coverSource = nil
         do {
             let data = try await ProfileImageFromPhoto.download(url)
-            let source = try await Task.detached(priority: .userInitiated) {
-                try CoverCropMath.source(from: data)
+            let display = try await Task.detached(priority: .userInitiated) {
+                try CoverCropMath.display(from: data)
             }.value
             message = nil
-            coverCrop = CoverCropRequest(image: source, photoId: photo.id)
+            coverCrop = CoverCropRequest(sourceData: data, display: display, photoId: photo.id)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を準備できませんでした", "Couldn't prepare the image")
         }
@@ -775,6 +777,8 @@ struct ProfileEditView: View {
             preparingImage = nil
             coverItem = nil
         }
+        // 新しいカバーを読む前に、前に選んだ元を手放す（2つ同時に持たない）
+        if kind == .cover { coverSource = nil }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 message = L("画像を読み込めませんでした", "Couldn't load the image")
@@ -783,11 +787,11 @@ struct ProfileEditView: View {
             if kind == .cover {
                 // カバーは位置を合わせてから（owner 2026-10-28）。切り抜いた絵は `CoverCropMath.render` が
                 // `ImagePreparer` と同じ関所（GPS/EXIF を落とせたと確かめたものだけ）を通す
-                let source = try await Task.detached(priority: .userInitiated) {
-                    try CoverCropMath.source(from: data)
+                let display = try await Task.detached(priority: .userInitiated) {
+                    try CoverCropMath.display(from: data)
                 }.value
                 message = nil
-                coverCrop = CoverCropRequest(image: source, photoId: nil)
+                coverCrop = CoverCropRequest(sourceData: data, display: display, photoId: nil)
                 return
             }
             // GPS/EXIF を除去できた JPEG だけをプレビューと送信に使う。
