@@ -42,16 +42,36 @@ final class ProfileTabPagerTests: XCTestCase {
         XCTAssertNotNil(ProfileTabMotion.animation(reduceMotion: false))
     }
 
-    /// 払いの判定（はっきり横・端で回り込まない）。人のページ（投稿 / マップ）でも同じ
+    /// 払いの判定（端で回り込まない）。人のページ（投稿 / マップ）でも同じ。**投稿から地図へ入る払いは効く**
     func testSwipeMovesToTheNeighbour() {
         let mine = ProfileTab.tabs(isMe: true)
-        XCTAssertEqual(ProfileTab.swiped(from: .posts, in: mine, dx: -80, dy: 5), .trips)
-        XCTAssertEqual(ProfileTab.swiped(from: .trips, in: mine, dx: 80, dy: 5), .posts)
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: 80, dy: 0), "端で回り込んでいる")
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: -80, dy: 70), "斜めの縦スクロールで切り替わる")
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -150, velocity: 0, width: 390), .trips)
+        XCTAssertEqual(ProfileTab.settled(from: .trips, in: mine, dx: 150, velocity: 0, width: 390), .posts)
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: 150, velocity: 0, width: 390), "端で回り込んでいる")
         let theirs = ProfileTab.tabs(isMe: false)
-        XCTAssertEqual(ProfileTab.swiped(from: .posts, in: theirs, dx: -80, dy: 0), .map)
-        XCTAssertEqual(ProfileTab.swiped(from: .map, in: theirs, dx: 80, dy: 0), .posts)
+        XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: theirs, dx: -12, dy: 2), "投稿から地図へ払い始められない")
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: theirs, dx: -60, velocity: -700, width: 390), .map)
+        XCTAssertEqual(ProfileTab.settled(from: .map, in: theirs, dx: 150, velocity: 0, width: 390), .posts)
+    }
+
+    /// 🔴 2026-10-28（owner の実機で払っても替わらない）: 払いは SwiftUI の `DragGesture` ではなく、縦の送りの
+    /// `UIScrollView` に足す UIKit のパンで受ける（`DragGesture` は縦の送りが始まると取り消され、離したときの
+    /// 判定まで届かなかった）。縦の送りはパンが「始めない」と決まってから・中身は指に付いてくる
+    func testSwipeIsAUIKitPanThatLocksDirection() throws {
+        let pager = try source("Sources/JourneyPhoto/Features/Profile/ProfileTabPager.swift")
+        let swipe = String(pager[pager.range(of: "struct ProfileTabSwipe")!.lowerBound...])
+        XCTAssertFalse(swipe.contains("DragGesture("), "払いが SwiftUI の DragGesture に戻っている")
+        XCTAssertFalse(swipe.contains(".simultaneousGesture("))
+        XCTAssertTrue(swipe.contains("UIPanGestureRecognizer("))
+        XCTAssertTrue(swipe.contains("shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {\n            gestureRecognizer === pan && otherGestureRecognizer === host?.panGestureRecognizer"),
+                      "縦の送りがパンの判定を待たない（向きが固定されない）")
+        XCTAssertTrue(swipe.contains("ProfileTab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)"))
+        XCTAssertTrue(swipe.contains("ProfileTab.settled(from: selection, in: tabs,"))
+        // 選んでいる札が止めている（地図）ときは、枠の中の指を受けない
+        XCTAssertTrue(swipe.contains("handlers?.isEnabled == true"))
+        // 中身が指に付いてくる
+        XCTAssertTrue(pager.contains(".offset(x: drag)"))
+        XCTAssertTrue(pager.contains("enabled: !swipeBlocked.contains(selection), follow: $drag))"))
     }
 
     /// 🔴 マイページと人のページが同じ入れ物を使い、中身を `if tab ==` の枝で作り直していない。

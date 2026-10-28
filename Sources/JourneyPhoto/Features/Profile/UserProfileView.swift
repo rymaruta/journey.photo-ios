@@ -185,6 +185,7 @@ struct UserProfileView: View {
                 // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
                 // 札の行と中身は横に払っても切り替わる（マイページと同じ部品・2026-10-24 判断）。
                 // **地図の札の中身では払いを受けない**——地図を横に動かす操作とぶつかる（札の行では受ける）
+                // 2026-10-28 判断: 投稿の中身を左へ払えば地図へ入る（指に付いてくる）。地図から出るのは札の行の払いか札を押す
                 ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
                     .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab))
                     .id(ProfileTabScroll.rowID)
