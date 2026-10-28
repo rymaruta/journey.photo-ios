@@ -162,6 +162,8 @@ final class PerfBatch2RoomSceneTests: XCTestCase {
         scene.show(layout: layout, doc: doc, paint: 0x5B6168)
         for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
         XCTAssertEqual(markers.count, 1, "組み終えた合図が出ない／二度出た")
+        // 同じ鍵の 2 回目で組み直しを始め直さない（`if key == buildingKey { return }`・確かめ役）
+        XCTAssertEqual(scene.buildsStarted, 1, "同じ鍵の組み直しを始め直した")
         // 渡した物を覚えているのは模型（`SceneKitShim` の `SCNView.prepared`）だけ。本物の SceneKit では
         // 組み終えた合図が 1 回出ること（prepare の答えを待っても止まらない）までを見る（Mac run 709 で判明）
         #if !canImport(SceneKit)
@@ -175,6 +177,51 @@ final class PerfBatch2RoomSceneTests: XCTestCase {
         let bed = try XCTUnwrap(doc.all.first { $0.k == "bed.platform" })
         let bedGeometry = try XCTUnwrap(try body(scene, bed.u).geometry)
         XCTAssertTrue(prepared.contains { $0.geometry === bedGeometry }, "家具の形を prepare に渡していない")
+        // 殻を渡したのは 1 回だけ（始め直していない）
+        XCTAssertEqual(view.prepared.filter { ($0 as? SCNNode)?.name == "room.always" }.count, 1)
         #endif
+    }
+
+    #if !canImport(SceneKit)
+    /// prepare の答えが来なくても、待つ上限（`prepareTimeout`）で組み上げを進める（部屋が出ないままにしない）
+    func testShowFinishesWhenPrepareNeverAnswers() async throws {
+        let doc = CamperRoomRules.starterDocument(layout)
+        let scene = CamperRoomScene()
+        let view = SCNView(frame: .zero)
+        view.answersPrepare = false
+        scene.attach(view)
+        var markers: [String] = []
+        scene.onReady = { markers.append($0) }
+        scene.show(layout: layout, doc: doc, paint: 0x5B6168)
+        for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
+        XCTAssertEqual(markers.count, 1, "prepare が答えないと部屋が組み上がらない")
+        XCTAssertFalse(view.prepared.isEmpty)
+        XCTAssertEqual(all(scene.scene.rootNode).filter { $0.name == "room.always" }.count, 1)
+    }
+    #endif
+
+    /// 組み直しの途中で取り消したら、次に同じ部屋を見せる時は組み直す（材質の控えが作り直し途中のまま
+    /// 家具だけを合わせない・`cancel()` で `builtKey` を忘れる）
+    func testCancelForgetsTheBuiltRoom() async throws {
+        let doc = CamperRoomRules.starterDocument(layout)
+        let scene = CamperRoomScene()
+        var markers: [String] = []
+        scene.onReady = { markers.append($0) }
+        scene.show(layout: layout, doc: doc, paint: 0x5B6168)
+        for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
+        XCTAssertEqual(markers.count, 1)
+        XCTAssertEqual(scene.buildsStarted, 1)
+        // 組み上がった部屋をもう一度: 組み直さない
+        scene.show(layout: layout, doc: doc, paint: 0x5B6168)
+        XCTAssertEqual(scene.buildsStarted, 1)
+        // 別の塗装で組み直し始めて、途中で取り消す
+        scene.show(layout: layout, doc: doc, paint: 0x123456)
+        XCTAssertEqual(scene.buildsStarted, 2)
+        scene.cancel()
+        // 元の部屋に戻す: 材質を作り直し始めていたので、組み直す
+        scene.show(layout: layout, doc: doc, paint: 0x5B6168)
+        XCTAssertEqual(scene.buildsStarted, 3, "取り消した後に、作り直し途中の材質のまま家具だけを合わせた")
+        for _ in 0..<2400 where markers.count < 2 { try await Task.sleep(nanoseconds: 25_000_000) }
+        XCTAssertEqual(markers.count, 2)
     }
 }

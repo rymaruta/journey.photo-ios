@@ -56,6 +56,8 @@ final class CamperRoomScene {
     private(set) var geometryBuilds = 0
     /// 組んでいる途中の鍵（同じ鍵で何度呼ばれても、組み直しを始め直さない）
     private var buildingKey: String?
+    /// 試験用: 組み直しを始めた回数（同じ鍵で呼ばれても 1 回か）
+    private(set) var buildsStarted = 0
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
     /// 選んでいる家具（3 浮かせる）・持ち上げて動かしている家具（動かした先）と置けるか
@@ -167,6 +169,7 @@ final class CamperRoomScene {
         if key == buildingKey { return }
         buildTask?.cancel()
         buildingKey = key
+        buildsStarted += 1
         let started = Date()
         let extra = doc.all.map(\.k)
         buildTask = Task { [weak self] in
@@ -266,7 +269,7 @@ final class CamperRoomScene {
         guard let view = scnView, !nodes.isEmpty else { return }
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             let once = CamperResumeOnce(done)
-            view.prepare(nodes) { _ in once.fire() }
+            view.prepare(nodes) { @Sendable _ in once.fire() }
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.prepareTimeout) { once.fire() }
         }
     }
@@ -948,6 +951,9 @@ final class CamperRoomScene {
         buildTask?.cancel()
         buildTask = nil
         buildingKey = nil
+        // 途中で止めた組み直しは材質を作り直し始めている（`buildShell` の `palette.reset`）。いま見えている部屋の鍵を
+        // 忘れて、次に呼ばれたら組み直させる（材質の控えと部屋が食い違ったまま家具だけ合わせない・2026-10-28 確かめ役）
+        builtKey = nil
     }
 }
 
