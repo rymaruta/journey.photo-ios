@@ -63,6 +63,14 @@ struct ProfileEditView: View {
     @State private var coverSort: CoverCandidates.Sort = .likes
     /// 候補から選んだカバーの写真（端末から選んだら nil）。保存が通ったら「いまのカバー」として覚える
     @State private var pickedCoverId: String?
+    /// カバーの位置を合わせる画面（owner 2026-10-28）。写真を選んだ直後と「位置を調整」で開く
+    @State private var coverCrop: CoverCropRequest?
+    /// この編集の間に選んだカバーの元と、合わせた位置（「位置を調整」で選び直さずに合わせ直すため）。
+    /// 2026-10-28 判断: **元の写真はサーバーにも端末にも残さない**（上げるのは切り抜いた絵だけ）。
+    /// だから開き直したあとの「位置を調整」は、写真を選び直す流れになる
+    @State private var coverSource: CoverCropRequest?
+    /// いまカバーが置かれているか（HEAD・分からなければ nil）。「位置を調整」を出すかに使う
+    @State private var hasRemoteCover: Bool?
     /// アイコンを切り抜く画面（板 50b）
     @State private var showAvatarCrop = false
     /// ほかの人からの見え方（板 50c）
@@ -211,9 +219,22 @@ struct ProfileEditView: View {
             }
         }
         .onChange(of: coverItem) { _, item in
-            pickedCoverId = nil
+            // 選んだ写真の ID は「完了」で決める（キャンセルしたら前の選択のまま）
             Task { await stage(item, kind: .cover) }
         }
+        // カバーの位置を合わせる（owner 2026-10-28）。決めたら見本に入り、保存で反映（ほかの写真と同じ約束）
+        .fullScreenCover(item: $coverCrop) { request in
+            CoverCropView(request: request) { data, image, position in
+                pendingCover = data
+                coverPreview = image
+                pickedCoverId = request.photoId
+                var kept = request
+                kept.position = position
+                coverSource = kept
+                message = L("写真を選びました。右上の「保存」で反映されます。", "Photo selected. Tap Save to apply it.")
+            }
+        }
+        .onChange(of: coverCrop?.id) { _, open in childOpen = open != nil }
         // アイコンを自分の写真から丸く切り抜く（板 50b）。決めたら見本に入り、保存で反映（カバーと同じ約束）
         .navigationDestination(isPresented: $showAvatarCrop) {
             AvatarCropView(photos: myPhotos ?? []) { data, image in
@@ -292,6 +313,13 @@ struct ProfileEditView: View {
                     }
                     .background(WebTheme.card)
                     .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+                    .overlay(alignment: .topTrailing) {
+                        if coverSource != nil || hasRemoteCover == true {
+                            adjustCoverButton
+                                .padding(.trailing, 10)
+                                .padding(.top, 6)
+                        }
+                    }
                     .overlay(alignment: .bottomTrailing) {
                         PhotosPicker(selection: $coverItem, matching: .images) {
                             // 板 50: 候補（下の「カバーにする写真」）のほかの写真から選ぶ口
@@ -358,6 +386,34 @@ struct ProfileEditView: View {
         .listRowInsets(EdgeInsets(top: 0, leading: ProfileV2.gutter, bottom: 0, trailing: ProfileV2.gutter))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+    }
+
+    /// カバーの「位置を調整」（owner 2026-10-28）。写真の上なのでガラスに白の字（「ほかの写真から」と同じ形）。
+    /// この編集の間に選んだ元があれば、その元で合わせ直す。**無ければ写真を選び直す**——上げたカバーは
+    /// 切り抜いたあとの絵で、元の写真は手元に無い（`coverSource` の注記）
+    @ViewBuilder
+    private var adjustCoverButton: some View {
+        let label = Label(L("位置を調整", "Adjust"), systemImage: "crop")
+            .font(JPFont.footnote.weight(.semibold))
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 14)
+            .frame(minHeight: JPHeight.inlineButton)
+            .jpGlass(in: Capsule())
+            // 見た目は 36pt、押せる高さは 44pt
+            .padding(.vertical, ProfileV2.tapSlack(visible: JPHeight.inlineButton))
+            .contentShape(Rectangle())
+        Group {
+            if let coverSource {
+                Button { coverCrop = coverSource } label: { label }
+            } else {
+                PhotosPicker(selection: $coverItem, matching: .images) { label }
+                    .accessibilityHint(L("写真を選び直して、帯に映る範囲を合わせます",
+                                         "Choose the photo again to set what shows in the cover"))
+            }
+        }
+        .buttonStyle(.borderless)
+        .disabled(!loaded || isSaving || preparingImage != nil)
+        .accessibilityIdentifier("profileEdit.coverAdjust")
     }
 
     /// 板 v2 ProfileEdit: カバーの札の高さ 150・アイコン 84
@@ -561,6 +617,9 @@ struct ProfileEditView: View {
         themeColor = draft.themeColor
         songs = draft.songs
         loaded = true
+        // カバーが置かれているか（「位置を調整」を出すか）。待たずに次へ
+        let owner = profile.userId
+        Task { hasRemoteCover = await ProfileImageFromPhoto.exists(userId: owner, kind: .cover) }
         // 候補の元（読めなくても編集はできる。候補の節が出ないだけ）
         myPhotos = await ProfileImageFromPhoto.myPhotos(environment: environment) ?? []
     }
@@ -670,7 +729,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// 候補から選んだ写真をカバーの見本に入れる（取り直して、端末から選ぶときと同じ JPEG にする）
+    /// 候補から選んだ写真を取り直して、位置を合わせる画面を開く（決めたら見本に入る）
     private func stagePhoto(_ photo: Photo) async {
         guard let url = photo.detailImageURL else { return }
         guard preparingImage == nil, !isSaving else {
@@ -683,15 +742,12 @@ struct ProfileEditView: View {
         message = L("カバーを準備しています…", "Preparing cover…")
         defer { preparingImage = nil }
         do {
-            let data = try await ProfileImageFromPhoto.preparedJPEG(url)
-            guard let preview = UIImage(data: data) else {
-                message = L("画像を表示できませんでした", "Couldn't preview the image")
-                return
-            }
-            pendingCover = data
-            coverPreview = preview
-            pickedCoverId = photo.id
-            message = L("写真を選びました。右上の「保存」で反映されます。", "Photo selected. Tap Save to apply it.")
+            let data = try await ProfileImageFromPhoto.download(url)
+            let source = try await Task.detached(priority: .userInitiated) {
+                try CoverCropMath.source(from: data)
+            }.value
+            message = nil
+            coverCrop = CoverCropRequest(image: source, photoId: photo.id)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を準備できませんでした", "Couldn't prepare the image")
         }
@@ -722,6 +778,16 @@ struct ProfileEditView: View {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 message = L("画像を読み込めませんでした", "Couldn't load the image")
+                return
+            }
+            if kind == .cover {
+                // カバーは位置を合わせてから（owner 2026-10-28）。切り抜いた絵は `CoverCropMath.render` が
+                // `ImagePreparer` と同じ関所（GPS/EXIF を落とせたと確かめたものだけ）を通す
+                let source = try await Task.detached(priority: .userInitiated) {
+                    try CoverCropMath.source(from: data)
+                }.value
+                message = nil
+                coverCrop = CoverCropRequest(image: source, photoId: nil)
                 return
             }
             // GPS/EXIF を除去できた JPEG だけをプレビューと送信に使う。

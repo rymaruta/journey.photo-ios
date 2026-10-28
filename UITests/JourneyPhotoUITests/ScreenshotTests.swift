@@ -3650,6 +3650,15 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(recent.frame.height, 44, "「最近」が 44pt 未満")
             if first.isHittable {
                 first.tap()
+                // 選んだ直後にカバーの位置を合わせる画面（owner 2026-10-28）。出なければ撮らずに先へ
+                let done = app.buttons["coverCrop.done"].firstMatch
+                if done.waitForExistence(timeout: 20) {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "104a2-カバーの位置を調整")
+                    XCTAssertGreaterThanOrEqual(done.frame.height, 44, "「完了」が 44pt 未満")
+                    XCTAssertGreaterThanOrEqual(app.buttons["coverCrop.cancel"].firstMatch.frame.height, 44, "「キャンセル」が 44pt 未満")
+                    done.tap()
+                }
                 Thread.sleep(forTimeInterval: 4)
                 shoot(app, "104b-プロフィールの編集（候補を選んだ）")
             }
