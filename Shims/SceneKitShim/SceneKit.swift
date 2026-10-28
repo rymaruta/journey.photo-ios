@@ -126,6 +126,12 @@ open class SCNGeometry {
     public init() {}
     public init(sources: [SCNGeometrySource], elements: [SCNGeometryElement]?) {}
     open var materials: [SCNMaterial] = []
+    /// 本物は NSObject の `copy()`（頂点の並びは元と共有し、材質だけ別に持てる写し）。模型は材質を写した別の形を返す
+    open func copy() -> Any {
+        let g = SCNGeometry()
+        g.materials = materials
+        return g
+    }
     open var boundingBox: (min: SCNVector3, max: SCNVector3) { (SCNVector3(0, 0, 0), SCNVector3(0, 0, 0)) }
 }
 
@@ -288,6 +294,12 @@ open class SCNView: UIView, SCNSceneRenderer {
     /// 模型は画面に写さない（z 0 を返す＝画面の外として扱われる）
     open func projectPoint(_ point: SCNVector3) -> SCNVector3 { SCNVector3(0, 0, 0) }
     open func snapshot() -> UIImage { UIImage() }
+    /// 本物は描く前に形と材質を GPU に載せ、終わったら別の糸で知らせる。模型は渡された物を覚えてすぐ知らせる
+    public private(set) var prepared: [Any] = []
+    open func prepare(_ objects: [Any], completionHandler: ((Bool) -> Void)? = nil) {
+        prepared.append(contentsOf: objects)
+        completionHandler?(true)
+    }
 }
 
 /// 画面の外で描いて絵にする（本物は `init(device: MTLDevice?, options:)`。家具の接写の一覧・2026-10-21）
