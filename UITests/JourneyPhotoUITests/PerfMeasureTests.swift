@@ -102,9 +102,19 @@ final class PerfMeasureTests: XCTestCase {
     /// 探すの「おすすめ」の「すべて見る」から、カテゴリの集約の一覧（`PhotoGrid`）を開く
     private func openCollection(_ app: XCUIApplication) {
         tab(app, 1)
+        // 一覧の読み込みを待ってから、「すべて見る」が木に出るまで送る（Lazy なので画面の外は木に無い・run 717）
+        XCTAssertTrue(app.descendants(matching: .any)["search.field"].firstMatch.waitForExistence(timeout: 30), "探すが出ない")
+        Thread.sleep(forTimeInterval: 6)
         let more = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'すべて見る'")).firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 40), "探すに「すべて見る」が出ない")
-        reveal(more, in: app, "すべて見る")
+        var pushes = 0
+        while !(more.exists && more.isHittable), pushes < 20 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        XCTAssertTrue(more.exists && more.isHittable, "探すに「すべて見る」が出ない（送った回数 \(pushes)）")
+        note("「すべて見る」まで送った回数=\(pushes) ラベル=\(more.label)")
         more.tap()
         XCTAssertTrue(more.waitForNonExistence(timeout: 15), "集約の一覧が開かない")
         Thread.sleep(forTimeInterval: 4)
@@ -194,7 +204,16 @@ final class PerfMeasureTests: XCTestCase {
     func testPerfViewerThumbnails() {
         let app = makeApp()
         launch(app)
-        openFirstFeedPhoto(app)
+        // ホームの札の詳細は並びが同じ投稿の写真だけ（多くは1枚＝列が出ない・run 717）。
+        // 集約の一覧から開くと、並びが一覧の全部になる（`CollectionPhotosScreen` の context）
+        openCollection(app)
+        var opened = false
+        for y in [0.5, 0.65, 0.8, 0.4] where !opened {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: y)).tap()
+            opened = app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 8)
+        }
+        XCTAssertTrue(opened, "集約の一覧から写真の詳細が開かない")
+        Thread.sleep(forTimeInterval: 2)
         let close = app.buttons["閉じる"].firstMatch
         var counted = false
         measure(metrics: appMetrics(app), options: manualOptions()) {
