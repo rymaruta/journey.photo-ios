@@ -8,6 +8,10 @@ import Foundation
 ///
 /// **閲覧画面の「♪」の行は残す。** Web から投稿したストーリーには札が無く、
 /// 曲名を出せるのはあの行だけ。札は投稿者が置く飾りの扱い。
+///
+/// 2026-10-28: 札は**6つの形**（`SongStickerStyle`）を持ち、押すたびに替わる（`cycled`）。
+/// 曲を変えた・外したとき（`retext`・`shouldDetach`・`isOnPhoto`）は**形を問わず同じに動く**
+/// ——どれも文字（「曲名 · 歌手」）で札を見分け、形は見ない。
 enum SongSticker {
 
     /// 札の文字（「曲名 · アーティスト」）。題が空なら置かない
@@ -45,14 +49,54 @@ enum SongSticker {
         return !remaining.contains { $0.contains { isSticker($0, of: song) } }
     }
 
+    /// 札に描く曲名と歌手（`text(for:)` と同じ整え方・改行は空白）。題が空なら nil
+    static func parts(for song: Photo.Song) -> (title: String, artist: String?)? {
+        let title = TextOverlay.cleaned(song.title, kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        let artist = TextOverlay.cleaned(song.artist ?? "", kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (title, artist.isEmpty ? nil : artist)
+    }
+
     /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。
     /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
-    /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）
-    static func make(for song: Photo.Song) -> TextOverlay? {
+    /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）。
+    /// `style` は札の形（作る画面は端末に覚えた形 `SongStickerStyle.remembered()`）。
+    /// nil は文字だけの札（前の版の札）
+    static func make(for song: Photo.Song, style: SongStickerStyle?) -> TextOverlay? {
         guard let text = text(for: song) else { return nil }
-        let display = TextOverlay.display(text: text, kind: .song)
-        return TextOverlay(text: text, x: 0.5, y: 0.6, size: fittedSize(for: display),
-                           kind: .song, face: .gothic)
+        var overlay = TextOverlay(text: text, x: 0.5, y: 0.6, size: TextOverlay.defaultSize,
+                                  kind: .song, face: .gothic)
+        overlay.songStyle = style
+        overlay.size = fittedSize(for: overlay, song: song)
+        return overlay
+    }
+
+    /// 札の形のとき、その札（`overlay`）に描く形。**付けた曲の札で形を持つときだけ**
+    /// （自分で打った「曲」の札・前の版の文字だけの札・曲を外した後の札は文字のまま描く）
+    static func shape(of overlay: TextOverlay, song: Photo.Song?) -> SongStickerStyle? {
+        guard let style = overlay.songStyle, isSticker(overlay, of: song) else { return nil }
+        return style
+    }
+
+    /// 札を押した（2026-10-28・Instagram と同じく押すたびに形が替わる）。A→B→…→F→A。
+    /// 文字だけの札（前の版）は A から。**大きさは置いたときの大きさの比で替える**——形ごとに
+    /// 幅が違うので、そのままだとジャケット大で写真からはみ出す。自分で大きく・小さくした分は倍率で残る
+    static func cycled(_ overlay: TextOverlay, song: Photo.Song) -> TextOverlay {
+        var next = overlay
+        next.songStyle = overlay.songStyle?.next ?? .glass
+        let before = fittedSize(for: overlay, song: song)
+        let after = fittedSize(for: next, song: song)
+        next.size = next.clampedSize(overlay.size * after / before)
+        return next
+    }
+
+    /// その札を置いたときの大きさ（形があれば形の幅、無ければ文字の幅で決める）
+    static func fittedSize(for overlay: TextOverlay, song: Photo.Song) -> Double {
+        guard let style = overlay.songStyle, let parts = parts(for: song) else {
+            return fittedSize(for: TextOverlay.display(text: overlay.text, kind: .song))
+        }
+        let width = SongStickerLayout.estimatedWidth(style: style, title: parts.title, artist: parts.artist)
+        return max(SongStickerStyle.minSize, min(SongStickerStyle.defaultSize, SongStickerStyle.fitWidth / width))
     }
 
     /// 1行で収まる幅（短い辺に対する割合）。**写真の幅ではなく見えている幅に合わせる**
@@ -90,6 +134,12 @@ enum SongSticker {
             guard isOld(overlay) else { return overlay }
             var changed = overlay
             changed.text = String(newText.prefix(TextOverlay.maxLength))
+            // 形のある札は**形の幅の比**で変える（形はそのまま・2026-10-28）
+            if overlay.songStyle != nil {
+                changed.size = changed.clampedSize(
+                    overlay.size * fittedSize(for: changed, song: new) / fittedSize(for: overlay, song: old))
+                return changed
+            }
             // **置いたときの大きさの比で変える。** 手を付けていない札は新しい曲名で
             // 置いたときと同じ大きさになり、自分で大きく・小さくした分は倍率として残る。
             // 曲を行き来しても元に戻る。**例外は下限・上限で切られたとき**——最小まで

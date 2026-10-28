@@ -72,6 +72,9 @@ struct StoryComposerView: View {
     @State private var showPendingFailure = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
     @State private var song: Photo.Song?
+    /// 曲のジャケット（曲の札に描く・2026-10-28）。**読めないうちは nil**（札は ♪ の四角）。
+    /// 作る画面と焼き込みが同じ絵を使う（`songArt`）
+    @State private var songArtwork: UIImage?
     @State private var durationSec = StoryService.defaultDurationSec
     @State private var showSongPicker = false
     /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
@@ -351,6 +354,12 @@ struct StoryComposerView: View {
                 self.song = song.fitting(window: window)
             }
         }
+        // 曲のジャケット（曲の札に描く）。曲の `artwork` を読むだけ（新しい通信先は無い・`SongArtwork`）
+        .task(id: song?.artwork) {
+            songArtwork = SongArtwork.cached(song) ?? PreviewStorySample.artwork(for: song)
+            guard songArtwork == nil, let loaded = await SongArtwork.load(song), !Task.isCancelled else { return }
+            songArtwork = loaded
+        }
         // 撮影地の候補のための索引。**写真を選んでから**読む（選ぶ段では使わない）
         .task(id: shots.isEmpty) {
             guard !shots.isEmpty, spotIndex.isEmpty else { return }
@@ -392,6 +401,14 @@ struct StoryComposerView: View {
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
             askedOnOpen = true
+            // 画面写真の試験だけ: 見本の写真と曲を入れて開く（`PreviewStorySample`・Debug のみ）
+            if shots.isEmpty, let sample = PreviewStorySample.photoData() {
+                Task {
+                    await accept(sample)
+                    applySong(PreviewStorySample.song)
+                }
+                return
+            }
             let hasAuto = autoDrafts.draft != nil
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
@@ -510,6 +527,11 @@ struct StoryComposerView: View {
                             // 打っている札は打つ画面の真ん中に出す（写真の上に二重に出さない）
                             hiddenId: typingShotId == shots[current].id ? typingId : nil,
                             onTap: { overlay in
+                                // 付けた曲の札は**押すたびに形が替わる**（2026-10-28・Instagram と同じ）
+                                if SongSticker.isSticker(overlay, of: song) {
+                                    cycleSongSticker(overlay.id)
+                                    return
+                                }
                                 // **押したらすぐ打つ画面へ**（時刻・日付は書体・色・大きさだけ）。スタンプは何もしない
                                 if StoryTextEditing.opensTyping(overlay) { startTyping(overlay.id) }
                             },
@@ -528,7 +550,8 @@ struct StoryComposerView: View {
                             photoId: shots.indices.contains(current) ? shots[current].id : nil,
                             // 「ひとこと」の欄は**写真と札の間**に敷く（札の上に重ねると、真ん中の札を
                             // 欄が先に取って動かせなかった）
-                            underOverlays: AnyView(captionLayer))
+                            underOverlays: AnyView(captionLayer),
+                            songArt: songArt)
             } else {
                 // 写真を読めなかった1枚（並びには居る）。黒のまま
                 Color.black
@@ -1281,6 +1304,19 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 曲の札の形を次へ（A→B→…→F→A）。選んだ形は端末に覚え、次のストーリーで最初に出す
+    private func cycleSongSticker(_ id: UUID) {
+        guard let song, let i = overlays.wrappedValue.firstIndex(where: { $0.id == id }) else { return }
+        let next = SongSticker.cycled(overlays.wrappedValue[i], song: song)
+        overlays.wrappedValue[i] = next
+        if let style = next.songStyle { SongStickerStyle.remember(style) }
+    }
+
+    /// 付けた曲とジャケット（作る画面の札と焼き込みが同じ絵を使う）
+    private var songArt: SongStickerPainter.Art? {
+        song.map { SongStickerPainter.Art(song: $0, artwork: songArtwork) }
+    }
+
     /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
     /// いま見ている1枚に動かせる札を置き、変えたら札の文字を差し替え、外したら消す。
     /// 曲は全部の写真に共通なので、差し替えと削除は全部の写真で行う
@@ -1295,7 +1331,7 @@ struct StoryComposerView: View {
         }
         // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
         // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
-        guard !found, let new, let sticker = SongSticker.make(for: new),
+        guard !found, let new, let sticker = SongSticker.make(for: new, style: SongStickerStyle.remembered()),
               shots.indices.contains(current) else { return }
         guard shots[current].overlays.count < TextOverlay.maxCount else {
             return
@@ -1321,7 +1357,7 @@ struct StoryComposerView: View {
         case .kind(let kind):
             guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
             // 曲を付けてあれば、その曲の札（右の列の「曲」と同じ札・打たなくてよい）
-            if kind == .song, let song, let sticker = SongSticker.make(for: song) {
+            if kind == .song, let song, let sticker = SongSticker.make(for: song, style: SongStickerStyle.remembered()) {
                 // 同じ写真に付けた曲の札が既にあれば置かない（右の列の「曲」と同じく1枚）
                 if !SongSticker.retext(overlays.wrappedValue, from: song, to: song).found {
                     overlays.wrappedValue.append(sticker)
@@ -1823,12 +1859,14 @@ struct StoryComposerView: View {
                                         attachesPhotoLocation: attachesLocation)
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
-                imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
+                // 曲の札は作る画面と同じ形・同じジャケットで焼く（読めていなければ ♪ の四角・画面と同じ）
+                imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
+                                                    song: songArt),
                 caption: caption, location: placeText, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
-                // 曲の札を焼き込んだ1枚は、見る画面の ♪ の行を出さない（曲名が2か所に出ない）
+                // 曲の札を焼き込んだ印（送る形は変えない。見る画面は 2026-10-28 から印に関わらず ♪ の行を出す）
                 songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song))
         }
         let stories = environment.stories

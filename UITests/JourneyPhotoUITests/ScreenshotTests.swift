@@ -4920,4 +4920,41 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "絵文字の列の的が 44pt 未満")
         }
     }
+
+    /// **ストーリーの曲の札の6つの形**（2026-10-28・owner「押して替える めっちゃいいね！」）。
+    ///
+    /// `-JPPreviewStorySong YES` で、見本の写真と見本の曲（同梱の画像をジャケットに使う・通信しない）を付けて
+    /// ストーリー作成を開く（`PreviewStorySample`・Debug のみ）。曲の札を押すたびに A→F と替わるのを1枚ずつ撮る。
+    /// 覚えた形は起動の引数で A に戻す（引数の値が端末の覚えより先に読まれる）。**出なければ撮らずに抜ける**
+    func testCapturesStorySongStickerStyles() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewStorySong", "YES", "-story.songSticker.style", "glass"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toStory = app.buttons["post.choice.story"].firstMatch
+        guard toStory.waitForExistence(timeout: 5), toStory.isHittable else { return }
+        toStory.tap()
+        let sticker = app.descendants(matching: .any)["story.songSticker"].firstMatch
+        guard sticker.waitForExistence(timeout: 20) else {
+            shoot(app, "62-ストーリーの曲の札（札が出ない）")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        let names = ["A ガラスの札", "B 白い札", "C 小さな帯", "D ジャケット大", "E レコード", "F 明朝の題字"]
+        for (i, name) in names.enumerated() {
+            shoot(app, "62\(["a", "b", "c", "d", "e", "f"][i])-ストーリーの曲の札（\(name)）")
+            guard i < names.count - 1, sticker.isHittable else { break }
+            sticker.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+    }
 }

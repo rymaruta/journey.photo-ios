@@ -413,6 +413,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストでストーリー作成を**見本の写真と曲を付けた状態で**開く（Debug のみ）。`-JPPreviewStorySong YES`。
+    /// 曲の札の6つの形（2026-10-28）を押して替えながら撮る。**入っている見本の利用者のときだけ**効く。
+    /// Release では必ず false
+    static let storySongKey = "JPPreviewStorySong"
+
+    static var opensStorySongSample: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: storySongKey)
+        #else
+        return false
+        #endif
+    }
+
     /// マイページでカバーが無いことにする（額縁・板 52 を撮る。見本の利用者がカバーを持っていても）
     static let noCoverKey = "JPPreviewNoCover"
 

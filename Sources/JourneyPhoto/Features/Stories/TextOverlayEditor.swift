@@ -43,6 +43,11 @@ struct StoryCanvas: View {
     /// **札より下に置く**——札の上に重ねると、真ん中に置いたスタンプや札を欄が先に取り、
     /// 動かす・回す・つまむのどれも効かなかった（2026-09-30・owner「スタンプとかも移動できねえ」）
     var underOverlays: AnyView? = nil
+    /// 付けた曲とジャケット（2026-10-28）。**形のある曲の札は形で描く**（焼き込みと同じ絵・`SongStickerView`）
+    var songArt: SongStickerPainter.Art? = nil
+
+    /// 「動きを減らす」がオンなら曲の札の棒・レコードを動かさない
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
@@ -526,18 +531,10 @@ struct StoryCanvas: View {
         let fontSize = TextOverlay.fontSize(size, in: photo.size)
         let center = overlay.center(in: photo)
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
-        return Self.edged(Text(overlay.drawnText)
-            // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
-            .font(Self.font(overlay.face, size: fontSize))
-            // 改行した文字の揃え（焼き込みは揃えつきの段落・`TextOverlayRenderer.draw`）
-            .multilineTextAlignment(Self.alignment(overlay.align))
-            // **折り返さない**（焼き込みも折り返さない。画面の幅で折り返すと行数と揃えがずれた）
-            .fixedSize(), overlay: overlay, fontSize: fontSize)
-            // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
-            .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
-            .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
-            .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
-            .shadow(radius: overlay.style == .light ? 6 : 0)
+        // 形のある曲の札は**つまんでいる間は絵を縮め拡げるだけ**（毎こま絵を描き直さない）。離すと描き直す
+        let shaped = SongSticker.shape(of: overlay, song: songArt?.song) != nil
+        return look(overlay, fontSize: shaped ? TextOverlay.fontSize(overlay.size, in: photo.size) : fontSize)
+            .scaleEffect(shaped && overlay.size > 0 ? CGFloat(size / overlay.size) : 1)
             // 小さい文字でも指で掴めるように、**押せる範囲だけ**広げる
             // （帯の見た目は広げない＝`background` より後ろに置く）
             .frame(minWidth: 44, minHeight: 44)
@@ -554,11 +551,36 @@ struct StoryCanvas: View {
                     .onChanged { value in overlayDragChanged(overlay, value: value, photo: photo, canvas: canvas) }
                     .onEnded { value in overlayDragEnded(overlay, value: value, photo: photo, canvas: canvas) }
             )
-            // 押すと打ち直す（呼ぶ側が決める・スタンプ以外）。消すのはゴミ箱
+            // 押すと打ち直す（呼ぶ側が決める・スタンプ以外）。曲の札は形が替わる。消すのはゴミ箱
             .onTapGesture { onTap(overlay) }
+            // 1つの読み上げの要素にする（曲の札の絵は中身を読み上げに出さない・縁の写しも読まない）
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(overlay.text)
+            .accessibilityHint(SongSticker.shape(of: overlay, song: songArt?.song) == nil ? ""
+                               : L("押すと札の形が替わります", "Tap to change the sticker style"))
+            .accessibilityIdentifier(overlay.kind == .song ? "story.songSticker" : "")
             // VoiceOver では指で運べないので、消す操作を別に出す
             .accessibilityAction(named: L("消す", "Delete")) { onDelete(overlay.id) }
+    }
+
+    /// 札の見た目（押せる範囲・位置・指の操作を付ける前）。**形のある曲の札は形で描く**（2026-10-28）
+    private func look(_ overlay: TextOverlay, fontSize: Double) -> AnyView {
+        if let art = songArt, let layout = SongStickerPainter.layout(for: overlay, art: art, unit: fontSize) {
+            return AnyView(SongStickerView(layout: layout, art: art, animated: !reduceMotion)
+                .frame(width: layout.size.width, height: layout.size.height))
+        }
+        return AnyView(Self.edged(Text(overlay.drawnText)
+            // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
+            .font(Self.font(overlay.face, size: fontSize))
+            // 改行した文字の揃え（焼き込みは揃えつきの段落・`TextOverlayRenderer.draw`）
+            .multilineTextAlignment(Self.alignment(overlay.align))
+            // **折り返さない**（焼き込みも折り返さない。画面の幅で折り返すと行数と揃えがずれた）
+            .fixedSize(), overlay: overlay, fontSize: fontSize)
+            // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
+            .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
+            .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
+            .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
+            .shadow(radius: overlay.style == .light ? 6 : 0))
     }
 
     /// 札を1本指で運んでいる間（札の上で始まった回と、写真の上で札の近くから始まった回の両方）
@@ -649,6 +671,11 @@ struct StoryCanvas: View {
     private func overlayUnder(_ point: CGPoint, photo: CGRect) -> UUID? {
         let placed = overlays.filter { $0.id != hiddenId }.map { overlay -> StoryTextEditing.Placed in
             let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
+            // 形のある曲の札は札の大きさで当てる（2026-10-28）
+            if let layout = SongStickerPainter.layout(for: overlay, art: songArt, unit: fontSize) {
+                return StoryTextEditing.Placed(id: overlay.id, center: overlay.center(in: photo),
+                                               size: layout.size, rotation: overlay.rotation)
+            }
             let text = TextOverlayRenderer.naturalSize(overlay, fontSize: fontSize)
             let banner = overlay.style == .banner
             return StoryTextEditing.Placed(

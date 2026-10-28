@@ -738,13 +738,10 @@ struct StoryViewerView: View {
         let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
         // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。スポットへの結び付けは `spotLink` 側で元の文字から
         let place = story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 }
-        // 曲の札を焼き込んだ1本は出さない（写真の上の札と2度出る・`songLineShown`）
-        let song = story.songLineShown
-        // 札は画像なので読み上げでは読めない。隠した行は**読み上げにだけ**残す（686566d のレビュー）
-        let spokenSong = song == nil ? story.songLine : nil
+        // 曲は 2026-10-28 から**名前の下の1行**（`header`・`SongMarqueeLine`）。ここには出さない
         // ハイライトの日付「2026.09.12 · 残したストーリー」（板 HighlightPlayer: ひとことの下・13 の等幅・白 82%）
         let keptDate = highlight == nil ? nil : StoryPlayback.dotDate(story.createdAt)
-        if caption != nil || place != nil || song != nil || spokenSong != nil || keptDate != nil {
+        if caption != nil || place != nil || keptDate != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {
                     Text(caption)
@@ -799,30 +796,17 @@ struct StoryViewerView: View {
                             .accessibilityLabel(L("撮影地 \(place)", "Location \(place)"))
                     }
                 }
-                if let song {
-                    photoMeta(symbol: "music.note", text: song)
-                        .allowsHitTesting(false)
-                }
-                // ひとことも撮影地も無い回は並びが空になり、背景に大きさが無いので中に置く
-                // （ほかに要素が無いので間隔は足されない）
-                if caption == nil, place == nil, keptDate == nil, let spokenSong {
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .allowsHitTesting(false)
-                        .accessibilityElement()
-                        .accessibilityLabel(L("曲 \(spokenSong)", "Song \(spokenSong)"))
-                }
             }
-            // **並びの外（背景）に置く。** 並びの中に置くと間隔 8pt ＋ 1pt が足され、下端で
-            // 揃えている塊が 9pt 押し上がった（c04fdf5 のレビュー）
-            .background {
-                if caption != nil || place != nil || keptDate != nil, let spokenSong {
-                    Color.clear
-                        .allowsHitTesting(false)
-                        .accessibilityElement()
-                        .accessibilityLabel(L("曲 \(spokenSong)", "Song \(spokenSong)"))
-                }
-            }
+        }
+    }
+
+    /// 名前の下の「♪ 曲名 · 歌手」の行（2026-10-28 判断・モック「見る側の ♪ の行」）。
+    /// **札を焼き込んだ1本でも出す**（`Story.songLineShown`）。長い曲名は横に流し、動きを減らす設定では「…」で切る
+    @ViewBuilder
+    private func songRow(for story: Story) -> some View {
+        if let line = story.songLineShown {
+            SongMarqueeLine(text: line, reduceMotion: reduceMotion, paused: frozen)
+                .allowsHitTesting(false)
         }
     }
 
@@ -904,7 +888,7 @@ struct StoryViewerView: View {
             // 自分の名前は押せない形で描く（自分のページはマイページ）。
             // 無効のボタンにすると薄く描かれ、読み上げも「使用不可」になる
             if let highlight {
-                highlightLabel(highlight)
+                highlightLabel(highlight, story: story)
             } else if isMine(story) || story.userId == nil {
                 authorLabel(for: story)
             } else {
@@ -946,7 +930,7 @@ struct StoryViewerView: View {
     }
 
     /// ハイライトの見出し（表紙・題・「ストーリーハイライト · 5件」。板 38）
-    private func highlightLabel(_ highlight: HighlightContext) -> some View {
+    private func highlightLabel(_ highlight: HighlightContext, story: Story) -> some View {
         HStack(spacing: 10) {
             Group {
                 if let url = highlight.coverURL {
@@ -969,6 +953,7 @@ struct StoryViewerView: View {
                 Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
                     .font(JPFont.meta)
                     .foregroundStyle(WebTheme.muted)
+                songRow(for: story)
             }
             .jpPhotoTextShadow()
         }
@@ -1027,19 +1012,25 @@ struct StoryViewerView: View {
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
                     }
+                    songRow(for: story)
                 }
             } else {
-                Text(story.authorName)
-                    // 板 14・600（`.subheadline` と同じだけ伸びる）
-                    .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                if let ago = StoryPlayback.ago(from: story.createdAt) {
-                    // v2: 名前と同じ行に、白 75%（写真の上なので白の透過の muted2）
-                    Text(ago)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.muted2)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(story.authorName)
+                            // 板 14・600（`.subheadline` と同じだけ伸びる）
+                            .jpSystemFont(StoryViewerMetrics.smallTextSize, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        if let ago = StoryPlayback.ago(from: story.createdAt) {
+                            // v2: 名前と同じ行に、白 75%（写真の上なので白の透過の muted2）
+                            Text(ago)
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(1)
+                        }
+                    }
+                    songRow(for: story)
                 }
             }
         }
