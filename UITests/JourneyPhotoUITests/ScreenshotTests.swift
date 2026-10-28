@@ -3637,7 +3637,16 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(bar.frame.midY, app.frame.height * 0.6, "離した高さに残っていない")
         shoot(app, "10m-ホーム（再生器・左の端へ寄せた）")
 
-        // 探すの札で、いちばん上まで引き上げる → 見出しの下の入力欄にかぶらない（`MiniPlayerPlacement.topReserved`）
+        // 探すの札で、いちばん上まで引き上げる → 見出しの下の入力欄にかぶらない（`MiniPlayerPlacement.topReserved`）。
+        // 試聴は 30 秒で終わり再生器が消える（run 734 はここで消えて落ちた）。マイページで鳴らし直してから行く
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard song.waitForExistence(timeout: 10) else { return }
+        if bar.exists {
+            song.tap()  // 鳴っていたら一度止める（押すと止まる）
+            Thread.sleep(forTimeInterval: 1)
+        }
+        song.tap()
+        guard bar.waitForExistence(timeout: 15) else { return }
         tabBar.buttons.element(boundBy: 1).tap()
         let field = app.textFields["search.field"].firstMatch
         _ = field.waitForExistence(timeout: 10)
