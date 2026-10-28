@@ -126,6 +126,12 @@ open class SCNGeometry {
     public init() {}
     public init(sources: [SCNGeometrySource], elements: [SCNGeometryElement]?) {}
     open var materials: [SCNMaterial] = []
+    /// 本物は NSObject の `copy()`（頂点の並びは元と共有し、材質だけ別に持てる写し）。模型は材質を写した別の形を返す
+    open func copy() -> Any {
+        let g = SCNGeometry()
+        g.materials = materials
+        return g
+    }
     open var boundingBox: (min: SCNVector3, max: SCNVector3) { (SCNVector3(0, 0, 0), SCNVector3(0, 0, 0)) }
 }
 

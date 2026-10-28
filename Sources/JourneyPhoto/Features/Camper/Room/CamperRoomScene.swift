@@ -16,6 +16,17 @@ import SceneKitShim
 //   窓の硝子は暗い色にし、外の景色は光を受けない夜の絵（windowNight）
 // - 夜の光の決まり（docs/CAMPER.md）: にじみ（bloom）は使わない・光る面の emission は 1 まで・室内の灯りは室内の組
 //   （categoryBitMask = 2）だけを照らす。天井の広い spot は置かない（Mac run 575）
+//
+// 重さ（2026-10-28 判断・owner 承認「見た目が少し変わる重さの直し」）:
+// - 影を落とす光は昼の太陽の 1 つだけ。灯りの家具は影を落とさない（`lampsCastShadows`）。太陽の影の絵は 1024（以前 2048）・
+//   ぼかしの数 8（以前 16）。影の縁が少し粗くなる
+// - 家具の形（SCNGeometry）は家具の種類ごとに 1 つ作って使い回す。額だけは材質（印画）を額ごとに持つので、頂点を共有する写し
+//   （`copy()`）にする。以前は置いた家具 1 つごとに頂点の並びを作り直していた
+// - `SCNView.prepare`（場面に入れる前に GPU に載せる）は**使わない**。2026-10-28 に入れたが、PR #390 の検証で部屋へ入った直後に
+//   アプリが 15 秒あまり応答しなくなった（Mac run 738・XCTest の問い合わせが「Interrupted by waiter」。同じ条件の main の
+//   run 739 は緑）。シミュレーターは描く準備（シェーダーの組み立て）を CPU で一度にやり、その間 SceneKit の場面の鍵を握るので、
+//   主スレッドのカメラ・家具の更新が待たされたと見ている。描く側で少しずつ組む元のやり方に戻した（`testRoomDoesNotCallPrepare`）
+// - 輪郭のなめらかさ（MSAA）は 2 倍（`CamperRoomSceneView.antialiasing`・以前 4 倍）
 
 #if canImport(SceneKit) || canImport(SceneKitShim)
 
@@ -39,6 +50,17 @@ final class CamperRoomScene {
     private var furniture: [String: CamperPreparedMesh] = [:]
     /// 家具の透明の硝子（`CamperRoomMaterials.drawnAfterOpaque`）。不透明の部分（`furniture`）の後に描く
     private var furnitureGlass: [String: CamperPreparedMesh] = [:]
+    /// 家具の種類ごとの形（2026-10-28・使い回す。材質を作り直す組み直しで空にする）
+    private var furnitureGeometry: [String: SCNGeometry] = [:]
+    private var furnitureGlassGeometry: [String: SCNGeometry] = [:]
+    /// 接地の影の材質（床・壁で濃さが違うだけ。家具ごとに作らない）
+    private var contactMaterials: [Bool: SCNMaterial] = [:]
+    /// 試験用: 家具の形を頂点から作った回数（使い回しが効いているか）
+    private(set) var geometryBuilds = 0
+    /// 組んでいる途中の鍵（同じ鍵で何度呼ばれても、組み直しを始め直さない）
+    private var buildingKey: String?
+    /// 試験用: 組み直しを始めた回数（同じ鍵で呼ばれても 1 回か）
+    private(set) var buildsStarted = 0
     private var photoImages: [String: UIImage] = [:]
     private var buildTask: Task<Void, Never>?
     /// 選んでいる家具（3 浮かせる）・持ち上げて動かしている家具（動かした先）と置けるか
@@ -104,8 +126,8 @@ final class CamperRoomScene {
         // 影の色で塗られる（外の車の run 538 と同じ）。天井と壁にさえぎられ、窓の形の光だけが床に落ちる
         sun.shadowMode = .forward
         sun.shadowRadius = 6
-        sun.shadowSampleCount = 16
-        sun.shadowMapSize = CGSize(width: 2048, height: 2048)
+        sun.shadowSampleCount = Self.sunShadowSamples
+        sun.shadowMapSize = CGSize(width: Self.sunShadowMapSize, height: Self.sunShadowMapSize)
         sun.automaticallyAdjustsShadowProjection = true
         sun.categoryBitMask = CamperScene.insideMask | CamperScene.outsideMask
         sunNode.light = sun
@@ -122,6 +144,12 @@ final class CamperRoomScene {
         overlayNode.addChildNode(focusNode)
     }
 
+    /// 太陽の影の絵の大きさとぼかしの数（2026-10-28・重さの直しで 2048 / 16 から下げた）
+    nonisolated static let sunShadowMapSize: CGFloat = 1024
+    nonisolated static let sunShadowSamples = 8
+    /// 灯りの家具が影を落とすか（2026-10-28・落とさない。影を落とす光は昼の太陽だけ）
+    nonisolated static let lampsCastShadows = false
+
     /// SCNView を覚える（写真の材質を替えたあと、止まっている描画を起こす）
     func attach(_ view: SCNView) { scnView = view }
 
@@ -133,11 +161,16 @@ final class CamperRoomScene {
         self.doc = doc
         self.layout = layout
         self.paint = paint
-        if key == builtKey {
+        if key == builtKey, buildingKey == nil {
             syncItems(layout: layout, doc: doc)
             return
         }
+        // 同じ鍵を組んでいる途中なら始め直さない（文書は self.doc に入れたので、組み終えた後に合わせる）。
+        // 組んでいる途中に元の鍵へ戻ったときは、材質を作り直し始めているので、元の鍵も組み直す
+        if key == buildingKey { return }
         buildTask?.cancel()
+        buildingKey = key
+        buildsStarted += 1
         let started = Date()
         let extra = doc.all.map(\.k)
         buildTask = Task { [weak self] in
@@ -145,7 +178,8 @@ final class CamperRoomScene {
                 CamperRoomScenePlan.make(layout, doc: doc, paint: paint, extra: extra)
             }.value
             guard !Task.isCancelled, let self else { return }
-            self.install(plan, key: key)
+            self.install(plan, key: key, shell: self.buildShell(plan))
+            if self.buildingKey == key { self.buildingKey = nil }
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
             self.reapplyDrag()
             // 組み直しのあいだに届いた印画を載せる（setPhotoImages が空の itemNodes に当たって取りこぼす）
@@ -162,7 +196,8 @@ final class CamperRoomScene {
     func installNow(layout: CamperRoomLayout, doc: CamperRoomDocument, paint: UInt32) {
         self.layout = layout
         self.doc = doc
-        install(CamperRoomScenePlan.make(layout, doc: doc, paint: paint), key: "now")
+        let plan = CamperRoomScenePlan.make(layout, doc: doc, paint: paint)
+        install(plan, key: "now", shell: buildShell(plan))
         syncItems(layout: layout, doc: doc)
         reapplyAllPhotos()
         applyCutaway()
@@ -180,18 +215,11 @@ final class CamperRoomScene {
         "camper-room-ready \(layout?.kind.rawValue ?? "") \(mood.rawValue) items=\(itemNodes.count) ms=\(ms)"
     }
 
-    private func install(_ plan: CamperRoomScenePlan, key: String) {
-        builtKey = key
+    /// 部屋の殻を組む（まだ場面に入れない）。材質はここで作り直すので、家具の形の控えも空にする
+    private func buildShell(_ plan: CamperRoomScenePlan) -> [(SCNNode, String)] {
         palette.reset(bitmaps: plan.bitmaps, paint: paint, mood: mood)
-        furniture = plan.furniture
-        furnitureGlass = plan.furnitureGlass
-        roomNode.childNodes.forEach { $0.removeFromParentNode() }
-        itemsNode.childNodes.forEach { $0.removeFromParentNode() }
-        itemNodes = [:]
-        shellGroups = []
-        // 灯りは部屋の節の子なので一緒に外れる。並びの控えも消す（作り直させる）
-        lampNodes = []
-        lampSpecs = []
+        furnitureGeometry = [:]
+        furnitureGlassGeometry = [:]
         // 部屋は見せ方の組（いつも・手前の端の壁の高い／低い）ごとにまとめる（描く回数を抑える）
         var groups: [String: SCNNode] = [:]
         for (name, mesh) in plan.shell {
@@ -204,10 +232,35 @@ final class CamperRoomScene {
             holder.addChildNode(n)
             groups[key] = holder
         }
-        for (key, holder) in groups.sorted(by: { $0.key < $1.key }) {
+        return groups.sorted(by: { $0.key < $1.key }).map { key, holder in
             let flat = holder.flattenedClone()
             flat.name = key
             CamperScene.mask(flat, CamperScene.insideMask)
+            return (flat, key)
+        }
+    }
+
+    /// 家具の種類ごとの形（1 つ作って使い回す・2026-10-28）
+    private func sharedGeometry(_ id: String, _ mesh: CamperPreparedMesh, glass: Bool) -> SCNGeometry? {
+        if let hit = glass ? furnitureGlassGeometry[id] : furnitureGeometry[id] { return hit }
+        guard let made = palette.geometry(mesh) else { return nil }
+        geometryBuilds += 1
+        if glass { furnitureGlassGeometry[id] = made } else { furnitureGeometry[id] = made }
+        return made
+    }
+
+    private func install(_ plan: CamperRoomScenePlan, key: String, shell: [(SCNNode, String)]) {
+        builtKey = key
+        furniture = plan.furniture
+        furnitureGlass = plan.furnitureGlass
+        roomNode.childNodes.forEach { $0.removeFromParentNode() }
+        itemsNode.childNodes.forEach { $0.removeFromParentNode() }
+        itemNodes = [:]
+        shellGroups = []
+        // 灯りは部屋の節の子なので一緒に外れる。並びの控えも消す（作り直させる）
+        lampNodes = []
+        lampSpecs = []
+        for (flat, key) in shell {
             roomNode.addChildNode(flat)
             shellGroups.append((flat, key))
         }
@@ -283,9 +336,12 @@ final class CamperRoomScene {
             furniture[it.furnitureId] = parts.body
             furnitureGlass[it.furnitureId] = parts.glass
         }
-        guard let mesh = furniture[it.furnitureId], let geometry = palette.geometry(mesh) else { return nil }
+        guard let mesh = furniture[it.furnitureId], let shared = sharedGeometry(it.furnitureId, mesh, glass: false) else { return nil }
+        let hasPhoto = mesh.groups.contains { if case .room(.photo) = $0.material { return true } else { return false } }
+        // 額でない家具は同じ形をそのまま共有する。額は写し（頂点は共有・材質だけ別）にして、
         // 写真の材質は額ごとに専用にする（共有だと片方の印画がもう片方にも乗る／差し替えが効かない）
-        if geometry.materials.count == mesh.groups.count {
+        let geometry = hasPhoto ? ((shared.copy() as? SCNGeometry) ?? shared) : shared
+        if hasPhoto, geometry.materials.count == mesh.groups.count {
             geometry.materials = zip(geometry.materials, mesh.groups).map { mat, group in
                 guard case .room(.photo) = group.material else { return mat }
                 let fresh = SCNMaterial()
@@ -299,7 +355,7 @@ final class CamperRoomScene {
         body.name = "body"
         holder.addChildNode(body)
         // 透明の硝子は別の節にして、壁・床・中身（不透明の組）と接地の影の後に描く。影は落とさない
-        if let glassMesh = furnitureGlass[it.furnitureId], let glassGeometry = palette.geometry(glassMesh) {
+        if let glassMesh = furnitureGlass[it.furnitureId], let glassGeometry = sharedGeometry(it.furnitureId, glassMesh, glass: true) {
             let glass = SCNNode(geometry: glassGeometry)
             glass.name = "glass"
             glass.castsShadow = false
@@ -311,14 +367,7 @@ final class CamperRoomScene {
         if f?.isRug == false, it.placement != .ceiling {
             let pad = it.placement == .floor ? 5.0 : 3.0
             let plane = SCNPlane(width: CGFloat((it.footprint.x + pad) * Self.unit), height: CGFloat((it.footprint.y + pad) * Self.unit))
-            let shade = SCNMaterial()
-            shade.lightingModel = .constant
-            shade.diffuse.contents = palette.image(key: "contact") { CamperTextures.contactShadow().premultiplied() }
-            shade.transparencyMode = .aOne
-            shade.blendMode = .alpha
-            shade.writesToDepthBuffer = false
-            shade.transparency = it.placement == .floor ? 0.85 : 0.45
-            plane.materials = [shade]
+            plane.materials = [contactMaterial(floor: it.placement == .floor)]
             let contact = SCNNode(geometry: plane)
             contact.name = "contact"
             contact.castsShadow = false
@@ -335,6 +384,20 @@ final class CamperRoomScene {
         CamperScene.mask(holder, CamperScene.insideMask)
         applyPhotos(holder, it)
         return holder
+    }
+
+    /// 接地の影の材質（床と壁で 1 つずつ・2026-10-28）
+    private func contactMaterial(floor: Bool) -> SCNMaterial {
+        if let hit = contactMaterials[floor] { return hit }
+        let shade = SCNMaterial()
+        shade.lightingModel = .constant
+        shade.diffuse.contents = palette.image(key: "contact") { CamperTextures.contactShadow().premultiplied() }
+        shade.transparencyMode = .aOne
+        shade.blendMode = .alpha
+        shade.writesToDepthBuffer = false
+        shade.transparency = floor ? 0.85 : 0.45
+        contactMaterials[floor] = shade
+        return shade
     }
 
     // MARK: 写真
@@ -598,7 +661,8 @@ final class CamperRoomScene {
                 l.spotInnerAngle = CGFloat(spec.spotInner)
                 l.spotOuterAngle = CGFloat(spec.spotOuter)
             }
-            if spec.castsShadow {
+            // 2026-10-28: 部屋の灯りは影を落とさない（`lampsCastShadows`・影を落とす光は昼の太陽だけ）
+            if spec.castsShadow, Self.lampsCastShadows {
                 // 影はその灯りの光だけを減らす forward で（外の車の run 538 と同じ）
                 l.castsShadow = true
                 l.shadowMode = .forward
@@ -861,6 +925,10 @@ final class CamperRoomScene {
     func cancel() {
         buildTask?.cancel()
         buildTask = nil
+        buildingKey = nil
+        // 途中で止めた組み直しは材質を作り直し始めている（`buildShell` の `palette.reset`）。いま見えている部屋の鍵を
+        // 忘れて、次に呼ばれたら組み直させる（材質の控えと部屋が食い違ったまま家具だけ合わせない・2026-10-28 確かめ役）
+        builtKey = nil
     }
 }
 

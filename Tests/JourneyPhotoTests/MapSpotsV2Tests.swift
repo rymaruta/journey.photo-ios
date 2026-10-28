@@ -106,7 +106,7 @@ final class MapSpotsV2Tests: XCTestCase {
 
     // MARK: - ピン（板 Map・SpotPinOptions）
 
-    /// みんなの写真のピンは 44 の白い札に 2 の余白で写真（角 12 / 10）。束も同じ枠を使う。
+    /// みんなの写真のピンは 44 の白い札に 2 の余白で写真（角 12 / 10）・影なし。束も同じ枠を使う。
     /// 件数バッジは板の位置（真鍮の丸の角が top -6・right -8）に黒の縁 2 を足した所
     func testPhotoPinsHaveWhiteFrame() throws {
         XCTAssertEqual(PhotoMapView.photoPinSize, 44)
@@ -119,8 +119,8 @@ final class MapSpotsV2Tests: XCTestCase {
         assertInOrder([".frame(width: photoPinSize - photoPinInset * 2, height: photoPinSize - photoPinInset * 2)",
                        ".clipShape(RoundedRectangle(cornerRadius: photoPinRadius - photoPinInset))",
                        ".padding(photoPinInset)",
-                       ".background(Color.white, in: RoundedRectangle(cornerRadius: photoPinRadius))",
-                       ".shadow(color: .black.opacity(0.55)"], in: frame, "写真のピンの枠")
+                       ".background(Color.white, in: RoundedRectangle(cornerRadius: photoPinRadius))"], in: frame, "写真のピンの枠")
+        // 2026-10-28: 影は外した（重さの直し・`PerfBatch2Tests.testMapPinsHaveNoShadow`）
         // 1つの撮影地のピンと束の両方が同じ枠を通る
         XCTAssertEqual(count("Self.photoPinFrame(RemoteImage(", in: text), 2)
         XCTAssertEqual(count(".offset(x: Self.badgeOffset.x, y: Self.badgeOffset.y)", in: text), 2)
