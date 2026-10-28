@@ -159,23 +159,32 @@ final class MiniPlayerPlacementTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// 地を透けさせない（白 10% の地は下の文字と曲名が重なって読めなかった）・停止は 44pt・
-    /// 読み上げに移動の代わりの操作・ドラッグは少し動いてから
-    func testBarIsOpaqueAndAccessible() throws {
+    /// 地は透けるガラス（2026-10-28 owner「透明をやめちゃったの？好きだったのに」）。ぼかしは1枚だけ・
+    /// 置いている間は外の影なし（スクロール中に軽く）・曲名と歌手名に薄い影・曲選びの中は不透明の面のまま。
+    /// 停止は 44pt・読み上げに移動の代わりの操作・**長押しせずに引けば動く**（owner 実機で動かせなかった）
+    func testBarIsGlassAndAccessible() throws {
         let bar = try source("Sources/JourneyPhoto/Features/Common/MiniPlayerBar.swift")
-        XCTAssertFalse(bar.contains("WebTheme.raised"), "透ける地に戻っている")
-        XCTAssertTrue(bar.contains(".background(Self.pickerBarFill, in:"), "不透明の面でない")
+        XCTAssertTrue(bar.contains("Color.clear.jpGlass(in: shape)"), "全体のバーが透けるガラスでない")
+        XCTAssertFalse(bar.contains("WebTheme.raised"), "ぼかしの無い白 10% に戻っている（下の字と曲名が重なる）")
+        XCTAssertFalse(bar.contains("Material"), "ぼかしを重ねている（jpGlass の1枚だけにする）")
+        XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")
+        XCTAssertTrue(bar.contains(".shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity)"),
+                      "ガラスの上の曲名・歌手名に影が無い")
+        XCTAssertTrue(bar.contains(".shadow(color: .black.opacity(dragging ? 0.6 : 0), radius: dragging ? 18 : 0"),
+                      "置いている間も外の影がある（重い・透け感が濁る）")
         XCTAssertTrue(bar.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "停止が 44pt でない")
-        for text in ["L(\"再生中の曲\", \"Now playing\")", "長押ししてドラッグで移動", "上へ移す", "下へ移す",
+        for text in ["L(\"再生中の曲\", \"Now playing\")", "L(\"ドラッグで移動\", \"Drag to move\")", "上へ移す", "下へ移す",
                      "左の端へ", "右の端へ", "joined(separator: L("] {
             XCTAssertTrue(bar.contains(text), "読み上げの「\(text)」が無い")
         }
         XCTAssertTrue(bar.contains(".accessibilityHint("), "操作の説明がラベルに混ざっている")
         XCTAssertFalse(bar.contains("再生中の曲。ドラッグで移動"), "操作の説明がラベルに混ざっている")
-        // スクロールの指で動かないよう、長押しが済んでから引く
-        XCTAssertTrue(bar.contains("LongPressGesture(minimumDuration: Self.liftDelay)"), "長押しせずに動く")
-        XCTAssertTrue(bar.contains(".sequenced(before: DragGesture("), "長押しせずに動く")
-        XCTAssertTrue(bar.contains(".sensoryFeedback(.impact(weight: .light), trigger: dragging)"), "持ち上げの合図が無い")
+        // 長押しせずに引けば動く。始まりの距離は 10〜12pt（スクロールの指で誤って動きにくく）
+        XCTAssertFalse(bar.contains("LongPressGesture"), "長押ししないと動かない（owner 実機で動かせなかった）")
+        XCTAssertFalse(bar.contains(".sequenced(before:"), "長押ししないと動かない（owner 実機で動かせなかった）")
+        XCTAssertTrue(bar.contains("DragGesture(minimumDistance: Self.dragStartDistance"), "始まりの距離を使っていない")
+        XCTAssertTrue((10...12).contains(MiniPlayerBar.dragStartDistance), "始まりの距離が 10〜12pt でない")
+        XCTAssertTrue(bar.contains(".sensoryFeedback(.impact(weight: .light), trigger: dragging)"), "掴んだ合図が無い")
         XCTAssertTrue(bar.contains("dragging && !reduceMotion ? Self.liftedScale : 1"), "動きを減らすで縮める")
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertFalse(root.contains("MiniPlayerBar().padding"), "置き場所を外から固定している")
