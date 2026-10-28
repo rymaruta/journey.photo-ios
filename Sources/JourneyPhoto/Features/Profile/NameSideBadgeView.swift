@@ -278,6 +278,10 @@ struct NameSideBadgeView: View {
     /// 初期ユーザーのバッジを持つ人だけ。付ける / 外す。**選ばれている札は本人が決めた値だけ**
     /// （2026-10-28 Web のレビューの指摘と同じ判断: 出ているかで札を選ぶと、既定で出ている人の
     /// 「付ける」が最初から選ばれていて、押しても決めたことにならない）。決めるまでは下の一行で今の状態を言う
+    /// 決めるまでは、札を読み上げるときに今の状態の一行も添える（どちらの札も選ばれていないので、
+    /// 札だけでは「いま付いているか」が伝わらない。Web は同じ一行を `aria-describedby` で結ぶ）
+    private var earlyHint: String { earlyOn == nil ? NameSideChoice.earlyAutoNote(shown: earlyShown) : "" }
+
     private var earlyPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             markRow(title: L("初期メンバーの印", "Early member mark")) {
@@ -289,11 +293,13 @@ struct NameSideBadgeView: View {
                         Text(L("付ける", "Show")).font(.caption)
                     }
                 }
+                .accessibilityHint(earlyHint)
                 markOption(on: earlyOn == false, label: L("初期メンバーの印を外す", "Remove the early member mark"),
                            identifier: "nameSide.early.off",
                            action: { earlyOn = false }) {
                     removeLabel
                 }
+                .accessibilityHint(earlyHint)
             }
             if earlyOn == nil {
                 Text(NameSideChoice.earlyAutoNote(shown: earlyShown))
