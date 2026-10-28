@@ -3785,6 +3785,16 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(recent.frame.height, 44, "「最近」が 44pt 未満")
             if first.isHittable {
                 first.tap()
+                // 選んだ直後にカバーの位置を合わせる画面（owner 2026-10-28）。出なければ撮らずに先へ
+                let done = app.buttons["coverCrop.done"].firstMatch
+                if done.waitForExistence(timeout: 20) {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "104a2-カバーの位置を調整")
+                    // 「完了」「キャンセル」は上のバーの系統の部品（iOS 26 は見た目 36 で報告し、当たりは系統が広げる）。
+                    // 高さではなく、出ていることを確かめる
+                    XCTAssertTrue(app.buttons["coverCrop.cancel"].firstMatch.exists, "「キャンセル」が無い")
+                    done.tap()
+                }
                 Thread.sleep(forTimeInterval: 4)
                 shoot(app, "104b-プロフィールの編集（候補を選んだ）")
             }

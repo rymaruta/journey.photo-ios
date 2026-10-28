@@ -95,32 +95,22 @@ enum AvatarCropMath {
     /// 拡大の上限（丸に対して）
     static let maxZoom: Double = 4
 
+    // 2026-10-28: 計算はカバーの帯と同じ `FrameCropMath`（正方形の枠）に寄せた。ここは丸の一辺で呼ぶ口だけ
+
     /// 丸（一辺 `side`）を埋める最小の倍率で写真を置いたときの、写真の表示の大きさ
     static func fillSize(image: CGSize, side: Double) -> CGSize {
-        guard image.width > 0, image.height > 0 else { return CGSize(width: side, height: side) }
-        let scale = max(side / image.width, side / image.height)
-        return CGSize(width: image.width * scale, height: image.height * scale)
+        FrameCropMath.fillSize(image: image, frame: CGSize(width: side, height: side))
     }
 
     /// 動かした量を、丸から写真がはみ出さない（丸の中に空きができない）範囲に収める
     static func clamp(offset: CGSize, zoom: Double, image: CGSize, side: Double) -> CGSize {
-        let base = fillSize(image: image, side: side)
-        let w = base.width * zoom, h = base.height * zoom
-        let maxX = max(0, (w - side) / 2), maxY = max(0, (h - side) / 2)
-        return CGSize(width: min(maxX, max(-maxX, offset.width)), height: min(maxY, max(-maxY, offset.height)))
+        FrameCropMath.clamp(offset: offset, zoom: zoom, image: image, frame: CGSize(width: side, height: side))
     }
 
     /// 丸に入っている写真の範囲（写真の画素の座標）。丸の一辺は `side`（画面の pt）
     static func cropRect(image: CGSize, side: Double, zoom: Double, offset: CGSize) -> CGRect {
-        let base = fillSize(image: image, side: side)
-        let z = min(maxZoom, max(1, zoom))
-        let o = clamp(offset: offset, zoom: z, image: image, side: side)
-        // 画面の 1pt が写真の何画素か
-        let perPoint = image.width / (base.width * z)
-        let length = side * perPoint
-        let centerX = image.width / 2 - o.width * perPoint
-        let centerY = image.height / 2 - o.height * perPoint
-        return CGRect(x: centerX - length / 2, y: centerY - length / 2, width: length, height: length)
+        FrameCropMath.cropRect(image: image, frame: CGSize(width: side, height: side), zoom: zoom, offset: offset,
+                               maxZoom: maxZoom)
     }
 
     /// 切り抜いて JPEG にする（EXIF は持たない・`UIGraphicsImageRenderer`）

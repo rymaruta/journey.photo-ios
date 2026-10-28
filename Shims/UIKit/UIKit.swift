@@ -221,6 +221,10 @@ open class NSShadow: NSObject {
 public final class UIGraphicsImageRendererFormat {
     public init() {}
     public var scale: Double = 3
+    public var opaque: Bool = false
+    /// 色の幅（本物は `UIGraphicsImageRendererFormat.Range`）
+    public enum Range { case unspecified, automatic, extended, standard }
+    public var preferredRange: Range = .automatic
 }
 
 public final class UIGraphicsImageRenderer {
