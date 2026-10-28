@@ -48,6 +48,8 @@ struct CamperRoomView: View {
     @State private var trayTab: CamperRoomPlacement = .floor
     /// 置く棚の分類（床一括にしない・2026-10-21）
     @State private var trayCategory: CamperRoomCategory = .bed
+    /// 置く棚の控え（`CamperRoomShelfMemo`）。中身を替えても描き直させない（控えなので）
+    @State private var shelfMemo = CamperRoomShelfMemo()
     @State private var styleTab: StyleTab = .wall
     /// 模様替えの途中の状態（入った時の柄・試している見本。`CamperRoomStyleSession`）
     @State private var styleSession = CamperRoomStyleSession()
@@ -1179,8 +1181,9 @@ struct CamperRoomView: View {
     // MARK: 置く
 
     private var editPanel: some View {
-        // 棚の絞り込みは 1 回だけ（分類チップごとに全部の家具を絞り直さない・2026-10-21 見直し）
-        let shelf = CamperRoomShelf(editor?.tray(trayTab, owned: owned) ?? [], news: news)
+        // 棚の絞り込みは 1 回だけ（分類チップごとに全部の家具を絞り直さない・2026-10-21 見直し）。
+        // 材料が変わらない描き直し（家具を動かす・カメラ）では作り直さない（`CamperRoomShelfMemo`・2026-10-28）
+        let shelf = shelfMemo.shelf(editor, placement: trayTab, owned: owned, news: news)
         let cats = shelf.categories
         let cat = cats.contains(trayCategory) ? trayCategory : (cats.first ?? .bed)
         let tray = shelf.items(cat)
@@ -1811,25 +1814,62 @@ struct CamperRoomOptionalHint: ViewModifier {
 }
 
 /// 模様替えの見本の四角（貼り絵に色を掛けた小さな絵）
+///
+/// 2026-10-28 判断: **貼り絵は画面の処理の外で描く**（`draw` を `Task.detached` で）。描き直しの中で
+/// 256px の貼り絵を描いていたので、模様替えの札を開くと見本の数だけ画面が止まっていた。描き上がるまでは
+/// 素材の色（貼り絵が無い見本と同じ地）を出す。同じ絵を二重に描かない（描いている途中は待つ）——
+/// 家具の小さな絵（`CamperRoomThumbs`）と同じ作り
 struct CamperRoomSwatch: View {
     let spec: CamperMaterialSpec
     let have: Bool
 
     /// 作った見本の絵（貼り絵を描くのは重いので、描き直しのたびに作らない）
     @MainActor private static var cache: [String: UIImage] = [:]
+    @MainActor private static var inFlight: [String: Task<UIImage?, Never>] = [:]
+    /// 試験用: 貼り絵を描いた回数
+    @MainActor private(set) static var renderCount = 0
 
-    @MainActor private static func image(_ kind: CamperTextureKind, _ color: UInt32) -> UIImage? {
+    /// 描き上がった絵と、その鍵（見本が替わったら古い絵を出さない）
+    @State private var loaded: Loaded?
+
+    private struct Loaded {
+        let key: String
+        let image: UIImage
+    }
+
+    /// 貼り絵の鍵。持っていない・貼り絵の無い見本は nil（色だけ）
+    private var textureKey: String? {
+        guard have, let kind = spec.texture else { return nil }
+        return CamperScenePlan.textureKey(kind, spec.color)
+    }
+
+    /// 絵を返す（控えに無ければ画面の処理の外で描く。同じ絵を描いている途中なら、それを待つ）
+    @MainActor static func image(_ kind: CamperTextureKind, _ color: UInt32) async -> UIImage? {
         let key = CamperScenePlan.textureKey(kind, color)
         if let hit = cache[key] { return hit }
-        guard let cg = CamperScenePalette.cgImage(CamperTextures.make(kind).tinted(color)) else { return nil }
-        let made = UIImage(cgImage: cg)
-        cache[key] = made
+        if let running = inFlight[key] { return await running.value }
+        renderCount += 1
+        let task = Task { () -> UIImage? in
+            let bitmap = await Task.detached(priority: .userInitiated) { draw(kind, color) }.value
+            guard let cg = CamperScenePalette.cgImage(bitmap) else { return nil }
+            return UIImage(cgImage: cg)
+        }
+        inFlight[key] = task
+        let made = await task.value
+        inFlight[key] = nil
+        if let made { cache[key] = made }
         return made
     }
 
+    /// 貼り絵を描く（重い。画面の処理の外で呼ぶ）
+    nonisolated static func draw(_ kind: CamperTextureKind, _ color: UInt32) -> CamperBitmap {
+        CamperTextures.make(kind).tinted(color)
+    }
+
     var body: some View {
+        let key = textureKey
         Group {
-            if have, let kind = spec.texture, let image = Self.image(kind, spec.color) {
+            if let key, let image = Self.cache[key] ?? (loaded?.key == key ? loaded?.image : nil) {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 CamperStyle.color(have ? spec.color : 0x1A1A1A)
@@ -1838,6 +1878,10 @@ struct CamperRoomSwatch: View {
         .frame(width: 64, height: 64)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityHidden(true)
+        .task(id: key) {
+            guard let key, let kind = spec.texture, Self.cache[key] == nil else { return }
+            if let image = await Self.image(kind, spec.color) { loaded = Loaded(key: key, image: image) }
+        }
     }
 }
 

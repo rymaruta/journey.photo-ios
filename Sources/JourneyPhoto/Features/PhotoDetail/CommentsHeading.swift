@@ -47,10 +47,10 @@ enum CommentsHeading {
         }
     }
 
+    /// 2026-10-28 判断: **読み手を毎回作らない。** コメントの行ごと・描き直しのたびに `ISO8601DateFormatter` を
+    /// 2つずつ作っていた（作るのは重い）。小数秒の有無の両方を試す読み方は通知の見出しと同じなので、
+    /// `static` に1つずつ持っている `NotificationGroups.parse` を使う
     private static func parse(_ iso: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: iso) { return date }
-        return ISO8601DateFormatter().date(from: iso)
+        NotificationGroups.parse(iso)
     }
 }
