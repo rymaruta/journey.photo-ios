@@ -99,24 +99,23 @@ final class PerfMeasureTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.5)
     }
 
-    /// 探すの「おすすめ」の「すべて見る」から、カテゴリの集約の一覧（`PhotoGrid`）を開く
+    /// ホームの1枚目の写真の詳細から、カテゴリの札（「風景」など）を押して、カテゴリの集約の一覧（`PhotoGrid`）を開く。
+    /// 探すの「すべて見る」は木に出てこなかった（run 717・721・722）ので、詳細のカテゴリの札から入る
     private func openCollection(_ app: XCUIApplication) {
-        tab(app, 1)
-        // 一覧の読み込みを待ってから、「すべて見る」が木に出るまで送る（Lazy なので画面の外は木に無い・run 717）
-        XCTAssertTrue(app.descendants(matching: .any)["search.field"].firstMatch.waitForExistence(timeout: 30), "探すが出ない")
-        Thread.sleep(forTimeInterval: 6)
-        let more = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'すべて見る'")).firstMatch
+        openFirstFeedPhoto(app)
+        let names = ["写真", "イラスト", "デザイン", "自然", "風景", "建築", "街", "人物", "動物", "食べ物"]
+        let chip = app.buttons.matching(NSPredicate(format: "label IN %@", names)).firstMatch
         var pushes = 0
-        while !(more.exists && more.isHittable), pushes < 20 {
+        while !(chip.exists && chip.isHittable), pushes < 6 {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        XCTAssertTrue(more.exists && more.isHittable, "探すに「すべて見る」が出ない（送った回数 \(pushes)）")
-        note("「すべて見る」まで送った回数=\(pushes) ラベル=\(more.label)")
-        more.tap()
-        XCTAssertTrue(more.waitForNonExistence(timeout: 15), "集約の一覧が開かない")
+        XCTAssertTrue(chip.exists && chip.isHittable, "写真の詳細にカテゴリの札が無い")
+        note("カテゴリ=\(chip.label)")
+        chip.tap()
+        XCTAssertTrue(app.buttons["photo.like"].firstMatch.waitForNonExistence(timeout: 15), "集約の一覧が開かない")
         Thread.sleep(forTimeInterval: 4)
     }
 
