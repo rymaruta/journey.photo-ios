@@ -2274,7 +2274,7 @@ final class ScreenshotTests: XCTestCase {
     /// **位置が止まってから押し、選ばれたかを確かめ、選ばれなければ押し直す**（3回まで）
     private func selectTripsTab(_ app: XCUIApplication) -> Bool {
         let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        guard measureWait(tripsTab, "旅の記録のタブ") else { return false }
         for _ in 0..<3 {
             // 位置が 1 秒止まるまで待つ（見出しの読み込みで動く間は押さない・最長 10 秒）
             var last = tripsTab.frame
@@ -2322,7 +2322,7 @@ final class ScreenshotTests: XCTestCase {
         }
         tabBar.buttons.element(boundBy: 4).tap()
         let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        guard tripsTab.waitForExistence(timeout: 15) else { return false }
+        guard measureWait(tripsTab, "旅の記録のタブ") else { return false }
         var pushes = 0
         while !tripsTab.isHittable, pushes < 4 {
             app.swipeUp()
@@ -2336,7 +2336,7 @@ final class ScreenshotTests: XCTestCase {
         let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
         // 🔴 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（PR #390 の検証 run 728・2026-10-28: 3 回目の起動で
         // タブの中身が「読み込み中」のまま行が出なかった）。長めに待ち、出なければタブを押し直してもう一度待つ
-        if !row.waitForExistence(timeout: 30), tripsTab.exists, tripsTab.isHittable {
+        if !measureWait(row, "行 \(id)"), tripsTab.exists, tripsTab.isHittable {
             note(app, "旅の記録の行 \(id)", "30 秒待っても \(id) が出ない。タブを押し直す")
             tripsTab.tap()
         }
@@ -3825,10 +3825,10 @@ final class ScreenshotTests: XCTestCase {
     private func openCamperRoom(_ app: XCUIApplication) -> Bool {
         guard openCamper(app) else { return false }
         let enter = app.buttons["camper.room.enter"].firstMatch
-        guard enter.waitForExistence(timeout: 15) else { return false }
+        guard measureWait(enter, "入口の札") else { return false }
         if !enter.isHittable { scrollTo(enter, in: app) }
         enter.tap()
-        return app.descendants(matching: .any)["camper.room.scene"].firstMatch.waitForExistence(timeout: 15)
+        return measureWait(app.descendants(matching: .any)["camper.room.scene"].firstMatch, "部屋の画面")
     }
 
     /// 立体を組み終えるまで待つ（読み上げの値に「camper-room-ready 部屋 時刻」が出る・見本の起動のときだけ）
@@ -3847,10 +3847,31 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 計測用（直しには入れない）: 要素が出るまでを最大 120 秒待ち、かかった秒を UIMEASURE で残す
+    @discardableResult
+    private func measureWait(_ e: XCUIElement, _ what: String) -> Bool {
+        let t0 = Date()
+        let ok = e.waitForExistence(timeout: 120)
+        print("UIMEASURE \(what): \(ok ? "出た" : "出ない") \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
+        return ok
+    }
+
+    /// 計測用: 押せるようになるまで最大 120 秒
+    private func measureHittable(_ e: XCUIElement, _ what: String) {
+        let t0 = Date()
+        while Date().timeIntervalSince(t0) < 120 {
+            if e.exists, e.isHittable { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        print("UIMEASURE \(what): \(e.exists && e.isHittable ? "押せる" : "押せない") \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
+    }
+
     private func waitRoom(_ app: XCUIApplication, _ id: String, _ marker: String, timeout: TimeInterval = 40) -> Bool {
         let scene = app.descendants(matching: .any)[id].firstMatch
         let ready = NSPredicate(format: "value CONTAINS %@", marker)
-        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: timeout) == .completed
+        let t0 = Date()
+        let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: max(timeout, 120)) == .completed
+        print("UIMEASURE 組み終え \(id): \(done ? "出た" : "出ない") \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
         // 組んだ形が次のコマで描かれ、カメラの動き（0.6 秒）が止まるまで
         Thread.sleep(forTimeInterval: 2)
         return done
@@ -3901,6 +3922,7 @@ final class ScreenshotTests: XCTestCase {
         for (i, c) in closeUps.enumerated() {
             let clear = app.buttons["camper.room.dex.search.clear"].firstMatch
             if clear.exists { clear.tap() }
+            measureHittable(search, "図鑑の探し欄 \(i)")
             search.tap()
             search.typeText(c.id + "\n")
             let card = app.buttons["camper.room.dex.\(c.id)"].firstMatch
