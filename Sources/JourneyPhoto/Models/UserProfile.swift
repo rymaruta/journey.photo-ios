@@ -161,7 +161,7 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     var earlyMarkChoice: Bool? { earlyMarkOn?.value }
 
     /// 初期メンバーの印の資格（初期ユーザーのバッジを持っている）
-    var hasEarlyMemberQualification: Bool { earnedBadges["earlyUser"] != nil }
+    var hasEarlyMemberQualification: Bool { earnedBadges[FoundingGiftGate.badgeKey] != nil }
 
     /// 画面に出す1曲。**先頭だけ**（モックのカードは1枚）
     var bgm: Photo.Song? {

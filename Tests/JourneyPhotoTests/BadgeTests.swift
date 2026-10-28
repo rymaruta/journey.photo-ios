@@ -274,6 +274,33 @@ final class BadgePatchTests: XCTestCase {
         XCTAssertTrue(NameSideChoice.earlyAutoNote(shown: false).contains("自動で外れています"))
     }
 
+    /// 画面の今の選び方から下見を組む（2026-10-28 iOS のレビューの指摘: 画面が渡す入力をテストが見ていなかった）
+    func testEarlyShownFromCurrentChoices() throws {
+        let at = "2026-10-01T00:00:00.000Z"
+        let p = try profile(#"{"userId":"u1","pro":true,"verified":true,"badges":{"earlyUser":{"tier":1,"at":"\#(at)"},"first":{"tier":1,"at":"\#(at)"}}}"#)
+        func shown(selected: String? = nil, style: ProMarkStyle? = nil, verifiedOn: Bool = false, earlyOn: Bool? = nil) -> Bool {
+            NameSideChoice.earlyShown(profile: p, badges: p.earnedBadges, selected: selected, style: style,
+                                      verifiedOn: verifiedOn, earlyOn: earlyOn)
+        }
+        XCTAssertTrue(shown(), "Pro マーク・公式の印を外し、バッジなしなら既定で付く")
+        XCTAssertFalse(shown(style: .iris), "Pro マークを選んでいる形で見る（開いたときの値ではない）")
+        XCTAssertFalse(shown(verifiedOn: true))
+        XCTAssertFalse(shown(selected: "first"))
+        XCTAssertTrue(shown(selected: "wish"), "持っていないバッジは出ていない")
+        XCTAssertTrue(shown(style: .iris, earlyOn: true))
+        XCTAssertFalse(NameSideChoice.earlyShown(profile: p, badges: BadgeSet(), selected: nil, style: nil,
+                                                 verifiedOn: false, earlyOn: true), "資格は渡したバッジで見る")
+    }
+
+    /// 設定一覧の一行: 本人が外したときだけ「外しています」と言う
+    func testNameSideDetailMentionsRemovedEarlyMark() throws {
+        let early = #""badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}"#
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":false}"#)),
+                       "バッジなし · 初期メンバーの印は外しています")
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early)}"#)), "バッジなし")
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1","earlyMarkOn":false}"#)), "バッジなし")
+    }
+
     /// 送るのは決めた値が開いたときと違うときだけ。決めていない（nil）なら触らない
     func testEarlyMarkPatch() throws {
         let p = try profile(#"{"userId":"u1","badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}}"#)

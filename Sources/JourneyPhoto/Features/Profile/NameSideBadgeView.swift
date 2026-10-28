@@ -83,15 +83,11 @@ struct NameSideBadgeView: View {
     private var isVerified: Bool { profile.verified == true }
     private var selectedBadge: EarnedBadge? { selected.flatMap { badges[$0] } }
     /// 初期メンバーの印の資格（初期ユーザーのバッジ。`GET /user/badges` を読んだらそちらで見る）
-    private var isEarlyMember: Bool { badges["earlyUser"] != nil }
+    private var isEarlyMember: Bool { badges[FoundingGiftGate.badgeKey] != nil }
     /// この設定なら初期メンバーの印が名前の横に出るか（下見・サーバーの `showsEarlyMark` と同じ規則）
     private var earlyShown: Bool {
-        NameSideChoice.earlyShown(
-            qualified: isEarlyMember, choice: earlyOn,
-            verifiedShown: isVerified && verifiedOn,
-            proShown: profile.isPro && style != nil,
-            badgeShown: selectedBadge != nil
-                || NameSideChoice.keepsUnknownOwnedBadge(profile: profile, selected: selected))
+        NameSideChoice.earlyShown(profile: profile, badges: badges, selected: selected, style: style,
+                                  verifiedOn: verifiedOn, earlyOn: earlyOn)
     }
 
     /// 板: 4列・隙間 2pt
@@ -277,7 +273,6 @@ struct NameSideBadgeView: View {
         }
     }
 
-    /// 「外す」の札（バッジの「なし」と同じ点線の丸と斜線を小さく）
     // MARK: - 初期メンバーの印
 
     /// 初期ユーザーのバッジを持つ人だけ。付ける / 外す。**選ばれている札は本人が決めた値だけ**
@@ -310,6 +305,7 @@ struct NameSideBadgeView: View {
         }
     }
 
+    /// 「外す」の札（バッジの「なし」と同じ点線の丸と斜線を小さく）
     private var removeLabel: some View {
         HStack(spacing: 6) {
             NameSideNoneMark(side: 18)
@@ -652,6 +648,17 @@ enum NameSideChoice {
         guard qualified else { return false }
         if let choice { return choice }
         return !verifiedShown && !proShown && !badgeShown
+    }
+
+    /// 画面の今の選び方から、上の規則の入力を組む（下見に使う）。**Pro マークは選んでいる形**
+    /// （`style`。nil は外す）で見る——開いたときの値で見ると、外しても下見が変わらない
+    static func earlyShown(profile: UserProfile, badges: BadgeSet, selected: String?, style: ProMarkStyle?,
+                           verifiedOn: Bool, earlyOn: Bool?) -> Bool {
+        earlyShown(qualified: badges[FoundingGiftGate.badgeKey] != nil, choice: earlyOn,
+                   verifiedShown: profile.verified == true && verifiedOn,
+                   proShown: profile.isPro && style != nil,
+                   badgeShown: selected.flatMap { badges[$0] } != nil
+                       || keepsUnknownOwnedBadge(profile: profile, selected: selected))
     }
 
     /// 決めていない（既定の）ときの一行。いま付いているか・外れているかと、その理由

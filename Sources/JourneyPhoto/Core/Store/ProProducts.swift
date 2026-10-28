@@ -402,6 +402,10 @@ enum ProStatusText {
         if profile.verified == true, profile.verifiedMarkRemoved {
             parts.append(L("公式の印は外しています", "Verified mark off"))
         }
+        // 初期メンバーの印: 本人が「外す」と決めたときだけ言う（既定で外れているのは「外している」ではない）
+        if profile.hasEarlyMemberQualification, profile.earlyMarkChoice == false {
+            parts.append(L("初期メンバーの印は外しています", "Early member mark off"))
+        }
         return parts.joined(separator: " · ")
     }
 }
