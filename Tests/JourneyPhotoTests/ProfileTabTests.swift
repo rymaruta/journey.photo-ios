@@ -42,35 +42,67 @@ final class ProfileTabTests: XCTestCase {
 
     /// 指を左へ払うと右隣、右へ払うと左隣
     func testSwipeMovesToNeighbour() {
-        XCTAssertEqual(ProfileTab.swiped(from: .posts, in: mine, dx: -80, dy: 0), .trips)
-        XCTAssertEqual(ProfileTab.swiped(from: .wishlist, in: mine, dx: 80, dy: 0), .trips)
-        XCTAssertEqual(ProfileTab.swiped(from: .wishlist, in: mine, dx: -80, dy: 0), .favorites)
+        XCTAssertEqual(ProfileTab.neighbor(of: .posts, in: mine, towards: -1), .trips)
+        XCTAssertEqual(ProfileTab.neighbor(of: .wishlist, in: mine, towards: 1), .trips)
+        XCTAssertEqual(ProfileTab.neighbor(of: .wishlist, in: mine, towards: -1), .favorites)
+        XCTAssertNil(ProfileTab.neighbor(of: .posts, in: mine, towards: 0))
     }
 
-    /// 端では回り込まない（最後から最初へ飛ぶと、どこにいるか分からなくなる）
+    /// 端では回り込まない（最後から最初へ飛ぶと、どこにいるか分からなくなる）。
+    /// 隣の無い向きへは払いを始めない（人のページの「戻る」の払いに渡す）
     func testSwipeStopsAtEdges() {
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: 80, dy: 0))
-        XCTAssertNil(ProfileTab.swiped(from: .favorites, in: mine, dx: -80, dy: 0))
+        XCTAssertNil(ProfileTab.neighbor(of: .posts, in: mine, towards: 1))
+        XCTAssertNil(ProfileTab.neighbor(of: .favorites, in: mine, towards: -1))
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: 12, dy: 0))
+        XCTAssertNil(ProfileTab.settled(from: .favorites, in: mine, dx: -300, velocity: -900, width: 390))
+        XCTAssertEqual(ProfileTab.followOffset(from: .posts, in: mine, dx: 120, width: 390), 0, "隣の無い向きへ中身が動く")
     }
 
-    /// **縦のスクロールでタブが変わらない**——斜めの流しや短い揺れは無視
-    func testSwipeIgnoresVerticalAndShortDrags() {
-        // 縦が主
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: -60, dy: 200))
-        // 斜め（横が縦の 1.5 倍に届かない）
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: -90, dy: 70))
-        // 比のちょうど境目（横がちょうど縦の 1.5 倍）は切り替えない
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: -75, dy: 50))
-        XCTAssertEqual(ProfileTab.swiped(from: .posts, in: mine, dx: -76, dy: 50), .trips)
-        // 短い
-        XCTAssertNil(ProfileTab.swiped(from: .posts, in: mine, dx: -30, dy: 0))
-        // 境目: ちょうど最小距離なら切り替わる
-        XCTAssertEqual(ProfileTab.swiped(from: .posts, in: mine,
-                                         dx: -ProfileTab.swipeMinDistance, dy: 0), .trips)
+    /// 🔴 始めるのは動き始めの横が縦の 1.2 倍より大きいときだけ（2026-10-28: 以前の 1.5 倍は厳しすぎた）。
+    /// 始まったらその指の間は縦に送らない（向きの固定・`ProfileTabSwipe`）
+    func testSwipeStartsOnlyWhenMostlyHorizontal() {
+        XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -12, dy: 3))
+        XCTAssertTrue(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -10, dy: 8), "約 40° より寝た払いで始まらない")
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -9, dy: 8), "斜めの縦送り（約 42°）で始まる")
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -8, dy: 8), "斜め 45° の縦送りで始まる")
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .posts, in: mine, dx: -3, dy: -12), "縦の送りで始まる")
+    }
+
+    /// 動いている間は指に付いてくる（画面の幅まで）
+    func testContentFollowsTheFinger() {
+        XCTAssertEqual(ProfileTab.followOffset(from: .posts, in: mine, dx: -120, width: 390), -120)
+        XCTAssertEqual(ProfileTab.followOffset(from: .posts, in: mine, dx: -600, width: 390), -390)
+        XCTAssertEqual(ProfileTab.followOffset(from: .trips, in: mine, dx: 80, width: 390), 80)
+    }
+
+    /// 🔴 離したとき: 幅の 3 割動かしたか、同じ向きに速く払えば隣へ。足りなければ戻る
+    func testSettlesByDistanceOrFling() {
+        // 普通の速さで、指を3割以上動かした
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -130, velocity: -100, width: 390), .trips)
+        // 短いが勢いがある（以前は 50pt に届かないと替わらなかった）
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -40, velocity: -800, width: 390), .trips)
+        XCTAssertEqual(ProfileTab.settled(from: .trips, in: mine, dx: 40, velocity: 500, width: 390), .posts)
+        // 短くてゆっくり → 戻る
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -100, velocity: -100, width: 390))
+        // 少し動かした指の揺れ（以前の 300pt/秒 なら替わっていた）→ 戻る
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -40, velocity: -400, width: 390))
+        // 動かしてから逆へ払い戻した → 戻る（替えない）。🔴 旅の記録なら逆向きにも隣（投稿）があるので、
+        // 逆向きの払いで反対側の札へ飛ばないこと（`settled` の向きの guard）
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: -200, velocity: 900, width: 390))
+        XCTAssertNil(ProfileTab.settled(from: .trips, in: mine, dx: -200, velocity: 900, width: 390),
+                     "左へ動かしてから右へ払い戻したのに、反対側の札へ替わった")
+        // 境目
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -390 * ProfileTab.swipeCommitFraction,
+                                          velocity: 0, width: 390), .trips)
+        XCTAssertEqual(ProfileTab.settled(from: .posts, in: mine, dx: -10,
+                                          velocity: -ProfileTab.swipeFlingVelocity, width: 390), .trips)
+        // 取り消し（量も速さも 0）
+        XCTAssertNil(ProfileTab.settled(from: .posts, in: mine, dx: 0, velocity: 0, width: 390))
     }
 
     /// 並びに無いタブ（本人のページのマップ）からは動かない
     func testSwipeFromUnknownTabIsNil() {
-        XCTAssertNil(ProfileTab.swiped(from: .map, in: mine, dx: -80, dy: 0))
+        XCTAssertNil(ProfileTab.neighbor(of: .map, in: mine, towards: -1))
+        XCTAssertFalse(ProfileTab.startsSwipe(from: .map, in: mine, dx: -80, dy: 0))
     }
 }

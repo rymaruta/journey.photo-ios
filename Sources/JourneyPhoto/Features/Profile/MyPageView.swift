@@ -403,7 +403,8 @@ struct MyPageView: View {
                     // 「見えている高さ − 札の行と間」——いちばん下まで送っても札の行が上端に残る
                     ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                     minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
-                                                                              rowHeight: tabRowHeight, spacing: 14)) { page in
+                                                                              rowHeight: tabRowHeight, spacing: 14),
+                                    rowOverflow: ProfileTabScroll.rowOverflow(rowMinY: tabRowMinY, visibleTop: visibleTop)) { page in
                         VStack(alignment: .leading, spacing: 14) {
                             tabContent(page)
                         }
@@ -1004,7 +1005,8 @@ struct MyPageView: View {
         ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab)
     }
 
-    // 横の払いは `ProfileTabSwipe`（札の行と中身の両方・人のページと同じ部品・2026-10-24）
+    // 横の払いは `ProfileTabSwipe`（札の行と中身の両方・人のページと同じ部品・2026-10-24）。
+    // 中身は指に付いてくる（2026-10-28・UIKit のパンで縦の送りと向きを分ける）
 
     /// 旅の記録（旅の一冊の棚）。**自分の写真から**その場でまとめる（`TripBook.shelfTrips`）
     /// ——日付で束ねるのは公開写真だけ。1つの投稿にまとめた束は非公開でも一冊（自分だけの印付き）。
