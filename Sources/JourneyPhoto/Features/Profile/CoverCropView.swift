@@ -63,18 +63,18 @@ struct CoverCropView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity)
+                // 上のバーの文字ボタンは系統の部品（当たりは系統が決める）。幅を指定すると
+                // 「キャンセル」が丸に押し込まれて切れた（2026-10-28 Mac の絵）ので、大きさは付けない
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(L("キャンセル", "Cancel")) { dismiss() }
                             .foregroundStyle(WebTheme.foreground)
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                             .accessibilityIdentifier("coverCrop.cancel")
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button(L("完了", "Done")) { decide(frame) }
                             .font(.body.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                             .accessibilityIdentifier("coverCrop.done")
                     }
                 }
