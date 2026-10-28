@@ -41,6 +41,34 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertEqual(ProfileCover.cutoutWidth, 4)
     }
 
+    /// カバーの下端は**多段で溶かす**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。
+    /// 前は 40% の透明から下端の黒まで1本の直線で、写真の終わりが「バッサリ黒」に見えた
+    func testCoverBottomFadesInSteps() throws {
+        let stops = ProfileCoverFade.stops
+        XCTAssertEqual(stops.map(\.opacity), [0.25, 0, 0.08, 0.24, 0.46, 0.70, 0.90, 1.0],
+                       "案A の段（0, .08, .24, .46, .70, .90, 1.0）でない。1本の直線に戻すと継ぎ目に線が入る")
+        let locations = stops.map(\.location)
+        for (got, want) in zip(locations, [0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] as [CGFloat]) {
+            XCTAssertEqual(got, want, accuracy: 0.0001, "段の位置がずれている（写真の中ほど 40% から 10% 刻み）")
+        }
+        XCTAssertEqual(stops.last?.location, 1)
+        XCTAssertEqual(stops.last?.opacity, 1, "下端でちょうど黒（地の黒と継ぎ目が出ない）")
+        // 入りも終わりも緩い（中ほどの段がいちばん急）。終わりが急だと下端に線が見える
+        let fade = Array(stops.dropFirst())
+        let slopes = zip(fade, fade.dropFirst()).map { ($1.opacity - $0.opacity) / Double($1.location - $0.location) }
+        XCTAssertLessThan(slopes.first!, slopes.max()!, "入りが急")
+        XCTAssertLessThan(slopes.last!, slopes.max()!, "終わりが急（下端で傾きが急に 0 になる）")
+
+        // マイページ・人のページは同じ部品（`ProfileCover`）で、掛けは共通の `ProfileCoverFade` だけ
+        let cover = try source("Features/Profile/ProfileCover.swift")
+        let band = try slice(cover, from: "private func band(", to: "struct ProfileCoverFade")
+        XCTAssertTrue(band.contains("ProfileCoverFade()"), "カバーの掛けが共通の部品を使っていない")
+        XCTAssertFalse(band.contains("LinearGradient("), "カバーに直書きの掛けが残っている")
+        for path in ["Features/Profile/MyPageView.swift", "Features/Profile/UserProfileView.swift"] {
+            XCTAssertTrue(try source(path).contains("ProfileCover(url:"), "\(path) がカバーの共通の部品を使っていない")
+        }
+    }
+
     /// 押せるもの 44（見た目が小さくても当たりは 44）
     func testTapTargetsReach44() {
         XCTAssertEqual(ProfileV2.headerButtonHeight + 2 * ProfileV2.tapSlack(visible: ProfileV2.headerButtonHeight),

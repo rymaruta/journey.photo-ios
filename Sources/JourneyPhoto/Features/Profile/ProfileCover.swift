@@ -64,15 +64,43 @@ struct ProfileCover: View {
             .overlay {
                 image.resizable().aspectRatio(contentMode: .fill)
             }
-            .overlay {
-                LinearGradient(stops: [.init(color: WebTheme.background.opacity(0.25), location: 0),
-                                       .init(color: WebTheme.background.opacity(0), location: 0.4),
-                                       .init(color: WebTheme.background, location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-            }
+            .overlay { ProfileCoverFade() }
             .clipped()
             // 飾り。読み上げは名前から始める
             .accessibilityHidden(true)
+    }
+}
+
+/// カバーの上に重ねる黒の掛け（マイページ・人のページで同じ。`ProfileCover` だけが使う）。
+///
+/// 上 25% の黒 → 40% で透明（時計とガラスの丸の地）→ **下端でちょうど黒**（アイコンと名前が乗る側）。
+///
+/// 2026-10-28 判断（owner が案A を選んだ）: 下半分は**多段で溶かす**。前は 40% の透明から下端の黒まで
+/// 1本の直線で、下端で傾きが急に 0 になるため、写真の終わりに**一本の線が入ってバッサリ黒**に見えた。
+/// 写真の中ほど（40%）から 10% 刻みに 0 → .08 → .24 → .46 → .70 → .90 → 1.0 と、入りは緩く・
+/// 終わりも緩く寄せて、下の黒い地との継ぎ目を消す。下端は 1.0（地の `WebTheme.background` と同じ黒）。
+/// 板 v1 の MyPage は 180pt・下 110pt の `linear-gradient(to top,#000,transparent)`（始まりは 39% の所）
+struct ProfileCoverFade: View {
+
+    /// 写真の中ほど。ここで透明になり、下へ黒を重ねていく
+    nonisolated static let fadeStart: CGFloat = 0.4
+    /// 下半分の黒の濃さ（案A）。`fadeStart` から下端まで等間隔に置く
+    nonisolated static let fadeOpacities: [Double] = [0, 0.08, 0.24, 0.46, 0.70, 0.90, 1.0]
+    /// 上端の黒（時計とガラスの丸の地）
+    nonisolated static let topOpacity: Double = 0.25
+
+    /// 掛けの段（位置 0…1・黒の濃さ）。上端 → 中ほどの透明 → 多段で下端の黒
+    nonisolated static var stops: [(location: CGFloat, opacity: Double)] {
+        let steps = fadeOpacities.count - 1
+        let fade = fadeOpacities.enumerated().map { index, opacity in
+            (location: fadeStart + (1 - fadeStart) * CGFloat(index) / CGFloat(steps), opacity: opacity)
+        }
+        return [(location: 0, opacity: topOpacity)] + fade
+    }
+
+    var body: some View {
+        LinearGradient(stops: Self.stops.map { .init(color: WebTheme.background.opacity($0.opacity), location: $0.location) },
+                       startPoint: .top, endPoint: .bottom)
     }
 }
 

@@ -3622,6 +3622,38 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
     }
 
+    /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、
+    /// カバーの下端と黒の継ぎ目を切り出した1枚を撮る。前の絵は main の回の `14-マイページ`。
+    /// 見本の利用者にカバーが無い（額縁が出る・見出しが上に詰まる）回は撮らない（この試験の決まり）
+    func testCapturesProfileCoverFade() {
+        let app = launchProfileLooks()
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let edit = app.buttons["mypage.edit"].firstMatch
+        guard edit.waitForExistence(timeout: 20) else { return }
+        // カバーは通信で来る。出たら「プロフィールを編集」はアイコンの横（名前の上）に、
+        // 無ければ数の並びの右（名前の下）に出る
+        Thread.sleep(forTimeInterval: 4)
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.exists, !app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
+              edit.frame.maxY <= nameLine.frame.minY else { return }
+        shoot(app, "106-マイページ（カバーの下端のフェード）")
+
+        // 継ぎ目の寄り: 帯の下半分（中ほどの透明 → 下端の黒）と、その下の黒い地。
+        // 帯の下端はアイコン（88pt を 44pt 重ねる）の真ん中あたり＝名前の少し上
+        let screen = app.screenshot().image
+        let scale = screen.scale
+        let seam = CGRect(x: 0, y: max(0, nameLine.frame.minY - 200), width: screen.size.width, height: 220)
+        guard let cg = screen.cgImage?.cropping(to: CGRect(x: seam.minX * scale, y: seam.minY * scale,
+                                                           width: seam.width * scale, height: seam.height * scale))
+        else { return }
+        let crop = XCTAttachment(image: UIImage(cgImage: cg, scale: scale, orientation: .up))
+        crop.name = "106a-マイページ（カバーの継ぎ目の寄り）"
+        crop.lifetime = .keepAlways
+        add(crop)
+    }
+
     /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**
     /// （板 52・50・50b・50c）。サーバーには何も送らない（保存は押さない）。出なければ撮らない（この試験の決まり）。
     /// 額縁・候補・「決める」が 44pt 未満なら落とす
