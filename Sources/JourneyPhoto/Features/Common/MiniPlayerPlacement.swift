@@ -39,12 +39,15 @@ enum MiniPlayerPlacement {
     static let margin: CGFloat = 12
     /// 再生器の幅の上限。**全幅だと左右へ寄せられない**ので細くする（曲名がおよそ9字入る幅）
     static let maxWidth: CGFloat = 280
-    /// 上の見出し（ロゴ・探す・お知らせ・メニューの帯）の高さ。ここには重ねない
-    static let topReserved: CGFloat = 52
+    /// 上の見出し（ロゴ・探す・お知らせ・メニューの帯）と、その下の1段（探すの入力欄など）の高さ。ここには重ねない。
+    /// 2026-10-28 判断: 見出しだけ（52）では、いちばん上に置くと探すの入力欄にかぶる（確かめ役の指摘）。
+    /// 見出し 52 ＋ 入力欄の段 60 にした。画面写真 `10m-探す（再生器・いちばん上）` で確かめる
+    static let topReserved: CGFloat = 112
     /// 下のタブバーの高さ（前の `padding(.bottom, 56)` と同じ）。ここには重ねない
     static let bottomReserved: CGFloat = 56
-    /// 「速く払った」とみなす、勢いで先へ進む量（pt）。これより小さい動きでは消さない
-    static let flingDistance: CGFloat = 60
+    /// 「速く払った」とみなす、勢いで先へ進む量（pt）。これより小さい動きでは消さない。
+    /// 2026-10-28 判断: 60 では下へ引き下ろしただけで止まった（確かめ役の指摘）。はっきり払ったときだけにする
+    static let flingDistance: CGFloat = 160
     /// 読み上げの「上へ移す／下へ移す」の1回の量（範囲の割合）
     static let accessibilityStep: CGFloat = 1.0 / 3.0
 
@@ -90,11 +93,14 @@ enum MiniPlayerPlacement {
                        container: CGSize, barSize: CGSize) -> Outcome {
         let start = center(of: spot, container: container, barSize: barSize)
         let range = verticalRange(container: container, barHeight: barSize.height)
-        // 下へ払った: 勢いで下へ進む量が十分・縦の動きが主・行き着く先が範囲の下より再生器1つ分外
+        // 下へ払って外へ出した: 指を離した所そのものが範囲の下端より再生器半分以上タブバー側に出ていて、
+        // 勢いで下へ進む量が十分・縦の動きが主・行き着く先が範囲の下より再生器1つ分外。
+        // **範囲の中で離したら、勢いがあっても止めない**（引き下ろしただけで止まらないように）
+        let releasedOut = start.y + translation.height > range.upperBound + barSize.height / 2
         let flungDown = predicted.height - translation.height >= flingDistance
         let mostlyDown = predicted.height > abs(predicted.width)
         let projectedY = start.y + predicted.height
-        if flungDown && mostlyDown && projectedY > range.upperBound + barSize.height {
+        if releasedOut && flungDown && mostlyDown && projectedY > range.upperBound + barSize.height {
             return .dismiss
         }
         // 左右は勢いを足した行き着く先で（速く払った向きの端へ）
@@ -110,6 +116,13 @@ enum MiniPlayerPlacement {
     static func moved(_ spot: Spot, up: Bool) -> Spot {
         var next = spot
         next.height = min(1, max(0, spot.height + (up ? accessibilityStep : -accessibilityStep)))
+        return next
+    }
+
+    /// 読み上げの「左の端へ」「右の端へ」。高さは変えない
+    static func moved(_ spot: Spot, to side: Side) -> Spot {
+        var next = spot
+        next.side = side
         return next
     }
 }

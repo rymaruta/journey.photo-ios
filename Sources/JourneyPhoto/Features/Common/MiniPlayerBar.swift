@@ -26,7 +26,7 @@ struct MiniPlayerBar: View {
 
     /// 動かしている間の量（離したら 0 に戻す）
     @State private var dragOffset = CGSize.zero
-    /// 指が触れて動かしている間か。**取り消された（電話が来た等）ときも戻す**ために
+    /// 長押しが済んで持ち上げている間か。**取り消された（電話が来た等）ときも戻す**ために
     /// `@GestureState` で持つ（取り消しでは `onEnded` が呼ばれない）
     @GestureState private var dragging = false
     /// 再生器の高さ（文字の大きさで変わる）。範囲の計算に使う
@@ -41,6 +41,9 @@ struct MiniPlayerBar: View {
     static let liftedScale: CGFloat = 0.96
     /// 動かす置き場所の座標の名前
     private static let area = "miniPlayer.area"
+    /// 持ち上げるまでの長押し（秒）。2026-10-28 判断: 再生器の上から始めたスクロールで再生器が動いて
+    /// しまった（確かめ役の指摘）ので、押さえてから引く形にした
+    static let liftDelay: Double = 0.2
 
     var body: some View {
         if let song = player.playingSong,
@@ -66,10 +69,14 @@ struct MiniPlayerBar: View {
                 // 読み上げ: 曲の札（絵と名前）を1つにまとめ、移動の代わりの操作を付ける。停止ボタンは別に読む
                 info(song)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(L("再生中の曲。ドラッグで移動", "Now playing. Drag to move"))
-                    .accessibilityValue([song.title, song.artist ?? ""].filter { !$0.isEmpty }.joined(separator: "、"))
+                    .accessibilityLabel(L("再生中の曲", "Now playing"))
+                    .accessibilityValue([song.title, song.artist ?? ""].filter { !$0.isEmpty }
+                        .joined(separator: L("、", ", ")))
+                    .accessibilityHint(L("長押ししてドラッグで移動", "Touch and hold, then drag to move"))
                     .accessibilityAction(named: L("上へ移す", "Move up")) { move(up: true) }
                     .accessibilityAction(named: L("下へ移す", "Move down")) { move(up: false) }
+                    .accessibilityAction(named: L("左の端へ", "Move to left edge")) { move(to: .leading) }
+                    .accessibilityAction(named: L("右の端へ", "Move to right edge")) { move(to: .trailing) }
             }
             Button {
                 player.stop()
@@ -136,8 +143,10 @@ struct MiniPlayerBar: View {
                 .scaleEffect(dragging && !reduceMotion ? Self.liftedScale : 1)
                 .shadow(color: .black.opacity(dragging ? 0.7 : 0.5), radius: dragging ? 22 : 14,
                         x: 0, y: dragging ? 14 : 8)
-                // 押すとぶつからないよう、少し動いてから動かす（停止ボタンのタップは指が動かないので効く）
+                // 押さえてから引く（停止ボタンのタップは長押しにならないので効く）
                 .gesture(dragGesture(container: container, size: size))
+                // 持ち上げた瞬間に軽く震わせる（長押しが済んだ合図）
+                .sensoryFeedback(.impact(weight: .light), trigger: dragging) { old, new in !old && new }
                 .position(x: base.x + dragOffset.width, y: base.y + dragOffset.height)
         }
         .coordinateSpace(.named(Self.area))
@@ -149,11 +158,18 @@ struct MiniPlayerBar: View {
     }
 
     private func dragGesture(container: CGSize, size: CGSize) -> some Gesture {
-        // 動かす間に再生器自身が動くので、量は動かない枠の座標で測る
-        DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.area))
-            .updating($dragging) { _, state, _ in state = true }
-            .onChanged { value in dragOffset = value.translation }
-            .onEnded { value in
+        // 長押しが済んでから引く（スクロールの指で動かない）。動かす間に再生器自身が動くので、
+        // 量は動かない枠の座標で測る
+        LongPressGesture(minimumDuration: Self.liftDelay)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.area)))
+            .updating($dragging) { value, state, _ in
+                if case .second(true, _) = value { state = true }
+            }
+            .onChanged { value in
+                if case .second(true, let drag?) = value { dragOffset = drag.translation }
+            }
+            .onEnded { sequence in
+                guard case .second(true, let value?) = sequence else { return }
                 let outcome = MiniPlayerPlacement.settle(from: placement.spot,
                                                          translation: value.translation,
                                                          predicted: value.predictedEndTranslation,
@@ -179,6 +195,12 @@ struct MiniPlayerBar: View {
     private func move(up: Bool) {
         withAnimation(settleAnimation) {
             placement.spot = MiniPlayerPlacement.moved(placement.spot, up: up)
+        }
+    }
+
+    private func move(to side: MiniPlayerPlacement.Side) {
+        withAnimation(settleAnimation) {
+            placement.spot = MiniPlayerPlacement.moved(placement.spot, to: side)
         }
     }
 }

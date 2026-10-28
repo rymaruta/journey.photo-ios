@@ -84,7 +84,10 @@ final class MiniPlayerPlacementTests: XCTestCase {
 
     /// 下へ素早く払って外へ出したら消す。ゆっくり・横向き・少しだけでは消さない
     func testFlingDownDismisses() {
-        XCTAssertEqual(settle(CGSize(width: 0, height: 40), predicted: CGSize(width: 0, height: 260)), .dismiss)
+        // 離した所が範囲の下端より再生器半分（30）以上外・勢い 200
+        XCTAssertEqual(settle(CGSize(width: 0, height: 70), predicted: CGSize(width: 0, height: 270)), .dismiss)
+        // 勢いが下限（160）に届かない
+        XCTAssertNotEqual(settle(CGSize(width: 0, height: 70), predicted: CGSize(width: 0, height: 200)), .dismiss)
         // 勢いが足りない（行き着く先が離した所と同じ）
         XCTAssertNotEqual(settle(CGSize(width: 0, height: 200), predicted: CGSize(width: 0, height: 210)), .dismiss)
         // 横へ払った（下へも動いたが横が主）
@@ -94,6 +97,32 @@ final class MiniPlayerPlacementTests: XCTestCase {
         XCTAssertNotEqual(settle(CGSize(width: 0, height: 20), predicted: CGSize(width: 0, height: 200), from: high), .dismiss)
         // 上へ払っても消さない
         XCTAssertNotEqual(settle(CGSize(width: 0, height: -40), predicted: CGSize(width: 0, height: -400)), .dismiss)
+    }
+
+    /// 🔴 **範囲の中で離したら、勢いがあっても止めない**（確かめ役の指摘: 下へ引き下ろしただけで止まった）
+    func testReleaseInsideRangeNeverDismisses() {
+        // 範囲の下端（再生器の下端がタブバーの上）から少しだけ下で離し、強く払った
+        XCTAssertNotEqual(settle(CGSize(width: 0, height: 20), predicted: CGSize(width: 0, height: 900)), .dismiss)
+        // 上の方から下端の手前まで勢いよく引き下ろした
+        let middle = MiniPlayerPlacement.Spot(side: .trailing, height: 0.6)
+        let pull = center(.initial).y - center(middle).y
+        guard case .place(let spot) = settle(CGSize(width: 0, height: pull),
+                                             predicted: CGSize(width: 0, height: pull + 800), from: middle) else {
+            return XCTFail("引き下ろしただけで止まった")
+        }
+        XCTAssertEqual(spot.height, 0, accuracy: 0.0001, "いちばん下に収まる")
+    }
+
+    /// 読み上げの「左の端へ」「右の端へ」は高さを変えない
+    func testAccessibilitySideMoves() {
+        let spot = MiniPlayerPlacement.Spot(side: .trailing, height: 0.5)
+        XCTAssertEqual(MiniPlayerPlacement.moved(spot, to: .leading), .init(side: .leading, height: 0.5))
+        XCTAssertEqual(MiniPlayerPlacement.moved(spot, to: .trailing), spot)
+    }
+
+    /// いちばん上でも、上の見出しとその下の1段（探すの入力欄など）にかぶらない
+    func testTopLeavesHeaderAndFirstRow() {
+        XCTAssertGreaterThanOrEqual(MiniPlayerPlacement.topReserved, 52 + 44, "見出しの下の1段にかぶる")
     }
 
     /// 読み上げの「上へ移す／下へ移す」は範囲の中で動く
@@ -136,10 +165,16 @@ final class MiniPlayerPlacementTests: XCTestCase {
         XCTAssertFalse(bar.contains("WebTheme.raised"), "透ける地に戻っている")
         XCTAssertTrue(bar.contains(".background(Self.pickerBarFill, in:"), "不透明の面でない")
         XCTAssertTrue(bar.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "停止が 44pt でない")
-        for text in ["再生中の曲。ドラッグで移動", "上へ移す", "下へ移す"] {
+        for text in ["L(\"再生中の曲\", \"Now playing\")", "長押ししてドラッグで移動", "上へ移す", "下へ移す",
+                     "左の端へ", "右の端へ", "joined(separator: L("] {
             XCTAssertTrue(bar.contains(text), "読み上げの「\(text)」が無い")
         }
-        XCTAssertTrue(bar.contains("DragGesture(minimumDistance: 8"), "押すとぶつかる")
+        XCTAssertTrue(bar.contains(".accessibilityHint("), "操作の説明がラベルに混ざっている")
+        XCTAssertFalse(bar.contains("再生中の曲。ドラッグで移動"), "操作の説明がラベルに混ざっている")
+        // スクロールの指で動かないよう、長押しが済んでから引く
+        XCTAssertTrue(bar.contains("LongPressGesture(minimumDuration: Self.liftDelay)"), "長押しせずに動く")
+        XCTAssertTrue(bar.contains(".sequenced(before: DragGesture("), "長押しせずに動く")
+        XCTAssertTrue(bar.contains(".sensoryFeedback(.impact(weight: .light), trigger: dragging)"), "持ち上げの合図が無い")
         XCTAssertTrue(bar.contains("dragging && !reduceMotion ? Self.liftedScale : 1"), "動きを減らすで縮める")
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertFalse(root.contains("MiniPlayerBar().padding"), "置き場所を外から固定している")

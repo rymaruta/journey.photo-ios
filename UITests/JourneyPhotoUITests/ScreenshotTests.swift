@@ -3624,10 +3624,10 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(bar.frame.width, app.frame.width - 24, "全幅のまま（左右へ寄せられない）")
         shoot(app, "10m-ホーム（再生器・説明文に重なった所）")
 
-        // 曲名の辺り（停止ボタンでない所）をつまんで左上へ引いて離す → 左の端へ寄る
+        // 曲名の辺り（停止ボタンでない所）を長押しして（0.2 秒で持ち上がる）左上へ引いて離す → 左の端へ寄る
         let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
         let target = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.45))
-        start.press(forDuration: 0.2, thenDragTo: target)
+        start.press(forDuration: 0.6, thenDragTo: target)
         Thread.sleep(forTimeInterval: 1.5)
         guard bar.exists else {
             XCTFail("引いただけで再生器が消えた")
@@ -3636,6 +3636,24 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(bar.frame.minX, app.frame.minX + 12, accuracy: 3, "左の端へ寄っていない")
         XCTAssertLessThan(bar.frame.midY, app.frame.height * 0.6, "離した高さに残っていない")
         shoot(app, "10m-ホーム（再生器・左の端へ寄せた）")
+
+        // 探すの札で、いちばん上まで引き上げる → 見出しの下の入力欄にかぶらない（`MiniPlayerPlacement.topReserved`）
+        tabBar.buttons.element(boundBy: 1).tap()
+        let field = app.textFields["search.field"].firstMatch
+        _ = field.waitForExistence(timeout: 10)
+        guard bar.exists else { return }
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+            .press(forDuration: 0.6, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.02)))
+        Thread.sleep(forTimeInterval: 1.5)
+        guard bar.exists else {
+            XCTFail("上へ引いただけで再生器が消えた")
+            return
+        }
+        if field.exists {
+            XCTAssertGreaterThanOrEqual(bar.frame.minY, field.frame.maxY, "いちばん上で探すの入力欄にかぶる")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "10m-探す（再生器・いちばん上）")
         app.terminate()
     }
 
