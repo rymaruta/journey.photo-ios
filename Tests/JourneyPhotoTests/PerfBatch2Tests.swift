@@ -162,6 +162,9 @@ final class PerfBatch2RoomSceneTests: XCTestCase {
         scene.show(layout: layout, doc: doc, paint: 0x5B6168)
         for _ in 0..<2400 where markers.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
         XCTAssertEqual(markers.count, 1, "組み終えた合図が出ない／二度出た")
+        // 渡した物を覚えているのは模型（`SceneKitShim` の `SCNView.prepared`）だけ。本物の SceneKit では
+        // 組み終えた合図が 1 回出ること（prepare の答えを待っても止まらない）までを見る（Mac run 709 で判明）
+        #if !canImport(SceneKit)
         let prepared = view.prepared.compactMap { $0 as? SCNNode }
         XCTAssertFalse(prepared.isEmpty, "prepare に何も渡していない")
         // 殻（見せ方の組）は prepare に渡したものがそのまま場面に入る
@@ -172,5 +175,6 @@ final class PerfBatch2RoomSceneTests: XCTestCase {
         let bed = try XCTUnwrap(doc.all.first { $0.k == "bed.platform" })
         let bedGeometry = try XCTUnwrap(try body(scene, bed.u).geometry)
         XCTAssertTrue(prepared.contains { $0.geometry === bedGeometry }, "家具の形を prepare に渡していない")
+        #endif
     }
 }
