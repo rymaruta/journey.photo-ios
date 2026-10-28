@@ -3541,6 +3541,74 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **格子の上を普通の速さで払っても札が替わる**（2026-10-28 owner の実機「投稿からマップにスライドしようと
+    /// すると、うまくタブの切り替えができない」）。`testSwipesMyPageTabs` は札の行を勢いの無い送りで払うだけで、
+    /// 指を写真の上に置いて勢いよく払う（`swipeLeft`）回を見ていなかった。写真を押すと詳細が開くこと・
+    /// 格子の上で縦に送れることも続けて見る（払いが写真の押しや縦のスクロールを奪わない）。
+    /// 写真が出なければ撮らない（この試験の決まり）。払って替わらなければ落とす
+    func testSwipesMyPageGridQuickly() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let posts = app.buttons["profile.tab.posts"].firstMatch
+        let trips = app.buttons["profile.tab.trips"].firstMatch
+        guard posts.waitForExistence(timeout: 10) else { return }
+        let photo = app.buttons["mypage.photo"].firstMatch
+        guard photo.waitForExistence(timeout: 15) else { return }
+        // 格子の写真が画面の真ん中あたりに来るまで、勢いを付けずに引き上げる
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let height = app.frame.height
+        let width = app.frame.width
+        let lift = photo.frame.midY - height * 0.55
+        if lift > 0 {
+            origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8))
+                .press(forDuration: 0.1, thenDragTo: origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8 - lift)),
+                       withVelocity: .slow, thenHoldForDuration: 0.5)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard photo.isHittable else { return }
+        let spot = origin.withOffset(CGVector(dx: width * 0.5, dy: photo.frame.midY))
+
+        // 写真の上で、勢いのある払い（指を離すまで止めない）
+        photo.swipeLeft()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(trips.isSelected, "格子の上を勢いよく左へ払っても「旅の記録」に替わらない")
+        shoot(app, "14q-マイページ（格子の上を払って旅の記録へ）")
+
+        // 同じ所を右へ速く払って戻る
+        origin.withOffset(CGVector(dx: width * 0.2, dy: photo.frame.midY))
+            .press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: width * 0.85, dy: photo.frame.midY)),
+                   withVelocity: .fast, thenHoldForDuration: 0)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(posts.isSelected, "旅の記録の中身を右へ速く払っても「投稿」に戻らない")
+
+        // 縦に送れる（払いが縦のスクロールを奪わない）
+        let rowY = posts.frame.minY
+        spot.press(forDuration: 0.05, thenDragTo: spot.withOffset(CGVector(dx: 0, dy: -height * 0.2)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertLessThan(posts.frame.minY, rowY - 40, "格子の上で縦に送れない")
+        XCTAssertTrue(posts.isSelected, "縦に送っただけで札が替わった")
+
+        // 写真を押すと詳細が開く（払いが押しを奪わない）
+        let tapPhoto = app.buttons["mypage.photo"].firstMatch
+        guard tapPhoto.isHittable else { return }
+        tapPhoto.tap()
+        XCTAssertTrue(app.buttons["photo.menu"].firstMatch.waitForExistence(timeout: 10), "格子の写真を押しても詳細が開かない")
+    }
+
     /// **マイページの札を横に払って切り替える**（2026-10-24 owner「切り替えスムーズに」・`ProfileTabPager`）。
     /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
     /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす
