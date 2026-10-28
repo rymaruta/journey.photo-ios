@@ -1,10 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// 名前の横に並ぶ印（2026-10-09）。**並びは 名前 → 公式（運営だけ）→ Pro マーク → 選んだバッジ。**
+/// 名前の横に並ぶ印（2026-10-09）。**並びは 名前 → 公式（運営だけ）→ Pro マーク → 初期メンバーの印 → 選んだバッジ。**
 ///
 /// - 公式の封印（`VerifiedBadge`）: 運営が立てた人だけ。本人は外せる（付ける・外すだけ）
 /// - Pro マーク（`ProMark`）: Pro 会員だけ。形は本人が選び、外すこともできる
+/// - 初期メンバーの印（`EarlyMemberMark`・2026-10-28）: 出すかはサーバーが決める（`UserProfile.showsEarlyMark`）。
+///   公式・Pro と同じく、写真の詳細の作者の行にも出す
 /// - 選んだバッジ: **プロフィールの頁だけ**（`showsBadge`）。写真の詳細の作者の行には出さない。
 ///   名前の横の画面の下見は、選んでいる途中の値を直接渡す
 ///
@@ -17,6 +19,8 @@ struct NameMarks: View {
     let verified: Bool?
     /// Pro マークの形。**nil は Pro でない**（印を出さない）
     let proStyle: ProMarkStyle?
+    /// 初期メンバーの印を出すか
+    let early: Bool
     /// 名前の横に出すバッジ（プロフィールの頁だけ渡す）
     let badge: EarnedBadge?
     var nameSize: Double = 15
@@ -25,11 +29,12 @@ struct NameMarks: View {
     /// バッジを押したとき（人の頁: その人の棚を開く）。nil なら押せない
     var onBadgeTap: ((EarnedBadge) -> Void)?
 
-    init(verified: Bool?, proStyle: ProMarkStyle?, badge: EarnedBadge?,
+    init(verified: Bool?, proStyle: ProMarkStyle?, early: Bool = false, badge: EarnedBadge?,
          nameSize: Double = 15, relativeTo: Font.TextStyle = .subheadline,
          fit: VerifiedBadge.Fit = .system, onBadgeTap: ((EarnedBadge) -> Void)? = nil) {
         self.verified = verified
         self.proStyle = proStyle
+        self.early = early
         self.badge = badge
         self.nameSize = nameSize
         self.relativeTo = relativeTo
@@ -45,6 +50,7 @@ struct NameMarks: View {
         // サーバーが落として返すので、同じ判定のままで出ない
         self.init(verified: profile?.showsVerifiedMark,
                   proStyle: profile?.shownProMark,
+                  early: profile?.showsEarlyMark ?? false,
                   badge: showsBadge ? profile?.shownBadge : nil,
                   nameSize: nameSize, relativeTo: relativeTo, fit: fit, onBadgeTap: onBadgeTap)
     }
@@ -78,6 +84,13 @@ struct NameMarks: View {
                         side: ProMarkFit.side(nameSize: nameSize, mincho: isMincho) * scale)
                     // 公式の封印と同じく、行の中央ではなく字面の中央へ。封印は記号で見た目の中央が
                     // 少し下にあるので、その分も下げる（`ProMarkFit.sealCenterNudge`）
+                    .alignmentGuide(VerticalAlignment.center) { d in
+                        d[VerticalAlignment.center] - d.height * (fit.nudge + ProMarkFit.sealCenterNudge)
+                    }
+            }
+            if early {
+                // 大きさ・上下の位置は Pro マークと同じ（公式の封印の字面の中央にそろえる）
+                EarlyMemberMark(side: ProMarkFit.side(nameSize: nameSize, mincho: isMincho) * scale)
                     .alignmentGuide(VerticalAlignment.center) { d in
                         d[VerticalAlignment.center] - d.height * (fit.nudge + ProMarkFit.sealCenterNudge)
                     }
@@ -212,6 +225,7 @@ enum MyPageNameLine {
         // 名前の横に**出ている**印だけを言う（外した印は言わない・2026-10-10）
         if profile.showsVerifiedMark { parts.append(L("認証済み", "Verified")) }
         if profile.shownProMark != nil { parts.append(L("Pro 会員", "Pro member")) }
+        if profile.showsEarlyMark { parts.append(EarlyMemberMarkGeometry.label) }
         if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) {
             parts.append(BadgeCatalog.nameSideLabel(badge))
         }

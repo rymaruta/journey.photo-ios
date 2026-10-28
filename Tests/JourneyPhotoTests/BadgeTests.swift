@@ -231,6 +231,100 @@ final class BadgePatchTests: XCTestCase {
         XCTAssertEqual(p.shownProMark, .iris)
     }
 
+    // MARK: 初期メンバーの印（2026-10-28 owner「デフォルトでは付与・外すのはユーザーの任意・
+    // 条件は名前の横に公式・Pro・メダルのどれも出ていない人」）
+
+    /// 名前の横はサーバーの答え（`earlyMark`）をそのまま出す。文字の "true"・古いサーバー（無い）は出さない
+    @MainActor
+    func testEarlyMarkFollowsServerAnswer() async throws {
+        let on = try profile(#"{"userId":"u1","displayName":"丸田","earlyMark":true,"badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}}"#)
+        XCTAssertTrue(on.showsEarlyMark)
+        XCTAssertTrue(NameMarks(profile: on).early)
+        XCTAssertEqual(MyPageNameLine.label(on), "丸田、初期からのメンバー")
+
+        XCTAssertFalse(try profile(#"{"userId":"u1","earlyMark":"true"}"#).showsEarlyMark)
+        XCTAssertFalse(try profile(#"{"userId":"u1","badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}}"#).showsEarlyMark,
+                       "資格があっても、サーバーが出すと言わなければ出さない")
+        XCTAssertFalse(NameMarks(profile: try profile(#"{"userId":"u1"}"#)).early)
+    }
+
+    /// 本人の設定（`earlyMarkOn`）: true / false / null（既定）。資格は初期ユーザーのバッジ
+    func testEarlyMarkChoiceAndQualification() throws {
+        let early = #""badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}"#
+        XCTAssertNil(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":null}"#).earlyMarkChoice)
+        XCTAssertEqual(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":false}"#).earlyMarkChoice, false)
+        XCTAssertEqual(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":true}"#).earlyMarkChoice, true)
+        XCTAssertTrue(try profile(#"{"userId":"u1",\#(early)}"#).hasEarlyMemberQualification)
+        XCTAssertFalse(try profile(#"{"userId":"u1"}"#).hasEarlyMemberQualification)
+    }
+
+    /// 下見の規則はサーバーの `showsEarlyMark` と同じ（`api-user/src/__tests__/profileBadges.test.ts` と同じ場合）
+    func testEarlyShownMatchesServerRule() {
+        func shown(_ q: Bool = true, _ c: Bool? = nil, v: Bool = false, p: Bool = false, b: Bool = false) -> Bool {
+            NameSideChoice.earlyShown(qualified: q, choice: c, verifiedShown: v, proShown: p, badgeShown: b)
+        }
+        XCTAssertTrue(shown(), "既定: 何も出ていなければ付く")
+        XCTAssertFalse(shown(v: true))
+        XCTAssertFalse(shown(p: true))
+        XCTAssertFalse(shown(b: true))
+        XCTAssertTrue(shown(true, true, p: true), "付けると決めていれば並べて出る")
+        XCTAssertFalse(shown(true, false), "外すと決めていれば出ない")
+        XCTAssertFalse(shown(false, true), "資格が無ければ出ない")
+        XCTAssertTrue(NameSideChoice.earlyAutoNote(shown: true).contains("自動で付いています"))
+        XCTAssertTrue(NameSideChoice.earlyAutoNote(shown: false).contains("自動で外れています"))
+    }
+
+    /// 画面の今の選び方から下見を組む（2026-10-28 iOS のレビューの指摘: 画面が渡す入力をテストが見ていなかった）
+    func testEarlyShownFromCurrentChoices() throws {
+        let at = "2026-10-01T00:00:00.000Z"
+        let p = try profile(#"{"userId":"u1","pro":true,"verified":true,"badges":{"earlyUser":{"tier":1,"at":"\#(at)"},"first":{"tier":1,"at":"\#(at)"}}}"#)
+        func shown(selected: String? = nil, style: ProMarkStyle? = nil, verifiedOn: Bool = false, earlyOn: Bool? = nil) -> Bool {
+            NameSideChoice.earlyShown(profile: p, badges: p.earnedBadges, selected: selected, style: style,
+                                      verifiedOn: verifiedOn, earlyOn: earlyOn)
+        }
+        XCTAssertTrue(shown(), "Pro マーク・公式の印を外し、バッジなしなら既定で付く")
+        XCTAssertFalse(shown(style: .iris), "Pro マークを選んでいる形で見る（開いたときの値ではない）")
+        XCTAssertFalse(shown(verifiedOn: true))
+        XCTAssertFalse(shown(selected: "first"))
+        XCTAssertTrue(shown(selected: "wish"), "持っていないバッジは出ていない")
+        XCTAssertTrue(shown(style: .iris, earlyOn: true))
+        XCTAssertFalse(NameSideChoice.earlyShown(profile: p, badges: BadgeSet(), selected: nil, style: nil,
+                                                 verifiedOn: false, earlyOn: true), "資格は渡したバッジで見る")
+
+        // 資格の無い印は、画面の既定値（公式の印「付ける」・Pro マークの形 iris）が入っていても出ていない
+        let plain = try profile(#"{"userId":"u2","pro":false,"badges":{"earlyUser":{"tier":1,"at":"\#(at)"}}}"#)
+        XCTAssertTrue(NameSideChoice.earlyShown(profile: plain, badges: plain.earnedBadges, selected: nil, style: .iris,
+                                                verifiedOn: true, earlyOn: nil), "公式でも Pro でもない人は既定で付く")
+
+        // 持っているがアプリの知らない鍵を飾っている人（選び直していない）は、バッジが出ている
+        let unknown = try profile(#"{"userId":"u3","displayBadge":"futureBadge","badges":{"earlyUser":{"tier":1,"at":"\#(at)"},"futureBadge":{"tier":1,"at":"\#(at)"}}}"#)
+        XCTAssertFalse(NameSideChoice.earlyShown(profile: unknown, badges: unknown.earnedBadges, selected: nil, style: nil,
+                                                 verifiedOn: false, earlyOn: nil), "サーバーの判定ではバッジが出ているので付かない")
+    }
+
+    /// 設定一覧の一行: 本人が外したときだけ「外しています」と言う
+    func testNameSideDetailMentionsRemovedEarlyMark() throws {
+        let early = #""badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}"#
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":false}"#)),
+                       "バッジなし · 初期メンバーの印は外しています")
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early)}"#)), "バッジなし")
+        XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1","earlyMarkOn":false}"#)), "バッジなし")
+    }
+
+    /// 送るのは決めた値が開いたときと違うときだけ。決めていない（nil）なら触らない
+    func testEarlyMarkPatch() throws {
+        let p = try profile(#"{"userId":"u1","badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}}"#)
+        XCTAssertNil(NameSideChoice.patch(profile: p, selected: nil, style: .iris, earlyOn: nil))
+        let off = try XCTUnwrap(NameSideChoice.patch(profile: p, selected: nil, style: .iris, earlyOn: false))
+        XCTAssertEqual(try json(off)["earlyMarkOn"] as? Bool, false)
+        XCTAssertNil(try json(off)["earlyMark"], "結果の項目は送らない")
+        XCTAssertEqual(NameSideChoice.patch(profile: p, selected: nil, style: .iris, earlyOn: true)?.earlyMarkOn, true)
+
+        let decided = try profile(#"{"userId":"u1","earlyMarkOn":false,"badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}}"#)
+        XCTAssertNil(NameSideChoice.patch(profile: decided, selected: nil, style: .iris, earlyOn: false))
+        XCTAssertNil(try json(XCTUnwrap(NameSideChoice.patch(profile: p, selected: nil, style: .iris, verifiedOn: nil, earlyOn: true)))["verifiedMarkOff"])
+    }
+
     /// 上の説明は、持っている資格に合わせて付け外しできる印を言う
     func testIntroMentionsRemovableMarks() {
         XCTAssertTrue(NameSideChoice.intro(isPro: true, verified: true).contains("公式の印"))

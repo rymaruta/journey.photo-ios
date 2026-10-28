@@ -59,6 +59,12 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// 本人が認証済みの印を外しているか（2026-10-10）。**本人の応答だけに載る**。
     /// 公開プロフィールでは、外した人は `verified` ごと返ってこない（サーバーの `toPublicProfile`）
     private let verifiedMarkOff: LenientFlag?
+    /// 初期メンバーの印を名前の横に出すか（2026-10-28・**サーバーが決めた結果**）。公開・本人の
+    /// どちらの応答にも載る（公開は出すときだけ `true`）。古いサーバーは返さない → 出さない
+    private let earlyMark: LenientFlag?
+    /// 初期メンバーの印の**本人の設定**（`true` 付ける・`false` 外す・`null` 既定）。本人の応答だけに載る。
+    /// 既定は「名前の横にほかの印が何も出ていなければ付く」（サーバーの `showsEarlyMark`）
+    private let earlyMarkOn: LenientFlag?
 
     /// 持っているバッジ。返さないサーバーでは空
     var earnedBadges: BadgeSet {
@@ -144,6 +150,18 @@ struct UserProfile: Decodable, Equatable, Identifiable {
 
     /// 名前の横に認証済みの印を出すか。資格があり、外していないときだけ
     var showsVerifiedMark: Bool { verified == true && !verifiedMarkRemoved }
+
+    // MARK: 初期メンバーの印（2026-10-28 owner「デフォルトでは付与・外すのはユーザーの任意」）
+
+    /// 名前の横に初期メンバーの印を出すか。**サーバーの答えをそのまま使う**（規則を画面で持つのは
+    /// 名前の横の画面の下見だけ・`NameSideChoice.earlyShown`）
+    var showsEarlyMark: Bool { earlyMark?.value ?? false }
+
+    /// 本人が決めた値（`nil` は決めていない＝既定）
+    var earlyMarkChoice: Bool? { earlyMarkOn?.value }
+
+    /// 初期メンバーの印の資格（初期ユーザーのバッジを持っている）
+    var hasEarlyMemberQualification: Bool { earnedBadges[FoundingGiftGate.badgeKey] != nil }
 
     /// 画面に出す1曲。**先頭だけ**（モックのカードは1枚）
     var bgm: Photo.Song? {
