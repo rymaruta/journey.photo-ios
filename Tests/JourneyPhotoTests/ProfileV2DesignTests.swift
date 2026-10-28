@@ -32,32 +32,39 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertEqual(ProfileV2.tabGap, 22)
     }
 
-    /// カバーとアイコン（板 v2: 帯 196・アイコン 88 を 44 重ねる・黒 4 の縁。カバーの無い人は 72）
+    /// カバーとアイコン（帯 240＝2026-10-28 owner の要望・板 v2 は 196。アイコン 88 を 44 重ねる・黒 4 の縁。カバーの無い人は 72）
     func testCoverMetrics() {
-        XCTAssertEqual(ProfileCover.height, 196)
+        XCTAssertEqual(ProfileCover.height, 240, "owner の要望（2026-10-28）は 240。板 v2 の 196 に戻っている")
         XCTAssertEqual(ProfileCover.avatarSize, 88)
         XCTAssertEqual(ProfileCover.avatarOverlap, 44)
         XCTAssertEqual(ProfileCover.compactAvatarSize, 72)
         XCTAssertEqual(ProfileCover.cutoutWidth, 4)
     }
 
-    /// カバーの下端は**多段で溶かす**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。
-    /// 前は 40% の透明から下端の黒まで1本の直線で、写真の終わりが「バッサリ黒」に見えた
+    /// カバーの下端は**多段で溶かす**（2026-10-28 owner が案A を選び、値を直した・`ProfileCoverFade`）。
+    /// 初めは 40% の透明から下端の黒まで1本の直線で「バッサリ黒」。案A の1回目は 40% から濃くして
+    /// 帯の 6 割から下がほぼ黒になり、owner「元の写真のほとんど映ってないかも」
     func testCoverBottomFadesInSteps() throws {
         let stops = ProfileCoverFade.stops
-        XCTAssertEqual(stops.map(\.opacity), [0.25, 0, 0.08, 0.24, 0.46, 0.70, 0.90, 1.0],
-                       "案A の段（0, .08, .24, .46, .70, .90, 1.0）でない。1本の直線に戻すと継ぎ目に線が入る")
+        XCTAssertEqual(stops.map(\.opacity), [0.25, 0, 0, 0.03, 0.10, 0.22, 0.42, 0.70, 1.0],
+                       "段（60% から 0, .03, .10, .22, .42, .70, 1.0）でない")
         let locations = stops.map(\.location)
-        for (got, want) in zip(locations, [0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] as [CGFloat]) {
-            XCTAssertEqual(got, want, accuracy: 0.0001, "段の位置がずれている（写真の中ほど 40% から 10% 刻み）")
+        let want: [CGFloat] = [0, 0.4, 0.6] + (1...6).map { 0.6 + 0.4 * CGFloat($0) / 6 }
+        XCTAssertEqual(locations.count, want.count)
+        for (got, expected) in zip(locations, want) {
+            XCTAssertEqual(got, expected, accuracy: 0.0001, "段の位置がずれている（60% から下端まで等間隔）")
         }
         XCTAssertEqual(stops.last?.location, 1)
         XCTAssertEqual(stops.last?.opacity, 1, "下端でちょうど黒（地の黒と継ぎ目が出ない）")
-        // 入りも終わりも緩い（中ほどの段がいちばん急）。終わりが急だと下端に線が見える
-        let fade = Array(stops.dropFirst())
+        // 帯の上 6 割は写真がそのまま見える（上端の歯車の地は前と同じく 40% で消え、60% まで透明）
+        XCTAssertEqual(ProfileCoverFade.fadeStart, 0.6, accuracy: 0.0001, "透明の所が上がっている（写真が隠れる）")
+        // 黒は下端の 2 割に寄せる: 80% の所でも 1/4 より薄い（1回目は .70 で写真が消えた）
+        let at80 = try XCTUnwrap(stops.first { abs($0.location - 0.8) < 0.0001 })
+        XCTAssertLessThan(at80.opacity, 0.25, "80% の所が濃すぎる（写真の下半分が消える）")
+        // 入りはごく緩い（継ぎ目の上端に線を出さない）
+        let fade = Array(stops.dropFirst(2))
         let slopes = zip(fade, fade.dropFirst()).map { ($1.opacity - $0.opacity) / Double($1.location - $0.location) }
-        XCTAssertLessThan(slopes.first!, slopes.max()!, "入りが急")
-        XCTAssertLessThan(slopes.last!, slopes.max()!, "終わりが急（下端で傾きが急に 0 になる）")
+        XCTAssertLessThan(slopes.first!, 0.5, "入りが急")
 
         // マイページ・人のページは同じ部品（`ProfileCover`）で、掛けは共通の `ProfileCoverFade` だけ
         let cover = try source("Features/Profile/ProfileCover.swift")

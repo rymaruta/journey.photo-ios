@@ -3640,11 +3640,11 @@ final class ScreenshotTests: XCTestCase {
               edit.frame.maxY <= nameLine.frame.minY else { return }
         shoot(app, "106-マイページ（カバーの下端のフェード）")
 
-        // 継ぎ目の寄り: 帯の下半分（中ほどの透明 → 下端の黒）と、その下の黒い地。
+        // 継ぎ目の寄り: 帯の下の方（60% の透明 → 下端の黒）と、その下の黒い地。
         // 帯の下端はアイコン（88pt を 44pt 重ねる）の真ん中あたり＝名前の少し上
         let screen = app.screenshot().image
         let scale = screen.scale
-        let seam = CGRect(x: 0, y: max(0, nameLine.frame.minY - 200), width: screen.size.width, height: 220)
+        let seam = CGRect(x: 0, y: max(0, nameLine.frame.minY - 280), width: screen.size.width, height: 300)
         guard let cg = screen.cgImage?.cropping(to: CGRect(x: seam.minX * scale, y: seam.minY * scale,
                                                            width: seam.width * scale, height: seam.height * scale))
         else { return }

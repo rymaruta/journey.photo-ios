@@ -19,9 +19,11 @@ struct ProfileCover: View {
     var reserve = false
     var onLoaded: (Bool) -> Void = { _ in }
 
-    /// 板 v2（MyPage・UserProfile）の高さ 196。上 25% の黒 → 40% で透明 → 下端で黒へ溶かす
-    /// （上は時計とガラスの丸の地・下はアイコンと名前が乗る側）。v1 は 180・下 110pt だけ
-    nonisolated static let height: CGFloat = 196
+    /// 帯の高さ。**2026-10-28 owner の要望で 240**（「選んだ写真がヘッダーで映る範囲をもう少し広げたい」）。
+    /// 板 v2（MyPage・UserProfile）は 196、v1 は 180。上 25% の黒 → 透明 → 下の 4 割で黒へ溶かす
+    /// （`ProfileCoverFade`・帯の上 6 割＝144pt は写真がそのまま見える）。
+    /// **帯の高さはここ1か所だけ**（表紙の見える範囲の調整など、帯の縦横比はここから取る）
+    nonisolated static let height: CGFloat = 240
     /// 見出しのアイコン（板 v2 88pt）と、帯の下端へ引き上げる量（板 v2 44pt）。
     /// マイページと人のページで同じ。v1 は 84・50
     nonisolated static let avatarSize: CGFloat = 88
@@ -73,29 +75,34 @@ struct ProfileCover: View {
 
 /// カバーの上に重ねる黒の掛け（マイページ・人のページで同じ。`ProfileCover` だけが使う）。
 ///
-/// 上 25% の黒 → 40% で透明（時計とガラスの丸の地）→ **下端でちょうど黒**（アイコンと名前が乗る側）。
+/// 上 25% の黒 → 透明（時計とガラスの丸の地）→ **下端でちょうど黒**（アイコンと名前が乗る側）。
 ///
-/// 2026-10-28 判断（owner が案A を選んだ）: 下半分は**多段で溶かす**。前は 40% の透明から下端の黒まで
-/// 1本の直線で、下端で傾きが急に 0 になるため、写真の終わりに**一本の線が入ってバッサリ黒**に見えた。
-/// 写真の中ほど（40%）から 10% 刻みに 0 → .08 → .24 → .46 → .70 → .90 → 1.0 と、入りは緩く・
-/// 終わりも緩く寄せて、下の黒い地との継ぎ目を消す。下端は 1.0（地の `WebTheme.background` と同じ黒）。
-/// 板 v1 の MyPage は 180pt・下 110pt の `linear-gradient(to top,#000,transparent)`（始まりは 39% の所）
+/// 2026-10-28 判断（owner が案A を選び、そのあと値を直した）:
+/// - 初めは 40% の透明から下端の黒まで1本の直線で、写真の終わりに線が入り「バッサリ黒」に見えた
+/// - 案A の1回目（40% から 0, .08, .24, .46, .70, .90, 1.0）は、80% で .70・90% で .90 と直線より
+///   下が濃く、帯の 6 割から下がほぼ黒になった。owner「だいぶ怪しい。元の写真のほとんど映ってないかも」
+/// - いま: **透明を 60% まで下げ、黒は下端の 2 割に寄せる**。60% から等間隔に
+///   0, .03, .10, .22, .42, .70, 1.0。入りはごく緩く（継ぎ目の上端に線を出さない）、帯の上 6 割は
+///   写真がそのまま見え、下端は地の `WebTheme.background` と同じ黒で終わる
+/// 板 v1 の MyPage は 180pt・下 110pt の `linear-gradient(to top,#000,transparent)`
 struct ProfileCoverFade: View {
 
-    /// 写真の中ほど。ここで透明になり、下へ黒を重ねていく
-    nonisolated static let fadeStart: CGFloat = 0.4
-    /// 下半分の黒の濃さ（案A）。`fadeStart` から下端まで等間隔に置く
-    nonisolated static let fadeOpacities: [Double] = [0, 0.08, 0.24, 0.46, 0.70, 0.90, 1.0]
-    /// 上端の黒（時計とガラスの丸の地）
+    /// ここまでは写真をそのまま見せる（上端の黒を除く）。ここから下へ黒を重ねていく
+    nonisolated static let fadeStart: CGFloat = 0.6
+    /// 下の黒の濃さ。`fadeStart` から下端まで等間隔に置く
+    nonisolated static let fadeOpacities: [Double] = [0, 0.03, 0.10, 0.22, 0.42, 0.70, 1.0]
+    /// 上端の黒（時計とガラスの丸の地）。前と同じく 40% で透明に戻す（透明を 60% に下げても、
+    /// 上の黒を下へ伸ばさない）
     nonisolated static let topOpacity: Double = 0.25
+    nonisolated static let topClearAt: CGFloat = 0.4
 
-    /// 掛けの段（位置 0…1・黒の濃さ）。上端 → 中ほどの透明 → 多段で下端の黒
+    /// 掛けの段（位置 0…1・黒の濃さ）。上端 → 40% で透明 → 60% まで透明 → 多段で下端の黒
     nonisolated static var stops: [(location: CGFloat, opacity: Double)] {
         let steps = fadeOpacities.count - 1
         let fade = fadeOpacities.enumerated().map { index, opacity in
             (location: fadeStart + (1 - fadeStart) * CGFloat(index) / CGFloat(steps), opacity: opacity)
         }
-        return [(location: 0, opacity: topOpacity)] + fade
+        return [(location: 0, opacity: topOpacity), (location: topClearAt, opacity: 0)] + fade
     }
 
     var body: some View {
