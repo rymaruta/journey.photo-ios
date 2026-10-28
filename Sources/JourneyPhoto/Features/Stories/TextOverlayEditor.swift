@@ -45,6 +45,8 @@ struct StoryCanvas: View {
     var underOverlays: AnyView? = nil
     /// 付けた曲とジャケット（2026-10-28）。**形のある曲の札は形で描く**（焼き込みと同じ絵・`SongStickerView`）
     var songArt: SongStickerPainter.Art? = nil
+    /// 上にシートなどが出ている（曲の札の動きを止める・2026-10-28 のレビュー）
+    var songStickersCovered = false
 
     /// 「動きを減らす」がオンなら曲の札の棒・レコードを動かさない
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -566,7 +568,8 @@ struct StoryCanvas: View {
     /// 札の見た目（押せる範囲・位置・指の操作を付ける前）。**形のある曲の札は形で描く**（2026-10-28）
     private func look(_ overlay: TextOverlay, fontSize: Double) -> AnyView {
         if let art = songArt, let layout = SongStickerPainter.layout(for: overlay, art: art, unit: fontSize) {
-            return AnyView(SongStickerView(layout: layout, art: art, animated: !reduceMotion)
+            return AnyView(SongStickerView(layout: layout, art: art, animated: !reduceMotion,
+                                           covered: songStickersCovered)
                 .frame(width: layout.size.width, height: layout.size.height))
         }
         return AnyView(Self.edged(Text(overlay.drawnText)

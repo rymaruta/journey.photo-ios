@@ -11,12 +11,36 @@ import UIKit
 /// ジャケットは曲の `artwork`（BGM の行と同じ画像・`SongArtwork`）。**読めないときは ♪ の四角**。
 enum SongStickerPainter {
 
-    /// 札に描く曲（曲とジャケットの絵）。ジャケットが無い・読めないときは nil
+    /// 読んだジャケットと、**どの URL の絵か**（2026-10-28 のレビュー）
+    struct LoadedArtwork {
+        /// 読んだ曲の `artwork`（そのままの文字列）
+        let url: String
+        let image: UIImage
+    }
+
+    /// 札に描く曲（曲とジャケットの絵）。
+    ///
+    /// 🔴 **ジャケットはこの曲の URL で読んだ絵だけを渡す**（2026-10-28 のレビュー）。以前は絵だけを持ち、
+    /// 曲を変えた直後〜読み直す前の1回の描画で「新しい曲の URL の鍵＋前の曲の絵」が控え（`cache`）に入り、
+    /// 以後ずっと前の曲のジャケットが新しい曲の札に出た。絵と URL を組で持ち、曲の `artwork` と合わなければ
+    /// nil（♪ の四角）。控えの鍵も**絵の側の URL** から作る（二重に守る）
     struct Art {
         let song: Photo.Song
-        let artwork: UIImage?
-        /// ジャケットの見分け（画像の控えの鍵）。曲の `artwork` の URL か、読めていなければ空
-        var artworkKey: String { artwork == nil ? "" : (song.artwork ?? "") }
+        let loaded: LoadedArtwork?
+
+        init(song: Photo.Song, loaded: LoadedArtwork?) {
+            self.song = song
+            self.loaded = loaded
+        }
+
+        /// 描くジャケット。読めていない・別の曲の絵なら nil
+        var artwork: UIImage? {
+            guard let loaded, let url = song.artwork, loaded.url == url else { return nil }
+            return loaded.image
+        }
+
+        /// ジャケットの見分け（画像の控えの鍵）。描く絵の URL か、描かなければ空
+        var artworkKey: String { artwork == nil ? "" : (loaded?.url ?? "") }
     }
 
     // MARK: - 書体と測り方
@@ -49,9 +73,15 @@ enum SongStickerPainter {
     // MARK: - 描く
 
     /// 札を `origin`（札の左上）に描く。`moving` が false なら棒とレコードの盤（作る画面が上に重ねて
-    /// 動かす物）を描かない——レコードの影だけは描く（盤を重ねると隠れる）
+    /// 動かす物）を描かない——レコードの影だけは描く（盤を重ねると隠れる）。
+    ///
+    /// `shadowScale` は描く先の倍率（画素 ÷ 点）。**影のずれとぼかしは画素で効く**（`CGContext.setShadow` は
+    /// 座標の拡大を受けない）ので、倍率を掛けてそろえる（2026-10-28 のレビュー）。焼き込みは倍率 1、
+    /// 作る画面の絵（`image`）は端末の倍率（3 倍）で描き、掛けないと作る画面の影が焼き込みの 1/3 になっていた。
+    /// **回しの差は残る**——焼き込みは回した座標に描いても影は写真の下へ落ちるが、作る画面は絵ごと回すので
+    /// 影も回る（傾けた札だけ・影の向きが少し違う。見送った）
     static func draw(_ layout: SongStickerLayout, artwork: UIImage?, in cg: CGContext,
-                     origin: CGPoint, moving: Bool = true) {
+                     origin: CGPoint, moving: Bool = true, shadowScale: Double = 1) {
         let ox = Double(origin.x), oy = Double(origin.y)
         func at(_ r: CGRect) -> CGRect { r.offsetBy(dx: ox, dy: oy) }
 
@@ -59,7 +89,7 @@ enum SongStickerPainter {
         if let plate = layout.plate {
             let path = UIBezierPath(roundedRect: at(plate.rect), cornerRadius: plate.radius)
             cg.saveGState()
-            if let shadow = plate.shadow { setShadow(shadow, cg) }
+            if let shadow = plate.shadow { setShadow(shadow, scale: shadowScale, cg) }
             switch plate.kind {
             case .glass: UIColor.black.withAlphaComponent(0.55).setFill()
             case .white: UIColor.white.withAlphaComponent(0.94).setFill()
@@ -79,7 +109,7 @@ enum SongStickerPainter {
         if let disc = layout.disc {
             if let shadow = layout.discShadow {
                 cg.saveGState()
-                setShadow(shadow, cg)
+                setShadow(shadow, scale: shadowScale, cg)
                 color(0x141414).setFill()
                 UIBezierPath(ovalIn: at(disc)).fill()
                 cg.restoreGState()
@@ -91,7 +121,7 @@ enum SongStickerPainter {
             // ジャケット（A・B・D）
             if let shadow = layout.artworkShadow {
                 cg.saveGState()
-                setShadow(shadow, cg)
+                setShadow(shadow, scale: shadowScale, cg)
                 UIColor.black.setFill()
                 UIBezierPath(roundedRect: at(art), cornerRadius: layout.artworkRadius).fill()
                 cg.restoreGState()
@@ -102,7 +132,7 @@ enum SongStickerPainter {
 
         // 字
         cg.saveGState()
-        if let shadow = layout.textShadow { setShadow(shadow, cg) }
+        if let shadow = layout.textShadow { setShadow(shadow, scale: shadowScale, cg) }
         for run in layout.texts {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font(run.role, size: run.pointSize),
@@ -170,9 +200,16 @@ enum SongStickerPainter {
         cg.restoreGState()
     }
 
-    private static func setShadow(_ shadow: SongStickerLayout.Shadow, _ cg: CGContext) {
-        cg.setShadow(offset: CGSize(width: 0, height: shadow.dy), blur: shadow.blur,
+    private static func setShadow(_ shadow: SongStickerLayout.Shadow, scale: Double, _ cg: CGContext) {
+        let device = shadowInPixels(shadow, scale: scale)
+        cg.setShadow(offset: device.offset, blur: device.blur,
                      color: UIColor.black.withAlphaComponent(shadow.opacity).cgColor)
+    }
+
+    /// 影を描く先の画素に直す（ずれとぼかしに倍率を掛ける・`draw` の `shadowScale`）
+    static func shadowInPixels(_ shadow: SongStickerLayout.Shadow, scale: Double) -> (offset: CGSize, blur: Double) {
+        let s = scale > 0 && scale.isFinite ? scale : 1
+        return (CGSize(width: 0, height: shadow.dy * s), shadow.blur * s)
     }
 
     static func color(_ hex: UInt32) -> UIColor {
@@ -209,7 +246,8 @@ enum SongStickerPainter {
         let renderer = UIGraphicsImageRenderer(
             size: CGSize(width: layout.size.width + b * 2, height: layout.size.height + b * 2), format: format)
         let made = renderer.image { context in
-            draw(layout, artwork: art.artwork, in: context.cgContext, origin: CGPoint(x: b, y: b), moving: moving)
+            draw(layout, artwork: art.artwork, in: context.cgContext, origin: CGPoint(x: b, y: b), moving: moving,
+                 shadowScale: Double(format.scale))
         }
         cache.setObject(Box(made), forKey: k)
         return made

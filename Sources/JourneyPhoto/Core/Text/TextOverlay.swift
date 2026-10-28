@@ -553,10 +553,11 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     /// この札の大きさの幅。**形のある曲の札は上限を小さくする**（2026-10-28 判断）——札は字より
-    /// 何倍も広く（ジャケット大は歌手の字の 10 倍）、文字の上限 0.2 まで広げると写真を覆う
+    /// 何倍も広く（ジャケット大は歌手の字の 10 倍）、文字の上限 0.2 まで広げると写真を覆う。
+    /// 上限は形ごと（`SongStickerStyle.maxSize(for:)`・札の幅が短い辺の約8割まで）
     func clampedSize(_ value: Double) -> Double {
-        guard kind == .song, songStyle != nil else { return Self.clampSize(value) }
-        return min(max(value, SongStickerStyle.minSize), SongStickerStyle.maxSize)
+        guard kind == .song, let songStyle else { return Self.clampSize(value) }
+        return min(max(value, SongStickerStyle.minSize), SongStickerStyle.maxSize(for: songStyle))
     }
 
     // MARK: - 編集画面と焼き込みで同じ形にする

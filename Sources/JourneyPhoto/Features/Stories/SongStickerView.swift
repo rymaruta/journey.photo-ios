@@ -18,6 +18,12 @@ struct SongStickerView: View {
     let art: SongStickerPainter.Art
     /// 動かすか（作る画面で、動きを減らす設定がオフのとき）
     var animated = true
+    /// 上にシート・カメラ・写真選びが出ている（動きの時計を止める・`SongStickerLayout.clockPaused`）
+    var covered = false
+
+    @Environment(\.scenePhase) private var scenePhase
+    /// 札が画面に居るか（消えたら時計を止める）
+    @State private var onScreen = true
 
     var body: some View {
         let b = CGFloat(layout.bleed)
@@ -27,7 +33,10 @@ struct SongStickerView: View {
                 .resizable()
                 .frame(width: full.width, height: full.height)
             if animated {
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: false)) { context in
+                TimelineView(.animation(minimumInterval: 1.0 / 30,
+                                        paused: SongStickerLayout.clockPaused(covered: covered,
+                                                                              foreground: scenePhase == .active,
+                                                                              onScreen: onScreen))) { context in
                     let time = context.date.timeIntervalSinceReferenceDate
                     ZStack(alignment: .topLeading) {
                         if let disc = layout.disc, let image = SongStickerPainter.discImage(layout, art: art) {
@@ -55,6 +64,8 @@ struct SongStickerView: View {
         .padding(-b)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
     }
 }
 

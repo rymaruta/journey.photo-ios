@@ -68,8 +68,17 @@ enum SongStickerStyle: String, Codable, CaseIterable, Identifiable {
     static let defaultSize = 0.032
     /// 小さくできる下限。**歌手の字が 12pt 相当**（9:16 の写真で 0.03 × 390 ≒ 12pt）
     static let minSize = TextOverlay.minSize
-    /// 大きくできる上限。ジャケット大・レコードでも短い辺の8割ほどまで（文字の札の 0.2 は札だと写真を覆う）
-    static let maxSize = 0.08
+    /// 札の幅の上限（短い辺に対する割合）。**どの形も、どの曲名でも、札の幅がこれを超えない大きさまで**
+    static let maxWidthShare = 0.8
+
+    /// 大きくできる上限。**形ごとの幅で決める**（2026-10-28 判断・レビューの指摘）——以前は全形で 0.08 にしていて、
+    /// ガラスの札・小さな帯は長い曲名だと短い辺の約145%まで広がり写真からはみ出した。その形のいちばん広い札
+    /// （字が「…」で切られる幅いっぱい・`SongStickerLayout.widestWidth`）でも幅が `maxWidthShare` に収まる大きさ。
+    /// 曲名を見ないので、つまむ（`TextOverlay.scaled`）・押して替える（`SongSticker.cycled`）のどこでも同じに効く。
+    /// 短い曲名だと札の幅は8割に届かない（つまんでも広げきれない）が、はみ出すよりよいとした
+    static func maxSize(for style: SongStickerStyle) -> Double {
+        max(minSize, maxWidthShare / SongStickerLayout.widestWidth(style: style))
+    }
     /// 長い曲名で縮めて収める幅（短い辺に対する割合・文字の札と同じ `SongSticker.fitWidth`）
     static var fitWidth: Double { SongSticker.fitWidth }
 
@@ -315,29 +324,37 @@ struct SongStickerLayout: Equatable {
                                         color: 0xFFFFFF, opacity: 0.78))
             }
         case .title:
-            let ts = U.typeSize * u, asz = U.typeArtist * u
-            let t = fit(title, .mincho, ts, maxWidth: U.typeTitleMax * u, measure)
-            let a = artist.map { fit($0, .artist, asz, maxWidth: U.typeArtistMax * u, measure) }
-            let tSize = measure(t, .mincho, ts)
-            let aSize = a.map { measure($0, .artist, asz) } ?? .zero
+            // 題字は**2行まで折り返し、それでも入らなければ字を小さくする**（2026-10-28・Mac の画面写真 run 748。
+            // 1行で切ると「夜明け…」の3字になり、何の曲か分からなかった）
+            let (lines, ts) = titleLines(title, maxWidth: U.typeTitleMax * u, size: U.typeSize * u, measure)
+            let asz = U.typeArtist * u
+            // 歌手は**写真の上でも読める太さ**（曲名と同じ semibold・白 100%。regular の白 90% は細く薄かった）
+            let a = artist.map { fit($0, .title, asz, maxWidth: U.typeArtistMax * u, measure) }
+            let sizes = lines.map { measure($0, .mincho, ts) }
+            let aSize = a.map { measure($0, .title, asz) } ?? .zero
             let rowH = max(aSize.height, U.eqHeight * u)
             let rowW = U.eqWidth * u + (a == nil ? 0 : U.typeRowGap * u + aSize.width)
-            let width = max(tSize.width, rowW)
-            let rowY = tSize.height + U.typeGap * u
+            let width = max(sizes.map(\.width).max() ?? 0, rowW)
+            let titleH = sizes.reduce(0) { $0 + $1.height }
+            let rowY = titleH + U.typeGap * u
             layout.size = CGSize(width: width, height: rowY + rowH)
-            layout.textShadow = Shadow(dy: 2 * U.px * u, blur: 14 * U.px * u, opacity: 0.65)
-            layout.texts = [Run(text: t, role: .mincho, pointSize: ts,
-                                frame: CGRect(x: (width - tSize.width) / 2, y: 0,
-                                              width: tSize.width, height: tSize.height),
-                                color: 0xFFFFFF, opacity: 1)]
+            // 影は締めて濃く（ぼかし 14・65% は小さな歌手の字の周りで薄く広がり、字が読めなかった）
+            layout.textShadow = Shadow(dy: 1.5 * U.px * u, blur: 8 * U.px * u, opacity: 0.85)
+            var lineY = 0.0
+            layout.texts = zip(lines, sizes).map { line, size in
+                defer { lineY += size.height }
+                return Run(text: line, role: .mincho, pointSize: ts,
+                           frame: CGRect(x: (width - size.width) / 2, y: lineY, width: size.width, height: size.height),
+                           color: 0xFFFFFF, opacity: 1)
+            }
             let rowX = (width - rowW) / 2
             layout.bars = bars(x: rowX, centerY: rowY + rowH / 2, u: u)
             if let a {
-                layout.texts.append(Run(text: a, role: .artist, pointSize: asz,
+                layout.texts.append(Run(text: a, role: .title, pointSize: asz,
                                         frame: CGRect(x: rowX + U.eqWidth * u + U.typeRowGap * u,
                                                       y: rowY + (rowH - aSize.height) / 2,
                                                       width: aSize.width, height: aSize.height),
-                                        color: 0xFFFFFF, opacity: 0.9))
+                                        color: 0xFFFFFF, opacity: 1))
             }
         }
         return layout
@@ -367,6 +384,43 @@ struct SongStickerLayout: Equatable {
         return String(chars[0..<lo]).trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    /// 題字（F）の倍率の段（1行 → 2行 → 小さくして2行。最後の段でも入らなければ2行目を「…」で切る）
+    static let titleScales = [1.0, 0.85, 0.72]
+
+    /// 題字の行と字の大きさ。**1行で入れば1行、入らなければ2行に折り返し、それでも入らなければ字を小さくする**
+    static func titleLines(_ title: String, maxWidth: Double, size: Double,
+                           _ measure: Measure) -> (lines: [String], size: Double) {
+        var last: (lines: [String], size: Double) = ([title], size)
+        for scale in titleScales {
+            let ts = size * scale
+            if measure(title, .mincho, ts).width <= maxWidth { return ([title], ts) }
+            let (head, rest) = breakLine(title, maxWidth: maxWidth, size: ts, measure)
+            if rest.isEmpty || measure(rest, .mincho, ts).width <= maxWidth {
+                return (rest.isEmpty ? [head] : [head, rest], ts)
+            }
+            last = ([head, fit(rest, .mincho, ts, maxWidth: maxWidth, measure)], ts)
+        }
+        return last
+    }
+
+    /// 1行目に入るいちばん長い頭と残り。**空白で切れるなら空白で**（英語の単語を途中で割らない）
+    private static func breakLine(_ text: String, maxWidth: Double, size: Double,
+                                  _ measure: Measure) -> (head: String, rest: String) {
+        let chars = Array(text)
+        var lo = 1, hi = chars.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if measure(String(chars[0..<mid]), .mincho, size).width <= maxWidth { lo = mid } else { hi = mid - 1 }
+        }
+        var cut = lo
+        if cut < chars.count, chars[cut] != " ", let space = chars[0..<cut].lastIndex(of: " "), space > 0 {
+            cut = space
+        }
+        let head = String(chars[0..<cut]).trimmingCharacters(in: .whitespaces)
+        let rest = String(chars[cut...]).trimmingCharacters(in: .whitespaces)
+        return (head, rest)
+    }
+
     // MARK: - 動き（作る画面だけ・焼き込みは止まった絵）
 
     /// 棒の伸び縮み（0.4〜1 倍・1.05 秒で1往復・3本の位相はモックの animation-delay）。
@@ -380,6 +434,13 @@ struct SongStickerLayout: Equatable {
         return 0.7 - 0.3 * cos(phase * 2 * .pi)
     }
 
+    /// 作る画面の動き（棒・レコード）の時計を止めるか（2026-10-28 のレビュー）。シート・カメラ・写真選びで
+    /// **覆われている**・アプリが前に無い・札が**画面に無い**ときは止める（見えない所で 30 回/秒描き続けない）。
+    /// 弧の光の `PassGreatCircle.paused`（見えていなければ止める）と同じ考え方。止めた間は最後の形のまま
+    static func clockPaused(covered: Bool, foreground: Bool, onScreen: Bool) -> Bool {
+        covered || !foreground || !onScreen
+    }
+
     /// レコードの回り（6 秒で1周・ラジアン）
     static func discAngle(time: Double) -> Double {
         let period = 6.0
@@ -387,6 +448,31 @@ struct SongStickerLayout: Equatable {
     }
 
     // MARK: - 幅の目安（測る口の無い所・置くときの大きさ）
+
+    /// 札の高さの目安（歌手の字の大きさを 1 とした高さ・字の高さは字の 1.2 倍）。**置く位置**
+    /// （`SongSticker.placedY`）にだけ使う。題字は2行に折り返したとき（いちばん高い）で見る
+    static func estimatedHeight(style: SongStickerStyle, hasArtist: Bool) -> Double {
+        let line = 1.2
+        switch style {
+        case .glass, .white:
+            let text = U.titleSize * line + (hasArtist ? U.lineGap + U.artistSize * line : 0)
+            return U.cardPadV * 2 + max(U.cardJacket, text)
+        case .pill:
+            return U.pillPadV * 2 + max(U.pillFont * line, U.eqHeight)
+        case .sleeve, .disc:
+            return U.big + U.bigGap + U.titleSize * line + (hasArtist ? U.artistSize * line : 0)
+        case .title:
+            return U.typeSize * line * 2 + U.typeGap + max(U.typeArtist * line, U.eqHeight)
+        }
+    }
+
+    /// その形のいちばん広い札の幅（歌手の字の大きさを 1 とした幅）。曲名・歌手が「…」で切られる長さのとき。
+    /// 大きさの上限（`SongStickerStyle.maxSize(for:)`）に使う。切る幅（`U.*TextMax`）を `estimatedWidth` と
+    /// 二重に持たないよう、切られるほど長い字を `estimatedWidth` に通して求める
+    static func widestWidth(style: SongStickerStyle) -> Double {
+        let long = String(repeating: "あ", count: 64)
+        return estimatedWidth(style: style, title: long, artist: long)
+    }
 
     /// 札の幅の目安（歌手の字の大きさを 1 とした幅）。全角1・半角0.6 の目安（`SongSticker.ems` と同じ）。
     /// 置くときの大きさ（`SongSticker.fittedSize`）にだけ使う。**描く寸法は `make` が測って決める**

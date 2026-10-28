@@ -61,14 +61,43 @@ enum SongSticker {
     /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
     /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）。
     /// `style` は札の形（作る画面は端末に覚えた形 `SongStickerStyle.remembered()`）。
-    /// nil は文字だけの札（前の版の札）
-    static func make(for song: Photo.Song, style: SongStickerStyle?) -> TextOverlay? {
+    /// nil は文字だけの札（前の版の札）。`image` は置く写真の大きさ（形のある札の高さを写真の割合に直す・
+    /// 無ければ 3:4 の縦とみなす）。**形のある札は「ひとことを書く」の欄に重ならない所へ置く**（`placedY`）
+    static func make(for song: Photo.Song, style: SongStickerStyle?, image: CGSize? = nil) -> TextOverlay? {
         guard let text = text(for: song) else { return nil }
         var overlay = TextOverlay(text: text, x: 0.5, y: 0.6, size: TextOverlay.defaultSize,
                                   kind: .song, face: .gothic)
         overlay.songStyle = style
         overlay.size = fittedSize(for: overlay, song: song)
+        overlay.y = placedY(for: overlay, song: song, image: image)
         return overlay
+    }
+
+    // MARK: 置く位置（2026-10-28・Mac の画面写真 run 748）
+
+    /// 作る画面の「ひとことを書く」の欄が居る高さ（写真の高さに対する割合）。欄は写真の枠の**縦の真ん中**に
+    /// 敷く（`StoryComposerView.captionLayer`）。何も書いていない1行の欄で上下 5% ほど
+    static let captionBand = 0.45...0.55
+    /// 欄・写真の上下の道具（✕ と「…」・下の並び）から離す量
+    static let placeGap = 0.02
+    /// 札を置いてよい上下の端（上は ✕ と「…」、下は写真の並びの帯を避ける）
+    static let placeRange = 0.08...0.87
+
+    /// 形のある札を最初に置く縦の位置（中心）。**欄の下に入ればその下、入らなければ欄の上**、どちらにも
+    /// 入らないほど高い札（横長の写真のジャケット大など）は上の端に寄せる（欄には少し掛かる・見送った）。
+    /// 文字だけの札は前と同じ 0.6（文字の札・撮影地の札と同じ高さ）。
+    /// 以前は形を問わず 0.6 に置き、ジャケット大・レコード・題字が欄の字に重なった
+    static func placedY(for overlay: TextOverlay, song: Photo.Song, image: CGSize?) -> Double {
+        guard let style = overlay.songStyle else { return 0.6 }
+        let image = image.flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil } ?? CGSize(width: 3, height: 4)
+        let shortSide = Double(min(image.width, image.height))
+        let units = SongStickerLayout.estimatedHeight(style: style, hasArtist: parts(for: song)?.artist != nil)
+        let half = units * overlay.size * shortSide / Double(image.height) / 2
+        let below = captionBand.upperBound + placeGap + half
+        if below + half <= placeRange.upperBound { return below }
+        let above = captionBand.lowerBound - placeGap - half
+        if above - half >= placeRange.lowerBound { return above }
+        return TextOverlay.clampPosition(placeRange.lowerBound + half)
     }
 
     /// 札の形のとき、その札（`overlay`）に描く形。**付けた曲の札で形を持つときだけ**
@@ -80,13 +109,21 @@ enum SongSticker {
 
     /// 札を押した（2026-10-28・Instagram と同じく押すたびに形が替わる）。A→B→…→F→A。
     /// 文字だけの札（前の版）は A から。**大きさは置いたときの大きさの比で替える**——形ごとに
-    /// 幅が違うので、そのままだとジャケット大で写真からはみ出す。自分で大きく・小さくした分は倍率で残る
-    static func cycled(_ overlay: TextOverlay, song: Photo.Song) -> TextOverlay {
+    /// 幅が違うので、そのままだとジャケット大で写真からはみ出す。自分で大きく・小さくした分は倍率で残る。
+    /// 比で替えた後は**替えた先の形の上限で切る**（`clampedSize`・2026-10-28 のレビュー。長い曲名は
+    /// どの形でも置いたときの大きさが下限・既定に張り付いて比が 1 近くになり、大きくした札を
+    /// 小さな帯に替えると写真からはみ出していた）
+    /// **置いたままの札（動かしていない）は、替えた先の形でも欄に重ならない所へ置き直す**（`placedY`・
+    /// 2026-10-28）。動かした札はその場で替える
+    static func cycled(_ overlay: TextOverlay, song: Photo.Song, image: CGSize? = nil) -> TextOverlay {
         var next = overlay
         next.songStyle = overlay.songStyle?.next ?? .glass
         let before = fittedSize(for: overlay, song: song)
         let after = fittedSize(for: next, song: song)
         next.size = next.clampedSize(overlay.size * after / before)
+        let untouched = overlay.songStyle != nil && overlay.x == 0.5
+            && abs(overlay.y - placedY(for: overlay, song: song, image: image)) < 1e-9
+        if untouched { next.y = placedY(for: next, song: song, image: image) }
         return next
     }
 
