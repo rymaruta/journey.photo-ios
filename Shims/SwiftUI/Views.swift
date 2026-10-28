@@ -406,6 +406,8 @@ public struct GeometryProxy {
     public var safeAreaInsets: EdgeInsets { EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0) }
     /// 名前の付いた座標での枠（本物と同じ・`.scrollView` は iOS 17）
     public func frame(in space: NamedCoordinateSpace) -> CGRect { .zero }
+    /// 名前の付いた座標の枠（`.scrollView` なら見えている枠）を、この入れ物の座標で（本物と同じ・iOS 17）
+    public func bounds(of space: NamedCoordinateSpace) -> CGRect? { nil }
 }
 
 public struct GeometryReader<Content: View>: View {

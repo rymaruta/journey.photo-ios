@@ -34,7 +34,8 @@ struct MyPageView: View {
     /// 札の中身の計算の控え（保持した札の分まで描き直しのたびに計算しない・2026-10-24）
     @State private var tabMemo = MyPageTabMemo()
     /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う
-    @State private var tabRowMinY: CGFloat = 0
+    /// 札の行の上端の控え（見張らない箱。送るたびに画面全体を作り直さない・`ProfileTabRowSpot`）
+    @State private var tabRow = ProfileTabRowSpot()
     @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
@@ -395,8 +396,7 @@ struct MyPageView: View {
                         .onGeometryChange(for: CGRect.self) { proxy in
                             proxy.frame(in: .scrollView)
                         } action: { frame in
-                            tabRowMinY = frame.minY
-                            tabRowHeight = frame.height
+                            if let height = tabRow.record(frame, height: tabRowHeight) { tabRowHeight = height }
                         }
                     photoBanners
                     // 一度開いた札の中身は持ち続ける（`ProfileTabPager`・2026-10-24 判断）。最低の高さは
@@ -404,7 +404,7 @@ struct MyPageView: View {
                     ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                     minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
                                                                               rowHeight: tabRowHeight, spacing: 14),
-                                    rowOverflow: ProfileTabScroll.rowOverflow(rowMinY: tabRowMinY, visibleTop: visibleTop)) { page in
+                                    rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) }) { page in
                         VStack(alignment: .leading, spacing: 14) {
                             tabContent(page)
                         }
@@ -419,7 +419,7 @@ struct MyPageView: View {
         .refreshable { await reloadAll() }
         // 深く送ってから札を替えたら、新しい札は頭から（札の行を上端へ）。まだ送っていなければそのまま
         .onChange(of: tab) { _, _ in
-            guard ProfileTabScroll.scrollsToRow(rowMinY: tabRowMinY, visibleTop: visibleTop) else { return }
+            guard ProfileTabScroll.scrollsToRow(rowMinY: tabRow.minY, visibleTop: visibleTop) else { return }
             let anchor = UnitPoint(x: 0.5, y: ProfileTabScroll.anchorY(visibleTop: visibleTop, viewport: scrollHeight,
                                                                        rowHeight: tabRowHeight))
             withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
