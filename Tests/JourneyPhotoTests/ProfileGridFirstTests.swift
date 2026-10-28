@@ -53,7 +53,7 @@ final class ProfileGridFirstTests: XCTestCase {
     func testTapAreasGrowWithoutNegativePadding() throws {
         let bgm = try source("Sources/JourneyPhoto/Features/Profile/ProfileBgmCard.swift")
         XCTAssertFalse(bgm.contains("padding(.vertical, -"), "BGM の行が負の余白で張り出している")
-        XCTAssertTrue(bgm.contains(".frame(minHeight: Self.artworkSide)\n            .contentShape(Rectangle())"),
+        XCTAssertTrue(bgm.contains(".frame(minHeight: Self.artworkSide)\n            .padding(Self.framePadding)\n            .contentShape(Rectangle())"),
                       "曲の行ぜんぶが押せる範囲になっていない")
         let record = try source("Sources/JourneyPhoto/Features/Profile/TravelRecordView.swift")
         let toggle = try XCTUnwrap(record.range(of: "private func routeToggle("))

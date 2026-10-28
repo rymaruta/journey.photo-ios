@@ -13,15 +13,19 @@ struct PhotoGrid<Destination: View>: View {
     var captionsLead = false
     @ViewBuilder let destination: (Photo) -> Destination
 
-    /// 1つの投稿に2枚以上入っている写真。**この並びの中で数える**
-    /// ——兄弟が見えていないのに「複数枚」と出さない
-    private var multiple: Set<String> { PhotoGroups.multiPhotoIds(photos) }
-
     /// 段どうし・段の中の隙間
     private let gap: CGFloat = 10
 
     var body: some View {
-        VStack(spacing: gap) {
+        // 1つの投稿に2枚以上入っている写真。**この並びの中で数える**
+        // ——兄弟が見えていないのに「複数枚」と出さない。
+        // 2026-10-28 判断: **描くたびに1回だけ数える。** 計算型のプロパティにしていたので、
+        // 札1枚ごとに並び全部を数え直していた（写真 n 枚で n 回 × n）
+        let multiple = PhotoGroups.multiPhotoIds(photos)
+        // 2026-10-28 判断: **`LazyVStack` で組む**（画面に入る段だけを作る）。`VStack` は並び全部の札と
+        // 写真の読み込みを一度に作っていた。札は横いっぱいに広がる（`Color.clear` の縦横比）ので、
+        // 幅いっぱいに取る `LazyVStack` でも組み上がりは同じ
+        LazyVStack(spacing: gap) {
             ForEach(EditorialLayout.rows(photos)) { row in
                 switch row {
                 case .hero(let photo):
@@ -39,18 +43,18 @@ struct PhotoGrid<Destination: View>: View {
                         }
                         .buttonStyle(.plain)
                     } else {
-                        link(photo, aspect: 16.0 / 10.0)
+                        link(photo, aspect: 16.0 / 10.0, multiple: multiple)
                     }
                 case .pair(let first, let second):
                     if let second {
                         HStack(spacing: gap) {
-                            link(first, aspect: 1)
-                            link(second, aspect: 1)
+                            link(first, aspect: 1, multiple: multiple)
+                            link(second, aspect: 1, multiple: multiple)
                         }
                     } else {
                         // **相方が無い段は1枚で横いっぱい。**
                         // 半分だけ写真がある段を作らない
-                        link(first, aspect: 16.0 / 10.0)
+                        link(first, aspect: 16.0 / 10.0, multiple: multiple)
                     }
                 }
             }
@@ -58,7 +62,7 @@ struct PhotoGrid<Destination: View>: View {
         .padding(.horizontal, gap)
     }
 
-    private func link(_ photo: Photo, aspect: CGFloat) -> some View {
+    private func link(_ photo: Photo, aspect: CGFloat, multiple: Set<String>) -> some View {
         NavigationLink {
             destination(photo)
         } label: {

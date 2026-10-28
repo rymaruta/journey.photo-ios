@@ -206,6 +206,40 @@ struct CamperRoomShelf {
     func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { byCategory[c] ?? [] }
 }
 
+/// 置く棚（`CamperRoomShelf`）の控え。**材料が同じ間は作り直さない。**
+///
+/// 2026-10-28 判断: 置く板は、家具を動かす・回す・カメラを動かすたびに描き直され、そのたびに 1,000 点を超える
+/// 家具から棚を絞り直していた。棚が読むのは「置く場所・持っている家具・新しい家具・部屋に置いた家具の種類」
+/// だけ（`CamperRoomEditor.tray(_:owned:)`）なので、それが変わったときだけ作り直す。家具を動かしても
+/// 置いた種類は変わらないので、棚は作り直さない
+final class CamperRoomShelfMemo {
+
+    /// 棚の材料。**`tray(_:owned:)` と `CamperRoomShelf.init` が読むものを全部入れる**
+    private struct Key: Equatable {
+        let hasEditor: Bool
+        let placement: CamperRoomPlacement
+        let owned: Set<String>
+        let news: Set<String>
+        /// 部屋に置いた家具の種類（`doc.all` の `k`）
+        let placed: Set<String>
+    }
+
+    private var last: (key: Key, shelf: CamperRoomShelf)?
+    /// 試験用: 棚を作った回数
+    private(set) var builds = 0
+
+    func shelf(_ editor: CamperRoomEditor?, placement: CamperRoomPlacement, owned: Set<String>,
+               news: Set<String>) -> CamperRoomShelf {
+        let key = Key(hasEditor: editor != nil, placement: placement, owned: owned, news: news,
+                      placed: Set(editor?.doc.all.map(\.k) ?? []))
+        if let last, last.key == key { return last.shelf }
+        let shelf = CamperRoomShelf(editor?.tray(placement, owned: owned) ?? [], news: news)
+        last = (key, shelf)
+        builds += 1
+        return shelf
+    }
+}
+
 // MARK: - 保存（人ごとにこの端末へ・退会で消す）
 
 /// 部屋の配置を人ごとにこの端末へ覚える（2026-10-19 判断: 第1段は端末だけ。外まわりの `CamperStore` と同じ人ごとの鍵）。

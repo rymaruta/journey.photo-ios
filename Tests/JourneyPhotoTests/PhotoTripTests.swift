@@ -318,7 +318,7 @@ final class PhotoTripTests: XCTestCase {
                       "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"photo.spotGuide\")"))
         // 撮影地の行の下・題の上（v2: 写真の裾 `photoFoot` に撮影地 → 撮影スポットの順。題は写真の下）
-        let foot = try XCTUnwrap(view.components(separatedBy: "private var photoFoot: some View {").dropFirst().first)
+        let foot = try XCTUnwrap(view.components(separatedBy: "private func photoFoot(_ hero: HeroLineup) -> some View {").dropFirst().first)
         XCTAssertTrue(foot.prefix(300).contains("placeRow\n            spotGuideRow"))
         // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
         XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))

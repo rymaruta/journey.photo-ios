@@ -302,7 +302,9 @@ struct PhotoViewerView: View {
     private var thumbnailStrip: some View {
         if photos.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                // 2026-10-28 判断: **`LazyHStack` で並べる**（見えている札だけを作る）。束が長いと `HStack` は
+                // 全部の札と写真の読み込みを一度に作っていた。札は 52pt の決まった大きさなので並びは同じ
+                LazyHStack(spacing: 6) {
                     ForEach(Array(photos.enumerated()), id: \.offset) { offset, photo in
                         Button {
                             index = offset
