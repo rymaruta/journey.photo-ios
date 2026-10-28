@@ -356,6 +356,18 @@ jobs:
       # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は
       # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
       # `ios-pr.yml` の `tested` の job も合わせる
+      # 計測用の枝（`claude/perf-measure*`）だけ: XCTest の measure の結果と `PERF:` の行を要約に出す
+      - name: 計測の結果（measured の行）
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### 計測の結果"
+            echo '```'
+            grep -E "measured \[|PERF: |Test Case .*PerfMeasureTests.*(passed|failed)" /tmp/xcodebuild-full.log | sort -u || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "measured \[|PERF: " /tmp/xcodebuild-full.log || true
+
       - name: 全部のテストが通った（PR の検証が数える印）
         if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"

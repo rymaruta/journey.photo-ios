@@ -38,7 +38,19 @@ ALWAYS = "SmokeTests"
 # 名指しした回だけ流す（全部を回す回では飛ばす）。「Class/testName」
 # 2026-10-22: 額の頁（写真を入れられる額 120 点あまり × 横長・縦長 = 60 頁あまり・1 頁 6 秒ほどで約 6〜7 分）も同じ扱い。
 # 印画が写真の外を読まないことは単体テスト（`testEveryPhotoPanelHasPlanarUVs`・`testPhotoFitCropsInsideThePhotoAndKeepsAspect`）が毎回見る
-ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet"]
+ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet",
+                   # 計測用（2026-10-28・`claude/perf-measure*` だけ）。`screens=PerfMeasure` で名指ししたときだけ流す
+                   "PerfMeasureTests/testPerfGridScroll",
+                   "PerfMeasureTests/testPerfGridScrollHitches",
+                   "PerfMeasureTests/testPerfSearchTyping",
+                   "PerfMeasureTests/testPerfViewerThumbnails",
+                   "PerfMeasureTests/testPerfHomeScroll",
+                   "PerfMeasureTests/testPerfHomeScrollHitches",
+                   "PerfMeasureTests/testPerfHomeLike",
+                   "PerfMeasureTests/testPerfMapPan",
+                   "PerfMeasureTests/testPerfCamperEnterRoom",
+                   "PerfMeasureTests/testPerfCamperStyleSwatches",
+                   ]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)
