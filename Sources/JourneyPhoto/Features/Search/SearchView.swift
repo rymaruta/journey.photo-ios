@@ -1126,11 +1126,41 @@ final class SearchViewModel: ObservableObject {
 
     /// 画面に出す写真。**打っていないときはカテゴリ／タグの結果を出す**
     /// ——空の画面にしない（探しに来た人を手ぶらで帰さない）
+    ///
+    /// 2026-10-28 判断: **絞り方の材料が同じ間は1回だけ作る**（`ShownKey`）。画面は1回の描き直しで
+    /// 件数・空かどうか・格子のために5〜6回読むので、そのたびに全写真を絞って並べ替えていた
+    /// （1打鍵ごとに5〜6回）。材料（語・並び・種類・カテゴリ・季節と時間帯・一覧）が1つでも
+    /// 変われば作り直す
     var shown: [Photo] {
+        let key = ShownKey(query: query, sort: sort, scope: scope, category: category,
+                           timeFilter: timeFilter, photosVersion: photosVersion)
+        if let cached = shownCache, cached.key == key { return cached.photos }
         // 打っていないときは全部（タグ／撮影地はその欄を持つ写真）、
         // 打っているときは種類ごとの欄に当てる（`SearchScope`）
-        return sort.apply(filtered(query: query))
+        let photos = sort.apply(filtered(query: query))
+        shownCache = (key, photos)
+        shownBuilds += 1
+        return photos
     }
+
+    /// `shown` を作る材料。**`filtered(query:)` と `sort` が読むものを全部入れる**
+    /// （足し忘れると、材料が変わっても古い結果を出す）
+    private struct ShownKey: Equatable {
+        let query: String
+        let sort: GallerySort
+        let scope: SearchScope
+        let category: String?
+        let timeFilter: ShootingTime.Filter
+        /// 一覧（`allPhotos`）と探すための字（`searchTexts`）の版
+        let photosVersion: Int
+    }
+
+    /// 最後に作った `shown` と、その材料。`@Published` にしない（読むだけで描き直させない）
+    private var shownCache: (key: ShownKey, photos: [Photo])?
+    /// `shown` を作り直した回数（試験で「1回だけ作る」を確かめる口）
+    private(set) var shownBuilds = 0
+    /// `allPhotos`・`searchTexts` が替わるたびに上げる（`ShownKey.photosVersion`）
+    private var photosVersion = 0
 
     /// タグのチップと、**押したときに出る枚数**（0 もそのまま持つ。出すかどうかは画面）。
     ///
@@ -1148,7 +1178,9 @@ final class SearchViewModel: ObservableObject {
 
     /// 写真 id → 探すための畳んだ字（題・説明・撮影地・カテゴリ・タグ）。一覧が変わったときだけ作る
     /// ——`shown` は描くたびに何度も読まれるので、そのたびに全写真の説明を畳み直さない（2026-10-07）
-    private var searchTexts: [String: String] = [:]
+    private var searchTexts: [String: String] = [:] {
+        didSet { photosVersion &+= 1 }
+    }
 
     /// `shown` の絞り方（並べ替えの前まで）
     private func filtered(query: String) -> [Photo] {
@@ -1223,7 +1255,9 @@ final class SearchViewModel: ObservableObject {
     /// 使うと、絞った瞬間に「近く」が消える
     var everything: [Photo] { allPhotos }
 
-    private var allPhotos: [Photo] = []
+    private var allPhotos: [Photo] = [] {
+        didSet { photosVersion &+= 1 }
+    }
     /// 打つたびに投げない。**最後の打鍵から少し待つ**
     private var searchTask: Task<Void, Never>?
     /// 何回目の検索か。**返事を反映してよいのは、いちばん新しい回だけ**
@@ -1326,9 +1360,8 @@ final class SearchViewModel: ObservableObject {
         featured = SearchDiscovery.featured(in: allPhotos)
         // **機材・色は枚数で切らない**（既定は12）。行の「N枚」と押した先の一覧は
         // 段の写真そのものなので、12で切ると13枚目から先が数えられず出てこなかった。
-        // 行に描くのは先頭の1枚だけ。押した先の格子（`PhotoGrid`）は Lazy ではなく
-        // 全部を一度に作るが、カテゴリ・タグの一覧や季節の「すべて」も同じ作り
-        // （写真が増えて重くなったら、`PhotoGrid` の側でまとめて手当てする）
+        // 行に描くのは先頭の1枚だけ。押した先の格子（`PhotoGrid`）は `LazyVStack` で
+        // 見える段だけを作る（2026-10-28）
         gear = GearGroups.sections(in: allPhotos, limit: .max)
         categoryCovers = CategoryCovers.items(in: allPhotos)
         colors = ColorFamilies.sections(in: allPhotos, limit: .max)

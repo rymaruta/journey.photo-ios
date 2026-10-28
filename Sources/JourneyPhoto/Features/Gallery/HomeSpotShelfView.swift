@@ -163,7 +163,10 @@ struct HomeSpotShelfView: View {
         ZStack {
             WebTheme.background
             if let picture {
-                RemoteImage(url: picture.url, contentMode: .fit, onSettled: { ok in
+                // 2026-10-28 判断: **札の大きさ×画面の倍率まで縮めて**読む（`DownsampledRemoteImage`・ホームの
+                // 大きい枠と同じ部品）。`RemoteImage`（`AsyncImage`）は表紙の元の大きさのまま展開していた。
+                // 敷き方は `.fit` のままなので、長い辺は札の幅 240pt ぶんで足りる（縦長は高さ 150pt に収まる）
+                DownsampledRemoteImage(url: picture.url, contentMode: .fit, onSettled: { ok in
                     if !ok { broken.insert(picture.url) }
                 })
                 .accessibilityElement(children: .ignore)

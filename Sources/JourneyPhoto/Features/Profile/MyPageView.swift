@@ -498,7 +498,7 @@ struct MyPageView: View {
             bgmLine(profile)
         }
         .padding(.horizontal, ProfileV2.gutter)
-        // カバーがあればアイコンを下端に重ねる（板 v2: 196pt の帯に 88pt の丸を 44pt）。
+        // カバーがあればアイコンを下端に重ねる（`ProfileCover.height` の帯に 88pt の丸を 44pt）。
         // 無ければ右上の設定の丸の高さから（板 MyPageNoCover・丸と並ぶ）
         .padding(.top, bandShown ? -ProfileCover.avatarOverlap : 0)
     }

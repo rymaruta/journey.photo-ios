@@ -3611,6 +3611,39 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["photo.menu"].firstMatch.waitForExistence(timeout: 10), "格子の写真を押しても詳細が開かない")
     }
 
+    /// **マイページの BGM の枠と再生の輪**（2026-10-28 owner の決定・モック A）。止まっているとき（真鍮の輪と ▶）と、
+    /// 押して試聴が進んだとき（⏸ と満ちていく輪）を1枚ずつ撮る。曲の行が出なければ撮らない（この試験の決まり）。
+    /// 枠の中の行が 44pt 未満なら落とす
+    func testCapturesMyPageBgmRing() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
+        guard song.waitForExistence(timeout: 20) else { return }
+        XCTAssertGreaterThanOrEqual(song.frame.height, 44, "曲の行の押せる高さが 44pt 未満")
+        // ジャケットは通信で来るので少し待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "14n-マイページ（BGM の枠と再生の輪・止まっているとき）")
+        song.tap()
+        // 試聴の読み込みと進みを待つ（輪が数割満ちたところ）
+        Thread.sleep(forTimeInterval: 8)
+        shoot(app, "14n-マイページ（BGM の枠と再生の輪・再生中）")
+        song.tap()
+        app.terminate()
+    }
+
     /// **マイページの札を横に払って切り替える**（2026-10-24 owner「切り替えスムーズに」・`ProfileTabPager`）。
     /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
     /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす
@@ -3690,6 +3723,38 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(posts.isHittable && posts.frame.minY < height * 0.25,
                       "深く送ってから替えても札の行が上端へ戻らない（minY \(posts.frame.minY)）")
         shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
+    }
+
+    /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、
+    /// カバーの下端と黒の継ぎ目を切り出した1枚を撮る。前の絵は main の回の `14-マイページ`。
+    /// 見本の利用者にカバーが無い（額縁が出る・見出しが上に詰まる）回は撮らない（この試験の決まり）
+    func testCapturesProfileCoverFade() {
+        let app = launchProfileLooks()
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let edit = app.buttons["mypage.edit"].firstMatch
+        guard edit.waitForExistence(timeout: 20) else { return }
+        // カバーは通信で来る。出たら「プロフィールを編集」はアイコンの横（名前の上）に、
+        // 無ければ数の並びの右（名前の下）に出る
+        Thread.sleep(forTimeInterval: 4)
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.exists, !app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
+              edit.frame.maxY <= nameLine.frame.minY else { return }
+        shoot(app, "106-マイページ（カバーの下端のフェード）")
+
+        // 継ぎ目の寄り: 帯の下の方（60% の透明 → 下端の黒）と、その下の黒い地。
+        // 帯の下端はアイコン（88pt を 44pt 重ねる）の真ん中あたり＝名前の少し上
+        let screen = app.screenshot().image
+        let scale = screen.scale
+        let seam = CGRect(x: 0, y: max(0, nameLine.frame.minY - 280), width: screen.size.width, height: 300)
+        guard let cg = screen.cgImage?.cropping(to: CGRect(x: seam.minX * scale, y: seam.minY * scale,
+                                                           width: seam.width * scale, height: seam.height * scale))
+        else { return }
+        let crop = XCTAttachment(image: UIImage(cgImage: cg, scale: scale, orientation: .up))
+        crop.name = "106a-マイページ（カバーの継ぎ目の寄り）"
+        crop.lifetime = .keepAlways
+        add(crop)
     }
 
     /// **マイページの額縁 → プロフィールの編集（カバーの候補）→ 候補を押す → アイコンの切り抜き → ほかの人からの見え方**

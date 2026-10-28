@@ -89,6 +89,28 @@ final class MusicPreviewPlayer: ObservableObject {
         return playingURL == url && !isPaused
     }
 
+    /// 試聴の長さ（秒）。曲の長さがまだ読めないときの分母
+    static let previewSeconds: Double = 30
+
+    /// 試聴の進み（0〜1）。**`@Published` にしない**——毎フレーム publish すると、
+    /// この再生器を見ている画面（マイページ全体・ミニプレイヤー）が毎回描き直される。
+    /// 見たい行が `TimelineView` の中で自分から読みに来る（`ProfileBgmCard`）。
+    /// その曲が鳴っていない（止めた・一時停止・別の曲）ときは 0
+    func previewProgress(for url: URL?) -> Double {
+        guard isPlaying(url), let player else { return 0 }
+        return Self.previewProgress(current: player.currentTime().seconds,
+                                    duration: player.currentItem?.duration.seconds)
+    }
+
+    /// 進みの計算（画面を持たない・単体テスト用）。いつも 0〜1 に収める。
+    /// 長さが読めない（nil・NaN・無限・0 以下）なら 30 秒で割る。今の位置が NaN なら 0
+    static func previewProgress(current: Double, duration: Double?) -> Double {
+        guard current.isFinite, current > 0 else { return 0 }
+        var total = previewSeconds
+        if let duration, duration.isFinite, duration > 0 { total = duration }
+        return min(1, max(0, current / total))
+    }
+
     func toggle(_ url: URL?, song: Photo.Song? = nil, origin: PlaybackOrigin = .app) {
         guard let url else { return }
         // **鳴っているときだけ止める。** 一時停止中の同じ曲は ▶ を出しているので、
