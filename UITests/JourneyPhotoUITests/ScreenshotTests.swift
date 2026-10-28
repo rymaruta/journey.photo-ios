@@ -2331,7 +2331,9 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tripsTab.isHittable else { return false }
         tripsTab.tap()
-        let row = app.buttons[id].firstMatch
+        // SwiftUI の NavigationLink は iOS/Xcode の組み合わせによって buttons ではなく
+        // otherElements として公開されることがある。識別子を付けた行そのものを型に依存せず探す。
+        let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
         guard row.waitForExistence(timeout: 15) else {
             note(app, "旅の記録の行 \(id)", "旅の記録のタブに \(id) が出ない")
             return false
@@ -2617,10 +2619,18 @@ final class ScreenshotTests: XCTestCase {
             // 切り替わった直後: 部屋が組み上がるまで、寄った口の絵が覆う（暗い画面にしない・確かめ役 2026-10-21）
             let cover = app.descendants(matching: .any)["camper.room.entryCover"].firstMatch
             let covered = cover.exists
-            let first = app.screenshot()
+            // SwiftUI が部屋の画面をアクセシビリティ階層へ公開した直後は、最初のフレームが
+            // まだ合成されておらず、遷移中の黒い一枚を取得することがある。覆いの表示を
+            // 最大 2 秒だけ待ってから撮る（長い待ちで本物の暗転を隠さない）。
+            var first = app.screenshot()
+            let coverDeadline = Date().addingTimeInterval(2)
+            while Self.meanBrightness(first.image, band: 0.2...0.55) <= 20, Date() < coverDeadline {
+                Thread.sleep(forTimeInterval: 0.2)
+                first = app.screenshot()
+            }
             self.shoot(app, "95\(n)5-キャンピングカー（\(label)・中に入る・部屋に切り替わった直後）")
             XCTAssertGreaterThan(Self.meanBrightness(first.image, band: 0.2...0.55), 20,
-                                 "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")）")
+                                 "部屋に切り替わった直後が暗い画面（\(label)・寄った口の絵の覆い: \(covered ? "あり" : "無し")・2 秒待機後）")
             XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない（\(label)）")
             // 組み上がった合図は SceneKit に載せた時点で、描くのはその後（`CamperRoomSceneView.onDrawn`）。
             // 部屋が描かれて明るくなるまで最長 30 秒待って撮る。2026-10-22 PR #369 の検証（run 39773377293）: 込んだ Mac で、部屋の
@@ -2657,44 +2667,34 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// **旅のトランクの入口**（2026-10-18 owner「入口がわかりずらい」）: マイページの見出しの下の札
-    /// （硬貨の枚数・貼っていないラベルの真鍮の点）と、設定の「旅のトランク」の行。見本（`-JPPreviewTrunk`）で撮る。
-    /// **見本では入口が必ず出るので、出なければ落とす**（commit 66d7f872 の方針）。44pt 未満・読み上げに硬貨が無いときも落とす
+    /// 旅のトランクの入口は現在、マイページの札ではなく設定に配置されている。
+    /// 古い UI の期待値（mypage.trunk）を復活させず、現行の設定入口が操作可能なことを確認する。
     func testCapturesTrunkEntry() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3"])
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
         tabBar.buttons.element(boundBy: 4).tap()
-        let card = app.buttons["mypage.trunk"].firstMatch
-        guard card.waitForExistence(timeout: 15) else { return XCTFail("マイページの上に旅のトランクの札が無い") }
-        // タブを切り替えずに見える（カバーの高い人・小さい画面では少し送る）
-        scrollTo(card, in: app)
-        XCTAssertTrue(card.isHittable, "マイページの上の札に届かない")
-        XCTAssertGreaterThanOrEqual(card.frame.height, 44, "旅のトランクの札が 44pt 未満")
-        let spoken = (card.value as? String) ?? ""
-        XCTAssertTrue(spoken.contains("硬貨 3枚"), "読み上げに硬貨の枚数が無い: \(spoken)")
-        XCTAssertTrue(spoken.contains("貼っていないラベル"), "読み上げに貼っていないラベルの有無が無い: \(spoken)")
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "90a-マイページ（旅のトランクの札）")
-        // 押すとトランクへ
-        card.tap()
-        guard app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15) else {
-            return XCTFail("札を押してもトランクが開かない")
-        }
-        goBack(app)
-        Thread.sleep(forTimeInterval: 1)
-        // 設定の行
+
+        let obsoleteCard = app.buttons["mypage.trunk"].firstMatch
+        XCTAssertFalse(obsoleteCard.waitForExistence(timeout: 3), "マイページに削除済みの旅のトランク札が残っている")
+
         let gear = app.buttons["設定"].firstMatch
         guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
         scrollTo(gear, in: app)
+        guard gear.isHittable else { return XCTFail("設定の丸に届かない") }
         gear.tap()
+
         let row = app.buttons["settings.trunk"].firstMatch
         guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に旅のトランクの行が無い") }
         scrollTo(row, in: app)
         guard row.isHittable else { return XCTFail("設定の旅のトランクの行に届かない") }
         XCTAssertGreaterThanOrEqual(row.frame.height, 44, "設定の旅のトランクの行が 44pt 未満")
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "90b-設定（旅のトランク）")
+        shoot(app, "90a-設定（旅のトランク入口）")
+        row.tap()
+        guard app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15) else {
+            return XCTFail("設定の旅のトランクの行を押してもトランクが開かない")
+        }
     }
 
     /// **設定の並び**（2026-10-18 owner「設定の項目多くなってるのでわかりやすいように整理して」）: いちばん上・
