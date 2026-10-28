@@ -3579,7 +3579,9 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         guard photo.isHittable else { return }
-        let spot = origin.withOffset(CGVector(dx: width * 0.5, dy: photo.frame.midY))
+        // 写真の高さは先に控える（旅の記録へ替わると、投稿の格子は読み上げから外れて引けない）
+        let photoY = photo.frame.midY
+        let spot = origin.withOffset(CGVector(dx: width * 0.5, dy: photoY))
 
         // 写真の上で、勢いのある払い（指を離すまで止めない）
         photo.swipeLeft()
@@ -3588,8 +3590,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "14q-マイページ（格子の上を払って旅の記録へ）")
 
         // 同じ所を右へ速く払って戻る
-        origin.withOffset(CGVector(dx: width * 0.2, dy: photo.frame.midY))
-            .press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: width * 0.85, dy: photo.frame.midY)),
+        origin.withOffset(CGVector(dx: width * 0.2, dy: photoY))
+            .press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: width * 0.85, dy: photoY)),
                    withVelocity: .fast, thenHoldForDuration: 0)
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(posts.isSelected, "旅の記録の中身を右へ速く払っても「投稿」に戻らない")
