@@ -42,7 +42,8 @@ final class SongStickerStyleTests: XCTestCase {
     func testCycledAdvancesStyleAndKeepsPlacement() throws {
         let now = song("海へ", "誰か")
         var sticker = try XCTUnwrap(SongSticker.make(for: now, style: .glass))
-        sticker.x = 0.3; sticker.y = 0.7; sticker.rotation = 0.4
+        // 指で動かした札（`songMoved`）。動かしていない札は欄を避けて置き直す（`testMovedFlagDecidesReplacement`）
+        sticker.x = 0.3; sticker.y = 0.7; sticker.rotation = 0.4; sticker.songMoved = true
         let next = SongSticker.cycled(sticker, song: now)
         XCTAssertEqual(next.songStyle, .white)
         XCTAssertEqual(next.text, sticker.text)
@@ -351,7 +352,9 @@ final class SongStickerStyleTests: XCTestCase {
         XCTAssertTrue(view.contains("SongStickerLayout.clockPaused("))
         let composer = try source("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("songStickersCovered: songStickersCovered"), "作る画面が覆いを渡していない")
-        for flag in ["showSongPicker", "showStickerTray", "showSongStart", "showAudience", "showCamera", "showLibrary"] {
+        for flag in ["showSongPicker", "showStickerTray", "showSongStart", "showAudience", "showCamera", "showLibrary",
+                     "typingId != nil", "votePanelOpen", "showPlaceEditor", "showRestoreAuto", "showRestore",
+                     "showPendingFailure", "showLeaveConfirm"] {
             XCTAssertTrue(composer.contains("|| \(flag)") || composer.contains("\(flag) ||"), "\(flag) で止めない")
         }
     }
@@ -408,7 +411,7 @@ final class SongStickerStyleTests: XCTestCase {
     /// 以前は形を問わず 0.6 に置き、ジャケット大・レコード・題字が欄の字に重なった（run 748 の 62d〜f）
     func testPlacedStickerAvoidsTheCaption() throws {
         let now = song("夜明けの港で聴くバラード", "Journey Photo Band")
-        let band = SongSticker.captionBand
+        let band = SongSticker.defaultCaptionBand
         for image in [CGSize(width: 3000, height: 4000), CGSize(width: 1080, height: 1920)] {
             for style in SongStickerStyle.allCases {
                 let placed = try XCTUnwrap(SongSticker.make(for: now, style: style, image: image))
@@ -432,13 +435,124 @@ final class SongStickerStyleTests: XCTestCase {
         for _ in 0..<6 {
             cur = SongSticker.cycled(cur, song: now, image: image)
             let r = span(cur, song: now, image: image)
-            XCTAssertTrue(r.upperBound <= SongSticker.captionBand.lowerBound
-                          || r.lowerBound >= SongSticker.captionBand.upperBound,
+            XCTAssertTrue(r.upperBound <= SongSticker.defaultCaptionBand.lowerBound
+                          || r.lowerBound >= SongSticker.defaultCaptionBand.upperBound,
                           "\(cur.songStyle!) に替えたら欄に重なった: \(r)")
         }
         var moved = try XCTUnwrap(SongSticker.make(for: now, style: .glass, image: image))
         moved.y = 0.3
+        moved.songMoved = true
         XCTAssertEqual(SongSticker.cycled(moved, song: now, image: image).y, 0.3, "動かした札を置き直した")
+    }
+
+    // MARK: - 見直しの直し（2026-10-28・2回目）
+
+    private func clear(_ r: ClosedRange<Double>, of band: ClosedRange<Double>) -> Bool {
+        r.upperBound <= band.lowerBound + 1e-9 || r.lowerBound >= band.upperBound - 1e-9
+    }
+
+    /// 🔴 欄の上下の端は**測った高さ**から決める。SE の枠（375×560）で大きな字の2行＋撮影地の札（約 150pt）でも、
+    /// 置いた札が欄に掛からない（決め打ち 0.45〜0.55 では掛かった）
+    func testCaptionBandComesFromTheMeasuredHeight() throws {
+        let now = song("夜明けの港で聴くバラード", "Journey Photo Band")
+        let image = CGSize(width: 3000, height: 4000)
+        let canvas = CGSize(width: 375, height: 560)
+        XCTAssertEqual(SongSticker.captionBand(height: 0, canvas: canvas, image: image), SongSticker.defaultCaptionBand,
+                       "測れないときの既定")
+        XCTAssertEqual(SongSticker.defaultCaptionBand, 0.42...0.58)
+        let tall = SongSticker.captionBand(height: 150, canvas: canvas, image: image)
+        // 枠の高さ 560・写真は高さで合わせる（3:4 は枠より横に広い）→ 縦の割合はそのまま
+        XCTAssertEqual(tall.lowerBound, (280 - 75 - SongSticker.captionPad) / 560, accuracy: 1e-9)
+        XCTAssertEqual(tall.upperBound, (280 + 75 + SongSticker.captionPad) / 560, accuracy: 1e-9)
+        for style in SongStickerStyle.allCases {
+            let placed = try XCTUnwrap(SongSticker.make(for: now, style: style, image: image, band: tall))
+            XCTAssertTrue(clear(span(placed, song: now, image: image), of: tall) || style == .sleeve || style == .disc,
+                          "\(style) が測った欄に重なる")
+        }
+        // 1行の欄（約 40pt）ならジャケット大も重ならない
+        let one = SongSticker.captionBand(height: 40, canvas: canvas, image: image)
+        for style in SongStickerStyle.allCases {
+            let placed = try XCTUnwrap(SongSticker.make(for: now, style: style, image: image, band: one))
+            XCTAssertTrue(clear(span(placed, song: now, image: image), of: one), "\(style) が1行の欄に重なる")
+        }
+        // 縦に長い写真（枠より縦に長く敷かれる）は写真の割合に直す
+        let long = SongSticker.captionBand(height: 100, canvas: canvas, image: CGSize(width: 1000, height: 3000))
+        let photo = TextOverlay.filledRect(image: CGSize(width: 1000, height: 3000), in: canvas)
+        XCTAssertEqual(long.lowerBound, (280 - 50 - SongSticker.captionPad - Double(photo.minY)) / Double(photo.height),
+                       accuracy: 1e-9)
+    }
+
+    /// 🔴 上限近くまで大きくした札を**一周させると元の大きさに戻る**（切る前の望んだ大きさを持つ）。
+    /// 以前は小さな形の上限で切られたまま戻らなかった
+    func testCyclingFromNearTheMaxReturnsToTheSameSize() throws {
+        let now = song("海へ", "誰か")
+        let start = try XCTUnwrap(SongSticker.make(for: now, style: .sleeve)).scaled(by: 100)
+        XCTAssertEqual(start.size, SongStickerStyle.maxSize(for: .sleeve), accuracy: 1e-12)
+        var cur = start
+        var clamped = false
+        for _ in 0..<SongStickerStyle.allCases.count {
+            cur = SongSticker.cycled(cur, song: now)
+            let style = try XCTUnwrap(cur.songStyle)
+            XCTAssertLessThanOrEqual(cur.size, SongStickerStyle.maxSize(for: style) + 1e-12, "\(style) の上限を超えた")
+            clamped = clamped || cur.songWantedSize != nil
+        }
+        XCTAssertTrue(clamped, "途中で上限に切られる場面を試していない")
+        XCTAssertEqual(cur.songStyle, .sleeve)
+        XCTAssertEqual(cur.size, start.size, accuracy: 1e-9, "一周しても元の大きさに戻らない")
+        XCTAssertNil(cur.songWantedSize)
+        // つまんだら、その大きさが望んだ大きさ
+        var pinched = try XCTUnwrap(SongSticker.make(for: now, style: .glass))
+        pinched.songWantedSize = 0.07
+        XCTAssertNil(pinched.scaled(by: 1.1).songWantedSize)
+    }
+
+    /// 🔴 「動かした」は印で持つ。**つまむ・曲を変えるだけ**の札は動かしていない扱い（押して替えると置き直す）。
+    /// 指で動かした札だけその場で替える。以前は y の完全一致で見ていて、つまむだけで外れた
+    func testMovedFlagDecidesReplacement() throws {
+        // 短い曲名（置いた大きさは既定・下限に張り付かない）。つまむ・曲を変えると大きさが変わり、y も変わる
+        let now = song("海へ", "誰か")
+        let image = CGSize(width: 3000, height: 4000)
+        let band = SongSticker.defaultCaptionBand
+        // つまんでから押す
+        var pinched = try XCTUnwrap(SongSticker.make(for: now, style: .glass, image: image)).scaled(by: 0.95)
+        XCTAssertNil(pinched.songMoved)
+        for _ in 0..<5 {
+            pinched = SongSticker.cycled(pinched, song: now, image: image)
+            XCTAssertTrue(clear(span(pinched, song: now, image: image), of: band), "つまんだ札を置き直さない \(pinched.songStyle!)")
+        }
+        // 曲を変えてから押す（長い曲名に変えると置いた大きさが変わる）
+        let other = song("夜明けの港で聴くバラード", "Journey Photo Band")
+        let placed = try XCTUnwrap(SongSticker.make(for: now, style: .glass, image: image))
+        var changed = SongSticker.retext([placed], from: now, to: other).overlays[0]
+        XCTAssertNotEqual(changed.size, placed.size, "曲を変えても大きさが変わらない（試したいことが試せていない）")
+        XCTAssertNil(changed.songMoved)
+        for _ in 0..<5 {
+            changed = SongSticker.cycled(changed, song: other, image: image)
+            XCTAssertTrue(clear(span(changed, song: other, image: image), of: band), "曲を変えた札を置き直さない \(changed.songStyle!)")
+        }
+        // 指で動かした札はその場のまま
+        let moved = placed.moved(by: CGSize(width: 0, height: -100), in: CGSize(width: 300, height: 400))
+        XCTAssertEqual(moved.songMoved, true)
+        XCTAssertEqual(SongSticker.cycled(moved, song: now, image: image).y, moved.y, accuracy: 1e-12)
+        // 文字の札には印を立てない
+        XCTAssertNil(TextOverlay(text: "港").moved(by: CGSize(width: 10, height: 10), in: CGSize(width: 300, height: 400)).songMoved)
+    }
+
+    /// 印と望んだ大きさは下書きに残る。**印の無い下書きは動かしていない扱い**（nil）
+    func testMovedFlagAndWantedSizeSurviveDrafts() throws {
+        var sticker = try XCTUnwrap(SongSticker.make(for: song("海へ"), style: .pill))
+        sticker.songMoved = true
+        sticker.songWantedSize = 0.06
+        let data = try JSONEncoder().encode(sticker)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: data)
+        XCTAssertEqual(back.songMoved, true)
+        XCTAssertEqual(back.songWantedSize, 0.06)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "songMoved")
+        object.removeValue(forKey: "songWantedSize")
+        let old = try JSONDecoder().decode(TextOverlay.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(old.songMoved)
+        XCTAssertNil(old.songWantedSize)
     }
 
     private func source(_ path: String) throws -> String {

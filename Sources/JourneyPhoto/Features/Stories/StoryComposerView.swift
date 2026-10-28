@@ -95,6 +95,8 @@ struct StoryComposerView: View {
     @State private var typingShotId: UUID?
     /// 写真の枠の大きさ（**キーボードで縮む前**）。打つ画面の文字を焼き込みと同じ大きさで見せる
     @State private var canvasSize: CGSize = .zero
+    /// 「ひとことを書く」の欄（撮影地の札・候補を含む）の高さ（pt）。曲の札を欄に重ねずに置くため（0 は未計測）
+    @State private var captionHeight: CGFloat = 0
     /// 打ち始めた瞬間の `canvasSize`（打っている間はキーボードで枠が縮むので、こちらで測る）
     @State private var typingCanvas: CGSize = .zero
     /// 写真の枠を**キーボードで縮めない**か。打ち始めで立て、ひとことの欄・投票の欄（どちらも
@@ -892,6 +894,8 @@ struct StoryComposerView: View {
                 photoChip(symbol: "music.note", text: text)
             }
         }
+        // 欄の実際の高さ（字の大きさ・行数・撮影地の札で伸びる）。曲の札を置く位置に使う（`songStickerBand`）
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in captionHeight = height }
     }
 
     /// 曲の札を置けない理由の一言。**状態から毎回決める**（覚えておくと、写真を
@@ -1314,14 +1318,24 @@ struct StoryComposerView: View {
     /// 曲の札の形を次へ（A→B→…→F→A）。選んだ形は端末に覚え、次のストーリーで最初に出す
     private func cycleSongSticker(_ id: UUID) {
         guard let song, let i = overlays.wrappedValue.firstIndex(where: { $0.id == id }) else { return }
-        let next = SongSticker.cycled(overlays.wrappedValue[i], song: song, image: previewSize)
+        let next = SongSticker.cycled(overlays.wrappedValue[i], song: song, image: previewSize, band: songStickerBand)
         overlays.wrappedValue[i] = next
         if let style = next.songStyle { SongStickerStyle.remember(style) }
     }
 
     /// 写真の上の札がシート・カメラ・写真選びで覆われているか（曲の札の動きを止める・2026-10-28 のレビュー）
+    /// 打つ画面・投票の欄・撮影地の入力・下書きや送れなかったときの問い・閉じる前の確認も覆いに数える
+    /// （2026-10-28 のレビュー。札の上に出る物は全部）
     private var songStickersCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
+            || typingId != nil || votePanelOpen || showPlaceEditor || showRestoreAuto || showRestore
+            || showPendingFailure || showLeaveConfirm
+    }
+
+    /// 「ひとことを書く」の欄の上下の端（写真の割合）。曲の札を欄に重ねずに置く（`SongSticker.placedY`）。
+    /// 欄の高さは実際に測った値（`captionHeight`）。測れていなければ既定の帯
+    private var songStickerBand: ClosedRange<Double> {
+        SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize, image: previewSize)
     }
 
     /// 付けた曲とジャケット（作る画面の札と焼き込みが同じ絵を使う）
@@ -1344,7 +1358,7 @@ struct StoryComposerView: View {
         // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
         // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
         guard !found, let new, let sticker = SongSticker.make(for: new, style: SongStickerStyle.remembered(),
-                                                                  image: shots.indices.contains(current) ? shots[current].imageSize : nil),
+                                                                  image: previewSize, band: songStickerBand),
               shots.indices.contains(current) else { return }
         guard shots[current].overlays.count < TextOverlay.maxCount else {
             return
@@ -1371,7 +1385,8 @@ struct StoryComposerView: View {
             guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
             // 曲を付けてあれば、その曲の札（右の列の「曲」と同じ札・打たなくてよい）
             if kind == .song, let song, let sticker = SongSticker.make(for: song, style: SongStickerStyle.remembered(),
-                                                                                      image: previewSize) {
+                                                                                      image: previewSize,
+                                                                                      band: songStickerBand) {
                 // 同じ写真に付けた曲の札が既にあれば置かない（右の列の「曲」と同じく1枚）
                 if !SongSticker.retext(overlays.wrappedValue, from: song, to: song).found {
                     overlays.wrappedValue.append(sticker)
