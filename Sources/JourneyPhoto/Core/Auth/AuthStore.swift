@@ -352,6 +352,9 @@ final class AuthStore: ObservableObject {
         // 端末の Caches に残りうる。退会の「端末の控えも消す」（`AccountLocalData`）とも
         // 食い違っていた。公開の写真も消えるが、次に開いたときに取り直すだけ
         responseCache.removeAllCachedResponses()
+        // 縮めて展開した絵の控え（`DownsampledRemoteImage.memory`・2026-10-28）も同じ理由で空にする
+        // （限定写真・下書きの絵がメモリに残り、次の人の格子に出うる）
+        DownsampledRemoteImage.memory.removeAll()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

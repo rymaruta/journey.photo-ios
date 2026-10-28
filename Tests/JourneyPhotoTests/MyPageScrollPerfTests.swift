@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import JourneyPhoto
 
 /// マイページ（と人のページ）の縦の送りの重さの直し（2026-10-28・owner 実機 1.1.43「音楽を流していないときも重い」）。
@@ -117,5 +118,52 @@ final class MyPageScrollPerfTests: XCTestCase {
         XCTAssertTrue(view.contains("MyPageTripsShelf(deviceTrips: deviceTrips,"))
         // 「まだ旅はありません」を出す決まりは今までどおり（投稿した一冊が0で端末の一冊があるときは出さない）
         XCTAssertTrue(view.contains("if !trips.isEmpty || !hasDeviceBooks {\n                TripShelfList(trips: trips, isPublic: isPublic)"))
+    }
+
+    // MARK: 縮めた絵の控えの後片づけ（2026-10-28 確かめ役の指摘）
+
+    /// 🔴 ログアウトで縮めた絵の控えを空にする（限定写真・下書きの絵を次の人に残さない）
+    @MainActor
+    func testSignOutClearsTheDecodedImageMemory() async throws {
+        let url = try XCTUnwrap(URL(string: "https://x/signed-out-test.jpg"))
+        DownsampledRemoteImage.memory.store(UIImage(), pixels: 512, for: url, cost: 1)
+        XCTAssertNotNil(DownsampledRemoteImage.memory.entry(for: url), "下ごしらえ: 控えに入る")
+        AuthStore().settleSignedOut()
+        XCTAssertNil(DownsampledRemoteImage.memory.entry(for: url), "ログアウトしても縮めた絵が残っている")
+    }
+
+    /// 設定の「控えを空にする」も、縮めた絵の控えを一緒に空にする
+    func testClearCacheAlsoClearsTheDecodedImageMemory() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Settings/SettingsView.swift")
+        let button = String(view[try XCTUnwrap(view.range(of: "URLCache.shared.removeAllCachedResponses()")).lowerBound...].prefix(600))
+        XCTAssertTrue(button.contains("DownsampledRemoteImage.memory.removeAll()"), "控えを空にしても縮めた絵が残る")
+        XCTAssertTrue(button.contains("SettingsActionLabel(title: L(\"控えを空にする\""))
+    }
+
+    /// 🔴 URL の無い写真は写真の記号（読み込み中の輪を回し続けない）
+    func testMissingURLShowsThePhotoSymbol() throws {
+        XCTAssertEqual(DownsampledImagePhase.of(hasImage: false, failed: false, hasURL: false), .failed,
+                       "URL が無いのに読み込み中の輪を出す")
+        XCTAssertEqual(DownsampledImagePhase.of(hasImage: false, failed: false, hasURL: true), .loading)
+        XCTAssertEqual(DownsampledImagePhase.of(hasImage: false, failed: true, hasURL: true), .failed)
+        XCTAssertEqual(DownsampledImagePhase.of(hasImage: true, failed: true, hasURL: false), .image)
+        let image = try source("Sources/JourneyPhoto/Features/Common/DownsampledRemoteImage.swift")
+        XCTAssertTrue(image.contains("} else if DownsampledImagePhase.of(hasImage: false, failed: failed, hasURL: url != nil) == .failed {"))
+        let load = String(image[try XCTUnwrap(image.range(of: "private func load() async {")).lowerBound...].prefix(400))
+        XCTAssertTrue(load.contains("guard let url else {\n            if !failed {\n                failed = true"),
+                      "URL が無いときに出せないと決めていない")
+    }
+
+    /// 🔴 旅の記録のタブの行を待つのは共通の助け（長めに待ち、出なければタブを押し直す）。
+    /// `CriticalFlowTests` のキャンピングカーの部屋が 15 秒で落ちていた（2026-10-28 の Mac）
+    func testUITestsShareTheTripsTabWait() throws {
+        let helper = try source("UITests/JourneyPhotoUITests/TripsTabWait.swift")
+        XCTAssertTrue(helper.contains("tripsTab.tap()"), "出なければタブを押し直していない")
+        XCTAssertTrue(helper.contains("static let firstWait: TimeInterval = 30"))
+        let critical = try source("UITests/JourneyPhotoUITests/CriticalFlowTests.swift")
+        XCTAssertTrue(critical.contains("TripsTabWait.waitForRow(camper, tripsTab: tripsTab)"))
+        XCTAssertFalse(critical.contains("camper.waitForExistence(timeout: 15)"), "15 秒で諦める待ち方が残っている")
+        let shots = try source("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
+        XCTAssertTrue(shots.contains("TripsTabWait.waitForRow(row, tripsTab: tripsTab)"))
     }
 }

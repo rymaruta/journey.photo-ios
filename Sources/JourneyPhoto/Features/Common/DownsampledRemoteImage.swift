@@ -63,7 +63,8 @@ struct DownsampledRemoteImage: View {
             if let image = image ?? url.flatMap({ Self.memory.entry(for: $0)?.image }) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-            } else if failed {
+            } else if DownsampledImagePhase.of(hasImage: false, failed: failed, hasURL: url != nil) == .failed {
+                // URL の無い写真も写真の記号（読み込み中の輪を回し続けない・前の `RemoteImage` と同じ）
                 Image(systemName: "photo")
                     .font(.title2)
                     .foregroundStyle(.tertiary)
@@ -111,7 +112,15 @@ struct DownsampledRemoteImage: View {
     }
 
     private func load() async {
-        guard let url, let pixels = neededPixels else { return }
+        // URL の無い写真は読みに行かず、出せないと決める（輪を回し続けない・2026-10-28 確かめ役の指摘）
+        guard let url else {
+            if !failed {
+                failed = true
+                onSettled?(false)
+            }
+            return
+        }
+        guard let pixels = neededPixels else { return }
         // 同じ大きさ以上で読めていれば読み直さない（幅が少し縮んだだけの回）
         if image != nil, loadedPixels >= pixels { return }
         // 控えに足りる大きさで在れば、取りに行かず展開もしない
@@ -158,15 +167,30 @@ struct DownsampledRemoteImage: View {
     }
 }
 
+/// 絵の段のどれを出すか（画面を持たない計算・2026-10-28）。**URL が無ければ写真の記号**
+/// ——読みに行く先が無いのに読み込み中の輪を回し続けない（前の `RemoteImage` は記号を出していた）
+enum DownsampledImagePhase: Equatable {
+    case image
+    case failed
+    case loading
+
+    static func of(hasImage: Bool, failed: Bool, hasURL: Bool) -> DownsampledImagePhase {
+        if hasImage { return .image }
+        if failed || !hasURL { return .failed }
+        return .loading
+    }
+}
+
 /// 縮めて展開した絵の控え（画面を持たない計算・2026-10-28 判断）。
 ///
 /// URL ごとに**いちばん大きく読めた1枚**を持つ。小さな枠で読んだ絵を、大きな枠の求めに返さない
 /// （`entry(for:atLeast:)`）。中身は `NSCache`——展開後の大きさ（縦 × 横 × 4 バイト）で上限を見て、
-/// メモリが足りなくなれば OS が捨てる。ログアウトで空にする控え（`URLCache`）とは別だが、持つのは
-/// 画面に出した絵だけで、署名つきの URL は期限ごとに URL が替わる
+/// メモリが足りなくなれば OS が捨てる。`URLCache` とは別の控えなので、**ログアウト（`AuthStore.settleSignedOut`）と
+/// 設定の「控えを空にする」で一緒に空にする**（`removeAll`）
 final class DecodedImageMemory<Image> {
 
-    /// 既定の上限（展開後の大きさ）。格子のマス（約 1024px 四方・4MB）で 20 枚ほど
+    /// 既定の上限（展開後の大きさ）。格子のマス（約 1024px 四方・4MB）で 20 枚ほど。
+    /// **実機のメモリで確かめていない**（見積もりだけ・2026-10-28）
     static var defaultCostLimit: Int { 80 * 1024 * 1024 }
 
     private final class Entry {

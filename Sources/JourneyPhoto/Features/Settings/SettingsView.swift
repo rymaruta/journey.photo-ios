@@ -631,6 +631,8 @@ struct SettingsStoragePage: View {
                     // **消すのは画像の控えだけ。** ログインの情報や
                     // 保存した写真の印（`FavoritesStore`）は消さない
                     URLCache.shared.removeAllCachedResponses()
+                    // 縮めて展開した絵の控え（メモリの中・2026-10-28）も一緒に空にする
+                    DownsampledRemoteImage.memory.removeAll()
                     cacheSize = SettingsView.formattedCacheSize()
                 } label: {
                     // 板 v2: 押すとその場で効く行は真鍮の字（黒地の札の上の手がかり）
