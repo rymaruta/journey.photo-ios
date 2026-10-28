@@ -24,6 +24,12 @@ import SwiftUI
 /// **再生器の見張りはこの行の中だけ。** 画面に持たせると、再生・一時停止の
 /// たびにマイページ全体（格子まで）が描き直される。進みも `@Published` にせず、
 /// 鳴っている間だけこの行の `TimelineView` が読みに行く
+///
+/// **2026-10-28 判断（owner「音楽再生しながらスクロールすると重い」）: 見えていない間は時計を止める。**
+/// 縦の `ScrollView`（Lazy ではない）の中なので、送って画面の外へ出しても・別の札（タブ）や
+/// 次の画面へ移っても `TimelineView` が毎秒 10 回の描き直しを続けていた。見えているか
+/// （`onAppear`/`onDisappear` と、スクロールの見えている枠に掛かっているか）で止める。
+/// 見た目は変えない（見えている間は今までどおり 0.1 秒ごと・止めている間は誰にも見えない）
 struct ProfileBgmCard: View {
 
     let song: Photo.Song
@@ -57,6 +63,11 @@ struct ProfileBgmCard: View {
     static let frameColor = WebTheme.border
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// 画面に出ているか（`onAppear`〜`onDisappear`）。別の札・次の画面へ移ると false
+    @State private var appeared = false
+    /// スクロールの見えている枠に掛かっているか。**境目をまたいだときだけ**書き換わる（送るたびではない）
+    @State private var inViewport = true
 
     var body: some View {
         let playing = player.isPlaying(song.previewURL)
@@ -102,6 +113,12 @@ struct ProfileBgmCard: View {
         .accessibilityValue(playing ? L("再生中", "Playing") : "")
         .accessibilityHint(playing ? L("止める", "Stop") : L("30秒の試聴を再生", "Plays a 30-second preview"))
         .accessibilityIdentifier("mypage.bgm")
+        .onAppear { appeared = true }
+        .onDisappear { appeared = false }
+        // 値は「見えているか」の真偽だけ——送るたびに枠は変わるが、書き換えるのは境目をまたいだときだけ
+        .onGeometryChange(for: Bool.self) { proxy in
+            Self.isInViewport(size: proxy.size, visibleBounds: proxy.bounds(of: .scrollView))
+        } action: { inViewport = $0 }
     }
 
     /// 見た目 34pt の真鍮の輪と ▶ ⏸。鳴っている間だけ `TimelineView` で進みを読み直す
@@ -110,12 +127,32 @@ struct ProfileBgmCard: View {
     private func playRing(playing: Bool) -> some View {
         if playing {
             TimelineView(.animation(minimumInterval: reduceMotion ? Self.reducedProgressInterval
-                                                                  : Self.progressInterval)) { _ in
+                                                                  : Self.progressInterval,
+                                    paused: Self.progressTicksPerSecond(playing: true, appeared: appeared,
+                                                                        inViewport: inViewport,
+                                                                        reduceMotion: reduceMotion) == 0)) { _ in
                 ring(playing: true, progress: player.previewProgress(for: song.previewURL))
             }
         } else {
             ring(playing: false, progress: 0)
         }
+    }
+
+    /// 進みの輪を1秒に何回描き直すか（画面を持たない計算・単体テスト用）。
+    /// 鳴っていない・画面に出ていない・スクロールの枠の外なら 0（時計を止める）
+    nonisolated static func progressTicksPerSecond(playing: Bool, appeared: Bool, inViewport: Bool,
+                                                   reduceMotion: Bool) -> Double {
+        guard playing, appeared, inViewport else { return 0 }
+        return 1 / (reduceMotion ? reducedProgressInterval : progressInterval)
+    }
+
+    /// 行がスクロールの見えている枠に掛かっているか。`visibleBounds` は見えている枠を行の座標で
+    /// 表したもの（`GeometryProxy.bounds(of: .scrollView)`）。スクロールの中に無い（nil）なら出ている扱い。
+    /// 1pt でも掛かれば出ている（入ってきた瞬間から進みを動かす）
+    nonisolated static func isInViewport(size: CGSize, visibleBounds: CGRect?) -> Bool {
+        guard let visible = visibleBounds else { return true }
+        return visible.maxY > 0 && visible.minY < size.height
+            && visible.maxX > 0 && visible.minX < size.width
     }
 
     private func ring(playing: Bool, progress: Double) -> some View {

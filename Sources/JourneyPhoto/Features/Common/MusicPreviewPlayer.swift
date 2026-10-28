@@ -17,21 +17,40 @@ final class MusicPreviewPlayer: ObservableObject {
 
     static let shared = MusicPreviewPlayer()
 
-    @Published private(set) var playingURL: URL?
+    // **2026-10-28 判断（owner「音楽再生しながらスクロールすると重い」）: 変わったときだけ書く（`update`）。**
+    // `@Published` は同じ値を入れ直しても知らせを出し、見ている画面（下の再生器・マイページの BGM・
+    // 写真の曲の行・曲選び）が全部描き直される。鳴っている最中の `resume()`・何も鳴っていない
+    // ときの `stop()`・同じ曲の鳴らし直しで、変わっていない値を毎回入れ直していた。
+    // 書いた回数は `publishCount`（テスト用）で数える
+    @Published private(set) var playingURL: URL? { didSet { publishCount += 1 } }
     /// いま鳴っている曲。**画面をまたいで操作するために要る**
     /// （`MiniPlayerBar` が題と絵を出す）。URL だけでは何の曲か分からない
-    @Published private(set) var playingSong: Photo.Song?
+    @Published private(set) var playingSong: Photo.Song? { didSet { publishCount += 1 } }
     /// どの画面で鳴らしたか。**曲選びで鳴らした曲は全体のバーに出さない**
     /// （`SongPickerText.showsBar`）。止めたら nil
-    @Published private(set) var origin: PlaybackOrigin?
+    @Published private(set) var origin: PlaybackOrigin? { didSet { publishCount += 1 } }
 
     /// 一時停止中か。**止めた（stop）とは別。** 一時停止の間も `playingURL` は
     /// 残るので、これを見ないと他の画面の ▶ が「再生中」のままになる
-    @Published private(set) var isPaused = false
+    @Published private(set) var isPaused = false { didSet { publishCount += 1 } }
     /// 鳴らし始めるたびに増える番号。**「自分が鳴らした曲か」を URL ではなく
     /// これで見分ける**——同じ曲を別の画面が鳴らし直したとき、前の画面の後始末が
-    /// 新しい方を止めないように
-    private(set) var session = 0
+    /// 新しい方を止めないように。
+    ///
+    /// **`@Published` にする**（2026-10-28）——同じ曲・同じ画面から鳴らし直すと、ほかの値は
+    /// 変わらないので知らせが出ない。「自分が鳴らした回か」を見ている画面（`SongStartSheet`）の
+    /// ▶ ⏸ が古いままにならないよう、回が進んだことだけは知らせる（鳴らし直し1回に1つ）
+    @Published private(set) var session = 0 { didSet { publishCount += 1 } }
+
+    /// 見張っている値を書いた回数（＝見ている画面へ「変わった」を知らせた回数。テスト用に読める）
+    private(set) var publishCount = 0
+
+    /// 値が変わったときだけ書く（同じ値なら知らせを出さない）
+    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<MusicPreviewPlayer, Value>,
+                                          _ value: Value) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
+    }
 
     private var player: AVPlayer?
     /// 場を返す予約。**鳴らし直したら取り消す**——止めた直後（200ms 以内）に
@@ -66,7 +85,7 @@ final class MusicPreviewPlayer: ObservableObject {
     func markInterrupted() {
         guard playingURL != nil, !isPaused else { return }
         player?.pause()
-        isPaused = true
+        update(\.isPaused, true)
     }
 
     deinit { removeEndObserver() }
@@ -139,14 +158,14 @@ final class MusicPreviewPlayer: ObservableObject {
     func pause() {
         guard player != nil else { return }
         player?.pause()
-        isPaused = true
+        update(\.isPaused, true)
     }
 
     /// `pause()` の続きから鳴らす。鳴らしていなければ何もしない
     func resume() {
         guard player != nil else { return }
         player?.play()
-        isPaused = false
+        update(\.isPaused, false)
     }
 
     /// 消音。**止めない**——消音を解いたとき、映像と同じ位置で鳴っていてほしい
@@ -160,7 +179,7 @@ final class MusicPreviewPlayer: ObservableObject {
         deactivateTask?.cancel()
         deactivateTask = nil
         session += 1
-        isPaused = false
+        update(\.isPaused, false)
         sessionHeld = true
         // **`.ambient` にしない。** あれは消音スイッチに従うので、
         // 本人が ▶ を押したのに**マナーモードだと何も鳴らない**
@@ -171,9 +190,9 @@ final class MusicPreviewPlayer: ObservableObject {
 
         let player = AVPlayer(url: url)
         self.player = player
-        playingURL = url
-        playingSong = song
-        self.origin = origin
+        update(\.playingURL, url)
+        update(\.playingSong, song)
+        update(\.origin, origin)
         // **30秒で鳴り終わったら自分で止める。**
         //
         // 見張らないと (1) ボタンが「一時停止」のまま固まる
@@ -231,10 +250,10 @@ final class MusicPreviewPlayer: ObservableObject {
         removeEndObserver()
         player?.pause()
         player = nil
-        playingURL = nil
-        playingSong = nil
-        origin = nil
-        isPaused = false
+        update(\.playingURL, nil)
+        update(\.playingSong, nil)
+        update(\.origin, nil)
+        update(\.isPaused, false)
         guard releaseSession else { return }
         scheduleRelease()
     }
