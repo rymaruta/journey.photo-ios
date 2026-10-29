@@ -147,6 +147,11 @@ struct StoryComposerView: View {
     private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
+    /// ひとことを打ち始めようとしている（写真を押した・「…」の「ひとことを書く」）。ピントが入る前に欄を出す
+    /// ——描いていない欄にはピントを渡せない。ピントが外れたら下ろす（2026-10-29 判断 #404）
+    @State private var captionOpening = false
+    /// 入口の案内「写真を押してひとこと」（端末に1回だけ・数秒で消える・2026-10-29 判断 #404）
+    @State private var showCaptionHint = false
     /// 撮影地を打つ（写真の下の道具の「場所」）
     @State private var showPlaceEditor = false
     /// 写真を選ぶ画面（並びの帯の「＋」から開く・足すとき）
@@ -355,7 +360,16 @@ struct StoryComposerView: View {
         // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
         .onChange(of: current) { _, _ in voteSelected = false }
         // キーボードを避けたい欄に移ったら、写真の枠もキーボードを避ける側へ戻す
-        .onChange(of: captionFocused) { _, focused in if focused { photoIgnoresKeyboard = false } }
+        .onChange(of: captionFocused) { _, focused in
+            if focused { photoIgnoresKeyboard = false } else { captionOpening = false }
+        }
+        // 欄を出したらピントを渡し、置いたままの曲の札を欄の外へ（2026-10-29 判断 #404）。
+        // 打っている間に欄が伸びたときも（`clearSongStickersOfCaption` は打っていなければ何もしない）
+        .onChange(of: captionOpening) { _, opening in if opening { captionOpened() } }
+        .onChange(of: captionHeight) { _, _ in clearSongStickersOfCaption() }
+        // 写真が入ったら、入口の案内を一度だけ（`StoryTextEditing.shouldShowCaptionHint`）
+        .onChange(of: preview != nil) { _, loaded in if loaded { offerCaptionHint() } }
+        .onAppear { if preview != nil { offerCaptionHint() } }
         .onChange(of: votePanelOpen) { _, open in if open { photoIgnoresKeyboard = false } }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
@@ -708,8 +722,11 @@ struct StoryComposerView: View {
                                 // **押したらすぐ打つ画面へ**（時刻・日付は書体・色・大きさだけ）。スタンプは何もしない
                                 if StoryTextEditing.opensTyping(overlay) { startTyping(overlay.id) }
                             },
-                            // 写真を押したら投票の欄を閉じる
-                            onTapPhoto: { voteSelected = false },
+                            // 写真を押したら投票の欄を閉じる。何も無い所を押したら、ひとことを打ち始める・
+                            // 打ち終える（2026-10-29 判断 #404・`StoryTextEditing.photoTap`）
+                            onTapPhoto: { tapPhoto() },
+                            // VoiceOver の入口（見えない空の欄は読み上げから外している）
+                            onWriteCaption: { startCaption() },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
                             onDelete: { id in deleteOverlay(id) },
                             onDraggingChange: { dragging in
@@ -746,6 +763,11 @@ struct StoryComposerView: View {
         .overlay(alignment: .center) {
             if showPlaceHint && typingId == nil && !draggingOverlay {
                 placeHint
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showCaptionHint && typingId == nil && !draggingOverlay && !votePanelOpen && !captionShown {
+                captionHint
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -1017,6 +1039,105 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 「ひとこと」の欄が見えているか（書いてある・打っている・打ち始めた直後）。`StoryTextEditing.showsCaptionField`
+    private var captionShown: Bool {
+        StoryTextEditing.showsCaptionField(caption: caption, focused: captionFocused, opening: captionOpening)
+    }
+
+    /// 写真の真ん中に何か出ているか（ひとことの欄か、撮影地の札・候補）。曲の札はこれを避ける
+    private var captionAreaShown: Bool {
+        captionShown || !place.location.isEmpty || place.chip != nil
+    }
+
+    /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内・VoiceOver の操作）。
+    /// **欄を先に出し、出した状態が反映されてからピントを渡す**（`captionOpening` の `onChange` →
+    /// `captionOpened`）。同じ回に渡すと、まだ見えない欄でキーボードが出ないことがある（2026-10-29 のレビュー:
+    /// `Task.yield()` は描き直しの後を保証しない）。`delay` はメニューが閉じ切るのを待つ分
+    private func startCaption(after delay: Duration = .zero) {
+        guard typingId == nil, shots.indices.contains(current) else { return }
+        voteSelected = false
+        showCaptionHint = false
+        guard delay > .zero else {
+            captionOpening = true
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            captionOpening = true
+        }
+    }
+
+    /// 欄を出した（`captionOpening` が立った）後。ここでピントを渡し、置いたままの曲の札を欄の外へ。
+    /// ピントが入らず（別のシートが開いた等）空のままなら、欄を下ろす（空の欄を出したままにしない）
+    private func captionOpened() {
+        captionFocused = true
+        clearSongStickersOfCaption()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            if !captionFocused && caption.isEmpty { captionOpening = false }
+        }
+    }
+
+    /// 写真の何も無い所を押した（札・投票は札が先に取る）。`StoryTextEditing.photoTap`
+    private func tapPhoto() {
+        switch StoryTextEditing.photoTap(caption: caption, captionFocused: captionFocused, voteOpen: voteSelected) {
+        case .closeVote: voteSelected = false
+        case .endCaption: captionFocused = false
+        case .startCaption: startCaption()
+        case .none: break
+        }
+    }
+
+    /// 入口の案内「写真を押してひとこと」（2026-10-29 判断 #404・板 v2 の「指で動かす · 2本指で回す」と
+    /// 同じ形: 写真の上なので白い字に黒の地・13pt・真鍮は使わない）。**押すとそのまま打ち始める**。
+    /// 置き場は写真の下の方（真ん中は曲の札とひとことの欄が来る所）
+    private var captionHint: some View {
+        Button { startCaption() } label: {
+            Text(StoryTextEditing.captionHint)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.6), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("ひとことを打ち始めます", "Starts writing a caption"))
+        .accessibilityIdentifier("story.captionHint")
+        .padding(.bottom, 96)
+        .transition(.opacity)
+    }
+
+    /// 入口の案内を出す（写真が入った・ひとことが空・端末で1回だけ）。数秒で消す
+    private func offerCaptionHint() {
+        guard !shots.isEmpty, typingId == nil, !captionShown,
+              StoryTextEditing.shouldShowCaptionHint(caption: caption) else { return }
+        StoryTextEditing.markCaptionHintShown()
+        withAnimation(.easeOut(duration: 0.2)) { showCaptionHint = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(StoryTextEditing.captionHintSeconds))
+            withAnimation(.easeOut(duration: 0.3)) { showCaptionHint = false }
+        }
+    }
+
+    /// 打ち始めた・打っている間に欄が伸びたら、置いたままの曲の札で欄に掛かるものを欄の外へ
+    /// （`SongSticker.clearedOfCaption`）。写真ごとに大きさが違うので、欄の端は写真ごとに測り直す。
+    /// 🔴 **打ち始めた（`captionOpening`・`captionFocused`）ときだけ動かす**（2026-10-29 のレビュー）。
+    /// 下書きを開いた・欄を測っただけで動かすと、開いたときの中身（`restoredContent`）とずれて、
+    /// 何もしていないのに閉じるときに確認が出た。
+    /// つまんで大きくしただけの札（`songMoved` は立たない）は置き直しの対象（意図どおり: 置いた位置のまま
+    /// 大きくした札は、まだ「置いたまま」とみなす）
+    private func clearSongStickersOfCaption() {
+        guard captionOpening || captionFocused, let song else { return }
+        for i in shots.indices {
+            let band = SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize,
+                                               image: shots[i].imageSize)
+            let next = SongSticker.clearedOfCaption(shots[i].overlays, song: song, image: shots[i].imageSize,
+                                                    band: band)
+            if next != shots[i].overlays { shots[i].overlays = next }
+        }
+    }
+
     /// 写真の上のひとこと（明朝 30・影）と撮影地の札。**ひとことはその場で打つ**。
     /// v2: 見る画面と同じ 30（v1 は 32 で、作った形と見える形がずれていた）
     /// 曲は動かせる札として写真に置く（`SongSticker`）
@@ -1037,6 +1158,7 @@ struct StoryComposerView: View {
                 .foregroundStyle(Color.white.opacity(Self.captionHintOpacity)),
                axis: .vertical)
                 .focused($captionFocused)
+                .accessibilityIdentifier("story.caption")
                 .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
@@ -1051,6 +1173,14 @@ struct StoryComposerView: View {
                             .accessibilityHidden(true)
                     }
                 }
+                // 🔴 2026-10-29 判断（#404）: **空で打っていない欄は描かない**（帯も案内も・高さも取らない）。
+                // 入口は写真を押す・「…」・一度だけの案内。木からは外さず見えなくするだけ（外すと、写真を
+                // 押したときにピントを渡す欄が無い）。見えない間は指も読み上げも素通り。撮影地の札は今のまま出す
+                .frame(height: captionShown ? nil : 0)
+                .opacity(captionShown ? 1 : 0)
+                .allowsHitTesting(captionShown)
+                .accessibilityHidden(!captionShown)
+                .padding(.bottom, captionShown ? 0 : -10)
             if !place.location.isEmpty {
                 photoChip(symbol: "mappin", text: place.location)
             } else if let spot = place.chip {
@@ -1255,13 +1385,22 @@ struct StoryComposerView: View {
             } label: {
                 Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
             }
-            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
+            // やめた——1回押しでひとことを打ち始めるのが、2回押しを待つ分 0.3 秒遅れた）
             if !framing.wrappedValue.isIdentity {
                 Button {
                     framing.wrappedValue = .identity
                 } label: {
                     Label(L("写真の合わせ方を戻す", "Reset photo framing"), systemImage: "arrow.counterclockwise")
                 }
+            }
+            // ひとことの入口（写真を押すと打ち始める、が見つからない人の逃げ道・2026-10-29 判断 #404）。
+            // メニューが閉じ切ってからピントを渡す
+            Button {
+                startCaption(after: .milliseconds(350))
+            } label: {
+                Label(caption.isEmpty ? L("ひとことを書く", "Write a caption") : L("ひとことを直す", "Edit caption"),
+                      systemImage: "character.cursor.ibeam")
             }
             // **写真が無ければ下書きにできない。** 文字だけ残しても「続きから」で出すものが無い。
             // 残すと決めた下書きがある間・読み込み中も止める（前の「下書き保存」と同じ条件）
@@ -1533,9 +1672,11 @@ struct StoryComposerView: View {
     }
 
     /// 「ひとことを書く」の欄の上下の端（写真の割合）。曲の札を欄に重ねずに置く（`SongSticker.placedY`）。
-    /// 欄の高さは実際に測った値（`captionHeight`）。測れていなければ既定の帯
-    private var songStickerBand: ClosedRange<Double> {
-        SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize, image: previewSize)
+    /// 欄の高さは実際に測った値（`captionHeight`）。測れていなければ既定の帯。
+    /// **欄が出ていなければ nil**（避けずに真ん中へ置く・欄が出たら `clearSongStickersOfCaption` で外へ）
+    private var songStickerBand: ClosedRange<Double>? {
+        guard captionAreaShown else { return nil }
+        return SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize, image: previewSize)
     }
 
     /// 付けた曲とジャケット（作る画面の札と焼き込みが同じ絵を使う）
