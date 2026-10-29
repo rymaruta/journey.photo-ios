@@ -12,7 +12,7 @@ import SwiftUI
 /// **全体のバーは指で動かせる**（2026-10-28 owner「再生中の音楽自由に動かせるといいね」）。
 /// ホームの「いまの季節のスポット」の説明文の上に重なり、透ける地のせいで下の文字と曲名が
 /// 重なって読めなかった。置き場所の決まりは `MiniPlayerPlacement`。
-/// 地は透けるガラス（`jpGlass`）。読めるようにしたのはぼかしで、不透明にはしない（下の `bar` の注記）。
+/// 地は後ろの写真がそのまま見える薄い黒（ぼかし無し・`glassTint`）。読ませるのは字の影（下の `bar` の注記）。
 /// 曲選びの中のバーはシートの中に据えるので動かさない（下へ引くとシートを閉じる操作とぶつかる）
 struct MiniPlayerBar: View {
 
@@ -40,8 +40,17 @@ struct MiniPlayerBar: View {
 
     /// 動かしている間の縮み（持ち上げた感じ）。「動きを減らす」がオンなら縮めない
     static let liftedScale: CGFloat = 0.96
-    /// ガラスの上の曲名・歌手名の影の濃さ（板の「大きい字の影は黒 60%」より控えめ・広げない）
-    static let textShadowOpacity: Double = 0.5
+    /// 全体のバーの地（2026-10-29 判断・owner「背景透過させて、後ろの画像とかが見えるようにしたい」#402）。
+    /// 1.1.44 の `jpGlass`（黒 55%＋`.ultraThinMaterial`＋白 10% の縁）は、実機では黒 55% にぼかしの曇りが
+    /// 重なってほぼ不透明の黒い板に見えた。**ぼかしを外し**、黒の重ねを薄くして後ろの写真の形と色を見せる。
+    /// 読みやすさは字の影（`textShadow…`）で持たせる。`jpGlass` 自体は他の部品が使うので変えない
+    static let glassTint: Double = 0.2
+    /// 縁の白（髪の毛線）。明るい写真の上でも形が分かる強さ（板の border 白 12%）
+    static let glassBorder: Double = 0.12
+    /// 曲名・歌手名・停止ボタンの影（板の「写真の上の大きい字の影は黒 60%」）。白い写真の上でも字の縁が立つよう、
+    /// 広げすぎず（半径 3）濃くする（2026-10-29 判断・地を透かしたので 50% から上げた）
+    static let textShadowOpacity: Double = 0.6
+    static let textShadowRadius: CGFloat = 3
     /// 動かす置き場所の座標の名前
     private static let area = "miniPlayer.area"
     /// 動き始めるまでに指が進む距離（pt）。**長押しは要らない。普通に引けば動く。**
@@ -66,13 +75,15 @@ struct MiniPlayerBar: View {
     }
 
     /// 曲の絵・曲名・歌手名と停止ボタン。
-    /// 2026-10-28 判断（owner「再生中の音楽の透明をやめちゃったの？好きだったのに」）:
-    /// - 全体のバーの地は**透けるガラス**（`jpGlass`・板の「ガラス: 黒 55%＋ぼかし＋白 10% の縁」）。
-    ///   #395 では不透明の面（`RaisedTile.fill`）にしたが、owner は透けるのが好きだった
-    /// - #395 より前の白 10%（`WebTheme.raised`）はぼかしが無く、下の説明文の字がそのまま見えて
-    ///   曲名・歌手名と重なって読めなかった。ぼかし1枚で下の字を崩し、曲名・歌手名に薄い影を付けて読ませる
-    /// - 軽くする: ぼかし（material）は1枚だけ（重ねるとスクロール中に毎フレームの計算が増える）。
-    ///   再生器の外の影は置いている間は付けない（引いている間だけ・角丸の形にだけ）。ガラスの下に影があると透け感も濁る
+    /// 2026-10-28 判断（owner「再生中の音楽の透明をやめちゃったの？好きだったのに」）: #395 の不透明の面をやめ、透ける地に戻した。
+    /// 2026-10-29 判断（owner 背景を透かしたい・#402）: ガラス（黒 55%＋ぼかし）は実機でほぼ黒い板に見えたので、
+    /// **ぼかしを外して黒 20%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
+    /// - 下の字（説明文など）が透けて曲名と重なる件（#395 より前の白 10%）は、曲名・歌手名・停止ボタンの
+    ///   黒 60% の影で字の縁を立てて読ませる。重なって読みにくければ再生器を指で動かせる（`MiniPlayerPlacement`）
+    /// - 歌手名は写真の上の副文の白 72%（`muted2`・板の「写真の上の副文は不透明の text-2 にしない」）。
+    ///   白 60% の faint は明るい写真の上で沈んだ
+    /// - 軽くする: ぼかし（material）は使わない。再生器の外の影は置いている間は付けない
+    ///   （引いている間だけ・角丸の形にだけ）。地の下に影があると透け感も濁る
     /// - 曲選びの中のバーは板 SongPicker どおり不透明の面（#17171a の段）のまま
     private func bar(_ song: Photo.Song) -> some View {
         HStack(spacing: 10) {
@@ -97,6 +108,9 @@ struct MiniPlayerBar: View {
                 Image(systemName: "stop.circle.fill")
                     .font(.title2)
                     .foregroundStyle(WebTheme.foreground)
+                    // 透ける地の上でも丸の形が立つよう、曲名と同じ影（曲選びの中は不透明の面なので付けない）
+                    .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),
+                            radius: Self.textShadowRadius, x: 0, y: 1)
                     // 押せる範囲は 44pt（見た目はそのまま）
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
@@ -108,22 +122,23 @@ struct MiniPlayerBar: View {
         .padding(.trailing, 4)
         .padding(.vertical, 8)
         // 曲選びの中のバーは v2 SongPicker の形（高さ 60・角 18・地 #1A1A1C・縁は白 8%）。
-        // 全体のバーも同じ形（角 18）で、地は透けるガラス
+        // 全体のバーも同じ形（角 18）で、地は後ろが見える薄い黒（`glassTint`）
         .frame(minHeight: inSongPicker ? Self.pickerBarHeight : nil)
         .background { ground }
     }
 
-    /// 地。曲選びの中は不透明の面、全体のバーはガラス（ぼかし1枚）
+    /// 地。曲選びの中は不透明の面、全体のバーは後ろの写真が見える薄い黒（ぼかし無し・`glassTint`）
     @ViewBuilder private var ground: some View {
         let shape = RoundedRectangle(cornerRadius: Self.pickerBarRadius)
         if inSongPicker {
             shape.fill(Self.pickerBarFill)
                 .overlay(shape.strokeBorder(WebTheme.hairline, lineWidth: 1))
         } else {
-            Color.clear.jpGlass(in: shape)
+            shape.fill(Color.black.opacity(Self.glassTint))
+                .overlay { shape.strokeBorder(Color.white.opacity(Self.glassBorder), lineWidth: 1) }
                 // 2026-10-28 判断（再生の重さの担当の手がかり）: #395 は `.shadow(radius: 14)` を再生器の中身ごとに
                 // 付けていて、スクロール中に影を描き直していた疑い。影は**角丸の形にだけ**、**引いている間だけ**付ける。
-                // 置いている間は影なし（ガラスの下に影があると透け感も濁る）
+                // 置いている間は影なし（地の下に影があると透け感も濁る）
                 .background {
                     if dragging {
                         shape.fill(Color.black.opacity(0.5))
@@ -149,12 +164,13 @@ struct MiniPlayerBar: View {
                 if let artist = song.artist, !artist.isEmpty {
                     Text(artist)
                         .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
+                        .foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.muted2)
                         .lineLimit(1)
                 }
             }
-            // ガラス越しの字を読ませる薄い影（全体のバーだけ。曲選びの中は不透明の面なので要らない）
-            .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity), radius: 2, x: 0, y: 1)
+            // 透ける地の上の字を読ませる影（全体のバーだけ。曲選びの中は不透明の面なので要らない）
+            .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),
+                    radius: Self.textShadowRadius, x: 0, y: 1)
             Spacer(minLength: 0)
         }
         .frame(minHeight: WebTheme.minTapTarget)

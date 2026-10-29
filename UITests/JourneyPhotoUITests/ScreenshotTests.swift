@@ -3764,6 +3764,55 @@ final class ScreenshotTests: XCTestCase {
         app.terminate()
     }
 
+    /// **全体の再生器の透け方**（2026-10-29 owner「背景透過させて、後ろの画像とかが見えるようにしたい」#402）。
+    /// 地をぼかし無しの薄い黒にしたので、白い写真・模様の多い写真（白い字つき）・黒い写真の上で、曲名・歌手名・
+    /// 停止ボタンが読めて、後ろの色と形が見えるかを撮る。後ろは見本の地（`-JPPreviewMiniPlayerBackdrop`・
+    /// `MiniPlayerBackdrop`: 上から白 40%・模様 30%・黒 30%）。最初の置き場所（右下）が黒、真ん中が模様、
+    /// いちばん上が白。曲の行・再生器が出なければ撮らない（この試験の決まり）
+    func testCapturesMiniPlayerSeeThrough() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewMiniPlayerBackdrop", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
+        guard song.waitForExistence(timeout: 20) else { return }
+        song.tap()
+        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
+        guard bar.waitForExistence(timeout: 15) else { return }
+        // ジャケットは通信で来るので少し待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "10m-再生器の透け方（黒い写真の上）")
+
+        // 真ん中（模様の段）へ。長押しせずに引いて止めてから離す
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.55)),
+                   withVelocity: .fast, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1.5)
+        guard bar.exists else { return }
+        shoot(app, "10m-再生器の透け方（模様の多い写真の上）")
+
+        // いちばん上（白の段）へ
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.02)),
+                   withVelocity: .fast, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1.5)
+        guard bar.exists else { return }
+        shoot(app, "10m-再生器の透け方（白い写真の上）")
+        app.terminate()
+    }
+
     /// **マイページの札を横に払って切り替える**（2026-10-24 owner「切り替えスムーズに」・`ProfileTabPager`）。
     /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
     /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす

@@ -159,17 +159,28 @@ final class MiniPlayerPlacementTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// 地は透けるガラス（2026-10-28 owner「透明をやめちゃったの？好きだったのに」）。ぼかしは1枚だけ・
-    /// 置いている間は外の影なし（スクロール中に軽く）・曲名と歌手名に薄い影・曲選びの中は不透明の面のまま。
+    /// 地は後ろの写真が見える薄い黒（2026-10-28 owner「透明をやめちゃったの？好きだったのに」→
+    /// 2026-10-29 owner「背景透過させて、後ろの画像とかが見えるようにしたい」#402: ぼかし入りのガラスは実機で黒い板に見えた）。
+    /// ぼかし無し・黒 15〜25%・白 10〜15% の縁・曲名と歌手名と停止ボタンに黒 60% 前後の影・
+    /// 置いている間は外の影なし（スクロール中に軽く）・曲選びの中は不透明の面のまま。
     /// 停止は 44pt・読み上げに移動の代わりの操作・**長押しせずに引けば動く**（owner 実機で動かせなかった）
     func testBarIsGlassAndAccessible() throws {
         let bar = try source("Sources/JourneyPhoto/Features/Common/MiniPlayerBar.swift")
-        XCTAssertTrue(bar.contains("Color.clear.jpGlass(in: shape)"), "全体のバーが透けるガラスでない")
-        XCTAssertFalse(bar.contains("WebTheme.raised"), "ぼかしの無い白 10% に戻っている（下の字と曲名が重なる）")
-        XCTAssertFalse(bar.contains("Material"), "ぼかしを重ねている（jpGlass の1枚だけにする）")
+        XCTAssertTrue(bar.contains("shape.fill(Color.black.opacity(Self.glassTint))"), "全体のバーの地が薄い黒でない")
+        XCTAssertTrue(bar.contains("shape.strokeBorder(Color.white.opacity(Self.glassBorder), lineWidth: 1)"),
+                      "全体のバーに髪の毛線の縁が無い")
+        XCTAssertFalse(bar.contains("jpGlass("), "ぼかし入りのガラスに戻っている（実機で黒い板に見えた）")
+        XCTAssertFalse(bar.contains("Material"), "ぼかしを使っている（後ろの写真の形が見えない）")
+        XCTAssertTrue((0.15...0.25).contains(MiniPlayerBar.glassTint), "黒の重ねが 15〜25% でない（濃いと写真が見えない）")
+        XCTAssertTrue((0.10...0.15).contains(MiniPlayerBar.glassBorder), "縁が白 10〜15% でない")
+        XCTAssertTrue((0.55...0.7).contains(MiniPlayerBar.textShadowOpacity), "字の影が黒 60% 前後でない（明るい写真で読めない）")
+        XCTAssertTrue((2...3).contains(MiniPlayerBar.textShadowRadius), "字の影の半径が 2〜3 でない")
+        XCTAssertFalse(bar.contains("WebTheme.raised"), "白 10% の地に戻っている")
         XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")
-        XCTAssertTrue(bar.contains(".shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity)"),
-                      "ガラスの上の曲名・歌手名に影が無い")
+        XCTAssertEqual(bar.components(separatedBy: ".shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),\n").count - 1,
+                       2, "透ける地の上の曲名・歌手名と停止ボタンに影が無い")
+        XCTAssertTrue(bar.contains(".foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.muted2)"),
+                      "写真の上の歌手名が白 72% でない")
         // 外の影は角丸の形にだけ・引いている間だけ（中身ごとの影はスクロール中に描き直して重い）
         XCTAssertFalse(bar.contains(".shadow(color: .black.opacity(dragging"), "再生器の中身ごとに影を付けている")
         XCTAssertFalse(bar.contains("radius: dragging ? 22 : 14"), "置いている間も中身ごとの影がある（重い）")

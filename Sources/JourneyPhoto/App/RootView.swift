@@ -1195,6 +1195,8 @@ struct RootView: View {
         // Web のような「出さないページ」の判定は要らない
         // 鳴っている間だけ、どの画面にも出る（Web の `MiniPlayer`）。
         // 置き場所は再生器が自分で決める（指で動かせる・タブバーの上は `MiniPlayerPlacement.bottomReserved`）
+        // UI テストだけ: 再生器の後ろに白・模様・黒の見本の地を敷く（透け方の確かめ・`MiniPlayerBackdrop`）
+        .overlay { MiniPlayerBackdrop() }
         .overlay(alignment: .bottom) {
             MiniPlayerBar()
         }
