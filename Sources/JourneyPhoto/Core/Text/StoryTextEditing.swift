@@ -70,6 +70,56 @@ enum StoryTextEditing {
         defaults.set(true, forKey: placeHintShownKey)
     }
 
+    // MARK: - 写真の上の「ひとこと」の欄（2026-10-29 判断 #404）
+
+    /// 欄（灰色の帯＋明朝の案内「ひとことを書く」）を描くか。**書いてあるか、打っている（打ち始めた）ときだけ**。
+    /// owner・2026-10-29「ひとことを書くに何も入力しなかった場合も残っちゃうの嫌だな」——空の欄が写真の
+    /// 真ん中に出続けて写真を隠していた。空のまま打つのをやめたら消える。
+    /// `opening` は写真を押した・「…」から選んだ直後でピントが入る前（欄が無いとピントを渡せないので先に出す）
+    static func showsCaptionField(caption: String, focused: Bool, opening: Bool) -> Bool {
+        !caption.isEmpty || focused || opening
+    }
+
+    /// 写真の何も無い所を押したときにすること（札・投票の上では札が先に取るので、ここには来ない）
+    enum PhotoTap: Equatable {
+        /// 投票の欄を閉じるだけ（前からの動き）
+        case closeVote
+        /// ひとことを打ち終える（打っている間に写真を押した・Instagram の文字入れと同じ）
+        case endCaption
+        /// ひとことを打ち始める（空のとき。Instagram の文字入れと同じ手ざわり）
+        case startCaption
+        /// 何もしない（書いてあるひとことは欄そのものを押して直す）
+        case none
+    }
+
+    /// 写真を押したときの動き。2026-10-29 判断: 開いている欄を閉じるのが先（押した指で2つのことを起こさない）、
+    /// **書いてあるときは打ち始めない**（写真を触るたびにキーボードが出るのは煩い。欄を押せば直せる）
+    static func photoTap(caption: String, captionFocused: Bool, voteOpen: Bool) -> PhotoTap {
+        if voteOpen { return .closeVote }
+        if captionFocused { return .endCaption }
+        return caption.isEmpty ? .startCaption : .none
+    }
+
+    /// 入口の案内の文言（写真の上・白・本文 13pt）
+    static var captionHint: String { L("写真を押してひとこと", "Tap the photo to add a caption") }
+
+    /// 入口の案内を出しておく秒数（読んだら消える。押しても消える）
+    static let captionHintSeconds: Double = 4
+
+    /// 端末に1回だけの印（UserDefaults）
+    static let captionHintShownKey = "story.captionHintShown"
+
+    /// 入口の案内を出すか。**ひとことが空で、この端末でまだ出していないときだけ**（2026-10-29 判断:
+    /// 毎回出すと、また写真の上に何か残る、になる。見つからない人には「…」の「ひとことを書く」がある）
+    static func shouldShowCaptionHint(caption: String, defaults: UserDefaults = .standard) -> Bool {
+        caption.isEmpty && !defaults.bool(forKey: captionHintShownKey)
+    }
+
+    /// 出した印を付ける（出した時点で付ける）
+    static func markCaptionHintShown(defaults: UserDefaults = .standard) {
+        defaults.set(true, forKey: captionHintShownKey)
+    }
+
     /// 見た目を次へ（白 → 黒 → 帯 → 縁取り → 白）。色の寄せ方は `TextOverlay.withStyle`。
     /// **帯で固定の札（撮影地・曲など）とスタンプは変えない**
     static func nextStyle(_ overlay: TextOverlay) -> TextOverlay {
