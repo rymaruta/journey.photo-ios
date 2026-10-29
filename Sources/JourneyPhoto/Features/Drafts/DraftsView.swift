@@ -479,24 +479,23 @@ struct DraftsView: View {
                     // 整理しに来た回は「キャンセル」で作る画面へ戻る
                     if tidying { dismiss() }
                 } label: {
-                    Text(Labels.Common.cancel).font(.body).foregroundStyle(WebTheme.text)
+                    barLabel(Labels.Common.cancel, color: WebTheme.text)
                 }
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                .accessibilityIdentifier("drafts.cancel")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { selectAll() } label: {
-                    Text(DraftsText.selectAll).font(.body).foregroundStyle(WebTheme.text)
+                    barLabel(DraftsText.selectAll, color: WebTheme.text)
                 }
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                .accessibilityIdentifier("drafts.selectAll")
                 .disabled(visible.isEmpty)
             }
         } else {
             if presentation == .sheet {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
-                        Text(Labels.Common.close).font(.body).foregroundStyle(WebTheme.text)
+                        barLabel(Labels.Common.close, color: WebTheme.text)
                     }
-                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                     .accessibilityIdentifier("drafts.close")
                 }
             }
@@ -506,15 +505,29 @@ struct DraftsView: View {
                     selection = []
                     selecting = true
                 } label: {
-                    Text(DraftsText.select)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(entries.isEmpty || phase != .loaded ? WebTheme.text3 : WebTheme.accent)
+                    barLabel(DraftsText.select, weight: .semibold,
+                             color: entries.isEmpty || phase != .loaded ? WebTheme.text3 : WebTheme.accent)
                 }
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                 .disabled(entries.isEmpty || phase != .loaded)
                 .accessibilityIdentifier("drafts.select")
             }
         }
+    }
+
+    /// 上のバーの文字ボタン（キャンセル・すべて・閉じる・選ぶ）。
+    ///
+    /// 🔴 **字を縮めず・切らずに1行で出す**（2026-10-29・Mac の画面写真 107c で「キャンセル」が「ャンセ」と両端が
+    /// 切れていた）。ボタンに 44×44 の枠を付けると、iOS 26 のバーはそれを丸い札の大きさに使い、字が枠に
+    /// 押し込まれた。字の幅に合わせて広げ（`fixedSize`）、高さと最小の幅だけ 44 にする（英語の Cancel・Select all も同じ）
+    private func barLabel(_ text: String, weight: Font.Weight = .regular, color: Color) -> some View {
+        Text(text)
+            .font(.body.weight(weight))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, JPSpace.xxs)
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
     }
 
     /// 選んでいる間の下の段（件数・写真の枚数と「n件を削除」——危険の色・画面の行なので系統の赤にしない）

@@ -101,7 +101,7 @@ enum DraftsText {
     // MARK: 選ぶ・削除
 
     static var select: String { L("選ぶ", "Select") }
-    static var selectAll: String { L("すべて", "All") }
+    static var selectAll: String { L("すべて", "Select all") }
 
     static func selectionTitle(_ count: Int) -> String {
         count == 0 ? L("選んでください", "Select drafts") : L("\(count)件を選択", "\(count) selected")

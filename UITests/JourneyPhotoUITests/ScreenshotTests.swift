@@ -5017,8 +5017,17 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "107c-下書きの一覧（選ぶ）")
-        let cancel = app.navigationBars.buttons["キャンセル"].firstMatch
+        let cancel = app.buttons["drafts.cancel"].firstMatch
         guard cancel.waitForExistence(timeout: 5) else { return }
+        // 🔴 上のバーの「キャンセル」「すべて」が切れずに1行で出る（107c で「ャンセ」と切れていた）。
+        // 17pt の5字は約 85pt——押し込まれると 44 の丸になる。44pt 以上も確かめる
+        let selectAllButton = app.buttons["drafts.selectAll"].firstMatch
+        XCTAssertGreaterThanOrEqual(cancel.frame.width, 80, "「キャンセル」が丸に押し込まれて切れている")
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        if selectAllButton.exists {
+            XCTAssertGreaterThanOrEqual(selectAllButton.frame.width, 56, "「すべて」が押し込まれて切れている")
+            XCTAssertLessThan(cancel.frame.maxX, selectAllButton.frame.minX)
+        }
         cancel.tap()
 
         let rows = app.buttons["drafts.layout.rows"].firstMatch
@@ -5026,6 +5035,16 @@ final class ScreenshotTests: XCTestCase {
             rows.tap()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "107d-下書きの一覧（行）")
+            // 一番下までずらすと、最後の行が下のタブの帯に隠れずに押せる（下の余白）
+            for _ in 0..<3 { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "107d2-下書きの一覧（行・一番下）")
+            let lastRow = app.buttons.matching(identifier: "drafts.row").allElementsBoundByIndex.last
+            if let lastRow, tabBar.exists {
+                XCTAssertLessThanOrEqual(lastRow.frame.maxY, tabBar.frame.minY + 1,
+                                         "一番下の行が下のタブの帯に隠れる")
+            }
+            for _ in 0..<3 { app.swipeDown() }
             // 覚えた表示を格子に戻しておく（次の起動の絵を変えない）
             let grid = app.buttons["drafts.layout.grid"].firstMatch
             if grid.isHittable { grid.tap() }

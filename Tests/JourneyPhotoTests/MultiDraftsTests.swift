@@ -640,6 +640,20 @@ final class MultiDraftsTests: XCTestCase {
         XCTAssertTrue(root.contains("下書きを開けませんでした"), "開けなかったことを黙っている")
     }
 
+    /// 🔴 上のバーの文字ボタンは切れずに1行（107c の「ャンセ」）: 44×44 の枠をボタンに付けず、字の幅に合わせて広げる。
+    /// 英語は「Cancel」「Select all」
+    func testBarButtonsAreNotSqueezed() async throws {
+        let list = try source("Features/Drafts/DraftsView.swift")
+        let toolbar = try XCTUnwrap(list.range(of: "private var toolbar: some ToolbarContent {"))
+        let end = try XCTUnwrap(list.range(of: "/// 上のバーの文字ボタン", range: toolbar.upperBound..<list.endIndex))
+        let body = String(list[toolbar.upperBound..<end.lowerBound])
+        XCTAssertFalse(body.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"),
+                       "バーのボタンに 44×44 の枠を付けている（字が丸い札に押し込まれて切れる）")
+        XCTAssertEqual(body.components(separatedBy: "barLabel(").count - 1, 4, "バーの文字ボタンが共通の形を通っていない")
+        XCTAssertTrue(list.contains(".fixedSize(horizontal: true, vertical: false)"))
+        XCTAssertTrue(try source("Features/Drafts/DraftsText.swift").contains(#"L("すべて", "Select all")"#))
+    }
+
     // MARK: - 道具
 
     private static var root: URL {
