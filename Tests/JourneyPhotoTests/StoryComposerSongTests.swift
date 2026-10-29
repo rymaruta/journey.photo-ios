@@ -162,7 +162,7 @@ final class StoryComposerSongTests: XCTestCase {
         XCTAssertTrue(view.contains("songOwner.stopOthers()"), "開いたときにほかの曲を止めていない")
         // 覆いの中身（シート・カメラ・写真選び）
         let covered = try body(of: "private var songAudioCovered: Bool {", in: view)
-        for flag in ["showAudience", "showStickerTray", "showSongPicker", "showSongStart", "showCamera", "showLibrary"] {
+        for flag in ["showAudience", "showStickerTray", "showSongPicker", "showSongStart", "showCamera", "showLibrary", "showDrafts"] {
             XCTAssertTrue(covered.contains(flag), "\(flag) で覆っても曲が止まらない")
         }
         let held = try body(of: "private var songHeldOnScreen: Bool {", in: view)

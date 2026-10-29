@@ -1640,13 +1640,15 @@ struct StoryComposerView: View {
     private var songStickersCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
             || typingId != nil || votePanelOpen || showPlaceEditor || showRestoreAuto || showRestore
-            || showPendingFailure || showLeaveConfirm
+            || showPendingFailure || showLeaveConfirm || showDrafts || showSaveChoice
     }
 
     /// 付けた曲を流さない覆い（シート・カメラ・写真選び）。曲の札の動きを止める `songStickersCovered` の
-    /// うち、**別の画面が上に出るものだけ**（2026-10-29 判断・`StoryComposerSong` の注記）
+    /// うち、**別の画面が上に出るものだけ**（2026-10-29 判断・`StoryComposerSong` の注記）。
+    /// 下書きの一覧（`showDrafts`・#400）も別の画面なので数える（2026-10-29 統合の見直し）
     private var songAudioCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
+            || showDrafts
     }
 
     /// 付けた曲の鳴らす中身（鳴らせない曲なら nil）
