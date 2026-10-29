@@ -63,8 +63,6 @@ final class MusicPreviewPlayer: ObservableObject {
     private var endObservers: [NSObjectProtocol] = []
     /// 開始位置の頭出しの見張り（`startSeeker`）と、それを付けたプレイヤー
     private var startSeeker: (player: AVPlayer, token: Any)?
-    /// 繰り返す幅の見張り（`play(… length:)`）と、それを付けたプレイヤー
-    private var windowWatcher: (player: AVPlayer, token: Any)?
 
     /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
     private var interruptionObserver: NSObjectProtocol?
@@ -98,8 +96,6 @@ final class MusicPreviewPlayer: ObservableObject {
         }
         endObservers = []
         removeStartSeeker()
-        if let watcher = windowWatcher { watcher.player.removeTimeObserver(watcher.token) }
-        windowWatcher = nil
     }
 
     private func removeStartSeeker() {
@@ -151,7 +147,9 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
     /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
     /// `length` は繰り返す幅（秒）。`loops` のとき、`from` から `length` 秒鳴ったら `from` へ戻る
-    /// （ストーリーを作る画面で、表示秒数ぶんだけを繰り返す・2026-10-29 判断）。nil なら試聴の終わりまで
+    /// （ストーリーを作る画面で、表示秒数ぶんだけを繰り返す・2026-10-29 判断）。nil なら試聴の終わりまで。
+    /// 幅の終わりは項目の終わり（`forwardPlaybackEndTime`）にする——そこで鳴り終わりの知らせが来て、
+    /// 下の「流し始めへ戻す」がそのまま繰り返す（時刻を見張って戻すより、ずれも手間も無い）
     @discardableResult
     func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0,
               length: Double? = nil, origin: PlaybackOrigin = .app) -> Int {
@@ -160,10 +158,10 @@ final class MusicPreviewPlayer: ObservableObject {
         return session
     }
 
-    /// 繰り返す幅の終わりに来たか（画面を持たない・単体テスト用）。幅が無い・0 以下なら戻さない
-    static func loopsBack(current: Double, start: Double, length: Double?) -> Bool {
-        guard let length, length > 0, current.isFinite else { return false }
-        return current >= max(0, start) + length
+    /// 繰り返す幅の終わり（秒）。繰り返さない・幅が無い・0 以下なら nil（試聴の終わりまで）
+    static func loopEnd(loops: Bool, start: Double, length: Double?) -> Double? {
+        guard loops, let length, length > 0, length.isFinite else { return nil }
+        return max(0, start) + length
     }
 
     /// 止めずに一時停止する（場は返さない。すぐ `resume()` するため）
@@ -253,15 +251,10 @@ final class MusicPreviewPlayer: ObservableObject {
             }
             startSeeker = (player, token)
         }
-        if loops, let length, length > 0 {
-            // 幅の終わりで流し始めへ戻す（鳴り終わりの知らせより先に来る。試聴が幅より短ければ上の知らせで戻る）
-            let token = player.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
-            ) { [weak player] time in
-                guard let player, Self.loopsBack(current: time.seconds, start: startSeconds, length: length) else { return }
-                player.seek(to: startTime)
-            }
-            windowWatcher = (player, token)
+        if let end = Self.loopEnd(loops: loops, start: startSeconds, length: length) {
+            // 幅の終わりを項目の終わりにする。来たら鳴り終わりの知らせ → 上で流し始めへ戻す。
+            // 試聴が幅より短ければ、試聴の終わりで同じ知らせが来る
+            player.currentItem?.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 600)
         }
         player.play()
     }

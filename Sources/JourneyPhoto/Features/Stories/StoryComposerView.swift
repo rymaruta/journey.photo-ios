@@ -81,8 +81,7 @@ struct StoryComposerView: View {
     /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
     @State private var showSongStart = false
     /// 付けた曲をその場で流す（Issue #403・`StoryComposerSong`）。この画面が鳴らした回（`MusicPreviewPlayer.session`）と中身
-    @State private var songSession: Int?
-    @State private var songPlayed: StoryComposerSong.Cue?
+    @StateObject private var songOwner = StoryComposerSong.Owner()
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
@@ -363,7 +362,7 @@ struct StoryComposerView: View {
         // 付けた曲をその場で流す（Issue #403・2026-10-29 判断は `StoryComposerSong`）。付けた・替えた・流し始めや
         // 表示秒数を直した → 流し直す。外した → 止める。シートで覆われた間は一時停止
         .onChange(of: songCue) { _, _ in syncSong() }
-        .onChange(of: songAudioCovered) { _, _ in syncSong() }
+        .onChange(of: songHeldOnScreen) { _, _ in syncSong() }
         // 曲のジャケット（曲の札に描く）。曲の `artwork` を読むだけ（新しい通信先は無い・`SongArtwork`）
         .task(id: song?.artwork) {
             guard let url = song?.artwork else { songArtwork = nil; return }
@@ -407,8 +406,10 @@ struct StoryComposerView: View {
         // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
         .onDisappear {
             stopWaitingToPost()
-            // 閉じた・シェアした（どちらも dismiss）ら止める。**自分の鳴らした回だけ**
-            stopSong()
+            // 閉じた・シェアした（どちらも dismiss）ら止める。**自分の鳴らした回だけ**。
+            // カメラを開いたときもここへ来るが、そのときは止めない（覆いの一時停止に任せる・戻ったら続きから）。
+            // カメラを開いたまま外から閉じられたときは `songOwner` が消えるときに止める
+            if !showCamera { songOwner.stop() }
         }
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
@@ -416,10 +417,8 @@ struct StoryComposerView: View {
             drafts.use(userId: auth.userId)
             autoDrafts.use(userId: auth.userId)
             loadAttachesLocation(for: auth.userId)
-            // 2026-10-29 判断: **ほかで鳴っている曲（マイページの BGM の試聴など）は止める**（見る画面と同じ・
-            // Web の `stopGlobalMusic`）。全体の再生器はこのシートに覆われて止める口が無く、付けた曲と重なる。
-            // カメラを閉じて onAppear がもう一度走ったときは、自分の回なので止めない
-            if !ownsSong, MusicPreviewPlayer.shared.playingURL != nil { MusicPreviewPlayer.shared.stop() }
+            // 2026-10-29 判断: ほかで鳴っている曲は止める（`StoryComposerSong.Owner.stopOthers`）
+            songOwner.stopOthers()
             // 下書きから開いた・カメラから戻ったときも、曲が付いていれば流す
             syncSong()
             // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
@@ -1362,37 +1361,21 @@ struct StoryComposerView: View {
         StoryComposerSong.cue(song: song, durationSec: durationSec)
     }
 
-    /// いま鳴っているのがこの画面の鳴らした回か（見る画面の `ownsSong` と同じ見分け）
-    private var ownsSong: Bool {
-        songSession != nil && songSession == MusicPreviewPlayer.shared.session
-            && MusicPreviewPlayer.shared.playingURL != nil
-    }
+    /// 画面の中で曲を止めておく間（覆い・写真を全部外して写真選びの段に戻った間）。写真が入ったら続きから
+    private var songHeldOnScreen: Bool { songAudioCovered || shots.isEmpty }
 
     /// 付けた曲を、いまの状態に合わせて鳴らす・止める（`StoryComposerSong.action`）
     private func syncSong(foreground: Bool? = nil) {
         let player = MusicPreviewPlayer.shared
-        let held = songAudioCovered || !(foreground ?? (scenePhase == .active))
-        switch StoryComposerSong.action(cue: songCue, played: songPlayed, owns: ownsSong,
+        let held = songHeldOnScreen || !(foreground ?? (scenePhase == .active))
+        switch StoryComposerSong.action(cue: songCue, played: songOwner.played, owns: songOwner.owns,
                                         paused: player.isPaused, held: held) {
         case .none: break
-        case .play(let cue):
-            // `song` は渡さない——全体の再生器（`MiniPlayerBar`）に出さない（見る画面と同じ）
-            songSession = player.play(cue.url, song: nil, loops: true, from: cue.start, length: cue.length)
-            songPlayed = cue
+        case .play(let cue): songOwner.play(cue)
         case .pause: player.pause()
         case .resume: player.resume()
-        case .stop: stopSong()
+        case .stop: songOwner.stop()
         }
-    }
-
-    /// **自分が鳴らした曲だけ止める**（見る画面の `stopSong` と同じ）
-    private func stopSong() {
-        defer {
-            songSession = nil
-            songPlayed = nil
-        }
-        guard ownsSong else { return }
-        MusicPreviewPlayer.shared.stop()
     }
 
     /// 「ひとことを書く」の欄の上下の端（写真の割合）。曲の札を欄に重ねずに置く（`SongSticker.placedY`）。
