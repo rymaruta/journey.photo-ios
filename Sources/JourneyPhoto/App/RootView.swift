@@ -83,6 +83,13 @@ struct RootView: View {
     @Environment(\.requestReview) private var requestReview
     #endif
     @State private var showStoryComposer = false
+    /// 下書きの一覧から開く下書き（投稿・ストーリー・2026-10-29・#400）。画面を閉じたら忘れる
+    @State private var openPostDraftId: String?
+    @State private var openStoryDraftId: String?
+    /// 下書きを開くのを待っている（待っている間は次の依頼を受けない・二重に開かない）
+    @State private var openingDraft = false
+    /// 待っている間に来た次の依頼（最後の1つ）。前のが終わったら開く（黙って捨てない・2回目の見直し）
+    @State private var queuedDraft: DraftLibrary.Entry?
     /// 「旅の写真からまとめて」（全画面）
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
@@ -942,8 +949,11 @@ struct RootView: View {
             .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
                 uploadSheet
             }
-            .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
-                NavigationStack { StoryComposerView() }
+            .sheet(isPresented: $showStoryComposer, onDismiss: {
+                openStoryDraftId = nil
+                tabRouter.postSheetClosed()
+            }) {
+                NavigationStack { StoryComposerView(openDraft: openStoryDraftId) }
             }
     }
 
@@ -976,6 +986,7 @@ struct RootView: View {
                        startPrivate: !pendingTripPhotos.isEmpty,
                        initialCapture: pendingCapture,
                        resumeJournal: resumeJournalId,
+                       openDraft: openPostDraftId,
                        // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
                        onSaved: { tabRouter.notePosted($0) })
         }
@@ -995,6 +1006,8 @@ struct RootView: View {
                     pendingCapture = nil
                     // 送れなかった投稿の「続きから」も1回だけ
                     resumeJournalId = nil
+                    // 下書きの一覧から開いた下書きも1回だけ（#400）
+                    openPostDraftId = nil
                 }
             }
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
@@ -1016,6 +1029,25 @@ struct RootView: View {
                       PostRequestGate.opens(busy: postScreensShown) else { return }
                 choosePost(kind)
             }
+            // 下書きの一覧から下書きを開く（`TabRouter.openDraft`・2026-10-29・#400）。作る画面から別の種類の
+            // 下書きを選んだ回は、その画面が閉じきるのを待ってから開く（重ねると iOS が遷移を取りこぼす）
+            .onChange(of: tabRouter.draftRequests) { _, _ in
+                guard let entry = tabRouter.takePendingDraft() else { return }
+                guard !openingDraft else {
+                    queuedDraft = entry
+                    return
+                }
+                openingDraft = true
+                Task {
+                    var next: DraftLibrary.Entry? = entry
+                    while let current = next {
+                        await openDraftWhenFree(current)
+                        next = queuedDraft
+                        queuedDraft = nil
+                    }
+                    openingDraft = false
+                }
+            }
     }
 
     /// **投稿の画面が出ているか**の旗の並び。空の画面の一手と端末の旅の一冊は、どれか1つでも出ていたら
@@ -1023,6 +1055,34 @@ struct RootView: View {
     /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
     private var postScreensShown: [Bool] {
         [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
+    }
+
+    /// 下書きを開く。ほかの投稿の画面・シートが出ている間は少し待つ（最大およそ3秒・出ないままなら開かない——
+    /// 一覧に残っているので、もう一度押せる）
+    private func openDraftWhenFree(_ entry: DraftLibrary.Entry) async {
+        // 投稿の画面の旗は空の画面の一手と同じ並び（`postScreensShown`）を見る。加えて、ほかのシート
+        // （ストーリーの輪から開いた作る画面など）が閉じきるのを待つ
+        let free = { PostRequestGate.opens(busy: postScreensShown) && !ModalProbe.isPresenting() }
+        for _ in 0..<20 {
+            if free() { break }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        guard free() else {
+            // 開けなかったことを黙らない（下書きは一覧に残っているので、もう一度押せる）
+            toasts.show(L("下書きを開けませんでした。もう一度お試しください", "Couldn\u{2019}t open the draft. Please try again."),
+                        kind: .failure)
+            return
+        }
+        switch entry.kind {
+        case .post:
+            pendingTripPhotos = []
+            pendingCapture = nil
+            openPostDraftId = entry.id
+            showPhotoUpload = true
+        case .story:
+            openStoryDraftId = entry.id
+            showStoryComposer = true
+        }
     }
 
     /// 投稿の選択シートが閉じきってから、次の画面を開く。
@@ -1195,6 +1255,8 @@ struct RootView: View {
         // Web のような「出さないページ」の判定は要らない
         // 鳴っている間だけ、どの画面にも出る（Web の `MiniPlayer`）。
         // 置き場所は再生器が自分で決める（指で動かせる・タブバーの上は `MiniPlayerPlacement.bottomReserved`）
+        // UI テストだけ: 再生器の後ろに白・模様・黒の見本の地を敷く（透け方の確かめ・`MiniPlayerBackdrop`）
+        .overlay { MiniPlayerBackdrop() }
         .overlay(alignment: .bottom) {
             MiniPlayerBar()
         }

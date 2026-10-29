@@ -7,7 +7,17 @@ struct UploadView: View {
     @EnvironmentObject private var joined: JoinedAlbumsStore
     /// 撮影スポットの索引を読むため（`model.fetchSpotIndex`）。撮影地の欄（`PlaceSearchField`）も同じものを読む
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @StateObject private var model: UploadViewModel
+    /// 下書きの一覧（件数・入口・#400）
+    @ObservedObject private var draftLibrary = DraftLibrary.shared
+    /// 上の「下書き n ›」から開く一覧（2026-10-29・#400）
+    @State private var showDrafts = false
+    /// いっぱいで保存できない書きかけから「下書きを整理する」で開いた一覧
+    @State private var tidyingDrafts = false
+    /// 下書きの件数（上限に数えるもの）と、合計の大きさ
+    @State private var draftCount = 0
+    @State private var draftMegabytes = 0
     @State private var showCamera = false
     @State private var showSongPicker = false
     /// 「この写真を見て撮影」の元の写真を選ぶ画面（`InspiredPickerView`・2026-10-14）
@@ -65,13 +75,17 @@ struct UploadView: View {
     private let initialCapture: CameraCapture?
     /// 起動のときの「送れなかった投稿があります」で「続きから」を押して来た。**もう一度尋ねずに戻す**（2026-10-16）
     private let resumeJournal: String?
+    /// 下書きの一覧から開いた下書き（`DraftLibrary.Entry.id`・2026-10-29・#400）。尋ねずに戻す
+    private let openDraft: String?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
          initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
          initialCapture: CameraCapture? = nil,
          resumeJournal: String? = nil,
+         openDraft: String? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
         self.resumeJournal = resumeJournal
+        self.openDraft = openDraft
         // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
         // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
         self.initialCapture = initialCapture ?? PreviewUploadSample.capture()
@@ -154,21 +168,43 @@ struct UploadView: View {
         // 2026-10-11: **「下書きに保存」を足した**（端末に残す・`UploadDraftStore`）。以前は
         // 「投稿をやめる」「書き続ける」の2択で、閉じると選んだ写真と題・説明が全部消えていた。
         // 保存できないとき（読み込み中・送りかけ）は出さずに理由を言う（`UploadDraftRules.closeDialog`）
-        .confirmationDialog(closeDialog.title, isPresented: $confirmDiscard, titleVisibility: .visible) {
-            if closeDialog.canSave {
-                Button(L("下書きに保存", "Save draft")) { saveDraftAndClose() }
-            }
-            Button(L("投稿をやめる", "Stop posting"), role: .destructive) {
-                // 閉じる確認で「下書きから外します」と言うので、閉じた時点で外す（モデルの注記）
-                model.dropUnsureDraftPhotos()
-                // やめると決めたので、黙って残した書きかけ・この画面の送信の控えも消す（次に開いて尋ねない）
-                model.discardAutoDraft()
-                model.discardJournal()
-                dismiss()
+        //
+        // 2026-10-29（#400「下書きを複数持つ」）: **下書きから開いた回**は「この下書きを更新」（先頭・既定）／
+        // 「別の下書きとして保存」／「変更を残さずに閉じる」。**新しい投稿で下書きがいっぱい**なら保存を出さず
+        // 「下書きを整理する」へ（黙って古いものを消して保存しない）。新しい投稿は前の3択のまま
+        .confirmationDialog(closeTitle, isPresented: $confirmDiscard, titleVisibility: .visible) {
+            if closeChoice == .update {
+                Button(DraftsText.update) { saveDraftAndClose(update: true) }
+                if !DraftLibrary.isFull(count: draftCount) {
+                    Button(DraftsText.saveAsNew) { saveAsNewDraftAndClose() }
+                }
+                Button(DraftsText.closeWithoutChanges, role: .destructive) { stopPosting() }
+            } else if closeChoice == .full {
+                Button(DraftsText.tidy) { openDraftList(tidying: true) }
+                Button(L("投稿をやめる", "Stop posting"), role: .destructive) { stopPosting() }
+            } else {
+                if closeDialog.canSave {
+                    Button(L("下書きに保存", "Save draft")) { saveDraftAndClose() }
+                }
+                Button(L("投稿をやめる", "Stop posting"), role: .destructive) { stopPosting() }
             }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
         } message: {
-            Text(closeDialog.message)
+            Text(closeMessage)
+        }
+        // 下書きの一覧（上の「下書き n ›」・いっぱいのときの「下書きを整理する」）
+        // 削除を本当に済ませた（一覧を閉じた・約6秒たった）ら件数を読み直す。閉じたときの読み直しが削除より
+        // 先に走ると、いっぱいのまま残った（2回目の見直し）
+        .onChange(of: draftLibrary.revision) { _, _ in refreshDraftCount() }
+        .sheet(isPresented: $showDrafts, onDismiss: refreshDraftCount) {
+            NavigationStack {
+                DraftsView(presentation: .sheet, tidying: tidyingDrafts,
+                           onOpen: { entry in openFromList(entry) },
+                           onChoosePhotos: {
+                               showDrafts = false
+                               openLibraryAfterRestorePrompt()
+                           })
+            }
         }
         // 開いたときに一度だけ。黙って戻すと、新しく投稿しに来た人が前の写真に驚く（ストーリーと同じ）
         .alert(L("下書きを続けますか？", "Continue your draft?"), isPresented: $showRestore) {
@@ -242,21 +278,127 @@ struct UploadView: View {
         }
     }
 
-    /// 閉じる確認の中身（`UploadDraftRules.closeDialog`）
+    /// 閉じる確認の中身（`UploadDraftRules.closeDialog`）。下書きは何件でも持てるので「置き換わります」は
+    /// 言わない（`replacesOther: false`・#400）
     private var closeDialog: UploadDraftRules.CloseDialog {
         UploadDraftRules.closeDialog(block: model.draftSaveBlock,
-                                     replacesOther: !model.restoredDraft && model.storedDraft != nil,
+                                     replacesOther: false,
                                      restored: model.restoredDraft,
-                                     unsure: model.hasUnsureDraftPhotos)
+                                     unsure: model.hasUnsureDraftPhotos,
+                                     draftCount: draftCount)
     }
 
-    /// 「下書きに保存」。**書けたときだけ閉じる**（書けなければ上に知らせを出して残る）
-    private func saveDraftAndClose() {
+    /// 閉じるときの選び方（`UploadDraftRules.closeChoice`・#400）
+    private var closeChoice: UploadDraftRules.CloseChoice {
+        UploadDraftRules.closeChoice(block: model.draftSaveBlock, openedDraft: model.restoredDraft,
+                                     full: DraftLibrary.isFull(count: draftCount))
+    }
+
+    private var closeTitle: String {
+        switch closeChoice {
+        case .update: return DraftsText.updateTitle
+        case .full: return DraftsText.fullTitle
+        case .standard: return closeDialog.title
+        }
+    }
+
+    private var closeMessage: String {
+        switch closeChoice {
+        case .update:
+            return model.hasUnsureDraftPhotos
+                ? DraftsText.updateMessage + L("届いたか分からない写真は、二重に投稿しないよう下書きから外します。",
+                                               " Photos that may have already been sent are taken out of the draft so they aren't posted twice.")
+                : DraftsText.updateMessage
+        case .full: return DraftsText.fullMessage(megabytes: draftMegabytes)
+        case .standard: return closeDialog.message
+        }
+    }
+
+    /// 「投稿をやめる」「変更を残さずに閉じる」。開いていた下書きは残る（この回の変更だけ残さない）
+    private func stopPosting() {
+        // 閉じる確認で「下書きから外します」と言うので、閉じた時点で外す（モデルの注記）
+        model.dropUnsureDraftPhotos()
+        // やめると決めたので、黙って残した書きかけ・この画面の送信の控えも消す（次に開いて尋ねない）
+        model.discardAutoDraft()
+        model.discardJournal()
+        dismiss()
+    }
+
+    /// 「下書きに保存」「この下書きを更新」。**書けたときだけ閉じる**（書けなければ上に知らせを出して残る）
+    private func saveDraftAndClose(update: Bool = false) {
         if model.saveDraft() {
+            draftLibrary.noteChanged()
+            toasts.show(update ? DraftsText.updatedToast : DraftsText.savedToast)
             dismiss()
         } else {
             model.errorMessage = L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
                                    "Couldn't save the draft. Check your device's free space.")
+        }
+    }
+
+    /// 「別の下書きとして保存」（開いていた下書きはそのまま残す）
+    private func saveAsNewDraftAndClose() {
+        if model.saveDraftAsNew() {
+            draftLibrary.noteChanged()
+            toasts.show(DraftsText.savedAsNewToast)
+            dismiss()
+        } else {
+            model.errorMessage = L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
+                                   "Couldn't save the draft. Check your device's free space.")
+        }
+    }
+
+    /// 件数を読み直す（上の入口・閉じる確認の「いま n / 20件」・いっぱいか）
+    private func refreshDraftCount() {
+        guard let userId = auth.userId else {
+            draftCount = 0
+            return
+        }
+        draftCount = draftLibrary.count(for: userId)
+        draftMegabytes = DraftLibrary.megabytes(draftLibrary.entries(for: userId))
+    }
+
+    /// 下書きの一覧を開く（上の「下書き n ›」・いっぱいのときの「下書きを整理する」）
+    private func openDraftList(tidying: Bool) {
+        tidyingDrafts = tidying
+        Task {
+            // 確認のダイアログが閉じきってから出す（閉じる途中に重ねると出ないことがある）
+            if tidying { try? await Task.sleep(nanoseconds: 350_000_000) }
+            showDrafts = true
+        }
+    }
+
+    /// 一覧で選んだ下書きを開く。投稿はこの画面に戻す。**ストーリーはこの画面を閉じてストーリーの画面へ渡す**
+    /// （入口は写真がまだ無いときだけ出すので、閉じても失うものは無い）
+    private func openFromList(_ entry: DraftLibrary.Entry) {
+        showDrafts = false
+        guard entry.kind == .post else {
+            TabRouter.shared.openDraft(entry)
+            model.closeWithoutDraft()
+            dismiss()
+            return
+        }
+        Task {
+            // 一覧が閉じきってから戻す
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            if entry.id == DraftLibrary.autoPostId {
+                if model.autoDrafts == nil { model.autoDrafts = UploadDraftStore(slot: .auto) }
+                restoreDraft(from: .auto)
+            } else {
+                openEntry(entry.id)
+            }
+        }
+    }
+
+    /// 一覧から選んだ下書きを開く。**戻せなくても下書きは消さない**（一覧に残り、そこで削除を選べる）
+    private func openEntry(_ id: String) {
+        Task {
+            guard await model.openEntry(id) else {
+                if model.errorMessage == nil {
+                    model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
+                }
+                return
+            }
         }
     }
 
@@ -268,6 +410,8 @@ struct UploadView: View {
                 if model.errorMessage == nil {
                     switch slot {
                     case .saved: model.discardDraft()
+                    // 一覧から開いた下書きは消さない（一覧が「読めない写真」を知らせて選ばせる・#400）
+                    case .entry: break
                     case .auto: model.discardAutoDraft()
                     case .send:
                         if let owner = model.draftOwner { model.drafts?.sibling(slot).clear(for: owner) }
@@ -333,6 +477,43 @@ struct UploadView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
     }
 
+    /// 知らせと下書きの入口（`form` の VStack の上限 10 を超えないよう、ひとまとめ）
+    @ViewBuilder
+    private var topBlock: some View {
+        progressAndErrors
+        // 下書きの入口（「下書き n ›」・2026-10-29・#400）。**写真がまだ無いときだけ**——並べた写真を
+        // 残したまま別の下書きを開くと、今の書きかけが行き場を失う
+        if model.items.isEmpty && !model.isWorking && !model.isRestoringDraft && draftCount > 0 {
+            draftsEntryRow
+        }
+    }
+
+    /// 上の「下書き n ›」（件数バッジは真鍮＋墨＋黒の縁・黒地の上）
+    private var draftsEntryRow: some View {
+        Button { openDraftList(tidying: false) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.pencil")
+                    .font(.body)
+                    .foregroundStyle(WebTheme.text2)
+                    .accessibilityHidden(true)
+                Text(DraftsText.title)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                CountBadge(count: draftCount)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(DraftsText.entryAccessibility(draftCount))
+        .accessibilityIdentifier("upload.drafts")
+    }
+
     /// 案内・帯・「写真を編集」・一言。**ひとまとめにしてある**——`form` の VStack に直に並べると
     /// 10 個を超えて型検査が通らない（ViewBuilder の上限）
     @ViewBuilder
@@ -356,7 +537,7 @@ struct UploadView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
-                progressAndErrors
+                topBlock
                 if let spot = model.spot { spotBanner(spot) }
                 photosBlock
                 // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
@@ -405,6 +586,8 @@ struct UploadView: View {
             guard !Task.isCancelled else { return }
             // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
             guard !showRestore, !showRestoreAuto, askingJournal == nil, !model.isRestoringDraft else { return }
+            // 下書きの一覧から開いた回は開かない（下書きの写真を戻している・#400）
+            guard openDraft == nil else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
                 || initialCapture != nil
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
@@ -451,16 +634,20 @@ struct UploadView: View {
             }
             // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
             // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
-            if model.drafts == nil { model.drafts = UploadDraftStore() }
+            // 2026-10-29（#400）: この画面の下書きは**新しい1件**（保存するまで記録は無い）。
+            // 一覧から開いた回はその1件（下の `openEntry`）
+            if model.drafts == nil { model.drafts = UploadDraftStore(slot: .entry(UUID().uuidString)) }
             if !askedRestore { model.draftOwner = auth.userId }
+            refreshDraftCount()
             let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
-                || initialTag != nil || initialSpot != nil
+                || initialTag != nil || initialSpot != nil || openDraft != nil
             // 送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
             let autoStore = UploadDraftStore(slot: .auto)
             let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
             let journalIds = auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? []
+            // 本人の下書きは尋ねない（何件にもなるので一覧から選ぶ・`UploadDraftRules.openAction` の注記）
             let action = UploadDraftRules.openAction(journalIds: journalIds, hasAutoDraft: hasAuto,
-                                                     hasSavedDraft: model.storedDraft != nil,
+                                                     hasSavedDraft: false,
                                                      opensWithContent: opensWithContent, alreadyAsked: askedRestore,
                                                      resumeJournal: resumeJournal)
             // 🔴 尋ねていない書きかけには触らない（`ownsAutoSlot`）。触らない回は書きかけの枠を渡さない
@@ -474,6 +661,15 @@ struct UploadView: View {
             case .askAuto: showRestoreAuto = true
             case .askSaved: showRestore = true
             case .none: break
+            }
+            // 一覧から開いた下書き（一度だけ）
+            if let openDraft, !askedRestore {
+                if openDraft == DraftLibrary.autoPostId {
+                    if model.autoDrafts == nil { model.autoDrafts = autoStore }
+                    restoreDraft(from: .auto)
+                } else {
+                    openEntry(openDraft)
+                }
             }
             askedRestore = true
         }

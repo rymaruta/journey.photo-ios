@@ -87,6 +87,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、全体の再生器の後ろに見本の地（白・模様・黒の3段）を敷く（Debug のみ・2026-10-29・#402）。
+    /// `-JPPreviewMiniPlayerBackdrop YES`。再生器の地を透かしたので、白い写真・模様の多い写真・黒い写真の上で
+    /// 曲名が読めるかを毎回同じ絵で見る（`MiniPlayerBackdrop`）。Release では必ず false
+    static let miniPlayerBackdropKey = "JPPreviewMiniPlayerBackdrop"
+
+    static var miniPlayerBackdrop: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: miniPlayerBackdropKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
@@ -181,6 +194,22 @@ enum PreviewSession {
     /// （`PreviewUploadSample`）をカメラで撮った1枚と同じ道で入れる。**入っている見本の利用者のときだけ**
     /// 効く。Release では必ず false
     static let uploadSampleKey = "JPPreviewUploadSample"
+
+    /// UI テストで下書きの一覧（#400）を見本の中身で出す（Debug のみ・2026-10-29）。`-JPPreviewDrafts YES`
+    /// （投稿・ストーリー・自動の書きかけ・期限が近いもの・読めない写真のあるもの）。端末の中に書くだけで、
+    /// サーバーには何も送らない（下書きはもともと端末だけ・`PreviewDraftsSample`）。
+    /// 入っている見本の利用者のときだけ効く。Release では必ず false
+    static let draftsSampleKey = "JPPreviewDrafts"
+
+    static var seedsDraftsSample: Bool {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: draftsSampleKey)?.lowercased() else { return false }
+        return ["yes", "true", "1"].contains(raw)
+        #else
+        return false
+        #endif
+    }
 
     static var opensUploadSample: Bool {
         #if DEBUG

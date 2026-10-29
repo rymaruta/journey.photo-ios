@@ -3,9 +3,11 @@ import Combine
 
 /// ストーリーの下書き（モック4 の「下書き保存」）。
 ///
-/// **1件だけ**（1件の中に並べた写真は全部入る）。ストーリーは24時間で消える一過性のもので、何本も下書きを
-/// 貯める使い方をしない。2件目を保存したら1件目は上書きする——
-/// 一覧を作ると「どれが最新か」を選ばせることになる。
+/// **人ごとに何件でも**（2026-10-29 判断・#400・`Slot.entry`）。1件の中に並べた写真は全部入る。
+/// 以前は1件だけで、2件目を保存すると1件目を上書きしていた——owner が「下書きを複数持つ」を選び、
+/// 下書きの一覧（`DraftsView`）から選ぶ形にした。投稿の下書きと合わせて上限は `DraftLibrary.limit`、
+/// **保存から7日で消える**（`DraftLibrary.storyLifetime`・ストーリーは一過性のもの）。
+/// 前の版の1件（`Slot.saved` の鍵）は `migrateLegacySaved` で新しい形の1件に移す（失わない）。
 ///
 /// **サーバーには無い。** `api-user` のストーリーは投稿の口しか持たない
 /// （下書きの概念があるのは写真の方）。だから端末に置く。機種を変えると
@@ -108,10 +110,16 @@ final class StoryDraftStore: ObservableObject {
     private var userId: String?
 
     /// 下書きの枠（2026-10-16 判断・`UploadDraftStore.Slot` と同じ考え）。
-    /// `saved` は本人が「下書き保存」で残したもの、`auto` は**裏に回ったときに黙って残す書きかけ**
-    /// （OS にアプリを終了されても消えない）。本人の下書きを黙って上書きしないよう、別の鍵に置く
-    enum Slot: Equatable { case saved, auto }
-    let slot: Slot
+    /// `auto` は**裏に回ったときに黙って残す書きかけ**（OS にアプリを終了されても消えない）。
+    /// 本人の下書きを黙って上書きしないよう、別の鍵に置く。
+    /// `entry(id)` は本人が「下書き保存」で残した1件（2026-10-29・#400・ID は UUID）。
+    /// `saved` は前の版の「人ごとに1件」の鍵——**読むのは移すときだけ**（`migrateLegacySaved`）
+    enum Slot: Equatable {
+        case saved, auto
+        case entry(String)
+    }
+    /// 枠。**作る画面が開く下書きを替えるときだけ変わる**（`select(entry:)`）
+    private(set) var slot: Slot
 
     /// - Parameters:
     ///   - directory: 画像を置く場所。既定は Application Support
@@ -128,19 +136,92 @@ final class StoryDraftStore: ObservableObject {
 
     /// 枠ごとの鍵の頭。自動の枠も `journey-photo-story-draft:` で始まる——掃除（`sweepOrphans`）は
     /// どちらの枠からでも両方の画像を「指されている」と読む
-    private var base: String { slot == .saved ? Self.key : "\(Self.key):auto" }
+    private var base: String {
+        switch slot {
+        case .saved, .entry: return Self.key
+        case .auto: return "\(Self.key):auto"
+        }
+    }
 
     /// **アカウントごとに分ける**（`FavoritesStore` と同じ理由——同じ端末で
     /// 人が変わったとき、前の人の書きかけを見せない）。
+    /// 下書き（`entry`）は `journey-photo-story-draft:entry:<userId>:<ID>`。ログインしていない人の下書きは
+    /// 一覧に出ない鍵（userId が空）になる——投稿もできないので、作る画面は先にログインを求める
     private func key(for userId: String?) -> String {
+        if case .entry(let id) = slot { return "\(Self.entryPrefix(for: userId ?? ""))\(id)" }
         guard let userId, !userId.isEmpty else { return base }
         return "\(base):\(userId)"
+    }
+
+    /// その人の下書きの鍵の頭（`journey-photo-story-draft:entry:<userId>:`）
+    static func entryPrefix(for userId: String) -> String { "\(key):entry:\(userId):" }
+
+    /// 鍵がその人の下書きなら、その ID。**頭の後ろが UUID ちょうどのときだけ**（userId に「:」を含む
+    /// 別の人 "a" と "a:b" を取り違えない・`UploadDraftStore.journalId` と同じ）
+    static func entryId(fromKey key: String, userId: String) -> String? {
+        let prefix = entryPrefix(for: userId)
+        guard !userId.isEmpty, key.hasPrefix(prefix) else { return nil }
+        let rest = String(key.dropFirst(prefix.count))
+        guard let uuid = UUID(uuidString: rest), uuid.uuidString == rest.uppercased() else { return nil }
+        return rest
+    }
+
+    /// その人の下書きの ID（順は決めない・並べるのは `DraftLibrary`）
+    static func entryIds(for userId: String, defaults: UserDefaults = .standard) -> [String] {
+        defaults.dictionaryRepresentation().keys.compactMap { entryId(fromKey: $0, userId: userId) }
+    }
+
+    /// 開いている下書きの ID（`entry` のときだけ）
+    var entryId: String? {
+        if case .entry(let id) = slot { return id }
+        return nil
+    }
+
+    /// 開く下書きを替える（作る画面が一覧から選んだ下書き・「別の下書きとして保存」の新しい1件）。
+    /// 書いている途中の裏の保存は前の下書きに書かない（`saveGeneration`）
+    func select(entry id: String) {
+        guard slot != .auto else { return }
+        saveGeneration += 1
+        slot = .entry(id)
+        draft = load()
+    }
+
+    /// 🔴 **前の版の「人ごとに1件」の下書きを、新しい形の1件に移す**（2026-10-29・#400）。記録をそのまま
+    /// 新しい鍵へ移し、前の鍵を消す（画像の名前は変えない——記録が指すので掃除にも消されない）。
+    /// 送っている最中の下書きの印（`StoryUploadCenter.pendingDraftStamp`＝保存した時刻）も変わらない。
+    /// 何度呼んでも同じ（前の鍵が無ければ何もしない）
+    @discardableResult
+    static func migrateLegacySaved(for userId: String, defaults: UserDefaults = .standard,
+                                   newId: String = UUID().uuidString) -> String? {
+        guard !userId.isEmpty else { return nil }
+        let legacy = "\(key):\(userId)"
+        guard let data = defaults.data(forKey: legacy) else { return nil }
+        guard (try? JSONDecoder().decode(Draft.self, from: data)) != nil else {
+            // 読めない記録は移さない（画像は記録から外れるので、次の掃除が片づける）
+            defaults.removeObject(forKey: legacy)
+            return nil
+        }
+        // 移す先に別の中身の下書きが既にあれば上書きしない（古い版に戻して再び上げた回・`UploadDraftStore` と同じ）
+        var id = newId
+        if let existing = defaults.data(forKey: "\(entryPrefix(for: userId))\(newId)"), existing != data {
+            id = UUID().uuidString
+        }
+        defaults.set(data, forKey: "\(entryPrefix(for: userId))\(id)")
+        defaults.removeObject(forKey: legacy)
+        return id
     }
 
     func use(userId: String?) {
         self.userId = userId
         draft = load()
         sweepOrphans()
+    }
+
+    /// 人を決めて読むだけ（掃除しない）。一覧（`DraftLibrary`）が下書きを1件ずつ読むときに使う——
+    /// 件数ぶん置き場を見回さない
+    func bind(userId: String?) {
+        self.userId = userId
+        draft = load()
     }
 
     /// 並びを保存するときの名前。**保存のたびに新しい印（`token`）を付ける。**
@@ -196,6 +277,9 @@ final class StoryDraftStore: ObservableObject {
     private func load() -> Draft? {
         guard let data = defaults.data(forKey: key(for: userId)),
               var saved = try? JSONDecoder().decode(Draft.self, from: data) else { return nil }
+        // 🔴 **本人の下書き（`entry`）は、画像が欠けても片づけない**（2026-10-29・#400）。一覧が
+        // 「n枚を読み込めません」と知らせ、「読めた分で続ける／この下書きを削除」を選ばせる
+        if entryId != nil { return saved }
         // **中身の無い下書きを出さない。** 画像が消えていたら（端末の掃除・
         // 移行）「続きから」を押しても白い画面になる。印ごと片づける
         guard FileManager.default.fileExists(atPath: fileURL(saved.imageFile).path) else {
@@ -224,13 +308,14 @@ final class StoryDraftStore: ObservableObject {
     }
 
     /// 下書きの並び（画像の中身つき）。**1枚目が読めなければ空**
-    /// ——2枚目以降で読めないものは外す（並びの残りは戻す）
+    /// ——2枚目以降で読めないものは外す（並びの残りは戻す）。
+    /// 本人の下書き（`entry`）は1枚目が読めなくても残りを返す（「読めた分で続ける」・2026-10-29）
     func shotImages() -> [(shot: Shot, data: Data)] {
         guard let draft else { return [] }
         var result: [(shot: Shot, data: Data)] = []
         for (i, shot) in draft.shots.enumerated() {
             guard let data = try? Data(contentsOf: fileURL(shot.imageFile)) else {
-                if i == 0 { return [] }
+                if i == 0 && entryId == nil { return [] }
                 continue
             }
             result.append((shot: shot, data: data))
@@ -356,6 +441,17 @@ final class StoryDraftStore: ObservableObject {
             try? FileManager.default.removeItem(at: fileURL(name))
         }
         return true
+    }
+
+    /// 1枚の画像の置き場所（一覧の縮図を読む・大きさを数える・読めるか確かめる）
+    func imageURL(_ shot: Shot) -> URL { fileURL(shot.imageFile) }
+
+    /// 退会: その人の下書き（`entry`）を全部（記録と画像）消す（2026-10-29・#400）
+    static func removeAllEntries(for userId: String, defaults: UserDefaults = .standard, directory: URL? = nil) {
+        for id in entryIds(for: userId, defaults: defaults) {
+            let store = StoryDraftStore(defaults: defaults, directory: directory, slot: .entry(id))
+            store.removeData(for: userId)
+        }
     }
 
     /// 退会した人の書きかけを消す（`AccountLocalData`）。**画像のファイルも**

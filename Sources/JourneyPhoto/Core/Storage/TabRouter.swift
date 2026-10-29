@@ -77,6 +77,22 @@ final class TabRouter: ObservableObject {
         return pendingPost
     }
 
+    /// **下書きの一覧から下書きを開く**（2026-10-29・#400「下書きを複数持つ」）。開くのは下の「投稿」と同じ
+    /// 投稿・ストーリーの画面（`RootView`）——写して作らない。回数で伝えるのは上と同じ理由
+    @Published private(set) var draftRequests = 0
+    /// 開く下書き。`RootView` が受け取ったら消す（`takePendingDraft`）
+    private(set) var pendingDraft: DraftLibrary.Entry?
+
+    func openDraft(_ entry: DraftLibrary.Entry) {
+        pendingDraft = entry
+        draftRequests += 1
+    }
+
+    func takePendingDraft() -> DraftLibrary.Entry? {
+        defer { pendingDraft = nil }
+        return pendingDraft
+    }
+
     /// **ホームを開いたまま、下の「ホーム」をもう一度押した回数。**
     /// ホームのフィードはこれを見て一番上まで戻る（Instagram・X と同じ動き。
     /// owner の依頼・2026-09-25）。回数で伝えるのは上と同じ理由——

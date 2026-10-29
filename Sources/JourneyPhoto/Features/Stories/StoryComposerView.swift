@@ -16,7 +16,27 @@ import UIKit
 struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
-    @EnvironmentObject private var drafts: StoryDraftStore
+    /// この画面の下書き（**1件**・2026-10-29・#400「下書きを複数持つ」）。新しいストーリーは新しい ID
+    /// （保存するまで記録は無い）、一覧から開いた下書きはその ID（`select(entry:)`）。
+    /// 「下書き保存」「この下書きを更新」はこの1件に書き、ほかの下書きには触らない
+    @StateObject private var drafts = StoryDraftStore(slot: .entry(UUID().uuidString))
+    /// 下書きの一覧（件数・入口）
+    @ObservedObject private var draftLibrary = DraftLibrary.shared
+    /// 写真選びの上の「下書き n ›」から開く一覧（#400）
+    @State private var showDrafts = false
+    /// いっぱいで保存できない書きかけから「下書きを整理する」で開いた一覧
+    @State private var tidyingDrafts = false
+    /// 下書きの件数（上限に数えるもの）と合計の大きさ
+    @State private var draftCount = 0
+    @State private var draftMegabytes = 0
+    /// 「…」の「下書き保存」を下書きから開いた回に押した（「この下書きを更新／別の下書きとして保存」）
+    @State private var showSaveChoice = false
+    /// 下書きの一覧から開いた下書き（`DraftLibrary.Entry.id`）。尋ねずに戻す
+    private let openDraft: String?
+
+    init(openDraft: String? = nil) {
+        self.openDraft = openDraft
+    }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
     @Environment(\.scenePhase) private var scenePhase
@@ -80,6 +100,8 @@ struct StoryComposerView: View {
     @State private var showSongPicker = false
     /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
     @State private var showSongStart = false
+    /// 付けた曲をその場で流す（Issue #403・`StoryComposerSong`）。この画面が鳴らした回（`MusicPreviewPlayer.session`）と中身
+    @StateObject private var songOwner = StoryComposerSong.Owner()
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
@@ -125,6 +147,11 @@ struct StoryComposerView: View {
     private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
+    /// ひとことを打ち始めようとしている（写真を押した・「…」の「ひとことを書く」）。ピントが入る前に欄を出す
+    /// ——描いていない欄にはピントを渡せない。ピントが外れたら下ろす（2026-10-29 判断 #404）
+    @State private var captionOpening = false
+    /// 入口の案内「写真を押してひとこと」（端末に1回だけ・数秒で消える・2026-10-29 判断 #404）
+    @State private var showCaptionHint = false
     /// 撮影地を打つ（写真の下の道具の「場所」）
     @State private var showPlaceEditor = false
     /// 写真を選ぶ画面（並びの帯の「＋」から開く・足すとき）
@@ -249,7 +276,7 @@ struct StoryComposerView: View {
         }
     }
 
-    private var composer: some View {
+    private var composerBase: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
@@ -330,10 +357,23 @@ struct StoryComposerView: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    private var composerMiddle: some View {
+        composerBase
         // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
         .onChange(of: current) { _, _ in voteSelected = false }
         // キーボードを避けたい欄に移ったら、写真の枠もキーボードを避ける側へ戻す
-        .onChange(of: captionFocused) { _, focused in if focused { photoIgnoresKeyboard = false } }
+        .onChange(of: captionFocused) { _, focused in
+            if focused { photoIgnoresKeyboard = false } else { captionOpening = false }
+        }
+        // 欄を出したらピントを渡し、置いたままの曲の札を欄の外へ（2026-10-29 判断 #404）。
+        // 打っている間に欄が伸びたときも（`clearSongStickersOfCaption` は打っていなければ何もしない）
+        .onChange(of: captionOpening) { _, opening in if opening { captionOpened() } }
+        .onChange(of: captionHeight) { _, _ in clearSongStickersOfCaption() }
+        // 写真が入ったら、入口の案内を一度だけ（`StoryTextEditing.shouldShowCaptionHint`）
+        .onChange(of: preview != nil) { _, loaded in if loaded { offerCaptionHint() } }
+        .onAppear { if preview != nil { offerCaptionHint() } }
         .onChange(of: votePanelOpen) { _, open in if open { photoIgnoresKeyboard = false } }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
@@ -357,6 +397,10 @@ struct StoryComposerView: View {
                 self.song = song.fitting(window: window)
             }
         }
+        // 付けた曲をその場で流す（Issue #403・2026-10-29 判断は `StoryComposerSong`）。付けた・替えた・流し始めや
+        // 表示秒数を直した → 流し直す。外した → 止める。シートで覆われた間は一時停止
+        .onChange(of: songCue) { _, _ in syncSong() }
+        .onChange(of: songHeldOnScreen) { _, _ in syncSong() }
         // 曲のジャケット（曲の札に描く）。曲の `artwork` を読むだけ（新しい通信先は無い・`SongArtwork`）
         .task(id: song?.artwork) {
             guard let url = song?.artwork else { songArtwork = nil; return }
@@ -397,14 +441,32 @@ struct StoryComposerView: View {
             // 「撮影地の位置を付ける」の今の値で言い分ける（2026-10-18・変えるのは「誰に見せる？」）
             Text(StoryLocationText.placeEditorNote(attaches: attachesLocation))
         }
+    }
+
+    // 2026-10-29: 本体の修飾子の鎖が長く、Xcode の型検査が時間切れになった（PR #405）。4つ（Base・Middle・Head・本体）に分けて型を確かめる
+    private var composerHead: some View {
+        composerMiddle
         // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
-        .onDisappear { stopWaitingToPost() }
+        .onDisappear {
+            stopWaitingToPost()
+            // 閉じた・シェアした（どちらも dismiss）ら止める。**自分の鳴らした回だけ**。
+            // カメラを開いたときもここへ来るが、そのときは止めない（覆いの一時停止に任せる・戻ったら続きから）。
+            // カメラを開いたまま外から閉じられたときは `songOwner` が消えるときに止める
+            if !showCamera { songOwner.stop() }
+        }
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
+            // 前の版の「1件だけ」の下書きを新しい形に移し、期限の過ぎた下書きを消してから読む（#400）
+            if let userId = auth.userId { draftLibrary.prepare(for: userId) }
             drafts.use(userId: auth.userId)
             autoDrafts.use(userId: auth.userId)
+            refreshDraftCount()
             loadAttachesLocation(for: auth.userId)
+            // 2026-10-29 判断: ほかで鳴っている曲は止める（`StoryComposerSong.Owner.stopOthers`）
+            songOwner.stopOthers()
+            // 下書きから開いた・カメラから戻ったときも、曲が付いていれば流す
+            syncSong()
             // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
@@ -418,6 +480,17 @@ struct StoryComposerView: View {
                 return
             }
             let hasAuto = autoDrafts.draft != nil
+            // 下書きの一覧から開いた（尋ねずに戻す・#400）。自動の書きかけを開いた回はその枠を使ってよい
+            if let openDraft {
+                if openDraft == DraftLibrary.autoStoryId {
+                    autoSlotOwned = true
+                    restoreDraft(from: autoDrafts)
+                } else {
+                    autoSlotOwned = !hasAuto
+                    openEntry(openDraft)
+                }
+                return
+            }
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
@@ -441,6 +514,8 @@ struct StoryComposerView: View {
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
         .onChange(of: scenePhase) { _, phase in
+            // 前面にいない間は曲を止めておく（戻ったら続きから）
+            syncSong(foreground: phase == .active)
             // 裏の猶予は**裏に回ったこの瞬間に**取る（Task が走るのを待つと、その前に止められうる）
             if phase == .background {
                 let window = BackgroundWindow(name: "story-autosave")
@@ -450,6 +525,10 @@ struct StoryComposerView: View {
                 }
             }
         }
+    }
+
+    private var composer: some View {
+        composerHead
         .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
             Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
             Button(L("削除", "Delete"), role: .destructive) { clearAutoDraft() }
@@ -507,19 +586,132 @@ struct StoryComposerView: View {
         //
         // 🔴 **写真の読み込み中は「下書きに保存」を出さない**（`leaveDialog`）。右上の「…」の
         // 下書き保存と同じ条件——片方だけ止めると、読み込み中の写真を落とした下書きが別の口から書けた
+        //
+        // 2026-10-29（#400）: 下書きから開いた回は「この下書きを更新」（先頭・既定）／「別の下書きとして保存」／
+        // 「変更を残さずに閉じる」。新しいストーリーで下書きがいっぱいなら保存を出さず「下書きを整理する」へ
         .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
                            title: leaveDialog.title,
                            canSave: leaveDialog.canSave,
-                           saveTitle: L("下書きに保存", "Save draft"),
-                           discardTitle: L("保存せずに閉じる", "Close without saving"),
+                           saveTitle: leaveDialog.saveTitle,
+                           secondaryTitle: leaveDialog.secondary?.title,
+                           discardTitle: leaveDialog.discardTitle,
                            message: leaveDialog.message,
                            onSave: { saveDraft() },
+                           onSecondary: {
+                               switch leaveDialog.secondary {
+                               case .saveAsNew?: saveDraft(asNew: true)
+                               case .tidy?: openDraftList(tidying: true)
+                               case nil: break
+                               }
+                           },
                            onDiscard: {
                                stopWaitingToPost()
                                // 保存せずに閉じると決めたので、黙って残した書きかけも消す
                                clearAutoDraft()
                                dismiss()
                            })
+        // 「…」の「下書き保存」を下書きから開いた回に押した
+        .confirmationDialog(DraftsText.updateTitle, isPresented: $showSaveChoice, titleVisibility: .visible) {
+            Button(DraftsText.update) { saveDraft() }
+            if !DraftLibrary.isFull(count: draftCount) {
+                Button(DraftsText.saveAsNew) { saveDraft(asNew: true) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(DraftsText.updateMessage)
+        }
+        // 下書きの一覧（写真選びの上の「下書き n ›」・いっぱいのときの「下書きを整理する」）
+        // 削除を本当に済ませたら件数を読み直す（閉じたときの読み直しが削除より先に走っても残らない）
+        .onChange(of: draftLibrary.revision) { _, _ in refreshDraftCount() }
+        .sheet(isPresented: $showDrafts, onDismiss: refreshDraftCount) {
+            NavigationStack {
+                DraftsView(presentation: .sheet, initialFilter: tidyingDrafts ? nil : .story,
+                           tidying: tidyingDrafts,
+                           onOpen: { entry in openFromList(entry) })
+            }
+        }
+    }
+
+    // MARK: - 下書き（2026-10-29・#400）
+
+    /// 件数を読み直す（入口・閉じる確認・いっぱいか）
+    private func refreshDraftCount() {
+        guard let userId = auth.userId else {
+            draftCount = 0
+            return
+        }
+        draftCount = draftLibrary.count(for: userId)
+        draftMegabytes = DraftLibrary.megabytes(draftLibrary.entries(for: userId))
+    }
+
+    /// いま開いている下書きが保存されている（下書きから開いた・`drafts.draft` が在る）
+    private var openedSavedDraft: Bool { drafts.draft != nil }
+
+    private func openDraftList(tidying: Bool) {
+        tidyingDrafts = tidying
+        Task {
+            // 確認のダイアログが閉じきってから出す
+            if tidying { try? await Task.sleep(nanoseconds: 350_000_000) }
+            showDrafts = true
+        }
+    }
+
+    /// 一覧で選んだ下書きを開く。ストーリーはこの画面に戻す。**投稿はこの画面を閉じて投稿の画面へ渡す**
+    /// （入口は写真がまだ無いときだけ出すので、閉じても失うものは無い）
+    private func openFromList(_ entry: DraftLibrary.Entry) {
+        showDrafts = false
+        guard entry.kind == .story else {
+            TabRouter.shared.openDraft(entry)
+            closeWithoutChanges()
+            return
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard shots.isEmpty else { return }
+            if entry.id == DraftLibrary.autoStoryId {
+                autoSlotOwned = true
+                restoreDraft(from: autoDrafts)
+            } else {
+                openEntry(entry.id)
+            }
+        }
+    }
+
+    /// その下書きを今の下書きにして戻す（読めない写真は外して戻す・一覧で「読めた分で続ける」を選んで来た）
+    private func openEntry(_ id: String) {
+        drafts.select(entry: id)
+        guard drafts.draft != nil else {
+            message = L("下書きが見つかりませんでした", "Couldn\u{2019}t find that draft")
+            return
+        }
+        restoreDraft()
+    }
+
+    /// 写真選びの上の「下書き n ›」（件数バッジは真鍮＋墨＋黒の縁・黒地の上）
+    private var draftsEntryRow: some View {
+        Button { openDraftList(tidying: false) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.pencil")
+                    .font(.body)
+                    .foregroundStyle(WebTheme.text2)
+                    .accessibilityHidden(true)
+                Text(DraftsText.title)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                CountBadge(count: draftCount)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, JPSpace.m)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(DraftsText.entryAccessibility(draftCount))
+        .accessibilityIdentifier("story.drafts")
     }
 
     // MARK: - 写真
@@ -543,8 +735,11 @@ struct StoryComposerView: View {
                                 // **押したらすぐ打つ画面へ**（時刻・日付は書体・色・大きさだけ）。スタンプは何もしない
                                 if StoryTextEditing.opensTyping(overlay) { startTyping(overlay.id) }
                             },
-                            // 写真を押したら投票の欄を閉じる
-                            onTapPhoto: { voteSelected = false },
+                            // 写真を押したら投票の欄を閉じる。何も無い所を押したら、ひとことを打ち始める・
+                            // 打ち終える（2026-10-29 判断 #404・`StoryTextEditing.photoTap`）
+                            onTapPhoto: { tapPhoto() },
+                            // VoiceOver の入口（見えない空の欄は読み上げから外している）
+                            onWriteCaption: { startCaption() },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
                             onDelete: { id in deleteOverlay(id) },
                             onDraggingChange: { dragging in
@@ -581,6 +776,11 @@ struct StoryComposerView: View {
         .overlay(alignment: .center) {
             if showPlaceHint && typingId == nil && !draggingOverlay {
                 placeHint
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showCaptionHint && typingId == nil && !draggingOverlay && !votePanelOpen && !captionShown {
+                captionHint
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -685,6 +885,12 @@ struct StoryComposerView: View {
             .padding(.horizontal, 8)
             .padding(.top, 2)
             .padding(.bottom, 6)
+
+            // 写真選びの手前に下書きの入口（2026-10-29・#400）。下書きが無ければ出さない
+            if draftCount > 0 && loadingPicks == 0 {
+                draftsEntryRow
+                    .padding(.bottom, 4)
+            }
 
             // 選んだ順に並ぶ。🔴 **`.continuousAndOrdered` でなければならない**（2026-10-09）。
             // `.ordered` は「追加」を押した時にだけ選択を渡すが、その「追加」は下で止めている——
@@ -846,6 +1052,105 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 「ひとこと」の欄が見えているか（書いてある・打っている・打ち始めた直後）。`StoryTextEditing.showsCaptionField`
+    private var captionShown: Bool {
+        StoryTextEditing.showsCaptionField(caption: caption, focused: captionFocused, opening: captionOpening)
+    }
+
+    /// 写真の真ん中に何か出ているか（ひとことの欄か、撮影地の札・候補）。曲の札はこれを避ける
+    private var captionAreaShown: Bool {
+        captionShown || !place.location.isEmpty || place.chip != nil
+    }
+
+    /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内・VoiceOver の操作）。
+    /// **欄を先に出し、出した状態が反映されてからピントを渡す**（`captionOpening` の `onChange` →
+    /// `captionOpened`）。同じ回に渡すと、まだ見えない欄でキーボードが出ないことがある（2026-10-29 のレビュー:
+    /// `Task.yield()` は描き直しの後を保証しない）。`delay` はメニューが閉じ切るのを待つ分
+    private func startCaption(after delay: Duration = .zero) {
+        guard typingId == nil, shots.indices.contains(current) else { return }
+        voteSelected = false
+        showCaptionHint = false
+        guard delay > .zero else {
+            captionOpening = true
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            captionOpening = true
+        }
+    }
+
+    /// 欄を出した（`captionOpening` が立った）後。ここでピントを渡し、置いたままの曲の札を欄の外へ。
+    /// ピントが入らず（別のシートが開いた等）空のままなら、欄を下ろす（空の欄を出したままにしない）
+    private func captionOpened() {
+        captionFocused = true
+        clearSongStickersOfCaption()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            if !captionFocused && caption.isEmpty { captionOpening = false }
+        }
+    }
+
+    /// 写真の何も無い所を押した（札・投票は札が先に取る）。`StoryTextEditing.photoTap`
+    private func tapPhoto() {
+        switch StoryTextEditing.photoTap(caption: caption, captionFocused: captionFocused, voteOpen: voteSelected) {
+        case .closeVote: voteSelected = false
+        case .endCaption: captionFocused = false
+        case .startCaption: startCaption()
+        case .none: break
+        }
+    }
+
+    /// 入口の案内「写真を押してひとこと」（2026-10-29 判断 #404・板 v2 の「指で動かす · 2本指で回す」と
+    /// 同じ形: 写真の上なので白い字に黒の地・13pt・真鍮は使わない）。**押すとそのまま打ち始める**。
+    /// 置き場は写真の下の方（真ん中は曲の札とひとことの欄が来る所）
+    private var captionHint: some View {
+        Button { startCaption() } label: {
+            Text(StoryTextEditing.captionHint)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.6), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("ひとことを打ち始めます", "Starts writing a caption"))
+        .accessibilityIdentifier("story.captionHint")
+        .padding(.bottom, 96)
+        .transition(.opacity)
+    }
+
+    /// 入口の案内を出す（写真が入った・ひとことが空・端末で1回だけ）。数秒で消す
+    private func offerCaptionHint() {
+        guard !shots.isEmpty, typingId == nil, !captionShown,
+              StoryTextEditing.shouldShowCaptionHint(caption: caption) else { return }
+        StoryTextEditing.markCaptionHintShown()
+        withAnimation(.easeOut(duration: 0.2)) { showCaptionHint = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(StoryTextEditing.captionHintSeconds))
+            withAnimation(.easeOut(duration: 0.3)) { showCaptionHint = false }
+        }
+    }
+
+    /// 打ち始めた・打っている間に欄が伸びたら、置いたままの曲の札で欄に掛かるものを欄の外へ
+    /// （`SongSticker.clearedOfCaption`）。写真ごとに大きさが違うので、欄の端は写真ごとに測り直す。
+    /// 🔴 **打ち始めた（`captionOpening`・`captionFocused`）ときだけ動かす**（2026-10-29 のレビュー）。
+    /// 下書きを開いた・欄を測っただけで動かすと、開いたときの中身（`restoredContent`）とずれて、
+    /// 何もしていないのに閉じるときに確認が出た。
+    /// つまんで大きくしただけの札（`songMoved` は立たない）は置き直しの対象（意図どおり: 置いた位置のまま
+    /// 大きくした札は、まだ「置いたまま」とみなす）
+    private func clearSongStickersOfCaption() {
+        guard captionOpening || captionFocused, let song else { return }
+        for i in shots.indices {
+            let band = SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize,
+                                               image: shots[i].imageSize)
+            let next = SongSticker.clearedOfCaption(shots[i].overlays, song: song, image: shots[i].imageSize,
+                                                    band: band)
+            if next != shots[i].overlays { shots[i].overlays = next }
+        }
+    }
+
     /// 写真の上のひとこと（明朝 30・影）と撮影地の札。**ひとことはその場で打つ**。
     /// v2: 見る画面と同じ 30（v1 は 32 で、作った形と見える形がずれていた）
     /// 曲は動かせる札として写真に置く（`SongSticker`）
@@ -866,6 +1171,9 @@ struct StoryComposerView: View {
                 .foregroundStyle(Color.white.opacity(Self.captionHintOpacity)),
                axis: .vertical)
                 .focused($captionFocused)
+                // 隠している間（高さ0で画面に残す）は別の名札にする。XCUI は隠した欄の枠も高さのある物として
+                // 返した（PR #405）ので、見えている欄だけを "story.caption" と呼ぶ（2026-10-29）
+                .accessibilityIdentifier(captionShown ? "story.caption" : "story.caption.hidden")
                 .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
@@ -880,6 +1188,14 @@ struct StoryComposerView: View {
                             .accessibilityHidden(true)
                     }
                 }
+                // 🔴 2026-10-29 判断（#404）: **空で打っていない欄は描かない**（帯も案内も・高さも取らない）。
+                // 入口は写真を押す・「…」・一度だけの案内。木からは外さず見えなくするだけ（外すと、写真を
+                // 押したときにピントを渡す欄が無い）。見えない間は指も読み上げも素通り。撮影地の札は今のまま出す
+                .frame(height: captionShown ? nil : 0)
+                .opacity(captionShown ? 1 : 0)
+                .allowsHitTesting(captionShown)
+                .accessibilityHidden(!captionShown)
+                .padding(.bottom, captionShown ? 0 : -10)
             if !place.location.isEmpty {
                 photoChip(symbol: "mappin", text: place.location)
             } else if let spot = place.chip {
@@ -1084,7 +1400,8 @@ struct StoryComposerView: View {
             } label: {
                 Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
             }
-            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
+            // やめた——1回押しでひとことを打ち始めるのが、2回押しを待つ分 0.3 秒遅れた）
             if !framing.wrappedValue.isIdentity {
                 Button {
                     framing.wrappedValue = .identity
@@ -1092,10 +1409,19 @@ struct StoryComposerView: View {
                     Label(L("写真の合わせ方を戻す", "Reset photo framing"), systemImage: "arrow.counterclockwise")
                 }
             }
+            // ひとことの入口（写真を押すと打ち始める、が見つからない人の逃げ道・2026-10-29 判断 #404）。
+            // メニューが閉じ切ってからピントを渡す
+            Button {
+                startCaption(after: .milliseconds(350))
+            } label: {
+                Label(caption.isEmpty ? L("ひとことを書く", "Write a caption") : L("ひとことを直す", "Edit caption"),
+                      systemImage: "character.cursor.ibeam")
+            }
             // **写真が無ければ下書きにできない。** 文字だけ残しても「続きから」で出すものが無い。
             // 残すと決めた下書きがある間・読み込み中も止める（前の「下書き保存」と同じ条件）
             Button {
-                saveDraft()
+                // 下書きから開いた回は「この下書きを更新／別の下書きとして保存」を尋ねる（#400）
+                if openedSavedDraft { showSaveChoice = true } else { saveDraft() }
             } label: {
                 Label(L("下書き保存", "Save draft"), systemImage: "square.and.arrow.down")
             }
@@ -1329,13 +1655,45 @@ struct StoryComposerView: View {
     private var songStickersCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
             || typingId != nil || votePanelOpen || showPlaceEditor || showRestoreAuto || showRestore
-            || showPendingFailure || showLeaveConfirm
+            || showPendingFailure || showLeaveConfirm || showDrafts || showSaveChoice
+    }
+
+    /// 付けた曲を流さない覆い（シート・カメラ・写真選び）。曲の札の動きを止める `songStickersCovered` の
+    /// うち、**別の画面が上に出るものだけ**（2026-10-29 判断・`StoryComposerSong` の注記）。
+    /// 下書きの一覧（`showDrafts`・#400）も別の画面なので数える（2026-10-29 統合の見直し）
+    private var songAudioCovered: Bool {
+        showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
+            || showDrafts
+    }
+
+    /// 付けた曲の鳴らす中身（鳴らせない曲なら nil）
+    private var songCue: StoryComposerSong.Cue? {
+        StoryComposerSong.cue(song: song, durationSec: durationSec)
+    }
+
+    /// 画面の中で曲を止めておく間（覆い・写真を全部外して写真選びの段に戻った間）。写真が入ったら続きから
+    private var songHeldOnScreen: Bool { songAudioCovered || shots.isEmpty }
+
+    /// 付けた曲を、いまの状態に合わせて鳴らす・止める（`StoryComposerSong.action`）
+    private func syncSong(foreground: Bool? = nil) {
+        let player = MusicPreviewPlayer.shared
+        let held = songHeldOnScreen || !(foreground ?? (scenePhase == .active))
+        switch StoryComposerSong.action(cue: songCue, played: songOwner.played, owns: songOwner.owns,
+                                        paused: player.isPaused, held: held) {
+        case .none: break
+        case .play(let cue): songOwner.play(cue)
+        case .pause: player.pause()
+        case .resume: player.resume()
+        case .stop: songOwner.stop()
+        }
     }
 
     /// 「ひとことを書く」の欄の上下の端（写真の割合）。曲の札を欄に重ねずに置く（`SongSticker.placedY`）。
-    /// 欄の高さは実際に測った値（`captionHeight`）。測れていなければ既定の帯
-    private var songStickerBand: ClosedRange<Double> {
-        SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize, image: previewSize)
+    /// 欄の高さは実際に測った値（`captionHeight`）。測れていなければ既定の帯。
+    /// **欄が出ていなければ nil**（避けずに真ん中へ置く・欄が出たら `clearSongStickersOfCaption` で外へ）
+    private var songStickerBand: ClosedRange<Double>? {
+        guard captionAreaShown else { return nil }
+        return SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize, image: previewSize)
     }
 
     /// 付けた曲とジャケット（作る画面の札と焼き込みが同じ絵を使う）
@@ -1600,7 +1958,9 @@ struct StoryComposerView: View {
     /// 閉じる確認の中身（`unsavedCloseGuard`）
     private var leaveDialog: LeaveDialog {
         Self.leaveDialog(canSaveDraft: canSaveDraft, loading: loadingPicks > 0,
-                         restored: restoredContent != nil)
+                         restored: restoredContent != nil, openedDraft: openedSavedDraft,
+                         full: DraftLibrary.isFull(count: draftCount), megabytes: draftMegabytes,
+                         draftCount: draftCount)
     }
 
     /// 閉じる確認の題・「下書きに保存」を出すか・説明
@@ -1608,6 +1968,23 @@ struct StoryComposerView: View {
         let title: String
         let canSave: Bool
         let message: String
+        /// 保存の手の名前（新しいストーリーは「下書きに保存」、下書きから開いた回は「この下書きを更新」）
+        var saveTitle: String = L("下書きに保存", "Save draft")
+        /// 2つ目の手（「別の下書きとして保存」・「下書きを整理する」）
+        var secondary: Secondary? = nil
+        /// 残さずに閉じる手の名前
+        var discardTitle: String = L("保存せずに閉じる", "Close without saving")
+
+        enum Secondary: Equatable {
+            case saveAsNew, tidy
+
+            var title: String {
+                switch self {
+                case .saveAsNew: return DraftsText.saveAsNew
+                case .tidy: return DraftsText.tidy
+                }
+            }
+        }
     }
 
     /// 閉じる確認の中身を決める。
@@ -1616,12 +1993,18 @@ struct StoryComposerView: View {
     /// 下書き保存は読み込み中は押せないのに、閉じる確認からは通り、読み込み中の写真を
     /// 落とした下書きを書いて閉じていた。待てば読み込みは終わる（上限は
     /// `StorySimpleRules.pickLoadTimeout`）ので、「キャンセル」して待ってもらう
-    nonisolated static func leaveDialog(canSaveDraft: Bool, loading: Bool, restored: Bool) -> LeaveDialog {
+    ///
+    /// 2026-10-29（#400「下書きを複数持つ」）: **下書きから開いた回**（`openedDraft`）は「この下書きを更新」（先頭・既定）
+    /// ／「別の下書きとして保存」（いっぱいなら出さない）／「変更を残さずに閉じる」。**新しいストーリーで
+    /// いっぱい**（`full`）なら保存を出さず「下書きを整理する」へ——黙って古いものを消して保存しない
+    nonisolated static func leaveDialog(canSaveDraft: Bool, loading: Bool, restored: Bool,
+                                        openedDraft: Bool = false, full: Bool = false, megabytes: Int = 0,
+                                        draftCount: Int? = nil) -> LeaveDialog {
         guard canSaveDraft else {
             return LeaveDialog(
                 title: L("閉じますか？", "Close?"), canSave: false,
-                message: L("選んだ写真と置いた文字は消えます。前の下書きはそのまま残ります（下書きは1件だけです）。",
-                           "The photos and text you added will be lost. Your earlier draft stays (only one draft is kept)."))
+                message: L("選んだ写真と置いた文字は消えます。前の下書きはそのまま残ります。",
+                           "The photos and text you added will be lost. Your earlier draft stays."))
         }
         guard !loading else {
             return LeaveDialog(
@@ -1629,13 +2012,25 @@ struct StoryComposerView: View {
                 message: L("写真を読み込んでいる間は下書きに保存できません。保存するならキャンセルして、読み込み終わるまでお待ちください。閉じると、選んだ写真と置いた文字は消えます。",
                            "You can't save a draft while photos are loading. To save, tap Cancel and wait for them to finish. If you close now, the photos and text you added will be lost."))
         }
+        if openedDraft {
+            return LeaveDialog(title: DraftsText.updateTitle, canSave: true, message: DraftsText.updateMessage,
+                               saveTitle: DraftsText.update, secondary: full ? nil : .saveAsNew,
+                               discardTitle: DraftsText.closeWithoutChanges)
+        }
+        if full {
+            return LeaveDialog(title: DraftsText.fullTitle, canSave: false,
+                               message: DraftsText.fullMessage(megabytes: megabytes), secondary: .tidy)
+        }
+        let days = Int(DraftLibrary.storyLifetime / 86_400)
+        let lifetime = L("ストーリーの下書きは\(days)日で消えます。", " Story drafts last \(days) days.")
         return LeaveDialog(
             title: L("下書きに保存しますか？", "Save as a draft?"), canSave: true,
             message: restored
                 ? L("閉じると、下書きを開いてからの変更は消えます（前の下書きは残ります）。",
                     "If you close now, your changes since opening the draft will be lost. The draft itself stays.")
-                : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
-                    "If you close now, the photos and text you added will be lost. Drafts stay on this device only."))
+                : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります",
+                    "If you close now, the photos and text you added will be lost. Drafts stay on this device only")
+                    + (draftCount.map(DraftsText.countNote) ?? "") + L("。", ".") + lifetime)
     }
 
     /// 下書きに保存できないときの一言（`saveDraft`）。保存できるなら nil
@@ -1649,8 +2044,15 @@ struct StoryComposerView: View {
     /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）。
     /// **並べた写真を全部残す。** 以前は表示中の1枚だけを渡していて、
     /// 3枚並べて保存しても開き直すと1枚になっていた
-    private func saveDraft() {
+    private func saveDraft(asNew: Bool = false) {
         guard !shots.isEmpty else { return }
+        // 🔴 **新しい下書きは、いっぱいなら書かない**（黙って古いものを消して保存しない・#400）。
+        // 閉じる確認は「下書きを整理する」を出す。「…」からはここで理由を言う
+        let creates = asNew || !openedSavedDraft
+        if creates && DraftLibrary.isFull(count: draftCount) {
+            message = DraftsText.fullMessage(megabytes: draftMegabytes)
+            return
+        }
         // 読み込み中は書かない（閉じる確認・「…」の両方で止めているが、確認を出した後に
         // 読み込みが始まった回の念のため）。書かずに閉じもしないが、**黙って戻らない**——
         // 押した人には何も起きないように見える。理由を知らせに出す
@@ -1658,14 +2060,23 @@ struct StoryComposerView: View {
             message = blocked
             return
         }
+        // 「別の下書きとして保存」は新しい1件に書く（開いていた下書きはそのまま残す）
+        let previousEntry = drafts.entryId
+        let updating = openedSavedDraft && !asNew
+        if asNew { drafts.select(entry: UUID().uuidString) }
         let ok = write(to: drafts)
+        if !ok, asNew, let previousEntry { drafts.select(entry: previousEntry) }
         // **書けなかったことを黙らない。** 「保存しました」とだけ出して
         // 実際は消えている、が いちばん困る
         message = ok
-            ? L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device")
+            ? (updating ? DraftsText.updatedToast : asNew ? DraftsText.savedAsNewToast
+                : L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device"))
             : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
                 "Couldn't save the draft — check your device's free space")
         if ok {
+            draftLibrary.noteChanged()
+            // 画面は閉じるので、保存できたことは下の知らせで言う
+            if let message { toasts.show(message) }
             // 下書きにしたので、待っている投稿は出さない（同じものが下書きと投稿の両方に残る）
             stopWaitingToPost()
             // 本人の下書きに移したので、黙って残した書きかけは要らない
@@ -1697,7 +2108,7 @@ struct StoryComposerView: View {
             durationSec: durationSec,
             archive: keepInArchive,
             allowReplies: allowReplies,
-            savedAt: ISO8601DateFormatter().string(from: Date())
+            savedAt: DraftLibrary.storyStamp(Date())
         )
     }
 
@@ -1711,7 +2122,7 @@ struct StoryComposerView: View {
             _ = await autoDrafts.saveInBackground(
                 shots: shotInputs, caption: caption, location: place.location, song: song,
                 durationSec: durationSec, archive: keepInArchive, allowReplies: allowReplies,
-                basedOn: openedDraftStamp, savedAt: ISO8601DateFormatter().string(from: Date()))
+                basedOn: openedDraftStamp, savedAt: DraftLibrary.storyStamp(Date()))
         case .clear: clearAutoDraft()
         case .skip: break
         }
@@ -1774,7 +2185,8 @@ struct StoryComposerView: View {
         let drafts = store ?? self.drafts
         let saved = drafts.shotImages()
         guard let draft = drafts.draft, !saved.isEmpty else {
-            drafts.clear()
+            // 一覧から開いた下書きは消さない（一覧が「読めない写真」を知らせて選ばせる・#400）
+            if drafts.entryId == nil { drafts.clear() }
             message = L("下書きの写真を読み込めませんでした", "Couldn't load the draft photo")
             return
         }
@@ -1812,6 +2224,11 @@ struct StoryComposerView: View {
             // 自動の書きかけが本人の下書きを開いて書いていたもの（`basedOn`）なら、同じ下書きの続き——
             // 投稿・保存で元の下書きも片づける（残すと次に開いて同じ写真をもう一度出す・2026-10-16）
             openedDraftStamp = draft.basedOn
+            // 下書きが何件もあるので、どの下書きの続きかを印（保存した時刻）で探し、今の下書きにする（#400）
+            if let basedOn = draft.basedOn, let userId = auth.userId,
+               let id = draftLibrary.storyEntryId(stamp: basedOn, for: userId) {
+                self.drafts.select(entry: id)
+            }
             if StorySimpleRules.autoRestoreContinuesSaved(basedOn: draft.basedOn, savedStamp: self.drafts.draft?.savedAt) {
                 unansweredDraftStamp = nil
                 keptDraftStamp = nil

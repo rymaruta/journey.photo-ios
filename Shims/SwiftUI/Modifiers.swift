@@ -424,6 +424,9 @@ extension View {
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    /// 長押しで浮く絵つきの形（本物は iOS 16 以降・下書きの一覧）
+    public func contextMenu<M: View, P: View>(@ViewBuilder menuItems: () -> M,
+                                              @ViewBuilder preview: () -> P) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 本物の `accessibilityAdjustableAction`（読み上げの「増やす・減らす」）
     public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }

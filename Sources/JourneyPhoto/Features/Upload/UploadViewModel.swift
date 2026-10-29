@@ -691,7 +691,11 @@ final class UploadViewModel: ObservableObject {
 
     // MARK: 端末の下書き（2026-10-11・`UploadDraftStore`）
 
-    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない
+    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない。
+    ///
+    /// 2026-10-29（#400「下書きを複数持つ」）: 画面は **この画面の1件**（`Slot.entry(ID)`）を渡す——
+    /// 新しい投稿は新しい ID（保存するまで記録は無い）、一覧から開いた下書きはその ID（`openEntry`）。
+    /// 「下書きに保存」「この下書きを更新」はこの1件に書き、ほかの下書きには触らない
     var drafts: UploadDraftStore?
     /// 下書きの持ち主（ログインしている人）。**人ごとに分ける**——画面が `auth.userId` を入れる
     var draftOwner: String?
@@ -730,6 +734,59 @@ final class UploadViewModel: ObservableObject {
         items.contains { draftKeys[$0.id] != nil && staged[$0.id] != nil }
     }
 
+    /// 「別の下書きとして保存」（下書きから開いて閉じるとき・2026-10-29・#400）。**開いていた下書きは
+    /// そのまま残し**、今の写真と欄を新しい1件に書く。開き直した写真の印（`draftKeys`）は前の下書きのもの
+    /// なので外す（新しい1件の写真は保存のときに新しい印が付く）
+    @discardableResult
+    func saveDraftAsNew(now: Date = Date(), newId: String = UUID().uuidString) -> Bool {
+        guard draftSaveBlock == nil, let current = drafts else { return false }
+        let keys = draftKeys
+        let removals = pendingEntryRemovals
+        drafts = current.sibling(.entry(newId))
+        draftKeys = [:]
+        pendingEntryRemovals = []
+        guard saveDraft(now: now) else {
+            // 🔴 **書けなかったら、開いていた下書きとのつながりも戻す**（2026-10-29 の見直し）。置き場だけ戻して
+            // 印を空のままにすると、このあと送って上がった写真が開いていた下書きから外れず、次に開いて二重に投稿する
+            drafts = current
+            draftKeys = keys
+            pendingEntryRemovals = removals
+            return false
+        }
+        return true
+    }
+
+    /// 一覧から開いた下書き（`Slot.entry`）で、帯の × で外した写真の印（2026-10-29 の見直し）。
+    ///
+    /// 🔴 **× で外しても、その場では下書きの記録から消さない。** 「変更を残さずに閉じる」で閉じたら、
+    /// 開いたときのまま残す（その場で消すと、閉じても写真が戻らない）。「この下書きを更新」は今の写真で
+    /// 書き直すので外れる。**全部上がって画面を閉じるとき**は、ここに残した写真も下書きから外す
+    /// （本人が外した写真を、送り終えた下書きの残りとして置き去りにしない）。上がった写真を1枚ずつ外す
+    /// 処理（`markDraft(.posted)`）は今のまますぐ
+    private(set) var pendingEntryRemovals: [String] = []
+
+    /// 開き直した写真のうち、下書きの写真とつながっている枚数（試験で、つながりが切れていないかを見る）
+    var linkedDraftPhotoCount: Int { draftKeys.count }
+
+    /// いま開いている下書きの ID（`Slot.entry`）。新しい投稿でも保存前から決まっている
+    var draftEntryId: String? { drafts?.entryId }
+
+    /// 一覧から選んだ下書きを開く（2026-10-29・#400）。この画面の下書きの置き場をその1件に替えてから戻す。
+    /// 読めない写真は戻さない（一覧で「読めた分で続ける」を選んで来た・`UploadDraftStore.presentItems`）
+    @discardableResult
+    func openEntry(_ id: String) async -> Bool {
+        guard items.isEmpty, !isWorking, !isRestoringDraft else { return false }
+        let previous = drafts
+        let base = drafts ?? UploadDraftStore()
+        drafts = base.sibling(.entry(id))
+        guard await restoreDraft(from: .entry(id)) else {
+            // 戻せなかったら、前の新しい1件の枠に戻す（開けなかった下書きを、この画面の保存で上書きしない）
+            if items.isEmpty { drafts = previous }
+            return false
+        }
+        return true
+    }
+
     /// いまの欄を下書きに保存する（×→「下書きに保存」）。**写真は整えた本体と編集のレシピ**を残す
     /// （書き出した絵ではなく元に掛け直す——開き直しても編集し直せる）。
     /// - Returns: 書けたか。書けなければ画面は閉じない（知らせを出す）
@@ -739,6 +796,8 @@ final class UploadViewModel: ObservableObject {
         let ok = drafts.save(draftInputs(), fields: draftFields(now: now), for: draftOwner)
         if ok {
             restoredDraft = true
+            // 今の写真で書き直したので、× で外した写真はもう記録に無い
+            pendingEntryRemovals = []
             // 本人の下書きに移したので、黙って残した書きかけ・この画面の送信の控えは要らない
             // （次に開いて二重に尋ねない・同じ写真を2か所から送らない）
             discardAutoDraft()
@@ -781,6 +840,8 @@ final class UploadViewModel: ObservableObject {
                 ? inspired : nil)
         // 束の印（途中まで送った束を続きから送ると、同じ投稿に入る・`UploadGrouping.groupIdForSubmit`）
         fields.groupId = groupId
+        // 開いている本人の下書き（自動の枠・控えから続きを戻したとき、その下書きの続きにする・#400）
+        if restoredDraft || !draftKeys.isEmpty { fields.entryId = draftEntryId }
         return fields
     }
 
@@ -834,7 +895,10 @@ final class UploadViewModel: ObservableObject {
         guard !items.isEmpty else { return nil }
         var keys: [UUID: String] = [:]
         for photo in items { keys[photo.id] = UUID().uuidString }
-        guard await store.saveInBackground(draftInputs(keys: keys), fields: draftFields(now: now), for: owner) else {
+        var fields = draftFields(now: now)
+        // × で外したがまだ下書きに残っている写真（続きから全部送ったときに下書きからも外す・2回目の見直し）
+        if fields.entryId != nil && !pendingEntryRemovals.isEmpty { fields.pendingRemovals = pendingEntryRemovals }
+        guard await store.saveInBackground(draftInputs(keys: keys), fields: fields, for: owner) else {
             return nil
         }
         return keys
@@ -909,13 +973,39 @@ final class UploadViewModel: ObservableObject {
     func restoreDraft(from slot: UploadDraftStore.Slot = .saved) async -> Bool {
         let source: UploadDraftStore?
         switch slot {
-        case .saved: source = drafts
+        case .saved, .entry: source = drafts
         case .auto: source = autoDrafts
         case .send: source = drafts?.sibling(slot)
         }
         guard items.isEmpty, !isWorking, !isRestoringDraft,
               let drafts = source, let draftOwner,
               let draft = drafts.draft(for: draftOwner) else { return false }
+        // 🔴 **自動の枠・控えから戻すときは、開いていた本人の下書きを今の下書きにする**（2026-10-29・#400）。
+        // 下書きが何件もあるので、どれの続きかを記録（`entryId`）か、無ければ写真の印（`savedKey`・前の版）から
+        // 探す。見つからなければ新しい下書きのまま（保存すると新しい1件になる）
+        //
+        // 🔴 **その下書きの続きと見なすのは、下書きがもう無いか、書きかけの写真の印（`savedKey`）が今の下書きに
+        // 1つでも残っているときだけ**（2026-10-29 の見直し）。書きかけが残ったあとに一覧から同じ下書きを開いて
+        // 「更新」すると、下書きの写真の印は全部新しくなる。そのまま付け替えると、後で書きかけを戻して保存した
+        // とき、更新した下書きを古い中身で上書きした。続きでなければ新しい1件のまま（保存すると新しい1件になる）。
+        // 2026-10-29 判断: 古い書きかけは片づけない——本人がまだ見ていない書きかけを黙って消さない
+        // （`UploadDraftRules.ownsAutoSlot` と同じ考え）。続きと見なさないだけにする
+        if slot == .auto || isSend(slot), let base = self.drafts {
+            let savedKeys = Set(draft.items.compactMap(\.savedKey))
+            if let id = draft.entryId ?? savedKeys.lazy.compactMap({ base.entryContaining(itemKey: $0, for: draftOwner) }).first {
+                let target = base.sibling(.entry(id))
+                let currentKeys = Set(target.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
+                if let stored = target.draft(for: draftOwner), !stored.items.isEmpty {
+                    if !savedKeys.isDisjoint(with: currentKeys) {
+                        self.drafts = target
+                        // 書きかけが覚えていた「× で外した写真」も引き継ぐ（今もその下書きに在るものだけ）
+                        pendingEntryRemovals = (draft.pendingRemovals ?? []).filter(currentKeys.contains)
+                    }
+                } else {
+                    self.drafts = target
+                }
+            }
+        }
         // 本人の下書きにいま在る写真の印（自動の枠・控えの `savedKey` が今も指しているか）
         let savedKeysNow = Set(self.drafts?.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
         // 🔴 **先に印を立てる**（2026-10-12 判断）。縮小画像の `await` のあいだ MainActor を譲るので、
@@ -923,7 +1013,9 @@ final class UploadViewModel: ObservableObject {
         // `discardDraft` して下書きごと消えていた
         isRestoringDraft = true
         defer { isRestoringDraft = false }
-        let (restorable, dropped) = UploadDraftStore.restorable(draft)
+        let (sendable, dropped) = UploadDraftStore.restorable(draft)
+        // 本人の下書きは、画像の読めない写真を外して戻す（一覧で「読めた分で続ける」を選んで来た・#400）
+        let restorable = isEntry(slot) ? drafts.presentItems(sendable) : sendable
         for unsure in draft.items where unsure.inFlight == true {
             if let key = unsure.key { drafts.removeItem(key: key, for: draftOwner) }
         }
@@ -965,7 +1057,7 @@ final class UploadViewModel: ObservableObject {
             if !attachesLocation { photo.dropAutomaticPlace() }
             if let key = saved.key {
                 switch slot {
-                case .saved: draftKeys[photo.id] = key
+                case .saved, .entry: draftKeys[photo.id] = key
                 case .auto: autoKeys[photo.id] = key
                 case .send: journalKeys[photo.id] = key
                 }
@@ -973,7 +1065,7 @@ final class UploadViewModel: ObservableObject {
             // 🔴 **自動の枠・控えから戻した写真が本人の下書きにも在れば、その印も戻す**（2026-10-16）。戻さないと、
             // 続きから送って上がった写真が本人の下書きに残り、次に開いて送ると同じ写真がもう一度投稿された。
             // 本人の下書きが後で保存し直されていたら（その印がもう無い）戻さない
-            if slot != .saved, let savedKey = saved.savedKey, savedKeysNow.contains(savedKey) {
+            if slot == .auto || isSend(slot), let savedKey = saved.savedKey, savedKeysNow.contains(savedKey) {
                 draftKeys[photo.id] = savedKey
             }
             startStripThumb(for: photo.id, prepared: prepared)
@@ -999,9 +1091,28 @@ final class UploadViewModel: ObservableObject {
         }
         if case .send(let id) = slot { journalId = id }
         // 本人の下書きの続き（印を戻した）なら「下書きを開いた」——保存で閉じても「置き換わります」と言わない
-        restoredDraft = slot == .saved || !draftKeys.isEmpty
+        restoredDraft = slot == .saved || isEntry(slot) || !draftKeys.isEmpty
         errorMessage = droppedNote
         return true
+    }
+
+    private func isSend(_ slot: UploadDraftStore.Slot) -> Bool {
+        if case .send = slot { return true }
+        return false
+    }
+
+    private func isEntry(_ slot: UploadDraftStore.Slot) -> Bool {
+        if case .entry = slot { return true }
+        return false
+    }
+
+    /// × で外した写真を、開いていた下書きの記録からも外す（全部上がったとき）
+    func applyPendingEntryRemovals() {
+        guard !pendingEntryRemovals.isEmpty else { return }
+        if let drafts, let draftOwner {
+            for key in pendingEntryRemovals { drafts.removeItem(key: key, for: draftOwner) }
+        }
+        pendingEntryRemovals = []
     }
 
     /// 下書きを消す（「下書きを削除」）
@@ -1324,7 +1435,12 @@ final class UploadViewModel: ObservableObject {
     /// B が控えに残ったまま次の起動の「送れなかった投稿」から戻り、本人が外した写真が投稿されえた
     private func forgetStoredCopies(of photoId: UUID) {
         if let key = draftKeys[photoId] {
-            if let drafts, let draftOwner { drafts.removeItem(key: key, for: draftOwner) }
+            // 一覧から開いた下書きは、この場では記録から消さない（`pendingEntryRemovals` の注記・#400）
+            if drafts?.entryId != nil {
+                pendingEntryRemovals.append(key)
+            } else if let drafts, let draftOwner {
+                drafts.removeItem(key: key, for: draftOwner)
+            }
             draftKeys[photoId] = nil
         }
         if let key = autoKeys[photoId] {
@@ -1648,6 +1764,8 @@ final class UploadViewModel: ObservableObject {
                     CoverOfferStore.shared.notePosted(userId: savedPhotoOwner ?? draftOwner, photoIds: savedPhotoIds)
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
+                    // × で外した写真も、開いていた下書きから外す（`pendingEntryRemovals`・#400 の見直し）
+                    applyPendingEntryRemovals()
                 }
             } else {
                 errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(

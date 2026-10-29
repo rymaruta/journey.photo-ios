@@ -77,14 +77,18 @@ extension View {
 /// - `onSave`: 保存し、**成功したときだけ閉じる**のは呼び手の仕事（失敗なら開いたまま断りを出す）
 /// - 送っている最中（`.wait`）も払って閉じさせない。✕ を押せなくするのは呼び手
 extension View {
+    /// - `secondaryTitle`・`onSecondary`: 保存の次に置く2つ目の手（2026-10-29・#400 の下書き:
+    ///   下書きから開いた回の「別の下書きとして保存」・いっぱいのときの「下書きを整理する」）。nil なら出さない
     func unsavedCloseGuard(_ leave: UnsavedLeave,
                            isPresented: Binding<Bool>,
                            title: String,
                            canSave: Bool = true,
                            saveTitle: String,
+                           secondaryTitle: String? = nil,
                            discardTitle: String,
                            message: String,
                            onSave: @escaping () -> Void,
+                           onSecondary: (() -> Void)? = nil,
                            onDiscard: @escaping () -> Void) -> some View {
         self
             // 下へ払っても**跳ね返るだけ**で確認は出ない（SwiftUI には払われたことを知る口が
@@ -93,6 +97,9 @@ extension View {
             .confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
                 if canSave {
                     Button(saveTitle, action: onSave)
+                }
+                if let secondaryTitle, let onSecondary {
+                    Button(secondaryTitle, action: onSecondary)
                 }
                 Button(discardTitle, role: .destructive, action: onDiscard)
                 Button(L("キャンセル", "Cancel"), role: .cancel) {}

@@ -294,6 +294,8 @@ struct JourneyPhotoApp: App {
                         // （送っている間に保存し直した別の下書きは消さない）
                         clearDraft: { stamp in
                             if drafts.draft?.savedAt == stamp { drafts.clear() }
+                            // 下書きは何件にもなる（2026-10-29・#400）: 同じ印（保存した時刻）の下書きを片づける
+                            if let userId = auth.userId { DraftLibrary.shared.clearStory(stamp: stamp, for: userId) }
                         })
                     // 起動時に本人の ID が取れなかっただけのログアウト（`isSignedOutUncertain`）
                     // でも捨てない——通知の宛先と同じ扱い。捨てると、圏外で起動した
@@ -358,6 +360,13 @@ struct JourneyPhotoApp: App {
                     // 写真の投稿の下書きの、どの記録からも指されない画像を片づける（`StoryDraftStore` の
                     // `use` と同じ頃合い・2026-10-11）。下書き自体は投稿の画面が開いたときに人ごとに読む
                     UploadDraftStore().sweepOrphans()
+                    // 前の版の「1件だけ」の下書きを新しい形（何件でも・#400）に移し、期限の過ぎたストーリーの
+                    // 下書きを消す（ログインの状態が決まってから・人ごと）
+                    if let userId = auth.userId {
+                        DraftLibrary.shared.prepare(for: userId)
+                        // 画面写真の試験だけ: 下書きの一覧の見本を並べる（`PreviewDraftsSample`・Debug のみ）
+                        PreviewDraftsSample.seedIfNeeded(for: userId)
+                    }
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての

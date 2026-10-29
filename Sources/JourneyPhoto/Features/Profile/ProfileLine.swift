@@ -132,7 +132,8 @@ enum ProfileLine {
     /// 読まれないので、値として読む**
     static func gridState(pinned: Bool, draft: Bool, multiple: Bool) -> String {
         [pinned ? L("ピン留め中", "Pinned") : nil,
-         draft ? L("下書き", "Draft") : nil,
+         // 非公開の写真（2026-10-29・#400:「下書き」は端末の書きかけだけを呼ぶ）
+         draft ? L("非公開", "Private") : nil,
          multiple ? L("複数枚の投稿", "Multiple photos") : nil]
             .compactMap { $0 }
             .joined(separator: L("、", ", "))

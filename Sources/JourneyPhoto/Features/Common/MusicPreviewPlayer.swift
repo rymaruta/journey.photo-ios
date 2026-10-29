@@ -146,12 +146,22 @@ final class MusicPreviewPlayer: ObservableObject {
     /// `loops` なら鳴り終わっても止めずに頭から繰り返す（Web の `onEnded`）。
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
     /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
+    /// `length` は繰り返す幅（秒）。`loops` のとき、`from` から `length` 秒鳴ったら `from` へ戻る
+    /// （ストーリーを作る画面で、表示秒数ぶんだけを繰り返す・2026-10-29 判断）。nil なら試聴の終わりまで。
+    /// 幅の終わりは項目の終わり（`forwardPlaybackEndTime`）にする——そこで鳴り終わりの知らせが来て、
+    /// 下の「流し始めへ戻す」がそのまま繰り返す（時刻を見張って戻すより、ずれも手間も無い）
     @discardableResult
     func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0,
-              origin: PlaybackOrigin = .app) -> Int {
+              length: Double? = nil, origin: PlaybackOrigin = .app) -> Int {
         guard let url else { return session }
-        start(url, song: song, loops: loops, origin: origin, from: startSeconds)
+        start(url, song: song, loops: loops, origin: origin, from: startSeconds, length: length)
         return session
+    }
+
+    /// 繰り返す幅の終わり（秒）。繰り返さない・幅が無い・0 以下なら nil（試聴の終わりまで）
+    static func loopEnd(loops: Bool, start: Double, length: Double?) -> Double? {
+        guard loops, let length, length > 0, length.isFinite else { return nil }
+        return max(0, start) + length
     }
 
     /// 止めずに一時停止する（場は返さない。すぐ `resume()` するため）
@@ -174,7 +184,7 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     private func start(_ url: URL, song: Photo.Song?, loops: Bool = false,
-                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0) {
+                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0, length: Double? = nil) {
         let startTime = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
         deactivateTask?.cancel()
         deactivateTask = nil
@@ -240,6 +250,11 @@ final class MusicPreviewPlayer: ObservableObject {
                 }
             }
             startSeeker = (player, token)
+        }
+        if let end = Self.loopEnd(loops: loops, start: startSeconds, length: length) {
+            // 幅の終わりを項目の終わりにする。来たら鳴り終わりの知らせ → 上で流し始めへ戻す。
+            // 試聴が幅より短ければ、試聴の終わりで同じ知らせが来る
+            player.currentItem?.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 600)
         }
         player.play()
     }

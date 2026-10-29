@@ -10,7 +10,9 @@ import Foundation
 /// 戻らない（編集は写真ごとの別の画面）。端末なら、選んだ写真も欄もそのまま開き直せる。
 /// 機種を変えると消えるので、画面でもそう書く。
 ///
-/// - **人ごとに1件**（鍵に userId を入れる）。同じ端末で人が替わっても、前の人の書きかけは見えない
+/// - **人ごとに何件でも**（2026-10-29 判断・#400。鍵に userId と下書きの印を入れる・上限は `DraftLibrary.limit`）。
+///   同じ端末で人が替わっても、前の人の書きかけは見えない。以前は人ごとに1件で、保存し直すと前の下書きが
+///   置き換わった——その1件は `migrateLegacySaved` で新しい形の1件に移す（失わない）
 /// - 写真の中身（数MB）は `UserDefaults` に入れない——**ファイルに書いて、名前だけを覚える**
 /// - 保存のたびに新しい印（`token`）の名前で全部書いてから記録を差し替える（途中で書けなかったら、
 ///   前の下書きには触らない。理由は `StoryDraftStore.imageFileName` の注記と同じ）
@@ -81,6 +83,14 @@ final class UploadDraftStore {
         /// 束の印（「1つの投稿にまとめる」の `groupId`・2026-10-16）。途中まで送った束を続きから送るとき、
         /// 同じ束に入れる（新しい印にすると投稿が2つに割れる）。前の版の下書きには無い（nil）
         var groupId: String? = nil
+        /// 自動の枠・送信の控えだけ: **開いていた本人の下書きの印**（`Slot.entry` の ID・2026-10-29）。
+        /// 続きから戻したとき、その下書きの続きにする（「この下書きを更新」の行き先・上がった写真を外す先）。
+        /// 前の版の控えには無い（nil）——そのときは `savedKey` を含む下書きを探す（`entryContaining`）
+        var entryId: String? = nil
+        /// 自動の枠・送信の控えだけ: 開いていた下書きから **× で外したが、まだ下書きの記録に残っている写真の印**
+        /// （`UploadViewModel.pendingEntryRemovals`・2026-10-29 の2回目の見直し）。続きから全部送り終えたとき、
+        /// 下書きからも外す（外した写真を置き去りにしない）
+        var pendingRemovals: [String]? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -118,9 +128,16 @@ final class UploadDraftStore {
     ///   書きかけの枠を共有していた頃は、テーマ・スポットから開いた回の送信が前の書きかけを上書きするか、
     ///   控えを書かずに送るかの二択になった。残っていたら送っている途中でアプリが終了した
     ///   （次の起動で「送れなかった投稿が N 件あります」・`UploadDraftRules.interruptedNotice`）
+    ///
+    /// - `entry(id)`: **本人の下書きの1件**（2026-10-29 判断・#400）。人ごとに何件でも持つ（上限は
+    ///   `DraftLibrary.limit`）。ID は UUID。画像が欠けても下書きごと消さない——一覧が「読めない写真」を
+    ///   知らせ、「読めた分で続ける／この下書きを削除」を選ばせる（`draft(for:)` の注記）
+    /// - `saved`: 前の版の「人ごとに1件」の鍵（`journey-photo-upload-draft:<userId>`）。**読むのは移すときだけ**
+    ///   （`migrateLegacySaved`）。新しく書かない
     enum Slot: Equatable {
         case saved, auto
         case send(String)
+        case entry(String)
     }
 
     let slot: Slot
@@ -152,6 +169,75 @@ final class UploadDraftStore {
             // 控えの ID は UUID だけ（区切りの「:」を含まない・取り違えない）
             guard UUID(uuidString: id) != nil else { return nil }
             return "\(sendPrefix(for: userId))\(id)"
+        case .entry(let id):
+            guard UUID(uuidString: id) != nil else { return nil }
+            return "\(entryPrefix(for: userId))\(id)"
+        }
+    }
+
+    /// その人の下書き（`Slot.entry`）の鍵の頭（`journey-photo-upload-draft:entry:<userId>:`）
+    static func entryPrefix(for userId: String) -> String { "\(keyPrefix):entry:\(userId):" }
+
+    /// 鍵の頭の後ろが UUID ちょうどなら、その ID（`journalId` と同じ取り違えない読み方）
+    private static func uuidSuffix(of key: String, prefix: String) -> String? {
+        guard key.hasPrefix(prefix) else { return nil }
+        let rest = String(key.dropFirst(prefix.count))
+        guard let uuid = UUID(uuidString: rest), uuid.uuidString == rest.uppercased() else { return nil }
+        return rest
+    }
+
+    /// 鍵がその人の下書き（`Slot.entry`）なら、その ID
+    static func entryId(fromKey key: String, userId: String) -> String? {
+        guard !userId.isEmpty else { return nil }
+        return uuidSuffix(of: key, prefix: entryPrefix(for: userId))
+    }
+
+    /// その人の下書きの ID（順は決めない・並べるのは `DraftLibrary`）
+    func entryIds(for userId: String) -> [String] {
+        defaults.dictionaryRepresentation().keys.compactMap { Self.entryId(fromKey: $0, userId: userId) }
+    }
+
+    /// 開いている下書きの ID（`Slot.entry` のときだけ）
+    var entryId: String? {
+        if case .entry(let id) = slot { return id }
+        return nil
+    }
+
+    /// 🔴 **前の版の「人ごとに1件」の下書きを、新しい形の1件に移す**（2026-10-29・#400）。記録を新しい鍵へ
+    /// そのまま移し、前の鍵を消す。画像のファイル名は変えない（記録が同じ名前を指すので、掃除
+    /// `sweepOrphans` にも消されない。次に保存し直したとき新しい名前に替わる）。
+    /// 何度呼んでも同じ（前の鍵が無ければ何もしない）。
+    /// - Returns: 移した下書きの ID（移すものが無ければ nil）
+    @discardableResult
+    func migrateLegacySaved(for userId: String, newId: String = UUID().uuidString) -> String? {
+        guard let legacy = Self.key(for: userId, slot: .saved), let data = defaults.data(forKey: legacy) else {
+            return nil
+        }
+        // 読めない記録は移さない（前の版の `draft(for:)` と同じく片づける）
+        guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty,
+              var key = Self.key(for: userId, slot: .entry(newId)) else {
+            sibling(.saved).clear(for: userId)
+            return nil
+        }
+        var id = newId
+        // 🔴 **移す先に別の中身の下書きが既にあれば上書きしない**（2026-10-29 の2回目の見直し）。古い版に戻して
+        // また上げると、前の鍵がもう一度書かれる——決まった ID のまま移すと、移したあとに更新した1件を古い中身で
+        // 上書きした。同じ中身（二重に走った）なら同じ鍵のまま（1件のまま）
+        if let existing = defaults.data(forKey: key), existing != data {
+            id = UUID().uuidString
+            guard let fresh = Self.key(for: userId, slot: .entry(id)) else { return nil }
+            key = fresh
+        }
+        defaults.set(data, forKey: key)
+        defaults.removeObject(forKey: legacy)
+        return id
+    }
+
+    /// 1枚の印（`Item.key`）を含む、その人の下書きの ID（前の版の自動の枠・控えの `savedKey` から、
+    /// どの下書きの続きかを探す）
+    func entryContaining(itemKey: String, for userId: String) -> String? {
+        entryIds(for: userId).first { id in
+            sibling(.entry(id)).draft(for: userId)?.items.contains { $0.key == itemKey } ?? false
         }
     }
 
@@ -161,17 +247,15 @@ final class UploadDraftStore {
     /// 鍵がその人の送信の控えなら、その ID。**頭の後ろが UUID ちょうどのときだけ**——userId に「:」を
     /// 含む別の人（"a" と "a:b"）の控えを取り違えない
     static func journalId(fromKey key: String, userId: String) -> String? {
-        let prefix = sendPrefix(for: userId)
-        guard !userId.isEmpty, key.hasPrefix(prefix) else { return nil }
-        let rest = String(key.dropFirst(prefix.count))
-        guard let uuid = UUID(uuidString: rest), uuid.uuidString == rest.uppercased() else { return nil }
-        return rest
+        guard !userId.isEmpty else { return nil }
+        return uuidSuffix(of: key, prefix: sendPrefix(for: userId))
     }
 
     /// 同じ置き場の別の枠（送信の控えを開くため）
     func sibling(_ slot: Slot) -> UploadDraftStore {
         let other = UploadDraftStore(defaults: defaults, directory: directory, slot: slot)
         other.writeFiles = writeFiles
+        other.makeToken = makeToken
         return other
     }
 
@@ -205,9 +289,23 @@ final class UploadDraftStore {
         for key in defaults.dictionaryRepresentation().keys {
             if let id = Self.journalId(fromKey: key, userId: userId) { sibling(.send(id)).clear(for: userId) }
         }
-        guard !userId.isEmpty,
-              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
-        let head = Self.filePrefix + Self.hex(Self.sendPrefix(for: userId))
+        guard !userId.isEmpty else { return }
+        removeStrayFiles(underKeyPrefix: Self.sendPrefix(for: userId))
+    }
+
+    /// 退会: その人の下書き（`Slot.entry`）を全部（記録と画像）消す。記録から外れた画像も、控えと同じく
+    /// 鍵の頭と UUID を確かめて拾う（2026-10-29・#400）
+    func removeAllEntries(for userId: String) {
+        for id in entryIds(for: userId) { sibling(.entry(id)).clear(for: userId) }
+        guard !userId.isEmpty else { return }
+        removeStrayFiles(underKeyPrefix: Self.entryPrefix(for: userId))
+    }
+
+    /// 鍵の頭（その人の控え・下書き）の後ろに **UUID ちょうど** が付いた鍵の画像を消す
+    /// （userId に「:」を含む別の人 "a" と "a:b" を取り違えない）
+    private func removeStrayFiles(underKeyPrefix keyPrefix: String) {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let head = Self.filePrefix + Self.hex(keyPrefix)
         for name in names where name.hasPrefix(head) {
             // 頭の後ろは UUID（36字＝16進で72字）と「-」
             let rest = name.dropFirst(head.count)
@@ -258,17 +356,36 @@ final class UploadDraftStore {
     }
 
     /// その人の下書き。**画像が1枚でも消えていたら、無いものとして片づける**
-    /// ——欠けたまま戻すと、書いた題が別の写真に付く
+    /// ——欠けたまま戻すと、書いた題が別の写真に付く。
+    ///
+    /// 🔴 **本人の下書き（`Slot.entry`）だけは、欠けても片づけない**（2026-10-29 判断・#400）。以前は
+    /// 1枚でも読めないと下書きごと黙って消えていた。一覧が「n枚を読み込めません」と知らせ、
+    /// 「読めた分で続ける」（欠けた写真の題は戻さない・`presentItems`）か「この下書きを削除」を選ばせる
     func draft(for userId: String) -> Draft? {
         guard let key = storageKey(userId),
               let data = defaults.data(forKey: key) else { return nil }
-        guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty,
-              saved.items.allSatisfy({ FileManager.default.fileExists(atPath: fileURL($0.imageFile).path) }) else {
+        guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty else {
+            clear(for: userId)
+            return nil
+        }
+        if entryId != nil { return saved }
+        guard saved.items.allSatisfy({ hasImage($0) }) else {
             clear(for: userId)
             return nil
         }
         return saved
     }
+
+    /// その1枚の画像が端末に在るか
+    func hasImage(_ item: Item) -> Bool {
+        FileManager.default.fileExists(atPath: fileURL(item.imageFile).path)
+    }
+
+    /// 画像の在る写真だけ（並びの順）。「読めた分で続ける」で戻すもの
+    func presentItems(_ items: [Item]) -> [Item] { items.filter(hasImage) }
+
+    /// 画像の置き場所（一覧の縮図を読む・大きさを数える）
+    func imageURL(_ item: Item) -> URL { fileURL(item.imageFile) }
 
     /// 下書きがあるか（開いたときに「下書きを続けますか？」を出すか）
     func hasDraft(for userId: String) -> Bool { draft(for: userId) != nil }

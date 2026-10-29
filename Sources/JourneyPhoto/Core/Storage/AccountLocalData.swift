@@ -42,6 +42,11 @@ enum AccountLocalData {
         RecentSongsStore(defaults: defaults).removeData(for: userId)
         StoryDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
         StoryDraftStore(defaults: defaults, directory: draftDirectory, slot: .auto).removeData(for: userId)
+        // 下書きを複数持つ形（2026-10-29・#400）: ストーリーと投稿の下書きを全部。**ログアウトでは消さない**
+        // （人ごとの鍵で残り、同じ人が入り直すと戻る）——消すのは退会のときだけ
+        StoryDraftStore.removeAllEntries(for: userId, defaults: defaults, directory: draftDirectory)
+        UploadDraftStore(defaults: defaults, directory: draftDirectory).removeAllEntries(for: userId)
+        DraftViewPreference(defaults: defaults).removeData(for: userId)
         // 写真の投稿の下書きとその画像（2026-10-11）
         UploadDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
         // 自動で残した書きかけ・送信の控え（別の枠・2026-10-16）
