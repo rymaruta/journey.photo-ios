@@ -258,7 +258,8 @@ final class MultiDraftsTests: XCTestCase {
         let before = files()
         lib.hide([a])
         XCTAssertEqual(lib.entries(for: "a").map(\.id), [b])
-        XCTAssertEqual(lib.count(for: "a"), 1, "隠したものを上限に数えた")
+        // 「元に戻す」を待っている間も上限に数える（待っている間に保存して戻すと 21 件になる・見直し）
+        XCTAssertEqual(lib.count(for: "a"), 2, "元に戻せる下書きを上限から外した")
         XCTAssertEqual(files(), before, "「元に戻す」の間に画像を消した")
         lib.undo([a])
         XCTAssertEqual(lib.entries(for: "a").map(\.id), [a, b], "元の位置に戻らない")
@@ -419,6 +420,151 @@ final class MultiDraftsTests: XCTestCase {
         let shots = try String(contentsOf: Self.root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
                                encoding: .utf8)
         XCTAssertTrue(shots.contains("func testCapturesDrafts()"), "下書きの一覧の画面写真の試験が無い")
+    }
+
+    // MARK: - 見直し（2026-10-29）
+
+    /// 🔴 [1] 下書き X を書いている途中で終了 → 自動の書きかけ（X の続き）が残る → 一覧から X を開いて「更新」→
+    /// 後で自動の書きかけを戻して保存しても、**更新した X を古い中身で上書きしない**（新しい1件になる）
+    func testStaleAutoDraftDoesNotOverwriteUpdatedEntry() async throws {
+        let x = savePost("最初")
+        let writing = makeModel(owner: "a")
+        writing.autoDrafts = uploads(.auto)
+        let opened = await writing.openEntry(x)
+        XCTAssertTrue(opened)
+        writing.items[0].title = "書きかけ"
+        await writing.autoSaveDraft(now: now)
+        XCTAssertEqual(uploads(.auto).draft(for: "a")?.entryId, x, "前提")
+
+        let updating = makeModel(owner: "a")
+        let reopened = await updating.openEntry(x)
+        XCTAssertTrue(reopened)
+        updating.items[0].title = "更新した"
+        XCTAssertTrue(updating.saveDraft())
+
+        let resumed = makeModel(owner: "a")
+        resumed.autoDrafts = uploads(.auto)
+        let restored = await resumed.restoreDraft(from: .auto)
+        XCTAssertTrue(restored)
+        XCTAssertNotEqual(resumed.draftEntryId, x, "更新済みの下書きの続きと見なした")
+        XCTAssertFalse(resumed.restoredDraft, "「この下書きを更新」の形を出す（更新済みの下書きを上書きする）")
+        XCTAssertTrue(resumed.saveDraft())
+        XCTAssertEqual(uploads(.entry(x)).draft(for: "a")?.items.first?.title, "更新した", "更新した下書きを古い中身で上書きした")
+        XCTAssertEqual(library().count(for: "a"), 2)
+    }
+
+    /// [1] 自動の書きかけの写真が今の X に残っていれば X の続き。X がもう無ければ X として書き直す
+    func testAutoDraftStillContinuesWhenKeysMatchOrEntryIsGone() async throws {
+        let x = savePost("最初")
+        let writing = makeModel(owner: "a")
+        writing.autoDrafts = uploads(.auto)
+        let opened = await writing.openEntry(x)
+        XCTAssertTrue(opened)
+        await writing.autoSaveDraft(now: now)
+        let resumed = makeModel(owner: "a")
+        resumed.autoDrafts = uploads(.auto)
+        let restored = await resumed.restoreDraft(from: .auto)
+        XCTAssertTrue(restored)
+        XCTAssertEqual(resumed.draftEntryId, x, "印が合うのに続きと見なさない")
+
+        library().remove(x, for: "a")
+        let gone = makeModel(owner: "a")
+        gone.autoDrafts = uploads(.auto)
+        let again = await gone.restoreDraft(from: .auto)
+        XCTAssertTrue(again)
+        XCTAssertEqual(gone.draftEntryId, x)
+    }
+
+    /// 🔴 [2] 「別の下書きとして保存」が書けなかったら、開いていた下書きとのつながり（印）も戻す
+    func testSaveAsNewFailureKeepsTheLink() async throws {
+        let x = savePost("元", photos: 2)
+        let model = makeModel(owner: "a")
+        let opened = await model.openEntry(x)
+        XCTAssertTrue(opened)
+        XCTAssertEqual(model.linkedDraftPhotoCount, 2, "前提")
+        // 書けない名前（無いフォルダの下）にして失敗させる
+        model.drafts?.makeToken = { "missing-folder/x" }
+        XCTAssertFalse(model.saveDraftAsNew())
+        XCTAssertEqual(model.draftEntryId, x)
+        XCTAssertEqual(model.linkedDraftPhotoCount, 2, "つながりが切れた（上がった写真が下書きに残り、二重に投稿する）")
+    }
+
+    /// 🔴 [3] 一覧から開いた下書きで × で外した写真は、その場では記録から消えない（「変更を残さずに閉じる」で戻る）。
+    /// 「更新」で外れ、全部上がったときにも外れる
+    func testRemovingAPhotoFromAnEntryWaitsForUpdate() async throws {
+        let x = savePost("元", photos: 2)
+        let model = makeModel(owner: "a")
+        let opened = await model.openEntry(x)
+        XCTAssertTrue(opened)
+        model.remove(model.items[1].id)
+        XCTAssertEqual(uploads(.entry(x)).draft(for: "a")?.items.count, 2,
+                       "× で外しただけで下書きから消えた（変更を残さずに閉じても戻らない）")
+        XCTAssertEqual(model.pendingEntryRemovals.count, 1)
+        XCTAssertTrue(model.saveDraft())
+        XCTAssertEqual(uploads(.entry(x)).draft(for: "a")?.items.count, 1, "更新しても外れない")
+
+        let y = savePost("別", photos: 2)
+        let posting = makeModel(owner: "a")
+        let reopened = await posting.openEntry(y)
+        XCTAssertTrue(reopened)
+        posting.remove(posting.items[1].id)
+        posting.applyPendingEntryRemovals()
+        XCTAssertEqual(uploads(.entry(y)).draft(for: "a")?.items.count, 1, "送り終えたのに外した写真が下書きに残る")
+    }
+
+    /// 開けなかったら、前の新しい1件の枠に戻す（開けなかった下書きを上書きしない）
+    func testOpenEntryFailureKeepsTheNewSlot() async {
+        let fresh = UUID().uuidString
+        let model = makeModel(owner: "a", entry: fresh)
+        let opened = await model.openEntry(UUID().uuidString)
+        XCTAssertFalse(opened)
+        XCTAssertEqual(model.draftEntryId, fresh)
+    }
+
+    /// ストーリーの時刻の印はミリ秒まで。同じ秒に保存した2件を片づけで巻き込まない
+    func testStoryStampsAreMillisecondPrecise() async throws {
+        let stamp = DraftLibrary.storyStamp(now)
+        XCTAssertTrue(stamp.contains("."), "ミリ秒が無い")
+        XCTAssertEqual(DraftLibrary.storyDate(stamp), now)
+        XCTAssertNotNil(DraftLibrary.storyDate(ISO8601DateFormatter().string(from: now)), "前の版の秒までの印が読めない")
+        let first = stories(.entry(UUID().uuidString))
+        let second = stories(.entry(UUID().uuidString))
+        for (store, offset) in [(first, 0.1), (second, 0.4)] {
+            XCTAssertTrue(store.save(shots: [StoryDraftStore.ShotInput(imageData: Data([1]), fileName: "s.jpg",
+                                                                       contentType: "image/jpeg", coords: nil, overlays: [])],
+                                     caption: "", location: "", song: nil, durationSec: 5,
+                                     savedAt: DraftLibrary.storyStamp(now.addingTimeInterval(-86_400 + offset))))
+        }
+        let lib = library()
+        lib.clearStory(stamp: first.draft!.savedAt, for: "a")
+        XCTAssertEqual(lib.count(for: "a"), 1, "同じ秒の別の下書きまで片づけた")
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertFalse(composer.contains("savedAt: ISO8601DateFormatter().string(from: Date())"), "秒までの印で保存している")
+    }
+
+    /// 前の版の1件を移す ID は利用者から決まる（二重に走っても1件）
+    func testLegacyEntryIdIsDeterministic() async throws {
+        let id = DraftLibrary.legacyEntryId(userId: "a", kind: .post)
+        XCTAssertEqual(id, DraftLibrary.legacyEntryId(userId: "a", kind: .post))
+        XCTAssertNotNil(UUID(uuidString: id))
+        XCTAssertNotEqual(id, DraftLibrary.legacyEntryId(userId: "a", kind: .story))
+        XCTAssertNotEqual(id, DraftLibrary.legacyEntryId(userId: "b", kind: .post))
+        // 移したあとに前の鍵がもう一度書かれても（別の処理が同時に移した）、同じ鍵に入って1件のまま
+        for _ in 0..<2 {
+            XCTAssertTrue(uploads(.saved).save([UploadDraftStore.ItemInput(imageData: Data([1]), item: item("前"))],
+                                               fields: fields(now), for: "a"))
+            library().prepare(for: "a")
+        }
+        XCTAssertEqual(library().count(for: "a"), 1, "二度移して2件になった")
+        XCTAssertEqual(uploads().entryIds(for: "a"), [id])
+    }
+
+    /// 格子／行の切り替えは押せる範囲 44・下書きを開く道は待っている間に重ねず、開けなければ知らせる
+    func testSmallFixesAreWired() async throws {
+        XCTAssertEqual(DraftsView.segmentFaceHeight + DraftsView.segmentTapSlack * 2, 44)
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("guard let entry = tabRouter.takePendingDraft(), !openingDraft else { return }"))
+        XCTAssertTrue(root.contains("下書きを開けませんでした"), "開けなかったことを黙っている")
     }
 
     // MARK: - 道具

@@ -25,6 +25,9 @@ struct DraftsView: View {
     }
 
     let presentation: Presentation
+    /// 格子／行の切り替えの見た目の高さ（モック 40）と、押せる範囲を 44 にする上下の余白
+    nonisolated static let segmentFaceHeight: CGFloat = 40
+    nonisolated static let segmentTapSlack: CGFloat = (44 - segmentFaceHeight) / 2
     /// 開いたときの絞り込み（ストーリーの作る画面からは「ストーリー」）
     var initialFilter: DraftLibrary.Kind? = nil
     /// 🔴 **いっぱいで保存できない書きかけから来た**（「下書きを整理する」）。選ぶ状態で開き、
@@ -272,7 +275,8 @@ struct DraftsView: View {
                 layoutButton(.grid, symbol: "square.grid.3x3.fill", label: L("格子", "Grid"))
                 layoutButton(.rows, symbol: "list.bullet", label: L("行の一覧", "List"))
             }
-            .padding(2)
+            // 上下の 2 は中の押せる範囲（44）に入れた。見た目は前と同じ（地は 44・選んだ面は 40）
+            .padding(.horizontal, 2)
             .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(.leading, JPSpace.m)
@@ -288,8 +292,10 @@ struct DraftsView: View {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(layout == value ? WebTheme.text : WebTheme.text3)
-                .frame(width: WebTheme.minTapTarget, height: 40)
+                .frame(width: WebTheme.minTapTarget, height: Self.segmentFaceHeight)
                 .background(layout == value ? WebTheme.surface8 : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                // 見た目は 40（モックのセグメント）、押せる範囲は上下に 2 ずつ足して 44（板 03）
+                .padding(.vertical, Self.segmentTapSlack)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

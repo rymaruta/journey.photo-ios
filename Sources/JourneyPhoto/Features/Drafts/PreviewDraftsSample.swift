@@ -74,7 +74,7 @@ enum PreviewDraftsSample {
             let store = StoryDraftStore(slot: .entry(UUID().uuidString))
             store.bind(userId: userId)
             store.save(shots: inputs, caption: "", location: "", song: nil, durationSec: 5,
-                       savedAt: ISO8601DateFormatter().string(from: now.addingTimeInterval(-story.ago)))
+                       savedAt: DraftLibrary.storyStamp(now.addingTimeInterval(-story.ago)))
         }
         DraftLibrary.shared.noteChanged()
     }

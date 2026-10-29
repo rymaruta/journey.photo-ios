@@ -242,6 +242,7 @@ final class UploadDraftStore {
     func sibling(_ slot: Slot) -> UploadDraftStore {
         let other = UploadDraftStore(defaults: defaults, directory: directory, slot: slot)
         other.writeFiles = writeFiles
+        other.makeToken = makeToken
         return other
     }
 

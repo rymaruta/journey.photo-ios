@@ -1902,7 +1902,7 @@ struct StoryComposerView: View {
             durationSec: durationSec,
             archive: keepInArchive,
             allowReplies: allowReplies,
-            savedAt: ISO8601DateFormatter().string(from: Date())
+            savedAt: DraftLibrary.storyStamp(Date())
         )
     }
 
@@ -1916,7 +1916,7 @@ struct StoryComposerView: View {
             _ = await autoDrafts.saveInBackground(
                 shots: shotInputs, caption: caption, location: place.location, song: song,
                 durationSec: durationSec, archive: keepInArchive, allowReplies: allowReplies,
-                basedOn: openedDraftStamp, savedAt: ISO8601DateFormatter().string(from: Date()))
+                basedOn: openedDraftStamp, savedAt: DraftLibrary.storyStamp(Date()))
         case .clear: clearAutoDraft()
         case .skip: break
         }

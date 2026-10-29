@@ -111,13 +111,18 @@ final class DraftLibrary: ObservableObject {
     /// 一覧・件数を読む前に毎回呼ぶ（何度呼んでも同じ）。起動のときにも呼ぶ（`JourneyPhotoApp`）
     func prepare(for userId: String) {
         guard !userId.isEmpty else { return }
-        uploadStore(.saved).migrateLegacySaved(for: userId)
-        StoryDraftStore.migrateLegacySaved(for: userId, defaults: defaults)
+        uploadStore(.saved).migrateLegacySaved(for: userId, newId: Self.legacyEntryId(userId: userId, kind: .post))
+        StoryDraftStore.migrateLegacySaved(for: userId, defaults: defaults,
+                                           newId: Self.legacyEntryId(userId: userId, kind: .story))
         purgeExpiredStories(for: userId)
     }
 
     /// 保存から `storyLifetime` を過ぎたストーリーの下書き（自動の書きかけも）を消す。**知らせない**
-    /// （owner 決定: 2日前から一覧で知らせるだけ・通知は送らない）
+    /// （owner 決定: 2日前から一覧で知らせるだけ・通知は送らない）。
+    ///
+    /// 2026-10-29 判断（見直し）: 端末の時計を先へ進めると、何件かが一度に消えうる。それでも今の仕様で足りるとした——
+    /// ストーリーの下書きは一過性のもので、消える2日前から一覧の帯とマスで知らせており、時計を進めるのは本人の操作。
+    /// 消すのは一覧・件数を読んだときと起動のときだけで、通知も送らない（owner 決定どおり）
     func purgeExpiredStories(for userId: String) {
         let current = now()
         for id in StoryDraftStore.entryIds(for: userId, defaults: defaults) {
@@ -126,6 +131,37 @@ final class DraftLibrary: ObservableObject {
         }
         let auto = storyStore(.auto, userId: userId)
         if let draft = auto.draft, Self.isExpired(stamp: draft.savedAt, now: current) { auto.clear() }
+    }
+
+    /// ストーリーの下書きの保存の時刻の書き方（**ミリ秒まで**・2026-10-29 の見直し）。時刻は送り終えた下書きを
+    /// 片づける印（`clearStory(stamp:)`・`StoryUploadCenter.pendingDraftStamp`）にもなるので、秒までだと
+    /// 同じ秒に保存した別の下書き（複製・別の下書きとして保存）を巻き込んで消した。読む側は両方読める（`storyDate`）
+    nonisolated static func storyStamp(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
+    }
+
+    /// 前の版の1件を移すときの ID（**利用者 ID から決まる**・2026-10-29 の見直し）。移す処理が二つ同時に
+    /// 走っても（起動と画面）同じ鍵に書くので、1件が2件にならない
+    nonisolated static func legacyEntryId(userId: String, kind: Kind) -> String {
+        // FNV-1a（64bit）を種を替えて2回 → 16バイト → UUID の形
+        func fnv(_ seed: UInt64) -> UInt64 {
+            var hash: UInt64 = 0xcbf29ce484222325 ^ seed
+            for byte in "\(kind.rawValue):\(userId)".utf8 {
+                hash ^= UInt64(byte)
+                hash = hash &* 0x100000001b3
+            }
+            return hash
+        }
+        let a = fnv(0), b = fnv(0x9e3779b97f4a7c15)
+        var bytes = (0..<8).map { UInt8(truncatingIfNeeded: a >> (8 * UInt64($0))) }
+            + (0..<8).map { UInt8(truncatingIfNeeded: b >> (8 * UInt64($0))) }
+        bytes[6] = (bytes[6] & 0x0f) | 0x50   // 版（名前から作った印）
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        let uuid = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                               bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+        return uuid.uuidString
     }
 
     /// ストーリーの下書きの保存の時刻（秒まで・ミリ秒あり・なしの両方）
@@ -197,12 +233,15 @@ final class DraftLibrary: ObservableObject {
         }
     }
 
-    /// 上限に数える件数（自動の書きかけ・削除を待つものは数えない）
+    /// 上限に数える件数（自動の書きかけは数えない）。
+    ///
+    /// 🔴 **削除の「元に戻す」を待っている下書きも数える**（2026-10-29 の見直し）。数えないと、待っている間に
+    /// 新しく保存してから「元に戻す」を押して 21 件になった。空くのは本当に消したとき（約6秒後か一覧を閉じたとき）
     func count(for userId: String) -> Int {
         guard !userId.isEmpty else { return 0 }
         prepare(for: userId)
-        let posts = uploadStore(.saved).entryIds(for: userId).filter { !hidden.contains($0) }.count
-        let stories = StoryDraftStore.entryIds(for: userId, defaults: defaults).filter { !hidden.contains($0) }.count
+        let posts = uploadStore(.saved).entryIds(for: userId).count
+        let stories = StoryDraftStore.entryIds(for: userId, defaults: defaults).count
         return posts + stories
     }
 
@@ -357,7 +396,7 @@ final class DraftLibrary: ObservableObject {
                 shots: inputs, caption: draft.caption, location: draft.location, song: draft.song,
                 durationSec: draft.durationSec, archive: draft.archive == true,
                 allowReplies: draft.allowReplies != false,
-                savedAt: ISO8601DateFormatter().string(from: now()))
+                savedAt: Self.storyStamp(now()))
         }
         guard ok else { return nil }
         noteChanged()

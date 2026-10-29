@@ -740,14 +740,33 @@ final class UploadViewModel: ObservableObject {
     @discardableResult
     func saveDraftAsNew(now: Date = Date(), newId: String = UUID().uuidString) -> Bool {
         guard draftSaveBlock == nil, let current = drafts else { return false }
+        let keys = draftKeys
+        let removals = pendingEntryRemovals
         drafts = current.sibling(.entry(newId))
         draftKeys = [:]
+        pendingEntryRemovals = []
         guard saveDraft(now: now) else {
+            // 🔴 **書けなかったら、開いていた下書きとのつながりも戻す**（2026-10-29 の見直し）。置き場だけ戻して
+            // 印を空のままにすると、このあと送って上がった写真が開いていた下書きから外れず、次に開いて二重に投稿する
             drafts = current
+            draftKeys = keys
+            pendingEntryRemovals = removals
             return false
         }
         return true
     }
+
+    /// 一覧から開いた下書き（`Slot.entry`）で、帯の × で外した写真の印（2026-10-29 の見直し）。
+    ///
+    /// 🔴 **× で外しても、その場では下書きの記録から消さない。** 「変更を残さずに閉じる」で閉じたら、
+    /// 開いたときのまま残す（その場で消すと、閉じても写真が戻らない）。「この下書きを更新」は今の写真で
+    /// 書き直すので外れる。**全部上がって画面を閉じるとき**は、ここに残した写真も下書きから外す
+    /// （本人が外した写真を、送り終えた下書きの残りとして置き去りにしない）。上がった写真を1枚ずつ外す
+    /// 処理（`markDraft(.posted)`）は今のまますぐ
+    private(set) var pendingEntryRemovals: [String] = []
+
+    /// 開き直した写真のうち、下書きの写真とつながっている枚数（試験で、つながりが切れていないかを見る）
+    var linkedDraftPhotoCount: Int { draftKeys.count }
 
     /// いま開いている下書きの ID（`Slot.entry`）。新しい投稿でも保存前から決まっている
     var draftEntryId: String? { drafts?.entryId }
@@ -757,9 +776,15 @@ final class UploadViewModel: ObservableObject {
     @discardableResult
     func openEntry(_ id: String) async -> Bool {
         guard items.isEmpty, !isWorking, !isRestoringDraft else { return false }
+        let previous = drafts
         let base = drafts ?? UploadDraftStore()
         drafts = base.sibling(.entry(id))
-        return await restoreDraft(from: .entry(id))
+        guard await restoreDraft(from: .entry(id)) else {
+            // 戻せなかったら、前の新しい1件の枠に戻す（開けなかった下書きを、この画面の保存で上書きしない）
+            if items.isEmpty { drafts = previous }
+            return false
+        }
+        return true
     }
 
     /// いまの欄を下書きに保存する（×→「下書きに保存」）。**写真は整えた本体と編集のレシピ**を残す
@@ -771,6 +796,8 @@ final class UploadViewModel: ObservableObject {
         let ok = drafts.save(draftInputs(), fields: draftFields(now: now), for: draftOwner)
         if ok {
             restoredDraft = true
+            // 今の写真で書き直したので、× で外した写真はもう記録に無い
+            pendingEntryRemovals = []
             // 本人の下書きに移したので、黙って残した書きかけ・この画面の送信の控えは要らない
             // （次に開いて二重に尋ねない・同じ写真を2か所から送らない）
             discardAutoDraft()
@@ -953,10 +980,23 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **自動の枠・控えから戻すときは、開いていた本人の下書きを今の下書きにする**（2026-10-29・#400）。
         // 下書きが何件もあるので、どれの続きかを記録（`entryId`）か、無ければ写真の印（`savedKey`・前の版）から
         // 探す。見つからなければ新しい下書きのまま（保存すると新しい1件になる）
+        //
+        // 🔴 **その下書きの続きと見なすのは、下書きがもう無いか、書きかけの写真の印（`savedKey`）が今の下書きに
+        // 1つでも残っているときだけ**（2026-10-29 の見直し）。書きかけが残ったあとに一覧から同じ下書きを開いて
+        // 「更新」すると、下書きの写真の印は全部新しくなる。そのまま付け替えると、後で書きかけを戻して保存した
+        // とき、更新した下書きを古い中身で上書きした。続きでなければ新しい1件のまま（保存すると新しい1件になる）。
+        // 2026-10-29 判断: 古い書きかけは片づけない——本人がまだ見ていない書きかけを黙って消さない
+        // （`UploadDraftRules.ownsAutoSlot` と同じ考え）。続きと見なさないだけにする
         if slot == .auto || isSend(slot), let base = self.drafts {
-            let savedKey = draft.items.lazy.compactMap(\.savedKey).first
-            if let id = draft.entryId ?? savedKey.flatMap({ base.entryContaining(itemKey: $0, for: draftOwner) }) {
-                self.drafts = base.sibling(.entry(id))
+            let savedKeys = Set(draft.items.compactMap(\.savedKey))
+            if let id = draft.entryId ?? savedKeys.lazy.compactMap({ base.entryContaining(itemKey: $0, for: draftOwner) }).first {
+                let target = base.sibling(.entry(id))
+                let currentKeys = Set(target.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
+                if let stored = target.draft(for: draftOwner), !stored.items.isEmpty {
+                    if !savedKeys.isDisjoint(with: currentKeys) { self.drafts = target }
+                } else {
+                    self.drafts = target
+                }
             }
         }
         // 本人の下書きにいま在る写真の印（自動の枠・控えの `savedKey` が今も指しているか）
@@ -1057,6 +1097,15 @@ final class UploadViewModel: ObservableObject {
     private func isEntry(_ slot: UploadDraftStore.Slot) -> Bool {
         if case .entry = slot { return true }
         return false
+    }
+
+    /// × で外した写真を、開いていた下書きの記録からも外す（全部上がったとき）
+    func applyPendingEntryRemovals() {
+        guard !pendingEntryRemovals.isEmpty else { return }
+        if let drafts, let draftOwner {
+            for key in pendingEntryRemovals { drafts.removeItem(key: key, for: draftOwner) }
+        }
+        pendingEntryRemovals = []
     }
 
     /// 下書きを消す（「下書きを削除」）
@@ -1379,7 +1428,12 @@ final class UploadViewModel: ObservableObject {
     /// B が控えに残ったまま次の起動の「送れなかった投稿」から戻り、本人が外した写真が投稿されえた
     private func forgetStoredCopies(of photoId: UUID) {
         if let key = draftKeys[photoId] {
-            if let drafts, let draftOwner { drafts.removeItem(key: key, for: draftOwner) }
+            // 一覧から開いた下書きは、この場では記録から消さない（`pendingEntryRemovals` の注記・#400）
+            if drafts?.entryId != nil {
+                pendingEntryRemovals.append(key)
+            } else if let drafts, let draftOwner {
+                drafts.removeItem(key: key, for: draftOwner)
+            }
             draftKeys[photoId] = nil
         }
         if let key = autoKeys[photoId] {
@@ -1703,6 +1757,8 @@ final class UploadViewModel: ObservableObject {
                     CoverOfferStore.shared.notePosted(userId: savedPhotoOwner ?? draftOwner, photoIds: savedPhotoIds)
                     PushPrimerStore.shared.notePosted()
                     ReviewPromptStore.shared.noteHappyMoment()
+                    // × で外した写真も、開いていた下書きから外す（`pendingEntryRemovals`・#400 の見直し）
+                    applyPendingEntryRemovals()
                 }
             } else {
                 errorMessage = UploadSummary.withInspiredDropped(UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
