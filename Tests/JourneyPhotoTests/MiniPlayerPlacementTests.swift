@@ -173,12 +173,16 @@ final class MiniPlayerPlacementTests: XCTestCase {
         XCTAssertFalse(bar.contains("Material"), "ぼかしを使っている（後ろの写真の形が見えない）")
         XCTAssertTrue((0.15...0.25).contains(MiniPlayerBar.glassTint), "黒の重ねが 15〜25% でない（濃いと写真が見えない）")
         XCTAssertTrue((0.10...0.15).contains(MiniPlayerBar.glassBorder), "縁が白 10〜15% でない")
-        XCTAssertTrue((0.55...0.7).contains(MiniPlayerBar.textShadowOpacity), "字の影が黒 60% 前後でない（明るい写真で読めない）")
-        XCTAssertTrue((2...3).contains(MiniPlayerBar.textShadowRadius), "字の影の半径が 2〜3 でない")
+        XCTAssertTrue((0.55...0.7).contains(MiniPlayerBar.textShadowOpacity), "字の縁の影が黒 60% 前後でない（明るい写真で読めない）")
+        XCTAssertTrue((2...3).contains(MiniPlayerBar.textShadowRadius), "字の縁の影の半径が 2〜3 でない")
+        // 白い写真・模様の上の白い字の上でも読めるよう、字の後ろだけを沈める後光（run 759 の見本の絵で1枚では足りなかった）
+        XCTAssertTrue((0.35...0.6).contains(MiniPlayerBar.textGlowOpacity), "字の後光が無い・濃すぎる")
+        XCTAssertTrue((6...10).contains(MiniPlayerBar.textGlowRadius), "字の後光の広がりが 6〜10 でない")
+        XCTAssertTrue(bar.contains("radius: MiniPlayerBar.textGlowRadius"), "後光の影を付けていない")
         XCTAssertFalse(bar.contains("WebTheme.raised"), "白 10% の地に戻っている")
         XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")
-        XCTAssertEqual(bar.components(separatedBy: ".shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),\n").count - 1,
-                       2, "透ける地の上の曲名・歌手名と停止ボタンに影が無い")
+        XCTAssertEqual(bar.components(separatedBy: ".modifier(SeeThroughTextShadow(active: !inSongPicker))").count - 1,
+                       2, "透ける地の上の曲名・歌手名と停止ボタンに影が無い（曲選びの中にも付いている）")
         XCTAssertTrue(bar.contains(".foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.muted2)"),
                       "写真の上の歌手名が白 72% でない")
         // 外の影は角丸の形にだけ・引いている間だけ（中身ごとの影はスクロール中に描き直して重い）

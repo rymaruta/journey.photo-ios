@@ -44,13 +44,17 @@ struct MiniPlayerBar: View {
     /// 1.1.44 の `jpGlass`（黒 55%＋`.ultraThinMaterial`＋白 10% の縁）は、実機では黒 55% にぼかしの曇りが
     /// 重なってほぼ不透明の黒い板に見えた。**ぼかしを外し**、黒の重ねを薄くして後ろの写真の形と色を見せる。
     /// 読みやすさは字の影（`textShadow…`）で持たせる。`jpGlass` 自体は他の部品が使うので変えない
-    static let glassTint: Double = 0.2
+    static let glassTint: Double = 0.25
     /// 縁の白（髪の毛線）。明るい写真の上でも形が分かる強さ（板の border 白 12%）
     static let glassBorder: Double = 0.12
-    /// 曲名・歌手名・停止ボタンの影（板の「写真の上の大きい字の影は黒 60%」）。白い写真の上でも字の縁が立つよう、
-    /// 広げすぎず（半径 3）濃くする（2026-10-29 判断・地を透かしたので 50% から上げた）
+    /// 曲名・歌手名・停止ボタンの影は2枚（`SeeThroughTextShadow`）。2026-10-29 判断（run 759 の白・模様の見本の絵で、
+    /// 黒 60%・半径 3 の1枚では白い写真の上の歌手名がほぼ消え、模様の上の白い字と曲名がぶつかった）:
+    /// - 縁: 黒 60%・半径 2（板の「写真の上の字の影は黒 60%」）。字の輪郭を立てる
+    /// - 後光: 黒 45%・半径 8。字の後ろだけを暗く沈め、地全体は暗くしない（写真は見えたまま）
     static let textShadowOpacity: Double = 0.6
-    static let textShadowRadius: CGFloat = 3
+    static let textShadowRadius: CGFloat = 2
+    static let textGlowOpacity: Double = 0.45
+    static let textGlowRadius: CGFloat = 8
     /// 動かす置き場所の座標の名前
     private static let area = "miniPlayer.area"
     /// 動き始めるまでに指が進む距離（pt）。**長押しは要らない。普通に引けば動く。**
@@ -77,9 +81,9 @@ struct MiniPlayerBar: View {
     /// 曲の絵・曲名・歌手名と停止ボタン。
     /// 2026-10-28 判断（owner「再生中の音楽の透明をやめちゃったの？好きだったのに」）: #395 の不透明の面をやめ、透ける地に戻した。
     /// 2026-10-29 判断（owner 背景を透かしたい・#402）: ガラス（黒 55%＋ぼかし）は実機でほぼ黒い板に見えたので、
-    /// **ぼかしを外して黒 20%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
+    /// **ぼかしを外して黒 25%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
     /// - 下の字（説明文など）が透けて曲名と重なる件（#395 より前の白 10%）は、曲名・歌手名・停止ボタンの
-    ///   黒 60% の影で字の縁を立てて読ませる。重なって読みにくければ再生器を指で動かせる（`MiniPlayerPlacement`）
+    ///   2枚の影（縁＋後光・`SeeThroughTextShadow`）で字を立てて読ませる。重なって読みにくければ再生器を指で動かせる（`MiniPlayerPlacement`）
     /// - 歌手名は写真の上の副文の白 72%（`muted2`・板の「写真の上の副文は不透明の text-2 にしない」）。
     ///   白 60% の faint は明るい写真の上で沈んだ
     /// - 軽くする: ぼかし（material）は使わない。再生器の外の影は置いている間は付けない
@@ -109,8 +113,7 @@ struct MiniPlayerBar: View {
                     .font(.title2)
                     .foregroundStyle(WebTheme.foreground)
                     // 透ける地の上でも丸の形が立つよう、曲名と同じ影（曲選びの中は不透明の面なので付けない）
-                    .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),
-                            radius: Self.textShadowRadius, x: 0, y: 1)
+                    .modifier(SeeThroughTextShadow(active: !inSongPicker))
                     // 押せる範囲は 44pt（見た目はそのまま）
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
@@ -169,8 +172,7 @@ struct MiniPlayerBar: View {
                 }
             }
             // 透ける地の上の字を読ませる影（全体のバーだけ。曲選びの中は不透明の面なので要らない）
-            .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity),
-                    radius: Self.textShadowRadius, x: 0, y: 1)
+            .modifier(SeeThroughTextShadow(active: !inSongPicker))
             Spacer(minLength: 0)
         }
         .frame(minHeight: WebTheme.minTapTarget)
@@ -244,5 +246,19 @@ struct MiniPlayerBar: View {
         withAnimation(settleAnimation) {
             placement.spot = MiniPlayerPlacement.moved(placement.spot, to: side)
         }
+    }
+}
+
+/// 透ける地の上の曲名・歌手名・停止ボタンの影（全体のバーだけ。曲選びの中は不透明の面なので付けない）。
+/// 縁（黒 60%・半径 2）と後光（黒 45%・半径 8）の2枚。値は `MiniPlayerBar.textShadow…`・`textGlow…`
+private struct SeeThroughTextShadow: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: .black.opacity(active ? MiniPlayerBar.textShadowOpacity : 0),
+                    radius: MiniPlayerBar.textShadowRadius, x: 0, y: 1)
+            .shadow(color: .black.opacity(active ? MiniPlayerBar.textGlowOpacity : 0),
+                    radius: MiniPlayerBar.textGlowRadius, x: 0, y: 0)
     }
 }
