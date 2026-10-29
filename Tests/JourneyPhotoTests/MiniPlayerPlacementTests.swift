@@ -161,7 +161,7 @@ final class MiniPlayerPlacementTests: XCTestCase {
 
     /// 地は後ろの写真が見える薄い黒（2026-10-28 owner「透明をやめちゃったの？好きだったのに」→
     /// 2026-10-29 owner「背景透過させて、後ろの画像とかが見えるようにしたい」#402: ぼかし入りのガラスは実機で黒い板に見えた）。
-    /// ぼかし無し・黒 15〜25%・白 10〜15% の縁・曲名と歌手名と停止ボタンに黒 60% 前後の影・
+    /// ぼかし無し・黒 20〜35%・白 10〜15% の縁・曲名と歌手名と停止ボタンに黒 60% 前後の縁の影と後光・
     /// 置いている間は外の影なし（スクロール中に軽く）・曲選びの中は不透明の面のまま。
     /// 停止は 44pt・読み上げに移動の代わりの操作・**長押しせずに引けば動く**（owner 実機で動かせなかった）
     func testBarIsGlassAndAccessible() throws {
@@ -171,13 +171,13 @@ final class MiniPlayerPlacementTests: XCTestCase {
                       "全体のバーに髪の毛線の縁が無い")
         XCTAssertFalse(bar.contains("jpGlass("), "ぼかし入りのガラスに戻っている（実機で黒い板に見えた）")
         XCTAssertFalse(bar.contains("Material"), "ぼかしを使っている（後ろの写真の形が見えない）")
-        XCTAssertTrue((0.15...0.25).contains(MiniPlayerBar.glassTint), "黒の重ねが 15〜25% でない（濃いと写真が見えない）")
+        XCTAssertTrue((0.2...0.35).contains(MiniPlayerBar.glassTint), "黒の重ねが 20〜35% でない（濃いと写真が見えない・薄いと白い写真で字が沈む）")
         XCTAssertTrue((0.10...0.15).contains(MiniPlayerBar.glassBorder), "縁が白 10〜15% でない")
         XCTAssertTrue((0.55...0.7).contains(MiniPlayerBar.textShadowOpacity), "字の縁の影が黒 60% 前後でない（明るい写真で読めない）")
         XCTAssertTrue((2...3).contains(MiniPlayerBar.textShadowRadius), "字の縁の影の半径が 2〜3 でない")
         // 白い写真・模様の上の白い字の上でも読めるよう、字の後ろだけを沈める後光（run 759 の見本の絵で1枚では足りなかった）
-        XCTAssertTrue((0.35...0.6).contains(MiniPlayerBar.textGlowOpacity), "字の後光が無い・濃すぎる")
-        XCTAssertTrue((6...10).contains(MiniPlayerBar.textGlowRadius), "字の後光の広がりが 6〜10 でない")
+        XCTAssertTrue((0.5...0.8).contains(MiniPlayerBar.textGlowOpacity), "字の後光が無い・薄い")
+        XCTAssertTrue((4...8).contains(MiniPlayerBar.textGlowRadius), "字の後光の広がりが 4〜8 でない")
         XCTAssertTrue(bar.contains("radius: MiniPlayerBar.textGlowRadius"), "後光の影を付けていない")
         XCTAssertFalse(bar.contains("WebTheme.raised"), "白 10% の地に戻っている")
         XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")

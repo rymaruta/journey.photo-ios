@@ -43,18 +43,21 @@ struct MiniPlayerBar: View {
     /// 全体のバーの地（2026-10-29 判断・owner「背景透過させて、後ろの画像とかが見えるようにしたい」#402）。
     /// 1.1.44 の `jpGlass`（黒 55%＋`.ultraThinMaterial`＋白 10% の縁）は、実機では黒 55% にぼかしの曇りが
     /// 重なってほぼ不透明の黒い板に見えた。**ぼかしを外し**、黒の重ねを薄くして後ろの写真の形と色を見せる。
-    /// 読みやすさは字の影（`textShadow…`）で持たせる。`jpGlass` 自体は他の部品が使うので変えない
-    static let glassTint: Double = 0.25
+    /// 読みやすさは字の影（`textShadow…`）で持たせる。`jpGlass` 自体は他の部品が使うので変えない。
+    /// 黒は 30%: 見本の絵（run 759・760）で 20〜25% は白い写真の上で地が明るい灰になり、白い字が沈んだ。
+    /// 30% でも写真の形と色はそのまま見える（ぼかしが無いので）
+    static let glassTint: Double = 0.3
     /// 縁の白（髪の毛線）。明るい写真の上でも形が分かる強さ（板の border 白 12%）
     static let glassBorder: Double = 0.12
     /// 曲名・歌手名・停止ボタンの影は2枚（`SeeThroughTextShadow`）。2026-10-29 判断（run 759 の白・模様の見本の絵で、
     /// 黒 60%・半径 3 の1枚では白い写真の上の歌手名がほぼ消え、模様の上の白い字と曲名がぶつかった）:
     /// - 縁: 黒 60%・半径 2（板の「写真の上の字の影は黒 60%」）。字の輪郭を立てる
-    /// - 後光: 黒 45%・半径 8。字の後ろだけを暗く沈め、地全体は暗くしない（写真は見えたまま）
+    /// - 後光: 黒 70%・半径 6。字の後ろだけを暗く沈め、地全体は暗くしない（写真は見えたまま）。
+    ///   run 760 の 45%・半径 8 は細い字の周りに薄く広がるだけで、模様の上の白い字と曲名がまだぶつかった
     static let textShadowOpacity: Double = 0.6
     static let textShadowRadius: CGFloat = 2
-    static let textGlowOpacity: Double = 0.45
-    static let textGlowRadius: CGFloat = 8
+    static let textGlowOpacity: Double = 0.7
+    static let textGlowRadius: CGFloat = 6
     /// 動かす置き場所の座標の名前
     private static let area = "miniPlayer.area"
     /// 動き始めるまでに指が進む距離（pt）。**長押しは要らない。普通に引けば動く。**
@@ -81,7 +84,7 @@ struct MiniPlayerBar: View {
     /// 曲の絵・曲名・歌手名と停止ボタン。
     /// 2026-10-28 判断（owner「再生中の音楽の透明をやめちゃったの？好きだったのに」）: #395 の不透明の面をやめ、透ける地に戻した。
     /// 2026-10-29 判断（owner 背景を透かしたい・#402）: ガラス（黒 55%＋ぼかし）は実機でほぼ黒い板に見えたので、
-    /// **ぼかしを外して黒 25%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
+    /// **ぼかしを外して黒 30%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
     /// - 下の字（説明文など）が透けて曲名と重なる件（#395 より前の白 10%）は、曲名・歌手名・停止ボタンの
     ///   2枚の影（縁＋後光・`SeeThroughTextShadow`）で字を立てて読ませる。重なって読みにくければ再生器を指で動かせる（`MiniPlayerPlacement`）
     /// - 歌手名は写真の上の副文の白 72%（`muted2`・板の「写真の上の副文は不透明の text-2 にしない」）。
@@ -250,7 +253,7 @@ struct MiniPlayerBar: View {
 }
 
 /// 透ける地の上の曲名・歌手名・停止ボタンの影（全体のバーだけ。曲選びの中は不透明の面なので付けない）。
-/// 縁（黒 60%・半径 2）と後光（黒 45%・半径 8）の2枚。値は `MiniPlayerBar.textShadow…`・`textGlow…`
+/// 縁（黒 60%・半径 2）と後光（黒 70%・半径 6）の2枚。値は `MiniPlayerBar.textShadow…`・`textGlow…`
 private struct SeeThroughTextShadow: ViewModifier {
     let active: Bool
 
