@@ -576,6 +576,8 @@ struct StoryComposerView: View {
             Text(DraftsText.updateMessage)
         }
         // 下書きの一覧（写真選びの上の「下書き n ›」・いっぱいのときの「下書きを整理する」）
+        // 削除を本当に済ませたら件数を読み直す（閉じたときの読み直しが削除より先に走っても残らない）
+        .onChange(of: draftLibrary.revision) { _, _ in refreshDraftCount() }
         .sheet(isPresented: $showDrafts, onDismiss: refreshDraftCount) {
             NavigationStack {
                 DraftsView(presentation: .sheet, initialFilter: tidyingDrafts ? nil : .story,

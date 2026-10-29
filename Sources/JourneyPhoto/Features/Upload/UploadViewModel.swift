@@ -895,7 +895,10 @@ final class UploadViewModel: ObservableObject {
         guard !items.isEmpty else { return nil }
         var keys: [UUID: String] = [:]
         for photo in items { keys[photo.id] = UUID().uuidString }
-        guard await store.saveInBackground(draftInputs(keys: keys), fields: draftFields(now: now), for: owner) else {
+        var fields = draftFields(now: now)
+        // × で外したがまだ下書きに残っている写真（続きから全部送ったときに下書きからも外す・2回目の見直し）
+        if fields.entryId != nil && !pendingEntryRemovals.isEmpty { fields.pendingRemovals = pendingEntryRemovals }
+        guard await store.saveInBackground(draftInputs(keys: keys), fields: fields, for: owner) else {
             return nil
         }
         return keys
@@ -993,7 +996,11 @@ final class UploadViewModel: ObservableObject {
                 let target = base.sibling(.entry(id))
                 let currentKeys = Set(target.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
                 if let stored = target.draft(for: draftOwner), !stored.items.isEmpty {
-                    if !savedKeys.isDisjoint(with: currentKeys) { self.drafts = target }
+                    if !savedKeys.isDisjoint(with: currentKeys) {
+                        self.drafts = target
+                        // 書きかけが覚えていた「× で外した写真」も引き継ぐ（今もその下書きに在るものだけ）
+                        pendingEntryRemovals = (draft.pendingRemovals ?? []).filter(currentKeys.contains)
+                    }
                 } else {
                     self.drafts = target
                 }

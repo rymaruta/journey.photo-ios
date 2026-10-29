@@ -193,6 +193,9 @@ struct UploadView: View {
             Text(closeMessage)
         }
         // 下書きの一覧（上の「下書き n ›」・いっぱいのときの「下書きを整理する」）
+        // 削除を本当に済ませた（一覧を閉じた・約6秒たった）ら件数を読み直す。閉じたときの読み直しが削除より
+        // 先に走ると、いっぱいのまま残った（2回目の見直し）
+        .onChange(of: draftLibrary.revision) { _, _ in refreshDraftCount() }
         .sheet(isPresented: $showDrafts, onDismiss: refreshDraftCount) {
             NavigationStack {
                 DraftsView(presentation: .sheet, tidying: tidyingDrafts,

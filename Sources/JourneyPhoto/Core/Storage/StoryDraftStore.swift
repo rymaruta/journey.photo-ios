@@ -201,9 +201,14 @@ final class StoryDraftStore: ObservableObject {
             defaults.removeObject(forKey: legacy)
             return nil
         }
-        defaults.set(data, forKey: "\(entryPrefix(for: userId))\(newId)")
+        // 移す先に別の中身の下書きが既にあれば上書きしない（古い版に戻して再び上げた回・`UploadDraftStore` と同じ）
+        var id = newId
+        if let existing = defaults.data(forKey: "\(entryPrefix(for: userId))\(newId)"), existing != data {
+            id = UUID().uuidString
+        }
+        defaults.set(data, forKey: "\(entryPrefix(for: userId))\(id)")
         defaults.removeObject(forKey: legacy)
-        return newId
+        return id
     }
 
     func use(userId: String?) {

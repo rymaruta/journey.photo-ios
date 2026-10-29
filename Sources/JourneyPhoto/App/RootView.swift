@@ -88,6 +88,8 @@ struct RootView: View {
     @State private var openStoryDraftId: String?
     /// 下書きを開くのを待っている（待っている間は次の依頼を受けない・二重に開かない）
     @State private var openingDraft = false
+    /// 待っている間に来た次の依頼（最後の1つ）。前のが終わったら開く（黙って捨てない・2回目の見直し）
+    @State private var queuedDraft: DraftLibrary.Entry?
     /// 「旅の写真からまとめて」（全画面）
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
@@ -1030,10 +1032,19 @@ struct RootView: View {
             // 下書きの一覧から下書きを開く（`TabRouter.openDraft`・2026-10-29・#400）。作る画面から別の種類の
             // 下書きを選んだ回は、その画面が閉じきるのを待ってから開く（重ねると iOS が遷移を取りこぼす）
             .onChange(of: tabRouter.draftRequests) { _, _ in
-                guard let entry = tabRouter.takePendingDraft(), !openingDraft else { return }
+                guard let entry = tabRouter.takePendingDraft() else { return }
+                guard !openingDraft else {
+                    queuedDraft = entry
+                    return
+                }
                 openingDraft = true
                 Task {
-                    await openDraftWhenFree(entry)
+                    var next: DraftLibrary.Entry? = entry
+                    while let current = next {
+                        await openDraftWhenFree(current)
+                        next = queuedDraft
+                        queuedDraft = nil
+                    }
                     openingDraft = false
                 }
             }

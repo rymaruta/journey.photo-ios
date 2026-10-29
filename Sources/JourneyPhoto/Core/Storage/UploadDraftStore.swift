@@ -87,6 +87,10 @@ final class UploadDraftStore {
         /// 続きから戻したとき、その下書きの続きにする（「この下書きを更新」の行き先・上がった写真を外す先）。
         /// 前の版の控えには無い（nil）——そのときは `savedKey` を含む下書きを探す（`entryContaining`）
         var entryId: String? = nil
+        /// 自動の枠・送信の控えだけ: 開いていた下書きから **× で外したが、まだ下書きの記録に残っている写真の印**
+        /// （`UploadViewModel.pendingEntryRemovals`・2026-10-29 の2回目の見直し）。続きから全部送り終えたとき、
+        /// 下書きからも外す（外した写真を置き去りにしない）
+        var pendingRemovals: [String]? = nil
 
         /// スポットの紐付け（`UploadSpotTarget` の写し）
         struct Spot: Codable, Equatable {
@@ -211,13 +215,22 @@ final class UploadDraftStore {
         }
         // 読めない記録は移さない（前の版の `draft(for:)` と同じく片づける）
         guard let saved = try? JSONDecoder().decode(Draft.self, from: data), !saved.items.isEmpty,
-              let key = Self.key(for: userId, slot: .entry(newId)) else {
+              var key = Self.key(for: userId, slot: .entry(newId)) else {
             sibling(.saved).clear(for: userId)
             return nil
         }
+        var id = newId
+        // 🔴 **移す先に別の中身の下書きが既にあれば上書きしない**（2026-10-29 の2回目の見直し）。古い版に戻して
+        // また上げると、前の鍵がもう一度書かれる——決まった ID のまま移すと、移したあとに更新した1件を古い中身で
+        // 上書きした。同じ中身（二重に走った）なら同じ鍵のまま（1件のまま）
+        if let existing = defaults.data(forKey: key), existing != data {
+            id = UUID().uuidString
+            guard let fresh = Self.key(for: userId, slot: .entry(id)) else { return nil }
+            key = fresh
+        }
         defaults.set(data, forKey: key)
         defaults.removeObject(forKey: legacy)
-        return newId
+        return id
     }
 
     /// 1枚の印（`Item.key`）を含む、その人の下書きの ID（前の版の自動の枠・控えの `savedKey` から、

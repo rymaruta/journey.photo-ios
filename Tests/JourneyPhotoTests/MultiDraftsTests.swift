@@ -549,21 +549,94 @@ final class MultiDraftsTests: XCTestCase {
         XCTAssertNotNil(UUID(uuidString: id))
         XCTAssertNotEqual(id, DraftLibrary.legacyEntryId(userId: "a", kind: .story))
         XCTAssertNotEqual(id, DraftLibrary.legacyEntryId(userId: "b", kind: .post))
-        // 移したあとに前の鍵がもう一度書かれても（別の処理が同時に移した）、同じ鍵に入って1件のまま
-        for _ in 0..<2 {
-            XCTAssertTrue(uploads(.saved).save([UploadDraftStore.ItemInput(imageData: Data([1]), item: item("前"))],
-                                               fields: fields(now), for: "a"))
-            library().prepare(for: "a")
-        }
+        // 同じ中身を二度移しても（別の処理が同時に移した）、同じ鍵に入って1件のまま
+        XCTAssertTrue(uploads(.saved).save([UploadDraftStore.ItemInput(imageData: Data([1]), item: item("前"))],
+                                           fields: fields(now), for: "a"))
+        let legacyKey = try XCTUnwrap(UploadDraftStore.key(for: "a", slot: .saved))
+        let legacyData = try XCTUnwrap(defaults.data(forKey: legacyKey))
+        library().prepare(for: "a")
+        defaults.set(legacyData, forKey: legacyKey)
+        library().prepare(for: "a")
         XCTAssertEqual(library().count(for: "a"), 1, "二度移して2件になった")
         XCTAssertEqual(uploads().entryIds(for: "a"), [id])
+    }
+
+    /// 🔴 [2回目 1] 移したあとに更新した1件があるところへ、前の鍵がまた書かれた（古い版に戻して再び上げた）とき、
+    /// **更新した1件を古い中身で上書きしない**（別の ID に移す）。ストーリーも同じ
+    func testRemigrationDoesNotOverwriteAnUpdatedEntry() async throws {
+        XCTAssertTrue(uploads(.saved).save([UploadDraftStore.ItemInput(imageData: Data([1]), item: item("前"))],
+                                           fields: fields(now), for: "a"))
+        let lib = library()
+        lib.prepare(for: "a")
+        let id = DraftLibrary.legacyEntryId(userId: "a", kind: .post)
+        XCTAssertTrue(uploads(.entry(id)).save([UploadDraftStore.ItemInput(imageData: Data([2]), item: item("更新した"))],
+                                               fields: fields(now), for: "a"))
+        XCTAssertTrue(uploads(.saved).save([UploadDraftStore.ItemInput(imageData: Data([3]), item: item("古い版で書いた"))],
+                                           fields: fields(now), for: "a"))
+        lib.prepare(for: "a")
+        XCTAssertEqual(uploads(.entry(id)).draft(for: "a")?.items.first?.title, "更新した", "更新した1件を古い中身で上書きした")
+        XCTAssertEqual(lib.entries(for: "a").map(\.title).sorted(), ["古い版で書いた", "更新した"])
+
+        let storyId = DraftLibrary.legacyEntryId(userId: "a", kind: .story)
+        let legacyStory = StoryDraftStore(defaults: defaults, directory: directory)
+        legacyStory.use(userId: "a")
+        XCTAssertTrue(legacyStory.save(imageData: Data([4]), fileName: "a.jpg", contentType: "image/jpeg", coords: nil,
+                                       caption: "最初", location: "", overlays: [], song: nil, durationSec: 5,
+                                       savedAt: DraftLibrary.storyStamp(now)))
+        lib.prepare(for: "a")
+        XCTAssertTrue(stories(.entry(storyId)).save(
+            shots: [StoryDraftStore.ShotInput(imageData: Data([5]), fileName: "b.jpg", contentType: "image/jpeg",
+                                              coords: nil, overlays: [])],
+            caption: "更新したストーリー", location: "", song: nil, durationSec: 5,
+            savedAt: DraftLibrary.storyStamp(now.addingTimeInterval(1))))
+        XCTAssertTrue(legacyStory.save(imageData: Data([6]), fileName: "c.jpg", contentType: "image/jpeg", coords: nil,
+                                       caption: "古い版のストーリー", location: "", overlays: [], song: nil, durationSec: 5,
+                                       savedAt: DraftLibrary.storyStamp(now.addingTimeInterval(2))))
+        lib.prepare(for: "a")
+        XCTAssertEqual(stories(.entry(storyId)).draft?.caption, "更新したストーリー", "更新したストーリーの下書きを上書きした")
+        XCTAssertEqual(lib.count(for: "a", kind: .story), 2)
+    }
+
+    /// 🔴 [2回目 3] 下書きを開いて × で外した写真がある回に終了 → 書きかけから続けて全部送ったら、外した写真も下書きから外れる
+    func testAutoDraftCarriesPendingRemovals() async throws {
+        let x = savePost("元", photos: 2)
+        let writing = makeModel(owner: "a")
+        writing.autoDrafts = uploads(.auto)
+        let opened = await writing.openEntry(x)
+        XCTAssertTrue(opened)
+        writing.remove(writing.items[1].id)
+        await writing.autoSaveDraft(now: now)
+        XCTAssertEqual(uploads(.auto).draft(for: "a")?.pendingRemovals?.count, 1, "書きかけが外した写真を覚えていない")
+
+        let resumed = makeModel(owner: "a")
+        resumed.autoDrafts = uploads(.auto)
+        let restored = await resumed.restoreDraft(from: .auto)
+        XCTAssertTrue(restored)
+        XCTAssertEqual(resumed.draftEntryId, x)
+        XCTAssertEqual(resumed.pendingEntryRemovals.count, 1, "続けた回に外した写真を引き継がない")
+        resumed.applyPendingEntryRemovals()
+        XCTAssertEqual(uploads(.entry(x)).draft(for: "a")?.items.count, 1, "外した写真が下書きに残った")
+    }
+
+    /// [2回目 2・4] 件数は削除を済ませたら読み直す・複製の押せる判定は上限と同じ数え方・2本目の依頼を捨てない
+    func testSecondReviewWiring() async throws {
+        for path in ["Features/Upload/UploadView.swift", "Features/Stories/StoryComposerView.swift"] {
+            XCTAssertTrue(try source(path).contains(".onChange(of: draftLibrary.revision) { _, _ in refreshDraftCount() }"),
+                          "\(path): 削除を済ませても件数を読み直さない")
+        }
+        let list = try source("Features/Drafts/DraftsView.swift")
+        XCTAssertTrue(list.contains(".disabled(DraftLibrary.isFull(count: limitCount) || entry.readableCount == 0)"))
+        XCTAssertTrue(list.contains("limitCount = library.count(for: userId)"))
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("queuedDraft = entry"), "待っている間に来た依頼を捨てている")
+        XCTAssertTrue(root.contains("next = queuedDraft"))
     }
 
     /// 格子／行の切り替えは押せる範囲 44・下書きを開く道は待っている間に重ねず、開けなければ知らせる
     func testSmallFixesAreWired() async throws {
         XCTAssertEqual(DraftsView.segmentFaceHeight + DraftsView.segmentTapSlack * 2, 44)
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("guard let entry = tabRouter.takePendingDraft(), !openingDraft else { return }"))
+        XCTAssertTrue(root.contains("guard !openingDraft else {"))
         XCTAssertTrue(root.contains("下書きを開けませんでした"), "開けなかったことを黙っている")
     }
 

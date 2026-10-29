@@ -63,6 +63,8 @@ struct DraftsView: View {
     /// 複製できなかったなどの一言（起きた所のすぐ上・板 06）
     @State private var notice: String?
     @State private var appliedInitial = false
+    /// 上限に数える件数（`DraftLibrary.count`・「元に戻す」待ちも数える）。複製を押せるかに使う
+    @State private var limitCount = 0
 
     private var userId: String { auth.userId ?? "" }
     private var now: Date { library.now() }
@@ -363,7 +365,9 @@ struct DraftsView: View {
         Button { duplicate(entry) } label: {
             Label(DraftsText.duplicate, systemImage: "plus.square.on.square")
         }
-        .disabled(DraftLibrary.isFull(count: savedCount) || entry.readableCount == 0)
+        // いっぱいかは上限と同じ数え方（「元に戻す」待ちも数える `DraftLibrary.count`）——押せるのに
+        // 「複製できませんでした」を出さない（2回目の見直し）
+        .disabled(DraftLibrary.isFull(count: limitCount) || entry.readableCount == 0)
         Button(role: .destructive) { confirmDelete = [entry.id] } label: {
             Label(DraftsText.delete, systemImage: "trash")
         }
@@ -592,6 +596,7 @@ struct DraftsView: View {
             return
         }
         entries = library.entries(for: userId, sendingStoryStamp: StoryUploadCenter.shared.pendingDraftStamp)
+        limitCount = library.count(for: userId)
         selection = selection.filter { id in entries.contains { $0.id == id } }
         phase = .loaded
     }
