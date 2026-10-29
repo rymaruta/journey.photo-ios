@@ -25,6 +25,20 @@ final class StoryCaptionTests: XCTestCase {
         add(shot)
     }
 
+    /// 欄が見えているか（在って、高さが 1pt を超える）
+    private static func isShown(_ element: XCUIElement) -> Bool {
+        element.exists && element.frame.height > 1
+    }
+
+    private static func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        } while Date() < end
+        return condition()
+    }
+
     func testTappingThePhotoStartsTheCaptionAndEmptyCaptionHidesAgain() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -55,12 +69,14 @@ final class StoryCaptionTests: XCTestCase {
         // (1) 空で打っていない欄は見えない
         let caption = app.descendants(matching: .any)["story.caption"].firstMatch
         shoot(app, "ひとこと1（空の欄が見えない）")
-        XCTAssertFalse(caption.exists && caption.isHittable, "空のひとことの欄が写真の上に残っている")
+        // 空の欄は画面の中に残して高さ0で隠す（写真を押したときにピントを渡すため）。
+        // XCUI は高さ0の欄も「押せる」と答える（PR #405 の初回。画面写真では消えていた）ので、高さで見る
+        XCTAssertFalse(Self.isShown(caption), "空のひとことの欄が写真の上に残っている")
 
         // (2) 写真の何も無い所（上の ✕・「…」より下、真ん中の曲の札より上）を押すと打ち始める
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "写真を押してもキーボードが出ない")
-        XCTAssertTrue(caption.waitForExistence(timeout: 3), "打ち始めたのにひとことの欄が出ない")
+        XCTAssertTrue(Self.waitUntil(timeout: 3) { Self.isShown(caption) }, "打ち始めたのにひとことの欄が出ない")
         shoot(app, "ひとこと2（写真を押して打ち始めた）")
 
         // (3) 何も書かずに「完了」→ 欄がまた見えなくなる
@@ -69,8 +85,8 @@ final class StoryCaptionTests: XCTestCase {
         done.tap()
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: app.keyboards.firstMatch)
-        expectation(for: gone, evaluatedWith: caption)
         waitForExpectations(timeout: 5)
+        XCTAssertTrue(Self.waitUntil(timeout: 5) { !Self.isShown(caption) }, "空のまま閉じても欄が残っている")
         shoot(app, "ひとこと3（空のまま閉じた）")
     }
 }
