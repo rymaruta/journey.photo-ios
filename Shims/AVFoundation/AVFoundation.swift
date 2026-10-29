@@ -12,6 +12,8 @@ open class AVPlayerItem: NSObject {
     open var duration: CMTime { .zero }
     /// 本物と同じ形（先に読んでおく長さ・秒。0 は再生器に任せる）
     open var preferredForwardBufferDuration: TimeInterval = 0
+    /// 本物と同じ形（ここで鳴り終わる。既定は「無し」＝項目の終わりまで）
+    open var forwardPlaybackEndTime: CMTime = .invalid
 }
 
 open class AVPlayer {
@@ -62,6 +64,8 @@ public typealias CMTimeScale = Int32
 
 public struct CMTime {
     public static let zero = CMTime()
+    /// 本物と同じ形（無効な時刻。秒は NaN）
+    public static let invalid = CMTime(seconds: .nan, preferredTimescale: 0)
     public init() {}
     /// 本物と同じ形（秒と刻み）
     public init(seconds: Double, preferredTimescale: CMTimeScale) { self.seconds = seconds }

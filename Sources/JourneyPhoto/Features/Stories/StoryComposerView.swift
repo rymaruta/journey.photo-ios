@@ -100,6 +100,8 @@ struct StoryComposerView: View {
     @State private var showSongPicker = false
     /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
     @State private var showSongStart = false
+    /// 付けた曲をその場で流す（Issue #403・`StoryComposerSong`）。この画面が鳴らした回（`MusicPreviewPlayer.session`）と中身
+    @StateObject private var songOwner = StoryComposerSong.Owner()
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
@@ -377,6 +379,10 @@ struct StoryComposerView: View {
                 self.song = song.fitting(window: window)
             }
         }
+        // 付けた曲をその場で流す（Issue #403・2026-10-29 判断は `StoryComposerSong`）。付けた・替えた・流し始めや
+        // 表示秒数を直した → 流し直す。外した → 止める。シートで覆われた間は一時停止
+        .onChange(of: songCue) { _, _ in syncSong() }
+        .onChange(of: songHeldOnScreen) { _, _ in syncSong() }
         // 曲のジャケット（曲の札に描く）。曲の `artwork` を読むだけ（新しい通信先は無い・`SongArtwork`）
         .task(id: song?.artwork) {
             guard let url = song?.artwork else { songArtwork = nil; return }
@@ -418,7 +424,13 @@ struct StoryComposerView: View {
             Text(StoryLocationText.placeEditorNote(attaches: attachesLocation))
         }
         // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
-        .onDisappear { stopWaitingToPost() }
+        .onDisappear {
+            stopWaitingToPost()
+            // 閉じた・シェアした（どちらも dismiss）ら止める。**自分の鳴らした回だけ**。
+            // カメラを開いたときもここへ来るが、そのときは止めない（覆いの一時停止に任せる・戻ったら続きから）。
+            // カメラを開いたまま外から閉じられたときは `songOwner` が消えるときに止める
+            if !showCamera { songOwner.stop() }
+        }
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
@@ -428,6 +440,10 @@ struct StoryComposerView: View {
             autoDrafts.use(userId: auth.userId)
             refreshDraftCount()
             loadAttachesLocation(for: auth.userId)
+            // 2026-10-29 判断: ほかで鳴っている曲は止める（`StoryComposerSong.Owner.stopOthers`）
+            songOwner.stopOthers()
+            // 下書きから開いた・カメラから戻ったときも、曲が付いていれば流す
+            syncSong()
             // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
@@ -475,6 +491,8 @@ struct StoryComposerView: View {
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
         .onChange(of: scenePhase) { _, phase in
+            // 前面にいない間は曲を止めておく（戻ったら続きから）
+            syncSong(foreground: phase == .active)
             // 裏の猶予は**裏に回ったこの瞬間に**取る（Task が走るのを待つと、その前に止められうる）
             if phase == .background {
                 let window = BackgroundWindow(name: "story-autosave")
@@ -1484,6 +1502,34 @@ struct StoryComposerView: View {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
             || typingId != nil || votePanelOpen || showPlaceEditor || showRestoreAuto || showRestore
             || showPendingFailure || showLeaveConfirm
+    }
+
+    /// 付けた曲を流さない覆い（シート・カメラ・写真選び）。曲の札の動きを止める `songStickersCovered` の
+    /// うち、**別の画面が上に出るものだけ**（2026-10-29 判断・`StoryComposerSong` の注記）
+    private var songAudioCovered: Bool {
+        showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
+    }
+
+    /// 付けた曲の鳴らす中身（鳴らせない曲なら nil）
+    private var songCue: StoryComposerSong.Cue? {
+        StoryComposerSong.cue(song: song, durationSec: durationSec)
+    }
+
+    /// 画面の中で曲を止めておく間（覆い・写真を全部外して写真選びの段に戻った間）。写真が入ったら続きから
+    private var songHeldOnScreen: Bool { songAudioCovered || shots.isEmpty }
+
+    /// 付けた曲を、いまの状態に合わせて鳴らす・止める（`StoryComposerSong.action`）
+    private func syncSong(foreground: Bool? = nil) {
+        let player = MusicPreviewPlayer.shared
+        let held = songHeldOnScreen || !(foreground ?? (scenePhase == .active))
+        switch StoryComposerSong.action(cue: songCue, played: songOwner.played, owns: songOwner.owns,
+                                        paused: player.isPaused, held: held) {
+        case .none: break
+        case .play(let cue): songOwner.play(cue)
+        case .pause: player.pause()
+        case .resume: player.resume()
+        case .stop: songOwner.stop()
+        }
     }
 
     /// 「ひとことを書く」の欄の上下の端（写真の割合）。曲の札を欄に重ねずに置く（`SongSticker.placedY`）。
