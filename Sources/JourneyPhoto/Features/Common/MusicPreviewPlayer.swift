@@ -63,6 +63,8 @@ final class MusicPreviewPlayer: ObservableObject {
     private var endObservers: [NSObjectProtocol] = []
     /// 開始位置の頭出しの見張り（`startSeeker`）と、それを付けたプレイヤー
     private var startSeeker: (player: AVPlayer, token: Any)?
+    /// 繰り返す幅の見張り（`play(… length:)`）と、それを付けたプレイヤー
+    private var windowWatcher: (player: AVPlayer, token: Any)?
 
     /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
     private var interruptionObserver: NSObjectProtocol?
@@ -96,6 +98,8 @@ final class MusicPreviewPlayer: ObservableObject {
         }
         endObservers = []
         removeStartSeeker()
+        if let watcher = windowWatcher { watcher.player.removeTimeObserver(watcher.token) }
+        windowWatcher = nil
     }
 
     private func removeStartSeeker() {
@@ -146,12 +150,20 @@ final class MusicPreviewPlayer: ObservableObject {
     /// `loops` なら鳴り終わっても止めずに頭から繰り返す（Web の `onEnded`）。
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
     /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
+    /// `length` は繰り返す幅（秒）。`loops` のとき、`from` から `length` 秒鳴ったら `from` へ戻る
+    /// （ストーリーを作る画面で、表示秒数ぶんだけを繰り返す・2026-10-29 判断）。nil なら試聴の終わりまで
     @discardableResult
     func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0,
-              origin: PlaybackOrigin = .app) -> Int {
+              length: Double? = nil, origin: PlaybackOrigin = .app) -> Int {
         guard let url else { return session }
-        start(url, song: song, loops: loops, origin: origin, from: startSeconds)
+        start(url, song: song, loops: loops, origin: origin, from: startSeconds, length: length)
         return session
+    }
+
+    /// 繰り返す幅の終わりに来たか（画面を持たない・単体テスト用）。幅が無い・0 以下なら戻さない
+    static func loopsBack(current: Double, start: Double, length: Double?) -> Bool {
+        guard let length, length > 0, current.isFinite else { return false }
+        return current >= max(0, start) + length
     }
 
     /// 止めずに一時停止する（場は返さない。すぐ `resume()` するため）
@@ -174,7 +186,7 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     private func start(_ url: URL, song: Photo.Song?, loops: Bool = false,
-                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0) {
+                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0, length: Double? = nil) {
         let startTime = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
         deactivateTask?.cancel()
         deactivateTask = nil
@@ -240,6 +252,16 @@ final class MusicPreviewPlayer: ObservableObject {
                 }
             }
             startSeeker = (player, token)
+        }
+        if loops, let length, length > 0 {
+            // 幅の終わりで流し始めへ戻す（鳴り終わりの知らせより先に来る。試聴が幅より短ければ上の知らせで戻る）
+            let token = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
+            ) { [weak player] time in
+                guard let player, Self.loopsBack(current: time.seconds, start: startSeconds, length: length) else { return }
+                player.seek(to: startTime)
+            }
+            windowWatcher = (player, token)
         }
         player.play()
     }
