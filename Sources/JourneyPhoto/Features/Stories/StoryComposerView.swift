@@ -276,7 +276,7 @@ struct StoryComposerView: View {
         }
     }
 
-    private var composer: some View {
+    private var composerBase: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
@@ -357,6 +357,10 @@ struct StoryComposerView: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    private var composerMiddle: some View {
+        composerBase
         // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
         .onChange(of: current) { _, _ in voteSelected = false }
         // キーボードを避けたい欄に移ったら、写真の枠もキーボードを避ける側へ戻す
@@ -437,6 +441,11 @@ struct StoryComposerView: View {
             // 「撮影地の位置を付ける」の今の値で言い分ける（2026-10-18・変えるのは「誰に見せる？」）
             Text(StoryLocationText.placeEditorNote(attaches: attachesLocation))
         }
+    }
+
+    // 2026-10-29: 本体の修飾子の鎖が長く、Xcode の型検査が時間切れになった（PR #405）。4つ（Base・Middle・Head・本体）に分けて型を確かめる
+    private var composerHead: some View {
+        composerMiddle
         // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
         .onDisappear {
             stopWaitingToPost()
@@ -516,6 +525,10 @@ struct StoryComposerView: View {
                 }
             }
         }
+    }
+
+    private var composer: some View {
+        composerHead
         .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
             Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
             Button(L("削除", "Delete"), role: .destructive) { clearAutoDraft() }
