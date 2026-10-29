@@ -175,7 +175,8 @@ final class UXDeadEndsTests: XCTestCase {
             XCTAssertTrue(gate.contains(flag), "\(flag) が出ている間も空の画面の一手が投稿の画面を開く")
         }
         // 空の画面の一手と、端末の旅の一冊の「この旅の写真を投稿する」が、同じ並びを見る（別々に書くと抜ける）
-        XCTAssertEqual(root.components(separatedBy: "PostRequestGate.opens(busy: postScreensShown)").count - 1, 2,
+        // 下書きの一覧から下書きを開く道（`openDraftWhenFree`・2026-10-29・#400）も同じ並びを見る
+        XCTAssertEqual(root.components(separatedBy: "PostRequestGate.opens(busy: postScreensShown)").count - 1, 3,
                        "投稿の画面を開く入口が、まとめた並びとは別の確かめをしている")
         XCTAssertFalse(root.contains("guard !showTripImport, !showPhotoUpload"), "手書きの確かめが残っている")
     }

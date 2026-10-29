@@ -65,6 +65,8 @@ struct MyPageView: View {
     private var bandShown: Bool { hasCover || showsCoverFrame }
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 端末の下書きの件数（写真の格子の先頭の「下書き」の札・2026-10-29・#400）。0 なら札ごと出さない
+    @State private var draftCount = 0
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     @State private var trunkForeground = TrunkForegroundGate()
@@ -174,12 +176,15 @@ struct MyPageView: View {
         // 失敗の帯がタブごと差し替えて、開いている画面が閉じる。出ていない回は
         // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+            // 下書きの件数は画面に出ていなくても読み直す（端末の記録だけ・一覧を積んだ画面は閉じない）
+            refreshDraftCount()
             guard auth.userId != nil, isOnScreen else { return }
             // 上げた写真は読み直しを待たずに先に並べる（索引が遅れて返らないことがある・`PostedPhotos`）
             model.showPosted(tabRouter.lastPosted, for: auth.userId)
             Task { await model.load(for: auth.userId) }
         }
         .onAppear {
+            refreshDraftCount()
             switch front.appear() {
             case .first:
                 landOnScreen(reload: false)
@@ -1193,6 +1198,10 @@ struct MyPageView: View {
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             // 2026-10-16: 次の一手を1つ（「写真を投稿」・下の「投稿」と同じ道 `TabRouter.openPost`）
+            // 写真は0枚でも、端末の下書きがあれば入口を出す（#400）
+            if draftCount > 0 {
+                LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) { draftsTile }
+            }
             EmptyState(message: L("まだ写真がありません", "No photos yet"),
                        actionTitle: MyPageEmpty.postTitle, actionIdentifier: "mypage.emptyPost") {
                 tabRouter.openPost(.photo)
@@ -1200,6 +1209,8 @@ struct MyPageView: View {
         } else {
             let multiple = tabMemo.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) {
+                // 写真の並びの先頭に「下書き」の札（インスタのプロフィールと同じ置き方・2026-10-29・#400）
+                if draftCount > 0 { draftsTile }
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
@@ -1233,12 +1244,56 @@ struct MyPageView: View {
         }
     }
 
-    /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
+    /// 写真の格子の先頭の「下書き」の札（2026-10-29・#400・モックの入口）。地は札の地（surface-1）に白 8% の縁、
+    /// 件数バッジは真鍮＋墨＋黒 2px の縁（黒地の上）。押すと下書きの一覧を積む
+    private var draftsTile: some View {
+        NavigationLink {
+            DraftsView(presentation: .pushed,
+                       onOpen: { entry in tabRouter.openDraft(entry) },
+                       onChoosePhotos: { tabRouter.openPost(.photo) })
+        } label: {
+            Color.clear
+                .aspectRatio(ProfileV2.gridAspect, contentMode: .fit)
+                .background(WebTheme.card)
+                .overlay(Rectangle().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                .overlay {
+                    VStack(spacing: 6) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 22, weight: .light))
+                        Text(DraftsText.title)
+                            .font(JPFont.footnote)
+                    }
+                    .foregroundStyle(WebTheme.text)
+                }
+                .overlay(alignment: .topTrailing) {
+                    CountBadge(count: draftCount)
+                        .padding(JPSpace.xs)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(DraftsText.entryAccessibility(draftCount))
+        .accessibilityIdentifier("mypage.drafts")
+    }
+
+    /// 端末の下書きの件数を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを消してから数える）
+    private func refreshDraftCount() {
+        guard let userId = auth.userId else {
+            draftCount = 0
+            return
+        }
+        draftCount = DraftLibrary.shared.count(for: userId)
+    }
+
+    /// 一覧の1枚。**非公開の写真は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
     ///
     /// v2（板 MyPage・2026-10-14）: 縦長 4:5。ピン留めと複数枚は右上の白い印（影つき・写真の上は白だけ）、
-    /// 下書きは写真を 55% に沈めて左下に「下書き」の札（黒 60%・12pt）。**印は読み上げない**
-    /// （格子の1枚の値として読む）
+    /// 非公開は写真を 55% に沈めて左下に「非公開」の札（黒 60%・12pt）。**印は読み上げない**
+    /// （格子の1枚の値として読む）。
+    ///
+    /// 2026-10-29 判断（owner・#400）: 札は「下書き」から**「非公開」**に替えた。「下書き」は端末の書きかけ
+    /// （`DraftsView`）だけを呼ぶ——投稿の画面でも同じものを「非公開」と呼んでいる
     private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
         let draft = photo.published == false
         return PhotoFrame(photo: photo, aspect: ProfileV2.gridAspect, corner: 0)
@@ -1261,7 +1316,7 @@ struct MyPageView: View {
             }
             .overlay(alignment: .bottomLeading) {
                 if draft {
-                    Text(L("下書き", "Draft"))
+                    Text(L("非公開", "Private"))
                         .font(JPFont.caption.weight(.semibold))
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, JPSpace.xs)

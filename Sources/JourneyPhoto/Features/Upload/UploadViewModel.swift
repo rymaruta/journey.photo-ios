@@ -691,7 +691,11 @@ final class UploadViewModel: ObservableObject {
 
     // MARK: 端末の下書き（2026-10-11・`UploadDraftStore`）
 
-    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない
+    /// 下書きの置き場。画面が渡す（試験は差し替える）。無ければ下書きは使わない。
+    ///
+    /// 2026-10-29（#400「下書きを複数持つ」）: 画面は **この画面の1件**（`Slot.entry(ID)`）を渡す——
+    /// 新しい投稿は新しい ID（保存するまで記録は無い）、一覧から開いた下書きはその ID（`openEntry`）。
+    /// 「下書きに保存」「この下書きを更新」はこの1件に書き、ほかの下書きには触らない
     var drafts: UploadDraftStore?
     /// 下書きの持ち主（ログインしている人）。**人ごとに分ける**——画面が `auth.userId` を入れる
     var draftOwner: String?
@@ -728,6 +732,34 @@ final class UploadViewModel: ObservableObject {
     /// 開き直した写真のうち、届いたか分からないもの（閉じると下書きから外れる・閉じる確認で言う）
     var hasUnsureDraftPhotos: Bool {
         items.contains { draftKeys[$0.id] != nil && staged[$0.id] != nil }
+    }
+
+    /// 「別の下書きとして保存」（下書きから開いて閉じるとき・2026-10-29・#400）。**開いていた下書きは
+    /// そのまま残し**、今の写真と欄を新しい1件に書く。開き直した写真の印（`draftKeys`）は前の下書きのもの
+    /// なので外す（新しい1件の写真は保存のときに新しい印が付く）
+    @discardableResult
+    func saveDraftAsNew(now: Date = Date(), newId: String = UUID().uuidString) -> Bool {
+        guard draftSaveBlock == nil, let current = drafts else { return false }
+        drafts = current.sibling(.entry(newId))
+        draftKeys = [:]
+        guard saveDraft(now: now) else {
+            drafts = current
+            return false
+        }
+        return true
+    }
+
+    /// いま開いている下書きの ID（`Slot.entry`）。新しい投稿でも保存前から決まっている
+    var draftEntryId: String? { drafts?.entryId }
+
+    /// 一覧から選んだ下書きを開く（2026-10-29・#400）。この画面の下書きの置き場をその1件に替えてから戻す。
+    /// 読めない写真は戻さない（一覧で「読めた分で続ける」を選んで来た・`UploadDraftStore.presentItems`）
+    @discardableResult
+    func openEntry(_ id: String) async -> Bool {
+        guard items.isEmpty, !isWorking, !isRestoringDraft else { return false }
+        let base = drafts ?? UploadDraftStore()
+        drafts = base.sibling(.entry(id))
+        return await restoreDraft(from: .entry(id))
     }
 
     /// いまの欄を下書きに保存する（×→「下書きに保存」）。**写真は整えた本体と編集のレシピ**を残す
@@ -781,6 +813,8 @@ final class UploadViewModel: ObservableObject {
                 ? inspired : nil)
         // 束の印（途中まで送った束を続きから送ると、同じ投稿に入る・`UploadGrouping.groupIdForSubmit`）
         fields.groupId = groupId
+        // 開いている本人の下書き（自動の枠・控えから続きを戻したとき、その下書きの続きにする・#400）
+        if restoredDraft || !draftKeys.isEmpty { fields.entryId = draftEntryId }
         return fields
     }
 
@@ -909,13 +943,22 @@ final class UploadViewModel: ObservableObject {
     func restoreDraft(from slot: UploadDraftStore.Slot = .saved) async -> Bool {
         let source: UploadDraftStore?
         switch slot {
-        case .saved: source = drafts
+        case .saved, .entry: source = drafts
         case .auto: source = autoDrafts
         case .send: source = drafts?.sibling(slot)
         }
         guard items.isEmpty, !isWorking, !isRestoringDraft,
               let drafts = source, let draftOwner,
               let draft = drafts.draft(for: draftOwner) else { return false }
+        // 🔴 **自動の枠・控えから戻すときは、開いていた本人の下書きを今の下書きにする**（2026-10-29・#400）。
+        // 下書きが何件もあるので、どれの続きかを記録（`entryId`）か、無ければ写真の印（`savedKey`・前の版）から
+        // 探す。見つからなければ新しい下書きのまま（保存すると新しい1件になる）
+        if slot == .auto || isSend(slot), let base = self.drafts {
+            let savedKey = draft.items.lazy.compactMap(\.savedKey).first
+            if let id = draft.entryId ?? savedKey.flatMap({ base.entryContaining(itemKey: $0, for: draftOwner) }) {
+                self.drafts = base.sibling(.entry(id))
+            }
+        }
         // 本人の下書きにいま在る写真の印（自動の枠・控えの `savedKey` が今も指しているか）
         let savedKeysNow = Set(self.drafts?.draft(for: draftOwner)?.items.compactMap(\.key) ?? [])
         // 🔴 **先に印を立てる**（2026-10-12 判断）。縮小画像の `await` のあいだ MainActor を譲るので、
@@ -923,7 +966,9 @@ final class UploadViewModel: ObservableObject {
         // `discardDraft` して下書きごと消えていた
         isRestoringDraft = true
         defer { isRestoringDraft = false }
-        let (restorable, dropped) = UploadDraftStore.restorable(draft)
+        let (sendable, dropped) = UploadDraftStore.restorable(draft)
+        // 本人の下書きは、画像の読めない写真を外して戻す（一覧で「読めた分で続ける」を選んで来た・#400）
+        let restorable = isEntry(slot) ? drafts.presentItems(sendable) : sendable
         for unsure in draft.items where unsure.inFlight == true {
             if let key = unsure.key { drafts.removeItem(key: key, for: draftOwner) }
         }
@@ -965,7 +1010,7 @@ final class UploadViewModel: ObservableObject {
             if !attachesLocation { photo.dropAutomaticPlace() }
             if let key = saved.key {
                 switch slot {
-                case .saved: draftKeys[photo.id] = key
+                case .saved, .entry: draftKeys[photo.id] = key
                 case .auto: autoKeys[photo.id] = key
                 case .send: journalKeys[photo.id] = key
                 }
@@ -973,7 +1018,7 @@ final class UploadViewModel: ObservableObject {
             // 🔴 **自動の枠・控えから戻した写真が本人の下書きにも在れば、その印も戻す**（2026-10-16）。戻さないと、
             // 続きから送って上がった写真が本人の下書きに残り、次に開いて送ると同じ写真がもう一度投稿された。
             // 本人の下書きが後で保存し直されていたら（その印がもう無い）戻さない
-            if slot != .saved, let savedKey = saved.savedKey, savedKeysNow.contains(savedKey) {
+            if slot == .auto || isSend(slot), let savedKey = saved.savedKey, savedKeysNow.contains(savedKey) {
                 draftKeys[photo.id] = savedKey
             }
             startStripThumb(for: photo.id, prepared: prepared)
@@ -999,9 +1044,19 @@ final class UploadViewModel: ObservableObject {
         }
         if case .send(let id) = slot { journalId = id }
         // 本人の下書きの続き（印を戻した）なら「下書きを開いた」——保存で閉じても「置き換わります」と言わない
-        restoredDraft = slot == .saved || !draftKeys.isEmpty
+        restoredDraft = slot == .saved || isEntry(slot) || !draftKeys.isEmpty
         errorMessage = droppedNote
         return true
+    }
+
+    private func isSend(_ slot: UploadDraftStore.Slot) -> Bool {
+        if case .send = slot { return true }
+        return false
+    }
+
+    private func isEntry(_ slot: UploadDraftStore.Slot) -> Bool {
+        if case .entry = slot { return true }
+        return false
     }
 
     /// 下書きを消す（「下書きを削除」）

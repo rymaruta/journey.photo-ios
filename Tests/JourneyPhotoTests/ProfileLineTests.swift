@@ -76,11 +76,13 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(ProfileLine.about(status: nil, bio: nil), [])
     }
 
-    /// 格子の印は値として全部読む（題だけにすると下書きが読まれない）
+    /// 格子の印は値として全部読む（題だけにすると非公開が読まれない）。
+    /// 非公開の写真は「非公開」と読む（「下書き」は端末の書きかけだけ・#400）
     func testGridStateListsAllMarks() {
         let all = ProfileLine.gridState(pinned: true, draft: true, multiple: true)
         XCTAssertTrue(all.contains(L("ピン留め中", "Pinned")))
-        XCTAssertTrue(all.contains(L("下書き", "Draft")))
+        XCTAssertTrue(all.contains(L("非公開", "Private")))
+        XCTAssertFalse(all.contains(L("下書き", "Draft")), "非公開の写真を「下書き」と読む（端末の下書きと紛れる）")
         XCTAssertTrue(all.contains(L("複数枚の投稿", "Multiple photos")))
         XCTAssertEqual(ProfileLine.gridState(pinned: false, draft: false, multiple: false), "")
     }

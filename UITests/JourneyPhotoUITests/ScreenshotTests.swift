@@ -4985,4 +4985,77 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.5)
         }
     }
+
+    /// **下書きの一覧**（2026-10-29・#400「下書きを複数持つ」・モック 9JzQWmYxF14BmUiZ9yWbe8）: マイページの格子の
+    /// 先頭の「下書き」の札 → 3列の格子（投稿・ストーリー・自動の書きかけ・あと n 日・読めない写真の「!」）→
+    /// 「選ぶ」で2件 → 行の一覧 → 全部消した空の状態（「元に戻す」）。見本（`-JPPreviewDrafts YES`・端末の中だけ）で
+    /// 起動する。出なければ撮らずに抜ける（この試験の決まり）
+    func testCapturesDrafts() {
+        let app = launchTrunk(["-JPPreviewDrafts", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let tile = app.buttons["mypage.drafts"].firstMatch
+        guard tile.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "107a-マイページ（下書きの入口）")
+        guard tile.isHittable else { return }
+        tile.tap()
+        let cell = app.buttons["drafts.cell"].firstMatch
+        guard cell.waitForExistence(timeout: 10) else { return }
+        // 縮図は後ろで読むので少し待つ
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "107b-下書きの一覧（格子）")
+
+        let select = app.buttons["drafts.select"].firstMatch
+        guard select.waitForExistence(timeout: 5), select.isHittable else { return }
+        select.tap()
+        let cells = app.buttons.matching(identifier: "drafts.cell")
+        if cells.count > 2 {
+            cells.element(boundBy: 1).tap()
+            cells.element(boundBy: 2).tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "107c-下書きの一覧（選ぶ）")
+        let cancel = app.navigationBars.buttons["キャンセル"].firstMatch
+        guard cancel.waitForExistence(timeout: 5) else { return }
+        cancel.tap()
+
+        let rows = app.buttons["drafts.layout.rows"].firstMatch
+        if rows.waitForExistence(timeout: 5), rows.isHittable {
+            rows.tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "107d-下書きの一覧（行）")
+            // 覚えた表示を格子に戻しておく（次の起動の絵を変えない）
+            let grid = app.buttons["drafts.layout.grid"].firstMatch
+            if grid.isHittable { grid.tap() }
+        }
+
+        // 長押しの詳細と操作（浮く縮図・続きから編集／複製／削除）
+        if cell.waitForExistence(timeout: 5), cell.isHittable {
+            cell.press(forDuration: 1.2)
+            Thread.sleep(forTimeInterval: 1.5)
+            shoot(app, "107e-下書きの一覧（長押し）")
+            // 閉じる（メニューの外を押す）
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 全部を選んで削除 → 空の状態（「元に戻す」が出ている間）
+        guard select.waitForExistence(timeout: 5), select.isHittable else { return }
+        select.tap()
+        let all = app.navigationBars.buttons["すべて"].firstMatch
+        guard all.waitForExistence(timeout: 5) else { return }
+        all.tap()
+        let delete = app.buttons["drafts.deleteSelected"].firstMatch
+        guard delete.waitForExistence(timeout: 5), delete.isHittable else { return }
+        delete.tap()
+        let confirm = app.sheets.buttons["削除"].firstMatch.exists
+            ? app.sheets.buttons["削除"].firstMatch : app.buttons["削除"].firstMatch
+        guard confirm.waitForExistence(timeout: 5) else { return }
+        confirm.tap()
+        guard app.descendants(matching: .any)["drafts.empty"].firstMatch.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "107f-下書きの一覧（空・元に戻す）")
+    }
 }

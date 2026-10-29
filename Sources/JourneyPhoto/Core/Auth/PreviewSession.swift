@@ -182,6 +182,22 @@ enum PreviewSession {
     /// 効く。Release では必ず false
     static let uploadSampleKey = "JPPreviewUploadSample"
 
+    /// UI テストで下書きの一覧（#400）を見本の中身で出す（Debug のみ・2026-10-29）。`-JPPreviewDrafts YES`
+    /// （投稿・ストーリー・自動の書きかけ・期限が近いもの・読めない写真のあるもの）。端末の中に書くだけで、
+    /// サーバーには何も送らない（下書きはもともと端末だけ・`PreviewDraftsSample`）。
+    /// 入っている見本の利用者のときだけ効く。Release では必ず false
+    static let draftsSampleKey = "JPPreviewDrafts"
+
+    static var seedsDraftsSample: Bool {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: draftsSampleKey)?.lowercased() else { return false }
+        return ["yes", "true", "1"].contains(raw)
+        #else
+        return false
+        #endif
+    }
+
     static var opensUploadSample: Bool {
         #if DEBUG
         guard userId != nil else { return false }

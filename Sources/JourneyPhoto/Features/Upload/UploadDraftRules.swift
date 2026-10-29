@@ -43,11 +43,13 @@ enum UploadDraftRules {
     /// 閉じる確認の題・「下書きに保存」を出すか・説明。
     /// - Parameters:
     ///   - block: 保存できない理由（`saveBlock`）
-    ///   - replacesOther: **開き直していない**前の下書きがある（保存すると置き換わる）
+    ///   - replacesOther: **開き直していない**前の下書きがある（保存すると置き換わる）。2026-10-29（#400）から
+    ///     下書きは何件でも持てて置き換わらないので、画面は渡さない（前の版の試験のために残す）
     ///   - restored: この画面で下書きを開き直した（「投稿をやめる」でも前の下書きは残る）
     ///   - unsure: 開き直した写真に、届いたか分からないものがある（下書きから外れる）
+    ///   - draftCount: いまの下書きの件数（「いま n / 20件」を添える・#400）。nil なら添えない
     static func closeDialog(block: SaveBlock?, replacesOther: Bool, restored: Bool,
-                            unsure: Bool = false) -> CloseDialog {
+                            unsure: Bool = false, draftCount: Int? = nil) -> CloseDialog {
         let unsureNote = unsure
             ? L("届いたか分からない写真は、二重に投稿しないよう下書きから外します。",
                 "Photos that may have already been sent are taken out of the draft so they aren't posted twice. ")
@@ -58,12 +60,16 @@ enum UploadDraftRules {
             : L("投稿をやめると、選んだ写真と書いた題・説明は残りません。",
                 "If you stop, the photos you picked and what you wrote won't be kept.")
         guard let block else {
+            // 2026-10-29（#400）: 下書きは何件でも持てる（上限 20 件）ので「1件だけです」とは言わない。
+            // 代わりに今の件数を添える
             let replace = replacesOther
-                ? L("前の下書きは置き換わります（下書きは1件だけです）。", "This replaces your earlier draft (only one is kept). ")
+                ? L("前の下書きは置き換わります。", "This replaces your earlier draft. ")
                 : ""
+            let stays = draftCount.map { L("下書きはこの端末にだけ残ります", "Drafts stay on this device only") + DraftsText.countNote($0) + L("。", ". ") }
+                ?? L("下書きはこの端末にだけ残ります。", "Drafts stay on this device only. ")
             return CloseDialog(
                 title: L("下書きに保存しますか？", "Save as a draft?"), canSave: true,
-                message: replace + L("下書きはこの端末にだけ残ります。", "Drafts stay on this device only. ") + keeps)
+                message: replace + stays + keeps)
         }
         let reason: String
         switch block {
@@ -78,6 +84,28 @@ enum UploadDraftRules {
         }
         return CloseDialog(title: L("投稿をやめて閉じますか？", "Stop this post?"), canSave: false,
                            message: reason + keeps)
+    }
+
+    /// 閉じるときの選び方（2026-10-29・#400「下書きを複数持つ」）
+    enum CloseChoice: Equatable {
+        /// 下書きから開いた: 「この下書きを更新」（先頭・既定）／「別の下書きとして保存」／「変更を残さずに閉じる」
+        case update
+        /// 新しい投稿で、下書きがいっぱい: 保存を出さず「下書きを整理する」へ（黙って古いものを消さない）
+        case full
+        /// 新しい投稿: 「下書きに保存」／「投稿をやめる」／「書き続ける」（前の3択のまま）。
+        /// 保存できない理由があるとき（読み込み中・送りかけ）もこれ（`closeDialog` が理由を言う）
+        case standard
+    }
+
+    /// 閉じるときの選び方を決める
+    /// - Parameters:
+    ///   - block: 保存できない理由（あれば下書きから開いていても `standard`——理由を言う）
+    ///   - openedDraft: 下書きから開いた（`UploadViewModel.restoredDraft`）
+    ///   - full: 下書きがいっぱい（`DraftLibrary.isFull`）
+    static func closeChoice(block: SaveBlock?, openedDraft: Bool, full: Bool) -> CloseChoice {
+        guard block == nil else { return .standard }
+        if openedDraft { return .update }
+        return full ? .full : .standard
     }
 
     /// 開いたときに「下書きを続けますか？」を尋ねるか。**何かを持って開いた回は尋ねない**
@@ -100,7 +128,11 @@ enum UploadDraftRules {
         case none
     }
 
-    /// 開いたときの問い。送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
+    /// 開いたときの問い。送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き。
+    ///
+    /// 2026-10-29（#400）: 下書きが何件にもなると「どれを続けるか」をこの問いでは選べないので、画面は
+    /// **本人の下書きを尋ねない**（`hasSavedDraft: false` を渡す・入口は上の「下書き n ›」と一覧）。
+    /// 尋ねるのはアプリが途中で終了した書きかけと送れなかった投稿だけ
     /// - Parameters:
     ///   - journalIds: その人の送信の控え（**古い順**）
     ///   - resumeJournal: 起動のときの知らせで「続きから」を押して来た控え

@@ -15,6 +15,10 @@ struct PostSheet: View {
 
     /// 札の絵に敷く写真（板 21: 絵の後ろに写真・85%）。**本人の写真だけ**。無ければ地の色のまま
     @State private var thumbs: [URL] = []
+    /// 端末の下書きの件数（投稿・ストーリー・2026-10-29・#400）。行の右に件数バッジ（真鍮）。
+    /// 押すと前と同じく作る画面へ——そこに「下書き n ›」の入口がある
+    @State private var postDrafts = 0
+    @State private var storyDrafts = 0
 
     /// 選ばれたもの。閉じたあとに呼び手が開く
     let onSelect: (Kind) -> Void
@@ -59,7 +63,8 @@ struct PostSheet: View {
                 title: L("写真を投稿", "Post a photo"),
                 detail: L("撮影地やタグを付けて残します。ずっと出ます。", "Keep it with a place and tags. It stays."),
                 systemImage: "photo",
-                kind: .photo
+                kind: .photo,
+                drafts: postDrafts
             )
             // 2026-10-16 判断: 「カメラで撮る」は写真の投稿の次（同じ「写真を投稿」の入口の別の手）。
             // 札に自分の写真は敷かない（敷く写真は4枚まで・`PostSheetThumbs`）。カメラの無い端末では出さない
@@ -77,7 +82,8 @@ struct PostSheet: View {
                 title: L("ストーリーを投稿", "Post a story"),
                 detail: L("24時間で消えます。見た人が分かります。", "Disappears in 24 hours. You can see who viewed it."),
                 systemImage: "clock",
-                kind: .story
+                kind: .story,
+                drafts: storyDrafts
             )
             choice(
                 thumb: thumbs.dropFirst(2).first,
@@ -106,6 +112,11 @@ struct PostSheet: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(WebTheme.sheet)
         .presentationCornerRadius(Self.sheetRadius)
+        .onAppear {
+            guard let userId = auth.userId else { return }
+            postDrafts = DraftLibrary.shared.count(for: userId, kind: .post)
+            storyDrafts = DraftLibrary.shared.count(for: userId, kind: .story)
+        }
         .task {
             // **自分が最近出した写真**（`PostSheetThumbs`）。取れない・まだ無いときは
             // 印だけの無地のまま——**他人の写真で埋めない**
@@ -153,7 +164,7 @@ struct PostSheet: View {
     /// 「その人自身が最近出した写真」という owner の決まり（`PostSheetThumbs`）があり、板より優先した。
     /// 写真の上の印は白（写真の上に真鍮を置かない）。写真が無いときだけ構図の印を真鍮にする
     private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
-                        accentIcon: Bool = false, last: Bool = false) -> some View {
+                        drafts: Int = 0, accentIcon: Bool = false, last: Bool = false) -> some View {
         Button {
             // 選択を先に記録し、シートが閉じきった後に呼び手が次の画面を開く
             onSelect(kind)
@@ -191,6 +202,10 @@ struct PostSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // 下書きの件数（合図なので真鍮のバッジ・行の字は白のまま。シートの黒地の上）
+                if drafts > 0 {
+                    CountBadge(count: drafts)
+                }
             }
             .padding(.vertical, 14)
             .frame(minHeight: WebTheme.minTapTarget)
@@ -202,6 +217,8 @@ struct PostSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(JPRowButtonStyle())
+        // 件数バッジは読み上げないので、行の値として読む（名前は中の題と説明のまま）
+        .accessibilityValue(drafts > 0 ? DraftsText.entryAccessibility(drafts) : "")
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier("post.choice.\(Self.identifier(kind))")
     }
