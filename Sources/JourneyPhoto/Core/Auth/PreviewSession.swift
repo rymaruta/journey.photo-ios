@@ -87,6 +87,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、全体の再生器の後ろに見本の地（白・模様・黒の3段）を敷く（Debug のみ・2026-10-29・#402）。
+    /// `-JPPreviewMiniPlayerBackdrop YES`。再生器の地を透かしたので、白い写真・模様の多い写真・黒い写真の上で
+    /// 曲名が読めるかを毎回同じ絵で見る（`MiniPlayerBackdrop`）。Release では必ず false
+    static let miniPlayerBackdropKey = "JPPreviewMiniPlayerBackdrop"
+
+    static var miniPlayerBackdrop: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: miniPlayerBackdropKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
