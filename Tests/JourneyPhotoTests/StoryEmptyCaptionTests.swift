@@ -202,7 +202,7 @@ final class StoryEmptyCaptionTests: XCTestCase {
         XCTAssertTrue(editor.contains(".accessibilityAction(named: L(\"ひとことを書く\", \"Write a caption\")) { onWriteCaption() }"))
         let composer = try source("Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("onWriteCaption: { startCaption() },"))
-        XCTAssertTrue(composer.contains(".accessibilityIdentifier(\"story.caption\")"))
+        XCTAssertTrue(composer.contains(".accessibilityIdentifier(captionShown ? \"story.caption\" : \"story.caption.hidden\")"))
         let menu = slice(composer, from: "private var moreMenu: some View", to: "// MARK: - 足元")
         XCTAssertTrue(menu.contains("framing.wrappedValue = .identity"), "合わせ方を戻す口が無くなった")
     }

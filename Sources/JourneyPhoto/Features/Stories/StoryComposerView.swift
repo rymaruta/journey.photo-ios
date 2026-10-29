@@ -1171,7 +1171,9 @@ struct StoryComposerView: View {
                 .foregroundStyle(Color.white.opacity(Self.captionHintOpacity)),
                axis: .vertical)
                 .focused($captionFocused)
-                .accessibilityIdentifier("story.caption")
+                // 隠している間（高さ0で画面に残す）は別の名札にする。XCUI は隠した欄の枠も高さのある物として
+                // 返した（PR #405）ので、見えている欄だけを "story.caption" と呼ぶ（2026-10-29）
+                .accessibilityIdentifier(captionShown ? "story.caption" : "story.caption.hidden")
                 .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
