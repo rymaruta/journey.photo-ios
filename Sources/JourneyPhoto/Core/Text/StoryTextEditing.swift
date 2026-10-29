@@ -100,6 +100,17 @@ enum StoryTextEditing {
         return caption.isEmpty ? .startCaption : .none
     }
 
+    /// 2本指の操作（つまむ・回す）を離した直後に、1回押しを無視する長さ（秒）
+    static let photoTapAfterTwoFingers: TimeInterval = 0.35
+
+    /// 写真の1回押しを受けるか。**2本指で操作している間と、離した直後は受けない**——指を離す順で
+    /// 1回押しに見え、写真を大きくしただけでキーボードが出るのを防ぐ（2026-10-29 のレビュー）
+    static func acceptsPhotoTap(twoFingerActive: Bool, twoFingerEndedAt: Date?, now: Date = Date()) -> Bool {
+        guard !twoFingerActive else { return false }
+        guard let ended = twoFingerEndedAt else { return true }
+        return now.timeIntervalSince(ended) >= photoTapAfterTwoFingers
+    }
+
     /// 入口の案内の文言（写真の上・白・本文 13pt）
     static var captionHint: String { L("写真を押してひとこと", "Tap the photo to add a caption") }
 

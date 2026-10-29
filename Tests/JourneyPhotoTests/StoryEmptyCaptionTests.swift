@@ -153,6 +153,68 @@ final class StoryEmptyCaptionTests: XCTestCase {
         XCTAssertTrue(band.contains("guard captionAreaShown else { return nil }"))
         XCTAssertTrue(composer.contains("captionShown || !place.location.isEmpty || place.chip != nil"),
                       "撮影地の札が出ているのに、曲の札が真ん中に重なる")
-        XCTAssertTrue(composer.contains(".onChange(of: captionAreaShown) { _, _ in clearSongStickersOfCaption() }"))
+    }
+
+    // MARK: - 見直しの直し（2026-10-29）
+
+    /// 🔴 ピントは「欄を出した」状態が反映された後に渡す（`Task.yield()` は描き直しの後を保証しない）。
+    /// ピントが入らなかったときに下ろすのは、空のときだけ
+    func testFocusIsHandedAfterTheFieldIsShown() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        let start = slice(composer, from: "private func startCaption(after", to: "private func captionOpened()")
+        XCTAssertFalse(start.contains("captionFocused = true"), "欄を出す前の同じ回にピントを渡している")
+        XCTAssertFalse(start.contains("Task.yield()"))
+        XCTAssertTrue(composer.contains(".onChange(of: captionOpening) { _, opening in if opening { captionOpened() } }"))
+        let opened = slice(composer, from: "private func captionOpened()", to: "private func tapPhoto()")
+        XCTAssertTrue(opened.contains("captionFocused = true"))
+        XCTAssertTrue(opened.contains("if !captionFocused && caption.isEmpty { captionOpening = false }"),
+                      "書いてある欄まで下ろす／空の欄を出したままにする")
+    }
+
+    /// 🔴 下書きを開いた・欄を測っただけでは曲の札を動かさない（開いたときの中身とずれて、閉じるときに確認が出た）。
+    /// 動かすのは打ち始めた・打っている間だけ
+    func testStickersMoveOnlyWhileWriting() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        let clear = slice(composer, from: "private func clearSongStickersOfCaption()", to: "private var captionBlock")
+        XCTAssertTrue(clear.contains("guard captionOpening || captionFocused, let song else { return }"),
+                      "打っていないのに曲の札を置き直す")
+        XCTAssertFalse(composer.contains(".onChange(of: captionAreaShown)"), "欄が出た（下書きを開いた）だけで札を動かす")
+    }
+
+    /// 🔴 2本指の操作中・離した直後の1回押しは写真を押したことにしない
+    func testTapRightAfterTwoFingersIsIgnored() {
+        let now = Date()
+        XCTAssertTrue(StoryTextEditing.acceptsPhotoTap(twoFingerActive: false, twoFingerEndedAt: nil, now: now))
+        XCTAssertFalse(StoryTextEditing.acceptsPhotoTap(twoFingerActive: true, twoFingerEndedAt: nil, now: now))
+        XCTAssertFalse(StoryTextEditing.acceptsPhotoTap(twoFingerActive: false,
+                                                        twoFingerEndedAt: now.addingTimeInterval(-0.1), now: now),
+                       "つまんで離した直後にキーボードが出る")
+        XCTAssertTrue(StoryTextEditing.acceptsPhotoTap(twoFingerActive: false,
+                                                       twoFingerEndedAt: now.addingTimeInterval(-1), now: now))
+    }
+
+    /// 🔴 写真の1回押しを2回押しで待たせない（合わせ方を戻すのは「…」だけ）。VoiceOver の入口がある
+    func testPhotoTapIsNotDelayedAndVoiceOverCanWrite() throws {
+        let editor = try source("Features/Stories/TextOverlayEditor.swift")
+        XCTAssertFalse(editor.contains("onTapGesture(count: 2)"), "1回押しが2回押しを待って遅れる")
+        XCTAssertFalse(editor.contains("2回押すと元に戻します"), "読み上げの説明が古い")
+        XCTAssertTrue(editor.contains("StoryTextEditing.acceptsPhotoTap(twoFingerActive: twoFingerActive,"))
+        XCTAssertTrue(editor.contains(".accessibilityAction(named: L(\"ひとことを書く\", \"Write a caption\")) { onWriteCaption() }"))
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("onWriteCaption: { startCaption() },"))
+        XCTAssertTrue(composer.contains(".accessibilityIdentifier(\"story.caption\")"))
+        let menu = slice(composer, from: "private var moreMenu: some View", to: "// MARK: - 足元")
+        XCTAssertTrue(menu.contains("framing.wrappedValue = .identity"), "合わせ方を戻す口が無くなった")
+    }
+
+    /// 画面写真（曲の札 62・ストーリー作成）に入口の案内を写さない
+    func testScreenshotsSkipTheCaptionHint() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
+                               encoding: .utf8)
+        let song = slice(shots, from: "func testCapturesStorySongStickerStyles()", to: "app.launch()")
+        XCTAssertTrue(song.contains("\"-story.captionHintShown\", \"YES\""), "曲の札の絵に案内が写る")
+        XCTAssertEqual(StoryTextEditing.captionHintShownKey, "story.captionHintShown")
     }
 }

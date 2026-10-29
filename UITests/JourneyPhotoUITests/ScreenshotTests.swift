@@ -545,6 +545,8 @@ final class ScreenshotTests: XCTestCase {
         // 撮る画面の構図は端末に覚える（`CompositionPreferences`）。前の試験で選んだ構図を引きずらないよう、
         // 13h は既定の三分割で撮る（2026-10-10）
         app.launchArguments += ["-journey-photo-composition-last", "thirds"]
+        // ストーリー作成の入口の案内（端末に1回だけ・#404）は撮らない
+        app.launchArguments += ["-story.captionHintShown", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -4962,6 +4964,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewStorySong", "YES", "-story.songSticker.style", "glass"]
+        // 入口の案内「写真を押してひとこと」（端末に1回だけ・#404）は撮らない（札の絵に被る）
+        app.launchArguments += ["-story.captionHintShown", "YES"]
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }

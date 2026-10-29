@@ -341,8 +341,9 @@ struct StoryComposerView: View {
         .onChange(of: captionFocused) { _, focused in
             if focused { photoIgnoresKeyboard = false } else { captionOpening = false }
         }
-        // 欄が出た・伸びたら、置いたままの曲の札を欄の外へ（2026-10-29 判断 #404）
-        .onChange(of: captionAreaShown) { _, _ in clearSongStickersOfCaption() }
+        // 欄を出したらピントを渡し、置いたままの曲の札を欄の外へ（2026-10-29 判断 #404）。
+        // 打っている間に欄が伸びたときも（`clearSongStickersOfCaption` は打っていなければ何もしない）
+        .onChange(of: captionOpening) { _, opening in if opening { captionOpened() } }
         .onChange(of: captionHeight) { _, _ in clearSongStickersOfCaption() }
         // 写真が入ったら、入口の案内を一度だけ（`StoryTextEditing.shouldShowCaptionHint`）
         .onChange(of: preview != nil) { _, loaded in if loaded { offerCaptionHint() } }
@@ -559,6 +560,8 @@ struct StoryComposerView: View {
                             // 写真を押したら投票の欄を閉じる。何も無い所を押したら、ひとことを打ち始める・
                             // 打ち終える（2026-10-29 判断 #404・`StoryTextEditing.photoTap`）
                             onTapPhoto: { tapPhoto() },
+                            // VoiceOver の入口（見えない空の欄は読み上げから外している）
+                            onWriteCaption: { startCaption() },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
                             onDelete: { id in deleteOverlay(id) },
                             onDraggingChange: { dragging in
@@ -875,21 +878,32 @@ struct StoryComposerView: View {
         captionShown || !place.location.isEmpty || place.chip != nil
     }
 
-    /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内）。**欄を先に出し、
-    /// 描かれてからピントを渡す**（同じ回に渡すと、まだ見えない欄でキーボードが出ないことがある）。
-    /// `delay` はメニューが閉じ切るのを待つ分
+    /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内・VoiceOver の操作）。
+    /// **欄を先に出し、出した状態が反映されてからピントを渡す**（`captionOpening` の `onChange` →
+    /// `captionOpened`）。同じ回に渡すと、まだ見えない欄でキーボードが出ないことがある（2026-10-29 のレビュー:
+    /// `Task.yield()` は描き直しの後を保証しない）。`delay` はメニューが閉じ切るのを待つ分
     private func startCaption(after delay: Duration = .zero) {
         guard typingId == nil, shots.indices.contains(current) else { return }
         voteSelected = false
         showCaptionHint = false
-        captionOpening = true
+        guard delay > .zero else {
+            captionOpening = true
+            return
+        }
         Task { @MainActor in
-            if delay > .zero { try? await Task.sleep(for: delay) }
-            await Task.yield()
-            captionFocused = true
-            // ピントが入らなかった（別のシートが開いた等）ら、空の欄を出したままにしない
+            try? await Task.sleep(for: delay)
+            captionOpening = true
+        }
+    }
+
+    /// 欄を出した（`captionOpening` が立った）後。ここでピントを渡し、置いたままの曲の札を欄の外へ。
+    /// ピントが入らず（別のシートが開いた等）空のままなら、欄を下ろす（空の欄を出したままにしない）
+    private func captionOpened() {
+        captionFocused = true
+        clearSongStickersOfCaption()
+        Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
-            if !captionFocused { captionOpening = false }
+            if !captionFocused && caption.isEmpty { captionOpening = false }
         }
     }
 
@@ -935,10 +949,15 @@ struct StoryComposerView: View {
         }
     }
 
-    /// 欄が出た・伸びたら、置いたままの曲の札で欄に掛かるものを欄の外へ（`SongSticker.clearedOfCaption`）。
-    /// 写真ごとに大きさが違うので、欄の端は写真ごとに測り直す
+    /// 打ち始めた・打っている間に欄が伸びたら、置いたままの曲の札で欄に掛かるものを欄の外へ
+    /// （`SongSticker.clearedOfCaption`）。写真ごとに大きさが違うので、欄の端は写真ごとに測り直す。
+    /// 🔴 **打ち始めた（`captionOpening`・`captionFocused`）ときだけ動かす**（2026-10-29 のレビュー）。
+    /// 下書きを開いた・欄を測っただけで動かすと、開いたときの中身（`restoredContent`）とずれて、
+    /// 何もしていないのに閉じるときに確認が出た。
+    /// つまんで大きくしただけの札（`songMoved` は立たない）は置き直しの対象（意図どおり: 置いた位置のまま
+    /// 大きくした札は、まだ「置いたまま」とみなす）
     private func clearSongStickersOfCaption() {
-        guard captionAreaShown, let song else { return }
+        guard captionOpening || captionFocused, let song else { return }
         for i in shots.indices {
             let band = SongSticker.captionBand(height: Double(captionHeight), canvas: canvasSize,
                                                image: shots[i].imageSize)
@@ -968,6 +987,7 @@ struct StoryComposerView: View {
                 .foregroundStyle(Color.white.opacity(Self.captionHintOpacity)),
                axis: .vertical)
                 .focused($captionFocused)
+                .accessibilityIdentifier("story.caption")
                 .font(JPFont.display(Self.captionSize, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
@@ -1194,7 +1214,8 @@ struct StoryComposerView: View {
             } label: {
                 Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
             }
-            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
+            // やめた——1回押しでひとことを打ち始めるのが、2回押しを待つ分 0.3 秒遅れた）
             if !framing.wrappedValue.isIdentity {
                 Button {
                     framing.wrappedValue = .identity

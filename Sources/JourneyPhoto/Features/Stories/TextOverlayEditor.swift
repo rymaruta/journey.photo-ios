@@ -25,8 +25,10 @@ struct StoryCanvas: View {
     var hiddenId: UUID? = nil
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
-    /// 写真（札の無い所）を1回押した（呼ぶ側は投票の欄を閉じる）
+    /// 写真（札の無い所）を1回押した（呼ぶ側は投票の欄を閉じる・ひとことを打ち始める／打ち終える）
     var onTapPhoto: () -> Void = {}
+    /// VoiceOver の「ひとことを書く」（写真に付ける操作。見えない空の欄の代わりの入口・2026-10-29）
+    var onWriteCaption: () -> Void = {}
     /// 札をゴミ箱へ運んで離した（VoiceOver の「消す」も同じ口）
     var onDelete: (UUID) -> Void = { _ in }
     /// 札を指で動かし始めた・終えた（呼ぶ側は動かしている間、周りの道具を隠してゴミ箱を見せる）
@@ -69,6 +71,8 @@ struct StoryCanvas: View {
     /// （f17f17d のレビュー）
     @GestureState private var twisting = false
     @GestureState private var pinching = false
+    /// 2本指の操作を離した時刻。**離した直後の1回押しは写真を押したことにしない**（`StoryTextEditing.acceptsPhotoTap`）
+    @State private var twoFingerEndedAt: Date?
     @GestureState private var dragging = false
     /// 投票の札を動かし始めたときの札（動かしている間は**札の位置そのもの**を書き換える——
     /// 指の移動をそのまま見せると、札の置き方（割合の点で合わせる）と比が違い、離すと戻った）
@@ -150,7 +154,9 @@ struct StoryCanvas: View {
                     .position(x: photo.midX, y: photo.midY)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .clipped()
-                    // 写真の上で動かす（札の上では札が先に取る）。2回押すと合わせ方を戻す
+                    // 写真の上で動かす（札の上では札が先に取る）。
+                    // 2026-10-29: 2回押しで合わせ方を戻すのはやめた（1回押しが 2回押しを待って 0.3 秒遅れた。
+                    // 戻すのは「…」の「写真の合わせ方を戻す」）
                     .contentShape(Rectangle())
                     .gesture(
                         // 指の位置は写真の枠の座標で読む（札を運ぶ回はゴミ箱の判定にも使う）
@@ -192,12 +198,16 @@ struct StoryCanvas: View {
                                 photoDragStarted = false
                             }
                     )
-                    .onTapGesture(count: 2) { framing = .identity }
-                    .onTapGesture { onTapPhoto() }
+                    .onTapGesture {
+                        guard StoryTextEditing.acceptsPhotoTap(twoFingerActive: twoFingerActive,
+                                                               twoFingerEndedAt: twoFingerEndedAt) else { return }
+                        onTapPhoto()
+                    }
                     .accessibilityElement()
                     .accessibilityLabel(L("写真", "Photo"))
-                    .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
-                                         "Pinch or twist to zoom and rotate, drag to move. Double-tap to reset"))
+                    .accessibilityHint(L("2本指で拡大・回転、指で動かします。押すとひとことを書きます",
+                                         "Pinch or twist to zoom and rotate, drag to move. Tap to write a caption"))
+                    .accessibilityAction(named: L("ひとことを書く", "Write a caption")) { onWriteCaption() }
                 if let underOverlays {
                     underOverlays
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
@@ -328,8 +338,8 @@ struct StoryCanvas: View {
                     }
             )
             // 打ち切られた回の片付け（`onEnded` と、どちらが先に来ても1回だけ入る）
-            .onChange(of: twisting) { _, active in if !active { commitRotation() } }
-            .onChange(of: pinching) { _, active in if !active { commitScale() } }
+            .onChange(of: twisting) { _, active in if !active { commitRotation(); twoFingerEndedAt = Date() } }
+            .onChange(of: pinching) { _, active in if !active { commitScale(); twoFingerEndedAt = Date() } }
             .onChange(of: voteDragging) { _, active in
                 // 投票の札を動かす操作の片付け。**位置は戻さない**——動かしている間の位置は毎回
                 // 見えている範囲に挟んだ正しい値で、`onEnded` より先にここへ来ても離した所に残る
