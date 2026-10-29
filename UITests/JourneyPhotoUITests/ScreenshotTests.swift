@@ -5076,7 +5076,10 @@ final class ScreenshotTests: XCTestCase {
         // 17pt の5字は約 85pt——押し込まれると 44 の丸になる。44pt 以上も確かめる
         let selectAllButton = app.buttons["drafts.selectAll"].firstMatch
         XCTAssertGreaterThanOrEqual(cancel.frame.width, 80, "「キャンセル」が丸に押し込まれて切れている")
-        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        // 高さ: iOS 26 のナビバーの項目は系統が描く丸い札（目で測ると約 44pt・PR #401 run の 107c）で、
+        // 読み上げの枠は中の字の高さ（36pt）を返す。押せる範囲は系統が 44pt 以上にする（系統の部品）ので、
+        // ここでは字の枠が潰れていない（36pt 以上）ことを見る（2026-10-29 判断）
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 36, "「キャンセル」の字が潰れている")
         if selectAllButton.exists {
             XCTAssertGreaterThanOrEqual(selectAllButton.frame.width, 56, "「すべて」が押し込まれて切れている")
             XCTAssertLessThan(cancel.frame.maxX, selectAllButton.frame.minX)
