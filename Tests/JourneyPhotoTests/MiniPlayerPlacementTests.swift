@@ -183,8 +183,8 @@ final class MiniPlayerPlacementTests: XCTestCase {
         XCTAssertTrue(bar.contains("shape.fill(Self.pickerBarFill)"), "曲選びの中のバーが不透明の面でない")
         XCTAssertEqual(bar.components(separatedBy: ".modifier(SeeThroughTextShadow(active: !inSongPicker))").count - 1,
                        2, "透ける地の上の曲名・歌手名と停止ボタンに影が無い（曲選びの中にも付いている）")
-        XCTAssertTrue(bar.contains(".foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.muted2)"),
-                      "写真の上の歌手名が白 72% でない")
+        XCTAssertTrue(bar.contains(".foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.foreground)"),
+                      "写真の上の歌手名が白でない（灰の地に沈む）")
         // 外の影は角丸の形にだけ・引いている間だけ（中身ごとの影はスクロール中に描き直して重い）
         XCTAssertFalse(bar.contains(".shadow(color: .black.opacity(dragging"), "再生器の中身ごとに影を付けている")
         XCTAssertFalse(bar.contains("radius: dragging ? 22 : 14"), "置いている間も中身ごとの影がある（重い）")

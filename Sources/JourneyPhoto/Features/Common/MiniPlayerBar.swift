@@ -87,8 +87,8 @@ struct MiniPlayerBar: View {
     /// **ぼかしを外して黒 30%・白 12% の縁**にし、後ろの写真の形と色が見えるようにした（`glassTint`）。
     /// - 下の字（説明文など）が透けて曲名と重なる件（#395 より前の白 10%）は、曲名・歌手名・停止ボタンの
     ///   2枚の影（縁＋後光・`SeeThroughTextShadow`）で字を立てて読ませる。重なって読みにくければ再生器を指で動かせる（`MiniPlayerPlacement`）
-    /// - 歌手名は写真の上の副文の白 72%（`muted2`・板の「写真の上の副文は不透明の text-2 にしない」）。
-    ///   白 60% の faint は明るい写真の上で沈んだ
+    /// - 歌手名は白（曲名との差は字の大きさと太さで付ける）。見本の絵（run 759〜761）で、白 60%（faint）・
+    ///   白 72%（muted2）は白い写真・模様の上で灰の地に沈んで読めなかった
     /// - 軽くする: ぼかし（material）は使わない。再生器の外の影は置いている間は付けない
     ///   （引いている間だけ・角丸の形にだけ）。地の下に影があると透け感も濁る
     /// - 曲選びの中のバーは板 SongPicker どおり不透明の面（#17171a の段）のまま
@@ -170,7 +170,7 @@ struct MiniPlayerBar: View {
                 if let artist = song.artist, !artist.isEmpty {
                     Text(artist)
                         .font(.footnote)
-                        .foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.muted2)
+                        .foregroundStyle(inSongPicker ? WebTheme.faint : WebTheme.foreground)
                         .lineLimit(1)
                 }
             }
