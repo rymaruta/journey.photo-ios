@@ -28,11 +28,15 @@ enum ProfileTravelRecord {
         /// 一番古い写真の年
         let firstYear: Int?
 
+        /// 2026-10-28 判断（マイページの送りの重さ）: 距離・線・最初の年は**同じ写真を同じ古い順に並べたもの**
+        /// から作るので、並べ替えは1回にする（以前は `total`・`coordinates`・`firstYear` がそれぞれ並べ直していた）。
+        /// 答えは `TravelDistance.total`・`TravelRoute.coordinates`・`TravelRoute.firstYear` と同じ（テストで見張る）
         init(photos: [Photo]) {
-            kilometers = TravelDistance.total(of: photos)
+            let dated = TravelRoute.datedOldestFirst(photos)
+            kilometers = TravelDistance.connect(dated)
             countries = TravelRoute.countriesInOrder(photos)
-            coordinates = TravelRoute.coordinates(of: photos)
-            firstYear = TravelRoute.firstYear(of: photos)
+            coordinates = dated.compactMap(\.coords)
+            firstYear = TravelRoute.firstYear(ofDatedOldestFirst: dated)
         }
 
         /// **0 のものは出さない**（マイページの決まり）。国も距離も無ければ節ごと出さない

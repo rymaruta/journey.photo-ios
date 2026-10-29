@@ -63,14 +63,24 @@ enum TravelDistance {
     ///   日付だけの撮影日 `2026-05-02` は、同じ日の投稿日時
     ///   `2026-05-02T03:00:00Z` より**先**に来る
     /// - 同じキーは投稿日時の古い順 → id の昇順
+    ///
+    /// 2026-10-28 判断（マイページの送りの重さ）: 比べる文字（ゾーンを落としたもの・UTF-16）は**並べ替えの前に
+    /// 写真ごとに1回**作る。以前は比べるたびに正規表現と UTF-16 の配列を作り直していた（n log n 回）。
+    /// 比べ方は同じなので並びも同じ
     static func webOldestFirst(_ photos: [Photo]) -> [Photo] {
-        photos.sorted { lhs, rhs in
-            let byKey = compare(timeKey(lhs), timeKey(rhs))
+        let keyed = photos.map { photo in
+            (photo: photo,
+             key: Array(timeKey(photo).utf16),
+             created: Array(stripZone(photo.createdAt ?? "").utf16),
+             id: Array(photo.id.utf16))
+        }
+        return keyed.sorted { lhs, rhs in
+            let byKey = compare(lhs.key, rhs.key)
             if byKey != 0 { return byKey < 0 }
-            let byCreated = compare(stripZone(lhs.createdAt ?? ""), stripZone(rhs.createdAt ?? ""))
+            let byCreated = compare(lhs.created, rhs.created)
             if byCreated != 0 { return byCreated < 0 }
             return compare(lhs.id, rhs.id) < 0
-        }
+        }.map(\.photo)
     }
 
     /// Web の `photoTimeKey`（`date || createdAt`。空文字は無いものとして扱う）
@@ -92,8 +102,7 @@ enum TravelDistance {
         options: [.caseInsensitive])
 
     /// JS の文字列比較（UTF-16 の符号単位の順）。Swift の `<` は正規化を挟むので使わない
-    private static func compare(_ lhs: String, _ rhs: String) -> Int {
-        let l = Array(lhs.utf16), r = Array(rhs.utf16)
+    private static func compare(_ l: [UInt16], _ r: [UInt16]) -> Int {
         if l == r { return 0 }
         return l.lexicographicallyPrecedes(r) ? -1 : 1
     }

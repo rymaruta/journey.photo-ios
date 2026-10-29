@@ -37,8 +37,10 @@ struct ProfileTabPager<Page: View>: View {
     /// **その札へ入る払いは受ける**（投稿の中身を左へ払えば地図へ移る）——止めるのは、その札を
     /// 選んでいる間の中身の上だけ（`ProfileTabSwipe.enabled`・2026-10-28 判断）
     var swipeBlocked: Set<ProfileTab> = []
-    /// 札の行が見えている上端からどれだけ上へ出ているか（深く送った回だけ正・`ProfileTabScroll.rowOverflow`）
-    var rowOverflow: CGFloat = 0
+    /// 札の行が見えている上端からどれだけ上へ出ているか（深く送った回だけ正・`ProfileTabScroll.rowOverflow`）。
+    /// **値ではなく読み方で受ける**（2026-10-28）——値で受けると、呼ぶ側は送るたびに変わる上端を
+    /// 見張る値に置くことになり、1フレームごとに画面全体が作り直される（`ProfileTabRowSpot`）。読むのは払い始めだけ
+    var rowOverflow: () -> CGFloat = { 0 }
     /// 画面を開いて手が空いたら先に作っておく札（人のページの地図——払いの途中に初めて作ると引っかかる）
     var prebuilt: [ProfileTab] = []
     @ViewBuilder let page: (ProfileTab) -> Page
@@ -81,7 +83,8 @@ struct ProfileTabPager<Page: View>: View {
                                   enabled: !swipeBlocked.contains(selection), follow: drag,
                                   willShow: { next in
                                       // 払っている間は毎フレーム呼ばれる。状態を書くのは変わるときだけ
-                                      if lift != rowOverflow { lift = rowOverflow }
+                                      let overflow = rowOverflow()
+                                      if lift != overflow { lift = overflow }
                                       // 隣の札は、まだ作っていなければ作る（指の後ろから空の札が出てこない）
                                       if !pages.isBuilt(next) { pages.select(next) }
                                   }))
@@ -364,6 +367,25 @@ struct ProfileSwipePanHost: UIViewRepresentable {
 }
 #endif
 
+/// 札の行の位置の控え（マイページ・人のページ）。
+///
+/// **2026-10-28 判断（owner「スクロールするとなんか重い」）: 送るたびに変わる上端を `@State` に置かない。**
+/// 札の行の上端は送るたびに（1フレームごとに）変わる。`@State` の値に書くと、そのたびに画面の
+/// `body` ぜんぶ（見出し・保持した全部の札の `page()`）が作り直されていた。上端を読むのは
+/// 札を替えたとき（`scrollsToRow`）と払い始め（`rowOverflow`）だけなので、見張らない箱に控える
+/// （`@State` に置くのは箱の参照だけ。中を書き換えても描き直さない・`ProfileTabDrag` と同じ形）。
+/// 高さは最低の高さの計算（描く値）に使い、文字の大きさでしか変わらないので、変わったときだけ返す
+final class ProfileTabRowSpot {
+    /// 札の行の上端（スクロールの見えている枠から）
+    private(set) var minY: CGFloat = 0
+
+    /// 測った枠を控える。戻り値は**描き直しが要るときだけ**新しい高さ（上端だけ動いた回は nil）
+    func record(_ frame: CGRect, height current: CGFloat) -> CGFloat? {
+        minY = frame.minY
+        return frame.height == current ? nil : frame.height
+    }
+}
+
 /// 札の行の位置の計算（画面を持たない計算・2026-10-24 確かめ役の見直し）
 enum ProfileTabScroll {
 
@@ -447,8 +469,21 @@ final class MyPageTabMemo {
     let wanted = DerivedMemo<WantedKey, [DerivedSpot.Place]>()
     let unfilteredWanted = DerivedMemo<WantedKey, [DerivedSpot.Place]>()
     let saved = DerivedMemo<SavedKey, [Photo]>()
+    /// 旅の記録の数（見出しの下の節）。2026-10-28 判断: 描き直しのたびに数え直していた（古い順の並べ替え3回・
+    /// 国の名前の当てはめ）ので、写真が変わったときだけ数える
+    let travel = DerivedMemo<[Photo], ProfileTravelRecord.Summary>()
+    /// 投稿の格子の「複数枚」の印の写真（同じく写真が変わったときだけ）
+    let multiple = DerivedMemo<[Photo], Set<String>>()
 
     init() {}
+
+    func travelSummary(_ photos: [Photo]) -> ProfileTravelRecord.Summary {
+        travel.value(for: photos) { ProfileTravelRecord.Summary(photos: photos) }
+    }
+
+    func multiPhotoIds(_ photos: [Photo]) -> Set<String> {
+        multiple.value(for: photos) { PhotoGroups.multiPhotoIds(photos) }
+    }
 
     func shelfTrips(_ photos: [Photo]) -> [TripBook.Trip] {
         shelf.value(for: photos) { TripBook.shelfTrips(from: photos) }
@@ -490,6 +525,33 @@ final class MyPageTabMemo {
     func savedPhotos(ids: Set<String>, publicPool: [Photo], mine: [Photo]) -> [Photo] {
         saved.value(for: SavedKey(ids: ids, publicPool: publicPool, mine: mine)) {
             LikedPhotos.resolve(ids, in: [publicPool, mine])
+        }
+    }
+}
+
+/// 人のページの旅の記録・旅の棚の計算の控え（2026-10-28 判断・マイページの `MyPageTabMemo.travelSummary` と同じ理由）。
+/// 写真かブロックの関係が変わったときだけ数える
+final class OthersTravelMemo {
+
+    struct Key: Equatable {
+        let photos: [Photo]
+        let blocked: Bool
+    }
+
+    let summary = DerivedMemo<Key, ProfileTravelRecord.Summary>()
+    let shelf = DerivedMemo<Key, ProfileTravelRecord.OthersShelf>()
+
+    init() {}
+
+    func othersSummary(_ photos: [Photo], blocked: Bool) -> ProfileTravelRecord.Summary {
+        summary.value(for: Key(photos: photos, blocked: blocked)) {
+            ProfileTravelRecord.othersSummary(photos, blocked: blocked)
+        }
+    }
+
+    func othersShelf(_ photos: [Photo], blocked: Bool) -> ProfileTravelRecord.OthersShelf {
+        shelf.value(for: Key(photos: photos, blocked: blocked)) {
+            ProfileTravelRecord.othersShelf(photos, blocked: blocked)
         }
     }
 }

@@ -100,7 +100,7 @@ final class ProfileTabPagerTests: XCTestCase {
         XCTAssertTrue(pager.contains(".offset(y: shown ? 0 : lift)"))
         for page in ["MyPageView", "UserProfileView"] {
             let text = try source("Sources/JourneyPhoto/Features/Profile/\(page).swift")
-            XCTAssertTrue(text.contains("rowOverflow: ProfileTabScroll.rowOverflow(rowMinY: tabRowMinY, visibleTop: visibleTop)"),
+            XCTAssertTrue(text.contains("rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) }"),
                           "\(page) が札の行のはみ出しを渡していない")
         }
         // 人のページの地図は、開いて少し待ってから先に作る
@@ -174,7 +174,7 @@ final class ProfileTabPagerTests: XCTestCase {
         for page in ["MyPageView", "UserProfileView"] {
             let text = try source("Sources/JourneyPhoto/Features/Profile/\(page).swift")
             XCTAssertTrue(text.contains(".id(ProfileTabScroll.rowID)"), "\(page) の札の行に目印が無い")
-            XCTAssertTrue(text.contains("guard ProfileTabScroll.scrollsToRow(rowMinY: tabRowMinY, visibleTop: visibleTop)"),
+            XCTAssertTrue(text.contains("guard ProfileTabScroll.scrollsToRow(rowMinY: tabRow.minY, visibleTop: visibleTop)"),
                           "\(page) が札を替えても頭へ戻さない")
             XCTAssertTrue(text.contains("withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {\n                reader.scrollTo("),
                           "\(page) の送りが動きを減らす設定を見ていない")

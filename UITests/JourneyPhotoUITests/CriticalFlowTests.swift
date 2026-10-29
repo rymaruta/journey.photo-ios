@@ -283,7 +283,9 @@ final class CriticalFlowTests: XCTestCase {
         reveal(tripsTab, in: app, "旅の記録のタブ", pushes: 4)
         tripsTab.tap()
         let camper = app.buttons["trips.camper"].firstMatch
-        XCTAssertTrue(camper.waitForExistence(timeout: 15), "「写真で作るキャンピングカー」の行が無い")
+        // 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（run 728・2026-10-28 の Mac でここが落ちた）。
+        // 長めに待ち、出なければタブを押し直してもう一度待つ（`TripsTabWait`・`ScreenshotTests.openTripsRow` と共通）
+        XCTAssertTrue(TripsTabWait.waitForRow(camper, tripsTab: tripsTab), "「写真で作るキャンピングカー」の行が無い")
         reveal(camper, in: app, "キャンピングカーの行")
         camper.tap()
         let enter = app.buttons["camper.room.enter"].firstMatch

@@ -17,8 +17,12 @@ enum TravelRoute {
 
     /// 距離と同じ写真を、同じ古い順に並べた撮影地（緯度・経度）
     static func coordinates(of photos: [Photo]) -> [Photo.Coords] {
+        datedOldestFirst(photos).compactMap(\.coords)
+    }
+
+    /// 日時の読める写真を、Web と同じ古い順に（距離・線・最初の年が使う並び）
+    static func datedOldestFirst(_ photos: [Photo]) -> [Photo] {
         TravelDistance.webOldestFirst(photos.filter { TripBook.day(of: $0, in: utc) != nil })
-            .compactMap(\.coords)
     }
 
     /// 経度を前の点から続くように直す（日付変更線をまたぐと 359° 飛んで見えるのを防ぐ）。
@@ -156,8 +160,12 @@ enum TravelRoute {
 
     /// 一番古い写真の年（「2024 年から」）。読めなければ nil
     static func firstYear(of photos: [Photo]) -> Int? {
-        guard let first = TravelDistance.webOldestFirst(photos.filter { TripBook.day(of: $0, in: utc) != nil }).first,
-              let day = TripBook.day(of: first, in: utc) else { return nil }
+        firstYear(ofDatedOldestFirst: datedOldestFirst(photos))
+    }
+
+    /// `datedOldestFirst` で並べ済みの写真の、一番古い写真の年
+    static func firstYear(ofDatedOldestFirst dated: [Photo]) -> Int? {
+        guard let first = dated.first, let day = TripBook.day(of: first, in: utc) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = utc
         return calendar.component(.year, from: day)
