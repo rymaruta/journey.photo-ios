@@ -12,6 +12,7 @@ import SwiftUI
 /// **全体のバーは指で動かせる**（2026-10-28 owner「再生中の音楽自由に動かせるといいね」）。
 /// ホームの「いまの季節のスポット」の説明文の上に重なり、透ける地のせいで下の文字と曲名が
 /// 重なって読めなかった。置き場所の決まりは `MiniPlayerPlacement`。
+/// 地は透けるガラス（`jpGlass`）。読めるようにしたのはぼかしで、不透明にはしない（下の `bar` の注記）。
 /// 曲選びの中のバーはシートの中に据えるので動かさない（下へ引くとシートを閉じる操作とぶつかる）
 struct MiniPlayerBar: View {
 
@@ -26,7 +27,7 @@ struct MiniPlayerBar: View {
 
     /// 動かしている間の量（離したら 0 に戻す）
     @State private var dragOffset = CGSize.zero
-    /// 長押しが済んで持ち上げている間か。**取り消された（電話が来た等）ときも戻す**ために
+    /// 指で引いている間か。**取り消された（電話が来た等）ときも戻す**ために
     /// `@GestureState` で持つ（取り消しでは `onEnded` が呼ばれない）
     @GestureState private var dragging = false
     /// 再生器の高さ（文字の大きさで変わる）。範囲の計算に使う
@@ -39,11 +40,17 @@ struct MiniPlayerBar: View {
 
     /// 動かしている間の縮み（持ち上げた感じ）。「動きを減らす」がオンなら縮めない
     static let liftedScale: CGFloat = 0.96
+    /// ガラスの上の曲名・歌手名の影の濃さ（板の「大きい字の影は黒 60%」より控えめ・広げない）
+    static let textShadowOpacity: Double = 0.5
     /// 動かす置き場所の座標の名前
     private static let area = "miniPlayer.area"
-    /// 持ち上げるまでの長押し（秒）。2026-10-28 判断: 再生器の上から始めたスクロールで再生器が動いて
-    /// しまった（確かめ役の指摘）ので、押さえてから引く形にした
-    static let liftDelay: Double = 0.2
+    /// 動き始めるまでに指が進む距離（pt）。**長押しは要らない。普通に引けば動く。**
+    /// 2026-10-28 判断（owner 実機で動かせなかった）: #395 は 0.2 秒の長押しのあとに引く形
+    /// （`LongPressGesture.sequenced(before: DragGesture)`）にしたが、owner は普通に引いて動かせなかった
+    /// （長押しが済む前に指が動くと長押しが外れ、引きは始まらない）。再生器の上から始めたスクロールで
+    /// 誤って動く件は、始まりの距離を標準（10）より少し大きい 12 にして軽減する。
+    /// 停止ボタンのタップは 12pt 動かないので引きにならず、そのまま効く
+    static let dragStartDistance: CGFloat = 12
 
     var body: some View {
         if let song = player.playingSong,
@@ -59,8 +66,14 @@ struct MiniPlayerBar: View {
     }
 
     /// 曲の絵・曲名・歌手名と停止ボタン。
-    /// 2026-10-28 判断: 地は**不透明の一段浮かせた面**（`RaisedTile.fill`・板 SongPicker の帯 #17171a と
-    /// 同じ段）。前の全体のバーは白 10%（`WebTheme.raised`）で、下の文字が透けて曲名と重なっていた
+    /// 2026-10-28 判断（owner「再生中の音楽の透明をやめちゃったの？好きだったのに」）:
+    /// - 全体のバーの地は**透けるガラス**（`jpGlass`・板の「ガラス: 黒 55%＋ぼかし＋白 10% の縁」）。
+    ///   #395 では不透明の面（`RaisedTile.fill`）にしたが、owner は透けるのが好きだった
+    /// - #395 より前の白 10%（`WebTheme.raised`）はぼかしが無く、下の説明文の字がそのまま見えて
+    ///   曲名・歌手名と重なって読めなかった。ぼかし1枚で下の字を崩し、曲名・歌手名に薄い影を付けて読ませる
+    /// - 軽くする: ぼかし（material）は1枚だけ（重ねるとスクロール中に毎フレームの計算が増える）。
+    ///   再生器の外の影は置いている間は付けない（引いている間だけ・角丸の形にだけ）。ガラスの下に影があると透け感も濁る
+    /// - 曲選びの中のバーは板 SongPicker どおり不透明の面（#17171a の段）のまま
     private func bar(_ song: Photo.Song) -> some View {
         HStack(spacing: 10) {
             if inSongPicker {
@@ -72,7 +85,7 @@ struct MiniPlayerBar: View {
                     .accessibilityLabel(L("再生中の曲", "Now playing"))
                     .accessibilityValue([song.title, song.artist ?? ""].filter { !$0.isEmpty }
                         .joined(separator: L("、", ", ")))
-                    .accessibilityHint(L("長押ししてドラッグで移動", "Touch and hold, then drag to move"))
+                    .accessibilityHint(L("ドラッグで移動", "Drag to move"))
                     .accessibilityAction(named: L("上へ移す", "Move up")) { move(up: true) }
                     .accessibilityAction(named: L("下へ移す", "Move down")) { move(up: false) }
                     .accessibilityAction(named: L("左の端へ", "Move to left edge")) { move(to: .leading) }
@@ -95,11 +108,29 @@ struct MiniPlayerBar: View {
         .padding(.trailing, 4)
         .padding(.vertical, 8)
         // 曲選びの中のバーは v2 SongPicker の形（高さ 60・角 18・地 #1A1A1C・縁は白 8%）。
-        // 全体のバーも同じ形・同じ地。縁だけ白 12%（写真の上に浮かぶので境目を見せる）
+        // 全体のバーも同じ形（角 18）で、地は透けるガラス
         .frame(minHeight: inSongPicker ? Self.pickerBarHeight : nil)
-        .background(Self.pickerBarFill, in: RoundedRectangle(cornerRadius: Self.pickerBarRadius))
-        .overlay(RoundedRectangle(cornerRadius: Self.pickerBarRadius)
-            .strokeBorder(inSongPicker ? WebTheme.hairline : WebTheme.border, lineWidth: 1))
+        .background { ground }
+    }
+
+    /// 地。曲選びの中は不透明の面、全体のバーはガラス（ぼかし1枚）
+    @ViewBuilder private var ground: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.pickerBarRadius)
+        if inSongPicker {
+            shape.fill(Self.pickerBarFill)
+                .overlay(shape.strokeBorder(WebTheme.hairline, lineWidth: 1))
+        } else {
+            Color.clear.jpGlass(in: shape)
+                // 2026-10-28 判断（再生の重さの担当の手がかり）: #395 は `.shadow(radius: 14)` を再生器の中身ごとに
+                // 付けていて、スクロール中に影を描き直していた疑い。影は**角丸の形にだけ**、**引いている間だけ**付ける。
+                // 置いている間は影なし（ガラスの下に影があると透け感も濁る）
+                .background {
+                    if dragging {
+                        shape.fill(Color.black.opacity(0.5))
+                            .shadow(color: .black, radius: 18, x: 0, y: 10)
+                    }
+                }
+        }
     }
 
     private func info(_ song: Photo.Song) -> some View {
@@ -122,6 +153,8 @@ struct MiniPlayerBar: View {
                         .lineLimit(1)
                 }
             }
+            // ガラス越しの字を読ませる薄い影（全体のバーだけ。曲選びの中は不透明の面なので要らない）
+            .shadow(color: .black.opacity(inSongPicker ? 0 : Self.textShadowOpacity), radius: 2, x: 0, y: 1)
             Spacer(minLength: 0)
         }
         .frame(minHeight: WebTheme.minTapTarget)
@@ -139,13 +172,12 @@ struct MiniPlayerBar: View {
                 // 再生器全体を1つの入れ物にして道しるべを付ける（中の曲の札・停止ボタンは別々に読む）
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("mini.player")
-                // 持ち上げた感じ: 少し縮めて影を濃く。「動きを減らす」なら縮めない
+                // 持ち上げた感じ: 少し縮める（影は `ground` の角丸にだけ・引いている間だけ）。
+                // 「動きを減らす」なら縮めない
                 .scaleEffect(dragging && !reduceMotion ? Self.liftedScale : 1)
-                .shadow(color: .black.opacity(dragging ? 0.7 : 0.5), radius: dragging ? 22 : 14,
-                        x: 0, y: dragging ? 14 : 8)
-                // 押さえてから引く（停止ボタンのタップは長押しにならないので効く）
+                // 普通に引けば動く（停止ボタンのタップは 12pt 動かないので引きにならず効く）
                 .gesture(dragGesture(container: container, size: size))
-                // 持ち上げた瞬間に軽く震わせる（長押しが済んだ合図）
+                // 動き始めた瞬間に軽く震わせる（掴んだ合図）
                 .sensoryFeedback(.impact(weight: .light), trigger: dragging) { old, new in !old && new }
                 .position(x: base.x + dragOffset.width, y: base.y + dragOffset.height)
         }
@@ -158,18 +190,12 @@ struct MiniPlayerBar: View {
     }
 
     private func dragGesture(container: CGSize, size: CGSize) -> some Gesture {
-        // 長押しが済んでから引く（スクロールの指で動かない）。動かす間に再生器自身が動くので、
+        // 長押しせずに引く（2026-10-28 判断・`dragStartDistance`）。動かす間に再生器自身が動くので、
         // 量は動かない枠の座標で測る
-        LongPressGesture(minimumDuration: Self.liftDelay)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.area)))
-            .updating($dragging) { value, state, _ in
-                if case .second(true, _) = value { state = true }
-            }
-            .onChanged { value in
-                if case .second(true, let drag?) = value { dragOffset = drag.translation }
-            }
-            .onEnded { sequence in
-                guard case .second(true, let value?) = sequence else { return }
+        DragGesture(minimumDistance: Self.dragStartDistance, coordinateSpace: .named(Self.area))
+            .updating($dragging) { _, state, _ in state = true }
+            .onChanged { value in dragOffset = value.translation }
+            .onEnded { value in
                 let outcome = MiniPlayerPlacement.settle(from: placement.spot,
                                                          translation: value.translation,
                                                          predicted: value.predictedEndTranslation,

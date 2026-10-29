@@ -3665,7 +3665,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **全体の再生器を指で動かす**（2026-10-28 owner「再生中の音楽自由に動かせるといいね」・`MiniPlayerPlacement`）。
     /// マイページの BGM を鳴らしてホームへ移り、「いまの季節のスポット」の説明文の上に再生器が重なった所を1枚
-    /// （地が透けず、曲名・歌手名が読めること）。次に左上へ引いて離し、左の端へ寄った所を1枚撮る。
+    /// （地は透けるガラスで、それでも曲名・歌手名が読めること）。次に**長押しせずに**左上へ引いて離し、
+    /// 左の端へ寄った所を1枚撮る（2026-10-28 owner 実機で動かせなかった: 長押しが要る形だった）。
     /// 曲の行・再生器・段が出なければ撮らない（この試験の決まり）。左の端へ寄らなければ落とす
     func testCapturesMiniPlayerDrag() {
         let app = XCUIApplication()
@@ -3713,10 +3714,11 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(bar.frame.width, app.frame.width - 24, "全幅のまま（左右へ寄せられない）")
         shoot(app, "10m-ホーム（再生器・説明文に重なった所）")
 
-        // 曲名の辺り（停止ボタンでない所）を長押しして（0.2 秒で持ち上がる）左上へ引いて離す → 左の端へ寄る
+        // 曲名の辺り（停止ボタンでない所）に触れてすぐ（長押しせずに）左上へ引き、止めてから離す → 左の端へ寄る。
+        // 触れてから動き出すまでは 0.05 秒（長押しが要る形なら、ここで動かずに落ちる）
         let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
         let target = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.45))
-        start.press(forDuration: 0.6, thenDragTo: target)
+        start.press(forDuration: 0.05, thenDragTo: target, withVelocity: .fast, thenHoldForDuration: 0.3)
         Thread.sleep(forTimeInterval: 1.5)
         guard bar.exists else {
             XCTFail("引いただけで再生器が消えた")
@@ -3741,7 +3743,8 @@ final class ScreenshotTests: XCTestCase {
         _ = field.waitForExistence(timeout: 10)
         guard bar.exists else { return }
         bar.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
-            .press(forDuration: 0.6, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.02)))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.02)),
+                   withVelocity: .fast, thenHoldForDuration: 0.3)
         Thread.sleep(forTimeInterval: 1.5)
         guard bar.exists else {
             XCTFail("上へ引いただけで再生器が消えた")
@@ -3752,6 +3755,13 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "10m-探す（再生器・いちばん上）")
+
+        // 停止ボタンのタップは引きとぶつからない（引きの始まりは 12pt 動いてから・`MiniPlayerBar.dragStartDistance`）
+        let stop = bar.buttons["止める"].firstMatch
+        if bar.exists, stop.exists {
+            stop.tap()
+            XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "停止ボタンを押しても止まらない（引きとぶつかる）")
+        }
         app.terminate()
     }
 
