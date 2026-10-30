@@ -24,7 +24,7 @@
 決めたことと理由を報告に書く。owner は後から変えられる。
 
 - **手間がかかっても良いものを選ぶ。** 「簡単だからこちら」で妥協しない（例: 回したトランクの側面を1色の板で済ませない）
-- 聞くのは、owner にしか決められないことだけ: 本番・TestFlight に出す許可（下の節）、
+- 聞くのは、owner にしか決められないことだけ: 本番（Web/API）に出す許可（下の節）、
   費用が増えるもの・データベースの変更・新しい GSI、利用者の見え方を大きく変える方針の転換
 - 2026-10-18 に、トランクの側面・季節のスポットの回し方・硬貨の知らせ方を1つずつ聞いて止めていた
 
@@ -32,10 +32,11 @@
 
 **直したら staging で止めず、そのまま本番へ。** 利用者が困っている時間を延ばさない。
 
-**ただし出す前に owner に一言確かめる。** 直しが全部終わったら「リリースしていいか」を聞き、
-返事をもらってから TestFlight・本番の Web/API に出す（2026-10-09 owner）。直しの途中で1件ずつ出さない。
+**本番の Web/API は、出す前に owner に一言確かめる。** 直しが全部終わったら「リリースしていいか」を聞き、
+返事をもらってから出す（2026-10-09 owner）。直しの途中で1件ずつ出さない。
+**TestFlight は聞かずに出す**（2026-10-30 owner のルール、下の「iOS の変更は TestFlight まで出す」）。
 
-- **iOS:** 直しが全部 main に入り Mac の CI が緑で、owner が「いい」と言ったら TestFlight を流す（`/release`）。
+- **iOS:** 直しが main に入り Mac の CI が緑なら、そのまま TestFlight を流す（`/release`）。owner の返事は待たない。
   流す前に `git ls-remote origin 'refs/tags/testflight/*'` で、同じ main の sha がもう出ていないか見る
   （2026-10-09、別のセッションと同じ中身の版を二重に出した）
 - **Web・API（photo-gallery）:** 直しの枝から本番用の枝（main から切って cherry-pick）を作り、
@@ -58,6 +59,12 @@
 
 **iOS の直し・機能は、main にマージしたら、そのまま TestFlight まで出して終わりにする。**
 PR を作って止めない・「次の TestFlight で」と先送りしない。owner が実機で確かめられる所まで運ぶ。
+
+**Mac のテストが通ったら、owner に聞かずに TestFlight まで出す（2026-10-30 owner のルール）。**
+「出していいか」と確かめて止めない。出したら版と実機で見てほしい所を報告する。
+テストが落ちたら直して流し直し、緑になるまで出さない。本番の Web/API・費用・DB・GSI は今までどおり承認を取る。
+iOS の PR のマージ（`gh api -X PUT repos/rymaruta/journey.photo-ios/pulls/<番号>/merge …`）は `.claude/settings.json` で許してある。
+photo-gallery の本番（main）へのマージは今までどおり owner が押す。
 
 - 流れ: Linux の検査（`/verify`）→ PR → マージ → `/release`（`ios-testflight.yml` を `submit=true`）→
   版（`testflight/<版>` のタグ）を確かめて owner に日本語で報告
