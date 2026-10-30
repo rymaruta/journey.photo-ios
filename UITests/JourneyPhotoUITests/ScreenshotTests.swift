@@ -923,8 +923,8 @@ final class ScreenshotTests: XCTestCase {
         }
         // **投稿の2択と、ストーリー作成**（モック4）。**巡回の最後に置く。**
         //
-        // 🔴 run 58 はこれを途中に置いて落ちた——ストーリー作成は**札（sheet）**で
-        // 出るので、閉じないまま次の手に進むと**タブの帯が覆われて**押せない
+        // 🔴 run 58 はこれを途中に置いて落ちた——ストーリー作成は**覆う画面**で出る（当時はシート、
+        // 2026-10-30 #406 から画面いっぱい）ので、閉じないまま次の手に進むと**タブの帯が覆われて**押せない
         // （`kAXErrorCannotComplete`。runs 46・47 と同じ形）。
         // 閉じる手を足すより、**後ろに何も無い場所に置く**方が確実。
         // 中央のタブは画面ではなく入口で、押すと2択の札が出る。
@@ -5030,6 +5030,20 @@ final class ScreenshotTests: XCTestCase {
             return
         }
         Thread.sleep(forTimeInterval: 2)
+        // 🔴 2026-10-30 判断 #406: **作る画面は窓の上の端から始まる**（画面いっぱい・`fullScreenCover`）。
+        // シートのカードで出していた間は、上の隙間（時計の帯〜✕ の上）に下の画面（ホーム）が透けた。
+        // 写真の枠（`story.canvas`）の上の端が窓の上の端にあり、下の画面のタブの帯が押せないことを見る
+        let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
+        if canvas.waitForExistence(timeout: 5) {
+            let window = app.windows.firstMatch.frame
+            XCTAssertLessThanOrEqual(canvas.frame.minY, window.minY + 1,
+                                     "作る画面の写真の枠が窓の上の端から始まっていない（上に下の画面が透ける・#406）: "
+                                     + "\(canvas.frame) / \(window)")
+            XCTAssertEqual(canvas.frame.width, window.width, accuracy: 1, "作る画面が窓の幅いっぱいでない")
+        } else {
+            XCTFail("作る画面の写真の枠（story.canvas）が見つからない")
+        }
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "作る画面の下からタブの帯が押せる（下の画面が見えている）")
         let names = ["A ガラスの札", "B 白い札", "C 小さな帯", "D ジャケット大", "E レコード", "F 明朝の題字"]
         for (i, name) in names.enumerated() {
             shoot(app, "62\(["a", "b", "c", "d", "e", "f"][i])-ストーリーの曲の札（\(name)）")

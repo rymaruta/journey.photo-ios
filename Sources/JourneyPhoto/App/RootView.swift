@@ -949,7 +949,13 @@ struct RootView: View {
             .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
                 uploadSheet
             }
-            .sheet(isPresented: $showStoryComposer, onDismiss: {
+            // 2026-10-30 判断 #406: ストーリーを作る画面は**端末の画面いっぱい**（`fullScreenCover`）で出す。
+            // 大きいカードのシートで出すと、上の隙間（時計の帯〜✕ の上）に下の画面（開いた元の画面の
+            // カバー写真など）が透けた（TestFlight 1.1.45・owner「ストーリー作成枠の外の背景が写ってる？」）。
+            // 板 StoryComposer も閲覧画面と同じく全画面（写真は上の端から）。閉じるのは ✕ と
+            // 「保存せずに閉じる」の確認だけ（書きかけがある間は、下へ払う口も元から `unsavedCloseGuard` で止めていた）。
+            // ⚠️ 入口は2つ（ここと `StoriesRow`）。片方だけシートに戻さない（`StoryComposerPresentationTests`）
+            .fullScreenCover(isPresented: $showStoryComposer, onDismiss: {
                 openStoryDraftId = nil
                 tabRouter.postSheetClosed()
             }) {

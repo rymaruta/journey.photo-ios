@@ -261,6 +261,13 @@ struct StoryComposerView: View {
                 Color.black.ignoresSafeArea()
                 ProgressView()
             }
+            // 2026-10-30 判断 #406: 画面いっぱいで出すので下へ払って閉じられない。ログインの確かめが
+            // 長引いても出られるよう、ここにも閉じる口を置く（失うものは無い）
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(Labels.Common.close) { dismiss() }
+                }
+            }
         case .signIn:
             // 既存のログイン画面（`SignInView`）。ログインできたら、そのまま作る画面に変わる。
             // 作る画面は見出しのバーを隠すので、ここでは閉じる口を見出しに置く（`SignInSheet` と同じ形）
