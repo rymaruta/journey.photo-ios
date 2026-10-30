@@ -3895,9 +3895,17 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.2, dy: gridY)))
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(trips.isSelected, "格子の上を左へ払っても「旅の記録」に替わらない")
-        XCTAssertTrue(posts.isHittable && posts.frame.minY < height * 0.25,
-                      "深く送ってから替えても札の行が上端へ戻らない（minY \(posts.frame.minY)）")
         shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
+        // 札の行は上に留まるので、札の位置では「頭から」を言えない（いつも上端に居る）。
+        // 投稿へ戻し、格子の1枚目が札の行のすぐ下に来ていれば、替えたときに頭へ送れている
+        // （送れていなければ、投稿の格子は深く送ったまま＝1枚目は札の行より上）
+        posts.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(posts.isSelected, "「投稿」に戻らない")
+        let first = app.buttons["mypage.photo"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "投稿へ戻ったら格子が消えた")
+        let gap = first.frame.minY - posts.frame.maxY
+        XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
     /// **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・板「マイページ」の状態「区分の札が上に留まった」）。
@@ -3905,30 +3913,32 @@ final class ScreenshotTests: XCTestCase {
     /// 替えた札は頭から見せる（投稿へ戻すと格子の1枚目が札の行のすぐ下）。
     /// 🔴 段が見つからない・送れない・留まらないときは**落とす**（黙って通らない）
     func testPinsMyPageTabs() {
-        let app = XCUIApplication()
-        app.launchArguments += ["-legal.consent.version", "0"]
-        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
-        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
-        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
-        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
-        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        app.launch()
+        // カバーのある回（時計の裏まで伸ばす）と、カバーの無い回（安全域の内側）で、留まり方が違う
+        for (extra, suffix) in [([String](), "カバーあり"), (["-JPPreviewNoCover", "YES"], "カバーなし")] {
+            checkPinnedTabs(extra, suffix)
+        }
+    }
 
-        let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
+    private func checkPinnedTabs(_ extra: [String], _ suffix: String) {
+        let app = launchProfileLooks(extra)
+        defer { app.terminate() }
         let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "下のタブが出ない")
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "\(suffix): 下のタブが出ない")
         guard tabBar.exists, tabBar.buttons.count > 4 else { return }
         tabBar.buttons.element(boundBy: 4).tap()
         let edit = app.buttons["mypage.edit"].firstMatch
-        XCTAssertTrue(edit.waitForExistence(timeout: 20), "マイページの見出しが出ない")
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "\(suffix): マイページの見出しが出ない")
         let posts = app.buttons["profile.tab.posts"].firstMatch
         let trips = app.buttons["profile.tab.trips"].firstMatch
-        XCTAssertTrue(posts.waitForExistence(timeout: 10), "区分の札（投稿）が見つからない")
+        XCTAssertTrue(posts.waitForExistence(timeout: 10), "\(suffix): 区分の札（投稿）が見つからない")
         let photo = app.buttons["mypage.photo"].firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 20), "投稿の格子が出ない（深く送れない）")
+        XCTAssertTrue(photo.waitForExistence(timeout: 20), "\(suffix): 投稿の格子が出ない（深く送れない）")
         guard posts.exists, photo.exists else { return }
+        // カバーは通信で来る（来てから測る）
+        Thread.sleep(forTimeInterval: 3)
         let restY = posts.frame.minY
+        let pinnedRow = app.descendants(matching: .any)["mypage.tabs.pinned"].firstMatch
+        XCTAssertFalse(pinnedRow.exists, "\(suffix): 送る前から留まった札が出ている")
 
         // 下へ送る（見出しが流れて見えなくなるまで）
         for _ in 0..<3 {
@@ -3936,31 +3946,50 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         let height = app.frame.height
-        XCTAssertFalse(edit.exists && edit.isHittable, "送っても見出しが見えている（深く送れていない）")
-        // 留まった札: 押せて、時計の帯のすぐ下（画面の上 15% の中）に居る。送る前より上
-        XCTAssertTrue(posts.exists && posts.isHittable, "下へ送ると区分の札が消えた（上に留まらない）")
-        XCTAssertLessThan(posts.frame.minY, height * 0.15, "区分の札が上に留まっていない（minY \(posts.frame.minY)）")
-        XCTAssertGreaterThan(posts.frame.minY, 20, "区分の札が時計の帯の裏に入った（minY \(posts.frame.minY)）")
-        XCTAssertLessThan(posts.frame.minY, restY, "送る前と同じ位置のまま（送れていない）")
+        XCTAssertFalse(edit.exists && edit.isHittable, "\(suffix): 送っても見出しが見えている（深く送れていない）")
+        // 留まった札: 重ねた札が出ていて、押せて、時計の帯のすぐ下（画面の上 15% の中）に居る。送る前より上
+        XCTAssertTrue(pinnedRow.exists, "\(suffix): 下へ送っても区分の札が上に留まらない")
+        XCTAssertTrue(posts.exists && posts.isHittable, "\(suffix): 下へ送ると区分の札が押せない")
+        XCTAssertLessThan(posts.frame.minY, height * 0.15, "\(suffix): 区分の札が上に留まっていない（minY \(posts.frame.minY)）")
+        XCTAssertGreaterThan(posts.frame.minY, 20, "\(suffix): 区分の札が時計の帯の裏に入った（minY \(posts.frame.minY)）")
+        XCTAssertLessThan(posts.frame.minY, restY, "\(suffix): 送る前と同じ位置のまま（送れていない）")
         guard posts.isHittable, posts.frame.minY < height * 0.15 else { return }
+        // 留まった札の地は黒（格子の写真が透けない）: 札の行の右端の空き（字の無い所）の色を見る
+        let luma = Self.luma(app.screenshot().image, at: CGPoint(x: app.frame.width - 6, y: posts.frame.midY))
+        XCTAssertNotNil(luma, "\(suffix): 画面の絵を読めない")
+        if let luma { XCTAssertLessThan(luma, 16, "\(suffix): 留まった札の地が黒でない（明るさ \(luma)）") }
         let pinnedY = posts.frame.minY
-        shoot(app, "14x-マイページ（区分の札が留まる）")
+        shoot(app, "14x-マイページ（区分の札が留まる・\(suffix)）")
 
-        // 留まった札を押すと替わる。札の行は留まったまま
-        XCTAssertTrue(trips.isHittable, "留まった「旅の記録」の札が押せない")
+        // 留まった札を押すと替わる。札の行は同じ位置
+        XCTAssertTrue(trips.isHittable, "\(suffix): 留まった「旅の記録」の札が押せない")
         trips.tap()
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertTrue(trips.isSelected, "留まった「旅の記録」の札を押しても替わらない")
-        XCTAssertEqual(posts.frame.minY, pinnedY, accuracy: 2, "替えたら札の行が留まった位置から動いた")
+        XCTAssertTrue(trips.isSelected, "\(suffix): 留まった「旅の記録」の札を押しても替わらない")
+        XCTAssertEqual(posts.frame.minY, pinnedY, accuracy: 2, "\(suffix): 替えたら札の行が留まった位置から動いた")
 
         // 投稿へ戻すと頭から（格子の1枚目が札の行のすぐ下）
         posts.tap()
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertTrue(posts.isSelected, "留まった「投稿」の札を押しても戻らない")
-        XCTAssertTrue(photo.waitForExistence(timeout: 5), "投稿へ戻ったら格子が消えた")
+        XCTAssertTrue(posts.isSelected, "\(suffix): 留まった「投稿」の札を押しても戻らない")
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "\(suffix): 投稿へ戻ったら格子が消えた")
         let gap = photo.frame.minY - posts.frame.maxY
-        XCTAssertTrue(gap >= 0 && gap < 240, "替えた札が頭から出ない（札の行と格子の1枚目の間 \(gap)）")
-        app.terminate()
+        XCTAssertTrue(gap >= 0 && gap < 240, "\(suffix): 替えた札が頭から出ない（札の行と格子の1枚目の間 \(gap)）")
+    }
+
+    /// 画面の絵の1点（ポイント）の明るさ（0〜255）。読めなければ nil
+    private static func luma(_ image: UIImage, at point: CGPoint) -> Double? {
+        guard let cg = image.cgImage else { return nil }
+        let scale = image.scale
+        let x = Int(point.x * scale), y = Int(point.y * scale)
+        guard x >= 0, y >= 0, x < cg.width, y < cg.height,
+              let one = cg.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
+        var px = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(one, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return 0.299 * Double(px[0]) + 0.587 * Double(px[1]) + 0.114 * Double(px[2])
     }
 
     /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、

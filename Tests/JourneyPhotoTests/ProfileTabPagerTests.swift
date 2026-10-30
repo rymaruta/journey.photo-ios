@@ -114,8 +114,8 @@ final class ProfileTabPagerTests: XCTestCase {
         let mine = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
         XCTAssertTrue(mine.contains("ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,"))
         XCTAssertTrue(mine.contains("minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,"))
-        // 札の行は上に留まる見出しの中（2026-10-30 #418）。そこでも払える
-        XCTAssertTrue(mine.contains("tabPicker(stuck: stuck)\n                            .modifier(ProfileTabSwipe("))
+        // 流れている札の行で払える（上に留まった札は重ねて描く・2026-10-30 #418）
+        XCTAssertTrue(mine.contains("tabPicker(stuck: false)\n                        .modifier(ProfileTabSwipe("))
         XCTAssertFalse(mine.contains("private var photoArea"), "選んだ札だけを作る枝が残っている")
         XCTAssertFalse(mine.contains("simultaneousGesture(tabSwipe)"))
         let theirs = try source("Sources/JourneyPhoto/Features/Profile/UserProfileView.swift")

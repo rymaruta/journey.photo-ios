@@ -42,12 +42,34 @@ final class ProfileTabBarStyleTests: XCTestCase {
         let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
         let padding = try XCTUnwrap(tab.range(of: ".padding(.horizontal, ProfileTabStyle.underlineInset)"), "字の左右の 2 が無い")
         let underline = try XCTUnwrap(tab.range(of: ".matchedGeometryEffect(id: \"profile.tab.underline.\\(fill)\", in: underline)"))
+        let slack = try XCTUnwrap(tab.range(of: ".padding(.horizontal, ProfileTabStyle.hitSlack)"), "押せる範囲を広げていない")
         let fill = try XCTUnwrap(tab.range(of: ".frame(maxWidth: fill ? .infinity : nil)"), "広げた並びの幅が無い")
         XCTAssertLessThan(padding.lowerBound, underline.lowerBound)
+        XCTAssertLessThan(underline.lowerBound, slack.lowerBound, "下線が広げた当たりの幅まで伸びる（字の幅＋2 でない）")
         XCTAssertLessThan(underline.lowerBound, fill.lowerBound, "下線が割り当ての幅いっぱいに伸びる（字の幅＋2 でない）")
         XCTAssertTrue(tab.contains(".frame(minHeight: ProfileTabStyle.height)"), "札の高さが 48 でない")
         // 下線は札の下端
         XCTAssertTrue(tab.contains(".overlay(alignment: .bottom) {"))
+    }
+
+    /// 🔴 押せる範囲は札の左右に札の間の半分（12）まで広げる。見た目は札の間 24・左右 16 のまま。
+    /// 「投稿」「保存」（字 約30）でも当たりが 44 に届く。広げた並びでは割り当ての幅いっぱい
+    func testHitAreaReachesFortyFour() throws {
+        XCTAssertEqual(ProfileTabStyle.hitSlack, 12)
+        XCTAssertEqual(ProfileTabStyle.hitSlack * 2, ProfileTabStyle.gap, "札の間（見た目）が 24 でなくなる")
+        XCTAssertEqual(ProfileTabStyle.rowInset + ProfileTabStyle.hitSlack, ProfileTabStyle.gutter, "左右の余白（見た目）が 16 でなくなる")
+        let twoLetters: CGFloat = 30
+        XCTAssertGreaterThanOrEqual(ProfileTabStyle.underlineWidth(textWidth: twoLetters) + ProfileTabStyle.hitSlack * 2,
+                                    WebTheme.minTapTarget, "2文字の札の当たりが 44 に足りない")
+        let bar = try source("ProfileTabBar.swift")
+        XCTAssertTrue(bar.contains("HStack(spacing: 0) {"), "札の間を spacing で空けている（間が押せない）")
+        XCTAssertTrue(bar.contains(".padding(.horizontal, ProfileTabStyle.rowInset)"))
+        let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
+        let fill = try XCTUnwrap(tab.range(of: ".frame(maxWidth: fill ? .infinity : nil)"))
+        let shape = try XCTUnwrap(tab.range(of: ".contentShape(Rectangle())"), "当たりの形が無い")
+        XCTAssertLessThan(fill.lowerBound, shape.lowerBound, "広げた並びの割り当ての残りが押せない")
+        let label = try slice(tab, from: "} label: {", to: ".buttonStyle(")
+        XCTAssertTrue(label.contains(".contentShape(Rectangle())"), "当たりの形がボタンの中身に無い")
     }
 
     // MARK: - 色と字
@@ -64,8 +86,13 @@ final class ProfileTabBarStyleTests: XCTestCase {
         XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"))
         // 幅は太字で測る（選び替えで並びが揺れない）
         XCTAssertTrue(bar.contains(".font(ProfileTabStyle.font(selected: true))\n            .lineLimit(1)\n            .hidden()"))
-        // 留まったら地を黒 100%
-        XCTAssertTrue(bar.contains(".background(stuck ? Color.black : Color.clear)"), "留まった札の地が黒でない")
+        // 留まったら地を黒 100%。区切り線は地の側（真鍮の下線の上に重ねない）
+        let body = try slice(bar, from: "var body: some View {", to: "private func tab(")
+        let background = try slice(body, from: ".background {", to: "\n    }")
+        XCTAssertTrue(background.contains("(stuck ? Color.black : Color.clear)"), "留まった札の地が黒でない")
+        XCTAssertTrue(background.contains(".fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))"),
+                      "区切り線が地の側に無い（下線の上に重なる）")
+        XCTAssertFalse(body.contains(".overlay(alignment: .bottom) {\n            Rectangle()"), "区切り線が下線の上に重なっている")
     }
 
     /// 🔴 押している間は字を白 95%、離すと 0.15 秒で戻す。選び替えの字の色も 0.15 秒
@@ -74,17 +101,15 @@ final class ProfileTabBarStyleTests: XCTestCase {
         XCTAssertEqual(ProfileTabStyle.colorFade, 0.15, accuracy: 0.0001)
         let bar = try source("ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("pressed ? Color.white.opacity(ProfileTabStyle.pressedOpacity) : color(selected: selected)"))
-        let style = try slice(bar, from: "struct ProfileTabPressStyle", to: "struct ProfilePinnedTabRow")
+        let style = try slice(bar + "\n//END", from: "struct ProfileTabPressStyle", to: "\n//END")
         XCTAssertTrue(style.contains("ProfileTabBar.color(selected: selected, pressed: configuration.isPressed)"),
                       "押している間の色を見ていない")
-        XCTAssertTrue(style.contains(".animation(.easeOut(duration: ProfileTabStyle.colorFade), value: configuration.isPressed)"))
-        XCTAssertTrue(style.contains(".animation(.easeOut(duration: ProfileTabStyle.colorFade), value: selected)"))
-        // 0.15 秒の動きは字だけ。下線は押し方の部品の外（中にあると、下線のばねまで 0.15 秒になる）
-        XCTAssertFalse(style.contains("matchedGeometryEffect"))
+        // 0.15 秒の動きは字の色だけに閉じ込める（`value:` 付きだと、中の下線のばねまで 0.15 秒の直線になる）
+        XCTAssertTrue(style.contains(".animation(.easeOut(duration: ProfileTabStyle.colorFade)) { content in\n                content.foregroundStyle("),
+                      "字の色の 0.15 秒が色だけに閉じていない")
+        XCTAssertFalse(style.contains(", value:"), "0.15 秒の動きが下線にも掛かる")
         let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
-        let pressStyle = try XCTUnwrap(tab.range(of: ".buttonStyle(ProfileTabPressStyle(selected: selected))"), "押し方の部品を使っていない")
-        let underline = try XCTUnwrap(tab.range(of: "RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)"))
-        XCTAssertLessThan(pressStyle.lowerBound, underline.lowerBound, "下線が押し方の部品の中にある")
+        XCTAssertTrue(tab.contains(".buttonStyle(ProfileTabPressStyle(selected: selected))"), "押し方の部品を使っていない")
     }
 
     // MARK: - 切り替えの動き
@@ -105,56 +130,35 @@ final class ProfileTabBarStyleTests: XCTestCase {
 
     // MARK: - 上に留まる
 
-    /// 🔴 留まった・留まりかけた分だけ下げて、時計の帯の下に置く（カバーを時計の裏まで伸ばしたマイページ）
-    func testPinnedRowSitsUnderTheClock() {
-        // まだ下にある: 下げない・留まっていない
-        XCTAssertEqual(ProfileTabStyle.pinLift(rowTop: 300, visibleTop: 59), 0)
-        XCTAssertFalse(ProfileTabStyle.isStuck(rowTop: 300, visibleTop: 59))
-        // 時計の帯の中へ入りかけ（上端 20）: 39 下げて帯の下（59）に置く
-        XCTAssertEqual(ProfileTabStyle.pinLift(rowTop: 20, visibleTop: 59), 39)
-        XCTAssertTrue(ProfileTabStyle.isStuck(rowTop: 20, visibleTop: 59))
-        // 留まった（見えている枠の 0）: 帯の高さだけ下げる
-        XCTAssertEqual(ProfileTabStyle.pinLift(rowTop: 0, visibleTop: 59), 59)
-        XCTAssertEqual(ProfileTabStyle.pinLift(rowTop: -40, visibleTop: 59), 59)
-        // カバーの無い人（安全域の下に留まる）: 下げない。留まったら黒地
-        XCTAssertEqual(ProfileTabStyle.pinLift(rowTop: 0, visibleTop: 0), 0)
-        XCTAssertTrue(ProfileTabStyle.isStuck(rowTop: 0, visibleTop: 0))
-        XCTAssertFalse(ProfileTabStyle.isStuck(rowTop: 120, visibleTop: 0))
+    /// 🔴 札の行が見えている上端を越えたら留める（ちょうど上端に居る間は元の行のまま）
+    func testPinsOnlyAfterTheRowCrossesTheTop() {
+        XCTAssertFalse(ProfileTabScroll.pinsRow(rowMinY: 300, visibleTop: 59))
+        XCTAssertFalse(ProfileTabScroll.pinsRow(rowMinY: 59, visibleTop: 59), "替えて頭へ送った直後まで重ねる")
+        XCTAssertTrue(ProfileTabScroll.pinsRow(rowMinY: 20, visibleTop: 59))
+        XCTAssertTrue(ProfileTabScroll.pinsRow(rowMinY: -400, visibleTop: 59))
+        // カバーの無い人（安全域の内側で測る）
+        XCTAssertFalse(ProfileTabScroll.pinsRow(rowMinY: 0, visibleTop: 0))
+        XCTAssertTrue(ProfileTabScroll.pinsRow(rowMinY: -1, visibleTop: 0))
     }
 
-    /// 測った上端は時計の帯の高さの間だけ変わる（その外では同じ値＝送るたびに描き直さない）
-    func testPinTopOnlyChangesInsideTheClockBand() {
-        XCTAssertEqual(ProfileTabStyle.pinTop(500, visibleTop: 59), 60)
-        XCTAssertEqual(ProfileTabStyle.pinTop(900, visibleTop: 59), 60)
-        XCTAssertEqual(ProfileTabStyle.pinTop(30, visibleTop: 59), 30)
-        XCTAssertEqual(ProfileTabStyle.pinTop(-10, visibleTop: 59), 0)
-        XCTAssertFalse(ProfileTabStyle.isStuck(rowTop: ProfileTabStyle.pinTop(500, visibleTop: 59), visibleTop: 59))
-        XCTAssertFalse(ProfileTabStyle.isStuck(rowTop: ProfileTabStyle.pinTop(400, visibleTop: 0), visibleTop: 0))
-    }
-
-    /// 🔴 マイページは区分の札を節の見出しで留める。札の行の目印（替えたとき頭から）は流れる位置に置く
-    func testMyPagePinsTheTabRow() throws {
+    /// 🔴 マイページは中身を `VStack` のまま（上の段を作り直さない）、越えている間だけ留まった札を重ねる。
+    /// 流れている元の行は見せず・押させず・読ませない（二重にしない）。重ねた札は地が黒（`stuck: true`）
+    func testMyPageOverlaysThePinnedRow() throws {
         let page = try source("MyPageView.swift")
-        XCTAssertTrue(page.contains("LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders])"),
-                      "区分の札を上に留めていない")
-        let section = try slice(page, from: "Section {", to: ".refreshable")
-        let header = try slice(section, from: "} header: {", to: ".onGeometryChange(for: CGFloat.self)")
-        XCTAssertTrue(header.contains("ProfilePinnedTabRow(visibleTop: visibleTop) { stuck in"))
-        XCTAssertTrue(header.contains("tabPicker(stuck: stuck)"), "留まったときの地と線を渡していない")
-        XCTAssertTrue(header.contains(".modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))"),
-                      "留まった札の行で払えない")
-        // 目印は見出し（留まる）に付けない——留まった位置では「深く送ったか」が分からない
-        XCTAssertFalse(header.contains(".id(ProfileTabScroll.rowID)"), "札の行の目印が留まる見出しに付いている")
-        let marker = try slice(section, from: ".background(alignment: .top) {", to: "} header: {")
-        XCTAssertTrue(marker.contains(".alignmentGuide(.top) { _ in tabRowHeight + 14 }"), "目印が流れる札の行の位置にない")
-        XCTAssertTrue(marker.contains(".id(ProfileTabScroll.rowID)"))
-        XCTAssertTrue(marker.contains("tabRow.record(frame, height: tabRowHeight)"))
-        // 留める部品は下げる前の枠で測る（下げた分で測り直して揺れない）
-        let bar = try source("ProfileTabBar.swift")
-        let pinned = try slice(bar, from: "struct ProfilePinnedTabRow", to: "extension ProfileTabStyle")
-        let offset = try XCTUnwrap(pinned.range(of: ".offset(y: ProfileTabStyle.pinLift(rowTop: top, visibleTop: visibleTop))"))
-        let measure = try XCTUnwrap(pinned.range(of: ".onGeometryChange(for: CGFloat.self)"))
-        XCTAssertLessThan(offset.lowerBound, measure.lowerBound)
-        XCTAssertTrue(pinned.contains("ProfileTabStyle.pinTop(proxy.frame(in: .scrollView).minY, visibleTop: visibleTop)"))
+        XCTAssertFalse(page.contains("LazyVStack(alignment: .leading, spacing: 14"),
+                       "中身を LazyVStack にしている（上の段が画面外で作り直され、読み直しが走る）")
+        XCTAssertFalse(page.contains("pinnedViews:"))
+        let content = try slice(page, from: "private var content: some View {", to: "private func scroll(")
+        XCTAssertTrue(content.contains("if tabRowPinned { pinnedTabRow }"), "留まった札を重ねていない")
+        let pinned = try slice(page, from: "private var pinnedTabRow: some View {", to: "\n    }")
+        XCTAssertTrue(pinned.contains("tabPicker(stuck: true)"), "留まった札の地が黒でない")
+        let scroll = try slice(page, from: "private func scroll(", to: ".refreshable")
+        let row = try slice(scroll, from: "tabPicker(stuck: false)", to: "photoBanners")
+        XCTAssertTrue(row.contains(".opacity(tabRowPinned ? 0 : 1)"))
+        XCTAssertTrue(row.contains(".allowsHitTesting(!tabRowPinned)"))
+        XCTAssertTrue(row.contains(".accessibilityHidden(tabRowPinned)"), "読み上げ・UI テストで札が二重になる")
+        XCTAssertTrue(row.contains(".id(ProfileTabScroll.rowID)"), "替えたら頭から見せる目印が流れる行に無い")
+        XCTAssertTrue(row.contains("ProfileTabScroll.pinsRow(rowMinY: proxy.frame(in: .scrollView).minY, visibleTop: visibleTop)"))
+        XCTAssertTrue(row.contains(".onGeometryChange(for: Bool.self)"), "越えたかを送るたびに書いている")
     }
 }

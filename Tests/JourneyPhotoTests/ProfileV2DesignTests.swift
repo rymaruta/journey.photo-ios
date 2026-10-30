@@ -96,7 +96,7 @@ final class ProfileV2DesignTests: XCTestCase {
         let bar = try source("Features/Profile/ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んでいる札の字が真鍮でない")
         // 2026-10-24: 下線は選んだ札にだけ1本描き、選び替えで滑らせる（`matchedGeometryEffect`）
-        XCTAssertTrue(bar.contains("if selected {\n                RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)\n                    .fill(WebTheme.accent)"),
+        XCTAssertTrue(bar.contains("if selected {\n                        RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)\n                            .fill(WebTheme.accent)"),
                       "下線が真鍮でない")
         XCTAssertTrue(bar.contains(".frame(height: JPStroke.emphasis)"), "下線は 2pt")
         XCTAssertFalse(bar.contains("selected ? Color.white : WebTheme.faint"), "v1 の白い選択に戻っている")

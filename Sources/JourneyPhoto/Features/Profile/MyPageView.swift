@@ -37,6 +37,9 @@ struct MyPageView: View {
     /// 札の行の上端の控え（見張らない箱。送るたびに画面全体を作り直さない・`ProfileTabRowSpot`）
     @State private var tabRow = ProfileTabRowSpot()
     @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
+    /// 区分の札の行が見えている上端を越えたか（越えている間だけ上に留まった札を重ねる・#418）。
+    /// 越えた・戻ったときだけ変わる
+    @State private var tabRowPinned = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
@@ -354,6 +357,9 @@ struct MyPageView: View {
                 // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
                 TopBarScrim(topInset: geo.safeAreaInsets.top, covered: scrolledUnderClock)
                     .animation(.easeOut(duration: 0.2), value: scrolledUnderClock)
+                // 送ると上に留まる区分の札（2026-10-30 owner 採用 #418・案A）。この ZStack は安全域の内側なので、
+                // カバーの有無にかかわらず時計の帯のすぐ下に置ける
+                if tabRowPinned { pinnedTabRow }
             }
         }
     }
@@ -364,10 +370,10 @@ struct MyPageView: View {
         let scrollHeight = viewport + visibleTop
         return ScrollViewReader { reader in
         ScrollView {
-            // **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・案A）。素直に `LazyVStack` の
-            // 節の見出しを留める（`pinnedViews`）。見出し・設定の丸・ハイライトは流れて見えなくなり、
-            // 札の下は写真の格子だけが流れる（留め方の細部は `ProfilePinnedTabRow`）
-            LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
+            // 中身は `VStack` のまま（`LazyVStack` にすると上の段が画面外で作り直され、ハイライト・カバーの
+            // 読み直しが走ってちらつく・2026-10-30 確かめ役の見直し）。区分の札を上に留めるのは、重ねて描く
+            // 札（`pinnedTabRow`）——流れている元の行が上端を越えている間だけ出す
+            VStack(alignment: .leading, spacing: 14) {
                 // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
                 // 格子の右上の写真に被さり、そこを押すと設定が開いた
                 // 板: 見出し・数・旅の実績の間は 12pt、その下の段は 14pt
@@ -422,44 +428,34 @@ struct MyPageView: View {
                 highlightsRow
                 // **札と中身は横に払っても切り替わる**（札を押すのと同じ）。
                 // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
-                Section {
-                    VStack(alignment: .leading, spacing: 14) {
-                        photoBanners
-                        // 一度開いた札の中身は持ち続ける（`ProfileTabPager`・2026-10-24 判断）。最低の高さは
-                        // 「見えている高さ − 札の行と間」——いちばん下まで送っても札の行が上端に残る
-                        ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
-                                        minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
-                                                                                  rowHeight: tabRowHeight, spacing: 14),
-                                        rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) }) { page in
-                            VStack(alignment: .leading, spacing: 14) {
-                                tabContent(page)
-                            }
+                VStack(alignment: .leading, spacing: 14) {
+                    // 上に留まっている間（`tabRowPinned`）は、元の行を見せず・押させず・読ませない
+                    // （重ねた札と二重にしない。場所は取り続けるので、位置の控えと「替えたら頭から」の目印はそのまま）
+                    tabPicker(stuck: false)
+                        .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))
+                        .opacity(tabRowPinned ? 0 : 1)
+                        .allowsHitTesting(!tabRowPinned)
+                        .accessibilityHidden(tabRowPinned)
+                        .id(ProfileTabScroll.rowID)
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .scrollView)
+                        } action: { frame in
+                            if let height = tabRow.record(frame, height: tabRowHeight) { tabRowHeight = height }
                         }
-                    }
-                    // **札の行の流れたときの位置の目印**（中身の上端から札の行の高さと間だけ上）。札の行は上に留まる
-                    // ので、行そのものの位置は「深く送ったか」を言わない——替えたとき頭から見せる送り（`scrollTo`）と
-                    // 払っている間の下げ（`rowOverflow`）は、留めない場合の位置で決める（`ProfileTabScroll`）
-                    .background(alignment: .top) {
-                        Color.clear
-                            .frame(height: tabRowHeight)
-                            .alignmentGuide(.top) { _ in tabRowHeight + 14 }
-                            .id(ProfileTabScroll.rowID)
-                            .onGeometryChange(for: CGRect.self) { proxy in
-                                proxy.frame(in: .scrollView)
-                            } action: { frame in
-                                _ = tabRow.record(frame, height: tabRowHeight)
-                            }
-                            .accessibilityHidden(true)
-                    }
-                } header: {
-                    ProfilePinnedTabRow(visibleTop: visibleTop) { stuck in
-                        tabPicker(stuck: stuck)
-                            .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))
-                    }
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.size.height
-                    } action: { height in
-                        if height != tabRowHeight { tabRowHeight = height }
+                        // 上端を越えたかは、越えた・戻ったときだけ値が変わる（送るたびに描き直さない）
+                        .onGeometryChange(for: Bool.self) { proxy in
+                            ProfileTabScroll.pinsRow(rowMinY: proxy.frame(in: .scrollView).minY, visibleTop: visibleTop)
+                        } action: { tabRowPinned = $0 }
+                    photoBanners
+                    // 一度開いた札の中身は持ち続ける（`ProfileTabPager`・2026-10-24 判断）。最低の高さは
+                    // 「見えている高さ − 札の行と間」——いちばん下まで送っても札の行が上端に残る
+                    ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
+                                    minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
+                                                                              rowHeight: tabRowHeight, spacing: 14),
+                                    rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) }) { page in
+                        VStack(alignment: .leading, spacing: 14) {
+                            tabContent(page)
+                        }
                     }
                 }
             }
@@ -1051,9 +1047,21 @@ struct MyPageView: View {
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// 見た目は人のページと同じ下線の札（`ProfileTabBar`）
-    /// 送ると上に留まる（`stuck` で地を黒 100%・下の線を白 12%・2026-10-30 owner 採用 #418）
+    /// 区分の札。`stuck` は上に留まった姿（地を黒 100%・下の線を白 12%・2026-10-30 owner 採用 #418）
     private func tabPicker(stuck: Bool) -> some View {
         ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab, stuck: stuck)
+    }
+
+    /// 上に留まった区分の札（流れている元の行が見えている上端を越えている間だけ重ねる）。
+    ///
+    /// 2026-10-30 判断（確かめ役の見直し）: `LazyVStack` の節の見出しで留めると、上の段（カバー・ハイライト）が
+    /// 画面外で作り直され、戻るたびに読み直しが走った。中身は `VStack` のまま、札だけを重ねて描く。
+    /// 横の払いは中身（格子）の上で受ける——重ねた札はスクロールの外なので、縦の送りに足すパン（`ProfileTabSwipe`）が付かない
+    private var pinnedTabRow: some View {
+        tabPicker(stuck: true)
+            // 札の目印（`profile.tab.*`）は中に残す（入れ物の目印で上書きしない）
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("mypage.tabs.pinned")
     }
 
     // 横の払いは `ProfileTabSwipe`（札の行と中身の両方・人のページと同じ部品・2026-10-24）。

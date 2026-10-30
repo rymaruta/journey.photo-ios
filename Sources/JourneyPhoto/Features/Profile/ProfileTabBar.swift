@@ -10,7 +10,10 @@ import SwiftUI
 /// - 押している間は字を白 95%、離すと 0.15 秒で戻す（`ProfileTabPressStyle`）
 /// - 切り替えは下線が 0.28 秒のばね（減衰 0.85）で次の札の幅に伸び縮みしながら滑る。字の色は 0.15 秒。
 ///   「視差効果を減らす」では滑らせずに置く（`ProfileTabMotion`）
-/// - 送って上に留まったとき（`stuck`・マイページの `ProfilePinnedTabRow`）は地を黒 100%・下の線を白 12% に濃くする
+/// - 送って上に留まったとき（`stuck`・マイページの `pinnedTabRow`）は地を黒 100%・下の線を白 12% に濃くする
+/// - **押せる範囲は札の間の半分（12）まで左右に広げる**（2026-10-30 確かめ役の見直し: 字の幅＋2 だけだと「投稿」「保存」が
+///   約 34pt で 44 に足りなかった）。並びは「札ごとに左右 12 の余白・端は 16−12＝4」で、見た目は札の間 24・左右 16 のまま。
+///   広げた並び（`fill`）では割り当ての幅いっぱいが押せる
 ///
 /// 色だけで言わない——下線と太さと読み上げの「選択中」でも言う。
 ///
@@ -31,7 +34,7 @@ struct ProfileTabBar: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: ProfileTabStyle.gap) {
+            HStack(spacing: 0) {
                 ForEach(tabs) { option in tab(option, fill: false) }
                 Spacer(minLength: 0)
             }
@@ -39,12 +42,15 @@ struct ProfileTabBar: View {
                 ForEach(tabs) { option in tab(option, fill: true) }
             }
         }
-        .padding(.horizontal, ProfileTabStyle.gutter)
-        .background(stuck ? Color.black : Color.clear)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))
-                .frame(height: JPStroke.hairline)
+        .padding(.horizontal, ProfileTabStyle.rowInset)
+        // 区切り線は地の側（`background`）——真鍮の下線の上に重ねない
+        .background {
+            (stuck ? Color.black : Color.clear)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))
+                        .frame(height: JPStroke.hairline)
+                }
         }
     }
 
@@ -60,21 +66,24 @@ struct ProfileTabBar: View {
             label(option, selected: selected)
                 .padding(.horizontal, ProfileTabStyle.underlineInset)
                 .frame(minHeight: ProfileTabStyle.height)
+                .overlay(alignment: .bottom) {
+                    // 真鍮の下線は1本だけ。選んだ札へ形ごと移る（`matchedGeometryEffect`）——幅も次の札の字の幅に伸び縮みする。
+                    // 長さは字の幅＋左右 2（広げた当たりの余白の内側）。
+                    // id に並びの別（`fill`）を足す——`ViewThatFits` の2案が同じ id を持つと、両方が元になる
+                    if selected {
+                        RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)
+                            .fill(WebTheme.accent)
+                            .frame(height: JPStroke.emphasis)
+                            .matchedGeometryEffect(id: "profile.tab.underline.\(fill)", in: underline)
+                    }
+                }
+                // 押せる範囲: 左右に札の間の半分（12）、広げた並びでは割り当ての幅いっぱい
+                .padding(.horizontal, ProfileTabStyle.hitSlack)
+                .frame(maxWidth: fill ? .infinity : nil)
                 .contentShape(Rectangle())
         }
-        // 字の色（選んだ・押している）は押し方の部品で 0.15 秒。下線はその外に置き、ばねで滑らせる
+        // 字の色（選んだ・押している）は押し方の部品で 0.15 秒。その動きは色だけに閉じ込め、下線はばねで滑らせる
         .buttonStyle(ProfileTabPressStyle(selected: selected))
-        .overlay(alignment: .bottom) {
-            // 真鍮の下線は1本だけ。選んだ札へ形ごと移る（`matchedGeometryEffect`）——幅も次の札の字の幅に伸び縮みする。
-            // id に並びの別（`fill`）を足す——`ViewThatFits` の2案が同じ id を持つと、両方が元になる
-            if selected {
-                RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)
-                    .fill(WebTheme.accent)
-                    .frame(height: JPStroke.emphasis)
-                    .matchedGeometryEffect(id: "profile.tab.underline.\(fill)", in: underline)
-            }
-        }
-        .frame(maxWidth: fill ? .infinity : nil)
         .accessibilityAddTraits(selected ? .isSelected : [])
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier("profile.tab.\(option.rawValue)")
@@ -117,8 +126,12 @@ enum ProfileTabStyle {
     nonisolated static let labelSize: CGFloat = 15
     /// 札と札の間（板 gap 24。v2 の 22 から広げた）
     nonisolated static let gap: CGFloat = 24
-    /// 左右の余白
+    /// 左右の余白（字の左の 2 の外側まで）
     nonisolated static let gutter: CGFloat = JPSpace.gutter
+    /// 押せる範囲を札の左右に広げる量（札の間の半分）。札の間 24 はこの 2 つ分
+    nonisolated static let hitSlack: CGFloat = gap / 2
+    /// 行の端の余白（左右 16 から、端の札の広げた分を引く）
+    nonisolated static let rowInset: CGFloat = gutter - hitSlack
     /// 札の高さ（当たりも 48）
     nonisolated static let height: CGFloat = 48
     /// 下線を字からはみ出させる量（左右それぞれ）。札の字の左右の余白も同じ
@@ -147,57 +160,15 @@ enum ProfileTabStyle {
 }
 
 /// 札を押したときの字の色（押している間は白 95%、離すと 0.15 秒で戻す）。選び替えの色も 0.15 秒。
-/// **下線は含めない**（ここで 0.15 秒の動きを付けると、下線のばねまで 0.15 秒の直線になる）
+/// **0.15 秒の動きは色だけに閉じ込める**（`value:` 付きの `.animation` だと、中の下線のばねまで 0.15 秒の直線になる）
 struct ProfileTabPressStyle: ButtonStyle {
     let selected: Bool
 
     func makeBody(configuration: Configuration) -> some View {
+        // 0.15 秒の動きは字の色だけに付ける（`animation(_:body:)`）。中の下線の動き（ばね）には掛けない
         configuration.label
-            .foregroundStyle(ProfileTabBar.color(selected: selected, pressed: configuration.isPressed))
-            .animation(.easeOut(duration: ProfileTabStyle.colorFade), value: configuration.isPressed)
-            .animation(.easeOut(duration: ProfileTabStyle.colorFade), value: selected)
-    }
-}
-
-/// 送ると上に留まる区分の札の行（マイページ・2026-10-30 owner 採用 #418 の案A）。
-///
-/// 留めるのは `LazyVStack(pinnedViews: [.sectionHeaders])` の節の見出し（素直な作り）。ただしマイページは
-/// カバーを時計の裏まで伸ばす（スクロールが安全域を無視する）ので、見出しは時計の裏（見えている枠の 0）に
-/// 留まってしまう。**留まった・留まりかけた分だけ下げて、時計の帯の下（`visibleTop`）に置く**
-/// （`ProfileTabStyle.pinLift`）。カバーの無い人は安全域の下に留まるので下げない（0）。
-///
-/// 上端を見張るのは時計の帯の高さの間だけ（その外では控える値が変わらない・`ProfileTabStyle.pinTop`）——
-/// 送るたびに画面全体を描き直さない（`ProfileTabRowSpot` と同じ考え）
-struct ProfilePinnedTabRow<Bar: View>: View {
-    /// 見えている上端（カバーを時計の裏まで伸ばしたときは時計の下＝安全域の高さ。ほかは 0）
-    let visibleTop: CGFloat
-    @ViewBuilder let bar: (_ stuck: Bool) -> Bar
-    /// 行の上端（見えている枠から・`pinTop` で切り詰めた値）
-    @State private var top: CGFloat = .greatestFiniteMagnitude
-
-    var body: some View {
-        bar(ProfileTabStyle.isStuck(rowTop: top, visibleTop: visibleTop))
-            .offset(y: ProfileTabStyle.pinLift(rowTop: top, visibleTop: visibleTop))
-            // 測るのは下げる前の枠（`offset` の外で測る）——下げた分で測り直して揺れない
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                ProfileTabStyle.pinTop(proxy.frame(in: .scrollView).minY, visibleTop: visibleTop)
-            } action: { top = $0 }
-    }
-}
-
-extension ProfileTabStyle {
-    /// 測った上端を、見張る間（時計の帯の高さ）に切り詰める。その外では同じ値を返す（描き直さない）
-    nonisolated static func pinTop(_ minY: CGFloat, visibleTop: CGFloat) -> CGFloat {
-        min(max(minY, 0), visibleTop + 1)
-    }
-
-    /// 下げる量。行の上端（留まると 0）が時計の帯の下より上にある分だけ下げる
-    nonisolated static func pinLift(rowTop: CGFloat, visibleTop: CGFloat) -> CGFloat {
-        max(0, visibleTop - max(rowTop, 0))
-    }
-
-    /// 上に留まっているか（見えている上端に着いた）
-    nonisolated static func isStuck(rowTop: CGFloat, visibleTop: CGFloat) -> Bool {
-        rowTop <= visibleTop + 0.5
+            .animation(.easeOut(duration: ProfileTabStyle.colorFade)) { content in
+                content.foregroundStyle(ProfileTabBar.color(selected: selected, pressed: configuration.isPressed))
+            }
     }
 }

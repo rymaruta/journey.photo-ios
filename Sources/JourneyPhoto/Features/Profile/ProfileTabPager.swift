@@ -404,6 +404,12 @@ enum ProfileTabScroll {
         rowMinY < visibleTop - 0.5
     }
 
+    /// 区分の札を上に留めるか（マイページ・#418）。札の行が見えている上端を越えた（`scrollsToRow` と同じ境）とき。
+    /// ちょうど上端に居るとき（替えて頭へ送った直後）は元の行がそのまま見えている
+    static func pinsRow(rowMinY: CGFloat, visibleTop: CGFloat) -> Bool {
+        scrollsToRow(rowMinY: rowMinY, visibleTop: visibleTop)
+    }
+
     /// 札の行が見えている上端からどれだけ上へ出ているか（出ていなければ 0）。払っている間、選んでいない札を
     /// これだけ下げると、札の行を上端へ送ったときの位置に頭が来る（`ProfileTabPager.lift`・2026-10-28）
     static func rowOverflow(rowMinY: CGFloat, visibleTop: CGFloat) -> CGFloat {
