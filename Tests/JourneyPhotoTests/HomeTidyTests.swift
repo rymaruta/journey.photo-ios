@@ -101,6 +101,9 @@ final class HomeTidyTests: XCTestCase {
                        "if let title {"], in: heading, "眉の行に「すべて見る」")
         XCTAssertTrue(heading.contains("trailing.padding(.vertical, -JPSectionHeadingLayout.trailingBleed)"),
                       "眉の行が 44 に伸びる（眉と題の間が開く）")
+        // はみ出した当たりの下側を、長い題が塞がない
+        assertInOrder(["if hasTrailing { trailingSlot }", ".zIndex(1)", "Text(title)", ".allowsHitTesting(false)"],
+                      in: heading, "「すべて見る」の当たりが題に塞がれる")
         // 当たり 44 のまま、行は眉の背（16）で組む
         XCTAssertEqual(JPSectionHeadingLayout.trailingBleed * 2 + 16, WebTheme.minTapTarget)
         // 「すべて ›」の当たりは 44 のまま
@@ -180,15 +183,20 @@ final class HomeTidyTests: XCTestCase {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         let section = slice(gallery, from: "private func feedSection(_ photos: [Photo]) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")
+        // 「おすすめ」では段の有無に関係なくいつも5枚で割り、段だけを挟む（後から届いた段で一覧を作り直さない）。
+        // 写真が0枚の日は段を出さない
         assertInOrder(["featuredSections",
-                       "if model.feed.showsSeasonShelf, let seasonShelf {",
+                       "if model.feed.showsSeasonShelf {",
                        "HomeFeed.splitForSeasonShelf(groups)",
                        "HomeMosaic(groups: split.lead",
+                       "if !groups.isEmpty, let seasonShelf {",
                        "HomeSpotShelfView(shelf: seasonShelf.shelf",
                        "HomeMosaic(groups: split.rest",
                        "} else {",
                        "HomeMosaic(groups: groups",
                        "pageFooter"], in: section, "季節の段の置き場所")
+        XCTAssertFalse(section.contains("showsSeasonShelf, let seasonShelf"),
+                       "段の有無で写真の一覧の枝が替わる（段が届いた瞬間に一覧が作り直される）")
         // 上の札の並びの下には置かない（2段続きに戻さない）
         let top = try source("Features/Gallery/HomeTopCardView.swift")
         XCTAssertFalse(top.contains("HomeSpotShelfView("), "季節の段が上の札の下に残っている")
@@ -263,6 +271,20 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertEqual(HomeFeed.allCases.first, .recommended)
         XCTAssertTrue(try source("Features/Gallery/GalleryViewModel.swift")
             .contains("@Published private(set) var feed: HomeFeed = .recommended"))
+    }
+
+    /// 留まった切り替えで別のフィードを押したら、新しい一覧の頭へ送る（上の札が見えている間は送らない）
+    func testPinnedPickerScrollsToTheListHead() throws {
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View",
+                           to: "private var followingDot: some View")
+        assertInOrder(["let changed = model.feed != feed", "model.select(feed: feed, viewerId: auth.userId)",
+                       "if changed, !topCardsVisible { feedHeadRequests &+= 1 }"], in: picker, "押したら一覧の頭へ")
+        let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
+        assertInOrder([".onAppear { topCardsVisible = true }", ".onDisappear { topCardsVisible = false }",
+                       "feedPicker(followingHasNew: followingHasNew)", ".id(Self.feedPickerID)",
+                       ".onChange(of: feedHeadRequests) { _, _ in", "proxy.scrollTo(Self.feedPickerID, anchor: .top)"],
+                      in: feed, "一覧の頭へ送る仕組み")
     }
 
     // MARK: - ⑨ 「フォロー中」の真鍮の点

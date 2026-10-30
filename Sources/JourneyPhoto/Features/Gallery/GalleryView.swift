@@ -48,6 +48,10 @@ struct GalleryView: View {
     @State private var shownViewer: String??
     /// 「いまの季節のスポット」の段の中身（決めるのは上の札 `HomeTopCardView`・#417 ④）
     @State private var seasonShelf: HomeSeasonShelfSlot?
+    /// 上の札（`HomeTopCardView`）が画面に出ているか。出ていない＝切り替えが見出しの下に留まっている（⑧）
+    @State private var topCardsVisible = true
+    /// 留まった切り替えで別のフィードを押した回数（一覧の頭へ送る合図・`feed` の `onChange`）
+    @State private var feedHeadRequests = 0
     /// 「フォロー中」をどこまで見たか（#417 ⑨・`FollowingSeenStore`）。人が替わったとき・覚え直したときに読み直す
     @State private var followingSeen: String?
     private let followingSeenStore = FollowingSeenStore()
@@ -368,7 +372,12 @@ struct GalleryView: View {
                     let selected = model.feed == feed
                     let dot = feed == .following && followingHasNew
                     Button {
+                        let changed = model.feed != feed
                         model.select(feed: feed, viewerId: auth.userId)
+                        // ⑧ 留まった切り替えで別のフィードを押したら、新しい一覧の**頭**へ送る（PR #422 の確かめ）。
+                        // 送らないと、前の一覧の深さのまま新しい一覧の途中（短ければ一番下）が出る。
+                        // 上の札が見えている（留まっていない）ときは送らない——開いた画面が飛ばない
+                        if changed, !topCardsVisible { feedHeadRequests &+= 1 }
                         // **選んだときにフォロー一覧を引き直す。** 一覧は
                         // `.task(id: auth.userId)` で一度しか引いていないので、
                         // 誰かをフォローしても「フォロー中」に出てこない
@@ -475,11 +484,14 @@ struct GalleryView: View {
                                 myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf)
+                    .onAppear { topCardsVisible = true }
+                    .onDisappear { topCardsVisible = false }
                 // ⑧ 切り替えは写真の一覧の頭の見出し。下へ送っても見出しの下に留まる
                 Section {
                     feedSection(photos)
                 } header: {
                     feedPicker(followingHasNew: followingHasNew)
+                        .id(Self.feedPickerID)
                 }
             }
             .padding(.top, 8)
@@ -493,6 +505,10 @@ struct GalleryView: View {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
+        // ⑧ 留まった切り替えで選び直したら、一覧の頭（切り替えの位置）へ
+        .onChange(of: feedHeadRequests) { _, _ in
+            proxy.scrollTo(Self.feedPickerID, anchor: .top)
+        }
         // ⑨ 「フォロー中」を開いた・開いている間に届いた・人が替わった・初めての日 → 既読を覚え直す
         .onChange(of: FollowingSeenKey(feed: model.feed, newest: followingNewest, viewer: auth.userId),
                   initial: true) { _, _ in
@@ -502,6 +518,8 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+    /// 写真の一覧の頭（切り替え）。留まった切り替えで選び直したときに送る先
+    private static let feedPickerID = "home-feed-picker"
 
     /// 切り替えの下の中身（選んだフィードの中身だけ）。
     ///
@@ -530,15 +548,21 @@ struct GalleryView: View {
             feedEmptyState
         }
         // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
-        if model.feed.showsSeasonShelf, let seasonShelf {
+        // 🔴 **「おすすめ」では段の有無に関係なく、いつも5枚で割る**（PR #422 の確かめ）。段の中身は後から届くので、
+        // 段の有無で枝を替えると写真の一覧（`HomeMosaic`）が作り直され、ちらつき・開いた詳細の元の札が作り直される。
+        // 段だけを間に挟む。**写真が0枚の日は段を出さない**——空の知らせのすぐ下に作例の段が並ぶと、
+        // 「おすすめ」が空なのか分からなくなる（空の知らせの一手は地図）
+        if model.feed.showsSeasonShelf {
             let split = HomeFeed.splitForSeasonShelf(groups)
             HomeMosaic(groups: split.lead, onReport: { reportTarget = $0 })
-            HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
-                              photos: dropped.visible(model.allPhotosForTheme),
-                              reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
-                // 板: 段の上 12＋写真の隙間 4・下 8＋4（一覧の段の間 24 から詰める）
-                .padding(.top, Self.seasonShelfTopTrim)
-                .padding(.bottom, Self.seasonShelfBottomTrim)
+            if !groups.isEmpty, let seasonShelf {
+                HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
+                                  photos: dropped.visible(model.allPhotosForTheme),
+                                  reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
+                    // 板: 段の上 12＋写真の隙間 4・下 8＋4（一覧の段の間 24 から詰める）
+                    .padding(.top, Self.seasonShelfTopTrim)
+                    .padding(.bottom, Self.seasonShelfBottomTrim)
+            }
             if !split.rest.isEmpty {
                 HomeMosaic(groups: split.rest, onReport: { reportTarget = $0 })
             }

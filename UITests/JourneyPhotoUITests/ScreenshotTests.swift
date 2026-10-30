@@ -55,33 +55,43 @@ final class ScreenshotTests: XCTestCase {
             recommended.tap()
             Thread.sleep(forTimeInterval: 2)
         }
+        // 🔴 段は画面の下（約 1000pt）なので、**在って押せるまで送る**（先に待って見つからず黙って抜けていた・PR #422 の確かめ）。
+        // 「行きたい」（札の下端）が在ればそれを、無ければ札を待つ
         let photo = app.buttons["home.spotShelf.card"].firstMatch
-        guard photo.waitForExistence(timeout: 10) else { return }
         let wish = app.buttons["home.spotShelf.wish"].firstMatch
-        let card = wish.exists ? wish : photo
+        func shelfReady() -> Bool {
+            let target = wish.exists ? wish : photo
+            return target.exists && target.isHittable
+        }
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0
-        while !card.isHittable, pushes < Self.shelfPushLimit {
+        while !shelfReady(), pushes < Self.shelfPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        if card.isHittable {
+        if shelfReady() {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
-            // ⑧ 下へ送った後も、切り替えは見出しの下に留まって押せる
-            if pushes > 0 {
-                let latest = app.buttons["home.feed.latest"].firstMatch
-                XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
-                shoot(app, "10f-ホーム（下へ送った後・切り替えが留まる）")
-            }
         }
+        // ⑧ 下へ送った後も、切り替えは見出しの下に留まって押せる。**段の無い日も確かめる**（数回は必ず送る）
+        while pushes < Self.pinCheckPushes {
+            low.press(forDuration: 0.05, thenDragTo: high)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        let latest = app.buttons["home.feed.latest"].firstMatch
+        XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
+        shoot(app, "10f-ホーム（下へ送った後・切り替えが留まる）")
         for _ in 0..<pushes {
             high.press(forDuration: 0.05, thenDragTo: low)
             Thread.sleep(forTimeInterval: 1)
         }
     }
+
+    /// ⑧ の確かめで、段が無い日でも必ず送る回数（1画面ぶんより下へ）
+    private static let pinCheckPushes = 4
 
     /// 季節の段まで送る回数の上限（短い引き＝画面の 35%）。#417 で段が写真の5枚の後ろへ移ったので 3 から増やした
     private static let shelfPushLimit = 10
@@ -3712,15 +3722,21 @@ final class ScreenshotTests: XCTestCase {
 
         // ホームの「いまの季節のスポット」の段まで送る（同じ短い引き・上限あり）
         tabBar.buttons.element(boundBy: 0).tap()
+        // 段は画面の下（#417 ④）。**在って押せるまで送る**（先に待つと見つからずに黙って抜けた・PR #422 の確かめ）
         let card = app.buttons["home.spotShelf.card"].firstMatch
-        guard card.waitForExistence(timeout: 20) else { return }
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0
-        while !card.isHittable, pushes < Self.shelfPushLimit {
+        while !(card.exists && card.isHittable), pushes < Self.shelfPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
+        }
+        // 届かなかった回も黙って抜けない（どこで止まったかを絵で残す）
+        guard card.exists, card.isHittable else {
+            shoot(app, "10m-ホーム（季節の段まで届かない）")
+            return
         }
         // 札の説明文が再生器の高さに来るよう、もう一引き（札の下端が再生器より上に抜けない範囲で）
         if card.frame.maxY < bar.frame.minY {

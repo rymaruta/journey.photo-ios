@@ -43,6 +43,8 @@ struct JPSectionHeading<Trailing: View>: View {
                     JPEyebrowLine(eyebrow, spoken: spoken)
                     if hasTrailing { trailingSlot }
                 }
+                // 「すべて見る」の当たり（上下へはみ出した 44）を、下の題より手前に置く（PR #422 の確かめ）
+                .zIndex(1)
             }
             if let title {
                 HStack(alignment: .center, spacing: JPSpace.s) {
@@ -51,6 +53,8 @@ struct JPSectionHeading<Trailing: View>: View {
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(titleLineLimit)
                         .accessibilityAddTraits(.isHeader)
+                        // 題は押す物ではない。長い題が眉の行の「すべて見る」の当たりの下側を塞がない
+                        .allowsHitTesting(false)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if eyebrow == nil, hasTrailing { trailingSlot }
                 }
