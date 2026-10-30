@@ -46,9 +46,12 @@ actor DailyQuizService {
             try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: urlFor(date))
         } catch {
-            // **取り消しを「通信できません」にしない**（2026-10-30 判断・#381）。呼んだ処理が取り消されて
-            // いるときだけ `CancellationError` で返す（`UploadService.put` と同じ）。画面（`DailyQuizView`・
-            // `HomeTopCardView`）はもとから取り消された回を失敗の札にしないので、見え方は変わらない
+            // **取り消しを「通信できません」にしない**（2026-10-30 判断・#381）。`CancellationError` で返すのは、
+            // 呼んだ処理が取り消されている（`Task.isCancelled`。そのとき URLSession が返す `URLError(.cancelled)`
+            // も含む）か、`CancellationError` そのものが届いた回（`UploadService.put` と同じ条件）。
+            // 呼び手が生きているのに来た `URLError(.cancelled)` は取り消しに数えず unreachable のまま。
+            // 画面（`DailyQuizView`・`HomeTopCardView`）はもとから取り消された回を失敗の札にしないので、
+            // 見え方は変わらない
             if error is CancellationError || Task.isCancelled {
                 throw CancellationError()
             }
