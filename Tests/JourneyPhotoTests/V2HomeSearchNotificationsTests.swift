@@ -260,8 +260,9 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         let card = slice(search, from: "private func spotCard(", to: "private var colors: some View")
         XCTAssertFalse(card.contains("WebTheme.accent"), "写真の上に真鍮")
         XCTAssertFalse(card.contains("WebTheme.text2") || card.contains("WebTheme.text3"), "写真の上に不透明の灰")
-        assertInOrder([".font(JPFont.rowTitle)", ".foregroundStyle(Color.white)", ".font(JPFont.meta)"],
-                      in: card, "撮影地の名前（明朝・白）と枚数（等幅）")
+        assertInOrder([".font(JPFont.rowTitle)", ".foregroundStyle(Color.white)",
+                       ".padding(.bottom, Self.spotNameBottomInset)"],
+                      in: card, "撮影地の名前（明朝・白）→ 下端から 10")
     }
 
     /// タグの写真: 眉（真鍮）→ 明朝 32 の題 → 枚数の一行。バーの中央に題を二重に出さない
