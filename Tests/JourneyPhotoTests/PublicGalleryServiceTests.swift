@@ -389,6 +389,43 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         XCTAssertEqual(snapshot.load()?.map(\.id), ["new"], "古い応答が端末の控えを巻き戻した")
     }
 
+    /// 古い取得が先に成功し、あとの引き下げ更新が失敗（5xx）したら、**古い成功が控えに残る**
+    /// （2026-10-30。「最新の取得だけが書く」だと、取れたばかりの一覧が控えに入らなかった）
+    func testOlderSuccessStaysWhenNewerFetchFails() async throws {
+        StubProtocol.respondInOrder([(status: 200, body: twoPhotos), (status: 500, body: "")])
+        let first = Gate(), second = Gate()
+        let order = Arrivals()
+        let snapshot = PhotoSnapshotStore(fileName: UUID().uuidString)
+        let gallery = PublicGalleryService(
+            url: url, session: session,
+            snapshot: snapshot,
+            beforeStaticRequest: {
+                switch await order.next() {
+                case 0: await first.wait()
+                case 1: await second.wait()
+                default: break
+                }
+            })
+        let older = Task { try await gallery.fetchPhotos() }
+        await first.untilWaiting(1)
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        await second.untilWaiting(1)
+
+        // 古い取得が先に 200 で終わる
+        await first.open()
+        let olderPhotos = try await older.value
+        XCTAssertEqual(olderPhotos.map(\.id), ["a", "b"])
+        // 引き下げ更新は 500。端末の控え（古い取得が書いたもの）で返る
+        await second.open()
+        let forcedPhotos = try await forced.value
+        XCTAssertEqual(forcedPhotos.map(\.id), ["a", "b"], "取れたばかりの一覧が端末の控えに入っていない")
+        XCTAssertEqual(snapshot.load()?.map(\.id), ["a", "b"])
+        // 次の通常読み込みは控え（60秒）で済む——取り直さない
+        let current = try await gallery.fetchPhotos()
+        XCTAssertEqual(current.map(\.id), ["a", "b"])
+        XCTAssertEqual(StubProtocol.requestCount, 2, "取れたばかりの一覧が控え（cached）に入っていない")
+    }
+
     /// もう取り消された呼び手は、新しい取得を**始めない**（要求の手前の門にも着かない）
     @MainActor
     func testAlreadyCancelledCallerStartsNoFetch() async throws {
