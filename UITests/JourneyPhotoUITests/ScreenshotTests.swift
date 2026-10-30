@@ -1971,6 +1971,43 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
     }
 
+    /// **探すの「機材から探す」の札3枚**（2026-10-30 owner 採用・#419）。発見の顔のいちばん下の段なので、
+    /// 札（`search.gear.wide` など）が押せる所まで少しずつ送ってから撮る。色の丸の段も同じ絵に入ることが多い。
+    /// **別の試験にしてある**（一巡の「11-探す」は上のままの絵）。出なければ撮らない（この試験の決まり）
+    func testCapturesSearchGearCards() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        // 写真の無い区分は札にしないので、どれか1枚が出ればよい
+        let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search.gear.'")).firstMatch
+        guard card.waitForExistence(timeout: 20) else { return }
+        var swipes = 0
+        while !card.isHittable, swipes < 10 {
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard card.isHittable else { return }
+        // 札の下に余白が出るまでもう少し送る（段の下端で切れた絵にしない）
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 2)
+        guard card.isHittable else { return }
+        shoot(app, "11e-探す（機材の札・色の丸）")
+    }
+
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
     /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
     ///

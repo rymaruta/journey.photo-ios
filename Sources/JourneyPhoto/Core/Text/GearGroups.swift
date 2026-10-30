@@ -47,6 +47,10 @@ enum GearGroups {
         /// 画面に出す範囲。**分け方を隠さない**。英語表示では「〜」を使わない
         var range: String { L(rangeText.ja, rangeText.en) }
 
+        /// 機材の札の読み上げ（「広角で撮る 〜35mm」）。札の中の字だけ——枚数は札から外した
+        /// （2026-10-30 owner 採用・#419）
+        var accessibilityLabel: String { "\(label) \(range)" }
+
         var rangeText: (ja: String, en: String) {
             switch self {
             case .wide: return ("〜35mm", "up to 35mm")

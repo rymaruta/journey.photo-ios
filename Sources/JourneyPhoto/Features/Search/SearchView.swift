@@ -586,7 +586,9 @@ struct SearchView: View {
     /// **枚数は数えたもの**
     ///
     /// v2（2026-10-14・Search の板の PLACES）: 名前は明朝（板 16 → 明朝の下限の 18）。写真の上なので白だけ。
-    /// 枚数は透過の白（写真の上の副文・`WebTheme.muted`）
+    ///
+    /// 2026-10-30 判断（owner 採用・#419・Search の板の①）: **「◯枚の写真」の行を外し、名前だけにした。**
+    /// 枚数は選ぶ手がかりにならない（並びはもう多い順）。名前は札の下端から 10（板の `padding: 28px 12px 10px`）
     private func spotCard(_ spot: DiscoverySections.Spot) -> some View {
         Color.clear
             .frame(width: 156, height: 116)
@@ -594,18 +596,13 @@ struct SearchView: View {
                 RemoteImage(url: spot.cover.gridImageURL, alignment: spot.cover.gridAlignment)
             }
             .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(LocationMatch.display(spot.id))
-                        .font(JPFont.rowTitle)
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                    Text(L("\(spot.count)枚の写真", spot.count == 1 ? "1 photo" : "\(spot.count) photos"))
-                        .font(JPFont.meta)
-                        .foregroundStyle(WebTheme.muted)
-                }
-                .padding(.horizontal, JPSpace.s)
-                .padding(.top, JPSpace.section)
-                .padding(.bottom, JPSpace.s)
+                Text(LocationMatch.display(spot.id))
+                    .font(JPFont.rowTitle)
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, JPSpace.s)
+                    .padding(.top, JPSpace.section)
+                    .padding(.bottom, Self.spotNameBottomInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.8)],
@@ -615,6 +612,9 @@ struct SearchView: View {
             .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
             .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
+
+    /// 撮影地の札の名前と札の下端のあいだ（板の 10・2026-10-30 owner 採用）
+    nonisolated static let spotNameBottomInset: CGFloat = 10
 
     /// 色から探す（モック9-5）。
     ///
@@ -627,8 +627,13 @@ struct SearchView: View {
         if !sections.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.s) {
                 sectionHeader(eyebrow: "COLORS", spoken: L("色", "Colors"), title: L("色から探す", "Browse by color"))
-                // 丸い写真に名前（板 11）。**5つを横に割り付ける**——色味は最大5つ
-                HStack(alignment: .top, spacing: 0) {
+                // 丸い写真に名前（板 11）。**幅を5つに割り、左から詰めて置く**——色味は最大5つ。
+                //
+                // 2026-10-30 判断（owner 採用・#419・Search の板の③）: 以前は並んだ数で幅を割っていたので、
+                // 色が3つだと1つ1つが広がり、丸が左右に離れて浮いた。いまは数によらず5等分の位置
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0, alignment: .top),
+                                         count: Self.colorColumnCount),
+                          alignment: .leading, spacing: JPSpace.s) {
                     ForEach(sections) { section in
                         NavigationLink {
                             ColorPhotosView(section: section)
@@ -669,12 +674,17 @@ struct SearchView: View {
     /// 色の丸の大きさ（v2 の板の 62）
     nonisolated static let colorCircleSize: CGFloat = 62
 
-    /// 機材から探す（板 11: 札の中の行・最小54・カメラの印・右に枚数と「›」）。
+    /// 色の丸の列の数。**並んだ色の数ではなく常に5**（色味の最大の数・2026-10-30 owner 採用）
+    nonisolated static let colorColumnCount = 5
+
+    /// 機材から探す。
     ///
-    /// **v2（2026-10-14・Search の板の GEAR）: 札で囲まず、白 8% の線で区切った行にした**（上にも線）。
-    /// 枚数は text-3 の等幅（数は合図ではない）
+    /// 2026-10-30 判断（owner 採用・#419・Search の板の②）: **縦の3行をやめ、横に並べた札3枚にした。**
+    /// 札の中は上から カメラの印 → 名前 → 焦点距離。枚数と「›」は外した（数は合図ではなく、
+    /// 札全体が押せることは形で分かる）。**写真の無い区分は出さず、残りで幅を等分する**
+    /// （`GearGroups.sections` が空の区分を落とす。札は並んだ数の列に割る）。
     ///
-    /// **分け方を隠さない**——行の下の小さい字に「〜35mm」を出す。
+    /// **分け方を隠さない**——名前の下の小さい字に「〜35mm」を出す。
     /// レンズ名で分けないのは、ズーム1本が広角も望遠も撮れるから。
     @ViewBuilder
     private var gear: some View {
@@ -682,16 +692,19 @@ struct SearchView: View {
         if !sections.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.s) {
                 sectionHeader(eyebrow: "GEAR", spoken: L("機材", "Gear"), title: L("機材から探す", "Browse by gear"))
-                VStack(spacing: 0) {
-                    JPCardDivider()
+                HStack(spacing: Self.gearCardSpacing) {
                     ForEach(sections) { section in
                         NavigationLink {
                             GearPhotosView(section: section)
                         } label: {
-                            gearRow(section)
+                            gearCard(section)
                         }
                         .buttonStyle(.plain)
-                        JPCardDivider()
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(section.group.accessibilityLabel)
+                        .accessibilityAddTraits(.isButton)
+                        // 実機の絵の道しるべ（`ScreenshotTests`）
+                        .accessibilityIdentifier("search.gear.\(section.group.rawValue)")
                     }
                 }
                 .padding(.horizontal, JPSpace.gutter)
@@ -699,34 +712,44 @@ struct SearchView: View {
         }
     }
 
-    private func gearRow(_ section: GearGroups.Section) -> some View {
-        HStack(spacing: 12) {
+    /// 機材の札（板: 390 幅で約112×88・内側 上下10 左右12・角14・地 surface-1・縁 白8%）
+    private func gearCard(_ section: GearGroups.Section) -> some View {
+        VStack(alignment: .leading, spacing: Self.gearIconGap) {
+            // 今と同じ線のカメラの印（text-2）
             Image(systemName: "camera")
-                .font(.system(size: 18))
+                .font(.system(size: 22))
                 .foregroundStyle(WebTheme.text2)
-                .frame(width: 20)
+                .frame(height: Self.gearIconSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(section.group.label)
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(section.group.range)
-                    .font(JPFont.caption)
+                    .font(JPFont.meta)
                     .foregroundStyle(WebTheme.text3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            Spacer(minLength: JPSpace.xs)
-            Text(L("\(section.count)枚", "\(section.count)"))
-                .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
-                .foregroundStyle(WebTheme.text3)
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.text3)
-                .accessibilityHidden(true)
         }
-        .padding(.vertical, JPSpace.s)
-        .frame(minHeight: JPHeight.row)
-        .contentShape(Rectangle())
+        .padding(.vertical, Self.gearCardPaddingV)
+        .padding(.horizontal, Self.gearCardPaddingH)
+        .frame(maxWidth: .infinity, minHeight: Self.gearCardHeight, alignment: .topLeading)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
+            .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
+
+    /// 機材の札の寸法（Search の板の②・2026-10-30 owner 採用）。高さは押せる所の 44 を上回る
+    nonisolated static let gearCardHeight: CGFloat = 88
+    nonisolated static let gearCardSpacing: CGFloat = 8
+    nonisolated static let gearCardPaddingV: CGFloat = 10
+    nonisolated static let gearCardPaddingH: CGFloat = 12
+    nonisolated static let gearIconSize: CGFloat = 24
+    nonisolated static let gearIconGap: CGFloat = 6
 
     private func sectionHeader(eyebrow: String, spoken: String, title: String) -> some View {
         sectionHeader(eyebrow: eyebrow, spoken: spoken, title: title) { EmptyView() }
