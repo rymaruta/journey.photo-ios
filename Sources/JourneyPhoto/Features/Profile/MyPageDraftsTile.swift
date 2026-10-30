@@ -119,12 +119,11 @@ struct MyPageDraftsTile: View {
                             Label(DraftsText.deleteThisDraft, systemImage: "trash")
                         }
                     } label: {
-                        Label {
-                            Text(DraftsText.title(entry))
-                            Text(DraftsText.menuSubtitle(entry, now: library.now()))
-                        } icon: {
-                            Image(systemName: entry.kind == .story ? "clock" : "photo")
-                        }
+                        // 題・副題（種類・枚数・日時）・印の順に並べる（系統のメニューが副題つきで出す形。
+                        // `Label` の題の中に2行入れると副題が落ちた——run 766 の 107a2）
+                        Text(DraftsText.title(entry))
+                        Text(DraftsText.menuSubtitle(entry, now: library.now()))
+                        Image(systemName: entry.kind == .story ? "clock" : "photo")
                     }
                 }
             }
