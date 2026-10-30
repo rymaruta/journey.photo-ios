@@ -117,6 +117,22 @@ final class SearchDiscoveryLayoutTests: XCTestCase {
         XCTAssertFalse(card.contains("WebTheme.accent"), "印・数は合図ではない（真鍮にしない）")
     }
 
+    /// 大きい字でも3枚の高さがそろい、名前は切れずに2行まで折る（2026-10-30 確かめ役の指摘・PR #421）
+    func testGearCardsKeepEqualHeightAndWrapNameAtLargeText() throws {
+        XCTAssertEqual(SearchView.gearNameLineLimit, 2, "名前が1行で切れる（アクセシビリティの大きい字で「広角で…」）")
+        let search = try source("Features/Search/SearchView.swift")
+        let gear = slice(search, from: "private var gear: some View", to: "private func gearCard(")
+        assertInOrder(["HStack(spacing: Self.gearCardSpacing)", ".fixedSize(horizontal: false, vertical: true)",
+                       ".padding(.horizontal, JPSpace.gutter)"],
+                      in: gear, "札の列が高さをそろえる（いちばん高い札に合わせる）")
+        let card = slice(search, from: "private func gearCard(", to: "nonisolated static let gearCardHeight")
+        XCTAssertTrue(card.contains("minHeight: Self.gearCardHeight, maxHeight: .infinity"),
+                      "札が列の高さまで伸びない（1枚だけ低く、下端がずれる）")
+        let name = slice(card, from: "Text(section.group.label)", to: "Text(section.group.range)")
+        XCTAssertTrue(name.contains(".lineLimit(Self.gearNameLineLimit)"), "名前を1行で切っている")
+        XCTAssertFalse(name.contains(".lineLimit(1)"), "名前を1行で切っている")
+    }
+
     func testGearAccessibilityLabelIsNameAndRange() {
         XCTAssertEqual(GearGroups.Group.wide.accessibilityLabel, L("広角で撮る 〜35mm", "Wide up to 35mm"))
         XCTAssertEqual(GearGroups.Group.standard.accessibilityLabel, L("標準で撮る 36〜70mm", "Standard 36–70mm"))

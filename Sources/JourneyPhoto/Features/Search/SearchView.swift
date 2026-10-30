@@ -707,6 +707,9 @@ struct SearchView: View {
                         .accessibilityIdentifier("search.gear.\(section.group.rawValue)")
                     }
                 }
+                // 3枚の高さをそろえる（大きい字で1枚だけ伸びても、残りも同じ高さに伸ばす。
+                // `minHeight` だけでは HStack は高さをそろえず、下端がずれた・2026-10-30 確かめ役の指摘）
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, JPSpace.gutter)
             }
         }
@@ -722,10 +725,11 @@ struct SearchView: View {
                 .frame(height: Self.gearIconSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                // 名前だけ2行まで折る（アクセシビリティの大きい字で「広角で…」と切れない。前の縦の行も折り返していた）
                 Text(section.group.label)
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
-                    .lineLimit(1)
+                    .lineLimit(Self.gearNameLineLimit)
                     .minimumScaleFactor(0.8)
                 Text(section.group.range)
                     .font(JPFont.meta)
@@ -736,7 +740,7 @@ struct SearchView: View {
         }
         .padding(.vertical, Self.gearCardPaddingV)
         .padding(.horizontal, Self.gearCardPaddingH)
-        .frame(maxWidth: .infinity, minHeight: Self.gearCardHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: Self.gearCardHeight, maxHeight: .infinity, alignment: .topLeading)
         .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
         .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
             .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
@@ -750,6 +754,8 @@ struct SearchView: View {
     nonisolated static let gearCardPaddingH: CGFloat = 12
     nonisolated static let gearIconSize: CGFloat = 24
     nonisolated static let gearIconGap: CGFloat = 6
+    /// 機材の札の名前の行の上限（大きい字で切らずに折る）
+    nonisolated static let gearNameLineLimit = 2
 
     private func sectionHeader(eyebrow: String, spoken: String, title: String) -> some View {
         sectionHeader(eyebrow: eyebrow, spoken: spoken, title: title) { EmptyView() }
