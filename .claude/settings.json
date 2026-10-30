@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh api -X PUT repos/rymaruta/journey.photo-ios/pulls/*/merge *)"
+      "Bash(gh api -X PUT repos/rymaruta/journey.photo-ios/pulls/*/merge *)",
+      "Bash(gh api -X PUT repos/rymaruta/photo-gallery/pulls/*/merge *)"
     ]
   }
 }
