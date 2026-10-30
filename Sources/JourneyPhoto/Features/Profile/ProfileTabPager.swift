@@ -170,12 +170,15 @@ struct ProfileTabPagerLayout: Layout {
     }
 }
 
-/// 札の切り替えの動き。**「視差効果を減らす」のときは動かさない**
+/// 札の切り替えの動き。**「視差効果を減らす」のときは動かさない**（下線も中身も置くだけ）。
+///
+/// 2026-10-30 owner 採用（#418・案A）: 0.25 秒の easeOut から **0.28 秒のばね（減衰 0.85）** に替えた。
+/// 下線が次の札の幅に伸び縮みしながら滑る動きと、中身の横の送り・札の行へ戻す送りを同じ手ざわりにする
+/// （値は `ProfileTabStyle.springResponse`・`springDamping`）
 enum ProfileTabMotion {
-    static let duration: Double = 0.25
-
     static func animation(reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : .easeOut(duration: duration)
+        reduceMotion ? nil : .spring(response: ProfileTabStyle.springResponse,
+                                     dampingFraction: ProfileTabStyle.springDamping)
     }
 }
 

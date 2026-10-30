@@ -3884,8 +3884,12 @@ final class ScreenshotTests: XCTestCase {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
-        guard !posts.isHittable || posts.frame.maxY < 0 else { return }
-        // 格子の上で横に払う（札の行は画面の外）
+        // 2026-10-30（#418）から札の行は上に留まる——深く送ったかは見出しの「編集」が見えないことで見る
+        // （以前の「札の行が画面の外」は、留まるようになって成り立たず、黙って抜けていた）
+        let edit = app.buttons["mypage.edit"].firstMatch
+        XCTAssertFalse(edit.exists && edit.isHittable, "3回送っても見出しが見えている（深く送れていない）")
+        guard !(edit.exists && edit.isHittable) else { return }
+        // 格子の上で横に払う（札の行は上に留まっている）
         let gridY = height * 0.5
         origin.withOffset(CGVector(dx: app.frame.width * 0.8, dy: gridY))
             .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.2, dy: gridY)))
@@ -3894,6 +3898,69 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(posts.isHittable && posts.frame.minY < height * 0.25,
                       "深く送ってから替えても札の行が上端へ戻らない（minY \(posts.frame.minY)）")
         shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
+    }
+
+    /// **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・板「マイページ」の状態「区分の札が上に留まった」）。
+    /// 下へ送っても札の行が時計の帯の下に残り、見出し（「編集」）は流れて見えない。留まった札を押すと替わり、
+    /// 替えた札は頭から見せる（投稿へ戻すと格子の1枚目が札の行のすぐ下）。
+    /// 🔴 段が見つからない・送れない・留まらないときは**落とす**（黙って通らない）
+    func testPinsMyPageTabs() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "下のタブが出ない")
+        guard tabBar.exists, tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let edit = app.buttons["mypage.edit"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "マイページの見出しが出ない")
+        let posts = app.buttons["profile.tab.posts"].firstMatch
+        let trips = app.buttons["profile.tab.trips"].firstMatch
+        XCTAssertTrue(posts.waitForExistence(timeout: 10), "区分の札（投稿）が見つからない")
+        let photo = app.buttons["mypage.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 20), "投稿の格子が出ない（深く送れない）")
+        guard posts.exists, photo.exists else { return }
+        let restY = posts.frame.minY
+
+        // 下へ送る（見出しが流れて見えなくなるまで）
+        for _ in 0..<3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let height = app.frame.height
+        XCTAssertFalse(edit.exists && edit.isHittable, "送っても見出しが見えている（深く送れていない）")
+        // 留まった札: 押せて、時計の帯のすぐ下（画面の上 15% の中）に居る。送る前より上
+        XCTAssertTrue(posts.exists && posts.isHittable, "下へ送ると区分の札が消えた（上に留まらない）")
+        XCTAssertLessThan(posts.frame.minY, height * 0.15, "区分の札が上に留まっていない（minY \(posts.frame.minY)）")
+        XCTAssertGreaterThan(posts.frame.minY, 20, "区分の札が時計の帯の裏に入った（minY \(posts.frame.minY)）")
+        XCTAssertLessThan(posts.frame.minY, restY, "送る前と同じ位置のまま（送れていない）")
+        guard posts.isHittable, posts.frame.minY < height * 0.15 else { return }
+        let pinnedY = posts.frame.minY
+        shoot(app, "14x-マイページ（区分の札が留まる）")
+
+        // 留まった札を押すと替わる。札の行は留まったまま
+        XCTAssertTrue(trips.isHittable, "留まった「旅の記録」の札が押せない")
+        trips.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(trips.isSelected, "留まった「旅の記録」の札を押しても替わらない")
+        XCTAssertEqual(posts.frame.minY, pinnedY, accuracy: 2, "替えたら札の行が留まった位置から動いた")
+
+        // 投稿へ戻すと頭から（格子の1枚目が札の行のすぐ下）
+        posts.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(posts.isSelected, "留まった「投稿」の札を押しても戻らない")
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "投稿へ戻ったら格子が消えた")
+        let gap = photo.frame.minY - posts.frame.maxY
+        XCTAssertTrue(gap >= 0 && gap < 240, "替えた札が頭から出ない（札の行と格子の1枚目の間 \(gap)）")
+        app.terminate()
     }
 
     /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、

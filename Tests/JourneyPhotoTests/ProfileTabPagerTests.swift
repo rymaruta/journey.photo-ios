@@ -114,7 +114,8 @@ final class ProfileTabPagerTests: XCTestCase {
         let mine = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
         XCTAssertTrue(mine.contains("ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,"))
         XCTAssertTrue(mine.contains("minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,"))
-        XCTAssertTrue(mine.contains("tabPicker\n                        .modifier(ProfileTabSwipe("))
+        // 札の行は上に留まる見出しの中（2026-10-30 #418）。そこでも払える
+        XCTAssertTrue(mine.contains("tabPicker(stuck: stuck)\n                            .modifier(ProfileTabSwipe("))
         XCTAssertFalse(mine.contains("private var photoArea"), "選んだ札だけを作る枝が残っている")
         XCTAssertFalse(mine.contains("simultaneousGesture(tabSwipe)"))
         let theirs = try source("Sources/JourneyPhoto/Features/Profile/UserProfileView.swift")
@@ -137,8 +138,8 @@ final class ProfileTabPagerTests: XCTestCase {
                       "下線の id に並びの別が無い")
         XCTAssertFalse(bar.contains("selected ? WebTheme.accent : Color.clear"), "札ごとの下線が残っている")
         XCTAssertTrue(bar.contains("withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion))"))
-        // 押せる高さは 44
-        XCTAssertTrue(bar.contains("minHeight: WebTheme.minTapTarget"))
+        // 押せる高さは 48（#418 案A・見た目も当たりも 48）
+        XCTAssertTrue(bar.contains(".frame(minHeight: ProfileTabStyle.height)"))
     }
 
     // MARK: - 2026-10-24 確かめ役の見直し

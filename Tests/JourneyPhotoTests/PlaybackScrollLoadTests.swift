@@ -122,9 +122,16 @@ final class PlaybackScrollLoadTests: XCTestCase {
         for page in ["MyPageView", "UserProfileView"] {
             let text = try source("Sources/JourneyPhoto/Features/Profile/\(page).swift")
             XCTAssertFalse(text.contains("tabRowMinY"), "\(page) が札の行の上端を見張る値に置いている")
-            XCTAssertTrue(text.contains("if let height = tabRow.record(frame, height: tabRowHeight) { tabRowHeight = height }"),
-                          "\(page) が札の行の位置を箱に控えていない")
         }
+        let theirs = try source("Sources/JourneyPhoto/Features/Profile/UserProfileView.swift")
+        XCTAssertTrue(theirs.contains("if let height = tabRow.record(frame, height: tabRowHeight) { tabRowHeight = height }"),
+                      "UserProfileView が札の行の位置を箱に控えていない")
+        // マイページ（2026-10-30 #418 から札の行は上に留まる）: 流れる位置の目印を箱に控え、
+        // 高さは留まる見出しの大きさが変わったときだけ書く（`onGeometryChange` は値が変わったときだけ呼ばれる）
+        let mine = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
+        XCTAssertTrue(mine.contains("_ = tabRow.record(frame, height: tabRowHeight)"), "MyPageView が札の行の位置を箱に控えていない")
+        XCTAssertTrue(mine.contains("proxy.size.height\n                    } action: { height in\n                        if height != tabRowHeight { tabRowHeight = height }"),
+                      "MyPageView が札の行の高さを送るたびに書いている")
         let pager = try source("Sources/JourneyPhoto/Features/Profile/ProfileTabPager.swift")
         XCTAssertTrue(pager.contains("final class ProfileTabRowSpot {"), "箱を見張る形（ObservableObject）にしている")
         XCTAssertTrue(pager.contains("var rowOverflow: () -> CGFloat"), "はみ出しを値で受けている（呼ぶ側が毎フレーム書くことになる）")
