@@ -467,4 +467,17 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// マイページでカバーも額縁も出さない（顔 72・設定の丸と数が同じ高さの姿を撮る・#415）。
+    /// `-JPPreviewBareHeader YES`。Release では必ず false
+    static let bareHeaderKey = "JPPreviewBareHeader"
+
+    static var forcesBareHeader: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: bareHeaderKey)
+        #else
+        return false
+        #endif
+    }
 }

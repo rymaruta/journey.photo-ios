@@ -3933,7 +3933,8 @@ final class ScreenshotTests: XCTestCase {
     /// 顔の右（名前の段より上）、「編集」は名前の段の右端。見本の利用者のまま（カバーが出ればカバーの回）と、
     /// カバーの無い回（額縁が出る）の2回で撮り、並びが違えば落とす。出なければ撮らない（この試験の決まり）
     func testCapturesMyPageHeaderRows() {
-        for (extra, suffix) in [([String](), "見本の利用者"), (["-JPPreviewNoCover", "YES"], "カバーなし")] {
+        for (extra, suffix) in [([String](), "見本の利用者"), (["-JPPreviewNoCover", "YES"], "カバーなし"),
+                                (["-JPPreviewBareHeader", "YES"], "カバーも額縁もなし")] {
             let app = launchProfileLooks(extra)
             let tabBar = app.tabBars.firstMatch
             guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
@@ -3958,6 +3959,16 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(edit.frame.maxX, width - 16 - 2, "\(suffix): 「編集」が右端にない")
             XCTAssertGreaterThanOrEqual(edit.frame.height, 44, "\(suffix): 「編集」の当たりが 44pt 未満")
             XCTAssertEqual(edit.label, "プロフィールを編集", "\(suffix): 読み上げが変わった")
+            // 額縁も無い回: 顔の段が右上の設定の丸と同じ高さ。数は丸の下に潜らない
+            if extra.contains("-JPPreviewBareHeader") {
+                XCTAssertFalse(app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
+                               "\(suffix): 額縁が出ている")
+                let gear = app.buttons["設定"].firstMatch
+                if gear.exists {
+                    XCTAssertLessThanOrEqual(stats.frame.maxX, gear.frame.minX + 1,
+                                             "\(suffix): 数が設定の丸の下に潜っている（\(stats.frame.maxX) / \(gear.frame.minX)）")
+                }
+            }
             shoot(app, "108-マイページ（見出しの並び・\(suffix)）")
             app.terminate()
         }

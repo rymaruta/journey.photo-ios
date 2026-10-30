@@ -60,7 +60,10 @@ struct MyPageView: View {
     /// 2026-10-18 見直し: 絵を読めなかっただけ（圏外など）では出さない——カバーがある人に「ここにあなたの1枚」を見せない
     @State private var coverMissing = false
     /// 額縁を出しているか（見本の `-JPPreviewNoCover` では、カバーがあっても額縁で撮る）
-    private var showsCoverFrame: Bool { PreviewSession.forcesNoCover || (coverMissing && !hasCover) }
+    /// `-JPPreviewBareHeader` はカバーも額縁も無い姿（顔 72・設定の丸と数が同じ高さ）を撮る
+    private var showsCoverFrame: Bool {
+        !PreviewSession.forcesBareHeader && (PreviewSession.forcesNoCover || (coverMissing && !hasCover))
+    }
     /// 帯（カバーか額縁）の下端にアイコンを重ねる並びにするか
     private var bandShown: Bool { hasCover || showsCoverFrame }
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -376,7 +379,7 @@ struct MyPageView: View {
                             // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
                             // 右上の設定の丸の下から始める（板 05d）
                             VStack(alignment: .leading, spacing: 0) {
-                                ProfileCover(url: PreviewSession.forcesNoCover ? nil
+                                ProfileCover(url: PreviewSession.forcesNoCover || PreviewSession.forcesBareHeader ? nil
                                                 : profile.coverURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)),
                                              reserve: hasCover) { loaded in
                                     hasCover = loaded
@@ -637,6 +640,10 @@ struct MyPageView: View {
     /// 形は人のページと同じ `ProfileStat`（v2: 数字の下に 12pt の text-3 の名前）
     private func statCell(value: String?, label: String) -> some View {
         ProfileStat(value: value, label: label)
+            // 顔の右で列が狭い（幅 375 で約 65〜79pt）。6 桁や大きい文字でも数と名前を折らずに1行で縮める
+            // （人のページの `ProfileStat` は広いまま・2026-10-30 #415 の確かめ）
+            .lineLimit(1)
+            .minimumScaleFactor(MyPageHeaderLayout.statMinimumScale)
         // 顔の段の中なので 44pt をそのまま取る（顔の下端にそろい、名前の段へ張り出さない）
         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
         .contentShape(Rectangle())
@@ -1749,6 +1756,9 @@ enum MyPageHeaderLayout {
     static let avatarStatsGap: CGFloat = JPSpace.m
     /// 数の列の間（板 MyPage・MyPageNoCover・MyPageCoverFrame の grid の gap 8）
     static let statColumnGap: CGFloat = JPSpace.xs
+    /// 数の列で、数と名前（「フォロー中」）を1行に保つために縮めてよい下限。
+    /// 12pt の名前が 0.6 で約 7pt まで縮めば、最も狭い列（約 65pt）でも6桁と「フォロー中」が入る
+    static let statMinimumScale: CGFloat = 0.6
     /// 名前と「編集」の間の最小（見本: gap 12）
     static let nameEditGap: CGFloat = JPSpace.s
     /// 名前の段の右端のボタンの字（読み上げは「プロフィールを編集」のまま）
