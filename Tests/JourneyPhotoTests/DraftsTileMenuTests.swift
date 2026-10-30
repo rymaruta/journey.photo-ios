@@ -163,7 +163,7 @@ final class DraftsTileMenuTests: XCTestCase {
     func testTileIsWired() async throws {
         let tile = try source("Features/Profile/MyPageDraftsTile.swift")
         XCTAssertTrue(tile.contains(".contextMenu {"), "枠に長押しのメニューが無い")
-        XCTAssertTrue(tile.contains("DraftPreviewCard(entry: latest, now: library.now())"),
+        XCTAssertTrue(tile.contains("DraftPreviewCard(entry: latest, now: now)"),
                       "浮く絵が一覧の長押しと同じ部品ではない")
         for action in ["DraftsText.continueEditing) {", "DraftsText.openList) {", "DraftsText.deleteThisDraft) {"] {
             XCTAssertTrue(tile.contains(".accessibilityAction(named: \(action)"), "読み上げの操作が無い: \(action)")
@@ -178,13 +178,13 @@ final class DraftsTileMenuTests: XCTestCase {
 
         let mypage = try source("Features/Profile/MyPageView.swift")
         XCTAssertTrue(mypage.contains("if draftCount > 0 { draftsTile }"), "0件のときの決まりを変えた")
-        XCTAssertTrue(mypage.contains("MyPageDraftsTile(userId:"))
+        XCTAssertTrue(mypage.contains("MyPageDraftsTile(count: draftCount, entries: draftRecent,"))
         XCTAssertTrue(mypage.contains(".overlay(alignment: .bottom) { DraftUndoBar(deleter: draftDeleter"),
                       "マイページの下に「元に戻す」が無い")
         XCTAssertTrue(mypage.contains("DraftRevisionWatcher { refreshDraftCount() }"), "消しても件数をすぐ読み直さない")
-        XCTAssertTrue(mypage.contains("draftCount = DraftLibrary.shared.shownCount(for: userId)"),
+        XCTAssertTrue(mypage.contains("let shown = DraftLibrary.shared.shown(for: userId"),
                       "バッジが「元に戻す」を待っているものまで数える")
-        XCTAssertTrue(mypage.contains("onOpen: { entry in tabRouter.openDraft(entry) }"))
+        XCTAssertTrue(mypage.contains("tabRouter.openDraft(entry)"))
         XCTAssertTrue(mypage.contains(".navigationDestination(isPresented: $showDraftsList)"))
 
         // 写しを作らない: 一覧も同じ削除・元に戻す・問いを使う
@@ -197,6 +197,54 @@ final class DraftsTileMenuTests: XCTestCase {
         let shots = try String(contentsOf: Self.root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
                                encoding: .utf8)
         XCTAssertTrue(shots.contains("107a2-マイページ（下書きの枠を長押し）"), "長押しのメニューの画面写真が無い")
+    }
+
+    // MARK: - 見直し（2026-10-30・#408）
+
+    /// 🔴 枠に要るもの（件数と先頭5件）は一覧と同じ並びの先頭だけを作る。件数は `shownCount` と同じ
+    func testShownReadsOnlyTheFirstFive() async {
+        var ids: [String] = []
+        for i in 0..<7 { ids.append(savePost("P\(i)", at: now.addingTimeInterval(TimeInterval(-60 * i)))) }
+        savePost("自動", at: now.addingTimeInterval(-99_999), slot: .auto)
+        let lib = library()
+        let shown = lib.shown(for: "a", limit: 5)
+        XCTAssertEqual(shown.count, 7)
+        XCTAssertEqual(shown.count, lib.shownCount(for: "a"))
+        XCTAssertEqual(shown.recent, Array(lib.entries(for: "a").prefix(5)), "並びが一覧と違う")
+        XCTAssertEqual(shown.recent.first?.id, DraftLibrary.autoPostId)
+        XCTAssertEqual(shown.recent.count, 5, "先頭5件より多く作った")
+        lib.hide([ids[0]])
+        XCTAssertEqual(lib.shown(for: "a", limit: 5).count, 6)
+        XCTAssertFalse(lib.shown(for: "a", limit: 5).recent.contains { $0.id == ids[0] })
+        XCTAssertEqual(lib.shown(for: "", limit: 5), DraftLibrary.Shown(count: 0, recent: []))
+    }
+
+    /// 見直しの4件: 人が替わったら元に戻すを済ませる・一覧／作る画面を開く前に済ませる・枠は自分で読み直さない・
+    /// 開ける下書きが無いときは読み上げの操作を付けない
+    func testReviewFixesAreWired() async throws {
+        let mypage = try source("Features/Profile/MyPageView.swift")
+        let userChange = try XCTUnwrap(mypage.range(of: ".onChange(of: auth.userId) { _, _ in"))
+        let afterUser = String(mypage[userChange.upperBound...].prefix(200))
+        XCTAssertTrue(afterUser.contains("draftDeleter.finish()"), "人が替わっても元に戻すの札が残る")
+        let openList = try XCTUnwrap(mypage.range(of: "private func openDraftsList() {"))
+        let listBody = String(mypage[openList.upperBound...].prefix(120))
+        XCTAssertTrue(listBody.contains("draftDeleter.finish()\n        showDraftsList = true"),
+                      "一覧を開く前に待っている削除を済ませていない")
+        XCTAssertTrue(mypage.contains("draftDeleter.finish()\n                             tabRouter.openDraft(entry)"),
+                      "作る画面を開く前に待っている削除を済ませていない")
+        XCTAssertTrue(mypage.contains("onShowList: openDraftsList"))
+
+        let tile = try source("Features/Profile/MyPageDraftsTile.swift")
+        XCTAssertFalse(tile.contains(".task("), "枠が出るたびに下書きを読み直す")
+        XCTAssertFalse(tile.contains("entries(for:"), "枠が自分で全件を読む")
+        XCTAssertTrue(tile.contains(".modifier(LatestDraftActions(latest: latest"))
+        XCTAssertFalse(tile.contains("{ if let latest { open(latest) } }"), "開ける下書きが無くても操作を付けている")
+
+        let library = try source("Core/Storage/DraftLibrary.swift")
+        let shownCount = try XCTUnwrap(library.range(of: "func shownCount(for userId: String) -> Int {"))
+        let body = String(library[shownCount.upperBound...].prefix(200))
+        XCTAssertEqual(body.components(separatedBy: "prepare(for:").count - 1, 1)
+        XCTAssertFalse(body.contains("count(for: userId, kind:"), "prepare を2回呼ぶ数え方に戻った")
     }
 
     // MARK: - 道具

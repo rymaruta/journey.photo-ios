@@ -67,6 +67,8 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 端末の下書きの件数（写真の格子の先頭の「下書き」の札・2026-10-29・#400）。0 なら札ごと出さない
     @State private var draftCount = 0
+    /// 枠の長押しに出す下書き（一覧と同じ並びの先頭5件・`DraftLibrary.shown`・下書きが変わったときだけ読む）
+    @State private var draftRecent: [DraftLibrary.Entry] = []
     /// 枠の長押しで消した下書きの「元に戻す」（下書きの一覧と同じもの・2026-10-30・#408）。枠が消えても（0件）
     /// 戻せるよう、枠ではなくマイページが持つ
     @StateObject private var draftDeleter = DraftDeleteUndo()
@@ -272,6 +274,9 @@ struct MyPageView: View {
         // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
         // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
         .onChange(of: auth.userId) { _, _ in
+            // 枠の長押しで消した下書きの「元に戻す」を次の人に残さない（前の人のぶんとして済ませる・見直し #408）
+            draftDeleter.finish()
+            refreshDraftCount()
             savedIds = []
             feed = []
             feedLoaded = false
@@ -1262,20 +1267,37 @@ struct MyPageView: View {
     /// 写真の格子の先頭の「下書き」の札（2026-10-29・#400・モックの入口）。押すと下書きの一覧を積み、
     /// 長押しで最新の下書きを続きから編集・削除（2026-10-30・#408・`MyPageDraftsTile`）
     private var draftsTile: some View {
-        MyPageDraftsTile(userId: auth.userId ?? "", count: draftCount,
-                         onShowList: { showDraftsList = true },
-                         onOpen: { entry in tabRouter.openDraft(entry) },
+        MyPageDraftsTile(count: draftCount, entries: draftRecent,
+                         onShowList: openDraftsList,
+                         onOpen: { entry in
+                             // 作る画面を開く前に、待っている削除を済ませる（一覧の「閉じたら確定」とそろえる。
+                             // 開いた先では札が見えず、元に戻せないまま残る・見直し #408）
+                             draftDeleter.finish()
+                             tabRouter.openDraft(entry)
+                         },
                          onDelete: { ids in draftDeleter.delete(ids, owner: auth.userId ?? "") })
     }
 
-    /// 端末の下書きの件数を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを消してから数える）
+    /// 枠から下書きの一覧を積む。待っている削除は先に済ませる（一覧の中では札が見えず元に戻せない・
+    /// 一覧の「閉じたら確定」とそろえる・見直し #408）
+    private func openDraftsList() {
+        draftDeleter.finish()
+        showDraftsList = true
+    }
+
+    /// 端末の下書きの件数と、枠の長押しに出す先頭5件を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを
+    /// 消してから・`prepare` は1回）。呼ぶのは下書きが変わった・画面に戻った・人が替わったときだけ
     private func refreshDraftCount() {
         guard let userId = auth.userId else {
             draftCount = 0
+            draftRecent = []
             return
         }
         // 「元に戻す」を待っているものは数えない（枠の長押しで消したらすぐ減らす・#408）
-        draftCount = DraftLibrary.shared.shownCount(for: userId)
+        let shown = DraftLibrary.shared.shown(for: userId, sendingStoryStamp: StoryUploadCenter.shared.pendingDraftStamp,
+                                              limit: DraftsTileMenu.recentLimit)
+        draftCount = shown.count
+        draftRecent = shown.recent
     }
 
     /// 一覧の1枚。**非公開の写真は一目で分かるようにする**

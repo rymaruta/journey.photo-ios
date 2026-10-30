@@ -16,28 +16,29 @@ struct MyPageDraftsTile: View {
     /// 縮図の上の黒の重ね（板の「写真の上」の線 78%）
     nonisolated static let scrimOpacity: Double = 0.78
 
-    let userId: String
-    /// バッジの件数（`DraftLibrary.shownCount`・呼び手が持つ。0 なら呼び手が枠ごと出さない）
+    /// バッジの件数（`DraftLibrary.shown`・呼び手が持つ。0 なら呼び手が枠ごと出さない）
     let count: Int
+    /// 一覧と同じ並びの先頭から最大5件（`DraftLibrary.shown`）。**読むのは呼び手で、下書きが変わったときだけ**——
+    /// 枠が画面に出るたび（格子をずらすたび）に読み直さない（2026-10-30 見直し #408・#398 のずらす速さ）
+    let entries: [DraftLibrary.Entry]
     let onShowList: () -> Void
     let onOpen: (DraftLibrary.Entry) -> Void
     let onDelete: ([String]) -> Void
 
-    @ObservedObject private var library = DraftLibrary.shared
-    @State private var entries: [DraftLibrary.Entry] = []
     @State private var confirmDelete: [String]?
     @State private var missingTarget: DraftLibrary.Entry?
 
-    init(userId: String, count: Int, onShowList: @escaping () -> Void,
+    init(count: Int, entries: [DraftLibrary.Entry], onShowList: @escaping () -> Void,
          onOpen: @escaping (DraftLibrary.Entry) -> Void, onDelete: @escaping ([String]) -> Void) {
-        self.userId = userId
         self.count = count
+        self.entries = entries
         self.onShowList = onShowList
         self.onOpen = onOpen
         self.onDelete = onDelete
     }
 
     private var menu: DraftsTileMenu { DraftsTileMenu(entries: entries) }
+    private var now: Date { DraftLibrary.shared.now() }
 
     var body: some View {
         let latest = menu.latest
@@ -47,18 +48,18 @@ struct MyPageDraftsTile: View {
                 menuItems
             } preview: {
                 if let latest {
-                    DraftPreviewCard(entry: latest, now: library.now())
+                    DraftPreviewCard(entry: latest, now: now)
                 } else {
                     face(nil).frame(width: 160)
                 }
             }
             .accessibilityLabel(accessibilityLabel(latest))
             .accessibilityHint(DraftsText.tileHint)
-            .accessibilityAction(named: DraftsText.continueEditing) { if let latest { open(latest) } }
+            // 開ける下書きがあるときだけ「続きから編集」「この下書きを削除」を付ける（空振りさせない・見直し #408）
+            .modifier(LatestDraftActions(latest: latest, onContinue: open,
+                                         onDelete: { confirmDelete = [$0.id] }))
             .accessibilityAction(named: DraftsText.openList) { onShowList() }
-            .accessibilityAction(named: DraftsText.deleteThisDraft) { if let latest { confirmDelete = [latest.id] } }
             .accessibilityIdentifier("mypage.drafts")
-            .task(id: TileReload(userId: userId, revision: library.revision)) { reload() }
             .draftDialogs(confirmDelete: $confirmDelete, missingTarget: $missingTarget,
                           onOpen: onOpen, onDelete: onDelete)
     }
@@ -122,7 +123,7 @@ struct MyPageDraftsTile: View {
                         // 題・副題（種類・枚数・日時）・印の順に並べる（系統のメニューが副題つきで出す形。
                         // `Label` の題の中に2行入れると副題が落ちた——run 766 の 107a2）
                         Text(DraftsText.title(entry))
-                        Text(DraftsText.menuSubtitle(entry, now: library.now()))
+                        Text(DraftsText.menuSubtitle(entry, now: now))
                         Image(systemName: entry.kind == .story ? "clock" : "photo")
                     }
                 }
@@ -133,7 +134,7 @@ struct MyPageDraftsTile: View {
     private func accessibilityLabel(_ latest: DraftLibrary.Entry?) -> String {
         let head = DraftsText.entryAccessibility(count)
         guard let latest else { return head }
-        return "\(head) · \(DraftsText.accessibility(latest, now: library.now()))"
+        return "\(head) · \(DraftsText.accessibility(latest, now: now))"
     }
 
     /// 開く（読めない写真があれば一覧と同じ問いを出す）
@@ -143,15 +144,22 @@ struct MyPageDraftsTile: View {
         case .open: onOpen(entry)
         }
     }
+}
 
-    private func reload() {
-        entries = library.entries(for: userId, sendingStoryStamp: StoryUploadCenter.shared.pendingDraftStamp)
-    }
+/// 枠の読み上げの操作のうち、最新の下書きに効くもの（無ければ付けない）
+private struct LatestDraftActions: ViewModifier {
+    let latest: DraftLibrary.Entry?
+    let onContinue: (DraftLibrary.Entry) -> Void
+    let onDelete: (DraftLibrary.Entry) -> Void
 
-    /// 読み直す合図（人が替わった・保存／削除／元に戻す）
-    private struct TileReload: Equatable {
-        let userId: String
-        let revision: Int
+    func body(content: Content) -> some View {
+        if let latest {
+            content
+                .accessibilityAction(named: DraftsText.continueEditing) { onContinue(latest) }
+                .accessibilityAction(named: DraftsText.deleteThisDraft) { onDelete(latest) }
+        } else {
+            content
+        }
     }
 }
 
