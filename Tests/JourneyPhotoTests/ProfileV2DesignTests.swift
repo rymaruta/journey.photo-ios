@@ -168,8 +168,63 @@ final class ProfileV2DesignTests: XCTestCase {
         let mine = try source("Features/Profile/MyPageView.swift")
         XCTAssertFalse(mine.contains("Color.white.opacity(0.28)"))
         XCTAssertEqual(mine.components(separatedBy: ".accessibilityIdentifier(\"mypage.edit\")").count - 1, 1,
-                       "編集の目印は1か所（カバーの有無で置き場だけ替わる）")
-        XCTAssertTrue(mine.contains("editLink(short: true)"), "カバーの無い人の「編集」（板 MyPageNoCover）")
+                       "編集の目印は1か所")
+    }
+
+    /// 🔴 マイページの見出し（2026-10-30 owner #415・案 ①②）: 数は**顔の右**、「編集」は**名前の段の右端**。
+    /// カバーの有無で並びを割らない（以前は有無で編集の置き場が割れていた）
+    func testMyPageHeaderPutsStatsBesideAvatarAndEditOnNameRow() throws {
+        let mine = try source("Features/Profile/MyPageView.swift")
+        let header = try slice(mine, from: "private func header(_ profile: UserProfile)", to: "private func avatar(")
+        // 顔の段: 顔 → 数（顔の下端にそろえる）
+        // 切り出しの終わりは各段の閉じかっこ（段の外へ出したら見つからずに落ちる）
+        let avatarRow = try slice(header, from: "HStack(alignment: .bottom, spacing: MyPageHeaderLayout.avatarStatsGap)",
+                                  to: "\n            }\n            VStack(alignment: .leading, spacing: JPSpace.xxs)")
+        let face = try XCTUnwrap(avatarRow.range(of: "avatar(profile"), "顔の段に顔が無い")
+        let stats = try XCTUnwrap(avatarRow.range(of: "stats\n"), "数が顔の段に無い（BGM の下へ戻っている）")
+        XCTAssertLessThan(face.lowerBound, stats.lowerBound, "数が顔の右でない")
+        // 名前の段: 名前 → 右端に「編集」
+        let nameRow = try slice(header, from: "HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap)",
+                                to: "\n                }\n                handleLine(profile)")
+        let name = try XCTUnwrap(nameRow.range(of: "nameLine(profile)"))
+        let edit = try XCTUnwrap(nameRow.range(of: "editLink()"), "「編集」が名前の段に無い")
+        XCTAssertLessThan(name.lowerBound, edit.lowerBound, "「編集」が名前の右でない")
+        // カバーの有無で置き場を割らない
+        XCTAssertEqual(mine.components(separatedBy: "editLink(").count - 1, 2, "「編集」の呼び出しは名前の段の1か所だけ")
+        XCTAssertFalse(header.contains("if bandShown {"), "カバーの有無で見出しの並びが割れている")
+        // 数は見出しの外（旅の記録の上）に置かない
+        let scroll = try slice(mine, from: "private func scroll(topInset: CGFloat", to: "private func reloadAll()")
+        XCTAssertFalse(scroll.contains("stats\n"), "数が見出しの外にも残っている")
+        // 字は「編集」、読み上げは「プロフィールを編集」
+        XCTAssertEqual(MyPageHeaderLayout.editTitle, L("編集", "Edit"))
+        let link = try slice(mine, from: "private func editLink()", to: "private func nameLine(")
+        XCTAssertTrue(link.contains(".accessibilityLabel(L(\"プロフィールを編集\", \"Edit profile\"))"), "読み上げが変わった")
+        XCTAssertTrue(link.contains("ProfileOutlinePill(title: MyPageHeaderLayout.editTitle)"), "今の線のボタンの型を使っていない")
+        XCTAssertTrue(link.contains("NavigationLink { ProfileEditView() }"), "行き先が変わった")
+    }
+
+    /// 顔の右の狭い列でも、数と名前を1行に保つ（2 行に折れて「1234 / 5」にしない）。
+    /// マイページの列だけ（人のページの `ProfileStat` には付けない）
+    func testMyPageStatStaysOnOneLine() throws {
+        let mine = try source("Features/Profile/MyPageView.swift")
+        let cell = try slice(mine, from: "private func statCell(", to: "private var travelRecord")
+        XCTAssertTrue(cell.contains(".lineLimit(1)"), "数が2行に折れうる")
+        XCTAssertTrue(cell.contains(".minimumScaleFactor(MyPageHeaderLayout.statMinimumScale)"), "狭い列で縮めない")
+        XCTAssertGreaterThan(MyPageHeaderLayout.statMinimumScale, 0.5, "縮めすぎ")
+        XCTAssertLessThan(MyPageHeaderLayout.statMinimumScale, 1, "縮めない値")
+        let parts = try source("Features/Profile/ProfileV2Parts.swift")
+        let stat = try slice(parts, from: "struct ProfileStat", to: "struct ProfileOutlinePill")
+        XCTAssertFalse(stat.contains("minimumScaleFactor"), "人のページの数まで縮めている")
+    }
+
+    /// 顔の段の寸法（板: 顔と数の間 16・列の間 8・名前と編集の間 12）。カバーが無い人は
+    /// 顔の段が右上の設定の丸と同じ高さなので、数の右に丸の幅（44）を空ける
+    func testMyPageHeaderLayoutMetrics() {
+        XCTAssertEqual(MyPageHeaderLayout.avatarStatsGap, 16)
+        XCTAssertEqual(MyPageHeaderLayout.statColumnGap, 8)
+        XCTAssertEqual(MyPageHeaderLayout.nameEditGap, 12)
+        XCTAssertEqual(MyPageHeaderLayout.statsTrailingReserve(coverBand: true), 0)
+        XCTAssertEqual(MyPageHeaderLayout.statsTrailingReserve(coverBand: false), WebTheme.minTapTarget)
     }
 
     /// 旅の記録の眉ラベルは土台の部品（同じ形を画面に書かない）
