@@ -382,10 +382,22 @@ actor PublicGalleryService {
         let fromDevice: Bool
     }
 
-    /// 端末の控え（静的 JSON）を出す。**端末の控えから出た印を付ける**
+    /// 端末の控え（静的 JSON）を出す。**端末の控えから出た印を付ける**——ただし、この口が網から
+    /// 読んで控えを書いた（または 304 で今の中身と確かめた）後なら、中身は網のものなので付けない
+    /// （`snapshotFromNetwork`）
     private func deviceStaticList() -> StaticList? {
-        snapshot.load().map { StaticList(photos: $0, fromDevice: true) }
+        snapshot.load().map { StaticList(photos: $0, fromDevice: !snapshotFromNetwork) }
     }
+
+    /// 端末の控えの中身を、**この口が網から確かめたか**（200 で書いた・304 で今の中身と確かめた）。
+    ///
+    /// 2026-10-30 判断: 古い取得が 200 で控えを書いた直後に引き下げ更新が圏外・5xx で落ちると、
+    /// 控えの中身は網から取れたばかりなのに「端末の控えから出た」になり、いいねの数の取得も
+    /// 落ちていると、いつのものか分からない生の控え（`storedLiveSnapshot`）が重なっていた
+    /// （2026-10-16「網から取れた一覧に古い控えを勝たせない」から外れる）。
+    /// `staticWrittenSeq > 0` で見ないのは、空の応答（1件も読めなかった回）は `cached` だけ書いて
+    /// 控えは前のまま残すため——その控えは網で確かめていない
+    private var snapshotFromNetwork = false
 
     /// 取りに行っている最中の一覧。**同時に来た呼び出しはこれを待つ**（`fetchStaticList`）
     private var staticInFlight: (seq: Int, task: Task<StaticList, Error>)?
@@ -407,7 +419,7 @@ actor PublicGalleryService {
     }
 
     /// 網から読めなかった回（圏外・HTTP でない・2xx でない・読めない本文）。**何も書かず**、
-    /// 端末の控えを「端末の控えから出た」印を付けて返す。控えも無ければ `failure` を投げる。
+    /// 端末の控えを返す（印は `deviceStaticList`——この口が網から書いた控えなら網のもの扱い）。控えも無ければ `failure` を投げる。
     /// どの取得でも同じ（古くても新しくても、失敗は共有の控えを変えない）
     private func fallbackStaticList(_ failure: Error) throws -> StaticList {
         if let list = deviceStaticList() { return list }
@@ -437,6 +449,7 @@ actor PublicGalleryService {
                 // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）。
                 // 自分より新しい取得がもう書いていれば、`cached` は触らない（`staticWrittenSeq`）
                 if claimWrite(seq) {
+                    snapshotFromNetwork = true
                     cached = photos
                     cachedAt = Date()
                 }
@@ -471,6 +484,7 @@ actor PublicGalleryService {
                 // しない**（写真が本当に0枚なら dropped も0なので控える）
                 if !photos.isEmpty || list.dropped == 0 {
                     snapshot.save(data, validator: HTTPValidator(response: http))
+                    snapshotFromNetwork = true
                 } else {
                     // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
                     // 今回とは違う控えを「変わっていない」として出す）

@@ -572,6 +572,47 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         XCTAssertEqual(fresh.map(\.id), ["z"])
     }
 
+    /// 🔴 **古い取得が網から控えを書いた直後に引き下げ更新が落ちても、その控えは網の中身として扱う**
+    /// （2026-10-30）。生の控え（いつのものか分からない）を重ねない（`testFreshStaticBeatsStoredLiveAnswer` と同じ約束）
+    func testFallbackAfterNetworkWriteDoesNotUseStoredLive() async throws {
+        let name = UUID().uuidString
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 200, body: #"[{"id":"old","src":"https://x/old.jpg"}]"#)
+        _ = try await service(live: liveURL, snapshot: name).fetchPhotos()
+
+        // 起動し直し: 生の口は落ちている。古い取得は網から読め、引き下げ更新は 500
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: #"[{"id":"z","src":"https://x/z.jpg"}]"#)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        let first = Gate(), second = Gate()
+        let order = Arrivals()
+        let gallery = PublicGalleryService(
+            url: staticURL, liveURL: liveURL, session: session,
+            snapshot: PhotoSnapshotStore(fileName: name),
+            beforeStaticRequest: {
+                switch await order.next() {
+                case 0: await first.wait()
+                case 1: await second.wait()
+                default: break
+                }
+            })
+        let older = Task { try await gallery.fetchPhotos() }
+        await first.untilWaiting(1)
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        await second.untilWaiting(1)
+
+        await first.open()
+        let fresh = try await older.value
+        XCTAssertEqual(fresh.map(\.id), ["z"])
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 500, body: "{}")
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        await second.open()
+        let afterFailure = try await forced.value
+        XCTAssertEqual(afterFailure.map(\.id), ["z"], "網から取れたばかりの控えに、古い生の控えを重ねた")
+    }
+
     private actor Arrivals {
         private(set) var count = 0
         func next() -> Int { defer { count += 1 }; return count }
