@@ -256,6 +256,13 @@ final class DraftLibrary: ObservableObject {
         }
     }
 
+    /// 画面に出す件数（マイページの「下書き」の枠のバッジ・枠を出すか）。自動の書きかけと、削除の「元に戻す」を
+    /// 待っているものは数えない（2026-10-30 判断 #408: 枠の長押しで消したら、バッジと枠をすぐ減らす。
+    /// 上限の数え方 `count(for:)` は待っているものも数えたまま）
+    func shownCount(for userId: String) -> Int {
+        count(for: userId, kind: .post) + count(for: userId, kind: .story)
+    }
+
     /// いっぱいか（新しい下書きを保存できない）
     func isFull(for userId: String) -> Bool { count(for: userId) >= Self.limit }
 
