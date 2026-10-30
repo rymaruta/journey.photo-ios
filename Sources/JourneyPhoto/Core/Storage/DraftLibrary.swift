@@ -199,29 +199,50 @@ final class DraftLibrary: ObservableObject {
     func entries(for userId: String, sendingStoryStamp: String? = nil) -> [Entry] {
         guard !userId.isEmpty else { return [] }
         prepare(for: userId)
-        var result: [Entry] = []
+        return build(for: userId, sendingStoryStamp: sendingStoryStamp, limit: nil)
+    }
+
+    /// 一覧と同じ並びで、**先頭から `limit` 件だけ**作る（`prepare` は呼び手が済ませる）。画像の大きさ・有無を
+    /// 調べるのは選んだ分だけ（2026-10-30 判断 #408: マイページの枠は最新の5件しか使わない）
+    private func build(for userId: String, sendingStoryStamp: String?, limit: Int?) -> [Entry] {
+        var candidates: [(isAuto: Bool, savedAt: Date, id: String, make: () -> Entry)] = []
         let uploads = uploadStore(.saved)
         for id in uploads.entryIds(for: userId) where !hidden.contains(id) {
             let store = uploads.sibling(.entry(id))
-            if let draft = store.draft(for: userId) { result.append(postEntry(id: id, draft: draft, store: store)) }
+            if let draft = store.draft(for: userId) {
+                candidates.append((false, UploadDraftStore.savedDate(draft.savedAt) ?? .distantPast, id,
+                                   { self.postEntry(id: id, draft: draft, store: store) }))
+            }
         }
         if !hidden.contains(Self.autoPostId) {
             let auto = uploads.sibling(.auto)
             if let draft = auto.draft(for: userId), !UploadDraftStore.restorable(draft).items.isEmpty {
-                result.append(postEntry(id: Self.autoPostId, draft: draft, store: auto, isAuto: true))
+                candidates.append((true, UploadDraftStore.savedDate(draft.savedAt) ?? .distantPast, Self.autoPostId,
+                                   { self.postEntry(id: Self.autoPostId, draft: draft, store: auto, isAuto: true) }))
             }
         }
         for id in StoryDraftStore.entryIds(for: userId, defaults: defaults) where !hidden.contains(id) {
             let store = storyStore(.entry(id), userId: userId)
             if let draft = store.draft, draft.savedAt != sendingStoryStamp {
-                result.append(storyEntry(id: id, draft: draft, store: store))
+                candidates.append((false, Self.storyDate(draft.savedAt) ?? .distantPast, id,
+                                   { self.storyEntry(id: id, draft: draft, store: store) }))
             }
         }
         if !hidden.contains(Self.autoStoryId) {
             let auto = storyStore(.auto, userId: userId)
-            if let draft = auto.draft { result.append(storyEntry(id: Self.autoStoryId, draft: draft, store: auto, isAuto: true)) }
+            if let draft = auto.draft {
+                candidates.append((true, Self.storyDate(draft.savedAt) ?? .distantPast, Self.autoStoryId,
+                                   { self.storyEntry(id: Self.autoStoryId, draft: draft, store: auto, isAuto: true) }))
+            }
         }
-        return Self.sorted(result)
+        // 並べ方は `sorted` と同じ（自動の書きかけを先頭・あとは保存の新しい順・同じ時刻は ID の順）
+        candidates.sort { a, b in
+            if a.isAuto != b.isAuto { return a.isAuto }
+            if a.savedAt != b.savedAt { return a.savedAt > b.savedAt }
+            return a.id < b.id
+        }
+        let chosen = limit.map { Array(candidates.prefix(max(0, $0))) } ?? candidates
+        return Self.sorted(chosen.map { $0.make() })
     }
 
     /// 並べ方（自動の書きかけを先頭・あとは保存の新しい順・同じ時刻は ID の順）
@@ -254,6 +275,33 @@ final class DraftLibrary: ObservableObject {
         case .story:
             return StoryDraftStore.entryIds(for: userId, defaults: defaults).filter { !hidden.contains($0) }.count
         }
+    }
+
+    /// 画面に出す件数（マイページの「下書き」の枠のバッジ・枠を出すか）。自動の書きかけと、削除の「元に戻す」を
+    /// 待っているものは数えない（2026-10-30 判断 #408: 枠の長押しで消したら、バッジと枠をすぐ減らす。
+    /// 上限の数え方 `count(for:)` は待っているものも数えたまま）
+    func shownCount(for userId: String) -> Int {
+        guard !userId.isEmpty else { return 0 }
+        prepare(for: userId)
+        return shownSavedCount(for: userId)
+    }
+
+    /// マイページの枠に要るもの（件数と、一覧と同じ並びの先頭 `limit` 件）を**1回の `prepare` で**読む（#408）
+    func shown(for userId: String, sendingStoryStamp: String? = nil, limit: Int) -> Shown {
+        guard !userId.isEmpty else { return Shown(count: 0, recent: []) }
+        prepare(for: userId)
+        return Shown(count: shownSavedCount(for: userId),
+                     recent: build(for: userId, sendingStoryStamp: sendingStoryStamp, limit: limit))
+    }
+
+    struct Shown: Equatable {
+        let count: Int
+        let recent: [Entry]
+    }
+
+    private func shownSavedCount(for userId: String) -> Int {
+        uploadStore(.saved).entryIds(for: userId).filter { !hidden.contains($0) }.count
+            + StoryDraftStore.entryIds(for: userId, defaults: defaults).filter { !hidden.contains($0) }.count
     }
 
     /// いっぱいか（新しい下書きを保存できない）

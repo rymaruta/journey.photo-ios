@@ -243,6 +243,18 @@ enum DraftsText {
     static var updatedToast: String { L("下書きを更新しました", "Draft updated") }
     static var savedAsNewToast: String { L("別の下書きとして保存しました", "Saved as a new draft") }
 
+    /// マイページの「下書き」の枠の長押しのメニュー（2026-10-30・#408）
+    static var openList: String { L("下書きの一覧を開く", "Open all drafts") }
+    static var recentSection: String { L("最近の下書き", "Recent drafts") }
+    /// 「最近の下書き」の1件の副題（「投稿 · 3枚 · 今日 06:12」）
+    static func menuSubtitle(_ entry: DraftLibrary.Entry, now: Date) -> String {
+        "\(kindAndPhotos(entry)) · \(saved(entry.savedAt, now: now))"
+    }
+    /// 枠の読み上げの説明（押すと一覧・長押しで操作）
+    static var tileHint: String {
+        L("開くと下書きの一覧。長押しで続きから編集・削除", "Opens all drafts. Touch and hold to continue editing or delete.")
+    }
+
     /// 作る画面の上の入口（「下書き n ›」）の読み上げ
     static func entryAccessibility(_ count: Int) -> String {
         L("下書き \(count)件", count == 1 ? "Drafts, 1" : "Drafts, \(count)")

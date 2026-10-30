@@ -5067,6 +5067,19 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "107a-マイページ（下書きの入口）")
         guard tile.isHittable else { return }
+        // 枠の長押し（#408）: 浮く絵は最新の下書き、メニューは 続きから編集／下書きの一覧を開く／この下書きを削除／
+        // 最近の下書き。撮ったらメニューの外を押して閉じる（何も選ばない）
+        tile.press(forDuration: 1.2)
+        let openList = app.buttons["下書きの一覧を開く"].firstMatch
+        if openList.waitForExistence(timeout: 5) {
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "107a2-マイページ（下書きの枠を長押し）")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        } else {
+            shoot(app, "107a2-マイページ（下書きの枠を長押し・メニューが出ない）")
+        }
+        guard tile.waitForExistence(timeout: 5), tile.isHittable else { return }
         tile.tap()
         let cell = app.buttons["drafts.cell"].firstMatch
         guard cell.waitForExistence(timeout: 10) else { return }

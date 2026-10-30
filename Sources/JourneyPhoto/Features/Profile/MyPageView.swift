@@ -67,6 +67,13 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 端末の下書きの件数（写真の格子の先頭の「下書き」の札・2026-10-29・#400）。0 なら札ごと出さない
     @State private var draftCount = 0
+    /// 枠の長押しに出す下書き（一覧と同じ並びの先頭5件・`DraftLibrary.shown`・下書きが変わったときだけ読む）
+    @State private var draftRecent: [DraftLibrary.Entry] = []
+    /// 枠の長押しで消した下書きの「元に戻す」（下書きの一覧と同じもの・2026-10-30・#408）。枠が消えても（0件）
+    /// 戻せるよう、枠ではなくマイページが持つ
+    @StateObject private var draftDeleter = DraftDeleteUndo()
+    /// 枠から下書きの一覧を積む（押す・長押しのメニューの「下書きの一覧を開く」）
+    @State private var showDraftsList = false
     /// 旅のトランクの口が在るか（無い間は入口を出さない・2026-10-17）
     @ObservedObject private var trunkAvailability = TrunkAvailability.shared
     @State private var trunkForeground = TrunkForegroundGate()
@@ -100,6 +107,16 @@ struct MyPageView: View {
             }
         }
         .webScreen()
+        // 枠の長押しで消した下書きの「元に戻す」（マイページの下・#408）
+        .overlay(alignment: .bottom) { DraftUndoBar(deleter: draftDeleter, identifier: "mypage.drafts.undo") }
+        // 下書きが変わったら（保存・削除・元に戻す）件数と枠をすぐ描き直す（#408）
+        .background { DraftRevisionWatcher { refreshDraftCount() } }
+        // 下書きの一覧は格子の外から積む（遅延の格子の中の `navigationDestination` は効かないことがある）
+        .navigationDestination(isPresented: $showDraftsList) {
+            DraftsView(presentation: .pushed,
+                       onOpen: { entry in tabRouter.openDraft(entry) },
+                       onChoosePhotos: { tabRouter.openPost(.photo) })
+        }
         .navigationTitle(Labels.Navigation.mypage)
         .navigationBarTitleDisplayMode(.inline)
         // **ログイン中は上のバーを出さない**（板 05c・05d）。カバーが画面の上端から
@@ -257,6 +274,9 @@ struct MyPageView: View {
         // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
         // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
         .onChange(of: auth.userId) { _, _ in
+            // 枠の長押しで消した下書きの「元に戻す」を次の人に残さない（前の人のぶんとして済ませる・見直し #408）
+            draftDeleter.finish()
+            refreshDraftCount()
             savedIds = []
             feed = []
             feedLoaded = false
@@ -1244,45 +1264,40 @@ struct MyPageView: View {
         }
     }
 
-    /// 写真の格子の先頭の「下書き」の札（2026-10-29・#400・モックの入口）。地は札の地（surface-1）に白 8% の縁、
-    /// 件数バッジは真鍮＋墨＋黒 2px の縁（黒地の上）。押すと下書きの一覧を積む
+    /// 写真の格子の先頭の「下書き」の札（2026-10-29・#400・モックの入口）。押すと下書きの一覧を積み、
+    /// 長押しで最新の下書きを続きから編集・削除（2026-10-30・#408・`MyPageDraftsTile`）
     private var draftsTile: some View {
-        NavigationLink {
-            DraftsView(presentation: .pushed,
-                       onOpen: { entry in tabRouter.openDraft(entry) },
-                       onChoosePhotos: { tabRouter.openPost(.photo) })
-        } label: {
-            Color.clear
-                .aspectRatio(ProfileV2.gridAspect, contentMode: .fit)
-                .background(WebTheme.card)
-                .overlay(Rectangle().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-                .overlay {
-                    VStack(spacing: 6) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 22, weight: .light))
-                        Text(DraftsText.title)
-                            .font(JPFont.footnote)
-                    }
-                    .foregroundStyle(WebTheme.text)
-                }
-                .overlay(alignment: .topTrailing) {
-                    CountBadge(count: draftCount)
-                        .padding(JPSpace.xs)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(DraftsText.entryAccessibility(draftCount))
-        .accessibilityIdentifier("mypage.drafts")
+        MyPageDraftsTile(count: draftCount, entries: draftRecent,
+                         onShowList: openDraftsList,
+                         onOpen: { entry in
+                             // 作る画面を開く前に、待っている削除を済ませる（一覧の「閉じたら確定」とそろえる。
+                             // 開いた先では札が見えず、元に戻せないまま残る・見直し #408）
+                             draftDeleter.finish()
+                             tabRouter.openDraft(entry)
+                         },
+                         onDelete: { ids in draftDeleter.delete(ids, owner: auth.userId ?? "") })
     }
 
-    /// 端末の下書きの件数を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを消してから数える）
+    /// 枠から下書きの一覧を積む。待っている削除は先に済ませる（一覧の中では札が見えず元に戻せない・
+    /// 一覧の「閉じたら確定」とそろえる・見直し #408）
+    private func openDraftsList() {
+        draftDeleter.finish()
+        showDraftsList = true
+    }
+
+    /// 端末の下書きの件数と、枠の長押しに出す先頭5件を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを
+    /// 消してから・`prepare` は1回）。呼ぶのは下書きが変わった・画面に戻った・人が替わったときだけ
     private func refreshDraftCount() {
         guard let userId = auth.userId else {
             draftCount = 0
+            draftRecent = []
             return
         }
-        draftCount = DraftLibrary.shared.count(for: userId)
+        // 「元に戻す」を待っているものは数えない（枠の長押しで消したらすぐ減らす・#408）
+        let shown = DraftLibrary.shared.shown(for: userId, sendingStoryStamp: StoryUploadCenter.shared.pendingDraftStamp,
+                                              limit: DraftsTileMenu.recentLimit)
+        draftCount = shown.count
+        draftRecent = shown.recent
     }
 
     /// 一覧の1枚。**非公開の写真は一目で分かるようにする**

@@ -57,9 +57,8 @@ struct DraftsView: View {
     @State private var showAbout = false
     /// 読めない写真のある下書きを開こうとした
     @State private var missingTarget: DraftLibrary.Entry?
-    /// 「元に戻す」を待っている削除
-    @State private var pendingUndo: [String]?
-    @State private var undoTask: Task<Void, Never>?
+    /// 削除と「元に戻す」（マイページの「下書き」の枠と同じもの・#408）
+    @StateObject private var deleter = DraftDeleteUndo()
     /// 複製できなかったなどの一言（起きた所のすぐ上・板 06）
     @State private var notice: String?
     @State private var appliedInitial = false
@@ -83,7 +82,7 @@ struct DraftsView: View {
             .navigationBarBackButtonHidden(selecting || presentation == .sheet)
             .toolbar { toolbar }
             .safeAreaInset(edge: .bottom) { bottomBar }
-            .overlay(alignment: .bottom) { undoBar }
+            .overlay(alignment: .bottom) { DraftUndoBar(deleter: deleter) }
             .onAppear {
                 if !appliedInitial {
                     appliedInitial = true
@@ -96,39 +95,10 @@ struct DraftsView: View {
             // 作る画面を閉じたら読み直す（保存し直した・投稿して外れた）
             .onChange(of: tabRouter.postSheetsClosed) { _, _ in Task { await reload() } }
             // 一覧を閉じたら、元に戻すを待っていた削除を済ませる（画像を消す）
-            .onDisappear { finishPendingDelete() }
-            .confirmationDialog(DraftsText.deleteConfirmTitle(confirmDelete?.count ?? 0),
-                                isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
-                                titleVisibility: .visible) {
-                Button(DraftsText.delete, role: .destructive) {
-                    if let ids = confirmDelete { delete(ids) }
-                    confirmDelete = nil
-                }
-                Button(Labels.Common.cancel, role: .cancel) { confirmDelete = nil }
-            } message: {
-                Text(DraftsText.deleteConfirmMessage)
-            }
-            .confirmationDialog(DraftsText.missingTitle(missingTarget?.missingCount ?? 0),
-                                isPresented: Binding(get: { missingTarget != nil }, set: { if !$0 { missingTarget = nil } }),
-                                titleVisibility: .visible) {
-                if let target = missingTarget {
-                    if target.readableCount > 0 {
-                        Button(DraftsText.continueWithRest(target.readableCount)) {
-                            missingTarget = nil
-                            onOpen(target)
-                        }
-                    }
-                    Button(DraftsText.deleteThisDraft, role: .destructive) {
-                        missingTarget = nil
-                        confirmDelete = [target.id]
-                    }
-                }
-                Button(Labels.Common.cancel, role: .cancel) { missingTarget = nil }
-            } message: {
-                if let target = missingTarget {
-                    Text(DraftsText.missingMessage(total: target.photoCount, missing: target.missingCount))
-                }
-            }
+            .onDisappear { deleter.finish() }
+            // 消す前の確かめと、読めない写真の問い（マイページの枠と同じもの・#408）
+            .draftDialogs(confirmDelete: $confirmDelete, missingTarget: $missingTarget,
+                          onOpen: onOpen, onDelete: delete)
             .sheet(isPresented: $showAbout) {
                 DraftsAboutSheet(count: savedCount, megabytes: DraftLibrary.megabytes(entries))
             }
@@ -562,42 +532,6 @@ struct DraftsView: View {
         selection.reduce(0) { sum, id in sum + (entries.first { $0.id == id }?.photoCount ?? 0) }
     }
 
-    /// 削除のあとの「元に戻す」（約6秒）。成功の印は緑、ボタンは真鍮（黒い札の上）
-    @ViewBuilder
-    private var undoBar: some View {
-        if let ids = pendingUndo {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(WebTheme.success)
-                    .accessibilityHidden(true)
-                Text(DraftsText.deleted(ids.count))
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button { undo() } label: {
-                    Text(DraftsText.undo)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("drafts.undo")
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 6)
-            .padding(.vertical, 4)
-            .background(WebTheme.surface6, in: RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-            .shadow(color: .black.opacity(0.5), radius: 15, y: 10)
-            .padding(.horizontal, JPSpace.s)
-            .padding(.bottom, JPSpace.l)
-            .accessibilityElement(children: .contain)
-        }
-    }
-
     // MARK: 操作
 
     private func reload(showLoading: Bool = false) async {
@@ -616,11 +550,10 @@ struct DraftsView: View {
 
     private func open(_ entry: DraftLibrary.Entry) {
         guard !tidying else { return }
-        if entry.missingCount > 0 {
-            missingTarget = entry
-            return
+        switch DraftOpenRoute.route(entry) {
+        case .askMissing: missingTarget = entry
+        case .open: onOpen(entry)
         }
-        onOpen(entry)
     }
 
     private func toggle(_ entry: DraftLibrary.Entry) {
@@ -647,37 +580,11 @@ struct DraftsView: View {
         }
     }
 
-    /// 削除（一覧から隠す）→ 約6秒「元に戻す」→ 本当に消す
+    /// 削除（一覧から隠す）→ 約6秒「元に戻す」→ 本当に消す（`DraftDeleteUndo`）
     private func delete(_ ids: [String]) {
-        // 前の削除の「元に戻す」は締め切る（積まない）
-        finishPendingDelete()
-        library.hide(ids)
+        deleter.delete(ids, owner: userId)
         selection = []
         selecting = tidying && DraftLibrary.isFull(count: savedCount - ids.count) ? true : false
-        pendingUndo = ids
-        let owner = userId
-        undoTask = Task {
-            try? await Task.sleep(nanoseconds: UInt64(DraftLibrary.undoSeconds * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            library.finalize(ids, for: owner)
-            if pendingUndo == ids { pendingUndo = nil }
-        }
-    }
-
-    private func undo() {
-        guard let ids = pendingUndo else { return }
-        undoTask?.cancel()
-        undoTask = nil
-        pendingUndo = nil
-        library.undo(ids)
-    }
-
-    private func finishPendingDelete() {
-        guard let ids = pendingUndo else { return }
-        undoTask?.cancel()
-        undoTask = nil
-        pendingUndo = nil
-        library.finalize(ids, for: userId)
     }
 }
 
@@ -876,7 +783,7 @@ private struct DraftRow<Trailing: View>: View {
 }
 
 /// 長押しで浮く縮図と詳細（題・撮影地・種類・枚数・日時・期限・読めない写真）
-private struct DraftPreviewCard: View {
+struct DraftPreviewCard: View {
     let entry: DraftLibrary.Entry
     let now: Date
 
@@ -915,6 +822,8 @@ private struct DraftPreviewCard: View {
 /// 縮図（下書きの写しの JPEG を小さくして読む・読めるまで骨格の色・読めなければ割れた写真の印）
 struct DraftCover: View {
     let url: URL?
+    /// 読めないときに割れた写真の印を出すか（マイページの枠の地に敷くときは出さない——札の字と重なる・#408）
+    var showsFailure = true
     @State private var image: UIImage?
     @State private var failed = false
 
@@ -925,7 +834,7 @@ struct DraftCover: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-            } else if url == nil || failed {
+            } else if showsFailure && (url == nil || failed) {
                 Image(systemName: "photo.badge.exclamationmark")
                     .font(.system(size: 22, weight: .light))
                     .foregroundStyle(WebTheme.text3)
