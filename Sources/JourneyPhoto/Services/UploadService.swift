@@ -93,8 +93,10 @@ struct UploadService {
             try RequestCancellation.throwIfCancelled()
             response = try await transfer.upload(request, body: data, key: presigned.key)
         } catch {
-            // Cancellation is a control-flow signal, not a network failure.
-            // Preserve it so callers can stop quietly instead of showing an offline error.
+            // **取り消しを「通信できません」にしない**（2026-10-30 判断・#378）。呼んだ処理が取り消されて
+            // いるときだけ `CancellationError` で返す（`APIClient`・`PhotoRecolor.fetchSource` と同じ）。
+            // 呼び手が生きているのに背景の転送が `URLError(.cancelled)` で終わった回（OS が止めた）は、
+            // 本体が届いていないので今までどおり失敗（unreachable）として知らせる
             if error is CancellationError || Task.isCancelled {
                 throw CancellationError()
             }

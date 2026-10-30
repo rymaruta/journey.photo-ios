@@ -46,8 +46,9 @@ actor DailyQuizService {
             try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: urlFor(date))
         } catch {
-            // A cancelled request is not a connectivity failure; preserve cancellation
-            // so callers can stop without showing a retry/error state.
+            // **取り消しを「通信できません」にしない**（2026-10-30 判断・#381）。呼んだ処理が取り消されて
+            // いるときだけ `CancellationError` で返す（`UploadService.put` と同じ）。画面（`DailyQuizView`・
+            // `HomeTopCardView`）はもとから取り消された回を失敗の札にしないので、見え方は変わらない
             if error is CancellationError || Task.isCancelled {
                 throw CancellationError()
             }

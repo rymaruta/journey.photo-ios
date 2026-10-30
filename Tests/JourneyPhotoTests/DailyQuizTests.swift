@@ -183,6 +183,7 @@ final class DailyQuizServiceTests: XCTestCase {
         guard case .ready = try await s.fetch(date: "2026-10-01") else { return XCTFail("「無い」を覚えている") }
     }
 
+    /// 取り消された処理は、取り消しのまま返り（「通信できません」にしない・#381）、要求も出さない
     func testCancellationIsPreservedAndSendsNoRequest() async {
         let s = service()
         let task = Task {
@@ -193,7 +194,7 @@ final class DailyQuizServiceTests: XCTestCase {
             try await task.value
             XCTFail("キャンセルが成功扱いになった")
         } catch is CancellationError {
-            // Expected.
+            // 期待どおり: 取り消しは通信の失敗と分けて返る
         } catch {
             XCTFail("キャンセルが通信エラーに変換された: \(error)")
         }
