@@ -63,6 +63,8 @@ PR を作って止めない・「次の TestFlight で」と先送りしない�
 **Mac のテストが通ったら、owner に聞かずに TestFlight まで出す（2026-10-30 owner のルール）。**
 「出していいか」と確かめて止めない。出したら版と実機で見てほしい所を報告する。
 テストが落ちたら直して流し直し、緑になるまで出さない。本番の Web/API・費用・DB・GSI は今までどおり承認を取る。
+iOS の PR のマージ（`gh api -X PUT repos/rymaruta/journey.photo-ios/pulls/<番号>/merge …`）は `.claude/settings.json` で許してある。
+photo-gallery の本番（main）へのマージは今までどおり owner が押す。
 
 - 流れ: Linux の検査（`/verify`）→ PR → マージ → `/release`（`ios-testflight.yml` を `submit=true`）→
   版（`testflight/<版>` のタグ）を確かめて owner に日本語で報告
