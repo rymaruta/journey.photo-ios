@@ -192,9 +192,13 @@ actor PublicGalleryService {
     /// 端末に控えた生の答え（`liveStore`）。**この起動で取れた答えが無いときだけ**読む（`liveFailed`）
     private var storedLiveSnapshot: LiveLikes.Snapshot?
     /// 一覧に使う生の答え。この起動で取れた答えがあればそれ。無ければ、**静的 JSON も端末の控えから
-    /// 出た回（本当にどちらも読めなかった回）だけ**生の控え（2026-10-16 判断）
-    private var liveForList: LiveLikes.Snapshot? {
-        liveSnapshot ?? (staticFromDevice ? storedLiveSnapshot : nil)
+    /// 出た回（本当にどちらも読めなかった回）だけ**生の控え（2026-10-16 判断）。
+    ///
+    /// 2026-10-30 判断: 「端末の控えから出たか」は**その呼び手が受け取った一覧ごと**に渡す（`StaticList`）。
+    /// 前は actor に1つの印（`staticFromDevice`）を置いていて、同時に走る別の取得が印を書き換えると、
+    /// 圏外で端末の控えを受け取った呼び手に生の控えが重ならないことがあった
+    private func liveForList(fromDevice: Bool) -> LiveLikes.Snapshot? {
+        liveSnapshot ?? (fromDevice ? storedLiveSnapshot : nil)
     }
     /// 取りに行っている最中の要求。**同時に来た呼び出しはこれを待つ**
     /// （待たずに返すと、その画面だけ静的 JSON の古い数で出て、
@@ -297,13 +301,14 @@ actor PublicGalleryService {
     func fetchPhotosTagged(force: Bool = false) async throws -> (photos: [Photo], epoch: Int) {
         if !force, let fresh = freshCache {
             await refreshLiveCounts(force: false)
-            return await merged(fresh, force: force)
+            // `cached` に入るのは網から読めた一覧だけ（端末の控えからは入れない）
+            return await merged(fresh, fromDevice: false, force: force)
         }
         // **いまの一覧（`GET /photos`）は、静的 JSON と同時に取りに行く**
         // （順に待つと、起き抜けの Lambda のぶん一覧が遅れる）
         async let live: Void = refreshLiveCounts(force: force)
         // **catch の中で await しない**（Xcode 26.3 の SILGen）。結果を外へ持ち出してから分ける
-        let loaded: Result<[Photo], Error>
+        let loaded: Result<StaticList, Error>
         do {
             loaded = .success(try await fetchStaticList(force: force))
         } catch {
@@ -311,13 +316,14 @@ actor PublicGalleryService {
         }
         await live
         switch loaded {
-        case .success(let photos):
-            return await merged(photos, force: force)
+        case .success(let list):
+            return await merged(list.photos, fromDevice: list.fromDevice, force: force)
         case .failure(let error):
             // 2026-10-16 判断: 静的 JSON が取れなくても（端末の控えも無い）、いまの一覧が
-            // 取れていればそれで出す。どちらも無ければ今までどおり投げる
-            guard !LiveLikes.list(live: liveForList, asOf: .distantPast, static: []).isEmpty else { throw error }
-            return await merged([], force: force)
+            // 取れていればそれで出す。どちらも無ければ今までどおり投げる。
+            // 網からも端末の控えからも読めなかった回なので、生の控えを使ってよい
+            guard !LiveLikes.list(live: liveForList(fromDevice: true), asOf: .distantPast, static: []).isEmpty else { throw error }
+            return await merged([], fromDevice: true, force: force)
         }
     }
 
@@ -342,15 +348,16 @@ actor PublicGalleryService {
     /// **もう取り消されている呼び手は、新しい取得を始めない**（`RequestCancellation` の約束・
     /// `testCancelledGalleryFetchDoesNotReachTheNetwork`）。取得はどの呼び手にも属さないので、
     /// 始めてしまうと誰も待たない要求が出る。途中の取得に乗るのは構わない（もう出ている）
-    private func fetchStaticList(force: Bool) async throws -> [Photo] {
-        let task: Task<[Photo], Error>
+    private func fetchStaticList(force: Bool) async throws -> StaticList {
+        let task: Task<StaticList, Error>
         if !force, let inFlight = staticInFlight {
             task = inFlight.task
         } else {
             guard !Task.isCancelled else { return try cancelledStaticList() }
-            let id = UUID()
-            task = Task { try await self.loadStaticList(id: id) }
-            staticInFlight = (id, task)
+            staticSeq += 1
+            let seq = staticSeq
+            task = Task { try await self.loadStaticList(seq: seq) }
+            staticInFlight = (seq, task)
         }
         do {
             return try await task.valueReleasingOnCancel()
@@ -361,30 +368,69 @@ actor PublicGalleryService {
     }
 
     /// 取り消された呼び手の戻り方。**まとめる前と同じ**——圏外と同じ道（端末の控え、無ければ unreachable）
-    private func cancelledStaticList() throws -> [Photo] {
-        if let cached = deviceStaticList() { return cached }
+    private func cancelledStaticList() throws -> StaticList {
+        if let list = deviceStaticList() { return list }
         throw APIError.unreachable
     }
 
-    /// 最後の静的 JSON が**端末の控えから出た（網から読めなかった）か**。
-    /// 2026-10-16 判断: 生の控え（`storedLiveSnapshot`）を使うのはこの印が立っている回だけ
-    /// （`liveForList`）。網から新しく取れた静的 JSON に、いつのものか分からない生の控えを勝たせない
-    private var staticFromDevice = false
-
-    /// 端末の控え（静的 JSON）を出す。**出した印を立てる**（`staticFromDevice`）
-    private func deviceStaticList() -> [Photo]? {
-        staticFromDevice = true
-        return snapshot.load()
+    /// 静的 JSON の一覧と、**それが端末の控えから出た（網から読めなかった）か**。
+    /// 2026-10-16 判断: 生の控え（`storedLiveSnapshot`）を使うのは `fromDevice` の回だけ
+    /// （`liveForList`）。網から新しく取れた静的 JSON に、いつのものか分からない生の控えを勝たせない。
+    /// 2026-10-30 判断: 印は actor に1つ置かず、呼び手が受け取る一覧ごとに持つ（`liveForList` の注記）
+    struct StaticList: Sendable {
+        let photos: [Photo]
+        let fromDevice: Bool
     }
 
+    /// 端末の控え（静的 JSON）を出す。**端末の控えから出た印を付ける**——ただし、この口が網から
+    /// 読んで控えを書いた（または 304 で今の中身と確かめた）後なら、中身は網のものなので付けない
+    /// （`snapshotFromNetwork`）
+    private func deviceStaticList() -> StaticList? {
+        snapshot.load().map { StaticList(photos: $0, fromDevice: !snapshotFromNetwork) }
+    }
+
+    /// 端末の控えの中身を、**この口が網から確かめたか**（200 で書いた・304 で今の中身と確かめた）。
+    ///
+    /// 2026-10-30 判断: 古い取得が 200 で控えを書いた直後に引き下げ更新が圏外・5xx で落ちると、
+    /// 控えの中身は網から取れたばかりなのに「端末の控えから出た」になり、いいねの数の取得も
+    /// 落ちていると、いつのものか分からない生の控え（`storedLiveSnapshot`）が重なっていた
+    /// （2026-10-16「網から取れた一覧に古い控えを勝たせない」から外れる）。
+    /// `staticWrittenSeq > 0` で見ないのは、空の応答（1件も読めなかった回）は `cached` だけ書いて
+    /// 控えは前のまま残すため——その控えは網で確かめていない
+    private var snapshotFromNetwork = false
+
     /// 取りに行っている最中の一覧。**同時に来た呼び出しはこれを待つ**（`fetchStaticList`）
-    private var staticInFlight: (id: UUID, task: Task<[Photo], Error>)?
+    private var staticInFlight: (seq: Int, task: Task<StaticList, Error>)?
+    /// 取得ごとに1つ増える番号（始めた順）
+    private var staticSeq = 0
+    /// `cached`・端末の控え・ETag に**最後に結果を書いた取得の番号**。
+    ///
+    /// 2026-10-30 判断: 書いてよいのは「自分より新しい取得が、まだ結果を書いていない」とき
+    /// （`seq > staticWrittenSeq`）。引き下げ更新（`force`）が後から始めた取得が先に書いたあとで、
+    /// 古い取得の応答が遅れて届いても巻き戻さない。逆に、古い取得が先に成功し、あとの取得が
+    /// 圏外・5xx・壊れた応答で失敗したときは、失敗は何も書かないので、古い成功がそのまま残る
+    private var staticWrittenSeq = 0
+
+    /// 自分の結果を書いてよいか（書くなら、書いた印を付ける）
+    private func claimWrite(_ seq: Int) -> Bool {
+        guard seq > staticWrittenSeq else { return false }
+        staticWrittenSeq = seq
+        return true
+    }
+
+    /// 網から読めなかった回（圏外・HTTP でない・2xx でない・読めない本文）。**何も書かず**、
+    /// 端末の控えを返す（印は `deviceStaticList`——この口が網から書いた控えなら網のもの扱い）。控えも無ければ `failure` を投げる。
+    /// どの取得でも同じ（古くても新しくても、失敗は共有の控えを変えない）
+    private func fallbackStaticList(_ failure: Error) throws -> StaticList {
+        if let list = deviceStaticList() { return list }
+        throw failure
+    }
 
     /// 一覧を1回取る本体。**「取得中」の印はここで消す**——自分の印のときだけ
     /// （引き下げ更新が後から始めた取得の印を、先に終わった古い取得が消さない）。
     /// 印を立てるのは `fetchStaticList` で、この本体はそのあとにしか actor の上で走らない
-    private func loadStaticList(id: UUID) async throws -> [Photo] {
-        defer { if staticInFlight?.id == id { staticInFlight = nil } }
+    private func loadStaticList(seq: Int) async throws -> StaticList {
+        defer { if staticInFlight?.seq == seq { staticInFlight = nil } }
         await beforeStaticRequest?()
         let data: Data
         let response: URLResponse
@@ -400,26 +446,28 @@ actor PublicGalleryService {
             }
             switch outcome {
             case .notModified(let photos):
-                // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）
-                staticFromDevice = false
-                cached = photos
-                cachedAt = Date()
-                return photos
+                // 304 は網で「変わっていない」と確かめた回（端末の控えだが今の中身）。
+                // 自分より新しい取得がもう書いていれば、`cached` は触らない（`staticWrittenSeq`）
+                if claimWrite(seq) {
+                    snapshotFromNetwork = true
+                    cached = photos
+                    cachedAt = Date()
+                }
+                return StaticList(photos: photos, fromDevice: false)
             case .fetched(let body, let reply):
                 (data, response) = (body, reply)
             }
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = deviceStaticList() { return cached }
-            throw APIError.unreachable
+            return try fallbackStaticList(APIError.unreachable)
         }
         guard let http = response as? HTTPURLResponse else {
-            staticFromDevice = true
+            // HTTP でない応答は控えに戻さず投げる（今までどおり）。何も書かない。
+            // 投げた回は呼び手（`fetchPhotosTagged`）が「網から読めなかった」として生の控えを使う
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = deviceStaticList() { return cached }
-            throw APIError.server(status: http.statusCode, message: "")
+            return try fallbackStaticList(APIError.server(status: http.statusCode, message: ""))
         }
         do {
             let list = try JSONDecoder.api.decode(LenientPhotoList.self, from: data)
@@ -428,24 +476,26 @@ actor PublicGalleryService {
                 print("[gallery] 読めなかった写真の行を \(list.dropped) 件落としました")
             }
             let photos = list.photos
-            // **読めたものだけを控える。** 壊れた応答（キャプティブポータルの
-            // ログイン HTML など）を控えると、次から圏外でそれが出る。
-            // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
-            // しない**（写真が本当に0枚なら dropped も0なので控える）
-            if !photos.isEmpty || list.dropped == 0 {
-                snapshot.save(data, validator: HTTPValidator(response: http))
-            } else {
-                // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
-                // 今回とは違う控えを「変わっていない」として出す）
-                snapshot.validators.clear()
+            // 自分より新しい取得がもう書いていれば、呼び手には返すが何も書かない（`staticWrittenSeq`）
+            if claimWrite(seq) {
+                // **読めたものだけを控える。** 壊れた応答（キャプティブポータルの
+                // ログイン HTML など）を控えると、次から圏外でそれが出る。
+                // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
+                // しない**（写真が本当に0枚なら dropped も0なので控える）
+                if !photos.isEmpty || list.dropped == 0 {
+                    snapshot.save(data, validator: HTTPValidator(response: http))
+                    snapshotFromNetwork = true
+                } else {
+                    // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
+                    // 今回とは違う控えを「変わっていない」として出す）
+                    snapshot.validators.clear()
+                }
+                cached = photos
+                cachedAt = Date()
             }
-            staticFromDevice = false
-            cached = photos
-            cachedAt = Date()
-            return photos
+            return StaticList(photos: photos, fromDevice: false)
         } catch {
-            if let cached = deviceStaticList() { return cached }
-            throw APIError.decoding(String(describing: error))
+            return try fallbackStaticList(APIError.decoding(String(describing: error)))
         }
     }
 
@@ -462,10 +512,11 @@ actor PublicGalleryService {
     /// **自分で編集した写真は編集後の行を重ねる**（`edits`）。限定の行を足した**後**に重ねる
     /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
     /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
-    private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
+    /// - Parameter fromDevice: `photos` が端末の控えから出たか（`StaticList.fromDevice`）
+    private func merged(_ photos: [Photo], fromDevice: Bool, force: Bool) async -> (photos: [Photo], epoch: Int) {
         // 投稿したばかりの公開写真を先に重ねる（読んだ一覧に在れば読んだ行を採る・`PostedPhotos.overlayPublic`）
         let counted = PostedPhotos.overlayPublic(
-            loaded: LiveLikes.list(live: liveForList, asOf: liveCountsAsOf ?? .distantPast, static: photos),
+            loaded: LiveLikes.list(live: liveForList(fromDevice: fromDevice), asOf: liveCountsAsOf ?? .distantPast, static: photos),
             posted: posted.photos())
         let (extra, epoch) = await restrictedPhotos(force: force)
         if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }

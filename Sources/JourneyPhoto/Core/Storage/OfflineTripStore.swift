@@ -312,6 +312,9 @@ final class OfflineTripStore: ObservableObject {
             try Task.checkCancellation()
             var overview: String?
             let overviewData = try await sources.overviewMap(stops)
+            // 地図を撮る間に取り消された（消された・保存し直された）前の保存は、置き場に書かない
+            // （同じ置き場を新しい保存が使っている・2026-10-30 判断。写真の取得と同じ穴）
+            try Task.checkCancellation()
             if let data = overviewData {
                 try data.write(to: partial.appendingPathComponent("overview.jpg"), options: .atomic)
                 overview = "overview.jpg"
@@ -342,10 +345,17 @@ final class OfflineTripStore: ObservableObject {
             do {
                 data = try await sources.download(source.url)
             } catch {
+                // キャンセルは通信失敗として飲み込まず、保存を止める。
+                if Task.isCancelled || error is CancellationError {
+                    throw CancellationError()
+                }
                 // **圏外は止める**（続きから保存）。1枚だけ取れない（消えた・壊れた）は飛ばして次へ
-                if Self.isOffline(error) || error is CancellationError { throw error }
+                if Self.isOffline(error) { throw error }
                 continue
             }
+            // download がキャンセルを無視して戻る実装でも、共有の partial ディレクトリに書かない。
+            // 同じ planId の保存し直しが始まっていると、古い job が新しい job の画像を上書きしうる。
+            try Task.checkCancellation()
             guard !data.isEmpty else { continue }
             let file = "s\(stop.number)-\(samples.count + 1).jpg"
             try data.write(to: dir.appendingPathComponent(file), options: .atomic)
@@ -356,6 +366,8 @@ final class OfflineTripStore: ObservableObject {
         // 撮れなければ投げて保存を止める（この場所は記録しないので、続きから保存で取り直す）
         var mapData: Data?
         if stop.coords != nil { mapData = try await sources.stopMap(stop) }
+        // 地図の取得中にキャンセルされても、古い job は画像を書き込まない。
+        try Task.checkCancellation()
         if let data = mapData {
             let file = "m\(stop.number).jpg"
             try data.write(to: dir.appendingPathComponent(file), options: .atomic)

@@ -183,6 +183,24 @@ final class DailyQuizServiceTests: XCTestCase {
         guard case .ready = try await s.fetch(date: "2026-10-01") else { return XCTFail("「無い」を覚えている") }
     }
 
+    /// 取り消された処理は、取り消しのまま返り（「通信できません」にしない・#381）、要求も出さない
+    func testCancellationIsPreservedAndSendsNoRequest() async {
+        let s = service()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            _ = try await s.fetch(date: "2026-10-01")
+        }
+        do {
+            try await task.value
+            XCTFail("キャンセルが成功扱いになった")
+        } catch is CancellationError {
+            // 期待どおり: 取り消しは通信の失敗と分けて返る
+        } catch {
+            XCTFail("キャンセルが通信エラーに変換された: \(error)")
+        }
+        XCTAssertNil(StubProtocol.lastRequest, "キャンセル後に HTTP 要求が出た")
+    }
+
     func testOfflineThrows() async {
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         do { _ = try await service().fetch(date: "2026-10-01"); XCTFail("圏外で投げていない") } catch {}

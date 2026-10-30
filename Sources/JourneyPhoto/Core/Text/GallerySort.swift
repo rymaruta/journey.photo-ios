@@ -38,10 +38,17 @@ enum GallerySort: String, CaseIterable, Identifiable {
 
     /// 並べ替える。**元の並びを壊さない**（新着の規則は1か所に置く）。
     ///
-    /// - `new` / `old`: `createdAt` で。**無い行は末尾へ**送る
-    ///   （実データに欠けている写真がある。Web の `photoOrder.ts` と同じ）
+    /// - `new` / `old`: `createdAt`（投稿日）で。**無い行は、どちらの向きでも末尾へ**送る
+    ///   （実データに欠けている写真がある）。どちらも無ければ id の昇順。
+    ///   Web との違い（2026-10-30 に photo-gallery の develop の `lib/utils/photoOrder.ts`・
+    ///   `lib/hooks/useGallery.ts` と照らした）:
+    ///   - Web のホームの「新着」タブ（`scope=all`・`sort=new`）は `comparePosted`＝投稿日の新しい順
+    ///     （photo-gallery #445・#446 で撮影日順から変えた）。こちらの `new` と同じ並びだが、
+    ///     Web は `createdAt` の無い行を `date`（撮影日）で並べ、同じ時刻は id で決める
+    ///   - Web の「さがす」の新しい順・古い順（`compareNewest` / `compareOldest`）は
+    ///     **撮影日（`date`）が先**で、無ければ投稿日。こちらは投稿日だけで並べるので、ここは揃っていない
     /// - `popular`: `likes` の多い順。**持たない写真は 0**
-    ///   （Web も `(b.likes ?? 0) - (a.likes ?? 0)`）
+    ///   （Web も `(b.likes ?? 0) - (a.likes ?? 0)`。同点は Web は元の並びのまま、こちらは新しい順）
     func apply(_ photos: [Photo]) -> [Photo] {
         switch self {
         case .new:

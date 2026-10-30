@@ -93,6 +93,15 @@ struct UploadService {
             try RequestCancellation.throwIfCancelled()
             response = try await transfer.upload(request, body: data, key: presigned.key)
         } catch {
+            // **取り消しを「通信できません」にしない**（2026-10-30 判断・#378）。`CancellationError` で返すのは
+            // 2つ: 呼んだ処理が取り消されている（`Task.isCancelled`。`RequestCancellation` や背景の転送の
+            // `withTaskCancellationHandler` が返す `URLError(.cancelled)` もここで拾う）か、
+            // 下から `CancellationError` そのものが届いた回（どちらも取り消しで、通信の失敗ではない）。
+            // 呼び手が生きているのに `URLError(.cancelled)` で終わった回（OS が背景の転送を止めた）は
+            // 取り消しに数えない——本体が届いていないので、今までどおり失敗（unreachable）として知らせる
+            if error is CancellationError || Task.isCancelled {
+                throw CancellationError()
+            }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
