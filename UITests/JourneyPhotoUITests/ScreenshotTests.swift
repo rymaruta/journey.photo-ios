@@ -45,7 +45,16 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 2026-10-18: 札の下端の「行きたい」（`home.spotShelf.wish`）まで画面に入れて撮る
     /// （ボタンの位置・余白を写真で確かめる）。ボタンが無い版では札だけを待つ
+    ///
+    /// #417（2026-10-30）: 段は「おすすめ」の中・写真の大1→2→2 の後ろへ移った。**「おすすめ」に戻してから**送り
+    /// （前の手順で「フォロー中」を選んでいる）、送る回数の上限を増やした。段まで送った所で、
+    /// **切り替えが見出しの下に留まっている**（「新着」が押せる）ことも確かめる（⑧）
     private func shootSpotShelf(_ app: XCUIApplication) {
+        let recommended = app.buttons["home.feed.recommended"].firstMatch
+        if recommended.exists, recommended.isHittable {
+            recommended.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
         let photo = app.buttons["home.spotShelf.card"].firstMatch
         guard photo.waitForExistence(timeout: 10) else { return }
         let wish = app.buttons["home.spotShelf.wish"].firstMatch
@@ -53,7 +62,7 @@ final class ScreenshotTests: XCTestCase {
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0
-        while !card.isHittable, pushes < 3 {
+        while !card.isHittable, pushes < Self.shelfPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
@@ -61,12 +70,21 @@ final class ScreenshotTests: XCTestCase {
         if card.isHittable {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
+            // ⑧ 下へ送った後も、切り替えは見出しの下に留まって押せる
+            if pushes > 0 {
+                let latest = app.buttons["home.feed.latest"].firstMatch
+                XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
+                shoot(app, "10f-ホーム（下へ送った後・切り替えが留まる）")
+            }
         }
         for _ in 0..<pushes {
             high.press(forDuration: 0.05, thenDragTo: low)
             Thread.sleep(forTimeInterval: 1)
         }
     }
+
+    /// 季節の段まで送る回数の上限（短い引き＝画面の 35%）。#417 で段が写真の5枚の後ろへ移ったので 3 から増やした
+    private static let shelfPushLimit = 10
 
     /// **ホームの右上の見出し（探す・お知らせ・メニューのガラスの帯）を寄りで撮る**（2026-10-14）。
     /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
@@ -593,7 +611,7 @@ final class ScreenshotTests: XCTestCase {
             // 見出しの帯はどのタブも同じ中身（2026-10-21）。探す・マップも寸法を残して見比べる
             if name == "ホーム" || name == "探す" || name == "マップ" { shootHeaderBand(app, tab: "1\(index)e-\(name)") }
             if name == "ホーム" {
-                let latest = app.buttons["新着"].firstMatch
+                let latest = app.buttons["home.feed.latest"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
                     latest.tap()
                     Thread.sleep(forTimeInterval: 3)
@@ -604,7 +622,8 @@ final class ScreenshotTests: XCTestCase {
                                    "消したはずの「撮影地を探す」の札が出ている")
                 }
                 // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
-                let following = app.buttons["フォロー中"].firstMatch
+                // 「フォロー中」は点のある日に読み上げの名前が「フォロー中・新しい写真あり」になる（#417 ⑨）。道しるべで探す
+                let following = app.buttons["home.feed.following"].firstMatch
                 if following.exists, following.isHittable {
                     following.tap()
                     Thread.sleep(forTimeInterval: 2)
@@ -3698,7 +3717,7 @@ final class ScreenshotTests: XCTestCase {
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0
-        while !card.isHittable, pushes < 3 {
+        while !card.isHittable, pushes < Self.shelfPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
@@ -4948,11 +4967,24 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
         }
 
-        // 写真の詳細の作者の顔。**ホームの「NEW」の1枚目から開く**（見本のストーリーは同じ新着の作者に付けてある・
-        // `PreviewBackend.previewStories`。おすすめの格子は画面の下で、run 693 では見つからなかった）
-        let fresh = app.descendants(matching: .any)["home.fresh"].firstMatch
-        let photo = fresh.buttons.matching(NSPredicate(format: "identifier != %@", "home.fresh.all")).firstMatch
-        guard fresh.waitForExistence(timeout: 30), photo.waitForExistence(timeout: 10), photo.isHittable else {
+        // 写真の詳細の作者の顔。**切り替えの「新着」の1枚目から開く**（見本のストーリーは新着の作者に付けてある・
+        // `PreviewBackend.previewStories`）。2026-10-30（#417 ⑦）に「NEW」の段を外し、新着は切り替えの「新着」に一本化した。
+        // 1枚目が画面の下なら、同じ短い引きで送る（上限あり）
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        let photo = app.buttons["feed.photo"].firstMatch
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var photoPushes = 0
+        while photo.waitForExistence(timeout: 10), !photo.isHittable, photoPushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            photoPushes += 1
+        }
+        guard photo.exists, photo.isHittable else {
             shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
             return
         }

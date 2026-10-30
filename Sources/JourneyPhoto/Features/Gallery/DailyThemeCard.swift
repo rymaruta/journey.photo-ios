@@ -30,51 +30,35 @@ struct DailyThemeCard: View {
     /// **v2（2026-10-14・Main の板の「TODAY'S THEME」の札）**: 隣の札（`HomeTopCardView`）と同じ
     /// 地（#0E0E0F）・白 8% の縁・角 16。眉は真鍮＋消える線、題は明朝、説明は text-2。
     /// 写真は右に薄く敷いたまま（字は写真に重ねない側＝黒地の上）。
-    /// 「参加する」は**写真のある画面の主ボタン＝白**（CLAUDE.md・`JPPillStyle.main(onPhoto: true)`）。
-    /// 札の中なので高さは副ボタンの 44
+    /// 「参加する」は**写真のある画面の主ボタン＝白**（CLAUDE.md・`JPPillStyle.main(onPhoto: true)` の塗りと字）。
+    ///
+    /// **#417 ③（2026-10-30 owner 採用）: 背を隣の札と同じ 116 に。** 「参加する」は題の右（見た目 36・当たり 44・
+    /// 板の「行の中の小ボタン」）、説明は1行。以前は「参加する」が札の幅いっぱいの 44 の帯で下に積まれ、
+    /// 並びの背が 156 に伸びていた。札の中の2段目（あなたの #タグ・きのうのテーマの写真）は板にだけあった案で、作らない
     var body: some View {
-        VStack(alignment: .leading, spacing: JPSpace.xs) {
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
             // 眉ラベル（板の `TODAY'S THEME`）。札の地は黒なので真鍮。タグは右に添え書き
             JPEyebrowLine("TODAY'S THEME", spoken: L("今日のテーマ", "Today's theme"),
                           trailing: "#\(theme.tag)")
 
-            Text(theme.title)
-                .font(JPFont.rowTitle)
-                .foregroundStyle(WebTheme.text)
+            HStack(alignment: .center, spacing: JPSpace.xs) {
+                Text(theme.title)
+                    .font(JPFont.rowTitle)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                joinControl
+            }
 
             Text(theme.prompt)
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if joined {
-                // **参加済みは「押せない印」にする。** 同じ日に何度も
-                // 促さない（写真は自分の写真から確かめたもの）
-                HStack(spacing: JPSpace.xxs) {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text(L("参加済み", "Joined"))
-                        .font(JPFont.bodyEmphasis)
-                }
-                .foregroundStyle(WebTheme.text)
-                .frame(maxWidth: .infinity)
-                .frame(height: JPHeight.secondaryButton)
-                .background(WebTheme.surface, in: Capsule())
-            } else {
-                Button {
-                    MissionRouter.shared.join(tag: theme.tag)
-                } label: {
-                    HStack(spacing: JPSpace.xxs) {
-                        Text(L("参加する", "Join"))
-                        Image(systemName: "arrow.right")
-                            .font(.caption.weight(.bold))
-                    }
-                    .jpPillButton(.main(onPhoto: true), height: JPHeight.secondaryButton)
-                }
-                .buttonStyle(.plain)
-            }
+                .lineLimit(1)
         }
-        .padding(JPSpace.m)
-        .frame(maxHeight: inCarousel ? .infinity : nil, alignment: .top)
+        .padding(.horizontal, JPSpace.m)
+        .padding(.vertical, JPSpace.s)
+        .frame(maxWidth: .infinity, minHeight: HomeTopCardView.cardHeight,
+               maxHeight: inCarousel ? .infinity : nil, alignment: .topLeading)
         .background(alignment: .trailing) {
             if let backdrop {
                 // **写真は脇役。** 文字が読めなくならないよう、右側だけに薄く
@@ -92,4 +76,44 @@ struct DailyThemeCard: View {
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
     }
+
+    /// 題の右の小ボタン（見た目 36・当たり 44）。参加済みは**押せない印**（同じ日に何度も促さない）
+    @ViewBuilder
+    private var joinControl: some View {
+        if joined {
+            HStack(spacing: JPSpace.xxs) {
+                Image(systemName: "checkmark.circle.fill")
+                    .accessibilityHidden(true)
+                Text(L("参加済み", "Joined"))
+            }
+            .jpCapsuleFace(font: JPOutlineSize.inline.font, text: WebTheme.text, fill: WebTheme.surface,
+                           border: Color.clear, fullWidth: false, minHeight: JPOutlineSize.inline.height,
+                           textInset: Self.joinInset)
+            .fixedSize()
+            .padding(.vertical, JPOutlineSize.inline.tapSlack)
+        } else {
+            Button {
+                MissionRouter.shared.join(tag: theme.tag)
+            } label: {
+                HStack(spacing: JPSpace.xxs) {
+                    Text(L("参加する", "Join"))
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+                .jpCapsuleFace(font: JPOutlineSize.inline.font, text: WebTheme.accentText,
+                               fill: JPPillStyle.main(onPhoto: true).fill, border: Color.clear, fullWidth: false,
+                               minHeight: JPOutlineSize.inline.height, textInset: Self.joinInset)
+                .fixedSize()
+                // 当たりは 44（見た目 36 の上下に 4 ずつ）
+                .padding(.vertical, JPOutlineSize.inline.tapSlack)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// 「参加する」の字の左右（板 padding 0 14）
+    nonisolated static let joinInset: CGFloat = 14
+
 }

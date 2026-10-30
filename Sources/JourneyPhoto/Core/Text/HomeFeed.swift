@@ -44,6 +44,21 @@ enum HomeFeed: String, CaseIterable, Identifiable {
     /// 押して何が変わったか見えなかった
     var showsFeatured: Bool { self == .recommended }
 
+    /// 「いまの季節のスポット」の段を写真の一覧の中に出すか（#417 ④・2026-10-30 owner 採用）。
+    /// **「おすすめ」のときだけ**——フォロー中・新着では出さない（2026-10-11「切り替えの下には選んだフィードの中身だけ」に沿う。
+    /// 段は全員向けの作例なので「おすすめ」の中身）
+    var showsSeasonShelf: Bool { self == .recommended }
+
+    /// 段の前に置く写真（束）の数。**大1→2→2 のひと回り**（`EditorialLayout.rows`: 大きい段のあと2枚の段が2つ）。
+    /// ひと回りの切れ目で割るので、段の後ろの写真も大きい1枚から始まり、並びのリズムは変わらない
+    static let seasonShelfAfter = 5
+
+    /// 写真（束）の並びを、段の前（ひと回り）と後ろに割る
+    static func splitForSeasonShelf<T>(_ items: [T]) -> (lead: [T], rest: [T]) {
+        let count = min(seasonShelfAfter, items.count)
+        return (Array(items.prefix(count)), Array(items.dropFirst(count)))
+    }
+
     /// ログインしていないと中身が出ない側か。
     /// **出しっぱなしにはする**——押せば「ログインしてください」に着き、
     /// そこから入れる（タブごと隠すと、入口そのものが見つからない）

@@ -99,11 +99,11 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(chip.contains(".accessibilityAddTraits(selected ? .isSelected : [])"))
     }
 
-    /// 節の見出し: 眉（真鍮＋線）→ 明朝 22 → 右に「すべて ›」（灰）
+    /// 節の見出し: 眉（真鍮＋線）と右の「すべて ›」（灰）の行 → 明朝 22（#417 ②・2026-10-30 で「すべて ›」を眉の行へ）
     func testSectionHeadingOrder() throws {
         let text = try source("Features/Common/SectionHeading.swift")
         let heading = slice(text, from: "struct JPSectionHeading", to: "extension JPSectionHeading")
-        assertInOrder(["JPEyebrowLine(eyebrow, spoken: spoken)", ".font(JPFont.cardTitle)", "trailing"],
+        assertInOrder(["JPEyebrowLine(eyebrow, spoken: spoken)", "if hasTrailing { trailingSlot }", ".font(JPFont.cardTitle)"],
                       in: heading, "節の見出しの並び")
         let more = slice(text, from: "struct MoreLink", to: ".contentShape(Rectangle())")
         XCTAssertTrue(more.contains(".foregroundStyle(WebTheme.text2)"), "「すべて ›」が灰でない")
@@ -116,7 +116,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
     /// 字のタブ: 選んだタブは真鍮の字と 2 の下線、ほかは text-3。白の塗りの切り替えに戻さない
     func testHomeFeedTabsAreBrassTextTabs() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let picker = slice(gallery, from: "private var feedPicker: some View", to: "static let feedTabGap")
+        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View", to: "static let feedTabGap")
         XCTAssertTrue(picker.contains("Text(feed.label)"), "UI テストは「新着」「フォロー中」を字で探す")
         assertInOrder([".foregroundStyle(selected ? WebTheme.accent : WebTheme.text3)",
                        ".fill(selected ? WebTheme.accent : Color.clear)",
@@ -159,7 +159,8 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertFalse(card.contains("WebTheme.surface"), "札の地が v1 の白 7% のまま")
         let theme = try source("Features/Gallery/DailyThemeCard.swift")
         XCTAssertTrue(theme.contains("JPEyebrowLine(\"TODAY'S THEME\""), "今日のテーマの眉が v2 でない")
-        XCTAssertTrue(theme.contains(".jpPillButton(.main(onPhoto: true), height: JPHeight.secondaryButton)"),
+        // #417 ③: 「参加する」は題の右の小ボタン（見た目 36・当たり 44）。色は写真のある画面の主ボタン（白）のまま
+        XCTAssertTrue(theme.contains("fill: JPPillStyle.main(onPhoto: true).fill"),
                       "「参加する」が写真のある画面の主ボタン（白）でない")
         XCTAssertTrue(theme.contains(".jpCardFace()"), "今日のテーマの札の地が共通の札でない")
     }

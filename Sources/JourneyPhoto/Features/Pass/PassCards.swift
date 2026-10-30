@@ -1122,21 +1122,41 @@ struct PassTicketSlot: View {
 struct PassMiniStack: View {
 
     let faces: [PassTicketFace]
+    /// ホームの低い帯の絵（#417 ①・板 Main の 44×54）。同じ小さなきっぷを縮めて重ねる——券面（Pro の地）はそのまま見える
+    var compact = false
 
     private static let tilts: [Double] = [-9, 6, -3]
     private static let lefts: [CGFloat] = [0, 14, 28]
 
+    /// 帯の絵の枠（板 44×54）と、きっぷを縮める比（前の1枚の高さを板の 50 に）
+    nonisolated static let bandSize = CGSize(width: 44, height: 54)
+    nonisolated static let bandScale: CGFloat = 50 / PassCardStyle.stackSize.height
+    /// 帯では**いちばん上を真っすぐ**に、下の1枚を左へ傾ける（板: 後ろ -8°・前 0°）。縮める前の座標
+    private static let bandTilts: [Double] = [6, -8, 0]
+    private static let bandLefts: [CGFloat] = [0, 13, 20]
+
     var body: some View {
+        if compact {
+            stack(tilts: Array(Self.bandTilts.suffix(min(faces.count, 3))), lefts: Self.bandLefts)
+                .scaleEffect(Self.bandScale, anchor: .topLeading)
+                .frame(width: Self.bandSize.width, height: Self.bandSize.height, alignment: .topLeading)
+                .accessibilityHidden(true)
+        } else {
+            stack(tilts: Self.tilts, lefts: Self.lefts)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func stack(tilts: [Double], lefts: [CGFloat]) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(faces.prefix(3).enumerated()), id: \.offset) { index, face in
                 PassMiniTicket(face: face, size: PassCardStyle.stackSize, showsName: false)
                     .shadow(color: Color.black.opacity(0.6), radius: 9, x: 0, y: 10)
-                    .rotationEffect(.degrees(Self.tilts[index]))
-                    .offset(x: Self.lefts[index], y: 6)
+                    .rotationEffect(.degrees(tilts[index]))
+                    .offset(x: lefts[index], y: 6)
             }
         }
         .frame(width: 140, height: 144, alignment: .topLeading)
-        .accessibilityHidden(true)
     }
 }
 

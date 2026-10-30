@@ -56,6 +56,7 @@ enum AccountLocalData {
         // 投稿の「撮影地の位置を付ける」の選んだ値（2026-10-18）
         UploadLocationPreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
+        FollowingSeenStore(defaults: defaults).removeData(for: userId)
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）
         OfflineTripStore.removeData(for: userId, root: offlineTripsRoot, defaults: defaults)

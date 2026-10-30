@@ -2467,44 +2467,34 @@ final class PeopleSearchQueryTests: XCTestCase {
 
 }
 
-// MARK: - ホームの「みんなの新しい写真」（2026-10-21・確かめ役の見直し）
+// MARK: - ホームの「フォロー中」の点（#417 ⑨・外した「みんなの新しい写真」の段と同じ考え）
 
 extension ViewModelTests {
 
-    /// 新しい順の写真（`bad0`〜 はそれぞれ別のブロックした人 `blocked0`〜（1人2つまでの決まりに掛からない）・`rep` は通報した写真・`ok` が一番古い）の photos.json
-    private func freshBody(blockedCount: Int) -> String {
-        var rows = (0..<blockedCount).map { i in
-            #"{"id":"bad\#(i)","src":"https://x/bad\#(i).jpg","createdAt":"2026-09-\#(String(format: "%02d", i + 1))T00:00:00Z","userId":"blocked\#(i)"}"#
-        }
-        rows.append(#"{"id":"rep","src":"https://x/rep.jpg","createdAt":"2026-08-01T00:00:00Z","userId":"x"}"#)
-        rows.append(#"{"id":"ok","src":"https://x/ok.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"a"}"#)
-        return "[" + rows.joined(separator: ",") + "]"
-    }
-
-    /// 🔴 ブロックした人・通報した写真は、**12に切る前に**落とす（段が空にならない）
-    func testFreshGroupsDropHiddenBeforeTheLimit() async {
-        let model = GalleryViewModel(gallery: gallery(freshBody(blockedCount: HomeFreshPhotos.limit)))
-        await model.load()
-        let open = model.freshGroups(viewerId: nil, hiding: ModerationSnapshot())
-        XCTAssertEqual(open.count, HomeFreshPhotos.limit, "前提: 絞らなければ12で切れている")
-        XCTAssertFalse(open.map(\.cover.id).contains("ok"), "前提: 一番古い写真は12の外")
-        let blocked = Set((0..<HomeFreshPhotos.limit).map { "blocked\($0)" })
-        let hidden = ModerationSnapshot(blocked: blocked, reported: ["rep"])
-        XCTAssertEqual(model.freshGroups(viewerId: nil, hiding: hidden).map(\.cover.id), ["ok"],
-                       "ブロック・通報を12に切った後で落としている（か、落としていない）")
-    }
-
-    /// 🔴 A さんのフォロー一覧が入ったまま B さんで呼んでも、A さんのフォロー先を先頭に出さない
-    func testFreshGroupsUseOnlyTheCurrentViewersFollowing() async {
+    /// 🔴 ブロックした人・通報した写真の投稿日で点を出さない（段のときと同じく先に落とす）
+    func testFollowingNewestDropsHidden() async {
         let model = GalleryViewModel(gallery: gallery("""
-        [{"id":"new","src":"https://x/n.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"x"},
-         {"id":"friend","src":"https://x/f.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"f"}]
+        [{"id":"bad","src":"https://x/b.jpg","createdAt":"2026-10-01T00:00:00Z","userId":"blocked"},
+         {"id":"rep","src":"https://x/r.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"f"},
+         {"id":"ok","src":"https://x/o.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"f"}]
+        """))
+        await model.load()
+        model.use(viewerId: "me", following: ["f", "blocked"])
+        XCTAssertEqual(model.followingNewest(viewerId: "me", hiding: ModerationSnapshot()), "2026-10-01T00:00:00Z",
+                       "前提: 絞らなければブロックした人の投稿日")
+        let hidden = ModerationSnapshot(blocked: ["blocked"], reported: ["rep"])
+        XCTAssertEqual(model.followingNewest(viewerId: "me", hiding: hidden), "2026-01-01T00:00:00Z",
+                       "ブロック・通報した写真で「新しい写真あり」と言う")
+    }
+
+    /// 🔴 A さんのフォロー一覧が入ったまま B さんで呼んでも、A さんのフォロー先で点を出さない
+    func testFollowingNewestUsesOnlyTheCurrentViewersFollowing() async {
+        let model = GalleryViewModel(gallery: gallery("""
+        [{"id":"friend","src":"https://x/f.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"f"}]
         """))
         await model.load()
         model.use(viewerId: "A", following: ["f"])
-        XCTAssertEqual(model.freshGroups(viewerId: "A", hiding: ModerationSnapshot()).map(\.cover.id),
-                       ["friend", "new"], "前提: A さんにはフォロー先が先")
-        XCTAssertEqual(model.freshGroups(viewerId: "B", hiding: ModerationSnapshot()).map(\.cover.id),
-                       ["new", "friend"], "前の人のフォロー一覧で並べた")
+        XCTAssertEqual(model.followingNewest(viewerId: "A", hiding: ModerationSnapshot()), "2026-09-01T00:00:00Z")
+        XCTAssertNil(model.followingNewest(viewerId: "B", hiding: ModerationSnapshot()), "前の人のフォロー一覧で点を出した")
     }
 }
