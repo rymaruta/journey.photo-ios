@@ -399,8 +399,8 @@ struct MyPageView: View {
                             Color.clear.frame(height: 44)
                         }
                     }
+                    // 数は見出しの中（顔の右）へ移した（`header`・2026-10-30 owner #415）
                     if model.profile != nil {
-                        stats
                         travelRecord
                     }
                 }
@@ -486,38 +486,35 @@ struct MyPageView: View {
         .accessibilityLabel(L("設定", "Settings"))
     }
 
-    /// 見出し（板 v2 MyPage・MyPageNoCover）。
+    /// 見出し（板 v2 MyPage・MyPageNoCover。顔の段と名前の段は 2026-10-30 owner #415 の案 ①②）。
     ///
-    /// - **カバーがある人**: 88pt のアイコン（黒い 4pt の縁）をカバーの下端に 44pt 重ね、右に
-    ///   「プロフィールを編集」。その下に明朝 26 の名前・「@ユーザー名 · (線のピン)居住地」・ひとこと
-    /// - **カバーが無い人**（板 MyPageNoCover）: 帯も灰色の空き地も置かず、72pt のアイコンと名前・
-    ///   @ユーザー名を**横に並べて上を詰める**。編集は数の並びの右へ（`stats`）
+    /// **カバーの有る人も無い人も同じ並び**（以前は有無で編集の置き場が割れていた）:
+    /// 1. 顔の段: 顔の右に数（投稿・フォロワー・フォロー中）。数は顔の下端にそろえる
+    ///    ＝カバーがある人は、帯の下端に 44pt 重ねた 88pt の顔の下半分の横（黒い地の上）に乗る
+    /// 2. 名前の段: 明朝 26 の名前、右端に「編集」（読み上げは「プロフィールを編集」）
+    /// 3. 「@ユーザー名 · (線のピン)居住地」・ひとこと・BGM
+    ///
+    /// 顔の大きさは今までどおり、カバーがある人（額縁の人も）88pt・無い人 72pt
     private func header(_ profile: UserProfile) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            if bandShown {
-                HStack(alignment: .bottom) {
-                    avatar(profile, side: ProfileCover.avatarSize)
-                        // **板どおり黒の縁**（写真の上でも丸が割れない）。
-                        // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
-                        .coverCutout(true)
-                    Spacer(minLength: 8)
-                    editLink(short: false)
-                }
-                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            HStack(alignment: .bottom, spacing: MyPageHeaderLayout.avatarStatsGap) {
+                avatar(profile, side: bandShown ? ProfileCover.avatarSize : ProfileCover.compactAvatarSize)
+                    // **板どおり黒の縁**（写真の上でも丸が割れない）。
+                    // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
+                    .coverCutout(bandShown)
+                stats
+                    // カバーが無い人は顔の段が右上の設定の丸と同じ高さに来る。丸の幅だけ右を空けて、
+                    // 「フォロー中」を丸の下に潜らせない
+                    .padding(.trailing, MyPageHeaderLayout.statsTrailingReserve(coverBand: bandShown))
+            }
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap) {
                     nameLine(profile)
-                    handleLine(profile)
-                    aboutLines(profile)
+                        .layoutPriority(1)
+                    Spacer(minLength: 0)
+                    editLink()
                 }
-            } else {
-                HStack(alignment: .center, spacing: 14) {
-                    avatar(profile, side: ProfileCover.compactAvatarSize)
-                    VStack(alignment: .leading, spacing: 2) {
-                        nameLine(profile)
-                        handleLine(profile)
-                    }
-                    // 右上の設定の丸に名前が潜らない
-                    Spacer(minLength: WebTheme.minTapTarget)
-                }
+                handleLine(profile)
                 aboutLines(profile)
             }
             // BGM はひとことの下の1行（2026-10-21・全画面の点検）。以前は数の下の札で、
@@ -564,14 +561,19 @@ struct MyPageView: View {
         }
     }
 
-    /// 「プロフィールを編集」。カバーが無い人は数の並びの右に短く「編集」（板 MyPageNoCover）。
-    /// どちらも同じ目印（画面写真の試験が「読み込みが済んだ」の印に待つ）
-    private func editLink(short: Bool) -> some View {
+    /// 名前の段の右端の「編集」（2026-10-30 owner #415）。カバーの有無で置き場を割らない。
+    /// 読み上げは「プロフィールを編集」のまま。目印は1つ（画面写真の試験が「読み込みが済んだ」の印に待つ）
+    private func editLink() -> some View {
         NavigationLink { ProfileEditView() } label: {
             // v2: 線の副ボタン（白 14% の縁・見た目 36・当たり 44・`ProfileOutlinePill`）
-            ProfileOutlinePill(title: short ? L("編集", "Edit") : L("プロフィールを編集", "Edit profile"))
+            ProfileOutlinePill(title: MyPageHeaderLayout.editTitle)
         }
         .buttonStyle(.plain)
+        // 名前が長くても「編集」は縮めない（名前の方を「…」で切る）
+        .fixedSize()
+        // 板（`margin: -7px 0`）どおり、当たりの 44 は名前の段の上下へ張り出し、段の高さは見た目の 36 で取る
+        // （名前の行の `nameTapSlack` と同じ。段が 44 に伸びて下の行が押し下がらない）
+        .padding(.vertical, -JPOutlineSize.inline.tapSlack)
         .accessibilityLabel(L("プロフィールを編集", "Edit profile"))
         // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
         .accessibilityIdentifier("mypage.edit")
@@ -609,10 +611,9 @@ struct MyPageView: View {
     private var nameTapSlack: CGFloat { max(0, (WebTheme.minTapTarget - nameLineHeight) / 2) }
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・数字（`JPFont.statNumber`）と名前）。
-    /// 列は幅を三等分し、押せる高さは 44pt
+    /// **顔の右**（`header` の顔の段・2026-10-30 owner #415）。列は残りの幅を三等分（間 8）し、押せる高さは 44pt
     private var stats: some View {
-        // 板 v2: カバーがあれば3列の等幅。無ければ左に詰めて間 24・右に「編集」（MyPageNoCover）
-        HStack(alignment: bandShown ? .top : .center, spacing: bandShown ? JPSpace.xs : JPSpace.xl) {
+        HStack(alignment: .bottom, spacing: MyPageHeaderLayout.statColumnGap) {
             statCell(value: ProfileLine.statValue(model.photoCount), label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
@@ -626,29 +627,21 @@ struct MyPageView: View {
                 statCell(value: ProfileLine.statValue(model.followingCount), label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
-            if !bandShown {
-                Spacer(minLength: 0)
-                editLink(short: true)
-            }
         }
-        .padding(.horizontal, ProfileV2.gutter)
+        // 試験が「顔の右に並ぶ」を測る目印（中の3つはそれぞれ読み上げる）
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mypage.stats")
     }
 
     /// - Parameter value: nil は読み込み中。**数を出さずに高さだけ取る**（出たときに並びが動かない）
     /// 形は人のページと同じ `ProfileStat`（v2: 数字の下に 12pt の text-3 の名前）
     private func statCell(value: String?, label: String) -> some View {
         ProfileStat(value: value, label: label)
-        .frame(maxWidth: bandShown ? .infinity : nil, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        // 顔の段の中なので 44pt をそのまま取る（顔の下端にそろい、名前の段へ張り出さない）
+        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
         .contentShape(Rectangle())
-        // **押せる高さは 44pt のまま、並びの上では字の高さだけ取る**（板: 数の下は
-        // すぐ 12pt で旅の実績の行）。44pt で場所を取ると、数と旅の実績の間が
-        // 板の倍近く空いていた。押せる範囲は下の旅の実績の行と重ならない量だけ詰める
-        .padding(.vertical, -Self.statTapSlack)
         .accessibilityElement(children: .combine)
     }
-
-    /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）
-    private static let statTapSlack: CGFloat = 5
 
     /// 旅の記録（モック2-3 → 案 H1「星図」2026-10-14）。**訪れた国・地域**と**写真をつないだ距離**、
     /// その距離の元になった**写真をつないだ線**（`TravelRecordView`）。
@@ -1746,5 +1739,24 @@ enum MyPageEmpty {
     static var wishlistMessage: String {
         L("撮影スポットの画面で「行きたい」を押すと、ここに並びます",
           "Tap “Want to go” on a place to add it here.")
+    }
+}
+
+/// マイページの見出しの並びの値（2026-10-30 owner #415・案 ①②。板 MyPage・MyPageNoCover・MyPageCoverFrame）。
+/// 顔の段（顔の右に数）と名前の段（右端に「編集」）は、カバーの有無で同じ並び
+enum MyPageHeaderLayout {
+    /// 顔と数の間（見本: gap 16）
+    static let avatarStatsGap: CGFloat = JPSpace.m
+    /// 数の列の間（板 MyPage・MyPageNoCover・MyPageCoverFrame の grid の gap 8）
+    static let statColumnGap: CGFloat = JPSpace.xs
+    /// 名前と「編集」の間の最小（見本: gap 12）
+    static let nameEditGap: CGFloat = JPSpace.s
+    /// 名前の段の右端のボタンの字（読み上げは「プロフィールを編集」のまま）
+    static var editTitle: String { L("編集", "Edit") }
+
+    /// 数の並びの右に空ける幅。**カバーが無い人だけ**、顔の段が右上の設定の丸（44pt）と
+    /// 同じ高さに来るので、丸の幅だけ空ける。カバー（額縁を含む）がある人は丸が帯の上にあるので 0
+    static func statsTrailingReserve(coverBand: Bool) -> CGFloat {
+        coverBand ? 0 : WebTheme.minTapTarget
     }
 }
