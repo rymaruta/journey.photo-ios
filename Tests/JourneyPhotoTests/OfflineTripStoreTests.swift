@@ -40,6 +40,12 @@ final class OfflineTripStoreTests: XCTestCase {
         var overviewFails = false
         var mapCalls = 0
         var payload: UInt8 = 1
+        /// 旅全体の地図の中身（どの保存が書いたかを見分ける）
+        var overviewByte: UInt8 = 3
+        /// 立っていれば、旅全体の地図を撮る所で待つ
+        var holdOverview = false
+        var overviewContinuation: CheckedContinuation<Void, Never>?
+        var reachedOverview: (() -> Void)?
     }
 
     private struct MapFailed: Error {}
@@ -72,8 +78,14 @@ final class OfflineTripStoreTests: XCTestCase {
                 return Data(repeating: 2, count: 500)
             },
             overviewMap: { _ in
+                if fake.holdOverview, fake.overviewContinuation == nil {
+                    await withCheckedContinuation { c in
+                        fake.overviewContinuation = c
+                        fake.reachedOverview?()
+                    }
+                }
                 if fake.overviewFails { throw MapFailed() }
-                return Data(repeating: 3, count: 700)
+                return Data(repeating: fake.overviewByte, count: 700)
             })
     }
 
@@ -237,6 +249,38 @@ final class OfflineTripStoreTests: XCTestCase {
         second.gate?.continuation?.resume()
         await waitUntil(store) { $0.manifest("plan-1") != nil }
         XCTAssertEqual(store.manifest("plan-1")?.stopCount, 3)
+    }
+
+    /// 消して保存し直したあと、**前の保存が旅全体の地図を撮り終えても、新しい保存の置き場に書かない**
+    /// （2026-10-30・#380 と同じ穴。地図を撮る間に取り消されても `overview.jpg` を書いていた）
+    func testCancelledSaveDoesNotWriteOverviewIntoNewSave() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        fake.holdOverview = true
+        var reached = false
+        fake.reachedOverview = { reached = true }
+        let p = plan(2)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { _ in reached }
+        store.delete("plan-1")
+        // 新しい保存は2か所目で待たせる（まだ全体の地図を撮っていない）
+        let second = Fake()
+        second.overviewByte = 9
+        var secondReached = false
+        second.gate = (2, nil)
+        second.reachedGate = { secondReached = true }
+        store.save(plan: p, stops: stops(p), sources: sources(second))
+        await waitUntil(store) { _ in secondReached }
+        fake.overviewContinuation?.resume()   // 前の保存の地図が撮り終わる
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        let partial = root.appendingPathComponent(OfflineTripStore.hex("u1"))
+            .appendingPathComponent(OfflineTripStore.hex("plan-1") + ".partial")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: partial.appendingPathComponent("overview.jpg").path),
+                       "取り消された前の保存が、新しい保存の置き場に全体の地図を書いた")
+        second.gate?.continuation?.resume()
+        await waitUntil(store) { $0.manifest("plan-1") != nil }
+        let file = try XCTUnwrap(store.fileURL(planId: "plan-1", file: "overview.jpg"))
+        XCTAssertTrue(try Data(contentsOf: file).allSatisfy { $0 == 9 }, "全体の地図が新しい保存のものではない")
     }
 
     func testDeleteAndPerUserFolders() async throws {

@@ -312,6 +312,9 @@ final class OfflineTripStore: ObservableObject {
             try Task.checkCancellation()
             var overview: String?
             let overviewData = try await sources.overviewMap(stops)
+            // 地図を撮る間に取り消された（消された・保存し直された）前の保存は、置き場に書かない
+            // （同じ置き場を新しい保存が使っている・2026-10-30 判断。写真の取得と同じ穴）
+            try Task.checkCancellation()
             if let data = overviewData {
                 try data.write(to: partial.appendingPathComponent("overview.jpg"), options: .atomic)
                 overview = "overview.jpg"
