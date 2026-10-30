@@ -3712,32 +3712,49 @@ final class ScreenshotTests: XCTestCase {
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
-        tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
-        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
-        guard song.waitForExistence(timeout: 20) else { return }
-        song.tap()
-        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
-        guard bar.waitForExistence(timeout: 15) else { return }
 
-        // ホームの「いまの季節のスポット」の段まで送る（同じ短い引き・上限あり）
-        tabBar.buttons.element(boundBy: 0).tap()
-        // 段は画面の下（#417 ④）。**在って押せるまで送る**（先に待つと見つからずに黙って抜けた・PR #422 の確かめ）
+        // 🔴 **先にホームで「いまの季節のスポット」の段まで送り、それから鳴らす**（PR #422 の Mac・run 41122249837）。
+        // #417 ④で段が写真の5枚の後ろ（画面の下）へ移り、鳴らしてから送ると最大10回の引きの間に試聴（30 秒）が
+        // 終わって再生器が消え、測る所で落ちた。タブを替えてもホームの送った位置は残る
         let card = app.buttons["home.spotShelf.card"].firstMatch
         _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        var pushes = 0
-        while !(card.exists && card.isHittable), pushes < Self.shelfPushLimit {
-            low.press(forDuration: 0.05, thenDragTo: high)
-            Thread.sleep(forTimeInterval: 1)
-            pushes += 1
+        func pushToShelf() {
+            var pushes = 0
+            while !(card.exists && card.isHittable), pushes < Self.shelfPushLimit {
+                low.press(forDuration: 0.05, thenDragTo: high)
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
         }
+        pushToShelf()
         // 届かなかった回も黙って抜けない（どこで止まったかを絵で残す）
         guard card.exists, card.isHittable else {
             shoot(app, "10m-ホーム（季節の段まで届かない）")
             return
         }
+
+        // マイページで鳴らして、すぐホームへ戻る（鳴らしてから測るまでを短く）
+        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
+        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
+        /// 鳴らし直してホームへ戻る（鳴っていたら一度止めてから）。再生器が出なければ false
+        func playAndReturnHome() -> Bool {
+            tabBar.buttons.element(boundBy: 4).tap()
+            guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20),
+                  song.waitForExistence(timeout: 20) else { return false }
+            if bar.exists {
+                song.tap()  // 鳴っていたら一度止める（押すと止まる）
+                Thread.sleep(forTimeInterval: 1)
+            }
+            song.tap()
+            guard bar.waitForExistence(timeout: 15) else { return false }
+            tabBar.buttons.element(boundBy: 0).tap()
+            // 送った位置が残っていなければ、段まで送り直す
+            pushToShelf()
+            return true
+        }
+        guard playAndReturnHome(), card.exists, card.isHittable else { return }
         // 札の説明文が再生器の高さに来るよう、もう一引き（札の下端が再生器より上に抜けない範囲で）
         if card.frame.maxY < bar.frame.minY {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
@@ -3749,6 +3766,10 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 4)
         XCTAssertLessThan(bar.frame.width, app.frame.width - 24, "全幅のまま（左右へ寄せられない）")
         shoot(app, "10m-ホーム（再生器・説明文に重なった所）")
+        // 引く直前に、試聴が終わって再生器が消えていたら鳴らし直す（測る所で消えていて落ちない）
+        if !bar.exists {
+            guard playAndReturnHome(), bar.exists else { return }
+        }
 
         // 曲名の辺り（停止ボタンでない所）に触れてすぐ（長押しせずに）左上へ引き、止めてから離す → 左の端へ寄る。
         // 触れてから動き出すまでは 0.05 秒（長押しが要る形なら、ここで動かずに落ちる）
