@@ -39,6 +39,7 @@ final class OfflineTripStoreTests: XCTestCase {
         var mapFails = false
         var overviewFails = false
         var mapCalls = 0
+        var payload: UInt8 = 1
     }
 
     private struct MapFailed: Error {}
@@ -63,7 +64,7 @@ final class OfflineTripStoreTests: XCTestCase {
                 }
                 if fake.failAt == n { throw URLError(.notConnectedToInternet) }
                 fake.downloads.append(name)
-                return Data(repeating: 1, count: 1_000)
+                return Data(repeating: fake.payload, count: 1_000)
             },
             stopMap: { _ in
                 fake.mapCalls += 1
@@ -217,6 +218,7 @@ final class OfflineTripStoreTests: XCTestCase {
         store.delete("plan-1")
         // 新しい保存は3か所目で待たせる（前の保存が止まり切る間、走り続けているかを見る）
         let second = Fake()
+        second.payload = 2
         var secondReached = false
         second.gate = (3, nil)
         second.reachedGate = { secondReached = true }
@@ -227,6 +229,11 @@ final class OfflineTripStoreTests: XCTestCase {
         XCTAssertTrue(store.isRunning("plan-1"), "前の保存が終わったときに、新しい保存の印まで外した")
         XCTAssertNotNil(store.status("plan-1").running, "新しい保存が「止まった」になった")
         XCTAssertNil(store.status("plan-1").error)
+        // 古い download がキャンセル後に戻っても、新しい job の stop-2 画像を上書きしない。
+        let partial = root.appendingPathComponent(OfflineTripStore.hex("u1"))
+            .appendingPathComponent(OfflineTripStore.hex("plan-1") + ".partial")
+        let stopTwoImage = try Data(contentsOf: partial.appendingPathComponent("s2-1.jpg"))
+        XCTAssertTrue(stopTwoImage.allSatisfy { $0 == 2 }, "キャンセル済みの古い job が新しい保存の画像を上書きした")
         second.gate?.continuation?.resume()
         await waitUntil(store) { $0.manifest("plan-1") != nil }
         XCTAssertEqual(store.manifest("plan-1")?.stopCount, 3)
