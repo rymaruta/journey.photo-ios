@@ -27,7 +27,7 @@ description: 機能や直しを「作る → 別の担当が確かめる → 直
   `screens` で絞った回は「Mac でテスト済み」と数えないので、PR の検証が全部を回す（約50分）。
 - PR の本文: 概要・変えたもの・確かめたこと（件数・Mac の run 番号）・確かめていないこと。
 - iOS は Mac が緑なら PR を作ってマージしてよい（main への merge commit）。
-- **photo-gallery の develop・main は `/server-release`**。本番（main）へのマージは owner が押す。
+- **photo-gallery の develop・main は `/server-release`**。本番（main）へのマージもこちらで押す（2026-10-30 owner）。
 
 ## 5. owner への報告
 

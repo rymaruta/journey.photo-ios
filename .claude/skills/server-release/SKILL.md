@@ -12,8 +12,8 @@ description: photo-gallery（Web と API）の変更を staging → 本番に出
 ## バグの直しは急ぐ（2026-10-09 owner のルール）
 
 **バグの直しは staging を待たずに本番へ出す。** 下の手順の 2（develop → staging で確かめる）を飛ばし、
-3〜5 を先にやる。**本番に出す前に owner に「出していいか」を確かめる**（直しが全部そろってから1回）。develop へは同じ直しを別の PR で入れる（次の本番で消えないように）。
-新しい機能・DB・GSI・費用の変わるものは、今までどおり下の手順と承認。
+3〜5 を先にやる。**本番は owner に聞かずに出し、出したあとで報告する**（2026-10-30 owner。直しが全部そろってから1回）。develop へは同じ直しを別の PR で入れる（次の本番で消えないように）。
+新しい機能も聞かずに出してよい。DB・GSI・費用の変わるものは、今までどおり承認。
 
 ## 手順
 
@@ -24,7 +24,8 @@ description: photo-gallery（Web と API）の変更を staging → 本番に出
    - 手元の `origin/main` が古いことがある。`git fetch origin main:refs/remotes/origin/main` で更新してから。
    - テスト（最上位で `npx vitest run`・`npx tsc --noEmit`）を流してから push。
 4. 本番用の PR（base は main）を作り、本文に「入るもの・入らないもの・確かめたこと」。
-5. **本番へのマージは owner が押す**（こちらから押すと止められることがある）。押してもらったら、
+5. **本番へのマージはこちらで押す**（2026-10-30 owner。`.claude/settings.json` で許してある）。
+   `gh api -X PUT repos/rymaruta/photo-gallery/pulls/<番号>/merge -f merge_method=merge -f sha=<head>`。
    本番のデプロイを待ち、本番の API を叩いて確かめる
    （本番の user API: `https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com`）。
 
