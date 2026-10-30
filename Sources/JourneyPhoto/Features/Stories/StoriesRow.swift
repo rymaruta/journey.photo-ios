@@ -142,7 +142,9 @@ struct StoriesRow: View {
             // あちらが知らせる（この行は開いた1本しか知らない）
             if let id { seen.markSeen(id) }
         }
-        .sheet(isPresented: $showComposer, onDismiss: {
+        // 2026-10-30 判断 #406: 作る画面は端末の画面いっぱい（`fullScreenCover`）。シートだと上の隙間に
+        // ホームが透けた（`RootView` の作る画面と同じ出し方・`StoryComposerPresentationTests`）
+        .fullScreenCover(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
             NavigationStack { StoryComposerView() }
