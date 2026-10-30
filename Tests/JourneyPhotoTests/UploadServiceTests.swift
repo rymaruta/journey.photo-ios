@@ -726,6 +726,31 @@ final class UploadServiceTests: XCTestCase {
             XCTAssertEqual(replace["date"] as? String, keptOld ? nil : takenOn)
         }
     }
+    /// Cancelling a task before the S3 PUT must remain cancellation, not be surfaced as an offline error.
+    func testPutPreservesTaskCancellation() async {
+        let upload = service()
+        let presigned = UploadService.PresignResponse(
+            presignedUrl: "https://s3.example.test/put?sig=1",
+            key: "uploads/u1/cancelled.jpg",
+            publicUrl: "https://cdn.example.test/uploads/u1/cancelled.jpg",
+            photoId: "cancelled",
+            contentType: "image/jpeg"
+        )
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await upload.put(data: Data([0xFF]), to: presigned)
+        }
+
+        do {
+            try await task.value
+            XCTFail("キャンセルが成功扱いになった")
+        } catch is CancellationError {
+            // Expected: cancellation is distinct from connectivity failure.
+        } catch {
+            XCTFail("キャンセルが通信エラーに変換された: \(error)")
+        }
+        XCTAssertTrue(ScriptedProtocol.calls.isEmpty, "キャンセル後にネットワーク要求が出た")
+    }
 }
 
 /// 順番に応答を返す `URLProtocol`。パスの一部で引き当てる。
