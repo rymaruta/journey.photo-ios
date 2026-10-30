@@ -357,9 +357,10 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         StubProtocol.respondInOrder([(status: 200, body: newRows), (status: 200, body: oldRows)])
         let first = Gate(), second = Gate()
         let order = Arrivals()
+        let snapshot = PhotoSnapshotStore(fileName: UUID().uuidString)
         let gallery = PublicGalleryService(
             url: url, session: session,
-            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+            snapshot: snapshot,
             beforeStaticRequest: {
                 switch await order.next() {
                 case 0: await first.wait()
@@ -382,8 +383,10 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         XCTAssertEqual(olderPhotos.map(\.id), ["old"])
         // 次の通常読み込みは新しいキャッシュを返し、ネットワークも追加で叩かない
         let current = try await gallery.fetchPhotos()
-        XCTAssertEqual(current.map(\\.id), ["new"])
+        XCTAssertEqual(current.map(\.id), ["new"])
         XCTAssertEqual(StubProtocol.requestCount, 2)
+        // 端末の控え（圏外のとき・次の起動で出すもの）も新しいまま（古い応答で書き戻さない）
+        XCTAssertEqual(snapshot.load()?.map(\.id), ["new"], "古い応答が端末の控えを巻き戻した")
     }
 
     /// もう取り消された呼び手は、新しい取得を**始めない**（要求の手前の門にも着かない）
