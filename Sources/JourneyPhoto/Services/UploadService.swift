@@ -293,6 +293,9 @@ struct PhotoDraft {
     /// 「この写真を見て撮影」の元の写真の ID（2026-10-14）。**付けないときは送らない**（キーごと落ちる）。
     /// 見られない元の写真はサーバーが黙って付けない——付いたかは応答の `photo.inspiredBy` で見る
     var inspiredBy: String?
+    /// 自動の結びを外した印（`"off"` だけ・2026-10-31 #425）。**本人が投稿画面の切り替えを切った写真だけ**
+    /// （`SpotUploadAuto.spotAutoToSend`）。自動の候補は `spotId` に書かない（Web の静的な生成が結ぶ）
+    var spotAuto: String?
 
     /// `POST /upload/save` に送る形。
     ///
@@ -319,7 +322,8 @@ struct PhotoDraft {
             groupId: groupId,
             audience: audience.wireValue,
             spotId: spotId,
-            inspiredBy: InspiredBy.normalizedId(inspiredBy)
+            inspiredBy: InspiredBy.normalizedId(inspiredBy),
+            spotAuto: spotAuto == SpotAutoLink.off ? spotAuto : nil
         )
     }
 
@@ -347,6 +351,8 @@ struct PhotoDraft {
         let spotId: String?
         /// 元の写真の ID。無ければ送らない（`nil` はキーごと落ちる）
         let inspiredBy: String?
+        /// 外した印。`"off"` のときだけ送る（`nil` はキーごと落ちる）
+        let spotAuto: String?
 
         struct Coords: Encodable {
             let lat: Double
