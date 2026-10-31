@@ -313,8 +313,12 @@ private struct StoryReelFace: View {
             ZStack(alignment: .topLeading) {
                 Color.black
                 if let story {
-                    // 枠いっぱいに敷く四角いサムネ（動画は記号。1コマ目を出さない）
-                    StoryPoster(story: story)
+                    // 枠いっぱいに敷く四角いサムネ（動画は記号。1コマ目を出さない）。
+                    // 🔴 **縮めずに読む**（2026-10-31 判断・札 #429）。全画面の枠では上限の 2048px になり元の画像
+                    // （1920px）から縮まず、縮めた絵の控え（`DownsampledRemoteImage.memory`・鍵は URL だけ）に残る。
+                    // 同じ回（Mac run 808）で比べて、開いて人を替え閉じるまでのメモリの山は 縮める 226.1MB／縮めない 217.6MB、
+                    // 閉じた後は 191.0MB／139.6MB。縮めない方が軽い
+                    StoryPoster(story: story, downsamples: false)
                 }
                 if let story {
                     Text(story.authorName)

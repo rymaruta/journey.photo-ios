@@ -48,6 +48,8 @@ struct JourneyPhotoApp: App {
     @State private var wentToBackground = false
 
     init() {
+        // 起動の区間の始め（最初の画面で終える・`PerfSignpost`・2026-10-31 札 #429）
+        PerfSignpost.beginLaunch()
         JourneyPhotoApp.configureImageCache()
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
         TabBarStyle.apply()
@@ -178,6 +180,8 @@ struct JourneyPhotoApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(configurationError: configurationError)
+                // 起動の区間の終わり（1回だけ・見た目は変えない・`PerfSignpost`）
+                .onAppear { PerfSignpost.endLaunch() }
                 .environmentObject(auth)
                 .environmentObject(environment)
                 .environmentObject(consent)
