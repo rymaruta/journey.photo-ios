@@ -303,7 +303,13 @@ struct StoryThumb: View {
                 .background(WebTheme.surface, in: Circle())
                 .accessibilityLabel(L("動画のストーリー", "Video story"))
         } else {
-            RemoteImage(url: story.imageURL)
+            // 🔴 **輪の大きさまで縮めて読む**（2026-10-31 判断・札 #429 アプリ 2）。写真は原寸（長い辺 1920px・
+            // 展開すると1枚 約 11MB）で、輪が並ぶと枚数ぶん原寸の画素を持っていた。縦横比を持たないので、
+            // 3:1 までの横長・縦長でも輪（64pt）を覆える大きさで読む（`StoryThumbnailSize`）。
+            // 読み込み中の輪・失敗の記号・自動の1回の読み直し・0.15 秒の淡い出は `RemoteImage` と同じ
+            DownsampledRemoteImage(url: story.imageURL, contentMode: .fill,
+                                   assumedRatioLimit: StoryThumbnailSize.assumedRatioLimit,
+                                   appearAnimation: .easeOut(duration: 0.15))
                 .frame(width: size, height: size)
                 .clipShape(Circle())
         }
@@ -328,9 +334,24 @@ struct StoryPoster: View {
             }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
         } else {
-            // `.fill` の絵は枠より大きい寸法を申告するので、透明な枠に重ねる
-            Color.clear.overlay { RemoteImage(url: story.imageURL) }
+            // `.fill` の絵は枠より大きい寸法を申告するので、透明な枠に重ねる。
+            // 枠の大きさまで縮めて読む（`StoryThumb` と同じ理由・2026-10-31 札 #429）
+            Color.clear.overlay {
+                DownsampledRemoteImage(url: story.imageURL, contentMode: .fill,
+                                       assumedRatioLimit: StoryThumbnailSize.assumedRatioLimit,
+                                       appearAnimation: .easeOut(duration: 0.15))
+            }
                 .clipped()
         }
     }
+}
+
+/// ストーリーの輪・四角いサムネを縮めて読むときの見込み（2026-10-31 判断・札 #429 アプリ 2）。
+///
+/// ストーリーは縦横比を持たない（`Story` に寸法が無い）ので、**長い辺 ÷ 短い辺がこの比までの写真なら、
+/// 横長でも縦長でも枠を覆える**大きさで読む（`DownsampledImageSize.pixels(filling:assumedRatioLimit:)`）。
+/// 3 は 3:1 のパノラマまで（縦長の 9:16 は 1.78）。輪（64pt・3倍の画面）なら長い辺 768px で、
+/// 原寸（1920px）の約 1/6 の画素になる
+enum StoryThumbnailSize {
+    static let assumedRatioLimit: CGFloat = 3
 }

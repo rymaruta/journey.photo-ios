@@ -556,7 +556,15 @@ struct PhotoDetailView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.heroHeight)
                 .overlay {
-                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+                    // 🔴 **枠（画面の幅 × 520pt）を覆う大きさまで縮めて読む**（2026-10-31 判断・札 #429 アプリ 2）。
+                    // ここは拡大しない（押すと別の画面 `PhotoViewerView` が自分で読む）ので、拡大の上限は 1 倍。
+                    // 縦横比が分かれば覆うのに要る画素ちょうど（刻みで切り上げ）、分からなければ上限（2048px）
+                    // ——どちらも枠の画素を下回らないので粗くならない（`ImageDownsampleWiringTests`）。
+                    // 読み込み中の輪・失敗の記号・自動の1回の読み直し・0.15 秒の淡い出は `RemoteImage` と同じ
+                    DownsampledRemoteImage(url: item.detailImageURL, contentMode: .fill,
+                                           aspectRatio: item.aspectRatio.map { CGFloat($0) },
+                                           alignment: item.gridAlignment,
+                                           appearAnimation: .easeOut(duration: 0.15))
                 }
                 .clipped()
                 .contentShape(Rectangle())
