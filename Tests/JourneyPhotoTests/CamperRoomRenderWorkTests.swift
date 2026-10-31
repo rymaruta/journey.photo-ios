@@ -98,6 +98,33 @@ final class CamperRoomRenderWorkTests: XCTestCase {
         XCTAssertEqual(scene.renderKicks, afterUndo.1, "回すだけの値渡しで止まっている SCNView を起こした")
     }
 
+    /// 置いてある家具を後ろの壁から左の壁へ移したら（節は作り直さず、向きと置き場所だけ替わる）、後ろ壁を切った向きでは隠す
+    /// （`syncItems` の `needsCutaway`・#430 の見直し）
+    func testItemMovedToTheLeftWallIsHiddenWhenTheRearWallIsCut() async throws {
+        let (scene, doc) = makeScene()
+        let back = try XCTUnwrap(doc.all.first { $0.w == .back }, "見本に後ろの壁（奥の壁）の家具が無い")
+        let left = try XCTUnwrap(doc.all.first { $0.w == .left }, "見本に左の壁の家具が無い")
+        var camera = CamperRoomCamera()
+        camera.yaw = -20
+        XCTAssertFalse(camera.cutsFrontEnd)
+        update(scene, doc, images: [:], camera: camera)
+        let holder = try XCTUnwrap(all(scene.scene.rootNode).first { $0.name == "item.\(back.u)" })
+        XCTAssertFalse(holder.isHidden, "奥の壁の家具が、移す前から隠れている")
+        // 左の壁へ移す（左の壁の家具の段・列へ。もとの左の壁の家具は外す）
+        var moved = doc
+        moved.items.removeAll { $0.u == left.u }
+        var item = back
+        item.w = .left
+        item.c = left.c
+        item.row = left.row
+        moved.upsert(item)
+        scene.replaceItemsNow(moved)
+        scene.setPhotosMode(false, focus: nil, preview: nil)
+        let after = try XCTUnwrap(all(scene.scene.rootNode).first { $0.name == "item.\(back.u)" })
+        XCTAssertTrue(after === holder, "移しただけなのに節を作り直した（向きの替わりの道を通っていない）")
+        XCTAssertTrue(after.isHidden, "左の壁へ移した家具が、切った後ろ壁の上に見えている")
+    }
+
     /// 文書の側で額の写真が替わったら、付け直して止まっている SCNView を起こす（#430 の見直し）
     func testDocPhotoChangeKicksTheView() async throws {
         let (scene, doc) = makeScene()
