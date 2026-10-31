@@ -87,19 +87,14 @@ final class MapSpotsV2Tests: XCTestCase {
     /// 「地図 / スポット / リスト」は角 14 の帯（白 7%）、選んだ札は白 16% の面に白の字（v1 は白 92% に墨）。
     /// 札 38 ＋ 内側 3 × 2 ＝ 押せる 44
     func testModePickerIsV2() throws {
-        XCTAssertEqual(PhotoMapView.modePickerWidth, 236)
-        XCTAssertEqual(PhotoMapView.modeInset, 3)
-        XCTAssertEqual(PhotoMapView.modeSegmentHeight + PhotoMapView.modeInset * 2, WebTheme.minTapTarget)
-        XCTAssertEqual(PhotoMapView.modeSelectedOpacity, 0.16)
+        // 2026-10-31 判断（#426）: 帯の切り替えから、マイページ・ホームと同じ下線の札（`ProfileTabBar`）へ。
+        // 中身は横にめくらない（地図を横に動かす操作とぶつかる）
         let picker = segment(try source(map), from: "private var modePicker: some View {")
-        assertInOrder([".foregroundStyle(selected ? WebTheme.text : WebTheme.text2)",
-                       ".frame(maxWidth: .infinity, minHeight: Self.modeSegmentHeight)",
-                       "Color.white.opacity(Self.modeSelectedOpacity)",
-                       ".accessibilityIdentifier(\"map.mode.\\(mode.rawValue)\")",
-                       ".padding(Self.modeInset)",
-                       ".frame(maxWidth: Self.modePickerWidth)",
-                       ".background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))"],
-                      in: picker, "切り替えの帯")
+        XCTAssertTrue(picker.contains("ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode)"),
+                      "地図の切り替えが共通の札でない")
+        XCTAssertFalse(picker.contains("ProfileTabPager("), "地図の札を横にめくっている（地図の操作とぶつかる）")
+        XCTAssertFalse(picker.contains("ProfileTabSwipe("))
+        XCTAssertEqual(PhotoMapViewModel.Mode.spots.tabIdentifier, "map.mode.spots", "UI テストの道しるべが変わった")
         XCTAssertFalse(picker.contains("Color.white.opacity(0.92)"), "v1 の白の塗りが残っている")
         XCTAssertFalse(picker.contains("WebTheme.accentText"), "選んだ札が墨の字のまま")
     }
@@ -403,7 +398,7 @@ final class MapSpotsV2Tests: XCTestCase {
     /// 作り替えで UI テストの目印を落とさない
     func testUITestIdentifiersSurvive() throws {
         let expected: [(String, [String])] = [
-            (map, ["map.search", "map.mode.", "map.photoPin", "map.photoCluster", "map.showAll", "map.pinCard",
+            (map, ["map.search", "map.photoPin", "map.photoCluster", "map.showAll", "map.pinCard",
                    "map.officialCard", "map.officialCard.open", "map.placeCard", "map.spotRow", "map.region",
                    "map.regionSpotRow", "map.list.categoryNote"]),
             (official, ["spot.official", "spot.official.photoCredit", "spot.official.draftNotice",
@@ -414,6 +409,8 @@ final class MapSpotsV2Tests: XCTestCase {
                         "spot.official.light.today", "spot.official.check", "spot.official.post",
                         "spot.official.share"]),
             ("Features/Spots/OfficialSpotMapView.swift", ["spot.official.mapScreen", "spot.official.mapScreen.directions"]),
+            // 見せ方の札の目印は区分の型が持つ（#426・`PagedTab.tabIdentifier`）
+            ("Features/Map/PhotoMapViewModel.swift", ["map.mode."]),
         ]
         for (path, ids) in expected {
             let text = try source(path)

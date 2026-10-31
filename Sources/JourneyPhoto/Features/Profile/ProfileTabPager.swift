@@ -27,25 +27,30 @@ import UIKit
 /// - 切り替えは `ProfileTabMotion.animation` で滑らせる（「視差効果を減らす」のときは動かさない）
 /// - **横の払いでは中身が指に付いてくる**（2026-10-28 判断・`ProfileTab.settled`・`ProfileTabSwipe`）。
 ///   動かし始めたら、その向きの隣の札を作って（まだなら）右か左から見せる
-struct ProfileTabPager<Page: View>: View {
+///
+/// **2026-10-31 判断（#426）: 区分の型（`PagedTab`）で受ける。** ホームのフィード（おすすめ / フォロー中 / 新着）・
+/// フォロー一覧・ストーリーの分析・すれちがい帳・着想の棚も、この入れ物で横にめくる（写しを作らない）
+struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
 
-    let tabs: [ProfileTab]
-    @Binding var selection: ProfileTab
+    let tabs: [Tab]
+    @Binding var selection: Tab
     /// 中身の最低の高さ（画面に見えている高さ）。0 なら付けない
     var minHeight: CGFloat = 0
     /// 横の払いを受けない札（人のページの地図——地図の横の操作とぶつかる）。札の行の払いは受ける。
     /// **その札へ入る払いは受ける**（投稿の中身を左へ払えば地図へ移る）——止めるのは、その札を
     /// 選んでいる間の中身の上だけ（`ProfileTabSwipe.enabled`・2026-10-28 判断）
-    var swipeBlocked: Set<ProfileTab> = []
+    var swipeBlocked: Set<Tab> = []
     /// 札の行が見えている上端からどれだけ上へ出ているか（深く送った回だけ正・`ProfileTabScroll.rowOverflow`）。
     /// **値ではなく読み方で受ける**（2026-10-28）——値で受けると、呼ぶ側は送るたびに変わる上端を
     /// 見張る値に置くことになり、1フレームごとに画面全体が作り直される（`ProfileTabRowSpot`）。読むのは払い始めだけ
     var rowOverflow: () -> CGFloat = { 0 }
     /// 画面を開いて手が空いたら先に作っておく札（人のページの地図——払いの途中に初めて作ると引っかかる）
-    var prebuilt: [ProfileTab] = []
-    @ViewBuilder let page: (ProfileTab) -> Page
+    var prebuilt: [Tab] = []
+    @ViewBuilder let page: (Tab) -> Page
 
-    @State private var pages = ProfileTabPages(initial: .posts)
+    /// 作ってある札。**最初は空**で、出たとき（`onAppear`）に選んでいる札を入れる——以前は `.posts` 決め打ちで、
+    /// 区分の型を広げたので初めの札を決められない（選んでいる札は `shown` で作るので、空でも中身は出る）
+    @State private var pages = ProfileTabPages<Tab>()
     /// 指に付いてきている横の量。**入れ物の `body` はこれに依存しない**（2026-10-28 確かめ役の見直し）——
     /// `@State` に箱（参照）を置くだけで中を見張らないので、払っている間に毎フレーム全部の札の `page()` を
     /// 作り直さない。読むのは中身をずらす小さな子（`ProfileTabDragOffset`）だけ
@@ -56,7 +61,7 @@ struct ProfileTabPager<Page: View>: View {
     var body: some View {
         ProfileTabDragOffset(drag: drag, content:
             ProfileTabPagerLayout(index: tabs.firstIndex(of: selection) ?? 0) {
-                ForEach(tabs) { option in
+                ForEach(tabs, id: \.self) { option in
                     let shown = option == selection
                     Group {
                         if pages.isBuilt(option) || shown {
@@ -102,6 +107,66 @@ struct ProfileTabPager<Page: View>: View {
     }
 }
 
+/// 縦の送りの中を流れる「札の行＋横にめくる中身」（2026-10-31 判断・#426）。
+///
+/// 人のページ（`UserProfileView`）で組んだ形——札の行の位置の控え（`ProfileTabRowSpot`）・深く送ってから替えたら
+/// 札の行を上端へ（`ProfileTabScroll.scrollsToRow`）・払っている間に隣の札を下げる（`rowOverflow`）・最低の高さ
+/// （`minPageHeight`）——を1つにまとめた。フォロー一覧・ストーリーの分析・すれちがい帳・着想の棚がこれを使う
+/// （画面ごとに同じ手順を写さない）。**置くのは縦の `ScrollView` の中**（見えている上端が 0 の画面）。
+/// 札の行は上に留めない（マイページ・ホームのように留める画面は、それぞれの留め方で `ProfileTabBar` と
+/// `ProfileTabPager` を直に使う）
+struct ProfileTabSection<Tab: PagedTab, Page: View>: View {
+
+    let tabs: [Tab]
+    @Binding var selection: Tab
+    /// 縦の送りの見えている高さ（呼ぶ側が `onGeometryChange` で測る）。0 なら最低の高さを付けない
+    var viewport: CGFloat = 0
+    /// 札の行と中身の間
+    var spacing: CGFloat = JPSpace.m
+    /// 札の字の左右の余白（`ProfileTabBar.gutter`）
+    var gutter: CGFloat = ProfileTabStyle.gutter
+    /// 札の名前の右の数（`ProfileTabBar.detail`）
+    var detail: (Tab) -> String? = { _ in nil }
+    @ViewBuilder let page: (Tab) -> Page
+
+    @State private var row = ProfileTabRowSpot()
+    @State private var rowHeight: CGFloat = ProfileTabStyle.height
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// 札の行の目印（替えたら頭から）。1つの画面に1つだけ置く
+    static var rowID: String { "tabs.section.row" }
+
+    var body: some View {
+        ScrollViewReader { reader in
+            VStack(alignment: .leading, spacing: spacing) {
+                ProfileTabBar(tabs: tabs, selection: $selection, gutter: gutter, detail: detail)
+                    .modifier(ProfileTabSwipe(tabs: tabs, selection: $selection))
+                    .id(Self.rowID)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .scrollView)
+                    } action: { frame in
+                        if let height = row.record(frame, height: rowHeight) { rowHeight = height }
+                    }
+                ProfileTabPager(tabs: tabs, selection: $selection,
+                                minHeight: viewport > 0
+                                    ? ProfileTabScroll.minPageHeight(viewport: viewport, visibleTop: 0,
+                                                                     rowHeight: rowHeight, spacing: spacing)
+                                    : 0,
+                                rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: row.minY, visibleTop: 0) }) { tab in
+                    page(tab)
+                }
+            }
+            // 深く送ってから札を替えたら、新しい札は頭から（札の行を上端へ）。まだ送っていなければそのまま
+            .onChange(of: selection) { _, _ in
+                guard ProfileTabScroll.scrollsToRow(rowMinY: row.minY, visibleTop: 0) else { return }
+                withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                    reader.scrollTo(Self.rowID, anchor: .top)
+                }
+            }
+        }
+    }
+}
+
 /// 画面を開いてから先に札を作るまでの待ち
 enum ProfileTabPrebuild {
     static let delayNanoseconds: UInt64 = 1_200_000_000
@@ -124,21 +189,23 @@ struct ProfileTabDragOffset<Content: View>: View {
 }
 
 /// どの札の中身を作ってあるか（画面を持たない計算）。**一度作った札は持ち続ける**
-struct ProfileTabPages: Equatable {
+struct ProfileTabPages<Tab: Hashable>: Equatable {
 
-    private(set) var built: [ProfileTab]
+    private(set) var built: [Tab]
 
-    init(initial: ProfileTab) { built = [initial] }
+    init() { built = [] }
+
+    init(initial: Tab) { built = [initial] }
 
     /// 選んだ札を「作ってある」に足す（二度足さない）
-    mutating func select(_ tab: ProfileTab) {
+    mutating func select(_ tab: Tab) {
         if !built.contains(tab) { built.append(tab) }
     }
 
-    func isBuilt(_ tab: ProfileTab) -> Bool { built.contains(tab) }
+    func isBuilt(_ tab: Tab) -> Bool { built.contains(tab) }
 
     /// 選んだ札から見た、その札の置き場（画面幅いくつ分右か。左は負）
-    static func offset(of tab: ProfileTab, selected: ProfileTab, in tabs: [ProfileTab]) -> Int {
+    static func offset(of tab: Tab, selected: Tab, in tabs: [Tab]) -> Int {
         guard let i = tabs.firstIndex(of: tab), let s = tabs.firstIndex(of: selected) else { return 0 }
         return i - s
     }
@@ -202,16 +269,16 @@ enum ProfileTabMotion {
 /// `enabled` が false の札（人のページの地図）では、この部品の枠の中の指を受けない——地図を横に
 /// 動かす操作を優先する（2026-10-28 判断: 地図の中で払って札を替えると、地図を動かしたいのか札を替え
 /// たいのか指だけでは分けられない。地図から出るのは札の行の払いか札を押す。地図へ入る払いは投稿の中身で効く）
-struct ProfileTabSwipe: ViewModifier {
+struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
 
-    let tabs: [ProfileTab]
-    @Binding var selection: ProfileTab
+    let tabs: [Tab]
+    @Binding var selection: Tab
     /// false のときは中の操作（地図など）にだけ渡す
     var enabled: Bool = true
     /// 指に付いてくる横の量の書き込み先（中身を動かす `ProfileTabPager` だけが渡す）
     var follow: ProfileTabDrag? = nil
     /// 動いている間、入ってくる隣の札を知らせる（作っておく・縦の位置をそろえる）
-    var willShow: ((ProfileTab) -> Void)? = nil
+    var willShow: ((Tab) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -221,16 +288,16 @@ struct ProfileTabSwipe: ViewModifier {
                 ProfileSwipeCatcher(
                     isEnabled: enabled,
                     shouldBegin: { dx, dy in
-                        ProfileTab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
+                        Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
                     },
                     onChange: { dx, width in
-                        if let next = ProfileTab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
-                        follow?.offset = CGFloat(ProfileTab.followOffset(from: selection, in: tabs,
-                                                                         dx: dx, width: width))
+                        if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
+                        follow?.offset = CGFloat(Tab.followOffset(from: selection, in: tabs,
+                                                                  dx: dx, width: width))
                     },
                     onEnd: { dx, velocity, width in
-                        let next = ProfileTab.settled(from: selection, in: tabs,
-                                                      dx: dx, velocity: velocity, width: width)
+                        let next = Tab.settled(from: selection, in: tabs,
+                                               dx: dx, velocity: velocity, width: width)
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
                             follow?.offset = 0
@@ -351,7 +418,24 @@ struct ProfileSwipePanHost: UIViewRepresentable {
             guard gestureRecognizer === pan, let probe, probe.window != nil, handlers?.isEnabled == true else {
                 return false
             }
-            return probe.bounds.contains(touch.location(in: probe))
+            guard probe.bounds.contains(touch.location(in: probe)) else { return false }
+            // 2026-10-31 判断（#426・ホームの「おすすめ」には横に流れる列がある——PICKS・季節の撮影スポット）:
+            // 横に流れる列の上で始まった指は、その列に渡す（列を流したいのか札を替えたいのか指だけでは分けられない）。
+            // 札を替えるのは列の外の払いか札を押す
+            return !Self.startsInHorizontalScroller(touch.view, host: host)
+        }
+
+        /// 指の下（`view`）から縦の送り（`host`）までの間に、横に流れる `UIScrollView` があるか
+        static func startsInHorizontalScroller(_ view: UIView?, host: UIScrollView?) -> Bool {
+            var current = view
+            while let candidate = current, candidate !== host {
+                if let scroll = candidate as? UIScrollView,
+                   scroll.isScrollEnabled, scroll.contentSize.width > scroll.bounds.width + 1 {
+                    return true
+                }
+                current = candidate.superview
+            }
+            return false
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -389,6 +473,68 @@ final class ProfileTabRowSpot {
     }
 }
 
+/// 節の見出し（`LazyVStack(pinnedViews: [.sectionHeaders])`）で上に留める札の行の位置の控え（ホーム・#426）。
+///
+/// **2026-10-31 判断: ホームはマイページの「重ねて描く札」（`pinnedTabRow`）にしない。** ホームの並びは
+/// `LazyVStack` で、流れている札の行は深く送ると作り直されて位置を測れなくなる（測れないと、払っている間に
+/// 隣の札を下げる量 `rowOverflow` が古いまま残り、入ってくる札が空に見える——マイページの 2026-10-28 の件）。
+/// 節の見出しは留まっている間も生きているので、#417 ⑧ の留め方はそのまま使い、位置は次の2つから出す:
+/// - 札の行の下端（見出し）と、札の中身の上端（`ProfileTabPager`）。留まっていない間は2つの間（`restGap`）は
+///   変わらず、留まると中身だけが上へ流れて間が詰まる。**詰まった量がはみ出し**（`ProfileTabScroll.pinnedOverflow`）
+/// - 間の決まった値は測って覚える（見出しと中身の間に `LazyVStack` の間が入るかを決め打ちしない）。留まると間は
+///   縮むだけなので、いちばん広かった間が元の間
+///
+/// 2つの位置は別々の `onGeometryChange` で届く。片方だけ新しい値で計算すると、送っている最中は1フレームぶん
+/// ずれた間を覚えてしまう——**両方が届いた後（次の回り）にまとめて計算する**（`schedule`）。
+/// 送るたびに変わる値なので `@State` に置かない（`ProfileTabRowSpot` と同じ）。描き直すのは留まった・外れたときだけ
+final class PinnedTabRowSpot {
+    private(set) var headerMaxY: CGFloat?
+    private(set) var contentMinY: CGFloat?
+    /// 留まっていないときの札の行と中身の間（測ったうちいちばん広い間）
+    private(set) var restGap: CGFloat?
+    private var scheduled = false
+
+    /// 札の行（見出し）の下端を控える。計算は次の回りで（`settled` に留まっているかを渡す）
+    func recordHeader(maxY: CGFloat, settled: @escaping (Bool) -> Void) {
+        headerMaxY = maxY
+        schedule(settled)
+    }
+
+    /// 札の中身の上端を控える
+    func recordContent(minY: CGFloat, settled: @escaping (Bool) -> Void) {
+        contentMinY = minY
+        schedule(settled)
+    }
+
+    /// 2つの位置がそろった今の値で、元の間を覚え直して、留まっているかを返す
+    @discardableResult
+    func settle() -> Bool {
+        if let headerMaxY, let contentMinY {
+            let gap = contentMinY - headerMaxY
+            restGap = max(restGap ?? gap, gap)
+        }
+        return isPinned
+    }
+
+    /// 札の中身の頭が、留まった札の行の下からどれだけ上へ流れているか（留まっていなければ 0）
+    var overflow: CGFloat {
+        guard let headerMaxY, let contentMinY, let restGap else { return 0 }
+        return ProfileTabScroll.pinnedOverflow(gap: contentMinY - headerMaxY, restGap: restGap)
+    }
+
+    /// 札の行が上に留まっているか（`ProfileTabScroll.scrollsToRow` と同じ 0.5 の遊び）
+    var isPinned: Bool { overflow > 0.5 }
+
+    private func schedule(_ settled: @escaping (Bool) -> Void) {
+        guard !scheduled else { return }
+        scheduled = true
+        DispatchQueue.main.async { [self] in
+            scheduled = false
+            settled(settle())
+        }
+    }
+}
+
 /// 札の行の位置の計算（画面を持たない計算・2026-10-24 確かめ役の見直し）
 enum ProfileTabScroll {
 
@@ -414,6 +560,12 @@ enum ProfileTabScroll {
     /// これだけ下げると、札の行を上端へ送ったときの位置に頭が来る（`ProfileTabPager.lift`・2026-10-28）
     static func rowOverflow(rowMinY: CGFloat, visibleTop: CGFloat) -> CGFloat {
         scrollsToRow(rowMinY: rowMinY, visibleTop: visibleTop) ? visibleTop - rowMinY : 0
+    }
+
+    /// 節の見出しで留めた札の行（ホーム・`PinnedTabRowSpot`）のはみ出し。札の行と中身の間（`gap`）が、
+    /// 留まっていないときの間（`restGap`）よりどれだけ詰まったか
+    static func pinnedOverflow(gap: CGFloat, restGap: CGFloat) -> CGFloat {
+        max(0, restGap - gap)
     }
 
     /// `scrollTo` の目印の縦の割合。札の行の上端を `visibleTop` に合わせる

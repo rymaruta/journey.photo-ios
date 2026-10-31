@@ -9,10 +9,13 @@ import Combine
 @MainActor
 final class PhotoMapViewModel: ObservableObject {
 
-    enum Mode: String, CaseIterable, Identifiable {
+    /// 2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`・`ProfileTabBar`）。目印は今までの `map.mode.<名前>`
+    enum Mode: String, CaseIterable, Identifiable, PagedTab {
         /// 板 04c 案A の並び: 地図 / スポット / リスト
         case map, spots, list
         var id: String { rawValue }
+        var tabTitle: String { label }
+        var tabIdentifier: String { "map.mode.\(rawValue)" }
         var label: String {
             switch self {
             case .map: return L("地図", "Map")

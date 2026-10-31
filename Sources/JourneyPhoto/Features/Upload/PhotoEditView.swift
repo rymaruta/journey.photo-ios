@@ -279,31 +279,12 @@ struct PhotoEditView: View {
 
     // MARK: - タブ
 
+    /// フィルム / 調整。2026-10-31 判断（#426）: マイページと同じ札（`ProfileTabBar`——下線がばねで滑る・
+    /// 当たりを札の間の半分まで広げる・押している間は白）。以前はここだけ自前の札（幅いっぱいの2つ割り・
+    /// 下線は瞬時に入れ替わる）だった。**中身は横にめくらない**——フィルムの列は横に流れ、調整はつまみを
+    /// 横に動かすので、払いで札を替えると指の意味が分からなくなる（札を押して替える）
     private var tabs: some View {
-        HStack(spacing: 0) {
-            tabButton(L("フィルム", "Film"), selected: screen.tab == .film) { screen.tab = .film }
-            tabButton(L("調整", "Adjust"), selected: screen.tab == .adjust) { screen.tab = .adjust }
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Self.selectedFill).frame(height: 1)
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func tabButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .jpSystemFont(15, weight: .semibold, relativeTo: .subheadline)
-                // 選んでいるタブは真鍮の字と下線（黒地の上）
-                .foregroundStyle(selected ? WebTheme.accent : Self.hint)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(selected ? WebTheme.accent : Color.clear).frame(height: 2)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab)
     }
 
     // MARK: - フィルム

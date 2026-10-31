@@ -102,13 +102,14 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertFalse(bar.contains("selected ? Color.white : WebTheme.faint"), "v1 の白い選択に戻っている")
         XCTAssertTrue(bar.contains(".fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))"), "区切り線は白 8%（留まると 12%）")
         XCTAssertTrue(bar.contains("accessibilityAddTraits(selected ? .isSelected : [])"), "色だけで選択を言っている")
-        XCTAssertTrue(bar.contains("\"profile.tab.\\(option.rawValue)\""), "画面写真の目印を落とした")
+        XCTAssertTrue(bar.contains(".accessibilityIdentifier(option.tabIdentifier)"), "画面写真の目印を落とした")
+        XCTAssertEqual(ProfileTab.posts.tabIdentifier, "profile.tab.posts", "画面写真の目印が変わった")
 
+        // 2026-10-31（#426）: フォロー一覧もマイページと同じ札の部品（真鍮の字と下線は部品が持つ）
         let follow = try source("Features/Profile/FollowListView.swift")
-        let tabs = try slice(follow, from: "private var tabs: some View", to: "@ViewBuilder\n    private func row")
-        XCTAssertTrue(tabs.contains("ProfileTabBar.color(selected: selected)"), "フォロー一覧の切り替えが真鍮でない")
-        XCTAssertTrue(tabs.contains(".fill(selected ? WebTheme.accent : Color.clear)"))
-        XCTAssertFalse(tabs.contains("WebTheme.foreground : WebTheme.muted2"), "v1 の白い選択に戻っている")
+        XCTAssertTrue(follow.contains("ProfileTabSection(tabs: Kind.order, selection: selection,"), "フォロー一覧の切り替えが共通の札でない")
+        XCTAssertFalse(follow.contains("WebTheme.foreground : WebTheme.muted2"), "v1 の白い選択に戻っている")
+        XCTAssertEqual(FollowListView.Kind.order, [.followers, .following], "札の並びが板（フォロワー → フォロー中）と違う")
     }
 
     /// 「行きたい場所」のタブ名はマイページのタブ名（owner の決め）。4 つ目は 2026-10-16 に「お気に入り」→「保存」

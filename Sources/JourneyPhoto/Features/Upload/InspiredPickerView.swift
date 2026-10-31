@@ -26,7 +26,9 @@ struct InspiredPickerView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var shelf: InspiredBy.Shelf = .saved
+    @State private var selectedShelf: InspiredBy.Shelf = .saved
+    /// 見えている高さ（札の中身の最低の高さ・`ProfileTabSection`）
+    @State private var viewport: CGFloat = 0
     @State private var pools: PhotoPools.Loaded?
     @State private var spotIndex: [OfficialSpot]?
     /// 開いたときに保存した写真が無く、行きたい場所がある人は、行きたい場所の棚から始める（一度だけ）
@@ -42,10 +44,21 @@ struct InspiredPickerView: View {
                     .font(.footnote)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                shelfTabs
-                content
+                    .padding(.horizontal, 16)
+                // 保存した写真 / 行きたい場所 / みんなの写真。2026-10-31 判断（#426）: マイページと同じ札
+                // （下線が滑る・当たりが広い・中身を横にめくる）。札の行は端から端まで、字と中身は左右 16
+                ProfileTabSection(tabs: InspiredBy.Shelf.allCases, selection: $selectedShelf, viewport: viewport,
+                                  spacing: 14) { shelf in
+                    content(shelf)
+                        .padding(.horizontal, 16)
+                }
             }
-            .padding(16)
+            .padding(.vertical, 16)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            if height != viewport { viewport = height }
         }
         .webScreen()
         .navigationTitle(L("元の写真を選ぶ", "Choose the original"))
@@ -60,42 +73,9 @@ struct InspiredPickerView: View {
         .task { await load() }
     }
 
-    // MARK: - 棚の切り替え
-
-    /// 表示の切替（板: 繋がったセグメント・`tablist`）。選んでいる側は真鍮の字＋下線＋太字
-    /// （CLAUDE.md の owner の好み「選んでいるタブは真鍮」・黒地の上）。色だけにしない
-    private var shelfTabs: some View {
-        HStack(spacing: 0) {
-            ForEach(InspiredBy.Shelf.allCases) { item in
-                let selected = item == shelf
-                Button {
-                    shelf = item
-                } label: {
-                    VStack(spacing: 6) {
-                        Text(item.label)
-                            .font(.subheadline.weight(selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text2)
-                            .lineLimit(1)
-                        Rectangle()
-                            .fill(selected ? WebTheme.accent : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-                .accessibilityIdentifier("inspiredPicker.shelf.\(item.rawValue)")
-            }
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-        }
-    }
-
     // MARK: - 中身
 
-    private var candidates: [Photo] {
+    private func candidates(_ shelf: InspiredBy.Shelf) -> [Photo] {
         guard let pools else { return [] }
         let feed = pools.feed.map { hidden.visible($0) }
         let mine = pools.mine
@@ -110,11 +90,12 @@ struct InspiredPickerView: View {
         }
     }
 
+    /// 棚ごとの中身。**`selectedShelf` ではなく渡された棚で分ける**——選んでいない棚も持ち続ける（`ProfileTabPager`）
     @ViewBuilder
-    private var content: some View {
+    private func content(_ shelf: InspiredBy.Shelf) -> some View {
         if pools == nil {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-        } else if candidates.isEmpty {
+        } else if candidates(shelf).isEmpty {
             VStack(spacing: JPSpace.s) {
                 Text(pools?.feed == nil
                      ? L("写真を読み込めませんでした。通信の状態を確かめてください",
@@ -127,7 +108,7 @@ struct InspiredPickerView: View {
                 // 押せる次の一手（2026-10-21・run 609 の 45b・45c: 説明だけで行き止まりだった）。
                 // 写真の無い画面の主ボタン＝真鍮の塗りに墨。読めなかった回は出さない（移っても空）
                 if pools?.feed != nil, let next = shelf.emptyNextShelf {
-                    Button { shelf = next } label: {
+                    Button { selectedShelf = next } label: {
                         Text(next.chooseLabel).jpPillButton(.main(onPhoto: false))
                     }
                     .buttonStyle(.plain)
@@ -138,7 +119,7 @@ struct InspiredPickerView: View {
             .frame(maxWidth: .infinity)
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(candidates) { photo in
+                ForEach(candidates(shelf)) { photo in
                     tile(photo)
                 }
             }
@@ -196,7 +177,7 @@ struct InspiredPickerView: View {
             choseStartShelf = true
             if InspiredBy.savedCandidates(ids: savedPhotos.ids, feed: loaded.feed, mine: loaded.mine).isEmpty,
                !wishlist.spotIds.isEmpty {
-                shelf = .wishlist
+                selectedShelf = .wishlist
             }
         }
         // 台帳のスポットの「行きたい」（`SPOT-…`）を写真に当てる索引。控えがあれば通信しない

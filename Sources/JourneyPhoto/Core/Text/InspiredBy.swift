@@ -284,7 +284,8 @@ enum InspiredBy {
     // MARK: - 元の写真を選ぶ（投稿の画面）
 
     /// 選ぶ先の棚
-    enum Shelf: String, CaseIterable, Identifiable {
+    /// 2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`）。目印は今までの `inspiredPicker.shelf.<名前>`
+    enum Shelf: String, CaseIterable, Identifiable, PagedTab {
         /// 保存（しおり）した写真
         case saved
         /// 行きたい場所の写真（写真の詳細の「行きたい」から入れた場所を含む）
@@ -294,6 +295,8 @@ enum InspiredBy {
         case everyone
 
         var id: String { rawValue }
+        var tabTitle: String { label }
+        var tabIdentifier: String { "inspiredPicker.shelf.\(rawValue)" }
 
         var label: String {
             switch self {
