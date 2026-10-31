@@ -325,25 +325,36 @@ final class UploadViewModel: ObservableObject {
         guard wantsAutoSpotIndex, !autoSpotIndexAsked else { return }
         autoSpotIndexAsked = true
         guard let index = await fetchSpotMatchIndex() else { return }
-        autoSpotMatcher = SpotMatcher(index: index)
-        autoSpotIndex = index
+        useAutoSpotIndex(index)
     }
 
-    /// 試験用: 索引を入れる（通信しない）
+    /// 索引を入れる（試験は通信せずにここから入れる）
     func useAutoSpotIndex(_ index: SpotMatchIndex) {
         autoSpotIndexAsked = true
         autoSpotMatcher = SpotMatcher(index: index)
+        autoSpotAnswers = [:]
         autoSpotIndex = index
     }
 
     /// その写真の自動の候補。**撮影スポットの画面から来て、この写真にその `spotId` を送るときは出さない**
     /// （帯・撮影地の欄で選んだ撮影スポットが受け持つ）。位置は送る座標（あとで静的な生成が見るのと同じ）
     func autoSpotCandidate(for item: PendingPhoto) -> String? {
-        guard UploadSpotTarget.spotIdToSend(screen: spot, for: item) == nil else { return nil }
-        return SpotUploadAuto.candidate(
-            matcher: autoSpotMatcher, location: item.location, title: item.title, caption: item.caption,
-            coords: item.coordsToSend(spot: spot, spots: spotIndexForSubmit, attachesPhotoLocation: attachesLocation))
+        guard UploadSpotTarget.spotIdToSend(screen: spot, for: item) == nil, let matcher = autoSpotMatcher else { return nil }
+        let coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit, attachesPhotoLocation: attachesLocation)
+        // 2026-10-31 判断: 画面は描くたびに写真ごとに呼ぶ（1字打つたびに約 2,700 行を突き合わせない）。
+        // 答えは入れたもので決まるので、入れたものを鍵に覚える
+        let key = [item.location, item.title, item.caption, coords.map { "\($0.lat),\($0.lng)" } ?? ""]
+            .joined(separator: "\u{1}")
+        if let hit = autoSpotAnswers[key] { return hit }
+        let answer = SpotUploadAuto.candidate(matcher: matcher, location: item.location, title: item.title,
+                                              caption: item.caption, coords: coords)
+        if autoSpotAnswers.count > 200 { autoSpotAnswers = [:] }
+        autoSpotAnswers[key] = .some(answer)
+        return answer
     }
+
+    /// 入れたもの → 候補（`autoSpotCandidate` の覚え。索引を入れ直したら捨てる）
+    private var autoSpotAnswers: [String: String?] = [:]
 
     /// その写真の「切り」（`SpotUploadAuto.offFor`）。触っていない写真は nil
     private func autoSpotOff(for item: PendingPhoto, candidate: String?) -> Bool? {
