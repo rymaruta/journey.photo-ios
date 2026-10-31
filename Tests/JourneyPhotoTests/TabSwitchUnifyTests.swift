@@ -324,7 +324,17 @@ final class TabSwitchUnifyTests: XCTestCase {
             .components(separatedBy: "struct ScrollHostProbe: View {")[0]
         XCTAssertTrue(handle.contains("let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,"))
         XCTAssertTrue(handle.contains("top: -scroll.adjustedContentInset.top)"))
-        XCTAssertTrue(handle.contains("usingSpringWithDamping: ProfileTabStyle.springDamping"), "札の切り替えと違う手ざわりで戻す")
+        XCTAssertTrue(handle.contains("usingSpringWithDamping: ProfileTabScroll.scrollBackDamping"))
+        XCTAssertEqual(ProfileTabScroll.scrollBackDamping, 1, "戻す動きが行き過ぎる（留まった札の行が一度外れて下がる）")
+        // 🔴 Mac の2回目（札の行が 116 → 118.33）: はみ出しをちょうど戻すと境目に来て、小さなずれで留まりから外れる。
+        // 留まりの側に 4 残す。残りが遊び以下なら戻さない（2回目の切り替えで動かない）
+        XCTAssertTrue(handle.contains("let distance = ProfileTabScroll.scrollBackDistance(overflow: overflow)"))
+        XCTAssertEqual(ProfileTabScroll.pinnedSlack, 4)
+        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 1128), 1124)
+        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 4), 0, "前に戻した残りをまた戻す（札の行が境目を越える）")
+        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 2.33), 0)
+        // 戻した後も札の行は留まったと見なされる（遊び 4 > 判定の 0.5）——次の切り替えで「留まっていない」扱いにならない
+        XCTAssertGreaterThan(ProfileTabScroll.pinnedSlack, 0.5)
         XCTAssertTrue(handle.contains("scroll.setContentOffset(point, animated: false)"), "視差効果を減らすでも動かしている")
         let gallery = try source("Features/Gallery/GalleryView.swift")
         XCTAssertTrue(gallery.contains("if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }"))

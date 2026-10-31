@@ -598,10 +598,20 @@ final class ScrollHostHandle {
 
     init() {}
 
-    /// 中身を `distance` だけ下へ戻す（新しい札の頭を札の行のすぐ下に出す）。ばねは札の切り替えと同じ減衰。
+    /// 留まった札の行の下へ、新しい札の頭を出す（`overflow` は測ったはみ出し）。
+    ///
+    /// 2026-10-31（#426 Mac の2回目・run の `:4126`・`:4128` で札の行が 116 → 118.33）: はみ出しをちょうど戻すと、
+    /// 札の行は留まりの境目ちょうどに来る。境目では、測りの小さなずれ（1/3pt の丸め・新しい札で高さが変わったときの
+    /// 並びの付け直し）や、戻す動きの行き過ぎ（減衰 0.85 のばねは約 0.6% 行き過ぎる——1100pt 戻すと 7pt）で、
+    /// 札の行が留まりから外れて数 pt 下へ動いた。いまは:
+    /// - 戻す量は **はみ出しから `ProfileTabScroll.pinnedSlack`（4）を引いた分**（`scrollBackDistance`）。札の行は
+    ///   留まりの側に 4pt 残り、境目を越えない。新しい札の頭が札の行の下に 4pt 隠れるが、写真の頭の 4pt は目に入らない
+    ///   （札の行が 2pt 跳ねる方が見える）。次に替えたときは残りが 4 なので戻さない（同じ位置のまま）
+    /// - 戻す動きは**行き過ぎないばね**（減衰 1）。行き過ぎると、留まった札の行が一度外れて下がり、戻る
     /// 「視差効果を減らす」では動かさずに置く
-    func scrollBack(_ distance: CGFloat, reduceMotion: Bool) {
+    func scrollBack(_ overflow: CGFloat, reduceMotion: Bool) {
         #if os(iOS)
+        let distance = ProfileTabScroll.scrollBackDistance(overflow: overflow)
         guard distance > 0.5, let scroll = scrollView else { return }
         let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,
                                                  top: -scroll.adjustedContentInset.top)
@@ -610,7 +620,7 @@ final class ScrollHostHandle {
             scroll.setContentOffset(point, animated: false)
         } else {
             UIView.animate(withDuration: ProfileTabScroll.scrollBackDuration, delay: 0,
-                           usingSpringWithDamping: ProfileTabStyle.springDamping, initialSpringVelocity: 0,
+                           usingSpringWithDamping: ProfileTabScroll.scrollBackDamping, initialSpringVelocity: 0,
                            options: [.allowUserInteraction, .beginFromCurrentState],
                            animations: { scroll.contentOffset = point }, completion: nil)
         }
@@ -705,8 +715,18 @@ enum ProfileTabScroll {
         max(top, current - max(0, distance))
     }
 
-    /// 送りを戻す動きの秒（減衰は `ProfileTabStyle.springDamping`）。札の切り替えのばね（0.28 秒）と並んで終わる長さ
+    /// 送りを戻す動きの秒。札の切り替えのばね（0.28 秒）と並んで終わる長さ
     static let scrollBackDuration: Double = 0.35
+    /// 送りを戻す動きの減衰。**1（行き過ぎない）**——行き過ぎると留まった札の行が一度外れて下がる
+    static let scrollBackDamping: CGFloat = 1
+
+    /// 留まりの側に残す量（札の行が留まりの境目を越えないための遊び・`ScrollHostHandle.scrollBack`）
+    static let pinnedSlack: CGFloat = 4
+
+    /// はみ出し `overflow` のうち、送りを戻す量（遊びを残す。遊び以下なら戻さない）
+    static func scrollBackDistance(overflow: CGFloat) -> CGFloat {
+        max(0, overflow - pinnedSlack)
+    }
 
     /// `scrollTo` の目印の縦の割合。札の行の上端を `visibleTop` に合わせる
     /// （`scrollTo` は札の行の中の同じ割合の点を、見えている枠の同じ割合の点にそろえる）
