@@ -297,4 +297,41 @@ final class TabSwitchUnifyTests: XCTestCase {
         XCTAssertTrue(pager.contains("control?.willShow = { next in prepare(next) }"), "重ねた札の払いで隣の札が作られない（空の札が出る）")
         XCTAssertTrue(pager.contains("ProfileTabDragOffset(drag: dragBox, content:"))
     }
+
+    // MARK: - 2026-10-31 177a6ac の確かめ
+
+    /// 🔴 払いの途中で重ねた札が消えたら（留まりが外れた・画面を離れた）、取り消しとして終える
+    /// （`onEnded` が来ず、中身のずらしが残っていた・UIKit の払いの `detach` と同じ扱い）
+    func testOverlaySwipeCancelsWhenTheRowGoesAway() throws {
+        let bar = try source("Features/Profile/ProfileTabBar.swift")
+        let overlay = bar.components(separatedBy: "struct ProfileTabOverlaySwipe<")[1]
+            .components(separatedBy: "/// 札の行の中だけに掛けるばね")[0]
+        XCTAssertTrue(overlay.contains(".onDisappear {\n                if swiping == true { control.drag.offset = 0 }\n                swiping = nil\n            }"),
+                      "払いの途中で重ねた札が消えると、中身のずらしが残る")
+    }
+
+    /// 🔴 マイページの留まった札も、ホームと同じく札の行の上で払える（手ざわりを割らない）
+    func testMyPagePinnedRowSwipesLikeHome() throws {
+        let mine = try source("Features/Profile/MyPageView.swift")
+        let pinned = mine.components(separatedBy: "private var pinnedTabRow: some View {")[1]
+            .components(separatedBy: "\n    }\n")[0]
+        XCTAssertTrue(pinned.contains(".modifier(ProfileTabOverlaySwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab, control: tabPager))"),
+                      "マイページの留まった札の上で払えない")
+        XCTAssertTrue(mine.contains("control: tabPager) { page in"), "留まった札の払いが中身の箱を動かさない（指に付いてこない）")
+    }
+
+    /// 🔴 外側を `VStack` にしたので、上の札は流れ出ても `onDisappear` が来ない。main（`LazyVStack`）の扱い
+    /// （流れ出たら差し替えを後回し・戻ったら前面の確定を待って読み直す）を位置で続ける
+    func testTopCardsKeepTheScrolledAwayHandling() throws {
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains("scrolledAway: topCardsAway)"))
+        XCTAssertTrue(gallery.contains("proxy.frame(in: .scrollView).maxY < 0"), "流れ切ったかを測っていない")
+        let top = try source("Features/Gallery/HomeTopCardView.swift")
+        XCTAssertTrue(top.contains(".onChange(of: scrolledAway) { _, away in\n                if away { wentOutOfView() } else { cameIntoView() }\n            }"),
+                      "流れ出ても札の差し替えを後回しにしない（深く送っている間に札の高さが変わって下の写真がずれる）")
+        XCTAssertTrue(top.contains(".onAppear { cameIntoView() }"))
+        XCTAssertTrue(top.contains(".onDisappear { wentOutOfView() }"))
+        let out = top.components(separatedBy: "private func wentOutOfView() {")[1].components(separatedBy: "\n    }\n")[0]
+        XCTAssertTrue(out.contains("front.disappear()") && out.contains("isShown = false"))
+    }
 }

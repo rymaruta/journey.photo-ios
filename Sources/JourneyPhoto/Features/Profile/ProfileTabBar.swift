@@ -203,6 +203,12 @@ struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
                         }
                     }
             )
+            // 払いの途中で重ねた札が消えたら（送って留まりが外れた・画面を離れた）、`onEnded` は来ない。
+            // 取り消しとして終え、中身のずらしを残さない（UIKit の払いの `ProfileSwipePanHost.detach` と同じ扱い）
+            .onDisappear {
+                if swiping == true { control.drag.offset = 0 }
+                swiping = nil
+            }
     }
 }
 

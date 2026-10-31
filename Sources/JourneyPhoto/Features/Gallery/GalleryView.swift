@@ -52,6 +52,8 @@ struct GalleryView: View {
     @State private var feedRowSpot = ProfileTabRowSpot()
     /// 中身の横の量の箱を、縦の送りの外に重ねた札の行（留まった札）と分け合う（`ProfileTabPagerControl`）
     @State private var feedPager = ProfileTabPagerControl<HomeFeed>()
+    /// 上の札（`HomeTopCardView`）が見えている上端より上へ流れ切っているか
+    @State private var topCardsAway = false
     /// 札ごとの写真の束ね（ブロックを落とす・投稿で束ねる・季節の段の前後に割る）の控え（#426 確かめ役の見直し）。
     /// 描き直しのたびに全部の札で計算し直さない——元の写真か「見せない」が変わったときだけ
     @State private var pageMemo = HomeFeedPageMemo()
@@ -441,6 +443,7 @@ struct GalleryView: View {
         let text = "feed=\(model.feed.rawValue) rowMinY=\(n(feedRowSpot.minY))"
             + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
             + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
+            + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
         if text != feedProbeText { feedProbeText = text }
     }
 
@@ -486,7 +489,18 @@ struct GalleryView: View {
                 HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
                                 myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
-                                seasonShelf: $seasonShelf)
+                                seasonShelf: $seasonShelf,
+                                scrolledAway: topCardsAway)
+                    // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
+                    // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
+                    // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
+                    // その扱いを位置で続ける——深く送っている間に札の高さが変わって、下の写真がずれないように
+                    .onGeometryChange(for: Bool.self) { proxy in
+                        proxy.frame(in: .scrollView).maxY < 0
+                    } action: { away in
+                        topCardsAway = away
+                        if PreviewSession.feedProbe { updateFeedProbe() }
+                    }
                 // ⑧ 切り替えは写真の一覧の頭。下へ送ると、見えている上端に留まる（重ねて描く `pinnedFeedRow`）。
                 // 留まっている間は元の行を見せず・押させず・読ませない（場所は取り続ける——位置の控えと「替えたら頭から」の目印）
                 feedPicker(followingHasNew: followingHasNew, stuck: false)
@@ -548,8 +562,13 @@ struct GalleryView: View {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
+        // UI テストのときだけ: 読んだページの数・選んでいるフィードが変わったら数を出し直す
+        .onChange(of: model.loadedPageCount) { _, _ in
+            if PreviewSession.feedProbe { updateFeedProbe() }
+        }
         // ⑧ 深く送ってから替えたら、新しい一覧は頭から（札の行を上端へ・マイページと同じ）。まだ送っていなければそのまま
         .onChange(of: model.feed) { _, _ in
+            if PreviewSession.feedProbe { updateFeedProbe() }
             guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }
             withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                 proxy.scrollTo(Self.feedRowID, anchor: .top)

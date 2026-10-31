@@ -4118,6 +4118,13 @@ final class ScreenshotTests: XCTestCase {
         latest.tap()
         Thread.sleep(forTimeInterval: 2)
         XCTAssertTrue(latest.isSelected, "「新着」を押しても替わらない")
+        // 新着を押した直後・送る前: 読んだページは1ページのまま（続きの目印が画面の外で読んでいない・#426）
+        logProbe("4-latest-before-push")
+        if let value = probe.value as? String, let pages = value.components(separatedBy: " ")
+            .first(where: { $0.hasPrefix("pages=") }) {
+            let count = Int(pages.dropFirst("pages=".count)) ?? -1
+            XCTAssertTrue((0...1).contains(count), "送る前に続きのページを読んだ（\(pages)・目印が画面の外で動いた）")
+        }
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
         for _ in 0..<Self.pinCheckPushes {

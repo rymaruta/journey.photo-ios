@@ -26,6 +26,11 @@ struct HomeTopCardView: View {
     /// 段の中身（索引・今日の一問・日・上の札に出ている場所）はこの画面が持っているので、決めるのはここのまま。
     /// 描くのは「おすすめ」の写真の大1→2→2 の後ろ（`GalleryView.feedSection`）
     @Binding var seasonShelf: HomeSeasonShelfSlot?
+    /// ホームの縦の送りで、この札が見えている上端より上へ流れ切っているか（2026-10-31 #426）。
+    /// ホームの外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（外側が `LazyVStack`）では
+    /// 流れ出ると `onDisappear`、戻ると `onAppear` が来ていた——その扱い（見えていない間は差し替えを後回し・戻ったら
+    /// 前面の確定を待って `landHomeCards`）を、この値の変わり目で続ける
+    var scrolledAway: Bool = false
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -120,25 +125,11 @@ struct HomeTopCardView: View {
             // 🔴 **開いた印を読み直すのはここと人が替わったときだけ。** 読み込み（`load`）で
             // 読み直すと、一冊を読んでいる最中に前面へ戻った合図で札が差し替わり、
             // 押した元のリンクが消えて一冊の画面が閉じることがある
-            .onAppear {
-                switch front.appear() {
-                case .first:
-                    landHomeCards()
-                case .returning:
-                    // スワイプ途中で一冊の印や行きたいを読むと、開いている画面が閉じる
-                    frontSettle?.cancel()
-                    frontSettle = Task {
-                        try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
-                        guard !Task.isCancelled, front.confirm() else { return }
-                        landHomeCards()
-                    }
-                }
-            }
-            .onDisappear {
-                frontSettle?.cancel()
-                frontSettle = nil
-                front.disappear()
-                isShown = false
+            .onAppear { cameIntoView() }
+            .onDisappear { wentOutOfView() }
+            // 送って流れ出た・戻った（`scrolledAway`）も、画面に出た・出なくなったと同じに扱う
+            .onChange(of: scrolledAway) { _, away in
+                if away { wentOutOfView() } else { cameIntoView() }
             }
             // 起動直後は許可の読み込みが索引より遅いことがある（初めは「許可なし」）。分かったときに入れ直す
             .onChange(of: push.isAuthorized) { _, _ in scheduleSeasonReminder() }
@@ -475,6 +466,30 @@ struct HomeTopCardView: View {
     }
 
     /// 前面が確定したときだけ、一冊の印・行きたい・取り直した札を入れる
+    /// 画面に出た（ホームに戻った・送って戻った）
+    private func cameIntoView() {
+        switch front.appear() {
+        case .first:
+            landHomeCards()
+        case .returning:
+            // スワイプ途中で一冊の印や行きたいを読むと、開いている画面が閉じる
+            frontSettle?.cancel()
+            frontSettle = Task {
+                try? await Task.sleep(nanoseconds: FrontConfirm.settleNanoseconds)
+                guard !Task.isCancelled, front.confirm() else { return }
+                landHomeCards()
+            }
+        }
+    }
+
+    /// 画面から出た（上に別の画面を積んだ・送って流れ出た）
+    private func wentOutOfView() {
+        frontSettle?.cancel()
+        frontSettle = nil
+        front.disappear()
+        isShown = false
+    }
+
     private func landHomeCards() {
         openedBooks = opened.ids(for: auth.userId)
         wishedKeys = wishlist.spotIds
