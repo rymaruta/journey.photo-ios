@@ -302,12 +302,12 @@ final class PhotoTripTests: XCTestCase {
 
     func testPhotoDetailIsWiredToTheSpotAndTheTripSection() throws {
         let view = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
-        // 1. 既存の索引の口で引き、spotId の無い写真は読みに行かない
-        XCTAssertTrue(view.contains(".task(id: shown.spotId ?? \"\") { await loadTripSpot() }"))
+        // 1. 既存の索引の口で引き、撮影スポットの無い写真は読みに行かない（`spotId`、無ければ自動の結び・#425）
+        XCTAssertTrue(view.contains(".task(id: linkedSpotId ?? \"\") { await loadTripSpot() }"))
         XCTAssertTrue(view.contains("await environment.spots.fetchIndexRows()"))
         // 読んだ spotId を覚え、今の写真の spotId と同じときだけ使う（値の決まりは下の `testStage…`）
-        XCTAssertTrue(view.contains("PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded)"))
-        XCTAssertTrue(view.contains("tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),\n                                          index: rows, photos: nil)"),
+        XCTAssertTrue(view.contains("PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)"))
+        XCTAssertTrue(view.contains("tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(id: id, in: rows),\n                                          index: rows, photos: nil)"),
                       "索引を読んだ時点で段を出していない（写真の一覧を待っている）")
         XCTAssertTrue(view.contains("guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }"),
                       "索引が読めなかった回を読み終わりとして覚えている")

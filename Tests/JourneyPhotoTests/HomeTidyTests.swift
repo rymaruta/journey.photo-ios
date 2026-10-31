@@ -181,20 +181,25 @@ final class HomeTidyTests: XCTestCase {
 
     func testSeasonShelfMovedIntoTheFeed() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let section = slice(gallery, from: "private func feedSection(_ photos: [Photo]) -> some View {",
+        // #426: 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
+        let make = slice(gallery, from: "static func make(_ page: HomeFeed,", to: "private struct PassResolveKey")
+        assertInOrder(["PhotoGroups.group(hidden.visible(photos))", "guard page.showsSeasonShelf else",
+                       "HomeFeed.splitForSeasonShelf(groups)"], in: make, "季節の段の前後に割る")
+        let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")
         // 「おすすめ」では段の有無に関係なくいつも5枚で割り、段だけを挟む（後から届いた段で一覧を作り直さない）。
         // 写真が0枚の日は段を出さない
-        assertInOrder(["featuredSections",
-                       "if model.feed.showsSeasonShelf {",
-                       "HomeFeed.splitForSeasonShelf(groups)",
+        assertInOrder(["featuredSections(page)",
+                       "if page.showsSeasonShelf {",
+                       "let split = (lead: rows.lead, rest: rows.rest)",
                        "HomeMosaic(groups: split.lead",
                        "if !groups.isEmpty, let seasonShelf {",
                        "HomeSpotShelfView(shelf: seasonShelf.shelf",
                        "HomeMosaic(groups: split.rest",
                        "} else {",
-                       "HomeMosaic(groups: groups",
-                       "pageFooter"], in: section, "季節の段の置き場所")
+                       "HomeMosaic(groups: groups"], in: section, "季節の段の置き場所")
+        // #426: 続きの目印は札の中身に置かない（外側の遅延の並びの子・`TabSwitchUnifyTests.testNextPageMarkerIsLazy`）
+        XCTAssertFalse(section.contains("{ pageFooter }"))
         XCTAssertFalse(section.contains("showsSeasonShelf, let seasonShelf"),
                        "段の有無で写真の一覧の枝が替わる（段が届いた瞬間に一覧が作り直される）")
         // 上の札の並びの下には置かない（2段続きに戻さない）
@@ -257,16 +262,21 @@ final class HomeTidyTests: XCTestCase {
     func testFeedPickerIsPinned() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
-        assertInOrder(["LazyVStack(spacing: 24, pinnedViews: [.sectionHeaders])",
+        // #426 Mac の確かめ: 節の見出しで留めるのをやめ、マイページと同じ（流れる札の行＋縦の送りの外に重ねる札）
+        assertInOrder(["VStack(spacing: Self.feedSpacing) {",
                        "HomeTopCardView(",
-                       "Section {", "feedSection(photos)", "} header: {", "feedPicker(followingHasNew: followingHasNew)"],
-                      in: feed, "切り替えは写真の一覧の頭の見出し")
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View",
-                           to: "private var followingDot: some View")
-        assertInOrder(["Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)",
-                       ".background(Color.black.opacity(Self.pinnedBackgroundOpacity))"], in: picker,
-                      "留まった切り替えの地（黒 92%）と下の線")
-        XCTAssertEqual(GalleryView.pinnedBackgroundOpacity, 0.92)
+                       "feedPicker(followingHasNew: followingHasNew, stuck: false)",
+                       "ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,",
+                       "feedSection(page, rows: pageRows(page, selected: photos))",
+                       "if feedRowPinned { pinnedFeedRow(followingHasNew: followingHasNew) }"],
+                      in: feed, "切り替えは写真の一覧の頭・送ると上に重ねて留める")
+        // 留まった姿はマイページと同じ札の部品の `stuck`（地は黒 100%・下の線は白 12%）
+        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
+                           to: "private var feedSelection: Binding<HomeFeed>")
+        assertInOrder(["ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: stuck,",
+                       ".background(WebTheme.background)",
+                       "feedPicker(followingHasNew: followingHasNew, stuck: true)"], in: picker, "留まった切り替えの地と下の線")
+        XCTAssertEqual(ProfileTabStyle.lineOpacity(stuck: true), 0.12)
         // 既定の選びは「おすすめ」のまま（owner の過去の判断）
         XCTAssertEqual(HomeFeed.allCases.first, .recommended)
         XCTAssertTrue(try source("Features/Gallery/GalleryViewModel.swift")
@@ -276,33 +286,41 @@ final class HomeTidyTests: XCTestCase {
     /// 留まった切り替えで別のフィードを押したら、新しい一覧の頭へ送る（上の札が見えている間は送らない）
     func testPinnedPickerScrollsToTheListHead() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View",
-                           to: "private var followingDot: some View")
-        assertInOrder(["let changed = model.feed != feed", "model.select(feed: feed, viewerId: auth.userId)",
-                       "if changed, !topCardsVisible { feedHeadRequests &+= 1 }"], in: picker, "押したら一覧の頭へ")
+        // #426: 押した・払ったのどちらも `model.feed` が替わる。深く送っていれば札の行を上端へ（マイページと同じ）
+        XCTAssertTrue(gallery.contains("Binding(get: { model.feed }, set: { selectFeed($0) })"), "払った回が一覧の頭へ送らない")
+        XCTAssertFalse(gallery.contains("topCardsVisible"), "上の札の出入りで留まりを見ている（境がずれる）")
         let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
-        assertInOrder([".onAppear { topCardsVisible = true }", ".onDisappear { topCardsVisible = false }",
-                       "feedPicker(followingHasNew: followingHasNew)", ".id(Self.feedPickerID)",
-                       ".onChange(of: feedHeadRequests) { _, _ in", "proxy.scrollTo(Self.feedPickerID, anchor: .top)"],
+        assertInOrder([".id(Self.feedRowID)",
+                       ".onChange(of: model.feed) { _, _ in",
+                       "guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }",
+                       "withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {",
+                       "proxy.scrollTo(Self.feedRowID, anchor: .top)"],
                       in: feed, "一覧の頭へ送る仕組み")
+        XCTAssertFalse(gallery.contains("feedPickerID"), "留まった札の行を目印に scrollTo している（いちばん上まで戻る）")
+        XCTAssertFalse(gallery.contains("feedHeadRequests"))
     }
 
     // MARK: - ⑨ 「フォロー中」の真鍮の点
 
     func testFollowingDotMeasuresAndSpeaks() throws {
-        XCTAssertEqual(GalleryView.followingDotSize, 8)
-        XCTAssertEqual(GalleryView.followingDotOffset.x, 11, "字の右端から 11 でない")
-        XCTAssertEqual(GalleryView.followingDotOffset.y, 9, "上から 9 でない")
+        // #426: 点は札の部品（`ProfileTabDot`）が描く。位置と大きさは `ProfileTabStyle`
+        XCTAssertEqual(ProfileTabStyle.dotSize, 8)
+        XCTAssertEqual(ProfileTabStyle.dotOffset.x, 11, "字の右端から 11 でない")
+        XCTAssertEqual(ProfileTabStyle.dotOffset.y, 9, "上から 9 でない")
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View",
-                           to: "nonisolated static let pinnedBackgroundOpacity")
-        assertInOrder(["let dot = feed == .following && followingHasNew",
-                       ".overlay(alignment: .topTrailing) {", "if dot { followingDot }",
-                       ".accessibilityLabel(HomeFollowingNews.spokenLabel(feed.label, hasNew: dot))",
-                       ".accessibilityIdentifier(\"home.feed.\\(feed.rawValue)\")"], in: picker, "点と読み上げ")
+        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
+                           to: "private var feedSelection: Binding<HomeFeed>")
+        assertInOrder(["dot: { $0 == .following && followingHasNew },",
+                       "spokenLabel: { HomeFollowingNews.spokenLabel($0.label, hasNew: $0 == .following && followingHasNew) })"],
+                      in: picker, "点と読み上げ")
+        XCTAssertEqual(HomeFeed.latest.tabIdentifier, "home.feed.latest", "UI テストの道しるべが変わった")
+        XCTAssertEqual(HomeFeed.following.tabTitle, HomeFeed.following.label, "UI テストは「新着」「フォロー中」を字でも探す")
+        let bar = try source("Features/Profile/ProfileTabBar.swift")
+        let dot = slice(bar, from: "struct ProfileTabDot: View {", to: "enum ProfileTabStyle {")
         assertInOrder(["Circle().fill(WebTheme.accent)", ".strokeBorder(WebTheme.background, lineWidth: 2)"],
-                      in: picker, "真鍮の点と黒 2 の縁")
-        XCTAssertTrue(picker.contains("Text(feed.label)"), "UI テストは「新着」「フォロー中」を字でも探す")
+                      in: dot, "真鍮の点と黒 2 の縁")
+        assertInOrder([".overlay(alignment: .topTrailing) {", "if dot(option) { ProfileTabDot() }",
+                       ".accessibilityLabel(spoken(option))"], in: bar, "札の部品の点と読み上げ")
         XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中・新しい写真あり", "フォロー中, new photos"))
         XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: false), "フォロー中")
     }

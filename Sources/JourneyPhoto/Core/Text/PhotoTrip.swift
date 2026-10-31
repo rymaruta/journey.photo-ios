@@ -43,8 +43,13 @@ enum PhotoTrip {
     /// 写真に紐づいた台帳の行。**`spotId` だけで引く**（撮影地の文字列では当てない・`OfficialSpot` の注記）。
     /// `spotId` が無い・索引が読めない・見つからないときは nil（何も出さない）
     static func spot(for photo: Photo, in index: [OfficialSpot]?) -> OfficialSpot? {
-        guard let id = photo.spotId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
-              let index else { return nil }
+        spot(id: photo.spotId, in: index)
+    }
+
+    /// 撮影スポットの id で台帳の行を引く。写真の詳細は**本人が選んだ `spotId`、無ければ自動の結び**
+    /// （`SpotPhotoLinks`・2026-10-31 #425）の id を渡す。空・索引が読めない・見つからないときは nil
+    static func spot(id raw: String?, in index: [OfficialSpot]?) -> OfficialSpot? {
+        guard let id = normalizedSpotId(raw), let index else { return nil }
         return index.first { $0.spotId == id }
     }
 
@@ -108,7 +113,13 @@ enum PhotoTrip {
     /// （`spotId` のある写真は「撮影スポット」の行がもう台帳の頁へ行く）。写真と座標で変わる
     /// （写真を送った直後・座標を直した直後に前の写真の行を出さない・`Loaded.spotId` に入れて比べる）
     static func nearbySpotKey(photo: Photo) -> String? {
-        guard normalizedSpotId(photo.spotId) == nil, let c = photo.coords else { return nil }
+        nearbySpotKey(photo: photo, linkedSpotId: photo.spotId)
+    }
+
+    /// - Parameter linkedSpotId: 写真の撮影スポット（本人が選んだ `spotId`、無ければ自動の結び・`SpotPhotoLinks`）。
+    ///   結ばれた写真は「撮影スポット」の行が受け持つので、「この近くの撮影スポット」は出さない（2026-10-31 #425）
+    static func nearbySpotKey(photo: Photo, linkedSpotId: String?) -> String? {
+        guard normalizedSpotId(linkedSpotId) == nil, let c = photo.coords else { return nil }
         return "near|\(photo.id)|\(c.lat),\(c.lng)"
     }
 

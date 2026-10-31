@@ -426,6 +426,8 @@ public struct DragGesture: Gesture {
         public var startLocation: CGPoint { CGPoint(x: 0, y: 0) }
         /// 勢いを足した行き着く先（本物と同じ）
         public var predictedEndTranslation: CGSize { CGSize(width: 0, height: 0) }
+        /// 指の速さ（pt/秒・iOS 17・本物と同じ）
+        public var velocity: CGSize { CGSize(width: 0, height: 0) }
     }
     public init(minimumDistance: Double = 10) {}
     /// 指の位置を名前を付けた座標で読む（iOS 17）

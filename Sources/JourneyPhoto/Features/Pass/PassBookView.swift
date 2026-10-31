@@ -17,6 +17,8 @@ struct PassBookView: View {
     @State private var noteReportTarget: PassCardContent?
     @State private var blockTarget: PassCardContent?
     @State private var order: PassBook.Order = .bound
+    /// 見えている高さ（札の中身の最低の高さ・`ProfileTabSection`）
+    @State private var viewport: CGFloat = 0
     @State private var opened: PassBookOpen?
     @State private var isLoading = true
     /// 空のときの「すれちがいの設定」（2026-10-16・次の一手）
@@ -62,14 +64,18 @@ struct PassBookView: View {
                     statsRow(PassBook.stats(book.filter { byId[$0.id] != nil }, prefectures: pass.ownerPrefectures))
                         .padding(.horizontal, JPSpace.l)
                         .padding(.top, 18)
-                    tabs.padding(.top, 14)
-                    VStack(alignment: .leading, spacing: JPSpace.l) {
-                        ForEach(PassBook.sections(book.filter { byId[$0.id] != nil }, order: order,
-                                                  names: pass.ownerNames, calendar: .current)) { section in
-                            sectionView(section, byId: byId)
+                    // 綴じた順 / 場所ごと / よく会う人。2026-10-31 判断（#426）: マイページと同じ札（下線が滑る・
+                    // 当たりが広い・中身を横にめくる）。**同じカードを並べ直すだけ**なので、めくった先もすぐ出る
+                    ProfileTabSection(tabs: PassBook.Order.allCases, selection: $order, viewport: viewport,
+                                      spacing: 14) { option in
+                        VStack(alignment: .leading, spacing: JPSpace.l) {
+                            ForEach(PassBook.sections(book.filter { byId[$0.id] != nil }, order: option,
+                                                      names: pass.ownerNames, calendar: .current)) { section in
+                                sectionView(section, byId: byId)
+                            }
                         }
+                        .padding(.horizontal, JPSpace.gutter)
                     }
-                    .padding(.horizontal, JPSpace.gutter)
                     .padding(.top, 14)
                     Text(L("場所は「〇〇のあたり」の粒度だけを、この iPhone の中に記録します。",
                            "Places are recorded only roughly (\u{201C}around …\u{201D}), on this iPhone only."))
@@ -80,6 +86,11 @@ struct PassBookView: View {
                 }
             }
             .padding(.bottom, JPSpace.screenEnd)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            if height != viewport { viewport = height }
         }
         // 設定（設定の画面の「すれちがい」と同じ `PassSettingsView`）
         .navigationDestination(isPresented: $showSettings) { PassSettingsView() }
@@ -137,33 +148,6 @@ struct PassBookView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-    }
-
-    /// 字のタブ（ホームのフィードの切り替えと同じ形: 選んだタブは真鍮の字と 2 の下線）
-    private var tabs: some View {
-        VStack(spacing: 0) {
-            // 板の間は 22。ホームのフィードの切り替えと同じく 4 の倍数の 24（`GalleryView.feedTabGap`）
-            HStack(spacing: JPSpace.xl) {
-                ForEach(PassBook.Order.allCases) { item in
-                    let selected = order == item
-                    Button { order = item } label: {
-                        Text(item.label)
-                            .font(selected ? JPFont.bodyEmphasis : JPFont.body)
-                            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text3)
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            .overlay(alignment: .bottom) {
-                                Rectangle().fill(selected ? WebTheme.accent : Color.clear).frame(height: JPStroke.emphasis)
-                            }
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, JPSpace.gutter)
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-        }
     }
 
     private func sectionView(_ section: PassBook.Section, byId: [String: PassCardContent]) -> some View {

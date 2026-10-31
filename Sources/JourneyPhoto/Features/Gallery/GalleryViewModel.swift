@@ -885,8 +885,62 @@ final class GalleryViewModel: ObservableObject {
     /// 作る段なので、「フォロー中」ではフォローしていない人の写真が
     /// 「フォロー中の人の写真はまだありません」の上に並んでいた
     /// **2026-10-03 判断:** owner が選んだ写真は日付を問わず全件から拾うので `photos.json` のまま
-    var featured: [FeaturedGroups.Group] {
-        guard category == nil, feed == .recommended else { return [] }
+    var featured: [FeaturedGroups.Group] { featured(for: feed) }
+
+    /// `page` のフィードの札に出す「おすすめ」の横並び（選んでいない札も横にめくって見えるので、札ごとに決める）
+    func featured(for page: HomeFeed) -> [FeaturedGroups.Group] {
+        guard category == nil, page == .recommended else { return [] }
         return FeaturedGroups.groups(from: all)
+    }
+
+    // MARK: - 横にめくる隣のフィード（#426）
+
+    /// `page` のフィードの写真（ブロックで落とす前）。**選んでいるフィードは出している一覧そのもの**（`state`）。
+    ///
+    /// **2026-10-31 判断（#426・owner「ホームのタブの切り替えもマイページと同じようにスムーズに」）。**
+    /// ホームのフィードも横にめくって切り替える（`ProfileTabPager`）ので、指に付いてくる隣の札にも中身が要る。
+    /// 選んでいないフィードは**選んだときと同じ決まり**（範囲・並び・絞り、「新着」は読んだページ）で、
+    /// 手元の全件から作る——**通信はしない**（選んだときに読むのは今までどおり「新着」の1ページ目だけ）。
+    /// 選び替えても中身が同じなので、一覧（`HomeMosaic`）は作り直されない。
+    /// 計算は控え（`DerivedMemo`）から——見えていない札の分まで描き直しのたびに並べ替えない
+    func photos(for page: HomeFeed) -> [Photo] {
+        if page == feed, case .loaded(let photos) = state { return photos }
+        let key = FeedPreviewKey(all: all, paged: pageSource == .pages ? pagedPhotos : nil, viewerId: viewerId,
+                                 following: followingIds, category: category, tags: selectedTags, query: query)
+        let memo = previewMemos[page] ?? DerivedMemo<FeedPreviewKey, [Photo]>()
+        previewMemos[page] = memo
+        return memo.value(for: key) { Self.preview(page, key: key) }
+    }
+
+    /// 隣のフィードの計算の入力（どれかが変わったときだけ計算し直す）
+    struct FeedPreviewKey: Equatable {
+        let all: [Photo]
+        /// 読んだ「新着」のページ（`/feed` が使えていないときは nil）
+        let paged: [Photo]?
+        let viewerId: String?
+        let following: Set<String>
+        let category: String?
+        let tags: [String]
+        let query: String
+    }
+
+    private var previewMemos: [HomeFeed: DerivedMemo<FeedPreviewKey, [Photo]>] = [:]
+
+    /// 選んでいない `page` の一覧。`filtered()` と同じ決まり（範囲 → カテゴリ → タグ → 打った文字）で、
+    /// 状態は書き換えない（チップの一覧・カテゴリの絞りは選んでいるフィードのもの）
+    nonisolated static func preview(_ page: HomeFeed, key: FeedPreviewKey) -> [Photo] {
+        let unfiltered = key.category == nil && key.tags.isEmpty
+            && key.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // 「新着」で絞りが無く、ページで読めているときは読んだページの並び（`usesPagedFeed` と同じ）
+        if page == .latest, unfiltered, let paged = key.paged { return paged }
+        let inScope = page.scope.photos(page.arrange(key.all), viewerId: key.viewerId, followingIds: key.following)
+        let inCategory: [Photo]
+        if let category = key.category {
+            let wanted = CategoryChoices.key(category)
+            inCategory = inScope.filter { CategoryChoices.key($0.category ?? "") == wanted }
+        } else {
+            inCategory = inScope
+        }
+        return PhotoQuery.photos(PhotoQuery.photos(inCategory, withAllTags: key.tags), matching: key.query)
     }
 }

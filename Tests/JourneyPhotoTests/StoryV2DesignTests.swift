@@ -233,10 +233,13 @@ final class StoryV2DesignTests: XCTestCase {
 
     func testInsightsTabsAndCounts() throws {
         let insights = try source("Features/Stories/StoryInsightsView.swift")
-        XCTAssertTrue(insights.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んだタブが真鍮でない")
-        let tabs = member("private var tabs: some View", in: insights)
-        assertInOrder(["Self.tabColor(selected: selected)", "selected ? WebTheme.accent : Color.clear",
-                       "JPStroke.emphasis"], in: tabs, "下線のタブ")
+        // 2026-10-31（#426）: 閲覧者 / リアクションはマイページと同じ札の部品（真鍮の字と 2 の下線は部品が持つ）
+        XCTAssertTrue(insights.contains("ProfileTabSection(tabs: Scope.allCases, selection: $scope,"), "下線のタブが共通の札でない")
+        let bar = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Profile/ProfileTabBar.swift"), encoding: .utf8)
+        XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んだタブが真鍮でない")
+        XCTAssertTrue(bar.contains(".frame(height: JPStroke.emphasis)"), "下線が 2 でない")
         let cell = member("private func countCell(", in: insights)
         XCTAssertTrue(cell.contains(".font(JPFont.figureLarge)"), "数が細い大きい数字でない")
         XCTAssertTrue(cell.contains("?? \"—\""), "読めていない数を 0 と書いている")

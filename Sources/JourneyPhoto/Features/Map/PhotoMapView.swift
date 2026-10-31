@@ -22,6 +22,8 @@ struct PhotoMapView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 下の「マップ」をもう一度押した合図（`MapTabReselect`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 写真の詳細で自動の結びを外した・戻した（`SpotLinkRevision`・#425）。「スポット」「リスト」の数を読み直す
+    @ObservedObject private var linkRevision = SpotLinkRevision.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
@@ -441,50 +443,20 @@ struct PhotoMapView: View {
     /// 「地図 / スポット / リスト」。地図は `shown` から、スポットは撮影スポットの台帳から、
     /// リストは両方を都道府県ごとにまとめて描く（`RegionList`）。
     ///
-    /// **v2（2026-10-14・板 Map / MapList の `tablist`）**: 角 14 の帯（白 7%）に3つ、選んでいる札は
-    /// 一段明るい面（白 16%）に白の太字・選んでいないものは text-2。幅は板の 236 で左に寄せる。
-    /// v1 は白 92% の塗りに墨の字（1画面に白の塗りが2つ並んでいた——選んだチップと）。
-    /// 板は帯 40・札 34。**押せる 44 を取るため帯 44・札 38**（2026-10-14 判断・`modeSegmentHeight`）。
-    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
+    /// **2026-10-31 判断（#426・owner「同じような機能のある画面に水平展開」）: マイページ・ホームと同じ下線の札**
+    /// （`ProfileTabBar`——選んだ札は真鍮の字と下線、下線はばねで滑る、当たりは札の間の半分まで広げる）。
+    /// 以前は角 14 の帯（白 7%）に白 16% の面の札（板 Map / MapList の `tablist`・v2 2026-10-14）で、
+    /// 同じ「見せ方の切り替え」がホーム・マイページと別の形だった。黒地の上（検索欄の下・地図の上の段）なので真鍮が読める。
+    /// **中身は横にめくらない**——地図は横に動かして見るので、払いで札を替えると地図を動かしたいのか分からない
+    /// （人のページの地図の札と同じ判断・`ProfileTabPager.swipeBlocked`）。リスト・スポットだけめくれると、
+    /// 同じ札で効く所と効かない所が割れるので、この画面は札を押して替える
     private var modePicker: some View {
-        HStack(spacing: 0) {
-            ForEach(PhotoMapViewModel.Mode.allCases) { mode in
-                let selected = model.mode == mode
-                Button {
-                    model.mode = mode
-                } label: {
-                    Text(mode.label)
-                        .font(.footnote.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? WebTheme.text : WebTheme.text2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.footnote))
-                        .frame(maxWidth: .infinity, minHeight: Self.modeSegmentHeight)
-                        .background(selected ? Color.white.opacity(Self.modeSelectedOpacity) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: JPRadius.s))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                .accessibilityIdentifier("map.mode.\(mode.rawValue)")
-            }
-        }
-        .padding(Self.modeInset)
-        .frame(maxWidth: Self.modePickerWidth)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, JPSpace.s)
-        // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
-        // 地図・リストはカテゴリのチップの下の余白がそのまま間になるが、
-        // スポットはチップを出さないので検索欄に隙間なしで付いていた
-        .padding(.top, model.mode == .spots ? JPSpace.s : 0)
-        .padding(.bottom, JPSpace.xs)
+        ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode, movesContent: false)
+            // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
+            // 地図・リストはカテゴリのチップの下の余白がそのまま間になるが、
+            // スポットはチップを出さないので検索欄に隙間なしで付いていた
+            .padding(.top, model.mode == .spots ? JPSpace.s : 0)
     }
-
-    /// 切り替えの帯の幅（板 236）・内側の余白（板 3）・札の高さ（帯 44 − 3 × 2）・選んだ札の面（白 16%）
-    nonisolated static let modePickerWidth: CGFloat = 236
-    nonisolated static let modeInset: CGFloat = 3
-    nonisolated static let modeSegmentHeight: CGFloat = WebTheme.minTapTarget - modeInset * 2
-    nonisolated static let modeSelectedOpacity = 0.16
 
     // MARK: - 地図
 
@@ -1516,7 +1488,7 @@ struct PhotoMapView: View {
         let spots = MapSearch.fold(model.query).isEmpty
             ? model.officialSpots
             : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
-        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
+        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks)
         // 丸写真の詳細を読む行（分けた置き場の索引だけの行のうち、頭から今の絞り込みでの深さまで）。
         // 詳細の和が小さいうちはどれも重ね済みで空——通信しない（`SpotDetailNeeds`・2026-10-08）
         let detailNeeds = SpotDetailNeeds.mapSpotList(
@@ -1587,6 +1559,8 @@ struct PhotoMapView: View {
         .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
             await model.loadListDetails(detailNeeds)
         }
+        // 写真の詳細で外した・戻したら、行の枚数を読み直す（出直したときにも走る・#425）
+        .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
@@ -1678,7 +1652,7 @@ struct PhotoMapView: View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
         let sections = RegionList.sections(photos: model.photos, spots: model.officialSpots,
                                            query: model.query, category: model.category,
-                                           aliases: model.spotAliases, from: center)
+                                           aliases: model.spotAliases, links: model.photoLinks, from: center)
         let currentId = sections.first(where: \.isCurrent)?.id
         // 開いている県の撮影スポットの行を並ぶ順につないだもの。丸写真の詳細は頭から `regionListDepth` 行だけ読む
         // （閉じた県は描かないので読まない・`SpotDetailNeeds`・2026-10-08）
@@ -1730,6 +1704,8 @@ struct PhotoMapView: View {
             .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
                 await model.loadListDetails(detailNeeds)
             }
+            // 写真の詳細で外した・戻したら、県の段の数を読み直す（#425）
+            .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
         }
     }
 
