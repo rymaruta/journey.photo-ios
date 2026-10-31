@@ -339,6 +339,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、とおまわり号の描画の数（1 コマの時間・値渡しの回数）を数えて読み上げの値に出す（Debug のみ・2026-10-31・#430）。
+    /// `-JPPreviewCamperPerf YES`。`CamperRenderMeter`。入っている見本の利用者のときだけ。Release では必ず false
+    static let camperPerfKey = "JPPreviewCamperPerf"
+
+    static var camperPerf: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: camperPerfKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
     /// `-JPPreviewCamperVisit YES`。
     ///

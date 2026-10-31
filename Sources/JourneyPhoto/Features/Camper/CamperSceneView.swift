@@ -37,6 +37,10 @@ struct CamperSceneView: UIViewRepresentable {
         }
         #endif
         snapshot?.view = view
+        // 1 コマの時間を測る（2026-10-31・#430・`CamperFrameMeter`。delegate は弱い参照なので場面が持つ）
+        let meter = CamperFrameMeter("CamperExteriorFrame")
+        context.coordinator.frameMeter = meter
+        view.delegate = meter
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
         // 炎の揺らぎ（SCNAction）は「動いている」ので、rendersContinuously が false のままでも描き直される。
@@ -55,11 +59,13 @@ struct CamperSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        let c = context.coordinator
-        c.show(config)
-        c.setAngle(angle, animated: animateAngle && !reduceMotion)
-        c.setDoor(open: doorOpen, animated: !reduceMotion)
-        c.setFlicker(allowed: !reduceMotion)
+        CamperRenderMark.measure("CamperExteriorUpdate") {
+            let c = context.coordinator
+            c.show(config)
+            c.setAngle(angle, animated: animateAngle && !reduceMotion)
+            c.setDoor(open: doorOpen, animated: !reduceMotion)
+            c.setFlicker(allowed: !reduceMotion)
+        }
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: CamperScene) {

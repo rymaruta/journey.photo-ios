@@ -99,6 +99,8 @@ final class CamperRoomScene {
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
     var firstFrame: AnyObject?
+    /// 1 コマの時間を測る delegate（見張りの前に挟む・2026-10-31・#430）
+    var frameMeter: AnyObject?
     /// 材質を替えたあとに再描画させる（`rendersContinuously = false` だと取りこぼすことがある）
     private weak var scnView: SCNView?
 
@@ -484,6 +486,7 @@ final class CamperRoomScene {
     }
 
     private func applyPhotos(_ holder: SCNNode, _ it: CamperRoomPlacedItem) {
+        CamperRenderMark.count("CamperRoomApplyPhotos")
         guard let body = holder.childNodes.first(where: { $0.name == "body" }), let g = body.geometry,
               let mesh = furniture[it.furnitureId] else { return }
         let photos: [String]
@@ -627,6 +630,7 @@ final class CamperRoomScene {
     private func kickRender() {
         // 止まっている SCNView（rendersContinuously = false）に、材質の差し替えを気づかせる
         guard let view = scnView else { return }
+        CamperRenderMark.count("CamperRoomKick")
         view.rendersContinuously = true
         view.scene = scene
         DispatchQueue.main.async { [weak self] in self?.scnView?.rendersContinuously = false }

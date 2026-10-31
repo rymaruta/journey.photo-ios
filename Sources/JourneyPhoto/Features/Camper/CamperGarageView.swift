@@ -91,6 +91,8 @@ struct CamperGarageView: View {
             }
         }
         .background { backdrop }
+        // 描画の数（見本の起動の計測のときだけ・見えない 1pt・2026-10-31・#430）
+        .overlay(alignment: .topLeading) { if PreviewSession.camperPerf { CamperRenderProbe(id: "camper.perf.exterior") } }
         .navigationTitle(L("キャンピングカー", "Camper"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)

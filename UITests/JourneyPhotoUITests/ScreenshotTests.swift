@@ -5022,6 +5022,195 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - とおまわり号の描画を測る（2026-10-31・#430「キャンピングカーの描画を軽くする」）
+    //
+    // 外観（昼）・灯り（外の夜）・部屋（昼・夜）を開いて数秒動かし、次を取る。見本の起動（`-JPPreviewCamperPerf YES`）だけ数える。
+    // - XCTest の measure: アプリの CPU（`XCTCPUMetric`）・メモリ（`XCTMemoryMetric`）・1 コマと値渡しの印の時間
+    //   （`XCTOSSignpostMetric`・アプリの `CamperRenderMark`）。ログの `measured [` の行に出る
+    // - アプリの数（`CamperRenderProbe` の読み上げの値）の前後の差: 1 コマの回数・毎秒のコマ・平均・16.7 ms を越えたコマ・
+    //   値渡しの回数。ログの `CAMPERPERF:` の行と、注記（`計測（とおまわり号の描画・…）`・screenshots の枝の .txt）に残す
+    // 普段の回（PR の検証・TestFlight）では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
+    // 名指しは `screens=testMeasuresCamperRender`。値は Mac の CI のシミュレーターのもの（実機ではない）
+
+    /// アプリの `CamperRenderMeter.subsystem`・`category` と同じ字
+    private static let camperRenderSubsystem = "com.journeyphoto.camper"
+    private static let camperRenderCategory = "CamperRender"
+    /// measure の回数（1 回 4〜6 秒）
+    private static let camperRenderIterations = 3
+
+    struct CamperRenderTally {
+        var count = 0
+        var ms = 0.0
+        var max = 0.0
+        var slow = 0
+    }
+
+    /// アプリの数を読む（`CamperRenderMeter.summary` の「名前 n= ms= max= slow=;」）
+    private func camperMeter(_ app: XCUIApplication, _ id: String) -> [String: CamperRenderTally] {
+        let probe = app.descendants(matching: .any)[id].firstMatch
+        guard probe.waitForExistence(timeout: 5) else { return [:] }
+        // 読み上げの値は 0.5 秒ごとに読み直される。いちばん新しい値を読む
+        Thread.sleep(forTimeInterval: 0.6)
+        var out: [String: CamperRenderTally] = [:]
+        for entry in ((probe.value as? String) ?? "").split(separator: ";") {
+            let words = entry.split(separator: " ")
+            guard let name = words.first else { continue }
+            var t = CamperRenderTally()
+            for w in words.dropFirst() {
+                let kv = w.split(separator: "=")
+                guard kv.count == 2 else { continue }
+                switch kv[0] {
+                case "n": t.count = Int(kv[1]) ?? 0
+                case "ms": t.ms = Double(kv[1]) ?? 0
+                case "max": t.max = Double(kv[1]) ?? 0
+                case "slow": t.slow = Int(kv[1]) ?? 0
+                default: break
+                }
+            }
+            out[String(name)] = t
+        }
+        return out
+    }
+
+    /// 1 つの場面の前後の差を行にする（ログの `CAMPERPERF:` と注記の両方へ）
+    private func camperPhase(_ app: XCUIApplication, probe id: String, _ label: String, lines: inout [String], _ body: () -> Void) {
+        let before = camperMeter(app, id)
+        let start = Date()
+        body()
+        let seconds = Date().timeIntervalSince(start)
+        let after = camperMeter(app, id)
+        if after.isEmpty { lines.append("\(label): 数が読めない（\(id) が無い）") }
+        for key in after.keys.sorted() {
+            let a = after[key]!, b = before[key] ?? CamperRenderTally()
+            let n = a.count - b.count
+            let ms = a.ms - b.ms
+            let avg = n > 0 ? ms / Double(n) : 0
+            lines.append(String(format: "%@ | %@ n=%d per_s=%.1f avg_ms=%.2f total_ms=%.1f slow=%d max_all_ms=%.2f secs=%.1f",
+                                label, key, n, Double(n) / max(seconds, 0.001), avg, ms, a.slow - b.slow, a.max, seconds))
+        }
+    }
+
+    private func camperRenderMetrics(_ app: XCUIApplication, _ names: [String]) -> [XCTMetric] {
+        var metrics: [XCTMetric] = [XCTCPUMetric(application: app), XCTMemoryMetric(application: app)]
+        for n in names {
+            metrics.append(XCTOSSignpostMetric(subsystem: Self.camperRenderSubsystem, category: Self.camperRenderCategory, name: n))
+        }
+        return metrics
+    }
+
+    private func camperRenderOptions() -> XCTMeasureOptions {
+        let o = XCTMeasureOptions()
+        o.iterationCount = Self.camperRenderIterations
+        return o
+    }
+
+    /// 指 1 本で横に引いて回す（行って戻る。ゆっくりの指で 1 回 2 秒ほど）
+    private func camperSpin(_ scene: XCUIElement, times: Int = 2) {
+        for i in 0..<times {
+            let left = scene.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            let right = scene.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+            let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.05)
+        }
+    }
+
+    /// 測った行をログと注記に残す
+    private func camperReport(_ title: String, _ lines: [String]) {
+        for line in lines { print("CAMPERPERF: \(name) \(line)") }
+        let text = XCTAttachment(string: lines.joined(separator: "\n"))
+        text.name = "計測（とおまわり号の描画・\(title)）"
+        text.lifetime = .keepAlways
+        add(text)
+    }
+
+    /// **外観（昼）**: 止まっている 3 秒・指で回す（measure）・回した後の 3 秒
+    func testMeasuresCamperRenderExterior() {
+        executionTimeAllowance = 600
+        let app = launchTrunk(["-JPPreviewCamperPerf", "YES"])
+        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
+        let probe = "camper.perf.exterior"
+        var lines: [String] = []
+        camperPhase(app, probe: probe, "外観・昼・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        camperPhase(app, probe: probe, "外観・昼・回す（measure 全回）", lines: &lines) {
+            measure(metrics: camperRenderMetrics(app, ["CamperExteriorFrame", "CamperExteriorUpdate"]), options: camperRenderOptions()) {
+                self.camperSpin(scene)
+            }
+        }
+        camperPhase(app, probe: probe, "外観・昼・回した後に止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        shoot(app, "95x1-計測（外観・昼）")
+        camperReport("外観・昼", lines)
+    }
+
+    /// **灯り（外の夜）**: 炎が揺れている夜の外を止めたまま（measure）・回す・中に入っている間の外（描き続けていないか）
+    func testMeasuresCamperRenderNight() {
+        executionTimeAllowance = 600
+        let app = launchTrunk(["-JPPreviewCamperPerf", "YES"])
+        XCTAssertTrue(openCamper(app), "キャンピングカーの画面が開かない")
+        guard waitCamper(app, "camper-ready") else { return XCTFail("キャンピングカーを組み終えない") }
+        let night = app.buttons["camper.mood.night"].firstMatch
+        guard night.waitForExistence(timeout: 5) else { return XCTFail("夜のボタンが無い") }
+        night.tap()
+        waitCamper(app, "night")
+        let scene = app.descendants(matching: .any)["camper.scene"].firstMatch
+        var lines: [String] = []
+        camperPhase(app, probe: "camper.perf.exterior", "外の夜・止まっている（measure 全回）", lines: &lines) {
+            measure(metrics: camperRenderMetrics(app, ["CamperExteriorFrame", "CamperExteriorUpdate"]), options: camperRenderOptions()) {
+                Thread.sleep(forTimeInterval: 4)
+            }
+        }
+        camperPhase(app, probe: "camper.perf.exterior", "外の夜・回す", lines: &lines) { camperSpin(scene) }
+        shoot(app, "95x2-計測（外の夜）")
+        // 中に入る（外の車は画面から外れる）。部屋を組み終えてから、外が描き続けていないかを見る
+        let enter = app.buttons["camper.room.enter"].firstMatch
+        guard enter.waitForExistence(timeout: 10) else { return XCTFail("「中に入る」が無い") }
+        if !enter.isHittable { scrollTo(enter, in: app) }
+        enter.tap()
+        XCTAssertTrue(waitRoom(app, "camper.room.scene", "camper-room-ready"), "部屋を組み終えない")
+        camperPhase(app, probe: "camper.perf.room", "外の夜から入った部屋・止まっている（外の車のコマを見る）", lines: &lines) {
+            Thread.sleep(forTimeInterval: 4)
+        }
+        shoot(app, "95x3-計測（外の夜から入った部屋）")
+        camperReport("外の夜", lines)
+    }
+
+    /// **部屋（昼）**: 止まっている 3 秒・指で回す（measure）
+    func testMeasuresCamperRenderRoom() {
+        measureCamperRoom(night: false)
+    }
+
+    /// **部屋（夜の灯り）**: 夜にして、止まっている 3 秒・指で回す（measure）
+    func testMeasuresCamperRenderRoomNight() {
+        measureCamperRoom(night: true)
+    }
+
+    private func measureCamperRoom(night: Bool) {
+        executionTimeAllowance = 600
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
+        let label = night ? "部屋・夜" : "部屋・昼"
+        if night {
+            app.buttons["camper.room.night"].firstMatch.tap()
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
+        }
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        let probe = "camper.perf.room"
+        var lines: [String] = []
+        camperPhase(app, probe: probe, "\(label)・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        camperPhase(app, probe: probe, "\(label)・回す（measure 全回）", lines: &lines) {
+            measure(metrics: camperRenderMetrics(app, ["CamperRoomFrame", "CamperRoomUpdate", "CamperRoomPhotoImages", "CamperRoomPhotosMode",
+                                                        "CamperRoomShow"]),
+                    options: camperRenderOptions()) {
+                self.camperSpin(scene)
+            }
+        }
+        camperPhase(app, probe: probe, "\(label)・回した後に止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        shoot(app, night ? "95x5-計測（部屋・夜）" : "95x4-計測（部屋・昼）")
+        camperReport(label, lines)
+    }
+
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
     func testCapturesCamperLargeText() {
