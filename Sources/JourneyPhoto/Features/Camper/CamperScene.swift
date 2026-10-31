@@ -81,6 +81,8 @@ final class CamperScene {
     private var doorOpen = false
     /// 組み終えたら呼ぶ（読み上げの値・画面写真の試験が待つ）
     var onReady: ((String) -> Void)?
+    /// 1 コマの時間を測る delegate（SCNView の delegate は弱い参照なので、ここで持つ・2026-10-31・#430）
+    var frameMeter: AnyObject?
 
     init() {
         buildStage()

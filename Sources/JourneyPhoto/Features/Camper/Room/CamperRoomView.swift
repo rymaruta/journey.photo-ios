@@ -152,6 +152,8 @@ struct CamperRoomView: View {
             }
         }
         .background { Color.black.ignoresSafeArea() }
+        // 描画の数（見本の起動の計測のときだけ・見えない 1pt・2026-10-31・#430）
+        .overlay(alignment: .topLeading) { if PreviewSession.camperPerf { CamperRenderProbe(id: "camper.perf.room") } }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         // 部屋の中はタブを隠す（下の道具の段がタブに掛からない・Mac run 568）

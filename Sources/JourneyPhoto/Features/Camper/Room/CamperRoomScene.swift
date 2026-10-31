@@ -99,6 +99,8 @@ final class CamperRoomScene {
     var studio = false
     /// 最初のコマの見張り（SCNView の delegate は弱い参照なので、ここで持つ）
     var firstFrame: AnyObject?
+    /// 1 コマの時間を測る delegate（見張りの前に挟む・2026-10-31・#430）
+    var frameMeter: AnyObject?
     /// 材質を替えたあとに再描画させる（`rendersContinuously = false` だと取りこぼすことがある）
     private weak var scnView: SCNView?
 
@@ -283,6 +285,10 @@ final class CamperRoomScene {
             entry.node.removeFromParentNode()
             itemNodes[uid] = nil
         }
+        // 切った壁の見せ方（`applyCutaway`）を付け直すか。2026-10-31（#430 の見直し）: 値渡しのたびの `setPhotosMode` を
+        // 変わった時だけにしたので、取り消し・やり直し・自動で置いた左の壁の家具が、切った後ろ壁の上に浮いて見えた
+        // （前は `setPhotosMode` が毎回 `applyCutaway` を回して隠れていた）。節を新しく作った・壁や向きが替わった時に付け直す
+        var needsCutaway = false
         for it in placed {
             if let entry = itemNodes[it.uid], entry.item.furnitureId == it.furnitureId {
                 if entry.item != it {
@@ -290,7 +296,12 @@ final class CamperRoomScene {
                     SCNTransaction.animationDuration = 0.12
                     transform(entry.node, displayed(it))
                     SCNTransaction.commit()
-                    if entry.item.photos != it.photos { applyPhotos(entry.node, it) }
+                    if entry.item.photos != it.photos {
+                        applyPhotos(entry.node, it)
+                        // 文書の側で額の写真が替わった（止まっている SCNView に描き直させる）
+                        kickRender()
+                    }
+                    if entry.item.yaw != it.yaw || entry.item.placement != it.placement { needsCutaway = true }
                     itemNodes[it.uid] = (entry.node, it)
                 }
                 continue
@@ -300,8 +311,10 @@ final class CamperRoomScene {
             itemsNode.addChildNode(node)
             itemNodes[it.uid] = (node, it)
             transform(node, displayed(it))
+            needsCutaway = true
         }
         rebuildLamps(placed, layout: layout, style: doc.style)
+        if needsCutaway { applyCutaway() }
     }
 
     /// 組み直した後に、持ち上げている家具とマス目の色を描き直す
@@ -402,20 +415,48 @@ final class CamperRoomScene {
 
     // MARK: 写真
 
-    /// 額に入れる写真（投稿の写真の id → 絵）。読めたものから入れる
+    /// 額に入れる写真（投稿の写真の id → 絵）。読めたものから入れる。
+    /// 2026-10-31（#430・Mac run 792）: SwiftUI の値渡し（`updateUIView`）は指で回すたびに呼ばれ、絵が同じでも
+    /// 全部の額の材質を作り直し（回す 1 回の値渡しで印画の付け直し 18 回）、止まっている SCNView を起こしていた。
+    /// 絵の組が前と同じ（同じ id に同じ絵）なら何もしない（`Self.samePhotos`）
     func setPhotoImages(_ images: [String: UIImage]) {
+        guard !Self.samePhotos(images, photoImages) else { return }
         photoImages = images
         for (_, entry) in itemNodes { applyPhotos(entry.node, entry.item) }
         kickRender()
     }
 
-    /// 写真を飾る場面の見せ方（天井の換気窓などを隠し、選んだ額の前に縁を出す・見本の写真を載せる）
+    /// 同じ id に同じ絵（同じ物）が入っているか（絵の中身は比べない。読み直した絵は別の物として入れ直す）
+    nonisolated static func samePhotos(_ a: [String: UIImage], _ b: [String: UIImage]) -> Bool {
+        sameEntries(a, b) { x, y in
+            #if os(Linux)
+            // Linux の模型の UIImage は中身の無い値なので、id の組だけを比べる
+            return true
+            #else
+            return x === y
+            #endif
+        }
+    }
+
+    nonisolated static func sameEntries<T>(_ a: [String: T], _ b: [String: T], same: (T, T) -> Bool) -> Bool {
+        guard a.count == b.count else { return false }
+        for (id, value) in a {
+            guard let other = b[id], same(value, other) else { return false }
+        }
+        return true
+    }
+
+    /// 写真を飾る場面の見せ方（天井の換気窓などを隠し、選んだ額の前に縁を出す・見本の写真を載せる）。
+    /// 2026-10-31（#430・Mac run 792）: 前は「家具が 1 つでもあれば」毎回、額の付け直し・切った壁の見直し・
+    /// 選んだ額の縁の作り直しと SCNView の起こしをしていた（指で回す値渡しのたび）。変わった時だけにする。
+    /// 組み直した後は `show` の終わり（`applyPhotosModeVisibility`・`applyCutaway`・`updateFocusRing`・
+    /// `reapplyAllPhotos`）が今の値で付け直し、家具を足した時は `makeItemNode` が `applyPhotos` を呼ぶ
     func setPhotosMode(_ on: Bool, focus: String?, preview: String?) {
         let changed = on != photosMode || focus != focusFrameUid || preview != previewPhotoId
         photosMode = on
         focusFrameUid = focus
         previewPhotoId = preview
-        guard changed || !itemNodes.isEmpty else { return }
+        guard changed else { return }
         applyPhotosModeVisibility()
         // 選んだ額を切った壁の規則から外す（写真を飾る場面に入った直後）
         applyCutaway()
@@ -483,7 +524,13 @@ final class CamperRoomScene {
         focusNode.isHidden = false
     }
 
+    /// 試験用: 額の印画を付け直した回数・止まっている SCNView を起こした回数
+    private(set) var photoApplies = 0
+    private(set) var renderKicks = 0
+
     private func applyPhotos(_ holder: SCNNode, _ it: CamperRoomPlacedItem) {
+        CamperRenderMark.count("CamperRoomApplyPhotos")
+        photoApplies += 1
         guard let body = holder.childNodes.first(where: { $0.name == "body" }), let g = body.geometry,
               let mesh = furniture[it.furnitureId] else { return }
         let photos: [String]
@@ -627,6 +674,8 @@ final class CamperRoomScene {
     private func kickRender() {
         // 止まっている SCNView（rendersContinuously = false）に、材質の差し替えを気づかせる
         guard let view = scnView else { return }
+        CamperRenderMark.count("CamperRoomKick")
+        renderKicks += 1
         view.rendersContinuously = true
         view.scene = scene
         DispatchQueue.main.async { [weak self] in self?.scnView?.rendersContinuously = false }
