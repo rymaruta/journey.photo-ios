@@ -48,22 +48,19 @@ struct GalleryView: View {
     @State private var shownViewer: String??
     /// 「いまの季節のスポット」の段の中身（決めるのは上の札 `HomeTopCardView`・#417 ④）
     @State private var seasonShelf: HomeSeasonShelfSlot?
-    /// 切り替えの札の行の位置の控え（留まったか・中身がどれだけ流れたか・#426 `PinnedTabRowSpot`）。
-    /// 以前は上の札（`HomeTopCardView`）が画面に出ているか（`onAppear`/`onDisappear`）で留まりを見ていたが、
-    /// `LazyVStack` は画面の少し外まで作るので境がずれた。送るたびに変わる値なので見張らない箱に置く
-    @State private var feedRow = PinnedTabRowSpot()
+    /// 切り替えの札の行の位置の控え（マイページと同じ `ProfileTabRowSpot`）。送るたびに変わる値なので見張らない箱に置く
+    @State private var feedRowSpot = ProfileTabRowSpot()
+    /// 中身の横の量の箱を、縦の送りの外に重ねた札の行（留まった札）と分け合う（`ProfileTabPagerControl`）
+    @State private var feedPager = ProfileTabPagerControl<HomeFeed>()
     /// 札ごとの写真の束ね（ブロックを落とす・投稿で束ねる・季節の段の前後に割る）の控え（#426 確かめ役の見直し）。
     /// 描き直しのたびに全部の札で計算し直さない——元の写真か「見せない」が変わったときだけ
     @State private var pageMemo = HomeFeedPageMemo()
-    /// 札の行が上に留まっているか（留まった姿 `stuck` に使う。変わったときだけ書く）
+    /// 札の行が上に留まっているか（重ねて描く札 `pinnedFeedRow` を出す。変わったときだけ書く）
     @State private var feedRowPinned = false
     /// 札の行の高さ・見えている高さ（札の中身の最低の高さ `ProfileTabScroll.minPageHeight`）
     @State private var feedRowHeight: CGFloat = ProfileTabStyle.height
     @State private var feedViewport: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 留まった切り替えで別のフィードを押した回数（一覧の頭へ送る合図・`feed` の `onChange`）
-    /// ホームの縦の送りの取っ手（留まったまま替えたら、測った量だけ頭へ戻す・`ScrollHostHandle`）
-    @State private var feedScroll = ScrollHostHandle()
     /// 「フォロー中」をどこまで見たか（#417 ⑨・`FollowingSeenStore`）。人が替わったとき・覚え直したときに読み直す
     @State private var followingSeen: String?
     private let followingSeenStore = FollowingSeenStore()
@@ -380,17 +377,33 @@ struct GalleryView: View {
     ///
     /// **#417 ⑨: フォロー中に新しい写真がある日は「フォロー中」の右上に真鍮の点**（8・黒 2 の縁・字の右端から 11・上から 9。
     /// お知らせの未読の点と同じ形・`ProfileTabDot`）。読み上げは「フォロー中・新しい写真あり」（`HomeFollowingNews`）
-    private func feedPicker(followingHasNew: Bool) -> some View {
-        ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: feedRowPinned,
+    private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View {
+        ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: stuck,
                       dot: { $0 == .following && followingHasNew },
                       spokenLabel: { HomeFollowingNews.spokenLabel($0.label, hasNew: $0 == .following && followingHasNew) })
-            // 札の行の上の払いは、中身の払い（`ProfileTabPager.swipeExtendsUp`）が札の行まで枠を広げて受ける。
-            // ここに別の払いを付けない——留まった札の行は中身の上に重なり、2つが指を取り合っていた（#426 確かめ役）
             // **規則の一文は出さない**（整理案 01c）。写真より先に
             // 説明が並ぶと、開いた瞬間に読むものが増える。
             // 文言は `HomeFeed.note` に残してある
-            // 地はいつも画面の黒で塗る（留まった印 `feedRowPinned` が届く1拍の間に、下の写真が透けない）
+            // 地は画面の黒（流れている札の行も黒地の上・留まった札は部品が黒 100% で塗る）
             .background(WebTheme.background)
+    }
+
+    /// 上に留まった切り替え（流れている元の行が見えている上端を越えている間だけ、縦の送りの外に重ねる）。
+    ///
+    /// **2026-10-31 判断（#426 Mac の確かめ・run 41201788362 の数）: マイページと同じ「重ねて描く札」にした。**
+    /// 以前は `LazyVStack(pinnedViews: [.sectionHeaders])` の節の見出しで留めていたが、遅れて作る並びは札の中身
+    /// （横に並べた入れ物）の高さを**1つ前の選びの高さのまま**持ち続けた（新着 → フォロー中で中身の高さ 6320、
+    /// フォロー中 → 新着で 1042）。短い高さが残った回に送りの位置が詰められ（offset 178.33 → 169.00）、札の行が
+    /// 留まりから外れて下がった（y 116 → 121.33・前の回は 118.33・130.33）。並びを `VStack` にして高さが選びと
+    /// 一緒に変わるようにし、留め方はマイページ（`pinnedTabRow`）と同じにした。
+    /// 横の払い: 重ねた札は縦の送りの外なので、縦の送りに足すパンは届かない。札の行の上だけ SwiftUI の
+    /// 指の操作（`ProfileTabOverlaySwipe`）で受け、中身と同じ箱（`feedPager`）を動かす——中身が指に付いてくる
+    private func pinnedFeedRow(followingHasNew: Bool) -> some View {
+        feedPicker(followingHasNew: followingHasNew, stuck: true)
+            .modifier(ProfileTabOverlaySwipe(tabs: HomeFeed.allCases, selection: feedSelection, control: feedPager))
+            // 札の目印（`home.feed.*`）は中に残す（入れ物の目印で上書きしない）
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("home.feed.pinned")
     }
 
     /// 札で選んでいるフィード。押した・払ったのどちらも `selectFeed` を通す
@@ -400,15 +413,9 @@ struct GalleryView: View {
 
     /// フィードを選ぶ（札を押した・中身か札の行を横に払った）
     private func selectFeed(_ feed: HomeFeed) {
-        let changed = model.feed != feed
         model.select(feed: feed, viewerId: auth.userId)
-        // ⑧ 留まった切り替えで別のフィードを選んだら、新しい一覧の**頭**へ送る（PR #422 の確かめ）。
-        // 送らないと、前の一覧の深さのまま新しい一覧の途中（短ければ一番下）が出る。
-        // 留まっていない（札の行が見えている）ときは送らない——開いた画面が飛ばない
-        // 2026-10-31（#426 Mac の確かめ）: 留まった札の行を目印に `scrollTo` すると、遅れて作る並びの見積もりで
-        // いちばん上まで戻った。測った量（中身の頭が札の行の下からどれだけ上へ流れているか）だけ戻す
-        if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }
-        if PreviewSession.feedProbe { updateFeedProbe() }
+        // ⑧ 留まった切り替えで別のフィードを選んだら、新しい一覧の**頭**へ送る（PR #422 の確かめ）——
+        // `feed` の `.onChange(of: model.feed)`（マイページと同じ `ProfileTabScroll.scrollsToRow`）
         // **選んだときにフォロー一覧を引き直す。** 一覧は
         // `.task(id: auth.userId)` で一度しか引いていないので、
         // 誰かをフォローしても「フォロー中」に出てこない
@@ -425,30 +432,28 @@ struct GalleryView: View {
         }
     }
 
-    /// 札の行が留まった・外れたを書く（変わったときだけ描き直す・`PinnedTabRowSpot`）
-    private func settleFeedRow(_ pinned: Bool) {
-        if pinned != feedRowPinned { feedRowPinned = pinned }
-        if PreviewSession.feedProbe { updateFeedProbe() }
-    }
 
     /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
     @State private var feedProbeText = ""
 
     private func updateFeedProbe() {
-        let n = ScrollHostHandle.n
-        let text = "feed=\(model.feed.rawValue) headerMaxY=\(feedRow.headerMaxY.map(n) ?? "nil")"
-            + " contentMinY=\(feedRow.contentMinY.map(n) ?? "nil") restGap=\(feedRow.restGap.map(n) ?? "nil")"
-            + " overflow=\(n(feedRow.overflow)) pinned=\(feedRow.isPinned) rowH=\(n(feedRowHeight))"
-            + " viewport=\(n(feedViewport)) \(feedScroll.probe) last=[\(feedScroll.lastScrollBack)]"
+        let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
+        let text = "feed=\(model.feed.rawValue) rowMinY=\(n(feedRowSpot.minY))"
+            + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
+            + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
         if text != feedProbeText { feedProbeText = text }
     }
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
     /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
     private func feed(_ photos: [Photo]) -> some View {
+        ZStack(alignment: .top) {
         ScrollViewReader { proxy in
         ScrollView {
-            LazyVStack(spacing: 24, pinnedViews: [.sectionHeaders]) {
+            // 2026-10-31（#426 Mac の確かめ）: `LazyVStack` の節の見出しで留めるのをやめ、マイページと同じ `VStack` と
+            // 重ねて描く札（`pinnedFeedRow`）にした。遅れて作る並びが札の中身の高さを1つ前の選びのまま持ち、送りの位置を
+            // 詰めて札の行を動かしていた。写真の一覧の遅れて作る並びは `HomeMosaic` の中にある（画面に入った段だけ作る）
+            VStack(spacing: Self.feedSpacing) {
                 // 「ホーム」をもう一度押したときに戻る先（高さ0の目印）
                 Color.clear.frame(height: 0).id(Self.feedTopID)
                 // **ストーリーはホームの一番上**（モック1）。
@@ -482,46 +487,39 @@ struct GalleryView: View {
                                 myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf)
-                // ⑧ 切り替えは写真の一覧の頭の見出し。下へ送っても見出しの下に留まる
+                // ⑧ 切り替えは写真の一覧の頭。下へ送ると、見えている上端に留まる（重ねて描く `pinnedFeedRow`）。
+                // 留まっている間は元の行を見せず・押させず・読ませない（場所は取り続ける——位置の控えと「替えたら頭から」の目印）
+                feedPicker(followingHasNew: followingHasNew, stuck: false)
+                    .opacity(feedRowPinned ? 0 : 1)
+                    .allowsHitTesting(!feedRowPinned)
+                    .accessibilityHidden(feedRowPinned)
+                    .id(Self.feedRowID)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .scrollView)
+                    } action: { frame in
+                        if let height = feedRowSpot.record(frame, height: feedRowHeight) { feedRowHeight = height }
+                        if PreviewSession.feedProbe { updateFeedProbe() }
+                    }
+                    // 上端を越えたかは、越えた・戻ったときだけ値が変わる（送るたびに描き直さない）
+                    .onGeometryChange(for: Bool.self) { proxy in
+                        ProfileTabScroll.pinsRow(rowMinY: proxy.frame(in: .scrollView).minY, visibleTop: 0)
+                    } action: { feedRowPinned = $0 }
                 // #426: 中身はフィードごとの札を横に並べて持つ（`ProfileTabPager`・マイページと同じ入れ物）。
-                // 一度開いたフィードは捨てずに持つので、戻っても一覧を作り直さない（写真の読み直し・ちらつきが無い）。
-                // 最低の高さは「見えている高さ − 札の行」——短いフィードへ替えても送りの位置が詰められず、札の行が跳ばない
-                Section {
-                    ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,
-                                    minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport, visibleTop: 0,
-                                                                              rowHeight: feedRowHeight, spacing: 0),
-                                    rowOverflow: { feedRow.overflow },
-                                    // 選んでいる札と左右の隣だけを持つ（写真の一覧が長いので、離れた札は捨てる）
-                                    keepsDistantPages: false,
-                                    // 札の行の上の払いも、この1つの払いが受ける（中身が指に付いてくる・`swipeExtendsUp`）
-                                    swipeExtendsUp: feedRowHeight + Self.feedSpacing) { page in
-                        VStack(spacing: Self.feedSpacing) {
-                            feedSection(page, rows: pageRows(page, selected: photos))
-                        }
+                // 最低の高さは「見えている高さ − 札の行と間」——短いフィードへ替えても送りの位置が詰められず、札の行が跳ばない
+                ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,
+                                minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport, visibleTop: 0,
+                                                                          rowHeight: feedRowHeight, spacing: Self.feedSpacing),
+                                rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0) },
+                                // 選んでいる札と左右の隣だけを持つ（写真の一覧が長いので、離れた札は捨てる）
+                                keepsDistantPages: false,
+                                // 流れている札の行の上の払いも、この1つの払いが受ける（中身が指に付いてくる・`swipeExtendsUp`）
+                                swipeExtendsUp: feedRowHeight + Self.feedSpacing,
+                                // 重ねた札の行の払いと、中身の横の量の箱を分け合う
+                                control: feedPager) { page in
+                    VStack(spacing: Self.feedSpacing) {
+                        feedSection(page, rows: pageRows(page, selected: photos))
                     }
-                    // 縦の送りの取っ手（留まったまま替えたら頭へ戻す・`ScrollHostHandle`）
-                    .background { ScrollHostProbe(handle: feedScroll) }
-                    // 中身の上端（札の行が留まったか・どれだけ流れたかを測る・`PinnedTabRowSpot`）
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.frame(in: .scrollView).minY
-                    } action: { minY in
-                        feedRow.recordContent(minY: minY, settled: settleFeedRow)
-                    }
-                } header: {
-                    feedPicker(followingHasNew: followingHasNew)
-                        .onGeometryChange(for: CGRect.self) { proxy in
-                            proxy.frame(in: .scrollView)
-                        } action: { frame in
-                            feedRow.recordHeader(maxY: frame.maxY, settled: settleFeedRow)
-                            // 高さは文字の大きさでしか変わらない（変わったときだけ描き直す）
-                            if frame.height != feedRowHeight { feedRowHeight = frame.height }
-                        }
                 }
-                // 「新着」の続きを読む目印。**外側の `LazyVStack` の子**（札の中身の外）に置く——札の中身は横に並べる
-                // 入れ物の中の普通の並びなので、そこに置くと画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびに
-                // また読んで、送らなくても全部のページを読んでいた（#426 確かめ役）。ここなら下まで送ったときだけ作られる。
-                // 続きを読むのは「新着」を選んでいる間だけ（`hasMorePages`）
-                pageFooter
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
@@ -550,15 +548,27 @@ struct GalleryView: View {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
+        // ⑧ 深く送ってから替えたら、新しい一覧は頭から（札の行を上端へ・マイページと同じ）。まだ送っていなければそのまま
+        .onChange(of: model.feed) { _, _ in
+            guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }
+            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                proxy.scrollTo(Self.feedRowID, anchor: .top)
+            }
+        }
         // ⑨ 「フォロー中」を開いた・開いている間に届いた・人が替わった・初めての日 → 既読を覚え直す
         .onChange(of: FollowingSeenKey(feed: model.feed, newest: followingNewest, viewer: auth.userId),
                   initial: true) { _, _ in
             syncFollowingSeen()
         }
         }
+        // 送ると上に留まる切り替え（縦の送りの外に重ねる・マイページの `pinnedTabRow` と同じ）
+        if feedRowPinned { pinnedFeedRow(followingHasNew: followingHasNew) }
+        }
     }
 
     private static let feedTopID = "home-feed-top"
+    /// 切り替えの札の行（深く送ってから替えたら、ここを上端へ）
+    static let feedRowID = "home.feed.row"
 
     /// 札ごとの写真の束。**選んでいるフィードは出している一覧**（`model.state`）、選んでいないフィード
     /// （横にめくった隣）は同じ決まりで手元から作る（`GalleryViewModel.photos(for:)`）。ブロックを落とし、
@@ -618,9 +628,12 @@ struct GalleryView: View {
                 HomeMosaic(groups: split.rest, onReport: { reportTarget = $0 })
             }
         } else {
-            HomeMosaic(groups: groups, onReport: { reportTarget = $0 })
+            // 「新着」の続きを読む目印は、写真の一覧の遅れて作る並び（`HomeMosaic` の `LazyVStack`）の最後の段。
+            // 札の中身の普通の並びに置くと、画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびにまた読んで、
+            // 送らなくても全部のページを読んでいた（#426 確かめ役）。続きを読むのは選んでいる「新着」だけ（`hasMorePages`）
+            HomeMosaic(groups: groups, onReport: { reportTarget = $0 },
+                       footer: page == model.feed && model.hasMorePages ? AnyView(pageFooter) : nil)
         }
-        // 続きを読む目印（`pageFooter`）は札の中身に置かない——外側の `LazyVStack` の子（`feed`）
     }
 
     /// 季節の段の上下を、一覧の段の間（24）から板の間（上 16・下 12）へ詰める量

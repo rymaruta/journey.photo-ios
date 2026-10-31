@@ -58,6 +58,9 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
     /// 札の行と中身にそれぞれ払いを付けると、留まった札の行（中身の上に重なる）の上で2つが指を取り合い、
     /// 札の行の上の払いでは中身が指に付いてこなかった。中身の払い1つの枠を札の行まで広げ、どちらで払っても同じにする
     var swipeExtendsUp: CGFloat = 0
+    /// 縦の送りの外に重ねた札の行（ホームの留まった札）と、中身の横の量の箱を分け合う（`ProfileTabOverlaySwipe`）。
+    /// nil なら入れ物が自分の箱を持つ（マイページ・人のページ）
+    var control: ProfileTabPagerControl<Tab>? = nil
     @ViewBuilder let page: (Tab) -> Page
 
     /// 作ってある札。**最初は空**で、出たとき（`onAppear`）に選んでいる札を入れる——以前は `.posts` 決め打ちで、
@@ -70,8 +73,19 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
     /// 選んでいない札を下へずらす量（払い始めに `rowOverflow` を写す）
     @State private var lift: CGFloat = 0
 
+    /// 横の量の箱。外から分け合う箱（`control`）があればそれ、無ければ自分の箱
+    private var dragBox: ProfileTabDrag { control?.drag ?? drag }
+
+    /// 払っている間（毎フレーム）: 隣の札を下げる量を写し、まだ作っていなければ作る（指の後ろから空の札が出てこない）。
+    /// 状態を書くのは変わるときだけ
+    private func prepare(_ next: Tab) {
+        let overflow = rowOverflow()
+        if lift != overflow { lift = overflow }
+        if !pages.isBuilt(next) { pages.select(next) }
+    }
+
     var body: some View {
-        ProfileTabDragOffset(drag: drag, content:
+        ProfileTabDragOffset(drag: dragBox, content:
             ProfileTabPagerLayout(index: tabs.firstIndex(of: selection) ?? 0) {
                 ForEach(tabs, id: \.self) { option in
                     let shown = option == selection
@@ -97,22 +111,20 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
         .frame(minHeight: minHeight, alignment: .top)
         .clipped()
         .modifier(ProfileTabSwipe(tabs: tabs, selection: $selection,
-                                  enabled: !swipeBlocked.contains(selection), follow: drag,
+                                  enabled: !swipeBlocked.contains(selection), follow: dragBox,
                                   extendsUp: swipeExtendsUp,
-                                  willShow: { next in
-                                      // 払っている間は毎フレーム呼ばれる。状態を書くのは変わるときだけ
-                                      let overflow = rowOverflow()
-                                      if lift != overflow { lift = overflow }
-                                      // 隣の札は、まだ作っていなければ作る（指の後ろから空の札が出てこない）
-                                      if !pages.isBuilt(next) { pages.select(next) }
-                                  }))
-        .onAppear { pages.select(selection) }
+                                  willShow: { next in prepare(next) }))
+        .onAppear {
+            pages.select(selection)
+            // 重ねた札の行の払いからも、隣の札を作って下げる（`ProfileTabOverlaySwipe`）
+            control?.willShow = { next in prepare(next) }
+        }
         .onChange(of: selection) { previous, next in
             pages.select(next)
             if !keepsDistantPages { pages.trim(around: next, keeping: previous, in: tabs) }
         }
         // 払いの途中で画面を離れたら、ずらしを残さない
-        .onDisappear { drag.offset = 0 }
+        .onDisappear { dragBox.offset = 0 }
         .task {
             // 開いてすぐは見えている札の読み込みを優先し、少し待ってから作る
             guard !prebuilt.isEmpty else { return }
@@ -121,6 +133,15 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
             for tab in prebuilt where tabs.contains(tab) && !pages.isBuilt(tab) { pages.select(tab) }
         }
     }
+}
+
+/// めくりの入れ物の外から中身を払うための箱（ホームの留まった札・`ProfileTabOverlaySwipe`）。
+/// 横の量の箱（`drag`）を入れ物と分け合い、入れ物は「隣の札を作って下げる」手順（`willShow`）を入れる
+final class ProfileTabPagerControl<Tab: Hashable> {
+    let drag = ProfileTabDrag()
+    var willShow: ((Tab) -> Void)?
+
+    init() {}
 }
 
 /// 縦の送りの中を流れる「札の行＋横にめくる中身」（2026-10-31 判断・#426）。
@@ -504,200 +525,6 @@ final class ProfileTabRowSpot {
     }
 }
 
-/// 節の見出し（`LazyVStack(pinnedViews: [.sectionHeaders])`）で上に留める札の行の位置の控え（ホーム・#426）。
-///
-/// **2026-10-31 判断: ホームはマイページの「重ねて描く札」（`pinnedTabRow`）にしない。** ホームの並びは
-/// `LazyVStack` で、流れている札の行は深く送ると作り直されて位置を測れなくなる（測れないと、払っている間に
-/// 隣の札を下げる量 `rowOverflow` が古いまま残り、入ってくる札が空に見える——マイページの 2026-10-28 の件）。
-/// 節の見出しは留まっている間も生きているので、#417 ⑧ の留め方はそのまま使い、位置は次の2つから出す:
-/// - 札の行の下端（見出し）と、札の中身の上端（`ProfileTabPager`）。留まっていない間は2つの間（`restGap`）は
-///   変わらず、留まると中身だけが上へ流れて間が詰まる。**詰まった量がはみ出し**（`ProfileTabScroll.pinnedOverflow`）
-/// - 間の決まった値は測って覚える（見出しと中身の間に `LazyVStack` の間が入るかを決め打ちしない）。
-///   **覚え直すのは「留まっていない」と分かる回だけ**: 開いた最初の回（札の行は画面の中ほど）と、前の計算から
-///   札の行と中身が同じだけ動いた回（留まっていれば札の行は動かない）。2026-10-31 確かめ役の見直し: 以前は
-///   「いちばん広かった間」を覚えて戻らなかったので、一度広すぎる間を測ると「留まった」と思い込み続けた
-///
-/// 2つの位置は別々の `onGeometryChange` で届く。片方だけ新しい値で計算すると、送っている最中は1フレームぶん
-/// ずれた間を覚えてしまう——**両方が届いた後（次の回り）にまとめて計算する**（`schedule`）。
-/// 送るたびに変わる値なので `@State` に置かない（`ProfileTabRowSpot` と同じ）。描き直すのは留まった・外れたときだけ
-final class PinnedTabRowSpot {
-    private(set) var headerMaxY: CGFloat?
-    private(set) var contentMinY: CGFloat?
-    /// 留まっていないときの札の行と中身の間（留まっていないと分かった回に覚え直す）
-    private(set) var restGap: CGFloat?
-    /// 前の計算のときの2つの位置（同じだけ動いたか＝留まっていないかを見る）
-    private var settledHeader: CGFloat?
-    private var settledContent: CGFloat?
-    private var scheduled = false
-
-    /// 札の行（見出し）の下端を控える。計算は次の回りで（`settled` に留まっているかを渡す）
-    func recordHeader(maxY: CGFloat, settled: @escaping (Bool) -> Void) {
-        headerMaxY = maxY
-        schedule(settled)
-    }
-
-    /// 札の中身の上端を控える
-    func recordContent(minY: CGFloat, settled: @escaping (Bool) -> Void) {
-        contentMinY = minY
-        schedule(settled)
-    }
-
-    /// 2つの位置がそろった今の値で、元の間を覚え直して、留まっているかを返す
-    @discardableResult
-    func settle() -> Bool {
-        if let headerMaxY, let contentMinY {
-            if Self.isFlowing(header: headerMaxY, content: contentMinY,
-                              previousHeader: settledHeader, previousContent: settledContent) {
-                restGap = contentMinY - headerMaxY
-            }
-            settledHeader = headerMaxY
-            settledContent = contentMinY
-        }
-        return isPinned
-    }
-
-    /// 札の行が留まっていない（流れている）と分かるか。最初の回（前が無い）か、札の行が動き、中身も同じだけ動いた回。
-    /// 留まっている間は札の行が動かないので、中身だけ動いた回は覚え直さない
-    static func isFlowing(header: CGFloat, content: CGFloat, previousHeader: CGFloat?, previousContent: CGFloat?) -> Bool {
-        guard let previousHeader, let previousContent else { return true }
-        let moved = header - previousHeader
-        return abs(moved) > 0.5 && abs(moved - (content - previousContent)) < 0.5
-    }
-
-    /// 札の中身の頭が、留まった札の行の下からどれだけ上へ流れているか（留まっていなければ 0）
-    var overflow: CGFloat {
-        guard let headerMaxY, let contentMinY, let restGap else { return 0 }
-        return ProfileTabScroll.pinnedOverflow(gap: contentMinY - headerMaxY, restGap: restGap)
-    }
-
-    /// 札の行が上に留まっているか（`ProfileTabScroll.scrollsToRow` と同じ 0.5 の遊び）
-    var isPinned: Bool { overflow > 0.5 }
-
-    private func schedule(_ settled: @escaping (Bool) -> Void) {
-        guard !scheduled else { return }
-        scheduled = true
-        DispatchQueue.main.async { [self] in
-            scheduled = false
-            settled(settle())
-        }
-    }
-}
-
-/// 縦の送り（`UIScrollView`）を直に送る取っ手（ホーム・2026-10-31 #426 Mac の確かめ）。
-///
-/// **ホームで「留まったまま替えたら頭へ」を `ScrollViewReader.scrollTo` でやめた理由**（run 41187923424・
-/// `testSwipesHomeFeedTabs`）: 留まった札の行（`LazyVStack` の節の見出し）を目印に送ると、札の行が留まりの位置
-/// （y=116）から送る前の頭（y=558・いちばん上）まで戻った。遅れて作る並びは、深く送ると上の段（すれちがい・
-/// ストーリー・上の札）を捨てて高さを見積もりに置き換えるので、目印の位置がその見積もりで決まり、いちばん上へ
-/// 送ってしまう。いまは測った実物の量（`PinnedTabRowSpot.overflow`＝中身の頭が札の行の下からどれだけ上へ
-/// 流れているか）だけ、送りの位置を戻す——見積もりを通らないので、札の行は留まりの位置から動かない
-final class ScrollHostHandle {
-    #if os(iOS)
-    weak var scrollView: UIScrollView?
-    #endif
-
-    /// 最後に戻したときの数（UI テストの見えない要素に出す・`PreviewSession.feedProbe`）
-    private(set) var lastScrollBack = "none"
-
-    init() {}
-
-    /// いまの送りの数（UI テストの見えない要素に出す）。送りが無ければ空
-    var probe: String {
-        #if os(iOS)
-        guard let scroll = scrollView else { return "scroll=nil" }
-        return "offset=\(Self.n(scroll.contentOffset.y)) insetTop=\(Self.n(scroll.adjustedContentInset.top))"
-            + " contentH=\(Self.n(scroll.contentSize.height)) boundsH=\(Self.n(scroll.bounds.height))"
-        #else
-        return "scroll=nil"
-        #endif
-    }
-
-    static func n(_ value: CGFloat) -> String { String(format: "%.2f", Double(value)) }
-
-    /// 留まった札の行の下へ、新しい札の頭を出す（`overflow` は測ったはみ出し）。
-    ///
-    /// 2026-10-31（#426 Mac の2回目・run の `:4126`・`:4128` で札の行が 116 → 118.33）: はみ出しをちょうど戻すと、
-    /// 札の行は留まりの境目ちょうどに来る。境目では、測りの小さなずれ（1/3pt の丸め・新しい札で高さが変わったときの
-    /// 並びの付け直し）や、戻す動きの行き過ぎ（減衰 0.85 のばねは約 0.6% 行き過ぎる——1100pt 戻すと 7pt）で、
-    /// 札の行が留まりから外れて数 pt 下へ動いた。いまは:
-    /// - 戻す量は **はみ出しから `ProfileTabScroll.pinnedSlack`（4）を引いた分**（`scrollBackDistance`）。札の行は
-    ///   留まりの側に 4pt 残り、境目を越えない。新しい札の頭が札の行の下に 4pt 隠れるが、写真の頭の 4pt は目に入らない
-    ///   （札の行が 2pt 跳ねる方が見える）。次に替えたときは残りが 4 なので戻さない（同じ位置のまま）
-    /// - 戻す動きは**行き過ぎないばね**（減衰 1）。行き過ぎると、留まった札の行が一度外れて下がり、戻る
-    /// 「視差効果を減らす」では動かさずに置く
-    func scrollBack(_ overflow: CGFloat, reduceMotion: Bool) {
-        #if os(iOS)
-        let distance = ProfileTabScroll.scrollBackDistance(overflow: overflow)
-        guard distance > 0.5, let scroll = scrollView else {
-            lastScrollBack = "skip overflow=\(Self.n(overflow)) distance=\(Self.n(distance))"
-            return
-        }
-        let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,
-                                                 top: -scroll.adjustedContentInset.top)
-        lastScrollBack = "overflow=\(Self.n(overflow)) distance=\(Self.n(distance))"
-            + " from=\(Self.n(scroll.contentOffset.y)) to=\(Self.n(target))"
-        let point = CGPoint(x: scroll.contentOffset.x, y: target)
-        if reduceMotion {
-            scroll.setContentOffset(point, animated: false)
-        } else {
-            UIView.animate(withDuration: ProfileTabScroll.scrollBackDuration, delay: 0,
-                           usingSpringWithDamping: ProfileTabScroll.scrollBackDamping, initialSpringVelocity: 0,
-                           options: [.allowUserInteraction, .beginFromCurrentState],
-                           animations: { scroll.contentOffset = point }, completion: nil)
-        }
-        #endif
-    }
-}
-
-/// `ScrollHostHandle` に、いちばん近い祖先の `UIScrollView`（縦の送り）を渡す見えない部品。指は受けない
-struct ScrollHostProbe: View {
-    let handle: ScrollHostHandle
-
-    var body: some View {
-        #if os(iOS)
-        ScrollHostProbeView(handle: handle)
-        #else
-        Color.clear
-        #endif
-    }
-}
-
-#if os(iOS)
-/// `ScrollHostProbe` の UIKit の部分
-struct ScrollHostProbeView: UIViewRepresentable {
-    let handle: ScrollHostHandle
-
-    func makeUIView(context: Context) -> Probe {
-        let probe = Probe()
-        probe.backgroundColor = .clear
-        probe.isUserInteractionEnabled = false
-        probe.handle = handle
-        return probe
-    }
-
-    func updateUIView(_ probe: Probe, context: Context) {
-        probe.handle = handle
-        probe.attach()
-    }
-
-    final class Probe: UIView {
-        var handle: ScrollHostHandle?
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            attach()
-        }
-
-        func attach() {
-            guard window != nil else { return }
-            var view = superview
-            while let current = view, !(current is UIScrollView) { view = current.superview }
-            if let scroll = view as? UIScrollView { handle?.scrollView = scroll }
-        }
-    }
-}
-#endif
-
 /// 札の行の位置の計算（画面を持たない計算・2026-10-24 確かめ役の見直し）
 enum ProfileTabScroll {
 
@@ -723,30 +550,6 @@ enum ProfileTabScroll {
     /// これだけ下げると、札の行を上端へ送ったときの位置に頭が来る（`ProfileTabPager.lift`・2026-10-28）
     static func rowOverflow(rowMinY: CGFloat, visibleTop: CGFloat) -> CGFloat {
         scrollsToRow(rowMinY: rowMinY, visibleTop: visibleTop) ? visibleTop - rowMinY : 0
-    }
-
-    /// 節の見出しで留めた札の行（ホーム・`PinnedTabRowSpot`）のはみ出し。札の行と中身の間（`gap`）が、
-    /// 留まっていないときの間（`restGap`）よりどれだけ詰まったか
-    static func pinnedOverflow(gap: CGFloat, restGap: CGFloat) -> CGFloat {
-        max(0, restGap - gap)
-    }
-
-    /// 送りの位置を `distance` だけ戻した先（いちばん上 `top` より上へは行かない）
-    static func offsetBack(current: CGFloat, distance: CGFloat, top: CGFloat) -> CGFloat {
-        max(top, current - max(0, distance))
-    }
-
-    /// 送りを戻す動きの秒。札の切り替えのばね（0.28 秒）と並んで終わる長さ
-    static let scrollBackDuration: Double = 0.35
-    /// 送りを戻す動きの減衰。**1（行き過ぎない）**——行き過ぎると留まった札の行が一度外れて下がる
-    static let scrollBackDamping: CGFloat = 1
-
-    /// 留まりの側に残す量（札の行が留まりの境目を越えないための遊び・`ScrollHostHandle.scrollBack`）
-    static let pinnedSlack: CGFloat = 4
-
-    /// はみ出し `overflow` のうち、送りを戻す量（遊びを残す。遊び以下なら戻さない）
-    static func scrollBackDistance(overflow: CGFloat) -> CGFloat {
-        max(0, overflow - pinnedSlack)
     }
 
     /// `scrollTo` の目印の縦の割合。札の行の上端を `visibleTop` に合わせる

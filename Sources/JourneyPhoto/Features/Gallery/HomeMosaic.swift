@@ -18,6 +18,9 @@ struct HomeMosaic: View {
     /// 写真に付けると、通報で一覧が読み直されて写真ごと消え、
     /// 「受け付けました」やブロック失敗の文言を見る前にシートが閉じる
     var onReport: (Photo) -> Void = { _ in }
+    /// 並びの最後の段に置くもの（「新着」の続きを読む目印・#426）。**この遅れて作る並びの中に置く**——画面に
+    /// 入ったときだけ作られるので、目印の `onAppear` が下まで送ったときだけ走る
+    var footer: AnyView? = nil
 
     /// 段どうし・段の中の隙間（板: 4px）
     private let gap: CGFloat = JPSpace.xxs
@@ -49,6 +52,7 @@ struct HomeMosaic: View {
                     }
                 }
             }
+            if let footer { footer }
         }
         .padding(.horizontal, Self.edge)
     }

@@ -160,6 +160,52 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     }
 }
 
+/// 縦の送りの外に重ねた札の行（ホームの留まった札）の横の払い（2026-10-31 #426）。
+///
+/// 重ねた札は縦の送り（`UIScrollView`）の外なので、縦の送りに足すパン（`ProfileTabSwipe`）が届かない。
+/// ここは縦の送りが無い所なので、SwiftUI の指の操作で受けても縦の送りとぶつからない（`ProfileTabSwipe` の注記の
+/// 「縦の送りが先に始まると取り消される」件は起きない）。中身の横の量の箱（`ProfileTabPagerControl.drag`）を動かすので、
+/// 札の行の上で払っても中身が指に付いてくる。決まりの数は中身の払いと同じ（`PagedTab.startsSwipe`・`settled`）
+struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
+    let tabs: [Tab]
+    @Binding var selection: Tab
+    let control: ProfileTabPagerControl<Tab>
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var width: CGFloat = 0
+    /// この指で払いを始めたか（nil はまだ決めていない）
+    @State private var swiping: Bool?
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width = $0 }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        let dx = Double(value.translation.width)
+                        if swiping == nil {
+                            swiping = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: Double(value.translation.height))
+                        }
+                        guard swiping == true else { return }
+                        if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { control.willShow?(next) }
+                        control.drag.offset = CGFloat(Tab.followOffset(from: selection, in: tabs, dx: dx, width: Double(width)))
+                    }
+                    .onEnded { value in
+                        defer { swiping = nil }
+                        guard swiping == true else { return }
+                        let next = Tab.settled(from: selection, in: tabs, dx: Double(value.translation.width),
+                                               velocity: Double(value.velocity.width), width: Double(width))
+                        withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                            if let next { selection = next }
+                            control.drag.offset = 0
+                        }
+                    }
+            )
+    }
+}
+
 /// 札の行の中だけに掛けるばね（`ProfileTabBar.movesContent` が false の画面）。`animation` が nil なら何もしない
 /// ——既定の画面に `.animation(nil, value:)` を掛けると、押したときの `withAnimation` まで札の行で消える
 struct ProfileTabRowMotion<Value: Equatable>: ViewModifier {

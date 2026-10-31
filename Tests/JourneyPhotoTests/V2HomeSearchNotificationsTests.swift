@@ -117,7 +117,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
     func testHomeFeedTabsAreBrassTextTabs() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         // #426: マイページと同じ札の部品（真鍮の字と下線・区切り線・読み上げの「選択中」は部品が持つ）
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool) -> some View",
+        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
                            to: "private var feedSelection: Binding<HomeFeed>")
         XCTAssertTrue(picker.contains("ProfileTabBar(tabs: HomeFeed.allCases"), "ホームだけ自前の札に戻っている")
         XCTAssertEqual(HomeFeed.latest.tabTitle, HomeFeed.latest.label, "UI テストは「新着」「フォロー中」を字で探す")

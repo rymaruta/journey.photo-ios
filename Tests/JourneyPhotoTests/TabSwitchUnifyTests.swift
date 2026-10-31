@@ -21,17 +21,18 @@ final class TabSwitchUnifyTests: XCTestCase {
     /// 🔴 ホームのフィードの切り替えは、マイページと同じ札の部品で、中身を横にめくる（札の行でも中身でも払える）
     func testHomeFeedUsesTheMyPageTabParts() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        XCTAssertTrue(gallery.contains("ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: feedRowPinned,"),
+        XCTAssertTrue(gallery.contains("ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: stuck,"),
                       "ホームの切り替えが共通の札でない（下線が滑らない・当たりが狭い）")
         // 札の行の上の払いは中身の払い1つが枠を広げて受ける（2つ付けると留まった札の行の上で指を取り合う）
         XCTAssertFalse(gallery.contains(".modifier(ProfileTabSwipe(tabs: HomeFeed.allCases"),
                        "札の行に別の払いを付けている（留まった札の行の上で中身の払いと指を取り合う）")
-        XCTAssertTrue(gallery.contains("swipeExtendsUp: feedRowHeight + Self.feedSpacing) { page in"),
+        XCTAssertTrue(gallery.contains("swipeExtendsUp: feedRowHeight + Self.feedSpacing,"),
                       "札の行の上で払っても替わらない（中身の払いの枠が札の行まで届かない）")
         XCTAssertTrue(gallery.contains("keepsDistantPages: false,"), "離れた札の中身まで持ち続けている（ホームが重い）")
         XCTAssertTrue(gallery.contains("ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,"),
                       "中身を横にめくって切り替えない")
-        XCTAssertTrue(gallery.contains("rowOverflow: { feedRow.overflow }"), "深く送ってから払うと入ってくる札が空に見える")
+        XCTAssertTrue(gallery.contains("rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0) },"),
+                      "深く送ってから払うと入ってくる札が空に見える")
         XCTAssertTrue(gallery.contains("minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport,"),
                       "短いフィードへ替えると送りの位置が詰められて札の行が跳ぶ")
         // 中身はフィードごとに作る（選んでいる1つだけを `model.feed` で分ける形に戻さない）
@@ -54,46 +55,6 @@ final class TabSwitchUnifyTests: XCTestCase {
         XCTAssertFalse(HomeFeed.startsSwipe(from: .following, in: feeds, dx: 10, dy: 20), "縦の送りで札の払いが始まる")
         XCTAssertEqual(HomeFeed.swipeCommitFraction, ProfileTab.swipeCommitFraction)
         XCTAssertEqual(HomeFeed.swipeFlingVelocity, ProfileTab.swipeFlingVelocity)
-    }
-
-    /// 🔴 札の行が留まったか・中身がどれだけ流れたかは、見出し（札の行）の下端と中身の上端の間で見る。
-    /// 留まっていない間は間が変わらず、留まると中身だけ流れて詰まる。**元の間は測った中でいちばん広い間**
-    func testPinnedRowSpotMeasuresTheOverflow() {
-        let spot = PinnedTabRowSpot()
-        XCTAssertFalse(spot.settle(), "何も測っていないのに留まっている")
-        XCTAssertEqual(spot.overflow, 0)
-        // 開いたとき（札の行は画面の中ほど・間 24）
-        spot.recordHeader(maxY: 600, settled: { _ in })
-        spot.recordContent(minY: 624, settled: { _ in })
-        XCTAssertFalse(spot.settle())
-        XCTAssertEqual(spot.restGap, 24)
-        // 送っても留まる前は間が変わらない
-        spot.recordHeader(maxY: 120, settled: { _ in })
-        spot.recordContent(minY: 144, settled: { _ in })
-        XCTAssertFalse(spot.settle(), "留まる前に留まったと言う")
-        // 留まった（札の行は見出しの下で止まり、中身だけ上へ流れる）
-        spot.recordHeader(maxY: 48, settled: { _ in })
-        spot.recordContent(minY: -500, settled: { _ in })
-        XCTAssertTrue(spot.settle(), "中身が札の行の下へ潜っても留まったと言わない")
-        XCTAssertEqual(spot.overflow, 572, "隣の札を下げる量が違う（48 + 24 + 500）")
-        XCTAssertEqual(spot.restGap, 24, "留まって詰まった間を元の間として覚えた")
-        // 引き下げ（上に伸びる）も2つ一緒に動くので留まらない
-        spot.recordHeader(maxY: 700, settled: { _ in })
-        spot.recordContent(minY: 724, settled: { _ in })
-        XCTAssertFalse(spot.settle())
-        XCTAssertEqual(ProfileTabScroll.pinnedOverflow(gap: 24, restGap: 24), 0)
-        XCTAssertEqual(ProfileTabScroll.pinnedOverflow(gap: 30, restGap: 24), 0, "間が広がったのにはみ出しを出した")
-    }
-
-    /// 🔴 2つの位置は別々に届くので、片方だけ新しい値で間を覚えない（次の回りにまとめて計算する）
-    func testPinnedRowSpotSettlesAfterBothPositionsArrive() throws {
-        let pager = try source("Features/Profile/ProfileTabPager.swift")
-        let spot = pager.components(separatedBy: "final class PinnedTabRowSpot {")[1]
-            .components(separatedBy: "/// 札の行の位置の計算")[0]
-        XCTAssertTrue(spot.contains("DispatchQueue.main.async { [self] in"), "届いたその場で計算している（1フレームずれた間を覚える）")
-        XCTAssertTrue(spot.contains("guard !scheduled else { return }"), "送るたびに何度も計算を積む")
-        let record = spot.components(separatedBy: "func recordHeader(")[1].components(separatedBy: "func settle()")[0]
-        XCTAssertFalse(record.contains("restGap ="), "位置が届いたその場で元の間を覚えている")
     }
 
     /// 🔴 ホームの「おすすめ」には横に流れる列（PICKS・季節の撮影スポット）がある。その上で始まった指は列に渡す
@@ -176,40 +137,17 @@ final class TabSwitchUnifyTests: XCTestCase {
     /// 画面の外でも `onAppear` が走り、作り直すたびにまた読んで、送らなくても全部のページを読んでいた
     func testNextPageMarkerIsLazy() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let feed = gallery.components(separatedBy: "private func feed(_ photos: [Photo]) -> some View {")[1]
-            .components(separatedBy: "private static let feedTopID")[0]
-        let lazy = try XCTUnwrap(feed.range(of: "LazyVStack(spacing: 24, pinnedViews: [.sectionHeaders]) {"))
-        let header = try XCTUnwrap(feed.range(of: "} header: {"))
-        let footer = try XCTUnwrap(feed.range(of: "\n                pageFooter\n"), "目印が外側の遅延の並びの子でない")
-        let lazyEnd = try XCTUnwrap(feed.range(of: "            .padding(.top, 8)"))
-        XCTAssertLessThan(lazy.lowerBound, footer.lowerBound)
-        XCTAssertLessThan(header.lowerBound, footer.lowerBound, "目印が札の行より前にある")
-        XCTAssertLessThan(footer.lowerBound, lazyEnd.lowerBound, "目印が遅延の並びの外にある")
+        // 目印は写真の一覧の遅れて作る並び（`HomeMosaic` の `LazyVStack`）の最後の段。選んでいる「新着」だけ
+        XCTAssertTrue(gallery.contains("footer: page == model.feed && model.hasMorePages ? AnyView(pageFooter) : nil)"),
+                      "続きの目印が写真の一覧の遅れて作る並びの中に無い")
+        XCTAssertEqual(gallery.components(separatedBy: "pageFooter").count - 1, 2, "続きの目印を別の所にも置いている（定義と1か所だけ）")
+        let mosaic = try source("Features/Gallery/HomeMosaic.swift")
+        let body = mosaic.components(separatedBy: "LazyVStack(spacing: gap) {")[1]
+            .components(separatedBy: ".padding(.horizontal, Self.edge)")[0]
+        XCTAssertTrue(body.contains("if let footer { footer }"), "目印が遅れて作る並びの外にある（画面の外でも読む）")
         let section = gallery.components(separatedBy: "private func feedSection(_ page: HomeFeed,")[1]
             .components(separatedBy: "nonisolated static let seasonShelfTopTrim")[0]
-        XCTAssertFalse(section.contains("{ pageFooter }"), "札の中身に続きの目印を置いている（画面の外でも読む）")
-        XCTAssertFalse(section.contains("\n        pageFooter"), "札の中身に続きの目印を置いている（画面の外でも読む）")
-    }
-
-    /// 🔴 元の間は「留まっていない」と分かる回に覚え直す。一度広すぎる間を測っても、留まったと思い込み続けない
-    func testPinnedRowSpotRelearnsATooWideGap() {
-        let spot = PinnedTabRowSpot()
-        // 開いた最初の回にずれた間（100）を測った
-        spot.recordHeader(maxY: 600, settled: { _ in })
-        spot.recordContent(minY: 700, settled: { _ in })
-        spot.settle()
-        // 中身だけ動いた（留まりと見分けられない）回は覚え直さない
-        spot.recordHeader(maxY: 520, settled: { _ in })
-        spot.recordContent(minY: 544, settled: { _ in })
-        spot.settle()
-        // 2つが同じだけ動いた＝流れている → 本当の間（24）を覚え直す
-        spot.recordHeader(maxY: 500, settled: { _ in })
-        spot.recordContent(minY: 524, settled: { _ in })
-        XCTAssertFalse(spot.settle(), "広すぎる間を覚えたまま、留まったと思い込んでいる")
-        XCTAssertEqual(spot.restGap, 24)
-        XCTAssertTrue(PinnedTabRowSpot.isFlowing(header: 10, content: 30, previousHeader: nil, previousContent: nil))
-        XCTAssertFalse(PinnedTabRowSpot.isFlowing(header: 48, content: -300, previousHeader: 48, previousContent: -200),
-                       "留まった札の行の下で中身だけ流れた回を、流れていると言う")
+        XCTAssertFalse(section.contains("{ pageFooter }"), "札の中身の普通の並びに続きの目印を置いている（画面の外でも読む）")
     }
 
     /// ホームは選んでいる札と左右の隣だけを持つ（マイページ・人のページは持ち続ける）
@@ -309,35 +247,54 @@ final class TabSwitchUnifyTests: XCTestCase {
                       "払いの枠が札の行まで届かない")
     }
 
-    // MARK: - 2026-10-31 Mac の確かめ（run 41187923424・testSwipesHomeFeedTabs）
+    // MARK: - 2026-10-31 Mac の確かめ（run 41201788362 の数）
 
-    /// 🔴 留まったまま替えたら、測った量だけ送りを戻す（いちばん上より上へは行かない）。
-    /// 札の行は留まりの位置のまま、新しい札の頭が札の行のすぐ下に出る
-    func testScrollBackUsesTheMeasuredOverflow() throws {
-        // 深く送った（送りの位置 1570）・中身の頭が札の行の下から 1128 上へ流れている → 442 へ戻す（札の行は留まりの境）
-        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 1570, distance: 1128, top: -116), 442)
-        // いちばん上より上へは行かない
-        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 100, distance: 900, top: -116), -116)
-        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 300, distance: -20, top: -116), 300, "負の量で先へ送った")
-        let pager = try source("Features/Profile/ProfileTabPager.swift")
-        let handle = pager.components(separatedBy: "final class ScrollHostHandle {")[1]
-            .components(separatedBy: "struct ScrollHostProbe: View {")[0]
-        XCTAssertTrue(handle.contains("let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,"))
-        XCTAssertTrue(handle.contains("top: -scroll.adjustedContentInset.top)"))
-        XCTAssertTrue(handle.contains("usingSpringWithDamping: ProfileTabScroll.scrollBackDamping"))
-        XCTAssertEqual(ProfileTabScroll.scrollBackDamping, 1, "戻す動きが行き過ぎる（留まった札の行が一度外れて下がる）")
-        // 🔴 Mac の2回目（札の行が 116 → 118.33）: はみ出しをちょうど戻すと境目に来て、小さなずれで留まりから外れる。
-        // 留まりの側に 4 残す。残りが遊び以下なら戻さない（2回目の切り替えで動かない）
-        XCTAssertTrue(handle.contains("let distance = ProfileTabScroll.scrollBackDistance(overflow: overflow)"))
-        XCTAssertEqual(ProfileTabScroll.pinnedSlack, 4)
-        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 1128), 1124)
-        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 4), 0, "前に戻した残りをまた戻す（札の行が境目を越える）")
-        XCTAssertEqual(ProfileTabScroll.scrollBackDistance(overflow: 2.33), 0)
-        // 戻した後も札の行は留まったと見なされる（遊び 4 > 判定の 0.5）——次の切り替えで「留まっていない」扱いにならない
-        XCTAssertGreaterThan(ProfileTabScroll.pinnedSlack, 0.5)
-        XCTAssertTrue(handle.contains("scroll.setContentOffset(point, animated: false)"), "視差効果を減らすでも動かしている")
+    /// 🔴 ホームの留め方はマイページと同じ（`VStack` の中を流れる札の行＋縦の送りの外に重ねる札）。
+    /// `LazyVStack` の節の見出しで留めると、遅れて作る並びが札の中身の高さを1つ前の選びのまま持ち（6320 / 1042）、
+    /// 送りの位置が詰められて札の行が留まりから外れた（offset 178.33 → 169.00・y 116 → 121.33）
+    func testHomePinsLikeMyPage() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        XCTAssertTrue(gallery.contains("if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }"))
-        XCTAssertFalse(gallery.contains("proxy.scrollTo(Self.feedPickerID"), "留まった札の行を目印に scrollTo している")
+        let feed = gallery.components(separatedBy: "private func feed(_ photos: [Photo]) -> some View {")[1]
+            .components(separatedBy: "private static let feedTopID")[0]
+        XCTAssertFalse(feed.contains("pinnedViews:"), "節の見出しで留めている（中身の高さが1つ前の選びのまま残る）")
+        XCTAssertFalse(feed.contains("LazyVStack("), "外側が遅れて作る並びのまま")
+        for part in ["VStack(spacing: Self.feedSpacing) {",
+                     "feedPicker(followingHasNew: followingHasNew, stuck: false)",
+                     ".opacity(feedRowPinned ? 0 : 1)", ".allowsHitTesting(!feedRowPinned)", ".accessibilityHidden(feedRowPinned)",
+                     ".id(Self.feedRowID)",
+                     "if let height = feedRowSpot.record(frame, height: feedRowHeight) { feedRowHeight = height }",
+                     "ProfileTabScroll.pinsRow(rowMinY: proxy.frame(in: .scrollView).minY, visibleTop: 0)",
+                     "rowHeight: feedRowHeight, spacing: Self.feedSpacing),",
+                     ".onChange(of: model.feed) { _, _ in",
+                     "guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }",
+                     "proxy.scrollTo(Self.feedRowID, anchor: .top)",
+                     "if feedRowPinned { pinnedFeedRow(followingHasNew: followingHasNew) }"] {
+            XCTAssertTrue(feed.contains(part), "ホームの留め方に「\(part)」が無い")
+        }
+        // 重ねた札の行の上で払っても中身が指に付いてくる（中身と横の量の箱を分け合う）
+        let pinned = gallery.components(separatedBy: "private func pinnedFeedRow(followingHasNew: Bool) -> some View {")[1]
+            .components(separatedBy: "/// 札で選んでいるフィード")[0]
+        XCTAssertTrue(pinned.contains("feedPicker(followingHasNew: followingHasNew, stuck: true)"))
+        XCTAssertTrue(pinned.contains(".modifier(ProfileTabOverlaySwipe(tabs: HomeFeed.allCases, selection: feedSelection, control: feedPager))"),
+                      "留まった札の行の上で払っても替わらない")
+        XCTAssertTrue(feed.contains("control: feedPager) { page in"), "重ねた札の払いが中身の箱を動かさない（指に付いてこない）")
+    }
+
+    /// 重ねた札の行の払い: 中身の払いと同じ決まりで、中身の横の量の箱を動かす。入れ物は隣の札を作る手順を入れる
+    func testOverlaySwipeSharesThePagerBox() throws {
+        let bar = try source("Features/Profile/ProfileTabBar.swift")
+        let overlay = bar.components(separatedBy: "struct ProfileTabOverlaySwipe<")[1]
+            .components(separatedBy: "/// 札の行の中だけに掛けるばね")[0]
+        for part in ["Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: Double(value.translation.height))",
+                     "control.willShow?(next)",
+                     "control.drag.offset = CGFloat(Tab.followOffset(from: selection, in: tabs, dx: dx, width: Double(width)))",
+                     "let next = Tab.settled(from: selection, in: tabs, dx: Double(value.translation.width),",
+                     "control.drag.offset = 0"] {
+            XCTAssertTrue(overlay.contains(part), "重ねた札の払いに「\(part)」が無い")
+        }
+        let pager = try source("Features/Profile/ProfileTabPager.swift")
+        XCTAssertTrue(pager.contains("private var dragBox: ProfileTabDrag { control?.drag ?? drag }"))
+        XCTAssertTrue(pager.contains("control?.willShow = { next in prepare(next) }"), "重ねた札の払いで隣の札が作られない（空の札が出る）")
+        XCTAssertTrue(pager.contains("ProfileTabDragOffset(drag: dragBox, content:"))
     }
 }
