@@ -52,6 +52,9 @@ struct GalleryView: View {
     /// 以前は上の札（`HomeTopCardView`）が画面に出ているか（`onAppear`/`onDisappear`）で留まりを見ていたが、
     /// `LazyVStack` は画面の少し外まで作るので境がずれた。送るたびに変わる値なので見張らない箱に置く
     @State private var feedRow = PinnedTabRowSpot()
+    /// 札ごとの写真の束ね（ブロックを落とす・投稿で束ねる・季節の段の前後に割る）の控え（#426 確かめ役の見直し）。
+    /// 描き直しのたびに全部の札で計算し直さない——元の写真か「見せない」が変わったときだけ
+    @State private var pageMemo = HomeFeedPageMemo()
     /// 札の行が上に留まっているか（留まった姿 `stuck` に使う。変わったときだけ書く）
     @State private var feedRowPinned = false
     /// 札の行の高さ・見えている高さ（札の中身の最低の高さ `ProfileTabScroll.minPageHeight`）
@@ -86,7 +89,7 @@ struct GalleryView: View {
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
                 // 切り替えが逃げ道だったが、整理案 01c で外した
-                feed(dropped.visible(photos))
+                feed(photos)
             }
         }
         .webScreen()
@@ -380,8 +383,8 @@ struct GalleryView: View {
         ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: feedRowPinned,
                       dot: { $0 == .following && followingHasNew },
                       spokenLabel: { HomeFollowingNews.spokenLabel($0.label, hasNew: $0 == .following && followingHasNew) })
-            // 札の行の上でも横に払える（マイページの流れている札の行と同じ）。留まっている間も同じ行なので効く
-            .modifier(ProfileTabSwipe(tabs: HomeFeed.allCases, selection: feedSelection))
+            // 札の行の上の払いは、中身の払い（`ProfileTabPager.swipeExtendsUp`）が札の行まで枠を広げて受ける。
+            // ここに別の払いを付けない——留まった札の行は中身の上に重なり、2つが指を取り合っていた（#426 確かめ役）
             // **規則の一文は出さない**（整理案 01c）。写真より先に
             // 説明が並ぶと、開いた瞬間に読むものが増える。
             // 文言は `HomeFeed.note` に残してある
@@ -470,9 +473,13 @@ struct GalleryView: View {
                     ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,
                                     minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport, visibleTop: 0,
                                                                               rowHeight: feedRowHeight, spacing: 0),
-                                    rowOverflow: { feedRow.overflow }) { page in
+                                    rowOverflow: { feedRow.overflow },
+                                    // 選んでいる札と左右の隣だけを持つ（写真の一覧が長いので、離れた札は捨てる）
+                                    keepsDistantPages: false,
+                                    // 札の行の上の払いも、この1つの払いが受ける（中身が指に付いてくる・`swipeExtendsUp`）
+                                    swipeExtendsUp: feedRowHeight + Self.feedSpacing) { page in
                         VStack(spacing: Self.feedSpacing) {
-                            feedSection(page, photos: pagePhotos(page, selected: photos))
+                            feedSection(page, rows: pageRows(page, selected: photos))
                         }
                     }
                     // 中身の上端（札の行が留まったか・どれだけ流れたかを測る・`PinnedTabRowSpot`）
@@ -492,6 +499,11 @@ struct GalleryView: View {
                             if frame.height != feedRowHeight { feedRowHeight = frame.height }
                         }
                 }
+                // 「新着」の続きを読む目印。**外側の `LazyVStack` の子**（札の中身の外）に置く——札の中身は横に並べる
+                // 入れ物の中の普通の並びなので、そこに置くと画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびに
+                // また読んで、送らなくても全部のページを読んでいた（#426 確かめ役）。ここなら下まで送ったときだけ作られる。
+                // 続きを読むのは「新着」を選んでいる間だけ（`hasMorePages`）
+                pageFooter
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
@@ -529,10 +541,12 @@ struct GalleryView: View {
     /// 写真の一覧の頭（切り替え）。留まった切り替えで選び直したときに送る先
     private static let feedPickerID = "home-feed-picker"
 
-    /// 札ごとの写真。**選んでいるフィードは出している一覧**（`model.state`・ブロックを落とした写し）、
-    /// 選んでいないフィード（横にめくった隣・前に開いた札）は同じ決まりで手元から作る（`GalleryViewModel.photos(for:)`）
-    private func pagePhotos(_ page: HomeFeed, selected: [Photo]) -> [Photo] {
-        page == model.feed ? selected : dropped.visible(model.photos(for: page))
+    /// 札ごとの写真の束。**選んでいるフィードは出している一覧**（`model.state`）、選んでいないフィード
+    /// （横にめくった隣）は同じ決まりで手元から作る（`GalleryViewModel.photos(for:)`）。ブロックを落とし、
+    /// 投稿で束ね、季節の段の前後に割るのは控えから（`HomeFeedPageMemo`）
+    private func pageRows(_ page: HomeFeed, selected: [Photo]) -> HomeFeedPageMemo.Rows {
+        let raw = page == model.feed ? selected : model.photos(for: page)
+        return pageMemo.rows(page, photos: raw, hidden: dropped)
     }
 
     /// 札の中身の段の間（以前の一覧の `LazyVStack` の間と同じ 24）
@@ -553,13 +567,13 @@ struct GalleryView: View {
     /// - **#417 ④: 「いまの季節のスポット」の段も「おすすめ」の中身**。写真の大1→2→2（5枚）の後ろに置く
     ///   （`HomeFeed.showsSeasonShelf`・`splitForSeasonShelf`）
     @ViewBuilder
-    private func feedSection(_ page: HomeFeed, photos: [Photo]) -> some View {
+    private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {
         if page.showsFeatured {
             featuredSections(page)
         }
         // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
         // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
-        let groups = PhotoGroups.group(photos)
+        let groups = rows.groups
         // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
         // 続きを読んでいる最中）。下の目印が次を読む
         if groups.isEmpty && !(page == model.feed && model.hasMorePages) {
@@ -571,7 +585,7 @@ struct GalleryView: View {
         // 段だけを間に挟む。**写真が0枚の日は段を出さない**——空の知らせのすぐ下に作例の段が並ぶと、
         // 「おすすめ」が空なのか分からなくなる（空の知らせの一手は地図）
         if page.showsSeasonShelf {
-            let split = HomeFeed.splitForSeasonShelf(groups)
+            let split = (lead: rows.lead, rest: rows.rest)
             HomeMosaic(groups: split.lead, onReport: { reportTarget = $0 })
             if !groups.isEmpty, let seasonShelf {
                 HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
@@ -587,8 +601,7 @@ struct GalleryView: View {
         } else {
             HomeMosaic(groups: groups, onReport: { reportTarget = $0 })
         }
-        // 続きを読む目印は選んでいる札だけ（続きを読むのは「新着」を選んでいる間だけ・`hasMorePages`）
-        if page == model.feed { pageFooter }
+        // 続きを読む目印（`pageFooter`）は札の中身に置かない——外側の `LazyVStack` の子（`feed`）
     }
 
     /// 季節の段の上下を、一覧の段の間（24）から板の間（上 16・下 12）へ詰める量
@@ -706,6 +719,46 @@ struct GalleryView: View {
     private func fetchFollowing() async -> Set<String>? {
         let ids = try? await environment.social.myFollowingIds()
         return ids.map { Set($0) }
+    }
+}
+
+/// ホームの札ごとの写真の束ねの控え（#426 確かめ役の見直し・`GalleryView.pageRows`）。
+/// 元の写真（同じ入れ物なら中身を見ずに一致）と「見せない」の写しが同じなら、前の答えを返す
+final class HomeFeedPageMemo {
+
+    struct Rows: Equatable {
+        /// 投稿で束ねた写真（ブロックを落とした後）
+        let groups: [PhotoGroups.Group]
+        /// 「おすすめ」の季節の段の前（大1→2→2）と後ろ。段を出さないフィードは全部 `lead`
+        let lead: [PhotoGroups.Group]
+        let rest: [PhotoGroups.Group]
+    }
+
+    struct Key: Equatable {
+        let photos: [Photo]
+        let hidden: ModerationSnapshot
+    }
+
+    private var memos: [HomeFeed: DerivedMemo<Key, Rows>] = [:]
+
+    init() {}
+
+    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
+        let memo = memos[page] ?? DerivedMemo<Key, Rows>()
+        memos[page] = memo
+        return memo.value(for: Key(photos: photos, hidden: hidden)) {
+            Self.make(page, photos: photos, hidden: hidden)
+        }
+    }
+
+    /// 計算した回数（試験用）
+    func computeCount(_ page: HomeFeed) -> Int { memos[page]?.computeCount ?? 0 }
+
+    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
+        let groups = PhotoGroups.group(hidden.visible(photos))
+        guard page.showsSeasonShelf else { return Rows(groups: groups, lead: groups, rest: []) }
+        let split = HomeFeed.splitForSeasonShelf(groups)
+        return Rows(groups: groups, lead: split.lead, rest: split.rest)
     }
 }
 

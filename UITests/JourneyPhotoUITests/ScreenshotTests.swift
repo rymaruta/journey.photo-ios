@@ -4120,6 +4120,10 @@ final class ScreenshotTests: XCTestCase {
         latest.tap()
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(latest.isSelected, "留まった「新着」を押しても戻らない")
+        // 5. 留まった札の行の上で払っても替わる（中身の払い1つが受ける・指を取り合わない・#426 確かめ役）
+        swipe(left: false, atY: recommended.frame.midY)
+        XCTAssertTrue(following.isSelected, "留まった札の行の上を右へ払っても「フォロー中」に替わらない")
+        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まった札の行の上で払ったら札の行が動いた")
         // 替えた札は頭から: 頭へ送ったので札の行はまだ留まりの位置（見出しの下）に居る
         XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま押して替えたら札の行が動いた")
     }

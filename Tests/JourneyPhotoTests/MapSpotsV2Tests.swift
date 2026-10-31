@@ -90,7 +90,7 @@ final class MapSpotsV2Tests: XCTestCase {
         // 2026-10-31 判断（#426）: 帯の切り替えから、マイページ・ホームと同じ下線の札（`ProfileTabBar`）へ。
         // 中身は横にめくらない（地図を横に動かす操作とぶつかる）
         let picker = segment(try source(map), from: "private var modePicker: some View {")
-        XCTAssertTrue(picker.contains("ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode)"),
+        XCTAssertTrue(picker.contains("ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode, movesContent: false)"),
                       "地図の切り替えが共通の札でない")
         XCTAssertFalse(picker.contains("ProfileTabPager("), "地図の札を横にめくっている（地図の操作とぶつかる）")
         XCTAssertFalse(picker.contains("ProfileTabSwipe("))

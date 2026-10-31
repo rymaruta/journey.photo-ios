@@ -181,20 +181,25 @@ final class HomeTidyTests: XCTestCase {
 
     func testSeasonShelfMovedIntoTheFeed() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, photos: [Photo]) -> some View {",
+        // #426: 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
+        let make = slice(gallery, from: "static func make(_ page: HomeFeed,", to: "private struct PassResolveKey")
+        assertInOrder(["PhotoGroups.group(hidden.visible(photos))", "guard page.showsSeasonShelf else",
+                       "HomeFeed.splitForSeasonShelf(groups)"], in: make, "季節の段の前後に割る")
+        let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")
         // 「おすすめ」では段の有無に関係なくいつも5枚で割り、段だけを挟む（後から届いた段で一覧を作り直さない）。
         // 写真が0枚の日は段を出さない
         assertInOrder(["featuredSections(page)",
                        "if page.showsSeasonShelf {",
-                       "HomeFeed.splitForSeasonShelf(groups)",
+                       "let split = (lead: rows.lead, rest: rows.rest)",
                        "HomeMosaic(groups: split.lead",
                        "if !groups.isEmpty, let seasonShelf {",
                        "HomeSpotShelfView(shelf: seasonShelf.shelf",
                        "HomeMosaic(groups: split.rest",
                        "} else {",
-                       "HomeMosaic(groups: groups",
-                       "pageFooter"], in: section, "季節の段の置き場所")
+                       "HomeMosaic(groups: groups"], in: section, "季節の段の置き場所")
+        // #426: 続きの目印は札の中身に置かない（外側の遅延の並びの子・`TabSwitchUnifyTests.testNextPageMarkerIsLazy`）
+        XCTAssertFalse(section.contains("{ pageFooter }"))
         XCTAssertFalse(section.contains("showsSeasonShelf, let seasonShelf"),
                        "段の有無で写真の一覧の枝が替わる（段が届いた瞬間に一覧が作り直される）")
         // 上の札の並びの下には置かない（2段続きに戻さない）
@@ -260,7 +265,7 @@ final class HomeTidyTests: XCTestCase {
         assertInOrder(["LazyVStack(spacing: 24, pinnedViews: [.sectionHeaders])",
                        "HomeTopCardView(",
                        "Section {", "ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,",
-                       "feedSection(page, photos: pagePhotos(page, selected: photos))",
+                       "feedSection(page, rows: pageRows(page, selected: photos))",
                        "} header: {", "feedPicker(followingHasNew: followingHasNew)"],
                       in: feed, "切り替えは写真の一覧の頭の見出し")
         // #426: 留まった姿はマイページと同じ札の部品の `stuck`（地は黒 100%・下の線は白 12%）。

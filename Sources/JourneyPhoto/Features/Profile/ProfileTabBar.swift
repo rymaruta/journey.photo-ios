@@ -39,6 +39,10 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     var dot: (Tab) -> Bool = { _ in false }
     /// 読み上げの名前（点があるときに「新しい写真あり」を足す画面など）。nil なら名前と数
     var spokenLabel: ((Tab) -> String)? = nil
+    /// 選び替えで中身も動かすか（2026-10-31 #426 確かめ役の見直し）。既定は動かす——横にめくる中身
+    /// （`ProfileTabPager`）は札と同じばねで滑る。**札だけの画面（地図・写真の編集）は false**: 下線だけを
+    /// ばねで滑らせ、中身は前と同じく一瞬で替える（地図や編集の道具まで、ばねの取引で入れ替えない）
+    var movesContent: Bool = true
     /// 名前の字の大きさ（`.subheadline` と同じだけ伸びる。既定 15）。縮める下限の計算に使う
     @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = ProfileTabStyle.labelSize
     /// 下線を選んだ札へ滑らせる目印（2026-10-24 判断・owner「切り替えスムーズに」）。
@@ -56,6 +60,13 @@ struct ProfileTabBar<Tab: PagedTab>: View {
                 ForEach(tabs, id: \.self) { option in tab(option, fill: true) }
             }
         }
+        // 札だけの画面: 選び替えは取引の外で書き、下線（札の行の中）だけをばねで動かす
+        .modifier(ProfileTabRowMotion(selection: selection, animation: movesContent ? nil
+                                      : ProfileTabMotion.animation(reduceMotion: reduceMotion)))
+        // 読み上げ: 札の並び全体をタブの並びとして読ませる（2026-10-31 #426 確かめ役の見直し）。
+        // 札ごとに「何番目 / いくつ」も値で言う（`ProfileTabStyle.position`）
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isTabBar)
         .padding(.horizontal, ProfileTabStyle.rowInset(gutter: gutter))
         // 区切り線は地の側（`background`）——真鍮の下線の上に重ねない
         .background {
@@ -72,8 +83,13 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     private func tab(_ option: Tab, fill: Bool) -> some View {
         let selected = selection == option
         return Button {
-            // 滑らせる（「視差効果を減らす」のときは動かさない・`ProfileTabMotion`）
-            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+            // 滑らせる（「視差効果を減らす」のときは動かさない・`ProfileTabMotion`）。
+            // 中身を動かさない画面は取引の外で替え、下線は `ProfileTabRowMotion` が動かす
+            if movesContent {
+                withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
+                    selection = option
+                }
+            } else {
                 selection = option
             }
         } label: {
@@ -103,6 +119,7 @@ struct ProfileTabBar<Tab: PagedTab>: View {
         // 字の色（選んだ・押している）は押し方の部品で 0.15 秒。その動きは色だけに閉じ込め、下線はばねで滑らせる
         .buttonStyle(ProfileTabPressStyle(selected: selected))
         .accessibilityLabel(spoken(option))
+        .accessibilityValue(ProfileTabStyle.position(of: option, in: tabs) ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier(option.tabIdentifier)
@@ -136,6 +153,21 @@ struct ProfileTabBar<Tab: PagedTab>: View {
                     .font(ProfileTabStyle.detailFont)
                     .lineLimit(1)
             }
+        }
+    }
+}
+
+/// 札の行の中だけに掛けるばね（`ProfileTabBar.movesContent` が false の画面）。`animation` が nil なら何もしない
+/// ——既定の画面に `.animation(nil, value:)` を掛けると、押したときの `withAnimation` まで札の行で消える
+struct ProfileTabRowMotion<Value: Equatable>: ViewModifier {
+    let selection: Value
+    let animation: Animation?
+
+    func body(content: Content) -> some View {
+        if let animation {
+            content.animation(animation, value: selection)
+        } else {
+            content
         }
     }
 }
@@ -197,6 +229,12 @@ enum ProfileTabStyle {
     /// 字（選んだ 600＝semibold・ほか 500＝medium。どちらも 15＝subheadline）
     static func font(selected: Bool) -> Font {
         selected ? JPFont.bodyEmphasis : Font.subheadline.weight(.medium)
+    }
+
+    /// 札の並びの何番目か（読み上げの値「1/3」）。並びに無ければ nil
+    nonisolated static func position<T: Equatable>(of tab: T, in tabs: [T]) -> String? {
+        guard let index = tabs.firstIndex(of: tab) else { return nil }
+        return L("\(index + 1)/\(tabs.count)", "\(index + 1) of \(tabs.count)")
     }
 
     /// 名前の右の数（SF の等幅数字・15・regular）

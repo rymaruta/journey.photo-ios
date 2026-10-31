@@ -46,6 +46,14 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
     var rowOverflow: () -> CGFloat = { 0 }
     /// 画面を開いて手が空いたら先に作っておく札（人のページの地図——払いの途中に初めて作ると引っかかる）
     var prebuilt: [Tab] = []
+    /// 選んでいる札から2つ以上離れた札の中身を捨てるか（2026-10-31 #426 確かめ役の見直し・ホームの重さ）。
+    /// 既定は持ち続ける（マイページ・人のページ）。ホームは写真の一覧が長いので、選んでいる札と左右の隣だけを持つ
+    /// ——隣へは払っている間に作り（`willShow`）、戻りは隣なので作り直さない（`ProfileTabPages.trim`）
+    var keepsDistantPages: Bool = true
+    /// 払いを受ける枠を上へ広げる量（ホーム・2026-10-31 #426 確かめ役の見直し）。ホームは札の行が節の見出しで、
+    /// 札の行と中身にそれぞれ払いを付けると、留まった札の行（中身の上に重なる）の上で2つが指を取り合い、
+    /// 札の行の上の払いでは中身が指に付いてこなかった。中身の払い1つの枠を札の行まで広げ、どちらで払っても同じにする
+    var swipeExtendsUp: CGFloat = 0
     @ViewBuilder let page: (Tab) -> Page
 
     /// 作ってある札。**最初は空**で、出たとき（`onAppear`）に選んでいる札を入れる——以前は `.posts` 決め打ちで、
@@ -86,6 +94,7 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
         .clipped()
         .modifier(ProfileTabSwipe(tabs: tabs, selection: $selection,
                                   enabled: !swipeBlocked.contains(selection), follow: drag,
+                                  extendsUp: swipeExtendsUp,
                                   willShow: { next in
                                       // 払っている間は毎フレーム呼ばれる。状態を書くのは変わるときだけ
                                       let overflow = rowOverflow()
@@ -94,7 +103,10 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
                                       if !pages.isBuilt(next) { pages.select(next) }
                                   }))
         .onAppear { pages.select(selection) }
-        .onChange(of: selection) { _, next in pages.select(next) }
+        .onChange(of: selection) { _, next in
+            pages.select(next)
+            if !keepsDistantPages { pages.trim(around: next, in: tabs) }
+        }
         // 払いの途中で画面を離れたら、ずらしを残さない
         .onDisappear { drag.offset = 0 }
         .task {
@@ -204,6 +216,15 @@ struct ProfileTabPages<Tab: Hashable>: Equatable {
 
     func isBuilt(_ tab: Tab) -> Bool { built.contains(tab) }
 
+    /// 選んでいる札から2つ以上離れた札を捨てる（左右の隣は残す——払って戻るときに作り直さない）
+    mutating func trim(around selected: Tab, in tabs: [Tab]) {
+        guard let center = tabs.firstIndex(of: selected) else { return }
+        built.removeAll { tab in
+            guard let index = tabs.firstIndex(of: tab) else { return true }
+            return abs(index - center) > 1
+        }
+    }
+
     /// 選んだ札から見た、その札の置き場（画面幅いくつ分右か。左は負）
     static func offset(of tab: Tab, selected: Tab, in tabs: [Tab]) -> Int {
         guard let i = tabs.firstIndex(of: tab), let s = tabs.firstIndex(of: selected) else { return 0 }
@@ -277,6 +298,8 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
     var enabled: Bool = true
     /// 指に付いてくる横の量の書き込み先（中身を動かす `ProfileTabPager` だけが渡す）
     var follow: ProfileTabDrag? = nil
+    /// 指を受ける枠を上へ広げる量（`ProfileTabPager.swipeExtendsUp`）
+    var extendsUp: CGFloat = 0
     /// 動いている間、入ってくる隣の札を知らせる（作っておく・縦の位置をそろえる）
     var willShow: ((Tab) -> Void)? = nil
 
@@ -303,6 +326,8 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
                             follow?.offset = 0
                         }
                     })
+                    // 枠を上へ広げる（札の行が中身の上の見出しの画面）。広げた分も同じ1つの払いが受ける
+                    .padding(.top, -extendsUp)
             }
     }
 }
@@ -481,8 +506,10 @@ final class ProfileTabRowSpot {
 /// 節の見出しは留まっている間も生きているので、#417 ⑧ の留め方はそのまま使い、位置は次の2つから出す:
 /// - 札の行の下端（見出し）と、札の中身の上端（`ProfileTabPager`）。留まっていない間は2つの間（`restGap`）は
 ///   変わらず、留まると中身だけが上へ流れて間が詰まる。**詰まった量がはみ出し**（`ProfileTabScroll.pinnedOverflow`）
-/// - 間の決まった値は測って覚える（見出しと中身の間に `LazyVStack` の間が入るかを決め打ちしない）。留まると間は
-///   縮むだけなので、いちばん広かった間が元の間
+/// - 間の決まった値は測って覚える（見出しと中身の間に `LazyVStack` の間が入るかを決め打ちしない）。
+///   **覚え直すのは「留まっていない」と分かる回だけ**: 開いた最初の回（札の行は画面の中ほど）と、前の計算から
+///   札の行と中身が同じだけ動いた回（留まっていれば札の行は動かない）。2026-10-31 確かめ役の見直し: 以前は
+///   「いちばん広かった間」を覚えて戻らなかったので、一度広すぎる間を測ると「留まった」と思い込み続けた
 ///
 /// 2つの位置は別々の `onGeometryChange` で届く。片方だけ新しい値で計算すると、送っている最中は1フレームぶん
 /// ずれた間を覚えてしまう——**両方が届いた後（次の回り）にまとめて計算する**（`schedule`）。
@@ -490,8 +517,11 @@ final class ProfileTabRowSpot {
 final class PinnedTabRowSpot {
     private(set) var headerMaxY: CGFloat?
     private(set) var contentMinY: CGFloat?
-    /// 留まっていないときの札の行と中身の間（測ったうちいちばん広い間）
+    /// 留まっていないときの札の行と中身の間（留まっていないと分かった回に覚え直す）
     private(set) var restGap: CGFloat?
+    /// 前の計算のときの2つの位置（同じだけ動いたか＝留まっていないかを見る）
+    private var settledHeader: CGFloat?
+    private var settledContent: CGFloat?
     private var scheduled = false
 
     /// 札の行（見出し）の下端を控える。計算は次の回りで（`settled` に留まっているかを渡す）
@@ -510,10 +540,22 @@ final class PinnedTabRowSpot {
     @discardableResult
     func settle() -> Bool {
         if let headerMaxY, let contentMinY {
-            let gap = contentMinY - headerMaxY
-            restGap = max(restGap ?? gap, gap)
+            if Self.isFlowing(header: headerMaxY, content: contentMinY,
+                              previousHeader: settledHeader, previousContent: settledContent) {
+                restGap = contentMinY - headerMaxY
+            }
+            settledHeader = headerMaxY
+            settledContent = contentMinY
         }
         return isPinned
+    }
+
+    /// 札の行が留まっていない（流れている）と分かるか。最初の回（前が無い）か、札の行が動き、中身も同じだけ動いた回。
+    /// 留まっている間は札の行が動かないので、中身だけ動いた回は覚え直さない
+    static func isFlowing(header: CGFloat, content: CGFloat, previousHeader: CGFloat?, previousContent: CGFloat?) -> Bool {
+        guard let previousHeader, let previousContent else { return true }
+        let moved = header - previousHeader
+        return abs(moved) > 0.5 && abs(moved - (content - previousContent)) < 0.5
     }
 
     /// 札の中身の頭が、留まった札の行の下からどれだけ上へ流れているか（留まっていなければ 0）

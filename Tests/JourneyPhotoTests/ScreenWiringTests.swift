@@ -187,10 +187,10 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertEqual(count("featuredSections(", in: gallery), 2, "横並びを絞らずに置いている所がある")
         // #417 ⑧: 切り替えは写真の一覧の見出し（Section の header）。中身は `feedSection` の先頭から。
         // #426: 中身はフィードごとの札を横に並べる入れ物（`ProfileTabPager`）の中
-        XCTAssertTrue(gallery.contains("VStack(spacing: Self.feedSpacing) {\n                            feedSection(page, photos: pagePhotos(page, selected: photos))\n                        }"),
+        XCTAssertTrue(gallery.contains("VStack(spacing: Self.feedSpacing) {\n                            feedSection(page, rows: pageRows(page, selected: photos))\n                        }"),
                       "切り替えの下に中身以外が挟まっている")
         let lines = gallery.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let section = lines.firstIndex(of: "private func feedSection(_ page: HomeFeed, photos: [Photo]) -> some View {") else {
+        guard let section = lines.firstIndex(of: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {") else {
             return XCTFail("切り替えの下の中身が無い")
         }
         XCTAssertEqual(lines[section + 1], "if page.showsFeatured {", "切り替えのすぐ下に別のものが挟まっている")

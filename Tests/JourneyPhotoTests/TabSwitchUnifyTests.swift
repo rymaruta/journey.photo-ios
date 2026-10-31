@@ -23,15 +23,19 @@ final class TabSwitchUnifyTests: XCTestCase {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         XCTAssertTrue(gallery.contains("ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: feedRowPinned,"),
                       "ホームの切り替えが共通の札でない（下線が滑らない・当たりが狭い）")
-        XCTAssertTrue(gallery.contains(".modifier(ProfileTabSwipe(tabs: HomeFeed.allCases, selection: feedSelection))"),
-                      "札の行の上で払っても替わらない")
+        // 札の行の上の払いは中身の払い1つが枠を広げて受ける（2つ付けると留まった札の行の上で指を取り合う）
+        XCTAssertFalse(gallery.contains(".modifier(ProfileTabSwipe(tabs: HomeFeed.allCases"),
+                       "札の行に別の払いを付けている（留まった札の行の上で中身の払いと指を取り合う）")
+        XCTAssertTrue(gallery.contains("swipeExtendsUp: feedRowHeight + Self.feedSpacing) { page in"),
+                      "札の行の上で払っても替わらない（中身の払いの枠が札の行まで届かない）")
+        XCTAssertTrue(gallery.contains("keepsDistantPages: false,"), "離れた札の中身まで持ち続けている（ホームが重い）")
         XCTAssertTrue(gallery.contains("ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,"),
                       "中身を横にめくって切り替えない")
         XCTAssertTrue(gallery.contains("rowOverflow: { feedRow.overflow }"), "深く送ってから払うと入ってくる札が空に見える")
         XCTAssertTrue(gallery.contains("minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport,"),
                       "短いフィードへ替えると送りの位置が詰められて札の行が跳ぶ")
         // 中身はフィードごとに作る（選んでいる1つだけを `model.feed` で分ける形に戻さない）
-        XCTAssertTrue(gallery.contains("private func feedSection(_ page: HomeFeed, photos: [Photo]) -> some View {"))
+        XCTAssertTrue(gallery.contains("private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {"))
         XCTAssertFalse(gallery.contains("if model.feed.showsFeatured"), "中身を選んでいるフィードで分けている（隣の札が同じ中身になる）")
         // 自前の札（瞬時に入れ替わる下線）に戻さない
         XCTAssertFalse(gallery.contains(".fill(selected ? WebTheme.accent : Color.clear)"), "自前の下線が残っている")
@@ -114,8 +118,8 @@ final class TabSwitchUnifyTests: XCTestCase {
         ]
         // 札だけ（中身は横にめくらない——地図を横に動かす・フィルムの列とつまみを横に動かす）
         let barOnly: [(String, String)] = [
-            ("Features/Map/PhotoMapView.swift", "ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode)"),
-            ("Features/Upload/PhotoEditView.swift", "ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab)"),
+            ("Features/Map/PhotoMapView.swift", "ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode, movesContent: false)"),
+            ("Features/Upload/PhotoEditView.swift", "ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab, movesContent: false)"),
         ]
         for (path, call) in paged + barOnly {
             let text = try source(path)
@@ -164,5 +168,115 @@ final class TabSwitchUnifyTests: XCTestCase {
                      "withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {"] {
             XCTAssertTrue(section.contains(part), "流れる札の行の部品に「\(part)」が無い")
         }
+    }
+
+    // MARK: - 2026-10-31 確かめ役の見直し
+
+    /// 🔴 「新着」の続きを読む目印は、外側の `LazyVStack` の子（札の中身の外）。札の中身の普通の並びに置くと、
+    /// 画面の外でも `onAppear` が走り、作り直すたびにまた読んで、送らなくても全部のページを読んでいた
+    func testNextPageMarkerIsLazy() throws {
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        let feed = gallery.components(separatedBy: "private func feed(_ photos: [Photo]) -> some View {")[1]
+            .components(separatedBy: "private static let feedTopID")[0]
+        let lazy = try XCTUnwrap(feed.range(of: "LazyVStack(spacing: 24, pinnedViews: [.sectionHeaders]) {"))
+        let header = try XCTUnwrap(feed.range(of: "} header: {"))
+        let footer = try XCTUnwrap(feed.range(of: "\n                pageFooter\n"), "目印が外側の遅延の並びの子でない")
+        let lazyEnd = try XCTUnwrap(feed.range(of: "            .padding(.top, 8)"))
+        XCTAssertLessThan(lazy.lowerBound, footer.lowerBound)
+        XCTAssertLessThan(header.lowerBound, footer.lowerBound, "目印が札の行より前にある")
+        XCTAssertLessThan(footer.lowerBound, lazyEnd.lowerBound, "目印が遅延の並びの外にある")
+        let section = gallery.components(separatedBy: "private func feedSection(_ page: HomeFeed,")[1]
+            .components(separatedBy: "nonisolated static let seasonShelfTopTrim")[0]
+        XCTAssertFalse(section.contains("{ pageFooter }"), "札の中身に続きの目印を置いている（画面の外でも読む）")
+        XCTAssertFalse(section.contains("\n        pageFooter"), "札の中身に続きの目印を置いている（画面の外でも読む）")
+    }
+
+    /// 🔴 元の間は「留まっていない」と分かる回に覚え直す。一度広すぎる間を測っても、留まったと思い込み続けない
+    func testPinnedRowSpotRelearnsATooWideGap() {
+        let spot = PinnedTabRowSpot()
+        // 開いた最初の回にずれた間（100）を測った
+        spot.recordHeader(maxY: 600, settled: { _ in })
+        spot.recordContent(minY: 700, settled: { _ in })
+        spot.settle()
+        // 中身だけ動いた（留まりと見分けられない）回は覚え直さない
+        spot.recordHeader(maxY: 520, settled: { _ in })
+        spot.recordContent(minY: 544, settled: { _ in })
+        spot.settle()
+        // 2つが同じだけ動いた＝流れている → 本当の間（24）を覚え直す
+        spot.recordHeader(maxY: 500, settled: { _ in })
+        spot.recordContent(minY: 524, settled: { _ in })
+        XCTAssertFalse(spot.settle(), "広すぎる間を覚えたまま、留まったと思い込んでいる")
+        XCTAssertEqual(spot.restGap, 24)
+        XCTAssertTrue(PinnedTabRowSpot.isFlowing(header: 10, content: 30, previousHeader: nil, previousContent: nil))
+        XCTAssertFalse(PinnedTabRowSpot.isFlowing(header: 48, content: -300, previousHeader: 48, previousContent: -200),
+                       "留まった札の行の下で中身だけ流れた回を、流れていると言う")
+    }
+
+    /// ホームは選んでいる札と左右の隣だけを持つ（マイページ・人のページは持ち続ける）
+    func testDistantPagesAreDropped() {
+        let feeds = HomeFeed.allCases
+        var pages = ProfileTabPages<HomeFeed>(initial: .recommended)
+        pages.select(.following)
+        pages.select(.latest)
+        pages.trim(around: .latest, in: feeds)
+        XCTAssertEqual(pages.built, [.following, .latest], "2つ離れた「おすすめ」を持ち続けている")
+        pages.trim(around: .following, in: feeds)
+        XCTAssertEqual(pages.built, [.following, .latest], "隣を捨てた（払って戻るたびに作り直す）")
+    }
+
+    /// 🔴 札ごとの束ね（見せない・束ねる・季節の段の割り）は、元の写真か「見せない」が変わったときだけ計算する
+    func testPageRowsAreMemoized() throws {
+        let photos = try ["a", "b", "c"].map { id in
+            try JSONDecoder.api.decode(Photo.self, from: Data("{\"id\":\"\(id)\",\"src\":\"/u/\(id).jpg\",\"userId\":\"u\(id)\"}".utf8))
+        }
+        let memo = HomeFeedPageMemo()
+        let first = memo.rows(.recommended, photos: photos, hidden: ModerationSnapshot())
+        _ = memo.rows(.recommended, photos: photos, hidden: ModerationSnapshot())
+        _ = memo.rows(.recommended, photos: Array(photos), hidden: ModerationSnapshot())
+        XCTAssertEqual(memo.computeCount(.recommended), 1, "描き直しのたびに束ね直している")
+        XCTAssertEqual(first.groups.count, 3)
+        XCTAssertEqual(first.lead.count, 3, "5枚より少ないのに季節の段の後ろへ回した")
+        _ = memo.rows(.recommended, photos: Array(photos.prefix(2)), hidden: ModerationSnapshot())
+        XCTAssertEqual(memo.computeCount(.recommended), 2, "元の写真が変わったのに計算し直さない")
+        let latest = memo.rows(.latest, photos: photos, hidden: ModerationSnapshot())
+        XCTAssertEqual(latest.lead.count, 3)
+        XCTAssertTrue(latest.rest.isEmpty, "季節の段の無いフィードを割った")
+        XCTAssertEqual(memo.computeCount(.recommended), 2, "別の札の計算でおすすめの控えが消えた")
+        XCTAssertTrue(try source("Features/Gallery/GalleryView.swift").contains("return pageMemo.rows(page, photos: raw, hidden: dropped)"),
+                      "ホームが控えを通さずに束ねている")
+    }
+
+    /// 🔴 札だけの画面（地図・写真の編集）は中身を動かさない: 選び替えは取引の外で書き、下線だけをばねで動かす。
+    /// 既定（横にめくる画面）は今までどおり `withAnimation` で中身も滑る
+    func testBarOnlyScreensMoveOnlyTheUnderline() throws {
+        let bar = try source("Features/Profile/ProfileTabBar.swift")
+        XCTAssertTrue(bar.contains("var movesContent: Bool = true"))
+        XCTAssertTrue(bar.contains("if movesContent {\n                withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {\n                    selection = option\n                }\n            } else {\n                selection = option\n            }"),
+                      "札だけの画面でも中身をばねの取引で替えている")
+        XCTAssertTrue(bar.contains(".modifier(ProfileTabRowMotion(selection: selection, animation: movesContent ? nil"),
+                      "札だけの画面で下線が滑らない")
+        let motion = bar.components(separatedBy: "struct ProfileTabRowMotion<")[1].components(separatedBy: "/// 札の名前の右上の真鍮の点")[0]
+        XCTAssertTrue(motion.contains("if let animation {\n            content.animation(animation, value: selection)\n        } else {\n            content\n        }"),
+                      "既定の画面にも `.animation(nil, value:)` を掛けて、押したときの滑りを消している")
+    }
+
+    /// 🔴 読み上げ: 札の並び全体はタブの並び、札ごとに「何番目 / いくつ」
+    func testTabRowSpeaksAsATabBar() throws {
+        let bar = try source("Features/Profile/ProfileTabBar.swift")
+        let body = bar.components(separatedBy: "var body: some View {")[1].components(separatedBy: "private func tab(")[0]
+        XCTAssertTrue(body.contains(".accessibilityElement(children: .contain)\n        .accessibilityAddTraits(.isTabBar)"),
+                      "札の並びをタブの並びとして読ませていない")
+        XCTAssertTrue(bar.contains(".accessibilityValue(ProfileTabStyle.position(of: option, in: tabs) ?? \"\")"))
+        XCTAssertEqual(ProfileTabStyle.position(of: HomeFeed.following, in: HomeFeed.allCases), L("2/3", "2 of 3"))
+        XCTAssertEqual(ProfileTabStyle.position(of: ProfileTab.favorites, in: ProfileTab.tabs(isMe: true)), L("4/4", "4 of 4"))
+        XCTAssertNil(ProfileTabStyle.position(of: ProfileTab.map, in: ProfileTab.tabs(isMe: true)))
+    }
+
+    /// 払いの枠を上へ広げる口（ホーム）。広げた分も同じ1つの払いが受ける
+    func testSwipeAreaCanReachTheRowAbove() throws {
+        let pager = try source("Features/Profile/ProfileTabPager.swift")
+        XCTAssertTrue(pager.contains("extendsUp: swipeExtendsUp,"))
+        XCTAssertTrue(pager.contains("                    })\n                    // 枠を上へ広げる（札の行が中身の上の見出しの画面）。広げた分も同じ1つの払いが受ける\n                    .padding(.top, -extendsUp)"),
+                      "払いの枠が札の行まで届かない")
     }
 }

@@ -449,7 +449,7 @@ struct PhotoMapView: View {
     /// （人のページの地図の札と同じ判断・`ProfileTabPager.swipeBlocked`）。リスト・スポットだけめくれると、
     /// 同じ札で効く所と効かない所が割れるので、この画面は札を押して替える
     private var modePicker: some View {
-        ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode)
+        ProfileTabBar(tabs: PhotoMapViewModel.Mode.allCases, selection: $model.mode, movesContent: false)
             // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
             // 地図・リストはカテゴリのチップの下の余白がそのまま間になるが、
             // スポットはチップを出さないので検索欄に隙間なしで付いていた

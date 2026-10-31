@@ -284,7 +284,7 @@ struct PhotoEditView: View {
     /// 下線は瞬時に入れ替わる）だった。**中身は横にめくらない**——フィルムの列は横に流れ、調整はつまみを
     /// 横に動かすので、払いで札を替えると指の意味が分からなくなる（札を押して替える）
     private var tabs: some View {
-        ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab)
+        ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab, movesContent: false)
     }
 
     // MARK: - フィルム
