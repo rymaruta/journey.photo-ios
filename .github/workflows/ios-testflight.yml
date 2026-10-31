@@ -72,8 +72,10 @@ env:
   # run 778（41187923424）の実測: 全部の回 128 分のうち UI テストが 109 分（1台で1本ずつ順に流していた・
   # うち ScreenshotTests 74 本が 89 分）。3台に分けると UI は1台あたり約 34 分（`Tools/ui-test-times.json` の見積もり）。
   # **上げる回（submit=true）は今までどおり**（テストを流すなら、この job の中で1台で流す）。
+  # 2026-10-31: 1台で全部を流す回は UI だけで 129 分かかり、続く Archive が job の上限 160 分に当たって
+  # cancelled になった（run 788・41210269135）。分けて流す回の `build` の job は Archive だけ（run 791 で 18 分）。
   # 下の job の `if:` にも同じ式がある（job の `if:` では env が読めない）。変えるときは両方
-  SHARDED: ${{ !inputs.submit && (inputs.screens == '' || inputs.storeShots) && 'true' || 'false' }}
+  SHARDED: ${{ !inputs.submit && (inputs.screens == '' || inputs.screens == 'all' || inputs.screens == '全部' || inputs.storeShots) && 'true' || 'false' }}
 
 jobs:
   build:
@@ -634,7 +636,7 @@ jobs:
   test-build:
     name: テストの品を組む
     # 上の env の SHARDED と同じ式（job の `if:` では env が読めない）
-    if: ${{ !inputs.submit && (inputs.screens == '' || inputs.storeShots) }}
+    if: ${{ !inputs.submit && (inputs.screens == '' || inputs.screens == 'all' || inputs.screens == '全部' || inputs.storeShots) }}
     runs-on: macos-15
     # 控えが外れて依存を丸ごと組むと50分を超える（run #8）
     timeout-minutes: 90
