@@ -1,0 +1,67 @@
+# 組んだテストの品で、テストの1組を流す（2026-10-31・#429）。`ios-testflight.yml` の全部の回で、
+# 「単体テスト」「UI テストの先に流す分」「UI テストの分けた組 1〜3」の各 Mac が使う。
+#
+# 組むのは「テストの品を組む」の1台だけで、ここはその品（成果物 `test-products`）をほどいて
+# `test-without-building` で流す。run 778 の実測では、各台で組み直すと控えから戻す 2 分＋組む 6 分かかる。
+# 流し方（時間の上限・名指しした回だけ流すテストを飛ばす）は `Tools/xcode-test.sh` のまま
+#
+# 結果（xcresult）と全文ログは、落ちても成果物 `part-<組>` に残す。「まとめ」の job が集めて
+# 画面の絵を `screenshots` の枝に置き、`build-logs` にまとめる
+name: テストの1組を流す
+description: 組んだテストの品で、単体テスト・UI テストの1組を流す
+inputs:
+  part:
+    description: "unit（単体テスト）・first（UI の先に流す分）・1〜3（UI の分けた組）"
+    required: true
+  xcode:
+    description: 組んだ台の Xcode の版（同じ版を選ぶ）
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Xcode を選ぶ（組んだ台と同じ版）
+      shell: bash
+      run: bash Tools/select-xcode.sh "${{ inputs.xcode }}"
+
+    - name: 組んだ品を受け取る
+      uses: actions/download-artifact@v4
+      with:
+        name: test-products
+        path: build/products-in
+
+    - name: 組んだ品をほどく
+      shell: bash
+      run: |
+        set -euo pipefail
+        xctestrun="$(python3 Tools/test-products.py unpack build/products-in/test-products.tar build/products)"
+        echo "XCTESTRUN=$xctestrun" >> "$GITHUB_ENV"
+        echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
+
+    # 🔴 **段の名前を「テスト」で始めない**（`ios-pr.yml` の古い数え方に拾われないように・`ios-testflight.yml` の注記）
+    - name: 流す
+      shell: bash
+      env:
+        PART: ${{ inputs.part }}
+      run: |
+        set -euo pipefail
+        mkdir -p build/ios/test build/logs
+        export XCODE_LOG="build/logs/xcodebuild-$PART.log"
+        case "$PART" in
+          unit)  bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult ;;
+          first) bash Tools/xcode-test.sh ui build/ios/test/Test-first.xcresult build/products-in/ui-plan/first.txt ;;
+          [0-9]) bash Tools/xcode-test.sh ui "build/ios/test/Test-$PART.xcresult" "build/products-in/ui-plan/part-$PART.txt" ;;
+          *) echo "::error::知らない組: $PART"; exit 2 ;;
+        esac
+
+    - name: 結果を残す
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-${{ inputs.part }}
+        path: |
+          build/ios/test/*.xcresult
+          build/logs/*.log
+        # 「まとめ」が `build-logs`（7日）にまとめ直すので、ここは1日
+        retention-days: 1
+        if-no-files-found: ignore

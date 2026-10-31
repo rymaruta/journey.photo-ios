@@ -40,6 +40,14 @@ on:
         description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
         type: string
         default: ""
+      # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
+      # 同時に流す（下の「テストの品を組む」から「まとめ」まで）。その前に、枝で変えた画面の UI テストを
+      # 単体テストと同時に別の Mac で先に流し、落ちたら分けた段まで進めない。何を先に流すかは、空なら
+      # 枝の差分から `Tools/pick-ui-tests.py --plan` が選ぶ。書けば `screens` と同じ書き方でそれを先に流す
+      first:
+        description: "全部の回で先に流す UI テスト（screens と同じ書き方。空＝枝で変えた画面から選ぶ）。落ちたら残りの UI テストは流さない"
+        type: string
+        default: ""
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -59,6 +67,13 @@ permissions:
 
 env:
   BUNDLE_ID: com.journeyphoto.JourneyPhoto
+  # 🔴 **UI テストを別々の Mac に分けて流す回**（2026-10-31 判断・#429）。上げない回（submit=false）で、
+  # 絞らない（screens 空、または storeShots で screens を捨てる）ときだけ。
+  # run 778（41187923424）の実測: 全部の回 128 分のうち UI テストが 109 分（1台で1本ずつ順に流していた・
+  # うち ScreenshotTests 74 本が 89 分）。3台に分けると UI は1台あたり約 34 分（`Tools/ui-test-times.json` の見積もり）。
+  # **上げる回（submit=true）は今までどおり**（テストを流すなら、この job の中で1台で流す）。
+  # 下の job の `if:` にも同じ式がある（job の `if:` では env が読めない）。変えるときは両方
+  SHARDED: ${{ !inputs.submit && (inputs.screens == '' || inputs.storeShots) && 'true' || 'false' }}
 
 jobs:
   build:
@@ -98,6 +113,9 @@ jobs:
           if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
             echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$SHARDED" = "true" ]; then
+              echo "単体テストと UI テストは、別々の Mac（「テストの品を組む」から「まとめ」まで）で流します。この job は Archive だけ" >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "full=false" >> "$GITHUB_OUTPUT"
             {
@@ -313,7 +331,8 @@ jobs:
       # 前は「テスト」で始まる最初の段の成否を見ていた。名前を変えれば古い数え方は何も数えず
       # （＝飛ばさない側に倒れ）、新しい数え方は下の「全部のテストが通った」の印だけを数える
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        # 分けて流す回は、下の「テストの品を組む」の job が組む（この job は Archive だけ）
+        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && env.SHARDED != 'true' }}
         run: |
           set -euo pipefail
           # 3段で同じシミュレータを使う
@@ -342,20 +361,21 @@ jobs:
 
       - name: 単体テスト
         id: unit
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && env.SHARDED != 'true' }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
       # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
       - name: UI テスト（画面の絵）
         id: ui
-        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
+        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && env.SHARDED != 'true' }}
         run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
 
       # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
       # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は
       # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
-      # `ios-pr.yml` の `tested` の job も合わせる
+      # `ios-pr.yml` の `tested` の job も合わせる。
+      # 分けて流す回（SHARDED）は単体・UI の段が skipped なのでここは付かず、「まとめ」の job の同じ名前の段が付く
       - name: 全部のテストが通った（PR の検証が数える印）
         if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
@@ -513,7 +533,8 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) }}
+        # 分けて流す回は「まとめ」の job が置く
+        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) && env.SHARDED != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
@@ -540,7 +561,8 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
+          # 分けて流す回は「まとめ」の job が各台の分と合わせて `build-logs` にする（同じ名前は2つ作れない）
+          name: ${{ env.SHARDED == 'true' && 'part-build' || 'build-logs' }}
           # テストの結果とビルドのログ。落ちた理由はここに残る
           # **`*.xml` はもう出ない。** `xcode-project run-tests` をやめた
           # 時点で JUnit の書き出しも無くなったので、ここだけ残していると
@@ -586,3 +608,261 @@ jobs:
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+
+  # ===========================================================================================
+  # 🔴 **全部の回は、テストを別々の Mac に分けて同時に流す**（2026-10-31 判断・#429）
+  #
+  # run 778（41187923424）の実測: 全部の回 128 分 = 控え 2 分・組む 6 分・単体 8 分・UI 109 分（1台で1本ずつ）。
+  #
+  #   テストの品を組む（1台・組むのは1回だけ）
+  #     ├─ 単体テスト（1台）           ┐ 同時に流す。どちらかが落ちたら、UI の分けた組は走らない
+  #     └─ UI の先に流す分（1台）      ┘ （枝で変えた画面のテスト＋起動の見張り。単体より短く収める）
+  #          └─ UI の分けた組 1〜3（3台・同時）
+  #               └─ まとめ（絵を `screenshots` の枝に置く・`build-logs`・「全部のテストが通った」の印）
+  #
+  # - **組んだ品は成果物で渡す**（各台で組み直さない）。各台で組み直すと控えから戻す 2 分＋組む 6 分（run 778）
+  # - **振り分けは1本ずつの実際の時間から**（`Tools/ui-test-times.json`・run 778 の全文ログから作った）。
+  #   長いものから順に、いちばん軽い組に入れる。表に無い新しいテストは表の中央の値で見積もる。
+  #   最後の組は「全部から、ほかの組と先に流した分を抜いた残り」なので、読み落としたテストも必ずどこかで流れる
+  # - **先に流した分は分けた組から抜く**。テストの本数は1本も変わらない（足さない・減らさない）
+  # - 単体テストは今までどおり1回。単体が落ちたら UI の分けた組には進まない
+  #   （先に流す分は単体と同時に走る。単体より短く収めるので、通る回は延びない）
+  # - Archive（Release の組み立て）は上の `build` の job が、ここと同時に流す
+  # - 同時に動く Mac は多いときで4台（`build` の Archive・単体・先に流す分 → 分けた組3台）。
+  #   公開リポジトリの Mac の同時実行は5台まで
+  # ===========================================================================================
+  test-build:
+    name: テストの品を組む
+    # 上の env の SHARDED と同じ式（job の `if:` では env が読めない）
+    if: ${{ !inputs.submit && (inputs.screens == '' || inputs.storeShots) }}
+    runs-on: macos-15
+    # 控えが外れて依存を丸ごと組むと50分を超える（run #8）
+    timeout-minutes: 90
+    outputs:
+      xcode: ${{ steps.xcode.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # **何を先に流し、どう分けるかを最初に決める**（`Tools/pick-ui-tests.py --plan`）。
+      # 枝の差分は GitHub の比べる口（main...この sha）から読む。読めなければ起動の見張りだけを先に流す。
+      # 組の数（3）は下の `ui` の matrix と揃える（`Tools/check-config.py` が見る）
+      - name: 先に流す UI テストと、分ける組を決める
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRST: ${{ inputs.first }}
+        run: |
+          set -euo pipefail
+          if ! gh api -H "Accept: application/vnd.github.diff" \
+                 "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_SHA}" > /tmp/branch.diff; then
+            echo "::warning::枝の差分が読めませんでした。先に流すのは起動の見張りだけにします"
+            : > /tmp/branch.diff
+          fi
+          echo "枝の差分: $(grep -c '^diff --git' /tmp/branch.diff || true) ファイル"
+          {
+            echo "### UI テストの割り振り（3台に分けて同時に流す）"
+            python3 Tools/pick-ui-tests.py --plan 3 build/ui-plan "${FIRST:-}" /tmp/branch.diff
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat build/ui-plan/plan.md
+          for f in build/ui-plan/*.txt; do echo "== $f"; cat "$f"; done
+
+      - name: Xcode を選ぶ
+        id: xcode
+        run: bash Tools/select-xcode.sh
+
+      - name: Xcode の版を読む
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 控えの鍵と path は `build` の job の「前回の作りかけを控えから戻す」と同じ（違うと当たらない）。読むだけ
+      - name: 控えの鍵を決める
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      - name: 前回の作りかけを控えから戻す
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      - name: Xcode プロジェクトを作る
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: 組む（本物の SwiftUI で型検査される最初の機会）
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
+
+      - name: 組んだ品を包む
+        run: |
+          set -euo pipefail
+          products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
+          python3 Tools/test-products.py pack "$products" build/test-products.tar
+          ls -la build/test-products.tar
+
+      # tar は自分で包んである（成果物の zip ではファイルの実行の権限が落ちるため）。縮める手間は軽くする
+      - name: 組んだ品を渡す
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-products
+          path: |
+            build/test-products.tar
+            build/ui-plan
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+
+      - name: 組んだときのログを残す
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: part-test-build
+          path: build/logs/*.log
+          retention-days: 1
+          if-no-files-found: ignore
+
+  pre:
+    name: ${{ matrix.part == 'unit' && '単体テスト' || 'UI テスト（先に流す分・変えた画面）' }}
+    needs: test-build
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      # 片方が落ちても、もう片方は最後まで流す（どちらの失敗も1回で見える）
+      fail-fast: false
+      matrix:
+        part: [unit, first]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/mac-test-part
+        with:
+          part: ${{ matrix.part }}
+          xcode: ${{ needs.test-build.outputs.xcode }}
+
+  ui:
+    name: UI テスト（分けた組 ${{ matrix.part }}/3）
+    # 単体テストと先に流す分が両方とも通ったときだけ（どちらかが落ちたら skipped）
+    needs: [test-build, pre]
+    runs-on: macos-15
+    # 1台あたりの見積もりは約 34 分。1本ごとの上限（Tools/xcode-test.sh）に当たる詰まりが続いても抜けられる長さ
+    timeout-minutes: 90
+    strategy:
+      # 1つの組が落ちても、ほかの組は最後まで流す（前の1台の回も、1本落ちても残りを全部流していた）
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/mac-test-part
+        with:
+          part: ${{ matrix.part }}
+          xcode: ${{ needs.test-build.outputs.xcode }}
+
+  finish:
+    name: まとめ（画面の絵・成果物・印）
+    needs: [build, test-build, pre, ui]
+    if: ${{ always() && needs.test-build.result != 'skipped' }}
+    # 絵を置く枝（`screenshots`）へ押すのに書き込みが要る
+    permissions:
+      contents: write
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode を選ぶ（結果を読む・まとめる）
+        run: bash Tools/select-xcode.sh "${{ needs.test-build.outputs.xcode }}"
+
+      - name: 各台の結果を受け取る
+        uses: actions/download-artifact@v4
+        with:
+          pattern: part-*
+          path: build/parts
+
+      # 前の1台の回と同じ形の `build-logs` にそろえる: logs/xcodebuild-full.log（組む → 単体 → 先に流す分 →
+      # 組 1〜3 の順につないだもの）・logs/Unit.xcresult・logs/Test.xcresult（UI の結果を1つにまとめたもの）
+      - name: 結果をまとめる
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          mkdir -p build/logs
+          ls build/parts || true
+          : > build/logs/xcodebuild-full.log
+          # 成果物の中の並びは、入っていたものによって変わる（共通の親から下になる）ので find で探す
+          for part in test-build unit first 1 2 3; do
+            for log in $(find "build/parts/part-$part" -name '*.log' -not -path '*.xcresult/*' 2>/dev/null | sort); do
+              echo "===== $part: $(basename "$log") =====" >> build/logs/xcodebuild-full.log
+              cat "$log" >> build/logs/xcodebuild-full.log
+            done
+          done
+          unit="$(find build/parts/part-unit -maxdepth 4 -type d -name Unit.xcresult 2>/dev/null | head -1)"
+          if [ -n "$unit" ]; then cp -R "$unit" build/logs/; fi
+          results=""
+          for part in first 1 2 3; do
+            r="$(find "build/parts/part-$part" -maxdepth 4 -type d -name "Test-$part.xcresult" 2>/dev/null | head -1)"
+            if [ -n "$r" ]; then results="$results $r"; fi
+          done
+          echo "UI の結果:$results"
+          echo "$results" > /tmp/ui-results.txt
+          # 1つにまとめる（前と同じ `Test.xcresult` で読めるように）。まとめられなければ、組ごとのまま入れる
+          # shellcheck disable=SC2086
+          if [ -n "$results" ] && xcrun xcresulttool merge $results --output-path build/logs/Test.xcresult; then
+            echo "UI の結果を Test.xcresult にまとめました"
+          else
+            echo "::warning::UI の結果を1つにまとめられませんでした。組ごとの結果を build-logs に入れます"
+            for r in $results; do cp -R "$r" build/logs/; done
+          fi
+          # 流れた本数（前の1台の回と同じ本数かを見る）
+          python3 Tools/pick-ui-tests.py --count-log build/logs/xcodebuild-full.log | tee -a "$GITHUB_STEP_SUMMARY"
+          true
+
+      - name: 画面の絵を `screenshots` の枝に置く
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STORE_SHOTS: ${{ inputs.storeShots }}
+          NARROWED: "false"
+        # 組ごとの結果から取り出す（まとめた Test.xcresult が作れなかった回でも置ける）
+        # 置き場の名前に空白は無い（build/parts/part-<組>/…）ので、わざと分けて渡す
+        run: |
+          # shellcheck disable=SC2046
+          bash Tools/export-screenshots.sh $(cat /tmp/ui-results.txt)
+
+      # 🔴 **「PR の検証」が数える印**（`build` の job の同じ名前の段の注記）。単体・先に流す分・分けた組の
+      # 全部が通った回だけ success。分けて流す回はいつも絞らない（`screens` 空・storeShots）
+      - name: 全部のテストが通った（PR の検証が数える印）
+        if: ${{ needs.test-build.result == 'success' && needs.pre.result == 'success' && needs.ui.result == 'success' }}
+        run: echo "単体テストと UI テスト（先に流す分と分けた組 3つ）を絞らずに全部流し、通りました"
+
+      # `build` の job の Archive（ipa）と集めたものも、前と同じ `build-logs` に入れる
+      - name: Archive の分を合わせる
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          if [ -d build/parts/part-build ]; then
+            mkdir -p build/ios/ipa build/logs/build-job
+            find build/parts/part-build -name '*.ipa' -exec cp {} build/ios/ipa/ \;
+            # ipa のほか（`build` の job が集めたもの）は build-job/ の下へ
+            (cd build/parts/part-build && find . -type f ! -name '*.ipa' | sed 's#^\./##') | while IFS= read -r f; do
+              mkdir -p "build/logs/build-job/$(dirname "$f")"
+              cp "build/parts/part-build/$f" "build/logs/build-job/$f"
+            done
+          fi
+          ls -la build/logs build/ios/ipa 2>/dev/null || true
+
+      - name: 落ちたときに読むもの
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build/ios/ipa/*.ipa
+            build/logs/**
+          retention-days: 7
+          if-no-files-found: ignore

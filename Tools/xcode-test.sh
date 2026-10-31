@@ -97,17 +97,26 @@ case "$mode" in
         ;;
 esac
 
+# **別の台で組んだ品で流す**（2026-10-31・#429）。`XCTESTRUN` に xctestrun の置き場を渡すと、
+# プロジェクトではなくその品で流す（`Tools/test-products.py unpack` が置き場を出す）。組む段では使えない
+if [ -n "${XCTESTRUN:-}" ]; then
+    if [ "$mode" = "build" ]; then
+        echo "XCTESTRUN は組んだ品で流すとき（unit・ui）だけ渡す" >&2
+        exit 2
+    fi
+    # 組む設定（arm64 に絞る・プラグインの関所）は組む側の話なので、組んだ品で流すときは渡さない
+    source_args="-xctestrun $XCTESTRUN"
+else
+    source_args="-project JourneyPhoto.xcodeproj -scheme JourneyPhoto"
+    source_args="$source_args ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -skipPackagePluginValidation -skipMacroValidation"
+fi
+
 mkdir -p "$(dirname "$LOG")"
-# `extra` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
+# `extra`・`source_args` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
 # shellcheck disable=SC2086
 xcodebuild \
-    -project JourneyPhoto.xcodeproj \
-    -scheme JourneyPhoto \
+    $source_args \
     -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
-    ARCHS=arm64 \
-    ONLY_ACTIVE_ARCH=YES \
-    -skipPackagePluginValidation \
-    -skipMacroValidation \
     $extra \
     "$action" 2>&1 | tee -a "$LOG" | tail -n 400 || {
         echo "::group::error: と落ちたテストの行だけ"

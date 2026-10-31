@@ -151,9 +151,11 @@ jobs:
             reason="このコミットで Mac のテストが通った TestFlight の回が無い"
             for id in $runs; do
               # 🔴 **段の名前は完全一致で見る**（前は「テスト」で始まる最初の段＝単体だけで
-              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える
-              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
-                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | first // ""' 2>/dev/null || true)"
+              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える。
+              # 2026-10-31（#429）: 印の段は2か所にある（1台で流す回は `build` の job、別々の Mac に分けて流す回は
+              # 「まとめ」の job）。流れなかった方は skipped なので、どれか1つが success なら数える
+              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | if any(. == "success") then "success" else "" end' 2>/dev/null || true)"
               if [ "$step" = "success" ]; then
                 skip=true
                 reason="TestFlight の run ${id} で同じコミットのテストが通っている"

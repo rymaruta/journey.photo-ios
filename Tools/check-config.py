@@ -470,6 +470,23 @@ if testflight_yml.exists() and pr_yml.exists():
         fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
     elif mark.group(1).strip() != MARK_IF:
         fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
+    # **別々の Mac に分けて流す回の印**（2026-10-31・#429）。「まとめ」の job の同じ名前の段で、
+    # 単体・先に流す分・分けた組の**全部**が success のときだけ付く。`always()` や `|| …` を足すと、落ちた回にも付く
+    FINISH_MARK_IF = ("needs.test-build.result == 'success' && needs.pre.result == 'success'"
+                      " && needs.ui.result == 'success'")
+    marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
+    if len(marks) != 2 or marks[1].strip() != FINISH_MARK_IF:
+        fail(f"ios-testflight.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {marks[1:]}")
+    # 分けた組は、単体と先に流す分の両方を待つ（`needs: [test-build, pre]`・job の if を足さない＝どれかが落ちたら skipped）
+    ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
+    if not ui_job or "needs: [test-build, pre]" not in ui_job.group(1) or re.search(r"^    if:", ui_job.group(1), re.M):
+        fail("ios-testflight.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
+    else:
+        # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
+        parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))
+        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", flow)
+        if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
+            fail("ios-testflight.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
     if selects != [f'.name == "{MARK}"']:
@@ -490,6 +507,14 @@ if testflight_yml.exists() and pr_yml.exists():
                 fail(f"{file} に「{name}」の段がありません")
             elif "continue-on-error" in block:
                 fail(f"{file} の「{name}」に continue-on-error があります（落ちても印まで進む）")
+    # 分けて流す回のテストの段（組む・組ごとに流す）にも continue-on-error を付けない
+    part_action = ROOT / ".github/actions/mac-test-part/action.yml"
+    if "continue-on-error" in (part_action.read_text(encoding="utf-8") if part_action.exists() else "continue-on-error"):
+        fail(".github/actions/mac-test-part/action.yml が無いか、continue-on-error があります（落ちても印まで進む）")
+    for job in ("test-build", "pre", "ui"):
+        body = re.search(r"^  " + job + r":\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
+        if not body or "continue-on-error" in body.group(1):
+            fail(f"ios-testflight.yml の job「{job}」が無いか、continue-on-error があります（落ちても印まで進む）")
     # 印が結果を見る段の `id`
     for name, step_id in [("単体テスト", "unit"), ("UI テスト（画面の絵）", "ui")]:
         block = step_block(flow, name) or ""
@@ -605,6 +630,40 @@ if testflight_yml.exists() and pr_yml.exists():
     code, _ = picked("どの絵にも無い語qqq")
     if code != 2:
         fail("pick-ui-tests.py が当たらない語で止まりません（打ち間違いで UI テスト0件のまま緑になる）")
+
+    # **分けて流す回の割り振り**（2026-10-31・#429）: 先に流す分と組 1〜N-1 は重ならず、最後の組は
+    # 「全部から、それらを抜いた残り」。どのテストも、ちょうど1回だけ流れる（足さない・減らさない）
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("pick_ui_tests", picker)
+    pick_mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(pick_mod)
+    index, loose = pick_mod.read_index()
+    runnable = {t for t in index if t not in pick_mod.ONLY_WHEN_NAMED}
+    prefix = f"-only-testing:{pick_mod.TARGET}/"
+    for words, diff in [("", ""), ("撮影スポット", ""),
+                        ("", "+++ b/UITests/JourneyPhotoUITests/SmokeTests.swift\n@@ -1,0 +1,1 @@\n+x\n")]:
+        got = pick_mod.plan(words, diff, 3, index=index, loose=loose)
+        first = {a[len(prefix):] for a in got["first"]}
+        first = {t for t in runnable if t in first or t.split("/")[0] in first}
+        groups = [{a[len(prefix):] for a in g} for g in got["parts"][:-1]]
+        last = got["parts"][-1]
+        skipped = {a.split(f"{pick_mod.TARGET}/", 1)[1] for a in last[1:]}
+        listed = [first, *groups]
+        overlap = sum(len(g) for g in listed) != len(set().union(*listed))
+        if (last[0] != f"-only-testing:{pick_mod.TARGET}" or not all(a.startswith("-skip-testing:") for a in last[1:])
+                or overlap or skipped != set().union(*listed) or not set().union(*listed) <= runnable):
+            fail(f"pick-ui-tests.py --plan の割り振りで、同じテストが2回流れるか、流れないテストがあります（{words!r}）")
+    # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
+    est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
+    if est["A/new"] != 30.0:
+        fail(f"pick-ui-tests.py が、時間の表に無いテストを中央の値で見積もっていません: {est}")
+    # 変えた行から先に流すテストを選ぶ（テストの関数の中の行・アプリのコードの識別子）
+    smoke_line = next(iter(index[next(t for t in index if t.startswith("SmokeTests/test"))]["lines"]))[0] + 1
+    sample = next(t for t in index if t.startswith("SmokeTests/test"))
+    chosen = pick_mod.tests_for_diff(f"+++ b/UITests/JourneyPhotoUITests/SmokeTests.swift\n@@ -{smoke_line},1 +{smoke_line},1 @@\n+x\n",
+                                     index, loose)
+    if not chosen:
+        fail(f"pick-ui-tests.py が、変えたテストの行から先に流すテストを選べません（{sample} の {smoke_line} 行目）")
 
 # ---- 結果 -----------------------------------------------------------------
 if errors:
