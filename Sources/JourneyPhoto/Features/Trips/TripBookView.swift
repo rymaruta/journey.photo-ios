@@ -146,12 +146,10 @@ struct TripBookView: View {
                 Color.clear
                     .aspectRatio(3.0 / 4.0, contentMode: .fit)
                     .overlay {
-                        // 表紙（画面の幅 × 3:4）を覆う大きさまで縮めて読む（2026-10-31 判断・札 #429 アプリ 2）。
-                        // 拡大しない画面なので上限は 1 倍。縦横比が分からなければ上限（2048px）で読む（粗くしない）
-                        DownsampledRemoteImage(url: cover.detailImageURL, contentMode: .fill,
-                                               aspectRatio: cover.aspectRatio.map { CGFloat($0) },
-                                               alignment: cover.gridAlignment,
-                                               appearAnimation: .easeOut(duration: 0.15))
+                        // 縮めて読む部品には替えない（2026-10-31 判断・札 #429）。表紙（画面の幅 × 3:4）を覆うには
+                        // 元の画像とほぼ同じ画素が要り縮まない。同じ大きさの写真の詳細で替えた回は、メモリが減らず
+                        // 閉じた後に増えた（`PhotoDetailView.heroImage` の注記）
+                        RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)
                     }
                     .clipped()
             }

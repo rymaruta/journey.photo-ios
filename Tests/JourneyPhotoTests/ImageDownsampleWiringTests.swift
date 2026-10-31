@@ -3,8 +3,9 @@ import XCTest
 
 /// 小さい枠に大きい写真を原寸で読まない（2026-10-31・札 #429 アプリ 2）。
 ///
-/// ストーリーの輪・四角いサムネ、写真の詳細の大きな写真、旅の一冊の表紙を、元の画像をそのまま展開する
-/// `RemoteImage` から、枠の大きさまで縮めて読む `DownsampledRemoteImage` に替えた。
+/// ストーリーの輪・四角いサムネを、元の画像をそのまま展開する `RemoteImage` から、枠の大きさまで縮めて読む
+/// `DownsampledRemoteImage` に替えた（Mac run 790 → 793 で輪の画面のメモリの山 157.1 → 135.7MB）。
+/// 写真の詳細の大きな写真・旅の一冊の表紙は、縮めても得が無いので替えない（下の試験）。
 /// 画面は模型では描けないので、**書いてあること**（直しを戻すと落ちる）と、**読む画素数が枠の画素を下回らない**
 /// （粗くならない）ことの両方で押さえる
 final class ImageDownsampleWiringTests: XCTestCase {
@@ -64,56 +65,41 @@ final class ImageDownsampleWiringTests: XCTestCase {
         }
     }
 
-    // MARK: - 写真の詳細の大きな写真
+    // MARK: - 写真の詳細の大きな写真・旅の一冊の表紙（替えない）
 
-    func testPhotoDetailHeroDownsamples() throws {
-        let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        let hero = try block("private func heroImage(", until: "\n    private ", in: view)
-        XCTAssertEqual(plainRemoteImages(hero), 0, "写真の詳細の大きな写真が原寸のまま展開する部品を使っている")
-        XCTAssertTrue(hero.contains("DownsampledRemoteImage(url: item.detailImageURL, contentMode: .fill"))
-        XCTAssertTrue(hero.contains("aspectRatio: item.aspectRatio.map { CGFloat($0) }"),
-                      "縦横比を渡していない（覆うのに要る画素が出せない）")
-        XCTAssertTrue(hero.contains("alignment: item.gridAlignment"), "切り抜きの中心（focalPoint）が前と違う")
-        XCTAssertTrue(hero.contains("appearAnimation: .easeOut(duration: 0.15)"))
-        // 拡大しない画面のまま（拡大は別の画面 `PhotoViewerView` が自分で読む）。ここに拡大を足すなら、読む大きさも見直す
-        XCTAssertFalse(hero.contains("MagnifyGesture") || hero.contains("MagnificationGesture"),
-                       "大きな写真が拡大できるようになった。拡大の上限ぶん大きく読まないと粗くなる")
-    }
-
-    /// 大きな写真の枠（いちばん広い iPhone の幅 440pt × 520pt・3倍の画面）を、どの縦横比の写真でも覆える
-    func testHeroPixelsNeverFallBelowTheFrame() throws {
+    /// 大きな枠（画面の幅 × 520pt の写真の詳細・3:4 の表紙）は、**覆うのに要る画素が元の画像（長い辺 1,920px）と
+    /// ほぼ同じ**で、縮めても得が無い（2026-10-31・替えた回の Mac run 793 で、開いた時のメモリの山は減らず、
+    /// 閉じた後のメモリが増えた）。だから `RemoteImage` のまま。ここで「縮まない」ことを数で押さえる
+    func testLargeFramesNeedAboutTheOriginalPixels() throws {
         for width in [375.0, 393.0, 402.0, 430.0, 440.0] {
-            let box = CGSize(width: width, height: Double(PhotoDetailView.heroHeight))
-            for ratio in [3.0, 16.0 / 9.0, 3.0 / 2.0, 4.0 / 3.0, 1.0, 3.0 / 4.0, 9.0 / 16.0, 1.0 / 3.0] {
-                let pixels = try XCTUnwrap(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: CGFloat(ratio)))
-                let w = ratio >= 1 ? Double(pixels) : Double(pixels) * ratio
-                let h = ratio >= 1 ? Double(pixels) / ratio : Double(pixels)
-                // 上限（2048px）で頭打ちになる横長は、元の画像（長い辺 1920px）も同じく足りない——前と同じ
-                guard pixels < DownsampledImageSize.maximum else { continue }
-                XCTAssertGreaterThanOrEqual(w, width * 3 - 0.5, "幅 \(width) に縦横比 \(ratio) の写真で横が足りない")
-                XCTAssertGreaterThanOrEqual(h, Double(PhotoDetailView.heroHeight) * 3 - 0.5,
-                                            "幅 \(width) に縦横比 \(ratio) の写真で縦が足りない")
+            let boxes = [CGSize(width: width, height: Double(PhotoDetailView.heroHeight)),
+                         CGSize(width: width, height: width * 4 / 3)]
+            for box in boxes {
+                for ratio in [16.0 / 9.0, 3.0 / 2.0, 4.0 / 3.0, 1.0, 3.0 / 4.0, 9.0 / 16.0] {
+                    let pixels = try XCTUnwrap(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: CGFloat(ratio)))
+                    XCTAssertGreaterThanOrEqual(pixels, 1536, "\(box) に縦横比 \(ratio) で、元の画像より大きく縮められる（替える意味が出た）")
+                }
+                // 縦横比の無い写真（多い）は上限で読む＝元の画像のまま
+                XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3), DownsampledImageSize.maximum)
             }
-            // 縦横比が分からない写真は上限で読む（原寸 1920px より大きい＝縮めない。粗くしない）
-            XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3), DownsampledImageSize.maximum)
         }
     }
 
-    // MARK: - 旅の一冊の表紙
-
-    func testTripBookCoverDownsamples() throws {
-        let view = try source("Features/Trips/TripBookView.swift")
-        let cover = try block("private var cover: some View", until: "\n    private ", in: view)
-        XCTAssertEqual(plainRemoteImages(cover), 0, "旅の一冊の表紙が原寸のまま展開する部品を使っている")
-        XCTAssertTrue(cover.contains("DownsampledRemoteImage(url: cover.detailImageURL, contentMode: .fill"))
-        XCTAssertTrue(cover.contains("aspectRatio: cover.aspectRatio.map { CGFloat($0) }"))
-        XCTAssertTrue(cover.contains("alignment: cover.gridAlignment"))
-        XCTAssertTrue(cover.contains("appearAnimation: .easeOut(duration: 0.15)"))
+    /// 写真の詳細の大きな写真と旅の一冊の表紙は `RemoteImage` のまま（上の理由）
+    func testLargeFramesKeepTheRemoteImage() throws {
+        let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        let hero = try block("private func heroImage(", until: "\n    private ", in: view)
+        XCTAssertTrue(hero.contains("RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)"))
+        XCTAssertFalse(hero.contains("DownsampledRemoteImage("), "大きな写真を縮めて読む部品に替えている（run 793 で閉じた後のメモリが増えた）")
+        let book = try source("Features/Trips/TripBookView.swift")
+        let cover = try block("private var cover: some View", until: "\n    private ", in: book)
+        XCTAssertTrue(cover.contains("RemoteImage(url: cover.detailImageURL, alignment: cover.gridAlignment)"))
+        XCTAssertFalse(cover.contains("DownsampledRemoteImage("))
     }
 
     // MARK: - 読み込み中・失敗・読み直しが前と同じ
 
-    /// 替えた4か所はどれも、押して読み直す記号（`allowsManualRetry`）も、片付いた知らせ（`onSettled`）も
+    /// 替えた2か所（輪と四角いサムネ）はどれも、押して読み直す記号（`allowsManualRetry`）も、片付いた知らせ（`onSettled`）も
     /// 使っていなかった（前の `RemoteImage` の既定のまま）。縮めて読む部品も同じく、自動の1回のあとは記号だけ
     /// （押す記号は出さない）。失敗・URL の無いときは写真の記号、読んでいる間は輪
     func testLoadingFailureAndRetryMatchTheOldBehaviour() {
@@ -126,14 +112,12 @@ final class ImageDownsampleWiringTests: XCTestCase {
         XCTAssertEqual(DownsampledImagePhase.of(hasImage: true, failed: true, hasURL: true), .image)
     }
 
-    /// 前の4か所は `allowsManualRetry`・`onSettled`・`onLayout`・`placeholderSymbol` を渡していなかった
+    /// 前の2か所は `allowsManualRetry`・`onSettled`・`onLayout`・`placeholderSymbol` を渡していなかった
     /// （渡していたら、縮めて読む部品には同じ口が無いので替えてはいけない）
     func testReplacedSitesDidNotUseOptionsTheDownsampledImageLacks() throws {
         let sites = [
             try block("struct StoryThumb: View", until: "\nstruct ", in: try source("Features/Stories/StoryMedia.swift")),
             try block("struct StoryPoster: View", until: "\nstruct ", in: try source("Features/Stories/StoryMedia.swift")),
-            try block("private func heroImage(", until: "\n    private ", in: try source("Features/PhotoDetail/PhotoDetailView.swift")),
-            try block("private var cover: some View", until: "\n    private ", in: try source("Features/Trips/TripBookView.swift")),
         ]
         for site in sites {
             for option in ["allowsManualRetry", "onSettled", "onLayout", "placeholderSymbol"] {

@@ -556,15 +556,11 @@ struct PhotoDetailView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.heroHeight)
                 .overlay {
-                    // 🔴 **枠（画面の幅 × 520pt）を覆う大きさまで縮めて読む**（2026-10-31 判断・札 #429 アプリ 2）。
-                    // ここは拡大しない（押すと別の画面 `PhotoViewerView` が自分で読む）ので、拡大の上限は 1 倍。
-                    // 縦横比が分かれば覆うのに要る画素ちょうど（刻みで切り上げ）、分からなければ上限（2048px）
-                    // ——どちらも枠の画素を下回らないので粗くならない（`ImageDownsampleWiringTests`）。
-                    // 読み込み中の輪・失敗の記号・自動の1回の読み直し・0.15 秒の淡い出は `RemoteImage` と同じ
-                    DownsampledRemoteImage(url: item.detailImageURL, contentMode: .fill,
-                                           aspectRatio: item.aspectRatio.map { CGFloat($0) },
-                                           alignment: item.gridAlignment,
-                                           appearAnimation: .easeOut(duration: 0.15))
+                    // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
+                    // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
+                    // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
+                    // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
+                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
                 }
                 .clipped()
                 .contentShape(Rectangle())
