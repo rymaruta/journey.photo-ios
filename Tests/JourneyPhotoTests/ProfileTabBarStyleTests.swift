@@ -39,7 +39,7 @@ final class ProfileTabBarStyleTests: XCTestCase {
         XCTAssertEqual(ProfileTabStyle.underlineWidth(textWidth: 90), 94)
         // 下線は「字＋左右 2 の余白」の札（ボタン）に重ね、割り当ての幅（`fill`）はその外で取る
         let bar = try source("ProfileTabBar.swift")
-        let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
+        let tab = try slice(bar, from: "private func tab(", to: "private func spoken(")
         let padding = try XCTUnwrap(tab.range(of: ".padding(.horizontal, ProfileTabStyle.underlineInset)"), "字の左右の 2 が無い")
         let underline = try XCTUnwrap(tab.range(of: ".matchedGeometryEffect(id: \"profile.tab.underline.\\(fill)\", in: underline)"))
         let slack = try XCTUnwrap(tab.range(of: ".padding(.horizontal, ProfileTabStyle.hitSlack)"), "押せる範囲を広げていない")
@@ -63,8 +63,10 @@ final class ProfileTabBarStyleTests: XCTestCase {
                                     WebTheme.minTapTarget, "2文字の札の当たりが 44 に足りない")
         let bar = try source("ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("HStack(spacing: 0) {"), "札の間を spacing で空けている（間が押せない）")
-        XCTAssertTrue(bar.contains(".padding(.horizontal, ProfileTabStyle.rowInset)"))
-        let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
+        XCTAssertTrue(bar.contains(".padding(.horizontal, ProfileTabStyle.rowInset(gutter: gutter))"))
+        XCTAssertEqual(ProfileTabStyle.rowInset(gutter: ProfileTabStyle.gutter), ProfileTabStyle.rowInset,
+                       "既定の余白で行の端が 4 でなくなる")
+        let tab = try slice(bar, from: "private func tab(", to: "private func spoken(")
         let fill = try XCTUnwrap(tab.range(of: ".frame(maxWidth: fill ? .infinity : nil)"))
         let shape = try XCTUnwrap(tab.range(of: ".contentShape(Rectangle())"), "当たりの形が無い")
         XCTAssertLessThan(fill.lowerBound, shape.lowerBound, "広げた並びの割り当ての残りが押せない")
@@ -85,7 +87,7 @@ final class ProfileTabBarStyleTests: XCTestCase {
                       "選んでいない札が 500（medium）でない")
         XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"))
         // 幅は太字で測る（選び替えで並びが揺れない）
-        XCTAssertTrue(bar.contains(".font(ProfileTabStyle.font(selected: true))\n            .lineLimit(1)\n            .hidden()"))
+        XCTAssertTrue(bar.contains(".font(ProfileTabStyle.font(selected: true))\n                .lineLimit(1)\n                .hidden()"))
         // 留まったら地を黒 100%。区切り線は地の側（真鍮の下線の上に重ねない）
         let body = try slice(bar, from: "var body: some View {", to: "private func tab(")
         let background = try slice(body, from: ".background {", to: "\n    }")
@@ -101,14 +103,15 @@ final class ProfileTabBarStyleTests: XCTestCase {
         XCTAssertEqual(ProfileTabStyle.colorFade, 0.15, accuracy: 0.0001)
         let bar = try source("ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("pressed ? Color.white.opacity(ProfileTabStyle.pressedOpacity) : color(selected: selected)"))
+        // 2026-10-31（#426）: 札の部品を区分の型で受ける形にしたので、色は値の側（`ProfileTabStyle`）に置く
         let style = try slice(bar + "\n//END", from: "struct ProfileTabPressStyle", to: "\n//END")
-        XCTAssertTrue(style.contains("ProfileTabBar.color(selected: selected, pressed: configuration.isPressed)"),
+        XCTAssertTrue(style.contains("ProfileTabStyle.color(selected: selected, pressed: configuration.isPressed)"),
                       "押している間の色を見ていない")
         // 0.15 秒の動きは字の色だけに閉じ込める（`value:` 付きだと、中の下線のばねまで 0.15 秒の直線になる）
         XCTAssertTrue(style.contains(".animation(.easeOut(duration: ProfileTabStyle.colorFade)) { content in\n                content.foregroundStyle("),
                       "字の色の 0.15 秒が色だけに閉じていない")
         XCTAssertFalse(style.contains(", value:"), "0.15 秒の動きが下線にも掛かる")
-        let tab = try slice(bar, from: "private func tab(", to: "static func color(selected: Bool) -> Color")
+        let tab = try slice(bar, from: "private func tab(", to: "private func spoken(")
         XCTAssertTrue(tab.contains(".buttonStyle(ProfileTabPressStyle(selected: selected))"), "押し方の部品を使っていない")
     }
 

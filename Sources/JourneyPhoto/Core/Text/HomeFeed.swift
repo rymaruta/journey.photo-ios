@@ -88,3 +88,10 @@ enum HomeFeed: String, CaseIterable, Identifiable {
         return picked + rest
     }
 }
+
+/// ホームのフィードの切り替えも、マイページと同じ下線の札（`ProfileTabBar`・`ProfileTabPager`・2026-10-31 #426）。
+/// 目印は今までの `home.feed.<名前>`（UI テストと画面写真の道しるべ）
+extension HomeFeed: PagedTab {
+    var tabTitle: String { label }
+    var tabIdentifier: String { "home.feed.\(rawValue)" }
+}

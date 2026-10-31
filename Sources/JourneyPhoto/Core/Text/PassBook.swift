@@ -144,9 +144,12 @@ struct PassSettings: Codable, Equatable {
 enum PassBook {
 
     /// 帳のタブ（板「綴じた順・場所ごと・よく会う人」）
-    enum Order: String, CaseIterable, Identifiable {
+    /// 並べ方の札（2026-10-31 #426: マイページと同じ下線の札・`PagedTab`）
+    enum Order: String, CaseIterable, Identifiable, PagedTab {
         case bound, place, person
         var id: String { rawValue }
+        var tabTitle: String { label }
+        var tabIdentifier: String { "passBook.order.\(rawValue)" }
         var label: String {
             switch self {
             case .bound: return L("綴じた順", "As bound")
