@@ -89,6 +89,12 @@ def only_when_named(test):
     return test in ONLY_WHEN_NAMED or test.split("/", 1)[0] in ONLY_WHEN_NAMED
 
 
+def sharded(submit, store_shots, screens):
+    """UI テストを別々の Mac に分けて流す回か（2026-10-31・#429）。上げない回（submit=false）で、全部を流すとき
+    （screens が空・all・全部 を含む——`wants_all` と同じ決め方——か、storeShots で screens を捨てるとき）"""
+    return not submit and (store_shots or wants_all(screens))
+
+
 def wants_all(screens):
     """空・`all`・`全部` なら True（UI テストのファイルを読む前に決める）"""
     words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
@@ -273,7 +279,7 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
     if index is None:
         index, loose = read_index()
     times = read_times() if times is None else times
-    runnable = sorted(t for t in index if not only_when_named(t))
+    runnable = {t for t in index if not only_when_named(t)}
     seconds = estimate(sorted(index), times)
     smoke = {t for t in runnable if t.startswith(f"{ALWAYS}/")}
     notes = []
@@ -294,7 +300,9 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
         found = tests_for_diff(diff_text, index, loose or {})
         first, used, later = set(), sum(seconds[t] for t in smoke), []
         # 短いものから詰める（上限の中で、変えた画面のテストをなるべく多く先に見る）
-        for test in sorted((t for t in found if t in seconds and t not in smoke), key=lambda t: (seconds[t], t)):
+        # 🔴 **名指しした回だけ流すテストは、差分から選ばない**（2026-10-31・見直しの指摘）。`seconds` には名指し専用も
+        # 入っているので、`runnable`（名指し専用を除いたもの）で絞る。入れると全部の回で家具の脚の接写などが流れる
+        for test in sorted((t for t in found if t in runnable and t not in smoke), key=lambda t: (seconds[t], t)):
             if used + seconds[test] <= FIRST_BUDGET:
                 first.add(test)
                 used += seconds[test]
@@ -307,7 +315,7 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
         if not found:
             notes.append("枝で変えた画面の UI テストは見つからなかった（先に流すのは起動の見張りだけ）")
     first_all = first | smoke
-    rest = [t for t in runnable if t not in first_all]
+    rest = sorted(t for t in runnable if t not in first_all)
     bins, load = balance(rest, seconds, parts)
     groups = [[f"-only-testing:{TARGET}/{t}" for t in sorted(group)] for group in bins[:-1]]
     # 🔴 **最後の組は「全部から、ほかで流すものを抜いた残り」**。この台本が読み落としたテスト
@@ -341,7 +349,8 @@ def main_plan(argv):
     out.mkdir(parents=True, exist_ok=True)
     (out / "first.txt").write_text("\n".join(result["first"]) + "\n", encoding="utf-8")
     for i, group in enumerate(result["parts"], 1):
-        (out / f"part-{i}.txt").write_text("\n".join(group) + "\n", encoding="utf-8")
+        # 空の組は空のファイルにする（`Tools/xcode-test.sh` は、渡された一覧が空なら何も流さない）
+        (out / f"part-{i}.txt").write_text("".join(f"{a}\n" for a in group), encoding="utf-8")
     counts = result["counts"]
     lines = [f"- 先に流す段: {counts[0]} 本・見積もり {result['first_seconds'] / 60:.1f} 分"]
     lines += [f"- 分けた段 {i}: {counts[i]} 本・見積もり {sec / 60:.1f} 分" for i, sec in enumerate(result["loads"], 1)]
@@ -354,6 +363,13 @@ def main_plan(argv):
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
         print("\n".join(ONLY_WHEN_NAMED))
+        return 0
+    if len(sys.argv) > 1 and sys.argv[1] == "--sharded":
+        # 全部の回を別々の Mac に分けて流すか（`ios-testflight.yml` の2か所がこれを呼ぶ・式を2つ書かない）。
+        # python3 Tools/pick-ui-tests.py --sharded <submit> <storeShots> <screens>
+        submit, store = (sys.argv[2:4] + ["", ""])[:2]
+        screens = sys.argv[4] if len(sys.argv) > 4 else ""
+        print("true" if sharded(submit == "true", store == "true", screens) else "false")
         return 0
     if len(sys.argv) > 1 and sys.argv[1] == "--plan":
         return main_plan(sys.argv[2:])

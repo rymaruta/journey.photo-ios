@@ -74,12 +74,18 @@ case "$mode" in
         extra="$extra -default-test-execution-time-allowance $UI_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UI_TIME_MAXIMUM"
         only=""
-        if [ -n "${2:-}" ] && [ -s "$2" ]; then
+        if [ -n "${2:-}" ] && [ -f "$2" ]; then
             while IFS= read -r line; do
                 [ -n "$line" ] && only="$only $line"
             done < "$2"
+            # 🔴 **一覧のファイルを渡したのに中身が無い＝流すテストが無い組**（2026-10-31・見直しの指摘）。
+            # 前は空（改行だけ）を「一覧が無い」と同じに扱い、UI テストを全部流していた
+            if [ -z "$only" ]; then
+                echo "一覧 $2 に流すテストがありません（空の組）。何も流しません"
+                exit 0
+            fi
         fi
-        # 一覧が無ければ UI テストを全部
+        # 一覧を渡さなければ UI テストを全部
         only="${only:--only-testing:JourneyPhotoUITests}"
         # 名指しした回だけ流す UI テスト（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED）は、一覧に名前が無ければ飛ばす。
         # 2026-10-22: 家具の脚の接写（約5分）が PR の検証・TestFlight の全部の回を延ばさないように

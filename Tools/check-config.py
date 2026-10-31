@@ -487,6 +487,12 @@ if testflight_yml.exists() and pr_yml.exists():
         plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", flow)
         if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
             fail("ios-testflight.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
+    # **分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘）。`build` の job と「分けて流すかを決める」の
+    # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
+    if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
+            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow \
+            or re.search(r"inputs\.screens == ", flow):
+        fail("ios-testflight.yml の「分けて流すか」が `pick-ui-tests.py --sharded` の1か所で決まっていません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
     if selects != [f'.name == "{MARK}"']:
@@ -669,6 +675,39 @@ if testflight_yml.exists() and pr_yml.exists():
             fail("pick-ui-tests.py --plan が、名指ししていないのに「名指しした回だけ流すテスト」を流します")
     finally:
         pick_mod.ONLY_WHEN_NAMED[:] = saved
+    # **差分から選ぶ先に流す分に、名指し専用のテストを入れない**（2026-10-31・見直しの指摘）。
+    # 名指し専用のテストが持つ識別子を、アプリのコードに足した差分を渡す
+    for named_test in pick_mod.ONLY_WHEN_NAMED:
+        lits = sorted(l for l in index.get(named_test, {}).get("literals", ()) if pick_mod.IDENT.match(l))
+        if not lits:
+            continue
+        diff = f"+++ b/Sources/JourneyPhoto/X.swift\n@@ -1,0 +1,1 @@\n+let x = \"{lits[0]}\"\n"
+        if named_test not in pick_mod.tests_for_diff(diff, index, loose):
+            continue  # 差分から当たらない書き方なら、この例では確かめられない
+        got = pick_mod.plan("", diff, 3, index=index, loose=loose)
+        if f"{prefix}{named_test}" in got["first"]:
+            fail(f"pick-ui-tests.py --plan が、差分から名指し専用のテスト（{named_test}）を先に流す分に入れます")
+        break
+    else:
+        fail("pick-ui-tests.py の見張り: 名指し専用のテストに当たる差分の例が作れません（確かめられていない）")
+    # **空の組は空のファイル**（xcode-test.sh が「流さない」と読む）
+    with tempfile.TemporaryDirectory() as tmp:
+        saved_plan = pick_mod.plan
+        try:
+            pick_mod.plan = lambda *a, **k: {**saved_plan(*a, **k), "parts": [[], [f"-only-testing:{pick_mod.TARGET}"]]}
+            import contextlib, io
+            with contextlib.redirect_stdout(io.StringIO()):
+                pick_mod.main_plan(["2", tmp, "", "/nonexistent"])
+        finally:
+            pick_mod.plan = saved_plan
+        if Path(tmp, "part-1.txt").read_text(encoding="utf-8") != "":
+            fail("pick-ui-tests.py --plan が、空の組に改行を書きます（xcode-test.sh が中身ありと読み、UI を全部流す）")
+    # **分けて流すかは `--sharded` の1か所で決め、`wants_all` と同じに読む**
+    for args, want in [((False, False, ""), True), ((False, False, "  "), True), ((False, False, "all, 撮影スポット"), True),
+                       ((False, False, "撮影スポット"), False), ((False, True, "撮影スポット"), True),
+                       ((True, False, ""), False), ((True, True, ""), False)]:
+        if pick_mod.sharded(*args) != want:
+            fail(f"pick-ui-tests.py の sharded{args} が {want} になりません")
     # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
     est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
     if est["A/new"] != 30.0:
