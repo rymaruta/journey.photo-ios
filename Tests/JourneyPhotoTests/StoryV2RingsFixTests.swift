@@ -70,7 +70,7 @@ final class StoryV2RingsFixTests: XCTestCase {
         XCTAssertEqual(StoryViewerMetrics.footerHeight, 60)
         let reel = try source("Features/Stories/StoryReelView.swift")
         let face = slice(reel, from: "private struct StoryReelFace", to: ".accessibilityHidden(true)")
-        assertInOrder(["VStack(spacing: 0)", "StoryPoster(story: story)",
+        assertInOrder(["VStack(spacing: 0)", "StoryPoster(story: story",
                        "UnevenRoundedRectangle(bottomLeadingRadius: StoryViewerMetrics.photoRadius",
                        "bottomTrailingRadius: StoryViewerMetrics.photoRadius",
                        ".ignoresSafeArea(edges: .top)",
