@@ -135,6 +135,10 @@ final class PhotoMapViewModel: ObservableObject {
     @Published private(set) var spotAliases: [String: [String]] = [:]
     /// 別名を取り終えたか（取れなかった回も立つ）。語への寄せの当たり外れはこれを待って決める
     @Published private(set) var aliasesSettled = false
+    /// 写真を撮影スポットに自動で結んだ表（`OfficialSpotService.fetchPhotoLinks`・2026-10-31 #425）。
+    /// 「スポット」の行の枚数と「リスト」の県の段が、`spotId` と同じに数える。取れなければ空（`spotId` だけ）。
+    /// 索引と一緒に届ける（索引の「読み終えた」より前に入れ、数が後から変わらないようにする）
+    @Published private(set) var photoLinks = SpotPhotoLinks.empty
     enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
@@ -318,8 +322,12 @@ final class PhotoMapViewModel: ObservableObject {
         // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
         indexTask = Task { [weak self] in
+            // 自動の結びの表は索引と並行に読む（どちらも小さな静的 JSON・控えがあれば通信しない）
+            async let links = environment.spots.fetchPhotoLinks()
             let fetched = try? await environment.spots.fetchIndex()
+            let linkTable = await links
             guard let self, self.loadGeneration == generation else { return }
+            self.photoLinks = linkTable
             self.officialSpots = fetched ?? []
             self.refreshOfficialPins()
             self.officialIndexState = fetched == nil ? .failed : .ready

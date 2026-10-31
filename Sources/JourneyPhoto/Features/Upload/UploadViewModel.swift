@@ -286,8 +286,87 @@ final class UploadViewModel: ObservableObject {
 
     /// スポットを外す。スポットの座標は外した時点で送らなくなる（`coordsToSend(spot:)`）。
     /// 撮影地の名前は残す（本人が直せる。空にすると座標まで送らなくなる）
+    ///
+    /// 2026-10-31 判断（#425・Web の `autoOffFor` の帯の「外す」）: 外した帯が受け持っていた写真は、
+    /// 自動の候補が同じ撮影スポットなら「切り」として外した印を書く（明示の操作）。Web は見ていた1枚だけだが、
+    /// iOS の帯は投稿の全部の写真に付く（`spotBanner`）ので、帯が付いていた写真を外した写真として扱う。
+    /// 帯の付いていなかった写真（撮影地からスポットの名前を消していた）には何も書かない
     func removeSpot() {
+        if let spot {
+            let covered = items.filter { UploadSpotTarget.spotIdToSend(spot, for: $0) != nil }.map(\.id)
+            autoSpotDismissal = (spot.spotId, Set(covered))
+        }
         spot = nil
+    }
+
+    // MARK: - 撮影スポットの自動の候補（2026-10-31 判断・journey.photo-ios#425・Web の `spotUploadAuto.ts`）
+
+    /// 候補を選ぶ索引を読む口（`/app/data/spot-match.json`・`UploadView` が `AppEnvironment.spots` を入れる）。
+    /// 試験・既定は読まない
+    var fetchSpotMatchIndex: @Sendable () async -> SpotMatchIndex? = { nil }
+    /// 読めた索引（候補の名前を引く）。読めなければ nil のまま——自動では選ばない（投稿はできる）
+    @Published private(set) var autoSpotIndex: SpotMatchIndex?
+    private var autoSpotMatcher: SpotMatcher?
+    private var autoSpotIndexAsked = false
+    /// 本人が切り替えた写真（写真 → 入り true／切り false）。**触っていない写真は入れない**（何も書かない）
+    @Published private(set) var autoSpotChoice: [UUID: Bool] = [:]
+    /// 撮影スポットの帯で「外す」を押したときの撮影スポットと、その帯が受け持っていた写真（`removeSpot`）
+    private(set) var autoSpotDismissal: (spotId: String, items: Set<UUID>)?
+
+    /// 索引を読みたいか。**撮影地・題・説明のどれかが入ってから**（約 400KB。入れない投稿では読まない・Web と同じ）
+    var wantsAutoSpotIndex: Bool {
+        items.contains { item in
+            [item.location, item.title, item.caption].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+    }
+
+    /// 索引を1回だけ読む（読めなかった回も読み直さない・Web と同じ。投稿は止めない）
+    func loadAutoSpotIndexIfNeeded() async {
+        guard wantsAutoSpotIndex, !autoSpotIndexAsked else { return }
+        autoSpotIndexAsked = true
+        guard let index = await fetchSpotMatchIndex() else { return }
+        autoSpotMatcher = SpotMatcher(index: index)
+        autoSpotIndex = index
+    }
+
+    /// 試験用: 索引を入れる（通信しない）
+    func useAutoSpotIndex(_ index: SpotMatchIndex) {
+        autoSpotIndexAsked = true
+        autoSpotMatcher = SpotMatcher(index: index)
+        autoSpotIndex = index
+    }
+
+    /// その写真の自動の候補。**撮影スポットの画面から来て、この写真にその `spotId` を送るときは出さない**
+    /// （帯・撮影地の欄で選んだ撮影スポットが受け持つ）。位置は送る座標（あとで静的な生成が見るのと同じ）
+    func autoSpotCandidate(for item: PendingPhoto) -> String? {
+        guard UploadSpotTarget.spotIdToSend(screen: spot, for: item) == nil else { return nil }
+        return SpotUploadAuto.candidate(
+            matcher: autoSpotMatcher, location: item.location, title: item.title, caption: item.caption,
+            coords: item.coordsToSend(spot: spot, spots: spotIndexForSubmit, attachesPhotoLocation: attachesLocation))
+    }
+
+    /// その写真の「切り」（`SpotUploadAuto.offFor`）。触っていない写真は nil
+    private func autoSpotOff(for item: PendingPhoto, candidate: String?) -> Bool? {
+        let dismissed = autoSpotDismissal.flatMap { $0.items.contains(item.id) ? $0.spotId : nil }
+        return SpotUploadAuto.offFor(choice: autoSpotChoice[item.id], dismissedSpotId: dismissed, candidate: candidate)
+    }
+
+    /// 撮影地の欄の下の切り替え（板 UploadIOS）。候補と名前が引けたときだけ
+    struct AutoSpotRow: Equatable {
+        let spotId: String
+        let name: String
+        let on: Bool
+    }
+
+    func autoSpotRow(for item: PendingPhoto) -> AutoSpotRow? {
+        guard let spotId = autoSpotCandidate(for: item), let name = autoSpotIndex?.name(of: spotId) else { return nil }
+        return AutoSpotRow(spotId: spotId, name: name, on: autoSpotOff(for: item, candidate: spotId) != true)
+    }
+
+    /// 本人が切り替えた（その写真だけ）。送っている間は変えさせない（送る中身は1枚ずつ作り直す）
+    func setAutoSpot(_ on: Bool, for itemId: UUID) {
+        guard !isWorking else { return }
+        autoSpotChoice[itemId] = on
     }
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
@@ -1817,6 +1896,10 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
         draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
+        // 自動の候補は `spotId` に書かない。本人が切った写真だけ外した印（`SpotUploadAuto`・#425）
+        let autoCandidate = draft.spotId == nil ? autoSpotCandidate(for: item) : nil
+        draft.spotAuto = SpotUploadAuto.spotAutoToSend(explicitSpotId: draft.spotId, candidate: autoCandidate,
+                                                       off: autoSpotOff(for: item, candidate: autoCandidate))
         draft.inspiredBy = inspiredCarrier.idToSend(for: item.id, pick: inspired)
         return draft
     }
@@ -2019,6 +2102,9 @@ final class UploadViewModel: ObservableObject {
         audience = .everyone
         selectedAlbumId = nil
         sharable = []
+        // 撮影スポットの切り替えは写真ごと（写真が入れ替わるので捨てる）。索引は持ったまま
+        autoSpotChoice = [:]
+        autoSpotDismissal = nil
     }
 
     /// 帯のサムネを作って入れる（2026-10-03）。以前は 1920px の本体をそのまま `UIImage(data:)` にして

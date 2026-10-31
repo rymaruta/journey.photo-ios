@@ -74,6 +74,14 @@ struct PhotoService {
         return TrunkDealt.read(data)
     }
 
+    /// 自動の結びを外す（`off: true`・`"spotAuto": "off"`）・自動に戻す（`false`・`"spotAuto": null`）。
+    /// `PUT /photos/{id}`（本人だけ・Web の `SpotAutoNotice.tsx` と同じ口）。2026-10-31・journey.photo-ios#425
+    func setSpotAuto(photoId: String, off: Bool) async throws {
+        var patch = PhotoPatch()
+        patch.spotAuto = off ? .off : .auto
+        try await update(photoId: photoId, patch: patch)
+    }
+
     /// 写真 `photoId` に付いている「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・認証）。
     ///
     /// サーバーが**読むときにも見られるか確かめた**ものだけが返る（閲覧者・付けた人と元の作者の
@@ -258,17 +266,26 @@ struct PhotoPatch: Encodable {
     /// 「この写真を見て撮影」の元の写真を**外す**（本文に `"inspiredBy": null`・2026-10-14）。
     /// サーバーは null か空文字で外す（`photoUpdate.ts`。確かめずに REMOVE）。付け直す口はここに無い
     var clearInspiredBy = false
+    /// 自動の結び（2026-10-31・journey.photo-ios#425）。`.off` は `"spotAuto": "off"`（外す）、
+    /// `.auto` は `"spotAuto": null`（外した印を消して自動に戻す）。nil は触らない。本人だけ
+    /// （サーバーの `photoUpdate.ts` の `sanitizeSpotAuto`）
+    var spotAuto: SpotAutoChange?
+
+    enum SpotAutoChange: Equatable {
+        case off
+        case auto
+    }
 
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
             && category == nil && tags == nil && date == nil && published == nil
             && song == nil && coords == nil && audience == nil && !clearCoords && !clearSpotId
-            && !clearInspiredBy
+            && !clearInspiredBy && spotAuto == nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case title, description, location, category, tags, date, published, coords, song, audience, spotId
-        case inspiredBy
+        case inspiredBy, spotAuto
     }
 
     /// 自動生成と同じく **nil のキーは載せない**。`clearCoords` のときだけ
@@ -291,5 +308,10 @@ struct PhotoPatch: Encodable {
         try c.encodeIfPresent(audience, forKey: .audience)
         if clearSpotId { try c.encodeNil(forKey: .spotId) }
         if clearInspiredBy { try c.encodeNil(forKey: .inspiredBy) }
+        switch spotAuto {
+        case .off?: try c.encode(SpotAutoLink.off, forKey: .spotAuto)
+        case .auto?: try c.encodeNil(forKey: .spotAuto)
+        case nil: break
+        }
     }
 }

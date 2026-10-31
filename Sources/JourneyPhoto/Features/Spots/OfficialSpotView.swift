@@ -78,8 +78,15 @@ struct OfficialSpotView: View {
     /// 写真・概要・下書きの日付を出す行。**索引だけの行で開いたら、詳細を重ねたもの**（`SpotDetailNeeds`）
     private var shown: OfficialSpot { detailed?.spotId == spot.spotId ? detailed! : spot }
 
-    /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
-    private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
+    /// 自動の結びの表（`spot-photo-links.json`・2026-10-31 #425）。読み終えるまで空（`spotId` だけ）
+    @State private var photoLinks = SpotPhotoLinks.empty
+
+    /// この撮影スポットの写真: **本人が選んだ `spotId`、無ければ自動の結び**（外した写真は入れない・
+    /// `SpotPhotoLinks`・Web の `photosLinkedTo`）。撮影地の文字列そのものでは当てない
+    private var linked: [Photo] { dropped.visible(SpotPhotoLinks.photos(photos, linkedTo: spot.spotId, links: photoLinks)) }
+
+    /// 自動で結んだ写真を含むか（節の見出しの下に断る・Web の `autoNote`）
+    private var linkedHasAuto: Bool { linked.contains { SpotAutoLink.explicitSpotId($0) == nil } }
 
     private var nearby: [(spot: OfficialSpot, km: Double)] {
         OfficialSpotIndex.nearby(spot, in: spots)
@@ -167,6 +174,12 @@ struct OfficialSpotView: View {
             let fetched = await environment.spots.fetchBody(slug: spot.slug)
             guard !Task.isCancelled else { return }
             spotBody = fetched
+        }
+        // 自動の結びの表（2026-10-31 #425）。索引と同じ口で控えがあれば通信しない
+        .task(id: "links|\(spot.spotId)") {
+            let links = await environment.spots.fetchPhotoLinks()
+            guard !Task.isCancelled else { return }
+            photoLinks = links
         }
         // 索引だけの行で開いたら、その区分の詳細（写真・概要）を重ねる（分けた置き場・2026-10-07）
         .task(id: "\(spot.spotId)|\(spot.isIndexOnly)") {
@@ -981,6 +994,15 @@ struct OfficialSpotView: View {
             // 写真が0枚の回は下の破線の札が見出しを持つ（同じことを二度言わない）
             if (photosKnown || !linked.isEmpty) && !showsEmptyPhotosCard {
                 SpotDetailParts.sectionHeader(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
+            }
+            if linkedHasAuto {
+                // 自動で結んだ写真を含むときだけ（案の板 SpotIOS・Web の `spot-auto-note`）。黒地の注記は text-3
+                Text(SpotAutoLink.spotPageNote)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, JPSpace.m)
+                    .accessibilityIdentifier("spot.official.autoNote")
             }
             if postedHere {
                 // 一覧は開いた時点の写しなので、上げた写真はすぐには並ばない。

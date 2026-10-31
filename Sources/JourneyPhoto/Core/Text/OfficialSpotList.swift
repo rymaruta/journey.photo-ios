@@ -6,8 +6,8 @@ import Foundation
 /// - **座標の無い行は出さない**（距離が測れない・地図にも置けない）
 /// - 近さは**現在地から**。取れていなければ**地図の中心から**測る
 ///   （どちらも無ければ名前の順・距離は出さない）
-/// - 写真の数は、その撮影スポットを付けて投稿された写真（`Photo.spotId`）。
-///   スポットの画面（`OfficialSpotView`）が並べるものと同じ数え方
+/// - 写真の数は、その撮影スポットの写真（本人が選んだ `Photo.spotId`、無ければ自動の結び・
+///   `SpotPhotoLinks`・2026-10-31 #425）。スポットの画面（`OfficialSpotView`）が並べるものと同じ数え方
 ///
 /// 画面を持たない層に置いてあるので、Linux の `swift test` で確かめられる。
 enum OfficialSpotList {
@@ -21,10 +21,11 @@ enum OfficialSpotList {
         var id: String { spot.spotId }
     }
 
-    static func rows(_ spots: [OfficialSpot], photos: [Photo], from center: Photo.Coords?) -> [Row] {
+    static func rows(_ spots: [OfficialSpot], photos: [Photo], from center: Photo.Coords?,
+                     links: SpotPhotoLinks = .empty) -> [Row] {
         var counts: [String: Int] = [:]
         for photo in photos {
-            if let id = photo.spotId { counts[id, default: 0] += 1 }
+            if let id = links.spotId(for: photo) { counts[id, default: 0] += 1 }
         }
         let rows = spots
             .filter { !$0.isDraft && $0.coords != nil }

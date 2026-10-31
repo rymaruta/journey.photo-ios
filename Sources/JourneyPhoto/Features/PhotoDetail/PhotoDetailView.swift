@@ -69,13 +69,37 @@ struct PhotoDetailView: View {
     /// **どの `spotId` で読んだかを持つ**（`PhotoTrip.Loaded`）。写真を送った直後は前の写真の分が
     /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
     @State private var tripLoaded: PhotoTrip.Loaded?
-    private var tripStage: PhotoTrip.Stage { PhotoTrip.stage(photoSpotId: shown.spotId, loaded: tripLoaded) }
+    /// 🔴 **自動の結びの表を読み終えるまでは「読み込み中」**（2026-10-31 #425）。読む前に撮影地の
+    /// 「行き先」を出すと、読み終えて撮影スポットに替わったとき、先に押した「行きたい」が別の鍵に入る
+    private var tripStage: PhotoTrip.Stage {
+        photoLinks == nil ? .loading : PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)
+    }
+    /// 写真の撮影スポット: **本人が選んだ `spotId` → 無ければ自動の結びの表**（外した写真は結ばない・
+    /// `SpotPhotoLinks`）。本人が「外す」「元に戻す」を送っている間は、送った向きで先に見せる
+    private var linkedSpotId: String? {
+        SpotAutoNotice.chipSpotId(photo: shown, links: photoLinks, pendingOff: spotAutoPending[shown.id],
+                                  candidate: photoLinks?.candidate(for: shown, rule: spotAutoRules[shown.id] ?? nil))
+    }
+    /// 「この近くの撮影スポット」の鍵。結ばれた写真・表を読み終える前は出さない
+    private var nearbySpotKey: String? {
+        photoLinks == nil ? nil : PhotoTrip.nearbySpotKey(photo: shown, linkedSpotId: linkedSpotId)
+    }
     /// 「この近くの撮影スポット」（`spotId` の無い写真・2026-10-16）。`spotId` の欄には
     /// `PhotoTrip.nearbySpotKey`（写真と座標）を入れて、今の写真の鍵と同じときだけ使う
     @State private var nearbySpotLoaded: PhotoTrip.Loaded?
     private var nearbySpotStage: PhotoTrip.Stage {
-        PhotoTrip.stage(photoSpotId: PhotoTrip.nearbySpotKey(photo: shown), loaded: nearbySpotLoaded)
+        PhotoTrip.stage(photoSpotId: nearbySpotKey, loaded: nearbySpotLoaded)
     }
+    /// 自動の結びの表（`spot-photo-links.json`・2026-10-31 #425）。**読み終えるまで nil**
+    @State private var photoLinks: SpotPhotoLinks?
+    /// 外した写真で、表に先が無いときに決まりで求め直した先（写真 id → 撮影スポット id。求めた結果の nil も覚える）
+    @State private var spotAutoRules: [String: String?] = [:]
+    /// 「外す」の札に出す撮影スポットの名前（撮影スポット id → 名前）
+    @State private var spotAutoNames: [String: String] = [:]
+    /// 送っている向き（写真 id → 外す true／戻す false）。失敗したら消して元の表示に戻す
+    @State private var spotAutoPending: [String: Bool] = [:]
+    /// 送れなかった知らせ（写真 id → 文）。札の中のボタンのすぐ上に出す
+    @State private var spotAutoFailures: [String: String] = [:]
     /// 「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・2026-10-14）。**どの写真の、どの元の写真で
     /// 読んだかを持つ**（`InspiredBy.Loaded`）——写真を送った直後に前の写真の行を出さない（`tripLoaded` と同じ考え）
     @State private var inspiredLoaded: InspiredBy.Loaded?
@@ -277,7 +301,7 @@ struct PhotoDetailView: View {
             await loadSpotLead()
         }
         // 台帳の撮影スポット（`spotId` のある写真だけ）。既に読んでいる索引の口で引く（控えがあれば通信しない）
-        .task(id: shown.spotId ?? "") { await loadTripSpot() }
+        .task(id: linkedSpotId ?? "") { await loadTripSpot() }
         // 「この写真を見て撮影」の元の写真（付いている写真・ログイン中だけ。口は認証が要る）
         .task(id: InspiredBy.loadKey(photoId: shown.id, inspiredBy: inspiredId, userId: auth.userId)) {
             await loadInspired()
@@ -515,10 +539,13 @@ struct PhotoDetailView: View {
         }
         .padding(.horizontal, JPSpace.m)
         .padding(.bottom, JPSpace.xxs)
+        // 自動の結びの表（2026-10-31 #425）。撮影スポットの行・「行き先」・この近くの撮影スポット・本人の「外す」が読む。
+        // 索引と同じ口で控えがあれば通信しない。`body` の鎖に足さない（下の注記と同じ理由）
+        .task(id: "links|\(shown.id)|\(isMine)") { await loadPhotoLinks() }
         // この近くの撮影スポット（`spotId` の無い写真で座標のあるときだけ）。同じ索引の口（控えがあれば通信しない）。
         // **`body` ではなくここに付ける**: `body` の修飾の鎖に足すと、Xcode の型検査が時間内に終わらず
         // ビルドが落ちた（2026-10-17・PR #262 の Mac の検証）。この裾は写真があるあいだ常に描かれる
-        .task(id: PhotoTrip.nearbySpotKey(photo: shown) ?? "") { await loadNearbySpot() }
+        .task(id: nearbySpotKey ?? "") { await loadNearbySpot() }
     }
 
     /// 束のページの点（v2 の板: 6pt・今の1枚は白、ほかは白 40%）。**1枚だけなら出さない**。
@@ -621,6 +648,8 @@ struct PhotoDetailView: View {
             // 印を足したところで溢れた（`extra argument in call`）
             Group {
                 heading(hero)
+                // 自動の結びの「外す」（撮った本人だけ・案の板 PhotoIOS: 題と日時のすぐ下）
+                spotAutoNotice
                 chips
                 paragraphs
                 authorRow
@@ -1867,15 +1896,15 @@ struct PhotoDetailView: View {
     /// 写真に紐づいた台帳の撮影スポットを引く（`PhotoTrip.spot`）。`spotId` の無い写真は読みに行かない。
     /// 取り消された回は書かない（後の回が入れた行き先を消さない）
     private func loadTripSpot() async {
-        guard let id = PhotoTrip.normalizedSpotId(shown.spotId) else { return }
-        let stillHere = { !Task.isCancelled && PhotoTrip.normalizedSpotId(shown.spotId) == id }
+        guard let id = PhotoTrip.normalizedSpotId(linkedSpotId) else { return }
+        let stillHere = { !Task.isCancelled && PhotoTrip.normalizedSpotId(linkedSpotId) == id }
         // 既にこの `spotId` で索引を読んであれば、索引は読み直さない（大きく見る画面を閉じた・戻ってきた）
         if tripLoaded?.spotId != id {
             // 🔴 **読めなかった（nil）回は覚えない**——覚えると同じ画面で読み直さない。
             // 入れなければ段は「読み込み中」のまま（行きたいを出さない）で、次の `.task` で読み直す
             guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
             // **索引を読んだ時点で段を出す**（写真の一覧の取り直しを待たない）。写真は後から足す
-            tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(for: shown, in: rows),
+            tripLoaded = PhotoTrip.Loaded(spotId: id, spot: PhotoTrip.spot(id: id, in: rows),
                                           index: rows, photos: nil)
         }
         guard let loaded = tripLoaded, loaded.spotId == id, loaded.photos == nil else { return }
@@ -1889,8 +1918,8 @@ struct PhotoDetailView: View {
     /// この近くの撮影スポットを引く（`PhotoTrip.nearbySpot`・2026-10-16）。`loadTripSpot` と同じ読み方で、
     /// 鍵は `PhotoTrip.nearbySpotKey`。読めなかった回は覚えない（次の `.task` で読み直す）
     private func loadNearbySpot() async {
-        guard let key = PhotoTrip.nearbySpotKey(photo: shown) else { return }
-        let stillHere = { !Task.isCancelled && PhotoTrip.nearbySpotKey(photo: shown) == key }
+        guard let key = nearbySpotKey else { return }
+        let stillHere = { !Task.isCancelled && nearbySpotKey == key }
         if nearbySpotLoaded?.spotId != key {
             guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
             nearbySpotLoaded = PhotoTrip.Loaded(spotId: key, spot: PhotoTrip.nearbySpot(to: shown.coords, in: rows),
@@ -1900,6 +1929,72 @@ struct PhotoDetailView: View {
         guard let photos = try? await environment.gallery.fetchPhotos(), stillHere(),
               nearbySpotLoaded?.spotId == key else { return }
         nearbySpotLoaded = loaded.withPhotos(photos)
+    }
+
+    // MARK: - 自動の結び（2026-10-31 判断・journey.photo-ios#425）
+
+    /// 本人の「外す」の札の中身（撮った本人・`spotId` の無い公開の写真で、結ぶ先があるときだけ）
+    private var spotAutoState: SpotAutoNotice.State? {
+        SpotAutoNotice.state(photo: shown, isMine: isMine, links: photoLinks,
+                             rule: spotAutoRules[shown.id] ?? nil, pendingOff: spotAutoPending[shown.id])
+    }
+
+    /// 「撮影スポット「◯◯」に結びました」「違う場所なので外す」（Web の `SpotAutoNotice.tsx`）。名前が引けるまで出さない
+    @ViewBuilder
+    private var spotAutoNotice: some View {
+        if let state = spotAutoState, let name = spotAutoNames[state.spotId] {
+            SpotAutoNoticeCard(spotName: name, off: state.off,
+                               saving: spotAutoPending[shown.id] != nil,
+                               failure: spotAutoFailures[shown.id]) {
+                toggleSpotAuto(state)
+            }
+        }
+    }
+
+    /// 表を読む。本人の写真では、外した写真の先（表に無い）を決まりで求め直し、札に出す名前を引く
+    private func loadPhotoLinks() async {
+        let photo = shown
+        let links = await environment.spots.fetchPhotoLinks()
+        guard !Task.isCancelled, shown.id == photo.id else { return }
+        photoLinks = links
+        guard isMine else { return }
+        if links.needsRule(for: photo), spotAutoRules[photo.id] == nil {
+            // 外した写真は表に載らない。投稿画面と同じ索引・同じ決まりで求め直す（本人の写真で、外したときだけ）
+            guard let index = await environment.spots.fetchMatchIndex(), !Task.isCancelled else { return }
+            let rule = SpotMatcher(index: index).match(photo)
+            spotAutoRules[photo.id] = .some(rule)
+            if let rule, let name = index.name(of: rule) { spotAutoNames[rule] = name }
+        }
+        guard let spotId = links.candidate(for: photo, rule: spotAutoRules[photo.id] ?? nil),
+              spotAutoNames[spotId] == nil else { return }
+        if let rows = await environment.spots.fetchIndexRows(), let spot = PhotoTrip.spot(id: spotId, in: rows) {
+            spotAutoNames[spotId] = spot.name
+        } else if let index = await environment.spots.fetchMatchIndex(), let name = index.name(of: spotId) {
+            spotAutoNames[spotId] = name
+        }
+    }
+
+    /// 外す・元に戻す（`PUT /photos/{id}` の `spotAuto`）。**先に見せて、失敗したら元の表示に戻し、札の中で知らせる**。
+    /// 通ったら、この端末ではサイトの作り直しを待たずに表へ重ねる（撮影スポットの頁・地図の数もそろう）
+    private func toggleSpotAuto(_ state: SpotAutoNotice.State) {
+        let photoId = shown.id
+        guard spotAutoPending[photoId] == nil else { return }
+        let nextOff = !state.off
+        spotAutoFailures[photoId] = nil
+        spotAutoPending[photoId] = nextOff
+        Task {
+            do {
+                try await environment.photos.setSpotAuto(photoId: photoId, off: nextOff)
+                await environment.spots.noteSpotAuto(
+                    photoId: photoId, nextOff ? .off(spotId: state.spotId) : .on(spotId: state.spotId))
+                photoLinks = await environment.spots.fetchPhotoLinks()
+                spotAutoPending[photoId] = nil
+                toasts.show(SpotAutoNoticeText.saved(nowOff: nextOff))
+            } catch {
+                spotAutoPending[photoId] = nil
+                spotAutoFailures[photoId] = (error as? LocalizedError)?.errorDescription ?? SpotAutoNoticeText.failed
+            }
+        }
     }
 
     /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**
