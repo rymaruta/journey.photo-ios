@@ -22,6 +22,8 @@ struct PhotoMapView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 下の「マップ」をもう一度押した合図（`MapTabReselect`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 写真の詳細で自動の結びを外した・戻した（`SpotLinkRevision`・#425）。「スポット」「リスト」の数を読み直す
+    @ObservedObject private var linkRevision = SpotLinkRevision.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
@@ -1486,7 +1488,7 @@ struct PhotoMapView: View {
         let spots = MapSearch.fold(model.query).isEmpty
             ? model.officialSpots
             : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
-        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
+        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks)
         // 丸写真の詳細を読む行（分けた置き場の索引だけの行のうち、頭から今の絞り込みでの深さまで）。
         // 詳細の和が小さいうちはどれも重ね済みで空——通信しない（`SpotDetailNeeds`・2026-10-08）
         let detailNeeds = SpotDetailNeeds.mapSpotList(
@@ -1557,6 +1559,8 @@ struct PhotoMapView: View {
         .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
             await model.loadListDetails(detailNeeds)
         }
+        // 写真の詳細で外した・戻したら、行の枚数を読み直す（出直したときにも走る・#425）
+        .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
@@ -1648,7 +1652,7 @@ struct PhotoMapView: View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
         let sections = RegionList.sections(photos: model.photos, spots: model.officialSpots,
                                            query: model.query, category: model.category,
-                                           aliases: model.spotAliases, from: center)
+                                           aliases: model.spotAliases, links: model.photoLinks, from: center)
         let currentId = sections.first(where: \.isCurrent)?.id
         // 開いている県の撮影スポットの行を並ぶ順につないだもの。丸写真の詳細は頭から `regionListDepth` 行だけ読む
         // （閉じた県は描かないので読まない・`SpotDetailNeeds`・2026-10-08）
@@ -1700,6 +1704,8 @@ struct PhotoMapView: View {
             .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
                 await model.loadListDetails(detailNeeds)
             }
+            // 写真の詳細で外した・戻したら、県の段の数を読み直す（#425）
+            .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
         }
     }
 

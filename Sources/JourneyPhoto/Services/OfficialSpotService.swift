@@ -574,6 +574,97 @@ actor OfficialSpotService {
         return body
     }
 
+    // MARK: - 写真の自動の結び（`spot-photo-links.json`・`spot-match.json`・2026-10-31・#425）
+
+    /// 写真 id → 撮影スポット id の表（Web が静的な生成で結んだもの・`SpotPhotoLinks`）。
+    /// **索引と同じ読み方**（控え 60秒 → 条件付きの通信 → 圏外・5xx・HTML・壊れた中身は前回の控え →
+    /// 404 は控えも消して空）。読めなければ空の表（`spotId` だけで引く・写真の機能は止めない）。
+    /// この端末で本人が外した・戻した分（`noteSpotAuto`）を重ねて返す
+    func fetchPhotoLinks() async -> SpotPhotoLinks {
+        let data = await fetchSmallFile("spot-photo-links.json") { SpotPhotoLinks.decode($0) != nil }
+        let table = data.flatMap(SpotPhotoLinks.decode) ?? .empty
+        return table.with(autoOverrides)
+    }
+
+    /// 投稿画面が候補を選ぶ索引（`SpotMatcher`・約 400KB・圧縮して配られる）。読めなければ nil
+    /// （自動では選ばない。投稿はできて、あとで静的な生成が同じ決まりで結ぶ）
+    func fetchMatchIndex() async -> SpotMatchIndex? {
+        if let hit = matchIndexCache, hit.until > Date() { return hit.index }
+        let data = await fetchSmallFile("spot-match.json") { SpotMatchIndex.decode($0) != nil }
+        let index = data.flatMap(SpotMatchIndex.decode)
+        // 読み直しは索引と同じ長さだけ空ける（同じ画面で開き直すたびに 400KB を読み直さない）
+        matchIndexCache = (index, Date().addingTimeInterval(Self.cacheLifetime))
+        return index
+    }
+
+    private var matchIndexCache: (index: SpotMatchIndex?, until: Date)?
+
+    /// この端末で本人が外した（`.off`）・戻した（`.on`）写真。**サイトの作り直しで表と写真の印が
+    /// 追いつくまでの数分**、写真の詳細・撮影スポットの頁・地図の数を先に合わせる。端末には残さない
+    private var autoOverrides: [String: SpotPhotoLinks.Override] = [:]
+
+    /// 本人が写真の詳細で外した・戻したことを覚える（`PUT /photos/{id}` が通ったあと）
+    func noteSpotAuto(photoId: String, _ override: SpotPhotoLinks.Override) {
+        autoOverrides[photoId] = override
+    }
+
+    /// 小さな静的 JSON の読み終えた中身（nil は「無い・読めない」）と、使い回せる時刻
+    private var smallFiles: [String: (data: Data?, until: Date)] = [:]
+    /// 走っている読み込み（名前ごとに1本だけ・呼んだ側の取り消しを受けない・`fetchAliases` と同じ理由）
+    private var smallLoads: [String: Task<Data?, Never>] = [:]
+
+    /// 索引の隣の小さな JSON を読む。`isValid` を通った中身だけを控え、返す
+    private func fetchSmallFile(_ name: String, isValid: @escaping @Sendable (Data) -> Bool) async -> Data? {
+        if let hit = smallFiles[name], hit.until > Date() { return hit.data }
+        if smallLoads[name] == nil {
+            let fileURL = url.deletingLastPathComponent().appendingPathComponent(name)
+            let store = SpotSnapshotStore(fileName: "\(feedSnapshotPrefix)-\(name)")
+            let session = self.session
+            smallLoads[name] = Task {
+                await Self.loadSmallFile(fileURL, store: store, session: session, isValid: isValid)
+            }
+        }
+        let data = await smallLoads[name]?.value ?? nil
+        smallLoads[name] = nil
+        smallFiles[name] = (data, Date().addingTimeInterval(Self.cacheLifetime))
+        return data
+    }
+
+    /// 読み方は古い置き場（`fetchLegacyIndex`）と同じ:
+    ///   - 304 → 控え ／ 200 で読める → 控えて返す
+    ///   - 404 → 控えも消して nil（下げたものを圏外で出し続けない）
+    ///   - 5xx・HTML（キャプティブポータル）・壊れた中身・圏外 → 前回の控え（無ければ nil）
+    private static func loadSmallFile(_ fileURL: URL, store: SpotSnapshotStore, session: URLSession,
+                                      isValid: @escaping @Sendable (Data) -> Bool) async -> Data? {
+        let previous = { () -> Data? in store.loadData().flatMap { isValid($0) ? $0 : nil } }
+        do {
+            let outcome: ConditionalGet.Outcome<Data> = try await ConditionalGet.fetch(
+                fileURL, session: session, validators: store.validators
+            ) { previous() }
+            switch outcome {
+            case .notModified(let data):
+                return data
+            case .fetched(let data, let response):
+                guard let http = response as? HTTPURLResponse else { return previous() }
+                if http.statusCode == 404 {
+                    store.clear()
+                    return nil
+                }
+                guard (200..<300).contains(http.statusCode), !isHTML(http) else { return previous() }
+                guard isValid(data) else {
+                    print("[spots] \(fileURL.lastPathComponent) が読めませんでした")
+                    // 控えていない中身の印を残さない（`fetchLegacyIndex` と同じ）
+                    store.validators.clear()
+                    return previous()
+                }
+                store.save(data, validator: HTTPValidator(response: http))
+                return data
+            }
+        } catch {
+            return previous()
+        }
+    }
+
     // MARK: - 別名（`/app/data/spot-search.json`・2026-09-30）
 
     /// 別名の控え（slug → 別名）と、取れた／取れなかった時刻。

@@ -108,7 +108,9 @@ final class UXDeadEndsTests: XCTestCase {
     func testNearbySpotRowsAreWired() async throws {
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("placeRow\n            spotGuideRow\n            nearbySpotRow"), "写真の裾に行が無い")
-        XCTAssertTrue(detail.contains(".task(id: PhotoTrip.nearbySpotKey(photo: shown) ?? \"\") { await loadNearbySpot() }"))
+        XCTAssertTrue(detail.contains(".task(id: nearbySpotKey ?? \"\") { await loadNearbySpot() }"))
+        // 鍵は自動の結びも見る（結ばれた写真には出さない・表を読む前も出さない・#425）
+        XCTAssertTrue(detail.contains("photoLinks == nil ? nil : PhotoTrip.nearbySpotKey(photo: shown, linkedSpotId: linkedSpotId)"))
         XCTAssertTrue(detail.contains("PhotoTrip.nearbySpot(to: shown.coords, in: rows)"))
         let row = slice(detail, from: "private var nearbySpotRow: some View {", to: "private var inspiredRow")
         XCTAssertTrue(row.contains("OfficialSpotView(spot: spot"))

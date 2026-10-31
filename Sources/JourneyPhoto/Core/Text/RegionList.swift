@@ -16,7 +16,11 @@ import Foundation
 /// 県の決め方:
 /// - 撮影スポット: 台帳の `region.prefecture` が**47都道府県の名前と一致するときだけ**その県。
 ///   「都道府県で終わるか」では見ない——フランスに「イヴリーヌ県」がある（本番の台帳で確認）
-/// - 写真: 撮影地の文字に都道府県の正式名（「東京都」「兵庫県」…）があればその県。
+/// - 写真: **撮影スポットに結ばれた写真**（本人が選んだ `spotId`、無ければ自動の結び・`SpotPhotoLinks`）は
+///   その撮影スポットの行と同じ段（2026-10-31 判断・#425）。段の「写真 N枚」と行の「写真 N枚」を同じ
+///   結びで数える——以前は段を撮影地の文字で、行を `spotId` で数えていて食い違った
+///   （撮影地「蔵王キツネ村, 白石市」のように県名の無い写真が、行には数えられて段には入らない）。
+///   結ばれていない写真は、撮影地の文字に都道府県の正式名（「東京都」「兵庫県」…）があればその県。
 ///   無ければ座標を見て、日本の範囲なら**150km 以内で一番近い撮影スポットの県**、範囲外なら海外。
 ///   どちらも無ければ「場所が分からない」
 ///
@@ -180,8 +184,9 @@ enum RegionList {
     ///   **県を当てる手がかりと「写真 N枚」は絞る前の全部から数える**——絞った後で作ると、
     ///   語がスポット名に当たらないだけで写真の県が分からなくなり、枚数も「スポット」の札と食い違う
     static func sections(photos: [Photo], spots: [OfficialSpot], query: String = "", category: String? = nil,
-                         aliases: [String: [String]] = [:], from center: Photo.Coords?) -> [Section] {
-        let allRows = OfficialSpotList.rows(spots, photos: photos, from: center)
+                         aliases: [String: [String]] = [:], links: SpotPhotoLinks = .empty,
+                         from center: Photo.Coords?) -> [Section] {
+        let allRows = OfficialSpotList.rows(spots, photos: photos, from: center, links: links)
         let anchors: [(coords: Photo.Coords, prefecture: String)] = allRows.compactMap { row in
             guard let c = row.spot.coords, let p = row.spot.region?.prefecture, prefectures.contains(p) else { return nil }
             return (c, p)
@@ -230,26 +235,33 @@ enum RegionList {
         let shownIds = Set(shown.spots.map(\.spotId))
         let rows = allRows.filter { shownIds.contains($0.spot.spotId) }
 
-        var spotsBy: [Key: [OfficialSpotList.Row]] = [:]
-        for row in rows {
-            let key: Key
-            if let p = row.spot.region?.prefecture, prefectures.contains(p) {
-                key = .prefecture(p)
-            } else if let country = row.spot.region?.country, !country.isEmpty, country != "日本" {
+        /// 撮影スポットの行の段
+        func spotKey(_ spot: OfficialSpot) -> Key {
+            if let p = spot.region?.prefecture, prefectures.contains(p) {
+                return .prefecture(p)
+            } else if let country = spot.region?.country, !country.isEmpty, country != "日本" {
                 // **国を箱より先に見る。** 日本の箱は粗く釜山・対馬海峡の向こうも入る——
                 // 国が載っている行を近くの県に入れない
-                key = .country(country)
-            } else if let c = row.spot.coords, isInJapan(c) {
-                key = nearestPrefecture(c).map(Key.prefecture) ?? .unknown
+                return .country(country)
+            } else if let c = spot.coords, isInJapan(c) {
+                return nearestPrefecture(c).map(Key.prefecture) ?? .unknown
             } else {
-                key = abroadKey(country: row.spot.region?.country, coords: row.spot.coords)
+                return abroadKey(country: spot.region?.country, coords: spot.coords)
             }
-            spotsBy[key, default: []].append(row)
         }
+        var spotsBy: [Key: [OfficialSpotList.Row]] = [:]
+        for row in rows {
+            spotsBy[spotKey(row.spot), default: []].append(row)
+        }
+        /// 写真が結ばれた撮影スポット（行の数え方と同じ・公開済みで座標のある行だけ）
+        let rowSpots = Dictionary(allRows.map { ($0.spot.spotId, $0.spot) }, uniquingKeysWith: { first, _ in first })
         var photosBy: [Key: [Photo]] = [:]
         for photo in shown.photos {
             let key: Key
-            if let p = prefecture(inText: photo.location) {
+            if let linked = links.spotId(for: photo), let spot = rowSpots[linked] {
+                // 撮影スポットに結ばれた写真は、その行と同じ段（2026-10-31 判断・#425）
+                key = spotKey(spot)
+            } else if let p = prefecture(inText: photo.location) {
                 key = .prefecture(p)
             } else if let c = photo.coords {
                 if let near = nearestPlace(c) {
