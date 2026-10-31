@@ -29,7 +29,7 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertEqual(ProfileV2.gridAspect, 0.8, accuracy: 0.0001, "板 v2 は縦長 4:5")
         XCTAssertEqual(ProfileV2.gutter, JPSpace.gutter)
         XCTAssertEqual(ProfileV2.gutter, 16, "v1 の 20 に戻っている")
-        XCTAssertEqual(ProfileV2.tabGap, 22)
+        XCTAssertEqual(ProfileTabStyle.gap, 24, "区分の札の間は 24（#418 案A。v2 の 22 に戻っている）")
     }
 
     /// カバーとアイコン（帯 240＝2026-10-28 owner の要望・板 v2 は 196。アイコン 88 を 44 重ねる・黒 4 の縁。カバーの無い人は 72）
@@ -96,11 +96,11 @@ final class ProfileV2DesignTests: XCTestCase {
         let bar = try source("Features/Profile/ProfileTabBar.swift")
         XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んでいる札の字が真鍮でない")
         // 2026-10-24: 下線は選んだ札にだけ1本描き、選び替えで滑らせる（`matchedGeometryEffect`）
-        XCTAssertTrue(bar.contains("if selected {\n                        Rectangle()\n                            .fill(WebTheme.accent)"),
+        XCTAssertTrue(bar.contains("if selected {\n                        RoundedRectangle(cornerRadius: ProfileTabStyle.underlineRadius)\n                            .fill(WebTheme.accent)"),
                       "下線が真鍮でない")
         XCTAssertTrue(bar.contains(".frame(height: JPStroke.emphasis)"), "下線は 2pt")
         XCTAssertFalse(bar.contains("selected ? Color.white : WebTheme.faint"), "v1 の白い選択に戻っている")
-        XCTAssertTrue(bar.contains("Rectangle().fill(WebTheme.hairline)"), "区切り線は v2 の白 8%")
+        XCTAssertTrue(bar.contains(".fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))"), "区切り線は白 8%（留まると 12%）")
         XCTAssertTrue(bar.contains("accessibilityAddTraits(selected ? .isSelected : [])"), "色だけで選択を言っている")
         XCTAssertTrue(bar.contains("\"profile.tab.\\(option.rawValue)\""), "画面写真の目印を落とした")
 

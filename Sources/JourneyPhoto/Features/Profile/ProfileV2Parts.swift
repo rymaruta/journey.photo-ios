@@ -28,8 +28,7 @@ enum ProfileV2 {
         max(0, (WebTheme.minTapTarget - visible) * 0.5)
     }
 
-    /// 下線の札の名前と名前の間（板 v2 の `nav`: gap 22）
-    nonisolated static let tabGap: CGFloat = 22
+    // 下線の札の値は `ProfileTabStyle`（2026-10-30 owner 採用 #418 で札の間を 22 → 24 に）
 
     /// 写真の格子の列
     static var gridItems: [GridItem] {

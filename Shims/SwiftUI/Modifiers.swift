@@ -587,6 +587,8 @@ extension View {
                                  anchor: UnitPoint = .center, anchorZ: CGFloat = 0,
                                  perspective: CGFloat = 1) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func animation<V: Equatable>(_ animation: Animation?, value: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 動きを中の修飾だけに閉じ込める（iOS 17 の `animation(_:body:)`。本物は `PlaceholderContentView<Self>` を渡す）
+    public func animation<V: View>(_ animation: Animation?, @ViewBuilder body: (Self) -> V) -> V { body(self) }
     public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func statusBarHidden(_ hidden: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 }

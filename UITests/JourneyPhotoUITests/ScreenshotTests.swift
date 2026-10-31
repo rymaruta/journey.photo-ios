@@ -3356,6 +3356,30 @@ final class ScreenshotTests: XCTestCase {
 
     /// **ふたを開ける → 中身を手に取る**: 閉じた姿・開けた姿（胴に会員証と乗車券・ふたの裏にメダル）・
     /// メダルを持ち上げた・「ほか N」を持ち上げた。目印が無ければ落とす。押せる所は 44pt 以上
+    /// トランクの中身を押して手に取る（持ち上がって出口「trunk.hold.go」が出るまで）。
+    ///
+    /// 🔴 2026-10-31 Mac run 41158764882 の `testCapturesTheirTrunk`: ふたが開き切って 10 秒たった会員証を押した記録は
+    /// あるのに、録画でも画面の木でも何も持ち上がらず「会員証を押しても持ち上がらない」で落ちた（同じアプリの
+    /// 3b1103c の回は通っている）。舞台にはふたを引く指（`LidDragPriority` の `highPriorityGesture`）が重なっていて、
+    /// 押しがそちらに取られて中のボタンに届かない回があると見られる（根は確かめきれていない）。
+    /// **前の出口が消えるのを待ってから押し**（戻した直後の消えかけの出口を「持ち上がった」と見ない）、
+    /// 4 秒で持ち上がらず押せる所に残っていれば、押し直したことを記録に残してもう一度だけ押す。それでも出なければ false
+    private func pickUp(_ item: XCUIElement, go: XCUIElement, in app: XCUIApplication) -> Bool {
+        let gone = NSPredicate(format: "exists == false")
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: go)], timeout: 3)
+        item.tap()
+        if go.waitForExistence(timeout: 4) { return true }
+        guard item.exists, item.isHittable else { return go.waitForExistence(timeout: 6) }
+        XCTContext.runActivity(named: "押しても持ち上がらなかったので押し直す（\(item.identifier)）") { activity in
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "押し直す前（\(item.identifier)）"
+            shot.lifetime = .keepAlways
+            activity.add(shot)
+        }
+        item.tap()
+        return go.waitForExistence(timeout: 10)
+    }
+
     func testCapturesTrunkOpen() {
         let app = launchTrunk(Self.trunkInsideArgs)
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -3374,9 +3398,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "100a-ふたを開けた")
         XCTAssertTrue(app.buttons["trunk.inside.card"].firstMatch.exists, "Pro の人の内ポケットに会員証が無い")
         XCTAssertTrue(app.buttons["trunk.inside.more"].firstMatch.exists, "メダル 10 枚なのに「ほか N」が無い")
-        medal.tap()
         let go = app.buttons["trunk.hold.go"].firstMatch
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("メダルを押しても持ち上がらない") }
+        guard pickUp(medal, go: go, in: app) else { return XCTFail("メダルを押しても持ち上がらない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "100b-中身を手に取った（メダル）")
         let putBack = app.buttons["trunk.hold.putBack"].firstMatch
@@ -3385,20 +3408,16 @@ final class ScreenshotTests: XCTestCase {
         putBack.tap()
         let more = app.buttons["trunk.inside.more"].firstMatch
         guard more.waitForExistence(timeout: 10), more.isHittable else { return XCTFail("戻したあと「ほか N」を押せない") }
-        more.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("「ほか N」を押しても持ち上がらない") }
+        guard pickUp(more, go: go, in: app) else { return XCTFail("「ほか N」を押しても持ち上がらない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "100c-中身を手に取った（ほかのメダル）")
         putBack.tap()
         let card = app.buttons["trunk.inside.card"].firstMatch
-        if card.waitForExistence(timeout: 5), card.isHittable {
-            card.tap()
-            if go.waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 1)
-                shoot(app, "100d-中身を手に取った（会員証）")
-                putBack.tap()
-            }
-        }
+        guard card.waitForExistence(timeout: 5), card.isHittable else { return XCTFail("戻したあと会員証を押せない") }
+        guard pickUp(card, go: go, in: app) else { return XCTFail("会員証を押しても持ち上がらない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "100d-中身を手に取った（会員証）")
+        putBack.tap()
     }
 
     /// **空のトランク**（メダルも会員証も乗車券も無い人・`-JPPreviewTrunk empty`）: 手に入れ方の3行と「写真を投稿する」
@@ -3541,8 +3560,7 @@ final class ScreenshotTests: XCTestCase {
         let putBack = app.buttons["trunk.hold.putBack"].firstMatch
         let insideCard = app.buttons["trunk.inside.card"].firstMatch
         guard insideCard.waitForExistence(timeout: 5), insideCard.isHittable else { return XCTFail("人のトランクの内ポケットに会員証が無い") }
-        insideCard.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("会員証を押しても持ち上がらない") }
+        guard pickUp(insideCard, go: go, in: app) else { return XCTFail("会員証を押しても持ち上がらない") }
         go.tap()
         let viewerClose = app.buttons["supporter.viewer.close"].firstMatch
         guard viewerClose.waitForExistence(timeout: 10) else { return XCTFail("会員証を回す画面が開かない") }
@@ -3556,8 +3574,7 @@ final class ScreenshotTests: XCTestCase {
         // わたしの乗車券を手に取って回す
         let tickets = app.buttons["trunk.inside.tickets"].firstMatch
         guard tickets.waitForExistence(timeout: 10), tickets.isHittable else { return XCTFail("人のトランクに乗車券が無い") }
-        tickets.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("乗車券を押しても持ち上がらない") }
+        guard pickUp(tickets, go: go, in: app) else { return XCTFail("乗車券を押しても持ち上がらない") }
         XCTAssertGreaterThanOrEqual(putBack.frame.height, 44, "「トランクに戻す」が 44pt 未満")
         go.tap()
         guard app.descendants(matching: .any)["trunk.their.ticket"].firstMatch.waitForExistence(timeout: 10) else {
@@ -3581,8 +3598,22 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += extra
         app.launch()
         let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        if agree.waitForExistence(timeout: 30) { agreeUntilGone(agree) }
         return app
+    }
+
+    /// 同意の画面を押して、閉じたことを確かめる。**押しが届かない回がある**（2026-10-31 Mac run 772 の
+    /// `testCapturesCoverOffer`: 「同意して…」を押した記録はあるのに、アプリの画面の木は 45 秒後も同意の画面のまま
+    /// ＝差し出しが出るはずのホームへ進まず「差し出しが出ない」で落ちた）。消えなければもう一度押し、
+    /// それでも残れば**ここで落とす**（後の段で別の理由に見せない）
+    private func agreeUntilGone(_ agree: XCUIElement) {
+        let gone = NSPredicate(format: "exists == false")
+        for _ in 0..<2 {
+            agree.tap()
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: agree)], timeout: 5) == .completed { return }
+            guard agree.exists, agree.isHittable else { break }
+        }
+        XCTAssertFalse(agree.exists, "同意の画面が閉じない（「同意して…」を押しても進まない）")
     }
 
     /// **マイページの曲の行と旅の記録**（2026-10-24 owner の要望）。曲の行（ジャケット・曲名・歌手名・再生）と、
@@ -3977,16 +4008,112 @@ final class ScreenshotTests: XCTestCase {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
-        guard !posts.isHittable || posts.frame.maxY < 0 else { return }
-        // 格子の上で横に払う（札の行は画面の外）
+        // 2026-10-30（#418）から札の行は上に留まる——深く送ったかは見出しの「編集」が見えないことで見る
+        // （以前の「札の行が画面の外」は、留まるようになって成り立たず、黙って抜けていた）
+        let edit = app.buttons["mypage.edit"].firstMatch
+        XCTAssertFalse(edit.exists && edit.isHittable, "3回送っても見出しが見えている（深く送れていない）")
+        guard !(edit.exists && edit.isHittable) else { return }
+        // 格子の上で横に払う（札の行は上に留まっている）
         let gridY = height * 0.5
         origin.withOffset(CGVector(dx: app.frame.width * 0.8, dy: gridY))
             .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.2, dy: gridY)))
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(trips.isSelected, "格子の上を左へ払っても「旅の記録」に替わらない")
-        XCTAssertTrue(posts.isHittable && posts.frame.minY < height * 0.25,
-                      "深く送ってから替えても札の行が上端へ戻らない（minY \(posts.frame.minY)）")
         shoot(app, "14p-マイページ（深く送ってから替えると頭から）")
+        // 札の行は上に留まるので、札の位置では「頭から」を言えない（いつも上端に居る）。
+        // 投稿へ戻し、格子の1枚目が札の行のすぐ下に来ていれば、替えたときに頭へ送れている
+        // （送れていなければ、投稿の格子は深く送ったまま＝1枚目は札の行より上）
+        posts.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(posts.isSelected, "「投稿」に戻らない")
+        let first = app.buttons["mypage.photo"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "投稿へ戻ったら格子が消えた")
+        let gap = first.frame.minY - posts.frame.maxY
+        XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
+    }
+
+    /// **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・板「マイページ」の状態「区分の札が上に留まった」）。
+    /// 下へ送っても札の行が時計の帯の下に残り、見出し（「編集」）は流れて見えない。留まった札を押すと替わり、
+    /// 替えた札は頭から見せる（投稿へ戻すと格子の1枚目が札の行のすぐ下）。
+    /// 🔴 段が見つからない・送れない・留まらないときは**落とす**（黙って通らない）
+    func testPinsMyPageTabs() {
+        // カバーのある回（時計の裏まで伸ばす）と、カバーの無い回（安全域の内側）で、留まり方が違う
+        for (extra, suffix) in [([String](), "カバーあり"), (["-JPPreviewNoCover", "YES"], "カバーなし")] {
+            checkPinnedTabs(extra, suffix)
+        }
+    }
+
+    private func checkPinnedTabs(_ extra: [String], _ suffix: String) {
+        let app = launchProfileLooks(extra)
+        defer { app.terminate() }
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "\(suffix): 下のタブが出ない")
+        guard tabBar.exists, tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let edit = app.buttons["mypage.edit"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "\(suffix): マイページの見出しが出ない")
+        let posts = app.buttons["profile.tab.posts"].firstMatch
+        let trips = app.buttons["profile.tab.trips"].firstMatch
+        XCTAssertTrue(posts.waitForExistence(timeout: 10), "\(suffix): 区分の札（投稿）が見つからない")
+        let photo = app.buttons["mypage.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 20), "\(suffix): 投稿の格子が出ない（深く送れない）")
+        guard posts.exists, photo.exists else { return }
+        // カバーは通信で来る（来てから測る）
+        Thread.sleep(forTimeInterval: 3)
+        let restY = posts.frame.minY
+        let pinnedRow = app.descendants(matching: .any)["mypage.tabs.pinned"].firstMatch
+        XCTAssertFalse(pinnedRow.exists, "\(suffix): 送る前から留まった札が出ている")
+
+        // 下へ送る（見出しが流れて見えなくなるまで）
+        for _ in 0..<3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let height = app.frame.height
+        XCTAssertFalse(edit.exists && edit.isHittable, "\(suffix): 送っても見出しが見えている（深く送れていない）")
+        // 留まった札: 重ねた札が出ていて、押せて、時計の帯のすぐ下（画面の上 15% の中）に居る。送る前より上
+        XCTAssertTrue(pinnedRow.exists, "\(suffix): 下へ送っても区分の札が上に留まらない")
+        XCTAssertTrue(posts.exists && posts.isHittable, "\(suffix): 下へ送ると区分の札が押せない")
+        XCTAssertLessThan(posts.frame.minY, height * 0.15, "\(suffix): 区分の札が上に留まっていない（minY \(posts.frame.minY)）")
+        XCTAssertGreaterThan(posts.frame.minY, 20, "\(suffix): 区分の札が時計の帯の裏に入った（minY \(posts.frame.minY)）")
+        XCTAssertLessThan(posts.frame.minY, restY, "\(suffix): 送る前と同じ位置のまま（送れていない）")
+        guard posts.isHittable, posts.frame.minY < height * 0.15 else { return }
+        // 留まった札の地は黒（格子の写真が透けない）: 札の行の右端の空き（字の無い所）の色を見る
+        let luma = Self.luma(app.screenshot().image, at: CGPoint(x: app.frame.width - 6, y: posts.frame.midY))
+        XCTAssertNotNil(luma, "\(suffix): 画面の絵を読めない")
+        if let luma { XCTAssertLessThan(luma, 16, "\(suffix): 留まった札の地が黒でない（明るさ \(luma)）") }
+        let pinnedY = posts.frame.minY
+        shoot(app, "14x-マイページ（区分の札が留まる・\(suffix)）")
+
+        // 留まった札を押すと替わる。札の行は同じ位置
+        XCTAssertTrue(trips.isHittable, "\(suffix): 留まった「旅の記録」の札が押せない")
+        trips.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(trips.isSelected, "\(suffix): 留まった「旅の記録」の札を押しても替わらない")
+        XCTAssertEqual(posts.frame.minY, pinnedY, accuracy: 2, "\(suffix): 替えたら札の行が留まった位置から動いた")
+
+        // 投稿へ戻すと頭から（格子の1枚目が札の行のすぐ下）
+        posts.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(posts.isSelected, "\(suffix): 留まった「投稿」の札を押しても戻らない")
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "\(suffix): 投稿へ戻ったら格子が消えた")
+        let gap = photo.frame.minY - posts.frame.maxY
+        XCTAssertTrue(gap >= 0 && gap < 240, "\(suffix): 替えた札が頭から出ない（札の行と格子の1枚目の間 \(gap)）")
+    }
+
+    /// 画面の絵の1点（ポイント）の明るさ（0〜255）。読めなければ nil
+    private static func luma(_ image: UIImage, at point: CGPoint) -> Double? {
+        guard let cg = image.cgImage else { return nil }
+        let scale = image.scale
+        let x = Int(point.x * scale), y = Int(point.y * scale)
+        guard x >= 0, y >= 0, x < cg.width, y < cg.height,
+              let one = cg.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
+        var px = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(one, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return 0.299 * Double(px[0]) + 0.587 * Double(px[1]) + 0.114 * Double(px[2])
     }
 
     /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、
@@ -4151,9 +4278,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "硬貨の行が無い")
         guard later.isHittable else { return XCTFail("「あとで」を押せない") }
         later.tap()
-        let gone = NSPredicate(format: "exists == false")
-        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 5)
+        // 閉じたかは「カバーにする」が無くなった・押せなくなったで見る。2026-10-30 Mac run（41139085964）では、録画で
+        // 札は 0.5 秒で下へ閉じてホームが出ているのに、`exists` だけで見た待ちが 5 秒で切れて落ちた（閉じた札の
+        // 要素が読み上げの木にしばらく残ると見られる。確かめきれてはいない）。押せる所に残っていれば閉じていないので落とす
+        let gone = NSPredicate(format: "exists == false OR hittable == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 10)
         XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5) && app.tabBars.firstMatch.isHittable,
+                      "「あとで」のあと下のタブに戻らない")
     }
 
     /// **いいねが集まった1枚をカバーに**（板 51b・カバーあり・`-JPPreviewCoverOffer liked`）。「今のままにする」で閉じる
