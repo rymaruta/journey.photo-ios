@@ -34,7 +34,12 @@ final class ImageDownsampleWiringTests: XCTestCase {
     func testStoryThumbAndPosterDownsample() throws {
         let media = try source("Features/Stories/StoryMedia.swift")
         for name in ["struct StoryThumb: View", "struct StoryPoster: View"] {
-            let body = try block(name, until: "\nstruct ", in: media)
+            var body = try block(name, until: "\nstruct ", in: media)
+            // 四角いサムネの「縮めない」の口（`downsamples: false`・全画面のリールの面の比べ）の中だけは元の部品
+            if let from = body.range(of: "} else if !downsamples {"),
+               let to = body.range(of: "} else {", range: from.upperBound..<body.endIndex) {
+                body.removeSubrange(from.lowerBound..<to.lowerBound)
+            }
             XCTAssertEqual(plainRemoteImages(body), 0, "\(name) が原寸のまま展開する部品を使っている")
             XCTAssertTrue(body.contains("DownsampledRemoteImage(url: story.imageURL, contentMode: .fill"),
                           "\(name) が縮めて読む部品を枠いっぱいの敷き方で使っていない")
@@ -45,10 +50,10 @@ final class ImageDownsampleWiringTests: XCTestCase {
         }
     }
 
-    /// 輪（64pt・52pt）と四角いサムネ（72×110 など）は、**3:1 までの横長・縦長のどれでも枠を覆える**画素で読む。
+    /// 輪の写真（54pt・`StoryRingMetrics.photo`）と四角いサムネ（72×110 など）は、**3:1 までの横長・縦長のどれでも枠を覆える**画素で読む。
     /// 原寸（1920px）より小さく読む（縮める得がある）
     func testStoryThumbPixelsCoverTheFrameAndShrink() throws {
-        let boxes = [CGSize(width: 64, height: 64), CGSize(width: 52, height: 52),
+        let boxes = [CGSize(width: 54, height: 54), CGSize(width: 64, height: 64),
                      CGSize(width: 72, height: 110), CGSize(width: 48, height: 64)]
         for box in boxes {
             let pixels = try XCTUnwrap(DownsampledImageSize.pixels(

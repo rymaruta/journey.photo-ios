@@ -160,6 +160,51 @@ final class PerformanceTests: XCTestCase {
         }
     }
 
+    /// **ストーリーを開いて人を数回替え、閉じる**までのメモリ（2026-10-31・札 #429 の見直し）。
+    /// 人を替える途中に見える隣の人の面（`StoryReelFace` → `StoryPoster`・全画面）を、縮めて読む（今の作り）と
+    /// 縮めない（`-JPPerfReelFullSize YES`・前の作り）の両方で、**同じ回のうちに**測って比べる（Mac の速さが回で違う）
+    private func measureStoryReel(fullSizeFaces: Bool) {
+        let app = configuredApp(localBackend: true, stories: true)
+        if fullSizeFaces { app.launchArguments += ["-JPPerfReelFullSize", "YES"] }
+        app.launch()
+        passConsent(app)
+        let mine = app.buttons["あなたのストーリー"].firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: 30), "ストーリーの輪が出ない")
+        // 人の輪（自分の輪でないもの）。読み上げは「<名前> のストーリー N本（…）」
+        let others = app.buttons.matching(NSPredicate(format: "label CONTAINS 'のストーリー' AND NOT (label BEGINSWITH 'あなた')"))
+        let ring = others.firstMatch
+        XCTAssertTrue(ring.waitForExistence(timeout: 20), "人の輪が無い")
+        Thread.sleep(forTimeInterval: 4)
+        let close = app.buttons["閉じる"].firstMatch
+        measure(metrics: [XCTMemoryMetric(application: app)], options: Self.options(3)) {
+            ring.tap()
+            XCTAssertTrue(close.waitForExistence(timeout: 15), "ストーリーが開かない")
+            Thread.sleep(forTimeInterval: 2)
+            // 人を替える（横に払う）。払う途中で隣の人の面が出る
+            for _ in 0..<3 {
+                app.swipeLeft()
+                Thread.sleep(forTimeInterval: 2)
+            }
+            if close.waitForExistence(timeout: 5), close.isHittable {
+                close.tap()
+            } else {
+                app.swipeDown()
+            }
+            XCTAssertTrue(mine.waitForExistence(timeout: 15), "閉じてホームに戻らない")
+            Thread.sleep(forTimeInterval: 2)
+        }
+    }
+
+    /// 今の作り（リールの面も縮めて読む）
+    func testStoryReelMemoryDownsampledFaces() {
+        measureStoryReel(fullSizeFaces: false)
+    }
+
+    /// 比べる側（リールの面は元の画像のまま）
+    func testStoryReelMemoryFullSizeFaces() {
+        measureStoryReel(fullSizeFaces: true)
+    }
+
     /// 写真の詳細を開いて戻るときのメモリ（上の大きな写真）
     func testPhotoDetailMemory() {
         let app = configuredApp(localBackend: true)

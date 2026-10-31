@@ -314,7 +314,7 @@ private struct StoryReelFace: View {
                 Color.black
                 if let story {
                     // 枠いっぱいに敷く四角いサムネ（動画は記号。1コマ目を出さない）
-                    StoryPoster(story: story)
+                    StoryPoster(story: story, downsamples: StoryReelFaceImage.downsamples)
                 }
                 if let story {
                     Text(story.authorName)
@@ -334,5 +334,18 @@ private struct StoryReelFace: View {
         .background(Color.black)
         // 画面の外に倒して置いてある面。**読み上げない**（前後の人の名前が読まれていた）
         .accessibilityHidden(true)
+    }
+}
+
+/// リールの面（全画面）の写真を縮めて読むか（2026-10-31・札 #429。**測って決めるまでの一時の切り替え**）。
+/// UI テストの `PerformanceTests` が、同じ回のうちに縮める／縮めないの両方のメモリを測る
+/// （Debug だけ `-JPPerfReelFullSize YES` で縮めない）。決めたら、この切り替えは消す
+enum StoryReelFaceImage {
+    static var downsamples: Bool {
+        #if DEBUG
+        return !UserDefaults.standard.bool(forKey: "JPPerfReelFullSize")
+        #else
+        return true
+        #endif
     }
 }

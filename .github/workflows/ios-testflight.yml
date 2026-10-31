@@ -456,13 +456,15 @@ jobs:
       - name: アプリの中身の大きさ
         if: ${{ steps.archive.outcome == 'success' }}
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           set -uo pipefail
           ipa="$(ls build/ios/ipa/*.ipa 2>/dev/null | head -1)"
           if [ -z "$ipa" ]; then echo "ipa が見つかりません"; exit 0; fi
           work="$(mktemp -d)"
           unzip -q "$ipa" -d "$work"
-          app="$(ls -d "$work"/Payload/*.app | head -1)"
+          app="$(ls -d "$work"/Payload/*.app 2>/dev/null | head -1)"
+          [ -d "$app" ] || { echo ".app が見つかりません"; exit 0; }
           mkdir -p build/logs
           out=build/logs/app-size.txt
           {
