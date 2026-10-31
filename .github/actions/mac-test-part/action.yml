@@ -54,6 +54,35 @@ runs:
           *) echo "::error::知らない組: $PART"; exit 2 ;;
         esac
 
+    # **落ちたテストの絵だけを小さく残す**（2026-10-31・#429）。組ごとの結果は 500MB ほどあり、
+    # 開発の環境の空きでは丸ごと落とせない（run 791 の組 1）。落ちたときの画面の絵と UI の木を
+    # 別の小さい成果物にして、原因を確かめられるようにする。読めなくても落とさない
+    - name: 落ちたテストの絵を取り出す
+      if: ${{ failure() }}
+      shell: bash
+      env:
+        PART: ${{ inputs.part }}
+      run: |
+        set +e
+        r="$(ls -d build/ios/test/*.xcresult 2>/dev/null | head -1)"
+        [ -n "$r" ] || exit 0
+        python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
+        mkdir -p "build/fail-shots/$PART"
+        xcrun xcresulttool export attachments --path "$r" --output-path "build/fail-shots/$PART" --only-failures \
+          || echo "::warning::落ちたテストの添付を取り出せませんでした"
+        # 録画（.mp4）は大きいので入れない
+        find "build/fail-shots/$PART" -name '*.mp4' -delete
+        ls -la "build/fail-shots/$PART" | head -40
+
+    - name: 落ちたテストの絵を残す
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: fail-shots-${{ inputs.part }}
+        path: build/fail-shots
+        retention-days: 7
+        if-no-files-found: ignore
+
     - name: 結果を残す
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
