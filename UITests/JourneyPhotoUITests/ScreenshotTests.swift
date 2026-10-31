@@ -3290,6 +3290,30 @@ final class ScreenshotTests: XCTestCase {
 
     /// **ふたを開ける → 中身を手に取る**: 閉じた姿・開けた姿（胴に会員証と乗車券・ふたの裏にメダル）・
     /// メダルを持ち上げた・「ほか N」を持ち上げた。目印が無ければ落とす。押せる所は 44pt 以上
+    /// トランクの中身を押して手に取る（持ち上がって出口「trunk.hold.go」が出るまで）。
+    ///
+    /// 🔴 2026-10-31 Mac run 41158764882 の `testCapturesTheirTrunk`: ふたが開き切って 10 秒たった会員証を押した記録は
+    /// あるのに、録画でも画面の木でも何も持ち上がらず「会員証を押しても持ち上がらない」で落ちた（同じアプリの
+    /// 3b1103c の回は通っている）。舞台にはふたを引く指（`LidDragPriority` の `highPriorityGesture`）が重なっていて、
+    /// 押しがそちらに取られて中のボタンに届かない回があると見られる（根は確かめきれていない）。
+    /// **前の出口が消えるのを待ってから押し**（戻した直後の消えかけの出口を「持ち上がった」と見ない）、
+    /// 4 秒で持ち上がらず押せる所に残っていれば、押し直したことを記録に残してもう一度だけ押す。それでも出なければ false
+    private func pickUp(_ item: XCUIElement, go: XCUIElement, in app: XCUIApplication) -> Bool {
+        let gone = NSPredicate(format: "exists == false")
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: go)], timeout: 3)
+        item.tap()
+        if go.waitForExistence(timeout: 4) { return true }
+        guard item.exists, item.isHittable else { return go.waitForExistence(timeout: 6) }
+        XCTContext.runActivity(named: "押しても持ち上がらなかったので押し直す（\(item.identifier)）") { activity in
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "押し直す前（\(item.identifier)）"
+            shot.lifetime = .keepAlways
+            activity.add(shot)
+        }
+        item.tap()
+        return go.waitForExistence(timeout: 10)
+    }
+
     func testCapturesTrunkOpen() {
         let app = launchTrunk(Self.trunkInsideArgs)
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -3308,9 +3332,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "100a-ふたを開けた")
         XCTAssertTrue(app.buttons["trunk.inside.card"].firstMatch.exists, "Pro の人の内ポケットに会員証が無い")
         XCTAssertTrue(app.buttons["trunk.inside.more"].firstMatch.exists, "メダル 10 枚なのに「ほか N」が無い")
-        medal.tap()
         let go = app.buttons["trunk.hold.go"].firstMatch
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("メダルを押しても持ち上がらない") }
+        guard pickUp(medal, go: go, in: app) else { return XCTFail("メダルを押しても持ち上がらない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "100b-中身を手に取った（メダル）")
         let putBack = app.buttons["trunk.hold.putBack"].firstMatch
@@ -3319,20 +3342,16 @@ final class ScreenshotTests: XCTestCase {
         putBack.tap()
         let more = app.buttons["trunk.inside.more"].firstMatch
         guard more.waitForExistence(timeout: 10), more.isHittable else { return XCTFail("戻したあと「ほか N」を押せない") }
-        more.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("「ほか N」を押しても持ち上がらない") }
+        guard pickUp(more, go: go, in: app) else { return XCTFail("「ほか N」を押しても持ち上がらない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "100c-中身を手に取った（ほかのメダル）")
         putBack.tap()
         let card = app.buttons["trunk.inside.card"].firstMatch
-        if card.waitForExistence(timeout: 5), card.isHittable {
-            card.tap()
-            if go.waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 1)
-                shoot(app, "100d-中身を手に取った（会員証）")
-                putBack.tap()
-            }
-        }
+        guard card.waitForExistence(timeout: 5), card.isHittable else { return XCTFail("戻したあと会員証を押せない") }
+        guard pickUp(card, go: go, in: app) else { return XCTFail("会員証を押しても持ち上がらない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "100d-中身を手に取った（会員証）")
+        putBack.tap()
     }
 
     /// **空のトランク**（メダルも会員証も乗車券も無い人・`-JPPreviewTrunk empty`）: 手に入れ方の3行と「写真を投稿する」
@@ -3475,8 +3494,7 @@ final class ScreenshotTests: XCTestCase {
         let putBack = app.buttons["trunk.hold.putBack"].firstMatch
         let insideCard = app.buttons["trunk.inside.card"].firstMatch
         guard insideCard.waitForExistence(timeout: 5), insideCard.isHittable else { return XCTFail("人のトランクの内ポケットに会員証が無い") }
-        insideCard.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("会員証を押しても持ち上がらない") }
+        guard pickUp(insideCard, go: go, in: app) else { return XCTFail("会員証を押しても持ち上がらない") }
         go.tap()
         let viewerClose = app.buttons["supporter.viewer.close"].firstMatch
         guard viewerClose.waitForExistence(timeout: 10) else { return XCTFail("会員証を回す画面が開かない") }
@@ -3490,8 +3508,7 @@ final class ScreenshotTests: XCTestCase {
         // わたしの乗車券を手に取って回す
         let tickets = app.buttons["trunk.inside.tickets"].firstMatch
         guard tickets.waitForExistence(timeout: 10), tickets.isHittable else { return XCTFail("人のトランクに乗車券が無い") }
-        tickets.tap()
-        guard go.waitForExistence(timeout: 10) else { return XCTFail("乗車券を押しても持ち上がらない") }
+        guard pickUp(tickets, go: go, in: app) else { return XCTFail("乗車券を押しても持ち上がらない") }
         XCTAssertGreaterThanOrEqual(putBack.frame.height, 44, "「トランクに戻す」が 44pt 未満")
         go.tap()
         guard app.descendants(matching: .any)["trunk.their.ticket"].firstMatch.waitForExistence(timeout: 10) else {
