@@ -38,7 +38,12 @@ ALWAYS = "SmokeTests"
 # 名指しした回だけ流す（全部を回す回では飛ばす）。「Class/testName」
 # 2026-10-22: 額の頁（写真を入れられる額 120 点あまり × 横長・縦長 = 60 頁あまり・1 頁 6 秒ほどで約 6〜7 分）も同じ扱い。
 # 印画が写真の外を読まないことは単体テスト（`testEveryPhotoPanelHasPlanarUVs`・`testPhotoFitCropsInsideThePhotoAndKeepsAspect`）が毎回見る
-ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet"]
+# 2026-10-31（札 #429）: アプリの重さを測る試験（`PerformanceTests`・合否を付けない計測・5本で約9分）も同じ扱い。
+# 測りたい回だけ `inputs[screens]=PerformanceTests` で名指しする（全部の回・PR の検証・TestFlight では流さない）
+ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet",
+                   "PerformanceTests/testLaunchTime", "PerformanceTests/testLaunchAndHomeLoadSignposts",
+                   "PerformanceTests/testHomeScrollMemory", "PerformanceTests/testStoryRingsMemory",
+                   "PerformanceTests/testPhotoDetailMemory"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

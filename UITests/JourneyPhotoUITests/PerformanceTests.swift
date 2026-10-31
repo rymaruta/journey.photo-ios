@@ -5,6 +5,7 @@ import XCTest
 /// **合否は付けない。** 数（`measure`）を試験のログ（`measured [...] average: …`）と結果（xcresult・
 /// ワークフローの成果物 `build-logs`）に残すだけ。時間やメモリで落とすと、Mac の混み具合・通信で赤くなる。
 /// 直す前と後は、同じ試験を同じ絞り方（`inputs[screens]=PerformanceTests`）で流して比べる。
+/// **名指しした回だけ流れる**（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`・5本で約9分・全部の回では飛ばす）。
 ///
 /// 測るもの:
 /// - 起動時間（`XCTApplicationLaunchMetric`・最初の画面が応答するまで）
