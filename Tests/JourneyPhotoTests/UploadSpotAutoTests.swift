@@ -154,7 +154,7 @@ final class UploadSpotAutoTests: XCTestCase {
         let m = model()
         m.items = [item(1, location: "蔵王キツネ村"), item(2, title: "蔵王キツネ村で")]
         XCTAssertEqual(m.autoSpotRow(for: m.items[1])?.spotId, "sp_fox", "前提: 2枚目にも候補がある")
-        m.setAutoSpot(false, for: m.items[0].id)
+        m.setAutoSpot(false, for: m.items[0].id, spotId: "sp_fox")
         XCTAssertEqual(m.autoSpotRow(for: m.items[0])?.on, false)
         await m.submit()
         let bodies = saveBodies()
@@ -169,8 +169,8 @@ final class UploadSpotAutoTests: XCTestCase {
         scriptUpload()
         let m = model()
         m.items = [item(1, location: "蔵王キツネ村")]
-        m.setAutoSpot(false, for: m.items[0].id)
-        m.setAutoSpot(true, for: m.items[0].id)
+        m.setAutoSpot(false, for: m.items[0].id, spotId: "sp_fox")
+        m.setAutoSpot(true, for: m.items[0].id, spotId: "sp_fox")
         await m.submit()
         XCTAssertNil(saveBodies().first?["spotAuto"])
     }
@@ -204,13 +204,108 @@ final class UploadSpotAutoTests: XCTestCase {
         XCTAssertNil(bodies[1]["spotAuto"])
     }
 
+    /// 🔴 候補が変わった写真（撮影地を書き換えた）には、前の撮影スポットについての「切り」を書かない
+    func testChangedCandidateWritesNothing() async {
+        scriptUpload()
+        let m = model()
+        m.items = [item(1, location: "蔵王キツネ村")]
+        m.setAutoSpot(false, for: m.items[0].id, spotId: "sp_fox")
+        m.items[0].location = "高屋神社, 観音寺市"
+        XCTAssertEqual(m.autoSpotRow(for: m.items[0]), .init(spotId: "sp_takaya", name: "高屋神社 本宮", on: true),
+                       "見ていない撮影スポットを切りで出した")
+        await m.submit()
+        XCTAssertNil(saveBodies().first?["spotAuto"], "本人が見ていない撮影スポットに外した印を書いた")
+    }
+
+    /// 送るときに求め直した候補が画面と違えば、何も書かない。画面の時点では撮影スポットの索引が無く、
+    /// 書き換えた撮影地の写真は座標を送らない扱い（候補は位置なしで蔵王キツネ村）。送るときに索引が届くと、
+    /// 撮影地が写真の近くの撮影スポットを指すので写真の座標（東京）を送る → 蔵王キツネ村から遠く、候補なし
+    func testSubmitRecomputesTheCandidateAndSkipsWhenItChanged() async throws {
+        scriptUpload()
+        let m = model()
+        let tokyo = Photo.Coords(lat: 35.68, lng: 139.76)
+        let nearby = try JSONDecoder.api.decode(OfficialSpot.self, from: Data("""
+        {"spotId":"sp_near","slug":"near","name":"蔵王キツネ村","stage":"published","coords":{"lat":35.68,"lng":139.76}}
+        """.utf8))
+        m.fetchSpotIndex = { [nearby] }
+        var p = PendingPhoto(prepared: shot(1, coords: tokyo))
+        p.fillAutomatically("千代田区")
+        p.location = "蔵王キツネ村"
+        m.items = [p]
+        XCTAssertEqual(m.autoSpotRow(for: m.items[0])?.spotId, "sp_fox", "前提: 画面では蔵王キツネ村が候補")
+        m.setAutoSpot(false, for: m.items[0].id, spotId: "sp_fox")
+        await m.submit()
+        let body = saveBodies().first
+        XCTAssertNotNil(body?["coords"], "前提: 送るときは写真の座標を送る")
+        XCTAssertNil(body?["spotAuto"], "送るときの候補が画面と違うのに外した印を書いた")
+    }
+
+    // MARK: - 下書き・送信の控えに残す（2026-10-31 確かめの指摘）
+
+    private let draftDefaults = UserDefaults(suiteName: "UploadSpotAutoTests.\(UUID().uuidString)")!
+    nonisolated private let draftDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("UploadSpotAutoTests-\(UUID().uuidString)")
+
+    private func draftModel() -> UploadViewModel {
+        let m = model()
+        m.drafts = UploadDraftStore(defaults: draftDefaults, directory: draftDirectory)
+        m.autoDrafts = UploadDraftStore(defaults: draftDefaults, directory: draftDirectory, slot: .auto)
+        m.draftOwner = "a"
+        m.makeDraftThumbnail = { _ in nil }
+        return m
+    }
+
+    /// 🔴 保存して開き直しても「切り」のまま（入りに戻って、外したつもりの写真が結ばれない）
+    func testDraftKeepsTheOffChoice() async {
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+        let first = draftModel()
+        first.items = [item(1, location: "蔵王キツネ村"), item(2, location: "蔵王キツネ村")]
+        first.setAutoSpot(false, for: first.items[0].id, spotId: "sp_fox")
+        XCTAssertTrue(first.saveDraft())
+
+        let next = draftModel()
+        let restored = await next.restoreDraft()
+        XCTAssertTrue(restored)
+        XCTAssertEqual(next.autoSpotRow(for: next.items[0])?.on, false, "開き直したら入りに戻った")
+        XCTAssertEqual(next.autoSpotRow(for: next.items[1])?.on, true, "触っていない写真まで切りになった")
+        // 古い下書き（欄の無い形）も読める
+        let old = #"{"imageFile":"x","fileName":"a.jpg","contentType":"image/jpeg","title":"","caption":"","location":"","locationClearedByUser":false}"#
+        let item = try? JSONDecoder().decode(UploadDraftStore.Item.self, from: Data(old.utf8))
+        XCTAssertNotNil(item)
+        XCTAssertNil(item?.spotAutoOff)
+    }
+
+    /// 🔴 送れなかった写真を「続きから」で送っても `spotAuto: "off"` を送る
+    func testResumedJournalStillSendsOff() async {
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presign, once: true),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+        ]
+        let first = draftModel()
+        first.items = [item(1, location: "東京"), item(2, location: "蔵王キツネ村")]
+        first.setAutoSpot(false, for: first.items[1].id, spotId: "sp_fox")
+        await first.submit()
+        let left = UploadDraftStore(defaults: draftDefaults, directory: draftDirectory).journals(for: "a")
+        XCTAssertEqual(left.first?.draft.items.first?.spotAutoOff, true, "送信の控えに切りが残っていない")
+
+        scriptUpload()
+        let next = draftModel()
+        let restored = await next.restoreDraft(from: .send(left[0].id))
+        XCTAssertTrue(restored)
+        await next.submit()
+        XCTAssertEqual(saveBodies().first?["spotAuto"] as? String, "off", "続きから送ったら外した印が消えた")
+    }
+
     /// 切り・外した印の決まり（値）
     func testOffForRules() async {
-        XCTAssertEqual(SpotUploadAuto.offFor(choice: false, dismissedSpotId: nil, candidate: "a"), true)
-        XCTAssertEqual(SpotUploadAuto.offFor(choice: true, dismissedSpotId: "a", candidate: "a"), false, "本人の切り替えが先")
-        XCTAssertEqual(SpotUploadAuto.offFor(choice: nil, dismissedSpotId: "a", candidate: "a"), true)
-        XCTAssertNil(SpotUploadAuto.offFor(choice: nil, dismissedSpotId: "a", candidate: "b"))
-        XCTAssertNil(SpotUploadAuto.offFor(choice: nil, dismissedSpotId: nil, candidate: "a"))
+        XCTAssertEqual(SpotUploadAuto.offFor(.init(off: true, spotId: "a"), candidate: "a"), true)
+        XCTAssertEqual(SpotUploadAuto.offFor(.init(off: false, spotId: "a"), candidate: "a"), false)
+        XCTAssertNil(SpotUploadAuto.offFor(.init(off: true, spotId: "a"), candidate: "b"), "別の撮影スポットの候補に外した印を書いた")
+        XCTAssertNil(SpotUploadAuto.offFor(nil, candidate: "a"))
+        XCTAssertEqual(SpotUploadAuto.offFor(.init(off: true, spotId: nil), candidate: "a"), true)
         XCTAssertNil(SpotUploadAuto.spotAutoToSend(explicitSpotId: "sp_x", candidate: "a", off: true))
         XCTAssertNil(SpotUploadAuto.spotAutoToSend(explicitSpotId: nil, candidate: nil, off: true))
         XCTAssertEqual(SpotUploadAuto.spotAutoToSend(explicitSpotId: nil, candidate: "a", off: true), "off")

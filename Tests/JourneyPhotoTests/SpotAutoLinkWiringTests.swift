@@ -124,8 +124,9 @@ final class SpotAutoLinkWiringTests: XCTestCase {
 
     func testScreensAreWired() throws {
         let detail = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
-        XCTAssertTrue(detail.contains("photoLinks == nil ? .loading : PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)"),
-                      "表を読む前に行き先を出す・表を使っていない")
+        XCTAssertTrue(detail.contains("photoLinks == nil && SpotAutoLink.explicitSpotId(shown) == nil\n            ? .loading : PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)"),
+                      "表を読む前に行き先を出す・表を使っていない・spotId のある写真まで表を待つ")
+        XCTAssertTrue(detail.contains("SpotLinkRevision.shared.bump()"), "外した・戻したを開いている頁に知らせていない")
         XCTAssertTrue(detail.contains(".task(id: \"links|\\(shown.id)|\\(isMine)\") { await loadPhotoLinks() }"))
         XCTAssertTrue(detail.contains("heading(hero)\n                // 自動の結びの「外す」（撮った本人だけ・案の板 PhotoIOS: 題と日時のすぐ下）\n                spotAutoNotice"))
         XCTAssertTrue(detail.contains("try await environment.photos.setSpotAuto(photoId: photoId, off: nextOff)"))

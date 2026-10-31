@@ -22,6 +22,8 @@ struct PhotoMapView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 下の「マップ」をもう一度押した合図（`MapTabReselect`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 写真の詳細で自動の結びを外した・戻した（`SpotLinkRevision`・#425）。「スポット」「リスト」の数を読み直す
+    @ObservedObject private var linkRevision = SpotLinkRevision.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
@@ -1587,6 +1589,8 @@ struct PhotoMapView: View {
         .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
             await model.loadListDetails(detailNeeds)
         }
+        // 写真の詳細で外した・戻したら、行の枚数を読み直す（出直したときにも走る・#425）
+        .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
@@ -1730,6 +1734,8 @@ struct PhotoMapView: View {
             .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
                 await model.loadListDetails(detailNeeds)
             }
+            // 写真の詳細で外した・戻したら、県の段の数を読み直す（#425）
+            .task(id: linkRevision.value) { await model.refreshPhotoLinks(revision: linkRevision.value, spots: environment.spots) }
         }
     }
 

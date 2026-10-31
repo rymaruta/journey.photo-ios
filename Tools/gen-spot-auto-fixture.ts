@@ -55,6 +55,8 @@ function group(name: string, spots: Spot[], cases: Case[]) {
             texts: [...texts(photo.title), ...texts(photo.description)],
             coords: photo.coords ?? null,
             geoApprox: !!photo.geoApprox,
+            // 写真の形のまま（題・説明が言語ごとの形の例も）。iOS は `Photo` に読んでから突き合わせる
+            photo: { title: photo.title ?? null, description: photo.description ?? null },
             expect: matcher.match(photo),
         })),
     };
@@ -85,6 +87,9 @@ const real: Case[] = [
     { note: "絵文字と結合文字", photo: { title: "東京タワー🗼✨", description: "カフェ́で" } },
     { note: "空の写真", photo: {} },
     { note: "題が言語ごと", photo: { title: { ja: "夢の中", en: "In a dream" }, description: { ja: ["蔵王キツネ村での一枚"] } } },
+    // 言語ごとの値の境目をまたぐ一致（ja → en の順・Web の写真の行に多い並び）。iOS は ja・en・ほかの順に並べる
+    { note: "言語ごとの境目をまたぐ（ja → en）", photo: { title: { ja: "東京", en: "タワー" } } },
+    { note: "説明の段落の境目をまたぐ", photo: { description: { ja: ["東京", "タワーの下で"] } } },
 ];
 
 const FOX = spot(1, { name: "蔵王キツネ村", aliases: ["宮城蔵王キツネ村", "白石市", "リアス海岸"] });

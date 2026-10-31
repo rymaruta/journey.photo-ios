@@ -80,6 +80,8 @@ struct OfficialSpotView: View {
 
     /// 自動の結びの表（`spot-photo-links.json`・2026-10-31 #425）。読み終えるまで空（`spotId` だけ）
     @State private var photoLinks = SpotPhotoLinks.empty
+    /// 写真の詳細で外した・戻したときに上がる（開いたままのこの頁も読み直す）
+    @ObservedObject private var linkRevision = SpotLinkRevision.shared
 
     /// この撮影スポットの写真: **本人が選んだ `spotId`、無ければ自動の結び**（外した写真は入れない・
     /// `SpotPhotoLinks`・Web の `photosLinkedTo`）。撮影地の文字列そのものでは当てない
@@ -175,8 +177,9 @@ struct OfficialSpotView: View {
             guard !Task.isCancelled else { return }
             spotBody = fetched
         }
-        // 自動の結びの表（2026-10-31 #425）。索引と同じ口で控えがあれば通信しない
-        .task(id: "links|\(spot.spotId)") {
+        // 自動の結びの表（2026-10-31 #425）。索引と同じ口で控えがあれば通信しない。
+        // 写真の詳細で外した・戻したら（`SpotLinkRevision`）読み直し、端末に重ねた分をすぐ映す
+        .task(id: "links|\(spot.spotId)|\(linkRevision.value)") {
             let links = await environment.spots.fetchPhotoLinks()
             guard !Task.isCancelled else { return }
             photoLinks = links

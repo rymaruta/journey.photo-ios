@@ -139,6 +139,18 @@ final class PhotoMapViewModel: ObservableObject {
     /// 「スポット」の行の枚数と「リスト」の県の段が、`spotId` と同じに数える。取れなければ空（`spotId` だけ）。
     /// 索引と一緒に届ける（索引の「読み終えた」より前に入れ、数が後から変わらないようにする）
     @Published private(set) var photoLinks = SpotPhotoLinks.empty
+    /// 表に映した `SpotLinkRevision` の値（同じ値では読み直さない）
+    private var appliedLinkRevision = 0
+
+    /// 写真の詳細で外した・戻したあと（`SpotLinkRevision` が上がった）に表を読み直す。行の枚数と県の段が
+    /// サイトの作り直しを待たずにそろう。表は控えから返る（通信しない）
+    func refreshPhotoLinks(revision: Int, spots: OfficialSpotService) async {
+        guard revision != appliedLinkRevision else { return }
+        appliedLinkRevision = revision
+        let links = await spots.fetchPhotoLinks()
+        guard !Task.isCancelled else { return }
+        photoLinks = links
+    }
     enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**

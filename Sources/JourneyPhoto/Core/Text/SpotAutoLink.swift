@@ -375,7 +375,15 @@ struct SpotMatcher: Sendable {
         return RegionList.prefectures.filter { s.contains($0) }
     }
 
-    /// 題・説明の文字（Web の `texts`）。言語ごとの値は ja・en・ほかの順（JSON の並びは保たれないので決めて並べる）
+    /// 題・説明の文字（Web の `texts`）。言語ごとの値は ja・en・ほかの順に並べる。
+    ///
+    /// ⚠️ **既知の差（2026-10-31 確かめの指摘）**: Web は JSON に書かれた順（`Object.values`）につなぐが、
+    /// `JSONDecoder` の辞書は並びを持たないので、ここでは ja・en・ほかの順に決めて並べる。答えが割れるのは、
+    /// 名前が**2つの言語の値の境目をまたいで**当たるとき（題 `{ja: "東京", en: "タワー"}` のように、
+    /// つないで初めて名前になる・正規化で改行が落ちる）だけで、JSON が ja より先に en を書いた写真に限る。
+    /// api-user は ja → en の順で書く（`sanitize.ts` の `sanitizeTitle`・`sanitizeDescription`）。ただし DynamoDB と
+    /// 静的な生成を通ったあとの並びは確かめていない。ja → en の境目をまたぐ例は
+    /// 答えの表に入れてある（`SpotAutoLinkTests.testSwiftAnswersMatchWebFromPhotoRows`）
     static func texts(_ photo: Photo) -> [String] {
         func ordered<V>(_ map: [String: V]) -> [V] {
             let keys = map.keys.sorted { a, b in
@@ -493,13 +501,21 @@ enum SpotUploadAuto {
         return matcher.match(location: location, texts: [title, caption], coords: coords)
     }
 
-    /// その写真の「切り」（Web の `autoOffFor`）。本人の切り替えが先。触っていなければ、撮影スポットの帯で
-    /// 外したときにその帯が受け持っていた写真で、候補が外した撮影スポットと同じなら「切り」（明示の操作）。
-    /// ほかは nil（何も書かない）
-    static func offFor(choice: Bool?, dismissedSpotId: String?, candidate: String?) -> Bool? {
-        if let choice { return !choice }
-        if let dismissedSpotId, candidate == dismissedSpotId { return true }
-        return nil
+    /// 本人の決め（切り替え・撮影スポットの帯の「外す」）。**どの撮影スポットについて決めたか**も持つ
+    struct Decision: Equatable, Sendable {
+        /// 切り（結ばない）
+        let off: Bool
+        /// 決めたときの撮影スポット。nil は「どの候補にも効く」（形だけの受け口・ふだんは入っている）
+        let spotId: String?
+    }
+
+    /// その写真の「切り」（Web の `autoOffFor`）。本人が決めた撮影スポットと今の候補が同じときだけ効く——
+    /// 撮影地・題・位置が変わって**別の撮影スポットが候補になった写真には何も書かない**（`"off"` も書かない。
+    /// 本人がその撮影スポットを見ていない・2026-10-31 確かめの指摘）。決めていない写真も nil
+    static func offFor(_ decision: Decision?, candidate: String?) -> Bool? {
+        guard let decision else { return nil }
+        if let spotId = decision.spotId, spotId != candidate { return nil }
+        return decision.off
     }
 
     /// 保存で送る外した印（Web の `uploadSpotFields`）。明示の `spotId` を送る写真・候補の無い写真・

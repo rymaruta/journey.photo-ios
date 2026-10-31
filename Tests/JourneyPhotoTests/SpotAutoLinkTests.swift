@@ -60,8 +60,34 @@ final class SpotAutoLinkTests: XCTestCase {
             }
         }
         // 表が減っていないこと（作り直しで例が消えたら気づく）
-        XCTAssertEqual(total, 111)
-        XCTAssertEqual(linked, 42)
+        XCTAssertEqual(total, 113)
+        XCTAssertEqual(linked, 44)
+    }
+
+    /// 写真の形（題・説明が言語ごと・段落の配列）から `Photo` に読んで突き合わせても、同じ答え
+    /// （`SpotMatcher.texts` の並び。境目をまたぐ一致の例を含む）
+    func testSwiftAnswersMatchWebFromPhotoRows() throws {
+        let data = try Data(contentsOf: Self.fixtureURL)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let groups = try XCTUnwrap(object["groups"] as? [[String: Any]])
+        let indexes = try Self.indexes()
+        var checked = 0
+        for (group, index) in zip(groups, indexes) {
+            let matcher = SpotMatcher(index: index)
+            for c in try XCTUnwrap(group["cases"] as? [[String: Any]]) {
+                var row: [String: Any] = ["id": "p", "src": "s"]
+                let raw = c["photo"] as? [String: Any] ?? [:]
+                if let title = raw["title"], !(title is NSNull) { row["title"] = title }
+                if let description = raw["description"], !(description is NSNull) { row["description"] = description }
+                if let location = c["location"] as? String { row["location"] = location }
+                if let coords = c["coords"] as? [String: Any] { row["coords"] = coords }
+                if c["geoApprox"] as? Bool == true { row["geoApprox"] = true }
+                let photo = try JSONDecoder().decode(Photo.self, from: JSONSerialization.data(withJSONObject: row))
+                XCTAssertEqual(matcher.match(photo), c["expect"] as? String, "\(c["note"] ?? "")")
+                checked += 1
+            }
+        }
+        XCTAssertEqual(checked, 113)
     }
 
     /// 本番の48枚: 正しく16・ほかの32枚は結ばない（案の表・Web の `spotAutoLink.test.ts` と同じ数）

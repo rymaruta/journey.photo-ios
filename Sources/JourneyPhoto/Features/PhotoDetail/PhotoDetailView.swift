@@ -70,9 +70,11 @@ struct PhotoDetailView: View {
     /// 残っているので、今の写真の `spotId` と同じときだけ使う（`PhotoTrip.stage`）
     @State private var tripLoaded: PhotoTrip.Loaded?
     /// 🔴 **自動の結びの表を読み終えるまでは「読み込み中」**（2026-10-31 #425）。読む前に撮影地の
-    /// 「行き先」を出すと、読み終えて撮影スポットに替わったとき、先に押した「行きたい」が別の鍵に入る
+    /// 「行き先」を出すと、読み終えて撮影スポットに替わったとき、先に押した「行きたい」が別の鍵に入る。
+    /// 本人が選んだ `spotId` を持つ写真は表に左右されないので待たない
     private var tripStage: PhotoTrip.Stage {
-        photoLinks == nil ? .loading : PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)
+        photoLinks == nil && SpotAutoLink.explicitSpotId(shown) == nil
+            ? .loading : PhotoTrip.stage(photoSpotId: linkedSpotId, loaded: tripLoaded)
     }
     /// 写真の撮影スポット: **本人が選んだ `spotId` → 無ければ自動の結びの表**（外した写真は結ばない・
     /// `SpotPhotoLinks`）。本人が「外す」「元に戻す」を送っている間は、送った向きで先に見せる
@@ -1988,6 +1990,8 @@ struct PhotoDetailView: View {
                 await environment.spots.noteSpotAuto(
                     photoId: photoId, nextOff ? .off(spotId: state.spotId) : .on(spotId: state.spotId))
                 photoLinks = await environment.spots.fetchPhotoLinks()
+                // 開いたままの撮影スポットの頁・地図の数にも知らせて読み直させる（`SpotLinkRevision`）
+                SpotLinkRevision.shared.bump()
                 spotAutoPending[photoId] = nil
                 toasts.show(SpotAutoNoticeText.saved(nowOff: nextOff))
             } catch {

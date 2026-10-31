@@ -1140,7 +1140,7 @@ struct UploadView: View {
     /// 名前は 15pt（板）、注記は 12 の text-3
     private func autoSpotToggle(_ row: UploadViewModel.AutoSpotRow, itemId: UUID) -> some View {
         JPCard {
-            Toggle(isOn: Binding(get: { row.on }, set: { model.setAutoSpot($0, for: itemId) })) {
+            Toggle(isOn: Binding(get: { row.on }, set: { model.setAutoSpot($0, for: itemId, spotId: row.spotId) })) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(SpotUploadAuto.title(spotName: row.name))
                         .font(JPFont.body)

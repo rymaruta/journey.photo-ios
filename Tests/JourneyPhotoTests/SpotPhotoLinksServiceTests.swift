@@ -112,6 +112,21 @@ final class SpotPhotoLinksServiceTests: XCTestCase {
         XCTAssertEqual(links.spotId(for: try SpotAutoLinkTests.photo(["id": "p2"])), "sp_b")
     }
 
+    /// 写真の詳細で外したら、開いたままの地図の数も読み直してそろう（`SpotLinkRevision`）。
+    /// 同じ回の値では読み直さない（出直すたびに走る `.task` で無駄に読まない）
+    @MainActor
+    func testMapRefreshesLinksAfterARevision() async throws {
+        StubProtocol.respond(path: "/app/data/spot-photo-links.json", status: 200, body: table)
+        let s = service(prefix: UUID().uuidString)
+        let model = PhotoMapViewModel()
+        await model.refreshPhotoLinks(revision: 0, spots: s)
+        XCTAssertEqual(model.photoLinks, .empty, "知らせの無い回に読み直した")
+        await s.noteSpotAuto(photoId: "p1", .off(spotId: "sp_a"))
+        await model.refreshPhotoLinks(revision: 1, spots: s)
+        XCTAssertNil(model.photoLinks.spotId(for: try SpotAutoLinkTests.photo(["id": "p1"])), "外した写真を数えたまま")
+        XCTAssertEqual(model.photoLinks.spotId(for: try SpotAutoLinkTests.photo(["id": "p2"])), "sp_b")
+    }
+
     func testMatchIndexIsReadOnceAndBrokenIsNil() async {
         StubProtocol.respond(path: "/app/data/spot-match.json", status: 200,
                              body: #"{"v":1,"spots":[{"i":"sp_a","d":"蔵王キツネ村","n":"蔵王キツネ村"}]}"#)
