@@ -143,13 +143,17 @@ final class PhotoMapViewModel: ObservableObject {
     private var appliedLinkRevision = 0
 
     /// 写真の詳細で外した・戻したあと（`SpotLinkRevision` が上がった）に表を読み直す。行の枚数と県の段が
-    /// サイトの作り直しを待たずにそろう。表は控えから返る（通信しない）
+    /// サイトの作り直しを待たずにそろう。表は控えから返る（通信しない）。
+    ///
+    /// 🔴 **「反映済み」は表を読み終えて入れてから記録する**（2026-10-31 見直しの指摘）。読む前に記録すると、
+    /// 読んでいる途中で取り消された回（画面を離れた）に古い表のまま「反映済み」になり、次に外す・戻すまで
+    /// 数がそろわなかった。待つ間に新しい回が入れていたら、古い回の答えで上書きしない
     func refreshPhotoLinks(revision: Int, spots: OfficialSpotService) async {
         guard revision != appliedLinkRevision else { return }
-        appliedLinkRevision = revision
         let links = await spots.fetchPhotoLinks()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, revision > appliedLinkRevision else { return }
         photoLinks = links
+        appliedLinkRevision = revision
     }
     enum IndexState { case loading, ready, failed }
 

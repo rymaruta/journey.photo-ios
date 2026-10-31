@@ -127,6 +127,24 @@ final class SpotPhotoLinksServiceTests: XCTestCase {
         XCTAssertEqual(model.photoLinks.spotId(for: try SpotAutoLinkTests.photo(["id": "p2"])), "sp_b")
     }
 
+    /// 読んでいる途中で取り消された回は「反映済み」にしない（次に出直したとき、同じ回の値で読み直す）
+    @MainActor
+    func testCancelledRefreshIsNotRecorded() async throws {
+        StubProtocol.respond(path: "/app/data/spot-photo-links.json", status: 200, body: table)
+        let s = service(prefix: UUID().uuidString)
+        let model = PhotoMapViewModel()
+        await s.noteSpotAuto(photoId: "p1", .off(spotId: "sp_a"))
+        let cancelled = Task { @MainActor in await model.refreshPhotoLinks(revision: 1, spots: s) }
+        cancelled.cancel()
+        await cancelled.value
+        XCTAssertEqual(model.photoLinks, .empty, "前提: 取り消された回は表を入れない")
+        // 同じ回の値でもう一度（画面に出直した）。記録していなければ読み直して入る
+        await model.refreshPhotoLinks(revision: 1, spots: s)
+        XCTAssertEqual(model.photoLinks.spotId(for: try SpotAutoLinkTests.photo(["id": "p2"])), "sp_b",
+                       "取り消された回を反映済みにして、読み直さなかった")
+        XCTAssertNil(model.photoLinks.spotId(for: try SpotAutoLinkTests.photo(["id": "p1"])))
+    }
+
     func testMatchIndexIsReadOnceAndBrokenIsNil() async {
         StubProtocol.respond(path: "/app/data/spot-match.json", status: 200,
                              body: #"{"v":1,"spots":[{"i":"sp_a","d":"蔵王キツネ村","n":"蔵王キツネ村"}]}"#)
