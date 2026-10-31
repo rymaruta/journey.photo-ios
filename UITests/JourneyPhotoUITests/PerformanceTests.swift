@@ -185,15 +185,15 @@ final class PerformanceTests: XCTestCase {
             ring.tap()
             XCTAssertTrue(close.waitForExistence(timeout: 15), "\(round) 回目: ストーリーが開かない")
             // 開いた時点で、隣の人の面（`StoryReelFace`・全画面）も描かれている
-            Thread.sleep(forTimeInterval: 3)
-            // 人を替える（横に払う）。払う途中で隣の人の面が出る
+            Thread.sleep(forTimeInterval: 2)
+            // 人を替える（横に払う）。払う途中で隣の人の面が出る。
+            // 🔴 run 807: 開いて 12 秒（払う2回）たって「閉じる」を押そうとした所で、ボタンが消えて押せなかった
+            // （その間に閉じていた）。開いている時間を短くする（払うのは1回・開いて約5秒で閉じる）
             var openAfter: [Bool] = []
-            for _ in 0..<2 {
-                app.swipeLeft()
-                Thread.sleep(forTimeInterval: 2)
-                openAfter.append(close.exists)
-            }
-            let stillOpen = close.exists && close.isHittable
+            app.swipeLeft()
+            Thread.sleep(forTimeInterval: 2)
+            openAfter.append(close.exists)
+            let stillOpen = close.exists
             if stillOpen { close.tap() }
             reelNote("\(round) 回目: 払うたびに開いていたか \(openAfter)・閉じるを押したか \(stillOpen)")
             XCTAssertTrue(close.waitForNonExistence(timeout: 15), "\(round) 回目: 閉じない")
