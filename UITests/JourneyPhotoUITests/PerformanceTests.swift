@@ -160,12 +160,11 @@ final class PerformanceTests: XCTestCase {
         }
     }
 
-    /// **ストーリーを開いて人を数回替え、閉じる**までのメモリ（2026-10-31・札 #429 の見直し）。
-    /// 人を替える途中に見える隣の人の面（`StoryReelFace` → `StoryPoster`・全画面）を、縮めて読む（今の作り）と
-    /// 縮めない（`-JPPerfReelFullSize YES`・前の作り）の両方で、**同じ回のうちに**測って比べる（Mac の速さが回で違う）
-    private func measureStoryReel(fullSizeFaces: Bool) {
+    /// **ストーリーを開いて人を替え、閉じる**までのメモリ（2026-10-31・札 #429 の見直し）。
+    /// 隣の人の面（`StoryReelFace` → `StoryPoster`・全画面）を縮める／縮めないを、同じ回（Mac run 808）で比べて
+    /// 縮めない方に決めた（山 226.1 → 217.6MB・閉じた後 191.0 → 139.6MB）。比べた一時の切り替えは消した
+    func testStoryReelMemory() {
         let app = configuredApp(localBackend: true, stories: true)
-        if fullSizeFaces { app.launchArguments += ["-JPPerfReelFullSize", "YES"] }
         app.launch()
         passConsent(app)
         let mine = app.buttons["あなたのストーリー"].firstMatch
@@ -209,16 +208,6 @@ final class PerformanceTests: XCTestCase {
         note.name = "リールの様子"
         note.lifetime = .keepAlways
         add(note)
-    }
-
-    /// 今の作り（リールの面も縮めて読む）
-    func testStoryReelMemoryDownsampledFaces() {
-        measureStoryReel(fullSizeFaces: false)
-    }
-
-    /// 比べる側（リールの面は元の画像のまま）
-    func testStoryReelMemoryFullSizeFaces() {
-        measureStoryReel(fullSizeFaces: true)
     }
 
     /// 写真の詳細を開いて戻るときのメモリ（上の大きな写真）

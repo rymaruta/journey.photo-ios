@@ -102,6 +102,20 @@ final class ImageDownsampleWiringTests: XCTestCase {
         XCTAssertFalse(cover.contains("DownsampledRemoteImage("))
     }
 
+    // MARK: - リールの面（全画面）は縮めない
+
+    /// 隣の人の面（全画面）は縮めずに読む（2026-10-31・Mac run 808 で同じ回に比べ、縮めない方が
+    /// 山 8.5MB・閉じた後 51MB 軽かった）。一時の切り替え（`-JPPerfReelFullSize`）は残さない
+    func testReelFaceDoesNotDownsample() throws {
+        let reel = try source("Features/Stories/StoryReelView.swift")
+        XCTAssertTrue(reel.contains("StoryPoster(story: story, downsamples: false)"), "リールの面を縮めて読んでいる")
+        XCTAssertFalse(reel.contains("JPPerfReelFullSize") || reel.contains("StoryReelFaceImage"), "比べるための切り替えが残っている")
+        // 全画面の枠は上限（2048px）になり、元の画像（1920px）から縮まない
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: CGSize(width: 402, height: 874), scale: 3,
+                                                   assumedRatioLimit: StoryThumbnailSize.assumedRatioLimit),
+                       DownsampledImageSize.maximum)
+    }
+
     // MARK: - 読み込み中・失敗・読み直しが前と同じ
 
     /// 替えた2か所（輪と四角いサムネ）はどれも、押して読み直す記号（`allowsManualRetry`）も、片付いた知らせ（`onSettled`）も

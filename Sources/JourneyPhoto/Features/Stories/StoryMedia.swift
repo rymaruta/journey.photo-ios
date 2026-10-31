@@ -324,7 +324,7 @@ struct StoryPoster: View {
 
     let story: Story
     /// 枠の大きさまで縮めて読むか（既定は縮める）。false なら元の画像のまま展開する（`RemoteImage`）。
-    /// 全画面の枠（リールの面）では縮まらないので、どちらが軽いかを測って呼ぶ側が決める（`StoryReelFace`）
+    /// 全画面の枠（リールの面）は縮まず、縮めた絵の控えに残って重くなるので false（`StoryReelFace`・Mac run 808 で測った）
     var downsamples = true
 
     var body: some View {
