@@ -38,6 +38,12 @@ runs:
         echo "XCTESTRUN=$xctestrun" >> "$GITHUB_ENV"
         echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
 
+    # **UI の組だけ、流す前にシミュレーターを温める**（2026-10-31・#429 の試し。理由と数は `Tools/warm-simulator.sh`）
+    - name: シミュレーターを温める（UI の組だけ）
+      if: ${{ inputs.part != 'unit' }}
+      shell: bash
+      run: bash Tools/warm-simulator.sh build/products
+
     # 🔴 **段の名前を「テスト」で始めない**（`ios-pr.yml` の古い数え方に拾われないように・`ios-testflight.yml` の注記）
     - name: 流す
       shell: bash
