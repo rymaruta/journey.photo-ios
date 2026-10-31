@@ -5043,6 +5043,9 @@ final class ScreenshotTests: XCTestCase {
         var ms = 0.0
         var max = 0.0
         var slow = 0
+        /// アプリ全体（`Process`）の CPU の時間の合計（ms）とメモリ（MB）
+        var cpuMs = 0.0
+        var memMB = 0.0
     }
 
     /// アプリの数を読む（`CamperRenderMeter.summary` の「名前 n= ms= max= slow=;」）
@@ -5064,6 +5067,8 @@ final class ScreenshotTests: XCTestCase {
                 case "ms": t.ms = Double(kv[1]) ?? 0
                 case "max": t.max = Double(kv[1]) ?? 0
                 case "slow": t.slow = Int(kv[1]) ?? 0
+                case "cpu_ms": t.cpuMs = Double(kv[1]) ?? 0
+                case "mem_mb": t.memMB = Double(kv[1]) ?? 0
                 default: break
                 }
             }
@@ -5080,7 +5085,14 @@ final class ScreenshotTests: XCTestCase {
         let seconds = Date().timeIntervalSince(start)
         let after = camperMeter(app, id)
         if after.isEmpty { lines.append("\(label): 数が読めない（\(id) が無い）") }
-        for key in after.keys.sorted() {
+        if let a = after["Process"] {
+            let b = before["Process"] ?? a
+            let cpu = a.cpuMs - b.cpuMs
+            // アプリの CPU（1 コア＝100%）とメモリ（前 → 後）
+            lines.append(String(format: "%@ | Process cpu_ms=%.0f cpu_pct=%.1f mem_mb_before=%.1f mem_mb_after=%.1f secs=%.1f",
+                                label, cpu, cpu / max(seconds, 0.001) / 10, b.memMB, a.memMB, seconds))
+        }
+        for key in after.keys.sorted() where key != "Process" {
             let a = after[key]!, b = before[key] ?? CamperRenderTally()
             let n = a.count - b.count
             let ms = a.ms - b.ms

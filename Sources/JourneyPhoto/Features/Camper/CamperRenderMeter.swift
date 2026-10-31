@@ -63,15 +63,39 @@ final class CamperRenderMeter: @unchecked Sendable {
         return tallies[name] ?? Tally()
     }
 
-    /// 「名前 n=回数 ms=合計 max=最長 slow=遅いコマ;」を名前の順に（UI テストが読む）
+    /// 「名前 n=回数 ms=合計 max=最長 slow=遅いコマ;」を名前の順に（UI テストが読む）。
+    /// 終わりにアプリ全体の CPU の時間とメモリ（`Process cpu_ms= mem_mb=;`）を足す（2026-10-31・run 792: XCTest の measure の
+    /// 行は Mac のログの終わりの 400 行にしか残らず、最後の試験の分しか読めなかった。場面ごとの CPU・メモリをここでも取る）
     func summary() -> String {
         lock.lock()
         let all = tallies
         lock.unlock()
-        return all.keys.sorted().map { key in
+        var parts = all.keys.sorted().map { key in
             let t = all[key]!
             return "\(key) n=\(t.count) ms=\(Self.ms(t.nanos)) max=\(Self.ms(t.maxNanos)) slow=\(t.slow);"
-        }.joined(separator: " ")
+        }
+        if enabled, let p = Self.processUsage() {
+            parts.append(String(format: "Process cpu_ms=%.1f mem_mb=%.1f;", p.cpuMs, p.memMB))
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// アプリ全体の CPU の時間（ミリ秒・起動からの合計）と、メモリ（phys_footprint・MB）。Linux では無い
+    static func processUsage() -> (cpuMs: Double, memMB: Double)? {
+        #if canImport(Darwin)
+        var ts = timespec()
+        guard clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0 else { return nil }
+        let cpu = Double(ts.tv_sec) * 1000 + Double(ts.tv_nsec) / 1_000_000
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        let mem = kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+        return (cpu, mem)
+        #else
+        return nil
+        #endif
     }
 
     static func ms(_ nanos: UInt64) -> String { String(format: "%.2f", Double(nanos) / 1_000_000) }
