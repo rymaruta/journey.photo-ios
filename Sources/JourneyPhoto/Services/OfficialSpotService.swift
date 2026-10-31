@@ -348,6 +348,9 @@ actor OfficialSpotService {
 
     /// 索引の JSON を読む（純関数・試験からも呼ぶ）。行は区分ごとにまとまっている
     static func decodeFeedIndex(_ data: Data) -> FeedIndexDecoding {
+        // 解析の区間（`PerfSignpost`・2026-10-31 札 #429。中身は変えない）
+        let signpost = PerfSignpost.begin(.spotIndexDecode)
+        defer { PerfSignpost.end(signpost) }
         struct Head: Decodable { let v: Int }
         struct File: Decodable { let shards: [Lenient<Shard>] }
         struct Shard: Decodable {

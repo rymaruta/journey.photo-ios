@@ -450,6 +450,47 @@ jobs:
             --scheme JourneyPhoto \
             --archive-flags="-skipPackagePluginValidation -skipMacroValidation"
 
+      # **アプリの中身ごとの大きさ**（2026-10-31 判断・札 #429 アプリ 1「測る仕組み」）。ipa は 57.2MB（2026-10-31）で、
+      # 何が占めているか（字体・絵・依存の Frameworks・本体）を Archive の回ごとに残す。Archive が走った回だけ。
+      # 数は段のログ・まとめ（Summary）・成果物 `build-logs` の `app-size.txt` に出す。**落ちても赤にしない**（上げる邪魔をしない）
+      - name: アプリの中身の大きさ
+        if: ${{ steps.archive.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          ipa="$(ls build/ios/ipa/*.ipa 2>/dev/null | head -1)"
+          if [ -z "$ipa" ]; then echo "ipa が見つかりません"; exit 0; fi
+          work="$(mktemp -d)"
+          unzip -q "$ipa" -d "$work"
+          app="$(ls -d "$work"/Payload/*.app | head -1)"
+          mkdir -p build/logs
+          out=build/logs/app-size.txt
+          {
+            echo "ipa: $(du -k "$ipa" | cut -f1) KB（$(basename "$ipa")）"
+            echo ".app: $(du -sk "$app" | cut -f1) KB"
+            echo
+            echo "== .app の直下（大きい順・KB）=="
+            du -sk "$app"/* 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
+            echo
+            echo "== Frameworks（大きい順・KB）=="
+            du -sk "$app"/Frameworks/* 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
+            echo
+            echo "== 1MB を超えるファイル（大きい順・KB）=="
+            find "$app" -type f -size +1024k -exec du -k {} + 2>/dev/null | sort -rn | sed "s|$app/||" | head -40
+            echo
+            echo "== 種類ごと（拡張子・KB）=="
+            find "$app" -type f -exec du -k {} + 2>/dev/null \
+              | awk -F'\t' '{ n = split($2, p, "/"); f = p[n]; e = (index(f, ".") ? f : "(なし)"); sub(/^.*\./, "", e); s[e] += $1 } END { for (e in s) print s[e], e }' \
+              | sort -rn | head -20
+          } | tee "$out"
+          {
+            echo "### アプリの中身の大きさ"
+            echo '```'
+            head -60 "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -rf "$work"
+
       - name: TestFlight に上げる
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
         env:
