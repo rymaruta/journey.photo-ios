@@ -85,7 +85,8 @@ case "$mode" in
         # 2026-10-22: 家具の脚の接写（約5分）が PR の検証・TestFlight の全部の回を延ばさないように
         for named in $(python3 Tools/pick-ui-tests.py --only-when-named); do
             case " $only " in
-                *"/$named "*) ;;
+                # テストの名前で名指し（`/Class/test `）か、クラスの名前で名指ししたときは、その下のテスト（`/Class/…`）も
+                *"/$named "*|*"/$named/"*) ;;
                 *) only="$only -skip-testing:JourneyPhotoUITests/$named" ;;
             esac
         done

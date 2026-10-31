@@ -653,6 +653,22 @@ if testflight_yml.exists() and pr_yml.exists():
         if (last[0] != f"-only-testing:{pick_mod.TARGET}" or not all(a.startswith("-skip-testing:") for a in last[1:])
                 or overlap or skipped != set().union(*listed) or not set().union(*listed) <= runnable):
             fail(f"pick-ui-tests.py --plan の割り振りで、同じテストが2回流れるか、流れないテストがあります（{words!r}）")
+    # **名指しした回だけ流すテストも、`first` で名指しすれば先に流す**（2026-10-31・黙って0本にしない）。
+    # クラスの名前で名指しする形（`PerformanceTests`）も見る。全部の回の分けた組には、名前でも入れない
+    saved = list(pick_mod.ONLY_WHEN_NAMED)
+    try:
+        pick_mod.ONLY_WHEN_NAMED[:] = saved + ["StoryPickerTests"]
+        named = {t for t in index if t.startswith("StoryPickerTests/")}
+        got = pick_mod.plan("StoryPickerTests", "", 3, index=index, loose=loose)
+        first = {a[len(prefix):] for a in got["first"]}
+        explicit = {a[len(prefix):] for g in got["parts"][:-1] for a in g}
+        if not named or not named <= first or named & explicit:
+            fail(f"pick-ui-tests.py --plan が、first で名指しした「名指しした回だけ流すテスト」を先に流しません: {sorted(first)}")
+        got = pick_mod.plan("", "", 3, index=index, loose=loose)
+        if named & ({a[len(prefix):] for a in got["first"]} | {a[len(prefix):] for g in got["parts"][:-1] for a in g}):
+            fail("pick-ui-tests.py --plan が、名指ししていないのに「名指しした回だけ流すテスト」を流します")
+    finally:
+        pick_mod.ONLY_WHEN_NAMED[:] = saved
     # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
     est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
     if est["A/new"] != 30.0:

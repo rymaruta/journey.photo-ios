@@ -84,6 +84,11 @@ def read_tests(directory=UI_DIR):
     return tests
 
 
+def only_when_named(test):
+    """「Class/test」が名指しした回だけ流すテストか（ONLY_WHEN_NAMED にテストの名前かクラスの名前がある）"""
+    return test in ONLY_WHEN_NAMED or test.split("/", 1)[0] in ONLY_WHEN_NAMED
+
+
 def wants_all(screens):
     """空・`all`・`全部` なら True（UI テストのファイルを読む前に決める）"""
     words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
@@ -268,8 +273,8 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
     if index is None:
         index, loose = read_index()
     times = read_times() if times is None else times
-    runnable = sorted(t for t in index if t not in ONLY_WHEN_NAMED)
-    seconds = estimate(runnable, times)
+    runnable = sorted(t for t in index if not only_when_named(t))
+    seconds = estimate(sorted(index), times)
     smoke = {t for t in runnable if t.startswith(f"{ALWAYS}/")}
     notes = []
     if first_words.strip() and not wants_all(first_words):
@@ -277,8 +282,14 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
         args, missing = pick(first_words, {t: f"{t}\n" + "\n".join(sorted(index[t]["literals"])) for t in index})
         if missing:
             return {"missing": missing}
-        first = {a.split(f"{TARGET}/", 1)[1] for a in args if a.count("/") >= 2} & set(runnable)
+        first = {a.split(f"{TARGET}/", 1)[1] for a in args if a.count("/") >= 2} & set(index)
         notes.append(f"先に流す: 指定（{first_words}）")
+        # 🔴 **名指しした回だけ流すテスト（ONLY_WHEN_NAMED）も、`first` で名指しすれば先に流す**（2026-10-31）。
+        # 前は流せる一覧から外してから選んでいたので、`first=PerformanceTests` が黙って0本になった
+        # （`claude/app-perf-429` と合わせた木で見つかった）。分けた組には入れない（全部の回では流さない決まりのまま）
+        named = sorted(t for t in first if only_when_named(t))
+        if named:
+            notes.append("名指しした回だけ流すテストを、指定どおり先に流す: " + "・".join(named))
     else:
         found = tests_for_diff(diff_text, index, loose or {})
         first, used, later = set(), sum(seconds[t] for t in smoke), []
