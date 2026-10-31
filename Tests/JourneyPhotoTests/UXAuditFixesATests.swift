@@ -302,7 +302,7 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertFalse(ids.contains("draft"), "公開していない写真を出した")
         XCTAssertFalse(ids.contains("followers"), "フォロワー限定の写真を出した")
         let picker = try source("Features/Upload/InspiredPickerView.swift")
-        let candidates = slice(picker, from: "private var candidates: [Photo] {", to: "@ViewBuilder")
+        let candidates = slice(picker, from: "private func candidates(_ shelf: InspiredBy.Shelf) -> [Photo] {", to: "@ViewBuilder")
         XCTAssertTrue(candidates.contains("let feed = pools.feed.map { hidden.visible($0) }"),
                       "ブロック・通報した人の写真を落とさずに棚へ渡している")
         XCTAssertTrue(candidates.contains("InspiredBy.everyoneCandidates(feed: feed,"),

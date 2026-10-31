@@ -36,7 +36,8 @@ final class FollowListSignInTests: XCTestCase {
         let view = try source("Features/Profile/FollowListView.swift")
         XCTAssertTrue(view.contains("} catch where Self.needsSignIn(error) {\n            needsSignIn = true"),
                       "未ログインの失敗を赤い文（errorMessage）に流している")
-        XCTAssertTrue(view.contains("if needsSignIn {\n                signInPrompt"),
+        // 2026-10-31（#426）: 中身は札ごと（`listContent`）。どちらの札でも先頭に案内
+        XCTAssertTrue(view.contains("if needsSignIn {\n            signInPrompt"),
                       "案内が一覧に出ていない（赤い文より先に見る）")
         // 共通のシート（閉じるボタン・ログインできたら閉じる）を使う。裸の `SignInView` を出さない
         XCTAssertTrue(view.contains("SignInSheet(reason: Self.signInLine(current))"))

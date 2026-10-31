@@ -11,8 +11,22 @@ import SwiftUI
 /// マイページと人のプロフィールの2か所から開く。
 struct FollowListView: View {
 
-    enum Kind {
+    /// 「フォロワー N ／ フォロー中 N」（板 v2 FollowList の下線の切り替え）。
+    /// 2026-10-31（#426）: マイページと同じ札（`ProfileTabBar`・`PagedTab`）。選んでいる方は真鍮の字と下線、
+    /// 数は名前の右に SF の等幅数字（`ProfileTabBar.detail`）
+    enum Kind: PagedTab {
         case following, followers
+
+        /// 札の並び（フォロワー → フォロー中・板の順）
+        static let order: [Kind] = [.followers, .following]
+
+        var tabTitle: String { title }
+        var tabIdentifier: String {
+            switch self {
+            case .following: return "followList.tab.following"
+            case .followers: return "followList.tab.followers"
+            }
+        }
 
         var title: String {
             switch self {
@@ -65,57 +79,34 @@ struct FollowListView: View {
     @State private var frontSettle: Task<Void, Never>?
 
     private var current: Kind { picked ?? kind }
-    private var users: [FollowUser] { dropped.follows(lists[current]?.users ?? []) }
-    private var total: Int { lists[current]?.total ?? 0 }
+    /// 札で選んでいる方（押した・払ったのどちらも `picked` に書く）
+    private var selection: Binding<Kind> {
+        Binding(get: { current }, set: { picked = $0 })
+    }
+    /// 見えている高さ（札の中身の最低の高さ・`ProfileTabSection`）
+    @State private var viewport: CGFloat = 0
+
+    private func users(_ which: Kind) -> [FollowUser] { dropped.follows(lists[which]?.users ?? []) }
+    private func total(_ which: Kind) -> Int { lists[which]?.total ?? 0 }
 
     var body: some View {
-        List {
-            // 板 v2 FollowList: 切り替えは画面の幅いっぱい（左右の余白なし）・下に白 8% の線
-            tabs
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-
-            if needsSignIn {
-                signInPrompt
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            } else if let errorMessage {
-                // v2 Components 06: 失敗は共通の並び（何が起きたか → もう一度）
-                ErrorBanner(message: errorMessage, isBusy: isLoading) { Task { await load() } }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            } else if users.isEmpty && !isLoading && total == 0 {
-                EmptyState(message: L("まだいません", "No one yet"))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
-            ForEach(users) { user in
-                row(user)
-                    // 板 v2 Components 05 の人の行: 64・アイコン 44・区切りは白 8%
-                    .frame(minHeight: JPHeight.tallRow)
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
-            // **一覧の長さと数え札は一致しない。** 50人で切ったぶん・一覧が
-            // 追いついていないぶん・ブロックで落としたぶんがある
-            // （api-user/src/follow.ts の注記）。黙って食い違わせない
-            if total > users.count {
-                Text(L("全 \(total) 人のうち \(users.count) 人を表示しています", "Showing \(users.count) of \(total)"))
-                    .font(JPFont.caption.monospacedDigit())
-                    .foregroundStyle(WebTheme.text3)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+        // 2026-10-31 判断（#426）: `List` から縦の送り（`ScrollView`）に替え、切り替えをマイページと同じ札
+        // （`ProfileTabSection`——下線が滑る・当たりが広い・中身を横にめくる）にした。フォロワーとフォロー中は
+        // 一度に読むので（`load`）、横にめくった先もすぐ出る。行の見た目（64・区切り白 8%）は今までどおり
+        ScrollView {
+            ProfileTabSection(tabs: Kind.order, selection: selection, viewport: viewport, spacing: 0,
+                              detail: { lists[$0].map { "\($0.total)" } }) { which in
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    listContent(which)
+                }
+                .padding(.horizontal, ProfileV2.gutter)
             }
         }
-        .listStyle(.plain)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            if height != viewport { viewport = height }
+        }
         .webScreen()
         .navigationTitle(ownerName ?? current.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -124,7 +115,7 @@ struct FollowListView: View {
             if isLoading && lists.isEmpty {
                 JPLoadingState(kind: .rows)
                     .padding(.horizontal, ProfileV2.gutter)
-                    .padding(.top, WebTheme.minTapTarget + JPSpace.xs)
+                    .padding(.top, ProfileTabStyle.height + JPSpace.xs)
             }
         }
         .unfollowConfirmation(isPresented: $showUnfollow) {
@@ -214,46 +205,42 @@ struct FollowListView: View {
         .padding(.vertical, 8)
     }
 
-    /// 「フォロワー N ／ フォロー中 N」（板 v2 FollowList の下線の切り替え）。
-    /// **選んでいる方は真鍮の字と真鍮の 2pt の下線**（CLAUDE.md の owner の好み・マイページの札と同じ
-    /// `ProfileTabBar.color`）。数は SF の等幅数字で、太さは名前だけ変える
-    private var tabs: some View {
-        HStack(spacing: 0) {
-            tab(.followers)
-            tab(.following)
+    /// 札ごとの中身（`ProfileTabSection`）。**`current` ではなく渡された方で分ける**——選んでいない方も持ち続ける。
+    /// 未ログイン・読めなかったは両方の札で同じ（`load` は2つを一度に読む）
+    @ViewBuilder
+    private func listContent(_ which: Kind) -> some View {
+        let shown = users(which)
+        let count = total(which)
+        if needsSignIn {
+            signInPrompt
+        } else if let errorMessage {
+            // v2 Components 06: 失敗は共通の並び（何が起きたか → もう一度）
+            ErrorBanner(message: errorMessage, isBusy: isLoading) { Task { await load() } }
+                .padding(.vertical, JPSpace.xs)
+        } else if shown.isEmpty && !isLoading && count == 0 {
+            EmptyState(message: L("まだいません", "No one yet"))
         }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-        }
-    }
 
-    private func tab(_ which: Kind) -> some View {
-        let selected = current == which
-        let count = lists[which]?.total
-        return Button {
-            picked = which
-        } label: {
-            HStack(spacing: 6) {
-                Text(which.title)
-                    .font(selected ? JPFont.bodyEmphasis : JPFont.body)
-                if let count {
-                    Text("\(count)")
-                        .font(JPFont.number(JPTypeScale.body, weight: .regular, relativeTo: .subheadline))
+        ForEach(shown) { user in
+            row(user)
+                // 板 v2 Components 05 の人の行: 64・アイコン 44・区切りは白 8%
+                .frame(minHeight: JPHeight.tallRow)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
                 }
-            }
-            .lineLimit(1)
-            .foregroundStyle(ProfileTabBar.color(selected: selected))
-            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(selected ? WebTheme.accent : Color.clear)
-                    .frame(height: JPStroke.emphasis)
-            }
-            .contentShape(Rectangle())
         }
-        // 同じ行に2つ並ぶので borderless（行全体が1つのボタンにならないように）
-        .buttonStyle(.borderless)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+
+        // **一覧の長さと数え札は一致しない。** 50人で切ったぶん・一覧が
+        // 追いついていないぶん・ブロックで落としたぶんがある
+        // （api-user/src/follow.ts の注記）。黙って食い違わせない
+        if count > shown.count {
+            Text(L("全 \(count) 人のうち \(shown.count) 人を表示しています", "Showing \(shown.count) of \(count)"))
+                .font(JPFont.caption.monospacedDigit())
+                .foregroundStyle(WebTheme.text3)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
+                .padding(.vertical, JPSpace.s)
+        }
     }
 
     @ViewBuilder
@@ -263,7 +250,9 @@ struct FollowListView: View {
                 // 退会した人にはプロフィールへの導線も札も出さない
                 person(user).foregroundStyle(WebTheme.text3)
             } else {
+                // 縦の送りの中では字が色付きのリンクにならないよう、見た目は行のまま（`List` のときと同じ）
                 NavigationLink { UserProfileView(userId: user.id) } label: { person(user) }
+                    .buttonStyle(.plain)
                 followButton(user)
             }
         }

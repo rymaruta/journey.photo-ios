@@ -10,7 +10,19 @@ import Foundation
 /// プリセット名は今のまま）。
 struct PhotoEditScreen: Equatable {
 
-    enum Tab: Equatable { case film, adjust }
+    /// フィルム / 調整。2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`・`ProfileTabBar`）
+    enum Tab: String, CaseIterable, Equatable, PagedTab {
+        case film, adjust
+
+        var tabTitle: String {
+            switch self {
+            case .film: return L("フィルム", "Film")
+            case .adjust: return L("調整", "Adjust")
+            }
+        }
+
+        var tabIdentifier: String { "photoEdit.tab.\(rawValue)" }
+    }
 
     /// 調整の6項目（並びは画面の順）
     enum Adjustment: String, CaseIterable, Identifiable, Equatable {

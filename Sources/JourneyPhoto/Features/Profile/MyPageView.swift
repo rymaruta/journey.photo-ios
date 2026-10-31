@@ -40,6 +40,8 @@ struct MyPageView: View {
     /// 区分の札の行が見えている上端を越えたか（越えている間だけ上に留まった札を重ねる・#418）。
     /// 越えた・戻ったときだけ変わる
     @State private var tabRowPinned = false
+    /// 中身の横の量の箱を、縦の送りの外に重ねた札（`pinnedTabRow`）と分け合う（ホームと同じ・#426）
+    @State private var tabPager = ProfileTabPagerControl<ProfileTab>()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
@@ -452,7 +454,8 @@ struct MyPageView: View {
                     ProfileTabPager(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                     minHeight: ProfileTabScroll.minPageHeight(viewport: scrollHeight, visibleTop: visibleTop,
                                                                               rowHeight: tabRowHeight, spacing: 14),
-                                    rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) }) { page in
+                                    rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) },
+                                    control: tabPager) { page in
                         VStack(alignment: .leading, spacing: 14) {
                             tabContent(page)
                         }
@@ -1056,9 +1059,12 @@ struct MyPageView: View {
     ///
     /// 2026-10-30 判断（確かめ役の見直し）: `LazyVStack` の節の見出しで留めると、上の段（カバー・ハイライト）が
     /// 画面外で作り直され、戻るたびに読み直しが走った。中身は `VStack` のまま、札だけを重ねて描く。
-    /// 横の払いは中身（格子）の上で受ける——重ねた札はスクロールの外なので、縦の送りに足すパン（`ProfileTabSwipe`）が付かない
+    /// 横の払い: 重ねた札はスクロールの外なので、縦の送りに足すパン（`ProfileTabSwipe`）は届かない。
+    /// 2026-10-31（#426）: ホームの留まった札と同じく SwiftUI の指の操作（`ProfileTabOverlaySwipe`）で受け、
+    /// 中身と横の量の箱を分け合う——札の行の上で払っても中身が指に付いてくる（ホームと手ざわりを割らない）
     private var pinnedTabRow: some View {
         tabPicker(stuck: true)
+            .modifier(ProfileTabOverlaySwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab, control: tabPager))
             // 札の目印（`profile.tab.*`）は中に残す（入れ物の目印で上書きしない）
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("mypage.tabs.pinned")

@@ -54,7 +54,27 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     static func tabs(isMe: Bool) -> [ProfileTab] {
         isMe ? [.posts, .trips, .wishlist, .favorites] : [.posts, .map]
     }
+}
 
+/// 下線の札で切り替える区分（`ProfileTabBar`・`ProfileTabPager`・`ProfileTabSwipe`）。
+///
+/// **2026-10-31 判断（#426・owner「ホームのタブの切り替えもマイページと同じようにスムーズに。同じような機能の
+/// ある画面に水平展開」）。** 札の部品はマイページ（#418・#423）で作ったので名前に Profile が残るが、いまは
+/// アプリ全体の下線の札の部品。区分（ホームのフィード・フォロー一覧・地図の見せ方など）がこれに従えば、
+/// 同じ見た目・同じ当たり・同じばね・同じ払いの決まりで動く。写しは作らない
+protocol PagedTab: Hashable {
+    /// 札の名前
+    var tabTitle: String { get }
+    /// 札の目印（UI テスト・`ScreenshotTests`）。**位置で探させない**
+    var tabIdentifier: String { get }
+}
+
+extension ProfileTab: PagedTab {
+    var tabTitle: String { label }
+    var tabIdentifier: String { "profile.tab.\(rawValue)" }
+}
+
+extension PagedTab {
     // MARK: - 横に払って切り替える（指に付いてくるページ送り）
     //
     // **2026-10-28 判断（owner の実機「投稿からマップにスライドしようとすると、うまくタブの切り替えが
@@ -71,7 +91,7 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     /// `dx` の向きの隣の札。**指を左へ払う（dx < 0）と右隣、右へ払うと左隣**
     /// （写真アプリ・Instagram と同じ向き）。端では回り込まない
-    static func neighbor(of current: ProfileTab, in tabs: [ProfileTab], towards dx: Double) -> ProfileTab? {
+    static func neighbor(of current: Self, in tabs: [Self], towards dx: Double) -> Self? {
         guard dx != 0, let index = tabs.firstIndex(of: current) else { return nil }
         let next = dx < 0 ? index + 1 : index - 1
         return tabs.indices.contains(next) ? tabs[next] : nil
@@ -79,12 +99,12 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     /// 横の払いを始めるか（動き始めの量で見る）。横が縦の `swipeStartRatio` 倍より大きく、その向きに隣の札があるときだけ。
     /// 隣が無い向き（いちばん左の札で右へ）は始めない——人のページの「戻る」の払いに渡す
-    static func startsSwipe(from current: ProfileTab, in tabs: [ProfileTab], dx: Double, dy: Double) -> Bool {
+    static func startsSwipe(from current: Self, in tabs: [Self], dx: Double, dy: Double) -> Bool {
         abs(dx) > abs(dy) * swipeStartRatio && neighbor(of: current, in: tabs, towards: dx) != nil
     }
 
     /// 動いている間、中身をどれだけ横へずらすか。指の量そのまま（画面の幅まで）。隣が無い向きへは 0
-    static func followOffset(from current: ProfileTab, in tabs: [ProfileTab], dx: Double, width: Double) -> Double {
+    static func followOffset(from current: Self, in tabs: [Self], dx: Double, width: Double) -> Double {
         guard neighbor(of: current, in: tabs, towards: dx) != nil else { return 0 }
         return max(-width, min(width, dx))
     }
@@ -94,8 +114,8 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     ///   - dx: 指を置いてからの横の量（左が負）
     ///   - velocity: 離したときの横の速さ（pt/秒・左が負）
     ///   - width: 中身の幅
-    static func settled(from current: ProfileTab, in tabs: [ProfileTab],
-                        dx: Double, velocity: Double, width: Double) -> ProfileTab? {
+    static func settled(from current: Self, in tabs: [Self],
+                        dx: Double, velocity: Double, width: Double) -> Self? {
         // 勢いのある払い: 動かした向きと同じ向きに速ければ、短くても替える（逆向きに払ったら戻す）
         if abs(velocity) >= swipeFlingVelocity {
             guard dx == 0 || (dx < 0) == (velocity < 0) else { return nil }
@@ -106,13 +126,13 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     }
 
     /// 離したときにこれだけ動かしていれば替える（中身の幅に対する割合）
-    static let swipeCommitFraction: Double = 0.3
+    static var swipeCommitFraction: Double { 0.3 }
     /// 払いを始める横と縦の比（2026-10-28 判断・確かめ役の見直し）。45°（1.0）だと、親指で斜めに流す縦送りの
     /// 出だしが横に寄ったときに札の払いが始まり、縦に送れなくなる（始まったらその指の間は縦に送らない）。
     /// 以前の 1.5 は厳しすぎて普通の払いが効かなかった。その間の 1.2（約 40°）
-    static let swipeStartRatio: Double = 1.2
+    static var swipeStartRatio: Double { 1.2 }
     /// 離したときにこの速さ（pt/秒）以上なら、短くても替える（2026-10-28 判断: 300 → 500）。
     /// 300 では、少し横へ動かして戻しかけた指の揺れでも替わることがあった。ゆっくりでも幅の 3 割動かせば
     /// 替わる（`swipeCommitFraction`）ので、勢いの決まりは「はっきり払った」ときだけでよい
-    static let swipeFlingVelocity: Double = 500
+    static var swipeFlingVelocity: Double { 500 }
 }
