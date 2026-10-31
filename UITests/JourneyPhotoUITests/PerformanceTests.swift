@@ -176,23 +176,39 @@ final class PerformanceTests: XCTestCase {
         XCTAssertTrue(ring.waitForExistence(timeout: 20), "人の輪が無い")
         Thread.sleep(forTimeInterval: 4)
         let close = app.buttons["閉じる"].firstMatch
+        var round = 0
+        // 🔴 run 804: 払った後に「閉じる」が無く（もう閉じていた）、ホームで下へ払ったあと、3回目の輪を押せなかった。
+        // 閉じていたかを毎回ログと添付に残し（`reelNote`）、ホームでは払わない。輪は毎回在って押せるまで待つ
         measure(metrics: [XCTMemoryMetric(application: app)], options: Self.options(3)) {
+            round += 1
+            XCTAssertTrue(ring.waitForExistence(timeout: 20), "\(round) 回目: 人の輪が無い")
             ring.tap()
-            XCTAssertTrue(close.waitForExistence(timeout: 15), "ストーリーが開かない")
-            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(close.waitForExistence(timeout: 15), "\(round) 回目: ストーリーが開かない")
+            // 開いた時点で、隣の人の面（`StoryReelFace`・全画面）も描かれている
+            Thread.sleep(forTimeInterval: 3)
             // 人を替える（横に払う）。払う途中で隣の人の面が出る
-            for _ in 0..<3 {
+            var openAfter: [Bool] = []
+            for _ in 0..<2 {
                 app.swipeLeft()
                 Thread.sleep(forTimeInterval: 2)
+                openAfter.append(close.exists)
             }
-            if close.waitForExistence(timeout: 5), close.isHittable {
-                close.tap()
-            } else {
-                app.swipeDown()
-            }
-            XCTAssertTrue(mine.waitForExistence(timeout: 15), "閉じてホームに戻らない")
+            let stillOpen = close.exists && close.isHittable
+            if stillOpen { close.tap() }
+            reelNote("\(round) 回目: 払うたびに開いていたか \(openAfter)・閉じるを押したか \(stillOpen)")
+            XCTAssertTrue(close.waitForNonExistence(timeout: 15), "\(round) 回目: 閉じない")
+            XCTAssertTrue(mine.waitForExistence(timeout: 15), "\(round) 回目: 閉じてホームに戻らない")
             Thread.sleep(forTimeInterval: 2)
         }
+    }
+
+    /// 試験の途中の様子をログと結果に残す
+    private func reelNote(_ text: String) {
+        print("[PerformanceTests] \(text)")
+        let note = XCTAttachment(string: text)
+        note.name = "リールの様子"
+        note.lifetime = .keepAlways
+        add(note)
     }
 
     /// 今の作り（リールの面も縮めて読む）
