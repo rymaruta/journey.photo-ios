@@ -119,15 +119,17 @@ enum CamperRenderMark {
 final class CamperFrameMeter: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
     let name: StaticString
     let meter: CamperRenderMeter
-    /// もとの delegate（持つのは呼ぶ側。ここは弱く）
-    weak var next: (any SCNSceneRendererDelegate)?
+    /// もとの delegate（部屋の「最初のコマ」の見張り。持つのは呼ぶ側。ここは弱く）。
+    /// 型を `CamperFirstFrame` に決めて直に呼ぶ（本物の SCNSceneRendererDelegate の手続きは任意で、
+    /// 協約の型のままでは `?` 付きで呼ぶ必要があり、Linux の模型と書き方が割れる・Mac run 789）
+    weak var next: CamperFirstFrame?
     private let lock = NSLock()
     private var started: UInt64?
     #if canImport(os)
     private var state: OSSignpostIntervalState?
     #endif
 
-    init(_ name: StaticString, meter: CamperRenderMeter = .shared, next: (any SCNSceneRendererDelegate)? = nil) {
+    init(_ name: StaticString, meter: CamperRenderMeter = .shared, next: CamperFirstFrame? = nil) {
         self.name = name
         self.meter = meter
         self.next = next
