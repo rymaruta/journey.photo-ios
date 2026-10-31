@@ -596,7 +596,23 @@ final class ScrollHostHandle {
     weak var scrollView: UIScrollView?
     #endif
 
+    /// 最後に戻したときの数（UI テストの見えない要素に出す・`PreviewSession.feedProbe`）
+    private(set) var lastScrollBack = "none"
+
     init() {}
+
+    /// いまの送りの数（UI テストの見えない要素に出す）。送りが無ければ空
+    var probe: String {
+        #if os(iOS)
+        guard let scroll = scrollView else { return "scroll=nil" }
+        return "offset=\(Self.n(scroll.contentOffset.y)) insetTop=\(Self.n(scroll.adjustedContentInset.top))"
+            + " contentH=\(Self.n(scroll.contentSize.height)) boundsH=\(Self.n(scroll.bounds.height))"
+        #else
+        return "scroll=nil"
+        #endif
+    }
+
+    static func n(_ value: CGFloat) -> String { String(format: "%.2f", Double(value)) }
 
     /// 留まった札の行の下へ、新しい札の頭を出す（`overflow` は測ったはみ出し）。
     ///
@@ -612,9 +628,14 @@ final class ScrollHostHandle {
     func scrollBack(_ overflow: CGFloat, reduceMotion: Bool) {
         #if os(iOS)
         let distance = ProfileTabScroll.scrollBackDistance(overflow: overflow)
-        guard distance > 0.5, let scroll = scrollView else { return }
+        guard distance > 0.5, let scroll = scrollView else {
+            lastScrollBack = "skip overflow=\(Self.n(overflow)) distance=\(Self.n(distance))"
+            return
+        }
         let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,
                                                  top: -scroll.adjustedContentInset.top)
+        lastScrollBack = "overflow=\(Self.n(overflow)) distance=\(Self.n(distance))"
+            + " from=\(Self.n(scroll.contentOffset.y)) to=\(Self.n(target))"
         let point = CGPoint(x: scroll.contentOffset.x, y: target)
         if reduceMotion {
             scroll.setContentOffset(point, animated: false)

@@ -4044,6 +4044,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        // 札の行の位置の数を見えない要素に出す（#426 Mac で札の行が動いた件を数で見る）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         app.launch()
         defer { app.terminate() }
 
@@ -4071,6 +4073,19 @@ final class ScreenshotTests: XCTestCase {
         guard recommended.isHittable else { return }
         XCTAssertTrue(recommended.isSelected, "開いたときに「おすすめ」を選んでいない")
         let rowY = recommended.frame.minY
+
+        /// 札の行の位置の数をログに残す（`home.feed.probe`・UI テストのときだけ出る）
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        func logProbe(_ step: String) {
+            let value = probe.exists ? ((probe.value as? String) ?? "-") : "probe missing"
+            let line = "[feedProbe] \(step): rowMinY=\(recommended.frame.minY) \(value)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let note = XCTAttachment(string: line)
+            note.name = "feedProbe \(step)"
+            note.lifetime = .keepAlways
+            add(note)
+        }
 
         /// 画面の横幅の 6 割を、指定の高さで払う（左へ払うと右隣の札）
         func swipe(left: Bool, atY y: CGFloat) {
@@ -4113,15 +4128,19 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(recommended.frame.minY, rowY, "送っても札の行が上へ動かない（送れていない）")
         guard latest.isHittable, recommended.frame.minY < rowY else { return }
         let pinnedY = recommended.frame.minY
+        logProbe("4-pinned-before")
         swipe(left: false, atY: height * 0.6)
+        logProbe("4-after-swipe")
         XCTAssertTrue(following.isSelected, "留まった札の下の中身を右へ払っても「フォロー中」に替わらない")
         XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま替えたら札の行が動いた")
         shoot(app, "10i-ホーム（留まったまま払って替える）")
         latest.tap()
         Thread.sleep(forTimeInterval: 1.5)
+        logProbe("4-after-tap-latest")
         XCTAssertTrue(latest.isSelected, "留まった「新着」を押しても戻らない")
         // 5. 留まった札の行の上で払っても替わる（中身の払い1つが受ける・指を取り合わない・#426 確かめ役）
         swipe(left: false, atY: recommended.frame.midY)
+        logProbe("5-after-row-swipe")
         XCTAssertTrue(following.isSelected, "留まった札の行の上を右へ払っても「フォロー中」に替わらない")
         XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まった札の行の上で払ったら札の行が動いた")
         // 替えた札は頭から: 頭へ送ったので札の行はまだ留まりの位置（見出しの下）に居る

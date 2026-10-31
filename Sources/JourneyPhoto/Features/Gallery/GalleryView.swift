@@ -408,6 +408,7 @@ struct GalleryView: View {
         // 2026-10-31（#426 Mac の確かめ）: 留まった札の行を目印に `scrollTo` すると、遅れて作る並びの見積もりで
         // いちばん上まで戻った。測った量（中身の頭が札の行の下からどれだけ上へ流れているか）だけ戻す
         if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }
+        if PreviewSession.feedProbe { updateFeedProbe() }
         // **選んだときにフォロー一覧を引き直す。** 一覧は
         // `.task(id: auth.userId)` で一度しか引いていないので、
         // 誰かをフォローしても「フォロー中」に出てこない
@@ -427,6 +428,19 @@ struct GalleryView: View {
     /// 札の行が留まった・外れたを書く（変わったときだけ描き直す・`PinnedTabRowSpot`）
     private func settleFeedRow(_ pinned: Bool) {
         if pinned != feedRowPinned { feedRowPinned = pinned }
+        if PreviewSession.feedProbe { updateFeedProbe() }
+    }
+
+    /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
+    @State private var feedProbeText = ""
+
+    private func updateFeedProbe() {
+        let n = ScrollHostHandle.n
+        let text = "feed=\(model.feed.rawValue) headerMaxY=\(feedRow.headerMaxY.map(n) ?? "nil")"
+            + " contentMinY=\(feedRow.contentMinY.map(n) ?? "nil") restGap=\(feedRow.restGap.map(n) ?? "nil")"
+            + " overflow=\(n(feedRow.overflow)) pinned=\(feedRow.isPinned) rowH=\(n(feedRowHeight))"
+            + " viewport=\(n(feedViewport)) \(feedScroll.probe) last=[\(feedScroll.lastScrollBack)]"
+        if text != feedProbeText { feedProbeText = text }
     }
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
@@ -512,6 +526,16 @@ struct GalleryView: View {
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
+        }
+        // UI テストのときだけ: 札の行の位置の数を見えない要素に出す（`PreviewSession.feedProbe`）
+        .overlay(alignment: .bottomTrailing) {
+            if PreviewSession.feedProbe {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("home.feed.probe")
+                    .accessibilityValue(feedProbeText)
+            }
         }
         // 見えている高さ（札の中身の最低の高さに使う。回したとき・文字の大きさで変わる）
         .onGeometryChange(for: CGFloat.self) { proxy in

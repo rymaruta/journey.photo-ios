@@ -100,6 +100,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストでホームの札の行の位置の数を見えない要素に出す（Debug のみ・2026-10-31 #426）。
+    /// `-JPPreviewFeedProbe YES`。留まったまま替えたときに札の行が動く件を、推定でなく実際の数で見るため
+    /// （`GalleryView` の `home.feed.probe`・`ScreenshotTests.testSwipesHomeFeedTabs`）。Release では必ず false
+    static let feedProbeKey = "JPPreviewFeedProbe"
+
+    static var feedProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: feedProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
