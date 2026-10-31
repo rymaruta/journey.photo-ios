@@ -222,6 +222,22 @@ final class TabSwitchUnifyTests: XCTestCase {
         XCTAssertEqual(pages.built, [.following, .latest], "2つ離れた「おすすめ」を持ち続けている")
         pages.trim(around: .following, in: feeds)
         XCTAssertEqual(pages.built, [.following, .latest], "隣を捨てた（払って戻るたびに作り直す）")
+        // 🔴 直前に選んでいた札は捨てない（滑っている最中に出ていく札が空になる・すぐ戻るとちらつく）
+        var jump = ProfileTabPages<HomeFeed>(initial: .recommended)
+        jump.select(.latest)
+        jump.trim(around: .latest, keeping: .recommended, in: feeds)
+        XCTAssertTrue(jump.isBuilt(.recommended), "おすすめ → 新着と飛んだとき、出ていくおすすめを捨てた")
+        jump.select(.following)
+        jump.trim(around: .following, keeping: .latest, in: feeds)
+        XCTAssertEqual(Set(jump.built), [.recommended, .latest, .following])
+    }
+
+    /// 🔴 めくりの入れ物は、選び替えのたびに（直前の札を残して）捨てる
+    func testPagerTrimsOnSelectionChange() throws {
+        let pager = try source("Features/Profile/ProfileTabPager.swift")
+        let body = pager.components(separatedBy: "struct ProfileTabPager<")[1].components(separatedBy: "enum ProfileTabPrebuild")[0]
+        XCTAssertTrue(body.contains(".onChange(of: selection) { previous, next in\n            pages.select(next)\n            if !keepsDistantPages { pages.trim(around: next, keeping: previous, in: tabs) }\n        }"),
+                      "選び替えたときに離れた札を捨てていない（または直前の札まで捨てる）")
     }
 
     /// 🔴 札ごとの束ね（見せない・束ねる・季節の段の割り）は、元の写真か「見せない」が変わったときだけ計算する
@@ -242,6 +258,13 @@ final class TabSwitchUnifyTests: XCTestCase {
         XCTAssertEqual(latest.lead.count, 3)
         XCTAssertTrue(latest.rest.isEmpty, "季節の段の無いフィードを割った")
         XCTAssertEqual(memo.computeCount(.recommended), 2, "別の札の計算でおすすめの控えが消えた")
+        // 🔴 「見せない」が変わったら計算し直す（ブロックした人の写真が札に残らない）
+        let blocked = try XCTUnwrap(photos.first?.userId)
+        var hidden = ModerationSnapshot()
+        hidden.blocked = [blocked]
+        let dropped = memo.rows(.recommended, photos: Array(photos.prefix(2)), hidden: hidden)
+        XCTAssertEqual(memo.computeCount(.recommended), 3, "「見せない」が変わったのに前の束ねを返した")
+        XCTAssertEqual(dropped.groups.count, 1, "ブロックした人の写真が札に残っている")
         XCTAssertTrue(try source("Features/Gallery/GalleryView.swift").contains("return pageMemo.rows(page, photos: raw, hidden: dropped)"),
                       "ホームが控えを通さずに束ねている")
     }
@@ -264,11 +287,17 @@ final class TabSwitchUnifyTests: XCTestCase {
     func testTabRowSpeaksAsATabBar() throws {
         let bar = try source("Features/Profile/ProfileTabBar.swift")
         let body = bar.components(separatedBy: "var body: some View {")[1].components(separatedBy: "private func tab(")[0]
-        XCTAssertTrue(body.contains(".accessibilityElement(children: .contain)\n        .accessibilityAddTraits(.isTabBar)"),
-                      "札の並びをタブの並びとして読ませていない")
+        XCTAssertTrue(body.contains(".accessibilityElement(children: .contain)"), "札の並びを1つのまとまりにしていない")
+        // 🔴 `.isTabBar` を付けると XCUITest の `app.tabBars` に数えられ、下のタブより先に掴まれる
+        let code = bar.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertFalse(code.contains(".isTabBar"), "札の行にタブバーの印を付けている（UI テストの下のタブの探し方が崩れる）")
+        XCTAssertFalse(code.contains("UIAccessibilityTraits.tabBar"))
         XCTAssertTrue(bar.contains(".accessibilityValue(ProfileTabStyle.position(of: option, in: tabs) ?? \"\")"))
-        XCTAssertEqual(ProfileTabStyle.position(of: HomeFeed.following, in: HomeFeed.allCases), L("2/3", "2 of 3"))
-        XCTAssertEqual(ProfileTabStyle.position(of: ProfileTab.favorites, in: ProfileTab.tabs(isMe: true)), L("4/4", "4 of 4"))
+        // 「2/3」は分数と読まれうる。言葉で「3つのうち2つ目」
+        XCTAssertEqual(ProfileTabStyle.position(of: HomeFeed.following, in: HomeFeed.allCases), L("3つのうち2つ目", "2 of 3"))
+        XCTAssertEqual(ProfileTabStyle.position(of: ProfileTab.favorites, in: ProfileTab.tabs(isMe: true)), L("4つのうち4つ目", "4 of 4"))
+        XCTAssertFalse(L("3つのうち2つ目", "2 of 3").contains("/"))
         XCTAssertNil(ProfileTabStyle.position(of: ProfileTab.map, in: ProfileTab.tabs(isMe: true)))
     }
 

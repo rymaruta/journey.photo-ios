@@ -48,7 +48,11 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
     var prebuilt: [Tab] = []
     /// 選んでいる札から2つ以上離れた札の中身を捨てるか（2026-10-31 #426 確かめ役の見直し・ホームの重さ）。
     /// 既定は持ち続ける（マイページ・人のページ）。ホームは写真の一覧が長いので、選んでいる札と左右の隣だけを持つ
-    /// ——隣へは払っている間に作り（`willShow`）、戻りは隣なので作り直さない（`ProfileTabPages.trim`）
+    /// ——隣へは払っている間に作り（`willShow`）、戻りは隣なので作り直さない（`ProfileTabPages.trim`）。
+    /// **直前に選んでいた札は捨てない**（2026-10-31 #426 2回目の確かめ）: 選び替えた直後に捨てると、滑っている
+    /// 最中に出ていく札が空になり、すぐ戻ると作り直して #423 で消した「ちらつき」が戻る。ばねが落ち着く時間を
+    /// 待って捨てる案は採らない——待ち時間の間に続けて替えると、どの札を捨てるかが時間でずれ、
+    /// 「視差効果を減らす」で滑らない回とも決まりが割れる。直前の札を残す方が、いつも同じ札が残って手ざわりが揃う
     var keepsDistantPages: Bool = true
     /// 払いを受ける枠を上へ広げる量（ホーム・2026-10-31 #426 確かめ役の見直し）。ホームは札の行が節の見出しで、
     /// 札の行と中身にそれぞれ払いを付けると、留まった札の行（中身の上に重なる）の上で2つが指を取り合い、
@@ -103,9 +107,9 @@ struct ProfileTabPager<Tab: PagedTab, Page: View>: View {
                                       if !pages.isBuilt(next) { pages.select(next) }
                                   }))
         .onAppear { pages.select(selection) }
-        .onChange(of: selection) { _, next in
+        .onChange(of: selection) { previous, next in
             pages.select(next)
-            if !keepsDistantPages { pages.trim(around: next, in: tabs) }
+            if !keepsDistantPages { pages.trim(around: next, keeping: previous, in: tabs) }
         }
         // 払いの途中で画面を離れたら、ずらしを残さない
         .onDisappear { drag.offset = 0 }
@@ -216,10 +220,12 @@ struct ProfileTabPages<Tab: Hashable>: Equatable {
 
     func isBuilt(_ tab: Tab) -> Bool { built.contains(tab) }
 
-    /// 選んでいる札から2つ以上離れた札を捨てる（左右の隣は残す——払って戻るときに作り直さない）
-    mutating func trim(around selected: Tab, in tabs: [Tab]) {
+    /// 選んでいる札から2つ以上離れた札を捨てる。左右の隣と、**直前に選んでいた札**（`keeping`）は残す——
+    /// 払って戻るときに作り直さない・滑っている最中に出ていく札を空にしない
+    mutating func trim(around selected: Tab, keeping previous: Tab? = nil, in tabs: [Tab]) {
         guard let center = tabs.firstIndex(of: selected) else { return }
         built.removeAll { tab in
+            if tab == previous { return false }
             guard let index = tabs.firstIndex(of: tab) else { return true }
             return abs(index - center) > 1
         }

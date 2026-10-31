@@ -63,10 +63,13 @@ struct ProfileTabBar<Tab: PagedTab>: View {
         // 札だけの画面: 選び替えは取引の外で書き、下線（札の行の中）だけをばねで動かす
         .modifier(ProfileTabRowMotion(selection: selection, animation: movesContent ? nil
                                       : ProfileTabMotion.animation(reduceMotion: reduceMotion)))
-        // 読み上げ: 札の並び全体をタブの並びとして読ませる（2026-10-31 #426 確かめ役の見直し）。
-        // 札ごとに「何番目 / いくつ」も値で言う（`ProfileTabStyle.position`）
+        // 読み上げ: 札の並びを1つのまとまりにし、札ごとに「3つのうち2つ目」を値で言う（`ProfileTabStyle.position`）。
+        // 🔴 **`.isTabBar` の印は付けない**（2026-10-31 #426 2回目の確かめ）: XCUITest はこの印の付いたものを
+        // `app.tabBars` として数え、ホームの札の行が画面の下のタブより先に `tabBars.firstMatch` で掴まれる
+        // （`SmokeTests`・`CriticalFlowTests`・`ScreenshotTests` の下のタブの探し方が崩れる）。
+        // まとまり（`.contain`）は札のボタンをそのまま中に見せるので、`app.buttons["…"]` の探し方は変わらない
+        // （マイページの留まった札 `mypage.tabs.pinned` と同じ形）
         .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isTabBar)
         .padding(.horizontal, ProfileTabStyle.rowInset(gutter: gutter))
         // 区切り線は地の側（`background`）——真鍮の下線の上に重ねない
         .background {
@@ -231,10 +234,11 @@ enum ProfileTabStyle {
         selected ? JPFont.bodyEmphasis : Font.subheadline.weight(.medium)
     }
 
-    /// 札の並びの何番目か（読み上げの値「1/3」）。並びに無ければ nil
+    /// 札の並びの何番目か（読み上げの値「3つのうち2つ目」）。並びに無ければ nil。
+    /// 「2/3」は日本語の VoiceOver で分数（3分の2）と読まれるおそれがあるので、言葉で言う（2026-10-31 #426）
     nonisolated static func position<T: Equatable>(of tab: T, in tabs: [T]) -> String? {
         guard let index = tabs.firstIndex(of: tab) else { return nil }
-        return L("\(index + 1)/\(tabs.count)", "\(index + 1) of \(tabs.count)")
+        return L("\(tabs.count)つのうち\(index + 1)つ目", "\(index + 1) of \(tabs.count)")
     }
 
     /// 名前の右の数（SF の等幅数字・15・regular）
