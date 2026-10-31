@@ -286,7 +286,7 @@ actor OfficialSpotService {
     private func fetchFeedIndex(_ indexURL: URL) async -> [OfficialSpot]? {
         let store = SpotSnapshotStore(fileName: "\(feedSnapshotPrefix)-index.json")
         func fromSnapshot() -> [OfficialSpot]? {
-            guard let data = store.loadData(), case .ok(let parsed) = Self.decodeFeedIndex(data) else { return nil }
+            guard let parsed = snapshotIndex(store) else { return nil }
             return adopt(parsed)
         }
         do {
@@ -294,8 +294,8 @@ actor OfficialSpotService {
             let outcome: ConditionalGet.Outcome<ParsedFeedIndex> = try await ConditionalGet.fetch(
                 indexURL, session: session, validators: store.validators
             ) { () -> ParsedFeedIndex? in
-                guard let data = store.loadData(), case .ok(let parsed) = Self.decodeFeedIndex(data) else { return nil }
-                return parsed
+                // 304（変わっていない）。**同じ中身をもう解析していれば、それを使う**（`snapshotIndex`）
+                await self.snapshotIndex(store)
             }
             switch outcome {
             case .notModified(let parsed):
@@ -305,24 +305,29 @@ actor OfficialSpotService {
                 if http.statusCode == 404 {
                     // 分けた置き場が無い（まだ出していない・下げた）。控えを出し続けない
                     store.clear()
+                    parsedIndex = nil
                     return nil
                 }
                 guard (200..<300).contains(http.statusCode), !Self.isHTML(http) else { return fromSnapshot() }
-                switch Self.decodeFeedIndex(data) {
+                switch decodeIndex(data) {
                 case .ok(let parsed):
                     if parsed.dropped > 0 {
                         print("[spots] 読めなかった・重複した索引の行・区分を \(parsed.dropped) 件落としました")
                     }
-                    // 読めた索引だけを控える（1件も読めず何か捨てた回は `.broken` で、ここに来ない）
+                    // 読めた索引だけを控える（1件も読めず何か捨てた回は `.broken` で、ここに来ない）。
+                    // 解析した結果も、控えた中身の指紋つきで持つ（次の 304・圏外で解析し直さない）
                     store.save(data, validator: HTTPValidator(response: http))
+                    parsedIndex = (ValidatorStore.fingerprint(data), parsed)
                     return adopt(parsed)
                 case .unknownVersion:
                     // このアプリが知らない形。**古い置き場に戻る**（控えた古い版も出さない）
                     print("[spots] 分けた置き場の索引が知らない版でした。古い置き場を読みます")
                     store.clear()
+                    parsedIndex = nil
                     return nil
                 case .broken:
-                    // 壊れた索引は控えない。**前回の良い控え**か、無ければ古い置き場へ
+                    // 壊れた索引は控えない（解析した結果も持たない・`parsedIndex` は前回の良い控えのまま）。
+                    // **前回の良い控え**か、無ければ古い置き場へ
                     print("[spots] 分けた置き場の索引が読めませんでした")
                     store.validators.clear()
                     return fromSnapshot()
@@ -332,6 +337,33 @@ actor OfficialSpotService {
             // 圏外。控えがあればそれ、無ければ古い置き場（その控え）へ
             return fromSnapshot()
         }
+    }
+
+    /// 最後に解析した索引と、**その元の中身の指紋**（`ValidatorStore.fingerprint`・2026-10-31 判断・札 #429 アプリ 3）。
+    ///
+    /// 索引は約 1.1MB・2,853件（2026-10-31）で、解析が重い。60秒の控えを過ぎるたび（地図・ホームの段を開くたび）に
+    /// サーバーが「変わっていない（304）」と答えても、端末の控えを読み直して解析し直していた。
+    /// **端末の控えの中身の指紋がこれと同じなら、解析し直さずにこれを使う**（`snapshotIndex`）。
+    /// 指紋で照らすので、別の入れ物が控えを書き替えた回は解析し直す。持つのは**読めた索引（`.ok`）だけ**
+    /// ——壊れた索引・知らない版は持たない（控えないのと同じ決まり）
+    private var parsedIndex: (fingerprint: String, parsed: ParsedFeedIndex)?
+
+    /// 索引を解析した回数（試験が「304・圏外で解析し直していない」を見る）
+    private(set) var feedIndexDecodeCount = 0
+
+    private func decodeIndex(_ data: Data) -> FeedIndexDecoding {
+        feedIndexDecodeCount += 1
+        return Self.decodeFeedIndex(data)
+    }
+
+    /// 端末の控えの索引。**同じ中身をもう解析していれば、解析し直さない**。読めなければ nil
+    private func snapshotIndex(_ store: SpotSnapshotStore) -> ParsedFeedIndex? {
+        guard let data = store.loadData() else { return nil }
+        let fingerprint = ValidatorStore.fingerprint(data)
+        if let parsedIndex, parsedIndex.fingerprint == fingerprint { return parsedIndex.parsed }
+        guard case .ok(let parsed) = decodeIndex(data) else { return nil }
+        parsedIndex = (fingerprint, parsed)
+        return parsed
     }
 
     /// 読めた索引を持つ。**指紋の変わった区分の詳細は捨てる**（下げた写真・直した文を出し続けない）
@@ -351,26 +383,40 @@ actor OfficialSpotService {
         // 解析の区間（`PerfSignpost`・2026-10-31 札 #429。中身は変えない）
         let signpost = PerfSignpost.begin(.spotIndexDecode)
         defer { PerfSignpost.end(signpost) }
-        struct Head: Decodable { let v: Int }
-        struct File: Decodable { let shards: [Lenient<Shard>] }
         struct Shard: Decodable {
             let key: String
             let bytes: Int?
             let hash: String?
             let spots: LenientOfficialSpotList
         }
-        guard let head = try? JSONDecoder.api.decode(Head.self, from: data) else { return .broken }
-        guard head.v == feedVersion else { return .unknownVersion }
+        /// 🔴 **1回で読む**（2026-10-31 判断・札 #429 アプリ 3）。前は版（`v`）だけを読む復号と、全体を読む復号の
+        /// 2回で、約 1.1MB の JSON を2度解析していた。版を先に見て、**知っている版のときだけ区分を読む**
+        /// （知らない版は形が違ってもよい——区分が読めなくても `.unknownVersion` で古い置き場へ。前と同じ）
+        struct File: Decodable {
+            let v: Int
+            /// 知っている版で、読めた区分。読めなければ nil（`.broken`）
+            let shards: [Lenient<Shard>]?
+            enum CodingKeys: String, CodingKey { case v, shards }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                v = try container.decode(Int.self, forKey: .v)
+                shards = v == OfficialSpotService.feedVersion
+                    ? try? container.decode([Lenient<Shard>].self, forKey: .shards)
+                    : nil
+            }
+        }
         guard let file = try? JSONDecoder.api.decode(File.self, from: data) else { return .broken }
+        guard file.v == feedVersion else { return .unknownVersion }
+        guard let shards = file.shards else { return .broken }
         // 読めずに捨てた区分（形の違う区分）も数える。中の行の数は分からないので1件と数える
-        let brokenShards = file.shards.filter { $0.value == nil }.count
+        let brokenShards = shards.filter { $0.value == nil }.count
         var rows: [OfficialSpot] = []
         var table: [String: ShardInfo] = [:]
         var aliases: [String: [String]] = [:]
         var seen = Set<String>()
         var shardOf: [String: String] = [:]
         var dropped = brokenShards
-        for shard in file.shards.compactMap(\.value) {
+        for shard in shards.compactMap(\.value) {
             // 区分の鍵はパスに混ぜる。綴りが違えば区分ごと落とす（行も地図に出さない）
             guard isSafeKey(shard.key), table[shard.key] == nil else {
                 dropped += shard.spots.spots.count + shard.spots.dropped
