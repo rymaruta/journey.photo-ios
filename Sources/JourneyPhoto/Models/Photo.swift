@@ -76,6 +76,19 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// `location` の文字列だけを持つ——台帳はその上に足す情報で、
     /// 撮影地を置き換えるものではない。
     let spotId: String?
+    /// **自動の結びを本人が外した印**（`"off"` だけ・2026-10-31 journey.photo-ios#425）。
+    /// 写真の詳細の「違う場所なので外す」で `PUT /photos/{id}` が書き、戻すと消える。
+    /// 付いた写真は、表（`SpotPhotoLinks`）に載っていても自動では結ばない。`spotId` には効かない。
+    /// **形の違う値で写真の行ごと落とさない**（`Lenient`）。読むのは `spotAutoMark`
+    let spotAuto: Lenient<String>?
+    /// 位置が地名から補ったもの（サーバーの `geoApprox`・地域の代表点）。決まりで写真を求め直すとき
+    /// （`SpotMatcher`）だけ読む。読むのは `isGeoApprox`
+    let geoApprox: Lenient<Bool>?
+
+    /// 本人が外した印（`"off"`）。無い・読めない値は nil
+    var spotAutoMark: String? { spotAuto?.value }
+    /// 位置が地名から補ったものか
+    var isGeoApprox: Bool { geoApprox?.value == true }
     /// 「この写真を見て撮影」の元の写真の ID（2026-10-14・サーバーの `inspiredBy`）。
     ///
     /// **ID だけ・今も見られるかは分からない。** 中身（題・画像・作者）は写真の詳細を開いたときに

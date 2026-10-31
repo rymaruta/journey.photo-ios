@@ -51,6 +51,11 @@ final class UploadDraftStore {
         /// 自動の枠だけ: **本人の下書きの中の同じ1枚の印**（`key`・2026-10-16）。本人の下書きを開いて送る途中で
         /// 終了 →「続きから」で送ったとき、上がった写真を本人の下書きからも外す（残すと次にまた投稿される）
         var savedKey: String? = nil
+        /// 撮影スポットに結ぶ切り替えを本人が決めた分（切り true／入り false・2026-10-31 #425）。決めていない写真・
+        /// 古い下書きは nil（自動のまま）。`spotAutoSpotId` はどの撮影スポットについて決めたか（送るときの候補と
+        /// 違えば何も書かない・`SpotUploadAuto.offFor`）
+        var spotAutoOff: Bool? = nil
+        var spotAutoSpotId: String? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }

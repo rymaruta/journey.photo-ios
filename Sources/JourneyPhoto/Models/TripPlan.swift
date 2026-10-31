@@ -129,6 +129,9 @@ struct Lenient<T: Decodable>: Decodable {
     }
 }
 
+/// 写真の行（`Photo`）に入れるため（`spotAuto`・`geoApprox`・2026-10-31）
+extension Lenient: Equatable where T: Equatable {}
+
 /// `{ "plans": [...] }`。**書き込みの応答も同じ形**（書いたあとの一覧）
 struct TripPlanList: Decodable {
     let plans: [TripPlan]

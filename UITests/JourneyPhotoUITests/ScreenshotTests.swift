@@ -1215,6 +1215,108 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "45d-投稿（元の写真を選んだ欄）")
     }
 
+    /// **写真を撮影スポットに自動で結ぶ（写真の詳細）**（2026-10-31・journey.photo-ios#425）。
+    ///
+    /// 見本の利用者の写真（マイページの格子）を頭から開き、自動で結ばれた1枚を探す。見つかったら
+    /// 写真の裾の「撮影スポット · ◯◯」の札（20g）と、題の下の本人だけの「外す」の札（20h）を撮る。
+    /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
+    /// 自動で結ばれた写真が無い・表が読めない回は**撮らずに抜ける**（この試験の決まり）
+    func testCapturesSpotAutoNotice() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        let photos = app.buttons.matching(identifier: "mypage.photo")
+        guard photos.firstMatch.waitForExistence(timeout: 15) else { return }
+        let notice = app.descendants(matching: .any).matching(identifier: "photo.spotAuto").firstMatch
+        // 頭から 9 枚まで（格子の1画面ぶん）。押せない枚は飛ばす
+        for index in 0..<9 {
+            let photo = photos.element(boundBy: index)
+            guard photo.exists else { break }
+            guard photo.isHittable else { continue }
+            photo.tap()
+            if notice.waitForExistence(timeout: 8) {
+                // 写真の裾の札（自動で結んだ撮影スポット）。札の名前と台帳を読み終えるのを少し待つ
+                Thread.sleep(forTimeInterval: 3)
+                shoot(app, "20g-写真の詳細（自動で結んだ撮影スポットの札）")
+                for _ in 0..<3 where !notice.isHittable {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                shoot(app, "20h-写真の詳細（外すの札・本人だけ）")
+                return
+            }
+            // この1枚は結ばれていない。マイページへ戻って次へ
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists else { return }
+            back.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+    }
+
+    /// **投稿の「撮影スポット「◯◯」に結ぶ」**（2026-10-31・journey.photo-ios#425・板 UploadIOS）。
+    ///
+    /// 見本の1枚（位置なし）の撮影地に「蔵王キツネ村」と打ち、撮影地の欄の下に切り替えが出たら撮る（45e）。
+    /// 候補の索引（`spot-match.json`）は本番を読む。**投稿は押さない**。切り替えが出ない回は撮らずに抜ける
+    func testCapturesUploadSpotAutoToggle() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15) else { return }
+
+        let place = app.textFields["upload.place"].firstMatch
+        guard place.waitForExistence(timeout: 10) else { return }
+        for _ in 0..<3 where !place.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard place.isHittable else { return }
+        place.tap()
+        // 焦点が来てから打つ（来ないまま打つと失敗として記録される・`shootSearchedSpot` と同じ）
+        guard waitForKeyboardFocus(place) else { return }
+        place.typeText("蔵王キツネ村\n")
+
+        let toggle = app.switches["upload.autoSpot"].firstMatch
+        // 索引（約 400KB・圧縮して配られる）を読み終えるまで待つ
+        guard toggle.waitForExistence(timeout: 20) else { return }
+        for _ in 0..<3 where !toggle.isHittable {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "45e-投稿（撮影スポットに結ぶ）")
+    }
+
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、
     /// 写真の欄に「写真を差し替える」と並んだ「色を編集」が見える1枚。
     ///

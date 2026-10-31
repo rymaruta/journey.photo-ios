@@ -567,6 +567,8 @@ struct UploadView: View {
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        // 撮影スポットの自動の候補の索引（撮影地・題・説明のどれかが入ってから1回だけ・#425）
+        .task(id: model.wantsAutoSpotIndex) { await model.loadAutoSpotIndexIfNeeded() }
         // 画面写真の試験だけ: 公開一覧の1枚を元の写真に選んだ状態にする（`PreviewSession.showsInspiredSample`・
         // Debug のみ。画面の状態だけで、控えにもサーバーにも書かない）
         .task {
@@ -615,6 +617,8 @@ struct UploadView: View {
             // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
             // **索引の行だけ**（区分の詳細を待つと、遅い通信で2秒の待ちを過ぎて座標を落とす）
             model.fetchSpotIndex = { [spots = environment.spots] in await spots.fetchIndexRows() }
+            // 撮影スポットの自動の候補を選ぶ索引（Web と同じ `spot-match.json`・2026-10-31 #425）
+            model.fetchSpotMatchIndex = { [spots = environment.spots] in await spots.fetchMatchIndex() }
             // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
             // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
             // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）
@@ -1098,6 +1102,10 @@ struct UploadView: View {
                         .padding(.horizontal, 4)
                         .accessibilityIdentifier("upload.sampleNote")
                     }
+                    // 撮影スポットに結ぶ切り替え（撮影地の欄の下・板 UploadIOS・Web の `upload-auto-spot`）
+                    if let row = model.autoSpotRow(for: item) {
+                        autoSpotToggle(row, itemId: item.id)
+                    }
                 }
                 JPField(L("タイトル", "Title")) {
                     TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
@@ -1121,6 +1129,36 @@ struct UploadView: View {
                 }
                 count(item.caption, limit: PostLimits.description)
             }
+        }
+    }
+
+    /// 「撮影スポット「◯◯」に結ぶ」（2026-10-31 判断・journey.photo-ios#425・板 UploadIOS）。
+    ///
+    /// 撮影地・題・説明・写真の位置から自動で選んだ撮影スポット（`SpotUploadAuto`）。**入りから**で、
+    /// 切ると外した印だけを送る（自動の候補は `spotId` にしない）。写真ごと——触っていない写真には何も書かない。
+    /// 見た目は「撮影地の位置を付ける」と同じ札（`JPCard`）と切り替え（軌道は暗い真鍮・板: Toggle のオン＝accent-deep）。
+    /// 名前は 15pt（板）、注記は 12 の text-3
+    private func autoSpotToggle(_ row: UploadViewModel.AutoSpotRow, itemId: UUID) -> some View {
+        JPCard {
+            Toggle(isOn: Binding(get: { row.on }, set: { model.setAutoSpot($0, for: itemId, spotId: row.spotId) })) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(SpotUploadAuto.title(spotName: row.name))
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(SpotUploadAuto.note(on: row.on))
+                        .font(.caption)
+                        .lineSpacing(3)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(WebTheme.accentDeep)
+            .disabled(model.isWorking)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .accessibilityIdentifier("upload.autoSpot")
         }
     }
 
