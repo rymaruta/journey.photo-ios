@@ -308,4 +308,26 @@ final class TabSwitchUnifyTests: XCTestCase {
         XCTAssertTrue(pager.contains("                    })\n                    // 枠を上へ広げる（札の行が中身の上の見出しの画面）。広げた分も同じ1つの払いが受ける\n                    .padding(.top, -extendsUp)"),
                       "払いの枠が札の行まで届かない")
     }
+
+    // MARK: - 2026-10-31 Mac の確かめ（run 41187923424・testSwipesHomeFeedTabs）
+
+    /// 🔴 留まったまま替えたら、測った量だけ送りを戻す（いちばん上より上へは行かない）。
+    /// 札の行は留まりの位置のまま、新しい札の頭が札の行のすぐ下に出る
+    func testScrollBackUsesTheMeasuredOverflow() throws {
+        // 深く送った（送りの位置 1570）・中身の頭が札の行の下から 1128 上へ流れている → 442 へ戻す（札の行は留まりの境）
+        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 1570, distance: 1128, top: -116), 442)
+        // いちばん上より上へは行かない
+        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 100, distance: 900, top: -116), -116)
+        XCTAssertEqual(ProfileTabScroll.offsetBack(current: 300, distance: -20, top: -116), 300, "負の量で先へ送った")
+        let pager = try source("Features/Profile/ProfileTabPager.swift")
+        let handle = pager.components(separatedBy: "final class ScrollHostHandle {")[1]
+            .components(separatedBy: "struct ScrollHostProbe: View {")[0]
+        XCTAssertTrue(handle.contains("let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,"))
+        XCTAssertTrue(handle.contains("top: -scroll.adjustedContentInset.top)"))
+        XCTAssertTrue(handle.contains("usingSpringWithDamping: ProfileTabStyle.springDamping"), "札の切り替えと違う手ざわりで戻す")
+        XCTAssertTrue(handle.contains("scroll.setContentOffset(point, animated: false)"), "視差効果を減らすでも動かしている")
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains("if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }"))
+        XCTAssertFalse(gallery.contains("proxy.scrollTo(Self.feedPickerID"), "留まった札の行を目印に scrollTo している")
+    }
 }

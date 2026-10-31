@@ -288,17 +288,20 @@ final class HomeTidyTests: XCTestCase {
         let select = slice(gallery, from: "private func selectFeed(_ feed: HomeFeed) {",
                            to: "private func settleFeedRow(_ pinned: Bool) {")
         assertInOrder(["let changed = model.feed != feed", "model.select(feed: feed, viewerId: auth.userId)",
-                       "if changed, feedRow.isPinned { feedHeadRequests &+= 1 }"], in: select, "押したら一覧の頭へ")
+                       "if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }"],
+                      in: select, "押したら一覧の頭へ")
         XCTAssertTrue(gallery.contains("Binding(get: { model.feed }, set: { selectFeed($0) })"), "払った回が一覧の頭へ送らない")
         XCTAssertFalse(gallery.contains("topCardsVisible"), "上の札の出入りで留まりを見ている（境がずれる）")
         let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
-        assertInOrder(["feedRow.recordContent(minY: minY, settled: settleFeedRow)",
-                       "feedPicker(followingHasNew: followingHasNew)", ".id(Self.feedPickerID)",
-                       "feedRow.recordHeader(maxY: frame.maxY, settled: settleFeedRow)",
-                       ".onChange(of: feedHeadRequests) { _, _ in",
-                       "withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {",
-                       "proxy.scrollTo(Self.feedPickerID, anchor: .top)"],
+        // #426 Mac の確かめ（run 41187923424）: 留まった札の行を目印に `scrollTo` すると、遅れて作る並びの見積もりで
+        // いちばん上まで戻った（札の行が y=116 → 558）。測った量だけ送りを戻す取っ手（`ScrollHostHandle`）で送る
+        assertInOrder([".background { ScrollHostProbe(handle: feedScroll) }",
+                       "feedRow.recordContent(minY: minY, settled: settleFeedRow)",
+                       "feedPicker(followingHasNew: followingHasNew)",
+                       "feedRow.recordHeader(maxY: frame.maxY, settled: settleFeedRow)"],
                       in: feed, "一覧の頭へ送る仕組み")
+        XCTAssertFalse(gallery.contains("feedPickerID"), "留まった札の行を目印に scrollTo している（いちばん上まで戻る）")
+        XCTAssertFalse(gallery.contains("feedHeadRequests"))
     }
 
     // MARK: - ⑨ 「フォロー中」の真鍮の点

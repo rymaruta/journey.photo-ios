@@ -583,6 +583,90 @@ final class PinnedTabRowSpot {
     }
 }
 
+/// 縦の送り（`UIScrollView`）を直に送る取っ手（ホーム・2026-10-31 #426 Mac の確かめ）。
+///
+/// **ホームで「留まったまま替えたら頭へ」を `ScrollViewReader.scrollTo` でやめた理由**（run 41187923424・
+/// `testSwipesHomeFeedTabs`）: 留まった札の行（`LazyVStack` の節の見出し）を目印に送ると、札の行が留まりの位置
+/// （y=116）から送る前の頭（y=558・いちばん上）まで戻った。遅れて作る並びは、深く送ると上の段（すれちがい・
+/// ストーリー・上の札）を捨てて高さを見積もりに置き換えるので、目印の位置がその見積もりで決まり、いちばん上へ
+/// 送ってしまう。いまは測った実物の量（`PinnedTabRowSpot.overflow`＝中身の頭が札の行の下からどれだけ上へ
+/// 流れているか）だけ、送りの位置を戻す——見積もりを通らないので、札の行は留まりの位置から動かない
+final class ScrollHostHandle {
+    #if os(iOS)
+    weak var scrollView: UIScrollView?
+    #endif
+
+    init() {}
+
+    /// 中身を `distance` だけ下へ戻す（新しい札の頭を札の行のすぐ下に出す）。ばねは札の切り替えと同じ減衰。
+    /// 「視差効果を減らす」では動かさずに置く
+    func scrollBack(_ distance: CGFloat, reduceMotion: Bool) {
+        #if os(iOS)
+        guard distance > 0.5, let scroll = scrollView else { return }
+        let target = ProfileTabScroll.offsetBack(current: scroll.contentOffset.y, distance: distance,
+                                                 top: -scroll.adjustedContentInset.top)
+        let point = CGPoint(x: scroll.contentOffset.x, y: target)
+        if reduceMotion {
+            scroll.setContentOffset(point, animated: false)
+        } else {
+            UIView.animate(withDuration: ProfileTabScroll.scrollBackDuration, delay: 0,
+                           usingSpringWithDamping: ProfileTabStyle.springDamping, initialSpringVelocity: 0,
+                           options: [.allowUserInteraction, .beginFromCurrentState],
+                           animations: { scroll.contentOffset = point }, completion: nil)
+        }
+        #endif
+    }
+}
+
+/// `ScrollHostHandle` に、いちばん近い祖先の `UIScrollView`（縦の送り）を渡す見えない部品。指は受けない
+struct ScrollHostProbe: View {
+    let handle: ScrollHostHandle
+
+    var body: some View {
+        #if os(iOS)
+        ScrollHostProbeView(handle: handle)
+        #else
+        Color.clear
+        #endif
+    }
+}
+
+#if os(iOS)
+/// `ScrollHostProbe` の UIKit の部分
+struct ScrollHostProbeView: UIViewRepresentable {
+    let handle: ScrollHostHandle
+
+    func makeUIView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.backgroundColor = .clear
+        probe.isUserInteractionEnabled = false
+        probe.handle = handle
+        return probe
+    }
+
+    func updateUIView(_ probe: Probe, context: Context) {
+        probe.handle = handle
+        probe.attach()
+    }
+
+    final class Probe: UIView {
+        var handle: ScrollHostHandle?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            attach()
+        }
+
+        func attach() {
+            guard window != nil else { return }
+            var view = superview
+            while let current = view, !(current is UIScrollView) { view = current.superview }
+            if let scroll = view as? UIScrollView { handle?.scrollView = scroll }
+        }
+    }
+}
+#endif
+
 /// 札の行の位置の計算（画面を持たない計算・2026-10-24 確かめ役の見直し）
 enum ProfileTabScroll {
 
@@ -615,6 +699,14 @@ enum ProfileTabScroll {
     static func pinnedOverflow(gap: CGFloat, restGap: CGFloat) -> CGFloat {
         max(0, restGap - gap)
     }
+
+    /// 送りの位置を `distance` だけ戻した先（いちばん上 `top` より上へは行かない）
+    static func offsetBack(current: CGFloat, distance: CGFloat, top: CGFloat) -> CGFloat {
+        max(top, current - max(0, distance))
+    }
+
+    /// 送りを戻す動きの秒（減衰は `ProfileTabStyle.springDamping`）。札の切り替えのばね（0.28 秒）と並んで終わる長さ
+    static let scrollBackDuration: Double = 0.35
 
     /// `scrollTo` の目印の縦の割合。札の行の上端を `visibleTop` に合わせる
     /// （`scrollTo` は札の行の中の同じ割合の点を、見えている枠の同じ割合の点にそろえる）

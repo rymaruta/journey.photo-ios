@@ -62,7 +62,8 @@ struct GalleryView: View {
     @State private var feedViewport: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 留まった切り替えで別のフィードを押した回数（一覧の頭へ送る合図・`feed` の `onChange`）
-    @State private var feedHeadRequests = 0
+    /// ホームの縦の送りの取っ手（留まったまま替えたら、測った量だけ頭へ戻す・`ScrollHostHandle`）
+    @State private var feedScroll = ScrollHostHandle()
     /// 「フォロー中」をどこまで見たか（#417 ⑨・`FollowingSeenStore`）。人が替わったとき・覚え直したときに読み直す
     @State private var followingSeen: String?
     private let followingSeenStore = FollowingSeenStore()
@@ -404,7 +405,9 @@ struct GalleryView: View {
         // ⑧ 留まった切り替えで別のフィードを選んだら、新しい一覧の**頭**へ送る（PR #422 の確かめ）。
         // 送らないと、前の一覧の深さのまま新しい一覧の途中（短ければ一番下）が出る。
         // 留まっていない（札の行が見えている）ときは送らない——開いた画面が飛ばない
-        if changed, feedRow.isPinned { feedHeadRequests &+= 1 }
+        // 2026-10-31（#426 Mac の確かめ）: 留まった札の行を目印に `scrollTo` すると、遅れて作る並びの見積もりで
+        // いちばん上まで戻った。測った量（中身の頭が札の行の下からどれだけ上へ流れているか）だけ戻す
+        if changed, feedRow.isPinned { feedScroll.scrollBack(feedRow.overflow, reduceMotion: reduceMotion) }
         // **選んだときにフォロー一覧を引き直す。** 一覧は
         // `.task(id: auth.userId)` で一度しか引いていないので、
         // 誰かをフォローしても「フォロー中」に出てこない
@@ -482,6 +485,8 @@ struct GalleryView: View {
                             feedSection(page, rows: pageRows(page, selected: photos))
                         }
                     }
+                    // 縦の送りの取っ手（留まったまま替えたら頭へ戻す・`ScrollHostHandle`）
+                    .background { ScrollHostProbe(handle: feedScroll) }
                     // 中身の上端（札の行が留まったか・どれだけ流れたかを測る・`PinnedTabRowSpot`）
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .scrollView).minY
@@ -490,7 +495,6 @@ struct GalleryView: View {
                     }
                 } header: {
                     feedPicker(followingHasNew: followingHasNew)
-                        .id(Self.feedPickerID)
                         .onGeometryChange(for: CGRect.self) { proxy in
                             proxy.frame(in: .scrollView)
                         } action: { frame in
@@ -522,13 +526,6 @@ struct GalleryView: View {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
-        // ⑧ 留まった切り替えで選び直したら、一覧の頭（切り替えの位置）へ。
-        // #426: 中身が横に滑るのと同じばねで送る（マイページの「替えたら頭から」と同じ・視差効果を減らすでは動かさない）
-        .onChange(of: feedHeadRequests) { _, _ in
-            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
-                proxy.scrollTo(Self.feedPickerID, anchor: .top)
-            }
-        }
         // ⑨ 「フォロー中」を開いた・開いている間に届いた・人が替わった・初めての日 → 既読を覚え直す
         .onChange(of: FollowingSeenKey(feed: model.feed, newest: followingNewest, viewer: auth.userId),
                   initial: true) { _, _ in
@@ -538,8 +535,6 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
-    /// 写真の一覧の頭（切り替え）。留まった切り替えで選び直したときに送る先
-    private static let feedPickerID = "home-feed-picker"
 
     /// 札ごとの写真の束。**選んでいるフィードは出している一覧**（`model.state`）、選んでいないフィード
     /// （横にめくった隣）は同じ決まりで手元から作る（`GalleryViewModel.photos(for:)`）。ブロックを落とし、
