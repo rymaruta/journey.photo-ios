@@ -3515,8 +3515,22 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += extra
         app.launch()
         let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        if agree.waitForExistence(timeout: 30) { agreeUntilGone(agree) }
         return app
+    }
+
+    /// 同意の画面を押して、閉じたことを確かめる。**押しが届かない回がある**（2026-10-31 Mac run 772 の
+    /// `testCapturesCoverOffer`: 「同意して…」を押した記録はあるのに、アプリの画面の木は 45 秒後も同意の画面のまま
+    /// ＝差し出しが出るはずのホームへ進まず「差し出しが出ない」で落ちた）。消えなければもう一度押し、
+    /// それでも残れば**ここで落とす**（後の段で別の理由に見せない）
+    private func agreeUntilGone(_ agree: XCUIElement) {
+        let gone = NSPredicate(format: "exists == false")
+        for _ in 0..<2 {
+            agree.tap()
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: agree)], timeout: 5) == .completed { return }
+            guard agree.exists, agree.isHittable else { break }
+        }
+        XCTAssertFalse(agree.exists, "同意の画面が閉じない（「同意して…」を押しても進まない）")
     }
 
     /// **マイページの曲の行と旅の記録**（2026-10-24 owner の要望）。曲の行（ジャケット・曲名・歌手名・再生）と、
@@ -4154,9 +4168,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["coverOffer.coins"].firstMatch.exists, "硬貨の行が無い")
         guard later.isHittable else { return XCTFail("「あとで」を押せない") }
         later.tap()
-        let gone = NSPredicate(format: "exists == false")
-        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 5)
+        // 閉じたかは「カバーにする」が無くなった・押せなくなったで見る。2026-10-30 Mac run（41139085964）では、録画で
+        // 札は 0.5 秒で下へ閉じてホームが出ているのに、`exists` だけで見た待ちが 5 秒で切れて落ちた（閉じた札の
+        // 要素が読み上げの木にしばらく残ると見られる。確かめきれてはいない）。押せる所に残っていれば閉じていないので落とす
+        let gone = NSPredicate(format: "exists == false OR hittable == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: apply)], timeout: 10)
         XCTAssertEqual(closed, .completed, "「あとで」で閉じない")
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5) && app.tabBars.firstMatch.isHittable,
+                      "「あとで」のあと下のタブに戻らない")
     }
 
     /// **いいねが集まった1枚をカバーに**（板 51b・カバーあり・`-JPPreviewCoverOffer liked`）。「今のままにする」で閉じる
