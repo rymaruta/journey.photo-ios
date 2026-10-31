@@ -4032,6 +4032,121 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
+    /// **ホームのフィードの切り替えもマイページと同じ手ざわり**（2026-10-31 #426・`ProfileTabBar`・`ProfileTabPager`）。
+    /// 札の行を左へ払うと「フォロー中」、中身を左へ払うと「新着」、札を押すと「おすすめ」に戻る。どの替え方でも
+    /// 札の行は跳ばない。下へ送ると札の行は見出しの下に留まり、留まったまま中身を払っても替わって、札の行は動かない。
+    /// 🔴 札が見つからない・払って替わらない・札の行が跳ぶ・留まらないときは**落とす**（黙って通らない）
+    func testSwipesHomeFeedTabs() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        // 札の行の位置の数を見えない要素に出す（#426 Mac で札の行が動いた件を数で見る）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
+        app.launch()
+        defer { app.terminate() }
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let recommended = app.buttons["home.feed.recommended"].firstMatch
+        let following = app.buttons["home.feed.following"].firstMatch
+        let latest = app.buttons["home.feed.latest"].firstMatch
+        XCTAssertTrue(recommended.waitForExistence(timeout: 30), "ホームの切り替え（おすすめ）が見つからない")
+        guard recommended.exists else { return }
+        // 写真が並ぶまで待つ（中身が無いと払う場所が無い）
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let width = app.frame.width
+        let height = app.frame.height
+        // 札の行を画面の上のほう（高さの 30%）まで、勢いを付けずに引き上げる（`swipeUp` は勢いで飛ばす）
+        let lift = recommended.frame.minY - height * 0.3
+        if lift > 0 {
+            let from = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8))
+            let to = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8 - lift))
+            from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.5)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(recommended.isHittable, "切り替えが見えるところまで送れない")
+        guard recommended.isHittable else { return }
+        XCTAssertTrue(recommended.isSelected, "開いたときに「おすすめ」を選んでいない")
+        let rowY = recommended.frame.minY
+
+        /// 札の行の位置の数をログに残す（`home.feed.probe`・UI テストのときだけ出る）
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        func logProbe(_ step: String) {
+            let value = probe.exists ? ((probe.value as? String) ?? "-") : "probe missing"
+            let line = "[feedProbe] \(step): rowMinY=\(recommended.frame.minY) \(value)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let note = XCTAttachment(string: line)
+            note.name = "feedProbe \(step)"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+
+        /// 画面の横幅の 6 割を、指定の高さで払う（左へ払うと右隣の札）
+        func swipe(left: Bool, atY y: CGFloat) {
+            let from = origin.withOffset(CGVector(dx: left ? width * 0.8 : width * 0.2, dy: y))
+            let to = origin.withOffset(CGVector(dx: left ? width * 0.2 : width * 0.8, dy: y))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+
+        // 1. 札の行の上を左へ払う → フォロー中
+        swipe(left: true, atY: recommended.frame.midY)
+        XCTAssertTrue(following.isSelected, "札の行を左へ払っても「フォロー中」に替わらない")
+        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "払って替えたら札の行の位置が跳んだ")
+        shoot(app, "10g-ホーム（札の行を払ってフォロー中へ）")
+
+        // 2. 中身の上を左へ払う → 新着（フォロー中は写真が無い人もいるので、札の行の 1.5 段下＝空の知らせの上でも効く）
+        swipe(left: true, atY: min(height * 0.85, recommended.frame.maxY + 150))
+        XCTAssertTrue(latest.isSelected, "中身を左へ払っても「新着」に替わらない")
+        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "中身を払って替えたら札の行の位置が跳んだ")
+        shoot(app, "10h-ホーム（中身を払って新着へ）")
+
+        // 3. 押して戻す → おすすめ（下線はばねで滑る。押した後も札の行は同じ位置）
+        recommended.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(recommended.isSelected, "「おすすめ」を押しても戻らない")
+        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "押して替えたら札の行の位置が跳んだ")
+
+        // 4. 下へ送ると札の行は見出しの下に留まる。留まったまま中身を払っても替わり、札の行は動かない。
+        // 「新着」で送る——「おすすめ」には横に流れる列（PICKS・季節の撮影スポット）があり、その上の指は列に渡す
+        latest.tap()
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(latest.isSelected, "「新着」を押しても替わらない")
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        for _ in 0..<Self.pinCheckPushes {
+            low.press(forDuration: 0.05, thenDragTo: high)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
+        XCTAssertLessThan(recommended.frame.minY, rowY, "送っても札の行が上へ動かない（送れていない）")
+        guard latest.isHittable, recommended.frame.minY < rowY else { return }
+        let pinnedY = recommended.frame.minY
+        logProbe("4-pinned-before")
+        swipe(left: false, atY: height * 0.6)
+        logProbe("4-after-swipe")
+        XCTAssertTrue(following.isSelected, "留まった札の下の中身を右へ払っても「フォロー中」に替わらない")
+        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま替えたら札の行が動いた")
+        shoot(app, "10i-ホーム（留まったまま払って替える）")
+        latest.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        logProbe("4-after-tap-latest")
+        XCTAssertTrue(latest.isSelected, "留まった「新着」を押しても戻らない")
+        // 5. 留まった札の行の上で払っても替わる（中身の払い1つが受ける・指を取り合わない・#426 確かめ役）
+        swipe(left: false, atY: recommended.frame.midY)
+        logProbe("5-after-row-swipe")
+        XCTAssertTrue(following.isSelected, "留まった札の行の上を右へ払っても「フォロー中」に替わらない")
+        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まった札の行の上で払ったら札の行が動いた")
+        // 替えた札は頭から: 頭へ送ったので札の行はまだ留まりの位置（見出しの下）に居る
+        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま押して替えたら札の行が動いた")
+    }
+
     /// **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・板「マイページ」の状態「区分の札が上に留まった」）。
     /// 下へ送っても札の行が時計の帯の下に残り、見出し（「編集」）は流れて見えない。留まった札を押すと替わり、
     /// 替えた札は頭から見せる（投稿へ戻すと格子の1枚目が札の行のすぐ下）。

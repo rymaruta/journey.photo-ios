@@ -13,7 +13,7 @@ final class ProfileTabPagerTests: XCTestCase {
 
     /// 🔴 一度開いた札は持ち続ける（戻ったときに作り直さない）。開いていない札は作らない
     func testVisitedTabsAreKept() {
-        var pages = ProfileTabPages(initial: .posts)
+        var pages = ProfileTabPages<ProfileTab>(initial: .posts)
         XCTAssertTrue(pages.isBuilt(.posts))
         XCTAssertFalse(pages.isBuilt(.trips), "開いていない札まで作っている")
         pages.select(.trips)
@@ -28,9 +28,9 @@ final class ProfileTabPagerTests: XCTestCase {
     /// 札は横に並ぶ（選んだ札が 0・右隣が画面幅 1つ分）
     func testPagesSitSideBySide() {
         let tabs = ProfileTab.tabs(isMe: true)
-        XCTAssertEqual(ProfileTabPages.offset(of: .posts, selected: .posts, in: tabs), 0)
-        XCTAssertEqual(ProfileTabPages.offset(of: .trips, selected: .posts, in: tabs), 1)
-        XCTAssertEqual(ProfileTabPages.offset(of: .posts, selected: .wishlist, in: tabs), -2)
+        XCTAssertEqual(ProfileTabPages<ProfileTab>.offset(of: .posts, selected: .posts, in: tabs), 0)
+        XCTAssertEqual(ProfileTabPages<ProfileTab>.offset(of: .trips, selected: .posts, in: tabs), 1)
+        XCTAssertEqual(ProfileTabPages<ProfileTab>.offset(of: .posts, selected: .wishlist, in: tabs), -2)
         XCTAssertEqual(ProfileTabPagerLayout.x(of: 3, selected: 1, width: 390), 780)
         XCTAssertEqual(ProfileTabPagerLayout.x(of: 0, selected: 1, width: 390), -390)
         XCTAssertEqual(ProfileTabPagerLayout.x(of: 1, selected: 1, width: 390), 0)
@@ -65,13 +65,13 @@ final class ProfileTabPagerTests: XCTestCase {
         XCTAssertTrue(swipe.contains("UIPanGestureRecognizer("))
         XCTAssertTrue(swipe.contains("shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {\n            gestureRecognizer === pan && otherGestureRecognizer === host?.panGestureRecognizer"),
                       "縦の送りがパンの判定を待たない（向きが固定されない）")
-        XCTAssertTrue(swipe.contains("ProfileTab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)"))
-        XCTAssertTrue(swipe.contains("ProfileTab.settled(from: selection, in: tabs,"))
+        XCTAssertTrue(swipe.contains("Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)"))
+        XCTAssertTrue(swipe.contains("Tab.settled(from: selection, in: tabs,"))
         // 選んでいる札が止めている（地図）ときは、枠の中の指を受けない
         XCTAssertTrue(swipe.contains("handlers?.isEnabled == true"))
         // 中身が指に付いてくる
         XCTAssertTrue(pager.contains("content.offset(x: drag.offset)"))
-        XCTAssertTrue(pager.contains("enabled: !swipeBlocked.contains(selection), follow: drag,"))
+        XCTAssertTrue(pager.contains("enabled: !swipeBlocked.contains(selection), follow: dragBox,"))
     }
 
     /// 🔴 2026-10-28 確かめ役の見直し: 払っている間に入れ物の `body`（全部の札の `page()`）を作り直さない。
@@ -85,8 +85,8 @@ final class ProfileTabPagerTests: XCTestCase {
         XCTAssertFalse(body.contains("drag.offset)"), "入れ物の body が横の量を読んでいる")
         // 子は中身を値で受ける（関数で受けると、子の描き直しのたびに全部の札を作り直す）
         XCTAssertTrue(pager.contains("    let content: Content\n"))
-        XCTAssertTrue(body.contains("if !pages.isBuilt(next) { pages.select(next) }"))
-        XCTAssertTrue(body.contains(".onDisappear { drag.offset = 0 }"))
+        XCTAssertTrue(pager.contains("if !pages.isBuilt(next) { pages.select(next) }"))
+        XCTAssertTrue(body.contains(".onDisappear { dragBox.offset = 0 }"))
         XCTAssertTrue(pager.contains("if pan.state == .began || pan.state == .changed {\n                handlers?.onEnd(0, 0,"),
                       "払いの途中で外したときに終えていない")
     }

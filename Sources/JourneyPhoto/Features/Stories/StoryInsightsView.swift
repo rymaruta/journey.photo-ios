@@ -72,10 +72,15 @@ struct StoryInsightsView: View {
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
     /// 引き直さない（リアクションは見た人の一部で、数え方も1つ）
     @State private var scope: Scope = .viewers
+    /// 見えている高さ（札の中身の最低の高さ・`ProfileTabSection`）
+    @State private var viewport: CGFloat = 0
 
-    enum Scope: String, CaseIterable, Identifiable {
+    /// 2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`・`ProfileTabSection`）
+    enum Scope: String, CaseIterable, Identifiable, PagedTab {
         case viewers, reactions
         var id: String { rawValue }
+        var tabTitle: String { label }
+        var tabIdentifier: String { "storyInsights.tab.\(rawValue)" }
         var label: String {
             switch self {
             case .viewers: return L("閲覧者", "Viewers")
@@ -93,25 +98,38 @@ struct StoryInsightsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
-                header
-                if let refreshNotice {
-                    Text(refreshNotice)
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.danger)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        // **少しで消す**（閲覧画面の知らせと同じ 2.5 秒）
-                        .task(id: refreshNotice) {
-                            try? await Task.sleep(nanoseconds: 2_500_000_000)
-                            if !Task.isCancelled { self.refreshNotice = nil }
-                        }
+                VStack(alignment: .leading, spacing: JPSpace.m) {
+                    header
+                    if let refreshNotice {
+                        Text(refreshNotice)
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            // **少しで消す**（閲覧画面の知らせと同じ 2.5 秒）
+                            .task(id: refreshNotice) {
+                                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                                if !Task.isCancelled { self.refreshNotice = nil }
+                            }
+                    }
+                    summary
                 }
-                summary
-                tabs
-                viewerList
+                .padding(.horizontal, JPSpace.l)
+                // 閲覧者 / リアクション。2026-10-31 判断（#426）: マイページと同じ札（下線が滑る・当たりが広い・
+                // 中身を横にめくる）。**同じ一覧を絞るだけ**なので、めくった先もすぐ出る（引き直さない）。
+                // 札の行は画面の端から端まで（区切り線も端まで）、字と中身は左右 24 にそろえる
+                ProfileTabSection(tabs: Scope.allCases, selection: $scope, viewport: viewport,
+                                  gutter: JPSpace.l) { option in
+                    viewerList(option)
+                        .padding(.horizontal, JPSpace.l)
+                }
             }
-            .padding(.horizontal, JPSpace.l)
             .padding(.top, JPSpace.xxs)
             .padding(.bottom, JPSpace.xl)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            if height != viewport { viewport = height }
         }
         // v2 StoryInsights: シートの地は札の面（surface-1 #0E0E0F）。写真の上ではないので不透明の灰を使う
         .scrollContentBackground(.hidden)
@@ -236,42 +254,11 @@ struct StoryInsightsView: View {
 
     // MARK: - 絞り
 
-    /// 閲覧者 / リアクション。**下線のタブ**（v2: 左寄せで間 22・15pt・選んだら真鍮の字と 2 の下線＝
-    /// CLAUDE.md の「選んでいるタブは真鍮」）。数は上の格子にある
-    private var tabs: some View {
-        HStack(spacing: 22) {
-            ForEach(Scope.allCases) { option in
-                let selected = scope == option
-                Button {
-                    scope = option
-                } label: {
-                    Text(option.label)
-                        .font(JPFont.body.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(Self.tabColor(selected: selected))
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .overlay(alignment: .bottom) {
-                            Rectangle().fill(selected ? WebTheme.accent : Color.clear).frame(height: JPStroke.emphasis)
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-            Spacer(minLength: 0)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
-        }
-    }
-
-    /// タブの字の色（選んだら真鍮・選んでいなければ text-3）
-    @MainActor static func tabColor(selected: Bool) -> Color {
-        selected ? WebTheme.accent : WebTheme.text3
-    }
     // MARK: - 見た人
 
+    /// 札ごとの一覧。**`scope` ではなく渡された札で分ける**——選んでいない札も持ち続ける（`ProfileTabPager`）
     @ViewBuilder
-    private var viewerList: some View {
+    private func viewerList(_ scope: Scope) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
@@ -287,7 +274,7 @@ struct StoryInsightsView: View {
                     .foregroundStyle(WebTheme.faint)
                     .padding(.top, 12)
                 retryButton
-            } else if shownViewers.isEmpty {
+            } else if shownViewers(scope).isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
                 Text(scope == .reactions
                      ? L("まだリアクションはありません", "No reactions yet")
@@ -296,7 +283,7 @@ struct StoryInsightsView: View {
                     .foregroundStyle(WebTheme.faint)
                     .padding(.vertical, 12)
             } else {
-                ForEach(shownViewers) { viewer in
+                ForEach(shownViewers(scope)) { viewer in
                     viewerRow(viewer)
                 }
             }
@@ -304,7 +291,7 @@ struct StoryInsightsView: View {
     }
 
     /// 絞ったあとの一覧。**リアクションは見た人の一部**（別の口では引かない）
-    private var shownViewers: [StoryViewer] {
+    private func shownViewers(_ scope: Scope) -> [StoryViewer] {
         let visible = dropped.viewers(viewers)
         return scope == .reactions ? visible.filter { hasReaction(from: $0.userId) } : visible
     }

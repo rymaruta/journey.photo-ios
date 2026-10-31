@@ -145,6 +145,31 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(feedCursors, [nil, "c1"], "前の答えの札をそのまま渡していない")
     }
 
+    /// 🔴 2026-10-31（#426）: ホームのフィードは横にめくって切り替える。**隣の札の中身は、選んだときに出す一覧と同じ**
+    /// （選び替えても一覧が作り直されない）で、**通信しない**（読み込みのやり直しが無い）。
+    /// 「新着」の隣の札は読んだページ、「おすすめ」は全件の並び
+    func testNeighbourFeedMatchesWhatSelectingShowsWithoutReloading() async {
+        prepare()
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: nil))
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+        let model = makeModel()
+        await model.load()
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+        let requests = StubProtocol.allRequests.count
+
+        // 選んでいない「おすすめ」の中身を先に作る（指に付いてくる隣の札）
+        let neighbour = model.photos(for: .recommended).map(\.id)
+        XCTAssertEqual(StubProtocol.allRequests.count, requests, "隣の札を作るのに通信した")
+        model.select(feed: .recommended, viewerId: nil)
+        XCTAssertEqual(neighbour, shown(model), "隣の札の中身と、選んだときの一覧が違う（選び替えで一覧が作り直される）")
+
+        // 「新着」へ戻る隣の札は、読んだページの並び（全件の新しい順ではない）
+        XCTAssertEqual(model.photos(for: .latest).map(\.id), ["p1", "p2"], "新着の隣の札が読んだページでない")
+        // 選んでいるフィードは出している一覧そのもの
+        XCTAssertEqual(model.photos(for: .recommended).map(\.id), shown(model))
+        XCTAssertEqual(StubProtocol.allRequests.count, requests, "隣の札を作るのに通信した")
+    }
+
     /// 🔴 2026-10-09: **ページの境目をまたぐ複数枚の投稿を、前半だけの束で出さない。**
     /// 続きが届くまで末尾の束を出さず、届いたらそろった束で出す
     /// （以前は前半だけの束が出て、続きが届くと表紙と枚数が変わり、先に開くと一部しか送れなかった）
