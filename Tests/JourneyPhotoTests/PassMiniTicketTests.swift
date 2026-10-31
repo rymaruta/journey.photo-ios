@@ -120,7 +120,7 @@ final class PassMiniTicketTests: XCTestCase {
         XCTAssertEqual(rest.components(separatedBy: "PassMiniTicket(face:").count - 1, 2, "帳の札か束が小さなきっぷを使っていない")
         XCTAssertFalse(rest.contains("RemoteImage("), "帳の札・束が写真を自分で描いている（窓の決まりを通らない）")
         XCTAssertFalse(rest.contains("PassTicketPunch"), "前の改札の穴が残っている")
-        XCTAssertTrue(try source("Features/Pass/PassHomeSlot.swift").contains("PassMiniStack(faces: cards.prefix(3).map { $0.face() })"),
+        XCTAssertTrue(try source("Features/Pass/PassHomeSlot.swift").contains("PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)"),
                       "ホームの束に券面が渡っていない（Pro の券面が束に出ない）")
 
         let mini = try miniBody()

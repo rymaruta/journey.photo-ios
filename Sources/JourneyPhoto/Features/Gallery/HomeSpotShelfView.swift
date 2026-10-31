@@ -10,6 +10,12 @@ import SwiftUI
 /// （CC BY-SA の写真を改変と受け取られる余地を作らない・docs/spot-samples-commons.md）。
 /// 出典の1行は札の中の写真の下（真鍮のリンク＝黒地の上の出典のリンク・CLAUDE.md の owner の好み）。
 /// 出典は撮影スポットへのリンクの**外**に置く（押す先が2つ重ならない）
+///
+/// **#417（2026-10-30 owner 採用）**:
+/// - ④ 置き場所は「おすすめ」の中・写真の大1→2→2（5枚）の後ろ（`GalleryView.feedSection`）。フォロー中・新着では出さない
+/// - ⑤ 見出しは眉「THIS SEASON · 秋」だけ（明朝の題は置かない・板 06「小さな段に明朝の題は置かない」）。
+///   作例の注記は文を変えずに札の下へ。題の言葉（`HomeSpotShelf.heading`）は段の読み上げの名前に残す
+/// - ⑥ 「行きたい」は札の幅いっぱいの帯（64）から、行の中の小ボタン（見た目 36・当たり 44・白 7% の地）へ
 struct HomeSpotShelfView: View {
 
     let shelf: HomeSpotShelf.Shelf
@@ -49,24 +55,26 @@ struct HomeSpotShelfView: View {
                 // 背を揃える（案内・出典の行数が違っても札の下端が揃う）
                 .fixedSize(horizontal: false, vertical: true)
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("home.spotShelf")
-        .task(id: shelf.entries.map(\.spot.slug).joined(separator: ",") + "#\(reloadToken)") { await loadBodies() }
-    }
-
-    private var header: some View {
-        // v2（2026-10-14・Search の板の節の見出しと同じ型）: 眉（真鍮＋消える線）→ 明朝 22 → 注記
-        VStack(alignment: .leading, spacing: JPSpace.xxs) {
-            JPSectionHeading(eyebrow: HomeSpotShelf.eyebrow(shelf.season),
-                             spoken: HomeSpotShelf.eyebrowSpoken(shelf.season),
-                             title: HomeSpotShelf.heading)
+            // ⑤ 作例の注記は札の下（文は変えない）
             Text(HomeSpotShelf.note)
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, JPSpace.gutter)
         }
-        .padding(.horizontal, JPSpace.gutter)
+        .accessibilityElement(children: .contain)
+        // 眉だけになった段の名前（読み上げで段に入ったとき「いまの季節の撮影スポット」）
+        .accessibilityLabel(HomeSpotShelf.heading)
+        .accessibilityIdentifier("home.spotShelf")
+        .task(id: shelf.entries.map(\.spot.slug).joined(separator: ",") + "#\(reloadToken)") { await loadBodies() }
+    }
+
+    /// ⑤ 眉だけ（板: 眉の行は min-height 44）。共通の節の見出しを題なしで使う
+    private var header: some View {
+        JPSectionHeading(eyebrow: HomeSpotShelf.eyebrow(shelf.season),
+                         spoken: HomeSpotShelf.eyebrowSpoken(shelf.season))
+            .frame(minHeight: WebTheme.minTapTarget)
+            .padding(.horizontal, JPSpace.gutter)
     }
 
     private func card(_ entry: HomeSpotShelf.Entry) -> some View {
@@ -123,6 +131,8 @@ struct HomeSpotShelfView: View {
             // （`fixedSize(vertical:)`＋札の `maxHeight: .infinity`）ので、ここで余りを空けて下へ送る
             Spacer(minLength: 0)
             // ホームで見つけた場所を、詳細へ入らずに「行きたい」へ保存できる。
+            // ⑥（#417）: 行の中の小ボタン（見た目 36・当たり 44・白 7% の地・左寄せ）。保存済みは白 94% の塗り＋墨
+            // （撮影スポットの画面の行動の札 `SpotDetailParts.actionLabel` と同じ色の組）
             Button {
                 Task {
                     let outcome = await WishlistSync.toggle(wishKey, store: wishlist, service: environment.savedSpots)
@@ -131,19 +141,13 @@ struct HomeSpotShelfView: View {
                     }
                 }
             } label: {
-                SpotDetailParts.actionLabel(
-                    icon: wanted ? "heart.fill" : "heart",
-                    title: L("行きたい", "Want to go"),
-                    filled: wanted,
-                    busy: wishlist.isSending(wishKey)
-                )
+                wishLabel(wanted: wanted, busy: wishlist.isSending(wishKey))
             }
             .buttonStyle(.plain)
             .disabled(wishlist.isSending(wishKey))
-            // 札の縁から 12 離す（板の札の余白 12）。下を空けないと、ボタンの角が札の縁に貼りつく
+            // 札の余白 12（板 padding 12）。上下は当たりの 4 を足して 8（＝札の下端まで 12）
             .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.bottom, 12 - JPOutlineSize.inline.tapSlack)
             // どの場所の「行きたい」か・保存済みかを読み上げでも分かるように（塗りの色だけにしない）
             .accessibilityLabel(HomeSpotShelf.wishSpokenLabel(entry.spot.name))
             .accessibilityValue(HomeSpotShelf.wishSpokenValue(saved: wanted))
@@ -156,6 +160,33 @@ struct HomeSpotShelfView: View {
         .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
+
+    /// ⑥ 「行きたい」の小ボタン（見た目 36・当たり 44）。待っている間は記号の代わりに輪（名前は替えない）
+    private func wishLabel(wanted: Bool, busy: Bool) -> some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().controlSize(.mini)
+                    .tint(wanted ? WebTheme.accentText : WebTheme.foreground)
+            } else {
+                Image(systemName: wanted ? "heart.fill" : "heart")
+                    .font(.footnote.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            Text(L("行きたい", "Want to go"))
+        }
+        .jpCapsuleFace(font: JPOutlineSize.inline.font,
+                       text: wanted ? WebTheme.accentText : WebTheme.foreground,
+                       fill: wanted ? WebTheme.accentBackground : WebTheme.surface,
+                       border: Color.clear, fullWidth: false,
+                       minHeight: Self.wishHeight, textInset: Self.wishInset)
+        .fixedSize()
+        .padding(.vertical, JPOutlineSize.inline.tapSlack)
+        .contentShape(Rectangle())
+    }
+
+    /// 「行きたい」の見た目の高さ（板 36＝行の中の小ボタン）と字の左右（板 padding 0 14）
+    nonisolated static let wishHeight: CGFloat = JPHeight.inlineButton
+    nonisolated static let wishInset: CGFloat = 14
 
     /// 札の写真。**切り抜かない**（`.fit`・余白は黒）。本文を待つ間は空の地、写真が無ければ真鍮のピン
     @ViewBuilder
@@ -223,4 +254,17 @@ struct HomeSpotShelfView: View {
             }
         }
     }
+}
+
+/// 「いまの季節のスポット」の段の中身（#417 ④）。決めるのは上の札（`HomeTopCardView`）、描くのは写真の一覧の中
+struct HomeSeasonShelfSlot {
+    let shelf: HomeSpotShelf.Shelf
+    /// 撮影スポットの画面に渡す索引（近くの撮影スポット）
+    let spots: [OfficialSpot]
+}
+
+/// 段を渡し直す合図（段の中身と、索引を書き換えた回数）
+struct HomeSeasonShelfKey: Equatable {
+    let shelf: HomeSpotShelf.Shelf?
+    let spotsRevision: Int
 }

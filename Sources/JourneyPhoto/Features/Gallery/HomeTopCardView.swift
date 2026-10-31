@@ -22,6 +22,10 @@ struct HomeTopCardView: View {
     let myPhotos: [Photo]
     /// 変わったら旅行プランを読み直す（`GalleryView` が渡す）
     var reloadToken: Int = 0
+    /// 「いまの季節のスポット」の段の中身を、写真の一覧の中（`GalleryView`）へ渡す口（#417 ④・2026-10-30）。
+    /// 段の中身（索引・今日の一問・日・上の札に出ている場所）はこの画面が持っているので、決めるのはここのまま。
+    /// 描くのは「おすすめ」の写真の大1→2→2 の後ろ（`GalleryView.feedSection`）
+    @Binding var seasonShelf: HomeSeasonShelfSlot?
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -53,6 +57,8 @@ struct HomeTopCardView: View {
     /// ——札が出ないだけ。索引は静的な JSON（Lambda を通らない）で、サービスが
     /// 60秒の控えと端末の控えを持つ。**一度取れたら画面が生きている間は取り直さない**
     @State private var spots: [OfficialSpot] = []
+    /// `spots` を書き換えた回数（段の中身を `seasonShelf` へ渡し直す合図。1,400件の配列を毎回比べない）
+    @State private var spotsRevision = 0
     /// 今日の一問（取れなかった日は nil のまま＝札を出さない）。サービスが日付ごとに覚えるので、
     /// 札から開いた画面は取り直さない
     @State private var quiz: DailyQuiz?
@@ -87,14 +93,14 @@ struct HomeTopCardView: View {
     private let opened = OpenedTripBooks()
 
     var body: some View {
-        // 札の並びの下に「いまの季節のスポット」の段（2026-10-03・`HomeSpotShelf`）。
-        // 間は一覧の段の間（`GalleryView` の 24）と同じ
-        // 札の並びは**1回だけ計算して**、札と段の両方に渡す
+        // 「いまの季節のスポット」の段は、2026-10-03 から札の並びの下に置いていたが、**#417 ④（2026-10-30 owner 採用）で
+        // 「おすすめ」の写真の大1→2→2 の後ろへ移した**（札の「AUTUMN SPOT」との2段続きが解け、切り替えが1画面目に上がる）。
+        // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
         let choices = self.choices
-        VStack(spacing: 24) {
-            content(choices)
-            spotShelf(choices)
-        }
+        content(choices)
+            .onChange(of: shelfKey(choices), initial: true) { _, _ in
+                seasonShelf = visibleShelf(choices).map { HomeSeasonShelfSlot(shelf: $0, spots: spots) }
+            }
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
             // 札・段・当日の行に出るスポットの詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ読む
@@ -157,16 +163,18 @@ struct HomeTopCardView: View {
                           wishlist: wishedKeys, quiz: quiz)
     }
 
-    /// 「いまの季節のスポット」の段。**索引が取れていない・候補が無い日・今日の一問が決着する前は出さない**
+    /// 「いまの季節のスポット」の段の中身。**索引が取れていない・候補が無い日・今日の一問が決着する前は nil**
     /// （空き地を作らない・`HomeSpotShelf.visibleShelf`）。上の札に出ている場所と今日の一問の選択肢は除く。
     /// 並びが変わるのは、札と同じく索引が取れたとき・ホームに戻ったとき（行きたい場所）・
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
-    @ViewBuilder
-    private func spotShelf(_ choices: [HomeTopCard.Choice]) -> some View {
-        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
-                                                  choices: choices, quiz: quiz, quizSettled: quizSettled) {
-            HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos, reloadToken: reloadToken)
-        }
+    private func visibleShelf(_ choices: [HomeTopCard.Choice]) -> HomeSpotShelf.Shelf? {
+        HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
+                                   choices: choices, quiz: quiz, quizSettled: quizSettled)
+    }
+
+    /// 段を渡し直す合図（段の中身と、索引の書き換え）
+    private func shelfKey(_ choices: [HomeTopCard.Choice]) -> HomeSeasonShelfKey {
+        HomeSeasonShelfKey(shelf: visibleShelf(choices), spotsRevision: spotsRevision)
     }
 
     @ViewBuilder
@@ -330,23 +338,26 @@ struct HomeTopCardView: View {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 英字の眉は読み上げでは日本語で（今日のテーマの札と同じ）
                     JPEyebrowLine(eyebrow, spoken: eyebrowLabel)
+                    // **#417 ③（2026-10-30 owner 採用）: 題・一行・出典は1行ずつ**（背を板の 116 に）。
+                    // 2行まで許していた間は、並びの背が一番高い札（出典の2行）に揃って 156 になり、
+                    // 下の写真の一覧が押し下がっていた。切れた全文は読み上げで読める（札は1つの要素）
                     Text(title)
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.text)
-                        .lineLimit(2)
+                        .lineLimit(Self.lineLimit)
                     Text(line)
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text2)
-                        .lineLimit(2)
+                        .lineLimit(Self.lineLimit)
                     if let detail {
-                        // **2行まで。** 写真の作者名には100文字を超える機械文がある（Commons の
+                        // **1行。** 写真の作者名には100文字を超える機械文がある（Commons の
                         // 「No machine-readable author provided…」）。並びは背を揃えるので、
                         // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
                         // 切るのは真ん中——末尾のライセンス名を残す
                         Text(detail)
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text3)
-                            .lineLimit(2)
+                            .lineLimit(Self.lineLimit)
                             // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
                             // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
                             .truncationMode(detailTruncation)
@@ -374,8 +385,10 @@ struct HomeTopCardView: View {
         .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
     }
 
-    /// 札の背（板の 116）。中身が多い札はそれより伸びる
+    /// 札の背（板の 116）。字を大きくする設定ではそれより伸びる
     nonisolated static let cardHeight: CGFloat = 116
+    /// 札の字の行の上限（#417 ③: 題・一行・出典とも1行）
+    nonisolated static let lineLimit = 1
     /// 札の左の写真の幅（板の 112）
     nonisolated static let photoWidth: CGFloat = 112
 
@@ -399,10 +412,15 @@ struct HomeTopCardView: View {
     }
 
     /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**
-    /// （空の行が並んでいた）
+    /// （空の行が並んでいた）。#417 ③で1行にした（「岡山 · 写真: … / CC BY-SA 4.0」）——真ん中で切るので、
+    /// 頭の地域と末尾のライセンス名は残る
+    nonisolated static func spotDetail(region: String?, credit: String?) -> String? {
+        let parts = [region, credit].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     private static func spotDetail(_ spot: OfficialSpot) -> String? {
-        let lines = [spot.regionLabel, spot.photo?.credit].compactMap { $0 }
-        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+        spotDetail(region: spot.regionLabel, credit: spot.photo?.credit)
     }
 
     /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
@@ -434,6 +452,7 @@ struct HomeTopCardView: View {
         let fetched = try? await environment.spots.fetchIndex()
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
+        spotsRevision &+= 1
         scheduleSeasonReminder()
     }
 
@@ -452,6 +471,7 @@ struct HomeTopCardView: View {
         let merged = await environment.spots.withDetails(spots, for: needs)
         guard !Task.isCancelled else { return }
         spots = merged
+        spotsRevision &+= 1
     }
 
     /// 前面が確定したときだけ、一冊の印・行きたい・取り直した札を入れる

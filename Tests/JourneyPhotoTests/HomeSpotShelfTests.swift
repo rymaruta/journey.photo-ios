@@ -384,7 +384,8 @@ final class HomeSpotShelfTests: XCTestCase {
         let wish = try XCTUnwrap(view.range(of: "WishlistSync.toggle", range: spacer.upperBound..<view.endIndex))
         let id = try XCTUnwrap(view.range(of: "\"home.spotShelf.wish\"", range: wish.upperBound..<view.endIndex))
         let modifiers = String(view[wish.upperBound..<id.lowerBound])
-        XCTAssertTrue(modifiers.contains(".padding(.bottom, 12)"), "ボタンの下が札の縁に貼りつく")
+        // #417 ⑥: 小ボタンの当たり（上下 4）を含めて札の下端まで 12
+        XCTAssertTrue(modifiers.contains(".padding(.bottom, 12 - JPOutlineSize.inline.tapSlack)"), "ボタンの下が札の縁に貼りつく")
         XCTAssertTrue(modifiers.contains(".accessibilityValue(HomeSpotShelf.wishSpokenValue(saved: wanted))"))
         XCTAssertTrue(modifiers.contains(".accessibilityLabel(HomeSpotShelf.wishSpokenLabel(entry.spot.name))"))
         // 背をそろえる仕組み（これが無いと Spacer で札が伸びきる・そろわない）

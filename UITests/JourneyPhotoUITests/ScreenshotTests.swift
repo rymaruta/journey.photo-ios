@@ -45,28 +45,56 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 2026-10-18: 札の下端の「行きたい」（`home.spotShelf.wish`）まで画面に入れて撮る
     /// （ボタンの位置・余白を写真で確かめる）。ボタンが無い版では札だけを待つ
+    ///
+    /// #417（2026-10-30）: 段は「おすすめ」の中・写真の大1→2→2 の後ろへ移った。**「おすすめ」に戻してから**送り
+    /// （前の手順で「フォロー中」を選んでいる）、送る回数の上限を増やした。段まで送った所で、
+    /// **切り替えが見出しの下に留まっている**（「新着」が押せる）ことも確かめる（⑧）
     private func shootSpotShelf(_ app: XCUIApplication) {
+        let recommended = app.buttons["home.feed.recommended"].firstMatch
+        if recommended.exists, recommended.isHittable {
+            recommended.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        // 🔴 段は画面の下（約 1000pt）なので、**在って押せるまで送る**（先に待って見つからず黙って抜けていた・PR #422 の確かめ）。
+        // 「行きたい」（札の下端）が在ればそれを、無ければ札を待つ
         let photo = app.buttons["home.spotShelf.card"].firstMatch
-        guard photo.waitForExistence(timeout: 10) else { return }
         let wish = app.buttons["home.spotShelf.wish"].firstMatch
-        let card = wish.exists ? wish : photo
+        func shelfReady() -> Bool {
+            let target = wish.exists ? wish : photo
+            return target.exists && target.isHittable
+        }
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         var pushes = 0
-        while !card.isHittable, pushes < 3 {
+        while !shelfReady(), pushes < Self.shelfPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        if card.isHittable {
+        if shelfReady() {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
         }
+        // ⑧ 下へ送った後も、切り替えは見出しの下に留まって押せる。**段の無い日も確かめる**（数回は必ず送る）
+        while pushes < Self.pinCheckPushes {
+            low.press(forDuration: 0.05, thenDragTo: high)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        let latest = app.buttons["home.feed.latest"].firstMatch
+        XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
+        shoot(app, "10f-ホーム（下へ送った後・切り替えが留まる）")
         for _ in 0..<pushes {
             high.press(forDuration: 0.05, thenDragTo: low)
             Thread.sleep(forTimeInterval: 1)
         }
     }
+
+    /// ⑧ の確かめで、段が無い日でも必ず送る回数（1画面ぶんより下へ）
+    private static let pinCheckPushes = 4
+
+    /// 季節の段まで送る回数の上限（短い引き＝画面の 35%）。#417 で段が写真の5枚の後ろへ移ったので 3 から増やした
+    private static let shelfPushLimit = 10
 
     /// **ホームの右上の見出し（探す・お知らせ・メニューのガラスの帯）を寄りで撮る**（2026-10-14）。
     /// 「デカすぎる」（owner）を 22pt → 19pt にしたので、前後の回で帯の高さ・絵の大きさを
@@ -593,7 +621,7 @@ final class ScreenshotTests: XCTestCase {
             // 見出しの帯はどのタブも同じ中身（2026-10-21）。探す・マップも寸法を残して見比べる
             if name == "ホーム" || name == "探す" || name == "マップ" { shootHeaderBand(app, tab: "1\(index)e-\(name)") }
             if name == "ホーム" {
-                let latest = app.buttons["新着"].firstMatch
+                let latest = app.buttons["home.feed.latest"].firstMatch
                 if latest.waitForExistence(timeout: 5), latest.isHittable {
                     latest.tap()
                     Thread.sleep(forTimeInterval: 3)
@@ -604,7 +632,8 @@ final class ScreenshotTests: XCTestCase {
                                    "消したはずの「撮影地を探す」の札が出ている")
                 }
                 // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
-                let following = app.buttons["フォロー中"].firstMatch
+                // 「フォロー中」は点のある日に読み上げの名前が「フォロー中・新しい写真あり」になる（#417 ⑨）。道しるべで探す
+                let following = app.buttons["home.feed.following"].firstMatch
                 if following.exists, following.isHittable {
                     following.tap()
                     Thread.sleep(forTimeInterval: 2)
@@ -3720,26 +3749,49 @@ final class ScreenshotTests: XCTestCase {
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
-        tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
-        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
-        guard song.waitForExistence(timeout: 20) else { return }
-        song.tap()
-        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
-        guard bar.waitForExistence(timeout: 15) else { return }
 
-        // ホームの「いまの季節のスポット」の段まで送る（同じ短い引き・上限あり）
-        tabBar.buttons.element(boundBy: 0).tap()
+        // 🔴 **先にホームで「いまの季節のスポット」の段まで送り、それから鳴らす**（PR #422 の Mac・run 41122249837）。
+        // #417 ④で段が写真の5枚の後ろ（画面の下）へ移り、鳴らしてから送ると最大10回の引きの間に試聴（30 秒）が
+        // 終わって再生器が消え、測る所で落ちた。タブを替えてもホームの送った位置は残る
         let card = app.buttons["home.spotShelf.card"].firstMatch
-        guard card.waitForExistence(timeout: 20) else { return }
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        var pushes = 0
-        while !card.isHittable, pushes < 3 {
-            low.press(forDuration: 0.05, thenDragTo: high)
-            Thread.sleep(forTimeInterval: 1)
-            pushes += 1
+        func pushToShelf() {
+            var pushes = 0
+            while !(card.exists && card.isHittable), pushes < Self.shelfPushLimit {
+                low.press(forDuration: 0.05, thenDragTo: high)
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
         }
+        pushToShelf()
+        // 届かなかった回も黙って抜けない（どこで止まったかを絵で残す）
+        guard card.exists, card.isHittable else {
+            shoot(app, "10m-ホーム（季節の段まで届かない）")
+            return
+        }
+
+        // マイページで鳴らして、すぐホームへ戻る（鳴らしてから測るまでを短く）
+        let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
+        let bar = app.descendants(matching: .any)["mini.player"].firstMatch
+        /// 鳴らし直してホームへ戻る（鳴っていたら一度止めてから）。再生器が出なければ false
+        func playAndReturnHome() -> Bool {
+            tabBar.buttons.element(boundBy: 4).tap()
+            guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20),
+                  song.waitForExistence(timeout: 20) else { return false }
+            if bar.exists {
+                song.tap()  // 鳴っていたら一度止める（押すと止まる）
+                Thread.sleep(forTimeInterval: 1)
+            }
+            song.tap()
+            guard bar.waitForExistence(timeout: 15) else { return false }
+            tabBar.buttons.element(boundBy: 0).tap()
+            // 送った位置が残っていなければ、段まで送り直す
+            pushToShelf()
+            return true
+        }
+        guard playAndReturnHome(), card.exists, card.isHittable else { return }
         // 札の説明文が再生器の高さに来るよう、もう一引き（札の下端が再生器より上に抜けない範囲で）
         if card.frame.maxY < bar.frame.minY {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
@@ -3751,6 +3803,10 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 4)
         XCTAssertLessThan(bar.frame.width, app.frame.width - 24, "全幅のまま（左右へ寄せられない）")
         shoot(app, "10m-ホーム（再生器・説明文に重なった所）")
+        // 引く直前に、試聴が終わって再生器が消えていたら鳴らし直す（測る所で消えていて落ちない）
+        if !bar.exists {
+            guard playAndReturnHome(), bar.exists else { return }
+        }
 
         // 曲名の辺り（停止ボタンでない所）に触れてすぐ（長押しせずに）左上へ引き、止めてから離す → 左の端へ寄る。
         // 触れてから動き出すまでは 0.05 秒（長押しが要る形なら、ここで動かずに落ちる）
@@ -5031,11 +5087,24 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
         }
 
-        // 写真の詳細の作者の顔。**ホームの「NEW」の1枚目から開く**（見本のストーリーは同じ新着の作者に付けてある・
-        // `PreviewBackend.previewStories`。おすすめの格子は画面の下で、run 693 では見つからなかった）
-        let fresh = app.descendants(matching: .any)["home.fresh"].firstMatch
-        let photo = fresh.buttons.matching(NSPredicate(format: "identifier != %@", "home.fresh.all")).firstMatch
-        guard fresh.waitForExistence(timeout: 30), photo.waitForExistence(timeout: 10), photo.isHittable else {
+        // 写真の詳細の作者の顔。**切り替えの「新着」の1枚目から開く**（見本のストーリーは新着の作者に付けてある・
+        // `PreviewBackend.previewStories`）。2026-10-30（#417 ⑦）に「NEW」の段を外し、新着は切り替えの「新着」に一本化した。
+        // 1枚目が画面の下なら、同じ短い引きで送る（上限あり）
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        let photo = app.buttons["feed.photo"].firstMatch
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var photoPushes = 0
+        while photo.waitForExistence(timeout: 10), !photo.isHittable, photoPushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            photoPushes += 1
+        }
+        guard photo.exists, photo.isHittable else {
             shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
             return
         }

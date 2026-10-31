@@ -185,10 +185,15 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertFalse(gallery.contains("home.exploreMap"))
         // 横並びを置くのは1か所（定義と、絞った中の1回）
         XCTAssertEqual(count("featuredSections", in: gallery), 2, "横並びを絞らずに置いている所がある")
+        // #417 ⑧: 切り替えは写真の一覧の見出し（Section の header）。中身は `feedSection` の先頭から
+        XCTAssertTrue(gallery.contains("Section {\n                    feedSection(photos)\n                } header: {\n                    feedPicker("),
+                      "切り替えの下に中身以外が挟まっている")
         let lines = gallery.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let picker = lines.firstIndex(of: "feedPicker") else { return XCTFail("切り替えが無い") }
-        XCTAssertEqual(lines[picker + 1], "if model.feed.showsFeatured {", "切り替えのすぐ下に別のものが挟まっている")
-        XCTAssertEqual(lines[picker + 2], "featuredSections")
+        guard let section = lines.firstIndex(of: "private func feedSection(_ photos: [Photo]) -> some View {") else {
+            return XCTFail("切り替えの下の中身が無い")
+        }
+        XCTAssertEqual(lines[section + 1], "if model.feed.showsFeatured {", "切り替えのすぐ下に別のものが挟まっている")
+        XCTAssertEqual(lines[section + 2], "featuredSections")
     }
 
     /// ホームの上段札: 消した自分の写真だけ落とす（全部の gone は回帰するので使わない・2026-10-12）

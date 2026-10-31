@@ -2,7 +2,7 @@ import SwiftUI
 
 /// **節の見出し**（v2 の板 Search・Main・Notifications の空の状態・2026-10-14）。
 ///
-/// 板の型は1つ: 眉（真鍮の字＋右へ消える線・`JPEyebrowLine`）→ 明朝 22 の題 → 右下に「すべて ›」。
+/// 板の型は1つ: 眉（真鍮の字＋右へ消える線・`JPEyebrowLine`）と右の「すべて ›」の行 → 明朝 22 の題。
 /// 探す・ホームの段がそれぞれ見出しを書いていて（12pt の灰の字・`subheadline` の白・明朝 18）、
 /// 同じ「段の見出し」が画面ごとに3通りあった。ここに寄せる（2026-10-14 判断）。
 ///
@@ -34,22 +34,42 @@ struct JPSectionHeading<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: JPSpace.s) {
-            VStack(alignment: .leading, spacing: JPSectionHeadingLayout.eyebrowGap) {
-                if let eyebrow {
+        // **#417 ②（2026-10-30 owner 採用）: 右の「すべて見る ›」は眉と同じ行・中央揃え。**
+        // 以前は眉と題の組の右下（`.bottom` 揃え）に置いていたので、題のある段では「すべて見る ›」が
+        // 題の行に落ち、眉の線より 15pt 上に浮いて見えた（Compare の板②）。眉の無い段は題の行の右
+        VStack(alignment: .leading, spacing: JPSectionHeadingLayout.eyebrowGap) {
+            if let eyebrow {
+                HStack(alignment: .center, spacing: JPSpace.s) {
                     JPEyebrowLine(eyebrow, spoken: spoken)
+                    if hasTrailing { trailingSlot }
                 }
-                if let title {
+                // 「すべて見る」の当たり（上下へはみ出した 44）を、下の題より手前に置く（PR #422 の確かめ）
+                .zIndex(1)
+            }
+            if let title {
+                HStack(alignment: .center, spacing: JPSpace.s) {
                     Text(title)
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(titleLineLimit)
                         .accessibilityAddTraits(.isHeader)
+                        // 題は押す物ではない。長い題が眉の行の「すべて見る」の当たりの下側を塞がない
+                        .allowsHitTesting(false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if eyebrow == nil, hasTrailing { trailingSlot }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            trailing
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 右の行き先があるか（`EmptyView` の段は行を空けない）
+    private var hasTrailing: Bool { Trailing.self != EmptyView.self }
+
+    /// 右の行き先。**当たりは 44 のまま、行の背は眉の高さに保つ**（`JPSectionHeadingLayout.trailingBleed`）。
+    /// 44 の箱をそのまま眉の行に入れると、行が 44 に伸びて眉と題の間が 6 → 約 21 に開く
+    private var trailingSlot: some View {
+        trailing.padding(.vertical, -JPSectionHeadingLayout.trailingBleed)
     }
 }
 
@@ -64,6 +84,9 @@ enum JPSectionHeadingLayout {
     /// 眉と題の間（板 Components 05 の節の見出し `gap: 6px`）。**`JPSpace` の 4 の律動の外**——
     /// 眉（11pt）と明朝 22 の組を板が 6 で詰めているので、板の値をそのまま持つ（2026-10-14 判断）
     nonisolated static let eyebrowGap: CGFloat = 6
+    /// 右の「すべて見る ›」（当たり 44）を眉の行に置くとき、上下へはみ出させる量（片側）。
+    /// 44 − 16（眉の行の背の見込み）を半分ずつ。当たりは 44 のまま、行は眉の背で組む（#417 ②・2026-10-30 判断）
+    nonisolated static let trailingBleed: CGFloat = (WebTheme.minTapTarget - 16) / 2
 }
 
 /// 節の右の「すべて ›」「地図で見る ›」（板の `.more`: 13・text-2・当たりは 44）。

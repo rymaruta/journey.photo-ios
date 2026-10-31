@@ -761,7 +761,7 @@ struct SearchView: View {
         sectionHeader(eyebrow: eyebrow, spoken: spoken, title: title) { EmptyView() }
     }
 
-    /// 段の見出し。**v2（2026-10-14・Search の板）**: 眉（真鍮＋消える線）→ 明朝 22 → 右下に「すべて ›」
+    /// 段の見出し。**v2（2026-10-14・Search の板）**: 眉（真鍮＋消える線）と右の「すべて ›」の行（#417 ②）→ 明朝 22
     /// （共通の `JPSectionHeading`・`MoreLink`）。以前は 12pt の灰の小さい見出しだった
     private func sectionHeader<Trailing: View>(eyebrow: String, spoken: String, title: String,
                                                @ViewBuilder trailing: () -> Trailing) -> some View {
