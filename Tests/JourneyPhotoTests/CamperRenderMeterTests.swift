@@ -15,7 +15,13 @@ final class CamperRenderMeterTests: XCTestCase {
         XCTAssertEqual(t.nanos, 25_000_000)
         XCTAssertEqual(t.maxNanos, 20_000_000)
         XCTAssertEqual(t.slow, 1, "16.7 ms を越えたコマだけを遅いコマに数える")
-        XCTAssertEqual(m.summary(), "CamperRoomFrame n=2 ms=25.00 max=20.00 slow=1; CamperRoomUpdate n=1 ms=1.00 max=1.00 slow=0;")
+        let summary = m.summary()
+        XCTAssertTrue(summary.hasPrefix("CamperRoomFrame n=2 ms=25.00 max=20.00 slow=1; CamperRoomUpdate n=1 ms=1.00 max=1.00 slow=0;"), summary)
+        // 端末（iOS）ではアプリ全体の CPU とメモリが終わりに付く（Linux の模型には無い・Mac run 794）
+        if CamperRenderMeter.processUsage() != nil {
+            XCTAssertTrue(summary.contains(" Process cpu_ms="), summary)
+            XCTAssertTrue(summary.hasSuffix(";"), summary)
+        }
     }
 
     func testDisabledMeterCountsNothing() {
