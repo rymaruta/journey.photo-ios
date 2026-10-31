@@ -285,6 +285,10 @@ final class CamperRoomScene {
             entry.node.removeFromParentNode()
             itemNodes[uid] = nil
         }
+        // 切った壁の見せ方（`applyCutaway`）を付け直すか。2026-10-31（#430 の見直し）: 値渡しのたびの `setPhotosMode` を
+        // 変わった時だけにしたので、取り消し・やり直し・自動で置いた左の壁の家具が、切った後ろ壁の上に浮いて見えた
+        // （前は `setPhotosMode` が毎回 `applyCutaway` を回して隠れていた）。節を新しく作った・壁や向きが替わった時に付け直す
+        var needsCutaway = false
         for it in placed {
             if let entry = itemNodes[it.uid], entry.item.furnitureId == it.furnitureId {
                 if entry.item != it {
@@ -292,7 +296,12 @@ final class CamperRoomScene {
                     SCNTransaction.animationDuration = 0.12
                     transform(entry.node, displayed(it))
                     SCNTransaction.commit()
-                    if entry.item.photos != it.photos { applyPhotos(entry.node, it) }
+                    if entry.item.photos != it.photos {
+                        applyPhotos(entry.node, it)
+                        // 文書の側で額の写真が替わった（止まっている SCNView に描き直させる）
+                        kickRender()
+                    }
+                    if entry.item.yaw != it.yaw || entry.item.placement != it.placement { needsCutaway = true }
                     itemNodes[it.uid] = (entry.node, it)
                 }
                 continue
@@ -302,8 +311,10 @@ final class CamperRoomScene {
             itemsNode.addChildNode(node)
             itemNodes[it.uid] = (node, it)
             transform(node, displayed(it))
+            needsCutaway = true
         }
         rebuildLamps(placed, layout: layout, style: doc.style)
+        if needsCutaway { applyCutaway() }
     }
 
     /// 組み直した後に、持ち上げている家具とマス目の色を描き直す

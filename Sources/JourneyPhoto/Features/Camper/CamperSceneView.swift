@@ -37,10 +37,13 @@ struct CamperSceneView: UIViewRepresentable {
         }
         #endif
         snapshot?.view = view
-        // 1 コマの時間を測る（2026-10-31・#430・`CamperFrameMeter`。delegate は弱い参照なので場面が持つ）
-        let meter = CamperFrameMeter("CamperExteriorFrame")
-        context.coordinator.frameMeter = meter
-        view.delegate = meter
+        // 1 コマの時間を測る（2026-10-31・#430・`CamperFrameMeter`。delegate は弱い参照なので場面が持つ）。
+        // 見本の起動の計測（`-JPPreviewCamperPerf YES`）のときだけ付ける（本番では描く糸に何も足さない・#430 の見直し）
+        if CamperRenderMeter.shared.enabled {
+            let meter = CamperFrameMeter("CamperExteriorFrame")
+            context.coordinator.frameMeter = meter
+            view.delegate = meter
+        }
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
         // 炎の揺らぎ（SCNAction）は「動いている」ので、rendersContinuously が false のままでも描き直される。

@@ -86,10 +86,15 @@ struct CamperRoomSceneView: UIViewRepresentable {
             }
         }
         c.firstFrame = watcher
-        // 1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・`CamperFrameMeter`）
-        let meter = CamperFrameMeter("CamperRoomFrame", next: watcher)
-        c.frameMeter = meter
-        view.delegate = meter
+        // 計測（`-JPPreviewCamperPerf YES`）のときだけ、1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・
+        // `CamperFrameMeter`）。本番では見張りをそのまま delegate にする（描く糸に何も足さない・#430 の見直し）
+        if CamperRenderMeter.shared.enabled {
+            let meter = CamperFrameMeter("CamperRoomFrame", next: watcher)
+            c.frameMeter = meter
+            view.delegate = meter
+        } else {
+            view.delegate = watcher
+        }
         c.onReady = { marker in
             watcher.arm()
             DispatchQueue.main.async { onReady(marker) }
