@@ -1200,7 +1200,7 @@ struct PhotoDetailView: View {
             credit: credit,
             text: ThreadsShare.text(title: target.title?.resolved() ?? "",
                                     description: target.paragraphs.joined(separator: "\n"),
-                                    location: target.location ?? "",
+                                    location: LocationMatch.shareCardDisplay(target.location),
                                     url: link),
             avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
