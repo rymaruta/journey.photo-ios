@@ -187,8 +187,8 @@ enum SignatureShareCardRenderer {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
                 if let outline, let coordinate = credit.coords {
                     CountryOutline.draw(outline, pin: coordinate, in: mapRect, color: brass, context: cg)
-                } else {
-                    drawLocationFallback(in: mapRect, color: brass, context: cg)
+                } else if let coordinate = credit.coords {
+                    CountryOutline.drawNearby(pin: coordinate, in: mapRect, color: brass, context: cg)
                 }
             }
 
@@ -274,6 +274,61 @@ enum SignatureShareCardRenderer {
             return shapes.first { shape in
                 shape.r.contains { contains(coordinate, ring: $0) }
             }
+        }
+
+        /// 海上や小島でも近隣の実際の国境・海岸線を表示する。
+        /// Natural Earth の輪郭が範囲内にない場合だけ地点の目盛りを表示する。
+        static func drawNearby(pin: CLLocationCoordinate2D, in rect: CGRect,
+                               color: UIColor, context: CGContext) {
+            let span: Double = 18
+            let lonScale = max(0.2, cos(pin.latitude * .pi / 180))
+            let minLon = pin.longitude - span / lonScale
+            let maxLon = pin.longitude + span / lonScale
+            let minLat = pin.latitude - span * Double(rect.height / rect.width)
+            let maxLat = pin.latitude + span * Double(rect.height / rect.width)
+            func project(_ p: [Double]) -> CGPoint {
+                CGPoint(x: rect.minX + CGFloat((p[0] - minLon) / (maxLon - minLon)) * rect.width,
+                        y: rect.maxY - CGFloat((p[1] - minLat) / (maxLat - minLat)) * rect.height)
+            }
+            context.saveGState()
+            context.clip(to: rect)
+            context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+            context.setLineWidth(1.4)
+            var drewCoast = false
+            for shape in shapes {
+                for ring in shape.r where ring.count >= 3 {
+                    guard ring.contains(where: { $0.count == 2 &&
+                        $0[0] >= minLon && $0[0] <= maxLon &&
+                        $0[1] >= minLat && $0[1] <= maxLat }) else { continue }
+                    context.beginPath()
+                    context.move(to: project(ring[0]))
+                    for point in ring.dropFirst() where point.count == 2 {
+                        context.addLine(to: project(point))
+                    }
+                    context.closePath()
+                    context.strokePath()
+                    drewCoast = true
+                }
+            }
+            if !drewCoast {
+                context.setStrokeColor(color.withAlphaComponent(0.25).cgColor)
+                for i in 1...3 {
+                    let x = rect.minX + rect.width * CGFloat(i) / 4
+                    let y = rect.minY + rect.height * CGFloat(i) / 4
+                    context.move(to: CGPoint(x: x, y: rect.minY))
+                    context.addLine(to: CGPoint(x: x, y: rect.maxY))
+                    context.move(to: CGPoint(x: rect.minX, y: y))
+                    context.addLine(to: CGPoint(x: rect.maxX, y: y))
+                }
+                context.strokePath()
+            }
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: CGRect(x: rect.midX - 5, y: rect.midY - 5, width: 10, height: 10))
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(2)
+            context.strokeEllipse(in: CGRect(x: rect.midX - 12, y: rect.midY - 12,
+                                             width: 24, height: 24))
+            context.restoreGState()
         }
 
         static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
