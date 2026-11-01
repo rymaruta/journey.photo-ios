@@ -1180,7 +1180,8 @@ struct PhotoDetailView: View {
         let credit = SignatureShareCardRenderer.Credit(
             name: AuthorName.shown(profile: model.owner, photoDisplayName: target.displayName),
             username: model.owner?.username,
-            location: target.location,
+            // SNSカードには検索用の生住所を渡さず、表示向けに短縮した地名だけを渡す。
+            location: LocationMatch.display(target.location),
             coords: target.isGeoApprox ? nil : target.coords.map {
                 CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)
             },
