@@ -31,7 +31,8 @@ enum SignatureShareCardRenderer {
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? { nil }
     #else
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? {
-        guard let photo = UIImage(data: data) else { return nil }
+        guard let photo = UIImage(data: data),
+              photo.size.width > 0, photo.size.height > 0 else { return nil }
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
@@ -51,6 +52,7 @@ enum SignatureShareCardRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
+        format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: canvas, format: format)
         return renderer.jpegData(withCompressionQuality: 0.93) { context in
             let cg = context.cgContext
@@ -122,6 +124,12 @@ enum SignatureShareCardRenderer {
                 draw("© Apple Maps", at: CGPoint(x: width - 232, y: rowY + 99),
                      maxWidth: 170, size: 15, color: .white)
             }
+            let settings = [
+                credit.camera, credit.lens, credit.aperture, credit.exposure,
+                credit.iso.map { "ISO\($0)" }
+            ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+             .filter { !$0.isEmpty }
+            guard !settings.isEmpty else { return }
             let lineY = rowY + 143
             cg.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
             cg.setLineWidth(1)
@@ -129,11 +137,6 @@ enum SignatureShareCardRenderer {
             cg.addLine(to: CGPoint(x: width - 55, y: lineY))
             cg.strokePath()
 
-            let settings = [
-                credit.camera, credit.lens, credit.aperture, credit.exposure,
-                credit.iso.map { "ISO\($0)" }
-            ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-             .filter { !$0.isEmpty }
             if !settings.isEmpty {
                 let firstLine = settings.prefix(2).joined(separator: "   ·   ")
                 let secondLine = settings.dropFirst(2).joined(separator: "   ·   ")
