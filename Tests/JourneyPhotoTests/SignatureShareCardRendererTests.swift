@@ -14,7 +14,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Photographer", username: "photographer", location: "Kyoto",
             coords: nil, camera: "Camera", lens: "35mm", exposure: "1/125s",
-            aperture: "f/2", iso: 100)
+            aperture: "f/2", iso: 100, verified: false, proStyle: nil,
+            early: false, badge: nil)
         let result = await SignatureShareCardRenderer.render(source, credit: credit)
         let data = try XCTUnwrap(result)
         let image = try XCTUnwrap(UIImage(data: data))
@@ -34,7 +35,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
             }
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,
-            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil)
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil, verified: false, proStyle: nil,
+            early: false, badge: nil)
         let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: .square)
         XCTAssertEqual(UIImage(data: try XCTUnwrap(result))?.size, CGSize(width: 1080, height: 1080))
     }
@@ -48,7 +50,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
             name: "Long Photographer Name", username: "journey_photo",
             location: "Florence, Italy", coords: nil,
             camera: "Hasselblad X2D II 100C", lens: "XCD 35-100mm f/2.8-4 E",
-            exposure: "1/125s", aperture: "f/4", iso: 200)
+            exposure: "1/125s", aperture: "f/4", iso: 200, verified: false, proStyle: nil,
+            early: false, badge: nil)
         let result = await SignatureShareCardRenderer.render(
             source, credit: credit, ratio: .story)
         let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(result)))
@@ -64,7 +67,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Photographer", username: "photo", location: "Venice",
             coords: nil, camera: nil, lens: nil, exposure: nil,
-            aperture: nil, iso: nil)
+            aperture: nil, iso: nil, verified: false, proStyle: nil,
+            early: false, badge: nil)
         for (ratio, height) in [
             (SignatureShareCardRenderer.Ratio.portrait, CGFloat(1350)),
             (.story, CGFloat(1920)),
@@ -81,7 +85,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
     func testInvalidPhotoDataReturnsNil() async {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,
-            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil)
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil, verified: false, proStyle: nil,
+            early: false, badge: nil)
         let result = await SignatureShareCardRenderer.render(
             Data("not a photo".utf8), credit: credit)
         XCTAssertNil(result)
@@ -101,7 +106,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: "creator", location: "Tokyo",
             coords: nil, camera: nil, lens: nil, exposure: nil,
-            aperture: nil, iso: nil)
+            aperture: nil, iso: nil, verified: false, proStyle: nil,
+            early: false, badge: nil)
         let rendered = await SignatureShareCardRenderer.render(
             photo, credit: credit, avatarData: avatar)
         XCTAssertNotNil(UIImage(data: try XCTUnwrap(rendered)))
