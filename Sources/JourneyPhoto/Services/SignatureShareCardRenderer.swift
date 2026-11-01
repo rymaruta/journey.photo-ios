@@ -1,6 +1,5 @@
 import UIKit
 import MapKit
-import AVFoundation
 
 /// SNS向けの1枚画像。写真と帰属情報を画素に焼き込み、元画像のEXIFを引き継がない。
 /// デザイン: docs/design/ios-artifact/DesignSystem.dc.html（黒塗りの真鍮）
@@ -34,7 +33,8 @@ enum SignatureShareCardRenderer {
         let canvas = CGSize(width: width, height: height)
         // MapKitの写真位置は公開用に丸められた座標だけを使う。
         let map: UIImage?
-        if let coordinate = credit.coords, CLLocationCoordinate2DIsValid(coordinate) {
+        if let coordinate = credit.coords, CLLocationCoordinate2DIsValid(coordinate),
+           abs(coordinate.latitude) <= 85 {
             let options = MKMapSnapshotter.Options()
             options.region = MKCoordinateRegion(center: coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4))
@@ -53,10 +53,14 @@ enum SignatureShareCardRenderer {
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
             let header: CGFloat = 120
-            let footer: CGFloat = ratio == .story ? 380 : 315
+            let footer: CGFloat = ratio == .story ? 400 : 335
             let photoRect = CGRect(x: 0, y: header, width: width, height: height - header - footer + 125)
             // 元画像を欠けさせない。写真の周囲は黒で埋める。
-            let fitted = AVMakeRect(aspectRatio: photo.size, insideRect: photoRect)
+            let scale = min(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
+            let fitted = CGRect(x: photoRect.midX - photo.size.width * scale / 2,
+                                y: photoRect.midY - photo.size.height * scale / 2,
+                                width: photo.size.width * scale,
+                                height: photo.size.height * scale)
             photo.draw(in: fitted)
             // 写真下端から黒い情報面へ自然につなぐ。個別のガラス枠は使わない。
             let fade = CGRect(x: 0, y: height - footer - 190, width: width, height: 245)
@@ -86,7 +90,7 @@ enum SignatureShareCardRenderer {
             draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 585, y: 51),
                  maxWidth: 450, size: 25, color: .white, alignment: .right)
 
-            let rowY = height - footer + 70
+            let rowY = height - footer + 50
             draw(credit.name, at: CGPoint(x: 58, y: rowY), maxWidth: 400,
                  size: 38, color: .white, bold: true)
             if let username = credit.username, !username.isEmpty {
@@ -127,8 +131,14 @@ enum SignatureShareCardRenderer {
             ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
              .filter { !$0.isEmpty }
             if !settings.isEmpty {
-                draw(settings.joined(separator: "   ·   "), at: CGPoint(x: 58, y: lineY + 28),
-                     maxWidth: width - 116, size: 27, color: secondary)
+                let firstLine = settings.prefix(2).joined(separator: "   ·   ")
+                let secondLine = settings.dropFirst(2).joined(separator: "   ·   ")
+                draw(firstLine, at: CGPoint(x: 58, y: lineY + 19),
+                     maxWidth: width - 116, size: 26, color: secondary)
+                if !secondLine.isEmpty {
+                    draw(secondLine, at: CGPoint(x: 58, y: lineY + 57),
+                         maxWidth: width - 116, size: 25, color: secondary)
+                }
             }
         }
     }
