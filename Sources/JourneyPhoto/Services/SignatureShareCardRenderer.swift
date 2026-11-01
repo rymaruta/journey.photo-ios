@@ -55,8 +55,6 @@ enum SignatureShareCardRenderer {
             // JPEG の画像境界をそのままカード境界とする。
             // 角丸で切り抜くと四隅に黒い余白が焼き込まれるため、
             // SNS保存用の画像では矩形のまま描画する。
-            let cardBounds = CGRect(origin: .zero, size: canvas)
-            let cardPath = UIBezierPath(rect: cardBounds)
             // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
             let margin: CGFloat = 48
@@ -225,7 +223,7 @@ enum SignatureShareCardRenderer {
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
-            // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
+            // 画像の端に沿う真鍮色の矩形フレーム。保存画像に角丸の外側余白を作らない。
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
             cg.setLineWidth(3)
             cg.stroke(CGRect(x: 1.5, y: 1.5, width: width - 3, height: height - 3))
