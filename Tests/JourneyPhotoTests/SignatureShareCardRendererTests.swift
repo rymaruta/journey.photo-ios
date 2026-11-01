@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ImageIO
+import CoreLocation
 @testable import JourneyPhoto
 
 #if !os(Linux)
@@ -79,6 +80,27 @@ final class SignatureShareCardRendererTests: XCTestCase {
             let data = try XCTUnwrap(rendered)
             XCTAssertEqual(UIImage(data: data)?.size,
                            CGSize(width: 1080, height: height))
+        }
+    }
+
+    func testLongCameraLensAndVisibleMarksRenderForAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "journey",
+            location: "月崎, 大多喜里見線, 市原市, 千葉県",
+            coords: CLLocationCoordinate2D(latitude: 35.34, longitude: 140.14),
+            camera: "Hasselblad X2D II 100C Medium Format Camera",
+            lens: "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens",
+            exposure: "1/125s", aperture: "f/4.8", iso: 200,
+            verified: true, proStyle: .iris, early: true, badge: nil)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+            let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(result)))
+            XCTAssertEqual(image.size.width, 1080)
         }
     }
 
