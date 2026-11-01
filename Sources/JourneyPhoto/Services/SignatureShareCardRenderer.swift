@@ -73,6 +73,22 @@ enum SignatureShareCardRenderer {
             cg.saveGState()
             cg.clip(to: photoRect)
             photo.draw(in: fitted)
+            // 横長の写真を縦型カードへ無理に拡大すると被写体が大幅に切れる。
+            // 背景は余白なく敷き、元写真は全体が見える比率で中央に重ねる。
+            let photoAspect = photo.size.width / photo.size.height
+            let cardAspect = photoRect.width / photoRect.height
+            if photoAspect > cardAspect * 1.35 {
+                let fitScale = min(photoRect.width / photo.size.width,
+                                   photoRect.height / photo.size.height)
+                let fitSize = CGSize(width: photo.size.width * fitScale,
+                                     height: photo.size.height * fitScale)
+                let fitRect = CGRect(x: photoRect.midX - fitSize.width / 2,
+                                     y: photoRect.midY - fitSize.height / 2,
+                                     width: fitSize.width, height: fitSize.height)
+                cg.setFillColor(UIColor.black.withAlphaComponent(0.35).cgColor)
+                cg.fill(photoRect)
+                photo.draw(in: fitRect)
+            }
             cg.restoreGState()
 
             let fade = CGRect(x: margin, y: photoBottom - 195,
