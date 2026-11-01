@@ -12,6 +12,26 @@
 name: TestFlight
 
 on:
+  workflow_call:
+    inputs:
+      submit:
+        type: boolean
+        default: false
+      betaReview:
+        type: boolean
+        default: false
+      storeShots:
+        type: boolean
+        default: false
+      tests:
+        type: boolean
+        default: true
+      screens:
+        type: string
+        default: ""
+      first:
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       submit:
