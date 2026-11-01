@@ -1,5 +1,8 @@
 import SwiftUI
 import UIKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// SNSに出す前に比率と焼き込まれる情報を確認する画面。
 struct SignatureShareCardSheet: View {
