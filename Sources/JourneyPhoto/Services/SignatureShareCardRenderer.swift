@@ -153,13 +153,13 @@ enum SignatureShareCardRenderer {
                 drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
                            size: 37, color: brass)
                 draw(place, at: CGPoint(x: 570, y: rowY + 22),
-                     maxWidth: outline == nil ? 385 : 225,
+                     maxWidth: outline == nil ? 385 : 205,
                      size: 29, color: .white, bold: true)
             }
             if let outline, let coordinate = credit.coords {
                 CountryOutline.draw(outline, pin: coordinate,
-                                    in: CGRect(x: 830, y: rowY - 15,
-                                             width: 140, height: 123),
+                                    in: CGRect(x: 785, y: rowY - 18,
+                                             width: 195, height: 128),
                                     color: brass, context: cg)
             }
 
