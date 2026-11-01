@@ -34,9 +34,11 @@ struct SignatureShareCardSheet: View {
                     } else if preparing {
                         ProgressView(L("共有画像を準備しています…", "Preparing image…"))
                     } else {
-                        ContentUnavailableView(L("画像を生成できませんでした", "Could not create image"),
-                                               systemImage: "photo.badge.exclamationmark",
-                                               description: Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again")))
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.badge.exclamationmark")
+                            Text(L("画像を生成できませんでした", "Could not create image"))
+                            Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
