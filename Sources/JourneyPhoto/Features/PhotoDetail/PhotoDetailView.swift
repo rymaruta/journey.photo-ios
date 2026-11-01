@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct PhotoDetailView: View {
 
@@ -38,7 +39,14 @@ struct PhotoDetailView: View {
     @State private var ownerPendingBlock: String?
     @State private var showEdit = false
     /// 過去の投稿を SNS に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
-    @State private var threadsBundle: ThreadsShare.Bundle?
+    @State private var signatureBundle: SignatureBundle?
+    private struct SignatureBundle: Identifiable {
+        let id = UUID()
+        let photoData: Data
+        let credit: SignatureShareCardRenderer.Credit
+        let text: String
+        let avatarURL: URL?
+    }
     @State private var preparingThreads = false
     @State private var showViewer = false
     @State private var actionError: String?
@@ -408,10 +416,11 @@ struct PhotoDetailView: View {
             // 通報する写真を上に小さく出す（v2 の板 Report・取り違えを防ぐ）
             ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)
         }
-        .sheet(item: $threadsBundle) { bundle in
-            ShareSheet(images: bundle.images, text: bundle.text)
-                .ignoresSafeArea()
-                .presentationDetents([.medium, .large])
+        .sheet(item: $signatureBundle) { bundle in
+            SignatureShareCardSheet(photoData: bundle.photoData,
+                                    credit: bundle.credit,
+                                    shareText: bundle.text,
+                                    avatarURL: bundle.avatarURL)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -1168,19 +1177,27 @@ struct PhotoDetailView: View {
             return
         }
         // 読めたが画像として書き出せない（壊れた画像・ホテルの Wi-Fi のログイン画面が HTML を返した等）
-        guard let data = await Task.detached(priority: .userInitiated, operation: { WatermarkRenderer.apply(raw) }).value else {
-            actionNotice = nil
-            actionError = L("この写真を SNS 用に用意できませんでした。少し時間をおいて、もう一度お試しください",
-                            "Couldn't prepare this photo for sharing. Please try again in a moment.")
-            return
-        }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: AuthorName.shown(profile: model.owner, photoDisplayName: target.displayName),
+            username: model.owner?.username,
+            location: target.location,
+            coords: target.isGeoApprox ? nil : target.coords.map {
+                CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)
+            },
+            camera: target.exif?.camera,
+            lens: target.exif?.lens,
+            exposure: target.exif?.exposure,
+            aperture: target.exif?.aperture,
+            iso: target.exif?.iso)
         actionNotice = nil
-        threadsBundle = ThreadsShare.Bundle(
-            images: [data],
+        signatureBundle = SignatureBundle(
+            photoData: raw,
+            credit: credit,
             text: ThreadsShare.text(title: target.title?.resolved() ?? "",
                                     description: target.paragraphs.joined(separator: "\n"),
                                     location: target.location ?? "",
-                                    url: link))
+                                    url: link),
+            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
 
     private var menu: some View {
