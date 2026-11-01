@@ -150,8 +150,8 @@ enum SignatureShareCardRenderer {
 
             if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                !place.isEmpty {
-                draw("⌖", at: CGPoint(x: 520, y: rowY + 21),
-                     maxWidth: 46, size: 37, color: brass)
+                drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
+                           size: 37, color: brass)
                 draw(place, at: CGPoint(x: 570, y: rowY + 22),
                      maxWidth: outline == nil ? 385 : 225,
                      size: 29, color: .white, bold: true)
