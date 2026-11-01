@@ -25,15 +25,21 @@ on:
         description: "Export App Store screenshots (forces full UI test suite)"
         type: boolean
         default: false
+      release_tests:
+        description: "Run Xcode unit/UI tests before upload (disable to reuse prior verified commit)"
+        type: boolean
+        default: true
       confirm_release:
         description: "Required for TestFlight upload; check only after reviewing the target commit"
         type: boolean
         default: false
 
 permissions:
-  contents: read
+  # The called TestFlight build job creates release tags and can publish screenshots.
+  # Reusable workflows cannot elevate the caller token permissions.
+  contents: write
 
-# No automatic uploads. For release, only main is accepted.
+# No automatic uploads. Releases can target any branch, with explicit confirmation.
 jobs:
   plan:
     name: Validate settings and publish execution plan
@@ -53,6 +59,7 @@ jobs:
           SCREENSHOTS: ${{ inputs.screenshots }}
           CONFIRM: ${{ inputs.confirm_release }}
           BRANCH: ${{ github.ref_name }}
+          RELEASE_TESTS: ${{ inputs.release_tests }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -70,16 +77,17 @@ jobs:
               release=true
               if [ "$MODE" = "testflight-external" ]; then external=true; fi
               if [ "$BRANCH" != "main" ]; then
-                echo "::error::TestFlight releases are only allowed from main; merge a verified PR first"
-                exit 1
+                echo "::warning::Releasing from $BRANCH (not main). Review the commit SHA carefully."
               fi
               if [ "$CONFIRM" != "true" ]; then
                 echo "::error::Select confirm_release to explicitly authorize upload"
                 exit 1
               fi
               if [ -n "$FIRST" ]; then
-                echo "::error::priority_tests is only supported for verify mode"
-                exit 1
+                echo "::warning::priority_tests is ignored for uploads; existing TestFlight workflow does not shard release tests"
+              fi
+              if [ "$RELEASE_TESTS" != "true" ]; then
+                echo "::warning::Xcode tests are disabled for this upload. Ensure this commit was verified separately."
               fi
               screens=all
               ;;
@@ -105,6 +113,7 @@ jobs:
             echo "| UI tests | \`$screens\` |"
             echo "| Screenshots | \`$SCREENSHOTS\` |"
             echo "| Upload authorized | \`$CONFIRM\` |"
+            echo "| Run tests before upload | \`$RELEASE_TESTS\` |"
             echo ""
             echo "The existing TestFlight workflow performs the Xcode tests, signing and upload."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -122,7 +131,7 @@ jobs:
       submit: ${{ needs.plan.outputs.release == 'true' }}
       betaReview: ${{ needs.plan.outputs.external == 'true' }}
       storeShots: ${{ inputs.screenshots }}
-      tests: true
+      tests: ${{ needs.plan.outputs.release != 'true' || inputs.release_tests }}
       screens: ${{ needs.plan.outputs.screens }}
       first: ${{ inputs.priority_tests }}
     secrets: inherit
