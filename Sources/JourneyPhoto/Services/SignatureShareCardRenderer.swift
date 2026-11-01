@@ -415,16 +415,27 @@ enum SignatureShareCardRenderer {
     /// 3列の撮影情報を折り返して表示。長い機材名を一律に末尾省略しない。
     private static func drawInfo(_ value: String, at origin: CGPoint,
                                  maxWidth: CGFloat, size: CGFloat, color: UIColor) {
-        let font = UIFont.systemFont(ofSize: size, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byCharWrapping
-        paragraph.lineSpacing = 2
-        (value as NSString).draw(with: CGRect(x: origin.x, y: origin.y,
-                                               width: maxWidth, height: size * 3.5),
-                                 options: [.usesLineFragmentOrigin],
-                                 attributes: [.font: font, .foregroundColor: color,
-                                              .paragraphStyle: paragraph],
-                                 context: nil)
+        paragraph.lineSpacing = 1
+        // 3行分の高さに収まるまで縮小し、末尾省略で機材名を失わないようにする。
+        let text = value as NSString
+        let availableHeight: CGFloat = 72
+        var fittedSize = size
+        var attributes: [NSAttributedString.Key: Any] = [:]
+        while true {
+            let font = UIFont.systemFont(ofSize: fittedSize, weight: .semibold)
+            attributes = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
+            let measured = text.boundingRect(
+                with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: attributes, context: nil)
+            if measured.height <= availableHeight || fittedSize <= 13 { break }
+            fittedSize -= 1
+        }
+        text.draw(with: CGRect(x: origin.x, y: origin.y, width: maxWidth,
+                               height: availableHeight),
+                  options: [.usesLineFragmentOrigin], attributes: attributes, context: nil)
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
