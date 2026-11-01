@@ -469,30 +469,49 @@ enum SignatureShareCardRenderer {
         }
     }
 
-    /// 3列の撮影情報を折り返して表示。長い機材名を一律に末尾省略しない。
+    /// 撮影情報の列幅と高さに合わせて、全文を表示できる最大フォントサイズを求める。
+    /// 描画とテストで同じ計測を使い、3行相当の高さからはみ出さないようにする。
+    static func equipmentFontSize(_ value: String, maxWidth: CGFloat,
+                                  preferredSize: CGFloat = 22,
+                                  availableHeight: CGFloat = 72) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byCharWrapping
+        paragraph.lineSpacing = 1
+        let text = value as NSString
+        var lower: CGFloat = 7
+        var upper = preferredSize
+        for _ in 0..<12 {
+            let middle = (lower + upper) / 2
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: middle, weight: .semibold),
+                .paragraphStyle: paragraph
+            ]
+            let measured = text.boundingRect(
+                with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: attributes, context: nil)
+            if measured.height <= availableHeight { lower = middle }
+            else { upper = middle }
+        }
+        return lower
+    }
+
+    /// 列内に全文を収める。短い機材名は従来の大きさを維持する。
     private static func drawInfo(_ value: String, at origin: CGPoint,
                                  maxWidth: CGFloat, size: CGFloat, color: UIColor) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byCharWrapping
         paragraph.lineSpacing = 1
-        // 3行分の高さに収まるまで縮小し、末尾省略で機材名を失わないようにする。
-        let text = value as NSString
-        let availableHeight: CGFloat = 72
-        var fittedSize = size
-        var attributes: [NSAttributedString.Key: Any] = [:]
-        while true {
-            let font = UIFont.systemFont(ofSize: fittedSize, weight: .semibold)
-            attributes = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
-            let measured = text.boundingRect(
-                with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: attributes, context: nil)
-            if measured.height <= availableHeight || fittedSize <= 13 { break }
-            fittedSize -= 1
-        }
-        text.draw(with: CGRect(x: origin.x, y: origin.y, width: maxWidth,
-                               height: availableHeight),
-                  options: [.usesLineFragmentOrigin], attributes: attributes, context: nil)
+        let fittedSize = equipmentFontSize(value, maxWidth: maxWidth, preferredSize: size)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fittedSize, weight: .semibold),
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ]
+        (value as NSString).draw(
+            with: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: 72),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes, context: nil)
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
