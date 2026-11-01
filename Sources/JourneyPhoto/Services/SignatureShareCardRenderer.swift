@@ -20,6 +20,10 @@ enum SignatureShareCardRenderer {
         let exposure: String?
         let aperture: String?
         let iso: Int?
+        let verified: Bool
+        let proStyle: ProMarkStyle?
+        let early: Bool
+        let badge: EarnedBadge?
     }
 
     private static let surface = UIColor(red: 14/255, green: 14/255, blue: 15/255, alpha: 1)
@@ -111,17 +115,17 @@ enum SignatureShareCardRenderer {
                            height: height - margin - photoBottom))
 
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 62, width: 55, height: 55))
+                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 62, width: 45, height: 45))
             }
-            draw("Journey Photo", at: CGPoint(x: 163, y: 57), maxWidth: 365,
-                 size: 43, color: .white, serif: true)
+            draw("Journey Photo", at: CGPoint(x: 157, y: 64), maxWidth: 365,
+                 size: 39, color: .white, serif: true)
             cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
             cg.setLineWidth(2)
             cg.move(to: CGPoint(x: 550, y: 59))
             cg.addLine(to: CGPoint(x: 550, y: 116))
             cg.strokePath()
-            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 585, y: 77),
-                 maxWidth: 390, size: 23, color: .white, alignment: .right)
+            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 79),
+                  maxWidth: 410, size: 25, color: .white, alignment: .right)
 
             let rowY = height - footer + 76
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
@@ -151,8 +155,9 @@ enum SignatureShareCardRenderer {
                      size: 45, color: .white, serif: true)
             }
             draw(credit.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                 at: CGPoint(x: 220, y: rowY), maxWidth: 250,
-                 size: 38, color: .white, bold: true)
+                 at: CGPoint(x: 220, y: rowY), maxWidth: 220,
+                  size: 34, color: .white, bold: true)
+            drawNameMarks(credit, at: CGPoint(x: 442, y: rowY + 7))
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
@@ -170,13 +175,15 @@ enum SignatureShareCardRenderer {
                            size: 37, color: brass)
                 draw(place, at: CGPoint(x: 570, y: rowY + 22),
                      maxWidth: outline == nil ? 385 : 205,
-                     size: 29, color: .white, bold: true)
+                      size: 26, lines: 3, color: .white, bold: true)
             }
-            if let outline, let coordinate = credit.coords {
-                CountryOutline.draw(outline, pin: coordinate,
-                                    in: CGRect(x: 785, y: rowY - 18,
-                                             width: 195, height: 128),
-                                    color: brass, context: cg)
+            if let coordinate = credit.coords {
+                let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
+                if let outline {
+                    CountryOutline.draw(outline, pin: coordinate, in: mapRect, color: brass, context: cg)
+                } else {
+                    drawLocationFallback(in: mapRect, color: brass, context: cg)
+                }
             }
 
             let separatorY = rowY + 132
@@ -204,18 +211,15 @@ enum SignatureShareCardRenderer {
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
                 drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
-                drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235,
-                         size: 26, color: .white)
+                drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235, size: 22, color: .white)
             }
             if !lens.isEmpty {
                 drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY), size: 40, color: brass)
-                drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246,
-                         size: 26, color: .white)
+                drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246, size: 22, color: .white)
             }
             if !exposure.isEmpty {
                 drawSymbol("timer", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
-                drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195,
-                         size: 24, color: .white)
+                drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
             // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
@@ -304,16 +308,56 @@ enum SignatureShareCardRenderer {
         }
     }
 
+    private static func drawLocationFallback(in rect: CGRect, color: UIColor, context: CGContext) {
+        context.saveGState()
+        context.clip(to: rect)
+        context.setStrokeColor(color.withAlphaComponent(0.32).cgColor)
+        context.setLineWidth(1)
+        for fraction in [CGFloat(0.25), 0.5, 0.75] {
+            let x = rect.minX + rect.width * fraction
+            let y = rect.minY + rect.height * fraction
+            context.move(to: CGPoint(x: x, y: rect.minY + 8))
+            context.addLine(to: CGPoint(x: x, y: rect.maxY - 8))
+            context.move(to: CGPoint(x: rect.minX + 8, y: y))
+            context.addLine(to: CGPoint(x: rect.maxX - 8, y: y))
+        }
+        context.strokePath()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10))
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(2)
+        context.strokeEllipse(in: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26))
+        context.restoreGState()
+    }
+
+    private static func drawNameMarks(_ credit: Credit, at origin: CGPoint) {
+        var x = origin.x
+        func symbol(_ name: String) {
+            drawSymbol(name, at: CGPoint(x: x, y: origin.y), size: 25, color: brass)
+            x += 30
+        }
+        if credit.verified { symbol("checkmark.seal.fill") }
+        if let proStyle = credit.proStyle {
+            symbol(proStyle == .iris ? "camera.aperture" : "star.circle.fill")
+        }
+        if credit.early { symbol("sparkle") }
+        if let badge = credit.badge, BadgeCatalog.isKnown(badge.key),
+           let image = UIImage(named: BadgeCatalog.nameSideImage(badge.key, tier: badge.tier)) {
+            image.draw(in: CGRect(x: x, y: origin.y - 2, width: 30, height: 30))
+        }
+    }
+
     /// 3列の撮影情報は最大2行で表示。長い機材名を一律に末尾省略しない。
     private static func drawInfo(_ value: String, at origin: CGPoint,
                                  maxWidth: CGFloat, size: CGFloat, color: UIColor) {
         let font = UIFont.systemFont(ofSize: size, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = .byCharWrapping
         paragraph.lineSpacing = 2
         (value as NSString).draw(with: CGRect(x: origin.x, y: origin.y,
-                                               width: maxWidth, height: size * 2.8),
-                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                                               width: maxWidth, height: size * 3.5),
+                                 options: [.usesLineFragmentOrigin],
                                  attributes: [.font: font, .foregroundColor: color,
                                               .paragraphStyle: paragraph],
                                  context: nil)
@@ -329,7 +373,8 @@ enum SignatureShareCardRenderer {
 
     private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
                              size: CGFloat, color: UIColor, bold: Bool = false,
-                             serif: Bool = false, alignment: NSTextAlignment = .left) {
+                             serif: Bool = false, alignment: NSTextAlignment = .left,
+                             lines: Int = 1) {
         let base = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
         let font = serif ? (base.fontDescriptor.withDesign(.serif).map {
             UIFont(descriptor: $0, size: size)
@@ -345,9 +390,9 @@ enum SignatureShareCardRenderer {
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = lines > 1 ? .byCharWrapping : .byTruncatingTail
         text.draw(in: CGRect(x: origin.x, y: origin.y,
-                             width: maxWidth, height: size * 1.6),
+                             width: maxWidth, height: size * CGFloat(lines) * 1.35),
                   withAttributes: [.font: fittedFont, .foregroundColor: color,
                                    .paragraphStyle: paragraph])
     }
