@@ -74,18 +74,25 @@ case "$mode" in
         extra="$extra -default-test-execution-time-allowance $UI_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UI_TIME_MAXIMUM"
         only=""
-        if [ -n "${2:-}" ] && [ -s "$2" ]; then
+        if [ -n "${2:-}" ] && [ -f "$2" ]; then
             while IFS= read -r line; do
                 [ -n "$line" ] && only="$only $line"
             done < "$2"
+            # 🔴 **一覧のファイルを渡したのに中身が無い＝流すテストが無い組**（2026-10-31・見直しの指摘）。
+            # 前は空（改行だけ）を「一覧が無い」と同じに扱い、UI テストを全部流していた
+            if [ -z "$only" ]; then
+                echo "一覧 $2 に流すテストがありません（空の組）。何も流しません"
+                exit 0
+            fi
         fi
-        # 一覧が無ければ UI テストを全部
+        # 一覧を渡さなければ UI テストを全部
         only="${only:--only-testing:JourneyPhotoUITests}"
         # 名指しした回だけ流す UI テスト（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED）は、一覧に名前が無ければ飛ばす。
         # 2026-10-22: 家具の脚の接写（約5分）が PR の検証・TestFlight の全部の回を延ばさないように
         for named in $(python3 Tools/pick-ui-tests.py --only-when-named); do
             case " $only " in
-                *"/$named "*) ;;
+                # テストの名前で名指し（`/Class/test `）か、クラスの名前で名指ししたときは、その下のテスト（`/Class/…`）も
+                *"/$named "*|*"/$named/"*) ;;
                 *) only="$only -skip-testing:JourneyPhotoUITests/$named" ;;
             esac
         done
@@ -97,17 +104,26 @@ case "$mode" in
         ;;
 esac
 
+# **別の台で組んだ品で流す**（2026-10-31・#429）。`XCTESTRUN` に xctestrun の置き場を渡すと、
+# プロジェクトではなくその品で流す（`Tools/test-products.py unpack` が置き場を出す）。組む段では使えない
+if [ -n "${XCTESTRUN:-}" ]; then
+    if [ "$mode" = "build" ]; then
+        echo "XCTESTRUN は組んだ品で流すとき（unit・ui）だけ渡す" >&2
+        exit 2
+    fi
+    # 組む設定（arm64 に絞る・プラグインの関所）は組む側の話なので、組んだ品で流すときは渡さない
+    source_args="-xctestrun $XCTESTRUN"
+else
+    source_args="-project JourneyPhoto.xcodeproj -scheme JourneyPhoto"
+    source_args="$source_args ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -skipPackagePluginValidation -skipMacroValidation"
+fi
+
 mkdir -p "$(dirname "$LOG")"
-# `extra` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
+# `extra`・`source_args` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
 # shellcheck disable=SC2086
 xcodebuild \
-    -project JourneyPhoto.xcodeproj \
-    -scheme JourneyPhoto \
+    $source_args \
     -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
-    ARCHS=arm64 \
-    ONLY_ACTIVE_ARCH=YES \
-    -skipPackagePluginValidation \
-    -skipMacroValidation \
     $extra \
     "$action" 2>&1 | tee -a "$LOG" | tail -n 400 || {
         echo "::group::error: と落ちたテストの行だけ"

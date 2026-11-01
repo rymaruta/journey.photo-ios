@@ -11,27 +11,35 @@
 # ビルドを赤くすると、本来の見張り（テストの結果）が読めなくなる。
 #
 #     bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
+#     bash Tools/export-screenshots.sh a.xcresult b.xcresult …   # UI テストを分けて流した回（2026-10-31・#429）
 set -uo pipefail
 
-XCRESULT="${1:-build/ios/test/Test.xcresult}"
+[ "$#" -gt 0 ] || set -- build/ios/test/Test.xcresult
 SRC=/tmp/shots
 OUT=/tmp/shots-out
-
-if [ ! -d "$XCRESULT" ]; then
-    echo "::warning::$XCRESULT がありません（テストが走らなかった？）"
-    exit 0
-fi
 
 rm -rf "$SRC" "$OUT"
 mkdir -p "$SRC" "$OUT"
 
-if ! xcrun xcresulttool export attachments --path "$XCRESULT" --output-path "$SRC"; then
-    echo "::warning::添付を取り出せませんでした（xcresulttool の版違い？）"
-    exit 0
+# **分けて流した回は結果が台ごとに分かれている**（2026-10-31・#429）。1つずつ取り出して同じ置き場に写す
+# （絵の名前は撮った時の UUID が付くので重ならない）。1つも読めなければ置かない
+found=0
+n=0
+for XCRESULT in "$@"; do
+n=$((n + 1))
+if [ ! -d "$XCRESULT" ]; then
+    echo "::warning::$XCRESULT がありません（テストが走らなかった？）"
+    continue
 fi
+mkdir -p "$SRC/$n"
+if ! xcrun xcresulttool export attachments --path "$XCRESULT" --output-path "$SRC/$n"; then
+    echo "::warning::添付を取り出せませんでした（xcresulttool の版違い？）: $XCRESULT"
+    continue
+fi
+found=$((found + 1))
 
 # 取り出したファイル名は機械向け。manifest から人が読める名前に戻す
-python3 - "$SRC" "$OUT" <<'PY'
+python3 - "$SRC/$n" "$OUT" <<'PY'
 import json, pathlib, shutil, sys
 
 src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
@@ -67,6 +75,10 @@ for test in json.loads(manifest.read_text()):
 if skipped:
     print(f"録画 {len(skipped)} 本はこの枝に置きません（成果物 build-logs の Test.xcresult の中にあります）: " + " / ".join(skipped[:5]))
 PY
+done
+if [ "$found" = "0" ]; then
+    exit 0
+fi
 
 count=$(ls "$OUT"/*.png 2>/dev/null | wc -l | tr -d ' ')
 if [ "$count" = "0" ]; then
