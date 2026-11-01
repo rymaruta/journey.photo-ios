@@ -15,6 +15,7 @@ struct SignatureShareCardSheet: View {
     @State private var showShare = false
     @State private var retryCount = 0
     @State private var avatarData: Data?
+    @State private var avatarFetchAttempted = false
 
     var body: some View {
         NavigationStack {
@@ -76,10 +77,11 @@ struct SignatureShareCardSheet: View {
             .task(id: "\(ratio.rawValue)-\(retryCount)") {
                 preparing = true
                 output = nil
-                if avatarData == nil, let avatarURL, !Task.isCancelled {
+                if !avatarFetchAttempted, let avatarURL, !Task.isCancelled {
+                    avatarFetchAttempted = true
                     var request = URLRequest(url: avatarURL)
                     request.cachePolicy = .reloadIgnoringLocalCacheData
-                    request.timeoutInterval = 8
+                    request.timeoutInterval = 4
                     if let (data, response) = try? await URLSession.shared.data(for: request),
                        let response = response as? HTTPURLResponse,
                        (200..<300).contains(response.statusCode),
