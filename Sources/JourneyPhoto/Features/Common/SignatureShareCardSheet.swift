@@ -17,7 +17,7 @@ struct SignatureShareCardSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                Picker("共有画像の比率", selection: $ratio) {
+                Picker(L("共有画像の比率", "Share image ratio"), selection: $ratio) {
                     Text("4:5").tag(SignatureShareCardRenderer.Ratio.portrait)
                     Text("9:16").tag(SignatureShareCardRenderer.Ratio.story)
                     Text("1:1").tag(SignatureShareCardRenderer.Ratio.square)
@@ -32,11 +32,11 @@ struct SignatureShareCardSheet: View {
                             .scaledToFit()
                             .accessibilityLabel("SNS共有画像のプレビュー")
                     } else if preparing {
-                        ProgressView("共有画像を準備しています…")
+                        ProgressView(L("共有画像を準備しています…", "Preparing image…"))
                     } else {
-                        ContentUnavailableView("画像を生成できませんでした",
+                        ContentUnavailableView(L("画像を生成できませんでした", "Could not create image"),
                                                systemImage: "photo.badge.exclamationmark",
-                                               description: Text("別の比率を選ぶか、もう一度お試しください"))
+                                               description: Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again")))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,21 +45,21 @@ struct SignatureShareCardSheet: View {
                 Button {
                     showShare = true
                 } label: {
-                    Text("この画像を共有")
+                    Text(L("この画像を共有", "Share this image"))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .webPrimaryButton()
                 .disabled(output == nil || preparing)
                 .padding(.horizontal)
                 .padding(.bottom, 16)
             }
             .background(Color.black)
             .foregroundStyle(.white)
-            .navigationTitle("SNSに共有")
+            .navigationTitle(L("SNSに共有", "Share to social media"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("閉じる") { dismiss() }
+                    Button(L("閉じる", "Close")) { dismiss() }
                 }
             }
             .task(id: ratio) {
