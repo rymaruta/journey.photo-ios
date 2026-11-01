@@ -31,7 +31,10 @@ struct SignatureShareCardSheet: View {
                             .scaledToFit()
                             .accessibilityLabel(L("SNS共有画像のプレビュー", "Social share image preview"))
                     } else if preparing {
-                        ProgressView(L("共有画像を準備しています…", "Preparing image…"))
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(L("共有画像を準備しています…", "Preparing image…"))
+                        }
                     } else {
                         VStack(spacing: 8) {
                             Image(systemName: "photo.badge.exclamationmark")
