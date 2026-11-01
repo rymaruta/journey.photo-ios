@@ -135,12 +135,12 @@ enum SignatureShareCardRenderer {
             ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
              .filter { !$0.isEmpty }
             if !settings.isEmpty {
-            let lineY = rowY + 143
-            cg.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
-            cg.setLineWidth(1)
-            cg.move(to: CGPoint(x: 55, y: lineY))
-            cg.addLine(to: CGPoint(x: width - 55, y: lineY))
-            cg.strokePath()
+                let lineY = rowY + 143
+                cg.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
+                cg.setLineWidth(1)
+                cg.move(to: CGPoint(x: 55, y: lineY))
+                cg.addLine(to: CGPoint(x: width - 55, y: lineY))
+                cg.strokePath()
 
                 let firstLine = settings.prefix(2).joined(separator: "   ·   ")
                 let secondLine = settings.dropFirst(2).joined(separator: "   ·   ")
@@ -161,12 +161,22 @@ enum SignatureShareCardRenderer {
         let font = serif ? (base.fontDescriptor.withDesign(.serif).map {
             UIFont(descriptor: $0, size: size)
         } ?? base) : base
+        // 長い撮影地・カメラ名は可能な範囲で縮小し、最後だけ省略する。
+        let text = value as NSString
+        var fittedFont = font
+        let minimumSize = max(16, size * 0.72)
+        while fittedFont.pointSize > minimumSize,
+              text.size(withAttributes: [.font: fittedFont]).width > maxWidth {
+            fittedFont = UIFont(descriptor: font.fontDescriptor,
+                                size: max(minimumSize, fittedFont.pointSize - 1))
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byTruncatingTail
-        (value as NSString).draw(in: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: size * 1.6),
-                                 withAttributes: [.font: font, .foregroundColor: color,
-                                                  .paragraphStyle: paragraph])
+        text.draw(in: CGRect(x: origin.x, y: origin.y,
+                             width: maxWidth, height: size * 1.6),
+                  withAttributes: [.font: fittedFont, .foregroundColor: color,
+                                   .paragraphStyle: paragraph])
     }
     #endif
 }
