@@ -1,5 +1,6 @@
 import UIKit
 import MapKit
+import ImageIO
 
 /// SNS向けの1枚画像。写真と帰属情報を画素に焼き込み、元画像のEXIFを引き継がない。
 /// デザイン: docs/design/ios-artifact/DesignSystem.dc.html（黒塗りの真鍮）
@@ -35,8 +36,25 @@ enum SignatureShareCardRenderer {
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? { nil }
     #else
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? {
-        guard let photo = UIImage(data: data),
-              photo.size.width > 0, photo.size.height > 0 else { return nil }
+        // 1080px幅のSNSカードに原本の全画素を展開しない。
+        // 画質の余裕を持たせて最大3072pxへ縮小デコードし、失敗時は従来方式へ戻す。
+        let photo: UIImage?
+        if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 3072,
+                kCGImageSourceShouldCacheImmediately: true
+            ]
+            if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                photo = UIImage(cgImage: thumbnail)
+            } else {
+                photo = UIImage(data: data)
+            }
+        } else {
+            photo = UIImage(data: data)
+        }
+        guard let photo, photo.size.width > 0, photo.size.height > 0 else { return nil }
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
