@@ -26,6 +26,10 @@ enum SignatureShareCardRenderer {
     private static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
     private static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
 
+    #if os(Linux)
+    // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? { nil }
+    #else
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? {
         guard let photo = UIImage(data: data) else { return nil }
         let width: CGFloat = 1080
@@ -157,4 +161,5 @@ enum SignatureShareCardRenderer {
                                  withAttributes: [.font: font, .foregroundColor: color,
                                                   .paragraphStyle: paragraph])
     }
+    #endif
 }
