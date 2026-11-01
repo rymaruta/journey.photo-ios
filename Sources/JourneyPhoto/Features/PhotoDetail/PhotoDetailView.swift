@@ -1182,9 +1182,9 @@ struct PhotoDetailView: View {
             username: model.owner?.username,
             // SNSカードには検索用の生住所を渡さず、表示向けに短縮した地名だけを渡す。
             location: LocationMatch.shareCardDisplay(target.location),
-            coords: target.isGeoApprox ? nil : target.coords.map {
-                CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)
-            },
+            // SNSカードには撮影地点の精密な座標を渡さない。
+            // 公開地名は行政区分までに留め、ピンから撮影地点が特定されることを防ぐ。
+            coords: nil,
             camera: target.exif?.camera,
             lens: target.exif?.lens,
             exposure: target.exif?.exposure,
