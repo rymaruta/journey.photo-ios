@@ -61,13 +61,16 @@ enum SignatureShareCardRenderer {
             let header: CGFloat = 120
             let footer: CGFloat = ratio == .story ? 400 : 335
             let photoRect = CGRect(x: 0, y: header, width: width, height: height - header - footer + 125)
-            // 元画像を欠けさせない。写真の周囲は黒で埋める。
-            let scale = min(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
+            // 余白を作らず写真を主役にする。カード枠からはみ出す部分のみ切り取る。
+            let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
             let fitted = CGRect(x: photoRect.midX - photo.size.width * scale / 2,
                                 y: photoRect.midY - photo.size.height * scale / 2,
                                 width: photo.size.width * scale,
                                 height: photo.size.height * scale)
+            cg.saveGState()
+            cg.clip(to: photoRect)
             photo.draw(in: fitted)
+            cg.restoreGState()
             // 写真下端から黒い情報面へ自然につなぐ。個別のガラス枠は使わない。
             let fade = CGRect(x: 0, y: height - footer - 190, width: width, height: 245)
             let colors = [UIColor.black.withAlphaComponent(0).cgColor,
