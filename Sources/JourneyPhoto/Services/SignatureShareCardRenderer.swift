@@ -158,7 +158,8 @@ enum SignatureShareCardRenderer {
             let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
             let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
                 + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
-            let nameWidth = CGFloat(max(112, 255 - markCount * 30))
+            let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
+            let nameWidth = max(90, 255 - markWidth)
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
             // マークが多い場合も撮影地との仕切り線を越えない。
@@ -336,20 +337,78 @@ enum SignatureShareCardRenderer {
         context.restoreGState()
     }
 
+    /// 既存の ProMarkGeometry / EarlyMemberMarkGeometry を使い、画面と同じ輪郭を描く。
     private static func drawNameMarks(_ credit: Credit, at origin: CGPoint) {
         var x = origin.x
-        func symbol(_ name: String) {
-            drawSymbol(name, at: CGPoint(x: x, y: origin.y), size: 25, color: brass)
-            x += 30
+        func advance(_ width: CGFloat = 30) { x += width }
+        if credit.verified {
+            drawSymbol("checkmark.seal.fill", at: CGPoint(x: x, y: origin.y), size: 25, color: brass)
+            advance()
         }
-        if credit.verified { symbol("checkmark.seal.fill") }
-        if let proStyle = credit.proStyle {
-            symbol(proStyle == .iris ? "camera.aperture" : "star.circle.fill")
+        if let style = credit.proStyle {
+            let rect = CGRect(x: x, y: origin.y, width: style == .plate ? 43 : 27, height: 27)
+            drawProMark(style, in: rect)
+            advance(style == .plate ? 46 : 30)
         }
-        if credit.early { symbol("sparkle") }
+        if credit.early {
+            let rect = CGRect(x: x, y: origin.y, width: 27, height: 27)
+            let shield = EarlyMemberMarkShape(part: .shield).path(in: rect)
+            let star = EarlyMemberMarkShape(part: .star).path(in: rect)
+            brass.setFill()
+            UIBezierPath(cgPath: shield.cgPath).fill()
+            UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1).setFill()
+            UIBezierPath(cgPath: star.cgPath).fill()
+            advance()
+        }
         if let badge = credit.badge, BadgeCatalog.isKnown(badge.key),
            let image = UIImage(named: BadgeCatalog.nameSideImage(badge.key, tier: badge.tier)) {
             image.draw(in: CGRect(x: x, y: origin.y - 2, width: 30, height: 30))
+        }
+    }
+
+    private static func drawProMark(_ style: ProMarkStyle, in rect: CGRect) {
+        let gold = brass
+        let ink = UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1)
+        if style == .plate {
+            let pill = UIBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 3), cornerRadius: 10)
+            UIColor(red: 12/255, green: 12/255, blue: 13/255, alpha: 1).setFill()
+            pill.fill()
+            gold.setStroke()
+            pill.lineWidth = 1.8
+            pill.stroke()
+            let font = UIFont.systemFont(ofSize: 13, weight: .heavy)
+            let label = "PRO" as NSString
+            let size = label.size(withAttributes: [.font: font])
+            label.draw(at: CGPoint(x: rect.midX - size.width / 2,
+                                   y: rect.midY - size.height / 2),
+                       withAttributes: [.font: font, .foregroundColor: gold])
+            return
+        }
+        let k = min(rect.width, rect.height) / 24
+        let ox = rect.midX - 12 * k, oy = rect.midY - 12 * k
+        func point(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: ox + p.x * k, y: oy + p.y * k)
+        }
+        let disc = CGRect(x: ox + 0.8 * k, y: oy + 0.8 * k,
+                          width: 22.4 * k, height: 22.4 * k)
+        gold.setFill()
+        UIBezierPath(ovalIn: disc).fill()
+        let aperture = ProMarkGeometry.aperture(small: false)
+        ink.setStroke()
+        for (start, end) in zip(aperture, ProMarkGeometry.bladeEnds) {
+            let line = UIBezierPath()
+            line.move(to: point(start))
+            line.addLine(to: point(end))
+            line.lineWidth = 1.05 * k
+            line.stroke()
+        }
+        let hole = UIBezierPath()
+        if let first = aperture.first {
+            hole.move(to: point(first))
+            for p in aperture.dropFirst() { hole.addLine(to: point(p)) }
+            hole.close()
+            ink.setFill()
+            hole.fill()
         }
     }
 
