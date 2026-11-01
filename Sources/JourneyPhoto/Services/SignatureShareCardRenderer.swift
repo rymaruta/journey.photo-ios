@@ -177,18 +177,25 @@ enum SignatureShareCardRenderer {
                             credit.iso.map { "ISO\($0)" }]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }.joined(separator: "  ")
-            draw("▣", at: CGPoint(x: 98, y: infoY), maxWidth: 54,
-                 size: 40, color: brass)
-            draw(camera, at: CGPoint(x: 157, y: infoY + 5), maxWidth: 235,
-                 size: 26, color: .white, bold: true)
-            draw("◎", at: CGPoint(x: 410, y: infoY), maxWidth: 52,
-                 size: 40, color: brass)
-            draw(lens, at: CGPoint(x: 463, y: infoY + 5), maxWidth: 246,
-                 size: 26, color: .white, bold: true)
-            draw("△", at: CGPoint(x: 731, y: infoY), maxWidth: 49,
-                 size: 38, color: brass)
-            draw(exposure, at: CGPoint(x: 786, y: infoY + 5), maxWidth: 195,
-                 size: 24, color: .white, bold: true)
+            // 値のない撮影項目はアイコンだけ残さない。
+            if !camera.isEmpty {
+                draw("▣", at: CGPoint(x: 98, y: infoY), maxWidth: 54,
+                     size: 40, color: brass)
+                draw(camera, at: CGPoint(x: 157, y: infoY + 5), maxWidth: 235,
+                     size: 26, color: .white, bold: true)
+            }
+            if !lens.isEmpty {
+                draw("◎", at: CGPoint(x: 410, y: infoY), maxWidth: 52,
+                     size: 40, color: brass)
+                draw(lens, at: CGPoint(x: 463, y: infoY + 5), maxWidth: 246,
+                     size: 26, color: .white, bold: true)
+            }
+            if !exposure.isEmpty {
+                draw("△", at: CGPoint(x: 731, y: infoY), maxWidth: 49,
+                     size: 38, color: brass)
+                draw(exposure, at: CGPoint(x: 786, y: infoY + 5), maxWidth: 195,
+                     size: 24, color: .white, bold: true)
+            }
 
             // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
