@@ -39,7 +39,13 @@ struct PhotoDetailView: View {
     @State private var ownerPendingBlock: String?
     @State private var showEdit = false
     /// 過去の投稿を SNS に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
-    @State private var threadsBundle: ThreadsShare.Bundle?
+    @State private var signatureBundle: SignatureBundle?
+    private struct SignatureBundle: Identifiable {
+        let id = UUID()
+        let photoData: Data
+        let credit: SignatureShareCardRenderer.Credit
+        let text: String
+    }
     @State private var preparingThreads = false
     @State private var showViewer = false
     @State private var actionError: String?
@@ -409,10 +415,10 @@ struct PhotoDetailView: View {
             // 通報する写真を上に小さく出す（v2 の板 Report・取り違えを防ぐ）
             ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)
         }
-        .sheet(item: $threadsBundle) { bundle in
-            ShareSheet(images: bundle.images, text: bundle.text)
-                .ignoresSafeArea()
-                .presentationDetents([.medium, .large])
+        .sheet(item: $signatureBundle) { bundle in
+            SignatureShareCardSheet(photoData: bundle.photoData,
+                                    credit: bundle.credit,
+                                    shareText: bundle.text)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -1181,15 +1187,10 @@ struct PhotoDetailView: View {
             exposure: target.exif?.exposure,
             aperture: target.exif?.aperture,
             iso: target.exif?.iso)
-        guard let data = await SignatureShareCardRenderer.render(raw, credit: credit) else {
-            actionNotice = nil
-            actionError = L("この写真を SNS 用に用意できませんでした。少し時間をおいて、もう一度お試しください",
-                            "Couldn't prepare this photo for sharing. Please try again in a moment.")
-            return
-        }
         actionNotice = nil
-        threadsBundle = ThreadsShare.Bundle(
-            images: [data],
+        signatureBundle = SignatureBundle(
+            photoData: raw,
+            credit: credit,
             text: ThreadsShare.text(title: target.title?.resolved() ?? "",
                                     description: target.paragraphs.joined(separator: "\n"),
                                     location: target.location ?? "",
