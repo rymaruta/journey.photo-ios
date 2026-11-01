@@ -109,7 +109,7 @@ jobs:
   #  - PR の回である（手で流した回は必ず回す）
   #  - main へ入れたあとの木（PR のマージの木）が、PR の先頭のコミットの木と同じ
   #    （PR を作ってから main が動いていれば、試していない組み合わせなので回す）
-  #  - PR の先頭のコミットで、TestFlight のワークフローが success で終わり、
+  #  - PR の先頭のコミットで、TestFlight のワークフローが success か cancelled で終わり（failure は数えない）、
   #    その回の「全部のテストが通った（PR の検証が数える印）」の段が success
   #    （2026-10-17: 枝の確認は UI テストを `screens` で絞れるようになった。絞った回は
   #    この印が skipped なので数えない＝ここで全部を回す。印の無い前の作りの回は数えない
@@ -146,14 +146,20 @@ jobs:
           elif [ "$merged" != "$head_tree" ]; then
             reason="PR を作ってから main が動いている（マージの木が先頭の木と違う）"
           else
-            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-testflight.yml/runs?head_sha=${HEAD_SHA}&status=success&per_page=20" \
-                      --jq '.workflow_runs[].id' 2>/dev/null || true)"
+            # 2026-10-31（#429）: run 全体が cancelled の回も見る。run 41210269135 は印の段まで success で、
+            # そのあとの Archive が job の上限（160 分）に当たって cancelled になり、PR #431 が同じコミットを
+            # Mac でもう一度全部流した。印の段は「単体と UI が全部通った」ときだけ success なので、後の段で
+            # 止まった回でもテスト済みと言える。**failure の回は数えない**（どこかが落ちた回）
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-testflight.yml/runs?head_sha=${HEAD_SHA}&status=completed&per_page=30" \
+                      --jq '.workflow_runs[] | select(.conclusion == "success" or .conclusion == "cancelled") | .id' 2>/dev/null || true)"
             reason="このコミットで Mac のテストが通った TestFlight の回が無い"
             for id in $runs; do
               # 🔴 **段の名前は完全一致で見る**（前は「テスト」で始まる最初の段＝単体だけで
-              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える
-              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
-                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | first // ""' 2>/dev/null || true)"
+              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える。
+              # 2026-10-31（#429）: 印の段は2か所にある（1台で流す回は `build` の job、別々の Mac に分けて流す回は
+              # 「まとめ」の job）。流れなかった方は skipped なので、どれか1つが success なら数える
+              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | if any(. == "success") then "success" else "" end' 2>/dev/null || true)"
               if [ "$step" = "success" ]; then
                 skip=true
                 reason="TestFlight の run ${id} で同じコミットのテストが通っている"
