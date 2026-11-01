@@ -61,8 +61,11 @@ enum SignatureShareCardRenderer {
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
             let header: CGFloat = 120
+            // 全比率で撮影者・地図・EXIFが収まる情報領域を確保する。
+            // 1:1も縦長と同じ情報領域を使い、最下段の文字切れを防ぐ。
             let footer: CGFloat = ratio == .story ? 400 : 335
-            let photoRect = CGRect(x: 0, y: header, width: width, height: height - header - footer + 125)
+            let photoRect = CGRect(x: 0, y: header, width: width,
+                                   height: height - header - footer + 125)
             // 余白を作らず写真を主役にする。カード枠からはみ出す部分のみ切り取る。
             let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
             let fitted = CGRect(x: photoRect.midX - photo.size.width * scale / 2,
@@ -102,13 +105,16 @@ enum SignatureShareCardRenderer {
                  maxWidth: 450, size: 25, color: .white, alignment: .right)
 
             let rowY = height - footer + 50
-            draw(credit.name, at: CGPoint(x: 58, y: rowY), maxWidth: 400,
+            draw(credit.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                 at: CGPoint(x: 58, y: rowY), maxWidth: 400,
                  size: 38, color: .white, bold: true)
-            if let username = credit.username, !username.isEmpty {
+            if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !username.isEmpty {
                 draw("@"+username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
                      at: CGPoint(x: 58, y: rowY + 53), maxWidth: 420, size: 27, color: secondary)
             }
-            if let place = credit.location, !place.isEmpty {
+            if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !place.isEmpty {
                 draw("⌖ " + place, at: CGPoint(x: 470, y: rowY + 20),
                      maxWidth: map == nil ? 540 : 335, size: 30, color: .white)
             }
