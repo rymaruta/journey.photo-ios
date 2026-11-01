@@ -45,6 +45,7 @@ struct PhotoDetailView: View {
         let photoData: Data
         let credit: SignatureShareCardRenderer.Credit
         let text: String
+        let avatarURL: URL?
     }
     @State private var preparingThreads = false
     @State private var showViewer = false
@@ -418,7 +419,8 @@ struct PhotoDetailView: View {
         .sheet(item: $signatureBundle) { bundle in
             SignatureShareCardSheet(photoData: bundle.photoData,
                                     credit: bundle.credit,
-                                    shareText: bundle.text)
+                                    shareText: bundle.text,
+                                    avatarURL: bundle.avatarURL)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -1194,7 +1196,8 @@ struct PhotoDetailView: View {
             text: ThreadsShare.text(title: target.title?.resolved() ?? "",
                                     description: target.paragraphs.joined(separator: "\n"),
                                     location: target.location ?? "",
-                                    url: link))
+                                    url: link),
+            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
 
     private var menu: some View {
