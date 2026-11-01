@@ -38,6 +38,23 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: .square)
         XCTAssertEqual(UIImage(data: try XCTUnwrap(result))?.size, CGSize(width: 1080, height: 1080))
     }
+    func testStoryCardRendersExpectedDimensions() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.black.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Long Photographer Name", username: "journey_photo",
+            location: "Florence, Italy", coords: nil,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100mm f/2.8-4 E",
+            exposure: "1/125s", aperture: "f/4", iso: 200)
+        let result = await SignatureShareCardRenderer.render(
+            source, credit: credit, ratio: .story)
+        let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(result)))
+        XCTAssertEqual(image.size, CGSize(width: 1080, height: 1920))
+    }
+
 }
 
 #endif
