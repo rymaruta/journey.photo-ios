@@ -85,4 +85,23 @@ final class LocationDisplayTests: XCTestCase {
         // 行き先の題（撮影地の写真の一覧）は縮めた名前
         XCTAssertEqual(PhotoQuery.Collection.location(raw).title, "蔵王キツネ村（宮城県白石市）")
     }
+    func testShareCardJapaneseAdministrativeLocation() {
+        XCTAssertEqual(
+            LocationMatch.shareCardDisplay("横浜赤レンガ倉庫, 中区, 横浜市, 神奈川県, 231-0001, 日本"),
+            "神奈川県（横浜市）")
+        XCTAssertEqual(
+            LocationMatch.shareCardDisplay("蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"),
+            "宮城県（白石市）")
+        XCTAssertEqual(
+            LocationMatch.shareCardDisplay("東京タワー, 港区, 東京都, 105-0011, 日本"),
+            "東京都（港区）")
+        XCTAssertEqual(LocationMatch.shareCardDisplay("富士山, 静岡県, 日本"), "静岡県")
+    }
+
+    func testShareCardForeignLocationUsesExistingFormatter() {
+        XCTAssertEqual(LocationMatch.shareCardDisplay("Louvre, Paris, France"),
+                       "Louvre (Paris, France)")
+        XCTAssertEqual(LocationMatch.shareCardDisplay(nil), "")
+    }
+
 }
