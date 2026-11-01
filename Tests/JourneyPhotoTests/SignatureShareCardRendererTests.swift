@@ -51,7 +51,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
                                           bitsPerComponent: 8, bytesPerRow: 4,
                                           space: colorSpace,
                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        ctx.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        let corner = try XCTUnwrap(bitmap.cropping(to: CGRect(x: 0, y: 0, width: 1, height: 1)))
+        ctx.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         XCTAssertGreaterThan(Int(pixel[0]), 60, "画像の角に黒い余白が残っている")
     }
 
