@@ -12,6 +12,7 @@ struct SignatureShareCardSheet: View {
     @State private var output: Data?
     @State private var preparing = true
     @State private var showShare = false
+    @State private var retryCount = 0
 
     var body: some View {
         NavigationStack {
@@ -40,6 +41,8 @@ struct SignatureShareCardSheet: View {
                             Image(systemName: "photo.badge.exclamationmark")
                             Text(L("画像を生成できませんでした", "Could not create image"))
                             Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
+                            Button(L("再試行", "Try again")) { retryCount += 1 }
+                                .accessibilityIdentifier("signatureShare.retry")
                         }
                     }
                 }
@@ -68,7 +71,7 @@ struct SignatureShareCardSheet: View {
                     Button(L("閉じる", "Close")) { dismiss() }
                 }
             }
-            .task(id: ratio) {
+            .task(id: "\(ratio.rawValue)-\(retryCount)") {
                 preparing = true
                 output = nil
                 let result = await SignatureShareCardRenderer.render(photoData, credit: credit, ratio: ratio)
