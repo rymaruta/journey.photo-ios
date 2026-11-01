@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct PhotoDetailView: View {
 
@@ -1168,7 +1169,19 @@ struct PhotoDetailView: View {
             return
         }
         // 読めたが画像として書き出せない（壊れた画像・ホテルの Wi-Fi のログイン画面が HTML を返した等）
-        guard let data = await Task.detached(priority: .userInitiated, operation: { WatermarkRenderer.apply(raw) }).value else {
+        let credit = SignatureShareCardRenderer.Credit(
+            name: AuthorName.shown(profile: model.owner, photoDisplayName: target.displayName),
+            username: model.owner?.username,
+            location: target.location,
+            coords: target.isGeoApprox ? nil : target.coords.map {
+                CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)
+            },
+            camera: target.exif?.camera,
+            lens: target.exif?.lens,
+            exposure: target.exif?.exposure,
+            aperture: target.exif?.aperture,
+            iso: target.exif?.iso)
+        guard let data = await SignatureShareCardRenderer.render(raw, credit: credit) else {
             actionNotice = nil
             actionError = L("この写真を SNS 用に用意できませんでした。少し時間をおいて、もう一度お試しください",
                             "Couldn't prepare this photo for sharing. Please try again in a moment.")
