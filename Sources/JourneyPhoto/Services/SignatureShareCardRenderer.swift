@@ -48,14 +48,17 @@ enum SignatureShareCardRenderer {
             let cg = context.cgContext
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
-            let header: CGFloat = 120
-            // 全比率で撮影者・地図・EXIFが収まる情報領域を確保する。
-            // 1:1も縦長と同じ情報領域を使い、最下段の文字切れを防ぐ。
-            let footer: CGFloat = ratio == .story ? 400 : 335
-            let photoRect = CGRect(x: 0, y: header, width: width,
-                                   height: height - header - footer + 125)
-            // 余白を作らず写真を主役にする。カード枠からはみ出す部分のみ切り取る。
-            let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
+            // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
+            // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
+            let margin: CGFloat = 48
+            let header: CGFloat = 142
+            let footer: CGFloat = ratio == .story ? 430 : 355
+            let photoBottom = height - footer + 78
+            let photoRect = CGRect(x: margin, y: header,
+                                   width: width - margin * 2,
+                                   height: photoBottom - header)
+            let scale = max(photoRect.width / photo.size.width,
+                            photoRect.height / photo.size.height)
             let fitted = CGRect(x: photoRect.midX - photo.size.width * scale / 2,
                                 y: photoRect.midY - photo.size.height * scale / 2,
                                 width: photo.size.width * scale,
@@ -64,13 +67,14 @@ enum SignatureShareCardRenderer {
             cg.clip(to: photoRect)
             photo.draw(in: fitted)
             cg.restoreGState()
-            // 写真下端から黒い情報面へ自然につなぐ。個別のガラス枠は使わない。
-            let fade = CGRect(x: 0, y: height - footer - 190, width: width, height: 245)
+
+            let fade = CGRect(x: margin, y: photoBottom - 195,
+                              width: width - margin * 2, height: 210)
             let colors = [UIColor.black.withAlphaComponent(0).cgColor,
-                          UIColor.black.withAlphaComponent(0.68).cgColor,
+                          surface.withAlphaComponent(0.86).cgColor,
                           surface.cgColor] as CFArray
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: colors, locations: [0, 0.5, 1]) {
+                                         colors: colors, locations: [0, 0.66, 1]) {
                 cg.saveGState()
                 cg.clip(to: fade)
                 cg.drawLinearGradient(gradient,
@@ -79,61 +83,99 @@ enum SignatureShareCardRenderer {
                 cg.restoreGState()
             }
             surface.setFill()
-            cg.fill(CGRect(x: 0, y: height - footer + 50, width: width, height: footer - 50))
+            cg.fill(CGRect(x: margin, y: photoBottom,
+                           width: width - margin * 2,
+                           height: height - margin - photoBottom))
 
-            // ブランド: 写真上は白のみ。公式アセットを使用。
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                cg.saveGState()
-                mark.withTintColor(.white).draw(in: CGRect(x: 54, y: 39, width: 44, height: 44))
-                cg.restoreGState()
+                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 62, width: 55, height: 55))
             }
-            draw("Journey Photo", at: CGPoint(x: 112, y: 35), maxWidth: 390,
-                 size: 47, color: .white, serif: true)
-            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 585, y: 51),
-                 maxWidth: 450, size: 25, color: .white, alignment: .right)
+            draw("Journey Photo", at: CGPoint(x: 163, y: 57), maxWidth: 365,
+                 size: 43, color: .white, serif: true)
+            cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
+            cg.setLineWidth(2)
+            cg.move(to: CGPoint(x: 550, y: 59))
+            cg.addLine(to: CGPoint(x: 550, y: 116))
+            cg.strokePath()
+            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 585, y: 77),
+                 maxWidth: 390, size: 23, color: .white, alignment: .right)
 
-            let rowY = height - footer + 50
+            let rowY = height - footer + 76
+            // アバター未取得の場合はブランド色の円形モノグラムで代替。
+            let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
+            cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
+            cg.fillEllipse(in: avatarRect)
+            cg.setStrokeColor(brass.cgColor)
+            cg.setLineWidth(2)
+            cg.strokeEllipse(in: avatarRect)
+            let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
+            draw(initial.isEmpty ? "J" : initial,
+                 at: CGPoint(x: 128, y: rowY + 17), maxWidth: 50,
+                 size: 45, color: .white, serif: true)
             draw(credit.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                 at: CGPoint(x: 58, y: rowY), maxWidth: 400,
+                 at: CGPoint(x: 220, y: rowY), maxWidth: 250,
                  size: 38, color: .white, bold: true)
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
-                draw("@"+username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
-                     at: CGPoint(x: 58, y: rowY + 53), maxWidth: 420, size: 27, color: secondary)
+                draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
+                     at: CGPoint(x: 220, y: rowY + 53), maxWidth: 245,
+                     size: 25, color: secondary)
             }
+            cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
+            cg.move(to: CGPoint(x: 493, y: rowY - 4))
+            cg.addLine(to: CGPoint(x: 493, y: rowY + 105))
+            cg.strokePath()
+
             if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                !place.isEmpty {
-                draw("⌖ " + place, at: CGPoint(x: 470, y: rowY + 20),
-                     maxWidth: outline == nil ? 540 : 335, size: 30, color: .white)
+                draw("⌖", at: CGPoint(x: 520, y: rowY + 21),
+                     maxWidth: 46, size: 37, color: brass)
+                draw(place, at: CGPoint(x: 570, y: rowY + 22),
+                     maxWidth: outline == nil ? 385 : 225,
+                     size: 29, color: .white, bold: true)
             }
             if let outline, let coordinate = credit.coords {
                 CountryOutline.draw(outline, pin: coordinate,
-                                    in: CGRect(x: width - 240, y: rowY - 32,
-                                             width: 190, height: 135),
+                                    in: CGRect(x: 830, y: rowY - 15,
+                                             width: 140, height: 123),
                                     color: brass, context: cg)
             }
-            let settings = [
-                credit.camera, credit.lens, credit.aperture, credit.exposure,
-                credit.iso.map { "ISO\($0)" }
-            ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-             .filter { !$0.isEmpty }
-            if !settings.isEmpty {
-                let lineY = rowY + 143
-                cg.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
-                cg.setLineWidth(1)
-                cg.move(to: CGPoint(x: 55, y: lineY))
-                cg.addLine(to: CGPoint(x: width - 55, y: lineY))
-                cg.strokePath()
 
-                let firstLine = settings.prefix(2).joined(separator: "   ·   ")
-                let secondLine = settings.dropFirst(2).joined(separator: "   ·   ")
-                draw(firstLine, at: CGPoint(x: 58, y: lineY + 19),
-                     maxWidth: width - 116, size: 26, color: secondary)
-                if !secondLine.isEmpty {
-                    draw(secondLine, at: CGPoint(x: 58, y: lineY + 57),
-                         maxWidth: width - 116, size: 25, color: secondary)
-                }
-            }
+            let separatorY = rowY + 132
+            cg.setStrokeColor(brass.withAlphaComponent(0.5).cgColor)
+            cg.setLineWidth(1.5)
+            cg.move(to: CGPoint(x: 96, y: separatorY))
+            cg.addLine(to: CGPoint(x: width - 96, y: separatorY))
+            cg.strokePath()
+
+            let infoY = separatorY + 31
+            let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lens = credit.lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let exposure = [credit.aperture, credit.exposure,
+                            credit.iso.map { "ISO\($0)" }]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }.joined(separator: "  ")
+            draw("▣", at: CGPoint(x: 98, y: infoY), maxWidth: 54,
+                 size: 40, color: brass)
+            draw(camera, at: CGPoint(x: 157, y: infoY + 5), maxWidth: 235,
+                 size: 26, color: .white, bold: true)
+            draw("◎", at: CGPoint(x: 410, y: infoY), maxWidth: 52,
+                 size: 40, color: brass)
+            draw(lens, at: CGPoint(x: 463, y: infoY + 5), maxWidth: 246,
+                 size: 26, color: .white, bold: true)
+            draw("△", at: CGPoint(x: 731, y: infoY), maxWidth: 49,
+                 size: 38, color: brass)
+            draw(exposure, at: CGPoint(x: 786, y: infoY + 5), maxWidth: 195,
+                 size: 24, color: .white, bold: true)
+
+            // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
+            cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
+            cg.setLineWidth(3)
+            cg.addPath(UIBezierPath(roundedRect: CGRect(x: 50, y: 14,
+                                                         width: width - 100,
+                                                         height: height - 28),
+                                    cornerRadius: 55).cgPath)
+            cg.strokePath()
         }
     }
 
