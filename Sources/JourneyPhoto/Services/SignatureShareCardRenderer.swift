@@ -48,6 +48,13 @@ enum SignatureShareCardRenderer {
             let cg = context.cgContext
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
+            // 外枠の外に写真がはみ出さないよう、カード全体を角丸でクリップ。
+            // 枠線は最後に重ねて描く。
+            let cardBounds = CGRect(x: 50, y: 14,
+                                    width: width - 100, height: height - 28)
+            let cardPath = UIBezierPath(roundedRect: cardBounds, cornerRadius: 55)
+            cg.addPath(cardPath.cgPath)
+            cg.clip()
             // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
             let margin: CGFloat = 48
@@ -186,10 +193,7 @@ enum SignatureShareCardRenderer {
             // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
             cg.setLineWidth(3)
-            cg.addPath(UIBezierPath(roundedRect: CGRect(x: 50, y: 14,
-                                                         width: width - 100,
-                                                         height: height - 28),
-                                    cornerRadius: 55).cgPath)
+            cg.addPath(cardPath.cgPath)
             cg.strokePath()
         }
     }
