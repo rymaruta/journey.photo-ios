@@ -55,6 +55,29 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertEqual(image.size, CGSize(width: 1080, height: 1920))
     }
 
+    func testWideLandscapePhotoCanBeExportedInAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1800, height: 650))
+            .jpegData(withCompressionQuality: 0.85) { context in
+                UIColor.blue.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1800, height: 650))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photo", location: "Venice",
+            coords: nil, camera: nil, lens: nil, exposure: nil,
+            aperture: nil, iso: nil)
+        for (ratio, height) in [
+            (SignatureShareCardRenderer.Ratio.portrait, CGFloat(1350)),
+            (.story, CGFloat(1920)),
+            (.square, CGFloat(1080))
+        ] {
+            let rendered = await SignatureShareCardRenderer.render(
+                source, credit: credit, ratio: ratio)
+            let data = try XCTUnwrap(rendered)
+            XCTAssertEqual(UIImage(data: data)?.size,
+                           CGSize(width: 1080, height: height))
+        }
+    }
+
 }
 
 #endif
