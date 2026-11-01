@@ -993,7 +993,9 @@ struct MyPageView: View {
     private func wishlistRow(_ spot: DerivedSpot.Place) -> some View {
         HStack(spacing: 12) {
             // 代表写真は**いちばん多く押された1枚**（数えた値）
-            RemoteImage(url: spot.cover?.gridImageURL)
+            DownsampledRemoteImage(url: spot.cover?.gridImageURL, contentMode: .fill,
+                                        aspectRatio: spot.cover?.aspectRatio.map { CGFloat($0) },
+                                        assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 .frame(width: 56, height: 56)
                 .background(WebTheme.card)
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
