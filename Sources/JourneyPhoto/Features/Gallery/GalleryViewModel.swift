@@ -139,16 +139,20 @@ final class GalleryViewModel: ObservableObject {
     /// 全件（`photos.json`）を読んで書く。**最後の書き込みはここだけで、`writes` を通す**
     private func finishSnapshot(serial mine: Int, force: Bool, generation: Int) async {
         // **catch の中で await しない**（Xcode 26.3 の SILGen）。結果を外へ持ち出してから分ける
+        let fetchInterval = PerfSignpost.begin(.homeSnapshotFetch)
         let result: Result<[Photo], Error>
         do {
             result = .success(try await gallery.fetchPhotos(force: force))
         } catch {
             result = .failure(error)
         }
+        PerfSignpost.end(fetchInterval)
         // 限定公開の控え・いいねの数を取り直した後で、読んだページの仕上げを掛け直す
         // （`writes` の後に await を挟まない——書くと決めたら必ずすぐ書く）
         if pageSource == .pages, pendingPage == nil { await representPages(loadsRestricted: true) }
         guard writes(mine, force: force, generation: generation) else { return }
+        let processInterval = PerfSignpost.begin(.homeSnapshotProcess)
+        defer { PerfSignpost.end(processInterval) }
         switch result {
         case .success(let photos):
             all = sorted(photos)
@@ -355,6 +359,8 @@ final class GalleryViewModel: ObservableObject {
     }
 
     private func readFirstPage(_ feedPages: PublicFeedService, serial: Int, loadsRestricted: Bool) async -> Bool {
+        let pageInterval = PerfSignpost.begin(.homeFirstPage)
+        defer { PerfSignpost.end(pageInterval) }
         defer { if serial == pageSerial { isLoadingPage = false } }
         let outcome = await readPages(feedPages, from: nil, known: [])
         guard serial == pageSerial else { return false }
