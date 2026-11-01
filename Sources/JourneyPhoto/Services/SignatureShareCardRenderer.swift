@@ -28,9 +28,9 @@ enum SignatureShareCardRenderer {
 
     #if os(Linux)
     // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? { nil }
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? { nil }
     #else
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? {
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? {
         guard let photo = UIImage(data: data),
               photo.size.width > 0, photo.size.height > 0 else { return nil }
         let width: CGFloat = 1080
@@ -103,15 +103,30 @@ enum SignatureShareCardRenderer {
             let rowY = height - footer + 76
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
-            cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
-            cg.fillEllipse(in: avatarRect)
+            if let avatarData, let avatar = UIImage(data: avatarData) {
+                cg.saveGState()
+                cg.addEllipse(in: avatarRect)
+                cg.clip()
+                let factor = max(avatarRect.width / avatar.size.width,
+                                 avatarRect.height / avatar.size.height)
+                avatar.draw(in: CGRect(x: avatarRect.midX - avatar.size.width * factor / 2,
+                                       y: avatarRect.midY - avatar.size.height * factor / 2,
+                                       width: avatar.size.width * factor,
+                                       height: avatar.size.height * factor))
+                cg.restoreGState()
+            } else {
+                cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
+                cg.fillEllipse(in: avatarRect)
+            }
             cg.setStrokeColor(brass.cgColor)
             cg.setLineWidth(2)
             cg.strokeEllipse(in: avatarRect)
             let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
-            draw(initial.isEmpty ? "J" : initial,
-                 at: CGPoint(x: 128, y: rowY + 17), maxWidth: 50,
-                 size: 45, color: .white, serif: true)
+            if avatarData.flatMap(UIImage.init(data:)) == nil {
+                draw(initial.isEmpty ? "J" : initial,
+                     at: CGPoint(x: 128, y: rowY + 17), maxWidth: 50,
+                     size: 45, color: .white, serif: true)
+            }
             draw(credit.name.trimmingCharacters(in: .whitespacesAndNewlines),
                  at: CGPoint(x: 220, y: rowY), maxWidth: 250,
                  size: 38, color: .white, bold: true)
