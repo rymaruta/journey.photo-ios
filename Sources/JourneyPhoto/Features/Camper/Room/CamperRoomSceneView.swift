@@ -86,7 +86,15 @@ struct CamperRoomSceneView: UIViewRepresentable {
             }
         }
         c.firstFrame = watcher
-        view.delegate = watcher
+        // 計測（`-JPPreviewCamperPerf YES`）のときだけ、1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・
+        // `CamperFrameMeter`）。本番では見張りをそのまま delegate にする（描く糸に何も足さない・#430 の見直し）
+        if CamperRenderMeter.shared.enabled {
+            let meter = CamperFrameMeter("CamperRoomFrame", next: watcher)
+            c.frameMeter = meter
+            view.delegate = meter
+        } else {
+            view.delegate = watcher
+        }
         c.onReady = { marker in
             watcher.arm()
             DispatchQueue.main.async { onReady(marker) }
@@ -105,17 +113,20 @@ struct CamperRoomSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        let c = context.coordinator
-        c.attach(view)
-        c.show(layout: layout, doc: doc, paint: paint)
-        c.setMood(mood)
-        c.setCamera(camera, animated: animateCamera)
-        c.setPhotoImages(photoImages)
-        c.setPhotosMode(photosMode, focus: focusFrame, preview: previewPhotoId)
-        c.setEditing(editing)
-        c.setSelected(drag == nil ? selected : nil)
-        c.setDrag(drag, check: dragCheck)
-        c.setHints(hints)
+        // 値渡しの段ごとに印を付けて測る（2026-10-31・#430）
+        CamperRenderMark.measure("CamperRoomUpdate") {
+            let c = context.coordinator
+            c.attach(view)
+            CamperRenderMark.measure("CamperRoomShow") { c.show(layout: layout, doc: doc, paint: paint) }
+            c.setMood(mood)
+            CamperRenderMark.measure("CamperRoomSetCamera") { c.setCamera(camera, animated: animateCamera) }
+            CamperRenderMark.measure("CamperRoomPhotoImages") { c.setPhotoImages(photoImages) }
+            CamperRenderMark.measure("CamperRoomPhotosMode") { c.setPhotosMode(photosMode, focus: focusFrame, preview: previewPhotoId) }
+            c.setEditing(editing)
+            c.setSelected(drag == nil ? selected : nil)
+            c.setDrag(drag, check: dragCheck)
+            c.setHints(hints)
+        }
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: CamperRoomScene) {

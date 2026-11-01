@@ -103,6 +103,9 @@ final class GalleryViewModel: ObservableObject {
     /// 札（おすすめ・フォロー中・カテゴリ・タグ・検索・今日のテーマ）のために今までどおり読む。
     /// `/feed` が使えない（道が無い 404・500・圏外・壊れた答え）回は全件の並びに戻る
     func load(force: Bool = false) async {
+        // ホームの読み込みの区間（`PerfSignpost`・2026-10-31 札 #429。動きは変えない）
+        let signpost = PerfSignpost.begin(.homeLoad)
+        defer { PerfSignpost.end(signpost) }
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
