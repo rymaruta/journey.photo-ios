@@ -196,7 +196,7 @@ enum SignatureShareCardRenderer {
             // 参考デザインどおり、撮影情報は個別の箱ではなく細い縦罫線で区切る。
             cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
             cg.setLineWidth(1.5)
-            for dividerX: CGFloat in [399, 721] {
+            for dividerX in [CGFloat(399), CGFloat(721)] {
                 cg.move(to: CGPoint(x: dividerX, y: infoY - 6))
                 cg.addLine(to: CGPoint(x: dividerX, y: infoY + 62))
                 cg.strokePath()
