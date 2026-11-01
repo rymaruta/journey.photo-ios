@@ -193,6 +193,14 @@ enum SignatureShareCardRenderer {
                             credit.iso.map { "ISO\($0)" }]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }.joined(separator: "  ")
+            // 参考デザインどおり、撮影情報は個別の箱ではなく細い縦罫線で区切る。
+            cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
+            cg.setLineWidth(1.5)
+            for dividerX: CGFloat in [399, 721] {
+                cg.move(to: CGPoint(x: dividerX, y: infoY - 6))
+                cg.addLine(to: CGPoint(x: dividerX, y: infoY + 62))
+                cg.strokePath()
+            }
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
                 drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
@@ -205,7 +213,7 @@ enum SignatureShareCardRenderer {
                          size: 26, color: .white)
             }
             if !exposure.isEmpty {
-                drawSymbol("mountain.2", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
+                drawSymbol("timer", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195,
                          size: 24, color: .white)
             }
