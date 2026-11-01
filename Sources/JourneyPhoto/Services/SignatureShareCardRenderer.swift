@@ -38,8 +38,10 @@ enum SignatureShareCardRenderer {
         let canvas = CGSize(width: width, height: height)
         // MapKitの写真位置は公開用に丸められた座標だけを使う。
         let map: UIImage?
-        if let coordinate = credit.coords, CLLocationCoordinate2DIsValid(coordinate),
-           abs(coordinate.latitude) <= 85 {
+        if let coordinate = credit.coords,
+           coordinate.latitude.isFinite, coordinate.longitude.isFinite,
+           (-85...85).contains(coordinate.latitude),
+           (-180...180).contains(coordinate.longitude) {
             let options = MKMapSnapshotter.Options()
             options.region = MKCoordinateRegion(center: coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4))
@@ -132,7 +134,7 @@ enum SignatureShareCardRenderer {
                 credit.iso.map { "ISO\($0)" }
             ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
              .filter { !$0.isEmpty }
-            guard !settings.isEmpty else { return }
+            if !settings.isEmpty {
             let lineY = rowY + 143
             cg.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
             cg.setLineWidth(1)
@@ -140,7 +142,6 @@ enum SignatureShareCardRenderer {
             cg.addLine(to: CGPoint(x: width - 55, y: lineY))
             cg.strokePath()
 
-            if !settings.isEmpty {
                 let firstLine = settings.prefix(2).joined(separator: "   ·   ")
                 let secondLine = settings.dropFirst(2).joined(separator: "   ·   ")
                 draw(firstLine, at: CGPoint(x: 58, y: lineY + 19),
