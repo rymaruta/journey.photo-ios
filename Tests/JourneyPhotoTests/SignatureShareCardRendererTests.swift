@@ -78,6 +78,35 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testInvalidPhotoDataReturnsNil() async {
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Creator", username: nil, location: nil, coords: nil,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil)
+        let result = await SignatureShareCardRenderer.render(
+            Data("not a photo".utf8), credit: credit)
+        XCTAssertNil(result)
+    }
+
+    func testAvatarImageCanBeRendered() async throws {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 1000))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 800, height: 1000))
+            }
+        let avatar = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
+            .pngData { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Creator", username: "creator", location: "Tokyo",
+            coords: nil, camera: nil, lens: nil, exposure: nil,
+            aperture: nil, iso: nil)
+        let rendered = await SignatureShareCardRenderer.render(
+            photo, credit: credit, avatarData: avatar)
+        XCTAssertNotNil(UIImage(data: try XCTUnwrap(rendered)))
+    }
+
 }
 
 #endif
