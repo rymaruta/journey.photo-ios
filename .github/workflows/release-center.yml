@@ -1,0 +1,128 @@
+# Journey Photo Release Center v1
+# Existing TestFlight workflow remains the single source of truth for signing, builds and uploads.
+name: Release Center
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Execution mode"
+        type: choice
+        options:
+          - verify
+          - testflight-internal
+          - testflight-external
+        default: verify
+      ui_scope:
+        description: "Verification UI tests: all / none / test name(s), comma separated. Release always runs all."
+        type: string
+        default: all
+      priority_tests:
+        description: "Run these UI tests first in full verification (comma separated)"
+        type: string
+        default: ""
+      screenshots:
+        description: "Export App Store screenshots (forces full UI test suite)"
+        type: boolean
+        default: false
+      confirm_release:
+        description: "Required for TestFlight upload; check only after reviewing the target commit"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# No automatic uploads. For release, only main is accepted.
+jobs:
+  plan:
+    name: Validate settings and publish execution plan
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.validate.outputs.release }}
+      external: ${{ steps.validate.outputs.external }}
+      screens: ${{ steps.validate.outputs.screens }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs
+        id: validate
+        env:
+          MODE: ${{ inputs.mode }}
+          UI_SCOPE: ${{ inputs.ui_scope }}
+          FIRST: ${{ inputs.priority_tests }}
+          SCREENSHOTS: ${{ inputs.screenshots }}
+          CONFIRM: ${{ inputs.confirm_release }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          release=false
+          external=false
+          screens="${UI_SCOPE:-all}"
+          case "$MODE" in
+            verify)
+              if [ "$CONFIRM" = "true" ]; then
+                echo "::error::confirm_release is only valid for TestFlight modes"
+                exit 1
+              fi
+              ;;
+            testflight-internal|testflight-external)
+              release=true
+              if [ "$MODE" = "testflight-external" ]; then external=true; fi
+              if [ "$BRANCH" != "main" ]; then
+                echo "::error::TestFlight releases are only allowed from main; merge a verified PR first"
+                exit 1
+              fi
+              if [ "$CONFIRM" != "true" ]; then
+                echo "::error::Select confirm_release to explicitly authorize upload"
+                exit 1
+              fi
+              if [ -n "$FIRST" ]; then
+                echo "::error::priority_tests is only supported for verify mode"
+                exit 1
+              fi
+              screens=all
+              ;;
+            *) echo "::error::Unknown mode: $MODE"; exit 1 ;;
+          esac
+          if [ "$SCREENSHOTS" = "true" ]; then screens=all; fi
+          if [ "$release" = "false" ]; then
+            python3 Tools/pick-ui-tests.py "$screens" >/tmp/release-center-ui-plan.txt
+          fi
+          {
+            echo "release=$release"
+            echo "external=$external"
+            echo "screens=$screens"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Journey Photo Release Center"
+            echo ""
+            echo "| Setting | Value |"
+            echo "|---|---|"
+            echo "| Mode | \`$MODE\` |"
+            echo "| Branch | \`$BRANCH\` |"
+            echo "| Commit | \`$SHA\` |"
+            echo "| UI tests | \`$screens\` |"
+            echo "| Screenshots | \`$SCREENSHOTS\` |"
+            echo "| Upload authorized | \`$CONFIRM\` |"
+            echo ""
+            echo "The existing TestFlight workflow performs the Xcode tests, signing and upload."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate Swift references and project configuration
+        run: |
+          set -euo pipefail
+          python3 Tools/check-cross-imports.py Sources Tests
+          python3 Tools/check-config.py
+
+  pipeline:
+    name: Xcode verification / TestFlight pipeline
+    needs: plan
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      submit: ${{ needs.plan.outputs.release == 'true' }}
+      betaReview: ${{ needs.plan.outputs.external == 'true' }}
+      storeShots: ${{ inputs.screenshots }}
+      tests: true
+      screens: ${{ needs.plan.outputs.screens }}
+      first: ${{ inputs.priority_tests }}
+    secrets: inherit
