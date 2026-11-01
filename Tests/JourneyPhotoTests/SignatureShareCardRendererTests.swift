@@ -28,6 +28,32 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertNil(properties?[kCGImagePropertyGPSDictionary as String])
     }
 
+    func testExportedCardBorderReachesImageCorners() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Creator", username: nil, location: nil, coords: nil,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        let data = try XCTUnwrap(await SignatureShareCardRenderer.render(source, credit: credit))
+        let image = try XCTUnwrap(UIImage(data: data))
+        XCTAssertEqual(image.size, CGSize(width: 1080, height: 1350))
+        // 角丸マスクの外側に黒い領域を残さない。JPEG の圧縮誤差を考慮して
+        // 角の近傍を読み、暗い黒背景ではなく真鍮色の枠があることを確認する。
+        let bitmap = try XCTUnwrap(image.cgImage)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let ctx = try XCTUnwrap(CGContext(data: &pixel, width: 1, height: 1,
+                                          bitsPerComponent: 8, bytesPerRow: 4,
+                                          space: colorSpace,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        XCTAssertGreaterThan(Int(pixel[0]), 60, "画像の角に黒い余白が残っている")
+    }
+
     func testSquareCardRenders() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).jpegData(
             withCompressionQuality: 0.9) { context in
