@@ -36,21 +36,9 @@ enum SignatureShareCardRenderer {
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
-        // MapKitの写真位置は公開用に丸められた座標だけを使う。
-        let map: UIImage?
-        if let coordinate = credit.coords,
-           coordinate.latitude.isFinite, coordinate.longitude.isFinite,
-           (-85...85).contains(coordinate.latitude),
-           (-180...180).contains(coordinate.longitude) {
-            let options = MKMapSnapshotter.Options()
-            options.region = MKCoordinateRegion(center: coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4))
-            options.size = CGSize(width: 180, height: 120)
-            options.mapType = .mutedStandard
-            map = try? await MKMapSnapshotter(options: options).start().image
-        } else {
-            map = nil
-        }
+        // 国境線はアプリ同梱のNatural Earth簡略データから描画する。
+        // 道路や施設名を含む地図画像は使わない。
+        let outline = credit.coords.flatMap { CountryOutline.find(at: $0) }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -116,24 +104,13 @@ enum SignatureShareCardRenderer {
             if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                !place.isEmpty {
                 draw("⌖ " + place, at: CGPoint(x: 470, y: rowY + 20),
-                     maxWidth: map == nil ? 540 : 335, size: 30, color: .white)
+                     maxWidth: outline == nil ? 540 : 335, size: 30, color: .white)
             }
-            if let map {
-                let mapRect = CGRect(x: width - 235, y: rowY - 25, width: 180, height: 120)
-                cg.saveGState()
-                let path = UIBezierPath(roundedRect: mapRect, cornerRadius: 9)
-                path.addClip()
-                map.draw(in: mapRect)
-                // 二重の点（中心点と輪）で撮影位置を示す。座標は地図の中心。
-                let pin = CGPoint(x: mapRect.midX, y: mapRect.midY)
-                brass.setStroke()
-                cg.setLineWidth(4)
-                cg.strokeEllipse(in: CGRect(x: pin.x - 14, y: pin.y - 14, width: 28, height: 28))
-                brass.setFill()
-                cg.fillEllipse(in: CGRect(x: pin.x - 5, y: pin.y - 5, width: 10, height: 10))
-                cg.restoreGState()
-                draw("© Apple Maps", at: CGPoint(x: width - 232, y: rowY + 99),
-                     maxWidth: 170, size: 15, color: .white)
+            if let outline, let coordinate = credit.coords {
+                CountryOutline.draw(outline, pin: coordinate,
+                                    in: CGRect(x: width - 240, y: rowY - 32,
+                                             width: 190, height: 135),
+                                    color: brass, context: cg)
             }
             let settings = [
                 credit.camera, credit.lens, credit.aperture, credit.exposure,
@@ -157,6 +134,84 @@ enum SignatureShareCardRenderer {
                          maxWidth: width - 116, size: 25, color: secondary)
                 }
             }
+        }
+    }
+
+    // GeoJSON由来の低解像度輪郭を軽量JSONとして同梱する。
+    // 出典: Natural Earth 1:110m admin-0 countries (public domain)。
+    private enum CountryOutline {
+        struct Shape: Decodable {
+            let n: String
+            let r: [[[Double]]]
+        }
+        static let shapes: [Shape] = {
+            guard let url = Bundle.main.url(forResource: "country-outlines", withExtension: "json"),
+                  let data = try? Data(contentsOf: url),
+                  let result = try? JSONDecoder().decode([Shape].self, from: data) else { return [] }
+            return result
+        }()
+
+        static func contains(_ point: CLLocationCoordinate2D, ring: [[Double]]) -> Bool {
+            guard ring.count >= 3 else { return false }
+            var inside = false
+            var previous = ring.count - 1
+            for index in ring.indices {
+                let a = ring[index], b = ring[previous]
+                if a.count == 2, b.count == 2,
+                   (a[1] > point.latitude) != (b[1] > point.latitude) {
+                    let intersection = (b[0] - a[0]) *
+                        (point.latitude - a[1]) / (b[1] - a[1]) + a[0]
+                    if point.longitude < intersection { inside.toggle() }
+                }
+                previous = index
+            }
+            return inside
+        }
+
+        static func find(at coordinate: CLLocationCoordinate2D) -> Shape? {
+            guard coordinate.latitude.isFinite, coordinate.longitude.isFinite,
+                  (-90...90).contains(coordinate.latitude),
+                  (-180...180).contains(coordinate.longitude) else { return nil }
+            return shapes.first { shape in
+                shape.r.contains { contains(coordinate, ring: $0) }
+            }
+        }
+
+        static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
+                         in rect: CGRect, color: UIColor, context: CGContext) {
+            let points = shape.r.flatMap { $0 }.filter { $0.count == 2 }
+            guard let minX = points.map({ $0[0] }).min(),
+                  let maxX = points.map({ $0[0] }).max(),
+                  let minY = points.map({ $0[1] }).min(),
+                  let maxY = points.map({ $0[1] }).max() else { return }
+            let spanX = max(maxX - minX, 0.01)
+            let spanY = max(maxY - minY, 0.01)
+            let scale = min((rect.width - 20) / spanX, (rect.height - 20) / spanY)
+            let offsetX = rect.midX - (minX + maxX) * scale / 2
+            let offsetY = rect.midY + (minY + maxY) * scale / 2
+            func project(_ p: [Double]) -> CGPoint {
+                CGPoint(x: p[0] * scale + offsetX, y: offsetY - p[1] * scale)
+            }
+            context.saveGState()
+            context.clip(to: rect)
+            context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+            context.setLineWidth(1.8)
+            for ring in shape.r where ring.count >= 3 {
+                context.beginPath()
+                context.move(to: project(ring[0]))
+                for point in ring.dropFirst() { context.addLine(to: project(point)) }
+                context.closePath()
+                context.strokePath()
+            }
+            let center = project([pin.longitude, pin.latitude])
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5,
+                                           width: 10, height: 10))
+            context.setStrokeColor(color.withAlphaComponent(0.7).cgColor)
+            context.setLineWidth(2)
+            context.strokeEllipse(in: CGRect(x: center.x - 12, y: center.y - 12,
+                                             width: 24, height: 24))
+            context.restoreGState()
         }
     }
 
