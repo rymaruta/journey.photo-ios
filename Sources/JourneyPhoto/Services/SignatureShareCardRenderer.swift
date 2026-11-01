@@ -391,7 +391,15 @@ enum SignatureShareCardRenderer {
         var x = origin.x
         func advance(_ width: CGFloat = 30) { x += width }
         if credit.verified {
-            drawSymbol("checkmark.seal.fill", at: CGPoint(x: x, y: origin.y), size: 25, color: brass)
+            // VerifiedBadge と同じ2色の封印（チェック＝墨、封印＝真鍮）。
+            // 単色 SF Symbol では公式マークの意匠が失われる。
+            let palette = UIImage.SymbolConfiguration(pointSize: 25, weight: .regular)
+                .applying(UIImage.SymbolConfiguration(paletteColors: [
+                    UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1), brass
+                ]))
+            if let symbol = UIImage(systemName: "checkmark.seal.fill", withConfiguration: palette) {
+                symbol.draw(in: CGRect(x: x, y: origin.y, width: 27, height: 27))
+            }
             advance()
         }
         if let style = credit.proStyle {
