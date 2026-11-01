@@ -179,20 +179,17 @@ enum SignatureShareCardRenderer {
                 .filter { !$0.isEmpty }.joined(separator: "  ")
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
-                draw("▣", at: CGPoint(x: 98, y: infoY), maxWidth: 54,
-                     size: 40, color: brass)
+                drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
                 draw(camera, at: CGPoint(x: 157, y: infoY + 5), maxWidth: 235,
                      size: 26, color: .white, bold: true)
             }
             if !lens.isEmpty {
-                draw("◎", at: CGPoint(x: 410, y: infoY), maxWidth: 52,
-                     size: 40, color: brass)
+                drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY), size: 40, color: brass)
                 draw(lens, at: CGPoint(x: 463, y: infoY + 5), maxWidth: 246,
                      size: 26, color: .white, bold: true)
             }
             if !exposure.isEmpty {
-                draw("△", at: CGPoint(x: 731, y: infoY), maxWidth: 49,
-                     size: 38, color: brass)
+                drawSymbol("mountain.2", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
                 draw(exposure, at: CGPoint(x: 786, y: infoY + 5), maxWidth: 195,
                      size: 24, color: .white, bold: true)
             }
@@ -281,6 +278,14 @@ enum SignatureShareCardRenderer {
                                              width: 24, height: 24))
             context.restoreGState()
         }
+    }
+
+    private static func drawSymbol(_ name: String, at origin: CGPoint,
+                                   size: CGFloat, color: UIColor) {
+        let config = UIImage.SymbolConfiguration(pointSize: size, weight: .regular)
+        guard let symbol = UIImage(systemName: name, withConfiguration: config)?
+            .withTintColor(color, renderingMode: .alwaysOriginal) else { return }
+        symbol.draw(in: CGRect(origin: origin, size: CGSize(width: size, height: size)))
     }
 
     private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
