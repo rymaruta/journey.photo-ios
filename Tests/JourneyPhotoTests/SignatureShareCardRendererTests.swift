@@ -3,6 +3,7 @@ import UIKit
 import ImageIO
 @testable import JourneyPhoto
 
+#if !os(Linux)
 final class SignatureShareCardRendererTests: XCTestCase {
     func testPortraitCardRendersExpectedDimensionsAndRemovesMetadata() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 600)).jpegData(
@@ -20,8 +21,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertEqual(image.size.width, 1080)
         XCTAssertEqual(image.size.height, 1350)
         // JPEGの画素を書き直しており、元のGPS/EXIFを受け渡さない。
-        let source = CGImageSourceCreateWithData(data as CFData, nil)
-        let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [String: Any] }
+        let imageSource = CGImageSourceCreateWithData(data as CFData, nil)
+        let properties = imageSource.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [String: Any] }
         XCTAssertNil(properties?[kCGImagePropertyGPSDictionary as String])
     }
 
@@ -38,3 +39,5 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertEqual(UIImage(data: try XCTUnwrap(result))?.size, CGSize(width: 1080, height: 1080))
     }
 }
+
+#endif
