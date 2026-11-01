@@ -1188,7 +1188,11 @@ struct PhotoDetailView: View {
             lens: target.exif?.lens,
             exposure: target.exif?.exposure,
             aperture: target.exif?.aperture,
-            iso: target.exif?.iso)
+            iso: target.exif?.iso,
+            verified: model.owner?.showsVerifiedMark ?? false,
+            proStyle: model.owner?.shownProMark,
+            early: model.owner?.showsEarlyMark ?? false,
+            badge: model.owner?.shownBadge)
         actionNotice = nil
         signatureBundle = SignatureBundle(
             photoData: raw,
