@@ -180,18 +180,18 @@ enum SignatureShareCardRenderer {
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
                 drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
-                draw(camera, at: CGPoint(x: 157, y: infoY + 5), maxWidth: 235,
-                     size: 26, color: .white, bold: true)
+                drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235,
+                         size: 26, color: .white)
             }
             if !lens.isEmpty {
                 drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY), size: 40, color: brass)
-                draw(lens, at: CGPoint(x: 463, y: infoY + 5), maxWidth: 246,
-                     size: 26, color: .white, bold: true)
+                drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246,
+                         size: 26, color: .white)
             }
             if !exposure.isEmpty {
                 drawSymbol("mountain.2", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
-                draw(exposure, at: CGPoint(x: 786, y: infoY + 5), maxWidth: 195,
-                     size: 24, color: .white, bold: true)
+                drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195,
+                         size: 24, color: .white)
             }
 
             // 全体の細い真鍮色角丸フレーム。写真や情報の個別ガラス枠は付けない。
@@ -278,6 +278,21 @@ enum SignatureShareCardRenderer {
                                              width: 24, height: 24))
             context.restoreGState()
         }
+    }
+
+    /// 3列の撮影情報は最大2行で表示。長い機材名を一律に末尾省略しない。
+    private static func drawInfo(_ value: String, at origin: CGPoint,
+                                 maxWidth: CGFloat, size: CGFloat, color: UIColor) {
+        let font = UIFont.systemFont(ofSize: size, weight: .semibold)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineSpacing = 2
+        (value as NSString).draw(with: CGRect(x: origin.x, y: origin.y,
+                                               width: maxWidth, height: size * 2.8),
+                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                                 attributes: [.font: font, .foregroundColor: color,
+                                              .paragraphStyle: paragraph],
+                                 context: nil)
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
