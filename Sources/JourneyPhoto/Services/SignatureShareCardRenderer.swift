@@ -5,7 +5,7 @@ import AVFoundation
 /// SNS向けの1枚画像。写真と帰属情報を画素に焼き込み、元画像のEXIFを引き継がない。
 /// デザイン: docs/design/ios-artifact/DesignSystem.dc.html（黒塗りの真鍮）
 enum SignatureShareCardRenderer {
-    enum Ratio: CGFloat {
+    enum Ratio: Double {
         case portrait = 0.8
         case story = 0.5625
         case square = 1
@@ -30,7 +30,7 @@ enum SignatureShareCardRenderer {
     static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait) async -> Data? {
         guard let photo = UIImage(data: data) else { return nil }
         let width: CGFloat = 1080
-        let height = width / ratio.rawValue
+        let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
         // MapKitの写真位置は公開用に丸められた座標だけを使う。
         let map: UIImage?
