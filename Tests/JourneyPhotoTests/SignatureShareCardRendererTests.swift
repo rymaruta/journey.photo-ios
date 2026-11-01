@@ -132,6 +132,26 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testLongEquipmentNamesFitWithinThreeLineArea() {
+        let camera = "Hasselblad X2D II 100C Medium Format Camera"
+        let lens = "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens"
+        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246))] {
+            let fontSize = SignatureShareCardRenderer.equipmentFontSize(name, maxWidth: width)
+            XCTAssertLessThanOrEqual(fontSize, 22)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byCharWrapping
+            paragraph.lineSpacing = 1
+            let measured = (name as NSString).boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+                    .paragraphStyle: paragraph
+                ], context: nil)
+            XCTAssertLessThanOrEqual(measured.height, 72.5, "\(name) must fit without clipping")
+        }
+    }
+
     func testInvalidPhotoDataReturnsNil() async {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,
