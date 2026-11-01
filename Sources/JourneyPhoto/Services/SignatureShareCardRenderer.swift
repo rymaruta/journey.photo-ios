@@ -155,10 +155,14 @@ enum SignatureShareCardRenderer {
                      at: CGPoint(x: 128, y: rowY + 17), maxWidth: 50,
                      size: 45, color: .white, serif: true)
             }
-            draw(credit.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                 at: CGPoint(x: 220, y: rowY), maxWidth: 220,
-                  size: 34, color: .white, bold: true)
-            drawNameMarks(credit, at: CGPoint(x: 442, y: rowY + 7))
+            let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
+                + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
+            let nameWidth = CGFloat(max(112, 255 - markCount * 30))
+            draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
+                 size: 32, color: .white, bold: true)
+            // マークが多い場合も撮影地との仕切り線を越えない。
+            drawNameMarks(credit, at: CGPoint(x: 220 + nameWidth + 5, y: rowY + 7))
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
@@ -175,12 +179,12 @@ enum SignatureShareCardRenderer {
                 drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
                            size: 37, color: brass)
                 draw(place, at: CGPoint(x: 570, y: rowY + 22),
-                     maxWidth: outline == nil ? 385 : 205,
-                      size: 26, lines: 3, color: .white, bold: true)
+                     maxWidth: credit.coords == nil ? 385 : 205,
+                     size: 26, color: .white, bold: true, lines: 3)
             }
-            if let coordinate = credit.coords {
+            if credit.coords != nil {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
-                if let outline {
+                if let outline, let coordinate = credit.coords {
                     CountryOutline.draw(outline, pin: coordinate, in: mapRect, color: brass, context: cg)
                 } else {
                     drawLocationFallback(in: mapRect, color: brass, context: cg)
@@ -349,7 +353,7 @@ enum SignatureShareCardRenderer {
         }
     }
 
-    /// 3列の撮影情報は最大2行で表示。長い機材名を一律に末尾省略しない。
+    /// 3列の撮影情報を折り返して表示。長い機材名を一律に末尾省略しない。
     private static func drawInfo(_ value: String, at origin: CGPoint,
                                  maxWidth: CGFloat, size: CGFloat, color: UIColor) {
         let font = UIFont.systemFont(ofSize: size, weight: .semibold)
