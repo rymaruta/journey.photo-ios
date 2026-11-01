@@ -6,6 +6,7 @@ struct SignatureShareCardSheet: View {
     let photoData: Data
     let credit: SignatureShareCardRenderer.Credit
     let shareText: String
+    let avatarURL: URL?
 
     @Environment(\.dismiss) private var dismiss
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
@@ -13,6 +14,7 @@ struct SignatureShareCardSheet: View {
     @State private var preparing = true
     @State private var showShare = false
     @State private var retryCount = 0
+    @State private var avatarData: Data?
 
     var body: some View {
         NavigationStack {
@@ -74,7 +76,19 @@ struct SignatureShareCardSheet: View {
             .task(id: "\(ratio.rawValue)-\(retryCount)") {
                 preparing = true
                 output = nil
-                let result = await SignatureShareCardRenderer.render(photoData, credit: credit, ratio: ratio)
+                if avatarData == nil, let avatarURL, !Task.isCancelled {
+                    var request = URLRequest(url: avatarURL)
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
+                    request.timeoutInterval = 8
+                    if let (data, response) = try? await URLSession.shared.data(for: request),
+                       let response = response as? HTTPURLResponse,
+                       (200..<300).contains(response.statusCode),
+                       data.count < 5_000_000, UIImage(data: data) != nil {
+                        avatarData = data
+                    }
+                }
+                let result = await SignatureShareCardRenderer.render(photoData, credit: credit,
+                    ratio: ratio, avatarData: avatarData)
                 guard !Task.isCancelled else { return }
                 output = result
                 preparing = false
