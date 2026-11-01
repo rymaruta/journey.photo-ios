@@ -111,7 +111,10 @@ struct NearbyPhotosSheet: View {
 
     private func row(_ item: (photo: Photo, km: Double)) -> some View {
         HStack(spacing: 10) {
-            RemoteImage(url: item.photo.gridImageURL, alignment: item.photo.gridAlignment)
+            DownsampledRemoteImage(url: item.photo.gridImageURL, contentMode: .fill,
+                                       aspectRatio: item.photo.aspectRatio.map { CGFloat($0) },
+                                       alignment: item.photo.gridAlignment,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 .frame(width: 52, height: 52)
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
             VStack(alignment: .leading, spacing: 2) {

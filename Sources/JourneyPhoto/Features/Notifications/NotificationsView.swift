@@ -436,7 +436,8 @@ private struct NotificationRow: View {
                 Spacer(minLength: 0)
                 // 写真の小窓は右（板 15）。フォローは写真を伴わない・ストーリー返信は出さない
                 if let url = NotificationText.thumbnailURL(notification) {
-                    RemoteImage(url: url)
+                    DownsampledRemoteImage(url: url, contentMode: .fill,
+                                            assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                         .frame(width: 44, height: 44)
                         .background(WebTheme.surface)
                         // v2: 小さい写真の角（radius-xs 6）

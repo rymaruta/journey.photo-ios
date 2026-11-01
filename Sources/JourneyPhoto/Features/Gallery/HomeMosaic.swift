@@ -97,7 +97,10 @@ struct HomeFeedTile: View {
                                                    aspectRatio: photo.aspectRatio.map { CGFloat($0) },
                                                    alignment: photo.gridAlignment)
                         } else {
-                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                            DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                   aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                   alignment: photo.gridAlignment,
+                                                   appearAnimation: .easeOut(duration: 0.15))
                         }
                     }
                     .overlay(alignment: .bottomLeading) { caption }
