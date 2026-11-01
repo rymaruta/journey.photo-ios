@@ -14,6 +14,9 @@ struct SignatureShareCardSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
     @State private var output: Data?
+    // 同じ共有画面内で比率を戻したときはJPEGの再生成を避ける。
+    // 最大3比率のみ保持し、画面を閉じると破棄する。
+    @State private var renderedByRatio: [SignatureShareCardRenderer.Ratio: Data] = [:]
     @State private var preparing = true
     @State private var showShare = false
     @State private var retryCount = 0
@@ -78,6 +81,11 @@ struct SignatureShareCardSheet: View {
                 }
             }
             .task(id: "\(ratio.rawValue)-\(retryCount)") {
+                if let cached = renderedByRatio[ratio], retryCount == 0 {
+                    output = cached
+                    preparing = false
+                    return
+                }
                 preparing = true
                 output = nil
                 if !avatarFetchAttempted, let avatarURL, !Task.isCancelled {
@@ -95,6 +103,7 @@ struct SignatureShareCardSheet: View {
                 let result = await SignatureShareCardRenderer.render(photoData, credit: credit,
                     ratio: ratio, avatarData: avatarData)
                 guard !Task.isCancelled else { return }
+                if let result { renderedByRatio[ratio] = result }
                 output = result
                 preparing = false
             }
