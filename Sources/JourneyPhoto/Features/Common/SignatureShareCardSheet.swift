@@ -12,7 +12,6 @@ struct SignatureShareCardSheet: View {
     @State private var output: Data?
     @State private var preparing = true
     @State private var showShare = false
-    @State private var failed = false
 
     var body: some View {
         NavigationStack {
@@ -30,7 +29,7 @@ struct SignatureShareCardSheet: View {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFit()
-                            .accessibilityLabel("SNS共有画像のプレビュー")
+                            .accessibilityLabel(L("SNS共有画像のプレビュー", "Social share image preview"))
                     } else if preparing {
                         ProgressView(L("共有画像を準備しています…", "Preparing image…"))
                     } else {
@@ -43,6 +42,7 @@ struct SignatureShareCardSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal)
+                .accessibilityIdentifier("signatureShare.preview")
 
                 Button {
                     showShare = true
@@ -52,6 +52,7 @@ struct SignatureShareCardSheet: View {
                 }
                 .webPrimaryButton()
                 .disabled(output == nil || preparing)
+                .accessibilityIdentifier("signatureShare.share")
                 .padding(.horizontal)
                 .padding(.bottom, 16)
             }
@@ -66,12 +67,10 @@ struct SignatureShareCardSheet: View {
             }
             .task(id: ratio) {
                 preparing = true
-                failed = false
                 output = nil
                 let result = await SignatureShareCardRenderer.render(photoData, credit: credit, ratio: ratio)
                 guard !Task.isCancelled else { return }
                 output = result
-                failed = result == nil
                 preparing = false
             }
             .sheet(isPresented: $showShare) {
