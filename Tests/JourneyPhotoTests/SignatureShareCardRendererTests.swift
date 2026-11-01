@@ -38,7 +38,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
             name: "Creator", username: nil, location: nil, coords: nil,
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
             verified: false, proStyle: nil, early: false, badge: nil)
-        let data = try XCTUnwrap(await SignatureShareCardRenderer.render(source, credit: credit))
+        let rendered = await SignatureShareCardRenderer.render(source, credit: credit)
+        let data = try XCTUnwrap(rendered)
         let image = try XCTUnwrap(UIImage(data: data))
         XCTAssertEqual(image.size, CGSize(width: 1080, height: 1350))
         // 角丸マスクの外側に黒い領域を残さない。JPEG の圧縮誤差を考慮して
