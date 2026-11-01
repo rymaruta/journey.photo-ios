@@ -50,7 +50,10 @@ struct SignatureShareCardSheet: View {
                             Image(systemName: "photo.badge.exclamationmark")
                             Text(L("画像を生成できませんでした", "Could not create image"))
                             Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
-                            Button(L("再試行", "Try again")) { retryCount += 1 }
+                            Button(L("再試行", "Try again")) {
+                                renderedByRatio.removeValue(forKey: ratio)
+                                retryCount += 1
+                            }
                                 .accessibilityIdentifier("signatureShare.retry")
                         }
                     }
@@ -81,7 +84,8 @@ struct SignatureShareCardSheet: View {
                 }
             }
             .task(id: "\(ratio.rawValue)-\(retryCount)") {
-                if let cached = renderedByRatio[ratio], retryCount == 0 {
+                let selectedRatio = ratio
+                if let cached = renderedByRatio[selectedRatio] {
                     output = cached
                     preparing = false
                     return
@@ -101,9 +105,9 @@ struct SignatureShareCardSheet: View {
                     }
                 }
                 let result = await SignatureShareCardRenderer.render(photoData, credit: credit,
-                    ratio: ratio, avatarData: avatarData)
+                    ratio: selectedRatio, avatarData: avatarData)
                 guard !Task.isCancelled else { return }
-                if let result { renderedByRatio[ratio] = result }
+                if let result { renderedByRatio[selectedRatio] = result }
                 output = result
                 preparing = false
             }
