@@ -34,19 +34,18 @@ def render(selection):
         selected = sorted(t for t in tests if not picker.only_when_named(t))
     else:
         selected = sorted(t for t in tests if any(a.endswith("/" + t) or a.endswith("/" + t.split("/")[0]) for a in args))
-    lines = ["## UIテスト実行内容", "",
-             f"- 指定: `{escape(selection or '全部')}`",
-             f"- 対象: **{len(selected)} 件**（全件指定では名指し専用テストを除外）", "",
-             "| テスト | 目的・操作の概要 | 実行方針 |",
-             "|---|---|---|"]
+    from collections import Counter
+    counts = Counter(t.split("/", 1)[0] for t in selected)
+    lines = ["### UIテストの予定", "",
+             f"**{len(selected)}件** / 指定: \`{escape(selection or '全部')}\`",
+             " / ".join(f"{escape(k)} {v}" for k, v in sorted(counts.items())), "",
+             "<details><summary>対象テストを表示</summary>", "",
+             "| テスト | 目的 |", "|---|---|"]
     for name in selected:
-        title, desc = DETAILS.get(name, (name.split("/", 1)[1], CLASS_DOC.get(name.split("/")[0], "UI操作と期待結果をXCTestで確認")))
-        policy = "名指し専用" if picker.only_when_named(name) else "通常"
-        lines.append(f"| `{escape(name)}` | **{escape(title)}** — {escape(desc)} | {policy} |")
-    lines += ["", "### 確認方法",
-              "詳細な操作・アサーションは各テストのSwiftソースを参照してください。",
-              "この表は実行計画であり成功結果ではありません。失敗時はActionsの各テストジョブSummaryを確認してください。公開Artifactには画像やxcresultを保存しません。",
-              ""]
+        title, desc = DETAILS.get(name, (name.split("/", 1)[1], CLASS_DOC.get(name.split("/")[0], "UIの動作確認")))
+        lines.append(f"| \`{escape(name)}\` | {escape(title)}: {escape(desc)} |")
+    lines += ["", "</details>", "",
+              "※実行予定です。結果は各ジョブのSummaryを参照。画像・xcresultは公開保存しません。", ""]
     return "\n".join(lines)
 
 if __name__ == "__main__":
