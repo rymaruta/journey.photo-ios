@@ -12,7 +12,7 @@ import SwiftUI
 struct SpotThumbImage: View {
 
     private let source: SpotThumbFallback
-    /// 縮めて読むとき（`DownsampledRemoteImage`・`.fill`）の見込みの縦横比。nil なら `RemoteImage`
+    /// 縮めて読むときの見込みの縦横比。未指定でも小さなスポット画像は縮小して読む
     private let assumedRatioLimit: CGFloat?
     @State private var state: SpotThumbFallback
 
@@ -30,20 +30,16 @@ struct SpotThumbImage: View {
     }
 
     var body: some View {
-        Group {
-            if let assumedRatioLimit {
-                DownsampledRemoteImage(url: state.current, contentMode: .fill,
-                                       assumedRatioLimit: assumedRatioLimit, onSettled: settled)
-            } else {
-                RemoteImage(url: state.current, onSettled: settled)
-            }
-        }
+        DownsampledRemoteImage(url: state.current, contentMode: .fill,
+                               assumedRatioLimit: assumedRatioLimit ?? 2,
+                               onSettled: { ok in settled(ok, for: state.current) })
+            .id(state.current)
         // 同じ枠に別のスポットが来たら（一覧の使い回し）最初から
         .onChange(of: source) { _, next in state = next }
     }
 
-    private func settled(_ ok: Bool) {
-        guard !ok else { return }
+    private func settled(_ ok: Bool, for requestedURL: URL) {
+        guard !ok, requestedURL == state.current else { return }
         var next = state
         if next.failed() { state = next }
     }
