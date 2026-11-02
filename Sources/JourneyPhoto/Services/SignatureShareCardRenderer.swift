@@ -200,7 +200,7 @@ enum SignatureShareCardRenderer {
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
             if stackedMarks {
-                drawNameMarks(credit, at: CGPoint(x: 220, y: rowY + 60))
+                drawNameMarks(credit, at: CGPoint(x: 220, y: rowY + 45))
             } else {
                 drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
             }
@@ -211,7 +211,7 @@ enum SignatureShareCardRenderer {
                 // 下段をマーク専用にしてユーザー名を表示可能な幅で確保する。
                 let usernameX: CGFloat = 220
                 let usernameWidth: CGFloat = 245
-                let usernameY: CGFloat = stackedMarks ? rowY + 86 : rowY + 53
+                let usernameY: CGFloat = stackedMarks ? rowY + 82 : rowY + 53
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
                      at: CGPoint(x: usernameX, y: usernameY), maxWidth: usernameWidth,
                      size: stackedMarks ? 18 : 25, color: secondary)
