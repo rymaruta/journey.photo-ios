@@ -1,0 +1,307 @@
+同意の画面が出るまで 24.1 秒・押した回数 1・まだ出ている false
+
+Attributes: Application, 0x101edb580, pid: 78675, label: 'Journey Photo'
+Element subtree:
+ →Application, 0x101edb580, pid: 78675, label: 'Journey Photo'
+    Window (Main), 0x101e71f30, {{0.0, 0.0}, {440.0, 956.0}}
+      Other, 0x101edb2a0, {{0.0, 0.0}, {440.0, 956.0}}
+        Other, 0x106b44170, {{0.0, 0.0}, {440.0, 956.0}}
+          Other, 0x101ee0000, {{0.0, 0.0}, {440.0, 956.0}}
+            Other, 0x101e852a0, {{0.0, 0.0}, {440.0, 956.0}}
+              Other, 0x106b9d290, {{0.0, 0.0}, {440.0, 956.0}}
+                Other, 0x101efe190, {{0.0, 0.0}, {440.0, 956.0}}
+                  Other, 0x101efd530, {{0.0, 0.0}, {440.0, 956.0}}
+                    Other, 0x101ec85f0, {{0.0, 0.0}, {440.0, 956.0}}
+                      Other, 0x106b64190, {{0.0, 0.0}, {440.0, 956.0}}
+                        Other, 0x106b5bf10, {{0.0, 0.0}, {440.0, 956.0}}
+                          Other, 0x106b66ad0, {{0.0, 0.0}, {440.0, 956.0}}
+                            NavigationBar, 0x101edd4a0, {{0.0, 62.0}, {440.0, 54.0}}, identifier: 'Journey Photo'
+                              StaticText, 0x101edd5c0, {{20.0, 70.7}, {175.7, 26.7}}, label: 'Journey Photo'
+                                Other, 0x101efc8a0, {{20.0, 70.7}, {175.7, 26.7}}
+                                  Other, 0x101efc9c0, {{20.0, 71.0}, {175.7, 26.3}}, label: 'Journey Photo'
+                                    Image, 0x101efccc0, {{20.0, 74.7}, {19.0, 19.0}}, label: 'BrandMark'
+                                    StaticText, 0x101efcde0, {{47.0, 70.8}, {148.7, 26.3}}, label: 'Journey Photo'
+                              Other, 0x101eff1e0, {{284.0, 66.0}, {132.0, 36.0}}, identifier: 'header.search', label: '探す'
+                                Other, 0x101eff300, {{284.0, 66.0}, {132.0, 36.0}}
+                                  Button, 0x101eff600, {{284.0, 62.0}, {44.0, 44.0}}, identifier: 'header.search', label: '探す'
+                                  Button, 0x101eff720, {{328.0, 62.0}, {44.0, 44.0}}, identifier: 'header.notifications', label: 'お知らせ'
+                                  Button, 0x101efedc0, {{372.0, 62.0}, {44.0, 44.0}}, identifier: 'header.menu', label: 'メニュー'
+                            Other, 0x101efeee0, {{0.0, 0.0}, {440.0, 956.0}}
+                              Other, 0x101efe580, {{0.0, 0.0}, {440.0, 956.0}}
+                                Other, 0x101efe6a0, {{0.0, 0.0}, {440.0, 956.0}}
+                                  Other, 0x101efd920, {{0.0, 0.0}, {440.0, 956.0}}
+                                    ScrollView, 0x101efda40, {{0.0, 0.0}, {440.0, 956.0}}
+                                      Other, 0x101efd0c0, {{0.0, 0.0}, {440.0, 956.0}}
+                                        Other, 0x101efd1e0, {{0.0, 0.0}, {440.0, 170.8}}
+                                        Other, 0x106b5b390, {{0.0, 808.2}, {440.0, 147.8}}
+                                      Other, 0x106b5b4b0, {{0.0, 0.0}, {440.0, 956.0}}
+                                        Other, 0x106b2f6c0, {{0.0, 808.2}, {440.0, 147.8}}
+                                          Image, 0x106b2f7e0, {{-120.0, 813.0}, {680.0, 286.0}}, identifier: 'AdditionalDimmingOverlay'
+                                          Other, 0x106b4e490, {{0.0, 808.2}, {440.0, 147.8}}
+                                            Other, 0x106b4e5b0, {{0.0, 808.2}, {440.0, 147.8}}
+                                          Other, 0x101ec7700, {{0.0, 808.2}, {440.0, 147.8}}
+                                            Other, 0x101ec7820, {{0.0, 808.2}, {440.0, 147.8}}
+                                            Other, 0x106ba7b80, {{0.0, 808.2}, {440.0, 147.8}}
+                                      Other, 0x106ba7ca0, {{0.0, 116.0}, {440.0, 7771.0}}
+                                        Button, 0x101ef4fc0, {{16.0, 148.0}, {408.0, 76.0}}, identifier: 'pass.home.open', label: '今日すれちがった 7人のカードを開く'
+                                          Button, 0x101ef50e0, {{16.0, 148.0}, {408.0, 76.0}}, label: 'カードが届きました、今日 7 枚、京都市・金沢市のあたりで すれちがい、束を開く ›'
+                                            Other, 0x101ee02a0, {{25.9, 160.0}, {40.2, 52.7}}
+                                            Other, 0x101ee03c0, {{25.5, 159.6}, {41.0, 53.5}}
+                                            Image, 0x101ede5c0, {{26.9, 148.2}, {40.7, 51.4}}
+                                            StaticText, 0x101ede6e0, {{28.8, 186.0}, {19.0, 8.8}}, label: '乗車券'
+                                            Other, 0x101ef4780, {{33.0, 194.2}, {27.9, 9.7}}, label: '東京発、フランス着'
+                                              StaticText, 0x101ef48a0, {{33.0, 194.2}, {10.0, 7.8}}, label: '東京'
+                                              Other, 0x101ed9cc0, {{43.3, 197.4}, {2.8, 2.7}}
+                                              StaticText, 0x101ed9de0, {{46.2, 195.5}, {14.7, 8.3}}, label: 'フランス'
+                                            Other, 0x101ede9e0, {{25.5, 159.6}, {41.0, 53.5}}
+                                            Other, 0x101edeb00, {{30.3, 159.6}, {41.5, 53.5}}
+                                            Other, 0x101edf640, {{29.8, 159.1}, {42.5, 54.5}}
+                                            Image, 0x101edf760, {{29.6, 158.1}, {39.3, 31.7}}
+                                            StaticText, 0x101ec8b30, {{35.0, 187.4}, {19.1, 9.4}}, label: '乗車券'
+                                            Other, 0x101ec8c50, {{36.4, 193.7}, {28.0, 10.6}}, label: 'どこか発、京都着'
+                                              StaticText, 0x101edfa60, {{36.4, 195.6}, {14.9, 8.8}}, label: 'どこか'
+                                              Other, 0x101edfb80, {{51.4, 197.4}, {2.8, 2.7}}
+                                              StaticText, 0x101edee00, {{54.2, 193.7}, {10.2, 8.1}}, label: '京都'
+                                            Other, 0x101edef20, {{29.9, 159.2}, {42.3, 54.3}}
+                                            Other, 0x106b53350, {{35.8, 161.3}, {35.9, 50.0}}
+                                            Other, 0x106b53470, {{35.8, 161.3}, {35.9, 50.0}}
+                                            Image, 0x106b51a90, {{35.8, 149.9}, {35.9, 47.9}}
+                                            StaticText, 0x106b51bb0, {{37.4, 187.7}, {18.4, 6.9}}, label: '乗車券'
+                                            Other, 0x106b52f30, {{37.8, 195.4}, {27.3, 6.9}}, label: 'どこか発、金沢着'
+                                              StaticText, 0x106b53050, {{37.8, 195.4}, {14.1, 6.9}}, label: 'どこか'
+                                              Other, 0x106b94e90, {{52.4, 197.5}, {2.8, 2.7}}
+                                              StaticText, 0x106b94fb0, {{55.7, 195.4}, {9.4, 6.9}}, label: '金沢'
+                                            Other, 0x106b9b9d0, {{35.4, 161.0}, {36.7, 50.8}}
+                                            StaticText, 0x106b9baf0, {{84.0, 158.0}, {106.7, 13.3}}, label: 'カードが届きました'
+                                            StaticText, 0x106b46130, {{84.0, 172.3}, {76.0, 26.3}}, label: '今日 7 枚'
+                                            StaticText, 0x106b46250, {{84.0, 199.7}, {194.3, 14.3}}, label: '京都市・金沢市のあたりで すれちがい'
+                                            StaticText, 0x106b98010, {{354.0, 178.2}, {58.0, 15.7}}, label: '束を開く ›'
+                                        ScrollView, 0x106b98130, {{0.0, 248.0}, {440.0, 94.3}}
+                                          Other, 0x106b96f90, {{0.0, 248.0}, {96.0, 94.3}}
+                                            Button, 0x106b970b0, {{16.0, 246.0}, {66.0, 88.3}}, label: 'ストーリーを投稿'
+                                              Image, 0x106b95af0, {{21.0, 246.0}, {54.0, 72.0}}
+                                              Image, 0x106b95c10, {{54.0, 288.0}, {28.0, 28.0}}, identifier: 'plus', label: '追加'
+                                              StaticText, 0x106b8eb70, {{31.0, 320.0}, {34.0, 14.3}}, label: 'あなた'
+                                        ScrollView, 0x106b8ec90, {{0.0, 366.3}, {440.0, 116.0}}
+                                          Other, 0x106b4dc50, {{16.0, 366.3}, {1192.0, 116.0}}
+                                            Button, 0x106b4dd70, {{16.0, 366.3}, {392.0, 116.0}}, label: '今日の撮影スポット・秋、世羅高原農場、ダリアとガーデンマムの季節です。品種が多いので寄って形の違いを撮れます。、広島県 · 世羅郡世羅町 · 写真: 世羅人 / CC BY-SA 4.0'
+                                              Image, 0x106b9ad70, {{-15.0, 366.3}, {174.0, 116.0}}
+                                              StaticText, 0x106b9ae90, {{144.0, 378.3}, {100.3, 13.3}}, label: '今日の撮影スポット・秋'
+                                              Other, 0x106b4e070, {{254.3, 384.7}, {116.0, 1.0}}
+                                              StaticText, 0x106b4e190, {{144.0, 395.7}, {108.0, 26.3}}, label: '世羅高原農場'
+                                              StaticText, 0x106b96330, {{144.0, 426.0}, {225.0, 14.3}}, label: 'ダリアとガーデンマムの季節です。品種が多いので寄って形の違いを撮れます。'
+                                              StaticText, 0x106b96450, {{144.0, 444.3}, {220.0, 14.3}}, label: '広島県 · 世羅郡世羅町 · 写真: 世羅人 / CC BY-SA 4.0'
+                                              Image, 0x106b8b560, {{388.7, 412.7}, {6.7, 11.7}}, identifier: 'chevron.right', label: '進む'
+                                            StaticText, 0x106b8b680, {{432.0, 378.8}, {111.7, 13.3}}, label: '今日のテーマ'
+                                            StaticText, 0x106b98c70, {{773.0, 378.3}, {19.0, 14.3}}, label: '#山'
+                                            StaticText, 0x106b98d90, {{432.0, 405.5}, {54.0, 26.3}}, label: '山と空'
+                                            Button, 0x106b9bdf0, {{697.0, 396.7}, {95.0, 44.0}}, label: '参加する'
+                                              StaticText, 0x106b9bf10, {{697.0, 396.7}, {95.0, 44.0}}, label: '参加する'
+                                              Image, 0x106b53fb0, {{765.0, 414.0}, {11.7, 9.7}}, identifier: 'arrow.right', label: '右'
+                                            StaticText, 0x106b540d0, {{432.0, 444.7}, {208.3, 14.3}}, label: '雄大な自然がつくる、心を動かす風景を。'
+                                            Button, 0x106b95f10, {{816.0, 366.3}, {392.0, 116.0}}, label: '今日の一問、この写真はどこ？、4つの中から撮影地を当てる、写真: "Tyoron2" / Public domain'
+                                              Image, 0x106b96030, {{794.7, 366.3}, {154.7, 116.0}}
+                                              StaticText, 0x106b44c90, {{944.0, 378.3}, {78.7, 13.3}}, label: '今日の一問'
+                                              Other, 0x106b44db0, {{1032.7, 384.7}, {137.7, 1.0}}
+                                              StaticText, 0x106b53b90, {{944.0, 395.7}, {144.0, 26.3}}, label: 'この写真はどこ？'
+                                              StaticText, 0x106b53cb0, {{944.0, 426.0}, {144.0, 14.3}}, label: '4つの中から撮影地を当てる'
+                                              StaticText, 0x106b977d0, {{944.0, 444.3}, {177.0, 14.3}}, label: '写真: "Tyoron2" / Public domain'
+                                              Image, 0x106b978f0, {{1188.7, 412.7}, {6.7, 11.7}}, identifier: 'chevron.right', label: '進む'
+                                        Other, 0x106b998d0, {{0.0, 506.3}, {440.0, 7356.7}}
+                                        Other, 0x106b999f0, {{0.0, 506.3}, {440.0, 48.0}}
+                                          Button, 0x106b458f0, {{4.0, 506.3}, {84.3, 48.0}}, identifier: 'home.feed.recommended', label: 'おすすめ', value: 3つのうち1つ目, Selected
+                                            Other, 0x106b45a10, {{0.0, 0.0}, {0.0, 0.0}}
+                                            StaticText, 0x106b973b0, {{4.0, 506.3}, {84.3, 48.0}}, label: 'おすすめ'
+                                          Button, 0x106b974d0, {{88.3, 506.3}, {98.3, 48.0}}, identifier: 'home.feed.following', label: 'フォロー中', value: 3つのうち2つ目
+                                            Other, 0x106b96b70, {{0.0, 0.0}, {0.0, 0.0}}
+                                            StaticText, 0x106b96c90, {{88.3, 506.3}, {98.3, 48.0}}, label: 'フォロー中'
+                                          Button, 0x106b9b5b0, {{186.7, 506.3}, {56.3, 48.0}}, identifier: 'home.feed.latest', label: '新着', value: 3つのうち3つ目
+                                            Other, 0x106b9b6d0, {{0.0, 0.0}, {0.0, 0.0}}
+                                            StaticText, 0x106b51eb0, {{186.7, 506.3}, {56.3, 48.0}}, label: '新着'
+                                        Other, 0x106b51fd0, {{8.0, 578.3}, {424.0, 452.7}}
+                                          Button, 0x106b994b0, {{8.0, 578.3}, {424.0, 238.7}}, identifier: 'feed.photo', label: '夢の中, 蔵王キツネ村, 丸田 竜平 · 35日前'
+                                            Image, 0x106b995d0, {{8.0, 538.7}, {424.0, 318.0}}
+                                            StaticText, 0x106b4d830, {{24.0, 751.2}, {132.0, 32.0}}, label: '蔵王キツネ村'
+                                            StaticText, 0x106b4d950, {{24.0, 785.2}, {103.3, 15.7}}, label: '丸田 竜平 · 35日前'
+                                          Button, 0x106b952b0, {{372.0, 772.7}, {60.0, 44.3}}, label: 'いいね 2'
+                                            Image, 0x106b953d0, {{389.7, 788.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                            StaticText, 0x106b9d6b0, {{408.3, 787.7}, {7.7, 14.3}}, label: '2'
+                                          Button, 0x106b9d7d0, {{8.0, 821.0}, {210.0, 210.0}}, identifier: 'feed.photo', label: '深緑の回廊, メタセコイア並木, 丸田 竜平'
+                                            Image, 0x106b45d10, {{8.0, 785.7}, {210.0, 280.3}}
+                                            StaticText, 0x106b45e30, {{24.0, 972.2}, {108.0, 26.3}}, label: 'メタセコイア並木'
+                                            StaticText, 0x106b9c210, {{24.0, 1000.5}, {48.3, 14.3}}, label: '丸田 竜平'
+                                          Button, 0x106b9c330, {{158.0, 987.0}, {60.0, 44.0}}, label: 'いいね 1'
+                                            Image, 0x106b956d0, {{175.7, 1002.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                            StaticText, 0x106b957f0, {{194.3, 1001.7}, {7.7, 14.3}}, label: '1'
+                                          Button, 0x106b46550, {{222.0, 821.0}, {210.0, 210.0}}, identifier: 'feed.photo', label: '飯山市 の写真, luzhj'
+                                            Image, 0x106b46670, {{187.0, 821.0}, {280.0, 210.0}}
+                                            StaticText, 0x106b98430, {{238.0, 972.2}, {54.0, 26.3}}, label: '飯山市'
+                                            StaticText, 0x106b98550, {{238.0, 1000.5}, {26.7, 14.3}}, label: 'luzhj'
+                                          Button, 0x106b8bda0, {{372.0, 987.0}, {60.0, 44.0}}, label: 'いいね 1'
+                                            Image, 0x106b8bec0, {{389.7, 1002.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                            StaticText, 0x106b61570, {{408.3, 1001.7}, {7.7, 14.3}}, label: '1'
+                                          Button, 0x106b61690, {{388.0, 821.0}, {44.0, 44.0}}, label: 'この写真の操作'
+                                            Button, 0x106b9b190, {{388.0, 821.0}, {44.0, 44.0}}
+                                              Image, 0x106b9b2b0, {{388.0, 821.0}, {44.0, 44.0}}, identifier: 'ellipsis', label: 'さらに表示'
+                                        Other, 0x106b9ca50, {{0.0, 1287.7}, {440.0, 413.3}}, identifier: 'home.spotShelf', label: 'いまの季節の撮影スポット'
+                                          StaticText, 0x106b9cb70, {{16.0, 1287.7}, {118.3, 13.3}}, label: 'いまの季節・秋'
+                                          Other, 0x106b97bf0, {{144.3, 1294.0}, {279.7, 1.0}}
+                                          ScrollView, 0x106b97d10, {{0.0, 1324.3}, {440.0, 338.3}}
+                                            Other, 0x106b61990, {{0.0, 1324.3}, {1264.0, 338.3}}
+                                              Button, 0x106b61ab0, {{16.0, 1324.3}, {240.0, 240.0}}, identifier: 'home.spotShelf.card', label: '撮影スポットの写真（撮影: 663highland）、猿尾滝、兵庫県、ブナやモミジが色づき、紅葉の名所になります。'
+                                                Image, 0x106b53770, {{16.0, 1324.3}, {240.0, 150.0}}, label: '撮影スポットの写真（撮影: 663highland）'
+                                                  Image, 0x106b53890, {{86.0, 1324.3}, {100.0, 150.0}}
+                                                Image, 0x106b98850, {{29.0, 1491.7}, {13.7, 15.7}}, identifier: 'mappin.and.ellipse', label: '地図のピンを削除'
+                                                StaticText, 0x106b98970, {{49.7, 1486.3}, {54.0, 26.3}}, label: '猿尾滝'
+                                                StaticText, 0x106b52b10, {{210.0, 1492.3}, {34.0, 14.3}}, label: '兵庫県'
+                                                StaticText, 0x106b52c30, {{28.0, 1518.7}, {207.3, 33.7}}, label: 'ブナやモミジが色づき、紅葉の名所になります。'
+                                              Button, 0x106b522d0, {{264.0, 1324.3}, {240.0, 240.0}}, identifier: 'home.spotShelf.card', label: '作例の写真（撮影: 先従隗始）、湖東三山 金剛輪寺、滋賀県、「血染めのもみじ」の名で知られる紅葉の名所です。'
+                                                Image, 0x106b523f0, {{264.0, 1324.3}, {240.0, 150.0}}, label: '作例の写真（撮影: 先従隗始）'
+                                                  Image, 0x106b9a950, {{271.3, 1324.3}, {225.3, 150.0}}
+                                                Image, 0x106b9aa70, {{277.0, 1491.7}, {13.7, 15.7}}, identifier: 'mappin.and.ellipse', label: '地図のピンを削除'
+                                                StaticText, 0x106b9fc10, {{297.7, 1486.3}, {130.7, 26.3}}, label: '湖東三山 金剛輪寺'
+                                                StaticText, 0x106b9fd30, {{458.0, 1492.3}, {34.0, 14.3}}, label: '滋賀県'
+                                                StaticText, 0x106b4d410, {{276.0, 1518.7}, {210.0, 33.7}}, label: '「血染めのもみじ」の名で知られる紅葉の名所です。'
+                                              Button, 0x106b4d530, {{512.0, 1324.3}, {240.0, 222.0}}, identifier: 'home.spotShelf.card', label: '作例の写真（撮影: くろふね）、龍王峡、栃木県、紅葉の季節は人出が特に多くなります。'
+                                                Image, 0x106b9f7f0, {{512.0, 1324.3}, {240.0, 150.0}}, label: '作例の写真（撮影: くろふね）'
+                                                  Image, 0x106b9f910, {{519.3, 1324.3}, {225.3, 150.0}}
+                                                Image, 0x106b99090, {{525.0, 1491.7}, {13.7, 15.7}}, identifier: 'mappin.and.ellipse', label: '地図のピンを削除'
+                                                StaticText, 0x106b991b0, {{545.7, 1486.3}, {54.0, 26.3}}, label: '龍王峡'
+                                                StaticText, 0x106b44450, {{706.0, 1492.3}, {34.0, 14.3}}, label: '栃木県'
+                                                StaticText, 0x106b44570, {{524.0, 1518.7}, {213.0, 15.7}}, label: '紅葉の季節は人出が特に多くなります。'
+                                              Button, 0x106b8b980, {{760.0, 1324.3}, {240.0, 240.0}}, identifier: 'home.spotShelf.card', label: '撮影スポットの写真（撮影: TR15336300101）、後瀬山城、福井県、秋は落葉が進むと、斜面の竪堀の形が分かりやすくなります。'
+                                                Image, 0x106b8baa0, {{760.0, 1324.3}, {240.0, 150.0}}, label: '撮影スポットの写真（撮影: TR15336300101）'
+                                                  Image, 0x106b9dad0, {{780.0, 1324.3}, {200.0, 150.0}}
+                                                Image, 0x106b9dbf0, {{773.0, 1491.7}, {13.7, 15.7}}, identifier: 'mappin.and.ellipse', label: '地図のピンを削除'
+                                                StaticText, 0x106b46970, {{793.7, 1486.3}, {72.0, 26.3}}, label: '後瀬山城'
+                                                StaticText, 0x106b46a90, {{954.0, 1492.3}, {34.0, 14.3}}, label: '福井県'
+                                                StaticText, 0x106b9ce70, {{772.0, 1518.7}, {207.3, 33.7}}, label: '秋は落葉が進むと、斜面の竪堀の形が分かりやすくなります。'
+                                              Button, 0x106b9cf90, {{1008.0, 1324.3}, {240.0, 240.0}}, identifier: 'home.spotShelf.card', label: '撮影スポットの写真（撮影: Tnk3a）、筑波宇宙センター、茨城県、宇宙の日ふれあい月間を含む10月に特別公開があります。'
+                                                Image, 0x106b44870, {{1008.0, 1324.3}, {240.0, 150.0}}, label: '撮影スポットの写真（撮影: Tnk3a）'
+                                                  Image, 0x106b44990, {{1028.0, 1324.3}, {200.0, 150.0}}
+                                                Image, 0x106b63d70, {{1021.0, 1491.7}, {13.7, 15.7}}, identifier: 'mappin.and.ellipse', label: '地図のピンを削除'
+                                                StaticText, 0x106b63e90, {{1041.7, 1486.3}, {144.0, 26.3}}, label: '筑波宇宙センター'
+                                                StaticText, 0x106b94a70, {{1202.0, 1492.3}, {34.0, 14.3}}, label: '茨城県'
+                                                StaticText, 0x106b94b90, {{1020.0, 1518.7}, {198.7, 33.7}}, label: '宇宙の日ふれあい月間を含む10月に特別公開があります。'
+                                              Button, 0x106b9c630, {{28.0, 1564.3}, {216.0, 44.0}}, identifier: 'home.spotShelf.credit', label: '写真: 663highland / CC BY-SA 4.0'
+                                                Button, 0x106b9c750, {{28.0, 1564.3}, {216.0, 44.0}}
+                                                  StaticText, 0x106b8ef90, {{28.0, 1564.3}, {216.0, 44.0}}, label: '写真: 663highland / CC BY-SA 4.0'
+                                                    Link, 0x106b8f0b0, {{28.0, 1564.3}, {100.6, 14.3}}, identifier: 'https://commons.wikimedia.org/wiki/File:201121_Saruo_Falls_Kami_Hyogo_pref_Japan03s3.jpg', label: '写真: 663highland'
+                                                    Link, 0x106b99cf0, {{139.0, 1564.3}, {77.9, 14.3}}, identifier: 'https://creativecommons.org/licenses/by-sa/4.0', label: 'CC BY-SA 4.0'
+                                              Button, 0x106b99e10, {{276.0, 1564.3}, {216.0, 46.3}}, identifier: 'home.spotShelf.credit', label: 'Shōhōzan Kongōrin-ji 20221117 02 / 写真: 先従隗始 / CC0 / Wikimedia Commons'
+                                                Button, 0x106b96750, {{276.0, 1564.3}, {216.0, 46.3}}
+                                                  StaticText, 0x106b96870, {{276.0, 1564.3}, {216.0, 46.3}}, label: 'Shōhōzan Kongōrin-ji 20221117 02 / 写真: 先従隗始 / CC0 / Wikimedia Commons'
+                                                    Link, 0x106b9a530, {{360.7, 1580.3}, {24.7, 16.0}}, identifier: 'https://creativecommons.org/publicdomain/zero/1.0/deed.en', label: 'CC0'
+                                                    Link, 0x106b9a650, {{276.0, 1580.3}, {206.3, 30.3}}, identifier: 'https://commons.wikimedia.org/wiki/File:Sh%C5%8Dh%C5%8Dzan_Kong%C5%8Drin-ji_20221117_02.jpg', label: 'Wikimedia Commons'
+                                              Button, 0x106b9a110, {{524.0, 1546.3}, {216.0, 46.3}}, identifier: 'home.spotShelf.credit', label: '竪琴の滝（龍王峡）20251115-IMG 4428 / 写真: くろふね / CC BY 4.0 / Wikimedia Commons'
+                                                Button, 0x106b9a230, {{524.0, 1546.3}, {216.0, 46.3}}
+                                                  StaticText, 0x101ed3250, {{524.0, 1546.3}, {216.0, 46.3}}, label: '竪琴の滝（龍王峡）20251115-IMG 4428 / 写真: くろふね / CC BY 4.0 / Wikimedia Commons'
+                                                    Link, 0x101ed3370, {{649.5, 1562.3}, {57.4, 16.0}}, identifier: 'https://creativecommons.org/licenses/by/4.0', label: 'CC BY 4.0'
+                                                    Link, 0x101ed2480, {{524.0, 1578.3}, {118.6, 14.3}}, identifier: 'https://commons.wikimedia.org/wiki/File:%E7%AB%AA%E7%90%B4%E3%81%AE%E6%BB%9D%EF%BC%88%E9%BE%8D%E7%8E%8B%E5%B3%A1%EF%BC%8920251115-IMG_4428.jpg', label: 'Wikimedia Commons'
+                                              Button, 0x101ed25a0, {{772.0, 1564.3}, {216.0, 44.0}}, identifier: 'home.spotShelf.credit', label: '写真: TR15336300101 / CC BY-SA 4.0'
+                                                Button, 0x101ed26c0, {{772.0, 1564.3}, {216.0, 44.0}}
+                                                  StaticText, 0x101ed27e0, {{772.0, 1564.3}, {216.0, 44.0}}, label: '写真: TR15336300101 / CC BY-SA 4.0'
+                                                    Link, 0x101ed1f40, {{772.0, 1564.3}, {121.8, 14.3}}, identifier: 'https://commons.wikimedia.org/wiki/File:Nochise-yama_castle_ruins_Honmaru1.jpg', label: '写真: TR15336300101'
+                                                    Link, 0x101ed2060, {{904.2, 1564.3}, {77.9, 14.3}}, identifier: 'https://creativecommons.org/licenses/by-sa/4.0', label: 'CC BY-SA 4.0'
+                                              Button, 0x101ed2180, {{1020.0, 1564.3}, {216.0, 44.0}}, identifier: 'home.spotShelf.credit', label: '写真: Tnk3a / CC BY-SA 3.0'
+                                                Button, 0x101ecfcf0, {{1020.0, 1564.3}, {216.0, 44.0}}
+                                                  StaticText, 0x101ecfe10, {{1020.0, 1564.3}, {216.0, 44.0}}, label: '写真: Tnk3a / CC BY-SA 3.0'
+                                                    Link, 0x101ecff30, {{1020.0, 1564.3}, {63.8, 14.3}}, identifier: 'https://commons.wikimedia.org/wiki/File:Tsukuba_Space_Center-01.jpg', label: '写真: Tnk3a'
+                                                    Link, 0x101efc290, {{1094.2, 1564.3}, {77.7, 14.3}}, identifier: 'https://creativecommons.org/licenses/by-sa/3.0/', label: 'CC BY-SA 3.0'
+                                              Button, 0x101efc3b0, {{28.0, 1610.7}, {99.0, 44.0}}, identifier: 'home.spotShelf.wish', label: '猿尾滝を行きたいに保存', value: 未保存
+                                                Image, 0x101efc4d0, {{43.7, 1626.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                                StaticText, 0x101edb9a0, {{28.0, 1610.7}, {99.0, 44.0}}, label: '行きたい'
+                                              Button, 0x101edbac0, {{276.0, 1610.7}, {99.0, 44.0}}, identifier: 'home.spotShelf.wish', label: '湖東三山 金剛輪寺を行きたいに保存', value: 未保存
+                                                Image, 0x101edbbe0, {{291.7, 1626.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                                StaticText, 0x101ecf090, {{276.0, 1610.7}, {99.0, 44.0}}, label: '行きたい'
+                                              Button, 0x101ecf1b0, {{524.0, 1610.7}, {99.0, 44.0}}, identifier: 'home.spotShelf.wish', label: '龍王峡を行きたいに保存', value: 未保存
+                                                Image, 0x101ecf2d0, {{539.7, 1626.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                                StaticText, 0x101ed2af0, {{524.0, 1610.7}, {99.0, 44.0}}, label: '行きたい'
+                                              Button, 0x101ed2c10, {{772.0, 1610.7}, {99.0, 44.0}}, identifier: 'home.spotShelf.wish', label: '後瀬山城を行きたいに保存', value: 未保存
+                                                Image, 0x101ed2d30, {{787.7, 1626.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                                StaticText, 0x101ed2e50, {{772.0, 1610.7}, {99.0, 44.0}}, label: '行きたい'
+                                              Button, 0x101ed2f70, {{1020.0, 1610.7}, {99.0, 44.0}}, identifier: 'home.spotShelf.wish', label: '筑波宇宙センターを行きたいに保存', value: 未保存
+                                                Image, 0x101ece3a0, {{1035.7, 1626.7}, {13.0, 12.3}}, identifier: 'heart', label: 'ラブ'
+                                                StaticText, 0x101ece4c0, {{1020.0, 1610.7}, {99.0, 44.0}}, label: '行きたい'
+                                          StaticText, 0x101ece5e0, {{16.0, 1670.7}, {382.3, 30.3}}, label: '写真は各撮影スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。'
+                                        Other, 0x101ece700, {{0.0, 0.0}, {0.0, 0.0}}
+                                      Other, 0x101eba720, {{407.0, 116.0}, {30.0, 757.0}}, label: '垂直スクロールバー, 11ページ', value: 0%
+                                        Other, 0x101eba840, {{434.0, 119.0}, {3.0, 98.0}}
+                                      Other, 0x101eba960, {{407.0, 116.0}, {30.0, 757.0}}, label: '垂直スクロールバー, 11ページ', value: 0%
+                                        Other, 0x101ebaa80, {{434.0, 119.0}, {3.0, 98.0}}
+                            Other, 0x101ec2f00, {{0.0, 0.0}, {440.0, 956.0}}
+                              Other, 0x101ec3020, {{0.0, 0.0}, {440.0, 956.0}}
+                Other, 0x101ec3140, {{0.0, 873.0}, {440.0, 83.0}}
+                  Other, 0x101ec3260, {{0.0, 0.0}, {440.0, 956.0}}
+                    TabBar, 0x101ec8f50, {{0.0, 873.0}, {440.0, 83.0}}, label: 'タブバー'
+                      Other, 0x101ec9070, {{21.0, 873.0}, {398.0, 62.0}}
+                        Other, 0x101ec9190, {{21.0, 873.0}, {84.6, 54.0}}
+                        Other, 0x101ec92b0, {{21.0, 873.0}, {398.0, 62.0}}
+                          Button, 0x101ec93d0, {{25.0, 877.0}, {84.6, 54.0}}, identifier: 'house', label: 'ホーム', Selected
+                            Image, 0x101ee06c0, {{51.0, 883.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'ホーム'
+                          Button, 0x101ee07e0, {{101.3, 877.0}, {84.6, 54.0}}, identifier: 'magnifyingglass', label: '探す'
+                            Image, 0x101ee0900, {{129.3, 883.7}, {27.7, 26.7}}, identifier: 'magnifyingglass', label: '検索'
+                          Button, 0x101ee0a20, {{177.7, 877.0}, {84.6, 54.0}}, identifier: 'plus.app', label: '投稿'
+                            Image, 0x101ee0b40, {{206.7, 884.3}, {27.0, 25.0}}, identifier: 'plus.app.fill', label: 'ホーム画面に追加'
+                          Button, 0x101ee0c60, {{254.0, 877.0}, {84.6, 54.0}}, identifier: 'map', label: 'マップ'
+                            Image, 0x101ee0d80, {{281.0, 883.7}, {29.7, 26.3}}, identifier: 'map.fill', label: '地図を表示'
+                          Button, 0x101ee0ea0, {{330.4, 877.0}, {84.6, 54.0}}, identifier: 'person', label: 'マイページ'
+                            Image, 0x101ee0fc0, {{360.4, 884.7}, {25.3, 24.7}}, identifier: 'person.fill', label: 'person.fill'
+                        Other, 0x101ee10e0, {{25.0, 877.0}, {84.6, 54.0}}
+                          Other, 0x101ee1200, {{25.0, 877.0}, {84.3, 54.0}}
+                            Other, 0x101ee1320, {{25.0, 877.0}, {84.3, 54.0}}
+                            Other, 0x101ee1440, {{25.0, 877.0}, {84.3, 54.0}}
+                              Other, 0x101ee1560, {{25.0, 877.0}, {84.3, 54.0}}
+                                Other, 0x101ee1680, {{25.0, 877.0}, {84.3, 54.0}}
+                                  Other, 0x101ee17a0, {{25.0, 877.0}, {84.3, 54.0}}
+                                Other, 0x101ee18c0, {{25.0, 877.0}, {84.3, 54.0}}
+                              Other, 0x101ee19e0, {{25.0, 877.0}, {84.3, 54.0}}
+                  Other, 0x101ee1b00, {{0.0, 873.0}, {440.0, 83.0}}
+                    Other, 0x101ee1c20, {{0.0, 873.0}, {440.0, 83.0}}
+                      Other, 0x101ee1d40, {{0.0, 873.0}, {440.0, 83.0}}
+                        Other, 0x101ee1e60, {{0.0, 873.0}, {440.0, 83.0}}
+                          Other, 0x101ee1f80, {{0.0, 873.0}, {440.0, 83.0}}
+                            Other, 0x101ee20a0, {{0.0, 873.0}, {440.0, 83.0}}
+                        Other, 0x101ee21c0, {{0.0, 873.0}, {440.0, 83.0}}
+                          Other, 0x101ee22e0, {{0.0, 873.0}, {440.0, 83.0}}
+      Other, 0x101ee2400, {{0.0, 0.0}, {440.0, 956.0}}
+        Other, 0x101ee2520, {{0.0, 0.0}, {440.0, 956.0}}
+          Other, 0x101ee2640, {{0.0, 0.0}, {440.0, 956.0}}
+            Other, 0x101ee2760, {{-308.0, -363.3}, {1056.0, 1338.3}}, identifier: 'trunk.arrived'
+              Button, 0x101ee2880, {{364.0, 68.0}, {68.0, 44.0}}, identifier: 'trunk.arrived.close', label: '閉じる'
+              ScrollView, 0x101ee29a0, {{18.0, 118.0}, {404.3, 616.0}}
+                Other, 0x101ee2ac0, {{18.0, 118.0}, {404.3, 453.0}}
+                  StaticText, 0x101ee2be0, {{146.5, 136.0}, {147.3, 13.3}}, label: 'NEW LABEL · 投稿のお礼'
+                  StaticText, 0x101ee2d00, {{88.2, 159.3}, {264.0, 32.0}}, label: '京都のラベルが届きました'
+                  StaticText, 0x101ee2e20, {{106.2, 197.3}, {228.0, 18.0}}, label: '「哲学の道の朝」を投稿したお礼です'
+                  Image, 0x101ee2f40, {{128.1, 272.5}, {184.2, 187.6}}, label: '京都 · 春のラベル'
+                    StaticText, 0x101ee3060, {{185.3, 345.0}, {68.5, 24.0}}, label: 'KYOTO'
+                    StaticText, 0x101ee3180, {{186.9, 366.4}, {70.2, 53.2}}, label: '京都'
+                    StaticText, 0x101ee32a0, {{182.2, 417.9}, {84.6, 22.1}}, label: 'SPRING · 春'
+                  StaticText, 0x101ed10a0, {{71.3, 513.5}, {109.7, 15.7}}, label: '春の時季だけの図柄'
+                  StaticText, 0x101ed11c0, {{234.7, 513.5}, {61.0, 15.7}}, label: '京都の図柄'
+                  StaticText, 0x101ed12e0, {{315.7, 505.3}, {86.7, 32.0}}, identifier: 'trunk.arrived.coin', label: '硬貨 +1'
+                    Other, 0x101ed1400, {{327.7, 514.3}, {14.0, 14.0}}
+                    StaticText, 0x101ed1520, {{347.7, 513.5}, {42.7, 15.7}}, label: '硬貨 +1'
+                  StaticText, 0x101ed1640, {{80.8, 555.3}, {278.7, 15.7}}, label: '手持ち、6 / 30、· あと24枚'
+                    StaticText, 0x101ed1760, {{80.8, 555.3}, {36.7, 15.7}}, label: '手持ち'
+                    Other, 0x101ed1880, {{125.3, 560.3}, {120.0, 6.0}}
+                    StaticText, 0x101ed19a0, {{253.5, 555.3}, {35.7, 15.7}}, label: '6 / 30'
+                    StaticText, 0x101ed1ac0, {{297.2, 555.3}, {62.3, 15.7}}, label: '· あと24枚'
+                Other, 0x101ed1be0, {{389.3, 118.0}, {30.0, 616.0}}, label: '垂直スクロールバー, 1ページ', value: 0%
+                  Other, 0x101ed1d00, {{416.3, 724.0}, {3.0, 7.0}}
+                Other, 0x101edc0e0, {{389.3, 118.0}, {30.0, 616.0}}, label: '垂直スクロールバー, 1ページ', value: 0%
+                  Other, 0x101edc200, {{416.3, 724.0}, {3.0, 7.0}}
+              Button, 0x101edc320, {{20.0, 734.0}, {400.0, 52.0}}, identifier: 'trunk.arrived.stick', label: 'トランクに貼る'
+              Button, 0x101edc440, {{20.0, 794.0}, {400.0, 48.0}}, identifier: 'trunk.arrived.keep', label: '手持ちに入れておく'
+              Button, 0x101edc560, {{20.0, 850.0}, {400.0, 44.0}}, identifier: 'trunk.arrived.reroll', label: '図柄を作り直す（Pro）'
+                Image, 0x101edc680, {{133.3, 863.7}, {16.7, 16.7}}, identifier: 'dice', label: 'dice'
+                StaticText, 0x101edc7a0, {{160.0, 863.0}, {98.3, 18.0}}, label: '図柄を作り直す'
+                StaticText, 0x101b88ff0, {{266.3, 864.3}, {42.3, 15.3}}, label: 'PRO'
+Path to element:
+ →Application, 0x101edb580, pid: 78675, label: 'Journey Photo'
+Query chain:
+ →Find: Target Application 'com.journeyphoto.JourneyPhoto.staging'
+  Output: {
+    Application, 0x1192575c0, pid: 78675, label: 'Journey Photo'
+  }

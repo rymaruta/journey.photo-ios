@@ -1,0 +1,1 @@
+[feedProbe] 4-after-swipe: rowMinY=116.0 feed=following rowMinY=0.00 overflow=0.00 pinned=true rowH=48.00 viewport=757.00 pages=1 topCardsAway=true
