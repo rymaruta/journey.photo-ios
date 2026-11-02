@@ -1181,9 +1181,9 @@ struct PhotoDetailView: View {
             username: model.owner?.username,
             // SNSカードには検索用の生住所を渡さず、表示向けに短縮した地名だけを渡す。
             location: LocationMatch.shareCardDisplay(target.location),
-            // SNSカードには撮影地点の精密な座標を渡さない。
-            // 公開地名は行政区分までに留め、ピンから撮影地点が特定されることを防ぐ。
-            coords: nil,
+            // SNS用の地図とピンは約50km単位に丸めた概略位置を使う。
+            // 原座標やEXIFのGPSは共有画像へ渡さない。
+            coords: SignatureShareCardRenderer.approximateShareCoordinate(target.coords),
             camera: target.exif?.camera,
             lens: target.exif?.lens,
             exposure: target.exif?.exposure,
