@@ -131,19 +131,19 @@ final class PerformanceTests: XCTestCase {
         let map = tabs.buttons["マップ"]
         let myPage = tabs.buttons["マイページ"]
 
-        for tab in [search, map, myPage, home] {
-            XCTAssertTrue(tab.exists, "測定対象のタブが見つからない: \\(tab.label)")
+        let sequence = [search, map, myPage, home]
+        for tab in sequence {
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "測定対象のタブが見つからない: \\(tab.label)")
             tab.tap()
-            XCTAssertTrue(tab.waitForExistence(timeout: 10))
             XCTAssertTrue(tab.isSelected, "初回のタブ選択に失敗: \\(tab.label)")
         }
 
+        // タブを一度構築してから再訪問を計測する。
+        // 画面の描画完了ではなく、UI操作と選択反映の往復時間である。
         measure(metrics: [XCTClockMetric()], options: Self.options(3)) {
-            for tab in [search, map, myPage, home] {
+            for tab in sequence {
                 tab.tap()
-                let selected = NSPredicate(format: "selected == true")
-                expectation(for: selected, evaluatedWith: tab)
-                waitForExpectations(timeout: 15)
+                XCTAssertTrue(tab.isSelected, "再訪問のタブ選択に失敗: \\(tab.label)")
             }
         }
     }
