@@ -183,6 +183,25 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testRegionalMapWithCoarsePinRendersAcrossAllRatios() async throws {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let coords = SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.6812, lng: 139.7671))
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer",
+            location: "東京都（千代田区）", coords: coords,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
+            let result = await SignatureShareCardRenderer.render(photo, credit: credit, ratio: ratio)
+            XCTAssertNotNil(result, "Regional map must render for \\(ratio)")
+        }
+    }
+
     func testShareMapPinUsesCoarseCoordinateAndRejectsInvalidValues() {
         let original = Photo.Coords(lat: 35.6812, lng: 139.7671)
         let approximate = SignatureShareCardRenderer.approximateShareCoordinate(original)
