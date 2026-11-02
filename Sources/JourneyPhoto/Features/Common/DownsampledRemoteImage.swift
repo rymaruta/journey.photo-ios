@@ -48,6 +48,8 @@ struct DownsampledRemoteImage: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
+    /// State が別の URL に再利用されても、前の写真を表示しないための識別子。
+    @State private var imageURL: URL?
     /// いま出している絵を読んだときの画素数（長い辺）。これ以上で読めていれば読み直さない
     @State private var loadedPixels = 0
     @State private var failed = false
@@ -60,7 +62,7 @@ struct DownsampledRemoteImage: View {
         ZStack {
             WebTheme.surface
             // 控えに在れば、取りに行く前から出す（格子へ戻ったときに読み込み中の輪から出直さない）
-            if let image = image ?? url.flatMap({ Self.memory.entry(for: $0)?.image }) {
+            if let image = (imageURL == url ? image : nil) ?? url.flatMap({ Self.memory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)?.image }) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
             } else if DownsampledImagePhase.of(hasImage: false, failed: failed, hasURL: url != nil) == .failed {
@@ -88,6 +90,7 @@ struct DownsampledRemoteImage: View {
         // 別の写真に替わったら数え直す（前の写真の失敗で、次の写真の読み直しを使い切らない）
         .onChange(of: url) { _, _ in
             image = nil
+            imageURL = nil
             loadedPixels = 0
             failed = false
             automaticRetries = 0
@@ -122,24 +125,33 @@ struct DownsampledRemoteImage: View {
         }
         guard let pixels = neededPixels else { return }
         // 同じ大きさ以上で読めていれば読み直さない（幅が少し縮んだだけの回）
-        if image != nil, loadedPixels >= pixels { return }
+        if imageURL == url, image != nil, loadedPixels >= pixels { return }
         // 控えに足りる大きさで在れば、取りに行かず展開もしない
         if let cached = Self.memory.entry(for: url, atLeast: pixels) {
             image = cached.image
+            imageURL = url
             loadedPixels = cached.pixels
             failed = false
             onSettled?(true)
             return
         }
         do {
-            // 同じURLを複数セルが同時に表示しても、通信は一度だけ。
-            let data = try await GridImageInFlight.shared.data(for: url)
-            // 同じURL・画素数を複数セルが同時に要求しても、展開は一度だけ。
-            let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            let decoded = await Task.detached(priority: .userInitiated) { () -> (image: UIImage, cost: Int)? in
+                guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else { return nil }
+                return (UIImage(cgImage: cgImage), cgImage.width * cgImage.height * 4)
+            }.value
             guard !Task.isCancelled else { return }
             guard let decoded else { throw URLError(.cannotDecodeContentData) }
             Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
-            withAnimation(appearAnimation) { image = decoded.image }
+            withAnimation(appearAnimation) {
+                image = decoded.image
+                imageURL = url
+            }
             loadedPixels = pixels
             failed = false
             onSettled?(true)
@@ -271,78 +283,5 @@ enum DownsampledImageSize {
         let needed = Int((max(shown.width, shown.height) * scale).rounded(.up))
         let stepped = ((needed + step - 1) / step) * step
         return min(maximum, max(minimum, stepped))
-    }
-}
-
-
-/// 一覧・旅の本の縮小画像に限定した通信中リクエストの共有。
-/// URLCacheは完了済み応答のキャッシュであり、通信中の同時要求を統合する保証はない。
-/// 完了後は必ず破棄し、永続的な画像データキャッシュを増やさない。
-/// セル単位のキャンセルで他セルの通信を止めない（結果の反映は各セル側でキャンセル判定）。
-private actor GridImageInFlight {
-    static let shared = GridImageInFlight()
-
-    private struct Entry {
-        let id: UUID
-        let task: Task<Data, Error>
-    }
-    private var requests: [URL: Entry] = [:]
-
-    func data(for url: URL) async throws -> Data {
-        if let running = requests[url] {
-            return try await running.task.value
-        }
-        let id = UUID()
-        let task = Task.detached(priority: .userInitiated) {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            return data
-        }
-        requests[url] = Entry(id: id, task: task)
-        // 失敗時にも必ず除去し、次回の自動リトライを妨げない。
-        defer {
-            if requests[url]?.id == id { requests[url] = nil }
-        }
-        return try await task.value
-    }
-}
-
-
-/// 通信の共有とは別に、同じ画像の縮小デコード中タスクを共有する。
-/// 完了後はタスクを保持しない。完成した画像の保持・破棄は既存の NSCache が担当。
-/// セルのキャンセルが別セルの画像展開を止めないよう detached task を使う。
-private actor GridImageDecodeInFlight {
-    static let shared = GridImageDecodeInFlight()
-
-    // UIImage はデコード後に変更しない。actor 境界を越える値を明示的に包む。
-    struct Decoded: @unchecked Sendable {
-        let image: UIImage
-        let cost: Int
-    }
-
-    private struct Key: Hashable {
-        let url: URL
-        let pixels: Int
-    }
-
-    private var tasks: [Key: Task<Decoded?, Never>] = [:]
-
-    func image(data: Data, for url: URL, pixels: Int) async -> Decoded? {
-        let key = Key(url: url, pixels: pixels)
-        if let existing = tasks[key] { return await existing.value }
-
-        let task = Task.detached(priority: .userInitiated) { () -> Decoded? in
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else {
-                return nil
-            }
-            return Decoded(image: UIImage(cgImage: cgImage), cost: cgImage.width * cgImage.height * 4)
-        }
-        tasks[key] = task
-        let result = await task.value
-        tasks[key] = nil
-        return result
     }
 }
