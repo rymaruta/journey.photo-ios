@@ -133,9 +133,11 @@ final class PerformanceTests: XCTestCase {
 
         let sequence = [search, map, myPage, home]
         for tab in sequence {
-            XCTAssertTrue(tab.waitForExistence(timeout: 10), "測定対象のタブが見つからない: \\(tab.label)")
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "測定対象のタブが見つからない: \(tab.label)")
             tab.tap()
-            XCTAssertTrue(tab.isSelected, "初回のタブ選択に失敗: \\(tab.label)")
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: tab)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed,
+                           "初回のタブ選択に失敗: \(tab.label)")
         }
 
         // タブを一度構築してから再訪問を計測する。
@@ -143,7 +145,9 @@ final class PerformanceTests: XCTestCase {
         measure(metrics: [XCTClockMetric()], options: Self.options(3)) {
             for tab in sequence {
                 tab.tap()
-                XCTAssertTrue(tab.isSelected, "再訪問のタブ選択に失敗: \\(tab.label)")
+                let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: tab)
+                XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed,
+                               "再訪問のタブ選択に失敗: \(tab.label)")
             }
         }
     }
