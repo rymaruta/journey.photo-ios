@@ -202,6 +202,21 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testStoryLandscapePhotoRendersWithoutInsetComposite() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 600))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 600))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: nil, location: nil, coords: nil,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: .story)
+        let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(result)))
+        XCTAssertEqual(image.size, CGSize(width: 1080, height: 1920))
+    }
+
     func testShareMapPinUsesCoarseCoordinateAndRejectsInvalidValues() {
         let original = Photo.Coords(lat: 35.6812, lng: 139.7671)
         let approximate = SignatureShareCardRenderer.approximateShareCoordinate(original)
