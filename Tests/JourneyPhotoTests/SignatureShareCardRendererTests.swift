@@ -160,6 +160,28 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testMultiplePhotographerMarksRenderWithLongNameAcrossRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Long Photographer Display Name", username: "long_photographer_username",
+            location: "神奈川県（横浜市）", coords: nil,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E",
+            exposure: "1/125s", aperture: "f/4", iso: 200,
+            verified: true, proStyle: .plate, early: true, badge: nil)
+        for (ratio, height) in [
+            (SignatureShareCardRenderer.Ratio.portrait, CGFloat(1350)),
+            (.square, CGFloat(1080)), (.story, CGFloat(1920))
+        ] {
+            let data = try XCTUnwrap(await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio))
+            let image = try XCTUnwrap(UIImage(data: data))
+            XCTAssertEqual(image.size, CGSize(width: 1080, height: height))
+        }
+    }
+
     func testInvalidPhotoDataReturnsNil() async {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,
