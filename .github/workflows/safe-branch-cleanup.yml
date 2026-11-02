@@ -1,0 +1,71 @@
+name: Safe branch cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DELETE to delete only explicitly allowlisted, fully merged branches'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: ${{ github.event.inputs.confirm == 'DELETE' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check and delete allowlisted branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(
+            claude/app-perf-429
+            claude/camper-render-430
+            claude/contact-sheet-slow
+            claude/credit-plain
+            claude/home-tabs-426
+            claude/mini-player-see-through
+            claude/multi-drafts
+            claude/music-playback-perf
+            claude/mypage-tabs-418-check
+            claude/spot-autolink-ios-425
+            claude/story-composer-song-autoplay
+            claude/story-empty-caption
+            fix/upload-cancellation-preservation
+          )
+          for branch in "${branches[@]}"; do
+            echo "::group::$branch"
+            if ! head_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha'); then
+              echo "Branch not found; skipping"
+              echo "::endgroup::"
+              continue
+            fi
+            # Refuse deletion when any open PR uses this branch.
+            open_prs=$(BRANCH="$branch" gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" --jq '.[] | select(.head.repo.full_name == env.GH_REPO and .head.ref == env.BRANCH) | .number')
+            if [[ -n "$open_prs" ]]; then
+              echo "Open PR exists ($open_prs); skipping"
+              echo "::endgroup::"
+              continue
+            fi
+            ahead=$(gh api "repos/$GH_REPO/compare/main...$branch" --jq '.ahead_by')
+            if [[ "$ahead" != "0" ]]; then
+              echo "$ahead commits ahead of main; skipping"
+              echo "::endgroup::"
+              continue
+            fi
+            current_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha')
+            if [[ "$current_sha" != "$head_sha" ]]; then
+              echo "Branch moved during verification; skipping"
+              echo "::endgroup::"
+              continue
+            fi
+            gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch"
+            echo "Deleted $branch"
+            echo "::endgroup::"
+          done
