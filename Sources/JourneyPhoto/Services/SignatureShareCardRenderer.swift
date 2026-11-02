@@ -173,10 +173,22 @@ enum SignatureShareCardRenderer {
                 + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
             let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
             let nameWidth = max(90, 255 - markWidth)
+            // マークは名前の固定幅の末尾ではなく、実際に描画する文字の直後に置く。
+            // 長い名前は draw() と同じ縮小ルールで測定し、地点欄との境界を守る。
+            let nameFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
+            var fittedNameFont = nameFont
+            let minimumNameSize: CGFloat = max(16, 32 * 0.72)
+            let nameText = authorName as NSString
+            while fittedNameFont.pointSize > minimumNameSize,
+                  nameText.size(withAttributes: [.font: fittedNameFont]).width > nameWidth {
+                fittedNameFont = UIFont(descriptor: nameFont.fontDescriptor,
+                                        size: max(minimumNameSize, fittedNameFont.pointSize - 1))
+            }
+            let actualNameWidth = min(nameWidth,
+                ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
-            // マークが多い場合も撮影地との仕切り線を越えない。
-            drawNameMarks(credit, at: CGPoint(x: 220 + nameWidth + 5, y: rowY + 7))
+            drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
