@@ -2,13 +2,14 @@
 """Explain UI test selection in GitHub Actions without changing test execution."""
 import os
 import pathlib
-import re
 import sys
 
-from importlib.machinery import SourceFileLoader
+import importlib.util
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-picker = SourceFileLoader("picker", str(ROOT / "Tools/pick-ui-tests.py")).load_module()
+spec = importlib.util.spec_from_file_location("picker", ROOT / "Tools/pick-ui-tests.py")
+picker = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(picker)
 CLASS_DOC = {
     "SmokeTests": "起動・基本画面の表示を確認",
     "ScreenshotTests": "各画面を操作してスクリーンショットを撮影",
@@ -35,7 +36,7 @@ def render(selection):
         selected = sorted(t for t in tests if any(a.endswith("/" + t) or a.endswith("/" + t.split("/")[0]) for a in args))
     lines = ["## UIテスト実行内容", "",
              f"- 指定: `{escape(selection or '全部')}`",
-             f"- 対象: **{len(selected)} 件**（名指し専用の性能・特殊撮影テストは全件実行から除外）", "",
+             f"- 対象: **{len(selected)} 件**（全件指定では名指し専用テストを除外）", "",
              "| テスト | 目的・操作の概要 | 実行方針 |",
              "|---|---|---|"]
     for name in selected:
@@ -43,8 +44,8 @@ def render(selection):
         policy = "名指し専用" if picker.only_when_named(name) else "通常"
         lines.append(f"| `{escape(name)}` | **{escape(title)}** — {escape(desc)} | {policy} |")
     lines += ["", "### 確認方法",
-              "実際の操作・アサーション・失敗位置は各テストのSwiftソースとxcresultを参照してください。",
-              "この表は実行計画であり、成功結果ではありません。失敗時はbuild-logsのxcresultとログを確認してください。",
+              "詳細な操作・アサーションは各テストのSwiftソースを参照してください。",
+              "この表は実行計画であり成功結果ではありません。失敗時はActionsの各テストジョブSummaryを確認してください。公開Artifactには画像やxcresultを保存しません。",
               ""]
     return "\n".join(lines)
 
