@@ -120,12 +120,15 @@ fi
 
 mkdir -p "$(dirname "$LOG")"
 # `extra`・`source_args` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
+# GitHub Actions に進捗を逐次出す。tail -n 400 は先頭400行が揃うまで出力を
+# バッファするため、長い UI テストが停止したように見える原因になる。
+# pipefail により xcodebuild の失敗は tee 越しでも検知する。
 # shellcheck disable=SC2086
 xcodebuild \
     $source_args \
     -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
     $extra \
-    "$action" 2>&1 | tee -a "$LOG" | tail -n 400 || {
+    "$action" 2>&1 | tee -a "$LOG" || {
         echo "::group::error: と落ちたテストの行だけ"
         grep -E "error:|Failing tests|\*\* TEST|' failed \(" "$LOG" | sort -u | head -200 || true
         echo "::endgroup::"
