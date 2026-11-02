@@ -273,11 +273,5 @@ jobs:
 
       # 公開リポジトリ: xcresultにはスクリーンショット・録画・診断情報が含まれる。
       # PRの成果物には含めず、Summaryで失敗名と理由を確認する。
-      - name: 公開可能なテストログのみ保存
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-test-results
-          path: build-xcodebuild.log
-          retention-days: 3
-          if-no-files-found: ignore
+      # 生ログにはユーザー名・URLなどが含まれる可能性があるためArtifactには保存しない。
+      # テストの失敗名・理由は「結果のまとめ」で確認する。
