@@ -106,7 +106,7 @@ jobs:
     # 2026-10-31（#429）: 上げる回で tests=true にすると、ここで UI テストを1台で全部流す（約 130 分）。
     # 続く Archive・上げるまで入れると 160 分に当たる（run 788 は Archive の途中で cancelled）。
     # この組だけ上限を延ばす（上げる回の流れは変えない・止めもしない。理由は「どこまで流すかを決める」の注記）
-    timeout-minutes: ${{ (inputs.submit && inputs.tests) && 240 || 160 }}
+    timeout-minutes: 160
 
     steps:
       - uses: actions/checkout@v4
@@ -141,12 +141,7 @@ jobs:
           # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
           sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          # **上げる回で tests=true は1台で全部を流す**（分けると、上げるのを別の job で全部の組を待つ作りに変わる）。
-          # 止めない: 上げる回の流れ（テスト → Archive → 上げる）は変えない約束で、main 以外の枝を確かめて上げる
-          # 使い方が残っている。かわりに job の上限を 240 分に延ばし、時間がかかることを警告で出す
-          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
-            echo "::warning::上げる回で tests=true なので、UI テストを1台で全部流します（約 130 分・上げるまで 3 時間近く）。枝を確かめるだけなら submit=false で流すと、別々の Mac に分けて約 70〜90 分です"
-          fi
+          # 配信時のテストは SmokeTests に絞り、全件 UI は PR 検証で維持する。
           # 配信時は長時間の全画面撮影を避け、起動・タブ・基本操作の SmokeTests を必須とする。
           # 全件 UI テストは PR の検証で引き続き実施する。配信時の短縮テストを全件成功とは扱わない。
           if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
@@ -156,7 +151,7 @@ jobs:
             SCREENS=""
           fi
           python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
-          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ] || [ "${SUBMIT:-}" = "true" ]; then
+          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
             echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
             if [ "$sharded" = "true" ]; then
@@ -166,7 +161,7 @@ jobs:
             echo "full=false" >> "$GITHUB_OUTPUT"
             {
               echo "### UI テストを絞った回（screens: ${SCREENS}）"
-              echo "この回は「Mac でテスト済み」と数えません。main に入る前に「PR の検証」が全部を回します。"
+              echo "この回は全件 UI テスト済みとは数えません。全件の検証は PR の検証で行います。"
               echo
               sed 's/^/- /' /tmp/ui-only-testing.txt
             } >> "$GITHUB_STEP_SUMMARY"
