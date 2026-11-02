@@ -231,6 +231,25 @@ final class DownsampledImageSizeTests: XCTestCase {
         XCTAssertTrue(source.contains("atLeast: neededPixels ?? DownsampledImageSize.maximum"))
     }
 
+    /// スポット画像は縮小版が失敗したときだけ元画像へ一度切り替える。
+    func testSpotThumbnailDownsamplesAndKeepsFallbackGuard() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Common/SpotThumbImage.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("DownsampledRemoteImage(url: requestedURL, contentMode: .fill,"))
+        XCTAssertTrue(source.contains("assumedRatioLimit: assumedRatioLimit ?? 2"))
+        XCTAssertTrue(source.contains(".id(requestedURL)"))
+        XCTAssertTrue(source.contains("requestedURL == state.current"))
+        XCTAssertFalse(source.contains("RemoteImage(url: state.current"), "小さな画像を原寸でデコードしない")
+        let first = try XCTUnwrap(URL(string: "https://example.com/small.jpg"))
+        let original = try XCTUnwrap(URL(string: "https://example.com/original.jpg"))
+        var fallback = SpotThumbFallback(primary: first, fallback: original)
+        XCTAssertEqual(fallback.current, first)
+        XCTAssertTrue(fallback.failed())
+        XCTAssertEqual(fallback.current, original)
+        XCTAssertFalse(fallback.failed(), "元画像の失敗で無限に切り替えない")
+        var same = SpotThumbFallback(primary: first, fallback: first)
+        XCTAssertFalse(same.failed(), "同じURLを二度取得しない")
+    }
+
     private static func sourcePath(_ relative: String) -> String {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
