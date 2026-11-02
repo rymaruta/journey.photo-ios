@@ -27,6 +27,17 @@ enum SignatureShareCardRenderer {
         let badge: EarnedBadge?
     }
 
+    /// SNSでは撮影地点をそのまま描かず、約50km単位の概略ピンにする。
+    /// 位置が不正な場合は地図を表示しない。
+    static func approximateShareCoordinate(_ coords: Photo.Coords?) -> CLLocationCoordinate2D? {
+        guard let coords, coords.lat.isFinite, coords.lng.isFinite,
+              (-90...90).contains(coords.lat), (-180...180).contains(coords.lng) else { return nil }
+        let step = 0.5
+        return CLLocationCoordinate2D(
+            latitude: (coords.lat / step).rounded() * step,
+            longitude: (coords.lng / step).rounded() * step)
+    }
+
     private static let surface = UIColor(red: 14/255, green: 14/255, blue: 15/255, alpha: 1)
     private static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
     private static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
