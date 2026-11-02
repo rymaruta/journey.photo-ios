@@ -1055,8 +1055,10 @@ struct PhotoMapView: View {
             return DerivedSpot.openable(pin.title, in: model.photos)
         }()
         return HStack(alignment: .top, spacing: JPSpace.s) {
-            RemoteImage(url: pin.photos.first?.gridImageURL,
-                        alignment: pin.photos.first?.gridAlignment ?? .center)
+            DownsampledRemoteImage(url: pin.photos.first?.gridImageURL, contentMode: .fill,
+                                       aspectRatio: pin.photos.first?.aspectRatio.map { CGFloat($0) },
+                                       alignment: pin.photos.first?.gridAlignment ?? .center,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
