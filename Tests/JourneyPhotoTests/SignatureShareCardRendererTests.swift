@@ -183,6 +183,18 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testShareMapPinUsesCoarseCoordinateAndRejectsInvalidValues() {
+        let original = Photo.Coords(lat: 35.6812, lng: 139.7671)
+        let approximate = SignatureShareCardRenderer.approximateShareCoordinate(original)
+        XCTAssertEqual(approximate?.latitude, 35.5)
+        XCTAssertEqual(approximate?.longitude, 140.0)
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(nil))
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: .nan, lng: 139)))
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 91, lng: 139)))
+    }
+
     func testInvalidPhotoDataReturnsNil() async {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,
