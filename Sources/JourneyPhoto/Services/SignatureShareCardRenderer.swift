@@ -556,7 +556,16 @@ enum SignatureShareCardRenderer {
         let config = UIImage.SymbolConfiguration(pointSize: size, weight: .regular)
         guard let symbol = UIImage(systemName: name, withConfiguration: config)?
             .withTintColor(color, renderingMode: .alwaysOriginal) else { return }
-        symbol.draw(in: CGRect(origin: origin, size: CGSize(width: size, height: size)))
+        // SF Symbols have different intrinsic aspect ratios (e.g. camera is wider
+        // than it is tall). Fit the symbol inside the square slot without stretching.
+        let intrinsicSize = symbol.size
+        guard intrinsicSize.width > 0, intrinsicSize.height > 0 else { return }
+        let scale = min(size / intrinsicSize.width, size / intrinsicSize.height)
+        let fittedSize = CGSize(width: intrinsicSize.width * scale,
+                                height: intrinsicSize.height * scale)
+        let fittedOrigin = CGPoint(x: origin.x + (size - fittedSize.width) / 2,
+                                   y: origin.y + (size - fittedSize.height) / 2)
+        symbol.draw(in: CGRect(origin: fittedOrigin, size: fittedSize))
     }
 
     private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
