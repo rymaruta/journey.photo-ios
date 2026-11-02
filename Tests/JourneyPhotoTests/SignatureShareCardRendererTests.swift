@@ -176,7 +176,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
             (SignatureShareCardRenderer.Ratio.portrait, CGFloat(1350)),
             (.square, CGFloat(1080)), (.story, CGFloat(1920))
         ] {
-            let data = try XCTUnwrap(await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio))
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+            let data = try XCTUnwrap(rendered)
             let image = try XCTUnwrap(UIImage(data: data))
             XCTAssertEqual(image.size, CGSize(width: 1080, height: height))
         }
