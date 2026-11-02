@@ -69,9 +69,7 @@ enum SignatureShareCardRenderer {
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
-        // 国境線はアプリ同梱のNatural Earth簡略データから描画する。
-        // 道路や施設名を含む地図画像は使わない。
-        let outline = credit.coords.flatMap { CountryOutline.find(at: $0) }
+        // SNS地図は概略位置の周辺を描画する。道路・施設名は描画しない。
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -233,9 +231,7 @@ enum SignatureShareCardRenderer {
             }
             if credit.coords != nil {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
-                if let outline, let coordinate = credit.coords {
-                    CountryOutline.draw(outline, pin: coordinate, in: mapRect, color: brass, context: cg)
-                } else if let coordinate = credit.coords {
+                if let coordinate = credit.coords {
                     CountryOutline.drawNearby(pin: coordinate, in: mapRect, color: brass, context: cg)
                 }
             }
@@ -334,7 +330,7 @@ enum SignatureShareCardRenderer {
         /// Natural Earth の輪郭が範囲内にない場合だけ地点の目盛りを表示する。
         static func drawNearby(pin: CLLocationCoordinate2D, in rect: CGRect,
                                color: UIColor, context: CGContext) {
-            let span: Double = 18
+            let span: Double = 3.5
             let lonScale = max(0.2, cos(pin.latitude * .pi / 180))
             let minLon = pin.longitude - span / lonScale
             let maxLon = pin.longitude + span / lonScale
