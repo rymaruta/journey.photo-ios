@@ -136,7 +136,9 @@ enum SignatureShareCardRenderer {
             draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 79),
                   maxWidth: 410, size: 25, color: .white, alignment: .right)
 
-            let rowY = height - footer + 62
+            // 写真境界からの距離と下段との余白を両立する。
+            // 行内の要素は左揃えを維持し、情報ブロックだけを余白の中心へ寄せる。
+            let rowY = height - footer + 83
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
             if let avatarData, let avatar = UIImage(data: avatarData) {
