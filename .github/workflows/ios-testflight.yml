@@ -54,10 +54,10 @@ on:
       # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
       # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）と storeShots の回では絞らない（ここに何を書いても無視）。
+      # 上げる回（submit=true）は screens を無視し、tests=true なら SmokeTests のみ実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
+        description: "UI テストを絞る（空＝全部、none＝SmokeTests）。submit=true では tests=true のとき SmokeTests を実行"
         type: string
         default: ""
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
@@ -106,7 +106,7 @@ jobs:
     # 2026-10-31（#429）: 上げる回で tests=true にすると、ここで UI テストを1台で全部流す（約 130 分）。
     # 続く Archive・上げるまで入れると 160 分に当たる（run 788 は Archive の途中で cancelled）。
     # この組だけ上限を延ばす（上げる回の流れは変えない・止めもしない。理由は「どこまで流すかを決める」の注記）
-    timeout-minutes: ${{ (inputs.submit && inputs.tests) && 240 || 160 }}
+    timeout-minutes: 160
 
     steps:
       - uses: actions/checkout@v4
@@ -141,13 +141,13 @@ jobs:
           # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
           sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          # **上げる回で tests=true は1台で全部を流す**（分けると、上げるのを別の job で全部の組を待つ作りに変わる）。
-          # 止めない: 上げる回の流れ（テスト → Archive → 上げる）は変えない約束で、main 以外の枝を確かめて上げる
-          # 使い方が残っている。かわりに job の上限を 240 分に延ばし、時間がかかることを警告で出す
+          # 配信時のテストは SmokeTests に絞り、全件 UI は PR 検証で維持する。
+          # 配信時は長時間の全画面撮影を避け、起動・タブ・基本操作の SmokeTests を必須とする。
+          # 全件 UI テストは PR の検証で引き続き実施する。配信時の短縮テストを全件成功とは扱わない。
           if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
-            echo "::warning::上げる回で tests=true なので、UI テストを1台で全部流します（約 130 分・上げるまで 3 時間近く）。枝を確かめるだけなら submit=false で流すと、別々の Mac に分けて約 70〜90 分です"
-          fi
-          if [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
+            SCREENS="none"
+            echo "### 配信前 UI テスト: SmokeTests（全画面撮影は PR 検証で実施）" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
             SCREENS=""
           fi
           python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
@@ -161,7 +161,7 @@ jobs:
             echo "full=false" >> "$GITHUB_OUTPUT"
             {
               echo "### UI テストを絞った回（screens: ${SCREENS}）"
-              echo "この回は「Mac でテスト済み」と数えません。main に入る前に「PR の検証」が全部を回します。"
+              echo "この回は全件 UI テスト済みとは数えません。全件の検証は PR の検証で行います。"
               echo
               sed 's/^/- /' /tmp/ui-only-testing.txt
             } >> "$GITHUB_STEP_SUMMARY"
@@ -418,7 +418,7 @@ jobs:
       # `ios-pr.yml` の `tested` の job も合わせる。
       # 分けて流す回（steps.scope.outputs.sharded）は単体・UI の段が skipped なのでここは付かず、「まとめ」の job の同じ名前の段が付く
       - name: 全部のテストが通った（PR の検証が数える印）
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
+        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
@@ -644,7 +644,7 @@ jobs:
         if: ${{ always() }}
         run: |
           find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
-          find build/logs -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \\) -delete 2>/dev/null || true
+          find build/logs -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \) -delete 2>/dev/null || true
 
       - name: 落ちたときに読むもの
         if: ${{ always() }}

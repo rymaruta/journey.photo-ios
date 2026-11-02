@@ -27,6 +27,17 @@ enum SignatureShareCardRenderer {
         let badge: EarnedBadge?
     }
 
+    /// SNSでは撮影地点をそのまま描かず、約50km単位の概略ピンにする。
+    /// 位置が不正な場合は地図を表示しない。
+    static func approximateShareCoordinate(_ coords: Photo.Coords?) -> CLLocationCoordinate2D? {
+        guard let coords, coords.lat.isFinite, coords.lng.isFinite,
+              (-90...90).contains(coords.lat), (-180...180).contains(coords.lng) else { return nil }
+        let step = 0.5
+        return CLLocationCoordinate2D(
+            latitude: (coords.lat / step).rounded() * step,
+            longitude: (coords.lng / step).rounded() * step)
+    }
+
     private static let surface = UIColor(red: 14/255, green: 14/255, blue: 15/255, alpha: 1)
     private static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
     private static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
@@ -58,9 +69,7 @@ enum SignatureShareCardRenderer {
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
-        // 国境線はアプリ同梱のNatural Earth簡略データから描画する。
-        // 道路や施設名を含む地図画像は使わない。
-        let outline = credit.coords.flatMap { CountryOutline.find(at: $0) }
+        // SNS地図は概略位置の周辺を描画する。道路・施設名は描画しない。
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -78,7 +87,7 @@ enum SignatureShareCardRenderer {
             let margin: CGFloat = 48
             let header: CGFloat = 142
             let footer: CGFloat = ratio == .story ? 430 : 355
-            let photoBottom = height - footer + 78
+            let photoBottom = height - footer + 32
             let photoRect = CGRect(x: margin, y: header,
                                    width: width - margin * 2,
                                    height: photoBottom - header)
@@ -91,22 +100,8 @@ enum SignatureShareCardRenderer {
             cg.saveGState()
             cg.clip(to: photoRect)
             photo.draw(in: fitted)
-            // 横長の写真を縦型カードへ無理に拡大すると被写体が大幅に切れる。
-            // 背景は余白なく敷き、元写真は全体が見える比率で中央に重ねる。
-            let photoAspect = photo.size.width / photo.size.height
-            let cardAspect = photoRect.width / photoRect.height
-            if photoAspect > cardAspect * 1.35 {
-                let fitScale = min(photoRect.width / photo.size.width,
-                                   photoRect.height / photo.size.height)
-                let fitSize = CGSize(width: photo.size.width * fitScale,
-                                     height: photo.size.height * fitScale)
-                let fitRect = CGRect(x: photoRect.midX - fitSize.width / 2,
-                                     y: photoRect.midY - fitSize.height / 2,
-                                     width: fitSize.width, height: fitSize.height)
-                cg.setFillColor(UIColor.black.withAlphaComponent(0.35).cgColor)
-                cg.fill(photoRect)
-                photo.draw(in: fitRect)
-            }
+            // 写真は一度だけ描画する。従来の背景拡大＋中央Fit重ね描きは
+            // 9:16で同じ被写体が二重に見える原因だったため廃止。
             cg.restoreGState()
 
             let fade = CGRect(x: margin, y: photoBottom - 195,
@@ -141,7 +136,9 @@ enum SignatureShareCardRenderer {
             draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 79),
                   maxWidth: 410, size: 25, color: .white, alignment: .right)
 
-            let rowY = height - footer + 76
+            // 写真境界からの距離と下段との余白を両立する。
+            // 行内の要素は左揃えを維持し、情報ブロックだけを余白の中心へ寄せる。
+            let rowY = height - footer + 83
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
             if let avatarData, let avatar = UIImage(data: avatarData) {
@@ -169,12 +166,14 @@ enum SignatureShareCardRenderer {
                      size: 45, color: .white, serif: true)
             }
             let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // マークが3つ以上ある場合は名前の横に押し込まず、2段に分ける。
+            // これにより長い撮影者名の過度な縮小を避ける。
+            let knownBadge = credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false
             let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
-                + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
+                + (credit.early ? 1 : 0) + (knownBadge ? 1 : 0)
             let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
-            let nameWidth = max(90, 255 - markWidth)
-            // マークは名前の固定幅の末尾ではなく、実際に描画する文字の直後に置く。
-            // 長い名前は draw() と同じ縮小ルールで測定し、地点欄との境界を守る。
+            let stackedMarks = markCount >= 3
+            let nameWidth = stackedMarks ? CGFloat(255) : max(90, 255 - markWidth)
             let nameFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
             var fittedNameFont = nameFont
             let minimumNameSize: CGFloat = max(16, 32 * 0.72)
@@ -188,12 +187,22 @@ enum SignatureShareCardRenderer {
                 ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
-            drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
+            if stackedMarks {
+                drawNameMarks(credit, at: CGPoint(x: 220, y: rowY + 45))
+            } else {
+                drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
+            }
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
+                // 複数マークとユーザー名を同じ行に置くと短い幅で文字が欠ける。
+                // マークが多い場合はユーザー名を上段の右側に置かず、
+                // 下段をマーク専用にしてユーザー名を表示可能な幅で確保する。
+                let usernameX: CGFloat = 220
+                let usernameWidth: CGFloat = 245
+                let usernameY: CGFloat = stackedMarks ? rowY + 82 : rowY + 53
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
-                     at: CGPoint(x: 220, y: rowY + 53), maxWidth: 245,
-                     size: 25, color: secondary)
+                     at: CGPoint(x: usernameX, y: usernameY), maxWidth: usernameWidth,
+                     size: stackedMarks ? 18 : 25, color: secondary)
             }
             cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
             cg.move(to: CGPoint(x: 493, y: rowY - 4))
@@ -210,9 +219,7 @@ enum SignatureShareCardRenderer {
             }
             if credit.coords != nil {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
-                if let outline, let coordinate = credit.coords {
-                    CountryOutline.draw(outline, pin: coordinate, in: mapRect, color: brass, context: cg)
-                } else if let coordinate = credit.coords {
+                if let coordinate = credit.coords {
                     CountryOutline.drawNearby(pin: coordinate, in: mapRect, color: brass, context: cg)
                 }
             }
@@ -311,7 +318,7 @@ enum SignatureShareCardRenderer {
         /// Natural Earth の輪郭が範囲内にない場合だけ地点の目盛りを表示する。
         static func drawNearby(pin: CLLocationCoordinate2D, in rect: CGRect,
                                color: UIColor, context: CGContext) {
-            let span: Double = 18
+            let span: Double = 3.5
             let lonScale = max(0.2, cos(pin.latitude * .pi / 180))
             let minLon = pin.longitude - span / lonScale
             let maxLon = pin.longitude + span / lonScale
@@ -328,9 +335,15 @@ enum SignatureShareCardRenderer {
             var drewCoast = false
             for shape in shapes {
                 for ring in shape.r where ring.count >= 3 {
-                    guard ring.contains(where: { $0.count == 2 &&
-                        $0[0] >= minLon && $0[0] <= maxLon &&
-                        $0[1] >= minLat && $0[1] <= maxLat }) else { continue }
+                    // 頂点が範囲外でも線分が表示領域を横切る場合がある。
+                    // 輪郭の外接矩形が表示領域と交差するものを描画対象にする。
+                    let points = ring.filter { $0.count == 2 }
+                    guard let west = points.map({ $0[0] }).min(),
+                          let east = points.map({ $0[0] }).max(),
+                          let south = points.map({ $0[1] }).min(),
+                          let north = points.map({ $0[1] }).max(),
+                          east >= minLon, west <= maxLon,
+                          north >= minLat, south <= maxLat else { continue }
                     context.beginPath()
                     context.move(to: project(ring[0]))
                     for point in ring.dropFirst() where point.count == 2 {

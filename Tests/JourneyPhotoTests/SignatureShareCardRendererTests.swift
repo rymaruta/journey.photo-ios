@@ -160,6 +160,75 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testMultiplePhotographerMarksRenderWithLongNameAcrossRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Long Photographer Display Name", username: "long_photographer_username",
+            location: "神奈川県（横浜市）", coords: nil,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E",
+            exposure: "1/125s", aperture: "f/4", iso: 200,
+            verified: true, proStyle: .plate, early: true, badge: nil)
+        for (ratio, height) in [
+            (SignatureShareCardRenderer.Ratio.portrait, CGFloat(1350)),
+            (.square, CGFloat(1080)), (.story, CGFloat(1920))
+        ] {
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            XCTAssertEqual(image.size, CGSize(width: 1080, height: height))
+        }
+    }
+
+    func testRegionalMapWithCoarsePinRendersAcrossAllRatios() async throws {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let coords = SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.6812, lng: 139.7671))
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer",
+            location: "東京都（千代田区）", coords: coords,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
+            let result = await SignatureShareCardRenderer.render(photo, credit: credit, ratio: ratio)
+            XCTAssertNotNil(result, "Regional map must render for \\(ratio)")
+        }
+    }
+
+    func testStoryLandscapePhotoRendersWithoutInsetComposite() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 600))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 600))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: nil, location: nil, coords: nil,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: .story)
+        let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(result)))
+        XCTAssertEqual(image.size, CGSize(width: 1080, height: 1920))
+    }
+
+    func testShareMapPinUsesCoarseCoordinateAndRejectsInvalidValues() {
+        let original = Photo.Coords(lat: 35.6812, lng: 139.7671)
+        let approximate = SignatureShareCardRenderer.approximateShareCoordinate(original)
+        XCTAssertEqual(approximate?.latitude, 35.5)
+        XCTAssertEqual(approximate?.longitude, 140.0)
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(nil))
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: .nan, lng: 139)))
+        XCTAssertNil(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 91, lng: 139)))
+    }
+
     func testInvalidPhotoDataReturnsNil() async {
         let credit = SignatureShareCardRenderer.Credit(
             name: "Creator", username: nil, location: nil, coords: nil,

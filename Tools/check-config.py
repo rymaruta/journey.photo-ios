@@ -463,7 +463,7 @@ if testflight_yml.exists() and pr_yml.exists():
     pr_flow = pr_yml.read_text(encoding="utf-8")
     # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
     # 単体・UI の段の結果も見る（`id` が消えると outcome は空になり、印が付かない＝安全側。下で id も見る）
-    MARK_IF = ("(inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true'"
+    MARK_IF = ("!inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true'"
                " && steps.unit.outcome == 'success' && steps.ui.outcome == 'success'")
     mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if not mark:
@@ -532,7 +532,7 @@ if testflight_yml.exists() and pr_yml.exists():
     # 下の `|| { exit 1 }` に来ない
     if not re.search(r"^set -[a-z]*o pipefail\b", runner, re.M):
         fail("Tools/xcode-test.sh に set -euo pipefail（pipefail）がありません（xcodebuild の失敗が tail に隠れる）")
-    if not re.search(r'\| tail -n \d+ \|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
+    if not re.search(r'\| tee -a "\$LOG"\s*\|\| \{[^}]*\n\s*exit 1\n\s*\}', runner):
         fail("Tools/xcode-test.sh が xcodebuild の失敗で exit 1 しません")
     # **1本ごとの時間の上限**（2026-10-18・run 233 で起動の詰まりが 72分待ち続けた）。
     # 単体・UI の両方に渡し、全部撮る1本の指定が UI の上限（maximum）を越えないこと
