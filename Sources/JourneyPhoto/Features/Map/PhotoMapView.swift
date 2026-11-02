@@ -292,7 +292,10 @@ struct PhotoMapView: View {
                         PhotoDetailView(photo: photo, context: photos)
                     } label: {
                         HStack(spacing: 10) {
-                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                            DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                   aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                   alignment: photo.gridAlignment,
+                                                   assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             Text(photo.displayTitle.isEmpty ? (photo.location.map { LocationMatch.display($0) } ?? L("写真", "Photo")) : photo.displayTitle)
@@ -1078,7 +1081,10 @@ struct PhotoMapView: View {
                     } label: {
                         HStack(spacing: 4) {
                             ForEach(pin.photos.prefix(3)) { photo in
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                       alignment: photo.gridAlignment,
+                                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                     .frame(width: 36, height: 36)
                                     .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
                             }
