@@ -1,0 +1,18 @@
+# GitHub Actions の更新は小さな PR にまとめ、CI で検証してから取り込む。
+# Swift Package Manager の依存関係は Xcode 側の解決・検証方法を確認してから追加する。
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
