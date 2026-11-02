@@ -33,7 +33,7 @@ def render(selection):
     if picker.wants_all(selection):
         selected = sorted(t for t in tests if not picker.only_when_named(t))
     else:
-        selected = sorted(t for t in tests if any(a.endswith("/" + t) or a.endswith("/" + t.split("/")[0]) for a in args))
+        selected = sorted(t for t in tests if any(a == f"-only-testing:{picker.TARGET}/{t}" or a == f"-only-testing:{picker.TARGET}/{t.split('/')[0]}" for a in args))
     from collections import Counter
     counts = Counter(t.split("/", 1)[0] for t in selected)
     lines = ["### UIテストの予定", "",
