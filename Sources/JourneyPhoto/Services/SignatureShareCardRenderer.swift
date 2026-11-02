@@ -220,7 +220,9 @@ enum SignatureShareCardRenderer {
             if credit.coords != nil {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
                 if let coordinate = credit.coords {
-                    CountryOutline.drawNearby(pin: coordinate, in: mapRect, color: brass, context: cg)
+                    if let country = CountryOutline.find(at: coordinate) {
+                        CountryOutline.draw(country, pin: coordinate, in: mapRect, color: brass, context: cg)
+                    }
                 }
             }
 
