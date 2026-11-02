@@ -147,11 +147,16 @@ jobs:
           if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
             echo "::warning::上げる回で tests=true なので、UI テストを1台で全部流します（約 130 分・上げるまで 3 時間近く）。枝を確かめるだけなら submit=false で流すと、別々の Mac に分けて約 70〜90 分です"
           fi
-          if [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
+          # 配信時は長時間の全画面撮影を避け、起動・タブ・基本操作の SmokeTests を必須とする。
+          # 全件 UI テストは PR の検証で引き続き実施する。配信時の短縮テストを全件成功とは扱わない。
+          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
+            SCREENS="none"
+            echo "### 配信前 UI テスト: SmokeTests（全画面撮影は PR 検証で実施）" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
             SCREENS=""
           fi
           python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
-          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
+          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ] || [ "${SUBMIT:-}" = "true" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
             echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
             if [ "$sharded" = "true" ]; then
@@ -418,7 +423,7 @@ jobs:
       # `ios-pr.yml` の `tested` の job も合わせる。
       # 分けて流す回（steps.scope.outputs.sharded）は単体・UI の段が skipped なのでここは付かず、「まとめ」の job の同じ名前の段が付く
       - name: 全部のテストが通った（PR の検証が数える印）
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
+        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
