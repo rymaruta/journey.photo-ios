@@ -136,15 +136,9 @@ struct DownsampledRemoteImage: View {
             return
         }
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            let decoded = await Task.detached(priority: .userInitiated) { () -> (image: UIImage, cost: Int)? in
-                guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                      let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else { return nil }
-                return (UIImage(cgImage: cgImage), cgImage.width * cgImage.height * 4)
-            }.value
+            // 同じURLの通信と同じ解像度のデコードはセル間で共有する。
+            let data = try await GridImageInFlight.shared.data(for: url)
+            let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels)
             guard !Task.isCancelled else { return }
             guard let decoded else { throw URLError(.cannotDecodeContentData) }
             Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
@@ -283,5 +277,78 @@ enum DownsampledImageSize {
         let needed = Int((max(shown.width, shown.height) * scale).rounded(.up))
         let stepped = ((needed + step - 1) / step) * step
         return min(maximum, max(minimum, stepped))
+    }
+}
+
+
+/// 一覧・旅の本の縮小画像に限定した通信中リクエストの共有。
+/// URLCacheは完了済み応答のキャッシュであり、通信中の同時要求を統合する保証はない。
+/// 完了後は必ず破棄し、永続的な画像データキャッシュを増やさない。
+/// セル単位のキャンセルで他セルの通信を止めない（結果の反映は各セル側でキャンセル判定）。
+private actor GridImageInFlight {
+    static let shared = GridImageInFlight()
+
+    private struct Entry {
+        let id: UUID
+        let task: Task<Data, Error>
+    }
+    private var requests: [URL: Entry] = [:]
+
+    func data(for url: URL) async throws -> Data {
+        if let running = requests[url] {
+            return try await running.task.value
+        }
+        let id = UUID()
+        let task = Task.detached(priority: .userInitiated) {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            return data
+        }
+        requests[url] = Entry(id: id, task: task)
+        // 失敗時にも必ず除去し、次回の自動リトライを妨げない。
+        defer {
+            if requests[url]?.id == id { requests[url] = nil }
+        }
+        return try await task.value
+    }
+}
+
+
+/// 通信の共有とは別に、同じ画像の縮小デコード中タスクを共有する。
+/// 完了後はタスクを保持しない。完成した画像の保持・破棄は既存の NSCache が担当。
+/// セルのキャンセルが別セルの画像展開を止めないよう detached task を使う。
+private actor GridImageDecodeInFlight {
+    static let shared = GridImageDecodeInFlight()
+
+    // UIImage はデコード後に変更しない。actor 境界を越える値を明示的に包む。
+    struct Decoded: @unchecked Sendable {
+        let image: UIImage
+        let cost: Int
+    }
+
+    private struct Key: Hashable {
+        let url: URL
+        let pixels: Int
+    }
+
+    private var tasks: [Key: Task<Decoded?, Never>] = [:]
+
+    func image(data: Data, for url: URL, pixels: Int) async -> Decoded? {
+        let key = Key(url: url, pixels: pixels)
+        if let existing = tasks[key] { return await existing.value }
+
+        let task = Task.detached(priority: .userInitiated) { () -> Decoded? in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else {
+                return nil
+            }
+            return Decoded(image: UIImage(cgImage: cgImage), cost: cgImage.width * cgImage.height * 4)
+        }
+        tasks[key] = task
+        let result = await task.value
+        tasks[key] = nil
+        return result
     }
 }
