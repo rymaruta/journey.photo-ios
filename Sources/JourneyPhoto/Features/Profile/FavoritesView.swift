@@ -167,7 +167,11 @@ struct FavoritesView: View {
             .frame(maxWidth: .infinity)
             .frame(height: Self.heroHeight)
             .overlay {
-                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                       alignment: photo.gridAlignment,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit,
+                                       appearAnimation: .easeOut(duration: 0.15))
             }
             .background(WebTheme.card)
             .clipped()
