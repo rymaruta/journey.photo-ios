@@ -169,12 +169,14 @@ enum SignatureShareCardRenderer {
                      size: 45, color: .white, serif: true)
             }
             let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // マークが3つ以上ある場合は名前の横に押し込まず、2段に分ける。
+            // これにより長い撮影者名の過度な縮小を避ける。
+            let knownBadge = credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false
             let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
-                + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
+                + (credit.early ? 1 : 0) + (knownBadge ? 1 : 0)
             let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
-            let nameWidth = max(90, 255 - markWidth)
-            // マークは名前の固定幅の末尾ではなく、実際に描画する文字の直後に置く。
-            // 長い名前は draw() と同じ縮小ルールで測定し、地点欄との境界を守る。
+            let stackedMarks = markCount >= 3
+            let nameWidth = stackedMarks ? CGFloat(255) : max(90, 255 - markWidth)
             let nameFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
             var fittedNameFont = nameFont
             let minimumNameSize: CGFloat = max(16, 32 * 0.72)
@@ -188,12 +190,18 @@ enum SignatureShareCardRenderer {
                 ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
-            drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
+            if stackedMarks {
+                drawNameMarks(credit, at: CGPoint(x: 220, y: rowY + 60))
+            } else {
+                drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
+            }
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
+                let usernameX: CGFloat = stackedMarks ? 220 + markWidth + 5 : 220
+                let usernameWidth: CGFloat = stackedMarks ? max(60, 465 - usernameX) : 245
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
-                     at: CGPoint(x: 220, y: rowY + 53), maxWidth: 245,
-                     size: 25, color: secondary)
+                     at: CGPoint(x: usernameX, y: rowY + 53), maxWidth: usernameWidth,
+                     size: stackedMarks ? 20 : 25, color: secondary)
             }
             cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
             cg.move(to: CGPoint(x: 493, y: rowY - 4))
