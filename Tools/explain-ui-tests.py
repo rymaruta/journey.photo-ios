@@ -37,13 +37,13 @@ def render(selection):
     from collections import Counter
     counts = Counter(t.split("/", 1)[0] for t in selected)
     lines = ["### UIテストの予定", "",
-             f"**{len(selected)}件** / 指定: \`{escape(selection or '全部')}\`",
+             f"**{len(selected)}件** / 指定: `{escape(selection or '全部')}`",
              " / ".join(f"{escape(k)} {v}" for k, v in sorted(counts.items())), "",
              "<details><summary>対象テストを表示</summary>", "",
              "| テスト | 目的 |", "|---|---|"]
     for name in selected:
         title, desc = DETAILS.get(name, (name.split("/", 1)[1], CLASS_DOC.get(name.split("/")[0], "UIの動作確認")))
-        lines.append(f"| \`{escape(name)}\` | {escape(title)}: {escape(desc)} |")
+        lines.append(f"| `{escape(name)}` | {escape(title)}: {escape(desc)} |")
     lines += ["", "</details>", "",
               "※実行予定です。結果は各ジョブのSummaryを参照。画像・xcresultは公開保存しません。", ""]
     return "\n".join(lines)
