@@ -636,11 +636,10 @@ struct PhotoDetailView: View {
         )
     }
 
-    /// 題の下の1行（板 02: 「2026.09.12 · 17:42 · 1/3枚」）
+    /// 題の下の1行。日時は表示せず、複数枚のときだけ枚数を表示する。
     private func headline(_ hero: HeroLineup) -> String? {
-        PhotoMetaLine.headline(date: shown.date,
-                               exifDateTime: shown.exif?.dateTimeOriginal,
-                               position: hero.index + 1, of: hero.photos.count)
+        // 写真詳細では撮影日付・時刻を表示しない。複数枚の場合のみ枚数を残す。
+        PhotoMetaLine.groupPosition(hero.index + 1, of: hero.photos.count)
     }
 
     /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
@@ -648,7 +647,7 @@ struct PhotoDetailView: View {
     ///
     ///     撮影スポットの行（撮影地）          ← 題の上
     ///     題（明朝）
-    ///     2026.09.12 · 17:42 · 1/3枚
+    ///     1/3枚（複数枚の場合のみ）
     ///     ［公開範囲の印・カテゴリ］ 説明     ← 題の近く
     ///     作者 ＋ フォロー
     ///     いいね・コメント・保存・共有
@@ -691,8 +690,8 @@ struct PhotoDetailView: View {
         .padding(.horizontal, JPSpace.gutter)
     }
 
-    /// 題のかたまり（v2 の板 PhotoDetail）: 題 → 日時と枚数。**写真の下の黒地**なので影は付けず、
-    /// 日時は黒地の灰（`text3`）。撮影地・撮影スポットの行は写真の裾（`photoFoot`）
+    /// 題のかたまり（v2 の板 PhotoDetail）: 題 → 複数枚の枚数表示。**写真の下の黒地**なので影は付けず、
+    /// 枚数は黒地の灰（`text3`）。撮影地・撮影スポットの行は写真の裾（`photoFoot`）
     private func heading(_ hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             if !shown.displayTitle.isEmpty {
