@@ -154,7 +154,11 @@ struct PhotoTile: View {
         Color.clear
             .aspectRatio(aspect, contentMode: .fit)
             .overlay {
-                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                       alignment: photo.gridAlignment,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit,
+                                       appearAnimation: .easeOut(duration: 0.15))
             }
             .clipShape(RoundedRectangle(cornerRadius: Self.corner))
             .overlay(RoundedRectangle(cornerRadius: Self.corner)
