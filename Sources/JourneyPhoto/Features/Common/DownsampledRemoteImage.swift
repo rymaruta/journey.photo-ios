@@ -134,11 +134,8 @@ struct DownsampledRemoteImage: View {
         do {
             // 同じURLを複数セルが同時に表示しても、通信は一度だけ。
             let data = try await GridImageInFlight.shared.data(for: url)
-            let decoded = await Task.detached(priority: .userInitiated) { () -> (image: UIImage, cost: Int)? in
-                guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                      let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else { return nil }
-                return (UIImage(cgImage: cgImage), cgImage.width * cgImage.height * 4)
-            }.value
+            // 同じURL・画素数を複数セルが同時に要求しても、展開は一度だけ。
+            let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels)
             guard !Task.isCancelled else { return }
             guard let decoded else { throw URLError(.cannotDecodeContentData) }
             Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
@@ -309,5 +306,43 @@ private actor GridImageInFlight {
             if requests[url]?.id == id { requests[url] = nil }
         }
         return try await task.value
+    }
+}
+
+
+/// 通信の共有とは別に、同じ画像の縮小デコード中タスクを共有する。
+/// 完了後はタスクを保持しない。完成した画像の保持・破棄は既存の NSCache が担当。
+/// セルのキャンセルが別セルの画像展開を止めないよう detached task を使う。
+private actor GridImageDecodeInFlight {
+    static let shared = GridImageDecodeInFlight()
+
+    // UIImage はデコード後に変更しない。actor 境界を越える値を明示的に包む。
+    struct Decoded: @unchecked Sendable {
+        let image: UIImage
+        let cost: Int
+    }
+
+    private struct Key: Hashable {
+        let url: URL
+        let pixels: Int
+    }
+
+    private var tasks: [Key: Task<Decoded?, Never>] = [:]
+
+    func image(data: Data, for url: URL, pixels: Int) async -> Decoded? {
+        let key = Key(url: url, pixels: pixels)
+        if let existing = tasks[key] { return await existing.value }
+
+        let task = Task.detached(priority: .userInitiated) { () -> Decoded? in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: pixels) else {
+                return nil
+            }
+            return Decoded(image: UIImage(cgImage: cgImage), cost: cgImage.width * cgImage.height * 4)
+        }
+        tasks[key] = task
+        let result = await task.value
+        tasks[key] = nil
+        return result
     }
 }
