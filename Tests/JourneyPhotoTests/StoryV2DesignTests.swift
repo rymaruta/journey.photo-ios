@@ -90,14 +90,15 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertTrue(row.contains("accessibilityIdentifier(\"stories.uploading\")"), "画面写真の道しるべが消えた")
     }
 
-    /// フォロー中の輪が無いときは、入口の行と「探す」への道（真鍮・黒地の上）。**読み終える前には出さない**
+    /// フォロー中の輪が無いときは、ストーリー追加の入口だけを出す。**読み終える前には出さない**
     func testEmptyRingRow() throws {
         let row = try source("Features/Stories/StoriesRow.swift")
         XCTAssertTrue(row.contains("ordered.mine == nil && ordered.others.isEmpty && model.loaded"),
                       "読み込み前に「輪が無い」の行を出している")
         let empty = member("private var emptyRow: some View", in: row)
-        assertInOrder(["showComposer = true", "TabRouter.shared.openSearch()", ".foregroundStyle(WebTheme.accent)"],
+        assertInOrder(["showComposer = true", "Text(L(\"ストーリーを追加\"", ".accessibilityIdentifier(\"stories.empty.add\")"],
                       in: empty, "輪が無いときの行")
+        XCTAssertFalse(empty.contains("TabRouter.shared.openSearch()"), "削除した探すリンクが残っている")
         XCTAssertLessThanOrEqual(StoryRingMetrics.emptyRowWidth, 320 - 2 * JPSpace.gutter, "いちばん狭い iPhone に収まらない")
     }
 
