@@ -292,7 +292,10 @@ struct PhotoMapView: View {
                         PhotoDetailView(photo: photo, context: photos)
                     } label: {
                         HStack(spacing: 10) {
-                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                            DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                   aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                   alignment: photo.gridAlignment,
+                                                   assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             Text(photo.displayTitle.isEmpty ? (photo.location.map { LocationMatch.display($0) } ?? L("写真", "Photo")) : photo.displayTitle)
@@ -1055,8 +1058,10 @@ struct PhotoMapView: View {
             return DerivedSpot.openable(pin.title, in: model.photos)
         }()
         return HStack(alignment: .top, spacing: JPSpace.s) {
-            RemoteImage(url: pin.photos.first?.gridImageURL,
-                        alignment: pin.photos.first?.gridAlignment ?? .center)
+            DownsampledRemoteImage(url: pin.photos.first?.gridImageURL, contentMode: .fill,
+                                       aspectRatio: pin.photos.first?.aspectRatio.map { CGFloat($0) },
+                                       alignment: pin.photos.first?.gridAlignment ?? .center,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
@@ -1076,7 +1081,10 @@ struct PhotoMapView: View {
                     } label: {
                         HStack(spacing: 4) {
                             ForEach(pin.photos.prefix(3)) { photo in
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                       alignment: photo.gridAlignment,
+                                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                     .frame(width: 36, height: 36)
                                     .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
                             }
@@ -1458,7 +1466,10 @@ struct PhotoMapView: View {
                             NavigationLink {
                                 PhotoDetailView(photo: photo, context: photos)
                             } label: {
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                alignment: photo.gridAlignment,
+                                                assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                     .frame(width: Self.placePhotoSize, height: Self.placePhotoSize)
                                     .clipped()
                             }
@@ -1851,7 +1862,10 @@ struct PhotoMapView: View {
                     NavigationLink {
                         PhotoDetailView(photo: photo, context: photos)
                     } label: {
-                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                        DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                alignment: photo.gridAlignment,
+                                                assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                             .frame(width: Self.regionPhotoSize.width, height: Self.regionPhotoSize.height)
                             .clipped()
                     }
