@@ -612,7 +612,7 @@ jobs:
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
         # 分けて流す回は「まとめ」の job が置く
-        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        if: ${{ always() && inputs.storeShots && steps.scope.outputs.sharded != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
@@ -627,12 +627,11 @@ jobs:
           mkdir -p build/logs
           # **`~` は upload-artifact が展開しない**（常に0件になり、
           # `if-no-files-found: ignore` が黙らせる）。シェルで集めてから渡す
-          find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 4             -exec cp -R {} build/logs/ \; 2>/dev/null || true
+          # xcresultは添付画像・録画を含むため公開Artifactへコピーしない
           # **xcodebuild を直に叩くようにしたので、伏せ先はもう無い。**
           # 拾うのは自分で書いた全文ログと、`-resultBundlePath` の結果
           cp /tmp/xcodebuild-full.log build/logs/ 2>/dev/null || true
-          cp -R build/ios/test/Unit.xcresult build/logs/ 2>/dev/null || true
-          cp -R build/ios/test/Test.xcresult build/logs/ 2>/dev/null || true
+          # Unit/Test.xcresultも公開Artifactに含めない
           ls -la build/logs || true
 
       - name: 落ちたときに読むもの
@@ -648,8 +647,9 @@ jobs:
           # 黙らせる（run #9 が実際そうだった）
           path: |
             build/ios/ipa/*.ipa
-            build/logs/**
-          retention-days: 7
+            build/logs/*.log
+            build/logs/*.txt
+          retention-days: 3
           if-no-files-found: ignore
 
       # 🔴 **控えを書くのは main の回だけ**（2026-10-17 判断・上の「前回の作りかけを控えから戻す」）。
@@ -924,7 +924,7 @@ jobs:
           true
 
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() }}
+        if: ${{ always() && inputs.storeShots }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
