@@ -173,10 +173,22 @@ enum SignatureShareCardRenderer {
                 + (credit.early ? 1 : 0) + (credit.badge == nil ? 0 : 1)
             let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
             let nameWidth = max(90, 255 - markWidth)
+            // マークは名前の固定幅の末尾ではなく、実際に描画する文字の直後に置く。
+            // 長い名前は draw() と同じ縮小ルールで測定し、地点欄との境界を守る。
+            let nameFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
+            var fittedNameFont = nameFont
+            let minimumNameSize: CGFloat = max(16, 32 * 0.72)
+            let nameText = authorName as NSString
+            while fittedNameFont.pointSize > minimumNameSize,
+                  nameText.size(withAttributes: [.font: fittedNameFont]).width > nameWidth {
+                fittedNameFont = UIFont(descriptor: nameFont.fontDescriptor,
+                                        size: max(minimumNameSize, fittedNameFont.pointSize - 1))
+            }
+            let actualNameWidth = min(nameWidth,
+                ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
             draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
                  size: 32, color: .white, bold: true)
-            // マークが多い場合も撮影地との仕切り線を越えない。
-            drawNameMarks(credit, at: CGPoint(x: 220 + nameWidth + 5, y: rowY + 7))
+            drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
@@ -241,10 +253,17 @@ enum SignatureShareCardRenderer {
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
-            // 画像の端に沿う真鍮色の矩形フレーム。保存画像に角丸の外側余白を作らない。
+            // 真鍮色の矩形フレームは画像境界から8px内側へ。
+            // SNS側で端が切り取られても線が消えにくく、外側も黒背景で統一する。
+            // 角丸・透明余白は作らず、共有/保存するJPEG自体に描き込む。
+            let frameInset: CGFloat = 8
+            let frameWidth: CGFloat = 4
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
-            cg.setLineWidth(3)
-            cg.stroke(CGRect(x: 1.5, y: 1.5, width: width - 3, height: height - 3))
+            cg.setLineWidth(frameWidth)
+            cg.stroke(CGRect(x: frameInset + frameWidth / 2,
+                           y: frameInset + frameWidth / 2,
+                           width: width - 2 * frameInset - frameWidth,
+                           height: height - 2 * frameInset - frameWidth))
         }
     }
 
