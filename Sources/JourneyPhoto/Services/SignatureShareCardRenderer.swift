@@ -87,7 +87,7 @@ enum SignatureShareCardRenderer {
             let margin: CGFloat = 48
             let header: CGFloat = 142
             let footer: CGFloat = ratio == .story ? 430 : 355
-            let photoBottom = height - footer + 78
+            let photoBottom = height - footer + 32
             let photoRect = CGRect(x: margin, y: header,
                                    width: width - margin * 2,
                                    height: photoBottom - header)
@@ -100,22 +100,8 @@ enum SignatureShareCardRenderer {
             cg.saveGState()
             cg.clip(to: photoRect)
             photo.draw(in: fitted)
-            // 横長の写真を縦型カードへ無理に拡大すると被写体が大幅に切れる。
-            // 背景は余白なく敷き、元写真は全体が見える比率で中央に重ねる。
-            let photoAspect = photo.size.width / photo.size.height
-            let cardAspect = photoRect.width / photoRect.height
-            if photoAspect > cardAspect * 1.35 {
-                let fitScale = min(photoRect.width / photo.size.width,
-                                   photoRect.height / photo.size.height)
-                let fitSize = CGSize(width: photo.size.width * fitScale,
-                                     height: photo.size.height * fitScale)
-                let fitRect = CGRect(x: photoRect.midX - fitSize.width / 2,
-                                     y: photoRect.midY - fitSize.height / 2,
-                                     width: fitSize.width, height: fitSize.height)
-                cg.setFillColor(UIColor.black.withAlphaComponent(0.35).cgColor)
-                cg.fill(photoRect)
-                photo.draw(in: fitRect)
-            }
+            // 写真は一度だけ描画する。従来の背景拡大＋中央Fit重ね描きは
+            // 9:16で同じ被写体が二重に見える原因だったため廃止。
             cg.restoreGState()
 
             let fade = CGRect(x: margin, y: photoBottom - 195,
@@ -150,7 +136,7 @@ enum SignatureShareCardRenderer {
             draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 79),
                   maxWidth: 410, size: 25, color: .white, alignment: .right)
 
-            let rowY = height - footer + 76
+            let rowY = height - footer + 62
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
             if let avatarData, let avatar = UIImage(data: avatarData) {
