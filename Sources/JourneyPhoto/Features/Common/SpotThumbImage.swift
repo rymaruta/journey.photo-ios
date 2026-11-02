@@ -30,12 +30,16 @@ struct SpotThumbImage: View {
     }
 
     var body: some View {
-        DownsampledRemoteImage(url: state.current, contentMode: .fill,
+        thumbnail(for: state.current)
+            // 同じ枠に別のスポットが来たら（一覧の使い回し）最初から
+            .onChange(of: source) { _, next in state = next }
+    }
+
+    private func thumbnail(for requestedURL: URL) -> some View {
+        DownsampledRemoteImage(url: requestedURL, contentMode: .fill,
                                assumedRatioLimit: assumedRatioLimit ?? 2,
-                               onSettled: { ok in settled(ok, for: state.current) })
-            .id(state.current)
-        // 同じ枠に別のスポットが来たら（一覧の使い回し）最初から
-        .onChange(of: source) { _, next in state = next }
+                               onSettled: { ok in settled(ok, for: requestedURL) })
+            .id(requestedURL)
     }
 
     private func settled(_ ok: Bool, for requestedURL: URL) {
