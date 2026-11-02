@@ -220,9 +220,7 @@ enum SignatureShareCardRenderer {
             if credit.coords != nil {
                 let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
                 if let coordinate = credit.coords {
-                    if let country = CountryOutline.find(at: coordinate) {
-                        CountryOutline.draw(country, pin: coordinate, in: mapRect, color: brass, context: cg)
-                    }
+                    CountryOutline.drawAtLocation(pin: coordinate, in: mapRect, color: brass, context: cg)
                 }
             }
 
@@ -375,6 +373,37 @@ enum SignatureShareCardRenderer {
             context.strokeEllipse(in: CGRect(x: rect.midX - 12, y: rect.midY - 12,
                                              width: 24, height: 24))
             context.restoreGState()
+        }
+
+        /// Use the complete country silhouette. If coarse coordinates land just offshore,
+        /// use the nearest country within a conservative geographic threshold.
+        static func shapeForDisplay(at pin: CLLocationCoordinate2D) -> Shape? {
+            if let contained = find(at: pin) { return contained }
+            let longitudeWeight = max(0.2, cos(pin.latitude * .pi / 180))
+            var closest: Shape?
+            var bestDistance = Double.greatestFiniteMagnitude
+            for shape in shapes {
+                for ring in shape.r {
+                    for point in ring where point.count == 2 {
+                        let dx = (point[0] - pin.longitude) * longitudeWeight
+                        let dy = point[1] - pin.latitude
+                        let distance = dx * dx + dy * dy
+                        if distance < bestDistance {
+                            bestDistance = distance
+                            closest = shape
+                        }
+                    }
+                }
+            }
+            // 0.5-degree rounding can move a coastal pin offshore; never infer
+            // a distant country for a point in open water.
+            return bestDistance <= 0.75 * 0.75 ? closest : nil
+        }
+
+        static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
+                                   color: UIColor, context: CGContext) {
+            guard let shape = shapeForDisplay(at: pin) else { return }
+            draw(shape, pin: pin, in: rect, color: color, context: context)
         }
 
         static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
