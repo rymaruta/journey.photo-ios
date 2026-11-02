@@ -43,7 +43,7 @@ on:
         type: boolean
         default: false
       storeShots:
-        description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
+        description: "無効（公開リポジトリのため画像保存は禁止）"
         type: boolean
         default: false
       tests:
@@ -114,6 +114,18 @@ jobs:
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
       # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
+      - name: 公開リポジトリの画像公開を防ぐ
+        if: ${{ inputs.storeShots }}
+        run: |
+          echo "::error::公開リポジトリでstoreShotsは無効です。画像は非公開環境で生成してください。"
+          exit 1
+
+      - name: UIテストの操作・目的を表示
+        if: ${{ inputs.tests }}
+        env:
+          SCREENS: ${{ inputs.screens }}
+        run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
+
       - name: どこまで流すかを決める
         id: scope
         env:
@@ -605,8 +617,8 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
-        # 分けて流す回は「まとめ」の job が置く
-        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        # 公開リポジトリでは常に無効
+        if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
@@ -621,13 +633,18 @@ jobs:
           mkdir -p build/logs
           # **`~` は upload-artifact が展開しない**（常に0件になり、
           # `if-no-files-found: ignore` が黙らせる）。シェルで集めてから渡す
-          find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 4             -exec cp -R {} build/logs/ \; 2>/dev/null || true
+          # xcresultは添付画像・録画を含むため公開Artifactへコピーしない
           # **xcodebuild を直に叩くようにしたので、伏せ先はもう無い。**
           # 拾うのは自分で書いた全文ログと、`-resultBundlePath` の結果
           cp /tmp/xcodebuild-full.log build/logs/ 2>/dev/null || true
-          cp -R build/ios/test/Unit.xcresult build/logs/ 2>/dev/null || true
-          cp -R build/ios/test/Test.xcresult build/logs/ 2>/dev/null || true
+          # Unit/Test.xcresultも公開Artifactに含めない
           ls -la build/logs || true
+
+      - name: 公開成果物から画像・診断データを除外
+        if: ${{ always() }}
+        run: |
+          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
+          find build/logs -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \\) -delete 2>/dev/null || true
 
       - name: 落ちたときに読むもの
         if: ${{ always() }}
@@ -642,8 +659,8 @@ jobs:
           # 黙らせる（run #9 が実際そうだった）
           path: |
             build/ios/ipa/*.ipa
-            build/logs/**
-          retention-days: 7
+            build/logs/app-size.txt
+          retention-days: 3
           if-no-files-found: ignore
 
       # 🔴 **控えを書くのは main の回だけ**（2026-10-17 判断・上の「前回の作りかけを控えから戻す」）。
@@ -815,7 +832,7 @@ jobs:
           if-no-files-found: error
 
       - name: 組んだときのログを残す
-        if: ${{ always() }}
+        if: ${{ false }}
         uses: actions/upload-artifact@v4
         with:
           name: part-test-build
@@ -874,60 +891,10 @@ jobs:
       - name: Xcode を選ぶ（結果を読む・まとめる）
         run: bash Tools/select-xcode.sh "${{ needs.test-build.outputs.xcode }}"
 
-      - name: 各台の結果を受け取る
-        uses: actions/download-artifact@v4
-        with:
-          pattern: part-*
-          path: build/parts
-
-      # 前の1台の回と同じ形の `build-logs` にそろえる: logs/xcodebuild-full.log（組む → 単体 → 先に流す分 →
-      # 組 1〜3 の順につないだもの）・logs/Unit.xcresult・logs/Test.xcresult（UI の結果を1つにまとめたもの）
-      - name: 結果をまとめる
-        if: ${{ always() }}
+      - name: 分割テストの結果について
         run: |
-          set -uo pipefail
-          mkdir -p build/logs
-          ls build/parts || true
-          : > build/logs/xcodebuild-full.log
-          # 成果物の中の並びは、入っていたものによって変わる（共通の親から下になる）ので find で探す
-          for part in test-build unit first 1 2 3; do
-            for log in $(find "build/parts/part-$part" -name '*.log' -not -path '*.xcresult/*' 2>/dev/null | sort); do
-              echo "===== $part: $(basename "$log") =====" >> build/logs/xcodebuild-full.log
-              cat "$log" >> build/logs/xcodebuild-full.log
-            done
-          done
-          unit="$(find build/parts/part-unit -maxdepth 4 -type d -name Unit.xcresult 2>/dev/null | head -1)"
-          if [ -n "$unit" ]; then cp -R "$unit" build/logs/; fi
-          results=""
-          for part in first 1 2 3; do
-            r="$(find "build/parts/part-$part" -maxdepth 4 -type d -name "Test-$part.xcresult" 2>/dev/null | head -1)"
-            if [ -n "$r" ]; then results="$results $r"; fi
-          done
-          echo "UI の結果:$results"
-          echo "$results" > /tmp/ui-results.txt
-          # 1つにまとめる（前と同じ `Test.xcresult` で読めるように）。まとめられなければ、組ごとのまま入れる
-          # shellcheck disable=SC2086
-          if [ -n "$results" ] && xcrun xcresulttool merge $results --output-path build/logs/Test.xcresult; then
-            echo "UI の結果を Test.xcresult にまとめました"
-          else
-            echo "::warning::UI の結果を1つにまとめられませんでした。組ごとの結果を build-logs に入れます"
-            for r in $results; do cp -R "$r" build/logs/; done
-          fi
-          # 流れた本数（前の1台の回と同じ本数かを見る）
-          python3 Tools/pick-ui-tests.py --count-log build/logs/xcodebuild-full.log | tee -a "$GITHUB_STEP_SUMMARY"
-          true
-
-      - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
-          NARROWED: "false"
-        # 組ごとの結果から取り出す（まとめた Test.xcresult が作れなかった回でも置ける）
-        # 置き場の名前に空白は無い（build/parts/part-<組>/…）ので、わざと分けて渡す
-        run: |
-          # shellcheck disable=SC2046
-          bash Tools/export-screenshots.sh $(cat /tmp/ui-results.txt)
+          echo "### 分割テストの結果" >> "$GITHUB_STEP_SUMMARY"
+          echo "各MacジョブのSummaryに成功・失敗と理由を記録しています。公開Artifactへxcresult・画面画像は転送しません。" >> "$GITHUB_STEP_SUMMARY"
 
       # 🔴 **「PR の検証」が数える印**（`build` の job の同じ名前の段の注記）。単体・先に流す分・分けた組の
       # 全部が通った回だけ success。分けて流す回はいつも絞らない（`screens` 空・storeShots）
@@ -951,6 +918,12 @@ jobs:
           fi
           ls -la build/logs build/ios/ipa 2>/dev/null || true
 
+      - name: 公開成果物から画像・診断データを除外
+        if: ${{ always() }}
+        run: |
+          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
+          find build/logs -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \\) -delete 2>/dev/null || true
+
       - name: 落ちたときに読むもの
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -958,6 +931,6 @@ jobs:
           name: build-logs
           path: |
             build/ios/ipa/*.ipa
-            build/logs/**
-          retention-days: 7
+            build/logs/app-size.txt
+          retention-days: 3
           if-no-files-found: ignore
