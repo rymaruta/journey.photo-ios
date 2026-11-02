@@ -347,9 +347,15 @@ enum SignatureShareCardRenderer {
             var drewCoast = false
             for shape in shapes {
                 for ring in shape.r where ring.count >= 3 {
-                    guard ring.contains(where: { $0.count == 2 &&
-                        $0[0] >= minLon && $0[0] <= maxLon &&
-                        $0[1] >= minLat && $0[1] <= maxLat }) else { continue }
+                    // 頂点が範囲外でも線分が表示領域を横切る場合がある。
+                    // 輪郭の外接矩形が表示領域と交差するものを描画対象にする。
+                    let points = ring.filter { $0.count == 2 }
+                    guard let west = points.map({ $0[0] }).min(),
+                          let east = points.map({ $0[0] }).max(),
+                          let south = points.map({ $0[1] }).min(),
+                          let north = points.map({ $0[1] }).max(),
+                          east >= minLon, west <= maxLon,
+                          north >= minLat, south <= maxLat else { continue }
                     context.beginPath()
                     context.move(to: project(ring[0]))
                     for point in ring.dropFirst() where point.count == 2 {
