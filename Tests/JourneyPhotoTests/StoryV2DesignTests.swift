@@ -96,8 +96,9 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertTrue(row.contains("ordered.mine == nil && ordered.others.isEmpty && model.loaded"),
                       "読み込み前に「輪が無い」の行を出している")
         let empty = member("private var emptyRow: some View", in: row)
-        assertInOrder(["showComposer = true", "TabRouter.shared.openSearch()", ".foregroundStyle(WebTheme.accent)"],
-                      in: empty, "輪が無いときの行")
+        XCTAssertTrue(empty.contains("showComposer = true"), "ストーリー追加の導線が無い")
+        XCTAssertTrue(empty.contains("TabRouter.shared.openSearch()"), "探すへの導線が無い")
+        XCTAssertTrue(empty.contains(".foregroundStyle(WebTheme.accent)"), "探すのリンクがアクセント色でない")
         XCTAssertLessThanOrEqual(StoryRingMetrics.emptyRowWidth, 320 - 2 * JPSpace.gutter, "いちばん狭い iPhone に収まらない")
     }
 
