@@ -1466,7 +1466,10 @@ struct PhotoMapView: View {
                             NavigationLink {
                                 PhotoDetailView(photo: photo, context: photos)
                             } label: {
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                alignment: photo.gridAlignment,
+                                                assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                                     .frame(width: Self.placePhotoSize, height: Self.placePhotoSize)
                                     .clipped()
                             }
@@ -1859,7 +1862,10 @@ struct PhotoMapView: View {
                     NavigationLink {
                         PhotoDetailView(photo: photo, context: photos)
                     } label: {
-                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                        DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                                aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                                alignment: photo.gridAlignment,
+                                                assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                             .frame(width: Self.regionPhotoSize.width, height: Self.regionPhotoSize.height)
                             .clipped()
                     }
