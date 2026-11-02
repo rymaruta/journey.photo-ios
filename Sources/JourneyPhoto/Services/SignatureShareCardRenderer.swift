@@ -197,11 +197,15 @@ enum SignatureShareCardRenderer {
             }
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
-                let usernameX: CGFloat = stackedMarks ? 220 + markWidth + 5 : 220
-                let usernameWidth: CGFloat = stackedMarks ? max(60, 465 - usernameX) : 245
+                // 複数マークとユーザー名を同じ行に置くと短い幅で文字が欠ける。
+                // マークが多い場合はユーザー名を上段の右側に置かず、
+                // 下段をマーク専用にしてユーザー名を表示可能な幅で確保する。
+                let usernameX: CGFloat = 220
+                let usernameWidth: CGFloat = 245
+                let usernameY: CGFloat = stackedMarks ? rowY + 86 : rowY + 53
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
-                     at: CGPoint(x: usernameX, y: rowY + 53), maxWidth: usernameWidth,
-                     size: stackedMarks ? 20 : 25, color: secondary)
+                     at: CGPoint(x: usernameX, y: usernameY), maxWidth: usernameWidth,
+                     size: stackedMarks ? 18 : 25, color: secondary)
             }
             cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
             cg.move(to: CGPoint(x: 493, y: rowY - 4))
