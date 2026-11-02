@@ -114,6 +114,12 @@ jobs:
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
       # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
+      - name: UIテストの操作・目的を表示
+        if: ${{ inputs.tests }}
+        env:
+          SCREENS: ${{ inputs.screens }}
+        run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
+
       - name: どこまで流すかを決める
         id: scope
         env:
