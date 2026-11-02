@@ -43,7 +43,7 @@ on:
         type: boolean
         default: false
       storeShots:
-        description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
+        description: "無効（公開リポジトリのため画像保存は禁止）"
         type: boolean
         default: false
       tests:
@@ -617,7 +617,7 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
-        # 分けて流す回は「まとめ」の job が置く
+        # 公開リポジトリでは常に無効
         if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -659,8 +659,7 @@ jobs:
           # 黙らせる（run #9 が実際そうだった）
           path: |
             build/ios/ipa/*.ipa
-            build/logs/*.log
-            build/logs/*.txt
+            build/logs/app-size.txt
           retention-days: 3
           if-no-files-found: ignore
 
@@ -833,7 +832,7 @@ jobs:
           if-no-files-found: error
 
       - name: 組んだときのログを残す
-        if: ${{ always() }}
+        if: ${{ false }}
         uses: actions/upload-artifact@v4
         with:
           name: part-test-build
@@ -932,6 +931,6 @@ jobs:
           name: build-logs
           path: |
             build/ios/ipa/*.ipa
-            build/logs/**
-          retention-days: 7
+            build/logs/app-size.txt
+          retention-days: 3
           if-no-files-found: ignore
