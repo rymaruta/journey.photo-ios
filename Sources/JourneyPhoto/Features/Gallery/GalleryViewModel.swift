@@ -126,6 +126,18 @@ final class GalleryViewModel: ObservableObject {
             && (force || pageSource == .untried || firstPageIsStale)
         // 「新着」以外で引き下げた回は、手元の1ページ目を古いことにする（次に「新着」を選んだら読み直す）
         if force, !readsFirstPage, pageSource == .pages { firstPageReadAt = nil }
+        // すでに全件の控えがあり、新着をページで表示できている場合は、
+        // 引き下げ更新でも巨大な全件スナップショットを再取得しない。
+        // /feed が失敗しても手元の全件に戻れることを条件にする。
+        // 絞り込み中は全件を使うため従来どおり読み込む。
+        if feed == .latest, pageSource == .pages, !all.isEmpty,
+           sort == .new, scope == .all, category == nil, selectedTags.isEmpty,
+           query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if readsFirstPage {
+                await showFirstPage(force: force, generation: generation, alongsideSnapshot: false)
+            }
+            return
+        }
         if readsFirstPage {
             // 1ページ目と全件を同時に読み、**どちらも着いた時点で書く**（片方を待たない）
             async let firstPage: Void = showFirstPage(force: force, generation: generation, alongsideSnapshot: true)
