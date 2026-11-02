@@ -253,10 +253,17 @@ enum SignatureShareCardRenderer {
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
-            // 画像の端に沿う真鍮色の矩形フレーム。保存画像に角丸の外側余白を作らない。
+            // 真鍮色の矩形フレームは画像境界から8px内側へ。
+            // SNS側で端が切り取られても線が消えにくく、外側も黒背景で統一する。
+            // 角丸・透明余白は作らず、共有/保存するJPEG自体に描き込む。
+            let frameInset: CGFloat = 8
+            let frameWidth: CGFloat = 4
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
-            cg.setLineWidth(3)
-            cg.stroke(CGRect(x: 1.5, y: 1.5, width: width - 3, height: height - 3))
+            cg.setLineWidth(frameWidth)
+            cg.stroke(CGRect(x: frameInset + frameWidth / 2,
+                           y: frameInset + frameWidth / 2,
+                           width: width - 2 * frameInset - frameWidth,
+                           height: height - 2 * frameInset - frameWidth))
         }
     }
 
