@@ -22,6 +22,9 @@ enum PerfSignpost {
     enum Name: String, CaseIterable, Sendable {
         case launch = "Launch"
         case homeLoad = "HomeLoad"
+        case homeSnapshotFetch = "HomeSnapshotFetch"
+        case homeSnapshotProcess = "HomeSnapshotProcess"
+        case homeFirstPage = "HomeFirstPage"
         case spotIndexDecode = "SpotIndexDecode"
     }
 
@@ -45,6 +48,9 @@ enum PerfSignpost {
         switch name {
         case .launch: state = signposter.beginInterval("Launch", id: id)
         case .homeLoad: state = signposter.beginInterval("HomeLoad", id: id)
+        case .homeSnapshotFetch: state = signposter.beginInterval("HomeSnapshotFetch", id: id)
+        case .homeSnapshotProcess: state = signposter.beginInterval("HomeSnapshotProcess", id: id)
+        case .homeFirstPage: state = signposter.beginInterval("HomeFirstPage", id: id)
         case .spotIndexDecode: state = signposter.beginInterval("SpotIndexDecode", id: id)
         }
         return Interval(name: name, state: state)
@@ -58,6 +64,9 @@ enum PerfSignpost {
         switch interval.name {
         case .launch: signposter.endInterval("Launch", interval.state)
         case .homeLoad: signposter.endInterval("HomeLoad", interval.state)
+        case .homeSnapshotFetch: signposter.endInterval("HomeSnapshotFetch", interval.state)
+        case .homeSnapshotProcess: signposter.endInterval("HomeSnapshotProcess", interval.state)
+        case .homeFirstPage: signposter.endInterval("HomeFirstPage", interval.state)
         case .spotIndexDecode: signposter.endInterval("SpotIndexDecode", interval.state)
         }
         #endif

@@ -243,6 +243,28 @@ extension LocationMatch {
             : "\(name) (\(region.joined(separator: ", ")))"
     }
 
+
+    /// SNS共有カード専用。日本の検索住所ではスポット名・番地・通りを表示せず、
+    /// 「神奈川県（横浜市）」のように行政区分だけを残す。
+    /// 海外や自由入力など確実に判定できない場合は既存の表示用短縮処理を使う。
+    static func shareCardDisplay(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.components(separatedBy: CharacterSet(charactersIn: ",，、"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let prefIndex = parts.lastIndex(where: RegionList.prefectures.contains) else {
+            return display(raw)
+        }
+        let pref = parts[prefIndex]
+        // Nominatim の日本語住所は細かい地名から都道府県へ並ぶ。
+        // 県より手前の最後の市区町村を使い、スポット・道路名は捨てる。
+        let city = parts[..<prefIndex].reversed().first { part in
+            guard part != pref, let suffix = part.last else { return false }
+            return "市区町村".contains(suffix)
+        }
+        return city.map { "\(pref)（\($0)）" } ?? pref
+    }
+
     /// 郵便番号・番地（数字と「-」「〒」と空白だけの欠片）
     static func isPostalOrNumber(_ part: String) -> Bool {
         let allowed = CharacterSet(charactersIn: "0123456789-−〒 ")

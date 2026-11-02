@@ -105,6 +105,8 @@ final class PerformanceTests: XCTestCase {
         let metrics: [XCTMetric] = [
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "Launch"),
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeLoad"),
+            XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeSnapshotFetch"),
+            XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeSnapshotProcess"),
         ]
         measure(metrics: metrics, options: Self.options(3)) {
             app.launch()
