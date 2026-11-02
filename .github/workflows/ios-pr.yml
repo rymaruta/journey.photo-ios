@@ -256,6 +256,9 @@ jobs:
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
 
+      - name: UIテストの内容を表示
+        run: python3 Tools/explain-ui-tests.py all
+
       - name: UI テスト（起動・全タブ・画面の絵）
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult
 
@@ -268,26 +271,13 @@ jobs:
           done
           true
 
-      # UI テストが撮った画面の絵（`ScreenshotTests`）。PR では枝に押さず、成果物に置く
-      - name: 画面の絵を取り出す
-        if: ${{ always() }}
-        run: |
-          set +e
-          mkdir -p build/shots
-          if [ -d build/Test.xcresult ]; then
-            xcrun xcresulttool export attachments --path build/Test.xcresult --output-path build/shots
-          fi
-          ls build/shots | head -50
-
-      - name: テストの結果を残す（xcresult・ログ・絵）
+      # 公開リポジトリ: xcresultにはスクリーンショット・録画・診断情報が含まれる。
+      # PRの成果物には含めず、Summaryで失敗名と理由を確認する。
+      - name: 公開可能なテストログのみ保存
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: xcode-test-results
-          path: |
-            build/Unit.xcresult
-            build/Test.xcresult
-            build-xcodebuild.log
-            build/shots
-          retention-days: 14
+          path: build-xcodebuild.log
+          retention-days: 3
           if-no-files-found: ignore
