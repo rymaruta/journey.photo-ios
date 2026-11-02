@@ -296,7 +296,10 @@ struct SearchView: View {
                     circleChip(label: Labels.Category.name(item.category), selected: selected) {
                         model.select(category: item.category)
                     } face: {
-                        RemoteImage(url: item.cover.gridImageURL, alignment: item.cover.gridAlignment)
+                        DownsampledRemoteImage(url: item.cover.gridImageURL, contentMode: .fill,
+                                               aspectRatio: item.cover.aspectRatio.map { CGFloat($0) },
+                                               alignment: item.cover.gridAlignment,
+                                               assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                     }
                 }
             }
@@ -593,7 +596,10 @@ struct SearchView: View {
         Color.clear
             .frame(width: 156, height: 116)
             .overlay {
-                RemoteImage(url: spot.cover.gridImageURL, alignment: spot.cover.gridAlignment)
+                DownsampledRemoteImage(url: spot.cover.gridImageURL, contentMode: .fill,
+                                       aspectRatio: spot.cover.aspectRatio.map { CGFloat($0) },
+                                       alignment: spot.cover.gridAlignment,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
             }
             .overlay(alignment: .bottomLeading) {
                 Text(LocationMatch.display(spot.id))
@@ -650,8 +656,10 @@ struct SearchView: View {
 
     private func colorCircle(_ section: ColorFamilies.Section) -> some View {
         VStack(spacing: 6) {
-            RemoteImage(url: section.photos.first?.gridImageURL,
-                        alignment: section.photos.first?.gridAlignment ?? .center)
+            DownsampledRemoteImage(url: section.photos.first?.gridImageURL, contentMode: .fill,
+                                       aspectRatio: section.photos.first?.aspectRatio.map { CGFloat($0) },
+                                       alignment: section.photos.first?.gridAlignment ?? .center,
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 // v2（Search の板）: 実際の写真の丸 62・縁は白 8%
                 .frame(width: Self.colorCircleSize, height: Self.colorCircleSize)
                 .background(WebTheme.surface, in: Circle())
