@@ -15,19 +15,19 @@ on:
   workflow_dispatch:
     inputs:
       submit:
-        description: "TestFlight に上げる（false ならビルドだけ）"
+        description: "TestFlightに配信する"
         type: boolean
         default: true
       betaReview:
-        description: "外部テスターの審査にも出す（App Store Connect の「テスト情報」が埋まっていること）"
+        description: "外部テスター審査を申請"
         type: boolean
         default: false
       storeShots:
-        description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
+        description: "App Store用画像を保存"
         type: boolean
         default: false
       tests:
-        description: "テストも流す（main は PR の検証で通っているので要らない。main 以外の枝を確かめるときだけ）"
+        description: "ビルド時にテストも実行"
         type: boolean
         default: false
       # 2026-10-17 判断: 枝の確認（submit=false）の UI テストを、変えた画面だけに絞れるようにする。
@@ -37,7 +37,7 @@ on:
       # 上げる回（submit=true）と storeShots の回では絞らない（ここに何を書いても無視）。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "UI テストを絞る（撮る画面の名前かテスト名の一部・, 区切り。空＝全部。none＝起動の見張りだけ）。submit=true では絞らない（テストを流すかは tests で決まる）"
+        description: "UIテスト指定（空欄＝全部、none＝起動確認）"
         type: string
         default: ""
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
@@ -45,7 +45,7 @@ on:
       # 単体テストと同時に別の Mac で先に流し、落ちたら分けた段まで進めない。何を先に流すかは、空なら
       # 枝の差分から `Tools/pick-ui-tests.py --plan` が選ぶ。書けば `screens` と同じ書き方でそれを先に流す
       first:
-        description: "全部の回で先に流す UI テスト（screens と同じ書き方。空＝枝で変えた画面から選ぶ）。落ちたら残りの UI テストは流さない"
+        description: "最初に実行するUIテスト（空欄＝自動選択）"
         type: string
         default: ""
 
