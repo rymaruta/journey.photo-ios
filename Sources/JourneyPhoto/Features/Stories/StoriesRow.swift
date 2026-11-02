@@ -239,7 +239,7 @@ struct StoriesRow: View {
     }
 
     /// **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。自分の顔＋「＋」・「ストーリーを追加」と
-    /// 一行の説明、下に「探す」への道（真鍮の下線・黒地の上のリンク）
+    /// 一行の説明。重複する「探す」へのリンクは置かない。
     private var emptyRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -271,17 +271,6 @@ struct StoriesRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("stories.empty.add")
-            Button {
-                TabRouter.shared.openSearch()
-            } label: {
-                Text(L("探すで写真の作者を見つける", "Find photographers in Search"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.accent)
-                    .underline()
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
         // 横に流れる列の中なので、幅を決める（いちばん狭い iPhone の幅 320 − 左右の端 16×2）
         .frame(width: StoryRingMetrics.emptyRowWidth, alignment: .leading)
