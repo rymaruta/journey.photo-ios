@@ -48,6 +48,8 @@ struct DownsampledRemoteImage: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
+    /// State が別の URL に再利用されても、前の写真を表示しないための識別子。
+    @State private var imageURL: URL?
     /// いま出している絵を読んだときの画素数（長い辺）。これ以上で読めていれば読み直さない
     @State private var loadedPixels = 0
     @State private var failed = false
@@ -60,7 +62,7 @@ struct DownsampledRemoteImage: View {
         ZStack {
             WebTheme.surface
             // 控えに在れば、取りに行く前から出す（格子へ戻ったときに読み込み中の輪から出直さない）
-            if let image = image ?? url.flatMap({ Self.memory.entry(for: $0)?.image }) {
+            if let image = (imageURL == url ? image : nil) ?? url.flatMap({ Self.memory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)?.image }) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
             } else if DownsampledImagePhase.of(hasImage: false, failed: failed, hasURL: url != nil) == .failed {
@@ -88,6 +90,7 @@ struct DownsampledRemoteImage: View {
         // 別の写真に替わったら数え直す（前の写真の失敗で、次の写真の読み直しを使い切らない）
         .onChange(of: url) { _, _ in
             image = nil
+            imageURL = nil
             loadedPixels = 0
             failed = false
             automaticRetries = 0
@@ -122,24 +125,27 @@ struct DownsampledRemoteImage: View {
         }
         guard let pixels = neededPixels else { return }
         // 同じ大きさ以上で読めていれば読み直さない（幅が少し縮んだだけの回）
-        if image != nil, loadedPixels >= pixels { return }
+        if imageURL == url, image != nil, loadedPixels >= pixels { return }
         // 控えに足りる大きさで在れば、取りに行かず展開もしない
         if let cached = Self.memory.entry(for: url, atLeast: pixels) {
             image = cached.image
+            imageURL = url
             loadedPixels = cached.pixels
             failed = false
             onSettled?(true)
             return
         }
         do {
-            // 同じURLを複数セルが同時に表示しても、通信は一度だけ。
+            // 同じURLの通信と同じ解像度のデコードはセル間で共有する。
             let data = try await GridImageInFlight.shared.data(for: url)
-            // 同じURL・画素数を複数セルが同時に要求しても、展開は一度だけ。
             let decoded = await GridImageDecodeInFlight.shared.image(data: data, for: url, pixels: pixels)
             guard !Task.isCancelled else { return }
             guard let decoded else { throw URLError(.cannotDecodeContentData) }
             Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)
-            withAnimation(appearAnimation) { image = decoded.image }
+            withAnimation(appearAnimation) {
+                image = decoded.image
+                imageURL = url
+            }
             loadedPixels = pixels
             failed = false
             onSettled?(true)

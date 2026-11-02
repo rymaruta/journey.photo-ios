@@ -178,7 +178,9 @@ final class DownsampledImageSizeTests: XCTestCase {
         XCTAssertTrue(image.contains("RemoteImageRetry.step(automaticDone: automaticRetries,"))
         XCTAssertTrue(image.contains("WebTheme.surface"))
         // 戻ったときは控えから（取りに行く前に出す・取りに行かない）
-        XCTAssertTrue(image.contains("if let image = image ?? url.flatMap({ Self.memory.entry(for: $0)?.image }) {"))
+        XCTAssertTrue(image.contains("imageURL == url ? image : nil"), "別の URL の State 画像を再利用しない")
+        XCTAssertTrue(image.contains("Self.memory.entry(for: $0, atLeast: neededPixels ?? DownsampledImageSize.maximum)"),
+                      "必要画素数を満たさないキャッシュ画像を先に表示しない")
         XCTAssertTrue(image.contains("if let cached = Self.memory.entry(for: url, atLeast: pixels) {"))
         XCTAssertTrue(image.contains("Self.memory.store(decoded.image, pixels: pixels, for: url, cost: decoded.cost)"))
     }
@@ -202,6 +204,50 @@ final class DownsampledImageSizeTests: XCTestCase {
         XCTAssertNil(memory.entry(for: try XCTUnwrap(URL(string: "https://x/b.jpg"))))
         memory.removeAll()
         XCTAssertNil(memory.entry(for: url))
+    }
+
+    /// キャッシュのサイズと URL の両方を確認する。View の再利用で別写真を混ぜない。
+    func testDecodedImageMemoryRespectsURLAndRequestedSize() throws {
+        final class Box {}
+        let memory = DecodedImageMemory<Box>(costLimit: 1_000_000)
+        let first = try XCTUnwrap(URL(string: "https://x/first.jpg"))
+        let second = try XCTUnwrap(URL(string: "https://x/second.jpg"))
+        let small = Box(), large = Box()
+        memory.store(small, pixels: 256, for: first, cost: 10)
+        XCTAssertNil(memory.entry(for: first, atLeast: 512))
+        XCTAssertNil(memory.entry(for: second, atLeast: 256))
+        memory.store(large, pixels: 1024, for: second, cost: 10)
+        XCTAssertTrue(memory.entry(for: second, atLeast: 512)?.image === large)
+        XCTAssertNil(memory.entry(for: first, atLeast: 1024))
+    }
+
+    /// UI の状態を URL に結び付け、キャッシュからの即時表示も必要サイズで判定する。
+    func testDownsampledViewDoesNotRenderStaleStateOrUndersizedCache() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Common/DownsampledRemoteImage.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("@State private var imageURL: URL?"))
+        XCTAssertTrue(source.contains("imageURL == url ? image : nil"))
+        XCTAssertTrue(source.contains("imageURL = nil"))
+        XCTAssertTrue(source.contains("imageURL = url"))
+        XCTAssertTrue(source.contains("atLeast: neededPixels ?? DownsampledImageSize.maximum"))
+    }
+
+    /// スポット画像は縮小版が失敗したときだけ元画像へ一度切り替える。
+    func testSpotThumbnailDownsamplesAndKeepsFallbackGuard() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Common/SpotThumbImage.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("DownsampledRemoteImage(url: requestedURL, contentMode: .fill,"))
+        XCTAssertTrue(source.contains("assumedRatioLimit: assumedRatioLimit ?? 2"))
+        XCTAssertTrue(source.contains(".id(requestedURL)"))
+        XCTAssertTrue(source.contains("requestedURL == state.current"))
+        XCTAssertFalse(source.contains("RemoteImage(url: state.current"), "小さな画像を原寸でデコードしない")
+        let first = try XCTUnwrap(URL(string: "https://example.com/small.jpg"))
+        let original = try XCTUnwrap(URL(string: "https://example.com/original.jpg"))
+        var fallback = SpotThumbFallback(primary: first, fallback: original)
+        XCTAssertEqual(fallback.current, first)
+        XCTAssertTrue(fallback.failed())
+        XCTAssertEqual(fallback.current, original)
+        XCTAssertFalse(fallback.failed(), "元画像の失敗で無限に切り替えない")
+        var same = SpotThumbFallback(primary: first, fallback: first)
+        XCTAssertFalse(same.failed(), "同じURLを二度取得しない")
     }
 
     private static func sourcePath(_ relative: String) -> String {
