@@ -105,14 +105,50 @@ final class PerformanceTests: XCTestCase {
         let metrics: [XCTMetric] = [
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "Launch"),
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeLoad"),
-            XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeSnapshotFetch"),
-            XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeSnapshotProcess"),
         ]
         measure(metrics: metrics, options: Self.options(3)) {
             app.launch()
             passConsent(app)
             waitForHomePhoto(app)
             app.terminate()
+        }
+    }
+
+    // MARK: - メインタブ切り替え
+
+    /// 下部タブの往復時間を記録する。初回構築と再訪問は混ぜず、ここでは再訪問を測る。
+    /// タブの選択状態が反映されるまでを測るもので、写真のデコード完了時間ではない。
+    /// 性能の合否閾値は設けない（CIの負荷による揺れを許容）。
+    func testMainTabRevisitTime() {
+        let app = configuredApp(localBackend: true)
+        app.launch()
+        passConsent(app)
+        waitForHomePhoto(app)
+
+        let tabs = app.tabBars.firstMatch
+        let home = tabs.buttons["ホーム"]
+        let search = tabs.buttons["探す"]
+        let map = tabs.buttons["マップ"]
+        let myPage = tabs.buttons["マイページ"]
+
+        let sequence = [search, map, myPage, home]
+        for tab in sequence {
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "測定対象のタブが見つからない: \(tab.label)")
+            tab.tap()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: tab)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed,
+                           "初回のタブ選択に失敗: \(tab.label)")
+        }
+
+        // タブを一度構築してから再訪問を計測する。
+        // 画面の描画完了ではなく、UI操作と選択反映の往復時間である。
+        measure(metrics: [XCTClockMetric()], options: Self.options(3)) {
+            for tab in sequence {
+                tab.tap()
+                let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: tab)
+                XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed,
+                               "再訪問のタブ選択に失敗: \(tab.label)")
+            }
         }
     }
 
