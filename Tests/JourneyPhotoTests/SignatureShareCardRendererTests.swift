@@ -42,18 +42,26 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let data = try XCTUnwrap(rendered)
         let image = try XCTUnwrap(UIImage(data: data))
         XCTAssertEqual(image.size, CGSize(width: 1080, height: 1350))
-        // 角丸マスクの外側に黒い領域を残さない。JPEG の圧縮誤差を考慮して
-        // 角の近傍を読み、暗い黒背景ではなく真鍮色の枠があることを確認する。
+        // 共有JPEGの四隅は黒背景。真鍮フレームは画像境界から8px内側にあり、
+        // 線幅4pxの中心が10pxなので、(10,10)は真鍮色になる。
+        // (0,0)に金色を要求すると、意図した8pxの余白を不具合と誤判定する。
         let bitmap = try XCTUnwrap(image.cgImage)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        var pixel = [UInt8](repeating: 0, count: 4)
-        let ctx = try XCTUnwrap(CGContext(data: &pixel, width: 1, height: 1,
-                                          bitsPerComponent: 8, bytesPerRow: 4,
-                                          space: colorSpace,
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        let corner = try XCTUnwrap(bitmap.cropping(to: CGRect(x: 0, y: 0, width: 1, height: 1)))
-        ctx.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        XCTAssertGreaterThan(Int(pixel[0]), 60, "画像の角に黒い余白が残っている")
+        func pixel(at x: Int, _ y: Int) throws -> [UInt8] {
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1,
+                bitsPerComponent: 8, bytesPerRow: 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(bitmap.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return rgba
+        }
+        let corner = try pixel(at: 0, 0)
+        XCTAssertLessThan(Int(corner[0]), 30, "画像の四隅は黒い背景で統一する")
+        let frame = try pixel(at: 10, 10)
+        XCTAssertGreaterThan(Int(frame[0]), 60, "8px内側の真鍮フレームが描かれていない")
     }
 
     func testSquareCardRenders() async throws {
