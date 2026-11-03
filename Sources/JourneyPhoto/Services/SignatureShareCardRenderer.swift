@@ -256,7 +256,7 @@ enum SignatureShareCardRenderer {
                 drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246, size: 22, color: .white)
             }
             if !exposure.isEmpty {
-                drawSymbol("timer", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
+                drawSymbol("timer", at: CGPoint(x: 731, y: infoY - 5), size: 38, color: brass)
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
