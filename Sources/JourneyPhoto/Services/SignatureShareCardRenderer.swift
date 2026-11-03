@@ -402,7 +402,16 @@ enum SignatureShareCardRenderer {
 
         static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
                                    color: UIColor, context: CGContext) {
-            guard let shape = shapeForDisplay(at: pin) else { return }
+            guard pin.latitude.isFinite, pin.longitude.isFinite,
+                  (-90...90).contains(pin.latitude),
+                  (-180...180).contains(pin.longitude) else { return }
+            guard let shape = shapeForDisplay(at: pin) else {
+                // Tiny islands and open-water locations are absent from the
+                // bundled coastline data. Never leave the map slot blank.
+                SignatureShareCardRenderer.drawLocationFallback(
+                    in: rect, color: color, context: context)
+                return
+            }
             draw(shape, pin: pin, in: rect, color: color, context: context)
         }
 
