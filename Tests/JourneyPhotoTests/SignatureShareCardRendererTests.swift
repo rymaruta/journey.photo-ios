@@ -229,6 +229,48 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testWorldwideMapExportAcrossAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 300))
+            .jpegData(withCompressionQuality: 0.8) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 300, height: 300))
+            }
+        // Include northern/southern hemispheres, islands, coastal cities and the dateline.
+        let locations: [(String, Double, Double)] = [
+            ("Helsinki", 60.17, 24.94),
+            ("Oslo", 59.91, 10.75),
+            ("Reykjavik", 64.15, -21.94),
+            ("London", 51.51, -0.13),
+            ("Cairo", 30.04, 31.24),
+            ("Nairobi", -1.29, 36.82),
+            ("Cape Town", -33.92, 18.42),
+            ("Mumbai", 19.08, 72.88),
+            ("Singapore", 1.35, 103.82),
+            ("Manila", 14.60, 120.98),
+            ("Jakarta", -6.21, 106.85),
+            ("Sydney", -33.87, 151.21),
+            ("Auckland", -36.85, 174.76),
+            ("Suva", -18.14, 178.44),
+            ("New York", 40.71, -74.01),
+            ("Vancouver", 49.28, -123.12),
+            ("Rio de Janeiro", -22.91, -43.20),
+            ("Santiago", -33.45, -70.67)
+        ]
+        for (name, latitude, longitude) in locations {
+            let credit = SignatureShareCardRenderer.Credit(
+                name: "Photographer", username: nil, location: name,
+                coords: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+                verified: false, proStyle: nil, early: false, badge: nil)
+            for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
+                let data = try XCTUnwrap(await SignatureShareCardRenderer.render(
+                    source, credit: credit, ratio: ratio),
+                    "\(name) / \(ratio) must export")
+                XCTAssertNotNil(UIImage(data: data), "\(name) / \(ratio) must decode")
+            }
+        }
+    }
+
     func testStoryLandscapePhotoRendersWithoutInsetComposite() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 600))
             .jpegData(withCompressionQuality: 0.95) { context in
