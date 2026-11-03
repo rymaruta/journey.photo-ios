@@ -399,6 +399,23 @@ def main_related(argv):
                 uncertain.append(path)
         elif path.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
             uncertain.append(path)
+    # バイナリ差分・モード変更・リネームなど、+++ 行がない変更も検出する。
+    # git diff --find-renames のヘッダーは a/path b/path 形式。
+    for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
+        header = block.splitlines()[0] if block.startswith("diff --git ") else ""
+        match = re.match(r"diff --git a/(.+) b/(.+)$", header)
+        if not match:
+            if header:
+                uncertain.append("解析不能な差分ヘッダー")
+            continue
+        old_path, new_path = match.groups()
+        if new_path in changes and old_path == new_path:
+            continue
+        impacted = (old_path, new_path)
+        if any(p.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or
+               p in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift")
+               for p in impacted):
+            uncertain.append(new_path)
     # 削除・リネーム前のパスも評価する。+++ /dev/null のファイルは changed_files に出ない。
     for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
         if "+++ /dev/null" not in block:
