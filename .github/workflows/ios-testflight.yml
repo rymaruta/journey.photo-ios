@@ -114,13 +114,13 @@ jobs:
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
       # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
-      - name: 公開リポジトリの画像公開を防ぐ
+      - name: 公開リポジトリへの画像保存を防止
         if: ${{ inputs.storeShots }}
         run: |
           echo "::error::公開リポジトリでstoreShotsは無効です。画像は非公開環境で生成してください。"
           exit 1
 
-      - name: UIテストの操作・目的を表示
+      - name: UIテストの実行内容を表示
         # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
         if: ${{ inputs.tests && inputs.screens != 'auto' && !(inputs.submit && inputs.screens == '') }}
         env:
@@ -238,7 +238,7 @@ jobs:
       # 揃う前にも「本物の SwiftUI で通るか」を見たい。揃っていない回は
       # 署名から先を飛ばし、**緑で終わらせる**（赤にすると
       # 「コンパイルが通ったのか」が読み取れなくなる）
-      - name: 秘密が揃っているかを見る
+      - name: 署名用Secretsを確認
         id: secrets
         env:
           ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -308,7 +308,7 @@ jobs:
       # **20個のうち1個でも落ちれば終わり**。外部コマンドを20回叩く必要は
       # 無い——名前が `Xcode_26.3.0.app` の形なので、そこから取って
       # `sort -V` で並べれば足りる（実測の一覧で確認済み）。
-      - name: Xcode を選ぶ（iOS 26 SDK が要る）
+      - name: Xcodeを選択（iOS 26 SDK）
         env:
           SUBMIT: ${{ inputs.submit }}
         run: |
@@ -356,17 +356,17 @@ jobs:
             echo "::warning::iOS ${sdk:-?} SDK です。上げるには iOS 26 SDK 以上が要ります（この回は上げないので続けます）"
           fi
 
-      - name: Xcode の版を読む
+      - name: Xcodeのバージョンを確認
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
       # キャッシュ復元（数GB）より前に、数秒で終わる設定検査を実施。
       # 設定不備ならMacの重い準備を待たずに失敗させる。
-      - name: 設定の検査
+      - name: 配信用アプリをビルド設定を検証
         run: python3 Tools/check-config.py
 
       # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
       # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
-      - name: 控えの鍵を決める
+      - name: 配信用アプリをビルドキャッシュのキーを生成
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
       # 🔴 **控えは main の回だけが書く・枝は読むだけ**（2026-10-17 判断）。
@@ -379,7 +379,7 @@ jobs:
       - name: キャッシュ復元の計測開始
         run: echo "CACHE_RESTORE_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
-      - name: 前回の作りかけを控えから戻す
+      - name: 配信用アプリをビルドキャッシュを復元
         id: cache
         uses: actions/cache/restore@v6
         with:
@@ -421,7 +421,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 道具を入れる
+      - name: 配信用アプリをビルドツールをインストール
         run: |
           set -euo pipefail
           if ! command -v xcodegen >/dev/null 2>&1; then
@@ -457,7 +457,7 @@ jobs:
             fi
           done
 
-      - name: Xcode プロジェクトを作る
+      - name: Xcodeプロジェクトを生成
         run: xcodegen generate
 
       # **既定ではテストを流さない**（2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。
@@ -527,7 +527,7 @@ jobs:
       # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の
       # 組み立ては全部の回（screens 空）と、上げる回（submit=true・いつも全部）で見る。
       # `steps.scope.outputs.full` は上げる回では必ず true なので、上げる回には効かない
-      - name: 署名の用意（証明書とプロファイルを API キーから作る）
+      - name: 署名証明書とプロファイルを準備
         if: ${{ steps.secrets.outputs.signing == 'true' && (steps.scope.outputs.full == 'true' || inputs.submit) }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -594,7 +594,7 @@ jobs:
           xcodegen generate
           xcode-project use-profiles
 
-      - name: ビルド
+      - name: 配信用アプリをビルド
         id: archive
         if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
         run: |
@@ -616,7 +616,7 @@ jobs:
       # **アプリの中身ごとの大きさ**（2026-10-31 判断・札 #429 アプリ 1「測る仕組み」）。ipa は 57.2MB（2026-10-31）で、
       # 何が占めているか（字体・絵・依存の Frameworks・本体）を Archive の回ごとに残す。Archive が走った回だけ。
       # 数は段のログ・まとめ（Summary）・成果物 `build-logs` の `app-size.txt` に出す。**落ちても赤にしない**（上げる邪魔をしない）
-      - name: アプリの中身の大きさ
+      - name: アプリサイズを確認
         if: ${{ steps.archive.outcome == 'success' }}
         continue-on-error: true
         timeout-minutes: 5
@@ -656,7 +656,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           rm -rf "$work"
 
-      - name: TestFlight に上げる
+      - name: TestFlightへアップロード
         id: upload
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' && steps.archive.outcome == 'success' }}
         env:
@@ -695,7 +695,7 @@ jobs:
       # 同じ版がもう一度使われる。印を押せなくても**赤にしない**——
       # TestFlight には既に上がっている（次の回が同じ版を使うだけで、
       # ビルド番号は上がるので受け付けられる）
-      - name: 版の印を付ける
+      - name: リリースバージョンを記録
         if: ${{ inputs.submit && steps.upload.outcome == 'success' && steps.archive.outcome == 'success' }}
         env:
           MARKETING: ${{ env.MARKETING }}
@@ -725,7 +725,7 @@ jobs:
       # 再現しない）。実際に描かれた絵は、このランナーのシミュレータに
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
-      - name: 画面の絵を `screenshots` の枝に置く
+      - name: スクリーンショットを保存
         # 公開リポジトリでは常に無効
         if: ${{ false }}
         env:
@@ -735,7 +735,7 @@ jobs:
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 
-      - name: 落ちたときに読むものを集める
+      - name: 失敗時の診断ログを収集
         if: ${{ always() }}
         run: |
           set -euo pipefail
@@ -749,7 +749,7 @@ jobs:
           # Unit/Test.xcresultも公開Artifactに含めない
           ls -la build/logs || true
 
-      - name: 落ちたときに読むもの
+      - name: 診断ログをアップロード
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
@@ -790,7 +790,7 @@ jobs:
           xcodegen generate
           XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
 
-      - name: 控えを書く（main の回だけ）
+      - name: mainのビルドキャッシュを保存
         if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v6
         with:
@@ -827,14 +827,14 @@ jobs:
   # `pick-ui-tests.py` の `wants_all` と同じに読めない。`build` の job の「どこまで流すかを決める」と同じ
   # `--sharded` を呼んで、決め方を1か所にする（2026-10-31・見直しの指摘）
   shard-plan:
-    name: 分けて流すかを決める
+    name: UIテストの分割実行を判定
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       sharded: ${{ steps.decide.outputs.sharded }}
     steps:
       - uses: actions/checkout@v7
-      - name: 決める
+      - name: 分割実行の条件を確認
         id: decide
         env:
           SCREENS: ${{ inputs.screens }}
@@ -847,7 +847,7 @@ jobs:
           echo "分けて流す: $sharded"
 
   test-build:
-    name: テストの品を組む
+    name: テスト用ビルドを準備
     needs: shard-plan
     if: ${{ needs.shard-plan.outputs.sharded == 'true' }}
     runs-on: macos-15
@@ -861,7 +861,7 @@ jobs:
       # **何を先に流し、どう分けるかを最初に決める**（`Tools/pick-ui-tests.py --plan`）。
       # 枝の差分は GitHub の比べる口（main...この sha）から読む。読めなければ起動の見張りだけを先に流す。
       # 組の数（3）は下の `ui` の matrix と揃える（`Tools/check-config.py` が見る）
-      - name: 先に流す UI テストと、分ける組を決める
+      - name: 優先UIテストと分割対象を決定
         env:
           GH_TOKEN: ${{ github.token }}
           FIRST: ${{ inputs.first }}
@@ -880,18 +880,18 @@ jobs:
           cat build/ui-plan/plan.md
           for f in build/ui-plan/*.txt; do echo "== $f"; cat "$f"; done
 
-      - name: Xcode を選ぶ
+      - name: Xcodeを選択
         id: xcode
         run: bash Tools/select-xcode.sh
 
-      - name: Xcode の版を読む
+      - name: Xcodeのバージョンを確認
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
       # 控えの鍵と path は `build` の job の「前回の作りかけを控えから戻す」と同じ（違うと当たらない）。読むだけ
-      - name: 控えの鍵を決める
+      - name: 配信用アプリをビルドキャッシュのキーを生成
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
-      - name: 前回の作りかけを控えから戻す
+      - name: 配信用アプリをビルドキャッシュを復元
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -904,7 +904,7 @@ jobs:
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
-      - name: Xcode プロジェクトを作る
+      - name: Xcodeプロジェクトを生成
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
             brew install xcodegen
@@ -919,7 +919,7 @@ jobs:
           mkdir -p build/logs
           XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
 
-      - name: 組んだ品を包む
+      - name: ビルド成果物を圧縮
         run: |
           set -euo pipefail
           products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
@@ -927,7 +927,7 @@ jobs:
           ls -la build/test-products.tar
 
       # tar は自分で包んである（成果物の zip ではファイルの実行の権限が落ちるため）。縮める手間は軽くする
-      - name: 組んだ品を渡す
+      - name: ビルド成果物をアップロード
         uses: actions/upload-artifact@v7
         with:
           name: test-products
@@ -938,7 +938,7 @@ jobs:
           compression-level: 1
           if-no-files-found: error
 
-      - name: 組んだときのログを残す
+      - name: ビルドログを保存
         if: ${{ false }}
         uses: actions/upload-artifact@v7
         with:
@@ -965,7 +965,7 @@ jobs:
           xcode: ${{ needs.test-build.outputs.xcode }}
 
   ui:
-    name: UI テスト（分けた組 ${{ matrix.part }}/3）
+    name: 分割UIテスト（${{ matrix.part }}/3）
     # 単体テストと先に流す分が両方とも通ったときだけ（どちらかが落ちたら skipped）
     needs: [test-build, pre]
     runs-on: macos-15
@@ -984,7 +984,7 @@ jobs:
           xcode: ${{ needs.test-build.outputs.xcode }}
 
   finish:
-    name: まとめ（画面の絵・成果物・印）
+    name: 分割テストの結果を集約
     needs: [build, test-build, pre, ui]
     if: ${{ always() && needs.test-build.result != 'skipped' }}
     # 絵を置く枝（`screenshots`）へ押すのに書き込みが要る
@@ -995,10 +995,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Xcode を選ぶ（結果を読む・まとめる）
+      - name: Xcodeを選択（結果を読む・まとめる）
         run: bash Tools/select-xcode.sh "${{ needs.test-build.outputs.xcode }}"
 
-      - name: 分割テストの結果について
+      - name: 分割テスト結果を確認
         run: |
           echo "### 分割テストの結果" >> "$GITHUB_STEP_SUMMARY"
           echo "各MacジョブのSummaryに成功・失敗と理由を記録しています。公開Artifactへxcresult・画面画像は転送しません。" >> "$GITHUB_STEP_SUMMARY"
@@ -1010,7 +1010,7 @@ jobs:
         run: echo "単体テストと UI テスト（先に流す分と分けた組 3つ）を絞らずに全部流し、通りました"
 
       # `build` の job の Archive（ipa）と集めたものも、前と同じ `build-logs` に入れる
-      - name: Archive の分を合わせる
+      - name: Archiveの成果物を統合
         if: ${{ always() }}
         run: |
           set -uo pipefail
@@ -1025,7 +1025,7 @@ jobs:
           fi
           ls -la build/logs build/ios/ipa 2>/dev/null || true
 
-      - name: 落ちたときに読むもの
+      - name: 診断ログをアップロード
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
