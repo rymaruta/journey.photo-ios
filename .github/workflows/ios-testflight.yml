@@ -327,6 +327,11 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # キャッシュ復元（数GB）より前に、数秒で終わる設定検査を実施。
+      # 設定不備ならMacの重い準備を待たずに失敗させる。
+      - name: 設定の検査
+        run: python3 Tools/check-config.py
+
       # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
       # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
       - name: 控えの鍵を決める
@@ -360,9 +365,6 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
-
-      - name: 設定の検査
-        run: python3 Tools/check-config.py
 
       - name: 道具を入れる
         run: |
