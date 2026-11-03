@@ -369,28 +369,49 @@ def main_plan(argv):
 
 
 def main_related(argv):
-    """PR差分から関連UIテストを選択。検出不能なら全件に倒し、見逃しを防ぐ。"""
-    diff_path = pathlib.Path(argv[0])
-    diff_text = diff_path.read_text(encoding="utf-8")
+    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。"""
+    diff_text = pathlib.Path(argv[0]).read_text(encoding="utf-8")
     index, loose = read_index()
     if not index:
         print("::error::UIテストの一覧が読めません", file=sys.stderr)
         return 1
     changes = changed_files(diff_text)
-    relevant = tests_for_diff(diff_text, index, loose)
-    # 共有UI・プロジェクト設定等は識別子で追跡できないため、保守的に全件を実行する。
-    unknown = [p for p in changes if (p.startswith("Sources/") and p.endswith(".swift") and not relevant)
-               or p.startswith(("UITests/", "project.yml", "Tools/pick-ui-tests.py"))]
-    if unknown:
-        print("関連範囲を特定できない変更: " + ", ".join(unknown), file=sys.stderr)
+    chosen = set()
+    uncertain = []
+    ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
+    for path, (lines, texts) in changes.items():
+        if path.startswith("Sources/") and path.endswith(".swift"):
+            # ファイルごとに判定する。別のファイルで一致したからといって見逃さない。
+            one = tests_for_diff(diff_text_for_path(diff_text, path), index, loose)
+            if one:
+                chosen.update(one)
+            else:
+                uncertain.append(path)
+        elif path.startswith(ui_prefix) and path.endswith(".swift"):
+            one = tests_for_diff(diff_text_for_path(diff_text, path), index, loose)
+            if one:
+                chosen.update(one)
+            else:
+                uncertain.append(path)
+        elif path in ("project.yml", "Tools/pick-ui-tests.py"):
+            uncertain.append(path)
+    if uncertain:
+        print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
-    selected = sorted(t for t in relevant if not only_when_named(t) and not t.startswith(f"{ALWAYS}/"))
     print(f"-only-testing:{TARGET}/{ALWAYS}")
-    for t in selected:
-        print(f"-only-testing:{TARGET}/{t}")
+    selected = sorted(t for t in chosen if not only_when_named(t) and not t.startswith(f"{ALWAYS}/"))
+    for test in selected:
+        print(f"-only-testing:{TARGET}/{test}")
     print(f"関連UIテスト: {len(selected)}本", file=sys.stderr)
     return 0
+
+
+def diff_text_for_path(diff_text, path):
+    """unified diffの指定ファイルの部分だけを取り出す。"""
+    blocks = re.split(r"(?=^diff --git )", diff_text, flags=re.M)
+    return "".join(block for block in blocks if block.startswith("diff --git ") and
+                   re.search(r"^\\+\\+\\+ b/" + re.escape(path) + r"$", block, re.M))
 
 
 def main():
