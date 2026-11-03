@@ -295,6 +295,14 @@ jobs:
             echo "判定: 起動スモーク＋関連UIテスト" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "選択したテスト指定数: $(wc -l < /tmp/pr-ui-tests.txt | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 実行対象" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^-only-testing:JourneyPhotoUITests\\/?//' /tmp/pr-ui-tests.txt | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 差分ファイル" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/pr-ui.diff ]; then
+            git diff --no-ext-diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- 手動実行または差分取得不可" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: UI テスト（通常は起動スモーク・手動指定で全画面）
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt

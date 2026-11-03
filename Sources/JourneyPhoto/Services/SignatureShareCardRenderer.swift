@@ -402,44 +402,76 @@ enum SignatureShareCardRenderer {
 
         static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
                                    color: UIColor, context: CGContext) {
-            guard let shape = shapeForDisplay(at: pin) else { return }
+            guard pin.latitude.isFinite, pin.longitude.isFinite,
+                  (-90...90).contains(pin.latitude),
+                  (-180...180).contains(pin.longitude) else { return }
+            guard let shape = shapeForDisplay(at: pin) else {
+                // Tiny islands and open-water locations are absent from the
+                // bundled coastline data. Never leave the map slot blank.
+                SignatureShareCardRenderer.drawLocationFallback(
+                    in: rect, color: color, context: context)
+                return
+            }
             draw(shape, pin: pin, in: rect, color: color, context: context)
         }
 
         static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
                          in rect: CGRect, color: UIColor, context: CGContext) {
-            let points = shape.r.flatMap { $0 }.filter { $0.count == 2 }
+            // Countries crossing the antimeridian (Russia, Fiji, etc.) have
+            // coordinates on both sides of ±180°. Shift each ring to the
+            // longitude domain nearest the photographed location so that
+            // the silhouette does not span nearly 360 degrees.
+            let rings = shape.r.map { ring -> [[Double]] in
+                guard let first = ring.first, first.count == 2 else { return ring }
+                var previous = first[0] + 360 * round((pin.longitude - first[0]) / 360)
+                return ring.enumerated().map { index, point in
+                    guard point.count == 2 else { return point }
+                    if index == 0 { return [previous, point[1]] }
+                    let unwrapped = point[0] + 360 * round((previous - point[0]) / 360)
+                    previous = unwrapped
+                    return [unwrapped, point[1]]
+                }
+            }
+            let points = rings.flatMap { $0 }.filter { $0.count == 2 }
             guard let minX = points.map({ $0[0] }).min(),
                   let maxX = points.map({ $0[0] }).max(),
                   let minY = points.map({ $0[1] }).min(),
                   let maxY = points.map({ $0[1] }).max() else { return }
-            let spanX = max(maxX - minX, 0.01)
+            // Longitude degrees shrink towards the poles. Project in local
+            // equirectangular coordinates instead of stretching the country east-west.
+            let longitudeScale = max(0.2, cos(((minY + maxY) / 2) * .pi / 180))
+            let spanX = max((maxX - minX) * longitudeScale, 0.01)
             let spanY = max(maxY - minY, 0.01)
-            let scale = min((rect.width - 20) / spanX, (rect.height - 20) / spanY)
-            let offsetX = rect.midX - (minX + maxX) * scale / 2
-            let offsetY = rect.midY + (minY + maxY) * scale / 2
+            let inset: CGFloat = 16
+            let scale = min((rect.width - inset * 2) / spanX,
+                            (rect.height - inset * 2) / spanY)
             func project(_ p: [Double]) -> CGPoint {
-                CGPoint(x: p[0] * scale + offsetX, y: offsetY - p[1] * scale)
+                CGPoint(x: rect.midX + (p[0] - (minX + maxX) / 2) * longitudeScale * scale,
+                        y: rect.midY - (p[1] - (minY + maxY) / 2) * scale)
             }
             context.saveGState()
             context.clip(to: rect)
             context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
-            context.setLineWidth(1.8)
-            for ring in shape.r where ring.count >= 3 {
+            context.setLineWidth(1.5)
+            context.setLineJoin(.round)
+            context.setLineCap(.round)
+            for ring in rings where ring.count >= 3 {
                 context.beginPath()
                 context.move(to: project(ring[0]))
                 for point in ring.dropFirst() { context.addLine(to: project(point)) }
                 context.closePath()
                 context.strokePath()
             }
-            let center = project([pin.longitude, pin.latitude])
+            let normalizedPinLongitude = pin.longitude +
+                360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
+            let center = project([normalizedPinLongitude, pin.latitude])
             context.setFillColor(color.cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5,
-                                           width: 10, height: 10))
-            context.setStrokeColor(color.withAlphaComponent(0.7).cgColor)
-            context.setLineWidth(2)
-            context.strokeEllipse(in: CGRect(x: center.x - 12, y: center.y - 12,
-                                             width: 24, height: 24))
+            context.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3,
+                                           width: 6, height: 6))
+            context.setStrokeColor(color.withAlphaComponent(0.8).cgColor)
+            context.setLineWidth(1.3)
+            context.strokeEllipse(in: CGRect(x: center.x - 8, y: center.y - 8,
+                                             width: 16, height: 16))
             context.restoreGState()
         }
     }

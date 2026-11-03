@@ -382,10 +382,10 @@ def main_related(argv):
         return 0
     chosen = set()
     uncertain = []
-    ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
+    unit_covered = []
+    # 共有カードの描画は画面操作ではなく純粋なレンダリング処理。\n    # SignatureShareCardRendererTests の単体検証と起動スモークで確認する。\n    # 対象を明示し、ほかの Sources 変更まで誤って除外しない。\n    unit_covered_paths = {"Sources/JourneyPhoto/Services/SignatureShareCardRenderer.swift"}\n    ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
     for path, (lines, texts) in changes.items():
-        if path.startswith("Sources/") and path.endswith(".swift"):
-            # ファイルごとに判定する。別のファイルで一致したからといって見逃さない。
+        if path in unit_covered_paths:\n            unit_covered.append(path)\n        elif path.startswith("Sources/") and path.endswith(".swift"):\n            # ファイルごとに判定する。別のファイルで一致したからといって見逃さない。
             one = tests_for_diff(diff_text_for_path(diff_text, path), index, loose)
             if one:
                 chosen.update(one)
@@ -424,8 +424,7 @@ def main_related(argv):
         for removed in old_paths:
             if removed.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or removed in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
                 uncertain.append(removed)
-    if uncertain:
-        print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
+    if unit_covered:\n        print("共有カード描画は単体テスト＋起動スモークで確認: " + ", ".join(unit_covered), file=sys.stderr)\n    if uncertain:\n        print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
     print(f"-only-testing:{TARGET}/{ALWAYS}")
