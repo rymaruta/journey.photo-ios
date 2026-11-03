@@ -45,22 +45,30 @@ jobs:
   # `photo-gallery` が非公開で読めないので「見ていない」と出して飛ばす
   checks:
     name: 静的な検査
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         with:
           node-version: "20"
       - name: tree-sitter を入れる
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: cd Tools && npm install --silent
       - name: Swift の構文
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: node Tools/check-swift-syntax.js Sources Tests UITests
       - name: 参照
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: node Tools/check-swift-refs.js Sources Tests
       - name: 2つの import が揃って初めて見える型
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: python3 Tools/check-cross-imports.py Sources Tests
       - name: Web 版との突き合わせ（読めなければ飛ばす）
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: python3 Tools/check-api-parity.py ../photo-gallery
       - name: 設定ファイル
         run: python3 Tools/check-config.py
