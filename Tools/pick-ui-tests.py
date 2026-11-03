@@ -368,7 +368,84 @@ def main_plan(argv):
     return 0
 
 
+def main_related(argv):
+    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。"""
+    diff_text = pathlib.Path(argv[0]).read_text(encoding="utf-8")
+    index, loose = read_index()
+    if not index:
+        print("::error::UIテストの一覧が読めません", file=sys.stderr)
+        return 1
+    changes = changed_files(diff_text)
+    if not changes and diff_text.strip():
+        print("::warning::差分を解析できないため全件実行", file=sys.stderr)
+        print(f"-only-testing:{TARGET}")
+        return 0
+    chosen = set()
+    uncertain = []
+    ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
+    for path, (lines, texts) in changes.items():
+        if path.startswith("Sources/") and path.endswith(".swift"):
+            # ファイルごとに判定する。別のファイルで一致したからといって見逃さない。
+            one = tests_for_diff(diff_text_for_path(diff_text, path), index, loose)
+            if one:
+                chosen.update(one)
+            else:
+                uncertain.append(path)
+        elif path.startswith(ui_prefix) and path.endswith(".swift"):
+            one = tests_for_diff(diff_text_for_path(diff_text, path), index, loose)
+            if one:
+                chosen.update(one)
+            else:
+                uncertain.append(path)
+        elif path.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
+            uncertain.append(path)
+    # バイナリ差分・モード変更・リネームなど、+++ 行がない変更も検出する。
+    # git diff --find-renames のヘッダーは a/path b/path 形式。
+    for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
+        header = block.splitlines()[0] if block.startswith("diff --git ") else ""
+        match = re.match(r"diff --git a/(.+) b/(.+)$", header)
+        if not match:
+            if header:
+                uncertain.append("解析不能な差分ヘッダー")
+            continue
+        old_path, new_path = match.groups()
+        if new_path in changes and old_path == new_path:
+            continue
+        impacted = (old_path, new_path)
+        if any(p.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or
+               p in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift")
+               for p in impacted):
+            uncertain.append(new_path)
+    # 削除・リネーム前のパスも評価する。+++ /dev/null のファイルは changed_files に出ない。
+    for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
+        if "+++ /dev/null" not in block:
+            continue
+        old_paths = [line[6:] for line in block.splitlines() if line.startswith("--- a/")]
+        for removed in old_paths:
+            if removed.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or removed in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
+                uncertain.append(removed)
+    if uncertain:
+        print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
+        print(f"-only-testing:{TARGET}")
+        return 0
+    print(f"-only-testing:{TARGET}/{ALWAYS}")
+    selected = sorted(t for t in chosen if not only_when_named(t) and not t.startswith(f"{ALWAYS}/"))
+    for test in selected:
+        print(f"-only-testing:{TARGET}/{test}")
+    print(f"関連UIテスト: {len(selected)}本", file=sys.stderr)
+    return 0
+
+
+def diff_text_for_path(diff_text, path):
+    """unified diffの指定ファイルの部分だけを取り出す。"""
+    blocks = re.split(r"(?=^diff --git )", diff_text, flags=re.M)
+    return "".join(block for block in blocks if block.startswith("diff --git ") and
+                   re.search(r"^\+\+\+ b/" + re.escape(path) + r"$", block, re.M))
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--related":
+        return main_related(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
         print("\n".join(ONLY_WHEN_NAMED))
         return 0
