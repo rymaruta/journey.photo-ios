@@ -643,12 +643,12 @@ if testflight_yml.exists() and pr_yml.exists():
         with tempfile.TemporaryDirectory() as tmp:
             relative = "Sources/JourneyPhoto/Resources/" + path
             diff = (
-                f"diff --git a/{relative} b/{relative}\\n"
-                f"--- a/{relative}\\n+++ b/{relative}\\n"
-                "@@ -1 +1 @@\\n-old\\n+new\\n"
+                f"diff --git a/{relative} b/{relative}\n"
+                f"--- a/{relative}\n+++ b/{relative}\n"
+                "@@ -1 +1 @@\n-old\n+new\n"
             )
             patch = Path(tmp) / "change.diff"
-            patch.write_text(diff.replace("\\\\n", "\\n"), encoding="utf-8")
+            patch.write_text(diff, encoding="utf-8")
             run = subprocess.run([sys.executable, str(picker), "--related", str(patch)],
                                  capture_output=True, text=True)
             return run.returncode, run.stdout.split()
