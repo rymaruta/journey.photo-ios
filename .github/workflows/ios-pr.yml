@@ -200,6 +200,8 @@ jobs:
     timeout-minutes: 160
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # TestFlight と同じ選び方（名前から版を読み、いちばん新しい Xcode）。
       # 理由は ios-testflight.yml の「Xcode を選ぶ」
@@ -271,8 +273,13 @@ jobs:
             python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
             python3 Tools/explain-ui-tests.py all
           else
-            python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
-            python3 Tools/explain-ui-tests.py none
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              git diff "${{ github.event.pull_request.base.sha }}" HEAD -- Sources UITests project.yml Tools/pick-ui-tests.py > /tmp/pr-ui.diff
+              python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
+            else
+              python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
+            fi
+            cat /tmp/pr-ui-tests.txt
           fi
 
       - name: UI テスト（通常は起動スモーク・手動指定で全画面）
