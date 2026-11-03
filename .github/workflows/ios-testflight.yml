@@ -668,12 +668,6 @@ jobs:
           # Unit/Test.xcresultも公開Artifactに含めない
           ls -la build/logs || true
 
-      - name: 公開成果物から画像・診断データを除外
-        if: ${{ always() }}
-        run: |
-          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
-          find build/logs -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \) -delete 2>/dev/null || true
-
       - name: 落ちたときに読むもの
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -945,12 +939,6 @@ jobs:
             done
           fi
           ls -la build/logs build/ios/ipa 2>/dev/null || true
-
-      - name: 公開成果物から画像・診断データを除外
-        if: ${{ always() }}
-        run: |
-          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
-          find build/logs -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \\) -delete 2>/dev/null || true
 
       - name: 落ちたときに読むもの
         if: ${{ always() }}
