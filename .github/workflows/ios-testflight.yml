@@ -25,7 +25,7 @@ on:
         default: false
       tests:
         type: boolean
-        default: true
+        default: false
       screens:
         type: string
         default: ""
@@ -400,9 +400,11 @@ jobs:
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
+      # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
+      # tests=trueの配信では、ビルド後にSmokeTestsだけを実行する。
       - name: 単体テスト
         id: unit
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
