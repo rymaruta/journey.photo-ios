@@ -400,9 +400,13 @@ def main_related(argv):
         elif path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh") or path.startswith(("Shims/", "Resources/")):
             uncertain.append(path)
     # 削除・リネーム前のパスも評価する。+++ /dev/null のファイルは changed_files に出ない。
-    for removed in re.findall(r"^--- a/(.+)\\n\\+\\+\\+ /dev/null$", diff_text, re.M):
-        if removed.startswith(("Sources/", ui_prefix)) or removed in ("project.yml", "Tools/pick-ui-tests.py"):
-            uncertain.append(removed)
+    for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
+        if "+++ /dev/null" not in block:
+            continue
+        old_paths = [line[6:] for line in block.splitlines() if line.startswith("--- a/")]
+        for removed in old_paths:
+            if removed.startswith(("Sources/", ui_prefix)) or removed in ("project.yml", "Tools/pick-ui-tests.py"):
+                uncertain.append(removed)
     if uncertain:
         print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
