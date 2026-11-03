@@ -25,7 +25,7 @@ on:
         default: false
       tests:
         type: boolean
-        default: true
+        default: false
       screens:
         type: string
         default: ""
@@ -35,37 +35,37 @@ on:
   workflow_dispatch:
     inputs:
       submit:
-        description: "TestFlight に上げる（false ならビルドだけ）"
+        description: "TestFlightに配信する"
         type: boolean
         default: true
       betaReview:
-        description: "外部テスターの審査にも出す（App Store Connect の「テスト情報」が埋まっていること）"
+        description: "外部テストの審査も申請する"
         type: boolean
         default: false
       storeShots:
-        description: "無効（公開リポジトリのため画像保存は禁止）"
+        description: "画像保存（使用不可・オフのまま）"
         type: boolean
         default: false
       tests:
-        description: "テストも流す（main は PR の検証で通っているので要らない。main 以外の枝を確かめるときだけ）"
+        description: "配信前にテストする（通常はオフ）"
         type: boolean
         default: false
       # 2026-10-17 判断: 枝の確認（submit=false）の UI テストを、変えた画面だけに絞れるようにする。
       # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
       # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）は screens を無視し、tests=true なら SmokeTests のみ実行する。
+      # 上げる回（submit=true）で tests=true なら配信差分に応じたUIテスト＋SmokeTestsを実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "UI テストを絞る（空＝全部、none＝SmokeTests）。submit=true では tests=true のとき SmokeTests を実行"
+        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件"
         type: string
-        default: ""
+        default: "auto"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
       # 同時に流す（下の「テストの品を組む」から「まとめ」まで）。その前に、枝で変えた画面の UI テストを
       # 単体テストと同時に別の Mac で先に流し、落ちたら分けた段まで進めない。何を先に流すかは、空なら
       # 枝の差分から `Tools/pick-ui-tests.py --plan` が選ぶ。書けば `screens` と同じ書き方でそれを先に流す
       first:
-        description: "全部の回で先に流す UI テスト（screens と同じ書き方。空＝枝で変えた画面から選ぶ）。落ちたら残りの UI テストは流さない"
+        description: "検証用：最初に実行するUIテスト（通常は空欄）"
         type: string
         default: ""
 
@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 160
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
@@ -121,7 +121,8 @@ jobs:
           exit 1
 
       - name: UIテストの実行内容を表示
-        if: ${{ inputs.tests }}
+        # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
+        if: ${{ inputs.tests && inputs.screens != 'auto' && !(inputs.submit && inputs.screens == '') }}
         env:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
@@ -141,16 +142,66 @@ jobs:
           # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
           sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          # 配信時のテストは SmokeTests に絞り、全件 UI は PR 検証で維持する。
-          # 配信時は長時間の全画面撮影を避け、起動・タブ・基本操作の SmokeTests を必須とする。
-          # 全件 UI テストは PR の検証で引き続き実施する。配信時の短縮テストを全件成功とは扱わない。
-          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
+          # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
+          # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
+          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
+            SCREENS="auto"
+          elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
             SCREENS="none"
-            echo "### 配信前 UI テスト: SmokeTests（全画面撮影は PR 検証で実施）" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
+          elif [ "${STORE_SHOTS:-}" = "true" ]; then
             SCREENS=""
           fi
-          python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
+          if [ "${SCREENS:-}" = "auto" ]; then
+            # main への直接反映・マージは直前コミットとの差分を見る。
+            # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
+            BASE=""
+            if [ "${SUBMIT:-}" = "true" ]; then
+              # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
+              # タグがない・履歴が読めない場合は全件へフォールバック。
+              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
+              history_ok=true
+              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+                git fetch --unshallow --no-tags origin || history_ok=false
+              fi
+              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
+              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
+                history_ok=false
+              fi
+              if [ "$history_ok" = "true" ]; then
+                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
+                best_distance=""
+                while IFS= read -r tag; do
+                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+                  [ -n "$commit" ] || continue
+                  git merge-base --is-ancestor "$commit" HEAD || continue
+                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
+                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
+                    BASE="$commit"
+                    best_distance="$distance"
+                  fi
+                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
+              else
+                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
+              fi
+              echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              git fetch --no-tags --depth=100 origin main || true
+              if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
+                BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+              else
+                BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+              fi
+            fi
+            if [ -n "$BASE" ] && git diff --find-renames "$BASE" HEAD > /tmp/ui-changes.diff; then
+              python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff > /tmp/ui-only-testing.txt
+              echo "### UI テスト: 差分から自動選択" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::比較元が取得できないため UI テストを全件実行します"
+              python3 Tools/pick-ui-tests.py all > /tmp/ui-only-testing.txt
+            fi
+          else
+            python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
+          fi
           if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
             echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
@@ -308,6 +359,11 @@ jobs:
       - name: Xcodeのバージョンを確認
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # キャッシュ復元（数GB）より前に、数秒で終わる設定検査を実施。
+      # 設定不備ならMacの重い準備を待たずに失敗させる。
+      - name: 配信用アプリをビルド設定を検証
+        run: python3 Tools/check-config.py
+
       # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
       # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
       - name: 配信用アプリをビルドキャッシュのキーを生成
@@ -320,9 +376,12 @@ jobs:
       # 12回中9回）と PR の検証の Mac（見た3回とも）が「控え無し」で始まって、ビルドが約10分
       # 余計にかかっていた（run 462: 控え無しでテストの段 55分 / run 461: 控え有りで 41分）。
       # main の回が下の「控えを温める」でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
+      - name: キャッシュ復元の計測開始
+        run: echo "CACHE_RESTORE_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 配信用アプリをビルドキャッシュを復元
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -342,20 +401,61 @@ jobs:
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
-      - name: 配信用アプリをビルド設定を検証
-        run: python3 Tools/check-config.py
+      # 7GB級の復元がボトルネックか、毎回のActions Summaryで確認する。
+      - name: キャッシュ復元の計測結果
+        env:
+          MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+          EXACT_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          elapsed=$(( $(date +%s) - CACHE_RESTORE_STARTED ))
+          {
+            echo "### Xcodeキャッシュ復元"
+            echo "所要時間: ${elapsed}秒"
+            if [ -z "${MATCHED_KEY:-}" ]; then
+              echo "状態: 未命中"
+            elif [ "${EXACT_HIT:-}" = "true" ]; then
+              echo "状態: 完全一致"
+            else
+              echo "状態: 近いキャッシュから復元"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 配信用アプリをビルドツールをインストール
         run: |
           set -euo pipefail
-          brew install xcodegen
-          # 署名・ビルド・提出をまとめて行う CLI（Codemagic が公開しているもの）。
-          # **pipx が無い回に備える**——ランナーの構成は黙って変わる
-          if command -v pipx >/dev/null 2>&1; then
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
+
+
+      # Codemagic CLI は署名・Archive・アップロード時だけ必要。
+      # UI確認だけの実行ではPythonパッケージの導入を省略する。
+      - name: 配信用CLIを用意
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        run: |
+          set -euo pipefail
+          if command -v app-store-connect >/dev/null 2>&1 && command -v xcode-project >/dev/null 2>&1 && command -v keychain >/dev/null 2>&1; then
+            echo "配信用CLIは導入済み"
+          elif command -v pipx >/dev/null 2>&1; then
             pipx install codemagic-cli-tools
           else
             python3 -m pip install --break-system-packages codemagic-cli-tools
           fi
+          # pipxのインストール成功だけではPATH反映が保証されない。
+          # 署名工程へ進む前に必要な3コマンドを検証し、欠けていればここで失敗させる。
+          if [ -d "$HOME/.local/bin" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          for cli in app-store-connect xcode-project keychain; do
+            if ! command -v "$cli" >/dev/null 2>&1; then
+              echo "::error::配信用CLIが見つかりません: $cli"
+              exit 1
+            fi
+          done
 
       - name: Xcodeプロジェクトを生成
         run: xcodegen generate
@@ -400,9 +500,11 @@ jobs:
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
+      # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
+      # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。
       - name: 単体テスト
         id: unit
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
@@ -449,7 +551,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド番号を決める
-        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -494,7 +596,7 @@ jobs:
 
       - name: 配信用アプリをビルド
         id: archive
-        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
         run: |
           set -euo pipefail
           # **プラグインの関所はビルドにも立つ。** Amplify →
@@ -555,6 +657,7 @@ jobs:
           rm -rf "$work"
 
       - name: TestFlightへアップロード
+        id: upload
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' && steps.archive.outcome == 'success' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -593,9 +696,15 @@ jobs:
       # TestFlight には既に上がっている（次の回が同じ版を使うだけで、
       # ビルド番号は上がるので受け付けられる）
       - name: リリースバージョンを記録
-        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        if: ${{ inputs.submit && steps.upload.outcome == 'success' && steps.archive.outcome == 'success' }}
+        env:
+          MARKETING: ${{ env.MARKETING }}
         run: |
           set -uo pipefail
+          if [ -z "${MARKETING:-}" ]; then
+            echo "::warning::版番号が設定されていないため、タグ作成をスキップします"
+            exit 0
+          fi
           # **押し損ねたらやり直す**（2026-10-07）。run 348 は GitHub が一時的に書き込みを
           # 落としていた間に当たり、1.0.69 を上げたのに印が付かなかった（後から
           # `version-tag.yml` で付け直した）。間を空けて最大4回
@@ -640,15 +749,9 @@ jobs:
           # Unit/Test.xcresultも公開Artifactに含めない
           ls -la build/logs || true
 
-      - name: 公開Artifactsから画像・診断データを除外
-        if: ${{ always() }}
-        run: |
-          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
-          find build/logs -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \) -delete 2>/dev/null || true
-
       - name: 診断ログをアップロード
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # 分けて流す回は「まとめ」の job が各台の分と合わせて `build-logs` にする（同じ名前は2つ作れない）
           name: ${{ steps.scope.outputs.sharded == 'true' && 'part-build' || 'build-logs' }}
@@ -689,7 +792,7 @@ jobs:
 
       - name: mainのビルドキャッシュを保存
         if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -730,7 +833,7 @@ jobs:
     outputs:
       sharded: ${{ steps.decide.outputs.sharded }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 分割実行の条件を確認
         id: decide
         env:
@@ -753,7 +856,7 @@ jobs:
     outputs:
       xcode: ${{ steps.xcode.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # **何を先に流し、どう分けるかを最初に決める**（`Tools/pick-ui-tests.py --plan`）。
       # 枝の差分は GitHub の比べる口（main...この sha）から読む。読めなければ起動の見張りだけを先に流す。
@@ -789,7 +892,7 @@ jobs:
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
       - name: 配信用アプリをビルドキャッシュを復元
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -803,7 +906,11 @@ jobs:
 
       - name: Xcodeプロジェクトを生成
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           xcodegen generate
 
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
@@ -821,7 +928,7 @@ jobs:
 
       # tar は自分で包んである（成果物の zip ではファイルの実行の権限が落ちるため）。縮める手間は軽くする
       - name: ビルド成果物をアップロード
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-products
           path: |
@@ -833,7 +940,7 @@ jobs:
 
       - name: ビルドログを保存
         if: ${{ false }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: part-test-build
           path: build/logs/*.log
@@ -851,7 +958,7 @@ jobs:
       matrix:
         part: [unit, first]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/mac-test-part
         with:
           part: ${{ matrix.part }}
@@ -870,7 +977,7 @@ jobs:
       matrix:
         part: [1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/mac-test-part
         with:
           part: ${{ matrix.part }}
@@ -886,7 +993,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Xcodeを選択（結果を読む・まとめる）
         run: bash Tools/select-xcode.sh "${{ needs.test-build.outputs.xcode }}"
@@ -918,15 +1025,9 @@ jobs:
           fi
           ls -la build/logs build/ios/ipa 2>/dev/null || true
 
-      - name: 公開Artifactsから画像・診断データを除外
-        if: ${{ always() }}
-        run: |
-          find build/logs -type d -name '*.xcresult' -prune -exec rm -rf {} + 2>/dev/null || true
-          find build/logs -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' \\) -delete 2>/dev/null || true
-
       - name: 診断ログをアップロード
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: |
