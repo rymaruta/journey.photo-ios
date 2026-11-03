@@ -248,11 +248,11 @@ enum SignatureShareCardRenderer {
             }
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
-                drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
+                drawSymbol("camera", at: CGPoint(x: 98, y: infoY - 5), size: 40, color: brass)
                 drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235, size: 22, color: .white)
             }
             if !lens.isEmpty {
-                drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY), size: 40, color: brass)
+                drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY - 5), size: 40, color: brass)
                 drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246, size: 22, color: .white)
             }
             if !exposure.isEmpty {
