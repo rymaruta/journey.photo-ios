@@ -40,7 +40,11 @@ def simplify(points, tolerance=0.025):
 
 def normalize_ring(points):
     result = [[round(lon, 4), round(lat, 4)] for lon, lat, *_ in simplify(points)]
-    return result if len(result) >= 4 else []
+    if len(result) < 4:
+        return []
+    if result[0] != result[-1]:
+        result.append(result[0])
+    return result if len(set(map(tuple, result[:-1]))) >= 3 else []
 
 
 def main():
@@ -60,10 +64,10 @@ def main():
             polygons = coords
         else:
             continue
-        # Only exterior rings. Holes are not compatible with the existing
-        # renderer's point-in-country logic and must not be treated as land.
-        rings = [ring for polygon in polygons if polygon
-                 for ring in [normalize_ring(polygon[0])] if ring]
+        # Retain interior holes for even-odd rendering and land lookup.
+        rings = [normalized for polygon in polygons
+                 for ring in polygon
+                 for normalized in [normalize_ring(ring)] if normalized]
         if rings:
             properties = feature.get("properties") or {}
             countries.append({"n": properties.get("ADMIN") or properties.get("NAME") or "Unknown", "r": rings})
