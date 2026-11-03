@@ -27,6 +27,11 @@ on:
       - "docs/**"
       - "**/*.md"
   workflow_dispatch:
+    inputs:
+      full_ui:
+        description: '全画面UIテストを実行（通常PRはスモークのみ）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -256,11 +261,22 @@ jobs:
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
 
-      - name: UIテストの内容を表示
-        run: python3 Tools/explain-ui-tests.py all
+      # PRでは高速な起動スモークを必須にし、全画面検証は手動で明示した場合のみ実行。
+      # 変更のあるUIテスト自体はSwiftの構文・Xcodeビルドで検査する。
+      - name: UIテストの対象を決める
+        env:
+          FULL_UI: ${{ inputs.full_ui }}
+        run: |
+          if [ "${FULL_UI:-false}" = "true" ]; then
+            python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
+            python3 Tools/explain-ui-tests.py all
+          else
+            python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
+            python3 Tools/explain-ui-tests.py none
+          fi
 
-      - name: UI テスト（起動・全タブ・画面の絵）
-        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult
+      - name: UI テスト（通常は起動スモーク・手動指定で全画面）
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt
 
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
       - name: 結果のまとめ
