@@ -15,7 +15,7 @@ spec.loader.exec_module(picker)
 
 
 def diff(path, line='changed'):
-    return f'diff --git a/{path} b/{path}\\n--- a/{path}\\n+++ b/{path}\\n@@ -1 +1 @@\\n-old\\n+{line}\\n'
+    return f'diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+{line}\n'
 
 
 class RelatedTests(unittest.TestCase):
@@ -24,8 +24,8 @@ class RelatedTests(unittest.TestCase):
             path = pathlib.Path(d) / 'changes.diff'
             path.write_text(patch_text)
             out = io.StringIO()
-            with patch.object(picker, 'read_index', return_value=({'SmokeTests/testLaunch': {}, 'ScreenshotTests/testHome': {}}, {})), \\
-                 patch.object(picker, 'tests_for_diff', side_effect=lambda text, *args: matches.get(next((p for p in matches if p in text), ''), {})), \\
+            with patch.object(picker, 'read_index', return_value=({'SmokeTests/testLaunch': {}, 'ScreenshotTests/testHome': {}}, {})), \
+                 patch.object(picker, 'tests_for_diff', side_effect=lambda text, *args: matches.get(next((p for p in matches if p in text), ''), {})), \
                  contextlib.redirect_stdout(out):
                 code = picker.main_related([str(path)])
             self.assertEqual(code, 0)
@@ -35,7 +35,7 @@ class RelatedTests(unittest.TestCase):
         result = self.run_related(diff('Sources/Home.swift'), {'Sources/Home.swift': {'ScreenshotTests/testHome': 'matched'}})
         self.assertIn('ScreenshotTests/testHome', result)
         self.assertIn('SmokeTests', result)
-        self.assertNotIn('-only-testing:JourneyPhotoUITests\\n', result)
+        self.assertNotIn('-only-testing:JourneyPhotoUITests\n', result)
 
     def test_unknown_file_forces_full_suite(self):
         result = self.run_related(diff('Sources/Home.swift') + diff('Sources/Other.swift'), {'Sources/Home.swift': {'ScreenshotTests/testHome': 'matched'}})
