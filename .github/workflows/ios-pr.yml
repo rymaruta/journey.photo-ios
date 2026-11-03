@@ -70,6 +70,12 @@ jobs:
       - name: Web 版との突き合わせ（読めなければ飛ばす）
         if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: python3 Tools/check-api-parity.py ../photo-gallery
+      # ワークフローのみのPRでもYAML構文を検証する。
+      # Swiftの重い検査を省略する代わりに、CI設定の壊れを早期検出する。
+      - name: GitHub ActionsのYAML構文
+        run: |
+          ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").each { |file| YAML.parse_file(file); puts "OK: #{file}" }'
+
       - name: 設定ファイル
         run: python3 Tools/check-config.py
       - name: 関連UIテスト選別の回帰テスト
