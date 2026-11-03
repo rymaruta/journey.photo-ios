@@ -90,6 +90,18 @@ class RelatedTests(unittest.TestCase):
         renamed = 'diff --git a/Sources/Old.swift b/Sources/New.swift\nsimilarity index 100%\nrename from Sources/Old.swift\nrename to Sources/New.swift\n'
         self.assertEqual(self.run_related(renamed, {}).strip(), '-only-testing:JourneyPhotoUITests')
 
+    def test_no_app_changes_uses_smoke_only(self):
+        result = self.run_related(diff('docs/README.md'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests/SmokeTests')
+
+    def test_shared_card_renderer_uses_smoke_and_unit_coverage(self):
+        result = self.run_related(diff('Sources/JourneyPhoto/Services/SignatureShareCardRenderer.swift'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests/SmokeTests')
+
+    def test_unparseable_nonempty_diff_forces_full_suite(self):
+        result = self.run_related('unrecognized diff content', {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
     def test_diff_filter_is_per_file(self):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))

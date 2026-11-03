@@ -54,10 +54,10 @@ on:
       # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
       # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）は screens を無視し、tests=true なら SmokeTests のみ実行する。
+      # 上げる回（submit=true）で tests=true なら配信差分に応じたUIテスト＋SmokeTestsを実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "検証用：auto=差分から自動選択、none=起動確認、all=全件"
+        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件"
         type: string
         default: "auto"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
@@ -122,7 +122,7 @@ jobs:
 
       - name: UIテストの操作・目的を表示
         # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
-        if: ${{ inputs.tests && inputs.screens != 'auto' }}
+        if: ${{ inputs.tests && inputs.screens != 'auto' && !(inputs.submit && inputs.screens == '') }}
         env:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
@@ -142,23 +142,55 @@ jobs:
           # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
           sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          # 配信時のテストは SmokeTests に絞り、全件 UI は PR 検証で維持する。
-          # 配信時は長時間の全画面撮影を避け、起動・タブ・基本操作の SmokeTests を必須とする。
-          # 全件 UI テストは PR の検証で引き続き実施する。配信時の短縮テストを全件成功とは扱わない。
-          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ]; then
+          # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
+          # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
+          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
+            SCREENS="auto"
+          elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
             SCREENS="none"
-            echo "### 配信前 UI テスト: SmokeTests（全画面撮影は PR 検証で実施）" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${SUBMIT:-}" = "true" ] || [ "${STORE_SHOTS:-}" = "true" ]; then
+          elif [ "${STORE_SHOTS:-}" = "true" ]; then
             SCREENS=""
           fi
           if [ "${SCREENS:-}" = "auto" ]; then
             # main への直接反映・マージは直前コミットとの差分を見る。
             # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
-            git fetch --no-tags --depth=100 origin main || true
-            if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
-              BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+            BASE=""
+            if [ "${SUBMIT:-}" = "true" ]; then
+              # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
+              # タグがない・履歴が読めない場合は全件へフォールバック。
+              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
+              history_ok=true
+              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+                git fetch --unshallow --no-tags origin || history_ok=false
+              fi
+              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
+              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
+                history_ok=false
+              fi
+              if [ "$history_ok" = "true" ]; then
+                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
+                best_distance=""
+                while IFS= read -r tag; do
+                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+                  [ -n "$commit" ] || continue
+                  git merge-base --is-ancestor "$commit" HEAD || continue
+                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
+                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
+                    BASE="$commit"
+                    best_distance="$distance"
+                  fi
+                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
+              else
+                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
+              fi
+              echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
             else
-              BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+              git fetch --no-tags --depth=100 origin main || true
+              if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
+                BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+              else
+                BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+              fi
             fi
             if [ -n "$BASE" ] && git diff --find-renames "$BASE" HEAD > /tmp/ui-changes.diff; then
               python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff > /tmp/ui-only-testing.txt
@@ -469,7 +501,7 @@ jobs:
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
       # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
-      # tests=trueの配信では、ビルド後にSmokeTestsだけを実行する。
+      # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。
       - name: 単体テスト
         id: unit
         if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
