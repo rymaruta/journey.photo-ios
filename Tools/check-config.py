@@ -637,6 +637,28 @@ if testflight_yml.exists() and pr_yml.exists():
     if code != 2:
         fail("pick-ui-tests.py が当たらない語で止まりません（打ち間違いで UI テスト0件のまま緑になる）")
 
+    # 共有カードの地図JSONはレンダラ単体テスト＋起動スモークに絞る。
+    # 未分類のリソースを誤って除外しない（安全側は全UI）。
+    def related_for(path):
+        with tempfile.TemporaryDirectory() as tmp:
+            relative = "Sources/JourneyPhoto/Resources/" + path
+            diff = (
+                f"diff --git a/{relative} b/{relative}\\n"
+                f"--- a/{relative}\\n+++ b/{relative}\\n"
+                "@@ -1 +1 @@\\n-old\\n+new\\n"
+            )
+            patch = Path(tmp) / "change.diff"
+            patch.write_text(diff.replace("\\\\n", "\\n"), encoding="utf-8")
+            run = subprocess.run([sys.executable, str(picker), "--related", str(patch)],
+                                 capture_output=True, text=True)
+            return run.returncode, run.stdout.split()
+    code, selected = related_for("country-outlines.json")
+    if code != 0 or selected != ["-only-testing:JourneyPhotoUITests/SmokeTests"]:
+        fail(f"共有カードの地図JSON変更なのにUIテストが絞れません: {code} {selected}")
+    code, selected = related_for("unknown-map-resource.json")
+    if code != 0 or selected != ["-only-testing:JourneyPhotoUITests"]:
+        fail(f"未分類の地図リソースが安全側の全UIになりません: {code} {selected}")
+
     # **分けて流す回の割り振り**（2026-10-31・#429）: 先に流す分と組 1〜N-1 は重ならず、最後の組は
     # 「全部から、それらを抜いた残り」。どのテストも、ちょうど1回だけ流れる（足さない・減らさない）
     import importlib.util as _ilu
