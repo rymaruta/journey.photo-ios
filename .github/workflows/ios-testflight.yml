@@ -54,10 +54,10 @@ on:
       # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
       # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）は screens を無視し、tests=true なら SmokeTests のみ実行する。
+      # 上げる回（submit=true）で tests=true なら配信差分に応じたUIテスト＋SmokeTestsを実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "検証用：auto=差分から自動選択、none=起動確認、all=全件"
+        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件"
         type: string
         default: "auto"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
@@ -159,23 +159,30 @@ jobs:
               # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
               # タグがない・履歴が読めない場合は全件へフォールバック。
               # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
+              history_ok=true
               if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-                git fetch --unshallow --no-tags origin || true
+                git fetch --unshallow --no-tags origin || history_ok=false
               fi
-              git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*' || true
-              # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
-              # lightweight tag では creatordate がコミット日時になり、配信順と一致しない。
-              best_distance=""
-              while IFS= read -r tag; do
-                commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
-                [ -n "$commit" ] || continue
-                git merge-base --is-ancestor "$commit" HEAD || continue
-                distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
-                if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
-                  BASE="$commit"
-                  best_distance="$distance"
-                fi
-              done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
+              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
+              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
+                history_ok=false
+              fi
+              if [ "$history_ok" = "true" ]; then
+                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
+                best_distance=""
+                while IFS= read -r tag; do
+                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+                  [ -n "$commit" ] || continue
+                  git merge-base --is-ancestor "$commit" HEAD || continue
+                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
+                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
+                    BASE="$commit"
+                    best_distance="$distance"
+                  fi
+                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
+              else
+                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
+              fi
               echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
             else
               git fetch --no-tags --depth=100 origin main || true
