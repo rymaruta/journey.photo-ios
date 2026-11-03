@@ -202,6 +202,33 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    func testShareMapRendersCoastalAndIslandLocationsInAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+            }
+        let locations: [(String, Double, Double)] = [
+            ("Tokyo", 35.6812, 139.7671),
+            ("Venice", 45.4408, 12.3155),
+            ("Okinawa", 26.2124, 127.6809),
+            ("Sapporo", 43.0618, 141.3545)
+        ]
+        for (name, latitude, longitude) in locations {
+            let coords = SignatureShareCardRenderer.approximateShareCoordinate(
+                Photo.Coords(lat: latitude, lng: longitude))
+            let credit = SignatureShareCardRenderer.Credit(
+                name: "Photographer", username: nil, location: name,
+                coords: coords, camera: nil, lens: nil, exposure: nil,
+                aperture: nil, iso: nil, verified: false, proStyle: nil,
+                early: false, badge: nil)
+            for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
+                let result = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+                XCTAssertNotNil(result, "\\(name) / \\(ratio) must export")
+            }
+        }
+    }
+
     func testStoryLandscapePhotoRendersWithoutInsetComposite() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 600))
             .jpegData(withCompressionQuality: 0.95) { context in
