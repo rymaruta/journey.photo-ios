@@ -248,15 +248,18 @@ enum SignatureShareCardRenderer {
             }
             // 値のない撮影項目はアイコンだけ残さない。
             if !camera.isEmpty {
-                drawSymbol("camera", at: CGPoint(x: 98, y: infoY - 5), size: 40, color: brass)
+                drawMetadataSymbol("camera", x: 98, textY: infoY + 3, text: camera, textWidth: 235,
+                                   fontSize: 22, symbolSize: 40, color: brass)
                 drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235, size: 22, color: .white)
             }
             if !lens.isEmpty {
-                drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY - 5), size: 40, color: brass)
+                drawMetadataSymbol("camera.aperture", x: 410, textY: infoY + 3, text: lens, textWidth: 246,
+                                   fontSize: 22, symbolSize: 40, color: brass)
                 drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246, size: 22, color: .white)
             }
             if !exposure.isEmpty {
-                drawSymbol("timer", at: CGPoint(x: 731, y: infoY - 5), size: 38, color: brass)
+                drawMetadataSymbol("timer", x: 731, textY: infoY + 3, text: exposure, textWidth: 195,
+                                   fontSize: 20, symbolSize: 38, color: brass)
                 drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
             }
 
@@ -673,6 +676,21 @@ enum SignatureShareCardRenderer {
             with: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: 72),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes, context: nil)
+    }
+
+    /// Align the SF Symbol's fitted square with the first text line's cap-height center.
+    /// Text is drawn with a semibold UIFont and may shrink to fit its column.
+    private static func drawMetadataSymbol(_ name: String, x: CGFloat, textY: CGFloat,
+                                           text: String, textWidth: CGFloat,
+                                           fontSize: CGFloat, symbolSize: CGFloat,
+                                           color: UIColor) {
+        let fittedFontSize = equipmentFontSize(text, maxWidth: textWidth,
+                                               preferredSize: fontSize)
+        let font = UIFont.systemFont(ofSize: fittedFontSize, weight: .semibold)
+        // The baseline is textY + ascender. Visible capitals extend capHeight above it.
+        let capCenterY = textY + font.ascender - font.capHeight / 2
+        let symbolY = capCenterY - symbolSize / 2
+        drawSymbol(name, at: CGPoint(x: x, y: symbolY), size: symbolSize, color: color)
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
