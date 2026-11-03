@@ -251,6 +251,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
             ("Sydney", -33.87, 151.21),
             ("Auckland", -36.85, 174.76),
             ("Suva", -18.14, 178.44),
+            ("Fiji dateline", -16.5, 179.8),
+            ("Chukotka", 66.0, -179.0),
             ("New York", 40.71, -74.01),
             ("Vancouver", 49.28, -123.12),
             ("Rio de Janeiro", -22.91, -43.20),
