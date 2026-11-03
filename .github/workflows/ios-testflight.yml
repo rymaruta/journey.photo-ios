@@ -354,6 +354,12 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            # Share-card and app outputs are rebuilt for this commit; only
+            # preserve reusable package/build intermediates in the cache.
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           # **Xcode の版を鍵に入れる。** 入れないと、ランナーの像が
@@ -765,6 +771,12 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            # Share-card and app outputs are rebuilt for this commit; only
+            # preserve reusable package/build intermediates in the cache.
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
@@ -865,6 +877,12 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            # Share-card and app outputs are rebuilt for this commit; only
+            # preserve reusable package/build intermediates in the cache.
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
