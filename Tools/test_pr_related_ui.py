@@ -45,6 +45,22 @@ class RelatedTests(unittest.TestCase):
         result = self.run_related(diff('.github/workflows/ios-pr.yml'), {})
         self.assertIn('SmokeTests', result)
 
+    def test_two_related_files_select_union(self):
+        result = self.run_related(diff('Sources/Home.swift') + diff('Sources/Photo.swift'), {
+            'Sources/Home.swift': {'ScreenshotTests/testHome': 'home'},
+            'Sources/Photo.swift': {'ScreenshotTests/testPhoto': 'photo'},
+        })
+        self.assertIn('ScreenshotTests/testHome', result)
+        self.assertIn('ScreenshotTests/testPhoto', result)
+
+    def test_project_configuration_forces_full_suite(self):
+        result = self.run_related(diff('project.yml'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
+    def test_changed_ui_test_without_match_forces_full_suite(self):
+        result = self.run_related(diff('UITests/JourneyPhotoUITests/ScreenshotTests.swift'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
     def test_diff_filter_is_per_file(self):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
