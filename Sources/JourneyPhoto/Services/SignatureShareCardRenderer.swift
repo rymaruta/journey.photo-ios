@@ -332,7 +332,10 @@ enum SignatureShareCardRenderer {
                   (-90...90).contains(coordinate.latitude),
                   (-180...180).contains(coordinate.longitude) else { return nil }
             return shapes.first { shape in
-                shape.r.contains { contains(coordinate, ring: $0) }
+                // Match the renderer's even-odd fill: holes are water, not land.
+                shape.r.reduce(false) { inside, ring in
+                    inside != contains(coordinate, ring: ring)
+                }
             }
         }
 
