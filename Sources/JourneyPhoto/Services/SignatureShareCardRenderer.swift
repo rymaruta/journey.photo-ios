@@ -290,25 +290,37 @@ enum SignatureShareCardRenderer {
 
         static func contains(_ point: CLLocationCoordinate2D, ring: [[Double]]) -> Bool {
             guard ring.count >= 3 else { return false }
-            // Reject distant polygons before running ray casting over every vertex.
-            // This matters especially with the bundled 1:10m geometry.
-            let bounds = ring.reduce((west: Double.infinity, east: -Double.infinity,
-                                      south: Double.infinity, north: -Double.infinity)) { bounds, vertex in
-                guard vertex.count == 2 else { return bounds }
-                return (min(bounds.west, vertex[0]), max(bounds.east, vertex[0]),
-                        min(bounds.south, vertex[1]), max(bounds.north, vertex[1]))
+            // Unwrap each segment around the query longitude. A polygon that
+            // crosses ±180° must not become a 360-degree-wide polygon.
+            var vertices: [(x: Double, y: Double)] = []
+            vertices.reserveCapacity(ring.count)
+            for vertex in ring where vertex.count == 2 {
+                let longitude = vertex[0]
+                let x: Double
+                if let previous = vertices.last {
+                    x = longitude + 360 * round((previous.x - longitude) / 360)
+                } else {
+                    x = longitude + 360 * round((point.longitude - longitude) / 360)
+                }
+                vertices.append((x, vertex[1]))
             }
-            guard point.longitude >= bounds.west, point.longitude <= bounds.east,
-                  point.latitude >= bounds.south, point.latitude <= bounds.north else { return false }
+            guard vertices.count >= 3 else { return false }
+            let west = vertices.map { $0.x }.min() ?? .infinity
+            let east = vertices.map { $0.x }.max() ?? -.infinity
+            let south = vertices.map { $0.y }.min() ?? .infinity
+            let north = vertices.map { $0.y }.max() ?? -.infinity
+            let queryLongitude = point.longitude +
+                360 * round(((west + east) / 2 - point.longitude) / 360)
+            guard (west...east).contains(queryLongitude),
+                  (south...north).contains(point.latitude) else { return false }
             var inside = false
-            var previous = ring.count - 1
-            for index in ring.indices {
-                let a = ring[index], b = ring[previous]
-                if a.count == 2, b.count == 2,
-                   (a[1] > point.latitude) != (b[1] > point.latitude) {
-                    let intersection = (b[0] - a[0]) *
-                        (point.latitude - a[1]) / (b[1] - a[1]) + a[0]
-                    if point.longitude < intersection { inside.toggle() }
+            var previous = vertices.count - 1
+            for index in vertices.indices {
+                let a = vertices[index], b = vertices[previous]
+                if (a.y > point.latitude) != (b.y > point.latitude) {
+                    let intersection = (b.x - a.x) *
+                        (point.latitude - a.y) / (b.y - a.y) + a.x
+                    if queryLongitude < intersection { inside.toggle() }
                 }
                 previous = index
             }
