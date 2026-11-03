@@ -451,7 +451,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド番号を決める
-        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -496,7 +496,7 @@ jobs:
 
       - name: ビルド
         id: archive
-        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
         run: |
           set -euo pipefail
           # **プラグインの関所はビルドにも立つ。** Amplify →
@@ -557,6 +557,7 @@ jobs:
           rm -rf "$work"
 
       - name: TestFlight に上げる
+        id: upload
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' && steps.archive.outcome == 'success' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -595,9 +596,15 @@ jobs:
       # TestFlight には既に上がっている（次の回が同じ版を使うだけで、
       # ビルド番号は上がるので受け付けられる）
       - name: 版の印を付ける
-        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        if: ${{ inputs.submit && steps.upload.outcome == 'success' && steps.archive.outcome == 'success' }}
+        env:
+          MARKETING: ${{ env.MARKETING }}
         run: |
           set -uo pipefail
+          if [ -z "${MARKETING:-}" ]; then
+            echo "::warning::版番号が設定されていないため、タグ作成をスキップします"
+            exit 0
+          fi
           # **押し損ねたらやり直す**（2026-10-07）。run 348 は GitHub が一時的に書き込みを
           # 落としていた間に当たり、1.0.69 を上げたのに印が付かなかった（後から
           # `version-tag.yml` で付け直した）。間を空けて最大4回
