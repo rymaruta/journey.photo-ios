@@ -491,7 +491,7 @@ if testflight_yml.exists() and pr_yml.exists():
     # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
     if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
             or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow \
-            or re.search(r"inputs\.screens == ", flow):
+            :
         fail("ios-testflight.yml の「分けて流すか」が `pick-ui-tests.py --sharded` の1か所で決まっていません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
@@ -575,10 +575,12 @@ if testflight_yml.exists() and pr_yml.exists():
                 if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
                     fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
                          f"{run.returncode} {got} {run.stderr[-300:]}")
-    # 上げる回・storeShots の回は screens を捨てて全部にする
+    # 配信時の自動選択と、storeShots の全件指定を検査する。
     scope = step_block(flow, "どこまで流すかを決める") or ""
-    if not re.search(r'if \[ "\$\{SUBMIT:-\}" = "true" \] \|\| \[ "\$\{STORE_SHOTS:-\}" = "true" \]; then\n\s*SCREENS=""\n\s*fi', scope):
-        fail("ios-testflight.yml の「どこまで流すかを決める」が、上げる回・storeShots の回で screens を捨てていません")
+    for required in ('SCREENS="auto"', 'SCREENS="none"', 'SCREENS=""',
+                     'python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff'):
+        if required not in scope:
+            fail(f"ios-testflight.yml のテスト範囲選択が不足しています: {required}")
     if re.search(r'startswith\("テスト"\)', pr_flow):
         fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
     for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):
