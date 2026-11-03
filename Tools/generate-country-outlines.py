@@ -13,15 +13,33 @@ SOURCE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/
 DEST = pathlib.Path(__file__).resolve().parents[1] / "Sources/JourneyPhoto/Resources/country-outlines.json"
 
 
+def simplify(points, tolerance=0.025):
+    """Ramer-Douglas-Peucker simplification, preserving small islands."""
+    if len(points) < 5:
+        return points
+    keep = {0, len(points) - 1}
+    stack = [(0, len(points) - 1)]
+    limit = tolerance * tolerance
+    while stack:
+        lo, hi = stack.pop()
+        x, y = points[lo][:2]
+        dx, dy = points[hi][0] - x, points[hi][1] - y
+        denominator = dx * dx + dy * dy
+        best, index = -1.0, -1
+        for i in range(lo + 1, hi):
+            px, py = points[i][0] - x, points[i][1] - y
+            t = max(0.0, min(1.0, (px * dx + py * dy) / denominator)) if denominator else 0.0
+            distance = (px - t * dx) ** 2 + (py - t * dy) ** 2
+            if distance > best:
+                best, index = distance, i
+        if best > limit:
+            keep.add(index)
+            stack.extend([(lo, index), (index, hi)])
+    return [points[i] for i in sorted(keep)]
+
+
 def normalize_ring(points):
-    # 1:10m vertices retained at 4 decimal places (~11m at the equator).
-    result = []
-    for lon, lat, *_ in points:
-        pair = [round(lon, 4), round(lat, 4)]
-        if not result or pair != result[-1]:
-            result.append(pair)
-    if len(result) >= 3 and result[0] != result[-1]:
-        result.append(result[0])
+    result = [[round(lon, 4), round(lat, 4)] for lon, lat, *_ in simplify(points)]
     return result if len(result) >= 4 else []
 
 
