@@ -45,32 +45,95 @@ jobs:
   # `photo-gallery` が非公開で読めないので「見ていない」と出して飛ばす
   checks:
     name: 静的な検査
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         with:
           node-version: "20"
       - name: tree-sitter を入れる
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: cd Tools && npm install --silent
       - name: Swift の構文
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: node Tools/check-swift-syntax.js Sources Tests UITests
       - name: 参照
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: node Tools/check-swift-refs.js Sources Tests
       - name: 2つの import が揃って初めて見える型
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: python3 Tools/check-cross-imports.py Sources Tests
       - name: Web 版との突き合わせ（読めなければ飛ばす）
+        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: python3 Tools/check-api-parity.py ../photo-gallery
+      # ワークフローのみのPRでもYAML構文を検証する。
+      # Swiftの重い検査を省略する代わりに、CI設定の壊れを早期検出する。
+      - name: GitHub ActionsのYAML構文
+        run: |
+          ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").each { |file| YAML.parse_file(file); puts "OK: #{file}" }'
+
       - name: 設定ファイル
         run: python3 Tools/check-config.py
       - name: 関連UIテスト選別の回帰テスト
         run: python3 Tools/test_pr_related_ui.py
 
+  # ワークフローだけの変更ではアプリのソース・テストが変わらない。
+  # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。
+  scope:
+    name: アプリ変更の有無
+    # 差分確認に全履歴は不要。PRのマージコミットとbaseだけ取得する。
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    outputs:
+      app_changed: ${{ steps.diff.outputs.app_changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: 差分を確認
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # workflow_dispatchなどPR以外では差分が無いので必ず全検証。
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # PRのbaseコミットだけを浅く取得。取得失敗時は安全側で全検証。
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git -c protocol.version=2 fetch --no-tags --depth=1 origin "${BASE_SHA}" || true
+          fi
+          # 差分を取得できない場合は安全側で通常テストを実行する。
+          if ! git cat-file -e "${BASE_SHA}^{commit}"; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git diff --name-only --no-ext-diff --find-renames "$BASE_SHA" HEAD > /tmp/changed-files; then
+            echo "::warning::差分を取得できないため全検証を実行"
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -s /tmp/changed-files ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+          elif grep -Ev '^(\.github/workflows/|\.github/actions/|docs/|.*\.md$)' /tmp/changed-files | grep -q .; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_changed=false" >> "$GITHUB_OUTPUT"
+            echo "ワークフロー・文書だけの変更: Xcode と Linux 単体テストを省略" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # 模型（Shims/）に向けたビルドと単体テスト。手元の verify.sh と同じもの。
   # 公式の Swift のイメージで回すので、外部の action は使わない
   linux-tests:
     name: 単体テスト（Linux・模型）
+    needs: scope
+    if: ${{ needs.scope.outputs.app_changed != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container: swift:6.0.3-noble
@@ -81,7 +144,7 @@ jobs:
       # 落ちた事実は終了コードで十分に分かる
       SWIFT_BACKTRACE: enable=no
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # **控え（actions/cache）は使わない。** Package に外部の依存は無く、効くのは
       # 自分のコードの差分ビルドだけ（初回3分弱）。1回 280MB をコミットごとに積むと
       # 控えの上限（10GB）を押し、TestFlight が頼る macOS の依存の控え（いちばん高い）
@@ -101,7 +164,7 @@ jobs:
           swift test --skip-build 2>&1 | tee build/linux-tests.log | grep -E "error|failed|Executed [0-9]+ tests" | tail -n 60
       - name: テストの結果を残す
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-tests
           path: build/linux-tests.log
@@ -126,7 +189,9 @@ jobs:
   # なり、必須のチェックにしていても通った扱いになる
   tested:
     name: 同じコミットが Mac でテスト済みかを見る
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    needs: scope
+    # アプリが変わらないPRではMacの重複判定APIも不要。
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && needs.scope.outputs.app_changed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -135,7 +200,7 @@ jobs:
     outputs:
       skip: ${{ steps.look.outputs.skip }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 見る
         id: look
         env:
@@ -190,9 +255,9 @@ jobs:
   # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
   xcode:
     name: Xcode のビルドとテスト（シミュレータ）
-    needs: [checks, tested]
+    needs: [checks, tested, scope]
     # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
-    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い。
@@ -201,7 +266,7 @@ jobs:
     # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
     timeout-minutes: 160
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -235,7 +300,8 @@ jobs:
       # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
       # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
       - name: 依存の控えを戻す
-        uses: actions/cache/restore@v4
+        id: dependency-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -247,9 +313,37 @@ jobs:
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
+      # キャッシュの命中・復元時間を毎回記録し、次の高速化を実測で判断する。
+      # restore-keys で近いキャッシュを拾った場合は cache-hit=false となる点にも注意。
+      - name: キャッシュの診断
+        env:
+          CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+          CACHE_MATCHED_KEY: ${{ steps.dependency-cache.outputs.cache-matched-key }}
+          CACHE_PRIMARY_KEY: ${{ steps.dependency-cache.outputs.cache-primary-key }}
+        run: |
+          {
+            echo "### Xcodeキャッシュ診断"
+            if [ -n "${CACHE_MATCHED_KEY:-}" ]; then
+              echo "復元: あり"
+              if [ "${CACHE_HIT:-}" = "true" ]; then
+                echo "一致: 完全一致"
+              else
+                echo "一致: 近いキーから復元"
+              fi
+              echo "復元キー: \`${CACHE_MATCHED_KEY}\`"
+            else
+              echo "復元: なし（依存関係を再ビルド）"
+            fi
+            echo "要求キー: \`${CACHE_PRIMARY_KEY:-不明}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Xcode プロジェクトを作る
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           xcodegen generate
 
       # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
@@ -295,6 +389,14 @@ jobs:
             echo "判定: 起動スモーク＋関連UIテスト" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "選択したテスト指定数: $(wc -l < /tmp/pr-ui-tests.txt | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 実行対象" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^-only-testing:JourneyPhotoUITests\\/?//' /tmp/pr-ui-tests.txt | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 差分ファイル" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/pr-ui.diff ]; then
+            git diff --no-ext-diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- 手動実行または差分取得不可" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: UI テスト（通常は起動スモーク・手動指定で全画面）
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt
