@@ -57,9 +57,9 @@ on:
       # 上げる回（submit=true）は screens を無視し、tests=true なら SmokeTests のみ実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
       screens:
-        description: "検証用：UIテストの対象（通常は空欄）"
+        description: "検証用：通常は起動確認のみ（none）。全件は all、対象画面はテスト名を指定"
         type: string
-        default: ""
+        default: "none"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
       # 同時に流す（下の「テストの品を組む」から「まとめ」まで）。その前に、枝で変えた画面の UI テストを
       # 単体テストと同時に別の Mac で先に流し、落ちたら分けた段まで進めない。何を先に流すかは、空なら
