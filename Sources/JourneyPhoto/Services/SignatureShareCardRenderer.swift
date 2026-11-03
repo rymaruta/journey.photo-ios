@@ -486,8 +486,8 @@ enum SignatureShareCardRenderer {
             context.setAllowsAntialiasing(true)
             context.setLineJoin(.round)
             context.setLineCap(.round)
-            // 輪郭線だけでは暗い共有カード上で消えるため、薄い面と二層の輪郭を重ねる。
-            // 複数リングを一つのパスにまとめ、島や内側の穴を偶奇規則で扱う。
+            // Reference card: a fine gold country silhouette with a single
+            // restrained luminous location dot. Avoid thick strokes at 195x128.
             context.beginPath()
             for ring in rings where ring.count >= 3 {
                 context.move(to: project(ring[0]))
@@ -496,31 +496,30 @@ enum SignatureShareCardRenderer {
                 }
                 context.closePath()
             }
-            let silhouette = context.path
-            if let silhouette {
+            if let silhouette = context.path {
                 context.addPath(silhouette)
-                context.setFillColor(color.withAlphaComponent(0.11).cgColor)
+                context.setFillColor(color.withAlphaComponent(0.045).cgColor)
                 context.drawPath(using: .eoFill)
+                // Subtle halo and crisp hairline keep small islands legible.
                 context.addPath(silhouette)
-                context.setStrokeColor(color.withAlphaComponent(0.18).cgColor)
-                context.setLineWidth(4.0)
+                context.setStrokeColor(color.withAlphaComponent(0.22).cgColor)
+                context.setLineWidth(2.1)
                 context.strokePath()
                 context.addPath(silhouette)
-                context.setStrokeColor(color.withAlphaComponent(0.96).cgColor)
-                context.setLineWidth(2.0)
+                context.setStrokeColor(color.withAlphaComponent(0.94).cgColor)
+                context.setLineWidth(0.95)
                 context.strokePath()
             }
             let normalizedPinLongitude = pin.longitude +
                 360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
             let center = project([normalizedPinLongitude, pin.latitude])
-            // ピンは必ず1つ。暗い地図と輪郭線に埋もれないよう中心を明るくする。
-            context.setFillColor(UIColor.white.withAlphaComponent(0.94).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5,
-                                           width: 7, height: 7))
-            context.setStrokeColor(color.cgColor)
-            context.setLineWidth(2)
-            context.strokeEllipse(in: CGRect(x: center.x - 9, y: center.y - 9,
-                                             width: 18, height: 18))
+            // The point should glow gently rather than obscure nearby coastline.
+            context.setFillColor(color.withAlphaComponent(0.18).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5,
+                                           width: 10, height: 10))
+            context.setFillColor(color.withAlphaComponent(0.95).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 2.2, y: center.y - 2.2,
+                                           width: 4.4, height: 4.4))
             context.restoreGState()
         }
     }
