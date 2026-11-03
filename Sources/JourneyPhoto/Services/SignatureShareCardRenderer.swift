@@ -247,17 +247,22 @@ enum SignatureShareCardRenderer {
                 cg.strokePath()
             }
             // 値のない撮影項目はアイコンだけ残さない。
+            // UIKit lays out the symbol and text together, using the symbol's
+            // native baseline metrics instead of a hard-coded pixel offset.
             if !camera.isEmpty {
-                drawSymbol("camera", at: CGPoint(x: 98, y: infoY), size: 40, color: brass)
-                drawInfo(camera, at: CGPoint(x: 157, y: infoY + 3), maxWidth: 235, size: 22, color: .white)
+                drawMetadataRow("camera", text: camera, at: CGPoint(x: 98, y: infoY + 3),
+                                textX: 157, textWidth: 235, fontSize: 22,
+                                symbolSize: 40, color: brass, context: cg)
             }
             if !lens.isEmpty {
-                drawSymbol("camera.aperture", at: CGPoint(x: 410, y: infoY), size: 40, color: brass)
-                drawInfo(lens, at: CGPoint(x: 463, y: infoY + 3), maxWidth: 246, size: 22, color: .white)
+                drawMetadataRow("camera.aperture", text: lens, at: CGPoint(x: 410, y: infoY + 3),
+                                textX: 463, textWidth: 246, fontSize: 22,
+                                symbolSize: 40, color: brass, context: cg)
             }
             if !exposure.isEmpty {
-                drawSymbol("timer", at: CGPoint(x: 731, y: infoY), size: 38, color: brass)
-                drawInfo(exposure, at: CGPoint(x: 786, y: infoY + 3), maxWidth: 195, size: 20, color: .white)
+                drawMetadataRow("timer", text: exposure, at: CGPoint(x: 731, y: infoY + 3),
+                                textX: 786, textWidth: 195, fontSize: 20,
+                                symbolSize: 38, color: brass, context: cg)
             }
 
             // 真鍮色の矩形フレームは画像境界から8px内側へ。
@@ -673,6 +678,50 @@ enum SignatureShareCardRenderer {
             with: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: 72),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes, context: nil)
+    }
+
+    /// Render a UIKit row into the card, preserving SF Symbol baseline alignment.
+    /// The first line of text stays at textY; longer equipment names can wrap.
+    private static func drawMetadataRow(_ symbolName: String, text: String,
+                                        at origin: CGPoint, textX: CGFloat,
+                                        textWidth: CGFloat, fontSize: CGFloat,
+                                        symbolSize: CGFloat, color: UIColor,
+                                        context: CGContext) {
+        let font = UIFont.systemFont(ofSize: equipmentFontSize(text,
+            maxWidth: textWidth, preferredSize: fontSize), weight: .semibold)
+        let rowWidth = textX - origin.x + textWidth
+        let row = UIView(frame: CGRect(x: 0, y: 0, width: rowWidth, height: 72))
+        row.backgroundColor = .clear
+        let icon = UIImageView(image: UIImage(systemName: symbolName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize,
+                                                            weight: .regular)))
+        icon.tintColor = color
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.font = font
+        label.textColor = .white
+        label.text = text
+        label.numberOfLines = 0
+        label.lineBreakMode = .byCharWrapping
+        label.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(icon)
+        row.addSubview(label)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            icon.widthAnchor.constraint(equalToConstant: symbolSize),
+            icon.heightAnchor.constraint(equalToConstant: symbolSize),
+            icon.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor,
+                                           constant: textX - origin.x),
+            label.topAnchor.constraint(equalTo: row.topAnchor),
+            label.widthAnchor.constraint(equalToConstant: textWidth)
+        ])
+        row.layoutIfNeeded()
+        context.saveGState()
+        context.translateBy(x: origin.x, y: origin.y)
+        row.layer.render(in: context)
+        context.restoreGState()
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
