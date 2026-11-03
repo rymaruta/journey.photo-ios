@@ -61,6 +61,15 @@ class RelatedTests(unittest.TestCase):
         result = self.run_related(diff('UITests/JourneyPhotoUITests/ScreenshotTests.swift'), {})
         self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
 
+    def test_deleted_source_forces_full_suite(self):
+        deleted = 'diff --git a/Sources/Old.swift b/Sources/Old.swift\n--- a/Sources/Old.swift\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n'
+        result = self.run_related(deleted, {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
+    def test_shared_test_runner_forces_full_suite(self):
+        result = self.run_related(diff('Tools/xcode-test.sh'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
     def test_diff_filter_is_per_file(self):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
