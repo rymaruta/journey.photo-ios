@@ -397,7 +397,7 @@ def main_related(argv):
                 chosen.update(one)
             else:
                 uncertain.append(path)
-        elif path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh") or path.startswith(("Shims/", "Resources/")):
+        elif path.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
             uncertain.append(path)
     # 削除・リネーム前のパスも評価する。+++ /dev/null のファイルは changed_files に出ない。
     for block in re.split(r"(?=^diff --git )", diff_text, flags=re.M):
@@ -405,7 +405,7 @@ def main_related(argv):
             continue
         old_paths = [line[6:] for line in block.splitlines() if line.startswith("--- a/")]
         for removed in old_paths:
-            if removed.startswith(("Sources/", ui_prefix)) or removed in ("project.yml", "Tools/pick-ui-tests.py"):
+            if removed.startswith(("Sources/", "UITests/", "Resources/", "Shims/")) or removed in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh", "Package.swift"):
                 uncertain.append(removed)
     if uncertain:
         print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
