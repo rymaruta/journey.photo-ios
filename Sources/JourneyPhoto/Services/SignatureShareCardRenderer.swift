@@ -417,7 +417,22 @@ enum SignatureShareCardRenderer {
 
         static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
                          in rect: CGRect, color: UIColor, context: CGContext) {
-            let points = shape.r.flatMap { $0 }.filter { $0.count == 2 }
+            // Countries crossing the antimeridian (Russia, Fiji, etc.) have
+            // coordinates on both sides of ±180°. Shift each ring to the
+            // longitude domain nearest the photographed location so that
+            // the silhouette does not span nearly 360 degrees.
+            let rings = shape.r.map { ring -> [[Double]] in
+                guard let first = ring.first, first.count == 2 else { return ring }
+                var previous = first[0] + 360 * round((pin.longitude - first[0]) / 360)
+                return ring.enumerated().map { index, point in
+                    guard point.count == 2 else { return point }
+                    if index == 0 { return [previous, point[1]] }
+                    let unwrapped = point[0] + 360 * round((previous - point[0]) / 360)
+                    previous = unwrapped
+                    return [unwrapped, point[1]]
+                }
+            }
+            let points = rings.flatMap { $0 }.filter { $0.count == 2 }
             guard let minX = points.map({ $0[0] }).min(),
                   let maxX = points.map({ $0[0] }).max(),
                   let minY = points.map({ $0[1] }).min(),
@@ -440,14 +455,16 @@ enum SignatureShareCardRenderer {
             context.setLineWidth(1.5)
             context.setLineJoin(.round)
             context.setLineCap(.round)
-            for ring in shape.r where ring.count >= 3 {
+            for ring in rings where ring.count >= 3 {
                 context.beginPath()
                 context.move(to: project(ring[0]))
                 for point in ring.dropFirst() { context.addLine(to: project(point)) }
                 context.closePath()
                 context.strokePath()
             }
-            let center = project([pin.longitude, pin.latitude])
+            let normalizedPinLongitude = pin.longitude +
+                360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
+            let center = project([normalizedPinLongitude, pin.latitude])
             context.setFillColor(color.cgColor)
             context.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3,
                                            width: 6, height: 6))
