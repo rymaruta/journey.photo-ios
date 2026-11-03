@@ -448,7 +448,7 @@ jobs:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: 配信用アプリをビルド番号を設定
+      - name: ビルド番号を決める
         if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
