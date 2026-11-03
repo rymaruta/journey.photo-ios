@@ -60,7 +60,9 @@ case "$mode" in
         result="${1:?結果の .xcresult の置き場を渡す}"
         rm -rf "$result"
         action="test-without-building"
-        extra="-resultBundlePath $result -only-testing:JourneyPhotoTests"
+        # PR can opt into one directly affected suite; TestFlight retains
+        # the full JourneyPhotoTests bundle by leaving this variable unset.
+        extra="-resultBundlePath $result -only-testing:${UNIT_ONLY_TESTING:-JourneyPhotoTests}"
         extra="$extra -test-timeouts-enabled YES"
         extra="$extra -default-test-execution-time-allowance $UNIT_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UNIT_TIME_MAXIMUM"
