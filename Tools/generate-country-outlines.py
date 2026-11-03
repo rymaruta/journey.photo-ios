@@ -39,9 +39,28 @@ def simplify(points, tolerance=0.025):
 
 
 def normalize_ring(points):
-    result = [[round(lon, 4), round(lat, 4)] for lon, lat, *_ in simplify(points)]
-    if len(result) < 4:
+    """Simplify a closed ring without collapsing its coincident endpoints.
+
+    RDP on a closed ring with identical first/last coordinates can discard
+    important coastlines. Split at the most distant vertex and simplify each
+    open arc independently, preserving both halves of the ring.
+    """
+    if len(points) < 4:
         return []
+    vertices = [list(p[:2]) for p in points]
+    if vertices[0] == vertices[-1]:
+        vertices.pop()
+    if len(vertices) < 3:
+        return []
+    start = vertices[0]
+    split = max(range(1, len(vertices)),
+                key=lambda i: (vertices[i][0] - start[0]) ** 2 +
+                              (vertices[i][1] - start[1]) ** 2)
+    closed = vertices + [vertices[0]]
+    first_arc = simplify(closed[:split + 1])
+    second_arc = simplify(closed[split:])
+    simplified = first_arc[:-1] + second_arc
+    result = [[round(lon, 4), round(lat, 4)] for lon, lat in simplified]
     if result[0] != result[-1]:
         result.append(result[0])
     return result if len(set(map(tuple, result[:-1]))) >= 3 else []
