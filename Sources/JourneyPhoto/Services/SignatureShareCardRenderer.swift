@@ -290,6 +290,16 @@ enum SignatureShareCardRenderer {
 
         static func contains(_ point: CLLocationCoordinate2D, ring: [[Double]]) -> Bool {
             guard ring.count >= 3 else { return false }
+            // Reject distant polygons before running ray casting over every vertex.
+            // This matters especially with the bundled 1:10m geometry.
+            let bounds = ring.reduce((west: Double.infinity, east: -Double.infinity,
+                                      south: Double.infinity, north: -Double.infinity)) { bounds, vertex in
+                guard vertex.count == 2 else { return bounds }
+                return (min(bounds.west, vertex[0]), max(bounds.east, vertex[0]),
+                        min(bounds.south, vertex[1]), max(bounds.north, vertex[1]))
+            }
+            guard point.longitude >= bounds.west, point.longitude <= bounds.east,
+                  point.latitude >= bounds.south, point.latitude <= bounds.north else { return false }
             var inside = false
             var previous = ring.count - 1
             for index in ring.indices {
@@ -397,7 +407,7 @@ enum SignatureShareCardRenderer {
             }
             // 0.5-degree rounding can move a coastal pin offshore; never infer
             // a distant country for a point in open water.
-            return bestDistance <= 0.75 * 0.75 ? closest : nil
+            return bestDistance <= 0.15 * 0.15 ? closest : nil
         }
 
         static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
