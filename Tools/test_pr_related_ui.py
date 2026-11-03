@@ -70,6 +70,18 @@ class RelatedTests(unittest.TestCase):
         result = self.run_related(diff('Tools/xcode-test.sh'), {})
         self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
 
+    def test_resources_force_full_suite(self):
+        result = self.run_related(diff('Resources/Assets.xcassets/Contents.json'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
+    def test_package_change_forces_full_suite(self):
+        result = self.run_related(diff('Package.swift'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
+    def test_unknown_ui_support_file_forces_full_suite(self):
+        result = self.run_related(diff('UITests/SharedHelper.txt'), {})
+        self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
+
     def test_diff_filter_is_per_file(self):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
