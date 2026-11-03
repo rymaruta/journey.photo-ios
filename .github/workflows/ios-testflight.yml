@@ -121,7 +121,8 @@ jobs:
           exit 1
 
       - name: UIテストの操作・目的を表示
-        if: ${{ inputs.tests }}
+        # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
+        if: ${{ inputs.tests && inputs.screens != 'auto' }}
         env:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
