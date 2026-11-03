@@ -368,9 +368,15 @@ jobs:
         run: |
           set -euo pipefail
           brew install xcodegen
-          # 署名・ビルド・提出をまとめて行う CLI（Codemagic が公開しているもの）。
-          # **pipx が無い回に備える**——ランナーの構成は黙って変わる
-          if command -v pipx >/dev/null 2>&1; then
+      # Codemagic CLI は署名・Archive・アップロード時だけ必要。
+      # UI確認だけの実行ではPythonパッケージの導入を省略する。
+      - name: 配信用CLIを用意
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        run: |
+          set -euo pipefail
+          if command -v app-store-connect >/dev/null 2>&1 && command -v xcode-project >/dev/null 2>&1 && command -v keychain >/dev/null 2>&1; then
+            echo "配信用CLIは導入済み"
+          elif command -v pipx >/dev/null 2>&1; then
             pipx install codemagic-cli-tools
           else
             python3 -m pip install --break-system-packages codemagic-cli-tools
