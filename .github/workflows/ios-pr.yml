@@ -270,6 +270,7 @@ jobs:
       # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
       # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
       - name: 依存の控えを戻す
+        id: dependency-cache
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -281,6 +282,30 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      # キャッシュの命中・復元時間を毎回記録し、次の高速化を実測で判断する。
+      # restore-keys で近いキャッシュを拾った場合は cache-hit=false となる点にも注意。
+      - name: キャッシュの診断
+        env:
+          CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+          CACHE_MATCHED_KEY: ${{ steps.dependency-cache.outputs.cache-matched-key }}
+          CACHE_PRIMARY_KEY: ${{ steps.dependency-cache.outputs.cache-primary-key }}
+        run: |
+          {
+            echo "### Xcodeキャッシュ診断"
+            if [ -n "${CACHE_MATCHED_KEY:-}" ]; then
+              echo "復元: あり"
+              if [ "${CACHE_HIT:-}" = "true" ]; then
+                echo "一致: 完全一致"
+              else
+                echo "一致: 近いキーから復元"
+              fi
+              echo "復元キー: \`${CACHE_MATCHED_KEY}\`"
+            else
+              echo "復元: なし（依存関係を再ビルド）"
+            fi
+            echo "要求キー: \`${CACHE_PRIMARY_KEY:-不明}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Xcode プロジェクトを作る
         run: |
