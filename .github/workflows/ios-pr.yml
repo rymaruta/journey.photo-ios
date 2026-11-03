@@ -356,20 +356,25 @@ jobs:
           echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
           XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
 
-      # Only renderer + country outlines changed: run the owning XCTest suite.
-      # Any other change, unavailable diff, or manual dispatch runs all units.
-      # TestFlight always runs the full suite independently of this PR shortcut.
+      # Share-card-only changes use their owning unit suite; all other PRs
+      # and manual runs still execute the entire JourneyPhotoTests bundle.
       - name: 単体テストの対象を決める
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           selected="JourneyPhotoTests"
-          if [ "${{ github.event_name }}" = "pull_request" ] \
-              && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
-            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD --)"
-            if [ -n "$files" ] && ! printf '%s\\n' "$files" | grep -Evq \
-                '^(Sources/JourneyPhoto/Services/SignatureShareCardRenderer\\.swift|Sources/JourneyPhoto/Resources/country-outlines\\.json|Tools/generate-country-outlines\\.py)
+          if [ "${{ github.event_name }}" = "pull_request" ] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD -- || true)"
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/SignatureShareCardRenderer\.swift|Sources/JourneyPhoto/Resources/country-outlines\.json|Tools/generate-country-outlines\.py)$'; then
+              selected="JourneyPhotoTests/SignatureShareCardRendererTests"
+            fi
+          fi
+          echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"
+          echo "### Xcode単体テスト選別" >> "$GITHUB_STEP_SUMMARY"
+          echo "対象: $selected" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 単体テスト
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
       # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
       # 変更のあるUIテスト自体も差分選別に含める。
       - name: UIテストの対象を決める
