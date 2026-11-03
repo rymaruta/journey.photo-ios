@@ -368,7 +368,34 @@ def main_plan(argv):
     return 0
 
 
+def main_related(argv):
+    """PR差分から関連UIテストを選択。検出不能なら全件に倒し、見逃しを防ぐ。"""
+    diff_path = pathlib.Path(argv[0])
+    diff_text = diff_path.read_text(encoding="utf-8")
+    index, loose = read_index()
+    if not index:
+        print("::error::UIテストの一覧が読めません", file=sys.stderr)
+        return 1
+    changes = changed_files(diff_text)
+    relevant = tests_for_diff(diff_text, index, loose)
+    # 共有UI・プロジェクト設定等は識別子で追跡できないため、保守的に全件を実行する。
+    unknown = [p for p in changes if (p.startswith("Sources/") and p.endswith(".swift") and not relevant)
+               or p.startswith(("UITests/", "project.yml", "Tools/pick-ui-tests.py"))]
+    if unknown:
+        print("関連範囲を特定できない変更: " + ", ".join(unknown), file=sys.stderr)
+        print(f"-only-testing:{TARGET}")
+        return 0
+    selected = sorted(t for t in relevant if not only_when_named(t) and not t.startswith(f"{ALWAYS}/"))
+    print(f"-only-testing:{TARGET}/{ALWAYS}")
+    for t in selected:
+        print(f"-only-testing:{TARGET}/{t}")
+    print(f"関連UIテスト: {len(selected)}本", file=sys.stderr)
+    return 0
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--related":
+        return main_related(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
         print("\n".join(ONLY_WHEN_NAMED))
         return 0
