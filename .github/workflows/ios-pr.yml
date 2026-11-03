@@ -276,13 +276,25 @@ jobs:
             python3 Tools/explain-ui-tests.py all
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
-              git diff --no-ext-diff --find-renames "${{ github.event.pull_request.base.sha }}" HEAD -- . > /tmp/pr-ui.diff
-              python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
+              base="${{ github.event.pull_request.base.sha }}"
+              if git cat-file -e "${base}^{commit}" && git diff --no-ext-diff --find-renames "$base" HEAD -- . > /tmp/pr-ui.diff; then
+                python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
+              else
+                echo "::warning::PR差分を取得できないため全UIテストを実行"
+                python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
+              fi
             else
               python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
             fi
             cat /tmp/pr-ui-tests.txt
           fi
+          echo "### PR UIテスト選別結果" >> "$GITHUB_STEP_SUMMARY"
+          if grep -qx -- "-only-testing:JourneyPhotoUITests" /tmp/pr-ui-tests.txt; then
+            echo "判定: 全UIテスト（安全側フォールバックまたは手動指定）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "判定: 起動スモーク＋関連UIテスト" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "選択したテスト指定数: $(wc -l < /tmp/pr-ui-tests.txt | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
 
       - name: UI テスト（通常は起動スモーク・手動指定で全画面）
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt
