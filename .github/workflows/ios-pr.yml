@@ -265,8 +265,8 @@ jobs:
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
 
-      # PRでは高速な起動スモークを必須にし、全画面検証は手動で明示した場合のみ実行。
-      # 変更のあるUIテスト自体はSwiftの構文・Xcodeビルドで検査する。
+      # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
+      # 変更のあるUIテスト自体も差分選別に含める。
       - name: UIテストの対象を決める
         env:
           FULL_UI: ${{ inputs.full_ui }}
@@ -276,7 +276,7 @@ jobs:
             python3 Tools/explain-ui-tests.py all
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
-              git diff "${{ github.event.pull_request.base.sha }}" HEAD -- Sources UITests project.yml Tools/pick-ui-tests.py > /tmp/pr-ui.diff
+              git diff --no-ext-diff --find-renames "${{ github.event.pull_request.base.sha }}" HEAD -- . > /tmp/pr-ui.diff
               python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
             else
               python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
