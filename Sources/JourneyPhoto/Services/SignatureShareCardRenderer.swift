@@ -274,8 +274,8 @@ enum SignatureShareCardRenderer {
         }
     }
 
-    // GeoJSON由来の低解像度輪郭を軽量JSONとして同梱する。
-    // 出典: Natural Earth 1:110m admin-0 countries (public domain)。
+    // Natural Earth admin-0 countries由来の輪郭をJSONとして同梱する。
+    // 解像度は同梱リソースに依存し、ここでは固定しない。
     private enum CountryOutline {
         struct Shape: Decodable {
             let n: String
@@ -305,10 +305,16 @@ enum SignatureShareCardRenderer {
                 vertices.append((x, vertex[1]))
             }
             guard vertices.count >= 3 else { return false }
-            let west = vertices.map { $0.x }.min() ?? .infinity
-            let east = vertices.map { $0.x }.max() ?? -.infinity
-            let south = vertices.map { $0.y }.min() ?? .infinity
-            let north = vertices.map { $0.y }.max() ?? -.infinity
+            var west = Double.infinity
+            var east = -Double.infinity
+            var south = Double.infinity
+            var north = -Double.infinity
+            for vertex in vertices {
+                west = min(west, vertex.x)
+                east = max(east, vertex.x)
+                south = min(south, vertex.y)
+                north = max(north, vertex.y)
+            }
             let queryLongitude = point.longitude +
                 360 * round(((west + east) / 2 - point.longitude) / 360)
             guard (west...east).contains(queryLongitude),
