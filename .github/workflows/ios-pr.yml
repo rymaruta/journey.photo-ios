@@ -284,7 +284,11 @@ jobs:
 
       - name: Xcode プロジェクトを作る
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           xcodegen generate
 
       # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
