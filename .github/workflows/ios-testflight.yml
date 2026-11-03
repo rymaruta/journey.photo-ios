@@ -158,8 +158,24 @@ jobs:
             if [ "${SUBMIT:-}" = "true" ]; then
               # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
               # タグがない・履歴が読めない場合は全件へフォールバック。
-              git fetch --force --tags origin 'refs/tags/testflight/*:refs/tags/testflight/*' || true
-              BASE="$(git for-each-ref --merged HEAD --sort=-creatordate --format='%(objectname)' 'refs/tags/testflight/*' | head -1)"
+              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
+              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+                git fetch --unshallow --no-tags origin || true
+              fi
+              git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*' || true
+              # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
+              # lightweight tag では creatordate がコミット日時になり、配信順と一致しない。
+              best_distance=""
+              while IFS= read -r tag; do
+                commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+                [ -n "$commit" ] || continue
+                git merge-base --is-ancestor "$commit" HEAD || continue
+                distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
+                if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
+                  BASE="$commit"
+                  best_distance="$distance"
+                fi
+              done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
               echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
             else
               git fetch --no-tags --depth=100 origin main || true
