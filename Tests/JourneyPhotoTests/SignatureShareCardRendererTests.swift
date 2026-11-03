@@ -263,9 +263,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
                 camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
                 verified: false, proStyle: nil, early: false, badge: nil)
             for ratio in [SignatureShareCardRenderer.Ratio.portrait, .square, .story] {
-                let data = try XCTUnwrap(await SignatureShareCardRenderer.render(
-                    source, credit: credit, ratio: ratio),
-                    "\(name) / \(ratio) must export")
+                let rendered = await SignatureShareCardRenderer.render(
+                    source, credit: credit, ratio: ratio)
+                let data = try XCTUnwrap(rendered, "\(name) / \(ratio) must export")
                 XCTAssertNotNil(UIImage(data: data), "\(name) / \(ratio) must decode")
             }
         }
