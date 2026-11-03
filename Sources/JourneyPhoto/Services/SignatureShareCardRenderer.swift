@@ -138,7 +138,7 @@ enum SignatureShareCardRenderer {
 
             // 写真境界からの距離と下段との余白を両立する。
             // 行内の要素は左揃えを維持し、情報ブロックだけを余白の中心へ寄せる。
-            let rowY = height - footer + 62
+            let rowY = height - footer + 37
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
             if let avatarData, let avatar = UIImage(data: avatarData) {
