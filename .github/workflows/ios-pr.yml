@@ -356,6 +356,83 @@ jobs:
           echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
           XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
 
+      # Only renderer + country outlines changed: run the owning XCTest suite.
+      # Any other change, unavailable diff, or manual dispatch runs all units.
+      # TestFlight always runs the full suite independently of this PR shortcut.
+      - name: 単体テストの対象を決める
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          selected="JourneyPhotoTests"
+          if [ "${{ github.event_name }}" = "pull_request" ] \
+              && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD --)"
+            if [ -n "$files" ] && ! printf '%s\\n' "$files" | grep -Evq \
+                '^(Sources/JourneyPhoto/Services/SignatureShareCardRenderer\\.swift|Sources/JourneyPhoto/Resources/country-outlines\\.json|Tools/generate-country-outlines\\.py)
+
+      # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
+      # 変更のあるUIテスト自体も差分選別に含める。
+      - name: UIテストの対象を決める
+        env:
+          FULL_UI: ${{ inputs.full_ui }}
+        run: |
+          if [ "${FULL_UI:-false}" = "true" ]; then
+            python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
+            python3 Tools/explain-ui-tests.py all
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              base="${{ github.event.pull_request.base.sha }}"
+              if git cat-file -e "${base}^{commit}" && git diff --no-ext-diff --find-renames "$base" HEAD -- . > /tmp/pr-ui.diff; then
+                python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
+              else
+                echo "::warning::PR差分を取得できないため全UIテストを実行"
+                python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
+              fi
+            else
+              python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
+            fi
+            cat /tmp/pr-ui-tests.txt
+          fi
+          echo "### PR UIテスト選別結果" >> "$GITHUB_STEP_SUMMARY"
+          if grep -qx -- "-only-testing:JourneyPhotoUITests" /tmp/pr-ui-tests.txt; then
+            echo "判定: 全UIテスト（安全側フォールバックまたは手動指定）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "判定: 起動スモーク＋関連UIテスト" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "選択したテスト指定数: $(wc -l < /tmp/pr-ui-tests.txt | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 実行対象" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^-only-testing:JourneyPhotoUITests\\/?//' /tmp/pr-ui-tests.txt | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          echo "#### 差分ファイル" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/pr-ui.diff ]; then
+            git diff --no-ext-diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- 手動実行または差分取得不可" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: UI テスト（通常は起動スモーク・手動指定で全画面）
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt
+
+      # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
+      - name: 結果のまとめ
+        if: ${{ always() }}
+        run: |
+          for r in build/Unit.xcresult build/Test.xcresult; do
+            [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+
+      # 公開リポジトリ: xcresultにはスクリーンショット・録画・診断情報が含まれる。
+      # PRの成果物には含めず、Summaryで失敗名と理由を確認する。
+      # 生ログにはユーザー名・URLなどが含まれる可能性があるためArtifactには保存しない。
+      # テストの失敗名・理由は「結果のまとめ」で確認する。
+; then
+              selected="JourneyPhotoTests/SignatureShareCardRendererTests"
+            fi
+          fi
+          echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"
+          echo "### Xcode単体テスト選別" >> "$GITHUB_STEP_SUMMARY"
+          echo "対象: \`$selected\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
 
