@@ -85,7 +85,7 @@ jobs:
   # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。
   scope:
     name: アプリ変更の有無
-    if: ${{ github.event_name == 'pull_request' }}
+    # 手動実行でもscopeを成功させる。skippedだとneeds経由でchecksが飛ぶため。
     runs-on: ubuntu-latest
     outputs:
       app_changed: ${{ steps.diff.outputs.app_changed }}
@@ -99,6 +99,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          # workflow_dispatchなどPR以外では差分が無いので必ず全検証。
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # 差分を取得できない場合は安全側で通常テストを実行する。
           if ! git cat-file -e "${BASE_SHA}^{commit}"; then
             echo "app_changed=true" >> "$GITHUB_OUTPUT"
