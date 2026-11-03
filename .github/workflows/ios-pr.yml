@@ -67,10 +67,45 @@ jobs:
       - name: 関連UIテスト選別の回帰テスト
         run: python3 Tools/test_pr_related_ui.py
 
+  # ワークフローだけの変更ではアプリのソース・テストが変わらない。
+  # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。
+  scope:
+    name: アプリ変更の有無
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    outputs:
+      app_changed: ${{ steps.diff.outputs.app_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 差分を確認
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # 差分を取得できない場合は安全側で通常テストを実行する。
+          if ! git cat-file -e "${BASE_SHA}^{commit}"; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only --no-ext-diff --find-renames "$BASE_SHA" HEAD > /tmp/changed-files
+          if [ ! -s /tmp/changed-files ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+          elif grep -Ev '^(\\.github/workflows/|\\.github/actions/|docs/|.*\\.md$)' /tmp/changed-files | grep -q .; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_changed=false" >> "$GITHUB_OUTPUT"
+            echo "ワークフロー・文書だけの変更: Xcode と Linux 単体テストを省略" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # 模型（Shims/）に向けたビルドと単体テスト。手元の verify.sh と同じもの。
   # 公式の Swift のイメージで回すので、外部の action は使わない
   linux-tests:
     name: 単体テスト（Linux・模型）
+    needs: scope
+    if: ${{ needs.scope.outputs.app_changed != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container: swift:6.0.3-noble
@@ -190,9 +225,9 @@ jobs:
   # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
   xcode:
     name: Xcode のビルドとテスト（シミュレータ）
-    needs: [checks, tested]
+    needs: [checks, tested, scope]
     # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
-    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い。
