@@ -122,7 +122,7 @@ jobs:
 
       - name: UIテストの操作・目的を表示
         # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
-        if: ${{ inputs.tests && inputs.screens != 'auto' }}
+        if: ${{ inputs.tests && inputs.screens != 'auto' && !(inputs.submit && inputs.screens == '') }}
         env:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
