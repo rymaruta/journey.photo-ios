@@ -426,7 +426,7 @@ jobs:
       # 組み立ては全部の回（screens 空）と、上げる回（submit=true・いつも全部）で見る。
       # `steps.scope.outputs.full` は上げる回では必ず true なので、上げる回には効かない
       - name: 署名の用意（証明書とプロファイルを API キーから作る）
-        if: ${{ steps.secrets.outputs.signing == 'true' && steps.scope.outputs.full == 'true' }}
+        if: ${{ steps.secrets.outputs.signing == 'true' && (steps.scope.outputs.full == 'true' || inputs.submit) }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -555,7 +555,7 @@ jobs:
           rm -rf "$work"
 
       - name: TestFlight に上げる
-        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' && steps.archive.outcome == 'success' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
