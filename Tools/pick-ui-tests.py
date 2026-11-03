@@ -386,7 +386,13 @@ def main_related(argv):
     # 共有カードの描画は画面操作ではなく純粋なレンダリング処理。
     # SignatureShareCardRendererTests の単体検証と起動スモークで確認する。
     # 対象を明示し、ほかの Sources 変更まで誤って除外しない。
-    unit_covered_paths = {"Sources/JourneyPhoto/Services/SignatureShareCardRenderer.swift"}
+    unit_covered_paths = {
+        "Sources/JourneyPhoto/Services/SignatureShareCardRenderer.swift",
+        # Offline country outlines are data consumed only by the share-card
+        # renderer; the renderer's unit tests plus startup smoke cover this
+        # path without running unrelated full-screen screenshot suites.
+        "Sources/JourneyPhoto/Resources/country-outlines.json",
+    }
     ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
     for path, (lines, texts) in changes.items():
         if path in unit_covered_paths:

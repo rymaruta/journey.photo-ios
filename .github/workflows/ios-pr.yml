@@ -306,6 +306,10 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
@@ -356,9 +360,25 @@ jobs:
           echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
           XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
 
+      # Share-card-only changes use their owning unit suite; all other PRs
+      # and manual runs still execute the entire JourneyPhotoTests bundle.
+      - name: 単体テストの対象を決める
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          selected="JourneyPhotoTests"
+          if [ "${{ github.event_name }}" = "pull_request" ] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD -- || true)"
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/SignatureShareCardRenderer\.swift|Sources/JourneyPhoto/Resources/country-outlines\.json|Tools/generate-country-outlines\.py)$'; then
+              selected="JourneyPhotoTests/SignatureShareCardRendererTests"
+            fi
+          fi
+          echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"
+          echo "### Xcode単体テスト選別" >> "$GITHUB_STEP_SUMMARY"
+          echo "対象: $selected" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
-
       # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
       # 変更のあるUIテスト自体も差分選別に含める。
       - name: UIテストの対象を決める

@@ -274,8 +274,8 @@ enum SignatureShareCardRenderer {
         }
     }
 
-    // GeoJSON由来の低解像度輪郭を軽量JSONとして同梱する。
-    // 出典: Natural Earth 1:110m admin-0 countries (public domain)。
+    // Natural Earth admin-0 countries由来の輪郭をJSONとして同梱する。
+    // 解像度は同梱リソースに依存し、ここでは固定しない。
     private enum CountryOutline {
         struct Shape: Decodable {
             let n: String
@@ -290,15 +290,43 @@ enum SignatureShareCardRenderer {
 
         static func contains(_ point: CLLocationCoordinate2D, ring: [[Double]]) -> Bool {
             guard ring.count >= 3 else { return false }
+            // Unwrap each segment around the query longitude. A polygon that
+            // crosses ±180° must not become a 360-degree-wide polygon.
+            var vertices: [(x: Double, y: Double)] = []
+            vertices.reserveCapacity(ring.count)
+            for vertex in ring where vertex.count == 2 {
+                let longitude = vertex[0]
+                let x: Double
+                if let previous = vertices.last {
+                    x = longitude + 360 * round((previous.x - longitude) / 360)
+                } else {
+                    x = longitude + 360 * round((point.longitude - longitude) / 360)
+                }
+                vertices.append((x, vertex[1]))
+            }
+            guard vertices.count >= 3 else { return false }
+            var west = Double.infinity
+            var east = -Double.infinity
+            var south = Double.infinity
+            var north = -Double.infinity
+            for vertex in vertices {
+                west = min(west, vertex.x)
+                east = max(east, vertex.x)
+                south = min(south, vertex.y)
+                north = max(north, vertex.y)
+            }
+            let queryLongitude = point.longitude +
+                360 * round(((west + east) / 2 - point.longitude) / 360)
+            guard (west...east).contains(queryLongitude),
+                  (south...north).contains(point.latitude) else { return false }
             var inside = false
-            var previous = ring.count - 1
-            for index in ring.indices {
-                let a = ring[index], b = ring[previous]
-                if a.count == 2, b.count == 2,
-                   (a[1] > point.latitude) != (b[1] > point.latitude) {
-                    let intersection = (b[0] - a[0]) *
-                        (point.latitude - a[1]) / (b[1] - a[1]) + a[0]
-                    if point.longitude < intersection { inside.toggle() }
+            var previous = vertices.count - 1
+            for index in vertices.indices {
+                let a = vertices[index], b = vertices[previous]
+                if (a.y > point.latitude) != (b.y > point.latitude) {
+                    let intersection = (b.x - a.x) *
+                        (point.latitude - a.y) / (b.y - a.y) + a.x
+                    if queryLongitude < intersection { inside.toggle() }
                 }
                 previous = index
             }
@@ -310,7 +338,10 @@ enum SignatureShareCardRenderer {
                   (-90...90).contains(coordinate.latitude),
                   (-180...180).contains(coordinate.longitude) else { return nil }
             return shapes.first { shape in
-                shape.r.contains { contains(coordinate, ring: $0) }
+                // Match the renderer's even-odd fill: holes are water, not land.
+                shape.r.reduce(false) { inside, ring in
+                    inside != contains(coordinate, ring: ring)
+                }
             }
         }
 
@@ -397,7 +428,7 @@ enum SignatureShareCardRenderer {
             }
             // 0.5-degree rounding can move a coastal pin offshore; never infer
             // a distant country for a point in open water.
-            return bestDistance <= 0.75 * 0.75 ? closest : nil
+            return bestDistance <= 0.15 * 0.15 ? closest : nil
         }
 
         static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
@@ -442,7 +473,7 @@ enum SignatureShareCardRenderer {
             let longitudeScale = max(0.2, cos(((minY + maxY) / 2) * .pi / 180))
             let spanX = max((maxX - minX) * longitudeScale, 0.01)
             let spanY = max(maxY - minY, 0.01)
-            let inset: CGFloat = 16
+            let inset: CGFloat = 8
             let scale = min((rect.width - inset * 2) / spanX,
                             (rect.height - inset * 2) / spanY)
             func project(_ p: [Double]) -> CGPoint {
@@ -451,27 +482,44 @@ enum SignatureShareCardRenderer {
             }
             context.saveGState()
             context.clip(to: rect)
-            context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
-            context.setLineWidth(1.5)
+            context.setShouldAntialias(true)
+            context.setAllowsAntialiasing(true)
             context.setLineJoin(.round)
             context.setLineCap(.round)
+            // Reference card: a fine gold country silhouette with a single
+            // restrained luminous location dot. Avoid thick strokes at 195x128.
+            context.beginPath()
             for ring in rings where ring.count >= 3 {
-                context.beginPath()
                 context.move(to: project(ring[0]))
-                for point in ring.dropFirst() { context.addLine(to: project(point)) }
+                for point in ring.dropFirst() where point.count == 2 {
+                    context.addLine(to: project(point))
+                }
                 context.closePath()
+            }
+            if let silhouette = context.path {
+                context.addPath(silhouette)
+                context.setFillColor(color.withAlphaComponent(0.045).cgColor)
+                context.drawPath(using: .eoFill)
+                // Subtle halo and crisp hairline keep small islands legible.
+                context.addPath(silhouette)
+                context.setStrokeColor(color.withAlphaComponent(0.22).cgColor)
+                context.setLineWidth(2.1)
+                context.strokePath()
+                context.addPath(silhouette)
+                context.setStrokeColor(color.withAlphaComponent(0.94).cgColor)
+                context.setLineWidth(0.95)
                 context.strokePath()
             }
             let normalizedPinLongitude = pin.longitude +
                 360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
             let center = project([normalizedPinLongitude, pin.latitude])
-            context.setFillColor(color.cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3,
-                                           width: 6, height: 6))
-            context.setStrokeColor(color.withAlphaComponent(0.8).cgColor)
-            context.setLineWidth(1.3)
-            context.strokeEllipse(in: CGRect(x: center.x - 8, y: center.y - 8,
-                                             width: 16, height: 16))
+            // The point should glow gently rather than obscure nearby coastline.
+            context.setFillColor(color.withAlphaComponent(0.18).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5,
+                                           width: 10, height: 10))
+            context.setFillColor(color.withAlphaComponent(0.95).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 2.2, y: center.y - 2.2,
+                                           width: 4.4, height: 4.4))
             context.restoreGState()
         }
     }
