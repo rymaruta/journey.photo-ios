@@ -412,6 +412,18 @@ jobs:
           else
             python3 -m pip install --break-system-packages codemagic-cli-tools
           fi
+          # pipxのインストール成功だけではPATH反映が保証されない。
+          # 署名工程へ進む前に必要な3コマンドを検証し、欠けていればここで失敗させる。
+          if [ -d "$HOME/.local/bin" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          for cli in app-store-connect xcode-project keychain; do
+            if ! command -v "$cli" >/dev/null 2>&1; then
+              echo "::error::配信用CLIが見つかりません: $cli"
+              exit 1
+            fi
+          done
 
       - name: Xcode プロジェクトを作る
         run: xcodegen generate
