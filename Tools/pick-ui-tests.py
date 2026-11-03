@@ -411,7 +411,7 @@ def diff_text_for_path(diff_text, path):
     """unified diffの指定ファイルの部分だけを取り出す。"""
     blocks = re.split(r"(?=^diff --git )", diff_text, flags=re.M)
     return "".join(block for block in blocks if block.startswith("diff --git ") and
-                   re.search(r"^\\+\\+\\+ b/" + re.escape(path) + r"$", block, re.M))
+                   re.search(r"^\+\+\+ b/" + re.escape(path) + r"$", block, re.M))
 
 
 def main():
