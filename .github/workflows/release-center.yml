@@ -49,7 +49,7 @@ jobs:
       external: ${{ steps.validate.outputs.external }}
       screens: ${{ steps.validate.outputs.screens }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate inputs
         id: validate
         env:

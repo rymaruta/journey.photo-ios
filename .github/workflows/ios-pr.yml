@@ -50,8 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         with:
           node-version: "20"
@@ -91,7 +91,7 @@ jobs:
     outputs:
       app_changed: ${{ steps.diff.outputs.app_changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: 差分を確認
@@ -144,7 +144,7 @@ jobs:
       # 落ちた事実は終了コードで十分に分かる
       SWIFT_BACKTRACE: enable=no
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # **控え（actions/cache）は使わない。** Package に外部の依存は無く、効くのは
       # 自分のコードの差分ビルドだけ（初回3分弱）。1回 280MB をコミットごとに積むと
       # 控えの上限（10GB）を押し、TestFlight が頼る macOS の依存の控え（いちばん高い）
@@ -164,7 +164,7 @@ jobs:
           swift test --skip-build 2>&1 | tee build/linux-tests.log | grep -E "error|failed|Executed [0-9]+ tests" | tail -n 60
       - name: テストの結果を残す
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-tests
           path: build/linux-tests.log
@@ -200,7 +200,7 @@ jobs:
     outputs:
       skip: ${{ steps.look.outputs.skip }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 見る
         id: look
         env:
@@ -266,7 +266,7 @@ jobs:
     # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
     timeout-minutes: 160
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -301,7 +301,7 @@ jobs:
       # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
       - name: 依存の控えを戻す
         id: dependency-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
