@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 160
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
@@ -349,7 +349,7 @@ jobs:
 
       - name: 前回の作りかけを控えから戻す
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -719,7 +719,7 @@ jobs:
 
       - name: 落ちたときに読むもの
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # 分けて流す回は「まとめ」の job が各台の分と合わせて `build-logs` にする（同じ名前は2つ作れない）
           name: ${{ steps.scope.outputs.sharded == 'true' && 'part-build' || 'build-logs' }}
@@ -760,7 +760,7 @@ jobs:
 
       - name: 控えを書く（main の回だけ）
         if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -801,7 +801,7 @@ jobs:
     outputs:
       sharded: ${{ steps.decide.outputs.sharded }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 決める
         id: decide
         env:
@@ -824,7 +824,7 @@ jobs:
     outputs:
       xcode: ${{ steps.xcode.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # **何を先に流し、どう分けるかを最初に決める**（`Tools/pick-ui-tests.py --plan`）。
       # 枝の差分は GitHub の比べる口（main...この sha）から読む。読めなければ起動の見張りだけを先に流す。
@@ -860,7 +860,7 @@ jobs:
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
       - name: 前回の作りかけを控えから戻す
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
@@ -896,7 +896,7 @@ jobs:
 
       # tar は自分で包んである（成果物の zip ではファイルの実行の権限が落ちるため）。縮める手間は軽くする
       - name: 組んだ品を渡す
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-products
           path: |
@@ -908,7 +908,7 @@ jobs:
 
       - name: 組んだときのログを残す
         if: ${{ false }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: part-test-build
           path: build/logs/*.log
@@ -926,7 +926,7 @@ jobs:
       matrix:
         part: [unit, first]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/mac-test-part
         with:
           part: ${{ matrix.part }}
@@ -945,7 +945,7 @@ jobs:
       matrix:
         part: [1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/mac-test-part
         with:
           part: ${{ matrix.part }}
@@ -961,7 +961,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Xcode を選ぶ（結果を読む・まとめる）
         run: bash Tools/select-xcode.sh "${{ needs.test-build.outputs.xcode }}"
@@ -995,7 +995,7 @@ jobs:
 
       - name: 落ちたときに読むもの
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: |
