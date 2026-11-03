@@ -505,7 +505,7 @@ if testflight_yml.exists() and pr_yml.exists():
         return found.group(1) if found else None
     for text, file, names in [
         (flow, "ios-testflight.yml", ["組む（本物の SwiftUI で型検査される最初の機会）", "単体テスト", "UI テスト（画面の絵）", MARK]),
-        (pr_flow, "ios-pr.yml", ["組む", "単体テスト", "UI テスト（起動・全タブ・画面の絵）"]),
+        (pr_flow, "ios-pr.yml", ["組む", "単体テスト", "UI テスト（通常は起動スモーク・手動指定で全画面）"]),
     ]:
         for name in names:
             block = step_block(text, name)
