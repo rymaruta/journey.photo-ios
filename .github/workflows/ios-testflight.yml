@@ -367,7 +367,11 @@ jobs:
       - name: 道具を入れる
         run: |
           set -euo pipefail
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           # 署名・ビルド・提出をまとめて行う CLI（Codemagic が公開しているもの）。
           # **pipx が無い回に備える**——ランナーの構成は黙って変わる
           if command -v pipx >/dev/null 2>&1; then
@@ -825,7 +829,11 @@ jobs:
 
       - name: Xcode プロジェクトを作る
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           xcodegen generate
 
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
