@@ -376,6 +376,10 @@ def main_related(argv):
         print("::error::UIテストの一覧が読めません", file=sys.stderr)
         return 1
     changes = changed_files(diff_text)
+    if not changes and diff_text.strip():
+        print("::warning::差分を解析できないため全件実行", file=sys.stderr)
+        print(f"-only-testing:{TARGET}")
+        return 0
     chosen = set()
     uncertain = []
     ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
@@ -393,8 +397,12 @@ def main_related(argv):
                 chosen.update(one)
             else:
                 uncertain.append(path)
-        elif path in ("project.yml", "Tools/pick-ui-tests.py"):
+        elif path in ("project.yml", "Tools/pick-ui-tests.py", "Tools/xcode-test.sh") or path.startswith(("Shims/", "Resources/")):
             uncertain.append(path)
+    # 削除・リネーム前のパスも評価する。+++ /dev/null のファイルは changed_files に出ない。
+    for removed in re.findall(r"^--- a/(.+)\\n\\+\\+\\+ /dev/null$", diff_text, re.M):
+        if removed.startswith(("Sources/", ui_prefix)) or removed in ("project.yml", "Tools/pick-ui-tests.py"):
+            uncertain.append(removed)
     if uncertain:
         print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
