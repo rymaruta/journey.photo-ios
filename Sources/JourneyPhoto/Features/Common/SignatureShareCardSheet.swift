@@ -19,6 +19,7 @@ struct SignatureShareCardSheet: View {
     @State private var renderedByRatio: [SignatureShareCardRenderer.Ratio: Data] = [:]
     @State private var preparing = true
     @State private var showShare = false
+    @State private var copiedImage = false
     @State private var retryCount = 0
     @State private var avatarData: Data?
     @State private var avatarFetchAttempted = false
@@ -62,6 +63,24 @@ struct SignatureShareCardSheet: View {
                 .padding(.horizontal)
                 .accessibilityIdentifier("signatureShare.preview")
 
+                // Copy the exact JPEG bytes, not a UIImage re-encoded by the share sheet.
+                // This avoids mixing the caption and image in a single paste operation.
+                Button {
+                    guard let output else { return }
+                    UIPasteboard.general.setItems(
+                        [["public.jpeg": output]],
+                        options: [.localOnly: true,
+                                  .expirationDate: Date().addingTimeInterval(600)])
+                    copiedImage = true
+                } label: {
+                    Text(copiedImage ? L("画像をコピーしました", "Image copied") :
+                         L("画像をコピー（SNSに貼り付け）", "Copy image for social apps"))
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(output == nil || preparing)
+                .accessibilityIdentifier("signatureShare.copyImage")
+                .padding(.horizontal)
+
                 Button {
                     showShare = true
                 } label: {
@@ -92,6 +111,7 @@ struct SignatureShareCardSheet: View {
                 }
                 preparing = true
                 output = nil
+                copiedImage = false
                 if !avatarFetchAttempted, let avatarURL, !Task.isCancelled {
                     avatarFetchAttempted = true
                     var request = URLRequest(url: avatarURL)
