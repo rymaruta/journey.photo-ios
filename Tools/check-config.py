@@ -490,8 +490,7 @@ if testflight_yml.exists() and pr_yml.exists():
     # **分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘）。`build` の job と「分けて流すかを決める」の
     # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
     if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
-            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow \
-            :
+            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow:
         fail("ios-testflight.yml の「分けて流すか」が `pick-ui-tests.py --sharded` の1か所で決まっていません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
