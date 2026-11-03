@@ -442,7 +442,7 @@ enum SignatureShareCardRenderer {
             let longitudeScale = max(0.2, cos(((minY + maxY) / 2) * .pi / 180))
             let spanX = max((maxX - minX) * longitudeScale, 0.01)
             let spanY = max(maxY - minY, 0.01)
-            let inset: CGFloat = 16
+            let inset: CGFloat = 8
             let scale = min((rect.width - inset * 2) / spanX,
                             (rect.height - inset * 2) / spanY)
             func project(_ p: [Double]) -> CGPoint {
@@ -451,27 +451,45 @@ enum SignatureShareCardRenderer {
             }
             context.saveGState()
             context.clip(to: rect)
-            context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
-            context.setLineWidth(1.5)
+            context.setShouldAntialias(true)
+            context.setAllowsAntialiasing(true)
             context.setLineJoin(.round)
             context.setLineCap(.round)
+            // 輪郭線だけでは暗い共有カード上で消えるため、薄い面と二層の輪郭を重ねる。
+            // 複数リングを一つのパスにまとめ、島や内側の穴を偶奇規則で扱う。
+            context.beginPath()
             for ring in rings where ring.count >= 3 {
-                context.beginPath()
                 context.move(to: project(ring[0]))
-                for point in ring.dropFirst() { context.addLine(to: project(point)) }
+                for point in ring.dropFirst() where point.count == 2 {
+                    context.addLine(to: project(point))
+                }
                 context.closePath()
+            }
+            let silhouette = context.path
+            if let silhouette {
+                context.addPath(silhouette)
+                context.setFillColor(color.withAlphaComponent(0.11).cgColor)
+                context.drawPath(using: .eoFill)
+                context.addPath(silhouette)
+                context.setStrokeColor(color.withAlphaComponent(0.18).cgColor)
+                context.setLineWidth(4.0)
+                context.strokePath()
+                context.addPath(silhouette)
+                context.setStrokeColor(color.withAlphaComponent(0.96).cgColor)
+                context.setLineWidth(2.0)
                 context.strokePath()
             }
             let normalizedPinLongitude = pin.longitude +
                 360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
             let center = project([normalizedPinLongitude, pin.latitude])
-            context.setFillColor(color.cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 3, y: center.y - 3,
-                                           width: 6, height: 6))
-            context.setStrokeColor(color.withAlphaComponent(0.8).cgColor)
-            context.setLineWidth(1.3)
-            context.strokeEllipse(in: CGRect(x: center.x - 8, y: center.y - 8,
-                                             width: 16, height: 16))
+            // ピンは必ず1つ。暗い地図と輪郭線に埋もれないよう中心を明るくする。
+            context.setFillColor(UIColor.white.withAlphaComponent(0.94).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5,
+                                           width: 7, height: 7))
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(2)
+            context.strokeEllipse(in: CGRect(x: center.x - 9, y: center.y - 9,
+                                             width: 18, height: 18))
             context.restoreGState()
         }
     }
