@@ -82,6 +82,14 @@ class RelatedTests(unittest.TestCase):
         result = self.run_related(diff('UITests/SharedHelper.txt'), {})
         self.assertEqual(result.strip(), '-only-testing:JourneyPhotoUITests')
 
+    def test_binary_asset_forces_full_suite(self):
+        binary = 'diff --git a/Resources/cover.png b/Resources/cover.png\nindex 123..456 100644\nBinary files a/Resources/cover.png and b/Resources/cover.png differ\n'
+        self.assertEqual(self.run_related(binary, {}).strip(), '-only-testing:JourneyPhotoUITests')
+
+    def test_rename_forces_full_suite(self):
+        renamed = 'diff --git a/Sources/Old.swift b/Sources/New.swift\nsimilarity index 100%\nrename from Sources/Old.swift\nrename to Sources/New.swift\n'
+        self.assertEqual(self.run_related(renamed, {}).strip(), '-only-testing:JourneyPhotoUITests')
+
     def test_diff_filter_is_per_file(self):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
