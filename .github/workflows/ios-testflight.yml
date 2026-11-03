@@ -327,6 +327,11 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
+      # キャッシュ復元（数GB）より前に、数秒で終わる設定検査を実施。
+      # 設定不備ならMacの重い準備を待たずに失敗させる。
+      - name: 設定の検査
+        run: python3 Tools/check-config.py
+
       # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
       # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
       - name: 控えの鍵を決める
@@ -339,6 +344,9 @@ jobs:
       # 12回中9回）と PR の検証の Mac（見た3回とも）が「控え無し」で始まって、ビルドが約10分
       # 余計にかかっていた（run 462: 控え無しでテストの段 55分 / run 461: 控え有りで 41分）。
       # main の回が下の「控えを温める」でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
+      - name: キャッシュ復元の計測開始
+        run: echo "CACHE_RESTORE_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 前回の作りかけを控えから戻す
         id: cache
         uses: actions/cache/restore@v4
@@ -361,20 +369,61 @@ jobs:
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
-      - name: 設定の検査
-        run: python3 Tools/check-config.py
+      # 7GB級の復元がボトルネックか、毎回のActions Summaryで確認する。
+      - name: キャッシュ復元の計測結果
+        env:
+          MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+          EXACT_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          elapsed=$(( $(date +%s) - CACHE_RESTORE_STARTED ))
+          {
+            echo "### Xcodeキャッシュ復元"
+            echo "所要時間: ${elapsed}秒"
+            if [ -z "${MATCHED_KEY:-}" ]; then
+              echo "状態: 未命中"
+            elif [ "${EXACT_HIT:-}" = "true" ]; then
+              echo "状態: 完全一致"
+            else
+              echo "状態: 近いキャッシュから復元"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 道具を入れる
         run: |
           set -euo pipefail
-          brew install xcodegen
-          # 署名・ビルド・提出をまとめて行う CLI（Codemagic が公開しているもの）。
-          # **pipx が無い回に備える**——ランナーの構成は黙って変わる
-          if command -v pipx >/dev/null 2>&1; then
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
+
+
+      # Codemagic CLI は署名・Archive・アップロード時だけ必要。
+      # UI確認だけの実行ではPythonパッケージの導入を省略する。
+      - name: 配信用CLIを用意
+        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        run: |
+          set -euo pipefail
+          if command -v app-store-connect >/dev/null 2>&1 && command -v xcode-project >/dev/null 2>&1 && command -v keychain >/dev/null 2>&1; then
+            echo "配信用CLIは導入済み"
+          elif command -v pipx >/dev/null 2>&1; then
             pipx install codemagic-cli-tools
           else
             python3 -m pip install --break-system-packages codemagic-cli-tools
           fi
+          # pipxのインストール成功だけではPATH反映が保証されない。
+          # 署名工程へ進む前に必要な3コマンドを検証し、欠けていればここで失敗させる。
+          if [ -d "$HOME/.local/bin" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          for cli in app-store-connect xcode-project keychain; do
+            if ! command -v "$cli" >/dev/null 2>&1; then
+              echo "::error::配信用CLIが見つかりません: $cli"
+              exit 1
+            fi
+          done
 
       - name: Xcode プロジェクトを作る
         run: xcodegen generate
@@ -825,7 +874,11 @@ jobs:
 
       - name: Xcode プロジェクトを作る
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
           xcodegen generate
 
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
