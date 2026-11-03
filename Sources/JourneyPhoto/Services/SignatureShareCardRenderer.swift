@@ -85,9 +85,9 @@ enum SignatureShareCardRenderer {
             // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
             let margin: CGFloat = 48
-            let header: CGFloat = 142
+            let header: CGFloat = 118
             let footer: CGFloat = ratio == .story ? 430 : 355
-            let photoBottom = height - footer + 32
+            let photoBottom = height - footer + 8
             let photoRect = CGRect(x: margin, y: header,
                                    width: width - margin * 2,
                                    height: photoBottom - header)
@@ -124,21 +124,21 @@ enum SignatureShareCardRenderer {
                            height: height - margin - photoBottom))
 
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 62, width: 45, height: 45))
+                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 49, width: 45, height: 45))
             }
-            draw("Journey Photo", at: CGPoint(x: 157, y: 64), maxWidth: 365,
+            draw("Journey Photo", at: CGPoint(x: 157, y: 51), maxWidth: 365,
                  size: 39, color: .white, serif: true)
             cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
             cg.setLineWidth(2)
-            cg.move(to: CGPoint(x: 550, y: 59))
-            cg.addLine(to: CGPoint(x: 550, y: 116))
+            cg.move(to: CGPoint(x: 550, y: 46))
+            cg.addLine(to: CGPoint(x: 550, y: 103))
             cg.strokePath()
-            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 79),
+            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 66),
                   maxWidth: 410, size: 25, color: .white, alignment: .right)
 
             // 写真境界からの距離と下段との余白を両立する。
             // 行内の要素は左揃えを維持し、情報ブロックだけを余白の中心へ寄せる。
-            let rowY = height - footer + 83
+            let rowY = height - footer + 62
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
             if let avatarData, let avatar = UIImage(data: avatarData) {
@@ -214,17 +214,17 @@ enum SignatureShareCardRenderer {
                 drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
                            size: 37, color: brass)
                 draw(place, at: CGPoint(x: 570, y: rowY + 22),
-                     maxWidth: credit.coords == nil ? 385 : 205,
+                     maxWidth: credit.coords == nil ? 385 : 155,
                      size: 26, color: .white, bold: true, lines: 3)
             }
             if credit.coords != nil {
-                let mapRect = CGRect(x: 785, y: rowY - 18, width: 195, height: 128)
+                let mapRect = CGRect(x: 730, y: rowY - 26, width: 250, height: 185)
                 if let coordinate = credit.coords {
                     CountryOutline.drawAtLocation(pin: coordinate, in: mapRect, color: brass, context: cg)
                 }
             }
 
-            let separatorY = rowY + 132
+            let separatorY = rowY + 174
             cg.setStrokeColor(brass.withAlphaComponent(0.5).cgColor)
             cg.setLineWidth(1.5)
             cg.move(to: CGPoint(x: 96, y: separatorY))
