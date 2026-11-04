@@ -52,7 +52,13 @@ enum ShareCardMap {
     struct Layout {
         static let width: CGFloat = 1080
         static let margin: CGFloat = 48
-        static let header: CGFloat = 118
+        /// 上の帯（ロゴと一文）の高さ。写真はこの下から始まる。
+        /// 2026-11-04 owner「ヘッダーみたいな箇所はスペースがあるからもうちょい詰められそう」:
+        /// 118 → 96（22 縮め、写真が縦に 22 伸びる）。帯の中身は `headerShift` だけ上へ
+        static let header: CGFloat = 96
+        /// 帯の中身（ロゴ・題・区切り線・一文）を上へ寄せる量。元の 118 の帯では中心が
+        /// 上の枠から 59.5・写真まで 46.5 だった比を、96 の帯でも保つ（14 上へ → 45.5／38.5）
+        static let headerShift: CGFloat = -14
         /// 写真の裾を黒へ溶かす帯（写真の下端から 195 上〜15 下）。止めの位置と濃さ
         static let fadeRise: CGFloat = 195
         static let fadeHeight: CGFloat = 210

@@ -327,4 +327,27 @@ final class ShareCardMapTests: XCTestCase {
             XCTAssertLessThan(seconds, 2, "\(name) の島選びが重い")
         }
     }
+
+    /// 上の帯（2026-11-04 owner「ヘッダーは詰められそう」: 118 → 96）。中身が枠にも写真にも当たらず、
+    /// 元の上下の比（枠から 59.5・写真まで 46.5）を保つ
+    func testHeaderBandIsTighterAndKeepsItsContentInside() {
+        let hs = ShareCardMap.Layout.headerShift
+        let header = ShareCardMap.Layout.header
+        XCTAssertEqual(header, 96)
+        // 帯の中身の縦の範囲: 区切り線（46〜103）が最も外。ロゴは 49〜94
+        let contentTop = 46 + hs
+        let contentBottom = 103 + hs
+        let frameInner: CGFloat = 12   // 枠の内側（8 + 4）
+        XCTAssertGreaterThanOrEqual(contentTop - frameInner, 16, "枠に近すぎない")
+        XCTAssertGreaterThanOrEqual(header - contentBottom, 4, "写真に当たらない")
+        // 中心の上下の比（元は 59.5 : 46.5）
+        let center = (49 + hs) + 45 / 2
+        XCTAssertEqual(center - frameInner, 45.5, accuracy: 0.01)
+        XCTAssertEqual(header - center, 38.5, accuracy: 0.01)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let layout = ShareCardMap.Layout(ratio: ratio)
+            XCTAssertEqual(layout.photoRect.minY, header, "\(ratio) 写真は帯の下から")
+            XCTAssertGreaterThan(layout.photoRect.height, 0)
+        }
+    }
 }

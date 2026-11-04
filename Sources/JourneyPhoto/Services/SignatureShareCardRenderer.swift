@@ -129,17 +129,18 @@ enum SignatureShareCardRenderer {
                            width: width - margin * 2,
                            height: height - margin - photoBottom))
 
+            let hs = ShareCardMap.Layout.headerShift
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 49, width: 45, height: 45))
+                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 49 + hs, width: 45, height: 45))
             }
-            draw("Journey Photo", at: CGPoint(x: 157, y: 51), maxWidth: 365,
+            draw("Journey Photo", at: CGPoint(x: 157, y: 51 + hs), maxWidth: 365,
                  size: 39, color: .white, serif: true)
             cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
             cg.setLineWidth(2)
-            cg.move(to: CGPoint(x: 550, y: 46))
-            cg.addLine(to: CGPoint(x: 550, y: 103))
+            cg.move(to: CGPoint(x: 550, y: 46 + hs))
+            cg.addLine(to: CGPoint(x: 550, y: 103 + hs))
             cg.strokePath()
-            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 66),
+            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 66 + hs),
                   maxWidth: 410, size: 25, color: .white, alignment: .right)
 
             // 写真境界からの距離と下段との余白を両立する。
