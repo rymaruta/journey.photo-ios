@@ -42,8 +42,11 @@ final class CriticalFlowTests: XCTestCase {
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES"]
         app.launchArguments += extra
+        // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
+        enablePerfProbe(app)
         let launched = Date()
         app.launch()
+        attachPerfProbeOnFailure(app)
         // 規約の同意は 60 秒まで待ち、同意の画面が消えるまで 3 回まで押し直す（`ScreenshotTests.agreeToTerms` と同じ考え方・
         // 2026-10-22: Mac で起動から同意の画面まで 20 秒を超える回があり、30 秒で切ると別の所で落ちた・run 686・689）
         let agree = app.buttons["legal.agree"]

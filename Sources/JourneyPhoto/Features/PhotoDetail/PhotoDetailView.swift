@@ -235,6 +235,8 @@ struct PhotoDetailView: View {
     // 型検査が現実的な時間で終わらなくなることがある
     // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
+        let _ = PerfRecorder.shared.bodyHit(.photoDetail)
         // 2026-10-28 判断: **上の束は描くたびに1回だけ作る**（`HeroLineup`）。写真・点・題の下の1行が
         // それぞれ作り直していて、1回の描き直しで束の絞り込みと並べ替えが5回走っていた
         let hero = heroLineup

@@ -113,6 +113,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、起動直後の動きの記録（`PerfRecorder`）を取り、見えない要素 `perf.probe` に出す（Debug のみ・2026-11-04・札 #435 / #429）。
+    /// `-JPPreviewPerfProbe YES`。下のタブを書いた場所と時刻・起動後の `.task` の始めと終わり・メインスレッドの停止・
+    /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
+    static let perfProbeKey = "JPPreviewPerfProbe"
+
+    static var perfProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: perfProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証

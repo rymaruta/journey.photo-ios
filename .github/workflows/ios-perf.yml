@@ -1,0 +1,158 @@
+# アプリの重さを、毎日1回・同じ条件で測って記録する（2026-11-04・札 #429 アプリ 1「測る仕組み」）。
+#
+# `PerformanceTests`（起動時間・起動と読み込みの区間・タブの往復・メモリ・起動直後の記録・body の評価回数）を
+# Mac で流し、値を行ごとに拾って、実行の Summary と成果物 `perf-record`（JSON）に残す。
+# 前後を比べる基準が残る（それまでは、名指しした回だけ流れて、値はログの最後の 400 行に埋もれていた）。
+#
+# **合否は付けない**（時間やメモリで赤にすると、Mac の混み具合で揺れる）。落ちるのは、試験が動かないとき
+# （画面が出ない）と、数が1つも拾えないとき（仕組みが壊れている）だけ。
+#
+# **Mac の使い方**: 組む（1台）→ 流す（1台）を順に。同時には1台しか使わない（Mac は同時5台まで・
+# TestFlight に上げる回が優先）。同じ回が重ならないよう `concurrency` で1本ずつ。
+# 組み立ては `ios-testflight.yml` の「テスト用ビルドを準備」と、`.github/actions/mac-test-part` の使い回し。
+#
+# **まだ有効にしていない。** 定期（schedule）は、リポジトリの変数 `IOS_PERF_ENABLED` が `true` のときだけ走る。
+# 手動（workflow_dispatch）はいつでも走る。有効にするのは、手動で1回流して値が出るのを確かめてから
+# （Settings → Secrets and variables → Actions → Variables）
+name: アプリの重さの記録
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎日 UTC 20:23 = JST 5:23。ほかの回（TestFlight・PR の検証は人が動かす時間帯）と重ならない早朝。
+    # 0 分・30 分を避けて、GitHub の混む時間を外す
+    - cron: "23 20 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-perf
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 重さの記録用ビルドを準備
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.IOS_PERF_ENABLED == 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    outputs:
+      xcode: ${{ steps.xcode.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # 流すのは `PerformanceTests` だけ（起動の見張り `SmokeTests` は入れない）。
+      # `Tools/pick-ui-tests.py --plan` は、名指しした回だけ流す試験もクラスの名前（PerformanceTests）で先に流す分に入れる。
+      # 組み立てのフックは `mac-test-part` の part=first（`first.txt`）
+      - name: 流す試験を決める
+        run: |
+          set -euo pipefail
+          : > /tmp/empty.diff
+          python3 Tools/pick-ui-tests.py --plan 3 build/ui-plan PerformanceTests /tmp/empty.diff
+          grep -v "SmokeTests" build/ui-plan/first.txt > build/ui-plan/perf.txt
+          mv build/ui-plan/perf.txt build/ui-plan/first.txt
+          echo "### 重さの記録で流す試験" >> "$GITHUB_STEP_SUMMARY"
+          sed 's#-only-testing:JourneyPhotoUITests/#- #' build/ui-plan/first.txt >> "$GITHUB_STEP_SUMMARY"
+          cat build/ui-plan/first.txt
+
+      - name: Xcodeを選択
+        id: xcode
+        run: bash Tools/select-xcode.sh
+
+      - name: Xcodeのバージョンを確認
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 控えの鍵と path は `ios-testflight.yml` の「テスト用ビルドを準備」と同じ（違うと当たらない）。読むだけ
+      - name: ビルドキャッシュのキーを生成
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      - name: ビルドキャッシュを復元
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      - name: Xcodeプロジェクトを生成
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
+          xcodegen generate
+
+      - name: 組む（本物の SwiftUI で型検査される最初の機会）
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
+
+      - name: ビルド成果物を圧縮
+        run: |
+          set -euo pipefail
+          products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
+          python3 Tools/test-products.py pack "$products" build/test-products.tar
+          ls -la build/test-products.tar
+
+      - name: ビルド成果物をアップロード
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-products
+          path: |
+            build/test-products.tar
+            build/ui-plan
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+
+  perf:
+    name: 重さを測って記録する
+    needs: build
+    runs-on: macos-15
+    # PerformanceTests は約 9〜15 分。1本ごとの上限は `Tools/xcode-test.sh`（300 秒）
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # 流し方（組んだ品をほどく・シミュレーターを温める・1本ごとの時間の上限）は `mac-test-part` のまま。
+      # 全文のログは build/logs/xcodebuild-first.log にも残る
+      - uses: ./.github/actions/mac-test-part
+        with:
+          part: first
+          xcode: ${{ needs.build.outputs.xcode }}
+
+      # 値を行ごとに拾う（`measured [...]` の行と、試験が残す `PERF …` の行）。落ちた回の分も拾う。
+      # 数が1つも拾えなければ異常終了（仕組みが壊れている）
+      - name: 数を拾って記録する
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          mkdir -p build/perf
+          status=0
+          python3 Tools/perf-collect.py build/logs/xcodebuild-first.log \
+            --json build/perf/perf.json --markdown build/perf/summary.md --require > /dev/null || status=$?
+          if [ -f build/perf/summary.md ]; then cat build/perf/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$status"
+
+      # 数字だけの記録（JSON）。xcresult・画面画像・生ログは入れない（公開リポジトリ）。90 日残る
+      - name: 記録を成果物に残す
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-record
+          path: |
+            build/perf/perf.json
+            build/perf/summary.md
+          retention-days: 90
+          if-no-files-found: warn

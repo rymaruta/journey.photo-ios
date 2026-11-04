@@ -329,7 +329,7 @@ final class UXAuditFixesATests: XCTestCase {
                        "根が出ているのに作り直す（地図の状態が消える）")
         XCTAssertFalse(TabRouter.resetsMapStack(hasQuery: true, mapSelected: false, rootOnScreen: false))
         let root = try source("App/RootView.swift")
-        let hook = slice(root, from: "if TabRouter.resetsMapStack(hasQuery: tabRouter.pendingMapQuery != nil,", to: "selection = .map")
+        let hook = slice(root, from: "if TabRouter.resetsMapStack(hasQuery: tabRouter.pendingMapQuery != nil,", to: "select(.map, at:")
         XCTAssertTrue(hook.contains("mapSelected: selection == .map"), "地図の札へ移す前の札で見ていない")
         XCTAssertTrue(hook.contains("mapStackId += 1"))
         let stack = slice(root, from: "PhotoMapView(unread: unread,", to: ".tabItem")
