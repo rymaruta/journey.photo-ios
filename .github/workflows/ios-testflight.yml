@@ -425,6 +425,21 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 🔴 **Archive の中間物の控え**（2026-11-04・速さの担当）。上の控えは Archive の中間物
+      # （`Build/Intermediates.noindex/ArchiveIntermediates`）を入れない（10GB の置き場に収めるため）ので、Archive は毎回、
+      # 依存（Amplify・aws-sdk-swift ほか）の Release 組みから始める（run 831: 約 6.3 分）。大きさを測ったら
+      # 1281MB（run 839 の段「Archive が残したものの大きさ」）で、圧縮すれば 控え全体の 1 割ほど。別の小さな控えに分けて戻す。
+      # 鍵は『Xcode の版＋project.yml・Package.swift の中身』（上の控えと同じ）＋回の番号、読む側は回の番号の手前まで。
+      # 書くのは main の回だけ（下の『Archive の中間物の控えを書く』）
+      - name: Archive の中間物の控えを戻す
+        id: archive-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+          key: archive-int-${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            archive-int-${{ env.CACHE_KEY }}-
+
       - name: 配信用アプリをビルドツールをインストール
         run: |
           set -euo pipefail
@@ -740,6 +755,15 @@ jobs:
           else
             echo "::warning::版の印 testflight/$MARKETING を押せませんでした。Actions の「版の印を付け直す」（version-tag.yml）で ${MARKETING} と $(git rev-parse --short HEAD) を渡して付けてください（付けないと次の回も同じ版になります）"
           fi
+
+      # 上げた『あと』に書く（上げる邪魔をしない）。Archive が通った回だけ。落ちても赤にしない
+      - name: Archive の中間物の控えを書く
+        if: ${{ steps.archive.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+          key: archive-int-${{ env.CACHE_KEY }}-${{ github.run_id }}
 
       # **見た目を確かめられる場所はここしか無い。** 開発は Linux で進めて
       # いて、手元にあるのは `Shims/` の模型（修飾子は素通し＝配置も色も
