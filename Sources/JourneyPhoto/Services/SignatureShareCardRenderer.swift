@@ -679,9 +679,16 @@ enum SignatureShareCardRenderer {
             withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 
-    /// Render a UIKit row into the card, preserving SF Symbol baseline alignment.
-    /// The first line of text stays at textY; longer equipment names wrap only
-    /// between words (ShareCardText), never inside a word.
+    /// 撮影情報の1列（記号＋字）。記号は字の1行目のベースラインにそろえる。
+    ///
+    /// 2026-11-04 判断: UIView と Auto Layout（UILabel・UIImageView・制約）で組むのをやめた。
+    /// `render` は画面の処理（メインスレッド）の外で走るので、Auto Layout を触ると
+    /// 「Modifications to the layout engine must not be performed from a background thread」で
+    /// 落ちる（Mac の単体テストで実測: #476 の PR の検証 run 41679775959 と、この枝の run 832。
+    /// 落ちた所は drawMetadataRow → -[UIView layoutBelowIfNeeded]）。
+    /// 同じそろえ方（UIImageView の firstBaseline＝記号の baselineOffsetFromBottom を表示の大きさへ縮めた所）を
+    /// 数で出して、UIImage と NSString で直に描く（どちらも描画の文脈の中ならメインの外で使える）。
+    /// 字は ShareCardText で語の切れ目でだけ折った行（語の途中で折らない）。
     private static func drawMetadataRow(_ symbolName: String, text: String,
                                         at origin: CGPoint, textX: CGFloat,
                                         textWidth: CGFloat, fontSize: CGFloat,
@@ -689,41 +696,30 @@ enum SignatureShareCardRenderer {
                                         context: CGContext) {
         let fitted = equipmentLayout(text, maxWidth: textWidth, preferredSize: fontSize)
         let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
-        let rowWidth = textX - origin.x + textWidth
-        let row = UIView(frame: CGRect(x: 0, y: 0, width: rowWidth, height: 72))
-        row.backgroundColor = .clear
-        let icon = UIImageView(image: UIImage(systemName: symbolName,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize,
-                                                            weight: .regular)))
-        icon.tintColor = color
-        icon.contentMode = .scaleAspectFit
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        let label = UILabel()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 1
         paragraph.lineBreakMode = .byClipping
-        label.attributedText = NSAttributedString(
-            string: fitted.lines.joined(separator: "\n"),
-            attributes: [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph])
-        label.numberOfLines = 0
-        label.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(icon)
-        row.addSubview(label)
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            icon.widthAnchor.constraint(equalToConstant: symbolSize),
-            icon.heightAnchor.constraint(equalToConstant: symbolSize),
-            icon.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
-            label.leadingAnchor.constraint(equalTo: row.leadingAnchor,
-                                           constant: textX - origin.x),
-            label.topAnchor.constraint(equalTo: row.topAnchor),
-            label.widthAnchor.constraint(equalToConstant: textWidth)
-        ])
-        row.layoutIfNeeded()
-        context.saveGState()
-        context.translateBy(x: origin.x, y: origin.y)
-        row.layer.render(in: context)
-        context.restoreGState()
+        // 字の上端は origin.y（前の UILabel の topAnchor と同じ）。1行目のベースラインは上端＋ascender
+        (fitted.lines.joined(separator: "\n") as NSString).draw(
+            with: CGRect(x: textX, y: origin.y, width: textWidth, height: 72),
+            options: [.usesLineFragmentOrigin],
+            attributes: [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph],
+            context: nil)
+        let textBaseline = origin.y + font.ascender
+        guard let symbol = UIImage(systemName: symbolName,
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize,
+                                                                                  weight: .regular))?
+            .withTintColor(color, renderingMode: .alwaysOriginal),
+              symbol.size.width > 0, symbol.size.height > 0 else { return }
+        // symbolSize の正方形に縦横比を保って収める（前の scaleAspectFit と同じ）
+        let scale = min(symbolSize / symbol.size.width, symbolSize / symbol.size.height)
+        let drawn = CGSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
+        let inBox = CGRect(x: (symbolSize - drawn.width) / 2, y: (symbolSize - drawn.height) / 2,
+                           width: drawn.width, height: drawn.height)
+        // 正方形の上端から記号のベースラインまで（ベースラインの無い記号は下端）
+        let baselineInBox = inBox.maxY - (symbol.hasBaseline ? symbol.baselineOffsetFromBottom * scale : 0)
+        let boxTop = textBaseline - baselineInBox
+        symbol.draw(in: inBox.offsetBy(dx: origin.x, dy: boxTop))
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
