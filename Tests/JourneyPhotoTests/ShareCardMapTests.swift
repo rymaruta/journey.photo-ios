@@ -395,7 +395,9 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
+    #if !os(Linux)
     /// 2026-11-04 owner「文字とアイコン中央がずれてる」: 大文字の高さの中心がマークの中心にそろう
+    /// （UIKit の字の寸法を使うので、Linux の模型では流さない）
     func testWordmarkCapHeightCenterMatchesMarkCenter() {
         let markMid = ShareCardMap.Layout.headerMarkY + ShareCardMap.Layout.headerMarkSize / 2
         let font = SignatureShareCardRenderer.wordmarkFont()
@@ -403,6 +405,7 @@ final class ShareCardMapTests: XCTestCase {
         let capCenter = top + font.ascender - font.capHeight / 2
         XCTAssertEqual(capCenter, markMid, accuracy: 0.01)
     }
+    #endif
 
     /// 上の帯（高さ 100）。マークの中心・区切り線の中心・一文の中心がどれも帯の縦の中心（50）にそろい、
     /// 中身が額縁にも写真にも当たらない
