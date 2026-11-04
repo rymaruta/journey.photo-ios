@@ -539,14 +539,15 @@ enum SignatureShareCardRenderer {
             }
             let center = project([pin.longitude, pin.latitude])
             // The point should glow gently rather than obscure nearby coastline.
-            // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 8・光の輪は半径 18
-            // （約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる）
+            // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 4・光の輪は半径 10。
+            // 地図が黒い帯の中（200×146）になって縮尺が小さくなったので、以前の 8/18 では県の塗りが点に隠れた。
+            // 約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる
             context.setFillColor(color.withAlphaComponent(0.22).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 18, y: center.y - 18,
-                                           width: 36, height: 36))
+            context.fillEllipse(in: CGRect(x: center.x - 10, y: center.y - 10,
+                                           width: 20, height: 20))
             context.setFillColor(color.withAlphaComponent(0.95).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 8, y: center.y - 8,
-                                           width: 16, height: 16))
+            context.fillEllipse(in: CGRect(x: center.x - 4, y: center.y - 4,
+                                           width: 8, height: 8))
             context.restoreGState()
         }
     }

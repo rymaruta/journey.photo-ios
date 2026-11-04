@@ -251,8 +251,23 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let rect = ShareCardMap.Layout(ratio: .portrait).mapRect
         let focused = try XCTUnwrap(ShareCardMap.focus(japan, latitude: pin.latitude,
                                                        longitude: pin.longitude, in: rect))
-        // 甲府の北西（山梨県の中・ピンの点から 6px 以上離れた所）
-        let probe = focused.projection.point(longitude: 138.4, latitude: 35.8)
+        // 山梨県の中で、ピンの点から 6〜9px 離れた所（点の半径 4 の外・光の輪の半径 10 の内側）。
+        // 2026-11-04: 地図が黒い帯の中（200×146）になり縮尺が小さくなったので、固定の座標でなく、
+        // 山梨県の輪の中の点を 0.05° 刻みで探して、その条件に合う所を選ぶ
+        let yamanashi = try XCTUnwrap(ShareCardMap.loadShapes(resource: "japan-prefectures")
+            .first(where: { $0.n == "山梨県" }))
+        let pinPoint = focused.projection.point(longitude: pin.longitude, latitude: pin.latitude)
+        var found: CGPoint?
+        search: for latStep in 0..<30 {
+            for lonStep in 0..<30 {
+                let lon = 138.1 + Double(lonStep) * 0.05, lat = 35.2 + Double(latStep) * 0.05
+                guard yamanashi.r.contains(where: { ShareCardMap.ringContains($0, longitude: lon, latitude: lat) }) else { continue }
+                let candidate = focused.projection.point(longitude: lon, latitude: lat)
+                let distance = hypot(candidate.x - pinPoint.x, candidate.y - pinPoint.y)
+                if distance >= 6, distance <= 9 { found = candidate; break search }
+            }
+        }
+        let probe = try XCTUnwrap(found, "山梨県の中に、ピンから 6〜9px の所が無い（地図の縮尺を確かめる）")
         func red(_ image: CGImage) throws -> Int {
             var rgba = [UInt8](repeating: 0, count: 4)
             let context = try XCTUnwrap(CGContext(
