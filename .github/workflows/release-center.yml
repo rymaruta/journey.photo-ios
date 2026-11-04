@@ -33,6 +33,10 @@ on:
         description: "Required for TestFlight upload; check only after reviewing the target commit"
         type: boolean
         default: false
+      skip_tested_gate:
+        description: "Skip the pre-upload gate (the tree must be green in the PR check's Xcode job). The reason is recorded in the run summary"
+        type: boolean
+        default: false
 
 permissions:
   # The called TestFlight build job creates release tags and can publish screenshots.
@@ -44,6 +48,7 @@ jobs:
   plan:
     name: Validate settings and publish execution plan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       release: ${{ steps.validate.outputs.release }}
       external: ${{ steps.validate.outputs.external }}
@@ -134,4 +139,5 @@ jobs:
       tests: ${{ needs.plan.outputs.release != 'true' || inputs.release_tests }}
       screens: ${{ needs.plan.outputs.screens }}
       first: ${{ inputs.priority_tests }}
+      skip_tested_gate: ${{ inputs.skip_tested_gate }}
     secrets: inherit

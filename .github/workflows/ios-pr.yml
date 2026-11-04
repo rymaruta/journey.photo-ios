@@ -80,6 +80,10 @@ jobs:
         run: python3 Tools/check-config.py
       - name: 関連UIテスト選別の回帰テスト
         run: python3 Tools/test_pr_related_ui.py
+      - name: ワークフローの検査と上げる前の関門の単体テスト
+        run: |
+          python3 Tools/test_workflow_lint.py
+          python3 Tools/test_tested_gate.py
 
   # ワークフローだけの変更ではアプリのソース・テストが変わらない。
   # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。
@@ -222,22 +226,14 @@ jobs:
             # そのあとの Archive が job の上限（160 分）に当たって cancelled になり、PR #431 が同じコミットを
             # Mac でもう一度全部流した。印の段は「単体と UI が全部通った」ときだけ success なので、後の段で
             # 止まった回でもテスト済みと言える。**failure の回は数えない**（どこかが落ちた回）
-            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-testflight.yml/runs?head_sha=${HEAD_SHA}&status=completed&per_page=30" \
-                      --jq '.workflow_runs[] | select(.conclusion == "success" or .conclusion == "cancelled") | .id' 2>/dev/null || true)"
+            # 判定は `Tools/tested_gate.py` の1か所（TestFlight の「上げる前の関門」も同じものを呼ぶ）。
+            # 段の名前は完全一致・印の段は2か所のどちらかが success・failure の回は数えない、の決まりもそこに書いてある
             reason="このコミットで Mac のテストが通った TestFlight の回が無い"
-            for id in $runs; do
-              # 🔴 **段の名前は完全一致で見る**（前は「テスト」で始まる最初の段＝単体だけで
-              # 通った扱いになりうる）。名前は ios-testflight.yml と揃える。
-              # 2026-10-31（#429）: 印の段は2か所にある（1台で流す回は `build` の job、別々の Mac に分けて流す回は
-              # 「まとめ」の job）。流れなかった方は skipped なので、どれか1つが success なら数える
-              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
-                        --jq '[.jobs[].steps[] | select(.name == "全部のテストが通った（PR の検証が数える印）") | .conclusion] | if any(. == "success") then "success" else "" end' 2>/dev/null || true)"
-              if [ "$step" = "success" ]; then
-                skip=true
-                reason="TestFlight の run ${id} で同じコミットのテストが通っている"
-                break
-              fi
-            done
+            id="$(python3 Tools/tested_gate.py mac-run "${HEAD_SHA}" 2>/dev/null || true)"
+            if [ -n "$id" ]; then
+              skip=true
+              reason="TestFlight の run ${id} で同じコミットのテストが通っている"
+            fi
           fi
           if [ "$skip" = "true" ]; then
             echo "Xcode の段を飛ばします: ${reason}"

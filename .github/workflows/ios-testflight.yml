@@ -32,6 +32,9 @@ on:
       first:
         type: string
         default: ""
+      skip_tested_gate:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       submit:
@@ -68,6 +71,13 @@ on:
         description: "検証用：最初に実行するUIテスト（通常は空欄）"
         type: string
         default: ""
+      # 2026-11-04 判断: 上げる回（submit=true）は、上げる木が PR の検証の Xcode の段で success になっているかを
+      # 上げる前に見る（下の `gate` の job）。PR #476 は Mac の単体テストが4件落ちる前にマージされ、
+      # 検査を通っていない木が TestFlight 1.1.60 として上がったため。検査なしで上げたいときだけ true にする
+      skip_tested_gate:
+        description: "上げる前の関門（PRの検証がこの木で成功しているか）を飛ばす。理由はSummaryに残る"
+        type: boolean
+        default: false
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -89,7 +99,48 @@ env:
   BUNDLE_ID: com.journeyphoto.JourneyPhoto
 
 jobs:
+  # 🔴 **上げる前の関門**（2026-11-04・Linux で数秒）。上げる回（`submit=true`）は既定でテストを流さず、
+  # 「main に入ったものは PR の検証の Mac のテストを通っている」前提で上げる。その前提を**上げる前に確かめる**:
+  # 上げる sha の木が、PR の検証（`ios-pr.yml`）の Xcode の段で success になっている（か、同じ木を Mac で
+  # 通した別の回がある）こと。無ければ `build`（署名・Archive・上げる）に進まず止める。
+  # 判定は `Tools/tested_gate.py` の1か所（`ios-pr.yml` の `tested` と同じ「木の同一性」。写しを作らない）。
+  # 飛ばすのは: 上げない回・この回の Mac で全部のテストを流す回（`tests` かつ `screens` が空）・
+  # `skip_tested_gate`（飛ばした理由として Summary に残す）
+  gate:
+    name: 上げる前の関門（Mac でテスト済みか）
+    if: ${{ inputs.submit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: 木が Mac のテストを通っているか見る
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKIP: ${{ inputs.skip_tested_gate }}
+          TESTS: ${{ inputs.tests }}
+          SCREENS: ${{ inputs.screens }}
+        run: |
+          set -uo pipefail
+          if [ "${SKIP:-}" = "true" ]; then
+            echo "### 上げる前の関門を飛ばしました" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip_tested_gate=true で流されました。上げる sha: ${GITHUB_SHA}（Mac のテスト済みかは確かめていません）" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::skip_tested_gate=true: 上げる前の関門を飛ばしました"
+            exit 0
+          fi
+          if [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
+            echo "### 上げる前の関門: この回の Mac で全部のテストを流すので確かめません" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          tree="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
+          python3 Tools/tested_gate.py gate "${GITHUB_SHA}" "$tree"
+
   build:
+    # 上げる回は、関門を通ってから（上げない回は関門が skipped で、そのまま進む）
+    needs: gate
+    if: ${{ !cancelled() && needs.gate.result != 'failure' }}
     # **絵を置く枝（`screenshots`）へ押すのに書き込みが要る。**
     # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける
     permissions:

@@ -16,6 +16,7 @@ jobs:
   cleanup:
     if: ${{ github.event.inputs.confirm == 'DELETE' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check and delete allowlisted branches
         env:

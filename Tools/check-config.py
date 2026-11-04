@@ -492,10 +492,13 @@ if testflight_yml.exists() and pr_yml.exists():
     if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
             or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow:
         fail("ios-testflight.yml の「分けて流すか」が `pick-ui-tests.py --sharded` の1か所で決まっていません")
-    # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
-    selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
-    if selects != [f'.name == "{MARK}"']:
-        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
+    # 数える側は `Tools/tested_gate.py` の1か所（2026-11-04・PR の検証の `tested` と TestFlight の「上げる前の関門」が共有）。
+    # 印の名前の**完全一致だけ**で数える（前方一致にすると別の段で通った扱いになる）
+    gate_py = (ROOT / "Tools/tested_gate.py").read_text(encoding="utf-8")
+    if f'MARK_STEP = "{MARK}"' not in gate_py or 's.get("name") == MARK_STEP' not in gate_py:
+        fail("Tools/tested_gate.py の印の名前が ios-testflight.yml と違うか、完全一致で数えていません")
+    if "tested_gate.py mac-run" not in pr_flow or re.search(r"select\(\.name", pr_flow):
+        fail("ios-pr.yml の「同じコミットが Mac でテスト済みか」が、共通の判定（Tools/tested_gate.py mac-run）を呼んでいません")
 
     # **落ちても先へ進む段を作らない。** 組む・単体・UI・印のどれかに `continue-on-error` が付くと、
     # 落ちた回でも印まで進み「テスト済み」と数えられる
@@ -742,6 +745,18 @@ if testflight_yml.exists() and pr_yml.exists():
                                      index, loose)
     if not chosen:
         fail(f"pick-ui-tests.py が、変えたテストの行から先に流すテストを選べません（{sample} の {smoke_line} 行目）")
+
+# ---- ワークフローと CI スクリプトの書き間違い ---------------------------------
+# 2026-11-04: TestFlight の失敗 23 件のうち 6 件は、`run:` の構文エラーや `Tools/*.py` の構文エラーだった。
+# 中身は `Tools/workflow_lint.py`（`bash -n`・`py_compile`・参照先・Secrets の名前・permissions と timeout）
+sys.path.insert(0, str(ROOT / "Tools"))
+import workflow_lint  # noqa: E402
+
+_lint_errors, _lint_skipped = workflow_lint.lint(ROOT)
+if _lint_skipped:
+    print(f"[skip] {_lint_skipped}")
+for _message in _lint_errors:
+    fail(_message)
 
 # ---- 結果 -----------------------------------------------------------------
 if errors:

@@ -38,6 +38,8 @@ python3 Tools/check-api-parity.py "${PHOTO_GALLERY:-../photo-gallery}"
 echo
 echo "== 設定ファイル =="
 python3 Tools/check-config.py
+python3 Tools/test_workflow_lint.py
+python3 Tools/test_tested_gate.py
 
 echo
 echo "== ビルドとテスト（模型に向けて・Swift があるときだけ） =="
