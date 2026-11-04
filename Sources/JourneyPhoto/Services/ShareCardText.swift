@@ -19,7 +19,9 @@ enum ShareCardText {
 
     private static let openers: Set<Character> = ["（", "(", "「", "［", "["]
     private static let closers: Set<Character> = ["）", ")", "」", "］", "]"]
-    private static let breakAfter: Set<Character> = ["、", "・", "，", "/", "／"]
+    private static let breakAfter: Set<Character> = ["、", "・", "，"]
+    /// 「/」は後ろが空白のときだけ折る（「f/2.8」を「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）
+    private static let slashes: Set<Character> = ["/", "／"]
 
     /// 折ってよい所で区切った塊。塊をつなげると元の文になる
     static func segments(_ text: String) -> [String] {
@@ -42,6 +44,7 @@ enum ShareCardText {
             let isSpace = character == " " || character == "　"
             let breaks = breakAfter.contains(character)
                 || (character == "," && next != " ")
+                || (slashes.contains(character) && (next == " " || next == "　"))
                 || (isSpace && next != " " && next != "　")
             if breaks, next != nil {
                 result.append(current)
@@ -108,6 +111,38 @@ enum ShareCardText {
             truncate(trimmed($0.joined()), maxWidth: maxWidth, size: size, measure: measure)
         }
         return Fitted(size: size, lines: lines, truncated: true)
+    }
+
+    /// 決まった行（撮影地の「県」「（市）」の2行）を、行の中では折らずに収める。
+    /// 2026-11-04 owner: 全部の行が入る最大の大きさにそろえる（小さい方に合わせる）。
+    /// 下限でも入らない行は末尾を「…」で切る。括弧で包んだ行は閉じ括弧を残す（「（サン＝ジェルマン＝アン…）」）
+    static func fitLines(_ lines: [String], maxWidth: CGFloat, preferredSize: CGFloat,
+                         minimumSize: CGFloat, step: CGFloat = 1,
+                         measure: (String, CGFloat) -> CGFloat) -> Fitted {
+        guard !lines.isEmpty else { return Fitted(size: preferredSize, lines: [], truncated: false) }
+        var size = preferredSize
+        while true {
+            if lines.allSatisfy({ measure($0, size) <= maxWidth }) {
+                return Fitted(size: size, lines: lines, truncated: false)
+            }
+            if size <= minimumSize { break }
+            size = max(minimumSize, size - step)
+        }
+        let cut = lines.map { line -> String in
+            guard measure(line, size) > maxWidth else { return line }
+            for (open, close) in [("（", "）"), ("(", ")")]
+            where line.hasPrefix(open) && line.hasSuffix(close) && line.count > 2 {
+                var inner = Array(line.dropFirst().dropLast())
+                while !inner.isEmpty {
+                    inner.removeLast()
+                    let candidate = open + trimmed(String(inner)) + "…" + close
+                    if measure(candidate, size) <= maxWidth { return candidate }
+                }
+                return open + "…" + close
+            }
+            return truncate(line, maxWidth: maxWidth, size: size, measure: measure)
+        }
+        return Fitted(size: size, lines: cut, truncated: true)
     }
 
     static func truncate(_ line: String, maxWidth: CGFloat, size: CGFloat,

@@ -144,7 +144,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
         // 2026-11-04 owner「文章の変な改行はいやです」: 機材名は語の途中で折らない
         let camera = "Hasselblad X2D II 100C Medium Format Camera"
         let lens = "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens"
-        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246))] {
+        // 「/」の後ろでは折らない（「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）
+        let nikkor = "NIKKOR Z 24-70mm f/2.8 S"
+        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246)), (nikkor, CGFloat(120))] {
             let fitted = SignatureShareCardRenderer.equipmentLayout(name, maxWidth: width)
             XCTAssertLessThanOrEqual(fitted.size, 22)
             XCTAssertFalse(fitted.truncated, "\(name) は全文が入る")
@@ -161,19 +163,23 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
-    func testPlaceWrapsOnlyAtSeparatorsWithRealFont() {
-        // 地図があるときの撮影地の幅（140）。「（山中湖\n村）」のように語の途中で折らない
+    func testPlaceTwoLinesWithRealFont() {
+        // 地図があるときの撮影地の幅（140）。決まった2行で、行の中では折らない（2026-11-04 owner）
         let width = ShareCardMap.Layout.placeWidthWithMap
         let cases: [(String, [String])] = [
             ("千葉県（市原市）", ["千葉県", "（市原市）"]),
-            ("山梨県（山中湖村）", ["山梨県", "（山中湖村）"]),
-            ("北海道（札幌市）", ["北海道", "（札幌市）"]),
-            ("Versailles, Île-de-France, フランス", ["Versailles,", "Île-de-France,", "フランス"])
+            ("山中湖村, 山梨県, 日本", ["山梨県", "（山中湖村）"]),
+            ("札幌市時計台, 中央区, 札幌市, 北海道, 060-0001, 日本", ["北海道", "（札幌市）"]),
+            ("ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス",
+             ["フランス", "（ヴェルサイユ）"]),
+            ("Paris, Île-de-France, France", ["France", "(Paris)"])
         ]
-        for (place, expected) in cases {
-            let fitted = SignatureShareCardRenderer.placeLayout(place, maxWidth: width)
-            XCTAssertEqual(fitted.lines, expected, "\(place) の折れる位置（大きさ \(fitted.size)）")
-            XCTAssertFalse(fitted.truncated, place)
+        for (raw, expected) in cases {
+            let lines = LocationMatch.shareCardPlace(raw)?.lines ?? []
+            XCTAssertEqual(lines, expected, raw)
+            let fitted = SignatureShareCardRenderer.placeLayout(lines, maxWidth: width)
+            XCTAssertEqual(fitted.lines, expected, "\(raw) が切れた（大きさ \(fitted.size)）")
+            XCTAssertFalse(fitted.truncated, raw)
             XCTAssertGreaterThanOrEqual(fitted.size, 26 * 0.72, "撮影者名と同じ下限")
             let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
             for line in fitted.lines {
@@ -181,6 +187,38 @@ final class SignatureShareCardRendererTests: XCTestCase {
                                          width, "\(line) が 140 からはみ出す")
             }
         }
+    }
+
+    /// 日本の長い市区町村名（全 1709 件のうち 6〜7 字の全部と、5 字の代表）を本物の字で測り、
+    /// Mac の記録に出す（2026-11-04 確かめ役の指摘: 「（南アルプス市）」は 18.72pt でも 140 を超えうる）。
+    /// 一覧は code4fukui/localgovjp の市区町村名から字数で選んだ
+    func testMeasureLongMunicipalityNames() {
+        let names = ["つくばみらい市", "いちき串木野市", "かすみがうら市", "山陽小野田市", "富士河口湖町",
+                     "ひたちなか市", "南アルプス市", "東松島市", "伊豆の国市", "大和郡山市", "四国中央市",
+                     "世田谷区", "山中湖村", "市原市"]
+        let minimum = CGFloat(26 * 0.72)
+        let semibold = UIFont.systemFont(ofSize: minimum, weight: .semibold)
+        // 和文の詰め（palt: kTextSpacingType=22・kAltProportionalTextSelector=5）
+        let paltDescriptor = semibold.fontDescriptor.addingAttributes([
+            .featureSettings: [[UIFontDescriptor.FeatureKey.type: 22,
+                                UIFontDescriptor.FeatureKey.selector: 5]]
+        ])
+        let palt = UIFont(descriptor: paltDescriptor, size: minimum)
+        for name in names {
+            let line = "（\(name)）"
+            let plain = (line as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (line as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE \(line) plain=\(String(format: "%.1f", plain)) palt=\(String(format: "%.1f", packed)) fitSize140=\(String(format: "%.2f", 140 / plain * minimum))")
+        }
+        for character in ["（", "）", "あ", "市"] {
+            let plain = (character as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (character as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE char \(character) plain=\(String(format: "%.2f", plain)) palt=\(String(format: "%.2f", packed))")
+        }
+        let pin = UIImage(systemName: "mappin.circle",
+                          withConfiguration: UIImage.SymbolConfiguration(pointSize: 37, weight: .regular))
+        print("SHARECARD-MEASURE pin size=\(pin.map { "\($0.size)" } ?? "nil")")
+        XCTAssertFalse(names.isEmpty)
     }
 
     /// 日本の写真は、撮影地の文字の県を真鍮 75% で塗る（案A-3）。海外の写真・県名の無い文字は塗らない

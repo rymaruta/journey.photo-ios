@@ -1192,7 +1192,9 @@ struct PhotoDetailView: View {
             verified: model.owner?.showsVerifiedMark ?? false,
             proStyle: model.owner?.shownProMark,
             early: model.owner?.showsEarlyMark ?? false,
-            badge: model.owner?.shownBadge)
+            badge: model.owner?.shownBadge,
+            // 撮影地は「大きい単位／（小さい単位）」の2行（2026-11-04 owner）
+            place: LocationMatch.shareCardPlace(target.location))
         actionNotice = nil
         signatureBundle = SignatureBundle(
             photoData: raw,

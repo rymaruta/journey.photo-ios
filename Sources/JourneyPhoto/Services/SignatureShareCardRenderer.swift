@@ -25,6 +25,13 @@ enum SignatureShareCardRenderer {
         let proStyle: ProMarkStyle?
         let early: Bool
         let badge: EarnedBadge?
+        /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
+        /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
+        var place: LocationMatch.ShareCardPlace? = nil
+
+        var placeLines: [String] {
+            (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
+        }
     }
 
     /// SNSでは撮影地点をそのまま描かず、約50km単位の概略ピンにする。
@@ -208,21 +215,23 @@ enum SignatureShareCardRenderer {
             cg.addLine(to: CGPoint(x: 493, y: rowY + 105))
             cg.strokePath()
 
-            if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !place.isEmpty {
+            let placeLines = credit.placeLines
+            if !placeLines.isEmpty {
                 drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
                            size: 37, color: brass)
-                // 語の途中では折らない（ShareCardText・2026-11-04 owner）。
+                // 決まった2行（「山梨県」「（山中湖村）」）。行の中では折らない（2026-11-04 owner）。
                 // 地図があるときは 140 幅（案A-3: 155 → 140 に詰めて地図の枠を広げた）
-                drawWrapped(place, at: CGPoint(x: ShareCardMap.Layout.placeX, y: rowY + 22),
-                            maxWidth: credit.coords == nil
-                                ? ShareCardMap.Layout.placeWidthWithoutMap
-                                : ShareCardMap.Layout.placeWidthWithMap,
-                            size: 26, lines: 3, color: .white)
+                drawPlaceLines(placeLines, at: CGPoint(x: ShareCardMap.Layout.placeX, y: rowY + 22),
+                               maxWidth: credit.coords == nil
+                                   ? ShareCardMap.Layout.placeWidthWithoutMap
+                                   : ShareCardMap.Layout.placeWidthWithMap,
+                               color: .white)
             }
             if let coordinate = credit.coords {
                 // 案A-3（2026-11-04 owner 了承）: 290×250。写真の裾の黒 86% の所から区切り線の 9px 上まで
-                CountryOutline.drawAtLocation(pin: coordinate, place: credit.location,
+                // 塗る県は、撮影地の1行目（県）と元の文字の両方から引く（英語の "Kyoto" も表で和文へ）
+                let placeText = (placeLines + [credit.location ?? ""]).joined(separator: ", ")
+                CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
                                               in: layout.mapRect, color: brass, context: cg)
             }
 
@@ -657,25 +666,24 @@ enum SignatureShareCardRenderer {
                         availableHeight: availableHeight).size
     }
 
-    /// 撮影地の行。撮影者名と同じ縮め方（1 ずつ・下限は 16 と 72% の大きい方）
-    static func placeLayout(_ value: String, maxWidth: CGFloat, size: CGFloat = 26,
-                            lines: Int = 3) -> ShareCardText.Fitted {
-        ShareCardText.fit(value, maxWidth: maxWidth, preferredSize: size,
-                          minimumSize: max(16, size * 0.72),
-                          maxLines: { _ in lines },
-                          measure: { measuredWidth($0, size: $1) })
+    /// 撮影地の2行。2行とも同じ大きさで、撮影者名と同じ縮め方（1 ずつ・下限は 16 と 72% の大きい方）
+    static let placeFontSize: CGFloat = 26
+    static func placeLayout(_ lines: [String], maxWidth: CGFloat) -> ShareCardText.Fitted {
+        ShareCardText.fitLines(lines, maxWidth: maxWidth, preferredSize: placeFontSize,
+                               minimumSize: max(16, placeFontSize * 0.72),
+                               measure: { measuredWidth($0, size: $1) })
     }
 
-    /// 区切りの所でだけ折った行を、そのまま描く（UIKit に折り返させない）
-    private static func drawWrapped(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
-                                    size: CGFloat, lines: Int, color: UIColor) {
-        let fitted = placeLayout(value, maxWidth: maxWidth, size: size, lines: lines)
+    /// 撮影地の行をそのまま描く（UIKit に折り返させない）
+    private static func drawPlaceLines(_ lines: [String], at origin: CGPoint, maxWidth: CGFloat,
+                                       color: UIColor) {
+        let fitted = placeLayout(lines, maxWidth: maxWidth)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
         let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
         (fitted.lines.joined(separator: "\n") as NSString).draw(
             in: CGRect(x: origin.x, y: origin.y, width: maxWidth,
-                       height: size * CGFloat(lines) * 1.35),
+                       height: ShareCardMap.Layout.placeHeight),
             withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 

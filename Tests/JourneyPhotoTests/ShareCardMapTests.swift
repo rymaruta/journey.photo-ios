@@ -173,7 +173,83 @@ final class ShareCardMapTests: XCTestCase {
                                                   latitude: 35.5, longitude: 140.0))
     }
 
-    // MARK: - 撮影地の折り返し（語の途中で折らない）
+
+    func testEnglishPrefectureNamesAreFilled() throws {
+        // 英語の環境の日本の写真でも県を塗る（2026-11-04 確かめ役の指摘）
+        XCTAssertEqual(ShareCardMap.prefectureName(in: "Kyoto, (Higashiyama)"), "京都府")
+        XCTAssertEqual(ShareCardMap.prefectureName(in: "Miyagi Prefecture"), "宮城県")
+        XCTAssertEqual(ShareCardMap.prefectureName(in: "Hyōgo Prefecture"), "兵庫県")
+        XCTAssertEqual(ShareCardMap.prefectureName(in: "Tokyo"), "東京都")
+        XCTAssertNil(ShareCardMap.prefectureName(in: "Paris, (Versailles)"))
+        XCTAssertEqual(ShareCardMap.englishPrefectures.count, RegionList.prefectures.count)
+    }
+
+    // MARK: - 撮影地の2行（2026-11-04 owner）
+
+    private func lines(_ raw: String?) -> [String] {
+        LocationMatch.shareCardPlace(raw)?.lines ?? []
+    }
+
+    func testJapanPlaceIsPrefectureThenCity() {
+        XCTAssertEqual(lines("月崎, 大多喜里見線, 市原市, 千葉県, 290-0000, 日本"), ["千葉県", "（市原市）"])
+        XCTAssertEqual(lines("山中湖村, 山梨県, 日本"), ["山梨県", "（山中湖村）"], "座標からの自動入力の形")
+        XCTAssertEqual(lines("富士山, 静岡県, 日本"), ["静岡県"], "市区町村が無ければ1行")
+        XCTAssertEqual(lines("東京タワー, 港区, 東京都, 105-0011, 日本"), ["東京都", "（港区）"])
+        XCTAssertEqual(lines("札幌市時計台, 中央区, 札幌市, 北海道, 060-0001, 日本"), ["北海道", "（札幌市）"])
+        XCTAssertEqual(lines("横浜赤レンガ倉庫, 中区, 横浜市, 神奈川県, 231-0001, 日本"), ["神奈川県", "（横浜市）"])
+        XCTAssertEqual(lines("北海道"), ["北海道"])
+        XCTAssertEqual(lines("千葉県（市原市）"), ["千葉県", "（市原市）"], "shareCardDisplay の形も割る")
+        XCTAssertEqual(lines("宮城県, 白石市, 蔵王キツネ村"), ["宮城県", "（白石市）"], "人が大きい順に打った形")
+    }
+
+    func testJapanPlaceInEnglish() {
+        XCTAssertEqual(lines("Kiyomizu-dera, 1, Kiyomizu, Higashiyama Ward, Kyoto, Kyoto Prefecture, 605-0862, Japan"),
+                       ["Kyoto", "(Higashiyama)"])
+        XCTAssertEqual(lines("Zao Fox Village, Minamizao Shichikashuku Line, Fukuoka Hachimiya, Shiroishi, Miyagi Prefecture, 989-0733, Japan"),
+                       ["Miyagi", "(Shiroishi)"])
+        XCTAssertEqual(lines("Tokyo, Japan"), ["Tokyo"])
+    }
+
+    func testOverseasPlaceIsCountryThenSmallestName() {
+        XCTAssertEqual(lines("ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス"),
+                       ["フランス", "（ヴェルサイユ）"])
+        XCTAssertEqual(lines("ニューヨーク, ニューヨーク州, アメリカ合衆国"), ["アメリカ合衆国", "（ニューヨーク）"])
+        XCTAssertEqual(lines("ローマ, ラツィオ州, イタリア"), ["イタリア", "（ローマ）"])
+        XCTAssertEqual(lines("ソウル, 韓国"), ["韓国", "（ソウル）"])
+        // ラテン文字だけなら半角の括弧（中身との間に空白を入れない）
+        XCTAssertEqual(lines("Versailles, Yvelines, Île-de-France, Metropolitan France, 78000, France"),
+                       ["France", "(Versailles)"])
+        XCTAssertEqual(lines("Paris, Île-de-France, France"), ["France", "(Paris)"])
+        // 人が打った短い文字・大きい順の英文は1行のまま
+        XCTAssertEqual(lines("山中湖"), ["山中湖"])
+        XCTAssertEqual(lines("Paris"), ["Paris"])
+        XCTAssertEqual(lines("オペラ・ガルニエ（パリ）"), ["オペラ・ガルニエ（パリ）"])
+        XCTAssertEqual(lines("Miyagi Prefecture, Shiroishi, Zao Fox Village"),
+                       ["Miyagi Prefecture, Shiroishi, Zao Fox Village"])
+        XCTAssertEqual(lines(nil), [])
+        XCTAssertEqual(lines("  "), [])
+    }
+
+    /// Web の app/data/photos.json の 30 件の `location`（2026-11-04 に写した実データ）
+    func testAllWebSampleLocations() {
+        let cases: [(String?, [String])] = [
+            ("山中湖", ["山中湖"]), ("山中湖", ["山中湖"]), ("バルセロナ", ["バルセロナ"]), ("パリ", ["パリ"]),
+            ("大阪", ["大阪"]), ("東京", ["東京"]), ("東京", ["東京"]), ("フィンランド", ["フィンランド"]),
+            (nil, []), ("福岡", ["福岡"]), ("フランス", ["フランス"]), (nil, []), (nil, []),
+            ("フランス ヴェルサイユ", ["フランス ヴェルサイユ"]), ("パリ, フランス", ["フランス", "（パリ）"]),
+            ("フランス ヴェルサイユ", ["フランス ヴェルサイユ"]), ("北海道", ["北海道"]),
+            ("オペラ・ガルニエ（パリ）", ["オペラ・ガルニエ（パリ）"]),
+            ("香川県 観音寺市 高屋神社", ["香川県", "（観音寺市）"]),
+            (nil, []), (nil, []), (nil, []), (nil, []), (nil, []), (nil, []), (nil, []), (nil, []), (nil, []), (nil, []),
+            ("茨城県 ひたちなか市 国営ひたち海浜公園", ["茨城県", "（ひたちなか市）"]),
+        ]
+        XCTAssertEqual(cases.count, 30)
+        for (raw, expected) in cases {
+            XCTAssertEqual(lines(raw), expected, raw ?? "nil")
+        }
+    }
+
+    // MARK: - 字の収め方
 
     /// 和文は1字＝字の大きさ、欧文は半分で測る（Linux には字の形が無いため）
     private func measure(_ text: String, _ size: CGFloat) -> CGFloat {
@@ -182,58 +258,73 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
-    private func fitPlace(_ text: String) -> ShareCardText.Fitted {
-        ShareCardText.fit(text, maxWidth: 140, preferredSize: 26, minimumSize: max(16, 26 * 0.72),
-                          maxLines: { _ in 3 }, measure: measure)
+    func testPlaceLinesShareOneSizeAndNeverWrap() {
+        let fitted = ShareCardText.fitLines(["山梨県", "（山中湖村）"], maxWidth: 140, preferredSize: 26,
+                                            minimumSize: 18.72, measure: measure)
+        // 2行目（6字）が入る 23 に、1行目もそろえる
+        XCTAssertEqual(fitted.size, 23)
+        XCTAssertEqual(fitted.lines, ["山梨県", "（山中湖村）"])
+        XCTAssertFalse(fitted.truncated)
+    }
+
+    func testLongOverseasCityKeepsClosingBracket() {
+        let fitted = ShareCardText.fitLines(["フランス", "（サン＝ジェルマン＝アン＝レー）"], maxWidth: 140,
+                                            preferredSize: 26, minimumSize: 18.72, measure: measure)
+        XCTAssertTrue(fitted.truncated)
+        XCTAssertEqual(fitted.size, 18.72)
+        XCTAssertEqual(fitted.lines[0], "フランス")
+        XCTAssertTrue(fitted.lines[1].hasPrefix("（サン"), fitted.lines[1])
+        XCTAssertTrue(fitted.lines[1].hasSuffix("…）"), fitted.lines[1])
+        XCTAssertLessThanOrEqual(measure(fitted.lines[1], fitted.size), 140)
+        let latin = ShareCardText.fitLines(["France", "(Saint-Germain-en-Laye-sur-Seine)"], maxWidth: 140,
+                                           preferredSize: 26, minimumSize: 18.72, measure: measure)
+        XCTAssertTrue(latin.lines[1].hasSuffix("…)"), latin.lines[1])
+    }
+
+    func testPlaceTwoLinesFitAboveSeparator() {
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let layout = ShareCardMap.Layout(ratio: ratio)
+            let bottom = layout.rowY + ShareCardMap.Layout.placeTopFromRow + ShareCardMap.Layout.placeHeight
+            // 区切り線の上・撮影者の段の縦の罫線（rowY+105）の中に収まる
+            XCTAssertLessThan(bottom, layout.rowY + 105, "\(ratio)")
+            XCTAssertLessThan(bottom, layout.separatorY, "\(ratio)")
+        }
     }
 
     func testSegmentsBreakOnlyAtSeparators() {
-        XCTAssertEqual(ShareCardText.segments("山梨県（山中湖村）"), ["山梨県", "（山中湖村）"])
         XCTAssertEqual(ShareCardText.segments("Versailles, Île-de-France, フランス"),
                        ["Versailles, ", "Île-de-France, ", "フランス"])
         XCTAssertEqual(ShareCardText.segments("清水寺 (京都府, 京都市)"), ["清水寺 ", "(京都府, 京都市)"],
                        "括弧の中では折らない")
         XCTAssertEqual(ShareCardText.segments("東京・浅草、雷門"), ["東京・", "浅草、", "雷門"])
-        XCTAssertEqual(ShareCardText.segments("山中湖村"), ["山中湖村"])
+        // 「/」は後ろが空白のときだけ（「f/2.8」で折らない）
+        XCTAssertEqual(ShareCardText.segments("NIKKOR Z 24-70mm f/2.8 S"),
+                       ["NIKKOR ", "Z ", "24-70mm ", "f/2.8 ", "S"])
+        XCTAssertEqual(ShareCardText.segments("A / B"), ["A ", "/ ", "B"])
     }
 
-    func testPlaceBreaksBetweenPrefectureAndCity() {
-        // 「（山中湖村）」は 26pt で 156 > 140。語の途中で折らず、字を小さくして1行に収める
-        let yamanashi = fitPlace("山梨県（山中湖村）")
-        XCTAssertEqual(yamanashi.lines, ["山梨県", "（山中湖村）"])
-        XCTAssertEqual(yamanashi.size, 23)
-        XCTAssertFalse(yamanashi.truncated)
-        XCTAssertEqual(fitPlace("千葉県（市原市）").lines, ["千葉県", "（市原市）"])
-        XCTAssertEqual(fitPlace("千葉県（市原市）").size, 26)
-        XCTAssertEqual(fitPlace("北海道（札幌市）").lines, ["北海道", "（札幌市）"])
-        let france = fitPlace("Versailles, Île-de-France, フランス")
-        XCTAssertEqual(france.lines, ["Versailles,", "Île-de-France,", "フランス"])
-        XCTAssertFalse(france.truncated)
-        for fitted in [yamanashi, france] {
-            for line in fitted.lines {
-                XCTAssertLessThanOrEqual(measure(line, fitted.size), 140)
-            }
-        }
-    }
-
-    func testOverlongChunkShrinksThenTruncatesWithoutMidWordBreak() {
-        // 下限（18.72）でも 140 に入らない塊は、次の行へ送らず末尾を「…」で切る
-        let fitted = fitPlace("北海道（上川郡東川町字東七号北）")
-        XCTAssertTrue(fitted.truncated)
-        XCTAssertEqual(fitted.size, max(16, 26 * 0.72))
-        XCTAssertEqual(fitted.lines.first, "北海道")
-        XCTAssertEqual(fitted.lines.count, 2)
-        XCTAssertTrue(fitted.lines[1].hasPrefix("（上川郡"))
-        XCTAssertTrue(fitted.lines[1].hasSuffix("…"))
-        XCTAssertLessThanOrEqual(measure(fitted.lines[1], fitted.size), 140)
-    }
-
-    func testTooManySegmentsCollapseIntoLastLine() {
-        let fitted = ShareCardText.fit("あいうえお、かきくけこ、さしすせそ、たちつてと", maxWidth: 140,
-                                       preferredSize: 26, minimumSize: 18.72,
+    func testEquipmentFitShrinksWithoutMidWordBreak() {
+        let fitted = ShareCardText.fit("Hasselblad XCD 35-100E f/2.8-4 Zoom Lens", maxWidth: 120,
+                                       preferredSize: 22, minimumSize: 7, step: 0.5,
                                        maxLines: { _ in 3 }, measure: measure)
-        XCTAssertLessThanOrEqual(fitted.lines.count, 3)
-        XCTAssertEqual(fitted.lines.first, "あいうえお、")
-        for line in fitted.lines { XCTAssertLessThanOrEqual(measure(line, fitted.size), 140) }
+        XCTAssertFalse(fitted.truncated)
+        XCTAssertEqual(fitted.lines.joined(separator: " ").split(separator: " "),
+                       "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens".split(separator: " "))
+        for line in fitted.lines { XCTAssertLessThanOrEqual(measure(line, fitted.size), 120) }
+    }
+
+    /// 島選びの所要時間（輪の多い国）。Mac の記録に出す（2026-11-04 確かめ役の指摘）
+    func testFocusTimeForCountriesWithManyIslands() throws {
+        for (name, latitude, longitude) in [("Canada", 45.5, -73.5), ("Russia", 55.5, 37.5),
+                                           ("United States of America", 40.5, -74.0),
+                                           ("Indonesia", -6.0, 107.0)] {
+            let shape = try country(name)
+            let start = Date()
+            _ = ShareCardMap.focus(shape, latitude: latitude, longitude: longitude,
+                                   in: ShareCardMap.Layout(ratio: .portrait).mapRect)
+            let seconds = Date().timeIntervalSince(start)
+            print("SHARECARD-TIME \(name) rings=\(shape.r.count) seconds=\(String(format: "%.3f", seconds))")
+            XCTAssertLessThan(seconds, 2, "\(name) の島選びが重い")
+        }
     }
 }

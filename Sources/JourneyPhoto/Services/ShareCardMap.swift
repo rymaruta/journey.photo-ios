@@ -67,6 +67,10 @@ enum ShareCardMap {
         static let placeWidthWithoutMap: CGFloat = 385
         static let mapGap: CGFloat = 12
         static let mapWidth: CGFloat = 290
+        /// 撮影地の字の上端（rowY から）と、2行を描く枠の高さ（26pt × 1.35 × 2 行）。
+        /// 3行の撮影地は 2026-11-04 の2行の決まりで無くなった
+        static let placeTopFromRow: CGFloat = 22
+        static let placeHeight: CGFloat = 26 * 1.35 * 2
 
         let height: CGFloat
         let footer: CGFloat
@@ -192,23 +196,24 @@ enum ShareCardMap {
         var seeds = usable.filter { ringContains(rings[$0], longitude: longitude, latitude: latitude) }
         if seeds.isEmpty {
             let pin = [longitude, latitude]
-            func gap(_ index: Int) -> Double {
+            // 輪ごとに1回だけ測る（比べるたびに測り直さない・2026-11-04 確かめ役の指摘）
+            var nearest: (index: Int, km: Double)?
+            for index in usable {
                 var best = Double.infinity
                 for point in rings[index] where point.count == 2 {
                     best = min(best, distanceKm(point, pin))
                 }
-                return best
+                if best < (nearest?.km ?? .infinity) { nearest = (index, best) }
             }
-            if let nearest = usable.min(by: { gap($0) < gap($1) }) {
-                seeds = [nearest]
-            }
+            if let nearest { seeds = [nearest.index] }
         }
         let longitudeScale = max(0.2, cos(latitude * .pi / 180))
-        if let largest = usable.max(by: {
-            area(rings[$0], longitudeScale: longitudeScale) < area(rings[$1], longitudeScale: longitudeScale)
-        }) {
-            seeds.append(largest)
+        var largest: (index: Int, area: Double)?
+        for index in usable {
+            let size = area(rings[index], longitudeScale: longitudeScale)
+            if size > (largest?.area ?? -1) { largest = (index, size) }
         }
+        if let largest { seeds.append(largest.index) }
         var kept = Set(seeds)
         var queue = Array(kept)
         let latitudeMargin = islandGapKm / 110.57
@@ -295,7 +300,36 @@ enum ShareCardMap {
         let parts = location.components(separatedBy: separators)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return parts.first { RegionList.prefectures.contains($0) }
+        if let japanese = parts.first(where: { RegionList.prefectures.contains($0) }) { return japanese }
+        // 英語の環境の撮影地（"Kyoto"・"Miyagi Prefecture"・"Hyōgo Prefecture"）。
+        // 「,」で区切った欠片ごとに英語名の表で引く（2026-11-04 確かめ役の指摘）
+        let pieces = location.components(separatedBy: CharacterSet(charactersIn: "（）()、，,"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return pieces.lazy.compactMap { prefecture(english: $0) }.first
+    }
+
+    /// 英語の県名（JIS の順・RegionList.prefectures と同じ並び）
+    static let englishPrefectures = [
+        "Hokkaido", "Aomori", "Iwate", "Miyagi", "Akita", "Yamagata", "Fukushima",
+        "Ibaraki", "Tochigi", "Gunma", "Saitama", "Chiba", "Tokyo", "Kanagawa",
+        "Niigata", "Toyama", "Ishikawa", "Fukui", "Yamanashi", "Nagano", "Gifu",
+        "Shizuoka", "Aichi", "Mie", "Shiga", "Kyoto", "Osaka", "Hyogo",
+        "Nara", "Wakayama", "Tottori", "Shimane", "Okayama", "Hiroshima", "Yamaguchi",
+        "Tokushima", "Kagawa", "Ehime", "Kochi", "Fukuoka", "Saga", "Nagasaki",
+        "Kumamoto", "Oita", "Miyazaki", "Kagoshima", "Okinawa",
+    ]
+
+    /// 英語の県名 → 和文の県名。"Kyoto"・"Kyoto Prefecture"・"Hyōgo"・"Tokyo Metropolis" を受ける
+    /// （長音の記号と大文字小文字は落として比べる）。それ以外は nil
+    static func prefecture(english raw: String) -> String? {
+        var name = raw.folding(options: [.diacriticInsensitive, .caseInsensitive],
+                               locale: Locale(identifier: "en_US_POSIX"))
+            .trimmingCharacters(in: .whitespaces)
+        for suffix in [" prefecture", " metropolis"] where name.hasSuffix(suffix) {
+            name = String(name.dropLast(suffix.count))
+        }
+        guard let index = englishPrefectures.firstIndex(where: { $0.lowercased() == name }) else { return nil }
+        return RegionList.prefectures[index]
     }
 
     /// 塗る県の形。文字と丸めた位置が食い違う（県の外接矩形から 1° 以上離れている）ときは塗らない
