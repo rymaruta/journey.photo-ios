@@ -138,6 +138,10 @@ TIMES = ROOT / "Tools" / "ui-test-times.json"
 # 先に流す段の上限（秒・時間の表での見積もり）。先に流す段は単体テスト（run 778 で 8 分）と別の Mac で
 # 同時に走るので、単体より短ければ通る回は延びない。起動の見張り（SmokeTests・90 秒）を含めて 7 分
 FIRST_BUDGET = 420
+# 単体テストの見積もり（秒）。最後の組を単体と先に流す分のあとに同じ Mac で流す回（`--last-after-pre`）の、その Mac の
+# 先行分に足す。run 838 の単体＋先に流す分の1台は 16.7 分（うち単体 約 7 分・シミュレーターを温める 約 4 分）。
+# 単体は 5〜13 分（run 812・813・815・800）の真ん中あたり
+PRE_UNIT_SECONDS = 480
 # 識別子らしい文字列（`camper.room.contact` の形）。画面のコードとテストの両方に同じ文字列で現れる
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+$")
 TYPE_DECL = re.compile(r"^(?:\w+\s+)*(?:enum|struct|class|extension)\s+(\w+)", re.M)
@@ -270,10 +274,11 @@ def estimate(tests, times):
     return {t: times.get(t, middle) for t in tests}
 
 
-def balance(tests, seconds, parts):
-    """長いものから順に、いまいちばん軽い組に入れる（LPT）。同じ長さは名前の順（毎回同じ割り振り）"""
+def balance(tests, seconds, parts, head=None):
+    """長いものから順に、いまいちばん軽い組に入れる（LPT）。同じ長さは名前の順（毎回同じ割り振り）。
+    `head` は組ごとの先行分（秒）。その Mac が先に別のテストを流すとき、その分だけ軽く見積もらせない"""
     bins = [[] for _ in range(parts)]
-    load = [0.0] * parts
+    load = list(head) if head else [0.0] * parts
     for test in sorted(tests, key=lambda t: (-seconds[t], t)):
         i = min(range(parts), key=lambda k: (load[k], k))
         bins[i].append(test)
@@ -281,9 +286,11 @@ def balance(tests, seconds, parts):
     return bins, load
 
 
-def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
+def plan(first_words, diff_text, parts, index=None, loose=None, times=None, last_after_pre=False):
     """全部の回の割り振りを決める。
-    返すのは {first: 先に流す段の引数, parts: 組ごとの引数, first_seconds, loads, notes, missing}"""
+    返すのは {first: 先に流す段の引数, parts: 組ごとの引数, first_seconds, loads, notes, missing}。
+    `last_after_pre` なら、最後の組は単体と先に流す分のあとに同じ Mac で流す（2026-11-04・速さの担当）。
+    その Mac は先に単体（`PRE_UNIT_SECONDS`）と先に流す分を流すので、最後の組をその分だけ軽くする"""
     if index is None:
         index, loose = read_index()
     times = read_times() if times is None else times
@@ -324,7 +331,12 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
             notes.append("枝で変えた画面の UI テストは見つからなかった（先に流すのは起動の見張りだけ）")
     first_all = first | smoke
     rest = sorted(t for t in runnable if t not in first_all)
-    bins, load = balance(rest, seconds, parts)
+    first_seconds = sum(seconds[t] for t in first_all)
+    head = [0.0] * (parts - 1) + [PRE_UNIT_SECONDS + first_seconds] if last_after_pre and parts > 1 else None
+    bins, load = balance(rest, seconds, parts, head)
+    if head:
+        load[-1] -= head[-1]  # 報告する『分けた段の見積もり』には、先行分を含めない
+        notes.append(f"最後の組は単体と先に流す分のあとに同じ Mac で流す（先行分 {head[-1] / 60:.1f} 分を見込んで軽くした）")
     groups = [[f"-only-testing:{TARGET}/{t}" for t in sorted(group)] for group in bins[:-1]]
     # 🔴 **最後の組は「全部から、ほかで流すものを抜いた残り」**。この台本が読み落としたテスト
     # （書き方が変わって関数の区切りに当たらないもの）も、ここで必ず流れる（黙って減らない）
@@ -332,7 +344,7 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
     groups.append([f"-only-testing:{TARGET}"] + [f"-skip-testing:{TARGET}/{t}" for t in sorted(others)])
     first_args = [f"-only-testing:{TARGET}/{ALWAYS}"] + [f"-only-testing:{TARGET}/{t}" for t in sorted(first)
                                                           if t not in smoke]
-    return {"first": first_args, "parts": groups, "first_seconds": sum(seconds[t] for t in first_all),
+    return {"first": first_args, "parts": groups, "first_seconds": first_seconds,
             "loads": load, "notes": notes, "missing": [], "counts": [len(first_all)] + [len(b) for b in bins]}
 
 
@@ -345,12 +357,14 @@ def times_from_log(log_text):
 
 
 def main_plan(argv):
-    """python3 Tools/pick-ui-tests.py --plan <組の数> <出す場所> <先に流す語> [<diff のファイル>]"""
+    """python3 Tools/pick-ui-tests.py --plan <組の数> <出す場所> <先に流す語> [<diff のファイル>] [--last-after-pre]"""
+    last_after_pre = "--last-after-pre" in argv
+    argv = [a for a in argv if a != "--last-after-pre"]
     parts, out, words = int(argv[0]), pathlib.Path(argv[1]), argv[2]
     diff_text = ""
     if len(argv) > 3 and pathlib.Path(argv[3]).is_file():
         diff_text = pathlib.Path(argv[3]).read_text(encoding="utf-8", errors="replace")
-    result = plan(words, diff_text, parts)
+    result = plan(words, diff_text, parts, last_after_pre=last_after_pre)
     if result["missing"]:
         print("::error::先に流す語に当たる UI テストがありません: " + " / ".join(result["missing"]), file=sys.stderr)
         return 2

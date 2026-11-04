@@ -483,11 +483,17 @@ if testflight_yml.exists() and pr_yml.exists():
     if not ui_job or not re.search(r"^    needs: test-build$", ui_job.group(1), re.M) or re.search(r"^    if:", ui_job.group(1), re.M):
         fail("ios-testflight.yml の `ui`（分けた組）が、`needs: test-build`（だけ）・if なし、になっていません")
     else:
-        # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
+        # 組の数は `--plan <数>` と揃える（ずれると、流れない組・空の組ができる）。組 1〜N-1 は `ui` の matrix、
+        # 最後の組 N は `pre` の Mac が単体と先に流す分のあとに流す（`part: unit+first+N`・`--last-after-pre`）
         parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))
-        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", flow)
-        if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
-            fail("ios-testflight.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
+        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) \S+ \S+ \S+ --last-after-pre", flow)
+        pre_job = re.search(r"^  pre:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
+        n = int(plan_n.group(1)) if plan_n else 0
+        if (not parts or not plan_n or not pre_job
+                or [int(x) for x in parts.group(1).split(",")] != list(range(1, n))
+                or not re.search(r"^          part: unit\+first\+" + str(n) + r"$", pre_job.group(1), re.M)):
+            fail("ios-testflight.yml の分けた組（`ui` の matrix 1〜N-1 と `pre` の最後の組 N）と "
+                 "`pick-ui-tests.py --plan <N> … --last-after-pre` の数が揃っていません")
     # **分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘）。`build` の job と「分けて流すかを決める」の
     # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
     if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
@@ -670,9 +676,11 @@ if testflight_yml.exists() and pr_yml.exists():
     index, loose = pick_mod.read_index()
     runnable = {t for t in index if t not in pick_mod.ONLY_WHEN_NAMED}
     prefix = f"-only-testing:{pick_mod.TARGET}/"
-    for words, diff in [("", ""), ("撮影スポット", ""),
-                        ("", "+++ b/UITests/JourneyPhotoUITests/SmokeTests.swift\n@@ -1,0 +1,1 @@\n+x\n")]:
-        got = pick_mod.plan(words, diff, 3, index=index, loose=loose)
+    # 組 N を単体と先に流す分のあとに流す形（`--last-after-pre`・組を 4 つ）も、同じく1回ずつ流れること
+    for (words, diff), (n_parts, after_pre) in [(w, s) for w in [("", ""), ("撮影スポット", ""),
+                        ("", "+++ b/UITests/JourneyPhotoUITests/SmokeTests.swift\n@@ -1,0 +1,1 @@\n+x\n")]
+                        for s in [(3, False), (4, True)]]:
+        got = pick_mod.plan(words, diff, n_parts, index=index, loose=loose, last_after_pre=after_pre)
         first = {a[len(prefix):] for a in got["first"]}
         first = {t for t in runnable if t in first or t.split("/")[0] in first}
         groups = [{a[len(prefix):] for a in g} for g in got["parts"][:-1]]
