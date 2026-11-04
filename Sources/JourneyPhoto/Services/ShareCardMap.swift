@@ -3,9 +3,9 @@ import Foundation
 /// SNS 共有カード（`SignatureShareCardRenderer`）の地図の計算。
 ///
 /// 描く処理（CoreGraphics）から切り出し、Linux でも枠の寸法・残す島・塗る県を試せるようにした。
-/// 2026-11-04 判断（案A-3・owner 了承。見本は Artifact の `project/MapA3.dc.html`）:
-/// - 枠を広げる（4:5 で 250×185 → 290×250）。上端は写真の裾が黒へ溶ける帯の 86% の所、
-///   下端は区切り線の 9px 上。どちらも撮影者の段（rowY）から測るので、3つの比で同じ大きさになる
+/// 2026-11-04 判断（案A-3 → 地図8・owner 採用。見本は Artifact「SNS 共有カード」の `project/Card.dc.html`）:
+/// - 枠は 264×296（4:5）。上端は写真の裾が黒へ溶ける帯の 70% の所、下端は撮影情報の 8 上。
+///   どの比でも撮影者の段（rowTop）から測るので同じ大きさになる
 /// - 国の全体ではなく「撮った場所の島」と「一番大きい陸」から 60km 以内でつながる島だけを収める
 /// - 日本の写真は、撮影地の文字の県を真鍮 75% で塗る
 enum ShareCardMap {
@@ -88,7 +88,7 @@ enum ShareCardMap {
             return c * c * (3 - 2 * c)
         }
         static let fadeStops: [(location: CGFloat, alpha: CGFloat)] =
-            (0...10).map { CGFloat($0) / 10 }.map { ($0, smoothstep($0)) }
+            (0...10).map { CGFloat($0) / 10 }.map { (location: $0, alpha: smoothstep($0)) }
 
         /// 黒い帯の上の余白（帯の開始 → 撮影者の段）。上は黒へ溶けているので近くてよい
         static let bandTopPad: CGFloat = 16

@@ -73,6 +73,7 @@ enum SignatureShareCardRenderer {
             photo = UIImage(data: data)
         }
         guard let photo, photo.size.width > 0, photo.size.height > 0 else { return nil }
+        typealias L = ShareCardMap.Layout
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
@@ -93,7 +94,6 @@ enum SignatureShareCardRenderer {
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
             // 下の段の位置は ShareCardMap.Layout に1か所で持つ（地図の枠の計算とテストが同じ数を使う）
             let layout = ShareCardMap.Layout(ratio: ratio)
-            typealias L = ShareCardMap.Layout
             let photoRect = layout.photoRect
             let scale = max(photoRect.width / photo.size.width,
                             photoRect.height / photo.size.height)

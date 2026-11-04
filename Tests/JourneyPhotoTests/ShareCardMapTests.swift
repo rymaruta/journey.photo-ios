@@ -409,8 +409,8 @@ final class ShareCardMapTests: XCTestCase {
     func testHeaderBandCentersItsContentAndKeepsItInside() {
         typealias L = ShareCardMap.Layout
         XCTAssertEqual(L.header, 100)
-        XCTAssertEqual(L.headerMarkY + L.headerMarkSize / 2, L.header / 2 - 0.5 + 0.5 - 0.0 + 0, accuracy: 0.6,
-                       "マークの中心が帯の中心（50）の 0.5 以内")
+        // マークの中心（27 + 22.5 = 49.5）が帯の中心（50）の 1 以内
+        XCTAssertEqual(L.headerMarkY + L.headerMarkSize / 2, L.header / 2, accuracy: 1)
         let dividerTop = L.header / 2 - 29, dividerBottom = L.header / 2 + 28
         XCTAssertGreaterThanOrEqual(dividerTop - (L.frameInset + L.frameWidth), 4, "額縁に近すぎない")
         XCTAssertGreaterThanOrEqual(L.header - dividerBottom, 4, "写真に当たらない")
