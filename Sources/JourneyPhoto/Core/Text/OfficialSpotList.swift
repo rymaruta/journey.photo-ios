@@ -41,4 +41,41 @@ enum OfficialSpotList {
             }
         }
     }
+
+    /// 「スポット」の札に出す行。上の欄で打った語があれば名前で絞り（地図のピンと同じ当て方）、近い順に並べる。
+    /// 画面の body から外に出した計算の本体（2026-11-04）。`SpotListCache` が入力の変わった回だけ呼ぶ
+    static func visibleRows(spots: [OfficialSpot], query: String, aliases: [String: [String]],
+                            photos: [Photo], links: SpotPhotoLinks, from center: Photo.Coords?) -> [Row] {
+        let matched = MapSearch.fold(query).isEmpty
+            ? spots
+            : OfficialSpotIndex.matches(spots, query: query, aliases: aliases)
+        return rows(matched, photos: photos, from: center, links: links)
+    }
+}
+
+/// 「スポット」の札の行の控え（2026-11-04 判断）。
+///
+/// 以前は `spotsArea` の body の中で毎回 `OfficialSpotList.rows` を呼んでいた（写真の全件の走査＋
+/// スポット約2,850件の距離計算と並べ替え）。モデルの `@Published` のどれが変わっても走るので、
+/// **入力が変わった回だけ**計算する。入力は「モデルが持つ値の改訂番号（`revision`）」と「起点」。
+/// 改訂番号は `PhotoMapViewModel` が query・photos・officialSpots・photoLinks・spotAliases の
+/// `didSet` で上げる（配列の中身を比べ直さない）。結果は1つの値で持つ。
+struct SpotListCache {
+    struct Key: Equatable {
+        let revision: Int
+        let center: Photo.Coords?
+    }
+
+    private var key: Key?
+    private var rows: [OfficialSpotList.Row] = []
+    /// 計算した回数（試験で「2回呼んでも1回」を数えるためだけ）
+    private(set) var computeCount = 0
+
+    mutating func rows(for key: Key, compute: () -> [OfficialSpotList.Row]) -> [OfficialSpotList.Row] {
+        if self.key == key { return rows }
+        rows = compute()
+        self.key = key
+        computeCount += 1
+        return rows
+    }
 }

@@ -1495,11 +1495,8 @@ struct PhotoMapView: View {
     @ViewBuilder
     private var spotsArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
-        // 上の欄（「撮影地・スポット名で絞る」）で打った語は、地図のピンと同じく名前で当てる
-        let spots = MapSearch.fold(model.query).isEmpty
-            ? model.officialSpots
-            : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
-        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks)
+        // 上の欄で打った語の絞りと並べ替えは `model.spotRows`（入力が変わった回だけ計算・body では計算しない）
+        let rows = model.spotRows(center: center)
         // 丸写真の詳細を読む行（分けた置き場の索引だけの行のうち、頭から今の絞り込みでの深さまで）。
         // 詳細の和が小さいうちはどれも重ね済みで空——通信しない（`SpotDetailNeeds`・2026-10-08）
         let detailNeeds = SpotDetailNeeds.mapSpotList(

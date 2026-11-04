@@ -25,7 +25,7 @@ final class PhotoMapViewModel: ObservableObject {
         }
     }
 
-    @Published private(set) var photos: [Photo] = []
+    @Published private(set) var photos: [Photo] = [] { didSet { spotInputsRevision &+= 1 } }
     @Published private(set) var loaded = false
     /// 写真の一覧を取れなかった（圏外で控えも無い）。**0枚とは分ける**
     @Published private(set) var loadFailed = false
@@ -33,6 +33,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// 欄に打っている途中の字は `typedQuery` に入り、間引いてからここへ写す
     @Published var query = "" {
         didSet {
+            spotInputsRevision &+= 1
             // 欄の字もそろえ、待っている写しは捨てる（古い字で上書きしない）
             queryDebounceTask?.cancel()
             queryDebounceTask = nil
@@ -126,7 +127,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
     /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
     /// ここは知らせない
-    private(set) var officialSpots: [OfficialSpot] = []
+    private(set) var officialSpots: [OfficialSpot] = [] { didSet { spotInputsRevision &+= 1 } }
     /// 撮影スポットの台帳を読み終えたか（「スポット」の札の「読み込み中」と「無い」を分ける）。
     /// **これは知らせる**——台帳は1回しか届かないので回り続けない。知らせないと、
     /// 台帳が届く前に「スポット」を押した回に空の一覧のまま止まる
@@ -135,13 +136,27 @@ final class PhotoMapViewModel: ObservableObject {
     /// 撮影スポットの別名（slug → 別名・`OfficialSpotService.fetchAliases`）。取れなければ空で、
     /// 名前・読み・地域だけで当てる。**「さがす」と同じ当て方にする**——別名で当たったスポットを
     /// 地図へ持ってきた回に「見つかりませんでした」にしない。届くのは1回なので知らせる
-    @Published private(set) var spotAliases: [String: [String]] = [:]
+    @Published private(set) var spotAliases: [String: [String]] = [:] { didSet { spotInputsRevision &+= 1 } }
     /// 別名を取り終えたか（取れなかった回も立つ）。語への寄せの当たり外れはこれを待って決める
     @Published private(set) var aliasesSettled = false
     /// 写真を撮影スポットに自動で結んだ表（`OfficialSpotService.fetchPhotoLinks`・2026-10-31 #425）。
     /// 「スポット」の行の枚数と「リスト」の県の段が、`spotId` と同じに数える。取れなければ空（`spotId` だけ）。
     /// 索引と一緒に届ける（索引の「読み終えた」より前に入れ、数が後から変わらないようにする）
-    @Published private(set) var photoLinks = SpotPhotoLinks.empty
+    @Published private(set) var photoLinks = SpotPhotoLinks.empty { didSet { spotInputsRevision &+= 1 } }
+    /// 「スポット」の札の行の入力（query・photos・officialSpots・photoLinks・spotAliases）が変わるたびに上がる番号。
+    /// **知らせない値**（描き直しを増やさない）。`spotRows(center:)` が控えの鍵に使う
+    private var spotInputsRevision = 0
+    private var spotListCache = SpotListCache()
+    /// 行を計算した回数（試験で数えるためだけ）
+    var spotRowsComputeCount: Int { spotListCache.computeCount }
+
+    /// 「スポット」の札の行。入力と起点が前回と同じなら控えを返す（body の評価のたびに計算しない）
+    func spotRows(center: Photo.Coords?) -> [OfficialSpotList.Row] {
+        spotListCache.rows(for: .init(revision: spotInputsRevision, center: center)) {
+            OfficialSpotList.visibleRows(spots: officialSpots, query: query, aliases: spotAliases,
+                                         photos: photos, links: photoLinks, from: center)
+        }
+    }
     /// 表に映した `SpotLinkRevision` の値（同じ値では読み直さない）
     private var appliedLinkRevision = 0
 
