@@ -133,8 +133,11 @@ enum SignatureShareCardRenderer {
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
                 mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 49 + hs, width: 45, height: 45))
             }
-            draw("Journey Photo", at: CGPoint(x: 157, y: 51 + hs), maxWidth: 365,
-                 size: 39, color: .white, serif: true)
+            // 2026-11-04 owner「文字とアイコン中央がずれてる」: 字の上端を固定（51）していたので、
+            // 字の見た目の中心（ベースライン−大文字の高さ/2）とマークの中心がずれた。
+            // 字の大きさから出した数で、大文字の高さの中心をマークの中心（49+22.5）にそろえる
+            draw("Journey Photo", at: CGPoint(x: 157, y: wordmarkTop(markMidY: 49 + hs + 22.5)),
+                 maxWidth: 365, size: 39, color: .white, serif: true)
             cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
             cg.setLineWidth(2)
             cg.move(to: CGPoint(x: 550, y: 46 + hs))
@@ -749,6 +752,18 @@ enum SignatureShareCardRenderer {
         let fittedOrigin = CGPoint(x: origin.x + (size - fittedSize.width) / 2,
                                    y: origin.y + (size - fittedSize.height) / 2)
         symbol.draw(in: CGRect(origin: fittedOrigin, size: fittedSize))
+    }
+
+    /// 「Journey Photo」の字（39pt・セリフ）。draw(serif: true) と同じ作り
+    static func wordmarkFont() -> UIFont {
+        let base = UIFont.systemFont(ofSize: 39, weight: .regular)
+        return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: 39) } ?? base
+    }
+
+    /// 大文字の高さの中心が markMidY に来る、字の上端。ベースライン＝上端＋ascender
+    static func wordmarkTop(markMidY: CGFloat) -> CGFloat {
+        let font = wordmarkFont()
+        return markMidY - (font.ascender - font.capHeight / 2)
     }
 
     private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,

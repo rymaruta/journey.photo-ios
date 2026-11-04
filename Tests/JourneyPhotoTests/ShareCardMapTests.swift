@@ -330,6 +330,15 @@ final class ShareCardMapTests: XCTestCase {
 
     /// 上の帯（2026-11-04 owner「ヘッダーは詰められそう」: 118 → 96）。中身が枠にも写真にも当たらず、
     /// 元の上下の比（枠から 59.5・写真まで 46.5）を保つ
+    /// 2026-11-04 owner「文字とアイコン中央がずれてる」: 大文字の高さの中心がマークの中心にそろう
+    func testWordmarkCapHeightCenterMatchesMarkCenter() {
+        let markMid: CGFloat = 49 + ShareCardMap.Layout.headerShift + 22.5
+        let font = SignatureShareCardRenderer.wordmarkFont()
+        let top = SignatureShareCardRenderer.wordmarkTop(markMidY: markMid)
+        let capCenter = top + font.ascender - font.capHeight / 2
+        XCTAssertEqual(capCenter, markMid, accuracy: 0.01)
+    }
+
     func testHeaderBandIsTighterAndKeepsItsContentInside() {
         let hs = ShareCardMap.Layout.headerShift
         let header = ShareCardMap.Layout.header
