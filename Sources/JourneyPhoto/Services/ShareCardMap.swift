@@ -52,24 +52,30 @@ enum ShareCardMap {
     ///
     /// 2026-11-04 owner「地図8（整え版）を採用して、妥協なしでブラッシュアップ」。見本は Artifact
     /// 「SNS 共有カード 1.1.62」の `project/Map8.dc.html`（4:5・1080×1350）。決まり:
-    /// - 外の余白 60・帯の中身は端から 48・額縁は 12 内側に 3px
+    /// - 外の余白 60・帯の中身は写真の左右の端にそろえる（内側に寄せない）・額縁は 12 内側に 3px
     /// - 段の間隔（撮影者の段 → 区切り線 → 撮影情報）は 32 にそろえる。帯の下の余白は 38
     /// - 区切り線・縦線は 2px・真鍮 45% の1種類
-    /// - 黒へ溶ける帯は、なだらかな曲線（smoothstep）で帯の開始位置にちょうど黒 100% になる
+    /// - 2026-11-04 owner「フェードする境界線いらない」: 写真の裾を黒へ溶かす帯（フェード）はやめた。
+    ///   写真は帯の開始位置できれいに終わり、その下は黒い面。地図は黒い帯の中だけに置く（写真に掛けない）
     ///   （以前は 15 下まで伸ばし、帯の開始位置で段が出ていた）
     /// - 撮影情報の3列の左端は、上の段（アバター・縦線の右・地図）の縦の線にそろえる
     struct Layout {
         static let width: CGFloat = 1080
         /// 写真と黒い帯の左右の余白（外の余白）
         static let margin: CGFloat = 60
-        /// 帯の端から中身（アバター・区切り線・地図）まで
-        static let contentInset: CGFloat = 48
+        /// 帯の端から中身（アバター・区切り線・地図）まで。
+        /// 2026-11-04 owner「写真の角とアイコンの先頭の端が合うように」: 0。写真の左右の端（60・1020）に、
+        /// ロゴのマーク・アバター・区切り線・撮影情報の左端、一文・地図の右端をそろえる（以前は 48 内側で、端が合っていなかった）
+        static let contentInset: CGFloat = 0
         static var contentLeft: CGFloat { margin + contentInset }
         static var contentRight: CGFloat { width - margin - contentInset }
         /// 上の帯（ロゴと一文）の高さ。写真はこの下から始まる
-        static let header: CGFloat = 100
+        /// 2026-11-04 owner「上のヘッダーの余白の幅も短すぎる」: 100 → 124。中身（一番高い区切り線 57）の上は額縁の内側から、
+        /// 下は写真まで、どちらも同じ 26 になる（中心は額縁の内側と写真の真ん中）
+        static let header: CGFloat = 124
         /// ロゴのマーク（45 角）の上端。字の中心はこのマークの中心にそろえる
-        static let headerMarkY: CGFloat = 27
+        static var headerCenter: CGFloat { (frameInset + frameWidth + header) / 2 }
+        static var headerMarkY: CGFloat { headerCenter - headerMarkSize / 2 }
         static let headerMarkSize: CGFloat = 45
         /// 額縁（画像の端から内側へ）
         static let frameInset: CGFloat = 12
@@ -77,18 +83,6 @@ enum ShareCardMap {
         /// 区切り線・縦線（1種類）
         static let lineWidth: CGFloat = 2
         static let lineAlpha: CGFloat = 0.45
-
-        /// 写真の裾を黒へ溶かす帯の高さ。帯の開始位置（写真の下端）で黒 100%
-        static let fadeHeight: CGFloat = 369
-        /// 地図の上端は、帯がこの濃さになる所（見本の「黒 70%」）
-        static let mapTopAlpha: CGFloat = 0.70
-        /// なだらかな曲線（smoothstep）。始まりと終わりがゆるやかで、継ぎ目に線が出ない
-        static func smoothstep(_ t: CGFloat) -> CGFloat {
-            let c = min(1, max(0, t))
-            return c * c * (3 - 2 * c)
-        }
-        static let fadeStops: [(location: CGFloat, alpha: CGFloat)] =
-            (0...10).map { CGFloat($0) / 10 }.map { (location: $0, alpha: smoothstep($0)) }
 
         /// 黒い帯の上の余白（帯の開始 → 撮影者の段）。上は黒へ溶けているので近くてよい
         static let bandTopPad: CGFloat = 16
@@ -105,7 +99,7 @@ enum ShareCardMap {
         static var pinX: CGFloat { rowDividerX + 24 }
         static var placeX: CGFloat { pinX + 50 }
         /// 地図の枠の幅。右端は本文の右端にそろえる
-        static let mapWidth: CGFloat = 264
+        static let mapWidth: CGFloat = 200
         static let mapGapToPlace: CGFloat = 8
         /// 地図の下端と撮影情報の上端の間（区切り線は地図の手前で止める）
         static let mapBottomGap: CGFloat = 8
@@ -135,10 +129,6 @@ enum ShareCardMap {
             CGRect(x: Layout.margin, y: photoBottom,
                    width: Layout.width - Layout.margin * 2, height: height - Layout.margin - photoBottom)
         }
-        var fadeRect: CGRect {
-            CGRect(x: Layout.margin, y: photoBottom - Layout.fadeHeight,
-                   width: Layout.width - Layout.margin * 2, height: Layout.fadeHeight)
-        }
         /// 撮影者の段の上端
         var rowTop: CGFloat { photoBottom + Layout.bandTopPad }
         var rowCenterY: CGFloat { rowTop + Layout.avatarSize / 2 }
@@ -152,27 +142,11 @@ enum ShareCardMap {
             hasMap ? Layout.mapX - Layout.mapLineGap : Layout.contentRight
         }
 
-        /// 帯の黒（`surface`）の濃さ。帯より上は 0、帯の開始位置で 1
-        func fadeAlpha(atY y: CGFloat) -> CGFloat {
-            Layout.smoothstep((y - fadeRect.minY) / fadeRect.height)
-        }
-
-        /// 帯がその濃さになる最初の y（smoothstep の逆を二分法で）
-        func fadeY(reaching alpha: CGFloat) -> CGFloat {
-            var low: CGFloat = 0, high: CGFloat = 1
-            for _ in 0..<40 {
-                let mid = (low + high) / 2
-                if Layout.smoothstep(mid) < alpha { low = mid } else { high = mid }
-            }
-            return fadeRect.minY + high * fadeRect.height
-        }
-
-        /// 地図の枠。上は帯が 70% になる所（整数に切り上げ）、下は撮影情報の 8 上。
-        /// 右端は本文の右端（972）にそろえる
+        /// 地図の枠。**黒い帯の中だけ**（上は撮影者の段の上端、下は撮影情報の 8 上＝高さ 146）。
+        /// 右端は本文の右端（972）にそろえる。写真には掛けない（フェードをやめたため）
         var mapRect: CGRect {
-            let top = fadeY(reaching: Layout.mapTopAlpha).rounded(.up)
-            let bottom = infoTop - Layout.mapBottomGap
-            return CGRect(x: Layout.mapX, y: top, width: Layout.mapWidth, height: bottom - top)
+            CGRect(x: Layout.mapX, y: rowTop, width: Layout.mapWidth,
+                   height: infoTop - Layout.mapBottomGap - rowTop)
         }
     }
 
