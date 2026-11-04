@@ -477,10 +477,11 @@ if testflight_yml.exists() and pr_yml.exists():
     marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if len(marks) != 2 or marks[1].strip() != FINISH_MARK_IF:
         fail(f"ios-testflight.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {marks[1:]}")
-    # 分けた組は、単体と先に流す分の両方を待つ（`needs: [test-build, pre]`・job の if を足さない＝どれかが落ちたら skipped）
+    # 分けた組は、組んだ品（`test-build`）だけを待つ（単体と先に流す分の `pre` は待たない・2026-11-04）。
+    # job の if を足さない。単体が落ちても流れるが、緑の印は「まとめ」が `pre` と `ui` の両方の success で付ける
     ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
-    if not ui_job or "needs: [test-build, pre]" not in ui_job.group(1) or re.search(r"^    if:", ui_job.group(1), re.M):
-        fail("ios-testflight.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
+    if not ui_job or not re.search(r"^    needs: test-build$", ui_job.group(1), re.M) or re.search(r"^    if:", ui_job.group(1), re.M):
+        fail("ios-testflight.yml の `ui`（分けた組）が、`needs: test-build`（だけ）・if なし、になっていません")
     else:
         # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
         parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))

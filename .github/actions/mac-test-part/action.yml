@@ -11,7 +11,7 @@ name: テストの1組を流す
 description: 組んだテストの品で、単体テスト・UI テストの1組を流す
 inputs:
   part:
-    description: "unit（単体テスト）・first（UI の先に流す分）・1〜3（UI の分けた組）"
+    description: "unit（単体テスト）・first（UI の先に流す分）・1〜3（UI の分けた組）。「+」で区切ると1台で順に流す（例: unit+first）"
     required: true
   xcode:
     description: 組んだ台の Xcode の版（同じ版を選ぶ）
@@ -48,17 +48,27 @@ runs:
     - name: 流す
       shell: bash
       env:
-        PART: ${{ inputs.part }}
+        PARTS: ${{ inputs.part }}
       run: |
         set -euo pipefail
         mkdir -p build/ios/test build/logs
-        export XCODE_LOG="build/logs/xcodebuild-$PART.log"
-        case "$PART" in
-          unit)  bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult ;;
-          first) bash Tools/xcode-test.sh ui build/ios/test/Test-first.xcresult build/products-in/ui-plan/first.txt ;;
-          [0-9]) bash Tools/xcode-test.sh ui "build/ios/test/Test-$PART.xcresult" "build/products-in/ui-plan/part-$PART.txt" ;;
-          *) echo "::error::知らない組: $PART"; exit 2 ;;
-        esac
+        # **「+」で区切った組は1台で順に流す**（例: unit+first）（2026-11-04・UI の分けた組が単体と先に流す分を待たないように）。
+        # 1つが落ちても残りは流し、最後に1つでも落ちていたら赤で終わる（どちらの失敗も1回で見える）
+        status=0
+        for PART in ${PARTS//+/ }; do
+          export XCODE_LOG="build/logs/xcodebuild-$PART.log"
+          case "$PART" in
+            unit)  cmd=(bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult) ;;
+            first) cmd=(bash Tools/xcode-test.sh ui build/ios/test/Test-first.xcresult build/products-in/ui-plan/first.txt) ;;
+            [0-9]) cmd=(bash Tools/xcode-test.sh ui "build/ios/test/Test-$PART.xcresult" "build/products-in/ui-plan/part-$PART.txt") ;;
+            *) echo "::error::知らない組: $PART"; exit 2 ;;
+          esac
+          if ! "${cmd[@]}"; then
+            echo "::error::組 $PART が落ちました"
+            status=1
+          fi
+        done
+        exit "$status"
 
     # 公開リポジトリではxcresult・添付画像・生ログをArtifactに保存しない。
     # テスト失敗の詳細はジョブのSummaryで確認する。
@@ -78,7 +88,8 @@ runs:
         PART: ${{ inputs.part }}
       run: |
         mkdir -p build/public-results
-        echo "組 $PART の結果はActionsのジョブSummaryを参照してください。" > "build/public-results/$PART.txt"
+        label="$PART"
+        echo "組 $PART の結果はActionsのジョブSummaryを参照してください。" > "build/public-results/$label.txt"
 
     - name: 公開可能な状態ファイルだけを渡す
       if: ${{ always() }}
