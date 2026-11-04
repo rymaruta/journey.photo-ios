@@ -375,7 +375,7 @@ jobs:
       # 前は枝の回がそれぞれ書いては互いを追い出し、直近の枝の回の半分以上（run 454〜465 の
       # 12回中9回）と PR の検証の Mac（見た3回とも）が「控え無し」で始まって、ビルドが約10分
       # 余計にかかっていた（run 462: 控え無しでテストの段 55分 / run 461: 控え有りで 41分）。
-      # main の回が下の「控えを温める」でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
+      # main の回が下の `warm` の job でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
       - name: キャッシュ復元の計測開始
         run: echo "CACHE_RESTORE_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -770,24 +770,60 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
 
-      # 🔴 **控えを書くのは main の回だけ**（2026-10-17 判断・上の「前回の作りかけを控えから戻す」）。
-      # main の上げる回はテストを流さない（Release の Archive だけ）ので、そのままでは控えに
-      # シミュレータ向けの組み立てが入らず、枝・PR の回の役に立たない。ここで組んでから書く。
-      # main の控えから差分で組むので、2回目からは数分（run 461 は控え有りで、組むのは逆算で1〜2分。控え無しの run 462 は約12分）。
-      # **上げる・印を付けるが済んだあと**に置き、落ちても赤にしない（上げる回の邪魔をしない）
-      # Archive（「ビルド」）が通った回だけ温める・書く。落ちた回の作りかけは書かない。
-      # **path の `!…/ArchiveIntermediates`**: Archive の中間物は控えに入れない（10GB を超えないように）。
-      # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）
+      # 🔴 **控えを温める・書く段は、ここ（Archive の job）から外した**（2026-11-04・速さの担当）。
+      # 上げる（TestFlightへアップロード）の**あと**に、同じ Mac で『元のプロジェクトに戻してシミュレータ向けに組む』
+      # （run 831: 243 秒）→『控えを書く』（91 秒）を直列に続けていて、main の上げる回の job が約 5.5 分（run 827・829 では
+      # 6〜8 分）長かった。上げる回は『同時に1本だけ』なので、次の上げる回はこの分だけ待たされる。
+      # 下の `warm` の job が Archive と同時に別の Mac で行う（Archive の job の長さは変わらず、回の終わりが早まる）
+
+  # main の回の控え（約7GB）を書く Mac。**Archive の job と同時に流す**（2026-11-04・速さの担当。理由は上の注記）。
+  # 控えを書くのは main の回だけ・枝は読むだけ（`build` の job の「前回の作りかけを控えから戻す」の注記）。
+  # **path の `!…/ArchiveIntermediates`**: Archive の中間物は控えに入れない（10GB を超えないように）。
+  # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）。
+  # 前は Archive が通ったあとに同じ Mac で温めていた。今は Archive と無関係に、シミュレータ向けの組み立てだけを
+  # 控えに入れる（Archive の作りかけが控えに混ざらないので、落ちた回の作りかけを書く心配も無い）。
+  # 組みが落ちたら書かない（steps.warm.outcome）。落ちても赤にはしない（上げる回の邪魔をしない）
+  warm:
+    name: 控えを書く（main の回だけ・シミュレータ向けに組む）
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Xcodeを選択
+        run: bash Tools/select-xcode.sh
+
+      - name: Xcodeのバージョンを確認
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 鍵は `build` の job の「配信用アプリをビルドキャッシュのキーを生成」と同じ（project.yml を書き換える前の値）
+      - name: 配信用アプリをビルドキャッシュのキーを生成
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      - name: 配信用アプリをビルドキャッシュを復元
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
       - name: 控えを温める（main の回だけ・シミュレータ向けに組む）
         id: warm
-        if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 30
-        # 🔴 **元のプロジェクトに戻してから組む**（2026-10-17 判断）。ここに来るまでに「ビルド番号を
-        # 決める」が project.yml の版・ビルド番号を書き換え、`xcode-project use-profiles` が署名の設定を
-        # .xcodeproj に入れている。そのまま組むと、控えに入るのは**枝や PR では作られない設定**の
-        # 中間物になり、読む側で差分が大きくなる（設定が違えば組み直し）。project.yml を checkout の
-        # 状態へ戻し、.xcodeproj（git に入っていない）を作り直してから組む
+        # この Mac は署名用にプロジェクトを書き換えない（版・ビルド番号を書くのは `build` の job だけ）ので、
+        # checkout のままで元のプロジェクト。念のため戻してから作り直す（`Tools/check-config.py` が並びを見る）
         run: |
           set -euo pipefail
           git checkout -- project.yml
@@ -795,7 +831,7 @@ jobs:
           XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
 
       - name: mainのビルドキャッシュを保存
-        if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ steps.warm.outcome == 'success' }}
         uses: actions/cache/save@v6
         with:
           path: |
