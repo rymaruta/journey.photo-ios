@@ -108,22 +108,8 @@ enum SignatureShareCardRenderer {
             // 9:16で同じ被写体が二重に見える原因だったため廃止。
             cg.restoreGState()
 
-            // 写真の裾を黒へ溶かす。なだらかな曲線で、帯の開始位置（写真の下端）にちょうど黒 100%。
-            // 帯の下の黒は、同じ位置から始める（半透明のまま帯へ入る継ぎ目＝境の線を作らない）
-            let fade = layout.fadeRect
-            let colors = L.fadeStops.map { stop in
-                stop.alpha == 0 ? UIColor.black.withAlphaComponent(0).cgColor
-                    : surface.withAlphaComponent(stop.alpha).cgColor
-            } as CFArray
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: colors, locations: L.fadeStops.map { $0.location }) {
-                cg.saveGState()
-                cg.clip(to: fade)
-                cg.drawLinearGradient(gradient,
-                    start: CGPoint(x: 0, y: fade.minY),
-                    end: CGPoint(x: 0, y: fade.maxY), options: [])
-                cg.restoreGState()
-            }
+            // 2026-11-04 owner「フェードする境界線いらない」: 写真は帯の開始位置できれいに終わり、
+            // その下は黒い面（surface）。写真の裾に黒を重ねない
             surface.setFill()
             cg.fill(layout.bandRect)
 
@@ -140,13 +126,13 @@ enum SignatureShareCardRenderer {
             let lineColor = brass.withAlphaComponent(L.lineAlpha).cgColor
             cg.setStrokeColor(lineColor)
             cg.setLineWidth(L.lineWidth)
-            cg.move(to: CGPoint(x: L.width / 2, y: L.header / 2 - 29))
-            cg.addLine(to: CGPoint(x: L.width / 2, y: L.header / 2 + 28))
+            cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
+            cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
             cg.strokePath()
             // 一文は帯の縦の中心にそろえる。右端は本文の右端
             let taglineFont = UIFont.systemFont(ofSize: 25)
             draw("旅の一瞬を、誰かの次の旅へ。",
-                 at: CGPoint(x: L.contentRight - 410, y: L.header / 2 - taglineFont.lineHeight / 2),
+                 at: CGPoint(x: L.contentRight - 410, y: L.headerCenter - taglineFont.lineHeight / 2),
                  maxWidth: 410, size: 25, color: .white, alignment: .right)
 
             // 撮影者の段。要素はアバターの縦の中心にそろえる
@@ -553,14 +539,15 @@ enum SignatureShareCardRenderer {
             }
             let center = project([pin.longitude, pin.latitude])
             // The point should glow gently rather than obscure nearby coastline.
-            // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 8・光の輪は半径 18
-            // （約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる）
+            // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 4・光の輪は半径 10。
+            // 地図が黒い帯の中（200×146）になって縮尺が小さくなったので、以前の 8/18 では県の塗りが点に隠れた。
+            // 約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる
             context.setFillColor(color.withAlphaComponent(0.22).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 18, y: center.y - 18,
-                                           width: 36, height: 36))
+            context.fillEllipse(in: CGRect(x: center.x - 10, y: center.y - 10,
+                                           width: 20, height: 20))
             context.setFillColor(color.withAlphaComponent(0.95).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 8, y: center.y - 8,
-                                           width: 16, height: 16))
+            context.fillEllipse(in: CGRect(x: center.x - 4, y: center.y - 4,
+                                           width: 8, height: 8))
             context.restoreGState()
         }
     }

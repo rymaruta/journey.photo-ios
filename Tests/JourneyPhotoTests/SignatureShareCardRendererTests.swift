@@ -251,8 +251,25 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let rect = ShareCardMap.Layout(ratio: .portrait).mapRect
         let focused = try XCTUnwrap(ShareCardMap.focus(japan, latitude: pin.latitude,
                                                        longitude: pin.longitude, in: rect))
-        // 甲府の北西（山梨県の中・ピンの点から 6px 以上離れた所）
-        let probe = focused.projection.point(longitude: 138.4, latitude: 35.8)
+        // 山梨県の中で、ピンの点から最も離れた所（点の半径 4 の外・光の輪の半径 10 の内側）。
+        // 2026-11-04: 地図が黒い帯の中（200×146）になり縮尺が小さくなったので、固定の座標でなく、
+        // 山梨県の輪の中の点を 0.05° 刻みで探し、ピンからの距離が最大の点を選ぶ
+        let yamanashi = try XCTUnwrap(ShareCardMap.loadShapes(resource: "japan-prefectures")
+            .first(where: { $0.n == "山梨県" }))
+        let pinPoint = focused.projection.point(longitude: pin.longitude, latitude: pin.latitude)
+        var found: CGPoint?
+        var foundDistance: CGFloat = 0
+        for latStep in 0..<30 {
+            for lonStep in 0..<30 {
+                let lon = 138.1 + Double(lonStep) * 0.05, lat = 35.2 + Double(latStep) * 0.05
+                guard yamanashi.r.contains(where: { ShareCardMap.ringContains($0, longitude: lon, latitude: lat) }) else { continue }
+                let candidate = focused.projection.point(longitude: lon, latitude: lat)
+                let distance = hypot(candidate.x - pinPoint.x, candidate.y - pinPoint.y)
+                if distance > foundDistance, distance <= 9.5 { found = candidate; foundDistance = distance }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(foundDistance, 4.6, "山梨県の中に、点（半径 4）の外の所が無い（地図の縮尺を確かめる）")
+        let probe = try XCTUnwrap(found)
         func red(_ image: CGImage) throws -> Int {
             var rgba = [UInt8](repeating: 0, count: 4)
             let context = try XCTUnwrap(CGContext(
@@ -268,7 +285,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let plainCard = try await card("Mount Fuji")
         let filled = try red(filledCard)
         let plain = try red(plainCard)
-        XCTAssertGreaterThan(filled, 120, "山梨県が塗られていない（\(probe)）")
+        // 県の端に近い点を見るので、縁の薄まり（アンチエイリアス）を見込んで、塗りあり／なしの差で比べる
+        // （2026-11-04 Mac の実測: 塗りあり 96・塗りなしは光の輪だけで 60 未満）
+        XCTAssertGreaterThan(filled, plain + 30, "山梨県が塗られていない（塗りあり \(filled)・なし \(plain)・\(probe)）")
         XCTAssertLessThan(plain, 60, "県名が無いのに塗っている")
     }
 
