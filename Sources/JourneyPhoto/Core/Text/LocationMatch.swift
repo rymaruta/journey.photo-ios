@@ -265,6 +265,100 @@ extension LocationMatch {
         return city.map { "\(pref)（\($0)）" } ?? pref
     }
 
+    /// SNS 共有カードの撮影地の2行（1行目＝大きい単位、2行目＝小さい単位）。
+    struct ShareCardPlace: Equatable {
+        let primary: String
+        let secondary: String?
+
+        /// 描く行。2行目は括弧で包む: 日本語の字（かな・漢字）が入れば全角「（ヴェルサイユ）」、
+        /// ラテン文字などだけなら半角「(Versailles)」（括弧と中身の間に空白は入れない・2026-11-04 判断）
+        var lines: [String] {
+            guard let secondary else { return [primary] }
+            return [primary, ShareCardPlace.bracketed(secondary)]
+        }
+
+        static func bracketed(_ text: String) -> String {
+            LocationMatch.hasJapaneseScript(text) ? "（\(text)）" : "(\(text))"
+        }
+    }
+
+    /// SNS 共有カードの撮影地を「大きい単位／（小さい単位）」の2行に分ける（2026-11-04 owner）。
+    ///
+    /// 撮影地の文字の出どころは3つ（実データ: Web の photos.json の 30 件・サーバーの geocodeSearch.ts）:
+    /// - 場所の検索で選んだ Nominatim の `display_name`。小さい順→国（「蔵王キツネ村, …, 白石市, 宮城県, 989-0733, 日本」
+    ///   「ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス」）
+    /// - 座標からの自動入力（`placeNameFromReverse`）。「市区町村, 県・州, 国」の3つ（「山中湖村, 山梨県, 日本」）
+    /// - 人が打った文字（「山中湖」「パリ, フランス」「香川県 観音寺市 高屋神社」「オペラ・ガルニエ（パリ）」）
+    ///
+    /// 決め方:
+    /// - 日本: 1行目＝都道府県、2行目＝市区町村（`shareCardDisplay` と同じ選び方。郡は飛ばす）。
+    ///   県より手前（小さい順）に無ければ後ろ（人が大きい順に打った形）から。空白で区切って打った
+    ///   「香川県 観音寺市 高屋神社」も同じ。英文（"…, Shiroishi, Miyagi Prefecture, …, Japan"）は県名を短くして同じ形
+    /// - 海外: 1行目＝国（郵便番号・番地を除いた最後の欠片）、2行目＝いちばん小さい地名（最初の欠片）。
+    ///   **文字だけでは「都市か施設か」を見分けられない**（Nominatim の種類は保存していない）。
+    ///   施設を選んだ住所（「エッフェル塔, 5, …, パリ, …, フランス」）では2行目が施設の名前になる。
+    ///   州・地方・「フランス本土」のような区分を都市として当てる方がずっと外れやすいので、最初の欠片にした
+    /// - 1行だけ: 欠片が1つ（「山中湖」「Paris」「オペラ・ガルニエ（パリ）」「フランス ヴェルサイユ」）、
+    ///   先頭が行政区分の英文など大きい順に打った形、県の無い「…, 日本」（「富士山」）
+    static func shareCardPlace(_ raw: String?) -> ShareCardPlace? {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let parts = trimmed.components(separatedBy: CharacterSet(charactersIn: ",，、"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let kept = parts.filter { !isPostalOrNumber($0) }
+        guard let first = kept.first, let last = kept.last else { return nil }
+
+        // 日本（和文）。1つの欠片なら空白で区切った語・「県（市）」の形も見る
+        var pieces = kept
+        if kept.count == 1 {
+            if let open = first.firstIndex(of: "（"), first.hasSuffix("）") {
+                let head = String(first[..<open])
+                let inner = String(first[first.index(after: open)..<first.index(before: first.endIndex)])
+                if RegionList.prefectures.contains(head), !inner.isEmpty {
+                    return ShareCardPlace(primary: head, secondary: inner)
+                }
+            }
+            pieces = first.components(separatedBy: CharacterSet(charactersIn: " 　")).filter { !$0.isEmpty }
+        }
+        if let prefIndex = pieces.lastIndex(where: RegionList.prefectures.contains) {
+            let pref = pieces[prefIndex]
+            func isCity(_ part: String) -> Bool {
+                guard part != pref, let tail = part.last else { return false }
+                return "市区町村".contains(tail)
+            }
+            let city = pieces[..<prefIndex].reversed().first(where: isCity)
+                ?? pieces[(prefIndex + 1)...].first(where: isCity)
+            return ShareCardPlace(primary: pref, secondary: city)
+        }
+        guard kept.count >= 2 else { return ShareCardPlace(primary: first, secondary: nil) }
+        // 日本（英文）
+        if isJapan(last) {
+            let body = kept.dropLast()
+            guard let prefIndex = body.lastIndex(where: isEnglishPrefecture) else {
+                return ShareCardPlace(primary: first, secondary: nil)
+            }
+            let pref = shortEnglishPrefecture(body[prefIndex])
+            // 県と同じ名の市（"Kyoto, Kyoto Prefecture"）は飛ばして、その次に小さい区を出す
+            // （"…, Higashiyama Ward, Kyoto, Kyoto Prefecture, …" → Kyoto／(Higashiyama)）
+            func short(_ part: String) -> String {
+                for suffix in [" Ward", " City"] where part.hasSuffix(suffix) {
+                    return String(part.dropLast(suffix.count))
+                }
+                return shortEnglishPrefecture(part)
+            }
+            let city = body[body.startIndex..<prefIndex].reversed()
+                .filter { !isEnglishDistrict($0) && $0 != body[prefIndex] }
+                .map(short)
+                .first { $0 != pref }
+            return ShareCardPlace(primary: pref, secondary: city)
+        }
+        // 大きい順に打った形（先頭が行政区分）は分けない
+        guard !isAdministrative(first) else { return ShareCardPlace(primary: trimmed, secondary: nil) }
+        // 海外: 国＋いちばん小さい地名
+        return ShareCardPlace(primary: last, secondary: first == last ? nil : first)
+    }
+
     /// 郵便番号・番地（数字と「-」「〒」と空白だけの欠片）
     static func isPostalOrNumber(_ part: String) -> Bool {
         let allowed = CharacterSet(charactersIn: "0123456789-−〒 ")

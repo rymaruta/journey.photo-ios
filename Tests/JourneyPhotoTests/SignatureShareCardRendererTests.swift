@@ -140,23 +140,160 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
-    func testLongEquipmentNamesFitWithinThreeLineArea() {
+    func testLongEquipmentNamesWrapOnlyBetweenWords() {
+        // 2026-11-04 owner「文章の変な改行はいやです」: 機材名は語の途中で折らない
         let camera = "Hasselblad X2D II 100C Medium Format Camera"
         let lens = "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens"
-        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246))] {
-            let fontSize = SignatureShareCardRenderer.equipmentFontSize(name, maxWidth: width)
-            XCTAssertLessThanOrEqual(fontSize, 22)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineBreakMode = .byCharWrapping
-            paragraph.lineSpacing = 1
-            let measured = (name as NSString).boundingRect(
-                with: CGSize(width: width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [
-                    .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
-                    .paragraphStyle: paragraph
-                ], context: nil)
-            XCTAssertLessThanOrEqual(measured.height, 72.5, "\(name) must fit without clipping")
+        // 「/」の後ろでは折らない（「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）
+        let nikkor = "NIKKOR Z 24-70mm f/2.8 S"
+        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246)), (nikkor, CGFloat(120))] {
+            let fitted = SignatureShareCardRenderer.equipmentLayout(name, maxWidth: width)
+            XCTAssertLessThanOrEqual(fitted.size, 22)
+            XCTAssertFalse(fitted.truncated, "\(name) は全文が入る")
+            // 行をつなぐと元の語の並びに戻る＝語の途中で切っていない
+            XCTAssertEqual(fitted.lines.joined(separator: " ").split(separator: " "),
+                           name.split(separator: " "), "\(name): \(fitted.lines)")
+            let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+            for line in fitted.lines {
+                XCTAssertLessThanOrEqual((line as NSString).size(withAttributes: [.font: font]).width,
+                                         width, "\(line) が列からはみ出す")
+            }
+            let height = CGFloat(fitted.lines.count) * font.lineHeight + CGFloat(fitted.lines.count - 1)
+            XCTAssertLessThanOrEqual(height, 72.5, "\(name) must fit without clipping")
+        }
+    }
+
+    func testPlaceTwoLinesWithRealFont() {
+        // 地図があるときの撮影地の幅（152）。決まった2行で、行の中では折らない（2026-11-04 owner）
+        let width = ShareCardMap.Layout.placeWidthWithMap
+        let cases: [(String, [String])] = [
+            ("千葉県（市原市）", ["千葉県", "（市原市）"]),
+            ("山中湖村, 山梨県, 日本", ["山梨県", "（山中湖村）"]),
+            ("札幌市時計台, 中央区, 札幌市, 北海道, 060-0001, 日本", ["北海道", "（札幌市）"]),
+            ("ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス",
+             ["フランス", "（ヴェルサイユ）"]),
+            ("Paris, Île-de-France, France", ["France", "(Paris)"]),
+            // 括弧つき最長の市区町村名（10字）も切らない（下限 15 で 150 ≤ 152）
+            ("かすみがうら市, 茨城県, 日本", ["茨城県", "（かすみがうら市）"])
+        ]
+        for (raw, expected) in cases {
+            let lines = LocationMatch.shareCardPlace(raw)?.lines ?? []
+            XCTAssertEqual(lines, expected, raw)
+            let fitted = SignatureShareCardRenderer.placeLayout(lines, maxWidth: width)
+            XCTAssertEqual(fitted.lines, expected, "\(raw) が切れた（大きさ \(fitted.size)）")
+            XCTAssertFalse(fitted.truncated, raw)
+            XCTAssertGreaterThanOrEqual(fitted.size, SignatureShareCardRenderer.placeMinimumFontSize, "撮影地の下限")
+            let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+            for line in fitted.lines {
+                XCTAssertLessThanOrEqual((line as NSString).size(withAttributes: [.font: font]).width,
+                                         width, "\(line) が \(width) からはみ出す")
+            }
+        }
+    }
+
+    /// 日本の長い市区町村名（全 1709 件のうち 6〜7 字の全部と、5 字の代表）を本物の字で測り、
+    /// Mac の記録に出す（2026-11-04 確かめ役の指摘: 「（南アルプス市）」は 18.72pt でも 140 を超えうる）。
+    /// 一覧は code4fukui/localgovjp の市区町村名から字数で選んだ
+    func testMeasureLongMunicipalityNames() {
+        let names = ["つくばみらい市", "いちき串木野市", "かすみがうら市", "山陽小野田市", "富士河口湖町",
+                     "ひたちなか市", "南アルプス市", "東松島市", "伊豆の国市", "大和郡山市", "四国中央市",
+                     "世田谷区", "山中湖村", "市原市"]
+        let minimum = CGFloat(26 * 0.72)
+        let semibold = UIFont.systemFont(ofSize: minimum, weight: .semibold)
+        // 和文の詰め（palt: kTextSpacingType=22・kAltProportionalTextSelector=5）
+        let paltDescriptor = semibold.fontDescriptor.addingAttributes([
+            .featureSettings: [[UIFontDescriptor.FeatureKey.type: 22,
+                                UIFontDescriptor.FeatureKey.selector: 5]]
+        ])
+        let palt = UIFont(descriptor: paltDescriptor, size: minimum)
+        for name in names {
+            let line = "（\(name)）"
+            let plain = (line as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (line as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE \(line) plain=\(String(format: "%.1f", plain)) palt=\(String(format: "%.1f", packed)) fitSize140=\(String(format: "%.2f", 140 / plain * minimum))")
+        }
+        for character in ["（", "）", "あ", "市"] {
+            let plain = (character as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (character as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE char \(character) plain=\(String(format: "%.2f", plain)) palt=\(String(format: "%.2f", packed))")
+        }
+        let pin = UIImage(systemName: "mappin.circle",
+                          withConfiguration: UIImage.SymbolConfiguration(pointSize: 37, weight: .regular))
+        print("SHARECARD-MEASURE pin size=\(pin.map { "\($0.size)" } ?? "nil")")
+        XCTAssertFalse(names.isEmpty)
+    }
+
+    /// 日本の写真は、撮影地の文字の県を真鍮 75% で塗る（案A-3）。海外の写真・県名の無い文字は塗らない
+    func testJapanCardFillsPrefectureNamedInPlace() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.black.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let pin = try XCTUnwrap(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.41, lng: 138.86)))   // 山中湖 → 35.5, 139.0
+        func card(_ place: String) async throws -> CGImage {
+            let credit = SignatureShareCardRenderer.Credit(
+                name: "Photographer", username: "photographer", location: place, coords: pin,
+                camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E", exposure: "1/100s",
+                aperture: "f/4", iso: 50, verified: false, proStyle: nil, early: false, badge: nil)
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "共有カード_\(place)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return try XCTUnwrap(image.cgImage)
+        }
+        let japan = try XCTUnwrap(ShareCardMap.loadShapes(resource: "country-outlines")
+            .first(where: { $0.n == "Japan" }))
+        let rect = ShareCardMap.Layout(ratio: .portrait).mapRect
+        let focused = try XCTUnwrap(ShareCardMap.focus(japan, latitude: pin.latitude,
+                                                       longitude: pin.longitude, in: rect))
+        // 甲府の北西（山梨県の中・ピンの点から 6px 以上離れた所）
+        let probe = focused.projection.point(longitude: 138.4, latitude: 35.8)
+        func red(_ image: CGImage) throws -> Int {
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(image.cropping(to: CGRect(x: Int(probe.x), y: Int(probe.y),
+                                                                  width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return Int(rgba[0])
+        }
+        let filledCard = try await card("山梨県（山中湖村）")
+        let plainCard = try await card("Mount Fuji")
+        let filled = try red(filledCard)
+        let plain = try red(plainCard)
+        XCTAssertGreaterThan(filled, 120, "山梨県が塗られていない（\(probe)）")
+        XCTAssertLessThan(plain, 60, "県名が無いのに塗っている")
+    }
+
+    func testOverseasCardRenders() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer",
+            location: "Versailles, Île-de-France, フランス",
+            coords: CLLocationCoordinate2D(latitude: 49.0, longitude: 2.0),
+            camera: "Hasselblad X2D II 100C Medium Format Camera",
+            lens: "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens",
+            exposure: "1/125s", aperture: "f/4", iso: 200,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "共有カード_フランス_\(ratio)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 

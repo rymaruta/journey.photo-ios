@@ -392,6 +392,10 @@ def main_related(argv):
         # renderer; the renderer's unit tests plus startup smoke cover this
         # path without running unrelated full-screen screenshot suites.
         "Sources/JourneyPhoto/Resources/country-outlines.json",
+        # 地図の計算・字の折り返し・県の輪郭も共有カードだけが使う（ShareCardMapTests・2026-11-04）
+        "Sources/JourneyPhoto/Services/ShareCardMap.swift",
+        "Sources/JourneyPhoto/Services/ShareCardText.swift",
+        "Sources/JourneyPhoto/Resources/japan-prefectures.json",
     }
     ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/"
     for path, (lines, texts) in changes.items():
