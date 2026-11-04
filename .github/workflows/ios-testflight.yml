@@ -617,6 +617,23 @@ jobs:
             --scheme JourneyPhoto \
             --archive-flags="-skipPackagePluginValidation -skipMacroValidation"
 
+      # **Archive が残したものの大きさ**（2026-11-04・速さの担当の測り）。Archive の 24 分のうち、依存の Release 組みが
+      # 約 6.3 分（run 831）。Archive の中間物（ArchiveIntermediates）は控えに入れていない（10GB の置き場に収まらないため）。
+      # 入れるとしたらどれだけの大きさかを、段のログに数で残す。**落ちても赤にしない・Archive が走った回だけ**
+      - name: Archive が残したものの大きさ
+        if: ${{ steps.archive.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          set -uo pipefail
+          dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
+          echo "DerivedData: $dd"
+          du -sm "$dd"/SourcePackages "$dd"/Build/Products "$dd"/Build/Intermediates.noindex "$dd"/Build/Intermediates.noindex/ArchiveIntermediates "$dd"/Build/Intermediates.noindex/XCBuildData "$HOME"/Library/Caches/org.swift.swiftpm 2>/dev/null || true
+          echo "--- ArchiveIntermediates の中（大きい順）"
+          du -sm "$dd"/Build/Intermediates.noindex/ArchiveIntermediates/*/* 2>/dev/null | sort -rn | head -12 || true
+          echo "--- Archive の組み立ての中（大きい順）"
+          du -sm "$dd"/Build/Intermediates.noindex/ArchiveIntermediates/*/IntermediateBuildFilesPath/* 2>/dev/null | sort -rn | head -20 || true
+
       # **アプリの中身ごとの大きさ**（2026-10-31 判断・札 #429 アプリ 1「測る仕組み」）。ipa は 57.2MB（2026-10-31）で、
       # 何が占めているか（字体・絵・依存の Frameworks・本体）を Archive の回ごとに残す。Archive が走った回だけ。
       # 数は段のログ・まとめ（Summary）・成果物 `build-logs` の `app-size.txt` に出す。**落ちても赤にしない**（上げる邪魔をしない）
