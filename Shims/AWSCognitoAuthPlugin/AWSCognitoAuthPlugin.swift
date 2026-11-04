@@ -6,6 +6,14 @@ public struct AWSCognitoAuthPlugin: Plugin {
     public init() {}
 }
 
+/// 本物の `AWSAuthConfirmSignUpOptions`
+/// （`AmplifyPlugins/Auth/Sources/AWSCognitoAuthPlugin/Models/Options/AWSAuthConfirmSignUpOptions.swift`・2.27.0 で確認）。
+/// `metadata` が Cognito の `ClientMetadata` としてそのまま PostConfirmation トリガーに届く
+public struct AWSAuthConfirmSignUpOptions {
+    public let metadata: [String: String]?
+    public init(metadata: [String: String]? = nil) { self.metadata = metadata }
+}
+
 /// 本物の `AWSCognitoAuthError`
 /// （`AmplifyPlugins/Auth/Sources/AWSCognitoAuthPlugin/Models/Errors/`）。
 /// **綴りは lowerCamel**——JS SDK の `UserNotConfirmedException` とは違う。

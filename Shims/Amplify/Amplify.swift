@@ -72,6 +72,14 @@ public enum AuthSignUpRequest {
         public init(userAttributes: [AuthUserAttribute] = []) {}
     }
 }
+/// 本物の `AuthConfirmSignUpRequest.Options`（`Amplify/Categories/Auth/Request/AuthConfirmSignUpRequest.swift`・2.27.0 で確認）。
+/// `pluginOptions` は `Any?` で、Cognito プラグインは `AWSAuthConfirmSignUpOptions` として読む
+public enum AuthConfirmSignUpRequest {
+    public struct Options {
+        public let pluginOptions: Any?
+        public init(pluginOptions: Any? = nil) { self.pluginOptions = pluginOptions }
+    }
+}
 public struct AuthSignUpResult { public let isSignUpComplete: Bool = false }
 public typealias AdditionalInfo = [String: String]
 /// 本物はほかにも MFA などの段を持つ。使う側は `default` で受けること
@@ -119,7 +127,8 @@ public enum Amplify {
             fatalError("模型")
         }
         public static func confirmSignUp(for username: String,
-                                         confirmationCode: String) async throws -> AuthSignUpResult {
+                                         confirmationCode: String,
+                                         options: AuthConfirmSignUpRequest.Options? = nil) async throws -> AuthSignUpResult {
             fatalError("模型")
         }
         public static func resendSignUpCode(for username: String) async throws -> AuthCodeDeliveryDetails {

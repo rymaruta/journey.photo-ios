@@ -223,7 +223,24 @@ enum AuthGateway {
     /// メールに届いた確認コードで登録を確定する。username は signUp が返した UUID。
     static func confirmSignUp(username: String, code: String) async throws {
         try requireConfigured()
-        _ = try await Amplify.Auth.confirmSignUp(for: username, confirmationCode: code)
+        _ = try await Amplify.Auth.confirmSignUp(for: username, confirmationCode: code,
+                                                 options: confirmSignUpOptions())
+    }
+
+    /// 2026-11-04 判断（journey.photo-ios#432・登録の出どころを数える）: 確認に付ける `ClientMetadata`。
+    /// サーバー（photo-gallery `api/src/cognitoTrigger.ts` の `signupMetricLine`）が `{"metric":"signup",...}` を
+    /// ログに出す。許される値は platform=`web`/`ios`、from=`wish`/`other`（範囲外は `unknown` に丸められる）。
+    /// **値は定数だけ。** メール・名前・UUID など利用者の情報は入れない。
+    /// iOS には「行きたい」から来た登録の入口の区別が無いので、from は常に `other`
+    enum SignUpOrigin {
+        static let platform = "ios"
+        static let from = "other"
+        static var clientMetadata: [String: String] { ["platform": platform, "from": from] }
+    }
+
+    /// Amplify の `confirmSignUp` に渡す options（本物の `AWSAuthConfirmSignUpOptions.metadata` が `ClientMetadata` になる）
+    static func confirmSignUpOptions() -> AuthConfirmSignUpRequest.Options {
+        .init(pluginOptions: AWSAuthConfirmSignUpOptions(metadata: SignUpOrigin.clientMetadata))
     }
 
     static func resendSignUpCode(username: String) async throws {
