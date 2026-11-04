@@ -61,11 +61,14 @@ enum ShareCardMap {
         static let mapTopAlpha: CGFloat = 0.86
         /// 地図の下端と区切り線の間（板の 9px）
         static let mapSeparatorGap: CGFloat = 9
-        /// 撮影地の字（570 から）と地図の間
-        static let placeX: CGFloat = 570
-        static let placeWidthWithMap: CGFloat = 140
-        static let placeWidthWithoutMap: CGFloat = 385
-        static let mapGap: CGFloat = 12
+        /// 撮影地の字。印（x 520・幅 37）の 7 右の 564 から。
+        /// 2026-11-04（Mac run 835 の実測）: 140 幅では「（ヴェルサイユ）」（全角8字・18.72pt で約150）が
+        /// 「（ヴェルサ…）」と切れた。地図の x（722）と幅（290）は動かさず、字の列を 152 に広げて
+        /// 印との間（13 → 7）と地図との間（12 → 6）を詰めた。
+        static let placeX: CGFloat = 564
+        static let placeWidthWithMap: CGFloat = 152
+        static let placeWidthWithoutMap: CGFloat = 391
+        static let mapGap: CGFloat = 6
         static let mapWidth: CGFloat = 290
         /// 撮影地の字の上端（rowY から）と、2行を描く枠の高さ（26pt × 1.35 × 2 行）。
         /// 3行の撮影地は 2026-11-04 の2行の決まりで無くなった
@@ -116,7 +119,7 @@ enum ShareCardMap {
         }
 
         /// 地図の枠。上は帯の 86% の所（整数に切り上げ）、下は区切り線の 9px 上。
-        /// 横は撮影地の字（140 幅）の 12px 右から 290。
+        /// 横は撮影地の字（152 幅）の 6px 右（x 722）から 290。
         var mapRect: CGRect {
             let top = fadeY(reaching: Layout.mapTopAlpha).rounded(.up)
             let bottom = separatorY - Layout.mapSeparatorGap

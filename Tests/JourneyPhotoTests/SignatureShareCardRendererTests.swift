@@ -164,7 +164,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
     }
 
     func testPlaceTwoLinesWithRealFont() {
-        // 地図があるときの撮影地の幅（140）。決まった2行で、行の中では折らない（2026-11-04 owner）
+        // 地図があるときの撮影地の幅（152）。決まった2行で、行の中では折らない（2026-11-04 owner）
         let width = ShareCardMap.Layout.placeWidthWithMap
         let cases: [(String, [String])] = [
             ("千葉県（市原市）", ["千葉県", "（市原市）"]),
@@ -172,7 +172,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
             ("札幌市時計台, 中央区, 札幌市, 北海道, 060-0001, 日本", ["北海道", "（札幌市）"]),
             ("ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス",
              ["フランス", "（ヴェルサイユ）"]),
-            ("Paris, Île-de-France, France", ["France", "(Paris)"])
+            ("Paris, Île-de-France, France", ["France", "(Paris)"]),
+            // 括弧つき最長の市区町村名（10字）も切らない（下限 15 で 150 ≤ 152）
+            ("かすみがうら市, 茨城県, 日本", ["茨城県", "（かすみがうら市）"])
         ]
         for (raw, expected) in cases {
             let lines = LocationMatch.shareCardPlace(raw)?.lines ?? []
@@ -180,11 +182,11 @@ final class SignatureShareCardRendererTests: XCTestCase {
             let fitted = SignatureShareCardRenderer.placeLayout(lines, maxWidth: width)
             XCTAssertEqual(fitted.lines, expected, "\(raw) が切れた（大きさ \(fitted.size)）")
             XCTAssertFalse(fitted.truncated, raw)
-            XCTAssertGreaterThanOrEqual(fitted.size, 26 * 0.72, "撮影者名と同じ下限")
+            XCTAssertGreaterThanOrEqual(fitted.size, SignatureShareCardRenderer.placeMinimumFontSize, "撮影地の下限")
             let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
             for line in fitted.lines {
                 XCTAssertLessThanOrEqual((line as NSString).size(withAttributes: [.font: font]).width,
-                                         width, "\(line) が 140 からはみ出す")
+                                         width, "\(line) が \(width) からはみ出す")
             }
         }
     }

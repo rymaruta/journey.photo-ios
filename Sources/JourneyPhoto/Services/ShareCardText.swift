@@ -20,8 +20,8 @@ enum ShareCardText {
     private static let openers: Set<Character> = ["（", "(", "「", "［", "["]
     private static let closers: Set<Character> = ["）", ")", "」", "］", "]"]
     private static let breakAfter: Set<Character> = ["、", "・", "，"]
-    /// 「/」は後ろが空白のときだけ折る（「f/2.8」を「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）
-    private static let slashes: Set<Character> = ["/", "／"]
+    // 「/」では折らない（「f/2.8」を「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）。
+    // 「A / B」の「/」の後ろの空白は、空白の規則（下の isSpace）で「/ 」の1塊にまとまる
 
     /// 折ってよい所で区切った塊。塊をつなげると元の文になる
     static func segments(_ text: String) -> [String] {
@@ -44,7 +44,6 @@ enum ShareCardText {
             let isSpace = character == " " || character == "　"
             let breaks = breakAfter.contains(character)
                 || (character == "," && next != " ")
-                || (slashes.contains(character) && (next == " " || next == "　"))
                 || (isSpace && next != " " && next != "　")
             if breaks, next != nil {
                 result.append(current)

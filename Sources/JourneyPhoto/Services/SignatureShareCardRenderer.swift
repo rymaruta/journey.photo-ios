@@ -220,7 +220,7 @@ enum SignatureShareCardRenderer {
                 drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
                            size: 37, color: brass)
                 // 決まった2行（「山梨県」「（山中湖村）」）。行の中では折らない（2026-11-04 owner）。
-                // 地図があるときは 140 幅（案A-3: 155 → 140 に詰めて地図の枠を広げた）
+                // 地図があるときは 152 幅（地図は x 722・290 幅のまま。Mac run 835 で 140 では「（ヴェルサイユ）」が切れた）
                 drawPlaceLines(placeLines, at: CGPoint(x: ShareCardMap.Layout.placeX, y: rowY + 22),
                                maxWidth: credit.coords == nil
                                    ? ShareCardMap.Layout.placeWidthWithoutMap
@@ -666,11 +666,14 @@ enum SignatureShareCardRenderer {
                         availableHeight: availableHeight).size
     }
 
-    /// 撮影地の2行。2行とも同じ大きさで、撮影者名と同じ縮め方（1 ずつ・下限は 16 と 72% の大きい方）
+    /// 撮影地の2行。2行とも同じ大きさで、1 ずつ縮める。
+    /// 下限は 15（2026-11-04）: 日本語の市区町村名は括弧つきで最長10字（「（かすみがうら市）」）まで
+    /// 152 幅に切らずに入れたい（10 × 15 = 150）。撮影者名より低いのは、2行目が短い補足だから。
     static let placeFontSize: CGFloat = 26
+    static let placeMinimumFontSize: CGFloat = 15
     static func placeLayout(_ lines: [String], maxWidth: CGFloat) -> ShareCardText.Fitted {
         ShareCardText.fitLines(lines, maxWidth: maxWidth, preferredSize: placeFontSize,
-                               minimumSize: max(16, placeFontSize * 0.72),
+                               minimumSize: placeMinimumFontSize,
                                measure: { measuredWidth($0, size: $1) })
     }
 
