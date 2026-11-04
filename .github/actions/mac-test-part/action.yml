@@ -80,6 +80,11 @@ runs:
           [ -d "$r" ] || continue
           python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
         done
+        # テスト1本ずつの秒数をログに残す（job のログは xcodebuild の最後の数百行しか残らない。`Tools/xcresult-times.py`）
+        for r in build/ios/test/*.xcresult; do
+          [ -d "$r" ] || continue
+          python3 Tools/xcresult-times.py "$r" || true
+        done
 
     - name: 組ごとの実行状況を渡す
       if: ${{ always() }}
