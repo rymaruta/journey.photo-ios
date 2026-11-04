@@ -5,7 +5,7 @@
   python3 Tools/ui-times-from-runs.py --write <run id> [<run id> ...]  # ui-test-times.json を書き換える
   python3 Tools/ui-times-from-runs.py --job-log <ファイル> ...          # 手元に落とした job のログから
 
-読むのは各 run の job のうち名前に「UI テスト」を含むもの（分けた組・先に流す分）の全文ログで、
+読むのは各 run の job のうち名前に「UI テスト」「UIテスト」を含むもの（分けた組・先に流す分）の全文ログで、
 `Test Case '-[JourneyPhotoUITests.X testY]' passed (N seconds)` の行から1本ずつの秒数を取る。
 run を2つ以上渡すと、本ごとの**中央値**を取る（1回の揺れで組分けが傾かないように）。
 Linux で動く（`gh` が要る・読むだけ）。`Tools/pick-ui-tests.py --times-from-log` の複数 run 版。
@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import statistics
 import subprocess
 import sys
@@ -43,9 +44,9 @@ def jobs_of(run_id):
 
 
 def ui_logs(run_id):
-    """run の UI テストの job のログ（成功した job だけ）"""
+    """run の UI テストの job のログ（終わった job（落ちた job も、結果の束は読める））"""
     for job in jobs_of(run_id):
-        if "UI テスト" in job["name"] and job["conclusion"] == "success":
+        if re.search(r"UI ?テスト", job["name"]) and job["conclusion"] in ("success", "failure"):
             yield f"run {run_id} / {job['name']}", gh(f"repos/{REPO}/actions/jobs/{job['id']}/logs")
 
 
