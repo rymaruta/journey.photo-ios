@@ -42,9 +42,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let data = try XCTUnwrap(rendered)
         let image = try XCTUnwrap(UIImage(data: data))
         XCTAssertEqual(image.size, CGSize(width: 1080, height: 1350))
-        // 共有JPEGの四隅は黒背景。真鍮フレームは画像境界から8px内側にあり、
-        // 線幅4pxの中心が10pxなので、(10,10)は真鍮色になる。
-        // (0,0)に金色を要求すると、意図した8pxの余白を不具合と誤判定する。
+        // 共有JPEGの四隅は黒背景。真鍮フレームは画像境界から12px内側にあり（2026-11-04 地図8）、
+        // 線幅3pxの中心が13.5pxなので、(13,13)は真鍮色になる。
+        // (0,0)に金色を要求すると、意図した12pxの余白を不具合と誤判定する。
         let bitmap = try XCTUnwrap(image.cgImage)
         func pixel(at x: Int, _ y: Int) throws -> [UInt8] {
             let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -60,8 +60,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
         let corner = try pixel(at: 0, 0)
         XCTAssertLessThan(Int(corner[0]), 30, "画像の四隅は黒い背景で統一する")
-        let frame = try pixel(at: 10, 10)
-        XCTAssertGreaterThan(Int(frame[0]), 60, "8px内側の真鍮フレームが描かれていない")
+        let frame = try pixel(at: 13, 13)
+        XCTAssertGreaterThan(Int(frame[0]), 60, "12px内側の真鍮フレームが描かれていない")
     }
 
     func testSquareCardRenders() async throws {
