@@ -376,6 +376,9 @@ jobs:
   xcode-unit:
     name: Xcode の単体テスト（シミュレータ）
     needs: [xcode-build]
+    # 🔴 `if` を書かないと、組む job が `!cancelled()` で動いても、その上の `tested`（PR 以外・飛ばした回は skipped）が
+    # 飛んでいるせいで、ここも黙って skipped になる（run 41822309173: 組みは success なのに単体・UI が skipped）
+    if: ${{ !cancelled() && needs.xcode-build.result == 'success' }}
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -431,6 +434,9 @@ jobs:
   xcode-ui:
     name: Xcode の UI テスト（シミュレータ）
     needs: [xcode-build]
+    # 🔴 `if` を書かないと、組む job が `!cancelled()` で動いても、その上の `tested`（PR 以外・飛ばした回は skipped）が
+    # 飛んでいるせいで、ここも黙って skipped になる（run 41822309173: 組みは success なのに単体・UI が skipped）
+    if: ${{ !cancelled() && needs.xcode-build.result == 'success' }}
     runs-on: macos-15
     timeout-minutes: 160
     steps:
