@@ -717,7 +717,7 @@ enum SignatureShareCardRenderer {
         let inBox = CGRect(x: (symbolSize - drawn.width) / 2, y: (symbolSize - drawn.height) / 2,
                            width: drawn.width, height: drawn.height)
         // 正方形の上端から記号のベースラインまで（ベースラインの無い記号は下端）
-        let baselineInBox = inBox.maxY - (symbol.hasBaseline ? symbol.baselineOffsetFromBottom * scale : 0)
+        let baselineInBox = inBox.maxY - (symbol.baselineOffsetFromBottom ?? 0) * scale
         let boxTop = textBaseline - baselineInBox
         symbol.draw(in: inBox.offsetBy(dx: origin.x, dy: boxTop))
     }
