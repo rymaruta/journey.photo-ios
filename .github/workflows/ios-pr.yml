@@ -248,44 +248,40 @@ jobs:
           fi
           echo "skip=${skip}" >> "$GITHUB_OUTPUT"
 
-  # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
+  # 本物の Xcode でコンパイル → 単体テスト・UI テスト（起動・全タブ・画面の絵）
   # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
   # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
   # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
   # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
-  xcode:
-    name: Xcode のビルドとテスト（シミュレータ）
+  #
+  # 🔴 **組む Mac と、単体・UI を流す Mac を分けた**（2026-11-04・速さの担当）。前は1台で
+  # 控えの復元 130〜240 秒 → 組む 330〜420 秒 → 単体 408〜551 秒 → UI スモーク 313〜408 秒を直列に流し、
+  # 21〜30 分かかっていた。組んだ品を成果物で渡し（`ios-testflight.yml` の分割実行と同じ
+  # `Tools/test-products.py`）、単体と UI を別の Mac で同時に流す。Mac は最大3台（組む → 単体・UI）。
+  # 単体が落ちても UI は止まらない（前は UI まで行かずに止めていた）。
+  # **必須のチェックの名前を変えないため、最後の `xcode` の job が前の job と同じ名前で全部の結果をまとめる**
+  # （どれかが落ちれば落ち、条件で飛ばしたときは前と同じく skipped）
+  xcode-build:
+    name: Xcode の組み立て（シミュレータ）
     needs: [checks, tested, scope]
     # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
     if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い。
-    # 画面の試験だけで 75 分まで伸び、90 分だと成功の直後に切れる（2026-10-20・#321）
-    # 2026-10-22: 試験が増え、Mac が同時に3本走る日は画面の試験だけで 104 分を超え、120 分で
-    # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
-    timeout-minutes: 160
+    timeout-minutes: 90
+    outputs:
+      xcode: ${{ steps.xcode.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       # TestFlight と同じ選び方（名前から版を読み、いちばん新しい Xcode）。
-      # 理由は ios-testflight.yml の「Xcode を選ぶ」
+      # 理由は ios-testflight.yml の「Xcode を選ぶ」。選んだ版は、流す Mac に渡して同じ版にそろえる
       - name: Xcode を選ぶ
+        id: xcode
         run: |
-          set +e
-          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
-                 | sed 's#.*/Xcode_##; s#\.app$##' \
-                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
-                 | sort -V | tail -1)"
-          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
-            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
-            echo "選んだ Xcode: $ver"
-            echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
-          fi
+          ver="$(bash Tools/select-xcode.sh)"
+          echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
@@ -350,15 +346,57 @@ jobs:
           fi
           xcodegen generate
 
-      # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
-      # 行かずに止まる。**ここは絞らない**——main に入る前に全部が回る場所（枝の確認の `screens` は
-      # ここには無い）。書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
-      # ios-testflight.yml の「組む」の段の注記
+      # 書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
+      # ios-testflight.yml の「組む」の段の注記。組むのはここの1回だけ
       - name: 組む
         run: |
           set -euo pipefail
           echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
           XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
+
+      # 組んだ品を tar に包んで渡す（`ios-testflight.yml` の「ビルド成果物を圧縮」「ビルド成果物をアップロード」と同じ）。
+      # tar は権限と別名を保つ（成果物の zip では実行の権限が落ちる）
+      - name: ビルド成果物を圧縮
+        run: |
+          set -euo pipefail
+          products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
+          python3 Tools/test-products.py pack "$products" build/test-products.tar
+          ls -la build/test-products.tar
+
+      - name: ビルド成果物をアップロード
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-test-products
+          path: build/test-products.tar
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+
+  xcode-unit:
+    name: Xcode の単体テスト（シミュレータ）
+    needs: [xcode-build]
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Xcode を選ぶ（組んだ Mac と同じ版）
+        run: bash Tools/select-xcode.sh "${{ needs.xcode-build.outputs.xcode }}"
+
+      - name: 組んだ品を受け取る
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-test-products
+          path: build/products-in
+
+      - name: 組んだ品をほどく
+        run: |
+          set -euo pipefail
+          xctestrun="$(python3 Tools/test-products.py unpack build/products-in/test-products.tar build/products)"
+          echo "XCTESTRUN=$xctestrun" >> "$GITHUB_ENV"
+          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
 
       # Share-card-only changes use their owning unit suite; all other PRs
       # and manual runs still execute the entire JourneyPhotoTests bundle.
@@ -379,6 +417,47 @@ jobs:
 
       - name: 単体テスト
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
+
+      # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
+      - name: 結果のまとめ
+        if: ${{ always() }}
+        run: |
+          for r in build/Unit.xcresult; do
+            [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+
+  xcode-ui:
+    name: Xcode の UI テスト（シミュレータ）
+    needs: [xcode-build]
+    runs-on: macos-15
+    timeout-minutes: 160
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Xcode を選ぶ（組んだ Mac と同じ版）
+        run: bash Tools/select-xcode.sh "${{ needs.xcode-build.outputs.xcode }}"
+
+      - name: 組んだ品を受け取る
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-test-products
+          path: build/products-in
+
+      - name: 組んだ品をほどく
+        run: |
+          set -euo pipefail
+          xctestrun="$(python3 Tools/test-products.py unpack build/products-in/test-products.tar build/products)"
+          echo "XCTESTRUN=$xctestrun" >> "$GITHUB_ENV"
+          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
+
+      # 前は同じ Mac で単体テストが先に同じシミュレーターでアプリを起動していた。別の Mac に分けたので、
+      # 最初の UI テストの前に温める（理由と数は `Tools/warm-simulator.sh`・`.github/actions/mac-test-part`）
+      - name: シミュレーターを温める
+        run: bash Tools/warm-simulator.sh build/products
+
       # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
       # 変更のあるUIテスト自体も差分選別に含める。
       - name: UIテストの対象を決める
@@ -425,7 +504,7 @@ jobs:
       - name: 結果のまとめ
         if: ${{ always() }}
         run: |
-          for r in build/Unit.xcresult build/Test.xcresult; do
+          for r in build/Test.xcresult; do
             [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
           done
           true
@@ -434,3 +513,27 @@ jobs:
       # PRの成果物には含めず、Summaryで失敗名と理由を確認する。
       # 生ログにはユーザー名・URLなどが含まれる可能性があるためArtifactには保存しない。
       # テストの失敗名・理由は「結果のまとめ」で確認する。
+
+  # 前と同じ名前の job（必須のチェックにしていても名前が変わらない）。上の3つの結果をまとめるだけ。
+  # `tested` が「同じコミットは Mac でテスト済み」と見て飛ばした回・アプリが変わらない回・下書きの回は、
+  # 前と同じく skipped（必須のチェックとしては通った扱い）
+  xcode:
+    name: Xcode のビルドとテスト（シミュレータ）
+    needs: [checks, tested, scope, xcode-build, xcode-unit, xcode-ui]
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 組む・単体・UI の結果を見る
+        env:
+          BUILD: ${{ needs.xcode-build.result }}
+          UNIT: ${{ needs.xcode-unit.result }}
+          UI: ${{ needs.xcode-ui.result }}
+        run: |
+          echo "組む: ${BUILD} / 単体: ${UNIT} / UI: ${UI}"
+          if [ "${BUILD}" = "success" ] && [ "${UNIT}" = "success" ] && [ "${UI}" = "success" ]; then
+            echo "組む・単体・UI が全部通りました"
+          else
+            echo "::error::組む（${BUILD}）・単体（${UNIT}）・UI（${UI}）のどれかが通っていません"
+            exit 1
+          fi
