@@ -359,6 +359,7 @@ jobs:
       - name: ビルド成果物を圧縮
         run: |
           set -euo pipefail
+          mkdir -p build
           products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
           python3 Tools/test-products.py pack "$products" build/test-products.tar
           ls -la build/test-products.tar
