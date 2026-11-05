@@ -172,6 +172,17 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
+    /// 2026-11-05: カードの上の隅に入れる Web の住所。サイトの本物の住所で、2行の塊が見出しに収まる
+    func testSiteAddressIsTheRealDomainAndFitsTheHeader() {
+        typealias L = ShareCardMap.Layout
+        XCTAssertEqual(L.siteAddress, "journey-photo.com")
+        XCTAssertGreaterThanOrEqual(L.siteAddressFontSize, 20, "字は最小 20（1080 幅）")
+        // 一文 25 の行（約30）+ 間 + 住所 20 の行（約24）の塊は、見出しの縦線（57）より低い
+        let block = 30 + L.taglineAddressGap + 24
+        XCTAssertLessThanOrEqual(block, 62)
+        XCTAssertLessThan(block / 2, L.header / 2 - 12, "額縁の内側に収まる")
+    }
+
     // MARK: - 残す島
 
     private func focusBounds(_ name: String, _ latitude: Double, _ longitude: Double) throws
