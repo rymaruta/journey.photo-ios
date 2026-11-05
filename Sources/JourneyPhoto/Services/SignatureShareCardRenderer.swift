@@ -261,36 +261,36 @@ enum SignatureShareCardRenderer {
             let infoCenterY = layout.infoCenterY
             cg.setStrokeColor(lineColor)
             cg.setLineWidth(L.lineWidth)
-            for dividerX in [L.rowDividerX, L.mapX - 24] {
+            for dividerX in [L.rowDividerX, L.exposureX - 12] {
                 cg.move(to: CGPoint(x: dividerX, y: infoCenterY - 20))
                 cg.addLine(to: CGPoint(x: dividerX, y: infoCenterY + 20))
                 cg.strokePath()
             }
             // 値のない撮影項目はアイコンだけ残さない。
-            let symbolSize: CGFloat = 38
-            let textGap: CGFloat = 12
+            let symbolSize: CGFloat = 30
+            let textGap: CGFloat = 10
             let cameraX = L.contentLeft
             let lensX = L.pinX
-            let exposureX = L.mapX
+            let exposureX = L.exposureX
             let cameraWidth = L.rowDividerX - 24 - cameraX
-            let lensWidth = L.mapX - 24 - 4 - lensX
-            let exposureWidth = L.contentRight - exposureX
+            let lensWidth = L.lensColumnWidth
+            let exposureWidth = L.mapX - 24 - exposureX
             if !camera.isEmpty {
                 drawMetadataRow("camera", text: camera,
                                 x: cameraX, centerY: infoCenterY,
-                                textWidth: cameraWidth - symbolSize - textGap, fontSize: 21,
+                                textWidth: cameraWidth - symbolSize - textGap, fontSize: 17,
                                 symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
             if !lens.isEmpty {
                 drawMetadataRow("camera.aperture", text: lens,
                                 x: lensX, centerY: infoCenterY,
-                                textWidth: lensWidth - symbolSize - textGap, fontSize: 21,
+                                textWidth: lensWidth - symbolSize - textGap, fontSize: 17,
                                 symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
             if !exposure.isEmpty {
                 drawMetadataRow("timer", text: exposure,
                                 x: exposureX, centerY: infoCenterY,
-                                textWidth: exposureWidth - symbolSize - textGap, fontSize: 21,
+                                textWidth: exposureWidth - symbolSize - textGap, fontSize: 17,
                                 symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
 
