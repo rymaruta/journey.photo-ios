@@ -223,6 +223,63 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertFalse(names.isEmpty)
     }
 
+    /// 2026-11-05 フェード型: 3 比率とも大きさが正しく、写真は全面・下は黒へ溶け、地図の線（真鍮）が出る
+    func testFadeStyleRendersAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1200))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor(red: 0.5, green: 0.7, blue: 0.9, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 1200))
+            }
+        let pin = try XCTUnwrap(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.41, lng: 138.86)))
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer", location: "山梨県（山中湖村）", coords: pin,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E", exposure: "1/100s",
+            aperture: "f/4", iso: 50, verified: false, proStyle: nil, early: false, badge: nil)
+        func rgb(_ image: CGImage, _ x: Int, _ y: Int) throws -> [Int] {
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return rgba.prefix(3).map(Int.init)
+        }
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let layout = ShareCardMap.FadeLayout(ratio: ratio)
+            let data = try XCTUnwrap(await SignatureShareCardRenderer.render(
+                source, credit: credit, ratio: ratio, style: .fade))
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "フェード_\(ratio)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertEqual(image.size, CGSize(width: 1080, height: layout.height), "\(ratio)")
+            let bitmap = try XCTUnwrap(image.cgImage)
+            // 写真は全面: グラデーションの上・ロゴの影の下（真ん中の左端）は元の写真の色のまま（青い）
+            let mid = try rgb(bitmap, 30, Int((layout.fadeTop + 260) / 2))
+            XCTAssertGreaterThan(mid[2], mid[0] + 40, "\(ratio) 写真の青が残っていない \(mid)")
+            XCTAssertGreaterThan(mid[2], 150, "\(ratio) 写真が暗くなっている \(mid)")
+            // 下は黒へ溶ける: 左下の隅（文字の無い所）は黒に近い
+            let bottom = try rgb(bitmap, 6, Int(layout.height) - 6)
+            XCTAssertLessThan(bottom.max() ?? 255, 24, "\(ratio) 下が黒に着いていない \(bottom)")
+            // 写真の上に真鍮の額縁を載せない（左上の隅 (13,13) は写真の色）
+            let corner = try rgb(bitmap, 13, 300)
+            XCTAssertGreaterThan(corner[2], 120, "\(ratio) 左の端に額縁が載っている \(corner)")
+            // 地図の枠の中に、真鍮の線（赤が青より明るい色）がある
+            let map = layout.mapRect
+            var brassPixels = 0
+            for yy in stride(from: Int(map.minY), to: Int(map.maxY), by: 4) {
+                for xx in stride(from: Int(map.minX), to: Int(map.maxX), by: 4) {
+                    let p = try rgb(bitmap, xx, yy)
+                    if p[0] > 150, p[0] > p[2] + 40 { brassPixels += 1 }
+                }
+            }
+            XCTAssertGreaterThan(brassPixels, 20, "\(ratio) 地図の線が見えない（\(brassPixels)）")
+        }
+    }
+
     /// 日本の写真は、撮影地の文字の県を真鍮 75% で塗る（案A-3）。海外の写真・県名の無い文字は塗らない
     func testJapanCardFillsPrefectureNamedInPlace() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))

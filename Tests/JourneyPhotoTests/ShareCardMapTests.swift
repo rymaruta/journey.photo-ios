@@ -113,6 +113,65 @@ final class ShareCardMapTests: XCTestCase {
         XCTAssertEqual(L.contentRight, 1020)
     }
 
+    // MARK: - フェード型の寸法（2026-11-05・見本 F2）
+
+    func testFadeLayoutMeasuredValues() {
+        typealias F = ShareCardMap.FadeLayout
+        let portrait = F(ratio: .portrait)
+        XCTAssertEqual(portrait.height, 1350)
+        XCTAssertEqual(portrait.base, 1350)
+        XCTAssertEqual(portrait.fadeTop, 640)
+        XCTAssertEqual(portrait.mapRect, CGRect(x: 640, y: 690, width: 380, height: 520))
+        XCTAssertEqual(portrait.placeTop, 984)
+        XCTAssertEqual(portrait.subPlaceTop, 1104)
+        XCTAssertEqual(portrait.authorTop, 1164)
+        XCTAssertEqual(portrait.exifCenterY, 1260)
+        // 9:16 は下の 75 を空ける（Instagram の返信欄）。地図の大きさは同じ
+        let story = F(ratio: .story)
+        XCTAssertEqual(story.height, 1920)
+        XCTAssertEqual(story.base, 1845)
+        XCTAssertEqual(story.mapRect.size, portrait.mapRect.size)
+        XCTAssertEqual(story.mapRect.maxY, 1845 - 140)
+        // 1:1 は写真が低いので、グラデーションを短く・地図を低く
+        let square = F(ratio: .square)
+        XCTAssertEqual(square.fadeTop, 520)
+        XCTAssertEqual(square.mapRect.height, 400)
+    }
+
+    /// どの比率でも、地名 → 市区町村 → 撮影者 → 撮影情報が重ならず、地図は撮影情報の上・右端は写真の右端
+    func testFadeLayoutNeverOverlaps() {
+        typealias F = ShareCardMap.FadeLayout
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = F(ratio: ratio)
+            XCTAssertLessThan(l.placeTop + F.placeFontSize, l.subPlaceTop, "\(ratio) 地名の字が市区町村に掛かる")
+            XCTAssertLessThan(l.subPlaceTop + F.subPlaceFontSize * 1.2, l.authorTop, "\(ratio)")
+            // 撮影情報は 2 行（長いレンズ名）になっても行の高さ 52 の中心から上下 26
+            XCTAssertLessThanOrEqual(l.authorTop + F.avatarSize, l.exifCenterY - 26, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.mapRect.maxY, l.exifCenterY - 26, "\(ratio)")
+            XCTAssertEqual(l.mapRect.maxX, F.contentRight, "\(ratio)")
+            // 左の列は地図の手前で終わる
+            XCTAssertEqual(F.contentLeft + F.leftColumnWidth, l.mapRect.minX, "\(ratio)")
+            // 地図の上はグラデーションの中（写真の明るい所に真鍮の線を置かない）
+            XCTAssertGreaterThanOrEqual(l.mapRect.minY, l.fadeTop, "\(ratio)")
+            XCTAssertGreaterThanOrEqual(l.fadeTop, 0, "\(ratio)")
+        }
+    }
+
+    func testFadeStopsAreSmoothAndEndOnBlack() {
+        let stops = ShareCardMap.FadeLayout.fadeStops
+        XCTAssertEqual(stops.first?.location, 0)
+        XCTAssertEqual(stops.first?.alpha, 0)
+        XCTAssertEqual(stops.last?.location, 1)
+        XCTAssertEqual(stops.last?.alpha, 1)
+        XCTAssertGreaterThanOrEqual(stops.count, 6, "短い帯にしない（境目を見せない）")
+        for (a, b) in zip(stops, stops.dropFirst()) {
+            XCTAssertLessThan(a.location, b.location)
+            XCTAssertLessThan(a.alpha, b.alpha)
+            // 隣の点の濃さの差は 0.3 まで（急に濃くならない）
+            XCTAssertLessThanOrEqual(b.alpha - a.alpha, 0.3)
+        }
+    }
+
     // MARK: - 残す島
 
     private func focusBounds(_ name: String, _ latitude: Double, _ longitude: Double) throws

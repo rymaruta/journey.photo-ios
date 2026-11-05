@@ -11,6 +11,14 @@ enum SignatureShareCardRenderer {
         case square = 1
     }
 
+    /// カードの型（2026-11-05 owner「ユーザが選べるように」）。
+    /// - `band`: 写真の下に黒い帯（いまの型・既定）
+    /// - `fade`: 写真を全面に敷き、下を黒へ溶かす（見本 F2）
+    enum Style: String, CaseIterable {
+        case band
+        case fade
+    }
+
     struct Credit {
         let name: String
         let username: String?
@@ -51,9 +59,9 @@ enum SignatureShareCardRenderer {
 
     #if os(Linux)
     // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? { nil }
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? { nil }
     #else
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? {
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? {
         // 1080px幅のSNSカードに原本の全画素を展開しない。
         // 画質の余裕を持たせて最大3072pxへ縮小デコードし、失敗時は従来方式へ戻す。
         let photo: UIImage?
@@ -73,6 +81,9 @@ enum SignatureShareCardRenderer {
             photo = UIImage(data: data)
         }
         guard let photo, photo.size.width > 0, photo.size.height > 0 else { return nil }
+        if style == .fade {
+            return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        }
         typealias L = ShareCardMap.Layout
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
@@ -575,6 +586,176 @@ enum SignatureShareCardRenderer {
         context.setLineWidth(2)
         context.strokeEllipse(in: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26))
         context.restoreGState()
+    }
+
+    // MARK: - フェード型（2026-11-05・見本 F2）
+
+    /// 写真を全面に敷き、下を長いグラデーションで黒へ溶かす型。寸法は `ShareCardMap.FadeLayout`。
+    /// 帯の型の `render` とは別の関数にして、帯の型の描き方（テストが固定している数）に触れない。
+    private static func renderFade(photo: UIImage, credit: Credit, ratio: Ratio, avatarData: Data?) -> Data? {
+        typealias F = ShareCardMap.FadeLayout
+        let layout = F(ratio: ratio)
+        let canvas = CGSize(width: F.width, height: layout.height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: canvas, format: format).jpegData(withCompressionQuality: 0.93) { context in
+            let cg = context.cgContext
+            UIColor.black.setFill()
+            cg.fill(CGRect(origin: .zero, size: canvas))
+            // 写真は全面（縦横比を保って埋める）
+            let scale = max(canvas.width / photo.size.width, canvas.height / photo.size.height)
+            photo.draw(in: CGRect(x: (canvas.width - photo.size.width * scale) / 2,
+                                  y: (canvas.height - photo.size.height * scale) / 2,
+                                  width: photo.size.width * scale, height: photo.size.height * scale))
+            // 上の影（ロゴと一文を空の上でも読めるように）。下のグラデーション（長く滑らか・境目を見せない）
+            func shade(from y0: CGFloat, to y1: CGFloat, stops: [(location: CGFloat, alpha: CGFloat)]) {
+                let colors = stops.map { UIColor.black.withAlphaComponent($0.alpha).cgColor } as CFArray
+                let locations = stops.map { $0.location }
+                guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                                colors: colors, locations: locations) else { return }
+                cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: y0), end: CGPoint(x: 0, y: y1), options: [])
+            }
+            shade(from: 0, to: F.topShadeHeight, stops: [
+                (0, F.topShadeAlpha), (0.45, F.topShadeAlpha * 0.5), (1, 0)])
+            // 下の空き（9:16）は黒一色。グラデーションは基準線で 1 に着き、その下は 1 のまま
+            var bottomStops = F.fadeStops.map { stop in
+                (location: stop.location * layout.fadeLength / (layout.height - layout.fadeTop), alpha: stop.alpha)
+            }
+            if let last = bottomStops.last, last.location < 1 { bottomStops.append((location: 1, alpha: 1)) }
+            shade(from: layout.fadeTop, to: layout.height, stops: bottomStops)
+
+            // 上: ロゴ（マーク＋字）と一文
+            let markY = ShareCardMap.Layout.headerMarkY // 帯の型の見出しと同じ中心
+            let markMidY = markY + ShareCardMap.Layout.headerMarkSize / 2
+            if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
+                mark.withTintColor(.white).draw(in: CGRect(x: F.contentLeft, y: markY,
+                    width: ShareCardMap.Layout.headerMarkSize, height: ShareCardMap.Layout.headerMarkSize))
+            }
+            draw("Journey Photo",
+                 at: CGPoint(x: F.contentLeft + ShareCardMap.Layout.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
+                 maxWidth: 365, size: 39, color: .white, serif: true)
+            let taglineFont = UIFont.systemFont(ofSize: 24)
+            draw("旅の一瞬を、誰かの次の旅へ。",
+                 at: CGPoint(x: F.contentRight - 410, y: markMidY - taglineFont.lineHeight / 2),
+                 maxWidth: 410, size: 24, color: .white, alignment: .right)
+
+            // 右: 地図（真鍮の細線・黒に溶けた所に置く）
+            if let coordinate = credit.coords {
+                let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
+                CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
+                                              in: layout.mapRect, color: brass, context: cg)
+            }
+
+            // 左: 地名（明朝）・市区町村（真鍮）
+            let lines = credit.placeLines
+            if let first = lines.first {
+                drawFittedSerif(first, at: CGPoint(x: F.contentLeft, y: layout.placeTop),
+                                maxWidth: F.leftColumnWidth, size: F.placeFontSize,
+                                minimumSize: F.placeMinimumFontSize, color: .white)
+                if lines.count > 1 {
+                    let sub = lines[1].trimmingCharacters(in: CharacterSet(charactersIn: "（）()"))
+                    let pin = F.subPlaceFontSize
+                    drawSymbol("mappin.circle", at: CGPoint(x: F.contentLeft, y: layout.subPlaceTop + 2),
+                               size: pin, color: brass)
+                    draw(sub, at: CGPoint(x: F.contentLeft + pin + 12, y: layout.subPlaceTop),
+                         maxWidth: F.leftColumnWidth - pin - 12, size: F.subPlaceFontSize, color: brass, bold: true)
+                }
+            }
+
+            // 撮影者（アバター・名前・ユーザー名）
+            drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop, context: cg)
+
+            // 撮影情報は1行（地図の下端より下・幅いっぱいを3つに分ける）
+            let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lens = credit.lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let exposure = [credit.aperture, credit.exposure, credit.iso.map { "ISO\($0)" }]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }.joined(separator: "  ")
+            let cells: [(String, String, CGFloat, CGFloat)] = [
+                ("camera", camera, F.contentLeft, 320),
+                ("camera.aperture", lens, F.contentLeft + 340, 340),
+                ("timer", exposure, F.contentLeft + 700, 260)
+            ]
+            for (symbol, text, x, width) in cells where !text.isEmpty {
+                drawMetadataRow(symbol, text: text, x: x, centerY: layout.exifCenterY,
+                                textWidth: width - F.exifSymbolSize - 10, fontSize: F.exifFontSize,
+                                symbolSize: F.exifSymbolSize, textGap: 10, color: brass, context: cg)
+            }
+        }
+    }
+
+    /// 明朝の1行。幅に入るまで 1 ずつ縮める（下限まで。最後だけ省略）
+    private static func drawFittedSerif(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
+                                        size: CGFloat, minimumSize: CGFloat, color: UIColor) {
+        func serif(_ s: CGFloat) -> UIFont {
+            let base = UIFont.systemFont(ofSize: s, weight: .bold)
+            return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: s) } ?? base
+        }
+        var fitted = size
+        while fitted > minimumSize,
+              (value as NSString).size(withAttributes: [.font: serif(fitted)]).width > maxWidth {
+            fitted -= 1
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        (value as NSString).draw(in: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: fitted * 1.3),
+                                 withAttributes: [.font: serif(fitted), .foregroundColor: color,
+                                                  .paragraphStyle: paragraph])
+    }
+
+    /// フェード型の撮影者の行。帯の型と同じ見た目（真鍮の輪のアバター・名前・マーク・ユーザー名）を、
+    /// 小さめの大きさで1行に描く。マークが3つ以上でも2段にしない（左の列に幅がある）
+    private static func drawFadeAuthor(_ credit: Credit, avatarData: Data?, top: CGFloat, context cg: CGContext) {
+        typealias F = ShareCardMap.FadeLayout
+        let size = F.avatarSize
+        let avatarRect = CGRect(x: F.contentLeft, y: top, width: size, height: size)
+        if let avatarData, let avatar = UIImage(data: avatarData) {
+            cg.saveGState()
+            cg.addEllipse(in: avatarRect)
+            cg.clip()
+            let factor = max(size / avatar.size.width, size / avatar.size.height)
+            avatar.draw(in: CGRect(x: avatarRect.midX - avatar.size.width * factor / 2,
+                                   y: avatarRect.midY - avatar.size.height * factor / 2,
+                                   width: avatar.size.width * factor, height: avatar.size.height * factor))
+            cg.restoreGState()
+        } else {
+            cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
+            cg.fillEllipse(in: avatarRect)
+            let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
+            let font = UIFont.systemFont(ofSize: 28)
+            draw(initial.isEmpty ? "J" : initial,
+                 at: CGPoint(x: avatarRect.minX + 18, y: avatarRect.midY - font.lineHeight / 2),
+                 maxWidth: 40, size: 28, color: .white, serif: true)
+        }
+        cg.setStrokeColor(brass.cgColor)
+        cg.setLineWidth(2)
+        cg.strokeEllipse(in: avatarRect)
+
+        let name = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
+            + (credit.early ? 1 : 0) + ((credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false) ? 1 : 0)
+        let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
+        let x = F.contentLeft + size + 16
+        let columnWidth: CGFloat = 480
+        let nameWidth = max(120, columnWidth - markWidth)
+        let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@")) ?? ""
+        let nameLine = UIFont.systemFont(ofSize: F.nameFontSize, weight: .semibold).lineHeight
+        let userLine = UIFont.systemFont(ofSize: F.usernameFontSize).lineHeight
+        let block = nameLine + (username.isEmpty ? 0 : userLine + 2)
+        let nameY = top + (size - block) / 2
+        draw(name, at: CGPoint(x: x, y: nameY), maxWidth: nameWidth, size: F.nameFontSize, color: .white, bold: true)
+        if markCount > 0 {
+            let nameFont = UIFont.systemFont(ofSize: F.nameFontSize, weight: .semibold)
+            let actual = min(nameWidth, ceil((name as NSString).size(withAttributes: [.font: nameFont]).width))
+            drawNameMarks(credit, at: CGPoint(x: x + actual + 5, y: nameY + (nameLine - 27) / 2))
+        }
+        if !username.isEmpty {
+            draw("@" + username, at: CGPoint(x: x, y: nameY + nameLine + 2),
+                 maxWidth: columnWidth, size: F.usernameFontSize, color: secondary)
+        }
     }
 
     /// 既存の ProMarkGeometry / EarlyMemberMarkGeometry を使い、画面と同じ輪郭を描く。
