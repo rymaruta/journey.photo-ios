@@ -61,6 +61,12 @@ enum ShareCardMap {
     /// - 撮影情報の3列の左端は、上の段（アバター・縦線の右・地図）の縦の線にそろえる
     struct Layout {
         static let width: CGFloat = 1080
+        /// カードの上の隅に小さく入れる Web の住所（2026-11-05 owner「WEB版をもっと認知してもらいたい」）。
+        /// Instagram の投稿は本文のリンクが押せず画像だけが回るので、画像に住所の字を焼き込む
+        static let siteAddress = "journey-photo.com"
+        /// 一文と住所の2行の塊（一文 25 の行 + 間 4 + 住所 20 の行）を、見出しの縦の中心にそろえる
+        static let siteAddressFontSize: CGFloat = 20
+        static let taglineAddressGap: CGFloat = 4
         /// 写真と黒い帯の左右の余白（外の余白）
         static let margin: CGFloat = 60
         /// 帯の端から中身（アバター・区切り線・地図）まで。

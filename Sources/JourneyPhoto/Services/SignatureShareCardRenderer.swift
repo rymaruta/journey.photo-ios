@@ -140,11 +140,9 @@ enum SignatureShareCardRenderer {
             cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
             cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
             cg.strokePath()
-            // 一文は帯の縦の中心にそろえる。右端は本文の右端
-            let taglineFont = UIFont.systemFont(ofSize: 25)
-            draw("旅の一瞬を、誰かの次の旅へ。",
-                 at: CGPoint(x: L.contentRight - 410, y: L.headerCenter - taglineFont.lineHeight / 2),
-                 maxWidth: 410, size: 25, color: .white, alignment: .right)
+            // 一文と Web の住所の2行の塊は、帯の縦の中心にそろえる。右端は本文の右端
+            drawTaglineAndAddress(centerY: L.headerCenter, right: L.contentRight, taglineSize: 25,
+                                  addressColor: brass)
 
             // 撮影者の段。要素はアバターの縦の中心にそろえる
             let rowTop = layout.rowTop
@@ -636,10 +634,9 @@ enum SignatureShareCardRenderer {
             draw("Journey Photo",
                  at: CGPoint(x: F.contentLeft + ShareCardMap.Layout.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
                  maxWidth: 365, size: 39, color: .white, serif: true)
-            let taglineFont = UIFont.systemFont(ofSize: 24)
-            draw("旅の一瞬を、誰かの次の旅へ。",
-                 at: CGPoint(x: F.contentRight - 410, y: markMidY - taglineFont.lineHeight / 2),
-                 maxWidth: 410, size: 24, color: .white, alignment: .right)
+            // 写真の上なので、住所も白（真鍮は黒い地の上だけ）
+            drawTaglineAndAddress(centerY: markMidY, right: F.contentRight, taglineSize: 24,
+                                  addressColor: .white)
 
             // 右: 地図（真鍮の細線・黒に溶けた所に置く）
             if let coordinate = credit.coords {
@@ -684,6 +681,20 @@ enum SignatureShareCardRenderer {
                                 symbolSize: F.exifSymbolSize, textGap: 10, color: brass, context: cg)
             }
         }
+    }
+
+    /// 一文と Web の住所（右揃え）。2行の塊の縦の中心が centerY（両方の型の見出しで同じ形）
+    private static func drawTaglineAndAddress(centerY: CGFloat, right: CGFloat, taglineSize: CGFloat,
+                                              addressColor: UIColor) {
+        let taglineLine = UIFont.systemFont(ofSize: taglineSize).lineHeight
+        let addressSize = ShareCardMap.Layout.siteAddressFontSize
+        let addressLine = UIFont.systemFont(ofSize: addressSize).lineHeight
+        let gap = ShareCardMap.Layout.taglineAddressGap
+        let top = centerY - (taglineLine + gap + addressLine) / 2
+        draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: right - 410, y: top),
+             maxWidth: 410, size: taglineSize, color: .white, alignment: .right)
+        draw(ShareCardMap.Layout.siteAddress, at: CGPoint(x: right - 410, y: top + taglineLine + gap),
+             maxWidth: 410, size: addressSize, color: addressColor, alignment: .right)
     }
 
     /// 明朝の1行。幅に入るまで 1 ずつ縮める（下限まで。最後だけ省略）
