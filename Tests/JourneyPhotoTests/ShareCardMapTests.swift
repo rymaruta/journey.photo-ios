@@ -25,7 +25,7 @@ final class ShareCardMapTests: XCTestCase {
         for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
             let layout = ShareCardMap.Layout(ratio: ratio)
             let map = layout.mapRect
-            XCTAssertEqual(map.width, 236, "\(ratio)")
+            XCTAssertEqual(map.width, 286, "\(ratio)")
             XCTAssertEqual(map.height, 244, "\(ratio)")
             // 2026-11-04 owner「フェードする境界線いらない」: 地図は黒い帯の中だけ（写真に掛けない）。
             // 「撮影情報さらに小さくして地図大きくしていい」: 帯の高さいっぱい（上下の余白 12）
@@ -44,15 +44,15 @@ final class ShareCardMapTests: XCTestCase {
     }
 
     func testMapFrameMeasuredValues() {
-        // 4:5（1080×1350）: 帯 1022・撮影者の段 1038・区切り線 1162・撮影情報 1200（高さ 52）・帯の下端 1290（下の余白 38）。
-        // 地図は 236×244（x 784・y 1034）。帯の高さいっぱい
+        // 4:5（1080×1350）: 帯 1022・撮影者の段 1038（アバター 76）・区切り線 1156・撮影情報 1200（高さ 52）・帯の下端 1290（下の余白 38）。
+        // 地図は 286×244（x 734・y 1034）。帯の高さいっぱい（2026-11-05: アバターを 76 に縮め縦線を左へ寄せて 236 → 286）
         let portrait = ShareCardMap.Layout(ratio: .portrait)
         XCTAssertEqual(portrait.photoBottom, 1022)
         XCTAssertEqual(portrait.rowTop, 1038)
-        XCTAssertEqual(portrait.separatorY, 1162)
+        XCTAssertEqual(portrait.separatorY, 1156)
         XCTAssertEqual(portrait.infoTop, 1200)
         XCTAssertEqual(portrait.bandRect.maxY, 1290)
-        XCTAssertEqual(portrait.mapRect, CGRect(x: 784, y: 1034, width: 236, height: 244))
+        XCTAssertEqual(portrait.mapRect, CGRect(x: 734, y: 1034, width: 286, height: 244))
         // 帯の下の余白は 38。9:16 は下の段が高い（その分だけ下に空く）が、地図の大きさは同じ
         XCTAssertEqual(portrait.bandRect.maxY - (portrait.infoTop + ShareCardMap.Layout.infoHeight), 38)
         let story = ShareCardMap.Layout(ratio: .story)
@@ -73,14 +73,14 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
-    /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）は上も下も 36
+    /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）は上も下も 42
     func testRowGapsAreEqualInEveryRatio() {
         for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
             let layout = ShareCardMap.Layout(ratio: ratio)
             let above = layout.separatorY - (layout.rowTop + ShareCardMap.Layout.avatarSize)
             let below = layout.infoTop - (layout.separatorY + ShareCardMap.Layout.lineWidth)
-            XCTAssertEqual(above, 36, "\(ratio)")
-            XCTAssertEqual(below, 36, "\(ratio)")
+            XCTAssertEqual(above, 42, "\(ratio)")
+            XCTAssertEqual(below, 42, "\(ratio)")
         }
     }
 
@@ -98,16 +98,16 @@ final class ShareCardMapTests: XCTestCase {
     /// 縦の線の位置: 撮影情報の3列の左端・縦罫は、上の段の縦の線にそろう
     func testInfoColumnsAlignWithRowAboveLines() {
         typealias L = ShareCardMap.Layout
-        XCTAssertEqual(L.nameX, 172)
-        XCTAssertEqual(L.rowDividerX, 387)
-        XCTAssertEqual(L.pinX, 411)
-        XCTAssertEqual(L.placeX, 461)
-        XCTAssertEqual(L.mapX, 784)
-        XCTAssertEqual(L.exposureX, 640)
+        XCTAssertEqual(L.nameX, 156)
+        XCTAssertEqual(L.rowDividerX, 337)
+        XCTAssertEqual(L.pinX, 361)
+        XCTAssertEqual(L.placeX, 411)
+        XCTAssertEqual(L.mapX, 734)
+        XCTAssertEqual(L.exposureX, 590)
         XCTAssertEqual(L.lensColumnWidth, 215)
         // 区切り線は地図の手前（16）で止まる
         let layout = ShareCardMap.Layout(ratio: .portrait)
-        XCTAssertEqual(layout.separatorEndX(hasMap: true), 768)
+        XCTAssertEqual(layout.separatorEndX(hasMap: true), 718)
         XCTAssertEqual(layout.separatorEndX(hasMap: false), 1020)
         XCTAssertEqual(L.contentLeft, 60)
         XCTAssertEqual(L.contentRight, 1020)

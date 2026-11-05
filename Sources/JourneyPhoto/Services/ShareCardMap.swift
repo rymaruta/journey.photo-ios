@@ -86,21 +86,23 @@ enum ShareCardMap {
 
         /// 黒い帯の上の余白（帯の開始 → 撮影者の段）。上は黒へ溶けているので近くてよい
         static let bandTopPad: CGFloat = 16
-        static let avatarSize: CGFloat = 88
+        /// 2026-11-05 owner「プロフィールアイコンと名前とアカウント名をもう少し小さく、縦線を左へ寄せて地図を大きく」:
+        /// 88 → 76。縦に空いた 12 は段の間隔（36 → 42 ずつ）に回し、帯の高さ・下の余白 38 は変えない
+        static let avatarSize: CGFloat = 76
         /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）
-        static let rowGap: CGFloat = 36
+        static let rowGap: CGFloat = 42
         /// 撮影情報の行の高さ。2026-11-04 owner「撮影情報さらに小さくして地図大きくしていい」: 60 → 52（字 21 → 17・記号 38 → 30）
         static let infoHeight: CGFloat = 52
 
-        /// 撮影者の名前の列（アバターの 24 右）。区切りの縦線はその 195 幅の 20 右
-        static var nameX: CGFloat { contentLeft + avatarSize + 24 }
-        static let nameColumnWidth: CGFloat = 195
-        static var rowDividerX: CGFloat { nameX + nameColumnWidth + 20 }
+        /// 撮影者の名前の列（アバターの 20 右）。区切りの縦線はその 165 幅の 16 右（名前 30 → 26・ユーザー名 24 → 21 に合わせて詰めた）
+        static var nameX: CGFloat { contentLeft + avatarSize + 20 }
+        static let nameColumnWidth: CGFloat = 165
+        static var rowDividerX: CGFloat { nameX + nameColumnWidth + 16 }
         /// 撮影地の印（pin）と字
         static var pinX: CGFloat { rowDividerX + 24 }
         static var placeX: CGFloat { pinX + 50 }
         /// 地図の枠の幅。右端は本文の右端にそろえる
-        static let mapWidth: CGFloat = 236
+        static let mapWidth: CGFloat = 286
         static let mapGapToPlace: CGFloat = 8
         /// 地図の下端と撮影情報の上端の間（区切り線は地図の手前で止める）
         /// 地図は黒い帯の高さいっぱい（上下の余白 12）。撮影情報は地図の左へ詰める
