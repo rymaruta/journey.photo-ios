@@ -88,8 +88,9 @@ enum ShareCardMap {
         static let bandTopPad: CGFloat = 16
         static let avatarSize: CGFloat = 88
         /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）
-        static let rowGap: CGFloat = 32
-        static let infoHeight: CGFloat = 60
+        static let rowGap: CGFloat = 36
+        /// 撮影情報の行の高さ。2026-11-04 owner「撮影情報さらに小さくして地図大きくしていい」: 60 → 52（字 21 → 17・記号 38 → 30）
+        static let infoHeight: CGFloat = 52
 
         /// 撮影者の名前の列（アバターの 24 右）。区切りの縦線はその 195 幅の 20 右
         static var nameX: CGFloat { contentLeft + avatarSize + 24 }
@@ -99,11 +100,17 @@ enum ShareCardMap {
         static var pinX: CGFloat { rowDividerX + 24 }
         static var placeX: CGFloat { pinX + 50 }
         /// 地図の枠の幅。右端は本文の右端にそろえる
-        static let mapWidth: CGFloat = 200
+        static let mapWidth: CGFloat = 236
         static let mapGapToPlace: CGFloat = 8
         /// 地図の下端と撮影情報の上端の間（区切り線は地図の手前で止める）
-        static let mapBottomGap: CGFloat = 8
+        /// 地図は黒い帯の高さいっぱい（上下の余白 12）。撮影情報は地図の左へ詰める
+        static let mapBandInset: CGFloat = 12
+        /// 地図の高さ（4:5・1:1 の帯 268 から上下 12 ずつ）。9:16 は帯が高いが、地図は同じ大きさ（余りは下に空く）
+        static let mapHeight: CGFloat = 244
         static let mapLineGap: CGFloat = 16
+        /// 撮影情報の3列: カメラ（アバターの左端〜縦線）・レンズ（印の右・215 幅）・撮影値（レンズの 14 右〜地図の 24 手前）
+        static let lensColumnWidth: CGFloat = 215
+        static var exposureX: CGFloat { pinX + lensColumnWidth + 14 }
         static var mapX: CGFloat { contentRight - mapWidth }
         static var placeWidthWithMap: CGFloat { mapX - mapGapToPlace - placeX }
         static var placeWidthWithoutMap: CGFloat { contentRight - placeX }
@@ -142,11 +149,11 @@ enum ShareCardMap {
             hasMap ? Layout.mapX - Layout.mapLineGap : Layout.contentRight
         }
 
-        /// 地図の枠。**黒い帯の中だけ**（上は撮影者の段の上端、下は撮影情報の 8 上＝高さ 146）。
-        /// 右端は本文の右端（972）にそろえる。写真には掛けない（フェードをやめたため）
+        /// 地図の枠。**黒い帯の中だけ**で、帯の高さいっぱい（上下の余白 12）。右端は本文の右端（1020）。
+        /// 写真には掛けない（フェードをやめたため）
         var mapRect: CGRect {
-            CGRect(x: Layout.mapX, y: rowTop, width: Layout.mapWidth,
-                   height: infoTop - Layout.mapBottomGap - rowTop)
+            CGRect(x: Layout.mapX, y: photoBottom + Layout.mapBandInset,
+                   width: Layout.mapWidth, height: Layout.mapHeight)
         }
     }
 

@@ -25,13 +25,16 @@ final class ShareCardMapTests: XCTestCase {
         for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
             let layout = ShareCardMap.Layout(ratio: ratio)
             let map = layout.mapRect
-            XCTAssertEqual(map.width, 200, "\(ratio)")
-            XCTAssertEqual(map.height, 146, "\(ratio)")
-            // 2026-11-04 owner「フェードする境界線いらない」: 地図は黒い帯の中だけ（写真に掛けない）
-            XCTAssertGreaterThanOrEqual(map.minY, layout.photoBottom, "\(ratio) 写真に掛かる")
-            XCTAssertEqual(map.minY, layout.rowTop, "\(ratio)")
-            // 下: 撮影情報の 8 上
-            XCTAssertEqual(map.maxY, layout.infoTop - 8, accuracy: 0.001, "\(ratio)")
+            XCTAssertEqual(map.width, 236, "\(ratio)")
+            XCTAssertEqual(map.height, 244, "\(ratio)")
+            // 2026-11-04 owner「フェードする境界線いらない」: 地図は黒い帯の中だけ（写真に掛けない）。
+            // 「撮影情報さらに小さくして地図大きくしていい」: 帯の高さいっぱい（上下の余白 12）
+            XCTAssertEqual(map.minY, layout.photoBottom + 12, "\(ratio) 帯の上から 12")
+            if ratio != .story {
+                XCTAssertEqual(map.maxY, layout.bandRect.maxY - 12, accuracy: 0.001, "\(ratio) 帯の下から 12")
+            } else {
+                XCTAssertLessThanOrEqual(map.maxY, layout.bandRect.maxY - 12, "\(ratio)")
+            }
             // 横: 右端は本文の右端。撮影地の字は 150 以上（括弧つき最長10字を 15 で切らず入れる）
             XCTAssertEqual(map.maxX, ShareCardMap.Layout.contentRight, "\(ratio)")
             XCTAssertGreaterThanOrEqual(ShareCardMap.Layout.placeWidthWithMap, 150, "\(ratio)")
@@ -41,15 +44,15 @@ final class ShareCardMapTests: XCTestCase {
     }
 
     func testMapFrameMeasuredValues() {
-        // 4:5（1080×1350）: 帯 1022・撮影者の段 1038・区切り線 1158・撮影情報 1192・帯の下端 1290（下の余白 38）。
-        // 地図は 200×146（x 820・y 1038）
+        // 4:5（1080×1350）: 帯 1022・撮影者の段 1038・区切り線 1162・撮影情報 1200（高さ 52）・帯の下端 1290（下の余白 38）。
+        // 地図は 236×244（x 784・y 1034）。帯の高さいっぱい
         let portrait = ShareCardMap.Layout(ratio: .portrait)
         XCTAssertEqual(portrait.photoBottom, 1022)
         XCTAssertEqual(portrait.rowTop, 1038)
-        XCTAssertEqual(portrait.separatorY, 1158)
-        XCTAssertEqual(portrait.infoTop, 1192)
+        XCTAssertEqual(portrait.separatorY, 1162)
+        XCTAssertEqual(portrait.infoTop, 1200)
         XCTAssertEqual(portrait.bandRect.maxY, 1290)
-        XCTAssertEqual(portrait.mapRect, CGRect(x: 820, y: 1038, width: 200, height: 146))
+        XCTAssertEqual(portrait.mapRect, CGRect(x: 784, y: 1034, width: 236, height: 244))
         // 帯の下の余白は 38。9:16 は下の段が高い（その分だけ下に空く）が、地図の大きさは同じ
         XCTAssertEqual(portrait.bandRect.maxY - (portrait.infoTop + ShareCardMap.Layout.infoHeight), 38)
         let story = ShareCardMap.Layout(ratio: .story)
@@ -70,14 +73,14 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
-    /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）は上も下も 32
+    /// 段の間隔（撮影者の段 → 区切り線 → 撮影情報）は上も下も 36
     func testRowGapsAreEqualInEveryRatio() {
         for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
             let layout = ShareCardMap.Layout(ratio: ratio)
             let above = layout.separatorY - (layout.rowTop + ShareCardMap.Layout.avatarSize)
             let below = layout.infoTop - (layout.separatorY + ShareCardMap.Layout.lineWidth)
-            XCTAssertEqual(above, 32, "\(ratio)")
-            XCTAssertEqual(below, 32, "\(ratio)")
+            XCTAssertEqual(above, 36, "\(ratio)")
+            XCTAssertEqual(below, 36, "\(ratio)")
         }
     }
 
@@ -99,10 +102,12 @@ final class ShareCardMapTests: XCTestCase {
         XCTAssertEqual(L.rowDividerX, 387)
         XCTAssertEqual(L.pinX, 411)
         XCTAssertEqual(L.placeX, 461)
-        XCTAssertEqual(L.mapX, 820)
+        XCTAssertEqual(L.mapX, 784)
+        XCTAssertEqual(L.exposureX, 640)
+        XCTAssertEqual(L.lensColumnWidth, 215)
         // 区切り線は地図の手前（16）で止まる
         let layout = ShareCardMap.Layout(ratio: .portrait)
-        XCTAssertEqual(layout.separatorEndX(hasMap: true), 804)
+        XCTAssertEqual(layout.separatorEndX(hasMap: true), 768)
         XCTAssertEqual(layout.separatorEndX(hasMap: false), 1020)
         XCTAssertEqual(L.contentLeft, 60)
         XCTAssertEqual(L.contentRight, 1020)
