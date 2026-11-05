@@ -13,10 +13,24 @@ struct SignatureShareCardSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
+    /// カードの型（帯／フェード）。前に選んだものを次も使う（2026-11-05 owner「ユーザが選べるように」）
+    /// 2026-11-05: `@AppStorage` は使わない（Linux の SwiftUI 模型に無く、他の画面も UserDefaults を直に読む）
+    private static let styleDefaultsKey = "signatureShare.style"
+    @State private var styleRaw = UserDefaults.standard.string(forKey: SignatureShareCardSheet.styleDefaultsKey)
+        ?? SignatureShareCardRenderer.Style.band.rawValue
+    private var style: SignatureShareCardRenderer.Style {
+        SignatureShareCardRenderer.Style(rawValue: styleRaw) ?? .band
+    }
+
+    /// 作った画像の置き場所の鍵（比率と型の組）
+    private struct CardKey: Hashable {
+        let ratio: SignatureShareCardRenderer.Ratio
+        let style: SignatureShareCardRenderer.Style
+    }
     @State private var output: Data?
     // 同じ共有画面内で比率を戻したときはJPEGの再生成を避ける。
-    // 最大3比率のみ保持し、画面を閉じると破棄する。
-    @State private var renderedByRatio: [SignatureShareCardRenderer.Ratio: Data] = [:]
+    // 最大 3 比率 × 2 型のみ保持し、画面を閉じると破棄する。
+    @State private var renderedByKey: [CardKey: Data] = [:]
     @State private var preparing = true
     @State private var showShare = false
     @State private var retryCount = 0
@@ -26,6 +40,14 @@ struct SignatureShareCardSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
+                Picker(L("共有画像の型", "Share image style"), selection: $styleRaw) {
+                    Text(L("帯", "Band")).tag(SignatureShareCardRenderer.Style.band.rawValue)
+                    Text(L("フェード", "Fade")).tag(SignatureShareCardRenderer.Style.fade.rawValue)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .accessibilityIdentifier("signatureShare.style")
+
                 Picker(L("共有画像の比率", "Share image ratio"), selection: $ratio) {
                     Text("4:5").tag(SignatureShareCardRenderer.Ratio.portrait)
                     Text("9:16").tag(SignatureShareCardRenderer.Ratio.story)
@@ -51,7 +73,7 @@ struct SignatureShareCardSheet: View {
                             Text(L("画像を生成できませんでした", "Could not create image"))
                             Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
                             Button(L("再試行", "Try again")) {
-                                renderedByRatio.removeValue(forKey: ratio)
+                                renderedByKey.removeValue(forKey: CardKey(ratio: ratio, style: style))
                                 retryCount += 1
                             }
                                 .accessibilityIdentifier("signatureShare.retry")
@@ -83,9 +105,14 @@ struct SignatureShareCardSheet: View {
                     Button(L("閉じる", "Close")) { dismiss() }
                 }
             }
-            .task(id: "\(ratio.rawValue)-\(retryCount)") {
+            .onChange(of: styleRaw) { _, newValue in
+                UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
+            }
+            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(retryCount)") {
                 let selectedRatio = ratio
-                if let cached = renderedByRatio[selectedRatio] {
+                let selectedStyle = style
+                let key = CardKey(ratio: selectedRatio, style: selectedStyle)
+                if let cached = renderedByKey[key] {
                     output = cached
                     preparing = false
                     return
@@ -105,9 +132,9 @@ struct SignatureShareCardSheet: View {
                     }
                 }
                 let result = await SignatureShareCardRenderer.render(photoData, credit: credit,
-                    ratio: selectedRatio, avatarData: avatarData)
+                    ratio: selectedRatio, style: selectedStyle, avatarData: avatarData)
                 guard !Task.isCancelled else { return }
-                if let result { renderedByRatio[selectedRatio] = result }
+                if let result { renderedByKey[key] = result }
                 output = result
                 preparing = false
             }

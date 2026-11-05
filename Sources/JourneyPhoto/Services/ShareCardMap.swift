@@ -159,6 +159,70 @@ enum ShareCardMap {
         }
     }
 
+    // MARK: - フェード型の寸法
+
+    /// 共有カードの「フェード」型（2026-11-05 owner「ユーザが選べるように・F2 が好き」）の寸法。
+    /// 見本は Artifact「SNS 共有カード 新デザイン5案」の `project/F2.dc.html`（4:5・1080×1350）。
+    ///
+    /// 写真をカード全面に敷き、下を長いなめらかなグラデーションで黒へ溶かす。**黒の帯は無い。**
+    /// 情報は黒に着いた所に、下から数えた位置で置く（9:16 は下の 75 を空ける＝Instagram の返信欄）。
+    /// 2026-11-05 判断: 写真の上に真鍮の額縁は載せない（真鍮は黒い地の上だけ・写真の上は白だけ）。
+    struct FadeLayout {
+        static let width: CGFloat = 1080
+        static let margin: CGFloat = 60
+        static var contentLeft: CGFloat { margin }
+        static var contentRight: CGFloat { width - margin }
+
+        let height: CGFloat
+        let isSquare: Bool
+        /// 下の空き。9:16 だけ 75（`Layout` の footer 403 と 328 の差）
+        let bottomInset: CGFloat
+
+        init(ratio: SignatureShareCardRenderer.Ratio) {
+            height = Self.width / CGFloat(ratio.rawValue)
+            isSquare = ratio == .square
+            bottomInset = ratio == .story ? 75 : 0
+        }
+
+        /// 下の情報の基準線（これより下は「下の空き」）
+        var base: CGFloat { height - bottomInset }
+        /// グラデーションの長さ。1:1 は写真が低いので短い
+        var fadeLength: CGFloat { isSquare ? 560 : 710 }
+        var fadeTop: CGFloat { base - fadeLength }
+        /// 上のロゴの下に敷く薄い影の高さ（白い字を空の上でも読めるように）
+        static let topShadeHeight: CGFloat = 220
+        static let topShadeAlpha: CGFloat = 0.55
+        /// グラデーションの形（0〜1 の位置・黒の濃さ）。短い帯にせず6点で滑らかにする（境目を見せない）
+        static let fadeStops: [(location: CGFloat, alpha: CGFloat)] = [
+            (0, 0), (0.06, 0.04), (0.18, 0.16), (0.38, 0.38), (0.62, 0.66), (0.85, 0.88), (1, 1)
+        ]
+
+        // 右: 地図（右端は写真の右端にそろえる）
+        static let mapWidth: CGFloat = 380
+        var mapHeight: CGFloat { isSquare ? 400 : 520 }
+        var mapRect: CGRect {
+            CGRect(x: Self.contentRight - Self.mapWidth, y: base - 140 - mapHeight,
+                   width: Self.mapWidth, height: mapHeight)
+        }
+        /// 左の列の幅（地図の手前まで）
+        static let leftColumnWidth: CGFloat = 580
+
+        // 左: 地名（明朝）・市区町村（真鍮）・撮影者・撮影情報
+        static let placeFontSize: CGFloat = 96
+        static let placeMinimumFontSize: CGFloat = 52
+        var placeTop: CGFloat { base - 366 }
+        var subPlaceTop: CGFloat { base - 246 }
+        static let subPlaceFontSize: CGFloat = 36
+        var authorTop: CGFloat { base - 186 }
+        static let avatarSize: CGFloat = 64
+        static let nameFontSize: CGFloat = 26
+        static let usernameFontSize: CGFloat = 21
+        /// 撮影情報の行の縦の中心（地図の下端より下）
+        var exifCenterY: CGFloat { base - 90 }
+        static let exifFontSize: CGFloat = 20
+        static let exifSymbolSize: CGFloat = 26
+    }
+
     // MARK: - 残す島
 
     /// 2つの島がこれより近ければ「つながっている」とみなす（owner 了承の 60km）
