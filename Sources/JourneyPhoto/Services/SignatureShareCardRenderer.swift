@@ -160,10 +160,10 @@ enum SignatureShareCardRenderer {
             cg.strokeEllipse(in: avatarRect)
             let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
             if avatarData.flatMap(UIImage.init(data:)) == nil {
-                let initialFont = UIFont.systemFont(ofSize: 40)
+                let initialFont = UIFont.systemFont(ofSize: 34)
                 draw(initial.isEmpty ? "J" : initial,
-                     at: CGPoint(x: avatarRect.minX + 24, y: avatarRect.midY - initialFont.lineHeight / 2),
-                     maxWidth: 50, size: 40, color: .white, serif: true)
+                     at: CGPoint(x: avatarRect.minX + 20, y: avatarRect.midY - initialFont.lineHeight / 2),
+                     maxWidth: 44, size: 34, color: .white, serif: true)
             }
             let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
             // マークが3つ以上ある場合は名前の横に押し込まず、2段に分ける。
@@ -175,7 +175,7 @@ enum SignatureShareCardRenderer {
             let stackedMarks = markCount >= 3
             let columnWidth = L.nameColumnWidth
             let nameWidth = stackedMarks ? columnWidth : max(90, columnWidth - markWidth)
-            let nameSize: CGFloat = 30
+            let nameSize: CGFloat = 26
             let nameFont = UIFont.systemFont(ofSize: nameSize, weight: .semibold)
             var fittedNameFont = nameFont
             let minimumNameSize: CGFloat = max(16, nameSize * 0.72)
@@ -187,13 +187,13 @@ enum SignatureShareCardRenderer {
             }
             let actualNameWidth = min(nameWidth,
                 ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
-            // 名前（30）と @ユーザー名（24）の塊を、アバターの縦の中心に置く。
+            // 名前（26）と @ユーザー名（21）の塊を（2026-11-05 owner: 30/24 から小さく）、アバターの縦の中心に置く。
             // マーク3つ以上の2段は、名前・マーク・ユーザー名（18）の3段の塊
-            let usernameSize: CGFloat = stackedMarks ? 18 : 24
+            let usernameSize: CGFloat = stackedMarks ? 16 : 21
             let nameLine = UIFont.systemFont(ofSize: nameSize, weight: .semibold).lineHeight
             let userLine = UIFont.systemFont(ofSize: usernameSize).lineHeight
             let hasUsername = !(credit.username?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-            let markLine: CGFloat = stackedMarks ? 30 : 0
+            let markLine: CGFloat = stackedMarks ? 28 : 0
             let blockHeight = nameLine + (stackedMarks ? markLine : 0)
                 + (hasUsername ? userLine + 4 : 0)
             let nameY = rowTop + (avatarSize - blockHeight) / 2
