@@ -542,12 +542,14 @@ enum SignatureShareCardRenderer {
             // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 4・光の輪は半径 10。
             // 地図が黒い帯の中（200×146）になって縮尺が小さくなったので、以前の 8/18 では県の塗りが点に隠れた。
             // 約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる
+            // 2026-11-05 owner「地図の点少し小さい」: 地図が 236×244 に広がって点が相対的に小さく見えたので、
+            // 点は半径 4 → 6、光の輪は半径 10 → 14
             context.setFillColor(color.withAlphaComponent(0.22).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 10, y: center.y - 10,
-                                           width: 20, height: 20))
+            context.fillEllipse(in: CGRect(x: center.x - 14, y: center.y - 14,
+                                           width: 28, height: 28))
             context.setFillColor(color.withAlphaComponent(0.95).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 4, y: center.y - 4,
-                                           width: 8, height: 8))
+            context.fillEllipse(in: CGRect(x: center.x - 6, y: center.y - 6,
+                                           width: 12, height: 12))
             context.restoreGState()
         }
     }
