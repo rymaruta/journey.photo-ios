@@ -248,8 +248,10 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
         for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
             let layout = ShareCardMap.FadeLayout(ratio: ratio)
-            let data = try XCTUnwrap(await SignatureShareCardRenderer.render(
-                source, credit: credit, ratio: ratio, style: .fade))
+            // `XCTUnwrap` の引数は autoclosure で `await` が使えないので、先に待つ
+            let rendered = await SignatureShareCardRenderer.render(
+                source, credit: credit, ratio: ratio, style: .fade)
+            let data = try XCTUnwrap(rendered)
             let image = try XCTUnwrap(UIImage(data: data))
             let attachment = XCTAttachment(image: image)
             attachment.name = "フェード_\(ratio)"
