@@ -14,7 +14,10 @@ struct SignatureShareCardSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
     /// カードの型（帯／フェード）。前に選んだものを次も使う（2026-11-05 owner「ユーザが選べるように」）
-    @AppStorage("signatureShare.style") private var styleRaw = SignatureShareCardRenderer.Style.band.rawValue
+    /// 2026-11-05: `@AppStorage` は使わない（Linux の SwiftUI 模型に無く、他の画面も UserDefaults を直に読む）
+    private static let styleDefaultsKey = "signatureShare.style"
+    @State private var styleRaw = UserDefaults.standard.string(forKey: SignatureShareCardSheet.styleDefaultsKey)
+        ?? SignatureShareCardRenderer.Style.band.rawValue
     private var style: SignatureShareCardRenderer.Style {
         SignatureShareCardRenderer.Style(rawValue: styleRaw) ?? .band
     }
@@ -101,6 +104,9 @@ struct SignatureShareCardSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("閉じる", "Close")) { dismiss() }
                 }
+            }
+            .onChange(of: styleRaw) { _, newValue in
+                UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
             }
             .task(id: "\(ratio.rawValue)-\(styleRaw)-\(retryCount)") {
                 let selectedRatio = ratio
