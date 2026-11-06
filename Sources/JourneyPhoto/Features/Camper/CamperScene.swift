@@ -36,8 +36,9 @@ enum CamperFrameRate {
     static let idle = 30
     static let idleDelay: TimeInterval = 2
 
-    static func target(flickering: Bool, idleFor seconds: TimeInterval) -> Int {
-        flickering && seconds >= idleDelay ? idle : active
+    /// `after` は止まっていてよい秒（場面ごとに変えられる。試験が短くする）。`seconds` がそれ以上で、炎が揺れていれば 30
+    static func target(flickering: Bool, idleFor seconds: TimeInterval, after delay: TimeInterval = idleDelay) -> Int {
+        flickering && seconds >= delay ? idle : active
     }
 }
 
@@ -589,7 +590,7 @@ final class CamperScene {
         idleTask = Task { @MainActor [weak self, weak view] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self, let view else { return }
-            view.preferredFramesPerSecond = CamperFrameRate.target(flickering: self.isFlickering, idleFor: delay)
+            view.preferredFramesPerSecond = CamperFrameRate.target(flickering: self.isFlickering, idleFor: delay, after: delay)
         }
     }
 

@@ -24,6 +24,10 @@ final class CamperFrameRateTests: XCTestCase {
         // 止まって、炎が揺れているときだけ 30
         XCTAssertEqual(CamperFrameRate.target(flickering: true, idleFor: CamperFrameRate.idleDelay), 30)
         XCTAssertEqual(CamperFrameRate.target(flickering: true, idleFor: 60), 30)
+        // 待つ秒を変えた場面（試験）では、その秒を基準にする（固定の2秒と比べない）
+        XCTAssertEqual(CamperFrameRate.target(flickering: true, idleFor: 0.05, after: 0.05), 30)
+        XCTAssertEqual(CamperFrameRate.target(flickering: true, idleFor: 0.04, after: 0.05), 60)
+        XCTAssertEqual(CamperFrameRate.target(flickering: false, idleFor: 0.05, after: 0.05), 60)
     }
 
     /// 炎が揺れるほど（炎のランタンを置いた）夜の場面
