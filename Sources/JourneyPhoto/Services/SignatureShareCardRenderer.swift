@@ -11,6 +11,14 @@ enum SignatureShareCardRenderer {
         case square = 1
     }
 
+    /// カードの型（2026-11-05 owner「ユーザが選べるように」）。
+    /// - `band`: 写真の下に黒い帯（いまの型・既定）
+    /// - `fade`: 写真を全面に敷き、下を黒へ溶かす（見本 F2）
+    enum Style: String, CaseIterable {
+        case band
+        case fade
+    }
+
     struct Credit {
         let name: String
         let username: String?
@@ -25,6 +33,13 @@ enum SignatureShareCardRenderer {
         let proStyle: ProMarkStyle?
         let early: Bool
         let badge: EarnedBadge?
+        /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
+        /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
+        var place: LocationMatch.ShareCardPlace? = nil
+
+        var placeLines: [String] {
+            (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
+        }
     }
 
     /// SNSでは撮影地点をそのまま描かず、約50km単位の概略ピンにする。
@@ -44,9 +59,9 @@ enum SignatureShareCardRenderer {
 
     #if os(Linux)
     // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? { nil }
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? { nil }
     #else
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, avatarData: Data? = nil) async -> Data? {
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? {
         // 1080px幅のSNSカードに原本の全画素を展開しない。
         // 画質の余裕を持たせて最大3072pxへ縮小デコードし、失敗時は従来方式へ戻す。
         let photo: UIImage?
@@ -66,6 +81,10 @@ enum SignatureShareCardRenderer {
             photo = UIImage(data: data)
         }
         guard let photo, photo.size.width > 0, photo.size.height > 0 else { return nil }
+        if style == .fade {
+            return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        }
+        typealias L = ShareCardMap.Layout
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
         let canvas = CGSize(width: width, height: height)
@@ -84,13 +103,9 @@ enum SignatureShareCardRenderer {
             // SNS保存用の画像では矩形のまま描画する。
             // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
-            let margin: CGFloat = 48
-            let header: CGFloat = 118
-            let footer: CGFloat = ratio == .story ? 430 : 355
-            let photoBottom = height - footer + 8
-            let photoRect = CGRect(x: margin, y: header,
-                                   width: width - margin * 2,
-                                   height: photoBottom - header)
+            // 下の段の位置は ShareCardMap.Layout に1か所で持つ（地図の枠の計算とテストが同じ数を使う）
+            let layout = ShareCardMap.Layout(ratio: ratio)
+            let photoRect = layout.photoRect
             let scale = max(photoRect.width / photo.size.width,
                             photoRect.height / photo.size.height)
             let fitted = CGRect(x: photoRect.midX - photo.size.width * scale / 2,
@@ -104,43 +119,36 @@ enum SignatureShareCardRenderer {
             // 9:16で同じ被写体が二重に見える原因だったため廃止。
             cg.restoreGState()
 
-            let fade = CGRect(x: margin, y: photoBottom - 195,
-                              width: width - margin * 2, height: 210)
-            let colors = [UIColor.black.withAlphaComponent(0).cgColor,
-                          surface.withAlphaComponent(0.86).cgColor,
-                          surface.cgColor] as CFArray
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: colors, locations: [0, 0.66, 1]) {
-                cg.saveGState()
-                cg.clip(to: fade)
-                cg.drawLinearGradient(gradient,
-                    start: CGPoint(x: 0, y: fade.minY),
-                    end: CGPoint(x: 0, y: fade.maxY), options: [])
-                cg.restoreGState()
-            }
+            // 2026-11-04 owner「フェードする境界線いらない」: 写真は帯の開始位置できれいに終わり、
+            // その下は黒い面（surface）。写真の裾に黒を重ねない
             surface.setFill()
-            cg.fill(CGRect(x: margin, y: photoBottom,
-                           width: width - margin * 2,
-                           height: height - margin - photoBottom))
+            cg.fill(layout.bandRect)
 
+            // 上の帯。字の大文字の高さの中心を、マークの中心にそろえる（2026-11-04 owner）
+            let markY = L.headerMarkY
+            let markMidY = markY + L.headerMarkSize / 2
             if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: 95, y: 49, width: 45, height: 45))
+                mark.withTintColor(.white).draw(in: CGRect(x: L.contentLeft, y: markY,
+                                                           width: L.headerMarkSize, height: L.headerMarkSize))
             }
-            draw("Journey Photo", at: CGPoint(x: 157, y: 51), maxWidth: 365,
-                 size: 39, color: .white, serif: true)
-            cg.setStrokeColor(brass.withAlphaComponent(0.55).cgColor)
-            cg.setLineWidth(2)
-            cg.move(to: CGPoint(x: 550, y: 46))
-            cg.addLine(to: CGPoint(x: 550, y: 103))
+            draw("Journey Photo",
+                 at: CGPoint(x: L.contentLeft + L.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
+                 maxWidth: 365, size: 39, color: .white, serif: true)
+            let lineColor = brass.withAlphaComponent(L.lineAlpha).cgColor
+            cg.setStrokeColor(lineColor)
+            cg.setLineWidth(L.lineWidth)
+            cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
+            cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
             cg.strokePath()
-            draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: 565, y: 66),
-                  maxWidth: 410, size: 25, color: .white, alignment: .right)
+            // 一文と Web の住所の2行の塊は、帯の縦の中心にそろえる。右端は本文の右端
+            drawTaglineAndAddress(centerY: L.headerCenter, right: L.contentRight, taglineSize: 25,
+                                  addressColor: brass)
 
-            // 写真境界からの距離と下段との余白を両立する。
-            // 行内の要素は左揃えを維持し、情報ブロックだけを余白の中心へ寄せる。
-            let rowY = height - footer + 37
+            // 撮影者の段。要素はアバターの縦の中心にそろえる
+            let rowTop = layout.rowTop
+            let avatarSize = L.avatarSize
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
-            let avatarRect = CGRect(x: 96, y: rowY - 4, width: 100, height: 100)
+            let avatarRect = CGRect(x: L.contentLeft, y: rowTop, width: avatarSize, height: avatarSize)
             if let avatarData, let avatar = UIImage(data: avatarData) {
                 cg.saveGState()
                 cg.addEllipse(in: avatarRect)
@@ -161,9 +169,10 @@ enum SignatureShareCardRenderer {
             cg.strokeEllipse(in: avatarRect)
             let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
             if avatarData.flatMap(UIImage.init(data:)) == nil {
+                let initialFont = UIFont.systemFont(ofSize: 34)
                 draw(initial.isEmpty ? "J" : initial,
-                     at: CGPoint(x: 128, y: rowY + 17), maxWidth: 50,
-                     size: 45, color: .white, serif: true)
+                     at: CGPoint(x: avatarRect.minX + 20, y: avatarRect.midY - initialFont.lineHeight / 2),
+                     maxWidth: 44, size: 34, color: .white, serif: true)
             }
             let authorName = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
             // マークが3つ以上ある場合は名前の横に押し込まず、2段に分ける。
@@ -173,10 +182,12 @@ enum SignatureShareCardRenderer {
                 + (credit.early ? 1 : 0) + (knownBadge ? 1 : 0)
             let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
             let stackedMarks = markCount >= 3
-            let nameWidth = stackedMarks ? CGFloat(255) : max(90, 255 - markWidth)
-            let nameFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
+            let columnWidth = L.nameColumnWidth
+            let nameWidth = stackedMarks ? columnWidth : max(90, columnWidth - markWidth)
+            let nameSize: CGFloat = 26
+            let nameFont = UIFont.systemFont(ofSize: nameSize, weight: .semibold)
             var fittedNameFont = nameFont
-            let minimumNameSize: CGFloat = max(16, 32 * 0.72)
+            let minimumNameSize: CGFloat = max(16, nameSize * 0.72)
             let nameText = authorName as NSString
             while fittedNameFont.pointSize > minimumNameSize,
                   nameText.size(withAttributes: [.font: fittedNameFont]).width > nameWidth {
@@ -185,91 +196,118 @@ enum SignatureShareCardRenderer {
             }
             let actualNameWidth = min(nameWidth,
                 ceil(nameText.size(withAttributes: [.font: fittedNameFont]).width))
-            draw(authorName, at: CGPoint(x: 220, y: rowY), maxWidth: nameWidth,
-                 size: 32, color: .white, bold: true)
+            // 名前（26）と @ユーザー名（21）の塊を（2026-11-05 owner: 30/24 から小さく）、アバターの縦の中心に置く。
+            // マーク3つ以上の2段は、名前・マーク・ユーザー名（18）の3段の塊
+            let usernameSize: CGFloat = stackedMarks ? 16 : 21
+            let nameLine = UIFont.systemFont(ofSize: nameSize, weight: .semibold).lineHeight
+            let userLine = UIFont.systemFont(ofSize: usernameSize).lineHeight
+            let hasUsername = !(credit.username?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            let markLine: CGFloat = stackedMarks ? 28 : 0
+            let blockHeight = nameLine + (stackedMarks ? markLine : 0)
+                + (hasUsername ? userLine + 4 : 0)
+            let nameY = rowTop + (avatarSize - blockHeight) / 2
+            draw(authorName, at: CGPoint(x: L.nameX, y: nameY), maxWidth: nameWidth,
+                 size: nameSize, color: .white, bold: true)
             if stackedMarks {
-                drawNameMarks(credit, at: CGPoint(x: 220, y: rowY + 45))
+                drawNameMarks(credit, at: CGPoint(x: L.nameX, y: nameY + nameLine))
             } else {
-                drawNameMarks(credit, at: CGPoint(x: 220 + actualNameWidth + 5, y: rowY + 7))
+                drawNameMarks(credit, at: CGPoint(x: L.nameX + actualNameWidth + 5,
+                                                  y: nameY + (nameLine - 27) / 2))
             }
             if let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines),
                !username.isEmpty {
                 // 複数マークとユーザー名を同じ行に置くと短い幅で文字が欠ける。
-                // マークが多い場合はユーザー名を上段の右側に置かず、
-                // 下段をマーク専用にしてユーザー名を表示可能な幅で確保する。
-                let usernameX: CGFloat = 220
-                let usernameWidth: CGFloat = 245
-                let usernameY: CGFloat = stackedMarks ? rowY + 82 : rowY + 53
+                // マークが多い場合はユーザー名を下段にして、表示可能な幅で確保する。
                 draw("@" + username.trimmingCharacters(in: CharacterSet(charactersIn: "@")),
-                     at: CGPoint(x: usernameX, y: usernameY), maxWidth: usernameWidth,
-                     size: stackedMarks ? 18 : 25, color: secondary)
+                     at: CGPoint(x: L.nameX, y: nameY + nameLine + markLine + 4),
+                     maxWidth: columnWidth, size: usernameSize, color: secondary)
             }
-            cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
-            cg.move(to: CGPoint(x: 493, y: rowY - 4))
-            cg.addLine(to: CGPoint(x: 493, y: rowY + 105))
+            // 縦の区切りは、撮影情報の左の縦線と同じ x（撮影者の段の上端から下端まで）
+            cg.setStrokeColor(lineColor)
+            cg.setLineWidth(L.lineWidth)
+            cg.move(to: CGPoint(x: L.rowDividerX, y: rowTop))
+            cg.addLine(to: CGPoint(x: L.rowDividerX, y: rowTop + avatarSize))
             cg.strokePath()
 
-            if let place = credit.location?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !place.isEmpty {
-                drawSymbol("mappin.circle", at: CGPoint(x: 520, y: rowY + 21),
-                           size: 37, color: brass)
-                draw(place, at: CGPoint(x: 570, y: rowY + 22),
-                     maxWidth: credit.coords == nil ? 385 : 155,
-                     size: 26, color: .white, bold: true, lines: 3)
+            let placeLines = credit.placeLines
+            if !placeLines.isEmpty {
+                let pinSize: CGFloat = 37
+                drawSymbol("mappin.circle", at: CGPoint(x: L.pinX, y: layout.rowCenterY - pinSize / 2),
+                           size: pinSize, color: brass)
+                // 決まった2行（「山梨県」「（山中湖村）」）。行の中では折らない（2026-11-04 owner）。
+                // 2行の塊をアバターの縦の中心に置く
+                drawPlaceLines(placeLines,
+                               at: CGPoint(x: L.placeX, y: layout.rowCenterY - L.placeHeight / 2),
+                               maxWidth: credit.coords == nil ? L.placeWidthWithoutMap : L.placeWidthWithMap,
+                               color: .white)
             }
-            if credit.coords != nil {
-                let mapRect = CGRect(x: 730, y: rowY - 26, width: 250, height: 185)
-                if let coordinate = credit.coords {
-                    CountryOutline.drawAtLocation(pin: coordinate, in: mapRect, color: brass, context: cg)
-                }
+            if let coordinate = credit.coords {
+                // 地図8（2026-11-04 owner 採用）: 264×296。帯が黒 70% になる所から撮影情報の 8 上まで。
+                // 塗る県は、撮影地の1行目（県）と元の文字の両方から引く（英語の "Kyoto" も表で和文へ）
+                let placeText = (placeLines + [credit.location ?? ""]).joined(separator: ", ")
+                CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
+                                              in: layout.mapRect, color: brass, context: cg)
             }
 
-            let separatorY = rowY + 174
-            cg.setStrokeColor(brass.withAlphaComponent(0.5).cgColor)
-            cg.setLineWidth(1.5)
-            cg.move(to: CGPoint(x: 96, y: separatorY))
-            cg.addLine(to: CGPoint(x: width - 96, y: separatorY))
+            // 区切り線（地図があるときは地図の手前で止める）
+            let separatorY = layout.separatorY
+            cg.setStrokeColor(lineColor)
+            cg.setLineWidth(L.lineWidth)
+            cg.move(to: CGPoint(x: L.contentLeft, y: separatorY + L.lineWidth / 2))
+            cg.addLine(to: CGPoint(x: layout.separatorEndX(hasMap: credit.coords != nil),
+                                   y: separatorY + L.lineWidth / 2))
             cg.strokePath()
 
-            let infoY = separatorY + 31
             let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let lens = credit.lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let exposure = [credit.aperture, credit.exposure,
                             credit.iso.map { "ISO\($0)" }]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }.joined(separator: "  ")
-            // 参考デザインどおり、撮影情報は個別の箱ではなく細い縦罫線で区切る。
-            cg.setStrokeColor(brass.withAlphaComponent(0.4).cgColor)
-            cg.setLineWidth(1.5)
-            for dividerX in [CGFloat(399), CGFloat(721)] {
-                cg.move(to: CGPoint(x: dividerX, y: infoY - 6))
-                cg.addLine(to: CGPoint(x: dividerX, y: infoY + 62))
+            // 撮影情報は個別の箱ではなく細い縦罫線で区切る。3列の左端は上の段の縦の線にそろえる
+            // （1列目＝アバターの左端・2列目＝縦線の右の印と同じ x・3列目＝地図の左端）。
+            // 縦罫は 40 の高さで、行の縦の中心に置く
+            let infoCenterY = layout.infoCenterY
+            cg.setStrokeColor(lineColor)
+            cg.setLineWidth(L.lineWidth)
+            for dividerX in [L.rowDividerX, L.exposureX - 12] {
+                cg.move(to: CGPoint(x: dividerX, y: infoCenterY - 20))
+                cg.addLine(to: CGPoint(x: dividerX, y: infoCenterY + 20))
                 cg.strokePath()
             }
             // 値のない撮影項目はアイコンだけ残さない。
-            // UIKit lays out the symbol and text together, using the symbol's
-            // native baseline metrics instead of a hard-coded pixel offset.
+            let symbolSize: CGFloat = 30
+            let textGap: CGFloat = 10
+            let cameraX = L.contentLeft
+            let lensX = L.pinX
+            let exposureX = L.exposureX
+            let cameraWidth = L.rowDividerX - 24 - cameraX
+            let lensWidth = L.lensColumnWidth
+            let exposureWidth = L.mapX - 24 - exposureX
             if !camera.isEmpty {
-                drawMetadataRow("camera", text: camera, at: CGPoint(x: 98, y: infoY + 3),
-                                textX: 157, textWidth: 235, fontSize: 22,
-                                symbolSize: 40, color: brass, context: cg)
+                drawMetadataRow("camera", text: camera,
+                                x: cameraX, centerY: infoCenterY,
+                                textWidth: cameraWidth - symbolSize - textGap, fontSize: 17,
+                                symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
             if !lens.isEmpty {
-                drawMetadataRow("camera.aperture", text: lens, at: CGPoint(x: 410, y: infoY + 3),
-                                textX: 463, textWidth: 246, fontSize: 22,
-                                symbolSize: 40, color: brass, context: cg)
+                drawMetadataRow("camera.aperture", text: lens,
+                                x: lensX, centerY: infoCenterY,
+                                textWidth: lensWidth - symbolSize - textGap, fontSize: 17,
+                                symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
             if !exposure.isEmpty {
-                drawMetadataRow("timer", text: exposure, at: CGPoint(x: 731, y: infoY + 3),
-                                textX: 786, textWidth: 195, fontSize: 20,
-                                symbolSize: 38, color: brass, context: cg)
+                drawMetadataRow("timer", text: exposure,
+                                x: exposureX, centerY: infoCenterY,
+                                textWidth: exposureWidth - symbolSize - textGap, fontSize: 17,
+                                symbolSize: symbolSize, textGap: textGap, color: brass, context: cg)
             }
 
-            // 真鍮色の矩形フレームは画像境界から8px内側へ。
+            // 真鍮色の矩形フレームは画像境界から12px内側へ。
             // SNS側で端が切り取られても線が消えにくく、外側も黒背景で統一する。
             // 角丸・透明余白は作らず、共有/保存するJPEG自体に描き込む。
-            let frameInset: CGFloat = 8
-            let frameWidth: CGFloat = 4
+            let frameInset = L.frameInset
+            let frameWidth = L.frameWidth
             cg.setStrokeColor(brass.withAlphaComponent(0.9).cgColor)
             cg.setLineWidth(frameWidth)
             cg.stroke(CGRect(x: frameInset + frameWidth / 2,
@@ -282,16 +320,10 @@ enum SignatureShareCardRenderer {
     // Natural Earth admin-0 countries由来の輪郭をJSONとして同梱する。
     // 解像度は同梱リソースに依存し、ここでは固定しない。
     private enum CountryOutline {
-        struct Shape: Decodable {
-            let n: String
-            let r: [[[Double]]]
-        }
-        static let shapes: [Shape] = {
-            guard let url = Bundle.main.url(forResource: "country-outlines", withExtension: "json"),
-                  let data = try? Data(contentsOf: url),
-                  let result = try? JSONDecoder().decode([Shape].self, from: data) else { return [] }
-            return result
-        }()
+        typealias Shape = ShareCardMap.Shape
+        static let shapes: [Shape] = ShareCardMap.loadShapes(resource: "country-outlines")
+        /// 日本の47都道府県（Tools/generate-japan-prefectures.py）。日本の写真で撮った県を塗る
+        static let prefectures: [Shape] = ShareCardMap.loadShapes(resource: "japan-prefectures")
 
         static func contains(_ point: CLLocationCoordinate2D, ring: [[Double]]) -> Bool {
             guard ring.count >= 3 else { return false }
@@ -436,7 +468,7 @@ enum SignatureShareCardRenderer {
             return bestDistance <= 0.15 * 0.15 ? closest : nil
         }
 
-        static func drawAtLocation(pin: CLLocationCoordinate2D, in rect: CGRect,
+        static func drawAtLocation(pin: CLLocationCoordinate2D, place: String?, in rect: CGRect,
                                    color: UIColor, context: CGContext) {
             guard pin.latitude.isFinite, pin.longitude.isFinite,
                   (-90...90).contains(pin.latitude),
@@ -448,42 +480,27 @@ enum SignatureShareCardRenderer {
                     in: rect, color: color, context: context)
                 return
             }
-            draw(shape, pin: pin, in: rect, color: color, context: context)
+            // 日本だけ、撮影地の文字の県を塗る（海外は国の輪郭だけ）
+            let prefecture = shape.n == "Japan"
+                ? ShareCardMap.prefectureShape(named: ShareCardMap.prefectureName(in: place),
+                                               among: prefectures,
+                                               latitude: pin.latitude, longitude: pin.longitude)
+                : nil
+            draw(shape, prefecture: prefecture, pin: pin, in: rect, color: color, context: context)
         }
 
-        static func draw(_ shape: Shape, pin: CLLocationCoordinate2D,
+        static func draw(_ shape: Shape, prefecture: Shape?, pin: CLLocationCoordinate2D,
                          in rect: CGRect, color: UIColor, context: CGContext) {
-            // Countries crossing the antimeridian (Russia, Fiji, etc.) have
-            // coordinates on both sides of ±180°. Shift each ring to the
-            // longitude domain nearest the photographed location so that
-            // the silhouette does not span nearly 360 degrees.
-            let rings = shape.r.map { ring -> [[Double]] in
-                guard let first = ring.first, first.count == 2 else { return ring }
-                var previous = first[0] + 360 * round((pin.longitude - first[0]) / 360)
-                return ring.enumerated().map { index, point in
-                    guard point.count == 2 else { return point }
-                    if index == 0 { return [previous, point[1]] }
-                    let unwrapped = point[0] + 360 * round((previous - point[0]) / 360)
-                    previous = unwrapped
-                    return [unwrapped, point[1]]
-                }
-            }
-            let points = rings.flatMap { $0 }.filter { $0.count == 2 }
-            guard let minX = points.map({ $0[0] }).min(),
-                  let maxX = points.map({ $0[0] }).max(),
-                  let minY = points.map({ $0[1] }).min(),
-                  let maxY = points.map({ $0[1] }).max() else { return }
-            // Longitude degrees shrink towards the poles. Project in local
-            // equirectangular coordinates instead of stretching the country east-west.
-            let longitudeScale = max(0.2, cos(((minY + maxY) / 2) * .pi / 180))
-            let spanX = max((maxX - minX) * longitudeScale, 0.01)
-            let spanY = max(maxY - minY, 0.01)
-            let inset: CGFloat = 8
-            let scale = min((rect.width - inset * 2) / spanX,
-                            (rect.height - inset * 2) / spanY)
+            // 案A-3（2026-11-04 owner 了承）: 国の全体ではなく、撮った場所の島と一番大きい陸から
+            // 60km 以内でつながる島だけを枠に収める（ShareCardMap.focusRingIndices）。
+            // 経度は撮った場所の側へ開く（±180° をまたぐ国が 360° 幅にならない）。
+            // 収めた範囲の外の島も同じ国なら描く（枠で切れるだけ）。
+            guard let focused = ShareCardMap.focus(shape, latitude: pin.latitude,
+                                                   longitude: pin.longitude, in: rect) else { return }
+            let rings = focused.rings
+            let projection = focused.projection
             func project(_ p: [Double]) -> CGPoint {
-                CGPoint(x: rect.midX + (p[0] - (minX + maxX) / 2) * longitudeScale * scale,
-                        y: rect.midY - (p[1] - (minY + maxY) / 2) * scale)
+                projection.point(longitude: p[0], latitude: p[1])
             }
             context.saveGState()
             context.clip(to: rect)
@@ -505,6 +522,20 @@ enum SignatureShareCardRenderer {
                 context.addPath(silhouette)
                 context.setFillColor(color.withAlphaComponent(0.045).cgColor)
                 context.drawPath(using: .eoFill)
+                // 撮った県を真鍮 75% で塗る（板 MapA3）。輪郭の線はその上に引く
+                if let prefecture {
+                    context.beginPath()
+                    for ring in ShareCardMap.unwrap(prefecture.r, aroundLongitude: pin.longitude)
+                    where ring.count >= 3 {
+                        context.move(to: project(ring[0]))
+                        for point in ring.dropFirst() where point.count == 2 {
+                            context.addLine(to: project(point))
+                        }
+                        context.closePath()
+                    }
+                    context.setFillColor(color.withAlphaComponent(0.75).cgColor)
+                    context.drawPath(using: .eoFill)
+                }
                 // Subtle halo and crisp hairline keep small islands legible.
                 context.addPath(silhouette)
                 context.setStrokeColor(color.withAlphaComponent(0.22).cgColor)
@@ -515,16 +546,19 @@ enum SignatureShareCardRenderer {
                 context.setLineWidth(0.95)
                 context.strokePath()
             }
-            let normalizedPinLongitude = pin.longitude +
-                360 * round(((minX + maxX) / 2 - pin.longitude) / 360)
-            let center = project([normalizedPinLongitude, pin.latitude])
+            let center = project([pin.longitude, pin.latitude])
             // The point should glow gently rather than obscure nearby coastline.
-            context.setFillColor(color.withAlphaComponent(0.18).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 5, y: center.y - 5,
-                                           width: 10, height: 10))
+            // 2026-11-04 owner「地図の点もうちょい大きくていい」: 点は半径 4・光の輪は半径 10。
+            // 地図が黒い帯の中（200×146）になって縮尺が小さくなったので、以前の 8/18 では県の塗りが点に隠れた。
+            // 約50km に丸めた位置なので、輪を点より大きく取り「この辺り」と見せる
+            // 2026-11-05 owner「地図の点少し小さい」: 地図が 236×244 に広がって点が相対的に小さく見えたので、
+            // 点は半径 4 → 6、光の輪は半径 10 → 14
+            context.setFillColor(color.withAlphaComponent(0.22).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - 14, y: center.y - 14,
+                                           width: 28, height: 28))
             context.setFillColor(color.withAlphaComponent(0.95).cgColor)
-            context.fillEllipse(in: CGRect(x: center.x - 2.2, y: center.y - 2.2,
-                                           width: 4.4, height: 4.4))
+            context.fillEllipse(in: CGRect(x: center.x - 6, y: center.y - 6,
+                                           width: 12, height: 12))
             context.restoreGState()
         }
     }
@@ -550,6 +584,189 @@ enum SignatureShareCardRenderer {
         context.setLineWidth(2)
         context.strokeEllipse(in: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26))
         context.restoreGState()
+    }
+
+    // MARK: - フェード型（2026-11-05・見本 F2）
+
+    /// 写真を全面に敷き、下を長いグラデーションで黒へ溶かす型。寸法は `ShareCardMap.FadeLayout`。
+    /// 帯の型の `render` とは別の関数にして、帯の型の描き方（テストが固定している数）に触れない。
+    private static func renderFade(photo: UIImage, credit: Credit, ratio: Ratio, avatarData: Data?) -> Data? {
+        typealias F = ShareCardMap.FadeLayout
+        let layout = F(ratio: ratio)
+        let canvas = CGSize(width: F.width, height: layout.height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: canvas, format: format).jpegData(withCompressionQuality: 0.93) { context in
+            let cg = context.cgContext
+            UIColor.black.setFill()
+            cg.fill(CGRect(origin: .zero, size: canvas))
+            // 写真は全面（縦横比を保って埋める）
+            let scale = max(canvas.width / photo.size.width, canvas.height / photo.size.height)
+            photo.draw(in: CGRect(x: (canvas.width - photo.size.width * scale) / 2,
+                                  y: (canvas.height - photo.size.height * scale) / 2,
+                                  width: photo.size.width * scale, height: photo.size.height * scale))
+            // 上の影（ロゴと一文を空の上でも読めるように）。下のグラデーション（長く滑らか・境目を見せない）
+            func shade(from y0: CGFloat, to y1: CGFloat, stops: [(location: CGFloat, alpha: CGFloat)]) {
+                let colors = stops.map { UIColor.black.withAlphaComponent($0.alpha).cgColor } as CFArray
+                let locations = stops.map { $0.location }
+                guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                                colors: colors, locations: locations) else { return }
+                cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: y0), end: CGPoint(x: 0, y: y1), options: [])
+            }
+            shade(from: 0, to: F.topShadeHeight, stops: [
+                (0, F.topShadeAlpha), (0.45, F.topShadeAlpha * 0.5), (1, 0)])
+            // 下の空き（9:16）は黒一色。グラデーションは基準線で 1 に着き、その下は 1 のまま
+            var bottomStops = F.fadeStops.map { stop in
+                (location: stop.location * layout.fadeLength / (layout.height - layout.fadeTop), alpha: stop.alpha)
+            }
+            if let last = bottomStops.last, last.location < 1 { bottomStops.append((location: 1, alpha: 1)) }
+            shade(from: layout.fadeTop, to: layout.height, stops: bottomStops)
+
+            // 上: ロゴ（マーク＋字）と一文
+            let markY = ShareCardMap.Layout.headerMarkY // 帯の型の見出しと同じ中心
+            let markMidY = markY + ShareCardMap.Layout.headerMarkSize / 2
+            if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
+                mark.withTintColor(.white).draw(in: CGRect(x: F.contentLeft, y: markY,
+                    width: ShareCardMap.Layout.headerMarkSize, height: ShareCardMap.Layout.headerMarkSize))
+            }
+            draw("Journey Photo",
+                 at: CGPoint(x: F.contentLeft + ShareCardMap.Layout.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
+                 maxWidth: 365, size: 39, color: .white, serif: true)
+            // 写真の上なので、住所も白（真鍮は黒い地の上だけ）
+            drawTaglineAndAddress(centerY: markMidY, right: F.contentRight, taglineSize: 24,
+                                  addressColor: .white)
+
+            // 右: 地図（真鍮の細線・黒に溶けた所に置く）
+            if let coordinate = credit.coords {
+                let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
+                CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
+                                              in: layout.mapRect, color: brass, context: cg)
+            }
+
+            // 左: 地名（明朝）・市区町村（真鍮）
+            let lines = credit.placeLines
+            if let first = lines.first {
+                drawFittedSerif(first, at: CGPoint(x: F.contentLeft, y: layout.placeTop),
+                                maxWidth: F.leftColumnWidth, size: F.placeFontSize,
+                                minimumSize: F.placeMinimumFontSize, color: .white)
+                if lines.count > 1 {
+                    let sub = lines[1].trimmingCharacters(in: CharacterSet(charactersIn: "（）()"))
+                    let pin = F.subPlaceFontSize
+                    drawSymbol("mappin.circle", at: CGPoint(x: F.contentLeft, y: layout.subPlaceTop + 2),
+                               size: pin, color: brass)
+                    draw(sub, at: CGPoint(x: F.contentLeft + pin + 12, y: layout.subPlaceTop),
+                         maxWidth: F.leftColumnWidth - pin - 12, size: F.subPlaceFontSize, color: brass, bold: true)
+                }
+            }
+
+            // 撮影者（アバター・名前・ユーザー名）
+            drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop, context: cg)
+
+            // 撮影情報は1行（地図の下端より下・幅いっぱいを3つに分ける）
+            let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lens = credit.lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let exposure = [credit.aperture, credit.exposure, credit.iso.map { "ISO\($0)" }]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }.joined(separator: "  ")
+            let cells: [(String, String, CGFloat, CGFloat)] = [
+                ("camera", camera, F.contentLeft, 320),
+                ("camera.aperture", lens, F.contentLeft + 340, 340),
+                ("timer", exposure, F.contentLeft + 700, 260)
+            ]
+            for (symbol, text, x, width) in cells where !text.isEmpty {
+                drawMetadataRow(symbol, text: text, x: x, centerY: layout.exifCenterY,
+                                textWidth: width - F.exifSymbolSize - 10, fontSize: F.exifFontSize,
+                                symbolSize: F.exifSymbolSize, textGap: 10, color: brass, context: cg)
+            }
+        }
+    }
+
+    /// 一文と Web の住所（右揃え）。2行の塊の縦の中心が centerY（両方の型の見出しで同じ形）
+    private static func drawTaglineAndAddress(centerY: CGFloat, right: CGFloat, taglineSize: CGFloat,
+                                              addressColor: UIColor) {
+        let taglineLine = UIFont.systemFont(ofSize: taglineSize).lineHeight
+        let addressSize = ShareCardMap.Layout.siteAddressFontSize
+        let addressLine = UIFont.systemFont(ofSize: addressSize).lineHeight
+        let gap = ShareCardMap.Layout.taglineAddressGap
+        let top = centerY - (taglineLine + gap + addressLine) / 2
+        draw("旅の一瞬を、誰かの次の旅へ。", at: CGPoint(x: right - 410, y: top),
+             maxWidth: 410, size: taglineSize, color: .white, alignment: .right)
+        draw(ShareCardMap.Layout.siteAddress, at: CGPoint(x: right - 410, y: top + taglineLine + gap),
+             maxWidth: 410, size: addressSize, color: addressColor, alignment: .right)
+    }
+
+    /// 明朝の1行。幅に入るまで 1 ずつ縮める（下限まで。最後だけ省略）
+    private static func drawFittedSerif(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
+                                        size: CGFloat, minimumSize: CGFloat, color: UIColor) {
+        func serif(_ s: CGFloat) -> UIFont {
+            let base = UIFont.systemFont(ofSize: s, weight: .bold)
+            return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: s) } ?? base
+        }
+        var fitted = size
+        while fitted > minimumSize,
+              (value as NSString).size(withAttributes: [.font: serif(fitted)]).width > maxWidth {
+            fitted -= 1
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        (value as NSString).draw(in: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: fitted * 1.3),
+                                 withAttributes: [.font: serif(fitted), .foregroundColor: color,
+                                                  .paragraphStyle: paragraph])
+    }
+
+    /// フェード型の撮影者の行。帯の型と同じ見た目（真鍮の輪のアバター・名前・マーク・ユーザー名）を、
+    /// 小さめの大きさで1行に描く。マークが3つ以上でも2段にしない（左の列に幅がある）
+    private static func drawFadeAuthor(_ credit: Credit, avatarData: Data?, top: CGFloat, context cg: CGContext) {
+        typealias F = ShareCardMap.FadeLayout
+        let size = F.avatarSize
+        let avatarRect = CGRect(x: F.contentLeft, y: top, width: size, height: size)
+        if let avatarData, let avatar = UIImage(data: avatarData) {
+            cg.saveGState()
+            cg.addEllipse(in: avatarRect)
+            cg.clip()
+            let factor = max(size / avatar.size.width, size / avatar.size.height)
+            avatar.draw(in: CGRect(x: avatarRect.midX - avatar.size.width * factor / 2,
+                                   y: avatarRect.midY - avatar.size.height * factor / 2,
+                                   width: avatar.size.width * factor, height: avatar.size.height * factor))
+            cg.restoreGState()
+        } else {
+            cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
+            cg.fillEllipse(in: avatarRect)
+            let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
+            let font = UIFont.systemFont(ofSize: 28)
+            draw(initial.isEmpty ? "J" : initial,
+                 at: CGPoint(x: avatarRect.minX + 18, y: avatarRect.midY - font.lineHeight / 2),
+                 maxWidth: 40, size: 28, color: .white, serif: true)
+        }
+        cg.setStrokeColor(brass.cgColor)
+        cg.setLineWidth(2)
+        cg.strokeEllipse(in: avatarRect)
+
+        let name = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
+            + (credit.early ? 1 : 0) + ((credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false) ? 1 : 0)
+        let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
+        let x = F.contentLeft + size + 16
+        let columnWidth: CGFloat = 480
+        let nameWidth = max(120, columnWidth - markWidth)
+        let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@")) ?? ""
+        let nameLine = UIFont.systemFont(ofSize: F.nameFontSize, weight: .semibold).lineHeight
+        let userLine = UIFont.systemFont(ofSize: F.usernameFontSize).lineHeight
+        let block = nameLine + (username.isEmpty ? 0 : userLine + 2)
+        let nameY = top + (size - block) / 2
+        draw(name, at: CGPoint(x: x, y: nameY), maxWidth: nameWidth, size: F.nameFontSize, color: .white, bold: true)
+        if markCount > 0 {
+            let nameFont = UIFont.systemFont(ofSize: F.nameFontSize, weight: .semibold)
+            let actual = min(nameWidth, ceil((name as NSString).size(withAttributes: [.font: nameFont]).width))
+            drawNameMarks(credit, at: CGPoint(x: x + actual + 5, y: nameY + (nameLine - 27) / 2))
+        }
+        if !username.isEmpty {
+            draw("@" + username, at: CGPoint(x: x, y: nameY + nameLine + 2),
+                 maxWidth: columnWidth, size: F.usernameFontSize, color: secondary)
+        }
     }
 
     /// 既存の ProMarkGeometry / EarlyMemberMarkGeometry を使い、画面と同じ輪郭を描く。
@@ -635,93 +852,101 @@ enum SignatureShareCardRenderer {
         }
     }
 
+    /// 字の幅を測る（ShareCardText に渡す）
+    static func measuredWidth(_ text: String, size: CGFloat, weight: UIFont.Weight = .semibold) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [
+            .font: UIFont.systemFont(ofSize: size, weight: weight)]).width)
+    }
+
+    /// 撮影情報の列の行。高さ 72 に入る行数で、語の途中では折らない（2026-11-04 owner）。
+    /// 収まらなければ 0.5 ずつ小さくする（下限 7 は従来どおり）。
+    static func equipmentLayout(_ value: String, maxWidth: CGFloat,
+                                preferredSize: CGFloat = 22,
+                                availableHeight: CGFloat = 72) -> ShareCardText.Fitted {
+        ShareCardText.fit(value, maxWidth: maxWidth, preferredSize: preferredSize,
+                          minimumSize: 7, step: 0.5,
+                          maxLines: { size in
+                              // 行の高さ＋行間 1 で、何行まで高さに入るか
+                              let line = UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
+                              return max(1, Int((availableHeight + 1) / (line + 1)))
+                          },
+                          measure: { measuredWidth($0, size: $1) })
+    }
+
     /// 撮影情報の列幅と高さに合わせて、全文を表示できる最大フォントサイズを求める。
-    /// 描画とテストで同じ計測を使い、3行相当の高さからはみ出さないようにする。
     static func equipmentFontSize(_ value: String, maxWidth: CGFloat,
                                   preferredSize: CGFloat = 22,
                                   availableHeight: CGFloat = 72) -> CGFloat {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byCharWrapping
-        paragraph.lineSpacing = 1
-        let text = value as NSString
-        var lower: CGFloat = 7
-        var upper = preferredSize
-        for _ in 0..<12 {
-            let middle = (lower + upper) / 2
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: middle, weight: .semibold),
-                .paragraphStyle: paragraph
-            ]
-            let measured = text.boundingRect(
-                with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: attributes, context: nil)
-            if measured.height <= availableHeight { lower = middle }
-            else { upper = middle }
-        }
-        return lower
+        equipmentLayout(value, maxWidth: maxWidth, preferredSize: preferredSize,
+                        availableHeight: availableHeight).size
     }
 
-    /// 列内に全文を収める。短い機材名は従来の大きさを維持する。
-    private static func drawInfo(_ value: String, at origin: CGPoint,
-                                 maxWidth: CGFloat, size: CGFloat, color: UIColor) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byCharWrapping
-        paragraph.lineSpacing = 1
-        let fittedSize = equipmentFontSize(value, maxWidth: maxWidth, preferredSize: size)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: fittedSize, weight: .semibold),
-            .foregroundColor: color,
-            .paragraphStyle: paragraph
-        ]
-        (value as NSString).draw(
-            with: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: 72),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes, context: nil)
+    /// 撮影地の2行。2行とも同じ大きさで、1 ずつ縮める。
+    /// 下限は 15（2026-11-04）: 日本語の市区町村名は括弧つきで最長10字（「（かすみがうら市）」）まで
+    /// 152 幅に切らずに入れたい（10 × 15 = 150）。撮影者名より低いのは、2行目が短い補足だから。
+    static let placeFontSize: CGFloat = ShareCardMap.Layout.placeFontSize
+    static let placeMinimumFontSize: CGFloat = 15
+    static func placeLayout(_ lines: [String], maxWidth: CGFloat) -> ShareCardText.Fitted {
+        ShareCardText.fitLines(lines, maxWidth: maxWidth, preferredSize: placeFontSize,
+                               minimumSize: placeMinimumFontSize,
+                               measure: { measuredWidth($0, size: $1) })
     }
 
-    /// Render a UIKit row into the card, preserving SF Symbol baseline alignment.
-    /// The first line of text stays at textY; longer equipment names can wrap.
+    /// 撮影地の行をそのまま描く（UIKit に折り返させない）
+    private static func drawPlaceLines(_ lines: [String], at origin: CGPoint, maxWidth: CGFloat,
+                                       color: UIColor) {
+        let fitted = placeLayout(lines, maxWidth: maxWidth)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byClipping
+        let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+        (fitted.lines.joined(separator: "\n") as NSString).draw(
+            in: CGRect(x: origin.x, y: origin.y, width: maxWidth,
+                       height: ShareCardMap.Layout.placeHeight),
+            withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
+    }
+
+    /// 撮影情報の1列（記号＋字）。記号と字の塊を、行の縦の中心（centerY）にそろえる。
+    ///
+    /// 2026-11-04 owner 採用（地図8）: 記号は、字（1行でも2行でも）の塊の縦の中心に置く。
+    /// 以前は記号を字の1行目のベースラインにそろえていたので、2行のレンズ名では記号が上に寄った。
+    ///
+    /// 2026-11-04 判断: UIView と Auto Layout（UILabel・UIImageView・制約）で組むのをやめた。
+    /// `render` は画面の処理（メインスレッド）の外で走るので、Auto Layout を触ると
+    /// 「Modifications to the layout engine must not be performed from a background thread」で落ちる。
+    /// UIImage と NSString で直に描く（どちらも描画の文脈の中ならメインの外で使える）。
+    /// 字は ShareCardText で語の切れ目でだけ折った行（語の途中で折らない）。
     private static func drawMetadataRow(_ symbolName: String, text: String,
-                                        at origin: CGPoint, textX: CGFloat,
+                                        x: CGFloat, centerY: CGFloat,
                                         textWidth: CGFloat, fontSize: CGFloat,
-                                        symbolSize: CGFloat, color: UIColor,
-                                        context: CGContext) {
-        let font = UIFont.systemFont(ofSize: equipmentFontSize(text,
-            maxWidth: textWidth, preferredSize: fontSize), weight: .semibold)
-        let rowWidth = textX - origin.x + textWidth
-        let row = UIView(frame: CGRect(x: 0, y: 0, width: rowWidth, height: 72))
-        row.backgroundColor = .clear
-        let icon = UIImageView(image: UIImage(systemName: symbolName,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize,
-                                                            weight: .regular)))
-        icon.tintColor = color
-        icon.contentMode = .scaleAspectFit
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        let label = UILabel()
-        label.font = font
-        label.textColor = .white
-        label.text = text
-        label.numberOfLines = 0
-        label.lineBreakMode = .byCharWrapping
-        label.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(icon)
-        row.addSubview(label)
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            icon.widthAnchor.constraint(equalToConstant: symbolSize),
-            icon.heightAnchor.constraint(equalToConstant: symbolSize),
-            icon.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
-            label.leadingAnchor.constraint(equalTo: row.leadingAnchor,
-                                           constant: textX - origin.x),
-            label.topAnchor.constraint(equalTo: row.topAnchor),
-            label.widthAnchor.constraint(equalToConstant: textWidth)
-        ])
-        row.layoutIfNeeded()
-        context.saveGState()
-        context.translateBy(x: origin.x, y: origin.y)
-        row.layer.render(in: context)
-        context.restoreGState()
+                                        symbolSize: CGFloat, textGap: CGFloat,
+                                        color: UIColor, context: CGContext) {
+        let blockLimit = ShareCardMap.Layout.infoHeight
+        let fitted = equipmentLayout(text, maxWidth: textWidth, preferredSize: fontSize,
+                                     availableHeight: blockLimit)
+        let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 1
+        paragraph.lineBreakMode = .byClipping
+        let lineHeight = font.lineHeight
+        let blockHeight = CGFloat(fitted.lines.count) * lineHeight
+            + CGFloat(max(0, fitted.lines.count - 1))
+        (fitted.lines.joined(separator: "\n") as NSString).draw(
+            with: CGRect(x: x + symbolSize + textGap, y: centerY - blockHeight / 2,
+                         width: textWidth, height: blockHeight + 2),
+            options: [.usesLineFragmentOrigin],
+            attributes: [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph],
+            context: nil)
+        guard let symbol = UIImage(systemName: symbolName,
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize,
+                                                                                  weight: .regular))?
+            .withTintColor(color, renderingMode: .alwaysOriginal),
+              symbol.size.width > 0, symbol.size.height > 0 else { return }
+        // symbolSize の正方形に縦横比を保って収め、その正方形の中心を行の中心に置く
+        let scale = min(symbolSize / symbol.size.width, symbolSize / symbol.size.height)
+        let drawn = CGSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
+        symbol.draw(in: CGRect(x: x + (symbolSize - drawn.width) / 2,
+                               y: centerY - drawn.height / 2,
+                               width: drawn.width, height: drawn.height))
     }
 
     private static func drawSymbol(_ name: String, at origin: CGPoint,
@@ -741,15 +966,27 @@ enum SignatureShareCardRenderer {
         symbol.draw(in: CGRect(origin: fittedOrigin, size: fittedSize))
     }
 
+    /// 「Journey Photo」の字（39pt・セリフ）。draw(serif: true) と同じ作り
+    static func wordmarkFont() -> UIFont {
+        let base = UIFont.systemFont(ofSize: 39, weight: .regular)
+        return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: 39) } ?? base
+    }
+
+    /// 大文字の高さの中心が markMidY に来る、字の上端。ベースライン＝上端＋ascender
+    static func wordmarkTop(markMidY: CGFloat) -> CGFloat {
+        let font = wordmarkFont()
+        return markMidY - (font.ascender - font.capHeight / 2)
+    }
+
     private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
                              size: CGFloat, color: UIColor, bold: Bool = false,
-                             serif: Bool = false, alignment: NSTextAlignment = .left,
-                             lines: Int = 1) {
+                             serif: Bool = false, alignment: NSTextAlignment = .left) {
         let base = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
         let font = serif ? (base.fontDescriptor.withDesign(.serif).map {
             UIFont(descriptor: $0, size: size)
         } ?? base) : base
-        // 長い撮影地・カメラ名は可能な範囲で縮小し、最後だけ省略する。
+        // 1行だけ。長い名前は可能な範囲で縮小し、最後だけ省略する（語の途中で折らない）。
+        // 折り返す撮影地・撮影情報は ShareCardText で区切りの所だけで折る。
         let text = value as NSString
         var fittedFont = font
         let minimumSize = max(16, size * 0.72)
@@ -760,9 +997,9 @@ enum SignatureShareCardRenderer {
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
-        paragraph.lineBreakMode = lines > 1 ? .byCharWrapping : .byTruncatingTail
+        paragraph.lineBreakMode = .byTruncatingTail
         text.draw(in: CGRect(x: origin.x, y: origin.y,
-                             width: maxWidth, height: size * CGFloat(lines) * 1.35),
+                             width: maxWidth, height: size * 1.35),
                   withAttributes: [.font: fittedFont, .foregroundColor: color,
                                    .paragraphStyle: paragraph])
     }

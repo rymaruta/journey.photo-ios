@@ -62,7 +62,11 @@ case "$mode" in
         action="test-without-building"
         # PR can opt into one directly affected suite; TestFlight retains
         # the full JourneyPhotoTests bundle by leaving this variable unset.
-        extra="-resultBundlePath $result -only-testing:${UNIT_ONLY_TESTING:-JourneyPhotoTests}"
+        # 空白で区切って複数の組を渡せる（共有カード: 描画と地図の計算の2組・2026-11-04）
+        extra="-resultBundlePath $result"
+        for suite in ${UNIT_ONLY_TESTING:-JourneyPhotoTests}; do
+            extra="$extra -only-testing:$suite"
+        done
         extra="$extra -test-timeouts-enabled YES"
         extra="$extra -default-test-execution-time-allowance $UNIT_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UNIT_TIME_MAXIMUM"

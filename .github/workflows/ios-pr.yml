@@ -371,8 +371,8 @@ jobs:
           selected="JourneyPhotoTests"
           if [ "${{ github.event_name }}" = "pull_request" ] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
             files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD -- || true)"
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/SignatureShareCardRenderer\.swift|Sources/JourneyPhoto/Resources/country-outlines\.json|Tools/generate-country-outlines\.py)$'; then
-              selected="JourneyPhotoTests/SignatureShareCardRendererTests"
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/(SignatureShareCardRenderer|ShareCardMap|ShareCardText)\.swift|Sources/JourneyPhoto/Resources/(country-outlines|japan-prefectures)\.json|Tools/generate-(country-outlines|japan-prefectures)\.py|Tests/JourneyPhotoTests/(SignatureShareCardRenderer|ShareCardMap)Tests\.swift)$'; then
+              selected="JourneyPhotoTests/SignatureShareCardRendererTests JourneyPhotoTests/ShareCardMapTests"
             fi
           fi
           echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"

@@ -42,9 +42,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let data = try XCTUnwrap(rendered)
         let image = try XCTUnwrap(UIImage(data: data))
         XCTAssertEqual(image.size, CGSize(width: 1080, height: 1350))
-        // 共有JPEGの四隅は黒背景。真鍮フレームは画像境界から8px内側にあり、
-        // 線幅4pxの中心が10pxなので、(10,10)は真鍮色になる。
-        // (0,0)に金色を要求すると、意図した8pxの余白を不具合と誤判定する。
+        // 共有JPEGの四隅は黒背景。真鍮フレームは画像境界から12px内側にあり（2026-11-04 地図8）、
+        // 線幅3pxの中心が13.5pxなので、(13,13)は真鍮色になる。
+        // (0,0)に金色を要求すると、意図した12pxの余白を不具合と誤判定する。
         let bitmap = try XCTUnwrap(image.cgImage)
         func pixel(at x: Int, _ y: Int) throws -> [UInt8] {
             let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -60,8 +60,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
         let corner = try pixel(at: 0, 0)
         XCTAssertLessThan(Int(corner[0]), 30, "画像の四隅は黒い背景で統一する")
-        let frame = try pixel(at: 10, 10)
-        XCTAssertGreaterThan(Int(frame[0]), 60, "8px内側の真鍮フレームが描かれていない")
+        let frame = try pixel(at: 13, 13)
+        XCTAssertGreaterThan(Int(frame[0]), 60, "12px内側の真鍮フレームが描かれていない")
     }
 
     func testSquareCardRenders() async throws {
@@ -140,23 +140,238 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
-    func testLongEquipmentNamesFitWithinThreeLineArea() {
+    func testLongEquipmentNamesWrapOnlyBetweenWords() {
+        // 2026-11-04 owner「文章の変な改行はいやです」: 機材名は語の途中で折らない
         let camera = "Hasselblad X2D II 100C Medium Format Camera"
         let lens = "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens"
-        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246))] {
-            let fontSize = SignatureShareCardRenderer.equipmentFontSize(name, maxWidth: width)
-            XCTAssertLessThanOrEqual(fontSize, 22)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineBreakMode = .byCharWrapping
-            paragraph.lineSpacing = 1
-            let measured = (name as NSString).boundingRect(
-                with: CGSize(width: width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [
-                    .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
-                    .paragraphStyle: paragraph
-                ], context: nil)
-            XCTAssertLessThanOrEqual(measured.height, 72.5, "\(name) must fit without clipping")
+        // 「/」の後ろでは折らない（「f/｜2.8」にしない・2026-11-04 確かめ役の指摘）
+        let nikkor = "NIKKOR Z 24-70mm f/2.8 S"
+        for (name, width) in [(camera, CGFloat(235)), (lens, CGFloat(246)), (nikkor, CGFloat(120))] {
+            let fitted = SignatureShareCardRenderer.equipmentLayout(name, maxWidth: width)
+            XCTAssertLessThanOrEqual(fitted.size, 22)
+            XCTAssertFalse(fitted.truncated, "\(name) は全文が入る")
+            // 行をつなぐと元の語の並びに戻る＝語の途中で切っていない
+            XCTAssertEqual(fitted.lines.joined(separator: " ").split(separator: " "),
+                           name.split(separator: " "), "\(name): \(fitted.lines)")
+            let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+            for line in fitted.lines {
+                XCTAssertLessThanOrEqual((line as NSString).size(withAttributes: [.font: font]).width,
+                                         width, "\(line) が列からはみ出す")
+            }
+            let height = CGFloat(fitted.lines.count) * font.lineHeight + CGFloat(fitted.lines.count - 1)
+            XCTAssertLessThanOrEqual(height, 72.5, "\(name) must fit without clipping")
+        }
+    }
+
+    func testPlaceTwoLinesWithRealFont() {
+        // 地図があるときの撮影地の幅（152）。決まった2行で、行の中では折らない（2026-11-04 owner）
+        let width = ShareCardMap.Layout.placeWidthWithMap
+        let cases: [(String, [String])] = [
+            ("千葉県（市原市）", ["千葉県", "（市原市）"]),
+            ("山中湖村, 山梨県, 日本", ["山梨県", "（山中湖村）"]),
+            ("札幌市時計台, 中央区, 札幌市, 北海道, 060-0001, 日本", ["北海道", "（札幌市）"]),
+            ("ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス",
+             ["フランス", "（ヴェルサイユ）"]),
+            ("Paris, Île-de-France, France", ["France", "(Paris)"]),
+            // 括弧つき最長の市区町村名（10字）も切らない（下限 15 で 150 ≤ 152）
+            ("かすみがうら市, 茨城県, 日本", ["茨城県", "（かすみがうら市）"])
+        ]
+        for (raw, expected) in cases {
+            let lines = LocationMatch.shareCardPlace(raw)?.lines ?? []
+            XCTAssertEqual(lines, expected, raw)
+            let fitted = SignatureShareCardRenderer.placeLayout(lines, maxWidth: width)
+            XCTAssertEqual(fitted.lines, expected, "\(raw) が切れた（大きさ \(fitted.size)）")
+            XCTAssertFalse(fitted.truncated, raw)
+            XCTAssertGreaterThanOrEqual(fitted.size, SignatureShareCardRenderer.placeMinimumFontSize, "撮影地の下限")
+            let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+            for line in fitted.lines {
+                XCTAssertLessThanOrEqual((line as NSString).size(withAttributes: [.font: font]).width,
+                                         width, "\(line) が \(width) からはみ出す")
+            }
+        }
+    }
+
+    /// 日本の長い市区町村名（全 1709 件のうち 6〜7 字の全部と、5 字の代表）を本物の字で測り、
+    /// Mac の記録に出す（2026-11-04 確かめ役の指摘: 「（南アルプス市）」は 18.72pt でも 140 を超えうる）。
+    /// 一覧は code4fukui/localgovjp の市区町村名から字数で選んだ
+    func testMeasureLongMunicipalityNames() {
+        let names = ["つくばみらい市", "いちき串木野市", "かすみがうら市", "山陽小野田市", "富士河口湖町",
+                     "ひたちなか市", "南アルプス市", "東松島市", "伊豆の国市", "大和郡山市", "四国中央市",
+                     "世田谷区", "山中湖村", "市原市"]
+        let minimum = CGFloat(26 * 0.72)
+        let semibold = UIFont.systemFont(ofSize: minimum, weight: .semibold)
+        // 和文の詰め（palt: kTextSpacingType=22・kAltProportionalTextSelector=5）
+        let paltDescriptor = semibold.fontDescriptor.addingAttributes([
+            .featureSettings: [[UIFontDescriptor.FeatureKey.type: 22,
+                                UIFontDescriptor.FeatureKey.selector: 5]]
+        ])
+        let palt = UIFont(descriptor: paltDescriptor, size: minimum)
+        for name in names {
+            let line = "（\(name)）"
+            let plain = (line as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (line as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE \(line) plain=\(String(format: "%.1f", plain)) palt=\(String(format: "%.1f", packed)) fitSize140=\(String(format: "%.2f", 140 / plain * minimum))")
+        }
+        for character in ["（", "）", "あ", "市"] {
+            let plain = (character as NSString).size(withAttributes: [.font: semibold]).width
+            let packed = (character as NSString).size(withAttributes: [.font: palt]).width
+            print("SHARECARD-MEASURE char \(character) plain=\(String(format: "%.2f", plain)) palt=\(String(format: "%.2f", packed))")
+        }
+        let pin = UIImage(systemName: "mappin.circle",
+                          withConfiguration: UIImage.SymbolConfiguration(pointSize: 37, weight: .regular))
+        print("SHARECARD-MEASURE pin size=\(pin.map { "\($0.size)" } ?? "nil")")
+        XCTAssertFalse(names.isEmpty)
+    }
+
+    /// 2026-11-05 フェード型: 3 比率とも大きさが正しく、写真は全面・下は黒へ溶け、地図の線（真鍮）が出る
+    func testFadeStyleRendersAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1200))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor(red: 0.5, green: 0.7, blue: 0.9, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 1200))
+            }
+        let pin = try XCTUnwrap(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.41, lng: 138.86)))
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer", location: "山梨県（山中湖村）", coords: pin,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E", exposure: "1/100s",
+            aperture: "f/4", iso: 50, verified: false, proStyle: nil, early: false, badge: nil)
+        func rgb(_ image: CGImage, _ x: Int, _ y: Int) throws -> [Int] {
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return rgba.prefix(3).map(Int.init)
+        }
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let layout = ShareCardMap.FadeLayout(ratio: ratio)
+            // `XCTUnwrap` の引数は autoclosure で `await` が使えないので、先に待つ
+            let rendered = await SignatureShareCardRenderer.render(
+                source, credit: credit, ratio: ratio, style: .fade)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "フェード_\(ratio)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertEqual(image.size, CGSize(width: 1080, height: layout.height), "\(ratio)")
+            let bitmap = try XCTUnwrap(image.cgImage)
+            // 写真は全面: グラデーションの上・ロゴの影の下（真ん中の左端）は元の写真の色のまま（青い）
+            let mid = try rgb(bitmap, 30, Int((layout.fadeTop + 260) / 2))
+            XCTAssertGreaterThan(mid[2], mid[0] + 40, "\(ratio) 写真の青が残っていない \(mid)")
+            XCTAssertGreaterThan(mid[2], 150, "\(ratio) 写真が暗くなっている \(mid)")
+            // 下は黒へ溶ける: 左下の隅（文字の無い所）は黒に近い
+            let bottom = try rgb(bitmap, 6, Int(layout.height) - 6)
+            XCTAssertLessThan(bottom.max() ?? 255, 24, "\(ratio) 下が黒に着いていない \(bottom)")
+            // 写真の上に真鍮の額縁を載せない（左上の隅 (13,13) は写真の色）
+            let corner = try rgb(bitmap, 13, 300)
+            XCTAssertGreaterThan(corner[2], 120, "\(ratio) 左の端に額縁が載っている \(corner)")
+            // 地図の枠の中に、真鍮の線（赤が青より明るい色）がある
+            let map = layout.mapRect
+            var brassPixels = 0
+            for yy in stride(from: Int(map.minY), to: Int(map.maxY), by: 4) {
+                for xx in stride(from: Int(map.minX), to: Int(map.maxX), by: 4) {
+                    let p = try rgb(bitmap, xx, yy)
+                    if p[0] > 150, p[0] > p[2] + 40 { brassPixels += 1 }
+                }
+            }
+            XCTAssertGreaterThan(brassPixels, 20, "\(ratio) 地図の線が見えない（\(brassPixels)）")
+        }
+    }
+
+    /// 日本の写真は、撮影地の文字の県を真鍮 75% で塗る（案A-3）。海外の写真・県名の無い文字は塗らない
+    func testJapanCardFillsPrefectureNamedInPlace() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.black.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let pin = try XCTUnwrap(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.41, lng: 138.86)))   // 山中湖 → 35.5, 139.0
+        func card(_ place: String) async throws -> CGImage {
+            let credit = SignatureShareCardRenderer.Credit(
+                name: "Photographer", username: "photographer", location: place, coords: pin,
+                camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E", exposure: "1/100s",
+                aperture: "f/4", iso: 50, verified: false, proStyle: nil, early: false, badge: nil)
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "共有カード_\(place)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return try XCTUnwrap(image.cgImage)
+        }
+        let japan = try XCTUnwrap(ShareCardMap.loadShapes(resource: "country-outlines")
+            .first(where: { $0.n == "Japan" }))
+        let rect = ShareCardMap.Layout(ratio: .portrait).mapRect
+        let focused = try XCTUnwrap(ShareCardMap.focus(japan, latitude: pin.latitude,
+                                                       longitude: pin.longitude, in: rect))
+        // 山梨県の中で、ピンの点から最も離れた所（点の半径 6 の外・光の輪の半径 14 の内側）。
+        // 2026-11-04: 地図が黒い帯の中（200×146）になり縮尺が小さくなったので、固定の座標でなく、
+        // 山梨県の輪の中の点を 0.05° 刻みで探し、ピンからの距離が最大の点を選ぶ
+        let yamanashi = try XCTUnwrap(ShareCardMap.loadShapes(resource: "japan-prefectures")
+            .first(where: { $0.n == "山梨県" }))
+        let pinPoint = focused.projection.point(longitude: pin.longitude, latitude: pin.latitude)
+        var found: CGPoint?
+        var foundDistance: CGFloat = 0
+        for latStep in 0..<30 {
+            for lonStep in 0..<30 {
+                let lon = 138.1 + Double(lonStep) * 0.05, lat = 35.2 + Double(latStep) * 0.05
+                guard yamanashi.r.contains(where: { ShareCardMap.ringContains($0, longitude: lon, latitude: lat) }) else { continue }
+                let candidate = focused.projection.point(longitude: lon, latitude: lat)
+                let distance = hypot(candidate.x - pinPoint.x, candidate.y - pinPoint.y)
+                if distance > foundDistance, distance <= 13.5 { found = candidate; foundDistance = distance }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(foundDistance, 6.6, "山梨県の中に、点（半径 6）の外の所が無い（地図の縮尺を確かめる）")
+        let probe = try XCTUnwrap(found)
+        func red(_ image: CGImage) throws -> Int {
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(image.cropping(to: CGRect(x: Int(probe.x), y: Int(probe.y),
+                                                                  width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return Int(rgba[0])
+        }
+        let filledCard = try await card("山梨県（山中湖村）")
+        let plainCard = try await card("Mount Fuji")
+        let filled = try red(filledCard)
+        let plain = try red(plainCard)
+        // 県の端に近い点を見るので、縁の薄まり（アンチエイリアス）を見込んで、塗りあり／なしの差で比べる
+        // （2026-11-04 Mac の実測: 塗りあり 96・塗りなしは光の輪だけで 60 未満）
+        XCTAssertGreaterThan(filled, plain + 30, "山梨県が塗られていない（塗りあり \(filled)・なし \(plain)・\(probe)）")
+        XCTAssertLessThan(plain, 60, "県名が無いのに塗っている")
+    }
+
+    func testOverseasCardRenders() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.darkGray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Photographer", username: "photographer",
+            location: "Versailles, Île-de-France, フランス",
+            coords: CLLocationCoordinate2D(latitude: 49.0, longitude: 2.0),
+            camera: "Hasselblad X2D II 100C Medium Format Camera",
+            lens: "Hasselblad XCD 35-100E f/2.8-4 Zoom Lens",
+            exposure: "1/125s", aperture: "f/4", iso: 200,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let rendered = await SignatureShareCardRenderer.render(source, credit: credit, ratio: ratio)
+            let data = try XCTUnwrap(rendered)
+            let image = try XCTUnwrap(UIImage(data: data))
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "共有カード_フランス_\(ratio)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 
