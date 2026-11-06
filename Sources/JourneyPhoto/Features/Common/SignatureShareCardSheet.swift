@@ -41,8 +41,11 @@ struct SignatureShareCardSheet: View {
         NavigationStack {
             VStack(spacing: 16) {
                 Picker(L("共有画像の型", "Share image style"), selection: $styleRaw) {
+                    // 型の名前は短く（4つを1行の切り替えに並べる）。順は「いつもの帯」→ 写真を活かす順
                     Text(L("帯", "Band")).tag(SignatureShareCardRenderer.Style.band.rawValue)
                     Text(L("フェード", "Fade")).tag(SignatureShareCardRenderer.Style.fade.rawValue)
+                    Text(L("表紙", "Cover")).tag(SignatureShareCardRenderer.Style.cover.rawValue)
+                    Text(L("展示札", "Label")).tag(SignatureShareCardRenderer.Style.label.rawValue)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
