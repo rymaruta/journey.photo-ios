@@ -24,7 +24,10 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         // **毎回まっさらから。** 同意の記録が残っていると初回の道を通らない
         app.launchArguments += ["-legal.consent.version", "0"]
+        // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
+        enablePerfProbe(app)
         app.launch()
+        attachPerfProbeOnFailure(app)
 
         // 同意画面 → タブ
         // **名札で指す。** 並び順で掴むと「利用規約」のリンクを押して
@@ -72,7 +75,10 @@ final class SmokeTests: XCTestCase {
     func testNotificationsSheetCloses() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
+        // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
+        enablePerfProbe(app)
         app.launch()
+        attachPerfProbeOnFailure(app)
 
         let agree = app.buttons["legal.agree"]
         XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
@@ -98,7 +104,10 @@ final class SmokeTests: XCTestCase {
     func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
+        // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
+        enablePerfProbe(app)
         app.launch()
+        attachPerfProbeOnFailure(app)
 
         let agree = app.buttons["legal.agree"]
         XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
@@ -137,7 +146,10 @@ final class SmokeTests: XCTestCase {
     func testHeaderMenuOpensAndRoutesToMap() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
+        // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
+        enablePerfProbe(app)
         app.launch()
+        attachPerfProbeOnFailure(app)
 
         let agree = app.buttons["legal.agree"]
         XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")

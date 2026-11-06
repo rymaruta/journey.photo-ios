@@ -50,6 +50,10 @@ struct JourneyPhotoApp: App {
     init() {
         // 起動の区間の始め（最初の画面で終える・`PerfSignpost`・2026-10-31 札 #429）
         PerfSignpost.beginLaunch()
+        // UI テストのときだけ: 起動直後の動きの記録の0ms をここに合わせ、メインスレッドの停止の見張りを始める
+        // （`PerfRecorder`・札 #435 / #429。無効のときは何もしない）
+        PerfRecorder.shared.markLaunch()
+        PerfStallWatcher.shared.start()
         JourneyPhotoApp.configureImageCache()
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
         TabBarStyle.apply()
@@ -315,6 +319,8 @@ struct JourneyPhotoApp: App {
                 // 前に使っていた人の置き場を出す**（圏外で使うための機能なので、圏外の起動で消えては困る）。
                 // 期限切れのログアウトも同じ人が入り直すことが多いので切り替えない
                 .task(id: auth.state) {
+                    let probe = PerfRecorder.shared.beginTask("offlineTrips")
+                    defer { PerfRecorder.shared.endTask(probe) }
                     guard !auth.isResolving else { return }
                     if auth.isSignedOutUncertain {
                         offlineTrips.useLastUser()
@@ -326,6 +332,8 @@ struct JourneyPhotoApp: App {
                 // すれちがいの帳と設定も人に合わせる。圏外で ID が取れなかった回だけ前の人のまま
                 // （起動の `PassCoordinator.launch` が読んだ人）。人が替われば電波を決め直す（前の人の乗車券を出さない）
                 .task(id: auth.state) {
+                    let probe = PerfRecorder.shared.beginTask("pass")
+                    defer { PerfRecorder.shared.endTask(probe) }
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
                     // 期限切れのログアウトでも電波は止める（帳は端末に残り、入り直せば読み戻す）
                     PassStore.shared.use(userId: auth.userId)
@@ -352,7 +360,14 @@ struct JourneyPhotoApp: App {
                     // ——`setRestrictedLoader` の中で、口の差し替えと同じ手番で捨てる。
                     // 差し替えの後に捨てていた頃は、その間に始まった読み直しが
                     // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった
+                    // 起動後の同期の区間（`PerfSignpost.launchSync*`・2026-11-04 札 #435 / #429）。**測るだけで動作は変えない**。
+                    // `launchSync` は頭から `syncWishlist` の前まで（待ちを含む）、`launchSyncStores` はその中の待たない部分
+                    // （メインスレッドを占める時間）。UI テストのときだけ、始めと終わりを記録にも残す（`PerfRecorder`）
+                    let probe = PerfRecorder.shared.beginTask("auth.state.sync")
+                    defer { PerfRecorder.shared.endTask(probe) }
+                    let launchSync = PerfSignpost.begin(.launchSync)
                     await applyRestrictedFeed()
+                    let launchStores = PerfSignpost.begin(.launchSyncStores)
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
@@ -363,15 +378,16 @@ struct JourneyPhotoApp: App {
                     storyDrafts.use(userId: auth.userId)
                     // 写真の投稿の下書きの、どの記録からも指されない画像を片づける（`StoryDraftStore` の
                     // `use` と同じ頃合い・2026-10-11）。下書き自体は投稿の画面が開いたときに人ごとに読む
-                    UploadDraftStore().sweepOrphans()
+                    PerfSignpost.measure(.launchSyncSweepOrphans) { UploadDraftStore().sweepOrphans() }
                     // 前の版の「1件だけ」の下書きを新しい形（何件でも・#400）に移し、期限の過ぎたストーリーの
                     // 下書きを消す（ログインの状態が決まってから・人ごと）
                     if let userId = auth.userId {
-                        DraftLibrary.shared.prepare(for: userId)
+                        PerfSignpost.measure(.launchSyncDraftPrepare) { DraftLibrary.shared.prepare(for: userId) }
                         // 画面写真の試験だけ: 下書きの一覧の見本を並べる（`PreviewDraftsSample`・Debug のみ）
                         PreviewDraftsSample.seedIfNeeded(for: userId)
                     }
                     seenStories.use(userId: auth.userId)
+                    PerfSignpost.end(launchStores)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
@@ -401,6 +417,7 @@ struct JourneyPhotoApp: App {
                             await applyModeration()
                         }
                     }
+                    PerfSignpost.end(launchSync)
                     // **行きたい場所は最後。** 端末にしか無い分を1本ずつ送るので、回線が
                     // 詰まっていると長く待つ——その間ブロック一覧の同期が止まっていた
                     await syncWishlist(since: wishMark)

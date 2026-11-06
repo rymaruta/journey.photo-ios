@@ -743,6 +743,55 @@ if testflight_yml.exists() and pr_yml.exists():
     if not chosen:
         fail(f"pick-ui-tests.py が、変えたテストの行から先に流すテストを選べません（{sample} の {smoke_line} 行目）")
 
+# ---- 重さの記録（ios-perf.yml・2026-11-04・札 #429）---------------------------
+# 毎日1回 PerformanceTests を流して数を残す回。**有効にするまで走らせない**（変数 IOS_PERF_ENABLED）、
+# **TestFlight に上げない・版を触らない**、**Mac を同時に1台しか使わない**、数が1つも拾えなければ落とす、を見張る
+perf_yml = ROOT / ".github/workflows/ios-perf.yml"
+if not perf_yml.exists():
+    fail(".github/workflows/ios-perf.yml がありません（アプリの重さを定期に測る回）")
+else:
+    perf_text = perf_yml.read_text(encoding="utf-8")
+    if not re.search(r"^  workflow_dispatch:", perf_text, re.M):
+        fail("ios-perf.yml に手動実行（workflow_dispatch）がありません")
+    cron = re.search(r'^\s+- cron: "(\d+) (\d+) \* \* \*"', perf_text, re.M)
+    if not cron:
+        fail("ios-perf.yml に1日1回の schedule（cron: \"分 時 * * *\"）がありません")
+    elif cron.group(1) in ("0", "30"):
+        fail("ios-perf.yml の schedule が 0 分・30 分です（GitHub の混む時間を避ける）")
+    # 有効にするまで定期は走らせない: 変数が 'true' のときだけ（手動は常に可）。組む job と流す job の両方
+    gate = "github.event_name == 'workflow_dispatch' || vars.IOS_PERF_ENABLED == 'true'"
+    if gate not in perf_text:
+        fail("ios-perf.yml の最初の job に「手動か vars.IOS_PERF_ENABLED == 'true'」の if がありません（有効にする前に定期で走る）")
+    if not re.search(r"^  perf:\n(?:.*\n)*?    needs: build\n", perf_text, re.M):
+        fail("ios-perf.yml の `perf` が `build` を待っていません（組む job が飛ばされたら流す job も飛ばす）")
+    if "uses: ./.github/actions/mac-test-part" not in perf_text:
+        fail("ios-perf.yml が mac-test-part を使っていません（流し方を写さず使い回す）")
+    if not re.search(r"^concurrency:\n  group: ios-perf\n  cancel-in-progress: false", perf_text, re.M):
+        fail("ios-perf.yml の concurrency が `ios-perf`・cancel-in-progress: false ではありません（Mac を重ねない）")
+    if "--require" not in perf_text or "Tools/perf-collect.py" not in perf_text:
+        fail("ios-perf.yml が数を拾う段（perf-collect.py --require）を持っていません")
+    if "name: perf-record" not in perf_text:
+        fail("ios-perf.yml が成果物 perf-record を残していません")
+    for forbidden in ("testflight.sh", "next-marketing-version", "bump-build", "git push", "gh issue", "gh api"):
+        if forbidden in perf_text:
+            fail(f"ios-perf.yml に「{forbidden}」があります（版・TestFlight・Issue への書き込みには触らない）")
+    if re.search(r"^      - name: テスト", perf_text, re.M):
+        fail("ios-perf.yml の段が「テスト」で始まります（古い数え方に拾われる）")
+    if "build/ui-plan/first.txt" not in perf_text:
+        fail("ios-perf.yml が流す試験の一覧（first.txt）を作っていません")
+
+# 名指しした回だけ流す2本（起動直後の記録・body の評価回数）は、UI テストに実在し、全部の回では流れない
+import importlib.util as _perf_ilu
+_pick_spec = _perf_ilu.spec_from_file_location("pick_ui_tests_perf", ROOT / "Tools/pick-ui-tests.py")
+_pick = _perf_ilu.module_from_spec(_pick_spec)
+_pick_spec.loader.exec_module(_pick)
+_perf_src = (ROOT / "UITests/JourneyPhotoUITests/PerformanceTests.swift").read_text(encoding="utf-8")
+for _named in ("testLaunchProbe", "testBodyEvaluationCounts"):
+    if f"PerformanceTests/{_named}" not in _pick.ONLY_WHEN_NAMED:
+        fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に PerformanceTests/{_named} がありません（全部の回で流れてしまう）")
+    if f"func {_named}()" not in _perf_src:
+        fail(f"PerformanceTests に {_named} がありません")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

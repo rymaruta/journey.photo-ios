@@ -104,6 +104,8 @@ struct MyPageView: View {
     private let columns = ProfileV2.gridItems
 
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
+        let _ = PerfRecorder.shared.bodyHit(.myPage)
         Group {
             if auth.isResolving {
                 // 確認が終わるまでログイン画面を出さない（ちらつきを作らない）

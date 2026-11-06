@@ -6,11 +6,13 @@ import os
 /// 重さを測るための印（`OSSignposter`・2026-10-31 判断・札 #429 アプリ 1）。
 ///
 /// **見た目も動きも変えない。** Instruments（Points of Interest・os_signpost）で、どこに時間を使っているかを
-/// 区間で見るためだけに置く。印を付けるのは3か所:
+/// 区間で見るためだけに置く。印を付けるのは次の所:
 ///
 /// - `launch`: アプリの `init` から、最初の画面（`RootView`）が出るまで
 /// - `homeLoad`: ホームの一覧の読み込み（`GalleryViewModel.load`）の始めから終わりまで
 /// - `spotIndexDecode`: 撮影スポットの索引（`spot-feed/index.json`・約 1.1MB・2,853件 2026-10-31）を解析する間
+///
+/// - `launchSync` ほか: 起動後の `.task(id: auth.state)` の同期の区間（2026-11-04・札 #435 / #429。**包むだけで動作は変えない**）
 ///
 /// 名前（`subsystem`・`category`・区間の名前）は UI テストの `XCTOSSignpostMetric` と Instruments で引くので、
 /// 変えるときは `PerformanceTests` も合わせる。Linux の模型（`os` が無い）では何もしない
@@ -26,6 +28,14 @@ enum PerfSignpost {
         case homeSnapshotProcess = "HomeSnapshotProcess"
         case homeFirstPage = "HomeFirstPage"
         case spotIndexDecode = "SpotIndexDecode"
+        /// 起動後の `.task(id: auth.state)`（`JourneyPhotoApp`）の頭から `syncWishlist` の前まで（待ちを含む）
+        case launchSync = "LaunchSync"
+        /// その中の、待たない（同期の）部分: 6つの Store の `use` から `seenStories.use` まで（メインスレッドを占める時間）
+        case launchSyncStores = "LaunchSyncStores"
+        /// その中の `UploadDraftStore().sweepOrphans()`（`UserDefaults` を丸ごと読んで各キーを解く）
+        case launchSyncSweepOrphans = "LaunchSyncSweepOrphans"
+        /// その中の `DraftLibrary.prepare`
+        case launchSyncDraftPrepare = "LaunchSyncDraftPrepare"
     }
 
     /// 始めた区間（終えるときに渡す）
@@ -52,6 +62,10 @@ enum PerfSignpost {
         case .homeSnapshotProcess: state = signposter.beginInterval("HomeSnapshotProcess", id: id)
         case .homeFirstPage: state = signposter.beginInterval("HomeFirstPage", id: id)
         case .spotIndexDecode: state = signposter.beginInterval("SpotIndexDecode", id: id)
+        case .launchSync: state = signposter.beginInterval("LaunchSync", id: id)
+        case .launchSyncStores: state = signposter.beginInterval("LaunchSyncStores", id: id)
+        case .launchSyncSweepOrphans: state = signposter.beginInterval("LaunchSyncSweepOrphans", id: id)
+        case .launchSyncDraftPrepare: state = signposter.beginInterval("LaunchSyncDraftPrepare", id: id)
         }
         return Interval(name: name, state: state)
         #else
@@ -68,6 +82,10 @@ enum PerfSignpost {
         case .homeSnapshotProcess: signposter.endInterval("HomeSnapshotProcess", interval.state)
         case .homeFirstPage: signposter.endInterval("HomeFirstPage", interval.state)
         case .spotIndexDecode: signposter.endInterval("SpotIndexDecode", interval.state)
+        case .launchSync: signposter.endInterval("LaunchSync", interval.state)
+        case .launchSyncStores: signposter.endInterval("LaunchSyncStores", interval.state)
+        case .launchSyncSweepOrphans: signposter.endInterval("LaunchSyncSweepOrphans", interval.state)
+        case .launchSyncDraftPrepare: signposter.endInterval("LaunchSyncDraftPrepare", interval.state)
         }
         #endif
     }

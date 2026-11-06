@@ -194,6 +194,20 @@
                 <string>85F4.1</string>
             </array>
         </dict>
+
+        <!--
+          経過時間の計測（`PerfProbe` の `ProcessInfo.systemUptime`）。
+          2026-11-06 判断: 理由コード 35F9.1 = アプリの中で出来事の間の経過時間を測るだけ。
+          起動時刻そのものを画面に出さず、端末の外へも送らない
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
     </array>
 </dict>
 </plist>

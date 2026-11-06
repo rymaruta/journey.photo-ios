@@ -155,6 +155,10 @@ struct RootView: View {
         // Web のどこにも出てこない色だった
         .tint(WebTheme.foreground)
         .background(WebTheme.background)
+        // UI テストのときだけ: 起動直後の動きの記録を見えない要素 `perf.probe` に出す（`-JPPreviewPerfProbe YES`）
+        .overlay(alignment: .bottomLeading) {
+            if PerfRecorder.shared.isEnabled { PerfProbeOverlay() }
+        }
         .overlay(alignment: .top) {
             if let configurationError {
                 Text(L("認証の初期化に失敗しました: \(configurationError)", "Sign-in setup failed: \(configurationError)"))
@@ -302,7 +306,7 @@ struct RootView: View {
                 return
             }
             // 通知はタブではなくなったので、ホームのヘッダーから開く
-            selection = .home
+            select(.home, at: "takeActivityRequest")
             showNotifications = true
         }
     }
@@ -819,7 +823,7 @@ struct RootView: View {
         // 「新しくなったこと」の項目 → ホームの札へ
         .onChange(of: tabRouter.homeRequests) { _, _ in
             showMenu = false
-            selection = .home
+            select(.home, at: "homeRequests")
         }
         // **札へ移るときはメニューのシートも下ろす**（2026-10-04 判断: メニュー → 設定 →
         // 「新しくなったこと」から札へ移ると、メニューのシートが上に残って移った先が見えない。
@@ -1135,6 +1139,13 @@ struct RootView: View {
         showPhotoUpload = true
     }
 
+    /// 下のタブ（`selection`）を書く。**書き込みは全部ここを通す**（2026-11-04・札 #435）。
+    /// UI テストのときだけ、どこで・何から何へ・起動から何 ms かを `PerfRecorder` に残す。動作は `selection = tab` と同じ
+    private func select(_ tab: Tab, at site: String) {
+        PerfRecorder.shared.recordSelection(site: site, from: selection, to: tab)
+        selection = tab
+    }
+
     private var tabsBase: some View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
@@ -1143,7 +1154,7 @@ struct RootView: View {
             get: { selection },
             set: { tapped in
                 tabRouter.tabTapped(tapped.reselectable, alreadySelected: tapped == selection)
-                selection = tapped
+                select(tapped, at: "tabs.set")
             }
         )) {
             NavigationStack {
@@ -1248,8 +1259,9 @@ struct RootView: View {
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）
         .onChange(of: selection) { previous, tab in
+            PerfRecorder.shared.recordSelection(site: "onChange", from: previous, to: tab)
             if tab == .post {
-                selection = previous == .post ? .home : previous
+                select(previous == .post ? .home : previous, at: "post.revert")
                 showPostChoice = true
             }
         }
@@ -1272,11 +1284,11 @@ struct RootView: View {
         }
         // メニューの「マイページ」が押されたら、マイページの札へ移る
         .onChange(of: tabRouter.myPageRequests) { _, _ in
-            selection = .mypage
+            select(.mypage, at: "myPageRequests")
         }
         // 見出しの「探す」→ 探すの札へ（探すの札の上で押したら、探す口に字を打てるようにする・`SearchView`）
         .onChange(of: tabRouter.searchRequests) { _, _ in
-            selection = .search
+            select(.search, at: "searchRequests")
         }
         // メニューの「撮影地マップ」→ マップの札へ
         .onChange(of: tabRouter.mapRequests) { _, _ in
@@ -1287,7 +1299,7 @@ struct RootView: View {
                                         rootOnScreen: tabRouter.mapRootOnScreen) {
                 mapStackId += 1
             }
-            selection = .map
+            select(.map, at: "mapRequests")
         }
         .onChange(of: tabRouter.menuRequests) { _, _ in
             showMenu = true
