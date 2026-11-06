@@ -17,8 +17,6 @@ enum SignatureShareCardRenderer {
     enum Style: String, CaseIterable {
         case band
         case fade
-        /// 黒い帯が右だけ写真へ食い込み、地図が縦に大きくなる（2026-11-06・見本 S1）
-        case notch
         /// 地名を明朝の主役に、ラベルつきの撮影情報の表を下に置く（見本 S2）
         case label
         /// 地名を大きな明朝で、写真と黒のあいだにまたがらせる（見本 F5）
@@ -91,9 +89,8 @@ enum SignatureShareCardRenderer {
         case .fade: return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .label: return renderLabel(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .cover: return renderCover(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
-        case .band, .notch: break   // 帯の型（切り欠きは、帯の型に1つの長方形を足す）
+        case .band: break   // 帯の型
         }
-        let notch = style == .notch
         typealias L = ShareCardMap.Layout
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
@@ -133,10 +130,6 @@ enum SignatureShareCardRenderer {
             // その下は黒い面（surface）。写真の裾に黒を重ねない
             surface.setFill()
             cg.fill(layout.bandRect)
-            // 切り欠き: 黒い帯の右端が写真へ食い込む（地図の座）。写真は帯の開始位置までと同じ、食い込みの分だけ黒
-            let notchLayout = ShareCardMap.NotchLayout(ratio: ratio)
-            if notch { cg.fill(notchLayout.notchRect) }
-            let mapFrame = notch ? notchLayout.mapRect : layout.mapRect
 
             // 上の帯。字の大文字の高さの中心を、マークの中心にそろえる（2026-11-04 owner）
             let markY = L.headerMarkY
@@ -260,7 +253,7 @@ enum SignatureShareCardRenderer {
                 // 塗る県は、撮影地の1行目（県）と元の文字の両方から引く（英語の "Kyoto" も表で和文へ）
                 let placeText = (placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
-                                              in: mapFrame, color: brass, context: cg)
+                                              in: layout.mapRect, color: brass, context: cg)
             }
 
             // 区切り線（地図があるときは地図の手前で止める）

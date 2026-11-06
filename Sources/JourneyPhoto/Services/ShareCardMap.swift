@@ -229,27 +229,6 @@ enum ShareCardMap {
         static let exifSymbolSize: CGFloat = 26
     }
 
-    // MARK: - 切り欠き型の寸法
-
-    /// 「切り欠き」型（2026-11-06・見本 S1）。帯の型（`Layout`）はそのままに、黒い帯の右端だけを写真へ食い込ませ、
-    /// 地図の枠を縦に伸ばす。地図の幅・右端・左の段の数は帯の型と同じ（左は1つも動かない）。
-    struct NotchLayout {
-        /// 写真へ食い込む高さ（地図の上の余白 12 を含む）
-        static let notchHeight: CGFloat = 122
-        let layout: Layout
-        init(ratio: SignatureShareCardRenderer.Ratio) { layout = Layout(ratio: ratio) }
-        /// 黒く塗る長方形（写真の下端から上へ）
-        var notchRect: CGRect {
-            CGRect(x: Layout.mapX, y: layout.photoBottom - Self.notchHeight, width: Layout.mapWidth, height: Self.notchHeight)
-        }
-        /// 地図の枠: 食い込みの上から 12 下がった所から、帯の型の地図の下端まで
-        var mapRect: CGRect {
-            let m = layout.mapRect
-            let top = layout.photoBottom - (Self.notchHeight - Layout.mapBandInset)
-            return CGRect(x: m.minX, y: top, width: m.width, height: m.maxY - top)
-        }
-    }
-
     // MARK: - 展示札型の寸法
 
     /// 「展示札」型（2026-11-06・見本 S2）。上に写真、下に作品札のような札（地名・撮影者・ラベルつきの撮影情報の表・地図）。

@@ -282,7 +282,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
-    /// 2026-11-06 切り欠き・展示札・表紙: 3 比率とも大きさが正しく、写真が出て、黒い面があり、地図の線（真鍮）が出る
+    /// 2026-11-06 展示札・表紙: 3 比率とも大きさが正しく、写真が出て、黒い面があり、地図の線（真鍮）が出る
     func testNewStylesRenderAllRatios() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1200))
             .jpegData(withCompressionQuality: 0.95) { context in
@@ -317,7 +317,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
             }
             return n
         }
-        for style in [SignatureShareCardRenderer.Style.notch, .label, .cover] {
+        for style in [SignatureShareCardRenderer.Style.label, .cover] {
             for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
                 let rendered = await SignatureShareCardRenderer.render(
                     source, credit: credit, ratio: ratio, style: style)
@@ -333,15 +333,6 @@ final class SignatureShareCardRendererTests: XCTestCase {
                 XCTAssertEqual(image.size.width, 1080, name)
                 XCTAssertEqual(image.size.height, 1080 / CGFloat(ratio.rawValue), name)
                 switch style {
-                case .notch:
-                    let classic = ShareCardMap.Layout(ratio: ratio)
-                    let notch = ShareCardMap.NotchLayout(ratio: ratio)
-                    // 写真は左の上のほう、食い込みの中（右端の近く・写真の下端のすぐ上）は黒い面
-                    XCTAssertTrue(isPhotoBlue(try rgb(bitmap, 200, Int(classic.photoBottom) - 300)), name)
-                    XCTAssertTrue(isDark(try rgb(bitmap, Int(notch.notchRect.maxX) - 10, Int(notch.notchRect.minY) + 6)), "\(name) 食い込みが黒くない")
-                    // 食い込みの上は写真
-                    XCTAssertTrue(isPhotoBlue(try rgb(bitmap, Int(notch.notchRect.midX), Int(notch.notchRect.minY) - 20)), name)
-                    XCTAssertGreaterThan(try brassCount(bitmap, in: notch.mapRect), 20, "\(name) 地図の線が見えない")
                 case .label:
                     let layout = ShareCardMap.LabelLayout(ratio: ratio)
                     XCTAssertTrue(isPhotoBlue(try rgb(bitmap, 540, Int(layout.photoBottom) - 100)), name)

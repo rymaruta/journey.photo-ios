@@ -183,29 +183,7 @@ final class ShareCardMapTests: XCTestCase {
         XCTAssertLessThan(block / 2, L.header / 2 - 12, "額縁の内側に収まる")
     }
 
-    // MARK: - 切り欠き・展示札・表紙の寸法（2026-11-06）
-
-    func testNotchLayoutOnlyGrowsTheMapUpward() {
-        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
-            let notch = ShareCardMap.NotchLayout(ratio: ratio)
-            let classic = ShareCardMap.Layout(ratio: ratio).mapRect
-            // 地図の幅・右端・下端は帯の型と同じ。上だけが写真へ伸びる
-            XCTAssertEqual(notch.mapRect.width, classic.width, "\(ratio)")
-            XCTAssertEqual(notch.mapRect.maxX, classic.maxX, "\(ratio)")
-            XCTAssertEqual(notch.mapRect.maxY, classic.maxY, "\(ratio)")
-            XCTAssertLessThan(notch.mapRect.minY, classic.minY, "\(ratio)")
-            // 食い込みの黒は写真の下端で帯に接し、地図の枠を上から 12 の余白で囲む
-            let photoBottom = ShareCardMap.Layout(ratio: ratio).photoBottom
-            XCTAssertEqual(notch.notchRect.maxY, photoBottom, "\(ratio)")
-            XCTAssertEqual(notch.mapRect.minY - notch.notchRect.minY, ShareCardMap.Layout.mapBandInset, "\(ratio)")
-            XCTAssertEqual(notch.notchRect.maxX, ShareCardMap.Layout.contentRight, "\(ratio)")
-            // 左の段（撮影者・区切り線・撮影情報）は帯の型のまま、地図の左（mapX）より左に収まる
-            XCTAssertEqual(notch.notchRect.minX, ShareCardMap.Layout.mapX, "\(ratio)")
-        }
-        let portrait = ShareCardMap.NotchLayout(ratio: .portrait)
-        XCTAssertEqual(portrait.mapRect, CGRect(x: 734, y: 912, width: 286, height: 366))
-        XCTAssertEqual(portrait.notchRect, CGRect(x: 734, y: 900, width: 286, height: 122))
-    }
+    // MARK: - 展示札・表紙の寸法（2026-11-06）
 
     func testLabelLayoutNeverOverlapsAndKeepsTheBottomMargin() {
         typealias L = ShareCardMap.LabelLayout
@@ -254,9 +232,9 @@ final class ShareCardMapTests: XCTestCase {
     }
 
     func testAllStylesAreOfferedInOrder() {
-        // 共有画面の切り替え（帯・切り欠き・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）
+        // 共有画面の切り替え（帯・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）
         XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.map(\.rawValue),
-                       ["band", "fade", "notch", "label", "cover"])
+                       ["band", "fade", "label", "cover"])
     }
 
     // MARK: - 残す島

@@ -4,10 +4,11 @@ import CoreLocation
 
 /// SNS 共有カードの型（2026-11-06 owner「iOS の SNS に載せるデザインの種類が2つしかないので、めっちゃいいのを考えて増やして」）。
 ///
-/// 帯（既定）・フェードに、**切り欠き・展示札・表紙**を足す。見本は Artifact「SNS 共有カード 新デザイン5案」
-/// （S1 切り欠き・S2 展示札・F5 表紙）。寸法は `ShareCardMap` の `NotchLayout` / `LabelLayout` / `CoverLayout` に1か所で持つ。
-/// - 切り欠きは、帯の型の描き方に1つの長方形を足すだけ（`SignatureShareCardRenderer.render`）。
-/// - 展示札・表紙はここの別の関数。帯の型の描き方（テストが固定している数）には触れない。
+/// 帯（既定）・フェードに、**展示札・表紙**を足す。見本は Artifact「SNS 共有カード 新デザイン5案」（S2 展示札・F5 表紙）。
+/// 寸法は `ShareCardMap` の `LabelLayout` / `CoverLayout` に1か所で持つ。帯の型の描き方（テストが固定している数）には触れない。
+///
+/// 2026-11-06 判断: 一度「切り欠き」（帯の右端が写真へ食い込む型）を作ったが、owner「写真の雰囲気を壊している」で外した。
+/// 写真の上に黒い面を重ねる型は作らない（写真は壊さない・黒い面は写真の外に置く）。
 extension SignatureShareCardRenderer {
     // MARK: - 部品
 
