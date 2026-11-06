@@ -17,6 +17,12 @@ enum SignatureShareCardRenderer {
     enum Style: String, CaseIterable {
         case band
         case fade
+        /// 黒い帯が右だけ写真へ食い込み、地図が縦に大きくなる（2026-11-06・見本 S1）
+        case notch
+        /// 地名を明朝の主役に、ラベルつきの撮影情報の表を下に置く（見本 S2）
+        case label
+        /// 地名を大きな明朝で、写真と黒のあいだにまたがらせる（見本 F5）
+        case cover
     }
 
     struct Credit {
@@ -53,9 +59,9 @@ enum SignatureShareCardRenderer {
             longitude: (coords.lng / step).rounded() * step)
     }
 
-    private static let surface = UIColor(red: 14/255, green: 14/255, blue: 15/255, alpha: 1)
-    private static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
-    private static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
+    static let surface = UIColor(red: 14/255, green: 14/255, blue: 15/255, alpha: 1)
+    static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
+    static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
 
     #if os(Linux)
     // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
@@ -81,9 +87,13 @@ enum SignatureShareCardRenderer {
             photo = UIImage(data: data)
         }
         guard let photo, photo.size.width > 0, photo.size.height > 0 else { return nil }
-        if style == .fade {
-            return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        switch style {
+        case .fade: return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        case .label: return renderLabel(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        case .cover: return renderCover(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        case .band, .notch: break   // 帯の型（切り欠きは、帯の型に1つの長方形を足す）
         }
+        let notch = style == .notch
         typealias L = ShareCardMap.Layout
         let width: CGFloat = 1080
         let height = width / CGFloat(ratio.rawValue)
@@ -123,6 +133,10 @@ enum SignatureShareCardRenderer {
             // その下は黒い面（surface）。写真の裾に黒を重ねない
             surface.setFill()
             cg.fill(layout.bandRect)
+            // 切り欠き: 黒い帯の右端が写真へ食い込む（地図の座）。写真は帯の開始位置までと同じ、食い込みの分だけ黒
+            let notchLayout = ShareCardMap.NotchLayout(ratio: ratio)
+            if notch { cg.fill(notchLayout.notchRect) }
+            let mapFrame = notch ? notchLayout.mapRect : layout.mapRect
 
             // 上の帯。字の大文字の高さの中心を、マークの中心にそろえる（2026-11-04 owner）
             let markY = L.headerMarkY
@@ -246,7 +260,7 @@ enum SignatureShareCardRenderer {
                 // 塗る県は、撮影地の1行目（県）と元の文字の両方から引く（英語の "Kyoto" も表で和文へ）
                 let placeText = (placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
-                                              in: layout.mapRect, color: brass, context: cg)
+                                              in: mapFrame, color: brass, context: cg)
             }
 
             // 区切り線（地図があるときは地図の手前で止める）
@@ -319,7 +333,7 @@ enum SignatureShareCardRenderer {
 
     // Natural Earth admin-0 countries由来の輪郭をJSONとして同梱する。
     // 解像度は同梱リソースに依存し、ここでは固定しない。
-    private enum CountryOutline {
+    enum CountryOutline {
         typealias Shape = ShareCardMap.Shape
         static let shapes: [Shape] = ShareCardMap.loadShapes(resource: "country-outlines")
         /// 日本の47都道府県（Tools/generate-japan-prefectures.py）。日本の写真で撮った県を塗る
@@ -684,7 +698,7 @@ enum SignatureShareCardRenderer {
     }
 
     /// 一文と Web の住所（右揃え）。2行の塊の縦の中心が centerY（両方の型の見出しで同じ形）
-    private static func drawTaglineAndAddress(centerY: CGFloat, right: CGFloat, taglineSize: CGFloat,
+    static func drawTaglineAndAddress(centerY: CGFloat, right: CGFloat, taglineSize: CGFloat,
                                               addressColor: UIColor) {
         let taglineLine = UIFont.systemFont(ofSize: taglineSize).lineHeight
         let addressSize = ShareCardMap.Layout.siteAddressFontSize
@@ -698,7 +712,7 @@ enum SignatureShareCardRenderer {
     }
 
     /// 明朝の1行。幅に入るまで 1 ずつ縮める（下限まで。最後だけ省略）
-    private static func drawFittedSerif(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
+    static func drawFittedSerif(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
                                         size: CGFloat, minimumSize: CGFloat, color: UIColor) {
         func serif(_ s: CGFloat) -> UIFont {
             let base = UIFont.systemFont(ofSize: s, weight: .bold)
@@ -718,7 +732,7 @@ enum SignatureShareCardRenderer {
 
     /// フェード型の撮影者の行。帯の型と同じ見た目（真鍮の輪のアバター・名前・マーク・ユーザー名）を、
     /// 小さめの大きさで1行に描く。マークが3つ以上でも2段にしない（左の列に幅がある）
-    private static func drawFadeAuthor(_ credit: Credit, avatarData: Data?, top: CGFloat, context cg: CGContext) {
+    static func drawFadeAuthor(_ credit: Credit, avatarData: Data?, top: CGFloat, columnWidth: CGFloat = 480, context cg: CGContext) {
         typealias F = ShareCardMap.FadeLayout
         let size = F.avatarSize
         let avatarRect = CGRect(x: F.contentLeft, y: top, width: size, height: size)
@@ -749,7 +763,6 @@ enum SignatureShareCardRenderer {
             + (credit.early ? 1 : 0) + ((credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false) ? 1 : 0)
         let markWidth = CGFloat(markCount * 30 + (credit.proStyle == .plate ? 16 : 0))
         let x = F.contentLeft + size + 16
-        let columnWidth: CGFloat = 480
         let nameWidth = max(120, columnWidth - markWidth)
         let username = credit.username?.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "@")) ?? ""
@@ -949,7 +962,7 @@ enum SignatureShareCardRenderer {
                                width: drawn.width, height: drawn.height))
     }
 
-    private static func drawSymbol(_ name: String, at origin: CGPoint,
+    static func drawSymbol(_ name: String, at origin: CGPoint,
                                    size: CGFloat, color: UIColor) {
         let config = UIImage.SymbolConfiguration(pointSize: size, weight: .regular)
         guard let symbol = UIImage(systemName: name, withConfiguration: config)?
@@ -978,7 +991,7 @@ enum SignatureShareCardRenderer {
         return markMidY - (font.ascender - font.capHeight / 2)
     }
 
-    private static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
+    static func draw(_ value: String, at origin: CGPoint, maxWidth: CGFloat,
                              size: CGFloat, color: UIColor, bold: Bool = false,
                              serif: Bool = false, alignment: NSTextAlignment = .left) {
         let base = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)

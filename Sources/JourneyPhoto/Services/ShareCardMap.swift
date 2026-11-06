@@ -229,6 +229,112 @@ enum ShareCardMap {
         static let exifSymbolSize: CGFloat = 26
     }
 
+    // MARK: - 切り欠き型の寸法
+
+    /// 「切り欠き」型（2026-11-06・見本 S1）。帯の型（`Layout`）はそのままに、黒い帯の右端だけを写真へ食い込ませ、
+    /// 地図の枠を縦に伸ばす。地図の幅・右端・左の段の数は帯の型と同じ（左は1つも動かない）。
+    struct NotchLayout {
+        /// 写真へ食い込む高さ（地図の上の余白 12 を含む）
+        static let notchHeight: CGFloat = 122
+        let layout: Layout
+        init(ratio: SignatureShareCardRenderer.Ratio) { layout = Layout(ratio: ratio) }
+        /// 黒く塗る長方形（写真の下端から上へ）
+        var notchRect: CGRect {
+            CGRect(x: Layout.mapX, y: layout.photoBottom - Self.notchHeight, width: Layout.mapWidth, height: Self.notchHeight)
+        }
+        /// 地図の枠: 食い込みの上から 12 下がった所から、帯の型の地図の下端まで
+        var mapRect: CGRect {
+            let m = layout.mapRect
+            let top = layout.photoBottom - (Self.notchHeight - Layout.mapBandInset)
+            return CGRect(x: m.minX, y: top, width: m.width, height: m.maxY - top)
+        }
+    }
+
+    // MARK: - 展示札型の寸法
+
+    /// 「展示札」型（2026-11-06・見本 S2）。上に写真、下に作品札のような札（地名・撮影者・ラベルつきの撮影情報の表・地図）。
+    /// 余白は 60 の線にそろえる。9:16 は下の 75 を空ける（Instagram の返信欄）。
+    struct LabelLayout {
+        static let width: CGFloat = 1080
+        static let margin: CGFloat = 60
+        static var contentLeft: CGFloat { margin }
+        static var contentRight: CGFloat { width - margin }
+        static let header: CGFloat = 112
+        /// 見出しの縦の中心（額縁の内側と写真の真ん中）
+        static var headerCenter: CGFloat { (15 + header) / 2 }
+
+        let height: CGFloat
+        let base: CGFloat
+        let labelHeight: CGFloat
+
+        init(ratio: SignatureShareCardRenderer.Ratio) {
+            height = Self.width / CGFloat(ratio.rawValue)
+            base = height - (ratio == .story ? 75 : 0)
+            labelHeight = ratio == .square ? 420 : 450
+        }
+        var photoBottom: CGFloat { base - labelHeight }
+        var photoRect: CGRect {
+            CGRect(x: Self.margin, y: Self.header, width: Self.width - Self.margin * 2, height: photoBottom - Self.header)
+        }
+        var eyebrowTop: CGFloat { photoBottom + 44 }
+        var placeTop: CGFloat { photoBottom + 68 }
+        static let placeFontSize: CGFloat = 60
+        static let placeMinimumFontSize: CGFloat = 36
+        var ruleY: CGFloat { photoBottom + 148 }
+        var authorTop: CGFloat { photoBottom + 170 }
+        var tableTop: CGFloat { photoBottom + 260 }
+        /// 表の値の最大の高さ（22 の字で2行）
+        static let tableValueHeight: CGFloat = 60
+        /// 左の列（地名・罫線・撮影者・表）の幅。右は地図
+        static let leftColumnWidth: CGFloat = 620
+        static let mapWidth: CGFloat = 304
+        var mapRect: CGRect {
+            CGRect(x: Self.contentRight - Self.mapWidth, y: photoBottom + 28, width: Self.mapWidth, height: 300)
+        }
+        /// 表の3列の左端と幅（ラベル CAMERA / LENS / EXPOSURE）
+        static let tableColumns: [(x: CGFloat, width: CGFloat)] = [(60, 180), (268, 180), (476, 180)]
+        /// 表の中身が終わる縦の位置（下の余白 60 より上に収まる）
+        var tableBottom: CGFloat { tableTop + 26 + Self.tableValueHeight }
+    }
+
+    // MARK: - 表紙型の寸法
+
+    /// 「表紙」型（2026-11-06・見本 F5）。写真を上から全面に敷き、下の 250 は黒一色。写真の下 340 を黒へ溶かし、
+    /// その途中に地名（大きな明朝）をまたがせる。額縁は載せない（写真の上は白だけ・真鍮は黒い地の上だけ）。
+    struct CoverLayout {
+        static let width: CGFloat = 1080
+        static let margin: CGFloat = 60
+        static var contentLeft: CGFloat { margin }
+        static var contentRight: CGFloat { width - margin }
+        let height: CGFloat
+        let base: CGFloat
+
+        init(ratio: SignatureShareCardRenderer.Ratio) {
+            height = Self.width / CGFloat(ratio.rawValue)
+            base = height - (ratio == .story ? 75 : 0)
+        }
+        static let blackHeight: CGFloat = 250
+        static let fadeLength: CGFloat = 340
+        var photoBottom: CGFloat { base - Self.blackHeight }
+        var fadeTop: CGFloat { photoBottom - Self.fadeLength }
+        var placeTop: CGFloat { photoBottom - 182 }
+        static let placeFontSize: CGFloat = 112
+        static let placeMinimumFontSize: CGFloat = 56
+        static let leftColumnWidth: CGFloat = 660
+        var subPlaceTop: CGFloat { photoBottom - 48 }
+        static let subPlaceFontSize: CGFloat = 40
+        /// 地図（右端は写真の右端）。上半分はグラデーションの中・下半分は黒の上
+        static let mapWidth: CGFloat = 260
+        var mapRect: CGRect {
+            CGRect(x: Self.contentRight - Self.mapWidth, y: photoBottom - 220, width: Self.mapWidth, height: 300)
+        }
+        var authorTop: CGFloat { photoBottom + 70 }
+        /// 撮影情報の2行（撮影者の右）
+        static let exifX: CGFloat = 430
+        static let exifWidth: CGFloat = 320
+        var exifTop: CGFloat { photoBottom + 78 }
+    }
+
     // MARK: - 残す島
 
     /// 2つの島がこれより近ければ「つながっている」とみなす（owner 了承の 60km）

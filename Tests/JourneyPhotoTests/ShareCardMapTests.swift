@@ -183,6 +183,82 @@ final class ShareCardMapTests: XCTestCase {
         XCTAssertLessThan(block / 2, L.header / 2 - 12, "額縁の内側に収まる")
     }
 
+    // MARK: - 切り欠き・展示札・表紙の寸法（2026-11-06）
+
+    func testNotchLayoutOnlyGrowsTheMapUpward() {
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let notch = ShareCardMap.NotchLayout(ratio: ratio)
+            let classic = ShareCardMap.Layout(ratio: ratio).mapRect
+            // 地図の幅・右端・下端は帯の型と同じ。上だけが写真へ伸びる
+            XCTAssertEqual(notch.mapRect.width, classic.width, "\(ratio)")
+            XCTAssertEqual(notch.mapRect.maxX, classic.maxX, "\(ratio)")
+            XCTAssertEqual(notch.mapRect.maxY, classic.maxY, "\(ratio)")
+            XCTAssertLessThan(notch.mapRect.minY, classic.minY, "\(ratio)")
+            // 食い込みの黒は写真の下端で帯に接し、地図の枠を上から 12 の余白で囲む
+            let photoBottom = ShareCardMap.Layout(ratio: ratio).photoBottom
+            XCTAssertEqual(notch.notchRect.maxY, photoBottom, "\(ratio)")
+            XCTAssertEqual(notch.mapRect.minY - notch.notchRect.minY, ShareCardMap.Layout.mapBandInset, "\(ratio)")
+            XCTAssertEqual(notch.notchRect.maxX, ShareCardMap.Layout.contentRight, "\(ratio)")
+            // 左の段（撮影者・区切り線・撮影情報）は帯の型のまま、地図の左（mapX）より左に収まる
+            XCTAssertEqual(notch.notchRect.minX, ShareCardMap.Layout.mapX, "\(ratio)")
+        }
+        let portrait = ShareCardMap.NotchLayout(ratio: .portrait)
+        XCTAssertEqual(portrait.mapRect, CGRect(x: 734, y: 912, width: 286, height: 366))
+        XCTAssertEqual(portrait.notchRect, CGRect(x: 734, y: 900, width: 286, height: 122))
+    }
+
+    func testLabelLayoutNeverOverlapsAndKeepsTheBottomMargin() {
+        typealias L = ShareCardMap.LabelLayout
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = L(ratio: ratio)
+            XCTAssertGreaterThan(l.photoRect.height, 500, "\(ratio) 写真が低すぎる")
+            XCTAssertLessThan(l.eyebrowTop, l.placeTop, "\(ratio)")
+            XCTAssertLessThan(l.placeTop + L.placeFontSize, l.ruleY, "\(ratio) 地名が罫線に掛かる")
+            XCTAssertLessThan(l.ruleY, l.authorTop, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.authorTop + 64, l.tableTop, "\(ratio) 撮影者が表に掛かる")
+            // 表の中身は、下の余白 60（9:16 は返信欄の 75 を足した所）より上で終わる
+            XCTAssertLessThanOrEqual(l.tableBottom, l.height - 60 - (ratio == .story ? 75 : 0), "\(ratio)")
+            // 地図は札の中（写真の下から）・右端は写真の右端・左の列と重ならない
+            XCTAssertGreaterThanOrEqual(l.mapRect.minY, l.photoBottom, "\(ratio)")
+            XCTAssertEqual(l.mapRect.maxX, L.contentRight, "\(ratio)")
+            XCTAssertLessThanOrEqual(L.contentLeft + L.leftColumnWidth, l.mapRect.minX, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.mapRect.maxY, l.base - 60, "\(ratio)")
+            // 表の3列は、地図と重ならず、列どうしも重ならない
+            for (a, b) in zip(L.tableColumns, L.tableColumns.dropFirst()) {
+                XCTAssertLessThan(a.x + a.width, b.x, "\(ratio)")
+            }
+            XCTAssertLessThanOrEqual((L.tableColumns.last!.x + L.tableColumns.last!.width), l.mapRect.minX, "\(ratio)")
+        }
+        XCTAssertEqual(L(ratio: .portrait).photoBottom, 900)
+    }
+
+    func testCoverLayoutKeepsEverythingInsideAndFadeEndsOnBlack() {
+        typealias C = ShareCardMap.CoverLayout
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = C(ratio: ratio)
+            XCTAssertGreaterThan(l.fadeTop, 0, "\(ratio)")
+            XCTAssertLessThan(l.placeTop + C.placeFontSize, l.subPlaceTop + 12, "\(ratio) 地名が市区町村に掛かる")
+            XCTAssertLessThan(l.subPlaceTop, l.photoBottom, "\(ratio)")
+            // 地図は右端が写真の右端。左の地名の列と重ならない
+            XCTAssertEqual(l.mapRect.maxX, C.contentRight, "\(ratio)")
+            XCTAssertLessThanOrEqual(C.contentLeft + C.leftColumnWidth, l.mapRect.minX + 40, "\(ratio)")
+            // 撮影者の行・撮影情報は、黒の上（写真の下端より下）で、下の余白 60 より上に収まる
+            XCTAssertGreaterThanOrEqual(l.authorTop, l.photoBottom, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.authorTop + 64, l.base - 60 + 14, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.exifTop + 30 + 24, l.base - 60 + 14, "\(ratio)")
+            // 撮影情報は撮影者の右・地図の左
+            XCTAssertLessThan(C.exifX + C.exifWidth, l.mapRect.minX, "\(ratio)")
+        }
+        XCTAssertEqual(C(ratio: .portrait).photoBottom, 1100)
+        XCTAssertEqual(C(ratio: .portrait).mapRect, CGRect(x: 760, y: 880, width: 260, height: 300))
+    }
+
+    func testAllStylesAreOfferedInOrder() {
+        // 共有画面の切り替え（帯・切り欠き・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）
+        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.map(\.rawValue),
+                       ["band", "fade", "notch", "label", "cover"])
+    }
+
     // MARK: - 残す島
 
     private func focusBounds(_ name: String, _ latitude: Double, _ longitude: Double) throws
