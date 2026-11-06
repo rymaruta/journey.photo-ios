@@ -14,7 +14,7 @@ import SceneKitShim
 @MainActor
 final class CamperFrameRateTests: XCTestCase {
 
-    func testPolicy() {
+    func testPolicy() async {
         XCTAssertEqual(CamperFrameRate.active, 60)
         XCTAssertEqual(CamperFrameRate.idle, 30)
         // 操作の直後は 60。揺れていなければ、止まっていても 60（描き続けないので下げる必要が無い）
