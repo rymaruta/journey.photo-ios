@@ -525,7 +525,22 @@ enum CamperRoomCatalog {
     ]
 
     /// 板と別種の家具、形の組み合わせで増やした家具
-    static let all: [CamperRoomFurniture] = board + CamperRoomVariety.furniture
+    /// 一時的に下げた家具（2026-11-06 owner「キャンピングカーの家具は、質の低いものを一旦減らしたい」→「あなたの案で」）。
+    ///
+    /// 選び方（数で決めた。実機の見た目では見ていない）: 形を作る関数の部品の数と行数が少ない順に、次を除いて選んだ。
+    /// - 最初から持つ家具・要サーバーの家具（新しい利用者の最初の部屋と、もともと「近日」の物は動かさない）
+    /// - 初期の部屋・試験・UI テストが id で参照する家具
+    /// - 額縁・ポスター（写真を飾る、この部屋の主役）・敷物と姿見（平らな物は部品が少ないのが当たり前）
+    ///
+    /// 効き方: `all` から外す。図鑑・持ち物・数・家具の選び場・部屋の表示が同じ入口で揃う。形のコード（`CamperRoomFurnitureModels`）と
+    /// `board` の行は消さない。**戻すときは、ここから id を消すだけ。**
+    /// 保存済みの部屋は書き換えない（`CamperRoomDocument.shown(owned:)` は写しから外すだけ）。すでに置いた家具は、戻すとそのまま現れる。
+    static let paused: Set<String> = [
+        "wash.soap_niche", "wall_shelf.spice_rack", "roof_hatch.round_hatch", "storage.wicker_baskets",
+        "roof_hatch.star_window", "string_ceiling.paper_garland", "plant_pot.herb_box", "wash.cup_rail"
+    ]
+
+    static let all: [CamperRoomFurniture] = (board + CamperRoomVariety.furniture).filter { !paused.contains($0.id) }
 
     private static let byId: [String: CamperRoomFurniture] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
