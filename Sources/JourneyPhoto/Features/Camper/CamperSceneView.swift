@@ -58,6 +58,7 @@ struct CamperSceneView: UIViewRepresentable {
         context.coordinator.setDoor(open: doorOpen, animated: false)
         context.coordinator.setFlicker(allowed: !reduceMotion)
         context.coordinator.show(config)
+        context.coordinator.noteActivity(view)
         return view
     }
 
@@ -68,6 +69,8 @@ struct CamperSceneView: UIViewRepresentable {
             c.setAngle(angle, animated: animateAngle && !reduceMotion)
             c.setDoor(open: doorOpen, animated: !reduceMotion)
             c.setFlicker(allowed: !reduceMotion)
+            // 操作のあとは 60、止まって夜の炎が揺れていれば 30（`CamperFrameRate`）
+            c.noteActivity(view)
         }
     }
 

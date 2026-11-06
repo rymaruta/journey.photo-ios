@@ -20,6 +20,27 @@ import SceneKitShim
 
 #if canImport(SceneKit) || canImport(SceneKitShim)
 
+/// 外観の毎秒の描き直しの枚数の決め方（2026-11-06・札 #430）。
+///
+/// **数で決めた（Mac run 42257294870・シミュレータ）**: 夜の外観は、何も操作していなくても炎の揺らぎ（`SCNAction`）が
+/// 毎コマ描き直させ、**毎秒 61.9 コマ・アプリの CPU 28.9%**（昼の止まっている間は 0 コマ・9.1%）。
+/// 揺らぎはいちばん速い成分でも周期 0.31 秒・振れ幅 1.5%（`CamperScene.flickerAmount`）なので、
+/// 毎秒 30 コマでも 1 周期に約 9 コマ入り、見た目は変わらない。
+///
+/// - 操作（回す・扉・昼夜の切り替え）のあとは 60 のまま（指で回す動きは 60 が要る）
+/// - 操作が `idleDelay` 秒止まって、炎が揺れている間だけ 30
+/// - **切り替えの瞬間には触らない**: 2026-10-19（Mac run 547）、揺らし始めた時に描き方の設定を切り替えたら、
+///   夜に替えた直後の数枚が描き直されず昼の絵のまま止まって見えた。ここは操作から `idleDelay` 秒あとにだけ下げる
+enum CamperFrameRate {
+    static let active = 60
+    static let idle = 30
+    static let idleDelay: TimeInterval = 2
+
+    static func target(flickering: Bool, idleFor seconds: TimeInterval) -> Int {
+        flickering && seconds >= idleDelay ? idle : active
+    }
+}
+
 /// SceneKit の場面（車・床・光・カメラ）
 @MainActor
 final class CamperScene {
@@ -548,6 +569,28 @@ final class CamperScene {
     func cancel() {
         buildTask?.cancel()
         buildTask = nil
+    }
+
+    // MARK: 毎秒の枚数（夜の炎が揺れている間・止まっていれば下げる）
+
+    private var idleTask: Task<Void, Never>?
+    /// 操作から下げるまでの秒（試験が短くする）
+    var idleDelay: TimeInterval = CamperFrameRate.idleDelay
+
+    /// 何か操作があった（回す・扉・昼夜・見え方の更新）。すぐ 60 に戻し、止まって `idleDelay` 秒たったら
+    /// （炎が揺れていれば）30 に下げる
+    func noteActivity(_ view: SCNView) {
+        view.preferredFramesPerSecond = CamperFrameRate.active
+        idleTask?.cancel()
+        idleTask = nil
+        // 揺らさない（視差効果を減らす）なら、止まっている間は描かないので下げる必要が無い
+        guard flickerAllowed else { return }
+        let delay = idleDelay
+        idleTask = Task { @MainActor [weak self, weak view] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self, let view else { return }
+            view.preferredFramesPerSecond = CamperFrameRate.target(flickering: self.isFlickering, idleFor: delay)
+        }
     }
 
     // MARK: 炎のゆらぎ
