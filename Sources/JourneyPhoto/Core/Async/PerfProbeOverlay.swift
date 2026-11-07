@@ -77,10 +77,21 @@ private func perfSampleHandler(_ signal: Int32) {
     perfSampleDepth = backtrace(perfSampleBuffer, Int32(perfSampleCapacity))
 }
 
-@_silgen_name("swift_demangle")
+/// Swift の名前の戻し（`swift_demangle`）。`@_silgen_name` の本体なし宣言は、構文検査（tree-sitter）が読めない
+/// （`Tools/verify.sh` の NG になる）ので、実行時に `dlsym` で探す（2026-11-07）。見つからなければ nil（名前を戻さないだけ）
+private typealias PerfDemangleFn = @convention(c) (UnsafePointer<CChar>?, UInt, UnsafeMutablePointer<CChar>?,
+                                                    UnsafeMutablePointer<UInt>?, UInt32) -> UnsafeMutablePointer<CChar>?
+
+private let perfDemangleFn: PerfDemangleFn? = {
+    guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "swift_demangle") else { return nil }
+    return unsafeBitCast(symbol, to: PerfDemangleFn.self)
+}()
+
 private func perfSwiftDemangle(_ mangledName: UnsafePointer<CChar>?, _ mangledNameLength: UInt,
                                _ outputBuffer: UnsafeMutablePointer<CChar>?, _ outputBufferSize: UnsafeMutablePointer<UInt>?,
-                               _ flags: UInt32) -> UnsafeMutablePointer<CChar>?
+                               _ flags: UInt32) -> UnsafeMutablePointer<CChar>? {
+    perfDemangleFn?(mangledName, mangledNameLength, outputBuffer, outputBufferSize, flags)
+}
 
 /// メインスレッドが止まっている間（`DispatchQueue.main` に投げた合図が 150ms 戻らない間）に、別のスレッドから
 /// メインスレッドへ `SIGUSR1` を送り、**止まっている最中の積み（何の処理を実行しているか）**を撮って `PerfRecorder` に渡す。
