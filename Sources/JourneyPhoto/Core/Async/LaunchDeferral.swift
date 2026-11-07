@@ -36,7 +36,11 @@ final class LaunchDeferral: @unchecked Sendable {
 
     /// 最初の1回だけ `grace` 秒待つ。待ちを抜けたあとも続けてよいか（取り消されていなければ true）を返す。
     /// 2回目以降・`skip` のときは待たずに、取り消されていなければ true
-    func waitOnce(skip: Bool = false, grace: TimeInterval = LaunchDeferral.grace) async -> Bool {
+    ///
+    /// `eligible` が false の回（ログインしていない起動など、後ろで何も同期しない回）は、待たず、
+    /// **「最初の1回」も使わない**——あとでログインした回がちゃんと待てるように
+    func waitOnce(eligible: Bool = true, skip: Bool = false, grace: TimeInterval = LaunchDeferral.grace) async -> Bool {
+        guard eligible else { return !Task.isCancelled }
         let shouldWait = takeTurn(skip: skip)
         if shouldWait { await pause(grace) }
         return !Task.isCancelled

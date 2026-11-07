@@ -116,7 +116,26 @@ final class APIClientThrottleRetryTests: XCTestCase {
         )
     }
 
+    /// 再試行の待ちを `pauseGate` で止められる、枠を取った後を `holdGate` で止められる版
+    private func client(limit: Int, pauseGate: Gate? = nil, holdGate: Gate? = nil) -> APIClient {
+        APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "ID-TOKEN"),
+            session: session,
+            maxConcurrentRequests: limit,
+            retryPause: { _ in await pauseGate?.wait() },
+            afterAcquire: { _ in await holdGate?.wait() }
+        )
+    }
+
     private struct Payload: Decodable, Equatable { let ok: Bool }
+
+    private final class DoneFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _value = false
+        var value: Bool { lock.lock(); defer { lock.unlock() }; return _value }
+        func set() { lock.lock(); _value = true; lock.unlock() }
+    }
 
     func testGetIsRetriedOnceAfter503AndThenSucceeds() async throws {
         StubProtocol.respondInOrder([(503, #"{"error":"busy"}"#), (200, #"{"ok":true}"#)])
@@ -205,6 +224,79 @@ final class APIClientThrottleRetryTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 1)
     }
 
+    /// 🔴 `APIClient` が同時に飛ばすのは `maxConcurrentRequests` 本まで。枠を取った後で止まる要求が
+    /// 2本あれば、3本目以降は通信（`afterAcquire`）に着かない。`transfer` の `limiter.acquire()` を消すと
+    /// 4本全部が着いて落ちる
+    func testApiClientNeverRunsMoreThanTheLimitAtOnce() async throws {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let hold = Gate()
+        let api = client(limit: 2, holdGate: hold)
+        let tasks = (0..<4).map { _ in
+            Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        }
+        await hold.untilWaiting(2)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let arrived = await hold.arrived
+        XCTAssertEqual(arrived, 2, "上限(2)を超えて同時に通信へ入った")
+        XCTAssertEqual(StubProtocol.requestCount, 0, "止めている間に通信が出た")
+
+        await hold.open()
+        for task in tasks { _ = try await task.value }
+        let total = await hold.arrived
+        XCTAssertEqual(total, 4, "待たされた要求が最後まで通っていない")
+        XCTAssertEqual(StubProtocol.requestCount, 4)
+    }
+
+    /// 🔴 再試行の待ちの途中で枠を握らない。枠1本で、1本目が待ちの最中でも2本目が通る
+    /// （待ちの間も枠を持つ作りに戻すと、2本目が通らず落ちる）
+    func testOtherRequestPassesWhileARetryIsWaiting() async throws {
+        StubProtocol.respondInOrder([(503, ""), (200, #"{"ok":true}"#)])
+        let pauseGate = Gate()
+        let api = client(limit: 1, pauseGate: pauseGate)
+        let first = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        await pauseGate.untilWaiting(1)
+
+        let done = DoneFlag()
+        let second = Task { () -> Payload in
+            let value = try await api.authorized(.get, "/user/profile", as: Payload.self)
+            done.set()
+            return value
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while !done.value, Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
+        let passedWhileWaiting = done.value
+        await pauseGate.open()
+        let secondValue = try await second.value
+        let firstValue = try await first.value
+        XCTAssertEqual(secondValue, Payload(ok: true))
+        XCTAssertEqual(firstValue, Payload(ok: true))
+        XCTAssertTrue(passedWhileWaiting, "再試行の待ちの間、枠を握ったままになっている")
+    }
+
+    /// 🔴 再試行の待ちの最中に取り消されたら送り直さず、枠も返る
+    /// （待ちのあとの `Task.checkCancellation` を消すと、2本目が出て落ちる）
+    func testCancelDuringRetryWaitDoesNotResendAndFreesTheSlot() async throws {
+        StubProtocol.respondInOrder([(503, ""), (200, #"{"ok":true}"#)])
+        let pauseGate = Gate()
+        let api = client(limit: 1, pauseGate: pauseGate)
+        let first = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        await pauseGate.untilWaiting(1)
+        first.cancel()
+        await pauseGate.open()
+        do {
+            _ = try await first.value
+            XCTFail("取り消したのに成功した")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("取り消しが別の失敗になった: \(error)")
+        }
+        XCTAssertEqual(StubProtocol.requestCount, 1, "取り消されたのに送り直した")
+
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let next = try await api.authorized(.get, "/user/profile", as: Payload.self)
+        XCTAssertEqual(next, Payload(ok: true), "枠が返っていない")
+    }
+
     /// 待っている間は枠を握らない（枠が1本でも、送り直しが詰まらない）
     func testRetryWaitDoesNotHoldTheConcurrencySlot() async throws {
         StubProtocol.respondInOrder([(503, ""), (200, #"{"ok":true}"#)])
@@ -253,6 +345,18 @@ final class LaunchDeferralTests: XCTestCase {
         _ = await deferral.waitOnce(skip: true)
         _ = await deferral.waitOnce()
         XCTAssertTrue(pauses.values.isEmpty)
+    }
+
+    /// 🔴 ログインしていない回(`eligible: false`)は待たず、「最初の1回」も使わない。
+    /// そのあとログインした回がちゃんと待てる(使い切ると、ログイン後の同期が遅れず山を作る)
+    func testIneligibleCallDoesNotConsumeTheFirstTurn() async {
+        let pauses = Pauses()
+        let deferral = LaunchDeferral(pause: { pauses.add($0) })
+        let signedOut = await deferral.waitOnce(eligible: false)
+        XCTAssertTrue(signedOut)
+        XCTAssertTrue(pauses.values.isEmpty, "ログインしていない回で待った")
+        _ = await deferral.waitOnce(eligible: true)
+        XCTAssertEqual(pauses.values, [LaunchDeferral.grace], "ログインした回が待てていない")
     }
 
     func testCancelledCallerIsToldToStop() async {

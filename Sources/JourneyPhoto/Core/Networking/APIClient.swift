@@ -64,6 +64,10 @@ actor APIClient {
     /// 鍵を待つ間・再試行の待ちの間は枠を握らない
     private let limiter: RequestLimiter
 
+    /// 枠を取った**直後**に呼ぶ口。**本番は nil**。試験が「枠を持ったまま止まる要求」を作って、
+    /// 同時数が絞られていることを見るのに使う（`beforeRequest` は枠を取る前なので使えない）
+    private let afterAcquire: (@Sendable (URLRequest) async -> Void)?
+
     /// 503・429 のあとの待ち。**本番は `Task.sleep`**。試験が実際に待たずに済むよう差し替えられる
     private let retryPause: @Sendable (TimeInterval) async -> Void
 
@@ -78,11 +82,13 @@ actor APIClient {
          session: URLSession? = nil,
          maxConcurrentRequests: Int = RequestLimiter.defaultLimit,
          retryPause: (@Sendable (TimeInterval) async -> Void)? = nil,
+         afterAcquire: (@Sendable (URLRequest) async -> Void)? = nil,
          beforeRequest: (@Sendable (URLRequest) async -> Void)? = nil) {
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
         self.beforeRequest = beforeRequest
         self.limiter = RequestLimiter(limit: maxConcurrentRequests)
+        self.afterAcquire = afterAcquire
         self.retryPause = retryPause ?? Self.sleepPause
         if let session {
             self.session = session
@@ -296,6 +302,7 @@ actor APIClient {
         // 枠を取るのは通信の間だけ。取り消されたら待ちから外れて `CancellationError`
         // （`acquire` が最初に取り消しを見る——通信の手前で止める今までの振る舞いのまま）
         try await limiter.acquire()
+        await afterAcquire?(request)
         // 答えを `Result` に取って、枠を返してから分ける（`catch` の中で await しない・上の注記）
         let outcome: Result<(Data, URLResponse), Error>
         do {

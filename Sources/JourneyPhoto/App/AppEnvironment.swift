@@ -58,7 +58,8 @@ final class AppEnvironment: ObservableObject {
          quiz: DailyQuizService = DailyQuizService(),
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
-        let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session)
+        let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session,
+                                          retryPause: APIClient.previewRetryPause)
         self.api = api
         self.gallery = gallery
         self.spots = spots

@@ -398,26 +398,25 @@ struct JourneyPhotoApp: App {
                     let savesMark = savedPhotos.syncMark
                     let wishMark = wishlist.syncMark
                     let blocksFetch = hidden.beginBlockFetch()
-                    // 🔴 **画面に今すぐ要る同期（保存・いいね）だけ先に走らせ、残りは最初の画面が出たあとへ
-                    // 少し遅らせる**（2026-11-07 判断・`LaunchDeferral`）。本番の Lambda は同時実行の上限が 10 で、
-                    // 起動直後にホーム・未読通知・プロフィールの読み込みとこの同期が重なると 503 になっていた。
-                    // 印（`likesMark` など）は上で取り済みなので、待つ間に押した分は消えない
+                    // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
+                    // 「前の人の宛先が残っている」と見なして端末ごと外していた
+                    // 起動時に本人の ID が取れなかっただけのログアウトも同じ
+                    // （`AuthStore.isSignedOutUncertain`）。**宛先は人が替わる所なので遅らせない**
+                    if !auth.isResolving && !auth.isSignedOutUncertain {
+                        await push.use(userId: auth.userId)
+                    }
                     await applyModeration()
                     await syncSaves(since: savesMark)
                     await syncLikes(since: likesMark)
                     PerfSignpost.end(launchSync)
-                    // 起動して最初の1回（ログインが決まった回）だけ待つ。確認中は何も送らないので待たない。
+                    // 🔴 **ここから先（ブロック・行きたい場所・購入の送り直し）は、最初の画面が出たあとへ少し遅らせる**
+                    // （2026-11-07 判断・`LaunchDeferral`）。本番の Lambda は同時実行の上限が 10 で、
+                    // 起動直後にホーム・未読通知・プロフィールの読み込みとこの同期が重なると 503 になっていた。
+                    // 印（`wishMark`・`blocksFetch`）は上で取り済みなので、待つ間に押した分は消えない。
+                    // 起動して最初の「ログイン中の回」だけ待つ（ログアウトの回は後ろで何も送らないので待たず、1回も使わない）。
                     // 待っている間に状態が変わって取り消されたら、新しい回が引き継ぐのでここで終わる
-                    if !auth.isResolving {
-                        guard await LaunchDeferral.shared.waitOnce(skip: PreviewSession.userId != nil) else { return }
-                    }
-                    // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
-                    // 「前の人の宛先が残っている」と見なして端末ごと外していた
-                    // 起動時に本人の ID が取れなかっただけのログアウトも同じ
-                    // （`AuthStore.isSignedOutUncertain`）
-                    if !auth.isResolving && !auth.isSignedOutUncertain {
-                        await push.use(userId: auth.userId)
-                    }
+                    guard await LaunchDeferral.shared.waitOnce(eligible: auth.userId != nil,
+                                                               skip: PreviewSession.userId != nil) else { return }
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）
                     if let owner = auth.userId {
