@@ -76,7 +76,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         watcher.connect(isShowing: { [weak c] in
             guard let c else { return nil }
             return c.isShowingRoom
-        }, requestRender: { [weak c] in c?.requestRender() }, onDrawn: onDrawn)
+        }, requestRender: { [weak c] in c?.requestRender() }, onDrawn: { onDrawn() })
         c.firstFrame = watcher
         // 計測（`-JPPreviewCamperPerf YES`）のときだけ、1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・
         // `CamperFrameMeter`）。本番では見張りをそのまま delegate にする（描く糸に何も足さない・#430 の見直し）
@@ -186,8 +186,10 @@ final class CamperFirstFrame: NSObject, SCNSceneRendererDelegate, @unchecked Sen
     /// 組み上がった後の最初のコマを知らせる配線。**組み上がり、画面に載った後のコマを `framesNeeded` 枚描いてから**
     /// `onDrawn` を呼ぶ（まだなら次のコマを待つ）。`isShowing` が nil を返したら（部屋の持ち主が居ない）何もしない。
     /// 🔴 `self` は弱く掴む——強く掴むと `onDrawn` と循環して解放されない
-    func connect(framesNeeded: Int = 2, isShowing: @escaping @Sendable () -> Bool?,
-                 requestRender: @escaping @Sendable () -> Void, onDrawn done: @escaping @Sendable () -> Void) {
+    /// 渡す閉包は **`@MainActor`**(部屋の `isShowingRoom`・`requestRender()` は主スレッドの持ち物)。呼ぶのは下の
+    /// `DispatchQueue.main.async` の中だけ——元のコード(`[weak c]` の閉包)が同じ場所で `c` を触っていたのと同じ作り
+    func connect(framesNeeded: Int = 2, isShowing: @escaping @MainActor () -> Bool?,
+                 requestRender: @escaping @MainActor () -> Void, onDrawn done: @escaping @MainActor () -> Void) {
         let counter = Counter()
         onDrawn = { [weak self] in
             DispatchQueue.main.async {
