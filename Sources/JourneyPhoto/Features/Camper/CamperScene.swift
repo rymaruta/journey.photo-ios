@@ -323,6 +323,9 @@ final class CamperScene {
             guard !Task.isCancelled, let self, let now = self.config, now.buildKey == next.buildKey else { return }
             self.install(plan, config: now)
             let ms = Int(Date().timeIntervalSince(started) * 1000)
+            #if canImport(SceneKit)
+            CamperSceneStats.publish("SceneExterior", root: self.scene.rootNode)   // 見本の計測の起動だけ（メモリの内訳・#430）
+            #endif
             self.onReady?(Self.marker(now, blueprint: plan.blueprint, ms: ms))
         }
     }

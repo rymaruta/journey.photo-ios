@@ -24,6 +24,27 @@ final class CamperRenderMeterTests: XCTestCase {
         }
     }
 
+    /// 場面の中身の数（回数・時間ではない）は、名前ごとに最新の 1 本を ; 区切りで足す（2026-11-06・メモリの内訳）
+    func testNotesAreInSummaryAndOverwrite() {
+        let m = CamperRenderMeter(enabled: true)
+        m.add("CamperRoomFrame", nanos: 1_000_000)
+        m.note("SceneRoom", "nodes=10 verts=100")
+        m.note("SceneRoom", "nodes=12 verts=120")
+        m.note("SceneExterior", "nodes=5")
+        let s = m.summary()
+        XCTAssertTrue(s.contains("SceneRoom nodes=12 verts=120;"), s)
+        XCTAssertFalse(s.contains("nodes=10"), "最新の 1 本だけ")
+        XCTAssertTrue(s.contains("SceneExterior nodes=5;"), s)
+        m.reset()
+        XCTAssertFalse(m.summary().contains("Scene"), "reset で注記も消える")
+    }
+
+    func testDisabledMeterIgnoresNotes() {
+        let m = CamperRenderMeter(enabled: false)
+        m.note("SceneRoom", "nodes=1")
+        XCTAssertEqual(m.summary(), "")
+    }
+
     func testDisabledMeterCountsNothing() {
         let m = CamperRenderMeter(enabled: false)
         m.add("CamperRoomFrame", nanos: 5_000_000)

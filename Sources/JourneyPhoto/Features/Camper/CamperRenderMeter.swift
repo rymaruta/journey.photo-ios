@@ -42,6 +42,8 @@ final class CamperRenderMeter: @unchecked Sendable {
     let enabled: Bool
     private let lock = NSLock()
     private var tallies: [String: Tally] = [:]
+    /// 回数や時間ではない、場面の中身の数（`CamperSceneStats`・2026-11-06）。名前ごとに最新の「欄=値」を 1 本持つ
+    private var notes: [String: String] = [:]
 
     init(enabled: Bool) { self.enabled = enabled }
 
@@ -57,6 +59,14 @@ final class CamperRenderMeter: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// 場面の中身の数を残す（`SceneExterior` `SceneRoom` など。「nodes=… verts=…」の形）。数えない起動では何もしない
+    func note(_ name: String, _ fields: String) {
+        guard enabled else { return }
+        lock.lock()
+        notes[name] = fields
+        lock.unlock()
+    }
+
     func tally(_ name: String) -> Tally {
         lock.lock()
         defer { lock.unlock() }
@@ -69,11 +79,14 @@ final class CamperRenderMeter: @unchecked Sendable {
     func summary() -> String {
         lock.lock()
         let all = tallies
+        let noted = notes
         lock.unlock()
         var parts = all.keys.sorted().map { key in
             let t = all[key]!
             return "\(key) n=\(t.count) ms=\(Self.ms(t.nanos)) max=\(Self.ms(t.maxNanos)) slow=\(t.slow);"
         }
+        // 場面の中身の数（回数・時間ではない）。UI テストはそのまま 1 行にして残す
+        parts += noted.keys.sorted().map { "\($0) \(noted[$0]!);" }
         if enabled, let p = Self.processUsage() {
             parts.append(String(format: "Process cpu_ms=%.1f mem_mb=%.1f;", p.cpuMs, p.memMB))
         }
@@ -104,6 +117,7 @@ final class CamperRenderMeter: @unchecked Sendable {
     func reset() {
         lock.lock()
         tallies = [:]
+        notes = [:]
         lock.unlock()
     }
 }

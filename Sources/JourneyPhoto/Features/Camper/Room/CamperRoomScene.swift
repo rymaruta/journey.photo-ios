@@ -190,6 +190,10 @@ final class CamperRoomScene {
             self.applyCutaway()
             self.updateFocusRing()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
+            #if canImport(SceneKit)
+            // 見本の計測の起動だけ（メモリの内訳・#430）。UI テストが "camper.room.scene"・"camper.room.enter" で引く部屋の場面
+            CamperSceneStats.publish("SceneRoom", root: self.scene.rootNode)
+            #endif
             self.onReady?(self.marker(ms: ms))
         }
     }
