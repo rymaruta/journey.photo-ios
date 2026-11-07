@@ -59,7 +59,7 @@ final class AppEnvironment: ObservableObject {
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
         let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session,
-                                          limiter: RequestLimiter.shared,
+                                          limiter: RequestLimiter.shared, writeLimiter: RequestLimiter.sharedWrites,
                                           retryPause: APIClient.previewRetryPause)
         self.api = api
         self.gallery = gallery

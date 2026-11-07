@@ -31,6 +31,56 @@ final class LiveLikesTests: XCTestCase {
         XCTAssertNil(LiveLikes.counts(from: Data(#"{"error":"x"}"#.utf8)))
     }
 
+    // MARK: - 1回の解析(2026-11-07)
+
+    /// 以前の読み方(`JSONSerialization` 2回+`LenientPhotoList` 1回)の写し。1回の解析にまとめた `read` が
+    /// **同じ結果**になることを見る基準
+    private func reference(_ data: Data) -> (counts: [String: Int], ids: [String], photoIds: [String])? {
+        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+        var counts: [String: Int] = [:]
+        for row in rows {
+            guard let dict = row as? [String: Any], let id = dict["id"] as? String, !id.isEmpty else { continue }
+            counts[id] = max(0, (dict["likes"] as? NSNumber)?.intValue ?? 0)
+        }
+        var ids: [String] = []
+        var seen = Set<String>()
+        for row in rows {
+            guard let dict = row as? [String: Any], let id = dict["id"] as? String, !id.isEmpty,
+                  seen.insert(id).inserted else { continue }
+            if LiveLikes.isRestrictedRow(dict["audience"]) { continue }
+            ids.append(id)
+        }
+        let decoded = (try? JSONDecoder.api.decode(LenientPhotoList.self, from: data))?.photos ?? []
+        let photoIds = decoded.filter { !LiveLikes.isRestrictedRow($0.audience) }.map(\.id)
+        return (counts, ids, photoIds)
+    }
+
+    /// 🔴 いろいろな形の答えで、1回の解析の `read` が以前の読み方と同じ数・id・写真を返す。
+    /// 緩い読み方(`likes` の型・`audience` の型・壊れた行・重複・読めない写真の行)を変えると、ここで食い違って落ちる
+    func testSinglePassReadMatchesTheOldThreePassRead() {
+        let fixtures = [
+            #"[{"id":"a","src":"https://x/a.jpg","likes":3},{"id":"b","src":"https://x/b.jpg"},{"id":"c","likes":0}]"#,
+            #"[null, {"likes":5}, {"id":"","likes":1}, {"id":"a","src":"https://x/a.jpg","likes":2}, 7, "x", [1]]"#,
+            #"[{"id":"a","src":"https://x/a.jpg","likes":"9"},{"id":"b","src":"https://x/b.jpg","likes":true},{"id":"c","src":"https://x/c.jpg","likes":2.9},{"id":"d","src":"https://x/d.jpg","likes":-4}]"#,
+            #"[{"id":"a","src":"https://x/a.jpg","audience":null},{"id":"b","src":"https://x/b.jpg","audience":""},{"id":"c","src":"https://x/c.jpg","audience":"  "},{"id":"d","src":"https://x/d.jpg","audience":"followers"},{"id":"e","src":"https://x/e.jpg","audience":5},{"id":"f","src":"https://x/f.jpg","audience":{}},{"id":"g","src":"https://x/g.jpg","audience":true}]"#,
+            #"[{"id":"a","src":"https://x/a.jpg","likes":1},{"id":"a","src":"https://x/a2.jpg","likes":8},{"id":"b","likes":4}]"#,
+            #"[{"id":"x","src":123,"likes":2},{"id":"y","src":"https://x/y.jpg"}]"#,
+            "[]",
+            #"{"error":"x"}"#,
+            "<html></html>",
+        ]
+        for json in fixtures {
+            let data = Data(json.utf8)
+            let old = reference(data)
+            let new = LiveLikes.read(data)
+            XCTAssertEqual(new == nil, old == nil, "読めるかが食い違う: \(json)")
+            guard let old, let new else { continue }
+            XCTAssertEqual(new.counts, old.counts, "数が食い違う: \(json)")
+            XCTAssertEqual(new.ids, old.ids, "id が食い違う: \(json)")
+            XCTAssertEqual(Set(new.photos.keys), Set(old.photoIds), "写真が食い違う: \(json)")
+        }
+    }
+
     // MARK: - 写し方
 
     private func photo(_ id: String, likes: Int?) throws -> Photo {

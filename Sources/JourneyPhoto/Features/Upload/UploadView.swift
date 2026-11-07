@@ -1085,6 +1085,12 @@ struct UploadView: View {
                     PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
                                      near: item.prepared.coords, offersSpots: true,
                                      pickedSpot: $item.pickedSpot, boxed: true)
+                        // 🔴 撮影地の長さを止める(2026-11-07)。サーバーは 200 で黙って切る(`PostLimits.location`)ので、
+                        // 画面の字と保存された字が食い違っていた。題・説明と同じ止め方
+                        .onChange(of: item.location) { old, value in
+                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.location)
+                            if kept != value { item.location = kept }
+                        }
                     // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
                     if UploadDetails.showsSampleNote(location: item.location, published: model.published,
                                                      audience: model.audience) {

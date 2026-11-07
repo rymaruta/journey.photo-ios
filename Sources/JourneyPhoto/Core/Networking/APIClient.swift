@@ -63,6 +63,8 @@ actor APIClient {
     /// 同時に飛ばす本数の絞り（2026-11-07 判断・`RequestLimiter`）。**通信している間だけ**枠を使う——
     /// 鍵を待つ間・再試行の待ちの間は枠を握らない
     private let limiter: RequestLimiter
+    /// 書く要求(GET 以外)の枠。読む要求の枠とは独立(2026-11-07・`RequestLimiter.defaultWriteLimit`)
+    private let writeLimiter: RequestLimiter
 
     /// 枠を取った**直後**に呼ぶ口。**本番は nil**。試験が「枠を持ったまま止まる要求」を作って、
     /// 同時数が絞られていることを見るのに使う（`beforeRequest` は枠を取る前なので使えない）
@@ -82,6 +84,7 @@ actor APIClient {
          session: URLSession? = nil,
          maxConcurrentRequests: Int = RequestLimiter.defaultLimit,
          limiter: RequestLimiter? = nil,
+         writeLimiter: RequestLimiter? = nil,
          retryPause: (@Sendable (TimeInterval) async -> Void)? = nil,
          afterAcquire: (@Sendable (URLRequest) async -> Void)? = nil,
          beforeRequest: (@Sendable (URLRequest) async -> Void)? = nil) {
@@ -90,6 +93,7 @@ actor APIClient {
         self.beforeRequest = beforeRequest
         // 渡されたもの(本番の配線は `RequestLimiter.shared`)があればそれ、無ければこの実体だけの絞り
         self.limiter = limiter ?? RequestLimiter(limit: maxConcurrentRequests)
+        self.writeLimiter = writeLimiter ?? RequestLimiter(limit: RequestLimiter.defaultWriteLimit)
         self.afterAcquire = afterAcquire
         self.retryPause = retryPause ?? Self.sleepPause
         if let session {
@@ -303,7 +307,9 @@ actor APIClient {
         let response: URLResponse
         // 枠を取るのは通信の間だけ。取り消されたら待ちから外れて `CancellationError`
         // （`acquire` が最初に取り消しを見る——通信の手前で止める今までの振る舞いのまま）
-        try await limiter.acquire()
+        // 読む要求と書く要求は別の枠(書く要求が遅い GET の束に詰まらない)。取り消し・返し忘れの扱いは同じ
+        let slot = request.httpMethod == Method.get.rawValue ? limiter : writeLimiter
+        try await slot.acquire()
         await afterAcquire?(request)
         // 答えを `Result` に取って、枠を返してから分ける（`catch` の中で await しない・上の注記）
         let outcome: Result<(Data, URLResponse), Error>
@@ -313,7 +319,7 @@ actor APIClient {
         } catch {
             outcome = .failure(error)
         }
-        await limiter.release()
+        await slot.release()
         switch outcome {
         case .success(let pair):
             (data, response) = pair

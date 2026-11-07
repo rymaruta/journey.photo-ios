@@ -70,6 +70,9 @@ enum AccountLocalData {
         // アイコン・カバーのお礼の控えと「この1枚をカバーに」の覚え（#304・2026-10-18）
         ProfileReward.removeData(for: userId, defaults: defaults)
         CoverOfferStore.removeData(for: userId, defaults: defaults)
+        // 初期ユーザー章の全画面を出した回数・終えた印（人ごと・2026-11-07）
+        defaults.removeObject(forKey: FoundingGiftGate.shownKey(userId))
+        defaults.removeObject(forKey: FoundingGiftGate.doneKey(userId))
         defaults.removeObject(forKey: TrunkAgingNotice.key(userId))
         defaults.removeObject(forKey: TrunkWrinkles.key(userId))
         // 写真で作るキャンピングカーの飾りと「届いた」を見せた印（2026-10-18）

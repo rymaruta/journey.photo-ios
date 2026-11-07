@@ -261,6 +261,26 @@ final class StoryDraftStore: ObservableObject {
 
     private static let filePrefix = "story-draft-"
 
+    /// 🔴 **書き途中の画像の名前**(2026-11-07)。`saveInBackground` は画像を主スレッドの外で書き、書き終えてから記録に載せる。
+    /// その間(記録にまだ載っていない間)に別の入れ物の `use`/`sweepOrphans` が走ると、「どの記録からも指されていない」
+    /// 新しい画像を消してしまう窓があった。書き始める前にここへ入れ、記録に載せた後(または諦めた後)に外す。
+    /// 掃除はここに在る名前を消さない。入れ物をまたいで共有するので静的で、錠で守る
+    private static let writingLock = NSLock()
+    nonisolated(unsafe) private static var writing: Set<String> = []
+
+    private static func beginWriting(_ names: [String]) {
+        writingLock.lock(); writing.formUnion(names); writingLock.unlock()
+    }
+
+    private static func endWriting(_ names: [String]) {
+        writingLock.lock(); writing.subtract(names); writingLock.unlock()
+    }
+
+    static func isWriting(_ name: String) -> Bool {
+        writingLock.lock(); defer { writingLock.unlock() }
+        return writing.contains(name)
+    }
+
     /// 下書きの記録から画像の名前だけを読む形
     private struct ImageRef: Decodable {
         struct Extra: Decodable { let imageFile: String }
@@ -287,7 +307,7 @@ final class StoryDraftStore: ObservableObject {
             return saved.files
         })
         for name in names where name.hasPrefix(Self.filePrefix) && name.hasSuffix(".jpg")
-            && !referenced.contains(name) {
+            && !referenced.contains(name) && !Self.isWriting(name) {
             try? FileManager.default.removeItem(at: fileURL(name))
         }
     }
@@ -406,6 +426,9 @@ final class StoryDraftStore: ObservableObject {
         let token = makeToken()
         let files = inputs.indices.map { Self.imageFileName(forKey: storageKey, token: token, index: $0) }
         let urls = files.map { fileURL($0) }
+        // 書き終えて記録に載せる(または諦める)まで、掃除から守る
+        Self.beginWriting(files)
+        defer { Self.endWriting(files) }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try await writeFiles(Array(zip(inputs.map(\.imageData), urls)))

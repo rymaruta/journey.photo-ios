@@ -328,6 +328,36 @@ extension DeviceTripScanTests {
         await store.waitForRemoval()
     }
 
+    /// 🔴 **裏に回ったら読みを止め、前面に戻ったら続きから読む**(2026-11-07)。5万枚を超える人は10分ごとに全読みに戻るため、
+    /// 裏でも走り続けていた。`pauseForBackground` を外すと、裏に回っても読みが残り(`isScanning` が真のまま)、
+    /// 前面に戻っても新しい読みが始まらず(`runsStarted` が 1 のまま)落ちる
+    @MainActor
+    func testBackgroundStopsTheReadAndForegroundResumes() async throws {
+        let url = tempURLForGate()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let source = FakeTripSource(library())
+        let gate = FetchGate()
+        source.gate = gate
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "DeviceTripScanTests-\(UUID().uuidString)"))
+        let store = DeviceTripShelfStore(defaults: defaults, url: url, source: source,
+                                         status: { .authorized }, place: { _ in (nil, nil) },
+                                         pauseNanos: 0, lookupPauseNanos: 0, observesLibrary: false,
+                                         signedIn: true, runPriority: Self.gatedPriority)
+        store.startIfAllowed()
+        await gate.waitForWaiting(1)
+        XCTAssertTrue(store.isScanning, "前提: 読んでいる")
+        store.setActive(false)                  // 裏へ
+        XCTAssertFalse(store.isScanning, "裏に回っても読みが残っている")
+        await gate.releaseFirst()               // 止めた読みを放す(取り消されているので輪を抜ける)
+        await store.waitForLoopsFinished(1)
+        XCTAssertEqual(store.runsStarted, 1)
+        store.setActive(true)                   // 前面へ
+        XCTAssertEqual(store.runsStarted, 2, "前面に戻っても続きを読まない")
+        await gate.open()
+        await store.waitUntilIdle()
+        await store.waitForRemoval()
+    }
+
     /// 🔴 **ログインしていない間は、前面に戻っても読まない**（サインアウトで消した要約を作り直さない）
     @MainActor
     func testSignedOutForegroundDoesNotRead() async throws {
