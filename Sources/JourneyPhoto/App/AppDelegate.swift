@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **押したときの行き先のために、自分を受け手にしておく。**
         // 許可を取るのは設定画面（`PushCenter.enable`）——起動時に聞かない
         UNUserNotificationCenter.current().delegate = self
+        // **クラッシュ・ハング・起動時間の診断を受け取って端末のログに出す**（2026-11-07・`MetricKitReceiver`）。
+        // OS は起動の早い時期に登録した購読者へ届けるので、ここで登録する。サーバーには送らない
+        MetricKitReceiver.shared.start()
         // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
         // 居ない転送は止め、その鍵はログインしているときに片付ける
         BackgroundTransfer.shared.reconnect()

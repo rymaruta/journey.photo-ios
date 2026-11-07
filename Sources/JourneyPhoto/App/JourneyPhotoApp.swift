@@ -361,7 +361,7 @@ struct JourneyPhotoApp: App {
                     // 差し替えの後に捨てていた頃は、その間に始まった読み直しが
                     // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった
                     // 起動後の同期の区間（`PerfSignpost.launchSync*`・2026-11-04 札 #435 / #429）。**測るだけで動作は変えない**。
-                    // `launchSync` は頭から `syncWishlist` の前まで（待ちを含む）、`launchSyncStores` はその中の待たない部分
+                    // `launchSync` は頭から保存・いいねの同期の終わりまで（待ちを含む。2026-11-07 から、端末登録・ブロック・行きたい場所は `LaunchDeferral` の待ちの後ろなので含めない）、`launchSyncStores` はその中の待たない部分
                     // （メインスレッドを占める時間）。UI テストのときだけ、始めと終わりを記録にも残す（`PerfRecorder`）
                     let probe = PerfRecorder.shared.beginTask("auth.state.sync")
                     defer { PerfRecorder.shared.endTask(probe) }
@@ -398,6 +398,19 @@ struct JourneyPhotoApp: App {
                     let savesMark = savedPhotos.syncMark
                     let wishMark = wishlist.syncMark
                     let blocksFetch = hidden.beginBlockFetch()
+                    // 🔴 **画面に今すぐ要る同期（保存・いいね）だけ先に走らせ、残りは最初の画面が出たあとへ
+                    // 少し遅らせる**（2026-11-07 判断・`LaunchDeferral`）。本番の Lambda は同時実行の上限が 10 で、
+                    // 起動直後にホーム・未読通知・プロフィールの読み込みとこの同期が重なると 503 になっていた。
+                    // 印（`likesMark` など）は上で取り済みなので、待つ間に押した分は消えない
+                    await applyModeration()
+                    await syncSaves(since: savesMark)
+                    await syncLikes(since: likesMark)
+                    PerfSignpost.end(launchSync)
+                    // 起動して最初の1回（ログインが決まった回）だけ待つ。確認中は何も送らないので待たない。
+                    // 待っている間に状態が変わって取り消されたら、新しい回が引き継ぐのでここで終わる
+                    if !auth.isResolving {
+                        guard await LaunchDeferral.shared.waitOnce(skip: PreviewSession.userId != nil) else { return }
+                    }
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
                     // 起動時に本人の ID が取れなかっただけのログアウトも同じ
@@ -405,9 +418,6 @@ struct JourneyPhotoApp: App {
                     if !auth.isResolving && !auth.isSignedOutUncertain {
                         await push.use(userId: auth.userId)
                     }
-                    await applyModeration()
-                    await syncSaves(since: savesMark)
-                    await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）
                     if let owner = auth.userId {
@@ -417,7 +427,6 @@ struct JourneyPhotoApp: App {
                             await applyModeration()
                         }
                     }
-                    PerfSignpost.end(launchSync)
                     // **行きたい場所は最後。** 端末にしか無い分を1本ずつ送るので、回線が
                     // 詰まっていると長く待つ——その間ブロック一覧の同期が止まっていた
                     await syncWishlist(since: wishMark)

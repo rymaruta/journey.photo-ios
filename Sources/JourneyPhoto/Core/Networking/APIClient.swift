@@ -60,13 +60,30 @@ actor APIClient {
     /// （`PublicGalleryService.beforeLiveRequest` と同じ理由）
     private let beforeRequest: (@Sendable (URLRequest) async -> Void)?
 
+    /// 同時に飛ばす本数の絞り（2026-11-07 判断・`RequestLimiter`）。**通信している間だけ**枠を使う——
+    /// 鍵を待つ間・再試行の待ちの間は枠を握らない
+    private let limiter: RequestLimiter
+
+    /// 503・429 のあとの待ち。**本番は `Task.sleep`**。試験が実際に待たずに済むよう差し替えられる
+    private let retryPause: @Sendable (TimeInterval) async -> Void
+
+    /// 503・429 を受けたときの待ちの範囲（秒）。サーバーが `Retry-After` を付けなければ
+    /// 0.5〜1.5 秒のばらつき（同時に弾かれた要求が同じ瞬間に戻って、また弾かれるのを避ける）
+    static let retryJitter: ClosedRange<TimeInterval> = 0.5...1.5
+    /// `Retry-After` に従う上限（秒）。画面を長く待たせない——これより長い指示は上限に丸める
+    static let retryAfterCap: TimeInterval = 5
+
     init(baseURL: URL = AppConfig.userAPIBaseURL,
          tokenProvider: TokenProviding,
          session: URLSession? = nil,
+         maxConcurrentRequests: Int = RequestLimiter.defaultLimit,
+         retryPause: (@Sendable (TimeInterval) async -> Void)? = nil,
          beforeRequest: (@Sendable (URLRequest) async -> Void)? = nil) {
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
         self.beforeRequest = beforeRequest
+        self.limiter = RequestLimiter(limit: maxConcurrentRequests)
+        self.retryPause = retryPause ?? Self.sleepPause
         if let session {
             self.session = session
         } else {
@@ -221,21 +238,86 @@ actor APIClient {
         return result
     }
 
+    /// 1回送る。**503・429（スロットル）のときだけ、読むだけの要求（GET）を1回だけ**待って送り直す
+    /// （2026-11-07 判断）。書く要求（POST/PUT/PATCH/DELETE）は送り直さない——サーバーが
+    /// 処理したあとに 503 を返したのか分からず、二重に書く（二重のいいね・二重の投稿）恐れがある。
+    /// 401 の取り直し（`send`）とは別の層: 401 の送り直しの2本目もここを通るので、それぞれ1回まで。
+    /// 待っている間は枠（`limiter`）を返しているので、ほかの要求を止めない
     private func perform(_ request: URLRequest) async throws -> Data {
+        let first = await performOnce(request)
+        guard case .failure(let error) = first else { return try first.get() }
+        guard let throttled = error as? Throttled else { throw error }
+        guard request.httpMethod == Method.get.rawValue else { throw throttled.underlying }
+        await retryPause(Self.retryDelay(retryAfter: throttled.retryAfter, jitter: Double.random(in: Self.retryJitter)))
+        // 待っている間に画面を離れた要求は、送り直さない
+        try Task.checkCancellation()
+        let second = await performOnce(request)
+        if case .failure(let retryError) = second, let again = retryError as? Throttled {
+            throw again.underlying
+        }
+        return try second.get()
+    }
+
+    /// スロットルの印（`performOnce` の中だけ）。送り直すかは `perform` が決める
+    private struct Throttled: Error {
+        let underlying: APIError
+        let retryAfter: TimeInterval?
+    }
+
+    /// 待つ秒数。`Retry-After`（秒）があればそれに従い（上限 `retryAfterCap`）、無ければ `jitter`
+    @Sendable private static func sleepPause(_ seconds: TimeInterval) async {
+        try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+
+    static func retryDelay(retryAfter: TimeInterval?, jitter: TimeInterval) -> TimeInterval {
+        if let retryAfter, retryAfter >= 0 { return min(retryAfter, retryAfterCap) }
+        return jitter
+    }
+
+    /// `Retry-After` の秒数。日付の形は読まない（nil で、ばらつきの待ちになる）
+    static func retryAfterSeconds(_ header: String?) -> TimeInterval? {
+        guard let header, let seconds = TimeInterval(header.trimmingCharacters(in: .whitespaces)),
+              seconds.isFinite, seconds >= 0 else { return nil }
+        return seconds
+    }
+
+    private func performOnce(_ request: URLRequest) async -> Result<Data, Error> {
+        do {
+            return .success(try await transfer(request))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func transfer(_ request: URLRequest) async throws -> Data {
         await beforeRequest?(request)
         let data: Data
         let response: URLResponse
+        // 枠を取るのは通信の間だけ。取り消されたら待ちから外れて `CancellationError`
+        // （`acquire` が最初に取り消しを見る——通信の手前で止める今までの振る舞いのまま）
+        try await limiter.acquire()
+        // 答えを `Result` に取って、枠を返してから分ける（`catch` の中で await しない・上の注記）
+        let outcome: Result<(Data, URLResponse), Error>
         do {
             try RequestCancellation.throwIfCancelled()
-            (data, response) = try await session.cancellableData(for: request)
-        } catch let error as URLError where error.code == .userAuthenticationRequired {
-            throw APIError.notAuthenticated
-        } catch let error as URLError where error.code == .cancelled {
-            // **取り消しを「通信できません」と言わない。** 画面を離れた・
-            // 引き下げ更新の途中で描き直された回に、失敗の文が残っていた。
-            // 画面は `CancellationError` を失敗として扱わない
-            throw CancellationError()
+            outcome = .success(try await session.cancellableData(for: request))
         } catch {
+            outcome = .failure(error)
+        }
+        await limiter.release()
+        switch outcome {
+        case .success(let pair):
+            (data, response) = pair
+        case .failure(let error):
+            if let urlError = error as? URLError, urlError.code == .userAuthenticationRequired {
+                throw APIError.notAuthenticated
+            }
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                // **取り消しを「通信できません」と言わない。** 画面を離れた・
+                // 引き下げ更新の途中で描き直された回に、失敗の文が残っていた。
+                // 画面は `CancellationError` を失敗として扱わない
+                throw CancellationError()
+            }
             throw APIError.unreachable
         }
 
@@ -244,7 +326,12 @@ actor APIClient {
         }
         guard (200..<300).contains(http.statusCode) else {
             Self.errorBodySink?.set(data)
-            throw APIError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            let failure = APIError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            if http.statusCode == 503 || http.statusCode == 429 {
+                throw Throttled(underlying: failure,
+                                retryAfter: Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After")))
+            }
+            throw failure
         }
         return data
     }
