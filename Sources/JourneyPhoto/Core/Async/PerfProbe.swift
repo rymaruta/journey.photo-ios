@@ -53,8 +53,8 @@ final class PerfRecorder: @unchecked Sendable {
     /// 出来事の一覧の上限（先に起きた順に残し、溢れた数は `+Ndropped` で残す・2026-11-07）
     static let eventCap = 40
     /// メインスレッドの積み(スタック)の見本の上限と、1 件に残す段の数（2026-11-07・`PerfMainSampler`）
-    static let sampleCap = 8
-    static let sampleFrameCap = 12
+    static let sampleCap = 16
+    static let sampleFrameCap = 14
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval

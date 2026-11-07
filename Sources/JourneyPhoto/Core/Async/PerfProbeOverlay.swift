@@ -151,7 +151,11 @@ final class PerfMainSampler: @unchecked Sendable {
             if text.contains("perfSampleHandler") || text.contains("_sigtramp") { continue }
             frames.append(text)
         }
-        PerfRecorder.shared.recordSample(frames: frames)
+        // 浅い方の 7 段（いま実行中の処理）と、その先にある**このアプリの段**（`JourneyPhoto` の画像）を 6 段まで。
+        // 浅い方が SwiftUI の中ばかりでも、どの画面の何が呼んだかが残る（2026-11-07）
+        let top = Array(frames.prefix(7))
+        let app = frames.dropFirst(7).filter { $0.hasPrefix("JourneyPhoto") }.prefix(6)
+        PerfRecorder.shared.recordSample(frames: top + (app.isEmpty ? [] : ["…"]) + Array(app))
     }
 
     /// 「画像`名前」。名前は Swift の綴りに戻す。長いものは切る。名前が無ければ画像と番地
@@ -169,7 +173,7 @@ final class PerfMainSampler: @unchecked Sendable {
             free(demangled)
         }
         // 見やすくするため切る（区切りの `;` `^` と空白は別の字に）
-        let cut = String(name.prefix(90))
+        let cut = String(name.prefix(80))
             .replacingOccurrences(of: ";", with: ",")
             .replacingOccurrences(of: "^", with: "~")
         return "\(image)`\(cut)"
