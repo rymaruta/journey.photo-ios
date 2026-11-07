@@ -174,9 +174,9 @@ struct MyPageView: View {
             PerfRecorder.shared.event("mypage.feed<")
         }
         .task(id: auth.userId) {
-            PerfRecorder.shared.event("mypage.trunk>")
+            PerfRecorder.shared.event("mypage.availability>")
             await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
-            PerfRecorder.shared.event("mypage.trunk<")
+            PerfRecorder.shared.event("mypage.availability<")
         }
         // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）。
         // 2026-10-18: **裏から戻ったときだけ**（通知センター・Face ID からの戻りでは読まない・`TrunkForegroundGate`）。
