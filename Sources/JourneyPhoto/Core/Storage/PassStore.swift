@@ -73,7 +73,9 @@ final class PassStore: ObservableObject {
                            fileManager: FileManager = .default) {
         guard !userId.isEmpty else { return }
         let base = root ?? defaultRoot(fileManager)
-        try? fileManager.removeItem(at: base.appendingPathComponent(OfflineTripStore.hex(userId) + ".json"))
+        let file = base.appendingPathComponent(OfflineTripStore.hex(userId) + ".json")
+        try? fileManager.removeItem(at: file)
+        try? fileManager.removeItem(at: file.appendingPathExtension("corrupt"))   // 退避した壊れた帳も消す
         if defaults.string(forKey: lastUserKey) == userId { defaults.removeObject(forKey: lastUserKey) }
         PassBundleNotifier.cancelAll()
     }
@@ -98,6 +100,7 @@ final class PassStore: ObservableObject {
             PassBundleNotifier.cancelAll()
         }
         userId = id
+        saveBlocked = false
         photos = [:]
         owners = [:]
         away = nil
@@ -441,13 +444,33 @@ final class PassStore: ObservableObject {
         var homeLocation: String?
     }
 
+    /// 🔴 読めなかった帳を、次の保存で空のまま上書きしない(2026-11-07)。
+    /// - ファイルが無い: 初めての人。空で始めてよい。
+    /// - 読んだが形が壊れている: `.corrupt` に退避して(あとで取り出せる)、空で始める。
+    /// - ファイルは在るのに読めない(退避もできない): 書き込みを止める(`saveBlocked`)。人が替わるまで上書きしない。
     private func load(_ id: String) -> File? {
-        guard let data = try? Data(contentsOf: fileURL(for: id)) else { return nil }
-        return try? Self.decoder.decode(File.self, from: data)
+        let url = fileURL(for: id)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url) else {
+            saveBlocked = true
+            return nil
+        }
+        if let file = try? Self.decoder.decode(File.self, from: data) { return file }
+        let aside = url.appendingPathExtension("corrupt")
+        try? fileManager.removeItem(at: aside)
+        do {
+            try fileManager.moveItem(at: url, to: aside)
+        } catch {
+            saveBlocked = true
+        }
+        return nil
     }
 
+    /// 読めなかった帳を持つ間は書かない(`load`)
+    private var saveBlocked = false
+
     private func save() {
-        guard let id = userId else { return }
+        guard let id = userId, !saveBlocked else { return }
         let file = File(settings: settings, encounters: encounters, awayDay: away?.day, awayValue: away?.value,
                         homeLocation: homeLocation)
         guard let data = try? Self.encoder.encode(file) else { return }

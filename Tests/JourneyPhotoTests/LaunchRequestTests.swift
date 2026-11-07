@@ -297,6 +297,51 @@ final class APIClientThrottleRetryTests: XCTestCase {
         XCTAssertEqual(next, Payload(ok: true), "枠が返っていない")
     }
 
+    /// 🔴 書く要求(POST など)は、読む要求の枠が埋まっていても通る(別の枠・2026-11-07)。
+    /// 読む枠が 1 本で、その 1 本が止まっている間に POST が完了する。書く要求も同じ枠に入れる作りに戻すと、
+    /// POST が詰まって 2 秒待っても終わらず落ちる
+    func testWriteRequestIsNotBlockedBySlowReads() async throws {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let hold = Gate()
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "ID-TOKEN"), session: session,
+                            maxConcurrentRequests: 1, retryPause: { _ in },
+                            afterAcquire: { request in
+            if request.httpMethod == "GET" { await hold.wait() }
+        })
+        let read = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        await hold.untilWaiting(1)
+
+        let done = DoneFlag()
+        let write = Task { () -> Void in
+            _ = try await api.authorizedVoid(.post, "/user/likes")
+            done.set()
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while !done.value, Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
+        let passed = done.value
+        await hold.open()
+        _ = try await read.value
+        try await write.value
+        XCTAssertTrue(passed, "書く要求が読む要求の列に詰まった")
+    }
+
+    /// 書く枠の同時数にも上限がある(既定 2・読み4+書き2=6 が本番の上限 10 の内)
+    func testWriteLimitIsSmallAndWithinTheBudget() {
+        XCTAssertEqual(RequestLimiter.defaultWriteLimit, 2)
+        XCTAssertLessThanOrEqual(RequestLimiter.defaultLimit + RequestLimiter.defaultWriteLimit, 10)
+    }
+
+    /// 本番の配線は書く枠も共通のものを渡す
+    func testProductionWiringUsesTheSharedWriteLimiter() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        for path in ["Sources/JourneyPhoto/App/AppEnvironment.swift", "Sources/JourneyPhoto/Core/Networking/PreviewBackend.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(source.contains("writeLimiter: RequestLimiter.sharedWrites"), "\(path) が共通の書く枠を使っていない")
+        }
+    }
+
     /// 🔴 同じ絞りを渡した `APIClient` どうしは、合わせて上限までしか出さない(本番は `RequestLimiter.shared`)。
     /// 絞りを `APIClient` ごとに持つ作りに戻すと、2本ずつ計4本が出て落ちる
     func testClientsSharingALimiterShareTheLimit() async throws {

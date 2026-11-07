@@ -573,14 +573,26 @@ final class PassCoordinator {
         refresh()
     }
 
+    /// 地名引きを待つ上限(秒)。受け取りの記録を背面で落とさない
+    nonisolated static let placeLookupTimeout: TimeInterval = 4
+
     private func receive(_ payload: PassExchange.Payload) {
         let now = Date()
         // **いま交換してよい回だけ**（日をまたいだ・前面でなくなった）。場所を引く前に決める
         guard store.exchangeAllowed(isForeground: isForeground, now: now), store.accepts(payload, at: now) else { return }
         let fix = places.recentFix(now: now)
+        // 🔴 地名引きは取り消せない外部の問い合わせで、背面で止められると返らない(2026-11-07)。数秒で諦めて、
+        // 地名なしで綴じる(`FirstResult`)。待っている間に人が替わっていたら、別の人の帳に綴じない
+        let owner = store.userId
+        let places = places
         Task { @MainActor in
             let name: String?
-            if let fix { name = await places.placeName(for: fix) } else { name = nil }
+            if let fix {
+                name = await FirstResult.run(timeout: Self.placeLookupTimeout, fallback: nil) {
+                    await places.placeName(for: fix)
+                }
+            } else { name = nil }
+            guard store.userId == owner else { return }
             store.record(payload, at: now, placeName: name, place: fix)
         }
     }

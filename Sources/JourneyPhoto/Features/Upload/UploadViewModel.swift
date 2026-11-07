@@ -1911,7 +1911,9 @@ final class UploadViewModel: ObservableObject {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
-        draft.location = item.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 撮影地はサーバーが 200 で黙って切る(`PostLimits.location`)——送る前に切って、画面の字と保存された字をそろえる
+        draft.location = PostLimits.clamp(item.location.trimmingCharacters(in: .whitespacesAndNewlines),
+                                          limit: PostLimits.location)
         draft.tags = TagInput.parse(tagsText)
         // **空なら送らない**（空文字は「カテゴリ無し」ではなく空の属性になる）
         let trimmedCategory = category.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -126,6 +126,22 @@ final class AccountLocalDataTests: XCTestCase {
         let images = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         XCTAssertEqual(images.count, 1, "退会した人の書きかけの画像が端末に残っている: \(images)")
     }
+
+    /// 🔴 初期ユーザー章の全画面の控え(出した回数・終えた印)も、退会した人の分だけ消える
+    /// (`FoundingGiftGate.shownKey` / `doneKey`・2026-11-07)。消す行を外すと、ここで残って落ちる
+    func testRemovesFoundingGiftMarksOfThatPersonOnly() async throws {
+        let defaults = suite()
+        let dir = try directory()
+        for id in ["gone", "stays"] {
+            defaults.set(2, forKey: FoundingGiftGate.shownKey(id))
+            defaults.set(true, forKey: FoundingGiftGate.doneKey(id))
+        }
+        AccountLocalData.remove(userId: "gone", username: nil, defaults: defaults, draftDirectory: dir)
+        XCTAssertNil(defaults.object(forKey: FoundingGiftGate.shownKey("gone")), "退会した人の出した回数が残っている")
+        XCTAssertNil(defaults.object(forKey: FoundingGiftGate.doneKey("gone")), "退会した人の終えた印が残っている")
+        XCTAssertNotNil(defaults.object(forKey: FoundingGiftGate.shownKey("stays")), "別の人の控えまで消した")
+        XCTAssertNotNil(defaults.object(forKey: FoundingGiftGate.doneKey("stays")))
+    }
 }
 
 /// ログアウトの前に通知の宛先を外せなかった回（ログインの期限切れ・圏外）。

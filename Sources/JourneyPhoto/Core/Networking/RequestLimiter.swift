@@ -22,6 +22,13 @@ actor RequestLimiter {
     /// 試験が直に作る `APIClient` は、互いに詰まらないよう独立の絞りのまま
     static let shared = RequestLimiter()
 
+    /// 書く要求(POST/PUT/PATCH/DELETE)の同時数(2026-11-07)。**読む要求とは別の枠**にする——遅い GET の束(起動の読み込み)に
+    /// 詰まって、いいね・コメント・投稿が待たされないように。読み4+書き2=6 で、本番の上限 10 の内に収まる
+    static let defaultWriteLimit = 2
+
+    /// アプリ全体で1つの書く要求の絞り(本番の配線だけが使う・`shared` と同じ理由)
+    static let sharedWrites = RequestLimiter(limit: defaultWriteLimit)
+
     private let limit: Int
     private var running = 0
     private var waiters: [(id: UInt64, continuation: CheckedContinuation<Void, Error>)] = []
