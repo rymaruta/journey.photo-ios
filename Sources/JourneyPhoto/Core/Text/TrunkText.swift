@@ -248,8 +248,8 @@ enum TrunkText {
 
     /// トランクの読み上げ（モック Trunk の `ariaLabel`）。付けている部品があれば名前を添える
     static func accessibilityLabel(model: TrunkModel, labels: Int, tags: Int, equipped: TrunkEquipped = .none) -> String {
-        var text = L("\(info(model).name)。ラベル\(labels)枚", "\(info(model).name). \(labels) labels")
-        if tags > 0 { text += L("、手荷物タグ\(tags)枚", ", \(tags) baggage tags") }
+        var text = L("\(info(model).name)。ラベル\(labels)枚", "\(info(model).name). \(Plural.count(labels, "label"))")
+        if tags > 0 { text += L("、手荷物タグ\(tags)枚", ", \(Plural.count(tags, "baggage tag"))") }
         let names = equipped.all.compactMap { TrunkPartCatalog.part($0) }.filter { $0.kind != .lining }.map(\.name)
         if !names.isEmpty { text += L("。付けている部品: \(names.joined(separator: "、"))", ". Parts: \(names.joined(separator: ", "))") }
         return text

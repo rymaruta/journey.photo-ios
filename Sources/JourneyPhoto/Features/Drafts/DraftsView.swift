@@ -151,7 +151,7 @@ struct DraftsView: View {
             band(symbol: "info.circle", text: DraftsText.limitBand)
         }
         let soon = entries.filter { entry in
-            DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.savedAt, now: now).map { $0 <= 1 } ?? false
+            DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now).map { $0 <= 1 } ?? false
         }.count
         if soon > 0 && !selecting {
             band(symbol: "clock", text: DraftsText.expiringBand(soon))
@@ -602,7 +602,7 @@ struct DraftGridCell: View {
     private static let markShadow = Color.black.opacity(0.8)
 
     var body: some View {
-        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.savedAt, now: now)
+        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now)
         Color.clear
             .aspectRatio(4.0 / 5.0, contentMode: .fit)
             .overlay { DraftCover(url: entry.cover) }
@@ -705,7 +705,7 @@ private struct DraftRow<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.savedAt, now: now)
+        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now)
         HStack(spacing: JPSpace.s) {
             Button(action: onTap) {
                 HStack(spacing: JPSpace.s) {
@@ -788,7 +788,7 @@ struct DraftPreviewCard: View {
     let now: Date
 
     var body: some View {
-        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.savedAt, now: now)
+        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now)
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .frame(width: 280, height: 350)

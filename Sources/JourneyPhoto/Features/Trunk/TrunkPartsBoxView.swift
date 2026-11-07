@@ -115,7 +115,7 @@ struct TrunkPartsBoxView: View {
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 TrunkCoinMark(size: 14)
-                Text(L("硬貨 \(state.coins)", "\(state.coins) coins"))
+                Text(L("硬貨 \(state.coins)", Plural.count(state.coins, "coin")))
                     .font(JPFont.number(13, weight: .regular, relativeTo: .footnote))
                     .foregroundStyle(TrunkStyle.muted)
             }

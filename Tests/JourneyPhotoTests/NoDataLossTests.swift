@@ -84,6 +84,59 @@ final class NoDataLossTests: XCTestCase {
         try String(contentsOf: Self.root.appendingPathComponent(path), encoding: .utf8)
     }
 
+    // MARK: - 「送り始めた」印は PUT のあと(2026-11-07)
+
+    private final class MarkLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _atPresign: [Bool?] = []
+        private var _atSave: [Bool?] = []
+        func presign(_ v: Bool?) { lock.lock(); _atPresign.append(v); lock.unlock() }
+        func save(_ v: Bool?) { lock.lock(); _atSave.append(v); lock.unlock() }
+        var atPresign: [Bool?] { lock.lock(); defer { lock.unlock() }; return _atPresign }
+        var atSave: [Bool?] { lock.lock(); defer { lock.unlock() }; return _atSave }
+    }
+
+    /// 🔴 送信の控えの「送り始めた」印(`inFlight`)は、本体を置く PUT の前には付かず、PUT のあと(保存の前)に付く。
+    /// PUT の最中に終了した回は、まだ投稿されていない写真を「届いたか分からない」で控えから外さない。
+    /// 印を送信ループの先頭に戻すと、鍵を取る時点(PUT の前)で true になって落ちる
+    func testInFlightMarkComesAfterThePutNotBefore() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ScriptedProtocol.self]
+        let session = URLSession(configuration: config)
+        let log = MarkLog()
+        let defaults = self.defaults
+        let directory = self.directory
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session,
+                            beforeRequest: { request in
+            let path = request.url?.path ?? ""
+            guard path.contains("/upload/presigned-url") || path.contains("/upload/save") else { return }
+            let mark: Bool? = await MainActor.run {
+                UploadDraftStore(defaults: defaults, directory: directory)
+                    .journals(for: "a").first?.draft.items.first?.inFlight
+            }
+            if path.contains("/upload/save") { log.save(mark) } else { log.presign(mark) }
+        })
+        let model = UploadViewModel(uploads: UploadService(api: api, session: session), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.drafts = saved()
+        model.autoDrafts = auto()
+        model.draftOwner = "a"
+        model.makeDraftThumbnail = { _ in nil }
+        model.items = [photo(1, title: "1枚目")]
+        await model.submit()
+        XCTAssertTrue(model.didPostAll, "前提: 上がった")
+        XCTAssertFalse(log.atPresign.isEmpty, "前提: 鍵を取る要求が出た")
+        XCTAssertTrue(log.atPresign.allSatisfy { $0 == nil }, "PUT の前に「送り始めた」印が付いている(PUT の最中に落ちると写真が控えから外れる)")
+        XCTAssertFalse(log.atSave.isEmpty, "前提: 保存の要求が出た")
+        XCTAssertTrue(log.atSave.allSatisfy { $0 == true }, "PUT のあと(保存の前)に印が付いていない")
+    }
+
     // MARK: - 1. 送信の控え
 
     /// 🔴 **新しい投稿（下書きから開き直していない）も、送り始める前に控えに書く。** 1枚目の保存が

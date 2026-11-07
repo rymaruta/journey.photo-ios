@@ -1128,7 +1128,13 @@ final class UploadViewModel: ObservableObject {
             errorMessage = droppedNote
             return false
         }
-        guard let images = drafts.images(of: restorable) else { return false }
+        guard let images = drafts.images(of: restorable) else {
+            // 🔴 画像が読めなかった回に、何も言わずに false を返さない(2026-11-07)。呼び出し側(`UploadView.restoreDraft`)は
+            // 知らせが無いと下書きを消す——一時的に読めなかっただけの下書きまで失っていた。知らせを入れて、消させない
+            errorMessage = L("下書きの写真を読み込めませんでした。もう一度お試しください",
+                             "Couldn\u{2019}t load the draft\u{2019}s photos. Please try again.")
+            return false
+        }
         // 一覧用の縮小画像（512px）は下書きに残していないので、画面の処理の外で作り直す
         // （無いまま送ると、一覧がサムネ無しの本体を読む）
         let make = makeDraftThumbnail
@@ -1771,8 +1777,11 @@ final class UploadViewModel: ObservableObject {
             // **送る直前に引き直す。** 送信中も欄は生きているので、
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
-            // 開き直した下書きの写真なら「送り始めた」印（落ちても、開き直したときに二重に上げない）
-            markDraft(item.id, .sending)
+            // 🔴 「送り始めた」印は、ここでは付けない(2026-11-07)。本体を置く PUT より前に付けると、PUT の最中に
+            // アプリが終了した回は、まだ投稿されていない写真と題・撮影地が「届いたか分からない」扱いで控えから外れた
+            // (`restorable`・`interruptedNotice`)。保存(`/upload/save`)を送るのは PUT の終わりを待つ側(アプリ内)だけなので、
+            // PUT 中に落ちたなら投稿は確実にされていない。印は `upload()` の中、`staged` を立てた直後に付ける
+            // (自動の書きかけの `inFlight: staged[…] != nil` と同じ基準)
             do {
                 let outcome = try await upload(item, exported: exported[item.id])
                 if !outcome.songAttached { songFailures += 1 }
@@ -1981,6 +1990,9 @@ final class UploadViewModel: ObservableObject {
             placed = try await uploads.stagePhoto(toSend)
             staged[item.id] = placed
             stagedEdits[item.id] = (item.recipe, toSend.dominantColor)
+            // 本体を置いた。ここから先は保存が通ったか分からない——開き直した下書きの写真なら「送り始めた」印
+            // (落ちても、開き直したときに二重に上げない)。やり直しで `staged` が残っている回(上の分岐)は印が付いたまま
+            markDraft(item.id, .sending)
         }
         // 🔴 **保存の直前に、いまの行から下書きを作り直す**（2026-10-03）。下書きは送り始めに
         // 作っていたので、画像を書き出して置くまで（数秒）の間に直した題・説明・撮影地は

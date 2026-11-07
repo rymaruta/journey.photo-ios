@@ -88,6 +88,9 @@ public final class AVAudioSession {
     /// 電話・Siri などで音が止められた・戻された知らせ（本物と同じ名前）。
     /// 種類は `userInfo["AVAudioSessionInterruptionTypeKey"]`（1 が始まり）
     public static let interruptionNotification = Notification.Name("AVAudioSessionInterruptionNotification")
+    /// イヤホン・Bluetooth の抜き差しなど音の出口が変わった知らせ(本物と同じ名前)。
+    /// 理由は `userInfo["AVAudioSessionRouteChangeReasonKey"]`(2 が前の出口が無くなった)
+    public static let routeChangeNotification = Notification.Name("AVAudioSessionRouteChangeNotification")
     public func setCategory(_ c: Category, mode: Mode) throws {}
     /// **本物と同じ形にする。** 引数を省いた模型にしておくと、
     /// `options:` を渡すコードが Linux では通らず、Mac でしか気づけない

@@ -114,8 +114,10 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        let releases = WhatsNew.decode(data)
-        XCTAssertEqual(releases.map(\.version), ["1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        let all = WhatsNew.decode(data)
+        XCTAssertEqual(all.map(\.version), ["1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        let releases = Array(all.dropFirst())
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
@@ -265,7 +267,8 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        let releases = WhatsNew.decode(data)
+        // 1.1.72 より前の分だけで見る（1.1.72 は `testVersion1172SummarizesChangesSince1087`）
+        let releases = Array(WhatsNew.decode(data).dropFirst())
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
@@ -300,6 +303,48 @@ final class WhatsNewTests: XCTestCase {
             .components(separatedBy: "\"").dropFirst().first)
         XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.17"),
                        "project.yml の版（\(marketing)）が 1.1.17 より新しい——次の版が 1.1.18 にならない。項目の版を見直す")
+    }
+
+    /// 🔴 **1.1.72（2026-11-07）は、App Store の版 1.0.87 以降の見える変更をまとめた1エントリ。**
+    /// `pending` は「見た版より新しい版を全部」（今の版を上限にしない）なので、
+    /// - 1.0.87 の人: 1.1.72 → 1.1.18 → 1.1.16 → 1.1.15 → 1.1.14 の順に、重複なく全部（1.0.82 以前は出ない）
+    /// - 1.1.71（TestFlight）の人: 1.1.72 だけ。次の版が 1.1.73 以降になっても 1.1.72 の分は出る
+    /// - 新しいインストール・同じ版の2回目: 出ない
+    func testVersion1172SummarizesChangesSince1087() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
+        let releases = WhatsNew.decode(data)
+        let latest = try XCTUnwrap(releases.first)
+        XCTAssertEqual(latest.version, "1.1.72")
+        XCTAssertEqual(latest.date, WhatsNew.Day(year: 2026, month: 11, day: 7))
+        XCTAssertEqual(latest.items.count, 10)
+        XCTAssertEqual(latest.items.map(\.symbol).count, Set(latest.items.map(\.symbol)).count, "記号が重複している")
+        XCTAssertEqual(Set(latest.items.map(\.title.ja)).count, latest.items.count)
+        for destination in latest.items.compactMap(\.destination) {
+            XCTAssertTrue([WhatsNew.Destination.home, .search, .map, .mypage].contains(destination))
+        }
+        // 禁止語（CLAUDE.md の言葉の好み・場所の呼び名）。外した機能（写真で作るキャンプ場）も入れない
+        let banned = ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "キャンプ場"]
+        for item in latest.items {
+            for text in [item.title.ja, item.detail.ja] {
+                for word in banned { XCTAssertFalse(text.contains(word), "\(item.title.ja): \(word)") }
+            }
+            XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty, item.title.ja)
+        }
+        // 1.0.87 の人: 重複なく、新しい順に全部
+        let from1087 = WhatsNew.pending(releases: releases, seen: "1.0.87", current: "1.1.72", usedBefore: true)
+        XCTAssertEqual(from1087.map(\.version), ["1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
+        let titles = from1087.flatMap(\.items).map(\.title.ja)
+        XCTAssertEqual(Set(titles).count, titles.count, "1.0.87 の人に同じ題が2回出る")
+        // 1.1.71 の人は 1.1.72 だけ。ワークフローが 1.1.73 を付けても出る
+        for current in ["1.1.72", "1.1.73", "1.1.80"] {
+            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.71", current: current, usedBefore: true)
+                .map(\.version), ["1.1.72"], current)
+        }
+        // 1.1.72 を見た人・新しいインストールには出さない
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.72", usedBefore: true).isEmpty)
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.72", usedBefore: false).isEmpty)
     }
 
     // MARK: - 配線（Linux では描けないので文で確かめる）

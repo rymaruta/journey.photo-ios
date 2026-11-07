@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 他の人のプロフィール（板 31）。
 ///
@@ -23,6 +24,9 @@ struct UserProfileView: View {
     @StateObject private var trunk = TheirTrunkModel()
     @EnvironmentObject private var connectivity: Connectivity
     @State private var showBlockConfirm = false
+    /// 通報のメールを開けない端末(宛先を確認で出す・`StoryRepliesSheet` と同じ)
+    @State private var mailUnavailable = false
+    @Environment(\.openURL) private var openURL
     @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
     /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う（2026-10-24）
@@ -87,6 +91,16 @@ struct UserProfileView: View {
         .navigationDestination(isPresented: $showShelf) {
             BadgeShelfView(mode: userId == auth.userId ? .mine : .other(userId: userId),
                            preloaded: model.profile)
+        }
+        .alert(StoryReplyActions.mailUnavailableTitle, isPresented: $mailUnavailable) {
+            Button(StoryReplyActions.copyAddress) {
+                UIPasteboard.general.string = LegalConsent.contactEmail
+                toasts.show(L("宛先をコピーしました", "Address copied"))
+            }
+            Button(Labels.Common.close, role: .cancel) {}
+        } message: {
+            Text(L("\(LegalConsent.contactEmail) へ、通報する人と理由をお知らせください。",
+                   "Please email \(LegalConsent.contactEmail) with the person and the reason."))
         }
         .blockConfirmation(isPresented: $showBlockConfirm) {
             Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
@@ -229,6 +243,14 @@ struct UserProfileView: View {
         }
     }
 
+    /// 通報(問い合わせの宛先へのメール)。開けない端末では宛先を確認で知らせる
+    private func reportProfile() {
+        guard let url = ModerationService.profileReportURL(userId: userId, displayName: model.shownName ?? "") else { return }
+        openURL(url) { accepted in
+            if !accepted { mailUnavailable = true }
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         // **中央は空けておく**（`AppHeader` と同じ塞ぎ方）。名前は下の見出しにある
@@ -238,10 +260,12 @@ struct UserProfileView: View {
         }
         if canAct {
             ToolbarItem(placement: .topBarTrailing) {
-                // **通報は置かない。** サーバーが受けるのは写真の通報だけ
-                // （`POST /photos/{id}/report`）で、人を通報する口が無い。
-                // 押しても何も起きない項目は作らない（写真の詳細から通報できる）
+                // 通報(2026-11-07・審査 1.2): サーバーに人を通報する口は無いので、ストーリーの返信と同じく
+                // 問い合わせの宛先へのメールで送る(`ModerationService.profileReportURL`)
                 Menu {
+                    Button { reportProfile() } label: {
+                        Label(L("通報する", "Report"), systemImage: "flag")
+                    }
                     Button(role: .destructive) { showBlockConfirm = true } label: {
                         Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                     }

@@ -103,9 +103,9 @@ struct PhotoEditView: View {
         .onChange(of: screen.current) { _, recipe in
             preview.request(recipe)
         }
-        .confirmationDialog(L("編集を破棄しますか？", "Discard your edits?"),
+        .confirmationDialog(L("編集を保存せずに閉じますか？", "Close without saving your edits?"),
                             isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button(L("破棄する", "Discard"), role: .destructive) { onCancel() }
+            Button(L("保存せずに閉じる", "Close without saving"), role: .destructive) { onCancel() }
             Button(L("編集を続ける", "Keep editing"), role: .cancel) { }
         }
     }

@@ -284,7 +284,7 @@ struct TrunkView: View {
                     TrunkMenuRow(title: L("カプセルの機械", "Capsule machine"), value: nil, chevron: false)
                     HStack(spacing: 6) {
                         TrunkCoinMark(size: 16)
-                        Text(L("硬貨 \(state.coins)", "\(state.coins) coins"))
+                        Text(L("硬貨 \(state.coins)", Plural.count(state.coins, "coin")))
                             .font(JPFont.mono(15, relativeTo: .subheadline))
                             .foregroundStyle(TrunkStyle.muted)
                         Image(systemName: "chevron.right")
