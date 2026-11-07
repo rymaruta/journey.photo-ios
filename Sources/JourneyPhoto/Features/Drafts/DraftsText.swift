@@ -73,7 +73,7 @@ enum DraftsText {
         if !entry.place.isEmpty { parts.append(entry.place) }
         parts.append(kindAndPhotos(entry))
         parts.append(saved(entry.savedAt, now: now))
-        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.savedAt, now: now)
+        let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now)
         if DraftLibrary.showsDaysLeft(days), let days { parts.append(daysLeftLong(days)) }
         if entry.missingCount > 0 { parts.append(missing(entry.missingCount)) }
         return parts.joined(separator: " · ")

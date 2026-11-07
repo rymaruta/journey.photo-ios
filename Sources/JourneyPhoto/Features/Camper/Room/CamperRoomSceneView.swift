@@ -70,21 +70,13 @@ struct CamperRoomSceneView: UIViewRepresentable {
         let watcher = CamperFirstFrame()
         // PR #364 の検証（Mac が重い回）: 描いた知らせの時点で、SCNView がまだ画面に大きさを持っていない・部屋が組み上がって
         // いないことがあった見立て。組み上がり、画面に載った後のコマを 2 枚描いてから知らせる。まだなら次のコマを待つ
-        var drawnAfterShown = 0
-        watcher.onDrawn = { [weak c] in
-            DispatchQueue.main.async {
-                guard let c else { return }
-                if c.isShowingRoom {
-                    drawnAfterShown += 1
-                    if drawnAfterShown >= 2 {
-                        onDrawn()
-                        return
-                    }
-                }
-                watcher.arm()
-                c.requestRender()
-            }
-        }
+        // 🔴 見張りの中から見張り自身を強く掴まない（掴むと `onDrawn` と見張りが循環して解放されない・2026-11-07）。
+        // 見張りを持ち続けるのは `c.firstFrame`（型は `AnyObject?` の強い参照）と `c.onReady`・`c.frameMeter`——
+        // 部屋の画面が生きている間は残り、`dismantleUIView` で切る。作り方は `CamperFirstFrame.connect`
+        watcher.connect(isShowing: { [weak c] in
+            guard let c else { return nil }
+            return c.isShowingRoom
+        }, requestRender: { [weak c] in c?.requestRender() }, onDrawn: onDrawn)
         c.firstFrame = watcher
         // 計測（`-JPPreviewCamperPerf YES`）のときだけ、1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・
         // `CamperFrameMeter`）。本番では見張りをそのまま delegate にする（描く糸に何も足さない・#430 の見直し）
@@ -130,6 +122,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: CamperRoomScene) {
+        (coordinator.firstFrame as? CamperFirstFrame)?.disconnect()
         coordinator.cancel()
     }
 }
@@ -187,7 +180,45 @@ final class CamperFirstFrame: NSObject, SCNSceneRendererDelegate, @unchecked Sen
         lock.unlock()
     }
 
+    /// 数えるだけの入れ物（主スレッドからだけ触る）
+    private final class Counter: @unchecked Sendable { var value = 0 }
+
+    /// 組み上がった後の最初のコマを知らせる配線。**組み上がり、画面に載った後のコマを `framesNeeded` 枚描いてから**
+    /// `onDrawn` を呼ぶ（まだなら次のコマを待つ）。`isShowing` が nil を返したら（部屋の持ち主が居ない）何もしない。
+    /// 🔴 `self` は弱く掴む——強く掴むと `onDrawn` と循環して解放されない
+    func connect(framesNeeded: Int = 2, isShowing: @escaping @Sendable () -> Bool?,
+                 requestRender: @escaping @Sendable () -> Void, onDrawn done: @escaping @Sendable () -> Void) {
+        let counter = Counter()
+        onDrawn = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, let showing = isShowing() else { return }
+                if showing {
+                    counter.value += 1
+                    if counter.value >= framesNeeded {
+                        done()
+                        return
+                    }
+                }
+                self.arm()
+                requestRender()
+            }
+        }
+    }
+
+    /// 配線を切る（部屋の画面を外すとき）
+    func disconnect() {
+        lock.lock()
+        armed = false
+        lock.unlock()
+        onDrawn = nil
+    }
+
     func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        fireIfArmed()
+    }
+
+    /// 描いた後の知らせ（`renderer` から。試験は直に呼ぶ）
+    func fireIfArmed() {
         lock.lock()
         let fire = armed
         armed = false

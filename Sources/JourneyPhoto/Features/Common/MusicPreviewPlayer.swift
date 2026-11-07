@@ -66,6 +66,8 @@ final class MusicPreviewPlayer: ObservableObject {
 
     /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
     private var interruptionObserver: NSObjectProtocol?
+    /// 音の出口の変化の見張り(イヤホン・Bluetooth の切断)。アプリ全体で1つなので外さない
+    private var routeChangeObserver: NSObjectProtocol?
 
     private init() {
         // 🔴 **中断されたら「一時停止」に揃える。** OS はプレイヤーを止めるが、
@@ -79,6 +81,21 @@ final class MusicPreviewPlayer: ObservableObject {
             guard type == 1 else { return }
             self?.markInterrupted()
         }
+        // 🔴 **イヤホン・Bluetooth が外れたら「一時停止」に揃える**(2026-11-07)。OS はプレイヤーを止めるが、
+        // 中断の通知(上)は来ないので、こちらの状態は「再生中」のまま残っていた(無音なのに ▶ が再生中の表示)
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let reason = note.userInfo?["AVAudioSessionRouteChangeReasonKey"] as? UInt
+            guard Self.pausesOnRouteChange(reason: reason) else { return }
+            self?.markInterrupted()
+        }
+    }
+
+    /// 音の出口の変化で止めるか。**2 = 前の出口が無くなった**(`AVAudioSession.RouteChangeReason.oldDeviceUnavailable`・
+    /// イヤホンを抜いた・Bluetooth が切れた)だけ。新しい出口がつながった・カテゴリの変更などでは止めない
+    nonisolated static func pausesOnRouteChange(reason: UInt?) -> Bool {
+        reason == 2
     }
 
     /// 中断された（`interruptionNotification` の始まり）。鳴っていれば一時停止の扱いにする

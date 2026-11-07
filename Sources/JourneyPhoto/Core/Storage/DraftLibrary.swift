@@ -45,6 +45,11 @@ final class DraftLibrary: ObservableObject {
         /// アプリが途中で終了した自動の書きかけ（件数に数えない・先頭に固定）
         let isAuto: Bool
         let savedAt: Date
+        /// 移した下書きの期限の数え始め（前の版から移した下書きだけ・`StoryDraftStore.lifetimeStart`）。
+        /// 「あと n 日」はこれと保存の遅い方から数える。既定は nil（保存から）
+        var lifetimeStartedAt: Date? = nil
+        /// 期限の数え始め（残り日数の計算に使う）
+        var lifetimeStart: Date { max(savedAt, lifetimeStartedAt ?? savedAt) }
         /// 保存した時刻の元の字（ストーリーの送信の印 `pendingDraftStamp` と比べる）
         let stamp: String
         /// 題（投稿は1枚目の題、ストーリーは写真の上の文字かひとこと）。無ければ空
@@ -113,7 +118,7 @@ final class DraftLibrary: ObservableObject {
         guard !userId.isEmpty else { return }
         uploadStore(.saved).migrateLegacySaved(for: userId, newId: Self.legacyEntryId(userId: userId, kind: .post))
         StoryDraftStore.migrateLegacySaved(for: userId, defaults: defaults,
-                                           newId: Self.legacyEntryId(userId: userId, kind: .story))
+                                           newId: Self.legacyEntryId(userId: userId, kind: .story), now: now())
         purgeExpiredStories(for: userId)
     }
 
@@ -127,7 +132,9 @@ final class DraftLibrary: ObservableObject {
         let current = now()
         for id in StoryDraftStore.entryIds(for: userId, defaults: defaults) {
             let store = storyStore(.entry(id), userId: userId)
-            if let draft = store.draft, Self.isExpired(stamp: draft.savedAt, now: current) { store.clear() }
+            if let draft = store.draft,
+               Self.isExpired(stamp: draft.savedAt, now: current,
+                              since: StoryDraftStore.lifetimeStart(for: userId, id: id, defaults: defaults)) { store.clear() }
         }
         let auto = storyStore(.auto, userId: userId)
         if let draft = auto.draft, Self.isExpired(stamp: draft.savedAt, now: current) { auto.clear() }
@@ -173,9 +180,11 @@ final class DraftLibrary: ObservableObject {
     }
 
     /// 期限を過ぎたか。読めない時刻は過ぎていないことにする（黙って消さない）
-    nonisolated static func isExpired(stamp: String, now: Date) -> Bool {
+    /// `since` は前の版から移した下書きの数え始め（`StoryDraftStore.lifetimeStart`）。あれば、保存の時刻と
+    /// 遅い方から数える（移した直後に消さない・2026-11-07）
+    nonisolated static func isExpired(stamp: String, now: Date, since: Date? = nil) -> Bool {
         guard let saved = storyDate(stamp) else { return false }
-        return now.timeIntervalSince(saved) >= storyLifetime
+        return now.timeIntervalSince(max(saved, since ?? saved)) >= storyLifetime
     }
 
     /// 消えるまでの日数（切り上げ・「あと n 日」）。投稿・読めない時刻は nil
@@ -225,14 +234,14 @@ final class DraftLibrary: ObservableObject {
             let store = storyStore(.entry(id), userId: userId)
             if let draft = store.draft, draft.savedAt != sendingStoryStamp {
                 candidates.append((false, Self.storyDate(draft.savedAt) ?? .distantPast, id,
-                                   { self.storyEntry(id: id, draft: draft, store: store) }))
+                                   { self.storyEntry(id: id, draft: draft, store: store, userId: userId) }))
             }
         }
         if !hidden.contains(Self.autoStoryId) {
             let auto = storyStore(.auto, userId: userId)
             if let draft = auto.draft {
                 candidates.append((true, Self.storyDate(draft.savedAt) ?? .distantPast, Self.autoStoryId,
-                                   { self.storyEntry(id: Self.autoStoryId, draft: draft, store: auto, isAuto: true) }))
+                                   { self.storyEntry(id: Self.autoStoryId, draft: draft, store: auto, userId: userId, isAuto: true) }))
             }
         }
         // 並べ方は `sorted` と同じ（自動の書きかけを先頭・あとは保存の新しい順・同じ時刻は ID の順）
@@ -325,11 +334,13 @@ final class DraftLibrary: ObservableObject {
     }
 
     private func storyEntry(id: String, draft: StoryDraftStore.Draft, store: StoryDraftStore,
-                            isAuto: Bool = false) -> Entry {
+                            userId: String, isAuto: Bool = false) -> Entry {
         let shots = draft.shots
         let present = shots.filter { FileManager.default.fileExists(atPath: store.imageURL($0).path) }
         return Entry(id: id, kind: .story, isAuto: isAuto,
-                     savedAt: Self.storyDate(draft.savedAt) ?? .distantPast, stamp: draft.savedAt,
+                     savedAt: Self.storyDate(draft.savedAt) ?? .distantPast,
+                     lifetimeStartedAt: isAuto ? nil : StoryDraftStore.lifetimeStart(for: userId, id: id, defaults: defaults),
+                     stamp: draft.savedAt,
                      title: Self.storyTitle(draft), place: draft.location.trimmingCharacters(in: .whitespacesAndNewlines),
                      photoCount: shots.count, missingCount: shots.count - present.count,
                      cover: present.first.map(store.imageURL),

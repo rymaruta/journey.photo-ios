@@ -677,4 +677,60 @@ final class MultiDraftsTests: XCTestCase {
         model.makeDraftThumbnail = { _ in nil }
         return model
     }
+
+    // MARK: - 前の版から移した下書きの期限（2026-11-07）
+
+    private func saveLegacyStory(ageDays: Double) {
+        let legacy = StoryDraftStore(defaults: defaults, directory: directory)
+        legacy.use(userId: "a")
+        XCTAssertTrue(legacy.save(imageData: Data([5]), fileName: "a.jpg", contentType: "image/jpeg", coords: nil,
+                                  caption: "古い下書き", location: "", overlays: [], song: nil, durationSec: 5,
+                                  savedAt: ISO8601DateFormatter().string(from: now.addingTimeInterval(-ageDays * 86_400))))
+    }
+
+    /// 🔴 1.0.87 のストーリーの下書き(期限が無かった)は、保存から7日以上たっていても、移した直後に消えない。
+    /// 期限は移した時刻から数え直す。`migrateLegacySaved` の数え始めの記録を外すと、ここで消えて落ちる
+    func testMigratedOldStoryDraftSurvivesTheFirstLaunch() async {
+        saveLegacyStory(ageDays: 30)
+        let lib = library()
+        lib.prepare(for: "a")
+        let entries = lib.entries(for: "a")
+        XCTAssertEqual(entries.count, 1, "更新後の最初の起動で古い下書きが消えた")
+        XCTAssertEqual(entries.first?.savedAt, ISO8601DateFormatter().date(from: ISO8601DateFormatter().string(from: now.addingTimeInterval(-30 * 86_400))),
+                       "保存の時刻(送信の印)を書き換えた")
+        let days = DraftLibrary.daysLeft(kind: .story, savedAt: entries.first!.lifetimeStart, now: now)
+        XCTAssertEqual(days, 7, "残りの日数が移した時刻から数えられていない")
+    }
+
+    /// 数え直した期限が来れば、通常どおり消える(永久に残さない)
+    func testMigratedStoryDraftExpiresSevenDaysAfterMigration() async {
+        saveLegacyStory(ageDays: 30)
+        let lib = library()
+        lib.prepare(for: "a")
+        let later = now.addingTimeInterval(DraftLibrary.storyLifetime + 1)
+        lib.now = { later }
+        lib.purgeExpiredStories(for: "a")
+        XCTAssertTrue(lib.entries(for: "a").isEmpty)
+    }
+
+    /// 移していない(今の版で保存した)古い下書きは、今までどおり保存から7日で消える
+    func testNonMigratedOldStoryDraftStillExpires() async {
+        saveStory("今の版", ageDays: 8)
+        let lib = library()
+        lib.prepare(for: "a")
+        XCTAssertTrue(lib.entries(for: "a").isEmpty)
+    }
+
+    /// 何度 `prepare` しても数え始めは動かない
+    func testMigrationStartIsNotMovedByLaterCalls() async {
+        saveLegacyStory(ageDays: 30)
+        let lib = library()
+        lib.prepare(for: "a")
+        let id = StoryDraftStore.entryIds(for: "a", defaults: defaults).first!
+        let first = StoryDraftStore.lifetimeStart(for: "a", id: id, defaults: defaults)
+        lib.now = { [now] in now.addingTimeInterval(3 * 86_400) }
+        lib.prepare(for: "a")
+        XCTAssertEqual(StoryDraftStore.lifetimeStart(for: "a", id: id, defaults: defaults), first)
+        XCTAssertEqual(lib.entries(for: "a").count, 1)
+    }
 }

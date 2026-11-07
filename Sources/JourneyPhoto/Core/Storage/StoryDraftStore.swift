@@ -192,7 +192,7 @@ final class StoryDraftStore: ObservableObject {
     /// 何度呼んでも同じ（前の鍵が無ければ何もしない）
     @discardableResult
     static func migrateLegacySaved(for userId: String, defaults: UserDefaults = .standard,
-                                   newId: String = UUID().uuidString) -> String? {
+                                   newId: String = UUID().uuidString, now: Date = Date()) -> String? {
         guard !userId.isEmpty else { return nil }
         let legacy = "\(key):\(userId)"
         guard let data = defaults.data(forKey: legacy) else { return nil }
@@ -208,7 +208,25 @@ final class StoryDraftStore: ObservableObject {
         }
         defaults.set(data, forKey: "\(entryPrefix(for: userId))\(id)")
         defaults.removeObject(forKey: legacy)
+        // 🔴 **移した時刻から期限を数え直す**（2026-11-07 判断）。1.0.87 の下書きには期限が無く、
+        // 保存から7日以上たっていると、移した直後の `purgeExpiredStories` が黙って消していた。
+        // 保存の時刻（`savedAt`）は書き換えない——送っている最中の印（`pendingDraftStamp`）と同じなので。
+        // 数え始めは別の鍵に覚える（すでに覚えていれば動かさない＝何度呼んでも同じ）
+        let graceKey = lifetimeStartKey(userId: userId, id: id)
+        if defaults.string(forKey: graceKey) == nil {
+            defaults.set(DraftLibrary.storyStamp(now), forKey: graceKey)
+        }
         return id
+    }
+
+    /// 移した下書きの期限の数え始め（`migrateLegacySaved` が覚える）。移していない下書きは nil。
+    /// 鍵は下書きの鍵（`entryPrefix`）と頭が違うので、`entryIds` に混ざらない
+    static func lifetimeStart(for userId: String, id: String, defaults: UserDefaults = .standard) -> Date? {
+        defaults.string(forKey: lifetimeStartKey(userId: userId, id: id)).flatMap(DraftLibrary.storyDate)
+    }
+
+    private static func lifetimeStartKey(userId: String, id: String) -> String {
+        "journey-photo-story-draft-lifetime-start:\(userId):\(id)"
     }
 
     func use(userId: String?) {
@@ -479,6 +497,9 @@ final class StoryDraftStore: ObservableObject {
             try? FileManager.default.removeItem(at: fileURL(shot.imageFile))
         }
         defaults.removeObject(forKey: key(for: userId))
+        if case .entry(let id) = slot, let userId {
+            defaults.removeObject(forKey: Self.lifetimeStartKey(userId: userId, id: id))
+        }
         draft = nil
     }
 }

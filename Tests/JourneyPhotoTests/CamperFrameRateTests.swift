@@ -107,5 +107,45 @@ final class CamperFrameRateTests: XCTestCase {
         XCTAssertFalse(scene.isFlickering)
         XCTAssertEqual(view.preferredFramesPerSecond, 60)
     }
+
+    // MARK: 低電力モード・熱でも止める(2026-11-07)
+
+    /// 条件は「視差効果を減らす」・低電力モード・熱(serious 以上)のどれか1つでも当たれば止める。
+    /// 通常時(どれも無し)は揺らす。`allowed` が `!reduceMotion` だけに戻ると落ちる
+    func testFlickerPolicy() {
+        XCTAssertTrue(CamperFlicker.allowed(reduceMotion: false, lowPower: false, thermalSerious: false), "通常時に止めた")
+        XCTAssertFalse(CamperFlicker.allowed(reduceMotion: true, lowPower: false, thermalSerious: false))
+        XCTAssertFalse(CamperFlicker.allowed(reduceMotion: false, lowPower: true, thermalSerious: false), "低電力モードで止まらない")
+        XCTAssertFalse(CamperFlicker.allowed(reduceMotion: false, lowPower: false, thermalSerious: true), "熱で止まらない")
+        XCTAssertFalse(CamperFlicker.allowed(reduceMotion: true, lowPower: true, thermalSerious: true))
+    }
+
+    /// 低電力モードで止まり、戻れば揺れ直す。止まっている間は描き続けない(30 に下げる必要も無く 60 のまま)
+    func testLowPowerStopsAndResumesFlicker() async {
+        let scene = nightScene()
+        XCTAssertTrue(scene.isFlickering)
+        scene.setPowerState(lowPower: true, thermalSerious: false)
+        XCTAssertFalse(scene.isFlickering, "低電力モードでも揺れている")
+        XCTAssertFalse(scene.flickerAllowed)
+        scene.idleDelay = 0.05
+        let view = SCNView(frame: .zero)
+        scene.noteActivity(view)
+        await wait(0.3)
+        XCTAssertEqual(view.preferredFramesPerSecond, 60)
+        scene.setPowerState(lowPower: false, thermalSerious: false)
+        XCTAssertTrue(scene.isFlickering, "戻っても揺れ直さない")
+    }
+
+    /// 熱は「視差効果を減らす」と独立: 視差効果が許していても熱で止まり、熱が引いても視差効果が止めていれば止まったまま
+    func testThermalAndReduceMotionAreIndependent() {
+        let scene = nightScene()
+        scene.setPowerState(lowPower: false, thermalSerious: true)
+        XCTAssertFalse(scene.isFlickering)
+        scene.setFlicker(allowed: false)
+        scene.setPowerState(lowPower: false, thermalSerious: false)
+        XCTAssertFalse(scene.isFlickering, "熱が引いたら視差効果の指定まで外れた")
+        scene.setFlicker(allowed: true)
+        XCTAssertTrue(scene.isFlickering)
+    }
 }
 #endif

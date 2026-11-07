@@ -42,7 +42,45 @@ enum CamperFrameRate {
     }
 }
 
-/// SceneKit の場面（車・床・光・カメラ）
+/// 炎の揺らぎを止める条件(2026-11-07)。揺らぎ(`SCNAction`)は夜の外観を毎秒 60 コマ描き直させる(上の `CamperFrameRate`)ので、
+/// 「視差効果を減らす」に加えて、**低電力モード**と**熱(serious 以上)**でも止める。止まれば止まっている間は描かない
+/// (`rendersContinuously` は false のまま)ので、30 コマに下げる必要も無い——`noteActivity` は揺らぎが許されない間は
+/// 60 のまま待つ。通常時(3つとも許す)は今までどおり揺らす
+enum CamperFlicker {
+    static func allowed(reduceMotion: Bool, lowPower: Bool, thermalSerious: Bool) -> Bool {
+        !reduceMotion && !lowPower && !thermalSerious
+    }
+}
+
+/// 低電力モード・熱の状態の読み取りと見張り(Darwin だけ。Linux の模型では常に「通常」)
+final class PowerStateWatch: @unchecked Sendable {
+    private var tokens: [NSObjectProtocol] = []
+
+    static func current() -> (lowPower: Bool, thermalSerious: Bool) {
+        #if canImport(Darwin)
+        let info = ProcessInfo.processInfo
+        return (info.isLowPowerModeEnabled, info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue)
+        #else
+        return (false, false)
+        #endif
+    }
+
+    /// 状態が変わったら `onChange` を主キューで呼ぶ
+    func start(_ onChange: @escaping @Sendable () -> Void) {
+        #if canImport(Darwin)
+        let names: [Notification.Name] = [.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification]
+        for name in names {
+            tokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in onChange() })
+        }
+        #endif
+    }
+
+    deinit {
+        for token in tokens { NotificationCenter.default.removeObserver(token) }
+    }
+}
+
+/// SceneKit の場面(車・床・光・カメラ)
 @MainActor
 final class CamperScene {
 
@@ -87,8 +125,14 @@ final class CamperScene {
     /// 炎の舌と、揺らす灯り（焚き火・ランタン）。夜だけ、ゆっくり小さく揺らす（「視差効果を減らす」では止める）
     private var flameNodes: [SCNNode] = []
     private var flickerLights: [(SCNNode, Double)] = []
-    /// 揺らしてよいか（`CamperSceneView` が「視差効果を減らす」を渡す）
+    /// 揺らしてよいか。**「視差効果を減らす」・低電力モード・熱の3つがすべて許したときだけ true**
+    /// （`CamperFlicker.allowed`・2026-11-07）。外から渡すのは視差効果の分（`setFlicker(allowed:)`）で、
+    /// 低電力・熱はこの場面が自分で見張る（`powerWatch`）
     private(set) var flickerAllowed = true
+    private var motionAllowed = true
+    private var lowPowerMode = false
+    private var thermalSerious = false
+    private let powerWatch = PowerStateWatch()
     /// いま揺らしているか（揺らしている間だけ SCNView を回し続ける）
     private(set) var isFlickering = false
     /// 揺らし始めた・止めた（SCNView の描き続けるかを切り替える）
@@ -108,6 +152,34 @@ final class CamperScene {
 
     init() {
         buildStage()
+        let state = PowerStateWatch.current()
+        lowPowerMode = state.lowPower
+        thermalSerious = state.thermalSerious
+        applyFlickerPolicy()
+        powerWatch.start { [weak self] in
+            MainActor.assumeIsolated { self?.refreshPowerState() }
+        }
+    }
+
+    /// 低電力モード・熱の状態が変わった(通知は主キューで届く)
+    func refreshPowerState() {
+        let state = PowerStateWatch.current()
+        setPowerState(lowPower: state.lowPower, thermalSerious: state.thermalSerious)
+    }
+
+    /// 低電力モード・熱(serious 以上)の状態を渡す(試験はここから直に渡す)
+    func setPowerState(lowPower: Bool, thermalSerious: Bool) {
+        guard lowPower != lowPowerMode || thermalSerious != self.thermalSerious else { return }
+        lowPowerMode = lowPower
+        self.thermalSerious = thermalSerious
+        applyFlickerPolicy()
+    }
+
+    private func applyFlickerPolicy() {
+        let allowed = CamperFlicker.allowed(reduceMotion: !motionAllowed, lowPower: lowPowerMode, thermalSerious: thermalSerious)
+        guard allowed != flickerAllowed else { return }
+        flickerAllowed = allowed
+        updateFlicker()
     }
 
     private func buildStage() {
@@ -601,9 +673,8 @@ final class CamperScene {
 
     /// 揺らしてよいか（「視差効果を減らす」では止める）
     func setFlicker(allowed: Bool) {
-        guard allowed != flickerAllowed else { return }
-        flickerAllowed = allowed
-        updateFlicker()
+        motionAllowed = allowed
+        applyFlickerPolicy()
     }
 
     /// 夜だけ、炎の形と焚き火・ランタンの光をゆっくり小さく揺らす（2026-10-19 owner「発光の仕方ひどい」: 硬い円の光）
