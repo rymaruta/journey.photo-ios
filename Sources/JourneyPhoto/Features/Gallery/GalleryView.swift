@@ -90,13 +90,13 @@ struct GalleryView: View {
                     Task { await model.load() }
                 }
             case .loaded(let photos):
-                let _ = PerfRecorder.shared.event("home.loaded.body")
+                let _ = PerfRecorder.shared.mark("home.loaded.body")
                 // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
                 // 切り替えが逃げ道だったが、整理案 01c で外した
                 feed(photos)
-                    .perfMark("home.feed.appear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
+                    .onAppear { PerfRecorder.shared.mark("home.feed.appear") }   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             }
         }
         .webScreen()

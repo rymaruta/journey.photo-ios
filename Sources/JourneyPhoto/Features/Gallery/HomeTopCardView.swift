@@ -105,7 +105,7 @@ struct HomeTopCardView: View {
         content(choices)
             .onChange(of: shelfKey(choices), initial: true) { _, _ in
                 seasonShelf = visibleShelf(choices).map { HomeSeasonShelfSlot(shelf: $0, spots: spots) }
-                PerfRecorder.shared.hit("home.seasonShelf.set")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
+                PerfRecorder.shared.mark("home.seasonShelf.set")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             }
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
@@ -445,7 +445,7 @@ struct HomeTopCardView: View {
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
         spotsRevision &+= 1
-        PerfRecorder.shared.hit("home.spots.loaded")
+        PerfRecorder.shared.mark("home.spots.loaded")
         scheduleSeasonReminder()
     }
 
@@ -465,7 +465,7 @@ struct HomeTopCardView: View {
         guard !Task.isCancelled else { return }
         spots = merged
         spotsRevision &+= 1
-        PerfRecorder.shared.hit("home.details.merged")
+        PerfRecorder.shared.mark("home.details.merged")
     }
 
     /// 前面が確定したときだけ、一冊の印・行きたい・取り直した札を入れる

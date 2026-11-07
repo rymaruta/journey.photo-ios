@@ -377,6 +377,24 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertEqual(evTail(off), "[]")
     }
 
+    /// `mark` は、そのときまでの評価回数を名前に付けて毎回残す（同じ名前でも2回目を捨てない）
+    func testMarkAttachesCounts() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.bodyHit(.home)
+        rec.hit("home.tile.body")
+        rec.hit("home.tile.body")
+        rec.mark("m")
+        rec.hit("home.mosaic.body")
+        rec.mark("m")
+        let tail = evTail(rec)
+        XCTAssertTrue(tail.contains("m{home=1,mosaic=0,tile=2,shelf=0}"), tail)
+        XCTAssertTrue(tail.contains("m{home=1,mosaic=1,tile=2,shelf=0}"), tail)
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.mark("m")
+        XCTAssertEqual(evTail(off), "[]")
+    }
+
     /// 無効のとき（本番）は、出来事の名前を作らず、鍵も取らず、何も残さない。呼び出しが何千回あっても同じ
     func testDisabledRecorderDoesNoWorkForEvents() {
         let clock = FakeClock()

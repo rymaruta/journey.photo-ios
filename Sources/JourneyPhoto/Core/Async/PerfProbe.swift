@@ -206,6 +206,23 @@ final class PerfRecorder: @unchecked Sendable {
         }
     }
 
+    /// 引き金になりうる出来事を、**そのときまでの評価回数つき**で残す（`home.seasonShelf.set{home=8,mosaic=8,tile=33,shelf=0}`）。
+    /// 引き金どうしの間の差が、その引き金で何回描き直されたか（2026-11-07・札 #435 / #429）。同じ名前も毎回残す。無効なら何もしない
+    func mark(_ label: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        let now = elapsedMs()
+        let text = label()
+        lock.lock()
+        defer { lock.unlock() }
+        let counts = "{home=\(bodyCounts[.home] ?? 0),mosaic=\(hitCounts["home.mosaic.body"] ?? 0),"
+            + "tile=\(hitCounts["home.tile.body"] ?? 0),shelf=\(hitCounts["home.shelf.body"] ?? 0)}"
+        if events.count < Self.eventCap {
+            events.append(PerfEvent(ms: now, name: text + counts))
+        } else {
+            droppedEvents += 1
+        }
+    }
+
     // MARK: - body
 
     /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）。
