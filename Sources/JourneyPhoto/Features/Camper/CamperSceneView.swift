@@ -8,6 +8,12 @@ import SceneKitShim
 #endif
 
 /// 車を描く SCNView（指の動きは SwiftUI の側が受けて、向きの値で渡す）
+///
+/// **UI テストとの対応**（`Tools/pick-ui-tests.py` が PR の差分から関連 UI テストを選ぶ手がかり・2026-11-06）:
+/// この SCNView は、UI テストから `"camper.scene"`（`CamperGarageView` が付ける識別子）で引かれ、
+/// `"camper.door"`（扉）・`"camper.mood.night"`（夜）・`"camper.reset"` の操作で場面が変わる。
+/// 識別子がこのファイルに無いと、差分から関連テストを特定できず、PR の検証が UI テストを全件流す
+/// （#493 は 2 時間 40 分の上限を超えて打ち切られた）。ここに書いた文字列は、その手がかりを兼ねる
 struct CamperSceneView: UIViewRepresentable {
     let config: CamperConfig
     let angle: CamperAngle
@@ -58,6 +64,7 @@ struct CamperSceneView: UIViewRepresentable {
         context.coordinator.setDoor(open: doorOpen, animated: false)
         context.coordinator.setFlicker(allowed: !reduceMotion)
         context.coordinator.show(config)
+        context.coordinator.noteActivity(view)
         return view
     }
 
@@ -68,6 +75,8 @@ struct CamperSceneView: UIViewRepresentable {
             c.setAngle(angle, animated: animateAngle && !reduceMotion)
             c.setDoor(open: doorOpen, animated: !reduceMotion)
             c.setFlicker(allowed: !reduceMotion)
+            // 操作のあとは 60、止まって夜の炎が揺れていれば 30（`CamperFrameRate`）
+            c.noteActivity(view)
         }
     }
 
