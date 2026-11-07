@@ -37,12 +37,29 @@ final class CamperVarietyMeshSizeTests: XCTestCase {
         var total: [CamperRoomCategory: Int] = [:], most: [CamperRoomCategory: (Int, String)] = [:]
         let pieces = CamperRoomVariety.pieces
         var counts = [Int](repeating: 0, count: pieces.count)
+        var verts = [Int](repeating: 0, count: pieces.count)
         let gate = NSLock()
         DispatchQueue.concurrentPerform(iterations: pieces.count) { k in
-            let n = CamperRoomVariety.build(pieces[k]).triangleCount
+            let mesh = CamperRoomVariety.build(pieces[k])
             gate.lock()
-            counts[k] = n
+            counts[k] = mesh.triangleCount
+            verts[k] = mesh.positions.count
             gate.unlock()
+        }
+        // 2026-11-07（札 #430・測るだけ）: 家具 1 点ごとの重さの表。分類の合計と、三角形の多い順の上位 30 を毎回ログに出す
+        // （`MESHSIZE` の行。CAMPER_MESH_SIZES を渡せない Mac の CI でも読めるように）
+        var byCategory: [CamperRoomCategory: (n: Int, tris: Int, verts: Int)] = [:]
+        for (k, p) in pieces.enumerated() {
+            var t = byCategory[p.furniture.category] ?? (0, 0, 0)
+            t.n += 1; t.tris += counts[k]; t.verts += verts[k]
+            byCategory[p.furniture.category] = t
+        }
+        for c in CamperRoomCategory.allCases { if let t = byCategory[c] {
+            print("MESHSIZE 分類 \(c.rawValue) 点数 \(t.n) 三角形合計 \(t.tris) 頂点合計 \(t.verts) 平均三角形 \(t.tris / max(t.n, 1))")
+        } }
+        print("MESHSIZE 全部 点数 \(pieces.count) 三角形 \(counts.reduce(0, +)) 頂点 \(verts.reduce(0, +))")
+        for k in counts.indices.sorted(by: { counts[$0] > counts[$1] }).prefix(30) {
+            print("MESHSIZE 上位 \(pieces[k].furniture.category.rawValue) \(pieces[k].furniture.id) 三角形 \(counts[k]) 頂点 \(verts[k])")
         }
         for (k, p) in pieces.enumerated() {
             let c = p.furniture.category

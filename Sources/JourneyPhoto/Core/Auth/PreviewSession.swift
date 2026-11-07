@@ -369,6 +369,20 @@ enum PreviewSession {
     /// `-JPPreviewCamperPerf YES`。`CamperRenderMeter`。入っている見本の利用者のときだけ。Release では必ず false
     static let camperPerfKey = "JPPreviewCamperPerf"
 
+    /// メモリの内訳を測るための A/B（2026-11-07・札 #430・測るだけ）。`-JPPreviewCamperAA none|2x|4x` で、とおまわり号の外観・部屋の
+    /// SCNView の輪郭のなめらかさ（`antialiasingMode`）を切り替える。Debug かつ入っている見本の利用者のときだけ。指定が無い・Release では nil（本番の既定のまま）
+    static let camperAAKey = "JPPreviewCamperAA"
+
+    static var camperAA: String? {
+        #if DEBUG
+        guard userId != nil else { return nil }
+        guard let v = UserDefaults.standard.string(forKey: camperAAKey)?.lowercased(), ["none", "2x", "4x"].contains(v) else { return nil }
+        return v
+        #else
+        return nil
+        #endif
+    }
+
     static var camperPerf: Bool {
         #if DEBUG
         guard userId != nil else { return false }

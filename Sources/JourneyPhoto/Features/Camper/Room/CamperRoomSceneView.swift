@@ -52,7 +52,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.backgroundColor = .clear
-        view.antialiasingMode = Self.antialiasing
+        view.antialiasingMode = PreviewSession.camperAntialiasing(default: Self.antialiasing)
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = false
         #if canImport(SceneKit)

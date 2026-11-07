@@ -31,7 +31,7 @@ struct CamperSceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.backgroundColor = .clear
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = PreviewSession.camperAntialiasing(default: .multisampling4X)
         view.preferredFramesPerSecond = 60
         // 動いた時だけ描き直す（止まっている間は描かない）
         view.rendersContinuously = false

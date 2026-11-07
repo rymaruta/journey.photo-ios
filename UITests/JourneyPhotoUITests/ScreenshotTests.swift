@@ -5270,6 +5270,10 @@ final class ScreenshotTests: XCTestCase {
         /// アプリ全体（`Process`）の CPU の時間の合計（ms）とメモリ（MB）
         var cpuMs = 0.0
         var memMB = 0.0
+        /// メモリの内訳（`task_vm_info` の internal・compressed・device・MB・2026-11-07）
+        var intMB = 0.0
+        var cmpMB = 0.0
+        var devMB = 0.0
         /// 場面の中身の数（`SceneExterior`・`SceneRoom`・`CamperSceneStats`）の「欄=値」の原文（2026-11-06・メモリの内訳）
         var raw = ""
     }
@@ -5296,6 +5300,9 @@ final class ScreenshotTests: XCTestCase {
                 case "slow": t.slow = Int(kv[1]) ?? 0
                 case "cpu_ms": t.cpuMs = Double(kv[1]) ?? 0
                 case "mem_mb": t.memMB = Double(kv[1]) ?? 0
+                case "int_mb": t.intMB = Double(kv[1]) ?? 0
+                case "cmp_mb": t.cmpMB = Double(kv[1]) ?? 0
+                case "dev_mb": t.devMB = Double(kv[1]) ?? 0
                 default: break
                 }
             }
@@ -5454,6 +5461,46 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, night ? "95x5-計測（部屋・夜）" : "95x4-計測（部屋・昼）")
         camperReport(label, lines)
     }
+
+    // MARK: - とおまわり号のメモリの内訳（2026-11-07・札 #430・測るだけ）
+    //
+    // 外観を開いて組み終えた後 → 「中に入る」で部屋を組み終えた後のアプリ全体のメモリ（phys_footprint）を、
+    // SCNView の輪郭のなめらかさ（`-JPPreviewCamperAA none|2x|4x`・外観と部屋の両方）を替えて、各 3 回測る。
+    // 毎回アプリを起動し直す。ログの `CAMPERMEM:` の行（値は MB・シミュレータ）。名指しは `screens=testMeasuresCamperMemory`
+
+    private func measureCamperMemory(aa: String, runs: Int = 3) {
+        executionTimeAllowance = 1100
+        var lines: [String] = []
+        for run in 1...runs {
+            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES", "-JPPreviewCamperAA", aa])
+            defer { app.terminate() }
+            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(aa) \(run) 回目）"); continue }
+            let ext = camperMeter(app, "camper.perf.exterior")
+            let enter = app.buttons["camper.room.enter"].firstMatch
+            guard enter.waitForExistence(timeout: 15) else { XCTFail("「中に入る」が無い"); continue }
+            if !enter.isHittable { scrollTo(enter, in: app) }
+            enter.tap()
+            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない（\(aa) \(run) 回目）"); continue }
+            Thread.sleep(forTimeInterval: 3)
+            let room = camperMeter(app, "camper.perf.room")
+            Thread.sleep(forTimeInterval: 5)
+            let late = camperMeter(app, "camper.perf.room")
+            let e = ext["Process"] ?? CamperRenderTally(), r = room["Process"] ?? CamperRenderTally(), l = late["Process"] ?? CamperRenderTally()
+            lines.append(String(format: "CAMPERMEM aa=%@ run=%d ext_mb=%.1f room_mb=%.1f delta_mb=%.1f room_late_mb=%.1f | ext int=%.1f cmp=%.1f dev=%.1f | room int=%.1f cmp=%.1f dev=%.1f | SceneExterior %@ | SceneRoom %@",
+                                aa, run, e.memMB, r.memMB, r.memMB - e.memMB, l.memMB, e.intMB, e.cmpMB, e.devMB, r.intMB, r.cmpMB, r.devMB,
+                                ext["SceneExterior"]?.raw ?? "-", room["SceneRoom"]?.raw ?? "-"))
+        }
+        for line in lines { print("CAMPERMEM: \(line)") }
+        let text = XCTAttachment(string: lines.joined(separator: "\n"))
+        text.name = "計測（とおまわり号のメモリ・\(aa)）"
+        text.lifetime = .keepAlways
+        add(text)
+        XCTAssertEqual(lines.count, runs, "測れなかった回がある")
+    }
+
+    func testMeasuresCamperMemoryAA4x() { measureCamperMemory(aa: "4x") }
+    func testMeasuresCamperMemoryAA2x() { measureCamperMemory(aa: "2x") }
+    func testMeasuresCamperMemoryAANone() { measureCamperMemory(aa: "none") }
 
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
