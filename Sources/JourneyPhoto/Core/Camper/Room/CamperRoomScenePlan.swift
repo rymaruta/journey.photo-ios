@@ -53,6 +53,8 @@ struct CamperRoomScenePlan: Sendable {
         }
         bitmaps["contact"] = CamperTextures.contactShadow().premultiplied()
         bitmaps["room.grid"] = gridBitmap()
+        // 測定専用（`-JPPreviewCamperDiag halftex`・Debug のみ）: 貼り絵を縦横半分の寸法にする
+        if PreviewSession.camperDiag == "halftex" { bitmaps = bitmaps.mapValues { $0.halved() } }
         return CamperRoomScenePlan(blueprint: bp, shell: shell, furniture: furniture, furnitureGlass: furnitureGlass, bitmaps: bitmaps)
     }
 
@@ -61,7 +63,14 @@ struct CamperRoomScenePlan: Sendable {
         guard let m = CamperRoomFurnitureModels.mesh(id) else { return nil }
         let parts = m.split(CamperRoomMaterials.drawnAfterOpaque)
         let glass = parts.matched.groups.isEmpty ? nil : CamperPreparedMesh(parts.matched, unit: unit)
-        return (CamperPreparedMesh(parts.rest, unit: unit), glass)
+        var body = CamperPreparedMesh(parts.rest, unit: unit)
+        // 測定専用（`-JPPreviewCamperDiag lightbed|lightfurniture`・Debug のみ）: ベッド（か家具全部）を同じ大きさの箱に差し替える
+        switch PreviewSession.camperDiag {
+        case "lightfurniture": body = body.boundingBox()
+        case "lightbed": if CamperRoomCatalog.furniture(id)?.category == .bed { body = body.boundingBox() }
+        default: break
+        }
+        return (body, glass)
     }
 
     /// 向きによって見せる壁（手前の端の壁は低い方、奥の端の壁は高い方。窓もその壁と一緒）

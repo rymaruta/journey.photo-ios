@@ -180,7 +180,9 @@ final class CamperRoomScene {
                 CamperRoomScenePlan.make(layout, doc: doc, paint: paint, extra: extra)
             }.value
             guard !Task.isCancelled, let self else { return }
+            CamperRenderMeter.shared.mark("B1planned")
             self.install(plan, key: key, shell: self.buildShell(plan))
+            CamperRenderMeter.shared.mark("B2installed")
             if self.buildingKey == key { self.buildingKey = nil }
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
             self.reapplyDrag()
@@ -190,13 +192,34 @@ final class CamperRoomScene {
             self.applyCutaway()
             self.updateFocusRing()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
+            CamperRenderMeter.shared.mark("B3synced")
             #if canImport(SceneKit)
             // 見本の計測の起動だけ（メモリの内訳・#430）。UI テストが "camper.room.scene"・"camper.room.enter" で引く部屋の場面
             CamperSceneStats.publish("SceneRoom", root: self.scene.rootNode)
+            self.publishPartStats()
             #endif
+            CamperRenderMeter.shared.mark("B4ready", vm: true)
             self.onReady?(self.marker(ms: ms))
         }
     }
+
+    #if canImport(SceneKit)
+    /// 家具ごと・殻の組ごとの三角形・頂点（2026-11-07・#430・測るだけ。数える起動のときだけ）。同じ種類の家具は形を共有しているので、合計は重ならない数とは限らない
+    private func publishPartStats() {
+        let meter = CamperRenderMeter.shared
+        guard meter.enabled else { return }
+        for (i, uid) in itemNodes.keys.sorted().enumerated() {
+            guard let e = itemNodes[uid] else { continue }
+            let s = CamperSceneStats.measure(e.node)
+            let cat = CamperRoomCatalog.furniture(e.item.furnitureId)?.category.rawValue ?? "-"
+            meter.note(String(format: "SceneItem%02d", i), String(format: "id=%@ cat=%@ tris=%d verts=%d geo_kb=%.0f mats=%d", e.item.furnitureId, cat, s.triangles, s.vertices, s.geometryKB, s.materials))
+        }
+        for (i, g) in shellGroups.enumerated() {
+            let s = CamperSceneStats.measure(g.0)
+            meter.note(String(format: "SceneShell%02d", i), String(format: "key=%@ tris=%d verts=%d geo_kb=%.0f mats=%d", g.1.replacingOccurrences(of: " ", with: "_"), s.triangles, s.vertices, s.geometryKB, s.materials))
+        }
+    }
+    #endif
 
     /// 試験用: いまの処理の中で組む
     func installNow(layout: CamperRoomLayout, doc: CamperRoomDocument, paint: UInt32) {
@@ -746,6 +769,10 @@ final class CamperRoomScene {
         mood = m
         applyMood(m)
         for (_, entry) in itemNodes where !entry.item.photos.isEmpty { applyPhotos(entry.node, entry.item) }
+        #if canImport(SceneKit)
+        CamperSceneStats.publish("SceneRoomMood", root: scene.rootNode)
+        #endif
+        CamperRenderMeter.shared.mark("D1mood_" + m.rawValue, vm: true)
         onReady?(marker())
     }
 

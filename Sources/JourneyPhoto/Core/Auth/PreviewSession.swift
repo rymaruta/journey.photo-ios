@@ -369,6 +369,35 @@ enum PreviewSession {
     /// `-JPPreviewCamperPerf YES`。`CamperRenderMeter`。入っている見本の利用者のときだけ。Release では必ず false
     static let camperPerfKey = "JPPreviewCamperPerf"
 
+    /// メモリの内訳を測るための A/B（2026-11-07・札 #430・測るだけ）。`-JPPreviewCamperAA none|2x|4x` で、とおまわり号の外観・部屋の
+    /// SCNView の輪郭のなめらかさ（`antialiasingMode`）を切り替える。Debug かつ入っている見本の利用者のときだけ。指定が無い・Release では nil（本番の既定のまま）
+    static let camperAAKey = "JPPreviewCamperAA"
+
+    static var camperAA: String? {
+        #if DEBUG
+        guard userId != nil else { return nil }
+        guard let v = UserDefaults.standard.string(forKey: camperAAKey)?.lowercased(), ["none", "2x", "4x"].contains(v) else { return nil }
+        return v
+        #else
+        return nil
+        #endif
+    }
+
+    /// 測定専用の差し替え（2026-11-07・札 #430・Debug の見本の利用者のときだけ。Release では必ず nil）。
+    /// `-JPPreviewCamperDiag lightbed|lightfurniture|halftex`: ベッドを箱に・家具を全部箱に・貼り絵を半分の寸法に。見た目の確認は不要
+    static let camperDiagKey = "JPPreviewCamperDiag"
+
+    static var camperDiag: String? {
+        #if DEBUG
+        guard userId != nil else { return nil }
+        guard let v = UserDefaults.standard.string(forKey: camperDiagKey)?.lowercased(),
+              ["lightbed", "lightfurniture", "halftex"].contains(v) else { return nil }
+        return v
+        #else
+        return nil
+        #endif
+    }
+
     static var camperPerf: Bool {
         #if DEBUG
         guard userId != nil else { return false }

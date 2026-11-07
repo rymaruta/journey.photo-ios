@@ -52,7 +52,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.backgroundColor = .clear
-        view.antialiasingMode = Self.antialiasing
+        view.antialiasingMode = PreviewSession.camperAntialiasing(default: Self.antialiasing)
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = false
         #if canImport(SceneKit)
@@ -66,6 +66,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.attach(view)
         view.scene = c.scene
         view.pointOfView = c.cameraNode
+        CamperRenderMeter.shared.mark("A1viewMade", vm: true)
         // 組み上がった後の最初のコマを知らせる（Mac run 646: 組み上がった合図から実際に描くまで、シミュレーターでは数秒かかった）
         let watcher = CamperFirstFrame()
         // PR #364 の検証（Mac が重い回）: 描いた知らせの時点で、SCNView がまだ画面に大きさを持っていない・部屋が組み上がって
@@ -76,7 +77,10 @@ struct CamperRoomSceneView: UIViewRepresentable {
         watcher.connect(isShowing: { [weak c] in
             guard let c else { return nil }
             return c.isShowingRoom
-        }, requestRender: { [weak c] in c?.requestRender() }, onDrawn: { onDrawn() })
+        }, requestRender: { [weak c] in c?.requestRender() }, onDrawn: {
+            CamperRenderMeter.shared.mark("C1firstFrame", vm: true)
+            onDrawn()
+        })
         c.firstFrame = watcher
         // 計測（`-JPPreviewCamperPerf YES`）のときだけ、1 コマの時間を測り、描いた後を見張りへ渡す（2026-10-31・#430・
         // `CamperFrameMeter`）。本番では見張りをそのまま delegate にする（描く糸に何も足さない・#430 の見直し）
