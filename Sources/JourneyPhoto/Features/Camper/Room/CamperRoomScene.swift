@@ -180,6 +180,7 @@ final class CamperRoomScene {
                 CamperRoomScenePlan.make(layout, doc: doc, paint: paint, extra: extra)
             }.value
             guard !Task.isCancelled, let self else { return }
+            PerfRecorder.shared.event("camper.room.install>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             self.install(plan, key: key, shell: self.buildShell(plan))
             if self.buildingKey == key { self.buildingKey = nil }
             if let now = self.doc { self.syncItems(layout: layout, doc: now) }
@@ -194,6 +195,7 @@ final class CamperRoomScene {
             // 見本の計測の起動だけ（メモリの内訳・#430）。UI テストが "camper.room.scene"・"camper.room.enter" で引く部屋の場面
             CamperSceneStats.publish("SceneRoom", root: self.scene.rootNode)
             #endif
+            PerfRecorder.shared.event("camper.room.install<")
             self.onReady?(self.marker(ms: ms))
         }
     }

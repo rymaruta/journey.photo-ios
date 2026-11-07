@@ -122,9 +122,11 @@ struct PhotoMapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
+            PerfRecorder.shared.event("map.task>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             if !autoLocateStarted {
                 autoLocateStarted = true
                 location.locate(requestedByUser: false)
+                PerfRecorder.shared.event("map.locate")
             }
             let revision = hidden.userRevision
             seenUserRevision = revision
@@ -164,6 +166,7 @@ struct PhotoMapView: View {
             if isOnScreen, userChanged { reloadForNewUser() }
         }
         .onAppear {
+            PerfRecorder.shared.event("map.onAppear")
             switch front.appear() {
             case .first:
                 landMapFront()

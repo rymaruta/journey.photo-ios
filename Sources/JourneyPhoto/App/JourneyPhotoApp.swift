@@ -54,11 +54,17 @@ struct JourneyPhotoApp: App {
         // （`PerfRecorder`・札 #435 / #429。無効のときは何もしない）
         PerfRecorder.shared.markLaunch()
         PerfStallWatcher.shared.start()
+        // 起動の各段の時刻（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429。測るだけ）
+        PerfRecorder.shared.event("app.init.start")
         JourneyPhotoApp.configureImageCache()
+        PerfRecorder.shared.event("app.init.imageCache")
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
         TabBarStyle.apply()
+        PerfRecorder.shared.event("app.init.tabBarStyle")
+        defer { PerfRecorder.shared.event("app.init.end") }
         do {
             try AuthGateway.configure()
+            PerfRecorder.shared.event("app.init.authGateway")
         } catch {
             // ここで落とさない。ログインが要らない画面（公開ギャラリー）は
             // 出せるので、**アプリを起動できなくする方が損**
@@ -183,6 +189,8 @@ struct JourneyPhotoApp: App {
 
     var body: some Scene {
         WindowGroup {
+            // 最初の画面を組み始めた時刻（`@StateObject` の中身はここで初めて作られる）
+            let _ = PerfRecorder.shared.event("app.body")
             RootView(configurationError: configurationError)
                 // 起動の区間の終わり（1回だけ・見た目は変えない・`PerfSignpost`）
                 .onAppear { PerfSignpost.endLaunch() }

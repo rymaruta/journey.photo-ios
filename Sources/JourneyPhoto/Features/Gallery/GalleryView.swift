@@ -111,7 +111,9 @@ struct GalleryView: View {
             // `setHidden` が届かず、ブロックが一生効かない
             // 「新着」はページで読む（`GET /feed`・2026-10-03）。同じ理由で環境の1つを渡す
             model.use(gallery: environment.gallery, feed: environment.publicFeed)
+            PerfRecorder.shared.event("home.load>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07 札 #435 / #429）
             await model.load()
+            PerfRecorder.shared.event("home.load<")
         }
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る

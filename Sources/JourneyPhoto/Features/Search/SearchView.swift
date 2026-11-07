@@ -164,6 +164,7 @@ struct SearchView: View {
             }
         }
         .onAppear {
+            PerfRecorder.shared.event("search.onAppear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             switch front.appear() {
             case .first:
                 applyFrontModeration(reloadIfNeeded: true)

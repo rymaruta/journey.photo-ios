@@ -75,6 +75,9 @@ final class StoreService: ObservableObject {
     private var updatesTask: Task<Void, Never>?
 
     init(prefix: String = ProProducts.currentPrefix) {
+        // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
+        PerfRecorder.shared.event("StoreService.init>")
+        defer { PerfRecorder.shared.event("StoreService.init<") }
         self.prefix = prefix
     }
 

@@ -58,6 +58,9 @@ final class AppEnvironment: ObservableObject {
          quiz: DailyQuizService = DailyQuizService(),
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
+        // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
+        PerfRecorder.shared.event("AppEnvironment.init>")
+        defer { PerfRecorder.shared.event("AppEnvironment.init<") }
         let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session)
         self.api = api
         self.gallery = gallery

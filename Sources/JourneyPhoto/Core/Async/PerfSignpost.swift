@@ -52,6 +52,8 @@ enum PerfSignpost {
 
     /// 区間を始める。`OSSignposter` は名前に `StaticString` しか取らないので、名前ごとに書き分ける
     static func begin(_ name: Name) -> Interval {
+        // UI テストのときだけ、出来事の記録にも残す（`PerfRecorder.event`・2026-11-07）
+        PerfRecorder.shared.event("sp.\(name.rawValue)>")
         #if canImport(os)
         let id = signposter.makeSignpostID()
         let state: OSSignpostIntervalState
@@ -74,6 +76,7 @@ enum PerfSignpost {
     }
 
     static func end(_ interval: Interval) {
+        PerfRecorder.shared.event("sp.\(interval.name.rawValue)<")
         #if canImport(os)
         switch interval.name {
         case .launch: signposter.endInterval("Launch", interval.state)

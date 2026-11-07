@@ -146,7 +146,9 @@ struct MyPageView: View {
         }
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
+            PerfRecorder.shared.event("mypage.load>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             await model.load(for: auth.userId)
+            PerfRecorder.shared.event("mypage.load<")
         }
         // 自分の一覧の絞った写真は期限つきの URL（`/user/photos` が署名する）。期限切れで
         // 割れたら読み直して新しい URL をもらう（2026-10-18・札 #294・`SignedImageExpiry`）
@@ -166,8 +168,16 @@ struct MyPageView: View {
             Task { await model.reloadProfile(expecting: expected) }
         }
         // 保存した写真の引き当て先（公開一覧）
-        .task(id: auth.userId) { await loadFeed() }
-        .task(id: auth.userId) { await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk) }
+        .task(id: auth.userId) {
+            PerfRecorder.shared.event("mypage.feed>")
+            await loadFeed()
+            PerfRecorder.shared.event("mypage.feed<")
+        }
+        .task(id: auth.userId) {
+            PerfRecorder.shared.event("mypage.trunk>")
+            await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)
+            PerfRecorder.shared.event("mypage.trunk<")
+        }
         // 前面に戻ったときは間を空けずに確かめ直す（`TrunkAvailabilityRule.recheckInterval` の注記）。
         // 2026-10-18: **裏から戻ったときだけ**（通知センター・Face ID からの戻りでは読まない・`TrunkForegroundGate`）。
         // 読めた中身は入口の札の数にも入る（`TrunkEntryStore.read`・1回で両方）
@@ -179,7 +189,9 @@ struct MyPageView: View {
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
+            PerfRecorder.shared.event("mypage.spotIndex>")
             officialSpots = (try? await environment.spots.fetchIndex()) ?? officialSpots
+            PerfRecorder.shared.event("mypage.spotIndex<")
         }
         // 「行きたい」のスポットの詳細（行の写真・地図の札）。分けた置き場の索引だけの行のときだけ読む
         // （`SpotDetailNeeds`・2026-10-07）

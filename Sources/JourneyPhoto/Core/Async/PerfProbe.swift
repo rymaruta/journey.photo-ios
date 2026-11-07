@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// 札 #435（起動直後に操作が効かない／ホームに戻される）と #429（アプリの重さ）の**原因を数で取る記録**
 /// （2026-11-04 判断）。
@@ -49,6 +50,8 @@ final class PerfRecorder: @unchecked Sendable {
     static let taskCap = 50
     /// 停止の一覧の上限（長いものから残す）
     static let stallEventCap = 12
+    /// 出来事の一覧の上限（先に起きた順に残し、溢れた数は `+Ndropped` で残す・2026-11-07）
+    static let eventCap = 40
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
@@ -61,6 +64,9 @@ final class PerfRecorder: @unchecked Sendable {
     private var stall = StallMeter()
     /// 100ms を超えた停止の一覧（起点と長さ）。長いものから `stallEventCap` 件だけ残す（2026-11-07・札 #435・#429）
     private var stallEvents: [StallEvent] = []
+    /// 時刻付きの出来事（`event(_:)`）。停止の起点（`stalls=`）と突き合わせて「何の最中に止まったか」を見る
+    private var events: [PerfEvent] = []
+    private var droppedEvents = 0
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -142,14 +148,41 @@ final class PerfRecorder: @unchecked Sendable {
         stall.reset()
     }
 
+    // MARK: - event
+
+    /// 時刻付きの出来事を1つ残す（2026-11-07・札 #435 / #429。**測るだけで動作は変えない**）。
+    /// 名前は `画面.出来事` の短い語（始めは `>`・終わりは `<` を末尾に付ける）。無効のときは名前も作らない
+    func event(_ name: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        let now = elapsedMs()
+        let label = name()
+        lock.lock()
+        defer { lock.unlock() }
+        if events.count < Self.eventCap {
+            events.append(PerfEvent(ms: now, name: label))
+        } else {
+            droppedEvents += 1
+        }
+    }
+
     // MARK: - body
 
-    /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）
+    /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）。
+    /// 最初の 2 回は出来事にも残す（`body.home#1`）
     func bodyHit(_ screen: BodyScreen) {
         guard isEnabled else { return }
+        let now = elapsedMs()
         lock.lock()
         defer { lock.unlock() }
         bodyCounts[screen, default: 0] += 1
+        let n = bodyCounts[screen, default: 0]
+        if n <= 2 {
+            if events.count < Self.eventCap {
+                events.append(PerfEvent(ms: now, name: "body.\(screen.rawValue)#\(n)"))
+            } else {
+                droppedEvents += 1
+            }
+        }
     }
 
     func bodyCount(_ screen: BodyScreen) -> Int {
@@ -162,7 +195,7 @@ final class PerfRecorder: @unchecked Sendable {
 
     /// 見えない要素の値。**形を変えるときは `PerfProbeTests` も合わせる**:
     ///
-    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…]
+    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init>;+40 app.init<;…]
     func summary() -> String {
         let now = elapsedMs()
         lock.lock()
@@ -183,6 +216,8 @@ final class PerfRecorder: @unchecked Sendable {
             + " | t=\(now)ms"
             // 後ろに足した（読む側は `key=` で引く）。起点の順。無ければ空
             + " | stalls=[\(stallEvents.sorted { $0.startMs < $1.startMs }.map { "+\($0.startMs)ms \($0.gapMs)ms" }.joined(separator: ";"))]"
+            // さらに後ろ（2026-11-07）: 時刻付きの出来事。`+ms 名前`（ms は起動から）。起きた順。溢れた数は `+Ndropped`
+            + " | ev=[\((events.map { "+\($0.ms) \($0.name)" } + (droppedEvents > 0 ? ["+\(droppedEvents)dropped"] : [])).joined(separator: ";"))]"
     }
 }
 
@@ -215,6 +250,20 @@ struct StallMeter: Equatable {
     /// 次の刻みを「最初の1回」にする（裏から戻った直後の長い空きを数えない）
     mutating func reset() {
         lastTimestamp = nil
+    }
+}
+
+/// 時刻付きの出来事 1 件（起動から何 ms に何が起きたか）
+struct PerfEvent: Equatable, Sendable {
+    let ms: Int
+    let name: String
+}
+
+/// 画面の出来事を残す印（`.perfMark("home.appear")`）。出たとき（`onAppear`）に `PerfRecorder.event` へ1つ。
+/// 見た目も動きも変えない。無効のとき（本番）は何もしない
+extension View {
+    func perfMark(_ name: String) -> some View {
+        onAppear { PerfRecorder.shared.event(name) }
     }
 }
 
