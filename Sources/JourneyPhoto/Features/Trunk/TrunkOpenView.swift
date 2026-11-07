@@ -57,6 +57,13 @@ struct TrunkOpenView: View {
 
     enum Phase: Equatable { case loading, loaded, failed }
 
+    /// 見えない要素 `trunk.open.debug` に出す今の状態（UI テストのときだけ使う）
+    private func probeSnapshot(overflows: Bool, scale: Double) -> TrunkPickProbe.Snapshot {
+        TrunkPickProbe.Snapshot(flat: TrunkLid.showsFlatLid(p, settled: lidSettled && dragStart == nil),
+                                lidSettled: lidSettled, dragStartSet: dragStart != nil,
+                                held: TrunkPickProbe.label(held), p: p, overflows: overflows, k: scale)
+    }
+
     private var lining: TrunkLining { TrunkInsideLooks.lining(model: model, equipped: parts) }
 
     private var contents: TrunkInsideContents {
@@ -208,6 +215,12 @@ struct TrunkOpenView: View {
                 }
                 .frame(minHeight: Double(geo.size.height), alignment: .top)
             }
+            // UI テストのときだけ: 押しが中身に届かない件（札 #424）の原因を数で取る見えない要素（`-JPPreviewPerfProbe YES`）
+            .overlay(alignment: .bottomTrailing) {
+                if TrunkPickProbe.shared.isEnabled {
+                    TrunkPickProbeOverlay(snapshot: probeSnapshot(overflows: overflows, scale: k))
+                }
+            }
         }
     }
 
@@ -238,7 +251,8 @@ struct TrunkOpenView: View {
     private func drag(scale k: Double) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
-                guard held == nil else { return }
+                guard held == nil else { TrunkPickProbe.shared.recordDragIgnoredByHeld(); return }
+                TrunkPickProbe.shared.recordDragChanged(x: Double(value.location.x), y: Double(value.location.y))
                 let start = dragStart ?? p
                 if dragStart == nil { dragStart = p }
                 lidSettled = false
@@ -247,6 +261,7 @@ struct TrunkOpenView: View {
                 p = next
             }
             .onEnded { _ in
+                TrunkPickProbe.shared.recordDragEnded()
                 dragStart = nil
                 settle(to: TrunkLid.settled(p))
             }
@@ -280,6 +295,7 @@ struct TrunkOpenView: View {
         } completion: {
             // 途中で指が触れた・別の行き先に替わったときは差し替えない
             if p == target, dragStart == nil { lidSettled = TrunkLid.isOpen(target) }
+            TrunkPickProbe.shared.recordEvent("moveDone settled=\(lidSettled ? 1 : 0)")
         }
     }
 
@@ -372,6 +388,7 @@ struct TrunkOpenView: View {
     }
 
     private func pick(_ item: TrunkHeld) {
+        TrunkPickProbe.shared.recordPick(TrunkPickProbe.label(item))
         TrunkSound.tick()
         picks += 1
         if reduceMotion {
@@ -940,3 +957,22 @@ private struct LidDragPriority<G: Gesture>: ViewModifier {
     static func simultaneousMask(overflows: Bool) -> GestureMask { overflows ? .all : .subviews }
 }
 
+
+/// `TrunkPickProbe.summary` を読み上げの値に出す見えない要素（UI テストのときだけ置く・`PerfProbeOverlay` と同じ作り）。
+/// 0.25 秒ごとに**自分の中だけ**描き直す。見えない 1pt・押せない。識別子は `trunk.open.debug`
+struct TrunkPickProbeOverlay: View {
+    static let identifier = "trunk.open.debug"
+    let snapshot: TrunkPickProbe.Snapshot
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.25)) { _ in
+            Text(" ")
+                .font(.caption2)
+                .accessibilityLabel("trunk pick debug")
+                .accessibilityValue(TrunkPickProbe.shared.summary(snapshot))
+                .accessibilityIdentifier(Self.identifier)
+        }
+        .frame(width: 1, height: 1)
+        .allowsHitTesting(false)
+    }
+}
