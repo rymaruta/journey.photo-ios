@@ -132,7 +132,8 @@ final class PerfProbeTests: XCTestCase {
                        // 150ms 止まった刻みが戻ってきたのが 200ms → 止まり始めは 50ms（2026-11-07）
                        + " | stalls=[+50ms 150ms]"
                        // 出来事（2026-11-07）: body の最初の 2 回までが入る。ホームの 2 回・写真詳細の 1 回
-                       + " | ev=[+200 body.home#1;+200 body.home#2;+200 body.photoDetail#1]")
+                       + " | ev=[+200 body.home#1;+200 body.home#2;+200 body.photoDetail#1]"
+                       + " | samples=[]")
         XCTAssertEqual(rec.bodyCount(.home), 2)
     }
 
@@ -248,7 +249,25 @@ final class PerfProbeTests: XCTestCase {
     // MARK: - 出来事（ev）
 
     private func evTail(_ rec: PerfRecorder) -> String {
-        rec.summary().components(separatedBy: " | ev=").last ?? ""
+        (rec.summary().components(separatedBy: " | ev=").last ?? "")
+            .components(separatedBy: " | samples=").first ?? ""
+    }
+
+    /// 止まっている最中の積みの見本: `+撮った ms 段^段`・浅い方が先・段は上限まで・件数にも上限。無効なら残さない
+    func testSamplesAreRecordedAndCapped() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        clock.now = 1005.300
+        rec.recordSample(frames: (0..<(PerfRecorder.sampleFrameCap + 5)).map { "f\($0)" })
+        let tail = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        XCTAssertTrue(tail.hasPrefix("[+5300 f0^f1^"), tail)
+        XCTAssertTrue(tail.hasSuffix("^f\(PerfRecorder.sampleFrameCap - 1)]"), tail)
+        for _ in 0..<(PerfRecorder.sampleCap + 3) { rec.recordSample(frames: ["x"]) }
+        let after = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        XCTAssertEqual(after.components(separatedBy: ";").count, PerfRecorder.sampleCap)
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.recordSample(frames: ["x"])
+        XCTAssertEqual(off.summary().components(separatedBy: " | samples=").last, "[]")
     }
 
     /// 出来事は `+起動からのms 名前`・起きた順。何も無ければ空。`stalls=` の後ろに付く（既存の欄の順は変えない）

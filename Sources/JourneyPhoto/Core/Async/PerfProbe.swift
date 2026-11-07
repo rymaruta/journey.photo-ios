@@ -52,6 +52,9 @@ final class PerfRecorder: @unchecked Sendable {
     static let stallEventCap = 12
     /// 出来事の一覧の上限（先に起きた順に残し、溢れた数は `+Ndropped` で残す・2026-11-07）
     static let eventCap = 40
+    /// メインスレッドの積み(スタック)の見本の上限と、1 件に残す段の数（2026-11-07・`PerfMainSampler`）
+    static let sampleCap = 8
+    static let sampleFrameCap = 12
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
@@ -69,6 +72,8 @@ final class PerfRecorder: @unchecked Sendable {
     private var droppedEvents = 0
     /// 残した名前（**同じ名前は最初の1回だけ**残す。`app.body` のように何度も起きるものが枠を使い切らないように）
     private var eventNames: Set<String> = []
+    /// 止まっている最中のメインスレッドの積み（`PerfMainSampler` が撮る）。止まった時刻と突き合わせて「何をしていたか」を見る
+    private var samples: [PerfSample] = []
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -168,6 +173,18 @@ final class PerfRecorder: @unchecked Sendable {
         }
     }
 
+    // MARK: - sample
+
+    /// 止まっている最中のメインスレッドの積みを 1 件残す（`frames` は浅い方から）。上限を超えたら捨てる
+    func recordSample(frames: [String]) {
+        guard isEnabled else { return }
+        let now = elapsedMs()
+        lock.lock()
+        defer { lock.unlock() }
+        guard samples.count < Self.sampleCap else { return }
+        samples.append(PerfSample(ms: now, frames: Array(frames.prefix(Self.sampleFrameCap))))
+    }
+
     // MARK: - body
 
     /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）。
@@ -198,7 +215,7 @@ final class PerfRecorder: @unchecked Sendable {
 
     /// 見えない要素の値。**形を変えるときは `PerfProbeTests` も合わせる**:
     ///
-    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init>;+40 app.init<;…]
+    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…] | samples=[+5300 Foo`bar^Baz`qux;…]
     func summary() -> String {
         let now = elapsedMs()
         lock.lock()
@@ -221,6 +238,8 @@ final class PerfRecorder: @unchecked Sendable {
             + " | stalls=[\(stallEvents.sorted { $0.startMs < $1.startMs }.map { "+\($0.startMs)ms \($0.gapMs)ms" }.joined(separator: ";"))]"
             // さらに後ろ（2026-11-07）: 時刻付きの出来事。`+ms 名前`（ms は起動から）。起きた順。溢れた数は `+Ndropped`
             + " | ev=[\((events.map { "+\($0.ms) \($0.name)" } + (droppedEvents > 0 ? ["+\(droppedEvents)dropped"] : [])).joined(separator: ";"))]"
+            // さらに後ろ（2026-11-07）: 止まっている最中のメインスレッドの積み。`+撮った ms 段^段^…`（浅い方＝いま実行中の処理が先）
+            + " | samples=[\(samples.map { "+\($0.ms) " + $0.frames.joined(separator: "^") }.joined(separator: ";"))]"
     }
 }
 
@@ -254,6 +273,12 @@ struct StallMeter: Equatable {
     mutating func reset() {
         lastTimestamp = nil
     }
+}
+
+/// 止まっている最中のメインスレッドの積みの見本 1 件（撮った時刻と、浅い方からの段）
+struct PerfSample: Equatable, Sendable {
+    let ms: Int
+    let frames: [String]
 }
 
 /// 時刻付きの出来事 1 件（起動から何 ms に何が起きたか）

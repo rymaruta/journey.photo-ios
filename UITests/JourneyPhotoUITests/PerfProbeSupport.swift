@@ -11,7 +11,7 @@ import XCTest
 ///
 /// 値の形（アプリの `PerfRecorder.summary()` と同じ。変えるときは両方）:
 ///
-///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…]
+///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…] | samples=[+5300 SwiftUI`xxx^JourneyPhoto`yyy;…]
 extension XCTestCase {
 
     /// 起動の引数に足す（`app.launch()` の前）
@@ -91,6 +91,11 @@ struct PerfProbeReading {
     /// 末尾の `+Ndropped` は溢れた数
     var events: [String] {
         section("ev").split(separator: ";").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// 止まっている最中のメインスレッドの積みの見本（`+5300 SwiftUI`xxx^JourneyPhoto`yyy` の並び・撮った ms と浅い方からの段・2026-11-07）
+    var samples: [String] {
+        section("samples").split(separator: ";").map(String.init).filter { !$0.isEmpty }
     }
 
     /// body の評価回数（`home`・`myPage`・`photoDetail`）

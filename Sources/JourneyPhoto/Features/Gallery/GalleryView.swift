@@ -92,6 +92,7 @@ struct GalleryView: View {
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
                 // 切り替えが逃げ道だったが、整理案 01c で外した
                 feed(photos)
+                    .perfMark("home.feed.appear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             }
         }
         .webScreen()

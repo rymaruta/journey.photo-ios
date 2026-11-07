@@ -143,8 +143,10 @@ struct RootView: View {
             if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
+                    .perfMark("legal.gate.appear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07 札 #435 / #429）
             } else {
                 tabsWithFoundingGift
+                    .perfMark("root.tabs.appear")
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
