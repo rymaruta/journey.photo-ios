@@ -453,7 +453,7 @@ extension APIClient {
     /// （2026-10-22 判断: 写真の詳細・投稿・マイページ・通知が各自 `CognitoTokenProvider` で作っていたので、1か所に寄せた）
     static func app() -> APIClient {
         APIClient(tokenProvider: PreviewBackend.tokenProvider ?? CognitoTokenProvider(), session: PreviewBackend.session,
-                  retryPause: previewRetryPause)
+                  limiter: RequestLimiter.shared, retryPause: previewRetryPause)
     }
 
     /// 見本の通信(`PreviewBackend.session` が有るとき)は 503 を「未対応」の答えに使うので、再試行で待たない

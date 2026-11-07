@@ -432,11 +432,24 @@ final class UploadDraftStore {
     /// 1枚ずつ外した記録を古い中身で上書きしない。入れ物（このクラスの1つ）ごとではなく鍵ごとに数える——
     /// 同じ鍵を別の入れ物から触っても（`sibling`・起動の知らせ）同じ数を見る
     private static var generations: [String: Int] = [:]
+    /// `generations` の錠(2026-11-07)。このクラスは `@MainActor` で、`await` のあとも主スレッドで続くので
+    /// 今の呼び方で競合は起きないが、辞書は静的で全部の入れ物が共有する。将来 `nonisolated` の呼び出しが
+    /// 増えても壊れないよう、読み書きを錠で包む
+    private static let generationsLock = NSLock()
 
     private func bump(_ key: String) -> Int {
+        Self.generationsLock.lock()
+        defer { Self.generationsLock.unlock() }
         let next = (Self.generations[key] ?? 0) + 1
         Self.generations[key] = next
         return next
+    }
+
+    /// いまの回(`bump` と同じ錠の中で読む)
+    private func currentGeneration(_ key: String) -> Int? {
+        Self.generationsLock.lock()
+        defer { Self.generationsLock.unlock() }
+        return Self.generations[key]
     }
 
     /// 画像を書く口（**主スレッドの外で書く**・試験で遅らせて順番を作る）
@@ -463,7 +476,7 @@ final class UploadDraftStore {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             return false
         }
-        guard mine == Self.generations[key] else {
+        guard mine == currentGeneration(key) else {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             return false
         }

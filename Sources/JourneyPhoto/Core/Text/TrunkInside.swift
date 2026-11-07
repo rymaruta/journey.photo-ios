@@ -503,10 +503,10 @@ struct TrunkInsideContents: Equatable {
     /// トランクの中の読み上げ（「革の旅行鞄の中。内張りは紺の天鵞絨。メダル 10 枚、会員証、乗車券 12 枚」）
     func accessibilityLabel(model: TrunkModel, lining: TrunkLining) -> String {
         var items: [String] = [medals.isEmpty ? L("メダルはまだありません", "no medals yet")
-                                              : L("メダル \(medals.count) 枚", "\(medals.count) medals")]
+                                              : L("メダル \(medals.count) 枚", Plural.count(medals.count, "medal"))]
         if showsCard { items.append(L("会員証", "member card")) }
         if ticketCount > 0 {
-            items.append(isTheirs ? L("わたしの乗車券", "their ticket") : L("乗車券 \(ticketCount) 枚", "\(ticketCount) tickets"))
+            items.append(isTheirs ? L("わたしの乗車券", "their ticket") : L("乗車券 \(ticketCount) 枚", Plural.count(ticketCount, "ticket")))
         }
         let name = TrunkText.info(model).name
         return L("\(name)の中。内張りは\(lining.name)。\(items.joined(separator: "、"))",
@@ -561,7 +561,7 @@ struct TrunkInsideContents: Equatable {
                      "\(ownerName)\u{2019}s own ticket. Open it to turn it over")
         case .tickets:
             return L("旅先ですれちがった人から届いた \(ticketCount) 枚。帳を開くと、全部を綴じた順に見られます",
-                     "\(ticketCount) tickets from people you passed on your travels. Open the book to see them all in order")
+                     "\(Plural.count(ticketCount, "ticket")) from people you passed on your travels. Open the book to see \(ticketCount == 1 ? "it" : "them all in order")")
         }
     }
 

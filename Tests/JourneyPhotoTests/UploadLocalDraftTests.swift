@@ -59,6 +59,25 @@ final class UploadLocalDraftTests: XCTestCase {
             .filter { $0.hasPrefix("upload-draft-") && !$0.hasPrefix(journalHead) }
     }
 
+    /// 🔴 下書きの画像が読めなかった回は、知らせ(`errorMessage`)を入れて false を返す。知らせが無いと呼び出し側
+    /// (`UploadView.restoreDraft`)が下書きを消す。知らせを外すと、ここで nil になって落ちる。下書きそのものも残る
+    func testUnreadableDraftImageReportsInsteadOfSilentlyFailing() async {
+        let first = model(owner: "a")
+        var one = PendingPhoto(prepared: shot(1))
+        one.title = "読めない"
+        first.items = [one]
+        XCTAssertTrue(first.saveDraft())
+        for name in imageFiles() {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+
+        let next = model(owner: "a")
+        let restored = await next.restoreDraft()
+        XCTAssertFalse(restored)
+        XCTAssertNotNil(next.errorMessage, "知らせが無い(呼び出し側が下書きを消す)")
+        XCTAssertNotNil(store().draft(for: "a"), "読めなかっただけで下書きの記録まで消えた")
+    }
+
     // MARK: - 保存して開き直す
 
     /// 🔴 **閉じる前の写真・題・説明・まとめて付く欄が、開き直すとそのまま戻る**

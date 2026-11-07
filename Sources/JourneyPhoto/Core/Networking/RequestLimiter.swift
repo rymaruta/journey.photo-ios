@@ -16,6 +16,12 @@ actor RequestLimiter {
     /// 通常の画面は待たされない。起動の山（8〜14 本）だけが 4 本ずつに均される
     static let defaultLimit = 4
 
+    /// **アプリ全体で1つの絞り**(2026-11-07)。本番の配線(`AppEnvironment.api`・`APIClient.app()`)だけがこれを使う。
+    /// 絞りが `APIClient` ごとにあると、`APIClient.app()` が画面ごとに作る実体(マイページ・投稿・写真詳細・通知)が
+    /// それぞれ4本ずつ出せてしまい、アプリ全体の同時数を守れない。
+    /// 試験が直に作る `APIClient` は、互いに詰まらないよう独立の絞りのまま
+    static let shared = RequestLimiter()
+
     private let limit: Int
     private var running = 0
     private var waiters: [(id: UInt64, continuation: CheckedContinuation<Void, Error>)] = []

@@ -20,7 +20,7 @@ enum PassBundleNotifier {
 
     static func body(count: Int) -> String {
         L("今日すれちがった \(count) 人のカードです。束を開いて、めくってみましょう。",
-          "\(count) cards from people you passed today. Open the bundle and flip through them.")
+          "\(Plural.count(count, "card")) from people you passed today. Open the bundle and flip through \(count == 1 ? "it" : "them").")
     }
 
     static func schedule(day: String, at date: Date, count: Int,

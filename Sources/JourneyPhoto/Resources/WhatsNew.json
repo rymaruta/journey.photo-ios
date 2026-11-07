@@ -12,7 +12,7 @@
             "en": "A refreshed look"
           },
           "detail": {
-            "ja": "ホーム・さがす・地図・マイページ・設定まで、黒と白に真鍮の差し色で、写真がいちばん引き立つ見た目にそろえました。",
+            "ja": "ホーム・探す・マップ・マイページ・設定まで、黒と白に真鍮の差し色で、写真がいちばん引き立つ見た目にそろえました。",
             "en": "Home, Search, Map, My Page and Settings share one look: black and white with a brass accent, so your photos stand out."
           }
         },
@@ -116,7 +116,7 @@
             "en": "New posts show up sooner"
           },
           "detail": {
-            "ja": "ホーム・さがす・地図・人のプロフィールに、Web で見える新しい投稿がアプリにも出るようになりました。",
+            "ja": "ホーム・探す・マップ・人のプロフィールに、Web で見える新しい投稿がアプリにも出るようになりました。",
             "en": "New posts you can see on the web now also appear in Home, Search, Map and profiles in the app."
           },
           "destination": "home"

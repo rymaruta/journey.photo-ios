@@ -51,7 +51,7 @@ struct TrunkSpinViewer: View {
                     Text(TrunkText.info(model).name)
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.foreground)
-                    Text(L("ラベル \(stuck.count) 枚 · 投稿 \(posts)", "\(stuck.count) labels · \(posts) posts"))
+                    Text(L("ラベル \(stuck.count) 枚 · 投稿 \(posts)", "\(Plural.count(stuck.count, "label")) · \(Plural.count(posts, "post"))"))
                         .font(JPFont.mono(12))
                         .foregroundStyle(WebTheme.muted2)
                     Text(L("指で回すと、側面・上・底・背面が見えます",

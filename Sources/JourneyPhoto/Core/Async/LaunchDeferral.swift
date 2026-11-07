@@ -3,15 +3,15 @@ import Foundation
 /// 起動直後の「画面に今すぐ要らない同期」を、最初の画面が出たあとへ少し遅らせる（2026-11-07 判断）。
 ///
 /// **なぜ**: 本番の Lambda は同時実行の上限が 10 で、起動の直後にホーム・未読通知・プロフィールの
-/// 読み込みと、ログイン後の同期（端末登録・ブロック・行きたい場所・購入の送り直し）が重なると
+/// 読み込みと、ログイン後の同期（行きたい場所・購入の送り直し。端末登録とブロックは遅らせない）が重なると
 /// 上限を超えてスロットル（503）になる。**画面を描くのに要るものは遅らせない**——遅らせるのは、
 /// 画面に今すぐ出ない同期だけ（`JourneyPhotoApp` の `.task(id: auth.state)` の後半）。
 ///
 /// - **起動して最初の1回だけ**待つ。ログイン・ログアウトで状態が変わった回は待たない
 ///   （ログインした直後の端末登録を遅らせない）。
 /// - 待ち時間 `grace` は、最初の画面の読み込み（約 2〜3 本）が出払うのに足りる長さ。長くしすぎると
-///   端末登録・ブロックの反映が遅れるので 1.5 秒に留める（ブロックした相手の写真は端末の控えで
-///   すでに隠れているので、サーバーとの突き合わせが 1.5 秒遅れても見え方は変わらない）。
+///   行きたい場所の同期・購入の送り直しが遅れるので 1.5 秒に留める。端末登録とブロックの取得は
+///   遅らせない（ブロックは新しい端末で相手が見える窓になる・審査 1.2）。
 /// - 画面写真・UI テスト（`PreviewSession`）では待たない（絵の撮影の時間を延ばさない）。
 final class LaunchDeferral: @unchecked Sendable {
 
@@ -40,7 +40,10 @@ final class LaunchDeferral: @unchecked Sendable {
     /// `eligible` が false の回（ログインしていない起動など、後ろで何も同期しない回）は、待たず、
     /// **「最初の1回」も使わない**——あとでログインした回がちゃんと待てるように
     func waitOnce(eligible: Bool = true, skip: Bool = false, grace: TimeInterval = LaunchDeferral.grace) async -> Bool {
-        guard eligible else { return !Task.isCancelled }
+        // 🔴 取り消された回は「最初の1回」を使わない(起動直後に state が `.unknown` → `.signedIn` に変わると、
+        // 前の回は取り消される。その回が使い切ると、新しい回が待たずに山を作る)
+        guard !Task.isCancelled else { return false }
+        guard eligible else { return true }
         let shouldWait = takeTurn(skip: skip)
         if shouldWait { await pause(grace) }
         return !Task.isCancelled

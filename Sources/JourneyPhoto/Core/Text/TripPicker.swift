@@ -284,7 +284,7 @@ enum TripPicker {
             return L("1日\(cap)か所までなので \(planned) 日に分けました。",
                      "Up to \(cap) places a day, so split into \(planned) days.")
         }
-        return L("\(dayCount) 日間に割り振りました。", "Spread over \(dayCount) days.")
+        return L("\(dayCount) 日間に割り振りました。", "Spread over \(Plural.count(dayCount, "day")).")
     }
 
     /// 1日に詰めてよい目安（か所）。**これを越えるほど詰まるなら、地域を混ぜてでも均す**

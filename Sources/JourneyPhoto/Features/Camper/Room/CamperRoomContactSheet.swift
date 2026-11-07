@@ -188,9 +188,10 @@ struct CamperRoomContactSheet: View {
                     .accessibilityValue(marker)
                     .accessibilityIdentifier("camper.room.contact")
                 Spacer()
-                pager("chevron.left", id: "camper.room.contact.prev", enabled: page > 0) { go(page - 1) }
-                pager("chevron.right", id: "camper.room.contact.next", enabled: page + 1 < CamperRoomContactPages.count(kind)) { go(page + 1) }
-                pager(mood == .night ? "sun.max" : "moon", id: "camper.room.contact.mood", enabled: true) {
+                pager("chevron.left", id: "camper.room.contact.prev", label: L("前の頁", "Previous page"), enabled: page > 0) { go(page - 1) }
+                pager("chevron.right", id: "camper.room.contact.next", label: L("次の頁", "Next page"), enabled: page + 1 < CamperRoomContactPages.count(kind)) { go(page + 1) }
+                pager(mood == .night ? "sun.max" : "moon", id: "camper.room.contact.mood",
+                      label: mood == .night ? L("昼にする", "Switch to day") : L("夜にする", "Switch to night"), enabled: true) {
                     mood = mood == .night ? .day : .night
                     images = [:]
                     draw()
@@ -248,7 +249,7 @@ struct CamperRoomContactSheet: View {
         draw()
     }
 
-    private func pager(_ symbol: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func pager(_ symbol: String, id: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).jpSystemFont(16, weight: .semibold)
                 .foregroundStyle(enabled ? WebTheme.foreground : WebTheme.faint)
@@ -259,6 +260,7 @@ struct CamperRoomContactSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .accessibilityLabel(label)
         .accessibilityIdentifier(id)
     }
 

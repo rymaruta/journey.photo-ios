@@ -152,7 +152,7 @@ final class PerformanceTests: XCTestCase {
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "Launch"),
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "HomeLoad"),
             // 起動後の `.task(id: auth.state)` の同期の区間（2026-11-04・札 #435 / #429）。
-            // LaunchSync は頭から保存・いいねの同期の終わりまで（待ちを含む。2026-11-07 から、ブロック・行きたい場所は待ちの後ろで含めない）、LaunchSyncStores はその中の待たない部分、
+            // LaunchSync は頭から保存・いいねの同期の終わりまで（待ちを含む。2026-11-07 から、ブロック・行きたい場所・購入の送り直しは区間に含めない）、LaunchSyncStores はその中の待たない部分、
             // SweepOrphans と DraftPrepare はその中の 2 つの同期の呼び出し。メインスレッドを占める時間を見る
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "LaunchSync"),
             XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "LaunchSyncStores"),

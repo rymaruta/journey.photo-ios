@@ -132,6 +132,11 @@ struct ModerationService {
 
     /// 返信の通報のメール（`mailto:`）。作れなければ nil
     static func storyReplyReportURL(_ reply: ReportedComment, storyId: String?) -> URL? {
+        mailtoURL(subject: "\(storyReplyMarker) \(reply.authorName)", body: storyReplyReportBody(reply, storyId: storyId))
+    }
+
+    /// 宛先（`LegalConsent.contactEmail`）への `mailto:`
+    private static func mailtoURL(subject: String, body: String) -> URL? {
         var parts = URLComponents()
         parts.scheme = "mailto"
         parts.path = LegalConsent.contactEmail
@@ -141,10 +146,34 @@ struct ModerationService {
         allowed.remove(charactersIn: "&=+")
         func encode(_ text: String) -> String { text.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }
         parts.percentEncodedQueryItems = [
-            URLQueryItem(name: "subject", value: encode("\(storyReplyMarker) \(reply.authorName)")),
-            URLQueryItem(name: "body", value: encode(storyReplyReportBody(reply, storyId: storyId))),
+            URLQueryItem(name: "subject", value: encode(subject)),
+            URLQueryItem(name: "body", value: encode(body)),
         ]
         return parts.url
+    }
+
+    // MARK: - 人（プロフィール）の通報（2026-11-07 判断・審査 1.2）
+    //
+    // サーバーに人を通報する口は無い(写真の通報だけ)。返信と同じく**新しい口は作らず**、問い合わせの宛先への
+    // メールで送る。中身は誰を(名前・ID)と、書いてもらう理由の欄
+
+    /// 人の通報のメールの件名の印(テストで見張る)
+    static let profileReportMarker = "[ユーザーの通報]"
+
+    static func profileReportBody(userId: String, displayName: String) -> String {
+        [
+            profileReportMarker,
+            displayName.isEmpty ? "対象 / User: \(userId)" : "対象 / User: \(displayName) (\(userId))",
+            "",
+            L("理由・補足（任意）:", "Reason / details (optional):"),
+            "",
+        ].joined(separator: "\n")
+    }
+
+    /// 人の通報のメール(`mailto:`)。作れなければ nil
+    static func profileReportURL(userId: String, displayName: String) -> URL? {
+        mailtoURL(subject: "\(profileReportMarker) \(displayName.isEmpty ? userId : displayName)",
+                  body: profileReportBody(userId: userId, displayName: displayName))
     }
 
     // MARK: - すれちがいのカードのひとことの通報（2026-10-16 判断）

@@ -109,7 +109,7 @@ struct StoriesRow: View {
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
                             isPresented: $showUploadFailure, titleVisibility: .visible) {
             Button(L("もう一度送る", "Try again")) { uploads.retry() }
-            Button(L("やめる", "Discard"), role: .destructive) {
+            Button(L("やめる", "Stop sending"), role: .destructive) {
                 uploads.discard()
                 // 出せたぶんがあれば並べる
                 Task { await reload() }

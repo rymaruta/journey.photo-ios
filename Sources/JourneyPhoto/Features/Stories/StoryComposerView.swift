@@ -549,7 +549,7 @@ struct StoryComposerView: View {
                 uploads.retry()
                 dismiss()
             }
-            Button(L("やめる", "Discard"), role: .destructive) { uploads.discard() }
+            Button(L("やめる", "Stop sending"), role: .destructive) { uploads.discard() }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             if case .failed(let message, _) = uploads.phase {

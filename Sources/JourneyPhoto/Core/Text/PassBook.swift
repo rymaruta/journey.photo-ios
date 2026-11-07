@@ -255,7 +255,7 @@ enum PassBook {
             if names.count == 2 { break }
         }
         guard !names.isEmpty else {
-            return L("\(cards.count) 人とすれちがいました", "You passed \(cards.count) people")
+            return L("\(cards.count) 人とすれちがいました", "You passed \(Plural.count(cards.count, "person", "people"))")
         }
         let joined = names.joined(separator: L("・", " / "))
         return L("\(joined)のあたりで すれちがい", "Passed around \(joined)")

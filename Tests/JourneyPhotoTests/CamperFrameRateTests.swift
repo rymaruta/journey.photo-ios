@@ -112,7 +112,7 @@ final class CamperFrameRateTests: XCTestCase {
 
     /// 条件は「視差効果を減らす」・低電力モード・熱(serious 以上)のどれか1つでも当たれば止める。
     /// 通常時(どれも無し)は揺らす。`allowed` が `!reduceMotion` だけに戻ると落ちる
-    func testFlickerPolicy() {
+    func testFlickerPolicy() async {
         XCTAssertTrue(CamperFlicker.allowed(reduceMotion: false, lowPower: false, thermalSerious: false), "通常時に止めた")
         XCTAssertFalse(CamperFlicker.allowed(reduceMotion: true, lowPower: false, thermalSerious: false))
         XCTAssertFalse(CamperFlicker.allowed(reduceMotion: false, lowPower: true, thermalSerious: false), "低電力モードで止まらない")
@@ -137,7 +137,7 @@ final class CamperFrameRateTests: XCTestCase {
     }
 
     /// 熱は「視差効果を減らす」と独立: 視差効果が許していても熱で止まり、熱が引いても視差効果が止めていれば止まったまま
-    func testThermalAndReduceMotionAreIndependent() {
+    func testThermalAndReduceMotionAreIndependent() async {
         let scene = nightScene()
         scene.setPowerState(lowPower: false, thermalSerious: true)
         XCTAssertFalse(scene.isFlickering)

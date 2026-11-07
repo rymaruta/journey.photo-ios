@@ -81,13 +81,15 @@ actor APIClient {
          tokenProvider: TokenProviding,
          session: URLSession? = nil,
          maxConcurrentRequests: Int = RequestLimiter.defaultLimit,
+         limiter: RequestLimiter? = nil,
          retryPause: (@Sendable (TimeInterval) async -> Void)? = nil,
          afterAcquire: (@Sendable (URLRequest) async -> Void)? = nil,
          beforeRequest: (@Sendable (URLRequest) async -> Void)? = nil) {
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
         self.beforeRequest = beforeRequest
-        self.limiter = RequestLimiter(limit: maxConcurrentRequests)
+        // 渡されたもの(本番の配線は `RequestLimiter.shared`)があればそれ、無ければこの実体だけの絞り
+        self.limiter = limiter ?? RequestLimiter(limit: maxConcurrentRequests)
         self.afterAcquire = afterAcquire
         self.retryPause = retryPause ?? Self.sleepPause
         if let session {

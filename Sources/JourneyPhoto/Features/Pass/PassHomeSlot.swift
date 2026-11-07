@@ -97,8 +97,8 @@ struct PassHomeCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(isToday
-            ? L("今日すれちがった \(cards.count)人のカードを開く", "Open cards from \(cards.count) people you passed today")
-            : L("届いた \(cards.count)人のカードを開く", "Open \(cards.count) cards that arrived"))
+            ? L("今日すれちがった \(cards.count)人のカードを開く", "Open cards from \(Plural.count(cards.count, "person", "people")) you passed today")
+            : L("届いた \(cards.count)人のカードを開く", "Open \(Plural.count(cards.count, "card")) that arrived"))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("pass.home.open")
     }
@@ -113,6 +113,6 @@ struct PassHomeCard: View {
 
     /// 数の前後の字（「今日 」「 枚」）。英語は「N today」「N cards」
     nonisolated static func countParts(count: Int, isToday: Bool) -> (prefix: String, suffix: String) {
-        isToday ? (L("今日 ", ""), L(" 枚", " today")) : ("", L(" 枚", count == 1 ? " card" : " cards"))
+        isToday ? (L("今日 ", ""), L(" 枚", " today")) : ("", L(" 枚", Plural.word(count, " card", " cards")))
     }
 }

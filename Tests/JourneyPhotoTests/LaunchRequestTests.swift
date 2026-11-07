@@ -297,6 +297,38 @@ final class APIClientThrottleRetryTests: XCTestCase {
         XCTAssertEqual(next, Payload(ok: true), "枠が返っていない")
     }
 
+    /// 🔴 同じ絞りを渡した `APIClient` どうしは、合わせて上限までしか出さない(本番は `RequestLimiter.shared`)。
+    /// 絞りを `APIClient` ごとに持つ作りに戻すと、2本ずつ計4本が出て落ちる
+    func testClientsSharingALimiterShareTheLimit() async throws {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let hold = Gate()
+        let shared = RequestLimiter(limit: 2)
+        func make() -> APIClient {
+            APIClient(baseURL: URL(string: "https://api.example.test")!,
+                      tokenProvider: StubTokenProvider(token: "ID-TOKEN"), session: session,
+                      limiter: shared, afterAcquire: { _ in await hold.wait() })
+        }
+        let a = make(), b = make()
+        let tasks = (0..<2).map { _ in Task { try await a.authorized(.get, "/user/profile", as: Payload.self) } }
+            + (0..<2).map { _ in Task { try await b.authorized(.get, "/user/profile", as: Payload.self) } }
+        await hold.untilWaiting(2)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let arrived = await hold.arrived
+        XCTAssertEqual(arrived, 2, "別の APIClient が別枠で出している")
+        await hold.open()
+        for task in tasks { _ = try await task.value }
+    }
+
+    /// 本番の配線(`AppEnvironment`・`APIClient.app()`)は共通の絞りを渡す。外すと画面ごとの実体が別枠になる
+    func testProductionWiringUsesTheSharedLimiter() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        for path in ["Sources/JourneyPhoto/App/AppEnvironment.swift", "Sources/JourneyPhoto/Core/Networking/PreviewBackend.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(source.contains("limiter: RequestLimiter.shared"), "\(path) が共通の絞りを使っていない")
+        }
+    }
+
     /// 待っている間は枠を握らない（枠が1本でも、送り直しが詰まらない）
     func testRetryWaitDoesNotHoldTheConcurrencySlot() async throws {
         StubProtocol.respondInOrder([(503, ""), (200, #"{"ok":true}"#)])
@@ -357,6 +389,23 @@ final class LaunchDeferralTests: XCTestCase {
         XCTAssertTrue(pauses.values.isEmpty, "ログインしていない回で待った")
         _ = await deferral.waitOnce(eligible: true)
         XCTAssertEqual(pauses.values, [LaunchDeferral.grace], "ログインした回が待てていない")
+    }
+
+    /// 🔴 取り消された回は「最初の1回」を使わない。次の回(取り消した側の後継)がちゃんと待つ。
+    /// 先頭の取り消し確認を外すと、取り消された回が使い切って次が待たず落ちる
+    func testCancelledCallDoesNotConsumeTheFirstTurn() async {
+        let pauses = Pauses()
+        let deferral = LaunchDeferral(pause: { pauses.add($0) })
+        let task = Task { () -> Bool in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await deferral.waitOnce()
+        }
+        let first = await task.value
+        XCTAssertFalse(first)
+        XCTAssertTrue(pauses.values.isEmpty, "取り消された回が待った")
+        let next = await deferral.waitOnce()
+        XCTAssertTrue(next)
+        XCTAssertEqual(pauses.values, [LaunchDeferral.grace], "取り消された回が最初の1回を使い切った")
     }
 
     func testCancelledCallerIsToldToStop() async {

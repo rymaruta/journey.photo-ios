@@ -87,7 +87,7 @@ enum DraftsText {
 
     /// 明日までに消えるストーリーの帯
     static func expiringBand(_ count: Int) -> String {
-        L("ストーリーの下書き\(count)件が、あした消えます。保存から\(Int(DraftLibrary.storyLifetime / 86_400))日で消えます。",
+        L("ストーリーの下書き\(count)件が、あした消えます。作ってから\(Int(DraftLibrary.storyLifetime / 86_400))日で消えます。",
           "\(count) story draft\(count == 1 ? "" : "s") will be deleted tomorrow. Story drafts last \(Int(DraftLibrary.storyLifetime / 86_400)) days.")
     }
 
@@ -202,8 +202,8 @@ enum DraftsText {
                  detail: L("同じアカウントでログインし直すと戻ります。別の人がこの端末でログインしても見えません。退会すると消えます。",
                            "Sign back in to the same account to see them. Others signing in on this device can\u{2019}t see them. Deleting your account removes them.")),
             Fact(symbol: "clock",
-                 headline: L("投稿の下書きは消えません。ストーリーの下書きは保存から\(days)日で消えます。",
-                             "Post drafts don\u{2019}t expire. Story drafts are deleted \(days) days after saving."),
+                 headline: L("投稿の下書きは消えません。ストーリーの下書きは作ってから\(days)日で消えます。",
+                             "Post drafts don\u{2019}t expire. Story drafts are deleted \(days) days after you make them."),
                  detail: L("消える\(DraftLibrary.warnDays)日前から、一覧でお知らせします。",
                            "We\u{2019}ll let you know in this list \(DraftLibrary.warnDays) days before.")),
             Fact(symbol: "shippingbox",

@@ -12,7 +12,7 @@ import os
 /// - `homeLoad`: ホームの一覧の読み込み（`GalleryViewModel.load`）の始めから終わりまで
 /// - `spotIndexDecode`: 撮影スポットの索引（`spot-feed/index.json`・約 1.1MB・2,853件 2026-10-31）を解析する間
 ///
-/// - `launchSync` ほか: 起動後の `.task(id: auth.state)` の同期の区間（`launchSync` は保存・いいねの同期の終わりまで。ブロック・行きたい場所は `LaunchDeferral` の待ちの後ろで含めない・2026-11-07。2026-11-04・札 #435 / #429。**包むだけで動作は変えない**）
+/// - `launchSync` ほか: 起動後の `.task(id: auth.state)` の同期の区間（`launchSync` は保存・いいねの同期の終わりまで。ブロック・行きたい場所・購入の送り直しは区間に含めない(行きたい場所と購入の送り直しは `LaunchDeferral` の待ちの後ろ)・2026-11-07。2026-11-04・札 #435 / #429。**包むだけで動作は変えない**）
 ///
 /// 名前（`subsystem`・`category`・区間の名前）は UI テストの `XCTOSSignpostMetric` と Instruments で引くので、
 /// 変えるときは `PerformanceTests` も合わせる。Linux の模型（`os` が無い）では何もしない
