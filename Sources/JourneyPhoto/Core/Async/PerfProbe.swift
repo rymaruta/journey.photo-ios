@@ -51,7 +51,7 @@ final class PerfRecorder: @unchecked Sendable {
     /// 停止の一覧の上限（長いものから残す）
     static let stallEventCap = 12
     /// 出来事の一覧の上限（先に起きた順に残し、溢れた数は `+Ndropped` で残す・2026-11-07）
-    static let eventCap = 40
+    static let eventCap = 64
     /// メインスレッドの積み(スタック)の見本の上限と、1 件に残す段の数（2026-11-07・`PerfMainSampler`）
     static let sampleCap = 16
     static let sampleFrameCap = 14
@@ -72,6 +72,8 @@ final class PerfRecorder: @unchecked Sendable {
     private var droppedEvents = 0
     /// 残した名前（**同じ名前は最初の1回だけ**残す。`app.body` のように何度も起きるものが枠を使い切らないように）
     private var eventNames: Set<String> = []
+    /// 名前ごとの回数（`hit(_:)`）
+    private var hitCounts: [String: Int] = [:]
     /// 止まっている最中のメインスレッドの積み（`PerfMainSampler` が撮る）。止まった時刻と突き合わせて「何をしていたか」を見る
     private var samples: [PerfSample] = []
 
@@ -185,6 +187,25 @@ final class PerfRecorder: @unchecked Sendable {
         samples.append(PerfSample(ms: now, frames: Array(frames.prefix(Self.sampleFrameCap))))
     }
 
+    /// 何度も起きる出来事を数える（2026-11-07・札 #435 / #429）。**1〜4 回目と、2 の累乗の回だけ**
+    /// `名前#回数` として時刻つきで残す（`home.tile#8` が +9100 なら、8 回目の評価が 9100ms）。無効のときは何もしない
+    func hit(_ name: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        let now = elapsedMs()
+        let key = name()
+        lock.lock()
+        defer { lock.unlock() }
+        guard hitCounts[key] != nil || hitCounts.count < 32 else { return }
+        let n = (hitCounts[key] ?? 0) + 1
+        hitCounts[key] = n
+        guard n <= 4 || (n & (n - 1)) == 0 else { return }
+        if events.count < Self.eventCap {
+            events.append(PerfEvent(ms: now, name: "\(key)#\(n)"))
+        } else {
+            droppedEvents += 1
+        }
+    }
+
     // MARK: - body
 
     /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）。
@@ -196,7 +217,7 @@ final class PerfRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         bodyCounts[screen, default: 0] += 1
         let n = bodyCounts[screen, default: 0]
-        if n <= 2 {
+        if n <= 4 || (n & (n - 1)) == 0 {
             if events.count < Self.eventCap {
                 events.append(PerfEvent(ms: now, name: "body.\(screen.rawValue)#\(n)"))
             } else {

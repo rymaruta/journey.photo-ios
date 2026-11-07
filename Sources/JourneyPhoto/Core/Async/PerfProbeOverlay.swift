@@ -36,7 +36,10 @@ final class PerfStallWatcher: NSObject {
     func start() {
         guard link == nil, PerfRecorder.shared.isEnabled else { return }
         // メインスレッドが止まっている間の積みを撮る見張りも始める（同じ UI テストのときだけ）
+        // **Debug のビルドだけ**（Release からは `PerfMainSampler` ごと消える＝信号の受け手も見張りのスレッドも作られない）
+        #if DEBUG
         PerfMainSampler.shared.start()
+        #endif
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
@@ -57,7 +60,9 @@ final class PerfStallWatcher: NSObject {
     #endif
 }
 
-#if os(iOS)
+// **Debug のビルドだけ。** Release では丸ごと消える（`SIGUSR1` の受け手・見張りのスレッド・`backtrace` の呼び出しが
+// バイナリに入らない）。有効になる条件も `-JPPreviewPerfProbe YES`（Debug のみ true）と二重（2026-11-07 owner の確認事項）
+#if os(iOS) && DEBUG
 import Darwin
 
 // MARK: - メインスレッドの積み(スタック)の見本（2026-11-07・札 #435 / #429）

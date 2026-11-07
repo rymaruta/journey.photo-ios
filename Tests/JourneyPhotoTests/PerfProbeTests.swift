@@ -327,6 +327,68 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertTrue(text.contains("PerfRecorder.shared.event(\"sp.\\(interval.name.rawValue)<\")"), "end が出来事を残していない")
     }
 
+    // MARK: - Release に入らない（2026-11-07 owner の確認事項）
+
+    /// 🔴 メインスレッドの積みを撮る仕組み（`SIGUSR1`・見張りのスレッド）は **Debug のビルドにしか入らない**。
+    /// 型ごと `#if os(iOS) && DEBUG` の内側にあり、呼び出しも `#if DEBUG` の内側。`SIGUSR1` を使うのはこのファイルだけ
+    func testMainSamplerIsCompiledOnlyInDebug() throws {
+        let text = try source("Sources/JourneyPhoto/Core/Async/PerfProbeOverlay.swift")
+        let gate = try XCTUnwrap(text.range(of: "#if os(iOS) && DEBUG"), "型を囲む #if os(iOS) && DEBUG が無い")
+        let type = try XCTUnwrap(text.range(of: "final class PerfMainSampler"))
+        let signal = try XCTUnwrap(text.range(of: "signal(SIGUSR1"))
+        let thread = try XCTUnwrap(text.range(of: "thread.start()"))
+        XCTAssertLessThan(gate.lowerBound, type.lowerBound, "型が #if DEBUG の外にある")
+        XCTAssertLessThan(gate.lowerBound, signal.lowerBound, "SIGUSR1 の登録が #if DEBUG の外にある")
+        XCTAssertLessThan(gate.lowerBound, thread.lowerBound, "見張りのスレッドが #if DEBUG の外にある")
+        // 型を囲む #if の終わりより前に、他の #if が混ざって閉じていない（最後の #endif が型の後ろにある）
+        let lastEndif = try XCTUnwrap(text.range(of: "#endif", options: .backwards))
+        XCTAssertGreaterThan(lastEndif.lowerBound, thread.lowerBound)
+        // 呼び出しも Debug の内側
+        let call = try XCTUnwrap(text.range(of: "PerfMainSampler.shared.start()"))
+        let before = String(text[..<call.lowerBound])
+        let lastIf = try XCTUnwrap(before.range(of: "#if", options: .backwards))
+        XCTAssertTrue(before[lastIf.lowerBound...].hasPrefix("#if DEBUG"), "start() の呼び出しが #if DEBUG の内側にない")
+        // SIGUSR1 を使うのはこのファイルだけ
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        var users: [String] = []
+        if let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) {
+            for case let url as URL in files where url.pathExtension == "swift" {
+                if let body = try? String(contentsOf: url, encoding: .utf8),
+                   body.components(separatedBy: "\n").contains(where: {
+                       !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") && $0.contains("SIGUSR1")
+                   }) {
+                    users.append(url.lastPathComponent)
+                }
+            }
+        }
+        XCTAssertEqual(users, ["PerfProbeOverlay.swift"], "SIGUSR1 を使う場所が増えている: \(users)")
+    }
+
+    /// 何度も起きる出来事は 1〜4 回目と 2 の累乗の回だけ残す（`名前#回数`）。無効なら何もしない
+    func testHitKeepsFirstFourAndPowersOfTwo() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for _ in 0..<20 { rec.hit("t") }
+        XCTAssertEqual(evTail(rec), "[+0 t#1;+0 t#2;+0 t#3;+0 t#4;+0 t#8;+0 t#16]")
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        for _ in 0..<20 { off.hit("t") }
+        XCTAssertEqual(evTail(off), "[]")
+    }
+
+    /// 無効のとき（本番）は、出来事の名前を作らず、鍵も取らず、何も残さない。呼び出しが何千回あっても同じ
+    func testDisabledRecorderDoesNoWorkForEvents() {
+        let clock = FakeClock()
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        var built = 0
+        for _ in 0..<1000 { off.event({ built += 1; return "x" }()) }
+        for _ in 0..<1000 { off.bodyHit(.home) }
+        XCTAssertEqual(built, 0, "無効のときに名前を作っている")
+        XCTAssertEqual(off.bodyCount(.home), 0)
+        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[]"), off.summary())
+    }
+
     // MARK: - 配線
 
     /// 🔴 `selection` を書くのは `select(_:at:)` の1か所だけ（書き込みの場所が記録から漏れない）。

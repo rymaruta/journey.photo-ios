@@ -43,6 +43,7 @@ struct HomeSpotShelfView: View {
     private static let photoHeight: CGFloat = 150
 
     var body: some View {
+        let _ = PerfRecorder.shared.hit("home.shelf.body")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
         VStack(alignment: .leading, spacing: 8) {
             header
             ScrollView(.horizontal, showsIndicators: false) {
