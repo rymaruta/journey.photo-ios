@@ -122,7 +122,9 @@ final class PerfProbeTests: XCTestCase {
                        + " | task=[#0 auth.state.sync 200-450ms]"
                        + " | stall=1/150ms/3f"
                        + " | body=home:2,myPage:0,photoDetail:1"
-                       + " | t=500ms")
+                       + " | t=500ms"
+                       // 150ms 止まった刻みが戻ってきたのが 200ms → 止まり始めは 50ms（2026-11-07）
+                       + " | stalls=[+50ms 150ms]")
         XCTAssertEqual(rec.bodyCount(.home), 2)
     }
 
@@ -174,6 +176,66 @@ final class PerfProbeTests: XCTestCase {
         meter.ingest(61.016)
         XCTAssertEqual(meter.count, 0)
         XCTAssertEqual(meter.maxMs, 16)
+    }
+
+    // MARK: - 停止の一覧（起点と長さ・2026-11-07・札 #435・#429）
+
+    /// 閾値を超えた間隔だけを返す（超えない・最初の1回は nil）
+    func testStallMeterIngestReturnsTheGapOnlyWhenOverThreshold() {
+        var meter = StallMeter()
+        XCTAssertNil(meter.ingest(5.000))
+        XCTAssertNil(meter.ingest(5.016))
+        XCTAssertNil(meter.ingest(5.116), "100ms ちょうどは数えない")
+        XCTAssertEqual(meter.ingest(5.346), 230)
+        XCTAssertNil(meter.ingest(5.362))
+    }
+
+    /// 停止の起点は「刻みが戻ってきた時刻 − 長さ」。`task=`・`sel=` と同じ時計なので突き合わせられる
+    func testStallEventsStartIsEndMinusGapInTheRecorderClock() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.recordFrame(at: 1.000)
+        clock.now = 1000.300
+        rec.recordFrame(at: 1.016)
+        clock.now = 1001.800
+        rec.recordFrame(at: 2.516)      // 1500ms 止まって戻ってきた（1800ms 時点）
+        let tail = rec.summary().components(separatedBy: " | stalls=").last
+        XCTAssertEqual(tail, "[+300ms 1500ms]")
+    }
+
+    /// 一覧には上限があり、**長いものから**残す。出力は起点の順
+    func testStallEventsKeepTheLongestAndAreSortedByStart() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        var t = 10.0
+        rec.recordFrame(at: t)
+        // 上限 + 3 件の停止。長さは 110ms から 1ms ずつ増やす（最後の 3 件が最長）
+        for i in 0..<(PerfRecorder.stallEventCap + 3) {
+            clock.now = 1000 + Double(i + 1)
+            t += 0.110 + Double(i) * 0.001
+            rec.recordFrame(at: t)
+        }
+        let tail = rec.summary().components(separatedBy: " | stalls=[").last ?? ""
+        let events = tail.dropLast().split(separator: ";").map(String.init)
+        XCTAssertEqual(events.count, PerfRecorder.stallEventCap)
+        let gaps = events.map { Int($0.split(separator: " ")[1].replacingOccurrences(of: "ms", with: "")) ?? 0 }
+        XCTAssertFalse(gaps.contains(110), "いちばん短いものから落とす")
+        XCTAssertTrue(gaps.contains(124), "最長は残る")
+        let starts = events.map { Int($0.split(separator: " ")[0].dropFirst().replacingOccurrences(of: "ms", with: "")) ?? 0 }
+        XCTAssertEqual(starts, starts.sorted(), "起点の順に並ぶ")
+    }
+
+    /// 停止が無ければ空。数えない起動では何も残さない
+    func testStallEventsEmptyWhenNoStallOrDisabled() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.recordFrame(at: 1.000)
+        rec.recordFrame(at: 1.016)
+        XCTAssertTrue(rec.summary().hasSuffix(" | stalls=[]"), rec.summary())
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.recordFrame(at: 1.000)
+        off.recordFrame(at: 3.000)
+        XCTAssertEqual(off.summary().components(separatedBy: " | stalls=").last, "[]")
     }
 
     // MARK: - 配線

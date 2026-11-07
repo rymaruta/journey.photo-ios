@@ -14,6 +14,11 @@ import Foundation
 ///
 /// 見えない要素 `perf.probe`（`PerfProbeOverlay`）の `accessibilityValue` に `summary()` を出し、
 /// UI テストが読む（`UITests/.../PerfProbeSupport.swift`・失敗したときは添付に残す）
+///
+/// **UI テストとの対応**（`Tools/pick-ui-tests.py` が PR の差分から関連 UI テストを選ぶ手がかり・2026-11-07）:
+/// UI テストは `"perf.probe"`（見えない要素の識別子）の値を、`SmokeTests`（起動の見張り）と `CriticalFlowTests`
+/// （失敗したときに添付に残す）と `PerformanceTests`（名指しで流す）から読む。識別子がこのファイルに無いと、
+/// 関連テストを特定できず PR の検証が UI テストを全件流す（#493 は上限を超えて打ち切られた）
 final class PerfRecorder: @unchecked Sendable {
 
     /// 本番（と UI テスト）で使う1つ。無効なら全部の口が何もしない
@@ -42,6 +47,8 @@ final class PerfRecorder: @unchecked Sendable {
     /// 履歴の上限（暴走しても見えない要素の値を膨らませない）
     static let selectionCap = 200
     static let taskCap = 50
+    /// 停止の一覧の上限（長いものから残す）
+    static let stallEventCap = 12
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
@@ -52,6 +59,8 @@ final class PerfRecorder: @unchecked Sendable {
     private var tasks: [TaskSpan] = []
     private var bodyCounts: [BodyScreen: Int] = [:]
     private var stall = StallMeter()
+    /// 100ms を超えた停止の一覧（起点と長さ）。長いものから `stallEventCap` 件だけ残す（2026-11-07・札 #435・#429）
+    private var stallEvents: [StallEvent] = []
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -113,7 +122,16 @@ final class PerfRecorder: @unchecked Sendable {
         guard isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
-        stall.ingest(timestamp)
+        // 刻みが戻ってきた時刻（`task=` と同じ時計）から長さを引くと、止まり始めた時刻になる。
+        // どの処理の最中に止まったかを、`task=`・`sel=` の時刻と突き合わせて見られる
+        guard let gapMs = stall.ingest(timestamp) else { return }
+        let event = StallEvent(startMs: max(0, elapsedMs() - gapMs), gapMs: gapMs)
+        if stallEvents.count < Self.stallEventCap {
+            stallEvents.append(event)
+        } else if let smallest = stallEvents.indices.min(by: { stallEvents[$0].gapMs < stallEvents[$1].gapMs }),
+                  stallEvents[smallest].gapMs < gapMs {
+            stallEvents[smallest] = event
+        }
     }
 
     /// 裏に入った・戻った。**その間の空きを停止に数えない**
@@ -144,7 +162,7 @@ final class PerfRecorder: @unchecked Sendable {
 
     /// 見えない要素の値。**形を変えるときは `PerfProbeTests` も合わせる**:
     ///
-    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms
+    ///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…]
     func summary() -> String {
         let now = elapsedMs()
         lock.lock()
@@ -163,6 +181,8 @@ final class PerfRecorder: @unchecked Sendable {
             + " | stall=\(stall.count)/\(stall.maxMs)ms/\(stall.frames)f"
             + " | body=\(body.joined(separator: ","))"
             + " | t=\(now)ms"
+            // 後ろに足した（読む側は `key=` で引く）。起点の順。無ければ空
+            + " | stalls=[\(stallEvents.sorted { $0.startMs < $1.startMs }.map { "+\($0.startMs)ms \($0.gapMs)ms" }.joined(separator: ";"))]"
     }
 }
 
@@ -179,17 +199,27 @@ struct StallMeter: Equatable {
     /// 間隔を測った回数
     private(set) var frames = 0
 
-    mutating func ingest(_ timestamp: TimeInterval) {
+    /// 閾値を超えた間隔（ミリ秒）を返す（超えなければ nil）
+    @discardableResult
+    mutating func ingest(_ timestamp: TimeInterval) -> Int? {
         defer { lastTimestamp = timestamp }
-        guard let last = lastTimestamp else { return }
+        guard let last = lastTimestamp else { return nil }
         let gapMs = (timestamp - last) * 1000
         frames += 1
         maxMs = max(maxMs, Int(gapMs.rounded()))
-        if gapMs > thresholdMs { count += 1 }
+        guard gapMs > thresholdMs else { return nil }
+        count += 1
+        return Int(gapMs.rounded())
     }
 
     /// 次の刻みを「最初の1回」にする（裏から戻った直後の長い空きを数えない）
     mutating func reset() {
         lastTimestamp = nil
     }
+}
+
+/// 100ms を超えた停止 1 件（起動から何 ms に止まり始め、何 ms 止まったか）
+struct StallEvent: Equatable {
+    let startMs: Int
+    let gapMs: Int
 }

@@ -78,6 +78,7 @@ final class PerformanceTests: XCTestCase {
          ("task", reading.section("task").replacingOccurrences(of: " ", with: "_")),
          ("stallCount", "\(reading.stall.count)"),
          ("stallMaxMs", "\(reading.stall.maxMs)"),
+         ("stalls", reading.stalls.joined(separator: ";").replacingOccurrences(of: " ", with: "_")),
          ("bodyHome", "\(reading.bodyCount("home"))"),
          ("bodyMyPage", "\(reading.bodyCount("myPage"))"),
          ("bodyPhotoDetail", "\(reading.bodyCount("photoDetail"))")]

@@ -82,6 +82,11 @@ struct PerfProbeReading {
         section("sel").split(separator: ";").map(String.init).filter { !$0.isEmpty }
     }
 
+    /// 100ms を超えた停止の一覧（`+1750ms 1634ms` の並び・起動から止まり始めた時刻と長さ・2026-11-07）
+    var stalls: [String] {
+        section("stalls").split(separator: ";").map(String.init).filter { !$0.isEmpty }
+    }
+
     /// body の評価回数（`home`・`myPage`・`photoDetail`）
     func bodyCount(_ screen: String) -> Int {
         for pair in section("body").split(separator: ",") {
