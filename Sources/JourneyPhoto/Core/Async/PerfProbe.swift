@@ -67,6 +67,8 @@ final class PerfRecorder: @unchecked Sendable {
     /// 時刻付きの出来事（`event(_:)`）。停止の起点（`stalls=`）と突き合わせて「何の最中に止まったか」を見る
     private var events: [PerfEvent] = []
     private var droppedEvents = 0
+    /// 残した名前（**同じ名前は最初の1回だけ**残す。`app.body` のように何度も起きるものが枠を使い切らないように）
+    private var eventNames: Set<String> = []
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -150,7 +152,7 @@ final class PerfRecorder: @unchecked Sendable {
 
     // MARK: - event
 
-    /// 時刻付きの出来事を1つ残す（2026-11-07・札 #435 / #429。**測るだけで動作は変えない**）。
+    /// 時刻付きの出来事を1つ残す（2026-11-07・札 #435 / #429。**測るだけで動作は変えない**）。**同じ名前は最初の1回だけ**。
     /// 名前は `画面.出来事` の短い語（始めは `>`・終わりは `<` を末尾に付ける）。無効のときは名前も作らない
     func event(_ name: @autoclosure () -> String) {
         guard isEnabled else { return }
@@ -158,6 +160,7 @@ final class PerfRecorder: @unchecked Sendable {
         let label = name()
         lock.lock()
         defer { lock.unlock() }
+        guard eventNames.insert(label).inserted else { return }
         if events.count < Self.eventCap {
             events.append(PerfEvent(ms: now, name: label))
         } else {

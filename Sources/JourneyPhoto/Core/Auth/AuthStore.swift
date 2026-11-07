@@ -82,8 +82,7 @@ final class AuthStore: ObservableObject {
     /// UI テストの見本の通信（`-JPPreviewLocalBackend`）のときだけ見本の認証（`PreviewBackend.authGateway`・Debug のみ）
     init(gateway: AuthStoreGateway = PreviewBackend.authGateway ?? .live) {
         // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
-        PerfRecorder.shared.event("AuthStore.init>")
-        defer { PerfRecorder.shared.event("AuthStore.init<") }
+        defer { PerfRecorder.shared.event("AuthStore.init") }   // 作り終えた時刻（始めは1つ前の出来事から読む）
         self.gateway = gateway
         // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
         expiryObserver = NotificationCenter.default.addObserver(

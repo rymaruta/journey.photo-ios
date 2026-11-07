@@ -38,6 +38,12 @@ enum PerfSignpost {
         case launchSyncDraftPrepare = "LaunchSyncDraftPrepare"
     }
 
+    /// 出来事の記録（`PerfRecorder.event`）に残す区間。起動の同期の細かい 2 つ（10ms 台と取れている）は、
+    /// 40 件の枠を使わないよう残さない（2026-11-07）
+    static func recordsEvent(_ name: Name) -> Bool {
+        name != .launchSyncSweepOrphans && name != .launchSyncDraftPrepare
+    }
+
     /// 始めた区間（終えるときに渡す）
     struct Interval: @unchecked Sendable {
         let name: Name
@@ -53,7 +59,7 @@ enum PerfSignpost {
     /// 区間を始める。`OSSignposter` は名前に `StaticString` しか取らないので、名前ごとに書き分ける
     static func begin(_ name: Name) -> Interval {
         // UI テストのときだけ、出来事の記録にも残す（`PerfRecorder.event`・2026-11-07）
-        PerfRecorder.shared.event("sp.\(name.rawValue)>")
+        if recordsEvent(name) { PerfRecorder.shared.event("sp.\(name.rawValue)>") }
         #if canImport(os)
         let id = signposter.makeSignpostID()
         let state: OSSignpostIntervalState
@@ -76,7 +82,7 @@ enum PerfSignpost {
     }
 
     static func end(_ interval: Interval) {
-        PerfRecorder.shared.event("sp.\(interval.name.rawValue)<")
+        if recordsEvent(interval.name) { PerfRecorder.shared.event("sp.\(interval.name.rawValue)<") }
         #if canImport(os)
         switch interval.name {
         case .launch: signposter.endInterval("Launch", interval.state)

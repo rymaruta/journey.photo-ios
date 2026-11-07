@@ -68,8 +68,7 @@ final class OfflineTripStore: ObservableObject {
 
     init(root: URL? = nil, fileManager: FileManager = .default, defaults: UserDefaults = .standard) {
         // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
-        PerfRecorder.shared.event("OfflineTripStore.init>")
-        defer { PerfRecorder.shared.event("OfflineTripStore.init<") }
+        defer { PerfRecorder.shared.event("OfflineTripStore.init") }   // 作り終えた時刻（始めは1つ前の出来事から読む）
         self.fileManager = fileManager
         self.defaults = defaults
         self.root = root ?? Self.defaultRoot(fileManager)

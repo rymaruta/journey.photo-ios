@@ -76,8 +76,7 @@ final class StoreService: ObservableObject {
 
     init(prefix: String = ProProducts.currentPrefix) {
         // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
-        PerfRecorder.shared.event("StoreService.init>")
-        defer { PerfRecorder.shared.event("StoreService.init<") }
+        defer { PerfRecorder.shared.event("StoreService.init") }   // 作り終えた時刻（始めは1つ前の出来事から読む）
         self.prefix = prefix
     }
 

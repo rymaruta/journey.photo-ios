@@ -284,6 +284,21 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertFalse(built, "無効のときは名前を作らない")
     }
 
+    /// 同じ名前は最初の1回だけ（何度も起きる出来事が 40 件の枠を使い切らない）。細かい 2 区間は枠を使わない
+    func testSameEventNameIsKeptOnlyOnce() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        clock.now = 1000.100
+        rec.event("app.body")
+        clock.now = 1000.200
+        rec.event("app.body")
+        rec.event("x")
+        XCTAssertEqual(evTail(rec), "[+100 app.body;+200 x]")
+        XCTAssertTrue(PerfSignpost.recordsEvent(.launchSync))
+        XCTAssertFalse(PerfSignpost.recordsEvent(.launchSyncSweepOrphans))
+        XCTAssertFalse(PerfSignpost.recordsEvent(.launchSyncDraftPrepare))
+    }
+
     /// signpost の区間の始め・終わりも出来事に残る（`PerfSignpost.begin/end` が `PerfRecorder.shared` に渡す配線）
     func testSignpostWiringRecordsEvents() throws {
         let text = try source("Sources/JourneyPhoto/Core/Async/PerfSignpost.swift")
