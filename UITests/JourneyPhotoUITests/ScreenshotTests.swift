@@ -5270,6 +5270,8 @@ final class ScreenshotTests: XCTestCase {
         /// アプリ全体（`Process`）の CPU の時間の合計（ms）とメモリ（MB）
         var cpuMs = 0.0
         var memMB = 0.0
+        /// 場面の中身の数（`SceneExterior`・`SceneRoom`・`CamperSceneStats`）の「欄=値」の原文（2026-11-06・メモリの内訳）
+        var raw = ""
     }
 
     /// アプリの数を読む（`CamperRenderMeter.summary` の「名前 n= ms= max= slow=;」）
@@ -5283,6 +5285,7 @@ final class ScreenshotTests: XCTestCase {
             let words = entry.split(separator: " ")
             guard let name = words.first else { continue }
             var t = CamperRenderTally()
+            t.raw = words.dropFirst().joined(separator: " ")
             for w in words.dropFirst() {
                 let kv = w.split(separator: "=")
                 guard kv.count == 2 else { continue }
@@ -5317,6 +5320,11 @@ final class ScreenshotTests: XCTestCase {
                                 label, cpu, cpu / max(seconds, 0.001) / 10, b.memMB, a.memMB, seconds))
         }
         for key in after.keys.sorted() where key != "Process" {
+            // 場面の中身の数（回数・時間ではない）は、欄の原文をそのまま残す（メモリの内訳・#430）
+            if key.hasPrefix("Scene") {
+                lines.append("\(label) | \(key) \(after[key]!.raw)")
+                continue
+            }
             let a = after[key]!, b = before[key] ?? CamperRenderTally()
             let n = a.count - b.count
             let ms = a.ms - b.ms
