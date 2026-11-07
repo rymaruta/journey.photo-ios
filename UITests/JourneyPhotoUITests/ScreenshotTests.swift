@@ -3528,10 +3528,15 @@ final class ScreenshotTests: XCTestCase {
     /// `rounds` 回。押す前の待ちは回ごとに替える（2 秒・10 秒）。押しが届かなかった回（`PERF-TRUNK … outcome=missed`）の
     /// `trunk.open.debug` の値で、A（引く指が押しを奪う）・B（`dragStart`/`lidSettled` が残る）・C（`held` が残る）を見分ける。
     /// 一度でも押し直しが要ったら最後に落とす（押し直しの仕組みが無くても通ることを数で示すため）
-    func testTrunkPickRepeat() {
-        let rounds = 6
+    func testTrunkPickRepeat() { trunkPickRounds([0, 1]) }
+    func testTrunkPickRepeat2() { trunkPickRounds([2, 3]) }
+    func testTrunkPickRepeat3() { trunkPickRounds([4, 5]) }
+    func testTrunkPickRepeat4() { trunkPickRounds([6, 7]) }
+
+    /// 1 回の起動で、会員証・メダル・「ほか N」・乗車券を 2 巡押す（1 つの試験は 5 分の上限に収まるよう 2 回の起動まで）
+    private func trunkPickRounds(_ rounds: [Int]) {
         pickMisses = 0
-        for round in 0..<rounds {
+        for round in rounds {
             let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
             defer { app.terminate() }
             guard openTrunk(app) else { return XCTFail("旅のトランクを開けない（\(round) 回目）") }
@@ -3545,15 +3550,17 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: round % 2 == 0 ? 2 : 10)
             let go = app.buttons["trunk.hold.go"].firstMatch
             let putBack = app.buttons["trunk.hold.putBack"].firstMatch
-            for id in ["trunk.inside.card", "trunk.inside.medal", "trunk.inside.more", "trunk.inside.tickets"] {
-                let item = app.buttons[id].firstMatch
-                guard item.waitForExistence(timeout: 10), item.isHittable else {
-                    XCTContext.runActivity(named: "PERF-TRUNK round=\(round) item=\(id) 押せる所に無い \(trunkDebugValue(app))") { _ in }
-                    continue
+            for _ in 0..<2 {
+                for id in ["trunk.inside.card", "trunk.inside.medal", "trunk.inside.more", "trunk.inside.tickets"] {
+                    let item = app.buttons[id].firstMatch
+                    guard item.waitForExistence(timeout: 10), item.isHittable else {
+                        XCTContext.runActivity(named: "PERF-TRUNK round=\(round) item=\(id) 押せる所に無い \(trunkDebugValue(app))") { _ in }
+                        continue
+                    }
+                    guard pickUp(item, go: go, in: app) else { XCTFail("\(id) を押しても持ち上がらない（\(round) 回目）"); return }
+                    Thread.sleep(forTimeInterval: 0.5)
+                    putBack.tap()
                 }
-                guard pickUp(item, go: go, in: app) else { XCTFail("\(id) を押しても持ち上がらない（\(round) 回目）"); break }
-                Thread.sleep(forTimeInterval: 0.5)
-                putBack.tap()
             }
         }
         XCTAssertEqual(pickMisses, 0, "押しても持ち上がらなかった回が \(pickMisses) 回（PERF-TRUNK の行を見る）")
