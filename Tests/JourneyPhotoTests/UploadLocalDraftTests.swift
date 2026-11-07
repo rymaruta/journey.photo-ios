@@ -67,9 +67,18 @@ final class UploadLocalDraftTests: XCTestCase {
         one.title = "読めない"
         first.items = [one]
         XCTAssertTrue(first.saveDraft())
-        for name in imageFiles() {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        // 「ファイルはあるのに読めない」を作る: 画像のファイルを消して、同じ名前の**ディレクトリ**に置き換える。
+        // ファイルを消すだけだと、`draft(for:)` が(画像が無い記録は無効として)記録ごと外し(`UploadDraftStore` の
+        // `allSatisfy hasImage`)、`restoreDraft` はその手前で知らせ無しに false を返す——別の経路で、画像を読む段階に来ない。
+        // ディレクトリなら `fileExists` は真で `Data(contentsOf:)` だけが失敗する(`images(of:)` が nil を返す条件)
+        let names = imageFiles()
+        XCTAssertFalse(names.isEmpty, "前提: 画像のファイルがある")
+        for name in names {
+            let url = directory.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         }
+        XCTAssertNotNil(store().draft(for: "a"), "前提: 記録は有効(ファイルは在る)のまま")
 
         let next = model(owner: "a")
         let restored = await next.restoreDraft()
