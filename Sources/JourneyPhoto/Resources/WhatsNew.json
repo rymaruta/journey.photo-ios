@@ -2,6 +2,128 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.72",
+      "date": "2026-11-07",
+      "items": [
+        {
+          "symbol": "rectangle.3.group",
+          "title": {
+            "ja": "画面のデザインが新しくなりました",
+            "en": "A refreshed look"
+          },
+          "detail": {
+            "ja": "ホーム・さがす・地図・マイページ・設定まで、黒と白に真鍮の差し色で、写真がいちばん引き立つ見た目にそろえました。",
+            "en": "Home, Search, Map, My Page and Settings share one look: black and white with a brass accent, so your photos stand out."
+          }
+        },
+        {
+          "symbol": "books.vertical",
+          "title": {
+            "ja": "投稿する前に、旅の一冊ができる",
+            "en": "Trip books before you post"
+          },
+          "detail": {
+            "ja": "写真へのアクセスを許可すると、過去の旅が一冊ずつマイページの棚に並びます。写真は端末の中で調べるだけで、どこにも送りません。投稿するかどうかは自由です。",
+            "en": "Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device and never sent anywhere. Posting is up to you."
+          },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "globe.asia.australia",
+          "title": {
+            "ja": "人のプロフィールにも旅の記録",
+            "en": "Trip records on profiles too"
+          },
+          "detail": {
+            "ja": "人のプロフィールで、その人の旅の記録（つないだ距離・訪れた国と地域）と旅の一覧を見られます。誰にでも公開している写真だけが使われます。",
+            "en": "See a person's trip record (distance, countries and regions visited) and their trips on their profile. Only photos shared with everyone are used."
+          }
+        },
+        {
+          "symbol": "play.circle",
+          "title": {
+            "ja": "ストーリーがもっと使いやすく",
+            "en": "Easier Stories"
+          },
+          "detail": {
+            "ja": "ストーリーがある人の顔に輪が付き、押すとその人のストーリーが開きます。左をタップで前へ戻り、上へ払って返信、絵文字6つですぐ反応できます。曲の札は6つの形から選べます。",
+            "en": "People with a story get a ring around their face; tap it to watch. Tap the left side to go back, swipe up to reply, or react with one of 6 emoji. Song stickers come in 6 styles."
+          },
+          "destination": "home"
+        },
+        {
+          "symbol": "doc.on.doc",
+          "title": {
+            "ja": "下書きを複数持てる",
+            "en": "Keep several drafts"
+          },
+          "detail": {
+            "ja": "投稿もストーリーも、下書きをいくつでも残せます。マイページの「下書き」を長押しすると、続ける・削除ができます。",
+            "en": "Keep as many drafts as you like for posts and stories. Press and hold Drafts on My Page to continue or delete one."
+          },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "mappin.and.ellipse",
+          "title": {
+            "ja": "写真の詳細から撮影スポットへ",
+            "en": "From a photo to its photo spot"
+          },
+          "detail": {
+            "ja": "写真の詳細に、その写真に結ばれた撮影スポットが出ます。「行きたい」を付けたり、次のゴールデンアワーや経路を見たりして、同じ場所へ行く計画を立てられます。",
+            "en": "A photo's page now shows the photo spot it belongs to. Mark it Want to go, check the next golden hour and directions, and plan your own visit."
+          },
+          "destination": "map"
+        },
+        {
+          "symbol": "photo.on.rectangle",
+          "title": {
+            "ja": "「この写真を見て撮影」に元の写真",
+            "en": "Link the photo that inspired you"
+          },
+          "detail": {
+            "ja": "投稿や編集で、見て撮った元の写真を付けられます。写真の詳細にも「この写真を見て撮影」として出ます。",
+            "en": "Attach the original photo that inspired yours when you post or edit. It also appears on the photo's page."
+          }
+        },
+        {
+          "symbol": "bus",
+          "title": {
+            "ja": "とおまわり号の中に入れます",
+            "en": "Step inside Detour"
+          },
+          "detail": {
+            "ja": "とおまわり号の中は7つの部屋に分かれ、家具を置いたり、額に自分の写真を飾ったりできます。夜は灯りがともります。マイページの旅の記録から。",
+            "en": "Detour now has 7 rooms inside. Place furniture, hang your own photos in frames, and enjoy the lights at night. Find it under Trips on My Page."
+          },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "square.and.arrow.up",
+          "title": {
+            "ja": "共有カードの型を選べる",
+            "en": "Pick a share card style"
+          },
+          "detail": {
+            "ja": "SNS に載せる共有カードを、帯・フェード・表紙・展示札の4つの型から選べます。選んだ型は次回も使われます。",
+            "en": "Share cards for social media come in 4 styles: Band, Fade, Cover and Label. The style you pick is remembered."
+          }
+        },
+        {
+          "symbol": "arrow.clockwise",
+          "title": {
+            "ja": "新しい投稿がすぐ出る",
+            "en": "New posts show up sooner"
+          },
+          "detail": {
+            "ja": "ホーム・さがす・地図・人のプロフィールに、Web で見える新しい投稿がアプリにも出るようになりました。",
+            "en": "New posts you can see on the web now also appear in Home, Search, Map and profiles in the app."
+          },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.18",
       "date": "2026-10-19",
       "items": [

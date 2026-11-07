@@ -11,6 +11,7 @@ CLAUDE.md の「リリースのたびに版を上げる」を守る。版（MARK
 ## 手順
 
 1. 出すものが main に入っていて、それぞれ Mac で緑（`/mac-check`）か確かめる。
+   - 出す前に、`Sources/JourneyPhoto/Resources/WhatsNew.json` に今回の版（直近の `testflight/*` の最後の数字 +1）の項目を足したか確かめる（利用者に見える変更が無い版は足さない。`WhatsNew.pending` は見た版より新しい版を全部出すので、足し忘れた分は次の版にまとめて足せる）。
 2. 流す:
    ```bash
    gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
