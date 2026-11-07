@@ -185,6 +185,36 @@ final class PerformanceTests: XCTestCase {
         perf(perfProbeFields("afterHome", readProbe(app, label: "afterHome")))
     }
 
+    /// **起動直後にタブを押すと、ホームへ戻される**（札 #435・2026-11-01 に Mac の録画で2回）を、冷えた起動で何度も再現して、
+    /// そのたびの `selection` の書き込みの履歴（どこで・何から何へ・起動から ms）を残す（2026-11-07）。
+    ///
+    /// 起動のたびに、タブが出た**直後に**マイページ（4 番目）を押し、数秒後に選ばれているタブを読む。
+    ///  - `PERF … result=stayed` … マイページのまま（不具合は出ていない）
+    ///  - `PERF … result=returned` … ホームに戻された（不具合が出た回。この回の `sel=` に、戻した書き込みの場所が出る）
+    /// **合否は付けない**（出るか出ないかを観察する。出た回の記録が、原因を特定する数字になる）。
+    /// 名指しで流す（`screens=testColdLaunchTabTap`・`ONLY_WHEN_NAMED`）。1 回の起動は約 25 秒、回数は `coldLaunchRounds`
+    func testColdLaunchTabTap() {
+        for round in 1...Self.coldLaunchRounds {
+            let app = configuredApp(localBackend: true)
+            enablePerfProbe(app)
+            app.launch()
+            passConsent(app)
+            // タブが出た直後に押す（ホームの写真を待たない・待つと不具合が出る条件から外れる）
+            let mine = app.tabBars.firstMatch.buttons.element(boundBy: 4)
+            XCTAssertTrue(mine.waitForExistence(timeout: 10), "マイページのタブが無い（\(round) 回目）")
+            mine.tap()
+            Thread.sleep(forTimeInterval: 4)
+            let selected = mine.isSelected
+            let reading = readProbe(app, label: "round\(round)")
+            perf([("round", "\(round)"), ("result", selected ? "stayed" : "returned")]
+                 + perfProbeFields("afterTap", reading))
+            app.terminate()
+        }
+    }
+
+    /// `testColdLaunchTabTap` の起動の回数
+    private static let coldLaunchRounds = 6
+
     /// 主要画面の body の評価回数（ホーム・マイページ・写真詳細）。各段の終わりの数を `PERF` に残す:
     /// ホームが出た後 → マイページへ → ホームへ戻る → 写真を開く → 戻る。**差が評価の回数**。合否は付けない
     func testBodyEvaluationCounts() {

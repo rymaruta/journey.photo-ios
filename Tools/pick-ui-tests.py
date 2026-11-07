@@ -47,6 +47,8 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "PerformanceTests/testPhotoDetailMemory", "PerformanceTests/testStoryReelMemory",
                    # 2026-11-04（札 #435・#429）: 起動直後の動きの記録（`perf.probe`）と body の評価回数。名指しした回だけ
                    "PerformanceTests/testLaunchProbe", "PerformanceTests/testBodyEvaluationCounts",
+                   # 2026-11-07（札 #435）: 冷えた起動の直後にタブを押して、ホームへ戻されるかと `selection` の履歴を取る（6 回起動・約 3 分）
+                   "PerformanceTests/testColdLaunchTabTap",
                    # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
                    "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
                    "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight"]
