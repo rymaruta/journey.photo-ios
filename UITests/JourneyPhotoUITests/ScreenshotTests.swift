@@ -3469,9 +3469,21 @@ final class ScreenshotTests: XCTestCase {
     private func pickUp(_ item: XCUIElement, go: XCUIElement, in app: XCUIApplication) -> Bool {
         let gone = NSPredicate(format: "exists == false")
         _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: go)], timeout: 3)
+        // 札 #424: 押す直前の見えない要素 `trunk.open.debug` の値（押し直しが要った回の原因を数で見る）
+        let pre = trunkDebugValue(app)
+        let began = Date()
         item.tap()
-        if go.waitForExistence(timeout: 4) { return true }
-        guard item.exists, item.isHittable else { return go.waitForExistence(timeout: 6) }
+        if go.waitForExistence(timeout: 4) {
+            notePick(app, item: item, outcome: "ok", pre: pre, since: began)
+            return true
+        }
+        guard item.exists, item.isHittable else {
+            let ok = go.waitForExistence(timeout: 6)
+            notePick(app, item: item, outcome: ok ? "late" : "failed-unhittable", pre: pre, since: began)
+            return ok
+        }
+        // 🔴 押し直す前の値（この回が「持ち上がらなかった回」）
+        notePick(app, item: item, outcome: "missed", pre: pre, since: began)
         XCTContext.runActivity(named: "押しても持ち上がらなかったので押し直す（\(item.identifier)）") { activity in
             let shot = XCTAttachment(screenshot: app.screenshot())
             shot.name = "押し直す前（\(item.identifier)）"
@@ -3479,11 +3491,76 @@ final class ScreenshotTests: XCTestCase {
             activity.add(shot)
         }
         item.tap()
-        return go.waitForExistence(timeout: 10)
+        let ok = go.waitForExistence(timeout: 10)
+        notePick(app, item: item, outcome: ok ? "retry-ok" : "retry-failed", pre: pre, since: began)
+        return ok
+    }
+
+    /// 見えない要素 `trunk.open.debug`（`TrunkPickProbe`・`-JPPreviewPerfProbe YES` のときだけ在る）の今の値
+    private func trunkDebugValue(_ app: XCUIApplication) -> String {
+        guard app.state == .runningForeground else { return "debug が読めない（アプリが前に居ない）" }
+        let probe = app.descendants(matching: .any)["trunk.open.debug"].firstMatch
+        guard probe.exists else { return "debug が読めない（要素が無い）" }
+        return (probe.value as? String) ?? "debug が読めない（値が無い）"
+    }
+
+    /// 押した結果を1行で残す（ログ・活動の名前・添付）。`PERF-TRUNK` で引く
+    private func notePick(_ app: XCUIApplication, item: XCUIElement, outcome: String, pre: String, since: Date) {
+        let ms = Int(Date().timeIntervalSince(since) * 1000)
+        if outcome != "ok" { pickMisses += 1 }
+        let post = trunkDebugValue(app)
+        let line = "PERF-TRUNK test=\(perfTestName) item=\(item.identifier) outcome=\(outcome) afterMs=\(ms)"
+            + " hittable=\(item.exists && item.isHittable) PRE{\(pre)} POST{\(post)}"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        if outcome != "ok" {
+            let att = XCTAttachment(string: line)
+            att.name = "trunk.open.debug \(outcome)（\(item.identifier)）"
+            att.lifetime = .keepAlways
+            add(att)
+        }
+    }
+
+    /// 押して持ち上がらなかった回の数（`notePick`・`testTrunkPickRepeat` が最後に見る）
+    private var pickMisses = 0
+
+    /// **札 #424 の測り**: 開いたふたの中身を押す。新しく起動して → 開けて → 会員証・メダル・「ほか N」を戻しながら押す、を
+    /// `rounds` 回。押す前の待ちは回ごとに替える（2 秒・10 秒）。押しが届かなかった回（`PERF-TRUNK … outcome=missed`）の
+    /// `trunk.open.debug` の値で、A（引く指が押しを奪う）・B（`dragStart`/`lidSettled` が残る）・C（`held` が残る）を見分ける。
+    /// 一度でも押し直しが要ったら最後に落とす（押し直しの仕組みが無くても通ることを数で示すため）
+    func testTrunkPickRepeat() {
+        let rounds = 6
+        pickMisses = 0
+        for round in 0..<rounds {
+            let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
+            defer { app.terminate() }
+            guard openTrunk(app) else { return XCTFail("旅のトランクを開けない（\(round) 回目）") }
+            guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い（\(round) 回目）") }
+            let toggle = app.buttons["trunk.open.toggle"].firstMatch
+            guard toggle.waitForExistence(timeout: 15) else { return XCTFail("「ふたを開ける」のボタンが無い（\(round) 回目）") }
+            Thread.sleep(forTimeInterval: 2)
+            toggle.tap()
+            let medal = app.buttons["trunk.inside.medal"].firstMatch
+            guard medal.waitForExistence(timeout: 15) else { return XCTFail("開けたふたの裏にメダルが無い（\(round) 回目）") }
+            Thread.sleep(forTimeInterval: round % 2 == 0 ? 2 : 10)
+            let go = app.buttons["trunk.hold.go"].firstMatch
+            let putBack = app.buttons["trunk.hold.putBack"].firstMatch
+            for id in ["trunk.inside.card", "trunk.inside.medal", "trunk.inside.more", "trunk.inside.tickets"] {
+                let item = app.buttons[id].firstMatch
+                guard item.waitForExistence(timeout: 10), item.isHittable else {
+                    XCTContext.runActivity(named: "PERF-TRUNK round=\(round) item=\(id) 押せる所に無い \(trunkDebugValue(app))") { _ in }
+                    continue
+                }
+                guard pickUp(item, go: go, in: app) else { XCTFail("\(id) を押しても持ち上がらない（\(round) 回目）"); break }
+                Thread.sleep(forTimeInterval: 0.5)
+                putBack.tap()
+            }
+        }
+        XCTAssertEqual(pickMisses, 0, "押しても持ち上がらなかった回が \(pickMisses) 回（PERF-TRUNK の行を見る）")
     }
 
     func testCapturesTrunkOpen() {
-        let app = launchTrunk(Self.trunkInsideArgs)
+        let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い") }
         let toggle = app.buttons["trunk.open.toggle"].firstMatch
@@ -3580,6 +3657,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewTheirTrunk", "YES"]
+        enablePerfProbe(app) // 札 #424: 見えない要素 `trunk.open.debug`
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
