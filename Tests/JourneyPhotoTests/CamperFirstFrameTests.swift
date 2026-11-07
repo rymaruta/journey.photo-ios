@@ -32,7 +32,7 @@ final class CamperFirstFrameTests: XCTestCase {
     /// 🔴 配線しても見張りは解放される(`connect` の中で `self` を強く掴むと残って落ちる)
     func testWatcherIsReleasedAfterConnecting() {
         weak var weakWatcher: CamperFirstFrame?
-        autoreleasepool {
+        do {  // Linux に autoreleasepool は無い。Swift のクラスはスコープを出れば解放される
             let watcher = CamperFirstFrame()
             weakWatcher = watcher
             watcher.connect(isShowing: { true }, requestRender: {}, onDrawn: {})
