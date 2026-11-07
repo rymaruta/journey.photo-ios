@@ -18,6 +18,12 @@ final class PerfProbeTests: XCTestCase {
         PerfRecorder(enabled: enabled, clock: { clock.now })
     }
 
+    /// `stalls=` の右から `ev=` の手前まで（`[…]`）。`ev=` を足しても停止の一覧の試験が変わらないように
+    private func stallsTail(_ rec: PerfRecorder) -> String? {
+        rec.summary().components(separatedBy: " | stalls=").last?
+            .components(separatedBy: " | ev=").first
+    }
+
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -122,7 +128,12 @@ final class PerfProbeTests: XCTestCase {
                        + " | task=[#0 auth.state.sync 200-450ms]"
                        + " | stall=1/150ms/3f"
                        + " | body=home:2,myPage:0,photoDetail:1"
-                       + " | t=500ms")
+                       + " | t=500ms"
+                       // 150ms 止まった刻みが戻ってきたのが 200ms → 止まり始めは 50ms（2026-11-07）
+                       + " | stalls=[+50ms 150ms]"
+                       // 出来事（2026-11-07）: body の最初の 2 回までが入る。ホームの 2 回・写真詳細の 1 回
+                       + " | ev=[+200 body.home#1;+200 body.home#2;+200 body.photoDetail#1]"
+                       + " | samples=[]")
         XCTAssertEqual(rec.bodyCount(.home), 2)
     }
 
@@ -174,6 +185,226 @@ final class PerfProbeTests: XCTestCase {
         meter.ingest(61.016)
         XCTAssertEqual(meter.count, 0)
         XCTAssertEqual(meter.maxMs, 16)
+    }
+
+    // MARK: - 停止の一覧（起点と長さ・2026-11-07・札 #435・#429）
+
+    /// 閾値を超えた間隔だけを返す（超えない・最初の1回は nil）
+    func testStallMeterIngestReturnsTheGapOnlyWhenOverThreshold() {
+        var meter = StallMeter()
+        XCTAssertNil(meter.ingest(5.000))
+        XCTAssertNil(meter.ingest(5.016))
+        XCTAssertNil(meter.ingest(5.116), "100ms ちょうどは数えない")
+        XCTAssertEqual(meter.ingest(5.346), 230)
+        XCTAssertNil(meter.ingest(5.362))
+    }
+
+    /// 停止の起点は「刻みが戻ってきた時刻 − 長さ」。`task=`・`sel=` と同じ時計なので突き合わせられる
+    func testStallEventsStartIsEndMinusGapInTheRecorderClock() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.recordFrame(at: 1.000)
+        clock.now = 1000.300
+        rec.recordFrame(at: 1.016)
+        clock.now = 1001.800
+        rec.recordFrame(at: 2.516)      // 1500ms 止まって戻ってきた（1800ms 時点）
+        XCTAssertEqual(stallsTail(rec), "[+300ms 1500ms]")
+    }
+
+    /// 一覧には上限があり、**長いものから**残す。出力は起点の順
+    func testStallEventsKeepTheLongestAndAreSortedByStart() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        var t = 10.0
+        rec.recordFrame(at: t)
+        // 上限 + 3 件の停止。長さは 110ms から 1ms ずつ増やす（最後の 3 件が最長）
+        for i in 0..<(PerfRecorder.stallEventCap + 3) {
+            clock.now = 1000 + Double(i + 1)
+            t += 0.110 + Double(i) * 0.001
+            rec.recordFrame(at: t)
+        }
+        let tail = (stallsTail(rec) ?? "").dropFirst()
+        let events = tail.dropLast().split(separator: ";").map(String.init)
+        XCTAssertEqual(events.count, PerfRecorder.stallEventCap)
+        let gaps = events.map { Int($0.split(separator: " ")[1].replacingOccurrences(of: "ms", with: "")) ?? 0 }
+        XCTAssertFalse(gaps.contains(110), "いちばん短いものから落とす")
+        XCTAssertTrue(gaps.contains(124), "最長は残る")
+        let starts = events.map { Int($0.split(separator: " ")[0].dropFirst().replacingOccurrences(of: "ms", with: "")) ?? 0 }
+        XCTAssertEqual(starts, starts.sorted(), "起点の順に並ぶ")
+    }
+
+    /// 停止が無ければ空。数えない起動では何も残さない
+    func testStallEventsEmptyWhenNoStallOrDisabled() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.recordFrame(at: 1.000)
+        rec.recordFrame(at: 1.016)
+        XCTAssertEqual(stallsTail(rec), "[]", rec.summary())
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.recordFrame(at: 1.000)
+        off.recordFrame(at: 3.000)
+        XCTAssertEqual(stallsTail(off), "[]")
+    }
+
+    // MARK: - 出来事（ev）
+
+    private func evTail(_ rec: PerfRecorder) -> String {
+        (rec.summary().components(separatedBy: " | ev=").last ?? "")
+            .components(separatedBy: " | samples=").first ?? ""
+    }
+
+    /// 止まっている最中の積みの見本: `+撮った ms 段^段`・浅い方が先・段は上限まで・件数にも上限。無効なら残さない
+    func testSamplesAreRecordedAndCapped() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        clock.now = 1005.300
+        rec.recordSample(frames: (0..<(PerfRecorder.sampleFrameCap + 5)).map { "f\($0)" })
+        let tail = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        XCTAssertTrue(tail.hasPrefix("[+5300 f0^f1^"), tail)
+        XCTAssertTrue(tail.hasSuffix("^f\(PerfRecorder.sampleFrameCap - 1)]"), tail)
+        for _ in 0..<(PerfRecorder.sampleCap + 3) { rec.recordSample(frames: ["x"]) }
+        let after = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        XCTAssertEqual(after.components(separatedBy: ";").count, PerfRecorder.sampleCap)
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.recordSample(frames: ["x"])
+        XCTAssertEqual(off.summary().components(separatedBy: " | samples=").last, "[]")
+    }
+
+    /// 出来事は `+起動からのms 名前`・起きた順。何も無ければ空。`stalls=` の後ろに付く（既存の欄の順は変えない）
+    func testEventsAreRecordedInOrderWithTimes() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        XCTAssertEqual(evTail(rec), "[]")
+        clock.now = 1000.012
+        rec.event("app.init.start")
+        clock.now = 1000.340
+        rec.event("camper.ext.plan>")
+        XCTAssertEqual(evTail(rec), "[+12 app.init.start;+340 camper.ext.plan>]")
+        let parts = rec.summary().components(separatedBy: " | ")
+        // 欄の順: … | stalls | ev | samples（後ろに足していく。既存の欄の順は変えない）
+        XCTAssertEqual(parts.last?.hasPrefix("samples="), true)
+        XCTAssertEqual(parts.dropLast().last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
+        XCTAssertTrue(parts.dropLast(2).last?.hasPrefix("stalls=") == true)
+    }
+
+    /// 上限を超えたら先の分を残し、溢れた数を残す。無効のときは何も残さない（名前の文字列も作らない）
+    func testEventsAreCappedAndDisabledRecordsNothing() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for i in 0..<(PerfRecorder.eventCap + 3) { rec.event("e\(i)") }
+        let tail = evTail(rec)
+        XCTAssertTrue(tail.hasSuffix(";+3dropped]"), tail)
+        XCTAssertTrue(tail.contains("e0;"), "先の分は残る")
+        XCTAssertFalse(tail.contains("e\(PerfRecorder.eventCap)"), "上限より後は残さない")
+
+        var built = false
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.event({ built = true; return "x" }())
+        off.bodyHit(.home)
+        XCTAssertEqual(evTail(off), "[]")
+        XCTAssertFalse(built, "無効のときは名前を作らない")
+    }
+
+    /// 同じ名前は最初の1回だけ（何度も起きる出来事が 40 件の枠を使い切らない）。細かい 2 区間は枠を使わない
+    func testSameEventNameIsKeptOnlyOnce() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        clock.now = 1000.100
+        rec.event("app.body")
+        clock.now = 1000.200
+        rec.event("app.body")
+        rec.event("x")
+        XCTAssertEqual(evTail(rec), "[+100 app.body;+200 x]")
+        XCTAssertTrue(PerfSignpost.recordsEvent(.launchSync))
+        XCTAssertFalse(PerfSignpost.recordsEvent(.launchSyncSweepOrphans))
+        XCTAssertFalse(PerfSignpost.recordsEvent(.launchSyncDraftPrepare))
+    }
+
+    /// signpost の区間の始め・終わりも出来事に残る（`PerfSignpost.begin/end` が `PerfRecorder.shared` に渡す配線）
+    func testSignpostWiringRecordsEvents() throws {
+        let text = try source("Sources/JourneyPhoto/Core/Async/PerfSignpost.swift")
+        XCTAssertTrue(text.contains("PerfRecorder.shared.event(\"sp.\\(name.rawValue)>\")"), "begin が出来事を残していない")
+        XCTAssertTrue(text.contains("PerfRecorder.shared.event(\"sp.\\(interval.name.rawValue)<\")"), "end が出来事を残していない")
+    }
+
+    // MARK: - Release に入らない（2026-11-07 owner の確認事項）
+
+    /// 🔴 メインスレッドの積みを撮る仕組み（`SIGUSR1`・見張りのスレッド）は **Debug のビルドにしか入らない**。
+    /// 型ごと `#if os(iOS) && DEBUG` の内側にあり、呼び出しも `#if DEBUG` の内側。`SIGUSR1` を使うのはこのファイルだけ
+    func testMainSamplerIsCompiledOnlyInDebug() throws {
+        let text = try source("Sources/JourneyPhoto/Core/Async/PerfProbeOverlay.swift")
+        let gate = try XCTUnwrap(text.range(of: "#if os(iOS) && DEBUG"), "型を囲む #if os(iOS) && DEBUG が無い")
+        let type = try XCTUnwrap(text.range(of: "final class PerfMainSampler"))
+        let signal = try XCTUnwrap(text.range(of: "signal(SIGUSR1"))
+        let thread = try XCTUnwrap(text.range(of: "thread.start()"))
+        XCTAssertLessThan(gate.lowerBound, type.lowerBound, "型が #if DEBUG の外にある")
+        XCTAssertLessThan(gate.lowerBound, signal.lowerBound, "SIGUSR1 の登録が #if DEBUG の外にある")
+        XCTAssertLessThan(gate.lowerBound, thread.lowerBound, "見張りのスレッドが #if DEBUG の外にある")
+        // 型を囲む #if の終わりより前に、他の #if が混ざって閉じていない（最後の #endif が型の後ろにある）
+        let lastEndif = try XCTUnwrap(text.range(of: "#endif", options: .backwards))
+        XCTAssertGreaterThan(lastEndif.lowerBound, thread.lowerBound)
+        // 呼び出しも Debug の内側
+        let call = try XCTUnwrap(text.range(of: "PerfMainSampler.shared.start()"))
+        let before = String(text[..<call.lowerBound])
+        let lastIf = try XCTUnwrap(before.range(of: "#if", options: .backwards))
+        XCTAssertTrue(before[lastIf.lowerBound...].hasPrefix("#if DEBUG"), "start() の呼び出しが #if DEBUG の内側にない")
+        // SIGUSR1 を使うのはこのファイルだけ
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        var users: [String] = []
+        if let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) {
+            for case let url as URL in files where url.pathExtension == "swift" {
+                if let body = try? String(contentsOf: url, encoding: .utf8),
+                   body.components(separatedBy: "\n").contains(where: {
+                       !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") && $0.contains("SIGUSR1")
+                   }) {
+                    users.append(url.lastPathComponent)
+                }
+            }
+        }
+        XCTAssertEqual(users, ["PerfProbeOverlay.swift"], "SIGUSR1 を使う場所が増えている: \(users)")
+    }
+
+    /// 何度も起きる出来事は 1〜4 回目と 2 の累乗の回だけ残す（`名前#回数`）。無効なら何もしない
+    func testHitKeepsFirstFourAndPowersOfTwo() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for _ in 0..<20 { rec.hit("t") }
+        XCTAssertEqual(evTail(rec), "[+0 t#1;+0 t#2;+0 t#3;+0 t#4;+0 t#8;+0 t#16]")
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        for _ in 0..<20 { off.hit("t") }
+        XCTAssertEqual(evTail(off), "[]")
+    }
+
+    /// `mark` は、そのときまでの評価回数を名前に付けて毎回残す（同じ名前でも2回目を捨てない）
+    func testMarkAttachesCounts() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.bodyHit(.home)
+        rec.hit("home.tile.body")
+        rec.hit("home.tile.body")
+        rec.mark("m")
+        rec.hit("home.mosaic.body")
+        rec.mark("m")
+        let tail = evTail(rec)
+        XCTAssertTrue(tail.contains("m{home=1,mosaic=0,tile=2,shelf=0}"), tail)
+        XCTAssertTrue(tail.contains("m{home=1,mosaic=1,tile=2,shelf=0}"), tail)
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.mark("m")
+        XCTAssertEqual(evTail(off), "[]")
+    }
+
+    /// 無効のとき（本番）は、出来事の名前を作らず、鍵も取らず、何も残さない。呼び出しが何千回あっても同じ
+    func testDisabledRecorderDoesNoWorkForEvents() {
+        let clock = FakeClock()
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        var built = 0
+        for _ in 0..<1000 { off.event({ built += 1; return "x" }()) }
+        for _ in 0..<1000 { off.bodyHit(.home) }
+        XCTAssertEqual(built, 0, "無効のときに名前を作っている")
+        XCTAssertEqual(off.bodyCount(.home), 0)
+        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[]"), off.summary())
     }
 
     // MARK: - 配線

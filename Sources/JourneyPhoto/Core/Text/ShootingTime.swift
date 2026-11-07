@@ -149,7 +149,7 @@ enum ShootingTime {
         /// 撮影地が当たるか（季節は季節の案内、時間帯は時間帯の案内に文があるか）。
         /// **種類で見る**——索引だけの行（分けた置き場・文は詳細）でも絞れる（`OfficialSpot.seasonKeys`）
         func matches(_ spot: OfficialSpot) -> Bool {
-            if let season, !spot.seasonKeys.contains(season.rawValue) { return false }
+            if let season, !spot.hasSeason(season.rawValue) { return false }
             if let dayPart, !spot.timeKeys.contains(where: { dayPart.ledgerTimes.contains($0) }) { return false }
             return true
         }

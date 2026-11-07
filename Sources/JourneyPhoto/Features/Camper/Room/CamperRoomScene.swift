@@ -184,6 +184,7 @@ final class CamperRoomScene {
             }.value
             guard !Task.isCancelled, let self else { return }
             CamperRenderMeter.shared.mark("B1planned")
+            PerfRecorder.shared.event("camper.room.install>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             self.install(plan, key: key, shell: self.buildShell(plan))
             CamperRenderMeter.shared.mark("B2installed")
             if self.buildingKey == key { self.buildingKey = nil }
@@ -202,6 +203,7 @@ final class CamperRoomScene {
             self.publishPartStats()
             #endif
             CamperRenderMeter.shared.mark("B4ready", vm: true)
+            PerfRecorder.shared.event("camper.room.install<")
             self.onReady?(self.marker(ms: ms))
         }
     }

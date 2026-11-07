@@ -62,7 +62,7 @@ enum SeasonReminder {
         let names = spots
             .filter { !$0.isDraft && wishlist.contains(SavedSpotKey.official($0.slug)) }
             // 種類で見る（索引だけの行でも答えられる・`OfficialSpot.seasonKeys`）
-            .filter { spot in spot.seasonKeys.contains(season) }
+            .filter { spot in spot.hasSeason(season) }
             .sorted { $0.spotId < $1.spotId }
             .map(\.name)
         guard let first = names.first else { return nil }
