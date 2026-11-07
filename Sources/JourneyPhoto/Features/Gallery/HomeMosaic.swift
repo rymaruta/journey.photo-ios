@@ -61,12 +61,18 @@ struct HomeMosaic: View {
     @ViewBuilder
     private func tile(_ photo: Photo, byCover: [String: PhotoGroups.Group], large: Bool) -> some View {
         let group = byCover[photo.id]
+        // 2026-11-07 判断（札 #435 / #429）: **入力が同じなら札の `body` を評価し直さない。** 親（`GalleryView`）の
+        // `body` は、読み込みの途中・撮影スポットの索引が届いたとき（`seasonShelf` を書く）にも評価し直され、
+        // そのたびに `HomeMosaic` が2つ（それぞれ約5枚）の札を作り直していた（Mac の記録: 親の評価1回 = 札10回）。
+        // `onReport` は毎回新しい閉包で比べられないため、比べない（中身は `reportTarget = $0` で、古い閉包でも同じ状態を書く）
         HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport)
+            .equatable()
     }
 }
 
 /// ホームの1枚（板 01c）。写真・撮影地と撮った人の重ね・右下のいいね・複数枚の印
 struct HomeFeedTile: View {
+
 
     let photo: Photo
     /// 同じ投稿の写真（`photo` を含む）。2枚以上なら右上に印
@@ -448,5 +454,20 @@ enum HomeLikeGate {
             favorites.set(photoId, favorite: wasLiked, for: owner)
             toasts.show(ViewerLike.failureNotice(error), kind: .failure)
         }
+    }
+}
+
+/// 見た目を決める入力（写真・同じ投稿の写真・段の大きさ）が同じなら等しい（`.equatable()` で `body` の評価し直しを省く）。
+/// `onReport` は比べない（`HomeMosaic.tile` の注記）。ログインの変化（「…」を出すか）は `@EnvironmentObject` の更新で別に届く
+extension HomeFeedTile: Equatable {
+    static func == (lhs: HomeFeedTile, rhs: HomeFeedTile) -> Bool {
+        lhs.photo == rhs.photo && lhs.siblings == rhs.siblings && lhs.large == rhs.large
+    }
+}
+
+extension HomeFeedTile {
+    /// 試験が札の等しさを見るための作り口（メンバーごとの init は `@EnvironmentObject` が private で、このファイルの外から呼べない）
+    static func forEquality(photo: Photo, siblings: [Photo], large: Bool) -> HomeFeedTile {
+        HomeFeedTile(photo: photo, siblings: siblings, large: large)
     }
 }

@@ -659,3 +659,8 @@ public struct _ViewModifier_Content<Modifier: ViewModifier>: View {
 extension View {
     public func modifier<M: ViewModifier>(_ m: M) -> ModifiedContent<Self, M> { ModifiedContent() }
 }
+
+extension View where Self: Equatable {
+    /// 入力が等しいなら `body` を評価し直さない（本物は `EquatableView<Self>`。模型は型だけ通す）
+    public func equatable() -> Self { self }
+}
