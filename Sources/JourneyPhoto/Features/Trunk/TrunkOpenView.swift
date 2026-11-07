@@ -967,7 +967,7 @@ struct TrunkPickProbeOverlay: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25)) { _ in
             Text(" ")
-                .font(.system(size: 1))
+                .font(.caption2)
                 .accessibilityLabel("trunk pick debug")
                 .accessibilityValue(TrunkPickProbe.shared.summary(snapshot))
                 .accessibilityIdentifier(Self.identifier)
