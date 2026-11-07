@@ -5528,12 +5528,13 @@ final class ScreenshotTests: XCTestCase {
         return waitRoom(app, "camper.room.scene", "camper-room-ready")
     }
 
-    private func measureCamperStages(diag: String?, runs: Int, full: Bool) {
-        executionTimeAllowance = 1100
-        let d = diag ?? "none"
+    private func measureCamperStages(diag: String?, aa: String? = nil, runs: Int, full: Bool) {
+        executionTimeAllowance = 1150
+        let d = diag ?? (aa.map { "aa-\($0)" } ?? "none")
         for run in 1...runs {
             var args = ["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"]
             if let diag { args += ["-JPPreviewCamperDiag", diag] }
+            if let aa { args += ["-JPPreviewCamperAA", aa] }
             let app = launchTrunk(args)
             defer { app.terminate() }
             let tag = "diag=\(d) run=\(run)"
@@ -5542,6 +5543,8 @@ final class ScreenshotTests: XCTestCase {
             guard enterCamperRoom(app) else { XCTFail("部屋を組み終えない（\(tag)）"); continue }
             Thread.sleep(forTimeInterval: 3)
             camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼")
+            // 軽くする前後の絵の突き合わせ用（screenshots の枝の `95z1-…`）
+            if run == 1 { shoot(app, "95z1-計測（部屋・昼・\(d)）") }
             guard full else { continue }
             let night = app.buttons["camper.room.night"].firstMatch
             night.tap()
@@ -5569,12 +5572,12 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// 差し替え無し: 段・user_tag・昼夜・外へ出た後（1 回）。差し替えの 3 本は入るところまで 3 回
-    func testMeasuresCamperStages() { measureCamperStages(diag: nil, runs: 1, full: true) }
-    func testMeasuresCamperStagesNoDiag() { measureCamperStages(diag: nil, runs: 2, full: false) }
-    func testMeasuresCamperStagesLightBed() { measureCamperStages(diag: "lightbed", runs: 3, full: false) }
-    func testMeasuresCamperStagesLightFurniture() { measureCamperStages(diag: "lightfurniture", runs: 3, full: false) }
-    func testMeasuresCamperStagesHalfTex() { measureCamperStages(diag: "halftex", runs: 3, full: false) }
+    /// 軽くした後（既定）と、軽くする前（`keepmesh`）を各 3 回: 段・user_tag・昼夜・外へ出た後。
+    /// 輪郭のなめらかさ（AA）は none と 4x（外観と部屋の両方）で入るところまで 3 回ずつ
+    func testMeasuresCamperStages() { measureCamperStages(diag: nil, runs: 3, full: true) }
+    func testMeasuresCamperStagesKeepMesh() { measureCamperStages(diag: "keepmesh", runs: 3, full: true) }
+    func testMeasuresCamperStagesAANone() { measureCamperStages(diag: nil, aa: "none", runs: 3, full: false) }
+    func testMeasuresCamperStagesAA4x() { measureCamperStages(diag: nil, aa: "4x", runs: 3, full: false) }
 
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**

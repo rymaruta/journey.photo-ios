@@ -14,7 +14,16 @@ struct CamperPreparedMesh: Sendable {
     var normals: [Float]
     var uvs: [Float]
     var groups: [(material: CamperMaterial, indices: [Int32])]
+    /// 軽くした網（2026-11-07・札 #430）: SceneKit の図形を作った後は CPU 側の配列を持たない。束の材質の並びだけ残す
+    var isSlim = false
     var vertexCount: Int { positions.count / 3 }
+
+    /// 図形を作った後に配列を手放した網（材質の並び・束の数は同じ）。再び図形が要るときは下ごしらえし直す
+    func slimmed() -> CamperPreparedMesh {
+        var s = CamperPreparedMesh(positions: [], normals: [], uvs: [], groups: groups.map { (material: $0.material, indices: [Int32]()) })
+        s.isSlim = true
+        return s
+    }
 
     init(positions: [Float], normals: [Float], uvs: [Float], groups: [(material: CamperMaterial, indices: [Int32])]) {
         self.positions = positions

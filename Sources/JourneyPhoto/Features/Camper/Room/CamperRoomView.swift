@@ -160,7 +160,12 @@ struct CamperRoomView: View {
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
         // 部屋を閉じたら家具の小さな絵の控えを捨てる（2026-10-21 点検: 控えが増え続けた）
-        .onDisappear { CamperRoomThumbs.shared.removeAll() }
+        .onDisappear {
+            CamperRoomThumbs.shared.removeAll()
+            // 部屋を出た後の残りを測る（測るだけ・2026-11-07・#430）
+            CamperRenderMeter.shared.mark("E1exit", vm: true)
+            CamperRenderMeter.shared.markLater("E2exit4s", after: 4, vm: true)
+        }
         .onChange(of: room) { _, _ in openRoom() }
         .onChange(of: photos.count) { _, _ in
             recount()

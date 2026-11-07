@@ -19,6 +19,26 @@ import SceneKitShim
 //   `-JPPreviewCamperPerf YES` のときだけ数え、画面の隅の読み上げの値（`CamperRenderProbe`・見えない 1pt）に出す。
 //   UI テスト（`ScreenshotTests.testMeasuresCamperRender…`）が前後の差を取り、ログと注記に残す
 
+/// 生きている場面の数（部屋・外観。部屋を出た後に解放されるかを見る・2026-11-07・#430。測るだけ）
+final class CamperLive: @unchecked Sendable {
+    static let shared = CamperLive()
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    func add(_ name: String, _ delta: Int) {
+        lock.lock()
+        counts[name, default: 0] += delta
+        lock.unlock()
+    }
+
+    /// 「exteriors=… rooms=…」
+    func summary() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts.keys.sorted().map { "\($0)=\(counts[$0]!)" }.joined(separator: " ")
+    }
+}
+
 /// 名前ごとの回数と時間（スレッドをまたいで足す。描く糸と画面の糸の両方から呼ばれる）
 final class CamperRenderMeter: @unchecked Sendable {
 
@@ -72,9 +92,16 @@ final class CamperRenderMeter: @unchecked Sendable {
     func mark(_ stage: String, vm: Bool = false) {
         guard enabled, let p = Self.processUsage() else { return }
         note("SceneMem" + stage, String(format: "mb=%.1f int=%.1f cmp=%.1f", p.memMB, p.internalMB, p.compressedMB))
+        note("SceneLive" + stage, CamperLive.shared.summary())
         #if canImport(Darwin)
         if vm { note("SceneVM" + stage, Self.vmTagSummary()) }
         #endif
+    }
+
+    /// 少し後に印を付ける（部屋を出た後の残りを見る）
+    func markLater(_ stage: String, after seconds: Double, vm: Bool = false) {
+        guard enabled else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in mark(stage, vm: vm) }
     }
 
     func tally(_ name: String) -> Tally {

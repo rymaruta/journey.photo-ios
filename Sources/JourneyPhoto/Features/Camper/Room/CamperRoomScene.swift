@@ -104,7 +104,10 @@ final class CamperRoomScene {
     /// 材質を替えたあとに再描画させる（`rendersContinuously = false` だと取りこぼすことがある）
     private weak var scnView: SCNView?
 
+    deinit { CamperLive.shared.add("rooms", -1) }
+
     init() {
+        CamperLive.shared.add("rooms", 1)
         let cam = SCNCamera()
         cam.fieldOfView = CGFloat(CamperRoomCamera.fieldOfView)
         cam.zNear = 0.02
@@ -214,6 +217,8 @@ final class CamperRoomScene {
             let cat = CamperRoomCatalog.furniture(e.item.furnitureId)?.category.rawValue ?? "-"
             meter.note(String(format: "SceneItem%02d", i), String(format: "id=%@ cat=%@ tris=%d verts=%d geo_kb=%.0f mats=%d", e.item.furnitureId, cat, s.triangles, s.vertices, s.geometryKB, s.materials))
         }
+        // 図形の中身（頂点・添字のバイト列）の印。軽くする前後で同じなら、形は 1 バイトも変わっていない
+        meter.note("SceneRoomHash", "scene=\(CamperSceneStats.contentHash(scene.rootNode)) items=\(CamperSceneStats.contentHash(itemsNode))")
         for (i, g) in shellGroups.enumerated() {
             let s = CamperSceneStats.measure(g.0)
             meter.note(String(format: "SceneShell%02d", i), String(format: "key=%@ tris=%d verts=%d geo_kb=%.0f mats=%d", g.1.replacingOccurrences(of: " ", with: "_"), s.triangles, s.vertices, s.geometryKB, s.materials))
@@ -272,11 +277,26 @@ final class CamperRoomScene {
     /// 家具の種類ごとの形（1 つ作って使い回す・2026-10-28）
     private func sharedGeometry(_ id: String, _ mesh: CamperPreparedMesh, glass: Bool) -> SCNGeometry? {
         if let hit = glass ? furnitureGlassGeometry[id] : furnitureGeometry[id] { return hit }
-        guard let made = palette.geometry(mesh) else { return nil }
+        // 配列を手放した網で図形を作り直すことになったら（組み直しで図形の控えだけ空にした後など）下ごしらえし直す
+        var source = mesh
+        if mesh.isSlim {
+            guard let parts = CamperRoomScenePlan.prepareFurniture(id) else { return nil }
+            source = glass ? (parts.glass ?? mesh) : parts.body
+        }
+        guard let made = palette.geometry(source) else { return nil }
         geometryBuilds += 1
         if glass { furnitureGlassGeometry[id] = made } else { furnitureGeometry[id] = made }
+        // 2026-11-07 判断（札 #430・見た目は変えない）: 図形（SCNGeometry）は頂点を自分の Data に写しているので、CPU 側の配列
+        // （位置・向き・貼り絵の座標・添字。既定の部屋で約 9MB）は持ち続けない。写真を入れる額だけは、印画の位置合わせが
+        // 位置・添字を読む（`applyPhotos`）ので残す。軽くする前の動きは測定専用の `-JPPreviewCamperDiag keepmesh`
+        if Self.releasesMeshes, !source.groups.contains(where: { if case .room(.photo) = $0.material { return true } else { return false } }) {
+            if glass { furnitureGlass[id] = source.slimmed() } else { furniture[id] = source.slimmed() }
+        }
         return made
     }
+
+    /// 図形を作った後に網の配列を手放すか（測定専用の `keepmesh` のときだけ手放さない・Debug のみ）
+    private static var releasesMeshes: Bool { PreviewSession.camperDiag != "keepmesh" }
 
     private func install(_ plan: CamperRoomScenePlan, key: String, shell: [(SCNNode, String)]) {
         builtKey = key

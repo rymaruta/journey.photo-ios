@@ -150,7 +150,10 @@ final class CamperScene {
     /// 1 コマの時間を測る delegate（SCNView の delegate は弱い参照なので、ここで持つ・2026-10-31・#430）
     var frameMeter: AnyObject?
 
+    deinit { CamperLive.shared.add("exteriors", -1) }
+
     init() {
+        CamperLive.shared.add("exteriors", 1)
         buildStage()
         let state = PowerStateWatch.current()
         lowPowerMode = state.lowPower
