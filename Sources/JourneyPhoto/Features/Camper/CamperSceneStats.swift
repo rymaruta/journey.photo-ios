@@ -89,6 +89,24 @@ struct CamperSceneStats: Equatable {
         return s
     }
 
+    /// 木の図形の中身（頂点・添字のバイト列と束の数）の FNV-1a の印（16 進）。測るだけ・数える起動のときだけ呼ぶ
+    static func contentHash(_ root: SCNNode) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        func mix(_ d: Data) { d.withUnsafeBytes { for b in $0 { h = (h ^ UInt64(b)) &* 0x100000001b3 } } }
+        func mixInt(_ v: Int) { var x = v; withUnsafeBytes(of: &x) { for b in $0 { h = (h ^ UInt64(b)) &* 0x100000001b3 } } }
+        func visit(_ n: SCNNode) {
+            mixInt(n.childNodes.count)
+            if let g = n.geometry {
+                for s in g.sources { mixInt(s.vectorCount); mix(s.data) }
+                for e in g.elements { mixInt(e.primitiveCount); mix(e.data) }
+                mixInt(g.materials.count)
+            }
+            for c in n.childNodes { visit(c) }
+        }
+        visit(root)
+        return String(h, radix: 16)
+    }
+
     /// 組み上がった印のところで呼ぶ。数える起動のときだけ木をたどる
     static func publish(_ label: String, root: SCNNode, meter: CamperRenderMeter = .shared) {
         guard meter.enabled else { return }
