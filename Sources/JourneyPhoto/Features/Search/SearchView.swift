@@ -3,6 +3,9 @@ import SwiftUI
 /// 探す。写真（題・撮影地・タグ）と人の両方を1画面で。
 struct SearchView: View {
 
+    // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）: 作られた時刻
+    private let perfInit: Void = PerfRecorder.shared.event("SearchView.init")
+
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0

@@ -280,15 +280,44 @@ enum HomeTopCard {
     static func seasonGuides(today: Date, spots: [OfficialSpot]) -> (season: String, rows: [(spot: OfficialSpot, guide: String)]) {
         let month = TripPlanText.calendar.component(.month, from: today)
         let season = SpotBodyText.season(ofMonth: month)
+        // 2026-11-07 判断（札 #435 / #429）: **同じ索引・同じ季節なら作り直さない。** ホームの `body` は札と段で
+        // 何度もここを通り（`choices`・`visibleShelf`・`shelfKey`）、そのたびに 2,853 件を走査していた。
+        // 鍵は「配列の中身の置き場（先頭の番地と件数）」+ 季節。**キャッシュが配列を持ち続ける**ので、持っている間は
+        // 同じ番地に別の中身が来ない（呼ぶ側が書き換えると配列は複製され、番地が変わる）＝中身が同じことが保証される。
+        // 索引が取り直された・詳細が重なった・季節が替わったときは鍵が合わず、作り直す
+        let address = spots.withUnsafeBufferPointer { $0.baseAddress.map { UnsafeRawPointer($0) } }
+        if let address {
+            seasonGuidesLock.lock()
+            let hit = seasonGuidesCache
+            seasonGuidesLock.unlock()
+            if let hit, hit.season == season, hit.address == address, hit.spots.count == spots.count {
+                return (season, hit.rows)
+            }
+        }
         let rows = spots
-            .filter { !$0.isDraft && $0.seasonKeys.contains(season) }
+            .filter { !$0.isDraft && $0.hasSeason(season) }
             .map { spot -> (spot: OfficialSpot, guide: String) in
                 let text = spot.seasons.first(where: { $0.season == season })?.text ?? ""
                 return (spot, text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             .sorted { $0.spot.spotId < $1.spot.spotId }
+        if let address {
+            seasonGuidesLock.lock()
+            seasonGuidesCache = SeasonGuidesCache(season: season, address: address, spots: spots, rows: rows)
+            seasonGuidesLock.unlock()
+        }
         return (season, rows)
     }
+
+    /// `seasonGuides` の直近の答え（1件）。`spots` を持つことで、鍵の番地が使い回されないようにする
+    private struct SeasonGuidesCache {
+        let season: String
+        let address: UnsafeRawPointer
+        let spots: [OfficialSpot]
+        let rows: [(spot: OfficialSpot, guide: String)]
+    }
+    nonisolated(unsafe) private static var seasonGuidesCache: SeasonGuidesCache?
+    private static let seasonGuidesLock = NSLock()
 
     /// 行きたい場所の札の見出しの読み（「行きたい場所・秋」）
     static func wishlistEyebrow(_ season: String) -> String {
@@ -321,7 +350,7 @@ enum HomeTopCard {
         let season = SpotBodyText.season(ofMonth: month)
         let candidates = spots
             .filter { !$0.isDraft && !excluding.contains($0.spotId) && wishlist.contains(SavedSpotKey.official($0.slug))
-                && $0.seasonKeys.contains(season) }
+                && $0.hasSeason(season) }
             .map { spot -> (OfficialSpot, String) in
                 // 文は詳細（索引だけの行は空・`seasonGuides` の注記）
                 let text = spot.seasons.first(where: { $0.season == season })?.text ?? ""

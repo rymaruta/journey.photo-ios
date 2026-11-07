@@ -3,6 +3,9 @@ import SwiftUI
 /// 自分のページ。ログインしていなければログイン画面を出す。
 struct MyPageView: View {
 
+    // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）: 作られた時刻
+    private let perfInitStart: Void = PerfRecorder.shared.event("MyPageView.init>")
+
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
@@ -102,6 +105,7 @@ struct MyPageView: View {
 
     /// 板 v2 MyPage: 3列・隙間 2pt・縦長 4:5・角なし（`ProfileV2`）
     private let columns = ProfileV2.gridItems
+    private let perfInitEnd: Void = PerfRecorder.shared.event("MyPageView.init<")
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）

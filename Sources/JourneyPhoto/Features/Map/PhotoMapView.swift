@@ -13,6 +13,9 @@ import MapKit
 /// 出す数は全部 `shown` から数えたもの。
 struct PhotoMapView: View {
 
+    // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）: 作られた時刻
+    private let perfInit: Void = PerfRecorder.shared.event("PhotoMapView.init")
+
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}

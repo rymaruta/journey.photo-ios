@@ -173,7 +173,11 @@ final class PerfMainSampler: @unchecked Sendable {
             free(demangled)
         }
         // 見やすくするため切る（区切りの `;` `^` と空白は別の字に）
-        let cut = String(name.prefix(80))
+        // `protocol witness for … in conformance Foo : Bar` は型名が後ろにある。前を短くして型名を残す（どの型か分かるように）
+        if let range = name.range(of: " in conformance ") {
+            name = String(name.prefix(36)) + "…" + String(name[range.upperBound...].prefix(70))
+        }
+        let cut = String(name.prefix(110))
             .replacingOccurrences(of: ";", with: ",")
             .replacingOccurrences(of: "^", with: "~")
         return "\(image)`\(cut)"

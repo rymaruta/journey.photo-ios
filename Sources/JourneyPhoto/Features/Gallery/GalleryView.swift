@@ -2,6 +2,9 @@ import SwiftUI
 
 struct GalleryView: View {
 
+    // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）: 作られた時刻
+    private let perfInit: Void = PerfRecorder.shared.event("GalleryView.init")
+
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら読み直すため**に見ている。
@@ -87,6 +90,7 @@ struct GalleryView: View {
                     Task { await model.load() }
                 }
             case .loaded(let photos):
+                let _ = PerfRecorder.shared.event("home.loaded.body")
                 // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の

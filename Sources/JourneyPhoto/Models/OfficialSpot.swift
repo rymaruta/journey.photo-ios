@@ -87,6 +87,17 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
         isIndexOnly ? (seasonKinds?.value ?? []).filter { SpotBodyText.seasonOrder.contains($0) } : seasons.map(\.season)
     }
 
+    /// この季節の案内があるか。**`seasonKeys.contains(season)` と同じ答えを、配列を作らずに返す**
+    /// （2026-11-07 判断・札 #435 / #429。ホームの季節の札と段が 2,853 件を何度も走査し、行ごとに配列を作って
+    /// 解析の直後に 0.4〜1 秒メインスレッドを止めていた——Mac の積みで `seasonKeys.getter` を確認）。
+    /// 索引だけの行は台帳の綴りの季節だけを数える（`seasonKeys` の `filter` と同じ）
+    func hasSeason(_ season: String) -> Bool {
+        if isIndexOnly {
+            return SpotBodyText.seasonOrder.contains(season) && (seasonKinds?.value ?? []).contains(season)
+        }
+        return seasons.contains { $0.season == season }
+    }
+
     /// 時間帯の案内がある時間帯（台帳の綴り）。`seasonKeys` と同じ理由
     var timeKeys: [String] {
         isIndexOnly ? (timeKinds?.value ?? []).filter { SpotBodyText.timeOrder.contains($0) } : times.map(\.time)
