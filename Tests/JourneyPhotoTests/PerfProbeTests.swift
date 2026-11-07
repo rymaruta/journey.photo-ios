@@ -281,8 +281,10 @@ final class PerfProbeTests: XCTestCase {
         rec.event("camper.ext.plan>")
         XCTAssertEqual(evTail(rec), "[+12 app.init.start;+340 camper.ext.plan>]")
         let parts = rec.summary().components(separatedBy: " | ")
-        XCTAssertEqual(parts.last?.hasPrefix("ev="), true, "ev は最後の欄（既存の欄の後ろ）")
-        XCTAssertTrue(parts.dropLast().last?.hasPrefix("stalls=") == true)
+        // 欄の順: … | stalls | ev | samples（後ろに足していく。既存の欄の順は変えない）
+        XCTAssertEqual(parts.last?.hasPrefix("samples="), true)
+        XCTAssertEqual(parts.dropLast().last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
+        XCTAssertTrue(parts.dropLast(2).last?.hasPrefix("stalls=") == true)
     }
 
     /// 上限を超えたら先の分を残し、溢れた数を残す。無効のときは何も残さない（名前の文字列も作らない）
