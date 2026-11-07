@@ -383,6 +383,21 @@ enum PreviewSession {
         #endif
     }
 
+    /// 測定専用の差し替え（2026-11-07・札 #430・Debug の見本の利用者のときだけ。Release では必ず nil）。
+    /// `-JPPreviewCamperDiag lightbed|lightfurniture|halftex`: ベッドを箱に・家具を全部箱に・貼り絵を半分の寸法に。見た目の確認は不要
+    static let camperDiagKey = "JPPreviewCamperDiag"
+
+    static var camperDiag: String? {
+        #if DEBUG
+        guard userId != nil else { return nil }
+        guard let v = UserDefaults.standard.string(forKey: camperDiagKey)?.lowercased(),
+              ["lightbed", "lightfurniture", "halftex"].contains(v) else { return nil }
+        return v
+        #else
+        return nil
+        #endif
+    }
+
     static var camperPerf: Bool {
         #if DEBUG
         guard userId != nil else { return false }

@@ -21,6 +21,17 @@ struct CamperBitmap: Equatable, Sendable {
         rgba[i + 3] = UInt8(max(0, min(255, (a * 255).rounded())))
     }
 
+    /// 測定専用: 縦横半分（間引き）
+    func halved() -> CamperBitmap {
+        let w = max(1, width / 2), h = max(1, height / 2)
+        var out = CamperBitmap(width: w, height: h)
+        for y in 0..<h { for x in 0..<w {
+            let s = (min(height - 1, y * 2) * width + min(width - 1, x * 2)) * 4, d = (y * w + x) * 4
+            for k in 0..<4 { out.rgba[d + k] = rgba[s + k] }
+        } }
+        return out
+    }
+
     func pixel(_ x: Int, _ y: Int) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
         let i = (y * width + x) * 4
         return (rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3])

@@ -66,6 +66,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
         c.attach(view)
         view.scene = c.scene
         view.pointOfView = c.cameraNode
+        CamperRenderMeter.shared.mark("A1viewMade", vm: true)
         // 組み上がった後の最初のコマを知らせる（Mac run 646: 組み上がった合図から実際に描くまで、シミュレーターでは数秒かかった）
         let watcher = CamperFirstFrame()
         // PR #364 の検証（Mac が重い回）: 描いた知らせの時点で、SCNView がまだ画面に大きさを持っていない・部屋が組み上がって
@@ -77,6 +78,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
                 if c.isShowingRoom {
                     drawnAfterShown += 1
                     if drawnAfterShown >= 2 {
+                        CamperRenderMeter.shared.mark("C1firstFrame", vm: true)
                         onDrawn()
                         return
                     }

@@ -5502,6 +5502,80 @@ final class ScreenshotTests: XCTestCase {
     func testMeasuresCamperMemoryAA2x() { measureCamperMemory(aa: "2x") }
     func testMeasuresCamperMemoryAANone() { measureCamperMemory(aa: "none") }
 
+    // MARK: - とおまわり号のメモリ: 途中の段・user_tag 別・差し替え（2026-11-07・札 #430・測るだけ）
+    //
+    // アプリ側の `CamperRenderMeter.mark`（組む途中の段）と `vmTagSummary`（user_tag 別）を、段ごとに読んでログ（`CAMPERSTAGE:`）に出す。
+    // 差し替え（`-JPPreviewCamperDiag lightbed|lightfurniture|halftex`）は測定専用。名指しは `screens=testMeasuresCamperStages`
+
+    /// 読み上げの値から、段・家具・殻・場面の数の行を 1 本ずつ出す
+    private func camperStageDump(_ app: XCUIApplication, probe id: String, _ label: String) {
+        let probeElement = app.descendants(matching: .any)[id].firstMatch
+        guard probeElement.waitForExistence(timeout: 5) else { print("CAMPERSTAGE: \(label) | 数が読めない（\(id) が無い）"); return }
+        Thread.sleep(forTimeInterval: 0.6)
+        let value = (probeElement.value as? String) ?? ""
+        for entry in value.split(separator: ";") {
+            let t = entry.trimmingCharacters(in: .whitespaces)
+            guard let name = t.split(separator: " ").first else { continue }
+            if name.hasPrefix("Scene") || name == "Process" { print("CAMPERSTAGE: \(label) | \(t)") }
+        }
+    }
+
+    private func enterCamperRoom(_ app: XCUIApplication) -> Bool {
+        let enter = app.buttons["camper.room.enter"].firstMatch
+        guard enter.waitForExistence(timeout: 15) else { return false }
+        if !enter.isHittable { scrollTo(enter, in: app) }
+        enter.tap()
+        return waitRoom(app, "camper.room.scene", "camper-room-ready")
+    }
+
+    private func measureCamperStages(diag: String?, runs: Int, full: Bool) {
+        executionTimeAllowance = 1100
+        let d = diag ?? "none"
+        for run in 1...runs {
+            var args = ["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"]
+            if let diag { args += ["-JPPreviewCamperDiag", diag] }
+            let app = launchTrunk(args)
+            defer { app.terminate() }
+            let tag = "diag=\(d) run=\(run)"
+            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(tag)）"); continue }
+            camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外観")
+            guard enterCamperRoom(app) else { XCTFail("部屋を組み終えない（\(tag)）"); continue }
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼")
+            guard full else { continue }
+            let night = app.buttons["camper.room.night"].firstMatch
+            night.tap()
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・夜")
+            night.tap()
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "day"), "昼に戻らない")
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼に戻した")
+            // 外へ出て、5 秒おいて外の数を読む（部屋の分が戻るか）。もう一度入って出る
+            for cycle in 1...2 {
+                let back = app.buttons["camper.room.back"].firstMatch
+                guard back.waitForExistence(timeout: 10) else { return XCTFail("外へ戻れない") }
+                back.tap()
+                XCTAssertTrue(app.buttons["camper.room.enter"].firstMatch.waitForExistence(timeout: 15), "外の車に戻らない")
+                Thread.sleep(forTimeInterval: 5)
+                camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外へ出た後 \(cycle) 回目")
+                if cycle == 1 {
+                    guard enterCamperRoom(app) else { return XCTFail("部屋に入り直せない") }
+                    Thread.sleep(forTimeInterval: 3)
+                    camperStageDump(app, probe: "camper.perf.room", "\(tag) 入り直した部屋")
+                }
+            }
+        }
+    }
+
+    /// 差し替え無し: 段・user_tag・昼夜・外へ出た後（1 回）。差し替えの 3 本は入るところまで 3 回
+    func testMeasuresCamperStages() { measureCamperStages(diag: nil, runs: 1, full: true) }
+    func testMeasuresCamperStagesNoDiag() { measureCamperStages(diag: nil, runs: 2, full: false) }
+    func testMeasuresCamperStagesLightBed() { measureCamperStages(diag: "lightbed", runs: 3, full: false) }
+    func testMeasuresCamperStagesLightFurniture() { measureCamperStages(diag: "lightfurniture", runs: 3, full: false) }
+    func testMeasuresCamperStagesHalfTex() { measureCamperStages(diag: "halftex", runs: 3, full: false) }
+
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**
     func testCapturesCamperLargeText() {
