@@ -163,8 +163,14 @@ final class FirstMomentsTests: XCTestCase {
         XCTAssertNil(ArrivalFact.sentence(label: kyoto, photos: nil))
         XCTAssertNil(ArrivalFact.sentence(label: kyoto, photos: [osaka]))
         XCTAssertNil(ArrivalFact.sentence(label: label(name: "どこか"), photos: [try photo("ph1", location: "どこか")]))
-        // 撮影地が記録されていない写真は、アプリの数え方（撮影地の文字から県を読む）では県に入らない。今の写真の県はラベルの名前からも読む
-        XCTAssertEqual(ArrivalFact.sentence(label: kyoto, photos: [try photo("ph1", location: nil), try photo("x", location: nil)]), expected)
+        // 今の写真の県はラベルの名前からも読む（撮影地が空でも、ほかに読めない写真が無ければ言える）
+        XCTAssertEqual(ArrivalFact.sentence(label: kyoto, photos: [try photo("ph1", location: nil)]), expected)
+        // **県が読めない公開の写真が1枚でも混じるなら言わない**（撮影地が空・英語・座標だけの写真が、実は京都かもしれない）
+        XCTAssertNil(ArrivalFact.sentence(label: kyoto, photos: [mine, try photo("x", location: nil)]))
+        XCTAssertNil(ArrivalFact.sentence(label: kyoto, photos: [mine, try photo("y", location: "Kyoto, Japan")]))
+        XCTAssertNil(ArrivalFact.sentence(label: kyoto, photos: [mine, osaka, try photo("z", location: "35.0116, 135.7681")]))
+        // 読めない写真が下書きなら数えない
+        XCTAssertEqual(ArrivalFact.sentence(label: kyoto, photos: [mine, try photo("w", location: nil, published: false)]), expected)
     }
 
     func testSpecialLabelsGetStrongerGlow() async {
@@ -184,6 +190,42 @@ final class FirstMomentsTests: XCTestCase {
         XCTAssertEqual(steps.map { $0.0 }, [.photo, .label, .sentence])
         XCTAssertEqual(steps.reduce(0) { $0 + $1.1 }, ArrivalSequence.sentenceAt, accuracy: 0.0001)
         XCTAssertLessThan(ArrivalSequence.sentenceAt, 2, "祝いが長すぎる（閉じるまで待たせない）")
+        // 画面が使う判定: 動きを減らす設定では、進みが始まりのままでも全部見せる
+        XCTAssertTrue(ArrivalSequence.isShown(.sentence, current: .start, reduceMotion: true))
+        XCTAssertFalse(ArrivalSequence.isShown(.photo, current: .start, reduceMotion: false))
+        XCTAssertTrue(ArrivalSequence.isShown(.photo, current: .label, reduceMotion: false))
+        XCTAssertFalse(ArrivalSequence.isShown(.sentence, current: .label, reduceMotion: false))
+    }
+
+    /// 一覧の読み込みが呼ぶ `noteFirstReactions`: 印を model に載せ、控えで一度だけ、退会者・ログアウトでは載せない
+    func testViewModelNotesFirstReactionsOnce() async throws {
+        let defaults = suite()
+        let model = NotificationsViewModel()
+        let first = try row("like", by: "a", t: iso(hoursAgo: 2))
+        model.noteFirstReactions([first], viewerId: "me", now: now, defaults: defaults)
+        XCTAssertEqual(model.firstReactions, [first.id: .like])
+        // 新しい行が増えても、印は最初の行のまま
+        let later = try row("like", by: "b", photo: "p2", t: iso(hoursAgo: 1))
+        model.noteFirstReactions([later, first], viewerId: "me", now: now, defaults: defaults)
+        XCTAssertEqual(model.firstReactions, [first.id: .like])
+        // 別の人（別の端末の控え）は別に決まる。ログインしていなければ載せない
+        let other = NotificationsViewModel()
+        other.noteFirstReactions([first], viewerId: nil, now: now, defaults: defaults)
+        XCTAssertTrue(other.firstReactions.isEmpty)
+        // 一覧が50件に届いていれば決めない
+        let many = try (0..<FirstReaction.listLimit).map { try row("like", by: "u\($0)", t: iso(hoursAgo: Double($0) + 1)) }
+        let full = NotificationsViewModel()
+        full.noteFirstReactions(many, viewerId: "someone", now: now, defaults: defaults)
+        XCTAssertTrue(full.firstReactions.isEmpty)
+    }
+
+    /// 読み上げの文: 印が付く行は印の言葉が先に来る。未読の言葉も残る
+    func testSpokenLabelCarriesFirstMark() async {
+        XCTAssertEqual(NotificationText.spokenLabel("Aki liked", unread: false, first: nil), "Aki liked")
+        XCTAssertEqual(NotificationText.spokenLabel("Aki liked", unread: true, first: nil), L("未読、", "Unread, ") + "Aki liked")
+        let spoken = NotificationText.spokenLabel("Aki liked", unread: true, first: .like)
+        XCTAssertTrue(spoken.hasPrefix(FirstReaction.Kind.like.eyebrow + "。" + FirstReaction.Kind.like.note))
+        XCTAssertTrue(spoken.hasSuffix(L("未読、", "Unread, ") + "Aki liked"))
     }
 
     // MARK: 画面のつなぎ（消したら落ちる）
@@ -198,6 +240,9 @@ final class FirstMomentsTests: XCTestCase {
         XCTAssertTrue(arrived.contains("@Environment(\\.accessibilityReduceMotion)"), "動きを減らす設定を見ていない")
         XCTAssertTrue(arrived.contains(".sensoryFeedback(.impact(weight: .light), trigger: landed)"), "触覚が無い")
         XCTAssertTrue(arrived.contains("ArrivalFact.sentence("), "事実の一文につながっていない")
+        XCTAssertTrue(arrived.contains("ArrivalSequence.isShown("), "動きの順序（ArrivalSequence）を画面が使っていない")
+        XCTAssertTrue(arrived.contains("ArrivalSequence.delays("), "動きの待ち（ArrivalSequence）を画面が使っていない")
+        XCTAssertTrue(arrived.contains("@State private var sentence"), "一文を1回だけ決めて持っていない")
         XCTAssertTrue(arrived.contains("TrunkStyle.glow(width: 340, height: 250, strong: special)"), "節目・箔押しの光が強くならない")
         XCTAssertTrue(arrived.contains("ShareLink"), "共有の副ボタンが無い")
         XCTAssertTrue(arrived.contains("arrival.shareable"), "公開でない投稿にも共有が出る")
@@ -205,6 +250,7 @@ final class FirstMomentsTests: XCTestCase {
         let list = try source("Features/Notifications/NotificationsView.swift")
         XCTAssertTrue(list.contains("firstReactions: model.firstReactions"), "一覧が初めての印を受けていない")
         XCTAssertTrue(list.contains("FirstReaction.resolve("), "初めての判定につながっていない")
+        XCTAssertTrue(list.contains("noteFirstReactions(page.items, viewerId: viewerId)"), "読み込みが初めての判定を呼んでいない")
         XCTAssertTrue(list.contains("entry.firstReaction"), "行に初めての印が出ない")
         let upload = try source("Features/Upload/UploadViewModel.swift")
         XCTAssertTrue(upload.contains("photoURL: $0.photoURL, shareable: $0.shareable"), "投稿の写真・共有可が届いた画面に渡らない")
@@ -238,14 +284,49 @@ final class FirstMomentsTests: XCTestCase {
         XCTAssertFalse(CamperRoomUnlock.seasons(4).condition.isEmpty)
     }
 
-    /// 家具の図鑑に、秋と季節をまたぐ条件が入っている。同じ日に撮る条件（段が奇数）は残っている
+    /// 家具の図鑑に、秋と季節をまたぐ条件が「もう一つの道」として入っている。同じ日に撮る条件は、どれも残っている
     func testVarietyUsesTheNewSeasonalUnlocks() async {
         let unlocks = CamperRoomCatalog.all.map(\.unlock)
-        XCTAssertTrue(unlocks.contains { if case .autumn = $0 { return true } else { return false } }, "秋の条件の家具が無い")
-        XCTAssertTrue(unlocks.contains { if case .seasons = $0 { return true } else { return false } }, "季節をまたぐ条件の家具が無い")
+        func either(_ u: CamperRoomUnlock, _ f: (CamperRoomUnlock) -> Bool) -> Bool {
+            if case let .either(a, b) = u { return f(a) || f(b) }
+            return false
+        }
+        XCTAssertTrue(unlocks.contains { either($0) { if case .autumn = $0 { return true } else { return false } } }, "秋の条件の家具が無い")
+        XCTAssertTrue(unlocks.contains { either($0) { if case .seasons = $0 { return true } else { return false } } }, "季節をまたぐ条件の家具が無い")
         XCTAssertTrue(unlocks.contains { if case .sameDay = $0 { return true } else { return false } }, "同じ日の条件が全部消えた")
-        // 秋・季節の条件はサーバーが要らない（端末で数える）＝届く家具に数えられる
         XCTAssertTrue(CamperRoomUnlock.autumn(4).isAvailable)
         XCTAssertTrue(CamperRoomUnlock.seasons(3).isAvailable)
+    }
+
+    /// **互換**: 前の条件（同じ日に n 枚）だけを満たす人は、どの家具も持ち続ける。新しい道は足すだけ
+    func testOldSameDayUnlockStillHoldsAndNewPathAdds() async {
+        let s = CamperStats()
+        var oldOnly = CamperRoomStats()
+        oldOnly.sameDayMax = 100
+        var newOnly = CamperRoomStats()
+        newOnly.autumnShots = 100
+        newOnly.seasonsShot = 4
+        var checked = 0
+        for f in CamperRoomCatalog.all {
+            guard case let .either(old, new) = f.unlock else { continue }
+            checked += 1
+            guard case .sameDay = old else { XCTFail("\(f.id): 前の条件が先に残っていない"); continue }
+            XCTAssertTrue(f.unlock.isMet(s, oldOnly), "\(f.id): 前の条件だけ満たす人が持てなくなる")
+            XCTAssertTrue(f.unlock.isMet(s, newOnly), "\(f.id): 新しい道で持てない（\(new)）")
+            XCTAssertFalse(f.unlock.isMet(s, CamperRoomStats()), "\(f.id): 何も満たさないのに持てる")
+            XCTAssertEqual(f.unlock.fraction(s, oldOnly), 1)
+        }
+        XCTAssertGreaterThan(checked, 0, "新しい道を足した家具が1つも無い")
+        // 前のカタログで同じ日の条件だった家具（段が偶数）は、満たし方が増えただけで、数は変わっていない
+        let sameDayOnly = CamperRoomCatalog.all.filter { if case .sameDay = $0.unlock { return true } else { return false } }.count
+        XCTAssertGreaterThan(sameDayOnly, 0)
+        // 満たしていない間は、進みの大きい方を見せる
+        var part = CamperRoomStats()
+        part.sameDayMax = 3
+        part.autumnShots = 2
+        let u = CamperRoomUnlock.either(.sameDay(6), .autumn(4))
+        XCTAssertEqual(u.fraction(s, part), 0.5, accuracy: 0.0001)
+        XCTAssertFalse(u.isMet(s, part))
+        XCTAssertFalse(u.condition.isEmpty)
     }
 }

@@ -167,4 +167,11 @@ enum NotificationText {
         if days <= 1 { return L("昨日", "Yesterday") }
         return L("\(days)日前", "\(days)d ago")
     }
+
+    /// 行の読み上げの文。未読・初めての印を足す。（ビューの中で変数を書き換えないよう、ここに出してある）
+    static func spokenLabel(_ plain: String, unread: Bool, first: FirstReaction.Kind?) -> String {
+        let base = unread ? L("未読、", "Unread, ") + plain : plain
+        guard let first else { return base }
+        return first.eyebrow + "。" + first.note + "。" + base
+    }
 }

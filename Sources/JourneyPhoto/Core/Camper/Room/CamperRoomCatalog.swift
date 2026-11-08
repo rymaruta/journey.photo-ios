@@ -188,7 +188,7 @@ enum CamperRoomTopic: String, CaseIterable, Sendable {
 }
 
 /// 家具の手に入れ方。外まわりの部品と同じ数え方（`CamperUnlock`）に、室内だけの条件を足す
-enum CamperRoomUnlock: Equatable, Sendable {
+indirect enum CamperRoomUnlock: Equatable, Sendable {
     /// 外まわりの部品と同じ条件（最初から・写真の枚数・夜・冬・都道府県・同じ場所・森・空・満月・続けた月・車の段・要サーバー）
     case base(CamperUnlock)
     /// 写真に写った物の枚数（言葉で読む）
@@ -201,10 +201,15 @@ enum CamperRoomUnlock: Equatable, Sendable {
     case autumn(Int)
     /// 撮った季節の数（春夏秋冬のうち n 季節・2026-11-08）
     case seasons(Int)
+    /// どちらかを満たせば手に入る（2026-11-08）。**すでに前の条件で持っている人から家具を減らさず**、新しい道を足す
+    case either(CamperRoomUnlock, CamperRoomUnlock)
 
     var isAvailable: Bool {
-        if case .base(let u) = self { return u.isAvailable }
-        return true
+        switch self {
+        case .base(let u): return u.isAvailable
+        case let .either(a, b): return a.isAvailable || b.isAvailable
+        default: return true
+        }
     }
 
     func progress(_ s: CamperStats, _ r: CamperRoomStats) -> (have: Int, need: Int) {
@@ -215,16 +220,23 @@ enum CamperRoomUnlock: Equatable, Sendable {
         case .sameDay(let n): return (r.sameDayMax, n)
         case .autumn(let n): return (r.autumnShots, n)
         case .seasons(let n): return (r.seasonsShot, n)
+        case let .either(a, b):
+            // 満たしている方、どちらもまだなら進みの大きい方を見せる
+            if a.isMet(s, r) { return a.progress(s, r) }
+            if b.isMet(s, r) { return b.progress(s, r) }
+            return a.fraction(s, r) >= b.fraction(s, r) ? a.progress(s, r) : b.progress(s, r)
         }
     }
 
     func isMet(_ s: CamperStats, _ r: CamperRoomStats) -> Bool {
+        if case let .either(a, b) = self { return a.isMet(s, r) || b.isMet(s, r) }
         guard isAvailable else { return false }
         let p = progress(s, r)
         return p.have >= p.need
     }
 
     func fraction(_ s: CamperStats, _ r: CamperRoomStats) -> Double {
+        if case let .either(a, b) = self { return max(a.fraction(s, r), b.fraction(s, r)) }
         guard isAvailable else { return 0 }
         let p = progress(s, r)
         guard p.need > 0 else { return 1 }
@@ -240,6 +252,7 @@ enum CamperRoomUnlock: Equatable, Sendable {
         case .sameDay(let n): return L("同じ日に \(n) 枚撮る", "Photos in one day: \(n)")
         case .autumn(let n): return L("秋の写真 \(n) 枚", "Autumn photos: \(n)")
         case .seasons(let n): return L("\(n) つの季節に撮る", "Photos in \(n) seasons")
+        case let .either(a, b): return L("\(a.condition)、または\(b.condition)", "\(a.condition), or \(b.condition)")
         }
     }
 

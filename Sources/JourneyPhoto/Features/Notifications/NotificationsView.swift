@@ -402,8 +402,7 @@ private struct NotificationRow: View {
     /// （アイコン・フォローバックとは横に並ぶ別のボタン＝入れ子にしない）
     @ViewBuilder
     private func main(_ line: NotificationText.Line) -> some View {
-        var label = entry.unread ? L("未読、", "Unread, ") + line.plain : line.plain
-        if let first = entry.firstReaction { label = first.eyebrow + "。" + first.note + "。" + label }
+        let label = NotificationText.spokenLabel(line.plain, unread: entry.unread, first: entry.firstReaction)
         if let onOpen {
             Button(action: onOpen) { mainContent(line) }
                 .buttonStyle(.plain)
@@ -833,7 +832,8 @@ final class NotificationsViewModel: ObservableObject {
 
     /// 初めてのいいね・コメントの印を決める（`FirstReaction.resolve`）。見本の入り方（`-JPPreviewFirstReaction`）では
     /// 控えに書かず、見本の行に印を付ける
-    func noteFirstReactions(_ items: [AppNotification], viewerId: String?) {
+    func noteFirstReactions(_ items: [AppNotification], viewerId: String?, now: Date = Date(),
+                            defaults: UserDefaults = .standard) {
         #if DEBUG
         if PreviewSession.opensFirstReaction {
             if let like = items.first(where: { $0.kind == .like }) {
@@ -844,7 +844,7 @@ final class NotificationsViewModel: ObservableObject {
             return
         }
         #endif
-        firstReactions = FirstReaction.resolve(rows: items, userId: viewerId)
+        firstReactions = FirstReaction.resolve(rows: items, userId: viewerId, now: now, defaults: defaults)
     }
 
     /// 手元の一覧を書いてよい回か（より新しい回が書いていたら false）

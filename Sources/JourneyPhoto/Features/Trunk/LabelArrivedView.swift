@@ -30,8 +30,8 @@ struct LabelArrivedView: View {
     @State private var step: ArrivalSequence.Step = .start
     /// ラベルが貼りついた瞬間に軽い触覚を 1 回鳴らすための数
     @State private var landed = 0
-    /// 一文を言うための自分の写真の一覧。nil＝読めていない（言わない）
-    @State private var photos: [Photo]?
+    /// 事実の一文。**開いたときに1回だけ**決めて持つ（描き直すたびに写真の一覧を数え直さない）。nil＝言わない
+    @State private var sentence: String?
     /// 写真が読み込めなかった（写真の札は出さず、ラベルだけを真ん中に出す）
     @State private var photoFailed = false
 
@@ -44,16 +44,10 @@ struct LabelArrivedView: View {
     /// 写真があるときだけ、写真の札を出す
     private var photoURL: URL? { photoFailed ? nil : arrival.photoURL }
 
-    /// 一文（言えるときだけ）。見本の入り方（`-JPPreviewTrunkArrived`）では一覧を読まず、見本の一覧（今の 1 枚だけ）で言う
-    private var sentence: String? {
-        #if DEBUG
-        if PreviewSession.opensTrunkArrived { return ArrivalFact.sentence(label: label, photos: ArrivalFact.previewPhotos(for: label)) }
-        #endif
-        return ArrivalFact.sentence(label: label, photos: photos)
+    /// その段まで進んだか。動きを減らす設定では最初から全部（`ArrivalSequence.isShown`）
+    private func shown(_ s: ArrivalSequence.Step) -> Bool {
+        ArrivalSequence.isShown(s, current: step, reduceMotion: reduceMotion)
     }
-
-    /// その段まで進んだか。動きを減らす設定では最初から全部
-    private func shown(_ s: ArrivalSequence.Step) -> Bool { reduceMotion || step >= s }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -94,10 +88,7 @@ struct LabelArrivedView: View {
         // 祝いの動き（写真 → ラベルが落ちる → 一文）。動きを減らす設定では待たず、触覚だけ 1 回
         .task { await runSequence() }
         // 一文のための自分の写真の一覧（読めなければ nil＝言わない。見本の入り方では読まない）
-        .task {
-            guard !PreviewSession.opensTrunkArrived, photos == nil else { return }
-            photos = await ProfileImageFromPhoto.myPhotos(environment: environment)
-        }
+        .task { await decideSentence() }
         .sensoryFeedback(.impact(weight: .light), trigger: landed)
         .fullScreenCover(isPresented: $showReroll, onDismiss: {
             // 作り直しで決めた図柄に描き替える（手持ちの状態は作り直しの画面が読み直している）
@@ -204,6 +195,22 @@ struct LabelArrivedView: View {
                 .opacity(shown(.sentence) ? 1 : 0)
                 .accessibilityIdentifier("trunk.arrived.fact")
         }
+    }
+
+    /// 一文を1回だけ決める。節目はサーバーの事実なので一覧を待たず、そのほかは自分の写真の一覧を読んでから
+    /// （読めなければ nil＝言わない）。見本の入り方（`-JPPreviewTrunkArrived`）では一覧を読まず、見本の一覧で言う
+    private func decideSentence() async {
+        guard sentence == nil else { return }
+        #if DEBUG
+        if PreviewSession.opensTrunkArrived {
+            sentence = ArrivalFact.sentence(label: label, photos: ArrivalFact.previewPhotos(for: label))
+            return
+        }
+        #endif
+        sentence = ArrivalFact.sentence(label: label, photos: nil)
+        if sentence != nil { return }
+        let mine = await ProfileImageFromPhoto.myPhotos(environment: environment)
+        sentence = ArrivalFact.sentence(label: label, photos: mine)
     }
 
     /// 写真 → ラベルが落ちる → 一文の順に進める。動きを減らす設定では何も動かさず、触覚を 1 回だけ

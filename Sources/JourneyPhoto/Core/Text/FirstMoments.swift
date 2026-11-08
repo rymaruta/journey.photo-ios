@@ -111,6 +111,7 @@ enum ArrivalFact {
     /// - それ以外は、自分の写真の一覧から**この県で撮った写真がほかに無い**ときだけ言う。
     ///   一覧が読めていない・今投稿した写真が一覧に載っていない（一覧が古いかもしれない）・県が読めない・
     ///   同じ県のほかの写真が 1 枚でも在るときは言わない（取りこぼしは「言わない」方へ倒す）
+    /// - ほかの公開の写真に、県が読めないもの（撮影地が空・英語・座標だけ）が1枚でも在るときも言わない
     /// - 県は撮影地の文字から読む既存の判定（`CamperCounting.prefecture(in:)`）を使い回す
     static func sentence(label: TrunkLabel, photos: [Photo]?) -> String? {
         let name = label.place.name
@@ -131,10 +132,11 @@ enum ArrivalFact {
         guard let mine = published.first(where: { $0.id == label.photoId }) else { return nil }
         guard let prefecture = CamperCounting.prefecture(in: mine.location)
                 ?? CamperCounting.prefecture(in: name) else { return nil }
-        let others = published.filter {
-            $0.id != label.photoId && CamperCounting.prefecture(in: $0.location) == prefecture
-        }
-        guard others.isEmpty else { return nil }
+        // ほかの公開の写真の県が1枚でも読めないなら言わない（撮影地が空・英語・座標だけの写真が、
+        // 実はその県かもしれない。確かめられないときは祝わない）
+        var others: [String?] = []
+        for p in published where p.id != label.photoId { others.append(CamperCounting.prefecture(in: p.location)) }
+        guard !others.contains(where: { $0 == nil }), !others.contains(where: { $0 == prefecture }) else { return nil }
         return L("\(prefecture)、はじめての1枚です", "\(prefecture) \u{2014} your first photo here")
     }
 
@@ -168,6 +170,12 @@ struct ArrivalSequence: Equatable {
     static let sentenceAt = 1.25
     /// ラベルが落ち始めてから、貼りついて触覚を鳴らすまで（ばねが落ち切る少し前）
     static let landAfter = 0.28
+
+    /// その段を見せてよいか。動きを減らす設定のときは、待たずに全部を最初から出す（画面が使う）
+    static func isShown(_ target: Step, current: Step, reduceMotion: Bool) -> Bool {
+        let now = reduceMotion ? firstStep(reduceMotion: true) : current
+        return now >= target
+    }
 
     /// 動きを減らす設定のときは、待たずに全部を最初から出す（同じ情報を静かに出す）
     static func firstStep(reduceMotion: Bool) -> Step { reduceMotion ? .sentence : .start }
