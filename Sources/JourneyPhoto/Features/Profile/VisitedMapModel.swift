@@ -26,6 +26,8 @@ final class VisitedMapModel: ObservableObject {
     struct Toast: Equatable {
         let id: Int
         let message: String
+        /// 「取り消す」を添えるか（上限の知らせには添えない）
+        var offersUndo = true
     }
 
     @Published private(set) var record = VisitedPrefectures()
@@ -47,6 +49,10 @@ final class VisitedMapModel: ObservableObject {
     /// 触覚の合図（値が変わったら鳴らす）。足す・引く・戻すは軽く、周がそろったときだけ成功
     @Published private(set) var lightTick = 0
     @Published private(set) var successTick = 0
+    /// 上限（99回）に達して足せなかったときの警告の触覚
+    @Published private(set) var warningTick = 0
+    /// VoiceOver が動いているとき「取り消す」を長く残す（押す前に消えない・`VisitedMapScreen` が渡す）
+    var voiceOverOn = false
 
     private(set) var userId: String?
     private let store: VisitedPrefectureStore
@@ -56,6 +62,8 @@ final class VisitedMapModel: ObservableObject {
 
     /// 「取り消す」を出しておく秒数
     nonisolated static let toastSeconds: Double = 5
+    /// VoiceOver のときの秒数（読み上げを聞いてから押せる長さ）
+    nonisolated static let voiceOverToastSeconds: Double = 30
 
     init(store: VisitedPrefectureStore = VisitedPrefectureStore(), now: @escaping () -> Date = Date.init,
          calendar: Calendar = .current) {
@@ -136,7 +144,16 @@ final class VisitedMapModel: ObservableObject {
 
     /// 1 回足す。同じ日に記録があれば、確かめてから（`confirmSameDay`）
     func add(_ prefecture: String, confirmingSameDay: Bool = true) {
-        guard record.count(prefecture) < VisitedPrefectures.maxCount else { return }
+        guard record.count(prefecture) < VisitedPrefectures.maxCount else {
+            // 黙って何も起きないままにしない: 一言と警告の触覚
+            warningTick += 1
+            toastCounter += 1
+            let notice = Toast(id: toastCounter, message: VisitedMapText.limitReached(prefecture), offersUndo: false)
+            toast = notice
+            scheduleToastEnd(notice.id)
+            announcement = notice.message
+            return
+        }
         if confirmingSameDay, record.hasVisit(prefecture, on: today) {
             pendingSameDay = prefecture
             return
@@ -227,10 +244,14 @@ final class VisitedMapModel: ObservableObject {
     /// - celebrates: false なら、そろった周は「見せた」ことにだけして祝わない（「47県ぜんぶ行った」の一括は
     ///   本人がまとめて申告したもので、祝う場面ではない）
     private func finish(message: String?, name: String?, celebrates: Bool = true) {
-        lightTick += 1
-        if let celebrated = record.takeCelebration(), celebrates {
+        let celebrated = record.takeCelebration()
+        let celebrating = celebrated != nil && celebrates
+        if celebrating, let celebrated {
             celebration = celebrated
+            // 触覚は成功の1回だけ（軽い触覚と重ねない）
             successTick += 1
+        } else {
+            lightTick += 1
         }
         persist()
         if let message {
@@ -241,16 +262,20 @@ final class VisitedMapModel: ObservableObject {
         } else {
             toast = nil
         }
-        if let name {
-            announcement = VisitedMapText.changeAnnouncement(name, count: record.count(name), visited: record.visitedCount)
-        } else {
-            announcement = VisitedMapText.ratio(record.visitedCount)
+        var spoken = name.map {
+            VisitedMapText.changeAnnouncement($0, count: record.count($0), visited: record.visitedCount)
+        } ?? VisitedMapText.ratio(record.visitedCount)
+        // 祝いは目で見る札なので、VoiceOver の人にも文で伝える
+        if celebrating, let celebrated {
+            spoken = "\(VisitedMapText.celebrationTitle(celebrated))。\(spoken)"
         }
+        announcement = spoken
     }
 
     private func scheduleToastEnd(_ id: Int) {
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.toastSeconds * 1_000_000_000))
+            let seconds = self?.voiceOverOn == true ? Self.voiceOverToastSeconds : Self.toastSeconds
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard let self, self.toast?.id == id else { return }
             self.toast = nil
         }

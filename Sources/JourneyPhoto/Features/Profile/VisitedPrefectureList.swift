@@ -93,13 +93,13 @@ struct VisitedSwatch: View {
             let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
             var shape = Path()
             shape.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
-            ctx.fill(shape, with: .color(ProMarkColors.color(VisitedMapStyle.fill(forLevel: level))))
+            ctx.fill(shape, with: .color(VisitedMapStyle.color(VisitedMapStyle.fill(forLevel: level))))
             if let line = VisitedMapCanvasView.patternPath(level, bounds: rect) {
                 var layer = ctx
                 layer.clip(to: shape)
                 let color: Color = level == 0
                     ? Color.white.opacity(0.18)
-                    : ProMarkColors.color(level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark).opacity(0.5)
+                    : VisitedMapStyle.color(level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark).opacity(0.5)
                 layer.stroke(line.path, with: .color(color), style: line.style)
             }
             if level == 0 && isCandidate {

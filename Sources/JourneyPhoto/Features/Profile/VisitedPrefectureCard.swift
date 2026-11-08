@@ -34,6 +34,8 @@ struct VisitedPrefectureCard: View {
             .padding(.bottom, JPSpace.xl)
         }
         .background(WebTheme.sheet)
+        // 確かめと「取り消す」は札の中にも出す（親の画面の帯は札の下に隠れる）
+        .overlay(alignment: .bottom) { VisitedBottomBar(model: model) }
         .accessibilityIdentifier("visitedMap.card")
     }
 

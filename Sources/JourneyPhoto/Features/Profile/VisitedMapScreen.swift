@@ -20,6 +20,7 @@ struct VisitedMapScreen: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = VisitedMapModel()
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
 
     @State private var viewport = VisitedMapViewport()
     @State private var mode: Mode = .map
@@ -65,7 +66,8 @@ struct VisitedMapScreen: View {
                 .accessibilityIdentifier("visitedMap.undoStep")
             }
         }
-        .overlay(alignment: .bottom) { bottomBar }
+        // 札（シート）が開いている間は、帯は札の中に出る（`VisitedPrefectureCard`・親の帯は札の下に隠れる）
+        .overlay(alignment: .bottom) { if model.selected == nil { VisitedBottomBar(model: model) } }
         .overlay(alignment: .bottom) { celebrationCard }
         .sheet(isPresented: cardBinding) {
             VisitedPrefectureCard(model: model, prefecture: model.selected ?? "", nearby: nearbyNames,
@@ -86,6 +88,9 @@ struct VisitedMapScreen: View {
         }
         .sensoryFeedback(.impact(weight: .light), trigger: model.lightTick)
         .sensoryFeedback(.success, trigger: model.successTick)
+        .sensoryFeedback(.warning, trigger: model.warningTick)
+        .onAppear { model.voiceOverOn = voiceOverOn }
+        .onChange(of: voiceOverOn) { _, on in model.voiceOverOn = on }
         .onChange(of: model.announcement) { _, text in
             guard let text else { return }
             UIAccessibility.post(notification: .announcement, argument: text)
@@ -214,7 +219,6 @@ struct VisitedMapScreen: View {
                                      onTap: { unit, name in lastTap = (unit, name) })
                     .aspectRatio(geometry.size.width / geometry.size.height, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .overlay(alignment: .bottomTrailing) { zoomControls(geometry) }
                 legend
             }
         } else {
@@ -223,38 +227,6 @@ struct VisitedMapScreen: View {
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)
         }
-    }
-
-    private func zoomControls(_ geometry: PrefectureMapGeometry) -> some View {
-        VStack(spacing: WebTheme.mapControlSpacing) {
-            zoomButton(systemName: "plus", label: VisitedMapText.zoomIn, enabled: viewport.canZoomIn, id: "visitedMap.zoomIn") {
-                viewport = viewport.stepped(1, content: geometry.size, container: containerGuess(geometry))
-            }
-            zoomButton(systemName: "minus", label: VisitedMapText.zoomOut, enabled: viewport.canZoomOut, id: "visitedMap.zoomOut") {
-                viewport = viewport.stepped(-1, content: geometry.size, container: containerGuess(geometry))
-            }
-        }
-        .padding(JPSpace.xs)
-    }
-
-    /// 枠の大きさ（＋−は枠の真ん中を中心に拡大するので、縦横比だけ合っていればよい）
-    private func containerGuess(_ geometry: PrefectureMapGeometry) -> CGSize {
-        CGSize(width: geometry.size.width, height: geometry.size.height)
-    }
-
-    private func zoomButton(systemName: String, label: String, enabled: Bool, id: String,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(enabled ? Color.white : Color.white.opacity(0.4))
-                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                .jpGlass(in: Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(id)
     }
 
     /// 凡例（段の見本＋字。色だけに頼らない）
@@ -391,69 +363,13 @@ struct VisitedMapScreen: View {
         return geometry.nearby(to: piece.anchor, excluding: name)
     }
 
-    /// 画面の下の帯。同じ日の確かめが先、なければ直前の変更の「取り消す」
-    @ViewBuilder
-    private var bottomBar: some View {
-        if let name = model.pendingSameDay {
-            HStack(spacing: JPSpace.xs) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(VisitedMapText.sameDayTitle).font(JPFont.footnote.weight(.semibold))
-                    Text("\(name) · \(VisitedMapText.sameDayQuestion)").font(JPFont.caption)
-                }
-                .foregroundStyle(WebTheme.foreground)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                barButton(VisitedMapText.cancel, id: "visitedMap.sameDay.cancel") { model.cancelSameDay() }
-                barButton(VisitedMapText.sameDayAdd, id: "visitedMap.sameDay.add") { model.confirmSameDay() }
-            }
-            .modifier(BarFace())
-            .padding(.horizontal, JPSpace.m)
-            .padding(.bottom, JPSpace.m)
-            .accessibilityElement(children: .contain)
-        } else if let toast = model.toast, model.celebration == nil {
-            HStack(spacing: JPSpace.xs) {
-                Text(toast.message)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                barButton(VisitedMapText.undo, id: "visitedMap.undo") { model.undo() }
-            }
-            .modifier(BarFace())
-            .padding(.horizontal, JPSpace.m)
-            .padding(.bottom, JPSpace.m)
-            .accessibilityElement(children: .contain)
-        }
-    }
-
-    private func barButton(_ title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.accent)
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-    }
-
-    /// 帯の地（トーストの板: 角 14・縁は白 12%）
-    private struct BarFace: ViewModifier {
-        func body(content: Content) -> some View {
-            content
-                .padding(.leading, JPSpace.s)
-                .padding(.trailing, JPSpace.xxs)
-                .frame(minHeight: 48)
-                .background(WebTheme.surface5, in: RoundedRectangle(cornerRadius: JPRadius.m))
-                .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.border, lineWidth: JPStroke.hairline))
-        }
-    }
-
     // MARK: - 祝い
 
     /// 静かな祝い。札を1枚（真鍮の細い縁）。連続・順位・紙吹雪は作らない
     @ViewBuilder
     private var celebrationCard: some View {
-        if let celebration = model.celebration {
+        // 札を開いている間は出さない（札の下に隠れる）。閉じたあとに出る
+        if let celebration = model.celebration, model.selected == nil {
             VStack(alignment: .leading, spacing: JPSpace.s) {
                 Text(VisitedMapText.celebrationEyebrow(celebration))
                     .jpEyebrow()

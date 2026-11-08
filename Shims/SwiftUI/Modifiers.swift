@@ -513,6 +513,7 @@ public struct SensoryFeedback {
     public static func impact(weight: Weight = .medium, intensity: Double = 1) -> SensoryFeedback { SensoryFeedback() }
     public static let selection = SensoryFeedback()
     public static let success = SensoryFeedback()
+    public static let warning = SensoryFeedback()
 }
 
 public struct TapGesture: Gesture {

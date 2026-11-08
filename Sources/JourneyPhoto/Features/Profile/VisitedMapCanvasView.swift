@@ -23,11 +23,19 @@ struct VisitedMapCanvasView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // 指の途中状態。**指を ScrollView に取られて `onEnded` が来なくても**、次の指で必ず作り直す
+    // （`onChanged` の先頭で新しい指かを見る・`isNewTouch`）。残っていても、タップや移動が止まらない
     @State private var panStart: VisitedMapViewport?
     @State private var pinchStart: VisitedMapViewport?
     @State private var touchBegan: Date?
+    @State private var touchStart: CGPoint?
+    @State private var lastTranslation: CGSize = .zero
     @State private var moved = false
     @State private var pinched = false
+    @State private var pinchLocation: CGPoint?
+    @State private var lastMagnification: CGFloat = 1
+    /// 長押し（0.5 秒）に届いた合図の触覚（「視差効果を減らす」でも鳴らす）
+    @State private var longPressTick = 0
     /// 回数が変わった県だけ 0.15 秒かけて切り替える
     @State private var fades: [String: Fade] = [:]
     @State private var liftStart: Date?
@@ -64,6 +72,8 @@ struct VisitedMapCanvasView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(VisitedMapText.mapAccessibility)
             .accessibilityIdentifier("visitedMap.map")
+            .overlay(alignment: .bottomTrailing) { zoomControls(container: container) }
+            .sensoryFeedback(.impact(weight: .light), trigger: longPressTick)
         }
         .onChange(of: levels) { old, new in startFades(from: old, to: new) }
         .onChange(of: model.celebration) { _, new in
@@ -147,7 +157,7 @@ struct VisitedMapCanvasView: View {
 
         // 1. 塗り
         for item in items where visible.intersects(item.screenBounds) {
-            ctx.fill(item.path, with: .color(ProMarkColors.color(item.fill)))
+            ctx.fill(item.path, with: .color(VisitedMapStyle.color(item.fill)))
         }
         // 2. 模様（県の形の内側だけ）
         for item in items where visible.intersects(item.screenBounds) {
@@ -158,7 +168,7 @@ struct VisitedMapCanvasView: View {
                 layer.stroke(line.path, with: .color(Color.white.opacity(0.12)), style: line.style)
             } else {
                 let ink = item.level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark
-                layer.stroke(line.path, with: .color(ProMarkColors.color(ink).opacity(0.42 * item.progress)),
+                layer.stroke(line.path, with: .color(VisitedMapStyle.color(ink).opacity(0.42 * item.progress)),
                              style: line.style)
             }
         }
@@ -288,9 +298,9 @@ struct VisitedMapCanvasView: View {
             let at = viewport.screenPoint(forUnit: piece.anchor, content: geometry.size, container: container)
             if CGRect(origin: .zero, size: container).insetBy(dx: -20, dy: -20).contains(at),
                count > 0 || showsName {
-                let level = VisitedPrefectures.level(forCount: count)
-                let ink = level >= 2 ? ProMarkColors.color(VisitedMapStyle.inkOnBright)
-                                      : (level == 1 ? Color.white : WebTheme.text2)
+                // 数字が模様に重なって読みにくいので、塗った県の字は黒い下地（黒 60%）に白で載せる。
+                // 未の県の県名は斜線の上に灰（text-2）のまま
+                let onChip = count > 0
                 VStack(spacing: 0) {
                     if showsName {
                         Text(PrefectureResolver.shortName(name))
@@ -301,9 +311,12 @@ struct VisitedMapCanvasView: View {
                             .font(JPFont.number(JPTypeScale.caption, weight: .bold, relativeTo: .caption))
                     }
                 }
-                .foregroundStyle(ink)
+                .foregroundStyle(onChip ? Color.white : WebTheme.text2)
                 .lineLimit(1)
                 .fixedSize()
+                .padding(.horizontal, onChip ? 4 : 0)
+                .padding(.vertical, onChip ? 1 : 0)
+                .background(onChip ? Color.black.opacity(0.6) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .position(x: at.x, y: at.y)
             }
         }
@@ -345,14 +358,31 @@ struct VisitedMapCanvasView: View {
 
     // MARK: - ジェスチャー
 
+    /// 新しい指か。`onEnded` が来なかった（ScrollView が指を取った・取り消された）あとでも、
+    /// 始めの位置が違う・動きが 0 に戻った、のどちらかで新しい指とみなして状態を作り直す
+    private func isNewTouch(start: CGPoint, translation: CGSize) -> Bool {
+        guard touchBegan != nil, let touchStart else { return true }
+        if touchStart != start { return true }
+        return translation == .zero && lastTranslation != .zero
+    }
+
     private func dragGesture(container: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                if touchBegan == nil {
-                    touchBegan = Date()
+                if isNewTouch(start: value.startLocation, translation: value.translation) {
+                    let began = Date()
+                    touchBegan = began
+                    touchStart = value.startLocation
                     panStart = viewport
                     moved = false
+                    pinched = false
+                    // 0.5 秒動かさずに押していたら、長押しになった合図を1回
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        if touchBegan == began, !moved, !pinched, pinchStart == nil { longPressTick += 1 }
+                    }
                 }
+                lastTranslation = value.translation
                 let distance = (value.translation.width * value.translation.width
                                 + value.translation.height * value.translation.height).squareRoot()
                 if distance > 10 { moved = true }
@@ -365,26 +395,72 @@ struct VisitedMapCanvasView: View {
                 let began = touchBegan
                 let didMove = moved
                 let didPinch = pinched
-                touchBegan = nil
-                panStart = nil
-                moved = false
-                pinched = false
+                resetTouch()
                 guard !didMove, !didPinch else { return }
                 let long = began.map { Date().timeIntervalSince($0) >= 0.5 } ?? false
                 tap(at: value.location, long: long, container: container)
             }
     }
 
+    private func resetTouch() {
+        touchBegan = nil
+        touchStart = nil
+        lastTranslation = .zero
+        panStart = nil
+        moved = false
+        pinched = false
+    }
+
     private func pinchGesture(container: CGSize) -> some Gesture {
         MagnifyGesture()
             .onChanged { value in
+                // 新しいピンチか（前のピンチの `onEnded` が来なかった場合も作り直す）
+                let fresh = pinchStart == nil || pinchLocation != value.startLocation
+                    || (abs(value.magnification - 1) < 0.01 && abs(lastMagnification - 1) >= 0.01)
+                if fresh {
+                    pinchStart = viewport
+                    pinchLocation = value.startLocation
+                }
+                lastMagnification = value.magnification
                 pinched = true
                 let start = pinchStart ?? viewport
-                if pinchStart == nil { pinchStart = viewport }
                 viewport = start.zoomed(to: start.zoom * value.magnification, around: value.startLocation,
                                         content: geometry.size, container: container)
             }
-            .onEnded { _ in pinchStart = nil }
+            .onEnded { _ in
+                pinchStart = nil
+                pinchLocation = nil
+                lastMagnification = 1
+            }
+    }
+
+    // MARK: - 拡大の ＋−（実際の枠の大きさで拡大する）
+
+    private func zoomControls(container: CGSize) -> some View {
+        VStack(spacing: WebTheme.mapControlSpacing) {
+            zoomButton(systemName: "plus", label: VisitedMapText.zoomIn, enabled: viewport.canZoomIn, id: "visitedMap.zoomIn") {
+                viewport = viewport.stepped(1, content: geometry.size, container: container)
+            }
+            zoomButton(systemName: "minus", label: VisitedMapText.zoomOut, enabled: viewport.canZoomOut, id: "visitedMap.zoomOut") {
+                viewport = viewport.stepped(-1, content: geometry.size, container: container)
+            }
+        }
+        .padding(JPSpace.xs)
+    }
+
+    private func zoomButton(systemName: String, label: String, enabled: Bool, id: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(enabled ? Color.white : Color.white.opacity(0.4))
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .jpGlass(in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
     }
 
     private func tap(at location: CGPoint, long: Bool, container: CGSize) {

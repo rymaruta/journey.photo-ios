@@ -32,7 +32,8 @@ struct VisitedPrefectures: Equatable {
     init(visits: [String: [String]], dismissed: Set<String> = [], seenRounds: Int? = nil) {
         var clean: [String: [String]] = [:]
         for (name, days) in visits where RegionList.prefectures.contains(name) && !days.isEmpty {
-            clean[name] = Array(days.prefix(Self.maxCount))
+            // 古い順に並べ直す（保存の並びに頼らない）
+            clean[name] = Array(days.sorted().prefix(Self.maxCount))
         }
         self.visits = clean
         self.dismissed = dismissed.filter { RegionList.prefectures.contains($0) }
@@ -118,10 +119,12 @@ struct VisitedPrefectures: Equatable {
         return VisitedChange(before: [prefecture: before], after: [prefecture: after])
     }
 
-    /// 日付を直す（記録の一つを別の日に）。範囲外・同じ日なら nil
+    /// 日付を直す（記録の一つを別の日に）。範囲外・同じ日・**ほかの記録と同じ日になる**ときは nil
+    /// （同じ日の2回目は「足す」で確かめてから記録できる。直すことで重なりを作らない）
     @discardableResult
     mutating func changeDay(_ prefecture: String, at index: Int, to day: String) -> VisitedChange? {
-        guard let before = visits[prefecture], before.indices.contains(index), before[index] != day else { return nil }
+        guard let before = visits[prefecture], before.indices.contains(index), before[index] != day,
+              !before.contains(day) else { return nil }
         var after = before
         after[index] = day
         after.sort()
@@ -234,10 +237,21 @@ struct VisitedHistory: Equatable {
     mutating func removeAll() { changes.removeAll() }
 }
 
-/// 日付の文字（"yyyy-MM-dd"）。端末のカレンダーの日で数える
+/// 日付の文字（"yyyy-MM-dd"）。**暦は必ず西暦（グレゴリオ暦）**で、時刻帯だけ端末（渡した暦）のものを使う。
+///
+/// 🔴 端末の暦（和暦・仏暦）をそのまま使うと、和暦では 2026 年が「0008」になり、読み込みの `isValid`
+/// （1900 年以上）で落ちて**記録が消えた**。保存する文字は暦に依らない西暦にそろえる
 enum VisitedDay {
+
+    /// 西暦の暦（時刻帯は渡された暦のもの）
+    static func gregorian(like calendar: Calendar) -> Calendar {
+        var g = Calendar(identifier: .gregorian)
+        g.timeZone = calendar.timeZone
+        return g
+    }
+
     static func string(from date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let c = gregorian(like: calendar).dateComponents([.year, .month, .day], from: date)
         func pad(_ n: Int, _ width: Int) -> String {
             let s = String(n)
             return String(repeating: "0", count: max(0, width - s.count)) + s
@@ -250,7 +264,7 @@ enum VisitedDay {
         guard isValid(s) else { return nil }
         let parts = s.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
-        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+        return gregorian(like: calendar).date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
     }
 
     /// 読める日付か

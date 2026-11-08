@@ -104,6 +104,10 @@ enum VisitedMapText {
     static var recordedAllToast: String { L("47県を記録しました", "Recorded all 47") }
     static var clearedAllToast: String { L("記録をすべて外しました", "Cleared all records") }
 
+    static func limitReached(_ name: String) -> String {
+        L("\(name)は \(VisitedPrefectures.maxCount) 回までです", "\(name) is limited to \(VisitedPrefectures.maxCount)")
+    }
+
     static var sameDayTitle: String { L("今日は記録済みです", "Already recorded today") }
     static var sameDayQuestion: String { L("もう 1 回足しますか", "Add another visit?") }
     static var sameDayAdd: String { L("足す", "Add") }

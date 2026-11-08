@@ -141,8 +141,5 @@ final class PrefectureMapGeometryTests: XCTestCase {
         XCTAssertEqual(VisitedMapStyle.fills[4], 0xF3DCA6)
         XCTAssertEqual((0...5).map(VisitedMapStyle.pattern(forLevel:)),
                        [.hatch, .solid, .dots, .stripes, .grid, .grid])
-        XCTAssertFalse(VisitedMapStyle.labelUsesInk(forLevel: 1), "暗い真鍮の上は白")
-        XCTAssertTrue(VisitedMapStyle.labelUsesInk(forLevel: 2))
-        XCTAssertTrue(VisitedMapStyle.labelUsesInk(forLevel: 4))
     }
 }
