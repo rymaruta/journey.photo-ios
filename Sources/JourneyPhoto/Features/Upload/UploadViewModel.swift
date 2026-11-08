@@ -1749,7 +1749,7 @@ final class UploadViewModel: ObservableObject {
         /// 元の写真が付かなかった（`UploadOutcome.inspiredDropped`）。投稿は成功なので失敗に数えない
         var inspiredDropped = false
         /// 旅のトランクのラベル（2026-10-17）。届いた順と、手持ちがいっぱいで届かなかったか
-        var dealtLabels: [(label: TrunkLabel, title: String)] = []
+        var dealtLabels: [(label: TrunkLabel, title: String, photoURL: URL?, shareable: Bool)] = []
         /// 届かなかった理由の一言（手持ちがいっぱい・トランクの容量）。ほかの理由は黙る
         var labelNotice: TrunkArrivals.Notice?
         /// 届いた硬貨の数（公開の投稿1件で1枚・2026-10-17 次の版）
@@ -1788,7 +1788,7 @@ final class UploadViewModel: ObservableObject {
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
                 if outcome.inspiredDropped { inspiredDropped = true }
-                if let label = outcome.label { dealtLabels.append((label, outcome.title)) }
+                if let label = outcome.label { dealtLabels.append((label, outcome.title, outcome.photoURL, outcome.shareable)) }
                 if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
                 dealtCoins += outcome.coin
                 camperAdded += outcome.camperAdded
@@ -1821,7 +1821,8 @@ final class UploadViewModel: ObservableObject {
         // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す（`RootView` が待つ）。
         // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
         // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
-        TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title) },
+        TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title,
+                                                              photoURL: $0.photoURL, shareable: $0.shareable) },
                                      notice: labelNotice, coins: dealtCoins)
         // とおまわり号（2026-10-19 第2段）: 投稿で届いた部品を本人の控えに入れる（車の画面の「届いた」で見せる）
         CamperStore.receive(camperAdded, userId: savedPhotoOwner ?? draftOwner)
@@ -1958,6 +1959,10 @@ final class UploadViewModel: ObservableObject {
         var camperAdded: [String] = []
         /// 送った題（届いた画面の「「…」を投稿したお礼です」）
         var title = ""
+        /// 保存の応答の写真の一覧用の画像（届いた画面の写真・2026-11-08）
+        var photoURL: URL?
+        /// 写真へのリンクを共有してよい投稿か（届いた画面の副ボタン）
+        var shareable = false
     }
 
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
@@ -2007,6 +2012,8 @@ final class UploadViewModel: ObservableObject {
         do {
             let saved = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
             photo = saved.photo
+            outcome.photoURL = saved.photo?.gridImageURL
+            outcome.shareable = ThreadsShare.isEligible(published: draft.published, audience: draft.audience)
             outcome.label = saved.label
             outcome.labelSkipped = saved.labelSkipped
             outcome.coin = saved.coin

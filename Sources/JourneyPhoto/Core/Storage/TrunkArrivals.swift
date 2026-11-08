@@ -29,6 +29,11 @@ final class TrunkArrivals: ObservableObject {
         let label: TrunkLabel
         /// 投稿した写真の題（空なら「写真」と言う）
         let photoTitle: String
+        /// 投稿した写真の一覧用の画像（届いた画面で「写真 → ラベルが落ちる」の写真に使う・2026-11-08）。無ければ写真は出さない
+        var photoURL: URL? = nil
+        /// 写真へのリンクを共有してよい投稿か（公開・全体に公開だけ・`ThreadsShare.isEligible` と同じ決まり）。
+        /// 既定は false＝共有の副ボタンを出さない
+        var shareable = false
     }
 
     /// 届いた画面に出す束（先頭が大きく出る1枚・残りは「ほかに N 枚」）
@@ -108,8 +113,8 @@ final class TrunkArrivals: ObservableObject {
     }
 
     /// 下書きを公開した・投稿した応答の配った結果を渡す（`TrunkDealt`）
-    func deliver(_ dealt: TrunkDealt, photoTitle: String, now: Date = Date()) {
-        deliver(dealt.label.map { [Arrival(label: $0, photoTitle: photoTitle)] } ?? [],
+    func deliver(_ dealt: TrunkDealt, photoTitle: String, photoURL: URL? = nil, now: Date = Date()) {
+        deliver(dealt.label.map { [Arrival(label: $0, photoTitle: photoTitle, photoURL: photoURL)] } ?? [],
                 notice: Notice(dealt.labelSkipped), coins: dealt.coin, now: now)
     }
 

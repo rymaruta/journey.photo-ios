@@ -198,7 +198,8 @@ struct NotificationsView: View {
                     // 同じ写真へのいいねは1行にまとめる（板の「ほか N人」）。
                     // まとめるのは見出しの中だけ——昨日のいいねを今日の行に
                     // 吸い込むと、見出しの「今日」が嘘になる
-                    ForEach(NotificationText.collapse(group.rows, unreadIds: model.unreadIds)) { entry in
+                    ForEach(NotificationText.collapse(group.rows, unreadIds: model.unreadIds,
+                                                          firstReactions: model.firstReactions)) { entry in
                         rowLink(entry)
                             // v2: 行の間に線を引かない（板）。左の 20 は未読の真鍮の点の居場所
                             .listRowBackground(Color.clear)
@@ -401,7 +402,8 @@ private struct NotificationRow: View {
     /// （アイコン・フォローバックとは横に並ぶ別のボタン＝入れ子にしない）
     @ViewBuilder
     private func main(_ line: NotificationText.Line) -> some View {
-        let label = entry.unread ? L("未読、", "Unread, ") + line.plain : line.plain
+        var label = entry.unread ? L("未読、", "Unread, ") + line.plain : line.plain
+        if let first = entry.firstReaction { label = first.eyebrow + "。" + first.note + "。" + label }
         if let onOpen {
             Button(action: onOpen) { mainContent(line) }
                 .buttonStyle(.plain)
@@ -416,6 +418,18 @@ private struct NotificationRow: View {
     private func mainContent(_ line: NotificationText.Line) -> some View {
             HStack(spacing: JPSpace.s) {
                 VStack(alignment: .leading, spacing: 2) {
+                    // 初めてのいいね・コメントは、その人に一度だけ真鍮の小さな印と眉ラベルを添える（2026-11-08・案 A）。
+                    // 印だけに頼らず字でも言う。黒地の上なので真鍮
+                    if let first = entry.firstReaction {
+                        HStack(spacing: JPSpace.xxs) {
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 11, weight: .semibold))
+                                .accessibilityHidden(true)
+                            Text(first.eyebrow).jpEyebrow()
+                        }
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityIdentifier("notifications.firstReaction")
+                    }
                     // 新しいメダルは眉ラベル（黒地の上なので真鍮・板 15）
                     if notification.kind == .badge {
                         Text("NEW MEDAL")
@@ -427,6 +441,11 @@ private struct NotificationRow: View {
                     (Text(line.who).bold().foregroundStyle(WebTheme.text)
                         + Text(line.rest).foregroundStyle(WebTheme.text2))
                         .font(JPFont.body)
+                    if let first = entry.firstReaction {
+                        Text(first.note)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text2)
+                    }
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
                             .font(JPFont.caption)
@@ -601,6 +620,9 @@ final class NotificationsViewModel: ObservableObject {
     /// 未読の行（真鍮の点）。**既読にする前の数から決める**——開いたときに
     /// 既読化するので、`unread` はすぐ 0 になる。読み直すまでは点を残す
     @Published private(set) var unreadIds: Set<String> = []
+    /// その人にとって初めてのいいね・コメントの行（行の id → 種類・2026-11-08・`FirstReaction`）。
+    /// 端末の控えで決まる＝一度だけ。読めた一覧のたびに決め直すが、控えが在れば同じ行のまま
+    @Published private(set) var firstReactions: [String: FirstReaction.Kind] = [:]
     /// いまフォローしている人。**フォローバックを出すかの判断だけに使う**
     ///
     /// **nil は「まだ分からない」**（読めていない・読めなかった）。空集合と
@@ -651,6 +673,7 @@ final class NotificationsViewModel: ObservableObject {
         mine = []
         unread = 0
         unreadIds = []
+        firstReactions = [:]
         following = nil
         liveStoryIds = nil
         isLoading = false
@@ -808,6 +831,22 @@ final class NotificationsViewModel: ObservableObject {
         return true
     }
 
+    /// 初めてのいいね・コメントの印を決める（`FirstReaction.resolve`）。見本の入り方（`-JPPreviewFirstReaction`）では
+    /// 控えに書かず、見本の行に印を付ける
+    func noteFirstReactions(_ items: [AppNotification], viewerId: String?) {
+        #if DEBUG
+        if PreviewSession.opensFirstReaction {
+            if let like = items.first(where: { $0.kind == .like }) {
+                firstReactions = [like.id: .like]
+            } else {
+                firstReactions = [:]
+            }
+            return
+        }
+        #endif
+        firstReactions = FirstReaction.resolve(rows: items, userId: viewerId)
+    }
+
     /// 手元の一覧を書いてよい回か（より新しい回が書いていたら false）
     func claimPools(_ generation: Int) -> Bool {
         guard generation >= poolsGeneration else { return false }
@@ -839,6 +878,14 @@ final class NotificationsViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         defer { if generation == self.generation { isLoading = false } }
+        #if DEBUG
+        // 画面写真の見本（`-JPPreviewFirstReaction YES`）: サーバーには何も送らず、見本の 3 行を出す
+        if PreviewSession.opensFirstReaction {
+            let page = Self.previewFirstReactionPage()
+            if apply(page, refreshing: refreshing, generation: generation) { noteFirstReactions(page.items, viewerId: viewerId) }
+            return false
+        }
+        #endif
         do {
             // 一覧は控えから即返るので、押し先の引き当てのために先に読む
             // **より新しい回が書いたあとの一覧を、古い回で上書きしない**
@@ -854,6 +901,7 @@ final class NotificationsViewModel: ObservableObject {
             let page = try await environment.notifications.fetch()
             // 古い読み込みは画面に移さない（既読化も新しい方に任せる）
             guard apply(page, refreshing: refreshing, generation: generation) else { return false }
+            noteFirstReactions(page.items, viewerId: viewerId)
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
             await loadFollowing(environment: environment, viewerId: viewerId, era: era)
@@ -893,4 +941,21 @@ final class NotificationsViewModel: ObservableObject {
             return false
         }
     }
+
+    #if DEBUG
+    /// 画面写真の見本の 3 行（初めてのいいね・コメント・フォロー）。時刻は今から数える
+    static func previewFirstReactionPage(now: Date = Date()) -> NotificationService.Page {
+        let formatter = ISO8601DateFormatter()
+        func row(_ type: String, _ name: String, _ id: String, hoursAgo: Double, photo: Bool = true) -> AppNotification {
+            let t = formatter.string(from: now.addingTimeInterval(-hoursAgo * 3600))
+            let photoField = photo ? ",\"photoId\":\"p1\"" : ""
+            let json = "{\"type\":\"\(type)\",\"t\":\"\(t)\",\"byId\":\"\(id)\",\"byName\":\"\(name)\"\(photoField)}"
+            return (try? JSONDecoder.api.decode(AppNotification.self, from: Data(json.utf8)))!
+        }
+        return NotificationService.Page(items: [row("like", "Aki", "u1", hoursAgo: 1),
+                                                row("comment", "Mika", "u2", hoursAgo: 3),
+                                                row("follow", "Ren", "u3", hoursAgo: 30, photo: false)],
+                                        unread: 2)
+    }
+    #endif
 }

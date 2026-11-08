@@ -255,7 +255,16 @@ private func varietyUnlock(_ n: Int) -> CamperRoomUnlock {
     case 10: return .topic(.food, step)
     case 11: return .topic(.book, step)
     case 12: return .spring(2 * step)
-    default: return .sameDay(3 * step)
+    default:
+        // 2026-11-08 判断（楽しさの案 B）: 同じ日に何枚も撮る条件の、段が偶数のぶんを「秋」と「季節をまたぐ」に替える。
+        // 秋の写真の条件が無く、季節の条件が春・夏・冬だけだった。同じ日 6 枚以上（段 2・4・6）は日を選ぶ撮り方なので、
+        // 季節を巡る撮り方に開く。段が奇数（3・9・15 枚）は今までどおり
+        switch step {
+        case 2: return .autumn(4)
+        case 4: return .seasons(3)
+        case 6: return .seasons(4)
+        default: return .sameDay(3 * step)
+        }
     }
 }
 

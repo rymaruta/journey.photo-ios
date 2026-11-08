@@ -142,6 +142,11 @@ enum CamperRoomCategory: String, CaseIterable, Codable, Sendable {
 struct CamperRoomStats: Equatable, Sendable {
     /// 春（3〜5 月）の写真
     var springShots = 0
+    /// 秋（9〜11 月）の写真（2026-11-08・楽しさの案 B）
+    var autumnShots = 0
+    /// 写真を撮った季節の数（春 3〜5・夏 6〜8・秋 9〜11・冬 12〜2 月のうち、1 枚でも撮った季節。0〜4）。
+    /// 撮った日が読めない写真は数えない（取りこぼしは「無い」方へ倒す）
+    var seasonsShot = 0
     /// 雪・市場・寺・和室・料理・本・星空・教会の写真
     var topics: [CamperRoomTopic: Int] = [:]
     /// 同じ日に撮った写真のいちばん多い数
@@ -192,6 +197,10 @@ enum CamperRoomUnlock: Equatable, Sendable {
     case spring(Int)
     /// 同じ日に撮った枚数
     case sameDay(Int)
+    /// 秋の写真の枚数（2026-11-08）
+    case autumn(Int)
+    /// 撮った季節の数（春夏秋冬のうち n 季節・2026-11-08）
+    case seasons(Int)
 
     var isAvailable: Bool {
         if case .base(let u) = self { return u.isAvailable }
@@ -204,6 +213,8 @@ enum CamperRoomUnlock: Equatable, Sendable {
         case let .topic(t, n): return (r.count(t), n)
         case .spring(let n): return (r.springShots, n)
         case .sameDay(let n): return (r.sameDayMax, n)
+        case .autumn(let n): return (r.autumnShots, n)
+        case .seasons(let n): return (r.seasonsShot, n)
         }
     }
 
@@ -227,6 +238,8 @@ enum CamperRoomUnlock: Equatable, Sendable {
             return n <= 1 ? L("\(t.name)の写真", "A \(t.name) photo") : L("\(t.name)の写真 \(n) 枚", "Photos of \(t.name): \(n)")
         case .spring(let n): return L("春の写真 \(n) 枚", "Spring photos: \(n)")
         case .sameDay(let n): return L("同じ日に \(n) 枚撮る", "Photos in one day: \(n)")
+        case .autumn(let n): return L("秋の写真 \(n) 枚", "Autumn photos: \(n)")
+        case .seasons(let n): return L("\(n) つの季節に撮る", "Photos in \(n) seasons")
         }
     }
 
@@ -587,6 +600,7 @@ enum CamperRoomCounting {
     static func stats(_ photos: [Photo]) -> CamperRoomStats {
         var r = CamperRoomStats()
         var days: [String: Int] = [:]
+        var seasons = Set<Int>()
         for p in photos {
             // 地名を外した文（「国分寺市」の寺・「星ヶ丘」の星に当たらない）。市場と料理は「〜市場」「朝市」が市の名前として
             // 外されるので、外す前の文で読む
@@ -599,10 +613,24 @@ enum CamperRoomCounting {
             }
             if let t = CamperCounting.shotTime(p.exif?.dateTimeOriginal ?? p.date) {
                 if (3...5).contains(t.month) { r.springShots += 1 }
+                if (9...11).contains(t.month) { r.autumnShots += 1 }
+                // 季節の区切りは外まわりの `CamperStats`（夏 6〜8・冬 12〜2）と同じ
+                seasons.insert(CamperRoomCounting.season(ofMonth: t.month))
                 days[t.day, default: 0] += 1
             }
         }
         r.sameDayMax = days.values.max() ?? 0
+        r.seasonsShot = seasons.count
         return r
+    }
+
+    /// 月から季節の番号（0 春・1 夏・2 秋・3 冬）。春 3〜5・夏 6〜8・秋 9〜11・冬 12〜2
+    static func season(ofMonth month: Int) -> Int {
+        switch month {
+        case 3...5: return 0
+        case 6...8: return 1
+        case 9...11: return 2
+        default: return 3
+        }
     }
 }
