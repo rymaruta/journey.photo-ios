@@ -230,13 +230,14 @@ struct TrunkStickView: View {
             if let s {
                 TrunkBoxView(model: s.effectiveModel, posts: s.posts ?? 0, stuck: stuck, ownerName: ownerName,
                              parts: s.equipped, overrides: overrides, hidden: carry.flatMap { $0.fromTray ? nil : $0.label.id },
-                             wrinkles: wrinkles, pop: pop, popScale: popScale)
+                             wrinkles: wrinkles, pop: pop, popScale: popScale, tagPicks: s.tagPicks)
                     .scaleEffect(layout.scale, anchor: .topLeading)
                     .frame(width: size.w, height: size.h, alignment: .topLeading)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: s.effectiveModel,
                                                                      labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: s.posts ?? 0).count,
+                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: s.posts ?? 0,
+                                                                                           picks: s.tagPicks).count,
                                                                      equipped: s.equipped))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityIdentifier("trunk.stick.trunk")

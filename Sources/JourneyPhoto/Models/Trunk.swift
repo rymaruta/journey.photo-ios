@@ -291,6 +291,49 @@ struct TrunkPendingReroll: Equatable {
     let seeds: [Int]
 }
 
+/// 手荷物タグの枠ごとの選び（2026-11-08 owner 承認・札 #501）。サーバーの `tagPicks` の1要素:
+/// `""` = おまかせ（新しいラベルから自動）・`"_"` = その枠にタグを吊るさない・それ以外 = 貼ったラベルの id
+/// （人のトランクでは、その返答の中の番号 `s<n>`）
+enum TrunkTagPick: Equatable, Hashable {
+    case auto
+    /// 「タグを外す」: その枠には何も吊るさない
+    case removed
+    case label(String)
+
+    /// サーバーの「その枠にタグを吊るさない」の印（`TAG_PICK_NONE`）
+    static let removedToken = "_"
+    /// 枠の数の上限（サーバーの `TAG_PICKS_MAX`・`TrunkLooks.tagSlots` の数）
+    static let maxSlots = 3
+
+    init(wire: String) {
+        switch wire {
+        case "": self = .auto
+        case Self.removedToken: self = .removed
+        default: self = .label(wire)
+        }
+    }
+
+    var wire: String {
+        switch self {
+        case .auto: return ""
+        case .removed: return Self.removedToken
+        case .label(let id): return id
+        }
+    }
+
+    /// 枠の順の選び。末尾のおまかせは持たず、枠の数までに収める（サーバーの保存の形と同じ）
+    static func normalized(_ picks: [TrunkTagPick]) -> [TrunkTagPick] {
+        var out = Array(picks.prefix(maxSlots))
+        while out.last == .auto { out.removeLast() }
+        return out
+    }
+
+    /// 線の上の文字の並びから（形の違うものは作らない＝おまかせ）
+    static func list(wire: [String]) -> [TrunkTagPick] {
+        normalized(wire.map { TrunkTagPick(wire: $0) })
+    }
+}
+
 /// `GET /user/trunk` の応答（書き込みの口も同じ形で、`posts` だけが無い）
 struct TrunkState: Decodable, Equatable {
     /// 選んでいる型（Pro をやめても保存は残る）
@@ -327,12 +370,17 @@ struct TrunkState: Decodable, Equatable {
     let supportsSharing: Bool
     /// わたしの乗車券（人のトランクの中に出す1枚・サーバーに置いたもの）。置いていなければ nil
     let ticket: TrunkTicket?
+    /// 手荷物タグの枠ごとの選び（2026-11-08・サーバーが、はがした枠を直して返す）。無ければ全部おまかせ
+    let tagPicks: [TrunkTagPick]
+    /// サーバーがタグの選びに対応しているか。**応答に `tagPicks` の欄があるか**で決める（対応したサーバーはいつも返す）。
+    /// 対応していない間は、選ぶ口を出さず、PUT も送らない（旧サーバーが黙って捨てる設定を「保存した」と言わない）
+    let supportsTagPicks: Bool
 
     init(model: TrunkModel, effectiveModel: TrunkModel? = nil, pocket: [TrunkLabel], stuck: [TrunkLabel],
          limit: Int, isPro: Bool, rerollsLeft: Int, pendingReroll: TrunkPendingReroll? = nil,
          posts: Int?, receiveLabels: Bool, coins: Int = 0, parts: [String] = [], fragments: Int = 0,
          equipped: TrunkEquipped = .none, showTrunk: Bool = true, ticket: TrunkTicket? = nil,
-         supportsSharing: Bool = true) {
+         supportsSharing: Bool = true, tagPicks: [TrunkTagPick] = [], supportsTagPicks: Bool = true) {
         self.model = model
         self.effectiveModel = effectiveModel ?? model
         self.pocket = pocket
@@ -350,6 +398,8 @@ struct TrunkState: Decodable, Equatable {
         self.showTrunk = showTrunk
         self.ticket = ticket
         self.supportsSharing = supportsSharing
+        self.tagPicks = TrunkTagPick.normalized(tagPicks)
+        self.supportsTagPicks = supportsTagPicks
     }
 
     /// 同じ状態で一部だけ替えたもの（端末の中の移り変わり・ガチャの結果を足す）
@@ -357,7 +407,8 @@ struct TrunkState: Decodable, Equatable {
               effectiveModel: TrunkModel? = nil, rerollsLeft: Int? = nil,
               pendingReroll: TrunkPendingReroll?? = nil, posts: Int?? = nil, receiveLabels: Bool? = nil,
               coins: Int? = nil, parts: [String]? = nil, fragments: Int? = nil,
-              equipped: TrunkEquipped? = nil, showTrunk: Bool? = nil, ticket: TrunkTicket?? = nil) -> TrunkState {
+              equipped: TrunkEquipped? = nil, showTrunk: Bool? = nil, ticket: TrunkTicket?? = nil,
+              tagPicks: [TrunkTagPick]? = nil) -> TrunkState {
         TrunkState(model: model ?? self.model, effectiveModel: effectiveModel ?? self.effectiveModel,
                    pocket: pocket ?? self.pocket, stuck: stuck ?? self.stuck, limit: limit, isPro: isPro,
                    rerollsLeft: rerollsLeft ?? self.rerollsLeft,
@@ -365,7 +416,8 @@ struct TrunkState: Decodable, Equatable {
                    posts: posts == nil ? self.posts : posts!, receiveLabels: receiveLabels ?? self.receiveLabels,
                    coins: coins ?? self.coins, parts: parts ?? self.parts, fragments: fragments ?? self.fragments,
                    equipped: equipped ?? self.equipped, showTrunk: showTrunk ?? self.showTrunk,
-                   ticket: ticket == nil ? self.ticket : ticket!, supportsSharing: supportsSharing)
+                   ticket: ticket == nil ? self.ticket : ticket!, supportsSharing: supportsSharing,
+                   tagPicks: tagPicks ?? self.tagPicks, supportsTagPicks: supportsTagPicks)
     }
 
     /// 持っている部品（台帳の順ではなく、届いた新しい順）
@@ -377,7 +429,7 @@ struct TrunkState: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case model, effectiveModel, pocket, stuck, limit, isPro, rerolls, pendingReroll, posts, receiveLabels
-        case coins, parts, fragments, equipped, showTrunk, ticket
+        case coins, parts, fragments, equipped, showTrunk, ticket, tagPicks
     }
     private enum RerollKeys: String, CodingKey { case left, month }
     private enum PendingKeys: String, CodingKey { case labelId, seeds }
@@ -433,6 +485,10 @@ struct TrunkState: Decodable, Equatable {
         supportsSharing = shows != nil
         showTrunk = shows ?? false
         ticket = (try? c.decodeIfPresent(Lenient<TrunkTicket>.self, forKey: .ticket))??.value
+        // 手荷物タグの選び（2026-11-08）。**包みで読む**。欄が無ければ、サーバーが対応していない（全部おまかせ・選ぶ口を出さない）
+        let picks = (try? c.decodeIfPresent([Lenient<String>].self, forKey: .tagPicks)) ?? nil
+        supportsTagPicks = picks != nil
+        tagPicks = TrunkTagPick.list(wire: picks?.map { $0.value ?? "" } ?? [])
     }
 
     /// ほかの人に見えているか（サーバーが対応していて、見せる設定がオン）

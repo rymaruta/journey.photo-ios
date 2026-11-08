@@ -3363,6 +3363,47 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **手荷物タグを自分で選ぶ**（2026-11-08・札 #501）: トランクの行 → 枠の一覧 → ラベルを選ぶシート → 完了 → タグを外す。
+    /// 入口が無ければ落とす
+    func testCapturesTrunkTags() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.tags.open") else { return XCTFail("「手荷物タグ」の入口が無い") }
+        let slot = app.buttons["trunk.tags.slot.1"].firstMatch
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("手荷物タグの画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99t-手荷物タグ")
+        XCTAssertGreaterThanOrEqual(slot.frame.height, 44, "枠の行が 44pt 未満")
+        slot.tap()
+        let done = app.buttons["trunk.tags.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("載せるラベルを選ぶシートが開かない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99u-手荷物タグ（載せるラベルを選ぶ）")
+        for id in ["trunk.tags.auto", "trunk.tags.remove", "trunk.tags.done"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        // 押せる行（使用中・地名なしは押せない）の最初の1つを選ぶ
+        let picks = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'trunk.tags.pick.' AND enabled == true"))
+        if picks.count > 0 {
+            let pick = picks.element(boundBy: picks.count - 1)
+            XCTAssertGreaterThanOrEqual(pick.frame.height, 44, "ラベルの行が 44pt 未満")
+            pick.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "99v-手荷物タグ（ラベルを選んだ）")
+        }
+        done.tap()
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("完了のあとに枠の一覧へ戻らない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99w-手荷物タグ（選んだあと）")
+        slot.tap()
+        let remove = app.buttons["trunk.tags.remove"].firstMatch
+        guard remove.waitForExistence(timeout: 10) else { return XCTFail("シートが開き直せない") }
+        remove.tap()
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("タグを外したあとに枠の一覧へ戻らない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99x-手荷物タグ（タグを外した）")
+    }
+
     /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。
     /// 付け替えの画面で錠前を替え、トランクに付けた錠前の形も撮る。タブが無ければ落とす
     func testCapturesTrunkPartsKinds() {

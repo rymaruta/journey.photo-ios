@@ -97,7 +97,7 @@ struct TrunkModelCard: View {
                 // 絵のラベルは2枚に減らしても、手荷物タグは全部のラベルから（ほかの画面とタグを割らない）
                 let preview = TrunkLooks.modelsPreview(state.stuck, count: 2)
                 TrunkFigure(model: trunk, posts: state.posts ?? 0, stuck: preview.stuck,
-                            ownerName: ownerName, width: 140, tagsFrom: preview.tagsFrom)
+                            ownerName: ownerName, width: 140, tagsFrom: preview.tagsFrom, tagPicks: state.tagPicks)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(info.name)
@@ -211,7 +211,8 @@ struct TrunkProModelsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 let preview = TrunkLooks.modelsPreview(state?.stuck ?? [], count: 3)
                 TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
-                               ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom)
+                               ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom,
+                               tagPicks: state?.tagPicks ?? [])
                     .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {

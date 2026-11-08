@@ -131,6 +131,9 @@ struct TheirTrunk: Decodable, Equatable {
     let card: Card?
     /// わたしの乗車券（置いた写真が今も公開のときだけ）
     let ticket: TrunkTicket?
+    /// 手荷物タグの枠ごとの選び（2026-11-08）。ラベルは `stuck` の `id`（この返答の中の番号）で指す。
+    /// 地名を見せていないラベルを選んでいた枠・欄の無い応答（旧サーバー）は全部おまかせ
+    let tagPicks: [TrunkTagPick]
 
     struct Card: Equatable {
         /// 今 Pro か
@@ -138,7 +141,8 @@ struct TheirTrunk: Decodable, Equatable {
     }
 
     init(userId: String, model: TrunkModel, stuck: [TrunkLabel], equipped: TrunkEquipped = .none, posts: Int? = nil,
-         places: [String: String] = [:], badges: BadgeSet = BadgeSet(), card: Card? = nil, ticket: TrunkTicket? = nil) {
+         places: [String: String] = [:], badges: BadgeSet = BadgeSet(), card: Card? = nil, ticket: TrunkTicket? = nil,
+         tagPicks: [TrunkTagPick] = []) {
         self.userId = userId
         self.model = model
         self.stuck = stuck
@@ -148,6 +152,7 @@ struct TheirTrunk: Decodable, Equatable {
         self.badges = badges
         self.card = card
         self.ticket = ticket
+        self.tagPicks = TrunkTagPick.normalized(tagPicks)
     }
 
     /// 古び方に渡す投稿の数
@@ -160,7 +165,7 @@ struct TheirTrunk: Decodable, Equatable {
     /// ラベルの写真を引く土地の名前（地名の無いラベルは nil）
     func place(of label: TrunkLabel) -> String? { places[label.id] }
 
-    private enum CodingKeys: String, CodingKey { case userId, model, stuck, equipped, posts, inside }
+    private enum CodingKeys: String, CodingKey { case userId, model, stuck, equipped, posts, inside, tagPicks }
     private enum InsideKeys: String, CodingKey { case badges, card, ticket }
     private enum CardKeys: String, CodingKey { case pro }
 
@@ -210,6 +215,8 @@ struct TheirTrunk: Decodable, Equatable {
                   // 人の部品箱は来ないので、台帳と場所だけで確かめる
                   equipped: rawEquipped.sanitized(owned: nil),
                   posts: LenientInt.read(c, .posts).map { max(0, $0) },
-                  places: places, badges: badges, card: card, ticket: ticket)
+                  places: places, badges: badges, card: card, ticket: ticket,
+                  tagPicks: TrunkTagPick.list(wire: (((try? c.decodeIfPresent([Lenient<String>].self, forKey: .tagPicks)) ?? nil) ?? [])
+                      .map { $0.value ?? "" }))
     }
 }
