@@ -35,10 +35,15 @@ enum TrunkStyle {
         .ignoresSafeArea()
     }
 
+    static let glowStrongCenter = 0.34
+    static let glowStrongEdge = 0.09
+
     /// ラベルの後ろの真鍮の淡い光（`radial-gradient(closest-side, rgba(201,166,107,0.22), …0.05 60%, transparent)`）
-    static func glow(width: Double, height: Double) -> some View {
-        EllipticalGradient(stops: [Gradient.Stop(color: WebTheme.accent.opacity(0.22), location: 0),
-                                   Gradient.Stop(color: WebTheme.accent.opacity(0.05), location: 0.6),
+    ///
+    /// `strong` は節目と箔押しのとき（2026-11-08・案 A）。中心 0.22 → 0.34、すそ 0.05 → 0.09 の一段だけ強くする
+    static func glow(width: Double, height: Double, strong: Bool = false) -> some View {
+        EllipticalGradient(stops: [Gradient.Stop(color: WebTheme.accent.opacity(strong ? glowStrongCenter : 0.22), location: 0),
+                                   Gradient.Stop(color: WebTheme.accent.opacity(strong ? glowStrongEdge : 0.05), location: 0.6),
                                    Gradient.Stop(color: Color.clear, location: 1)],
                            center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
             .frame(width: width, height: height)

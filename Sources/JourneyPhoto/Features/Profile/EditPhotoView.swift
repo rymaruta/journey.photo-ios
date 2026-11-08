@@ -700,7 +700,8 @@ struct EditPhotoView: View {
             // 旅のトランク（2026-10-17）: 下書きを初めて公開した回は、投稿と同じく届いた画面（または一言）を出す。
             // 出すのはこの画面が閉じてから（`RootView` が待つ）
             if patch.published == true {
-                TrunkArrivals.shared.deliver(dealt, photoTitle: title.trimmingCharacters(in: .whitespacesAndNewlines))
+                TrunkArrivals.shared.deliver(dealt, photoTitle: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                             photoURL: photo.gridImageURL)
             }
             // とおまわり号（2026-10-19 第2段）: 写真の編集の応答で届いた部品（`camper.added`）を本人の控えに入れる。
             // 控えの持ち主は写真の持ち主か、**送る前に取った** `owner`（待っている間に人が替わっても別の人の控えに入れない）

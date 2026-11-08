@@ -3124,6 +3124,10 @@ final class ScreenshotTests: XCTestCase {
         guard stick.waitForExistence(timeout: 30) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "96-ラベルが届いた")
+        // 静かな祝い（2026-11-08・案 A）: 動きのあと、事実の一文が出ている（見本は「京都、はじめての1枚です」）
+        let fact = app.staticTexts["trunk.arrived.fact"].firstMatch
+        XCTAssertTrue(fact.exists, "ラベルが届いた画面に、事実の一文が出ていない")
+        XCTAssertTrue(fact.label.contains("はじめて") || fact.label.lowercased().contains("first"), "一文が「はじめて」を言っていない: \(fact.label)")
         let keep = app.buttons["trunk.arrived.keep"].firstMatch
         let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
         let close = app.buttons["trunk.arrived.close"].firstMatch
@@ -3139,6 +3143,23 @@ final class ScreenshotTests: XCTestCase {
         // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
         Thread.sleep(forTimeInterval: 4)
         XCTAssertFalse(stick.exists, "「手持ちに入れておく」で閉じたあと、届いた画面がまた出た")
+    }
+
+    /// **はじめてのいいね**（お知らせ・`-JPPreviewFirstReaction`・2026-11-08・案 A）。見本の行は必ず出るが、
+    /// お知らせが開けなければ撮らずに抜ける。出たのに「はじめて」の一言が無いなら落とす
+    func testCapturesFirstReaction() {
+        let app = launchTrunk(["-JPPreviewFirstReaction", "YES"])
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 30), bell.isHittable else { return }
+        bell.tap()
+        let mark = app.descendants(matching: .any)["notifications.firstReaction"].firstMatch
+        guard mark.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "96e-はじめてのいいね（お知らせ）")
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'はじめて'")).firstMatch
+        XCTAssertTrue(note.exists, "「はじめて」の一言が出ていない")
+        let close = app.buttons["notifications.close"].firstMatch
+        if close.exists, close.isHittable { close.tap() }
     }
 
     // MARK: - はじめての硬貨（2026-10-18 owner 承認）
