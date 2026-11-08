@@ -1689,9 +1689,13 @@ struct StoryComposerView: View {
 
     // MARK: - 撮影地の札（札 #499）
 
-    /// どれかの写真に付けた撮影地の札があるか（固定の札を出さない・`PlaceSticker`）
+    /// いま見ている1枚に付けた撮影地の札があるか（固定の札を出さない・`PlaceSticker`）
+    ///
+    /// **写真ごとに判定する**（見ている1枚）。見る画面は写真ごとに `locationOnPhoto` で固定の札を出し分けるので、
+    /// 作る画面も同じ規則にそろえる（札の無い2枚目では、見る画面と同じく固定の撮影地の札が出る）
     private var placeOnPhoto: Bool {
-        PlaceSticker.isOnAnyPhoto(shots.map(\.overlays), location: place.location)
+        guard shots.indices.contains(current) else { return false }
+        return PlaceSticker.isOnPhoto(shots[current].overlays, location: place.location)
     }
 
     /// 撮影地を決める・直す・外す。**写真の上の札も合わせる**——決めたらいま見ている1枚に動かせる札を置き、

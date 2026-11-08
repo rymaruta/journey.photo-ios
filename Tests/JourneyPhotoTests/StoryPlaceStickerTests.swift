@@ -142,3 +142,37 @@ final class StoryPlaceStickerTests: XCTestCase {
         XCTAssertTrue(try story(#","locationOnPhoto":false"#).showsLocationCard)
     }
 }
+
+/// 札 #499 の直し: 焼き込み済みの1本の撮影スポットへの導線と、写真ごとの判定
+final class StoryPlaceLinkTests: XCTestCase {
+    func testEntryOnlyWhenBakedAndLinked() {
+        XCTAssertEqual(StoryPlaceLink.entry(showsCard: false, location: "高屋神社", spotLinked: true), "高屋神社")
+        XCTAssertNil(StoryPlaceLink.entry(showsCard: false, location: "高屋神社", spotLinked: false), "結べないのに導線を出している")
+        XCTAssertNil(StoryPlaceLink.entry(showsCard: true, location: "高屋神社", spotLinked: true), "固定の札と二重に導線を出している")
+        XCTAssertNil(StoryPlaceLink.entry(showsCard: false, location: nil, spotLinked: true))
+        XCTAssertNil(StoryPlaceLink.entry(showsCard: false, location: "", spotLinked: true))
+    }
+
+    private func repo(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 作る画面・送信・見る画面が同じ規則（写真ごと）。作る画面は見ている1枚で判定する
+    func testComposerDecidesPerShot() throws {
+        let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("PlaceSticker.isOnPhoto(shots[current].overlays, location: place.location)"))
+        XCTAssertFalse(composer.contains("private var placeOnPhoto: Bool {\n        PlaceSticker.isOnAnyPhoto"),
+                       "どれかの写真に札があれば全部の写真で固定の札を消している")
+        XCTAssertTrue(composer.contains("locationOnPhoto: PlaceSticker.isOnPhoto(shot.overlays, location: placeText)"))
+    }
+
+    /// 禁止語（PlaceTermWordingTests）を使わない
+    func testEntryWordingAvoidsBannedTerms() throws {
+        let viewer = try repo("Sources/JourneyPhoto/Features/Stories/StoryViewerView.swift")
+        XCTAssertTrue(viewer.contains("撮影スポットを見る"))
+        for banned in ["注目スポット", "撮影地ガイド", "ガイドを見る"] {
+            XCTAssertFalse(viewer.contains("L(\"\(banned)"), banned)
+        }
+    }
+}
