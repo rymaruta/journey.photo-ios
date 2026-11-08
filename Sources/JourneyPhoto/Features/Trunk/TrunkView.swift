@@ -36,7 +36,7 @@ struct TrunkView: View {
                 if let state = model.state {
                     TrunkSpinViewer(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
                                     ownerName: ownerName, parts: state.equipped,
-                                    wrinkles: TrunkWrinkles(userId: auth.userId).strengths)
+                                    wrinkles: TrunkWrinkles(userId: auth.userId).strengths, tagPicks: state.tagPicks)
                 }
             }
             .fullScreenCover(isPresented: $showPaywall, onDismiss: {
@@ -44,6 +44,12 @@ struct TrunkView: View {
                 Task { await model.refreshAfterPaywall(offline: connectivity.isOffline) }
             }) { PaywallView(origin: .trunk) }
             .fullScreenCover(isPresented: $showStick) { TrunkStickView(model: model, ownerName: ownerName) }
+            // タグに載せていたラベルをはがして、その枠がおまかせに戻った（一度だけ知らせる・2026-11-08）
+            .onChange(of: model.tagPickReset) { _, reset in
+                guard reset else { return }
+                model.tagPickReset = false
+                toasts.show(TrunkTagText.pickResetNotice, kind: .info)
+            }
             // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
     }
 
@@ -135,7 +141,8 @@ struct TrunkView: View {
                 // 幅の狭い画面では枠ごと縮める（左右に 6 ずつ）
                 TrunkFigureFit(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
                                ownerName: ownerName, parts: state.equipped,
-                               wrinkles: TrunkWrinkles(userId: auth.userId).strengths, maxWidth: 360)
+                               wrinkles: TrunkWrinkles(userId: auth.userId).strengths, maxWidth: 360,
+                               tagPicks: state.tagPicks)
                     .scaleEffect(1.05)
                     .rotation3DEffect(.degrees(5), axis: (x: 1, y: 0, z: 0), perspective: 0.36)
                     .rotation3DEffect(.degrees(-7), axis: (x: 0, y: 1, z: 0), perspective: 0.36)
@@ -255,7 +262,7 @@ struct TrunkView: View {
             NavigationLink {
                 TrunkOpenView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
                               ownerName: ownerName, parts: state.equipped,
-                              wrinkles: TrunkWrinkles(userId: auth.userId).strengths)
+                              wrinkles: TrunkWrinkles(userId: auth.userId).strengths, tagPicks: state.tagPicks)
             } label: {
                 TrunkMenuRow(title: L("ふたを開ける", "Open the lid"), value: L("中身", "Inside"))
             }
@@ -269,6 +276,7 @@ struct TrunkView: View {
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("trunk.stick.open")
             TrunkStyle.line.frame(height: 1)
+            tagsRow(state)
             NavigationLink {
                 TrunkPartsBoxView(model: model, ownerName: ownerName)
             } label: {
@@ -303,6 +311,26 @@ struct TrunkView: View {
         .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 20)
+    }
+
+    /// 手荷物タグ（2026-11-08 owner 承認・札 #501）。「手荷物タグ n / m 枚」から、枠ごとに載せるラベルを選ぶ画面へ。
+    /// サーバーが選びに対応していない間（`supportsTagPicks` が false）は出さない（保存できない設定を見せない）。
+    /// 区切り線は行の下に付ける（行が無い間は線も無い）
+    @ViewBuilder
+    private func tagsRow(_ state: TrunkState) -> some View {
+        if state.supportsTagPicks {
+            let posts = state.posts ?? 0
+            let shown = TrunkLooks.tags(stuck: state.stuck, posts: posts, picks: state.tagPicks).count
+            NavigationLink {
+                TrunkTagsView(model: model, onStick: { showStick = true })
+            } label: {
+                TrunkMenuRow(title: TrunkTagText.title,
+                             value: TrunkTagText.rowValue(shown: shown, open: TrunkAging.tagCount(posts: posts)))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trunk.tags.open")
+            TrunkStyle.line.frame(height: 1)
+        }
     }
 
     /// 手持ち・型・受け取り（モック: #121212 の札・行 52・#1A1A1A の区切り）

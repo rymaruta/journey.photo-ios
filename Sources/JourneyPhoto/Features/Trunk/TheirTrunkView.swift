@@ -134,7 +134,7 @@ struct TheirTrunkCard: View {
         HStack(spacing: 10) {
             // 板: 360×300 を 0.389 倍（140×117）・少し横を向ける（rotateY -6°）
             TrunkFigure(model: trunk.model, posts: trunk.agingPosts, stuck: trunk.stuck, ownerName: ownerName,
-                        parts: trunk.equipped, width: 140)
+                        parts: trunk.equipped, width: 140, tagPicks: trunk.tagPicks)
                 .rotation3DEffect(.degrees(-6), axis: (x: 0, y: 1, z: 0), perspective: 0.36)
                 .frame(width: 140, height: 117, alignment: .topLeading)
             VStack(alignment: .leading, spacing: 5) {
@@ -210,7 +210,7 @@ struct TheirTrunkView: View {
             .fullScreenCover(isPresented: $showSpin) {
                 if let trunk = model.trunk {
                     TrunkSpinViewer(model: trunk.model, posts: trunk.agingPosts, stuck: trunk.stuck, ownerName: ownerName,
-                                    parts: trunk.equipped)
+                                    parts: trunk.equipped, tagPicks: trunk.tagPicks)
                 }
             }
     }
@@ -302,10 +302,11 @@ struct TheirTrunkView: View {
         let selected = placed.first { $0.label.id == selectedId }
         return ZStack(alignment: .topLeading) {
             TrunkBoxView(model: trunk.model, posts: trunk.agingPosts, stuck: trunk.stuck, ownerName: ownerName,
-                         parts: trunk.equipped)
+                         parts: trunk.equipped, tagPicks: trunk.tagPicks)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(TrunkText.accessibilityLabel(model: trunk.model, labels: placed.count,
-                                                                 tags: TrunkLooks.tags(stuck: trunk.stuck, posts: trunk.agingPosts).count,
+                                                                 tags: TrunkLooks.tags(stuck: trunk.stuck, posts: trunk.agingPosts,
+                                                                                       picks: trunk.tagPicks).count,
                                                                  equipped: trunk.equipped))
                 .accessibilityAddTraits(.isImage)
             // ラベルの id で見分ける（押せる所と読み上げが、読み直しで別のラベルに入れ替わらない・`TrunkSlots.Placed.id`）
@@ -363,7 +364,7 @@ struct TheirTrunkView: View {
             .accessibilityIdentifier("trunk.their.spin")
             NavigationLink {
                 TrunkOpenView(model: trunk.model, posts: trunk.agingPosts, stuck: trunk.stuck, ownerName: ownerName,
-                              parts: trunk.equipped,
+                              parts: trunk.equipped, tagPicks: trunk.tagPicks,
                               theirs: TheirTrunkInside(userId: userId, name: ownerName, handle: handle,
                                                        homeLocation: homeLocation, trunk: trunk, profile: profile,
                                                        photos: photos, preview: model.isPreview))

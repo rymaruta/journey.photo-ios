@@ -23,6 +23,8 @@ final class TrunkViewModel: ObservableObject {
     @Published var actionError: String?
     /// 書き込みの最中（同じボタンを続けて押させない）
     @Published private(set) var busy = false
+    /// タグに載せていたラベルをはがして、その枠がおまかせに戻った（画面が一度だけ知らせて、false に戻す・2026-11-08）
+    @Published var tagPickReset = false
 
     /// 口（画面が `.task` で `bind` する。`@StateObject` の作り始めには環境が無いため）
     private var service: TrunkService?
@@ -231,6 +233,16 @@ final class TrunkViewModel: ObservableObject {
         return await write({ TrunkLocal.setReceive($0, on) }, { try await $0.setReceiveLabels(on) })
     }
 
+    /// 手荷物タグの枠ごとの選びを置く（全部まとめて・2026-11-08）。**サーバーが対応していなければ送らない**
+    /// （旧サーバーは欄を黙って捨てるので、「保存した」と言わない）。失敗したら状態を変えず、一言は `actionError`
+    @discardableResult
+    func setTagPicks(_ picks: [TrunkTagPick]) async -> Bool {
+        guard let current = state, current.supportsTagPicks || preview != nil else { return false }
+        let next = TrunkTagPick.normalized(picks)
+        guard current.tagPicks != next else { return true }
+        return await write({ TrunkLocal.setTagPicks($0, next) }, { try await $0.setTagPicks(next) })
+    }
+
     // MARK: 自分の手で貼る（2026-10-17 次の版）
 
     /// 置き場つきで貼る
@@ -316,8 +328,11 @@ final class TrunkViewModel: ObservableObject {
             return false
         }
         let slots = state.map { TrunkPlacement.slotsBeforeUnstick($0.stuck, removing: id, overrides: overrides) } ?? [:]
-        return await write({ TrunkLocal.unstick($0, id: id, slots: slots) }, { try await $0.unstick(id, slots: slots) },
-                           refusal: { $0.code == "full" ? TrunkText.unstickFull : nil })
+        let hadTagPick = state?.tagPicks.contains(.label(id)) ?? false
+        let done = await write({ TrunkLocal.unstick($0, id: id, slots: slots) }, { try await $0.unstick(id, slots: slots) },
+                               refusal: { $0.code == "full" ? TrunkText.unstickFull : nil })
+        if done && hadTagPick { tagPickReset = true }
+        return done
     }
 
     /// おまかせで並べる（空いている置き場に、手持ちの新しいものから順に貼る）。貼れた id を返す。
