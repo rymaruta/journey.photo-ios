@@ -101,7 +101,13 @@ final class StoryPlaceMoveTests: XCTestCase {
     }
 
     /// 相手を `trials` 回、上下に交互に運び、動いたかを 1 行ずつ残す
-    private func dragTrials(_ app: XCUIApplication, name: String, find: () -> XCUIElement) {
+    ///
+    /// `horizontal`: 横に運ぶ。**ほかの札と縦に重なる位置へ運ばない**ための向き。縦に運ぶと、運んだ先で別の札
+    /// （文字・撮影地の札）の枠に重なり、次の回の指がそちらを掴む（Mac の run 42447081301:
+    /// song(打った後) #1 は text@0.350 と song@0.385 が重なり、掴まれたのは text で 0.350→0.465 に動き、
+    /// song は 0.385 のまま。ov.begin の kind=text が証拠）。札を動かせるかの測定が、札どうしの重なりで外れないようにする
+    private func dragTrials(_ app: XCUIApplication, name: String, horizontal: Bool = false,
+                            find: () -> XCUIElement) {
         var moved = 0
         for i in 0..<Self.trials {
             let target = find()
@@ -112,7 +118,8 @@ final class StoryPlaceMoveTests: XCTestCase {
             let before = target.frame
             let dy: CGFloat = (i % 2 == 0) ? -90 : 90
             let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: dy)))
+            let offset = horizontal ? CGVector(dx: dy, dy: 0) : CGVector(dx: 0, dy: dy)
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(offset))
             Thread.sleep(forTimeInterval: 0.7)
             let after = find().frame
             let delta = abs(after.midY - before.midY) + abs(after.midX - before.midX)
@@ -185,7 +192,8 @@ final class StoryPlaceMoveTests: XCTestCase {
                 log("トレイに撮影地が無い"); shoot(app, "トレイ")
             }
         }
-        dragTrials(app, name: "song(打った後)") { app.descendants(matching: .any)["story.songSticker"].firstMatch }
+        // 文字・撮影地の札が縦に並んだあとなので、曲の札は横に運ぶ(縦だと運んだ先で文字の札に重なり、そちらを掴む)
+        dragTrials(app, name: "song(打った後)", horizontal: true) { app.descendants(matching: .any)["story.songSticker"].firstMatch }
         finish(app)
     }
 }
