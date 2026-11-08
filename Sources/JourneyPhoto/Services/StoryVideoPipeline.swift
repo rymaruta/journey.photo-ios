@@ -73,6 +73,17 @@ enum StoryVideoPipeline {
     }
 }
 
+/// 取り込んだ動画の一時ファイルの持ち主(札 #500)。作る画面の `@StateObject` に置き、**画面が本当に無くなった
+/// とき(閉じた・やめた・どの経路でも)に残りを消す**。`onDisappear` は別の画面を重ねただけでも走るので使わない
+final class StoryVideoTempHolder: ObservableObject {
+    private var urls: Set<URL> = []
+    func add(_ url: URL) { urls.insert(url) }
+    func forget(_ url: URL) { urls.remove(url) }
+    deinit {
+        for url in urls { try? FileManager.default.removeItem(at: url) }
+    }
+}
+
 #if canImport(Darwin)
 import AVFoundation
 import CoreTransferable
@@ -136,58 +147,74 @@ extension StoryVideoPipeline {
         }
     }
 
+    /// 取り消しを渡すための入れ物(`AVAssetExportSession` は Sendable ではない)
+    private final class ExportBox: @unchecked Sendable {
+        let session: AVAssetExportSession
+        init(_ session: AVAssetExportSession) { self.session = session }
+    }
+
     fileprivate static func exportDarwin(_ clip: StoryVideoClip, overlays: [TextOverlay],
                                          song: SongStickerPainter.Art?) async throws -> URL {
         let asset = AVURLAsset(url: clip.url)
         let visible = overlays.filter { !$0.isEmpty }
-        var source: AVAsset = asset
-        var videoComposition: AVVideoComposition?
-        if !visible.isEmpty {
-            let built = try await composition(for: asset, overlays: visible, song: song)
-            source = built.asset
-            videoComposition = built.video
-        }
 
-        // 画質の高い段から順に試し、50MB に収まった最初の1本を返す（収まらなければ次の段へ）
+        // 画質の高い段から順に試し、50MB に収まった最初の1本を返す(収まらなければ次の段へ)。
+        // **重ねの有無に関わらず `AVMutableComposition` を通す**——元のファイルの付帯情報(撮影地など)を
+        // 書き出しに持ち込まない。位置情報は書き出したあとにもう一度確かめる(下)
         var lastProblem = StoryVideoRules.Problem.exportFailed
         for step in StoryVideoRules.ladder(durationSec: clip.durationSec) {
-            guard let session = AVAssetExportSession(asset: source, presetName: step.preset) else { continue }
-            let out = StoryVideoPipeline.temporaryURL(ext: StoryVideoRules.exportExtension)
-            session.outputURL = out
-            session.outputFileType = .mp4
-            session.shouldOptimizeForNetworkUse = true
-            session.videoComposition = videoComposition
-            // 位置情報（`com.apple.quicktime.location.ISO6709`）を含む付帯情報を書かない。
-            // 書き出したあとにもう一度確かめる（下）——消せたつもりで上げない
-            session.metadata = []
-            session.metadataItemFilter = AVMetadataItemFilter.forSharing()
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                session.exportAsynchronously { continuation.resume() }
+            try Task.checkCancellation()
+            let built = try await composition(for: asset, overlays: visible, song: song, step: step)
+            // 位置情報が残ったときは1回だけ自動でやり直す(それでも残るなら上げない)
+            for _ in 0..<2 {
+                try Task.checkCancellation()
+                guard let session = AVAssetExportSession(asset: built.asset, presetName: step.preset) else { break }
+                let out = StoryVideoPipeline.temporaryURL(ext: StoryVideoRules.exportExtension)
+                session.outputURL = out
+                session.outputFileType = .mp4
+                session.shouldOptimizeForNetworkUse = true
+                session.videoComposition = built.video
+                session.metadata = []
+                session.metadataItemFilter = AVMetadataItemFilter.forSharing()
+                let box = ExportBox(session)
+                // 画面を閉じた・やめるで取り消されたら書き出しも止める
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        box.session.exportAsynchronously { continuation.resume() }
+                    }
+                } onCancel: {
+                    box.session.cancelExport()
+                }
+                if Task.isCancelled {
+                    try? FileManager.default.removeItem(at: out)
+                    throw CancellationError()
+                }
+                guard session.status == .completed else {
+                    try? FileManager.default.removeItem(at: out)
+                    lastProblem = .exportFailed
+                    break
+                }
+                let bytes = (try? out.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if let problem = StoryVideoRules.problem(exportedBytes: bytes) {
+                    try? FileManager.default.removeItem(at: out)
+                    lastProblem = problem
+                    break
+                }
+                if await hasLocationMetadata(out) {
+                    try? FileManager.default.removeItem(at: out)
+                    lastProblem = .locationRemains
+                    continue
+                }
+                return out
             }
-            guard session.status == .completed else {
-                try? FileManager.default.removeItem(at: out)
-                lastProblem = .exportFailed
-                continue
-            }
-            let bytes = (try? out.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if let problem = StoryVideoRules.problem(exportedBytes: bytes) {
-                try? FileManager.default.removeItem(at: out)
-                lastProblem = problem
-                continue
-            }
-            if await hasLocationMetadata(out) {
-                try? FileManager.default.removeItem(at: out)
-                throw StoryVideoRules.Problem.locationRemains
-            }
-            return out
         }
         throw lastProblem
     }
 
-    /// 重ねの層を載せた合成（向きを直し、重ねを 1 枚の画像として全コマの上に置く）
+    /// 書き出す元の合成。向きを直し、重ねがあれば**段の大きさまで縮めて**全コマの上に置く
     private static func composition(for asset: AVURLAsset, overlays: [TextOverlay],
-                                    song: SongStickerPainter.Art?) async throws
-        -> (asset: AVAsset, video: AVVideoComposition) {
+                                    song: SongStickerPainter.Art?, step: StoryVideoRules.Step) async throws
+        -> (asset: AVAsset, video: AVVideoComposition?) {
         guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else {
             throw StoryVideoRules.Problem.unreadable
         }
@@ -211,25 +238,33 @@ extension StoryVideoPipeline {
 
         let natural = try await sourceVideo.load(.naturalSize)
         let transform = try await sourceVideo.load(.preferredTransform)
+        guard !overlays.isEmpty else {
+            // 重ねなし: 向きだけ写す(付帯情報は写さない)。大きさは書き出しの段が決める
+            video.preferredTransform = transform
+            return (composition, nil)
+        }
+
         let frameRate = try await sourceVideo.load(.nominalFrameRate)
         let rect = CGRect(origin: .zero, size: natural).applying(transform)
-        // H.264 は偶数の画素を好む
-        let renderSize = CGSize(width: (abs(rect.width) / 2).rounded() * 2, height: (abs(rect.height) / 2).rounded() * 2)
+        let oriented = CGSize(width: abs(rect.width), height: abs(rect.height))
+        let renderSize = StoryVideoRules.renderSize(for: oriented, step: step)
+        let sx = renderSize.width / max(oriented.width, 1)
+        let sy = renderSize.height / max(oriented.height, 1)
 
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: video)
         layerInstruction.setTransform(
-            transform.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY)), at: .zero)
+            transform.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
+                .concatenating(CGAffineTransform(scaleX: sx, y: sy)), at: .zero)
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = range
         instruction.layerInstructions = [layerInstruction]
 
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = renderSize
-        let fps = frameRate > 1 ? Int32(min(60, frameRate.rounded())) : 30
-        videoComposition.frameDuration = CMTime(value: 1, timescale: fps)
+        videoComposition.frameDuration = CMTime(value: 1, timescale: StoryVideoRules.overlayFrameRate(source: frameRate))
         videoComposition.instructions = [instruction]
 
-        // 写真と同じ描き方（`TextOverlayRenderer.draw`）で透明な画像に重ねだけを描き、全コマの上に置く
+        // 写真と同じ描き方(`TextOverlayRenderer.draw`)で透明な画像に重ねだけを描き、全コマの上に置く
         if let cgImage = TextOverlayRenderer.overlayImage(overlays, size: renderSize, song: song)?.cgImage {
             let frame = CGRect(origin: .zero, size: renderSize)
             let parent = CALayer()
@@ -247,19 +282,34 @@ extension StoryVideoPipeline {
         return (composition, videoComposition)
     }
 
-    /// 書き出した動画に位置情報の付帯情報が残っているか
+    /// 書き出した動画に位置情報の付帯情報が残っているか。**読めないときは残っているものとして扱う**。
+    /// 全体・トラックごとの付帯情報に加え、時刻つきの付帯情報のトラック(撮影地が毎秒入る形)の識別子も見る
     private static func hasLocationMetadata(_ url: URL) async -> Bool {
         let asset = AVURLAsset(url: url)
-        var items: [AVMetadataItem] = []
-        items += (try? await asset.load(.metadata)) ?? []
-        items += (try? await asset.load(.commonMetadata)) ?? []
+        var identifiers: [String] = []
+        func collect(_ items: [AVMetadataItem]) {
+            for item in items {
+                identifiers.append(item.identifier?.rawValue ?? "")
+                identifiers.append(item.commonKey?.rawValue ?? "")
+            }
+        }
+        collect((try? await asset.load(.metadata)) ?? [])
+        collect((try? await asset.load(.commonMetadata)) ?? [])
         for format in (try? await asset.load(.availableMetadataFormats)) ?? [] {
-            items += (try? await asset.loadMetadata(for: format)) ?? []
+            collect((try? await asset.loadMetadata(for: format)) ?? [])
         }
-        return items.contains { item in
-            StoryVideoRules.isLocationIdentifier(item.identifier?.rawValue ?? "")
-                || StoryVideoRules.isLocationIdentifier(item.commonKey?.rawValue ?? "")
+        guard let tracks = try? await asset.load(.tracks) else { return true }
+        for track in tracks {
+            collect((try? await track.load(.metadata)) ?? [])
+            for format in (try? await track.load(.availableMetadataFormats)) ?? [] {
+                collect((try? await track.loadMetadata(for: format)) ?? [])
+            }
+            for description in (try? await track.load(.formatDescriptions)) ?? []
+            where CMFormatDescriptionGetMediaType(description) == kCMMediaType_Metadata {
+                identifiers += (CMMetadataFormatDescriptionGetIdentifiers(description) as? [String]) ?? []
+            }
         }
+        return identifiers.contains { StoryVideoRules.isLocationIdentifier($0) }
     }
 }
 
