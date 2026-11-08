@@ -249,6 +249,10 @@ struct TrunkTagPickerSheet: View {
     let slot: Int
     var onStick: () -> Void = {}
 
+    /// シートのボタンの高さ。押せるものは 44pt 以上（`WebTheme.minTapTarget`）。Mac の実測で 44 ちょうどの指定が
+    /// 42.4pt に出たので、下限に余裕を持たせて 48 にし、足元はつぶされないよう縦に固定する（`footer`）
+    private static let buttonHeight: Double = Double(WebTheme.minTapTarget) + 4
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var draft: TrunkTagPick?
@@ -403,13 +407,13 @@ struct TrunkTagPickerSheet: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("trunk.tags.sheet.error")
                     Button { commit(failedPick) } label: {
-                        TrunkButtonFace(title: TrunkTagText.retry, kind: .main, height: 50, size: 15)
+                        TrunkButtonFace(title: TrunkTagText.retry, kind: .main, height: Self.buttonHeight, size: 15)
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy)
                     .accessibilityIdentifier("trunk.tags.retry")
                     Button { dismiss() } label: {
-                        TrunkButtonFace(title: TrunkTagText.closeWithoutSaving, kind: .secondary, height: 44, size: 15)
+                        TrunkButtonFace(title: TrunkTagText.closeWithoutSaving, kind: .secondary, height: Self.buttonHeight, size: 15)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("trunk.tags.discard")
@@ -420,7 +424,7 @@ struct TrunkTagPickerSheet: View {
                     VStack(spacing: 10) { quickButtons(state) }
                 }
                 Button { finish(state) } label: {
-                    TrunkButtonFace(title: TrunkTagText.done, kind: .main, height: 50, size: 15)
+                    TrunkButtonFace(title: TrunkTagText.done, kind: .main, height: Self.buttonHeight, size: 15)
                 }
                 .buttonStyle(.plain)
                 .disabled(model.busy)
@@ -430,18 +434,20 @@ struct TrunkTagPickerSheet: View {
         .padding(.horizontal, 20)
         .padding(.top, 10)
         .padding(.bottom, 16)
+        .fixedSize(horizontal: false, vertical: true)
+        .layoutPriority(1)
     }
 
     @ViewBuilder
     private func quickButtons(_ state: TrunkState) -> some View {
         Button { commit(.auto) } label: {
-            TrunkButtonFace(title: TrunkTagText.backToAuto, kind: .secondary, height: 44, size: 14)
+            TrunkButtonFace(title: TrunkTagText.backToAuto, kind: .secondary, height: Self.buttonHeight, size: 14)
         }
         .buttonStyle(.plain)
         .disabled(model.busy)
         .accessibilityIdentifier("trunk.tags.auto")
         Button { commit(.removed) } label: {
-            TrunkButtonFace(title: TrunkTagText.removeTag, kind: .secondary, height: 44, size: 14)
+            TrunkButtonFace(title: TrunkTagText.removeTag, kind: .secondary, height: Self.buttonHeight, size: 14)
         }
         .buttonStyle(.plain)
         .disabled(model.busy)
@@ -453,12 +459,12 @@ struct TrunkTagPickerSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             EmptyState(title: TrunkTagText.emptyTitle, message: TrunkTagText.emptyMessage)
             Button { onStick() } label: {
-                TrunkButtonFace(title: TrunkTagText.stickAction, kind: .main, height: 50, size: 15)
+                TrunkButtonFace(title: TrunkTagText.stickAction, kind: .main, height: Self.buttonHeight, size: 15)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.tags.stick")
             Button { dismiss() } label: {
-                TrunkButtonFace(title: TrunkTagText.close, kind: .secondary, height: 44, size: 15)
+                TrunkButtonFace(title: TrunkTagText.close, kind: .secondary, height: Self.buttonHeight, size: 15)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.tags.close")

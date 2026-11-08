@@ -383,6 +383,14 @@ final class TrunkTagPicksTests: XCTestCase {
                    "trunk.tags.auto", "trunk.tags.remove", "trunk.tags.stick", "trunk.tags.loading"] {
             XCTAssertTrue(view.contains("\"\(id)\""), id)
         }
+        // 押せるものは 44pt 以上: シートのボタンは全部 minTapTarget から作った高さを使い、足元はつぶされない
+        XCTAssertTrue(view.contains("private static let buttonHeight: Double = Double(WebTheme.minTapTarget) + 4"))
+        XCTAssertFalse(view.contains("height: 44"), "シートのボタンに 44 ちょうどの固定が残っている")
+        XCTAssertFalse(view.contains("height: 50"))
+        XCTAssertEqual(view.components(separatedBy: "TrunkButtonFace(").count - 1,
+                       view.components(separatedBy: "height: Self.buttonHeight").count - 1, "高さを共通の値にしていないボタンがある")
+        XCTAssertTrue(view.contains(".fixedSize(horizontal: false, vertical: true)\n        .layoutPriority(1)"), "足元がつぶされうる")
+        XCTAssertTrue(view.contains("minHeight: 56"), "ラベルの行が 56 未満")
         // 失敗しても選びを捨てない: 失敗したら選びを残し、「もう一度」で同じ選びを送り直す
         XCTAssertTrue(view.contains("failed = pick"))
         // 書き込み中・未対応の false を「通信に失敗しました」にしない
