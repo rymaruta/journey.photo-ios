@@ -167,6 +167,7 @@ struct StoryCanvas: View {
                                     photoDragStarted = true; photoDragSpoiled = false; framingDragPhotoId = photoId
                                     // 指の近くに札があれば、この回は札を運ぶ（2本指の相手の決め方と同じ）
                                     photoDragOverlay = twoFingerActive ? nil : overlayUnder(value.startLocation, photo: photo)
+                                    StoryComposeProbe.shared.note("photo.begin", "carries=\(photoDragOverlay != nil) twoFinger=\(twoFingerActive)")
                                 }
                                 if let id = photoDragOverlay {
                                     if let overlay = overlays.first(where: { $0.id == id }) {
@@ -180,6 +181,7 @@ struct StoryCanvas: View {
                                 photoDrag = photoDragSpoiled ? .zero : value.translation
                             }
                             .onEnded { value in
+                                StoryComposeProbe.shared.note("photo.ended", "carries=\(photoDragOverlay != nil) dx=\(Int(value.translation.width)) dy=\(Int(value.translation.height))")
                                 if let id = photoDragOverlay {
                                     if let overlay = overlays.first(where: { $0.id == id }) {
                                         overlayDragEnded(overlay, value: value, photo: photo, canvas: geometry.size)
@@ -200,7 +202,11 @@ struct StoryCanvas: View {
                     )
                     .onTapGesture {
                         guard StoryTextEditing.acceptsPhotoTap(twoFingerActive: twoFingerActive,
-                                                               twoFingerEndedAt: twoFingerEndedAt) else { return }
+                                                               twoFingerEndedAt: twoFingerEndedAt) else {
+                            StoryComposeProbe.shared.note("photo.tap", "rejected")
+                            return
+                        }
+                        StoryComposeProbe.shared.note("photo.tap", "accepted")
                         onTapPhoto()
                     }
                     .accessibilityElement()
@@ -367,6 +373,7 @@ struct StoryCanvas: View {
                 // `dragSpoiled` はここで戻さない——`onEnded` より先に来ると、2本指が入った回の
                 // 移動を入れてしまう。次に動かし始めたときに戻す
                 if !active {
+                    StoryComposeProbe.shared.note("ov.dragging.off", "dragId=\(dragId != nil)")
                     dragId = nil; dragOffset = .zero; resetDragAids()
                     if !twoFingerActive { carriedId = nil }
                 }
@@ -566,7 +573,10 @@ struct StoryCanvas: View {
                     .onEnded { value in overlayDragEnded(overlay, value: value, photo: photo, canvas: canvas) }
             )
             // 押すと打ち直す（呼ぶ側が決める・スタンプ以外）。曲の札は形が替わる。消すのはゴミ箱
-            .onTapGesture { onTap(overlay) }
+            .onTapGesture {
+                StoryComposeProbe.shared.note("ov.tap", "kind=\(overlay.kind.rawValue)")
+                onTap(overlay)
+            }
             // 1つの読み上げの要素にする（曲の札の絵は中身を読み上げに出さない・縁の写しも読まない）
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(overlay.text)
@@ -602,7 +612,11 @@ struct StoryCanvas: View {
     private func overlayDragChanged(_ overlay: TextOverlay, value: DragGesture.Value, photo: CGRect, canvas: CGSize) {
         let center = overlay.center(in: photo)
         // 動かし始め（前の回の印を戻す）
-        if dragId == nil { dragSpoiled = false; if !twoFingerActive { carriedId = nil } }
+        if dragId == nil {
+            StoryComposeProbe.shared.note("ov.begin", "kind=\(overlay.kind.rawValue) twoFinger=\(twoFingerActive)")
+            dragSpoiled = false; if !twoFingerActive { carriedId = nil }
+        }
+        StoryComposeProbe.shared.note("ov.changed", countOnly: true)
         // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない。
         // **相殺する前に、そこまで運んだ分を入れる**（2本指の判定より先にここへ来ると、
         // 運んだ分が捨てられて札が元の位置へ戻った・4ed53ca のレビュー）。2回目は何もしない
@@ -633,6 +647,7 @@ struct StoryCanvas: View {
     /// 札を運ぶ指を離した
     private func overlayDragEnded(_ overlay: TextOverlay, value: DragGesture.Value, photo: CGRect, canvas: CGSize) {
         let center = overlay.center(in: photo)
+        StoryComposeProbe.shared.note("ov.ended", "kind=\(overlay.kind.rawValue) spoiled=\(dragSpoiled) twoFinger=\(twoFingerActive) dx=\(Int(value.translation.width)) dy=\(Int(value.translation.height))")
         // **離したときに位置へ入れる。** 動かしている最中に
         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
         if !dragSpoiled && !twoFingerActive {

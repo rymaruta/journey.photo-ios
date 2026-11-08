@@ -737,11 +737,16 @@ struct StoryViewerView: View {
         // `caption` を保存する・Web の `hasStoryTextItem` と同じ判定）
         let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
         // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。スポットへの結び付けは `spotLink` 側で元の文字から
-        let place = story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 }
+        // 撮影地の札を写真に焼き込んだ1本は固定の札を出さない（札 #499・二重に見える）。結び付け（`spotLink`）は変わらない
+        let displayPlace = story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 }
+        let place = story.showsLocationCard ? displayPlace : nil
+        // 焼き込み済みでも、スポットに結べたときだけ小さな導線を残す（札 #499 の直し・ガイドを開く・行きたい）
+        let spotEntry = StoryPlaceLink.entry(showsCard: story.showsLocationCard, location: displayPlace,
+                                             spotLinked: spotLink?.storyId == story.id && spotLink?.spot != nil)
         // 曲は 2026-10-28 から**名前の下の1行**（`header`・`SongMarqueeLine`）。ここには出さない
         // ハイライトの日付「2026.09.12 · 残したストーリー」（板 HighlightPlayer: ひとことの下・13 の等幅・白 82%）
         let keptDate = highlight == nil ? nil : StoryPlayback.dotDate(story.createdAt)
-        if caption != nil || place != nil || keptDate != nil {
+        if caption != nil || place != nil || keptDate != nil || spotEntry != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {
                     Text(caption)
@@ -763,6 +768,26 @@ struct StoryViewerView: View {
                         .foregroundStyle(Color.white.opacity(StoryViewerMetrics.highlightDateOpacity))
                         .jpPhotoTextShadow()
                         .allowsHitTesting(false)
+                }
+                if place == nil, spotEntry != nil, let spot = spotLink?.spot {
+                    Button {
+                        guideSpot = spot
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "mappin").font(JPFont.footnote)
+                            Text(L("撮影スポットを見る", "See the photo spot")).font(JPFont.footnote)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(Color.white.opacity(StoryViewerMetrics.metaOpacity))
+                        .jpPhotoTextShadow()
+                        // 押せる所だけ上下に広げて 44pt に（並びは変えない・上の行と同じ作り）
+                        .padding(.vertical, 15)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -15)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("撮影スポットの画面を開く", "Open the photo spot"))
+                    .accessibilityIdentifier("story.viewer.spotEntry")
                 }
                 if let place {
                     if let spot = spotLink?.storyId == story.id ? spotLink?.spot : nil {

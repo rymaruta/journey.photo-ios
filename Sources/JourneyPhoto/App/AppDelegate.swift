@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **クラッシュ・ハング・起動時間の診断を受け取って端末のログに出す**（2026-11-07・`MetricKitReceiver`）。
         // OS は起動の早い時期に登録した購読者へ届けるので、ここで登録する。サーバーには送らない
         MetricKitReceiver.shared.start()
+        // 起動の時刻を固定する（アイコン長押しの受け口が「起動直後の約2秒は待つ」ために使う・`StoryCameraRules.settleWait`）
+        _ = StoryCameraRules.launchedAt
         // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
         // 居ない転送は止め、その鍵はログインしているときに片付ける
         BackgroundTransfer.shared.reconnect()
@@ -38,6 +40,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         PendingVerificationStore().migrateLegacyKeys()
         return true
     }
+
+    #if canImport(Darwin)
+    /// アイコン長押しの「ストーリーを撮る」（札 #500）。**場面の係を指定する**——起動のときに選ばれた項目は
+    /// ここ（`options.shortcutItem`）に来て、起動中に選ばれた項目は `StorySceneDelegate` に来る
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        if let item = options.shortcutItem, item.type == StoryCameraRules.shortcutType {
+            Task { @MainActor in StoryShortcutCenter.shared.request() }
+        }
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = StorySceneDelegate.self
+        return configuration
+    }
+    #endif
 
     /// 写真の本体の転送（背景の URLSession）が終わって、OS に起こされた。
     /// **預かった `completionHandler` は、渡し終えたら呼ぶ**（`urlSessionDidFinishEvents`）
@@ -196,6 +213,24 @@ enum ModalProbe {
             // 間に「何も出ていない」と答えると、出せないシートを true にしてしまう
             for window in windowScene.windows {
                 if window.rootViewController?.presentedViewController != nil { return true }
+            }
+        }
+        return false
+    }
+
+    /// 画面を出す・下ろす動きの最中か(札 #500: カメラを先頭に出すのを、動きが終わるまで待つ)。
+    /// 読むだけ。出ている画面の鎖を最後までたどり、1つでも動いていれば true
+    static func isTransitioning() -> Bool {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                var controller = window.rootViewController
+                while let current = controller {
+                    if current.isBeingPresented || current.isBeingDismissed || current.transitionCoordinator != nil {
+                        return true
+                    }
+                    controller = current.presentedViewController
+                }
             }
         }
         return false

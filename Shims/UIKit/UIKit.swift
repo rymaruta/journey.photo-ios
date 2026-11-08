@@ -7,6 +7,10 @@ open class UIViewController {
     public init() {}
     /// 本物は読み取りだけ（このコントローラが出しているもの）
     open var presentedViewController: UIViewController? { nil }
+    /// 画面を出す・下ろす動きの最中か(本物にもある)
+    open var isBeingPresented: Bool { false }
+    open var isBeingDismissed: Bool { false }
+    open var transitionCoordinator: Any? { nil }
 }
 
 /// 画面の場。本物は `UIResponder`（NSObject）の子なので Set に入る
@@ -74,6 +78,9 @@ public struct UIBackgroundTaskIdentifier: Hashable, Sendable {
 /// 本物の3つ目は `Selector?`——Linux に無い型なので、`nil` だけ渡す前提で `Any?` にしてある
 public func UIImageWriteToSavedPhotosAlbum(_ image: UIImage, _ completionTarget: Any?,
                                            _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
+/// 動画を端末の写真に保存する（本物と同じ名前・引数の数）。模型は何もしない
+public func UISaveVideoAtPathToSavedPhotosAlbum(_ videoPath: String, _ completionTarget: Any?,
+                                                _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
 open class UINavigationController: UIViewController {}
 
 public protocol UINavigationControllerDelegate: AnyObject {}

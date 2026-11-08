@@ -83,6 +83,8 @@ struct RootView: View {
     @Environment(\.requestReview) private var requestReview
     #endif
     @State private var showStoryComposer = false
+    /// ストーリーの作る画面をカメラから始めるか（アイコン長押し・札 #500）
+    @State private var storyStartsWithCamera = false
     /// 下書きの一覧から開く下書き（投稿・ストーリー・2026-10-29・#400）。画面を閉じたら忘れる
     @State private var openPostDraftId: String?
     @State private var openStoryDraftId: String?
@@ -963,10 +965,19 @@ struct RootView: View {
             // ⚠️ 入口は2つ（ここと `StoriesRow`）。片方だけシートに戻さない（`StoryComposerPresentationTests`）
             .fullScreenCover(isPresented: $showStoryComposer, onDismiss: {
                 openStoryDraftId = nil
+                storyStartsWithCamera = false
                 tabRouter.postSheetClosed()
             }) {
-                NavigationStack { StoryComposerView(openDraft: openStoryDraftId) }
+                NavigationStack { StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera) }
             }
+            // アイコン長押しの「ストーリーを撮る」（札 #500）。ログイン済みで、ほかの画面が出ていないときだけ開く
+            .modifier(StoryShortcutOpener(
+                signedIn: auth.userId != nil,
+                anotherScreenShown: { !PostRequestGate.opens(busy: postScreensShown) || ModalProbe.isPresenting() },
+                open: {
+                    storyStartsWithCamera = StoryCameraView.isAvailable
+                    showStoryComposer = true
+                }))
     }
 
     /// 🔴 **送っている途中でアプリが終了した投稿を知らせる**（2026-10-16）。以前はまだ送れていない写真が
