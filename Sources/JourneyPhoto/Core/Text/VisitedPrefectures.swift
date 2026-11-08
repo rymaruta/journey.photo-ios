@@ -245,6 +245,14 @@ enum VisitedDay {
         return "\(pad(c.year ?? 1970, 4))-\(pad(c.month ?? 1, 2))-\(pad(c.day ?? 1, 2))"
     }
 
+    /// 日付の文字 → その日の正午（日付の選び直しに使う）。読めなければ nil
+    static func date(from s: String, calendar: Calendar = .current) -> Date? {
+        guard isValid(s) else { return nil }
+        let parts = s.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+    }
+
     /// 読める日付か
     static func isValid(_ s: String) -> Bool {
         let parts = s.split(separator: "-")

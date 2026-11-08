@@ -21,6 +21,8 @@ struct MedalViewerView: View {
     let badge: EarnedBadge
     /// 裏に刻む名前（バッジの持ち主の表示名）
     let ownerName: String
+    /// 「行った県の地図を見る」（バッジ「都道府県」の詳細だけ・自分の棚だけ。札 #503）。nil なら出さない
+    var onShowMap: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -110,6 +112,17 @@ struct MedalViewerView: View {
                 .foregroundStyle(WebTheme.faint)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+            if let onShowMap {
+                Button(action: onShowMap) {
+                    Text(VisitedMapText.openFromBadge)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.accent)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("medalViewer.visitedMap")
+            }
         }
     }
 

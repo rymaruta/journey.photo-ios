@@ -2366,6 +2366,63 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - 行った県マップ（2026-11-08・札 #503）
+
+    /// 行った県マップ。マイページの「旅の記録」の下の札から入り、地図・一覧・県の札を撮る。
+    /// `-JPPreviewVisitedMap YES`（Debug のみ・`PreviewSession.visitedMapSeed`）で、1〜5 回の段が並んだ見本の記録を入れる。
+    /// **出なければ撮らずに抜ける**（札が見つからない・地図が出ない）。サーバーには何も送らない
+    func testCapturesVisitedMap() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewVisitedMap", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let entry = app.descendants(matching: .any)["profile.visitedMap"].firstMatch
+        guard entry.waitForExistence(timeout: 20) else { return }
+        var swipes = 0
+        while !entry.isHittable, swipes < 4 {
+            app.swipeUp()
+            swipes += 1
+        }
+        guard entry.isHittable else { return }
+        shoot(app, "86a-マイページの札「行った県」")
+        entry.tap()
+
+        let map = app.descendants(matching: .any)["visitedMap.map"].firstMatch
+        guard map.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86b-行った県の地図（回数の段）")
+
+        // 県の札（スイッチがオフのときは札が開く）
+        let tokyo = app.descendants(matching: .any)["visitedMap.pref.東京都"].firstMatch
+        if tokyo.waitForExistence(timeout: 5), tokyo.isHittable {
+            tokyo.tap()
+            if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86c-行った県の札（東京都）")
+                let close = app.buttons["visitedMap.card.close"].firstMatch
+                if close.exists, close.isHittable { close.tap() }
+            }
+        }
+
+        let list = app.buttons["visitedMap.mode.list"].firstMatch
+        if list.waitForExistence(timeout: 5), list.isHittable {
+            list.tap()
+            if app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86d-行った県の一覧")
+            }
+        }
+    }
+
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
 
     /// 旅のトランクの見本で起動する（`-JPPreviewTrunk`・Debug のみ。サーバーには何も送らない）

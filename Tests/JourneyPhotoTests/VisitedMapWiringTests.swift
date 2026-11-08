@@ -1,0 +1,150 @@
+import XCTest
+@testable import JourneyPhoto
+
+/// 🔴 行った県マップの画面が、判定の関数・入口・設定につながっていること（札 #503）。
+///
+/// 判定は `VisitedPrefecturesTests` などで縛っているが、**画面側のつなぎを外しても**それらは通ったままになる。
+/// 画面は Linux で描けないので、ソースに**つなぎの呼び出しが残っていること**を見る。
+/// 書き方を変えたら、ここも合わせて直す（消したら落ちるのが目的）
+final class VisitedMapWiringTests: XCTestCase {
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+        // 注記（`//`）の中は数えない
+        return text.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    private func visitedSources() throws -> [(path: String, text: String)] {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Profile")
+        return try FileManager.default.contentsOfDirectory(atPath: root.path)
+            .filter { $0.hasPrefix("Visited") && $0.hasSuffix(".swift") }
+            .sorted()
+            .map { ("Features/Profile/" + $0, try source("Features/Profile/" + $0)) }
+    }
+
+    /// 入口: マイページの「旅の記録」の下に札。バッジ「都道府県」の詳細からも入れる
+    func testEntriesAreWired() throws {
+        let myPage = try source("Features/Profile/MyPageView.swift")
+        let travel = myPage.range(of: "                        travelRecord\n")
+        let entry = myPage.range(of: "VisitedMapEntryCard()")
+        XCTAssertNotNil(travel, "マイページの旅の記録が見つからない")
+        XCTAssertNotNil(entry, "マイページに入口の札が無い")
+        if let travel, let entry { XCTAssertLessThan(travel.lowerBound, entry.lowerBound, "札は旅の記録の下") }
+
+        let shelf = try source("Features/Profile/BadgeShelfView.swift")
+        XCTAssertTrue(shelf.contains(#"badge.key == "prefectures""#), "バッジ「都道府県」だけに出す")
+        XCTAssertTrue(shelf.contains("isMine && badge.key"), "自分の棚だけに出す")
+        XCTAssertTrue(shelf.contains("VisitedMapScreen()"))
+        let medal = try source("Features/Profile/MedalViewerView.swift")
+        XCTAssertTrue(medal.contains("VisitedMapText.openFromBadge"))
+
+        let card = try source("Features/Profile/VisitedMapEntryCard.swift")
+        XCTAssertTrue(card.contains("VisitedMapText.entryAccessibility(record.visitedCount)"))
+        XCTAssertTrue(card.contains("minHeight: JPHeight.tallRow"), "入口の札は 64pt 以上")
+        // 地図タブには混ぜない
+        let map = try source("Features/Map/PhotoMapView.swift")
+        XCTAssertFalse(map.contains("VisitedMap"), "行った県は地図タブに混ぜない")
+    }
+
+    /// 画面: 開くとき記録を読み、拡大中はスクロールを止め、触覚・読み上げ・取り消しを結ぶ
+    func testScreenIsWired() throws {
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        for needle in [
+            "model.open(userId: auth.userId)",
+            ".scrollDisabled(viewport.isZoomed && mode == .map)",
+            ".sensoryFeedback(.impact(weight: .light), trigger: model.lightTick)",
+            ".sensoryFeedback(.success, trigger: model.successTick)",
+            "UIAccessibility.post(notification: .announcement, argument: text)",
+            "Button { model.undo() }",
+            "model.markAllVisited()",
+            "model.clearAll()",
+            "model.confirmSameDay()",
+            "model.cancelSameDay()",
+            "Toggle(isOn: $model.addsOnTap)",
+            "environment.photos.myPhotos()",
+            "PrefectureMapGeometry.bundled",
+            "VisitedPrefectureList(model: model)",
+            "VisitedPrefectureCard(model: model",
+            "jpPillButton(.accent)",
+            "TabRouter.shared.openPost(.photo)",
+        ] {
+            XCTAssertTrue(screen.contains(needle), "画面のつなぎが無い: \(needle)")
+        }
+    }
+
+    func testCanvasIsWired() throws {
+        let canvas = try source("Features/Profile/VisitedMapCanvasView.swift")
+        for needle in [
+            "geometry.prefecture(at: unit, tolerance: tolerance)",
+            "VisitedMapText.prefectureAccessibility(",
+            "VisitedMapStyle.fill(forLevel:",
+            "VisitedMapStyle.pattern(forLevel:",
+            "@Environment(\\.accessibilityReduceMotion)",
+            "guard new != nil, !reduceMotion else { return }",
+            "guard !reduceMotion, let start = liftStart else { return 0 }",
+            "guard !reduceMotion, old.count == new.count else { return }",
+            "model.openCard(name)",
+            "model.tap(name)",
+            "MagnifyGesture()",
+            "start.isZoomed",
+        ] {
+            XCTAssertTrue(canvas.contains(needle), "地図のつなぎが無い: \(needle)")
+        }
+        // 色は段の表から（画面に色の数を書かない）
+        XCTAssertFalse(canvas.contains("0xF3DCA6"))
+        XCTAssertFalse(canvas.contains("0x796440"))
+    }
+
+    /// 札: 「−」で減らし、候補は「記録する」まで数に入らない
+    func testCardIsWired() throws {
+        let card = try source("Features/Profile/VisitedPrefectureCard.swift")
+        for needle in ["model.remove(prefecture)", "model.add(prefecture)", "model.dismissCandidate(prefecture)",
+                       "model.restoreCandidate(prefecture)", "model.changeDay(prefecture", "VisitedMapText.candidateNote",
+                       "jpPillButton(.accent)", "jpPillButton(.outline)", "minHeight: WebTheme.minTapTarget"] {
+            XCTAssertTrue(card.contains(needle), "札のつなぎが無い: \(needle)")
+        }
+    }
+
+    /// 🔴 塗り・回数は報酬にも他人への公開にも結ばない（不正の誘因を作らない）。
+    /// 行った県の画面の層が、硬貨・バッジ・家具・Pro・サーバーへの書き込みに触れていない
+    func testScreensAreNotTiedToRewardsOrServerWrites() throws {
+        let forbidden = ["Camper", "Trunk", "BadgeCatalog", "BadgeStatus", "ProStatus", "Purchase", "StoreKit",
+                         "environment.camper", "environment.trunk", "environment.api", "environment.social",
+                         "environment.profiles", "environment.uploads", "environment.purchases",
+                         "URLSession", "APIClient", "authorized("]
+        let files = try visitedSources()
+        XCTAssertGreaterThanOrEqual(files.count, 6, "行った県の画面が見つからない")
+        for (path, text) in files {
+            for word in forbidden {
+                XCTAssertFalse(text.contains(word), "\(path) が \(word) に触れている（報酬・公開・サーバーと結ばない）")
+            }
+        }
+    }
+
+    /// 文字の大きさ: 本文系の最小は 12。数で書く字は 12 未満にしない
+    func testNoTinyFixedFonts() throws {
+        for (path, text) in try visitedSources() {
+            for line in text.components(separatedBy: "\n") where line.contains(".system(size:") {
+                let rest = line.components(separatedBy: ".system(size:").last ?? ""
+                let digits = String(rest.prefix(while: { $0 == " " || $0.isNumber || $0 == "." }))
+                    .trimmingCharacters(in: .whitespaces)
+                if let size = Double(digits) {
+                    XCTAssertGreaterThanOrEqual(size, 12, "\(path) に 12 未満の字: \(line)")
+                }
+            }
+        }
+    }
+
+    /// 系統の赤を画面の行に出さない
+    func testNoSystemRedInVisitedScreens() throws {
+        for (path, text) in try visitedSources() {
+            XCTAssertFalse(text.contains("Color.red"), "\(path) に系統の赤")
+        }
+    }
+}

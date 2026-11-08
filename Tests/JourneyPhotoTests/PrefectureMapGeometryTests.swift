@@ -121,6 +121,16 @@ final class PrefectureMapGeometryTests: XCTestCase {
         XCTAssertNil(PrefectureRegions.region(of: "パリ"))
     }
 
+    func testMixAndFill() {
+        XCTAssertEqual(VisitedMapStyle.mix(0x000000, 0xFFFFFF, 0.5), 0x808080)
+        XCTAssertEqual(VisitedMapStyle.mix(0x796440, 0xC9A66B, 0), 0x796440)
+        XCTAssertEqual(VisitedMapStyle.mix(0x796440, 0xC9A66B, 1), 0xC9A66B)
+        XCTAssertEqual(VisitedMapStyle.mix(0x796440, 0xC9A66B, 9), 0xC9A66B, "割合は 0〜1 に収める")
+        XCTAssertEqual(VisitedMapStyle.fill(forLevel: 0), VisitedMapStyle.baseFill)
+        XCTAssertEqual(VisitedMapStyle.fill(forLevel: 3), 0xF3DCA6)
+        XCTAssertEqual(VisitedMapStyle.fill(forLevel: 99), 0xF3DCA6)
+    }
+
     /// 段ごとの色と模様（提案書 第2版）。板の外の色は #F3DCA6 だけ
     func testStyleLevels() {
         XCTAssertEqual(VisitedMapStyle.fills.count, 5)

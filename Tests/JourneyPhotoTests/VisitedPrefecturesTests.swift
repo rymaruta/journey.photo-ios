@@ -353,6 +353,9 @@ final class VisitedPrefecturesTests: XCTestCase {
         XCTAssertEqual(s, "2026-11-08", "端末のカレンダーの日で数える（UTC では翌日にならない）")
         XCTAssertTrue(VisitedDay.isValid(s), s)
         XCTAssertEqual(s.count, 10)
+        let back = VisitedDay.date(from: "2026-11-08", calendar: cal)
+        XCTAssertEqual(back.map { VisitedDay.string(from: $0, calendar: cal) }, "2026-11-08")
+        XCTAssertNil(VisitedDay.date(from: "いつか", calendar: cal))
         XCTAssertFalse(VisitedDay.isValid("2026-13-01"))
         XCTAssertFalse(VisitedDay.isValid("26-1-1"))
     }

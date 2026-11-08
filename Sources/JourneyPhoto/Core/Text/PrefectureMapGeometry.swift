@@ -282,10 +282,28 @@ enum VisitedMapStyle {
 
     /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない
     /// 1 回 #796440（板の「地図の印」）・2 回 #C9A66B・3 回以上 #F3DCA6（owner 承認 2026-11-08・板の使い道の外）
-    nonisolated static let fills: [Int?] = [nil, 0x796440, 0xC9A66B, 0xF3DCA6, 0xF3DCA6]
+    nonisolated static let fills: [UInt32?] = [nil, BrandPalette.accentDeep, BrandPalette.accent, BrandPalette.accentHighlight, BrandPalette.accentHighlight]
     /// 模様の上に載せる字・数字の色（墨）。段 1（暗い真鍮）の上は白（白を載せて 5.66:1）
-    nonisolated static let inkOnBright = 0x07090A
-    nonisolated static let inkOnDark = 0xFFFFFF
+    nonisolated static let inkOnBright: UInt32 = BrandPalette.ink
+    nonisolated static let inkOnDark: UInt32 = 0xFFFFFF
+    /// 未の県の地（板の surface-3）。斜線を重ねる
+    nonisolated static let baseFill: UInt32 = BrandPalette.surface3
+
+    /// 2つの色（0xRRGGBB）を割合 t（0〜1）で混ぜる。色の切り替え（0.15 秒）と祝いの明るさに使う
+    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        let t = min(max(t, 0), 1)
+        func channel(_ shift: UInt32) -> UInt32 {
+            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
+            return UInt32((x + (y - x) * t).rounded())
+        }
+        return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
+
+    /// 段の塗り（未は地の色）
+    static func fill(forLevel level: Int) -> UInt32 {
+        let index = min(max(level, 0), fills.count - 1)
+        return fills[index] ?? baseFill
+    }
 
     static func pattern(forLevel level: Int) -> Pattern {
         switch level {
