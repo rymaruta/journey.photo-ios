@@ -127,6 +127,8 @@ struct StoryComposerView: View {
     @State private var photoIgnoresKeyboard = false
     /// 打っている札が**付けた曲の札**だったか（打ち始めの時点）。空にして閉じたら曲も外す
     @State private var typingSongSticker = false
+    /// 打っている札が付けた撮影地の札か（打ち終えたら撮影地の文字も合わせる・`PlaceSticker`・札 #499）
+    @State private var typingPlaceSticker = false
     /// 打ち始める前の札（「キャンセル」で戻す先）。**nil は打つ画面を開くときに新しく足した札**
     /// （キャンセルで消す）。`StoryTextEditing.cancel`
     @State private var typingOriginal: TextOverlay?
@@ -444,9 +446,9 @@ struct StoryComposerView: View {
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
                 get: { placeDraft },
                 set: { placeDraft = PostLimits.limited(old: placeDraft, new: $0, limit: PostLimits.location) }))
-            Button(L("決める", "Set")) { place.location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+            Button(L("決める", "Set")) { setPlace(placeDraft.trimmingCharacters(in: .whitespacesAndNewlines)) }
             if !place.location.isEmpty {
-                Button(L("外す", "Remove"), role: .destructive) { place.location = "" }
+                Button(L("外す", "Remove"), role: .destructive) { setPlace("") }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
@@ -1072,7 +1074,7 @@ struct StoryComposerView: View {
 
     /// 写真の真ん中に何か出ているか（ひとことの欄か、撮影地の札・候補）。曲の札はこれを避ける
     private var captionAreaShown: Bool {
-        captionShown || !place.location.isEmpty || place.chip != nil
+        captionShown || (!place.location.isEmpty && !placeOnPhoto) || place.chip != nil
     }
 
     /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内・VoiceOver の操作）。
@@ -1209,8 +1211,10 @@ struct StoryComposerView: View {
                 .allowsHitTesting(captionShown)
                 .accessibilityHidden(!captionShown)
                 .padding(.bottom, captionShown ? 0 : -10)
+            // 撮影地は**動かせる札で見せる**（札 #499）。固定の札は、どの写真にも札が無いときだけ
+            // （札が上限で置けなかった・札を置いた写真を外した・前の動きの下書き）
             if !place.location.isEmpty {
-                photoChip(symbol: "mappin", text: place.location)
+                if !placeOnPhoto { photoChip(symbol: "mappin", text: place.location) }
             } else if let spot = place.chip {
                 spotSuggestionChip(spot)
             }
@@ -1275,7 +1279,9 @@ struct StoryComposerView: View {
     /// 写真の上なので白だけ（真鍮は置かない）
     private func spotSuggestionChip(_ spot: OfficialSpot) -> some View {
         Button {
+            let before = place.location
             place.pick()
+            reconcilePlaceSticker(from: before)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "plus").font(JPFont.footnote.weight(.semibold))
@@ -1577,6 +1583,7 @@ struct StoryComposerView: View {
         typingCanvas = canvasSize
         typingShotId = shots[current].id
         typingSongSticker = overlays.wrappedValue.first { $0.id == id }.map { SongSticker.isSticker($0, of: song) } ?? false
+        typingPlaceSticker = overlays.wrappedValue.first { $0.id == id }.map { PlaceSticker.isSticker($0, of: place.location) } ?? false
         typingOriginal = isNew ? nil : overlays.wrappedValue.first { $0.id == id }
         showPlaceHint = false
         photoIgnoresKeyboard = true
@@ -1616,10 +1623,13 @@ struct StoryComposerView: View {
                SongSticker.shouldDetach(removedSticker: true, remaining: shots.map(\.overlays), song: song) {
                 applySong(nil)
             }
+            // 撮影地の札を打ち直した＝撮影地の文字も合わせる。空にして閉じた＝札を消した（ゴミ箱と同じ扱い）
+            if typingPlaceSticker { settlePlaceSticker(shot: i, id: id, removed: removed != nil) }
         }
         typingId = nil
         typingShotId = nil
         typingSongSticker = false
+        typingPlaceSticker = false
         typingOriginal = nil
     }
 
@@ -1666,6 +1676,55 @@ struct StoryComposerView: View {
         if SongSticker.shouldDetach(removedSticker: wasSticker, remaining: shots.map(\.overlays), song: song) {
             applySong(nil)
         }
+        let wasPlace = removed.map { PlaceSticker.isSticker($0, of: place.location) } ?? false
+        if PlaceSticker.shouldDetach(removedSticker: wasPlace, remaining: shots.map(\.overlays), location: place.location) {
+            place.location = ""
+        }
+    }
+
+    // MARK: - 撮影地の札（札 #499）
+
+    /// どれかの写真に付けた撮影地の札があるか（固定の札を出さない・`PlaceSticker`）
+    private var placeOnPhoto: Bool {
+        PlaceSticker.isOnAnyPhoto(shots.map(\.overlays), location: place.location)
+    }
+
+    /// 撮影地を決める・直す・外す。**写真の上の札も合わせる**——決めたらいま見ている1枚に動かせる札を置き、
+    /// 直したら札の文字を差し替え（位置と大きさは残す）、外したら消す。`location`・`coords` は今までどおり送る
+    private func setPlace(_ new: String) {
+        let old = place.location
+        place.location = new
+        reconcilePlaceSticker(from: old)
+    }
+
+    /// `place.location` が `old` から替わったあとの札の置き換え。前の札が無ければ（初めて決めた・自分で消していた）
+    /// いまの1枚に置く。札が上限なら置かない（固定の札が出る）
+    private func reconcilePlaceSticker(from old: String) {
+        let new = place.location
+        var found = false
+        for i in shots.indices {
+            let result = PlaceSticker.retext(shots[i].overlays, from: old, to: new)
+            shots[i].overlays = result.overlays
+            found = found || result.found
+        }
+        guard !found, shots.indices.contains(current),
+              shots[current].overlays.count < TextOverlay.maxCount,
+              let sticker = PlaceSticker.make(for: new, avoiding: shots[current].overlays) else { return }
+        shots[current].overlays.append(sticker)
+    }
+
+    /// 撮影地の札を打ち終えた。残ったなら文字を整えて撮影地の文字に写し、消えたなら（ほかの写真にも無ければ）撮影地を外す
+    private func settlePlaceSticker(shot i: Int, id: UUID, removed: Bool) {
+        if removed {
+            if PlaceSticker.shouldDetach(removedSticker: true, remaining: shots.map(\.overlays), location: place.location) {
+                place.location = ""
+            }
+            return
+        }
+        guard let o = shots[i].overlays.firstIndex(where: { $0.id == id }) else { return }
+        let text = shots[i].overlays[o].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        shots[i].overlays[o].text = text
+        place.location = text
     }
 
     /// 曲の札の形を次へ（A→B→…→F→A）。選んだ形は端末に覚え、次のストーリーで最初に出す
@@ -2340,7 +2399,9 @@ struct StoryComposerView: View {
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
                 // 曲の札を焼き込んだ印（送る形は変えない。見る画面は 2026-10-28 から印に関わらず ♪ の行を出す）
-                songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song))
+                songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song),
+                // 撮影地の札を焼き込んだ印（見る画面は固定の撮影地の札を出さない・札 #499）
+                locationOnPhoto: PlaceSticker.isOnPhoto(shot.overlays, location: placeText))
         }
         let stories = environment.stories
         let drafts = drafts

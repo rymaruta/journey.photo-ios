@@ -311,6 +311,33 @@ final class StoryUploadCenterTests: XCTestCase {
         center.userChanged(to: nil)
     }
 
+    /// 撮影地の札を焼き込んだ印も戻す（落ちて戻したときに撮影地が2か所に出ない・札 #499）
+    func testLocationOnPhotoSurvivesARelaunch() async throws {
+        let dir = tempDir()
+        let center = StoryUploadCenter(directory: dir)
+        var release = false
+        center.start([StoryUploadCenter.Job(imageData: Data([7]), caption: "", location: "高屋神社", coords: nil,
+                                            song: nil, durationSec: 5, archive: false, locationOnPhoto: true),
+                      StoryUploadCenter.Job(imageData: Data([8]), caption: "", location: "高屋神社", coords: nil,
+                                            song: nil, durationSec: 5, archive: false)],
+                     ownerId: "me", currentUserId: { "me" },
+                     send: { _, _ in
+            while !release { await Task.yield() }
+            throw Boom()
+        })
+        for _ in 0..<200 { await Task.yield() }
+
+        let relaunched = StoryUploadCenter(directory: dir)
+        var sent: [Bool] = []
+        relaunched.configure(currentUserId: { "me" }, send: { j, _ in sent.append(j.locationOnPhoto) },
+                             discardUpload: { _ in })
+        relaunched.retry()
+        await settle(relaunched)
+        XCTAssertEqual(sent, [true, false], "戻した並びで撮影地の札の印が落ちた")
+        release = true
+        center.userChanged(to: nil)
+    }
+
     /// 起動直後に別の人でログインしていたら、前の人の残りは送らない
     func testRestoredJobsAreDroppedForAnotherUser() async {
         let dir = tempDir()

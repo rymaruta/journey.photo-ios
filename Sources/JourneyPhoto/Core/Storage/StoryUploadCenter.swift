@@ -39,13 +39,15 @@ final class StoryUploadCenter: ObservableObject {
         let texts: [StoryPostText]?
         /// 曲の札をこの写真に焼き込んだか（見る画面の ♪ の行を出さない）
         let songOnPhoto: Bool
+        /// 撮影地の札をこの写真に焼き込んだか（見る画面は固定の撮影地の札を出さない・札 #499）
+        let locationOnPhoto: Bool
         /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
         var uploaded: StoryService.UploadedMedia?
 
         init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
              allowReplies: Bool = true, texts: [StoryPostText]? = nil,
-             songOnPhoto: Bool = false,
+             songOnPhoto: Bool = false, locationOnPhoto: Bool = false,
              uploaded: StoryService.UploadedMedia? = nil) {
             self.id = id
             self.imageData = imageData
@@ -58,6 +60,7 @@ final class StoryUploadCenter: ObservableObject {
             self.allowReplies = allowReplies
             self.texts = texts
             self.songOnPhoto = songOnPhoto
+            self.locationOnPhoto = locationOnPhoto
             self.uploaded = uploaded
         }
     }
@@ -317,6 +320,8 @@ final class StoryUploadCenter: ObservableObject {
             /// 曲の札を焼き込んだ印。**書かないと、途中で落ちて戻したときに曲名が2か所に出た**
             /// （686566d のレビュー・`texts` と同じ形）。前の版には無い（nil＝立てない）
             let songOnPhoto: Bool?
+            /// 撮影地の札を焼き込んだ印（札 #499）。**書かないと、途中で落ちて戻したときに撮影地が2か所に出る**。前の版には無い
+            let locationOnPhoto: Bool?
         }
         let ownerId: String
         let total: Int
@@ -348,7 +353,8 @@ final class StoryUploadCenter: ObservableObject {
                                song: job.song, durationSec: job.durationSec,
                                archive: job.archive, allowReplies: job.allowReplies ? nil : false,
                                uploaded: job.uploaded, texts: job.texts,
-                               songOnPhoto: job.songOnPhoto ? true : nil)
+                               songOnPhoto: job.songOnPhoto ? true : nil,
+                               locationOnPhoto: job.locationOnPhoto ? true : nil)
             }, draftToClear: draftToClear)
             try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
@@ -385,7 +391,8 @@ final class StoryUploadCenter: ObservableObject {
             return Job(id: entry.id, imageData: image, caption: entry.caption, location: entry.location,
                        coords: coords, song: entry.song, durationSec: entry.durationSec,
                        archive: entry.archive, allowReplies: entry.allowReplies != false,
-                       texts: entry.texts, songOnPhoto: entry.songOnPhoto == true, uploaded: entry.uploaded)
+                       texts: entry.texts, songOnPhoto: entry.songOnPhoto == true,
+                       locationOnPhoto: entry.locationOnPhoto == true, uploaded: entry.uploaded)
         }
         guard !jobs.isEmpty, !manifest.ownerId.isEmpty else {
             clearStorage()

@@ -91,7 +91,8 @@ struct StoryService {
                                        coords: job.coords, song: job.song,
                                        durationSec: job.durationSec, archive: job.archive,
                                        allowReplies: job.allowReplies, texts: job.texts,
-                                       songOnPhoto: job.songOnPhoto)
+                                       songOnPhoto: job.songOnPhoto,
+                                       locationOnPhoto: job.locationOnPhoto)
         } catch {
             failure = error
         }
@@ -167,7 +168,8 @@ struct StoryService {
     func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
                       archive: Bool = false, allowReplies: Bool = true,
-                      texts: [StoryPostText]? = nil, songOnPhoto: Bool = false) async throws -> Story? {
+                      texts: [StoryPostText]? = nil, songOnPhoto: Bool = false,
+                      locationOnPhoto: Bool = false) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -193,6 +195,9 @@ struct StoryService {
             /// 曲の札を写真に焼き込んだ（見る画面の ♪ の行を出さない）。**曲があって、
             /// 札を置いたときだけ `true` を送る**
             let songOnPhoto: Bool?
+            /// 撮影地の札を写真に焼き込んだ（見る画面は固定の撮影地の札を出さない・札 #499）。
+            /// **撮影地の文字があって、札を置いたときだけ `true` を送る**（`songOnPhoto` と同じ形）
+            let locationOnPhoto: Bool?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -207,7 +212,8 @@ struct StoryService {
             archive: archive ? true : nil,
             allowReplies: allowReplies ? nil : false,
             texts: texts?.isEmpty == false ? texts : nil,
-            songOnPhoto: song != nil && songOnPhoto ? true : nil
+            songOnPhoto: song != nil && songOnPhoto ? true : nil,
+            locationOnPhoto: location?.isEmpty == false && locationOnPhoto ? true : nil
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }
@@ -329,6 +335,13 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 札を外した人・Web の投稿では曲名がどこにも無い。印は送る形を変えないために読み書きだけ残す。
     /// **曲を鳴らすかどうかには使わない**（`songLine` は鳴らす判定にも使う）
     let songOnPhoto: Bool?
+    /// 撮影地の札を写真に焼き込んだ印（札 #499）。立っていれば見る画面は固定の撮影地の札を出さない
+    /// （札と二重に見える）。**撮影スポットへのひも付け（`location`・`coords`）は変わらない**。
+    /// 旧版のアプリは印を読まないので、新版のストーリーが二重に見える（owner 了承・2026-11-08）
+    let locationOnPhoto: Bool?
+
+    /// 見る画面に固定の撮影地の札を出すか。焼き込んだ1本は出さない
+    var showsLocationCard: Bool { locationOnPhoto != true }
 
     var imageURL: URL? { URL(string: src) }
 
@@ -359,7 +372,7 @@ struct Story: Decodable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
         case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive, texts, vote
-        case songOnPhoto
+        case songOnPhoto, locationOnPhoto
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -388,6 +401,7 @@ struct Story: Decodable, Identifiable, Equatable {
         texts = StoryTextItem.parseList(raws.compactMap(\.raw))
         vote = (try? c.decodeIfPresent(StoryVoteState.self, forKey: .vote)) ?? nil
         songOnPhoto = (try? c.decodeIfPresent(Bool.self, forKey: .songOnPhoto)) ?? nil
+        locationOnPhoto = (try? c.decodeIfPresent(Bool.self, forKey: .locationOnPhoto)) ?? nil
     }
 }
 

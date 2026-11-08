@@ -737,7 +737,9 @@ struct StoryViewerView: View {
         // `caption` を保存する・Web の `hasStoryTextItem` と同じ判定）
         let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
         // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。スポットへの結び付けは `spotLink` 側で元の文字から
-        let place = story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 }
+        // 撮影地の札を写真に焼き込んだ1本は固定の札を出さない（札 #499・二重に見える）。結び付け（`spotLink`）は変わらない
+        let place = story.showsLocationCard
+            ? story.location.map { LocationMatch.display($0) }.flatMap { $0.isEmpty ? nil : $0 } : nil
         // 曲は 2026-10-28 から**名前の下の1行**（`header`・`SongMarqueeLine`）。ここには出さない
         // ハイライトの日付「2026.09.12 · 残したストーリー」（板 HighlightPlayer: ひとことの下・13 の等幅・白 82%）
         let keptDate = highlight == nil ? nil : StoryPlayback.dotDate(story.createdAt)
