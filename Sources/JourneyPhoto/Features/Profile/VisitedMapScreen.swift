@@ -259,7 +259,8 @@ struct VisitedMapScreen: View {
 
     /// 凡例（段の見本＋字。色だけに頼らない）
     private var legend: some View {
-        HStack(spacing: JPSpace.m) {
+        // 6 つは 1 行に収まらない幅があるので、折り返して並べる
+        FlowLayout(spacing: JPSpace.m, lineSpacing: JPSpace.xs) {
             legendItem(level: 0, candidate: false, text: VisitedMapText.legendNone)
             legendItem(level: 0, candidate: true, text: VisitedMapText.legendCandidate)
             legendItem(level: 1, candidate: false, text: VisitedMapText.legendTimes(1))

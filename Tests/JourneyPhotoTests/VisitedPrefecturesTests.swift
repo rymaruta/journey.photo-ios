@@ -348,9 +348,9 @@ final class VisitedPrefecturesTests: XCTestCase {
     func testDayString() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Asia/Tokyo")!
-        let date = cal.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 23, minute: 30))!
+        let date = cal.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 0, minute: 30))!
         let s = VisitedDay.string(from: date, calendar: cal)
-        XCTAssertEqual(s, "2026-11-08", "端末のカレンダーの日で数える（UTC では翌日にならない）")
+        XCTAssertEqual(s, "2026-11-08", "端末のカレンダーの日で数える（この時刻は UTC では前日の 15:30）")
         XCTAssertTrue(VisitedDay.isValid(s), s)
         XCTAssertEqual(s.count, 10)
         let back = VisitedDay.date(from: "2026-11-08", calendar: cal)
