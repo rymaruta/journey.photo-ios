@@ -100,11 +100,8 @@ enum StoryCameraRules {
     /// ホーム画面のアイコン長押しの項目の種類（`project.yml` の `UIApplicationShortcutItems` と同じ文字）
     static let shortcutType = "photo.journey.shortcut.storyCamera"
 
-    /// アイコン長押しの「ストーリーを撮る」を、いま受けてよいか。
-    ///
-    /// 2026-11-08 判断（札 #500・#435）: 起動直後の約1秒はメインスレッドが止まりやすく（最大 1.6 秒・#435 の計測）、
-    /// 起動直後に画面を重ねる設計は競合しうる。**タブが出て、ログインが済み、ほかの画面（投稿・お知らせ・
-    /// 規約など）が出ていないときだけ**受け、それまでは**持ち越す**（捨てない）。タブの選択（`selection`）には触らない
+    // MARK: - 起動直後
+
     /// 起動の時刻（`AppDelegate` が起動の早い時期に触って固定する）
     static let launchedAt = Date()
     /// 起動してから、アイコン長押しを受けるまで待つ秒数（起動直後の約1秒は処理が詰まる・#435 の計測で最大 1.6 秒）
@@ -115,6 +112,11 @@ enum StoryCameraRules {
         max(0, settleSeconds - max(0, sinceLaunch))
     }
 
+    /// アイコン長押しの「ストーリーを撮る」を、いま受けてよいか。
+    ///
+    /// 2026-11-08 判断（札 #500・#435）: 起動直後の約1秒はメインスレッドが止まりやすく（最大 1.6 秒・#435 の計測）、
+    /// 起動直後に画面を重ねる設計は競合しうる。**タブが出て、ログインが済み、ほかの画面（投稿・お知らせ・
+    /// 規約など）が出ていないときだけ**受け、それまでは**持ち越す**（捨てない）。タブの選択（`selection`）には触らない
     static func canOpenCamera(signedIn: Bool, tabsShown: Bool, anotherScreenShown: Bool) -> Bool {
         signedIn && tabsShown && !anotherScreenShown
     }
