@@ -180,4 +180,51 @@ final class VisitedMapModelTests: XCTestCase {
         XCTAssertNil(m.selected)
         XCTAssertEqual(m.record.visitedCount, 0)
     }
+
+    /// 99 回で足せないときは、黙らず一言と警告の触覚（「取り消す」は添えない）
+    func testLimitReachedGivesNoticeAndWarning() async {
+        let m = model()
+        m.open(userId: "u")
+        for _ in 0..<VisitedPrefectures.maxCount { m.add("沖縄県", confirmingSameDay: false) }
+        XCTAssertEqual(m.warningTick, 0)
+        m.add("沖縄県", confirmingSameDay: false)
+        XCTAssertEqual(m.warningTick, 1)
+        XCTAssertEqual(m.record.count("沖縄県"), VisitedPrefectures.maxCount)
+        XCTAssertEqual(m.toast?.message, VisitedMapText.limitReached("沖縄県"))
+        XCTAssertEqual(m.toast?.offersUndo, false)
+    }
+
+    /// 周がそろったときは成功の触覚だけ（軽い触覚と重ねない）・祝いを読み上げにも出す
+    func testCelebrationHapticIsSuccessOnlyAndAnnounced() async {
+        let m = model()
+        m.open(userId: "u")
+        for name in RegionList.prefectures.dropLast() { m.add(name) }
+        let lightBefore = m.lightTick
+        m.add("沖縄県")
+        XCTAssertEqual(m.successTick, 1)
+        XCTAssertEqual(m.lightTick, lightBefore, "祝いのときは軽い触覚を鳴らさない")
+        XCTAssertTrue(m.announcement?.contains(VisitedMapText.celebrationTitle(.allVisited)) == true)
+    }
+
+    func testNormalChangeOffersUndoAndLightHaptic() async {
+        let m = model()
+        m.open(userId: "u")
+        m.add("東京都")
+        XCTAssertEqual(m.toast?.offersUndo, true)
+        XCTAssertEqual(m.lightTick, 1)
+        XCTAssertEqual(m.successTick, 0)
+    }
+
+    func testChangeDayRejectsDuplicates() async {
+        let m = model()
+        m.open(userId: "u")
+        m.add("京都府")
+        m.add("京都府", confirmingSameDay: false)
+        m.changeDay("京都府", at: 0, to: "2026-11-08")
+        XCTAssertEqual(m.record.days("京都府"), ["2026-11-08", "2026-11-08"], "同じ日の2回目は足すで記録済み。直して重ねない")
+        m.changeDay("京都府", at: 0, to: "2026-10-01")
+        XCTAssertEqual(m.record.days("京都府"), ["2026-10-01", "2026-11-08"])
+        m.changeDay("京都府", at: 0, to: "2026-11-08")
+        XCTAssertEqual(m.record.days("京都府"), ["2026-10-01", "2026-11-08"], "ほかの記録と同じ日には直せない")
+    }
 }

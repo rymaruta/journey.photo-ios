@@ -314,7 +314,4 @@ enum VisitedMapStyle {
         default: return .hatch
         }
     }
-
-    /// 字・数字の色。1 回（暗い真鍮）だけ白、ほかは墨
-    static func labelUsesInk(forLevel level: Int) -> Bool { level >= 2 }
 }

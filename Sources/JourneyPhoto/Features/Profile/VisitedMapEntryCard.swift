@@ -1,5 +1,11 @@
 import SwiftUI
 
+extension VisitedMapStyle {
+    /// 段の色（0xRRGGBB）→ `Color`。作り方は既存の `ProMarkColors.color` と同じ。Pro の部品ではない
+    /// （名前が Pro と紛れるので、行った県の層はこの名前で呼ぶ）
+    static func color(_ hex: UInt32) -> Color { ProMarkColors.color(hex) }
+}
+
 extension PrefectureMapGeometry {
     /// 同梱の `japan-prefectures.json` から1度だけ作る（入口の札と画面で共有）
     static let bundled: PrefectureMapGeometry? =
@@ -84,7 +90,7 @@ struct VisitedMapThumbnail: View {
                 }
                 let level = VisitedPrefectures.level(forCount: counts[index])
                 ctx.fill(path, with: .color(level == 0 ? Color.white.opacity(0.1)
-                                                        : ProMarkColors.color(VisitedMapStyle.fill(forLevel: level))))
+                                                        : VisitedMapStyle.color(VisitedMapStyle.fill(forLevel: level))))
             }
         }
     }

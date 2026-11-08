@@ -360,6 +360,78 @@ final class VisitedPrefecturesTests: XCTestCase {
         XCTAssertFalse(VisitedDay.isValid("26-1-1"))
     }
 
+    /// 🔴 和暦・仏暦の端末でも、保存する日付は西暦（以前は和暦で「0008-11-08」になり、読み込みで落ちて記録が消えた）
+    func testDayIsGregorianWhateverTheDeviceCalendar() {
+        let tz = TimeZone(identifier: "Asia/Tokyo")!
+        var g = Calendar(identifier: .gregorian)
+        g.timeZone = tz
+        let date = g.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 12))!
+        for id in [Calendar.Identifier.japanese, .buddhist, .republicOfChina, .islamicCivil, .hebrew] {
+            var cal = Calendar(identifier: id)
+            cal.timeZone = tz
+            let s = VisitedDay.string(from: date, calendar: cal)
+            XCTAssertEqual(s, "2026-11-08", "\(id) の端末で西暦にならない")
+            XCTAssertTrue(VisitedDay.isValid(s))
+            // 読み戻しも西暦（その日の正午）
+            let back = VisitedDay.date(from: s, calendar: cal)
+            XCTAssertEqual(back, date)
+        }
+    }
+
+    /// 和暦の端末で足した記録が、保存して読み直しても消えない
+    func testRecordSurvivesSaveAndLoadOnJapaneseCalendar() async throws {
+        var cal = Calendar(identifier: .japanese)
+        cal.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        var g = Calendar(identifier: .gregorian)
+        g.timeZone = cal.timeZone
+        let date = g.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 12))!
+        let d = defaults()
+        let store = VisitedPrefectureStore(defaults: d)
+        var book = VisitedPrefectures()
+        book.add("東京都", day: VisitedDay.string(from: date, calendar: cal))
+        store.save(book, for: "u")
+        XCTAssertEqual(store.load(for: "u").days("東京都"), ["2026-11-08"])
+    }
+
+    func testChangeDayNeverMakesDuplicatesAndLoadSortsDays() {
+        var book = VisitedPrefectures()
+        book.add("京都府", day: "2026-05-01")
+        book.add("京都府", day: "2026-07-01")
+        XCTAssertNil(book.changeDay("京都府", at: 0, to: "2026-07-01"), "ほかの記録と同じ日には直せない")
+        XCTAssertEqual(book.days("京都府"), ["2026-05-01", "2026-07-01"])
+        // 読み込みで並べ直す
+        let loaded = VisitedPrefectures(visits: ["京都府": ["2026-09-01", "2026-01-01", "2026-05-01"]])
+        XCTAssertEqual(loaded.days("京都府"), ["2026-01-01", "2026-05-01", "2026-09-01"])
+    }
+
+    /// 🔴 読めない値・新しい版の値は、空で上書きされる前に控えへ移す（退会で控えも消える）
+    func testUnreadableOrFutureValuesAreBackedUpBeforeOverwrite() {
+        let d = defaults()
+        let store = VisitedPrefectureStore(defaults: d)
+        let broken = Data("{\"visits\":".utf8)
+        d.set(broken, forKey: VisitedPrefectureStore.key(for: "a"))
+        XCTAssertEqual(store.load(for: "a").visitedCount, 0)
+        XCTAssertEqual(d.data(forKey: VisitedPrefectureStore.backupKey(for: "a")), broken)
+        // 空を保存しても控えは残る。2回目に読めない値を読んでも控えは入れ替えない
+        store.save(VisitedPrefectures(), for: "a")
+        XCTAssertEqual(d.data(forKey: VisitedPrefectureStore.backupKey(for: "a")), broken)
+
+        let future = Data(#"{"v":2,"visits":{"東京都":["2026-01-01"]},"extra":1}"#.utf8)
+        d.set(future, forKey: VisitedPrefectureStore.key(for: "b"))
+        XCTAssertEqual(store.load(for: "b").count("東京都"), 1)
+        XCTAssertEqual(d.data(forKey: VisitedPrefectureStore.backupKey(for: "b")), future)
+
+        // 今の形なら控えを作らない
+        var book = VisitedPrefectures()
+        book.add("東京都", day: "2026-01-01")
+        store.save(book, for: "c")
+        _ = store.load(for: "c")
+        XCTAssertNil(d.data(forKey: VisitedPrefectureStore.backupKey(for: "c")))
+
+        store.removeData(for: "a")
+        XCTAssertNil(d.data(forKey: VisitedPrefectureStore.backupKey(for: "a")), "退会で控えも消える")
+    }
+
     // MARK: - 報酬・公開と結ばない
 
     /// 🔴 塗り・回数は硬貨・バッジ・家具・Pro にも、サーバーにも結ばない（不正の誘因を作らない）。

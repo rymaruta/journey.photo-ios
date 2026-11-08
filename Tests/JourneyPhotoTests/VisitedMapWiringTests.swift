@@ -64,8 +64,10 @@ final class VisitedMapWiringTests: XCTestCase {
             "Button { model.undo() }",
             "model.markAllVisited()",
             "model.clearAll()",
-            "model.confirmSameDay()",
-            "model.cancelSameDay()",
+            "VisitedBottomBar(model: model)",
+            "model.selected == nil",
+            ".sensoryFeedback(.warning, trigger: model.warningTick)",
+            "model.voiceOverOn = ",
             "Toggle(isOn: $model.addsOnTap)",
             "environment.photos.myPhotos()",
             "PrefectureMapGeometry.bundled",
@@ -108,6 +110,42 @@ final class VisitedMapWiringTests: XCTestCase {
                        "model.restoreCandidate(prefecture)", "model.changeDay(prefecture", "VisitedMapText.candidateNote",
                        "jpPillButton(.accent)", "jpPillButton(.outline)", "minHeight: WebTheme.minTapTarget"] {
             XCTAssertTrue(card.contains(needle), "札のつなぎが無い: \(needle)")
+        }
+    }
+
+    /// 🔴 県の札（シート）の下に確かめ・「取り消す」・祝いが隠れない
+    func testBarAndCelebrationAreNotHiddenBehindTheCard() throws {
+        let card = try source("Features/Profile/VisitedPrefectureCard.swift")
+        XCTAssertTrue(card.contains(".overlay(alignment: .bottom) { VisitedBottomBar(model: model) }"),
+                      "札の中に確かめ・取り消すの帯が無い")
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        // 画面側の帯と祝いは、札が開いている間は出さない（札の下に隠れる／二重にしない）
+        XCTAssertTrue(screen.contains("if model.selected == nil { VisitedBottomBar(model: model) }"))
+        XCTAssertTrue(screen.contains("if let celebration = model.celebration, model.selected == nil"),
+                      "祝いは札を閉じたあとに出す")
+        let bar = try source("Features/Profile/VisitedBottomBar.swift")
+        for needle in ["model.confirmSameDay()", "model.cancelSameDay()", "model.undo()", "toast.offersUndo"] {
+            XCTAssertTrue(bar.contains(needle), "帯のつなぎが無い: \(needle)")
+        }
+    }
+
+    /// 🔴 指の途中状態は、`onEnded` が来なくても次の指で作り直す。＋−は実際の枠の大きさで拡大する
+    func testGestureStateIsRebuiltAndZoomUsesTheRealFrame() throws {
+        let canvas = try source("Features/Profile/VisitedMapCanvasView.swift")
+        for needle in ["isNewTouch(start: value.startLocation, translation: value.translation)",
+                       "private func resetTouch()", "let fresh = pinchStart == nil || pinchLocation != value.startLocation",
+                       "zoomControls(container: container)", "viewport.stepped(1, content: geometry.size, container: container)",
+                       "longPressTick += 1"] {
+            XCTAssertTrue(canvas.contains(needle), "地図のつなぎが無い: \(needle)")
+        }
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        XCTAssertFalse(screen.contains("containerGuess"), "＋−に推定の枠を渡している")
+    }
+
+    /// 回数の色の作り方に Pro の名前を出さない（`VisitedMapStyle.color` を通す）
+    func testColorsDoNotGoThroughProNames() throws {
+        for (path, text) in try visitedSources() where !path.hasSuffix("VisitedMapEntryCard.swift") {
+            XCTAssertFalse(text.contains("ProMarkColors"), "\(path) が Pro の名前の部品を直に呼んでいる")
         }
     }
 
