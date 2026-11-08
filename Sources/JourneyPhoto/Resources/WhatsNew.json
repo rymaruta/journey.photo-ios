@@ -2,6 +2,59 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.74",
+      "date": "2026-11-08",
+      "items": [
+        {
+          "symbol": "map",
+          "title": {
+            "ja": "行った県を塗りつぶせる地図",
+            "en": "A map of the prefectures you've visited"
+          },
+          "detail": {
+            "ja": "マイページの「行った県」から、日本地図に行った県を塗れます。写真の撮影地から候補が出て、あなたがタップして記録します。同じ県に何度行っても、回数が色と数字で残ります。あなただけの記録で、ほかの人には見えません。",
+            "en": "From \"Prefectures visited\" on My Page, color in the prefectures you've been to on a map of Japan. Photo locations suggest candidates and you confirm by tapping. Return trips are kept as colors and numbers. It's your own record, hidden from everyone else."
+          },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "video",
+          "title": {
+            "ja": "ストーリーに動画。撮影もすぐに",
+            "en": "Videos in Stories, and a faster camera"
+          },
+          "detail": {
+            "ja": "ストーリーに動画（60秒まで）を載せられます。ホームの「＋」でカメラがすぐ開き、タップで写真、長押しで動画。アプリのアイコンを長押しして「ストーリーを撮る」からも始められます。場所の札は、写真の上で自由に動かせます。",
+            "en": "Add videos (up to 60 seconds) to Stories. Tap \"+\" on Home to open the camera right away: tap for a photo, hold for video. You can also start from the app icon's \"Shoot a Story\" shortcut. Place stickers can now be moved anywhere on the photo."
+          },
+          "destination": "home"
+        },
+        {
+          "symbol": "tag",
+          "title": {
+            "ja": "手荷物タグに載せるラベルを選べる",
+            "en": "Choose what goes on your baggage tags"
+          },
+          "detail": {
+            "ja": "トランクの「手荷物タグ」から、タグごとに貼ったラベルを選べます。選ばない枠は、これまでどおり自動で並びます。タグを外すこともできます。",
+            "en": "From \"Baggage tags\" on your Trunk, pick which label goes on each tag. Slots you leave alone keep filling automatically, and you can remove a tag."
+          },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "sparkles",
+          "title": {
+            "ja": "投稿のあと、静かなお祝い",
+            "en": "A quiet celebration after you post"
+          },
+          "detail": {
+            "ja": "投稿すると、写真にラベルが落ちて貼りつきます。はじめての1枚や、はじめての県には一言が添えます。はじめてのいいね・コメントも、お知らせで一度だけお知らせします。",
+            "en": "After you post, your label settles onto the photo. Firsts get a short note — your first photo, a new prefecture, and your first like or comment (shown once in Notifications)."
+          }
+        }
+      ]
+    },
+    {
       "version": "1.1.72",
       "date": "2026-11-07",
       "items": [

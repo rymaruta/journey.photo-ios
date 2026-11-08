@@ -115,7 +115,7 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        XCTAssertEqual(all.map(\.version), ["1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
         // 1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
         let releases = Array(all.dropFirst())
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
