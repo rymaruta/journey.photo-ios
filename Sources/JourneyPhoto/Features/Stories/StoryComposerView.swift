@@ -1890,42 +1890,34 @@ struct StoryComposerView: View {
         var failed = 0
         // 動画の読み込みの断り（60秒超え・読めない）。**写真と同じ一言にせず理由を言う**（札 #500）
         var videoProblem: StoryVideoRules.Problem?
-        if items.contains(where: { StoryVideoPipeline.isVideo($0) }) {
-            // 写真と動画が混ざる選びは、**選んだ順のまま**1件ずつ足す
-            for item in items {
-                if StoryVideoPipeline.isVideo(item) {
-                    // 写真と同じ上限時間(`StorySimpleRules.pickLoadTimeout`)。iCloud から落ちてこない動画で
-                    // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
-                    let result: Result<StoryVideoPipeline.Imported, Error>? = await AsyncTimeout.firstWithin(
-                        seconds: StorySimpleRules.pickLoadTimeout
-                    ) { () async -> Result<StoryVideoPipeline.Imported, Error>? in
-                        do { return .success(try await StoryVideoPipeline.importClip(from: item)) }
-                        catch { return .failure(error) }
-                    }
-                    switch result {
-                    case .success(let imported)?:
-                        await acceptVideo(imported)
-                    case .failure(let error)?:
-                        failed += 1
-                        videoProblem = (error as? StoryVideoRules.Problem) ?? .importFailed
-                    case nil:
-                        failed += 1
-                        videoProblem = .importTimedOut
-                    }
-                } else {
-                    failed += await StorySimpleRules.readPicks([item], read: { item in
-                        try await item.loadTransferable(type: Data.self)
-                    }, accept: { data in
-                        await accept(data)
-                    })
+        // 選んだ順のまま1件ずつ足す(写真と動画が混ざってもよい)。写真は `readPicks` を通す
+        for item in items {
+            if StoryVideoPipeline.isVideo(item) {
+                // 写真と同じ上限時間(`StorySimpleRules.pickLoadTimeout`)。iCloud から落ちてこない動画で
+                // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
+                let result: Result<StoryVideoPipeline.Imported, Error>? = await AsyncTimeout.firstWithin(
+                    seconds: StorySimpleRules.pickLoadTimeout
+                ) { () async -> Result<StoryVideoPipeline.Imported, Error>? in
+                    do { return .success(try await StoryVideoPipeline.importClip(from: item)) }
+                    catch { return .failure(error) }
                 }
+                switch result {
+                case .success(let imported)?:
+                    await acceptVideo(imported)
+                case .failure(let error)?:
+                    failed += 1
+                    videoProblem = (error as? StoryVideoRules.Problem) ?? .importFailed
+                case nil:
+                    failed += 1
+                    videoProblem = .importTimedOut
+                }
+            } else {
+                failed += await StorySimpleRules.readPicks([item], read: { item in
+                    try await item.loadTransferable(type: Data.self)
+                }, accept: { data in
+                    await accept(data)
+                })
             }
-        } else {
-            failed = await StorySimpleRules.readPicks(items, read: { item in
-                try await item.loadTransferable(type: Data.self)
-            }, accept: { data in
-                await accept(data)
-            })
         }
         if let videoProblem {
             message = videoProblem.message
@@ -2148,7 +2140,7 @@ struct StoryComposerView: View {
         .overlay(alignment: .bottomLeading) {
             if shot.video != nil {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.white)
                     .padding(4)
                     .accessibilityHidden(true)

@@ -254,7 +254,7 @@ final class StoryVideoTests: XCTestCase {
         XCTAssertTrue(composer.contains("StoryVideoRules.exportCheck("), "送る直前に動画の書き出しを確かめていない")
         XCTAssertTrue(composer.contains("if currentClip == nil {\n                Menu {\n                    durationOptions"), "動画に表示秒数を出している")
         XCTAssertTrue(composer.contains("if currentClip == nil, !framing.wrappedValue.isIdentity"), "動画に合わせ方を出している")
-        XCTAssertTrue(composer.contains("AsyncTimeout.firstWithin(\n                        seconds: StorySimpleRules.pickLoadTimeout"), "動画の読み込みに時間切れが無い")
+        XCTAssertTrue(composer.contains("AsyncTimeout.firstWithin(\n                    seconds: StorySimpleRules.pickLoadTimeout"), "動画の読み込みに時間切れが無い")
         XCTAssertTrue(composer.contains("hasVideo: hasVideoShot"))
         // 閉じる・外す・投稿のどの経路でも消す
         XCTAssertTrue(composer.contains("discardAllVideos()"))

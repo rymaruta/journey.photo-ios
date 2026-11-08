@@ -413,7 +413,8 @@ final class MultiDraftsTests: XCTestCase {
         XCTAssertTrue(story.contains("@StateObject private var drafts = StoryDraftStore(slot: .entry(UUID().uuidString))"))
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("openDraft: openPostDraftId"))
-        XCTAssertTrue(root.contains("StoryComposerView(openDraft: openStoryDraftId)"))
+        // 下書きの一覧から開く道(openDraft)は変えない。札 #500 で「カメラを先頭に」の旗が後ろに増えた
+        XCTAssertTrue(root.contains("StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera)"))
         let app = try source("App/JourneyPhotoApp.swift")
         XCTAssertTrue(app.contains("DraftLibrary.shared.prepare(for: userId)"), "起動のときに前の版の下書きを移していない")
         XCTAssertTrue(app.contains("DraftLibrary.shared.clearStory(stamp: stamp, for: userId)"))

@@ -23,8 +23,6 @@ struct StoriesRow: View {
     /// 開いたときに写した**人ごとの束の並び**と、押した人の位置（`StoryReel`）
     @State private var openedReel: (groups: [StoryReel.Group], start: Int) = ([], 0)
     @State private var showComposer = false
-    /// 作る画面をカメラから始めるか（札 #500。「＋」はカメラが先頭・A 案）。カメラが無い端末では写真選びから
-    @State private var composerStartsWithCamera = false
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @State private var showUploadFailure = false
@@ -151,15 +149,9 @@ struct StoriesRow: View {
         .fullScreenCover(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
-            NavigationStack { StoryComposerView(startsWithCamera: composerStartsWithCamera) }
+            NavigationStack { // 入口は全部「＋」(ストーリーを追加)なので、カメラを先頭に開く(札 #500・A 案)。カメラが無い端末は写真選びから
+            StoryComposerView(startsWithCamera: StoryCameraView.isAvailable) }
         }
-    }
-
-    /// 「＋」を押した。**カメラを先頭に開く**（札 #500・アプリを開いてから撮るまでの手間を省く）。
-    /// カメラが使えない端末（シミュレータ）は今までどおり写真選びから
-    private func openComposer() {
-        composerStartsWithCamera = StoryCameraView.isAvailable
-        showComposer = true
     }
 
     // MARK: - 輪
@@ -185,10 +177,10 @@ struct StoriesRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("あなたのストーリー", "Your story"))
             // 読み上げでは「＋」を別の要素にせず、輪の操作として選べるようにする
-            .accessibilityAction(named: L("ストーリーを追加", "Add to your story")) { openComposer() }
+            .accessibilityAction(named: L("ストーリーを追加", "Add to your story")) { showComposer = true }
             .overlay(alignment: .topLeading) {
                 Button {
-                    openComposer()
+                    showComposer = true
                 } label: {
                     plusBadge
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
@@ -207,7 +199,7 @@ struct StoriesRow: View {
             // 「＋」は見た目 22 の丸だが、**押せるのは輪と名前の全体**（幅 64・44pt 以上）。
             // 「＋」だけの小さな的は置かない
             Button {
-                openComposer()
+                showComposer = true
             } label: {
                 VStack(spacing: StoryRingMetrics.nameSpacing) {
                     StoryRing(count: 1, unseen: false) { myFace }
@@ -254,7 +246,7 @@ struct StoriesRow: View {
     private var emptyRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                openComposer()
+                showComposer = true
             } label: {
                 HStack(spacing: JPSpace.s) {
                     myFace

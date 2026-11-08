@@ -142,7 +142,7 @@ final class StoryCameraEntryTests: XCTestCase {
     /// 作る画面の入口は2つ（`RootView`・`StoriesRow`）。どちらも全画面のまま、カメラ先頭の旗を渡す
     func testComposerEntriesPassTheCameraFirstFlag() throws {
         XCTAssertTrue(try read("Sources/JourneyPhoto/Features/Stories/StoriesRow.swift")
-            .contains("StoryComposerView(startsWithCamera: composerStartsWithCamera)"))
+            .contains("StoryComposerView(startsWithCamera: StoryCameraView.isAvailable)"))
         XCTAssertTrue(try read("Sources/JourneyPhoto/App/RootView.swift")
             .contains("StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera)"))
     }
