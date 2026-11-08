@@ -3369,10 +3369,13 @@ final class ScreenshotTests: XCTestCase {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         guard openTrunkRow(app, "trunk.tags.open") else { return XCTFail("「手荷物タグ」の入口が無い") }
-        let slot = app.buttons["trunk.tags.slot.1"].firstMatch
+        // 見本の投稿は 42 件＝吊るせるタグは1枚（50 件で2枚目）。1枠目だけが押せる行で、2枠目以降は押せない行（Button ではない）
+        let slot = app.buttons["trunk.tags.slot.0"].firstMatch
         guard slot.waitForExistence(timeout: 10) else { return XCTFail("手荷物タグの画面が開かない") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "99t-手荷物タグ")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.tags.slot.1"].firstMatch.exists, "まだ吊るせない枠の行が無い")
+        XCTAssertFalse(app.buttons["trunk.tags.slot.1"].firstMatch.exists, "まだ吊るせない枠が押せる")
         XCTAssertGreaterThanOrEqual(slot.frame.height, 44, "枠の行が 44pt 未満")
         slot.tap()
         let done = app.buttons["trunk.tags.done"].firstMatch
