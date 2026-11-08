@@ -331,6 +331,12 @@ struct StoryComposerView: View {
                                         onDelete: { deleteTyping() },
                                         onCancel: { cancelTyping() }) { finishTyping() }
                 }
+                // UI テストのときだけ: 札の動きの記録を見えない要素 `story.probe` に出す（`-JPPreviewStoryProbe YES`・札 #499）
+                if StoryComposeProbe.isEnabled {
+                    StoryComposeProbeView(snapshot: storyProbeSnapshot)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
+                }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
@@ -1575,6 +1581,20 @@ struct StoryComposerView: View {
         showPlaceHint = false
         photoIgnoresKeyboard = true
         typingId = id
+    }
+
+    /// `story.probe` に出す、いまの状態（札 #499・UI テストのときだけ使う）。
+    /// 形: `typing=0|1 dragging=0|1 capFocus=0|1 capShown=0|1 votePanel=0|1 sheet=0|1 loc="…" chip=0|1 fr=ox,oy,s,r ov=[kind@x,y,s,r:"文字";…]`
+    private var storyProbeSnapshot: String {
+        func f(_ v: Double) -> String { String(format: "%.3f", v) }
+        let list = (shots.indices.contains(current) ? shots[current].overlays : []).map {
+            "\($0.kind.rawValue)@\(f($0.x)),\(f($0.y)),\(f($0.size)),\(f($0.rotation)):\"\($0.text)\""
+        }.joined(separator: ";")
+        let fr = shots.indices.contains(current) ? shots[current].framing : .identity
+        return "typing=\(typingId != nil ? 1 : 0) dragging=\(draggingOverlay ? 1 : 0) capFocus=\(captionFocused ? 1 : 0) "
+            + "capShown=\(captionShown ? 1 : 0) votePanel=\(votePanelOpen ? 1 : 0) sheet=\(showStickerTray || showPlaceEditor ? 1 : 0) "
+            + "loc=\"\(place.location)\" chip=\(place.location.isEmpty ? 0 : 1) "
+            + "fr=\(f(fr.offsetX)),\(f(fr.offsetY)),\(f(fr.scale)),\(f(fr.rotation)) ov=[\(list)]"
     }
 
     /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）。

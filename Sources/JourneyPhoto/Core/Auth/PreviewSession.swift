@@ -126,6 +126,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、ストーリー作成の札の動き（動かす操作の回数・時刻・各札の位置・打っている最中か）を取り、
+    /// 見えない要素 `story.probe` に出す（Debug のみ・2026-11-08・札 #499「場所などを入力した後、自由に動かせない」）。
+    /// `-JPPreviewStoryProbe YES`。画面の絵からの推定でなく、動かない回の実際の数で原因を決めるため。
+    /// Release では必ず false（記録も要素も出ない）
+    static let storyProbeKey = "JPPreviewStoryProbe"
+
+    static var storyProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: storyProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
