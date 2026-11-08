@@ -39,6 +39,66 @@ final class HomeSpotShelfTests: XCTestCase {
         shelf?.entries.map(\.spot.spotId) ?? []
     }
 
+    // MARK: - 季節の判定と答えの使い回し（2026-11-07・札 #435 / #429）
+
+    /// 索引だけの行（`seasons` の鍵に種類だけ）
+    private func indexOnlySpot(_ id: String, kinds: [String]) throws -> OfficialSpot {
+        let list = kinds.map { "\"\($0)\"" }.joined(separator: ",")
+        var spot = try JSONDecoder.api.decode(
+            OfficialSpot.self,
+            from: Data("{\"spotId\":\"\(id)\",\"slug\":\"\(id)\",\"name\":\"[\(id)]\",\"stage\":\"published\",\"seasons\":[\(list)]}".utf8))
+        spot.isIndexOnly = true
+        return spot
+    }
+
+    /// `hasSeason` は `seasonKeys.contains` と全部の季節・知らない綴り・空で同じ答え（詳細つきの行も索引だけの行も）
+    func testHasSeasonMatchesSeasonKeysContains() throws {
+        let rows = [
+            try spot("sp_a", seasons: [("autumn", "秋"), ("spring", "春")]),
+            try spot("sp_b", seasons: []),
+            try indexOnlySpot("sp_c", kinds: ["winter", "autumn", "bogus"]),
+            try indexOnlySpot("sp_d", kinds: []),
+        ]
+        for row in rows {
+            for season in ["spring", "summer", "autumn", "winter", "bogus", ""] {
+                XCTAssertEqual(row.hasSeason(season), row.seasonKeys.contains(season),
+                               "\(row.spotId) / \(season)")
+            }
+        }
+        XCTAssertTrue(rows[2].hasSeason("autumn"))
+        XCTAssertFalse(rows[2].hasSeason("bogus"), "知らない季節は索引だけの行でも数えない")
+    }
+
+    /// 同じ配列を続けて渡すと同じ答え（使い回し）。並びは前と同じ（`spotId` の順）
+    func testSeasonGuidesRepeatedCallsGiveSameRows() throws {
+        let list = try [spot("sp_03"), spot("sp_01"), spot("sp_02", stage: "review"), spot("sp_00")]
+        let first = HomeTopCard.seasonGuides(today: today, spots: list)
+        let second = HomeTopCard.seasonGuides(today: today, spots: list)
+        XCTAssertEqual(first.season, "autumn")
+        XCTAssertEqual(first.rows.map(\.spot.spotId), ["sp_00", "sp_01", "sp_03"], "下書きは除き、spotId の順")
+        XCTAssertEqual(second.rows.map(\.spot.spotId), first.rows.map(\.spot.spotId))
+        XCTAssertEqual(second.rows.map(\.guide), first.rows.map(\.guide))
+    }
+
+    /// 配列を書き換えたら作り直す（古い答えを返さない）。詳細が重なって文が変わった回も、季節が替わった回も
+    func testSeasonGuidesRecomputesWhenSpotsOrSeasonChange() throws {
+        var list = try [spot("sp_00"), spot("sp_01"), spot("sp_02")]
+        XCTAssertEqual(HomeTopCard.seasonGuides(today: today, spots: list).rows.count, 3)
+        // 1件を下書きに替える（件数は同じ・中身だけ違う）
+        list[1] = try spot("sp_01", stage: "review")
+        XCTAssertEqual(HomeTopCard.seasonGuides(today: today, spots: list).rows.map(\.spot.spotId), ["sp_00", "sp_02"])
+        // 文を替える
+        list[0] = try spot("sp_00", seasons: [("autumn", "新しい文")])
+        XCTAssertEqual(HomeTopCard.seasonGuides(today: today, spots: list).rows.first?.guide, "新しい文")
+        // 季節が替わる（同じ配列・3月 = 春）
+        let spring = HomeTopCard.today(Date(timeIntervalSince1970: 1_773_835_200), in: utc)!   // 2026-03-18
+        let springRows = HomeTopCard.seasonGuides(today: spring, spots: list)
+        XCTAssertEqual(springRows.season, "spring")
+        XCTAssertTrue(springRows.rows.isEmpty, "春の案内を持つ行は無い")
+        // 戻すと秋の答え
+        XCTAssertEqual(HomeTopCard.seasonGuides(today: today, spots: list).season, "autumn")
+    }
+
     // MARK: - 何を出すか
 
     /// 公開済み・いまの季節の案内を持つ行だけ。**写真の無い行も出す**（作例は本文にしか無い）

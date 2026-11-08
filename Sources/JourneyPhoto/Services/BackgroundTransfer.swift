@@ -174,14 +174,21 @@ final class BackgroundTransfer: NSObject, PhotoTransfer, URLSessionTaskDelegate,
         let task = session.uploadTask(with: request, fromFile: file)
         task.taskDescription = tag.encoded
         let book = self.book
+        // 🔴 **取り消しは、待つ人を書いて始めたあとにだけ task へ届ける**(2026-11-07)。作る前にもう取り消されていると、
+        // `onCancel` が本体より先に走って `task.cancel()` が完了通知を呼び、待つ人を書く前に `finish` が「誰も待っていない」
+        // で鍵を控えに書き、そのあとで書いた待ち手は二度と起こされなかった(永久に待つ)。`TransferCancelGate` が順序を守る
+        let gate = TransferCancelGate()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URLResponse, Error>) in
                 // **待つ人を書いてから始める**——先に始めると、すぐ終わった回が「誰も待っていない」になる
                 book.wait(file: tag.file) { continuation.resume(with: $0) }
+                let cancelNow = gate.arm()
                 task.resume()
+                // 待つ人を書いた後に取り消す(先に取り消されていた回もここで)。完了通知は必ず待ち手に届く
+                if cancelNow { task.cancel() }
             }
         } onCancel: {
-            task.cancel()
+            gate.requestCancel { task.cancel() }
         }
     }
 
@@ -476,5 +483,31 @@ final class OrphanKeys: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         try? JSONEncoder().encode(keys).write(to: fileURL, options: .atomic)
+    }
+}
+
+/// `upload` の取り消しの順序を守る小さな錠(2026-11-07)。取り消しの要求(`requestCancel`)は、待つ人を書いて
+/// `arm()` した後にだけ実際の取り消しを走らせる。`arm()` より前に要求が来ていたら、`arm()` が true を返して
+/// 呼び手が取り消す。どちらの順でも取り消しは1回だけ、必ず待つ人を書いた後になる
+final class TransferCancelGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var armed = false
+    private var requested = false
+
+    /// 待つ人を書き終えた。取り消しの要求がすでに来ていれば true(呼び手が取り消す)
+    func arm() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        armed = true
+        return requested
+    }
+
+    /// 取り消しの要求。`arm()` 済みならその場で `cancel` を走らせ、まだなら覚えておくだけ
+    func requestCancel(_ cancel: () -> Void) {
+        lock.lock()
+        requested = true
+        let runNow = armed
+        lock.unlock()
+        if runNow { cancel() }
     }
 }

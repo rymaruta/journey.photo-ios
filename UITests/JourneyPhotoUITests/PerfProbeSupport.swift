@@ -11,7 +11,7 @@ import XCTest
 ///
 /// 値の形（アプリの `PerfRecorder.summary()` と同じ。変えるときは両方）:
 ///
-///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms
+///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…] | samples=[+5300 SwiftUI`xxx^JourneyPhoto`yyy;…]
 extension XCTestCase {
 
     /// 起動の引数に足す（`app.launch()` の前）
@@ -80,6 +80,22 @@ struct PerfProbeReading {
     /// `selection` を書いた履歴（`+120ms home>search@tabs.set` の並び）
     var selections: [String] {
         section("sel").split(separator: ";").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// 100ms を超えた停止の一覧（`+1750ms 1634ms` の並び・起動から止まり始めた時刻と長さ・2026-11-07）
+    var stalls: [String] {
+        section("stalls").split(separator: ";").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// 時刻付きの出来事の一覧（`+812 app.body` の並び・起動からの ms と名前・起きた順・2026-11-07）。
+    /// 末尾の `+Ndropped` は溢れた数
+    var events: [String] {
+        section("ev").split(separator: ";").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// 止まっている最中のメインスレッドの積みの見本（`+5300 SwiftUI`xxx^JourneyPhoto`yyy` の並び・撮った ms と浅い方からの段・2026-11-07）
+    var samples: [String] {
+        section("samples").split(separator: ";").map(String.init).filter { !$0.isEmpty }
     }
 
     /// body の評価回数（`home`・`myPage`・`photoDetail`）

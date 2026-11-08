@@ -3469,9 +3469,21 @@ final class ScreenshotTests: XCTestCase {
     private func pickUp(_ item: XCUIElement, go: XCUIElement, in app: XCUIApplication) -> Bool {
         let gone = NSPredicate(format: "exists == false")
         _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: go)], timeout: 3)
+        // 札 #424: 押す直前の見えない要素 `trunk.open.debug` の値（押し直しが要った回の原因を数で見る）
+        let pre = trunkDebugValue(app)
+        let began = Date()
         item.tap()
-        if go.waitForExistence(timeout: 4) { return true }
-        guard item.exists, item.isHittable else { return go.waitForExistence(timeout: 6) }
+        if go.waitForExistence(timeout: 4) {
+            notePick(app, item: item, outcome: "ok", pre: pre, since: began)
+            return true
+        }
+        guard item.exists, item.isHittable else {
+            let ok = go.waitForExistence(timeout: 6)
+            notePick(app, item: item, outcome: ok ? "late" : "failed-unhittable", pre: pre, since: began)
+            return ok
+        }
+        // 🔴 押し直す前の値（この回が「持ち上がらなかった回」）
+        notePick(app, item: item, outcome: "missed", pre: pre, since: began)
         XCTContext.runActivity(named: "押しても持ち上がらなかったので押し直す（\(item.identifier)）") { activity in
             let shot = XCTAttachment(screenshot: app.screenshot())
             shot.name = "押し直す前（\(item.identifier)）"
@@ -3479,11 +3491,83 @@ final class ScreenshotTests: XCTestCase {
             activity.add(shot)
         }
         item.tap()
-        return go.waitForExistence(timeout: 10)
+        let ok = go.waitForExistence(timeout: 10)
+        notePick(app, item: item, outcome: ok ? "retry-ok" : "retry-failed", pre: pre, since: began)
+        return ok
+    }
+
+    /// 見えない要素 `trunk.open.debug`（`TrunkPickProbe`・`-JPPreviewPerfProbe YES` のときだけ在る）の今の値
+    private func trunkDebugValue(_ app: XCUIApplication) -> String {
+        guard app.state == .runningForeground else { return "debug が読めない（アプリが前に居ない）" }
+        let probe = app.descendants(matching: .any)["trunk.open.debug"].firstMatch
+        guard probe.exists else { return "debug が読めない（要素が無い）" }
+        return (probe.value as? String) ?? "debug が読めない（値が無い）"
+    }
+
+    /// 押した結果を1行で残す（ログ・活動の名前・添付）。`PERF-TRUNK` で引く
+    private func notePick(_ app: XCUIApplication, item: XCUIElement, outcome: String, pre: String, since: Date) {
+        let ms = Int(Date().timeIntervalSince(since) * 1000)
+        if outcome != "ok" { pickMisses += 1 }
+        let post = trunkDebugValue(app)
+        let line = "PERF-TRUNK test=\(perfTestName) item=\(item.identifier) outcome=\(outcome) afterMs=\(ms)"
+            + " hittable=\(item.exists && item.isHittable) PRE{\(pre)} POST{\(post)}"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        if outcome != "ok" {
+            let att = XCTAttachment(string: line)
+            att.name = "trunk.open.debug \(outcome)（\(item.identifier)）"
+            att.lifetime = .keepAlways
+            add(att)
+        }
+    }
+
+    /// 押して持ち上がらなかった回の数（`notePick`・`testTrunkPickRepeat` が最後に見る）
+    private var pickMisses = 0
+
+    /// **札 #424 の測り**: 開いたふたの中身を押す。新しく起動して → 開けて → 会員証・メダル・「ほか N」を戻しながら押す、を
+    /// `rounds` 回。押す前の待ちは回ごとに替える（2 秒・10 秒）。押しが届かなかった回（`PERF-TRUNK … outcome=missed`）の
+    /// `trunk.open.debug` の値で、A（引く指が押しを奪う）・B（`dragStart`/`lidSettled` が残る）・C（`held` が残る）を見分ける。
+    /// 一度でも押し直しが要ったら最後に落とす（押し直しの仕組みが無くても通ることを数で示すため）
+    func testTrunkPickRepeat() { trunkPickRounds([0, 1]) }
+    func testTrunkPickRepeat2() { trunkPickRounds([2, 3]) }
+    func testTrunkPickRepeat3() { trunkPickRounds([4, 5]) }
+    func testTrunkPickRepeat4() { trunkPickRounds([6, 7]) }
+
+    /// 1 回の起動で、会員証・メダル・「ほか N」・乗車券を 2 巡押す（1 つの試験は 5 分の上限に収まるよう 2 回の起動まで）
+    private func trunkPickRounds(_ rounds: [Int]) {
+        pickMisses = 0
+        for round in rounds {
+            let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
+            defer { app.terminate() }
+            guard openTrunk(app) else { return XCTFail("旅のトランクを開けない（\(round) 回目）") }
+            guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い（\(round) 回目）") }
+            let toggle = app.buttons["trunk.open.toggle"].firstMatch
+            guard toggle.waitForExistence(timeout: 15) else { return XCTFail("「ふたを開ける」のボタンが無い（\(round) 回目）") }
+            Thread.sleep(forTimeInterval: 2)
+            toggle.tap()
+            let medal = app.buttons["trunk.inside.medal"].firstMatch
+            guard medal.waitForExistence(timeout: 15) else { return XCTFail("開けたふたの裏にメダルが無い（\(round) 回目）") }
+            Thread.sleep(forTimeInterval: round % 2 == 0 ? 2 : 10)
+            let go = app.buttons["trunk.hold.go"].firstMatch
+            let putBack = app.buttons["trunk.hold.putBack"].firstMatch
+            for _ in 0..<2 {
+                for id in ["trunk.inside.card", "trunk.inside.medal", "trunk.inside.more", "trunk.inside.tickets"] {
+                    let item = app.buttons[id].firstMatch
+                    guard item.waitForExistence(timeout: 10), item.isHittable else {
+                        XCTContext.runActivity(named: "PERF-TRUNK round=\(round) item=\(id) 押せる所に無い \(trunkDebugValue(app))") { _ in }
+                        continue
+                    }
+                    guard pickUp(item, go: go, in: app) else { XCTFail("\(id) を押しても持ち上がらない（\(round) 回目）"); return }
+                    Thread.sleep(forTimeInterval: 0.5)
+                    putBack.tap()
+                }
+            }
+        }
+        XCTAssertEqual(pickMisses, 0, "押しても持ち上がらなかった回が \(pickMisses) 回（PERF-TRUNK の行を見る）")
     }
 
     func testCapturesTrunkOpen() {
-        let app = launchTrunk(Self.trunkInsideArgs)
+        let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         guard openTrunkRow(app, "trunk.open") else { return XCTFail("「ふたを開ける」の入口が無い") }
         let toggle = app.buttons["trunk.open.toggle"].firstMatch
@@ -3580,6 +3664,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewTheirTrunk", "YES"]
+        enablePerfProbe(app) // 札 #424: 見えない要素 `trunk.open.debug`
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
@@ -5270,6 +5355,10 @@ final class ScreenshotTests: XCTestCase {
         /// アプリ全体（`Process`）の CPU の時間の合計（ms）とメモリ（MB）
         var cpuMs = 0.0
         var memMB = 0.0
+        /// メモリの内訳（`task_vm_info` の internal・compressed・device・MB・2026-11-07）
+        var intMB = 0.0
+        var cmpMB = 0.0
+        var devMB = 0.0
         /// 場面の中身の数（`SceneExterior`・`SceneRoom`・`CamperSceneStats`）の「欄=値」の原文（2026-11-06・メモリの内訳）
         var raw = ""
     }
@@ -5296,6 +5385,9 @@ final class ScreenshotTests: XCTestCase {
                 case "slow": t.slow = Int(kv[1]) ?? 0
                 case "cpu_ms": t.cpuMs = Double(kv[1]) ?? 0
                 case "mem_mb": t.memMB = Double(kv[1]) ?? 0
+                case "int_mb": t.intMB = Double(kv[1]) ?? 0
+                case "cmp_mb": t.cmpMB = Double(kv[1]) ?? 0
+                case "dev_mb": t.devMB = Double(kv[1]) ?? 0
                 default: break
                 }
             }
@@ -5454,6 +5546,123 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, night ? "95x5-計測（部屋・夜）" : "95x4-計測（部屋・昼）")
         camperReport(label, lines)
     }
+
+    // MARK: - とおまわり号のメモリの内訳（2026-11-07・札 #430・測るだけ）
+    //
+    // 外観を開いて組み終えた後 → 「中に入る」で部屋を組み終えた後のアプリ全体のメモリ（phys_footprint）を、
+    // SCNView の輪郭のなめらかさ（`-JPPreviewCamperAA none|2x|4x`・外観と部屋の両方）を替えて、各 3 回測る。
+    // 毎回アプリを起動し直す。ログの `CAMPERMEM:` の行（値は MB・シミュレータ）。名指しは `screens=testMeasuresCamperMemory`
+
+    private func measureCamperMemory(aa: String, runs: Int = 3) {
+        executionTimeAllowance = 1100
+        var lines: [String] = []
+        for run in 1...runs {
+            let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES", "-JPPreviewCamperAA", aa])
+            defer { app.terminate() }
+            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(aa) \(run) 回目）"); continue }
+            let ext = camperMeter(app, "camper.perf.exterior")
+            let enter = app.buttons["camper.room.enter"].firstMatch
+            guard enter.waitForExistence(timeout: 15) else { XCTFail("「中に入る」が無い"); continue }
+            if !enter.isHittable { scrollTo(enter, in: app) }
+            enter.tap()
+            guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { XCTFail("部屋を組み終えない（\(aa) \(run) 回目）"); continue }
+            Thread.sleep(forTimeInterval: 3)
+            let room = camperMeter(app, "camper.perf.room")
+            Thread.sleep(forTimeInterval: 5)
+            let late = camperMeter(app, "camper.perf.room")
+            let e = ext["Process"] ?? CamperRenderTally(), r = room["Process"] ?? CamperRenderTally(), l = late["Process"] ?? CamperRenderTally()
+            lines.append(String(format: "CAMPERMEM aa=%@ run=%d ext_mb=%.1f room_mb=%.1f delta_mb=%.1f room_late_mb=%.1f | ext int=%.1f cmp=%.1f dev=%.1f | room int=%.1f cmp=%.1f dev=%.1f | SceneExterior %@ | SceneRoom %@",
+                                aa, run, e.memMB, r.memMB, r.memMB - e.memMB, l.memMB, e.intMB, e.cmpMB, e.devMB, r.intMB, r.cmpMB, r.devMB,
+                                ext["SceneExterior"]?.raw ?? "-", room["SceneRoom"]?.raw ?? "-"))
+        }
+        for line in lines { print("CAMPERMEM: \(line)") }
+        let text = XCTAttachment(string: lines.joined(separator: "\n"))
+        text.name = "計測（とおまわり号のメモリ・\(aa)）"
+        text.lifetime = .keepAlways
+        add(text)
+        XCTAssertEqual(lines.count, runs, "測れなかった回がある")
+    }
+
+    func testMeasuresCamperMemoryAA4x() { measureCamperMemory(aa: "4x") }
+    func testMeasuresCamperMemoryAA2x() { measureCamperMemory(aa: "2x") }
+    func testMeasuresCamperMemoryAANone() { measureCamperMemory(aa: "none") }
+
+    // MARK: - とおまわり号のメモリ: 途中の段・user_tag 別・差し替え（2026-11-07・札 #430・測るだけ）
+    //
+    // アプリ側の `CamperRenderMeter.mark`（組む途中の段）と `vmTagSummary`（user_tag 別）を、段ごとに読んでログ（`CAMPERSTAGE:`）に出す。
+    // 差し替え（`-JPPreviewCamperDiag lightbed|lightfurniture|halftex`）は測定専用。名指しは `screens=testMeasuresCamperStages`
+
+    /// 読み上げの値から、段・家具・殻・場面の数の行を 1 本ずつ出す
+    private func camperStageDump(_ app: XCUIApplication, probe id: String, _ label: String) {
+        let probeElement = app.descendants(matching: .any)[id].firstMatch
+        guard probeElement.waitForExistence(timeout: 5) else { print("CAMPERSTAGE: \(label) | 数が読めない（\(id) が無い）"); return }
+        Thread.sleep(forTimeInterval: 0.6)
+        let value = (probeElement.value as? String) ?? ""
+        for entry in value.split(separator: ";") {
+            let t = entry.trimmingCharacters(in: .whitespaces)
+            guard let name = t.split(separator: " ").first else { continue }
+            if name.hasPrefix("Scene") || name == "Process" { print("CAMPERSTAGE: \(label) | \(t)") }
+        }
+    }
+
+    private func enterCamperRoom(_ app: XCUIApplication) -> Bool {
+        let enter = app.buttons["camper.room.enter"].firstMatch
+        guard enter.waitForExistence(timeout: 15) else { return false }
+        if !enter.isHittable { scrollTo(enter, in: app) }
+        enter.tap()
+        return waitRoom(app, "camper.room.scene", "camper-room-ready")
+    }
+
+    private func measureCamperStages(diag: String?, aa: String? = nil, runs: Int, full: Bool) {
+        executionTimeAllowance = 1150
+        let d = diag ?? (aa.map { "aa-\($0)" } ?? "none")
+        for run in 1...runs {
+            var args = ["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperPerf", "YES"]
+            if let diag { args += ["-JPPreviewCamperDiag", diag] }
+            if let aa { args += ["-JPPreviewCamperAA", aa] }
+            let app = launchTrunk(args)
+            defer { app.terminate() }
+            let tag = "diag=\(d) run=\(run)"
+            guard openCamper(app), waitCamper(app, "camper-ready") else { XCTFail("外観を組み終えない（\(tag)）"); continue }
+            camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外観")
+            guard enterCamperRoom(app) else { XCTFail("部屋を組み終えない（\(tag)）"); continue }
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼")
+            // 軽くする前後の絵の突き合わせ用（screenshots の枝の `95z1-…`）
+            if run == 1 { shoot(app, "95z1-計測（部屋・昼・\(d)）") }
+            guard full else { continue }
+            let night = app.buttons["camper.room.night"].firstMatch
+            night.tap()
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "night"), "夜にならない")
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・夜")
+            night.tap()
+            XCTAssertTrue(waitRoom(app, "camper.room.scene", "day"), "昼に戻らない")
+            Thread.sleep(forTimeInterval: 3)
+            camperStageDump(app, probe: "camper.perf.room", "\(tag) 部屋・昼に戻した")
+            // 外へ出て、5 秒おいて外の数を読む（部屋の分が戻るか）。もう一度入って出る
+            for cycle in 1...2 {
+                let back = app.buttons["camper.room.back"].firstMatch
+                guard back.waitForExistence(timeout: 10) else { return XCTFail("外へ戻れない") }
+                back.tap()
+                XCTAssertTrue(app.buttons["camper.room.enter"].firstMatch.waitForExistence(timeout: 15), "外の車に戻らない")
+                Thread.sleep(forTimeInterval: 5)
+                camperStageDump(app, probe: "camper.perf.exterior", "\(tag) 外へ出た後 \(cycle) 回目")
+                if cycle == 1 {
+                    guard enterCamperRoom(app) else { return XCTFail("部屋に入り直せない") }
+                    Thread.sleep(forTimeInterval: 3)
+                    camperStageDump(app, probe: "camper.perf.room", "\(tag) 入り直した部屋")
+                }
+            }
+        }
+    }
+
+    /// 軽くした後（既定）と、軽くする前（`keepmesh`）を各 3 回: 段・user_tag・昼夜・外へ出た後。
+    /// 輪郭のなめらかさ（AA）は none と 4x（外観と部屋の両方）で入るところまで 3 回ずつ
+    func testMeasuresCamperStages() { measureCamperStages(diag: nil, runs: 3, full: true) }
+    func testMeasuresCamperStagesKeepMesh() { measureCamperStages(diag: "keepmesh", runs: 3, full: true) }
+    func testMeasuresCamperStagesAANone() { measureCamperStages(diag: nil, aa: "none", runs: 3, full: false) }
+    func testMeasuresCamperStagesAA4x() { measureCamperStages(diag: nil, aa: "4x", runs: 3, full: false) }
 
     /// **キャンピングカー（大きい文字）**: 数の札・段が縦に積まれ、字が切れずに押せるか。開けなければ撮らずに抜ける。
     /// **出たのに段のボタンが 44pt 未満・横 3 つのまま（幅が画面の半分に満たない）なら落とす**

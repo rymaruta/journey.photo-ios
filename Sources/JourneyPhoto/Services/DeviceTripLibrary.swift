@@ -352,6 +352,8 @@ final class DeviceTripShelfStore: ObservableObject {
     /// 一度でも読み始めた（`startIfNeeded`）
     private var didStart = false
     private var task: Task<Void, Never>?
+    /// 裏に回って読みを止めた(前面に戻ったら続きから読む・`pauseForBackground`)
+    private var interruptedByBackground = false
     /// 何回目の読みか。**自分の番のときだけ**印を消し、結果を受ける（古い読みが新しい読みの印を消さない）
     private var runId = 0
     /// 読みを始めた回数（試験・読みが2本走らないか）
@@ -499,14 +501,34 @@ final class DeviceTripShelfStore: ObservableObject {
     /// 裏にいる間に変化の知らせが来ていれば1回だけ読む。**読み始めるのはログインしているときだけ**
     func setActive(_ active: Bool) {
         isActive = active
-        guard active else { return }
+        guard active else {
+            pauseForBackground()
+            return
+        }
         guard refreshStatus(), isSignedIn else { return }
         if !didStart {
             startIfAllowed()
         } else if pendingChange {
             pendingChange = false
+            interruptedByBackground = false
             libraryChanged()
+        } else if interruptedByBackground {
+            // 裏で止めた読みを、前面に戻ったときに続きから(`frontier` から・`readFirst`)
+            interruptedByBackground = false
+            startIfAllowed()
         }
+    }
+
+    /// 裏で読みを止めて、前面に戻ったら続きから読む(2026-11-07)。写真が5万枚を超える人は、10分ごとの突き合わせで
+    /// 全部を読み直すことがあり(`sweep` の注記)、裏に回っても走り続けていた。読みの途中の要約は棚に反映済み
+    /// (`apply`)で、続きは `frontier` が覚えている
+    private func pauseForBackground() {
+        guard let running = task else { return }
+        running.cancel()
+        task = nil
+        runId += 1          // 止めた読みの結果は受けない(`apply` は古い番を捨てる)
+        isScanning = false
+        interruptedByBackground = true
     }
 
     /// 一部だけ許可した人が写真を選び足す（選び終えたら読み直す）
@@ -561,6 +583,7 @@ final class DeviceTripShelfStore: ObservableObject {
     func forget() {
         task?.cancel()
         task = nil
+        interruptedByBackground = false
         runId += 1
         changeDebounce?.cancel()
         if let observer { PHPhotoLibrary.shared().unregisterChangeObserver(observer) }

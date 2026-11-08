@@ -49,7 +49,13 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "PerformanceTests/testLaunchProbe", "PerformanceTests/testBodyEvaluationCounts",
                    # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
                    "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
-                   "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight"]
+                   "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight",
+                   # 2026-11-07（#430）: メモリの内訳（輪郭のなめらかさ 4x・2x・なし × 各 3 回）。`screens=testMeasuresCamperMemory`
+                   "ScreenshotTests/testMeasuresCamperMemoryAA4x", "ScreenshotTests/testMeasuresCamperMemoryAA2x",
+                   "ScreenshotTests/testMeasuresCamperMemoryAANone",
+                   # 2026-11-07（#430）: 途中の段・user_tag 別・差し替え。`screens=testMeasuresCamperStages`
+                   "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
+                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

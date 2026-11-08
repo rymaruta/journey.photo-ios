@@ -35,21 +35,62 @@ enum LiveLikes {
     /// 写真として読めない行（`src` が無いなど）でも id と数は残す——`list` がその id を
     /// `photos.json` の行で埋める（1行の型違いで、在る写真を一覧から消さない）
     static func read(_ data: Data) -> Snapshot? {
-        guard let counts = counts(from: data),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+        // 🔴 本文は**1回だけ**解析する(2026-11-07)。以前は `JSONSerialization` を2回(数と id)・`LenientPhotoList` を1回の
+        // 計3回、同じ本文を読んでいた。`Row` が1行ずつ「id・likes・audience」と「写真」を同じ復号の中で読む
+        guard let rows = try? JSONDecoder.api.decode([Row].self, from: data) else { return nil }
+        var counts: [String: Int] = [:]
         var ids: [String] = []
         var seen = Set<String>()
+        var decoded: [Photo] = []
         for row in rows {
-            guard let dict = row as? [String: Any],
-                  let id = dict["id"] as? String, !id.isEmpty, seen.insert(id).inserted else { continue }
+            if let photo = row.photo { decoded.append(photo) }
+            guard let id = row.id, !id.isEmpty else { continue }
+            counts[id] = row.likes
+            guard seen.insert(id).inserted else { continue }
             // 公開範囲を絞った行は**id ごと**一覧に入れない（`isRestrictedRow`）
-            if isRestrictedRow(dict["audience"]) { continue }
+            if row.restricted { continue }
             ids.append(id)
         }
-        let decoded = (try? JSONDecoder.api.decode(LenientPhotoList.self, from: data))?.photos ?? []
         let photos = Dictionary(decoded.filter { !isRestrictedRow($0.audience) }.map { ($0.id, $0) },
                                 uniquingKeysWith: { first, _ in first })
         return Snapshot(counts: counts, ids: ids, photos: photos)
+    }
+
+    /// `GET /photos` の1行。**復号を絶対に失敗させない形**（`LenientPhotoList.Row` と同じ理由）。
+    /// 緩い読み方は以前の `JSONSerialization` 版と同じ: id は文字列だけ、`likes` は数（真偽は 1/0）以外・無ければ 0、
+    /// `audience` は null か無ければ絞っていない・文字列は空白を除いて空でなければ絞った行・それ以外の型も絞った行
+    private struct Row: Decodable {
+        let id: String?
+        let likes: Int
+        let restricted: Bool
+        let photo: Photo?
+
+        private enum Keys: String, CodingKey { case id, likes, audience }
+
+        init(from decoder: Decoder) throws {
+            photo = try? Photo(from: decoder)
+            guard let c = try? decoder.container(keyedBy: Keys.self) else {
+                id = nil; likes = 0; restricted = false
+                return
+            }
+            id = try? c.decode(String.self, forKey: .id)
+            if let n = try? c.decode(Int.self, forKey: .likes) {
+                likes = max(0, n)
+            } else if let d = try? c.decode(Double.self, forKey: .likes), d.isFinite {
+                likes = Int(max(0, min(d, 9e15)))
+            } else if let b = try? c.decode(Bool.self, forKey: .likes) {
+                likes = b ? 1 : 0
+            } else {
+                likes = 0
+            }
+            if !c.contains(.audience) || ((try? c.decodeNil(forKey: .audience)) ?? false) {
+                restricted = false
+            } else if let text = try? c.decode(String.self, forKey: .audience) {
+                restricted = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            } else {
+                restricted = true
+            }
+        }
     }
 
     /// 公開範囲を絞った行か。**サーバーの `isRestricted`（`api/src/photos.ts`）と同じ線**——空でない
@@ -93,15 +134,7 @@ enum LiveLikes {
     /// 返すので、**一度もいいねされていない写真は `likes` を持たない**。
     /// 読み飛ばすと、静的 JSON に残った古い数（取り消されたぶん）が出続ける。
     static func counts(from data: Data) -> [String: Int]? {
-        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
-        var out: [String: Int] = [:]
-        for row in rows {
-            guard let dict = row as? [String: Any],
-                  let id = dict["id"] as? String, !id.isEmpty else { continue }
-            let likes = (dict["likes"] as? NSNumber)?.intValue ?? 0
-            out[id] = max(0, likes)
-        }
-        return out
+        read(data)?.counts
     }
 
     /// 数を写す。**`counts` に無い写真は触らない**

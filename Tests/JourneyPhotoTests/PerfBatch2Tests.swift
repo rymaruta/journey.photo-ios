@@ -90,7 +90,7 @@ final class PerfBatch2Tests: XCTestCase {
     func testRoomAntialiasingIsTwoX() throws {
         XCTAssertEqual(CamperRoomSceneView.antialiasing, .multisampling2X)
         let view = try code("Features/Camper/Room/CamperRoomSceneView.swift")
-        XCTAssertTrue(view.contains("view.antialiasingMode = Self.antialiasing"))
+        XCTAssertTrue(view.contains("view.antialiasingMode = PreviewSession.camperAntialiasing(default: Self.antialiasing)"))
         XCTAssertFalse(view.contains(".multisampling4X"))
     }
 }

@@ -143,8 +143,10 @@ struct RootView: View {
             if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
+                    .perfMark("legal.gate.appear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07 札 #435 / #429）
             } else {
                 tabsWithFoundingGift
+                    .perfMark("root.tabs.appear")
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
@@ -1150,6 +1152,7 @@ struct RootView: View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
         // 押しても setter を呼ぶので、そこで比べる
+        // 起動直後の停止の切り分け: タブの各画面が出た時刻（`.perfMark`・UI テストのときだけ・2026-11-07 札 #435 / #429）
         TabView(selection: Binding(
             get: { selection },
             set: { tapped in
@@ -1159,6 +1162,7 @@ struct RootView: View {
         )) {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
+                    .perfMark("tab.home.appear")
             }
             .tint(WebTheme.foreground)
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
@@ -1166,6 +1170,7 @@ struct RootView: View {
 
             NavigationStack {
                 SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
+                    .perfMark("tab.search.appear")
             }
             .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
@@ -1183,6 +1188,7 @@ struct RootView: View {
                 PhotoMapView(unread: unread,
                              onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
+                    .perfMark("tab.map.appear")
             }
             // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
             .id(mapStackId)
@@ -1192,6 +1198,7 @@ struct RootView: View {
 
             NavigationStack {
                 MyPageView()
+                    .perfMark("tab.mypage.appear")
             }
             .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }

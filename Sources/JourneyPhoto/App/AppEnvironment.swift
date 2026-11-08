@@ -58,8 +58,10 @@ final class AppEnvironment: ObservableObject {
          quiz: DailyQuizService = DailyQuizService(),
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
+        // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）
+        defer { PerfRecorder.shared.event("AppEnvironment.init") }   // 作り終えた時刻（始めは1つ前の出来事から読む）
         let api = api ?? APIClient(tokenProvider: tokenProvider, session: PreviewBackend.session,
-                                          limiter: RequestLimiter.shared,
+                                          limiter: RequestLimiter.shared, writeLimiter: RequestLimiter.sharedWrites,
                                           retryPause: APIClient.previewRetryPause)
         self.api = api
         self.gallery = gallery

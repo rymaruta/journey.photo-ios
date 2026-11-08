@@ -29,9 +29,11 @@ struct CamperSceneView: UIViewRepresentable {
     func makeCoordinator() -> CamperScene { CamperScene() }
 
     func makeUIView(context: Context) -> SCNView {
+        PerfRecorder.shared.event("camper.ext.makeView>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07 札 #435 / #429）
+        defer { PerfRecorder.shared.event("camper.ext.makeView<") }
         let view = SCNView(frame: .zero)
         view.backgroundColor = .clear
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = PreviewSession.camperAntialiasing(default: .multisampling4X)
         view.preferredFramesPerSecond = 60
         // 動いた時だけ描き直す（止まっている間は描かない）
         view.rendersContinuously = false

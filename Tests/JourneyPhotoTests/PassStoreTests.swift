@@ -116,6 +116,27 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(scheduled.last?.count, 2, "知らせの枚数が書き換わらない")
     }
 
+    /// 🔴 壊れた帳(JSON として読めない)は、空の状態で次の保存に上書きされない。`.corrupt` に退避して残し、
+    /// 新しい帳を始める。`load` の退避を外すと、壊れた中身が消えて落ちる(2026-11-07)
+    func testCorruptBookIsSetAsideNotOverwritten() async throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent(OfflineTripStore.hex("me") + ".json")
+        let broken = Data("{ not json".utf8)
+        try broken.write(to: file)
+
+        let store = makeStore()          // 読み込み → 設定を変えて保存
+        XCTAssertTrue(store.encounters.isEmpty)
+        let aside = file.appendingPathExtension("corrupt")
+        XCTAssertEqual(try? Data(contentsOf: aside), broken, "壊れた帳が退避されていない(上書きで失われた)")
+        let rewritten = try Data(contentsOf: file)
+        XCTAssertNotEqual(rewritten, broken)
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: rewritten), "新しい帳が書かれていない")
+
+        // 退会では退避した帳も消す
+        PassStore.removeData(for: "me", root: root, defaults: defaults)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: aside.path))
+    }
+
     /// 端末の中に残り、読み直しても同じ。**人ごとに分かれる**
     func testPersistsPerPerson() async {
         let store = makeStore()

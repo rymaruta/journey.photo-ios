@@ -137,6 +137,34 @@ final class NoDataLossTests: XCTestCase {
         XCTAssertTrue(log.atSave.allSatisfy { $0 == true }, "PUT のあと(保存の前)に印が付いていない")
     }
 
+    // MARK: - 撮影地の長さ(2026-11-07)
+
+    /// 🔴 撮影地は 200 字(`PostLimits.location`)で切って送る(サーバーが黙って切るので、画面の字と保存された字をそろえる)。
+    /// `makeDraft` の `clamp` を外すと、201 字目まで送られて落ちる
+    func testLocationIsClampedBeforeSending() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: Self.presign),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: Self.saveOK),
+        ]
+        let model = model(owner: "a")
+        var one = photo(1, title: "長い撮影地")
+        one.location = String(repeating: "あ", count: 250)
+        model.items = [one]
+        await model.submit()
+        XCTAssertTrue(model.didPostAll, "前提: 上がった")
+        let save = ScriptedProtocol.calls.last { $0.path.contains("/upload/save") }
+        let body = String(decoding: save?.body ?? Data(), as: UTF8.self)
+        XCTAssertTrue(body.contains(String(repeating: "あ", count: PostLimits.location)), "前提: 撮影地が送られている")
+        XCTAssertFalse(body.contains(String(repeating: "あ", count: PostLimits.location + 1)), "200 字を超えて送った")
+    }
+
+    /// 撮影地の欄にも題・説明と同じ止め方がある(外すと画面で 200 字を超えて打てる)
+    func testLocationFieldStopsAtTheLimit() async throws {
+        let view = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        XCTAssertTrue(view.contains("PostLimits.limited(old: old, new: value, limit: PostLimits.location)"))
+    }
+
     // MARK: - 1. 送信の控え
 
     /// 🔴 **新しい投稿（下書きから開き直していない）も、送り始める前に控えに書く。** 1枚目の保存が

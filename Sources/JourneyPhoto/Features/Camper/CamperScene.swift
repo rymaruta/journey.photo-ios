@@ -150,7 +150,10 @@ final class CamperScene {
     /// 1 コマの時間を測る delegate（SCNView の delegate は弱い参照なので、ここで持つ・2026-10-31・#430）
     var frameMeter: AnyObject?
 
+    deinit { CamperLive.shared.add("exteriors", -1) }
+
     init() {
+        CamperLive.shared.add("exteriors", 1)
         buildStage()
         let state = PowerStateWatch.current()
         lowPowerMode = state.lowPower
@@ -390,13 +393,17 @@ final class CamperScene {
         }
         buildTask?.cancel()
         let started = Date()
+        PerfRecorder.shared.event("camper.ext.plan>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
         buildTask = Task { [weak self] in
             let plan = await Task.detached(priority: .userInitiated) { CamperScenePlan.make(next) }.value
             guard !Task.isCancelled, let self, let now = self.config, now.buildKey == next.buildKey else { return }
+            PerfRecorder.shared.event("camper.ext.install>")
             self.install(plan, config: now)
+            PerfRecorder.shared.event("camper.ext.install<")
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             #if canImport(SceneKit)
-            CamperSceneStats.publish("SceneExterior", root: self.scene.rootNode)   // 見本の計測の起動だけ（メモリの内訳・#430）
+            CamperSceneStats.publish("SceneExterior", root: self.scene.rootNode)
+            CamperRenderMeter.shared.mark("X0exteriorReady", vm: true)   // 見本の計測の起動だけ（メモリの内訳・#430）
             #endif
             self.onReady?(Self.marker(now, blueprint: plan.blueprint, ms: ms))
         }
