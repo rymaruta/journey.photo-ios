@@ -41,6 +41,9 @@ final class StoryUploadCenter: ObservableObject {
         let songOnPhoto: Bool
         /// 撮影地の札をこの写真に焼き込んだか（見る画面は固定の撮影地の札を出さない・札 #499）
         let locationOnPhoto: Bool
+        /// 動画の本体（札 #500）。**動画の1本は `imageData` に表紙の1コマ（JPEG）を持ち、本体はここ**。
+        /// 無ければ写真
+        var video: Video?
         /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
         var uploaded: StoryService.UploadedMedia?
 
@@ -48,6 +51,7 @@ final class StoryUploadCenter: ObservableObject {
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
              allowReplies: Bool = true, texts: [StoryPostText]? = nil,
              songOnPhoto: Bool = false, locationOnPhoto: Bool = false,
+             video: Video? = nil,
              uploaded: StoryService.UploadedMedia? = nil) {
             self.id = id
             self.imageData = imageData
@@ -61,8 +65,15 @@ final class StoryUploadCenter: ObservableObject {
             self.texts = texts
             self.songOnPhoto = songOnPhoto
             self.locationOnPhoto = locationOnPhoto
+            self.video = video
             self.uploaded = uploaded
         }
+    }
+
+    /// 動画の本体（端末の中のファイル）と送る種類（`StoryVideoRules.allowedFileTypes`）
+    struct Video: Equatable {
+        let fileURL: URL
+        let fileType: String
     }
 
     /// 1本を送る手順。2つ目の引数で「上げ終えた画像」を係に覚えさせる（nil で忘れる）
@@ -322,6 +333,9 @@ final class StoryUploadCenter: ObservableObject {
             let songOnPhoto: Bool?
             /// 撮影地の札を焼き込んだ印（札 #499）。**書かないと、途中で落ちて戻したときに撮影地が2か所に出る**。前の版には無い
             let locationOnPhoto: Bool?
+            /// 動画の本体の拡張子（`<id>.<拡張子>` で並びの置き場に写す・札 #500）。前の版には無い（nil＝写真）
+            let videoExtension: String?
+            let videoFileType: String?
         }
         let ownerId: String
         let total: Int
@@ -346,6 +360,17 @@ final class StoryUploadCenter: ObservableObject {
                     guard let url = imageURL(job.id) else { continue }
                     try job.imageData.write(to: url, options: .atomic)
                 }
+                // 動画の本体は並びの置き場へ移す（一時フォルダは強制終了のあとに消えることがある）。
+                // 写したら送るときもそちらを読む（`pending` の URL を差し替える）
+                for index in pending.indices {
+                    guard let video = pending[index].video,
+                          let copy = videoURL(pending[index].id, ext: Self.videoExtension(video)),
+                          copy != video.fileURL else { continue }
+                    if !FileManager.default.fileExists(atPath: copy.path) {
+                        try FileManager.default.moveItem(at: video.fileURL, to: copy)
+                    }
+                    pending[index].video = Video(fileURL: copy, fileType: video.fileType)
+                }
             }
             let manifest = Manifest(ownerId: ownerId, total: total, jobs: pending.map { job in
                 Manifest.Entry(id: job.id, caption: job.caption, location: job.location,
@@ -354,7 +379,9 @@ final class StoryUploadCenter: ObservableObject {
                                archive: job.archive, allowReplies: job.allowReplies ? nil : false,
                                uploaded: job.uploaded, texts: job.texts,
                                songOnPhoto: job.songOnPhoto ? true : nil,
-                               locationOnPhoto: job.locationOnPhoto ? true : nil)
+                               locationOnPhoto: job.locationOnPhoto ? true : nil,
+                               videoExtension: job.video.map { Self.videoExtension($0) },
+                               videoFileType: job.video?.fileType)
             }, draftToClear: draftToClear)
             try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
@@ -366,6 +393,20 @@ final class StoryUploadCenter: ObservableObject {
     private func removeImage(of job: Job) {
         guard let url = imageURL(job.id) else { return }
         try? FileManager.default.removeItem(at: url)
+        if let video = job.video, let copy = videoURL(job.id, ext: Self.videoExtension(video)),
+           copy != video.fileURL {
+            try? FileManager.default.removeItem(at: copy)
+        }
+    }
+
+    /// 動画の本体の置き場（`<id>.<拡張子>`）
+    private func videoURL(_ id: UUID, ext: String) -> URL? {
+        directory?.appendingPathComponent("\(id.uuidString).\(ext)")
+    }
+
+    static func videoExtension(_ video: Video) -> String {
+        let ext = video.fileURL.pathExtension.lowercased()
+        return ext.isEmpty ? (StoryVideoRules.fileExtension(forFileType: video.fileType) ?? "mp4") : ext
     }
 
     private func clearStorage() {
@@ -388,11 +429,19 @@ final class StoryUploadCenter: ObservableObject {
                 guard let lat = entry.latitude, let lng = entry.longitude else { return nil }
                 return Photo.Coords(lat: lat, lng: lng)
             }()
+            // 動画の1本は本体も読めなければ戻さない（表紙だけの動画は送りようがない）
+            var video: Video?
+            if let ext = entry.videoExtension {
+                guard let copy = videoURL(entry.id, ext: ext), FileManager.default.fileExists(atPath: copy.path)
+                else { return nil }
+                video = Video(fileURL: copy, fileType: entry.videoFileType
+                    ?? StoryVideoRules.fileType(forExtension: ext) ?? StoryVideoRules.exportFileType)
+            }
             return Job(id: entry.id, imageData: image, caption: entry.caption, location: entry.location,
                        coords: coords, song: entry.song, durationSec: entry.durationSec,
                        archive: entry.archive, allowReplies: entry.allowReplies != false,
                        texts: entry.texts, songOnPhoto: entry.songOnPhoto == true,
-                       locationOnPhoto: entry.locationOnPhoto == true, uploaded: entry.uploaded)
+                       locationOnPhoto: entry.locationOnPhoto == true, video: video, uploaded: entry.uploaded)
         }
         guard !jobs.isEmpty, !manifest.ownerId.isEmpty else {
             clearStorage()

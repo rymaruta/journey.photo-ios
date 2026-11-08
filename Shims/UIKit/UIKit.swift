@@ -74,6 +74,9 @@ public struct UIBackgroundTaskIdentifier: Hashable, Sendable {
 /// 本物の3つ目は `Selector?`——Linux に無い型なので、`nil` だけ渡す前提で `Any?` にしてある
 public func UIImageWriteToSavedPhotosAlbum(_ image: UIImage, _ completionTarget: Any?,
                                            _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
+/// 動画を端末の写真に保存する（本物と同じ名前・引数の数）。模型は何もしない
+public func UISaveVideoAtPathToSavedPhotosAlbum(_ videoPath: String, _ completionTarget: Any?,
+                                                _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
 open class UINavigationController: UIViewController {}
 
 public protocol UINavigationControllerDelegate: AnyObject {}
@@ -91,7 +94,14 @@ open class UIImagePickerController: UIViewController {
         public static let editedImage = InfoKey(rawValue: "UIImagePickerControllerEditedImage")
         /// 撮った1枚の撮影情報（`{Exif}`・`{TIFF}` などの辞書。カメラのときだけ）
         public static let mediaMetadata = InfoKey(rawValue: "UIImagePickerControllerMediaMetadata")
+        /// 撮ったものの種類（`public.image` / `public.movie`）と動画のファイル
+        public static let mediaType = InfoKey(rawValue: "UIImagePickerControllerMediaType")
+        public static let mediaURL = InfoKey(rawValue: "UIImagePickerControllerMediaURL")
     }
+    public enum VideoQuality { case typeHigh, typeMedium, typeLow }
+    public var mediaTypes: [String] = ["public.image"]
+    public var videoMaximumDuration: TimeInterval = 600
+    public var videoQuality: VideoQuality = .typeMedium
     public var sourceType: SourceType = .photoLibrary
     public var cameraCaptureMode: CameraCaptureMode = .photo
     public weak var delegate: (UIImagePickerControllerDelegate & UINavigationControllerDelegate)?

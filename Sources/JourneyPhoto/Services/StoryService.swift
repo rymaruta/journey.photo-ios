@@ -76,11 +76,11 @@ struct StoryService {
                 // 409 が返らず見分けられない。そのときは上げ直して、もう1本出る
                 if try await discardStale(key: uploaded.key) == .inUse { return }
                 await record(nil)
-                media = try await upload(imageData: job.imageData)
+                media = try await upload(job)
                 await record(media)
             }
         } else {
-            media = try await upload(imageData: job.imageData)
+            media = try await upload(job)
             await record(media)
         }
         // **catch の中で await しない**（Xcode 26.3 の SILGen が落ちた形に近い）。
@@ -92,7 +92,8 @@ struct StoryService {
                                        durationSec: job.durationSec, archive: job.archive,
                                        allowReplies: job.allowReplies, texts: job.texts,
                                        songOnPhoto: job.songOnPhoto,
-                                       locationOnPhoto: job.locationOnPhoto)
+                                       locationOnPhoto: job.locationOnPhoto,
+                                       mediaType: job.video == nil ? "image" : "video")
         } catch {
             failure = error
         }
@@ -138,6 +139,33 @@ struct StoryService {
         return !path.isEmpty && path == media.key
     }
 
+    /// 1本ぶんの本体を上げる。動画（札 #500）なら動画のファイル、写真なら焼き込み済みの JPEG
+    func upload(_ job: StoryUploadCenter.Job) async throws -> UploadedMedia {
+        guard let video = job.video else { return try await upload(imageData: job.imageData) }
+        return try await upload(videoFile: video.fileURL, fileType: video.fileType)
+    }
+
+    /// 動画を上げる。**申告する大きさは実際に置く本体の長さ**（加工前の長さを申告すると 403・`upload.ts` の注記）。
+    /// 50MB を超える本体は要求を出さずに断る（書き出しの段で収めているので、ここに来るのは想定外）
+    func upload(videoFile url: URL, fileType: String) async throws -> UploadedMedia {
+        guard let ext = StoryVideoRules.fileExtension(forFileType: fileType) else {
+            throw StoryVideoRules.Problem.exportFailed
+        }
+        // 50MB を一度に載せる（`transfer.upload` が Data を受ける形）。ファイルの写しで済むよう map する
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), !data.isEmpty else {
+            throw StoryVideoRules.Problem.importFailed
+        }
+        if let problem = StoryVideoRules.problem(exportedBytes: data.count) { throw problem }
+        let presigned = try await uploads.presign(fileName: "story.\(ext)", fileType: fileType, fileSize: data.count)
+        do {
+            try await uploads.put(data: data, to: presigned)
+        } catch {
+            await uploads.discard(key: presigned.key)
+            throw error
+        }
+        return UploadedMedia(key: presigned.key, publicUrl: presigned.publicUrl, uploadedAt: Date())
+    }
+
     /// 画像を上げる（置き場所をもらって本体を置く）。置けなかったら片づけて投げる
     func upload(imageData: Data) async throws -> UploadedMedia {
         let presigned = try await uploads.presign(
@@ -169,7 +197,8 @@ struct StoryService {
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
                       archive: Bool = false, allowReplies: Bool = true,
                       texts: [StoryPostText]? = nil, songOnPhoto: Bool = false,
-                      locationOnPhoto: Bool = false) async throws -> Story? {
+                      locationOnPhoto: Bool = false,
+                      mediaType: String = "image") async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -204,16 +233,20 @@ struct StoryService {
         let body = Body(
             publicUrl: media.publicUrl,
             caption: caption?.isEmpty == true ? nil : caption,
-            mediaType: "image",
-            location: location?.isEmpty == true ? nil : location,
-            coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
+            mediaType: mediaType,
+            // **動画には位置・座標・表示秒数を付けない**（札 #500・サーバーは動画の分を捨てる。送らないことで
+            // 片側だけの防御にしない・`StoryVideoRules.sendsLocation`）
+            location: StoryVideoRules.sendsLocation(mediaType: mediaType) && location?.isEmpty == false ? location : nil,
+            coords: StoryVideoRules.sendsLocation(mediaType: mediaType) && location?.isEmpty == false
+                ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
             song: song,
-            durationSec: Self.storedDuration(durationSec),
+            durationSec: StoryVideoRules.sendsDuration(mediaType: mediaType) ? Self.storedDuration(durationSec) : nil,
             archive: archive ? true : nil,
             allowReplies: allowReplies ? nil : false,
             texts: texts?.isEmpty == false ? texts : nil,
             songOnPhoto: song != nil && songOnPhoto ? true : nil,
-            locationOnPhoto: location?.isEmpty == false && locationOnPhoto ? true : nil
+            locationOnPhoto: StoryVideoRules.sendsLocation(mediaType: mediaType) && location?.isEmpty == false
+                && locationOnPhoto ? true : nil
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }

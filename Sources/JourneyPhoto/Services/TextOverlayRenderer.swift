@@ -63,7 +63,7 @@ enum TextOverlayRenderer {
         }
     }
 
-    private static func draw(_ overlay: TextOverlay, on size: CGSize, context: CGContext,
+    static func draw(_ overlay: TextOverlay, on size: CGSize, context: CGContext,
                              song: SongStickerPainter.Art?) {
         // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
