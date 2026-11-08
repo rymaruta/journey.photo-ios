@@ -340,9 +340,12 @@ struct TrunkTagPickerSheet: View {
         } label: {
             HStack(spacing: 12) {
                 ZStack {
+                    // 選択の丸（下線の札ではない）。塗りは「選んでいるときだけ真鍮の円を重ねる」で書く
                     Circle()
                         .strokeBorder(selected ? WebTheme.accent : Color.white.opacity(0.3), lineWidth: 2)
-                        .background(Circle().fill(selected ? WebTheme.accent : Color.clear))
+                    if selected {
+                        Circle().fill(WebTheme.accent)
+                    }
                     if selected {
                         Image(systemName: "checkmark")
                             .font(.system(size: 13, weight: .heavy))
