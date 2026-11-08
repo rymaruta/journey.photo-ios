@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **クラッシュ・ハング・起動時間の診断を受け取って端末のログに出す**（2026-11-07・`MetricKitReceiver`）。
         // OS は起動の早い時期に登録した購読者へ届けるので、ここで登録する。サーバーには送らない
         MetricKitReceiver.shared.start()
+        // 起動の時刻を固定する（アイコン長押しの受け口が「起動直後の約2秒は待つ」ために使う・`StoryCameraRules.settleWait`）
+        _ = StoryCameraRules.launchedAt
         // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
         // 居ない転送は止め、その鍵はログインしているときに片付ける
         BackgroundTransfer.shared.reconnect()
@@ -38,6 +40,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         PendingVerificationStore().migrateLegacyKeys()
         return true
     }
+
+    #if canImport(Darwin)
+    /// アイコン長押しの「ストーリーを撮る」（札 #500）。**場面の係を指定する**——起動のときに選ばれた項目は
+    /// ここ（`options.shortcutItem`）に来て、起動中に選ばれた項目は `StorySceneDelegate` に来る
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        if let item = options.shortcutItem, item.type == StoryCameraRules.shortcutType {
+            Task { @MainActor in StoryShortcutCenter.shared.request() }
+        }
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = StorySceneDelegate.self
+        return configuration
+    }
+    #endif
 
     /// 写真の本体の転送（背景の URLSession）が終わって、OS に起こされた。
     /// **預かった `completionHandler` は、渡し終えたら呼ぶ**（`urlSessionDidFinishEvents`）

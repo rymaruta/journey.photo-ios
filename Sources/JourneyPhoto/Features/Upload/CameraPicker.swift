@@ -60,12 +60,6 @@ struct CameraPicker: UIViewControllerRepresentable {
 
     /// 撮れた1枚。閉じただけなら呼ばれない。**JPEG にするのは受け取った側**（画面の処理の外で）
     let onCapture: (CameraCapture) -> Void
-    /// 撮れた動画（札 #500・ストーリー）。**呼ぶ側の一時フォルダに写したファイル**を渡す
-    /// （撮影の画面が閉じると元の一時ファイルは消えうる）。`allowsVideo` のときだけ呼ばれる
-    var onVideo: ((URL) -> Void)? = nil
-    /// 写真に加えて動画も撮れるか（画面の上の「写真 / ビデオ」の切り替えは標準の部品が出す）。
-    /// 動画はマイクを使うので `NSMicrophoneUsageDescription` が要る
-    var allowsVideo = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -78,12 +72,6 @@ struct CameraPicker: UIViewControllerRepresentable {
         let controller = UIImagePickerController()
         controller.sourceType = .camera
         controller.cameraCaptureMode = .photo
-        if allowsVideo {
-            // 標準の識別子（`UTType.image` / `.movie`）。ストーリーの上限（60 秒）で止める
-            controller.mediaTypes = ["public.image", "public.movie"]
-            controller.videoMaximumDuration = StoryVideoRules.maxSeconds
-            controller.videoQuality = .typeHigh
-        }
         controller.delegate = context.coordinator
         return controller
     }
@@ -91,19 +79,16 @@ struct CameraPicker: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCapture: onCapture, onVideo: onVideo, dismiss: { dismiss() })
+        Coordinator(onCapture: onCapture, dismiss: { dismiss() })
     }
 
     final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
 
         private let onCapture: (CameraCapture) -> Void
-        private let onVideo: ((URL) -> Void)?
         private let dismiss: () -> Void
 
-        init(onCapture: @escaping (CameraCapture) -> Void, onVideo: ((URL) -> Void)? = nil,
-             dismiss: @escaping () -> Void) {
+        init(onCapture: @escaping (CameraCapture) -> Void, dismiss: @escaping () -> Void) {
             self.onCapture = onCapture
-            self.onVideo = onVideo
             self.dismiss = dismiss
         }
 
@@ -112,15 +97,6 @@ struct CameraPicker: UIViewControllerRepresentable {
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
             defer { dismiss() }
-            // 動画（札 #500）。撮った原本は端末にも残す（写真と同じ）。ファイルは自分の一時フォルダへ写してから渡す
-            if let mediaType = info[.mediaType] as? String, mediaType == "public.movie" {
-                guard let source = info[.mediaURL] as? URL, let onVideo else { return }
-                let copy = StoryVideoPipeline.temporaryURL(ext: source.pathExtension.isEmpty ? "mov" : source.pathExtension)
-                guard (try? FileManager.default.copyItem(at: source, to: copy)) != nil else { return }
-                UISaveVideoAtPathToSavedPhotosAlbum(source.path, nil, nil, nil)
-                onVideo(copy)
-                return
-            }
             guard let image = info[.originalImage] as? UIImage else { return }
             // 🔴 **撮った写真は端末にも残す。** この画面のカメラは写真アプリに
             // 保存しないので、投稿せずに閉じる・投稿に失敗して諦めると、撮った

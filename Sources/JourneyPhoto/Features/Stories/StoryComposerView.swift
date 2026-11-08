@@ -33,9 +33,14 @@ struct StoryComposerView: View {
     @State private var showSaveChoice = false
     /// 下書きの一覧から開いた下書き（`DraftLibrary.Entry.id`）。尋ねずに戻す
     private let openDraft: String?
+    /// 開いたらカメラを先頭に出す（札 #500・ホームの輪の「＋」とアイコン長押しの「ストーリーを撮る」）。
+    /// 写真選びの段を飛ばして撮れる。撮らずに閉じれば写真選びの段に戻る。下書きの続き・送れなかった残りの問いが
+    /// あるときは出さない（先に答えてもらう）
+    private let startsWithCamera: Bool
 
-    init(openDraft: String? = nil) {
+    init(openDraft: String? = nil, startsWithCamera: Bool = false) {
         self.openDraft = openDraft
+        self.startsWithCamera = startsWithCamera
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -525,6 +530,7 @@ struct StoryComposerView: View {
             }
             // 🔴 尋ねていない自動の書きかけには触らない（黙って上書き・削除しない）
             autoSlotOwned = StorySimpleRules.ownsAutoSlot(hasAutoDraft: hasAuto, asked: showRestoreAuto)
+            openCameraFirstIfAsked()
         }
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
@@ -574,9 +580,10 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(onCapture: { capture in acceptFromCamera(capture) },
-                         onVideo: { url in acceptRecordedVideo(url) },
-                         allowsVideo: true)
+            // 自前のカメラ（写真｜動画・長押しで動画・前後の切り替え・触覚）。札 #500
+            StoryCameraView(onPhoto: { data in
+                acceptFromCamera(CameraCapture(metadata: [:], capturedAt: Date(), encode: { data }))
+            }, onVideo: { url in acceptRecordedVideo(url) })
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -1991,9 +1998,12 @@ struct StoryComposerView: View {
 
     /// カメラで撮った動画（`CameraPicker` が写した一時ファイル）。写真と同じく読み込み中に数える
     private func acceptRecordedVideo(_ url: URL) {
+        // 写真と同じく、写真を選ぶ段で印を付けていた写真を先に読む（`acceptFromCamera`）
+        let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
         loadingPicks += 1
         Task {
             defer { loadingPicks -= 1 }
+            await load(pending)
             do {
                 let imported = try await StoryVideoPipeline.importRecorded(at: url)
                 await acceptVideo(imported)
@@ -2275,6 +2285,19 @@ struct StoryComposerView: View {
         .accessibilityLabel(L("動画 \(clip.durationLabel)", "Video \(clip.durationLabel)"))
         .accessibilityIdentifier("story.videoBadge")
         .allowsHitTesting(false)
+    }
+
+    /// カメラを先頭に出す（`startsWithCamera`）。**下書き・送れなかった残りの問いが出ているときは出さない**。
+    /// 開いた直後に重ねて出すと iOS が取りこぼすことがあるので、画面が落ち着いてから（`RootView.postChoiceDismissed` と同じ考え）
+    private func openCameraFirstIfAsked() {
+        guard startsWithCamera, openDraft == nil, shots.isEmpty, StoryCameraView.isAvailable,
+              !showPendingFailure, !showRestoreAuto, !showRestore else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled, shots.isEmpty, !showPendingFailure, !showRestoreAuto, !showRestore,
+                  !showLibrary, !showCamera else { return }
+            showCamera = true
+        }
     }
 
     /// 動画の1本が並びにあるか（札 #500。下書きに残せない）

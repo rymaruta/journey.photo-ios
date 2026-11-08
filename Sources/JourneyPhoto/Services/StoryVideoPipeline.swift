@@ -41,7 +41,7 @@ enum StoryVideoPipeline {
         #endif
     }
 
-    /// カメラで撮った動画（`CameraPicker` が自分の一時フォルダに写したファイル）を確かめる
+    /// カメラで撮った動画（`StoryCameraView` が撮った一時ファイル）を確かめる
     static func importRecorded(at url: URL) async throws -> Imported {
         #if canImport(Darwin)
         return try await prepare(fileAt: url)

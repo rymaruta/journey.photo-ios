@@ -23,6 +23,8 @@ struct StoriesRow: View {
     /// 開いたときに写した**人ごとの束の並び**と、押した人の位置（`StoryReel`）
     @State private var openedReel: (groups: [StoryReel.Group], start: Int) = ([], 0)
     @State private var showComposer = false
+    /// 作る画面をカメラから始めるか（札 #500。「＋」はカメラが先頭・A 案）。カメラが無い端末では写真選びから
+    @State private var composerStartsWithCamera = false
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @State private var showUploadFailure = false
@@ -105,6 +107,8 @@ struct StoriesRow: View {
             guard opened == nil else { return }
             Task { await reload() }
         }
+        // 投稿が全部届いたときの触覚（札 #500・成功）。送っている間に画面を閉じてもここで鳴る
+        .sensoryFeedback(.success, trigger: uploads.finished)
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
                             isPresented: $showUploadFailure, titleVisibility: .visible) {
@@ -147,8 +151,15 @@ struct StoriesRow: View {
         .fullScreenCover(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
-            NavigationStack { StoryComposerView() }
+            NavigationStack { StoryComposerView(startsWithCamera: composerStartsWithCamera) }
         }
+    }
+
+    /// 「＋」を押した。**カメラを先頭に開く**（札 #500・アプリを開いてから撮るまでの手間を省く）。
+    /// カメラが使えない端末（シミュレータ）は今までどおり写真選びから
+    private func openComposer() {
+        composerStartsWithCamera = StoryCameraView.isAvailable
+        showComposer = true
     }
 
     // MARK: - 輪
@@ -174,10 +185,10 @@ struct StoriesRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("あなたのストーリー", "Your story"))
             // 読み上げでは「＋」を別の要素にせず、輪の操作として選べるようにする
-            .accessibilityAction(named: L("ストーリーを追加", "Add to your story")) { showComposer = true }
+            .accessibilityAction(named: L("ストーリーを追加", "Add to your story")) { openComposer() }
             .overlay(alignment: .topLeading) {
                 Button {
-                    showComposer = true
+                    openComposer()
                 } label: {
                     plusBadge
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
@@ -196,7 +207,7 @@ struct StoriesRow: View {
             // 「＋」は見た目 22 の丸だが、**押せるのは輪と名前の全体**（幅 64・44pt 以上）。
             // 「＋」だけの小さな的は置かない
             Button {
-                showComposer = true
+                openComposer()
             } label: {
                 VStack(spacing: StoryRingMetrics.nameSpacing) {
                     StoryRing(count: 1, unseen: false) { myFace }
@@ -243,7 +254,7 @@ struct StoriesRow: View {
     private var emptyRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                showComposer = true
+                openComposer()
             } label: {
                 HStack(spacing: JPSpace.s) {
                     myFace
